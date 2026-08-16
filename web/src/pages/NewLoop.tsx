@@ -72,9 +72,7 @@ export default function NewLoop() {
             onChange={(e) => setName(e.target.value.toLowerCase())}
             autoFocus
           />
-          <div className="hint">
-            Lowercase, 2–32 chars. Others reach this loop as @{name || 'name'}.
-          </div>
+          <div className="hint">Lowercase, 2–32 chars. Others reach this loop as @{name || 'name'}.</div>
         </div>
 
         <div className="field">
@@ -176,8 +174,8 @@ export default function NewLoop() {
             onChange={(e) => setToken(e.target.value)}
           />
           <div className="hint">
-            Create a bot with @BotFather (/newbot), then: /setprivacy → Disable, so the bot sees
-            group messages. Paste its token here and add the bot to your group.
+            Create a bot with @BotFather (/newbot), then: /setprivacy → Disable, so the bot sees group
+            messages. Paste its token here and add the bot to your group.
           </div>
         </div>
 

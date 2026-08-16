@@ -9,21 +9,31 @@ import { Timeline } from '../components/Timeline'
 import { SpoolGlyph } from '../components/Spool'
 
 function Countdown({ at }: { at: number }) {
-  const [, force] = useState(0)
+  const [s, setS] = useState<number | null>(null)
   useEffect(() => {
-    const t = setInterval(() => force((n) => n + 1), 1000)
+    const update = () => setS(Math.max(0, Math.floor((at - Date.now()) / 1000)))
+    update()
+    const t = setInterval(update, 1000)
     return () => clearInterval(t)
-  }, [])
-  if (!at) return <div className="countdown">—</div>
-  const s = Math.max(0, Math.floor((at - Date.now()) / 1000))
+  }, [at])
+  if (!at || s === null) return <div className="countdown">—</div>
   if (s === 0) return <div className="countdown due">due now</div>
   const h = Math.floor(s / 3600)
   const m = Math.floor((s % 3600) / 60)
-  const txt = h > 0 ? `${h}:${String(m).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}` : `${m}:${String(s % 60).padStart(2, '0')}`
+  const txt =
+    h > 0
+      ? `${h}:${String(m).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
+      : `${m}:${String(s % 60).padStart(2, '0')}`
   return <div className="countdown">{txt}</div>
 }
 
-function ScheduleEditor({ name, current }: { name: string; current: { tick: number; min: number; max: number; idle: number } }) {
+function ScheduleEditor({
+  name,
+  current,
+}: {
+  name: string
+  current: { tick: number; min: number; max: number; idle: number }
+}) {
   const qc = useQueryClient()
   const [tick, setTick] = useState(String(Math.round(current.tick / 60)))
   const mut = useMutation({
@@ -35,7 +45,16 @@ function ScheduleEditor({ name, current }: { name: string; current: { tick: numb
       <span className="k">interval</span>
       <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
         <input
-          style={{ width: 56, background: 'var(--ink)', border: '1px solid var(--ink-line)', borderRadius: 5, color: 'var(--linen)', padding: '2px 6px', fontFamily: 'var(--mono)', fontSize: 12 }}
+          style={{
+            width: 56,
+            background: 'var(--ink)',
+            border: '1px solid var(--ink-line)',
+            borderRadius: 5,
+            color: 'var(--linen)',
+            padding: '2px 6px',
+            fontFamily: 'var(--mono)',
+            fontSize: 12,
+          }}
           value={tick}
           onChange={(e) => setTick(e.target.value)}
         />
@@ -76,11 +95,7 @@ function ModelPanel({ loop }: { loop: LoopView }) {
       <div className="row" style={{ alignItems: 'center' }}>
         <span className="k">model</span>
       </div>
-      <select
-        style={selectStyle}
-        value={loop.model}
-        onChange={(e) => patch({ model: e.target.value })}
-      >
+      <select style={selectStyle} value={loop.model} onChange={(e) => patch({ model: e.target.value })}>
         {MODEL_OPTIONS.map((o) => (
           <option key={o.value} value={o.value}>
             {o.label}
@@ -91,11 +106,7 @@ function ModelPanel({ loop }: { loop: LoopView }) {
       <div className="row" style={{ marginTop: 8 }}>
         <span className="k">effort</span>
       </div>
-      <select
-        style={selectStyle}
-        value={loop.effort}
-        onChange={(e) => patch({ effort: e.target.value })}
-      >
+      <select style={selectStyle} value={loop.effort} onChange={(e) => patch({ effort: e.target.value })}>
         {EFFORT_OPTIONS.map((o) => (
           <option key={o.value} value={o.value}>
             {o.label}
@@ -105,11 +116,7 @@ function ModelPanel({ loop }: { loop: LoopView }) {
       <div className="row" style={{ marginTop: 8 }}>
         <span className="k">pacing</span>
       </div>
-      <select
-        style={selectStyle}
-        value={loop.pacing}
-        onChange={(e) => patch({ pacing: e.target.value })}
-      >
+      <select style={selectStyle} value={loop.pacing} onChange={(e) => patch({ pacing: e.target.value })}>
         {PACING_OPTIONS.map((o) => (
           <option key={o.value} value={o.value}>
             {o.label}
@@ -131,7 +138,11 @@ export default function LoopDetail() {
   const [draft, setDraft] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
 
-  const { data: loop } = useQuery({ queryKey: ['loop', name], queryFn: () => api.loop(name), refetchInterval: 10000 })
+  const { data: loop } = useQuery({
+    queryKey: ['loop', name],
+    queryFn: () => api.loop(name),
+    refetchInterval: 10000,
+  })
   const { data: events } = useQuery({ queryKey: ['events', name], queryFn: () => api.events(name) })
   const { data: turns } = useQuery({ queryKey: ['turns', name], queryFn: () => api.turns(name, 10) })
 
@@ -210,7 +221,12 @@ export default function LoopDetail() {
             </div>
             <ScheduleEditor
               name={name}
-              current={{ tick: loop.tick_interval_sec, min: loop.min_wake_sec, max: loop.max_wake_sec, idle: loop.idle_timeout_sec }}
+              current={{
+                tick: loop.tick_interval_sec,
+                min: loop.min_wake_sec,
+                max: loop.max_wake_sec,
+                idle: loop.idle_timeout_sec,
+              }}
             />
           </div>
 
@@ -218,11 +234,21 @@ export default function LoopDetail() {
             <h3>Controls</h3>
             <div className="controls">
               {paused ? (
-                <button className="btn sm" onClick={() => api.resume(name).then(() => qc.invalidateQueries({ queryKey: ['loop', name] }))}>
+                <button
+                  className="btn sm"
+                  onClick={() =>
+                    api.resume(name).then(() => qc.invalidateQueries({ queryKey: ['loop', name] }))
+                  }
+                >
                   Resume
                 </button>
               ) : (
-                <button className="btn sm" onClick={() => api.pause(name).then(() => qc.invalidateQueries({ queryKey: ['loop', name] }))}>
+                <button
+                  className="btn sm"
+                  onClick={() =>
+                    api.pause(name).then(() => qc.invalidateQueries({ queryKey: ['loop', name] }))
+                  }
+                >
                   Pause
                 </button>
               )}
@@ -287,7 +313,9 @@ export default function LoopDetail() {
                 </div>
                 <div className="row">
                   <span className="k">group</span>
-                  <span className="v">{loop.tg_group_chat_id ? 'bound' : 'waiting for a group message…'}</span>
+                  <span className="v">
+                    {loop.tg_group_chat_id ? 'bound' : 'waiting for a group message…'}
+                  </span>
                 </div>
               </>
             ) : (
@@ -302,7 +330,8 @@ export default function LoopDetail() {
             {(turns ?? []).map((t) => (
               <div className="row" key={t.id}>
                 <span className="k">
-                  {new Date(t.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} {t.trigger}
+                  {new Date(t.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}{' '}
+                  {t.trigger}
                 </span>
                 <span className="v">{t.ended_at ? `$${t.cost_usd.toFixed(3)}` : '…'}</span>
               </div>

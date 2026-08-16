@@ -12,7 +12,16 @@ export interface ContentBlock {
 export type Entry =
   | { kind: 'inbound'; id: number; ts: number; who: string; body: string; trigger: string }
   | { kind: 'assistant'; id: number; ts: number; blocks: ContentBlock[] }
-  | { kind: 'result'; id: number; ts: number; costUsd: number; durationMs: number; inTok: number; outTok: number; isError: boolean }
+  | {
+      kind: 'result'
+      id: number
+      ts: number
+      costUsd: number
+      durationMs: number
+      inTok: number
+      outTok: number
+      isError: boolean
+    }
   | { kind: 'note'; id: number; ts: number; text: string }
 
 // splitEnvelope separates the bracketed header from the body of an injected
@@ -92,9 +101,13 @@ function spoolNote(e: LoopEvent): string {
 }
 
 // extractDelta pulls streaming text out of a raw stream_event payload.
-export function extractDelta(payload: any): string {
-  if (payload?.type !== 'stream_event') return ''
-  const ev = payload.event
+export function extractDelta(payload: unknown): string {
+  const p = payload as {
+    type?: string
+    event?: { type?: string; delta?: { type?: string; text?: string } }
+  }
+  if (p?.type !== 'stream_event') return ''
+  const ev = p.event
   if (ev?.type === 'content_block_delta' && ev.delta?.type === 'text_delta') {
     return ev.delta.text ?? ''
   }

@@ -84,7 +84,7 @@ export interface CreateLoopReq {
   mission: string
   model?: string
   effort?: string
-  pacing?: 'fixed' | 'self' 
+  pacing?: 'fixed' | 'self'
   workspace_path?: string
   workspace_mode?: 'auto' | 'dir' | 'none'
   tick_interval_sec?: number
@@ -121,10 +121,9 @@ export const api = {
   patchLoop: (name: string, body: Partial<CreateLoopReq>) =>
     req<LoopView>(`/api/loops/${name}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteLoop: (name: string, removeWorktree: boolean) =>
-    req<{ deleted: boolean }>(
-      `/api/loops/${name}?remove_worktree=${removeWorktree ? 1 : 0}`,
-      { method: 'DELETE' },
-    ),
+    req<{ deleted: boolean }>(`/api/loops/${name}?remove_worktree=${removeWorktree ? 1 : 0}`, {
+      method: 'DELETE',
+    }),
   pause: (name: string) => req<LoopView>(`/api/loops/${name}/pause`, { method: 'POST' }),
   resume: (name: string) => req<LoopView>(`/api/loops/${name}/resume`, { method: 'POST' }),
   wake: (name: string) => req<{ woken: boolean }>(`/api/loops/${name}/wake`, { method: 'POST' }),
@@ -148,10 +147,8 @@ export const api = {
       `/api/loops/${name}/telegram/status`,
     ),
   senders: () => req<TGSender[]>('/api/telegram/senders'),
-  allowSender: (id: number) =>
-    req<TGSender>(`/api/telegram/senders/${id}/allow`, { method: 'POST' }),
-  blockSender: (id: number) =>
-    req<TGSender>(`/api/telegram/senders/${id}/block`, { method: 'POST' }),
+  allowSender: (id: number) => req<TGSender>(`/api/telegram/senders/${id}/allow`, { method: 'POST' }),
+  blockSender: (id: number) => req<TGSender>(`/api/telegram/senders/${id}/block`, { method: 'POST' }),
   deleteSender: (id: number) =>
     req<{ deleted: boolean }>(`/api/telegram/senders/${id}`, { method: 'DELETE' }),
   inspectWorkspace: (path: string) =>

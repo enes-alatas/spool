@@ -19,8 +19,7 @@ function SenderRow({ s }: { s: TGSender }) {
             {' · '}
           </>
         )}
-        first seen via {s.first_seen_via || 'unknown'} ·{' '}
-        {new Date(s.created_at).toLocaleDateString()}
+        first seen via {s.first_seen_via || 'unknown'} · {new Date(s.created_at).toLocaleDateString()}
       </span>
       <span style={{ marginLeft: 'auto', display: 'flex', gap: 8, flex: 'none' }}>
         {s.status !== 'allowed' && (
@@ -50,16 +49,14 @@ export default function Access() {
     <div className="page">
       <h1>Access</h1>
       <p style={{ color: 'var(--muted)', fontSize: 13, maxWidth: 640, marginBottom: 20 }}>
-        Only people on this list can talk to your loops from Telegram. Anyone else who messages a
-        bot is silently ignored and appears here as pending — check the pairing code with them
-        before allowing. Blocked senders are dropped without any reply.
+        Only people on this list can talk to your loops from Telegram. Anyone else who messages a bot is
+        silently ignored and appears here as pending — check the pairing code with them before allowing.
+        Blocked senders are dropped without any reply.
       </p>
 
       {pending.length > 0 && (
         <>
-          <h2 style={{ fontSize: 14, color: 'var(--thread)', margin: '14px 0 4px' }}>
-            Waiting for approval
-          </h2>
+          <h2 style={{ fontSize: 14, color: 'var(--thread)', margin: '14px 0 4px' }}>Waiting for approval</h2>
           {pending.map((s) => (
             <SenderRow key={s.tg_user_id} s={s} />
           ))}
@@ -77,8 +74,7 @@ export default function Access() {
 
       {senders && senders.length === 0 && (
         <div className="empty">
-          No Telegram senders yet. When someone messages one of your bots, they'll show up here for
-          approval.
+          No Telegram senders yet. When someone messages one of your bots, they'll show up here for approval.
         </div>
       )}
     </div>
