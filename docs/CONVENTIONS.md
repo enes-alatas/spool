@@ -1,0 +1,89 @@
+# Spool — Conventions
+
+*Living document. These rules bind humans, Claude sessions, and (from L2) Spool's own
+loops equally. Keep it short; if a rule needs a paragraph of justification, it gets an
+ADR instead.*
+
+## Workflow (humans in the loop)
+
+- **PR-only, no exceptions** (ADR-0008). `main` is protected; every change — human,
+  Claude session, or loop — lands via a pull request with CI green and at least one
+  human approval. Loops never merge their own work.
+- **Squash-merge only**; the PR title becomes the commit message and must be a valid
+  Conventional Commit.
+- **Branches**: `<type>/<topic>` (e.g. `feat/sandbox-runtime`, `fix/trailer-clamp`).
+  The `loop/<name>` namespace is reserved for loop worktree branches — never use it
+  for feature work.
+- **Commits / PR titles**: [Conventional Commits](https://www.conventionalcommits.org)
+  — `feat|fix|refactor|docs|test|chore|ci(scope): summary`. Scopes are package names
+  (`loop`, `route`, `surface/telegram`, `web`, …).
+- **Issues & milestones**: work is tracked in GitHub issues; milestones map to the
+  ladder rungs (L0…L7). A PR references its issue.
+- **Decisions**: any choice that constrains future work gets an ADR in `docs/adr/`
+  (sequential number, `proposed → accepted → superseded by ADR-XXXX`; never edit an
+  accepted ADR's decision — supersede it). Living docs (VISION / ARCHITECTURE /
+  CONVENTIONS) state current truth and link the ADRs.
+- **Releases**: semver, `v0.<rung>.x` — completing ladder rung Ln tags `v0.n+1.0`
+  (the MVP is retroactively v0.1.0). `v1.0.0` is OSS launch (L6).
+
+## Testing (ADR-0009)
+
+| Tier | What | Where | Command |
+|---|---|---|---|
+| 1 — unit | pure Go/TS, no processes | CI, every PR | `make test` |
+| 2 — integration | engine against `cmd/fakeclaude` (exact stream-json protocol: init/assistant/result, resume semantics, exit codes, big lines) | CI, every PR | `make itest` |
+| 3 — e2e | real `claude` sessions, real Telegram/Slack | local, per milestone | `make e2e-*` |
+
+- New engine behavior needs a tier-2 test; a bug found in tier 3 gets a tier-2
+  regression reproducing it via fakeclaude.
+- Quality baselines (perf numbers, scale envelope, reliability/security rules) and
+  the full CI gate list live in `docs/QUALITY.md` (ADR-0013). Arch tests enforce the
+  seams mechanically; a perf smoke runs per milestone.
+- fakeclaude scenarios are declarative fixtures checked into the repo; fakeclaude
+  itself must track the real CLI's observed behavior (version-noted, like
+  `claude/preflight.go`'s TestedVersion).
+
+## Go
+
+- Format/lint: `gofmt`, `go vet`, `golangci-lint` — all CI-gated. No custom style
+  debates beyond that.
+- **Stdlib-first**: a new dependency must be argued for in its PR description.
+  (Current allowlist: `modernc.org/sqlite`.)
+- Errors: wrap with `fmt.Errorf("…: %w", err)`; sentinel errors as package vars
+  (`store.ErrNotFound` pattern); no panics outside `main` wiring.
+- `context.Context` first parameter on anything that blocks or touches I/O.
+- Interfaces are defined where they're consumed (the hub owns the seams), kept small.
+- Tests: table-driven, `t.Run` subtests; no test frameworks.
+- Time: unix milliseconds `int64` everywhere (DB, API, bus). IDs: TEXT UUIDs.
+
+## Web
+
+- TypeScript strict; React function components; TanStack Query for server state; no
+  component library, no CSS framework — hand-rolled `styles.css` on the design tokens.
+- Prettier + ESLint, CI-gated. API types live in `src/api.ts` only, mirrored by hand
+  from the Go structs (snake_case JSON) — until the API freezes at L6, the mirror is
+  maintained manually and checked in code review.
+
+## API
+
+- REST under `/api/`, method-routed stdlib mux, JSON snake_case. SSE for streams.
+- Every mutating endpoint validates server-side (the UI's dropdowns are convenience,
+  not enforcement).
+- Secrets (bot tokens, connection creds) never appear in API responses (`json:"-"`).
+
+## Prompts
+
+- Everything injected into a loop (system prompt, envelopes, preambles) lives in
+  `internal/loop/prompt.go` — never inline strings elsewhere. Envelope headers are
+  part of the product's contract with loops; changing them is a `feat`, not a tweak.
+
+## Dev environment
+
+- Canonical entry points are `make` targets; if it isn't in the Makefile, it isn't a
+  supported workflow. Go toolchain pinned in `go.mod`; Node 20+; `.editorconfig` at
+  root.
+- `CLAUDE.md` at repo root orients Claude sessions and loops: read VISION →
+  ARCHITECTURE → CONVENTIONS, then the package you're touching. It links, it doesn't
+  duplicate.
+- Real-claude e2e (tier 3) spends plan tokens — run deliberately, prefer haiku, note
+  the run in the PR.
