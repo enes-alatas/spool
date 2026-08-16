@@ -1,0 +1,1 @@
+{"root":["./src/App.tsx","./src/api.ts","./src/main.tsx","./src/options.ts","./src/stream.ts","./src/timeline.ts","./src/components/Spool.tsx","./src/components/Timeline.tsx","./src/pages/Access.tsx","./src/pages/Activity.tsx","./src/pages/Dashboard.tsx","./src/pages/LoopDetail.tsx","./src/pages/NewLoop.tsx"],"version":"5.9.3"}
