@@ -28,7 +28,10 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v8
         with:
-          version: v2.1
+          # 'latest' because pinned minors go stale against our Go toolchain
+          # (v2.1 was built with go1.24 and refused go1.25). Revisit if a
+          # release ever breaks us.
+          version: latest
       - name: unit tests (tier 1 + arch)
         run: go test -coverprofile=cover.out ./...
       - name: coverage (informational)
