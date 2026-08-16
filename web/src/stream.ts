@@ -1,17 +1,21 @@
 import { useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 
+export type StreamPayload = { type?: string } & Record<string, unknown>
+
 export interface BusItem {
   kind: string
   loop_id?: string
-  payload: any
+  payload: StreamPayload
 }
 
 // useStream opens one EventSource and invokes onItem for every bus item.
 // Reconnects automatically (EventSource default behavior).
 export function useStream(url: string, onItem: (item: BusItem) => void) {
   const handler = useRef(onItem)
-  handler.current = onItem
+  useEffect(() => {
+    handler.current = onItem
+  })
   useEffect(() => {
     const es = new EventSource(url)
     const kinds = ['message', 'loop_status', 'agent_event', 'turn_result', 'schedule', 'access']

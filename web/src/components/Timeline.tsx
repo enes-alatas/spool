@@ -9,9 +9,7 @@ function ToolLine({ block }: { block: ContentBlock }) {
   let arg = ''
   try {
     const input = block.input as Record<string, unknown>
-    arg = String(
-      input?.command ?? input?.file_path ?? input?.path ?? input?.pattern ?? input?.url ?? '',
-    )
+    arg = String(input?.command ?? input?.file_path ?? input?.path ?? input?.pattern ?? input?.url ?? '')
   } catch {
     /* no arg preview */
   }

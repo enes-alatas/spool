@@ -5,13 +5,14 @@ import { StateDot } from '../components/Spool'
 import { useEffect, useState } from 'react'
 
 function Countdown({ at }: { at: number }) {
-  const [, force] = useState(0)
+  const [s, setS] = useState<number | null>(null)
   useEffect(() => {
-    const t = setInterval(() => force((n) => n + 1), 1000)
+    const update = () => setS(Math.max(0, Math.floor((at - Date.now()) / 1000)))
+    update()
+    const t = setInterval(update, 1000)
     return () => clearInterval(t)
-  }, [])
-  if (!at) return <span>—</span>
-  const s = Math.max(0, Math.floor((at - Date.now()) / 1000))
+  }, [at])
+  if (!at || s === null) return <span>—</span>
   if (s === 0) return <span className="hot">due</span>
   const h = Math.floor(s / 3600)
   const m = Math.floor((s % 3600) / 60)
