@@ -168,6 +168,9 @@ type TurnStore interface {
 type EventStore interface {
 	Insert(ctx context.Context, e *Event) (int64, error)
 	ListByLoop(ctx context.Context, loopID string, afterID int64, limit int) ([]*Event, error)
+	// DeleteBefore prunes raw events older than cutoff (retention,
+	// docs/QUALITY.md). Messages and turns are never pruned.
+	DeleteBefore(ctx context.Context, cutoff int64) (int64, error)
 }
 
 type ScheduleStore interface {

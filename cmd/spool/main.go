@@ -30,6 +30,7 @@ func main() {
 	dataDir := flag.String("data-dir", defaultDataDir(), "directory for spool.db, loop homes and worktrees")
 	claudeBin := flag.String("claude-bin", "claude", "path to the claude binary")
 	partials := flag.Bool("partial-messages", true, "stream token deltas to the UI (--include-partial-messages)")
+	retentionDays := flag.Int("events-retention-days", 30, "prune raw claude events older than this many days (0 disables; messages and turns are never pruned)")
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -96,6 +97,7 @@ func main() {
 	_ = db.Sessions().EndDangling(ctx, store.EndReasonCrash, time.Now().UnixMilli())
 
 	go scheduler.Run(ctx)
+	go pruneEvents(ctx, db, *retentionDays, log)
 
 	bridge := telegram.NewBridge(db, b, router, log)
 	bridge.Start(ctx)
@@ -127,6 +129,29 @@ func main() {
 		log.Error("serve", "err", err)
 	}
 	manager.Shutdown()
+}
+
+// pruneEvents enforces the events-retention baseline (docs/QUALITY.md):
+// hourly, delete raw events older than the retention window.
+func pruneEvents(ctx context.Context, db store.Store, days int, log *slog.Logger) {
+	if days <= 0 {
+		return
+	}
+	tick := time.NewTicker(time.Hour)
+	defer tick.Stop()
+	for {
+		cutoff := time.Now().AddDate(0, 0, -days).UnixMilli()
+		if n, err := db.Events().DeleteBefore(ctx, cutoff); err != nil {
+			log.Warn("events prune", "err", err)
+		} else if n > 0 {
+			log.Info("events pruned", "rows", n, "older_than_days", days)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+		}
+	}
 }
 
 func peersOf(db store.Store, self *store.Loop) []loop.Peer {
