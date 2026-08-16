@@ -90,20 +90,20 @@ type Message struct {
 }
 
 type Turn struct {
-	ID              string  `json:"id"`
-	LoopID          string  `json:"loop_id"`
-	SessionID       string  `json:"session_id"`
-	Trigger         string  `json:"trigger"`
-	StartedAt       int64   `json:"started_at"`
-	EndedAt         int64   `json:"ended_at"`
-	IsError         bool    `json:"is_error"`
-	ResultText      string  `json:"result_text"`
-	CostUSD         float64 `json:"cost_usd"`
-	InputTokens     int     `json:"input_tokens"`
-	OutputTokens    int     `json:"output_tokens"`
-	CacheReadTokens int     `json:"cache_read_tokens"`
-	CacheWriteTokens int    `json:"cache_write_tokens"`
-	DurationMS      int64   `json:"duration_ms"`
+	ID               string  `json:"id"`
+	LoopID           string  `json:"loop_id"`
+	SessionID        string  `json:"session_id"`
+	Trigger          string  `json:"trigger"`
+	StartedAt        int64   `json:"started_at"`
+	EndedAt          int64   `json:"ended_at"`
+	IsError          bool    `json:"is_error"`
+	ResultText       string  `json:"result_text"`
+	CostUSD          float64 `json:"cost_usd"`
+	InputTokens      int     `json:"input_tokens"`
+	OutputTokens     int     `json:"output_tokens"`
+	CacheReadTokens  int     `json:"cache_read_tokens"`
+	CacheWriteTokens int     `json:"cache_write_tokens"`
+	DurationMS       int64   `json:"duration_ms"`
 }
 
 type Event struct {
