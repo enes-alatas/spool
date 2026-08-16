@@ -57,7 +57,23 @@ spool --listen 127.0.0.1:8080 --data-dir ~/.spool --claude-bin claude --partial-
 make server         # Go binary only (uses last-built UI)
 make dev            # run backend on :8080
 make ui-dev         # vite dev server with /api proxy
-make e2e-m1         # end-to-end: engine + resume  (spawns real claude turns)
+make test           # tier 1: unit + architecture tests
+make itest          # tier 2: real binary vs fakeclaude (protocol fake), ~8s
+make lint           # gofmt + vet + golangci-lint
+make e2e-m1         # tier 3: real claude sessions (spends plan tokens)
 ```
 
-The e2e suites (`scripts/e2e/`) exercise everything against real `claude` subprocesses: session resume across process death and orchestrator restarts (m1), tick scheduling and trailer clamping (m2), mention relay + storm guard (m4), and worktree isolation (m6).
+Testing is three-tiered (see `docs/QUALITY.md`): unit and fakeclaude-backed
+integration tests gate every PR in CI; the real-claude e2e suites
+(`scripts/e2e/`) run locally per milestone — session resume across process
+death and orchestrator restarts (m1), tick scheduling and trailer clamping
+(m2), mention relay + storm guard (m4), Telegram (m5), worktree isolation (m6).
+
+### Project docs
+
+- `docs/VISION.md` — product vision and the L0–L7 milestone ladder
+- `docs/ARCHITECTURE.md` — shape, seams, ubiquitous language
+- `docs/CONVENTIONS.md` — workflow, style, test tiers
+- `docs/QUALITY.md` — baselines and CI gates
+- `docs/adr/` — decision records
+- `CLAUDE.md` — orientation for AI agents working on this repo
