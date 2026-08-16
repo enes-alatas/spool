@@ -2,6 +2,8 @@ module github.com/enes-alatas/spool
 
 go 1.25.0
 
+toolchain go1.25.13
+
 require modernc.org/sqlite v1.56.0
 
 require (
