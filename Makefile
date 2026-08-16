@@ -1,7 +1,7 @@
 GO ?= go
 export PATH := /usr/local/go/bin:$(PATH)
 
-.PHONY: build dev test vet e2e-m1 ui ui-dev clean
+.PHONY: build dev test itest lint fakeclaude vet e2e-m1 ui ui-dev clean
 
 build: ui
 	$(GO) build -o bin/spool ./cmd/spool
@@ -9,6 +9,19 @@ build: ui
 # backend-only build (uses whatever is in web/dist, placeholder included)
 server:
 	$(GO) build -o bin/spool ./cmd/spool
+
+fakeclaude:
+	$(GO) build -o bin/fakeclaude ./cmd/fakeclaude
+
+# tier 2 (docs/QUALITY.md): real binary + fakeclaude over HTTP
+itest: server fakeclaude
+	$(GO) test -tags integration -count=1 -timeout 300s ./itest/...
+
+# gofmt (fails on diff) + vet + golangci-lint when installed (CI pins it)
+lint:
+	@fmtout=$$(gofmt -l cmd internal itest); if [ -n "$$fmtout" ]; then echo "gofmt needed:"; echo "$$fmtout"; exit 1; fi
+	$(GO) vet ./...
+	@if command -v golangci-lint >/dev/null 2>&1; then golangci-lint run ./...; else echo "golangci-lint not installed — skipped (CI runs it)"; fi
 
 ui:
 	cd web && npm install --silent && npm run build
