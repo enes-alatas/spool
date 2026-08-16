@@ -158,10 +158,10 @@ type createLoopReq struct {
 	Name            string `json:"name"`
 	Mission         string `json:"mission"`
 	Model           string `json:"model"`
-	Effort          string `json:"effort"` // ""|low|medium|high|xhigh|max
-	Pacing          string `json:"pacing"` // ""(=fixed)|fixed|self
-	WorkspacePath   string `json:"workspace_path"`   // empty = no workspace
-	WorkspaceMode   string `json:"workspace_mode"`   // "auto" (default) | "dir" | "none"
+	Effort          string `json:"effort"`         // ""|low|medium|high|xhigh|max
+	Pacing          string `json:"pacing"`         // ""(=fixed)|fixed|self
+	WorkspacePath   string `json:"workspace_path"` // empty = no workspace
+	WorkspaceMode   string `json:"workspace_mode"` // "auto" (default) | "dir" | "none"
 	TickIntervalSec int    `json:"tick_interval_sec"`
 	MinWakeSec      int    `json:"min_wake_sec"`
 	MaxWakeSec      int    `json:"max_wake_sec"`

@@ -80,8 +80,8 @@ func SystemPrompt(l *store.Loop, peers []Peer) string {
 
 // Envelope is one formatted inbound item for a loop, ready to inject.
 type Envelope struct {
-	Trigger  string `json:"trigger"` // store.TriggerTick | TriggerMessage | TriggerManual
-	Text     string `json:"text"`    // fully formatted, header included
+	Trigger  string `json:"trigger"`              // store.TriggerTick | TriggerMessage | TriggerManual
+	Text     string `json:"text"`                 // fully formatted, header included
 	TGChatID int64  `json:"tg_chat_id,omitempty"` // DM chat to reply to (0 = none)
 }
 

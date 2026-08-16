@@ -60,9 +60,9 @@ type cmd struct {
 
 // Runtime is the single-goroutine actor owning one loop's claude process.
 type Runtime struct {
-	deps        Deps
-	cmds        chan cmd
-	stateSnap   atomic.Value // string; last published state, for REST reads
+	deps      Deps
+	cmds      chan cmd
+	stateSnap atomic.Value // string; last published state, for REST reads
 
 	// goroutine-owned state below
 	loop         store.Loop
@@ -99,12 +99,12 @@ func NewRuntime(deps Deps, l *store.Loop) *Runtime {
 
 // --- public API (thread-safe; commands are serialized onto the actor) ---
 
-func (r *Runtime) Deliver(env Envelope)      { r.cmds <- cmd{kind: "deliver", env: env} }
-func (r *Runtime) Tick()                     { r.cmds <- cmd{kind: "tick"} }
-func (r *Runtime) Pause()                    { r.cmds <- cmd{kind: "pause"} }
-func (r *Runtime) Resume()                   { r.cmds <- cmd{kind: "resume"} }
-func (r *Runtime) Kill()                     { r.cmds <- cmd{kind: "kill"} }
-func (r *Runtime) UpdateLoop(l *store.Loop)  { r.cmds <- cmd{kind: "update", loop: l} }
+func (r *Runtime) Deliver(env Envelope)     { r.cmds <- cmd{kind: "deliver", env: env} }
+func (r *Runtime) Tick()                    { r.cmds <- cmd{kind: "tick"} }
+func (r *Runtime) Pause()                   { r.cmds <- cmd{kind: "pause"} }
+func (r *Runtime) Resume()                  { r.cmds <- cmd{kind: "resume"} }
+func (r *Runtime) Kill()                    { r.cmds <- cmd{kind: "kill"} }
+func (r *Runtime) UpdateLoop(l *store.Loop) { r.cmds <- cmd{kind: "update", loop: l} }
 
 // Shutdown stops the runtime, killing any live process. Blocks until done.
 func (r *Runtime) Shutdown() {
