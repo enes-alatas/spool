@@ -370,6 +370,14 @@ func (r events) Insert(ctx context.Context, e *store.Event) (int64, error) {
 	return id, nil
 }
 
+func (r events) DeleteBefore(ctx context.Context, cutoff int64) (int64, error) {
+	res, err := r.db.ExecContext(ctx, `DELETE FROM events WHERE ts < ?`, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 func (r events) ListByLoop(ctx context.Context, loopID string, afterID int64, limit int) ([]*store.Event, error) {
 	rows, err := r.db.QueryContext(ctx, `SELECT id, loop_id, session_id, turn_id, ts, type, subtype, payload
 		FROM events WHERE loop_id=? AND id>? ORDER BY id LIMIT ?`, loopID, afterID, limit)
