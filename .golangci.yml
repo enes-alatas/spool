@@ -1,0 +1,23 @@
+# Defaults, with errcheck taught the intentionally-ignored patterns: closes,
+# rollbacks, flushes, and writes to streams where the error has no meaningful
+# handler (docs/CONVENTIONS.md — real errors are wrapped and returned).
+version: "2"
+linters:
+  settings:
+    errcheck:
+      exclude-functions:
+        - (io.Closer).Close
+        - (io.ReadCloser).Close
+        - (*os.File).Close
+        - (*database/sql.Rows).Close
+        - (*database/sql.DB).Close
+        - (*database/sql.Tx).Rollback
+        - (io/fs.File).Close
+        - (*bufio.Writer).Write
+        - (*bufio.Writer).WriteByte
+        - (*bufio.Writer).Flush
+        - (*encoding/json.Encoder).Encode
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - (*github.com/enes-alatas/spool/internal/store/sqlite.DB).Close
