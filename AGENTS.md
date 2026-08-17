@@ -39,6 +39,9 @@ humans and each other. This file orients you; it links, it doesn't duplicate.
   record). Trivial mechanical fixes may skip it — the PR's Issue section says why.
 - Done means: `make lint && make test && make itest` green locally, docs of
   record updated in the same PR, template filled.
+- Commits are atomic and land verbatim (rebase-merge, ADR-0016): one logical
+  change each, self-standing, Conventional. Review fixes fold into their origin
+  commit — use `/review-fix`; never add "address review" commits.
 - Ask vs proceed: implementation details — proceed. Constraining decisions —
   new dep, seam/prompt contract, terminology, API shape, security posture,
   real-token runs — stop, interview the human, record an ADR.

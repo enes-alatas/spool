@@ -9,8 +9,20 @@ ADR instead.*
 - **PR-only, no exceptions** (ADR-0008). `main` is protected; every change — human,
   Claude session, or loop — lands via a pull request with CI green and at least one
   human approval. Loops never merge their own work.
-- **Squash-merge only**; the PR title becomes the commit message and must be a valid
-  Conventional Commit.
+- **Rebase & merge only** (ADR-0016): the branch's commits land in `main`
+  verbatim — linear history, no merge or squash commits (repo settings enforce
+  this). The PR title is still a valid Conventional Commit; the template's
+  Commit Structure section lists what will land.
+- **Atomic commits** (ADR-0016): one logical change per commit — a subject that
+  needs "and" means split. Each commit builds and passes tiers 1–2 on its own
+  (history stays bisectable; review-enforced — CI tests the head). Mechanical
+  churn (gofmt, renames, moves) never mixes with behavior changes. Every commit
+  is a valid Conventional Commit — if no single type fits the diff, split it.
+- **Review feedback folds into the origin commit** (ADR-0016; procedure:
+  `/review-fix`): no "address review" commits — rewrite the branch, prove the
+  fold with a byte-identical tree diff, push `--force-with-lease`. Genuinely
+  new scope gets its own commit, or its own issue and PR. Accepted costs:
+  inline comments go outdated; the changes-since-last-review diff resets.
 - **Branches**: `<type>/<topic>` (e.g. `feat/sandbox-runtime`, `fix/trailer-clamp`).
   The `loop/<name>` namespace is reserved for loop worktree branches — never use it
   for feature work.

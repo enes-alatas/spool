@@ -1,6 +1,7 @@
 # ADR-0008: PR-only workflow for humans and loops alike
 
-Date: 2026-08-16 · Status: accepted
+Date: 2026-08-16 · Status: accepted (merge-strategy clause superseded by
+ADR-0016: rebase & merge, not squash)
 
 ## Context
 
