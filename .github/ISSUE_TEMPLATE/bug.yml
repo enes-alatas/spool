@@ -1,0 +1,44 @@
+name: Bug
+description: Something the system does wrong
+labels: ["bug"]
+body:
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed behavior
+      description: What happens, in 2-3 sentences. Include the exact error if there is one.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should happen instead.
+    validations:
+      required: true
+  - type: textarea
+    id: coupling-map
+    attributes:
+      label: Where it lives
+      description: File/path map of the code involved, one path per line with a short note.
+      placeholder: internal/loop/runtime.go — idle reap races the inbound wake
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: Mirror this as the matching `severity:` label after filing.
+      options:
+        - critical
+        - high
+        - medium
+        - low
+        - info
+    validations:
+      required: true
+  - type: input
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: One line on what this issue does not cover.

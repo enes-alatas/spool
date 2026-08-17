@@ -1,0 +1,25 @@
+name: Chore
+description: Build, CI, ops, or dependency upkeep
+labels: ["chore"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What needs doing
+      description: The upkeep and why now, in 2-3 sentences.
+    validations:
+      required: true
+  - type: textarea
+    id: coupling-map
+    attributes:
+      label: Where it lives
+      description: File/path map of the affected config, pipeline, or infrastructure, one path per line.
+    validations:
+      required: true
+  - type: input
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: One line on what this issue does not cover.
+    validations:
+      required: true

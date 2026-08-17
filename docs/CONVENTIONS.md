@@ -18,7 +18,15 @@ ADR instead.*
   — `feat|fix|refactor|docs|test|chore|ci(scope): summary`. Scopes are package names
   (`loop`, `route`, `surface/telegram`, `web`, …).
 - **Issues & milestones**: work is tracked in GitHub issues; milestones map to the
-  ladder rungs (L0…L7). A PR references its issue.
+  ladder rungs (L0…L7). Every issue carries exactly one type label — `bug`,
+  `new feature`, `improvement`, `refactor`, `chore`, `security`, `documentation`,
+  `question` — applied automatically by the issue forms (ADR-0014; blank issues are
+  disabled). Filing via `gh`/API bypasses forms: apply the type label yourself and
+  replicate the matching form's headings in the body — CI flags untyped issues
+  `needs-type`. Mirror a bug/security form's severity as a `severity:*` label. The
+  type names the branch that closes it (bug→`fix/`, new feature→`feat/`, …).
+- **PRs** follow `.github/pull_request_template.md`: link the issue (`Closes #n` /
+  `Part of #n` — if none, say why), and cite ADRs for seam changes and new deps.
 - **Decisions**: any choice that constrains future work gets an ADR in `docs/adr/`
   (sequential number, `proposed → accepted → superseded by ADR-XXXX`; never edit an
   accepted ADR's decision — supersede it). Living docs (VISION / ARCHITECTURE /

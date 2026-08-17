@@ -1,0 +1,38 @@
+name: Improvement
+description: Existing behavior made better, no new capability
+labels: ["improvement"]
+body:
+  - type: textarea
+    id: current-behavior
+    attributes:
+      label: Current behavior and friction
+      description: What the system does today and why that costs something, in 2-3 sentences.
+    validations:
+      required: true
+  - type: textarea
+    id: coupling-map
+    attributes:
+      label: Coupling points
+      description: File/path map of the code this touches, one path per line with a short note.
+    validations:
+      required: true
+  - type: input
+    id: seams-adrs
+    attributes:
+      label: Seams / ADRs touched
+      description: Any seam (Surface, SandboxRuntime, Store, Runner) or ADR this change touches; leave blank if none.
+      placeholder: Store — ADR-0003
+  - type: textarea
+    id: proposed-shape
+    attributes:
+      label: Proposed shape
+      description: What the system does after this lands.
+    validations:
+      required: true
+  - type: input
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: One line on what this issue does not cover.
+    validations:
+      required: true

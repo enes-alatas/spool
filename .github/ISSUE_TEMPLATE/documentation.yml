@@ -1,0 +1,22 @@
+name: Documentation
+description: A doc is wrong, missing, or unclear
+labels: ["documentation"]
+body:
+  - type: input
+    id: which-doc
+    attributes:
+      label: Which doc
+      placeholder: docs/ARCHITECTURE.md
+    validations:
+      required: true
+  - type: textarea
+    id: defect
+    attributes:
+      label: What is wrong or missing
+      description: The mismatch with code or the gap, in 2-3 sentences.
+    validations:
+      required: true
+  - type: textarea
+    id: proposed-change
+    attributes:
+      label: Proposed change

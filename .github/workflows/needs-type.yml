@@ -1,0 +1,29 @@
+# Mandatory issue typing (ADR-0014): issue forms pre-apply a type label, but
+# gh/API filings bypass forms — this flags anything that arrives untyped.
+name: needs-type
+
+on:
+  issues:
+    types: [opened, reopened, labeled, unlabeled]
+
+permissions:
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: flag issues without a type label
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          NUM: ${{ github.event.issue.number }}
+        run: |
+          types='bug|new feature|improvement|refactor|chore|security|documentation|question'
+          labels=$(gh issue view "$NUM" -R "$REPO" --json labels -q '.labels[].name')
+          n=$(grep -cE "^($types)$" <<<"$labels" || true)
+          if [ "$n" -eq 0 ]; then
+            gh issue edit "$NUM" -R "$REPO" --add-label needs-type
+          elif grep -qxF 'needs-type' <<<"$labels"; then
+            gh issue edit "$NUM" -R "$REPO" --remove-label needs-type
+          fi
