@@ -1,0 +1,44 @@
+name: New feature
+description: A capability the system does not have
+labels: ["new feature"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: 2-3 sentences. State the problem once; do not restate it in later sections.
+    validations:
+      required: true
+  - type: textarea
+    id: coupling-map
+    attributes:
+      label: Coupling points
+      description: File/path map of the code this touches, one path per line with a short note.
+      placeholder: internal/route/router.go — mention resolution the new capability hooks into
+    validations:
+      required: true
+  - type: input
+    id: seams-adrs
+    attributes:
+      label: Seams / ADRs touched
+      description: Any seam (Surface, SandboxRuntime, Store, Runner) or ADR this change touches; leave blank if none.
+      placeholder: SandboxRuntime — ADR-0010
+  - type: textarea
+    id: proposed-shape
+    attributes:
+      label: Proposed shape
+      description: What the system does after this lands. No step-by-step migration plan.
+    validations:
+      required: true
+  - type: textarea
+    id: open-questions
+    attributes:
+      label: Open questions
+      description: Decisions still open; detailed sequencing waits until these are resolved.
+  - type: input
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: One line on what this issue does not cover.
+    validations:
+      required: true
