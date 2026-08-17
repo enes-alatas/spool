@@ -34,6 +34,32 @@ ADR instead.*
 - **Releases**: semver, `v0.<rung>.x` — completing ladder rung Ln tags `v0.n+1.0`
   (the MVP is retroactively v0.1.0). `v1.0.0` is OSS launch (L6).
 
+## Agent workflow (ADR-0015)
+
+*The same loop a human follows, written down because most contributors are
+agents — Claude sessions today, Spool's own loops from L2.*
+
+- **Lifecycle**: typed issue → branch `<type>/<topic>` off fresh `main` →
+  implement → self-check → PR (template filled, issue linked) → stop for
+  review. Reviews may come from humans or agents; merging needs a human
+  approval (ADR-0008), and agents never merge their own work.
+- **Code is not precedent** — the docs of record are; where code and docs
+  disagree, docs win. Improve opportunistically or rewrite behind the seams.
+- **Issue-first**: any change touching behavior, seams, dependencies, prompts,
+  or the docs of record (VISION, ARCHITECTURE, CONVENTIONS, QUALITY, ADRs)
+  starts from a typed issue the human could have seen. Trivial mechanical fixes
+  (typo, formatting, broken link) may go straight to PR — the template's Issue
+  section says why.
+- **Definition of done** — self-check before opening a PR:
+  `make lint && make test && make itest` green locally; engine behavior carries
+  a tier-2 test; docs of record updated in the same PR when behavior or rules
+  changed; an ADR when a constraining decision was made.
+- **Ask vs proceed**: implementation details — reversible choices inside
+  existing rules — proceed autonomously. Anything that constrains the future
+  stops for a human interview and gets an ADR: a new dependency, a seam or
+  prompt-contract change, terminology, public API shape, security posture, or
+  spending real plan tokens (tier-3 e2e).
+
 ## Testing (ADR-0009)
 
 | Tier | What | Where | Command |
@@ -90,8 +116,8 @@ ADR instead.*
 - Canonical entry points are `make` targets; if it isn't in the Makefile, it isn't a
   supported workflow. Go toolchain pinned in `go.mod`; Node 20+; `.editorconfig` at
   root.
-- `CLAUDE.md` at repo root orients Claude sessions and loops: read VISION →
-  ARCHITECTURE → CONVENTIONS, then the package you're touching. It links, it doesn't
-  duplicate.
+- `AGENTS.md` at repo root (with `CLAUDE.md` symlinked to it, ADR-0015) orients
+  agent sessions and loops: read VISION → ARCHITECTURE → CONVENTIONS, then the
+  package you're touching. It links, it doesn't duplicate.
 - Real-claude e2e (tier 3) spends plan tokens — run deliberately, prefer haiku, note
   the run in the PR.
