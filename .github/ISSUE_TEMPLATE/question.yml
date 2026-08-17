@@ -1,0 +1,11 @@
+name: Question
+description: Something that needs an answer, not a change
+labels: ["question"]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What you need to know and the context that makes it non-obvious.
+    validations:
+      required: true

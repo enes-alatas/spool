@@ -24,6 +24,9 @@ rewrite behind the seams — nothing in the prototype is sacred.
 
 - Every change lands via PR: CI green + human approval. Never merge your own work.
 - Conventional Commit titles; branches `<type>/<topic>` (`loop/*` is reserved).
+- Issues are typed (ADR-0014): file via the forms; `gh` filings need exactly one
+  type label + the matching form's headings (CI flags strays `needs-type`). PRs
+  link their issue (`Closes #n` / `Part of #n`).
 - New engine behavior needs a tier-2 test (`itest/`, runs against `fakeclaude`).
 - Prompts/envelopes live in `internal/loop/prompt.go` only; changing them is a
   `feat` and updates tier-2 fixtures.

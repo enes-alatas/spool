@@ -1,0 +1,45 @@
+name: Security
+description: Security hardening or a vulnerability
+labels: ["security"]
+body:
+  - type: textarea
+    id: affected-surface
+    attributes:
+      label: Affected surface
+      description: File/path map of the exposed code or config, one path per line with a short note.
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact and exploit path
+      description: What an attacker or fault can do today and the path from entry point to effect. For defense-in-depth hardening with no concrete path, say so.
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: Mirror this as the matching `severity:` label after filing.
+      options:
+        - critical
+        - high
+        - medium
+        - low
+        - info
+    validations:
+      required: true
+  - type: textarea
+    id: proposed-hardening
+    attributes:
+      label: Proposed hardening
+      description: What closes the gap.
+    validations:
+      required: true
+  - type: input
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: One line on what this issue does not cover.
+    validations:
+      required: true
