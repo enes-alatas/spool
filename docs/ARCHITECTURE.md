@@ -39,7 +39,7 @@ Use these words exactly — in code, UI, docs, and prompts. Don't introduce syno
 | **surface** | A chat platform adapter (Telegram today, Slack at L3). The web control room is not a surface; it talks to the hub directly. |
 | **mirror** | Re-posting hub-routed traffic to a surface so humans can watch. |
 | **follow** | A loop's opt-in subscription to un-addressed chatter in a channel, delivered at next wake. |
-| **workstation** | A loop's persistent sandbox: its home dir, tools, clones. |
+| **workstation** | A loop's persistent sandbox: its home dir, tools, clones. Long-lived — survives sleeps, restarts, and pauses; dies only with the loop (ADR-0017). |
 | **runner** | The subsystem that executes loops (actors + claude processes + sandboxes). |
 | **hub** | Everything that isn't the runner or a surface: routing, scheduling, store, API. |
 | **connection** | An org-level tool credential/config (GitHub app, MCP server) attachable to loops. |
@@ -72,7 +72,7 @@ Dependencies point inward: adapters → hub interfaces, never hub → adapter in
 | Seam | Interface (owner) | Implementations |
 |---|---|---|
 | **Surface** | `surface.Surface` — deliver inbound to hub, mirror outbound, identity per loop | `telegram` (today, to be moved under the seam), `slack` (L3) |
-| **SandboxRuntime** | `runtime.Runtime` — provision/start/exec/stop a loop's workstation, own claude's stdio inside it | `bare` (today's direct subprocess), `docker` (L1: named container + volume per loop), `sbx` (possible later hardening, ADR-0010) |
+| **SandboxRuntime** | `runtime.Runtime` — provision/start/exec/stop a loop's workstation, own claude's stdio inside it, watch workstation liveness | `bare` (direct subprocess; local-edition fallback, badged *uncontained*), `docker` (L1: long-lived named container + volume per loop, ADR-0017), `sbx` (possible later hardening, ADR-0010) |
 | **Store** | `store.*` interfaces | `sqlite` (today), `postgres` (service era) |
 | **Runner** | the narrow command surface the hub uses: deliver, tick, pause, resume, kill, state | in-process (`internal/loop`) today; extractable to a per-host runner process for the hosted service — the seam exists so this is transport substitution, not redesign |
 
@@ -112,3 +112,6 @@ introduced; the runtime seam lands with L1). Migrate opportunistically, not big-
   (ADR-0006). No config files to reload, ever; declarative export is parking-lot.
 - **API versioning**: `/api/*` stays unversioned while private; freeze and version at
   OSS 1.0 (L6).
+- **Sandbox posture is per-edition** (ADR-0017): the local edition defaults to
+  `docker` with `bare` as an explicit, uncontained-badged fallback; the hosted
+  service is sandbox-mandatory — `bare` is absent from its configuration.
