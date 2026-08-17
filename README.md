@@ -76,4 +76,5 @@ death and orchestrator restarts (m1), tick scheduling and trailer clamping
 - `docs/CONVENTIONS.md` — workflow, style, test tiers
 - `docs/QUALITY.md` — baselines and CI gates
 - `docs/adr/` — decision records
-- `CLAUDE.md` — orientation for AI agents working on this repo
+- `AGENTS.md` — orientation for AI agents working on this repo (`CLAUDE.md` is
+  a symlink to it)
