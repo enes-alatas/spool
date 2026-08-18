@@ -34,6 +34,11 @@ scale arrives via runner extraction (ADR-0004), not by inflating this envelope.
 A perf smoke (tier-2, fakeclaude, envelope-sized fixtures) runs per milestone and
 whenever engine hot paths change — not on every PR.
 
+Workstation liveness polling honours the idle-CPU baseline by construction: the
+docker runtime answers per-loop `Health` reads from a short-TTL cache filled by
+one batched `docker ps` sweep, so the fleet costs one subprocess per cache
+window regardless of loop count (ADR-0018).
+
 ## Reliability baselines
 
 - Accepted inbound messages are persisted **before** the surface is acked (e.g.
@@ -55,7 +60,9 @@ whenever engine hot paths change — not on every PR.
 
 **CI (mechanical, blocking):**
 - `gofmt`, `go vet`, `golangci-lint`; `eslint`, `prettier`; build incl. web.
-- Test tiers 1 + 2 (CONVENTIONS.md).
+- Test tiers 1 + 2 (CONVENTIONS.md). The docker workstation suites in tier 2
+  run against a real daemon: CI runners always have one; locally they skip
+  with a notice when none is reachable.
 - **Architecture tests**: a hand-rolled Go test walks the import graph and fails on:
   adapters importing each other; hub packages importing adapter internals; a seam
   importing anything but its own protocol (its implementations included);
