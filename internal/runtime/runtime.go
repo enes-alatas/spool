@@ -16,6 +16,11 @@ import (
 	"github.com/enes-alatas/spool/internal/claude"
 )
 
+// WorkstationHome is where a containerized runtime mounts the loop's volume
+// and where its claude runs — the image convention fixed by ADR-0018. Bare
+// loops have host workspaces instead.
+const WorkstationHome = "/home/loop"
+
 // Spec is everything a runtime needs for one wake of one loop. Plain data —
 // no live channels, no callbacks, no store types.
 type Spec struct {

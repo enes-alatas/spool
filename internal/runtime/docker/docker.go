@@ -30,10 +30,6 @@ import (
 )
 
 const (
-	// home is where the loop's volume mounts inside every workstation — part
-	// of the image convention fixed by ADR-0018.
-	home = "/home/loop"
-
 	// orphanGrace is how long claude inside a workstation gets to honour
 	// SIGTERM before it is killed outright.
 	orphanGrace = 5 * time.Second
@@ -257,7 +253,7 @@ func runArgv(spec runtime.Spec, defaultImage string) []string {
 		"run", "--detach", "--init",
 		"--name", name,
 		"--restart", "unless-stopped",
-		"--volume", name + ":" + home,
+		"--volume", name + ":" + runtime.WorkstationHome,
 	}
 	argv = append(argv, labelArgs(spec)...)
 	if spec.MemMB > 0 {
