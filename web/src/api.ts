@@ -10,6 +10,10 @@ export interface LoopView {
   repo_path: string
   worktree_path: string
   branch: string
+  runtime: 'bare' | 'docker'
+  image: string
+  mem_mb: number
+  cpus: number
   tick_interval_sec: number
   min_wake_sec: number
   max_wake_sec: number
@@ -27,6 +31,8 @@ export interface LoopView {
   next_tick_at: number
   cost_today_usd: number
   has_tg_token: boolean
+  workstation_up: boolean
+  workstation_detail?: string
 }
 
 export interface Turn {
@@ -85,7 +91,11 @@ export interface CreateLoopReq {
   model?: string
   effort?: string
   pacing?: 'fixed' | 'self'
-  workspace_path?: string
+  runtime?: 'bare' | 'docker' // create-only; empty = server default
+  image?: string // docker only
+  mem_mb?: number // docker only
+  cpus?: number // docker only
+  workspace_path?: string // bare only
   workspace_mode?: 'auto' | 'dir' | 'none'
   tick_interval_sec?: number
   min_wake_sec?: number

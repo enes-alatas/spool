@@ -43,6 +43,7 @@ export default function Dashboard() {
             <div className="head">
               <StateDot state={l.state} />
               <span className="loop-name">{l.name}</span>
+              {l.runtime === 'bare' && <span className="containment-badge">uncontained</span>}
               <span className="state-name" style={{ marginLeft: 'auto' }}>
                 {l.state}
               </span>

@@ -190,6 +190,7 @@ export default function LoopDetail() {
             <SpoolGlyph spinning={loop.state === 'busy'} size={20} />
             <span style={{ fontFamily: 'var(--mono)' }}>@{loop.name}</span>
             <span className="state-name">{loop.state}</span>
+            {loop.runtime === 'bare' && <span className="containment-badge">uncontained</span>}
           </h1>
           <Timeline entries={entries} liveText={liveText} />
           <div ref={bottomRef} />

@@ -241,6 +241,10 @@ select {
   background: transparent;
   border: 1.5px solid var(--rust);
 }
+.state-workstation_down {
+  background: var(--rust);
+  box-shadow: 0 0 6px var(--rust);
+}
 .sender-allowed {
   background: var(--alive);
 }
@@ -255,6 +259,16 @@ select {
   font-family: var(--mono);
   font-size: 11.5px;
   color: var(--muted);
+}
+/* bare loops run on the host with no wall around them (ADR-0017) */
+.containment-badge {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--rust);
+  border: 1px solid var(--rust);
+  border-radius: 4px;
+  padding: 1px 5px;
+  flex: none;
 }
 
 /* ---- dashboard grid ---- */
