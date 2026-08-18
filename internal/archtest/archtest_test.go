@@ -30,7 +30,8 @@ var adapters = map[string][]string{
 	module + "/web":                   runnerPkgs,
 	// SandboxRuntime adapters are the runner's own, so speaking the claude
 	// protocol is their job — but they serve the seam, not the loop actors.
-	module + "/internal/runtime/bare": {module + "/internal/loop"}, // docker joins it at L1
+	module + "/internal/runtime/bare":   {module + "/internal/loop"},
+	module + "/internal/runtime/docker": {module + "/internal/loop"},
 }
 
 var runnerPkgs = []string{
@@ -52,8 +53,9 @@ var seamAllowedImports = map[string][]string{
 var runnerInternals = map[string][]string{
 	module + "/internal/claude": {
 		module + "/internal/loop",
-		module + "/internal/runtime",      // the seam speaks the claude protocol
-		module + "/internal/runtime/bare", // …and so does every implementation
+		module + "/internal/runtime",        // the seam speaks the claude protocol
+		module + "/internal/runtime/bare",   // …and so does every implementation
+		module + "/internal/runtime/docker", //
 	},
 }
 
