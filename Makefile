@@ -13,9 +13,14 @@ server:
 fakeclaude:
 	$(GO) build -o bin/fakeclaude ./cmd/fakeclaude
 
-# tier 2 (docs/QUALITY.md): real binary + fakeclaude over HTTP
+# tier 2 (docs/QUALITY.md): real binary + fakeclaude over HTTP. The docker
+# workstation suites run against a real daemon and the fakeclaude image;
+# without a reachable daemon they self-skip with a notice.
 itest: server fakeclaude
-	$(GO) test -tags integration -count=1 -timeout 300s ./itest/...
+	@if docker version >/dev/null 2>&1; then \
+		docker build -q -t spool-workstation-itest -f itest/testdata/workstation/Dockerfile bin >/dev/null; \
+	else echo "docker daemon unreachable — docker workstation itests will skip"; fi
+	$(GO) test -tags integration -count=1 -timeout 600s ./itest/... ./internal/runtime/docker/
 
 # gofmt (fails on diff) + vet + golangci-lint when installed (CI pins it)
 lint:

@@ -34,7 +34,17 @@ func repoRoot(t *testing.T) string {
 	return filepath.Dir(wd)
 }
 
+// startServer spawns spool pinned to the bare runtime: on a docker-equipped
+// machine, auto would default new loops to docker workstations the plain
+// engine tests don't want.
 func startServer(t *testing.T, dataDir string) *server {
+	t.Helper()
+	return startServerArgs(t, dataDir, "--runtime", "bare")
+}
+
+// startServerArgs spawns spool with the harness plumbing plus extra flags
+// (the docker suites pick their runtime and image this way).
+func startServerArgs(t *testing.T, dataDir string, extraArgs ...string) *server {
 	t.Helper()
 	root := repoRoot(t)
 	spoolBin := filepath.Join(root, "bin", "spool")
@@ -53,15 +63,14 @@ func startServer(t *testing.T, dataDir string) *server {
 	l.Close()
 
 	fkState := filepath.Join(dataDir, "fkstate")
-	cmd := exec.Command(spoolBin,
+	args := []string{
 		"--listen", addr,
 		"--data-dir", dataDir,
 		"--claude-bin", fakeBin,
-		// pin bare: on a docker-equipped machine, auto would default new
-		// loops to docker workstations these engine tests don't want
-		"--runtime", "bare",
 		"--partial-messages=false",
-	)
+	}
+	args = append(args, extraArgs...)
+	cmd := exec.Command(spoolBin, args...)
 	cmd.Env = append(os.Environ(), "FAKECLAUDE_STATE="+fkState)
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
@@ -143,11 +152,15 @@ func (s *server) mustJSON(method, path string, body any, out any) {
 }
 
 type loopView struct {
-	Name       string  `json:"name"`
-	State      string  `json:"state"`
-	Status     string  `json:"status"`
-	NextTickAt int64   `json:"next_tick_at"`
-	CostToday  float64 `json:"cost_today_usd"`
+	ID            string  `json:"id"`
+	Name          string  `json:"name"`
+	State         string  `json:"state"`
+	Status        string  `json:"status"`
+	Runtime       string  `json:"runtime"`
+	WorkspacePath string  `json:"workspace_path"`
+	WorkstationUp bool    `json:"workstation_up"`
+	NextTickAt    int64   `json:"next_tick_at"`
+	CostToday     float64 `json:"cost_today_usd"`
 }
 
 type turn struct {
