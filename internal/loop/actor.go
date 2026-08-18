@@ -276,6 +276,9 @@ func (actor *Actor) wakeSpec(fresh bool) runtime.Spec {
 		WorkDir:            actor.loop.WorkspacePath,
 		Model:              actor.loop.Model,
 		Effort:             actor.loop.Effort,
+		Image:              actor.loop.Image,
+		MemMB:              actor.loop.MemMB,
+		CPUs:               actor.loop.CPUs,
 		AppendSystemPrompt: actor.deps.SystemPrompt(&actor.loop),
 		PartialMessages:    actor.deps.PartialMessages,
 	}
