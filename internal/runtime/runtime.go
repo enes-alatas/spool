@@ -22,9 +22,16 @@ type Spec struct {
 	LoopID   string
 	LoopName string // for workstation naming and diagnostics
 
-	// WorkDir is claude's working directory. It must be stable across wakes:
-	// sessions are keyed by cwd.
+	// WorkDir is claude's working directory, in the runtime's own filesystem
+	// (a host path for bare, an in-container path for docker). It must be
+	// stable across wakes: sessions are keyed by cwd.
 	WorkDir string
+
+	// Workstation config (ADR-0017). Runtimes without a workstation to
+	// provision (bare) ignore all three.
+	Image string  // workstation image; never empty for runtimes that use it
+	MemMB int     // workstation memory limit
+	CPUs  float64 // workstation CPU limit
 
 	Model  string
 	Effort string // ""|low|medium|high|xhigh|max
@@ -60,7 +67,10 @@ type Runtime interface {
 	Kind() string
 
 	// Preflight verifies the runtime is usable and returns the claude version
-	// it will run. Called once at boot; a failure is fatal.
+	// it will run, or "" when that can't be known yet (e.g. the docker
+	// runtime before its image exists locally). Called once at boot; the
+	// wirer treats failure as fatal for the default runtime and as a warning
+	// for the others.
 	Preflight(ctx context.Context) (version string, err error)
 
 	// Ensure makes the loop's workstation exist and be ready to exec into.
