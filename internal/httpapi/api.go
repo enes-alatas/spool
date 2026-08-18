@@ -122,8 +122,8 @@ type loopView struct {
 
 func (s *Server) view(ctx context.Context, l *store.Loop) *loopView {
 	v := &loopView{Loop: l, State: loop.StateAsleep, HasTGToken: l.TGBotToken != ""}
-	if rt, ok := s.Manager.Get(l.ID); ok {
-		v.State = rt.State()
+	if actor, ok := s.Manager.Get(l.ID); ok {
+		v.State = actor.State()
 	}
 	if e, err := s.Store.Schedule().Get(ctx, l.ID); err == nil {
 		v.NextTickAt = e.NextTickAt
@@ -409,8 +409,8 @@ func (s *Server) handlePause(w http.ResponseWriter, r *http.Request) {
 	l.Status = store.StatusPaused
 	l.UpdatedAt = time.Now().UnixMilli()
 	_ = s.Store.Loops().Update(r.Context(), l)
-	if rt, ok := s.Manager.Get(l.ID); ok {
-		rt.Pause()
+	if actor, ok := s.Manager.Get(l.ID); ok {
+		actor.Pause()
 	}
 	s.Sched.Suspend(l.ID)
 	writeJSON(w, 200, s.view(r.Context(), l))
@@ -424,8 +424,8 @@ func (s *Server) handleResume(w http.ResponseWriter, r *http.Request) {
 	l.Status = store.StatusActive
 	l.UpdatedAt = time.Now().UnixMilli()
 	_ = s.Store.Loops().Update(r.Context(), l)
-	if rt, ok := s.Manager.Get(l.ID); ok {
-		rt.Resume()
+	if actor, ok := s.Manager.Get(l.ID); ok {
+		actor.Resume()
 	}
 	s.Sched.Resume(l.ID)
 	writeJSON(w, 200, s.view(r.Context(), l))
@@ -445,8 +445,8 @@ func (s *Server) handleKill(w http.ResponseWriter, r *http.Request) {
 	if l == nil {
 		return
 	}
-	if rt, ok := s.Manager.Get(l.ID); ok {
-		rt.Kill()
+	if actor, ok := s.Manager.Get(l.ID); ok {
+		actor.Kill()
 	}
 	writeJSON(w, 200, map[string]bool{"killed": true})
 }

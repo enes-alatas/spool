@@ -10,21 +10,21 @@ import (
 	"github.com/enes-alatas/spool/internal/store"
 )
 
-// Manager owns all loop runtimes and boot recovery.
+// Manager owns all loop actors and boot recovery.
 type Manager struct {
 	deps Deps
 
 	mu       sync.RWMutex
-	byID     map[string]*Runtime
+	byID     map[string]*Actor
 	nameToID map[string]string
 }
 
 func NewManager(deps Deps) *Manager {
-	return &Manager{deps: deps, byID: map[string]*Runtime{}, nameToID: map[string]string{}}
+	return &Manager{deps: deps, byID: map[string]*Actor{}, nameToID: map[string]string{}}
 }
 
 // Boot recovers state after an orchestrator restart: kills orphan claude
-// processes, closes dangling turns, and starts a runtime per loop.
+// processes, closes dangling turns, and starts an actor per loop.
 func (m *Manager) Boot(ctx context.Context) error {
 	loops, err := m.deps.Store.Loops().List(ctx)
 	if err != nil {
@@ -47,22 +47,22 @@ func (m *Manager) Boot(ctx context.Context) error {
 	return nil
 }
 
-func (m *Manager) add(l *store.Loop) *Runtime {
-	rt := NewRuntime(m.deps, l)
+func (m *Manager) add(l *store.Loop) *Actor {
+	actor := NewActor(m.deps, l)
 	m.mu.Lock()
-	m.byID[l.ID] = rt
+	m.byID[l.ID] = actor
 	m.nameToID[l.Name] = l.ID
 	m.mu.Unlock()
-	return rt
+	return actor
 }
 
-// Add registers and starts a runtime for a newly created loop.
-func (m *Manager) Add(l *store.Loop) *Runtime { return m.add(l) }
+// Add registers and starts an actor for a newly created loop.
+func (m *Manager) Add(l *store.Loop) *Actor { return m.add(l) }
 
-// Remove shuts a loop's runtime down (used on delete/archive).
+// Remove shuts a loop's actor down (used on delete/archive).
 func (m *Manager) Remove(id string) {
 	m.mu.Lock()
-	rt := m.byID[id]
+	actor := m.byID[id]
 	delete(m.byID, id)
 	for name, lid := range m.nameToID {
 		if lid == id {
@@ -70,30 +70,30 @@ func (m *Manager) Remove(id string) {
 		}
 	}
 	m.mu.Unlock()
-	if rt != nil {
-		rt.Shutdown()
+	if actor != nil {
+		actor.Shutdown()
 	}
 }
 
-func (m *Manager) Get(id string) (*Runtime, bool) {
+func (m *Manager) Get(id string) (*Actor, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	rt, ok := m.byID[id]
-	return rt, ok
+	actor, ok := m.byID[id]
+	return actor, ok
 }
 
-func (m *Manager) GetByName(name string) (*Runtime, bool) {
+func (m *Manager) GetByName(name string) (*Actor, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	id, ok := m.nameToID[name]
 	if !ok {
 		return nil, false
 	}
-	rt, ok := m.byID[id]
-	return rt, ok
+	actor, ok := m.byID[id]
+	return actor, ok
 }
 
-// UpdateLoop pushes a fresh loop config into the runtime (rename included).
+// UpdateLoop pushes a fresh loop config into the actor (rename included).
 func (m *Manager) UpdateLoop(l *store.Loop) {
 	m.mu.Lock()
 	for name, lid := range m.nameToID {
@@ -102,49 +102,49 @@ func (m *Manager) UpdateLoop(l *store.Loop) {
 		}
 	}
 	m.nameToID[l.Name] = l.ID
-	rt := m.byID[l.ID]
+	actor := m.byID[l.ID]
 	m.mu.Unlock()
-	if rt != nil {
-		rt.UpdateLoop(l)
+	if actor != nil {
+		actor.UpdateLoop(l)
 	}
 }
 
 // Deliver routes an envelope to a loop by id; returns false if unknown.
 func (m *Manager) Deliver(id string, env Envelope) bool {
-	rt, ok := m.Get(id)
+	actor, ok := m.Get(id)
 	if !ok {
 		return false
 	}
-	rt.Deliver(env)
+	actor.Deliver(env)
 	return true
 }
 
 func (m *Manager) Tick(id string) bool {
-	rt, ok := m.Get(id)
+	actor, ok := m.Get(id)
 	if !ok {
 		return false
 	}
-	rt.Tick()
+	actor.Tick()
 	return true
 }
 
-// Shutdown stops every runtime; blocks until all claude processes are gone.
+// Shutdown stops every actor; blocks until all claude processes are gone.
 func (m *Manager) Shutdown() {
 	m.mu.Lock()
-	rts := make([]*Runtime, 0, len(m.byID))
-	for _, rt := range m.byID {
-		rts = append(rts, rt)
+	actors := make([]*Actor, 0, len(m.byID))
+	for _, actor := range m.byID {
+		actors = append(actors, actor)
 	}
-	m.byID = map[string]*Runtime{}
+	m.byID = map[string]*Actor{}
 	m.nameToID = map[string]string{}
 	m.mu.Unlock()
 	var wg sync.WaitGroup
-	for _, rt := range rts {
+	for _, actor := range actors {
 		wg.Add(1)
-		go func(rt *Runtime) {
+		go func(actor *Actor) {
 			defer wg.Done()
-			rt.Shutdown()
-		}(rt)
+			actor.Shutdown()
+		}(actor)
 	}
 	wg.Wait()
 }
