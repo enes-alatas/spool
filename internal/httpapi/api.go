@@ -20,6 +20,7 @@ import (
 	"github.com/enes-alatas/spool/internal/gitws"
 	"github.com/enes-alatas/spool/internal/loop"
 	"github.com/enes-alatas/spool/internal/route"
+	"github.com/enes-alatas/spool/internal/runtime"
 	"github.com/enes-alatas/spool/internal/sched"
 	"github.com/enes-alatas/spool/internal/store"
 )
@@ -120,16 +121,21 @@ func (s *Server) loopByName(w http.ResponseWriter, r *http.Request) *store.Loop 
 // loopView is a loop plus live runtime info for the UI.
 type loopView struct {
 	*store.Loop
-	State      string  `json:"state"`
-	NextTickAt int64   `json:"next_tick_at"`
-	CostToday  float64 `json:"cost_today_usd"`
-	HasTGToken bool    `json:"has_tg_token"`
+	State             string  `json:"state"`
+	NextTickAt        int64   `json:"next_tick_at"`
+	CostToday         float64 `json:"cost_today_usd"`
+	HasTGToken        bool    `json:"has_tg_token"`
+	WorkstationUp     bool    `json:"workstation_up"`
+	WorkstationDetail string  `json:"workstation_detail,omitempty"`
 }
 
 func (s *Server) view(ctx context.Context, l *store.Loop) *loopView {
-	v := &loopView{Loop: l, State: loop.StateAsleep, HasTGToken: l.TGBotToken != ""}
+	v := &loopView{Loop: l, State: loop.StateAsleep, HasTGToken: l.TGBotToken != "", WorkstationUp: true}
 	if actor, ok := s.Manager.Get(l.ID); ok {
 		v.State = actor.State()
+		health := actor.WorkstationHealth()
+		v.WorkstationUp = health.Up
+		v.WorkstationDetail = health.Detail
 	}
 	if e, err := s.Store.Schedule().Get(ctx, l.ID); err == nil {
 		v.NextTickAt = e.NextTickAt
@@ -161,18 +167,22 @@ func (s *Server) handleListLoops(w http.ResponseWriter, r *http.Request) {
 }
 
 type createLoopReq struct {
-	Name            string `json:"name"`
-	Mission         string `json:"mission"`
-	Model           string `json:"model"`
-	Effort          string `json:"effort"`         // ""|low|medium|high|xhigh|max
-	Pacing          string `json:"pacing"`         // ""(=fixed)|fixed|self
-	WorkspacePath   string `json:"workspace_path"` // empty = no workspace
-	WorkspaceMode   string `json:"workspace_mode"` // "auto" (default) | "dir" | "none"
-	TickIntervalSec int    `json:"tick_interval_sec"`
-	MinWakeSec      int    `json:"min_wake_sec"`
-	MaxWakeSec      int    `json:"max_wake_sec"`
-	IdleTimeoutSec  int    `json:"idle_timeout_sec"`
-	TGBotToken      string `json:"tg_bot_token"`
+	Name            string  `json:"name"`
+	Mission         string  `json:"mission"`
+	Model           string  `json:"model"`
+	Effort          string  `json:"effort"`         // ""|low|medium|high|xhigh|max
+	Pacing          string  `json:"pacing"`         // ""(=fixed)|fixed|self
+	Runtime         string  `json:"runtime"`        // ""(=server default)|bare|docker; immutable after creation (ADR-0018)
+	Image           string  `json:"image"`          // docker only; "" = the server's default image
+	MemMB           int     `json:"mem_mb"`         // docker only; 0 = 4096 (ADR-0017)
+	CPUs            float64 `json:"cpus"`           // docker only; 0 = 2
+	WorkspacePath   string  `json:"workspace_path"` // bare only; empty = no workspace
+	WorkspaceMode   string  `json:"workspace_mode"` // "auto" (default) | "dir" | "none"
+	TickIntervalSec int     `json:"tick_interval_sec"`
+	MinWakeSec      int     `json:"min_wake_sec"`
+	MaxWakeSec      int     `json:"max_wake_sec"`
+	IdleTimeoutSec  int     `json:"idle_timeout_sec"`
+	TGBotToken      string  `json:"tg_bot_token"`
 }
 
 var validEfforts = map[string]bool{"": true, "low": true, "medium": true, "high": true, "xhigh": true, "max": true}
@@ -205,6 +215,37 @@ func (s *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	loopRuntime := defaultStr(req.Runtime, defaultStr(s.DefaultRuntime, store.RuntimeBare))
+	switch loopRuntime {
+	case store.RuntimeBare:
+		if req.Image != "" || req.MemMB != 0 || req.CPUs != 0 {
+			s.jsonErr(w, 400, "image, mem_mb and cpus apply to docker loops only")
+			return
+		}
+	case store.RuntimeDocker:
+		if req.WorkspacePath != "" {
+			s.jsonErr(w, 400, "a docker loop's workstation is its workspace; workspace_path applies to bare loops only")
+			return
+		}
+		if req.MemMB != 0 && (req.MemMB < 256 || req.MemMB > 262144) {
+			s.jsonErr(w, 400, "mem_mb must be between 256 and 262144")
+			return
+		}
+		if req.CPUs != 0 && (req.CPUs < 0.1 || req.CPUs > 64) {
+			s.jsonErr(w, 400, "cpus must be between 0.1 and 64")
+			return
+		}
+		if s.RuntimeAvailable != nil {
+			if err := s.RuntimeAvailable(r.Context(), store.RuntimeDocker); err != nil {
+				s.jsonErr(w, 400, "docker runtime unavailable: %v", err)
+				return
+			}
+		}
+	default:
+		s.jsonErr(w, 400, "runtime must be 'bare' or 'docker' (or empty for the server default)")
+		return
+	}
+
 	nowMS := time.Now().UnixMilli()
 	l := &store.Loop{
 		ID:              loopID(),
@@ -218,10 +259,18 @@ func (s *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 		MaxWakeSec:      defaultInt(req.MaxWakeSec, 14400),
 		IdleTimeoutSec:  defaultInt(req.IdleTimeoutSec, 90),
 		TGBotToken:      strings.TrimSpace(req.TGBotToken),
-		Runtime:         store.RuntimeBare,
+		Runtime:         loopRuntime,
 		Status:          store.StatusActive,
 		CreatedAt:       nowMS,
 		UpdatedAt:       nowMS,
+	}
+	if loopRuntime == store.RuntimeDocker {
+		l.Image = strings.TrimSpace(req.Image)
+		l.MemMB = defaultInt(req.MemMB, 4096)
+		l.CPUs = req.CPUs
+		if l.CPUs == 0 {
+			l.CPUs = 2
+		}
 	}
 
 	if l.TGBotToken != "" && s.Telegram != nil {
@@ -233,7 +282,12 @@ func (s *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 		l.TGBotUsername = username
 	}
 
-	if err := s.resolveWorkspace(l, req.WorkspacePath, req.WorkspaceMode); err != nil {
+	if l.Runtime == store.RuntimeDocker {
+		// The workstation is the workspace (ADR-0017): claude's cwd is the
+		// volume-backed home inside the container, stable across wakes.
+		l.WorkspaceMode = store.WorkspaceNone
+		l.WorkspacePath = runtime.WorkstationHome
+	} else if err := s.resolveWorkspace(l, req.WorkspacePath, req.WorkspaceMode); err != nil {
 		s.jsonErr(w, 400, "%v", err)
 		return
 	}

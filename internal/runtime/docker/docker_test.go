@@ -13,7 +13,7 @@ import (
 func TestExecArgvCarriesNoEnvValues(t *testing.T) {
 	spec := runtime.Spec{
 		LoopID:    "abc",
-		WorkDir:   home,
+		WorkDir:   runtime.WorkstationHome,
 		SessionID: "sess-1",
 		Env: map[string]string{
 			"CLAUDE_CODE_OAUTH_TOKEN": "sk-secret",
@@ -29,7 +29,7 @@ func TestExecArgvCarriesNoEnvValues(t *testing.T) {
 		t.Fatalf("secret value leaked into argv: %q", joined)
 	}
 	wantPrefix := []string{
-		"exec", "--interactive", "--workdir", home,
+		"exec", "--interactive", "--workdir", runtime.WorkstationHome,
 		"--env", "API_KEY", "--env", "CLAUDE_CODE_OAUTH_TOKEN", // sorted, value-less
 		"spool-ws-abc", "claude",
 	}

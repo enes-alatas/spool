@@ -57,6 +57,9 @@ func startServer(t *testing.T, dataDir string) *server {
 		"--listen", addr,
 		"--data-dir", dataDir,
 		"--claude-bin", fakeBin,
+		// pin bare: on a docker-equipped machine, auto would default new
+		// loops to docker workstations these engine tests don't want
+		"--runtime", "bare",
 		"--partial-messages=false",
 	)
 	cmd.Env = append(os.Environ(), "FAKECLAUDE_STATE="+fkState)
