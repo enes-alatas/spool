@@ -2,9 +2,8 @@ package loop
 
 import (
 	"context"
-	"fmt"
+	"log/slog"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/enes-alatas/spool/internal/store"
@@ -23,8 +22,10 @@ func NewManager(deps Deps) *Manager {
 	return &Manager{deps: deps, byID: map[string]*Actor{}, nameToID: map[string]string{}}
 }
 
-// Boot recovers state after an orchestrator restart: kills orphan claude
-// processes, closes dangling turns, and starts an actor per loop.
+// Boot recovers state after an orchestrator restart: reaps claude processes
+// left behind by the previous run, closes dangling turns, and starts an actor
+// per loop. Reaping is the runtime's job — a bare loop has an orphan host
+// process, a sandboxed one has a stale execution in a standing workstation.
 func (m *Manager) Boot(ctx context.Context) error {
 	loops, err := m.deps.Store.Loops().List(ctx)
 	if err != nil {
@@ -35,8 +36,10 @@ func (m *Manager) Boot(ctx context.Context) error {
 		return err
 	}
 	for _, l := range loops {
+		if err := m.deps.Runtime.Reap(ctx, l.ID, l.CurrentPID); err != nil {
+			m.log().Warn("reap orphan", "loop", l.Name, "err", err)
+		}
 		if l.CurrentPID > 0 {
-			killOrphan(l.CurrentPID)
 			_ = m.deps.Store.Loops().SetRuntime(ctx, l.ID, l.CurrentSessionID, 0)
 			l.CurrentPID = 0
 		}
@@ -59,7 +62,8 @@ func (m *Manager) add(l *store.Loop) *Actor {
 // Add registers and starts an actor for a newly created loop.
 func (m *Manager) Add(l *store.Loop) *Actor { return m.add(l) }
 
-// Remove shuts a loop's actor down (used on delete/archive).
+// Remove shuts a loop's actor down and powers its workstation off (used on
+// delete: a workstation outlives sleeps and pauses, never its loop).
 func (m *Manager) Remove(id string) {
 	m.mu.Lock()
 	actor := m.byID[id]
@@ -72,6 +76,9 @@ func (m *Manager) Remove(id string) {
 	m.mu.Unlock()
 	if actor != nil {
 		actor.Shutdown()
+	}
+	if err := m.deps.Runtime.PowerOff(context.Background(), id); err != nil {
+		m.log().Warn("workstation power off", "loop", id, "err", err)
 	}
 }
 
@@ -149,33 +156,9 @@ func (m *Manager) Shutdown() {
 	wg.Wait()
 }
 
-// killOrphan terminates a leftover claude process from a previous run.
-// Pdeathsig should have handled it, but belt and braces.
-func killOrphan(pid int) {
-	proc, err := findProcess(pid)
-	if err != nil {
-		return
+func (m *Manager) log() *slog.Logger {
+	if m.deps.Logger == nil {
+		return slog.Default()
 	}
-	_ = proc.Signal(syscall.SIGTERM)
-	go func() {
-		time.Sleep(5 * time.Second)
-		_ = proc.Signal(syscall.SIGKILL)
-	}()
-}
-
-func findProcess(pid int) (*processHandle, error) {
-	// only signal if the pid still exists and we own it
-	if err := syscall.Kill(pid, 0); err != nil {
-		return nil, err
-	}
-	return &processHandle{pid: pid}, nil
-}
-
-type processHandle struct{ pid int }
-
-func (p *processHandle) Signal(sig syscall.Signal) error {
-	if p.pid <= 1 {
-		return fmt.Errorf("refusing to signal pid %d", p.pid)
-	}
-	return syscall.Kill(p.pid, sig)
+	return m.deps.Logger
 }

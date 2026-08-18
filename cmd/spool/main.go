@@ -18,6 +18,7 @@ import (
 	"github.com/enes-alatas/spool/internal/httpapi"
 	"github.com/enes-alatas/spool/internal/loop"
 	"github.com/enes-alatas/spool/internal/route"
+	"github.com/enes-alatas/spool/internal/runtime/bare"
 	"github.com/enes-alatas/spool/internal/sched"
 	"github.com/enes-alatas/spool/internal/store"
 	"github.com/enes-alatas/spool/internal/store/sqlite"
@@ -36,7 +37,11 @@ func main() {
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(log)
 
-	ver, err := claude.Preflight(*claudeBin)
+	// The SandboxRuntime seam (ADR-0004): bare is the only implementation
+	// until docker lands, so wiring picks it unconditionally.
+	rt := bare.New(*claudeBin)
+
+	ver, err := rt.Preflight(context.Background())
 	if err != nil {
 		log.Error("claude preflight failed — install Claude Code or pass --claude-bin", "err", err)
 		os.Exit(1)
@@ -45,7 +50,7 @@ func main() {
 		log.Warn("claude version differs from the one Spool was verified against",
 			"found", ver, "tested", claude.TestedVersion)
 	}
-	log.Info("claude ok", "version", ver)
+	log.Info("claude ok", "version", ver, "runtime", rt.Kind())
 
 	if err := os.MkdirAll(*dataDir, 0o755); err != nil {
 		log.Error("data dir", "err", err)
@@ -68,7 +73,7 @@ func main() {
 	deps := loop.Deps{
 		Store:           db,
 		Bus:             b,
-		ClaudeBin:       *claudeBin,
+		Runtime:         rt,
 		PartialMessages: *partials,
 		Logger:          log,
 		SystemPrompt: func(l *store.Loop) string {

@@ -4,9 +4,9 @@
 // dependency-free. It walks the source tree with go/parser — stdlib only —
 // so a PR that erodes a boundary fails CI instead of eroding quietly.
 //
-// When packages move (telegram → surface/telegram at L3, runtime seam at L1),
-// update the rule tables here in the same PR — the rules are the point, the
-// paths are just their current addresses.
+// When packages move (telegram → surface/telegram at L3), update the rule
+// tables here in the same PR — the rules are the point, the paths are just
+// their current addresses.
 package archtest
 
 import (
@@ -20,22 +20,30 @@ import (
 
 const module = "github.com/enes-alatas/spool"
 
-// adapters are packages implementing a seam; only cmd/ wiring may import them.
-var adapters = []string{
-	module + "/internal/telegram", // Surface adapter (moves under internal/surface at L3)
-	module + "/internal/store/sqlite",
-	module + "/web",
+// adapters implement a seam: only cmd/ wiring may import them, and each maps
+// to what it may never import itself.
+var adapters = map[string][]string{
+	// Hub adapters serve the hub and must not reach into the runner at all.
+	module + "/internal/telegram":     runnerPkgs, // Surface (moves under internal/surface at L3)
+	module + "/internal/store/sqlite": runnerPkgs,
+	module + "/web":                   runnerPkgs,
+	// SandboxRuntime adapters are the runner's own, so speaking the claude
+	// protocol is their job — but they serve the seam, not the loop actors.
+	module + "/internal/runtime/bare": {module + "/internal/loop"}, // docker joins it at L1
+}
+
+var runnerPkgs = []string{
+	module + "/internal/loop",
+	module + "/internal/claude",
 }
 
 // runnerInternals may only be imported by the runner itself and cmd/ wiring.
 var runnerInternals = map[string][]string{
-	module + "/internal/claude": {module + "/internal/loop"},
-}
-
-// adapterForbidden: adapters talk to the hub, never to the runner.
-var adapterForbidden = []string{
-	module + "/internal/loop",
-	module + "/internal/claude",
+	module + "/internal/claude": {
+		module + "/internal/loop",
+		module + "/internal/runtime",      // the seam speaks the claude protocol
+		module + "/internal/runtime/bare", // …and so does every implementation
+	},
 }
 
 func TestSeamRules(t *testing.T) {
@@ -43,20 +51,23 @@ func TestSeamRules(t *testing.T) {
 
 	for pkg, imps := range imports {
 		isWiring := strings.HasPrefix(pkg, module+"/cmd/")
-		isAdapter := contains(adapters, pkg)
+		forbidden, isAdapter := adapters[pkg]
 
 		for _, imp := range imps {
 			if !strings.HasPrefix(imp, module) {
 				continue // stdlib / external deps: not arch-test business
 			}
-			if contains(adapters, imp) && !isWiring && pkg != imp && !strings.HasPrefix(imp, pkg) {
+			// A parent may reach into its own subpackage; everyone else has
+			// to go through the seam.
+			ownSubpackage := strings.HasPrefix(imp, pkg+"/")
+			if _, isAdapterImport := adapters[imp]; isAdapterImport && !isWiring && !ownSubpackage {
 				t.Errorf("%s imports adapter %s — only cmd/ wiring may (ADR-0004)", pkg, imp)
 			}
 			if allowed, ok := runnerInternals[imp]; ok && !isWiring && !contains(allowed, pkg) {
 				t.Errorf("%s imports runner-internal %s — only %v and cmd/ may", pkg, imp, allowed)
 			}
-			if isAdapter && contains(adapterForbidden, imp) {
-				t.Errorf("adapter %s imports %s — adapters talk to the hub, not the runner", pkg, imp)
+			if isAdapter && contains(forbidden, imp) {
+				t.Errorf("adapter %s imports %s — an adapter serves its seam, nothing else (ADR-0004)", pkg, imp)
 			}
 			if pkg == module+"/internal/store" {
 				t.Errorf("internal/store imports %s — the store seam must stay dependency-free", imp)
