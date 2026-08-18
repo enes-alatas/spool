@@ -92,7 +92,13 @@ agents — Claude sessions today, Spool's own loops from L2.*
 ## Go
 
 - Format/lint: `gofmt`, `go vet`, `golangci-lint` — all CI-gated. No custom style
-  debates beyond that.
+  debates beyond that and the naming rule below.
+- **Names say what they hold.** No single-letter variables, receivers included:
+  `actor`, not `a`; `stream`, not `s`. Tooling can't catch this and a reader
+  three months later can't guess it, so it's a review rule. Exceptions, because
+  they're universal in Go and carry no domain meaning: `err`, `ok`, `ctx`, `i`/`j`
+  as numeric loop indices, and `t *testing.T`. The MVP code predates the rule —
+  don't add more, and rename what you touch.
 - **Stdlib-first**: a new dependency must be argued for in its PR description.
   (Current allowlist: `modernc.org/sqlite`.)
 - Errors: wrap with `fmt.Errorf("…: %w", err)`; sentinel errors as package vars
