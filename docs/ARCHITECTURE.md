@@ -55,7 +55,7 @@ Use these words exactly — in code, UI, docs, and prompts. Don't introduce syno
 │ surface/slack(L3) │ ⇄ │           guard)          │ ⇄ │  machine, turns)        │
 └───────────────────┘   │ sched    (ticks, trailers)│   │  └─ claude procs via    │
 ┌───────────────────┐   │ bus      (in-proc pub/sub)│   │     SandboxRuntime:     │
-│ web control room  │ ⇄ │ httpapi  (REST + SSE)     │   │     bare | docker(L1)   │
+│ web control room  │ ⇄ │ httpapi  (REST + SSE)     │   │     bare | docker       │
 └───────────────────┘   │ store    (sqlite | pg)    │   └─────────────────────────┘
                         └──────────────────────────┘
 ```
@@ -72,7 +72,7 @@ Dependencies point inward: adapters → hub interfaces, never hub → adapter in
 | Seam | Interface (owner) | Implementations |
 |---|---|---|
 | **Surface** | `surface.Surface` — deliver inbound to hub, mirror outbound, identity per loop | `telegram` (today, to be moved under the seam), `slack` (L3) |
-| **SandboxRuntime** | `runtime.Runtime` — provision/start/exec/stop a loop's workstation, own claude's stdio inside it, watch workstation liveness | `bare` (direct subprocess; local-edition fallback, badged *uncontained*), `docker` (L1: long-lived named container + volume per loop, ADR-0017), `sbx` (possible later hardening, ADR-0010) |
+| **SandboxRuntime** | `runtime.Runtime` — provision/start/exec/stop a loop's workstation, own claude's stdio inside it, watch workstation liveness | `bare` (direct subprocess; local-edition fallback, badged *uncontained*), `docker` (long-lived named container + volume per loop, driven through the docker CLI; the default whenever the daemon is reachable — ADR-0017, ADR-0018), `sbx` (possible later hardening, ADR-0010) |
 | **Store** | `store.*` interfaces | `sqlite` (today), `postgres` (service era) |
 | **Runner** | the narrow command surface the hub uses: deliver, tick, pause, resume, kill, state | in-process (`internal/loop`) today; extractable to a per-host runner process for the hosted service — the seam exists so this is transport substitution, not redesign |
 
@@ -96,9 +96,10 @@ docs/                 VISION, ARCHITECTURE, CONVENTIONS, adr/
 scripts/e2e/          real-claude milestone suites (local only)
 ```
 
-The SandboxRuntime seam is live: `internal/runtime` owns the interface and
-`internal/runtime/bare` is today's host-subprocess implementation; `docker` joins it
-at L1. Current code deviates only in that `telegram` isn't yet behind the Surface
+The SandboxRuntime seam is live with both implementations: `internal/runtime` owns
+the interface, `internal/runtime/bare` runs host subprocesses, and
+`internal/runtime/docker` runs workstations through the docker CLI (ADR-0018).
+Current code deviates only in that `telegram` isn't yet behind the Surface
 interface (`internal/telegram` moves to `internal/surface/telegram` when that seam is
 introduced). Migrate opportunistically, not big-bang.
 
