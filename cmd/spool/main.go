@@ -20,6 +20,7 @@ import (
 	"github.com/enes-alatas/spool/internal/route"
 	"github.com/enes-alatas/spool/internal/runtime"
 	"github.com/enes-alatas/spool/internal/runtime/bare"
+	"github.com/enes-alatas/spool/internal/runtime/docker"
 	"github.com/enes-alatas/spool/internal/sched"
 	"github.com/enes-alatas/spool/internal/store"
 	"github.com/enes-alatas/spool/internal/store/sqlite"
@@ -30,7 +31,10 @@ import (
 func main() {
 	listen := flag.String("listen", "127.0.0.1:8080", "address to serve the API/UI on")
 	dataDir := flag.String("data-dir", defaultDataDir(), "directory for spool.db, loop homes and worktrees")
-	claudeBin := flag.String("claude-bin", "claude", "path to the claude binary")
+	claudeBin := flag.String("claude-bin", "claude", "path to the claude binary (bare runtime)")
+	runtimeChoice := flag.String("runtime", "auto", "default runtime for new loops: auto (docker when the daemon is reachable), docker, or bare")
+	workstationImage := flag.String("workstation-image", "spool-workstation", "default image for docker workstations")
+	healthSec := flag.Int("workstation-health-sec", 45, "seconds between workstation liveness polls")
 	partials := flag.Bool("partial-messages", true, "stream token deltas to the UI (--include-partial-messages)")
 	retentionDays := flag.Int("events-retention-days", 30, "prune raw claude events older than this many days (0 disables; messages and turns are never pruned)")
 	flag.Parse()
@@ -38,20 +42,26 @@ func main() {
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(log)
 
-	// The SandboxRuntime seam (ADR-0004): bare is the only implementation
-	// until docker lands, so wiring picks it unconditionally.
-	rt := bare.New(*claudeBin)
-
-	ver, err := rt.Preflight(context.Background())
-	if err != nil {
-		log.Error("claude preflight failed — install Claude Code or pass --claude-bin", "err", err)
-		os.Exit(1)
+	// The SandboxRuntime seam (ADR-0004): both implementations stay wired —
+	// the runtime is a per-loop choice (ADR-0017) — and --runtime only picks
+	// which one new loops default to.
+	healthInterval := time.Duration(*healthSec) * time.Second
+	dockerRuntime := docker.New("", *workstationImage, healthCacheTTL(healthInterval))
+	runtimes := map[string]runtime.Runtime{
+		store.RuntimeBare:   bare.New(*claudeBin),
+		store.RuntimeDocker: dockerRuntime,
 	}
-	if ver != "" && !containsVersion(ver, claude.TestedVersion) {
+
+	defaultRuntime, ver := selectDefaultRuntime(log, *runtimeChoice, runtimes)
+	switch {
+	case ver == "":
+		log.Warn("claude version unknown until the workstation image exists — run `make image` (#14)",
+			"image", *workstationImage)
+	case !containsVersion(ver, claude.TestedVersion):
 		log.Warn("claude version differs from the one Spool was verified against",
 			"found", ver, "tested", claude.TestedVersion)
 	}
-	log.Info("claude ok", "version", ver, "runtime", rt.Kind())
+	log.Info("runtime ready", "default", defaultRuntime, "claude_version", ver)
 
 	if err := os.MkdirAll(*dataDir, 0o755); err != nil {
 		log.Error("data dir", "err", err)
@@ -72,11 +82,12 @@ func main() {
 	var scheduler *sched.Scheduler
 
 	deps := loop.Deps{
-		Store:           db,
-		Bus:             b,
-		Runtimes:        map[string]runtime.Runtime{store.RuntimeBare: rt},
-		PartialMessages: *partials,
-		Logger:          log,
+		Store:                     db,
+		Bus:                       b,
+		Runtimes:                  runtimes,
+		WorkstationHealthInterval: healthInterval,
+		PartialMessages:           *partials,
+		Logger:                    log,
 		SystemPrompt: func(l *store.Loop) string {
 			peers := peersOf(db, l)
 			return loop.SystemPrompt(l, peers)
@@ -109,16 +120,23 @@ func main() {
 	bridge.Start(ctx)
 
 	api := &httpapi.Server{
-		Store:     db,
-		Bus:       b,
-		Manager:   manager,
-		Router:    router,
-		Sched:     scheduler,
-		Telegram:  bridge,
-		DataDir:   *dataDir,
-		ClaudeVer: ver,
-		Log:       log,
-		WebFS:     web.Dist(),
+		Store:          db,
+		Bus:            b,
+		Manager:        manager,
+		Router:         router,
+		Sched:          scheduler,
+		Telegram:       bridge,
+		DataDir:        *dataDir,
+		ClaudeVer:      ver,
+		DefaultRuntime: defaultRuntime,
+		RuntimeAvailable: func(ctx context.Context, kind string) error {
+			if kind == store.RuntimeDocker {
+				return dockerRuntime.Available(ctx)
+			}
+			return nil
+		},
+		Log:   log,
+		WebFS: web.Dist(),
 	}
 
 	srv := &http.Server{Addr: *listen, Handler: api.Handler()}
@@ -172,6 +190,47 @@ func peersOf(db store.Store, self *store.Loop) []loop.Peer {
 		}
 	}
 	return peers
+}
+
+// selectDefaultRuntime resolves --runtime per ADR-0017: docker is the
+// default whenever the daemon is reachable, bare the explicit uncontained
+// fallback. Preflight failure is fatal only for the chosen default — the
+// other runtime stays wired, and a loop on a broken one surfaces
+// workstation_down at wake instead of blocking boot.
+func selectDefaultRuntime(log *slog.Logger, choice string, runtimes map[string]runtime.Runtime) (kind, claudeVersion string) {
+	ctx := context.Background()
+	if choice == "auto" {
+		version, err := runtimes[store.RuntimeDocker].Preflight(ctx)
+		if err == nil {
+			return store.RuntimeDocker, version
+		}
+		log.Info("docker unreachable; new loops default to the uncontained bare runtime", "err", err)
+		choice = store.RuntimeBare
+	}
+	selected, ok := runtimes[choice]
+	if !ok {
+		log.Error("--runtime must be auto, docker, or bare", "got", choice)
+		os.Exit(1)
+	}
+	version, err := selected.Preflight(ctx)
+	if err != nil {
+		log.Error("runtime preflight failed", "runtime", choice, "err", err)
+		os.Exit(1)
+	}
+	return choice, version
+}
+
+// healthCacheTTL sizes the docker runtime's batched-sweep cache to the poll
+// cadence: half the interval, clamped to [1s, 10s].
+func healthCacheTTL(interval time.Duration) time.Duration {
+	ttl := interval / 2
+	if ttl < time.Second {
+		ttl = time.Second
+	}
+	if ttl > 10*time.Second {
+		ttl = 10 * time.Second
+	}
+	return ttl
 }
 
 func defaultDataDir() string {

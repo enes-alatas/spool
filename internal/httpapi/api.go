@@ -47,8 +47,14 @@ type Server struct {
 	Telegram  Telegram // may be nil
 	DataDir   string
 	ClaudeVer string
-	Log       *slog.Logger
-	WebFS     fs.FS // embedded UI dist; may be nil in dev
+	// DefaultRuntime is the kind loops get when a create request doesn't
+	// name one (ADR-0017: docker whenever the daemon is reachable).
+	DefaultRuntime string
+	// RuntimeAvailable answers whether a runtime kind can host a new loop
+	// right now; wired in cmd so this package stays free of runtime imports.
+	RuntimeAvailable func(ctx context.Context, kind string) error
+	Log              *slog.Logger
+	WebFS            fs.FS // embedded UI dist; may be nil in dev
 }
 
 func (s *Server) Handler() http.Handler {
@@ -138,7 +144,7 @@ func (s *Server) view(ctx context.Context, l *store.Loop) *loopView {
 // --- handlers ---
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, map[string]any{"ok": true, "claude_version": s.ClaudeVer})
+	writeJSON(w, 200, map[string]any{"ok": true, "claude_version": s.ClaudeVer, "runtime": s.DefaultRuntime})
 }
 
 func (s *Server) handleListLoops(w http.ResponseWriter, r *http.Request) {

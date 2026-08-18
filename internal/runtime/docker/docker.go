@@ -77,12 +77,21 @@ func New(bin, defaultImage string, healthTTL time.Duration) *Runtime {
 
 func (rt *Runtime) Kind() string { return "docker" }
 
+// Available reports whether the daemon is reachable — the cheap slice of
+// Preflight, for validating a create request that names this runtime.
+func (rt *Runtime) Available(ctx context.Context) error {
+	if _, err := rt.command(ctx, queryTimeout, "version", "--format", "{{.Server.Version}}"); err != nil {
+		return fmt.Errorf("docker daemon unreachable: %w", err)
+	}
+	return nil
+}
+
 // Preflight verifies the CLI can reach a daemon. The claude version is
 // best-effort: until the default image exists locally (#14) there is nothing
 // to run it in, and that is a warning for the wirer, not a failure here.
 func (rt *Runtime) Preflight(ctx context.Context) (string, error) {
-	if _, err := rt.command(ctx, queryTimeout, "version", "--format", "{{.Server.Version}}"); err != nil {
-		return "", fmt.Errorf("docker daemon unreachable: %w", err)
+	if err := rt.Available(ctx); err != nil {
+		return "", err
 	}
 	if _, err := rt.command(ctx, queryTimeout, "image", "inspect", rt.defaultImage); err != nil {
 		return "", nil
