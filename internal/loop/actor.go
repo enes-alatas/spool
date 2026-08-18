@@ -230,14 +230,12 @@ func (actor *Actor) wake() {
 	} else {
 		opts.ResumeID = actor.loop.CurrentSessionID
 	}
-	opts.Bin = actor.deps.ClaudeBin
-	opts.WorkDir = actor.loop.WorkspacePath
 	opts.Model = actor.loop.Model
 	opts.Effort = actor.loop.Effort
 	opts.AppendSystemPrompt = actor.deps.SystemPrompt(&actor.loop)
 	opts.PartialMessages = actor.deps.PartialMessages
 
-	proc, err := claude.Spawn(ctx, opts)
+	proc, err := claude.Spawn(ctx, actor.deps.ClaudeBin, actor.loop.WorkspacePath, opts)
 	if err != nil {
 		actor.log().Error("spawn failed", "err", err)
 		actor.crashBackoff()
