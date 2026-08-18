@@ -63,7 +63,9 @@ type containerState struct {
 }
 
 func (rt *Runtime) inspectState(ctx context.Context, name string) (*containerState, error) {
-	out, err := rt.command(ctx, queryTimeout, "inspect", "--format", "{{json .State}}", name)
+	// --type container matters: the loop's volume shares the name, and an
+	// unscoped inspect would resolve to it once the container is gone.
+	out, err := rt.command(ctx, queryTimeout, "inspect", "--type", "container", "--format", "{{json .State}}", name)
 	if err != nil {
 		if notFound(err) {
 			return nil, errNotFound
