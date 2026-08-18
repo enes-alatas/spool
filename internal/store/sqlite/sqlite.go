@@ -117,7 +117,7 @@ type loops struct{ db *sql.DB }
 const loopCols = `id, name, mission, model, workspace_mode, workspace_path, repo_path,
 	worktree_path, branch, tick_interval_sec, min_wake_sec, max_wake_sec, idle_timeout_sec,
 	pacing, effort, tg_bot_token, tg_bot_username, tg_group_chat_id, status,
-	current_session_id, current_pid, created_at, updated_at`
+	current_session_id, current_pid, created_at, updated_at, runtime, image, mem_mb, cpus`
 
 func scanLoop(row interface{ Scan(...any) error }) (*store.Loop, error) {
 	var l store.Loop
@@ -125,7 +125,7 @@ func scanLoop(row interface{ Scan(...any) error }) (*store.Loop, error) {
 		&l.RepoPath, &l.WorktreePath, &l.Branch, &l.TickIntervalSec, &l.MinWakeSec,
 		&l.MaxWakeSec, &l.IdleTimeoutSec, &l.Pacing, &l.Effort, &l.TGBotToken,
 		&l.TGBotUsername, &l.TGGroupChatID, &l.Status, &l.CurrentSessionID, &l.CurrentPID,
-		&l.CreatedAt, &l.UpdatedAt)
+		&l.CreatedAt, &l.UpdatedAt, &l.Runtime, &l.Image, &l.MemMB, &l.CPUs)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, store.ErrNotFound
 	}
@@ -136,12 +136,16 @@ func scanLoop(row interface{ Scan(...any) error }) (*store.Loop, error) {
 }
 
 func (r loops) Create(ctx context.Context, l *store.Loop) error {
+	// Workstation columns (runtime, image, mem_mb, cpus) are set here and
+	// deliberately absent from Update: immutable after creation (ADR-0018),
+	// the same enforcement-by-omission as current_session_id/current_pid.
 	_, err := r.db.ExecContext(ctx, `INSERT INTO loops (`+loopCols+`) VALUES
-		(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		l.ID, l.Name, l.Mission, l.Model, l.WorkspaceMode, l.WorkspacePath, l.RepoPath,
 		l.WorktreePath, l.Branch, l.TickIntervalSec, l.MinWakeSec, l.MaxWakeSec,
 		l.IdleTimeoutSec, l.Pacing, l.Effort, l.TGBotToken, l.TGBotUsername,
-		l.TGGroupChatID, l.Status, l.CurrentSessionID, l.CurrentPID, l.CreatedAt, l.UpdatedAt)
+		l.TGGroupChatID, l.Status, l.CurrentSessionID, l.CurrentPID, l.CreatedAt, l.UpdatedAt,
+		l.Runtime, l.Image, l.MemMB, l.CPUs)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return store.ErrDuplicate
 	}

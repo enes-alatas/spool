@@ -19,7 +19,8 @@ func TestEventsDeleteBefore(t *testing.T) {
 
 	now := time.Now().UnixMilli()
 	l := &store.Loop{ID: "l1", Name: "pruned", Mission: "m", Status: store.StatusActive,
-		WorkspaceMode: store.WorkspaceNone, Pacing: store.PacingFixed, CreatedAt: now, UpdatedAt: now}
+		WorkspaceMode: store.WorkspaceNone, Runtime: store.RuntimeBare, Pacing: store.PacingFixed,
+		CreatedAt: now, UpdatedAt: now}
 	if err := db.Loops().Create(ctx, l); err != nil {
 		t.Fatal(err)
 	}

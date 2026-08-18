@@ -212,6 +212,7 @@ func (s *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 		MaxWakeSec:      defaultInt(req.MaxWakeSec, 14400),
 		IdleTimeoutSec:  defaultInt(req.IdleTimeoutSec, 90),
 		TGBotToken:      strings.TrimSpace(req.TGBotToken),
+		Runtime:         store.RuntimeBare,
 		Status:          store.StatusActive,
 		CreatedAt:       nowMS,
 		UpdatedAt:       nowMS,
