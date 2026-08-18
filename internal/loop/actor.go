@@ -2,11 +2,12 @@ package loop
 
 import (
 	"context"
-	"crypto/rand"
+	crand "crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -25,6 +26,10 @@ const (
 	StateIdle     = "idle"
 	StateDraining = "draining"
 	StatePaused   = "paused"
+	// StateWorkstationDown overlays every other state — pause included —
+	// while the loop's workstation is unreachable (ADR-0017): it is the
+	// alert the operator must act on. Ensure self-heals it at next wake.
+	StateWorkstationDown = "workstation_down"
 )
 
 const (
@@ -32,6 +37,9 @@ const (
 	backoffStart    = 10 * time.Second
 	backoffCap      = 5 * time.Minute
 	recentTurnCount = 5
+
+	defaultHealthInterval = 45 * time.Second
+	healthCheckTimeout    = 10 * time.Second
 )
 
 // Deps wires an actor to the rest of the system without import cycles.
@@ -43,6 +51,11 @@ type Deps struct {
 	Runtimes        map[string]runtime.Runtime
 	PartialMessages bool
 	Logger          *slog.Logger
+
+	// WorkstationHealthInterval paces each loop's liveness poll; 0 means
+	// the default. The docker runtime answers from one batched sweep behind
+	// a short TTL, so the interval is about UI freshness, not cost.
+	WorkstationHealthInterval time.Duration
 
 	// SystemPrompt builds the --append-system-prompt for a loop (peers are
 	// resolved at call time so every wake sees the current fleet).
@@ -74,14 +87,17 @@ type cmd struct {
 // Actor owns one loop: a single goroutine serializing every command,
 // event and timer for that loop, and the claude process it drives.
 type Actor struct {
-	deps      Deps
-	cmds      chan cmd
-	stateSnap atomic.Value // string; last published state, for REST reads
+	deps       Deps
+	cmds       chan cmd
+	stateSnap  atomic.Value // string; last published state, for REST reads
+	healthSnap atomic.Value // runtime.Health; last workstation poll, for REST reads
 
 	// goroutine-owned state below
 	loop         store.Loop
 	state        string
 	paused       bool
+	wsDown       bool   // workstation unreachable; overlays the state
+	wsDetail     string // why, when wsDown
 	proc         runtime.Proc
 	procEvents   <-chan claude.Event
 	inbox        []Envelope
@@ -91,8 +107,9 @@ type Actor struct {
 	freshSpawn   bool // current process was started with --session-id (not resume)
 	backoff      time.Duration
 
-	idleTimer  *time.Timer
-	retryTimer *time.Timer
+	idleTimer   *time.Timer
+	retryTimer  *time.Timer
+	healthTimer *time.Timer
 }
 
 func NewActor(deps Deps, l *store.Loop) *Actor {
@@ -103,10 +120,12 @@ func NewActor(deps Deps, l *store.Loop) *Actor {
 		state: StateAsleep,
 	}
 	actor.paused = l.Status == store.StatusPaused
+	actor.healthSnap.Store(runtime.Health{Up: true}) // optimistic until the first poll
 	actor.idleTimer = time.NewTimer(time.Hour)
 	actor.idleTimer.Stop()
 	actor.retryTimer = time.NewTimer(time.Hour)
 	actor.retryTimer.Stop()
+	actor.healthTimer = time.NewTimer(actor.healthInterval())
 	go actor.run()
 	return actor
 }
@@ -152,6 +171,9 @@ func (actor *Actor) run() {
 			if len(actor.inbox) > 0 && actor.state == StateAsleep {
 				actor.wake()
 			}
+		case <-actor.healthTimer.C:
+			actor.checkWorkstation()
+			actor.healthTimer.Reset(actor.healthInterval())
 		}
 	}
 }
@@ -242,20 +264,24 @@ func (actor *Actor) wake() {
 	loopRuntime := actor.deps.runtimeFor(actor.loop.Runtime)
 	if loopRuntime == nil {
 		actor.log().Error("workstation not ready", "err", fmt.Errorf("no %q runtime available", actor.loop.Runtime))
+		actor.setWorkstationDown(fmt.Sprintf("no %q runtime available", actor.loop.Runtime))
 		actor.crashBackoff()
 		return
 	}
 	if err := loopRuntime.Ensure(ctx, spec); err != nil {
 		actor.log().Error("workstation not ready", "err", err)
+		actor.setWorkstationDown(err.Error())
 		actor.crashBackoff()
 		return
 	}
 	proc, err := loopRuntime.Start(ctx, spec)
 	if err != nil {
 		actor.log().Error("spawn failed", "err", err)
+		actor.setWorkstationDown(err.Error())
 		actor.crashBackoff()
 		return
 	}
+	actor.setWorkstationUp()
 	actor.proc = proc
 	actor.procEvents = proc.Events()
 	actor.freshSpawn = fresh
@@ -528,6 +554,77 @@ func (actor *Actor) handleShutdown() {
 	}
 }
 
+// --- workstation liveness (ADR-0017: a seam duty, surfaced as a state) ---
+
+// checkWorkstation polls the loop's workstation and maintains the
+// workstation_down overlay. Bare loops answer statically up, so the uniform
+// poll costs them nothing.
+func (actor *Actor) checkWorkstation() {
+	loopRuntime := actor.deps.runtimeFor(actor.loop.Runtime)
+	if loopRuntime == nil {
+		actor.setWorkstationDown(fmt.Sprintf("no %q runtime available", actor.loop.Runtime))
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), healthCheckTimeout)
+	defer cancel()
+	health, err := loopRuntime.Health(ctx, actor.loop.ID)
+	switch {
+	case err != nil:
+		actor.setWorkstationDown(err.Error())
+	case health.Up:
+		actor.setWorkstationUp()
+	default:
+		actor.setWorkstationDown(health.Detail)
+	}
+}
+
+// healthInterval jitters the poll so a fleet of actors spreads over the
+// runtime's cache window instead of thundering against it at once.
+func (actor *Actor) healthInterval() time.Duration {
+	interval := actor.deps.WorkstationHealthInterval
+	if interval <= 0 {
+		interval = defaultHealthInterval
+	}
+	jitter := time.Duration((rand.Float64()*0.4 - 0.2) * float64(interval))
+	return interval + jitter
+}
+
+func (actor *Actor) setWorkstationDown(detail string) {
+	actor.healthSnap.Store(runtime.Health{Up: false, Detail: detail})
+	if actor.wsDown && actor.wsDetail == detail {
+		return
+	}
+	wasUp := !actor.wsDown
+	actor.wsDown = true
+	actor.wsDetail = detail
+	if wasUp {
+		actor.storeSpoolEvent("workstation_down", fmt.Sprintf(`{"detail":%q}`, detail))
+		actor.log().Warn("workstation down", "detail", detail)
+	}
+	actor.publishState()
+}
+
+func (actor *Actor) setWorkstationUp() {
+	actor.healthSnap.Store(runtime.Health{Up: true})
+	if !actor.wsDown {
+		return
+	}
+	actor.wsDown = false
+	actor.wsDetail = ""
+	actor.storeSpoolEvent("workstation_up", "{}")
+	actor.log().Info("workstation up")
+	actor.publishState()
+}
+
+// WorkstationHealth returns the last observed workstation health (safe from
+// any goroutine; REST reads never touch the runtime).
+func (actor *Actor) WorkstationHealth() runtime.Health {
+	if health, ok := actor.healthSnap.Load().(runtime.Health); ok {
+		return health
+	}
+	return runtime.Health{Up: true}
+}
+
 // --- helpers ---
 
 func (actor *Actor) loopHadHistory() bool {
@@ -603,6 +700,10 @@ func (actor *Actor) publishState() {
 	if actor.paused {
 		state = StatePaused
 	}
+	if actor.wsDown {
+		// the alert outranks pause: a dead workstation needs the operator
+		state = StateWorkstationDown
+	}
 	actor.stateSnap.Store(state)
 	actor.deps.Bus.Publish(bus.Item{Kind: bus.KindLoopStatus, LoopID: actor.loop.ID, Payload: map[string]any{
 		"loop_id": actor.loop.ID,
@@ -630,7 +731,7 @@ func tail(s string, n int) string {
 // newUUID returns a random v4 UUID (claude --session-id requires valid UUIDs).
 func newUUID() string {
 	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
+	if _, err := crand.Read(b[:]); err != nil {
 		panic(err)
 	}
 	b[6] = (b[6] & 0x0f) | 0x40
