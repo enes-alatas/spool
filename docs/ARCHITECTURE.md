@@ -81,7 +81,7 @@ Dependencies point inward: adapters → hub interfaces, never hub → adapter in
 ```
 cmd/spool/            wiring, flags
 cmd/fakeclaude/       stream-json protocol fake for CI (ADR-0009)
-internal/claude/      subprocess + event protocol (runner-internal)
+internal/claude/      claude's stream-json protocol: args, stdio, events (runner-internal)
 internal/loop/        loop actors, prompts, trailers (runner)
 internal/runtime/     SandboxRuntime seam + bare/, docker/
 internal/surface/     Surface seam + telegram/, slack/
@@ -96,9 +96,11 @@ docs/                 VISION, ARCHITECTURE, CONVENTIONS, adr/
 scripts/e2e/          real-claude milestone suites (local only)
 ```
 
-Current code deviates only in that `telegram` and the runtime seam aren't yet behind
-interfaces (`internal/telegram` moves to `internal/surface/telegram` when the seam is
-introduced; the runtime seam lands with L1). Migrate opportunistically, not big-bang.
+The SandboxRuntime seam is live: `internal/runtime` owns the interface and
+`internal/runtime/bare` is today's host-subprocess implementation; `docker` joins it
+at L1. Current code deviates only in that `telegram` isn't yet behind the Surface
+interface (`internal/telegram` moves to `internal/surface/telegram` when that seam is
+introduced). Migrate opportunistically, not big-bang.
 
 ## Evolution notes (so we don't design against ourselves)
 
