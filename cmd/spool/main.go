@@ -18,6 +18,7 @@ import (
 	"github.com/enes-alatas/spool/internal/httpapi"
 	"github.com/enes-alatas/spool/internal/loop"
 	"github.com/enes-alatas/spool/internal/route"
+	"github.com/enes-alatas/spool/internal/runtime"
 	"github.com/enes-alatas/spool/internal/runtime/bare"
 	"github.com/enes-alatas/spool/internal/sched"
 	"github.com/enes-alatas/spool/internal/store"
@@ -73,7 +74,7 @@ func main() {
 	deps := loop.Deps{
 		Store:           db,
 		Bus:             b,
-		Runtime:         rt,
+		Runtimes:        map[string]runtime.Runtime{store.RuntimeBare: rt},
 		PartialMessages: *partials,
 		Logger:          log,
 		SystemPrompt: func(l *store.Loop) string {
