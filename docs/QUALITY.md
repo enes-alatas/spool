@@ -57,7 +57,8 @@ whenever engine hot paths change — not on every PR.
 - `gofmt`, `go vet`, `golangci-lint`; `eslint`, `prettier`; build incl. web.
 - Test tiers 1 + 2 (CONVENTIONS.md).
 - **Architecture tests**: a hand-rolled Go test walks the import graph and fails on:
-  adapters importing each other; hub packages importing adapter internals;
+  adapters importing each other; hub packages importing adapter internals; a seam
+  importing anything but its own protocol (its implementations included);
   non-plain-data types crossing the Runner seam. Stdlib-only, lives in the repo.
 - `govulncheck`.
 
