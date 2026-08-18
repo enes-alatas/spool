@@ -1,8 +1,9 @@
 // Package archtest mechanically enforces the seam rules from
-// docs/ARCHITECTURE.md (ADR-0004, ADR-0013): adapters stay behind their
-// seams, wiring happens only in cmd/, and the store interface package stays
-// dependency-free. It walks the source tree with go/parser — stdlib only —
-// so a PR that erodes a boundary fails CI instead of eroding quietly.
+// docs/ARCHITECTURE.md (ADR-0004, ADR-0013): seam packages own their
+// interfaces and depend on nothing else — least of all their own
+// implementations — adapters stay behind those seams, and wiring happens only
+// in cmd/. It walks the source tree with go/parser — stdlib only — so a PR
+// that erodes a boundary fails CI instead of eroding quietly.
 //
 // When packages move (telegram → surface/telegram at L3), update the rule
 // tables here in the same PR — the rules are the point, the paths are just
@@ -37,6 +38,16 @@ var runnerPkgs = []string{
 	module + "/internal/claude",
 }
 
+// seamAllowedImports maps a seam's interface package to the only
+// module-internal imports it may have. Anything else — a hub type, a store
+// row, one of its own implementations — makes the seam un-substitutable, and
+// substitutability is the whole point (ADR-0004): docker replaces bare, and
+// postgres replaces sqlite, without the dependents noticing.
+var seamAllowedImports = map[string][]string{
+	module + "/internal/store":   {},                            // the store seam is plain interfaces and rows
+	module + "/internal/runtime": {module + "/internal/claude"}, // the SandboxRuntime seam speaks the claude protocol
+}
+
 // runnerInternals may only be imported by the runner itself and cmd/ wiring.
 var runnerInternals = map[string][]string{
 	module + "/internal/claude": {
@@ -52,6 +63,7 @@ func TestSeamRules(t *testing.T) {
 	for pkg, imps := range imports {
 		isWiring := strings.HasPrefix(pkg, module+"/cmd/")
 		forbidden, isAdapter := adapters[pkg]
+		seamAllows, isSeam := seamAllowedImports[pkg]
 
 		for _, imp := range imps {
 			if !strings.HasPrefix(imp, module) {
@@ -69,8 +81,8 @@ func TestSeamRules(t *testing.T) {
 			if isAdapter && contains(forbidden, imp) {
 				t.Errorf("adapter %s imports %s — an adapter serves its seam, nothing else (ADR-0004)", pkg, imp)
 			}
-			if pkg == module+"/internal/store" {
-				t.Errorf("internal/store imports %s — the store seam must stay dependency-free", imp)
+			if isSeam && !contains(seamAllows, imp) {
+				t.Errorf("seam %s imports %s — a seam depends on nothing but its own protocol, and never on an implementation (ADR-0004)", pkg, imp)
 			}
 		}
 	}
