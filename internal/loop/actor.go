@@ -38,9 +38,9 @@ const (
 type Deps struct {
 	Store store.Store
 	Bus   *bus.Bus
-	// Runtime is the SandboxRuntime seam: where this loop's claude process
-	// runs (bare on the host, or a docker workstation).
-	Runtime         runtime.Runtime
+	// Runtimes holds the available SandboxRuntime implementations by kind;
+	// each loop runs on the one its runtime field names (ADR-0018).
+	Runtimes        map[string]runtime.Runtime
 	PartialMessages bool
 	Logger          *slog.Logger
 
@@ -52,6 +52,16 @@ type Deps struct {
 	OnReply func(l *store.Loop, resultText string, replyDMChats []int64)
 	// OnTurnDone reschedules the loop's next tick after any completed turn.
 	OnTurnDone func(l *store.Loop, trailer time.Duration, hasTrailer bool)
+}
+
+// runtimeFor picks the runtime a loop runs on. Unknown kinds return nil —
+// callers surface that as a workstation problem rather than crashing the
+// server (a DB written by a newer Spool could name a kind this build lacks).
+func (deps *Deps) runtimeFor(kind string) runtime.Runtime {
+	if kind == "" {
+		kind = store.RuntimeBare
+	}
+	return deps.Runtimes[kind]
 }
 
 type cmd struct {
@@ -229,12 +239,18 @@ func (actor *Actor) wake() {
 	}
 	spec := actor.wakeSpec(fresh)
 
-	if err := actor.deps.Runtime.Ensure(ctx, spec); err != nil {
+	loopRuntime := actor.deps.runtimeFor(actor.loop.Runtime)
+	if loopRuntime == nil {
+		actor.log().Error("workstation not ready", "err", fmt.Errorf("no %q runtime available", actor.loop.Runtime))
+		actor.crashBackoff()
+		return
+	}
+	if err := loopRuntime.Ensure(ctx, spec); err != nil {
 		actor.log().Error("workstation not ready", "err", err)
 		actor.crashBackoff()
 		return
 	}
-	proc, err := actor.deps.Runtime.Start(ctx, spec)
+	proc, err := loopRuntime.Start(ctx, spec)
 	if err != nil {
 		actor.log().Error("spawn failed", "err", err)
 		actor.crashBackoff()

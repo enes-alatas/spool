@@ -385,7 +385,7 @@ func (s *Server) handleDeleteLoop(w http.ResponseWriter, r *http.Request) {
 	if l == nil {
 		return
 	}
-	s.Manager.Remove(l.ID)
+	s.Manager.Remove(l.ID, l.Runtime)
 	if s.Telegram != nil {
 		s.Telegram.LoopRemoved(l.ID)
 	}

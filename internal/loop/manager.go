@@ -2,6 +2,7 @@ package loop
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -36,7 +37,9 @@ func (m *Manager) Boot(ctx context.Context) error {
 		return err
 	}
 	for _, l := range loops {
-		if err := m.deps.Runtime.Reap(ctx, l.ID, l.CurrentPID); err != nil {
+		if loopRuntime := m.deps.runtimeFor(l.Runtime); loopRuntime == nil {
+			m.log().Warn("reap orphan", "loop", l.Name, "err", fmt.Errorf("no %q runtime available", l.Runtime))
+		} else if err := loopRuntime.Reap(ctx, l.ID, l.CurrentPID); err != nil {
 			m.log().Warn("reap orphan", "loop", l.Name, "err", err)
 		}
 		if l.CurrentPID > 0 {
@@ -63,8 +66,10 @@ func (m *Manager) add(l *store.Loop) *Actor {
 func (m *Manager) Add(l *store.Loop) *Actor { return m.add(l) }
 
 // Remove shuts a loop's actor down and powers its workstation off (used on
-// delete: a workstation outlives sleeps and pauses, never its loop).
-func (m *Manager) Remove(id string) {
+// delete: a workstation outlives sleeps and pauses, never its loop). The
+// caller names the loop's runtime kind — the loop record may already be
+// deleted by the time this runs.
+func (m *Manager) Remove(id, runtimeKind string) {
 	m.mu.Lock()
 	actor := m.byID[id]
 	delete(m.byID, id)
@@ -77,7 +82,9 @@ func (m *Manager) Remove(id string) {
 	if actor != nil {
 		actor.Shutdown()
 	}
-	if err := m.deps.Runtime.PowerOff(context.Background(), id); err != nil {
+	if loopRuntime := m.deps.runtimeFor(runtimeKind); loopRuntime == nil {
+		m.log().Warn("workstation power off", "loop", id, "err", fmt.Errorf("no %q runtime available", runtimeKind))
+	} else if err := loopRuntime.PowerOff(context.Background(), id); err != nil {
 		m.log().Warn("workstation power off", "loop", id, "err", err)
 	}
 }
