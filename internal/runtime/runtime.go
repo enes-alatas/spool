@@ -1,0 +1,104 @@
+// Package runtime defines the SandboxRuntime seam (ADR-0004, ADR-0010,
+// ADR-0017): where a loop's claude process actually runs. Implementations
+// live in subpackages — bare (a host subprocess) today, docker (a long-lived
+// container and volume per loop) at L1 — and the runner talks only to this
+// interface.
+//
+// The seam is deliberately hub-free: it knows nothing of the store, the bus
+// or the API, and everything crossing it is plain data. That is what keeps
+// the service-era runner extraction a transport substitution rather than a
+// redesign (ADR-0004).
+package runtime
+
+import (
+	"context"
+
+	"github.com/enes-alatas/spool/internal/claude"
+)
+
+// Spec is everything a runtime needs for one wake of one loop. Plain data —
+// no live channels, no callbacks, no store types.
+type Spec struct {
+	LoopID   string
+	LoopName string // for workstation naming and diagnostics
+
+	// WorkDir is claude's working directory. It must be stable across wakes:
+	// sessions are keyed by cwd.
+	WorkDir string
+
+	Model  string
+	Effort string // ""|low|medium|high|xhigh|max
+
+	// Exactly one of SessionID (fresh session with a pre-chosen uuid) or
+	// ResumeID (continue an existing session) is set.
+	SessionID string
+	ResumeID  string
+
+	AppendSystemPrompt string
+	PartialMessages    bool
+
+	// Env carries per-loop credentials into the workstation — the claude
+	// OAuth token (#11) and secret env vars (#12). Never logged.
+	Env map[string]string
+}
+
+// Health is a workstation's liveness as the control room reports it.
+type Health struct {
+	Up     bool
+	Detail string // human-readable reason when Up is false
+}
+
+// Runtime owns a loop's workstation: it provisions it, execs claude inside
+// it with the runner holding that process's stdio, and watches it live.
+//
+// A workstation is long-lived (ADR-0017): it survives sleeps, orchestrator
+// restarts and pauses, and goes away only with the loop. A wake is Ensure
+// followed by Start; a sleep ends the Proc and nothing else.
+type Runtime interface {
+	// Kind names the implementation — "bare", "docker" — for logs and the
+	// control room's containment badge.
+	Kind() string
+
+	// Preflight verifies the runtime is usable and returns the claude version
+	// it will run. Called once at boot; a failure is fatal.
+	Preflight(ctx context.Context) (version string, err error)
+
+	// Ensure makes the loop's workstation exist and be ready to exec into.
+	// Idempotent and called before every wake, so a workstation that died
+	// while the loop slept comes back by itself.
+	Ensure(ctx context.Context, spec Spec) error
+
+	// Start execs claude inside the workstation and hands back the live
+	// process with its stdio attached.
+	Start(ctx context.Context, spec Spec) (Proc, error)
+
+	// Reap cleans up an execution left behind by a previous orchestrator run,
+	// identified by the pid the store recorded for it. Called during boot
+	// recovery, before the loop's first wake.
+	Reap(ctx context.Context, loopID string, pid int) error
+
+	// PowerOff destroys the workstation and everything persisted inside it.
+	// Called when a loop is deleted — never on sleep or pause.
+	PowerOff(ctx context.Context, loopID string) error
+
+	// Health reports whether the loop's workstation is up.
+	Health(ctx context.Context, loopID string) (Health, error)
+}
+
+// Proc is a claude process running inside a workstation, speaking
+// stream-json on stdio the runner owns.
+type Proc interface {
+	// Send writes one user message. Never call while a previous turn is in
+	// flight; turn serialization is the caller's job.
+	Send(text string) error
+	// Events yields decoded stdout lines; closed when stdout closes.
+	Events() <-chan claude.Event
+	// CloseStdin asks claude to finish up and exit cleanly.
+	CloseStdin() error
+	Kill() error
+	// Wait blocks until the process exits and returns its code and stderr tail.
+	Wait() claude.ExitInfo
+	// PID identifies the execution for boot-time reaping. Runtimes that have
+	// no host pid to give report 0.
+	PID() int
+}

@@ -13,6 +13,7 @@ import (
 
 	"github.com/enes-alatas/spool/internal/bus"
 	"github.com/enes-alatas/spool/internal/claude"
+	"github.com/enes-alatas/spool/internal/runtime"
 	"github.com/enes-alatas/spool/internal/store"
 )
 
@@ -35,9 +36,11 @@ const (
 
 // Deps wires an actor to the rest of the system without import cycles.
 type Deps struct {
-	Store           store.Store
-	Bus             *bus.Bus
-	ClaudeBin       string
+	Store store.Store
+	Bus   *bus.Bus
+	// Runtime is the SandboxRuntime seam: where this loop's claude process
+	// runs (bare on the host, or a docker workstation).
+	Runtime         runtime.Runtime
 	PartialMessages bool
 	Logger          *slog.Logger
 
@@ -69,7 +72,7 @@ type Actor struct {
 	loop         store.Loop
 	state        string
 	paused       bool
-	proc         claude.Proc
+	proc         runtime.Proc
 	procEvents   <-chan claude.Event
 	inbox        []Envelope
 	currentBatch []Envelope // in-flight batch, kept for redelivery on session loss
@@ -221,21 +224,17 @@ func (actor *Actor) pump() {
 func (actor *Actor) wake() {
 	ctx := context.Background()
 	fresh := actor.loop.CurrentSessionID == ""
-	var opts claude.Opts
 	if fresh {
-		sid := newUUID()
-		actor.loop.CurrentSessionID = sid
-		_ = actor.deps.Store.Sessions().Create(ctx, &store.Session{ID: sid, LoopID: actor.loop.ID, StartedAt: now()})
-		opts.SessionID = sid
-	} else {
-		opts.ResumeID = actor.loop.CurrentSessionID
+		actor.mintSession(ctx)
 	}
-	opts.Model = actor.loop.Model
-	opts.Effort = actor.loop.Effort
-	opts.AppendSystemPrompt = actor.deps.SystemPrompt(&actor.loop)
-	opts.PartialMessages = actor.deps.PartialMessages
+	spec := actor.wakeSpec(fresh)
 
-	proc, err := claude.Spawn(ctx, actor.deps.ClaudeBin, actor.loop.WorkspacePath, opts)
+	if err := actor.deps.Runtime.Ensure(ctx, spec); err != nil {
+		actor.log().Error("workstation not ready", "err", err)
+		actor.crashBackoff()
+		return
+	}
+	proc, err := actor.deps.Runtime.Start(ctx, spec)
 	if err != nil {
 		actor.log().Error("spawn failed", "err", err)
 		actor.crashBackoff()
@@ -253,6 +252,39 @@ func (actor *Actor) wake() {
 	if len(actor.inbox) > 0 {
 		actor.startTurn()
 	}
+}
+
+// mintSession gives the loop a fresh claude session id. The id is ours to
+// choose (claude accepts --session-id), so it is recorded before the process
+// exists and survives a spawn failure.
+func (actor *Actor) mintSession(ctx context.Context) {
+	sessionID := newUUID()
+	actor.loop.CurrentSessionID = sessionID
+	_ = actor.deps.Store.Sessions().Create(ctx, &store.Session{
+		ID:        sessionID,
+		LoopID:    actor.loop.ID,
+		StartedAt: now(),
+	})
+}
+
+// wakeSpec describes this wake to the runtime. Peers are resolved here rather
+// than cached, so every wake sees the current fleet in its system prompt.
+func (actor *Actor) wakeSpec(fresh bool) runtime.Spec {
+	spec := runtime.Spec{
+		LoopID:             actor.loop.ID,
+		LoopName:           actor.loop.Name,
+		WorkDir:            actor.loop.WorkspacePath,
+		Model:              actor.loop.Model,
+		Effort:             actor.loop.Effort,
+		AppendSystemPrompt: actor.deps.SystemPrompt(&actor.loop),
+		PartialMessages:    actor.deps.PartialMessages,
+	}
+	if fresh {
+		spec.SessionID = actor.loop.CurrentSessionID
+	} else {
+		spec.ResumeID = actor.loop.CurrentSessionID
+	}
+	return spec
 }
 
 // startTurn sends everything queued as one batched user message.
