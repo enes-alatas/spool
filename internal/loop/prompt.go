@@ -61,10 +61,12 @@ func SystemPrompt(l *store.Loop, peers []Peer) string {
 	}
 
 	b.WriteString("WORKSPACE\n")
-	switch l.WorkspaceMode {
-	case store.WorkspaceWorktree:
+	switch {
+	case l.Runtime == store.RuntimeDocker:
+		fmt.Fprintf(&b, "You work in %s inside your own persistent workstation: your home directory,\nanything you install, and processes you leave running survive across wakes.\n\n", l.WorkspacePath)
+	case l.WorkspaceMode == store.WorkspaceWorktree:
 		fmt.Fprintf(&b, "You work in %s, an isolated git worktree on branch %s.\nCommit your work to this branch; never switch branches.\n\n", l.WorkspacePath, l.Branch)
-	case store.WorkspaceDir:
+	case l.WorkspaceMode == store.WorkspaceDir:
 		fmt.Fprintf(&b, "You work in %s (not a git repo managed by Spool).\n\n", l.WorkspacePath)
 	default:
 		b.WriteString("You have no workspace; you are a conversational loop.\n\n")
