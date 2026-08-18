@@ -33,6 +33,9 @@ const (
 	PacingFixed = "fixed" // orchestrator interval; trailer optional
 	PacingSelf  = "self"  // the loop schedules itself via trailers; interval is a fallback
 
+	RuntimeBare   = "bare"   // host subprocess, uncontained (ADR-0017)
+	RuntimeDocker = "docker" // long-lived container + volume workstation
+
 	SenderPending = "pending"
 	SenderAllowed = "allowed"
 	SenderBlocked = "blocked"
@@ -45,10 +48,16 @@ type Loop struct {
 	Model   string `json:"model"`
 
 	WorkspaceMode string `json:"workspace_mode"` // none|dir|worktree
-	WorkspacePath string `json:"workspace_path"` // effective cwd for the claude process
+	WorkspacePath string `json:"workspace_path"` // effective cwd for the claude process, in the runtime's filesystem
 	RepoPath      string `json:"repo_path"`
 	WorktreePath  string `json:"worktree_path"`
 	Branch        string `json:"branch"`
+
+	// Workstation config (ADR-0017): set at creation, immutable after.
+	Runtime string  `json:"runtime"` // bare|docker
+	Image   string  `json:"image"`   // workstation image; "" = the server default
+	MemMB   int     `json:"mem_mb"`  // workstation memory limit
+	CPUs    float64 `json:"cpus"`    // workstation CPU limit
 
 	TickIntervalSec int    `json:"tick_interval_sec"`
 	MinWakeSec      int    `json:"min_wake_sec"`
