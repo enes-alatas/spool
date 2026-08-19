@@ -130,6 +130,89 @@ function ModelPanel({ loop }: { loop: LoopView }) {
   )
 }
 
+// SecretsPanel manages a loop's secret env vars: names are listed, values are
+// write-only — entered once, stored, never shown again.
+function SecretsPanel({ loop }: { loop: LoopView }) {
+  const qc = useQueryClient()
+  const { data: secrets } = useQuery({
+    queryKey: ['secrets', loop.name],
+    queryFn: () => api.loopSecrets(loop.name),
+  })
+  const [name, setName] = useState('')
+  const [value, setValue] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['secrets', loop.name] })
+
+  const add = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      await api.setLoopSecret(loop.name, name.trim(), value)
+      setName('')
+      setValue('')
+      invalidate()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const remove = async (key: string) => {
+    setError('')
+    try {
+      await api.deleteLoopSecret(loop.name, key)
+      invalidate()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  return (
+    <div className="side-panel">
+      <h3>Secrets</h3>
+      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8 }}>
+        Env vars injected into every workstation exec (a gh token, API keys). Values are write-only — stored,
+        never shown again. Applied from the next wake.
+      </div>
+      {(secrets ?? []).length === 0 ? (
+        <div style={{ fontSize: 13, color: 'var(--muted)' }}>No secrets set.</div>
+      ) : (
+        (secrets ?? []).map((s) => (
+          <div className="row" key={s.name} style={{ alignItems: 'center' }}>
+            <span className="k" style={{ fontFamily: 'var(--mono)' }}>
+              {s.name}
+            </span>
+            <button
+              className="btn danger"
+              onClick={() => remove(s.name)}
+              style={{ padding: '2px 8px' }}
+              title="Remove secret"
+            >
+              ✕
+            </button>
+          </div>
+        ))
+      )}
+      <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <input
+          placeholder="NAME"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          style={{ fontFamily: 'var(--mono)' }}
+        />
+        <input type="password" placeholder="value" value={value} onChange={(e) => setValue(e.target.value)} />
+        {error && <div className="form-error">{error}</div>}
+        <button className="btn primary" onClick={add} disabled={busy || !name.trim() || !value}>
+          {busy ? 'Saving…' : 'Add secret'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function LoopDetail() {
   const { name = '' } = useParams()
   const nav = useNavigate()
@@ -330,6 +413,8 @@ export default function LoopDetail() {
               </div>
             )}
           </div>
+
+          <SecretsPanel loop={loop} />
 
           <div className="side-panel">
             <h3>Recent turns</h3>
