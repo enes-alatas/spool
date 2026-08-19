@@ -108,6 +108,15 @@ agents — Claude sessions today, Spool's own loops from L2.*
 - Tests: table-driven, `t.Run` subtests; no test frameworks.
 - Time: unix milliseconds `int64` everywhere (DB, API, bus). IDs: TEXT UUIDs.
 
+## Comments
+
+- **Self-contained.** A comment must be meaningful on its own, without sending the
+  reader elsewhere to understand it. Don't cite issues, PRs, ADR section numbers,
+  or milestones — they drift as issues close and ADRs are renumbered, and the
+  comment is silently left behind. State the reason in place; cite an ADR by bare
+  number only when a decision genuinely can't be restated locally, never a
+  specific section. Review-enforced.
+
 ## Web
 
 - TypeScript strict; React function components; TanStack Query for server state; no
