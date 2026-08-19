@@ -41,6 +41,12 @@ const (
 	SenderBlocked = "blocked"
 )
 
+// SettingClaudeOAuthToken is the settings key holding the operator's
+// `claude setup-token` output. It is injected into every workstation exec as
+// CLAUDE_CODE_OAUTH_TOKEN so contained loops run under the operator's own
+// Claude login. Write-only through the API; never logged.
+const SettingClaudeOAuthToken = "claude_oauth_token"
+
 type Loop struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
