@@ -1,7 +1,7 @@
 GO ?= go
 export PATH := /usr/local/go/bin:$(PATH)
 
-.PHONY: build dev test itest lint fakeclaude vet e2e-m1 ui ui-dev clean
+.PHONY: build dev test itest lint fakeclaude vet e2e-m1 ui ui-dev image image-multiarch clean
 
 build: ui
 	$(GO) build -o bin/spool ./cmd/spool
@@ -21,6 +21,17 @@ itest: server fakeclaude
 		docker build -q -t spool-workstation-itest -f itest/testdata/workstation/Dockerfile bin >/dev/null; \
 	else echo "docker daemon unreachable — docker workstation itests will skip"; fi
 	$(GO) test -tags integration -count=1 -timeout 600s ./itest/... ./internal/runtime/docker/
+
+# The official spool-workstation image (ADR-0017 §7, #14). `image` builds the
+# host arch into the local daemon — the tag the docker runtime's preflight runs.
+# Registry publish is out of scope (L2+); `image-multiarch` verifies both arches
+# build (needs a one-time `docker buildx create --use`).
+image:
+	docker build -t spool-workstation -f docker/workstation/Dockerfile .
+
+image-multiarch:
+	docker buildx build --platform linux/amd64,linux/arm64 \
+	    -t spool-workstation -f docker/workstation/Dockerfile .
 
 # gofmt (fails on diff) + vet + golangci-lint when installed (CI pins it)
 lint:
