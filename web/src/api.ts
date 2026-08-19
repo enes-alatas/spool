@@ -89,6 +89,11 @@ export interface Settings {
   claude_token_set: boolean
 }
 
+export interface LoopSecret {
+  name: string
+  updated_at: number
+}
+
 export interface CreateLoopReq {
   name: string
   mission: string
@@ -177,4 +182,13 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ claude_oauth_token: token }),
     }),
+  // Secret values are write-only: the list returns names only.
+  loopSecrets: (name: string) => req<LoopSecret[]>(`/api/loops/${name}/secrets`),
+  setLoopSecret: (name: string, key: string, value: string) =>
+    req<LoopSecret[]>(`/api/loops/${name}/secrets/${key}`, {
+      method: 'PUT',
+      body: JSON.stringify({ value }),
+    }),
+  deleteLoopSecret: (name: string, key: string) =>
+    req<{ deleted: boolean }>(`/api/loops/${name}/secrets/${key}`, { method: 'DELETE' }),
 }
