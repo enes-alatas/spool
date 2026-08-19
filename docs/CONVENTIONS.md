@@ -53,7 +53,11 @@ agents — Claude sessions today, Spool's own loops from L2.*
 
 - **Lifecycle**: typed issue → branch `<type>/<topic>` off fresh `main` →
   implement → self-check → PR (template filled, issue linked) → stop for
-  review. Reviews may come from humans or agents; merging needs a human
+  review. **Fresh means synced**: `git fetch` and branch off `origin/main`,
+  never a local `main` you haven't updated — in an agent session the checkout
+  can lag the remote (a dependency PR may already be merged under new SHAs), and
+  branching on a stale base costs a needless rebase or, worse, duplicate-looking
+  commits. Reviews may come from humans or agents; merging needs a human
   approval (ADR-0008), and agents never merge their own work.
 - **Code is not precedent** — the docs of record are; where code and docs
   disagree, docs win. Improve opportunistically or rewrite behind the seams.

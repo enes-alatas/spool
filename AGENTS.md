@@ -32,9 +32,11 @@ humans and each other. This file orients you; it links, it doesn't duplicate.
 
 ## Working agreement (digest — ADR-0015)
 
-- Lifecycle: typed issue → branch off fresh `main` → implement → self-check →
-  PR → stop for review. Reviews may come from humans or agents; merging needs a
-  human approval.
+- Lifecycle: typed issue → `git fetch` and branch off fresh `main` → implement
+  → self-check → PR → stop for review. "Fresh" means synced with `origin/main`,
+  not a local `main` you assume is current — verify, since the checkout can lag
+  the remote. Reviews may come from humans or agents; merging needs a human
+  approval.
 - Issue-first for anything non-trivial (behavior, seams, deps, prompts, docs of
   record). Trivial mechanical fixes may skip it — the PR's Issue section says why.
 - Done means: `make lint && make test && make itest` green locally, docs of
