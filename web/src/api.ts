@@ -85,6 +85,10 @@ export interface TGSender {
   updated_at: number
 }
 
+export interface Settings {
+  claude_token_set: boolean
+}
+
 export interface CreateLoopReq {
   name: string
   mission: string
@@ -165,5 +169,12 @@ export const api = {
     req<{ path: string; exists: boolean; is_git: boolean }>('/api/workspace/inspect', {
       method: 'POST',
       body: JSON.stringify({ path }),
+    }),
+  settings: () => req<Settings>('/api/settings'),
+  // The token is write-only: send '' to clear it. Presence comes back in Settings.
+  setClaudeToken: (token: string) =>
+    req<Settings>('/api/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ claude_oauth_token: token }),
     }),
 }

@@ -8,6 +8,7 @@ import LoopDetail from './pages/LoopDetail'
 import NewLoop from './pages/NewLoop'
 import Activity from './pages/Activity'
 import Access from './pages/Access'
+import Settings from './pages/Settings'
 import './styles.css'
 
 const queryClient = new QueryClient({
@@ -26,6 +27,7 @@ const router = createBrowserRouter([
       { path: 'new', element: <NewLoop /> },
       { path: 'activity', element: <Activity /> },
       { path: 'access', element: <Access /> },
+      { path: 'settings', element: <Settings /> },
     ],
   },
 ])
