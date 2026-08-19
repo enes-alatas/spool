@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/enes-alatas/spool/internal/bus"
 	"github.com/enes-alatas/spool/internal/gitws"
@@ -77,6 +78,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/loops/{name}/turns", s.handleLoopTurns)
 	mux.HandleFunc("GET /api/loops/{name}/telegram/status", s.handleTelegramStatus)
 	mux.HandleFunc("GET /api/activity", s.handleActivity)
+	mux.HandleFunc("GET /api/settings", s.handleGetSettings)
+	mux.HandleFunc("PUT /api/settings", s.handlePutSettings)
 	mux.HandleFunc("GET /api/telegram/senders", s.handleListSenders)
 	mux.HandleFunc("POST /api/telegram/senders/{id}/allow", s.handleSenderStatus(store.SenderAllowed))
 	mux.HandleFunc("POST /api/telegram/senders/{id}/block", s.handleSenderStatus(store.SenderBlocked))
@@ -606,6 +609,93 @@ func (s *Server) handleTelegramStatus(w http.ResponseWriter, r *http.Request) {
 		status["bridge"] = s.Telegram.Status(l.ID)
 	}
 	writeJSON(w, 200, status)
+}
+
+// --- operator settings (ADR-0017: stored server-side, presence-only on read) ---
+
+// settingsView reports operator settings as presence, never values — the
+// Claude setup-token is write-only, like a loop's bot token.
+type settingsView struct {
+	ClaudeTokenSet bool `json:"claude_token_set"`
+}
+
+func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
+	token, err := s.claudeToken(r.Context())
+	if err != nil {
+		s.jsonErr(w, 500, "%v", err)
+		return
+	}
+	writeJSON(w, 200, settingsView{ClaudeTokenSet: token != ""})
+}
+
+type putSettingsReq struct {
+	// nil leaves the token unchanged; "" clears it; otherwise it is validated
+	// and stored.
+	ClaudeOAuthToken *string `json:"claude_oauth_token"`
+}
+
+func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
+	var req putSettingsReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.jsonErr(w, 400, "bad json: %v", err)
+		return
+	}
+	if req.ClaudeOAuthToken != nil {
+		token := ""
+		if strings.TrimSpace(*req.ClaudeOAuthToken) != "" {
+			validated, err := validateClaudeToken(*req.ClaudeOAuthToken)
+			if err != nil {
+				s.jsonErr(w, 400, "%v", err)
+				return
+			}
+			token = validated
+		}
+		if err := s.Store.Settings().Set(r.Context(), store.SettingClaudeOAuthToken, token); err != nil {
+			s.jsonErr(w, 500, "%v", err)
+			return
+		}
+	}
+	token, err := s.claudeToken(r.Context())
+	if err != nil {
+		s.jsonErr(w, 500, "%v", err)
+		return
+	}
+	writeJSON(w, 200, settingsView{ClaudeTokenSet: token != ""})
+}
+
+// claudeToken reads the stored setup-token, mapping an unset key to empty so
+// callers can treat "never configured" and "" alike.
+func (s *Server) claudeToken(ctx context.Context) (string, error) {
+	token, err := s.Store.Settings().Get(ctx, store.SettingClaudeOAuthToken)
+	if errors.Is(err, store.ErrNotFound) {
+		return "", nil
+	}
+	return token, err
+}
+
+// claudeTokenPrefix is the observed shape of `claude setup-token` output
+// (sk-ant-oat01-…); the sk-ant- namespace also covers API-key tokens, so the
+// check stays lenient. This is the line most likely to need updating if the
+// CLI changes its token format.
+const claudeTokenPrefix = "sk-ant-"
+
+// validateClaudeToken rejects obvious paste mistakes without a network call: a
+// setup-token is one non-empty run of characters, of plausible length, in the
+// sk-ant- namespace. It never proves the token authenticates — a well-formed
+// but wrong token surfaces later as the loop's workstation going down.
+func validateClaudeToken(raw string) (string, error) {
+	token := strings.TrimSpace(raw)
+	switch {
+	case token == "":
+		return "", fmt.Errorf("token is empty")
+	case strings.ContainsFunc(token, unicode.IsSpace):
+		return "", fmt.Errorf("token contains whitespace — check for a truncated or multi-line paste")
+	case len(token) < 20:
+		return "", fmt.Errorf("token is too short to be a setup-token")
+	case !strings.HasPrefix(token, claudeTokenPrefix):
+		return "", fmt.Errorf("token doesn't look like a setup-token (expected an %s… value from `claude setup-token`)", claudeTokenPrefix)
+	}
+	return token, nil
 }
 
 func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
