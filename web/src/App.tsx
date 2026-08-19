@@ -29,6 +29,9 @@ export default function App() {
           <NavLink to="/access" className="btn sm">
             Access
           </NavLink>
+          <NavLink to="/settings" className="btn sm">
+            Settings
+          </NavLink>
         </nav>
         <div className="meta">
           {health && <span>{health.claude_version}</span>}
