@@ -77,6 +77,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/loops/{name}/events", s.handleLoopEvents)
 	mux.HandleFunc("GET /api/loops/{name}/turns", s.handleLoopTurns)
 	mux.HandleFunc("GET /api/loops/{name}/telegram/status", s.handleTelegramStatus)
+	mux.HandleFunc("GET /api/loops/{name}/secrets", s.handleListSecrets)
+	mux.HandleFunc("PUT /api/loops/{name}/secrets/{key}", s.handlePutSecret)
+	mux.HandleFunc("DELETE /api/loops/{name}/secrets/{key}", s.handleDeleteSecret)
 	mux.HandleFunc("GET /api/activity", s.handleActivity)
 	mux.HandleFunc("GET /api/settings", s.handleGetSettings)
 	mux.HandleFunc("PUT /api/settings", s.handlePutSettings)
@@ -720,6 +723,133 @@ func (s *Server) handleListSenders(w http.ResponseWriter, r *http.Request) {
 		senders = []*store.TGSender{}
 	}
 	writeJSON(w, 200, senders)
+}
+
+// --- per-loop secrets ---
+
+// secretNameRe constrains a secret's name to a POSIX env identifier — what
+// both `docker --env KEY` and the shell require.
+var secretNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+const (
+	maxSecretNameLen  = 128
+	maxSecretValueLen = 16 * 1024
+	maxSecretsPerLoop = 64
+)
+
+// secretView reports a loop secret as name + timestamp only. The value is
+// write-only, the same rule the operator's setup-token and a bot token follow.
+type secretView struct {
+	Name      string `json:"name"`
+	UpdatedAt int64  `json:"updated_at"`
+}
+
+func (s *Server) secretViews(ctx context.Context, loopID string) ([]secretView, error) {
+	secrets, err := s.Store.LoopSecrets().List(ctx, loopID)
+	if err != nil {
+		return nil, err
+	}
+	views := make([]secretView, 0, len(secrets))
+	for _, sc := range secrets {
+		views = append(views, secretView{Name: sc.Name, UpdatedAt: sc.UpdatedAt})
+	}
+	return views, nil
+}
+
+func (s *Server) handleListSecrets(w http.ResponseWriter, r *http.Request) {
+	l := s.loopByName(w, r)
+	if l == nil {
+		return
+	}
+	views, err := s.secretViews(r.Context(), l.ID)
+	if err != nil {
+		s.jsonErr(w, 500, "%v", err)
+		return
+	}
+	writeJSON(w, 200, views)
+}
+
+type putSecretReq struct {
+	Value string `json:"value"`
+}
+
+func (s *Server) handlePutSecret(w http.ResponseWriter, r *http.Request) {
+	l := s.loopByName(w, r)
+	if l == nil {
+		return
+	}
+	name := r.PathValue("key")
+	if err := validateSecretName(name); err != nil {
+		s.jsonErr(w, 400, "%v", err)
+		return
+	}
+	var req putSecretReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.jsonErr(w, 400, "bad json: %v", err)
+		return
+	}
+	switch {
+	case req.Value == "":
+		s.jsonErr(w, 400, "secret value is empty (use DELETE to remove a secret)")
+		return
+	case len(req.Value) > maxSecretValueLen:
+		s.jsonErr(w, 400, "secret value too large (max %d bytes)", maxSecretValueLen)
+		return
+	}
+	existing, err := s.Store.LoopSecrets().List(r.Context(), l.ID)
+	if err != nil {
+		s.jsonErr(w, 500, "%v", err)
+		return
+	}
+	// The cap bounds distinct names; replacing an existing one never grows it.
+	if len(existing) >= maxSecretsPerLoop && !hasSecret(existing, name) {
+		s.jsonErr(w, 400, "too many secrets on this loop (max %d)", maxSecretsPerLoop)
+		return
+	}
+	if err := s.Store.LoopSecrets().Set(r.Context(), l.ID, name, req.Value, time.Now().UnixMilli()); err != nil {
+		s.jsonErr(w, 500, "%v", err)
+		return
+	}
+	views, err := s.secretViews(r.Context(), l.ID)
+	if err != nil {
+		s.jsonErr(w, 500, "%v", err)
+		return
+	}
+	writeJSON(w, 200, views)
+}
+
+func (s *Server) handleDeleteSecret(w http.ResponseWriter, r *http.Request) {
+	l := s.loopByName(w, r)
+	if l == nil {
+		return
+	}
+	// Delete is idempotent: removing an absent name still reports success.
+	if err := s.Store.LoopSecrets().Delete(r.Context(), l.ID, r.PathValue("key")); err != nil {
+		s.jsonErr(w, 500, "%v", err)
+		return
+	}
+	writeJSON(w, 200, map[string]bool{"deleted": true})
+}
+
+func validateSecretName(name string) error {
+	switch {
+	case name == "":
+		return fmt.Errorf("secret name is empty")
+	case len(name) > maxSecretNameLen:
+		return fmt.Errorf("secret name too long (max %d chars)", maxSecretNameLen)
+	case !secretNameRe.MatchString(name):
+		return fmt.Errorf("secret name must be a valid env var identifier ([A-Za-z_][A-Za-z0-9_]*)")
+	}
+	return nil
+}
+
+func hasSecret(secrets []*store.LoopSecret, name string) bool {
+	for _, sc := range secrets {
+		if sc.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) handleSenderStatus(status string) http.HandlerFunc {
