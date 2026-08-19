@@ -152,15 +152,16 @@ func (s *server) mustJSON(method, path string, body any, out any) {
 }
 
 type loopView struct {
-	ID            string  `json:"id"`
-	Name          string  `json:"name"`
-	State         string  `json:"state"`
-	Status        string  `json:"status"`
-	Runtime       string  `json:"runtime"`
-	WorkspacePath string  `json:"workspace_path"`
-	WorkstationUp bool    `json:"workstation_up"`
-	NextTickAt    int64   `json:"next_tick_at"`
-	CostToday     float64 `json:"cost_today_usd"`
+	ID                string  `json:"id"`
+	Name              string  `json:"name"`
+	State             string  `json:"state"`
+	Status            string  `json:"status"`
+	Runtime           string  `json:"runtime"`
+	WorkspacePath     string  `json:"workspace_path"`
+	WorkstationUp     bool    `json:"workstation_up"`
+	WorkstationDetail string  `json:"workstation_detail"`
+	NextTickAt        int64   `json:"next_tick_at"`
+	CostToday         float64 `json:"cost_today_usd"`
 }
 
 type turn struct {

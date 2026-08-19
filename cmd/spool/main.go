@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"log/slog"
 	"net/http"
@@ -97,6 +98,13 @@ func main() {
 		},
 		OnTurnDone: func(l *store.Loop, trailer time.Duration, has bool) {
 			scheduler.ScheduleAfterTurn(l, trailer, has)
+		},
+		ClaudeToken: func(ctx context.Context) (string, error) {
+			token, err := db.Settings().Get(ctx, store.SettingClaudeOAuthToken)
+			if errors.Is(err, store.ErrNotFound) {
+				return "", nil
+			}
+			return token, err
 		},
 	}
 	manager := loop.NewManager(deps)

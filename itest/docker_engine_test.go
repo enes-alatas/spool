@@ -11,17 +11,25 @@ import (
 
 const workstationTestImage = "spool-workstation-itest"
 
+// dockerTestToken is a well-formed placeholder setup-token: the workstation
+// runs fakeclaude, which ignores it, but the engine still requires one before
+// it will wake a contained loop.
+const dockerTestToken = "sk-ant-oat01-itesttoken000000000000000000"
+
 // startDockerServer spawns spool defaulting to docker workstations, on the
 // fakeclaude test image with a fast liveness poll; skips when the daemon or
-// image is unavailable.
+// image is unavailable. It configures the operator setup-token so contained
+// loops can wake.
 func startDockerServer(t *testing.T, dataDir string) *server {
 	t.Helper()
 	requireWorkstationImage(t)
-	return startServerArgs(t, dataDir,
+	s := startServerArgs(t, dataDir,
 		"--runtime", "docker",
 		"--workstation-image", workstationTestImage,
 		"--workstation-health-sec", "2",
 	)
+	s.mustJSON("PUT", "/api/settings", map[string]any{"claude_oauth_token": dockerTestToken}, nil)
+	return s
 }
 
 func requireWorkstationImage(t *testing.T) {
@@ -209,6 +217,42 @@ func TestMixedRuntimeFleet(t *testing.T) {
 	if err := exec.Command("docker", "inspect", "spool-ws-"+view.ID).Run(); err == nil {
 		t.Fatal("a bare loop must not get a workstation")
 	}
+}
+
+// TestDockerWorkstationNeedsClaudeToken pins the wake-time gate: with no
+// operator setup-token a contained loop refuses to wake — it surfaces the
+// reason and provisions nothing, rather than execing claude with no login —
+// and setting the token lets the same loop run.
+func TestDockerWorkstationNeedsClaudeToken(t *testing.T) {
+	s := startDockerServer(t, t.TempDir())
+	s.mustJSON("PUT", "/api/settings", map[string]any{"claude_oauth_token": ""}, nil)
+
+	s.createLoop("wsnotoken", nil)
+	loopID := s.loop("wsnotoken").ID
+	cleanupWorkstation(t, loopID)
+
+	s.message("wsnotoken", "should not run")
+	s.waitState("wsnotoken", "workstation_down", 30*time.Second)
+	view := s.loop("wsnotoken")
+	if view.WorkstationUp {
+		t.Fatalf("workstation reported up without a token: %+v", view)
+	}
+	if !strings.Contains(view.WorkstationDetail, "Claude token not configured") {
+		t.Fatalf("detail %q does not name the missing token", view.WorkstationDetail)
+	}
+	if err := exec.Command("docker", "inspect", "spool-ws-"+loopID).Run(); err == nil {
+		t.Fatal("a workstation was provisioned despite the missing token")
+	}
+	if done := s.completed("wsnotoken"); len(done) != 0 {
+		t.Fatalf("a turn ran without a token: %s", dump(done))
+	}
+
+	// once the operator sets the token, the same loop wakes and runs
+	s.mustJSON("PUT", "/api/settings", map[string]any{"claude_oauth_token": dockerTestToken}, nil)
+	s.message("wsnotoken", "now with a token")
+	s.waitTurn("wsnotoken", 60*time.Second, func(tr turn) bool {
+		return strings.Contains(tr.ResultText, "now with a token")
+	})
 }
 
 // TestCreateLoopRuntimeValidation needs no daemon: every case fails before
