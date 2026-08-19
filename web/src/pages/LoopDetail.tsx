@@ -192,6 +192,11 @@ export default function LoopDetail() {
             <span className="state-name">{loop.state}</span>
             {loop.runtime === 'bare' && <span className="containment-badge">uncontained</span>}
           </h1>
+          {!loop.workstation_up && (
+            <div className="ws-down-note">
+              Workstation down{loop.workstation_detail ? `: ${loop.workstation_detail}` : ''}
+            </div>
+          )}
           <Timeline entries={entries} liveText={liveText} />
           <div ref={bottomRef} />
           <div className="composer">

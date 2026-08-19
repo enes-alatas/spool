@@ -39,7 +39,14 @@ export default function Dashboard() {
       )}
       <div className="loop-grid">
         {(loops ?? []).map((l) => (
-          <Link key={l.id} to={`/loops/${l.name}`} className="loop-card">
+          <Link
+            key={l.id}
+            to={`/loops/${l.name}`}
+            className="loop-card"
+            title={
+              !l.workstation_up ? `Workstation down: ${l.workstation_detail || 'unreachable'}` : undefined
+            }
+          >
             <div className="head">
               <StateDot state={l.state} />
               <span className="loop-name">{l.name}</span>
