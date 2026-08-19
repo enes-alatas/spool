@@ -86,15 +86,16 @@ func (s *DB) migrate() error {
 
 func (s *DB) Close() error { return s.db.Close() }
 
-func (s *DB) Loops() store.LoopStore         { return loops{s.db} }
-func (s *DB) Sessions() store.SessionStore   { return sessions{s.db} }
-func (s *DB) Messages() store.MessageStore   { return messages{s.db} }
-func (s *DB) Turns() store.TurnStore         { return turns{s.db} }
-func (s *DB) Events() store.EventStore       { return events{s.db} }
-func (s *DB) Schedule() store.ScheduleStore  { return schedule{s.db} }
-func (s *DB) Inbox() store.InboxStore        { return inbox{s.db} }
-func (s *DB) Settings() store.SettingsStore  { return settings{s.db} }
-func (s *DB) TGSenders() store.TGSenderStore { return tgSenders{s.db} }
+func (s *DB) Loops() store.LoopStore             { return loops{s.db} }
+func (s *DB) LoopSecrets() store.LoopSecretStore { return loopSecrets{s.db} }
+func (s *DB) Sessions() store.SessionStore       { return sessions{s.db} }
+func (s *DB) Messages() store.MessageStore       { return messages{s.db} }
+func (s *DB) Turns() store.TurnStore             { return turns{s.db} }
+func (s *DB) Events() store.EventStore           { return events{s.db} }
+func (s *DB) Schedule() store.ScheduleStore      { return schedule{s.db} }
+func (s *DB) Inbox() store.InboxStore            { return inbox{s.db} }
+func (s *DB) Settings() store.SettingsStore      { return settings{s.db} }
+func (s *DB) TGSenders() store.TGSenderStore     { return tgSenders{s.db} }
 
 func toJSON(v []string) string {
 	if v == nil {
@@ -513,6 +514,40 @@ func (r settings) Set(ctx context.Context, key, value string) error {
 	_, err := r.db.ExecContext(ctx, `INSERT INTO settings (key, value) VALUES (?,?)
 		ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, value)
 	return err
+}
+
+// --- loop secrets ---
+
+type loopSecrets struct{ db *sql.DB }
+
+func (r loopSecrets) Set(ctx context.Context, loopID, name, value string, updatedAt int64) error {
+	_, err := r.db.ExecContext(ctx, `INSERT INTO loop_secrets (loop_id, name, value, updated_at) VALUES (?,?,?,?)
+		ON CONFLICT(loop_id, name) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`,
+		loopID, name, value, updatedAt)
+	return err
+}
+
+func (r loopSecrets) Delete(ctx context.Context, loopID, name string) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM loop_secrets WHERE loop_id=? AND name=?`, loopID, name)
+	return err
+}
+
+func (r loopSecrets) List(ctx context.Context, loopID string) ([]*store.LoopSecret, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT loop_id, name, value, updated_at
+		FROM loop_secrets WHERE loop_id=? ORDER BY name`, loopID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*store.LoopSecret
+	for rows.Next() {
+		var s store.LoopSecret
+		if err := rows.Scan(&s.LoopID, &s.Name, &s.Value, &s.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, &s)
+	}
+	return out, rows.Err()
 }
 
 // --- tg senders ---

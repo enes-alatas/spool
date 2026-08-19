@@ -83,6 +83,16 @@ type Loop struct {
 	UpdatedAt        int64  `json:"updated_at"`
 }
 
+// LoopSecret is one per-loop secret env var: a name/value pair injected into
+// every workstation exec as a tool credential. Value is write-only — json:"-"
+// keeps it out of every API response, the same rule a loop's bot token follows.
+type LoopSecret struct {
+	LoopID    string `json:"loop_id"`
+	Name      string `json:"name"`
+	Value     string `json:"-"`
+	UpdatedAt int64  `json:"updated_at"`
+}
+
 type Session struct {
 	ID        string `json:"id"` // the claude session uuid (minted by Spool)
 	LoopID    string `json:"loop_id"`
@@ -153,6 +163,17 @@ type LoopStore interface {
 	GetByName(ctx context.Context, name string) (*Loop, error)
 	List(ctx context.Context) ([]*Loop, error)
 	SetRuntime(ctx context.Context, id, sessionID string, pid int) error
+}
+
+// LoopSecretStore holds a loop's secret env vars. Callers pass the timestamp
+// (the store never reads the clock), matching the rest of the interfaces.
+type LoopSecretStore interface {
+	// Set upserts one secret by (loopID, name).
+	Set(ctx context.Context, loopID, name, value string, updatedAt int64) error
+	Delete(ctx context.Context, loopID, name string) error
+	// List returns a loop's secrets name-sorted, values included: the injector
+	// needs the values; the API maps these rows to names only.
+	List(ctx context.Context, loopID string) ([]*LoopSecret, error)
 }
 
 type SessionStore interface {
@@ -231,6 +252,7 @@ type TGSenderStore interface {
 
 type Store interface {
 	Loops() LoopStore
+	LoopSecrets() LoopSecretStore
 	Sessions() SessionStore
 	Messages() MessageStore
 	Turns() TurnStore
