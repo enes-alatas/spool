@@ -65,6 +65,10 @@ type Deps struct {
 	OnReply func(l *store.Loop, resultText string, replyDMChats []int64)
 	// OnTurnDone reschedules the loop's next tick after any completed turn.
 	OnTurnDone func(l *store.Loop, trailer time.Duration, hasTrailer bool)
+	// ClaudeToken returns the operator's stored setup-token, or "" when none is
+	// configured. Workstation (contained) runtimes inject it as
+	// CLAUDE_CODE_OAUTH_TOKEN; bare loops use the host login and never call it.
+	ClaudeToken func(ctx context.Context) (string, error)
 }
 
 // runtimeFor picks the runtime a loop runs on. Unknown kinds return nil —
@@ -267,6 +271,21 @@ func (actor *Actor) wake() {
 		actor.setWorkstationDown(fmt.Sprintf("no %q runtime available", actor.loop.Runtime))
 		actor.crashBackoff()
 		return
+	}
+	if needsClaudeToken(loopRuntime) {
+		token, err := actor.claudeToken(ctx)
+		switch {
+		case err != nil:
+			actor.log().Error("workstation not ready", "err", err)
+			actor.setWorkstationDown(err.Error())
+			actor.crashBackoff()
+			return
+		case token == "":
+			actor.setWorkstationDown(noClaudeTokenDetail)
+			actor.crashBackoff()
+			return
+		}
+		spec.Env = map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": token}
 	}
 	if err := loopRuntime.Ensure(ctx, spec); err != nil {
 		actor.log().Error("workstation not ready", "err", err)
@@ -556,6 +575,25 @@ func (actor *Actor) handleShutdown() {
 
 // --- workstation liveness (ADR-0017: a seam duty, surfaced as a state) ---
 
+// noClaudeTokenDetail is the workstation-down reason shown when a contained
+// loop has no operator setup-token to run claude under.
+const noClaudeTokenDetail = "Claude token not configured. Please add a setup-token in Settings"
+
+// needsClaudeToken reports whether a runtime is a contained workstation that
+// must carry the operator's setup-token. Bare loops use the host login.
+func needsClaudeToken(loopRuntime runtime.Runtime) bool {
+	return loopRuntime.Kind() != store.RuntimeBare
+}
+
+// claudeToken reads the operator's stored setup-token, treating a missing
+// wiring as "unconfigured" rather than panicking a loop's goroutine.
+func (actor *Actor) claudeToken(ctx context.Context) (string, error) {
+	if actor.deps.ClaudeToken == nil {
+		return "", nil
+	}
+	return actor.deps.ClaudeToken(ctx)
+}
+
 // checkWorkstation polls the loop's workstation and maintains the
 // workstation_down overlay. Bare loops answer statically up, so the uniform
 // poll costs them nothing.
@@ -564,6 +602,19 @@ func (actor *Actor) checkWorkstation() {
 	if loopRuntime == nil {
 		actor.setWorkstationDown(fmt.Sprintf("no %q runtime available", actor.loop.Runtime))
 		return
+	}
+	if needsClaudeToken(loopRuntime) {
+		token, err := actor.claudeToken(context.Background())
+		switch {
+		case err != nil:
+			actor.setWorkstationDown(err.Error())
+			return
+		case token == "":
+			// A contained loop can't run without the operator token; say so
+			// here too, so the poll doesn't overwrite it with "not found".
+			actor.setWorkstationDown(noClaudeTokenDetail)
+			return
+		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), healthCheckTimeout)
 	defer cancel()
