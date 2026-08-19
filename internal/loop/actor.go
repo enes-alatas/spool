@@ -272,6 +272,7 @@ func (actor *Actor) wake() {
 		actor.crashBackoff()
 		return
 	}
+	system := map[string]string{}
 	if needsClaudeToken(loopRuntime) {
 		token, err := actor.claudeToken(ctx)
 		switch {
@@ -285,8 +286,19 @@ func (actor *Actor) wake() {
 			actor.crashBackoff()
 			return
 		}
-		spec.Env = map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": token}
+		system["CLAUDE_CODE_OAUTH_TOKEN"] = token
 	}
+	// Per-loop secrets are read fresh each wake, so an edit lands on the next
+	// wake. A read failure fails closed: a loop running without its expected
+	// credentials could act on the wrong ones.
+	secrets, err := actor.deps.Store.LoopSecrets().List(ctx, actor.loop.ID)
+	if err != nil {
+		actor.log().Error("workstation not ready", "err", err)
+		actor.setWorkstationDown(err.Error())
+		actor.crashBackoff()
+		return
+	}
+	spec.Env = buildExecEnv(system, secrets)
 	if err := loopRuntime.Ensure(ctx, spec); err != nil {
 		actor.log().Error("workstation not ready", "err", err)
 		actor.setWorkstationDown(err.Error())
@@ -583,6 +595,25 @@ const noClaudeTokenDetail = "Claude token not configured. Please add a setup-tok
 // must carry the operator's setup-token. Bare loops use the host login.
 func needsClaudeToken(loopRuntime runtime.Runtime) bool {
 	return loopRuntime.Kind() != store.RuntimeBare
+}
+
+// buildExecEnv assembles a wake's env: the system-injected vars first, then the
+// loop's own secrets overlaid on top. Secrets are applied last on purpose — a
+// loop secret wins a name collision with a system var, the operator's
+// deliberate escape hatch (a per-loop CLAUDE_CODE_OAUTH_TOKEN, say). Returns
+// nil when there is nothing to inject, so spec.Env stays unset.
+func buildExecEnv(system map[string]string, secrets []*store.LoopSecret) map[string]string {
+	if len(system) == 0 && len(secrets) == 0 {
+		return nil
+	}
+	env := make(map[string]string, len(system)+len(secrets))
+	for k, v := range system {
+		env[k] = v
+	}
+	for _, s := range secrets {
+		env[s.Name] = s.Value
+	}
+	return env
 }
 
 // claudeToken reads the operator's stored setup-token, treating a missing
