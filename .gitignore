@@ -3,6 +3,7 @@ bin/
 web/node_modules/
 web/dist/*
 !web/dist/.gitkeep
+*.tsbuildinfo
 *.db
 *.db-wal
 *.db-shm
