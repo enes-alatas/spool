@@ -118,3 +118,10 @@ introduced). Migrate opportunistically, not big-bang.
 - **Sandbox posture is per-edition** (ADR-0017): the local edition defaults to
   `docker` with `bare` as an explicit, uncontained-badged fallback; the hosted
   service is sandbox-mandatory — `bare` is absent from its configuration.
+- **GitHub is not a surface** (ADR-0019): loops do GitHub work — branch, PR,
+  review, issues — themselves with `git`/`gh` inside the workstation. Spool models
+  the `connection` (the injected credential) and nothing downstream of it: no PR
+  or issue model, no GitHub API client, no PR mirroring to chat or the control
+  room. Loops coordinate GitHub work with each other over `@mention` routing, not
+  any GitHub-aware wiring. Don't reintroduce a GitHub surface; the same holds for
+  any other CLI-driven tool a connection injects.

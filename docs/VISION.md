@@ -43,7 +43,7 @@ who is responsible for it.
 | Decision | Choice |
 |---|---|
 | Milestone style | **Always-usable ladder.** Every milestone ends with a shippable product used daily. Dogfooding grows with capability: as soon as loops can safely contribute, Spool loops help build Spool, with a human reviewing every PR. |
-| First pillar | **Sandboxes + GitHub before Slack, Slack before the hosted service.** Containment makes `bypassPermissions` genuinely safe and unlocks dogfooding on the Spool repo itself. |
+| First pillar | **Sandboxes + GitHub access before Slack, Slack before the hosted service.** Containment makes `bypassPermissions` genuinely safe and unlocks dogfooding on the Spool repo itself; GitHub is reached as a per-loop connection, not built as a product surface (ADR-0019). |
 
 ## The milestone ladder
 
@@ -54,9 +54,9 @@ mention routing, Telegram, worktrees, allowlist, self-pacing, model/effort selec
 |---|---|---|---|
 | **L0** | Foundation | Repo under discipline: initial commit, CI, test gates, conventions, the agentic dev workflow itself defined (how loops + humans collaborate on this repo). `mvp.spec` retired. | The project can absorb contributions — human or loop — without chaos. |
 | **L1** | Workstations | Per-loop persistent Docker sandbox: `claude` runs inside, workspace/creds/tools live inside, resource limits, survive restarts. | `bypassPermissions` is safe. A loop can be pointed at a real repo without fear. |
-| **L2** | GitHub flow | Workspace-level GitHub connection; loops do branch → PR → respond to review; PR links surface in chat/control room. **Dogfooding begins: the first Spool loop contributes reviewed PRs to Spool.** | A loop can deliver real engineering work through the same door humans use. |
+| **L2** | Connections | Org-level tool credentials (GitHub first) attached per loop and injected into the workstation. A loop uses `git`/`gh` itself to branch, open PRs, review, and file issues — Spool provides the credential and the messaging fabric, **not** PR/issue orchestration or a GitHub surface (that stays the loop's own work; see ADR-0019). **Dogfooding begins: the first Spool loops contribute reviewed PRs to Spool.** | A loop can deliver real engineering work through the same door humans use, with no GitHub-specific product surface. |
 | **L3** | Slack | Chat-surface abstraction (Telegram becomes an adapter). Per-loop Slack apps via generated manifests: DMs, channels, real mentions, opt-in follow, mirrors. Access model mapped to Slack workspace membership. | Loops are coworkers in the team's actual Slack. |
-| **L4** | Catalog | Workspace tool catalog: MCP servers + CLI credentials connected once, attached per loop, injected into sandboxes. | A loop can be wired to company tools in minutes, revocably. |
+| **L4** | Catalog | Full org tool catalog: MCP servers + CLI credentials connected once, attached per loop, injected into sandboxes — generalizing the L2 connection mechanism to many tools with a management UI. | A loop can be wired to company tools in minutes, revocably. |
 | **L5** | Team | Owners, admins, members; web UI auth (required once multi-user). | Two humans can share a fleet with clear accountability. |
 | **L6** | OSS 1.0 | Public Apache-2.0 release of the local edition: docs, quickstart, packaging. | A stranger can go from `git clone` to a Slack coworker in under an hour. |
 | **L7** | Service | Multi-tenant control plane: customer workspaces, Claude-login onboarding, hosted sandbox fleet, billing. Closed layer on the open core. | A team signs up and gets coworkers without operating anything. |
