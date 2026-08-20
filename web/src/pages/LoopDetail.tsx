@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
-import { api, LoopView } from '../api'
+import { api, LoopView, Turn } from '../api'
 import { MODEL_OPTIONS, EFFORT_OPTIONS, PACING_OPTIONS } from '../options'
 import { useStream } from '../stream'
 import { toEntries, extractDelta } from '../timeline'
@@ -125,6 +125,56 @@ function ModelPanel({ loop }: { loop: LoopView }) {
       </select>
       <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 8 }}>
         Changes apply from the next wake.
+      </div>
+    </div>
+  )
+}
+
+// Tokens a turn carried into the model: what it sent plus what it reloaded
+// from cache. The closest measure of context occupancy the result event gives
+// us — sampled at the turn's start, not live.
+function contextTokens(turn: Turn): number {
+  return turn.input_tokens + turn.cache_read_tokens
+}
+
+function formatTokens(n: number): string {
+  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
+}
+
+// ContextPanel plots context occupancy across recent turns so a loop climbing
+// toward its window is visible before it overflows. Bars are relative to the
+// largest turn in view — the model's actual limit is not on the loop response
+// yet, so there is no honest percentage to show.
+function ContextPanel({ turns }: { turns: Turn[] }) {
+  const finished = turns.filter((turn) => turn.ended_at > 0).reverse()
+  if (finished.length === 0) return null
+
+  const peak = Math.max(...finished.map(contextTokens))
+  const latest = contextTokens(finished[finished.length - 1])
+
+  return (
+    <div className="side-panel">
+      <h3>Context</h3>
+      <div className="row">
+        <span className="k">last turn</span>
+        <span className="v">{formatTokens(latest)} tokens</span>
+      </div>
+      <div className="ctx-trend">
+        {finished.map((turn) => (
+          <div
+            key={turn.id}
+            className="ctx-bar"
+            style={{ height: `${peak > 0 ? (contextTokens(turn) / peak) * 100 : 0}%` }}
+            title={`${new Date(turn.started_at).toLocaleTimeString()} — ${formatTokens(
+              contextTokens(turn),
+            )} tokens (${formatTokens(turn.input_tokens)} sent, ${formatTokens(
+              turn.cache_read_tokens,
+            )} cached)`}
+          />
+        ))}
+      </div>
+      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 8 }}>
+        Sent plus cache-read tokens per turn, oldest first. Bars are relative to the tallest turn shown.
       </div>
     </div>
   )
@@ -402,6 +452,8 @@ export default function LoopDetail() {
               </button>
             </div>
           </div>
+
+          <ContextPanel turns={turns ?? []} />
 
           <WorkstationPanel loop={loop} />
 
