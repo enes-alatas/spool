@@ -130,6 +130,46 @@ function ModelPanel({ loop }: { loop: LoopView }) {
   )
 }
 
+// WorkstationPanel shows where a loop's claude actually runs (ADR-0017) — the
+// container or the bare host — and whether that machine is reachable right now.
+function WorkstationPanel({ loop }: { loop: LoopView }) {
+  const contained = loop.runtime === 'docker'
+  return (
+    <div className="side-panel">
+      <h3>Workstation</h3>
+      <div className="row" style={{ alignItems: 'center' }}>
+        <span className="k">status</span>
+        <span className="v" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span className={`state-dot ${loop.workstation_up ? 'state-idle' : 'state-workstation_down'}`} />
+          {loop.workstation_up ? 'up' : 'down'}
+        </span>
+      </div>
+      <div className="row">
+        <span className="k">runtime</span>
+        <span className="v">{loop.runtime}</span>
+      </div>
+      {contained ? (
+        <>
+          <div className="row">
+            <span className="k">image</span>
+            <span className="v">{loop.image || 'server default'}</span>
+          </div>
+          <div className="row">
+            <span className="k">resources</span>
+            <span className="v">
+              {loop.mem_mb} MB · {loop.cpus} cpu
+            </span>
+          </div>
+        </>
+      ) : (
+        <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 8 }}>
+          Uncontained — claude runs directly on the host, with the operator's own files in reach.
+        </div>
+      )}
+    </div>
+  )
+}
+
 // SecretsPanel manages a loop's secret env vars: names are listed, values are
 // write-only — entered once, stored, never shown again.
 function SecretsPanel({ loop }: { loop: LoopView }) {
@@ -362,6 +402,8 @@ export default function LoopDetail() {
               </button>
             </div>
           </div>
+
+          <WorkstationPanel loop={loop} />
 
           <ModelPanel loop={loop} />
 
