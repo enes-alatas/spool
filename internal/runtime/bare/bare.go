@@ -5,7 +5,8 @@
 // service does not ship it at all.
 //
 // There is no workstation to provision or destroy — the host is the
-// workstation — so Ensure, PowerOff and Health are trivial.
+// workstation — so Ensure, Destroy and Health are trivial, and the power
+// controls do not apply at all.
 package bare
 
 import (
@@ -48,10 +49,19 @@ func (host *Runtime) Preflight(ctx context.Context) (string, error) {
 // Ensure is a no-op: the host is always provisioned.
 func (host *Runtime) Ensure(ctx context.Context, spec runtime.Spec) error { return nil }
 
-// PowerOff is a no-op: nothing outside the process belongs to us. A loop's
+// Halt has nothing to stop: halting the host is not ours to do.
+func (host *Runtime) Halt(ctx context.Context, loopID string) error {
+	return runtime.ErrUnsupported
+}
+
+// Destroy is a no-op: nothing outside the process belongs to us. A loop's
 // workspace directory is the operator's, and its worktree is removed
 // explicitly on delete, not here.
-func (host *Runtime) PowerOff(ctx context.Context, loopID string) error { return nil }
+func (host *Runtime) Destroy(ctx context.Context, loopID string) error { return nil }
+
+// HasWorkstation is false: the host is the workstation, so there is nothing
+// the operator's power controls could halt or rebuild.
+func (host *Runtime) HasWorkstation() bool { return false }
 
 // Health is always up: if the orchestrator is running, so is the host.
 func (host *Runtime) Health(ctx context.Context, loopID string) (runtime.Health, error) {

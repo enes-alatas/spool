@@ -84,7 +84,7 @@ func (m *Manager) Remove(id, runtimeKind string) {
 	}
 	if loopRuntime := m.deps.runtimeFor(runtimeKind); loopRuntime == nil {
 		m.log().Warn("workstation power off", "loop", id, "err", fmt.Errorf("no %q runtime available", runtimeKind))
-	} else if err := loopRuntime.PowerOff(context.Background(), id); err != nil {
+	} else if err := loopRuntime.Destroy(context.Background(), id); err != nil {
 		m.log().Warn("workstation power off", "loop", id, "err", err)
 	}
 }

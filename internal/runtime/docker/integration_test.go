@@ -41,7 +41,7 @@ func randomHex(bytes int) string {
 	return hex.EncodeToString(buf)
 }
 
-// testSpec provisions under a unique loop id and registers PowerOff cleanup
+// testSpec provisions under a unique loop id and registers Destroy cleanup
 // so failed tests don't leak containers.
 func testSpec(t *testing.T, rt *Runtime) runtime.Spec {
 	t.Helper()
@@ -49,7 +49,7 @@ func testSpec(t *testing.T, rt *Runtime) runtime.Spec {
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
-		_ = rt.PowerOff(ctx, loopID)
+		_ = rt.Destroy(ctx, loopID)
 	})
 	return runtime.Spec{
 		LoopID:    loopID,
@@ -312,23 +312,23 @@ func assertNoClaudeInside(t *testing.T, container string) {
 	t.Fatalf("claude still running inside %s", container)
 }
 
-func TestPowerOffRemovesContainerAndVolume(t *testing.T) {
+func TestDestroyRemovesContainerAndVolume(t *testing.T) {
 	rt := requireDocker(t)
 	spec := testSpec(t, rt)
 	mustEnsure(t, rt, spec)
 
-	if err := rt.PowerOff(context.Background(), spec.LoopID); err != nil {
-		t.Fatalf("PowerOff: %v", err)
+	if err := rt.Destroy(context.Background(), spec.LoopID); err != nil {
+		t.Fatalf("Destroy: %v", err)
 	}
 	name := containerName(spec.LoopID)
 	if _, err := dockerOut(t, "inspect", name); err == nil {
-		t.Fatal("container survived PowerOff")
+		t.Fatal("container survived Destroy")
 	}
 	if _, err := dockerOut(t, "volume", "inspect", name); err == nil {
-		t.Fatal("volume survived PowerOff")
+		t.Fatal("volume survived Destroy")
 	}
-	if err := rt.PowerOff(context.Background(), spec.LoopID); err != nil {
-		t.Fatalf("second PowerOff must be a no-op: %v", err)
+	if err := rt.Destroy(context.Background(), spec.LoopID); err != nil {
+		t.Fatalf("second Destroy must be a no-op: %v", err)
 	}
 }
 
@@ -366,4 +366,31 @@ func awaitHealth(t *testing.T, rt *Runtime, loopID string, wantUp bool, wantDeta
 		time.Sleep(300 * time.Millisecond)
 	}
 	t.Fatalf("health never reached up=%v detail~%q; last %+v", wantUp, wantDetail, last)
+}
+
+// Halt stops the workstation and keeps it: the container is still there,
+// stopped, with its volume intact, and Ensure brings it back.
+func TestHaltStopsWithoutDestroying(t *testing.T) {
+	rt := requireDocker(t)
+	spec := testSpec(t, rt)
+	mustEnsure(t, rt, spec)
+	name := containerName(spec.LoopID)
+
+	if err := rt.Halt(context.Background(), spec.LoopID); err != nil {
+		t.Fatalf("Halt: %v", err)
+	}
+	if state, err := dockerOut(t, "inspect", "--format", "{{.State.Running}}", name); err != nil || strings.TrimSpace(state) != "false" {
+		t.Fatalf("container running after Halt: %q %v", state, err)
+	}
+	if _, err := dockerOut(t, "volume", "inspect", name); err != nil {
+		t.Fatalf("volume gone after Halt: %v", err)
+	}
+
+	mustEnsure(t, rt, spec)
+	if state, err := dockerOut(t, "inspect", "--format", "{{.State.Running}}", name); err != nil || strings.TrimSpace(state) != "true" {
+		t.Fatalf("container not running after Ensure: %q %v", state, err)
+	}
+	if err := rt.Halt(context.Background(), "itest-absent-"+randomHex(4)); err != nil {
+		t.Fatalf("Halt of a workstation that isn't there must be a no-op: %v", err)
+	}
 }
