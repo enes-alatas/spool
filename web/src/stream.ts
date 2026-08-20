@@ -10,15 +10,28 @@ export interface BusItem {
 }
 
 // useStream opens one EventSource and invokes onItem for every bus item.
-// Reconnects automatically (EventSource default behavior).
-export function useStream(url: string, onItem: (item: BusItem) => void) {
+// Reconnects automatically (EventSource default behavior); onOpen fires on
+// every successful connect, so callers holding state that a frame was meant
+// to clear can reset it — frames sent while we were disconnected are gone.
+export function useStream(url: string, onItem: (item: BusItem) => void, onOpen?: () => void) {
   const handler = useRef(onItem)
+  const opened = useRef(onOpen)
   useEffect(() => {
     handler.current = onItem
+    opened.current = onOpen
   })
   useEffect(() => {
     const es = new EventSource(url)
-    const kinds = ['message', 'loop_status', 'agent_event', 'turn_result', 'schedule', 'access']
+    es.onopen = () => opened.current?.()
+    const kinds = [
+      'message',
+      'loop_status',
+      'agent_event',
+      'turn_result',
+      'schedule',
+      'access',
+      'workstation',
+    ]
     const listeners = kinds.map((kind) => {
       const fn = (e: MessageEvent) => {
         try {
@@ -45,6 +58,7 @@ export function useGlobalStream() {
       case 'loop_status':
       case 'schedule':
       case 'turn_result':
+      case 'workstation':
         qc.invalidateQueries({ queryKey: ['loops'] })
         break
       case 'message':
