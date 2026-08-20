@@ -72,6 +72,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/loops/{name}/resume", s.handleResume)
 	mux.HandleFunc("POST /api/loops/{name}/wake", s.handleWake)
 	mux.HandleFunc("POST /api/loops/{name}/kill", s.handleKill)
+	mux.HandleFunc("POST /api/loops/{name}/workstation/restart", s.handlePower(loop.PowerRestart))
+	mux.HandleFunc("POST /api/loops/{name}/workstation/poweroff", s.handlePower(loop.PowerOff))
+	mux.HandleFunc("POST /api/loops/{name}/workstation/poweron", s.handlePower(loop.PowerOn))
+	mux.HandleFunc("POST /api/loops/{name}/workstation/recreate", s.handlePower(loop.PowerRecreate))
 	mux.HandleFunc("POST /api/loops/{name}/message", s.handleLoopMessage)
 	mux.HandleFunc("POST /api/messages", s.handleBroadcastMessage)
 	mux.HandleFunc("GET /api/loops/{name}/events", s.handleLoopEvents)
@@ -105,6 +109,21 @@ func (s *Server) jsonErr(w http.ResponseWriter, code int, msg string, args ...an
 	json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf(msg, args...)})
 }
 
+// jsonErrCode is jsonErr plus a stable machine-readable reason, for the
+// cases where one status covers outcomes a client must tell apart. The
+// prose stays the human's, the code is the client's.
+func (s *Server) jsonErrCode(w http.ResponseWriter, status int, reason, msg string, args ...any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf(msg, args...), "code": reason})
+}
+
+// Reasons behind an otherwise ambiguous status, sent as "code".
+const (
+	codeLoopNotRunning = "loop_not_running"
+	codeNoWorkstation  = "no_workstation"
+)
+
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
@@ -133,6 +152,9 @@ type loopView struct {
 	HasTGToken        bool    `json:"has_tg_token"`
 	WorkstationUp     bool    `json:"workstation_up"`
 	WorkstationDetail string  `json:"workstation_detail,omitempty"`
+	// DownReason distinguishes a workstation the operator switched off from
+	// one that died; empty while it is up (ADR-0021).
+	DownReason string `json:"down_reason"`
 }
 
 func (s *Server) view(ctx context.Context, l *store.Loop) *loopView {
@@ -142,6 +164,7 @@ func (s *Server) view(ctx context.Context, l *store.Loop) *loopView {
 		health := actor.WorkstationHealth()
 		v.WorkstationUp = health.Up
 		v.WorkstationDetail = health.Detail
+		v.DownReason = actor.DownReason()
 	}
 	if e, err := s.Store.Schedule().Get(ctx, l.ID); err == nil {
 		v.NextTickAt = e.NextTickAt
@@ -481,6 +504,38 @@ func (s *Server) handlePause(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Sched.Suspend(l.ID)
 	writeJSON(w, 200, s.view(r.Context(), l))
+}
+
+// handlePower runs one of the operator's power controls on a loop's
+// workstation and answers with the loop as it stands afterwards — the call
+// is synchronous, so the control room can render the result rather than
+// wait for the stream to correct it (ADR-0021).
+func (s *Server) handlePower(verb string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		l := s.loopByName(w, r)
+		if l == nil {
+			return
+		}
+		actor, ok := s.Manager.Get(l.ID)
+		if !ok {
+			s.jsonErrCode(w, http.StatusConflict, codeLoopNotRunning,
+				"loop %s is not running", l.Name)
+			return
+		}
+		switch err := actor.Power(verb); {
+		case errors.Is(err, runtime.ErrUnsupported):
+			s.jsonErrCode(w, http.StatusConflict, codeNoWorkstation,
+				"loop %s runs on the %s runtime, which has no workstation to %s", l.Name, l.Runtime, verb)
+			return
+		case err != nil:
+			s.jsonErr(w, http.StatusInternalServerError, "%s: %v", verb, err)
+			return
+		}
+		if fresh, err := s.Store.Loops().Get(r.Context(), l.ID); err == nil {
+			l = fresh
+		}
+		writeJSON(w, 200, s.view(r.Context(), l))
+	}
 }
 
 func (s *Server) handleResume(w http.ResponseWriter, r *http.Request) {

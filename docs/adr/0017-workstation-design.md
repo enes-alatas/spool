@@ -62,6 +62,10 @@ and later on the hosted service.
 
 ## Consequences
 
+- **Amended by ADR-0021:** "a workstation dies only with the loop" describes
+  the *engine's* behavior — no sleep, pause or restart takes one away. The
+  operator can now halt or rebuild one deliberately, through the power
+  controls, and that is the only other way one stops.
 - `bypassPermissions` becomes defensible: the wall is the container, not a
   directory convention. Dogfooding at L2 gets its prerequisite.
 - The workspace concept narrows: for sandboxed loops the workstation *is* the

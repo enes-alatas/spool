@@ -26,7 +26,7 @@ scale arrives via runner extraction (ADR-0004), not by inflating this envelope.
 | Idle RSS at full envelope (orchestrator only) | < 100 MB |
 | Wake overhead: inbound message → stdin write (excl. claude startup) | p95 < 500 ms |
 | Boot recovery at full envelope (orphans, dangling turns, overdue ticks) | < 3 s |
-| Control-room API response (localhost) | p95 < 100 ms |
+| Control-room API response (localhost) | p95 < 100 ms — except the four workstation power endpoints (`POST /api/loops/{name}/workstation/{restart,poweroff,poweron,recreate}`), which wait on a container lifecycle operation; `recreate` on a cold image is the worst case (ADR-0021) |
 | SSE fan-out | 10 clients, no visible lag |
 | UI initial load (localhost) | < 1 s |
 | Events retention | raw claude events pruned after 30 days (configurable); messages/turns kept forever; stream deltas never stored |
