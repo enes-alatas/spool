@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { api } from '../api'
+import { api, LoopView } from '../api'
 import { StateDot } from '../components/Spool'
 import { useEffect, useState } from 'react'
 
@@ -21,6 +21,14 @@ function Countdown({ at }: { at: number }) {
   return <span className="hot">{`${s}s`}</span>
 }
 
+// A workstation the operator switched off is not a fault; only an unreachable
+// one is worth flagging on the card.
+function workstationNote(loop: LoopView): string | undefined {
+  if (loop.workstation_up) return undefined
+  if (loop.down_reason === 'powered_off') return 'Workstation powered off'
+  return `Workstation down: ${loop.workstation_detail || 'unreachable'}`
+}
+
 export default function Dashboard() {
   const { data: loops } = useQuery({ queryKey: ['loops'], queryFn: api.loops })
 
@@ -39,14 +47,7 @@ export default function Dashboard() {
       )}
       <div className="loop-grid">
         {(loops ?? []).map((l) => (
-          <Link
-            key={l.id}
-            to={`/loops/${l.name}`}
-            className="loop-card"
-            title={
-              !l.workstation_up ? `Workstation down: ${l.workstation_detail || 'unreachable'}` : undefined
-            }
-          >
+          <Link key={l.id} to={`/loops/${l.name}`} className="loop-card" title={workstationNote(l)}>
             <div className="head">
               <StateDot state={l.state} />
               <span className="loop-name">{l.name}</span>

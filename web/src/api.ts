@@ -33,6 +33,9 @@ export interface LoopView {
   has_tg_token: boolean
   workstation_up: boolean
   workstation_detail?: string
+  // Why the workstation is down: '' while it is up, 'powered_off' when the
+  // operator switched it off, 'unreachable' when it died on its own.
+  down_reason: '' | 'powered_off' | 'unreachable'
 }
 
 export interface Turn {
@@ -182,6 +185,11 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ claude_oauth_token: token }),
     }),
+  // Power verbs return the loop post-verb, so the caller can cache the result
+  // rather than refetch. All four are 409 on the bare runtime, which has no
+  // workstation to power.
+  workstationPower: (name: string, verb: 'restart' | 'poweroff' | 'poweron' | 'recreate') =>
+    req<LoopView>(`/api/loops/${name}/workstation/${verb}`, { method: 'POST' }),
   // Secret values are write-only: the list returns names only.
   loopSecrets: (name: string) => req<LoopSecret[]>(`/api/loops/${name}/secrets`),
   setLoopSecret: (name: string, key: string, value: string) =>

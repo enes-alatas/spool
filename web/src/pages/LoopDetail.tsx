@@ -180,18 +180,65 @@ function ContextPanel({ turns }: { turns: Turn[] }) {
   )
 }
 
+type WorkstationVerb = 'restart' | 'poweroff' | 'poweron' | 'recreate'
+
+// What to call a verb while it is still running. A cold recreate can take
+// minutes, so the room says what is happening rather than freezing a button.
+const VERB_PROGRESS: Record<string, string> = {
+  restart: 'Restarting…',
+  poweroff: 'Powering off…',
+  poweron: 'Powering on…',
+  recreate: 'Recreating…',
+}
+
 // WorkstationPanel shows where a loop's claude actually runs (ADR-0017) — the
 // container or the bare host — and whether that machine is reachable right now.
-function WorkstationPanel({ loop }: { loop: LoopView }) {
+function WorkstationPanel({ loop, runningVerb }: { loop: LoopView; runningVerb: string }) {
+  const qc = useQueryClient()
+  const [confirming, setConfirming] = useState(false)
+  const [typed, setTyped] = useState('')
+  const [error, setError] = useState('')
   const contained = loop.runtime === 'docker'
+
+  // The response carries the loop as it is after the verb, so it seeds the
+  // cache directly instead of costing a refetch.
+  const power = useMutation({
+    mutationFn: (verb: WorkstationVerb) => api.workstationPower(loop.name, verb),
+    onSuccess: (updated) => {
+      setError('')
+      qc.setQueryData(['loop', loop.name], updated)
+      qc.invalidateQueries({ queryKey: ['loops'] })
+    },
+    onError: (err: unknown) => setError(err instanceof Error ? err.message : String(err)),
+  })
+
+  // The verb the server says is under way outranks our own pending call: it
+  // survives a dropped connection, which a ten-minute recreate may not.
+  const busy = power.isPending || runningVerb !== ''
+  const poweredOff = !loop.workstation_up && loop.down_reason === 'powered_off'
+  const status = loop.workstation_up ? 'up' : poweredOff ? 'powered off' : 'down'
+  // A workstation the operator switched off is not a fault: it reads calm,
+  // while one that died on its own keeps the alarm.
+  const statusDot = loop.workstation_up
+    ? 'state-idle'
+    : poweredOff
+      ? 'state-asleep'
+      : 'state-workstation_down'
+
+  const recreate = () => {
+    setConfirming(false)
+    setTyped('')
+    power.mutate('recreate')
+  }
+
   return (
     <div className="side-panel">
       <h3>Workstation</h3>
       <div className="row" style={{ alignItems: 'center' }}>
         <span className="k">status</span>
         <span className="v" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span className={`state-dot ${loop.workstation_up ? 'state-idle' : 'state-workstation_down'}`} />
-          {loop.workstation_up ? 'up' : 'down'}
+          <span className={`state-dot ${statusDot}`} />
+          {status}
         </span>
       </div>
       <div className="row">
@@ -210,10 +257,69 @@ function WorkstationPanel({ loop }: { loop: LoopView }) {
               {loop.mem_mb} MB · {loop.cpus} cpu
             </span>
           </div>
+          <div className="controls" style={{ marginTop: 12 }}>
+            <button className="btn sm" onClick={() => power.mutate('restart')} disabled={busy}>
+              Restart
+            </button>
+            {loop.workstation_up ? (
+              <button className="btn sm" onClick={() => power.mutate('poweroff')} disabled={busy}>
+                Power off
+              </button>
+            ) : (
+              <button className="btn sm" onClick={() => power.mutate('poweron')} disabled={busy}>
+                Power on
+              </button>
+            )}
+            <button
+              className="btn sm danger"
+              onClick={() => setConfirming(true)}
+              disabled={busy || confirming}
+            >
+              Recreate
+            </button>
+          </div>
+          {confirming && (
+            <div className="ws-confirm">
+              <div>
+                Recreating destroys this workstation and builds a fresh one from its image.
+                <strong> Gone:</strong> the loop's session memory — it starts its next turn fresh, with no
+                recollection of this conversation — plus anything uncommitted in the workspace and anything it
+                installed. <strong>Kept:</strong> its mission, schedule, secrets, Spool's own record of every
+                message and turn, and anything it pushed to a remote.
+              </div>
+              <div style={{ marginTop: 8 }}>
+                Type <code>{loop.name}</code> to confirm:
+              </div>
+              <input
+                value={typed}
+                onChange={(event) => setTyped(event.target.value)}
+                style={{ fontFamily: 'var(--mono)', marginTop: 6 }}
+              />
+              <div className="controls" style={{ marginTop: 8 }}>
+                <button className="btn sm danger" onClick={recreate} disabled={typed !== loop.name}>
+                  Recreate workstation
+                </button>
+                <button
+                  className="btn sm"
+                  onClick={() => {
+                    setConfirming(false)
+                    setTyped('')
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+          {runningVerb && (
+            <div className="ws-progress">{VERB_PROGRESS[runningVerb] ?? `${runningVerb}…`}</div>
+          )}
+          {error && <div className="form-error">{error}</div>}
         </>
       ) : (
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 8 }}>
-          Uncontained — claude runs directly on the host, with the operator's own files in reach.
+          Uncontained — claude runs directly on the host, with the operator's own files in reach. There is no
+          workstation to power.
         </div>
       )}
     </div>
@@ -308,6 +414,9 @@ export default function LoopDetail() {
   const nav = useNavigate()
   const qc = useQueryClient()
   const [liveText, setLiveText] = useState('')
+  // A power control the server reports as under way, from the workstation
+  // frames — the only progress signal a long verb has.
+  const [runningVerb, setRunningVerb] = useState('')
   const [draft, setDraft] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -319,24 +428,38 @@ export default function LoopDetail() {
   const { data: events } = useQuery({ queryKey: ['events', name], queryFn: () => api.events(name) })
   const { data: turns } = useQuery({ queryKey: ['turns', name], queryFn: () => api.turns(name, 10) })
 
-  useStream(`/api/loops/${name}/stream`, (item) => {
-    if (item.kind === 'agent_event') {
-      const p = item.payload
-      if (p?.type === 'stream_event') {
-        const d = extractDelta(p)
-        if (d) setLiveText((t) => t + d)
-        return
-      }
-      if (p?.type === 'result') setLiveText('')
-      qc.invalidateQueries({ queryKey: ['events', name] })
-      if (p?.type === 'result') {
-        qc.invalidateQueries({ queryKey: ['turns', name] })
+  useStream(
+    `/api/loops/${name}/stream`,
+    (item) => {
+      if (item.kind === 'agent_event') {
+        const p = item.payload
+        if (p?.type === 'stream_event') {
+          const d = extractDelta(p)
+          if (d) setLiveText((t) => t + d)
+          return
+        }
+        if (p?.type === 'result') setLiveText('')
+        qc.invalidateQueries({ queryKey: ['events', name] })
+        if (p?.type === 'result') {
+          qc.invalidateQueries({ queryKey: ['turns', name] })
+          qc.invalidateQueries({ queryKey: ['loop', name] })
+        }
+      } else if (item.kind === 'workstation') {
+        const verb = item.payload?.verb
+        setRunningVerb(typeof verb === 'string' ? verb : '')
+        qc.invalidateQueries({ queryKey: ['loop', name] })
+      } else if (item.kind === 'loop_status' || item.kind === 'schedule') {
         qc.invalidateQueries({ queryKey: ['loop', name] })
       }
-    } else if (item.kind === 'loop_status' || item.kind === 'schedule') {
+    },
+    () => {
+      // A power control's terminal frame may have been sent while we were
+      // disconnected — or never sent at all, if the orchestrator died mid-verb.
+      // A fresh connection is the moment to stop claiming one is running.
+      setRunningVerb('')
       qc.invalidateQueries({ queryKey: ['loop', name] })
-    }
-  })
+    },
+  )
 
   const entries = useMemo(() => toEntries(events ?? []), [events])
 
@@ -365,11 +488,16 @@ export default function LoopDetail() {
             <span className="state-name">{loop.state}</span>
             {loop.runtime === 'bare' && <span className="containment-badge">uncontained</span>}
           </h1>
-          {!loop.workstation_up && (
-            <div className="ws-down-note">
-              Workstation down{loop.workstation_detail ? `: ${loop.workstation_detail}` : ''}
-            </div>
-          )}
+          {!loop.workstation_up &&
+            (loop.down_reason === 'powered_off' ? (
+              <div className="ws-off-note">
+                Workstation powered off — ticks are skipped and messages queue until it is powered back on.
+              </div>
+            ) : (
+              <div className="ws-down-note">
+                Workstation down{loop.workstation_detail ? `: ${loop.workstation_detail}` : ''}
+              </div>
+            ))}
           <Timeline entries={entries} liveText={liveText} />
           <div ref={bottomRef} />
           <div className="composer">
@@ -455,7 +583,7 @@ export default function LoopDetail() {
 
           <ContextPanel turns={turns ?? []} />
 
-          <WorkstationPanel loop={loop} />
+          <WorkstationPanel loop={loop} runningVerb={runningVerb} />
 
           <ModelPanel loop={loop} />
 
