@@ -84,7 +84,9 @@ type Runtime interface {
 	Ensure(ctx context.Context, spec Spec) error
 
 	// Start execs claude inside the workstation and hands back the live
-	// process with its stdio attached.
+	// process with its stdio attached. ctx governs the start attempt only:
+	// the process outlives the call and is torn down through Proc.Kill, not
+	// by cancelling ctx.
 	Start(ctx context.Context, spec Spec) (Proc, error)
 
 	// Reap cleans up an execution left behind by a previous orchestrator run,

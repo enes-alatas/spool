@@ -59,7 +59,10 @@ func (host *Runtime) Health(ctx context.Context, loopID string) (runtime.Health,
 }
 
 // Start spawns claude in the loop's workspace. It returns as soon as the
-// process is started; the system/init event arrives on Events().
+// process is started; the system/init event arrives on Events(). ctx governs
+// the spawn attempt only: there is deliberately no kill-on-cancel goroutine
+// — the process outlives the call and is torn down by Kill, by Wait, or by
+// Pdeathsig when the orchestrator dies.
 func (host *Runtime) Start(ctx context.Context, spec runtime.Spec) (runtime.Proc, error) {
 	args, err := claude.Args(claude.Opts{
 		Model:              spec.Model,
@@ -94,15 +97,7 @@ func (host *Runtime) Start(ctx context.Context, spec runtime.Spec) (runtime.Proc
 		return nil, fmt.Errorf("claude: start %s: %w", host.bin, err)
 	}
 
-	process := &hostProc{cmd: cmd, Stream: claude.Attach(stdin, stdout, stderr)}
-
-	// If the surrounding context dies, take the subprocess with it.
-	go func() {
-		<-ctx.Done()
-		_ = process.Kill()
-	}()
-
-	return process, nil
+	return &hostProc{cmd: cmd, Stream: claude.Attach(stdin, stdout, stderr)}, nil
 }
 
 // Reap terminates a claude process left behind by a previous orchestrator
