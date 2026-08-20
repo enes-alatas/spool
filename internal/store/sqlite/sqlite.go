@@ -117,15 +117,17 @@ type loops struct{ db *sql.DB }
 
 const loopCols = `id, name, mission, model, workspace_mode, workspace_path, repo_path,
 	worktree_path, branch, tick_interval_sec, min_wake_sec, max_wake_sec, idle_timeout_sec,
-	pacing, effort, tg_bot_token, tg_bot_username, tg_group_chat_id, status,
-	current_session_id, current_pid, created_at, updated_at, runtime, image, mem_mb, cpus`
+	pacing, effort, tg_bot_token, tg_bot_username, tg_group_chat_id, tg_group_bound_at,
+	status, current_session_id, current_pid, created_at, updated_at, runtime, image,
+	mem_mb, cpus`
 
 func scanLoop(row interface{ Scan(...any) error }) (*store.Loop, error) {
 	var l store.Loop
 	err := row.Scan(&l.ID, &l.Name, &l.Mission, &l.Model, &l.WorkspaceMode, &l.WorkspacePath,
 		&l.RepoPath, &l.WorktreePath, &l.Branch, &l.TickIntervalSec, &l.MinWakeSec,
 		&l.MaxWakeSec, &l.IdleTimeoutSec, &l.Pacing, &l.Effort, &l.TGBotToken,
-		&l.TGBotUsername, &l.TGGroupChatID, &l.Status, &l.CurrentSessionID, &l.CurrentPID,
+		&l.TGBotUsername, &l.TGGroupChatID, &l.TGGroupBoundAt, &l.Status,
+		&l.CurrentSessionID, &l.CurrentPID,
 		&l.CreatedAt, &l.UpdatedAt, &l.Runtime, &l.Image, &l.MemMB, &l.CPUs)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, store.ErrNotFound
@@ -141,11 +143,12 @@ func (r loops) Create(ctx context.Context, l *store.Loop) error {
 	// deliberately absent from Update: immutable after creation (ADR-0018),
 	// the same enforcement-by-omission as current_session_id/current_pid.
 	_, err := r.db.ExecContext(ctx, `INSERT INTO loops (`+loopCols+`) VALUES
-		(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		l.ID, l.Name, l.Mission, l.Model, l.WorkspaceMode, l.WorkspacePath, l.RepoPath,
 		l.WorktreePath, l.Branch, l.TickIntervalSec, l.MinWakeSec, l.MaxWakeSec,
 		l.IdleTimeoutSec, l.Pacing, l.Effort, l.TGBotToken, l.TGBotUsername,
-		l.TGGroupChatID, l.Status, l.CurrentSessionID, l.CurrentPID, l.CreatedAt, l.UpdatedAt,
+		l.TGGroupChatID, l.TGGroupBoundAt, l.Status, l.CurrentSessionID, l.CurrentPID,
+		l.CreatedAt, l.UpdatedAt,
 		l.Runtime, l.Image, l.MemMB, l.CPUs)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return store.ErrDuplicate
@@ -158,11 +161,11 @@ func (r loops) Update(ctx context.Context, l *store.Loop) error {
 		workspace_mode=?, workspace_path=?, repo_path=?, worktree_path=?, branch=?,
 		tick_interval_sec=?, min_wake_sec=?, max_wake_sec=?, idle_timeout_sec=?,
 		pacing=?, effort=?, tg_bot_token=?, tg_bot_username=?, tg_group_chat_id=?,
-		status=?, updated_at=? WHERE id=?`,
+		tg_group_bound_at=?, status=?, updated_at=? WHERE id=?`,
 		l.Name, l.Mission, l.Model, l.WorkspaceMode, l.WorkspacePath, l.RepoPath,
 		l.WorktreePath, l.Branch, l.TickIntervalSec, l.MinWakeSec, l.MaxWakeSec,
 		l.IdleTimeoutSec, l.Pacing, l.Effort, l.TGBotToken, l.TGBotUsername,
-		l.TGGroupChatID, l.Status, l.UpdatedAt, l.ID)
+		l.TGGroupChatID, l.TGGroupBoundAt, l.Status, l.UpdatedAt, l.ID)
 	return err
 }
 
@@ -253,10 +256,11 @@ func (r messages) Insert(ctx context.Context, m *store.Message) error {
 		tgChat, tgMsg = m.TGChatID, m.TGMessageID
 	}
 	res, err := r.db.ExecContext(ctx, `INSERT INTO messages
-		(ts, origin, author, from_loop_id, text, mentions, tg_chat_id, tg_message_id, delivered_to)
-		VALUES (?,?,?,?,?,?,?,?,?)`,
+		(ts, origin, author, from_loop_id, text, mentions, tg_chat_id, tg_message_id,
+		 tg_bot_loop_id, delivered_to)
+		VALUES (?,?,?,?,?,?,?,?,?,?)`,
 		m.TS, m.Origin, m.Author, m.FromLoopID, m.Text, toJSON(m.Mentions), tgChat, tgMsg,
-		toJSON(m.DeliveredTo))
+		m.TGBotLoopID, toJSON(m.DeliveredTo))
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			return store.ErrDuplicate
@@ -274,7 +278,7 @@ func (r messages) SetDelivered(ctx context.Context, id int64, deliveredTo []stri
 
 func (r messages) List(ctx context.Context, limit int) ([]*store.Message, error) {
 	rows, err := r.db.QueryContext(ctx, `SELECT id, ts, origin, author, from_loop_id, text,
-		mentions, COALESCE(tg_chat_id,0), COALESCE(tg_message_id,0), delivered_to
+		mentions, COALESCE(tg_chat_id,0), COALESCE(tg_message_id,0), tg_bot_loop_id, delivered_to
 		FROM messages ORDER BY id DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
@@ -285,7 +289,7 @@ func (r messages) List(ctx context.Context, limit int) ([]*store.Message, error)
 		var m store.Message
 		var mentions, delivered string
 		if err := rows.Scan(&m.ID, &m.TS, &m.Origin, &m.Author, &m.FromLoopID, &m.Text,
-			&mentions, &m.TGChatID, &m.TGMessageID, &delivered); err != nil {
+			&mentions, &m.TGChatID, &m.TGMessageID, &m.TGBotLoopID, &delivered); err != nil {
 			return nil, err
 		}
 		m.Mentions = fromJSON(mentions)

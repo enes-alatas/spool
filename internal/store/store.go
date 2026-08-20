@@ -75,6 +75,9 @@ type Loop struct {
 	TGBotToken    string `json:"-"`
 	TGBotUsername string `json:"tg_bot_username"`
 	TGGroupChatID int64  `json:"tg_group_chat_id"`
+	// TGGroupBoundAt is when this loop's bot bound to that group. A bot only
+	// ingests group messages Telegram dated after it — see ADR-0020.
+	TGGroupBoundAt int64 `json:"-"`
 
 	Status           string `json:"status"`
 	CurrentSessionID string `json:"current_session_id"`
@@ -111,6 +114,10 @@ type Message struct {
 	Mentions    []string `json:"mentions"`
 	TGChatID    int64    `json:"tg_chat_id,omitempty"`
 	TGMessageID int64    `json:"tg_message_id,omitempty"`
+	// TGBotLoopID is the loop whose bot received this message. Telegram
+	// numbers message_id per bot conversation, so it identifies a message
+	// only together with the bot that saw it. Storage detail, not surfaced.
+	TGBotLoopID string   `json:"-"`
 	DeliveredTo []string `json:"delivered_to"`
 }
 

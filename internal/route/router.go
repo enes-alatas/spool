@@ -34,6 +34,9 @@ type InboundMessage struct {
 	Text        string
 	TGChatID    int64 // source chat (telegram origins)
 	TGMessageID int64
+	// TGBotLoopID is the loop whose bot saw the message; part of a telegram
+	// message's identity, since message_id is numbered per bot.
+	TGBotLoopID string
 	// ImplicitTo optionally targets a loop with no mention needed
 	// (DM to a loop's bot, or POST /api/loops/{name}/message).
 	ImplicitTo string // loop ID
@@ -83,8 +86,8 @@ func Mentions(text string) []string {
 	return out
 }
 
-// Ingest persists and routes one message. Returns store.ErrDuplicate for
-// telegram messages already seen by another bot's poller.
+// Ingest persists and routes one message. Returns store.ErrDuplicate when
+// the same bot's poller re-reads a telegram message it already ingested.
 func (r *Router) Ingest(ctx context.Context, in InboundMessage) error {
 	mentions := Mentions(in.Text)
 	msg := &store.Message{
@@ -96,6 +99,7 @@ func (r *Router) Ingest(ctx context.Context, in InboundMessage) error {
 		Mentions:    mentions,
 		TGChatID:    in.TGChatID,
 		TGMessageID: in.TGMessageID,
+		TGBotLoopID: in.TGBotLoopID,
 	}
 
 	// resolve recipients before persisting so delivered_to lands in one write

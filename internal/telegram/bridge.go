@@ -24,13 +24,18 @@ const (
 	maxMsgLen      = 4096
 	sendSpacing    = time.Second // per-bot pacing (Telegram: ~1 msg/s)
 	dedupSize      = 512
+	// bindSettle is how long after binding a bot waits before it may win a
+	// group's ingest election (ADR-0020): margin for clock skew between
+	// Telegram's message dates and ours.
+	bindSettle = 5 * time.Second
 )
 
 type Bridge struct {
-	store  store.Store
-	bus    *bus.Bus
-	router *route.Router
-	log    *slog.Logger
+	store   store.Store
+	bus     *bus.Bus
+	router  *route.Router
+	log     *slog.Logger
+	apiBase string
 
 	ctx context.Context
 
@@ -42,11 +47,13 @@ type Bridge struct {
 	pairNotified map[int64]bool // senders already told their pairing code this run
 }
 
-func NewBridge(st store.Store, b *bus.Bus, r *route.Router, log *slog.Logger) *Bridge {
+// NewBridge builds the bridge. apiBase is the Bot API to talk to; "" means
+// the live one.
+func NewBridge(st store.Store, b *bus.Bus, r *route.Router, log *slog.Logger, apiBase string) *Bridge {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Bridge{store: st, bus: b, router: r, log: log,
+	return &Bridge{store: st, bus: b, router: r, log: log, apiBase: apiBase,
 		pollers: map[string]*poller{}, dedup: newDedupLRU(dedupSize),
 		pairNotified: map[int64]bool{}}
 }
@@ -70,7 +77,7 @@ func (br *Bridge) Start(ctx context.Context) {
 // --- httpapi.Telegram interface ---
 
 func (br *Bridge) ValidateToken(ctx context.Context, token string) (string, error) {
-	u, err := NewClient(token).GetMe(ctx)
+	u, err := NewClientAt(br.apiBase, token).GetMe(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -126,7 +133,7 @@ func (br *Bridge) startPoller(l *store.Loop) {
 	p := &poller{
 		loopID: l.ID,
 		name:   l.Name,
-		client: NewClient(l.TGBotToken),
+		client: NewClientAt(br.apiBase, l.TGBotToken),
 		cancel: cancel,
 		sendCh: make(chan sendReq, 128),
 	}
@@ -232,9 +239,12 @@ func (br *Bridge) handleMessage(ctx context.Context, p *poller, m *tgMsgAlias) {
 	}
 
 	if isGroup {
-		// N bots see the same human group message; first one wins
-		key := fmt.Sprintf("%d:%d", m.Chat.ID, m.MessageID)
-		if !br.dedup.Add(key) {
+		// Every bot in the group sees this message under its own message_id,
+		// so exactly one of them may persist it.
+		if br.groupIngestLoopID(ctx, m.Chat.ID, m.Date) != p.loopID {
+			return
+		}
+		if !br.dedup.Add(dedupKey(p.loopID, m.Chat.ID, m.MessageID)) {
 			return
 		}
 		err := br.router.Ingest(ctx, route.InboundMessage{
@@ -243,6 +253,7 @@ func (br *Bridge) handleMessage(ctx context.Context, p *poller, m *tgMsgAlias) {
 			Text:        text,
 			TGChatID:    m.Chat.ID,
 			TGMessageID: m.MessageID,
+			TGBotLoopID: p.loopID,
 		})
 		if err != nil && !errors.Is(err, store.ErrDuplicate) {
 			br.log.Error("telegram group ingest", "err", err)
@@ -251,18 +262,89 @@ func (br *Bridge) handleMessage(ctx context.Context, p *poller, m *tgMsgAlias) {
 	}
 
 	if m.Chat.Type == "private" {
+		if !br.dedup.Add(dedupKey(p.loopID, m.Chat.ID, m.MessageID)) {
+			return
+		}
 		err := br.router.Ingest(ctx, route.InboundMessage{
 			Origin:      store.OriginTelegramDM,
 			Author:      author,
 			Text:        text,
 			TGChatID:    m.Chat.ID,
 			TGMessageID: m.MessageID,
+			TGBotLoopID: p.loopID,
 			ImplicitTo:  p.loopID,
 		})
 		if err != nil && !errors.Is(err, store.ErrDuplicate) {
 			br.log.Error("telegram dm ingest", "err", err)
 		}
 	}
+}
+
+// groupIngestLoopID names the one bot allowed to ingest chatID's messages,
+// as of the message Telegram dated at msgDate. Telegram hands each bot its
+// own message_id for the same human message, so no key computed from an
+// update can tell "the same message twice" from "two messages" — the only
+// reliable dedup is to let a single poller through.
+//
+// The election is the lowest loop ID among the bots polling that group whose
+// binding predates the message. That second clause is what makes every
+// poller agree on one answer: a bot binds to a group in the middle of
+// handling a message, so a candidate set read as "whoever is bound right
+// now" differs between pollers racing on the same message. A message dated
+// after a committed bind, by contrast, was received after that bind — so
+// every poller handling it reads the same set, whatever order they run in,
+// and a bot that joins a live group (or is catching up on a backlog) leaves
+// the incumbent to finish the messages that predate it.
+//
+// While the elected poller is down but still registered — a 409 pause, say —
+// the group is deaf: nobody steps in, because stepping in on a live poller's
+// behalf is exactly the double-ingest this prevents. Returns "" when nobody
+// is eligible (a brand-new group, where the first message is what binds the
+// bots); the caller drops the message rather than let every bot ingest it.
+func (br *Bridge) groupIngestLoopID(ctx context.Context, chatID, msgDate int64) string {
+	loops, err := br.store.Loops().List(ctx)
+	if err != nil {
+		br.log.Error("telegram: group ingest election", "err", err)
+		return ""
+	}
+	br.mu.Lock()
+	defer br.mu.Unlock()
+	ingest := ""
+	for _, l := range loops {
+		if l.TGGroupChatID != chatID || l.Status == store.StatusArchived {
+			continue
+		}
+		if !boundBefore(l, msgDate) {
+			continue
+		}
+		if _, polling := br.pollers[l.ID]; !polling {
+			continue
+		}
+		if ingest == "" || l.ID < ingest {
+			ingest = l.ID
+		}
+	}
+	return ingest
+}
+
+// boundBefore reports whether l's bot was bound to its group early enough to
+// ingest a message Telegram dated at msgDate. bindSettle covers the skew
+// between Telegram's clock and ours: erring long only delays a newcomer's
+// first ingest by a few seconds, while erring short would let it duplicate
+// what the incumbent already took. A binding from before this rule existed
+// is recorded as 0 and always qualifies.
+func boundBefore(l *store.Loop, msgDate int64) bool {
+	if l.TGGroupBoundAt == 0 {
+		return true
+	}
+	return msgDate > l.TGGroupBoundAt/1000+int64(bindSettle.Seconds())
+}
+
+// dedupKey identifies a telegram message: the chat, the id, and the bot that
+// numbered it. It guards a poller re-reading its own updates; cross-bot
+// duplicates are prevented upstream, by only one bot ingesting a group.
+func dedupKey(loopID string, chatID, messageID int64) string {
+	return fmt.Sprintf("%s:%d:%d", loopID, chatID, messageID)
 }
 
 // tgMsgAlias keeps handleMessage readable without exporting internals.
@@ -348,7 +430,8 @@ func (br *Bridge) maybeBindGroup(ctx context.Context, p *poller, chatID int64) {
 		return
 	}
 	l.TGGroupChatID = chatID
-	l.UpdatedAt = time.Now().UnixMilli()
+	l.TGGroupBoundAt = time.Now().UnixMilli()
+	l.UpdatedAt = l.TGGroupBoundAt
 	if err := br.store.Loops().Update(ctx, l); err != nil {
 		br.log.Error("group bind", "err", err)
 		return
