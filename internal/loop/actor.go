@@ -27,9 +27,31 @@ const (
 	StateDraining = "draining"
 	StatePaused   = "paused"
 	// StateWorkstationDown overlays every other state — pause included —
-	// while the loop's workstation is unreachable (ADR-0017): it is the
-	// alert the operator must act on. Ensure self-heals it at next wake.
+	// while the loop's workstation is unreachable for a reason nobody chose
+	// (ADR-0017): it is the alert the operator must act on. Ensure
+	// self-heals it at next wake.
 	StateWorkstationDown = "workstation_down"
+	// StateWorkstationOff is the calm counterpart: the workstation is down
+	// because the operator switched it off (ADR-0021). It is equally
+	// not-running, so the fleet says so, but it is expected rather than
+	// wrong — and it yields to pause, which is a statement about the loop
+	// rather than its machine.
+	StateWorkstationOff = "workstation_off"
+)
+
+// Why a workstation is down, for the control room: nothing when it is up,
+// and otherwise whether the operator meant it.
+const (
+	DownReasonPoweredOff  = "powered_off"
+	DownReasonUnreachable = "unreachable"
+)
+
+// The operator's power controls, as passed to Power.
+const (
+	PowerRestart  = "restart"
+	PowerOff      = "poweroff"
+	PowerOn       = "poweron"
+	PowerRecreate = "recreate"
 )
 
 const (
@@ -40,7 +62,17 @@ const (
 
 	defaultHealthInterval = 45 * time.Second
 	healthCheckTimeout    = 10 * time.Second
+	// powerTimeout bounds one power control. Generous because recreate on a
+	// cold image pulls and builds before it can answer.
+	powerTimeout = 10 * time.Minute
+	// procStopGrace is how long a power control waits for the claude process
+	// it killed to close its stdout before carrying on regardless.
+	procStopGrace = 10 * time.Second
 )
+
+// poweredOffDetail is what the control room shows for a workstation the
+// operator switched off; down_reason carries the machine-readable half.
+const poweredOffDetail = "powered off by the operator"
 
 // Deps wires an actor to the rest of the system without import cycles.
 type Deps struct {
@@ -82,10 +114,12 @@ func (deps *Deps) runtimeFor(kind string) runtime.Runtime {
 }
 
 type cmd struct {
-	kind string // deliver|tick|pause|resume|kill|update|shutdown
-	env  Envelope
-	loop *store.Loop
-	done chan struct{} // for shutdown
+	kind  string // deliver|tick|pause|resume|kill|update|power|shutdown
+	env   Envelope
+	loop  *store.Loop
+	verb  string        // for power
+	reply chan error    // for power: the caller waits on the result
+	done  chan struct{} // for shutdown
 }
 
 // Actor owns one loop: a single goroutine serializing every command,
@@ -95,6 +129,7 @@ type Actor struct {
 	cmds       chan cmd
 	stateSnap  atomic.Value // string; last published state, for REST reads
 	healthSnap atomic.Value // runtime.Health; last workstation poll, for REST reads
+	offSnap    atomic.Bool  // the operator's power-off intent, for REST reads
 
 	// goroutine-owned state below
 	loop         store.Loop
@@ -124,7 +159,13 @@ func NewActor(deps Deps, l *store.Loop) *Actor {
 		state: StateAsleep,
 	}
 	actor.paused = l.Status == store.StatusPaused
+	actor.offSnap.Store(l.WorkstationOff)
 	actor.healthSnap.Store(runtime.Health{Up: true}) // optimistic until the first poll
+	if l.WorkstationOff {
+		// switched off before the orchestrator restarted: it is still off,
+		// and still calmly so
+		actor.healthSnap.Store(runtime.Health{Up: false, Detail: poweredOffDetail})
+	}
 	actor.idleTimer = time.NewTimer(time.Hour)
 	actor.idleTimer.Stop()
 	actor.retryTimer = time.NewTimer(time.Hour)
@@ -136,11 +177,21 @@ func NewActor(deps Deps, l *store.Loop) *Actor {
 
 // --- public API (thread-safe; commands are serialized onto the actor) ---
 
-func (actor *Actor) Deliver(env Envelope)     { actor.cmds <- cmd{kind: "deliver", env: env} }
-func (actor *Actor) Tick()                    { actor.cmds <- cmd{kind: "tick"} }
-func (actor *Actor) Pause()                   { actor.cmds <- cmd{kind: "pause"} }
-func (actor *Actor) Resume()                  { actor.cmds <- cmd{kind: "resume"} }
-func (actor *Actor) Kill()                    { actor.cmds <- cmd{kind: "kill"} }
+func (actor *Actor) Deliver(env Envelope) { actor.cmds <- cmd{kind: "deliver", env: env} }
+func (actor *Actor) Tick()                { actor.cmds <- cmd{kind: "tick"} }
+func (actor *Actor) Pause()               { actor.cmds <- cmd{kind: "pause"} }
+func (actor *Actor) Resume()              { actor.cmds <- cmd{kind: "resume"} }
+func (actor *Actor) Kill()                { actor.cmds <- cmd{kind: "kill"} }
+
+// Power runs one of the operator's power controls against the loop's
+// workstation and blocks until it is done, so the caller can answer with the
+// state it produced rather than a promise (ADR-0021). Serialized onto the
+// actor like every other command, which is what keeps it from racing a wake.
+func (actor *Actor) Power(verb string) error {
+	reply := make(chan error, 1)
+	actor.cmds <- cmd{kind: "power", verb: verb, reply: reply}
+	return <-reply
+}
 func (actor *Actor) UpdateLoop(l *store.Loop) { actor.cmds <- cmd{kind: "update", loop: l} }
 
 // Shutdown stops the actor, killing any live process. Blocks until done.
@@ -172,7 +223,7 @@ func (actor *Actor) run() {
 		case <-actor.idleTimer.C:
 			actor.handleIdleTimeout()
 		case <-actor.retryTimer.C:
-			if len(actor.inbox) > 0 && actor.state == StateAsleep {
+			if len(actor.inbox) > 0 && actor.state == StateAsleep && !actor.loop.WorkstationOff {
 				actor.wake()
 			}
 		case <-actor.healthTimer.C:
@@ -185,7 +236,7 @@ func (actor *Actor) run() {
 func (actor *Actor) handleCmd(command cmd) {
 	switch command.kind {
 	case "deliver":
-		if actor.paused {
+		if actor.paused || actor.loop.WorkstationOff {
 			if b, err := json.Marshal(command.env); err == nil {
 				_ = actor.deps.Store.Inbox().Push(context.Background(), actor.loop.ID, string(b), now())
 			}
@@ -194,7 +245,9 @@ func (actor *Actor) handleCmd(command cmd) {
 		actor.enqueue(command.env)
 		actor.pump()
 	case "tick":
-		if actor.paused {
+		if actor.paused || actor.loop.WorkstationOff {
+			// a switched-off workstation stays off: ticks are skipped, not
+			// queued, so power-on isn't met by a backlog of stale wakes
 			return
 		}
 		if actor.state == StateBusy || actor.state == StateWaking {
@@ -208,18 +261,11 @@ func (actor *Actor) handleCmd(command cmd) {
 		actor.publishState()
 	case "resume":
 		actor.paused = false
-		envs, err := actor.deps.Store.Inbox().Drain(context.Background(), actor.loop.ID)
-		if err != nil {
-			actor.log().Error("inbox drain", "err", err)
-		}
-		for _, raw := range envs {
-			var env Envelope
-			if json.Unmarshal([]byte(raw), &env) == nil {
-				actor.enqueue(env)
-			}
-		}
+		actor.drainStoredInbox()
 		actor.publishState()
 		actor.pump()
+	case "power":
+		command.reply <- actor.power(command.verb)
 	case "kill":
 		if actor.proc != nil {
 			_ = actor.proc.Kill()
@@ -229,8 +275,26 @@ func (actor *Actor) handleCmd(command cmd) {
 		token := actor.loop // keep runtime-only fields
 		actor.loop = *command.loop
 		actor.loop.CurrentSessionID = token.CurrentSessionID
+		actor.loop.WorkstationOff = token.WorkstationOff // power intent is the actor's, not the editor's
 		actor.paused = actor.loop.Status == store.StatusPaused
 		actor.publishState()
+	}
+}
+
+// drainStoredInbox re-queues the messages that arrived while the loop was
+// not accepting work — paused, or its workstation switched off. Whatever was
+// said to the loop meanwhile is said again the moment it can hear it.
+func (actor *Actor) drainStoredInbox() {
+	envs, err := actor.deps.Store.Inbox().Drain(context.Background(), actor.loop.ID)
+	if err != nil {
+		actor.log().Error("inbox drain", "err", err)
+		return
+	}
+	for _, raw := range envs {
+		var env Envelope
+		if json.Unmarshal([]byte(raw), &env) == nil {
+			actor.enqueue(env)
+		}
 	}
 }
 
@@ -244,7 +308,7 @@ func (actor *Actor) enqueue(env Envelope) {
 
 // pump advances the state machine when there is queued work.
 func (actor *Actor) pump() {
-	if len(actor.inbox) == 0 {
+	if len(actor.inbox) == 0 || actor.loop.WorkstationOff {
 		return
 	}
 	switch actor.state {
@@ -534,7 +598,7 @@ func (actor *Actor) handleProcExit() {
 		actor.currentBatch = nil
 		actor.state = StateAsleep
 		actor.publishState()
-		if len(actor.inbox) > 0 && !actor.paused {
+		if len(actor.inbox) > 0 && !actor.paused && !actor.loop.WorkstationOff {
 			actor.wake() // message raced the idle close
 		}
 	case sessionLost:
@@ -550,7 +614,7 @@ func (actor *Actor) handleProcExit() {
 		}
 		actor.state = StateAsleep
 		actor.publishState()
-		if len(actor.inbox) > 0 && !actor.paused {
+		if len(actor.inbox) > 0 && !actor.paused && !actor.loop.WorkstationOff {
 			actor.wake()
 		}
 	default:
@@ -625,10 +689,154 @@ func (actor *Actor) claudeToken(ctx context.Context) (string, error) {
 	return actor.deps.ClaudeToken(ctx)
 }
 
+// power carries out one operator power control, in the actor's goroutine.
+// Every verb that takes the workstation away ends the running turn first, so
+// a turn is never silently truncated, and the caller gets the resulting
+// state rather than a promise.
+func (actor *Actor) power(verb string) error {
+	loopRuntime := actor.deps.runtimeFor(actor.loop.Runtime)
+	if loopRuntime == nil {
+		return fmt.Errorf("no %q runtime available", actor.loop.Runtime)
+	}
+	if !loopRuntime.HasWorkstation() {
+		return runtime.ErrUnsupported
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), powerTimeout)
+	defer cancel()
+
+	if verb != PowerOn {
+		// poweron is documented idempotent: it must not end a turn that is
+		// running on a workstation which is already up
+		actor.stopProcess(verb)
+	}
+	actor.publishWorkstationVerb(verb)
+	spec := actor.wakeSpec(actor.loop.CurrentSessionID == "")
+
+	// The operator's intent is recorded only once the verb it describes has
+	// actually happened. A verb that fails leaves everything as it found it:
+	// a failed halt must not suspend a loop whose workstation is still up,
+	// and a failed power-on must not discard an off-intent that still holds.
+	var err error
+	switch verb {
+	case PowerOff:
+		if err = loopRuntime.Halt(ctx, actor.loop.ID); err == nil {
+			actor.setWorkstationOff(true)
+		}
+	case PowerOn:
+		if err = loopRuntime.Ensure(ctx, spec); err == nil {
+			actor.setWorkstationOff(false)
+		}
+	case PowerRestart:
+		if err = loopRuntime.Halt(ctx, actor.loop.ID); err == nil {
+			err = loopRuntime.Ensure(ctx, spec)
+		}
+		if err == nil {
+			actor.setWorkstationOff(false)
+		}
+	case PowerRecreate:
+		if err = loopRuntime.Destroy(ctx, actor.loop.ID); err == nil {
+			actor.forgetSession(ctx)
+			err = loopRuntime.Ensure(ctx, spec)
+		}
+		if err == nil {
+			actor.setWorkstationOff(false)
+		}
+	default:
+		return fmt.Errorf("unknown power verb %q", verb)
+	}
+
+	actor.storeSpoolEvent("workstation_power", fmt.Sprintf(`{"verb":%q,"ok":%v}`, verb, err == nil))
+	if err != nil {
+		if actor.loop.WorkstationOff {
+			// still switched off, and still calmly so: the failed verb
+			// changed nothing, and the caller gets the error
+			actor.checkWorkstation()
+		} else {
+			actor.setWorkstationDown(err.Error())
+		}
+		return err
+	}
+	if verb == PowerOff {
+		actor.checkWorkstation() // publishes the calm off state
+		return nil
+	}
+	actor.setWorkstationUp()
+	// the machine is back: deliver what was said while it was away
+	actor.drainStoredInbox()
+	actor.pump()
+	return nil
+}
+
+// stopProcess ends the claude process a power verb is about to pull the
+// ground from under. It waits for stdout to close so the turn is recorded as
+// it happened; if the process outlives the grace period the ordinary exit
+// path picks it up later, by which time the verb has already run.
+func (actor *Actor) stopProcess(verb string) {
+	if actor.proc == nil {
+		return
+	}
+	actor.log().Info("power control ends the running turn", "verb", verb)
+	_ = actor.proc.Kill()
+	grace := time.NewTimer(procStopGrace)
+	defer grace.Stop()
+	for {
+		select {
+		case _, open := <-actor.procEvents:
+			if !open {
+				actor.handleProcExit()
+				return
+			}
+		case <-grace.C:
+			return
+		}
+	}
+}
+
+// forgetSession drops the loop's claude session: recreate destroys the state
+// it lived in, so the next wake starts fresh instead of failing to resume.
+func (actor *Actor) forgetSession(ctx context.Context) {
+	old := actor.loop.CurrentSessionID
+	if old == "" {
+		return
+	}
+	_ = actor.deps.Store.Sessions().End(ctx, old, store.EndReasonLost, now())
+	actor.loop.CurrentSessionID = ""
+	_ = actor.deps.Store.Loops().SetRuntime(ctx, actor.loop.ID, "", 0)
+	actor.storeSpoolEvent("session_forgotten", fmt.Sprintf(`{"old_session":%q}`, old))
+}
+
+// setWorkstationOff records the operator's intent, in memory and in the DB,
+// so it survives a restart — a health poll can't tell "switched off" from
+// "died" (ADR-0021).
+func (actor *Actor) setWorkstationOff(off bool) {
+	actor.loop.WorkstationOff = off
+	actor.offSnap.Store(off)
+	l, err := actor.deps.Store.Loops().Get(context.Background(), actor.loop.ID)
+	if err != nil {
+		actor.log().Error("power intent not persisted", "err", err)
+		return
+	}
+	l.WorkstationOff = off
+	l.UpdatedAt = now()
+	if err := actor.deps.Store.Loops().Update(context.Background(), l); err != nil {
+		actor.log().Error("power intent not persisted", "err", err)
+	}
+}
+
 // checkWorkstation polls the loop's workstation and maintains the
 // workstation_down overlay. Bare loops answer statically up, so the uniform
 // poll costs them nothing.
 func (actor *Actor) checkWorkstation() {
+	if actor.loop.WorkstationOff {
+		// don't poll something the operator switched off: it is down, and
+		// the reason is already known
+		actor.wsDown = false
+		actor.wsDetail = ""
+		actor.healthSnap.Store(runtime.Health{Up: false, Detail: poweredOffDetail})
+		actor.publishState()
+		actor.publishWorkstation()
+		return
+	}
 	loopRuntime := actor.deps.runtimeFor(actor.loop.Runtime)
 	if loopRuntime == nil {
 		actor.setWorkstationDown(fmt.Sprintf("no %q runtime available", actor.loop.Runtime))
@@ -684,6 +892,7 @@ func (actor *Actor) setWorkstationDown(detail string) {
 		actor.log().Warn("workstation down", "detail", detail)
 	}
 	actor.publishState()
+	actor.publishWorkstation()
 }
 
 func (actor *Actor) setWorkstationUp() {
@@ -696,6 +905,51 @@ func (actor *Actor) setWorkstationUp() {
 	actor.storeSpoolEvent("workstation_up", "{}")
 	actor.log().Info("workstation up")
 	actor.publishState()
+	actor.publishWorkstation()
+}
+
+// DownReason says why the workstation is not up: nothing when it is,
+// powered_off when the operator switched it off, unreachable otherwise.
+func (actor *Actor) DownReason() string {
+	if actor.WorkstationHealth().Up {
+		return ""
+	}
+	if actor.PoweredOff() {
+		return DownReasonPoweredOff
+	}
+	return DownReasonUnreachable
+}
+
+// PoweredOff reports the operator's power-off intent (safe from any
+// goroutine).
+func (actor *Actor) PoweredOff() bool { return actor.offSnap.Load() }
+
+// publishWorkstation announces the workstation's liveness on the bus. Sent
+// when the verdict changes, not on every poll: the control room renders a
+// state, not a heartbeat.
+func (actor *Actor) publishWorkstation() {
+	health := actor.WorkstationHealth()
+	actor.deps.Bus.Publish(bus.Item{Kind: bus.KindWorkstation, LoopID: actor.loop.ID, Payload: map[string]any{
+		"loop_id":     actor.loop.ID,
+		"up":          health.Up,
+		"down_reason": actor.DownReason(),
+		"detail":      health.Detail,
+	}})
+}
+
+// publishWorkstationVerb announces that a power control has started, so the
+// control room can show work in progress rather than a frozen button — a
+// cold recreate can run for minutes and outlive the request's connection.
+// The frame is the ordinary workstation one plus the verb under way.
+func (actor *Actor) publishWorkstationVerb(verb string) {
+	health := actor.WorkstationHealth()
+	actor.deps.Bus.Publish(bus.Item{Kind: bus.KindWorkstation, LoopID: actor.loop.ID, Payload: map[string]any{
+		"loop_id":     actor.loop.ID,
+		"up":          health.Up,
+		"down_reason": actor.DownReason(),
+		"detail":      health.Detail,
+		"verb":        verb,
+	}})
 }
 
 // WorkstationHealth returns the last observed workstation health (safe from
@@ -779,11 +1033,16 @@ func (actor *Actor) State() string {
 
 func (actor *Actor) publishState() {
 	state := actor.state
+	if actor.loop.WorkstationOff {
+		// switched off: really not running, so say so — but calmly, and
+		// pause still outranks it as a fact about the loop itself
+		state = StateWorkstationOff
+	}
 	if actor.paused {
 		state = StatePaused
 	}
 	if actor.wsDown {
-		// the alert outranks pause: a dead workstation needs the operator
+		// the alert outranks everything: a dead workstation needs the operator
 		state = StateWorkstationDown
 	}
 	actor.stateSnap.Store(state)

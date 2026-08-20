@@ -8,12 +8,13 @@ import (
 )
 
 const (
-	KindMessage    = "message"     // a chat message (human or loop) was persisted
-	KindLoopStatus = "loop_status" // a loop's runtime state changed
-	KindAgentEvent = "agent_event" // raw claude stdout event (incl. stream deltas)
-	KindTurnResult = "turn_result" // a turn finished (cost/usage)
-	KindSchedule   = "schedule"    // next_tick_at changed
-	KindAccess     = "access"      // telegram sender allowlist changed
+	KindMessage     = "message"     // a chat message (human or loop) was persisted
+	KindLoopStatus  = "loop_status" // a loop's runtime state changed
+	KindAgentEvent  = "agent_event" // raw claude stdout event (incl. stream deltas)
+	KindTurnResult  = "turn_result" // a turn finished (cost/usage)
+	KindSchedule    = "schedule"    // next_tick_at changed
+	KindAccess      = "access"      // telegram sender allowlist changed
+	KindWorkstation = "workstation" // a loop's workstation liveness changed
 )
 
 type Item struct {

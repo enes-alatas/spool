@@ -159,6 +159,7 @@ type loopView struct {
 	Runtime           string  `json:"runtime"`
 	WorkspacePath     string  `json:"workspace_path"`
 	WorkstationUp     bool    `json:"workstation_up"`
+	DownReason        string  `json:"down_reason"`
 	WorkstationDetail string  `json:"workstation_detail"`
 	NextTickAt        int64   `json:"next_tick_at"`
 	CostToday         float64 `json:"cost_today_usd"`

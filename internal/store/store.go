@@ -75,6 +75,11 @@ type Loop struct {
 	TGBotToken    string `json:"-"`
 	TGBotUsername string `json:"tg_bot_username"`
 	TGGroupChatID int64  `json:"tg_group_chat_id"`
+	// WorkstationOff records that the operator switched this loop's
+	// workstation off. Intent, not observation: a health poll cannot tell a
+	// halted workstation from a dead one (ADR-0021). Surfaced to the UI as
+	// down_reason, not as a field of its own.
+	WorkstationOff bool `json:"-"`
 	// TGGroupBoundAt is when this loop's bot bound to that group. A bot only
 	// ingests group messages Telegram dated after it — see ADR-0020.
 	TGGroupBoundAt int64 `json:"-"`

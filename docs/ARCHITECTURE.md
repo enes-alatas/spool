@@ -39,7 +39,8 @@ Use these words exactly — in code, UI, docs, and prompts. Don't introduce syno
 | **surface** | A chat platform adapter (Telegram today, Slack at L3). The web control room is not a surface; it talks to the hub directly. |
 | **mirror** | Re-posting hub-routed traffic to a surface so humans can watch. |
 | **follow** | A loop's opt-in subscription to un-addressed chatter in a channel, delivered at next wake. |
-| **workstation** | A loop's persistent sandbox: its home dir, tools, clones. Long-lived — survives sleeps, restarts, and pauses; dies only with the loop (ADR-0017). |
+| **workstation** | A loop's persistent sandbox: its home dir, tools, clones. Long-lived — survives sleeps, restarts, and pauses; dies with the loop, or when the operator switches it off or rebuilds it (ADR-0017, ADR-0021). |
+| **power controls** | The operator's switches on a workstation: restart, power off, power on, recreate. They act on the loop's *machine*, not the loop — pause is the switch for the loop itself, and the two compose (ADR-0021). |
 | **runner** | The subsystem that executes loops (actors + claude processes + sandboxes). |
 | **hub** | Everything that isn't the runner or a surface: routing, scheduling, store, API. |
 | **connection** | An org-level tool credential/config (GitHub app, MCP server) attachable to loops. |
@@ -118,6 +119,12 @@ introduced). Migrate opportunistically, not big-bang.
 - **Sandbox posture is per-edition** (ADR-0017): the local edition defaults to
   `docker` with `bare` as an explicit, uncontained-badged fallback; the hosted
   service is sandbox-mandatory — `bare` is absent from its configuration.
+- **Down is not always wrong** (ADR-0021): a workstation the operator switched
+  off is `workstation_off` — really not running, said calmly — while one that
+  died is `workstation_down`, the alert that outranks every other state. The
+  difference is intent, which a health poll cannot observe, so it is recorded
+  in the DB and survives a restart. Precedence: `workstation_down` > `paused` >
+  `workstation_off`.
 - **One bot ingests a group, every bot delivers** (ADR-0020): a surface where each
   loop has its own bot identity sees the same human message N times, numbered
   differently per bot. Exactly one bot persists it — for Telegram, the lowest loop
