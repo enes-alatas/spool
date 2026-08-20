@@ -75,6 +75,12 @@ agents — Claude sessions today, Spool's own loops from L2.*
   stops for a human interview and gets an ADR: a new dependency, a seam or
   prompt-contract change, terminology, public API shape, security posture, or
   spending real plan tokens (tier-3 e2e).
+- **Scoped delegation**: the interview may end with the human delegating the
+  decision back ("you decide"). That delegation is per-decision: it covers
+  exactly the questions put to the human, and the ADR or issue recording the
+  outcome quotes it verbatim in its Context. A standing delegation — a class
+  of decisions the fleet may settle without asking — is itself a constraining
+  decision and needs its own ADR.
 
 ## Testing (ADR-0009)
 
