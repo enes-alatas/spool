@@ -12,9 +12,14 @@ package runtime
 
 import (
 	"context"
+	"errors"
 
 	"github.com/enes-alatas/spool/internal/claude"
 )
+
+// ErrUnsupported is what a runtime returns for an operation its kind of
+// workstation cannot do — halting the host it runs on, say.
+var ErrUnsupported = errors.New("runtime: operation not supported")
 
 // WorkstationHome is where a containerized runtime mounts the loop's volume
 // and where its claude runs — the image convention fixed by ADR-0018. Bare
@@ -94,9 +99,23 @@ type Runtime interface {
 	// recovery, before the loop's first wake.
 	Reap(ctx context.Context, loopID string, pid int) error
 
-	// PowerOff destroys the workstation and everything persisted inside it.
-	// Called when a loop is deleted — never on sleep or pause.
-	PowerOff(ctx context.Context, loopID string) error
+	// Halt stops the workstation, keeping everything on it. The operator's
+	// power-off control comes here; a halted workstation comes back with
+	// Ensure, carrying its state. Runtimes with no workstation of their own
+	// return ErrUnsupported.
+	Halt(ctx context.Context, loopID string) error
+
+	// Destroy removes the workstation and everything persisted inside it.
+	// Loop deletion goes here, and so does the operator's recreate control —
+	// deliberately never sleep or pause (ADR-0017).
+	Destroy(ctx context.Context, loopID string) error
+
+	// HasWorkstation reports whether the loop's workstation is a thing of
+	// this runtime's own, separable from the loop: something that can be
+	// halted, started and rebuilt while the loop lives on. False for bare,
+	// where the workstation is the operator's host and the power controls
+	// have nothing to act on.
+	HasWorkstation() bool
 
 	// Health reports whether the loop's workstation is up.
 	Health(ctx context.Context, loopID string) (Health, error)

@@ -3,7 +3,7 @@
 // container and one named volume per loop — the workstation — with a
 // keepalive as PID 1, and claude exec'd inside per wake with its stdio held
 // by the runner. The workstation survives sleeps, orchestrator restarts and
-// daemon restarts; it is removed only by PowerOff.
+// daemon restarts; it is removed only by Destroy.
 //
 // Everything is a docker CLI subprocess: `exec -i` hands over the inner
 // process's stdio as ordinary pipes (exactly what claude.Attach needs), and
@@ -72,6 +72,10 @@ func New(bin, defaultImage string, healthTTL time.Duration) *Runtime {
 }
 
 func (rt *Runtime) Kind() string { return "docker" }
+
+// HasWorkstation is true: the container and its volume are the loop's own
+// machine, which the operator can halt, start and rebuild under it.
+func (rt *Runtime) HasWorkstation() bool { return true }
 
 // Available reports whether the daemon is reachable — the cheap slice of
 // Preflight, for validating a create request that names this runtime.
@@ -195,9 +199,20 @@ func (rt *Runtime) Reap(ctx context.Context, loopID string, pid int) error {
 	return rt.stopClaude(ctx, containerName(loopID))
 }
 
-// PowerOff destroys the workstation and everything on its volume. Only loop
-// deletion gets here — never sleep or pause (ADR-0017).
-func (rt *Runtime) PowerOff(ctx context.Context, loopID string) error {
+// Halt stops the container, leaving it and its volume in place: the operator
+// switched the workstation off, and Ensure starts it again with everything
+// still on it.
+func (rt *Runtime) Halt(ctx context.Context, loopID string) error {
+	if _, err := rt.command(ctx, startTimeout, "stop", containerName(loopID)); err != nil && !notFound(err) {
+		return err
+	}
+	return nil
+}
+
+// Destroy removes the workstation and everything on its volume. Loop deletion
+// and the operator's recreate control get here — never sleep or pause
+// (ADR-0017).
+func (rt *Runtime) Destroy(ctx context.Context, loopID string) error {
 	name := containerName(loopID)
 	if _, err := rt.command(ctx, startTimeout, "rm", "--force", name); err != nil && !notFound(err) {
 		return err
