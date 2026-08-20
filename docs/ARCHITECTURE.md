@@ -118,6 +118,12 @@ introduced). Migrate opportunistically, not big-bang.
 - **Sandbox posture is per-edition** (ADR-0017): the local edition defaults to
   `docker` with `bare` as an explicit, uncontained-badged fallback; the hosted
   service is sandbox-mandatory — `bare` is absent from its configuration.
+- **One bot ingests a group, every bot delivers** (ADR-0020): a surface where each
+  loop has its own bot identity sees the same human message N times, numbered
+  differently per bot. Exactly one bot persists it — for Telegram, the lowest loop
+  ID currently polling that group — while the router still fans it out to every
+  mentioned loop and `delivered_to` lists them all. Ingest is transport detail;
+  delivery is the hub's. Any future multi-identity surface inherits this rule.
 - **GitHub is not a surface** (ADR-0019): loops do GitHub work — branch, PR,
   review, issues — themselves with `git`/`gh` inside the workstation. Spool models
   the `connection` (the injected credential) and nothing downstream of it: no PR

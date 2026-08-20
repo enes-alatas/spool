@@ -6,18 +6,31 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
 // Minimal Telegram Bot API client: getMe, getUpdates long-poll, sendMessage.
 
+// APIBase is the live Telegram Bot API. Tests point a client at a stand-in
+// server instead; nothing else varies it.
+const APIBase = "https://api.telegram.org"
+
 type Client struct {
 	token string
+	base  string
 	http  *http.Client
 }
 
-func NewClient(token string) *Client {
-	return &Client{token: token, http: &http.Client{Timeout: 70 * time.Second}}
+func NewClient(token string) *Client { return NewClientAt(APIBase, token) }
+
+// NewClientAt talks to a Bot API at base — APIBase in production.
+func NewClientAt(base, token string) *Client {
+	if base == "" {
+		base = APIBase
+	}
+	return &Client{token: token, base: strings.TrimSuffix(base, "/"),
+		http: &http.Client{Timeout: 70 * time.Second}}
 }
 
 type apiResponse struct {
@@ -45,7 +58,7 @@ func (c *Client) call(ctx context.Context, method string, params any, result any
 	if err != nil {
 		return err
 	}
-	url := "https://api.telegram.org/bot" + c.token + "/" + method
+	url := c.base + "/bot" + c.token + "/" + method
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
 		return err

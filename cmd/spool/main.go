@@ -37,6 +37,7 @@ func main() {
 	workstationImage := flag.String("workstation-image", "spool-workstation", "default image for docker workstations")
 	healthSec := flag.Int("workstation-health-sec", 45, "seconds between workstation liveness polls")
 	partials := flag.Bool("partial-messages", true, "stream token deltas to the UI (--include-partial-messages)")
+	telegramAPI := flag.String("telegram-api-base", telegram.APIBase, "Telegram Bot API base URL (tests point this at a stand-in server)")
 	retentionDays := flag.Int("events-retention-days", 30, "prune raw claude events older than this many days (0 disables; messages and turns are never pruned)")
 	flag.Parse()
 
@@ -124,7 +125,7 @@ func main() {
 	go scheduler.Run(ctx)
 	go pruneEvents(ctx, db, *retentionDays, log)
 
-	bridge := telegram.NewBridge(db, b, router, log)
+	bridge := telegram.NewBridge(db, b, router, log, *telegramAPI)
 	bridge.Start(ctx)
 
 	api := &httpapi.Server{
