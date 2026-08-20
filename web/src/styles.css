@@ -515,6 +515,24 @@ select {
   text-align: right;
   word-break: break-all;
 }
+/* per-turn context occupancy, oldest turn on the left */
+.ctx-trend {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 46px;
+  margin-top: 10px;
+}
+.ctx-bar {
+  flex: 1;
+  min-height: 2px;
+  background: var(--thread);
+  border-radius: 2px 2px 0 0;
+  opacity: 0.75;
+}
+.ctx-bar:last-child {
+  opacity: 1;
+}
 .side-panel .controls {
   display: flex;
   flex-wrap: wrap;
