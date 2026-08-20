@@ -69,6 +69,20 @@ and later on the hosted service.
   only.
 - Idle workstations cost a keepalive process each — within the QUALITY.md
   envelope (100 defined / 15 awake), negligible; the perf smoke (#4) verifies.
+- **Injected secrets are readable by the loop.** Env-var injection — the setup-
+  token and per-loop secrets alike — necessarily puts credentials where the
+  agent can read them, since it must use them. A loop can therefore be steered
+  into disclosing or exfiltrating a secret: not only by anyone authorized to
+  message it, but by prompt injection in any untrusted content it reads, given
+  open egress and tools. Nothing scrubs a loop's reply, so a leaked value
+  persists in its turns/messages and mirrors to surfaces; containment does not
+  help, as the wall stops code from escaping, not the agent from handing out a
+  credential it holds. Accepted at L1 as an operator responsibility — least-
+  privilege scope, short-lived revocable tokens, and no high-value credentials
+  on loops that read untrusted input. The structural fix is a credential broker
+  (parking lot, #30).
 - Parking lot: workstation port publishing (viewing an in-workstation dev
-  server) and an inside-out wake channel (a process inside the wall waking its
-  own loop — today all wake triggers are hub-owned).
+  server); an inside-out wake channel (a process inside the wall waking its own
+  loop — today all wake triggers are hub-owned); and a credential broker that
+  injects secrets into a loop's outbound requests so the agent wields a
+  capability, never the raw value (#30).
