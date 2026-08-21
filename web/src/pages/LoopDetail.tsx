@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { api, LoopView, Turn } from '../api'
+import { formatTokens, fillTone } from '../format'
 import { MODEL_OPTIONS, EFFORT_OPTIONS, PACING_OPTIONS } from '../options'
 import { useStream } from '../stream'
 import { toEntries, extractDelta } from '../timeline'
@@ -137,15 +138,24 @@ function contextTokens(turn: Turn): number {
   return turn.input_tokens + turn.cache_read_tokens
 }
 
-function formatTokens(n: number): string {
-  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
+// ContextFill is the occupancy of the model's own window — the glanceable
+// number. Only rendered when Spool knows the window; an unknown limit gets
+// absolute tokens rather than a percentage against a guess.
+function ContextFill({ tokens, limit }: { tokens: number; limit: number }) {
+  const ratio = Math.min(1, tokens / limit)
+  return (
+    <div className={`ctx-fill ${fillTone(ratio)}`} title={`${tokens} of ${limit} tokens`}>
+      <div className="ctx-fill-bar" style={{ width: `${ratio * 100}%` }} />
+      <span className="ctx-fill-pct">{Math.round(ratio * 100)}%</span>
+    </div>
+  )
 }
 
 // ContextPanel plots context occupancy across recent turns so a loop climbing
 // toward its window is visible before it overflows. Bars are relative to the
-// largest turn in view — the model's actual limit is not on the loop response
-// yet, so there is no honest percentage to show.
-function ContextPanel({ turns }: { turns: Turn[] }) {
+// largest turn in view; the fill against the model's own window is the row
+// above them, and only when Spool knows that window.
+function ContextPanel({ loop, turns }: { loop: LoopView; turns: Turn[] }) {
   const finished = turns.filter((turn) => turn.ended_at > 0).reverse()
   if (finished.length === 0) return null
 
@@ -157,8 +167,14 @@ function ContextPanel({ turns }: { turns: Turn[] }) {
       <h3>Context</h3>
       <div className="row">
         <span className="k">last turn</span>
-        <span className="v">{formatTokens(latest)} tokens</span>
+        <span className="v">
+          {formatTokens(loop.context_tokens || latest)}
+          {loop.context_limit_tokens > 0 && ` / ${formatTokens(loop.context_limit_tokens)}`} tokens
+        </span>
       </div>
+      {loop.context_limit_tokens > 0 && (
+        <ContextFill tokens={loop.context_tokens} limit={loop.context_limit_tokens} />
+      )}
       <div className="ctx-trend">
         {finished.map((turn) => (
           <div
@@ -581,7 +597,7 @@ export default function LoopDetail() {
             </div>
           </div>
 
-          <ContextPanel turns={turns ?? []} />
+          <ContextPanel loop={loop} turns={turns ?? []} />
 
           <WorkstationPanel loop={loop} runningVerb={runningVerb} />
 
