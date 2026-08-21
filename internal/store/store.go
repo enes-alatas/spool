@@ -127,10 +127,13 @@ type Message struct {
 }
 
 type Turn struct {
-	ID               string  `json:"id"`
-	LoopID           string  `json:"loop_id"`
-	SessionID        string  `json:"session_id"`
-	Trigger          string  `json:"trigger"`
+	ID        string `json:"id"`
+	LoopID    string `json:"loop_id"`
+	SessionID string `json:"session_id"`
+	Trigger   string `json:"trigger"`
+	// Model the turn actually ran on, as the CLI reported it at init — not
+	// the loop's configured string, which may be empty or an alias.
+	Model            string  `json:"model,omitempty"`
 	StartedAt        int64   `json:"started_at"`
 	EndedAt          int64   `json:"ended_at"`
 	IsError          bool    `json:"is_error"`
@@ -208,6 +211,10 @@ type TurnStore interface {
 	Create(ctx context.Context, t *Turn) error
 	Finish(ctx context.Context, t *Turn) error
 	ListByLoop(ctx context.Context, loopID string, limit int) ([]*Turn, error)
+	// Latest returns the loop's most recent finished turn, or ErrNotFound
+	// when it has none. Its token counts are the freshest measure of how
+	// full the loop's context is.
+	Latest(ctx context.Context, loopID string) (*Turn, error)
 	// InterruptDangling marks unfinished turns as errored (orchestrator crash).
 	InterruptDangling(ctx context.Context, endedAt int64) error
 	CostSince(ctx context.Context, loopID string, since int64) (float64, error)
