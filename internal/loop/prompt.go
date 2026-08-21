@@ -4,9 +4,24 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/enes-alatas/spool/internal/store"
 )
+
+// truncate caps text at max bytes without splitting a UTF-8 rune, marking the
+// cut with an ellipsis. Prompt text is model-authored and freely multi-byte;
+// a byte slice through a rune would feed the session invalid UTF-8.
+func truncate(text string, max int) string {
+	if len(text) <= max {
+		return text
+	}
+	cut := max
+	for cut > 0 && !utf8.RuneStart(text[cut]) {
+		cut--
+	}
+	return text[:cut] + "…"
+}
 
 // Peer is the minimal view of another loop shown in a system prompt.
 type Peer struct {
@@ -37,9 +52,7 @@ func SystemPrompt(l *store.Loop, peers []Peer) string {
 			if i := strings.IndexByte(mission, '\n'); i >= 0 {
 				mission = mission[:i]
 			}
-			if len(mission) > 120 {
-				mission = mission[:120] + "…"
-			}
+			mission = truncate(mission, 120)
 			fmt.Fprintf(&b, "    @%s — %s\n", p.Name, mission)
 		}
 	} else {
@@ -129,23 +142,53 @@ reply with a trailer like [next-wake: 45m] (allowed range: %s–%s).`, dur(l.Min
 	return Envelope{Trigger: store.TriggerTick, Text: head + "\n\n" + body}
 }
 
+// RotationEnvelope is the last turn of a session about to be rotated: it asks
+// the loop for the handoff note its successor starts from (ADR-0022).
+func RotationEnvelope(now time.Time) Envelope {
+	head := header(now, "context rotation")
+	body := `Your context window is filling up, so this session ends here and a fresh
+session continues your work. Reply with a handoff note for your successor —
+it is the only conversational memory that carries across. Cover: work in
+progress and its exact state, decisions made and why, and what to do next.
+Your mission and operating instructions reach the new session automatically;
+do not restate them, and do not include a [next-wake] trailer.`
+	return Envelope{Trigger: store.TriggerRotation, Text: head + "\n\n" + body}
+}
+
+// maxHandoffNote caps what a rotation carries into the fresh session, so one
+// runaway reply cannot seed the new context with the bulk of the old one.
+const maxHandoffNote = 4000
+
 // SessionLostPreamble is prepended to the first envelope of a fresh session
 // after a failed resume.
 func SessionLostPreamble(l *store.Loop, recentTurns []string) string {
 	var b strings.Builder
 	b.WriteString("[system note · your previous session could not be resumed; this is a fresh session]\n\n")
 	fmt.Fprintf(&b, "Your mission (restated): %s\n", strings.TrimSpace(l.Mission))
-	if len(recentTurns) > 0 {
-		b.WriteString("Recent context (your latest replies, oldest first):\n")
-		for _, t := range recentTurns {
-			t = strings.TrimSpace(t)
-			if len(t) > 500 {
-				t = t[:500] + "…"
-			}
-			fmt.Fprintf(&b, "- %s\n", strings.ReplaceAll(t, "\n", " "))
-		}
-	}
+	writeRecentReplies(&b, recentTurns)
 	return b.String()
+}
+
+// RotationPreamble opens the fresh session after a deliberate context
+// rotation, carrying the note the previous session wrote on its way out.
+func RotationPreamble(l *store.Loop, note string, recentTurns []string) string {
+	var b strings.Builder
+	b.WriteString("[system note · your context was rotated; this fresh session continues your work]\n\n")
+	fmt.Fprintf(&b, "Your mission (restated): %s\n", strings.TrimSpace(l.Mission))
+	fmt.Fprintf(&b, "Handoff note from your previous session:\n%s\n", truncate(strings.TrimSpace(note), maxHandoffNote))
+	writeRecentReplies(&b, recentTurns)
+	return b.String()
+}
+
+func writeRecentReplies(b *strings.Builder, recentTurns []string) {
+	if len(recentTurns) == 0 {
+		return
+	}
+	b.WriteString("Recent context (your latest replies, oldest first):\n")
+	for _, t := range recentTurns {
+		t = truncate(strings.TrimSpace(t), 500)
+		fmt.Fprintf(b, "- %s\n", strings.ReplaceAll(t, "\n", " "))
+	}
 }
 
 func dur(sec int) string {

@@ -16,14 +16,16 @@ const (
 	StatusPaused   = "paused"
 	StatusArchived = "archived"
 
-	EndReasonIdle   = "idle"
-	EndReasonKilled = "killed"
-	EndReasonCrash  = "crash"
-	EndReasonLost   = "lost"
+	EndReasonIdle    = "idle"
+	EndReasonKilled  = "killed"
+	EndReasonCrash   = "crash"
+	EndReasonLost    = "lost"
+	EndReasonRotated = "rotated" // retired by a deliberate context rotation (ADR-0022)
 
-	TriggerTick    = "tick"
-	TriggerMessage = "message"
-	TriggerManual  = "manual"
+	TriggerTick     = "tick"
+	TriggerMessage  = "message"
+	TriggerManual   = "manual"
+	TriggerRotation = "rotation" // the handoff turn a context rotation injects
 
 	OriginWeb           = "web"
 	OriginTelegramGroup = "telegram-group"
@@ -46,6 +48,14 @@ const (
 // CLAUDE_CODE_OAUTH_TOKEN so contained loops run under the operator's own
 // Claude login. Write-only through the API; never logged.
 const SettingClaudeOAuthToken = "claude_oauth_token"
+
+// Context-rotation thresholds (ADR-0022), stored as integer percentages of
+// the model's context window. A loop arms rotation at the first and stops
+// waiting for a quiet boundary at the second.
+const (
+	SettingContextArmPercent   = "context_arm_percent"
+	SettingContextForcePercent = "context_force_percent"
+)
 
 type Loop struct {
 	ID      string `json:"id"`
