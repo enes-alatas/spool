@@ -93,6 +93,32 @@ export interface TGSender {
   updated_at: number
 }
 
+// A fleet rule: one instruction injected into every loop's prompt, ahead of
+// its mission (ADR pending, #33).
+export interface FleetRule {
+  id: string
+  title: string
+  body: string
+  enabled: boolean
+  created_at: number
+  updated_at: number
+}
+
+// What the size guard measures and what it allows. section_chars is the
+// rendered size of the enabled set — the number the guard itself checks — so
+// a panel counting against it can never let through what the API rejects.
+export interface RulesBudget {
+  section_chars: number
+  section_chars_max: number
+  title_chars_max: number
+  body_chars_max: number
+}
+
+export interface RulesView {
+  rules: FleetRule[]
+  budget: RulesBudget
+}
+
 export interface Settings {
   claude_token_set: boolean
 }
@@ -121,6 +147,20 @@ export interface CreateLoopReq {
   tg_bot_token?: string
 }
 
+// ApiError carries the API's machine-readable reason alongside its prose, so
+// a caller can branch on the cause without parsing the message.
+export class ApiError extends Error {
+  readonly status: number
+  readonly code: string
+
+  constructor(status: number, message: string, code = '') {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.code = code
+  }
+}
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     headers: { 'Content-Type': 'application/json' },
@@ -128,14 +168,17 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   })
   if (!res.ok) {
     let msg = `${res.status}`
+    let code = ''
     try {
       const body = await res.json()
       if (body.error) msg = body.error
+      if (body.code) code = body.code
     } catch {
       /* keep status */
     }
-    throw new Error(msg)
+    throw new ApiError(res.status, msg, code)
   }
+  if (res.status === 204) return undefined as T
   return res.json()
 }
 
@@ -195,6 +238,12 @@ export const api = {
   // workstation to power.
   workstationPower: (name: string, verb: 'restart' | 'poweroff' | 'poweron' | 'recreate') =>
     req<LoopView>(`/api/loops/${name}/workstation/${verb}`, { method: 'POST' }),
+  rules: () => req<RulesView>('/api/rules'),
+  createRule: (body: { title: string; body: string; enabled: boolean }) =>
+    req<FleetRule>('/api/rules', { method: 'POST', body: JSON.stringify(body) }),
+  patchRule: (id: string, body: Partial<{ title: string; body: string; enabled: boolean }>) =>
+    req<FleetRule>(`/api/rules/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteRule: (id: string) => req<void>(`/api/rules/${id}`, { method: 'DELETE' }),
   // Secret values are write-only: the list returns names only.
   loopSecrets: (name: string) => req<LoopSecret[]>(`/api/loops/${name}/secrets`),
   setLoopSecret: (name: string, key: string, value: string) =>
