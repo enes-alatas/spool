@@ -63,6 +63,9 @@ const (
 	// itself before the session is written off as unusable. Two, so a single
 	// transient failure still gets its ordinary retry.
 	deadResumeLimit = 2
+	// drainGrace bounds a stdin-close drain; a process that ignores EOF is
+	// killed rather than left parking the loop (and any queued work) forever.
+	drainGrace = 30 * time.Second
 
 	defaultHealthInterval = 45 * time.Second
 	healthCheckTimeout    = 10 * time.Second
@@ -152,6 +155,16 @@ type Actor struct {
 	deadResumes  int    // consecutive resumes that died before announcing
 	activeModel  string // model the CLI reported at init, for the turn record
 	backoff      time.Duration
+
+	// Context rotation (ADR-0022): the loop sheds its context proactively,
+	// before the window's degradation zone, by writing a handoff note as its
+	// session's last turn and starting fresh from it.
+	fillPct      int    // context fill of the last measured turn, percent of the model's window (0 = unknown)
+	armed        bool   // fill crossed the arm threshold; rotate at the next quiet boundary
+	handoffTurn  bool   // the in-flight turn is the rotation's handoff request
+	rotateOnExit bool   // rotate to a fresh session once the draining process exits
+	handoffNote  string // captured handoff reply, carried into the next fresh session's preamble
+	powering     bool   // a power verb is running; nothing may spawn a process under it
 
 	idleTimer   *time.Timer
 	retryTimer  *time.Timer
@@ -435,10 +448,40 @@ func (actor *Actor) wakeSpec(fresh bool) runtime.Spec {
 	return spec
 }
 
-// startTurn sends everything queued as one batched user message.
+// startTurn sends everything queued as one batched user message — unless the
+// context is past the force ceiling, in which case the handoff turn runs
+// first and the queue is delivered to the fresh session after rotation.
 func (actor *Actor) startTurn() {
+	if actor.needsForcedRotation() {
+		actor.startHandoffTurn()
+		return
+	}
 	batch := actor.inbox
 	actor.inbox = nil
+	actor.sendBatch(batch)
+}
+
+// needsForcedRotation reports whether the context is past the force ceiling.
+// Rotation then stops waiting for a quiet boundary: a loop that is never idle
+// must still not ride into the CLI's end-of-window compaction.
+func (actor *Actor) needsForcedRotation() bool {
+	if actor.handoffTurn || actor.fillPct == 0 {
+		return false
+	}
+	_, force := RotationThresholds(context.Background(), actor.deps.Store.Settings())
+	return actor.fillPct >= force
+}
+
+// startHandoffTurn asks the loop, as this session's last turn, to write the
+// handoff note its successor starts from. The inbox stays put; it is
+// delivered to the fresh session after rotation.
+func (actor *Actor) startHandoffTurn() {
+	actor.handoffTurn = true
+	actor.sendBatch([]Envelope{RotationEnvelope(time.Now())})
+}
+
+// sendBatch runs one turn over the given envelopes.
+func (actor *Actor) sendBatch(batch []Envelope) {
 	actor.currentBatch = batch
 
 	texts := make([]string, 0, len(batch))
@@ -454,9 +497,17 @@ func (actor *Actor) startTurn() {
 		}
 	}
 	text := strings.Join(texts, "\n\n---\n\n")
-	if actor.freshSpawn && actor.loopHadHistory() {
-		recent := actor.recentReplies()
-		text = SessionLostPreamble(&actor.loop, recent) + "\n\n---\n\n" + text
+	if actor.freshSpawn {
+		switch {
+		case actor.handoffNote != "":
+			// The note is not cleared here: a send that fails or a process
+			// that dies before this turn completes must not cost it. It is
+			// cleared when a turn finishes, by which point the fresh session
+			// has the preamble in its history.
+			text = RotationPreamble(&actor.loop, actor.handoffNote, actor.recentReplies()) + "\n\n---\n\n" + text
+		case actor.loopHadHistory():
+			text = SessionLostPreamble(&actor.loop, actor.recentReplies()) + "\n\n---\n\n" + text
+		}
 	}
 
 	turn := &store.Turn{
@@ -502,6 +553,11 @@ func (actor *Actor) handleEvent(ev claude.Event) {
 			// what the loop is really running on: its configured model may
 			// be empty or an alias that floats between releases
 			actor.activeModel = ev.Init.Model
+			if ContextLimit(actor.activeModel) == 0 {
+				// otherwise rotation stays off in total silence, and the loop
+				// rides to the CLI's end-of-window compaction unnoticed
+				actor.log().Warn("context window unknown; rotation will not trigger", "model", actor.activeModel)
+			}
 		}
 		actor.storeClaudeEvent(ev)
 		if actor.state == StateWaking && actor.turn == nil {
@@ -542,29 +598,85 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 		}
 		actor.deps.Bus.Publish(bus.Item{Kind: bus.KindTurnResult, LoopID: actor.loop.ID, Payload: t})
 
+		// The handoff turn's reply is a note to the loop's successor, not an
+		// outgoing message: it is neither routed nor read for a trailer.
 		var trailer time.Duration
 		var hasTrailer bool
-		if !res.IsError {
+		if !res.IsError && !actor.handoffTurn {
 			trailer, hasTrailer = ParseTrailer(res.ResultText)
 			if actor.deps.OnReply != nil && strings.TrimSpace(res.ResultText) != "" {
 				actor.deps.OnReply(&actor.loop, res.ResultText, actor.pendingDMs)
 			}
 		}
-		if actor.deps.OnTurnDone != nil {
+		if actor.deps.OnTurnDone != nil && !actor.handoffTurn {
 			actor.deps.OnTurnDone(&actor.loop, trailer, hasTrailer)
 		}
 	}
 	actor.turn = nil
 	actor.pendingDMs = nil
 	actor.currentBatch = nil
+	// A completed turn means any pending handoff note reached its session;
+	// finishHandoff below sets the next one after this clears the old.
+	actor.handoffNote = ""
+
+	if actor.handoffTurn {
+		actor.finishHandoff(res)
+		return
+	}
+	actor.measureContext(res)
 
 	if len(actor.inbox) > 0 && !actor.paused {
 		actor.startTurn()
 		return
 	}
+	if actor.armed && !actor.paused {
+		// quiet boundary: the wake left no queued work, so this is the
+		// cheapest moment to shed the context (ADR-0022)
+		actor.startHandoffTurn()
+		return
+	}
 	actor.state = StateIdle
 	actor.armIdleTimer()
 	actor.publishState()
+}
+
+// finishHandoff ends the rotation's handoff turn: the reply is the note the
+// next session starts from (an errored turn donates none — the rotation still
+// happens with the summary-less carry), and the process is drained so the
+// rotation lands on a dead process rather than under a live one.
+func (actor *Actor) finishHandoff(res *claude.ResultInfo) {
+	actor.handoffTurn = false
+	if res != nil && !res.IsError {
+		actor.handoffNote = strings.TrimSpace(res.ResultText)
+	}
+	actor.rotateOnExit = true
+	actor.state = StateDraining
+	actor.publishState()
+	_ = actor.proc.CloseStdin()
+	// the timer becomes the drain's deadline: a process that ignores EOF
+	// would otherwise park the rotation — and any queued work — forever
+	actor.idleTimer.Reset(drainGrace)
+}
+
+// measureContext records how full the model's window was at the turn that
+// just finished — the prompt sent plus the cached prefix reread — and arms
+// rotation once it crosses the arm threshold. An unknown window never arms:
+// a ratio against a guess would rotate on fiction. Zero usage (an errored
+// turn) keeps the previous measurement rather than reading as empty.
+func (actor *Actor) measureContext(res *claude.ResultInfo) {
+	if res == nil {
+		return
+	}
+	window := ContextLimit(actor.activeModel)
+	tokens := res.Usage.InputTokens + res.Usage.CacheReadTokens
+	if window <= 0 || tokens == 0 {
+		return
+	}
+	actor.fillPct = tokens * 100 / window
+	arm, _ := RotationThresholds(context.Background(), actor.deps.Store.Settings())
+	// Recomputed, not latched: a drop below the threshold — the CLI compacted
+	// after all, or the operator raised the bar — disarms a pointless rotation.
+	actor.armed = actor.fillPct >= arm
 }
 
 func (actor *Actor) armIdleTimer() {
@@ -576,13 +688,23 @@ func (actor *Actor) armIdleTimer() {
 }
 
 func (actor *Actor) handleIdleTimeout() {
-	if actor.state != StateIdle || actor.proc == nil {
+	if actor.proc == nil {
 		return
 	}
-	actor.state = StateDraining
-	actor.publishState()
-	_ = actor.proc.CloseStdin()
-	// exit arrives via procEvents close
+	switch actor.state {
+	case StateIdle:
+		actor.state = StateDraining
+		actor.publishState()
+		_ = actor.proc.CloseStdin()
+		// exit arrives via procEvents close; the timer re-arms as the
+		// drain's deadline
+		actor.idleTimer.Reset(drainGrace)
+	case StateDraining:
+		// the process ignored EOF past the grace: kill it — the exit path
+		// still carries out whatever the drain was for (sleep or rotation)
+		actor.log().Warn("drain timed out; killing process")
+		_ = actor.proc.Kill()
+	}
 }
 
 func (actor *Actor) handleProcExit() {
@@ -596,6 +718,8 @@ func (actor *Actor) handleProcExit() {
 
 	wasDraining := actor.state == StateDraining
 	inTurn := actor.turn != nil
+	wasHandoff := actor.handoffTurn
+	actor.handoffTurn = false
 	sessionLost := claude.IsSessionNotFound(exit)
 	// A resume that dies before the CLI announces itself never loaded the
 	// session at all. One can be a blip; a run of them means this session
@@ -618,12 +742,22 @@ func (actor *Actor) handleProcExit() {
 	}
 
 	switch {
+	case wasHandoff:
+		// the handoff turn died with the process; rotate anyway — the crash
+		// costs the note, not the rotation. Its envelope is not requeued: the
+		// rotation it asked for is happening.
+		actor.currentBatch = nil
+		actor.rotateContext(tail(exit.Stderr, 500))
 	case wasDraining || (exit.Code == 0 && !inTurn):
 		// clean idle exit
 		actor.currentBatch = nil
+		if actor.rotateOnExit {
+			actor.rotateContext("")
+			return
+		}
 		actor.state = StateAsleep
 		actor.publishState()
-		if len(actor.inbox) > 0 && !actor.paused && !actor.loop.WorkstationOff {
+		if len(actor.inbox) > 0 && !actor.paused && !actor.loop.WorkstationOff && !actor.powering {
 			actor.wake() // message raced the idle close
 		}
 	case sessionLost:
@@ -670,16 +804,49 @@ func (actor *Actor) rotateSession(reason, detail string) {
 		actor.storeSpoolEvent(reason, fmt.Sprintf(`{"old_session":%q,"stderr":%q}`, old, detail))
 		actor.log().Warn("session cannot be resumed; rotating", "old_session", old, "stderr", detail)
 	}
-	actor.loop.CurrentSessionID = ""
-	actor.deadResumes = 0
-	actor.backoff = 0
 	if len(actor.currentBatch) > 0 {
 		actor.inbox = append(actor.currentBatch, actor.inbox...)
 		actor.currentBatch = nil
 	}
+	actor.startFreshSession()
+}
+
+// rotateContext is the deliberate counterpart of rotateSession (ADR-0022):
+// the context crossed its threshold and the old session is retired by choice,
+// its handoff note (when one was captured) waiting to seed the next session's
+// first turn.
+func (actor *Actor) rotateContext(detail string) {
+	actor.rotateOnExit = false
+	old := actor.loop.CurrentSessionID
+	_ = actor.deps.Store.Sessions().End(context.Background(), old, store.EndReasonRotated, now())
+	if detail == "" {
+		actor.storeSpoolEvent("context_rotated", fmt.Sprintf(`{"old_session":%q,"fill_pct":%d}`, old, actor.fillPct))
+	} else {
+		actor.storeSpoolEvent("context_rotated", fmt.Sprintf(`{"old_session":%q,"fill_pct":%d,"stderr":%q}`, old, actor.fillPct, detail))
+	}
+	actor.log().Info("context rotated", "old_session", old, "fill_pct", actor.fillPct)
+	actor.startFreshSession()
+}
+
+// startFreshSession forgets the current session and, when work is queued,
+// wakes onto a new one. Shared tail of every rotation path. The cleared id is
+// persisted immediately: a loop that goes quiet after rotating may not wake
+// again before a server restart, and a restart must not resurrect the retired
+// session.
+func (actor *Actor) startFreshSession() {
+	actor.loop.CurrentSessionID = ""
+	_ = actor.deps.Store.Loops().SetRuntime(context.Background(), actor.loop.ID, "", 0)
+	actor.deadResumes = 0
+	actor.backoff = 0
+	actor.armed = false
+	actor.fillPct = 0
 	actor.state = StateAsleep
 	actor.publishState()
-	if len(actor.inbox) > 0 && !actor.paused && !actor.loop.WorkstationOff {
+	// Never wake while a power verb is underway: stopProcess can land here
+	// mid-verb via a draining rotation, and a process spawned now would run
+	// on the workstation the verb is about to halt or destroy. The queued
+	// work stays put; the verb's end delivers it.
+	if len(actor.inbox) > 0 && !actor.paused && !actor.loop.WorkstationOff && !actor.powering {
 		actor.wake()
 	}
 }
@@ -762,6 +929,8 @@ func (actor *Actor) power(verb string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), powerTimeout)
 	defer cancel()
+	actor.powering = true
+	defer func() { actor.powering = false }()
 
 	if verb != PowerOn {
 		// poweron is documented idempotent: it must not end a turn that is
@@ -861,6 +1030,10 @@ func (actor *Actor) forgetSession(ctx context.Context) {
 	_ = actor.deps.Store.Sessions().End(ctx, old, store.EndReasonLost, now())
 	actor.loop.CurrentSessionID = ""
 	_ = actor.deps.Store.Loops().SetRuntime(ctx, actor.loop.ID, "", 0)
+	// the fill measurement described the forgotten session; left standing it
+	// would force a pointless rotation as the new empty session's first turn
+	actor.fillPct = 0
+	actor.armed = false
 	actor.storeSpoolEvent("session_forgotten", fmt.Sprintf(`{"old_session":%q}`, old))
 }
 

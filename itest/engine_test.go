@@ -217,3 +217,150 @@ func TestUnresumableSessionRotatesInsteadOfRetrying(t *testing.T) {
 		t.Fatal("rotation was not recorded as a spool event")
 	}
 }
+
+// TestContextRotationAtQuietBoundary: turns that fill the window past the arm
+// threshold make the loop write a handoff note and rotate at a quiet
+// boundary; the next message lands on a fresh session whose first turn
+// carries the note, and the note itself never enters the message stream
+// (ADR-0022). Every fakeclaude turn echoes and reports 100k of a 200k
+// window (50%, past the 40% arm default, below the 70% force ceiling).
+func TestContextRotationAtQuietBoundary(t *testing.T) {
+	workspace := workspaceWithScript(t, "!ctx 100000\n")
+	s := startServer(t, t.TempDir())
+	s.createLoop("shedder", map[string]any{
+		"workspace_path": workspace,
+		"workspace_mode": "dir",
+		"model":          "haiku",
+	})
+
+	s.message("shedder", "fill it")
+	s.waitTurn("shedder", 30*time.Second, func(tr turn) bool {
+		return strings.Contains(tr.ResultText, "fill it")
+	})
+
+	// the queue is empty, so the handoff turn and the rotation follow on
+	// their own; the echoed reply proves the rotation request reached the loop
+	handoff := s.waitTurn("shedder", 30*time.Second, func(tr turn) bool {
+		return tr.Trigger == "rotation" && strings.Contains(tr.ResultText, "handoff note")
+	})
+	if !s.hasEvent("shedder", "context_rotated", 30*time.Second) {
+		t.Fatal("rotation was not recorded as a spool event")
+	}
+
+	// the next message runs on a fresh session, seeded with the note the old
+	// session wrote — the echo shows the preamble carrying it
+	s.message("shedder", "carry on")
+	carried := s.waitTurn("shedder", 30*time.Second, func(tr turn) bool {
+		return strings.Contains(tr.ResultText, "carry on")
+	})
+	if carried.SessionID == handoff.SessionID {
+		t.Fatalf("work after the rotation stayed on the retired session %s", handoff.SessionID)
+	}
+	if !strings.Contains(carried.ResultText, "your context was rotated") ||
+		!strings.Contains(carried.ResultText, "Handoff note from your previous session") {
+		t.Fatalf("fresh session did not carry the handoff note:\n%s", carried.ResultText)
+	}
+
+	// the handoff reply is a note to the successor, not an outgoing message
+	var msgs []struct {
+		Origin string `json:"origin"`
+		Text   string `json:"text"`
+	}
+	s.mustJSON("GET", "/api/activity?limit=100", nil, &msgs)
+	for _, m := range msgs {
+		if m.Origin == "loop" && strings.HasPrefix(m.Text, "echo: [context rotation") {
+			t.Fatalf("handoff note leaked into the message stream: %q", m.Text)
+		}
+	}
+}
+
+// TestContextRotationForcedBeforeQueuedWork: past the force ceiling the
+// rotation stops waiting for quiet — work queued behind a hot context is
+// answered only after the handoff, on the fresh session (ADR-0022). Every
+// turn hangs 2s at 150k of the 200k window (75%, past the 70% force default),
+// so a message sent during a turn is reliably queued behind a forced context.
+func TestContextRotationForcedBeforeQueuedWork(t *testing.T) {
+	workspace := workspaceWithScript(t, "!ctx 150000 !hang 2\n")
+	s := startServer(t, t.TempDir())
+	s.createLoop("presser", map[string]any{
+		"workspace_path": workspace,
+		"workspace_mode": "dir",
+		"model":          "haiku",
+	})
+
+	s.message("presser", "one")
+	time.Sleep(500 * time.Millisecond) // let a turn start its hang
+	s.message("presser", "two")        // queues behind the hot context
+
+	handoff := s.waitTurn("presser", 60*time.Second, func(tr turn) bool {
+		return tr.Trigger == "rotation"
+	})
+	if !s.hasEvent("presser", "context_rotated", 30*time.Second) {
+		t.Fatal("forced rotation was not recorded as a spool event")
+	}
+	// the queued work was not delivered to the hot session the handoff retired
+	s.waitTurn("presser", 60*time.Second, func(tr turn) bool {
+		return tr.Trigger == "message" && tr.SessionID != handoff.SessionID
+	})
+}
+
+// TestContextRotationSurvivesServerRestart: a loop that rotates and then goes
+// quiet must not resurrect the retired session when the orchestrator
+// restarts — the cleared session id is persisted at rotation time, not at the
+// next wake (ADR-0022; found in manual testing, 2026-08-21).
+func TestContextRotationSurvivesServerRestart(t *testing.T) {
+	workspace := workspaceWithScript(t, "!ctx 100000\n")
+	dataDir := t.TempDir()
+	s := startServer(t, dataDir)
+	s.createLoop("sleeper", map[string]any{
+		"workspace_path": workspace,
+		"workspace_mode": "dir",
+		"model":          "haiku",
+	})
+
+	s.message("sleeper", "fill it")
+	retired := s.waitTurn("sleeper", 30*time.Second, func(tr turn) bool {
+		return tr.Trigger == "rotation"
+	})
+	if !s.hasEvent("sleeper", "context_rotated", 30*time.Second) {
+		t.Fatal("rotation was not recorded as a spool event")
+	}
+	s.waitState("sleeper", "asleep", 30*time.Second)
+	s.stop()
+
+	s2 := startServer(t, dataDir)
+	s2.message("sleeper", "after restart")
+	answered := s2.waitTurn("sleeper", 30*time.Second, func(tr turn) bool {
+		return strings.Contains(tr.ResultText, "after restart")
+	})
+	if answered.SessionID == retired.SessionID {
+		t.Fatalf("restart resurrected the retired session %s", retired.SessionID)
+	}
+}
+
+// TestContextRotationSurvivesHandoffCrash: ADR-0022's fallback — a handoff
+// turn that dies with its process still rotates, just without a note, and
+// later work is answered on the fresh session.
+func TestContextRotationSurvivesHandoffCrash(t *testing.T) {
+	// turn 1 arms at 75%; turn 2 — the handoff request — crashes mid-turn
+	workspace := workspaceWithScript(t, "!ctx 150000\n!crash\n")
+	s := startServer(t, t.TempDir())
+	s.createLoop("crasher", map[string]any{
+		"workspace_path": workspace,
+		"workspace_mode": "dir",
+		"model":          "haiku",
+	})
+
+	s.message("crasher", "boom")
+	failed := s.waitTurn("crasher", 30*time.Second, func(tr turn) bool {
+		return tr.Trigger == "rotation" && tr.IsError
+	})
+	if !s.hasEvent("crasher", "context_rotated", 30*time.Second) {
+		t.Fatal("a crashed handoff turn must still rotate")
+	}
+
+	s.message("crasher", "still alive?")
+	s.waitTurn("crasher", 30*time.Second, func(tr turn) bool {
+		return strings.Contains(tr.ResultText, "still alive?") && tr.SessionID != failed.SessionID
+	})
+}

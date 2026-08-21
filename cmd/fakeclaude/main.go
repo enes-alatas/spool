@@ -11,8 +11,11 @@
 // Replies: if the working directory contains a ".fakeclaude" file, its lines
 // script the replies (line N answers the session's turn N; the last line
 // repeats). Directives: "!crash" exits 2 mid-turn without a result; "!huge
-// <bytes>" replies with that many bytes; "!hang <seconds>" sleeps first.
-// Without a script file, every turn echoes: "echo: <received text>".
+// <bytes>" replies with that many bytes; "!hang <seconds>" sleeps first. A
+// "!ctx <tokens>" prefix makes the turn report that many input tokens — how
+// a filling context looks from outside — and composes with the rest of the
+// line ("!ctx 120000 !hang 2"). Without a script file, every turn echoes:
+// "echo: <received text>".
 //
 // A ".fakeclaude-resume-broken" file in the working directory makes every
 // --resume fail the way a session that can no longer be loaded does: a
@@ -136,9 +139,17 @@ func main() {
 
 		state.Turns++
 		reply := "echo: " + text
+		ctxTokens := 0
 		if script != nil {
 			line := script[min(state.Turns, len(script))-1]
+			for strings.HasPrefix(line, "!ctx ") {
+				numStr, rest, _ := strings.Cut(strings.TrimPrefix(line, "!ctx "), " ")
+				ctxTokens, _ = strconv.Atoi(numStr)
+				line = strings.TrimSpace(rest)
+			}
 			switch {
+			case line == "":
+				// a bare "!ctx <n>" line keeps the echo reply
 			case line == "!crash":
 				out.Flush()
 				os.Exit(2)
@@ -169,14 +180,14 @@ func main() {
 			"message": map[string]any{
 				"role":    "assistant",
 				"content": []map[string]any{{"type": "text", "text": reply}},
-				"usage":   usage(),
+				"usage":   usage(ctxTokens),
 			},
 			"session_id": id,
 		})
 		emit(map[string]any{
 			"type": "result", "subtype": "success", "is_error": false,
 			"total_cost_usd": 0.001, "duration_ms": 5, "num_turns": state.Turns,
-			"result": reply, "usage": usage(), "session_id": id,
+			"result": reply, "usage": usage(ctxTokens), "session_id": id,
 		})
 
 		b, _ := json.Marshal(state)
@@ -204,9 +215,15 @@ func loadScript() []string {
 	return lines
 }
 
-func usage() map[string]any {
+// usage reports the turn's token usage; ctxTokens overrides the input count
+// when a "!ctx" directive set it, 0 keeps the small default.
+func usage(ctxTokens int) map[string]any {
+	input := 10
+	if ctxTokens > 0 {
+		input = ctxTokens
+	}
 	return map[string]any{
-		"input_tokens": 10, "output_tokens": 5,
+		"input_tokens": input, "output_tokens": 5,
 		"cache_creation_input_tokens": 0, "cache_read_input_tokens": 0,
 	}
 }
