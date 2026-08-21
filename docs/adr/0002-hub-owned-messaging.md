@@ -21,3 +21,5 @@ between loops. Each loop gets its own bot identity per surface.
 - One routing/storm-guard/persistence point; surfaces are thin adapters.
 - Loops need no tools to communicate — replying is sending, which works on any model.
 - Un-addressed chatter reaches a loop only via the opt-in *follow* mechanism (VISION).
+- **Amended by ADR-0023:** the mirror is no longer unconditional — surfaces carry
+  only human-facing traffic; loop-to-loop coordination stays in the control room.

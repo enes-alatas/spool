@@ -10,8 +10,9 @@ lives in `docs/VISION.md`.*
    stream-json over stdin/stdout under the operator's own Claude login and plan limits.
    No Agent SDK, no direct API. (ADR-0001)
 2. **The hub owns all messaging.** A loop's final reply text is its outgoing message;
-   the orchestrator parses `@mentions`, routes internally, and mirrors to chat surfaces.
-   Surfaces are mirrors and human I/O — never the transport between loops. (ADR-0002)
+   the orchestrator parses `@mentions`, routes internally, and mirrors human-facing
+   traffic to chat surfaces. Surfaces are mirrors and human I/O — never the transport
+   between loops. (ADR-0002, ADR-0023)
 3. **Modular monolith with seams.** One binary, one process, four formal interface
    boundaries inside. We extract processes only when the hosted service forces it,
    and the seams are drawn so that extraction is a move, not a rewrite. (ADR-0004)
@@ -37,7 +38,8 @@ Use these words exactly — in code, UI, docs, and prompts. Don't introduce syno
 | **trailer** | The `[next-wake: 45m]` suffix a loop uses to schedule itself. |
 | **envelope** | The bracketed header + body format in which messages/ticks are delivered to a loop. |
 | **surface** | A chat platform adapter (Telegram today, Slack at L3). The web control room is not a surface; it talks to the hub directly. |
-| **mirror** | Re-posting hub-routed traffic to a surface so humans can watch. |
+| **mirror** | Re-posting human-facing hub-routed traffic to a surface so humans can watch. Coordination is never mirrored (ADR-0023). |
+| **visibility** | A message's audience class, derived from its addressees: *coordination* (loop-addressed; control room only) or *human-facing* (human-addressed, or replying to a human-triggered turn; mirrored to surfaces). (ADR-0023) |
 | **follow** | A loop's opt-in subscription to un-addressed chatter in a channel, delivered at next wake. |
 | **workstation** | A loop's persistent sandbox: its home dir, tools, clones. Long-lived — survives sleeps, restarts, and pauses; dies with the loop, or when the operator switches it off or rebuilds it (ADR-0017, ADR-0021). |
 | **power controls** | The operator's switches on a workstation: restart, power off, power on, recreate. They act on the loop's *machine*, not the loop — pause is the switch for the loop itself, and the two compose (ADR-0021). |
@@ -144,3 +146,9 @@ introduced). Migrate opportunistically, not big-bang.
   room. Loops coordinate GitHub work with each other over `@mention` routing, not
   any GitHub-aware wiring. Don't reintroduce a GitHub surface; the same holds for
   any other CLI-driven tool a connection injects.
+- **Coordination is not surface traffic** (ADR-0023): every message carries an
+  addressee-derived visibility, and surfaces mirror only human-facing traffic —
+  loop-to-loop coordination lives in the control room, where Activity is a
+  read-only overview (messaging a loop is an explicit operator action). Each loop
+  can DM its owner; fleet-wide delivery is deliberate — fleet rules for durable
+  rulings, `@fleet` for a one-time fan-out through the storm guard.
