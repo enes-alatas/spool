@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -57,6 +58,10 @@ type Server struct {
 	RuntimeAvailable func(ctx context.Context, kind string) error
 	Log              *slog.Logger
 	WebFS            fs.FS // embedded UI dist; may be nil in dev
+
+	// settingsMu serializes the read-validate-write of paired settings, so
+	// two concurrent PUTs cannot interleave into an inverted stored pair.
+	settingsMu sync.Mutex
 }
 
 func (s *Server) Handler() http.Handler {
@@ -152,9 +157,11 @@ type loopView struct {
 	HasTGToken        bool    `json:"has_tg_token"`
 	WorkstationUp     bool    `json:"workstation_up"`
 	WorkstationDetail string  `json:"workstation_detail,omitempty"`
-	// ContextTokens is what the loop's last finished turn loaded into the
-	// model's context: the prompt it sent plus the cached prefix it reread.
-	// An approximation, measured at that turn, not a live gauge.
+	// ContextTokens is what the last finished turn of the loop's current
+	// session loaded into the model's context: the prompt it sent plus the
+	// cached prefix it reread. An approximation, measured at that turn, not
+	// a live gauge — and empty right after a rotation, when a retired
+	// session's turns say nothing about the fresh one.
 	ContextTokens int `json:"context_tokens"`
 	// ContextLimitTokens is that model's context window, or 0 when we don't
 	// know it — an unrecognized or not-yet-run model. Clients show absolute
@@ -174,7 +181,7 @@ func (s *Server) view(ctx context.Context, l *store.Loop) *loopView {
 		v.WorkstationDetail = health.Detail
 		v.DownReason = actor.DownReason()
 	}
-	if t, err := s.Store.Turns().Latest(ctx, l.ID); err == nil {
+	if t, err := s.Store.Turns().Latest(ctx, l.ID); err == nil && t.SessionID == l.CurrentSessionID {
 		v.ContextTokens = t.InputTokens + t.CacheReadTokens
 		v.ContextLimitTokens = loop.ContextLimit(t.Model)
 	}
@@ -683,25 +690,46 @@ func (s *Server) handleTelegramStatus(w http.ResponseWriter, r *http.Request) {
 
 // --- operator settings (ADR-0017: stored server-side, presence-only on read) ---
 
-// settingsView reports operator settings as presence, never values — the
-// Claude setup-token is write-only, like a loop's bot token.
+// settingsView reports operator settings — secrets as presence only (the
+// Claude setup-token is write-only, like a loop's bot token), plain values
+// as themselves. The rotation thresholds are always the effective values,
+// defaults included.
 type settingsView struct {
-	ClaudeTokenSet bool `json:"claude_token_set"`
+	ClaudeTokenSet      bool `json:"claude_token_set"`
+	ContextArmPercent   int  `json:"context_arm_percent"`
+	ContextForcePercent int  `json:"context_force_percent"`
+}
+
+func (s *Server) settingsView(ctx context.Context) (settingsView, error) {
+	token, err := s.claudeToken(ctx)
+	if err != nil {
+		return settingsView{}, err
+	}
+	arm, force := loop.RotationThresholds(ctx, s.Store.Settings())
+	return settingsView{
+		ClaudeTokenSet:      token != "",
+		ContextArmPercent:   arm,
+		ContextForcePercent: force,
+	}, nil
 }
 
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
-	token, err := s.claudeToken(r.Context())
+	view, err := s.settingsView(r.Context())
 	if err != nil {
 		s.jsonErr(w, 500, "%v", err)
 		return
 	}
-	writeJSON(w, 200, settingsView{ClaudeTokenSet: token != ""})
+	writeJSON(w, 200, view)
 }
 
 type putSettingsReq struct {
 	// nil leaves the token unchanged; "" clears it; otherwise it is validated
 	// and stored.
 	ClaudeOAuthToken *string `json:"claude_oauth_token"`
+	// nil leaves a threshold unchanged; the pair is validated together
+	// (percent of the model's window, 1–99, arm below force).
+	ContextArmPercent   *int `json:"context_arm_percent"`
+	ContextForcePercent *int `json:"context_force_percent"`
 }
 
 func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
@@ -725,12 +753,35 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	token, err := s.claudeToken(r.Context())
+	if req.ContextArmPercent != nil || req.ContextForcePercent != nil {
+		s.settingsMu.Lock()
+		defer s.settingsMu.Unlock()
+		arm, force := loop.RotationThresholds(r.Context(), s.Store.Settings())
+		if req.ContextArmPercent != nil {
+			arm = *req.ContextArmPercent
+		}
+		if req.ContextForcePercent != nil {
+			force = *req.ContextForcePercent
+		}
+		if arm < 1 || arm > 99 || force < 1 || force > 99 || arm >= force {
+			s.jsonErr(w, 400, "rotation thresholds must be percentages 1-99 with arm below force (got arm %d, force %d)", arm, force)
+			return
+		}
+		if err := s.Store.Settings().Set(r.Context(), store.SettingContextArmPercent, strconv.Itoa(arm)); err != nil {
+			s.jsonErr(w, 500, "%v", err)
+			return
+		}
+		if err := s.Store.Settings().Set(r.Context(), store.SettingContextForcePercent, strconv.Itoa(force)); err != nil {
+			s.jsonErr(w, 500, "%v", err)
+			return
+		}
+	}
+	view, err := s.settingsView(r.Context())
 	if err != nil {
 		s.jsonErr(w, 500, "%v", err)
 		return
 	}
-	writeJSON(w, 200, settingsView{ClaudeTokenSet: token != ""})
+	writeJSON(w, 200, view)
 }
 
 // claudeToken reads the stored setup-token, mapping an unset key to empty so
