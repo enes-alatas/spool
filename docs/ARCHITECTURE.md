@@ -125,6 +125,12 @@ introduced). Migrate opportunistically, not big-bang.
   difference is intent, which a health poll cannot observe, so it is recorded
   in the DB and survives a restart. Precedence: `workstation_down` > `paused` >
   `workstation_off`.
+- **Context is rotated before the wall** (ADR-0022): the CLI's auto-compact
+  fires only near a full window, deep in the degradation zone, so the runner
+  rotates proactively instead — armed at ~40% fill, run at a quiet boundary
+  (the end of a wake that leaves no queued work), forced at ~70% — onto a
+  fresh session seeded with a loop-authored handoff note. Thresholds are
+  operator settings; no Spool-side `/compact`, ever.
 - **One bot ingests a group, every bot delivers** (ADR-0020): a surface where each
   loop has its own bot identity sees the same human message N times, numbered
   differently per bot. Exactly one bot persists it — for Telegram, the lowest loop
