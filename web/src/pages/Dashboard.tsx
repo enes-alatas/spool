@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api, LoopView } from '../api'
+import { formatTokens, fillTone } from '../format'
 import { StateDot } from '../components/Spool'
 import { useEffect, useState } from 'react'
 
@@ -19,6 +20,25 @@ function Countdown({ at }: { at: number }) {
   if (h > 0) return <span>{`${h}h ${m}m`}</span>
   if (m > 0) return <span>{`${m}m ${s % 60}s`}</span>
   return <span className="hot">{`${s}s`}</span>
+}
+
+// Context occupancy on a card, where there is room for one number: the
+// percentage of the model's window when Spool knows it, and the raw token
+// count when it doesn't — never a percentage against a guessed limit.
+function ContextStat({ loop }: { loop: LoopView }) {
+  // Falsy, not `=== 0`: api.ts describes the API as it will be, so a field an
+  // older server doesn't send arrives as undefined and would divide into NaN.
+  if (!loop.context_tokens) return null
+  if (!loop.context_limit_tokens) return <span>{formatTokens(loop.context_tokens)} ctx</span>
+  const ratio = Math.min(1, loop.context_tokens / loop.context_limit_tokens)
+  return (
+    <span
+      className={`ctx-stat ${fillTone(ratio)}`}
+      title={`${loop.context_tokens} of ${loop.context_limit_tokens} context tokens`}
+    >
+      {Math.round(ratio * 100)}% ctx
+    </span>
+  )
 }
 
 // A workstation the operator switched off is not a fault; only an unreachable
@@ -62,6 +82,7 @@ export default function Dashboard() {
                 next <Countdown at={l.next_tick_at} />
               </span>
               <span>${l.cost_today_usd.toFixed(2)} today</span>
+              <ContextStat loop={l} />
               {l.workspace_mode === 'worktree' && <span>{l.branch}</span>}
               {l.tg_bot_username && <span>@{l.tg_bot_username}</span>}
             </div>

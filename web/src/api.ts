@@ -30,6 +30,11 @@ export interface LoopView {
   state: string
   next_tick_at: number
   cost_today_usd: number
+  // Context occupancy: what the latest turn carried into the model, against
+  // that model's window. The limit is 0 when the model is unknown to Spool,
+  // in which case there is no honest percentage to show.
+  context_tokens: number
+  context_limit_tokens: number
   has_tg_token: boolean
   workstation_up: boolean
   workstation_detail?: string
