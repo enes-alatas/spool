@@ -3,6 +3,8 @@
 package itest
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -176,5 +178,42 @@ func TestContextUsageOnTheLoopView(t *testing.T) {
 	}
 	if unknown.ContextTokens <= 0 {
 		t.Fatalf("context_tokens = %d, want tokens even without a limit", unknown.ContextTokens)
+	}
+}
+
+// A session that can no longer be resumed — an over-full context window is
+// the case we expect — must not become an endless retry against itself. The
+// loop rotates onto a fresh session, carries its mission and recent replies
+// across, and answers the message that was waiting.
+func TestUnresumableSessionRotatesInsteadOfRetrying(t *testing.T) {
+	workspace := t.TempDir()
+	s := startServer(t, t.TempDir())
+	s.createLoop("rotator", map[string]any{
+		"workspace_path": workspace,
+		"workspace_mode": "dir",
+	})
+
+	s.message("rotator", "first thing")
+	first := s.waitTurn("rotator", 30*time.Second, func(tr turn) bool {
+		return strings.Contains(tr.ResultText, "first thing")
+	})
+
+	// let the process go away, so the next message has to resume
+	s.waitState("rotator", "asleep", 30*time.Second)
+
+	// from here on the session cannot be loaded; a fresh one still can
+	if err := os.WriteFile(filepath.Join(workspace, ".fakeclaude-resume-broken"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s.message("rotator", "second thing")
+	second := s.waitTurn("rotator", 90*time.Second, func(tr turn) bool {
+		return strings.Contains(tr.ResultText, "second thing")
+	})
+	if second.SessionID == first.SessionID {
+		t.Fatalf("loop stayed on the session it cannot resume (%s)", first.SessionID)
+	}
+	if !s.hasEvent("rotator", "session_unusable", 10*time.Second) {
+		t.Fatal("rotation was not recorded as a spool event")
 	}
 }
