@@ -31,7 +31,7 @@ type sessionState struct {
 }
 
 func main() {
-	var sessionID, resumeID string
+	var sessionID, resumeID, model string
 	partials := false
 
 	args := os.Args[1:]
@@ -48,7 +48,10 @@ func main() {
 			resumeID = args[i]
 		case "--include-partial-messages":
 			partials = true
-		case "--input-format", "--output-format", "--permission-mode", "--model",
+		case "--model":
+			i++
+			model = args[i] // echoed back at init, as the real CLI resolves and reports it
+		case "--input-format", "--output-format", "--permission-mode",
 			"--effort", "--append-system-prompt", "--add-dir":
 			i++ // value consumed, ignored
 		default:
@@ -112,7 +115,7 @@ func main() {
 			first = false
 			emit(map[string]any{
 				"type": "system", "subtype": "init",
-				"session_id": id, "cwd": cwd, "model": "fakeclaude",
+				"session_id": id, "cwd": cwd, "model": initModel(model),
 			})
 		}
 
@@ -191,4 +194,13 @@ func usage() map[string]any {
 		"input_tokens": 10, "output_tokens": 5,
 		"cache_creation_input_tokens": 0, "cache_read_input_tokens": 0,
 	}
+}
+
+// initModel is what the init event reports: the model the runner asked for,
+// or a name of our own when it asked for none.
+func initModel(model string) string {
+	if model == "" {
+		return "fakeclaude"
+	}
+	return model
 }

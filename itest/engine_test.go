@@ -142,3 +142,39 @@ func TestMentionRoutedLoopToLoop(t *testing.T) {
 		t.Errorf("callee turn errored: %s", dump(tn))
 	}
 }
+
+// A loop's context usage comes from the turn that actually ran: the tokens it
+// loaded, measured against the window of the model it ran on. An unknown
+// model reports its tokens with a zero limit rather than a guessed ratio.
+func TestContextUsageOnTheLoopView(t *testing.T) {
+	s := startServer(t, t.TempDir())
+	s.createLoop("ctxknown", map[string]any{"model": "claude-haiku-4-5"})
+	s.createLoop("ctxunknown", nil) // no model: fakeclaude reports its own name
+
+	if view := s.loop("ctxknown"); view.ContextTokens != 0 || view.ContextLimitTokens != 0 {
+		t.Fatalf("a loop with no turns yet should report nothing: %+v", view)
+	}
+
+	for _, name := range []string{"ctxknown", "ctxunknown"} {
+		s.message(name, "fill some context")
+		s.waitTurn(name, 30*time.Second, func(tr turn) bool {
+			return strings.Contains(tr.ResultText, "fill some context")
+		})
+	}
+
+	known := s.loop("ctxknown")
+	if known.ContextLimitTokens != 200_000 {
+		t.Fatalf("context_limit_tokens = %d, want haiku's 200000", known.ContextLimitTokens)
+	}
+	if known.ContextTokens <= 0 {
+		t.Fatalf("context_tokens = %d, want the last turn's loaded tokens", known.ContextTokens)
+	}
+
+	unknown := s.loop("ctxunknown")
+	if unknown.ContextLimitTokens != 0 {
+		t.Fatalf("an unrecognized model must report an unknown limit, got %d", unknown.ContextLimitTokens)
+	}
+	if unknown.ContextTokens <= 0 {
+		t.Fatalf("context_tokens = %d, want tokens even without a limit", unknown.ContextTokens)
+	}
+}

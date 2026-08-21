@@ -314,16 +314,38 @@ func (r turns) Create(ctx context.Context, t *store.Turn) error {
 func (r turns) Finish(ctx context.Context, t *store.Turn) error {
 	_, err := r.db.ExecContext(ctx, `UPDATE turns SET ended_at=?, is_error=?, result_text=?,
 		cost_usd=?, input_tokens=?, output_tokens=?, cache_read_tokens=?, cache_write_tokens=?,
-		duration_ms=? WHERE id=?`,
+		duration_ms=?, model=? WHERE id=?`,
 		t.EndedAt, boolInt(t.IsError), t.ResultText, t.CostUSD, t.InputTokens, t.OutputTokens,
-		t.CacheReadTokens, t.CacheWriteTokens, t.DurationMS, t.ID)
+		t.CacheReadTokens, t.CacheWriteTokens, t.DurationMS, t.Model, t.ID)
 	return err
 }
 
+const turnCols = `id, loop_id, session_id, trigger_kind, started_at, ended_at, is_error,
+	result_text, cost_usd, input_tokens, output_tokens, cache_read_tokens,
+	cache_write_tokens, duration_ms, model`
+
+// Latest is the most recent turn the loop actually finished: an in-flight
+// turn has no usage yet, and an errored one reports what it managed.
+func (r turns) Latest(ctx context.Context, loopID string) (*store.Turn, error) {
+	row := r.db.QueryRowContext(ctx, `SELECT `+turnCols+`
+		FROM turns WHERE loop_id=? AND ended_at>0 ORDER BY ended_at DESC LIMIT 1`, loopID)
+	var t store.Turn
+	var isErr int
+	err := row.Scan(&t.ID, &t.LoopID, &t.SessionID, &t.Trigger, &t.StartedAt, &t.EndedAt,
+		&isErr, &t.ResultText, &t.CostUSD, &t.InputTokens, &t.OutputTokens,
+		&t.CacheReadTokens, &t.CacheWriteTokens, &t.DurationMS, &t.Model)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, store.ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	t.IsError = isErr != 0
+	return &t, nil
+}
+
 func (r turns) ListByLoop(ctx context.Context, loopID string, limit int) ([]*store.Turn, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT id, loop_id, session_id, trigger_kind,
-		started_at, ended_at, is_error, result_text, cost_usd, input_tokens, output_tokens,
-		cache_read_tokens, cache_write_tokens, duration_ms
+	rows, err := r.db.QueryContext(ctx, `SELECT `+turnCols+`
 		FROM turns WHERE loop_id=? ORDER BY started_at DESC LIMIT ?`, loopID, limit)
 	if err != nil {
 		return nil, err
@@ -335,7 +357,7 @@ func (r turns) ListByLoop(ctx context.Context, loopID string, limit int) ([]*sto
 		var isErr int
 		if err := rows.Scan(&t.ID, &t.LoopID, &t.SessionID, &t.Trigger, &t.StartedAt,
 			&t.EndedAt, &isErr, &t.ResultText, &t.CostUSD, &t.InputTokens, &t.OutputTokens,
-			&t.CacheReadTokens, &t.CacheWriteTokens, &t.DurationMS); err != nil {
+			&t.CacheReadTokens, &t.CacheWriteTokens, &t.DurationMS, &t.Model); err != nil {
 			return nil, err
 		}
 		t.IsError = isErr != 0

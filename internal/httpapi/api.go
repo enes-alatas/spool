@@ -152,6 +152,14 @@ type loopView struct {
 	HasTGToken        bool    `json:"has_tg_token"`
 	WorkstationUp     bool    `json:"workstation_up"`
 	WorkstationDetail string  `json:"workstation_detail,omitempty"`
+	// ContextTokens is what the loop's last finished turn loaded into the
+	// model's context: the prompt it sent plus the cached prefix it reread.
+	// An approximation, measured at that turn, not a live gauge.
+	ContextTokens int `json:"context_tokens"`
+	// ContextLimitTokens is that model's context window, or 0 when we don't
+	// know it — an unrecognized or not-yet-run model. Clients show absolute
+	// tokens rather than a ratio against a guess.
+	ContextLimitTokens int `json:"context_limit_tokens"`
 	// DownReason distinguishes a workstation the operator switched off from
 	// one that died; empty while it is up (ADR-0021).
 	DownReason string `json:"down_reason"`
@@ -165,6 +173,10 @@ func (s *Server) view(ctx context.Context, l *store.Loop) *loopView {
 		v.WorkstationUp = health.Up
 		v.WorkstationDetail = health.Detail
 		v.DownReason = actor.DownReason()
+	}
+	if t, err := s.Store.Turns().Latest(ctx, l.ID); err == nil {
+		v.ContextTokens = t.InputTokens + t.CacheReadTokens
+		v.ContextLimitTokens = loop.ContextLimit(t.Model)
 	}
 	if e, err := s.Store.Schedule().Get(ctx, l.ID); err == nil {
 		v.NextTickAt = e.NextTickAt

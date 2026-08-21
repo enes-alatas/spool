@@ -143,7 +143,8 @@ type Actor struct {
 	currentBatch []Envelope // in-flight batch, kept for redelivery on session loss
 	pendingDMs   []int64    // DM chats of the in-flight turn
 	turn         *store.Turn
-	freshSpawn   bool // current process was started with --session-id (not resume)
+	freshSpawn   bool   // current process was started with --session-id (not resume)
+	activeModel  string // model the CLI reported at init, for the turn record
 	backoff      time.Duration
 
 	idleTimer   *time.Timer
@@ -488,6 +489,11 @@ func (actor *Actor) handleEvent(ev claude.Event) {
 			actor.loop.CurrentSessionID = ev.Init.SessionID
 			_ = actor.deps.Store.Loops().SetRuntime(context.Background(), actor.loop.ID, ev.Init.SessionID, actor.proc.PID())
 		}
+		if ev.Init != nil && ev.Init.Model != "" {
+			// what the loop is really running on: its configured model may
+			// be empty or an alias that floats between releases
+			actor.activeModel = ev.Init.Model
+		}
 		actor.storeClaudeEvent(ev)
 		if actor.state == StateWaking && actor.turn == nil {
 			// spawned with no work (shouldn't normally happen)
@@ -521,6 +527,7 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 		t.CacheReadTokens = res.Usage.CacheReadTokens
 		t.CacheWriteTokens = res.Usage.CacheCreationTokens
 		t.DurationMS = res.DurationMS
+		t.Model = actor.activeModel
 		if err := actor.deps.Store.Turns().Finish(context.Background(), t); err != nil {
 			actor.log().Error("turn finish", "err", err)
 		}
