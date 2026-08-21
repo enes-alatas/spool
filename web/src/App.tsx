@@ -12,8 +12,14 @@ export default function App() {
     queryFn: api.health,
     refetchInterval: 60000,
   })
+  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings })
   const loc = useLocation()
   const busy = (loops ?? []).some((l) => l.state === 'busy')
+  // Without a token no loop can run, and every one of them reports it as its
+  // own workstation fault. Say it once, where it is actually fixed — but not
+  // on the page that fixes it, and not before there is a loop to break.
+  const tokenMissing =
+    settings?.claude_token_set === false && (loops ?? []).length > 0 && loc.pathname !== '/settings'
 
   return (
     <div className="app">
@@ -59,6 +65,12 @@ export default function App() {
       </aside>
 
       <main className="main" key={loc.pathname}>
+        {tokenMissing && (
+          <div className="fleet-alert">
+            No Claude token is set, so no loop can start a turn — every workstation will report itself down
+            until one is. <Link to="/settings">Add one in Settings</Link>.
+          </div>
+        )}
         <Outlet />
       </main>
     </div>
