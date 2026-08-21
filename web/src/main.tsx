@@ -9,6 +9,7 @@ import NewLoop from './pages/NewLoop'
 import Activity from './pages/Activity'
 import Access from './pages/Access'
 import Settings from './pages/Settings'
+import Rules from './pages/Rules'
 import './styles.css'
 
 const queryClient = new QueryClient({
@@ -28,6 +29,7 @@ const router = createBrowserRouter([
       { path: 'activity', element: <Activity /> },
       { path: 'access', element: <Access /> },
       { path: 'settings', element: <Settings /> },
+      { path: 'rules', element: <Rules /> },
     ],
   },
 ])

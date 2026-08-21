@@ -35,6 +35,9 @@ export default function App() {
           <NavLink to="/access" className="btn sm">
             Access
           </NavLink>
+          <NavLink to="/rules" className="btn sm">
+            Rules
+          </NavLink>
           <NavLink to="/settings" className="btn sm">
             Settings
           </NavLink>
