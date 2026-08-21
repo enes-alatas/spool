@@ -61,3 +61,41 @@ func TestSettingsClaudeToken(t *testing.T) {
 		t.Fatal("token still set after clearing")
 	}
 }
+
+// TestSettingsRotationThresholds drives the context-rotation thresholds
+// (ADR-0022): defaults come back effective, valid pairs store, and an
+// inverted or out-of-range pair is rejected without clobbering the stored one.
+func TestSettingsRotationThresholds(t *testing.T) {
+	s := startServer(t, t.TempDir())
+
+	var v struct {
+		Arm   int `json:"context_arm_percent"`
+		Force int `json:"context_force_percent"`
+	}
+	s.mustJSON("GET", "/api/settings", nil, &v)
+	if v.Arm != 40 || v.Force != 70 {
+		t.Fatalf("defaults = %d/%d, want 40/70", v.Arm, v.Force)
+	}
+
+	s.mustJSON("PUT", "/api/settings", map[string]any{"context_arm_percent": 30, "context_force_percent": 55}, &v)
+	if v.Arm != 30 || v.Force != 55 {
+		t.Fatalf("after PUT = %d/%d, want 30/55", v.Arm, v.Force)
+	}
+
+	for _, bad := range []map[string]any{
+		{"context_arm_percent": 60},                               // inverted against the stored force of 55
+		{"context_arm_percent": 0, "context_force_percent": 50},   // out of range
+		{"context_arm_percent": 50, "context_force_percent": 100}, // out of range
+		{"context_arm_percent": 80, "context_force_percent": 20},  // inverted
+	} {
+		resp, body := s.do("PUT", "/api/settings", bad)
+		if resp.StatusCode != 400 {
+			t.Fatalf("PUT %v: status %d, want 400 (%s)", bad, resp.StatusCode, body)
+		}
+	}
+
+	s.mustJSON("GET", "/api/settings", nil, &v)
+	if v.Arm != 30 || v.Force != 55 {
+		t.Fatalf("rejected writes changed stored thresholds to %d/%d", v.Arm, v.Force)
+	}
+}

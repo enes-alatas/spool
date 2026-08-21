@@ -95,6 +95,10 @@ export interface TGSender {
 
 export interface Settings {
   claude_token_set: boolean
+  // Context-rotation thresholds (ADR-0022): effective percentages of the
+  // model's window, defaults included.
+  context_arm_percent: number
+  context_force_percent: number
 }
 
 export interface LoopSecret {
