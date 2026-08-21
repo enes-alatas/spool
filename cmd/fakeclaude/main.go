@@ -13,6 +13,10 @@
 // repeats). Directives: "!crash" exits 2 mid-turn without a result; "!huge
 // <bytes>" replies with that many bytes; "!hang <seconds>" sleeps first.
 // Without a script file, every turn echoes: "echo: <received text>".
+//
+// A ".fakeclaude-resume-broken" file in the working directory makes every
+// --resume fail the way a session that can no longer be loaded does: a
+// diagnostic on stderr, exit 1, no stream-json. Fresh sessions still work.
 package main
 
 import (
@@ -66,6 +70,17 @@ func main() {
 	if err := os.MkdirAll(stateDir, 0o755); err != nil {
 		fmt.Fprintf(os.Stderr, "fakeclaude: state dir: %v\n", err)
 		os.Exit(1)
+	}
+
+	// A session the CLI can no longer load — what an over-full context looks
+	// like from the outside: a resume that dies with a diagnostic on stderr
+	// and no stream-json at all. A fresh session still works, so a runner
+	// that rotates recovers and one that retries does not.
+	if resumeID != "" {
+		if _, err := os.Stat(".fakeclaude-resume-broken"); err == nil {
+			fmt.Fprintln(os.Stderr, "API Error: 400 prompt is too long: 251000 tokens > 200000 maximum")
+			os.Exit(1)
+		}
 	}
 
 	id := sessionID

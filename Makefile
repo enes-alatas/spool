@@ -1,7 +1,7 @@
 GO ?= go
 export PATH := /usr/local/go/bin:$(PATH)
 
-.PHONY: build dev test itest lint fakeclaude vet e2e-m1 ui ui-dev image image-multiarch clean
+.PHONY: build dev test itest lint fakeclaude vet e2e-context e2e-m1 ui ui-dev image image-multiarch clean
 
 build: ui
 	$(GO) build -o bin/spool ./cmd/spool
@@ -57,6 +57,9 @@ vet:
 
 e2e-m1: server
 	bash scripts/e2e/m1.sh
+
+e2e-context: server
+	bash scripts/e2e/context.sh
 
 e2e-m2: server
 	bash scripts/e2e/m2.sh

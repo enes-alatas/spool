@@ -252,6 +252,29 @@ func (s *server) waitState(name, state string, timeout time.Duration) {
 	s.t.Fatalf("loop %s never reached state %q (now %q)", name, state, s.loop(name).State)
 }
 
+type spoolEvent struct {
+	Type    string `json:"type"`
+	Subtype string `json:"subtype"`
+	Payload string `json:"payload"`
+}
+
+// hasEvent waits for a spool event of the given subtype on a loop.
+func (s *server) hasEvent(name, subtype string, timeout time.Duration) bool {
+	s.t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		var events []spoolEvent
+		s.mustJSON("GET", "/api/loops/"+name+"/events?limit=200", nil, &events)
+		for _, e := range events {
+			if e.Subtype == subtype {
+				return true
+			}
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return false
+}
+
 func dump(v any) string {
 	b, _ := json.Marshal(v)
 	return string(b)

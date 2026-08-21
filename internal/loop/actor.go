@@ -59,6 +59,10 @@ const (
 	backoffStart    = 10 * time.Second
 	backoffCap      = 5 * time.Minute
 	recentTurnCount = 5
+	// deadResumeLimit is how many resumes may die before the CLI announces
+	// itself before the session is written off as unusable. Two, so a single
+	// transient failure still gets its ordinary retry.
+	deadResumeLimit = 2
 
 	defaultHealthInterval = 45 * time.Second
 	healthCheckTimeout    = 10 * time.Second
@@ -144,6 +148,8 @@ type Actor struct {
 	pendingDMs   []int64    // DM chats of the in-flight turn
 	turn         *store.Turn
 	freshSpawn   bool   // current process was started with --session-id (not resume)
+	sawInit      bool   // current process got as far as announcing itself
+	deadResumes  int    // consecutive resumes that died before announcing
 	activeModel  string // model the CLI reported at init, for the turn record
 	backoff      time.Duration
 
@@ -381,6 +387,7 @@ func (actor *Actor) wake() {
 	actor.proc = proc
 	actor.procEvents = proc.Events()
 	actor.freshSpawn = fresh
+	actor.sawInit = false
 	actor.state = StateWaking
 	_ = actor.deps.Store.Loops().SetRuntime(ctx, actor.loop.ID, actor.loop.CurrentSessionID, proc.PID())
 	actor.storeSpoolEvent("proc_spawn", fmt.Sprintf(`{"pid":%d,"resume":%v}`, proc.PID(), !fresh))
@@ -489,6 +496,8 @@ func (actor *Actor) handleEvent(ev claude.Event) {
 			actor.loop.CurrentSessionID = ev.Init.SessionID
 			_ = actor.deps.Store.Loops().SetRuntime(context.Background(), actor.loop.ID, ev.Init.SessionID, actor.proc.PID())
 		}
+		actor.sawInit = true
+		actor.deadResumes = 0
 		if ev.Init != nil && ev.Init.Model != "" {
 			// what the loop is really running on: its configured model may
 			// be empty or an alias that floats between releases
@@ -588,6 +597,15 @@ func (actor *Actor) handleProcExit() {
 	wasDraining := actor.state == StateDraining
 	inTurn := actor.turn != nil
 	sessionLost := claude.IsSessionNotFound(exit)
+	// A resume that dies before the CLI announces itself never loaded the
+	// session at all. One can be a blip; a run of them means this session
+	// cannot be resumed any more, whatever the CLI printed about it — which
+	// is why this is classified by what the process did rather than by
+	// matching a message.
+	deadOnResume := !actor.freshSpawn && !actor.sawInit && exit.Code != 0
+	if deadOnResume {
+		actor.deadResumes++
+	}
 
 	if inTurn {
 		// process died mid-turn
@@ -609,26 +627,60 @@ func (actor *Actor) handleProcExit() {
 			actor.wake() // message raced the idle close
 		}
 	case sessionLost:
-		// resume failed: mint a fresh session, requeue the undelivered batch,
-		// and retry immediately
-		old := actor.loop.CurrentSessionID
-		_ = actor.deps.Store.Sessions().End(context.Background(), old, store.EndReasonLost, now())
-		actor.storeSpoolEvent("session_lost", fmt.Sprintf(`{"old_session":%q}`, old))
-		actor.loop.CurrentSessionID = ""
+		// the CLI said outright that the session is gone
+		actor.rotateSession("session_lost", "")
+	case deadOnResume:
+		// The session never loaded. One failure gets an ordinary retry — it
+		// may have been a blip — but a session that cannot be resumed twice
+		// running will not be resumable later either. Retrying it forever
+		// would leave a perfectly healthy loop reading as dead, so rotate
+		// onto a fresh session and carry the mission across.
+		actor.storeSpoolEvent("resume_failed",
+			fmt.Sprintf(`{"session":%q,"attempt":%d,"stderr":%q}`,
+				actor.loop.CurrentSessionID, actor.deadResumes, tail(exit.Stderr, 500)))
+		if actor.deadResumes >= deadResumeLimit {
+			actor.rotateSession("session_unusable", tail(exit.Stderr, 500))
+			return
+		}
+		// keep the undelivered work: the retry is what earns the second
+		// data point, and the generic crash path would drop it
 		if len(actor.currentBatch) > 0 {
 			actor.inbox = append(actor.currentBatch, actor.inbox...)
 			actor.currentBatch = nil
 		}
-		actor.state = StateAsleep
-		actor.publishState()
-		if len(actor.inbox) > 0 && !actor.paused && !actor.loop.WorkstationOff {
-			actor.wake()
-		}
+		actor.crashBackoff()
 	default:
 		actor.currentBatch = nil
 		actor.storeSpoolEvent("crash", fmt.Sprintf(`{"code":%d,"stderr":%q}`, exit.Code, tail(exit.Stderr, 2000)))
 		actor.log().Warn("claude process crashed", "code", exit.Code, "stderr", tail(exit.Stderr, 500))
 		actor.crashBackoff()
+	}
+}
+
+// rotateSession abandons the loop's claude session and starts a fresh one,
+// carrying the mission and the loop's recent replies across through the
+// handoff preamble. Undelivered work is requeued, so nothing said to the loop
+// is lost — only the model's own recollection of the conversation is.
+func (actor *Actor) rotateSession(reason, detail string) {
+	old := actor.loop.CurrentSessionID
+	_ = actor.deps.Store.Sessions().End(context.Background(), old, store.EndReasonLost, now())
+	if detail == "" {
+		actor.storeSpoolEvent(reason, fmt.Sprintf(`{"old_session":%q}`, old))
+	} else {
+		actor.storeSpoolEvent(reason, fmt.Sprintf(`{"old_session":%q,"stderr":%q}`, old, detail))
+		actor.log().Warn("session cannot be resumed; rotating", "old_session", old, "stderr", detail)
+	}
+	actor.loop.CurrentSessionID = ""
+	actor.deadResumes = 0
+	actor.backoff = 0
+	if len(actor.currentBatch) > 0 {
+		actor.inbox = append(actor.currentBatch, actor.inbox...)
+		actor.currentBatch = nil
+	}
+	actor.state = StateAsleep
+	actor.publishState()
+	if len(actor.inbox) > 0 && !actor.paused && !actor.loop.WorkstationOff {
+		actor.wake()
 	}
 }
 
