@@ -169,6 +169,7 @@ type activityMessage struct {
 	Author      string   `json:"author"`
 	Text        string   `json:"text"`
 	DeliveredTo []string `json:"delivered_to"`
+	Visibility  string   `json:"visibility"`
 }
 
 func (s *server) activity() []activityMessage {
@@ -299,6 +300,57 @@ func TestBotJoiningLiveGroupDoesNotDoubleIngest(t *testing.T) {
 		if stored := srv.activityWith(text); len(stored) != 1 {
 			t.Fatalf("%q stored %d times, want 1", text, len(stored))
 		}
+	}
+}
+
+// sentTo reports whether token ever sent to chatID, waiting briefly for the
+// mirror consumer to run.
+func (tg *fakeTelegram) sentTo(token string, chatID int64, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for {
+		tg.mu.Lock()
+		for _, m := range tg.sent {
+			if m.Token == token && m.ChatID == chatID {
+				tg.mu.Unlock()
+				return true
+			}
+		}
+		tg.mu.Unlock()
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+// A loop's reply to a DM-triggered turn must stay in that DM: it must not
+// also post to the loop's bound group, even though the group is bound and
+// the pre-ADR-0023 behavior mirrored every reply there unconditionally (#37).
+func TestDMReplyStaysInDM(t *testing.T) {
+	operator := user{ID: 6161, First: "Operator", Username: "operator"}
+	_, tg := startTelegramFleet(t, operator)
+
+	tg.dm("alpha", operator, "hello alone")
+	if !tg.sentTo("alpha", operator.ID, 20*time.Second) {
+		t.Fatalf("reply never reached the DM: sent=%+v", tg.sent)
+	}
+	// The group mirror, if it were going to happen, would have queued by now
+	// too — give it the same grace before asserting its absence.
+	time.Sleep(2 * time.Second)
+	if tg.sentTo("alpha", groupChatID, 0) {
+		t.Fatalf("DM-triggered reply leaked into the bound group: sent=%+v", tg.sent)
+	}
+}
+
+// A loop's reply to a group-triggered turn still mirrors to the group — the
+// DM-privacy fix narrows the mirror, it doesn't remove it.
+func TestGroupReplyStillMirrorsToGroup(t *testing.T) {
+	operator := user{ID: 6262, First: "Operator", Username: "operator"}
+	_, tg := startTelegramFleet(t, operator)
+
+	tg.post(groupChatID, "supergroup", "@alpha standalone status", operator)
+	if !tg.sentTo("alpha", groupChatID, 20*time.Second) {
+		t.Fatalf("group-triggered reply never mirrored to the group: sent=%+v", tg.sent)
 	}
 }
 

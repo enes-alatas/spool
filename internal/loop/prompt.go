@@ -131,6 +131,10 @@ type Envelope struct {
 	Trigger  string `json:"trigger"`              // store.TriggerTick | TriggerMessage | TriggerManual
 	Text     string `json:"text"`                 // fully formatted, header included
 	TGChatID int64  `json:"tg_chat_id,omitempty"` // DM chat to reply to (0 = none)
+	// HumanFacing marks an inbound message as human-addressed (ADR-0023): a
+	// reply to a turn carrying one is human-facing and mirrors to the surface
+	// it came from. Ticks and loop-to-loop messages leave this false.
+	HumanFacing bool `json:"human_facing,omitempty"`
 }
 
 func header(now time.Time, s string) string {
@@ -152,9 +156,10 @@ func MessageEnvelope(now time.Time, origin, author, text string, fromLoop bool, 
 		from = fmt.Sprintf("message from %s via web", author)
 	}
 	return Envelope{
-		Trigger:  store.TriggerMessage,
-		Text:     header(now, from) + "\n\n" + text,
-		TGChatID: tgChatID,
+		Trigger:     store.TriggerMessage,
+		Text:        header(now, from) + "\n\n" + text,
+		TGChatID:    tgChatID,
+		HumanFacing: !fromLoop,
 	}
 }
 

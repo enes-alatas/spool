@@ -42,6 +42,11 @@ type InboundMessage struct {
 	ImplicitTo string // loop ID
 	// ReplyDMChats: for loop replies, DM chats of the triggering turn.
 	ReplyDMChats []int64
+	// GroupWorthy: for loop replies, whether the triggering turn carried a
+	// human-facing message that wasn't a DM (group or web) — so the reply
+	// belongs on the loop's bound group too, not only in the DM(s) that
+	// triggered it (ADR-0023's #37 fix: a DM-only turn stays in that DM).
+	GroupWorthy bool
 }
 
 // MessagePayload is what KindMessage bus items carry (UI + telegram mirror).
@@ -49,6 +54,7 @@ type MessagePayload struct {
 	store.Message
 	FromLoopName string  `json:"from_loop_name,omitempty"`
 	ReplyDMChats []int64 `json:"reply_dm_chats,omitempty"`
+	GroupWorthy  bool    `json:"group_worthy,omitempty"`
 }
 
 type Deliverer interface {
@@ -100,6 +106,7 @@ func (r *Router) Ingest(ctx context.Context, in InboundMessage) error {
 		TGChatID:    in.TGChatID,
 		TGMessageID: in.TGMessageID,
 		TGBotLoopID: in.TGBotLoopID,
+		Visibility:  visibility(in),
 	}
 
 	// resolve recipients before persisting so delivered_to lands in one write
@@ -151,6 +158,7 @@ func (r *Router) Ingest(ctx context.Context, in InboundMessage) error {
 		Message:      *msg,
 		FromLoopName: fromLoopName,
 		ReplyDMChats: in.ReplyDMChats,
+		GroupWorthy:  in.GroupWorthy,
 	}})
 
 	nowT := time.Now()
@@ -169,8 +177,9 @@ func (r *Router) Ingest(ctx context.Context, in InboundMessage) error {
 
 // LoopReply handles a loop's finished turn: persist as a loop-origin message
 // and route its mentions. resultText arrives with the trailer already present;
-// the stored/mirrored text has it stripped.
-func (r *Router) LoopReply(l *store.Loop, resultText string, replyDMChats []int64) {
+// the stored/mirrored text has it stripped. groupWorthy reports whether the
+// triggering turn carried a human-facing message that wasn't a DM (ADR-0023).
+func (r *Router) LoopReply(l *store.Loop, resultText string, replyDMChats []int64, groupWorthy bool) {
 	text := loop.StripTrailer(resultText)
 	if text == "" {
 		return
@@ -181,6 +190,7 @@ func (r *Router) LoopReply(l *store.Loop, resultText string, replyDMChats []int6
 		FromLoopID:   l.ID,
 		Text:         text,
 		ReplyDMChats: replyDMChats,
+		GroupWorthy:  groupWorthy,
 	})
 	if err != nil {
 		r.log.Error("loop reply ingest", "loop", l.Name, "err", err)
@@ -192,6 +202,19 @@ func dmChatFor(in InboundMessage) int64 {
 		return in.TGChatID
 	}
 	return 0
+}
+
+// visibility classifies an ingested message (ADR-0023): human-authored
+// messages are always human-facing (the human already knows they sent it);
+// a loop-authored message is human-facing only when it replies a turn that
+// carried a human trigger — a DM, or a non-DM human message (group/web).
+// Everything else — loop-to-loop mentions, tick replies — is coordination:
+// persisted and visible in the control room, never mirrored to a surface.
+func visibility(in InboundMessage) string {
+	if in.FromLoopID == "" || in.GroupWorthy || len(in.ReplyDMChats) > 0 {
+		return store.VisibilityHumanFacing
+	}
+	return store.VisibilityCoordination
 }
 
 func (r *Router) stormAllow(fromID, toID string, now time.Time) bool {

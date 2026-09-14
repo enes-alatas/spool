@@ -99,9 +99,11 @@ type Deps struct {
 	// SystemPrompt builds the --append-system-prompt for a loop (peers are
 	// resolved at call time so every wake sees the current fleet).
 	SystemPrompt func(l *store.Loop) string
-	// OnReply is called after each successful turn with the final reply text
-	// and the DM chats that triggered this turn (for reply-context mirroring).
-	OnReply func(l *store.Loop, resultText string, replyDMChats []int64)
+	// OnReply is called after each successful turn with the final reply text,
+	// the DM chats that triggered this turn (for reply-context mirroring), and
+	// whether the turn also carried a non-DM human trigger (group/web) worth
+	// mirroring to the loop's bound group (ADR-0023).
+	OnReply func(l *store.Loop, resultText string, replyDMChats []int64, groupWorthy bool)
 	// OnTurnDone reschedules the loop's next tick after any completed turn.
 	OnTurnDone func(l *store.Loop, trailer time.Duration, hasTrailer bool)
 	// ClaudeToken returns the operator's stored setup-token, or "" when none is
@@ -139,22 +141,23 @@ type Actor struct {
 	offSnap    atomic.Bool  // the operator's power-off intent, for REST reads
 
 	// goroutine-owned state below
-	loop         store.Loop
-	state        string
-	paused       bool
-	wsDown       bool   // workstation unreachable; overlays the state
-	wsDetail     string // why, when wsDown
-	proc         runtime.Proc
-	procEvents   <-chan claude.Event
-	inbox        []Envelope
-	currentBatch []Envelope // in-flight batch, kept for redelivery on session loss
-	pendingDMs   []int64    // DM chats of the in-flight turn
-	turn         *store.Turn
-	freshSpawn   bool   // current process was started with --session-id (not resume)
-	sawInit      bool   // current process got as far as announcing itself
-	deadResumes  int    // consecutive resumes that died before announcing
-	activeModel  string // model the CLI reported at init, for the turn record
-	backoff      time.Duration
+	loop               store.Loop
+	state              string
+	paused             bool
+	wsDown             bool   // workstation unreachable; overlays the state
+	wsDetail           string // why, when wsDown
+	proc               runtime.Proc
+	procEvents         <-chan claude.Event
+	inbox              []Envelope
+	currentBatch       []Envelope // in-flight batch, kept for redelivery on session loss
+	pendingDMs         []int64    // DM chats of the in-flight turn
+	pendingGroupWorthy bool       // in-flight turn also carried a non-DM human trigger (ADR-0023)
+	turn               *store.Turn
+	freshSpawn         bool   // current process was started with --session-id (not resume)
+	sawInit            bool   // current process got as far as announcing itself
+	deadResumes        int    // consecutive resumes that died before announcing
+	activeModel        string // model the CLI reported at init, for the turn record
+	backoff            time.Duration
 
 	// Context rotation (ADR-0022): the loop sheds its context proactively,
 	// before the window's degradation zone, by writing a handoff note as its
@@ -487,13 +490,18 @@ func (actor *Actor) sendBatch(batch []Envelope) {
 	texts := make([]string, 0, len(batch))
 	trigger := store.TriggerTick
 	actor.pendingDMs = nil
+	actor.pendingGroupWorthy = false
 	for _, env := range batch {
 		texts = append(texts, env.Text)
 		if env.Trigger != store.TriggerTick {
 			trigger = env.Trigger
 		}
-		if env.TGChatID != 0 {
-			actor.pendingDMs = append(actor.pendingDMs, env.TGChatID)
+		if env.HumanFacing {
+			if env.TGChatID != 0 {
+				actor.pendingDMs = append(actor.pendingDMs, env.TGChatID)
+			} else {
+				actor.pendingGroupWorthy = true
+			}
 		}
 	}
 	text := strings.Join(texts, "\n\n---\n\n")
@@ -605,7 +613,7 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 		if !res.IsError && !actor.handoffTurn {
 			trailer, hasTrailer = ParseTrailer(res.ResultText)
 			if actor.deps.OnReply != nil && strings.TrimSpace(res.ResultText) != "" {
-				actor.deps.OnReply(&actor.loop, res.ResultText, actor.pendingDMs)
+				actor.deps.OnReply(&actor.loop, res.ResultText, actor.pendingDMs, actor.pendingGroupWorthy)
 			}
 		}
 		if actor.deps.OnTurnDone != nil && !actor.handoffTurn {
@@ -614,6 +622,7 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 	}
 	actor.turn = nil
 	actor.pendingDMs = nil
+	actor.pendingGroupWorthy = false
 	actor.currentBatch = nil
 	// A completed turn means any pending handoff note reached its session;
 	// finishHandoff below sets the next one after this clears the old.
@@ -739,6 +748,7 @@ func (actor *Actor) handleProcExit() {
 		_ = actor.deps.Store.Turns().Finish(context.Background(), t)
 		actor.turn = nil
 		actor.pendingDMs = nil
+		actor.pendingGroupWorthy = false
 	}
 
 	switch {

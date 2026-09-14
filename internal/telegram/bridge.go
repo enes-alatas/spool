@@ -512,11 +512,18 @@ func (br *Bridge) mirror(ctx context.Context) {
 	}
 }
 
+// mirrorMessage applies ADR-0023: surfaces mirror human-facing traffic only.
+// Coordination (loop-to-loop, tick) replies are persisted and visible in the
+// control room but never posted here.
 func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
+	if mp.Visibility != store.VisibilityHumanFacing {
+		return
+	}
 	switch mp.Origin {
 	case store.OriginLoop:
-		// the loop's own reply: post to its bound group as its own bot, and
-		// to any DM chats whose messages triggered this turn
+		// the loop's own reply: post to any DM chats whose messages triggered
+		// this turn, and to its bound group only if the turn was also
+		// group-worthy — a DM-only turn stays in that DM (the #37 leak).
 		br.mu.Lock()
 		p := br.pollers[mp.FromLoopID]
 		br.mu.Unlock()
@@ -528,7 +535,7 @@ func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 			return
 		}
 		sent := map[int64]bool{}
-		if l.TGGroupChatID != 0 {
+		if mp.GroupWorthy && l.TGGroupChatID != 0 {
 			p.enqueueSend(l.TGGroupChatID, mp.Text)
 			sent[l.TGGroupChatID] = true
 		}

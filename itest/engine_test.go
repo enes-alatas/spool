@@ -145,6 +145,52 @@ func TestMentionRoutedLoopToLoop(t *testing.T) {
 	}
 }
 
+// TestMessageVisibilityLoopToLoopIsCoordination pins ADR-0023's
+// classification end to end: a human's message is always human-facing, and
+// a loop's reply is human-facing only when it replies a human-triggered
+// turn — mentioning another loop, with no human anywhere in that turn, is
+// coordination.
+func TestMessageVisibilityLoopToLoopIsCoordination(t *testing.T) {
+	s := startServer(t, t.TempDir())
+	wsCallee := workspaceWithScript(t, "received.\n")
+	s.createLoop("callee2", map[string]any{"workspace_path": wsCallee})
+
+	// Every fresh loop gets an immediate first tick (so its mission starts
+	// without waiting a full interval), and this script mentions callee2 on
+	// every turn. Let that initial tick — and the coordination reply it
+	// causes — settle first, so "go talk" below is unambiguously the only
+	// human-triggered turn caller2 ever runs.
+	wsCaller := workspaceWithScript(t, "@callee2 hello from caller\n")
+	s.createLoop("caller2", map[string]any{"workspace_path": wsCaller})
+	s.waitTurn("caller2", 20*time.Second, func(tn turn) bool { return tn.Trigger == "tick" })
+	s.waitTurn("callee2", 20*time.Second, func(tn turn) bool { return tn.Trigger == "message" })
+
+	s.message("caller2", "go talk")
+	s.waitTurn("caller2", 20*time.Second, func(tn turn) bool { return tn.Trigger == "message" })
+	time.Sleep(500 * time.Millisecond) // let its callee2 mention land too
+
+	// newest first: the first author match is each loop's latest message.
+	var callerMsg, calleeMsg *activityMessage
+	msgs := s.activity()
+	for i := range msgs {
+		if callerMsg == nil && msgs[i].Author == "caller2" {
+			callerMsg = &msgs[i]
+		}
+		if calleeMsg == nil && msgs[i].Author == "callee2" {
+			calleeMsg = &msgs[i]
+		}
+	}
+	if callerMsg == nil || calleeMsg == nil {
+		t.Fatalf("expected messages from both loops, got: %s", dump(msgs))
+	}
+	if callerMsg.Visibility != "human-facing" {
+		t.Errorf("caller's reply to the human-triggered turn: visibility = %q, want human-facing", callerMsg.Visibility)
+	}
+	if calleeMsg.Visibility != "coordination" {
+		t.Errorf("callee's reply to a loop mention: visibility = %q, want coordination", calleeMsg.Visibility)
+	}
+}
+
 // A loop's context usage comes from the turn that actually ran: the tokens it
 // loaded, measured against the window of the model it ran on. An unknown
 // model reports its tokens with a zero limit rather than a guessed ratio.

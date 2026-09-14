@@ -93,8 +93,8 @@ func main() {
 		SystemPrompt: func(l *store.Loop) string {
 			return loop.SystemPrompt(l, peersOf(db, l), rulesOf(db))
 		},
-		OnReply: func(l *store.Loop, text string, dms []int64) {
-			router.LoopReply(l, text, dms)
+		OnReply: func(l *store.Loop, text string, dms []int64, groupWorthy bool) {
+			router.LoopReply(l, text, dms, groupWorthy)
 		},
 		OnTurnDone: func(l *store.Loop, trailer time.Duration, has bool) {
 			scheduler.ScheduleAfterTurn(l, trailer, has)

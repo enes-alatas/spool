@@ -89,6 +89,31 @@ func TestSystemPromptFleetRules(t *testing.T) {
 	}
 }
 
+// TestMessageEnvelopeHumanFacing pins the signal a reply's mirror-gating
+// depends on (ADR-0023): an envelope is human-facing unless it came from
+// another loop, regardless of origin or DM chat.
+func TestMessageEnvelopeHumanFacing(t *testing.T) {
+	cases := []struct {
+		name     string
+		origin   string
+		fromLoop bool
+		want     bool
+	}{
+		{"telegram dm", store.OriginTelegramDM, false, true},
+		{"telegram group", store.OriginTelegramGroup, false, true},
+		{"web", store.OriginWeb, false, true},
+		{"loop mention", store.OriginLoop, true, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			env := MessageEnvelope(time.Now(), c.origin, "someone", "hi", c.fromLoop, 0)
+			if env.HumanFacing != c.want {
+				t.Errorf("HumanFacing = %v, want %v", env.HumanFacing, c.want)
+			}
+		})
+	}
+}
+
 // TestRotationEnvelope pins the handoff request of the rotation contract
 // (ADR-0022): it asks for a handoff note, carries the rotation trigger, and
 // forbids the trailer a normal reply may end with.
