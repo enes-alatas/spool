@@ -29,10 +29,43 @@ type Peer struct {
 	Mission string
 }
 
-// SystemPrompt builds the per-loop --append-system-prompt text.
-func SystemPrompt(l *store.Loop, peers []Peer) string {
+// FleetRulesSection renders the enabled fleet rules as the FLEET RULES
+// section of a system prompt (ADR-0024), or "" when none is enabled. Rules
+// keep the order given — creation order from the store — so the section is
+// identical between wakes. The API measures this exact text against the
+// section cap, so the budget an operator sees is the budget the prompt pays.
+func FleetRulesSection(rules []*store.FleetRule) string {
+	var b strings.Builder
+	n := 0
+	for _, r := range rules {
+		if !r.Enabled {
+			continue
+		}
+		if n == 0 {
+			b.WriteString("FLEET RULES\n")
+		}
+		n++
+		fmt.Fprintf(&b, "%d. %s\n", n, strings.TrimSpace(r.Title))
+		for _, line := range strings.Split(strings.TrimSpace(r.Body), "\n") {
+			fmt.Fprintf(&b, "   %s\n", line)
+		}
+	}
+	if n == 0 {
+		return ""
+	}
+	b.WriteString("Where a fleet rule and your mission conflict, the fleet rule wins.")
+	return b.String()
+}
+
+// SystemPrompt builds the per-loop --append-system-prompt text. Enabled
+// fleet rules go ahead of the mission: they exist to constrain every loop,
+// so a mission cannot opt out of them.
+func SystemPrompt(l *store.Loop, peers []Peer, rules []*store.FleetRule) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "You are %q, a long-running autonomous loop managed by Spool.\n\n", l.Name)
+	if section := FleetRulesSection(rules); section != "" {
+		b.WriteString(section + "\n\n")
+	}
 	fmt.Fprintf(&b, "MISSION\n%s\n\n", strings.TrimSpace(l.Mission))
 
 	b.WriteString(`HOW THIS WORKS

@@ -43,7 +43,7 @@ func TestSystemPromptWorkspaceSection(t *testing.T) {
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			prompt := SystemPrompt(&testCase.loop, nil)
+			prompt := SystemPrompt(&testCase.loop, nil, nil)
 			if !strings.Contains(prompt, testCase.want) {
 				t.Errorf("prompt missing %q:\n%s", testCase.want, prompt)
 			}
@@ -51,6 +51,41 @@ func TestSystemPromptWorkspaceSection(t *testing.T) {
 				t.Errorf("prompt must not contain %q:\n%s", testCase.dontWant, prompt)
 			}
 		})
+	}
+}
+
+// TestSystemPromptFleetRules pins the FLEET RULES section of the prompt
+// contract (ADR-0024): only enabled rules render, numbered in the order
+// given, the section sits ahead of MISSION and ends with the conflict line,
+// and with nothing enabled the section is absent entirely.
+func TestSystemPromptFleetRules(t *testing.T) {
+	l := &store.Loop{Name: "r", Mission: "keep the tests green"}
+	rules := []*store.FleetRule{
+		{Title: "sign your work", Body: "End every artifact with your name.", Enabled: true},
+		{Title: "dormant", Body: "must not appear", Enabled: false},
+		{Title: "one PR at a time", Body: "Never open a second PR\nwhile one is waiting.", Enabled: true},
+	}
+	prompt := SystemPrompt(l, nil, rules)
+
+	wantSection := "FLEET RULES\n" +
+		"1. sign your work\n   End every artifact with your name.\n" +
+		"2. one PR at a time\n   Never open a second PR\n   while one is waiting.\n" +
+		"Where a fleet rule and your mission conflict, the fleet rule wins."
+	if got := FleetRulesSection(rules); got != wantSection {
+		t.Fatalf("FleetRulesSection =\n%s\nwant\n%s", got, wantSection)
+	}
+	if !strings.Contains(prompt, wantSection+"\n\nMISSION\n") {
+		t.Errorf("section must sit immediately ahead of MISSION:\n%s", prompt)
+	}
+	if strings.Contains(prompt, "dormant") {
+		t.Errorf("a disabled rule rendered:\n%s", prompt)
+	}
+
+	if got := FleetRulesSection([]*store.FleetRule{{Title: "off", Body: "x"}}); got != "" {
+		t.Errorf("FleetRulesSection with nothing enabled = %q, want empty", got)
+	}
+	if bare := SystemPrompt(l, nil, nil); strings.Contains(bare, "FLEET RULES") {
+		t.Errorf("prompt without rules still carries the section:\n%s", bare)
 	}
 }
 
