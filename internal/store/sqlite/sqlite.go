@@ -259,10 +259,10 @@ func (r messages) Insert(ctx context.Context, m *store.Message) error {
 	}
 	res, err := r.db.ExecContext(ctx, `INSERT INTO messages
 		(ts, origin, author, from_loop_id, text, mentions, tg_chat_id, tg_message_id,
-		 tg_bot_loop_id, delivered_to)
-		VALUES (?,?,?,?,?,?,?,?,?,?)`,
+		 tg_bot_loop_id, delivered_to, visibility)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
 		m.TS, m.Origin, m.Author, m.FromLoopID, m.Text, toJSON(m.Mentions), tgChat, tgMsg,
-		m.TGBotLoopID, toJSON(m.DeliveredTo))
+		m.TGBotLoopID, toJSON(m.DeliveredTo), m.Visibility)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			return store.ErrDuplicate
@@ -280,7 +280,7 @@ func (r messages) SetDelivered(ctx context.Context, id int64, deliveredTo []stri
 
 func (r messages) List(ctx context.Context, limit int) ([]*store.Message, error) {
 	rows, err := r.db.QueryContext(ctx, `SELECT id, ts, origin, author, from_loop_id, text,
-		mentions, COALESCE(tg_chat_id,0), COALESCE(tg_message_id,0), tg_bot_loop_id, delivered_to
+		mentions, COALESCE(tg_chat_id,0), COALESCE(tg_message_id,0), tg_bot_loop_id, delivered_to, visibility
 		FROM messages ORDER BY id DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
@@ -291,7 +291,7 @@ func (r messages) List(ctx context.Context, limit int) ([]*store.Message, error)
 		var m store.Message
 		var mentions, delivered string
 		if err := rows.Scan(&m.ID, &m.TS, &m.Origin, &m.Author, &m.FromLoopID, &m.Text,
-			&mentions, &m.TGChatID, &m.TGMessageID, &m.TGBotLoopID, &delivered); err != nil {
+			&mentions, &m.TGChatID, &m.TGMessageID, &m.TGBotLoopID, &delivered, &m.Visibility); err != nil {
 			return nil, err
 		}
 		m.Mentions = fromJSON(mentions)

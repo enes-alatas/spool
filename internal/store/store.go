@@ -32,6 +32,13 @@ const (
 	OriginTelegramDM    = "telegram-dm"
 	OriginLoop          = "loop"
 
+	// Visibility (ADR-0023): coordination is loop-addressed traffic, persisted
+	// and shown in the control room but never mirrored to a chat surface;
+	// human-facing is addressed to a human, or replies a human-triggered turn,
+	// and is mirrored.
+	VisibilityCoordination = "coordination"
+	VisibilityHumanFacing  = "human-facing"
+
 	PacingFixed = "fixed" // orchestrator interval; trailer optional
 	PacingSelf  = "self"  // the loop schedules itself via trailers; interval is a fallback
 
@@ -146,6 +153,9 @@ type Message struct {
 	// only together with the bot that saw it. Storage detail, not surfaced.
 	TGBotLoopID string   `json:"-"`
 	DeliveredTo []string `json:"delivered_to"`
+	// Visibility is one of Visibility* (ADR-0023), derived by the router from
+	// the message's addressees at ingest.
+	Visibility string `json:"visibility"`
 }
 
 type Turn struct {
