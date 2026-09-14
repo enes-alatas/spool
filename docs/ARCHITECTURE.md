@@ -9,10 +9,11 @@ lives in `docs/VISION.md`.*
 1. **Plain `claude` CLI underneath, always.** Loops are `claude` subprocesses speaking
    stream-json over stdin/stdout under the operator's own Claude login and plan limits.
    No Agent SDK, no direct API. (ADR-0001)
-2. **The hub owns all messaging.** A loop's final reply text is its outgoing message;
-   the orchestrator parses `@mentions`, routes internally, and mirrors human-facing
-   traffic to chat surfaces. Surfaces are mirrors and human I/O — never the transport
-   between loops. (ADR-0002, ADR-0023)
+2. **The hub owns all messaging.** The committed model uses explicit destinations,
+   recipients, and reply references. Group coordination is visible to the owner;
+   only addressed loops receive it. DMs stay in their private conversation.
+   Surfaces provide mirrors and human I/O — never loop-to-loop transport.
+   The existing final-reply routing requires migration. (ADR-0002, ADR-0025)
 3. **Modular monolith with seams.** One binary, one process, four formal interface
    boundaries inside. We extract processes only when the hosted service forces it,
    and the seams are drawn so that extraction is a move, not a rewrite. (ADR-0004)
@@ -39,9 +40,9 @@ Use these words exactly — in code, UI, docs, and prompts. Don't introduce syno
 | **trailer** | The `[next-wake: 45m]` suffix a loop uses to schedule itself. |
 | **envelope** | The bracketed header + body format in which messages/ticks are delivered to a loop. |
 | **surface** | A chat platform adapter (Telegram today, Slack at L3). The web control room is not a surface; it talks to the hub directly. |
-| **mirror** | Re-posting human-facing hub-routed traffic to a surface so humans can watch. Coordination is never mirrored (ADR-0023). |
-| **visibility** | A message's audience class, derived from its addressees: *coordination* (loop-addressed; control room only) or *human-facing* (human-addressed, or replying to a human-triggered turn; mirrored to surfaces). (ADR-0023) |
-| **follow** | A loop's opt-in subscription to un-addressed chatter in a channel, delivered at next wake. |
+| **mirror** | Re-posting hub-routed traffic to its explicit surface destination. Group coordination remains visible to humans; DM traffic stays in its DM. (ADR-0025) |
+| **visibility** | Who can see a message in its destination conversation; separate from which loops receive it as input. The former coordination/human-facing mirror gate is superseded. (ADR-0025) |
+| **follow** | Deferred opt-in subscription to un-addressed channel chatter. Not enabled in ADR-0025's selective-delivery model. |
 | **workstation** | A loop's persistent sandbox: its home dir, tools, clones. Long-lived — survives sleeps, restarts, and pauses; dies with the loop, or when the operator switches it off or rebuilds it (ADR-0017, ADR-0021). |
 | **power controls** | The operator's switches on a workstation: restart, power off, power on, recreate. They act on the loop's *machine*, not the loop — pause is the switch for the loop itself, and the two compose (ADR-0021). |
 | **runner** | The subsystem that executes loops (actors + claude processes + sandboxes). |
@@ -64,9 +65,15 @@ Use these words exactly — in code, UI, docs, and prompts. Don't introduce syno
                         └──────────────────────────┘
 ```
 
-Message flow (unchanged from MVP): inbound (surface/web) → `route.Ingest` → persist →
+Current implementation: inbound (surface/web) → `route.Ingest` → persist →
 resolve recipients → deliver to runner → loop turn → final reply → `route.LoopReply` →
 route mentions + mirror to surfaces.
+
+Committed direction (ADR-0025; implementation tracked in #44): preserve each
+message's conversation and explicit reply reference, resolve recipients from native
+replies/mentions/`@all`, and deliver only to those loops. Outgoing messages choose
+their own destination and recipients; private and group processing must remain
+separate. The precise sending interface and context-isolation mechanism remain open.
 
 ## The four seams
 
@@ -103,9 +110,10 @@ scripts/e2e/          real-claude milestone suites (local only)
 The SandboxRuntime seam is live with both implementations: `internal/runtime` owns
 the interface, `internal/runtime/bare` runs host subprocesses, and
 `internal/runtime/docker` runs workstations through the docker CLI (ADR-0018).
-Current code deviates only in that `telegram` isn't yet behind the Surface
-interface (`internal/telegram` moves to `internal/surface/telegram` when that seam is
-introduced). Migrate opportunistically, not big-bang.
+The `telegram` package isn't yet behind the Surface interface
+(`internal/telegram` moves to `internal/surface/telegram` when that seam is
+introduced). Messaging also awaits the ADR-0025 migration described above.
+Migrate opportunistically, not big-bang.
 
 ## Evolution notes (so we don't design against ourselves)
 
@@ -147,9 +155,9 @@ introduced). Migrate opportunistically, not big-bang.
   room. Loops coordinate GitHub work with each other over `@mention` routing, not
   any GitHub-aware wiring. Don't reintroduce a GitHub surface; the same holds for
   any other CLI-driven tool a connection injects.
-- **Coordination is not surface traffic** (ADR-0023): every message carries an
-  addressee-derived visibility, and surfaces mirror only human-facing traffic —
-  loop-to-loop coordination lives in the control room, where Activity is a
-  read-only overview (messaging a loop is an explicit operator action). Each loop
-  can DM its owner; fleet-wide delivery is deliberate — fleet rules for durable
-  rulings, `@fleet` for a one-time fan-out through the storm guard.
+- **Group visibility and loop delivery are separate** (ADR-0025): the owner sees
+  group coordination while only explicitly addressed loops receive it. Native
+  replies address a specific message's author; mentions add recipients; `@all`
+  deliberately broadcasts. Owner–loop DMs stay private, including when inputs
+  arrive alongside group traffic. Activity is a read-only overview with an explicit
+  messaging action. Fleet rules continue to carry durable rulings.
