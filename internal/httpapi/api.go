@@ -62,6 +62,10 @@ type Server struct {
 	// settingsMu serializes the read-validate-write of paired settings, so
 	// two concurrent PUTs cannot interleave into an inverted stored pair.
 	settingsMu sync.Mutex
+	// rulesMu serializes fleet-rule writes: the section cap is checked
+	// against the whole enabled set, so two writes must not interleave
+	// between the check and the store.
+	rulesMu sync.Mutex
 }
 
 func (s *Server) Handler() http.Handler {
@@ -92,6 +96,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/activity", s.handleActivity)
 	mux.HandleFunc("GET /api/settings", s.handleGetSettings)
 	mux.HandleFunc("PUT /api/settings", s.handlePutSettings)
+	mux.HandleFunc("GET /api/rules", s.handleListRules)
+	mux.HandleFunc("POST /api/rules", s.handleCreateRule)
+	mux.HandleFunc("PATCH /api/rules/{id}", s.handlePatchRule)
+	mux.HandleFunc("DELETE /api/rules/{id}", s.handleDeleteRule)
 	mux.HandleFunc("GET /api/telegram/senders", s.handleListSenders)
 	mux.HandleFunc("POST /api/telegram/senders/{id}/allow", s.handleSenderStatus(store.SenderAllowed))
 	mux.HandleFunc("POST /api/telegram/senders/{id}/block", s.handleSenderStatus(store.SenderBlocked))
@@ -1096,6 +1104,10 @@ func queryInt(r *http.Request, key string, d int) int {
 	return d
 }
 
-func loopID() string {
-	return "loop_" + strconv.FormatInt(time.Now().UnixNano(), 36)
+// Ids are creation-ordered: base36 nanoseconds behind a type prefix.
+func loopID() string { return mintID("loop_") }
+func ruleID() string { return mintID("rule_") }
+
+func mintID(prefix string) string {
+	return prefix + strconv.FormatInt(time.Now().UnixNano(), 36)
 }
