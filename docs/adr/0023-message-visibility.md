@@ -1,6 +1,6 @@
 # ADR-0023: Message visibility is addressee-based; surfaces carry only human-facing traffic
 
-Date: 2026-08-21 · Status: accepted
+Date: 2026-08-21 · Status: superseded by ADR-0025
 
 ## Context
 

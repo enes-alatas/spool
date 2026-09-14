@@ -23,3 +23,10 @@ between loops. Each loop gets its own bot identity per surface.
 - Un-addressed chatter reaches a loop only via the opt-in *follow* mechanism (VISION).
 - **Amended by ADR-0023:** the mirror is no longer unconditional — surfaces carry
   only human-facing traffic; loop-to-loop coordination stays in the control room.
+
+- **Subsequently amended by ADR-0025 (superseding ADR-0023):** group coordination
+  remains visible to humans, while delivery follows explicit recipients and reply
+  references. Private DMs remain separate. The final-reply-as-message and no-tools
+  constraints yield to an explicit sending contract whose interface is still to be
+  designed; hub-owned routing and per-loop identities remain in force. Ambient
+  follow is deferred under that contract.
