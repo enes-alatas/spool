@@ -111,6 +111,18 @@ type LoopSecret struct {
 	UpdatedAt int64  `json:"updated_at"`
 }
 
+// FleetRule is one operator-defined rule every loop follows. Enabled rules
+// render into every loop's system prompt as the FLEET RULES section, ahead of
+// its mission (ADR-0024). A rule's text is data; only the section is contract.
+type FleetRule struct {
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	Body      string `json:"body"`
+	Enabled   bool   `json:"enabled"`
+	CreatedAt int64  `json:"created_at"`
+	UpdatedAt int64  `json:"updated_at"`
+}
+
 type Session struct {
 	ID        string `json:"id"` // the claude session uuid (minted by Spool)
 	LoopID    string `json:"loop_id"`
@@ -201,6 +213,17 @@ type LoopSecretStore interface {
 	List(ctx context.Context, loopID string) ([]*LoopSecret, error)
 }
 
+// FleetRuleStore holds the fleet's rules. List returns them in creation
+// order, enabled or not, so the rendered section stays stable between wakes
+// and the API can show disabled rules alongside the live ones.
+type FleetRuleStore interface {
+	Create(ctx context.Context, r *FleetRule) error
+	Update(ctx context.Context, r *FleetRule) error
+	Delete(ctx context.Context, id string) error
+	Get(ctx context.Context, id string) (*FleetRule, error)
+	List(ctx context.Context) ([]*FleetRule, error)
+}
+
 type SessionStore interface {
 	Create(ctx context.Context, s *Session) error
 	End(ctx context.Context, id, reason string, endedAt int64) error
@@ -282,6 +305,7 @@ type TGSenderStore interface {
 type Store interface {
 	Loops() LoopStore
 	LoopSecrets() LoopSecretStore
+	FleetRules() FleetRuleStore
 	Sessions() SessionStore
 	Messages() MessageStore
 	Turns() TurnStore

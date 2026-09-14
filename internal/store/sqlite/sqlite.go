@@ -88,6 +88,7 @@ func (s *DB) Close() error { return s.db.Close() }
 
 func (s *DB) Loops() store.LoopStore             { return loops{s.db} }
 func (s *DB) LoopSecrets() store.LoopSecretStore { return loopSecrets{s.db} }
+func (s *DB) FleetRules() store.FleetRuleStore   { return fleetRules{s.db} }
 func (s *DB) Sessions() store.SessionStore       { return sessions{s.db} }
 func (s *DB) Messages() store.MessageStore       { return messages{s.db} }
 func (s *DB) Turns() store.TurnStore             { return turns{s.db} }
@@ -573,6 +574,71 @@ func (r loopSecrets) List(ctx context.Context, loopID string) ([]*store.LoopSecr
 			return nil, err
 		}
 		out = append(out, &s)
+	}
+	return out, rows.Err()
+}
+
+// --- fleet rules ---
+
+type fleetRules struct{ db *sql.DB }
+
+const ruleCols = `id, title, body, enabled, created_at, updated_at`
+
+func scanRule(row interface{ Scan(...any) error }) (*store.FleetRule, error) {
+	var r store.FleetRule
+	var enabled int
+	if err := row.Scan(&r.ID, &r.Title, &r.Body, &enabled, &r.CreatedAt, &r.UpdatedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, store.ErrNotFound
+		}
+		return nil, err
+	}
+	r.Enabled = enabled == 1
+	return &r, nil
+}
+
+func (r fleetRules) Create(ctx context.Context, rule *store.FleetRule) error {
+	_, err := r.db.ExecContext(ctx, `INSERT INTO fleet_rules (`+ruleCols+`) VALUES (?,?,?,?,?,?)`,
+		rule.ID, rule.Title, rule.Body, boolInt(rule.Enabled), rule.CreatedAt, rule.UpdatedAt)
+	return err
+}
+
+func (r fleetRules) Update(ctx context.Context, rule *store.FleetRule) error {
+	res, err := r.db.ExecContext(ctx, `UPDATE fleet_rules SET title=?, body=?, enabled=?, updated_at=? WHERE id=?`,
+		rule.Title, rule.Body, boolInt(rule.Enabled), rule.UpdatedAt, rule.ID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
+func (r fleetRules) Delete(ctx context.Context, id string) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM fleet_rules WHERE id=?`, id)
+	return err
+}
+
+func (r fleetRules) Get(ctx context.Context, id string) (*store.FleetRule, error) {
+	return scanRule(r.db.QueryRowContext(ctx, `SELECT `+ruleCols+` FROM fleet_rules WHERE id=?`, id))
+}
+
+// List returns every rule in creation order: ids are creation-ordered, and
+// a stable order keeps the rendered section identical between wakes.
+func (r fleetRules) List(ctx context.Context) ([]*store.FleetRule, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT `+ruleCols+` FROM fleet_rules ORDER BY created_at, id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*store.FleetRule
+	for rows.Next() {
+		rule, err := scanRule(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rule)
 	}
 	return out, rows.Err()
 }
