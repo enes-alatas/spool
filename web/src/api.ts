@@ -80,6 +80,7 @@ export interface ChatMessage {
   text: string
   mentions: string[]
   delivered_to: string[]
+  visibility: string
 }
 
 export interface TGSender {
@@ -204,11 +205,6 @@ export const api = {
   kill: (name: string) => req<{ killed: boolean }>(`/api/loops/${name}/kill`, { method: 'POST' }),
   message: (name: string, text: string, author = 'operator') =>
     req<{ queued: boolean }>(`/api/loops/${name}/message`, {
-      method: 'POST',
-      body: JSON.stringify({ author, text }),
-    }),
-  broadcast: (text: string, author = 'operator') =>
-    req<{ queued: boolean }>('/api/messages', {
       method: 'POST',
       body: JSON.stringify({ author, text }),
     }),
