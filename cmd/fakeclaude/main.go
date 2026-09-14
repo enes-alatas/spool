@@ -14,8 +14,9 @@
 // <bytes>" replies with that many bytes; "!hang <seconds>" sleeps first. A
 // "!ctx <tokens>" prefix makes the turn report that many input tokens — how
 // a filling context looks from outside — and composes with the rest of the
-// line ("!ctx 120000 !hang 2"). Without a script file, every turn echoes:
-// "echo: <received text>".
+// line ("!ctx 120000 !hang 2"). "!sysprompt" replies with the text spool
+// passed as --append-system-prompt, so a test can see the prompt a loop was
+// given. Without a script file, every turn echoes: "echo: <received text>".
 //
 // A ".fakeclaude-resume-broken" file in the working directory makes every
 // --resume fail the way a session that can no longer be loaded does: a
@@ -38,7 +39,7 @@ type sessionState struct {
 }
 
 func main() {
-	var sessionID, resumeID, model string
+	var sessionID, resumeID, model, systemPrompt string
 	partials := false
 
 	args := os.Args[1:]
@@ -58,8 +59,11 @@ func main() {
 		case "--model":
 			i++
 			model = args[i] // echoed back at init, as the real CLI resolves and reports it
+		case "--append-system-prompt":
+			i++
+			systemPrompt = args[i] // replayed by the !sysprompt directive
 		case "--input-format", "--output-format", "--permission-mode",
-			"--effort", "--append-system-prompt", "--add-dir":
+			"--effort", "--add-dir":
 			i++ // value consumed, ignored
 		default:
 			// -p, --verbose, unknown flags: ignored
@@ -153,6 +157,8 @@ func main() {
 			case line == "!crash":
 				out.Flush()
 				os.Exit(2)
+			case line == "!sysprompt":
+				reply = systemPrompt
 			case strings.HasPrefix(line, "!huge "):
 				n, _ := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(line, "!huge ")))
 				reply = strings.Repeat("x", n)

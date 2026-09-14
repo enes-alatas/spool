@@ -91,8 +91,7 @@ func main() {
 		PartialMessages:           *partials,
 		Logger:                    log,
 		SystemPrompt: func(l *store.Loop) string {
-			peers := peersOf(db, l)
-			return loop.SystemPrompt(l, peers)
+			return loop.SystemPrompt(l, peersOf(db, l), rulesOf(db))
 		},
 		OnReply: func(l *store.Loop, text string, dms []int64) {
 			router.LoopReply(l, text, dms)
@@ -199,6 +198,16 @@ func peersOf(db store.Store, self *store.Loop) []loop.Peer {
 		}
 	}
 	return peers
+}
+
+// rulesOf reads the fleet rules fresh for each prompt build, so an edit in
+// the control room reaches every loop on its next wake (ADR-0024).
+func rulesOf(db store.Store) []*store.FleetRule {
+	rules, err := db.FleetRules().List(context.Background())
+	if err != nil {
+		return nil
+	}
+	return rules
 }
 
 // selectDefaultRuntime resolves --runtime per ADR-0017: docker is the

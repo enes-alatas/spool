@@ -29,6 +29,7 @@ Use these words exactly — in code, UI, docs, and prompts. Don't introduce syno
 |---|---|
 | **loop** | The product's core noun: a mission-driven agent on a persistent Claude Code session. Never "bot" (reserved for chat-platform bot identities) or "agent" in user-facing text. |
 | **mission** | The loop's standing purpose, set at creation, restated in its system prompt. |
+| **fleet rule** | An operator-defined rule every loop follows. Enabled rules render into every system prompt as the `FLEET RULES` section ahead of the mission, and win where the two conflict (ADR-0024). |
 | **workspace** | The loop's working directory (`none` \| plain dir \| git worktree). A loop-level concept only. |
 | **org** | The tenant: a team sharing loops, humans, and connections. Implicit and single in the local edition; explicit from L5 on. (When Slack's own "workspace" term must appear, say "your Slack workspace" — our tenant is always *org*.) |
 | **owner / admin / member** | Org roles: each loop has one responsible human owner; admins manage everything; members talk to loops. |
