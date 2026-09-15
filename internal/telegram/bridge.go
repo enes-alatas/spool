@@ -515,6 +515,11 @@ func (br *Bridge) mirror(ctx context.Context) {
 func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 	switch mp.Origin {
 	case store.OriginLoop:
+		if mp.Conversation != "" && mp.Conversation != store.ConversationGroup {
+			// A private send (owner_dm, control_room) must never surface in
+			// the group; its own delivery is the explicit-send bridge work.
+			return
+		}
 		// the loop's own reply: post to its bound group as its own bot, and
 		// to any DM chats whose messages triggered this turn
 		br.mu.Lock()
