@@ -99,6 +99,10 @@ type Deps struct {
 	// SystemPrompt builds the --append-system-prompt for a loop (peers are
 	// resolved at call time so every wake sees the current fleet).
 	SystemPrompt func(l *store.Loop) string
+	// MCPEndpoint returns the hub MCP URL reachable from this loop's
+	// runtime ("" = don't connect the tool). Wired in cmd, which knows the
+	// listen address and each runtime's network path to it (ADR-0026).
+	MCPEndpoint func(l *store.Loop) string
 	// OnTurnDone reschedules the loop's next tick after any completed turn.
 	OnTurnDone func(l *store.Loop, trailer time.Duration, hasTrailer bool)
 	// ClaudeToken returns the operator's stored setup-token, or "" when none is
@@ -435,6 +439,11 @@ func (actor *Actor) wakeSpec(fresh bool) runtime.Spec {
 		CPUs:               actor.loop.CPUs,
 		AppendSystemPrompt: actor.deps.SystemPrompt(&actor.loop),
 		PartialMessages:    actor.deps.PartialMessages,
+	}
+	if actor.deps.MCPEndpoint != nil && actor.loop.HubMCPToken != "" {
+		if url := actor.deps.MCPEndpoint(&actor.loop); url != "" {
+			spec.MCPConfig = claude.MCPConfigJSON(url, actor.loop.HubMCPToken)
+		}
 	}
 	if fresh {
 		spec.SessionID = actor.loop.CurrentSessionID

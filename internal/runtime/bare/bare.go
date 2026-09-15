@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"sync"
 	"syscall"
@@ -30,6 +31,10 @@ const orphanGrace = 5 * time.Second
 // Runtime is the host-subprocess implementation of runtime.Runtime.
 type Runtime struct {
 	bin string // path to the claude binary
+
+	cfgOnce sync.Once
+	cfgDir  string // private dir for per-loop MCP config files
+	cfgErr  error
 }
 
 // New returns a bare runtime spawning bin (default "claude").
@@ -74,14 +79,34 @@ func (host *Runtime) Health(ctx context.Context, loopID string) (runtime.Health,
 // — the process outlives the call and is torn down by Kill, by Wait, or by
 // Pdeathsig when the orchestrator dies.
 func (host *Runtime) Start(ctx context.Context, spec runtime.Spec) (runtime.Proc, error) {
-	args, err := claude.Args(claude.Opts{
+	opts := claude.Opts{
 		Model:              spec.Model,
 		Effort:             spec.Effort,
 		SessionID:          spec.SessionID,
 		ResumeID:           spec.ResumeID,
 		AppendSystemPrompt: spec.AppendSystemPrompt,
 		PartialMessages:    spec.PartialMessages,
-	})
+	}
+	if spec.MCPConfig != "" {
+		// The config carries the loop's hub token: a 0600 file keeps it out
+		// of argv, where any host process could ps it. The file lives in a
+		// 0700 directory MkdirTemp mints for this run — a predictable name
+		// directly under the shared temp dir could be pre-created or
+		// symlinked by another host user, handing them the token. One
+		// stable path per loop — each wake overwrites the last.
+		host.cfgOnce.Do(func() {
+			host.cfgDir, host.cfgErr = os.MkdirTemp("", "spool-mcp-")
+		})
+		if host.cfgErr != nil {
+			return nil, fmt.Errorf("mcp config dir: %w", host.cfgErr)
+		}
+		path := filepath.Join(host.cfgDir, spec.LoopID+".json")
+		if err := os.WriteFile(path, []byte(spec.MCPConfig), 0o600); err != nil {
+			return nil, fmt.Errorf("write mcp config: %w", err)
+		}
+		opts.MCPConfigPath = path
+	}
+	args, err := claude.Args(opts)
 	if err != nil {
 		return nil, err
 	}

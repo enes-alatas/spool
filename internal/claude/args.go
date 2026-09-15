@@ -1,6 +1,9 @@
 package claude
 
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 // Opts describes one claude invocation: everything that becomes a command
 // line flag. Where the process runs — which binary, which working directory,
@@ -15,7 +18,12 @@ type Opts struct {
 	ResumeID           string
 	AddDirs            []string
 	PartialMessages    bool
-	ExtraArgs          []string
+	// MCPConfigPath points --mcp-config at a file (with --strict-mcp-config,
+	// so nothing else registers servers). A path, never inline JSON: the
+	// config carries the loop's hub token, which must stay out of argv where
+	// ps could see it — runtimes materialize the file (ADR-0026).
+	MCPConfigPath string
+	ExtraArgs     []string
 }
 
 // Args builds the argument list for a stream-json claude run. Every runtime
@@ -51,5 +59,23 @@ func Args(opts Opts) ([]string, error) {
 	if opts.PartialMessages {
 		args = append(args, "--include-partial-messages")
 	}
+	if opts.MCPConfigPath != "" {
+		args = append(args, "--mcp-config", opts.MCPConfigPath, "--strict-mcp-config")
+	}
 	return append(args, opts.ExtraArgs...), nil
+}
+
+// MCPConfigJSON renders the --mcp-config contents pointing claude at the
+// hub's MCP endpoint as the loop it runs (ADR-0026).
+func MCPConfigJSON(url, token string) string {
+	b, _ := json.Marshal(map[string]any{
+		"mcpServers": map[string]any{
+			"spool": map[string]any{
+				"type":    "http",
+				"url":     url,
+				"headers": map[string]string{"Authorization": "Bearer " + token},
+			},
+		},
+	})
+	return string(b)
 }

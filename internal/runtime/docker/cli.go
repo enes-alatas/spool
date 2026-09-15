@@ -34,9 +34,18 @@ func (failure *cliError) Unwrap() error { return failure.err }
 // command runs one docker CLI invocation under a bounded deadline and
 // returns its stdout.
 func (rt *Runtime) command(ctx context.Context, timeout time.Duration, args ...string) ([]byte, error) {
+	return rt.commandInput(ctx, timeout, "", args...)
+}
+
+// commandInput is command with the given stdin — how content reaches a
+// workstation without crossing host argv.
+func (rt *Runtime) commandInput(ctx context.Context, timeout time.Duration, stdin string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, rt.bin, args...)
+	if stdin != "" {
+		cmd.Stdin = strings.NewReader(stdin)
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
