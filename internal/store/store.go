@@ -5,7 +5,22 @@ package store
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 )
+
+// NewHubMCPToken mints the bearer token a loop presents to the hub's own MCP
+// endpoint — hub-scoped, unrelated to any MCP connection a loop may attach
+// later (ADR-0026). Implementations
+// call it from Create when the caller left the token empty, so every loop
+// holds one no matter which path created it.
+func NewHubMCPToken() string {
+	b := make([]byte, 24)
+	if _, err := rand.Read(b); err != nil {
+		panic("store: crypto/rand unavailable: " + err.Error())
+	}
+	return hex.EncodeToString(b)
+}
 
 const (
 	WorkspaceNone     = "none"
@@ -91,6 +106,10 @@ type Loop struct {
 	TGBotToken    string `json:"-"`
 	TGBotUsername string `json:"tg_bot_username"`
 	TGGroupChatID int64  `json:"tg_group_chat_id"`
+	// HubMCPToken is the bearer token this loop's claude process presents to
+	// the hub's MCP endpoint (ADR-0026). Minted at creation, immutable, and
+	// secret: json:"-" keeps it out of every API response, like TGBotToken.
+	HubMCPToken string `json:"-"`
 	// WorkstationOff records that the operator switched this loop's
 	// workstation off. Intent, not observation: a health poll cannot tell a
 	// halted workstation from a dead one (ADR-0021). Surfaced to the UI as
@@ -210,6 +229,9 @@ type LoopStore interface {
 	Delete(ctx context.Context, id string) error
 	Get(ctx context.Context, id string) (*Loop, error)
 	GetByName(ctx context.Context, name string) (*Loop, error)
+	// GetByHubMCPToken resolves the loop presenting a bearer token to the
+	// hub's MCP endpoint; ErrNotFound for an unknown token.
+	GetByHubMCPToken(ctx context.Context, token string) (*Loop, error)
 	List(ctx context.Context) ([]*Loop, error)
 	SetRuntime(ctx context.Context, id, sessionID string, pid int) error
 }

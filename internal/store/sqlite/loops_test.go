@@ -80,3 +80,45 @@ func TestLoopRuntimeChecked(t *testing.T) {
 		t.Fatal("creating a loop with an unknown runtime must fail")
 	}
 }
+
+// TestLoopHubMCPToken pins the send-token contract (ADR-0026): Create mints a
+// token when the caller leaves it empty, the token resolves its loop, and an
+// unknown or empty bearer is ErrNotFound.
+func TestLoopHubMCPToken(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+
+	now := time.Now().UnixMilli()
+	for _, name := range []string{"terra", "iris"} {
+		l := &store.Loop{
+			ID: "l_" + name, Name: name, Mission: "m", Status: store.StatusActive,
+			WorkspaceMode: store.WorkspaceNone, Pacing: store.PacingFixed,
+			Runtime: store.RuntimeBare, CreatedAt: now, UpdatedAt: now,
+		}
+		if err := db.Loops().Create(ctx, l); err != nil {
+			t.Fatalf("create %s: %v", name, err)
+		}
+		if l.HubMCPToken == "" {
+			t.Fatalf("create %s left HubMCPToken empty", name)
+		}
+	}
+
+	terra, err := db.Loops().GetByName(ctx, "terra")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := db.Loops().GetByHubMCPToken(ctx, terra.HubMCPToken)
+	if err != nil || got.ID != terra.ID {
+		t.Fatalf("GetByHubMCPToken = %v, %v; want terra", got, err)
+	}
+	if _, err := db.Loops().GetByHubMCPToken(ctx, "nope"); err != store.ErrNotFound {
+		t.Fatalf("unknown token: err = %v, want ErrNotFound", err)
+	}
+	if _, err := db.Loops().GetByHubMCPToken(ctx, ""); err != store.ErrNotFound {
+		t.Fatalf("empty token: err = %v, want ErrNotFound", err)
+	}
+}
