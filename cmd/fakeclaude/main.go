@@ -18,6 +18,15 @@
 // passed as --append-system-prompt, so a test can see the prompt a loop was
 // given. Without a script file, every turn echoes: "echo: <received text>".
 //
+// A "!send {json}" prefix calls the hub's send_message MCP tool with the
+// given arguments, exactly as the real CLI would mid-turn. It repeats for
+// several sends and composes with a trailing reply text; with none, the
+// reply reports each call's outcome ("sent …" / "send error: …"). The
+// endpoint comes from --mcp-config (inline JSON or a file path, the real
+// CLI's flag) or, when the runner doesn't pass one, from the
+// FAKECLAUDE_MCP_CONFIG env var in the same format — read lazily at send
+// time, so a test can write the file after the loop exists.
+//
 // A ".fakeclaude-resume-broken" file in the working directory makes every
 // --resume fail the way a session that can no longer be loaded does: a
 // diagnostic on stderr, exit 1, no stream-json. Fresh sessions still work.
@@ -25,13 +34,18 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type sessionState struct {
@@ -39,7 +53,7 @@ type sessionState struct {
 }
 
 func main() {
-	var sessionID, resumeID, model, systemPrompt string
+	var sessionID, resumeID, model, systemPrompt, mcpConfig string
 	partials := false
 
 	args := os.Args[1:]
@@ -62,6 +76,9 @@ func main() {
 		case "--append-system-prompt":
 			i++
 			systemPrompt = args[i] // replayed by the !sysprompt directive
+		case "--mcp-config":
+			i++
+			mcpConfig = args[i] // inline JSON or a file path, like the real CLI
 		case "--input-format", "--output-format", "--permission-mode",
 			"--effort", "--add-dir":
 			i++ // value consumed, ignored
@@ -151,7 +168,22 @@ func main() {
 				ctxTokens, _ = strconv.Atoi(numStr)
 				line = strings.TrimSpace(rest)
 			}
+			var sent []string
+			for strings.HasPrefix(line, "!send ") {
+				rest := strings.TrimPrefix(line, "!send ")
+				dec := json.NewDecoder(strings.NewReader(rest))
+				var sendArgs map[string]any
+				if err := dec.Decode(&sendArgs); err != nil {
+					sent = append(sent, "send error: bad json: "+err.Error())
+					line = ""
+					break
+				}
+				sent = append(sent, mcpSend(mcpConfig, sendArgs))
+				line = strings.TrimSpace(rest[dec.InputOffset():])
+			}
 			switch {
+			case line == "" && len(sent) > 0:
+				reply = strings.Join(sent, "\n")
 			case line == "":
 				// a bare "!ctx <n>" line keeps the echo reply
 			case line == "!crash":
@@ -241,4 +273,90 @@ func initModel(model string) string {
 		return "fakeclaude"
 	}
 	return model
+}
+
+// --- the !send directive: a real client of the hub's MCP endpoint ---
+
+// mcpSess is the one connection this process holds, dialed on the first
+// !send — the real CLI likewise connects once per session.
+var mcpSess *mcp.ClientSession
+
+func mcpSend(flagConfig string, args map[string]any) string {
+	sess, err := mcpConnect(flagConfig)
+	if err != nil {
+		return "send error: " + err.Error()
+	}
+	res, err := sess.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "send_message", Arguments: args,
+	})
+	if err != nil {
+		return "send error: " + err.Error()
+	}
+	var parts []string
+	for _, c := range res.Content {
+		if tc, ok := c.(*mcp.TextContent); ok {
+			parts = append(parts, tc.Text)
+		}
+	}
+	text := strings.Join(parts, " ")
+	if res.IsError {
+		return "send error: " + text
+	}
+	return "sent " + text
+}
+
+func mcpConnect(flagConfig string) (*mcp.ClientSession, error) {
+	if mcpSess != nil {
+		return mcpSess, nil
+	}
+	raw := flagConfig
+	if raw == "" {
+		raw = os.Getenv("FAKECLAUDE_MCP_CONFIG")
+	}
+	if raw == "" {
+		return nil, errors.New("no mcp config (--mcp-config or FAKECLAUDE_MCP_CONFIG)")
+	}
+	if !strings.HasPrefix(strings.TrimSpace(raw), "{") {
+		data, err := os.ReadFile(raw)
+		if err != nil {
+			return nil, err
+		}
+		raw = string(data)
+	}
+	var cfg struct {
+		MCPServers map[string]struct {
+			URL     string            `json:"url"`
+			Headers map[string]string `json:"headers"`
+		} `json:"mcpServers"`
+	}
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+		return nil, fmt.Errorf("mcp config: %w", err)
+	}
+	for _, srv := range cfg.MCPServers {
+		if srv.URL == "" {
+			continue
+		}
+		client := mcp.NewClient(&mcp.Implementation{Name: "fakeclaude", Version: "0"}, nil)
+		sess, err := client.Connect(context.Background(), &mcp.StreamableClientTransport{
+			Endpoint:             srv.URL,
+			HTTPClient:           &http.Client{Transport: headerTransport{srv.Headers}},
+			DisableStandaloneSSE: true,
+			MaxRetries:           -1,
+		}, nil)
+		if err != nil {
+			return nil, err
+		}
+		mcpSess = sess
+		return sess, nil
+	}
+	return nil, errors.New("mcp config names no server with a url")
+}
+
+type headerTransport struct{ headers map[string]string }
+
+func (h headerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	for k, v := range h.headers {
+		r.Header.Set(k, v)
+	}
+	return http.DefaultTransport.RoundTrip(r)
 }
