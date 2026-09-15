@@ -128,9 +128,23 @@ func SystemPrompt(l *store.Loop, peers []Peer, rules []*store.FleetRule) string 
 
 // Envelope is one formatted inbound item for a loop, ready to inject.
 type Envelope struct {
-	Trigger  string `json:"trigger"`              // store.TriggerTick | TriggerMessage | TriggerManual
-	Text     string `json:"text"`                 // fully formatted, header included
-	TGChatID int64  `json:"tg_chat_id,omitempty"` // DM chat to reply to (0 = none)
+	Trigger string `json:"trigger"` // store.TriggerTick | TriggerMessage | TriggerManual
+	Text    string `json:"text"`    // fully formatted, header included
+	// Conversation is the store.Conversation* kind the message belongs to
+	// ("" for ticks and envelopes queued before conversations existed).
+	// The actor batches one turn per conversation from it (ADR-0026).
+	Conversation string `json:"conversation,omitempty"`
+	TGChatID     int64  `json:"tg_chat_id,omitempty"` // source DM chat (0 = none)
+}
+
+// conversationKey is what the actor batches turns by: the conversation kind,
+// plus the DM chat so distinct DMs never share a turn. Ticks and legacy
+// queued envelopes key separately from any conversation.
+func (e Envelope) conversationKey() string {
+	if e.Trigger == store.TriggerTick {
+		return "tick"
+	}
+	return fmt.Sprintf("%s:%d", e.Conversation, e.TGChatID)
 }
 
 func header(now time.Time, s string) string {
@@ -138,8 +152,9 @@ func header(now time.Time, s string) string {
 }
 
 // MessageEnvelope formats an inbound chat message for injection.
-// origin: store.Origin* constants; author is the display name (no @).
-func MessageEnvelope(now time.Time, origin, author, text string, fromLoop bool, tgChatID int64) Envelope {
+// origin: store.Origin* constants; author is the display name (no @);
+// conversation is the store.Conversation* kind the message belongs to.
+func MessageEnvelope(now time.Time, origin, author, text, conversation string, fromLoop bool, tgChatID int64) Envelope {
 	var from string
 	switch {
 	case fromLoop:
@@ -152,9 +167,10 @@ func MessageEnvelope(now time.Time, origin, author, text string, fromLoop bool, 
 		from = fmt.Sprintf("message from %s via web", author)
 	}
 	return Envelope{
-		Trigger:  store.TriggerMessage,
-		Text:     header(now, from) + "\n\n" + text,
-		TGChatID: tgChatID,
+		Trigger:      store.TriggerMessage,
+		Text:         header(now, from) + "\n\n" + text,
+		Conversation: conversation,
+		TGChatID:     tgChatID,
 	}
 }
 

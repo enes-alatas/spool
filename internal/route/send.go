@@ -125,7 +125,7 @@ func (r *Router) Send(ctx context.Context, req SendRequest) (*store.Message, *Se
 			r.recordStormDrop(ctx, req.From.ID, req.From.Name, target)
 			continue
 		}
-		env := loop.MessageEnvelope(now, store.OriginLoop, req.From.Name, text, true, 0)
+		env := loop.MessageEnvelope(now, store.OriginLoop, req.From.Name, text, store.ConversationGroup, true, 0)
 		if !r.deliver.Deliver(target.ID, env) {
 			r.log.Warn("deliver to unknown runtime", "loop", target.Name)
 		}

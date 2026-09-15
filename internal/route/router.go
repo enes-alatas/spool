@@ -182,7 +182,7 @@ func (r *Router) Ingest(ctx context.Context, in InboundMessage) error {
 			r.recordStormDrop(ctx, in.FromLoopID, fromLoopName, target)
 			continue
 		}
-		env := loop.MessageEnvelope(nowT, in.Origin, in.Author, in.Text, in.FromLoopID != "", dmChatFor(in))
+		env := loop.MessageEnvelope(nowT, in.Origin, in.Author, in.Text, conv, in.FromLoopID != "", dmChatFor(in))
 		if !r.deliver.Deliver(target.ID, env) {
 			r.log.Warn("deliver to unknown runtime", "loop", target.Name)
 		}
