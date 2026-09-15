@@ -1,0 +1,78 @@
+package httpapi
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"strings"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/enes-alatas/spool/internal/route"
+	"github.com/enes-alatas/spool/internal/store"
+)
+
+// The hub serves its own MCP endpoint (ADR-0026): send_message is the one
+// way a loop's claude process emits an explicitly addressed message. Each
+// request authenticates with the loop's hub MCP bearer token; the endpoint
+// is stateless, so every POST stands alone and no session state accrues.
+
+type sendMessageIn struct {
+	Destination string `json:"destination" jsonschema:"where this message goes: owner_dm (private DM with your owner), group (the shared group; @mention recipients in the text), or control_room (your private web thread with the operator)"`
+	ReplyTo     string `json:"reply_to,omitempty" jsonschema:"reference of the message this replies to, as given in its envelope; not supported yet — omit"`
+	Text        string `json:"text" jsonschema:"the message text; in the group, @mentions name the recipients"`
+}
+
+type sendMessageOut struct {
+	MessageID int64 `json:"message_id"`
+}
+
+func (s *Server) mcpHandler() http.Handler {
+	inner := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
+		l, ok := r.Context().Value(mcpLoopKey{}).(*store.Loop)
+		if !ok {
+			return nil
+		}
+		srv := mcp.NewServer(&mcp.Implementation{Name: "spool", Version: s.ClaudeVer}, nil)
+		mcp.AddTool(srv, &mcp.Tool{
+			Name: "send_message",
+			Description: "Send one explicitly addressed message. Each call is one message to one " +
+				"destination; call again for another destination or recipient set. Errors are " +
+				"correctable: fix what the message names and retry.",
+		}, s.sendMessageTool(l))
+		return srv
+	}, &mcp.StreamableHTTPOptions{Stateless: true, Logger: s.Log})
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		l, err := s.Store.Loops().GetByHubMCPToken(r.Context(), token)
+		if err != nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		inner.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), mcpLoopKey{}, l)))
+	})
+}
+
+type mcpLoopKey struct{}
+
+func (s *Server) sendMessageTool(l *store.Loop) func(context.Context, *mcp.CallToolRequest, sendMessageIn) (*mcp.CallToolResult, sendMessageOut, error) {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, in sendMessageIn) (*mcp.CallToolResult, sendMessageOut, error) {
+		msg, serr, err := s.Router.Send(ctx, route.SendRequest{
+			From:        l,
+			Destination: in.Destination,
+			ReplyTo:     in.ReplyTo,
+			Text:        in.Text,
+		})
+		if serr != nil {
+			// A typed refusal: the SDK renders a returned error as an
+			// isError tool result, which is what lets the model correct.
+			return nil, sendMessageOut{}, serr
+		}
+		if err != nil {
+			s.Log.Error("send_message", "loop", l.Name, "err", err)
+			return nil, sendMessageOut{}, fmt.Errorf("internal error; try again")
+		}
+		return nil, sendMessageOut{MessageID: msg.ID}, nil
+	}
+}
