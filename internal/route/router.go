@@ -40,15 +40,12 @@ type InboundMessage struct {
 	// ImplicitTo optionally targets a loop with no mention needed
 	// (DM to a loop's bot, or POST /api/loops/{name}/message).
 	ImplicitTo string // loop ID
-	// ReplyDMChats: for loop replies, DM chats of the triggering turn.
-	ReplyDMChats []int64
 }
 
 // MessagePayload is what KindMessage bus items carry (UI + telegram mirror).
 type MessagePayload struct {
 	store.Message
-	FromLoopName string  `json:"from_loop_name,omitempty"`
-	ReplyDMChats []int64 `json:"reply_dm_chats,omitempty"`
+	FromLoopName string `json:"from_loop_name,omitempty"`
 }
 
 type Deliverer interface {
@@ -173,7 +170,6 @@ func (r *Router) Ingest(ctx context.Context, in InboundMessage) error {
 	r.bus.Publish(bus.Item{Kind: bus.KindMessage, LoopID: in.FromLoopID, Payload: &MessagePayload{
 		Message:      *msg,
 		FromLoopName: fromLoopName,
-		ReplyDMChats: in.ReplyDMChats,
 	}})
 
 	nowT := time.Now()
@@ -188,26 +184,6 @@ func (r *Router) Ingest(ctx context.Context, in InboundMessage) error {
 		}
 	}
 	return nil
-}
-
-// LoopReply handles a loop's finished turn: persist as a loop-origin message
-// and route its mentions. resultText arrives with the trailer already present;
-// the stored/mirrored text has it stripped.
-func (r *Router) LoopReply(l *store.Loop, resultText string, replyDMChats []int64) {
-	text := loop.StripTrailer(resultText)
-	if text == "" {
-		return
-	}
-	err := r.Ingest(context.Background(), InboundMessage{
-		Origin:       store.OriginLoop,
-		Author:       l.Name,
-		FromLoopID:   l.ID,
-		Text:         text,
-		ReplyDMChats: replyDMChats,
-	})
-	if err != nil {
-		r.log.Error("loop reply ingest", "loop", l.Name, "err", err)
-	}
 }
 
 func dmChatFor(in InboundMessage) int64 {

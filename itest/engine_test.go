@@ -126,15 +126,19 @@ func TestTrailerClampedByMinWake(t *testing.T) {
 	}
 }
 
-// TestMentionRoutedLoopToLoop: loop caller's reply mentions @callee; the hub
-// must deliver it as a message-triggered turn on callee.
-func TestMentionRoutedLoopToLoop(t *testing.T) {
+// TestSendRoutedLoopToLoop: caller's turn group-sends a message mentioning
+// @callee through the hub's MCP endpoint; the hub must deliver it as a
+// message-triggered turn on callee. Caller's own final reply is a status
+// note and must reach nobody — even when it names a peer.
+func TestSendRoutedLoopToLoop(t *testing.T) {
 	s := startServer(t, t.TempDir())
 	wsCallee := workspaceWithScript(t, "received.\n")
 	s.createLoop("callee", map[string]any{"workspace_path": wsCallee})
 
-	wsCaller := workspaceWithScript(t, "@callee hello from caller\n")
+	wsCaller := workspaceWithScript(t,
+		`!send {"destination":"group","text":"@callee hello from caller"} @callee note to self about callee`+"\n")
 	s.createLoop("caller", map[string]any{"workspace_path": wsCaller})
+	writeFakeMCPConfig(t, s, "caller")
 	s.message("caller", "go talk")
 
 	tn := s.waitTurn("callee", 20*time.Second, func(tn turn) bool {
@@ -142,6 +146,21 @@ func TestMentionRoutedLoopToLoop(t *testing.T) {
 	})
 	if tn.IsError {
 		t.Errorf("callee turn errored: %s", dump(tn))
+	}
+	// The status note ("note to self…") was never a message: not stored,
+	// not delivered, its @mention routed nowhere.
+	for _, m := range s.activity() {
+		if strings.Contains(m.Text, "note to self") {
+			t.Errorf("status note was stored as a message: %s", dump(m))
+		}
+	}
+	callee := s.completed("callee")
+	if len(callee) > 1 {
+		for _, tn := range callee {
+			if strings.Contains(tn.ResultText, "note to self") {
+				t.Errorf("status note reached callee: %s", dump(tn))
+			}
+		}
 	}
 }
 
