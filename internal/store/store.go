@@ -32,6 +32,12 @@ const (
 	OriginTelegramDM    = "telegram-dm"
 	OriginLoop          = "loop"
 
+	// A message's conversation: the unit of privacy and addressing
+	// (ADR-0026). The private kinds are keyed to a loop; group is shared.
+	ConversationOwnerDM     = "owner_dm"     // a loop's Telegram DM with its owner
+	ConversationGroup       = "group"        // the loop's bound Telegram group
+	ConversationControlRoom = "control_room" // a loop's private web thread
+
 	PacingFixed = "fixed" // orchestrator interval; trailer optional
 	PacingSelf  = "self"  // the loop schedules itself via trailers; interval is a fallback
 
@@ -146,6 +152,12 @@ type Message struct {
 	// only together with the bot that saw it. Storage detail, not surfaced.
 	TGBotLoopID string   `json:"-"`
 	DeliveredTo []string `json:"delivered_to"`
+	// Conversation is the unit of privacy and addressing this message
+	// belongs to: one of the Conversation* constants.
+	Conversation string `json:"conversation"`
+	// ConversationLoopID keys the private conversation kinds (owner_dm,
+	// control_room) to their loop; empty for the shared group.
+	ConversationLoopID string `json:"conversation_loop_id,omitempty"`
 }
 
 type Turn struct {
