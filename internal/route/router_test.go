@@ -3,6 +3,8 @@ package route
 import (
 	"reflect"
 	"testing"
+
+	"github.com/enes-alatas/spool/internal/store"
 )
 
 func TestMentions(t *testing.T) {
@@ -22,6 +24,27 @@ func TestMentions(t *testing.T) {
 		got := Mentions(c.in)
 		if !reflect.DeepEqual(got, c.want) {
 			t.Errorf("Mentions(%q) = %v want %v", c.in, got, c.want)
+		}
+	}
+}
+
+func TestConversationFor(t *testing.T) {
+	cases := []struct {
+		name   string
+		in     InboundMessage
+		kind   string
+		loopID string
+	}{
+		{"dm to a loop's bot", InboundMessage{Origin: store.OriginTelegramDM, ImplicitTo: "l1"}, store.ConversationOwnerDM, "l1"},
+		{"group message", InboundMessage{Origin: store.OriginTelegramGroup}, store.ConversationGroup, ""},
+		{"loop reply", InboundMessage{Origin: store.OriginLoop, FromLoopID: "l1"}, store.ConversationGroup, ""},
+		{"per-loop web composer", InboundMessage{Origin: store.OriginWeb, ImplicitTo: "l2"}, store.ConversationControlRoom, "l2"},
+		{"web broadcast", InboundMessage{Origin: store.OriginWeb}, store.ConversationGroup, ""},
+	}
+	for _, c := range cases {
+		kind, loopID := conversationFor(c.in)
+		if kind != c.kind || loopID != c.loopID {
+			t.Errorf("%s: conversationFor = %q/%q, want %q/%q", c.name, kind, loopID, c.kind, c.loopID)
 		}
 	}
 }

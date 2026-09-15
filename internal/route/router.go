@@ -86,10 +86,27 @@ func Mentions(text string) []string {
 	return out
 }
 
+// conversationFor derives the conversation a message belongs to (ADR-0026)
+// from its origin: a DM to a loop's bot is that loop's owner_dm, the per-loop
+// web composer is its control_room, and everything else — group traffic and
+// loop replies — is the shared group. Explicit destinations replace this
+// derivation once loops send through the MCP tool.
+func conversationFor(in InboundMessage) (kind, loopID string) {
+	switch {
+	case in.Origin == store.OriginTelegramDM:
+		return store.ConversationOwnerDM, in.ImplicitTo
+	case in.Origin == store.OriginWeb && in.ImplicitTo != "":
+		return store.ConversationControlRoom, in.ImplicitTo
+	default:
+		return store.ConversationGroup, ""
+	}
+}
+
 // Ingest persists and routes one message. Returns store.ErrDuplicate when
 // the same bot's poller re-reads a telegram message it already ingested.
 func (r *Router) Ingest(ctx context.Context, in InboundMessage) error {
 	mentions := Mentions(in.Text)
+	conv, convLoopID := conversationFor(in)
 	msg := &store.Message{
 		TS:          time.Now().UnixMilli(),
 		Origin:      in.Origin,
@@ -100,6 +117,9 @@ func (r *Router) Ingest(ctx context.Context, in InboundMessage) error {
 		TGChatID:    in.TGChatID,
 		TGMessageID: in.TGMessageID,
 		TGBotLoopID: in.TGBotLoopID,
+
+		Conversation:       conv,
+		ConversationLoopID: convLoopID,
 	}
 
 	// resolve recipients before persisting so delivered_to lands in one write
