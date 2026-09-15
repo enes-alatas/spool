@@ -20,7 +20,6 @@ func TestSeparateTurnsPerConversation(t *testing.T) {
 	s := startServer(t, t.TempDir())
 	s.createLoop("alpha", map[string]any{"workspace_path": wsAlpha})
 	s.createLoop("beta", map[string]any{"workspace_path": wsBeta})
-	writeFakeMCPConfig(t, s, "beta")
 
 	s.message("alpha", "start hanging")
 	time.Sleep(300 * time.Millisecond) // alpha is inside the hang

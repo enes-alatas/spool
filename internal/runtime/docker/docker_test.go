@@ -58,6 +58,7 @@ func TestRunArgv(t *testing.T) {
 		"--name", "spool-ws-abc",
 		"--restart", "unless-stopped",
 		"--volume", "spool-ws-abc:/home/loop",
+		"--add-host", "host.docker.internal:host-gateway",
 		"--label", "spool.loop.id=abc",
 		"--label", "spool.loop.name=greeter",
 		"--memory", "4096m",

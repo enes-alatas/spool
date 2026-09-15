@@ -151,6 +151,13 @@ func (rt *Runtime) provision(ctx context.Context, spec runtime.Spec) error {
 // the inner claude anyway (ADR-0018) — Kill and boot-time Reap go through
 // the wall instead.
 func (rt *Runtime) Start(ctx context.Context, spec runtime.Spec) (runtime.Proc, error) {
+	if spec.MCPConfig != "" {
+		// The config carries the loop's hub token: written inside the
+		// workstation over exec stdin, so it never crosses host argv.
+		if err := rt.writeMCPConfig(ctx, spec); err != nil {
+			return nil, err
+		}
+	}
 	argv, err := execArgv(spec)
 	if err != nil {
 		return nil, err
@@ -269,6 +276,9 @@ func runArgv(spec runtime.Spec, defaultImage string) []string {
 		"--name", name,
 		"--restart", "unless-stopped",
 		"--volume", name + ":" + runtime.WorkstationHome,
+		// the loop reaches the hub's MCP endpoint through the host gateway
+		// (ADR-0026); existing workstations pick this up on recreate
+		"--add-host", "host.docker.internal:host-gateway",
 	}
 	argv = append(argv, labelArgs(spec)...)
 	if spec.MemMB > 0 {
@@ -289,14 +299,18 @@ func runArgv(spec runtime.Spec, defaultImage string) []string {
 // process's environment, so credential values never appear in argv where
 // host ps or logs could see them (ADR-0018).
 func execArgv(spec runtime.Spec) ([]string, error) {
-	claudeArgs, err := claude.Args(claude.Opts{
+	opts := claude.Opts{
 		Model:              spec.Model,
 		Effort:             spec.Effort,
 		SessionID:          spec.SessionID,
 		ResumeID:           spec.ResumeID,
 		AppendSystemPrompt: spec.AppendSystemPrompt,
 		PartialMessages:    spec.PartialMessages,
-	})
+	}
+	if spec.MCPConfig != "" {
+		opts.MCPConfigPath = mcpConfigPath
+	}
+	claudeArgs, err := claude.Args(opts)
 	if err != nil {
 		return nil, err
 	}
@@ -306,6 +320,20 @@ func execArgv(spec runtime.Spec) ([]string, error) {
 	}
 	argv = append(argv, containerName(spec.LoopID), "claude")
 	return append(argv, claudeArgs...), nil
+}
+
+// mcpConfigPath is where a workstation keeps its loop's hub MCP config,
+// written fresh at every wake.
+const mcpConfigPath = runtime.WorkstationHome + "/.spool-mcp.json"
+
+// writeMCPConfig lands the loop's MCP config inside the workstation over
+// exec stdin — owner-only, and never through host argv (ADR-0018's rule for
+// credentials).
+func (rt *Runtime) writeMCPConfig(ctx context.Context, spec runtime.Spec) error {
+	_, err := rt.commandInput(ctx, queryTimeout, spec.MCPConfig,
+		"exec", "--interactive", containerName(spec.LoopID),
+		"sh", "-c", "umask 077 && cat > "+mcpConfigPath)
+	return err
 }
 
 // environ returns the exec client's environment: inherited, plus the loop's

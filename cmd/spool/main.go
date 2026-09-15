@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -92,6 +93,22 @@ func main() {
 		Logger:                    log,
 		SystemPrompt: func(l *store.Loop) string {
 			return loop.SystemPrompt(l, peersOf(db, l), rulesOf(db))
+		},
+		MCPEndpoint: func(l *store.Loop) string {
+			host, port, err := net.SplitHostPort(*listen)
+			if err != nil {
+				return ""
+			}
+			switch {
+			case l.Runtime == store.RuntimeDocker:
+				// containers reach the host through the gateway alias the
+				// workstation is created with; the hub must listen on an
+				// address the docker bridge can reach
+				host = "host.docker.internal"
+			case host == "" || host == "0.0.0.0" || host == "::":
+				host = "127.0.0.1"
+			}
+			return "http://" + net.JoinHostPort(host, port) + "/mcp"
 		},
 		OnTurnDone: func(l *store.Loop, trailer time.Duration, has bool) {
 			scheduler.ScheduleAfterTurn(l, trailer, has)

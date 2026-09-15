@@ -138,7 +138,6 @@ func TestSendRoutedLoopToLoop(t *testing.T) {
 	wsCaller := workspaceWithScript(t,
 		`!send {"destination":"group","text":"@callee hello from caller"} @callee note to self about callee`+"\n")
 	s.createLoop("caller", map[string]any{"workspace_path": wsCaller})
-	writeFakeMCPConfig(t, s, "caller")
 	s.message("caller", "go talk")
 
 	tn := s.waitTurn("callee", 20*time.Second, func(tn turn) bool {

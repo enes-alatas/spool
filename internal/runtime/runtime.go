@@ -54,6 +54,13 @@ type Spec struct {
 	AppendSystemPrompt string
 	PartialMessages    bool
 
+	// MCPConfig is the --mcp-config JSON connecting claude to the hub's MCP
+	// endpoint as this loop ("" = none). It carries the loop's hub token, so
+	// each runtime materializes it as a file in its own filesystem rather
+	// than passing it through argv — the same ps-visibility rule Env
+	// follows. Never logged.
+	MCPConfig string
+
 	// Env carries per-loop credentials into the workstation — the claude
 	// OAuth token (#11) and secret env vars (#12). Never logged.
 	Env map[string]string
