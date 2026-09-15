@@ -110,6 +110,12 @@ func main() {
 			}
 			return "http://" + net.JoinHostPort(host, port) + "/mcp"
 		},
+		OnTurnStart: func(l *store.Loop) {
+			router.ResetSendBudget(l.ID)
+		},
+		SendsThisTurn: func(loopID string) int {
+			return router.SendCount(loopID)
+		},
 		OnTurnDone: func(l *store.Loop, trailer time.Duration, has bool) {
 			scheduler.ScheduleAfterTurn(l, trailer, has)
 		},

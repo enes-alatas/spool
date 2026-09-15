@@ -10,8 +10,10 @@
 //
 // Replies: if the working directory contains a ".fakeclaude" file, its lines
 // script the replies (line N answers the session's turn N; the last line
-// repeats). Directives: "!crash" exits 2 mid-turn without a result; "!huge
-// <bytes>" replies with that many bytes; "!hang <seconds>" sleeps first. A
+// repeats). Directives: "!crash" exits 2 mid-turn without a result; "!lost"
+// dies mid-turn the way a lost session does (exit 1, canonical stderr);
+// "!huge <bytes>" replies with that many bytes; "!hang <seconds>" sleeps
+// first. A
 // "!ctx <tokens>" prefix makes the turn report that many input tokens — how
 // a filling context looks from outside — and composes with the rest of the
 // line ("!ctx 120000 !hang 2"). "!sysprompt" replies with the text spool
@@ -189,6 +191,11 @@ func main() {
 			case line == "!crash":
 				out.Flush()
 				os.Exit(2)
+			case line == "!lost":
+				// mid-turn session loss, exactly as the real CLI reports it
+				out.Flush()
+				fmt.Fprintf(os.Stderr, "No conversation found with session ID: %s\n", id)
+				os.Exit(1)
 			case line == "!sysprompt":
 				reply = systemPrompt
 			case strings.HasPrefix(line, "!huge "):

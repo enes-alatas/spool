@@ -198,3 +198,11 @@ func (r *Router) ResetSendBudget(loopID string) {
 	defer r.mu.Unlock()
 	delete(r.sendBudget, loopID)
 }
+
+// SendCount reports the loop's sends since its budget last opened — how the
+// runner tells a redelivered turn what its lost attempt already sent.
+func (r *Router) SendCount(loopID string) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.sendBudget[loopID]
+}
