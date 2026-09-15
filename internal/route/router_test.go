@@ -48,3 +48,22 @@ func TestConversationFor(t *testing.T) {
 		}
 	}
 }
+
+func TestSendBudget(t *testing.T) {
+	r := &Router{}
+	for i := 0; i < SendCapPerTurn; i++ {
+		if !r.sendAllow("l1") {
+			t.Fatalf("send %d refused before the cap", i+1)
+		}
+	}
+	if r.sendAllow("l1") {
+		t.Fatal("send beyond the cap allowed")
+	}
+	if !r.sendAllow("l2") {
+		t.Fatal("another loop's budget affected")
+	}
+	r.ResetSendBudget("l1")
+	if !r.sendAllow("l1") {
+		t.Fatal("send refused after reset")
+	}
+}

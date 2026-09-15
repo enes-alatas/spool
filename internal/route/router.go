@@ -63,6 +63,9 @@ type Router struct {
 
 	mu    sync.Mutex
 	storm map[string][]time.Time // "fromID→toID" → delivery timestamps
+	// sendBudget counts a loop's explicit sends this turn (ADR-0026);
+	// ResetSendBudget clears it at every turn start.
+	sendBudget map[string]int
 }
 
 func New(st store.Store, b *bus.Bus, d Deliverer, log *slog.Logger) *Router {
