@@ -184,6 +184,9 @@ func TestMCPSendControlRoom(t *testing.T) {
 func TestMCPSendCap(t *testing.T) {
 	s := startServer(t, t.TempDir())
 	s.createLoop("aster", nil)
+	// pause the loop: every turn start reopens the budget, and this test
+	// counts sends against one turn's worth
+	s.mustJSON("POST", "/api/loops/aster/pause", nil, nil)
 	sess := mcpSession(t, s, hubMCPToken(t, s, "aster"))
 
 	for i := 0; i < 10; i++ {
@@ -237,5 +240,66 @@ func TestFakeclaudeSendDirective(t *testing.T) {
 	}
 	if !found["first note"] || !found["second note"] {
 		t.Fatalf("scripted sends not stored as control_room messages: %s", dump(s.activity()))
+	}
+}
+
+// TestSendBudgetResetsPerTurn: a turn that spends the whole send cap does
+// not starve the next turn — the runner reopens the budget at every turn
+// start.
+func TestSendBudgetResetsPerTurn(t *testing.T) {
+	// line 1 absorbs the creation tick (fakeclaude scripts are per-turn);
+	// line 2 spends the whole cap, line 3 sends once more.
+	full := strings.Repeat(`!send {"destination":"control_room","text":"burst"} `, 10)
+	ws := workspaceWithScript(t, "!ctx 0\n"+full+"\n"+`!send {"destination":"control_room","text":"after reset"}`+"\n")
+	s := startServer(t, t.TempDir())
+	s.createLoop("aster", map[string]any{"workspace_path": ws})
+	s.waitTurn("aster", 20*time.Second, func(tn turn) bool { return tn.Trigger == "tick" })
+
+	s.message("aster", "one")
+	first := s.waitTurn("aster", 20*time.Second, func(tn turn) bool {
+		return strings.Contains(tn.ResultText, "sent")
+	})
+	if strings.Contains(first.ResultText, "send error") {
+		t.Fatalf("a send inside the cap was refused: %s", dump(first))
+	}
+
+	s.message("aster", "two")
+	second := s.waitTurn("aster", 20*time.Second, func(tn turn) bool {
+		return strings.Contains(tn.ResultText, "sent") && tn.ID != first.ID
+	})
+	if strings.Contains(second.ResultText, "send_limit") {
+		t.Fatalf("budget did not reopen for the next turn: %s", dump(second))
+	}
+}
+
+// TestRedeliveredTurnKnowsItsSends: a session lost mid-turn after a send —
+// the redelivered batch's fresh session is told what was already sent, and
+// the send is stored exactly once.
+func TestRedeliveredTurnKnowsItsSends(t *testing.T) {
+	// line 1 absorbs the creation tick; line 2 sends and then dies the way
+	// a lost session does; the fresh session's turn 1 is line 1 again and
+	// echoes the redelivered batch.
+	ws := workspaceWithScript(t, "!ctx 0\n"+
+		`!send {"destination":"control_room","text":"pre-loss"} !lost`+"\n")
+	s := startServer(t, t.TempDir())
+	s.createLoop("aster", map[string]any{"workspace_path": ws})
+	s.waitTurn("aster", 20*time.Second, func(tn turn) bool { return tn.Trigger == "tick" })
+
+	s.message("aster", "risky business")
+	redelivered := s.waitTurn("aster", 30*time.Second, func(tn turn) bool {
+		return !tn.IsError && strings.Contains(tn.ResultText, "risky business") &&
+			strings.Contains(tn.ResultText, "already sent")
+	})
+	if !strings.Contains(redelivered.ResultText, "already sent 1 message") {
+		t.Fatalf("fresh session not told about the lost attempt's send: %s", dump(redelivered))
+	}
+	n := 0
+	for _, m := range s.activity() {
+		if m.Text == "pre-loss" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("lost attempt's send stored %d times, want exactly 1", n)
 	}
 }
