@@ -164,11 +164,13 @@ type user struct {
 }
 
 type activityMessage struct {
-	ID          int64    `json:"id"`
-	Origin      string   `json:"origin"`
-	Author      string   `json:"author"`
-	Text        string   `json:"text"`
-	DeliveredTo []string `json:"delivered_to"`
+	ID                 int64    `json:"id"`
+	Origin             string   `json:"origin"`
+	Author             string   `json:"author"`
+	Text               string   `json:"text"`
+	DeliveredTo        []string `json:"delivered_to"`
+	Conversation       string   `json:"conversation"`
+	ConversationLoopID string   `json:"conversation_loop_id"`
 }
 
 func (s *server) activity() []activityMessage {

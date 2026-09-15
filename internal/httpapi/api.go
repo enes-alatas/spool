@@ -107,6 +107,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/workspace/inspect", s.handleWorkspaceInspect)
 	mux.HandleFunc("GET /api/stream", s.handleGlobalStream)
 	mux.HandleFunc("GET /api/loops/{name}/stream", s.handleLoopStream)
+	mux.Handle("/mcp", s.mcpHandler())
 
 	if s.WebFS != nil {
 		mux.HandleFunc("/", s.handleUI)
