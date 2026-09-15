@@ -448,16 +448,27 @@ func (actor *Actor) wakeSpec(fresh bool) runtime.Spec {
 	return spec
 }
 
-// startTurn sends everything queued as one batched user message — unless the
-// context is past the force ceiling, in which case the handoff turn runs
-// first and the queue is delivered to the fresh session after rotation.
+// startTurn sends the queue's oldest conversation as one batched user
+// message — never more than one conversation per turn, so a private and a
+// group exchange cannot blend into one answer (ADR-0026). Whatever else is
+// queued stays put and runs as the following turns. Past the force ceiling
+// the handoff turn runs first and the queue is delivered to the fresh
+// session after rotation.
 func (actor *Actor) startTurn() {
 	if actor.needsForcedRotation() {
 		actor.startHandoffTurn()
 		return
 	}
-	batch := actor.inbox
-	actor.inbox = nil
+	key := actor.inbox[0].conversationKey()
+	var batch, rest []Envelope
+	for _, env := range actor.inbox {
+		if env.conversationKey() == key {
+			batch = append(batch, env)
+		} else {
+			rest = append(rest, env)
+		}
+	}
+	actor.inbox = rest
 	actor.sendBatch(batch)
 }
 
