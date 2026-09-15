@@ -39,6 +39,9 @@ Use these words exactly — in code, UI, docs, and prompts. Don't introduce syno
 | **tick** | A scheduled wake with no inbound message. |
 | **trailer** | The `[next-wake: 45m]` suffix a loop uses to schedule itself. |
 | **envelope** | The bracketed header + body format in which messages/ticks are delivered to a loop. |
+| **conversation** | The unit of privacy and addressing a message belongs to: `owner_dm` (a loop's Telegram DM with its owner), `group` (its bound group), or `control_room` (its private web thread). (ADR-0026) |
+| **send** | A loop's explicit outgoing message: destination, optional reply reference, text — expressed through the hub-served `send_message` tool. (ADR-0026) |
+| **status note** | A turn's final reply text: stored on the turn and shown in the timeline, carries the trailer, delivered to no conversation. (ADR-0026) |
 | **surface** | A chat platform adapter (Telegram today, Slack at L3). The web control room is not a surface; it talks to the hub directly. |
 | **mirror** | Re-posting hub-routed traffic to its explicit surface destination. Group coordination remains visible to humans; DM traffic stays in its DM. (ADR-0025) |
 | **visibility** | Who can see a message in its destination conversation; separate from which loops receive it as input. The former coordination/human-facing mirror gate is superseded. (ADR-0025) |
@@ -69,11 +72,13 @@ Current implementation: inbound (surface/web) → `route.Ingest` → persist →
 resolve recipients → deliver to runner → loop turn → final reply → `route.LoopReply` →
 route mentions + mirror to surfaces.
 
-Committed direction (ADR-0025; implementation tracked in #44): preserve each
-message's conversation and explicit reply reference, resolve recipients from native
-replies/mentions/`@all`, and deliver only to those loops. Outgoing messages choose
-their own destination and recipients; private and group processing must remain
-separate. The precise sending interface and context-isolation mechanism remain open.
+Committed direction (ADR-0025, ADR-0026; implementation tracked in #44): preserve
+each message's conversation and explicit reply reference, resolve recipients from
+native replies/mentions/`@all`, and deliver only to those loops. A loop sends
+through the hub-served `send_message` MCP tool — immediate, validated in-turn,
+capped per turn — and its final reply text becomes a status note. The runner keeps
+one session per loop but runs one turn per conversation, never batching private
+and group input into one answer.
 
 ## The four seams
 
