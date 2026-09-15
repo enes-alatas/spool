@@ -27,6 +27,6 @@ between loops. Each loop gets its own bot identity per surface.
 - **Subsequently amended by ADR-0025 (superseding ADR-0023):** group coordination
   remains visible to humans, while delivery follows explicit recipients and reply
   references. Private DMs remain separate. The final-reply-as-message and no-tools
-  constraints yield to an explicit sending contract whose interface is still to be
-  designed; hub-owned routing and per-loop identities remain in force. Ambient
-  follow is deferred under that contract.
+  constraints yield to an explicit sending contract — its interface selected in
+  ADR-0026 (a hub-served `send_message` MCP tool); hub-owned routing and per-loop
+  identities remain in force. Ambient follow is deferred under that contract.

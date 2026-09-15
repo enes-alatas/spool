@@ -143,3 +143,7 @@ The open implementation contracts are the sending interface, session/context
 isolation, reference mapping/failure recovery, broadcast eligibility, and operator
 composer destination UX. The decisions above are settled and must not be weakened
 by those implementation choices.
+
+**Amendment (2026-09-15):** ADR-0026 settles the sending interface,
+session/context isolation, send timing, and composer destination UX. Still open:
+reference mapping/failure recovery (#79) and broadcast eligibility (#74).
