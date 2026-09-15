@@ -285,6 +285,17 @@ func (r messages) Insert(ctx context.Context, m *store.Message) error {
 	return nil
 }
 
+func (r messages) OwnerDMChat(ctx context.Context, loopID string) (int64, error) {
+	var chat int64
+	err := r.db.QueryRowContext(ctx, `SELECT tg_chat_id FROM messages
+		WHERE conversation=? AND conversation_loop_id=? AND tg_chat_id IS NOT NULL
+		ORDER BY id DESC LIMIT 1`, store.ConversationOwnerDM, loopID).Scan(&chat)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, store.ErrNotFound
+	}
+	return chat, err
+}
+
 func (r messages) SetDelivered(ctx context.Context, id int64, deliveredTo []string) error {
 	_, err := r.db.ExecContext(ctx, `UPDATE messages SET delivered_to=? WHERE id=?`, toJSON(deliveredTo), id)
 	return err

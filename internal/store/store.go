@@ -272,6 +272,12 @@ type MessageStore interface {
 	Insert(ctx context.Context, m *Message) error
 	SetDelivered(ctx context.Context, id int64, deliveredTo []string) error
 	List(ctx context.Context, limit int) ([]*Message, error)
+	// OwnerDMChat returns the telegram chat of the loop's owner_dm
+	// conversation, captured from its latest inbound DM; ErrNotFound when no
+	// DM was ever ingested. Interim owner-DM address until a configured
+	// owner identity replaces the capture (tracked as part of ADR-0025/0026
+	// follow-up work).
+	OwnerDMChat(ctx context.Context, loopID string) (int64, error)
 }
 
 type TurnStore interface {
