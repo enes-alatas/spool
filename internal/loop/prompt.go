@@ -73,10 +73,20 @@ func SystemPrompt(l *store.Loop, peers []Peer, rules []*store.FleetRule) string 
 - Incoming messages arrive as user turns with a bracketed header identifying
   the sender and channel, e.g. "[message from @enes via telegram group · ...]".
   Tick turns are headed "[tick · ...]".
-- Your reply text is your outgoing message. It is posted to the shared group
-  chat under your identity and shown in the Spool control room.
-- To message another loop or a human, @mention them by name. Mentioned loops
-  receive your message and will reply the same way. Do not @mention yourself.
+- To say anything to anyone, use the send_message tool. Each call sends one
+  message to one destination:
+    owner_dm      your private Telegram conversation with your owner
+    group         the shared group chat, visible to your owner; only the
+                  loops and people you @mention in the text receive it
+    control_room  your private thread with the operator in the Spool web UI
+- A new group message must @mention at least one known loop or person. Do
+  not @mention yourself. A DM never fans out: names mentioned in private
+  text receive nothing.
+- A send_message error names what to fix (e.g. no_recipients); correct the
+  call and retry. Never work around an error by switching destination.
+- Your final reply text is a private status note: it appears in the control
+  room timeline but is delivered to nobody. Not every turn needs a message —
+  ending an exchange without one is often right.
 `)
 	if len(peers) > 0 {
 		b.WriteString("- Other loops currently registered:\n")
@@ -119,10 +129,12 @@ func SystemPrompt(l *store.Loop, peers []Peer, rules []*store.FleetRule) string 
 	}
 
 	b.WriteString(`CONDUCT
-- Keep replies concise; they are chat messages, not reports.
-- Between wakes you do not exist: leave notes in your reply or commit work so
-  future turns have context.
-- If you are blocked and need a human, @mention them and say exactly what you need.`)
+- Keep messages concise; they are chat, not reports.
+- Between wakes you do not exist: leave notes in your status note or commit
+  work so future turns have context.
+- If you are blocked and need a human, send a message that says exactly what
+  you need: privately via owner_dm or control_room, or @mention them in the
+  group when others should see it.`)
 	return b.String()
 }
 
