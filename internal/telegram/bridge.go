@@ -520,8 +520,7 @@ func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 			// the group; its own delivery is the explicit-send bridge work.
 			return
 		}
-		// the loop's own reply: post to its bound group as its own bot, and
-		// to any DM chats whose messages triggered this turn
+		// a loop's explicit group send: post to its bound group as its own bot
 		br.mu.Lock()
 		p := br.pollers[mp.FromLoopID]
 		br.mu.Unlock()
@@ -529,20 +528,10 @@ func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 			return
 		}
 		l, err := br.store.Loops().Get(ctx, mp.FromLoopID)
-		if err != nil {
+		if err != nil || l.TGGroupChatID == 0 {
 			return
 		}
-		sent := map[int64]bool{}
-		if l.TGGroupChatID != 0 {
-			p.enqueueSend(l.TGGroupChatID, mp.Text)
-			sent[l.TGGroupChatID] = true
-		}
-		for _, dm := range mp.ReplyDMChats {
-			if dm != 0 && !sent[dm] {
-				p.enqueueSend(dm, mp.Text)
-				sent[dm] = true
-			}
-		}
+		p.enqueueSend(l.TGGroupChatID, mp.Text)
 	case store.OriginWeb:
 		// mirror web-origin human messages into the group so Telegram
 		// lurkers see the whole conversation; use the first delivered

@@ -99,9 +99,6 @@ type Deps struct {
 	// SystemPrompt builds the --append-system-prompt for a loop (peers are
 	// resolved at call time so every wake sees the current fleet).
 	SystemPrompt func(l *store.Loop) string
-	// OnReply is called after each successful turn with the final reply text
-	// and the DM chats that triggered this turn (for reply-context mirroring).
-	OnReply func(l *store.Loop, resultText string, replyDMChats []int64)
 	// OnTurnDone reschedules the loop's next tick after any completed turn.
 	OnTurnDone func(l *store.Loop, trailer time.Duration, hasTrailer bool)
 	// ClaudeToken returns the operator's stored setup-token, or "" when none is
@@ -148,7 +145,6 @@ type Actor struct {
 	procEvents   <-chan claude.Event
 	inbox        []Envelope
 	currentBatch []Envelope // in-flight batch, kept for redelivery on session loss
-	pendingDMs   []int64    // DM chats of the in-flight turn
 	turn         *store.Turn
 	freshSpawn   bool   // current process was started with --session-id (not resume)
 	sawInit      bool   // current process got as far as announcing itself
@@ -497,14 +493,10 @@ func (actor *Actor) sendBatch(batch []Envelope) {
 
 	texts := make([]string, 0, len(batch))
 	trigger := store.TriggerTick
-	actor.pendingDMs = nil
 	for _, env := range batch {
 		texts = append(texts, env.Text)
 		if env.Trigger != store.TriggerTick {
 			trigger = env.Trigger
-		}
-		if env.TGChatID != 0 {
-			actor.pendingDMs = append(actor.pendingDMs, env.TGChatID)
 		}
 	}
 	text := strings.Join(texts, "\n\n---\n\n")
@@ -609,22 +601,21 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 		}
 		actor.deps.Bus.Publish(bus.Item{Kind: bus.KindTurnResult, LoopID: actor.loop.ID, Payload: t})
 
-		// The handoff turn's reply is a note to the loop's successor, not an
-		// outgoing message: it is neither routed nor read for a trailer.
+		// The final reply is the turn's status note (ADR-0026): stored and
+		// published above, delivered to no conversation — a loop that wants
+		// to say something sends it explicitly. Only the trailer is read
+		// (the handoff turn's reply is a note to the loop's successor and
+		// is not even that).
 		var trailer time.Duration
 		var hasTrailer bool
 		if !res.IsError && !actor.handoffTurn {
 			trailer, hasTrailer = ParseTrailer(res.ResultText)
-			if actor.deps.OnReply != nil && strings.TrimSpace(res.ResultText) != "" {
-				actor.deps.OnReply(&actor.loop, res.ResultText, actor.pendingDMs)
-			}
 		}
 		if actor.deps.OnTurnDone != nil && !actor.handoffTurn {
 			actor.deps.OnTurnDone(&actor.loop, trailer, hasTrailer)
 		}
 	}
 	actor.turn = nil
-	actor.pendingDMs = nil
 	actor.currentBatch = nil
 	// A completed turn means any pending handoff note reached its session;
 	// finishHandoff below sets the next one after this clears the old.
@@ -749,7 +740,6 @@ func (actor *Actor) handleProcExit() {
 		t.IsError = true
 		_ = actor.deps.Store.Turns().Finish(context.Background(), t)
 		actor.turn = nil
-		actor.pendingDMs = nil
 	}
 
 	switch {

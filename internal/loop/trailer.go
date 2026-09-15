@@ -36,7 +36,7 @@ func ParseTrailer(text string) (time.Duration, bool) {
 	}
 }
 
-// StripTrailer removes the trailer from a reply for mirroring to chat.
+// StripTrailer removes the trailer from a reply for display.
 func StripTrailer(text string) string {
 	return strings.TrimSpace(trailerRe.ReplaceAllString(text, ""))
 }
