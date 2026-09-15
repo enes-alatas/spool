@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -208,5 +209,46 @@ func TestMCPBadToken(t *testing.T) {
 	}, nil)
 	if err == nil || !strings.Contains(err.Error(), "Unauthorized") {
 		t.Fatalf("connect with a bad token: err = %v, want Unauthorized", err)
+	}
+}
+
+// writeFakeMCPConfig points fakeclaude's !send directive at this server with
+// the loop's own bearer token — standing in for the runner passing
+// --mcp-config, which is still ahead.
+func writeFakeMCPConfig(t *testing.T, s *server, loopName string) {
+	t.Helper()
+	cfg := fmt.Sprintf(`{"mcpServers":{"spool":{"type":"http","url":%q,"headers":{"Authorization":"Bearer %s"}}}}`,
+		s.baseURL+"/mcp", hubMCPToken(t, s, loopName))
+	if err := os.WriteFile(filepath.Join(s.dataDir, "mcp.json"), []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestFakeclaudeSendDirective: a scripted loop turn sends through the hub's
+// MCP endpoint mid-turn — two messages from one turn — and the turn's final
+// text reports the outcomes.
+func TestFakeclaudeSendDirective(t *testing.T) {
+	ws := workspaceWithScript(t,
+		`!send {"destination":"control_room","text":"first note"} !send {"destination":"control_room","text":"second note"}`+"\n")
+	s := startServer(t, t.TempDir())
+	s.createLoop("aster", map[string]any{"workspace_path": ws})
+	writeFakeMCPConfig(t, s, "aster")
+
+	s.message("aster", "go")
+	tn := s.waitTurn("aster", 20*time.Second, func(tn turn) bool {
+		return strings.Contains(tn.ResultText, "sent")
+	})
+	if tn.IsError || strings.Contains(tn.ResultText, "send error") {
+		t.Fatalf("scripted sends failed: %s", dump(tn))
+	}
+
+	found := map[string]bool{}
+	for _, m := range s.activity() {
+		if m.Conversation == "control_room" && m.Author == "aster" {
+			found[m.Text] = true
+		}
+	}
+	if !found["first note"] || !found["second note"] {
+		t.Fatalf("scripted sends not stored as control_room messages: %s", dump(s.activity()))
 	}
 }

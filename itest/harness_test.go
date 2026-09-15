@@ -71,7 +71,11 @@ func startServerArgs(t *testing.T, dataDir string, extraArgs ...string) *server 
 	}
 	args = append(args, extraArgs...)
 	cmd := exec.Command(spoolBin, args...)
-	cmd.Env = append(os.Environ(), "FAKECLAUDE_STATE="+fkState)
+	// The MCP config file need not exist: fakeclaude reads it lazily at
+	// !send time, so a test can write it once its loop (and token) exist.
+	cmd.Env = append(os.Environ(),
+		"FAKECLAUDE_STATE="+fkState,
+		"FAKECLAUDE_MCP_CONFIG="+filepath.Join(dataDir, "mcp.json"))
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
