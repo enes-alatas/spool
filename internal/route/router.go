@@ -71,6 +71,10 @@ type Router struct {
 	// sendBudget counts a loop's explicit sends this turn (ADR-0026);
 	// StartTurn clears it at every turn start.
 	sendBudget map[string]int
+	// turnSends summarizes each send of the loop's current turn, so a
+	// redelivered turn can be told what was already sent; cleared with the
+	// budget.
+	turnSends map[string][]string
 	// turnDMChat pins, per loop, the owner-DM chat its current turn is
 	// answering (0 = not an owner_dm turn); set by StartTurn.
 	turnDMChat map[string]int64

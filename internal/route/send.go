@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/enes-alatas/spool/internal/bus"
 	"github.com/enes-alatas/spool/internal/loop"
@@ -123,6 +124,7 @@ func (r *Router) Send(ctx context.Context, req SendRequest) (*store.Message, *Se
 	if err := r.store.Messages().Insert(ctx, msg); err != nil {
 		return nil, nil, err
 	}
+	r.recordSend(req.From.ID, req.Destination, text)
 	r.bus.Publish(bus.Item{Kind: bus.KindMessage, LoopID: req.From.ID, Payload: &MessagePayload{
 		Message:      *msg,
 		FromLoopName: req.From.Name,
@@ -218,16 +220,37 @@ func (r *Router) StartTurn(loopID string, ownerDMChat int64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.sendBudget, loopID)
+	delete(r.turnSends, loopID)
 	if r.turnDMChat == nil {
 		r.turnDMChat = map[string]int64{}
 	}
 	r.turnDMChat[loopID] = ownerDMChat
 }
 
-// SendCount reports the loop's sends since its budget last opened — how the
-// runner tells a redelivered turn what its lost attempt already sent.
-func (r *Router) SendCount(loopID string) int {
+// TurnSends reports what the loop has sent since its budget last opened,
+// one summary per send — how the runner tells a redelivered turn what its
+// lost attempt already sent, so it can identify (not just count) them
+// (ADR-0026 decision 5).
+func (r *Router) TurnSends(loopID string) []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.sendBudget[loopID]
+	return append([]string(nil), r.turnSends[loopID]...)
+}
+
+// recordSend appends one send's summary to the loop's current turn.
+func (r *Router) recordSend(loopID, destination, text string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.turnSends == nil {
+		r.turnSends = map[string][]string{}
+	}
+	// rune-safe cap: model-authored text is freely multi-byte
+	if len(text) > 120 {
+		cut := 120
+		for cut > 0 && !utf8.RuneStart(text[cut]) {
+			cut--
+		}
+		text = text[:cut] + "…"
+	}
+	r.turnSends[loopID] = append(r.turnSends[loopID], fmt.Sprintf("to %s: %q", destination, text))
 }
