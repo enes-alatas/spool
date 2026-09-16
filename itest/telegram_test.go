@@ -163,6 +163,35 @@ type user struct {
 	Username string
 }
 
+// sentTo returns every message any bot has posted to chatID so far.
+func (tg *fakeTelegram) sentTo(chatID int64) []sentMessage {
+	tg.mu.Lock()
+	defer tg.mu.Unlock()
+	var out []sentMessage
+	for _, m := range tg.sent {
+		if m.ChatID == chatID {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// waitSent blocks until a bot posts a message containing text to chatID.
+func (tg *fakeTelegram) waitSent(t *testing.T, chatID int64, text string) sentMessage {
+	t.Helper()
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		for _, m := range tg.sentTo(chatID) {
+			if strings.Contains(m.Text, text) {
+				return m
+			}
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	t.Fatalf("no bot ever sent %q to chat %d", text, chatID)
+	return sentMessage{}
+}
+
 type activityMessage struct {
 	ID                 int64    `json:"id"`
 	Origin             string   `json:"origin"`
@@ -230,12 +259,20 @@ func (s *server) allowSender(id int64) {
 
 // startTelegramFleet brings up two bot-backed loops against a fake Bot API,
 // with the operator already allowlisted and both bots bound to the group.
-func startTelegramFleet(t *testing.T, operator user) (*server, *fakeTelegram) {
+// Optional overrides merge into alpha's, then beta's, create request.
+func startTelegramFleet(t *testing.T, operator user, overrides ...map[string]any) (*server, *fakeTelegram) {
 	t.Helper()
 	tg := startFakeTelegram(t, "alpha", "beta")
 	srv := startServerArgs(t, t.TempDir(), "--runtime", "bare", "--telegram-api-base", tg.srv.URL)
-	srv.createLoop("alpha", map[string]any{"tg_bot_token": "alpha"})
-	srv.createLoop("beta", map[string]any{"tg_bot_token": "beta"})
+	for i, name := range []string{"alpha", "beta"} {
+		req := map[string]any{"tg_bot_token": name}
+		if i < len(overrides) {
+			for k, v := range overrides[i] {
+				req[k] = v
+			}
+		}
+		srv.createLoop(name, req)
+	}
 
 	// The first group message only registers the operator as pending — an
 	// unknown sender is turned away before the bind. The second one binds
@@ -323,4 +360,34 @@ func TestDirectMessagesToDifferentBotsBothLand(t *testing.T) {
 	}
 	t.Fatalf("DMs not both stored: alpha=%d beta=%d",
 		len(srv.activityWith("for alpha")), len(srv.activityWith("for beta")))
+}
+
+// A loop's owner_dm send must reach the captured DM chat as the loop's own
+// bot, never surface in the group, and deliver nothing to a peer the private
+// text names (ADR-0025 scenarios, #37).
+func TestOwnerDMSendReachesTheDMChat(t *testing.T) {
+	operator := user{ID: 4747, First: "Operator", Username: "operator"}
+	// line 1 answers the creation tick; line 2 answers the owner's DM
+	wsAlpha := workspaceWithScript(t, "!ctx 0\n"+
+		`!send {"destination":"owner_dm","text":"@beta hello owner"}`+"\n")
+	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": wsAlpha})
+
+	tg.dm("alpha", operator, "hi alpha")
+
+	sent := tg.waitSent(t, operator.ID, "hello owner")
+	if sent.Token != "alpha" {
+		t.Fatalf("owner DM delivered by bot %q, want alpha's own", sent.Token)
+	}
+	// let any misrouted delivery drain before the negative checks
+	time.Sleep(2 * time.Second)
+	for _, m := range tg.sentTo(groupChatID) {
+		if strings.Contains(m.Text, "hello owner") {
+			t.Fatalf("owner_dm send surfaced in the group: %q", m.Text)
+		}
+	}
+	for _, tn := range srv.completed("beta") {
+		if tn.Trigger == "message" {
+			t.Fatalf("private text naming beta delivered to it: %s", dump(tn))
+		}
+	}
 }

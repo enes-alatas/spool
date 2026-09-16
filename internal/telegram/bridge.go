@@ -515,31 +515,44 @@ func (br *Bridge) mirror(ctx context.Context) {
 func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 	switch mp.Origin {
 	case store.OriginLoop:
-		if mp.Conversation != "" && mp.Conversation != store.ConversationGroup {
-			// A private send (owner_dm, control_room) must never surface in
-			// the group; its own delivery is the explicit-send bridge work.
-			return
+		p := br.poller(mp.FromLoopID)
+		switch mp.Conversation {
+		case store.ConversationGroup:
+			// a loop's explicit group send: post to its bound group as its
+			// own bot. No poller just means the loop has no bot — normal
+			// for a fleet without telegram.
+			if p == nil {
+				return
+			}
+			l, err := br.store.Loops().Get(ctx, mp.FromLoopID)
+			if err != nil || l.TGGroupChatID == 0 {
+				return
+			}
+			p.enqueueSend(l.TGGroupChatID, mp.Text)
+		case store.ConversationOwnerDM:
+			// a loop's owner_dm send: deliver to the captured DM chat as its
+			// own bot. route.Send refuses when no capture exists, and a
+			// capture implies the loop had a bot — so a miss on either here
+			// is an internal fault, not a model error, and must not drop
+			// the private message silently.
+			if p == nil {
+				br.log.Error("owner dm delivery: loop has no bot", "loop", mp.FromLoopID)
+				return
+			}
+			chat, err := br.store.Messages().OwnerDMChat(ctx, mp.ConversationLoopID)
+			if err != nil {
+				br.log.Error("owner dm delivery: no captured chat", "loop", mp.FromLoopID, "err", err)
+				return
+			}
+			p.enqueueSend(chat, mp.Text)
 		}
-		// a loop's explicit group send: post to its bound group as its own bot
-		br.mu.Lock()
-		p := br.pollers[mp.FromLoopID]
-		br.mu.Unlock()
-		if p == nil {
-			return
-		}
-		l, err := br.store.Loops().Get(ctx, mp.FromLoopID)
-		if err != nil || l.TGGroupChatID == 0 {
-			return
-		}
-		p.enqueueSend(l.TGGroupChatID, mp.Text)
+		// control_room lives in the web UI alone; telegram sees nothing
 	case store.OriginWeb:
 		// mirror web-origin human messages into the group so Telegram
 		// lurkers see the whole conversation; use the first delivered
 		// loop's bot that has a bound group
 		for _, loopID := range mp.DeliveredTo {
-			br.mu.Lock()
-			p := br.pollers[loopID]
-			br.mu.Unlock()
+			p := br.poller(loopID)
 			if p == nil {
 				continue
 			}
@@ -552,6 +565,12 @@ func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 		}
 	}
 	// telegram-origin messages are already visible in telegram: no re-mirror
+}
+
+func (br *Bridge) poller(loopID string) *poller {
+	br.mu.Lock()
+	defer br.mu.Unlock()
+	return br.pollers[loopID]
 }
 
 // --- small utils ---
