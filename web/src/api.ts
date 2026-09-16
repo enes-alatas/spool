@@ -71,6 +71,10 @@ export interface LoopEvent {
   payload: string
 }
 
+// The two destinations the composer offers (ADR-0026): the loop's private
+// control_room thread, or a post to the shared group conversation.
+export type MessageDestination = 'control_room' | 'group'
+
 export interface ChatMessage {
   id: number
   ts: number
@@ -80,6 +84,8 @@ export interface ChatMessage {
   text: string
   mentions: string[]
   delivered_to: string[]
+  conversation: string
+  conversation_loop_id?: string
 }
 
 export interface TGSender {
@@ -202,10 +208,15 @@ export const api = {
   resume: (name: string) => req<LoopView>(`/api/loops/${name}/resume`, { method: 'POST' }),
   wake: (name: string) => req<{ woken: boolean }>(`/api/loops/${name}/wake`, { method: 'POST' }),
   kill: (name: string) => req<{ killed: boolean }>(`/api/loops/${name}/kill`, { method: 'POST' }),
-  message: (name: string, text: string, author = 'operator') =>
+  message: (
+    name: string,
+    text: string,
+    destination: MessageDestination = 'control_room',
+    author = 'operator',
+  ) =>
     req<{ queued: boolean }>(`/api/loops/${name}/message`, {
       method: 'POST',
-      body: JSON.stringify({ author, text }),
+      body: JSON.stringify({ author, text, destination }),
     }),
   broadcast: (text: string, author = 'operator') =>
     req<{ queued: boolean }>('/api/messages', {

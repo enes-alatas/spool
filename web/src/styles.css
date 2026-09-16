@@ -523,6 +523,31 @@ select {
   gap: 10px;
   margin-top: 16px;
 }
+.dest-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+.dest-picker .dest-label {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--thread-dim);
+}
+.dest-picker .dest {
+  background: var(--ink-raised);
+  border: 1px solid var(--ink-line);
+  border-radius: 999px;
+  color: var(--thread-dim);
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+.dest-picker .dest.on {
+  border-color: var(--thread);
+  color: var(--linen);
+}
 .composer textarea {
   flex: 1;
   background: var(--ink-raised);
