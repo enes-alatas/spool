@@ -63,7 +63,7 @@ export default function App() {
           </NavLink>
         ))}
         {loops && loops.length === 0 && (
-          <div style={{ padding: '8px 16px', color: 'var(--muted)', fontSize: 13 }}>No loops yet.</div>
+          <div style={{ padding: '8px 16px', color: 'var(--text-muted)', fontSize: 13 }}>No loops yet.</div>
         )}
       </aside>
 

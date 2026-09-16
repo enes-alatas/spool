@@ -1,16 +1,27 @@
-/* Spool control room — night-shift mill: indigo ink, linen, amber thread. */
+/* Spool control room — one near-black canvas, white for identity, colour only
+   where the system is telling the operator something (ADR-0027). */
 
 :root {
-  --ink: #171a2b;
-  --ink-deep: #12141f;
-  --ink-raised: #1f2338;
-  --ink-line: #2c3150;
-  --linen: #e8e4d8;
-  --muted: #8b8fa8;
-  --thread: #e0a458;
-  --thread-dim: #a97c3f;
-  --alive: #6fb5a6;
-  --rust: #c96f4a;
+  --canvas: #050505;
+  /* the only raised value: row hover, input wells, interim panels */
+  --surface: #0c0c0e;
+  --hairline: #1b1b1e;
+  --text: #f2f1ed;
+  /* nudged 3 steps from the approved #77777c so it clears 4.5:1 on --surface
+     as well as on --canvas; see ADR-0027 */
+  --text-muted: #7a7a7f;
+  /* active work, and anything wanting the operator's attention soon */
+  --active: #ff8a1f;
+  --ready: #3fe39a;
+  --danger: #ff4567;
+  /* the boundary and wash an actionable warning keeps, so a dialog or an
+     alert still reads as one without a card shell */
+  --danger-line: rgba(255, 69, 103, 0.38);
+  --danger-wash: rgba(255, 69, 103, 0.07);
+  /* meters and fills: data, drawn in the text colour. The token is a plain
+     colour; each rule sets its own weight with opacity, so the dimming lives
+     in one layer and an emphasised bar can still reach full strength */
+  --fill: var(--text);
   --mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'JetBrains Mono', Menlo, Consolas, monospace;
   --sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
@@ -27,8 +38,8 @@ body,
 }
 
 body {
-  background: var(--ink);
-  color: var(--linen);
+  background: var(--canvas);
+  color: var(--text);
   font-family: var(--sans);
   font-size: 14px;
   line-height: 1.5;
@@ -49,8 +60,8 @@ select {
 }
 
 ::selection {
-  background: var(--thread-dim);
-  color: var(--ink-deep);
+  background: color-mix(in srgb, var(--text) 22%, transparent);
+  color: var(--text);
 }
 
 .app {
@@ -68,8 +79,8 @@ select {
   align-items: center;
   gap: 16px;
   padding: 0 20px;
-  border-bottom: 1px solid var(--ink-line);
-  background: var(--ink-deep);
+  border-bottom: 1px solid var(--hairline);
+  background: var(--canvas);
 }
 .wordmark {
   display: flex;
@@ -78,10 +89,10 @@ select {
   font-family: var(--mono);
   font-size: 17px;
   letter-spacing: 0.14em;
-  color: var(--linen);
+  color: var(--text);
 }
 .wordmark .spool-glyph {
-  color: var(--thread);
+  color: var(--text);
 }
 .topbar .meta {
   margin-left: auto;
@@ -90,12 +101,12 @@ select {
   gap: 14px;
   font-family: var(--mono);
   font-size: 11.5px;
-  color: var(--muted);
+  color: var(--text-muted);
 }
 .btn {
-  border: 1px solid var(--ink-line);
-  background: var(--ink-raised);
-  color: var(--linen);
+  border: 1px solid var(--hairline);
+  background: var(--surface);
+  color: var(--text);
   border-radius: 6px;
   padding: 6px 14px;
   transition:
@@ -103,31 +114,37 @@ select {
     background 120ms;
 }
 .btn:hover {
-  border-color: var(--thread-dim);
+  border-color: var(--text-muted);
 }
 .btn:focus-visible {
-  outline: 2px solid var(--thread);
+  outline: 2px solid var(--text);
   outline-offset: 1px;
 }
 .btn.primary {
-  background: var(--thread);
-  border-color: var(--thread);
-  color: var(--ink-deep);
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--canvas);
   font-weight: 600;
 }
 .btn.primary:hover {
-  background: #e9b26c;
+  background: color-mix(in srgb, var(--text) 88%, white);
 }
 .btn.danger {
-  color: var(--rust);
-  border-color: #5a3527;
+  color: var(--danger);
+  border-color: var(--danger-line);
 }
 .btn.danger:hover {
-  border-color: var(--rust);
+  border-color: var(--danger);
 }
 .btn:disabled {
   opacity: 0.45;
   cursor: default;
+}
+.btn.primary:disabled {
+  background: transparent;
+  border-color: var(--text-muted);
+  color: var(--text-muted);
+  opacity: 1;
 }
 .btn.sm {
   padding: 3px 10px;
@@ -138,8 +155,8 @@ select {
 /* ---- left rail ---- */
 .rail {
   grid-area: rail;
-  border-right: 1px solid var(--ink-line);
-  background: var(--ink-deep);
+  border-right: 1px solid var(--hairline);
+  background: var(--canvas);
   overflow-y: auto;
   padding: 12px 0;
 }
@@ -149,22 +166,22 @@ select {
   font-size: 10.5px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--text-muted);
 }
 .rail-item {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 7px 16px;
-  color: var(--linen);
+  color: var(--text);
   border-left: 2px solid transparent;
 }
 .rail-item:hover {
-  background: var(--ink-raised);
+  background: var(--surface);
 }
 .rail-item.active {
-  border-left-color: var(--thread);
-  background: var(--ink-raised);
+  border-left-color: var(--text);
+  background: var(--surface);
 }
 .rail-item .name {
   font-family: var(--mono);
@@ -172,7 +189,7 @@ select {
 }
 .rail-item .name::before {
   content: '@';
-  color: var(--muted);
+  color: var(--text-muted);
 }
 .rail-item .state-dot {
   margin-left: auto;
@@ -210,6 +227,11 @@ select {
   .spool-glyph.spinning {
     animation: none;
   }
+  /* the cursor still marks where the text is arriving; it just stops
+     blinking, so the information survives the animation being gone */
+  .live-cursor {
+    animation: none;
+  }
 }
 
 /* ---- states ---- */
@@ -220,56 +242,59 @@ select {
   flex: none;
 }
 .state-busy {
-  background: var(--thread);
-  box-shadow: 0 0 6px var(--thread);
+  background: var(--active);
+  box-shadow: 0 0 6px var(--active);
 }
 .state-idle {
-  background: var(--alive);
+  background: var(--ready);
 }
 .state-waking {
-  background: var(--alive);
+  background: var(--ready);
   opacity: 0.6;
 }
 .state-draining {
-  background: var(--muted);
+  background: var(--text-muted);
 }
 .state-asleep {
   background: transparent;
-  border: 1.5px solid var(--muted);
+  border: 1.5px solid var(--text-muted);
 }
+/* the operator stopped this loop by hand — a square reads as "stopped" where
+   asleep's outline circle reads as "idle", so the unlabelled rail dot still
+   tells them apart */
 .state-paused {
-  background: transparent;
-  border: 1.5px solid var(--rust);
+  background: var(--text-muted);
+  border-radius: 2px;
 }
 /* the operator switched this workstation off — deliberate, so no alarm */
 .state-workstation_off {
   background: transparent;
-  border: 1.5px solid var(--rust);
+  border: 1.5px solid var(--text-muted);
   opacity: 0.6;
 }
 .state-workstation_down {
-  background: var(--rust);
-  box-shadow: 0 0 6px var(--rust);
+  background: var(--danger);
+  box-shadow: 0 0 6px var(--danger);
 }
 /* one fleet-wide fault, said once at the top instead of per loop */
 .fleet-alert {
   font-size: 13px;
-  color: var(--rust);
-  background: rgba(201, 111, 74, 0.08);
-  border: 1px solid #5a3527;
+  color: var(--danger);
+  background: var(--danger-wash);
+  border: 1px solid var(--danger-line);
   border-radius: 7px;
   padding: 10px 14px;
   margin-bottom: 16px;
 }
 .fleet-alert a {
-  color: var(--rust);
+  color: var(--danger);
 }
 /* the reason a loop's workstation is unreachable, under its header */
 .ws-down-note {
   font-size: 12.5px;
-  color: var(--rust);
-  background: rgba(201, 111, 74, 0.08);
-  border: 1px solid #5a3527;
+  color: var(--danger);
+  background: var(--danger-wash);
+  border: 1px solid var(--danger-line);
   border-radius: 7px;
   padding: 7px 11px;
   margin-bottom: 12px;
@@ -277,8 +302,8 @@ select {
 /* a workstation the operator switched off — deliberate, so not an alarm */
 .ws-off-note {
   font-size: 12.5px;
-  color: var(--muted);
-  border: 1px solid var(--ink-line);
+  color: var(--text-muted);
+  border: 1px solid var(--hairline);
   border-radius: 7px;
   padding: 7px 11px;
   margin-bottom: 12px;
@@ -286,41 +311,42 @@ select {
 /* a power control the server says is still running */
 .ws-progress {
   font-size: 12px;
-  color: var(--thread);
+  color: var(--active);
   margin-top: 8px;
 }
 /* the typed-name gate in front of a destructive recreate */
 .ws-confirm {
   font-size: 12px;
   line-height: 1.5;
-  color: var(--linen);
-  background: rgba(201, 111, 74, 0.08);
-  border: 1px solid #5a3527;
+  color: var(--text);
+  background: var(--danger-wash);
+  border: 1px solid var(--danger-line);
   border-radius: 7px;
   padding: 10px;
   margin-top: 10px;
 }
 .sender-allowed {
-  background: var(--alive);
+  background: var(--ready);
 }
 .sender-pending {
-  background: var(--thread);
+  background: var(--active);
 }
 .sender-blocked {
-  background: var(--rust);
+  background: var(--danger);
 }
 
 .state-name {
   font-family: var(--mono);
   font-size: 11.5px;
-  color: var(--muted);
+  color: var(--text-muted);
 }
-/* bare loops run on the host with no wall around them (ADR-0017) */
+/* bare loops run on the host with no wall around them (ADR-0017): a standing
+   unsafe condition, not a state, so it takes the danger tokens (ADR-0027 §4) */
 .containment-badge {
   font-family: var(--mono);
   font-size: 10.5px;
-  color: var(--rust);
-  border: 1px solid var(--rust);
+  color: var(--danger);
+  border: 1px solid var(--danger-line);
   border-radius: 4px;
   padding: 1px 5px;
   flex: none;
@@ -334,14 +360,14 @@ select {
 }
 .loop-card {
   display: block;
-  background: var(--ink-raised);
-  border: 1px solid var(--ink-line);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
   border-radius: 10px;
   padding: 16px;
   transition: border-color 120ms;
 }
 .loop-card:hover {
-  border-color: var(--thread-dim);
+  border-color: var(--text-muted);
 }
 .loop-card .head {
   display: flex;
@@ -355,10 +381,10 @@ select {
 }
 .loop-card .loop-name::before {
   content: '@';
-  color: var(--muted);
+  color: var(--text-muted);
 }
 .loop-card .mission {
-  color: var(--muted);
+  color: var(--text-muted);
   font-size: 13px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -372,22 +398,22 @@ select {
   margin-top: 12px;
   font-family: var(--mono);
   font-size: 11.5px;
-  color: var(--muted);
+  color: var(--text-muted);
 }
 /* context occupancy on a card: quiet until the window is nearly full */
 .loop-card .stats .ctx-stat.warm {
-  color: var(--rust);
+  color: var(--active);
   opacity: 0.8;
 }
 .loop-card .stats .ctx-stat.hot {
-  color: var(--rust);
+  color: var(--active);
 }
 .loop-card .stats .hot {
-  color: var(--thread);
+  color: var(--active);
 }
 
 .empty {
-  color: var(--muted);
+  color: var(--text-muted);
   padding: 60px 0;
   text-align: center;
 }
@@ -404,7 +430,7 @@ select {
   top: 0;
   bottom: 0;
   width: 2px;
-  background: var(--ink-line);
+  background: var(--hairline);
 }
 .knot {
   position: relative;
@@ -418,18 +444,18 @@ select {
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: var(--ink);
-  border: 2px solid var(--muted);
+  background: var(--canvas);
+  border: 2px solid var(--text-muted);
 }
 .knot.inbound::before {
-  border-color: var(--thread);
+  border-color: var(--text);
 }
 .knot.reply::before {
-  border-color: var(--alive);
-  background: var(--alive);
+  border-color: var(--ready);
+  background: var(--ready);
 }
 .knot.system-note::before {
-  border-color: var(--ink-line);
+  border-color: var(--hairline);
   width: 7px;
   height: 7px;
   left: -21.5px;
@@ -438,18 +464,18 @@ select {
 .knot .who {
   font-family: var(--mono);
   font-size: 11.5px;
-  color: var(--muted);
+  color: var(--text-muted);
   margin-bottom: 3px;
 }
 .knot .who .author {
-  color: var(--thread);
+  color: var(--text);
 }
 .knot.reply .who .author {
-  color: var(--alive);
+  color: var(--ready);
 }
 .bubble {
-  background: var(--ink-raised);
-  border: 1px solid var(--ink-line);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
   border-radius: 8px;
   padding: 10px 14px;
   white-space: pre-wrap;
@@ -457,7 +483,7 @@ select {
   max-width: 720px;
 }
 .knot .plain {
-  color: var(--linen);
+  color: var(--text);
   white-space: pre-wrap;
   word-break: break-word;
   max-width: 720px;
@@ -465,23 +491,23 @@ select {
 .tool-line {
   font-family: var(--mono);
   font-size: 12px;
-  color: var(--muted);
+  color: var(--text-muted);
   padding: 1px 0;
 }
 .tool-line .tool-name {
-  color: var(--linen);
+  color: var(--text);
 }
 .thinking-toggle {
   font-family: var(--mono);
   font-size: 11px;
-  color: var(--muted);
+  color: var(--text-muted);
   background: none;
   border: none;
   padding: 0;
   text-decoration: underline dotted;
 }
 .thinking-body {
-  color: var(--muted);
+  color: var(--text-muted);
   font-size: 12.5px;
   white-space: pre-wrap;
   margin-top: 4px;
@@ -491,17 +517,17 @@ select {
   gap: 12px;
   font-family: var(--mono);
   font-size: 11px;
-  color: var(--muted);
+  color: var(--text-muted);
   margin-top: 4px;
 }
 .turn-footer .err {
-  color: var(--rust);
+  color: var(--danger);
 }
 .live-cursor {
   display: inline-block;
   width: 7px;
   height: 14px;
-  background: var(--thread);
+  background: var(--active);
   vertical-align: text-bottom;
   animation: blink 1s steps(2) infinite;
 }
@@ -532,39 +558,39 @@ select {
 .dest-picker .dest-label {
   font-family: var(--mono);
   font-size: 12px;
-  color: var(--thread-dim);
+  color: var(--text-muted);
 }
 .dest-picker .dest {
-  background: var(--ink-raised);
-  border: 1px solid var(--ink-line);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
   border-radius: 999px;
-  color: var(--thread-dim);
+  color: var(--text-muted);
   font-family: var(--mono);
   font-size: 12px;
   padding: 4px 12px;
   cursor: pointer;
 }
 .dest-picker .dest.on {
-  border-color: var(--thread);
-  color: var(--linen);
+  border-color: var(--text);
+  color: var(--text);
 }
 .composer textarea {
   flex: 1;
-  background: var(--ink-raised);
-  border: 1px solid var(--ink-line);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
   border-radius: 8px;
-  color: var(--linen);
+  color: var(--text);
   padding: 10px 12px;
   resize: vertical;
   min-height: 44px;
 }
 .composer textarea:focus {
-  outline: 1px solid var(--thread-dim);
+  outline: 1px solid var(--text);
 }
 
 .side-panel {
-  background: var(--ink-raised);
-  border: 1px solid var(--ink-line);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
   border-radius: 10px;
   padding: 16px;
   margin-bottom: 14px;
@@ -574,7 +600,7 @@ select {
   font-size: 11px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--text-muted);
   margin-bottom: 10px;
 }
 .side-panel .row {
@@ -585,7 +611,7 @@ select {
   font-size: 13px;
 }
 .side-panel .row .k {
-  color: var(--muted);
+  color: var(--text-muted);
 }
 .side-panel .row .v {
   font-family: var(--mono);
@@ -598,23 +624,23 @@ select {
   position: relative;
   height: 16px;
   border-radius: 4px;
-  background: var(--ink);
-  border: 1px solid var(--ink-line);
+  background: var(--canvas);
+  border: 1px solid var(--hairline);
   overflow: hidden;
   margin-top: 8px;
 }
 .ctx-fill-bar {
   height: 100%;
-  background: var(--thread);
+  background: var(--fill);
   opacity: 0.55;
 }
 .ctx-fill.warm .ctx-fill-bar {
-  background: var(--rust);
-  opacity: 0.5;
+  background: var(--active);
+  opacity: 0.55;
 }
 .ctx-fill.hot .ctx-fill-bar {
-  background: var(--rust);
-  opacity: 0.85;
+  background: var(--active);
+  opacity: 1;
 }
 .ctx-fill-pct {
   position: absolute;
@@ -624,7 +650,7 @@ select {
   justify-content: center;
   font-family: var(--mono);
   font-size: 10.5px;
-  color: var(--linen);
+  color: var(--text);
 }
 /* per-turn context occupancy, oldest turn on the left */
 .ctx-trend {
@@ -637,7 +663,7 @@ select {
 .ctx-bar {
   flex: 1;
   min-height: 2px;
-  background: var(--thread);
+  background: var(--fill);
   border-radius: 2px 2px 0 0;
   opacity: 0.75;
 }
@@ -653,10 +679,10 @@ select {
   font-family: var(--mono);
   font-size: 22px;
   font-weight: 300;
-  color: var(--linen);
+  color: var(--text);
 }
 .countdown .due {
-  color: var(--thread);
+  color: var(--active);
 }
 
 /* ---- forms ---- */
@@ -672,33 +698,33 @@ select {
   font-size: 11px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--text-muted);
   margin-bottom: 5px;
 }
 .field input,
 .field textarea,
 .field select {
   width: 100%;
-  background: var(--ink-raised);
-  border: 1px solid var(--ink-line);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
   border-radius: 7px;
-  color: var(--linen);
+  color: var(--text);
   padding: 8px 11px;
 }
 .field input:focus,
 .field textarea:focus {
-  outline: 1px solid var(--thread-dim);
+  outline: 1px solid var(--text);
 }
 .field .hint {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--text-muted);
   margin-top: 4px;
 }
 .field .hint.ok {
-  color: var(--alive);
+  color: var(--ready);
 }
 .field .hint.warn {
-  color: var(--rust);
+  color: var(--danger);
 }
 .field-row {
   display: flex;
@@ -708,9 +734,9 @@ select {
   flex: 1;
 }
 .form-error {
-  color: var(--rust);
-  background: rgba(201, 111, 74, 0.08);
-  border: 1px solid #5a3527;
+  color: var(--danger);
+  background: var(--danger-wash);
+  border: 1px solid var(--danger-line);
   border-radius: 7px;
   padding: 8px 12px;
 }
@@ -720,27 +746,27 @@ select {
   display: flex;
   gap: 12px;
   padding: 9px 0;
-  border-bottom: 1px solid var(--ink-line);
+  border-bottom: 1px solid var(--hairline);
   font-size: 13px;
 }
 .feed-item .when {
   font-family: var(--mono);
   font-size: 11px;
-  color: var(--muted);
+  color: var(--text-muted);
   flex: none;
   width: 76px;
   padding-top: 2px;
 }
 .feed-item .author {
   font-family: var(--mono);
-  color: var(--thread);
+  color: var(--text);
   flex: none;
 }
 .feed-item .author.loop-author {
-  color: var(--alive);
+  color: var(--ready);
 }
 .feed-item .text {
-  color: var(--linen);
+  color: var(--text);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -748,7 +774,7 @@ select {
   margin-left: auto;
   font-family: var(--mono);
   font-size: 10.5px;
-  color: var(--muted);
+  color: var(--text-muted);
   flex: none;
 }
 
@@ -775,22 +801,22 @@ select {
   height: 18px;
   max-width: 78ch;
   border-radius: 4px;
-  background: var(--ink);
-  border: 1px solid var(--ink-line);
+  background: var(--canvas);
+  border: 1px solid var(--hairline);
   overflow: hidden;
 }
 .rules-meter-bar {
   height: 100%;
-  background: var(--thread);
+  background: var(--fill);
   opacity: 0.5;
 }
 .rules-meter.near .rules-meter-bar {
-  background: var(--rust);
-  opacity: 0.5;
+  background: var(--active);
+  opacity: 0.55;
 }
 .rules-meter.full .rules-meter-bar {
-  background: var(--rust);
-  opacity: 0.85;
+  background: var(--danger);
+  opacity: 1;
 }
 .rules-meter-label {
   position: absolute;
@@ -800,17 +826,17 @@ select {
   justify-content: center;
   font-family: var(--mono);
   font-size: 10.5px;
-  color: var(--linen);
+  color: var(--text);
 }
 .rules-note {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--text-muted);
   margin-top: 8px;
   max-width: 68ch;
 }
 .rule-item {
-  background: var(--ink-raised);
-  border: 1px solid var(--ink-line);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
   border-radius: 10px;
   padding: 14px 16px;
   margin-bottom: 12px;
@@ -830,8 +856,8 @@ select {
 .rule-badge {
   font-family: var(--mono);
   font-size: 10.5px;
-  color: var(--muted);
-  border: 1px solid var(--ink-line);
+  color: var(--text-muted);
+  border: 1px solid var(--hairline);
   border-radius: 4px;
   padding: 1px 5px;
 }
@@ -850,10 +876,10 @@ select {
 .rule-editor input,
 .rule-editor textarea {
   width: 100%;
-  background: var(--ink);
-  border: 1px solid var(--ink-line);
+  background: var(--canvas);
+  border: 1px solid var(--hairline);
   border-radius: 7px;
-  color: var(--linen);
+  color: var(--text);
   padding: 8px 11px;
 }
 .rule-editor textarea {
@@ -862,7 +888,7 @@ select {
 }
 .rule-editor input:focus,
 .rule-editor textarea:focus {
-  outline: 1px solid var(--thread-dim);
+  outline: 1px solid var(--text);
 }
 .rule-field {
   display: flex;
@@ -872,16 +898,16 @@ select {
   font-family: var(--mono);
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--text-muted);
   margin-bottom: 4px;
 }
 .char-count {
   font-family: var(--mono);
   font-size: 11px;
-  color: var(--muted);
+  color: var(--text-muted);
   letter-spacing: 0;
   text-transform: none;
 }
 .char-count.over {
-  color: var(--rust);
+  color: var(--danger);
 }
