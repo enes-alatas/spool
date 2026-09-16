@@ -110,8 +110,8 @@ func main() {
 			}
 			return "http://" + net.JoinHostPort(host, port) + "/mcp"
 		},
-		OnTurnStart: func(l *store.Loop) {
-			router.ResetSendBudget(l.ID)
+		OnTurnStart: func(l *store.Loop, ownerDMChat int64) {
+			router.StartTurn(l.ID, ownerDMChat)
 		},
 		SendsThisTurn: func(loopID string) int {
 			return router.SendCount(loopID)

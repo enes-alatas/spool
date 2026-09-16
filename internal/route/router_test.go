@@ -66,8 +66,26 @@ func TestSendBudget(t *testing.T) {
 	if !r.sendAllow("l2") {
 		t.Fatal("another loop's budget affected")
 	}
-	r.ResetSendBudget("l1")
+	r.StartTurn("l1", 0)
 	if !r.sendAllow("l1") {
-		t.Fatal("send refused after reset")
+		t.Fatal("send refused after a fresh turn")
+	}
+}
+
+// TestTurnPinsOwnerDMChat: the chat recorded at turn start is what owner_dm
+// sends resolve to, and the next turn replaces it (ADR-0025 — a mid-turn DM
+// must not redirect a private reply already under way).
+func TestTurnPinsOwnerDMChat(t *testing.T) {
+	r := &Router{}
+	r.StartTurn("l1", 42)
+	if got := r.pinnedDMChat("l1"); got != 42 {
+		t.Fatalf("pinned chat = %d, want 42", got)
+	}
+	if got := r.pinnedDMChat("l2"); got != 0 {
+		t.Fatalf("another loop's pin = %d, want 0", got)
+	}
+	r.StartTurn("l1", 0)
+	if got := r.pinnedDMChat("l1"); got != 0 {
+		t.Fatalf("pin survived a non-DM turn: %d", got)
 	}
 }

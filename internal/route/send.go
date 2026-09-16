@@ -75,6 +75,7 @@ func (r *Router) Send(ctx context.Context, req SendRequest) (*store.Message, *Se
 	}
 
 	var targets map[string]*store.Loop
+	var ownerChat int64
 	switch req.Destination {
 	case store.ConversationGroup:
 		for _, m := range mentions {
@@ -89,11 +90,19 @@ func (r *Router) Send(ctx context.Context, req SendRequest) (*store.Message, *Se
 			return nil, serr, err
 		}
 	case store.ConversationOwnerDM:
-		if _, err := r.store.Messages().OwnerDMChat(ctx, req.From.ID); err != nil {
+		// The turn's pinned chat wins: a reply within a DM exchange goes to
+		// the human being answered, whatever DMs arrived since. A turn with
+		// no DM of its own (a tick, say) falls back to the latest captured
+		// chat — the interim owner address until #73 configures the owner.
+		ownerChat = r.pinnedDMChat(req.From.ID)
+		if ownerChat == 0 {
+			var err error
+			ownerChat, err = r.store.Messages().OwnerDMChat(ctx, req.From.ID)
 			if errors.Is(err, store.ErrNotFound) {
 				return nil, &SendError{ErrOwnerDMUnavailable, "no owner DM captured for this loop; the owner must DM its bot first"}, nil
+			} else if err != nil {
+				return nil, nil, err
 			}
-			return nil, nil, err
 		}
 		msg.ConversationLoopID = req.From.ID
 	case store.ConversationControlRoom:
@@ -117,6 +126,7 @@ func (r *Router) Send(ctx context.Context, req SendRequest) (*store.Message, *Se
 	r.bus.Publish(bus.Item{Kind: bus.KindMessage, LoopID: req.From.ID, Payload: &MessagePayload{
 		Message:      *msg,
 		FromLoopName: req.From.Name,
+		OwnerDMChat:  ownerChat,
 	}})
 
 	now := time.Now()
@@ -177,6 +187,14 @@ func (r *Router) groupRecipients(ctx context.Context, from *store.Loop, mentions
 	return targets, nil, nil
 }
 
+// pinnedDMChat is the owner-DM chat the loop's current turn answers (0 when
+// it is not an owner_dm turn).
+func (r *Router) pinnedDMChat(loopID string) int64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.turnDMChat[loopID]
+}
+
 // sendAllow spends one unit of the loop's per-turn send budget.
 func (r *Router) sendAllow(loopID string) bool {
 	r.mu.Lock()
@@ -191,12 +209,19 @@ func (r *Router) sendAllow(loopID string) bool {
 	return true
 }
 
-// ResetSendBudget opens a fresh per-turn send budget for a loop. The runner
-// calls it at every turn start.
-func (r *Router) ResetSendBudget(loopID string) {
+// StartTurn opens a fresh per-turn send budget for a loop and pins the
+// owner-DM chat the turn is answering (0 when the turn is not an owner_dm
+// turn). The runner calls it at every turn start. Pinning at the turn
+// boundary is what keeps two humans' DM threads separate: a DM arriving
+// mid-turn cannot redirect the reply already under way (ADR-0025).
+func (r *Router) StartTurn(loopID string, ownerDMChat int64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.sendBudget, loopID)
+	if r.turnDMChat == nil {
+		r.turnDMChat = map[string]int64{}
+	}
+	r.turnDMChat[loopID] = ownerDMChat
 }
 
 // SendCount reports the loop's sends since its budget last opened — how the

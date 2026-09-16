@@ -530,21 +530,22 @@ func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 			}
 			p.enqueueSend(l.TGGroupChatID, mp.Text)
 		case store.ConversationOwnerDM:
-			// a loop's owner_dm send: deliver to the captured DM chat as its
-			// own bot. route.Send refuses when no capture exists, and a
-			// capture implies the loop had a bot — so a miss on either here
-			// is an internal fault, not a model error, and must not drop
-			// the private message silently.
+			// a loop's owner_dm send: deliver to the chat route.Send pinned
+			// at send time — never re-resolved here, so a DM arriving
+			// between send and delivery cannot redirect it. route.Send
+			// refuses when no chat resolves, and a captured chat implies
+			// the loop had a bot — so a miss on either here is an internal
+			// fault, not a model error, and must not drop the private
+			// message silently.
 			if p == nil {
 				br.log.Error("owner dm delivery: loop has no bot", "loop", mp.FromLoopID)
 				return
 			}
-			chat, err := br.store.Messages().OwnerDMChat(ctx, mp.ConversationLoopID)
-			if err != nil {
-				br.log.Error("owner dm delivery: no captured chat", "loop", mp.FromLoopID, "err", err)
+			if mp.OwnerDMChat == 0 {
+				br.log.Error("owner dm delivery: send carried no pinned chat", "loop", mp.FromLoopID)
 				return
 			}
-			p.enqueueSend(chat, mp.Text)
+			p.enqueueSend(mp.OwnerDMChat, mp.Text)
 		}
 		// control_room lives in the web UI alone; telegram sees nothing
 	case store.OriginWeb:
