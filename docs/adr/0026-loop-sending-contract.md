@@ -132,3 +132,27 @@ tick, say), the loop's most recent captured private chat. The tool
 description and system prompt state exactly this. "Reach the configured
 owner regardless of the current exchange" is not expressible until #73
 lands; the owner-contact acceptance criterion stays open there.
+
+**Amendment (2026-09-16): `owner_dm` is the configured owner (#73).** This
+replaces the interim rule above. Each loop has an owner — an allowlisted
+Telegram sender the operator picks, defaulting to the first one allowlisted —
+and `owner_dm` always addresses that person, whatever DM the current turn
+happens to be answering. The tool's name already promises this, and only a
+fixed address lets a loop open a private conversation after a tick. The
+turn-start pin is therefore gone: a destination that changed with the
+incoming message could never be proactive.
+
+The address itself is captured, not derived. A bot cannot open a private
+chat, so a loop can write to its owner only once that owner has written to
+*this loop's own bot*; the chat is recorded then. Until it is, an `owner_dm`
+send is refused with a typed error naming what is missing — no owner
+configured, or no chat captured — and never falls back to the group
+(ADR-0025).
+
+What this leaves open: a DM from an allowlisted human who is not the owner.
+Delivering it would give the loop no way to answer — a reply to `owner_dm`
+would reach the owner instead, putting one person's private message in
+another's chat. Until non-owner private conversations are designed, such a
+DM is not delivered; the bot answers once, in that chat, saying that only
+the loop's owner can DM it for now. Silence would be worse than a refusal a
+human can read.
