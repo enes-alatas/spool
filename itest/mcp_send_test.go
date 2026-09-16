@@ -184,8 +184,12 @@ func TestMCPSendControlRoom(t *testing.T) {
 func TestMCPSendCap(t *testing.T) {
 	s := startServer(t, t.TempDir())
 	s.createLoop("aster", nil)
-	// pause the loop: every turn start reopens the budget, and this test
-	// counts sends against one turn's worth
+	// Every turn start reopens the budget, and this test counts sends
+	// against one turn's worth. Let the creation tick finish first, then
+	// pause so no further turn begins: on a slow machine that turn
+	// otherwise starts mid-count and the eleventh send lands in a fresh
+	// budget.
+	s.waitTurn("aster", 30*time.Second, func(tn turn) bool { return tn.Trigger == "tick" })
 	s.mustJSON("POST", "/api/loops/aster/pause", nil, nil)
 	sess := mcpSession(t, s, hubMCPToken(t, s, "aster"))
 
