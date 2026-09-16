@@ -81,9 +81,6 @@ type Router struct {
 	// redelivered turn can be told what was already sent; cleared with the
 	// budget.
 	turnSends map[string][]string
-	// turnDMChat pins, per loop, the owner-DM chat its current turn is
-	// answering (0 = not an owner_dm turn); set by StartTurn.
-	turnDMChat map[string]int64
 }
 
 func New(st store.Store, b *bus.Bus, d Deliverer, log *slog.Logger) *Router {
