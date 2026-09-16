@@ -177,6 +177,24 @@ type Message struct {
 	// ConversationLoopID keys the private conversation kinds (owner_dm,
 	// control_room) to their loop; empty for the shared group.
 	ConversationLoopID string `json:"conversation_loop_id,omitempty"`
+	// ReplyToID is the message this one explicitly replies to (0 = none).
+	// A reply is always chosen, never inferred from ordering (ADR-0025).
+	ReplyToID int64 `json:"reply_to_id,omitempty"`
+	// TGKey identifies a telegram message by what every bot observing it
+	// sees alike — chat, sender, date, text — so one bot's message can be
+	// matched to another bot's sighting of it. Storage detail, not surfaced.
+	TGKey string `json:"-"`
+}
+
+// SurfaceRef is one bot's own id for a message on a surface: what its poller
+// received, or what Telegram returned when it sent it. Telegram numbers
+// message_id per bot conversation (ADR-0020), so a reference is only ever
+// valid for the bot that holds it.
+type SurfaceRef struct {
+	MessageID   int64
+	BotLoopID   string
+	TGChatID    int64
+	TGMessageID int64
 }
 
 type Turn struct {
@@ -287,6 +305,32 @@ type MessageStore interface {
 	// owner identity replaces the capture (tracked as part of ADR-0025/0026
 	// follow-up work).
 	OwnerDMChat(ctx context.Context, loopID string) (int64, error)
+	// Get returns one message by id, or ErrNotFound. Reply targets are
+	// resolved through it.
+	Get(ctx context.Context, id int64) (*Message, error)
+	// PutRef records a bot's own surface id for a message.
+	PutRef(ctx context.Context, ref *SurfaceRef) error
+	// Ref returns the bot's own id for a message, or ErrNotFound when that
+	// bot never saw or sent it — the case where no native reply can be
+	// rendered. A sighting recorded by a non-ingesting poller counts.
+	Ref(ctx context.Context, messageID int64, botLoopID string) (*SurfaceRef, error)
+	// RecordSighting stores a poller's own id for a telegram message it
+	// observed, whether or not it was the bot that ingested it.
+	RecordSighting(ctx context.Context, tgKey, botLoopID string, chatID, messageID, seenAt int64) error
+	// ByRef resolves a surface id back to the message it belongs to, from
+	// the perspective of one bot: what that bot sent, or what it saw.
+	// ErrNotFound when it maps to nothing.
+	ByRef(ctx context.Context, botLoopID string, chatID, tgMessageID int64) (*Message, error)
+	// ByTGKey resolves a telegram message to the ingested row that shares
+	// its identity, whichever bot ingested it. ErrNotFound when it was
+	// never ingested.
+	ByTGKey(ctx context.Context, tgKey string) (*Message, error)
+	// LatestGroupTextFrom finds the one loop-authored group message with
+	// exactly this text — the last resort for identifying a reply target
+	// that no bot holds an id for, such as another loop's post. Ambiguity
+	// is ErrNotFound: two loops that posted the same words cannot be told
+	// apart, and the answer decides delivery, not just rendering.
+	LatestGroupTextFrom(ctx context.Context, text string) (*Message, error)
 }
 
 type TurnStore interface {
