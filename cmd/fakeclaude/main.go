@@ -16,6 +16,9 @@
 // first. A
 // "!toolong" returns an errored result saying the prompt did not fit the
 // window, with no usage, and keeps the session. A
+// A "!send" directive may write "$ref" where the reference of the message
+// being answered belongs; the fake substitutes it from the envelope header.
+//
 // "!ctx <tokens>" prefix makes the turn report that many input tokens per API
 // step — how a filling context looks from outside — and composes with the
 // rest of the line ("!ctx 120000 !hang 2"). A "!steps <k>" prefix makes the
@@ -49,6 +52,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -191,7 +195,10 @@ func main() {
 			}
 			var sent []string
 			for strings.HasPrefix(line, "!send ") {
-				rest := strings.TrimPrefix(line, "!send ")
+				// $ref stands for the reference the arriving envelope's
+				// header carries — what a model reads there and passes
+				// back as reply_to.
+				rest := strings.ReplaceAll(strings.TrimPrefix(line, "!send "), "$ref", incomingRef(text))
 				dec := json.NewDecoder(strings.NewReader(rest))
 				var sendArgs map[string]any
 				if err := dec.Decode(&sendArgs); err != nil {
@@ -323,6 +330,16 @@ func initModel(model string) string {
 		return "fakeclaude"
 	}
 	return model
+}
+
+// refRe finds the reference an envelope header carries. The message's own
+// reference comes first, before any "in reply to" it names.
+var refRe = regexp.MustCompile(`ref:\d+`)
+
+// incomingRef is the reference of the message this turn is answering, or ""
+// when the turn has none (a tick).
+func incomingRef(text string) string {
+	return refRe.FindString(text)
 }
 
 // --- the !send directive: a real client of the hub's MCP endpoint ---
