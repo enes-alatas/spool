@@ -147,3 +147,33 @@ by those implementation choices.
 **Amendment (2026-09-15):** ADR-0026 settles the sending interface,
 session/context isolation, send timing, and composer destination UX. Still open:
 reference mapping/failure recovery (#79) and broadcast eligibility (#74).
+
+**Amendment (2026-09-16): native replies are best-effort, references are not.**
+Telegram numbers `message_id` per bot conversation (ADR-0020), and bots never
+receive other bots' messages. Production data confirms it: before the ingest
+election, the same group message was stored by several bots under different
+ids. Two consequences fix the shape of #79.
+
+A native reply can only be rendered by a bot that holds **its own** id for the
+target. Passing another bot's id would be a foreign number in that chat, so it
+is never done. A loop can therefore thread under its own DM always, under a
+human's group message whenever its poller saw that message, and under another
+loop's group post never — that post reached no other bot.
+
+Delivery does not degrade with the rendering. The reference is internal: the
+message's own id, durable across restarts, distinct for identical-looking
+text, and never "the latest message". It is what selects the reply target,
+addresses that message's author, and rejects an unknown or cross-conversation
+target in-turn. When no native anchor exists the message is posted plainly
+with a one-line quote of what it answers, so the group still reads as a
+conversation. The matrix row "A natively replies to B ... renders against the
+exact source message" is met as delivery and as a visible quote, not as a
+Telegram reply; the platform cannot do the latter.
+
+Inbound has the mirror-image limit. A human's native reply to a loop's post
+reaches the ingesting bot with an id it does not hold, so the only thing left
+to identify the target by is the post's text — and that answer chooses who is
+woken, not merely how the message looks. The match is therefore exact or
+nothing: two loops that posted the same words resolve to neither, and the
+message is delivered as an ordinary one. An unaimed message is a smaller
+failure than one aimed at the wrong loop.
