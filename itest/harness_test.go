@@ -165,6 +165,9 @@ type loopView struct {
 	WorkstationDetail  string  `json:"workstation_detail"`
 	NextTickAt         int64   `json:"next_tick_at"`
 	CostToday          float64 `json:"cost_today_usd"`
+	OwnerTGUserID      int64   `json:"owner_tg_user_id"`
+	OwnerDMReady       bool    `json:"owner_dm_ready"`
+	OwnerUsername      string  `json:"owner_username"`
 }
 
 type turn struct {

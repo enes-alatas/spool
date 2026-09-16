@@ -649,66 +649,53 @@ func TestMixedDMAndGroupArrivalsAnswerSeparately(t *testing.T) {
 	}
 }
 
-// Two humans' DM conversations with the same bot arriving together must not
-// share a turn or an answer, and each turn's owner_dm reply must reach the
-// human it answers — the friend's later DM (the newest captured chat while
-// the first reply is composed) must not redirect it (ADR-0025 scenarios).
-func TestSeparateDMConversationsNeverShareATurn(t *testing.T) {
+// Only the loop's owner holds a private conversation with it (#73): a
+// non-owner's DM is turned away with a readable reason and never becomes a
+// turn, and the owner's own DM is answered in the owner's chat while a
+// stranger's arrives alongside it. Isolating *two* humans' private
+// conversations returns with the non-owner DM design.
+func TestOnlyTheOwnerHoldsAPrivateConversation(t *testing.T) {
 	operator := user{ID: 5252, First: "Operator", Username: "operator"}
 	friend := user{ID: 5353, First: "Friend", Username: "friend"}
 	ws := workspaceWithScript(t, "!ctx 0\n!hang 4\n"+
 		`!send {"destination":"owner_dm","text":"answer for op"} handled from op`+"\n"+
-		`!send {"destination":"owner_dm","text":"answer for friend"} handled from friend`+"\n"+
 		`!send {"destination":"owner_dm","text":"proactive note"} handled wake`+"\n")
 	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws})
 
-	// the friend's first DM only registers them as pending; it never reaches
-	// the loop, so it consumes no script line
+	// the friend's first DM only registers them as pending; allowlisting
+	// them lets them reach a bot, but not this loop's private conversation
 	tg.dm("alpha", friend, "knock")
 	srv.allowSender(friend.ID)
 
 	tg.dm("alpha", operator, "start hanging")
 	srv.waitState("alpha", "busy", 10*time.Second) // alpha is inside the hang
 	tg.dm("alpha", operator, "from op")
-	srv.waitForMessage("from op") // ingested first: the queue order is fixed
+	srv.waitForMessage("from op")
 	tg.dm("alpha", friend, "from friend")
 
 	opTurn := srv.waitTurn("alpha", 30*time.Second, func(tn turn) bool {
 		return strings.Contains(tn.ResultText, "handled from op")
 	})
-	friendTurn := srv.waitTurn("alpha", 30*time.Second, func(tn turn) bool {
-		return strings.Contains(tn.ResultText, "handled from friend")
-	})
-	if opTurn.ID == friendTurn.ID {
-		t.Fatalf("two DM conversations shared one turn: %s", dump(opTurn))
-	}
-	// each turn's recorded envelopes must carry only its own human's DM
+	tg.waitSent(t, operator.ID, "answer for op")
+	tg.waitSent(t, friend.ID, "direct messages only from")
+
+	// nothing of the friend's reached the loop: not as a turn input, not as
+	// a stored message, not as an answer
 	inputs := srv.turnInputs("alpha")
-	for _, c := range []struct {
-		tn           turn
-		want, forbid string
-	}{
-		{opTurn, "from op", "from friend"},
-		{friendTurn, "from friend", "from op"},
-	} {
-		joined := strings.Join(inputs[c.tn.ID], "\n")
-		if !strings.Contains(joined, c.want) || strings.Contains(joined, c.forbid) {
-			t.Fatalf("turn %s inputs = %q, want %q and never %q", c.tn.ID, joined, c.want, c.forbid)
+	for id, envelopes := range inputs {
+		if strings.Contains(strings.Join(envelopes, "\n"), "from friend") {
+			t.Fatalf("turn %s was given a non-owner's DM", id)
 		}
 	}
-
-	// each answer lands in its own human's chat — the op's even though the
-	// friend's DM was the newest capture when it was sent
-	tg.waitSent(t, operator.ID, "answer for op")
-	tg.waitSent(t, friend.ID, "answer for friend")
+	if len(srv.activityWith("from friend")) != 0 {
+		t.Fatal("a non-owner's DM was stored as a message")
+	}
+	if !strings.Contains(strings.Join(inputs[opTurn.ID], "\n"), "from op") {
+		t.Fatalf("the owner's DM never reached its turn: %q", inputs[opTurn.ID])
+	}
 	for _, m := range tg.sentTo(friend.ID) {
 		if strings.Contains(m.Text, "answer for op") {
-			t.Fatalf("the operator's answer reached the friend: %q", m.Text)
-		}
-	}
-	for _, m := range tg.sentTo(operator.ID) {
-		if strings.Contains(m.Text, "answer for friend") {
-			t.Fatalf("the friend's answer reached the operator: %q", m.Text)
+			t.Fatalf("the owner's answer reached a non-owner: %q", m.Text)
 		}
 	}
 	for _, m := range tg.sentTo(groupChatID) {
@@ -717,14 +704,14 @@ func TestSeparateDMConversationsNeverShareATurn(t *testing.T) {
 		}
 	}
 
-	// A turn with no DM of its own falls back to the latest captured chat —
-	// the friend's, here — which is the stated interim owner address until
-	// #73 configures the owner (ADR-0026 amendment).
+	// A turn with no DM of its own still reaches the owner: the address is
+	// the configured owner's, not the latest chat to have written
+	// (ADR-0026, amended for #73).
 	srv.mustJSON("POST", "/api/loops/alpha/wake", nil, nil)
-	tg.waitSent(t, friend.ID, "proactive note")
-	for _, m := range tg.sentTo(operator.ID) {
+	tg.waitSent(t, operator.ID, "proactive note")
+	for _, m := range tg.sentTo(friend.ID) {
 		if strings.Contains(m.Text, "proactive note") {
-			t.Fatalf("the fallback owner address ignored the latest capture: %q", m.Text)
+			t.Fatalf("a proactive owner DM went to a non-owner: %q", m.Text)
 		}
 	}
 }
