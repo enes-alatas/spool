@@ -68,17 +68,19 @@ Use these words exactly — in code, UI, docs, and prompts. Don't introduce syno
                         └──────────────────────────┘
 ```
 
-Current implementation: inbound (surface/web) → `route.Ingest` → persist →
-resolve recipients → deliver to runner → loop turn → final reply → `route.LoopReply` →
-route mentions + mirror to surfaces.
+Current implementation (ADR-0025, ADR-0026): inbound (surface/web) →
+`route.Ingest` → persist with its conversation → deliver only to addressed
+loops (mentions, or the private conversation's loop; unaddressed group chatter
+wakes nobody) → loop turn — one turn per conversation, never batching private
+and group input into one answer. A loop sends through the hub-served
+`send_message` MCP tool — immediate, validated in-turn, capped per turn — to
+`owner_dm`, `group` (recipients from @mentions), or `control_room`; the bridge
+and web deliver each send by its conversation, and the final reply text becomes
+a status note delivered nowhere.
 
-Committed direction (ADR-0025, ADR-0026; implementation tracked in #44): preserve
-each message's conversation and explicit reply reference, resolve recipients from
-native replies/mentions/`@all`, and deliver only to those loops. A loop sends
-through the hub-served `send_message` MCP tool — immediate, validated in-turn,
-capped per turn — and its final reply text becomes a status note. The runner keeps
-one session per loop but runs one turn per conversation, never batching private
-and group input into one answer.
+Still open under #44: native-reply references (#79), `@all` broadcast
+eligibility (#74), and a configured owner identity replacing the captured-DM
+interim address (#73).
 
 ## The four seams
 

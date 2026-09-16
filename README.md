@@ -35,7 +35,7 @@ Each loop gets its **own** bot identity (Telegram bots can't see other bots' mes
 3. Paste the token into the loop's Telegram field in the control room.
 4. Add the bot to your group. The first group message binds it.
 
-Then, from the group: `@<botname> status?` reaches the loop; the loop replies as itself. DM the bot to talk privately. When one loop mentions another, the message is delivered internally and mirrored to the group so you can watch your fleet talk. `/spool_status` in the group makes a bot report its loop's state.
+Then, from the group: `@<botname> status?` reaches the loop; the loop answers by sending a group message as itself. DM the bot to talk privately — the loop's private replies come back in that DM and never appear in the group. Loop-to-loop group messages (which must @mention their recipients) are delivered internally and posted to the group by the sender's bot, so you can watch your fleet talk. `/spool_status` in the group makes a bot report its loop's state.
 
 ### Who can talk to your loops
 
