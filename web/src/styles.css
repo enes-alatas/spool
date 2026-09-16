@@ -351,79 +351,208 @@ select {
   flex: none;
 }
 
-/* ---- dashboard grid ---- */
-.loop-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
-  gap: 14px;
-}
-.loop-card {
-  display: block;
-  background: var(--surface);
-  border: 1px solid var(--hairline);
-  border-radius: 10px;
-  padding: 16px;
-  transition: border-color 120ms;
-}
-.loop-card:hover {
-  border-color: var(--text-muted);
-}
-.loop-card .head {
+/* ---- fleet list ---- */
+/* Fleet is the one authoritative list of loops (#71): full-width rows
+   separated by hairlines, no cards. A card draws a box around each loop and
+   invites the eye to read them one at a time; a list lets the operator scan
+   one column down the fleet. */
+.fleet-head {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
 }
-.loop-card .loop-name {
+.fleet-summary {
   font-family: var(--mono);
-  font-size: 15px;
-}
-.loop-card .loop-name::before {
-  content: '@';
+  font-size: 12px;
   color: var(--text-muted);
 }
-.loop-card .mission {
+.fleet-note {
   color: var(--text-muted);
   font-size: 13px;
+  padding: 18px 0;
+}
+/* The row grid, shared with the column labels so the two cannot drift. The
+   identity column takes what is left; the four numbers are fixed so they
+   align down the list. */
+.fleet-row,
+.fleet-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 152px 92px 76px 80px;
+  align-items: start;
+  gap: 16px;
+}
+.fleet-cols {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--hairline);
+}
+.fleet-row {
+  position: relative;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--hairline);
+  color: var(--text);
+}
+.fleet-row:hover {
+  background: var(--surface);
+}
+.fleet-row:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: -2px;
+  border-radius: 4px;
+}
+.fleet-row .identity {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.fleet-row .loop-name {
+  font-family: var(--mono);
+  font-size: 14.5px;
+  overflow-wrap: anywhere;
+}
+.fleet-row .mission {
+  color: var(--text-muted);
+  font-size: 13px;
+  /* two lines is enough to tell two loops apart; the detail page has the rest */
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  min-height: 2.6em;
 }
-/* each field is a label and its value: the row wraps between fields, never
-   inside one, so a narrow card grows a second line instead of running the
-   last field under its border */
-.loop-card .stats {
+/* the conditions worth seeing without opening the loop: containment, a
+   workstation that is off or unreachable, and where it is working */
+.fleet-row .notes {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 14px;
-  margin-top: 12px;
+  align-items: center;
+  gap: 4px 10px;
+  margin-top: 2px;
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: 11px;
   color: var(--text-muted);
 }
-.loop-card .stats > * {
-  white-space: nowrap;
-}
-/* a branch or a bot handle can be longer than the card is wide, and there is
-   no shortening it: a clipped handle reads as a different handle. These two
-   break across lines where the pairs above them do not */
-.loop-card .stats .branch,
-.loop-card .stats .tg-handle {
-  white-space: normal;
+.fleet-row .note {
   overflow-wrap: anywhere;
 }
-/* context occupancy on a card: quiet until the window is nearly full */
-.loop-card .stats .ctx-stat.warm {
+.fleet-row .note.bad {
+  color: var(--danger);
+}
+/* the column is sized for the longest state name (workstation_down): these
+   are single identifiers, and breaking one across lines invents a word */
+.fleet-row .f-state,
+.fleet-cols .f-state {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+/* On a wide screen the three numbers are columns of the row's own grid; the
+   wrapper only exists so they can become one line together when the columns
+   are dropped below. */
+.fleet-row .f-meta,
+.fleet-cols .f-meta {
+  display: contents;
+}
+.fleet-row .f-next,
+.fleet-row .f-ctx,
+.fleet-row .f-today {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.fleet-row .f-today {
+  text-align: right;
+}
+.fleet-row .hot {
+  color: var(--active);
+}
+.fleet-row .warm {
   color: var(--active);
   opacity: 0.8;
 }
-.loop-card .stats .ctx-stat.hot {
-  color: var(--active);
+.fleet-row .dim {
+  opacity: 0.55;
 }
-.loop-card .stats .hot {
-  color: var(--active);
+/* Visually hidden, still announced — for a word the layout supplies by
+   position and assistive technology has no other way to reach. The fleet
+   row's column labels are the first use; there will be more. */
+.sr-only,
+.fleet-row .lbl {
+  position: absolute;
+  /* pinned to the positioned ancestor rather than left where it fell: a
+     1px box at the end of a row still counts towards the row's width */
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+/* the busy row's two phrasings: exactly one is in the tree at a time, so
+   neither is announced twice */
+.only-narrow {
+  display: none;
+}
+/* Below this the four number columns stop fitting beside a mission anyone
+   would want to read, so the row recomposes rather than shrinks: name and
+   state on the first line, mission under it, the numbers on a wrapping line
+   of their own. The words the column headers used to supply come back with
+   them — a bare "18m" under no heading says nothing. */
+@media (max-width: 720px) {
+  .fleet-cols {
+    display: none;
+  }
+  .fleet-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'identity state'
+      'meta meta';
+    gap: 6px 12px;
+    min-height: 56px;
+  }
+  .fleet-row .identity {
+    grid-area: identity;
+  }
+  .fleet-row .f-state {
+    grid-area: state;
+  }
+  .fleet-row .f-meta {
+    grid-area: meta;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 14px;
+    margin-top: 2px;
+  }
+  .fleet-row .f-today {
+    text-align: left;
+  }
+  /* here the labels lay out normally again: the numbers have no headers.
+     The gaps around them are real spaces in the markup, so they are read as
+     well as seen — a margin is invisible to a screen reader, which would
+     hear "next17m". */
+  .fleet-row .lbl {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip-path: none;
+  }
+  .only-wide {
+    display: none;
+  }
+  .only-narrow {
+    display: inline;
+  }
 }
 
 .empty {
