@@ -48,6 +48,12 @@ type Bridge struct {
 
 	pairMu       sync.Mutex
 	pairNotified map[int64]bool // senders already told their pairing code this run
+	// notOwnerNotified tracks which (loop, private chat) pairs have been
+	// told that the loop answers only its owner, so each bot says it once
+	// per run. Keyed by loop as well as chat: a private chat's id is the
+	// human's user id in every bot's numbering, so a fleet-wide key would
+	// let the first bot's notice silence all the others.
+	notOwnerNotified map[string]bool
 }
 
 // NewBridge builds the bridge. apiBase is the Bot API to talk to; "" means
@@ -58,7 +64,7 @@ func NewBridge(st store.Store, b *bus.Bus, r *route.Router, log *slog.Logger, ap
 	}
 	return &Bridge{store: st, bus: b, router: r, log: log, apiBase: apiBase,
 		pollers: map[string]*poller{}, dedup: newDedupLRU(dedupSize),
-		pairNotified: map[int64]bool{}}
+		pairNotified: map[int64]bool{}, notOwnerNotified: map[string]bool{}}
 }
 
 // Start launches pollers for every configured loop and the mirror consumer.
@@ -280,6 +286,16 @@ func (br *Bridge) handleMessage(ctx context.Context, p *poller, m *tgMsgAlias) {
 	}
 
 	if m.Chat.Type == "private" {
+		br.maybeCaptureOwnerDM(ctx, p, m)
+		if !br.ownerOf(ctx, p, m.From.ID) {
+			// Not the loop's owner. Delivering this would leave the loop
+			// unable to answer — owner_dm addresses the owner, so the reply
+			// would land in someone else's chat. Until non-owner private
+			// conversations are designed, say so instead of going silent
+			// (ADR-0026 amendment).
+			br.notifyNotOwner(ctx, p, m.Chat.ID)
+			return
+		}
 		if !br.dedup.Add(dedupKey(p.loopID, m.Chat.ID, m.MessageID)) {
 			return
 		}
@@ -562,6 +578,62 @@ func (br *Bridge) maybeBindGroup(ctx context.Context, p *poller, chatID int64) {
 	br.bus.Publish(bus.Item{Kind: bus.KindLoopStatus, LoopID: l.ID, Payload: map[string]any{
 		"loop_id": l.ID, "name": l.Name, "tg_group_bound": true,
 	}})
+}
+
+// maybeCaptureOwnerDM records where this loop's bot can write privately to
+// its configured owner. A bot cannot open a private chat, so the address
+// only exists once the owner has written to this bot at least once — and it
+// is that bot's chat, not another's (#73). Only the configured owner's chat
+// is captured: being allowlisted, or messaging first, does not make someone
+// the owner.
+func (br *Bridge) maybeCaptureOwnerDM(ctx context.Context, p *poller, m *tgMsgAlias) {
+	l, err := br.store.Loops().Get(ctx, p.loopID)
+	if err != nil || l.OwnerTGUserID == 0 || l.OwnerTGUserID != m.From.ID {
+		return
+	}
+	if l.OwnerDMChatID == m.Chat.ID {
+		return
+	}
+	l.OwnerDMChatID = m.Chat.ID
+	l.UpdatedAt = time.Now().UnixMilli()
+	if err := br.store.Loops().Update(ctx, l); err != nil {
+		br.log.Error("owner dm capture", "loop", l.Name, "err", err)
+		return
+	}
+	br.log.Info("owner dm captured", "loop", l.Name, "chat_id", m.Chat.ID)
+	br.bus.Publish(bus.Item{Kind: bus.KindLoopStatus, LoopID: l.ID, Payload: map[string]any{
+		"loop_id": l.ID, "name": l.Name, "owner_dm_ready": true,
+	}})
+}
+
+// ownerOf reports whether tgUserID is the loop's configured owner.
+func (br *Bridge) ownerOf(ctx context.Context, p *poller, tgUserID int64) bool {
+	l, err := br.store.Loops().Get(ctx, p.loopID)
+	return err == nil && l.OwnerTGUserID != 0 && l.OwnerTGUserID == tgUserID
+}
+
+// notifyNotOwner tells a non-owner, once per loop per run, why their DM
+// goes unanswered. The same pacing as the pairing code — a turned away
+// sender should learn the reason, not be answered on every message — but
+// per loop, because each one answers a different owner.
+func (br *Bridge) notifyNotOwner(ctx context.Context, p *poller, chatID int64) {
+	key := fmt.Sprintf("%s:%d", p.loopID, chatID)
+	br.pairMu.Lock()
+	notified := br.notOwnerNotified[key]
+	br.notOwnerNotified[key] = true
+	br.pairMu.Unlock()
+	if notified {
+		return
+	}
+	owner := "its owner"
+	if l, err := br.store.Loops().Get(ctx, p.loopID); err == nil && l.OwnerTGUserID != 0 {
+		if s, err := br.store.TGSenders().Get(ctx, l.OwnerTGUserID); err == nil && s.Username != "" {
+			owner = "@" + s.Username
+		}
+	}
+	p.enqueueSend(chatID, fmt.Sprintf(
+		"Spool: %s reads direct messages only from %s for now. Reach it in the group instead.",
+		p.name, owner))
 }
 
 func (br *Bridge) replyStatus(ctx context.Context, p *poller, chatID int64) {
