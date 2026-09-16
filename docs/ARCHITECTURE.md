@@ -168,3 +168,10 @@ Migrate opportunistically, not big-bang.
   deliberately broadcasts. Owner–loop DMs stay private, including when inputs
   arrive alongside group traffic. Activity is a read-only overview with an explicit
   messaging action. Fleet rules continue to carry durable rulings.
+- **Colour means something, or it is white** (ADR-0027): the control room
+  spends colour only on system state — orange for work happening or wanted
+  soon, green for healthy, red for what is wrong or unsafe. Identity, primary
+  action and selection are white. A state the operator chose renders neutral
+  when the choice removes exposure (paused, asleep, powered off) and stays red
+  when it adds it — a loop running with no wall around it is chosen, and still
+  a standing risk.
