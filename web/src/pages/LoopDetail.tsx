@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
-import { api, LoopView, MessageDestination, Turn } from '../api'
+import { api, ChatMessage, LoopView, MessageDestination, Turn } from '../api'
 import { formatTokens, fillTone } from '../format'
 import { MODEL_OPTIONS, EFFORT_OPTIONS, PACING_OPTIONS } from '../options'
 import { useStream } from '../stream'
@@ -425,6 +425,28 @@ function SecretsPanel({ loop }: { loop: LoopView }) {
   )
 }
 
+// ControlRoomThread renders the loop's private control_room conversation:
+// the operator's composer messages and the loop's control_room sends,
+// oldest first. Status notes stay on the timeline pane with their turns.
+function ControlRoomThread({ msgs }: { msgs: ChatMessage[] }) {
+  if (msgs.length === 0) {
+    return <div className="empty">A private thread between you and this loop. Nothing yet.</div>
+  }
+  return (
+    <div className="timeline">
+      {[...msgs].reverse().map((m) => (
+        <div key={m.id} className={`knot${m.origin === 'loop' ? '' : ' inbound'}`}>
+          <div className="who">
+            <span className="author">@{m.author}</span> ·{' '}
+            {new Date(m.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </div>
+          <div className={m.origin === 'loop' ? 'plain' : 'bubble'}>{m.text}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function LoopDetail() {
   const { name = '' } = useParams()
   const nav = useNavigate()
@@ -435,6 +457,7 @@ export default function LoopDetail() {
   const [runningVerb, setRunningVerb] = useState('')
   const [draft, setDraft] = useState('')
   const [dest, setDest] = useState<MessageDestination>('control_room')
+  const [pane, setPane] = useState<'timeline' | 'control_room'>('timeline')
   const bottomRef = useRef<HTMLDivElement>(null)
 
   const { data: loop } = useQuery({
@@ -443,6 +466,12 @@ export default function LoopDetail() {
     refetchInterval: 10000,
   })
   const { data: events } = useQuery({ queryKey: ['events', name], queryFn: () => api.events(name) })
+  const { data: thread } = useQuery({
+    queryKey: ['conversation', name],
+    queryFn: () => api.conversation(name),
+    enabled: pane === 'control_room',
+    refetchInterval: 5000,
+  })
   const { data: turns } = useQuery({ queryKey: ['turns', name], queryFn: () => api.turns(name, 10) })
 
   useStream(
@@ -489,6 +518,7 @@ export default function LoopDetail() {
     if (!text) return
     setDraft('')
     await api.message(name, text, dest)
+    qc.invalidateQueries({ queryKey: ['conversation', name] })
   }
 
   if (!loop) return <div className="page">Loading…</div>
@@ -515,7 +545,22 @@ export default function LoopDetail() {
                 Workstation down{loop.workstation_detail ? `: ${loop.workstation_detail}` : ''}
               </div>
             ))}
-          <Timeline entries={entries} liveText={liveText} />
+          <div className="dest-picker" style={{ marginTop: 0, marginBottom: 12 }}>
+            <button className={`dest${pane === 'timeline' ? ' on' : ''}`} onClick={() => setPane('timeline')}>
+              timeline
+            </button>
+            <button
+              className={`dest${pane === 'control_room' ? ' on' : ''}`}
+              onClick={() => setPane('control_room')}
+            >
+              control room
+            </button>
+          </div>
+          {pane === 'timeline' ? (
+            <Timeline entries={entries} liveText={liveText} />
+          ) : (
+            <ControlRoomThread msgs={thread ?? []} />
+          )}
           <div ref={bottomRef} />
           <div className="dest-picker">
             <span className="dest-label">to</span>

@@ -222,6 +222,8 @@ export const api = {
     req<LoopEvent[]>(`/api/loops/${name}/events?after_id=${afterId}&limit=${limit}`),
   turns: (name: string, limit = 50) => req<Turn[]>(`/api/loops/${name}/turns?limit=${limit}`),
   activity: (limit = 100) => req<ChatMessage[]>(`/api/activity?limit=${limit}`),
+  conversation: (name: string, kind: 'control_room' | 'owner_dm' = 'control_room', limit = 100) =>
+    req<ChatMessage[]>(`/api/loops/${name}/conversation?conversation=${kind}&limit=${limit}`),
   telegramStatus: (name: string) =>
     req<{ configured: boolean; bot_username: string; group_bound: boolean; bridge?: unknown }>(
       `/api/loops/${name}/telegram/status`,

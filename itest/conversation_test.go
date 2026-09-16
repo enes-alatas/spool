@@ -40,3 +40,38 @@ func TestSeparateTurnsPerConversation(t *testing.T) {
 			webTurn.ResultText, groupTurn.ResultText)
 	}
 }
+
+// TestControlRoomThreadEndpoint: the per-loop conversation endpoint returns
+// exactly the private thread — the operator's composer messages and the
+// loop's control_room sends, newest first — and refuses the group kind,
+// which has no per-loop thread.
+func TestControlRoomThreadEndpoint(t *testing.T) {
+	ws := workspaceWithScript(t, "!ctx 0\n"+
+		`!send {"destination":"control_room","text":"thread reply"}`+"\n")
+	s := startServer(t, t.TempDir())
+	s.createLoop("aster", map[string]any{"workspace_path": ws})
+
+	s.message("aster", "thread question")
+
+	var thread []activityMessage
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		s.mustJSON("GET", "/api/loops/aster/conversation", nil, &thread)
+		if len(thread) >= 2 {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if len(thread) != 2 || thread[0].Text != "thread reply" || thread[1].Text != "thread question" {
+		t.Fatalf("control_room thread = %s, want the reply then the question", dump(thread))
+	}
+	for _, m := range thread {
+		if m.Conversation != "control_room" {
+			t.Fatalf("thread returned a %q message: %s", m.Conversation, dump(m))
+		}
+	}
+
+	if resp, _ := s.do("GET", "/api/loops/aster/conversation?conversation=group", nil); resp.StatusCode != 400 {
+		t.Fatalf("group thread request answered %d, want 400", resp.StatusCode)
+	}
+}

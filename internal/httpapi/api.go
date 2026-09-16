@@ -93,6 +93,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/loops/{name}/secrets/{key}", s.handlePutSecret)
 	mux.HandleFunc("DELETE /api/loops/{name}/secrets/{key}", s.handleDeleteSecret)
 	mux.HandleFunc("GET /api/activity", s.handleActivity)
+	mux.HandleFunc("GET /api/loops/{name}/conversation", s.handleLoopConversation)
 	mux.HandleFunc("GET /api/settings", s.handleGetSettings)
 	mux.HandleFunc("PUT /api/settings", s.handlePutSettings)
 	mux.HandleFunc("GET /api/rules", s.handleListRules)
@@ -817,6 +818,30 @@ func validateClaudeToken(raw string) (string, error) {
 		return "", fmt.Errorf("token doesn't look like a setup-token (expected an %s… value from `claude setup-token`)", claudeTokenPrefix)
 	}
 	return token, nil
+}
+
+// handleLoopConversation serves one of the loop's private conversation
+// threads: control_room (the default) or owner_dm. The shared group has no
+// per-loop thread — it lives on /api/activity.
+func (s *Server) handleLoopConversation(w http.ResponseWriter, r *http.Request) {
+	l := s.loopByName(w, r)
+	if l == nil {
+		return
+	}
+	kind := defaultStr(r.URL.Query().Get("conversation"), store.ConversationControlRoom)
+	if kind != store.ConversationControlRoom && kind != store.ConversationOwnerDM {
+		s.jsonErr(w, 400, "conversation must be %s or %s", store.ConversationControlRoom, store.ConversationOwnerDM)
+		return
+	}
+	msgs, err := s.Store.Messages().ListConversation(r.Context(), kind, l.ID, queryInt(r, "limit", 100))
+	if err != nil {
+		s.jsonErr(w, 500, "%v", err)
+		return
+	}
+	if msgs == nil {
+		msgs = []*store.Message{}
+	}
+	writeJSON(w, 200, msgs)
 }
 
 func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
