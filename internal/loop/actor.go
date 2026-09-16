@@ -633,6 +633,9 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 	actor.backoff = 0
 	actor.freshSpawn = false
 	res := ev.Result
+	if claude.IsPromptTooLong(res) {
+		actor.recordOversizedBatch()
+	}
 	if actor.turn != nil && res != nil {
 		t := actor.turn
 		t.EndedAt = now()
@@ -843,6 +846,24 @@ func (actor *Actor) handleProcExit() {
 		actor.log().Warn("claude process crashed", "code", exit.Code, "stderr", tail(exit.Stderr, 500))
 		actor.crashBackoff()
 	}
+}
+
+// recordOversizedBatch notes that the turn's payload did not fit the model's
+// context window. The batch dies with the turn either way — what this adds is
+// a verdict the operator can act on: an ordinary errored turn says a loop
+// failed, while this says a specific message was too big to deliver and no
+// retry will change that. The text is not recorded: it is the thing
+// that was too large, and the timeline is not the place for it.
+func (actor *Actor) recordOversizedBatch() {
+	chars := 0
+	for _, env := range actor.currentBatch {
+		chars += len(env.Text)
+	}
+	actor.storeSpoolEvent("message_too_long", fmt.Sprintf(
+		`{"messages":%d,"chars":%d,"model":%q,"window_tokens":%d}`,
+		len(actor.currentBatch), chars, actor.activeModel, ContextLimit(actor.activeModel)))
+	actor.log().Warn("message too long for the model's context window",
+		"messages", len(actor.currentBatch), "chars", chars, "model", actor.activeModel)
 }
 
 // rotateSession abandons the loop's claude session and starts a fresh one,

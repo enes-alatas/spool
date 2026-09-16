@@ -382,3 +382,35 @@ func TestContextRotationSurvivesHandoffCrash(t *testing.T) {
 		return strings.Contains(tr.ResultText, "still alive?") && tr.SessionID != failed.SessionID
 	})
 }
+
+// A message too big for the model's window comes back as an ordinary errored
+// turn saying "Prompt is too long" (verified by make e2e-context). The loop
+// must call that what it is — a payload that will never fit — rather than
+// filing it with every other model error, and must carry on afterwards.
+func TestOverWindowMessageIsRecordedAsTooLong(t *testing.T) {
+	s := startServer(t, t.TempDir())
+	s.createLoop("oversize", map[string]any{
+		"workspace_path": workspaceWithScript(t, "first turn fits\n!toolong"),
+		"workspace_mode": "dir",
+	})
+	first := s.waitTurn("oversize", 30*time.Second, func(tr turn) bool {
+		return strings.Contains(tr.ResultText, "first turn fits")
+	})
+
+	s.message("oversize", "a wall of text")
+	failed := s.waitTurn("oversize", 30*time.Second, func(tr turn) bool {
+		return strings.Contains(tr.ResultText, "Prompt is too long")
+	})
+	if !failed.IsError {
+		t.Fatal("an over-window turn must be recorded as errored")
+	}
+	if !s.hasEvent("oversize", "message_too_long", 10*time.Second) {
+		t.Fatal("no message_too_long event: the failure is indistinguishable from any model error")
+	}
+	if s.hasEvent("oversize", "crash", 2*time.Second) {
+		t.Fatal("an over-window turn is not a crash")
+	}
+	if failed.SessionID != first.SessionID {
+		t.Fatalf("session changed on an over-window turn: %s -> %s", first.SessionID, failed.SessionID)
+	}
+}
