@@ -411,3 +411,36 @@ func TestControlRoomStaysOutOfTheGroup(t *testing.T) {
 		}
 	}
 }
+
+// Unaddressed human group chatter is stored and visible but wakes no loop;
+// a mention delivers to the mentioned loop alone (ADR-0025 selective wake).
+func TestUnaddressedGroupChatterWakesNoLoop(t *testing.T) {
+	operator := user{ID: 4949, First: "Operator", Username: "operator"}
+	srv, tg := startTelegramFleet(t, operator)
+
+	const chatter = "just us humans talking"
+	tg.post(groupChatID, "supergroup", chatter, operator)
+	srv.waitForMessage(chatter)
+	if d := srv.activityWith(chatter)[0].DeliveredTo; len(d) != 0 {
+		t.Fatalf("unaddressed chatter delivered to %v, want nobody", d)
+	}
+
+	// the mention that follows proves delivery works while the chatter,
+	// ingested first, still reached nobody
+	tg.post(groupChatID, "supergroup", "@alpha only you", operator)
+	srv.waitTurn("alpha", 30*time.Second, func(tn turn) bool {
+		return strings.Contains(tn.ResultText, "only you")
+	})
+	for _, name := range []string{"alpha", "beta"} {
+		for _, tn := range srv.completed(name) {
+			if strings.Contains(tn.ResultText, chatter) {
+				t.Fatalf("unaddressed chatter reached %s: %s", name, dump(tn))
+			}
+		}
+	}
+	for _, tn := range srv.completed("beta") {
+		if tn.Trigger == "message" {
+			t.Fatalf("a message addressed to alpha alone woke beta: %s", dump(tn))
+		}
+	}
+}
