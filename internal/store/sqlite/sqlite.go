@@ -271,10 +271,11 @@ func (r messages) Insert(ctx context.Context, m *store.Message) error {
 	}
 	res, err := r.db.ExecContext(ctx, `INSERT INTO messages
 		(ts, origin, author, from_loop_id, text, mentions, tg_chat_id, tg_message_id,
-		 tg_bot_loop_id, delivered_to, conversation, conversation_loop_id)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+		 tg_bot_loop_id, delivered_to, conversation, conversation_loop_id, reply_to_id, tg_key)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		m.TS, m.Origin, m.Author, m.FromLoopID, m.Text, toJSON(m.Mentions), tgChat, tgMsg,
-		m.TGBotLoopID, toJSON(m.DeliveredTo), m.Conversation, m.ConversationLoopID)
+		m.TGBotLoopID, toJSON(m.DeliveredTo), m.Conversation, m.ConversationLoopID,
+		m.ReplyToID, m.TGKey)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			return store.ErrDuplicate
@@ -303,7 +304,7 @@ func (r messages) SetDelivered(ctx context.Context, id int64, deliveredTo []stri
 
 const messageCols = `id, ts, origin, author, from_loop_id, text,
 	mentions, COALESCE(tg_chat_id,0), COALESCE(tg_message_id,0), tg_bot_loop_id, delivered_to,
-	conversation, conversation_loop_id`
+	conversation, conversation_loop_id, reply_to_id, tg_key`
 
 func (r messages) List(ctx context.Context, limit int) ([]*store.Message, error) {
 	return r.query(ctx, `SELECT `+messageCols+` FROM messages ORDER BY id DESC LIMIT ?`, limit)
@@ -313,6 +314,121 @@ func (r messages) ListConversation(ctx context.Context, kind, loopID string, lim
 	return r.query(ctx, `SELECT `+messageCols+` FROM messages
 		WHERE conversation=? AND conversation_loop_id=?
 		ORDER BY id DESC LIMIT ?`, kind, loopID, limit)
+}
+
+// Get resolves one message by id — how a reply target named in a send
+// becomes the message it refers to.
+func (r messages) Get(ctx context.Context, id int64) (*store.Message, error) {
+	out, err := r.query(ctx, `SELECT `+messageCols+` FROM messages WHERE id=?`, id)
+	if err != nil {
+		return nil, err
+	}
+	if len(out) == 0 {
+		return nil, store.ErrNotFound
+	}
+	return out[0], nil
+}
+
+func (r messages) PutRef(ctx context.Context, ref *store.SurfaceRef) error {
+	_, err := r.db.ExecContext(ctx, `INSERT INTO message_refs
+		(message_id, bot_loop_id, tg_chat_id, tg_message_id) VALUES (?,?,?,?)
+		ON CONFLICT (message_id, bot_loop_id) DO UPDATE SET
+			tg_chat_id=excluded.tg_chat_id, tg_message_id=excluded.tg_message_id`,
+		ref.MessageID, ref.BotLoopID, ref.TGChatID, ref.TGMessageID)
+	return err
+}
+
+// Ref prefers the exact reference — an id this bot itself received or was
+// given when it sent the message — and falls back to its sighting of the
+// message, which is how a bot that did not ingest a group message still
+// knows its own id for it.
+func (r messages) Ref(ctx context.Context, messageID int64, botLoopID string) (*store.SurfaceRef, error) {
+	ref := store.SurfaceRef{MessageID: messageID, BotLoopID: botLoopID}
+	err := r.db.QueryRowContext(ctx, `SELECT tg_chat_id, tg_message_id FROM message_refs
+		WHERE message_id=? AND bot_loop_id=?`, messageID, botLoopID).Scan(&ref.TGChatID, &ref.TGMessageID)
+	if err == nil {
+		return &ref, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+	err = r.db.QueryRowContext(ctx, `SELECT s.tg_chat_id, s.tg_message_id
+		FROM tg_sightings s JOIN messages m ON m.tg_key = s.tg_key
+		WHERE m.id=? AND m.tg_key != '' AND s.bot_loop_id=?`,
+		messageID, botLoopID).Scan(&ref.TGChatID, &ref.TGMessageID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, store.ErrNotFound
+	}
+	return &ref, err
+}
+
+// sightingRetention bounds tg_sightings: a reply to a message older than
+// this renders without a native anchor rather than keeping every id forever.
+const sightingRetention = 30 * 24 * 60 * 60 * 1000 // ms
+
+func (r messages) RecordSighting(ctx context.Context, tgKey, botLoopID string, chatID, messageID, seenAt int64) error {
+	if _, err := r.db.ExecContext(ctx, `INSERT INTO tg_sightings
+		(tg_key, bot_loop_id, tg_chat_id, tg_message_id, seen_at) VALUES (?,?,?,?,?)
+		ON CONFLICT (tg_key, bot_loop_id) DO NOTHING`,
+		tgKey, botLoopID, chatID, messageID, seenAt); err != nil {
+		return err
+	}
+	_, err := r.db.ExecContext(ctx, `DELETE FROM tg_sightings WHERE seen_at < ?`, seenAt-sightingRetention)
+	return err
+}
+
+func (r messages) ByRef(ctx context.Context, botLoopID string, chatID, tgMessageID int64) (*store.Message, error) {
+	var id int64
+	err := r.db.QueryRowContext(ctx, `SELECT message_id FROM message_refs
+		WHERE bot_loop_id=? AND tg_chat_id=? AND tg_message_id=?`,
+		botLoopID, chatID, tgMessageID).Scan(&id)
+	if err == nil {
+		return r.Get(ctx, id)
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+	var key string
+	err = r.db.QueryRowContext(ctx, `SELECT tg_key FROM tg_sightings
+		WHERE bot_loop_id=? AND tg_chat_id=? AND tg_message_id=?`,
+		botLoopID, chatID, tgMessageID).Scan(&key)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, store.ErrNotFound
+	} else if err != nil {
+		return nil, err
+	}
+	return r.ByTGKey(ctx, key)
+}
+
+func (r messages) ByTGKey(ctx context.Context, tgKey string) (*store.Message, error) {
+	if tgKey == "" {
+		return nil, store.ErrNotFound
+	}
+	out, err := r.query(ctx, `SELECT `+messageCols+` FROM messages WHERE tg_key=? ORDER BY id LIMIT 1`, tgKey)
+	if err != nil {
+		return nil, err
+	}
+	if len(out) == 0 {
+		return nil, store.ErrNotFound
+	}
+	return out[0], nil
+}
+
+func (r messages) LatestGroupTextFrom(ctx context.Context, text string) (*store.Message, error) {
+	out, err := r.query(ctx, `SELECT `+messageCols+` FROM messages
+		WHERE conversation=? AND from_loop_id != '' AND text=?
+		ORDER BY id DESC LIMIT 2`, store.ConversationGroup, text)
+	if err != nil {
+		return nil, err
+	}
+	// Exact or nothing. Two loops posting the same words — terse acks, in
+	// this fleet — are indistinguishable here, and the answer becomes a
+	// delivery recipient, not just a visual anchor. Picking the newest
+	// would wake a loop about a message it never wrote.
+	if len(out) != 1 {
+		return nil, store.ErrNotFound
+	}
+	return out[0], nil
 }
 
 func (r messages) query(ctx context.Context, q string, args ...any) ([]*store.Message, error) {
@@ -327,7 +443,7 @@ func (r messages) query(ctx context.Context, q string, args ...any) ([]*store.Me
 		var mentions, delivered string
 		if err := rows.Scan(&m.ID, &m.TS, &m.Origin, &m.Author, &m.FromLoopID, &m.Text,
 			&mentions, &m.TGChatID, &m.TGMessageID, &m.TGBotLoopID, &delivered,
-			&m.Conversation, &m.ConversationLoopID); err != nil {
+			&m.Conversation, &m.ConversationLoopID, &m.ReplyToID, &m.TGKey); err != nil {
 			return nil, err
 		}
 		m.Mentions = fromJSON(mentions)
