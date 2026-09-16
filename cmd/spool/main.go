@@ -113,8 +113,8 @@ func main() {
 		OnTurnStart: func(l *store.Loop, ownerDMChat int64) {
 			router.StartTurn(l.ID, ownerDMChat)
 		},
-		SendsThisTurn: func(loopID string) int {
-			return router.SendCount(loopID)
+		SendsThisTurn: func(loopID string) []string {
+			return router.TurnSends(loopID)
 		},
 		OnTurnDone: func(l *store.Loop, trailer time.Duration, has bool) {
 			scheduler.ScheduleAfterTurn(l, trailer, has)

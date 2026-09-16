@@ -108,10 +108,11 @@ type Deps struct {
 	// when the batch is an owner_dm turn, 0 otherwise — so a later inbound
 	// DM cannot redirect a private reply already under way.
 	OnTurnStart func(l *store.Loop, ownerDMChat int64)
-	// SendsThisTurn reports how many messages the loop has sent since its
-	// budget last opened — what a redelivered batch's fresh session is told
-	// about, so a lost turn's sends are not repeated.
-	SendsThisTurn func(loopID string) int
+	// SendsThisTurn summarizes the messages the loop has sent since its
+	// budget last opened — what a redelivered batch's fresh session is told,
+	// so it can identify the lost turn's sends and not repeat them
+	// (ADR-0026 decision 5).
+	SendsThisTurn func(loopID string) []string
 	// OnTurnDone reschedules the loop's next tick after any completed turn.
 	OnTurnDone func(l *store.Loop, trailer time.Duration, hasTrailer bool)
 	// ClaudeToken returns the operator's stored setup-token, or "" when none is
@@ -159,12 +160,12 @@ type Actor struct {
 	inbox        []Envelope
 	currentBatch []Envelope // in-flight batch, kept for redelivery on session loss
 	turn         *store.Turn
-	redelivered  bool   // next batch repeats a turn whose session was lost mid-flight
-	lostSends    int    // sends made by every lost attempt of the turn being redelivered
-	freshSpawn   bool   // current process was started with --session-id (not resume)
-	sawInit      bool   // current process got as far as announcing itself
-	deadResumes  int    // consecutive resumes that died before announcing
-	activeModel  string // model the CLI reported at init, for the turn record
+	redelivered  bool     // next batch repeats a turn whose session was lost mid-flight
+	lostSends    []string // sends made by every lost attempt of the turn being redelivered
+	freshSpawn   bool     // current process was started with --session-id (not resume)
+	sawInit      bool     // current process got as far as announcing itself
+	deadResumes  int      // consecutive resumes that died before announcing
+	activeModel  string   // model the CLI reported at init, for the turn record
 	backoff      time.Duration
 
 	// Context rotation (ADR-0022): the loop sheds its context proactively,
@@ -522,17 +523,21 @@ func (actor *Actor) sendBatch(batch []Envelope) {
 	text := strings.Join(texts, "\n\n---\n\n")
 	if actor.redelivered {
 		// The lost attempts' sends are facts (immediate delivery, ADR-0026);
-		// the retry must know about them before its budget reopens below.
-		// They accumulate in lostSends because each attempt's budget
-		// restarts at zero — the last attempt's count alone would forget
-		// what the attempts before it sent.
+		// the retry must know what they were before its budget reopens
+		// below. They accumulate in lostSends because each attempt's log
+		// restarts empty — the last attempt's alone would forget what the
+		// attempts before it sent.
 		actor.redelivered = false
 		if actor.deps.SendsThisTurn != nil {
-			actor.lostSends += actor.deps.SendsThisTurn(actor.loop.ID)
+			actor.lostSends = append(actor.lostSends, actor.deps.SendsThisTurn(actor.loop.ID)...)
 		}
-		if actor.lostSends > 0 {
-			text = fmt.Sprintf("[system note · a previous attempt at this turn already sent %d message(s); do not send them again]", actor.lostSends) +
-				"\n\n---\n\n" + text
+		if len(actor.lostSends) > 0 {
+			var note strings.Builder
+			note.WriteString("[system note · a previous attempt at this turn already sent the following; do not send them again]")
+			for _, s := range actor.lostSends {
+				note.WriteString("\n- " + s)
+			}
+			text = note.String() + "\n\n---\n\n" + text
 		}
 	}
 	if actor.deps.OnTurnStart != nil {
@@ -661,7 +666,7 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 	}
 	actor.turn = nil
 	actor.currentBatch = nil
-	actor.lostSends = 0
+	actor.lostSends = nil
 	// A completed turn means any pending handoff note reached its session;
 	// finishHandoff below sets the next one after this clears the old.
 	actor.handoffNote = ""
@@ -833,7 +838,7 @@ func (actor *Actor) handleProcExit() {
 	default:
 		// the batch is dropped, so any lost-send tally for it dies with it
 		actor.currentBatch = nil
-		actor.lostSends = 0
+		actor.lostSends = nil
 		actor.storeSpoolEvent("crash", fmt.Sprintf(`{"code":%d,"stderr":%q}`, exit.Code, tail(exit.Stderr, 2000)))
 		actor.log().Warn("claude process crashed", "code", exit.Code, "stderr", tail(exit.Stderr, 500))
 		actor.crashBackoff()

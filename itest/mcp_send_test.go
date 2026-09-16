@@ -290,8 +290,10 @@ func TestRedeliveredTurnKnowsItsSends(t *testing.T) {
 		return !tn.IsError && strings.Contains(tn.ResultText, "risky business") &&
 			strings.Contains(tn.ResultText, "already sent")
 	})
-	if !strings.Contains(redelivered.ResultText, "already sent 1 message") {
-		t.Fatalf("fresh session not told about the lost attempt's send: %s", dump(redelivered))
+	// the note identifies the send — destination and content, not a bare
+	// count — so the retry can tell what is already out (ADR-0026)
+	if !strings.Contains(redelivered.ResultText, `to control_room: "pre-loss"`) {
+		t.Fatalf("fresh session not told what the lost attempt sent: %s", dump(redelivered))
 	}
 	n := 0
 	for _, m := range s.activity() {
