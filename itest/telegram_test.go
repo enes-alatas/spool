@@ -444,3 +444,27 @@ func TestUnaddressedGroupChatterWakesNoLoop(t *testing.T) {
 		}
 	}
 }
+
+// The per-loop composer declares its destination (ADR-0026): group posts to
+// the shared conversation — delivered to the loop and mirrored to the bound
+// telegram group — and a destination outside the picker's two is refused.
+func TestComposerGroupDestination(t *testing.T) {
+	operator := user{ID: 5050, First: "Operator", Username: "operator"}
+	srv, tg := startTelegramFleet(t, operator)
+
+	srv.mustJSON("POST", "/api/loops/alpha/message",
+		map[string]any{"author": "operator", "text": "to the group", "destination": "group"}, nil)
+	tg.waitSent(t, groupChatID, "to the group")
+	srv.waitTurn("alpha", 30*time.Second, func(tn turn) bool {
+		return strings.Contains(tn.ResultText, "to the group")
+	})
+	stored := srv.activityWith("to the group")
+	if len(stored) != 1 || stored[0].Conversation != "group" {
+		t.Fatalf("group-destination message stored as: %s", dump(stored))
+	}
+
+	if resp, _ := srv.do("POST", "/api/loops/alpha/message",
+		map[string]any{"text": "x", "destination": "owner_dm"}); resp.StatusCode != 400 {
+		t.Fatalf("owner_dm composer destination accepted: %d", resp.StatusCode)
+	}
+}

@@ -40,6 +40,10 @@ type InboundMessage struct {
 	// ImplicitTo optionally targets a loop with no mention needed
 	// (DM to a loop's bot, or POST /api/loops/{name}/message).
 	ImplicitTo string // loop ID
+	// Conversation optionally names the destination outright — the web
+	// composer's declared destination (ADR-0026). Empty means derive it
+	// from the origin. Callers pass a validated store.Conversation* value.
+	Conversation string
 }
 
 // MessagePayload is what KindMessage bus items carry (UI + telegram mirror).
@@ -86,13 +90,17 @@ func Mentions(text string) []string {
 	return out
 }
 
-// conversationFor derives the conversation a message belongs to (ADR-0026)
-// from its origin: a DM to a loop's bot is that loop's owner_dm, the per-loop
-// web composer is its control_room, and everything else — group traffic and
-// loop replies — is the shared group. Explicit destinations replace this
-// derivation once loops send through the MCP tool.
+// conversationFor resolves the conversation a message belongs to (ADR-0026).
+// An explicit destination — the web composer's picker — wins; otherwise it
+// derives from the origin: a DM to a loop's bot is that loop's owner_dm, the
+// per-loop web composer is its control_room, and everything else — group
+// traffic and loop replies — is the shared group.
 func conversationFor(in InboundMessage) (kind, loopID string) {
 	switch {
+	case in.Conversation == store.ConversationGroup:
+		return store.ConversationGroup, ""
+	case in.Conversation != "":
+		return in.Conversation, in.ImplicitTo
 	case in.Origin == store.OriginTelegramDM:
 		return store.ConversationOwnerDM, in.ImplicitTo
 	case in.Origin == store.OriginWeb && in.ImplicitTo != "":
