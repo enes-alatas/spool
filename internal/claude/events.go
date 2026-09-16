@@ -27,10 +27,13 @@ type InitInfo struct {
 }
 
 // AssistantInfo carries the API message of an assistant event. Content is kept
-// raw for storage/UI; Text is the concatenation of its text blocks.
+// raw for storage/UI; Text is the concatenation of its text blocks. Usage is
+// this one API call's usage — unlike the result event's, which sums every
+// call of the turn and says nothing about context occupancy.
 type AssistantInfo struct {
 	Text    string
 	Content json.RawMessage
+	Usage   Usage
 }
 
 type Usage struct {
@@ -81,12 +84,14 @@ func DecodeEvent(line []byte) Event {
 		var body struct {
 			Message struct {
 				Content json.RawMessage `json:"content"`
+				Usage   Usage           `json:"usage"`
 			} `json:"message"`
 		}
 		if json.Unmarshal(line, &body) == nil {
 			ev.Assistant = &AssistantInfo{
 				Text:    textFromContent(body.Message.Content),
 				Content: body.Message.Content,
+				Usage:   body.Message.Usage,
 			}
 		}
 	case "result":
