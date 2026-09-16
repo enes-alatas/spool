@@ -39,6 +39,14 @@ func TestSeparateTurnsPerConversation(t *testing.T) {
 		t.Fatalf("conversation inputs blended across turns:\nweb: %s\ngroup: %s",
 			webTurn.ResultText, groupTurn.ResultText)
 	}
+	// the echoed input carries the envelope header: the model must see which
+	// conversation each message belongs to (ADR-0026)
+	if !strings.Contains(webTurn.ResultText, "· control_room") {
+		t.Fatalf("control_room input not labeled for the model: %s", webTurn.ResultText)
+	}
+	if !strings.Contains(groupTurn.ResultText, "· group") {
+		t.Fatalf("group input not labeled for the model: %s", groupTurn.ResultText)
+	}
 }
 
 // TestControlRoomThreadEndpoint: the per-loop conversation endpoint returns

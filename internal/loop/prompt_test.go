@@ -92,6 +92,34 @@ func TestSystemPromptFleetRules(t *testing.T) {
 // TestRotationEnvelope pins the handoff request of the rotation contract
 // (ADR-0022): it asks for a handoff note, carries the rotation trigger, and
 // forbids the trailer a normal reply may end with.
+// TestMessageEnvelopeNamesConversation pins that every inbound header names
+// the conversation it belongs to — a private web message and one posted to
+// the group must never look alike to the model (ADR-0026).
+func TestMessageEnvelopeNamesConversation(t *testing.T) {
+	now := time.Now()
+	cases := []struct {
+		name string
+		env  Envelope
+		want string
+	}{
+		{"web control_room", MessageEnvelope(now, store.OriginWeb, "enes", "x", store.ConversationControlRoom, false, 0),
+			"message from enes via web · control_room"},
+		{"web group", MessageEnvelope(now, store.OriginWeb, "enes", "x", store.ConversationGroup, false, 0),
+			"message from enes via web · group"},
+		{"telegram dm", MessageEnvelope(now, store.OriginTelegramDM, "enes", "x", store.ConversationOwnerDM, false, 42),
+			"message from @enes via telegram dm · owner_dm"},
+		{"telegram group", MessageEnvelope(now, store.OriginTelegramGroup, "enes", "x", store.ConversationGroup, false, 0),
+			"message from @enes via telegram · group"},
+		{"loop group send", MessageEnvelope(now, store.OriginLoop, "terra", "x", store.ConversationGroup, true, 0),
+			"message from @terra (loop) · group"},
+	}
+	for _, c := range cases {
+		if !strings.Contains(c.env.Text, c.want) {
+			t.Errorf("%s: header %q missing %q", c.name, c.env.Text, c.want)
+		}
+	}
+}
+
 func TestRotationEnvelope(t *testing.T) {
 	env := RotationEnvelope(time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC))
 	if env.Trigger != store.TriggerRotation {

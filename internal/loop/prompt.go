@@ -70,8 +70,12 @@ func SystemPrompt(l *store.Loop, peers []Peer, rules []*store.FleetRule) string 
 
 	b.WriteString(`HOW THIS WORKS
 - You are woken periodically (ticks) and whenever someone sends you a message.
-- Incoming messages arrive as user turns with a bracketed header identifying
-  the sender and channel, e.g. "[message from @enes via telegram group · ...]".
+- Incoming messages arrive as user turns with a bracketed header naming the
+  sender and the conversation it belongs to, e.g.
+  "[message from @enes via telegram · group · ...]" or
+  "[message from enes via web · control_room · ...]". Answer through the
+  send_message destination matching that conversation unless you have a
+  reason to choose another.
   Tick turns are headed "[tick · ...]".
 - To say anything to anyone, use the send_message tool. Each call sends one
   message to one destination:
@@ -168,17 +172,22 @@ func header(now time.Time, s string) string {
 // MessageEnvelope formats an inbound chat message for injection.
 // origin: store.Origin* constants; author is the display name (no @);
 // conversation is the store.Conversation* kind the message belongs to.
+// The header always names the conversation, so the loop can answer through
+// the matching send destination — two web messages must not look alike when
+// one is private and one is in the group (ADR-0026).
 func MessageEnvelope(now time.Time, origin, author, text, conversation string, fromLoop bool, tgChatID int64) Envelope {
 	var from string
 	switch {
 	case fromLoop:
-		from = fmt.Sprintf("message from @%s (loop)", author)
+		from = fmt.Sprintf("message from @%s (loop) · group", author)
 	case origin == store.OriginTelegramGroup:
-		from = fmt.Sprintf("message from @%s via telegram group", author)
+		from = fmt.Sprintf("message from @%s via telegram · group", author)
 	case origin == store.OriginTelegramDM:
-		from = fmt.Sprintf("message from @%s via telegram dm", author)
+		from = fmt.Sprintf("message from @%s via telegram dm · owner_dm", author)
+	case conversation == store.ConversationControlRoom:
+		from = fmt.Sprintf("message from %s via web · control_room", author)
 	default:
-		from = fmt.Sprintf("message from %s via web", author)
+		from = fmt.Sprintf("message from %s via web · group", author)
 	}
 	return Envelope{
 		Trigger:      store.TriggerMessage,
