@@ -37,6 +37,12 @@ type InboundMessage struct {
 	// TGBotLoopID is the loop whose bot saw the message; part of a telegram
 	// message's identity, since message_id is numbered per bot.
 	TGBotLoopID string
+	// TGKey joins this message to the sightings other bots recorded of it,
+	// which is how a bot that did not ingest it can still reply natively.
+	TGKey string
+	// ReplyToID is the message a native reply points at (0 = not a reply).
+	// The surface adapter resolves it; the router never infers one.
+	ReplyToID int64
 	// ImplicitTo optionally targets a loop with no mention needed
 	// (DM to a loop's bot, or POST /api/loops/{name}/message).
 	ImplicitTo string // loop ID
@@ -136,6 +142,8 @@ func (r *Router) Ingest(ctx context.Context, in InboundMessage) error {
 		TGChatID:    in.TGChatID,
 		TGMessageID: in.TGMessageID,
 		TGBotLoopID: in.TGBotLoopID,
+		TGKey:       in.TGKey,
+		ReplyToID:   in.ReplyToID,
 
 		Conversation:       conv,
 		ConversationLoopID: convLoopID,
@@ -161,11 +169,33 @@ func (r *Router) Ingest(ctx context.Context, in InboundMessage) error {
 	// A private conversation delivers exclusively to its own loop: names in
 	// private text never add recipients (ADR-0025). Only the group resolves
 	// mentions into deliveries.
+	// A native reply is shown to the recipient as what it answers, and in
+	// the group it addresses the message's author with no mention needed
+	// (ADR-0025). A reply to a human addresses a human and wakes nobody;
+	// the original's other recipients are never inherited.
+	var replyTo *store.Message
+	replyRef := ""
+	if in.ReplyToID != 0 {
+		target, err := r.store.Messages().Get(ctx, in.ReplyToID)
+		if err != nil {
+			r.log.Warn("reply target vanished", "id", in.ReplyToID, "err", err)
+		} else {
+			replyTo, replyRef = target, loop.MessageRef(target.ID)
+		}
+	}
+
 	targets := map[string]*store.Loop{}
 	if conv == store.ConversationGroup {
 		for _, m := range mentions {
 			if l, ok := byKey[m]; ok && l.ID != in.FromLoopID && l.Status != store.StatusArchived {
 				targets[l.ID] = l
+			}
+		}
+		if replyTo != nil && replyTo.FromLoopID != "" && replyTo.FromLoopID != in.FromLoopID {
+			for _, l := range loops {
+				if l.ID == replyTo.FromLoopID && l.Status != store.StatusArchived {
+					targets[l.ID] = l
+				}
 			}
 		}
 	}
@@ -202,7 +232,16 @@ func (r *Router) Ingest(ctx context.Context, in InboundMessage) error {
 			r.recordStormDrop(ctx, in.FromLoopID, fromLoopName, target)
 			continue
 		}
-		env := loop.MessageEnvelope(nowT, in.Origin, in.Author, in.Text, conv, in.FromLoopID != "", dmChatFor(in))
+		env := loop.MessageEnvelope(nowT, loop.Inbound{
+			Origin:       in.Origin,
+			Author:       in.Author,
+			Text:         in.Text,
+			Conversation: conv,
+			FromLoop:     in.FromLoopID != "",
+			TGChatID:     dmChatFor(in),
+			Ref:          loop.MessageRef(msg.ID),
+			ReplyTo:      replyRef,
+		})
 		if !r.deliver.Deliver(target.ID, env) {
 			r.log.Warn("deliver to unknown runtime", "loop", target.Name)
 		}

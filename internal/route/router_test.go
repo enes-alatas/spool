@@ -89,3 +89,34 @@ func TestTurnPinsOwnerDMChat(t *testing.T) {
 		t.Fatalf("pin survived a non-DM turn: %d", got)
 	}
 }
+
+// TestSameConversation: a reply target must belong to the conversation being
+// sent to. Only the group has no loop key; on a private kind an empty key is
+// a backfilled row (migration 0009), not a wildcard — reading it as one
+// would quote another loop's DM into this one (ADR-0025).
+func TestSameConversation(t *testing.T) {
+	cases := []struct {
+		name        string
+		target      store.Message
+		destination string
+		want        bool
+	}{
+		{"group message answered in the group",
+			store.Message{Conversation: store.ConversationGroup}, store.ConversationGroup, true},
+		{"own owner_dm message",
+			store.Message{Conversation: store.ConversationOwnerDM, ConversationLoopID: "l1"}, store.ConversationOwnerDM, true},
+		{"another loop's owner_dm message",
+			store.Message{Conversation: store.ConversationOwnerDM, ConversationLoopID: "l2"}, store.ConversationOwnerDM, false},
+		{"owner_dm message keyed to no loop",
+			store.Message{Conversation: store.ConversationOwnerDM}, store.ConversationOwnerDM, false},
+		{"control_room message keyed to no loop",
+			store.Message{Conversation: store.ConversationControlRoom}, store.ConversationControlRoom, false},
+		{"group message answered in a DM",
+			store.Message{Conversation: store.ConversationGroup}, store.ConversationOwnerDM, false},
+	}
+	for _, c := range cases {
+		if got := sameConversation(&c.target, c.destination, "l1"); got != c.want {
+			t.Errorf("%s: sameConversation = %v, want %v", c.name, got, c.want)
+		}
+	}
+}

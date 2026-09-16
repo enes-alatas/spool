@@ -2,6 +2,7 @@ package loop
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -88,6 +89,12 @@ func SystemPrompt(l *store.Loop, peers []Peer, rules []*store.FleetRule) string 
 - A new group message must @mention at least one known loop or person. Do
   not @mention yourself. A DM never fans out: names mentioned in private
   text receive nothing.
+- Every header carries that message's reference ("ref:42"). Pass it as
+  reply_to to answer that exact message: in the group it reaches the
+  author with no @mention needed, and mentions add recipients on top. Only
+  a reference you were actually shown works, and only in the conversation
+  it came from — never invent one, and never reply to "the last message"
+  when you mean a specific one. Your own sends report their reference too.
 - A send_message error names what to fix (e.g. no_recipients); correct the
   call and retry. Never work around an error by switching destination.
 - Your final reply text is a private status note: it appears in the control
@@ -172,31 +179,67 @@ func header(now time.Time, s string) string {
 	return fmt.Sprintf("[%s · %s]", s, now.UTC().Format("2006-01-02 15:04 UTC"))
 }
 
+// MessageRef renders a message's reply reference — the token a loop reads in
+// an envelope header and passes back as reply_to. It is the message's own
+// internal id, so it is durable across restarts, distinct for two
+// identical-looking messages, and never means "the latest message".
+func MessageRef(id int64) string { return fmt.Sprintf("ref:%d", id) }
+
+// ParseMessageRef reads a reference back. It accepts the bare id too, since
+// that is what the send tool reports for a message the loop just sent.
+func ParseMessageRef(ref string) (int64, bool) {
+	id, err := strconv.ParseInt(strings.TrimPrefix(strings.TrimSpace(ref), "ref:"), 10, 64)
+	if err != nil || id <= 0 {
+		return 0, false
+	}
+	return id, true
+}
+
+// Inbound is one arriving message, as the hub knows it, ready to be
+// formatted for the loop.
+type Inbound struct {
+	Origin       string // store.Origin* constant
+	Author       string // display name, no @
+	Text         string
+	Conversation string // store.Conversation* kind
+	FromLoop     bool
+	TGChatID     int64  // source DM chat (0 = none)
+	Ref          string // this message's reply reference (MessageRef)
+	ReplyTo      string // the reference this message itself replies to
+}
+
 // MessageEnvelope formats an inbound chat message for injection.
-// origin: store.Origin* constants; author is the display name (no @);
-// conversation is the store.Conversation* kind the message belongs to.
 // The header always names the conversation, so the loop can answer through
 // the matching send destination — two web messages must not look alike when
-// one is private and one is in the group (ADR-0026).
-func MessageEnvelope(now time.Time, origin, author, text, conversation string, fromLoop bool, tgChatID int64) Envelope {
+// one is private and one is in the group (ADR-0026) — and carries the
+// message's own reference, which is what a later reply_to must name. A
+// reference is never guessed from ordering (ADR-0025): if the loop did not
+// read it in a header, it cannot reply to it.
+func MessageEnvelope(now time.Time, in Inbound) Envelope {
 	var from string
 	switch {
-	case fromLoop:
-		from = fmt.Sprintf("message from @%s (loop) · group", author)
-	case origin == store.OriginTelegramGroup:
-		from = fmt.Sprintf("message from @%s via telegram · group", author)
-	case origin == store.OriginTelegramDM:
-		from = fmt.Sprintf("message from @%s via telegram dm · owner_dm", author)
-	case conversation == store.ConversationControlRoom:
-		from = fmt.Sprintf("message from %s via web · control_room", author)
+	case in.FromLoop:
+		from = fmt.Sprintf("message from @%s (loop) · group", in.Author)
+	case in.Origin == store.OriginTelegramGroup:
+		from = fmt.Sprintf("message from @%s via telegram · group", in.Author)
+	case in.Origin == store.OriginTelegramDM:
+		from = fmt.Sprintf("message from @%s via telegram dm · owner_dm", in.Author)
+	case in.Conversation == store.ConversationControlRoom:
+		from = fmt.Sprintf("message from %s via web · control_room", in.Author)
 	default:
-		from = fmt.Sprintf("message from %s via web · group", author)
+		from = fmt.Sprintf("message from %s via web · group", in.Author)
+	}
+	if in.Ref != "" {
+		from += " · " + in.Ref
+	}
+	if in.ReplyTo != "" {
+		from += " · in reply to " + in.ReplyTo
 	}
 	return Envelope{
 		Trigger:      store.TriggerMessage,
-		Text:         header(now, from) + "\n\n" + text,
-		Conversation: conversation,
-		TGChatID:     tgChatID,
+		Text:         header(now, from) + "\n\n" + in.Text,
+		Conversation: in.Conversation,
+		TGChatID:     in.TGChatID,
 	}
 }
 
