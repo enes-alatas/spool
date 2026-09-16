@@ -167,11 +167,12 @@ type loopView struct {
 	HasTGToken        bool    `json:"has_tg_token"`
 	WorkstationUp     bool    `json:"workstation_up"`
 	WorkstationDetail string  `json:"workstation_detail,omitempty"`
-	// ContextTokens is what the last finished turn of the loop's current
-	// session loaded into the model's context: the prompt it sent plus the
-	// cached prefix it reread. An approximation, measured at that turn, not
-	// a live gauge — and empty right after a rotation, when a retired
-	// session's turns say nothing about the fresh one.
+	// ContextTokens is the context occupancy the last finished turn of the
+	// loop's current session measured at its final API call — what the next
+	// prompt would carry into the window. Measured at that turn, not a live
+	// gauge — and zero right after a rotation, when a retired session's
+	// turns say nothing about the fresh one, or when the last turn predates
+	// the measure entirely: 0 means unmeasured, never an empty context.
 	ContextTokens int `json:"context_tokens"`
 	// ContextLimitTokens is that model's context window, or 0 when we don't
 	// know it — an unrecognized or not-yet-run model. Clients show absolute
@@ -192,7 +193,7 @@ func (s *Server) view(ctx context.Context, l *store.Loop) *loopView {
 		v.DownReason = actor.DownReason()
 	}
 	if t, err := s.Store.Turns().Latest(ctx, l.ID); err == nil && t.SessionID == l.CurrentSessionID {
-		v.ContextTokens = t.InputTokens + t.CacheReadTokens
+		v.ContextTokens = t.ContextTokens
 		v.ContextLimitTokens = loop.ContextLimit(t.Model)
 	}
 	if e, err := s.Store.Schedule().Get(ctx, l.ID); err == nil {

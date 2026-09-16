@@ -160,12 +160,13 @@ type Actor struct {
 	inbox        []Envelope
 	currentBatch []Envelope // in-flight batch, kept for redelivery on session loss
 	turn         *store.Turn
-	redelivered  bool     // next batch repeats a turn whose session was lost mid-flight
-	lostSends    []string // sends made by every lost attempt of the turn being redelivered
-	freshSpawn   bool     // current process was started with --session-id (not resume)
-	sawInit      bool     // current process got as far as announcing itself
-	deadResumes  int      // consecutive resumes that died before announcing
-	activeModel  string   // model the CLI reported at init, for the turn record
+	redelivered  bool         // next batch repeats a turn whose session was lost mid-flight
+	lostSends    []string     // sends made by every lost attempt of the turn being redelivered
+	freshSpawn   bool         // current process was started with --session-id (not resume)
+	sawInit      bool         // current process got as far as announcing itself
+	deadResumes  int          // consecutive resumes that died before announcing
+	activeModel  string       // model the CLI reported at init, for the turn record
+	lastCall     claude.Usage // usage of the in-flight turn's latest API call (assistant event)
 	backoff      time.Duration
 
 	// Context rotation (ADR-0022): the loop sheds its context proactively,
@@ -610,6 +611,7 @@ func (actor *Actor) sendBatch(batch []Envelope) {
 		actor.log().Error("turn create", "err", err)
 	}
 	actor.turn = turn
+	actor.lastCall = claude.Usage{}
 
 	for _, env := range batch {
 		if b, err := json.Marshal(env); err == nil {
@@ -655,6 +657,13 @@ func (actor *Actor) handleEvent(ev claude.Event) {
 			actor.armIdleTimer()
 			actor.publishState()
 		}
+	case ev.Type == "assistant":
+		// each API call of the turn reports its own usage here; the latest
+		// one is the context-occupancy measure (the result's is summed)
+		if ev.Assistant != nil && ev.Assistant.Usage != (claude.Usage{}) {
+			actor.lastCall = ev.Assistant.Usage
+		}
+		actor.storeClaudeEvent(ev)
 	case ev.Type == "stream_event":
 		// live deltas: publish only, never persist
 		actor.deps.Bus.Publish(bus.Item{Kind: bus.KindAgentEvent, LoopID: actor.loop.ID, Payload: json.RawMessage(ev.Raw)})
@@ -683,6 +692,7 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 		t.OutputTokens = res.Usage.OutputTokens
 		t.CacheReadTokens = res.Usage.CacheReadTokens
 		t.CacheWriteTokens = res.Usage.CacheCreationTokens
+		t.ContextTokens = contextOccupancy(actor.lastCall)
 		t.DurationMS = res.DurationMS
 		t.Model = actor.activeModel
 		if err := actor.deps.Store.Turns().Finish(context.Background(), t); err != nil {
@@ -715,7 +725,7 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 		actor.finishHandoff(res)
 		return
 	}
-	actor.measureContext(res)
+	actor.measureContext()
 
 	if len(actor.inbox) > 0 && !actor.paused {
 		actor.startTurn()
@@ -751,17 +761,25 @@ func (actor *Actor) finishHandoff(res *claude.ResultInfo) {
 	actor.idleTimer.Reset(drainGrace)
 }
 
-// measureContext records how full the model's window was at the turn that
-// just finished — the prompt sent plus the cached prefix reread — and arms
-// rotation once it crosses the arm threshold. An unknown window never arms:
-// a ratio against a guess would rotate on fiction. Zero usage (an errored
-// turn) keeps the previous measurement rather than reading as empty.
-func (actor *Actor) measureContext(res *claude.ResultInfo) {
-	if res == nil {
-		return
-	}
+// contextOccupancy is what a session's next prompt would carry into the
+// window after this API call: the prompt it sent, the cached prefix it
+// reread, and the suffix it just wrote to the cache (the next call rereads
+// that too). The same formula backs the CLI's own /context gauge.
+func contextOccupancy(u claude.Usage) int {
+	return u.InputTokens + u.CacheReadTokens + u.CacheCreationTokens
+}
+
+// measureContext records how full the model's window was when the turn that
+// just finished made its last API call, and arms rotation once it crosses
+// the arm threshold. The last call, not the result event's usage: the CLI
+// sums usage across the turn's API steps, and every step rereads the cached
+// prefix, so a long turn's sum reaches multiples of the window (#94). An
+// unknown window never arms: a ratio against a guess would rotate on
+// fiction. Zero usage (an errored turn) keeps the previous measurement
+// rather than reading as empty.
+func (actor *Actor) measureContext() {
 	window := ContextLimit(actor.activeModel)
-	tokens := res.Usage.InputTokens + res.Usage.CacheReadTokens
+	tokens := contextOccupancy(actor.lastCall)
 	if window <= 0 || tokens == 0 {
 		return
 	}

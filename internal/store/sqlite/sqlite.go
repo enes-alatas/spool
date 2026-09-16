@@ -351,15 +351,15 @@ func (r turns) Create(ctx context.Context, t *store.Turn) error {
 func (r turns) Finish(ctx context.Context, t *store.Turn) error {
 	_, err := r.db.ExecContext(ctx, `UPDATE turns SET ended_at=?, is_error=?, result_text=?,
 		cost_usd=?, input_tokens=?, output_tokens=?, cache_read_tokens=?, cache_write_tokens=?,
-		duration_ms=?, model=? WHERE id=?`,
+		context_tokens=?, duration_ms=?, model=? WHERE id=?`,
 		t.EndedAt, boolInt(t.IsError), t.ResultText, t.CostUSD, t.InputTokens, t.OutputTokens,
-		t.CacheReadTokens, t.CacheWriteTokens, t.DurationMS, t.Model, t.ID)
+		t.CacheReadTokens, t.CacheWriteTokens, t.ContextTokens, t.DurationMS, t.Model, t.ID)
 	return err
 }
 
 const turnCols = `id, loop_id, session_id, trigger_kind, started_at, ended_at, is_error,
 	result_text, cost_usd, input_tokens, output_tokens, cache_read_tokens,
-	cache_write_tokens, duration_ms, model`
+	cache_write_tokens, context_tokens, duration_ms, model`
 
 // Latest is the most recent turn the loop actually finished: an in-flight
 // turn has no usage yet, and an errored one reports what it managed.
@@ -370,7 +370,7 @@ func (r turns) Latest(ctx context.Context, loopID string) (*store.Turn, error) {
 	var isErr int
 	err := row.Scan(&t.ID, &t.LoopID, &t.SessionID, &t.Trigger, &t.StartedAt, &t.EndedAt,
 		&isErr, &t.ResultText, &t.CostUSD, &t.InputTokens, &t.OutputTokens,
-		&t.CacheReadTokens, &t.CacheWriteTokens, &t.DurationMS, &t.Model)
+		&t.CacheReadTokens, &t.CacheWriteTokens, &t.ContextTokens, &t.DurationMS, &t.Model)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, store.ErrNotFound
 	}
@@ -394,7 +394,7 @@ func (r turns) ListByLoop(ctx context.Context, loopID string, limit int) ([]*sto
 		var isErr int
 		if err := rows.Scan(&t.ID, &t.LoopID, &t.SessionID, &t.Trigger, &t.StartedAt,
 			&t.EndedAt, &isErr, &t.ResultText, &t.CostUSD, &t.InputTokens, &t.OutputTokens,
-			&t.CacheReadTokens, &t.CacheWriteTokens, &t.DurationMS, &t.Model); err != nil {
+			&t.CacheReadTokens, &t.CacheWriteTokens, &t.ContextTokens, &t.DurationMS, &t.Model); err != nil {
 			return nil, err
 		}
 		t.IsError = isErr != 0

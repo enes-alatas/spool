@@ -16,9 +16,13 @@
 // first. A
 // "!toolong" returns an errored result saying the prompt did not fit the
 // window, with no usage, and keeps the session. A
-// "!ctx <tokens>" prefix makes the turn report that many input tokens — how
-// a filling context looks from outside — and composes with the rest of the
-// line ("!ctx 120000 !hang 2"). "!sysprompt" replies with the text spool
+// "!ctx <tokens>" prefix makes the turn report that many input tokens per API
+// step — how a filling context looks from outside — and composes with the
+// rest of the line ("!ctx 120000 !hang 2"). A "!steps <k>" prefix makes the
+// turn span k API steps, the way a tool-using turn does: one assistant event
+// per step, each with that step's own usage, while the result event reports
+// the turn's summed usage — so a runner that reads the result's sum as
+// context occupancy sees k times the real fill. "!sysprompt" replies with the text spool
 // passed as --append-system-prompt, so a test can see the prompt a loop was
 // given. Without a script file, every turn echoes: "echo: <received text>".
 //
@@ -165,12 +169,25 @@ func main() {
 		state.Turns++
 		reply := "echo: " + text
 		ctxTokens := 0
+		steps := 1
 		if script != nil {
 			line := script[min(state.Turns, len(script))-1]
-			for strings.HasPrefix(line, "!ctx ") {
-				numStr, rest, _ := strings.Cut(strings.TrimPrefix(line, "!ctx "), " ")
-				ctxTokens, _ = strconv.Atoi(numStr)
-				line = strings.TrimSpace(rest)
+			for {
+				if strings.HasPrefix(line, "!ctx ") {
+					numStr, rest, _ := strings.Cut(strings.TrimPrefix(line, "!ctx "), " ")
+					ctxTokens, _ = strconv.Atoi(numStr)
+					line = strings.TrimSpace(rest)
+					continue
+				}
+				if strings.HasPrefix(line, "!steps ") {
+					numStr, rest, _ := strings.Cut(strings.TrimPrefix(line, "!steps "), " ")
+					if n, err := strconv.Atoi(numStr); err == nil && n > 0 {
+						steps = n
+					}
+					line = strings.TrimSpace(rest)
+					continue
+				}
+				break
 			}
 			var sent []string
 			for strings.HasPrefix(line, "!send ") {
@@ -236,19 +253,27 @@ func main() {
 				"session_id": id,
 			})
 		}
-		emit(map[string]any{
-			"type": "assistant",
-			"message": map[string]any{
-				"role":    "assistant",
-				"content": []map[string]any{{"type": "text", "text": reply}},
-				"usage":   usage(ctxTokens),
-			},
-			"session_id": id,
-		})
+		// One assistant event per API step carrying that step's own usage;
+		// the result sums them, as the real CLI's cumulative usage does.
+		for i := 1; i <= steps; i++ {
+			stepText := reply
+			if i < steps {
+				stepText = fmt.Sprintf("step %d of %d", i, steps)
+			}
+			emit(map[string]any{
+				"type": "assistant",
+				"message": map[string]any{
+					"role":    "assistant",
+					"content": []map[string]any{{"type": "text", "text": stepText}},
+					"usage":   usage(ctxTokens, 1),
+				},
+				"session_id": id,
+			})
+		}
 		emit(map[string]any{
 			"type": "result", "subtype": "success", "is_error": false,
 			"total_cost_usd": 0.001, "duration_ms": 5, "num_turns": state.Turns,
-			"result": reply, "usage": usage(ctxTokens), "session_id": id,
+			"result": reply, "usage": usage(ctxTokens, steps), "session_id": id,
 		})
 
 		b, _ := json.Marshal(state)
@@ -276,15 +301,17 @@ func loadScript() []string {
 	return lines
 }
 
-// usage reports the turn's token usage; ctxTokens overrides the input count
-// when a "!ctx" directive set it, 0 keeps the small default.
-func usage(ctxTokens int) map[string]any {
+// usage reports token usage summed over that many API steps: one step is an
+// assistant event's own usage, the turn's step count is the result event's
+// cumulative usage. ctxTokens overrides the per-step input count when a
+// "!ctx" directive set it, 0 keeps the small default.
+func usage(ctxTokens, steps int) map[string]any {
 	input := 10
 	if ctxTokens > 0 {
 		input = ctxTokens
 	}
 	return map[string]any{
-		"input_tokens": input, "output_tokens": 5,
+		"input_tokens": input * steps, "output_tokens": 5 * steps,
 		"cache_creation_input_tokens": 0, "cache_read_input_tokens": 0,
 	}
 }

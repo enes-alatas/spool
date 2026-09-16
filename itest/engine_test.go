@@ -292,6 +292,43 @@ func TestContextRotationAtQuietBoundary(t *testing.T) {
 	}
 }
 
+// TestContextMeasuredAtLastCallNotTurnSum: the result event's usage is summed
+// across a turn's API steps — every step rereads the cached prefix, so a long
+// tool-using turn's sum reaches multiples of the window while the real
+// occupancy stays low (#94). Eight steps of 30k against haiku's 200k window
+// sum to 240k (120%, past every threshold) yet occupy 15%: the loop must not
+// rotate, and the turn must record the last call's measure, not the sum.
+func TestContextMeasuredAtLastCallNotTurnSum(t *testing.T) {
+	workspace := workspaceWithScript(t, "!ctx 30000 !steps 8\n")
+	s := startServer(t, t.TempDir())
+	s.createLoop("stepper", map[string]any{
+		"workspace_path": workspace,
+		"workspace_mode": "dir",
+		"model":          "haiku",
+	})
+
+	s.message("stepper", "long tool turn")
+	worked := s.waitTurn("stepper", 30*time.Second, func(tr turn) bool {
+		return strings.Contains(tr.ResultText, "long tool turn")
+	})
+	if worked.ContextTokens != 30000 {
+		t.Fatalf("context_tokens = %d, want the last call's 30000, not the turn's sum", worked.ContextTokens)
+	}
+
+	// were the sum read as occupancy, the rotation would take this quiet
+	// boundary; give it the chance and insist the loop stays put
+	if s.hasEvent("stepper", "context_rotated", 3*time.Second) {
+		t.Fatal("loop rotated on the turn's summed usage")
+	}
+	s.message("stepper", "still here")
+	stayed := s.waitTurn("stepper", 30*time.Second, func(tr turn) bool {
+		return strings.Contains(tr.ResultText, "still here")
+	})
+	if stayed.SessionID != worked.SessionID {
+		t.Fatalf("second turn moved to session %s; a 15%% context had no reason to rotate", stayed.SessionID)
+	}
+}
+
 // TestContextRotationForcedBeforeQueuedWork: past the force ceiling the
 // rotation stops waiting for quiet — work queued behind a hot context is
 // answered only after the handoff, on the fresh session (ADR-0022). Every

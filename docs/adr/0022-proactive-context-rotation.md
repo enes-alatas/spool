@@ -53,9 +53,12 @@ path above — is fully observable, and fakeclaude can test it end to end.
    rotation falls back to what the unloadable-session path already carries —
    mission restated, recent replies, no note.
 4. **Thresholds are operator settings**, expressed as fractions of the
-   model's window, defaulting to 40% (arm) and 70% (force). The signal is the
-   fill the CLI itself reports per turn — the same number the control room's
-   context gauges read.
+   model's window, defaulting to 40% (arm) and 70% (force). The signal is
+   the occupancy of the turn's last API call — the prompt it sent plus the
+   cache it reread and wrote, derived from the per-call usage the CLI
+   streams. The CLI reports no fill of its own, and its result event sums
+   usage across the turn's calls, which prices the turn but measures
+   nothing (#94). The control room's context gauges read the same number.
 5. **A rotation is visible.** It writes a spool event at the seam and keeps
    the handoff note readable from the timeline, so a reader scrolling a
    loop's history can see where continuity broke and what was carried across.

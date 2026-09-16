@@ -196,7 +196,12 @@ type Turn struct {
 	OutputTokens     int     `json:"output_tokens"`
 	CacheReadTokens  int     `json:"cache_read_tokens"`
 	CacheWriteTokens int     `json:"cache_write_tokens"`
-	DurationMS       int64   `json:"duration_ms"`
+	// ContextTokens is the occupancy of the turn's last API call — what the
+	// session's next prompt would carry into the model's window. The usage
+	// fields above are summed across the turn's API steps (each step rereads
+	// the cached prefix), so they price the turn but cannot measure context.
+	ContextTokens int   `json:"context_tokens"`
+	DurationMS    int64 `json:"duration_ms"`
 }
 
 type Event struct {

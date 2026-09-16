@@ -131,11 +131,11 @@ function ModelPanel({ loop }: { loop: LoopView }) {
   )
 }
 
-// Tokens a turn carried into the model: what it sent plus what it reloaded
-// from cache. The closest measure of context occupancy the result event gives
-// us — sampled at the turn's start, not live.
+// Context occupancy the turn measured at its last API call — what the next
+// prompt would carry into the window. Turns recorded before the measure
+// existed read 0: unmeasured, not empty.
 function contextTokens(turn: Turn): number {
-  return turn.input_tokens + turn.cache_read_tokens
+  return turn.context_tokens
 }
 
 // ContextFill is the occupancy of the model's own window — the glanceable
@@ -183,14 +183,13 @@ function ContextPanel({ loop, turns }: { loop: LoopView; turns: Turn[] }) {
             style={{ height: `${peak > 0 ? (contextTokens(turn) / peak) * 100 : 0}%` }}
             title={`${new Date(turn.started_at).toLocaleTimeString()} — ${formatTokens(
               contextTokens(turn),
-            )} tokens (${formatTokens(turn.input_tokens)} sent, ${formatTokens(
-              turn.cache_read_tokens,
-            )} cached)`}
+            )} tokens in context`}
           />
         ))}
       </div>
       <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 8 }}>
-        Sent plus cache-read tokens per turn, oldest first. Bars are relative to the tallest turn shown.
+        Context occupancy at each turn's last API call, oldest first. Bars are relative to the tallest turn
+        shown.
       </div>
     </div>
   )
