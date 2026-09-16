@@ -123,3 +123,12 @@ non-delivery guarantees ADR-0025's scenario matrix demands.
   operator-visible warning is left to implementation experience.
 - The scenario matrix in ADR-0025 remains the acceptance bar; this ADR adds
   the interface those tests drive.
+
+**Amendment (2026-09-16): interim `owner_dm` routing until #73.** With no
+configured owner identity, `owner_dm` reaches the private Telegram chat of
+the DM the current turn answers — pinned at turn start, so a DM arriving
+later cannot redirect the reply — and, for a turn with no DM of its own (a
+tick, say), the loop's most recent captured private chat. The tool
+description and system prompt state exactly this. "Reach the configured
+owner regardless of the current exchange" is not expressible until #73
+lands; the owner-contact acceptance criterion stays open there.

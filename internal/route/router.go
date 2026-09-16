@@ -50,6 +50,10 @@ type InboundMessage struct {
 type MessagePayload struct {
 	store.Message
 	FromLoopName string `json:"from_loop_name,omitempty"`
+	// OwnerDMChat is the telegram chat an owner_dm send was resolved to at
+	// send time — pinned then so a DM arriving before bridge delivery
+	// cannot redirect it. Internal delivery detail, not surfaced.
+	OwnerDMChat int64 `json:"-"`
 }
 
 type Deliverer interface {
@@ -65,8 +69,11 @@ type Router struct {
 	mu    sync.Mutex
 	storm map[string][]time.Time // "fromID→toID" → delivery timestamps
 	// sendBudget counts a loop's explicit sends this turn (ADR-0026);
-	// ResetSendBudget clears it at every turn start.
+	// StartTurn clears it at every turn start.
 	sendBudget map[string]int
+	// turnDMChat pins, per loop, the owner-DM chat its current turn is
+	// answering (0 = not an owner_dm turn); set by StartTurn.
+	turnDMChat map[string]int64
 }
 
 func New(st store.Store, b *bus.Bus, d Deliverer, log *slog.Logger) *Router {

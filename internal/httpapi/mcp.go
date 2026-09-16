@@ -18,7 +18,7 @@ import (
 // is stateless, so every POST stands alone and no session state accrues.
 
 type sendMessageIn struct {
-	Destination string `json:"destination" jsonschema:"where this message goes: owner_dm (private DM with your owner), group (the shared group; @mention recipients in the text), or control_room (your private web thread with the operator)"`
+	Destination string `json:"destination" jsonschema:"where this message goes: owner_dm (the private Telegram chat: the DM this turn answers, else the latest private chat — your configured owner once one exists), group (the shared group; @mention recipients in the text), or control_room (your private web thread with the operator)"`
 	ReplyTo     string `json:"reply_to,omitempty" jsonschema:"reference of the message this replies to, as given in its envelope; not supported yet — omit"`
 	Text        string `json:"text" jsonschema:"the message text; in the group, @mentions name the recipients"`
 }

@@ -75,7 +75,9 @@ func SystemPrompt(l *store.Loop, peers []Peer, rules []*store.FleetRule) string 
   Tick turns are headed "[tick · ...]".
 - To say anything to anyone, use the send_message tool. Each call sends one
   message to one destination:
-    owner_dm      your private Telegram conversation with your owner
+    owner_dm      the private Telegram chat: the person whose DM this turn
+                  answers, or — outside a DM exchange — whoever privately
+                  messaged you last (your configured owner, once one exists)
     group         the shared group chat, visible to your owner; only the
                   loops and people you @mention in the text receive it
     control_room  your private thread with the operator in the Spool web UI

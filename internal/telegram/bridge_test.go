@@ -1,9 +1,12 @@
 package telegram
 
 import (
+	"context"
+	"log/slog"
 	"testing"
 	"time"
 
+	"github.com/enes-alatas/spool/internal/route"
 	"github.com/enes-alatas/spool/internal/store"
 )
 
@@ -35,5 +38,53 @@ func TestBoundBefore(t *testing.T) {
 	}
 	if bindSettle <= 0 {
 		t.Fatalf("bindSettle must be positive, got %v", time.Duration(bindSettle))
+	}
+}
+
+// laterCaptureStore answers OwnerDMChat with a chat that "DMed the bot"
+// after a send was accepted — what the bridge would deliver to if it ever
+// re-resolved instead of honoring the pinned chat. Every other store method
+// panics via the embedded nil interfaces: delivery must not need them.
+type laterCaptureStore struct{ store.Store }
+
+func (laterCaptureStore) Messages() store.MessageStore { return laterCaptureMessages{} }
+
+type laterCaptureMessages struct{ store.MessageStore }
+
+func (laterCaptureMessages) OwnerDMChat(context.Context, string) (int64, error) {
+	return 99, nil // chat B, the capture newer than the accepted send
+}
+
+// An owner_dm send accepted for one chat must be delivered to that chat even
+// when another human's DM becomes the newest capture between send acceptance
+// and bridge delivery (ADR-0025). The stub store reports the newer capture,
+// so this fails if the bridge ever resolves OwnerDMChat again instead of
+// using the chat route.Send pinned on the payload.
+func TestOwnerDMDeliveryUsesPinnedChat(t *testing.T) {
+	p := &poller{loopID: "l1", sendCh: make(chan sendReq, 4)}
+	br := &Bridge{
+		store:   laterCaptureStore{},
+		log:     slog.Default(),
+		pollers: map[string]*poller{"l1": p},
+	}
+
+	br.mirrorMessage(context.Background(), &route.MessagePayload{
+		Message: store.Message{
+			Origin:             store.OriginLoop,
+			FromLoopID:         "l1",
+			Conversation:       store.ConversationOwnerDM,
+			ConversationLoopID: "l1",
+			Text:               "answer for A",
+		},
+		OwnerDMChat: 42, // chat A, resolved when the send was accepted
+	})
+
+	select {
+	case req := <-p.sendCh:
+		if req.chatID != 42 {
+			t.Fatalf("owner_dm delivered to chat %d, want the pinned 42", req.chatID)
+		}
+	default:
+		t.Fatal("owner_dm send was not delivered at all")
 	}
 }

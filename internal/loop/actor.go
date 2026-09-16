@@ -103,8 +103,11 @@ type Deps struct {
 	// runtime ("" = don't connect the tool). Wired in cmd, which knows the
 	// listen address and each runtime's network path to it (ADR-0026).
 	MCPEndpoint func(l *store.Loop) string
-	// OnTurnStart opens the loop's per-turn send budget (ADR-0026).
-	OnTurnStart func(l *store.Loop)
+	// OnTurnStart opens the loop's per-turn send budget and pins the
+	// conversation this turn answers (ADR-0026): ownerDMChat is the DM chat
+	// when the batch is an owner_dm turn, 0 otherwise — so a later inbound
+	// DM cannot redirect a private reply already under way.
+	OnTurnStart func(l *store.Loop, ownerDMChat int64)
 	// SendsThisTurn reports how many messages the loop has sent since its
 	// budget last opened — what a redelivered batch's fresh session is told
 	// about, so a lost turn's sends are not repeated.
@@ -533,7 +536,13 @@ func (actor *Actor) sendBatch(batch []Envelope) {
 		}
 	}
 	if actor.deps.OnTurnStart != nil {
-		actor.deps.OnTurnStart(&actor.loop)
+		// every envelope in the batch shares one conversation key, so the
+		// first names the DM chat this turn answers (0 for anything else)
+		var dmChat int64
+		if batch[0].Conversation == store.ConversationOwnerDM {
+			dmChat = batch[0].TGChatID
+		}
+		actor.deps.OnTurnStart(&actor.loop, dmChat)
 	}
 	if actor.freshSpawn {
 		switch {
