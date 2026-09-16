@@ -118,6 +118,15 @@ type Loop struct {
 	// TGGroupBoundAt is when this loop's bot bound to that group. A bot only
 	// ingests group messages Telegram dated after it — see ADR-0020.
 	TGGroupBoundAt int64 `json:"-"`
+	// OwnerTGUserID is the allowlisted Telegram sender configured as this
+	// loop's owner (0 = none). Being known to Spool does not make someone
+	// an owner; the operator chooses (#73).
+	OwnerTGUserID int64 `json:"owner_tg_user_id,omitempty"`
+	// OwnerDMChatID is the private chat between that owner and this loop's
+	// own bot, captured when they write to it (0 = not captured yet). A bot
+	// cannot open a private chat, so until the owner writes once there is
+	// nowhere to send — reported, never substituted (ADR-0025).
+	OwnerDMChatID int64 `json:"-"`
 
 	Status           string `json:"status"`
 	CurrentSessionID string `json:"current_session_id"`
@@ -299,12 +308,6 @@ type MessageStore interface {
 	// first: kind is ConversationOwnerDM or ConversationControlRoom, keyed
 	// to its loop. The shared group has no loop key and stays on List.
 	ListConversation(ctx context.Context, kind, loopID string, limit int) ([]*Message, error)
-	// OwnerDMChat returns the telegram chat of the loop's owner_dm
-	// conversation, captured from its latest inbound DM; ErrNotFound when no
-	// DM was ever ingested. Interim owner-DM address until a configured
-	// owner identity replaces the capture (tracked as part of ADR-0025/0026
-	// follow-up work).
-	OwnerDMChat(ctx context.Context, loopID string) (int64, error)
 	// Get returns one message by id, or ErrNotFound. Reply targets are
 	// resolved through it.
 	Get(ctx context.Context, id int64) (*Message, error)

@@ -122,3 +122,56 @@ func TestLoopHubMCPToken(t *testing.T) {
 		t.Fatalf("empty token: err = %v, want ErrNotFound", err)
 	}
 }
+
+// TestMigrateWithoutAllowlistedSender: a database holding loops and nobody
+// allowlisted must still open. Migration 0014 backfills the owner from
+// tg_senders, and a subquery with no rows would write NULL into a NOT NULL
+// column — failing the migration, which is the difference between "no owner
+// configured" and a server that cannot start (#73).
+func TestMigrateWithoutAllowlistedSender(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.db")
+	db, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	now := time.Now().UnixMilli()
+	if err := db.Loops().Create(ctx, &store.Loop{
+		ID: "l1", Name: "aster", Status: store.StatusActive, WorkspaceMode: store.WorkspaceNone,
+		Runtime: store.RuntimeBare, Pacing: store.PacingFixed, CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// a sender who is known but not allowed must not be adopted either
+	if err := db.TGSenders().Create(ctx, &store.TGSender{
+		TGUserID: 7, Username: "pending", Status: store.SenderPending, CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// rewind to the schema before 0014 and replay it against the populated
+	// database — an upgrade, which is the only path that runs the backfill
+	// with rows to back-fill
+	for _, stmt := range []string{
+		`ALTER TABLE loops DROP COLUMN owner_tg_user_id`,
+		`ALTER TABLE loops DROP COLUMN owner_dm_chat_id`,
+		`DELETE FROM schema_migrations WHERE version = '0014_loop_owner.sql'`,
+	} {
+		if _, err := db.db.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("rewinding the schema: %v", err)
+		}
+	}
+	db.Close()
+
+	reopened, err := Open(path)
+	if err != nil {
+		t.Fatalf("reopening a database with loops and no allowlisted sender: %v", err)
+	}
+	defer reopened.Close()
+	l, err := reopened.Loops().Get(ctx, "l1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l.OwnerTGUserID != 0 || l.OwnerDMChatID != 0 {
+		t.Fatalf("owner = %d, chat = %d; want an ownerless loop", l.OwnerTGUserID, l.OwnerDMChatID)
+	}
+}

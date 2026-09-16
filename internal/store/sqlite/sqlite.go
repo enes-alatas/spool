@@ -119,6 +119,7 @@ type loops struct{ db *sql.DB }
 const loopCols = `id, name, mission, model, workspace_mode, workspace_path, repo_path,
 	worktree_path, branch, tick_interval_sec, min_wake_sec, max_wake_sec, idle_timeout_sec,
 	pacing, effort, tg_bot_token, tg_bot_username, tg_group_chat_id, tg_group_bound_at,
+	owner_tg_user_id, owner_dm_chat_id,
 	workstation_off, status, current_session_id, current_pid, created_at, updated_at,
 	runtime, image, mem_mb, cpus, hub_mcp_token`
 
@@ -127,7 +128,8 @@ func scanLoop(row interface{ Scan(...any) error }) (*store.Loop, error) {
 	err := row.Scan(&l.ID, &l.Name, &l.Mission, &l.Model, &l.WorkspaceMode, &l.WorkspacePath,
 		&l.RepoPath, &l.WorktreePath, &l.Branch, &l.TickIntervalSec, &l.MinWakeSec,
 		&l.MaxWakeSec, &l.IdleTimeoutSec, &l.Pacing, &l.Effort, &l.TGBotToken,
-		&l.TGBotUsername, &l.TGGroupChatID, &l.TGGroupBoundAt, &l.WorkstationOff,
+		&l.TGBotUsername, &l.TGGroupChatID, &l.TGGroupBoundAt,
+		&l.OwnerTGUserID, &l.OwnerDMChatID, &l.WorkstationOff,
 		&l.Status, &l.CurrentSessionID, &l.CurrentPID,
 		&l.CreatedAt, &l.UpdatedAt, &l.Runtime, &l.Image, &l.MemMB, &l.CPUs, &l.HubMCPToken)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -148,12 +150,12 @@ func (r loops) Create(ctx context.Context, l *store.Loop) error {
 		l.HubMCPToken = store.NewHubMCPToken()
 	}
 	_, err := r.db.ExecContext(ctx, `INSERT INTO loops (`+loopCols+`) VALUES
-		(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		l.ID, l.Name, l.Mission, l.Model, l.WorkspaceMode, l.WorkspacePath, l.RepoPath,
 		l.WorktreePath, l.Branch, l.TickIntervalSec, l.MinWakeSec, l.MaxWakeSec,
 		l.IdleTimeoutSec, l.Pacing, l.Effort, l.TGBotToken, l.TGBotUsername,
-		l.TGGroupChatID, l.TGGroupBoundAt, l.WorkstationOff, l.Status,
-		l.CurrentSessionID, l.CurrentPID,
+		l.TGGroupChatID, l.TGGroupBoundAt, l.OwnerTGUserID, l.OwnerDMChatID,
+		l.WorkstationOff, l.Status, l.CurrentSessionID, l.CurrentPID,
 		l.CreatedAt, l.UpdatedAt,
 		l.Runtime, l.Image, l.MemMB, l.CPUs, l.HubMCPToken)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
@@ -167,11 +169,13 @@ func (r loops) Update(ctx context.Context, l *store.Loop) error {
 		workspace_mode=?, workspace_path=?, repo_path=?, worktree_path=?, branch=?,
 		tick_interval_sec=?, min_wake_sec=?, max_wake_sec=?, idle_timeout_sec=?,
 		pacing=?, effort=?, tg_bot_token=?, tg_bot_username=?, tg_group_chat_id=?,
-		tg_group_bound_at=?, workstation_off=?, status=?, updated_at=? WHERE id=?`,
+		tg_group_bound_at=?, owner_tg_user_id=?, owner_dm_chat_id=?,
+		workstation_off=?, status=?, updated_at=? WHERE id=?`,
 		l.Name, l.Mission, l.Model, l.WorkspaceMode, l.WorkspacePath, l.RepoPath,
 		l.WorktreePath, l.Branch, l.TickIntervalSec, l.MinWakeSec, l.MaxWakeSec,
 		l.IdleTimeoutSec, l.Pacing, l.Effort, l.TGBotToken, l.TGBotUsername,
-		l.TGGroupChatID, l.TGGroupBoundAt, l.WorkstationOff, l.Status, l.UpdatedAt, l.ID)
+		l.TGGroupChatID, l.TGGroupBoundAt, l.OwnerTGUserID, l.OwnerDMChatID,
+		l.WorkstationOff, l.Status, l.UpdatedAt, l.ID)
 	return err
 }
 
@@ -284,17 +288,6 @@ func (r messages) Insert(ctx context.Context, m *store.Message) error {
 	}
 	m.ID, _ = res.LastInsertId()
 	return nil
-}
-
-func (r messages) OwnerDMChat(ctx context.Context, loopID string) (int64, error) {
-	var chat int64
-	err := r.db.QueryRowContext(ctx, `SELECT tg_chat_id FROM messages
-		WHERE conversation=? AND conversation_loop_id=? AND tg_chat_id IS NOT NULL
-		ORDER BY id DESC LIMIT 1`, store.ConversationOwnerDM, loopID).Scan(&chat)
-	if errors.Is(err, sql.ErrNoRows) {
-		return 0, store.ErrNotFound
-	}
-	return chat, err
 }
 
 func (r messages) SetDelivered(ctx context.Context, id int64, deliveredTo []string) error {
