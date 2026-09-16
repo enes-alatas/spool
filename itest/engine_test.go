@@ -414,3 +414,53 @@ func TestOverWindowMessageIsRecordedAsTooLong(t *testing.T) {
 		t.Fatalf("session changed on an over-window turn: %s -> %s", first.SessionID, failed.SessionID)
 	}
 }
+
+// TestManualRotation: the operator's rotate control runs the ADR-0022
+// handoff flow on demand — the loop writes its note now and continues on a
+// fresh session seeded from it, with no fill threshold involved.
+func TestManualRotation(t *testing.T) {
+	ws := workspaceWithScript(t, "!ctx 0\nhandoff note from the old self\n")
+	s := startServer(t, t.TempDir())
+	s.createLoop("aster", map[string]any{"workspace_path": ws})
+	s.waitTurn("aster", 20*time.Second, func(tn turn) bool { return tn.Trigger == "tick" })
+
+	s.mustJSON("POST", "/api/loops/aster/rotate", nil, nil)
+	handoff := s.waitTurn("aster", 30*time.Second, func(tn turn) bool {
+		return tn.Trigger == "rotation" && strings.Contains(tn.ResultText, "handoff note from the old self")
+	})
+
+	s.message("aster", "carry on fresh")
+	fresh := s.waitTurn("aster", 30*time.Second, func(tn turn) bool {
+		return strings.Contains(tn.ResultText, "carry on fresh")
+	})
+	if fresh.SessionID == handoff.SessionID {
+		t.Fatalf("work after the rotation stayed on the retired session %s", handoff.SessionID)
+	}
+	if !strings.Contains(fresh.ResultText, "your context was rotated") ||
+		!strings.Contains(fresh.ResultText, "handoff note from the old self") {
+		t.Fatalf("fresh session missing the rotation preamble or note: %s", fresh.ResultText)
+	}
+}
+
+// A rotate request while a turn is running must not interrupt it: the turn
+// completes and the handoff takes the following quiet boundary.
+func TestManualRotationWaitsForTheRunningTurn(t *testing.T) {
+	ws := workspaceWithScript(t, "!ctx 0\n!hang 3\nlate handoff note\n")
+	s := startServer(t, t.TempDir())
+	s.createLoop("aster", map[string]any{"workspace_path": ws})
+	s.waitTurn("aster", 20*time.Second, func(tn turn) bool { return tn.Trigger == "tick" })
+
+	s.message("aster", "start hanging")
+	s.waitState("aster", "busy", 10*time.Second)
+	s.mustJSON("POST", "/api/loops/aster/rotate", nil, nil)
+
+	hang := s.waitTurn("aster", 30*time.Second, func(tn turn) bool {
+		return strings.Contains(tn.ResultText, "hung 3s")
+	})
+	handoff := s.waitTurn("aster", 30*time.Second, func(tn turn) bool {
+		return tn.Trigger == "rotation" && strings.Contains(tn.ResultText, "late handoff note")
+	})
+	if handoff.StartedAt < hang.EndedAt {
+		t.Fatalf("handoff started at %d, before the running turn ended at %d", handoff.StartedAt, hang.EndedAt)
+	}
+}

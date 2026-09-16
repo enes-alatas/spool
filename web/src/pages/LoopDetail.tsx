@@ -640,6 +640,20 @@ export default function LoopDetail() {
               <button className="btn sm" onClick={() => api.wake(name)}>
                 Wake now
               </button>
+              <button
+                className="btn sm"
+                onClick={() => {
+                  if (
+                    confirm(
+                      `Rotate @${name}'s session? It writes a handoff note and continues fresh; conversational context is shed by design.`,
+                    )
+                  ) {
+                    api.rotate(name)
+                  }
+                }}
+              >
+                Rotate session
+              </button>
               <button className="btn sm danger" onClick={() => api.kill(name)}>
                 Kill process
               </button>
