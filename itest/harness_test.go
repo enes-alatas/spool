@@ -256,6 +256,29 @@ type spoolEvent struct {
 	Type    string `json:"type"`
 	Subtype string `json:"subtype"`
 	Payload string `json:"payload"`
+	TurnID  string `json:"turn_id"`
+}
+
+// turnInputs maps each turn to the envelope texts injected into it, read
+// from the recorded envelope events — the actual inputs a turn received,
+// independent of whatever its scripted reply claims.
+func (s *server) turnInputs(name string) map[string][]string {
+	s.t.Helper()
+	var events []spoolEvent
+	s.mustJSON("GET", "/api/loops/"+name+"/events?limit=500", nil, &events)
+	out := map[string][]string{}
+	for _, e := range events {
+		if e.Type != "envelope" || e.TurnID == "" {
+			continue
+		}
+		var env struct {
+			Text string `json:"text"`
+		}
+		if err := json.Unmarshal([]byte(e.Payload), &env); err == nil {
+			out[e.TurnID] = append(out[e.TurnID], env.Text)
+		}
+	}
+	return out
 }
 
 // hasEvent waits for a spool event of the given subtype on a loop.
