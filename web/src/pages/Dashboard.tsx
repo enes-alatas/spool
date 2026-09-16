@@ -83,8 +83,8 @@ export default function Dashboard() {
               </span>
               <span>${l.cost_today_usd.toFixed(2)} today</span>
               <ContextStat loop={l} />
-              {l.workspace_mode === 'worktree' && <span>{l.branch}</span>}
-              {l.tg_bot_username && <span>@{l.tg_bot_username}</span>}
+              {l.workspace_mode === 'worktree' && <span className="branch">{l.branch}</span>}
+              {l.tg_bot_username && <span className="tg-handle">@{l.tg_bot_username}</span>}
             </div>
           </Link>
         ))}
