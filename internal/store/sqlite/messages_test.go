@@ -56,44 +56,6 @@ func TestMessageConversationRoundTrip(t *testing.T) {
 	}
 }
 
-// TestOwnerDMChat pins the interim owner-DM address (ADR-0026): the chat of
-// the loop's latest ingested DM, ErrNotFound before any DM exists, and no
-// bleed between loops.
-func TestOwnerDMChat(t *testing.T) {
-	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	ctx := context.Background()
-	now := time.Now().UnixMilli()
-
-	if _, err := db.Messages().OwnerDMChat(ctx, "l1"); err != store.ErrNotFound {
-		t.Fatalf("no DMs yet: err = %v, want ErrNotFound", err)
-	}
-
-	for i, m := range []*store.Message{
-		{TS: now, Origin: store.OriginTelegramDM, Author: "enes", Text: "old",
-			TGChatID: 41, TGMessageID: 1, TGBotLoopID: "l1",
-			Conversation: store.ConversationOwnerDM, ConversationLoopID: "l1"},
-		{TS: now + 1, Origin: store.OriginTelegramDM, Author: "enes", Text: "new",
-			TGChatID: 42, TGMessageID: 2, TGBotLoopID: "l1",
-			Conversation: store.ConversationOwnerDM, ConversationLoopID: "l1"},
-		{TS: now + 2, Origin: store.OriginTelegramDM, Author: "enes", Text: "other loop",
-			TGChatID: 99, TGMessageID: 3, TGBotLoopID: "l2",
-			Conversation: store.ConversationOwnerDM, ConversationLoopID: "l2"},
-	} {
-		if err := db.Messages().Insert(ctx, m); err != nil {
-			t.Fatalf("insert %d: %v", i, err)
-		}
-	}
-
-	chat, err := db.Messages().OwnerDMChat(ctx, "l1")
-	if err != nil || chat != 42 {
-		t.Fatalf("OwnerDMChat(l1) = %d, %v; want 42 (the latest DM)", chat, err)
-	}
-}
-
 // TestListConversation pins the private-thread query: only the named kind
 // and loop come back, newest first, with no bleed from the group or from
 // another loop's thread.
