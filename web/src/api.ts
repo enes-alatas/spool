@@ -208,6 +208,7 @@ export const api = {
   resume: (name: string) => req<LoopView>(`/api/loops/${name}/resume`, { method: 'POST' }),
   wake: (name: string) => req<{ woken: boolean }>(`/api/loops/${name}/wake`, { method: 'POST' }),
   kill: (name: string) => req<{ killed: boolean }>(`/api/loops/${name}/kill`, { method: 'POST' }),
+  rotate: (name: string) => req<{ rotating: boolean }>(`/api/loops/${name}/rotate`, { method: 'POST' }),
   message: (
     name: string,
     text: string,

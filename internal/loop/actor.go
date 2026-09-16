@@ -173,6 +173,7 @@ type Actor struct {
 	// session's last turn and starting fresh from it.
 	fillPct      int    // context fill of the last measured turn, percent of the model's window (0 = unknown)
 	armed        bool   // fill crossed the arm threshold; rotate at the next quiet boundary
+	rotateAsked  bool   // operator asked for a rotation at the next quiet boundary
 	handoffTurn  bool   // the in-flight turn is the rotation's handoff request
 	rotateOnExit bool   // rotate to a fresh session once the draining process exits
 	handoffNote  string // captured handoff reply, carried into the next fresh session's preamble
@@ -214,6 +215,15 @@ func (actor *Actor) Tick()                { actor.cmds <- cmd{kind: "tick"} }
 func (actor *Actor) Pause()               { actor.cmds <- cmd{kind: "pause"} }
 func (actor *Actor) Resume()              { actor.cmds <- cmd{kind: "resume"} }
 func (actor *Actor) Kill()                { actor.cmds <- cmd{kind: "kill"} }
+
+// Rotate asks the loop to shed its context through the ADR-0022 handoff flow
+// at the next quiet boundary, and blocks for the immediate verdict: an error
+// means there is no session to rotate.
+func (actor *Actor) Rotate() error {
+	reply := make(chan error, 1)
+	actor.cmds <- cmd{kind: "rotate", reply: reply}
+	return <-reply
+}
 
 // Power runs one of the operator's power controls against the loop's
 // workstation and blocks until it is done, so the caller can answer with the
@@ -298,6 +308,8 @@ func (actor *Actor) handleCmd(command cmd) {
 		actor.pump()
 	case "power":
 		command.reply <- actor.power(command.verb)
+	case "rotate":
+		command.reply <- actor.requestRotation()
 	case "kill":
 		if actor.proc != nil {
 			_ = actor.proc.Kill()
@@ -421,6 +433,10 @@ func (actor *Actor) wake() {
 	// send queued work immediately rather than waiting for init.
 	if len(actor.inbox) > 0 {
 		actor.startTurn()
+	} else if actor.rotateAsked {
+		// woken for nothing but an operator-asked rotation: the handoff
+		// turn is the session's only business
+		actor.startHandoffTurn()
 	}
 }
 
@@ -498,6 +514,27 @@ func (actor *Actor) needsForcedRotation() bool {
 	}
 	_, force := RotationThresholds(context.Background(), actor.deps.Store.Settings())
 	return actor.fillPct >= force
+}
+
+// requestRotation latches an operator-asked rotation: ADR-0022's handoff
+// flow, on demand instead of at a fill threshold. Queued work still runs
+// first — the handoff turn takes the next quiet boundary — while an idle
+// loop rotates now, and an asleep one is woken just to write its note.
+func (actor *Actor) requestRotation() error {
+	if actor.loop.CurrentSessionID == "" {
+		return fmt.Errorf("the loop has no session to rotate")
+	}
+	actor.rotateAsked = true
+	if actor.paused || actor.loop.WorkstationOff || len(actor.inbox) > 0 {
+		return nil // latched; the next quiet boundary takes it
+	}
+	switch actor.state {
+	case StateIdle:
+		actor.startHandoffTurn()
+	case StateAsleep:
+		actor.wake()
+	}
+	return nil
 }
 
 // startHandoffTurn asks the loop, as this session's last turn, to write the
@@ -684,9 +721,10 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 		actor.startTurn()
 		return
 	}
-	if actor.armed && !actor.paused {
+	if (actor.armed || actor.rotateAsked) && !actor.paused {
 		// quiet boundary: the wake left no queued work, so this is the
-		// cheapest moment to shed the context (ADR-0022)
+		// cheapest moment to shed the context (ADR-0022) — whether the
+		// fill armed it or the operator asked for it
 		actor.startHandoffTurn()
 		return
 	}
@@ -915,6 +953,7 @@ func (actor *Actor) startFreshSession() {
 	actor.deadResumes = 0
 	actor.backoff = 0
 	actor.armed = false
+	actor.rotateAsked = false
 	actor.fillPct = 0
 	actor.state = StateAsleep
 	actor.publishState()
@@ -1110,6 +1149,7 @@ func (actor *Actor) forgetSession(ctx context.Context) {
 	// would force a pointless rotation as the new empty session's first turn
 	actor.fillPct = 0
 	actor.armed = false
+	actor.rotateAsked = false
 	actor.storeSpoolEvent("session_forgotten", fmt.Sprintf(`{"old_session":%q}`, old))
 }
 

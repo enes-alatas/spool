@@ -81,6 +81,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/loops/{name}/resume", s.handleResume)
 	mux.HandleFunc("POST /api/loops/{name}/wake", s.handleWake)
 	mux.HandleFunc("POST /api/loops/{name}/kill", s.handleKill)
+	mux.HandleFunc("POST /api/loops/{name}/rotate", s.handleRotate)
 	mux.HandleFunc("POST /api/loops/{name}/workstation/restart", s.handlePower(loop.PowerRestart))
 	mux.HandleFunc("POST /api/loops/{name}/workstation/poweroff", s.handlePower(loop.PowerOff))
 	mux.HandleFunc("POST /api/loops/{name}/workstation/poweron", s.handlePower(loop.PowerOn))
@@ -599,6 +600,26 @@ func (s *Server) handleKill(w http.ResponseWriter, r *http.Request) {
 		actor.Kill()
 	}
 	writeJSON(w, 200, map[string]bool{"killed": true})
+}
+
+// handleRotate queues an operator-asked context rotation (ADR-0022): the
+// loop writes its handoff note at the next quiet boundary and continues on
+// a fresh session seeded from it.
+func (s *Server) handleRotate(w http.ResponseWriter, r *http.Request) {
+	l := s.loopByName(w, r)
+	if l == nil {
+		return
+	}
+	actor, ok := s.Manager.Get(l.ID)
+	if !ok {
+		s.jsonErr(w, 409, "loop has no running actor")
+		return
+	}
+	if err := actor.Rotate(); err != nil {
+		s.jsonErr(w, 409, "%v", err)
+		return
+	}
+	writeJSON(w, 202, map[string]bool{"rotating": true})
 }
 
 type postMessageReq struct {
