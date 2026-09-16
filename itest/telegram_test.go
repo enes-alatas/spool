@@ -31,6 +31,21 @@ type sentMessage struct {
 	Token  string
 	ChatID int64
 	Text   string
+	// MessageID is the id this bot's numbering gave the send; ReplyTo is
+	// the id it asked Telegram to thread under (0 = a plain post).
+	MessageID int64
+	ReplyTo   int64
+}
+
+// fakePost is one message as the chat holds it: the ids differ per bot,
+// because Telegram numbers message_id per bot conversation. A reply can only
+// name the id belonging to the bot that receives it.
+type fakePost struct {
+	ids   map[string]int64 // token → that bot's id for this message
+	from  user
+	isBot bool
+	text  string
+	date  int64
 }
 
 func startFakeTelegram(t *testing.T, tokens ...string) *fakeTelegram {
@@ -73,14 +88,24 @@ func (tg *fakeTelegram) handle(w http.ResponseWriter, r *http.Request) {
 		writeOK(w, tg.drain(token))
 	case "sendMessage":
 		var req struct {
-			ChatID int64  `json:"chat_id"`
-			Text   string `json:"text"`
+			ChatID          int64  `json:"chat_id"`
+			Text            string `json:"text"`
+			ReplyParameters *struct {
+				MessageID int64 `json:"message_id"`
+			} `json:"reply_parameters"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&req)
 		tg.mu.Lock()
-		tg.sent = append(tg.sent, sentMessage{Token: token, ChatID: req.ChatID, Text: req.Text})
+		tg.nextID[token]++
+		id := tg.nextID[token]
+		var replyTo int64
+		if req.ReplyParameters != nil {
+			replyTo = req.ReplyParameters.MessageID
+		}
+		tg.sent = append(tg.sent, sentMessage{Token: token, ChatID: req.ChatID,
+			Text: req.Text, MessageID: id, ReplyTo: replyTo})
 		tg.mu.Unlock()
-		writeOK(w, map[string]any{"message_id": 1})
+		writeOK(w, map[string]any{"message_id": id})
 	default:
 		writeOK(w, map[string]any{})
 	}
@@ -112,25 +137,76 @@ func (tg *fakeTelegram) drain(token string) []map[string]any {
 
 // post delivers one human message to every bot listening on the chat, each
 // with its own message_id — exactly what Telegram does.
-func (tg *fakeTelegram) post(chatID int64, chatType, text string, from user) {
+func (tg *fakeTelegram) post(chatID int64, chatType, text string, from user) *fakePost {
+	return tg.postReply(chatID, chatType, text, from, nil)
+}
+
+// postReply is post with a native reply attached. Every bot receives the
+// embedded target under its own id for it, and a bot that never saw the
+// target — another bot's post — receives the embedded copy with no usable
+// id, which is exactly the case the text has to identify.
+func (tg *fakeTelegram) postReply(chatID int64, chatType, text string, from user, target *fakePost) *fakePost {
 	tg.mu.Lock()
 	defer tg.mu.Unlock()
+	post := &fakePost{ids: map[string]int64{}, from: from, text: text, date: time.Now().Unix()}
 	for _, token := range tg.bots {
 		tg.nextID[token]++
 		tg.updates++
-		tg.queued[token] = append(tg.queued[token], map[string]any{
-			"update_id": tg.updates,
-			"message": map[string]any{
-				"message_id": tg.nextID[token],
-				"date":       time.Now().Unix(),
-				"text":       text,
-				"from": map[string]any{
-					"id": from.ID, "is_bot": false,
-					"first_name": from.First, "username": from.Username,
-				},
-				"chat": map[string]any{"id": chatID, "type": chatType},
+		post.ids[token] = tg.nextID[token]
+		msg := map[string]any{
+			"message_id": tg.nextID[token],
+			"date":       post.date,
+			"text":       text,
+			"from": map[string]any{
+				"id": from.ID, "is_bot": false,
+				"first_name": from.First, "username": from.Username,
 			},
+			"chat": map[string]any{"id": chatID, "type": chatType},
+		}
+		if target != nil {
+			msg["reply_to_message"] = target.embed(token, chatID, chatType)
+		}
+		tg.queued[token] = append(tg.queued[token], map[string]any{
+			"update_id": tg.updates, "message": msg,
 		})
+	}
+	return post
+}
+
+// embed renders the target as Telegram embeds it in a reply, from one bot's
+// point of view.
+func (p *fakePost) embed(token string, chatID int64, chatType string) map[string]any {
+	sender := map[string]any{
+		"id": p.from.ID, "is_bot": p.isBot,
+		"first_name": p.from.First, "username": p.from.Username,
+	}
+	return map[string]any{
+		"message_id": p.ids[token], // 0 when this bot never saw it
+		"date":       p.date,
+		"text":       p.text,
+		"from":       sender,
+		"chat":       map[string]any{"id": chatID, "type": chatType},
+	}
+}
+
+// sentPost turns a bot's own send into a post other messages can reply to:
+// only the bot that sent it holds an id for it.
+func (tg *fakeTelegram) sentPost(t *testing.T, chatID int64, text string) *fakePost {
+	t.Helper()
+	return tg.sentPostFrom(t, chatID, "", text)
+}
+
+// sentPostFrom is sentPost narrowed to one bot's send, for when several bots
+// posted the same words.
+func (tg *fakeTelegram) sentPostFrom(t *testing.T, chatID int64, token, text string) *fakePost {
+	t.Helper()
+	sent := tg.waitSentFrom(t, chatID, token, text)
+	return &fakePost{
+		ids:   map[string]int64{sent.Token: sent.MessageID},
+		from:  user{ID: 9000, First: botUsername(sent.Token)},
+		isBot: true,
+		text:  sent.Text,
+		date:  time.Now().Unix(),
 	}
 }
 
@@ -179,16 +255,22 @@ func (tg *fakeTelegram) sentTo(chatID int64) []sentMessage {
 // waitSent blocks until a bot posts a message containing text to chatID.
 func (tg *fakeTelegram) waitSent(t *testing.T, chatID int64, text string) sentMessage {
 	t.Helper()
+	return tg.waitSentFrom(t, chatID, "", text)
+}
+
+// waitSentFrom is waitSent restricted to one bot's token ("" = any bot).
+func (tg *fakeTelegram) waitSentFrom(t *testing.T, chatID int64, token, text string) sentMessage {
+	t.Helper()
 	deadline := time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {
 		for _, m := range tg.sentTo(chatID) {
-			if strings.Contains(m.Text, text) {
+			if (token == "" || m.Token == token) && strings.Contains(m.Text, text) {
 				return m
 			}
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	t.Fatalf("no bot ever sent %q to chat %d", text, chatID)
+	t.Fatalf("bot %q never sent %q to chat %d", token, text, chatID)
 	return sentMessage{}
 }
 
@@ -200,6 +282,7 @@ type activityMessage struct {
 	DeliveredTo        []string `json:"delivered_to"`
 	Conversation       string   `json:"conversation"`
 	ConversationLoopID string   `json:"conversation_loop_id"`
+	ReplyToID          int64    `json:"reply_to_id"`
 }
 
 func (s *server) activity() []activityMessage {
