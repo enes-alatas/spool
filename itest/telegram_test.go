@@ -470,6 +470,41 @@ func TestComposerGroupDestination(t *testing.T) {
 	}
 }
 
+// A private inbound message naming a peer delivers only to its own loop:
+// mentions in owner_dm or control_room text never add recipients, the named
+// peer gets no input or wake, and nothing surfaces in the group (ADR-0025).
+func TestPrivateInboundNeverFansOut(t *testing.T) {
+	operator := user{ID: 5454, First: "Operator", Username: "operator"}
+	srv, tg := startTelegramFleet(t, operator)
+
+	const dmText = "please check @beta quietly"
+	const webText = "control room note about @beta"
+	tg.dm("alpha", operator, dmText)
+	srv.mustJSON("POST", "/api/loops/alpha/message", map[string]any{"text": webText}, nil)
+
+	for _, text := range []string{dmText, webText} {
+		srv.waitTurn("alpha", 30*time.Second, func(tn turn) bool {
+			return strings.Contains(tn.ResultText, text)
+		})
+		stored := srv.activityWith(text)
+		if len(stored) != 1 || len(stored[0].DeliveredTo) != 1 {
+			t.Fatalf("%q delivered to %v, want alpha alone", text, dump(stored))
+		}
+	}
+	// let any misrouted delivery drain before the negative checks
+	time.Sleep(2 * time.Second)
+	for _, tn := range srv.completed("beta") {
+		if tn.Trigger == "message" {
+			t.Fatalf("private text naming beta delivered to it: %s", dump(tn))
+		}
+	}
+	for _, m := range tg.sentTo(groupChatID) {
+		if strings.Contains(m.Text, dmText) || strings.Contains(m.Text, webText) {
+			t.Fatalf("private inbound surfaced in the group: %q", m.Text)
+		}
+	}
+}
+
 // A DM and a group message arriving together must produce separate replies
 // in separate turns — no combined private/group answer (ADR-0025 scenarios).
 func TestMixedDMAndGroupArrivalsAnswerSeparately(t *testing.T) {
