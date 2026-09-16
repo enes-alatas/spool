@@ -391,13 +391,28 @@ select {
   overflow: hidden;
   min-height: 2.6em;
 }
+/* each field is a label and its value: the row wraps between fields, never
+   inside one, so a narrow card grows a second line instead of running the
+   last field under its border */
 .loop-card .stats {
   display: flex;
-  gap: 14px;
+  flex-wrap: wrap;
+  gap: 4px 14px;
   margin-top: 12px;
   font-family: var(--mono);
   font-size: 11.5px;
   color: var(--text-muted);
+}
+.loop-card .stats > * {
+  white-space: nowrap;
+}
+/* a branch or a bot handle can be longer than the card is wide, and there is
+   no shortening it: a clipped handle reads as a different handle. These two
+   break across lines where the pairs above them do not */
+.loop-card .stats .branch,
+.loop-card .stats .tg-handle {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 /* context occupancy on a card: quiet until the window is nearly full */
 .loop-card .stats .ctx-stat.warm {
