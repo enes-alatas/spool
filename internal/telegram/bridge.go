@@ -7,12 +7,15 @@ package telegram
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/enes-alatas/spool/internal/bus"
 	"github.com/enes-alatas/spool/internal/route"
@@ -126,6 +129,13 @@ type poller struct {
 type sendReq struct {
 	chatID int64
 	text   string
+	// replyTo is this bot's own id for the message being replied to, or 0
+	// for a plain post. A foreign bot's id is never passed here: message_id
+	// is numbered per bot conversation (ADR-0020).
+	replyTo int64
+	// recordFor is the internal message whose surface id this send mints;
+	// 0 when the send is not worth referencing later.
+	recordFor int64
 }
 
 func (br *Bridge) startPoller(l *store.Loop) {
@@ -238,6 +248,12 @@ func (br *Bridge) handleMessage(ctx context.Context, p *poller, m *tgMsgAlias) {
 		return
 	}
 
+	// Every bot that saw the message records its own id for it, whether or
+	// not it is the one that ingests it. That sighting is what later lets
+	// this bot's reply thread under the message: it cannot borrow the
+	// ingesting bot's id, which belongs to another numbering (ADR-0020).
+	br.recordSighting(ctx, p, m)
+
 	if isGroup {
 		// Every bot in the group sees this message under its own message_id,
 		// so exactly one of them may persist it.
@@ -254,6 +270,8 @@ func (br *Bridge) handleMessage(ctx context.Context, p *poller, m *tgMsgAlias) {
 			TGChatID:    m.Chat.ID,
 			TGMessageID: m.MessageID,
 			TGBotLoopID: p.loopID,
+			TGKey:       tgKey(m),
+			ReplyToID:   br.inboundReplyTarget(ctx, p, m),
 		})
 		if err != nil && !errors.Is(err, store.ErrDuplicate) {
 			br.log.Error("telegram group ingest", "err", err)
@@ -272,6 +290,8 @@ func (br *Bridge) handleMessage(ctx context.Context, p *poller, m *tgMsgAlias) {
 			TGChatID:    m.Chat.ID,
 			TGMessageID: m.MessageID,
 			TGBotLoopID: p.loopID,
+			TGKey:       tgKey(m),
+			ReplyToID:   br.inboundReplyTarget(ctx, p, m),
 			ImplicitTo:  p.loopID,
 		})
 		if err != nil && !errors.Is(err, store.ErrDuplicate) {
@@ -345,6 +365,108 @@ func boundBefore(l *store.Loop, msgDate int64) bool {
 // duplicates are prevented upstream, by only one bot ingesting a group.
 func dedupKey(loopID string, chatID, messageID int64) string {
 	return fmt.Sprintf("%s:%d:%d", loopID, chatID, messageID)
+}
+
+// tgKey identifies a telegram message by what every bot observing it sees
+// alike: the chat, the sender, Telegram's own date, and the text. Bots agree
+// on all four while disagreeing on message_id, so it is the only join
+// between one bot's sighting and another's ingested row.
+func tgKey(m *tgMsgAlias) string {
+	sum := sha256.Sum256(fmt.Appendf(nil, "%d|%d|%d|%s", m.Chat.ID, m.From.ID, m.Date, m.Text))
+	return hex.EncodeToString(sum[:16])
+}
+
+// recordSighting stores this bot's own id for a message it received —
+// every inbound message, group or DM, since a DM's only reference is the
+// receiving bot's sighting of it.
+func (br *Bridge) recordSighting(ctx context.Context, p *poller, m *tgMsgAlias) {
+	err := br.store.Messages().RecordSighting(ctx, tgKey(m), p.loopID, m.Chat.ID, m.MessageID, time.Now().UnixMilli())
+	if err != nil {
+		br.log.Warn("telegram: record sighting", "loop", p.name, "err", err)
+	}
+}
+
+// recordSentRef maps an internal message to the id Telegram minted for it in
+// this bot's numbering, so a later reply can target it.
+func (br *Bridge) recordSentRef(ctx context.Context, p *poller, req sendReq, sent *Message) {
+	if req.recordFor == 0 || sent == nil || sent.MessageID == 0 {
+		return
+	}
+	err := br.store.Messages().PutRef(ctx, &store.SurfaceRef{
+		MessageID: req.recordFor, BotLoopID: p.loopID,
+		TGChatID: req.chatID, TGMessageID: sent.MessageID,
+	})
+	if err != nil {
+		br.log.Warn("telegram: record sent reference", "loop", p.name, "err", err)
+	}
+}
+
+// inboundReplyTarget identifies the message a human's native reply points
+// at. Telegram's embedded reply_to_message carries an id in the receiving
+// bot's own numbering, so it resolves directly only for messages that bot
+// sent or saw; for another loop's post — which no other bot ever receives —
+// the embedded copy's text is all that is left to identify it by. A target
+// that resolves to nothing stays 0: the message is delivered as an ordinary
+// one rather than aimed at a guess.
+func (br *Bridge) inboundReplyTarget(ctx context.Context, p *poller, m *tgMsgAlias) int64 {
+	rm := m.ReplyToMessage
+	if rm == nil || rm.From == nil {
+		return 0
+	}
+	msgs := br.store.Messages()
+	if target, err := msgs.ByRef(ctx, p.loopID, m.Chat.ID, rm.MessageID); err == nil {
+		return target.ID
+	}
+	if !rm.From.IsBot {
+		if target, err := msgs.ByTGKey(ctx, tgKey(rm)); err == nil {
+			return target.ID
+		}
+		return 0
+	}
+	if rm.Text != "" {
+		if target, err := msgs.LatestGroupTextFrom(ctx, rm.Text); err == nil {
+			return target.ID
+		}
+	}
+	return 0
+}
+
+// render prepares a loop's message for one chat: the native reply anchor
+// when the sending bot holds its own id for the target, and otherwise a
+// quoted first line naming what the message answers. A bot holds no id for
+// another loop's post — bots never receive each other's messages — so
+// without the quote a reply would read as an unrelated remark (ADR-0025,
+// amendment). A foreign bot's id is never used as an anchor: message_id is
+// numbered per bot conversation (ADR-0020).
+func (br *Bridge) render(ctx context.Context, mp *route.MessagePayload, chatID int64) (anchor int64, text string) {
+	if mp.ReplyToID == 0 {
+		return 0, mp.Text
+	}
+	if ref, err := br.store.Messages().Ref(ctx, mp.ReplyToID, mp.FromLoopID); err == nil && ref.TGChatID == chatID {
+		return ref.TGMessageID, mp.Text
+	}
+	target, err := br.store.Messages().Get(ctx, mp.ReplyToID)
+	if err != nil {
+		return 0, mp.Text
+	}
+	return 0, quotePrefix(target) + mp.Text
+}
+
+// quoteLen caps the quoted line; long enough to identify the message, short
+// enough that the reply itself stays the message.
+const quoteLen = 80
+
+// quotePrefix renders the one line that stands in for a native reply.
+func quotePrefix(target *store.Message) string {
+	quoted := strings.Join(strings.Fields(target.Text), " ")
+	if len(quoted) > quoteLen {
+		cut := quoteLen
+		for cut > 0 && !utf8.RuneStart(quoted[cut]) {
+			cut--
+		}
+		quoted = quoted[:cut] + "…"
+	}
+	return fmt.Sprintf("↳ re %s: %s\n\n", target.Author, quoted)
 }
 
 // tgMsgAlias keeps handleMessage readable without exporting internals.
@@ -457,9 +579,20 @@ func (br *Bridge) replyStatus(ctx context.Context, p *poller, chatID int64) {
 // --- outbound: per-bot paced sender ---
 
 func (p *poller) enqueueSend(chatID int64, text string) {
-	for _, chunk := range splitMessage(text, maxMsgLen) {
+	p.enqueue(sendReq{chatID: chatID, text: text})
+}
+
+// enqueue splits a send into Telegram-sized chunks. Only the first chunk
+// carries the reply anchor and mints the message's surface reference: the
+// continuation chunks are the same message, not new targets.
+func (p *poller) enqueue(req sendReq) {
+	for i, chunk := range splitMessage(req.text, maxMsgLen) {
+		part := sendReq{chatID: req.chatID, text: chunk}
+		if i == 0 {
+			part.replyTo, part.recordFor = req.replyTo, req.recordFor
+		}
 		select {
-		case p.sendCh <- sendReq{chatID: chatID, text: chunk}:
+		case p.sendCh <- part:
 		default: // queue full: drop rather than block the bridge
 		}
 	}
@@ -472,8 +605,9 @@ func (br *Bridge) sendLoop(ctx context.Context, p *poller) {
 			return
 		case req := <-p.sendCh:
 			for attempt := 0; attempt < 3; attempt++ {
-				err := p.client.SendMessage(ctx, req.chatID, req.text)
+				sent, err := p.client.SendMessage(ctx, req.chatID, req.text, req.replyTo)
 				if err == nil {
+					br.recordSentRef(ctx, p, req, sent)
 					break
 				}
 				var apiErr *APIError
@@ -528,7 +662,8 @@ func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 			if err != nil || l.TGGroupChatID == 0 {
 				return
 			}
-			p.enqueueSend(l.TGGroupChatID, mp.Text)
+			anchor, text := br.render(ctx, mp, l.TGGroupChatID)
+			p.enqueue(sendReq{chatID: l.TGGroupChatID, text: text, replyTo: anchor, recordFor: mp.ID})
 		case store.ConversationOwnerDM:
 			// a loop's owner_dm send: deliver to the chat route.Send pinned
 			// at send time — never re-resolved here, so a DM arriving
@@ -545,7 +680,8 @@ func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 				br.log.Error("owner dm delivery: send carried no pinned chat", "loop", mp.FromLoopID)
 				return
 			}
-			p.enqueueSend(mp.OwnerDMChat, mp.Text)
+			anchor, text := br.render(ctx, mp, mp.OwnerDMChat)
+			p.enqueue(sendReq{chatID: mp.OwnerDMChat, text: text, replyTo: anchor, recordFor: mp.ID})
 		}
 		// control_room lives in the web UI alone; telegram sees nothing
 	case store.OriginWeb:
@@ -566,7 +702,11 @@ func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 			if err != nil || l.TGGroupChatID == 0 {
 				continue
 			}
-			p.enqueueSend(l.TGGroupChatID, fmt.Sprintf("%s (via web): %s", mp.Author, mp.Text))
+			p.enqueue(sendReq{
+				chatID:    l.TGGroupChatID,
+				text:      fmt.Sprintf("%s (via web): %s", mp.Author, mp.Text),
+				recordFor: mp.ID,
+			})
 			return
 		}
 	}
