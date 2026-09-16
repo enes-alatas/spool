@@ -301,11 +301,22 @@ func (r messages) SetDelivered(ctx context.Context, id int64, deliveredTo []stri
 	return err
 }
 
+const messageCols = `id, ts, origin, author, from_loop_id, text,
+	mentions, COALESCE(tg_chat_id,0), COALESCE(tg_message_id,0), tg_bot_loop_id, delivered_to,
+	conversation, conversation_loop_id`
+
 func (r messages) List(ctx context.Context, limit int) ([]*store.Message, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT id, ts, origin, author, from_loop_id, text,
-		mentions, COALESCE(tg_chat_id,0), COALESCE(tg_message_id,0), tg_bot_loop_id, delivered_to,
-		conversation, conversation_loop_id
-		FROM messages ORDER BY id DESC LIMIT ?`, limit)
+	return r.query(ctx, `SELECT `+messageCols+` FROM messages ORDER BY id DESC LIMIT ?`, limit)
+}
+
+func (r messages) ListConversation(ctx context.Context, kind, loopID string, limit int) ([]*store.Message, error) {
+	return r.query(ctx, `SELECT `+messageCols+` FROM messages
+		WHERE conversation=? AND conversation_loop_id=?
+		ORDER BY id DESC LIMIT ?`, kind, loopID, limit)
+}
+
+func (r messages) query(ctx context.Context, q string, args ...any) ([]*store.Message, error) {
+	rows, err := r.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}

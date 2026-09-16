@@ -93,3 +93,39 @@ func TestOwnerDMChat(t *testing.T) {
 		t.Fatalf("OwnerDMChat(l1) = %d, %v; want 42 (the latest DM)", chat, err)
 	}
 }
+
+// TestListConversation pins the private-thread query: only the named kind
+// and loop come back, newest first, with no bleed from the group or from
+// another loop's thread.
+func TestListConversation(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	now := time.Now().UnixMilli()
+
+	for i, m := range []*store.Message{
+		{TS: now, Origin: store.OriginWeb, Author: "operator", Text: "question",
+			Conversation: store.ConversationControlRoom, ConversationLoopID: "l1"},
+		{TS: now + 1, Origin: store.OriginLoop, Author: "terra", FromLoopID: "l1", Text: "answer",
+			Conversation: store.ConversationControlRoom, ConversationLoopID: "l1"},
+		{TS: now + 2, Origin: store.OriginWeb, Author: "operator", Text: "other loop's thread",
+			Conversation: store.ConversationControlRoom, ConversationLoopID: "l2"},
+		{TS: now + 3, Origin: store.OriginLoop, Author: "terra", FromLoopID: "l1", Text: "@milo group",
+			Conversation: store.ConversationGroup},
+	} {
+		if err := db.Messages().Insert(ctx, m); err != nil {
+			t.Fatalf("insert %d: %v", i, err)
+		}
+	}
+
+	got, err := db.Messages().ListConversation(ctx, store.ConversationControlRoom, "l1", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].Text != "answer" || got[1].Text != "question" {
+		t.Fatalf("ListConversation(control_room, l1) = %d messages (%+v), want the thread's 2 newest-first", len(got), got)
+	}
+}
