@@ -90,6 +90,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/loops/{name}/events", s.handleLoopEvents)
 	mux.HandleFunc("GET /api/loops/{name}/turns", s.handleLoopTurns)
 	mux.HandleFunc("GET /api/loops/{name}/telegram/status", s.handleTelegramStatus)
+	mux.HandleFunc("PUT /api/loops/{name}/owner", s.handlePutOwner)
 	mux.HandleFunc("GET /api/loops/{name}/secrets", s.handleListSecrets)
 	mux.HandleFunc("PUT /api/loops/{name}/secrets/{key}", s.handlePutSecret)
 	mux.HandleFunc("DELETE /api/loops/{name}/secrets/{key}", s.handleDeleteSecret)
@@ -181,10 +182,24 @@ type loopView struct {
 	// DownReason distinguishes a workstation the operator switched off from
 	// one that died; empty while it is up (ADR-0021).
 	DownReason string `json:"down_reason"`
+	// OwnerDMReady reports that the loop can message its owner privately:
+	// an owner is configured and has opened a chat with this loop's own
+	// bot. A bot cannot open one, so until the owner writes there is
+	// nowhere to send (#73).
+	OwnerDMReady bool `json:"owner_dm_ready"`
+	// OwnerUsername is the configured owner's telegram handle, when known —
+	// the name the UI shows instead of a numeric id.
+	OwnerUsername string `json:"owner_username,omitempty"`
 }
 
 func (s *Server) view(ctx context.Context, l *store.Loop) *loopView {
-	v := &loopView{Loop: l, State: loop.StateAsleep, HasTGToken: l.TGBotToken != "", WorkstationUp: true}
+	v := &loopView{Loop: l, State: loop.StateAsleep, HasTGToken: l.TGBotToken != "", WorkstationUp: true,
+		OwnerDMReady: l.OwnerTGUserID != 0 && l.OwnerDMChatID != 0}
+	if l.OwnerTGUserID != 0 {
+		if sender, err := s.Store.TGSenders().Get(ctx, l.OwnerTGUserID); err == nil {
+			v.OwnerUsername = sender.Username
+		}
+	}
 	if actor, ok := s.Manager.Get(l.ID); ok {
 		v.State = actor.State()
 		health := actor.WorkstationHealth()
@@ -350,6 +365,10 @@ func (s *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 		s.jsonErr(w, 400, "%v", err)
 		return
 	}
+
+	// A new loop starts owned by the same person as the rest of the fleet:
+	// the first allowlisted sender, reassignable per loop (#73).
+	l.OwnerTGUserID = s.defaultOwnerID(r.Context())
 
 	if err := s.Store.Loops().Create(r.Context(), l); err != nil {
 		if errors.Is(err, store.ErrDuplicate) {
@@ -1033,9 +1052,117 @@ func (s *Server) handleSenderStatus(status string) http.HandlerFunc {
 			return
 		}
 		sender, _ := s.Store.TGSenders().Get(r.Context(), id)
+		if status == store.SenderAllowed {
+			s.adoptDefaultOwner(r.Context(), id)
+		} else {
+			s.disownLoopsOf(r.Context(), id)
+		}
 		s.Bus.Publish(bus.Item{Kind: bus.KindAccess, Payload: sender})
 		writeJSON(w, 200, sender)
 	}
+}
+
+// defaultOwnerID is the first person the operator allowlisted, or 0 when
+// nobody is.
+func (s *Server) defaultOwnerID(ctx context.Context) int64 {
+	senders, err := s.Store.TGSenders().List(ctx)
+	if err != nil {
+		return 0
+	}
+	var owner *store.TGSender
+	for _, sender := range senders {
+		if sender.Status != store.SenderAllowed {
+			continue
+		}
+		if owner == nil || sender.CreatedAt < owner.CreatedAt {
+			owner = sender
+		}
+	}
+	if owner == nil {
+		return 0
+	}
+	return owner.TGUserID
+}
+
+// adoptDefaultOwner gives every ownerless loop this sender as its owner.
+// The first person the operator allowlists is the owner by default — the
+// fleet is built for one operator — and they can reassign per loop.
+func (s *Server) adoptDefaultOwner(ctx context.Context, tgUserID int64) {
+	loops, err := s.Store.Loops().List(ctx)
+	if err != nil {
+		return
+	}
+	for _, l := range loops {
+		if l.OwnerTGUserID != 0 || l.Status == store.StatusArchived {
+			continue
+		}
+		l.OwnerTGUserID = tgUserID
+		l.UpdatedAt = time.Now().UnixMilli()
+		if err := s.Store.Loops().Update(ctx, l); err != nil {
+			s.Log.Error("default owner", "loop", l.Name, "err", err)
+		}
+	}
+}
+
+// disownLoopsOf drops the ownership of a sender who may no longer reach the
+// fleet. An owner is an allowed sender — checked when one is set — and that
+// invariant has to survive the reverse transitions too: otherwise blocking
+// or deleting someone leaves the loops they own still messaging them
+// privately, with the control room reporting those loops as ready to do it.
+func (s *Server) disownLoopsOf(ctx context.Context, tgUserID int64) {
+	loops, err := s.Store.Loops().List(ctx)
+	if err != nil {
+		return
+	}
+	for _, l := range loops {
+		if l.OwnerTGUserID != tgUserID {
+			continue
+		}
+		l.OwnerTGUserID, l.OwnerDMChatID = 0, 0
+		l.UpdatedAt = time.Now().UnixMilli()
+		if err := s.Store.Loops().Update(ctx, l); err != nil {
+			s.Log.Error("disown loop", "loop", l.Name, "err", err)
+		}
+	}
+}
+
+type putOwnerReq struct {
+	TGUserID int64 `json:"tg_user_id"`
+}
+
+// handlePutOwner sets which person a loop may message privately. Only an
+// allowlisted sender qualifies: being able to reach a bot is not the same as
+// owning the loop it belongs to (#73). Changing the owner drops the captured
+// chat — it belonged to the previous one — and the new owner's first DM to
+// this bot captures theirs.
+func (s *Server) handlePutOwner(w http.ResponseWriter, r *http.Request) {
+	l := s.loopByName(w, r)
+	if l == nil {
+		return
+	}
+	var req putOwnerReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.jsonErr(w, 400, "bad json")
+		return
+	}
+	sender, err := s.Store.TGSenders().Get(r.Context(), req.TGUserID)
+	if errors.Is(err, store.ErrNotFound) || (err == nil && sender.Status != store.SenderAllowed) {
+		s.jsonErr(w, 400, "owner must be an allowed telegram sender")
+		return
+	} else if err != nil {
+		s.jsonErr(w, 500, "%v", err)
+		return
+	}
+	if l.OwnerTGUserID != req.TGUserID {
+		l.OwnerTGUserID = req.TGUserID
+		l.OwnerDMChatID = 0
+		l.UpdatedAt = time.Now().UnixMilli()
+		if err := s.Store.Loops().Update(r.Context(), l); err != nil {
+			s.jsonErr(w, 500, "%v", err)
+			return
+		}
+	}
+	writeJSON(w, 200, s.view(r.Context(), l))
 }
 
 func (s *Server) handleDeleteSender(w http.ResponseWriter, r *http.Request) {
@@ -1048,6 +1175,7 @@ func (s *Server) handleDeleteSender(w http.ResponseWriter, r *http.Request) {
 		s.jsonErr(w, 500, "%v", err)
 		return
 	}
+	s.disownLoopsOf(r.Context(), id)
 	s.Bus.Publish(bus.Item{Kind: bus.KindAccess, Payload: map[string]any{"deleted": id}})
 	writeJSON(w, 200, map[string]bool{"deleted": true})
 }
