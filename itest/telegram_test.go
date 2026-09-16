@@ -469,3 +469,66 @@ func TestComposerGroupDestination(t *testing.T) {
 		t.Fatalf("owner_dm composer destination accepted: %d", resp.StatusCode)
 	}
 }
+
+// A DM and a group message arriving together must produce separate replies
+// in separate turns — no combined private/group answer (ADR-0025 scenarios).
+func TestMixedDMAndGroupArrivalsAnswerSeparately(t *testing.T) {
+	operator := user{ID: 5151, First: "Operator", Username: "operator"}
+	// line 1 answers the creation tick; line 2 hangs so both arrivals queue;
+	// afterwards the echo names each turn's own inputs
+	ws := workspaceWithScript(t, "!ctx 0\n!hang 4\n!ctx 0\n")
+	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws})
+
+	tg.dm("alpha", operator, "start hanging")
+	time.Sleep(1500 * time.Millisecond) // alpha is inside the hang
+	tg.dm("alpha", operator, "dm hello")
+	tg.post(groupChatID, "supergroup", "@alpha group hello", operator)
+
+	dmTurn := srv.waitTurn("alpha", 30*time.Second, func(tn turn) bool {
+		return strings.Contains(tn.ResultText, "dm hello")
+	})
+	groupTurn := srv.waitTurn("alpha", 30*time.Second, func(tn turn) bool {
+		return strings.Contains(tn.ResultText, "group hello")
+	})
+	if dmTurn.ID == groupTurn.ID {
+		t.Fatalf("DM and group inputs shared one turn: %s", dump(dmTurn))
+	}
+	if strings.Contains(dmTurn.ResultText, "group hello") || strings.Contains(groupTurn.ResultText, "dm hello") {
+		t.Fatalf("conversation inputs blended across turns:\ndm: %s\ngroup: %s",
+			dmTurn.ResultText, groupTurn.ResultText)
+	}
+}
+
+// Two humans' DM conversations with the same bot arriving together must not
+// share a turn or an answer — no fan-out across private conversations
+// (ADR-0025 scenarios).
+func TestSeparateDMConversationsNeverShareATurn(t *testing.T) {
+	operator := user{ID: 5252, First: "Operator", Username: "operator"}
+	friend := user{ID: 5353, First: "Friend", Username: "friend"}
+	ws := workspaceWithScript(t, "!ctx 0\n!hang 4\n!ctx 0\n")
+	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws})
+
+	// the friend's first DM only registers them as pending; it never reaches
+	// the loop, so it consumes no script line
+	tg.dm("alpha", friend, "knock")
+	srv.allowSender(friend.ID)
+
+	tg.dm("alpha", operator, "start hanging")
+	time.Sleep(1500 * time.Millisecond) // alpha is inside the hang
+	tg.dm("alpha", operator, "from op")
+	tg.dm("alpha", friend, "from friend")
+
+	opTurn := srv.waitTurn("alpha", 30*time.Second, func(tn turn) bool {
+		return strings.Contains(tn.ResultText, "from op")
+	})
+	friendTurn := srv.waitTurn("alpha", 30*time.Second, func(tn turn) bool {
+		return strings.Contains(tn.ResultText, "from friend")
+	})
+	if opTurn.ID == friendTurn.ID {
+		t.Fatalf("two DM conversations shared one turn: %s", dump(opTurn))
+	}
+	if strings.Contains(opTurn.ResultText, "from friend") || strings.Contains(friendTurn.ResultText, "from op") {
+		t.Fatalf("DM conversations blended across turns:\nop: %s\nfriend: %s",
+			opTurn.ResultText, friendTurn.ResultText)
+	}
+}
