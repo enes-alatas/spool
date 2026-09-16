@@ -105,6 +105,11 @@ type Message struct {
 	Chat      Chat   `json:"chat"`
 	Text      string `json:"text"`
 	Date      int64  `json:"date"`
+	// ReplyToMessage is the message this one natively replies to, as
+	// Telegram embeds it. Its message_id is in the receiving bot's own
+	// numbering, but the embedded sender, date and text are what every bot
+	// sees alike — which is what makes the target identifiable at all.
+	ReplyToMessage *Message `json:"reply_to_message,omitempty"`
 }
 
 type Update struct {
@@ -133,7 +138,24 @@ func (c *Client) GetUpdates(ctx context.Context, offset int64, timeoutSec int) (
 	return updates, nil
 }
 
-func (c *Client) SendMessage(ctx context.Context, chatID int64, text string) error {
+// SendMessage posts text to a chat and returns the message Telegram created,
+// whose message_id is this bot's own reference to it — the only id this bot
+// may later use as a reply target (ADR-0020). replyTo is such an id from
+// this bot's numbering, or 0 for a plain post.
+func (c *Client) SendMessage(ctx context.Context, chatID int64, text string, replyTo int64) (*Message, error) {
 	// plain text (no parse_mode) avoids entity-escaping pitfalls
-	return c.call(ctx, "sendMessage", map[string]any{"chat_id": chatID, "text": text}, nil)
+	params := map[string]any{"chat_id": chatID, "text": text}
+	if replyTo != 0 {
+		// allow_sending_without_reply: a target that vanished (deleted, or
+		// too old for Telegram) must still deliver the message, unthreaded,
+		// rather than fail the send.
+		params["reply_parameters"] = map[string]any{
+			"message_id": replyTo, "allow_sending_without_reply": true,
+		}
+	}
+	var sent Message
+	if err := c.call(ctx, "sendMessage", params, &sent); err != nil {
+		return nil, err
+	}
+	return &sent, nil
 }
