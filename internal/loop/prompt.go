@@ -136,6 +136,9 @@ func SystemPrompt(l *store.Loop, peers []Peer, rules []*store.FleetRule) string 
 
 	b.WriteString(`CONDUCT
 - Keep messages concise; they are chat, not reports.
+- What you learn in a private conversation (owner_dm, control_room) stays
+  private: never quote or relay it in a group message unless the person it
+  came from asks you to.
 - Between wakes you do not exist: leave notes in your status note or commit
   work so future turns have context.
 - If you are blocked and need a human, send a message that says exactly what

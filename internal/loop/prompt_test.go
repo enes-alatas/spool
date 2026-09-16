@@ -92,6 +92,17 @@ func TestSystemPromptFleetRules(t *testing.T) {
 // TestRotationEnvelope pins the handoff request of the rotation contract
 // (ADR-0022): it asks for a handoff note, carries the rotation trigger, and
 // forbids the trailer a normal reply may end with.
+// TestSystemPromptPrivacyRule pins the behavioral half of ADR-0026
+// decision 4: the prompt must carry the rule against quoting private
+// conversation content into the group, since sessions are shared and only
+// conduct guards it.
+func TestSystemPromptPrivacyRule(t *testing.T) {
+	prompt := SystemPrompt(&store.Loop{Name: "terra", Mission: "m"}, nil, nil)
+	if !strings.Contains(prompt, "never quote or relay it in a group message") {
+		t.Fatalf("prompt missing the private-content rule:\n%s", prompt)
+	}
+}
+
 // TestMessageEnvelopeNamesConversation pins that every inbound header names
 // the conversation it belongs to — a private web message and one posted to
 // the group must never look alike to the model (ADR-0026).
