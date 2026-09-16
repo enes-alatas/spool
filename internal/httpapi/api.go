@@ -604,6 +604,10 @@ func (s *Server) handleKill(w http.ResponseWriter, r *http.Request) {
 type postMessageReq struct {
 	Author string `json:"author"`
 	Text   string `json:"text"`
+	// Destination is the composer's declared destination (ADR-0026):
+	// control_room (the default) keeps the message in the loop's private
+	// web thread; group posts it to the shared group conversation.
+	Destination string `json:"destination"`
 }
 
 func (s *Server) handleLoopMessage(w http.ResponseWriter, r *http.Request) {
@@ -616,11 +620,17 @@ func (s *Server) handleLoopMessage(w http.ResponseWriter, r *http.Request) {
 		s.jsonErr(w, 400, "author and non-empty text required")
 		return
 	}
+	dest := defaultStr(req.Destination, store.ConversationControlRoom)
+	if dest != store.ConversationControlRoom && dest != store.ConversationGroup {
+		s.jsonErr(w, 400, "destination must be %s or %s", store.ConversationControlRoom, store.ConversationGroup)
+		return
+	}
 	err := s.Router.Ingest(r.Context(), route.InboundMessage{
-		Origin:     store.OriginWeb,
-		Author:     defaultStr(req.Author, "operator"),
-		Text:       req.Text,
-		ImplicitTo: l.ID,
+		Origin:       store.OriginWeb,
+		Author:       defaultStr(req.Author, "operator"),
+		Text:         req.Text,
+		ImplicitTo:   l.ID,
+		Conversation: dest,
 	})
 	if err != nil {
 		s.jsonErr(w, 500, "%v", err)

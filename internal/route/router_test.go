@@ -39,7 +39,11 @@ func TestConversationFor(t *testing.T) {
 		{"group message", InboundMessage{Origin: store.OriginTelegramGroup}, store.ConversationGroup, ""},
 		{"loop reply", InboundMessage{Origin: store.OriginLoop, FromLoopID: "l1"}, store.ConversationGroup, ""},
 		{"per-loop web composer", InboundMessage{Origin: store.OriginWeb, ImplicitTo: "l2"}, store.ConversationControlRoom, "l2"},
-		{"web broadcast", InboundMessage{Origin: store.OriginWeb}, store.ConversationGroup, ""},
+		{"composer group destination", InboundMessage{Origin: store.OriginWeb, ImplicitTo: "l2",
+			Conversation: store.ConversationGroup}, store.ConversationGroup, ""},
+		{"composer explicit control_room", InboundMessage{Origin: store.OriginWeb, ImplicitTo: "l2",
+			Conversation: store.ConversationControlRoom}, store.ConversationControlRoom, "l2"},
+		{"unaddressed web message", InboundMessage{Origin: store.OriginWeb}, store.ConversationGroup, ""},
 	}
 	for _, c := range cases {
 		kind, loopID := conversationFor(c.in)
