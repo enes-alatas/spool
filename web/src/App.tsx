@@ -2,7 +2,31 @@ import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from './api'
 import { useGlobalStream } from './stream'
-import { SpoolGlyph, StateDot } from './components/Spool'
+import { SpoolGlyph } from './components/Spool'
+import { AccessIcon, ActivityIcon, FleetIcon, RulesIcon, SettingsIcon } from './components/Icons'
+
+// The primary destinations, in one list so the centred desktop row and the
+// mobile bottom bar can never drift apart.
+const DESTINATIONS = [
+  { to: '/', label: 'Fleet', Icon: FleetIcon, end: true },
+  { to: '/activity', label: 'Activity', Icon: ActivityIcon },
+  { to: '/access', label: 'Access', Icon: AccessIcon },
+  { to: '/rules', label: 'Rules', Icon: RulesIcon },
+  { to: '/settings', label: 'Settings', Icon: SettingsIcon },
+]
+
+function Destinations({ variant }: { variant: 'top' | 'bottom' }) {
+  return (
+    <nav className={`nav nav-${variant}`} aria-label="Primary">
+      {DESTINATIONS.map(({ to, label, Icon, end }) => (
+        <NavLink key={to} to={to} end={end} className="nav-item">
+          <Icon />
+          <span>{label}</span>
+        </NavLink>
+      ))}
+    </nav>
+  )
+}
 
 export default function App() {
   useGlobalStream()
@@ -28,44 +52,16 @@ export default function App() {
           <SpoolGlyph spinning={busy} />
           spool
         </Link>
-        <nav style={{ display: 'flex', gap: 4 }}>
-          <NavLink to="/activity" className="btn sm">
-            Activity
-          </NavLink>
-          <NavLink to="/access" className="btn sm">
-            Access
-          </NavLink>
-          <NavLink to="/rules" className="btn sm">
-            Rules
-          </NavLink>
-          <NavLink to="/settings" className="btn sm">
-            Settings
-          </NavLink>
-        </nav>
+
+        <Destinations variant="top" />
+
         <div className="meta">
-          {health && <span>{health.claude_version}</span>}
+          {health && <span className="version">{health.claude_version}</span>}
           <Link to="/new" className="btn sm primary">
-            New loop
+            <span aria-hidden>+ </span>New loop
           </Link>
         </div>
       </header>
-
-      <aside className="rail">
-        <div className="section-label">Loops</div>
-        {(loops ?? []).map((l) => (
-          <NavLink
-            key={l.id}
-            to={`/loops/${l.name}`}
-            className={({ isActive }) => `rail-item${isActive ? ' active' : ''}`}
-          >
-            <span className="name">{l.name}</span>
-            <StateDot state={l.state} />
-          </NavLink>
-        ))}
-        {loops && loops.length === 0 && (
-          <div style={{ padding: '8px 16px', color: 'var(--text-muted)', fontSize: 13 }}>No loops yet.</div>
-        )}
-      </aside>
 
       <main className="main" key={loc.pathname}>
         {tokenMissing && (
@@ -76,6 +72,8 @@ export default function App() {
         )}
         <Outlet />
       </main>
+
+      <Destinations variant="bottom" />
     </div>
   )
 }

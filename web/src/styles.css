@@ -67,17 +67,17 @@ select {
 .app {
   display: grid;
   grid-template-rows: 52px 1fr;
-  grid-template-columns: 230px 1fr;
-  grid-template-areas: 'top top' 'rail main';
   height: 100%;
 }
 
 /* ---- top bar ---- */
+/* brand and actions take equal side columns, so the destinations sit on the
+   centre of the viewport rather than on the centre of what is left over */
 .topbar {
-  grid-area: top;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  gap: 16px;
+  gap: 24px;
   padding: 0 20px;
   border-bottom: 1px solid var(--hairline);
   background: var(--canvas);
@@ -93,9 +93,10 @@ select {
 }
 .wordmark .spool-glyph {
   color: var(--text);
+  filter: drop-shadow(0 0 7px color-mix(in srgb, var(--text) 20%, transparent));
 }
 .topbar .meta {
-  margin-left: auto;
+  justify-self: end;
   display: flex;
   align-items: center;
   gap: 14px;
@@ -104,6 +105,7 @@ select {
   color: var(--text-muted);
 }
 .btn {
+  white-space: nowrap;
   border: 1px solid var(--hairline);
   background: var(--surface);
   color: var(--text);
@@ -152,52 +154,49 @@ select {
   border-radius: 5px;
 }
 
-/* ---- left rail ---- */
-.rail {
-  grid-area: rail;
-  border-right: 1px solid var(--hairline);
-  background: var(--canvas);
-  overflow-y: auto;
-  padding: 12px 0;
-}
-.rail .section-label {
-  padding: 4px 16px;
-  font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-.rail-item {
+/* ---- primary navigation ---- */
+/* No fill, no container, no underline: selection is carried by colour,
+   weight and a restrained bloom, so it survives without the glow. */
+.nav {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 7px 16px;
-  color: var(--text);
-  border-left: 2px solid transparent;
+  gap: 26px;
 }
-.rail-item:hover {
-  background: var(--surface);
-}
-.rail-item.active {
-  border-left-color: var(--text);
-  background: var(--surface);
-}
-.rail-item .name {
-  font-family: var(--mono);
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 2px;
   font-size: 13px;
-}
-.rail-item .name::before {
-  content: '@';
   color: var(--text-muted);
+  white-space: nowrap;
+  transition: color 120ms;
 }
-.rail-item .state-dot {
-  margin-left: auto;
+.nav-item:hover {
+  color: var(--text);
+}
+.nav-item[aria-current='page'] {
+  color: var(--text);
+  font-weight: 500;
+  text-shadow: 0 0 10px color-mix(in srgb, var(--text) 35%, transparent);
+}
+.nav-item[aria-current='page'] svg {
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--text) 30%, transparent));
+}
+/* keyboard focus is its own signal, never folded into selection */
+.nav-item:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 3px;
+  border-radius: 4px;
+  color: var(--text);
+}
+/* the bottom bar only exists on narrow screens */
+.nav-bottom {
+  display: none;
 }
 
 /* ---- main ---- */
 .main {
-  grid-area: main;
   overflow-y: auto;
 }
 .page {
@@ -260,8 +259,8 @@ select {
   border: 1.5px solid var(--text-muted);
 }
 /* the operator stopped this loop by hand — a square reads as "stopped" where
-   asleep's outline circle reads as "idle", so the unlabelled rail dot still
-   tells them apart */
+   asleep's outline circle reads as "idle", so the unlabelled dot on a fleet
+   card still tells them apart */
 .state-paused {
   background: var(--text-muted);
   border-radius: 2px;
@@ -355,7 +354,7 @@ select {
 /* ---- dashboard grid ---- */
 .loop-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
   gap: 14px;
 }
 .loop-card {
@@ -778,12 +777,52 @@ select {
   flex: none;
 }
 
-@media (max-width: 900px) {
-  .app {
-    grid-template-columns: 0 1fr;
-  }
-  .rail {
+/* the claude version is the first thing to go: it is reference detail, and
+   the destinations are not */
+@media (max-width: 1150px) {
+  .topbar .version {
     display: none;
+  }
+}
+
+/* Enter the narrow composition well before the centred row can reach the
+   brand or the New loop action — five labelled destinations plus both ends
+   stop fitting around 900px. */
+@media (max-width: 900px) {
+  .topbar {
+    grid-template-columns: auto 1fr;
+  }
+  .topbar .nav-top {
+    display: none;
+  }
+  .nav-bottom {
+    position: fixed;
+    inset: auto 0 0 0;
+    display: flex;
+    justify-content: space-around;
+    gap: 0;
+    padding: 6px 4px;
+    border-top: 1px solid var(--hairline);
+    background: var(--canvas);
+  }
+  /* the canvas is the whole width now, so narrow screens spend less of it
+     on gutters */
+  .page {
+    padding: 20px 16px;
+  }
+  .nav-bottom .nav-item {
+    flex: 1;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+    min-height: 46px;
+    justify-content: center;
+    padding: 4px 2px;
+    font-size: 10.5px;
+  }
+  /* the fixed bar must never sit on top of the last row of content */
+  .main {
+    padding-bottom: 64px;
   }
   .detail {
     grid-template-columns: 1fr;
