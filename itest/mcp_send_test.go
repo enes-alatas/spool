@@ -141,7 +141,7 @@ func TestMCPSendRefusals(t *testing.T) {
 		{"group mentioning only unknowns", map[string]any{"destination": "group", "text": "@stranger hi"}, "no_recipients"},
 		{"broadcast", map[string]any{"destination": "group", "text": "@all hello"}, "unsupported_broadcast"},
 		{"reply to a reference that names nothing", map[string]any{"destination": "group", "text": "@aster hi", "reply_to": "ref:9999"}, "unknown_reply_to"},
-		{"owner DM never captured", map[string]any{"destination": "owner_dm", "text": "hello owner"}, "owner_dm_unavailable"},
+		{"no owner configured", map[string]any{"destination": "owner_dm", "text": "hello owner"}, "owner_not_configured"},
 	}
 	for _, c := range cases {
 		wantSendError(t, callSend(t, sess, c.args), c.code)
