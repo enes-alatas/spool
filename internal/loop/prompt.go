@@ -28,6 +28,56 @@ func truncate(text string, max int) string {
 type Peer struct {
 	Name    string
 	Mission string
+	// BotUsername is the peer's telegram bot, so a loop can recognise the
+	// handle that posts as that peer in the group ("" = no bot).
+	BotUsername string
+}
+
+// Person is a human Spool knows: an allowlisted telegram sender.
+type Person struct {
+	// Username is their telegram handle without the @ ("" when they have
+	// none — then Display is all there is to go on).
+	Username string
+	Display  string
+	// TGUserID identifies them when they have neither, so a catalog entry
+	// is never a blank line.
+	TGUserID int64
+}
+
+// Label renders a person the way a loop should address them. A handle is
+// what a mention needs; the display name is added only when it says
+// something the handle does not. Someone with neither is named by id — not
+// addressable, but visible, which is the honest rendering of a person the
+// fleet knows and cannot mention.
+func (p Person) Label() string {
+	switch {
+	case p.Username != "" && p.Display != "" && !strings.EqualFold(p.Username, p.Display):
+		return "@" + p.Username + " (" + p.Display + ")"
+	case p.Username != "":
+		return "@" + p.Username
+	case p.Display != "":
+		return p.Display
+	default:
+		return fmt.Sprintf("telegram user %d (no handle — you cannot mention them)", p.TGUserID)
+	}
+}
+
+// Catalog is who a loop can reach and how, resolved fresh at every wake so
+// a new peer, a new owner, or a newly captured owner DM is visible on the
+// next turn rather than at the next restart (#45).
+type Catalog struct {
+	// BotUsername is this loop's own telegram bot ("" = none configured).
+	BotUsername string
+	Peers       []Peer
+	// People are the humans allowed to talk to the fleet.
+	People []Person
+	// Owner is the person this loop may message privately, when one is
+	// configured (#73).
+	Owner *Person
+	// OwnerDMReady reports that the private chat with the owner exists. A
+	// bot cannot open one, so until the owner writes first an owner_dm send
+	// is refused — the loop should ask in the group instead of retrying.
+	OwnerDMReady bool
 }
 
 // FleetRulesSection renders the enabled fleet rules as the FLEET RULES
@@ -58,10 +108,64 @@ func FleetRulesSection(rules []*store.FleetRule) string {
 	return b.String()
 }
 
+// section renders WHO YOU CAN ADDRESS: the identities this loop can name,
+// and what is missing when it cannot reach someone. Addressing is the one
+// thing a loop cannot work out for itself — a name it guesses reaches
+// nobody, and a mention it invents is a message that silently goes nowhere.
+func (cat Catalog) section(l *store.Loop) string {
+	var b strings.Builder
+	b.WriteString("WHO YOU CAN ADDRESS\n")
+	self := "@" + l.Name
+	if cat.BotUsername != "" {
+		self += ", posting in telegram as @" + cat.BotUsername
+	}
+	fmt.Fprintf(&b, "- You are %s.\n", self)
+
+	switch {
+	case cat.Owner == nil:
+		b.WriteString("- You have no owner configured, so owner_dm has nobody to reach.\n" +
+			"  Ask in the group for the operator to set one.\n")
+	case cat.OwnerDMReady:
+		fmt.Fprintf(&b, "- Your owner is %s; owner_dm reaches them privately.\n", cat.Owner.Label())
+	default:
+		fmt.Fprintf(&b, `- Your owner is %s, but there is no private chat with
+  them yet: a bot cannot open one, so owner_dm is refused until they
+  message your bot once. Ask them in the group rather than retrying.
+`, cat.Owner.Label())
+	}
+
+	if len(cat.Peers) > 0 {
+		b.WriteString("- The other loops, and what each is for — @mention one in the group to\n" +
+			"  reach it; a name that is not on this list reaches nobody:\n")
+		for _, p := range cat.Peers {
+			mission := strings.TrimSpace(p.Mission)
+			if i := strings.IndexByte(mission, '\n'); i >= 0 {
+				mission = mission[:i]
+			}
+			fmt.Fprintf(&b, "    @%s — %s\n", p.Name, truncate(mission, 120))
+			if p.BotUsername != "" {
+				fmt.Fprintf(&b, "      (posts as @%s in telegram)\n", p.BotUsername)
+			}
+		}
+	} else {
+		b.WriteString("- No other loops are registered right now.\n")
+	}
+
+	if len(cat.People) > 0 {
+		b.WriteString("- The people who can talk to this fleet:\n")
+		for _, person := range cat.People {
+			fmt.Fprintf(&b, "    %s\n", person.Label())
+		}
+		b.WriteString("  @mentioning a person in the group is public: everyone there sees it.\n" +
+			"  Only owner_dm and control_room are private, and only the owner has a DM.\n")
+	}
+	return b.String()
+}
+
 // SystemPrompt builds the per-loop --append-system-prompt text. Enabled
 // fleet rules go ahead of the mission: they exist to constrain every loop,
 // so a mission cannot opt out of them.
-func SystemPrompt(l *store.Loop, peers []Peer, rules []*store.FleetRule) string {
+func SystemPrompt(l *store.Loop, cat Catalog, rules []*store.FleetRule) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "You are %q, a long-running autonomous loop managed by Spool.\n\n", l.Name)
 	if section := FleetRulesSection(rules); section != "" {
@@ -73,8 +177,8 @@ func SystemPrompt(l *store.Loop, peers []Peer, rules []*store.FleetRule) string 
 - You are woken periodically (ticks) and whenever someone sends you a message.
 - Incoming messages arrive as user turns with a bracketed header naming the
   sender and the conversation it belongs to, e.g.
-  "[message from @enes via telegram · group · ...]" or
-  "[message from enes via web · control_room · ...]". Answer through the
+  "[message from @enes via telegram · group · ref:42 · ...]" or
+  "[message from enes via web · control_room · ref:43 · ...]". Answer through the
   send_message destination matching that conversation unless you have a
   reason to choose another.
   Tick turns are headed "[tick · ...]".
@@ -101,19 +205,6 @@ func SystemPrompt(l *store.Loop, peers []Peer, rules []*store.FleetRule) string 
   room timeline but is delivered to nobody. Not every turn needs a message —
   ending an exchange without one is often right.
 `)
-	if len(peers) > 0 {
-		b.WriteString("- Other loops currently registered:\n")
-		for _, p := range peers {
-			mission := strings.TrimSpace(p.Mission)
-			if i := strings.IndexByte(mission, '\n'); i >= 0 {
-				mission = mission[:i]
-			}
-			mission = truncate(mission, 120)
-			fmt.Fprintf(&b, "    @%s — %s\n", p.Name, mission)
-		}
-	} else {
-		b.WriteString("- No other loops are registered right now.\n")
-	}
 	if l.Pacing == store.PacingSelf {
 		fmt.Fprintf(&b, `- YOU own your schedule. ALWAYS end your reply with a trailer on its own
   line saying when you should next wake: [next-wake: 45m]  (range %s–%s).
@@ -128,6 +219,8 @@ func SystemPrompt(l *store.Loop, peers []Peer, rules []*store.FleetRule) string 
 
 `, dur(l.MinWakeSec), dur(l.MaxWakeSec), dur(l.TickIntervalSec))
 	}
+
+	b.WriteString(cat.section(l) + "\n")
 
 	b.WriteString("WORKSPACE\n")
 	switch {

@@ -43,7 +43,7 @@ func TestSystemPromptWorkspaceSection(t *testing.T) {
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			prompt := SystemPrompt(&testCase.loop, nil, nil)
+			prompt := SystemPrompt(&testCase.loop, Catalog{}, nil)
 			if !strings.Contains(prompt, testCase.want) {
 				t.Errorf("prompt missing %q:\n%s", testCase.want, prompt)
 			}
@@ -65,7 +65,7 @@ func TestSystemPromptFleetRules(t *testing.T) {
 		{Title: "dormant", Body: "must not appear", Enabled: false},
 		{Title: "one PR at a time", Body: "Never open a second PR\nwhile one is waiting.", Enabled: true},
 	}
-	prompt := SystemPrompt(l, nil, rules)
+	prompt := SystemPrompt(l, Catalog{}, rules)
 
 	wantSection := "FLEET RULES\n" +
 		"1. sign your work\n   End every artifact with your name.\n" +
@@ -84,7 +84,7 @@ func TestSystemPromptFleetRules(t *testing.T) {
 	if got := FleetRulesSection([]*store.FleetRule{{Title: "off", Body: "x"}}); got != "" {
 		t.Errorf("FleetRulesSection with nothing enabled = %q, want empty", got)
 	}
-	if bare := SystemPrompt(l, nil, nil); strings.Contains(bare, "FLEET RULES") {
+	if bare := SystemPrompt(l, Catalog{}, nil); strings.Contains(bare, "FLEET RULES") {
 		t.Errorf("prompt without rules still carries the section:\n%s", bare)
 	}
 }
@@ -97,7 +97,7 @@ func TestSystemPromptFleetRules(t *testing.T) {
 // conversation content into the group, since sessions are shared and only
 // conduct guards it.
 func TestSystemPromptPrivacyRule(t *testing.T) {
-	prompt := SystemPrompt(&store.Loop{Name: "terra", Mission: "m"}, nil, nil)
+	prompt := SystemPrompt(&store.Loop{Name: "terra", Mission: "m"}, Catalog{}, nil)
 	if !strings.Contains(prompt, "never quote or relay it in a group message") {
 		t.Fatalf("prompt missing the private-content rule:\n%s", prompt)
 	}
@@ -195,5 +195,92 @@ func TestTruncateRespectsRuneBoundaries(t *testing.T) {
 	}
 	if truncate("short", 10) != "short" {
 		t.Fatal("text under the cap must pass through untouched")
+	}
+}
+
+// TestCatalogSection: what a loop is told about who it can reach, and — the
+// part it cannot work out for itself — what is missing when it cannot reach
+// someone (#45).
+func TestCatalogSection(t *testing.T) {
+	l := &store.Loop{Name: "terra", Mission: "m"}
+	enes := Person{Username: "enesalatas", Display: "Enes"}
+	cases := []struct {
+		name          string
+		cat           Catalog
+		want, notWant []string
+	}{
+		{
+			name: "a fleet with peers, people and a reachable owner",
+			cat: Catalog{
+				BotUsername: "terra_spool_bot",
+				Peers: []Peer{{Name: "milo", Mission: "Product Owner", BotUsername: "milo_spool_bot"},
+					{Name: "quinn", Mission: "Quality Reviewer"}},
+				People: []Person{enes}, Owner: &enes, OwnerDMReady: true,
+			},
+			want: []string{
+				"You are @terra, posting in telegram as @terra_spool_bot",
+				"Your owner is @enesalatas (Enes); owner_dm reaches them privately",
+				"@milo — Product Owner",
+				"(posts as @milo_spool_bot in telegram)",
+				"@quinn — Quality Reviewer",
+				"@mentioning a person in the group is public",
+			},
+		},
+		{
+			name: "an owner who has never written",
+			cat:  Catalog{People: []Person{enes}, Owner: &enes},
+			want: []string{
+				"there is no private chat with",
+				"until they\n  message your bot once",
+			},
+			notWant: []string{"owner_dm reaches them privately"},
+		},
+		{
+			name:    "no owner at all",
+			cat:     Catalog{},
+			want:    []string{"no owner configured, so owner_dm has nobody to reach"},
+			notWant: []string{"Your owner is"},
+		},
+		{
+			name:    "a lone loop",
+			cat:     Catalog{Owner: &enes, OwnerDMReady: true},
+			want:    []string{"No other loops are registered right now"},
+			notWant: []string{"The people who can talk to this fleet"},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			prompt := SystemPrompt(l, c.cat, nil)
+			for _, want := range c.want {
+				if !strings.Contains(prompt, want) {
+					t.Errorf("prompt missing %q:\n%s", want, prompt)
+				}
+			}
+			for _, notWant := range c.notWant {
+				if strings.Contains(prompt, notWant) {
+					t.Errorf("prompt should not contain %q:\n%s", notWant, prompt)
+				}
+			}
+		})
+	}
+}
+
+// TestPersonLabel: a person is named the way a loop must address them, with
+// the display name only when it adds something.
+func TestPersonLabel(t *testing.T) {
+	cases := []struct {
+		person Person
+		want   string
+	}{
+		{Person{Username: "enesalatas", Display: "Enes"}, "@enesalatas (Enes)"},
+		{Person{Username: "enes", Display: "enes"}, "@enes"},
+		{Person{Username: "enes"}, "@enes"},
+		{Person{Display: "Enes"}, "Enes"},
+		{Person{TGUserID: 4242}, "telegram user 4242 (no handle — you cannot mention them)"},
+	}
+	for _, c := range cases {
+		if got := c.person.Label(); got != c.want {
+			t.Errorf("Label(%+v) = %q, want %q", c.person, got, c.want)
+		}
 	}
 }

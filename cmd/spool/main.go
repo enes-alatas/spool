@@ -92,7 +92,7 @@ func main() {
 		PartialMessages:           *partials,
 		Logger:                    log,
 		SystemPrompt: func(l *store.Loop) string {
-			return loop.SystemPrompt(l, peersOf(db, l), rulesOf(db))
+			return loop.SystemPrompt(l, catalogOf(db, l), rulesOf(db))
 		},
 		MCPEndpoint: func(l *store.Loop) string {
 			host, port, err := net.SplitHostPort(*listen)
@@ -206,18 +206,49 @@ func pruneEvents(ctx context.Context, db store.Store, days int, log *slog.Logger
 	}
 }
 
-func peersOf(db store.Store, self *store.Loop) []loop.Peer {
-	loops, err := db.Loops().List(context.Background())
-	if err != nil {
-		return nil
+// catalogOf resolves who a loop can address, fresh for each prompt build:
+// its peers, the people allowed to talk to the fleet, and its own owner
+// with whether a private chat to them exists yet (#45).
+func catalogOf(db store.Store, self *store.Loop) loop.Catalog {
+	ctx := context.Background()
+	// The caller's copy is the actor's, taken when it last loaded the loop;
+	// ownership changes through the API, so read it back before describing
+	// who this loop can reach.
+	if fresh, err := db.Loops().Get(ctx, self.ID); err == nil {
+		self = fresh
 	}
-	var peers []loop.Peer
+	cat := loop.Catalog{BotUsername: self.TGBotUsername}
+	loops, err := db.Loops().List(ctx)
+	if err != nil {
+		return cat
+	}
 	for _, l := range loops {
 		if l.ID != self.ID && l.Status == store.StatusActive {
-			peers = append(peers, loop.Peer{Name: l.Name, Mission: l.Mission})
+			cat.Peers = append(cat.Peers, loop.Peer{
+				Name: l.Name, Mission: l.Mission, BotUsername: l.TGBotUsername,
+			})
 		}
 	}
-	return peers
+	senders, err := db.TGSenders().List(ctx)
+	if err != nil {
+		return cat
+	}
+	// oldest first, so the catalog reads in the order people joined and
+	// does not reshuffle between wakes
+	for i := len(senders) - 1; i >= 0; i-- {
+		s := senders[i]
+		if s.Status != store.SenderAllowed {
+			continue
+		}
+		person := loop.Person{Username: s.Username, Display: s.Display, TGUserID: s.TGUserID}
+		cat.People = append(cat.People, person)
+		if s.TGUserID == self.OwnerTGUserID {
+			owner := person
+			cat.Owner = &owner
+			cat.OwnerDMReady = self.OwnerDMChatID != 0
+		}
+	}
+	return cat
 }
 
 // rulesOf reads the fleet rules fresh for each prompt build, so an edit in
