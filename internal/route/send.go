@@ -25,7 +25,7 @@ const SendCapPerTurn = 10
 type SendRequest struct {
 	From        *store.Loop
 	Destination string // store.Conversation*
-	ReplyTo     string // message reference; not yet supported
+	ReplyTo     string // reply reference from an inbound envelope ("" = none)
 	Text        string
 }
 
@@ -43,7 +43,8 @@ const (
 	ErrInvalidDestination   = "invalid_destination"
 	ErrEmptyText            = "empty_text"
 	ErrNoRecipients         = "no_recipients"
-	ErrUnsupportedReplyTo   = "unsupported_reply_to"
+	ErrUnknownReplyTo       = "unknown_reply_to"
+	ErrCrossConversation    = "cross_conversation_reply_to"
 	ErrUnsupportedBroadcast = "unsupported_broadcast"
 	ErrOwnerDMUnavailable   = "owner_dm_unavailable"
 	ErrSendLimit            = "send_limit"
@@ -60,8 +61,9 @@ func (r *Router) Send(ctx context.Context, req SendRequest) (*store.Message, *Se
 	if text == "" {
 		return nil, &SendError{ErrEmptyText, "message text is empty"}, nil
 	}
-	if req.ReplyTo != "" {
-		return nil, &SendError{ErrUnsupportedReplyTo, "reply references are not supported yet; send without reply_to"}, nil
+	replyTo, serr, err := r.replyTarget(ctx, req)
+	if serr != nil || err != nil {
+		return nil, serr, err
 	}
 
 	mentions := Mentions(text)
@@ -74,6 +76,9 @@ func (r *Router) Send(ctx context.Context, req SendRequest) (*store.Message, *Se
 		Mentions:     mentions,
 		Conversation: req.Destination,
 	}
+	if replyTo != nil {
+		msg.ReplyToID = replyTo.ID
+	}
 
 	var targets map[string]*store.Loop
 	var ownerChat int64
@@ -84,9 +89,7 @@ func (r *Router) Send(ctx context.Context, req SendRequest) (*store.Message, *Se
 				return nil, &SendError{ErrUnsupportedBroadcast, "@all broadcast is not supported yet; mention recipients by name"}, nil
 			}
 		}
-		var serr *SendError
-		var err error
-		targets, serr, err = r.groupRecipients(ctx, req.From, mentions)
+		targets, serr, err = r.groupRecipients(ctx, req.From, mentions, replyTo)
 		if serr != nil || err != nil {
 			return nil, serr, err
 		}
@@ -97,7 +100,6 @@ func (r *Router) Send(ctx context.Context, req SendRequest) (*store.Message, *Se
 		// chat — the interim owner address until #73 configures the owner.
 		ownerChat = r.pinnedDMChat(req.From.ID)
 		if ownerChat == 0 {
-			var err error
 			ownerChat, err = r.store.Messages().OwnerDMChat(ctx, req.From.ID)
 			if errors.Is(err, store.ErrNotFound) {
 				return nil, &SendError{ErrOwnerDMUnavailable, "no owner DM captured for this loop; the owner must DM its bot first"}, nil
@@ -137,7 +139,15 @@ func (r *Router) Send(ctx context.Context, req SendRequest) (*store.Message, *Se
 			r.recordStormDrop(ctx, req.From.ID, req.From.Name, target)
 			continue
 		}
-		env := loop.MessageEnvelope(now, store.OriginLoop, req.From.Name, text, store.ConversationGroup, true, 0)
+		env := loop.MessageEnvelope(now, loop.Inbound{
+			Origin:       store.OriginLoop,
+			Author:       req.From.Name,
+			Text:         text,
+			Conversation: store.ConversationGroup,
+			FromLoop:     true,
+			Ref:          loop.MessageRef(msg.ID),
+			ReplyTo:      replyRef(replyTo),
+		})
 		if !r.deliver.Deliver(target.ID, env) {
 			r.log.Warn("deliver to unknown runtime", "loop", target.Name)
 		}
@@ -145,12 +155,54 @@ func (r *Router) Send(ctx context.Context, req SendRequest) (*store.Message, *Se
 	return msg, nil, nil
 }
 
+// replyTarget resolves an explicit reply reference to the message it names.
+// Only a message of the very conversation being sent to qualifies: a
+// reference the loop invented, one that has been swept away, or one from
+// another conversation is refused in-turn rather than silently dropped or
+// redirected (ADR-0025). Returns nil when the send is not a reply.
+func (r *Router) replyTarget(ctx context.Context, req SendRequest) (*store.Message, *SendError, error) {
+	if strings.TrimSpace(req.ReplyTo) == "" {
+		return nil, nil, nil
+	}
+	id, ok := loop.ParseMessageRef(req.ReplyTo)
+	if !ok {
+		return nil, &SendError{ErrUnknownReplyTo,
+			fmt.Sprintf("%q is not a message reference; use one exactly as an envelope header gave it", req.ReplyTo)}, nil
+	}
+	target, err := r.store.Messages().Get(ctx, id)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, &SendError{ErrUnknownReplyTo, "no such message; reply only to a message you were shown"}, nil
+	} else if err != nil {
+		return nil, nil, err
+	}
+	if !sameConversation(target, req.Destination, req.From.ID) {
+		return nil, &SendError{ErrCrossConversation,
+			fmt.Sprintf("that message is in %s, not %s; a reply stays in its own conversation", target.Conversation, req.Destination)}, nil
+	}
+	return target, nil, nil
+}
+
+// sameConversation reports whether target is a message of the very
+// conversation being sent to. Only the group leaves ConversationLoopID
+// empty; reading that sentinel as "matches anyone" would let a loop quote a
+// private message keyed to no loop — which migration 0009 can leave behind —
+// into its own DM.
+func sameConversation(target *store.Message, destination, fromLoopID string) bool {
+	if target.Conversation != destination {
+		return false
+	}
+	if destination == store.ConversationGroup {
+		return true
+	}
+	return target.ConversationLoopID == fromLoopID
+}
+
 // groupRecipients resolves a group send's mentions: loops are delivered to;
 // a known human (allowed or pending telegram sender) satisfies the
 // recipient requirement without waking anything. A group message that
 // addresses nobody known is refused — recipients are enforced mechanically,
 // not just in prompt prose (ADR-0025).
-func (r *Router) groupRecipients(ctx context.Context, from *store.Loop, mentions []string) (map[string]*store.Loop, *SendError, error) {
+func (r *Router) groupRecipients(ctx context.Context, from *store.Loop, mentions []string, replyTo *store.Message) (map[string]*store.Loop, *SendError, error) {
 	loops, err := r.store.Loops().List(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -175,6 +227,24 @@ func (r *Router) groupRecipients(ctx context.Context, from *store.Loop, mentions
 
 	targets := map[string]*store.Loop{}
 	addressed := false
+	// A reply addresses the message's author without a mention, and adds to
+	// the mentions rather than inheriting the original's other recipients
+	// (ADR-0025). A human author addresses the message without waking
+	// anything; replying to one's own message addresses nobody by itself.
+	if replyTo != nil {
+		switch {
+		case replyTo.FromLoopID == from.ID:
+		case replyTo.FromLoopID != "":
+			for _, l := range loops {
+				if l.ID == replyTo.FromLoopID && l.Status != store.StatusArchived {
+					targets[l.ID] = l
+					addressed = true
+				}
+			}
+		default:
+			addressed = true // a human wrote it
+		}
+	}
 	for _, m := range mentions {
 		if l, ok := byKey[m]; ok && l.ID != from.ID && l.Status != store.StatusArchived {
 			targets[l.ID] = l
@@ -184,9 +254,18 @@ func (r *Router) groupRecipients(ctx context.Context, from *store.Loop, mentions
 		}
 	}
 	if !addressed {
-		return nil, &SendError{ErrNoRecipients, "a group message must @mention at least one known loop or person"}, nil
+		return nil, &SendError{ErrNoRecipients, "a group message must @mention at least one known loop or person, or reply to one"}, nil
 	}
 	return targets, nil, nil
+}
+
+// replyRef renders a reply target for an envelope header, or "" when the
+// message is not a reply.
+func replyRef(target *store.Message) string {
+	if target == nil {
+		return ""
+	}
+	return loop.MessageRef(target.ID)
 }
 
 // pinnedDMChat is the owner-DM chat the loop's current turn answers (0 when

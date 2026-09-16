@@ -8,6 +8,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/enes-alatas/spool/internal/loop"
 	"github.com/enes-alatas/spool/internal/route"
 	"github.com/enes-alatas/spool/internal/store"
 )
@@ -19,12 +20,16 @@ import (
 
 type sendMessageIn struct {
 	Destination string `json:"destination" jsonschema:"where this message goes: owner_dm (the private Telegram chat: the DM this turn answers, else the latest private chat — your configured owner once one exists), group (the shared group; @mention recipients in the text), or control_room (your private web thread with the operator)"`
-	ReplyTo     string `json:"reply_to,omitempty" jsonschema:"reference of the message this replies to, as given in its envelope; not supported yet — omit"`
+	ReplyTo     string `json:"reply_to,omitempty" jsonschema:"reference of the message this replies to (\"ref:42\"), exactly as its envelope header gave it; the reply addresses that message's author and, in the group, renders as a native reply. Must belong to this destination's conversation. Omit for a new message."`
 	Text        string `json:"text" jsonschema:"the message text; in the group, @mentions name the recipients"`
 }
 
 type sendMessageOut struct {
 	MessageID int64 `json:"message_id"`
+	// Ref is the sent message's reply reference, in the same form every
+	// envelope header uses — so a loop can reply to its own message with
+	// what it was handed, not a form it has to infer.
+	Ref string `json:"ref"`
 }
 
 func (s *Server) mcpHandler() http.Handler {
@@ -73,6 +78,6 @@ func (s *Server) sendMessageTool(l *store.Loop) func(context.Context, *mcp.CallT
 			s.Log.Error("send_message", "loop", l.Name, "err", err)
 			return nil, sendMessageOut{}, fmt.Errorf("internal error; try again")
 		}
-		return nil, sendMessageOut{MessageID: msg.ID}, nil
+		return nil, sendMessageOut{MessageID: msg.ID, Ref: loop.MessageRef(msg.ID)}, nil
 	}
 }

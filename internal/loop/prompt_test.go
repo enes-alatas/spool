@@ -113,16 +113,27 @@ func TestMessageEnvelopeNamesConversation(t *testing.T) {
 		env  Envelope
 		want string
 	}{
-		{"web control_room", MessageEnvelope(now, store.OriginWeb, "enes", "x", store.ConversationControlRoom, false, 0),
+		{"web control_room", MessageEnvelope(now, Inbound{Origin: store.OriginWeb, Author: "enes", Text: "x",
+			Conversation: store.ConversationControlRoom}),
 			"message from enes via web · control_room"},
-		{"web group", MessageEnvelope(now, store.OriginWeb, "enes", "x", store.ConversationGroup, false, 0),
+		{"web group", MessageEnvelope(now, Inbound{Origin: store.OriginWeb, Author: "enes", Text: "x",
+			Conversation: store.ConversationGroup}),
 			"message from enes via web · group"},
-		{"telegram dm", MessageEnvelope(now, store.OriginTelegramDM, "enes", "x", store.ConversationOwnerDM, false, 42),
+		{"telegram dm", MessageEnvelope(now, Inbound{Origin: store.OriginTelegramDM, Author: "enes", Text: "x",
+			Conversation: store.ConversationOwnerDM, TGChatID: 42}),
 			"message from @enes via telegram dm · owner_dm"},
-		{"telegram group", MessageEnvelope(now, store.OriginTelegramGroup, "enes", "x", store.ConversationGroup, false, 0),
+		{"telegram group", MessageEnvelope(now, Inbound{Origin: store.OriginTelegramGroup, Author: "enes", Text: "x",
+			Conversation: store.ConversationGroup}),
 			"message from @enes via telegram · group"},
-		{"loop group send", MessageEnvelope(now, store.OriginLoop, "terra", "x", store.ConversationGroup, true, 0),
+		{"loop group send", MessageEnvelope(now, Inbound{Origin: store.OriginLoop, Author: "terra", Text: "x",
+			Conversation: store.ConversationGroup, FromLoop: true}),
 			"message from @terra (loop) · group"},
+		{"reference", MessageEnvelope(now, Inbound{Origin: store.OriginTelegramGroup, Author: "enes", Text: "x",
+			Conversation: store.ConversationGroup, Ref: MessageRef(42)}),
+			"· group · ref:42 ·"},
+		{"reply", MessageEnvelope(now, Inbound{Origin: store.OriginLoop, Author: "milo", Text: "x",
+			Conversation: store.ConversationGroup, FromLoop: true, Ref: MessageRef(43), ReplyTo: MessageRef(42)}),
+			"· ref:43 · in reply to ref:42 ·"},
 	}
 	for _, c := range cases {
 		if !strings.Contains(c.env.Text, c.want) {
