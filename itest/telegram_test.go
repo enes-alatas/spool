@@ -391,3 +391,23 @@ func TestOwnerDMSendReachesTheDMChat(t *testing.T) {
 		}
 	}
 }
+
+// A web message to one loop is its private control_room thread: it must not
+// be mirrored to the group, while the group-wide web broadcast still is.
+func TestControlRoomStaysOutOfTheGroup(t *testing.T) {
+	operator := user{ID: 4848, First: "Operator", Username: "operator"}
+	srv, tg := startTelegramFleet(t, operator)
+
+	srv.message("alpha", "private control room note")
+	srv.mustJSON("POST", "/api/messages",
+		map[string]any{"author": "operator", "text": "@alpha public broadcast"}, nil)
+
+	tg.waitSent(t, groupChatID, "public broadcast")
+	// the mirror consumes bus items in order and alpha's bot queues sends
+	// FIFO: had the earlier private note leaked, it would already be posted
+	for _, m := range tg.sentTo(groupChatID) {
+		if strings.Contains(m.Text, "private control room note") {
+			t.Fatalf("control_room message surfaced in the group: %q", m.Text)
+		}
+	}
+}
