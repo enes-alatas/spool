@@ -147,10 +147,15 @@ func (r *Router) Ingest(ctx context.Context, in InboundMessage) error {
 		}
 	}
 
+	// A private conversation delivers exclusively to its own loop: names in
+	// private text never add recipients (ADR-0025). Only the group resolves
+	// mentions into deliveries.
 	targets := map[string]*store.Loop{}
-	for _, m := range mentions {
-		if l, ok := byKey[m]; ok && l.ID != in.FromLoopID && l.Status != store.StatusArchived {
-			targets[l.ID] = l
+	if conv == store.ConversationGroup {
+		for _, m := range mentions {
+			if l, ok := byKey[m]; ok && l.ID != in.FromLoopID && l.Status != store.StatusArchived {
+				targets[l.ID] = l
+			}
 		}
 	}
 	if in.ImplicitTo != "" {
