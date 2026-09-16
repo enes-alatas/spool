@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
-import { api, ChatMessage, LoopView, MessageDestination, Turn } from '../api'
+import { api, ChatMessage, LoopView, MessageDestination, TGSender, Turn } from '../api'
 import { formatTokens, fillTone } from '../format'
 import { MODEL_OPTIONS, EFFORT_OPTIONS, PACING_OPTIONS } from '../options'
 import { useStream } from '../stream'
@@ -424,6 +424,82 @@ function SecretsPanel({ loop }: { loop: LoopView }) {
   )
 }
 
+// Who the loop may message privately, and whether it can yet. The readiness
+// line says what is missing rather than reporting a boolean: an operator who
+// reads "not ready" has no way to guess that the fix is for a person to send
+// the bot a message, and the refusal itself only ever happens inside a turn.
+function OwnerPanel({ loop }: { loop: LoopView }) {
+  const qc = useQueryClient()
+  const { data: senders } = useQuery({ queryKey: ['senders'], queryFn: api.senders })
+  const [error, setError] = useState('')
+
+  // Only an allowed sender can be made owner, so only they are offered. The
+  // current owner joins the list even if they have since been blocked or
+  // removed — a picker that silently drops the value it is showing would
+  // read as "no owner".
+  const options = useMemo(() => {
+    const allowed = (senders ?? []).filter((s) => s.status === 'allowed')
+    const id = loop.owner_tg_user_id
+    if (id && !allowed.some((s) => s.tg_user_id === id)) {
+      return [...allowed, { tg_user_id: id, username: loop.owner_username ?? '', display: '' }]
+    }
+    return allowed
+  }, [senders, loop.owner_tg_user_id, loop.owner_username])
+
+  const setOwner = useMutation({
+    mutationFn: (tgUserID: number) => api.setOwner(loop.name, tgUserID),
+    onSuccess: (updated) => {
+      // The handler returns the updated view, and changing the owner drops
+      // the captured chat: seeding the cache shows that fall back to waiting
+      // straight away instead of after a refetch.
+      qc.setQueryData(['loop', loop.name], updated)
+      setError('')
+    },
+    onError: (e) => setError(e instanceof Error ? e.message : String(e)),
+  })
+
+  return (
+    <div className="field" style={{ marginTop: 12 }}>
+      <label htmlFor="owner-select">owner</label>
+      <select
+        id="owner-select"
+        value={loop.owner_tg_user_id ?? ''}
+        disabled={setOwner.isPending}
+        onChange={(e) => setOwner.mutate(Number(e.target.value))}
+      >
+        {!loop.owner_tg_user_id && <option value="">No owner set</option>}
+        {options.map((s) => (
+          <option key={s.tg_user_id} value={s.tg_user_id}>
+            {senderLabel(s)}
+          </option>
+        ))}
+      </select>
+      {error && (
+        <div className="form-error" style={{ marginTop: 6 }}>
+          {error}
+        </div>
+      )}
+      <div className={`hint ${loop.owner_dm_ready ? 'ok' : ''}`}>{readiness(loop)}</div>
+    </div>
+  )
+}
+
+// An owner is picked by a person, so lead with the handle and keep the display
+// name behind it. The bare id is the last resort for a sender with neither.
+function senderLabel(s: Pick<TGSender, 'tg_user_id' | 'username' | 'display'>): string {
+  if (!s.username) return s.display || String(s.tg_user_id)
+  return s.display ? `@${s.username} — ${s.display}` : `@${s.username}`
+}
+
+// What the operator can do about it, in words. Never "ready: false".
+function readiness(loop: LoopView): string {
+  if (!loop.owner_tg_user_id) return 'No owner set — this loop cannot message anyone privately.'
+  const owner = loop.owner_username ? `@${loop.owner_username}` : `sender ${loop.owner_tg_user_id}`
+  if (loop.owner_dm_ready) return `Ready — the loop can message ${owner} privately.`
+  const bot = loop.tg_bot_username ? `@${loop.tg_bot_username}` : "this loop's bot"
+  return `Waiting for ${owner} to message ${bot}. A bot cannot open a private chat, so there is nowhere to send until they write there first.`
+}
+
 // ControlRoomThread renders the loop's private control_room conversation:
 // the operator's composer messages and the loop's control_room sends,
 // oldest first. Status notes stay on the timeline pane with their turns.
@@ -719,6 +795,7 @@ export default function LoopDetail() {
                     {loop.tg_group_chat_id ? 'bound' : 'waiting for a group message…'}
                   </span>
                 </div>
+                <OwnerPanel loop={loop} />
               </>
             ) : (
               <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>

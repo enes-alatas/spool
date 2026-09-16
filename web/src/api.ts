@@ -41,6 +41,15 @@ export interface LoopView {
   // Why the workstation is down: '' while it is up, 'powered_off' when the
   // operator switched it off, 'unreachable' when it died on its own.
   down_reason: '' | 'powered_off' | 'unreachable'
+  // The allowlisted Telegram sender this loop may message privately, and the
+  // handle to show for them. Absent when no owner is configured; the handle
+  // is absent when the sender record carries no username.
+  owner_tg_user_id?: number
+  owner_username?: string
+  // Whether the loop can actually DM its owner: a bot cannot open a private
+  // chat, so it can only reach an owner who has written to this loop's own
+  // bot first (#73).
+  owner_dm_ready: boolean
 }
 
 export interface Turn {
@@ -210,6 +219,11 @@ export const api = {
   wake: (name: string) => req<{ woken: boolean }>(`/api/loops/${name}/wake`, { method: 'POST' }),
   kill: (name: string) => req<{ killed: boolean }>(`/api/loops/${name}/kill`, { method: 'POST' }),
   rotate: (name: string) => req<{ rotating: boolean }>(`/api/loops/${name}/rotate`, { method: 'POST' }),
+  setOwner: (name: string, tgUserID: number) =>
+    req<LoopView>(`/api/loops/${name}/owner`, {
+      method: 'PUT',
+      body: JSON.stringify({ tg_user_id: tgUserID }),
+    }),
   message: (
     name: string,
     text: string,
