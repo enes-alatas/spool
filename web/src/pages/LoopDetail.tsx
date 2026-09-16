@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
-import { api, LoopView, Turn } from '../api'
+import { api, LoopView, MessageDestination, Turn } from '../api'
 import { formatTokens, fillTone } from '../format'
 import { MODEL_OPTIONS, EFFORT_OPTIONS, PACING_OPTIONS } from '../options'
 import { useStream } from '../stream'
@@ -434,6 +434,7 @@ export default function LoopDetail() {
   // frames — the only progress signal a long verb has.
   const [runningVerb, setRunningVerb] = useState('')
   const [draft, setDraft] = useState('')
+  const [dest, setDest] = useState<MessageDestination>('control_room')
   const bottomRef = useRef<HTMLDivElement>(null)
 
   const { data: loop } = useQuery({
@@ -487,7 +488,7 @@ export default function LoopDetail() {
     const text = draft.trim()
     if (!text) return
     setDraft('')
-    await api.message(name, text)
+    await api.message(name, text, dest)
   }
 
   if (!loop) return <div className="page">Loading…</div>
@@ -516,9 +517,25 @@ export default function LoopDetail() {
             ))}
           <Timeline entries={entries} liveText={liveText} />
           <div ref={bottomRef} />
-          <div className="composer">
+          <div className="dest-picker">
+            <span className="dest-label">to</span>
+            <button
+              className={`dest${dest === 'control_room' ? ' on' : ''}`}
+              onClick={() => setDest('control_room')}
+            >
+              control room · private
+            </button>
+            <button className={`dest${dest === 'group' ? ' on' : ''}`} onClick={() => setDest('group')}>
+              group · visible to everyone
+            </button>
+          </div>
+          <div className="composer" style={{ marginTop: 8 }}>
             <textarea
-              placeholder={`Message @${loop.name}…`}
+              placeholder={
+                dest === 'group'
+                  ? `Post to the group as yourself — @${loop.name} is delivered either way`
+                  : `Message @${loop.name} privately…`
+              }
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
