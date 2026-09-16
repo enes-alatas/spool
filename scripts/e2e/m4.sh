@@ -51,9 +51,9 @@ mk_loop pong ping
 log "waiting for initial tick turns to settle"
 sleep 25
 
-log "kicking off the relay: '@ping 1' via web broadcast"
-curl -sf -X POST "$BASE/api/messages" -H 'Content-Type: application/json' \
-  -d '{"author":"tester","text":"@ping 1"}' >/dev/null
+log "kicking off the relay: '@ping 1' via ping's composer, group destination"
+curl -sf -X POST "$BASE/api/loops/ping/message" -H 'Content-Type: application/json' \
+  -d '{"author":"tester","text":"@ping 1","destination":"group"}' >/dev/null
 
 log "watching the relay (storm guard should halt it; max wait 10m)"
 LAST=0; STABLE=0

@@ -1,37 +1,16 @@
-import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api'
 
+// Activity is a read-only operator overview (ADR-0025 item 9): it filters
+// nothing and sends nothing. The messaging action links to the loop's own
+// composer, where the destination is declared.
 export default function Activity() {
   const { data: msgs } = useQuery({ queryKey: ['activity'], queryFn: () => api.activity() })
-  const [draft, setDraft] = useState('')
-
-  const send = async () => {
-    const text = draft.trim()
-    if (!text) return
-    setDraft('')
-    await api.broadcast(text)
-  }
 
   return (
     <div className="page">
       <h1>Activity</h1>
-      <div className="composer" style={{ marginTop: 0, marginBottom: 18 }}>
-        <textarea
-          placeholder="Post to the group — @mention a loop to reach it"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              send()
-            }
-          }}
-        />
-        <button className="btn primary" onClick={send} disabled={!draft.trim()}>
-          Send
-        </button>
-      </div>
       {(msgs ?? []).map((m) => (
         <div key={m.id} className="feed-item">
           <span className="when">
@@ -39,7 +18,12 @@ export default function Activity() {
           </span>
           <span className={`author${m.origin === 'loop' ? ' loop-author' : ''}`}>@{m.author}</span>
           <span className="text">{m.text}</span>
-          <span className="origin">{m.origin}</span>
+          <span className="origin">{m.conversation || m.origin}</span>
+          {m.origin === 'loop' && (
+            <Link className="btn sm" to={`/loops/${m.author}`} title={`Open @${m.author}'s composer`}>
+              message
+            </Link>
+          )}
         </div>
       ))}
       {msgs && msgs.length === 0 && (

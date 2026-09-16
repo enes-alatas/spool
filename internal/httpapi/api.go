@@ -86,7 +86,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/loops/{name}/workstation/poweron", s.handlePower(loop.PowerOn))
 	mux.HandleFunc("POST /api/loops/{name}/workstation/recreate", s.handlePower(loop.PowerRecreate))
 	mux.HandleFunc("POST /api/loops/{name}/message", s.handleLoopMessage)
-	mux.HandleFunc("POST /api/messages", s.handleBroadcastMessage)
 	mux.HandleFunc("GET /api/loops/{name}/events", s.handleLoopEvents)
 	mux.HandleFunc("GET /api/loops/{name}/turns", s.handleLoopTurns)
 	mux.HandleFunc("GET /api/loops/{name}/telegram/status", s.handleTelegramStatus)
@@ -631,24 +630,6 @@ func (s *Server) handleLoopMessage(w http.ResponseWriter, r *http.Request) {
 		Text:         req.Text,
 		ImplicitTo:   l.ID,
 		Conversation: dest,
-	})
-	if err != nil {
-		s.jsonErr(w, 500, "%v", err)
-		return
-	}
-	writeJSON(w, 202, map[string]bool{"queued": true})
-}
-
-func (s *Server) handleBroadcastMessage(w http.ResponseWriter, r *http.Request) {
-	var req postMessageReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Text) == "" {
-		s.jsonErr(w, 400, "author and non-empty text required")
-		return
-	}
-	err := s.Router.Ingest(r.Context(), route.InboundMessage{
-		Origin: store.OriginWeb,
-		Author: defaultStr(req.Author, "operator"),
-		Text:   req.Text,
 	})
 	if err != nil {
 		s.jsonErr(w, 500, "%v", err)
