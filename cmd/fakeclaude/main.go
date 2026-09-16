@@ -14,6 +14,8 @@
 // dies mid-turn the way a lost session does (exit 1, canonical stderr);
 // "!huge <bytes>" replies with that many bytes; "!hang <seconds>" sleeps
 // first. A
+// "!toolong" returns an errored result saying the prompt did not fit the
+// window, with no usage, and keeps the session. A
 // "!ctx <tokens>" prefix makes the turn report that many input tokens — how
 // a filling context looks from outside — and composes with the rest of the
 // line ("!ctx 120000 !hang 2"). "!sysprompt" replies with the text spool
@@ -196,6 +198,20 @@ func main() {
 				out.Flush()
 				fmt.Fprintf(os.Stderr, "No conversation found with session ID: %s\n", id)
 				os.Exit(1)
+			case line == "!toolong":
+				// what an over-window payload looks like: an errored result
+				// with no usage at all, then a clean exit (verified by
+				// make e2e-context)
+				emit(map[string]any{
+					"type": "result", "subtype": "error_during_execution", "is_error": true,
+					"total_cost_usd": 0, "duration_ms": 5, "num_turns": state.Turns,
+					"result": "Prompt is too long", "session_id": id,
+					"usage": map[string]any{
+						"input_tokens": 0, "output_tokens": 0,
+						"cache_creation_input_tokens": 0, "cache_read_input_tokens": 0,
+					},
+				})
+				continue
 			case line == "!sysprompt":
 				reply = systemPrompt
 			case strings.HasPrefix(line, "!huge "):
