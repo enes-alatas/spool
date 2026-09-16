@@ -549,9 +549,8 @@ func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 		// control_room lives in the web UI alone; telegram sees nothing
 	case store.OriginWeb:
 		if mp.Conversation != store.ConversationGroup {
-			// a per-loop composer message is the loop's private
-			// control_room thread; only the group-wide web broadcast
-			// is mirrored, until #80's web phase removes it
+			// a control_room message is private to its loop's web
+			// thread; only the composer's group destination is mirrored
 			return
 		}
 		// mirror web-origin group messages so Telegram lurkers see the

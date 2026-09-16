@@ -218,11 +218,6 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ author, text, destination }),
     }),
-  broadcast: (text: string, author = 'operator') =>
-    req<{ queued: boolean }>('/api/messages', {
-      method: 'POST',
-      body: JSON.stringify({ author, text }),
-    }),
   events: (name: string, afterId = 0, limit = 300) =>
     req<LoopEvent[]>(`/api/loops/${name}/events?after_id=${afterId}&limit=${limit}`),
   turns: (name: string, limit = 50) => req<Turn[]>(`/api/loops/${name}/turns?limit=${limit}`),
