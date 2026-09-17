@@ -59,7 +59,14 @@ path above — is fully observable, and fakeclaude can test it end to end.
    streams. The CLI reports no fill of its own, and its result event sums
    usage across the turn's calls, which prices the turn but measures
    nothing (#94). The control room's context gauges read the same number.
-5. **A rotation is visible.** It writes a spool event at the seam and keeps
+5. **A rotation outlives the orchestrator.** Both halves of it are stored,
+   not held in actor memory: the intent, from the moment the handoff turn is
+   asked for, and the note, until a turn completes on the successor session.
+   A restart in either window therefore retires the session that was told it
+   ends here and still opens the fresh one with its note, rather than
+   resuming a retired session or greeting the loop with "could not be
+   resumed" (#66).
+6. **A rotation is visible.** It writes a spool event at the seam and keeps
    the handoff note readable from the timeline, so a reader scrolling a
    loop's history can see where continuity broke and what was carried across.
 

@@ -201,6 +201,10 @@ func NewActor(deps Deps, l *store.Loop) *Actor {
 		forcePct: DefaultContextForcePercent,
 	}
 	actor.paused = l.Status == store.StatusPaused
+	// A rotation the previous process completed left its note in the store;
+	// the successor session has not had its first turn yet, so this actor is
+	// the one that owes it the preamble (#66).
+	actor.handoffNote = l.HandoffNote
 	actor.offSnap.Store(l.WorkstationOff)
 	actor.healthSnap.Store(runtime.Health{Up: true}) // optimistic until the first poll
 	if l.WorkstationOff {
@@ -329,6 +333,10 @@ func (actor *Actor) handleCmd(command cmd) {
 		actor.loop = *command.loop
 		actor.loop.CurrentSessionID = token.CurrentSessionID
 		actor.loop.WorkstationOff = token.WorkstationOff // power intent is the actor's, not the editor's
+		// likewise a rotation in flight: an edit carries the row as it was
+		// read, which may already be a wake behind the actor
+		actor.loop.RotatePending = token.RotatePending
+		actor.loop.HandoffNote = token.HandoffNote
 		actor.paused = actor.loop.Status == store.StatusPaused
 		actor.publishState()
 	}
@@ -552,6 +560,11 @@ func (actor *Actor) requestRotation() error {
 // delivered to the fresh session after rotation.
 func (actor *Actor) startHandoffTurn() {
 	actor.handoffTurn = true
+	// Recorded before the turn runs, not after it: from this moment the
+	// session has been told it ends here, and a restart in the window that
+	// follows — mid-turn, or mid-drain after it — must retire the session
+	// rather than resume one its own last turn retired (#66).
+	actor.setRotationState(true, actor.handoffNote)
 	actor.sendBatch([]Envelope{RotationEnvelope(time.Now())})
 }
 
@@ -722,6 +735,9 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 	actor.lostSends = nil
 	// A completed turn means any pending handoff note reached its session;
 	// finishHandoff below sets the next one after this clears the old.
+	if actor.handoffNote != "" {
+		actor.setRotationState(actor.loop.RotatePending, "")
+	}
 	actor.handoffNote = ""
 
 	if actor.handoffTurn {
@@ -756,12 +772,25 @@ func (actor *Actor) finishHandoff(res *claude.ResultInfo) {
 		actor.handoffNote = strings.TrimSpace(res.ResultText)
 	}
 	actor.rotateOnExit = true
+	actor.setRotationState(true, actor.handoffNote)
 	actor.state = StateDraining
 	actor.publishState()
 	_ = actor.proc.CloseStdin()
 	// the timer becomes the drain's deadline: a process that ignores EOF
 	// would otherwise park the rotation — and any queued work — forever
 	actor.idleTimer.Reset(drainGrace)
+}
+
+// setRotationState mirrors the actor's rotation bookkeeping into the store so
+// a restart inherits the decision instead of the loop paying for it twice
+// (#66). Best effort, like the other runtime writes: a failed write costs the
+// old behaviour, never the rotation.
+func (actor *Actor) setRotationState(pending bool, note string) {
+	actor.loop.RotatePending = pending
+	actor.loop.HandoffNote = note
+	if err := actor.deps.Store.Loops().SetRotation(context.Background(), actor.loop.ID, pending, note); err != nil {
+		actor.log().Error("persist rotation state", "err", err)
+	}
 }
 
 // contextOccupancy is what a session's next prompt would carry into the
@@ -987,6 +1016,13 @@ func (actor *Actor) retireSession() {
 	actor.deadResumes = 0
 	actor.armed = false
 	actor.rotateAsked = false
+	// The pending rotation is spent with the session it was pending on,
+	// whichever path retired it — a rotation by choice, or a failure that
+	// overtook one. Left set, it is a latch: the next restart would read it
+	// against a healthy session, retire that one as rotated, and re-apply a
+	// note it has already carried. The note itself is not cleared here — it
+	// is owed to the next session's first turn, restart or no.
+	actor.setRotationState(false, actor.handoffNote)
 	actor.fillPct = 0
 	actor.state = StateAsleep
 	actor.publishState()
@@ -1195,6 +1231,11 @@ func (actor *Actor) forgetSession(ctx context.Context) {
 	actor.fillPct = 0
 	actor.armed = false
 	actor.rotateAsked = false
+	// and the rotation this session was asked for: recreate answers the
+	// question it was asked — the session is gone — and a pending flag left
+	// standing would have the next restart retire the healthy session that
+	// replaced it
+	actor.setRotationState(false, actor.handoffNote)
 	actor.storeSpoolEvent("session_forgotten", fmt.Sprintf(`{"old_session":%q}`, old))
 }
 

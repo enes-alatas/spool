@@ -46,6 +46,19 @@ func (m *Manager) Boot(ctx context.Context) error {
 			_ = m.deps.Store.Loops().SetRuntime(ctx, l.ID, l.CurrentSessionID, 0)
 			l.CurrentPID = 0
 		}
+		if l.RotatePending && l.CurrentSessionID != "" {
+			// The loop asked its session for a handoff note and the
+			// orchestrator went down before the rotation landed. That
+			// session's last turn was told it ends here, so it is retired
+			// now rather than resumed; the note, if the turn produced one,
+			// still seeds the fresh session (#66, ADR-0022).
+			_ = m.deps.Store.Sessions().End(ctx, l.CurrentSessionID, store.EndReasonRotated, nowMS)
+			_ = m.deps.Store.Loops().SetRuntime(ctx, l.ID, "", 0)
+			_ = m.deps.Store.Loops().SetRotation(ctx, l.ID, false, l.HandoffNote)
+			m.log().Info("rotation completed after restart", "loop", l.Name, "old_session", l.CurrentSessionID)
+			l.CurrentSessionID = ""
+			l.RotatePending = false
+		}
 		if l.Status != store.StatusArchived {
 			m.add(l)
 		}
