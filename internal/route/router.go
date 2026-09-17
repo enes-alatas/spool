@@ -18,6 +18,35 @@ import (
 
 var mentionRe = regexp.MustCompile(`(?:^|[^\w@])@([A-Za-z0-9_-]+)`)
 
+// BroadcastToken addresses every eligible loop of the group a message is
+// posted in (ADR-0025). It is reserved: a loop cannot be named "all", so the
+// token never competes with a real name.
+const BroadcastToken = "all"
+
+// broadcastTargets are the loops an @all in chatID reaches, minus the
+// sender. Eligibility, as the operator settled it for #74: bound to that
+// group, not paused, not archived. A loop whose workstation is off stays
+// eligible — its delivery queues and arrives when the machine is back,
+// exactly as a direct mention does — while a paused loop is deliberately
+// out, since pausing is the operator saying "leave this one alone".
+//
+// chatID 0 means the message has no originating group chat: a composer post
+// from the control room. There is no group to be local to, so every
+// eligible loop receives it.
+func (r *Router) broadcastTargets(loops []*store.Loop, chatID int64, fromLoopID string) map[string]*store.Loop {
+	targets := map[string]*store.Loop{}
+	for _, l := range loops {
+		if l.ID == fromLoopID || l.Status != store.StatusActive {
+			continue
+		}
+		if chatID != 0 && l.TGGroupChatID != chatID {
+			continue
+		}
+		targets[l.ID] = l
+	}
+	return targets
+}
+
 // stormLimit caps deliveries per ordered loop pair per hour so two loops
 // can't ping-pong forever.
 const (
@@ -184,6 +213,15 @@ func (r *Router) Ingest(ctx context.Context, in InboundMessage) error {
 	targets := map[string]*store.Loop{}
 	if conv == store.ConversationGroup {
 		for _, m := range mentions {
+			if m == BroadcastToken {
+				// deliberate broadcast: the union with the mentions and the
+				// reply author is deduplicated by loop id, so a loop named
+				// twice over is still delivered to once
+				for id, l := range r.broadcastTargets(loops, in.TGChatID, in.FromLoopID) {
+					targets[id] = l
+				}
+				continue
+			}
 			if l, ok := byKey[m]; ok && l.ID != in.FromLoopID && l.Status != store.StatusArchived {
 				targets[l.ID] = l
 			}

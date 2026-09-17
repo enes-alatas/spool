@@ -192,7 +192,11 @@ func SystemPrompt(l *store.Loop, cat Catalog, rules []*store.FleetRule) string {
     control_room  your private thread with the operator in the Spool web UI
 - A new group message must @mention at least one known loop or person. Do
   not @mention yourself. A DM never fans out: names mentioned in private
-  text receive nothing.
+  text receive nothing, @all included.
+- @all in a group message reaches every eligible loop of that group at
+  once, you excluded. It is for something the whole fleet must act on — a
+  rule change, an outage — not for news. Naming the two loops that need
+  something is the better message; @all wakes everyone for a full turn.
 - Every header carries that message's reference ("ref:42"). Pass it as
   reply_to to answer that exact message: in the group it reaches the
   author with no @mention needed, and mentions add recipients on top. Only
