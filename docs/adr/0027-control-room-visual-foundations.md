@@ -1,6 +1,6 @@
 # ADR-0027: Colour means something, or it is white
 
-Date: 2026-09-16 · Status: accepted
+Date: 2026-09-16 · Status: accepted · Amended: 2026-09-17 (§9, units)
 
 ## Context
 
@@ -60,6 +60,18 @@ need the operator to look.
    the busy glyph, the streaming cursor — still carries its meaning when
    `prefers-reduced-motion` stops it.
 
+9. **Type is relative, spacing is not** (amended 2026-09-17, #107). Every
+   `font-size` is a `rem`, so a reader's browser font-size preference scales
+   the whole control room; gaps, padding, radii and hairlines stay in `px`,
+   because they are not text and a 2px hairline is a 2px hairline at any text
+   size. Dimensions that exist to *hold* text — a column track, a bar's
+   height, the clearance above a fixed bottom bar — follow the text, since a
+   fixed box around growing text clips it. Two places cap deliberately rather
+   than scale without limit, and each says so where it is written: the bottom
+   destination bar's labels, where five of them share the viewport's width,
+   and the fleet row's state column, where an identifier would otherwise
+   squeeze the loop name to nothing.
+
 ## Consequences
 
 - **The accent stops being decoration.** Orange on screen now always answers
@@ -83,6 +95,12 @@ need the operator to look.
   design intent is unchanged and the reason is measured, but it is a
   deviation from an approved value and is called out here rather than folded
   in quietly.
+- **Enlargement has a ceiling in two places, and it is visible.** A bar with
+  five labels across a 320px viewport cannot honour a doubled text size and
+  still fit; capping there is a real limit on the accommodation, so it is
+  written at the rule rather than left for someone to discover. Browser zoom
+  is unaffected either way — it scales CSS pixels, so nothing about it is
+  capped.
 - **Actionable warnings keep their boundary.** Dialogs, destructive
   confirmations and alerts keep a tinted edge and wash, because removing their
   container would remove the thing that makes them read as a boundary.

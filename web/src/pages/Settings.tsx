@@ -28,7 +28,7 @@ export default function Settings() {
   return (
     <div className="page">
       <h1>Settings</h1>
-      <p style={{ color: 'var(--text-muted)', fontSize: 13, maxWidth: 640, marginBottom: 20 }}>
+      <p style={{ color: 'var(--text-muted)', fontSize: '0.8125rem', maxWidth: 640, marginBottom: 20 }}>
         Workstation (contained) loops run <code>claude</code> inside a Docker container that has no login of
         its own. Paste a long-lived token from <code>claude setup-token</code> and every workstation runs
         under your own Claude plan and limits. Bare loops keep using this machine's login and don't need it.
@@ -40,7 +40,7 @@ export default function Settings() {
           <div
             style={{
               marginBottom: 8,
-              fontSize: 13,
+              fontSize: '0.8125rem',
               color: configured ? 'var(--ready)' : 'var(--text-muted)',
             }}
           >

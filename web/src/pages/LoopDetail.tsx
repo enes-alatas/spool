@@ -54,7 +54,7 @@ function ScheduleEditor({
             color: 'var(--text)',
             padding: '2px 6px',
             fontFamily: 'var(--mono)',
-            fontSize: 12,
+            fontSize: '0.75rem',
           }}
           value={tick}
           onChange={(e) => setTick(e.target.value)}
@@ -75,7 +75,7 @@ const selectStyle = {
   borderRadius: 5,
   color: 'var(--text)',
   padding: '4px 8px',
-  fontSize: 12.5,
+  fontSize: '0.78125rem',
 } as const
 
 // ModelPanel edits model / effort / pacing in place; changes apply from the
@@ -124,7 +124,7 @@ function ModelPanel({ loop }: { loop: LoopView }) {
           </option>
         ))}
       </select>
-      <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 8 }}>
+      <div style={{ fontSize: '0.71875rem', color: 'var(--text-muted)', marginTop: 8 }}>
         Changes apply from the next wake.
       </div>
     </div>
@@ -187,7 +187,7 @@ function ContextPanel({ loop, turns }: { loop: LoopView; turns: Turn[] }) {
           />
         ))}
       </div>
-      <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 8 }}>
+      <div style={{ fontSize: '0.71875rem', color: 'var(--text-muted)', marginTop: 8 }}>
         Context occupancy at each turn's last API call, oldest first. Bars are relative to the tallest turn
         shown.
       </div>
@@ -332,7 +332,7 @@ function WorkstationPanel({ loop, runningVerb }: { loop: LoopView; runningVerb: 
           {error && <div className="form-error">{error}</div>}
         </>
       ) : (
-        <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 8 }}>
+        <div style={{ fontSize: '0.71875rem', color: 'var(--text-muted)', marginTop: 8 }}>
           Uncontained — claude runs directly on the host, with the operator's own files in reach. There is no
           workstation to power.
         </div>
@@ -384,12 +384,12 @@ function SecretsPanel({ loop }: { loop: LoopView }) {
   return (
     <div className="side-panel">
       <h3>Secrets</h3>
-      <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 8 }}>
+      <div style={{ fontSize: '0.71875rem', color: 'var(--text-muted)', marginBottom: 8 }}>
         Env vars injected into every workstation exec (a gh token, API keys). Values are write-only — stored,
         never shown again. Applied from the next wake.
       </div>
       {(secrets ?? []).length === 0 ? (
-        <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>No secrets set.</div>
+        <div style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>No secrets set.</div>
       ) : (
         (secrets ?? []).map((s) => (
           <div className="row" key={s.name} style={{ alignItems: 'center' }}>
@@ -604,7 +604,7 @@ export default function LoopDetail() {
     <div className="page">
       <div className="detail">
         <section>
-          <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <h1 style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
             <SpoolGlyph spinning={loop.state === 'busy'} size={20} />
             <span style={{ fontFamily: 'var(--mono)' }}>@{loop.name}</span>
             <span className="state-name">{loop.state}</span>
@@ -756,7 +756,7 @@ export default function LoopDetail() {
 
           <div className="side-panel">
             <h3>Mission</h3>
-            <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{loop.mission}</div>
+            <div style={{ fontSize: '0.8125rem', whiteSpace: 'pre-wrap' }}>{loop.mission}</div>
           </div>
 
           <div className="side-panel">
@@ -798,7 +798,7 @@ export default function LoopDetail() {
                 <OwnerPanel loop={loop} />
               </>
             ) : (
-              <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+              <div style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
                 No bot connected. Add a token in loop settings to talk from Telegram.
               </div>
             )}
