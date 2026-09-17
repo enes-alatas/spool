@@ -17,7 +17,7 @@ function SenderRow({ s }: { s: TGSender }) {
       <span className="author" style={{ minWidth: 140 }}>
         {name}
       </span>
-      <span className="text" style={{ color: 'var(--text-muted)', fontSize: '0.78125rem' }}>
+      <span className="text sender-meta">
         {s.status === 'pending' && (
           <>
             pairing code <b style={{ fontFamily: 'var(--mono)', color: 'var(--active)' }}>{s.pair_code}</b>
@@ -53,7 +53,7 @@ export default function Access() {
   return (
     <div className="page">
       <h1>Access</h1>
-      <p style={{ color: 'var(--text-muted)', fontSize: '0.8125rem', maxWidth: 640, marginBottom: 20 }}>
+      <p className="page-lede">
         Only people on this list can talk to your loops from Telegram. Anyone else who messages a bot is
         silently ignored and appears here as pending — check the pairing code with them before allowing.
         Blocked senders are dropped without any reply.
@@ -61,9 +61,7 @@ export default function Access() {
 
       {pending.length > 0 && (
         <>
-          <h2 style={{ fontSize: '0.875rem', color: 'var(--active)', margin: '14px 0 4px' }}>
-            Waiting for approval
-          </h2>
+          <h2 className="sender-group waiting">Waiting for approval</h2>
           {pending.map((s) => (
             <SenderRow key={s.tg_user_id} s={s} />
           ))}
@@ -72,9 +70,7 @@ export default function Access() {
 
       {others.length > 0 && (
         <>
-          <h2 style={{ fontSize: '0.875rem', color: 'var(--text-muted)', margin: '18px 0 4px' }}>
-            Known senders
-          </h2>
+          <h2 className="sender-group">Known senders</h2>
           {others.map((s) => (
             <SenderRow key={s.tg_user_id} s={s} />
           ))}

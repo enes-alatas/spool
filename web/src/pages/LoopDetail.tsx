@@ -45,20 +45,7 @@ function ScheduleEditor({
     <div className="row" style={{ alignItems: 'center' }}>
       <span className="k">interval</span>
       <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-        <input
-          style={{
-            width: 56,
-            background: 'var(--canvas)',
-            border: '1px solid var(--hairline)',
-            borderRadius: 5,
-            color: 'var(--text)',
-            padding: '2px 6px',
-            fontFamily: 'var(--mono)',
-            fontSize: '0.75rem',
-          }}
-          value={tick}
-          onChange={(e) => setTick(e.target.value)}
-        />
+        <input className="tick-input" value={tick} onChange={(e) => setTick(e.target.value)} />
         <span className="k">min</span>
         <button className="btn sm" onClick={() => mut.mutate()} disabled={mut.isPending}>
           Set
@@ -67,16 +54,6 @@ function ScheduleEditor({
     </div>
   )
 }
-
-const selectStyle = {
-  width: '100%',
-  background: 'var(--canvas)',
-  border: '1px solid var(--hairline)',
-  borderRadius: 5,
-  color: 'var(--text)',
-  padding: '4px 8px',
-  fontSize: '0.78125rem',
-} as const
 
 // ModelPanel edits model / effort / pacing in place; changes apply from the
 // loop's next wake.
@@ -96,7 +73,7 @@ function ModelPanel({ loop }: { loop: LoopView }) {
       <div className="row" style={{ alignItems: 'center' }}>
         <span className="k">model</span>
       </div>
-      <select style={selectStyle} value={loop.model} onChange={(e) => patch({ model: e.target.value })}>
+      <select className="panel-select" value={loop.model} onChange={(e) => patch({ model: e.target.value })}>
         {MODEL_OPTIONS.map((o) => (
           <option key={o.value} value={o.value}>
             {o.label}
@@ -107,7 +84,11 @@ function ModelPanel({ loop }: { loop: LoopView }) {
       <div className="row" style={{ marginTop: 8 }}>
         <span className="k">effort</span>
       </div>
-      <select style={selectStyle} value={loop.effort} onChange={(e) => patch({ effort: e.target.value })}>
+      <select
+        className="panel-select"
+        value={loop.effort}
+        onChange={(e) => patch({ effort: e.target.value })}
+      >
         {EFFORT_OPTIONS.map((o) => (
           <option key={o.value} value={o.value}>
             {o.label}
@@ -117,16 +98,18 @@ function ModelPanel({ loop }: { loop: LoopView }) {
       <div className="row" style={{ marginTop: 8 }}>
         <span className="k">pacing</span>
       </div>
-      <select style={selectStyle} value={loop.pacing} onChange={(e) => patch({ pacing: e.target.value })}>
+      <select
+        className="panel-select"
+        value={loop.pacing}
+        onChange={(e) => patch({ pacing: e.target.value })}
+      >
         {PACING_OPTIONS.map((o) => (
           <option key={o.value} value={o.value}>
             {o.label}
           </option>
         ))}
       </select>
-      <div style={{ fontSize: '0.71875rem', color: 'var(--text-muted)', marginTop: 8 }}>
-        Changes apply from the next wake.
-      </div>
+      <div className="panel-note">Changes apply from the next wake.</div>
     </div>
   )
 }
@@ -201,7 +184,7 @@ function ContextPanel({ loop, turns, thresholds }: { loop: LoopView; turns: Turn
           />
         ))}
       </div>
-      <div style={{ fontSize: '0.71875rem', color: 'var(--text-muted)', marginTop: 8 }}>
+      <div className="panel-note">
         Context occupancy at each turn's last API call, oldest first. Bars are relative to the tallest turn
         shown.
       </div>
@@ -346,7 +329,7 @@ function WorkstationPanel({ loop, runningVerb }: { loop: LoopView; runningVerb: 
           {error && <div className="form-error">{error}</div>}
         </>
       ) : (
-        <div style={{ fontSize: '0.71875rem', color: 'var(--text-muted)', marginTop: 8 }}>
+        <div className="panel-note">
           Uncontained — claude runs directly on the host, with the operator's own files in reach. There is no
           workstation to power.
         </div>
@@ -398,12 +381,12 @@ function SecretsPanel({ loop }: { loop: LoopView }) {
   return (
     <div className="side-panel">
       <h3>Secrets</h3>
-      <div style={{ fontSize: '0.71875rem', color: 'var(--text-muted)', marginBottom: 8 }}>
+      <div className="panel-note leading">
         Env vars injected into every workstation exec (a gh token, API keys). Values are write-only — stored,
         never shown again. Applied from the next wake.
       </div>
       {(secrets ?? []).length === 0 ? (
-        <div style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>No secrets set.</div>
+        <div className="panel-empty">No secrets set.</div>
       ) : (
         (secrets ?? []).map((s) => (
           <div className="row" key={s.name} style={{ alignItems: 'center' }}>
@@ -772,7 +755,7 @@ export default function LoopDetail() {
 
           <div className="side-panel">
             <h3>Mission</h3>
-            <div style={{ fontSize: '0.8125rem', whiteSpace: 'pre-wrap' }}>{loop.mission}</div>
+            <div className="panel-body">{loop.mission}</div>
           </div>
 
           <div className="side-panel">
@@ -814,7 +797,7 @@ export default function LoopDetail() {
                 <OwnerPanel loop={loop} />
               </>
             ) : (
-              <div style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
+              <div className="panel-empty">
                 No bot connected. Add a token in loop settings to talk from Telegram.
               </div>
             )}

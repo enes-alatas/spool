@@ -920,6 +920,74 @@ select {
   padding: 8px 12px;
 }
 
+/* ---- prose and small controls inside pages and panels ----
+   These treatments were written inline at fifteen sites across three pages,
+   several of them character-for-character identical. Named here so there is
+   one place to change how a note or a lede looks, and so a site that differs
+   from its siblings is visibly a decision rather than a slip. */
+
+/* the sentence under a page title that says what the page is for */
+.page-lede {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  max-width: 640px;
+  margin-bottom: 20px;
+}
+/* the small print in a side panel, explaining the control above it */
+.panel-note {
+  font-size: 0.71875rem;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+/* the same note introducing what follows rather than explaining what precedes:
+   the margin moves to the other side, which is the whole difference */
+.panel-note.leading {
+  margin-top: 0;
+  margin-bottom: 8px;
+}
+/* a panel with nothing in it yet, saying so */
+.panel-empty {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+/* body text a panel exists to show — the mission, not commentary on it */
+.panel-body {
+  font-size: 0.8125rem;
+  white-space: pre-wrap;
+}
+/* whether the Claude token is set. Near neighbour of `.field .hint`, which
+   says the same kind of thing in the same kind of place — but a step smaller
+   and below its field rather than above it, so they are not yet one name */
+.token-state {
+  margin-bottom: 8px;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+.token-state.ok {
+  color: var(--ready);
+}
+/* the select a side panel edits a loop's settings through */
+.panel-select {
+  width: 100%;
+  background: var(--canvas);
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  color: var(--text);
+  padding: 4px 8px;
+  font-size: 0.78125rem;
+}
+/* the minutes field beside the interval row: a number, so it is mono */
+.tick-input {
+  width: 56px;
+  background: var(--canvas);
+  border: 1px solid var(--hairline);
+  border-radius: 5px;
+  color: var(--text);
+  padding: 2px 6px;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+}
+
 /* ---- activity feed ---- */
 .feed-item {
   /* contains the hidden status label, which is pinned to its row */
@@ -939,6 +1007,17 @@ select {
   width: 76px;
   padding-top: 2px;
 }
+/* the heading over a group of senders; `waiting` is the group that needs the
+   operator to do something, so it takes the attention colour */
+.sender-group {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  margin: 18px 0 4px;
+}
+.sender-group.waiting {
+  color: var(--active);
+  margin-top: 14px;
+}
 .feed-item .author {
   font-family: var(--mono);
   color: var(--text);
@@ -951,6 +1030,13 @@ select {
   color: var(--text);
   white-space: pre-wrap;
   word-break: break-word;
+}
+/* a sender's detail line: the pairing code and where they were first seen.
+   Quieter than a message's text, which is what `.text` above dresses it as,
+   so it follows that rule rather than preceding it */
+.feed-item .sender-meta {
+  font-size: 0.78125rem;
+  color: var(--text-muted);
 }
 .feed-item .origin {
   margin-left: auto;
