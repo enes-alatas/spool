@@ -169,7 +169,14 @@ type Actor struct {
 	// Context rotation (ADR-0022): the loop sheds its context proactively,
 	// before the window's degradation zone, by writing a handoff note as its
 	// session's last turn and starting fresh from it.
-	fillPct      int    // context fill of the last measured turn, percent of the model's window (0 = unknown)
+	fillPct int // context fill of the last measured turn, percent of the model's window (0 = unknown)
+	// armPct/forcePct are the rotation thresholds this wake runs on. Read
+	// once at the start of each wake rather than on every measurement: they
+	// are operator settings that change between wakes, not within one, and
+	// the actor goroutine was querying the store up to four times a turn
+	// for an answer that could not have moved.
+	armPct       int
+	forcePct     int
 	armed        bool   // fill crossed the arm threshold; rotate at the next quiet boundary
 	rotateAsked  bool   // operator asked for a rotation at the next quiet boundary
 	handoffTurn  bool   // the in-flight turn is the rotation's handoff request
@@ -188,6 +195,10 @@ func NewActor(deps Deps, l *store.Loop) *Actor {
 		cmds:  make(chan cmd, 32),
 		loop:  *l,
 		state: StateAsleep,
+		// the defaults hold until the first wake reads the operator's:
+		// a zero force threshold would read as "every turn is over it"
+		armPct:   DefaultContextArmPercent,
+		forcePct: DefaultContextForcePercent,
 	}
 	actor.paused = l.Status == store.StatusPaused
 	actor.offSnap.Store(l.WorkstationOff)
@@ -365,6 +376,8 @@ func (actor *Actor) pump() {
 
 func (actor *Actor) wake() {
 	ctx := context.Background()
+	// the thresholds this wake will judge its turns by, read once
+	actor.armPct, actor.forcePct = RotationThresholds(ctx, actor.deps.Store.Settings(), actor.log())
 	fresh := actor.loop.CurrentSessionID == ""
 	if fresh {
 		actor.mintSession(ctx)
@@ -510,8 +523,7 @@ func (actor *Actor) needsForcedRotation() bool {
 	if actor.handoffTurn || actor.fillPct == 0 {
 		return false
 	}
-	_, force := RotationThresholds(context.Background(), actor.deps.Store.Settings())
-	return actor.fillPct >= force
+	return actor.fillPct >= actor.forcePct
 }
 
 // requestRotation latches an operator-asked rotation: ADR-0022's handoff
@@ -774,11 +786,10 @@ func (actor *Actor) measureContext() {
 	if window <= 0 || tokens == 0 {
 		return
 	}
-	actor.fillPct = tokens * 100 / window
-	arm, _ := RotationThresholds(context.Background(), actor.deps.Store.Settings())
+	actor.fillPct = FillPercent(tokens, window)
 	// Recomputed, not latched: a drop below the threshold — the CLI compacted
 	// after all, or the operator raised the bar — disarms a pointless rotation.
-	actor.armed = actor.fillPct >= arm
+	actor.armed = actor.fillPct >= actor.armPct
 }
 
 func (actor *Actor) armIdleTimer() {
