@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { api, ChatMessage, LoopView, MessageDestination, Settings, TGSender, Turn } from '../api'
-import { formatTokens, fillTone } from '../format'
+import { formatTokens, fillTone, hasFillPct } from '../format'
 import { MODEL_OPTIONS, EFFORT_OPTIONS, PACING_OPTIONS } from '../options'
 import { useStream } from '../stream'
 import { toEntries, extractDelta } from '../timeline'
@@ -122,8 +122,9 @@ function contextTokens(turn: Turn): number {
 }
 
 // ContextFill is the occupancy of the model's own window — the glanceable
-// number. Only rendered when Spool knows the window; an unknown limit gets
-// absolute tokens rather than a percentage against a guess.
+// number. Only rendered when Spool knows the window and the server reported a
+// fill; an unknown limit gets absolute tokens rather than a percentage against
+// a guess, and an unreported fill would draw a bar of `width: undefined%`.
 function ContextFill({
   tokens,
   limit,
@@ -164,7 +165,7 @@ function ContextPanel({ loop, turns, thresholds }: { loop: LoopView; turns: Turn
           {loop.context_limit_tokens > 0 && ` / ${formatTokens(loop.context_limit_tokens)}`} tokens
         </span>
       </div>
-      {loop.context_limit_tokens > 0 && (
+      {loop.context_limit_tokens > 0 && hasFillPct(loop.context_fill_pct) && (
         <ContextFill
           tokens={loop.context_tokens}
           limit={loop.context_limit_tokens}

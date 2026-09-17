@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api, LoopView, Settings } from '../api'
-import { formatTokens, fillTone } from '../format'
+import { formatTokens, fillTone, hasFillPct } from '../format'
 import { StateDot } from '../components/Spool'
 import { useEffect, useState } from 'react'
 
@@ -30,10 +30,14 @@ function ContextStat({ loop, thresholds }: { loop: LoopView; thresholds?: Settin
   // older server doesn't send arrives as undefined and would divide into NaN.
   if (!loop.context_tokens) return <span className="dim">—</span>
   // The limit, not the percentage, answers "does Spool know the window": the
-  // percentage truncates, so a just-rotated loop on a 200k window reports 0%,
-  // which is a true reading and not an absent one. The loop page asks the same
-  // question of the same field.
-  if (!loop.context_limit_tokens) return <span>{formatTokens(loop.context_tokens)}</span>
+  // percentage truncates, so a measured loop holding ~1,500 tokens of a 200k
+  // window reports 0%, which is a true reading and not an absent one. The loop
+  // page asks the same question of the same field.
+  // Knowing the window is not the same as having been told the fill: an older
+  // server sends the limit and not the percentage, and the tokens are the
+  // honest reading of that.
+  if (!loop.context_limit_tokens || !hasFillPct(loop.context_fill_pct))
+    return <span>{formatTokens(loop.context_tokens)}</span>
   return (
     <span
       className={fillTone(loop.context_fill_pct, thresholds)}
