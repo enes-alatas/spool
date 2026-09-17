@@ -139,6 +139,9 @@ agents — Claude sessions today, Spool's own loops from L2.*
 - Prettier + ESLint, CI-gated. API types live in `src/api.ts` only, mirrored by hand
   from the Go structs (snake_case JSON) — until the API freezes at L6, the mirror is
   maintained manually and checked in code review.
+- A new `spool` event subtype ships with its timeline copy in `src/timeline.ts`, in the
+  same PR that emits it. `spoolNote` renders nothing for a subtype it does not know, so
+  an unlisted event is not terse in the room — it is absent, and nobody notices.
 
 ## API
 
