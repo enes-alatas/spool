@@ -245,6 +245,23 @@ func (s *server) waitTurn(name string, timeout time.Duration, pred func(turn) bo
 	return turn{}
 }
 
+// waitRunningTurn waits for a turn that has started and not finished — the
+// only way to catch a loop in the middle of one.
+func (s *server) waitRunningTurn(name string, timeout time.Duration, pred func(turn) bool) turn {
+	s.t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		for _, t := range s.turns(name) {
+			if t.EndedAt == 0 && pred(t) {
+				return t
+			}
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
+	s.t.Fatalf("no matching running turn for %s within %s; turns: %s", name, timeout, dump(s.turns(name)))
+	return turn{}
+}
+
 func (s *server) waitState(name, state string, timeout time.Duration) {
 	s.t.Helper()
 	deadline := time.Now().Add(timeout)

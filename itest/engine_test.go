@@ -394,6 +394,92 @@ func TestContextRotationSurvivesServerRestart(t *testing.T) {
 	}
 }
 
+// TestRotationNoteSurvivesServerRestart: the rotation completed, and the note
+// it captured is owed to a session whose first turn has not run yet. Restart
+// in that window and the note used to be dropped — the fresh session opened
+// with the "could not be resumed" preamble, which is not what happened to a
+// loop that retired its own session on purpose (#66, ADR-0022).
+func TestRotationNoteSurvivesServerRestart(t *testing.T) {
+	workspace := workspaceWithScript(t, "!ctx 100000\n")
+	dataDir := t.TempDir()
+	s := startServer(t, dataDir)
+	s.createLoop("keeper", map[string]any{
+		"workspace_path": workspace,
+		"workspace_mode": "dir",
+		"model":          "haiku",
+	})
+
+	s.message("keeper", "fill it")
+	handoff := s.waitTurn("keeper", 30*time.Second, func(tr turn) bool {
+		return tr.Trigger == "rotation" && strings.Contains(tr.ResultText, "handoff note")
+	})
+	if !s.hasEvent("keeper", "context_rotated", 30*time.Second) {
+		t.Fatal("rotation was not recorded as a spool event")
+	}
+	// the restart lands between the rotation and the fresh session's first
+	// turn: the note is captured, nothing has consumed it
+	s.waitState("keeper", "asleep", 30*time.Second)
+	s.stop()
+
+	s2 := startServer(t, dataDir)
+	s2.message("keeper", "after restart")
+	carried := s2.waitTurn("keeper", 30*time.Second, func(tr turn) bool {
+		return strings.Contains(tr.ResultText, "after restart")
+	})
+	if carried.SessionID == handoff.SessionID {
+		t.Fatalf("restart resurrected the retired session %s", handoff.SessionID)
+	}
+	if !strings.Contains(carried.ResultText, "your context was rotated") ||
+		!strings.Contains(carried.ResultText, "Handoff note from your previous session") {
+		t.Fatalf("the note did not survive the restart:\n%s", carried.ResultText)
+	}
+	if strings.Contains(carried.ResultText, "could not be resumed") {
+		t.Fatalf("a deliberate rotation was reported to the loop as a lost session:\n%s", carried.ResultText)
+	}
+}
+
+// TestRotationIntentSurvivesServerRestart: once the handoff turn is asked
+// for, that session has been told it ends here. A shutdown before the
+// rotation lands used to leave the intent in actor memory only, so the
+// restarted server resumed the session its own last turn retired and paid for
+// the handoff twice (#66). The handoff turn hangs, so the shutdown reliably
+// falls inside that window.
+func TestRotationIntentSurvivesServerRestart(t *testing.T) {
+	// every turn reports 50% (past the 40% arm default) and hangs; the hang
+	// is what makes the shutdown land inside the handoff turn rather than
+	// racing it
+	workspace := workspaceWithScript(t, "!ctx 100000 !hang 5\n")
+	dataDir := t.TempDir()
+	s := startServer(t, dataDir)
+	s.createLoop("interrupted", map[string]any{
+		"workspace_path": workspace,
+		"workspace_mode": "dir",
+		"model":          "haiku",
+	})
+
+	s.message("interrupted", "fill it")
+	retired := s.waitRunningTurn("interrupted", 30*time.Second, func(tr turn) bool {
+		return tr.Trigger == "rotation"
+	})
+	s.stop()
+
+	s2 := startServer(t, dataDir)
+	s2.message("interrupted", "after restart")
+	// a hung turn answers "hung 5s" rather than echoing, so the work after
+	// the restart is identified by when it ran, not by what it said
+	answered := s2.waitTurn("interrupted", 60*time.Second, func(tr turn) bool {
+		return tr.Trigger == "message" && tr.StartedAt > retired.StartedAt
+	})
+	if answered.SessionID == retired.SessionID {
+		t.Fatalf("restart resumed session %s, whose last turn was told it ends here", retired.SessionID)
+	}
+	for _, tr := range s2.turns("interrupted") {
+		if tr.StartedAt > retired.StartedAt && tr.SessionID == retired.SessionID {
+			t.Fatalf("turn %s ran on the retired session after the restart", tr.ID)
+		}
+	}
+}
+
 // TestContextRotationSurvivesHandoffCrash: ADR-0022's fallback — a handoff
 // turn that dies with its process still rotates, just without a note, and
 // later work is answered on the fresh session.
