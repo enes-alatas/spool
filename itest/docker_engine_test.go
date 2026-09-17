@@ -86,6 +86,35 @@ func TestDockerEchoTurn(t *testing.T) {
 	}
 }
 
+// TestDockerScriptedTurn: a contained loop can be scripted exactly as a bare
+// one is, which tier 2 could not do before — a docker loop's working
+// directory is inside its workstation, so the .fakeclaude file never reached
+// it and every contained turn could only echo (#117). Without scripting,
+// nothing that depends on what a turn *does* — a crash, a hang, a full
+// context — could be tested against a workstation at all.
+func TestDockerScriptedTurn(t *testing.T) {
+	s := startDockerServer(t, t.TempDir())
+	s.createLoop("wsscript", nil)
+	cleanupWorkstation(t, s.loop("wsscript").ID)
+	// one line, so it answers every turn from here on rather than depending
+	// on which turn of the session this is; the directive reports a context
+	// fill well below the arm threshold, so nothing rotates underneath the test
+	s.scriptLoop("wsscript", "!ctx 20000 scripted, not echoed\n")
+
+	s.message("wsscript", "say something of your own")
+	answered := s.waitTurn("wsscript", 90*time.Second, func(tr turn) bool {
+		return tr.Trigger == "message" && strings.Contains(tr.ResultText, "scripted, not echoed")
+	})
+	if strings.Contains(answered.ResultText, "say something of your own") {
+		t.Fatalf("the contained turn echoed instead of following its script:\n%s", answered.ResultText)
+	}
+	// and the directives cross with it: what the turn reported about itself
+	// is the script's doing, not the fake's default
+	if answered.ContextTokens != 20000 {
+		t.Fatalf("scripted context = %d tokens, want the directive's 20000", answered.ContextTokens)
+	}
+}
+
 // TestDockerWorkstationCustomSpec pins that a loop's own image and limits —
 // not the server defaults — reach docker run. The image is a distinct tag of
 // the test image so the assertion can tell the two apart.

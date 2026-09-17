@@ -8,16 +8,19 @@
 // Session state (a file per session id) lives in $FAKECLAUDE_STATE so resume
 // semantics survive process death, like the real CLI's session files.
 //
-// Replies: if the working directory contains a ".fakeclaude" file, its lines
-// script the replies (line N answers the session's turn N; the last line
-// repeats). Directives: "!crash" exits 2 mid-turn without a result; "!lost"
-// dies mid-turn the way a lost session does (exit 1, canonical stderr);
+// Replies are scripted by $FAKECLAUDE_SCRIPT when it is set, and otherwise by
+// a ".fakeclaude" file in the working directory: line N answers the session's
+// turn N, and the last line repeats. The env var is the route into a
+// contained loop, whose working directory lives inside its workstation where
+// a test cannot write the file.
+//
+// Directives: "!crash" exits 2 mid-turn without a result; "!lost" dies
+// mid-turn the way a lost session does (exit 1, canonical stderr);
 // "!huge <bytes>" replies with that many bytes; "!hang <seconds>" sleeps
-// first. A
-// "!toolong" returns an errored result saying the prompt did not fit the
-// window, with no usage, and keeps the session. A
-// A "!send" directive may write "$ref" where the reference of the message
-// being answered belongs; the fake substitutes it from the envelope header.
+// first; "!toolong" returns an errored result saying the prompt did not fit
+// the window, with no usage, and keeps the session. A "!send" directive may
+// write "$ref" where the reference of the message being answered belongs;
+// the fake substitutes it from the envelope header.
 //
 // "!ctx <tokens>" prefix makes the turn report that many input tokens per API
 // step — how a filling context looks from outside — and composes with the
@@ -27,7 +30,7 @@
 // the turn's summed usage — so a runner that reads the result's sum as
 // context occupancy sees k times the real fill. "!sysprompt" replies with the text spool
 // passed as --append-system-prompt, so a test can see the prompt a loop was
-// given. Without a script file, every turn echoes: "echo: <received text>".
+// given. Without a script, every turn echoes: "echo: <received text>".
 //
 // A "!send {json}" prefix calls the hub's send_message MCP tool with the
 // given arguments, exactly as the real CLI would mid-turn. It repeats for
@@ -293,10 +296,24 @@ func main() {
 	// stdin closed: clean exit, like the real CLI.
 }
 
+// scriptEnv carries a turn script for a loop whose working directory is out
+// of a test's reach — see loadScript.
+const scriptEnv = "FAKECLAUDE_SCRIPT"
+
+// loadScript reads the turn script from $FAKECLAUDE_SCRIPT when it is set,
+// and otherwise from a ".fakeclaude" file in the working directory. The env
+// var is how a contained loop is scripted: its working directory lives inside
+// its workstation, where a test on the host cannot write a file, but a loop
+// secret is injected into every exec by the engine itself — so the same
+// script reaches a bare loop and a contained one by the route each already
+// has (#117).
 func loadScript() []string {
-	data, err := os.ReadFile(".fakeclaude")
-	if err != nil {
-		return nil
+	data := []byte(os.Getenv(scriptEnv))
+	if len(data) == 0 {
+		var err error
+		if data, err = os.ReadFile(".fakeclaude"); err != nil {
+			return nil
+		}
 	}
 	var lines []string
 	for _, l := range strings.Split(strings.TrimRight(string(data), "\n"), "\n") {

@@ -98,6 +98,11 @@ agents — Claude sessions today, Spool's own loops from L2.*
 - fakeclaude scenarios are declarative fixtures checked into the repo; fakeclaude
   itself must track the real CLI's observed behavior (version-noted, like
   `claude/preflight.go`'s TestedVersion).
+- A scenario reaches a loop one of two ways: a `.fakeclaude` file in a bare
+  loop's workspace, or the `FAKECLAUDE_SCRIPT` secret, which the engine injects
+  into every exec. The secret is the only route into a contained loop, whose
+  workspace lives inside its workstation — reach for it whenever a tier-2 row
+  must run on both runtimes.
 
 ## Go
 

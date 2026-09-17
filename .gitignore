@@ -1,4 +1,9 @@
 bin/
+# `go build ./cmd/x` with no -o drops the binary in the working directory,
+# which for a worktree is the repo root; git does not diff binaries, so one
+# slips into a commit unseen by its own diffstat
+/fakeclaude
+/spool
 .data/
 web/node_modules/
 web/dist/*
