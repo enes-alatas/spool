@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { api, LoopView } from '../api'
+import { api, LoopView, Settings } from '../api'
 import { formatTokens, fillTone } from '../format'
 import { StateDot } from '../components/Spool'
 import { useEffect, useState } from 'react'
@@ -25,18 +25,21 @@ function Countdown({ at }: { at: number }) {
 // Context occupancy in one number: the percentage of the model's window when
 // Spool knows it, and the raw token count when it doesn't — never a
 // percentage against a guessed limit.
-function ContextStat({ loop }: { loop: LoopView }) {
+function ContextStat({ loop, thresholds }: { loop: LoopView; thresholds?: Settings }) {
   // Falsy, not `=== 0`: api.ts describes the API as it will be, so a field an
   // older server doesn't send arrives as undefined and would divide into NaN.
   if (!loop.context_tokens) return <span className="dim">—</span>
+  // The limit, not the percentage, answers "does Spool know the window": the
+  // percentage truncates, so a just-rotated loop on a 200k window reports 0%,
+  // which is a true reading and not an absent one. The loop page asks the same
+  // question of the same field.
   if (!loop.context_limit_tokens) return <span>{formatTokens(loop.context_tokens)}</span>
-  const ratio = Math.min(1, loop.context_tokens / loop.context_limit_tokens)
   return (
     <span
-      className={fillTone(ratio)}
+      className={fillTone(loop.context_fill_pct, thresholds)}
       title={`${loop.context_tokens} of ${loop.context_limit_tokens} context tokens`}
     >
-      {Math.round(ratio * 100)}%
+      {loop.context_fill_pct}%
     </span>
   )
 }
@@ -54,7 +57,7 @@ function workstationNote(loop: LoopView): { text: string; bad: boolean } | undef
 // right of it. The metadata is wrapped in an element that is `display:
 // contents` on a wide screen — its children join the row's grid as columns —
 // and a wrapping line of its own once the columns no longer fit.
-function FleetRow({ loop }: { loop: LoopView }) {
+function FleetRow({ loop, thresholds }: { loop: LoopView; thresholds?: Settings }) {
   const station = workstationNote(loop)
   return (
     <Link to={`/loops/${loop.name}`} className="fleet-row">
@@ -96,7 +99,7 @@ function FleetRow({ loop }: { loop: LoopView }) {
           )}
         </span>
         <span className="f-ctx">
-          <ContextStat loop={loop} /> <span className="lbl after">ctx</span>
+          <ContextStat loop={loop} thresholds={thresholds} /> <span className="lbl after">ctx</span>
         </span>
         <span className="f-today">
           ${loop.cost_today_usd.toFixed(2)} <span className="lbl after">today</span>
@@ -108,8 +111,10 @@ function FleetRow({ loop }: { loop: LoopView }) {
 
 export default function Dashboard() {
   const { data: loops, isLoading, isError, error } = useQuery({ queryKey: ['loops'], queryFn: api.loops })
+  // the rotation thresholds the gauge colours mean something against
+  const { data: thresholds } = useQuery({ queryKey: ['settings'], queryFn: api.settings })
 
-  const busy = (loops ?? []).filter((l) => l.state === 'busy').length
+  const busy = (loops ?? []).filter((fleetLoop) => fleetLoop.state === 'busy').length
 
   return (
     <div className="page">
@@ -152,8 +157,8 @@ export default function Dashboard() {
               <span className="f-today">today</span>
             </div>
           </div>
-          {loops.map((l) => (
-            <FleetRow key={l.id} loop={l} />
+          {loops.map((fleetLoop) => (
+            <FleetRow key={fleetLoop.id} loop={fleetLoop} thresholds={thresholds} />
           ))}
         </div>
       )}
