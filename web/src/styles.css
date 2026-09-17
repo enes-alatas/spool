@@ -711,6 +711,28 @@ textarea {
   left: -21.5px;
 }
 
+/* A seam note says the thread is not continuous here: the turns above it and
+   the turns below it were spoken into two different sessions, and the loop
+   below has no recollection of the ones above. The rail is that thread, so
+   the note cuts it — a length of canvas painted over the rail with a single
+   stroke across the gap — instead of hanging one more dot off it. The copy
+   alone could not do this: a reader scanning the thread reads the shape
+   before the words, and every other note shares the dot. */
+.knot.seam::before {
+  width: 13px;
+  height: 12px;
+  left: -23.5px;
+  top: 6.5px;
+  border: none;
+  border-radius: 0;
+  background:
+    linear-gradient(var(--text-muted), var(--text-muted)) center / 100% 2px no-repeat,
+    var(--canvas);
+}
+.knot.seam .who {
+  color: var(--text);
+}
+
 .knot .who {
   font-family: var(--mono);
   font-size: 0.71875rem;
