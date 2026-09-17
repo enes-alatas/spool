@@ -275,10 +275,20 @@ func (s *server) waitState(name, state string, timeout time.Duration) {
 }
 
 type spoolEvent struct {
+	ID      int64  `json:"id"`
 	Type    string `json:"type"`
 	Subtype string `json:"subtype"`
 	Payload string `json:"payload"`
 	TurnID  string `json:"turn_id"`
+}
+
+// eventsQuery reads the events endpoint with a raw query string, so a test
+// can ask for a particular window rather than the helper's default page.
+func (s *server) eventsQuery(name, query string) []spoolEvent {
+	s.t.Helper()
+	var events []spoolEvent
+	s.mustJSON("GET", "/api/loops/"+name+"/events?"+query, nil, &events)
+	return events
 }
 
 // turnInputs maps each turn to the envelope texts injected into it, read
@@ -286,8 +296,7 @@ type spoolEvent struct {
 // independent of whatever its scripted reply claims.
 func (s *server) turnInputs(name string) map[string][]string {
 	s.t.Helper()
-	var events []spoolEvent
-	s.mustJSON("GET", "/api/loops/"+name+"/events?limit=500", nil, &events)
+	events := s.eventsQuery(name, "limit=500")
 	out := map[string][]string{}
 	for _, e := range events {
 		if e.Type != "envelope" || e.TurnID == "" {

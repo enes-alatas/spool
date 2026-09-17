@@ -366,7 +366,15 @@ type TurnStore interface {
 
 type EventStore interface {
 	Insert(ctx context.Context, e *Event) (int64, error)
+	// ListByLoop returns up to limit events after afterID, oldest first —
+	// the tail-following form: afterID 0 is the oldest end of the timeline.
 	ListByLoop(ctx context.Context, loopID string, afterID int64, limit int) ([]*Event, error)
+	// ListByLoopBefore returns the newest window instead: up to limit events
+	// older than beforeID, still oldest first, so a caller reads one page the
+	// same way whichever end it asked from. beforeID 0 is the newest end of
+	// the timeline — the mirror of afterID 0 — which is what a page opening
+	// on a long-lived loop wants (#119).
+	ListByLoopBefore(ctx context.Context, loopID string, beforeID int64, limit int) ([]*Event, error)
 	// DeleteBefore prunes raw events older than cutoff (retention,
 	// docs/QUALITY.md). Messages and turns are never pruned.
 	DeleteBefore(ctx context.Context, cutoff int64) (int64, error)

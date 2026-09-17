@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math"
 	"sort"
 	"strings"
 
@@ -579,6 +580,37 @@ func (r events) ListByLoop(ctx context.Context, loopID string, afterID int64, li
 		out = append(out, &e)
 	}
 	return out, rows.Err()
+}
+
+// ListByLoopBefore reads the newest window: the rows are selected newest-first
+// so the limit bites at the recent end, then reversed, because every caller —
+// and the endpoint — reads a page oldest first.
+func (r events) ListByLoopBefore(ctx context.Context, loopID string, beforeID int64, limit int) ([]*store.Event, error) {
+	// 0 means "no cursor yet, start at the newest"; every real id is above it
+	if beforeID <= 0 {
+		beforeID = math.MaxInt64
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT id, loop_id, session_id, turn_id, ts, type, subtype, payload
+		FROM events WHERE loop_id=? AND id<? ORDER BY id DESC LIMIT ?`, loopID, beforeID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*store.Event
+	for rows.Next() {
+		var e store.Event
+		if err := rows.Scan(&e.ID, &e.LoopID, &e.SessionID, &e.TurnID, &e.TS, &e.Type, &e.Subtype, &e.Payload); err != nil {
+			return nil, err
+		}
+		out = append(out, &e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	return out, nil
 }
 
 // --- schedule ---
