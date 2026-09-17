@@ -121,6 +121,81 @@ function contextTokens(turn: Turn): number {
   return turn.context_tokens
 }
 
+// MissionPanel shows the mission clamped to five lines, because a dogfood
+// mission runs to paragraphs and rendering all of them made the page 3,815px
+// tall and left the four panels below this one past 4,100px (#131). It is the
+// side column's length a long mission costs, not the timeline's position —
+// the timeline is the other column and never moved. Five lines because
+// missions separate paragraphs with a blank line, and at four that gap took
+// the last slot and left an ellipsis alone on a row.
+//
+// The clamp is CSS, so the whole text stays in the DOM and stays selectable;
+// the toggle only appears when there is something hidden, which is a
+// measurement rather than a guess about length.
+function MissionPanel({ name, mission }: { name: string; mission: string }) {
+  const body = useRef<HTMLDivElement>(null)
+  const [open, setOpen] = useState(() => readMissionChoice(name))
+  const [clamped, setClamped] = useState(false)
+
+  // Whether the clamp is actually hiding anything. Re-measured when the text
+  // or the width changes: the same mission clamps at 1440px and may not at
+  // 320px, where the column is wider in lines.
+  useEffect(() => {
+    const el = body.current
+    if (!el) return
+    const measure = () => setClamped(el.scrollHeight > el.clientHeight + 1)
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [mission, open])
+
+  const toggle = () => {
+    const next = !open
+    setOpen(next)
+    writeMissionChoice(name, next)
+  }
+
+  return (
+    <div className="side-panel">
+      <h3>Mission</h3>
+      <div ref={body} className={`panel-body${open ? '' : ' clamped'}`}>
+        {mission}
+      </div>
+      {(clamped || open) && (
+        <button className="thinking-toggle mission-toggle" onClick={toggle}>
+          {open ? 'show less' : 'show the whole mission'}
+        </button>
+      )}
+    </div>
+  )
+}
+
+// The reader's choice, for as long as the tab lives — and the control room's
+// first Web Storage, so it is wrapped rather than trusted. `sessionStorage`
+// throws on access, not on failure, in a browser configured to refuse it, and
+// this read runs in a state initialiser: unwrapped, that takes the whole loop
+// page down. A remembered toggle is not worth a blank screen.
+function readMissionChoice(name: string): boolean {
+  try {
+    return sessionStorage.getItem(missionKey(name)) === 'open'
+  } catch {
+    return false
+  }
+}
+
+function writeMissionChoice(name: string, open: boolean): void {
+  try {
+    sessionStorage.setItem(missionKey(name), open ? 'open' : 'closed')
+  } catch {
+    /* the panel still opens; only the memory of the choice is lost */
+  }
+}
+
+function missionKey(name: string): string {
+  return `spool.mission.${name}`
+}
+
 // ContextFill is the occupancy of the model's own window — the glanceable
 // number. Only rendered when Spool knows the window and the server reported a
 // fill; an unknown limit gets absolute tokens rather than a percentage against
@@ -809,10 +884,7 @@ export default function LoopDetail() {
 
           <ModelPanel loop={loop} />
 
-          <div className="side-panel">
-            <h3>Mission</h3>
-            <div className="panel-body">{loop.mission}</div>
-          </div>
+          <MissionPanel name={name} mission={loop.mission} />
 
           <div className="side-panel">
             <h3>Workspace</h3>

@@ -1039,6 +1039,20 @@ textarea {
   font-size: 0.8125rem;
   white-space: pre-wrap;
 }
+/* Five lines of a mission, with the rest clamped rather than removed: the
+   text stays in the DOM, selectable and searchable, and expanding costs no
+   fetch. `line-clamp` needs the legacy box display to work, which is why the
+   three properties travel together. */
+.panel-body.clamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+  line-clamp: 5;
+  overflow: hidden;
+}
+.mission-toggle {
+  margin-top: 6px;
+}
 /* whether the Claude token is set. Near neighbour of `.field .hint`, which
    says the same kind of thing in the same kind of place — but a step smaller
    and below its field rather than above it, so they are not yet one name */
