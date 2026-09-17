@@ -931,7 +931,13 @@ func (actor *Actor) rotateSession(reason, detail string) {
 		actor.currentBatch = nil
 		actor.redelivered = true
 	}
-	actor.startFreshSession()
+	actor.retireSession()
+	// The retry, not an immediate wake: a rotation forced by failure is no
+	// evidence that a spawn will work now, and waking straight into one
+	// respawns a permanently broken loop every few seconds (#89). The
+	// ladder it climbs is the same one an ordinary crash climbs, so the
+	// two interleave into one sequence instead of resetting each other.
+	actor.crashBackoff()
 }
 
 // rotateContext is the deliberate counterpart of rotateSession (ADR-0022):
@@ -940,6 +946,9 @@ func (actor *Actor) rotateSession(reason, detail string) {
 // first turn.
 func (actor *Actor) rotateContext(detail string) {
 	actor.rotateOnExit = false
+	// A rotation taken by choice starts the new session unburdened: the old
+	// one was working, it just filled up.
+	actor.backoff = 0
 	old := actor.loop.CurrentSessionID
 	_ = actor.deps.Store.Sessions().End(context.Background(), old, store.EndReasonRotated, now())
 	if detail == "" {
@@ -951,21 +960,32 @@ func (actor *Actor) rotateContext(detail string) {
 	actor.startFreshSession()
 }
 
-// startFreshSession forgets the current session and, when work is queued,
-// wakes onto a new one. Shared tail of every rotation path. The cleared id is
-// persisted immediately: a loop that goes quiet after rotating may not wake
-// again before a server restart, and a restart must not resurrect the retired
-// session.
-func (actor *Actor) startFreshSession() {
+// retireSession forgets the current session without deciding what happens
+// next; the callers differ on that. The cleared id is persisted immediately:
+// a loop that goes quiet after rotating may not wake again before a server
+// restart, and a restart must not resurrect the retired session.
+//
+// The retry ladder is deliberately left alone here. A rotation the loop was
+// driven to by failure is no evidence that anything works, and clearing the
+// backoff on that path let a loop that could not spawn at all respawn every
+// few seconds forever (#89). The paths that know better clear it: a turn
+// that completed, and a rotation taken by choice.
+func (actor *Actor) retireSession() {
 	actor.loop.CurrentSessionID = ""
 	_ = actor.deps.Store.Loops().SetRuntime(context.Background(), actor.loop.ID, "", 0)
 	actor.deadResumes = 0
-	actor.backoff = 0
 	actor.armed = false
 	actor.rotateAsked = false
 	actor.fillPct = 0
 	actor.state = StateAsleep
 	actor.publishState()
+}
+
+// startFreshSession retires the session and wakes straight onto a new one:
+// the path for a loop that is working — a finished turn, or a rotation taken
+// by choice.
+func (actor *Actor) startFreshSession() {
+	actor.retireSession()
 	// Never wake while a power verb is underway: stopProcess can land here
 	// mid-verb via a draining rotation, and a process spawned now would run
 	// on the workstation the verb is about to halt or destroy. The queued
@@ -987,6 +1007,11 @@ func (actor *Actor) crashBackoff() {
 	actor.state = StateAsleep
 	actor.publishState()
 	if len(actor.inbox) > 0 {
+		// The wait is the only visible sign that a loop is failing rather
+		// than idle, and the ladder it climbs is what says "this is not
+		// getting better" — so record it where the operator reads the
+		// loop's story, next to the crash it follows.
+		actor.storeSpoolEvent("retry_scheduled", fmt.Sprintf(`{"in_ms":%d}`, actor.backoff.Milliseconds()))
 		actor.retryTimer.Reset(actor.backoff)
 	}
 }

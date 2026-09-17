@@ -40,7 +40,9 @@
 //
 // A ".fakeclaude-resume-broken" file in the working directory makes every
 // --resume fail the way a session that can no longer be loaded does: a
-// diagnostic on stderr, exit 1, no stream-json. Fresh sessions still work.
+// diagnostic on stderr, exit 1, no stream-json. Fresh sessions still work —
+// unless the file's contents are "all", which fails a fresh spawn the same
+// way: a loop that cannot run at all, whatever session it is given.
 package main
 
 import (
@@ -112,8 +114,8 @@ func main() {
 	// like from the outside: a resume that dies with a diagnostic on stderr
 	// and no stream-json at all. A fresh session still works, so a runner
 	// that rotates recovers and one that retries does not.
-	if resumeID != "" {
-		if _, err := os.Stat(".fakeclaude-resume-broken"); err == nil {
+	if marker, err := os.ReadFile(".fakeclaude-resume-broken"); err == nil {
+		if resumeID != "" || strings.TrimSpace(string(marker)) == "all" {
 			fmt.Fprintln(os.Stderr, "API Error: 400 prompt is too long: 251000 tokens > 200000 maximum")
 			os.Exit(1)
 		}

@@ -88,6 +88,8 @@ function spoolNote(e: LoopEvent): string {
         return '' // routine; the spawn note is enough
       case 'crash':
         return `process crashed (exit ${p.code})`
+      case 'retry_scheduled':
+        return `retrying in ${formatWait(p.in_ms)}`
       case 'session_lost':
         return 'previous session lost — continuing fresh with mission restated'
       case 'storm_drop':
@@ -98,6 +100,15 @@ function spoolNote(e: LoopEvent): string {
   } catch {
     return ''
   }
+}
+
+// formatWait renders a retry delay the way the ladder reads: seconds while
+// it is short, minutes once it has climbed.
+function formatWait(ms: number): string {
+  const seconds = Math.round(ms / 1000)
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.round(seconds / 60)
+  return `${minutes}m`
 }
 
 // extractDelta pulls streaming text out of a raw stream_event payload.
