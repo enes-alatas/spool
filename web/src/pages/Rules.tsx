@@ -144,14 +144,14 @@ export default function Rules() {
     }
   }
 
-  if (isPending) return <div className="page">Loading…</div>
+  if (isPending) return <div className="page measure placeholder">Loading…</div>
   if (!data) {
     // A failed load is not a slow load. Say which it was, and for the one
     // case an operator can act on — an orchestrator too old to serve rules —
     // say that instead of its status code.
     const missing = loadError instanceof ApiError && loadError.status === 404
     return (
-      <div className="page">
+      <div className="page measure">
         <h1>Fleet rules</h1>
         <div className="form-error">
           {missing
@@ -163,7 +163,7 @@ export default function Rules() {
   }
 
   return (
-    <div className="page">
+    <div className="page measure">
       <h1>Fleet rules</h1>
       <BudgetBar budget={data.budget} />
       {error && <div className="form-error">{error}</div>}
