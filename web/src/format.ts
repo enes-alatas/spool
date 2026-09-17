@@ -19,6 +19,19 @@ export function fillTone(pct: number, thresholds?: RotationThresholds): string {
   return ''
 }
 
+// Whether the server actually reported an occupancy. `api.ts` types the field
+// as `number` because that is the API as it will be, but a server older than
+// it sends nothing and it arrives as undefined — which prints as a percent
+// sign with no quantity in front of it. The parameter admits that, so the
+// guard is a real question rather than one tsc can prove.
+//
+// Falsiness cannot ask it: the server computes the fill in integer arithmetic
+// (`FillPercent`), so a measured loop holding ~1,500 tokens of a 200k window
+// truncates to a true, reported 0%.
+export function hasFillPct(pct: number | undefined): boolean {
+  return typeof pct === 'number'
+}
+
 // The server's defaults (ADR-0022), for the moment before settings load.
 const DEFAULT_ARM_PERCENT = 40
 const DEFAULT_FORCE_PERCENT = 70
