@@ -84,7 +84,11 @@ export function Timeline({ entries, liveText }: { entries: Entry[]; liveText: st
             )
           case 'note':
             return (
-              <div key={e.id} className="knot system-note" data-entry-id={e.id}>
+              <div
+                key={e.id}
+                className={e.seam ? 'knot system-note seam' : 'knot system-note'}
+                data-entry-id={e.id}
+              >
                 <div className="who">
                   {e.text} · {fmtTime(e.ts)}
                 </div>
