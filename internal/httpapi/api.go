@@ -179,6 +179,11 @@ type loopView struct {
 	// know it — an unrecognized or not-yet-run model. Clients show absolute
 	// tokens rather than a ratio against a guess.
 	ContextLimitTokens int `json:"context_limit_tokens"`
+	// ContextFillPct is that occupancy as a percentage of the window — the
+	// number rotation is judged by, computed here so the actor, this view
+	// and the UI cannot each arrive at their own. 0 when either side of the
+	// ratio is unknown: unmeasured, never empty.
+	ContextFillPct int `json:"context_fill_pct"`
 	// DownReason distinguishes a workstation the operator switched off from
 	// one that died; empty while it is up (ADR-0021).
 	DownReason string `json:"down_reason"`
@@ -193,32 +198,33 @@ type loopView struct {
 }
 
 func (s *Server) view(ctx context.Context, l *store.Loop) *loopView {
-	v := &loopView{Loop: l, State: loop.StateAsleep, HasTGToken: l.TGBotToken != "", WorkstationUp: true,
+	out := &loopView{Loop: l, State: loop.StateAsleep, HasTGToken: l.TGBotToken != "", WorkstationUp: true,
 		OwnerDMReady: l.OwnerTGUserID != 0 && l.OwnerDMChatID != 0}
 	if l.OwnerTGUserID != 0 {
 		if sender, err := s.Store.TGSenders().Get(ctx, l.OwnerTGUserID); err == nil {
-			v.OwnerUsername = sender.Username
+			out.OwnerUsername = sender.Username
 		}
 	}
 	if actor, ok := s.Manager.Get(l.ID); ok {
-		v.State = actor.State()
+		out.State = actor.State()
 		health := actor.WorkstationHealth()
-		v.WorkstationUp = health.Up
-		v.WorkstationDetail = health.Detail
-		v.DownReason = actor.DownReason()
+		out.WorkstationUp = health.Up
+		out.WorkstationDetail = health.Detail
+		out.DownReason = actor.DownReason()
 	}
-	if t, err := s.Store.Turns().Latest(ctx, l.ID); err == nil && t.SessionID == l.CurrentSessionID {
-		v.ContextTokens = t.ContextTokens
-		v.ContextLimitTokens = loop.ContextLimit(t.Model)
+	if latest, err := s.Store.Turns().Latest(ctx, l.ID); err == nil && latest.SessionID == l.CurrentSessionID {
+		out.ContextTokens = latest.ContextTokens
+		out.ContextLimitTokens = loop.ContextLimit(latest.Model)
+		out.ContextFillPct = loop.FillPercent(out.ContextTokens, out.ContextLimitTokens)
 	}
-	if e, err := s.Store.Schedule().Get(ctx, l.ID); err == nil {
-		v.NextTickAt = e.NextTickAt
+	if entry, err := s.Store.Schedule().Get(ctx, l.ID); err == nil {
+		out.NextTickAt = entry.NextTickAt
 	}
 	dayStart := time.Now().Truncate(24 * time.Hour).UnixMilli()
-	if c, err := s.Store.Turns().CostSince(ctx, l.ID, dayStart); err == nil {
-		v.CostToday = c
+	if cost, err := s.Store.Turns().CostSince(ctx, l.ID, dayStart); err == nil {
+		out.CostToday = cost
 	}
-	return v
+	return out
 }
 
 // --- handlers ---
@@ -754,7 +760,7 @@ func (s *Server) settingsView(ctx context.Context) (settingsView, error) {
 	if err != nil {
 		return settingsView{}, err
 	}
-	arm, force := loop.RotationThresholds(ctx, s.Store.Settings())
+	arm, force := loop.RotationThresholds(ctx, s.Store.Settings(), s.Log)
 	return settingsView{
 		ClaudeTokenSet:      token != "",
 		ContextArmPercent:   arm,
@@ -805,14 +811,14 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	if req.ContextArmPercent != nil || req.ContextForcePercent != nil {
 		s.settingsMu.Lock()
 		defer s.settingsMu.Unlock()
-		arm, force := loop.RotationThresholds(r.Context(), s.Store.Settings())
+		arm, force := loop.RotationThresholds(r.Context(), s.Store.Settings(), s.Log)
 		if req.ContextArmPercent != nil {
 			arm = *req.ContextArmPercent
 		}
 		if req.ContextForcePercent != nil {
 			force = *req.ContextForcePercent
 		}
-		if arm < 1 || arm > 99 || force < 1 || force > 99 || arm >= force {
+		if !loop.ValidThresholds(arm, force) {
 			s.jsonErr(w, 400, "rotation thresholds must be percentages 1-99 with arm below force (got arm %d, force %d)", arm, force)
 			return
 		}
