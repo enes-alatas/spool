@@ -22,22 +22,22 @@ func TestBoundBefore(t *testing.T) {
 	}{
 		{"never recorded, so from before the rule existed", 0, true},
 		{"bound well before the message", (msgDate - 3600) * 1000, true},
-		{"bound just outside the settle margin", (msgDate - int64(bindSettle.Seconds()) - 1) * 1000, true},
+		{"bound just outside the settle margin", (msgDate - int64(defaultBindSettle.Seconds()) - 1) * 1000, true},
 		{"bound inside the settle margin", (msgDate - 1) * 1000, false},
 		{"bound while handling this very message", msgDate * 1000, false},
 		{"bound after the message, catching up on a backlog", (msgDate + 60) * 1000, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := boundBefore(&store.Loop{TGGroupBoundAt: c.boundAtMS}, msgDate)
+			got := boundBefore(&store.Loop{TGGroupBoundAt: c.boundAtMS}, msgDate, defaultBindSettle)
 			if got != c.want {
 				t.Fatalf("boundBefore(bound_at=%d, date=%d) = %v, want %v",
 					c.boundAtMS, msgDate, got, c.want)
 			}
 		})
 	}
-	if bindSettle <= 0 {
-		t.Fatalf("bindSettle must be positive, got %v", time.Duration(bindSettle))
+	if defaultBindSettle <= 0 {
+		t.Fatalf("defaultBindSettle must be positive, got %v", time.Duration(defaultBindSettle))
 	}
 }
 

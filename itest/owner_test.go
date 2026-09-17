@@ -174,7 +174,7 @@ func TestOwnerDMSurvivesRestart(t *testing.T) {
 	operator := user{ID: 6464, First: "Operator", Username: "operator"}
 	dir := t.TempDir()
 	tg := startFakeTelegram(t, "alpha", "beta")
-	srv := startServerArgs(t, dir, "--runtime", "bare", "--telegram-api-base", tg.srv.URL)
+	srv := startTelegramServer(t, dir, tg)
 	ws := workspaceWithScript(t, "!ctx 0\n"+
 		`!send {"destination":"owner_dm","text":"still know where you are"}`+"\n")
 	for _, name := range []string{"alpha", "beta"} {
@@ -186,7 +186,7 @@ func TestOwnerDMSurvivesRestart(t *testing.T) {
 	waitOwnerDMReady(t, srv, "alpha")
 	srv.stop()
 
-	srv2 := startServerArgs(t, dir, "--runtime", "bare", "--telegram-api-base", tg.srv.URL)
+	srv2 := startTelegramServer(t, dir, tg)
 	if v := srv2.loop("alpha"); !v.OwnerDMReady || v.OwnerTGUserID != operator.ID {
 		t.Fatalf("after restart: owner %d, ready %v", v.OwnerTGUserID, v.OwnerDMReady)
 	}
