@@ -99,6 +99,32 @@ func TestSessionLostRecovery(t *testing.T) {
 	}
 }
 
+// TestLoopScriptedBySecret: the turn script can arrive as a loop secret
+// rather than a file in the workspace. That is the route a contained loop has
+// — its working directory is inside its workstation, out of a test's reach —
+// and this row keeps it honest on the runtime CI always exercises, so a
+// broken env route cannot hide behind a skipped docker suite (#117).
+func TestLoopScriptedBySecret(t *testing.T) {
+	s := startServer(t, t.TempDir())
+	// a workspace with no .fakeclaude in it: the script has one way in
+	s.createLoop("enveloped", map[string]any{
+		"workspace_path": t.TempDir(),
+		"workspace_mode": "dir",
+	})
+	s.scriptLoop("enveloped", "!ctx 20000 scripted through the environment\n")
+
+	s.message("enveloped", "say something of your own")
+	answered := s.waitTurn("enveloped", 30*time.Second, func(tr turn) bool {
+		return tr.Trigger == "message"
+	})
+	if !strings.Contains(answered.ResultText, "scripted through the environment") {
+		t.Fatalf("the secret's script did not reach the turn:\n%s", answered.ResultText)
+	}
+	if answered.ContextTokens != 20000 {
+		t.Fatalf("scripted context = %d tokens, want the directive's 20000", answered.ContextTokens)
+	}
+}
+
 // TestTrailerClampedByMinWake: a [next-wake: 1m] trailer with min_wake=2m
 // must schedule ~2m out, and the trailer must be stripped from result_text
 // as the loop's outgoing message... (stripping is asserted in the mention

@@ -355,6 +355,24 @@ func workspaceWithScript(t *testing.T, lines string) string {
 	return dir
 }
 
+// scriptLoop gives a loop its turn script through the secret the engine
+// injects into every exec, which is the only route into a contained loop: its
+// working directory is inside its workstation, where the test cannot write a
+// .fakeclaude file (#117).
+//
+// A process carries the env it was born with, so setting the secret is not
+// enough: the creation tick's wake may already be in flight, and it would
+// answer — and keep answering, for as long as it stays awake — from before
+// the script existed. So this waits for that first wake to finish and its
+// process to exit, after which the next spawn reads the script.
+func (s *server) scriptLoop(name, script string) {
+	s.t.Helper()
+	s.mustJSON("PUT", "/api/loops/"+name+"/secrets/FAKECLAUDE_SCRIPT",
+		map[string]any{"value": script}, nil)
+	s.waitTurn(name, 90*time.Second, func(turn) bool { return true })
+	s.waitState(name, "asleep", 90*time.Second)
+}
+
 // wipeDir empties a directory without removing it (simulates lost claude
 // session files).
 func wipeDir(t *testing.T, dir string) {
