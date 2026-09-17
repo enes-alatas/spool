@@ -698,9 +698,24 @@ func (s *Server) handleLoopEvents(w http.ResponseWriter, r *http.Request) {
 	if l == nil {
 		return
 	}
-	afterID, _ := strconv.ParseInt(r.URL.Query().Get("after_id"), 10, 64)
 	limit := queryInt(r, "limit", 200)
-	events, err := s.Store.Events().ListByLoop(r.Context(), l.ID, afterID, limit)
+	// Which end of the timeline the page is reading from. after_id follows
+	// the tail — the default, and what a page polling for new events wants.
+	// before_id asks for the newest window instead, so a loop with thousands
+	// of events can be opened on its recent history in one request rather
+	// than on the first 200 events of its life (#119); 0 means "the newest
+	// end", the mirror of after_id 0. Either way the page comes back oldest
+	// first.
+	query := r.URL.Query()
+	var events []*store.Event
+	var err error
+	if query.Has("before_id") {
+		beforeID, _ := strconv.ParseInt(query.Get("before_id"), 10, 64)
+		events, err = s.Store.Events().ListByLoopBefore(r.Context(), l.ID, beforeID, limit)
+	} else {
+		afterID, _ := strconv.ParseInt(query.Get("after_id"), 10, 64)
+		events, err = s.Store.Events().ListByLoop(r.Context(), l.ID, afterID, limit)
+	}
 	if err != nil {
 		s.jsonErr(w, 500, "%v", err)
 		return

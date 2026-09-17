@@ -4,6 +4,7 @@ package itest
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -234,6 +235,62 @@ func TestUnresumableSessionRotatesInsteadOfRetrying(t *testing.T) {
 	}
 	if !s.hasEvent("rotator", "session_unusable", 10*time.Second) {
 		t.Fatal("rotation was not recorded as a spool event")
+	}
+}
+
+// TestEventsNewestWindow: a loop's timeline is read from the recent end.
+// after_id follows the tail from the oldest event, which is what a page
+// polling for new ones wants and what the page opening on a long-lived loop
+// got by accident — the first events of its life, never the current ones
+// (#119). before_id asks for the newest window instead, and pages older from
+// there; both forms come back oldest first, so a reader assembles a page the
+// same way whichever end it asked from.
+func TestEventsNewestWindow(t *testing.T) {
+	s := startServer(t, t.TempDir())
+	s.createLoop("historian", nil)
+
+	// a few turns is already tens of events: envelopes, results, spool events
+	for _, text := range []string{"one", "two", "three"} {
+		s.message("historian", text)
+		s.waitTurn("historian", 30*time.Second, func(tr turn) bool {
+			return strings.Contains(tr.ResultText, text)
+		})
+	}
+
+	all := s.eventsQuery("historian", "after_id=0&limit=500")
+	if len(all) < 12 {
+		t.Fatalf("expected a timeline worth windowing, got %d events", len(all))
+	}
+
+	newest := s.eventsQuery("historian", "before_id=0&limit=5")
+	if len(newest) != 5 {
+		t.Fatalf("newest window returned %d events, want 5", len(newest))
+	}
+	if newest[len(newest)-1].ID != all[len(all)-1].ID {
+		t.Fatalf("newest window ends at %d, want the timeline's last event %d",
+			newest[len(newest)-1].ID, all[len(all)-1].ID)
+	}
+	for i := 1; i < len(newest); i++ {
+		if newest[i].ID <= newest[i-1].ID {
+			t.Fatalf("newest window is not oldest first: %d then %d", newest[i-1].ID, newest[i].ID)
+		}
+	}
+
+	// the same limit from the other end reads the loop's first events: the
+	// two forms are different questions, and after_id still answers its own
+	oldest := s.eventsQuery("historian", "after_id=0&limit=5")
+	if oldest[0].ID != all[0].ID || oldest[0].ID == newest[0].ID {
+		t.Fatalf("after_id no longer reads from the oldest end: %d vs %d", oldest[0].ID, all[0].ID)
+	}
+
+	// and the window pages older from its own first id
+	older := s.eventsQuery("historian", fmt.Sprintf("before_id=%d&limit=5", newest[0].ID))
+	if len(older) == 0 {
+		t.Fatal("paging before the newest window returned nothing")
+	}
+	if older[len(older)-1].ID >= newest[0].ID {
+		t.Fatalf("page before %d ends at %d; it must be strictly older",
+			newest[0].ID, older[len(older)-1].ID)
 	}
 }
 
