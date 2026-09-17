@@ -40,15 +40,14 @@ func (e *SendError) Error() string { return e.Code + ": " + e.Detail }
 
 // SendError codes.
 const (
-	ErrInvalidDestination   = "invalid_destination"
-	ErrEmptyText            = "empty_text"
-	ErrNoRecipients         = "no_recipients"
-	ErrUnknownReplyTo       = "unknown_reply_to"
-	ErrCrossConversation    = "cross_conversation_reply_to"
-	ErrUnsupportedBroadcast = "unsupported_broadcast"
-	ErrOwnerNotConfigured   = "owner_not_configured"
-	ErrOwnerDMUnavailable   = "owner_dm_unavailable"
-	ErrSendLimit            = "send_limit"
+	ErrInvalidDestination = "invalid_destination"
+	ErrEmptyText          = "empty_text"
+	ErrNoRecipients       = "no_recipients"
+	ErrUnknownReplyTo     = "unknown_reply_to"
+	ErrCrossConversation  = "cross_conversation_reply_to"
+	ErrOwnerNotConfigured = "owner_not_configured"
+	ErrOwnerDMUnavailable = "owner_dm_unavailable"
+	ErrSendLimit          = "send_limit"
 )
 
 // Send validates, persists, and delivers one explicit loop message
@@ -85,11 +84,6 @@ func (r *Router) Send(ctx context.Context, req SendRequest) (*store.Message, *Se
 	var ownerChat int64
 	switch req.Destination {
 	case store.ConversationGroup:
-		for _, m := range mentions {
-			if m == "all" {
-				return nil, &SendError{ErrUnsupportedBroadcast, "@all broadcast is not supported yet; mention recipients by name"}, nil
-			}
-		}
 		targets, serr, err = r.groupRecipients(ctx, req.From, mentions, replyTo)
 		if serr != nil || err != nil {
 			return nil, serr, err
@@ -227,6 +221,19 @@ func (r *Router) groupRecipients(ctx context.Context, from *store.Loop, mentions
 
 	targets := map[string]*store.Loop{}
 	addressed := false
+	// @all is a deliberate broadcast to the loops of this loop's own group,
+	// never to a fleet it cannot see. The sender is excluded — a loop does
+	// not wake itself — and the union with mentions and the reply author is
+	// deduplicated by loop id, so overlap costs one delivery.
+	for _, m := range mentions {
+		if m == BroadcastToken {
+			for id, l := range r.broadcastTargets(loops, from.TGGroupChatID, from.ID) {
+				targets[id] = l
+			}
+			addressed = true
+			break
+		}
+	}
 	// A reply addresses the message's author without a mention, and adds to
 	// the mentions rather than inheriting the original's other recipients
 	// (ADR-0025). A human author addresses the message without waking

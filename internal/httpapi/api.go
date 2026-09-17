@@ -276,6 +276,13 @@ func (s *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 		s.jsonErr(w, 400, "name must match %s", nameRe.String())
 		return
 	}
+	if req.Name == route.BroadcastToken {
+		// @all addresses the group's eligible loops; a loop of that name
+		// could never be mentioned, only broadcast to (#74).
+		s.jsonErr(w, 400, "%q is reserved: @%s addresses every eligible loop in the group",
+			route.BroadcastToken, route.BroadcastToken)
+		return
+	}
 	if strings.TrimSpace(req.Mission) == "" {
 		s.jsonErr(w, 400, "mission is required")
 		return
