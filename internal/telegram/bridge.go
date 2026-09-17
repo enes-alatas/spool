@@ -27,13 +27,19 @@ const (
 	maxMsgLen      = 4096
 	sendSpacing    = time.Second // per-bot pacing (Telegram: ~1 msg/s)
 	dedupSize      = 512
-	// bindSettle is how long after binding a bot waits before it may win a
+	// defaultBindSettle is how long after binding a bot waits before it may win a
 	// group's ingest election (ADR-0020): margin for clock skew between
-	// Telegram's message dates and ours.
-	bindSettle = 5 * time.Second
+	// Telegram's message dates and ours. It is the default rather than a
+	// constant of the bridge, because a test driving a stand-in API has no
+	// skew to cover and would otherwise sleep the margin out on every run.
+	defaultBindSettle = 5 * time.Second
 )
 
 type Bridge struct {
+	// bindSettle is this bridge's ingest-election margin, defaultBindSettle
+	// unless SetBindSettle shortened it for a test.
+	bindSettle time.Duration
+
 	store   store.Store
 	bus     *bus.Bus
 	router  *route.Router
@@ -63,8 +69,20 @@ func NewBridge(st store.Store, b *bus.Bus, r *route.Router, log *slog.Logger, ap
 		log = slog.Default()
 	}
 	return &Bridge{store: st, bus: b, router: r, log: log, apiBase: apiBase,
-		pollers: map[string]*poller{}, dedup: newDedupLRU(dedupSize),
+		bindSettle: defaultBindSettle,
+		pollers:    map[string]*poller{}, dedup: newDedupLRU(dedupSize),
 		pairNotified: map[int64]bool{}, notOwnerNotified: map[string]bool{}}
+}
+
+// SetBindSettle overrides the ingest-election margin, and must be called
+// before Start: the pollers read it as they run. Only a test harness pointed
+// at a stand-in API should call it at all — against the real Telegram the
+// margin is what keeps a newly bound bot from duplicating what the incumbent
+// already ingested. A value of 0 or less keeps the default.
+func (br *Bridge) SetBindSettle(d time.Duration) {
+	if d > 0 {
+		br.bindSettle = d
+	}
 }
 
 // Start launches pollers for every configured loop and the mirror consumer.
@@ -350,7 +368,7 @@ func (br *Bridge) groupIngestLoopID(ctx context.Context, chatID, msgDate int64) 
 		if l.TGGroupChatID != chatID || l.Status == store.StatusArchived {
 			continue
 		}
-		if !boundBefore(l, msgDate) {
+		if !boundBefore(l, msgDate, br.bindSettle) {
 			continue
 		}
 		if _, polling := br.pollers[l.ID]; !polling {
@@ -364,16 +382,16 @@ func (br *Bridge) groupIngestLoopID(ctx context.Context, chatID, msgDate int64) 
 }
 
 // boundBefore reports whether l's bot was bound to its group early enough to
-// ingest a message Telegram dated at msgDate. bindSettle covers the skew
+// ingest a message Telegram dated at msgDate. The settle margin covers the skew
 // between Telegram's clock and ours: erring long only delays a newcomer's
 // first ingest by a few seconds, while erring short would let it duplicate
 // what the incumbent already took. A binding from before this rule existed
 // is recorded as 0 and always qualifies.
-func boundBefore(l *store.Loop, msgDate int64) bool {
+func boundBefore(l *store.Loop, msgDate int64, settle time.Duration) bool {
 	if l.TGGroupBoundAt == 0 {
 		return true
 	}
-	return msgDate > l.TGGroupBoundAt/1000+int64(bindSettle.Seconds())
+	return msgDate > l.TGGroupBoundAt/1000+int64(settle.Seconds())
 }
 
 // dedupKey identifies a telegram message: the chat, the id, and the bot that

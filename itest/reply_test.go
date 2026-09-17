@@ -114,7 +114,7 @@ func TestReplyReferencesSurviveRestart(t *testing.T) {
 	operator := user{ID: 5454, First: "Operator", Username: "operator"}
 	dir := t.TempDir()
 	tg := startFakeTelegram(t, "alpha", "beta")
-	srv := startServerArgs(t, dir, "--runtime", "bare", "--telegram-api-base", tg.srv.URL)
+	srv := startTelegramServer(t, dir, tg)
 	for _, name := range []string{"alpha", "beta"} {
 		srv.createLoop(name, map[string]any{"tg_bot_token": name})
 	}
@@ -129,7 +129,7 @@ func TestReplyReferencesSurviveRestart(t *testing.T) {
 	srv.stop()
 
 	// a fresh orchestrator on the same data directory
-	srv2 := startServerArgs(t, dir, "--runtime", "bare", "--telegram-api-base", tg.srv.URL)
+	srv2 := startTelegramServer(t, dir, tg)
 	settleBindings()
 	ref := ""
 	for _, m := range srv2.activity() {

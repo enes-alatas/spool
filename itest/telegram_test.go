@@ -346,7 +346,7 @@ func (s *server) allowSender(id int64) {
 func startTelegramFleet(t *testing.T, operator user, overrides ...map[string]any) (*server, *fakeTelegram) {
 	t.Helper()
 	tg := startFakeTelegram(t, "alpha", "beta")
-	srv := startServerArgs(t, t.TempDir(), "--runtime", "bare", "--telegram-api-base", tg.srv.URL)
+	srv := startTelegramServer(t, t.TempDir(), tg)
 	for i, name := range []string{"alpha", "beta"} {
 		req := map[string]any{"tg_bot_token": name}
 		if i < len(overrides) {
@@ -367,9 +367,26 @@ func startTelegramFleet(t *testing.T, operator user, overrides ...map[string]any
 	return srv, tg
 }
 
+// startTelegramServer spawns a server pointed at the stand-in Telegram API.
+// Every test that binds bots goes through here rather than calling
+// startServerArgs itself, so the shortened bind margin and settleBindings
+// cannot drift apart: the margin exists to cover Telegram's clock skew, the
+// stand-in has none, and 24 rows sleeping out the production five seconds
+// was a third of the suite's runtime (#136).
+func startTelegramServer(t *testing.T, dataDir string, tg *fakeTelegram) *server {
+	t.Helper()
+	return startServerArgs(t, dataDir, "--runtime", "bare",
+		"--telegram-api-base", tg.srv.URL,
+		"--telegram-bind-settle-sec", "1")
+}
+
 // settleBindings waits out the margin a freshly bound bot serves before it
-// can win an ingest election (bindSettle in internal/telegram, ADR-0020).
-func settleBindings() { time.Sleep(7 * time.Second) }
+// can win an ingest election (the bridge's settle margin, ADR-0020).
+// The fleet harness sets that margin to a second; the wait is longer than
+// the margin because the comparison is against Telegram's message dates,
+// which are whole seconds, and is strict — a message has to be dated at
+// least one whole second past the margin to qualify.
+func settleBindings() { time.Sleep(2500 * time.Millisecond) }
 
 const groupChatID int64 = -1001234567890
 

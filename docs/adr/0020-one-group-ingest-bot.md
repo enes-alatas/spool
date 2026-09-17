@@ -43,9 +43,12 @@ three questions Milo had listed, of which this was the first.
    contrast, was received after that bind — so every poller handling it reads
    the same candidate set, in whatever order they run, and a bot joining a
    live group or working through a backlog leaves the incumbent to finish the
-   messages that predate it. A margin (`bindSettle`, 5s) absorbs clock skew
-   between Telegram's dates and ours; erring long only delays a newcomer's
-   first ingest, while erring short would let it duplicate.
+   messages that predate it. A settle margin (`defaultBindSettle`, 5s)
+   absorbs clock skew between Telegram's dates and ours; erring long only
+   delays a newcomer's first ingest, while erring short would let it
+   duplicate. The margin is a value the bridge holds rather than a constant
+   it reads, so a test against a stand-in API — which has no skew to absorb —
+   can shorten it; production never does.
 2. **Ingest is not delivery.** The router still fans a group message out to
    every mentioned loop, and `delivered_to` still lists all of them. Which
    bot's poller carried the bytes is transport detail and is not visible in
@@ -73,7 +76,7 @@ three questions Milo had listed, of which this was the first.
   not v1: it trades a bounded deaf window for a bounded duplicate window.
 - **A brand-new group's first messages are not ingested.** Binding is what
   the first allowlisted group message does, so nobody is eligible for it, and
-  nobody is eligible for the `bindSettle` seconds after. The operator's first
+  nobody is eligible for the settle margin's seconds after. The operator's first
   "hello" in a fresh group binds the bots and gets no answer; the next one
   works. Deliberate: the alternative is letting every bot ingest while the
   set is still forming, which is the bug.
