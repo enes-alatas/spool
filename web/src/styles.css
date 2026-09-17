@@ -209,10 +209,24 @@ select {
 /* ---- main ---- */
 .main {
   overflow-y: auto;
+  /* Both edges, because the centring below depends on it. This is the scroll
+     container and the bar above is outside it, so a scrollbar that takes
+     layout width would narrow this box and not the bar's, pushing the two
+     centres apart by half its width — 7.5px on Windows, where scrollbars are
+     not the overlays macOS and mobile draw. Reserving the gutter on both
+     sides keeps the axes shared, and costs nothing where scrollbars overlay.
+     Moving `overflow-y` or the bar changes this; re-check the centring. */
+  scrollbar-gutter: stable both-edges;
 }
+/* The destinations in the bar above are centred on the viewport, so the
+   column under them is too: left-anchored content reads as misaligned with
+   its own header once the screen is wider than the column. The maximum width
+   stays — it is a comfortable measure for the mission text, and widening it
+   would trade a real reading problem for a cosmetic one. */
 .page {
   padding: 24px 28px;
   max-width: 1100px;
+  margin-inline: auto;
 }
 .page h1 {
   font-size: 1.1875rem;
