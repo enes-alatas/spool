@@ -8,7 +8,12 @@ function SenderRow({ s }: { s: TGSender }) {
 
   return (
     <div className="feed-item" style={{ alignItems: 'center' }}>
-      <span className={`state-dot sender-${s.status}`} title={s.status} />
+      {/* Here the dot is the only thing carrying the status — the text beside
+          it is the pairing code and the first-seen line — so the word comes
+          with it. Hidden rather than shown: a visible status column is a
+          design change, and this is not one. */}
+      <span className={`state-dot sender-${s.status}`} />
+      <span className="sr-only">{s.status}</span>
       <span className="author" style={{ minWidth: 140 }}>
         {name}
       </span>

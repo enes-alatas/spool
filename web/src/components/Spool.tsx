@@ -17,6 +17,10 @@ export function SpoolGlyph({ size = 18, spinning = false }: { size?: number; spi
   )
 }
 
+// The dot is an accent on a state that is already written next to it, so it
+// carries no name of its own: a title here is read out after the word and
+// says it twice. Anywhere the dot would stand alone, the name has to come
+// with it — see the sender rows on Access.
 export function StateDot({ state }: { state: string }) {
-  return <span className={`state-dot state-${state}`} title={state} />
+  return <span className={`state-dot state-${state}`} />
 }
