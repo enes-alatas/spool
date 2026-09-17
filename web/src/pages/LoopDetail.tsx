@@ -644,7 +644,7 @@ export default function LoopDetail() {
     qc.invalidateQueries({ queryKey: ['conversation', name] })
   }
 
-  if (!loop) return <div className="page">Loading…</div>
+  if (!loop) return <div className="page measure placeholder">Loading…</div>
 
   const paused = loop.status === 'paused'
 

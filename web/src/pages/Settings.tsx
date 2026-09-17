@@ -26,7 +26,7 @@ export default function Settings() {
   }
 
   return (
-    <div className="page">
+    <div className="page measure">
       <h1>Settings</h1>
       <p className="page-lede">
         Workstation (contained) loops run <code>claude</code> inside a Docker container that has no login of

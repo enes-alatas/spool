@@ -58,7 +58,7 @@ export default function NewLoop() {
   const slugOk = /^[a-z0-9][a-z0-9_-]{1,31}$/.test(name.trim().toLowerCase())
 
   return (
-    <div className="page">
+    <div className="page measure">
       <h1>New loop</h1>
       <div className="form">
         {error && <div className="form-error">{error}</div>}

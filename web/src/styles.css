@@ -228,6 +228,27 @@ select {
   max-width: 1100px;
   margin-inline: auto;
 }
+/* A page whose content is a measure rather than a table: a form, its lede,
+   the sentences around it. The column is that measure, so the content fills
+   it and lands on the same axis as the destinations above — a narrow block
+   left-anchored inside a 1100px column reads as misaligned even though the
+   column is centred, which is what #126 was filed about. The blocks inside
+   stop carrying measures of their own; there is one here. */
+.page.measure {
+  max-width: 40rem;
+}
+.page.measure .form,
+.page.measure .page-lede,
+.page.measure .rules-meter {
+  max-width: none;
+}
+/* A page that is one line of placeholder text has no measure to speak of;
+   centring the line inside the measure is the only way it shares the axis.
+   The measure itself comes from `.measure` above, which these pages also
+   carry — one declaration of 40rem, not two that can drift apart. */
+.page.placeholder {
+  text-align: center;
+}
 .page h1 {
   font-size: 1.1875rem;
   font-weight: 600;
@@ -1110,6 +1131,13 @@ select {
     padding: 6px 4px;
     border-top: 1px solid var(--hairline);
     background: var(--canvas);
+  }
+  /* No destinations in the top bar below this width — they are in the bottom
+     one — so there is no axis for a form page to share, and holding it to a
+     measure would only spend the canvas on gutters. The same argument #121
+     made at 320px; it holds all the way up to here. */
+  .page.measure {
+    max-width: none;
   }
   /* the canvas is the whole width now, so narrow screens spend less of it
      on gutters */
