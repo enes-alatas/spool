@@ -1,5 +1,11 @@
 /* Spool control room — one near-black canvas, white for identity, colour only
-   where the system is telling the operator something (ADR-0027). */
+   where the system is telling the operator something (ADR-0027).
+
+   Units (ADR-0027 §9): every font-size is a rem, so the whole room scales
+   with the reader's browser font-size preference. Spacing — gaps, padding,
+   radii, hairlines — stays in px: it is not text, and a hairline is a
+   hairline at any size. A dimension that exists to hold text follows the
+   text, because a fixed box around growing text clips it. */
 
 :root {
   --canvas: #050505;
@@ -41,7 +47,7 @@ body {
   background: var(--canvas);
   color: var(--text);
   font-family: var(--sans);
-  font-size: 14px;
+  font-size: 0.875rem;
   line-height: 1.5;
 }
 
@@ -66,7 +72,9 @@ select {
 
 .app {
   display: grid;
-  grid-template-rows: 52px 1fr;
+  /* auto, not a fixed 52px: the bar has to be able to grow when the reader's
+     text is larger than ours, or it clips its own contents */
+  grid-template-rows: auto 1fr;
   height: 100%;
 }
 
@@ -78,6 +86,9 @@ select {
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: 24px;
+  /* the height the bar had when it was a fixed row, as a floor rather than a
+     ceiling */
+  min-height: 52px;
   padding: 0 20px;
   border-bottom: 1px solid var(--hairline);
   background: var(--canvas);
@@ -87,7 +98,7 @@ select {
   align-items: center;
   gap: 10px;
   font-family: var(--mono);
-  font-size: 17px;
+  font-size: 1.0625rem;
   letter-spacing: 0.14em;
   color: var(--text);
 }
@@ -101,7 +112,7 @@ select {
   align-items: center;
   gap: 14px;
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: 0.71875rem;
   color: var(--text-muted);
 }
 .btn {
@@ -150,7 +161,7 @@ select {
 }
 .btn.sm {
   padding: 3px 10px;
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   border-radius: 5px;
 }
 
@@ -167,7 +178,7 @@ select {
   align-items: center;
   gap: 7px;
   padding: 6px 2px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--text-muted);
   white-space: nowrap;
   transition: color 120ms;
@@ -204,7 +215,7 @@ select {
   max-width: 1100px;
 }
 .page h1 {
-  font-size: 19px;
+  font-size: 1.1875rem;
   font-weight: 600;
   letter-spacing: 0.01em;
   margin-bottom: 18px;
@@ -277,7 +288,7 @@ select {
 }
 /* one fleet-wide fault, said once at the top instead of per loop */
 .fleet-alert {
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--danger);
   background: var(--danger-wash);
   border: 1px solid var(--danger-line);
@@ -290,7 +301,7 @@ select {
 }
 /* the reason a loop's workstation is unreachable, under its header */
 .ws-down-note {
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   color: var(--danger);
   background: var(--danger-wash);
   border: 1px solid var(--danger-line);
@@ -300,7 +311,7 @@ select {
 }
 /* a workstation the operator switched off — deliberate, so not an alarm */
 .ws-off-note {
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   color: var(--text-muted);
   border: 1px solid var(--hairline);
   border-radius: 7px;
@@ -309,13 +320,13 @@ select {
 }
 /* a power control the server says is still running */
 .ws-progress {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--active);
   margin-top: 8px;
 }
 /* the typed-name gate in front of a destructive recreate */
 .ws-confirm {
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.5;
   color: var(--text);
   background: var(--danger-wash);
@@ -336,14 +347,14 @@ select {
 
 .state-name {
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: 0.71875rem;
   color: var(--text-muted);
 }
 /* bare loops run on the host with no wall around them (ADR-0017): a standing
    unsafe condition, not a state, so it takes the danger tokens (ADR-0027 §4) */
 .containment-badge {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 0.65625rem;
   color: var(--danger);
   border: 1px solid var(--danger-line);
   border-radius: 4px;
@@ -358,18 +369,19 @@ select {
    one column down the fleet. */
 .fleet-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
-  gap: 16px;
+  gap: 4px 16px;
 }
 .fleet-summary {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--text-muted);
 }
 .fleet-note {
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: 0.8125rem;
   padding: 18px 0;
 }
 /* The row grid, shared with the column labels so the two cannot drift. The
@@ -384,7 +396,7 @@ select {
 }
 .fleet-cols {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 0.65625rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-muted);
@@ -413,12 +425,13 @@ select {
 }
 .fleet-row .loop-name {
   font-family: var(--mono);
-  font-size: 14.5px;
+  font-size: 0.90625rem;
   overflow-wrap: anywhere;
 }
 .fleet-row .mission {
   color: var(--text-muted);
-  font-size: 13px;
+  overflow-wrap: anywhere;
+  font-size: 0.8125rem;
   /* two lines is enough to tell two loops apart; the detail page has the rest */
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -434,7 +447,7 @@ select {
   gap: 4px 10px;
   margin-top: 2px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--text-muted);
 }
 .fleet-row .note {
@@ -451,7 +464,7 @@ select {
   align-items: center;
   gap: 7px;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--text-muted);
   white-space: nowrap;
 }
@@ -466,7 +479,7 @@ select {
 .fleet-row .f-ctx,
 .fleet-row .f-today {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--text-muted);
 }
 .fleet-row .f-today {
@@ -513,7 +526,10 @@ select {
     display: none;
   }
   .fleet-row {
-    grid-template-columns: minmax(0, 1fr) auto;
+    /* fit-content, not auto: an `auto` track is sized to its content's
+       maximum, and a max-width on the item inside does not shrink the track
+       it sits in. This caps the track itself at 45% of the row. */
+    grid-template-columns: minmax(0, 1fr) fit-content(45%);
     grid-template-areas:
       'identity state'
       'meta meta';
@@ -523,8 +539,15 @@ select {
   .fleet-row .identity {
     grid-area: identity;
   }
+  /* The name and the state share one line here. A state is an identifier and
+     would rather not break, but `workstation_down` at a large text size is
+     wider than half a narrow screen, and squeezing the name to nothing to
+     keep the state intact is the wrong trade: the name is what the operator
+     is looking for. So the state yields first. */
   .fleet-row .f-state {
     grid-area: state;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
   .fleet-row .f-meta {
     grid-area: meta;
@@ -606,7 +629,7 @@ select {
 
 .knot .who {
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: 0.71875rem;
   color: var(--text-muted);
   margin-bottom: 3px;
 }
@@ -633,7 +656,7 @@ select {
 }
 .tool-line {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--text-muted);
   padding: 1px 0;
 }
@@ -642,7 +665,7 @@ select {
 }
 .thinking-toggle {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--text-muted);
   background: none;
   border: none;
@@ -651,7 +674,7 @@ select {
 }
 .thinking-body {
   color: var(--text-muted);
-  font-size: 12.5px;
+  font-size: 0.78125rem;
   white-space: pre-wrap;
   margin-top: 4px;
 }
@@ -659,7 +682,7 @@ select {
   display: flex;
   gap: 12px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--text-muted);
   margin-top: 4px;
 }
@@ -687,6 +710,11 @@ select {
   gap: 24px;
   align-items: start;
 }
+/* a grid item's automatic minimum is its min-content width, which at a large
+   text size is wider than a narrow viewport: these two columns may shrink */
+.detail > * {
+  min-width: 0;
+}
 .composer {
   display: flex;
   gap: 10px;
@@ -698,9 +726,15 @@ select {
   gap: 8px;
   margin-top: 16px;
 }
+/* the pills shrink and wrap their own labels rather than moving to a line of
+   their own: the picker reads as one choice between two, and keeping that
+   shape is worth more than keeping each label on one line */
+.dest-picker .dest {
+  min-width: 0;
+}
 .dest-picker .dest-label {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--text-muted);
 }
 .dest-picker .dest {
@@ -709,9 +743,10 @@ select {
   border-radius: 999px;
   color: var(--text-muted);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 0.75rem;
   padding: 4px 12px;
   cursor: pointer;
+  max-width: 100%;
 }
 .dest-picker .dest.on {
   border-color: var(--text);
@@ -719,6 +754,7 @@ select {
 }
 .composer textarea {
   flex: 1;
+  min-width: 0;
   background: var(--surface);
   border: 1px solid var(--hairline);
   border-radius: 8px;
@@ -740,7 +776,7 @@ select {
 }
 .side-panel h3 {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 0.6875rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-muted);
@@ -751,14 +787,14 @@ select {
   justify-content: space-between;
   gap: 8px;
   padding: 3px 0;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .side-panel .row .k {
   color: var(--text-muted);
 }
 .side-panel .row .v {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 0.75rem;
   text-align: right;
   word-break: break-all;
 }
@@ -792,7 +828,7 @@ select {
   align-items: center;
   justify-content: center;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 0.65625rem;
   color: var(--text);
 }
 /* per-turn context occupancy, oldest turn on the left */
@@ -820,7 +856,7 @@ select {
 }
 .countdown {
   font-family: var(--mono);
-  font-size: 22px;
+  font-size: 1.375rem;
   font-weight: 300;
   color: var(--text);
 }
@@ -838,7 +874,7 @@ select {
 .field label {
   display: block;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 0.6875rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text-muted);
@@ -859,7 +895,7 @@ select {
   outline: 1px solid var(--text);
 }
 .field .hint {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--text-muted);
   margin-top: 4px;
 }
@@ -887,14 +923,15 @@ select {
 /* ---- activity feed ---- */
 .feed-item {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   padding: 9px 0;
   border-bottom: 1px solid var(--hairline);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .feed-item .when {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--text-muted);
   flex: none;
   width: 76px;
@@ -916,7 +953,7 @@ select {
 .feed-item .origin {
   margin-left: auto;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 0.65625rem;
   color: var(--text-muted);
   flex: none;
 }
@@ -933,8 +970,19 @@ select {
    brand or the New loop action — five labelled destinations plus both ends
    stop fitting around 900px. */
 @media (max-width: 900px) {
+  /* Once the destinations move to the bottom bar the top row is only brand
+     and New loop, so it can be a wrapping line: at a large text size the two
+     stop fitting side by side and the action drops below the wordmark
+     instead of off the screen. */
   .topbar {
-    grid-template-columns: auto 1fr;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px 12px;
+    /* the horizontal padding is the wide bar's; the vertical only matters
+       once the line wraps, since min-height governs until then */
+    padding: 6px 20px;
   }
   .topbar .nav-top {
     display: none;
@@ -962,11 +1010,16 @@ select {
     min-height: 46px;
     justify-content: center;
     padding: 4px 2px;
-    font-size: 10.5px;
+    /* Five labels share the viewport's width, so this one cannot simply
+       follow the reader's text size: past a point it would clip instead of
+       enlarge. It grows with the text until the bar runs out of room, and
+       the icons and the accessible names carry it from there. */
+    font-size: min(0.65625rem, 3.4vw);
   }
-  /* the fixed bar must never sit on top of the last row of content */
+  /* The fixed bar must never sit on top of the last row of content, and the
+     bar is as tall as its own text, so this clearance is in the same unit. */
   .main {
-    padding-bottom: 64px;
+    padding-bottom: 4rem;
   }
   .detail {
     grid-template-columns: 1fr;
@@ -981,7 +1034,8 @@ select {
    not the context gauge's, so the two can diverge */
 .rules-meter {
   position: relative;
-  height: 18px;
+  /* a floor, not a fixed height: the label inside is text and grows */
+  min-height: 1.125rem;
   max-width: 78ch;
   border-radius: 4px;
   background: var(--canvas);
@@ -1008,11 +1062,11 @@ select {
   align-items: center;
   justify-content: center;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 0.65625rem;
   color: var(--text);
 }
 .rules-note {
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--text-muted);
   margin-top: 8px;
   max-width: 68ch;
@@ -1034,18 +1088,18 @@ select {
 }
 .rule-title {
   font-weight: 600;
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 .rule-badge {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 0.65625rem;
   color: var(--text-muted);
   border: 1px solid var(--hairline);
   border-radius: 4px;
   padding: 1px 5px;
 }
 .rule-body {
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.55;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -1077,7 +1131,7 @@ select {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-family: var(--mono);
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1086,7 +1140,7 @@ select {
 }
 .char-count {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--text-muted);
   letter-spacing: 0;
   text-transform: none;
