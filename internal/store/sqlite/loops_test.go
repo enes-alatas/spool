@@ -175,3 +175,55 @@ func TestMigrateWithoutAllowlistedSender(t *testing.T) {
 		t.Fatalf("owner = %d, chat = %d; want an ownerless loop", l.OwnerTGUserID, l.OwnerDMChatID)
 	}
 }
+
+// TestLoopRotationState pins the rotation columns (#66): a loop starts with
+// no rotation pending and no note, SetRotation round-trips both, and Update —
+// which the API calls with whatever a settings form sent — cannot silently
+// erase a rotation in progress.
+func TestLoopRotationState(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+
+	now := time.Now().UnixMilli()
+	loop := &store.Loop{
+		ID: "l1", Name: "shedder", Mission: "m", Status: store.StatusActive,
+		WorkspaceMode: store.WorkspaceNone, Pacing: store.PacingFixed,
+		Runtime: store.RuntimeBare, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.Loops().Create(ctx, loop); err != nil {
+		t.Fatal(err)
+	}
+	got, err := db.Loops().Get(ctx, "l1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RotatePending || got.HandoffNote != "" {
+		t.Fatalf("a new loop starts mid-rotation: %+v", got)
+	}
+
+	if err := db.Loops().SetRotation(ctx, "l1", true, "pick up the release"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err = db.Loops().Get(ctx, "l1"); err != nil {
+		t.Fatal(err)
+	}
+	if !got.RotatePending || got.HandoffNote != "pick up the release" {
+		t.Fatalf("rotation state did not round-trip: %+v", got)
+	}
+
+	loop.Mission = "edited elsewhere"
+	loop.UpdatedAt = now + 1
+	if err := db.Loops().Update(ctx, loop); err != nil {
+		t.Fatal(err)
+	}
+	if got, err = db.Loops().Get(ctx, "l1"); err != nil {
+		t.Fatal(err)
+	}
+	if !got.RotatePending || got.HandoffNote != "pick up the release" {
+		t.Fatalf("an unrelated update dropped the rotation in progress: %+v", got)
+	}
+}

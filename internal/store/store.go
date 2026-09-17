@@ -131,8 +131,18 @@ type Loop struct {
 	Status           string `json:"status"`
 	CurrentSessionID string `json:"current_session_id"`
 	CurrentPID       int    `json:"current_pid"`
-	CreatedAt        int64  `json:"created_at"`
-	UpdatedAt        int64  `json:"updated_at"`
+
+	// Rotation state that has to outlive the orchestrator (#66, ADR-0022).
+	// RotatePending says a handoff turn has been asked for and the session it
+	// ran on must not be resumed; HandoffNote is the note that session wrote,
+	// waiting for its successor's first turn. Both are engine bookkeeping
+	// rather than loop configuration, and the note is the loop's own words —
+	// json:"-" keeps the pair out of every API response.
+	RotatePending bool   `json:"-"`
+	HandoffNote   string `json:"-"`
+
+	CreatedAt int64 `json:"created_at"`
+	UpdatedAt int64 `json:"updated_at"`
 }
 
 // LoopSecret is one per-loop secret env var: a name/value pair injected into
@@ -266,6 +276,11 @@ type LoopStore interface {
 	GetByHubMCPToken(ctx context.Context, token string) (*Loop, error)
 	List(ctx context.Context) ([]*Loop, error)
 	SetRuntime(ctx context.Context, id, sessionID string, pid int) error
+	// SetRotation persists a rotation in progress: whether the current session
+	// has been retired by a handoff turn, and the note it wrote for its
+	// successor. Written at the points the actor changes its mind, so a
+	// restart reads the decision rather than starting the loop over.
+	SetRotation(ctx context.Context, id string, pending bool, note string) error
 }
 
 // LoopSecretStore holds a loop's secret env vars. Callers pass the timestamp
