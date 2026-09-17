@@ -598,6 +598,18 @@ select {
   text-align: center;
 }
 
+/* The loop's history: a window into a log that outgrows any page. It is
+   capped rather than fixed so a loop with three entries is three entries
+   tall, not a mostly-empty box, and the floor keeps the pane readable on a
+   short viewport. The gutter is one edge, not the `both-edges` .main takes:
+   nothing in here is centred, so there is no axis for a scrollbar to split
+   and a second gutter would only inset the text. */
+.pane-scroll {
+  max-height: clamp(18rem, 60vh, 48rem);
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
 /* ---- conversation: the thread ---- */
 .timeline {
   position: relative;

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, useMemo, type UIEvent } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { api, ChatMessage, LoopView, MessageDestination, Settings, TGSender, Turn } from '../api'
@@ -508,7 +508,7 @@ function ControlRoomThread({ msgs }: { msgs: ChatMessage[] }) {
   return (
     <div className="timeline">
       {[...msgs].reverse().map((m) => (
-        <div key={m.id} className={`knot${m.origin === 'loop' ? '' : ' inbound'}`}>
+        <div key={m.id} className={`knot${m.origin === 'loop' ? '' : ' inbound'}`} data-entry-id={m.id}>
           <div className="who">
             <span className="author">@{m.author}</span> ·{' '}
             {new Date(m.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -531,7 +531,24 @@ export default function LoopDetail() {
   const [draft, setDraft] = useState('')
   const [dest, setDest] = useState<MessageDestination>('control_room')
   const [pane, setPane] = useState<'timeline' | 'control_room'>('timeline')
-  const bottomRef = useRef<HTMLDivElement>(null)
+  const paneRef = useRef<HTMLDivElement>(null)
+  // Whether the pane should follow new entries. A reader who has scrolled up
+  // is reading; yanking them back to the tail because a turn arrived loses
+  // their place. Near the bottom counts as at the bottom — a couple of lines
+  // of slack, so the follow survives the rounding a fresh entry introduces.
+  const following = useRef(true)
+  // Which entry the reader is parked on, and where in the pane it sits, for
+  // the moment the window slides under them.
+  const anchor = useRef<{ id: string; offset: number } | null>(null)
+  // Both panes render into the same scroll container, so a position recorded
+  // in one means nothing in the other: the ids come from different tables and
+  // would collide by coincidence. Switching panes starts at the tail, which is
+  // where a reader opening a conversation wants to be anyway.
+  const showPane = (next: 'timeline' | 'control_room') => {
+    following.current = true
+    anchor.current = null
+    setPane(next)
+  }
 
   const { data: loop } = useQuery({
     queryKey: ['loop', name],
@@ -584,9 +601,40 @@ export default function LoopDetail() {
 
   const entries = useMemo(() => toEntries(events ?? []), [events])
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: 'end' })
-  }, [entries.length, liveText])
+  useLayoutEffect(() => {
+    const el = paneRef.current
+    if (!el) return
+    if (following.current) {
+      el.scrollTop = el.scrollHeight
+      return
+    }
+    // Not following: hold the reader's place against a window that slides.
+    // Each new event pushes the oldest one out of the window, so everything
+    // above shifts up; keeping `scrollTop` would quietly walk the reader
+    // down their own history. The anchor is the entry they were looking at.
+    const held = anchor.current
+    if (!held) return
+    const parked = el.querySelector(`[data-entry-id="${held.id}"]`)
+    if (parked instanceof HTMLElement) el.scrollTop = parked.offsetTop - held.offset
+    // `entries`, not its length: the window is a fixed size, so a new event
+    // slides it rather than growing it, and a length dependency would miss
+    // exactly the update this effect exists for.
+  }, [entries, liveText, pane, thread])
+
+  // Where the reader is, recorded as they move: whether they are at the tail,
+  // and if not, the first entry still on screen and how far down the pane it
+  // sits. The effect above restores that when the window slides.
+  const readingPosition = (e: UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget
+    following.current = el.scrollHeight - el.scrollTop - el.clientHeight < 32
+    anchor.current = null
+    if (following.current) return
+    for (const knot of el.querySelectorAll<HTMLElement>('[data-entry-id]')) {
+      if (knot.offsetTop + knot.offsetHeight <= el.scrollTop) continue
+      anchor.current = { id: knot.dataset.entryId ?? '', offset: knot.offsetTop - el.scrollTop }
+      break
+    }
+  }
 
   const send = async () => {
     const text = draft.trim()
@@ -621,22 +669,29 @@ export default function LoopDetail() {
               </div>
             ))}
           <div className="dest-picker" style={{ marginTop: 0, marginBottom: 12 }}>
-            <button className={`dest${pane === 'timeline' ? ' on' : ''}`} onClick={() => setPane('timeline')}>
+            <button
+              className={`dest${pane === 'timeline' ? ' on' : ''}`}
+              onClick={() => showPane('timeline')}
+            >
               timeline
             </button>
             <button
               className={`dest${pane === 'control_room' ? ' on' : ''}`}
-              onClick={() => setPane('control_room')}
+              onClick={() => showPane('control_room')}
             >
               control room
             </button>
           </div>
-          {pane === 'timeline' ? (
-            <Timeline entries={entries} liveText={liveText} />
-          ) : (
-            <ControlRoomThread msgs={thread ?? []} />
-          )}
-          <div ref={bottomRef} />
+          {/* The history scrolls inside the page rather than growing it, so the
+              composer below stays where the operator left it however long the
+              loop has been running. */}
+          <div className="pane-scroll" ref={paneRef} onScroll={readingPosition}>
+            {pane === 'timeline' ? (
+              <Timeline entries={entries} liveText={liveText} />
+            ) : (
+              <ControlRoomThread msgs={thread ?? []} />
+            )}
+          </div>
           <div className="dest-picker">
             <span className="dest-label">to</span>
             <button
