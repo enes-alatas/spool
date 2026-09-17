@@ -3,6 +3,7 @@
 package itest
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -500,4 +501,73 @@ func TestManualRotationWaitsForTheRunningTurn(t *testing.T) {
 	if handoff.StartedAt < hang.EndedAt {
 		t.Fatalf("handoff started at %d, before the running turn ended at %d", handoff.StartedAt, hang.EndedAt)
 	}
+}
+
+// A loop that cannot run at all must back off further every time, across
+// the rotation its failures trigger. Rotating used to re-floor the ladder,
+// so a broken loop respawned every few seconds forever and blamed a fresh
+// session each round (#89).
+func TestRetryLadderSurvivesAFailureRotation(t *testing.T) {
+	workspace := t.TempDir()
+	s := startServer(t, t.TempDir())
+	s.createLoop("broken", map[string]any{
+		"workspace_path": workspace,
+		"workspace_mode": "dir",
+	})
+
+	s.message("broken", "first thing")
+	s.waitTurn("broken", 30*time.Second, func(tr turn) bool {
+		return strings.Contains(tr.ResultText, "first thing")
+	})
+	s.waitState("broken", "asleep", 30*time.Second)
+
+	// from here nothing can run: neither this session nor a fresh one
+	if err := os.WriteFile(filepath.Join(workspace, ".fakeclaude-resume-broken"), []byte("all"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s.message("broken", "second thing")
+	if !s.hasEvent("broken", "session_unusable", 60*time.Second) {
+		t.Fatal("the unresumable session was never rotated away")
+	}
+
+	// The first dead resume waits 10s. The second rotates the session away
+	// and the spawn after that fails too — its wait must be 20s, the next
+	// rung. Re-flooring showed up here as a second 10s.
+	waits := waitForRetries(t, s, "broken", 2, 90*time.Second)
+	want := []int64{10000, 20000}
+	for i, ms := range want {
+		if waits[i] != ms {
+			t.Fatalf("retry waits %v, want %v — the ladder reset instead of climbing", waits, want)
+		}
+	}
+}
+
+// waitForRetries collects the delays a loop scheduled its retries with, in
+// order, until it has n of them.
+func waitForRetries(t *testing.T, s *server, name string, n int, timeout time.Duration) []int64 {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		var events []spoolEvent
+		s.mustJSON("GET", "/api/loops/"+name+"/events?limit=500", nil, &events)
+		var waits []int64
+		for _, e := range events { // oldest first, as the endpoint returns them
+			if e.Subtype != "retry_scheduled" {
+				continue
+			}
+			var p struct {
+				InMS int64 `json:"in_ms"`
+			}
+			if err := json.Unmarshal([]byte(e.Payload), &p); err == nil {
+				waits = append(waits, p.InMS)
+			}
+		}
+		if len(waits) >= n {
+			return waits
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+	t.Fatalf("loop %s scheduled fewer than %d retries", name, n)
+	return nil
 }
