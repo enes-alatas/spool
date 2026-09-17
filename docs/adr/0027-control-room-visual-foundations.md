@@ -1,6 +1,6 @@
 # ADR-0027: Colour means something, or it is white
 
-Date: 2026-09-16 · Status: accepted · Amended: 2026-09-17 (§9, units)
+Date: 2026-09-16 · Status: accepted · Amended: 2026-09-17 (§9, units; §6 and §10, rendering)
 
 ## Context
 
@@ -50,6 +50,12 @@ need the operator to look.
 6. **Typography carries the hierarchy.** System sans for titles, prose,
    missions and navigation; system mono for the operational register — loop
    names, states, costs, times, branches, paths. No network fonts.
+   *Amended 2026-09-17 (#132):* the sans stack asks for `'Segoe UI Variable
+   Text'` before `system-ui`. Still a system face and still no download —
+   `system-ui` resolves to Segoe UI on Windows, the 2012 design, while
+   Windows 11 ships a newer one drawn with optical sizes that `system-ui`
+   does not select. Machines without it fall through to exactly what they
+   had.
 7. **Contrast is a floor, not a preference.** Every text token clears 4.5:1
    against every background it can land on. The approved muted grey
    `#77777c` measures 4.58:1 on the canvas but 4.39:1 on the hover fill, so
@@ -72,6 +78,18 @@ need the operator to look.
    and the fleet row's state column, where an identifier would otherwise
    squeeze the loop name to nothing.
 
+10. **A hairline is specified in CSS and drawn in device pixels, and the two
+    are not the same thing** (added 2026-09-17, #132). At a fractional display
+    scale a 1px rule cannot land on a whole device pixel: at 125% — the
+    operator's own monitor — Chrome splits it across two rows at 78% and 56%
+    strength, so a token measured at 1.19:1 arrives at 1.12:1 and the room's
+    whole structure reads soft. Nothing in CSS controls the sub-pixel offset a
+    row's edge lands on; a 0.8px border, exactly one device pixel there,
+    measures identically. So the token carries the difference: `--hairline` is
+    `#24242a`, chosen so the split rendering at 125% reaches the weight the
+    design has at 100%, and it is a touch stronger than necessary at whole
+    scales rather than absent at fractional ones.
+
 ## Consequences
 
 - **The accent stops being decoration.** Orange on screen now always answers
@@ -91,6 +109,11 @@ need the operator to look.
   hairline and the raised fill until #69 and #71 replace the shell and Fleet
   with rows. That interim is deliberate — the alternative was one unreviewable
   change.
+- **A second palette value moved, and for the same kind of reason.**
+  `--hairline` went from `#1b1b1e` to `#24242a` (§10). The first move was a
+  contrast floor, this one a rasterisation floor; both are cases of a value
+  chosen on a screen rather than in the abstract, and both are recorded here
+  rather than folded in quietly.
 - **A palette value moved.** #70 approved `#77777c`; §7 ships `#7a7a7f`. The
   design intent is unchanged and the reason is measured, but it is a
   deviation from an approved value and is called out here rather than folded

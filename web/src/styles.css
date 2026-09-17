@@ -11,7 +11,10 @@
   --canvas: #050505;
   /* the only raised value: row hover, input wells, interim panels */
   --surface: #0c0c0e;
-  --hairline: #1b1b1e;
+  /* Carries a fractional display scale: at 125% a 1px rule is split across
+     two device rows at 78% and 56% strength, so the value is picked for what
+     survives that rather than for what it measures at 100% (ADR-0027 §10). */
+  --hairline: #24242a;
   --text: #f2f1ed;
   /* nudged 3 steps from the approved #77777c so it clears 4.5:1 on --surface
      as well as on --canvas; see ADR-0027 */
@@ -29,7 +32,11 @@
      in one layer and an emphasised bar can still reach full strength */
   --fill: var(--text);
   --mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'JetBrains Mono', Menlo, Consolas, monospace;
-  --sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* `system-ui` is SF Pro on macOS and Segoe UI — the 2012 design — on
+     Windows. Windows 11's newer face is not what `system-ui` selects, so it
+     is asked for by name ahead of it; anything without it falls through to
+     the stack as it was. Still system faces, still nothing downloaded. */
+  --sans: 'Segoe UI Variable Text', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
 
 * {
