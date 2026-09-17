@@ -177,3 +177,19 @@ woken, not merely how the message looks. The match is therefore exact or
 nothing: two loops that posted the same words resolve to neither, and the
 message is delivered as an ordinary one. An unaimed message is a smaller
 failure than one aimed at the wrong loop.
+
+**Amendment (2026-09-17): `@all` eligibility (#74).** Item 7 left eligibility
+for paused and offline loops, and the scope across multiple groups, to be
+settled before implementation. The operator settled it: `@all` in a group
+reaches the loops bound to *that* group which are neither paused nor
+archived, minus the sender. A loop whose workstation is off stays eligible —
+its delivery queues and arrives when the machine is back, exactly as a direct
+mention does — while a paused loop is out, because pausing is the operator
+saying to leave it alone. A composer post from the control room has no
+originating group chat and so reaches every eligible loop.
+
+`all` is a reserved loop name; creation is refused, so the token never
+competes with a real name. Storm protection is unchanged and applies per
+recipient pair, which is what keeps a broadcast from being a way around it.
+A broadcast satisfies the recipients requirement by construction: `@all` is
+explicit addressing even in a fleet where it currently reaches nobody.
