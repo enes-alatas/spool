@@ -499,16 +499,20 @@ select {
   color: var(--danger);
 }
 /* the column is sized for the longest state name (workstation_down): these
-   are single identifiers, and breaking one across lines invents a word */
+   are single identifiers, and breaking one across lines invents a word. The
+   heading shares the layout and nothing else — its type is the heading row's,
+   set on `.fleet-cols`, the same as the four labels beside it. */
 .fleet-row .f-state,
 .fleet-cols .f-state {
   display: flex;
   align-items: center;
   gap: 7px;
+  white-space: nowrap;
+}
+.fleet-row .f-state {
   font-family: var(--mono);
   font-size: 0.75rem;
   color: var(--text-muted);
-  white-space: nowrap;
 }
 /* On a wide screen the three numbers are columns of the row's own grid; the
    wrapper only exists so they can become one line together when the columns
