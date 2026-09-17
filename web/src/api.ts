@@ -35,6 +35,9 @@ export interface LoopView {
   // in which case there is no honest percentage to show.
   context_tokens: number
   context_limit_tokens: number
+  // Occupancy as a percentage of the window, computed by the server so the
+  // gauge and rotation judge the same number (0 = unmeasured).
+  context_fill_pct: number
   has_tg_token: boolean
   workstation_up: boolean
   workstation_detail?: string

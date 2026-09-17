@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
-import { api, ChatMessage, LoopView, MessageDestination, TGSender, Turn } from '../api'
+import { api, ChatMessage, LoopView, MessageDestination, Settings, TGSender, Turn } from '../api'
 import { formatTokens, fillTone } from '../format'
 import { MODEL_OPTIONS, EFFORT_OPTIONS, PACING_OPTIONS } from '../options'
 import { useStream } from '../stream'
@@ -141,12 +141,21 @@ function contextTokens(turn: Turn): number {
 // ContextFill is the occupancy of the model's own window — the glanceable
 // number. Only rendered when Spool knows the window; an unknown limit gets
 // absolute tokens rather than a percentage against a guess.
-function ContextFill({ tokens, limit }: { tokens: number; limit: number }) {
-  const ratio = Math.min(1, tokens / limit)
+function ContextFill({
+  tokens,
+  limit,
+  pct,
+  thresholds,
+}: {
+  tokens: number
+  limit: number
+  pct: number
+  thresholds?: Settings
+}) {
   return (
-    <div className={`ctx-fill ${fillTone(ratio)}`} title={`${tokens} of ${limit} tokens`}>
-      <div className="ctx-fill-bar" style={{ width: `${ratio * 100}%` }} />
-      <span className="ctx-fill-pct">{Math.round(ratio * 100)}%</span>
+    <div className={`ctx-fill ${fillTone(pct, thresholds)}`} title={`${tokens} of ${limit} tokens`}>
+      <div className="ctx-fill-bar" style={{ width: `${pct}%` }} />
+      <span className="ctx-fill-pct">{pct}%</span>
     </div>
   )
 }
@@ -155,7 +164,7 @@ function ContextFill({ tokens, limit }: { tokens: number; limit: number }) {
 // toward its window is visible before it overflows. Bars are relative to the
 // largest turn in view; the fill against the model's own window is the row
 // above them, and only when Spool knows that window.
-function ContextPanel({ loop, turns }: { loop: LoopView; turns: Turn[] }) {
+function ContextPanel({ loop, turns, thresholds }: { loop: LoopView; turns: Turn[]; thresholds?: Settings }) {
   const finished = turns.filter((turn) => turn.ended_at > 0).reverse()
   if (finished.length === 0) return null
 
@@ -173,7 +182,12 @@ function ContextPanel({ loop, turns }: { loop: LoopView; turns: Turn[] }) {
         </span>
       </div>
       {loop.context_limit_tokens > 0 && (
-        <ContextFill tokens={loop.context_tokens} limit={loop.context_limit_tokens} />
+        <ContextFill
+          tokens={loop.context_tokens}
+          limit={loop.context_limit_tokens}
+          pct={loop.context_fill_pct}
+          thresholds={thresholds}
+        />
       )}
       <div className="ctx-trend">
         {finished.map((turn) => (
@@ -548,6 +562,8 @@ export default function LoopDetail() {
     refetchInterval: 5000,
   })
   const { data: turns } = useQuery({ queryKey: ['turns', name], queryFn: () => api.turns(name, 10) })
+  // the rotation thresholds the context gauge's colours mean something against
+  const { data: thresholds } = useQuery({ queryKey: ['settings'], queryFn: api.settings })
 
   useStream(
     `/api/loops/${name}/stream`,
@@ -748,7 +764,7 @@ export default function LoopDetail() {
             </div>
           </div>
 
-          <ContextPanel loop={loop} turns={turns ?? []} />
+          <ContextPanel loop={loop} turns={turns ?? []} thresholds={thresholds} />
 
           <WorkstationPanel loop={loop} runningVerb={runningVerb} />
 
