@@ -922,6 +922,8 @@ select {
 
 /* ---- activity feed ---- */
 .feed-item {
+  /* contains the hidden status label, which is pinned to its row */
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
