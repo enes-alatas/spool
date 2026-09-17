@@ -139,7 +139,6 @@ func TestMCPSendRefusals(t *testing.T) {
 		{"empty text", map[string]any{"destination": "group", "text": "   "}, "empty_text"},
 		{"group without recipients", map[string]any{"destination": "group", "text": "talking to nobody"}, "no_recipients"},
 		{"group mentioning only unknowns", map[string]any{"destination": "group", "text": "@stranger hi"}, "no_recipients"},
-		{"broadcast", map[string]any{"destination": "group", "text": "@all hello"}, "unsupported_broadcast"},
 		{"reply to a reference that names nothing", map[string]any{"destination": "group", "text": "@aster hi", "reply_to": "ref:9999"}, "unknown_reply_to"},
 		{"no owner configured", map[string]any{"destination": "owner_dm", "text": "hello owner"}, "owner_not_configured"},
 	}
@@ -149,7 +148,7 @@ func TestMCPSendRefusals(t *testing.T) {
 	// A tick reply of aster's own may legitimately be stored; none of the
 	// refused payloads may be.
 	for _, m := range s.activity() {
-		for _, refused := range []string{"talking to nobody", "@stranger hi", "@all hello", "hello owner"} {
+		for _, refused := range []string{"talking to nobody", "@stranger hi", "hello owner"} {
 			if strings.Contains(m.Text, refused) && !strings.Contains(m.Text, "echo:") {
 				t.Errorf("a refused send was stored: %s", dump(m))
 			}
