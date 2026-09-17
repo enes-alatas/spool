@@ -35,7 +35,7 @@ function Thinking({ text }: { text: string }) {
 
 function AssistantEntry({ entry }: { entry: Entry & { kind: 'assistant' } }) {
   return (
-    <div className="knot">
+    <div className="knot" data-entry-id={entry.id}>
       <div className="who">{fmtTime(entry.ts)}</div>
       {entry.blocks.map((b, i) => {
         if (b.type === 'text' && b.text?.trim()) {
@@ -60,7 +60,7 @@ export function Timeline({ entries, liveText }: { entries: Entry[]; liveText: st
         switch (e.kind) {
           case 'inbound':
             return (
-              <div key={e.id} className="knot inbound">
+              <div key={e.id} className="knot inbound" data-entry-id={e.id}>
                 <div className="who">
                   <span className="author">{e.who || e.trigger}</span> · {fmtTime(e.ts)}
                 </div>
@@ -71,7 +71,7 @@ export function Timeline({ entries, liveText }: { entries: Entry[]; liveText: st
             return <AssistantEntry key={e.id} entry={e} />
           case 'result':
             return (
-              <div key={e.id} className="knot reply" style={{ marginTop: -8 }}>
+              <div key={e.id} className="knot reply" style={{ marginTop: -8 }} data-entry-id={e.id}>
                 <div className="turn-footer">
                   {e.isError && <span className="err">turn errored</span>}
                   <span>${e.costUsd.toFixed(4)}</span>
@@ -84,7 +84,7 @@ export function Timeline({ entries, liveText }: { entries: Entry[]; liveText: st
             )
           case 'note':
             return (
-              <div key={e.id} className="knot system-note">
+              <div key={e.id} className="knot system-note" data-entry-id={e.id}>
                 <div className="who">
                   {e.text} · {fmtTime(e.ts)}
                 </div>

@@ -237,8 +237,14 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ author, text, destination }),
     }),
-  events: (name: string, afterId = 0, limit = 300) =>
-    req<LoopEvent[]>(`/api/loops/${name}/events?after_id=${afterId}&limit=${limit}`),
+  // The newest window, not the oldest: `before_id=0` means "the newest end of
+  // the timeline" and the server returns the page oldest-first, so a loop with
+  // thousands of events opens on its recent history rather than on the first
+  // events of its life (#119). The `after_id` form still exists server-side for
+  // following the tail; nothing here needs it, because the stream re-reads this
+  // window instead of appending.
+  events: (name: string, limit = 300) =>
+    req<LoopEvent[]>(`/api/loops/${name}/events?before_id=0&limit=${limit}`),
   turns: (name: string, limit = 50) => req<Turn[]>(`/api/loops/${name}/turns?limit=${limit}`),
   activity: (limit = 100) => req<ChatMessage[]>(`/api/activity?limit=${limit}`),
   conversation: (name: string, kind: 'control_room' | 'owner_dm' = 'control_room', limit = 100) =>
