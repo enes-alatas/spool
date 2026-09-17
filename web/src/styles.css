@@ -56,6 +56,23 @@ body {
   font-family: var(--sans);
   font-size: 0.875rem;
   line-height: 1.5;
+  /* The thumb is the text colour at low opacity — the same way a meter draws
+     data (ADR-0027 §5) — and the track is nothing at all, so a pane that is
+     not scrolling shows no chrome in the gutter it reserves. This property
+     inherits, so it reaches every scroller in the room from here; the width
+     does not, and is set beside each `overflow`. Standard properties only:
+     Firefox has them natively, and the `::-webkit-scrollbar` family would be
+     a second treatment to keep in step.
+
+     One weight, no hover state. `:hover` on a scroll container is not the
+     question we want to ask — `.main` is the whole content area, so it
+     matches wherever the pointer is, and because this property inherits, a
+     rule on it repaints the history pane's scrollbar too. A thumb that
+     brightens because the pointer is on a heading says something false; the
+     standard properties cannot ask "is this scrollbar being used", and
+     inventing an answer with `::-webkit-scrollbar-thumb:hover` would mean
+     the second treatment this rule exists to avoid. */
+  scrollbar-color: color-mix(in srgb, var(--text) 20%, transparent) transparent;
 }
 
 a {
@@ -70,6 +87,10 @@ input,
 textarea,
 select {
   font: inherit;
+}
+/* a composer or a rule field long enough to scroll is a scroller too */
+textarea {
+  scrollbar-width: thin;
 }
 
 ::selection {
@@ -216,6 +237,10 @@ select {
 /* ---- main ---- */
 .main {
   overflow-y: auto;
+  /* thin, because the browser's default is a boxed, light widget against a
+     near-black canvas; `scrollbar-width` does not inherit, so it is set
+     wherever something scrolls */
+  scrollbar-width: thin;
   /* Both edges, because the centring below depends on it. This is the scroll
      container and the bar above is outside it, so a scrollbar that takes
      layout width would narrow this box and not the bar's, pushing the two
@@ -639,6 +664,7 @@ select {
 .pane-scroll {
   max-height: clamp(18rem, 60vh, 48rem);
   overflow-y: auto;
+  scrollbar-width: thin;
   scrollbar-gutter: stable;
 }
 
