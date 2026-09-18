@@ -427,6 +427,84 @@ reply with a trailer like [next-wake: 45m] (allowed range: %s–%s).`, dur(l.Min
 	return Envelope{Trigger: store.TriggerTick, Text: head + "\n\n" + body}
 }
 
+// maxSendFailuresTold caps how many lost messages one note names. An outage
+// can lose a whole turn's worth of sends, and a loop that has to read twenty
+// of them before it reaches the work of its wake is worse off than one told
+// the shape of the problem. The rest are counted, not listed, and all of
+// them are marked told: the loop has been given the news, and the control
+// room holds the full record.
+const maxSendFailuresTold = 5
+
+// maxLostExcerpt is how much of a lost message the note quotes: enough to
+// recognise which one it was, not the message over again. The bridge's
+// timeline event makes the same choice.
+const maxLostExcerpt = 160
+
+// SendFailureEnvelope tells a loop which of its own messages never arrived.
+//
+// A send is immediate (ADR-0026) and its outcome lands after the turn that
+// made it has ended, so a loop that DMs someone and hears nothing cannot
+// tell "they are busy" from "it never got there", and will not resend
+// (#154). This is the news, at the loop's next wake, ahead of that wake's
+// own envelopes: a loop should know what it failed to say before it decides
+// what to say next.
+//
+// Each line carries the reference, so a resend is a deliberate act the loop
+// can take against a message it can name, and the reason, because "blocked
+// by the recipient" and "the API timed out" call for different answers.
+// Nothing is resent automatically: the hub does not decide that words are
+// still worth saying minutes later.
+func SendFailureEnvelope(now time.Time, failures []*store.Message) Envelope {
+	shown := failures
+	if len(shown) > maxSendFailuresTold {
+		shown = shown[:maxSendFailuresTold]
+	}
+	noun := "message"
+	if len(failures) != 1 {
+		noun = "messages"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "[system note · %d of your %s never arrived · %s]\n\n",
+		len(failures), noun, now.UTC().Format("2006-01-02 15:04 UTC"))
+	b.WriteString("These sends were retried and then given up on, so nobody read them. " +
+		"They are\nnot sent again unless you send them again — say it once more only if it is " +
+		"still\nworth saying, and to the destination named.\n\n")
+	for _, m := range shown {
+		fmt.Fprintf(&b, "- %s to %s: %s\n  %q\n",
+			MessageRef(m.ID), destinationOf(m), reasonOf(m), truncate(strings.TrimSpace(m.Text), maxLostExcerpt))
+	}
+	if rest := len(failures) - len(shown); rest > 0 {
+		fmt.Fprintf(&b, "- and %d more, which the control room lists in full\n", rest)
+	}
+	return Envelope{Trigger: store.TriggerTick, Text: strings.TrimRight(b.String(), "\n")}
+}
+
+// destinationOf names where a lost message was going in the words a loop
+// sends with — the send_message destination, not a chat id, so the loop can
+// act on it without translating.
+func destinationOf(m *store.Message) string {
+	switch m.Conversation {
+	case store.ConversationOwnerDM:
+		return "owner_dm"
+	case store.ConversationGroup:
+		return "group"
+	case store.ConversationControlRoom:
+		return "control_room"
+	default:
+		return "an unknown destination"
+	}
+}
+
+// reasonOf is why the send was given up on, as the surface said it. Raw
+// rather than interpreted: a loop reads the difference between "chat not
+// found" and a timeout better than a category we invent would let it.
+func reasonOf(m *store.Message) string {
+	if reason := strings.TrimSpace(m.SendError); reason != "" {
+		return truncate(reason, 200)
+	}
+	return "no reason recorded"
+}
+
 // RotationEnvelope is the last turn of a session about to be rotated: it asks
 // the loop for the handoff note its successor starts from (ADR-0022).
 func RotationEnvelope(now time.Time) Envelope {

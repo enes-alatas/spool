@@ -187,7 +187,13 @@ type Actor struct {
 	// the note, so a spawn that dies first still owes it (#162).
 	promptDelta string
 	promptHash  string
-	powering    bool // a power verb is running; nothing may spawn a process under it
+	// The lost-send news this wake owes the loop, and the messages it
+	// covers. Held until a turn carries it, so a spawn that dies first
+	// still owes it; the store is the record, so a retired session simply
+	// leaves it to be collected again (#154).
+	sendFailure    *Envelope
+	sendFailureIDs []int64
+	powering       bool // a power verb is running; nothing may spawn a process under it
 
 	idleTimer   *time.Timer
 	retryTimer  *time.Timer
@@ -401,6 +407,7 @@ func (actor *Actor) wake() {
 		actor.mintSession(ctx)
 	}
 	actor.reconcilePrompt(ctx, fresh, prompt)
+	actor.collectSendFailures(ctx)
 	spec := actor.wakeSpec(fresh, prompt.System)
 
 	loopRuntime := actor.deps.runtimeFor(actor.loop.Runtime)
@@ -568,6 +575,34 @@ func (actor *Actor) setPromptHash(ctx context.Context, hash string) {
 	}
 }
 
+// collectSendFailures gathers the loop's own messages that never arrived and
+// have not been reported to it, so this wake can say so (#154). A send is
+// immediate and its outcome lands after the turn that made it ended, so the
+// next wake is the first moment the sender can be told.
+//
+// Read at wake rather than at every turn: a failure recorded mid-turn waits
+// for the following wake, which is what the operator chose — the alternative
+// wakes a loop per failure, and an outage is many failures.
+func (actor *Actor) collectSendFailures(ctx context.Context) {
+	lost, err := actor.deps.Store.Messages().UntoldSendFailures(ctx, actor.loop.ID)
+	if err != nil {
+		// The wake is not worth failing over news about an old message; the
+		// rows keep their unreported marks and the next wake tries again.
+		actor.log().Error("collect send failures", "err", err)
+		return
+	}
+	if len(lost) == 0 {
+		actor.sendFailure, actor.sendFailureIDs = nil, nil
+		return
+	}
+	env := SendFailureEnvelope(time.Now(), lost)
+	actor.sendFailure = &env
+	actor.sendFailureIDs = make([]int64, 0, len(lost))
+	for _, m := range lost {
+		actor.sendFailureIDs = append(actor.sendFailureIDs, m.ID)
+	}
+}
+
 // wakeSpec describes this wake to the runtime. The system prompt is passed in
 // rather than rendered here: wake compares it with the one the session was
 // created with first, and both must be the same text (#162).
@@ -667,7 +702,17 @@ func (actor *Actor) startHandoffTurn() {
 
 // sendBatch runs one turn over the given envelopes.
 func (actor *Actor) sendBatch(batch []Envelope) {
+	// currentBatch is the work, and only the work: it is what a lost turn is
+	// redelivered from, and the notes below are re-prepended then from the
+	// fields that still hold them.
 	actor.currentBatch = batch
+	if actor.sendFailure != nil && !actor.handoffTurn {
+		// ahead of the wake's own envelopes: a loop should know what it
+		// failed to say before it decides what to say next (#154). Never on
+		// a handoff turn — that session is ending, and news it cannot act on
+		// would be spent on it; the field keeps it for the successor.
+		batch = append([]Envelope{*actor.sendFailure}, batch...)
+	}
 
 	texts := make([]string, 0, len(batch))
 	trigger := store.TriggerTick
@@ -700,9 +745,11 @@ func (actor *Actor) sendBatch(batch []Envelope) {
 	if actor.deps.OnTurnStart != nil {
 		actor.deps.OnTurnStart(&actor.loop)
 	}
-	if actor.promptDelta != "" {
-		// Ahead of the wake's own envelopes and of nothing else: the loop
-		// must read what now binds it before it reads the work it binds.
+	if actor.promptDelta != "" && !actor.handoffTurn {
+		// Ahead of everything else: the loop must read what now binds it
+		// before it reads the work it binds, and before news about work it
+		// already did. Withheld from a handoff turn for the same reason —
+		// the successor session is spawned with the new prompt anyway.
 		text = actor.promptDelta + "\n\n---\n\n" + text
 	}
 	if actor.freshSpawn {
@@ -841,17 +888,29 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 		actor.setRotationState(actor.loop.RotatePending, "")
 	}
 	actor.handoffNote = ""
+
+	if actor.handoffTurn {
+		// A handoff turn carries neither note — sendBatch withholds both —
+		// so neither is spent here: both stay owed to the next session.
+		actor.finishHandoff(res)
+		return
+	}
+	if len(actor.sendFailureIDs) > 0 {
+		// The news is in the session's history now. Marked on completion
+		// rather than when it was rendered, so a turn that never finished
+		// owes it again instead of losing it (#154).
+		if err := actor.deps.Store.Messages().MarkSendFailuresTold(
+			context.Background(), actor.sendFailureIDs, now()); err != nil {
+			actor.log().Error("mark send failures told", "err", err)
+		}
+		actor.sendFailure, actor.sendFailureIDs = nil, nil
+	}
 	if actor.promptDelta != "" {
 		// The note is in the session's history now, so it is paid for, and
 		// the hash it earned becomes the one later wakes compare against:
 		// a second change is a second note, the same change is not.
 		actor.promptDelta = ""
 		actor.setPromptHash(context.Background(), actor.promptHash)
-	}
-
-	if actor.handoffTurn {
-		actor.finishHandoff(res)
-		return
 	}
 	actor.measureContext()
 

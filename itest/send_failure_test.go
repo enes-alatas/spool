@@ -78,3 +78,99 @@ func TestSendThatNeverGetsThroughIsRecorded(t *testing.T) {
 		}
 	}
 }
+
+// TestALostSendIsToldToItsSenderAtTheNextWake: the loop that said something
+// nobody read finds out. The outcome of a send lands after the turn that
+// made it has ended, so the next wake is the first moment the sender can be
+// told — and it is told ahead of that wake's own envelopes, so it knows what
+// it failed to say before it decides what to say next (#154).
+func TestALostSendIsToldToItsSenderAtTheNextWake(t *testing.T) {
+	operator := user{ID: 7733, First: "Operator", Username: "operator"}
+	ws := workspaceWithScript(t, "!ctx 0\n"+
+		`!send {"destination":"group","text":"@beta the deploy is wedged"}`+"\n"+
+		"!echo\n")
+	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws})
+
+	tg.failNextSends(-1) // every send from here on
+	srv.message("alpha", "say it")
+	if !srv.hasEvent("alpha", "send_failed", 60*time.Second) {
+		t.Fatal("the send was expected to be given up on")
+	}
+	srv.waitState("alpha", "asleep", 60*time.Second)
+
+	at := time.Now().UnixMilli()
+	srv.message("alpha", "anything new")
+	next := srv.waitTurn("alpha", 30*time.Second, func(tn turn) bool {
+		return tn.EndedAt >= at && strings.Contains(tn.ResultText, "anything new")
+	})
+	// The prefix, not a substring: the news leads the turn.
+	if !strings.HasPrefix(next.ResultText, "echo: [system note · 1 of your message never arrived") {
+		t.Fatalf("the turn the loop received does not open with the news:\n%s", next.ResultText)
+	}
+	for _, want := range []string{
+		"to group:",                  // where it was going, in send_message's words
+		"502",                        // and why, as the surface said it
+		"@beta the deploy is wedged", // enough of it to know which message
+		"anything new",               // and the wake's own envelope, after all of it
+	} {
+		if !strings.Contains(next.ResultText, want) {
+			t.Fatalf("the news lacks %q:\n%s", want, next.ResultText)
+		}
+	}
+
+	// And it is said once: a loop told twice about the same lost message
+	// would resend it twice, or distrust the news.
+	srv.waitState("alpha", "asleep", 60*time.Second)
+	again := time.Now().UnixMilli()
+	srv.message("alpha", "and now")
+	third := srv.waitTurn("alpha", 30*time.Second, func(tn turn) bool {
+		return tn.EndedAt >= again && strings.Contains(tn.ResultText, "and now")
+	})
+	if strings.Contains(third.ResultText, "never arrived") {
+		t.Fatalf("the loop was told about the same lost message twice:\n%s", third.ResultText)
+	}
+}
+
+// TestALostSendIsNotSpentOnAHandoffTurn: a rotation's handoff turn is the
+// one turn that cannot act on this news — that session is ending, and its
+// reply is a note to its successor. Spending the news there would announce a
+// lost message to the one session that can do nothing about it, and mark it
+// told. It is deferred instead: nothing is marked until a turn completes, so
+// the successor's first turn is where the loop hears it (#154, ADR-0024).
+func TestALostSendIsNotSpentOnAHandoffTurn(t *testing.T) {
+	operator := user{ID: 7744, First: "Operator", Username: "operator"}
+	ws := workspaceWithScript(t, "!ctx 0\n"+
+		`!send {"destination":"group","text":"@beta said into a dead line"}`+"\n"+
+		"!echo\n")
+	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws})
+
+	tg.failNextSends(-1) // every send from here on
+	srv.message("alpha", "say it")
+	if !srv.hasEvent("alpha", "send_failed", 60*time.Second) {
+		t.Fatal("the send was expected to be given up on")
+	}
+	srv.waitState("alpha", "asleep", 60*time.Second)
+
+	// The loop now owes itself news, and rotates before it can be told.
+	srv.mustJSON("POST", "/api/loops/alpha/rotate", nil, nil)
+	at := time.Now().UnixMilli()
+	srv.message("alpha", "after the rotation")
+
+	handoff := srv.waitTurn("alpha", 60*time.Second, func(tn turn) bool {
+		return tn.EndedAt >= at && tn.Trigger == "rotation"
+	})
+	if strings.Contains(handoff.ResultText, "never arrived") {
+		t.Fatalf("the news was spent on the handoff turn, which cannot act on it:\n%s", handoff.ResultText)
+	}
+
+	successor := srv.waitTurn("alpha", 60*time.Second, func(tn turn) bool {
+		return tn.EndedAt >= at && strings.Contains(tn.ResultText, "after the rotation")
+	})
+	if successor.SessionID == handoff.SessionID {
+		t.Fatalf("the loop was expected to rotate onto a fresh session, still on %s", handoff.SessionID)
+	}
+	if !strings.Contains(successor.ResultText, "never arrived") ||
+		!strings.Contains(successor.ResultText, "said into a dead line") {
+		t.Fatalf("the successor was never told what its predecessor failed to say:\n%s", successor.ResultText)
+	}
+}
