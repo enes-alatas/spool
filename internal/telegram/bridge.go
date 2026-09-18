@@ -312,6 +312,7 @@ func (br *Bridge) handleMessage(ctx context.Context, p *poller, m *tgMsgAlias) {
 	if m.Chat.Type == "private" {
 		br.maybeCaptureOwnerDM(ctx, p, m)
 		if !br.ownerOf(ctx, p, m.From.ID) {
+			br.logTurnedAway(p, m, author, "sender is not this loop's owner")
 			// Not the loop's owner. Delivering this would leave the loop
 			// unable to answer — owner_dm addresses the owner, so the reply
 			// would land in someone else's chat. Until non-owner private
@@ -511,6 +512,7 @@ func (br *Bridge) senderAllowed(ctx context.Context, p *poller, m *tgMsgAlias, a
 	sender, err := br.store.TGSenders().Get(ctx, m.From.ID)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		br.log.Error("sender lookup", "err", err)
+		br.logTurnedAway(p, m, author, "sender lookup failed")
 		return false // fail closed
 	}
 
@@ -533,10 +535,12 @@ func (br *Bridge) senderAllowed(ctx context.Context, p *poller, m *tgMsgAlias, a
 		if cerr := br.store.TGSenders().Create(ctx, sender); cerr != nil {
 			if !errors.Is(cerr, store.ErrDuplicate) {
 				br.log.Error("sender create", "err", cerr)
+				br.logTurnedAway(p, m, author, "sender could not be registered")
 				return false
 			}
 			// another poller registered them first; re-read
 			if sender, err = br.store.TGSenders().Get(ctx, m.From.ID); err != nil {
+				br.logTurnedAway(p, m, author, "sender registered by another poller but unreadable")
 				return false
 			}
 		} else {
@@ -549,6 +553,7 @@ func (br *Bridge) senderAllowed(ctx context.Context, p *poller, m *tgMsgAlias, a
 	case store.SenderAllowed:
 		return true
 	case store.SenderBlocked:
+		br.logTurnedAway(p, m, author, "sender is blocked")
 		return false
 	default: // pending
 		if !isGroup {
@@ -562,8 +567,26 @@ func (br *Bridge) senderAllowed(ctx context.Context, p *poller, m *tgMsgAlias, a
 					sender.PairCode))
 			}
 		}
+		br.logTurnedAway(p, m, author, "sender is pending approval")
 		return false
 	}
+}
+
+// logTurnedAway records an inbound message that reached a loop's bot and was
+// then discarded. Every one of these is a person whose words went nowhere and
+// who has no way to tell: the poller advances its offset past a message
+// whether or not anything was done with it, so a drop here is permanent. The
+// reason is the point — without it the only evidence is a line that never
+// appears, and a reader has to infer the branch from its absence (#161).
+//
+// Info rather than Debug: these are rare, human-caused, and each one is a
+// message that will not arrive. The routine returns are deliberately not
+// logged — losing a group ingest election or a dedup hit means another bot
+// took the message, not that it was lost.
+func (br *Bridge) logTurnedAway(p *poller, m *tgMsgAlias, author, reason string) {
+	br.log.Info("telegram inbound discarded", "loop", p.name, "reason", reason,
+		"author", author, "chat_type", m.Chat.Type, "chat_id", m.Chat.ID,
+		"message_id", m.MessageID)
 }
 
 const pairAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
