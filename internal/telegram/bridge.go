@@ -27,6 +27,12 @@ const (
 	maxMsgLen      = 4096
 	sendSpacing    = time.Second // per-bot pacing (Telegram: ~1 msg/s)
 	dedupSize      = 512
+	// sendAttempts and sendBackoff bound the retry a failed send gets: a
+	// timeout against api.telegram.org is ordinary, and one attempt made it
+	// cost the message (#147). Four attempts over ~7s of backoff outlast a
+	// blip without holding the bot's paced queue for a minute.
+	sendAttempts = 4
+	sendBackoff  = time.Second
 	// defaultBindSettle is how long after binding a bot waits before it may win a
 	// group's ingest election (ADR-0020): margin for clock skew between
 	// Telegram's message dates and ours. It is the default rather than a
@@ -493,14 +499,7 @@ const quoteLen = 80
 // quotePrefix renders the one line that stands in for a native reply.
 func quotePrefix(target *store.Message) string {
 	quoted := strings.Join(strings.Fields(target.Text), " ")
-	if len(quoted) > quoteLen {
-		cut := quoteLen
-		for cut > 0 && !utf8.RuneStart(quoted[cut]) {
-			cut--
-		}
-		quoted = quoted[:cut] + "…"
-	}
-	return fmt.Sprintf("↳ re %s: %s\n\n", target.Author, quoted)
+	return fmt.Sprintf("↳ re %s: %s\n\n", target.Author, excerpt(quoted, quoteLen))
 }
 
 // tgMsgAlias keeps handleMessage readable without exporting internals.
@@ -694,23 +693,136 @@ func (br *Bridge) sendLoop(ctx context.Context, p *poller) {
 		case <-ctx.Done():
 			return
 		case req := <-p.sendCh:
-			for attempt := 0; attempt < 3; attempt++ {
-				sent, err := p.client.SendMessage(ctx, req.chatID, req.text, req.replyTo)
-				if err == nil {
-					br.recordSentRef(ctx, p, req, sent)
-					break
-				}
-				var apiErr *APIError
-				if errors.As(err, &apiErr) && apiErr.Code == 429 {
-					sleepCtx(ctx, time.Duration(max(apiErr.RetryAfter, 1))*time.Second)
-					continue
-				}
-				br.log.Warn("telegram send failed", "loop", p.name, "err", err)
-				break
-			}
+			br.sendWithRetries(ctx, p, req)
 			sleepCtx(ctx, sendSpacing)
 		}
 	}
+}
+
+// sendWithRetries makes a send survive the ordinary failure — a timeout or a
+// 5xx against api.telegram.org — instead of costing the message. A rejection
+// Telegram means (a 4xx that is not 429) is not retried: sending it again
+// would fail the same way, slower.
+//
+// A send that runs out of attempts is recorded rather than only logged: on
+// the message, so the record answers "did that reach them", and as a spool
+// event, so the loop's timeline shows the gap where its words should be.
+// Nothing here is silent (#147) — except a cancelled context, which means the
+// process is going away and there is no live context left to record through.
+func (br *Bridge) sendWithRetries(ctx context.Context, p *poller, req sendReq) {
+	var lastErr error
+	for attempt := 0; attempt < sendAttempts; attempt++ {
+		sent, err := p.client.SendMessage(ctx, req.chatID, req.text, req.replyTo)
+		if err == nil {
+			br.recordSentRef(ctx, p, req, sent)
+			br.recordSendResult(ctx, req, nil)
+			return
+		}
+		lastErr = err
+		var apiErr *APIError
+		switch {
+		case errors.As(err, &apiErr) && apiErr.Code == 429:
+			// Telegram says how long to wait, and means it — but only when
+			// there is an attempt left to spend it on. retry_after runs to
+			// tens of seconds and sendLoop is serial per bot, so waiting
+			// after the last attempt holds the whole queue for nothing.
+			if attempt < sendAttempts-1 {
+				sleepCtx(ctx, time.Duration(max(apiErr.RetryAfter, 1))*time.Second)
+			}
+		case errors.As(err, &apiErr) && apiErr.Code >= 400 && apiErr.Code < 500:
+			br.failSend(ctx, p, req, err, attempt+1)
+			return
+		default:
+			if attempt < sendAttempts-1 {
+				br.log.Warn("telegram send failed; retrying",
+					"loop", p.name, "attempt", attempt+1, "err", err)
+				sleepCtx(ctx, sendBackoff<<attempt)
+			}
+		}
+		if ctx.Err() != nil {
+			return
+		}
+	}
+	br.failSend(ctx, p, req, lastErr, sendAttempts)
+}
+
+// failSend gives up on a send and leaves the evidence in the two places
+// somebody would look: the message row and the loop's timeline.
+func (br *Bridge) failSend(ctx context.Context, p *poller, req sendReq, err error, attempts int) {
+	br.log.Error("telegram send failed; giving up",
+		"loop", p.name, "chat", req.chatID, "attempts", attempts, "err", err)
+	br.recordSendResult(ctx, req, err)
+	e := &store.Event{
+		LoopID:  p.loopID,
+		TS:      time.Now().UnixMilli(),
+		Type:    "spool",
+		Subtype: "send_failed",
+		Payload: fmt.Sprintf(`{"chat":%q,"attempts":%d,"error":%q,"text":%q}`,
+			br.chatName(ctx, p, req.chatID), attempts, err.Error(), excerpt(req.text, excerptLen)),
+	}
+	if _, insErr := br.store.Events().Insert(ctx, e); insErr != nil {
+		br.log.Error("telegram: record send failure", "loop", p.name, "err", insErr)
+		return
+	}
+	br.bus.Publish(bus.Item{Kind: bus.KindAgentEvent, LoopID: p.loopID, Payload: e})
+}
+
+// chatName says which conversation a send was aimed at, in the operator's
+// terms rather than Telegram's. A chat id names nothing a reader knows; what
+// they need from a lost message is who never heard it.
+func (br *Bridge) chatName(ctx context.Context, p *poller, chatID int64) string {
+	l, err := br.store.Loops().Get(ctx, p.loopID)
+	if err != nil {
+		// The operator reads "a chat" either way, but a store that cannot be
+		// read during a send failure is a second problem, not a naming one.
+		br.log.Warn("telegram: name chat for send failure", "loop", p.name, "err", err)
+		return "a chat"
+	}
+	switch chatID {
+	case l.TGGroupChatID:
+		return "the group"
+	case l.OwnerDMChatID:
+		return "the owner"
+	default:
+		return "a chat"
+	}
+}
+
+// recordSendResult marks the message this send carried. A success clears a
+// previous attempt's error, so a message that got through on the retry does
+// not keep describing the failure it survived.
+func (br *Bridge) recordSendResult(ctx context.Context, req sendReq, err error) {
+	if req.recordFor == 0 {
+		return
+	}
+	var failedAt int64
+	var text string
+	if err != nil {
+		failedAt, text = time.Now().UnixMilli(), err.Error()
+	}
+	if setErr := br.store.Messages().SetSendResult(ctx, req.recordFor, failedAt, text); setErr != nil {
+		br.log.Warn("telegram: record send result", "err", setErr)
+	}
+}
+
+// excerptLen caps the excerpt of a lost message an event payload carries:
+// enough to recognise which message it was, not the message over again.
+const excerptLen = 200
+
+// excerpt keeps the opening of s, within n bytes. The head, because a message
+// is recognised by how it starts — the same choice quotePrefix and prompt.go's
+// truncate make. The cut walks back to a rune boundary: slicing bytes at an
+// arbitrary offset halves a multi-byte character, and the note then begins in
+// a stray continuation byte.
+func excerpt(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	cut := n
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "…"
 }
 
 // --- mirroring ---
