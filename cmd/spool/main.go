@@ -17,6 +17,7 @@ import (
 
 	"github.com/enes-alatas/spool/internal/bus"
 	"github.com/enes-alatas/spool/internal/claude"
+	"github.com/enes-alatas/spool/internal/datadir"
 	"github.com/enes-alatas/spool/internal/httpapi"
 	"github.com/enes-alatas/spool/internal/loop"
 	"github.com/enes-alatas/spool/internal/route"
@@ -67,7 +68,7 @@ func main() {
 	}
 	log.Info("runtime ready", "default", defaultRuntime, "claude_version", ver)
 
-	if err := os.MkdirAll(*dataDir, 0o755); err != nil {
+	if err := datadir.Secure(*dataDir, log); err != nil {
 		log.Error("data dir", "err", err)
 		os.Exit(1)
 	}
@@ -77,6 +78,14 @@ func main() {
 		os.Exit(1)
 	}
 	defer db.Close()
+	// Again, now that the database and its WAL sidecars exist: the first call
+	// had to run before the open, to create the directory private, and on a
+	// first run there was nothing inside it yet to narrow. Secure only ever
+	// removes permission bits, so running it twice costs a stat apiece.
+	if err := datadir.Secure(*dataDir, log); err != nil {
+		log.Error("data dir", "err", err)
+		os.Exit(1)
+	}
 
 	b := bus.New()
 
