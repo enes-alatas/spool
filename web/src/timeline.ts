@@ -132,6 +132,12 @@ function spoolNote(e: LoopEvent): Note | null {
         )
       case 'storm_drop':
         return plain(`storm guard: message to @${p.to} dropped (limit ${p.limit_per_hour}/h)`)
+      case 'send_failed':
+        // The loop believes it spoke; this note is the only place the
+        // operator learns otherwise — so it says who never heard it, not
+        // which chat id the send was aimed at. plain, not seam: nothing
+        // above this is forgotten, the words simply never left the machine.
+        return plain(`message to ${p.chat} never delivered (${p.attempts} attempts)`)
       default:
         return null
     }

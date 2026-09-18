@@ -25,6 +25,29 @@ type fakeTelegram struct {
 	nextID  map[string]int64            // token → next message_id
 	updates int64
 	sent    []sentMessage
+	// failSends makes the next n sendMessage calls fail the way a blip
+	// does — 502, which the bridge treats as worth retrying — and
+	// failForever keeps failing until a test says otherwise. A failed call
+	// records nothing in sent: the message never existed for the chat.
+	failSends   int
+	failForever bool
+	sendCalls   int
+}
+
+// failNextSends makes the stand-in refuse the next n sends. n < 0 refuses
+// every send until the test clears it.
+func (tg *fakeTelegram) failNextSends(n int) {
+	tg.mu.Lock()
+	defer tg.mu.Unlock()
+	tg.failSends, tg.failForever = n, n < 0
+}
+
+// sendAttempts counts every sendMessage call the bridge made, refused or not
+// — which is how a test sees a retry happen at all.
+func (tg *fakeTelegram) sendAttempts() int {
+	tg.mu.Lock()
+	defer tg.mu.Unlock()
+	return tg.sendCalls
 }
 
 type sentMessage struct {
@@ -96,6 +119,15 @@ func (tg *fakeTelegram) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = json.NewDecoder(r.Body).Decode(&req)
 		tg.mu.Lock()
+		tg.sendCalls++
+		if tg.failForever || tg.failSends > 0 {
+			if !tg.failForever {
+				tg.failSends--
+			}
+			tg.mu.Unlock()
+			http.Error(w, `{"ok":false,"error_code":502,"description":"Bad Gateway"}`, 502)
+			return
+		}
 		tg.nextID[token]++
 		id := tg.nextID[token]
 		var replyTo int64
@@ -283,6 +315,8 @@ type activityMessage struct {
 	Conversation       string   `json:"conversation"`
 	ConversationLoopID string   `json:"conversation_loop_id"`
 	ReplyToID          int64    `json:"reply_to_id"`
+	SendFailedAt       int64    `json:"send_failed_at"`
+	SendError          string   `json:"send_error"`
 }
 
 func (s *server) activity() []activityMessage {
