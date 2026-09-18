@@ -584,10 +584,8 @@ func (br *Bridge) maybeBindGroup(ctx context.Context, p *poller, chatID int64) {
 	if err != nil || l.TGGroupChatID == chatID {
 		return
 	}
-	l.TGGroupChatID = chatID
-	l.TGGroupBoundAt = time.Now().UnixMilli()
-	l.UpdatedAt = l.TGGroupBoundAt
-	if err := br.store.Loops().Update(ctx, l); err != nil {
+	boundAt := time.Now().UnixMilli()
+	if err := br.store.Loops().SetGroupBinding(ctx, l.ID, chatID, boundAt, boundAt); err != nil {
 		br.log.Error("group bind", "err", err)
 		return
 	}
@@ -611,9 +609,7 @@ func (br *Bridge) maybeCaptureOwnerDM(ctx context.Context, p *poller, m *tgMsgAl
 	if l.OwnerDMChatID == m.Chat.ID {
 		return
 	}
-	l.OwnerDMChatID = m.Chat.ID
-	l.UpdatedAt = time.Now().UnixMilli()
-	if err := br.store.Loops().Update(ctx, l); err != nil {
+	if err := br.store.Loops().SetOwnerDMChat(ctx, l.ID, m.Chat.ID, time.Now().UnixMilli()); err != nil {
 		br.log.Error("owner dm capture", "loop", l.Name, "err", err)
 		return
 	}

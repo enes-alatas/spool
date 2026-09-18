@@ -231,6 +231,38 @@ func (r loops) SetRotation(ctx context.Context, id string, pending bool, note st
 	return err
 }
 
+func (r loops) SetGroupBinding(ctx context.Context, id string, chatID, boundAt, updatedAt int64) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE loops SET tg_group_chat_id=?, tg_group_bound_at=?, updated_at=? WHERE id=?`,
+		chatID, boundAt, updatedAt, id)
+	return err
+}
+
+func (r loops) SetOwner(ctx context.Context, id string, tgUserID, dmChatID, updatedAt int64) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE loops SET owner_tg_user_id=?, owner_dm_chat_id=?, updated_at=? WHERE id=?`,
+		tgUserID, dmChatID, updatedAt, id)
+	return err
+}
+
+func (r loops) SetOwnerDMChat(ctx context.Context, id string, chatID, updatedAt int64) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE loops SET owner_dm_chat_id=?, updated_at=? WHERE id=?`, chatID, updatedAt, id)
+	return err
+}
+
+func (r loops) SetStatus(ctx context.Context, id, status string, updatedAt int64) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE loops SET status=?, updated_at=? WHERE id=?`, status, updatedAt, id)
+	return err
+}
+
+func (r loops) SetWorkstationOff(ctx context.Context, id string, off bool, updatedAt int64) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE loops SET workstation_off=?, updated_at=? WHERE id=?`, off, updatedAt, id)
+	return err
+}
+
 // --- sessions ---
 
 type sessions struct{ db *sql.DB }
