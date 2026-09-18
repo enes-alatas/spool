@@ -205,6 +205,11 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json()
 }
 
+// One window of a loop's timeline, live or historical. Exported because the
+// page compares a returned page against it to know it has reached the loop's
+// first event: a short page means there was nothing more to give.
+export const EVENT_WINDOW = 300
+
 export const api = {
   health: () => req<{ ok: boolean; claude_version: string }>('/api/health'),
   loops: () => req<LoopView[]>('/api/loops'),
@@ -243,8 +248,16 @@ export const api = {
   // events of its life (#119). The `after_id` form still exists server-side for
   // following the tail; nothing here needs it, because the stream re-reads this
   // window instead of appending.
-  events: (name: string, limit = 300) =>
+  events: (name: string, limit = EVENT_WINDOW) =>
     req<LoopEvent[]>(`/api/loops/${name}/events?before_id=0&limit=${limit}`),
+  // The window before an id, for walking back through history (#120). Same
+  // endpoint and same page size as the live window; only the cursor differs.
+  eventsBefore: (name: string, beforeID: number, limit = EVENT_WINDOW) =>
+    req<LoopEvent[]>(`/api/loops/${name}/events?before_id=${beforeID}&limit=${limit}`),
+  // The window after an id, oldest-first — for closing a gap when the live
+  // window has moved further than the page was watching (#120).
+  eventsAfter: (name: string, afterID: number, limit: number) =>
+    req<LoopEvent[]>(`/api/loops/${name}/events?after_id=${afterID}&limit=${limit}`),
   turns: (name: string, limit = 50) => req<Turn[]>(`/api/loops/${name}/turns?limit=${limit}`),
   activity: (limit = 100) => req<ChatMessage[]>(`/api/activity?limit=${limit}`),
   conversation: (name: string, kind: 'control_room' | 'owner_dm' = 'control_room', limit = 100) =>

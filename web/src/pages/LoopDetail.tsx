@@ -1,7 +1,17 @@
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, type UIEvent } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
-import { api, ChatMessage, LoopView, MessageDestination, Settings, TGSender, Turn } from '../api'
+import {
+  api,
+  ChatMessage,
+  EVENT_WINDOW,
+  LoopEvent,
+  LoopView,
+  MessageDestination,
+  Settings,
+  TGSender,
+  Turn,
+} from '../api'
 import { formatTokens, fillTone, hasFillPct } from '../format'
 import { MODEL_OPTIONS, EFFORT_OPTIONS, PACING_OPTIONS } from '../options'
 import { useStream } from '../stream'
@@ -674,7 +684,185 @@ export default function LoopDetail() {
     },
   )
 
-  const entries = useMemo(() => toEntries(events ?? []), [events])
+  // History the reader has walked back to, and everything the live window has
+  // shown since they started walking. Empty until they ask: before the first
+  // click the page renders exactly the window #119 gives it, so an untouched
+  // timeline behaves as it always has.
+  //
+  // It has to keep accumulating, not merely start from a seed. The live query
+  // is not a page — it is `id < ? ORDER BY id DESC LIMIT n`, recomputed on
+  // every refetch, so it is the newest N events and it *slides*: each event
+  // the loop emits pushes one off its old end. An event born after the click
+  // therefore lives only in that window, and one window later it has slid out
+  // of it — belonging to neither side, a hole in the middle of the transcript
+  // rather than a trim at its edge. So every window this page is handed is
+  // written into the record, not merged for display and dropped.
+  //
+  // A ref, because this is a cache of what has been seen rather than state
+  // the render reads and re-reads: writing it back through `setState` from an
+  // effect is a render cascade (`react-hooks/set-state-in-effect`), and the
+  // merge is idempotent, so doing it as the entries are derived is safe under
+  // a double render. `walked` counts the pages fetched, purely to ask for the
+  // render that follows one.
+  //
+  // Tagged with the loop it belongs to rather than cleared when the route
+  // changes: ids come from one table, so one loop's history merged into
+  // another's window would interleave two conversations silently. Reading the
+  // tag makes the stale case impossible; clearing it in an effect would still
+  // render the wrong timeline once, before the effect ran.
+  const [record, setRecord] = useState<{
+    loop: string
+    events: Map<number, LoopEvent>
+    upTo: number
+    // The stretch the window jumped over, if it ever did: events after `from`
+    // and before `to` that the page was never handed and only the store has.
+    // One jump is tracked, not a list: a second jump while the first is
+    // still being walked replaces it, and the earlier stretch stays missing.
+    // Chosen rather than overlooked — it takes two spells of the page going
+    // more than a window without a refetch, one inside the other's walk, and
+    // the cost of being wrong is history a reader can reload to recover.
+    hole: { from: number; to: number } | null
+  } | null>(null)
+  const history = record?.loop === name ? record : null
+  const [loadingOlder, setLoadingOlder] = useState(false)
+  const [olderFailed, setOlderFailed] = useState(false)
+  // Set when a page comes back shorter than it asked for: the store had
+  // nothing more to give, so this is the loop's first event.
+  const [atFirst, setAtFirst] = useState('')
+  const atFirstEvent = atFirst === name
+
+  // Writing the live window into the record as it arrives, during render. The
+  // two obvious places are both closed: an effect that calls setState is a
+  // render cascade (`react-hooks/set-state-in-effect`), and a ref mutated
+  // while deriving is a ref read during render (`react-hooks/refs`). This is
+  // React's own answer for state that has to track something it is handed —
+  // the component re-runs before anything is committed, so no extra paint.
+  // `upTo` is what makes it terminate: it only fires when the window's newest
+  // id has actually moved past what has already been folded in.
+  const newest = events?.length ? events[events.length - 1].id : 0
+  if (history && newest > history.upTo) {
+    const merged = new Map(history.events)
+    for (const e of events ?? []) merged.set(e.id, e)
+    // Noted here, before `upTo` moves past it: if the window's oldest event
+    // is beyond where the record ends, the events in between were never
+    // delivered to this page at all, and folding the window in would hide
+    // that by making the record's newest id look continuous.
+    const jumped = (events?.[0]?.id ?? 0) > history.upTo + 1
+    setRecord({
+      loop: name,
+      events: merged,
+      upTo: newest,
+      hole: jumped ? { from: history.upTo, to: events![0].id } : history.hole,
+    })
+  }
+
+  // Accumulating only keeps what the page was handed, and it is not handed
+  // everything: if more than a window's worth of events lands between two
+  // refetches — a tab left open overnight, a long disconnect — the window
+  // jumps clean over the events in between and they reach nobody. Nothing
+  // held client-side can close that; only the store still has them. On a loop
+  // being watched this never fires, because the stream refetches once per
+  // event and the window advances one at a time.
+  const hole = history?.hole
+  const filling = useRef(false)
+  useEffect(() => {
+    if (!hole || filling.current) return
+    filling.current = true
+    // A page at a time, walking forward. Not `hole.to - hole.from` as a count:
+    // ids are one AUTOINCREMENT shared by every loop, so a loop's own ids are
+    // sparse in it — measured across this fleet's four loops, between 8.9% and
+    // 32.8% dense — and the span over-counts the missing rows several times
+    // over. `ListByLoop` has no far bound and the endpoint does not clamp
+    // `limit`, so an over-counted span is not a harmless over-ask: it is
+    // "every event this loop has after `from`", payloads and all.
+    api
+      .eventsAfter(name, hole.from, EVENT_WINDOW)
+      .then((page) => {
+        // No in-flight cancellation: a page that has already been fetched is
+        // always landed. Dropping it on cleanup would strand the walk —
+        // nothing re-fires the effect, because `hole` only moves when a page
+        // lands, and a quiet loop's refetch returns a structurally identical
+        // array, so `events` does not change either. Landing it is also what
+        // steps the walk forward. `setRecord` rejects a stale loop, which is
+        // the case that matters, and a post-unmount setState is a no-op.
+        const inside = page.filter((e) => e.id < hole.to)
+        setRecord((prev) => {
+          if (prev?.loop !== name) return prev
+          const merged = new Map(prev.events)
+          for (const e of inside) merged.set(e.id, e)
+          // Done when the page ran past the far side of the hole, or the
+          // store had less than a page left to give. Otherwise the walk
+          // continues from where this page ended.
+          const done = inside.length < page.length || page.length < EVENT_WINDOW
+          const last = inside.length ? inside[inside.length - 1].id : hole.from
+          return { ...prev, events: merged, hole: done ? null : { from: last, to: hole.to } }
+        })
+      })
+      .catch(() => {
+        // Left standing rather than reported: this is a background repair the
+        // reader did not ask for, and the button's notice belongs to the
+        // button. The next window to arrive retries it — and if none does,
+        // because the loop has gone quiet, the stretch stays missing until
+        // the page is reloaded. Both halves of that have to be true at once:
+        // a jump, then a failed page, then silence.
+      })
+      .finally(() => {
+        filling.current = false
+      })
+    // `events` is the retry for a *failed* page, and the weaker of the two:
+    // it needs a window to change, which a quiet loop never does. A page that
+    // succeeds needs no help — landing it moves `hole`, which re-runs this.
+  }, [hole, name, events])
+
+  const entries = useMemo(() => {
+    if (!history) return toEntries(events ?? [])
+    return toEntries([...history.events.values()].sort((a, b) => a.id - b.id))
+  }, [events, history])
+
+  // The oldest event held, which is not the oldest entry rendered: `toEntries`
+  // drops the events the room has no copy for (proc_exit, an assistant line
+  // with no blocks), so a cursor taken from the first entry would ask again
+  // for the events sitting above it and never advance.
+  const oldestLoaded = () => {
+    let oldest = Infinity
+    for (const id of history ? history.events.keys() : (events ?? []).map((e) => e.id)) {
+      if (id < oldest) oldest = id
+    }
+    return oldest
+  }
+
+  const loadOlder = async () => {
+    const oldest = oldestLoaded()
+    if (!isFinite(oldest) || loadingOlder) return
+    setLoadingOlder(true)
+    setOlderFailed(false)
+    // A reader who scrolled up to reach this control already has an anchor,
+    // and it is the right one — leave it alone. The case that needs help is a
+    // timeline short enough that the control is visible from the tail: that
+    // reader is still "following", so the effect would hold them at the
+    // bottom and three hundred entries would arrive without the pane
+    // appearing to move at all. Park them on the entry that is about to stop
+    // being the oldest, which is where the new history meets the old.
+    if (following.current) {
+      following.current = false
+      anchor.current = { id: String(entries[0]?.id ?? ''), offset: 0 }
+    }
+    try {
+      const page = await api.eventsBefore(name, oldest)
+      if (page.length < EVENT_WINDOW) setAtFirst(name)
+      const merged = new Map(history?.events ?? [])
+      for (const e of page) merged.set(e.id, e)
+      for (const e of events ?? []) merged.set(e.id, e)
+      setRecord({ loop: name, events: merged, upTo: newest, hole: history?.hole ?? null })
+    } catch {
+      // A failure only the console knows about is a failure nobody knows
+      // about (#147): the button would re-enable and the history would not
+      // move, which reads exactly like reaching the first event.
+      setOlderFailed(true)
+    } finally {
+      setLoadingOlder(false)
+    }
+  }
 
   useLayoutEffect(() => {
     const el = paneRef.current
@@ -762,7 +950,13 @@ export default function LoopDetail() {
               loop has been running. */}
           <div className="pane-scroll" ref={paneRef} onScroll={readingPosition}>
             {pane === 'timeline' ? (
-              <Timeline entries={entries} liveText={liveText} />
+              <Timeline
+                entries={entries}
+                liveText={liveText}
+                onLoadOlder={atFirstEvent ? undefined : loadOlder}
+                loadingOlder={loadingOlder}
+                olderFailed={olderFailed}
+              />
             ) : (
               <ControlRoomThread msgs={thread ?? []} />
             )}
