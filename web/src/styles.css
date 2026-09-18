@@ -668,6 +668,34 @@ textarea {
   scrollbar-gutter: stable;
 }
 
+/* The way further back. It sits at the head of the thread because that is
+   where the thread runs out, reading as the next thing above the oldest entry
+   rather than as a control bolted to the pane. Quiet by default: a reader who
+   wants the recent history — most of them, most of the time — should not have
+   to look past it. */
+.load-older {
+  font-family: var(--mono);
+  font-size: 0.71875rem;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  padding: 0 0 14px 0;
+  text-decoration: underline dotted;
+}
+.load-older:disabled {
+  text-decoration: none;
+}
+.load-older-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.load-older-failed {
+  font-family: var(--mono);
+  font-size: 0.71875rem;
+  color: var(--danger);
+}
+
 /* ---- conversation: the thread ---- */
 .timeline {
   position: relative;

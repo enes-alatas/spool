@@ -53,9 +53,34 @@ function AssistantEntry({ entry }: { entry: Entry & { kind: 'assistant' } }) {
   )
 }
 
-export function Timeline({ entries, liveText }: { entries: Entry[]; liveText: string }) {
+export function Timeline({
+  entries,
+  liveText,
+  onLoadOlder,
+  loadingOlder,
+  olderFailed,
+}: {
+  entries: Entry[]
+  liveText: string
+  // Absent once the timeline is showing the loop's first event: there is
+  // nothing further back to ask for, so the control goes rather than sitting
+  // there disabled and inviting a click that does nothing.
+  onLoadOlder?: () => void
+  loadingOlder?: boolean
+  olderFailed?: boolean
+}) {
   return (
     <div className="timeline">
+      {onLoadOlder && entries.length > 0 && (
+        <div className="load-older-row">
+          <button className="load-older" onClick={onLoadOlder} disabled={loadingOlder}>
+            {loadingOlder ? 'loading…' : 'load older'}
+          </button>
+          {/* Said here rather than logged: a button that re-enables itself with
+              the history unmoved reads exactly like reaching the first event. */}
+          {olderFailed && <span className="load-older-failed">could not reach the store</span>}
+        </div>
+      )}
       {entries.map((e) => {
         switch (e.kind) {
           case 'inbound':
