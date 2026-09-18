@@ -227,3 +227,101 @@ func TestLoopRotationState(t *testing.T) {
 		t.Fatalf("an unrelated update dropped the rotation in progress: %+v", got)
 	}
 }
+
+// TestTelegramColumnsSurviveAConcurrentWriter pins why the Telegram columns
+// have their own setters instead of going through Update. Two writers touch a
+// loop row at once — the hub assigning an owner, the poller binding a group —
+// and neither holds the other's value. Written as the interleaving that
+// actually happens: both read, then both write (#161).
+func TestTelegramColumnsSurviveAConcurrentWriter(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+
+	now := time.Now().UnixMilli()
+	if err := db.Loops().Create(ctx, &store.Loop{
+		ID: "l1", Name: "alpha", Mission: "m", Status: store.StatusActive,
+		WorkspaceMode: store.WorkspaceNone, Pacing: store.PacingFixed,
+		Runtime: store.RuntimeBare, CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Both writers read the row before either has written: this is the state
+	// each one is holding when it decides what to do.
+	if _, err := db.Loops().Get(ctx, "l1"); err != nil {
+		t.Fatal(err)
+	}
+	stale, err := db.Loops().Get(ctx, "l1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := db.Loops().SetOwner(ctx, "l1", 5454, 0, now+1); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Loops().SetGroupBinding(ctx, "l1", -100123, now+2, now+2); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := db.Loops().Get(ctx, "l1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.OwnerTGUserID != 5454 {
+		t.Errorf("owner = %d, want it to survive the group bind", got.OwnerTGUserID)
+	}
+	if got.TGGroupChatID != -100123 {
+		t.Errorf("group chat = %d, want it to survive the owner write", got.TGGroupChatID)
+	}
+
+	// And the reason the narrow setters exist: a whole-row Update from the
+	// copy read before either write puts both columns back. Asserted rather
+	// than described, so nobody routes these writes back through Update.
+	stale.UpdatedAt = now + 3
+	if err := db.Loops().Update(ctx, stale); err != nil {
+		t.Fatal(err)
+	}
+	clobbered, err := db.Loops().Get(ctx, "l1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if clobbered.OwnerTGUserID != 0 || clobbered.TGGroupChatID != 0 {
+		t.Fatalf("Update from a stale copy no longer reverts these columns (%+v) — "+
+			"if that is deliberate, this test and the narrow setters need revisiting",
+			clobbered)
+	}
+
+	// Capturing the owner's DM chat must not disturb the binding either.
+	if err := db.Loops().SetOwner(ctx, "l1", 5454, 0, now+4); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Loops().SetGroupBinding(ctx, "l1", -100123, now+4, now+4); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Loops().SetOwnerDMChat(ctx, "l1", 777, now+5); err != nil {
+		t.Fatal(err)
+	}
+	// Pausing a loop and switching its workstation off are the other two
+	// single-field writers, and they run from the hub and the actor goroutine
+	// while the poller is writing the columns above.
+	if err := db.Loops().SetStatus(ctx, "l1", store.StatusPaused, now+6); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Loops().SetWorkstationOff(ctx, "l1", true, now+7); err != nil {
+		t.Fatal(err)
+	}
+	final, err := db.Loops().Get(ctx, "l1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if final.OwnerDMChatID != 777 || final.OwnerTGUserID != 5454 || final.TGGroupChatID != -100123 {
+		t.Fatalf("a later single-field write disturbed its neighbours: %+v", final)
+	}
+	if final.Status != store.StatusPaused || !final.WorkstationOff {
+		t.Fatalf("status/power did not land: %+v", final)
+	}
+}

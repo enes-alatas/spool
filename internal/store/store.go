@@ -288,6 +288,26 @@ type LoopStore interface {
 	// successor. Written at the points the actor changes its mind, so a
 	// restart reads the decision rather than starting the loop over.
 	SetRotation(ctx context.Context, id string, pending bool, note string) error
+	// SetGroupBinding records which group chat this loop's bot is bound to,
+	// and when. Narrow rather than a whole-row Update because the Telegram
+	// poller writes this while the hub writes other columns of the same row:
+	// two read-modify-write cycles interleave and the later one silently
+	// reverts the earlier one's column (#161).
+	SetGroupBinding(ctx context.Context, id string, chatID, boundAt, updatedAt int64) error
+	// SetOwner records who the loop may message privately, and the chat its
+	// bot reaches them in. Changing the owner passes 0 for the chat: the
+	// captured one belonged to the previous owner. Narrow for the same
+	// reason as SetGroupBinding.
+	SetOwner(ctx context.Context, id string, tgUserID, dmChatID, updatedAt int64) error
+	// SetOwnerDMChat records the private chat the owner has written from,
+	// which is the only way a bot learns an address it cannot open itself.
+	SetOwnerDMChat(ctx context.Context, id string, chatID, updatedAt int64) error
+	// SetStatus records whether a loop is active, paused or archived.
+	SetStatus(ctx context.Context, id, status string, updatedAt int64) error
+	// SetWorkstationOff records the operator's power intent for a loop's
+	// workstation. Written from the actor goroutine, which runs alongside the
+	// Telegram poller — the same reason the columns above are narrow.
+	SetWorkstationOff(ctx context.Context, id string, off bool, updatedAt int64) error
 }
 
 // LoopSecretStore holds a loop's secret env vars. Callers pass the timestamp

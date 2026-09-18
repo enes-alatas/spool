@@ -560,7 +560,7 @@ func (s *Server) handlePause(w http.ResponseWriter, r *http.Request) {
 	}
 	l.Status = store.StatusPaused
 	l.UpdatedAt = time.Now().UnixMilli()
-	_ = s.Store.Loops().Update(r.Context(), l)
+	_ = s.Store.Loops().SetStatus(r.Context(), l.ID, l.Status, l.UpdatedAt)
 	if actor, ok := s.Manager.Get(l.ID); ok {
 		actor.Pause()
 	}
@@ -607,7 +607,7 @@ func (s *Server) handleResume(w http.ResponseWriter, r *http.Request) {
 	}
 	l.Status = store.StatusActive
 	l.UpdatedAt = time.Now().UnixMilli()
-	_ = s.Store.Loops().Update(r.Context(), l)
+	_ = s.Store.Loops().SetStatus(r.Context(), l.ID, l.Status, l.UpdatedAt)
 	if actor, ok := s.Manager.Get(l.ID); ok {
 		actor.Resume()
 	}
@@ -1124,9 +1124,7 @@ func (s *Server) adoptDefaultOwner(ctx context.Context, tgUserID int64) {
 		if l.OwnerTGUserID != 0 || l.Status == store.StatusArchived {
 			continue
 		}
-		l.OwnerTGUserID = tgUserID
-		l.UpdatedAt = time.Now().UnixMilli()
-		if err := s.Store.Loops().Update(ctx, l); err != nil {
+		if err := s.Store.Loops().SetOwner(ctx, l.ID, tgUserID, 0, time.Now().UnixMilli()); err != nil {
 			s.Log.Error("default owner", "loop", l.Name, "err", err)
 		}
 	}
@@ -1146,9 +1144,7 @@ func (s *Server) disownLoopsOf(ctx context.Context, tgUserID int64) {
 		if l.OwnerTGUserID != tgUserID {
 			continue
 		}
-		l.OwnerTGUserID, l.OwnerDMChatID = 0, 0
-		l.UpdatedAt = time.Now().UnixMilli()
-		if err := s.Store.Loops().Update(ctx, l); err != nil {
+		if err := s.Store.Loops().SetOwner(ctx, l.ID, 0, 0, time.Now().UnixMilli()); err != nil {
 			s.Log.Error("disown loop", "loop", l.Name, "err", err)
 		}
 	}
@@ -1182,10 +1178,9 @@ func (s *Server) handlePutOwner(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if l.OwnerTGUserID != req.TGUserID {
-		l.OwnerTGUserID = req.TGUserID
-		l.OwnerDMChatID = 0
+		l.OwnerTGUserID, l.OwnerDMChatID = req.TGUserID, 0
 		l.UpdatedAt = time.Now().UnixMilli()
-		if err := s.Store.Loops().Update(r.Context(), l); err != nil {
+		if err := s.Store.Loops().SetOwner(r.Context(), l.ID, l.OwnerTGUserID, 0, l.UpdatedAt); err != nil {
 			s.jsonErr(w, 500, "%v", err)
 			return
 		}

@@ -1245,14 +1245,8 @@ func (actor *Actor) forgetSession(ctx context.Context) {
 func (actor *Actor) setWorkstationOff(off bool) {
 	actor.loop.WorkstationOff = off
 	actor.offSnap.Store(off)
-	l, err := actor.deps.Store.Loops().Get(context.Background(), actor.loop.ID)
-	if err != nil {
-		actor.log().Error("power intent not persisted", "err", err)
-		return
-	}
-	l.WorkstationOff = off
-	l.UpdatedAt = now()
-	if err := actor.deps.Store.Loops().Update(context.Background(), l); err != nil {
+	if err := actor.deps.Store.Loops().SetWorkstationOff(
+		context.Background(), actor.loop.ID, off, now()); err != nil {
 		actor.log().Error("power intent not persisted", "err", err)
 	}
 }
