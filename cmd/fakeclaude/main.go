@@ -28,9 +28,13 @@
 // turn span k API steps, the way a tool-using turn does: one assistant event
 // per step, each with that step's own usage, while the result event reports
 // the turn's summed usage — so a runner that reads the result's sum as
-// context occupancy sees k times the real fill. "!sysprompt" replies with the text spool
-// passed as --append-system-prompt, so a test can see the prompt a loop was
-// given. Without a script, every turn echoes: "echo: <received text>".
+// context occupancy sees k times the real fill. "!sysprompt" replies with the
+// system prompt the session is actually running with: the text passed as
+// --append-system-prompt when the session was created, not what this spawn
+// passed, because a resumed session keeps the prompt it started with (#162).
+// "!echo" is the unscripted default as a directive: it replies with the text
+// the turn received, which is how a test reads what Spool prepended to the
+// turn's envelopes. Without a script, every turn echoes.
 //
 // A "!send {json}" prefix calls the hub's send_message MCP tool with the
 // given arguments, exactly as the real CLI would mid-turn. It repeats for
@@ -67,6 +71,13 @@ import (
 
 type sessionState struct {
 	Turns int `json:"turns"`
+	// SystemPrompt is the --append-system-prompt the session was created
+	// with. A resumed session keeps it: the real CLI fixes the system prompt
+	// at session creation and ignores a changed --append-system-prompt on
+	// --resume, which is the behaviour #162 exists because of. Without it
+	// here, a tier-2 row asserting a prompt change reaches a loop would pass
+	// against a fake more forgiving than the thing it stands in for.
+	SystemPrompt string `json:"system_prompt"`
 }
 
 func main() {
@@ -125,7 +136,7 @@ func main() {
 	}
 
 	id := sessionID
-	state := sessionState{}
+	state := sessionState{SystemPrompt: systemPrompt}
 	if resumeID != "" {
 		id = resumeID
 		data, err := os.ReadFile(filepath.Join(stateDir, resumeID+".json"))
@@ -134,6 +145,8 @@ func main() {
 			os.Exit(1)
 		}
 		_ = json.Unmarshal(data, &state)
+		// deliberately not overwritten with this spawn's systemPrompt: the
+		// resumed session runs with the prompt it was created with.
 	}
 
 	script := loadScript()
@@ -242,7 +255,12 @@ func main() {
 				})
 				continue
 			case line == "!sysprompt":
-				reply = systemPrompt
+				reply = state.SystemPrompt
+			case line == "!echo":
+				// the unscripted default, available to a scripted turn: what
+				// a test needs to see anything Spool prepends to a turn's
+				// envelopes rather than puts in the system prompt
+				reply = "echo: " + text
 			case strings.HasPrefix(line, "!huge "):
 				n, _ := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(line, "!huge ")))
 				reply = strings.Repeat("x", n)

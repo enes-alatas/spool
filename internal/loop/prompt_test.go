@@ -284,3 +284,72 @@ func TestPersonLabel(t *testing.T) {
 		}
 	}
 }
+
+// TestDecidePrompt pins the three cases a wake distinguishes (#162), the
+// third of which is the one that is easy to get wrong: a session with no
+// recorded hash — every loop in a running fleet the day the column ships —
+// must adopt this wake's prompt rather than be left untracked, or the first
+// rule saved after the migration goes unannounced.
+func TestDecidePrompt(t *testing.T) {
+	for _, c := range []struct {
+		name     string
+		fresh    bool
+		known    string
+		rendered string
+		want     promptOutcome
+	}{
+		{"a fresh session runs what it was spawned with", true, "", "abc", promptAdopt},
+		{"a fresh session ignores whatever the old one ran", true, "old", "abc", promptAdopt},
+		{"a session from before the column is adopted, not announced", false, "", "abc", promptAdopt},
+		{"an unchanged prompt says nothing", false, "abc", "abc", promptUnchanged},
+		{"a changed prompt is announced", false, "old", "abc", promptChanged},
+	} {
+		if got := decidePrompt(c.fresh, c.known, c.rendered); got != c.want {
+			t.Errorf("%s: decidePrompt(%v, %q, %q) = %v, want %v",
+				c.name, c.fresh, c.known, c.rendered, got, c.want)
+		}
+	}
+}
+
+// TestStandingInstructionsPreambleCarriesEverythingThatChanges: the note is
+// what binds a loop until its prompt is replaced, so it has to carry the
+// loop's own mission as well as the fleet's rules and catalog — a note that
+// named only the fleet's sections would announce a change and then show a
+// loop its unchanged rules while an edited mission went undelivered.
+//
+// And it must not replay the prompt's worked examples. The prompt teaches
+// envelope headers by showing one, so a verbatim copy puts a plausible
+// "ref:42" into the transcript in a position that reads like an arriving
+// message — the invented reference ADR-0025 exists to prevent.
+func TestStandingInstructionsPreambleCarriesEverythingThatChanges(t *testing.T) {
+	l := &store.Loop{Name: "aster", Mission: "keep the tests green", Pacing: store.PacingFixed}
+	rules := []*store.FleetRule{{Title: "sign your work", Body: "End every artifact with your name.", Enabled: true}}
+	note := StandingInstructionsPreamble(l, Catalog{}, rules)
+
+	if !strings.HasPrefix(note, "[system note · your standing instructions changed]") {
+		t.Fatalf("the note must open with its header:\n%s", note)
+	}
+	for _, want := range []string{
+		"MISSION\nkeep the tests green",
+		"FLEET RULES\n1. sign your work",
+		"WHO YOU CAN ADDRESS",
+		"Other\nparts of the prompt may have changed too",
+	} {
+		if !strings.Contains(note, want) {
+			t.Fatalf("the note lacks %q:\n%s", want, note)
+		}
+	}
+	if strings.Contains(note, "ref:") {
+		t.Fatalf("the note replays an example reference into the transcript:\n%s", note)
+	}
+}
+
+// TestStandingInstructionsPreambleWithoutRules says so rather than omitting
+// the section: a loop that just had its last rule disabled must be able to
+// tell "no rules" from "rules not mentioned".
+func TestStandingInstructionsPreambleWithoutRules(t *testing.T) {
+	l := &store.Loop{Name: "aster", Mission: "m", Pacing: store.PacingFixed}
+	if note := StandingInstructionsPreamble(l, Catalog{}, nil); !strings.Contains(note, "FLEET RULES\nThere are no fleet rules in force.") {
+		t.Fatalf("a ruleless note does not say so:\n%s", note)
+	}
+}

@@ -57,3 +57,50 @@ rule sets are L5 Team territory and stay out of scope.
   are.
 - Seed data is data: the two dogfooding rulings from 2026-08-20 are entered
   through the control room once this ships, not shipped in a migration.
+
+**Amendment (2026-09-18): what "lands on each loop's next wake" costs (#162).**
+Decision 3 was written as if building the prompt per wake were enough. It is
+not: `claude --resume` keeps the system prompt its session was created with
+and ignores a changed `--append-system-prompt`, so a rule saved between two
+wakes reached the flag and never the loop. Every loop in the dogfooding fleet
+ran without a rule the operator had saved and believed was binding, and two
+tier-2 rows asserted the opposite — against a fake that honoured a changed
+prompt on resume, which the CLI does not (ADR-0001).
+
+Decision 3 now reads: **a change binds each loop from its next wake, and
+reaches its system prompt at its next rotation.**
+
+A wake that renders a prompt differing from the one its session was created
+with delivers a `[system note · your standing instructions changed]` envelope
+ahead of that wake's own envelopes. That is the promise decision 3 made: the
+rule binds the loop on its very next turn. It lives in the transcript rather
+than the system prompt until the session is replaced, and every fresh session
+is spawned with the prompt rendered at that wake, so no separate mechanism is
+needed to put it back where it belongs.
+
+Detection is a hash of the whole prompt, so nothing that changes goes
+unnoticed, and a burst of edits between two wakes costs one note rather than
+one each. The note carries the three sections that change outside a release
+— `MISSION`, `FLEET RULES` and the identity catalog — each whole, and says
+plainly that the rest of the prompt may have moved too and is not repeated.
+Two other renderings were tried first and are recorded here so they are not
+retried: naming only the fleet's sections announced a change and then showed
+a loop its unchanged rules while an edited mission went undelivered, the same
+bug one field over; replaying the prompt verbatim fixed that and put the
+prompt's own worked example of an envelope header — a plausible `ref:42` — in
+the transcript in a position that reads like an arriving message, which is
+the invented reference ADR-0025 exists to prevent.
+
+**Rejected: rotating on a prompt change.** The obvious completion — arm a
+rotation under ADR-0022 whenever the prompt differs, so the system prompt
+catches up on its own — was built and measured, and costs more than it buys
+(operator ruling, 2026-09-18, recorded on #162). Every fleet change is a
+prompt change for every loop: adding a loop changes each existing loop's
+catalog, so one creation would rotate the whole fleet, a handoff turn each.
+It buys nothing for correctness, since the note has already bound the loop.
+An operator who wants a loop's system prompt current sooner than its next
+rotation has rotate-on-demand (#93), which spends that turn deliberately and
+for one loop.
+
+The note's existence, its header and the sections it carries are prompt
+contract under decision 5.

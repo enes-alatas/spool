@@ -1,0 +1,12 @@
+-- The system prompt a session is actually running with is fixed when the
+-- session is created: `claude --resume` ignores a changed
+-- --append-system-prompt (#162). So Spool cannot tell whether a wake's freshly
+-- rendered prompt is the one the live session reads — unless it remembers
+-- what it passed when that session was minted.
+--
+-- prompt_hash is that memory: the hash of the prompt the current session was
+-- created with. A wake that renders a different one knows the difference is
+-- real and tells the session about it, once. Empty for a loop with no
+-- session, and for rows written before this column existed — an unknown hash
+-- claims no difference rather than a false one.
+ALTER TABLE loops ADD COLUMN prompt_hash TEXT NOT NULL DEFAULT '';

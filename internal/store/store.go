@@ -140,6 +140,13 @@ type Loop struct {
 	// json:"-" keeps the pair out of every API response.
 	RotatePending bool   `json:"-"`
 	HandoffNote   string `json:"-"`
+	// PromptHash identifies the system prompt the current session was created
+	// with. A resumed session keeps that prompt whatever Spool passes on the
+	// next spawn (#162), so this is the only record of what the live session
+	// actually reads; comparing it with the wake's rendered prompt is how a
+	// rule or catalog change is noticed. Engine bookkeeping like the pair
+	// above, and json:"-" for the same reason.
+	PromptHash string `json:"-"`
 
 	CreatedAt int64 `json:"created_at"`
 	UpdatedAt int64 `json:"updated_at"`
@@ -288,6 +295,12 @@ type LoopStore interface {
 	// successor. Written at the points the actor changes its mind, so a
 	// restart reads the decision rather than starting the loop over.
 	SetRotation(ctx context.Context, id string, pending bool, note string) error
+	// SetPromptHash records the system prompt the loop's current session was
+	// created with, so a later wake can tell whether the prompt it renders is
+	// the one that session is running (#162). Narrow for the same reason as
+	// the setters below: the actor writes it while other writers touch other
+	// columns of the same row.
+	SetPromptHash(ctx context.Context, id, hash string) error
 	// SetGroupBinding records which group chat this loop's bot is bound to,
 	// and when. Narrow rather than a whole-row Update because the Telegram
 	// poller writes this while the hub writes other columns of the same row:

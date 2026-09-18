@@ -228,6 +228,53 @@ func TestLoopRotationState(t *testing.T) {
 	}
 }
 
+// TestLoopPromptHash pins the column that says which system prompt the
+// current session is really running (#162). It starts empty — an unknown
+// hash must read as "no difference", never as one — round-trips through its
+// own setter, and survives an unrelated Update for the same reason the
+// rotation columns do: a settings form carries the row as it was read, which
+// may already be a wake behind the actor.
+func TestLoopPromptHash(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+
+	now := time.Now().UnixMilli()
+	loop := &store.Loop{
+		ID: "l1", Name: "prompted", Mission: "m", Status: store.StatusActive,
+		WorkspaceMode: store.WorkspaceNone, Pacing: store.PacingFixed,
+		Runtime: store.RuntimeBare, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.Loops().Create(ctx, loop); err != nil {
+		t.Fatal(err)
+	}
+	got, err := db.Loops().Get(ctx, "l1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.PromptHash != "" {
+		t.Fatalf("a loop with no session claims a prompt: %q", got.PromptHash)
+	}
+
+	if err := db.Loops().SetPromptHash(ctx, "l1", "abc123"); err != nil {
+		t.Fatal(err)
+	}
+	loop.Mission = "edited elsewhere"
+	loop.UpdatedAt = now + 1
+	if err := db.Loops().Update(ctx, loop); err != nil {
+		t.Fatal(err)
+	}
+	if got, err = db.Loops().Get(ctx, "l1"); err != nil {
+		t.Fatal(err)
+	}
+	if got.PromptHash != "abc123" {
+		t.Fatalf("prompt hash = %q, want it to round-trip and survive the update", got.PromptHash)
+	}
+}
+
 // TestTelegramColumnsSurviveAConcurrentWriter pins why the Telegram columns
 // have their own setters instead of going through Update. Two writers touch a
 // loop row at once — the hub assigning an owner, the poller binding a group —
