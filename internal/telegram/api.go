@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -61,12 +62,12 @@ func (c *Client) call(ctx context.Context, method string, params any, result any
 	url := c.base + "/bot" + c.token + "/" + method
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
-		return err
+		return redactToken(err, c.token)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return err
+		return redactToken(err, c.token)
 	}
 	defer resp.Body.Close()
 	var ar apiResponse
@@ -84,6 +85,23 @@ func (c *Client) call(ctx context.Context, method string, params any, result any
 		return json.Unmarshal(ar.Result, result)
 	}
 	return nil
+}
+
+// redactToken keeps a bot token out of an error's text. net/http puts the
+// request URL in every transport error, and the token is in the URL — so a
+// timeout against api.telegram.org carries the bot's credential into
+// whatever reads the error. That used to be the server log; since #147 it is
+// also the message row and the loop's timeline, which the API serves.
+func redactToken(err error, token string) error {
+	if err == nil || token == "" {
+		return err
+	}
+	msg := strings.ReplaceAll(err.Error(), token, "<bot-token>")
+	if msg == err.Error() {
+		return err
+	}
+	// deliberately not wrapped: the original's text is the leak
+	return errors.New(msg)
 }
 
 type User struct {
