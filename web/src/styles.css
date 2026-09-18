@@ -1,7 +1,7 @@
 /* Spool control room — one near-black canvas, white for identity, colour only
    where the system is telling the operator something (ADR-0027).
 
-   Units (ADR-0027 §9): every font-size is a rem, so the whole room scales
+   Units (ADR-0027): every font-size is a rem, so the whole room scales
    with the reader's browser font-size preference. Spacing — gaps, padding,
    radii, hairlines — stays in px: it is not text, and a hairline is a
    hairline at any size. A dimension that exists to hold text follows the
@@ -13,7 +13,7 @@
   --surface: #0c0c0e;
   /* Carries a fractional display scale: at 125% a 1px rule is split across
      two device rows at 78% and 56% strength, so the value is picked for what
-     survives that rather than for what it measures at 100% (ADR-0027 §10). */
+     survives that rather than for what it measures at 100% (ADR-0027). */
   --hairline: #24242a;
   --text: #f2f1ed;
   /* nudged 3 steps from the approved #77777c so it clears 4.5:1 on --surface
@@ -57,7 +57,7 @@ body {
   font-size: 0.875rem;
   line-height: 1.5;
   /* The thumb is the text colour at low opacity — the same way a meter draws
-     data (ADR-0027 §5) — and the track is nothing at all, so a pane that is
+     data (ADR-0027) — and the track is nothing at all, so a pane that is
      not scrolling shows no chrome in the gutter it reserves. This property
      inherits, so it reaches every scroller in the room from here; the width
      does not, and is set beside each `overflow`. Standard properties only:
@@ -435,7 +435,7 @@ textarea {
   color: var(--text-muted);
 }
 /* bare loops run on the host with no wall around them (ADR-0017): a standing
-   unsafe condition, not a state, so it takes the danger tokens (ADR-0027 §4) */
+   unsafe condition, not a state, so it takes the danger tokens (ADR-0027) */
 .containment-badge {
   font-family: var(--mono);
   font-size: 0.65625rem;
