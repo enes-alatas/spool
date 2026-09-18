@@ -1,0 +1,14 @@
+-- A send that never got through is recorded on the message (#147) and shown
+-- to the operator, but the loop that sent it still cannot see it: the outcome
+-- lands after its turn ended. #154 tells it at its next wake.
+--
+-- send_failure_told_at is what makes that exactly once. A watermark on the
+-- loop would be close enough most of the time and wrong at the edges — a
+-- failure recorded while the loop was mid-turn, or a wake that spawns and
+-- dies before delivering its envelope. Marking the message itself cannot
+-- double-report and cannot skip.
+--
+-- Zero means "not told yet", which is also what every row written before this
+-- column existed says. That is the honest default: those failures were never
+-- reported to their loop either.
+ALTER TABLE messages ADD COLUMN send_failure_told_at INTEGER NOT NULL DEFAULT 0;

@@ -339,10 +339,40 @@ func (r messages) Insert(ctx context.Context, m *store.Message) error {
 
 // SetSendResult records how the bridge's last attempt at a message ended.
 // A success clears an earlier failure: the same message is retried by a later
-// attempt, and a stale error would outlive the problem it described.
+// attempt, and a stale error would outlive the problem it described. It
+// clears send_failure_told_at with it, so the pair can never read as "told
+// about a failure that is no longer there".
 func (r messages) SetSendResult(ctx context.Context, id, failedAt int64, sendErr string) error {
 	_, err := r.db.ExecContext(ctx,
-		`UPDATE messages SET send_failed_at=?, send_error=? WHERE id=?`, failedAt, sendErr, id)
+		`UPDATE messages SET send_failed_at=?, send_error=?, send_failure_told_at=0 WHERE id=?`,
+		failedAt, sendErr, id)
+	return err
+}
+
+// UntoldSendFailures finds a loop's own lost messages, oldest first, so the
+// loop is told in the order it said them.
+func (r messages) UntoldSendFailures(ctx context.Context, loopID string) ([]*store.Message, error) {
+	if loopID == "" {
+		// every message nobody authored would match; a loop is always named
+		return nil, nil
+	}
+	return r.query(ctx, `SELECT `+messageCols+` FROM messages
+		WHERE from_loop_id=? AND send_failed_at!=0 AND send_failure_told_at=0
+		ORDER BY id`, loopID)
+}
+
+func (r messages) MarkSendFailuresTold(ctx context.Context, ids []int64, toldAt int64) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	marks := strings.Repeat(",?", len(ids))[1:]
+	args := make([]any, 0, len(ids)+1)
+	args = append(args, toldAt)
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE messages SET send_failure_told_at=? WHERE id IN (`+marks+`)`, args...)
 	return err
 }
 
@@ -353,7 +383,8 @@ func (r messages) SetDelivered(ctx context.Context, id int64, deliveredTo []stri
 
 const messageCols = `id, ts, origin, author, from_loop_id, text,
 	mentions, COALESCE(tg_chat_id,0), COALESCE(tg_message_id,0), tg_bot_loop_id, delivered_to,
-	conversation, conversation_loop_id, reply_to_id, send_failed_at, send_error, tg_key`
+	conversation, conversation_loop_id, reply_to_id, send_failed_at, send_error,
+	send_failure_told_at, tg_key`
 
 func (r messages) List(ctx context.Context, limit int) ([]*store.Message, error) {
 	return r.query(ctx, `SELECT `+messageCols+` FROM messages ORDER BY id DESC LIMIT ?`, limit)
@@ -493,7 +524,7 @@ func (r messages) query(ctx context.Context, q string, args ...any) ([]*store.Me
 		if err := rows.Scan(&m.ID, &m.TS, &m.Origin, &m.Author, &m.FromLoopID, &m.Text,
 			&mentions, &m.TGChatID, &m.TGMessageID, &m.TGBotLoopID, &delivered,
 			&m.Conversation, &m.ConversationLoopID, &m.ReplyToID,
-			&m.SendFailedAt, &m.SendError, &m.TGKey); err != nil {
+			&m.SendFailedAt, &m.SendError, &m.SendFailureToldAt, &m.TGKey); err != nil {
 			return nil, err
 		}
 		m.Mentions = fromJSON(mentions)
