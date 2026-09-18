@@ -13,6 +13,7 @@ import {
   Turn,
 } from '../api'
 import { formatTokens, fillTone, hasFillPct } from '../format'
+import { tokenSubmittable } from '../forms'
 import { MODEL_OPTIONS, EFFORT_OPTIONS, PACING_OPTIONS } from '../options'
 import { useStream } from '../stream'
 import { toEntries, extractDelta } from '../timeline'
@@ -580,11 +581,9 @@ function BotTokenForm({ loop }: { loop: LoopView }) {
       />
       {error && <div className="form-error">{error}</div>}
       <div style={{ display: 'flex', gap: 6 }}>
-        {/* The empty guard is load-bearing, not tidiness: PATCH reads an
-            empty `tg_bot_token` as *disconnect*, clearing the username and
-            zeroing the bound group. Without it a stray Enter would unbind a
-            loop from a button that says "Replace token". */}
-        <button className="btn primary" onClick={save} disabled={busy || !token.trim()}>
+        {/* `tokenSubmittable` is load-bearing, not tidiness — see its comment:
+            PATCH reads an empty `tg_bot_token` as *disconnect*. */}
+        <button className="btn primary" onClick={save} disabled={busy || !tokenSubmittable(token)}>
           {busy ? 'Checking…' : 'Save'}
         </button>
         <button className="btn" onClick={close} disabled={busy}>
