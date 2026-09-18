@@ -109,6 +109,7 @@ internal/bus/         hub: pub/sub
 internal/store/       hub: interfaces + sqlite/
 internal/httpapi/     hub: REST + SSE
 internal/gitws/       git worktree helper
+internal/datadir/     permissions on the data directory
 web/                  control room (React/Vite/TS, go:embed)
 docs/                 VISION, ARCHITECTURE, CONVENTIONS, adr/
 scripts/e2e/          real-claude milestone suites (local only)

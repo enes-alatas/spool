@@ -80,6 +80,14 @@ habits below.*
   exposure happened does, because everyone's evidence may carry it. The operator
   rotates. Whoever found it files the code issue with the value redacted — the fix
   is public work, the exposure is not.
+- **Secrets at rest are private by mode.** Everything Spool writes — the database
+  with its tokens and injected secrets, the loop homes with their transcripts and
+  checkouts — lives under a `0700` data directory, and the files Spool owns there
+  are `0600`. `internal/datadir` applies this at every startup, narrowing what it
+  inherits, because the default umask does not: world-readable is how a token
+  that had only reached a log became readable to every account on the box. A new
+  file under the data directory that carries secrets joins that list in the PR
+  that adds it.
 - **Loops are bound by this too**, through a fleet rule the operator sets; this
   section is what that rule points at.
 
