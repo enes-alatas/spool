@@ -156,3 +156,26 @@ another's chat. Until non-owner private conversations are designed, such a
 DM is not delivered; the bot answers once, in that chat, saying that only
 the loop's owner can DM it for now. Silence would be worse than a refusal a
 human can read.
+
+**Amendment (2026-09-18): a send that is given up on reaches its sender
+(#154).** "Sends are immediate" (item 5) left one hole: an outcome that lands
+after the sending turn ended has nowhere to be reported, so a loop whose
+message never arrived goes on believing it spoke. Retries and the failure
+record (#147) made that visible to the operator and to nobody else.
+
+The sender is now told at its next wake — scheduled or triggered, never a
+wake of its own — in one envelope ahead of that wake's envelopes, naming each
+lost message's reference, destination and the surface's reason. No outbox
+still holds: nothing is resent automatically, because the hub does not decide
+that words are still worth saying minutes later. Waking a loop *on* a failure
+is deliberately not done here: an outage is many failures, and one wake each
+is a storm.
+
+The news is delivered exactly once, marked per message rather than by a
+watermark on the loop, and marked only when the turn carrying it completed —
+a wake that dies still owes it. A handoff turn does not carry it: that
+session is ending, and the successor is the one that can act on it. The news
+is not spent there but deferred, because the mark is only written when a turn
+completes. (The standing-instructions note is withheld from a handoff turn
+too, for a related but distinct reason; that is ADR-0024's contract, amended
+there.)

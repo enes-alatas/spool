@@ -104,3 +104,22 @@ for one loop.
 
 The note's existence, its header and the sections it carries are prompt
 contract under decision 5.
+
+**Amendment (2026-09-18): a handoff turn is not told (#154).** Decision 3, as
+amended above, promises the note "ahead of that wake's own envelopes … on its
+very next turn". One turn is an exception: the handoff turn of a rotation.
+That session is ending, its reply is a note to its successor, and standing
+instructions it can no longer act on would only crowd that out.
+
+Nothing is lost by it. The successor is spawned with the prompt rendered at
+that wake, so the rule binds it by the stronger of the two mechanisms — its
+system prompt, not a line in a transcript. What the exception costs is the
+*telling*: a fresh session adopts its prompt as its baseline (`promptAdopt`),
+so no note is delivered on that path and the successor is bound without being
+shown what changed. That is accepted: a session reading its own system prompt
+needs no announcement of what it already contains.
+
+The exception is narrow and deliberate — it applies to the handoff turn only,
+not to any other turn of a rotating loop, and a note owed to a session that
+dies before its handoff is still owed, because nothing marks it paid until a
+turn completes.

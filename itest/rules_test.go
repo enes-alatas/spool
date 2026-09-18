@@ -262,3 +262,48 @@ func TestStandingInstructionsReachARunningSession(t *testing.T) {
 		t.Fatalf("the note was repeated on a wake with nothing new to say:\n%s", again.ResultText)
 	}
 }
+
+// TestStandingInstructionsAreNotSpentOnAHandoffTurn: the one turn decision 3
+// does not reach is a rotation's handoff turn (ADR-0024, amendment
+// 2026-09-18). That session is ending and its reply is a note to its
+// successor; standing instructions it can no longer act on would only crowd
+// that out. The successor is bound by the stronger mechanism — it is spawned
+// with the prompt rendered at that wake (TestFleetRulesReachThePrompt) — so
+// it is not told either, and must not be: a note announcing a change to a
+// session whose own system prompt already contains it is noise.
+func TestStandingInstructionsAreNotSpentOnAHandoffTurn(t *testing.T) {
+	s := startServer(t, t.TempDir())
+	ws := workspaceWithScript(t, "!echo\n")
+	s.createLoop("rotator", map[string]any{"workspace_path": ws, "workspace_mode": "dir"})
+
+	s.message("rotator", "first")
+	first := s.waitTurn("rotator", 15*time.Second, func(tn turn) bool {
+		return strings.Contains(tn.ResultText, "first")
+	})
+	s.waitState("rotator", "asleep", 30*time.Second)
+
+	// A rule the loop now owes itself a note about, and a rotation before
+	// the wake that would deliver it.
+	s.createRule("no telemetry", "Never phone home.", true)
+	s.mustJSON("POST", "/api/loops/rotator/rotate", nil, nil)
+	at := time.Now().UnixMilli()
+	s.message("rotator", "after the rotation")
+
+	const note = "standing instructions changed"
+	handoff := s.waitTurn("rotator", 30*time.Second, func(tn turn) bool {
+		return tn.EndedAt >= at && tn.Trigger == "rotation"
+	})
+	if strings.Contains(handoff.ResultText, note) {
+		t.Fatalf("the note was spent on the handoff turn, which cannot act on it:\n%s", handoff.ResultText)
+	}
+
+	successor := s.waitTurn("rotator", 30*time.Second, func(tn turn) bool {
+		return tn.EndedAt >= at && strings.Contains(tn.ResultText, "after the rotation")
+	})
+	if successor.SessionID == first.SessionID {
+		t.Fatalf("the loop was expected to rotate onto a fresh session, still on %s", first.SessionID)
+	}
+	if strings.Contains(successor.ResultText, note) {
+		t.Fatalf("a fresh session was told its own system prompt changed:\n%s", successor.ResultText)
+	}
+}

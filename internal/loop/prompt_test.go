@@ -353,3 +353,82 @@ func TestStandingInstructionsPreambleWithoutRules(t *testing.T) {
 		t.Fatalf("a ruleless note does not say so:\n%s", note)
 	}
 }
+
+// TestSendFailureEnvelope pins what a loop is told about its own lost
+// messages: which message, where it was going, and why it never got there —
+// enough to decide whether to say it again (#154).
+func TestSendFailureEnvelope(t *testing.T) {
+	now := time.Date(2026, 9, 18, 20, 0, 0, 0, time.UTC)
+	env := SendFailureEnvelope(now, []*store.Message{{
+		ID:           7,
+		Conversation: store.ConversationOwnerDM,
+		Text:         "the deploy is wedged, can you look",
+		SendFailedAt: 1,
+		SendError:    "telegram: bot was blocked by the user",
+	}})
+	for _, want := range []string{
+		"1 of your message never arrived",
+		"2026-09-18 20:00 UTC",
+		"ref:7",
+		"owner_dm",
+		"telegram: bot was blocked by the user",
+		"the deploy is wedged, can you look",
+		"not sent again unless you send them again",
+	} {
+		if !strings.Contains(env.Text, want) {
+			t.Errorf("envelope missing %q:\n%s", want, env.Text)
+		}
+	}
+}
+
+// TestSendFailureEnvelopeDestinations pins that the note names the
+// destination in the words send_message takes, so the loop can act on it
+// without translating a chat id.
+func TestSendFailureEnvelopeDestinations(t *testing.T) {
+	cases := map[string]string{
+		store.ConversationOwnerDM:     "owner_dm",
+		store.ConversationGroup:       "group",
+		store.ConversationControlRoom: "control_room",
+		"":                            "an unknown destination",
+	}
+	for conversation, want := range cases {
+		got := destinationOf(&store.Message{Conversation: conversation})
+		if got != want {
+			t.Errorf("destinationOf(%q) = %q, want %q", conversation, got, want)
+		}
+	}
+}
+
+// TestSendFailureEnvelopeCapsTheList pins that an outage's worth of lost
+// sends does not bury the wake's own work: the first few are named and the
+// rest are counted.
+func TestSendFailureEnvelopeCapsTheList(t *testing.T) {
+	var lost []*store.Message
+	for i := 1; i <= maxSendFailuresTold+3; i++ {
+		lost = append(lost, &store.Message{
+			ID: int64(i), Conversation: store.ConversationGroup,
+			Text: "x", SendFailedAt: 1, SendError: "timeout",
+		})
+	}
+	text := SendFailureEnvelope(time.Now(), lost).Text
+	if !strings.Contains(text, "8 of your messages never arrived") {
+		t.Errorf("envelope does not count all of them:\n%s", text)
+	}
+	if !strings.Contains(text, "and 3 more") {
+		t.Errorf("envelope does not count the remainder:\n%s", text)
+	}
+	if strings.Contains(text, MessageRef(int64(maxSendFailuresTold+1))) {
+		t.Errorf("envelope lists past the cap:\n%s", text)
+	}
+}
+
+// TestSendFailureEnvelopeWithoutAReason pins that a failure the surface did
+// not explain still reaches the loop.
+func TestSendFailureEnvelopeWithoutAReason(t *testing.T) {
+	text := SendFailureEnvelope(time.Now(), []*store.Message{
+		{ID: 3, Conversation: store.ConversationGroup, Text: "x", SendFailedAt: 1},
+	}).Text
+	if !strings.Contains(text, "no reason recorded") {
+		t.Errorf("envelope missing the unexplained-failure wording:\n%s", text)
+	}
+}
