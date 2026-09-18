@@ -101,8 +101,12 @@ func main() {
 		WorkstationHealthInterval: healthInterval,
 		PartialMessages:           *partials,
 		Logger:                    log,
-		SystemPrompt: func(l *store.Loop) string {
-			return loop.SystemPrompt(l, catalogOf(db, l), rulesOf(db))
+		RenderPrompt: func(l *store.Loop) loop.Prompt {
+			cat, rules := catalogOf(db, l), rulesOf(db)
+			return loop.Prompt{
+				System:         loop.SystemPrompt(l, cat, rules),
+				StandingChange: loop.StandingInstructionsPreamble(l, cat, rules),
+			}
 		},
 		MCPEndpoint: func(l *store.Loop) string {
 			host, port, err := net.SplitHostPort(*listen)

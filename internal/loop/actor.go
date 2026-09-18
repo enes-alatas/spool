@@ -96,9 +96,9 @@ type Deps struct {
 	// a short TTL, so the interval is about UI freshness, not cost.
 	WorkstationHealthInterval time.Duration
 
-	// SystemPrompt builds the --append-system-prompt for a loop (peers are
-	// resolved at call time so every wake sees the current fleet).
-	SystemPrompt func(l *store.Loop) string
+	// RenderPrompt builds a loop's prompt text for one wake (peers and rules
+	// are resolved at call time so every wake sees the current fleet).
+	RenderPrompt func(l *store.Loop) Prompt
 	// MCPEndpoint returns the hub MCP URL reachable from this loop's
 	// runtime ("" = don't connect the tool). Wired in cmd, which knows the
 	// listen address and each runtime's network path to it (ADR-0026).
@@ -182,7 +182,12 @@ type Actor struct {
 	handoffTurn  bool   // the in-flight turn is the rotation's handoff request
 	rotateOnExit bool   // rotate to a fresh session once the draining process exits
 	handoffNote  string // captured handoff reply, carried into the next fresh session's preamble
-	powering     bool   // a power verb is running; nothing may spawn a process under it
+	// The standing-instructions note this session is owed, and the hash it
+	// will be worth once the note lands. Both are held until a turn carries
+	// the note, so a spawn that dies first still owes it (#162).
+	promptDelta string
+	promptHash  string
+	powering    bool // a power verb is running; nothing may spawn a process under it
 
 	idleTimer   *time.Timer
 	retryTimer  *time.Timer
@@ -337,6 +342,10 @@ func (actor *Actor) handleCmd(command cmd) {
 		// read, which may already be a wake behind the actor
 		actor.loop.RotatePending = token.RotatePending
 		actor.loop.HandoffNote = token.HandoffNote
+		// and the prompt the live session runs, for the same reason: the
+		// edit's own row is what the next wake must be compared against,
+		// but only the actor knows what it last spawned with (#162)
+		actor.loop.PromptHash = token.PromptHash
 		actor.paused = actor.loop.Status == store.StatusPaused
 		actor.publishState()
 	}
@@ -387,10 +396,12 @@ func (actor *Actor) wake() {
 	// the thresholds this wake will judge its turns by, read once
 	actor.armPct, actor.forcePct = RotationThresholds(ctx, actor.deps.Store.Settings(), actor.log())
 	fresh := actor.loop.CurrentSessionID == ""
+	prompt := actor.renderPrompt()
 	if fresh {
 		actor.mintSession(ctx)
 	}
-	spec := actor.wakeSpec(fresh)
+	actor.reconcilePrompt(ctx, fresh, prompt)
+	spec := actor.wakeSpec(fresh, prompt.System)
 
 	loopRuntime := actor.deps.runtimeFor(actor.loop.Runtime)
 	if loopRuntime == nil {
@@ -472,9 +483,95 @@ func (actor *Actor) mintSession(ctx context.Context) {
 	})
 }
 
-// wakeSpec describes this wake to the runtime. Peers are resolved here rather
-// than cached, so every wake sees the current fleet in its system prompt.
-func (actor *Actor) wakeSpec(fresh bool) runtime.Spec {
+// renderPrompt resolves this wake's system prompt, falling back to an empty
+// render when nothing wired the dep (tier-1 tests that never spawn).
+func (actor *Actor) renderPrompt() Prompt {
+	if actor.deps.RenderPrompt == nil {
+		return Prompt{}
+	}
+	return actor.deps.RenderPrompt(&actor.loop)
+}
+
+// promptOutcome is what a wake owes a session, given the prompt it rendered
+// and the hash of the one the session was created with.
+type promptOutcome int
+
+const (
+	// promptUnchanged: the session is running this wake's prompt already.
+	promptUnchanged promptOutcome = iota
+	// promptAdopt: record this wake's prompt as the session's, silently.
+	promptAdopt
+	// promptChanged: the session is running something else; tell the loop.
+	promptChanged
+)
+
+// decidePrompt is the whole comparison, kept separate from the wake so its
+// three cases can be pinned. The one that is not obvious is the empty known
+// hash: a session created before Spool recorded hashes at all — which is
+// every loop in a running fleet the day the column ships. What that session
+// was created with is unknowable, so the honest move is to adopt this wake's
+// prompt as its baseline and say nothing, rather than announce a change
+// Spool could not describe. Returning promptUnchanged instead would be the
+// trap: the loop would never start being tracked, and the first rule saved
+// after the migration would go unannounced exactly as #162 describes.
+func decidePrompt(fresh bool, known, rendered string) promptOutcome {
+	switch {
+	case fresh, known == "":
+		return promptAdopt
+	case known == rendered:
+		return promptUnchanged
+	default:
+		return promptChanged
+	}
+}
+
+// reconcilePrompt decides what this wake owes a session whose system prompt
+// may no longer be the one Spool would write today.
+//
+// A fresh session is spawned with the rendered prompt, so recording its hash
+// is the whole job. A resumed one keeps the prompt it was created with
+// whatever this spawn passes (#162): when the two differ, the loop is told in
+// the transcript — the only place a running session can still be reached —
+// which is what binds it to the new text from its very next turn (ADR-0024).
+//
+// Telling it is the whole answer; nothing is rotated to chase the system
+// prompt itself. That was weighed and rejected: every fleet change is a
+// prompt change for every loop, so arming a rotation on one would charge the
+// whole fleet a handoff turn each time a loop, an owner or a rule is edited,
+// to buy nothing the note has not already bought. The prompt catches up at
+// whatever rotation the loop was going to have anyway, since every fresh
+// session is spawned with the prompt rendered at that wake.
+//
+// On a change the hash is left stale until the note is actually delivered: a
+// wake that spawns and dies before its turn must owe the note again, not
+// consider it paid.
+func (actor *Actor) reconcilePrompt(ctx context.Context, fresh bool, prompt Prompt) {
+	hash := PromptHash(prompt.System)
+	switch decidePrompt(fresh, actor.loop.PromptHash, hash) {
+	case promptAdopt:
+		actor.promptDelta = ""
+		actor.setPromptHash(ctx, hash)
+	case promptChanged:
+		actor.promptDelta = prompt.StandingChange
+		actor.promptHash = hash
+	}
+}
+
+// setPromptHash records the prompt a session is running with, in memory and
+// in the store. Best effort like the other runtime writes: a failed write
+// costs a redundant note and rotation on the next wake, never a missed one.
+func (actor *Actor) setPromptHash(ctx context.Context, hash string) {
+	actor.loop.PromptHash = hash
+	actor.promptHash = ""
+	if err := actor.deps.Store.Loops().SetPromptHash(ctx, actor.loop.ID, hash); err != nil {
+		actor.log().Error("persist prompt hash", "err", err)
+	}
+}
+
+// wakeSpec describes this wake to the runtime. The system prompt is passed in
+// rather than rendered here: wake compares it with the one the session was
+// created with first, and both must be the same text (#162).
+func (actor *Actor) wakeSpec(fresh bool, prompt string) runtime.Spec {
 	spec := runtime.Spec{
 		LoopID:             actor.loop.ID,
 		LoopName:           actor.loop.Name,
@@ -484,7 +581,7 @@ func (actor *Actor) wakeSpec(fresh bool) runtime.Spec {
 		Image:              actor.loop.Image,
 		MemMB:              actor.loop.MemMB,
 		CPUs:               actor.loop.CPUs,
-		AppendSystemPrompt: actor.deps.SystemPrompt(&actor.loop),
+		AppendSystemPrompt: prompt,
 		PartialMessages:    actor.deps.PartialMessages,
 	}
 	if actor.deps.MCPEndpoint != nil && actor.loop.HubMCPToken != "" {
@@ -602,6 +699,11 @@ func (actor *Actor) sendBatch(batch []Envelope) {
 	}
 	if actor.deps.OnTurnStart != nil {
 		actor.deps.OnTurnStart(&actor.loop)
+	}
+	if actor.promptDelta != "" {
+		// Ahead of the wake's own envelopes and of nothing else: the loop
+		// must read what now binds it before it reads the work it binds.
+		text = actor.promptDelta + "\n\n---\n\n" + text
 	}
 	if actor.freshSpawn {
 		switch {
@@ -739,6 +841,13 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 		actor.setRotationState(actor.loop.RotatePending, "")
 	}
 	actor.handoffNote = ""
+	if actor.promptDelta != "" {
+		// The note is in the session's history now, so it is paid for, and
+		// the hash it earned becomes the one later wakes compare against:
+		// a second change is a second note, the same change is not.
+		actor.promptDelta = ""
+		actor.setPromptHash(context.Background(), actor.promptHash)
+	}
 
 	if actor.handoffTurn {
 		actor.finishHandoff(res)
@@ -1016,6 +1125,10 @@ func (actor *Actor) retireSession() {
 	actor.deadResumes = 0
 	actor.armed = false
 	actor.rotateAsked = false
+	// The successor session is created with the current prompt, so it is
+	// owed no note; the one the old session had not yet been given dies
+	// with it.
+	actor.promptDelta = ""
 	// The pending rotation is spent with the session it was pending on,
 	// whichever path retired it — a rotation by choice, or a failure that
 	// overtook one. Left set, it is a latch: the next restart would read it
@@ -1134,7 +1247,10 @@ func (actor *Actor) power(verb string) error {
 		actor.stopProcess(verb)
 	}
 	actor.publishWorkstationVerb(verb)
-	spec := actor.wakeSpec(actor.loop.CurrentSessionID == "")
+	// The workstation verbs below never start a claude process, so this
+	// spec's prompt is only along for the ride; rendering it would cost a
+	// fleet-wide read for text nothing here passes to anything.
+	spec := actor.wakeSpec(actor.loop.CurrentSessionID == "", "")
 
 	// The operator's intent is recorded only once the verb it describes has
 	// actually happened. A verb that fails leaves everything as it found it:

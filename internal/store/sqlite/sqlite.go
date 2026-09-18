@@ -122,7 +122,7 @@ const loopCols = `id, name, mission, model, workspace_mode, workspace_path, repo
 	pacing, effort, tg_bot_token, tg_bot_username, tg_group_chat_id, tg_group_bound_at,
 	owner_tg_user_id, owner_dm_chat_id,
 	workstation_off, status, current_session_id, current_pid, created_at, updated_at,
-	runtime, image, mem_mb, cpus, hub_mcp_token, rotate_pending, handoff_note`
+	runtime, image, mem_mb, cpus, hub_mcp_token, rotate_pending, handoff_note, prompt_hash`
 
 func scanLoop(row interface{ Scan(...any) error }) (*store.Loop, error) {
 	var l store.Loop
@@ -133,7 +133,7 @@ func scanLoop(row interface{ Scan(...any) error }) (*store.Loop, error) {
 		&l.OwnerTGUserID, &l.OwnerDMChatID, &l.WorkstationOff,
 		&l.Status, &l.CurrentSessionID, &l.CurrentPID,
 		&l.CreatedAt, &l.UpdatedAt, &l.Runtime, &l.Image, &l.MemMB, &l.CPUs, &l.HubMCPToken,
-		&l.RotatePending, &l.HandoffNote)
+		&l.RotatePending, &l.HandoffNote, &l.PromptHash)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, store.ErrNotFound
 	}
@@ -152,14 +152,15 @@ func (r loops) Create(ctx context.Context, l *store.Loop) error {
 		l.HubMCPToken = store.NewHubMCPToken()
 	}
 	_, err := r.db.ExecContext(ctx, `INSERT INTO loops (`+loopCols+`) VALUES
-		(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		l.ID, l.Name, l.Mission, l.Model, l.WorkspaceMode, l.WorkspacePath, l.RepoPath,
 		l.WorktreePath, l.Branch, l.TickIntervalSec, l.MinWakeSec, l.MaxWakeSec,
 		l.IdleTimeoutSec, l.Pacing, l.Effort, l.TGBotToken, l.TGBotUsername,
 		l.TGGroupChatID, l.TGGroupBoundAt, l.OwnerTGUserID, l.OwnerDMChatID,
 		l.WorkstationOff, l.Status, l.CurrentSessionID, l.CurrentPID,
 		l.CreatedAt, l.UpdatedAt,
-		l.Runtime, l.Image, l.MemMB, l.CPUs, l.HubMCPToken, l.RotatePending, l.HandoffNote)
+		l.Runtime, l.Image, l.MemMB, l.CPUs, l.HubMCPToken, l.RotatePending, l.HandoffNote,
+		l.PromptHash)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return store.ErrDuplicate
 	}
@@ -228,6 +229,12 @@ func (r loops) SetRuntime(ctx context.Context, id, sessionID string, pid int) er
 func (r loops) SetRotation(ctx context.Context, id string, pending bool, note string) error {
 	_, err := r.db.ExecContext(ctx,
 		`UPDATE loops SET rotate_pending=?, handoff_note=? WHERE id=?`, pending, note, id)
+	return err
+}
+
+func (r loops) SetPromptHash(ctx context.Context, id, hash string) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE loops SET prompt_hash=? WHERE id=?`, hash, id)
 	return err
 }
 

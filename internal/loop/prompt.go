@@ -1,6 +1,8 @@
 package loop
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strconv"
 	"strings"
@@ -162,6 +164,12 @@ func (cat Catalog) section(l *store.Loop) string {
 	return b.String()
 }
 
+// missionSection renders MISSION: the loop's own standing instructions, as
+// against the fleet's.
+func missionSection(l *store.Loop) string {
+	return "MISSION\n" + strings.TrimSpace(l.Mission)
+}
+
 // SystemPrompt builds the per-loop --append-system-prompt text. Enabled
 // fleet rules go ahead of the mission: they exist to constrain every loop,
 // so a mission cannot opt out of them.
@@ -171,7 +179,7 @@ func SystemPrompt(l *store.Loop, cat Catalog, rules []*store.FleetRule) string {
 	if section := FleetRulesSection(rules); section != "" {
 		b.WriteString(section + "\n\n")
 	}
-	fmt.Fprintf(&b, "MISSION\n%s\n\n", strings.TrimSpace(l.Mission))
+	b.WriteString(missionSection(l) + "\n\n")
 
 	b.WriteString(`HOW THIS WORKS
 - You are woken periodically (ticks) and whenever someone sends you a message.
@@ -248,6 +256,68 @@ func SystemPrompt(l *store.Loop, cat Catalog, rules []*store.FleetRule) string {
 - If you are blocked and need a human, send a message that says exactly what
   you need: privately via owner_dm or control_room, or @mention them in the
   group when others should see it.`)
+	return b.String()
+}
+
+// PromptHash identifies a rendered system prompt. It is compared with the
+// hash of the prompt a session was created with, never shown to anyone, so
+// the algorithm only has to be stable within one build and cheap — a changed
+// hash on upgrade costs one loop one delta envelope and one rotation.
+func PromptHash(prompt string) string {
+	sum := sha256.Sum256([]byte(prompt))
+	return hex.EncodeToString(sum[:])
+}
+
+// Prompt is what one wake renders for a loop: the system prompt it would
+// spawn with, and the note a session created before the fleet changed needs
+// instead. Both come out of one resolve, so a rule saved between two reads
+// can never leave a loop holding a note that describes a fleet the prompt
+// beside it does not.
+type Prompt struct {
+	// System is the --append-system-prompt text for this wake.
+	System string
+	// StandingChange is what a resumed session is told when System differs
+	// from the prompt it was created with (#162).
+	StandingChange string
+}
+
+// StandingInstructionsPreamble tells a resumed session that the standing
+// instructions it was created with have changed, and carries the current ones
+// in the only place a running session can still read them: the transcript.
+//
+// A resumed session keeps the system prompt it was created with, so a rule
+// added, a mission edited or a peer joining since then is invisible to it
+// however faithfully Spool re-passes --append-system-prompt (#162). This is
+// the whole answer: the loop is bound by the current text from its very next
+// turn, and the system prompt catches up at whatever rotation the loop was
+// going to have anyway, since every fresh session is spawned with the text
+// rendered at that wake (ADR-0024).
+//
+// It carries the three sections that change outside a release — the loop's
+// mission, the fleet's rules, and who it can address — each whole, and says
+// plainly that the rest of the prompt may have moved too. Two renderings
+// were tried and rejected. Naming only the fleet's sections announced a
+// change and then showed a loop its unchanged rules while an edited mission
+// went undelivered, which is #162 one field over. Replaying the prompt
+// verbatim fixed that and introduced a worse thing: the prompt teaches
+// envelope headers by example, so the transcript gained a plausible
+// "ref:42" in a position that reads like an arriving message, which is
+// exactly the invented reference ADR-0025 exists to prevent.
+func StandingInstructionsPreamble(l *store.Loop, cat Catalog, rules []*store.FleetRule) string {
+	var b strings.Builder
+	b.WriteString("[system note · your standing instructions changed]\n\n")
+	b.WriteString("These are current and replace what the system prompt at the top of this\n" +
+		"session says; that prompt was written when the session started and cannot\n" +
+		"be rewritten while it runs. Where the two disagree, this note wins. Other\n" +
+		"parts of the prompt may have changed too and are not repeated here; the\n" +
+		"whole of it catches up when your context next rotates.\n\n")
+	b.WriteString(missionSection(l) + "\n\n")
+	if section := FleetRulesSection(rules); section != "" {
+		b.WriteString(section + "\n\n")
+	} else {
+		b.WriteString("FLEET RULES\nThere are no fleet rules in force.\n\n")
+	}
+	b.WriteString(cat.section(l))
 	return b.String()
 }
 
