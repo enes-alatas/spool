@@ -298,6 +298,15 @@ func (r messages) Insert(ctx context.Context, m *store.Message) error {
 	return nil
 }
 
+// SetSendResult records how the bridge's last attempt at a message ended.
+// A success clears an earlier failure: the same message is retried by a later
+// attempt, and a stale error would outlive the problem it described.
+func (r messages) SetSendResult(ctx context.Context, id, failedAt int64, sendErr string) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE messages SET send_failed_at=?, send_error=? WHERE id=?`, failedAt, sendErr, id)
+	return err
+}
+
 func (r messages) SetDelivered(ctx context.Context, id int64, deliveredTo []string) error {
 	_, err := r.db.ExecContext(ctx, `UPDATE messages SET delivered_to=? WHERE id=?`, toJSON(deliveredTo), id)
 	return err
@@ -305,7 +314,7 @@ func (r messages) SetDelivered(ctx context.Context, id int64, deliveredTo []stri
 
 const messageCols = `id, ts, origin, author, from_loop_id, text,
 	mentions, COALESCE(tg_chat_id,0), COALESCE(tg_message_id,0), tg_bot_loop_id, delivered_to,
-	conversation, conversation_loop_id, reply_to_id, tg_key`
+	conversation, conversation_loop_id, reply_to_id, send_failed_at, send_error, tg_key`
 
 func (r messages) List(ctx context.Context, limit int) ([]*store.Message, error) {
 	return r.query(ctx, `SELECT `+messageCols+` FROM messages ORDER BY id DESC LIMIT ?`, limit)
@@ -444,7 +453,8 @@ func (r messages) query(ctx context.Context, q string, args ...any) ([]*store.Me
 		var mentions, delivered string
 		if err := rows.Scan(&m.ID, &m.TS, &m.Origin, &m.Author, &m.FromLoopID, &m.Text,
 			&mentions, &m.TGChatID, &m.TGMessageID, &m.TGBotLoopID, &delivered,
-			&m.Conversation, &m.ConversationLoopID, &m.ReplyToID, &m.TGKey); err != nil {
+			&m.Conversation, &m.ConversationLoopID, &m.ReplyToID,
+			&m.SendFailedAt, &m.SendError, &m.TGKey); err != nil {
 			return nil, err
 		}
 		m.Mentions = fromJSON(mentions)

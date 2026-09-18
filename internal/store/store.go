@@ -199,6 +199,13 @@ type Message struct {
 	// ReplyToID is the message this one explicitly replies to (0 = none).
 	// A reply is always chosen, never inferred from ordering (ADR-0025).
 	ReplyToID int64 `json:"reply_to_id,omitempty"`
+	// SendFailedAt and SendError record a surface send that did not get
+	// through: when the bridge gave up, and what it gave up on. Both are
+	// zero for a message that was delivered, and for one nobody sent —
+	// the control room tells those apart by the direction of the message
+	// rather than by these (#147).
+	SendFailedAt int64  `json:"send_failed_at,omitempty"`
+	SendError    string `json:"send_error,omitempty"`
 	// TGKey identifies a telegram message by what every bot observing it
 	// sees alike — chat, sender, date, text — so one bot's message can be
 	// matched to another bot's sighting of it. Storage detail, not surfaced.
@@ -326,6 +333,10 @@ type MessageStore interface {
 	// Get returns one message by id, or ErrNotFound. Reply targets are
 	// resolved through it.
 	Get(ctx context.Context, id int64) (*Message, error)
+	// SetSendResult records how a surface send ended: an error and the time
+	// the bridge gave up, or empty and 0 when a later attempt got through.
+	// A message nobody tried to send carries neither (#147).
+	SetSendResult(ctx context.Context, id int64, failedAt int64, sendErr string) error
 	// PutRef records a bot's own surface id for a message.
 	PutRef(ctx context.Context, ref *SurfaceRef) error
 	// Ref returns the bot's own id for a message, or ErrNotFound when that
