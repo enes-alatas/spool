@@ -507,6 +507,88 @@ function SecretsPanel({ loop }: { loop: LoopView }) {
   )
 }
 
+// Binding a loop to a Telegram bot, and rebinding it to another. The token is
+// write-only in the same sense as a secret: it is typed, sent, and never
+// rendered back — the panel above says which bot answers, which is the part
+// an operator needs to recognise.
+//
+// It lives on the loop page because that is where a rotation is noticed. The
+// old copy sent the operator to "loop settings" for a control that was never
+// built, so the only way to change a token was the API; the 2026-09-18
+// rotation was three curl calls (#157).
+function BotTokenForm({ loop }: { loop: LoopView }) {
+  const qc = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const [token, setToken] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const close = () => {
+    setOpen(false)
+    setToken('')
+    setError('')
+  }
+
+  const save = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      await api.patchLoop(loop.name, { tg_bot_token: token.trim() })
+      // The loop, not just this panel: the bound username is the server's
+      // answer to whether the token worked, and the header's surface line
+      // reads from the same record.
+      qc.invalidateQueries({ queryKey: ['loop', loop.name] })
+      qc.invalidateQueries({ queryKey: ['loops'] })
+      close()
+    } catch (e) {
+      // The server's own words. It validates against Telegram before storing,
+      // so "telegram token rejected: …" distinguishes a typo from a revoked
+      // token — and it cannot quote the token back, which is redacted at the
+      // client (#146).
+      setError(e instanceof Error ? e.message : 'could not save the token')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (!open) {
+    return (
+      <button className="btn sm" style={{ marginTop: 10 }} onClick={() => setOpen(true)}>
+        {loop.has_tg_token ? 'Replace token' : 'Connect a bot'}
+      </button>
+    )
+  }
+  return (
+    <div className="field" style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <input
+        type="password"
+        placeholder="bot token from @BotFather"
+        value={token}
+        onChange={(e) => setToken(e.target.value)}
+        // so a browser does not offer to remember a bot token. Not a
+        // guarantee — browsers honour this unevenly on password fields — but
+        // this input is in no form, which is the other half of not being
+        // treated as a login.
+        autoComplete="off"
+        autoFocus
+      />
+      {error && <div className="form-error">{error}</div>}
+      <div style={{ display: 'flex', gap: 6 }}>
+        {/* The empty guard is load-bearing, not tidiness: PATCH reads an
+            empty `tg_bot_token` as *disconnect*, clearing the username and
+            zeroing the bound group. Without it a stray Enter would unbind a
+            loop from a button that says "Replace token". */}
+        <button className="btn primary" onClick={save} disabled={busy || !token.trim()}>
+          {busy ? 'Checking…' : 'Save'}
+        </button>
+        <button className="btn" onClick={close} disabled={busy}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // Who the loop may message privately, and whether it can yet. The readiness
 // line says what is missing rather than reporting a boolean: an operator who
 // reads "not ready" has no way to guess that the fix is for a person to send
@@ -1116,12 +1198,14 @@ export default function LoopDetail() {
                     {loop.tg_group_chat_id ? 'bound' : 'waiting for a group message…'}
                   </span>
                 </div>
+                <BotTokenForm loop={loop} />
                 <OwnerPanel loop={loop} />
               </>
             ) : (
-              <div className="panel-empty">
-                No bot connected. Add a token in loop settings to talk from Telegram.
-              </div>
+              <>
+                <div className="panel-empty">No bot connected — the loop cannot reach Telegram.</div>
+                <BotTokenForm loop={loop} />
+              </>
             )}
           </div>
 
