@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type Settings as SettingsView } from '../api'
+import { rotationGate, tokenSubmittable } from '../forms'
 
 export default function Settings() {
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings })
@@ -71,7 +72,7 @@ function ClaudeToken({ settings }: { settings?: SettingsView }) {
           <button
             className="btn primary"
             onClick={() => submit(token.trim())}
-            disabled={busy || !token.trim()}
+            disabled={busy || !tokenSubmittable(token)}
           >
             {busy ? 'Saving…' : configured ? 'Replace token' : 'Save token'}
           </button>
@@ -99,21 +100,13 @@ function RotationThresholds({ settings }: { settings?: SettingsView }) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const stored = settings && {
-    arm: String(settings.context_arm_percent),
-    force: String(settings.context_force_percent),
-  }
-  const shown = draft ?? stored
-  const changed = !!draft && !!stored && (draft.arm !== stored.arm || draft.force !== stored.force)
-  // Text that is not a number has none to send: `Number('abc')` is `NaN`,
-  // which serialises to `null`, and `null` is this endpoint's "leave this one
-  // alone" — so a typo would be answered 200 with the edit quietly dropped and
-  // no sign on the page that anything failed. An empty field is not that case
-  // (`Number('')` is 0, which the server rejects out loud); it is refused here
-  // because 0 is not what an empty box means. Everything that is a number goes
-  // to the server: 0, 120 and an inverted pair all come back in its words.
-  const digits = (value: string) => /^\d+$/.test(value.trim())
-  const sendable = changed && !!shown && digits(shown.arm) && digits(shown.force)
+  const stored = settings
+    ? {
+        arm: String(settings.context_arm_percent),
+        force: String(settings.context_force_percent),
+      }
+    : null
+  const { shown, changed, sendable } = rotationGate(stored, draft)
 
   const edit = (patch: { arm?: string; force?: string }) => {
     if (!shown) return
