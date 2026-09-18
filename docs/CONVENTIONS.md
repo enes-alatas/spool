@@ -88,6 +88,15 @@ habits below.*
   that had only reached a log became readable to every account on the box. A new
   file under the data directory that carries secrets joins that list in the PR
   that adds it.
+- **Credential inputs are masked and decline autofill.** An input that takes a
+  credential is `type="password"` with `autoComplete="off"`, wherever the value is
+  entered — a first entry is as exposed as a replacement, and the field a form
+  forgets to type is the one left standing in cleartext. `off` is best-effort:
+  browsers honour it unevenly on password fields. The stronger-looking
+  `autoComplete="new-password"` is deliberately not used — it invites the browser's
+  password generator to offer to invent a value for a field that must hold a token
+  the user was given, which is worse than the autofill it prevents. Name fields
+  beside a credential (a secret's NAME) are not credentials and stay unmasked.
 - **Loops are bound by this too**, through a fleet rule the operator sets; this
   section is what that rule points at.
 
@@ -187,14 +196,10 @@ agents — Claude sessions today, Spool's own loops from L2.*
 - A new `spool` event subtype ships with its timeline copy in `src/timeline.ts`, in the
   same PR that emits it. `spoolNote` renders nothing for a subtype it does not know, so
   an unlisted event is not terse in the room — it is absent, and nobody notices.
-- An input that takes a credential is `type="password"` with `autoComplete="off"`,
-  wherever the value is entered — a first entry is as exposed as a replacement, and
-  the field a form forgets to type is the one left standing in cleartext. `off` is
-  best-effort: browsers honour it unevenly on password fields. The stronger-looking
-  `autoComplete="new-password"` is deliberately not used — it invites the browser's
-  password generator to offer to invent a value for a field that must hold a token
-  the user was given, which is worse than the autofill it prevents. Name fields
-  beside a credential (a secret's NAME) are not credentials and stay unmasked.
+- A control's dressing — well, hairline, radius, focus ring — sits on `input`,
+  `textarea` and `select` themselves, never on a wrapper class. A wrapper sets width
+  and layout; a variant sets only what it changes. Markup that forgets the wrapper
+  then renders a field, not a browser default white box in a near-black room.
 
 ## API
 
