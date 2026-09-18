@@ -213,6 +213,11 @@ type Message struct {
 	// rather than by these (#147).
 	SendFailedAt int64  `json:"send_failed_at,omitempty"`
 	SendError    string `json:"send_error,omitempty"`
+	// SendFailureToldAt is when the loop that sent this message was told the
+	// send failed (0 = not yet). Engine bookkeeping for delivering that news
+	// exactly once (#154), so json:"-" keeps it out of every API response —
+	// the operator reads SendFailedAt, which is the fact itself.
+	SendFailureToldAt int64 `json:"-"`
 	// TGKey identifies a telegram message by what every bot observing it
 	// sees alike — chat, sender, date, text — so one bot's message can be
 	// matched to another bot's sighting of it. Storage detail, not surfaced.
@@ -370,6 +375,14 @@ type MessageStore interface {
 	// the bridge gave up, or empty and 0 when a later attempt got through.
 	// A message nobody tried to send carries neither (#147).
 	SetSendResult(ctx context.Context, id int64, failedAt int64, sendErr string) error
+	// UntoldSendFailures returns the messages a loop sent that never got
+	// through and whose sender has not been told, oldest first. The sender,
+	// not the recipient: this is the loop's own news about its own words.
+	UntoldSendFailures(ctx context.Context, loopID string) ([]*Message, error)
+	// MarkSendFailuresTold records that the loop has now been told about
+	// these messages. Called once the turn carrying the news has completed,
+	// so a wake that dies before it still owes the news.
+	MarkSendFailuresTold(ctx context.Context, ids []int64, toldAt int64) error
 	// PutRef records a bot's own surface id for a message.
 	PutRef(ctx context.Context, ref *SurfaceRef) error
 	// Ref returns the bot's own id for a message, or ErrNotFound when that

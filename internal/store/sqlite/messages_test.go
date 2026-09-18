@@ -204,3 +204,110 @@ func TestAmbiguousTextTargetIsNoTarget(t *testing.T) {
 		t.Fatalf("absent text = %v, want ErrNotFound", err)
 	}
 }
+
+// TestUntoldSendFailures pins the exactly-once bookkeeping behind telling a
+// loop its own words never arrived (#154): only the sender's own failures,
+// oldest first, and only until they have been told.
+func TestUntoldSendFailures(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	now := time.Now().UnixMilli()
+
+	mine := []*store.Message{
+		{TS: now, Origin: store.OriginLoop, Author: "terra", FromLoopID: "l1",
+			Text: "first", Conversation: store.ConversationGroup},
+		{TS: now + 1, Origin: store.OriginLoop, Author: "terra", FromLoopID: "l1",
+			Text: "second", Conversation: store.ConversationOwnerDM, ConversationLoopID: "l1"},
+	}
+	theirs := &store.Message{TS: now + 2, Origin: store.OriginLoop, Author: "iris",
+		FromLoopID: "l2", Text: "theirs", Conversation: store.ConversationGroup}
+	inbound := &store.Message{TS: now + 3, Origin: store.OriginTelegramDM, Author: "enes",
+		Text: "inbound", Conversation: store.ConversationOwnerDM, ConversationLoopID: "l1"}
+	delivered := &store.Message{TS: now + 4, Origin: store.OriginLoop, Author: "terra",
+		FromLoopID: "l1", Text: "got there", Conversation: store.ConversationGroup}
+	for _, m := range append(mine, theirs, inbound, delivered) {
+		if err := db.Messages().Insert(ctx, m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, m := range append(mine, theirs) {
+		if err := db.Messages().SetSendResult(ctx, m.ID, now, "chat not found"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	lost, err := db.Messages().UntoldSendFailures(ctx, "l1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lost) != 2 {
+		t.Fatalf("got %d untold failures, want 2 (mine only)", len(lost))
+	}
+	if lost[0].Text != "first" || lost[1].Text != "second" {
+		t.Errorf("failures out of order: %q then %q", lost[0].Text, lost[1].Text)
+	}
+	if lost[0].SendError != "chat not found" {
+		t.Errorf("send error = %q, want the surface's reason", lost[0].SendError)
+	}
+
+	if err := db.Messages().MarkSendFailuresTold(ctx, []int64{lost[0].ID, lost[1].ID}, now); err != nil {
+		t.Fatal(err)
+	}
+	again, err := db.Messages().UntoldSendFailures(ctx, "l1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(again) != 0 {
+		t.Errorf("told failures came back: %d rows", len(again))
+	}
+
+	// An empty loop id is not "every message nobody authored".
+	unowned, err := db.Messages().UntoldSendFailures(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(unowned) != 0 {
+		t.Errorf("empty loop id matched %d rows, want none", len(unowned))
+	}
+}
+
+// TestSendSuccessUnmarksItsFailure pins that a retry that gets through
+// cannot leave a message reading as "told about a failure that is no longer
+// there" — the loop must not be told about a message that did arrive.
+func TestSendSuccessUnmarksItsFailure(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	now := time.Now().UnixMilli()
+
+	m := &store.Message{TS: now, Origin: store.OriginLoop, Author: "terra",
+		FromLoopID: "l1", Text: "eventually", Conversation: store.ConversationGroup}
+	if err := db.Messages().Insert(ctx, m); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Messages().SetSendResult(ctx, m.ID, now, "timeout"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Messages().MarkSendFailuresTold(ctx, []int64{m.ID}, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Messages().SetSendResult(ctx, m.ID, 0, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := db.Messages().List(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got[0].SendFailedAt != 0 || got[0].SendError != "" || got[0].SendFailureToldAt != 0 {
+		t.Errorf("success left failure state behind: failed=%d err=%q told=%d",
+			got[0].SendFailedAt, got[0].SendError, got[0].SendFailureToldAt)
+	}
+}
