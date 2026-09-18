@@ -46,6 +46,43 @@ ADR instead.*
 - **Releases**: semver, `v0.<rung>.x` — completing ladder rung Ln tags `v0.n+1.0`
   (the MVP is retroactively v0.1.0). `v1.0.0` is OSS launch (L6).
 
+## Secrets and evidence
+
+*Written after 2026-09-18, when a bot token reached a log line, then an issue
+body quoting that log, then a test asserting that tokens do not leak. The old
+rule — no secrets in code, logs or API responses — already covered two of those
+three, and they happened anyway. What was missing was not coverage but the
+habits below.*
+
+- **Secrets never land in code, logs, API responses — or evidence.** Evidence is
+  everything a change carries with it: issue and PR bodies, review comments, commit
+  messages, fixtures, attachments, chat. A rule about code alone leaves every
+  route a person takes.
+- **Quote credentials redacted.** A credential-shaped string lifted from a log,
+  response or transcript is written as at most eight characters followed by `…`,
+  fewer if that already identifies it. A structural prefix counts toward the eight
+  (`ghp_abcd…`) unless the prefix is itself longer, in which case the eight are
+  counted after it (`sk-ant-api03-Xf9k2b…`) — a reader has to be able to match the
+  value against the store, and a quote that is all prefix identifies nothing. Never
+  the whole value, not even in a private repo: edit history outlives the redaction.
+- **Fixtures are synthetic.** A fixture needs a whole working-shaped value, so
+  redaction is not available to it: never paste a real credential into a test, a
+  seed script or a mock response — write one that is obviously fake
+  (`0000000000:AA-not-a-real-bot-token`). This is the one place the rule above
+  cannot help, which is what makes it a separate rule.
+- **Screenshots come from fixtures.** A control-room screenshot in a PR is driven
+  against intercepted fixture data, never the live fleet — the timeline renders raw
+  assistant text and tool inputs, so anything a loop ever echoed is in the picture.
+  The Activity page is never screenshotted at all: it carries the operator's DMs.
+- **A live credential in front of you is an incident.** Stop; do not copy it
+  anywhere; redact it where you can still reach it; tell the operator privately.
+  The value and the steps that reproduce it never go in the group — that an
+  exposure happened does, because everyone's evidence may carry it. The operator
+  rotates. Whoever found it files the code issue with the value redacted — the fix
+  is public work, the exposure is not.
+- **Loops are bound by this too**, through a fleet rule the operator sets; this
+  section is what that rule points at.
+
 ## Agent workflow (ADR-0015)
 
 *The same loop a human follows, written down because most contributors are

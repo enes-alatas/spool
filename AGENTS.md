@@ -26,7 +26,9 @@ humans and each other. This file orients you; it links, it doesn't duplicate.
 - Prompts/envelopes live in `internal/loop/prompt.go` only; changing them is a
   `feat` and updates tier-2 fixtures.
 - Stdlib-first: argue any new dependency in the PR description, citing an ADR.
-- Secrets never in code, logs, or API responses. No telemetry, ever.
+- Secrets never in code, logs, API responses — or evidence: quote credentials
+  redacted (≤8 chars + `…`), keep fixtures synthetic, screenshot fixtures rather
+  than the live room, and treat a live credential as an incident. No telemetry, ever.
 - Real-claude e2e (`make e2e-*`) spends the operator's plan tokens — run only
   when asked, prefer haiku.
 
