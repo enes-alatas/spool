@@ -83,10 +83,27 @@ button {
   font: inherit;
   cursor: pointer;
 }
+/* Every control in the room is a well: the raised value, a hairline and the
+   room's own text (ADR-0027). On the element, not on a wrapper class — a
+   field the markup forgets to wrap is still a field, and a browser's default
+   white box in a near-black room is the one styling failure an operator cannot
+   read past. Wrappers below set width and layout; a variant sets only what it
+   changes. A checkbox or radio would need its own rule, having neither a well
+   nor padding — the room has none today. */
 input,
 textarea,
 select {
   font: inherit;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 7px;
+  color: var(--text);
+  padding: 8px 11px;
+}
+input:focus,
+textarea:focus,
+select:focus {
+  outline: 1px solid var(--text);
 }
 /* a composer or a rule field long enough to scroll is a scroller too */
 textarea {
@@ -889,16 +906,8 @@ textarea {
 .composer textarea {
   flex: 1;
   min-width: 0;
-  background: var(--surface);
-  border: 1px solid var(--hairline);
-  border-radius: 8px;
-  color: var(--text);
-  padding: 10px 12px;
   resize: vertical;
   min-height: 44px;
-}
-.composer textarea:focus {
-  outline: 1px solid var(--text);
 }
 
 .side-panel {
@@ -1018,15 +1027,6 @@ textarea {
 .field textarea,
 .field select {
   width: 100%;
-  background: var(--surface);
-  border: 1px solid var(--hairline);
-  border-radius: 7px;
-  color: var(--text);
-  padding: 8px 11px;
-}
-.field input:focus,
-.field textarea:focus {
-  outline: 1px solid var(--text);
 }
 .field .hint {
   font-size: 0.75rem;
@@ -1114,13 +1114,13 @@ textarea {
 .token-state.ok {
   color: var(--ready);
 }
-/* the select a side panel edits a loop's settings through */
+/* The two controls a side panel carries. Both sit on the raised fill the panel
+   already has, so the well inverts to the canvas to stay a well; both are
+   compact because they are inside a panel of rows, not a form. */
 .panel-select {
   width: 100%;
   background: var(--canvas);
-  border: 1px solid var(--hairline);
   border-radius: 5px;
-  color: var(--text);
   padding: 4px 8px;
   font-size: 0.78125rem;
 }
@@ -1128,9 +1128,7 @@ textarea {
 .tick-input {
   width: 56px;
   background: var(--canvas);
-  border: 1px solid var(--hairline);
   border-radius: 5px;
-  color: var(--text);
   padding: 2px 6px;
   font-family: var(--mono);
   font-size: 0.75rem;
@@ -1356,19 +1354,10 @@ textarea {
 .rule-editor input,
 .rule-editor textarea {
   width: 100%;
-  background: var(--canvas);
-  border: 1px solid var(--hairline);
-  border-radius: 7px;
-  color: var(--text);
-  padding: 8px 11px;
 }
 .rule-editor textarea {
   line-height: 1.5;
   resize: vertical;
-}
-.rule-editor input:focus,
-.rule-editor textarea:focus {
-  outline: 1px solid var(--text);
 }
 .rule-field {
   display: flex;
