@@ -497,7 +497,13 @@ function SecretsPanel({ loop }: { loop: LoopView }) {
           onChange={(e) => setName(e.target.value)}
           style={{ fontFamily: 'var(--mono)' }}
         />
-        <input type="password" placeholder="value" value={value} onChange={(e) => setValue(e.target.value)} />
+        <input
+          type="password"
+          autoComplete="off"
+          placeholder="value"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+        />
         {error && <div className="form-error">{error}</div>}
         <button className="btn primary" onClick={add} disabled={busy || !name.trim() || !value}>
           {busy ? 'Saving…' : 'Add secret'}

@@ -43,6 +43,7 @@ export default function Settings() {
           <input
             id="claude-token"
             type="password"
+            autoComplete="off"
             placeholder={configured ? 'Paste a new token to replace it' : 'sk-ant-oat01-…'}
             value={token}
             onChange={(e) => setToken(e.target.value)}

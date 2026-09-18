@@ -169,6 +169,10 @@ export default function NewLoop() {
           <label htmlFor="nl-token">Telegram bot token (optional)</label>
           <input
             id="nl-token"
+            // masked: the first place a token is entered, straight out of
+            // BotFather and usually pasted, often with somebody watching
+            type="password"
+            autoComplete="off"
             placeholder="123456:ABC-DEF…"
             value={token}
             onChange={(e) => setToken(e.target.value)}
