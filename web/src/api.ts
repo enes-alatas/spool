@@ -283,6 +283,14 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ claude_oauth_token: token }),
     }),
+  // Both thresholds go in one write: the server validates them as a pair
+  // (1-99, arm below force), so sending one alone would be judged against a
+  // stored neighbour the operator may be in the middle of changing.
+  setRotationThresholds: (arm: number, force: number) =>
+    req<Settings>('/api/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ context_arm_percent: arm, context_force_percent: force }),
+    }),
   // Power verbs return the loop post-verb, so the caller can cache the result
   // rather than refetch. All four are 409 on the bare runtime, which has no
   // workstation to power.

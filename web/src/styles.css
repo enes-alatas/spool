@@ -304,6 +304,19 @@ textarea {
   letter-spacing: 0.01em;
   margin-bottom: 18px;
 }
+/* the heading of a second thing on a page that already has a title: smaller
+   than the title, and carrying its own space above so the section reads as a
+   break rather than as more of the section before it */
+.section-head {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  margin: 34px 0 10px;
+}
+/* the first one follows the page title, which has left its space already */
+.section-head.first {
+  margin-top: 0;
+}
 
 /* ---- spool glyph ---- */
 .spool-glyph {
