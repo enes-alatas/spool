@@ -121,9 +121,10 @@ agents — Claude sessions today, Spool's own loops from L2.*
   (typo, formatting, broken link) may go straight to PR — the template's Issue
   section says why.
 - **Definition of done** — self-check before opening a PR:
-  `make lint && make test && make itest` green locally; engine behavior carries
-  a tier-2 test; docs of record updated in the same PR when behavior or rules
-  changed; an ADR when a constraining decision was made.
+  `make lint && make test && make itest` green locally, plus `npm run lint`,
+  `npm run format:check` and `npm test` in `web/` when the change touches it;
+  engine behavior carries a tier-2 test; docs of record updated in the same PR
+  when behavior or rules changed; an ADR when a constraining decision was made.
 - **Ask vs proceed**: implementation details — reversible choices inside
   existing rules — proceed autonomously. Anything that constrains the future
   stops for a human interview and gets an ADR: a new dependency, a seam or
@@ -140,12 +141,19 @@ agents — Claude sessions today, Spool's own loops from L2.*
 
 | Tier | What | Where | Command |
 |---|---|---|---|
-| 1 — unit | pure Go/TS, no processes | CI, every PR | `make test` |
+| 1 — unit (Go) | pure Go, no processes | CI, every PR | `make test` |
+| 1 — unit (web) | pure TS: formatting, form gates, timeline entries — no browser | CI, every PR | `npm test` in `web/` |
 | 2 — integration | engine against `cmd/fakeclaude` (exact stream-json protocol: init/assistant/result, resume semantics, exit codes, big lines) | CI, every PR | `make itest` |
 | 3 — e2e | real `claude` sessions, real Telegram/Slack | local, per milestone | `make e2e-*` |
 
 - New engine behavior needs a tier-2 test; a bug found in tier 3 gets a tier-2
   regression reproducing it via fakeclaude.
+- The web's tier 1 is pure logic: formatting, timeline entry building, form
+  gates, API type guards. Logic worth testing gets lifted out of the component
+  into a module of its own rather than tested through a rendered tree. A DOM
+  environment is opt-in per test file and earns its way in only where a defect
+  has already bitten in the markup; browser automation stays a manual
+  verification tool (the screenshot practice), never CI.
 - Quality baselines (perf numbers, scale envelope, reliability/security rules) and
   the full CI gate list live in `docs/QUALITY.md` (ADR-0013). Arch tests enforce the
   seams mechanically; a perf smoke runs per milestone.
