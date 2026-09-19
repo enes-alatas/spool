@@ -34,6 +34,20 @@ ADR instead.*
   reviewer marked fixes optional, the author either declines them on the PR or
   folds them and waits for re-approval. Either way the reviewer pings last
   (#170).
+- **A pending operator decision blocks the merge** the way red CI does (#192).
+  A PR resting on a question still with the operator carries, in Notes / Risks,
+  one live line per question, citing where it was asked so the reviewer can
+  check it is real and still open:
+  `Operator decision pending: <the question> (<#n or link>)`. Live means
+  outside an HTML comment — the template reproduces the marker in its own
+  comment, and a commented marker blocks nothing. The reviewer may review and
+  approve while one stands — that is an approval *pending*, not a mandate to
+  merge — but issues no merge request until the line is gone. The author
+  deletes it once the answer lands and reports that like ready-for-review (a PR
+  comment naming the answer and where it is recorded, plus a ping to the
+  reviewer): such a question usually resolves with no push, so nothing else
+  would wake them. An answer that changes the work voids the approval exactly
+  as a push does (#188).
 - **Branches**: `<type>/<topic>` (e.g. `feat/sandbox-runtime`, `fix/trailer-clamp`).
   The `loop/<name>` namespace is reserved for loop worktree branches — never use it
   for feature work.
@@ -190,6 +204,12 @@ agents — Claude sessions today, Spool's own loops from L2.*
   stops for a human interview and gets an ADR: a new dependency, a seam or
   prompt-contract change, terminology, public API shape, security posture, or
   spending real plan tokens (tier-3 e2e).
+- **Flag and continue** is the third state, between those two (#192). Where
+  stopping would idle a PR, the author may put the question to the operator and
+  keep working — but only when the work stays correct under either answer, or
+  the answer is cheap to fold. The PR carries the `Operator decision pending:`
+  line until the answer arrives, and the answer is recorded where the decision
+  lives (an issue comment or an ADR), never only in chat.
 - **Scoped delegation**: the interview may end with the human delegating the
   decision back ("you decide"). That delegation is per-decision: it covers
   exactly the questions put to the human, and the ADR or issue recording the
