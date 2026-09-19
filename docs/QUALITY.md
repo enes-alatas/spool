@@ -70,6 +70,32 @@ window regardless of loop count (ADR-0018).
   non-plain-data types crossing the Runner seam. Stdlib-only, lives in the repo.
 - `govulncheck`.
 
+**What runs where.** Every job above runs on every pull request and reports
+its check. A job whose paths the change did not touch stops after deciding
+so, which keeps the check present and green while billing a minute instead
+of eight — Actions minutes are capped on a private repo and tier 2 is ~80%
+of a full run (#181). The mapping:
+
+| touched | tier 1 + lint + govulncheck | tier 2 (itest) | web |
+|---|---|---|---|
+| `cmd/`, `internal/`, `itest/`, `go.mod`, `go.sum`, `Makefile` | yes | yes | no |
+| `web/` | no | no | yes |
+| `docs/`, `README`, anything else | no | no | no |
+| `.github/workflows/` | yes | yes | yes |
+
+A change to the workflow runs everything: the gates must prove themselves
+under the gates they are changing.
+
+A push to `main` runs tier 1 only. Rebase-merge (ADR-0016) lands commits a
+PR already proved green, so the rest is a re-run; what it does not cover is
+a merge from a stale base, which branch protection's "require branches to be
+up to date" closes (#1).
+
+**"CI green" therefore means**: every check reported success, and every check
+whose paths the change touched actually executed. A docs-only PR is green on
+three skipped jobs, and that is the intended answer — not a gate that was
+evaded.
+
 **CI (informational, never blocking):**
 - Diff coverage of changed lines, posted on the PR. Reviewer judgment + the
   tier-2-test-required convention carry the real weight; no numeric gate to Goodhart.
