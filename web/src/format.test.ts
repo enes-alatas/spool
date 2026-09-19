@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { fillTone, hasFillPct, formatTokens } from './format'
+import { fillTone, hasFillPct, formatTokens, formatUsd, sumCostToday } from './format'
 
 describe('hasFillPct', () => {
   // #122: a server older than `context_fill_pct` sends nothing, the field
@@ -38,5 +38,30 @@ describe('formatTokens', () => {
   it('abbreviates at a thousand', () => {
     expect(formatTokens(999)).toBe('999')
     expect(formatTokens(1500)).toBe('1.5k')
+  })
+})
+
+describe('sumCostToday', () => {
+  // The header totals the real values, not the rounded ones on screen. Ten
+  // loops at a third of a cent each read $0.00 on every row; the fleet still
+  // spent three cents, and a total assembled from the displayed strings would
+  // report nothing.
+  it('sums before rounding, not after', () => {
+    const loops = Array.from({ length: 10 }, () => ({ cost_today_usd: 0.003 }))
+    expect(loops.every((l) => formatUsd(l.cost_today_usd) === '$0.00')).toBe(true)
+    expect(formatUsd(sumCostToday(loops))).toBe('$0.03')
+  })
+
+  it('is zero for an empty fleet', () => {
+    expect(formatUsd(sumCostToday([]))).toBe('$0.00')
+  })
+})
+
+describe('formatUsd', () => {
+  // Cents always: a column of costs aligns, and a measured zero is a zero
+  // rather than a blank.
+  it('always shows cents', () => {
+    expect(formatUsd(0)).toBe('$0.00')
+    expect(formatUsd(12.5)).toBe('$12.50')
   })
 })
