@@ -5,6 +5,20 @@ export function formatTokens(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
 }
 
+// A cost the operator reads as money. Cents always, so a column of them
+// aligns and $0.00 reads as a measured zero rather than a missing value.
+export function formatUsd(n: number): string {
+  return `$${n.toFixed(2)}`
+}
+
+// What the fleet has spent today: the sum of the real per-loop values, not of
+// the rounded ones on screen. Ten loops at a third of a cent each show $0.00
+// on every row and $0.03 in the header — the header is right, and a total
+// assembled from the displayed strings would not be.
+export function sumCostToday(loops: { cost_today_usd: number }[]): number {
+  return loops.reduce((total, loop) => total + loop.cost_today_usd, 0)
+}
+
 // How full a context window is, and how loudly to say so — in the operator's
 // own terms. Warm is "rotation is armed, it will happen at the next quiet
 // boundary", hot is "past the ceiling, the next turn rotates first". Fixed

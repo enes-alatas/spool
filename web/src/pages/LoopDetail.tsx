@@ -12,7 +12,7 @@ import {
   TGSender,
   Turn,
 } from '../api'
-import { formatTokens, fillTone, hasFillPct } from '../format'
+import { formatTokens, fillTone, hasFillPct, formatUsd } from '../format'
 import { tokenSubmittable } from '../forms'
 import { MODEL_OPTIONS, EFFORT_OPTIONS, PACING_OPTIONS } from '../options'
 import { useStream } from '../stream'
@@ -1088,7 +1088,7 @@ export default function LoopDetail() {
             <Countdown at={loop.next_tick_at} />
             <div className="row">
               <span className="k">today</span>
-              <span className="v">${loop.cost_today_usd.toFixed(2)}</span>
+              <span className="v">{formatUsd(loop.cost_today_usd)}</span>
             </div>
             <ScheduleEditor
               name={name}

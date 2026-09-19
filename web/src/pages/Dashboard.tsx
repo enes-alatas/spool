@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api, LoopView, Settings } from '../api'
-import { formatTokens, fillTone, hasFillPct } from '../format'
+import { formatTokens, fillTone, hasFillPct, formatUsd, sumCostToday } from '../format'
 import { StateDot } from '../components/Spool'
 import { useEffect, useState } from 'react'
 
@@ -106,7 +106,7 @@ function FleetRow({ loop, thresholds }: { loop: LoopView; thresholds?: Settings 
           <ContextStat loop={loop} thresholds={thresholds} /> <span className="lbl after">ctx</span>
         </span>
         <span className="f-today">
-          ${loop.cost_today_usd.toFixed(2)} <span className="lbl after">today</span>
+          {formatUsd(loop.cost_today_usd)} <span className="lbl after">today</span>
         </span>
       </div>
     </Link>
@@ -119,6 +119,12 @@ export default function Dashboard() {
   const { data: thresholds } = useQuery({ queryKey: ['settings'], queryFn: api.settings })
 
   const busy = (loops ?? []).filter((fleetLoop) => fleetLoop.state === 'busy').length
+  // Summed from the rows already on screen: the list endpoint carries each
+  // loop's daily cost, so the fleet's bill for the day costs no request of its
+  // own. It sits with the counts because it answers the same question they do
+  // — what is this fleet doing right now — and it is the one number in the
+  // room the operator was previously running SQL for.
+  const spentToday = sumCostToday(loops ?? [])
 
   return (
     <div className="page">
@@ -128,6 +134,7 @@ export default function Dashboard() {
           <span className="fleet-summary">
             {loops.length} {loops.length === 1 ? 'loop' : 'loops'}
             {busy > 0 && ` · ${busy} busy`}
+            {` · ${formatUsd(spentToday)} today`}
           </span>
         )}
       </div>
