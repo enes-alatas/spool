@@ -261,6 +261,12 @@ func (r *Router) Ingest(ctx context.Context, in InboundMessage) error {
 		FromLoopName: fromLoopName,
 	}})
 
+	// The guard cannot fire here while no caller sets FromLoopID: every
+	// Ingest today is human-origin (the telegram bridge and the web
+	// composer), and a loop's own message is written by Send, which
+	// guards and delivers it directly. Which is why delivered_to above
+	// is assembled from the targets and is still the truth — if a
+	// loop-origin ingest path ever appears, that stops being so (#143).
 	nowT := time.Now()
 	for _, target := range targets {
 		if in.FromLoopID != "" && !r.stormAllow(in.FromLoopID, target.ID, nowT) {

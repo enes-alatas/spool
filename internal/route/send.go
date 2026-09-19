@@ -114,11 +114,33 @@ func (r *Router) Send(ctx context.Context, req SendRequest) (*store.Message, *Se
 			fmt.Sprintf("this turn already sent %d messages; batch what remains or wait for the next turn", SendCapPerTurn)}, nil
 	}
 
-	for id := range targets {
-		msg.DeliveredTo = append(msg.DeliveredTo, id)
+	// The guard decides before the row is written, so delivered_to names
+	// the loops that were delivered to rather than the loops that were
+	// addressed (#143). Delivery itself still has to wait for the insert:
+	// an envelope carries the message's reference, which is its row id.
+	now := time.Now()
+	var delivering []*store.Loop
+	var dropped []*store.Loop
+	for _, target := range targets {
+		if r.stormAllow(req.From.ID, target.ID, now) {
+			delivering = append(delivering, target)
+			msg.DeliveredTo = append(msg.DeliveredTo, target.ID)
+			continue
+		}
+		dropped = append(dropped, target)
 	}
+
 	if err := r.store.Messages().Insert(ctx, msg); err != nil {
+		// Budget was spent above for a message that is not stored and will
+		// not be delivered, so a later send can be dropped against it. Error
+		// path only, and it errs toward dropping rather than over-claiming,
+		// which is the direction this change is moving in anyway.
 		return nil, nil, err
+	}
+	// After the insert, so a relay's tail reads in the order it happened:
+	// the message, then the drops it caused.
+	for _, target := range dropped {
+		r.recordStormDrop(ctx, req.From.ID, req.From.Name, target)
 	}
 	r.recordSend(req.From.ID, req.Destination, text)
 	r.bus.Publish(bus.Item{Kind: bus.KindMessage, LoopID: req.From.ID, Payload: &MessagePayload{
@@ -127,12 +149,7 @@ func (r *Router) Send(ctx context.Context, req SendRequest) (*store.Message, *Se
 		OwnerDMChat:  ownerChat,
 	}})
 
-	now := time.Now()
-	for _, target := range targets {
-		if !r.stormAllow(req.From.ID, target.ID, now) {
-			r.recordStormDrop(ctx, req.From.ID, req.From.Name, target)
-			continue
-		}
+	for _, target := range delivering {
 		env := loop.MessageEnvelope(now, loop.Inbound{
 			Origin:       store.OriginLoop,
 			Author:       req.From.Name,
@@ -143,6 +160,11 @@ func (r *Router) Send(ctx context.Context, req SendRequest) (*store.Message, *Se
 			ReplyTo:      replyRef(replyTo),
 		})
 		if !r.deliver.Deliver(target.ID, env) {
+			// The row already says delivered. The runtime is unknown to the
+			// hub, not refusing — a loop mid-restart, say — and the envelope
+			// is queued by the manager it does reach. A second write to
+			// correct a case that is not a refusal would cost every send an
+			// update; the warning is the record (#143 scope).
 			r.log.Warn("deliver to unknown runtime", "loop", target.Name)
 		}
 	}
