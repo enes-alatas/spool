@@ -1,6 +1,6 @@
 # ADR-0020: One bot ingests a group; every bot still delivers
 
-Date: 2026-08-20 · Status: accepted
+Date: 2026-08-20 · Status: accepted · Amended: 2026-09-17 (§1, settle margin); 2026-09-19 (§2, delivered_to)
 
 ## Context
 
@@ -43,16 +43,27 @@ three questions Milo had listed, of which this was the first.
    contrast, was received after that bind — so every poller handling it reads
    the same candidate set, in whatever order they run, and a bot joining a
    live group or working through a backlog leaves the incumbent to finish the
-   messages that predate it. A settle margin (`defaultBindSettle`, 5s)
-   absorbs clock skew between Telegram's dates and ours; erring long only
-   delays a newcomer's first ingest, while erring short would let it
-   duplicate. The margin is a value the bridge holds rather than a constant
-   it reads, so a test against a stand-in API — which has no skew to absorb —
-   can shorten it; production never does.
+   messages that predate it. A margin (`bindSettle`, 5s) absorbs clock skew
+   between Telegram's dates and ours; erring long only delays a newcomer's
+   first ingest, while erring short would let it duplicate.
+
+   **Amendment (2026-09-17, #140):** the margin is a value the bridge holds
+   rather than a constant it reads, so a test against a stand-in API — which
+   has no skew to absorb — can shorten it; production never does. `bindSettle`
+   above is that value, and still the margin this decision turns on; the 5s it
+   defaults to is now a separate `defaultBindSettle`.
 2. **Ingest is not delivery.** The router still fans a group message out to
    every mentioned loop, and `delivered_to` still lists all of them. Which
    bot's poller carried the bytes is transport detail and is not visible in
    the control room.
+
+   **Amendment (2026-09-19, #143):** "all of them" means all the loops the
+   message reached. A recipient the storm guard refuses is not listed — the
+   field names delivery, which is how the control room reads it — and the
+   refusal is recorded as a `storm_drop` event on the sender instead. On this
+   path the guard cannot fire while no caller gives an ingest a loop origin,
+   so nothing here changed; the field is also filled by `Send`, where it did.
+   The election is untouched.
 3. **A message's identity includes the bot that saw it.** `messages` is keyed
    `UNIQUE (tg_chat_id, tg_message_id, tg_bot_loop_id)`, and the in-memory
    dedup LRU keys the same way. That is now an idempotency net for one poller
@@ -76,7 +87,7 @@ three questions Milo had listed, of which this was the first.
   not v1: it trades a bounded deaf window for a bounded duplicate window.
 - **A brand-new group's first messages are not ingested.** Binding is what
   the first allowlisted group message does, so nobody is eligible for it, and
-  nobody is eligible for the settle margin's seconds after. The operator's first
+  nobody is eligible for the `bindSettle` seconds after. The operator's first
   "hello" in a fresh group binds the bots and gets no answer; the next one
   works. Deliberate: the alternative is letting every bot ingest while the
   set is still forming, which is the bug.

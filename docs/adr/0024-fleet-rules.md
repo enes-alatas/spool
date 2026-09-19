@@ -1,6 +1,6 @@
 # ADR-0024: Fleet rules are injected ahead of every mission
 
-Date: 2026-09-14 · Status: accepted
+Date: 2026-09-14 · Status: accepted · Amended: 2026-09-18 (wake cost; handoff turns)
 
 ## Context
 
@@ -58,7 +58,7 @@ rule sets are L5 Team territory and stay out of scope.
 - Seed data is data: the two dogfooding rulings from 2026-08-20 are entered
   through the control room once this ships, not shipped in a migration.
 
-**Amendment (2026-09-18): what "lands on each loop's next wake" costs (#162).**
+**Amendment (2026-09-18, #162): what "lands on each loop's next wake" costs.**
 Decision 3 was written as if building the prompt per wake were enough. It is
 not: `claude --resume` keeps the system prompt its session was created with
 and ignores a changed `--append-system-prompt`, so a rule saved between two
@@ -105,7 +105,7 @@ for one loop.
 The note's existence, its header and the sections it carries are prompt
 contract under decision 5.
 
-**Amendment (2026-09-18): a handoff turn is not told (#154).** Decision 3, as
+**Amendment (2026-09-18, #154): a handoff turn is not told.** Decision 3, as
 amended above, promises the note "ahead of that wake's own envelopes … on its
 very next turn". One turn is an exception: the handoff turn of a rotation.
 That session is ending, its reply is a note to its successor, and standing

@@ -50,7 +50,7 @@ need the operator to look.
 6. **Typography carries the hierarchy.** System sans for titles, prose,
    missions and navigation; system mono for the operational register — loop
    names, states, costs, times, branches, paths. No network fonts.
-   *Amended 2026-09-17 (#132):* the sans stack asks for `'Segoe UI Variable
+   **Amendment (2026-09-17, #132):** the sans stack asks for `'Segoe UI Variable
    Text'` before `system-ui`. Still a system face and still no download —
    `system-ui` resolves to Segoe UI on Windows, the 2012 design, while
    Windows 11 ships a newer one drawn with optical sizes that `system-ui`
@@ -66,7 +66,7 @@ need the operator to look.
    the busy glyph, the streaming cursor — still carries its meaning when
    `prefers-reduced-motion` stops it.
 
-9. **Type is relative, spacing is not** (amended 2026-09-17, #107). Every
+9. **Type is relative, spacing is not** (added 2026-09-17, #107). Every
    `font-size` is a `rem`, so a reader's browser font-size preference scales
    the whole control room; gaps, padding, radii and hairlines stay in `px`,
    because they are not text and a 2px hairline is a 2px hairline at any text
