@@ -284,9 +284,51 @@ type InboxItem struct {
 	QueuedAt int64  `json:"queued_at"`
 }
 
+// LoopEdit is an operator's edit to a loop's settings: the fields they named,
+// and only those. A nil field is one the request did not mention and the
+// write does not touch.
+//
+// Sparse rather than a whole Loop because the alternative loses writes it
+// never meant to make. PATCH used to read the row, apply the request, and
+// write all twenty-three columns back — holding that copy across a live
+// GetMe call to api.telegram.org when the edit carried a token. The poller
+// re-learns the group binding and the owner's DM chat in exactly that
+// window, and both were reverted from the stale copy, silently, leaving the
+// loop's group traffic dead with nothing in the control room to explain it
+// (#164, and the same mechanism as #161).
+type LoopEdit struct {
+	Mission *string
+	Model   *string
+	Effort  *string
+	Pacing  *string
+
+	TickIntervalSec *int
+	MinWakeSec      *int
+	MaxWakeSec      *int
+	IdleTimeoutSec  *int
+
+	// TGBotToken and TGBotUsername move together: the username is what the
+	// token's own GetMe answered, so writing one without the other would
+	// name a bot the token does not open.
+	TGBotToken    *string
+	TGBotUsername *string
+	// ClearGroupBinding drops the group this loop's bot was bound to, which
+	// a new token invalidates — the binding belonged to the old bot. Set
+	// only when the token is cleared, never as a side effect of an edit
+	// that did not mention it, which is the revert this type exists to
+	// prevent.
+	ClearGroupBinding bool
+
+	UpdatedAt int64
+}
+
 type LoopStore interface {
 	Create(ctx context.Context, l *Loop) error
-	Update(ctx context.Context, l *Loop) error
+	// Edit writes the fields an operator named and nothing else, returning
+	// the row as it stands afterwards. There is deliberately no whole-row
+	// writer: every column of a loop has an owner, and several of them are
+	// written by the Telegram poller while the hub is mid-edit (#164).
+	Edit(ctx context.Context, id string, edit LoopEdit) (*Loop, error)
 	Delete(ctx context.Context, id string) error
 	Get(ctx context.Context, id string) (*Loop, error)
 	GetByName(ctx context.Context, name string) (*Loop, error)

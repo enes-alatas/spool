@@ -40,15 +40,8 @@ func TestLoopWorkstationColumns(t *testing.T) {
 		t.Fatalf("workstation config did not round-trip: %+v", got)
 	}
 
-	got.Runtime = store.RuntimeBare
-	got.Image = "other"
-	got.MemMB = 1
-	got.CPUs = 1
-	got.Mission = "updated"
-	if err := db.Loops().Update(ctx, got); err != nil {
-		t.Fatal(err)
-	}
-	after, err := db.Loops().Get(ctx, "l1")
+	mission := "updated"
+	after, err := db.Loops().Edit(ctx, "l1", store.LoopEdit{Mission: &mission, UpdatedAt: now + 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +50,7 @@ func TestLoopWorkstationColumns(t *testing.T) {
 	}
 	if after.Runtime != store.RuntimeDocker || after.Image != "spool-workstation" ||
 		after.MemMB != 4096 || after.CPUs != 2 {
-		t.Fatalf("workstation config must be immutable through Update: %+v", after)
+		t.Fatalf("workstation config must be immutable through an edit: %+v", after)
 	}
 }
 
@@ -215,23 +208,19 @@ func TestLoopRotationState(t *testing.T) {
 		t.Fatalf("rotation state did not round-trip: %+v", got)
 	}
 
-	loop.Mission = "edited elsewhere"
-	loop.UpdatedAt = now + 1
-	if err := db.Loops().Update(ctx, loop); err != nil {
-		t.Fatal(err)
-	}
-	if got, err = db.Loops().Get(ctx, "l1"); err != nil {
+	mission := "edited elsewhere"
+	if got, err = db.Loops().Edit(ctx, "l1", store.LoopEdit{Mission: &mission, UpdatedAt: now + 1}); err != nil {
 		t.Fatal(err)
 	}
 	if !got.RotatePending || got.HandoffNote != "pick up the release" {
-		t.Fatalf("an unrelated update dropped the rotation in progress: %+v", got)
+		t.Fatalf("an unrelated edit dropped the rotation in progress: %+v", got)
 	}
 }
 
 // TestLoopPromptHash pins the column that says which system prompt the
 // current session is really running (#162). It starts empty — an unknown
 // hash must read as "no difference", never as one — round-trips through its
-// own setter, and survives an unrelated Update for the same reason the
+// own setter, and survives an unrelated edit for the same reason the
 // rotation columns do: a settings form carries the row as it was read, which
 // may already be a wake behind the actor.
 func TestLoopPromptHash(t *testing.T) {
@@ -262,16 +251,12 @@ func TestLoopPromptHash(t *testing.T) {
 	if err := db.Loops().SetPromptHash(ctx, "l1", "abc123"); err != nil {
 		t.Fatal(err)
 	}
-	loop.Mission = "edited elsewhere"
-	loop.UpdatedAt = now + 1
-	if err := db.Loops().Update(ctx, loop); err != nil {
-		t.Fatal(err)
-	}
-	if got, err = db.Loops().Get(ctx, "l1"); err != nil {
+	mission := "edited elsewhere"
+	if got, err = db.Loops().Edit(ctx, "l1", store.LoopEdit{Mission: &mission, UpdatedAt: now + 1}); err != nil {
 		t.Fatal(err)
 	}
 	if got.PromptHash != "abc123" {
-		t.Fatalf("prompt hash = %q, want it to round-trip and survive the update", got.PromptHash)
+		t.Fatalf("prompt hash = %q, want it to round-trip and survive the edit", got.PromptHash)
 	}
 }
 
@@ -302,8 +287,7 @@ func TestTelegramColumnsSurviveAConcurrentWriter(t *testing.T) {
 	if _, err := db.Loops().Get(ctx, "l1"); err != nil {
 		t.Fatal(err)
 	}
-	stale, err := db.Loops().Get(ctx, "l1")
-	if err != nil {
+	if _, err := db.Loops().Get(ctx, "l1"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -325,21 +309,21 @@ func TestTelegramColumnsSurviveAConcurrentWriter(t *testing.T) {
 		t.Errorf("group chat = %d, want it to survive the owner write", got.TGGroupChatID)
 	}
 
-	// And the reason the narrow setters exist: a whole-row Update from the
-	// copy read before either write puts both columns back. Asserted rather
-	// than described, so nobody routes these writes back through Update.
-	stale.UpdatedAt = now + 3
-	if err := db.Loops().Update(ctx, stale); err != nil {
-		t.Fatal(err)
-	}
-	clobbered, err := db.Loops().Get(ctx, "l1")
+	// And the operator's edit, decided from the row as it was before either
+	// write: it names a mission and nothing else, so it must leave both
+	// columns where the poller put them. This used to be a whole-row write
+	// that reverted them (#164) — the assertion is inverted here, and the
+	// shape of Edit is what makes the revert unspellable.
+	mission := "edited while the bots were busy"
+	survived, err := db.Loops().Edit(ctx, "l1", store.LoopEdit{Mission: &mission, UpdatedAt: now + 3})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if clobbered.OwnerTGUserID != 0 || clobbered.TGGroupChatID != 0 {
-		t.Fatalf("Update from a stale copy no longer reverts these columns (%+v) — "+
-			"if that is deliberate, this test and the narrow setters need revisiting",
-			clobbered)
+	if survived.OwnerTGUserID != 5454 || survived.TGGroupChatID != -100123 {
+		t.Fatalf("an edit that named only the mission reverted a concurrent write: %+v", survived)
+	}
+	if survived.Mission != mission {
+		t.Fatalf("mission = %q, want the edit to have landed", survived.Mission)
 	}
 
 	// Capturing the owner's DM chat must not disturb the binding either.

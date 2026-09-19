@@ -167,19 +167,55 @@ func (r loops) Create(ctx context.Context, l *store.Loop) error {
 	return err
 }
 
-func (r loops) Update(ctx context.Context, l *store.Loop) error {
-	_, err := r.db.ExecContext(ctx, `UPDATE loops SET name=?, mission=?, model=?,
-		workspace_mode=?, workspace_path=?, repo_path=?, worktree_path=?, branch=?,
-		tick_interval_sec=?, min_wake_sec=?, max_wake_sec=?, idle_timeout_sec=?,
-		pacing=?, effort=?, tg_bot_token=?, tg_bot_username=?, tg_group_chat_id=?,
-		tg_group_bound_at=?, owner_tg_user_id=?, owner_dm_chat_id=?,
-		workstation_off=?, status=?, updated_at=? WHERE id=?`,
-		l.Name, l.Mission, l.Model, l.WorkspaceMode, l.WorkspacePath, l.RepoPath,
-		l.WorktreePath, l.Branch, l.TickIntervalSec, l.MinWakeSec, l.MaxWakeSec,
-		l.IdleTimeoutSec, l.Pacing, l.Effort, l.TGBotToken, l.TGBotUsername,
-		l.TGGroupChatID, l.TGGroupBoundAt, l.OwnerTGUserID, l.OwnerDMChatID,
-		l.WorkstationOff, l.Status, l.UpdatedAt, l.ID)
-	return err
+// Edit writes the named fields in one statement and reads the row back, so
+// the caller's copy of the columns it did not write is the stored one rather
+// than whatever it read before the edit (#164).
+func (r loops) Edit(ctx context.Context, id string, edit store.LoopEdit) (*store.Loop, error) {
+	sets := []string{"updated_at=?"}
+	args := []any{edit.UpdatedAt}
+	set := func(col string, val any) {
+		sets = append(sets, col+"=?")
+		args = append(args, val)
+	}
+	if edit.Mission != nil {
+		set("mission", *edit.Mission)
+	}
+	if edit.Model != nil {
+		set("model", *edit.Model)
+	}
+	if edit.Effort != nil {
+		set("effort", *edit.Effort)
+	}
+	if edit.Pacing != nil {
+		set("pacing", *edit.Pacing)
+	}
+	if edit.TickIntervalSec != nil {
+		set("tick_interval_sec", *edit.TickIntervalSec)
+	}
+	if edit.MinWakeSec != nil {
+		set("min_wake_sec", *edit.MinWakeSec)
+	}
+	if edit.MaxWakeSec != nil {
+		set("max_wake_sec", *edit.MaxWakeSec)
+	}
+	if edit.IdleTimeoutSec != nil {
+		set("idle_timeout_sec", *edit.IdleTimeoutSec)
+	}
+	if edit.TGBotToken != nil {
+		set("tg_bot_token", *edit.TGBotToken)
+	}
+	if edit.TGBotUsername != nil {
+		set("tg_bot_username", *edit.TGBotUsername)
+	}
+	if edit.ClearGroupBinding {
+		set("tg_group_chat_id", 0)
+		set("tg_group_bound_at", 0)
+	}
+	if _, err := r.db.ExecContext(ctx,
+		`UPDATE loops SET `+strings.Join(sets, ", ")+` WHERE id=?`, append(args, id)...); err != nil {
+		return nil, err
+	}
+	return r.Get(ctx, id)
 }
 
 func (r loops) Delete(ctx context.Context, id string) error {
