@@ -113,6 +113,16 @@ function FleetRow({ loop, thresholds }: { loop: LoopView; thresholds?: Settings 
   )
 }
 
+// Which day "today" is. The server decides the boundary — its own local
+// midnight, not UTC's (#186) — and says so, so the room names the day rather
+// than deriving one the server might not agree with. Hover text, not a column:
+// an operator watching one fleet knows what day it is, and only wants to check
+// when a number looks wrong.
+function costDayTitle(loops: LoopView[]): string | undefined {
+  const day = loops[0]?.cost_day
+  return day ? `spend on ${day}, the server's local day` : undefined
+}
+
 export default function Dashboard() {
   const { data: loops, isLoading, isError, error } = useQuery({ queryKey: ['loops'], queryFn: api.loops })
   // the rotation thresholds the gauge colours mean something against
@@ -134,7 +144,7 @@ export default function Dashboard() {
           <span className="fleet-summary">
             {loops.length} {loops.length === 1 ? 'loop' : 'loops'}
             {busy > 0 && ` · ${busy} busy`}
-            {` · ${formatUsd(spentToday)} today`}
+            <span title={costDayTitle(loops)}>{` · ${formatUsd(spentToday)} today`}</span>
           </span>
         )}
       </div>

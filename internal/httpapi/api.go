@@ -162,12 +162,17 @@ func (s *Server) loopByName(w http.ResponseWriter, r *http.Request) *store.Loop 
 // loopView is a loop plus live runtime info for the UI.
 type loopView struct {
 	*store.Loop
-	State             string  `json:"state"`
-	NextTickAt        int64   `json:"next_tick_at"`
-	CostToday         float64 `json:"cost_today_usd"`
-	HasTGToken        bool    `json:"has_tg_token"`
-	WorkstationUp     bool    `json:"workstation_up"`
-	WorkstationDetail string  `json:"workstation_detail,omitempty"`
+	State      string  `json:"state"`
+	NextTickAt int64   `json:"next_tick_at"`
+	CostToday  float64 `json:"cost_today_usd"`
+	// CostDay names the calendar day CostToday sums, as YYYY-MM-DD in the
+	// server's own zone. A client that shows the number should not have to
+	// work out which day it belongs to, and the boundary is not the one a
+	// UTC client would guess.
+	CostDay           string `json:"cost_day"`
+	HasTGToken        bool   `json:"has_tg_token"`
+	WorkstationUp     bool   `json:"workstation_up"`
+	WorkstationDetail string `json:"workstation_detail,omitempty"`
 	// ContextTokens is the context occupancy the last finished turn of the
 	// loop's current session measured at its final API call — what the next
 	// prompt would carry into the window. Measured at that turn, not a live
@@ -197,6 +202,23 @@ type loopView struct {
 	OwnerUsername string `json:"owner_username,omitempty"`
 }
 
+// localDayStart reports the first instant of now's calendar day, in unix
+// millis, and the day it names.
+//
+// "Today" is the operator's day. The previous `Truncate(24 * time.Hour)`
+// rounded the instant, which lands on a UTC boundary whatever the machine's
+// zone: in Berlin the fleet's spend reset at 01:00 or 02:00 local, so an
+// evening session's cost appeared under tomorrow while the operator was still
+// reading today. Truncate cannot express a calendar day at all — it knows
+// durations, not dates — so the boundary is built from now's own date in now's
+// own location. That is also what makes it survive a DST change, where the
+// local day is 23 or 25 hours long and no fixed duration is the day.
+func localDayStart(now time.Time) (int64, string) {
+	year, month, day := now.Date()
+	start := time.Date(year, month, day, 0, 0, 0, 0, now.Location())
+	return start.UnixMilli(), start.Format("2006-01-02")
+}
+
 func (s *Server) view(ctx context.Context, l *store.Loop) *loopView {
 	out := &loopView{Loop: l, State: loop.StateAsleep, HasTGToken: l.TGBotToken != "", WorkstationUp: true,
 		OwnerDMReady: l.OwnerTGUserID != 0 && l.OwnerDMChatID != 0}
@@ -220,7 +242,8 @@ func (s *Server) view(ctx context.Context, l *store.Loop) *loopView {
 	if entry, err := s.Store.Schedule().Get(ctx, l.ID); err == nil {
 		out.NextTickAt = entry.NextTickAt
 	}
-	dayStart := time.Now().Truncate(24 * time.Hour).UnixMilli()
+	dayStart, day := localDayStart(time.Now())
+	out.CostDay = day
 	if cost, err := s.Store.Turns().CostSince(ctx, l.ID, dayStart); err == nil {
 		out.CostToday = cost
 	}
