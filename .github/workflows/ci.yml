@@ -79,6 +79,24 @@ jobs:
           fi
           printf 'unit=%s\nitest=%s\nweb=%s\n' "$go" "$go" "$web" >> "$GITHUB_OUTPUT"
 
+  # Not path-filtered, and deliberately: a credential can be added to any
+  # file, so "this change did not touch the Go tree" says nothing about
+  # whether it added a token. It is seconds of runner time (#151).
+  secrets:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: the scanner still catches what it claims to
+        run: bash scripts/secret-scan-test.sh
+      - name: scan the lines this PR adds
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git diff -U0 "$BASE" HEAD | bash scripts/secret-scan.sh --stdin
+
   go:
     needs: changes
     runs-on: ubuntu-latest

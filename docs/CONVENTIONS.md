@@ -120,6 +120,11 @@ agents — Claude sessions today, Spool's own loops from L2.*
   starts from a typed issue the human could have seen. Trivial mechanical fixes
   (typo, formatting, broken link) may go straight to PR — the template's Issue
   section says why.
+- **Secret shapes are scanned, not remembered**: `make secret-scan` runs the same
+  check CI runs on every PR — the lines a change *adds*, against the known
+  credential shapes. Test files and fixtures may hold a token-shaped string only
+  when the value reads as obviously synthetic; production code never may. A hit
+  prints at most eight characters, because a CI log is an artefact too.
 - **Definition of done** — self-check before opening a PR:
   `make lint && make test && make itest` green locally, plus `npm run lint`,
   `npm run format:check` and `npm test` in `web/` when the change touches it;
