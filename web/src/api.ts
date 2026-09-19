@@ -30,6 +30,10 @@ export interface LoopView {
   state: string
   next_tick_at: number
   cost_today_usd: number
+  // The calendar day cost_today_usd sums, YYYY-MM-DD in the server's zone.
+  // The boundary is the operator's midnight, not UTC's, so the client shows
+  // the day rather than deriving one.
+  cost_day: string
   // Context occupancy: what the latest turn carried into the model, against
   // that model's window. The limit is 0 when the model is unknown to Spool,
   // in which case there is no honest percentage to show.

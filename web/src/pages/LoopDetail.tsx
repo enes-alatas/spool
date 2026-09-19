@@ -1088,7 +1088,9 @@ export default function LoopDetail() {
             <Countdown at={loop.next_tick_at} />
             <div className="row">
               <span className="k">today</span>
-              <span className="v">{formatUsd(loop.cost_today_usd)}</span>
+              <span className="v" title={loop.cost_day ? `spend on ${loop.cost_day}` : undefined}>
+                {formatUsd(loop.cost_today_usd)}
+              </span>
             </div>
             <ScheduleEditor
               name={name}
