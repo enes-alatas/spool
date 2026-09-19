@@ -35,6 +35,7 @@ Use these words exactly — in code, UI, docs, and prompts. Don't introduce syno
 | **org** | The tenant: a team sharing loops, humans, and connections. Implicit and single in the local edition; explicit from L5 on. (When Slack's own "workspace" term must appear, say "your Slack workspace" — our tenant is always *org*.) |
 | **owner / admin / member** | Org roles: each loop has one responsible human owner; admins manage everything; members talk to loops. |
 | **turn** | One request→result cycle of a claude session. |
+| **turn cost** | What one turn spent: `cost_usd`, and the only cost column that may be summed. The CLI reports the session's running total instead, which is kept beside it as `session_cost_usd` (#191). |
 | **wake / sleep** | A loop's process lifecycle: asleep (no process) → awake (spawned, `--resume`). |
 | **tick** | A scheduled wake with no inbound message. |
 | **trailer** | The `[next-wake: 45m]` suffix a loop uses to schedule itself. |

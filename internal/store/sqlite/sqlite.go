@@ -583,15 +583,16 @@ func (r turns) Create(ctx context.Context, t *store.Turn) error {
 
 func (r turns) Finish(ctx context.Context, t *store.Turn) error {
 	_, err := r.db.ExecContext(ctx, `UPDATE turns SET ended_at=?, is_error=?, result_text=?,
-		cost_usd=?, input_tokens=?, output_tokens=?, cache_read_tokens=?, cache_write_tokens=?,
-		context_tokens=?, duration_ms=?, model=? WHERE id=?`,
-		t.EndedAt, boolInt(t.IsError), t.ResultText, t.CostUSD, t.InputTokens, t.OutputTokens,
+		cost_usd=?, session_cost_usd=?, input_tokens=?, output_tokens=?, cache_read_tokens=?,
+		cache_write_tokens=?, context_tokens=?, duration_ms=?, model=? WHERE id=?`,
+		t.EndedAt, boolInt(t.IsError), t.ResultText, t.CostUSD, t.SessionCostUSD,
+		t.InputTokens, t.OutputTokens,
 		t.CacheReadTokens, t.CacheWriteTokens, t.ContextTokens, t.DurationMS, t.Model, t.ID)
 	return err
 }
 
 const turnCols = `id, loop_id, session_id, trigger_kind, started_at, ended_at, is_error,
-	result_text, cost_usd, input_tokens, output_tokens, cache_read_tokens,
+	result_text, cost_usd, session_cost_usd, input_tokens, output_tokens, cache_read_tokens,
 	cache_write_tokens, context_tokens, duration_ms, model`
 
 // Latest is the most recent turn the loop actually finished: an in-flight
@@ -602,7 +603,7 @@ func (r turns) Latest(ctx context.Context, loopID string) (*store.Turn, error) {
 	var t store.Turn
 	var isErr int
 	err := row.Scan(&t.ID, &t.LoopID, &t.SessionID, &t.Trigger, &t.StartedAt, &t.EndedAt,
-		&isErr, &t.ResultText, &t.CostUSD, &t.InputTokens, &t.OutputTokens,
+		&isErr, &t.ResultText, &t.CostUSD, &t.SessionCostUSD, &t.InputTokens, &t.OutputTokens,
 		&t.CacheReadTokens, &t.CacheWriteTokens, &t.ContextTokens, &t.DurationMS, &t.Model)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, store.ErrNotFound
@@ -626,7 +627,8 @@ func (r turns) ListByLoop(ctx context.Context, loopID string, limit int) ([]*sto
 		var t store.Turn
 		var isErr int
 		if err := rows.Scan(&t.ID, &t.LoopID, &t.SessionID, &t.Trigger, &t.StartedAt,
-			&t.EndedAt, &isErr, &t.ResultText, &t.CostUSD, &t.InputTokens, &t.OutputTokens,
+			&t.EndedAt, &isErr, &t.ResultText, &t.CostUSD, &t.SessionCostUSD,
+			&t.InputTokens, &t.OutputTokens,
 			&t.CacheReadTokens, &t.CacheWriteTokens, &t.ContextTokens, &t.DurationMS, &t.Model); err != nil {
 			return nil, err
 		}
@@ -646,6 +648,18 @@ func (r turns) CostSince(ctx context.Context, loopID string, since int64) (float
 	var cost sql.NullFloat64
 	err := r.db.QueryRowContext(ctx,
 		`SELECT SUM(cost_usd) FROM turns WHERE loop_id=? AND started_at>=?`, loopID, since).Scan(&cost)
+	return cost.Float64, err
+}
+
+// SessionCost is the highest total recorded for the session. The CLI's
+// figure only grows within a session, so the highest is the latest — and
+// MAX ignores the in-flight turn asking the question, whose own column is
+// still zero.
+func (r turns) SessionCost(ctx context.Context, loopID, sessionID string) (float64, error) {
+	var cost sql.NullFloat64
+	err := r.db.QueryRowContext(ctx,
+		`SELECT MAX(session_cost_usd) FROM turns WHERE loop_id=? AND session_id=?`,
+		loopID, sessionID).Scan(&cost)
 	return cost.Float64, err
 }
 
