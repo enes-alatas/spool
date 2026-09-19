@@ -1,6 +1,25 @@
 # CI gates per docs/QUALITY.md (ADR-0013): lint, unit (tier 1, incl. arch
 # tests), integration vs fakeclaude (tier 2), web lint+build, govulncheck.
 # Coverage is informational (job summary), never a gate.
+#
+# What runs when is a cost decision, not a quality one (#181). This repo is
+# private, so Actions minutes are capped and itest bills ~8 of the ~10
+# minutes a full run costs. Three rules keep that spend proportionate; none
+# of them weakens a gate:
+#
+#   1. A superseded run is cancelled. Review-fix force-pushes routinely
+#      produced 3–7 runs of the same PR, all but the last of them answering
+#      a question nobody was asking any more.
+#   2. Every job still runs and still reports, but a job whose paths did not
+#      change does its checkout and stops. The check stays present and green
+#      — which is what branch protection needs (#1) — and bills a minute
+#      instead of eight.
+#   3. A push to main runs unit tests only. Rebase-merge (ADR-0016) lands
+#      the commits a PR already proved green, so the full matrix is a
+#      re-run. The gap this leaves is a merge from a stale base; branch
+#      protection's "require branches to be up to date" closes it, and
+#      until that is on, the unit job is the smoke that would catch a
+#      mechanical mismerge.
 name: ci
 
 on:
@@ -8,24 +27,81 @@ on:
     branches: [main]
   pull_request:
 
+# One run per PR. `head_ref` is empty on a push, so pushes to main fall back
+# to their own run id and are never cancelled by each other.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
 jobs:
-  go:
+  # Which parts of the tree this event touched. A push to main leaves every
+  # flag false: lever 3 above, expressed once here rather than as an
+  # event-name condition on each job.
+  changes:
     runs-on: ubuntu-latest
+    outputs:
+      # unit is the one job a push to main still runs: see lever 3 above.
+      unit: ${{ steps.filter.outputs.unit }}
+      itest: ${{ steps.filter.outputs.itest }}
+      web: ${{ steps.filter.outputs.web }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: filter
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            printf 'unit=true\nitest=false\nweb=false\n' >> "$GITHUB_OUTPUT"
+            echo 'Push to main: unit tests only — this content was green on its PR (ADR-0016).' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          files=$(git diff --name-only "$BASE" HEAD)
+          echo "changed files:"; echo "$files"
+          # Anything that can change what the binary does or how it is
+          # judged — .golangci.yml configures the lint that gates it — plus
+          # this workflow: a change to the gates must prove itself under
+          # them. A path that belongs in no bucket runs nothing, so the
+          # cost of forgetting one here is a gate that silently stops
+          # running; add to these rather than trimming them.
+          go=false
+          web=false
+          if echo "$files" | grep -qE '^(cmd/|internal/|itest/|go\.(mod|sum)$|Makefile$|\.golangci\.ya?ml$|\.github/workflows/)'; then
+            go=true
+          fi
+          if echo "$files" | grep -qE '^(web/|\.github/workflows/)'; then
+            web=true
+          fi
+          printf 'unit=%s\nitest=%s\nweb=%s\n' "$go" "$go" "$web" >> "$GITHUB_OUTPUT"
+
+  go:
+    needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - name: not needed for this change
+        if: needs.changes.outputs.unit != 'true'
+        run: echo 'No Go paths changed — tier 1 has nothing to prove here.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/checkout@v4
+        if: needs.changes.outputs.unit == 'true'
       - uses: actions/setup-go@v5
+        if: needs.changes.outputs.unit == 'true'
         with:
           go-version-file: go.mod
       - name: gofmt
+        if: needs.changes.outputs.unit == 'true'
         run: |
           out=$(gofmt -l cmd internal itest)
           if [ -n "$out" ]; then echo "gofmt needed:"; echo "$out"; exit 1; fi
       - name: go vet
+        if: needs.changes.outputs.unit == 'true'
         run: go vet ./...
       - name: golangci-lint
+        if: needs.changes.outputs.unit == 'true'
         uses: golangci/golangci-lint-action@v8
         with:
           # 'latest' because pinned minors go stale against our Go toolchain
@@ -33,42 +109,64 @@ jobs:
           # release ever breaks us.
           version: latest
       - name: unit tests (tier 1 + arch)
+        if: needs.changes.outputs.unit == 'true'
         run: go test -coverprofile=cover.out ./...
       - name: coverage (informational)
+        if: needs.changes.outputs.unit == 'true'
         run: |
           echo '## Coverage (informational — not a gate)' >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           go tool cover -func=cover.out | tail -25 >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
       - name: govulncheck
+        if: needs.changes.outputs.unit == 'true'
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
 
   itest:
+    needs: changes
     runs-on: ubuntu-latest
     steps:
+      - name: not needed for this change
+        if: needs.changes.outputs.itest != 'true'
+        run: echo 'No Go, itest or workflow paths changed — tier 2 has nothing to prove here.' >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/checkout@v4
+        if: needs.changes.outputs.itest == 'true'
       - uses: actions/setup-go@v5
+        if: needs.changes.outputs.itest == 'true'
         with:
           go-version-file: go.mod
       - name: integration tests (tier 2, vs fakeclaude)
+        if: needs.changes.outputs.itest == 'true'
         run: make itest
 
   web:
+    needs: changes
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: web
     steps:
+      - name: not needed for this change
+        if: needs.changes.outputs.web != 'true'
+        working-directory: .
+        run: echo 'No web paths changed — the control room has nothing to prove here.' >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/checkout@v4
+        if: needs.changes.outputs.web == 'true'
       - uses: actions/setup-node@v4
+        if: needs.changes.outputs.web == 'true'
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
+        if: needs.changes.outputs.web == 'true'
       - run: npm run lint
+        if: needs.changes.outputs.web == 'true'
       - run: npm run format:check
+        if: needs.changes.outputs.web == 'true'
       - run: npm test
+        if: needs.changes.outputs.web == 'true'
       - run: npm run build
+        if: needs.changes.outputs.web == 'true'
