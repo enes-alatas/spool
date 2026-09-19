@@ -903,7 +903,13 @@ export default function LoopDetail() {
 
   const entries = useMemo(() => {
     if (!history) return toEntries(events ?? [])
-    return toEntries([...history.events.values()].sort((a, b) => a.id - b.id))
+    // The hole travels with the events: a turn's cost is read from the turns
+    // before it, and the stretch the window jumped over is exactly where that
+    // evidence is missing.
+    return toEntries(
+      [...history.events.values()].sort((a, b) => a.id - b.id),
+      history.hole,
+    )
   }, [events, history])
 
   // The oldest event held, which is not the oldest entry rendered: `toEntries`

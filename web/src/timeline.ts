@@ -17,6 +17,10 @@ export type Entry =
       id: number
       ts: number
       costUsd: number
+      // 'turn' when costUsd is what this turn spent; 'session' when the
+      // turns before it in its session are not loaded, so the only true
+      // figure available is the session's running total.
+      costBasis: CostBasis
       durationMs: number
       inTok: number
       outTok: number
@@ -32,8 +36,45 @@ function splitEnvelope(text: string): { who: string; body: string } {
   return { who: m[1], body: m[2] }
 }
 
-export function toEntries(events: LoopEvent[]): Entry[] {
+export type CostBasis = 'turn' | 'session'
+
+// The CLI reports `total_cost_usd` as the session's running total, not the
+// turn's own spend (#191), so a turn costs the increment over the highest
+// total its session has reported so far — clamped at zero, because a total
+// that failed to grow (an errored turn repeats the previous figure) means the
+// turn spent nothing, never that it earned money back. This is the rule the
+// server applies to the `turns` column; the transcript reads raw engine
+// events and has to apply it itself.
+//
+// The baseline has to be found in the window, and a transcript is a window:
+// it opens on the newest events and walks backwards. When a session's earlier
+// turns are not loaded there is no baseline to subtract, and a guessed one
+// would misprice the turn — so those turns report the running total and say
+// so. The exception is a session that starts inside the window: a spawn that
+// did not resume opens a session at zero, which makes its first turn's total
+// its own cost.
+//
+// `hole` is the stretch the window jumped over (LoopDetail's `record.hole`):
+// events the page was never handed, sitting between two it holds. It matters
+// because evidence on the far side of a hole is not evidence about this turn
+// — a baseline read across one is missing however many turns fell in, so the
+// increment over it is their spend plus this turn's, and a spawn read across
+// one opened a session whose first turns are gone. Both would print a wrong
+// figure under the confident `turn` label, which is the case the `session`
+// label exists to prevent, so a baseline that spans the hole is discarded
+// rather than trusted.
+export function toEntries(events: LoopEvent[], hole?: { from: number; to: number } | null): Entry[] {
   const out: Entry[] = []
+  // session id -> the highest total that session has reported, and the id of
+  // the event that reported it. The id is what lets a later turn ask whether
+  // the hole sits between them.
+  const reported = new Map<string, { total: number; at: number }>()
+  // The id of a fresh spawn whose session has not reported yet: the session it
+  // opened starts from zero.
+  let opensAtZero: number | null = null
+  // Whether the window's missing stretch lies between these two events.
+  const spansHole = (from: number, to: number) =>
+    hole !== undefined && hole !== null && from <= hole.from && to >= hole.to
   for (const e of events) {
     try {
       switch (e.type) {
@@ -52,11 +93,25 @@ export function toEntries(events: LoopEvent[]): Entry[] {
         }
         case 'result': {
           const r = JSON.parse(e.payload)
+          const total: number = r.total_cost_usd ?? 0
+          let basis: CostBasis = 'turn'
+          let spent = total
+          const before = reported.get(e.session_id)
+          if (before !== undefined && !spansHole(before.at, e.id)) {
+            spent = Math.max(0, total - before.total)
+          } else if (before === undefined && opensAtZero !== null && !spansHole(opensAtZero, e.id)) {
+            opensAtZero = null
+          } else {
+            basis = 'session'
+            opensAtZero = null
+          }
+          reported.set(e.session_id, { total: Math.max(before?.total ?? 0, total), at: e.id })
           out.push({
             kind: 'result',
             id: e.id,
             ts: e.ts,
-            costUsd: r.total_cost_usd ?? 0,
+            costUsd: spent,
+            costBasis: basis,
             durationMs: r.duration_ms ?? 0,
             inTok: r.usage?.input_tokens ?? 0,
             outTok: r.usage?.output_tokens ?? 0,
@@ -65,6 +120,14 @@ export function toEntries(events: LoopEvent[]): Entry[] {
           break
         }
         case 'spool': {
+          // Not keyed to the spawn's own session id: a fresh spawn is stored
+          // under the id Spool minted for the session, which the CLI's init
+          // line may then replace with its own (actor.go `handleEvent`), so
+          // the results that follow can carry a different id from the spawn
+          // that opened them.
+          if (e.subtype === 'proc_spawn') {
+            opensAtZero = JSON.parse(e.payload).resume ? null : e.id
+          }
           const note = spoolNote(e)
           if (note) out.push({ kind: 'note', id: e.id, ts: e.ts, ...note })
           break

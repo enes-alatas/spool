@@ -99,7 +99,18 @@ export function Timeline({
               <div key={e.id} className="knot reply" style={{ marginTop: -8 }} data-entry-id={e.id}>
                 <div className="turn-footer">
                   {e.isError && <span className="err">turn errored</span>}
-                  <span>${e.costUsd.toFixed(4)}</span>
+                  {/* A turn priced on the session basis is the oldest one
+                      loaded for its session: its own cost cannot be worked
+                      out until the turns above it arrive, so the footer says
+                      which figure it is showing rather than passing the
+                      running total off as this turn's. */}
+                  {e.costBasis === 'session' ? (
+                    <span title="the turns before this one in its session are not loaded, so this is the session's total so far, not this turn's cost">
+                      ${e.costUsd.toFixed(4)} session
+                    </span>
+                  ) : (
+                    <span>${e.costUsd.toFixed(4)}</span>
+                  )}
                   <span>{(e.durationMs / 1000).toFixed(1)}s</span>
                   <span>
                     {e.inTok}→{e.outTok} tok
