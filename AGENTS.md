@@ -51,7 +51,10 @@ humans and each other. This file orients you; it links, it doesn't duplicate.
   commit — use `/review-fix`; never add "address review" commits.
 - Ask vs proceed: implementation details — proceed. Constraining decisions —
   new dep, seam/prompt contract, terminology, API shape, security posture,
-  real-token runs — stop, interview the human, record an ADR.
+  real-token runs — stop, interview the human, record an ADR. Where stopping
+  would idle the PR and the work holds under either answer, flag and continue:
+  the PR carries an `Operator decision pending:` line, which blocks the merge
+  until you delete it and tell the reviewer.
 
 ## Commands
 

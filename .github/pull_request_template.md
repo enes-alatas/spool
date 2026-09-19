@@ -31,4 +31,13 @@ live fleet, and a credential quoted anywhere here is redacted to <=8 chars + `�
 
 ## Notes / Risks
 
+<!-- Is a constraining question still with the operator? Add one line per question,
+below this comment rather than in it — only a live line blocks (CONVENTIONS.md
+"Flag and continue"):
+
+    Operator decision pending: <the question> (<#n or link to where it was asked>)
+
+Each blocks the merge the way red CI does. You delete yours once the answer lands,
+and report that to the reviewer — nothing else tells them the block has lifted. -->
+
 -
