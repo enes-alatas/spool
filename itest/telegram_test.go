@@ -32,6 +32,33 @@ type fakeTelegram struct {
 	failSends   int
 	failForever bool
 	sendCalls   int
+	// holdGetMe stands in for a slow api.telegram.org: getMe blocks on it
+	// until the test lets go. Real getMe calls take a round-trip, and the
+	// hub holds a copy of the loop row across one (#164) — a window a test
+	// cannot hit reliably by timing alone.
+	holdGetMe  chan struct{}
+	getMeEntry chan struct{}
+}
+
+// blockGetMe makes every getMe from here on hang until the returned release
+// func is called, and returns a channel that reports each call entering the
+// block. That is the hub's token round-trip held open, so a test can land a
+// concurrent write inside it rather than racing for it.
+func (tg *fakeTelegram) blockGetMe() (entered <-chan struct{}, release func()) {
+	tg.mu.Lock()
+	hold := make(chan struct{})
+	entry := make(chan struct{}, 8)
+	tg.holdGetMe, tg.getMeEntry = hold, entry
+	tg.mu.Unlock()
+	var once sync.Once
+	return entry, func() {
+		once.Do(func() {
+			tg.mu.Lock()
+			tg.holdGetMe, tg.getMeEntry = nil, nil
+			tg.mu.Unlock()
+			close(hold)
+		})
+	}
 }
 
 // failNextSends makes the stand-in refuse the next n sends. n < 0 refuses
@@ -106,6 +133,16 @@ func (tg *fakeTelegram) handle(w http.ResponseWriter, r *http.Request) {
 	token, method := parts[0], parts[1]
 	switch method {
 	case "getMe":
+		tg.mu.Lock()
+		hold, entry := tg.holdGetMe, tg.getMeEntry
+		tg.mu.Unlock()
+		if hold != nil {
+			select {
+			case entry <- struct{}{}:
+			default:
+			}
+			<-hold
+		}
 		writeOK(w, map[string]any{"id": 1, "is_bot": true, "username": botUsername(token)})
 	case "getUpdates":
 		writeOK(w, tg.drain(token))

@@ -471,64 +471,63 @@ func (s *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 		s.jsonErr(w, 400, "bad json: %v", err)
 		return
 	}
-	if req.Mission != nil {
-		l.Mission = *req.Mission
-	}
-	if req.Model != nil {
-		l.Model = *req.Model
+	// Built as an edit rather than applied to l: the loop was read before
+	// the token round-trip below, and writing that copy back reverts
+	// whatever the Telegram poller learned meanwhile (#164).
+	edit := store.LoopEdit{
+		Mission:         req.Mission,
+		Model:           req.Model,
+		TickIntervalSec: req.TickIntervalSec,
+		MinWakeSec:      req.MinWakeSec,
+		MaxWakeSec:      req.MaxWakeSec,
+		IdleTimeoutSec:  req.IdleTimeoutSec,
+		UpdatedAt:       time.Now().UnixMilli(),
 	}
 	if req.Effort != nil {
 		if !validEfforts[*req.Effort] {
 			s.jsonErr(w, 400, "effort must be one of: low, medium, high, xhigh, max (or empty for default)")
 			return
 		}
-		l.Effort = *req.Effort
+		edit.Effort = req.Effort
 	}
 	if req.Pacing != nil {
 		if !validPacing(*req.Pacing) {
 			s.jsonErr(w, 400, "pacing must be 'fixed' or 'self'")
 			return
 		}
-		l.Pacing = defaultStr(*req.Pacing, store.PacingFixed)
-	}
-	if req.TickIntervalSec != nil {
-		l.TickIntervalSec = *req.TickIntervalSec
-	}
-	if req.MinWakeSec != nil {
-		l.MinWakeSec = *req.MinWakeSec
-	}
-	if req.MaxWakeSec != nil {
-		l.MaxWakeSec = *req.MaxWakeSec
-	}
-	if req.IdleTimeoutSec != nil {
-		l.IdleTimeoutSec = *req.IdleTimeoutSec
+		pacing := defaultStr(*req.Pacing, store.PacingFixed)
+		edit.Pacing = &pacing
 	}
 	if req.TGBotToken != nil {
 		token := strings.TrimSpace(*req.TGBotToken)
+		username := ""
 		if token != "" && s.Telegram != nil {
-			username, err := s.Telegram.ValidateToken(r.Context(), token)
+			// A live call to api.telegram.org, which is why nothing read
+			// before this point may be written back afterwards.
+			name, err := s.Telegram.ValidateToken(r.Context(), token)
 			if err != nil {
 				s.jsonErr(w, 400, "telegram token rejected: %v", err)
 				return
 			}
-			l.TGBotUsername = username
+			username = name
 		}
-		if token == "" {
-			l.TGBotUsername = ""
-			l.TGGroupChatID = 0
-		}
-		l.TGBotToken = token
+		edit.TGBotToken, edit.TGBotUsername = &token, &username
+		// A cleared token leaves no bot to hold the binding. A replaced one
+		// keeps it: the group is the same group, and the poller rebinds.
+		edit.ClearGroupBinding = token == ""
 	}
-	l.UpdatedAt = time.Now().UnixMilli()
-	if err := s.Store.Loops().Update(r.Context(), l); err != nil {
+	updated, err := s.Store.Loops().Edit(r.Context(), l.ID, edit)
+	if err != nil {
 		s.jsonErr(w, 500, "%v", err)
 		return
 	}
-	s.Manager.UpdateLoop(l)
+	// The stored row, not the edited copy: everything this request did not
+	// name reaches the actor and the surface as it actually stands.
+	s.Manager.UpdateLoop(updated)
 	if s.Telegram != nil && req.TGBotToken != nil {
-		s.Telegram.LoopChanged(l)
+		s.Telegram.LoopChanged(updated)
 	}
-	writeJSON(w, 200, s.view(r.Context(), l))
+	writeJSON(w, 200, s.view(r.Context(), updated))
 }
 
 func (s *Server) handleDeleteLoop(w http.ResponseWriter, r *http.Request) {
