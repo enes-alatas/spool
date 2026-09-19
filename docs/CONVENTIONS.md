@@ -23,6 +23,17 @@ ADR instead.*
   fold with a byte-identical tree diff, push `--force-with-lease`. Genuinely
   new scope gets its own commit, or its own issue and PR. Accepted costs:
   inline comments go outdated; the changes-since-last-review diff resets.
+- **A review's last word is one of two things, never both** (#141): either
+  "approved at `<sha>`; merge as-is — remaining notes are follow-ups", or
+  "notes to fold; not ready for merge". An approval that also leaves fixes
+  hanging is how a PR gets merged out from under its reviewer (#165). A new
+  push voids the approval: the author re-pings the reviewer, never the
+  operator.
+- **The merge request comes from the reviewer**, in the same message as the
+  final approval, with the PR link. Authors never ask for a merge — if the
+  reviewer marked fixes optional, the author either declines them on the PR or
+  folds them and waits for re-approval. Either way the reviewer pings last
+  (#170).
 - **Branches**: `<type>/<topic>` (e.g. `feat/sandbox-runtime`, `fix/trailer-clamp`).
   The `loop/<name>` namespace is reserved for loop worktree branches — never use it
   for feature work.
