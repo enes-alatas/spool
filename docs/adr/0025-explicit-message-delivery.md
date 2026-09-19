@@ -1,6 +1,6 @@
 # ADR-0025: Private DMs and shared groups with explicit delivery
 
-Date: 2026-09-14 · Status: accepted (operator agreement; implementation pending)
+Date: 2026-09-14 · Status: accepted (operator agreement; implementation pending) · Amended: 2026-09-15 (sending contract); 2026-09-16 (native replies); 2026-09-17 (`@all` eligibility)
 
 ## Context
 
@@ -144,11 +144,12 @@ isolation, reference mapping/failure recovery, broadcast eligibility, and operat
 composer destination UX. The decisions above are settled and must not be weakened
 by those implementation choices.
 
-**Amendment (2026-09-15):** ADR-0026 settles the sending interface,
+**Amendment (2026-09-15, #80):** ADR-0026 settles the sending interface,
 session/context isolation, send timing, and composer destination UX. Still open:
 reference mapping/failure recovery (#79) and broadcast eligibility (#74).
 
-**Amendment (2026-09-16): native replies are best-effort, references are not.**
+**Amendment (2026-09-16, #79): native replies are best-effort, references
+are not.**
 Telegram numbers `message_id` per bot conversation (ADR-0020), and bots never
 receive other bots' messages. Production data confirms it: before the ingest
 election, the same group message was stored by several bots under different
@@ -178,7 +179,7 @@ nothing: two loops that posted the same words resolve to neither, and the
 message is delivered as an ordinary one. An unaimed message is a smaller
 failure than one aimed at the wrong loop.
 
-**Amendment (2026-09-17): `@all` eligibility (#74).** Item 7 left eligibility
+**Amendment (2026-09-17, #74): `@all` eligibility.** Item 7 left eligibility
 for paused and offline loops, and the scope across multiple groups, to be
 settled before implementation. The operator settled it: `@all` in a group
 reaches the loops bound to *that* group which are neither paused nor

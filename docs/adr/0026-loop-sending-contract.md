@@ -1,6 +1,6 @@
 # ADR-0026: Loops send through a hub-served MCP tool
 
-Date: 2026-09-15 · Status: accepted (operator interview; implementation pending)
+Date: 2026-09-15 · Status: accepted (operator interview; implementation pending) · Amended: 2026-09-16 (`owner_dm` routing, twice); 2026-09-18 (undelivered sends)
 
 ## Context
 
@@ -124,7 +124,7 @@ non-delivery guarantees ADR-0025's scenario matrix demands.
 - The scenario matrix in ADR-0025 remains the acceptance bar; this ADR adds
   the interface those tests drive.
 
-**Amendment (2026-09-16): interim `owner_dm` routing until #73.** With no
+**Amendment (2026-09-16, #73): interim `owner_dm` routing.** With no
 configured owner identity, `owner_dm` reaches the private Telegram chat of
 the DM the current turn answers — pinned at turn start, so a DM arriving
 later cannot redirect the reply — and, for a turn with no DM of its own (a
@@ -133,7 +133,7 @@ description and system prompt state exactly this. "Reach the configured
 owner regardless of the current exchange" is not expressible until #73
 lands; the owner-contact acceptance criterion stays open there.
 
-**Amendment (2026-09-16): `owner_dm` is the configured owner (#73).** This
+**Amendment (2026-09-16, #73): `owner_dm` is the configured owner.** This
 replaces the interim rule above. Each loop has an owner — an allowlisted
 Telegram sender the operator picks, defaulting to the first one allowlisted —
 and `owner_dm` always addresses that person, whatever DM the current turn
@@ -157,8 +157,8 @@ DM is not delivered; the bot answers once, in that chat, saying that only
 the loop's owner can DM it for now. Silence would be worse than a refusal a
 human can read.
 
-**Amendment (2026-09-18): a send that is given up on reaches its sender
-(#154).** "Sends are immediate" (item 5) left one hole: an outcome that lands
+**Amendment (2026-09-18, #154): a send that is given up on reaches its
+sender.** "Sends are immediate" (item 5) left one hole: an outcome that lands
 after the sending turn ended has nowhere to be reported, so a loop whose
 message never arrived goes on believing it spoke. Retries and the failure
 record (#147) made that visible to the operator and to nobody else.

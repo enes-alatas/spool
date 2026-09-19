@@ -1,6 +1,6 @@
 # ADR-0013: Quality baselines and gates
 
-Date: 2026-08-16 · Status: accepted
+Date: 2026-08-16 · Status: accepted · Amended: 2026-09-18 (control-room tier 1)
 
 ## Context
 
@@ -31,7 +31,7 @@ especially once loops author PRs (L2).
 - Baseline numbers change only via a superseding ADR.
 - The slog migration touches every package once, at L0, while the codebase is small.
 
-**Amendment (2026-09-18): the control room gets a tier 1, on Vitest (#173).**
+**Amendment (2026-09-18, #173): the control room gets a tier 1, on Vitest.**
 This ADR's gate list said "eslint/prettier, build incl. web" and stopped there:
 `web/` had no runner, no `npm test`, and no test files. Every control-room
 defect so far was caught by review and landed with no regression protection —
