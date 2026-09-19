@@ -56,9 +56,11 @@ vet:
 	$(GO) vet ./...
 
 # What CI runs on every PR, against the same base. Run it before you push if
-# a change went anywhere near a credential.
+# a change went anywhere near a credential. Both guards' tests run first:
+# they share a pattern list, so either one can break the other.
 secret-scan:
 	@bash scripts/secret-scan-test.sh >/dev/null
+	@bash scripts/secret-redact-test.sh >/dev/null
 	bash scripts/secret-scan.sh
 
 e2e-m1: server

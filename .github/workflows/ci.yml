@@ -91,6 +91,12 @@ jobs:
           fetch-depth: 0
       - name: the scanner still catches what it claims to
         run: bash scripts/secret-scan-test.sh
+      # The redaction guard (secret-redact.yml) fires on issue and comment
+      # events, where nothing gates it — this is the only place its rules are
+      # checked before they ship, and it shares its pattern list with the scan
+      # above, so a change to either arrives here.
+      - name: the redactor still takes out what it claims to
+        run: bash scripts/secret-redact-test.sh
       - name: scan the lines this PR adds
         env:
           BASE: ${{ github.event.pull_request.base.sha }}

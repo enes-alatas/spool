@@ -194,6 +194,11 @@ agents — Claude sessions today, Spool's own loops from L2.*
   credential shapes. Test files and fixtures may hold a token-shaped string only
   when the value reads as obviously synthetic; production code never may. A hit
   prints at most eight characters, because a CI log is an artefact too.
+- **An issue or comment body is redacted, not rejected**: text posted to GitHub
+  is published before anything can run, so the `secret-redact` workflow edits
+  the value out and posts what the edit does not fix — the revision history
+  still holds the original, so the author deletes the revision, and rotates
+  regardless. Both guards read their shapes from `scripts/secret-rules.awk`.
 - **Definition of done** — self-check before opening a PR:
   `make lint && make test && make itest` green locally, plus `npm run lint`,
   `npm run format:check` and `npm test` in `web/` when the change touches it;
