@@ -52,7 +52,7 @@ Use these words exactly — in code, UI, docs, and prompts. Don't introduce syno
 | **hub** | Everything that isn't the runner or a surface: routing, scheduling, store, API. |
 | **connection** | An org-level tool credential/config (GitHub app, MCP server) attachable to loops. |
 | **control room** | The web UI. |
-| **storm guard** | The rate limit on loop→loop delivery. |
+| **storm guard** | The rate limit on loop→loop delivery. A recipient it refuses is not listed in the message's `delivered_to` — that field names the loops a message reached, not the ones it addressed — and the refusal is recorded as a `storm_drop` event on the sender. |
 
 ## Shape
 

@@ -54,10 +54,8 @@ func TestStormGuardHaltsALoopRelay(t *testing.T) {
 		time.Sleep(2 * time.Second)
 	}
 
-	// Counted where the delivery lands — the envelopes beta was actually
-	// given — rather than in the sending message's delivered_to, which is
-	// filled in from the intended targets before the guard runs and so
-	// includes the ones it refused (#143).
+	// Counted where the delivery lands: the envelopes beta was actually
+	// given.
 	delivered := 0
 	for _, e := range srv.eventsQuery("beta", "limit=500") {
 		if e.Type == "envelope" && strings.Contains(e.Payload, "@beta relay") {
@@ -67,7 +65,27 @@ func TestStormGuardHaltsALoopRelay(t *testing.T) {
 	if delivered != stormLimit {
 		t.Fatalf("beta was given %d relay envelopes, want the cap of %d", delivered, stormLimit)
 	}
-	if sent := len(srv.activityWith("@beta relay")); sent <= delivered {
-		t.Fatalf("alpha sent %d and beta got %d: the guard dropped nothing", sent, delivered)
+
+	// And the messages agree with the envelopes. delivered_to used to be
+	// filled from the intended targets before the guard ran, so the tail of
+	// a halted relay named beta as a recipient of messages it was never
+	// given — the one record an operator reads to understand why the relay
+	// stopped, contradicting the storm_drop events beside it (#143).
+	sent := srv.activityWith("@beta relay")
+	betaID := srv.loop("beta").ID
+	claimed := 0
+	for _, m := range sent {
+		for _, id := range m.DeliveredTo {
+			if id == betaID {
+				claimed++
+			}
+		}
+	}
+	if claimed != delivered {
+		t.Fatalf("%d messages claim beta in delivered_to but beta was given %d envelopes",
+			claimed, delivered)
+	}
+	if len(sent) <= delivered {
+		t.Fatalf("alpha sent %d and beta got %d: the guard dropped nothing", len(sent), delivered)
 	}
 }
