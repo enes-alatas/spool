@@ -78,7 +78,18 @@ type sessionState struct {
 	// here, a tier-2 row asserting a prompt change reaches a loop would pass
 	// against a fake more forgiving than the thing it stands in for.
 	SystemPrompt string `json:"system_prompt"`
+	// CostUSD is the session's running total, because that is what the real
+	// CLI's total_cost_usd reports under --resume: a cumulative figure, not
+	// the price of the turn that just ran (#191). A fake that reported a
+	// per-turn cost would let a reader of the column pass a test the real
+	// thing fails.
+	CostUSD float64 `json:"cost_usd"`
 }
+
+// costPerTurn is what a fake turn adds to the session total. Small enough
+// that a summed column and a per-turn one are told apart by their ratio
+// rather than by rounding.
+const costPerTurn = 0.001
 
 func main() {
 	var sessionID, resumeID, model, systemPrompt, mcpConfig string
@@ -246,7 +257,9 @@ func main() {
 				// make e2e-context)
 				emit(map[string]any{
 					"type": "result", "subtype": "error_during_execution", "is_error": true,
-					"total_cost_usd": 0, "duration_ms": 5, "num_turns": state.Turns,
+					// The total is repeated unchanged: it is cumulative, and a
+					// turn that failed before running spent nothing.
+					"total_cost_usd": state.CostUSD, "duration_ms": 5, "num_turns": state.Turns,
 					"result": "Prompt is too long", "session_id": id,
 					"usage": map[string]any{
 						"input_tokens": 0, "output_tokens": 0,
@@ -300,9 +313,10 @@ func main() {
 				"session_id": id,
 			})
 		}
+		state.CostUSD += costPerTurn
 		emit(map[string]any{
 			"type": "result", "subtype": "success", "is_error": false,
-			"total_cost_usd": 0.001, "duration_ms": 5, "num_turns": state.Turns,
+			"total_cost_usd": state.CostUSD, "duration_ms": 5, "num_turns": state.Turns,
 			"result": reply, "usage": usage(ctxTokens, steps), "session_id": id,
 		})
 
