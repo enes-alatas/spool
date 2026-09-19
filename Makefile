@@ -1,7 +1,7 @@
 GO ?= go
 export PATH := /usr/local/go/bin:$(PATH)
 
-.PHONY: build dev test itest lint fakeclaude vet e2e-context e2e-m1 ui ui-dev image image-multiarch clean
+.PHONY: build dev test itest lint secret-scan fakeclaude vet e2e-context e2e-m1 ui ui-dev image image-multiarch clean
 
 build: ui
 	$(GO) build -o bin/spool ./cmd/spool
@@ -54,6 +54,12 @@ test:
 
 vet:
 	$(GO) vet ./...
+
+# What CI runs on every PR, against the same base. Run it before you push if
+# a change went anywhere near a credential.
+secret-scan:
+	@bash scripts/secret-scan-test.sh >/dev/null
+	bash scripts/secret-scan.sh
 
 e2e-m1: server
 	bash scripts/e2e/m1.sh
