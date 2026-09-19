@@ -105,6 +105,32 @@ textarea:focus,
 select:focus {
   outline: 1px solid var(--text);
 }
+/* A control not accepting input mutes its text, and drops its well where
+   there is a well to drop.
+
+   The text is the signal: #f2f1ed to --text-muted is 3.8:1 against itself and
+   fires on every control in every context. Not the button's `opacity: 0.45` —
+   that manufactures a colour nobody measured (#706f6d, 4.06:1 on the canvas
+   and 4.13:1 on a panel, under ADR-0027 §7's floor), and a field holds data an
+   operator reads rather than a label they know by shape. `.btn.primary`
+   already splits off the opacity idiom for the same reason.
+
+   The fill change reinforces, it does not carry: --surface to --canvas is
+   1.043:1, which reads only where the control sits on a raised panel, and is a
+   literal no-op for the variants whose enabled well is already --canvas
+   (.panel-select, .tick-input). It is here because withdrawing the well is the
+   right thing for a control that cannot be typed into, not because it is
+   visible on its own.
+
+   The hairline stays: it is what marks where the field is, and §1 gives the
+   room's structure to hairlines rather than to fills. */
+input:disabled,
+textarea:disabled,
+select:disabled {
+  background: var(--canvas);
+  color: var(--text-muted);
+  cursor: default;
+}
 /* a composer or a rule field long enough to scroll is a scroller too */
 textarea {
   scrollbar-width: thin;
