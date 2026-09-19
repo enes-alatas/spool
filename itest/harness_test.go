@@ -174,15 +174,16 @@ type loopView struct {
 }
 
 type turn struct {
-	ID            string  `json:"id"`
-	SessionID     string  `json:"session_id"`
-	Trigger       string  `json:"trigger"`
-	StartedAt     int64   `json:"started_at"`
-	EndedAt       int64   `json:"ended_at"`
-	IsError       bool    `json:"is_error"`
-	ResultText    string  `json:"result_text"`
-	CostUSD       float64 `json:"cost_usd"`
-	ContextTokens int     `json:"context_tokens"`
+	ID             string  `json:"id"`
+	SessionID      string  `json:"session_id"`
+	Trigger        string  `json:"trigger"`
+	StartedAt      int64   `json:"started_at"`
+	EndedAt        int64   `json:"ended_at"`
+	IsError        bool    `json:"is_error"`
+	ResultText     string  `json:"result_text"`
+	CostUSD        float64 `json:"cost_usd"`
+	SessionCostUSD float64 `json:"session_cost_usd"`
+	ContextTokens  int     `json:"context_tokens"`
 }
 
 // createLoop makes a loop with fast-test defaults; overrides merge on top.

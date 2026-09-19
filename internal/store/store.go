@@ -242,12 +242,21 @@ type Turn struct {
 	Trigger   string `json:"trigger"`
 	// Model the turn actually ran on, as the CLI reported it at init — not
 	// the loop's configured string, which may be empty or an alias.
-	Model            string  `json:"model,omitempty"`
-	StartedAt        int64   `json:"started_at"`
-	EndedAt          int64   `json:"ended_at"`
-	IsError          bool    `json:"is_error"`
-	ResultText       string  `json:"result_text"`
-	CostUSD          float64 `json:"cost_usd"`
+	Model      string `json:"model,omitempty"`
+	StartedAt  int64  `json:"started_at"`
+	EndedAt    int64  `json:"ended_at"`
+	IsError    bool   `json:"is_error"`
+	ResultText string `json:"result_text"`
+	// CostUSD is what this turn cost. The CLI reports the session's running
+	// total instead, so the actor records the difference from the previous
+	// turn of the same session (#191) — which makes this column safe to sum,
+	// and SessionCostUSD the one that is not.
+	CostUSD float64 `json:"cost_usd"`
+	// SessionCostUSD is the CLI's total_cost_usd verbatim: the session's
+	// spend up to and including this turn. Kept because it is the figure we
+	// were given, so a later turn can be priced against it after a restart,
+	// and because an accounting change upstream is only visible here.
+	SessionCostUSD   float64 `json:"session_cost_usd"`
 	InputTokens      int     `json:"input_tokens"`
 	OutputTokens     int     `json:"output_tokens"`
 	CacheReadTokens  int     `json:"cache_read_tokens"`
@@ -461,6 +470,13 @@ type TurnStore interface {
 	// InterruptDangling marks unfinished turns as errored (orchestrator crash).
 	InterruptDangling(ctx context.Context, endedAt int64) error
 	CostSince(ctx context.Context, loopID string, since int64) (float64, error)
+	// SessionCost returns the session's spend so far — the highest
+	// session_cost_usd recorded for it, or 0 when it has no finished turn.
+	// It is how a turn is priced: the CLI hands us a running total, and the
+	// difference from this is what the turn itself cost. Read from the store
+	// rather than remembered, so a restart mid-session still prices the next
+	// turn correctly.
+	SessionCost(ctx context.Context, loopID, sessionID string) (float64, error)
 }
 
 type EventStore interface {

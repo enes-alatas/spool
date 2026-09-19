@@ -852,7 +852,22 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 		t.EndedAt = now()
 		t.IsError = res.IsError
 		t.ResultText = res.ResultText
-		t.CostUSD = res.CostUSD
+		// The CLI reports the session's running total, not this turn's price
+		// (#191). The turn cost what the total gained, measured against the
+		// store rather than a remembered value so a restart mid-session
+		// prices the next turn correctly. Clamped at zero: a total that
+		// failed to grow means nothing was spent — an errored turn repeats
+		// the previous figure — never that a turn earned money back.
+		t.SessionCostUSD = res.CostUSD
+		prior, err := actor.deps.Store.Turns().SessionCost(context.Background(), actor.loop.ID, t.SessionID)
+		if err != nil {
+			// Price it as a first turn: the whole total. Wrong when the
+			// session had earlier turns, and wrong in the direction that
+			// shows up as too much rather than as free work.
+			actor.log().Error("session cost unavailable", "err", err)
+			prior = 0
+		}
+		t.CostUSD = max(0, res.CostUSD-prior)
 		t.InputTokens = res.Usage.InputTokens
 		t.OutputTokens = res.Usage.OutputTokens
 		t.CacheReadTokens = res.Usage.CacheReadTokens
