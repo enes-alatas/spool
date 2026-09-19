@@ -204,10 +204,15 @@ agents — Claude sessions today, Spool's own loops from L2.*
 - A new `spool` event subtype ships with its timeline copy in `src/timeline.ts`, in the
   same PR that emits it. `spoolNote` renders nothing for a subtype it does not know, so
   an unlisted event is not terse in the room — it is absent, and nobody notices.
-- A control's dressing — well, hairline, radius, focus ring — sits on `input`,
-  `textarea` and `select` themselves, never on a wrapper class. A wrapper sets width
-  and layout; a variant sets only what it changes. Markup that forgets the wrapper
-  then renders a field, not a browser default white box in a near-black room.
+- A control's dressing — well, hairline, radius, focus ring, and the disabled
+  treatment — sits on `input`, `textarea` and `select` themselves, never on a wrapper
+  class. A wrapper sets width and layout; a variant sets only what it changes. Markup
+  that forgets the wrapper then renders a field, not a browser default white box in a
+  near-black room.
+- A control that is not accepting input says so by muting its text to `--text-muted`,
+  and drops its well back to the canvas behind that (ADR-0027 §11). Never the button's
+  `opacity` — on a control that manufactures a text colour below the contrast floor.
+  Disabling a field while a request is in flight therefore costs no CSS.
 
 ## API
 

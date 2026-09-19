@@ -1,6 +1,6 @@
 # ADR-0027: Colour means something, or it is white
 
-Date: 2026-09-16 · Status: accepted · Amended: 2026-09-17 (§9, units; §6 and §10, rendering)
+Date: 2026-09-16 · Status: accepted · Amended: 2026-09-17 (§9, units; §6 and §10, rendering); 2026-09-19 (§11, disabled controls)
 
 ## Context
 
@@ -89,6 +89,30 @@ need the operator to look.
     `#24242a`, chosen so the split rendering at 125% reaches the weight the
     design has at 100%, and it is a touch stronger than necessary at whole
     scales rather than absent at fractional ones.
+
+11. **A control that is not accepting input mutes its text** (added
+    2026-09-19, #171). The signal is the text: `--text` to `--text-muted`,
+    3.78:1 against itself, on every control in every context. Not the
+    `opacity: 0.45` the buttons use — opacity manufactures a colour nobody
+    measured (`--text` at 45% lands on `#706f6d`, 4.06:1 on the canvas and
+    4.13:1 on a panel, under §7's floor), and a field holds data an operator
+    reads rather than a label they know by shape. The room already splits on
+    this line, since `.btn.primary:disabled` swaps tokens rather than fading
+    for want of a fill that can afford it.
+
+    The rule also drops §1's well, `--surface` back to `--canvas`, and that
+    part is reinforcement, not signal: the two values are 1.043:1 apart, so it
+    reads only where the control sits on a raised panel and is a literal no-op
+    for a variant whose enabled well is already `--canvas`. Withdrawing the
+    well is right for a control that cannot be typed into; it is not what tells
+    the operator so. The hairline stays — §1 gives structure to hairlines
+    rather than to fills, and muting it would make an inert control quieter
+    than the room around it.
+
+    This is measured because nothing here would have caught it: §7 is a floor
+    for *text* tokens, and the room has no rule about non-text contrast at all.
+    A future treatment that leans on a fill change owes itself the same
+    arithmetic.
 
 ## Consequences
 
