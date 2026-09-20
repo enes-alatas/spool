@@ -23,6 +23,10 @@
 #
 # Usage (the workflow sets GH_TOKEN; the rest comes from the event):
 #   GITHUB_EVENT_NAME=issues GITHUB_EVENT_PATH=event.json secret-redact-body.sh
+#
+# On a dispatched run the event file holds inputs rather than a payload, and
+# the body is fetched by number instead — see below. That is the path a PR
+# uses to prove this workflow before it merges (#209).
 set -euo pipefail
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -31,6 +35,36 @@ event=${GITHUB_EVENT_PATH:?}
 name=${GITHUB_EVENT_NAME:?}
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
+
+# A dispatched run carries inputs, not a payload: `workflow_dispatch` writes
+# the numbers someone typed and nothing else, so the body the event would
+# have carried has to be fetched. This is the one path that fetches, and it
+# is why the workflow can be exercised from a branch at all (#209) — every
+# line below it is the same code the real event runs.
+if [ "$name" = workflow_dispatch ]; then
+  name=$(jq -r '.inputs.kind // "issues"' "$event")
+  [ "$name" = issue ] && name=issues
+  number=$(jq -r '.inputs.issue' "$event")
+  comment=$(jq -r '.inputs.comment // ""' "$event")
+  # Rebuilt in the shape GitHub writes, so nothing downstream has to know
+  # which trigger it was reading — a second body-reading path is a second
+  # place for a bug like #207 to live.
+  case "$name" in
+    issue_comment)
+      gh api "repos/$repo/issues/comments/$comment" \
+        --jq '{issue:{number:'"$number"'},comment:{id:.id,body:.body}}' > "$work/event.json"
+      ;;
+    pull_request_review_comment)
+      gh api "repos/$repo/pulls/comments/$comment" \
+        --jq '{pull_request:{number:'"$number"'},comment:{id:.id,body:.body}}' > "$work/event.json"
+      ;;
+    *)
+      gh api "repos/$repo/issues/$number" \
+        --jq '{issue:{number:.number,body:.body}}' > "$work/event.json"
+      ;;
+  esac
+  event="$work/event.json"
+fi
 
 # The body, and where it lives. A comment's body wins over an issue's because
 # an `issue_comment` event carries both, and the comment is the one that fired.

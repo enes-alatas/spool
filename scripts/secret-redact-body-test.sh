@@ -27,6 +27,12 @@ cat > "$stub/gh" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$CALLS"
 if [ "${GH_FAILS:-}" = "PATCH" ] && [[ "$*" == *PATCH* ]]; then exit 1; fi
+# A read: the dispatch path fetching the body the event did not carry. The
+# fixture stands in for what the API would return, already shaped by --jq.
+if [[ "$*" != *--method* && "$*" == *--jq* ]]; then
+  cat "${FETCH:-/dev/null}"
+  exit 0
+fi
 for arg in "$@"; do
   case "$arg" in body=@*) cp "${arg#body=@}" "$SENT";; esac
 done
@@ -45,6 +51,12 @@ event() { # kind body
     pull_request_review_comment)
       printf '{"pull_request":{"number":204},"comment":{"id":77,"body":%s}}\n' "$(printf '%s' "$2" | jq -Rs .)"
       ;;
+    workflow_dispatch)
+      # What `workflow_dispatch` actually writes: the inputs someone typed,
+      # and no payload. $2 is the kind, not a body — there is no body here,
+      # which is the whole reason the dispatch path fetches one.
+      printf '{"inputs":{"issue":"206","comment":"991","kind":"%s"}}\n' "$2"
+      ;;
   esac
 }
 
@@ -55,7 +67,8 @@ run() { # kind body -> sets STATUS, CALLS file, SENT file
   CALLS="$dir/calls" SENT="$dir/sent" : > "$dir/calls"
   # `bash -e`, as the runner invokes a `run:` block.
   PATH="$stub:$PATH" CALLS="$dir/calls" SENT="$dir/sent" \
-    GH_FAILS="${GH_FAILS:-}" GITHUB_REPOSITORY=o/r GITHUB_EVENT_NAME="$1" \
+    GH_FAILS="${GH_FAILS:-}" FETCH="${FETCH:-}" \
+    GITHUB_REPOSITORY=o/r GITHUB_EVENT_NAME="$1" \
     GITHUB_EVENT_PATH="$dir/event.json" \
     bash -e "$root/scripts/secret-redact-body.sh" >"$dir/out" 2>"$dir/err"
   STATUS=$?
@@ -144,6 +157,50 @@ if [ "$STATUS" -eq 0 ] || [ -s "$CALLS_FILE" ]; then
 else
   pass 'a broken scanner writes nothing'
 fi
+
+# The dispatch path (#209). A run from a branch carries inputs and no
+# payload, so the body is fetched by number — and from there it has to be the
+# same code, or the run that proves the workflow proves a different workflow.
+FETCH=$(mktemp)
+printf '{"issue":{"number":206,"body":%s}}\n' "$(printf 'here is the token: %s' "$TG" | jq -Rs .)" > "$FETCH"
+export FETCH
+run workflow_dispatch issue
+if [ "$STATUS" -ne 0 ]; then
+  fail "a dispatched hit exits $STATUS, want 0 ($(cat "$ERR_FILE"))"
+elif ! grep -q 'api repos/o/r/issues/206 --jq' "$CALLS_FILE"; then
+  fail "the dispatch path did not fetch the body: $(cat "$CALLS_FILE")"
+elif ! grep -q 'PATCH repos/o/r/issues/206' "$CALLS_FILE"; then
+  fail "a dispatched hit did not PATCH the issue body: $(cat "$CALLS_FILE")"
+elif ! grep -q 'POST repos/o/r/issues/206/comments' "$CALLS_FILE"; then
+  fail 'a dispatched hit did not post the incident note'
+elif grep -qF "$TG" "$SENT_FILE"; then
+  fail 'the body written back still holds the value'
+else
+  pass 'a dispatched run redacts the issue it was given'
+fi
+
+# The kind input picks the endpoint, exactly as the event name does: a
+# dispatched comment run that PATCHed the issue would rewrite the wrong text.
+printf '{"issue":{"number":206},"comment":{"id":991,"body":%s}}\n' "$(printf 'here is the token: %s' "$TG" | jq -Rs .)" > "$FETCH"
+run workflow_dispatch issue_comment
+if ! grep -q 'api repos/o/r/issues/comments/991 --jq' "$CALLS_FILE"; then
+  fail "the dispatch path fetched the wrong thing for a comment: $(cat "$CALLS_FILE")"
+elif ! grep -q 'PATCH repos/o/r/issues/comments/991' "$CALLS_FILE"; then
+  fail "a dispatched comment went to the wrong endpoint: $(cat "$CALLS_FILE")"
+else
+  pass 'a dispatched comment run is written back as a comment'
+fi
+
+# A dispatched run against a clean issue is the rehearsal an author does
+# before merging: it must do nothing, and say so by doing nothing.
+printf '{"issue":{"number":206,"body":"nothing credential-shaped here"}}\n' > "$FETCH"
+run workflow_dispatch issue
+if [ "$STATUS" -ne 0 ] || grep -q 'PATCH' "$CALLS_FILE"; then
+  fail "a dispatched clean body exits $STATUS and wrote: $(cat "$CALLS_FILE")"
+else
+  pass 'a dispatched run on a clean body writes nothing'
+fi
+unset FETCH
 
 # The call site, not the script. Defect 2 of #207 was one line of YAML: a
 # body handed to a step through `env:` is printed in that step's "Run" group
