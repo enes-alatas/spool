@@ -29,13 +29,13 @@ func TestReplacingATokenKeepsWhatThePollerLearnedMeanwhile(t *testing.T) {
 
 	// The operator opens the settings form, then presses save. The save is
 	// inside the round-trip from here until release.
-	tg.addBot("alpha-rotated")
+	tg.addBot("rotated")
 	entered, release := tg.blockGetMe()
 	saved := make(chan map[string]any, 1)
 	go func() {
 		var out map[string]any
 		srv.mustJSON("PATCH", "/api/loops/alpha",
-			map[string]any{"tg_bot_token": "alpha-rotated"}, &out)
+			map[string]any{"tg_bot_token": "rotated"}, &out)
 		saved <- out
 	}()
 	select {
@@ -64,7 +64,7 @@ func TestReplacingATokenKeepsWhatThePollerLearnedMeanwhile(t *testing.T) {
 	if after.TGGroupChatID != groupChatID {
 		t.Fatalf("group binding = %d, want the save to have left it at %d", after.TGGroupChatID, groupChatID)
 	}
-	if after.TGBotUsername != botUsername("alpha-rotated") {
+	if after.TGBotUsername != botUsername("rotated") {
 		t.Fatalf("bot username = %q, want the replaced token's own", after.TGBotUsername)
 	}
 }

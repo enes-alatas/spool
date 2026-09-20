@@ -20,6 +20,7 @@ import (
 	"github.com/enes-alatas/spool/internal/datadir"
 	"github.com/enes-alatas/spool/internal/httpapi"
 	"github.com/enes-alatas/spool/internal/loop"
+	"github.com/enes-alatas/spool/internal/redact"
 	"github.com/enes-alatas/spool/internal/route"
 	"github.com/enes-alatas/spool/internal/runtime"
 	"github.com/enes-alatas/spool/internal/runtime/bare"
@@ -30,6 +31,12 @@ import (
 	"github.com/enes-alatas/spool/internal/telegram"
 	"github.com/enes-alatas/spool/web"
 )
+
+// redactTTL bounds how long a secret written while the process runs can go
+// unredacted. The API refreshes the redactor the moment it writes one, so
+// this is only the backstop for a write that forgets to — short enough that
+// the window is a blink, long enough that the log's hot path reloads rarely.
+const redactTTL = 5 * time.Second
 
 func main() {
 	listen := flag.String("listen", "127.0.0.1:8080", "address to serve the API/UI on")
@@ -44,7 +51,8 @@ func main() {
 	retentionDays := flag.Int("events-retention-days", 30, "prune raw claude events older than this many days (0 disables; messages and turns are never pruned)")
 	flag.Parse()
 
-	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	logTo := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})
+	log := slog.New(logTo)
 	slog.SetDefault(log)
 
 	// The SandboxRuntime seam (ADR-0004): both implementations stay wired —
@@ -87,6 +95,21 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Redaction (#150): every secret Spool holds, kept out of the
+	// log, the stored transcripts and the API's responses. It reads the raw
+	// db — it is the thing that knows the values — and everything else from
+	// here down gets the decorated store instead, so no writer has to
+	// remember the rule. Load once now: until the first load it redacts
+	// nothing, and the wiring below starts writing immediately.
+	redactor := redact.New(redact.StoreSource{Store: db}, redactTTL)
+	if err := redactor.Refresh(context.Background()); err != nil {
+		log.Error("load secrets for redaction", "err", err)
+		os.Exit(1)
+	}
+	log = slog.New(redact.Handler(logTo, redactor))
+	slog.SetDefault(log)
+	rdb := redact.Store(db, redactor)
+
 	b := bus.New()
 
 	// wire the object graph; router and manager reference each other through
@@ -95,14 +118,14 @@ func main() {
 	var scheduler *sched.Scheduler
 
 	deps := loop.Deps{
-		Store:                     db,
+		Store:                     rdb,
 		Bus:                       b,
 		Runtimes:                  runtimes,
 		WorkstationHealthInterval: healthInterval,
 		PartialMessages:           *partials,
 		Logger:                    log,
 		RenderPrompt: func(l *store.Loop) loop.Prompt {
-			cat, rules := catalogOf(db, l), rulesOf(db)
+			cat, rules := catalogOf(rdb, l), rulesOf(rdb)
 			return loop.Prompt{
 				System:         loop.SystemPrompt(l, cat, rules),
 				StandingChange: loop.StandingInstructionsPreamble(l, cat, rules),
@@ -134,7 +157,7 @@ func main() {
 			scheduler.ScheduleAfterTurn(l, trailer, has)
 		},
 		ClaudeToken: func(ctx context.Context) (string, error) {
-			token, err := db.Settings().Get(ctx, store.SettingClaudeOAuthToken)
+			token, err := rdb.Settings().Get(ctx, store.SettingClaudeOAuthToken)
 			if errors.Is(err, store.ErrNotFound) {
 				return "", nil
 			}
@@ -142,8 +165,8 @@ func main() {
 		},
 	}
 	manager := loop.NewManager(deps)
-	router = route.New(db, b, manager, log)
-	scheduler = sched.New(db, b, manager, log)
+	router = route.New(rdb, b, manager, log)
+	scheduler = sched.New(rdb, b, manager, log)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -153,17 +176,17 @@ func main() {
 		os.Exit(1)
 	}
 	// close sessions left dangling by a previous crash (best effort)
-	_ = db.Sessions().EndDangling(ctx, store.EndReasonCrash, time.Now().UnixMilli())
+	_ = rdb.Sessions().EndDangling(ctx, store.EndReasonCrash, time.Now().UnixMilli())
 
 	go scheduler.Run(ctx)
-	go pruneEvents(ctx, db, *retentionDays, log)
+	go pruneEvents(ctx, rdb, *retentionDays, log)
 
-	bridge := telegram.NewBridge(db, b, router, log, *telegramAPI)
+	bridge := telegram.NewBridge(rdb, b, router, log, *telegramAPI)
 	bridge.SetBindSettle(time.Duration(*bindSettleSec) * time.Second)
 	bridge.Start(ctx)
 
 	api := &httpapi.Server{
-		Store:          db,
+		Store:          rdb,
 		Bus:            b,
 		Manager:        manager,
 		Router:         router,
@@ -178,11 +201,16 @@ func main() {
 			}
 			return nil
 		},
+		SecretsChanged: func(ctx context.Context) {
+			if err := redactor.Refresh(ctx); err != nil {
+				log.Error("reload secrets for redaction", "err", err)
+			}
+		},
 		Log:   log,
 		WebFS: web.Dist(),
 	}
 
-	srv := &http.Server{Addr: *listen, Handler: api.Handler()}
+	srv := &http.Server{Addr: *listen, Handler: redact.HTTP(api.Handler(), redactor)}
 	go func() {
 		<-ctx.Done()
 		log.Info("shutting down")

@@ -1,6 +1,6 @@
 # ADR-0017: Workstation design — long-lived Docker containers behind the SandboxRuntime seam
 
-Date: 2026-08-17 · Status: accepted
+Date: 2026-08-17 · Status: accepted · Amended: 2026-09-20 (redaction)
 
 ## Context
 
@@ -56,6 +56,19 @@ and later on the hosted service.
    until the L4 connections catalog: stored in the DB, write-only through the
    API, injected into every exec, redacted from logs. The catalog later
    generalizes the same injection path.
+
+**Amendment (2026-09-20, #150): "redacted from logs" is now a component, and
+covers transcripts and API responses too.** Item 8 stated the rule and left
+each call site to keep it, which is not a rule but a hope — #146 was a
+transport error string carrying a bot token into the log, written by nobody.
+`internal/redact` now holds every secret value Spool knows (this item's
+per-loop secrets, the operator's Claude token, each loop's bot and hub-MCP
+tokens) and sits in three places at once: the slog handler, a decorator over
+the Store, and the API's response writer. Injection is unchanged — a loop
+still receives its secrets in the clear, which is the point of having them
+(ADR-0019 notes they are loop-readable by design). What changes is that the
+value cannot come back out through anything Spool writes down.
+
 9. **Default resource caps, open egress.** Per-loop memory/CPU limits
    (defaults 4GB / 2 CPUs, configurable); full outbound network; no published
    ports at L1.

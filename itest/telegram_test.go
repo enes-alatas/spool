@@ -180,6 +180,11 @@ func (tg *fakeTelegram) handle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// botUsername is what the stand-in's getMe answers for a token. It embeds
+// the token, which a real bot's username never does — so every token here
+// stays a short label, below redact.MinLength. A fixture token long enough
+// to be redacted would come back out of the API as "<redacted:tg_bot_token>_bot"
+// and read as a product bug rather than the fixture artefact it is (#150).
 func botUsername(token string) string { return token + "_bot" }
 
 func writeOK(w http.ResponseWriter, result any) {
