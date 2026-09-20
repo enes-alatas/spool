@@ -61,6 +61,7 @@ vet:
 secret-scan:
 	@bash scripts/secret-scan-test.sh >/dev/null
 	@bash scripts/secret-redact-test.sh >/dev/null
+	@bash scripts/secret-redact-body-test.sh >/dev/null
 	bash scripts/secret-scan.sh
 
 e2e-m1: server
