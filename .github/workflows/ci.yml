@@ -97,6 +97,11 @@ jobs:
       # above, so a change to either arrives here.
       - name: the redactor still takes out what it claims to
         run: bash scripts/secret-redact-test.sh
+      # The step the redaction workflow runs, under the runner's own `bash -e`
+      # — the flag is the difference that let #207 ship: every check passed
+      # under plain bash and the guard did nothing on the runner.
+      - name: the redaction step still acts on a hit
+        run: bash scripts/secret-redact-body-test.sh
       - name: scan the lines this PR adds
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
