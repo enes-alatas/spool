@@ -10,4 +10,4 @@ It looked like a token, key or password, so it was replaced with a marker. That 
 
 If this was not a real credential — an example, a fixture, a shape being discussed — put it back with a value that reads as obviously synthetic (the word `fixture` inside it, or a run of repeated characters) and it will be left alone.
 
-<sub>Posted automatically by the <code>secret-redact</code> workflow (.github/workflows/secret-redact.yml).</sub>
+<sub>Posted automatically by the <code>issue-guards</code> workflow (.github/workflows/secret-redact.yml).</sub>

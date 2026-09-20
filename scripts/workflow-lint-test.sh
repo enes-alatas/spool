@@ -229,7 +229,7 @@ jobs:
 YML
 
 # Ids and numbers are not text an attacker writes; the concurrency group in
-# secret-redact.yml needs one. A rule that flagged every `github.event.*`
+# the issue-guards workflow needs one. A rule that flagged every `github.event.*`
 # would have to be waived there, and a waived rule is not a rule.
 check ids-are-fine clean <<'YML'
 name: x
@@ -417,13 +417,15 @@ if [ ! -f "$sentinel" ]; then
   fail 'no ci-health.yml — rule 4 has nothing to check'
 else
   cp "$sentinel" "$work/sentinel.keep"
-  sed -i 's/^    workflows: \[.*$/    workflows: [needs-type]/' "$sentinel"
+  # A list naming a workflow this repo does not have, so every real one is
+  # missing from it and the rule has to name the ones that exist.
+  sed -i 's/^    workflows: \[.*$/    workflows: [not-a-workflow-here]/' "$sentinel"
   out=$(bash "$root/scripts/workflow-lint.sh" 2>&1)
   status=$?
   cp "$work/sentinel.keep" "$sentinel"
   if [ "$status" -eq 0 ]; then
     fail 'a workflow missing from the sentinel list was not reported'
-  elif ! grep -q 'secret-redact` is missing' <<<"$out"; then
+  elif ! grep -q 'issue-guards` is missing' <<<"$out"; then
     fail "rule 4 reported something else: $out"
   else
     pass 'a workflow missing from the sentinel list is reported'

@@ -85,13 +85,13 @@ run() { # event_name payload_file
 }
 
 # The case the whole workflow exists for.
-printf '{"workflow_run":%s}' "$(run_json secret-redact failure main)" > "$work/e.json"
+printf '{"workflow_run":%s}' "$(run_json issue-guards failure main)" > "$work/e.json"
 run workflow_run "$work/e.json"
 if [ "$STATUS" -ne 0 ]; then
   fail "a failure exits $STATUS, want 0 ($(cat "$ERR_FILE"))"
 elif ! grep -q 'POST repos/o/r/issues/216/comments' "$CALLS_FILE"; then
   fail "a failure was not reported: $(cat "$CALLS_FILE")"
-elif ! grep -q 'secret-redact' "$SENT_FILE"; then
+elif ! grep -q 'issue-guards' "$SENT_FILE"; then
   fail "the comment does not name the workflow: $(cat "$SENT_FILE")"
 elif ! grep -q 'actions/runs/42' "$SENT_FILE"; then
   fail 'the comment does not link the run'
@@ -103,7 +103,7 @@ fi
 
 # The normal state. A sentinel that comments on success is a sentinel someone
 # mutes, and then the failures are unread too.
-printf '{"workflow_run":%s}' "$(run_json secret-redact success main)" > "$work/e.json"
+printf '{"workflow_run":%s}' "$(run_json issue-guards success main)" > "$work/e.json"
 run workflow_run "$work/e.json"
 if [ "$STATUS" -ne 0 ] || [ -s "$CALLS_FILE" ]; then
   fail "a successful run exits $STATUS and called: $(cat "$CALLS_FILE")"
@@ -120,7 +120,7 @@ fi
 # cancelled by design on every force-push (ci.yml's concurrency), and
 # reporting those buries the real ones inside a week.
 for conclusion in cancelled skipped neutral stale; do
-  printf '{"workflow_run":%s}' "$(run_json secret-redact "$conclusion" main)" > "$work/e.json"
+  printf '{"workflow_run":%s}' "$(run_json issue-guards "$conclusion" main)" > "$work/e.json"
   run workflow_run "$work/e.json"
   if [ -s "$CALLS_FILE" ]; then
     fail "a $conclusion run was reported"
@@ -130,7 +130,7 @@ for conclusion in cancelled skipped neutral stale; do
 done
 
 for conclusion in timed_out startup_failure action_required some_future_conclusion; do
-  printf '{"workflow_run":%s}' "$(run_json secret-redact "$conclusion" main)" > "$work/e.json"
+  printf '{"workflow_run":%s}' "$(run_json issue-guards "$conclusion" main)" > "$work/e.json"
   run workflow_run "$work/e.json"
   if ! grep -q 'POST repos/o/r/issues/216/comments' "$CALLS_FILE"; then
     fail "a $conclusion run was not reported: $(cat "$CALLS_FILE")"
@@ -154,7 +154,7 @@ fi
 # The dispatch path (#209): the only way to prove the posting path, since a
 # healthy repo never fires the real trigger.
 FETCH="$work/fetched.json"
-run_json needs-type failure main > "$FETCH"
+run_json issue-guards failure main > "$FETCH"
 export FETCH
 printf '{"inputs":{"run_id":"42"}}' > "$work/e.json"
 run workflow_dispatch "$work/e.json"
@@ -170,7 +170,7 @@ fi
 
 # Same path, healthy run: the rehearsal an author does when the run they
 # picked turns out to have passed.
-run_json needs-type success main > "$FETCH"
+run_json issue-guards success main > "$FETCH"
 run workflow_dispatch "$work/e.json"
 if [ "$STATUS" -ne 0 ] || grep -q POST "$CALLS_FILE"; then
   fail "a dispatched success exits $STATUS and posted: $(cat "$CALLS_FILE")"
@@ -185,7 +185,7 @@ unset FETCH
 # and it must not pass either: a green run that proved nothing is what the
 # author would link as evidence.
 FETCH="$work/fetched.json"
-jq -nc '{name: "secret-redact", conclusion: null, head_branch: "main", html_url: "https://github.com/o/r/actions/runs/42", event: "issues", head_sha: "0123456789abcdef", updated_at: "2026-09-20T12:00:00Z", id: 42}' > "$FETCH"
+jq -nc '{name: "issue-guards", conclusion: null, head_branch: "main", html_url: "https://github.com/o/r/actions/runs/42", event: "issues", head_sha: "0123456789abcdef", updated_at: "2026-09-20T12:00:00Z", id: 42}' > "$FETCH"
 export FETCH
 printf '{"inputs":{"run_id":"42"}}' > "$work/e.json"
 run workflow_dispatch "$work/e.json"
@@ -203,7 +203,7 @@ unset FETCH
 # A branch name is attacker-writable text — anyone who can open a PR picks
 # one. It reaches the comment through jq, never through the shell, so a name
 # that would close the quoting is data either way.
-printf '{"workflow_run":%s}' "$(run_json secret-redact failure '"; rm -rf / #')" > "$work/e.json"
+printf '{"workflow_run":%s}' "$(run_json issue-guards failure '"; rm -rf / #')" > "$work/e.json"
 run workflow_run "$work/e.json"
 if [ "$STATUS" -ne 0 ]; then
   fail "a hostile branch name broke the step: $(cat "$ERR_FILE")"

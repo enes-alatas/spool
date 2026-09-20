@@ -96,13 +96,13 @@ jobs:
           fetch-depth: 0
       - name: the scanner still catches what it claims to
         run: bash scripts/secret-scan-test.sh
-      # The redaction guard (secret-redact.yml) fires on issue and comment
+      # The redaction guard (secret-redact.yml, the `issue-guards` workflow) fires on issue and comment
       # events, where nothing gates it — this is the only place its rules are
       # checked before they ship, and it shares its pattern list with the scan
       # above, so a change to either arrives here.
       - name: the redactor still takes out what it claims to
         run: bash scripts/secret-redact-test.sh
-      # The step the redaction workflow runs, under the runner's own `bash -e`
+      # The step the redaction guard runs, under the runner's own `bash -e`
       # — the flag is the difference that let #207 ship: every check passed
       # under plain bash and the guard did nothing on the runner.
       - name: the redaction step still acts on a hit

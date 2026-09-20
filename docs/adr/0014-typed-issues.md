@@ -25,8 +25,10 @@ Enforcement has three layers:
    filing time.
 2. **Written rule** for `gh`/API filings (which bypass forms): apply the type
    label yourself and replicate the matching form's headings in the body.
-3. **CI** (`needs-type` workflow on the `issues` trigger) labels any issue
-   without a type label `needs-type` and clears the flag once typed.
+3. **CI** (the typing guard in the `issue-guards` workflow, on the `issues`
+   trigger) labels any issue without a type label `needs-type` and clears the
+   flag once typed. It had a workflow of its own until #232; the label and the
+   behaviour are unchanged, it just shares a runner with the redaction guard.
 
 `bug` and `security` severity is mirrored as `severity:critical|high|medium|
 low|info` labels. Issue types map onto Conventional Commit / branch types
