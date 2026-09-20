@@ -58,7 +58,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "${{ github.event_name }}" != "pull_request" ]; then
-            printf 'unit=true\nitest=false\nweb=false\n' >> "$GITHUB_OUTPUT"
+            printf 'unit=true\nitest=false\nweb=false\nworkflows=false\n' >> "$GITHUB_OUTPUT"
             echo 'Push to main: unit tests only — this content was green on its PR (ADR-0016).' >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
