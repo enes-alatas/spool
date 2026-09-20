@@ -291,6 +291,124 @@ jobs:
         run: true
 YML
 
+# Rule 5 (#220) — the scopes a `gh` call needs. The shape that shipped: a
+# workflow that asks the API for a run under a grant naming only `issues`,
+# which is #203 wearing a different scope.
+check gh-actions-without-scope '#220' <<'YML'
+name: x
+on:
+  workflow_dispatch:
+permissions:
+  issues: write
+jobs:
+  j:
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh api "repos/$R/actions/runs/$id" > run.json
+YML
+
+check gh-actions-with-scope clean <<'YML'
+name: x
+on:
+  workflow_dispatch:
+permissions:
+  actions: read
+  issues: write
+jobs:
+  j:
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh api "repos/$R/actions/runs/$id" > run.json
+YML
+
+# The other two scopes, each under a grant that names the wrong one.
+check gh-issues-without-scope '#220' <<'YML'
+name: x
+on:
+  workflow_dispatch:
+permissions:
+  actions: read
+jobs:
+  j:
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh issue edit 1 --add-label needs-type
+YML
+
+check gh-pr-without-scope '#220' <<'YML'
+name: x
+on:
+  workflow_dispatch:
+permissions:
+  issues: write
+jobs:
+  j:
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh api "repos/$R/pulls/comments/$id"
+YML
+
+# Only the scope has to be named, not the level: read versus write is a
+# judgement about the call, and a rule that guessed it would cry wolf.
+check gh-scope-read-is-enough clean <<'YML'
+name: x
+on:
+  workflow_dispatch:
+permissions:
+  issues: read
+jobs:
+  j:
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh issue view 1
+YML
+
+# No block at all is the repo's default grant, and `write-all` is everything:
+# a rule that fired on either would fire on most workflows people write.
+check gh-no-block-no-finding clean <<'YML'
+name: x
+on:
+  workflow_dispatch:
+jobs:
+  j:
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh api "repos/$R/actions/runs/$id"
+YML
+
+check gh-write-all-no-finding clean <<'YML'
+name: x
+on:
+  workflow_dispatch:
+permissions: write-all
+jobs:
+  j:
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh api "repos/$R/actions/runs/$id"
+YML
+
+# The grant is per job, as in rule 2: a job that makes no call is not judged
+# by another job's calls.
+check gh-scope-is-per-job '#220' <<'YML'
+name: x
+on:
+  workflow_dispatch:
+jobs:
+  quiet:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - run: echo nothing
+  loud:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - run: gh api "repos/$R/actions/runs/$id"
+YML
+
 # Rule 4 (#210) — the sentinel's watch-list. This rule is about the set of
 # files, so it is exercised against the repo rather than a fixture: drop a
 # name from the list, and the workflow it names must be reported.
