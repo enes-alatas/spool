@@ -344,6 +344,40 @@ textarea {
   margin-top: 0;
 }
 
+/* ---- build identity (#224) ---- */
+/* The Build section of Settings: machine facts, in a label/value list. Each
+   value is monospace because every one of them is a string to copy exactly —
+   a version, a commit, a timestamp — and the labels stay muted so the column
+   of values is what the eye lands on. */
+.facts {
+  display: grid;
+  gap: 8px 20px;
+  margin: 0;
+}
+.fact {
+  display: grid;
+  grid-template-columns: 8.5rem 1fr;
+  gap: 4px 20px;
+  align-items: baseline;
+}
+.fact dt {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+.fact dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+/* Narrow enough that a label column would leave the values a few characters
+   wide: the label goes above its value instead of beside it. */
+@media (max-width: 520px) {
+  .fact {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ---- spool glyph ---- */
 .spool-glyph {
   display: inline-block;
@@ -1246,14 +1280,6 @@ textarea {
   font-size: 0.65625rem;
   color: var(--text-muted);
   flex: none;
-}
-
-/* the claude version is the first thing to go: it is reference detail, and
-   the destinations are not */
-@media (max-width: 1150px) {
-  .topbar .version {
-    display: none;
-  }
 }
 
 /* Enter the narrow composition well before the centred row can reach the

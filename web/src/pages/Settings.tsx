@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type Settings as SettingsView } from '../api'
 import { rotationGate, tokenSubmittable } from '../forms'
+import { buildFacts, useClaudeVersion, useVersion } from '../version'
 
 export default function Settings() {
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings })
@@ -11,7 +12,35 @@ export default function Settings() {
       <h1>Settings</h1>
       <ClaudeToken settings={settings} />
       <RotationThresholds settings={settings} />
+      <Build />
     </div>
+  )
+}
+
+// Which Spool this room is talking to, and which `claude` it runs (#224).
+// Settings is the page a question about the installation is already asked on,
+// and it is the only page that shows this: a version on every screen is
+// reference detail competing with the work.
+function Build() {
+  const { data: build } = useVersion()
+  const { data: health } = useClaudeVersion()
+
+  return (
+    <>
+      <h2 className="section-head">Build</h2>
+      <p className="page-lede">
+        What this server is, for a bug report or for checking that a deploy actually landed.
+      </p>
+
+      <dl className="facts">
+        {buildFacts(build, health?.claude_version).map((fact) => (
+          <div key={fact.label} className="fact">
+            <dt>{fact.label}</dt>
+            <dd>{fact.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </>
   )
 }
 
