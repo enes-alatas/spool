@@ -397,6 +397,20 @@ func (r messages) UntoldSendFailures(ctx context.Context, loopID string) ([]*sto
 		ORDER BY id`, loopID)
 }
 
+func (r messages) SendFailuresSince(ctx context.Context, loopID string, since int64) (int, error) {
+	if loopID == "" {
+		return 0, nil // as above: a loop is always named
+	}
+	// send_failed_at!=0 is not implied by the window: a since of 0 would
+	// otherwise count every delivered message, which is the wrong answer
+	// stated confidently.
+	var n int
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM messages
+		WHERE from_loop_id=? AND send_failed_at!=0 AND send_failed_at>=?`, loopID, since).Scan(&n)
+	return n, err
+}
+
 func (r messages) MarkSendFailuresTold(ctx context.Context, ids []int64, toldAt int64) error {
 	if len(ids) == 0 {
 		return nil

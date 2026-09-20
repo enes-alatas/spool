@@ -174,3 +174,38 @@ func TestALostSendIsNotSpentOnAHandoffTurn(t *testing.T) {
 		t.Fatalf("the successor was never told what its predecessor failed to say:\n%s", successor.ResultText)
 	}
 }
+
+// TestUndeliveredCountReachesTheFleetView: the operator who is not reading a
+// loop's timeline still learns its words are not arriving. The count is on
+// the loop's own view, and it counts the sender's failures — the loop that
+// was merely mentioned is healthy and says so (#202).
+func TestUndeliveredCountReachesTheFleetView(t *testing.T) {
+	operator := user{ID: 7733, First: "Operator", Username: "operator"}
+	ws := workspaceWithScript(t, "!ctx 0\n"+
+		`!send {"destination":"group","text":"@beta nobody hears this"}`+"\n")
+	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws})
+
+	if n := srv.loop("alpha").Undelivered24h; n != 0 {
+		t.Fatalf("a loop that has not sent anything reports %d undelivered", n)
+	}
+
+	tg.failNextSends(-1) // every send from here on
+	srv.message("alpha", "say it")
+
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		n := srv.loop("alpha").Undelivered24h
+		if n == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the sender's view reports %d undelivered after a send that never arrived", n)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	// the recipient is not the sender: beta's own messages all arrived
+	if n := srv.loop("beta").Undelivered24h; n != 0 {
+		t.Fatalf("beta reports %d undelivered, but the failed message was alpha's", n)
+	}
+}
