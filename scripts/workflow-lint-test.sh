@@ -291,6 +291,31 @@ jobs:
         run: true
 YML
 
+# Rule 4 (#210) — the sentinel's watch-list. This rule is about the set of
+# files, so it is exercised against the repo rather than a fixture: drop a
+# name from the list, and the workflow it names must be reported.
+sentinel=.github/workflows/ci-health.yml
+if [ ! -f "$sentinel" ]; then
+  fail 'no ci-health.yml — rule 4 has nothing to check'
+else
+  cp "$sentinel" "$work/sentinel.keep"
+  sed -i 's/^    workflows: \[.*$/    workflows: [needs-type]/' "$sentinel"
+  out=$(bash "$root/scripts/workflow-lint.sh" 2>&1)
+  status=$?
+  cp "$work/sentinel.keep" "$sentinel"
+  if [ "$status" -eq 0 ]; then
+    fail 'a workflow missing from the sentinel list was not reported'
+  elif ! grep -q 'secret-redact` is missing' <<<"$out"; then
+    fail "rule 4 reported something else: $out"
+  else
+    pass 'a workflow missing from the sentinel list is reported'
+  fi
+fi
+
+# ...and the exemptions are real: `ci` reports itself on the PR, and a
+# sentinel watching itself writes a loop into its own noticeboard. Neither
+# appears in the list, and the clean run below proves neither is demanded.
+
 # The repo's own workflows are the fixture that matters most: this is the
 # check that runs in CI, so the rules and the files have to agree today.
 out=$(bash "$root/scripts/workflow-lint.sh" 2>&1)

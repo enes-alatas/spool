@@ -74,7 +74,10 @@ window regardless of loop count (ADR-0018).
   workflow with a trigger other than `pull_request`/`push` declares a
   `workflow_dispatch`; no job runs `actions/checkout` under an effective
   grant missing `contents: read`; no workflow interpolates an event body,
-  `env:` included. One rule per incident (#203, #207, #209), stdlib shell.
+  `env:` included; every workflow but `ci` and `ci-health` appears in the
+  sentinel's `workflows:` list; and a file the parser cannot read is a
+  finding, never a pass. One rule per incident (#203, #207, #209, #210),
+  stdlib shell.
 - **Architecture tests**: a hand-rolled Go test walks the import graph and fails on:
   adapters importing each other; hub packages importing adapter internals; a seam
   importing anything but its own protocol (its implementations included);
