@@ -67,10 +67,10 @@ window regardless of loop count (ADR-0018).
 **CI (mechanical, blocking):**
 - `gofmt`, `go vet`, `golangci-lint`; `eslint`, `prettier`; build incl. web.
 - Test tiers 1 + 2 (CONVENTIONS.md), Go and web both — `make test`, `make itest`,
-  and `npm test` in the web job. The docker workstation suites in tier 2
+  and `npm test` in the web steps of `checks`. The docker workstation suites in tier 2
   run against a real daemon: CI runners always have one; locally they skip
   with a notice when none is reachable.
-- **Workflow rules** (`workflows` job, `scripts/workflow-lint.sh`): every
+- **Workflow rules** (`checks` job, `scripts/workflow-lint.sh`): every
   workflow with a trigger other than `pull_request`/`push` declares a
   `workflow_dispatch`; no job runs `actions/checkout` under an effective
   grant missing `contents: read`; no workflow interpolates an event body,
@@ -92,11 +92,27 @@ window regardless of loop count (ADR-0018).
   non-plain-data types crossing the Runner seam. Stdlib-only, lives in the repo.
 - `govulncheck`.
 
-**What runs where.** Every job above runs on every pull request and reports
-its check. A job whose paths the change did not touch stops after deciding
-so, which keeps the check present and green while billing a minute instead
-of eight — Actions minutes are capped on a private repo and tier 2 is ~80%
-of a full run (#181). The mapping:
+**What runs where.** Three checks report on a pull request, and branch
+protection (#1) requires all three:
+
+- `changes` — which parts of the tree the event touched. It reports a check
+  because the other two are `needs: changes`, and a job whose dependency
+  failed is *skipped*, which counts as passed (see below). Requiring it is
+  what stops a broken filter from producing a green PR that ran nothing.
+- `checks` — tier 1 + lint + govulncheck, web, the secret scans, the
+  workflow rules.
+- `itest` — tier 2.
+
+They are three rather than six because GitHub bills a started job a whole
+minute however little it does, and Actions minutes are capped on a private
+repo (#181, #232). Inside `checks`, each area keeps its own path filter as a
+step condition; `itest` is filtered at job level, so it is skipped outright
+when nothing it covers changed.
+
+`checks` runs even when `changes` failed, so a broken filter cannot silence
+the secret scans — before the fold they were the one job with no `needs:`.
+The rest of that job then fails fast rather than reading an empty filter and
+deciding each area has nothing to do. The mapping:
 
 | touched | tier 1 + lint + govulncheck | tier 2 (itest) | web | workflows |
 |---|---|---|---|---|
@@ -106,18 +122,27 @@ of a full run (#181). The mapping:
 | `docs/`, `README`, anything else | no | no | no | no |
 | `.github/workflows/` | yes | yes | yes | yes |
 
+The secret scans are in no row: they run on every pull request whatever it
+touched, because a credential can be added to any file.
+
 A change to the workflow runs everything: the gates must prove themselves
 under the gates they are changing.
 
-A push to `main` runs tier 1 only. Rebase-merge (ADR-0016) lands commits a
-PR already proved green, so the rest is a re-run; what it does not cover is
-a merge from a stale base, which branch protection's "require branches to be
-up to date" closes (#1).
+A push to `main` runs tier 1 only — `itest` is skipped there, not just
+filtered. Rebase-merge (ADR-0016) lands commits a PR already proved green,
+so re-running tier 2 re-proves nothing unless the base moved; that case is
+closed by branch protection's "require branches to be up to date" (#1),
+which the operator enables. Until it is on, the tier-1 steps are the smoke
+that would catch a mechanical mismerge.
 
-**"CI green" therefore means**: every check reported success, and every check
-whose paths the change touched actually executed. A docs-only PR is green on
-three skipped jobs, and that is the intended answer — not a gate that was
-evaded.
+**"CI green" therefore means**: every check reported success or `skipped`,
+and every check whose paths the change touched actually executed. A
+docs-only PR is green on a `checks` job that ran the secret scans and
+nothing else, and a skipped `itest` — the intended answer, not a gate that
+was evaded. A skipped job is a reported conclusion, which branch protection
+counts as passed; a workflow skipped at file level would instead leave its
+check pending forever, which is why the filtering happens inside the
+workflow and not in its `paths:`.
 
 **CI (informational, never blocking):**
 - Diff coverage of changed lines, posted on the PR. Reviewer judgment + the

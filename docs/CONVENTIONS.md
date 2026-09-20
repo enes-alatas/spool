@@ -237,7 +237,7 @@ agents — Claude sessions today, Spool's own loops from L2.*
   the way they check CI; a PR without it is not ready. After the merge the
   author runs it once more on `main` via a real event and reports it on the
   PR — the dispatched run proves the code, the real event proves the trigger.
-  `scripts/workflow-lint.sh` (CI job `workflows`) enforces what a file can
+  `scripts/workflow-lint.sh` (a step of CI's `checks` job) enforces what a file can
   show: the missing dispatch, a checkout without `contents: read` (#203), and
   an event body interpolated anywhere in a workflow, `env:` included (#207).
   **The exception is a brand-new workflow**, which cannot be dispatched at

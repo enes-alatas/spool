@@ -1,0 +1,44 @@
+chore(ci): four short checks in one job, and a real skip for tier 2
+
+A started job bills a whole minute whatever it does, so the two levers
+#183 chose both spend more than they look. Four jobs — `go`, `web`,
+`secrets`, `workflows` — did well under a minute of work each and
+billed four; and a job whose paths did not change billed a minute to
+echo that it had nothing to do, which on a push to `main` meant six
+jobs and six minutes for a set of commits CI had already proved. Of
+the 850 billed minutes measured on 2026-09-19, ~300 of `ci`'s 626 were
+this floor (#232).
+
+The four are one job, `checks`. Each area keeps the filter it had, as
+a step-level `if:` rather than a job-level one, so what runs is
+unchanged and only the packaging moved; the secret scans keep running
+on every pull request, since a credential can be added to any file.
+The cost is about a minute of wall time, because the four no longer
+run in parallel — worth paying on the short checks, which is why
+`itest` is not among them.
+
+`itest` instead gets the skip #183 ruled out. Its reasoning was that a
+skipped job reports no check and branch protection (#1) needs the
+check present; that is true of a workflow skipped by `paths:`, whose
+check stays pending forever, and not of a job skipped by an `if:`,
+which reports a conclusion of `skipped` that counts as passed. So the
+~8-minute job now costs nothing when nothing it covers changed,
+instead of a minute to say so — including on every push to `main`,
+where it was already filtered out.
+
+The check names change with the jobs: `go`, `web`, `secrets` and
+`workflows` become `checks`, which branch protection has to be
+configured against when #1 turns it on — and `changes` has to be
+required with it. `secrets` was the one job with no `needs:`, so a
+failure of the filter job could not silence the secret scan; now
+everything is downstream of `changes`, and a skipped job counts as
+passed. Two things restore that property: `checks` runs even when the
+filter failed, so the scans still run, and it then fails rather than
+reading an empty filter and concluding each area had nothing to do.
+
+Part of #232
+
+ — Iris · Frontend Engineer
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+

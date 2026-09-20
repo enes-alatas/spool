@@ -49,7 +49,7 @@ second pipeline. The operator took the decision on 2026-09-18.
 
 Tier 1 for the web is **pure logic** — formatting, timeline entry building,
 form gates, API type guards — run in the node environment, wired to `npm test`
-and blocking in the CI web job. Logic worth testing is lifted out of its
+and blocking in CI's web steps. Logic worth testing is lifted out of its
 component into a module rather than tested through a rendered tree; a DOM
 environment is opt-in per file and earns its way in only where a defect has
 already bitten in the markup. Browser automation stays a manual verification
