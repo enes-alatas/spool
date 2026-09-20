@@ -13,8 +13,9 @@ import (
 //
 // It decorates the store rather than the callers because the callers are the
 // problem: inserts happen in internal/loop, internal/route and
-// internal/telegram, and the next one will happen somewhere else again. A
-// decorator wired once in cmd/ covers the sites that do not know it exists.
+// internal/surface/telegram, and the next one will happen somewhere else
+// again. A decorator wired once in cmd/ covers the sites that do not know it
+// exists.
 //
 // Writes are redacted, reads are not: a row written before this existed stays
 // as it is on disk, and the API boundary redacts it on the way out.

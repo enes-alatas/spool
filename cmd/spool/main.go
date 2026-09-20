@@ -30,7 +30,7 @@ import (
 	"github.com/enes-alatas/spool/internal/sched"
 	"github.com/enes-alatas/spool/internal/store"
 	"github.com/enes-alatas/spool/internal/store/sqlite"
-	"github.com/enes-alatas/spool/internal/telegram"
+	"github.com/enes-alatas/spool/internal/surface/telegram"
 	"github.com/enes-alatas/spool/web"
 )
 
@@ -214,7 +214,7 @@ func main() {
 		Manager:        manager,
 		Router:         router,
 		Sched:          scheduler,
-		Telegram:       bridge,
+		Surface:        bridge,
 		DataDir:        *dataDir,
 		ClaudeVer:      ver,
 		DefaultRuntime: defaultRuntime,
