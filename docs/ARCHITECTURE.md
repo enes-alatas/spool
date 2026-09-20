@@ -109,12 +109,18 @@ internal/sched/       hub: tick scheduling
 internal/bus/         hub: pub/sub
 internal/store/       hub: interfaces + sqlite/
 internal/httpapi/     hub: REST + SSE
+internal/redact/      known secret values out of logs, writes and responses
 internal/gitws/       git worktree helper
 internal/datadir/     permissions on the data directory
 web/                  control room (React/Vite/TS, go:embed)
 docs/                 VISION, ARCHITECTURE, CONVENTIONS, adr/
 scripts/e2e/          real-claude milestone suites (local only)
 ```
+
+`internal/redact` is a decorator, not a fifth seam: it wraps the Store the hub
+already depends on, the log handler and the HTTP handler, so the secret values
+Spool holds cannot reach a log line, a stored transcript or a response. It has one
+implementation and nothing substitutes for it — the seams are the four above.
 
 The SandboxRuntime seam is live with both implementations: `internal/runtime` owns
 the interface, `internal/runtime/bare` runs host subprocesses, and

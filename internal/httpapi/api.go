@@ -56,8 +56,13 @@ type Server struct {
 	// RuntimeAvailable answers whether a runtime kind can host a new loop
 	// right now; wired in cmd so this package stays free of runtime imports.
 	RuntimeAvailable func(ctx context.Context, kind string) error
-	Log              *slog.Logger
-	WebFS            fs.FS // embedded UI dist; may be nil in dev
+	// SecretsChanged is called after a write that adds, replaces or removes
+	// a secret value, so the redactor reloads at once instead of
+	// serving its ttl out with a value it has never seen (#150). Wired in
+	// cmd; nil in tests that do not care.
+	SecretsChanged func(ctx context.Context)
+	Log            *slog.Logger
+	WebFS          fs.FS // embedded UI dist; may be nil in dev
 
 	// settingsMu serializes the read-validate-write of paired settings, so
 	// two concurrent PUTs cannot interleave into an inverted stored pair.
@@ -414,6 +419,9 @@ func (s *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	// A new loop is minted with a hub MCP token, and may arrive with a bot
+	// token: two secret values that did not exist a moment ago.
+	s.secretsChanged(r.Context())
 	s.Manager.Add(l)
 	if s.Telegram != nil && l.TGBotToken != "" {
 		s.Telegram.LoopChanged(l)
@@ -543,6 +551,9 @@ func (s *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.jsonErr(w, 500, "%v", err)
 		return
+	}
+	if req.TGBotToken != nil {
+		s.secretsChanged(r.Context())
 	}
 	// The stored row, not the edited copy: everything this request did not
 	// name reaches the actor and the surface as it actually stands.
@@ -844,6 +855,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			s.jsonErr(w, 500, "%v", err)
 			return
 		}
+		s.secretsChanged(r.Context())
 	}
 	if req.ContextArmPercent != nil || req.ContextForcePercent != nil {
 		s.settingsMu.Lock()
@@ -1044,6 +1056,7 @@ func (s *Server) handlePutSecret(w http.ResponseWriter, r *http.Request) {
 		s.jsonErr(w, 500, "%v", err)
 		return
 	}
+	s.secretsChanged(r.Context())
 	views, err := s.secretViews(r.Context(), l.ID)
 	if err != nil {
 		s.jsonErr(w, 500, "%v", err)
@@ -1062,7 +1075,17 @@ func (s *Server) handleDeleteSecret(w http.ResponseWriter, r *http.Request) {
 		s.jsonErr(w, 500, "%v", err)
 		return
 	}
+	s.secretsChanged(r.Context())
 	writeJSON(w, 200, map[string]bool{"deleted": true})
+}
+
+// secretsChanged tells the redactor to reload. A delete counts: the
+// value is gone from the store, so a redactor still holding it would keep
+// blanking text that no longer contains a secret.
+func (s *Server) secretsChanged(ctx context.Context) {
+	if s.SecretsChanged != nil {
+		s.SecretsChanged(ctx)
+	}
 }
 
 func validateSecretName(name string) error {

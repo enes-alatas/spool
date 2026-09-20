@@ -8,6 +8,7 @@ package itest
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -24,6 +25,20 @@ type server struct {
 	cmd     *exec.Cmd
 	dataDir string
 	fkState string
+	// logPath is a copy of everything the orchestrator wrote to stderr.
+	// The output still goes to the test's own stderr; this is the copy a
+	// test can read back and assert on (#150).
+	logPath string
+}
+
+// log returns everything the orchestrator has logged so far.
+func (s *server) log() string {
+	s.t.Helper()
+	b, err := os.ReadFile(s.logPath)
+	if err != nil {
+		s.t.Fatalf("read orchestrator log: %v", err)
+	}
+	return string(b)
 }
 
 func repoRoot(t *testing.T) string {
@@ -71,14 +86,21 @@ func startServerArgs(t *testing.T, dataDir string, extraArgs ...string) *server 
 	}
 	args = append(args, extraArgs...)
 	cmd := exec.Command(spoolBin, args...)
+	logPath := filepath.Join(dataDir, "spool.log")
+	logFile, err := os.Create(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { logFile.Close() })
+
 	cmd.Env = append(os.Environ(), "FAKECLAUDE_STATE="+fkState)
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = io.MultiWriter(os.Stderr, logFile)
+	cmd.Stderr = cmd.Stdout
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
 
-	s := &server{t: t, baseURL: "http://" + addr, cmd: cmd, dataDir: dataDir, fkState: fkState}
+	s := &server{t: t, baseURL: "http://" + addr, cmd: cmd, dataDir: dataDir, fkState: fkState, logPath: logPath}
 	t.Cleanup(s.stop)
 
 	deadline := time.Now().Add(10 * time.Second)
