@@ -103,6 +103,14 @@ export interface ChatMessage {
   delivered_to: string[]
   conversation: string
   conversation_loop_id?: string
+  // A surface send that did not get through, after the retries (#148). Set
+  // on the message itself, so a reader of the message sees what a reader of
+  // the timeline note sees. Absent on everything that was delivered, and on
+  // everything inbound — nobody sent those.
+  send_failed_at?: number
+  // The surface's own reason, scrubbed of credentials by the sender (#155),
+  // which is why it can be shown verbatim.
+  send_error?: string
 }
 
 export interface TGSender {

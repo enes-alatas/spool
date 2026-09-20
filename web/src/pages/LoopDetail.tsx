@@ -17,6 +17,7 @@ import { tokenSubmittable } from '../forms'
 import { MODEL_OPTIONS, EFFORT_OPTIONS, PACING_OPTIONS } from '../options'
 import { useStream } from '../stream'
 import { toEntries, extractDelta } from '../timeline'
+import { UndeliveredMark } from '../components/UndeliveredMark'
 import { Timeline } from '../components/Timeline'
 import { SpoolGlyph } from '../components/Spool'
 
@@ -686,6 +687,7 @@ function ControlRoomThread({ msgs }: { msgs: ChatMessage[] }) {
             {new Date(m.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </div>
           <div className={m.origin === 'loop' ? 'plain' : 'bubble'}>{m.text}</div>
+          <UndeliveredMark msg={m} />
         </div>
       ))}
     </div>
