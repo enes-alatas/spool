@@ -115,11 +115,31 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/workspace/inspect", s.handleWorkspaceInspect)
 	mux.HandleFunc("GET /api/stream", s.handleGlobalStream)
 	mux.HandleFunc("GET /api/loops/{name}/stream", s.handleLoopStream)
-	mux.Handle("/mcp", s.mcpHandler())
+
+	// /mcp lives on the loop listener alone (#238). Saying so explicitly
+	// matters because of what is registered next: the UI's catch-all would
+	// otherwise answer this path with index.html in a build that embeds the
+	// control room, so the endpoint would look moved in tests and alive in
+	// production.
+	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	})
 
 	if s.WebFS != nil {
 		mux.HandleFunc("/", s.handleUI)
 	}
+	return mux
+}
+
+// MCPHandler is the loop-facing half of the hub, served on its own listener
+// (#238). Workstations are allowed to reach this port and no other, so the
+// operator's API and control room are unreachable from inside a workstation
+// at the network layer, before any question of authentication. Nothing but
+// the MCP endpoint is routed here: every other path is 404 and never reaches
+// the API mux.
+func (s *Server) MCPHandler() http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("/mcp", s.mcpHandler())
 	return mux
 }
 

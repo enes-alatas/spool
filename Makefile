@@ -71,7 +71,7 @@ ui-dev:
 	cd web && npm run dev
 
 dev: server
-	./bin/spool --listen 127.0.0.1:8080 --data-dir ./.data
+	./bin/spool --listen 127.0.0.1:8080 --mcp-listen 0.0.0.0:8081 --data-dir ./.data
 
 test:
 	$(GO) test ./...

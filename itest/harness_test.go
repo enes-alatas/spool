@@ -14,14 +14,19 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
 )
 
 type server struct {
-	t       *testing.T
+	t *testing.T
+	// baseURL is the operator's API; mcpURL is the loop-facing listener,
+	// which serves /mcp and nothing else (#238).
 	baseURL string
+	mcpURL  string
 	cmd     *exec.Cmd
 	dataDir string
 	fkState string
@@ -58,8 +63,19 @@ func startServer(t *testing.T, dataDir string) *server {
 }
 
 // startServerArgs spawns spool with the harness plumbing plus extra flags
-// (the docker suites pick their runtime and image this way).
+// (the docker suites pick their runtime and image this way), with both
+// listeners on loopback.
 func startServerArgs(t *testing.T, dataDir string, extraArgs ...string) *server {
+	t.Helper()
+	return startServerOn(t, dataDir, "127.0.0.1", extraArgs...)
+}
+
+// startServerOn is startServerArgs with a say in where the loop-facing
+// listener binds. Only the docker suites need it off loopback — a workstation
+// reaches the hub over the bridge — and this is a PR's worth of argument that
+// what binds where is the security property, so the wildcard is asked for
+// where it is needed rather than taken everywhere (#238).
+func startServerOn(t *testing.T, dataDir, mcpHost string, extraArgs ...string) *server {
 	t.Helper()
 	root := repoRoot(t)
 	spoolBin := filepath.Join(root, "bin", "spool")
@@ -70,16 +86,15 @@ func startServerArgs(t *testing.T, dataDir string, extraArgs ...string) *server 
 		}
 	}
 
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	addr := l.Addr().String()
-	l.Close()
+	addr := freeAddr(t, "127.0.0.1")
+	// The API always stays on loopback, where nothing inside the wall can go.
+	mcpAddr := freeAddr(t, mcpHost)
+	_, mcpPort, _ := net.SplitHostPort(mcpAddr)
 
 	fkState := filepath.Join(dataDir, "fkstate")
 	args := []string{
 		"--listen", addr,
+		"--mcp-listen", mcpAddr,
 		"--data-dir", dataDir,
 		"--claude-bin", fakeBin,
 		"--partial-messages=false",
@@ -100,7 +115,15 @@ func startServerArgs(t *testing.T, dataDir string, extraArgs ...string) *server 
 		t.Fatal(err)
 	}
 
-	s := &server{t: t, baseURL: "http://" + addr, cmd: cmd, dataDir: dataDir, fkState: fkState, logPath: logPath}
+	s := &server{
+		t:       t,
+		baseURL: "http://" + addr,
+		mcpURL:  "http://" + net.JoinHostPort("127.0.0.1", mcpPort),
+		cmd:     cmd,
+		dataDir: dataDir,
+		fkState: fkState,
+		logPath: logPath,
+	}
 	t.Cleanup(s.stop)
 
 	deadline := time.Now().Add(10 * time.Second)
@@ -116,6 +139,29 @@ func startServerArgs(t *testing.T, dataDir string, extraArgs ...string) *server 
 	}
 	t.Fatal("server did not become healthy within 10s")
 	return nil
+}
+
+// port is the port of one of this server's URLs, for a probe that has to name
+// it from outside the process.
+func (s *server) port(rawURL string) string {
+	s.t.Helper()
+	_, port, err := net.SplitHostPort(strings.TrimPrefix(rawURL, "http://"))
+	if err != nil {
+		s.t.Fatalf("port of %q: %v", rawURL, err)
+	}
+	return port
+}
+
+// freeAddr reserves a port by binding and releasing it: the orchestrator
+// binds it a moment later, and nothing else on the machine is racing for it.
+func freeAddr(t *testing.T, host string) string {
+	t.Helper()
+	l, err := net.Listen("tcp", host+":0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	return net.JoinHostPort(host, strconv.Itoa(l.Addr().(*net.TCPAddr).Port))
 }
 
 func (s *server) stop() {

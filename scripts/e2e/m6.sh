@@ -5,6 +5,9 @@
 set -euo pipefail
 
 PORT="${PORT:-8095}"
+# the loop-facing listener (#238); on every interface so a docker workstation
+# reaches it through the gateway, while the API above stays on loopback
+MCP_PORT="${MCP_PORT:-8195}"
 BASE="http://127.0.0.1:$PORT"
 DATA="$(mktemp -d)"
 REPO="$(mktemp -d)"
@@ -26,7 +29,7 @@ echo "# test" > "$REPO/README.md"
 git -C "$REPO" add . && git -C "$REPO" -c user.email=t@t -c user.name=t commit -qm init
 MAIN_SHA=$(git -C "$REPO" rev-parse main)
 
-"$BIN" --listen "127.0.0.1:$PORT" --data-dir "$DATA" &
+"$BIN" --listen "127.0.0.1:$PORT" --mcp-listen "0.0.0.0:$MCP_PORT" --data-dir "$DATA" &
 SPOOL_PID=$!
 for _ in $(seq 1 50); do curl -sf "$BASE/api/health" >/dev/null 2>&1 && break; sleep 0.2; done
 

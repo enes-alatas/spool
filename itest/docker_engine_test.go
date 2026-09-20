@@ -35,7 +35,9 @@ func startDockerServer(t *testing.T, dataDir string, extraArgs ...string) *serve
 		"--egress-image", egressTestImage,
 		"--workstation-health-sec", "2",
 	}, extraArgs...)
-	s := startServerArgs(t, dataDir, args...)
+	// A workstation is allowlisted to the MCP port and reaches it over the
+	// docker bridge, which has no route to loopback (#238).
+	s := startServerOn(t, dataDir, "0.0.0.0", args...)
 	s.mustJSON("PUT", "/api/settings", map[string]any{"claude_oauth_token": dockerTestToken}, nil)
 	return s
 }

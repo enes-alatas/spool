@@ -47,7 +47,7 @@ func mcpSession(t *testing.T, s *server, token string) *mcp.ClientSession {
 	t.Helper()
 	client := mcp.NewClient(&mcp.Implementation{Name: "itest", Version: "0"}, nil)
 	sess, err := client.Connect(context.Background(), &mcp.StreamableClientTransport{
-		Endpoint:             s.baseURL + "/mcp",
+		Endpoint:             s.mcpURL + "/mcp",
 		HTTPClient:           &http.Client{Transport: bearerTransport{token}},
 		DisableStandaloneSSE: true,
 		MaxRetries:           -1,
@@ -207,7 +207,7 @@ func TestMCPBadToken(t *testing.T) {
 	s.createLoop("aster", nil)
 	client := mcp.NewClient(&mcp.Implementation{Name: "itest", Version: "0"}, nil)
 	_, err := client.Connect(context.Background(), &mcp.StreamableClientTransport{
-		Endpoint:             s.baseURL + "/mcp",
+		Endpoint:             s.mcpURL + "/mcp",
 		HTTPClient:           &http.Client{Transport: bearerTransport{"not-a-token"}},
 		DisableStandaloneSSE: true,
 		MaxRetries:           -1,
@@ -306,5 +306,56 @@ func TestRedeliveredTurnKnowsItsSends(t *testing.T) {
 	}
 	if n != 1 {
 		t.Fatalf("lost attempt's send stored %d times, want exactly 1", n)
+	}
+}
+
+// The loop-facing listener carries the MCP endpoint and nothing else (#238):
+// the operator's API is not routed onto it, and the MCP endpoint is no longer
+// routed onto the API's. Workstations are allowlisted to this port, so
+// anything reachable here is reachable by every loop in the fleet.
+func TestMCPListenerServesOnlyMCP(t *testing.T) {
+	s := startServer(t, t.TempDir())
+	s.createLoop("mcponly", nil)
+
+	for _, path := range []string{"/api/health", "/api/loops", "/api/settings", "/"} {
+		resp, err := http.Get(s.mcpURL + path)
+		if err != nil {
+			t.Fatalf("GET %s on the mcp listener: %v", path, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("GET %s on the mcp listener = %d, want 404 — the API must not be routed here", path, resp.StatusCode)
+		}
+	}
+
+	// And the other way round: the endpoint a loop authenticates to is gone
+	// from the operator's listener, so moving it is a move and not a copy.
+	// The failure has to be a 404 and not merely some failure: this binary
+	// has no embedded control room, and one that has it would answer /mcp
+	// with index.html if the API mux did not refuse the path itself.
+	resp, err := http.Get(s.baseURL + "/mcp")
+	if err != nil {
+		t.Fatalf("GET /mcp on the API listener: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("GET /mcp on the API listener = %d, want 404 — not the UI's catch-all", resp.StatusCode)
+	}
+	client := mcp.NewClient(&mcp.Implementation{Name: "itest", Version: "0"}, nil)
+	sess, err := client.Connect(context.Background(), &mcp.StreamableClientTransport{
+		Endpoint:             s.baseURL + "/mcp",
+		HTTPClient:           &http.Client{Transport: bearerTransport{hubMCPToken(t, s, "mcponly")}},
+		DisableStandaloneSSE: true,
+		MaxRetries:           -1,
+	}, nil)
+	if err == nil {
+		sess.Close()
+		t.Fatal("the API listener must no longer serve /mcp")
+	}
+	if !strings.Contains(err.Error(), "Not Found") {
+		// A build with the control room embedded would answer this path with
+		// index.html if the API mux did not refuse it; the failure would then
+		// be a parse error, and this test would still have passed.
+		t.Errorf("connect on the API listener: err = %v, want the 404 the API mux serves", err)
 	}
 }

@@ -50,7 +50,7 @@ Use these words exactly — in code, UI, docs, and prompts. Don't introduce syno
 | **workstation** | A loop's persistent sandbox: its home dir, tools, clones. Long-lived — survives sleeps, restarts, and pauses; dies with the loop, or when the operator switches it off or rebuilds it (ADR-0017, ADR-0021). |
 | **power controls** | The operator's switches on a workstation: restart, power off, power on, recreate. They act on the loop's *machine*, not the loop — pause is the switch for the loop itself, and the two compose (ADR-0021). |
 | **runner** | The subsystem that executes loops (actors + claude processes + sandboxes). |
-| **hub** | Everything that isn't the runner or a surface: routing, scheduling, store, API. |
+| **hub** | Everything that isn't the runner or a surface: routing, scheduling, store, API. It serves two listeners: the *operator listener* (`--listen`) carries the API and control room, the *loop listener* (`--mcp-listen`) carries the MCP endpoint and nothing else. Workstations may reach the loop listener and no other port of the operator's machine (ADR-0028, #238). |
 | **connection** | An org-level tool credential/config (GitHub app, MCP server) attachable to loops. |
 | **control room** | The web UI. |
 | **storm guard** | The rate limit on loop→loop delivery. A recipient it refuses is not listed in the message's `delivered_to` — that field names the loops a message reached, not the ones it addressed — and the refusal is recorded as a `storm_drop` event on the sender. |
@@ -129,7 +129,10 @@ the interface, `internal/runtime/bare` runs host subprocesses, and
 `internal/runtime/docker` runs workstations through the docker CLI (ADR-0018).
 Docker workstations sit on an internal network with no route off it; their only
 way out is `spool-egress-proxy`, a container running `cmd/spool-egress` that
-forwards to the hosts in `internal/egress` and refuses the rest (ADR-0028). A
+forwards to the hosts in `internal/egress` and refuses the rest (ADR-0028). The
+one entry naming the operator's own machine is the hub's loop listener, on its
+port alone: the operator listener is on no allowlist, so the API a workstation
+would otherwise reach unauthenticated is not a destination it has (#238). A
 bare loop has the host's own network and no wall — one more thing the
 *uncontained* badge means.
 The Surface seam is live with one implementation: `internal/surface` owns the

@@ -1,6 +1,6 @@
 # ADR-0028: Workstation egress runs through an allowlist proxy
 
-Date: 2026-09-20 · Status: accepted · Amends: ADR-0017 (decision 9, "open egress")
+Date: 2026-09-20 · Status: accepted · Amends: ADR-0017 (decision 9, "open egress") · Amended 2026-09-20 (decision 3: the hub entry is the MCP listener, #238)
 
 ## Context
 
@@ -40,12 +40,21 @@ by asking the agent nicely (#193).
    lets the allowlist be a Go value the tier-2 suite can drive directly.
    The image is `FROM scratch` plus the static binary.
 
-3. **The hub is reached through the proxy too.** An internal network has no
+3. **The hub is reached through the proxy too, and only its loop-facing
+   listener is.** An internal network has no
    route to the host gateway either, so `host.docker.internal` moves from the
    workstation to the proxy container (`--add-host …:host-gateway`) and a
    loop's MCP traffic is proxied like anything else. The gateway is the one
    entry that is *not* compiled in: it is the operator's own machine, so the
-   runtime allowlists it on the hub's port alone. A proxy whose configuration
+   runtime allowlists it on one port alone — `--mcp-listen`, which serves the
+   MCP endpoint and nothing else. The operator's API and control room are on
+   `--listen`, which is on no allowlist and therefore not a destination a
+   workstation has at all. Allowlisting the API port instead would have handed
+   every loop the unauthenticated admin API (#238): its own conversations,
+   every other owner's, the fleet's settings, and the creation of a *bare*
+   loop that runs outside any container. That separation is at the network
+   layer on purpose — it holds whether or not the API's own authentication is
+   right, and it held before the API had any. A proxy whose configuration
    has changed — a moved hub, a new image — is replaced rather than kept,
    since run arguments are fixed at creation. `HTTP_PROXY`, `HTTPS_PROXY` and their lowercase twins are set in every
    exec env, with `NO_PROXY=localhost,127.0.0.1` so a loop's own local servers
@@ -113,6 +122,15 @@ by asking the agent nicely (#193).
   closed by the same wall, not left open beside it.
 - One more long-lived container per fleet (not per loop): a scratch-image Go
   process, idle between requests, well inside the QUALITY.md envelope.
+- **The operator now binds two ports.** With docker workstations `--mcp-listen`
+  must name an address the bridge can reach, which was previously true of the
+  single listener and so exposed the API with it; now the address the bridge
+  can reach carries one endpoint whose only caller is a loop holding that
+  loop's own bearer token. The hub refuses to start if the two listeners would
+  be the same socket, since that silently restores the old hole, and it warns
+  at boot when the default runtime is docker and `--mcp-listen` is on loopback
+  — a fleet whose one allowed destination is the one it cannot route to comes
+  up looking healthy and never wakes.
 - Proxy denials are logged by host, never by URL: a query string can carry a
   credential, and this log is the one place a blocked exfiltration attempt is
   visible at all.
