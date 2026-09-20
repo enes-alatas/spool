@@ -52,7 +52,8 @@ var (
 )
 
 func main() {
-	listen := flag.String("listen", "127.0.0.1:8080", "address to serve the API/UI on")
+	listen := flag.String("listen", "127.0.0.1:8080", "address to serve the operator's API/UI on; never reachable from a workstation")
+	mcpListen := flag.String("mcp-listen", "127.0.0.1:8081", "address to serve the loop-facing /mcp endpoint on; the one port of this machine a workstation may reach (#238)")
 	dataDir := flag.String("data-dir", defaultDataDir(), "directory for spool.db, loop homes and worktrees")
 	claudeBin := flag.String("claude-bin", "claude", "path to the claude binary (bare runtime)")
 	runtimeChoice := flag.String("runtime", "auto", "default runtime for new loops: auto (docker when the daemon is reachable), docker, or bare")
@@ -92,11 +93,20 @@ func main() {
 		}
 	}
 
-	_, hubPort, _ := net.SplitHostPort(*listen)
+	// The two listeners are the boundary this fleet rests on: workstations
+	// are allowlisted to the MCP port alone, so the API port must not be it
+	// (#238). One address serving both would hand every workstation the
+	// unauthenticated API back.
+	mcpHost, mcpPort, err := splitMCPListen(*listen, *mcpListen)
+	if err != nil {
+		log.Error("--mcp-listen", "err", err)
+		os.Exit(1)
+	}
+
 	dockerRuntime := docker.New(docker.Options{
 		DefaultImage: *workstationImage,
 		EgressImage:  *egressImage,
-		HubPort:      hubPort,
+		MCPPort:      mcpPort,
 		EgressAllow:  allowEntries,
 		HealthTTL:    healthCacheTTL(healthInterval),
 	})
@@ -113,6 +123,15 @@ func main() {
 	case !containsVersion(ver, claude.TestedVersion):
 		log.Warn("claude version differs from the one Spool was verified against",
 			"found", ver, "tested", claude.TestedVersion)
+	}
+	// A containerized loop reaches the hub through the docker bridge, which
+	// has no route to loopback: the one destination it is allowed is then the
+	// one it cannot use, and the fleet comes up looking healthy and never
+	// wakes. The hub knows both halves here and nowhere earlier — the default
+	// runtime is only resolved above.
+	if defaultRuntime == store.RuntimeDocker && isLoopback(mcpHost) {
+		log.Warn("docker workstations cannot reach --mcp-listen on loopback — bind it to an address the docker bridge can reach (#238)",
+			"mcp_listen", *mcpListen, "example", "0.0.0.0:"+mcpPort)
 	}
 	log.Info("runtime ready", "default", defaultRuntime, "claude_version", ver,
 		"spool_version", build.Version, "commit", build.Commit, "built_at", build.BuiltAt)
@@ -174,17 +193,18 @@ func main() {
 			}
 		},
 		MCPEndpoint: func(l *store.Loop) string {
-			host, port, err := net.SplitHostPort(*listen)
+			host, port, err := net.SplitHostPort(*mcpListen)
 			if err != nil {
 				return ""
 			}
 			switch {
 			case l.Runtime == store.RuntimeDocker:
 				// containers reach the host through the gateway alias the
-				// workstation is created with; the hub must listen on an
-				// address the docker bridge can reach
+				// proxy is created with; --mcp-listen must therefore name an
+				// address the docker bridge can reach — and only it, the
+				// API's --listen stays on loopback (#238)
 				host = "host.docker.internal"
-			case host == "" || host == "0.0.0.0" || host == "::":
+			case isWildcard(host):
 				host = "127.0.0.1"
 			}
 			return "http://" + net.JoinHostPort(host, port) + "/mcp"
@@ -254,19 +274,108 @@ func main() {
 	}
 
 	srv := &http.Server{Addr: *listen, Handler: redact.HTTP(api.Handler(), redactor)}
+	mcpSrv := &http.Server{Addr: *mcpListen, Handler: redact.HTTP(api.MCPHandler(), redactor)}
 	go func() {
 		<-ctx.Done()
 		log.Info("shutting down")
 		shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(shutCtx)
+		_ = mcpSrv.Shutdown(shutCtx)
 	}()
 
-	log.Info("spool listening", "addr", *listen, "data", *dataDir, "ui", api.WebFS != nil)
+	// The loop-facing listener runs on its own goroutine; serving the API
+	// blocks below. Failing to bind it takes the whole hub down: a
+	// workstation with no hub to reach cannot take a turn, and a fleet that
+	// looks healthy and never wakes is the worse failure.
+	go func() {
+		if err := mcpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Error("serve mcp", "err", err)
+			stop()
+		}
+	}()
+
+	log.Info("spool listening", "addr", *listen, "mcp_addr", *mcpListen, "data", *dataDir, "ui", api.WebFS != nil)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Error("serve", "err", err)
 	}
 	manager.Shutdown()
+}
+
+// splitMCPListen takes --mcp-listen apart into the host the loop-facing
+// endpoint binds and the port workstations are allowlisted to reach. It
+// refuses an address that would put that endpoint back on the operator's own
+// listener: the separation is what makes the API unreachable from inside a
+// workstation, so a collision is a misconfiguration to stop on with a reason,
+// not to leave to whichever bind loses the race (#238).
+func splitMCPListen(apiAddr, mcpAddr string) (host, port string, err error) {
+	apiHost, apiPort, err := net.SplitHostPort(apiAddr)
+	if err != nil {
+		return "", "", fmt.Errorf("--listen %q: %w", apiAddr, err)
+	}
+	mcpHost, mcpPort, err := net.SplitHostPort(mcpAddr)
+	if err != nil {
+		return "", "", fmt.Errorf("%q: %w", mcpAddr, err)
+	}
+	if mcpPort == "" {
+		return "", "", fmt.Errorf("%q names no port", mcpAddr)
+	}
+	if mcpPort == apiPort && sameInterface(apiHost, mcpHost) {
+		return "", "", fmt.Errorf("%q would serve /mcp on the API's own port; workstations reach this port, and the API must not be on it", mcpAddr)
+	}
+	return mcpHost, mcpPort, nil
+}
+
+// sameInterface reports whether two host halves on one port could be the same
+// socket. Spelling is not the test: "localhost" and "127.0.0.1" are one
+// address, and a wildcard is every address. Names are resolved because an
+// operator writing the two listeners differently is exactly the case where a
+// silent collision would cost the most; a name that does not resolve falls
+// back to its spelling, which is all there is to go on.
+func sameInterface(a, b string) bool {
+	if isWildcard(a) || isWildcard(b) || a == b {
+		return true
+	}
+	aIPs, errA := net.LookupIP(a)
+	bIPs, errB := net.LookupIP(b)
+	if errA != nil || errB != nil {
+		return false
+	}
+	for _, x := range aIPs {
+		for _, y := range bIPs {
+			if x.Equal(y) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// isWildcard reports whether an address's host half binds every interface,
+// which makes it both a collision with any other host on the same port and a
+// thing a client has to be given a real address for.
+func isWildcard(host string) bool {
+	return host == "" || host == "0.0.0.0" || host == "::"
+}
+
+// isLoopback reports whether an address's host half is reachable only from
+// this machine — which a docker workstation, coming in over the bridge, is
+// not. An unresolvable name is not called loopback: the warning it would
+// raise is worse than the one it would miss.
+func isLoopback(host string) bool {
+	if isWildcard(host) {
+		return false
+	}
+	ips, err := net.LookupIP(host)
+	if err != nil || len(ips) == 0 {
+		return false
+	}
+	for _, ip := range ips {
+		if !ip.IsLoopback() {
+			return false
+		}
+	}
+	return true
 }
 
 // pruneEvents enforces the events-retention baseline (docs/QUALITY.md):

@@ -102,3 +102,56 @@ func startHostReachableServer(t *testing.T) int {
 	t.Cleanup(srv.Close)
 	return listener.Addr().(*net.TCPAddr).Port
 }
+
+// TestDockerWorkstationCannotReachTheAPI is the L1 safety claim itself (#238):
+// from inside a real workstation, behind the real wall, the hub's loop-facing
+// port answers and the hub's API port does not exist as a destination. The
+// probe runs as the loop's own turn, which is the position an attacker
+// steering a loop would actually be in.
+func TestDockerWorkstationCannotReachTheAPI(t *testing.T) {
+	s := startDockerServer(t, t.TempDir())
+
+	// The API port is on no allowlist, so the proxy refuses it before it
+	// dials anything: the loop never gets to find out the API is unauthenticated.
+	s.createLoop("wsapi", nil)
+	cleanupWorkstation(t, s.loop("wsapi").ID)
+	s.scriptLoop("wsapi", fmt.Sprintf("!get http://host.docker.internal:%s/api/loops\n", s.port(s.baseURL)))
+	s.message("wsapi", "reach the hub")
+	api := s.waitTurn("wsapi", 90*time.Second, func(tr turn) bool {
+		return strings.Contains(tr.ResultText, "/api/loops")
+	})
+	if !strings.Contains(api.ResultText, "403 Forbidden") {
+		t.Fatalf("a workstation must not reach the hub's API port, got:\n%s", api.ResultText)
+	}
+
+	// The MCP port is allowlisted, because a loop that cannot reach it cannot
+	// take a turn. The 404 is the proof of both halves at once: the request
+	// got through the wall to the hub's own process, and that process routes
+	// no API path here.
+	s.createLoop("wsmcp", nil)
+	cleanupWorkstation(t, s.loop("wsmcp").ID)
+	s.scriptLoop("wsmcp", fmt.Sprintf("!get http://host.docker.internal:%s/api/loops\n", s.port(s.mcpURL)))
+	s.message("wsmcp", "reach the hub")
+	viaMCPPort := s.waitTurn("wsmcp", 90*time.Second, func(tr turn) bool {
+		return strings.Contains(tr.ResultText, "/api/loops")
+	})
+	if !strings.Contains(viaMCPPort.ResultText, "404 Not Found") {
+		t.Fatalf("the mcp port must be reachable and serve no API, got:\n%s", viaMCPPort.ResultText)
+	}
+
+	// Reachable is not the claim; usable is. This loop makes the call its own
+	// runner configured for it — an MCP send_message to the endpoint the hub
+	// handed it — so the port that answers 404 for an API path answers the
+	// one thing it is there for, through the wall and the default allowlist
+	// entry rather than anything this test arranged.
+	s.createLoop("wssend", nil)
+	cleanupWorkstation(t, s.loop("wssend").ID)
+	s.scriptLoop("wssend", `!send {"destination":"control_room","text":"through the wall"}`+"\n")
+	s.message("wssend", "say something")
+	sent := s.waitTurn("wssend", 90*time.Second, func(tr turn) bool {
+		return strings.Contains(tr.ResultText, "sent") || strings.Contains(tr.ResultText, "send error")
+	})
+	if !strings.Contains(sent.ResultText, "sent") || strings.Contains(sent.ResultText, "send error") {
+		t.Fatalf("a workstation must reach the hub's MCP endpoint, got:\n%s", sent.ResultText)
+	}
+}

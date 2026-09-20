@@ -60,7 +60,8 @@ type domainRule struct {
 }
 
 // New builds an allowlist from entries. An entry is a host, optionally with
-// one port of its own ("host.docker.internal:8080"); without a port it
+// one port of its own ("host.docker.internal:8081", the hub's loop-facing
+// listener — never its API port, #238); without a port it
 // permits DefaultPorts. Entries are normalized (lowercase, trailing dot
 // dropped), and anything Validate rejects — an empty entry from a stray
 // comma, a pasted URL, a scheme where a port belongs — is left out.

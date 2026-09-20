@@ -4,6 +4,9 @@
 set -euo pipefail
 
 PORT="${PORT:-8098}"
+# the loop-facing listener (#238); on every interface so a docker workstation
+# reaches it through the gateway, while the API above stays on loopback
+MCP_PORT="${MCP_PORT:-8198}"
 BASE="http://127.0.0.1:$PORT"
 DATA="$(mktemp -d)"
 BIN="${BIN:-./bin/spool}"
@@ -19,7 +22,7 @@ cleanup() {
 trap cleanup EXIT
 
 start_spool() {
-  "$BIN" --listen "127.0.0.1:$PORT" --data-dir "$DATA" &
+  "$BIN" --listen "127.0.0.1:$PORT" --mcp-listen "0.0.0.0:$MCP_PORT" --data-dir "$DATA" &
   SPOOL_PID=$!
   for _ in $(seq 1 50); do
     curl -sf "$BASE/api/health" >/dev/null 2>&1 && return 0

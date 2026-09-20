@@ -85,7 +85,7 @@ func TestRunArgvImageOverrideAndNoLimits(t *testing.T) {
 // else changes; one in front of it (no proxy image configured) keeps the
 // host-gateway alias it used to reach the hub directly.
 func TestEgressShapesTheWorkstation(t *testing.T) {
-	walledRT := &Runtime{egressImage: "spool-egress", hubPort: "8080"}
+	walledRT := &Runtime{egressImage: "spool-egress", mcpPort: "8081"}
 	argv, err := execArgv(runtime.Spec{LoopID: "abc", SessionID: "sess-1"}, walledRT.egressEnv())
 	if err != nil {
 		t.Fatal(err)
@@ -112,9 +112,9 @@ func TestEgressShapesTheWorkstation(t *testing.T) {
 }
 
 func TestEgressProxyRunArgv(t *testing.T) {
-	rt := &Runtime{egressImage: "spool-egress", hubPort: "8080", egressAllow: []string{"internal.example"}}
+	rt := &Runtime{egressImage: "spool-egress", mcpPort: "8081", egressAllow: []string{"internal.example"}}
 	got := strings.Join(rt.egressRunArgv(), " ")
-	if rt.egressSpecHash() == (&Runtime{egressImage: "spool-egress", hubPort: "9090"}).egressSpecHash() {
+	if rt.egressSpecHash() == (&Runtime{egressImage: "spool-egress", mcpPort: "9091"}).egressSpecHash() {
 		// a proxy's run arguments are fixed at creation, so a moved hub has
 		// to be visible as a different spec or the old wall would be kept
 		t.Error("the spec hash must change when the hub moves")
@@ -130,9 +130,10 @@ func TestEgressProxyRunArgv(t *testing.T) {
 		"--restart unless-stopped",
 		"--add-host host.docker.internal:host-gateway",
 		"spool-egress --listen :3128",
-		// the hub is allowlisted on its own port and no other, so an
-		// allowlisted gateway is not a tunnel to the operator's machine
-		"--allow host.docker.internal:8080,internal.example",
+		// the hub's MCP port is allowlisted and no other, so an allowlisted
+		// gateway is not a tunnel to the operator's machine — its API port
+		// included (#238)
+		"--allow host.docker.internal:8081,internal.example",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("proxy run argv missing %q: %q", want, got)

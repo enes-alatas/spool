@@ -51,7 +51,7 @@ type Runtime struct {
 	bin          string   // the docker CLI
 	defaultImage string   // provisioned when a loop doesn't override it
 	egressImage  string   // the allowlist proxy's image ("" leaves egress open)
-	hubPort      string   // the port the hub listens on, allowlisted on the gateway
+	mcpPort      string   // the hub's loop-facing MCP port, allowlisted on the gateway
 	egressAllow  []string // fleet-wide allowlist entries on top of the defaults
 
 	healthMu  sync.Mutex
@@ -70,10 +70,10 @@ type Options struct {
 	// EgressImage is the fleet's allowlist proxy (ADR-0028). Empty leaves
 	// workstation egress open — the pre-0028 posture.
 	EgressImage string
-	// HubPort is the port the hub listens on: the one port of the operator's
-	// machine a workstation may reach, and how its loops reach the hub's MCP
-	// endpoint.
-	HubPort string
+	// MCPPort is the port the hub serves /mcp on: the one port of the
+	// operator's machine a workstation may reach (#238). The API and control
+	// room listen elsewhere and are allowlisted nowhere.
+	MCPPort string
 	// EgressAllow are fleet-wide allowlist entries on top of the built-in
 	// defaults, each "host" or "host:port".
 	EgressAllow []string
@@ -94,7 +94,7 @@ func New(opts Options) *Runtime {
 		bin:          opts.Bin,
 		defaultImage: opts.DefaultImage,
 		egressImage:  opts.EgressImage,
-		hubPort:      opts.HubPort,
+		mcpPort:      opts.MCPPort,
 		egressAllow:  opts.EgressAllow,
 		healthTTL:    opts.HealthTTL,
 	}

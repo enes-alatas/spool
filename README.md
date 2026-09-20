@@ -19,12 +19,16 @@ A *loop* is a mission-driven agent backed by a persistent [Claude Code](https://
 
 ```bash
 make build          # builds web UI + single spool binary
-./bin/spool         # listens on 127.0.0.1:8080, data in ~/.spool
+./bin/spool         # control room on 127.0.0.1:8080, loop endpoint on 127.0.0.1:8081, data in ~/.spool
 ```
+
+Spool serves two listeners. `--listen` is yours: the control room and its API. `--mcp-listen` is the loops': the one port a containerized workstation is allowed to reach, serving the MCP endpoint and nothing else. Keep them apart — a workstation that could reach the API port could read every conversation and create an uncontained loop.
+
+With docker workstations, `--mcp-listen` has to name an address the docker bridge can reach (`--mcp-listen 0.0.0.0:8081` on a machine whose ports are not open to your network, or the bridge address). `--listen` stays on localhost.
 
 Open http://127.0.0.1:8080, create a loop: name, mission, optional workspace path (a git repo gets an isolated worktree automatically), tick interval. The loop starts working immediately and reports in.
 
-> Spool runs loops with `--permission-mode bypassPermissions`. Containment is the workspace you give a loop. Don't point a loop at a directory you wouldn't hand to an autonomous agent, and keep the listener on localhost (front it with an authenticated reverse proxy if you expose it).
+> Spool runs loops with `--permission-mode bypassPermissions`. Containment is the workspace you give a loop. Don't point a loop at a directory you wouldn't hand to an autonomous agent, and keep `--listen` on localhost (front it with an authenticated reverse proxy if you expose it) — it has no authentication of its own yet.
 
 ## Telegram
 
@@ -48,7 +52,7 @@ Every loop has a tick interval (default 30m). After each completed turn, Spool s
 ## Flags
 
 ```
-spool --listen 127.0.0.1:8080 --data-dir ~/.spool --claude-bin claude --partial-messages
+spool --listen 127.0.0.1:8080 --mcp-listen 127.0.0.1:8081 --data-dir ~/.spool --claude-bin claude --partial-messages
 ```
 
 ## Development

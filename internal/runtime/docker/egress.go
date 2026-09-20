@@ -131,9 +131,10 @@ func (rt *Runtime) provisionEgressProxy(ctx context.Context) error {
 // hub's MCP endpoint on the operator's machine (ADR-0026).
 //
 // The hub is the one allowlist entry the proxy cannot carry compiled in: it
-// lives on the gateway on whatever port the operator started spool on, and it
-// is permitted on that port alone — otherwise an allowlisted gateway would be
-// a tunnel to every port of the operator's own machine (ADR-0028).
+// lives on the gateway on whatever port the operator gave --mcp-listen, and
+// it is permitted on that port alone — otherwise an allowlisted gateway would
+// be a tunnel to every port of the operator's own machine, the API port it
+// serves the control room on included (ADR-0028, #238).
 func (rt *Runtime) egressRunArgv() []string {
 	argv := []string{
 		"run", "--detach", "--init",
@@ -153,12 +154,12 @@ func (rt *Runtime) egressRunArgv() []string {
 }
 
 // egressEntries are the allowlist entries this fleet adds to the proxy's
-// built-in defaults: the hub on its own port, plus whatever the operator
-// configured.
+// built-in defaults: the hub's MCP port, plus whatever the operator
+// configured. The hub's API port is deliberately not among them.
 func (rt *Runtime) egressEntries() []string {
 	var entries []string
-	if rt.hubPort != "" {
-		entries = append(entries, egressGatewayHost+":"+rt.hubPort)
+	if rt.mcpPort != "" {
+		entries = append(entries, egressGatewayHost+":"+rt.mcpPort)
 	}
 	return append(entries, rt.egressAllow...)
 }
