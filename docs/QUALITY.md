@@ -168,3 +168,5 @@ workflow and not in its `paths:`.
   Spool read these logs — write them for that reader.
 - `/api/health` stays rich (claude version, store, surface states).
 - Metrics endpoint (Prometheus): parking lot until the service era.
+
+<!-- #232 skip drill: a docs-only change, to be closed unmerged. -->
