@@ -409,6 +409,23 @@ textarea {
   background: var(--danger);
   box-shadow: 0 0 6px var(--danger);
 }
+/* a message the surface never took: the fault belongs to the message, so it
+   reads as an annotation on it rather than as another message in the thread */
+.undelivered {
+  font-size: 0.6875rem;
+  font-family: var(--mono);
+  color: var(--danger);
+  margin-top: 3px;
+}
+.feed-item .undelivered {
+  margin-top: 0;
+  white-space: nowrap;
+}
+/* the surface's own words, quieter than the fact they explain */
+.undelivered-why {
+  color: var(--text-muted);
+}
+
 /* one fleet-wide fault, said once at the top instead of per loop */
 .fleet-alert {
   font-size: 0.8125rem;
