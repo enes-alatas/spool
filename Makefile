@@ -1,7 +1,7 @@
 GO ?= go
 export PATH := /usr/local/go/bin:$(PATH)
 
-.PHONY: build dev test itest lint secret-scan fakeclaude vet e2e-context e2e-m1 ui ui-dev image image-multiarch clean
+.PHONY: build dev test itest lint secret-scan workflow-lint fakeclaude vet e2e-context e2e-m1 ui ui-dev image image-multiarch clean
 
 build: ui
 	$(GO) build -o bin/spool ./cmd/spool
@@ -63,6 +63,11 @@ secret-scan:
 	@bash scripts/secret-redact-test.sh >/dev/null
 	@bash scripts/secret-redact-body-test.sh >/dev/null
 	bash scripts/secret-scan.sh
+
+# The rules CI's `workflows` job applies, runnable before you push. Cheap
+# enough to run on any change to .github/workflows or scripts.
+workflow-lint:
+	bash scripts/workflow-lint-test.sh
 
 e2e-m1: server
 	bash scripts/e2e/m1.sh
