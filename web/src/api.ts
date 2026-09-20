@@ -158,6 +158,16 @@ export interface Settings {
   context_force_percent: number
 }
 
+// Which build this Spool is, mirrored from internal/version.Info. Served
+// unauthenticated, because an operator filing a bug should not need a token
+// to say which Spool it was.
+export interface VersionInfo {
+  version: string
+  commit: string
+  built_at: string
+  go: string
+}
+
 export interface LoopSecret {
   name: string
   updated_at: number
@@ -224,6 +234,7 @@ export const EVENT_WINDOW = 300
 
 export const api = {
   health: () => req<{ ok: boolean; claude_version: string }>('/api/health'),
+  version: () => req<VersionInfo>('/api/version'),
   loops: () => req<LoopView[]>('/api/loops'),
   loop: (name: string) => req<LoopView>(`/api/loops/${name}`),
   createLoop: (body: CreateLoopReq) =>

@@ -31,11 +31,6 @@ function Destinations({ variant }: { variant: 'top' | 'bottom' }) {
 export default function App() {
   useGlobalStream()
   const { data: loops } = useQuery({ queryKey: ['loops'], queryFn: api.loops })
-  const { data: health } = useQuery({
-    queryKey: ['health'],
-    queryFn: api.health,
-    refetchInterval: 60000,
-  })
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings })
   const loc = useLocation()
   const busy = (loops ?? []).some((l) => l.state === 'busy')
@@ -56,7 +51,6 @@ export default function App() {
         <Destinations variant="top" />
 
         <div className="meta">
-          {health && <span className="version">{health.claude_version}</span>}
           <Link to="/new" className="btn sm primary">
             <span aria-hidden>+ </span>New loop
           </Link>
