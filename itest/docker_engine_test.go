@@ -9,7 +9,13 @@ import (
 	"time"
 )
 
-const workstationTestImage = "spool-workstation-itest"
+const (
+	workstationTestImage = "spool-workstation-itest"
+	// The suite's own proxy build. The egress wall is named after its image
+	// (ADR-0028), so these tests get their own network and proxy container and
+	// never join a real fleet's.
+	egressTestImage = "spool-egress-itest"
+)
 
 // dockerTestToken is a well-formed placeholder setup-token: the workstation
 // runs fakeclaude, which ignores it, but the engine still requires one before
@@ -20,14 +26,16 @@ const dockerTestToken = "sk-ant-oat01-itesttoken000000000000000000"
 // fakeclaude test image with a fast liveness poll; skips when the daemon or
 // image is unavailable. It configures the operator setup-token so contained
 // loops can wake.
-func startDockerServer(t *testing.T, dataDir string) *server {
+func startDockerServer(t *testing.T, dataDir string, extraArgs ...string) *server {
 	t.Helper()
 	requireWorkstationImage(t)
-	s := startServerArgs(t, dataDir,
+	args := append([]string{
 		"--runtime", "docker",
 		"--workstation-image", workstationTestImage,
+		"--egress-image", egressTestImage,
 		"--workstation-health-sec", "2",
-	)
+	}, extraArgs...)
+	s := startServerArgs(t, dataDir, args...)
 	s.mustJSON("PUT", "/api/settings", map[string]any{"claude_oauth_token": dockerTestToken}, nil)
 	return s
 }
@@ -37,8 +45,10 @@ func requireWorkstationImage(t *testing.T) {
 	if err := exec.Command("docker", "version").Run(); err != nil {
 		t.Skip("docker daemon not reachable — docker workstation itests skipped")
 	}
-	if err := exec.Command("docker", "image", "inspect", workstationTestImage).Run(); err != nil {
-		t.Skipf("%s image missing — run via `make itest`", workstationTestImage)
+	for _, image := range []string{workstationTestImage, egressTestImage} {
+		if err := exec.Command("docker", "image", "inspect", image).Run(); err != nil {
+			t.Skipf("%s image missing — run via `make itest`", image)
+		}
 	}
 }
 

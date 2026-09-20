@@ -48,8 +48,11 @@ const (
 
 // Runtime is the docker implementation of runtime.Runtime.
 type Runtime struct {
-	bin          string // the docker CLI
-	defaultImage string // provisioned when a loop doesn't override it
+	bin          string   // the docker CLI
+	defaultImage string   // provisioned when a loop doesn't override it
+	egressImage  string   // the allowlist proxy's image ("" leaves egress open)
+	hubPort      string   // the port the hub listens on, allowlisted on the gateway
+	egressAllow  []string // fleet-wide allowlist entries on top of the defaults
 
 	healthMu  sync.Mutex
 	healthTTL time.Duration
@@ -58,17 +61,43 @@ type Runtime struct {
 	fleetErr  error
 }
 
-// New returns a docker runtime shelling out to bin (default "docker"),
-// provisioning defaultImage for loops without an image of their own.
-// healthTTL bounds the batched liveness sweep; 0 means the default.
-func New(bin, defaultImage string, healthTTL time.Duration) *Runtime {
-	if bin == "" {
-		bin = "docker"
+// Options configures a docker runtime. Only Bin and HealthTTL have defaults;
+// the rest is the wirer's to decide.
+type Options struct {
+	Bin          string // the docker CLI (default "docker")
+	DefaultImage string // provisioned for loops without an image of their own
+
+	// EgressImage is the fleet's allowlist proxy (ADR-0028). Empty leaves
+	// workstation egress open — the pre-0028 posture.
+	EgressImage string
+	// HubPort is the port the hub listens on: the one port of the operator's
+	// machine a workstation may reach, and how its loops reach the hub's MCP
+	// endpoint.
+	HubPort string
+	// EgressAllow are fleet-wide allowlist entries on top of the built-in
+	// defaults, each "host" or "host:port".
+	EgressAllow []string
+
+	// HealthTTL bounds the batched liveness sweep; 0 means the default.
+	HealthTTL time.Duration
+}
+
+// New returns a docker runtime shelling out to the docker CLI.
+func New(opts Options) *Runtime {
+	if opts.Bin == "" {
+		opts.Bin = "docker"
 	}
-	if healthTTL <= 0 {
-		healthTTL = defaultHealthTTL
+	if opts.HealthTTL <= 0 {
+		opts.HealthTTL = defaultHealthTTL
 	}
-	return &Runtime{bin: bin, defaultImage: defaultImage, healthTTL: healthTTL}
+	return &Runtime{
+		bin:          opts.Bin,
+		defaultImage: opts.DefaultImage,
+		egressImage:  opts.EgressImage,
+		hubPort:      opts.HubPort,
+		egressAllow:  opts.EgressAllow,
+		healthTTL:    opts.HealthTTL,
+	}
 }
 
 func (rt *Runtime) Kind() string { return "docker" }
@@ -127,12 +156,18 @@ func (rt *Runtime) Ensure(ctx context.Context, spec runtime.Spec) error {
 }
 
 func (rt *Runtime) provision(ctx context.Context, spec runtime.Spec) error {
+	// The wall before the thing it contains: a workstation provisioned onto
+	// a network that does not exist yet would fail, and one provisioned
+	// while the proxy is down would simply have no way out.
+	if err := rt.ensureEgress(ctx); err != nil {
+		return err
+	}
 	volumeArgv := append([]string{"volume", "create"}, labelArgs(spec)...)
 	volumeArgv = append(volumeArgv, containerName(spec.LoopID))
 	if _, err := rt.command(ctx, queryTimeout, volumeArgv...); err != nil {
 		return err
 	}
-	if _, err := rt.command(ctx, runTimeout, runArgv(spec, rt.defaultImage)...); err != nil {
+	if _, err := rt.command(ctx, runTimeout, runArgv(spec, rt.defaultImage, rt.networkArgs())...); err != nil {
 		// A half-finished earlier provision can have left the container
 		// created but not running; then the name is taken and starting the
 		// existing one is the right move.
@@ -158,7 +193,7 @@ func (rt *Runtime) Start(ctx context.Context, spec runtime.Spec) (runtime.Proc, 
 			return nil, err
 		}
 	}
-	argv, err := execArgv(spec)
+	argv, err := execArgv(spec, rt.egressEnv())
 	if err != nil {
 		return nil, err
 	}
@@ -269,17 +304,15 @@ func labelArgs(spec runtime.Spec) []string {
 // behind), restart unless-stopped so the workstation outlives daemon
 // restarts, and the loop's volume as its home. Open egress, no published
 // ports (ADR-0017).
-func runArgv(spec runtime.Spec, defaultImage string) []string {
+func runArgv(spec runtime.Spec, defaultImage string, network []string) []string {
 	name := containerName(spec.LoopID)
 	argv := []string{
 		"run", "--detach", "--init",
 		"--name", name,
 		"--restart", "unless-stopped",
 		"--volume", name + ":" + runtime.WorkstationHome,
-		// the loop reaches the hub's MCP endpoint through the host gateway
-		// (ADR-0026); existing workstations pick this up on recreate
-		"--add-host", "host.docker.internal:host-gateway",
 	}
+	argv = append(argv, network...)
 	argv = append(argv, labelArgs(spec)...)
 	if spec.MemMB > 0 {
 		argv = append(argv, "--memory", strconv.Itoa(spec.MemMB)+"m")
@@ -298,7 +331,7 @@ func runArgv(spec runtime.Spec, defaultImage string) []string {
 // value-less --env KEY flags — docker resolves them from the client
 // process's environment, so credential values never appear in argv where
 // host ps or logs could see them (ADR-0018).
-func execArgv(spec runtime.Spec) ([]string, error) {
+func execArgv(spec runtime.Spec, egressEnv []string) ([]string, error) {
 	opts := claude.Opts{
 		Model:              spec.Model,
 		Effort:             spec.Effort,
@@ -315,6 +348,7 @@ func execArgv(spec runtime.Spec) ([]string, error) {
 		return nil, err
 	}
 	argv := []string{"exec", "--interactive", "--workdir", spec.WorkDir}
+	argv = append(argv, egressEnv...)
 	for _, key := range sortedKeys(spec.Env) {
 		argv = append(argv, "--env", key)
 	}
