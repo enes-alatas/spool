@@ -1,6 +1,6 @@
 # ADR-0020: One bot ingests a group; every bot still delivers
 
-Date: 2026-08-20 · Status: accepted · Amended: 2026-09-17 (§1, settle margin); 2026-09-19 (§2, delivered_to)
+Date: 2026-08-20 · Status: accepted · Amended: 2026-09-17 (§1, settle margin); 2026-09-19 (§2, delivered_to); 2026-09-20 (§1–§3 are Surface rules)
 
 ## Context
 
@@ -69,6 +69,15 @@ three questions Milo had listed, of which this was the first.
    dedup LRU keys the same way. That is now an idempotency net for one poller
    re-reading its own updates — the cross-bot case is prevented upstream, by
    the election — and it can no longer invent duplicates across DMs.
+
+   **Amendment (2026-09-20, #198):** all three items are Surface rules, not
+   Telegram rules (ADR-0029 §5). Any surface that gives each loop its own
+   identity in a shared room has this problem, and owes the same election, the
+   same separation of ingest from delivery, and the same three-part message
+   identity. What stays Telegram's is the *pathology* §3 defends against —
+   `message_id` numbered per bot conversation. A platform with room-global
+   message ids keeps the key; the ingesting loop is then redundant in it
+   rather than wrong.
 
 ## Consequences
 

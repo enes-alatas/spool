@@ -1,6 +1,6 @@
 # ADR-0025: Private DMs and shared groups with explicit delivery
 
-Date: 2026-09-14 · Status: accepted (operator agreement; implementation pending) · Amended: 2026-09-15 (sending contract); 2026-09-16 (native replies); 2026-09-17 (`@all` eligibility)
+Date: 2026-09-14 · Status: accepted (operator agreement; implementation pending) · Amended: 2026-09-15 (sending contract); 2026-09-16 (native replies); 2026-09-17 (`@all` eligibility); 2026-09-20 (item 4 is a Surface rule)
 
 ## Context
 
@@ -54,6 +54,12 @@ this agreement. Visibility to the owner and delivery to a loop are separate conc
    targets must not silently redirect delivery or become unrelated broadcasts.
    Surface references and internal identities must be mapped durably; exact
    identifiers and recovery behavior are implementation-design work.
+
+   **Amendment (2026-09-20, #198):** this item is a Surface rule and binds
+   every adapter (ADR-0029 §5): rendering the native reply and durably
+   recording the platform id it minted are the surface's, while choosing the
+   target stays the hub's. Mirroring to the message's destination rather than
+   to who can see the room is likewise a Surface rule.
 
 5. **Destination and recipients are explicit for each outgoing message.**
    A loop can emit separately addressed messages, including multiple messages

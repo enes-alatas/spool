@@ -90,7 +90,7 @@ Dependencies point inward: adapters → hub interfaces, never hub → adapter in
 
 | Seam | Interface (owner) | Implementations |
 |---|---|---|
-| **Surface** | `surface.Surface` — deliver inbound to hub, mirror outbound, identity per loop | `telegram` (today, to be moved under the seam), `slack` (L3) |
+| **Surface** | `surface.Surface` — start, validate a loop credential, follow loop config changes; the adapter delivers inbound to the router and mirrors outbound off the bus (ADR-0029) | `telegram` (today), `slack` (L3) |
 | **SandboxRuntime** | `runtime.Runtime` — provision/start/exec/stop a loop's workstation, own claude's stdio inside it, watch workstation liveness | `bare` (direct subprocess; local-edition fallback, badged *uncontained*), `docker` (long-lived named container + volume per loop, driven through the docker CLI; the default whenever the daemon is reachable — ADR-0017, ADR-0018), `sbx` (possible later hardening, ADR-0010) |
 | **Store** | `store.*` interfaces | `sqlite` (today), `postgres` (service era) |
 | **Runner** | the narrow command surface the hub uses: deliver, tick, pause, resume, kill, state | in-process (`internal/loop`) today; extractable to a per-host runner process for the hosted service — the seam exists so this is transport substitution, not redesign |
@@ -104,7 +104,7 @@ cmd/spool-egress/     the workstation egress proxy (ADR-0028)
 internal/claude/      claude's stream-json protocol: args, stdio, events (runner-internal)
 internal/loop/        loop actors, prompts, trailers (runner)
 internal/runtime/     SandboxRuntime seam + bare/, docker/
-internal/surface/     Surface seam + telegram/, slack/
+internal/surface/     Surface seam + telegram/ (slack/ at L3)
 internal/route/       hub: routing, mentions, storm guard
 internal/sched/       hub: tick scheduling
 internal/bus/         hub: pub/sub
@@ -132,10 +132,13 @@ way out is `spool-egress-proxy`, a container running `cmd/spool-egress` that
 forwards to the hosts in `internal/egress` and refuses the rest (ADR-0028). A
 bare loop has the host's own network and no wall — one more thing the
 *uncontained* badge means.
-The `telegram` package isn't yet behind the Surface interface
-(`internal/telegram` moves to `internal/surface/telegram` when that seam is
-introduced). Messaging also awaits the ADR-0025 migration described above.
-Migrate opportunistically, not big-bang.
+The Surface seam is live with one implementation: `internal/surface` owns the
+interface and `internal/surface/telegram` is the bridge behind it. Only the
+hub-to-surface direction crosses it — inbound goes to the router and outbound
+comes off the bus, like any other caller. ADR-0029 records the contract and
+which of ADR-0020's, ADR-0025's and ADR-0026's rules every adapter owes.
+Messaging still awaits the ADR-0025 migration described above. Migrate
+opportunistically, not big-bang.
 
 ## Evolution notes (so we don't design against ourselves)
 
