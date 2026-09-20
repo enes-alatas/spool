@@ -7,6 +7,18 @@
 # scripts/workflow-lint-test.sh. It understands enough structure to know which
 # job a line belongs to, because rule 2 is about a job's effective grant and a
 # file-wide grep cannot tell one job from another.
+#
+# Rule 5 maps exactly three API surfaces to the scope they need, and is
+# silent on every other path (decided on #220):
+#
+#     gh api .../actions/... , gh run ...   -> actions
+#     gh issue ... , gh api .../issues/...  -> issues
+#     gh pr ...    , gh api .../pulls/...   -> pull-requests
+#
+# Silent rather than warning, because there is no warn channel here and a
+# finding is the only output: a rule that guessed at unmapped paths would
+# report correct workflows, and a lint people argue with is a lint people
+# switch off. Adding a surface means adding a line here and a line there.
 
 function finding(line, msg) {
   printf "%s:%d: %s\n", FILENAME, line, msg
@@ -120,11 +132,31 @@ section == "jobs" && ind == 2 && line ~ /:[[:space:]]*$/ {
   next
 }
 
-# Inside a job. Two things matter: whether it checks out, and what it is
-# allowed to do while it does.
+# Inside a job. Three things matter: whether it checks out, which API scopes
+# its `gh` calls will ask for, and what it is allowed to do while it does.
 job != "" {
   if (line ~ /actions\/checkout/) {
     checkout[job] = FNR
+  }
+  # Rule 5 (#220, and #203 before it): the scopes a `gh` call needs.
+  #
+  # `ci-health` asked the API for a workflow run under `permissions: {issues:
+  # write}` — a whole grant, so `actions` was none — and got 403 on its first
+  # real drill. Rule 2 did not catch it because there is no checkout here, and
+  # neither did review or a harness with a stubbed `gh`: nothing that runs
+  # before the merge ever exercises a scope. This is the check that can.
+  #
+  # Only the scope has to be present, not the level: read versus write is a
+  # judgement about the call, and a rule that guessed it would cry wolf and
+  # get switched off. Missing entirely is the mistake that actually happens.
+  if (line ~ /gh[[:space:]]+api[^|]*\/actions\// || line ~ /gh[[:space:]]+run[[:space:]]/) {
+    needs_scope[job, "actions"] = FNR
+  }
+  if (line ~ /gh[[:space:]]+issue[[:space:]]/ || line ~ /gh[[:space:]]+api[^|]*\/issues\//) {
+    needs_scope[job, "issues"] = FNR
+  }
+  if (line ~ /gh[[:space:]]+pr[[:space:]]/ || line ~ /gh[[:space:]]+api[^|]*\/pulls\//) {
+    needs_scope[job, "pull-requests"] = FNR
   }
   if (ind == 4 && line ~ /^[[:space:]]+permissions:/) {
     in_job_perms = job
@@ -183,6 +215,29 @@ END {
   # silently set `contents` to none, so actions/checkout could not clone this
   # private repo and the guard was inert — red in a tab nobody was watching —
   # for as long as it took the operator to read the mail.
+  # Rule 5's findings, in file order. The scope list is written out rather
+  # than iterated, because `for (k in array)` has no defined order and a
+  # finding that reshuffles between runs reads like a different finding.
+  split("actions issues pull-requests", scopes, " ")
+  for (i = 1; i <= njobs; i++) {
+    j = job_order[i]
+    if (job_perms_decl[j]) {
+      perms = job_perms[j]
+    } else if (wf_perms_decl) {
+      perms = wf_perms
+    } else {
+      perms = "__default__"  # no block at all: the repo's default grant.
+    }
+    if (perms == "__default__" || perms ~ /read-all|write-all/) continue
+    for (n = 1; n <= 3; n++) {
+      scope = scopes[n]
+      if (!((j, scope) in needs_scope)) continue
+      if (perms !~ scope ":") {
+        finding(needs_scope[j, scope], "job `" j "` calls `gh` against the " scope " API, but its effective permissions do not name `" scope "` — an explicit block is a whole grant, so the call gets 403 (#220, and #203 before it).")
+      }
+    }
+  }
+
   for (i = 1; i <= njobs; i++) {
     j = job_order[i]
     if (!(j in checkout)) continue

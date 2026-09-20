@@ -75,9 +75,10 @@ window regardless of loop count (ADR-0018).
   `workflow_dispatch`; no job runs `actions/checkout` under an effective
   grant missing `contents: read`; no workflow interpolates an event body,
   `env:` included; every workflow but `ci` and `ci-health` appears in the
-  sentinel's `workflows:` list; and a file the parser cannot read is a
-  finding, never a pass. One rule per incident (#203, #207, #209, #210),
-  stdlib shell.
+  sentinel's `workflows:` list; a job whose `run:` calls `gh` against the
+  actions, issues or pulls API names that scope in its effective grant; and
+  a file the parser cannot read is a finding, never a pass. One rule per
+  incident (#203, #207, #209, #210, #220), stdlib shell.
 - **Failures of non-PR workflows are reported** (`ci-health`, #210): a run
   of any workflow but `ci` that does not conclude `success`, `cancelled`,
   `skipped`, `neutral` or `stale` posts to the pinned "CI health" issue
