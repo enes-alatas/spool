@@ -1,0 +1,130 @@
+# Failures of the event-driven workflows, posted where the fleet reads (#210).
+#
+# `ci` reports itself: a PR failure is a red check on the PR its author is
+# already looking at. The rest — `needs-type`, `secret-redact` — fire on
+# issues and comments, so a failure is a red run in a tab nobody opens and a
+# mail in the operator's inbox. #203 left the redaction guard inert that way
+# for a day, red the whole time. The fleet reads issues, so failures go to a
+# pinned issue as comments.
+name: ci-health
+
+on:
+  # `workflow_run` takes an explicit list, so a new workflow escapes this
+  # sentinel silently unless it is added here. scripts/workflow-lint.awk has
+  # a rule that fails CI when one is missing — same failure class as #209.
+  workflow_run:
+    workflows: [needs-type, secret-redact]
+    types: [completed]
+  # Runnable from a branch against a known-failed run, which is the only way
+  # to prove the posting path: a healthy repo never fires the real trigger
+  # (#209). The same code decides in both cases — a run that did not fail is
+  # a no-op on either path.
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: id of a completed run to report on, if it failed
+        required: true
+
+# No checkout, so no `contents` is needed: the whole point is to survive the
+# failure class where a checkout is what broke (#203).
+permissions:
+  issues: write
+
+# One report at a time, so two failures landing together cannot interleave
+# their comments. Queued rather than cancelled: a dropped report is a failure
+# nobody hears about, which is the thing this workflow exists to end.
+concurrency:
+  group: ci-health
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: post an unsuccessful run to the pinned CI-health issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Inline rather than a script under scripts/, deliberately: a script
+        # is only readable after actions/checkout, and a checkout is exactly
+        # what fails in the class this sentinel has to survive (#203). It is
+        # still tested — scripts/ci-health-test.sh extracts this block and
+        # runs it under `bash -e` with a stub `gh`.
+        #
+        # Nothing from the event is interpolated into the shell: `${{ }}` is
+        # pasted into the file the runner echoes, and a workflow name is
+        # repo-controlled but a branch name is not (#207).
+        run: |
+          set -euo pipefail
+
+          # The pinned noticeboard. Hard-coded because the alternative is
+          # searching by title at report time, and a report that cannot find
+          # its issue is a failure nobody hears about.
+          issue=216
+
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            id=$(jq -r '.inputs.run_id' "$GITHUB_EVENT_PATH")
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id" > run.json
+          else
+            jq '.workflow_run' "$GITHUB_EVENT_PATH" > run.json
+          fi
+
+          conclusion=$(jq -r '.conclusion // ""' run.json)
+          name=$(jq -r '.name // ""' run.json)
+
+          # A run that has not concluded. Unreachable on the event path
+          # (`types: [completed]`) and ordinary on the dispatch one: a run id
+          # copied while the run is still going answers `"conclusion": null`,
+          # and jq's `+` treats null as identity, so it would build a
+          # well-formed comment naming no conclusion and ask the sweep to
+          # open a bug for it.
+          #
+          # This fails rather than exiting quietly, unlike every other
+          # not-reporting path here. Those are answers — the run was fine.
+          # This one means the question was never asked, and a green run that
+          # proved nothing is exactly what a PR links as evidence under the
+          # rule in CONVENTIONS.md. Red is what tells the author to pick a
+          # completed run and dispatch again.
+          if [ -z "$conclusion" ]; then
+            echo "run $(jq -r '.id // "?"' run.json) has not concluded — nothing to report, and nothing proven. Dispatch again once it has finished." >&2
+            exit 1
+          fi
+
+          # Silence is an allowlist, not "anything but failure". A run that
+          # timed out or never started is the case this sentinel most needs:
+          # a hung secret-redact leaves the credential published, and a
+          # startup_failure is the workflow not running at all — #203's exact
+          # shape, which this file's header cites as the reason it exists.
+          #
+          # Inverted this way round, a conclusion GitHub adds later is
+          # reported rather than swallowed. Over-reporting is a comment
+          # somebody reads and dismisses; under-reporting is the silence the
+          # workflow was written to end.
+          case "$conclusion" in
+            success | cancelled | skipped | neutral | stale)
+              echo "$name run concluded '$conclusion' — nothing to report." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+              ;;
+          esac
+
+          # Never report on itself. The trigger list excludes this workflow,
+          # but a dispatch can name any run id, and a sentinel that can be
+          # pointed at its own failure writes a loop into the noticeboard.
+          if [ "$name" = ci-health ]; then
+            echo 'Refusing to report on ci-health itself.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # Built with jq from the run's own fields rather than interpolated,
+          # so a branch or workflow name cannot close the quoting (#207).
+          jq -r '
+            "**`" + .name + "` concluded `" + .conclusion + "` on `" + (.head_branch // "?") + "`.**\n\n"
+            + "- run: " + .html_url + "\n"
+            + "- event: `" + .event + "`\n"
+            + "- head: `" + .head_sha[0:7] + "`\n"
+            + "- concluded: " + .updated_at + "\n\n"
+            + "Triage this on the sweep it appears in: open a `bug` linking the run, and leave this comment as the record that it was seen."
+          ' run.json > comment.md
+
+          gh api --method POST "repos/$GITHUB_REPOSITORY/issues/$issue/comments" \
+            -F "body=@comment.md" --silent
+          echo "Reported $name to issue #$issue." >> "$GITHUB_STEP_SUMMARY"

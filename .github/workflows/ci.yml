@@ -223,3 +223,8 @@ jobs:
       - name: the rules still catch the incidents they name
         if: needs.changes.outputs.workflows == 'true'
         run: bash scripts/workflow-lint-test.sh
+      # The sentinel's step is inline YAML, so this harness extracts and runs
+      # it; nothing else exercises it before it ships (#210).
+      - name: the failure sentinel still reports what it claims to
+        if: needs.changes.outputs.workflows == 'true'
+        run: bash scripts/ci-health-test.sh
