@@ -47,6 +47,7 @@ jobs:
       unit: ${{ steps.filter.outputs.unit }}
       itest: ${{ steps.filter.outputs.itest }}
       web: ${{ steps.filter.outputs.web }}
+      workflows: ${{ steps.filter.outputs.workflows }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -71,13 +72,17 @@ jobs:
           # running; add to these rather than trimming them.
           go=false
           web=false
+          workflows=false
           if echo "$files" | grep -qE '^(cmd/|internal/|itest/|go\.(mod|sum)$|Makefile$|\.golangci\.ya?ml$|\.github/workflows/)'; then
             go=true
           fi
           if echo "$files" | grep -qE '^(web/|\.github/workflows/)'; then
             web=true
           fi
-          printf 'unit=%s\nitest=%s\nweb=%s\n' "$go" "$go" "$web" >> "$GITHUB_OUTPUT"
+          if echo "$files" | grep -qE '^(\.github/workflows/|scripts/)'; then
+            workflows=true
+          fi
+          printf 'unit=%s\nitest=%s\nweb=%s\nworkflows=%s\n' "$go" "$go" "$web" "$workflows" >> "$GITHUB_OUTPUT"
 
   # Not path-filtered, and deliberately: a credential can be added to any
   # file, so "this change did not touch the Go tree" says nothing about
@@ -199,3 +204,22 @@ jobs:
         if: needs.changes.outputs.web == 'true'
       - run: npm run build
         if: needs.changes.outputs.web == 'true'
+
+  # The event-driven workflows are the blind spot this job exists for: they
+  # fire on issues, comments and schedules, so no PR ever runs them and a
+  # broken one is green here and dead in the Actions tab (#203, #207, #209).
+  # The rules are checks on the file, which is the only thing a PR can see;
+  # the run from the branch that proves the rest is the author's job, linked
+  # in the PR's Verification section (CONVENTIONS.md).
+  workflows:
+    needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - name: not needed for this change
+        if: needs.changes.outputs.workflows != 'true'
+        run: echo 'No workflow or script paths changed — nothing to lint here.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/checkout@v4
+        if: needs.changes.outputs.workflows == 'true'
+      - name: the rules still catch the incidents they name
+        if: needs.changes.outputs.workflows == 'true'
+        run: bash scripts/workflow-lint-test.sh

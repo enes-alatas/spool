@@ -70,6 +70,11 @@ window regardless of loop count (ADR-0018).
   and `npm test` in the web job. The docker workstation suites in tier 2
   run against a real daemon: CI runners always have one; locally they skip
   with a notice when none is reachable.
+- **Workflow rules** (`workflows` job, `scripts/workflow-lint.sh`): every
+  workflow with a trigger other than `pull_request`/`push` declares a
+  `workflow_dispatch`; no job runs `actions/checkout` under an effective
+  grant missing `contents: read`; no workflow interpolates an event body,
+  `env:` included. One rule per incident (#203, #207, #209), stdlib shell.
 - **Architecture tests**: a hand-rolled Go test walks the import graph and fails on:
   adapters importing each other; hub packages importing adapter internals; a seam
   importing anything but its own protocol (its implementations included);
@@ -82,12 +87,13 @@ so, which keeps the check present and green while billing a minute instead
 of eight — Actions minutes are capped on a private repo and tier 2 is ~80%
 of a full run (#181). The mapping:
 
-| touched | tier 1 + lint + govulncheck | tier 2 (itest) | web |
-|---|---|---|---|
-| `cmd/`, `internal/`, `itest/`, `go.mod`, `go.sum`, `Makefile` | yes | yes | no |
-| `web/` | no | no | yes |
-| `docs/`, `README`, anything else | no | no | no |
-| `.github/workflows/` | yes | yes | yes |
+| touched | tier 1 + lint + govulncheck | tier 2 (itest) | web | workflows |
+|---|---|---|---|---|
+| `cmd/`, `internal/`, `itest/`, `go.mod`, `go.sum`, `Makefile` | yes | yes | no | no |
+| `web/` | no | no | yes | no |
+| `scripts/` | no | no | no | yes |
+| `docs/`, `README`, anything else | no | no | no | no |
+| `.github/workflows/` | yes | yes | yes | yes |
 
 A change to the workflow runs everything: the gates must prove themselves
 under the gates they are changing.
