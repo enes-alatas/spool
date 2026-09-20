@@ -2,24 +2,30 @@
 # tests), integration vs fakeclaude (tier 2), web lint+build, govulncheck.
 # Coverage is informational (job summary), never a gate.
 #
-# What runs when is a cost decision, not a quality one (#181). This repo is
-# private, so Actions minutes are capped and itest bills ~8 of the ~10
-# minutes a full run costs. Three rules keep that spend proportionate; none
-# of them weakens a gate:
+# What runs when is a cost decision, not a quality one (#181, #232). This
+# repo is private, so Actions minutes are capped, and GitHub bills a started
+# job a whole minute however little it does. Four rules keep that spend
+# proportionate; none of them weakens a gate:
 #
 #   1. A superseded run is cancelled. Review-fix force-pushes routinely
-#      produced 3–7 runs of the same PR, all but the last of them answering
+#      produced 3-7 runs of the same PR, all but the last of them answering
 #      a question nobody was asking any more.
-#   2. Every job still runs and still reports, but a job whose paths did not
-#      change does its checkout and stops. The check stays present and green
-#      — which is what branch protection needs (#1) — and bills a minute
-#      instead of eight.
-#   3. A push to main runs unit tests only. Rebase-merge (ADR-0016) lands
-#      the commits a PR already proved green, so the full matrix is a
-#      re-run. The gap this leaves is a merge from a stale base; branch
-#      protection's "require branches to be up to date" closes it, and
-#      until that is on, the unit job is the smoke that would catch a
-#      mechanical mismerge.
+#   2. The short checks are one job, not four. Go, web, the secret scans and
+#      the workflow lint each did well under a minute of work and each billed
+#      a full one; as steps of `checks` they bill about two minutes together
+#      and keep their own path filters as step-level `if:`s. The price is ~1
+#      minute of wall time, since they no longer run in parallel.
+#   3. `itest` is skipped outright when nothing it covers changed. It is ~8
+#      of the ~10 minutes a full run used to bill, so it is the one worth a
+#      job-level `if:` — and a job skipped that way still reports a check,
+#      concluded `skipped`, which branch protection counts as passed (#1).
+#      A no-op step would have billed a minute to say it had nothing to do.
+#   4. A push to main runs tier 1 only. Rebase-merge (ADR-0016) lands the
+#      commits a PR already proved green, so the full matrix is a re-run.
+#      The gap this leaves is a merge from a stale base; branch protection's
+#      "require branches to be up to date" closes it, and until that is on,
+#      the tier-1 steps are the smoke that would catch a mechanical mismerge.
+#
 name: ci
 
 on:
@@ -37,13 +43,20 @@ permissions:
   contents: read
 
 jobs:
-  # Which parts of the tree this event touched. A push to main leaves every
-  # flag false: lever 3 above, expressed once here rather than as an
-  # event-name condition on each job.
+  # Which parts of the tree this event touched. A push to main sets only
+  # `unit`: lever 4 above, expressed once here rather than as an event-name
+  # condition on each job.
+  #
+  # This job reports a check of its own, and branch protection has to require
+  # it (#1). Everything below is `needs: changes`, and a job whose dependency
+  # failed is skipped — a conclusion, which branch protection counts as
+  # passed. The step below guards the same hole from inside; requiring this
+  # check is what closes it from outside.
   changes:
     runs-on: ubuntu-latest
     outputs:
-      # unit is the one job a push to main still runs: see lever 3 above.
+      # `unit` gates the tier-1 steps of `checks`, and it is the only flag a
+      # push to main sets: see lever 4 above.
       unit: ${{ steps.filter.outputs.unit }}
       itest: ${{ steps.filter.outputs.itest }}
       web: ${{ steps.filter.outputs.web }}
@@ -84,44 +97,63 @@ jobs:
           fi
           printf 'unit=%s\nitest=%s\nweb=%s\nworkflows=%s\n' "$go" "$go" "$web" "$workflows" >> "$GITHUB_OUTPUT"
 
-  # Not path-filtered, and deliberately: a credential can be added to any
-  # file, so "this change did not touch the Go tree" says nothing about
-  # whether it added a token. It is seconds of runner time (#151).
-  secrets:
+  # One job, four areas. Each area keeps its own filter as a step-level `if:`;
+  # what went away is three extra runners. A started job bills a whole minute
+  # whatever it does (#232), so four one-minute jobs cost four minutes to do
+  # about ninety seconds of work. The cost of the fold is ~1 min of wall time
+  # per run, paid because these are the short checks; `itest` stays its own
+  # job — it is the long one, and the one most often skipped.
+  checks:
+    needs: changes
+    # Runs even when the filter job did not succeed, because one thing here
+    # must not be skippable: the secret scans were the one job with no
+    # `needs:` before this fold, so a broken filter could not silence them.
+    # A cancelled run is still a cancelled run.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      # The secret steps are not path-filtered, and deliberately: a credential
+      # can be added to any file, so "this change did not touch the Go tree"
+      # says nothing about whether it added a token. It is seconds of runner
+      # time (#151).
       - name: the scanner still catches what it claims to
+        if: github.event_name == 'pull_request'
         run: bash scripts/secret-scan-test.sh
       # The redaction guard (secret-redact.yml, the `issue-guards` workflow) fires on issue and comment
       # events, where nothing gates it — this is the only place its rules are
       # checked before they ship, and it shares its pattern list with the scan
       # above, so a change to either arrives here.
       - name: the redactor still takes out what it claims to
+        if: github.event_name == 'pull_request'
         run: bash scripts/secret-redact-test.sh
-      # The step the redaction guard runs, under the runner's own `bash -e`
-      # — the flag is the difference that let #207 ship: every check passed
-      # under plain bash and the guard did nothing on the runner.
+      # The step that guard runs, under the runner's own `bash -e` — the flag
+      # is the difference that let #207 ship: every check passed under plain
+      # bash and the guard did nothing on the runner.
       - name: the redaction step still acts on a hit
+        if: github.event_name == 'pull_request'
         run: bash scripts/secret-redact-body-test.sh
       - name: scan the lines this PR adds
+        if: github.event_name == 'pull_request'
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
         run: |
           git diff -U0 "$BASE" HEAD | bash scripts/secret-scan.sh --stdin
 
-  go:
-    needs: changes
-    runs-on: ubuntu-latest
-    steps:
-      - name: not needed for this change
-        if: needs.changes.outputs.unit != 'true'
-        run: echo 'No Go paths changed — tier 1 has nothing to prove here.' >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/checkout@v4
-        if: needs.changes.outputs.unit == 'true'
+      # Everything below reads `needs.changes.outputs.*`, which is empty when
+      # the filter job failed — so every area would quietly decide it had
+      # nothing to do and this job would go green having run only the scans
+      # above. Red instead. It sits here, not first, so a filter failure
+      # still gets the secret scans run (#232, finding 1).
+      - name: the filter has to have worked
+        if: needs.changes.result != 'success'
+        run: |
+          echo "the changes job concluded '${{ needs.changes.result }}', so no path filter is available and nothing below this step could run." >&2
+          exit 1
+
       - uses: actions/setup-go@v5
         if: needs.changes.outputs.unit == 'true'
         with:
@@ -158,36 +190,6 @@ jobs:
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
 
-  itest:
-    needs: changes
-    runs-on: ubuntu-latest
-    steps:
-      - name: not needed for this change
-        if: needs.changes.outputs.itest != 'true'
-        run: echo 'No Go, itest or workflow paths changed — tier 2 has nothing to prove here.' >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/checkout@v4
-        if: needs.changes.outputs.itest == 'true'
-      - uses: actions/setup-go@v5
-        if: needs.changes.outputs.itest == 'true'
-        with:
-          go-version-file: go.mod
-      - name: integration tests (tier 2, vs fakeclaude)
-        if: needs.changes.outputs.itest == 'true'
-        run: make itest
-
-  web:
-    needs: changes
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: web
-    steps:
-      - name: not needed for this change
-        if: needs.changes.outputs.web != 'true'
-        working-directory: .
-        run: echo 'No web paths changed — the control room has nothing to prove here.' >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/checkout@v4
-        if: needs.changes.outputs.web == 'true'
       - uses: actions/setup-node@v4
         if: needs.changes.outputs.web == 'true'
         with:
@@ -196,30 +198,27 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - run: npm ci
         if: needs.changes.outputs.web == 'true'
+        working-directory: web
       - run: npm run lint
         if: needs.changes.outputs.web == 'true'
+        working-directory: web
       - run: npm run format:check
         if: needs.changes.outputs.web == 'true'
+        working-directory: web
       - run: npm test
         if: needs.changes.outputs.web == 'true'
+        working-directory: web
       - run: npm run build
         if: needs.changes.outputs.web == 'true'
+        working-directory: web
 
-  # The event-driven workflows are the blind spot this job exists for: they
-  # fire on issues, comments and schedules, so no PR ever runs them and a
-  # broken one is green here and dead in the Actions tab (#203, #207, #209).
-  # The rules are checks on the file, which is the only thing a PR can see;
-  # the run from the branch that proves the rest is the author's job, linked
-  # in the PR's Verification section (CONVENTIONS.md).
-  workflows:
-    needs: changes
-    runs-on: ubuntu-latest
-    steps:
-      - name: not needed for this change
-        if: needs.changes.outputs.workflows != 'true'
-        run: echo 'No workflow or script paths changed — nothing to lint here.' >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/checkout@v4
-        if: needs.changes.outputs.workflows == 'true'
+      # The event-driven workflows are the blind spot these two steps exist
+      # for: they fire on issues, comments and schedules, so no PR ever runs
+      # them and a broken one is green here and dead in the Actions tab
+      # (#203, #207, #209). The rules are checks on the file, which is the
+      # only thing a PR can see; the run from the branch that proves the rest
+      # is the author's job, linked in the PR's Verification section
+      # (CONVENTIONS.md).
       - name: the rules still catch the incidents they name
         if: needs.changes.outputs.workflows == 'true'
         run: bash scripts/workflow-lint-test.sh
@@ -228,3 +227,20 @@ jobs:
       - name: the failure sentinel still reports what it claims to
         if: needs.changes.outputs.workflows == 'true'
         run: bash scripts/ci-health-test.sh
+
+  # The one job still filtered at job level, because it is the one worth
+  # skipping outright: ~8 of the ~10 minutes a full run used to bill. A job
+  # skipped by an `if:` reports a `skipped` check, which branch protection
+  # counts as passed — unlike a workflow-level skip, which leaves the check
+  # pending forever (#232 records the run this was verified on).
+  itest:
+    needs: changes
+    if: needs.changes.outputs.itest == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: integration tests (tier 2, vs fakeclaude)
+        run: make itest
