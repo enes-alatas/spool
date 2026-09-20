@@ -100,6 +100,7 @@ Dependencies point inward: adapters → hub interfaces, never hub → adapter in
 ```
 cmd/spool/            wiring, flags
 cmd/fakeclaude/       stream-json protocol fake for CI (ADR-0009)
+cmd/spool-egress/     the workstation egress proxy (ADR-0028)
 internal/claude/      claude's stream-json protocol: args, stdio, events (runner-internal)
 internal/loop/        loop actors, prompts, trailers (runner)
 internal/runtime/     SandboxRuntime seam + bare/, docker/
@@ -110,6 +111,7 @@ internal/bus/         hub: pub/sub
 internal/store/       hub: interfaces + sqlite/
 internal/httpapi/     hub: REST + SSE
 internal/redact/      known secret values out of logs, writes and responses
+internal/egress/      the host allowlist a workstation's egress is held to
 internal/gitws/       git worktree helper
 internal/datadir/     permissions on the data directory
 web/                  control room (React/Vite/TS, go:embed)
@@ -125,6 +127,11 @@ implementation and nothing substitutes for it — the seams are the four above.
 The SandboxRuntime seam is live with both implementations: `internal/runtime` owns
 the interface, `internal/runtime/bare` runs host subprocesses, and
 `internal/runtime/docker` runs workstations through the docker CLI (ADR-0018).
+Docker workstations sit on an internal network with no route off it; their only
+way out is `spool-egress-proxy`, a container running `cmd/spool-egress` that
+forwards to the hosts in `internal/egress` and refuses the rest (ADR-0028). A
+bare loop has the host's own network and no wall — one more thing the
+*uncontained* badge means.
 The `telegram` package isn't yet behind the Surface interface
 (`internal/telegram` moves to `internal/surface/telegram` when that seam is
 introduced). Messaging also awaits the ADR-0025 migration described above.

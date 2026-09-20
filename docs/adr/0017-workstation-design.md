@@ -71,7 +71,8 @@ value cannot come back out through anything Spool writes down.
 
 9. **Default resource caps, open egress.** Per-loop memory/CPU limits
    (defaults 4GB / 2 CPUs, configurable); full outbound network; no published
-   ports at L1.
+   ports at L1. *Amended by ADR-0028 (#193): egress is no longer open — a
+   workstation reaches only an allowlist of hosts, through a proxy.*
 
 ## Consequences
 
@@ -97,7 +98,9 @@ value cannot come back out through anything Spool writes down.
   credential it holds. Accepted at L1 as an operator responsibility — least-
   privilege scope, short-lived revocable tokens, and no high-value credentials
   on loops that read untrusted input. The structural fix is a credential broker
-  (parking lot, #30).
+  (parking lot, #30). *Since ADR-0028 the value can no longer leave to an
+  arbitrary host, and since #150 it is redacted from everything Spool records —
+  neither stops a loop from handing it to a host on the allowlist.*
 - Parking lot: workstation port publishing (viewing an in-workstation dev
   server); an inside-out wake channel (a process inside the wall waking its own
   loop — today all wake triggers are hub-owned); and a credential broker that

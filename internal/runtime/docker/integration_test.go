@@ -20,17 +20,28 @@ import (
 	"github.com/enes-alatas/spool/internal/runtime"
 )
 
-const testImage = "spool-workstation-itest"
+const (
+	testImage       = "spool-workstation-itest"
+	testEgressImage = "spool-egress-itest"
+)
 
 func requireDocker(t *testing.T) *Runtime {
 	t.Helper()
 	if err := exec.Command("docker", "version").Run(); err != nil {
 		t.Skip("docker daemon not reachable — docker workstation itests skipped")
 	}
-	if err := exec.Command("docker", "image", "inspect", testImage).Run(); err != nil {
-		t.Skipf("%s image missing — run via `make itest`", testImage)
+	for _, image := range []string{testImage, testEgressImage} {
+		if err := exec.Command("docker", "image", "inspect", image).Run(); err != nil {
+			t.Skipf("%s image missing — run via `make itest`", image)
+		}
 	}
-	return New("", testImage, time.Second)
+	// The suite's own proxy image, so these workstations are provisioned
+	// behind a wall of their own rather than a real fleet's (ADR-0028).
+	return New(Options{
+		DefaultImage: testImage,
+		EgressImage:  testEgressImage,
+		HealthTTL:    time.Second,
+	})
 }
 
 func randomHex(bytes int) string {

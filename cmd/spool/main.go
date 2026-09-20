@@ -12,12 +12,14 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/enes-alatas/spool/internal/bus"
 	"github.com/enes-alatas/spool/internal/claude"
 	"github.com/enes-alatas/spool/internal/datadir"
+	"github.com/enes-alatas/spool/internal/egress"
 	"github.com/enes-alatas/spool/internal/httpapi"
 	"github.com/enes-alatas/spool/internal/loop"
 	"github.com/enes-alatas/spool/internal/redact"
@@ -44,6 +46,8 @@ func main() {
 	claudeBin := flag.String("claude-bin", "claude", "path to the claude binary (bare runtime)")
 	runtimeChoice := flag.String("runtime", "auto", "default runtime for new loops: auto (docker when the daemon is reachable), docker, or bare")
 	workstationImage := flag.String("workstation-image", "spool-workstation", "default image for docker workstations")
+	egressImage := flag.String("egress-image", "spool-egress", "image for the workstation egress proxy; empty leaves workstation egress open (ADR-0028)")
+	egressAllow := flag.String("egress-allow", "", "comma-separated hosts (each \"host\" or \"host:port\") workstations may reach on top of the built-in allowlist")
 	healthSec := flag.Int("workstation-health-sec", 45, "seconds between workstation liveness polls")
 	partials := flag.Bool("partial-messages", true, "stream token deltas to the UI (--include-partial-messages)")
 	telegramAPI := flag.String("telegram-api-base", telegram.APIBase, "Telegram Bot API base URL (tests point this at a stand-in server)")
@@ -59,7 +63,25 @@ func main() {
 	// the runtime is a per-loop choice (ADR-0017) — and --runtime only picks
 	// which one new loops default to.
 	healthInterval := time.Duration(*healthSec) * time.Second
-	dockerRuntime := docker.New("", *workstationImage, healthCacheTTL(healthInterval))
+	// An unusable --egress-allow entry would permit nothing and say nothing,
+	// leaving a host mysteriously unreachable from inside the wall; the
+	// operator hears about it here instead (ADR-0028).
+	allowEntries := splitList(*egressAllow)
+	for _, entry := range allowEntries {
+		if err := egress.Validate(entry); err != nil {
+			log.Error("--egress-allow", "err", err)
+			os.Exit(1)
+		}
+	}
+
+	_, hubPort, _ := net.SplitHostPort(*listen)
+	dockerRuntime := docker.New(docker.Options{
+		DefaultImage: *workstationImage,
+		EgressImage:  *egressImage,
+		HubPort:      hubPort,
+		EgressAllow:  allowEntries,
+		HealthTTL:    healthCacheTTL(healthInterval),
+	})
 	runtimes := map[string]runtime.Runtime{
 		store.RuntimeBare:   bare.New(*claudeBin),
 		store.RuntimeDocker: dockerRuntime,
@@ -75,6 +97,7 @@ func main() {
 			"found", ver, "tested", claude.TestedVersion)
 	}
 	log.Info("runtime ready", "default", defaultRuntime, "claude_version", ver)
+	logEgressPosture(log, dockerRuntime)
 
 	if err := datadir.Secure(*dataDir, log); err != nil {
 		log.Error("data dir", "err", err)
@@ -330,6 +353,34 @@ func selectDefaultRuntime(log *slog.Logger, choice string, runtimes map[string]r
 		os.Exit(1)
 	}
 	return choice, version
+}
+
+// logEgressPosture says out loud, once at boot, whether the wall around
+// workstation egress is up (ADR-0028). Both warnings describe a fleet that
+// runs — with open egress, or with contained loops that cannot wake until the
+// image exists — so neither is fatal.
+func logEgressPosture(log *slog.Logger, rt *docker.Runtime) {
+	image, ready := rt.EgressWall(context.Background())
+	switch {
+	case image == "":
+		log.Warn("workstation egress is open: no egress proxy configured, so a loop can reach any host (ADR-0028)")
+	case !ready:
+		log.Warn("egress proxy image missing — contained loops cannot wake until it exists; run `make image`", "image", image)
+	default:
+		log.Info("workstation egress allowlisted", "proxy_image", image)
+	}
+}
+
+// splitList reads a comma-separated flag, dropping empties so a trailing
+// comma is not an entry.
+func splitList(value string) []string {
+	var items []string
+	for _, item := range strings.Split(value, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			items = append(items, item)
+		}
+	}
+	return items
 }
 
 // healthCacheTTL sizes the docker runtime's batched-sweep cache to the poll
