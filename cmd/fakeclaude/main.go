@@ -32,6 +32,9 @@
 // system prompt the session is actually running with: the text passed as
 // --append-system-prompt when the session was created, not what this spawn
 // passed, because a resumed session keeps the prompt it started with (#162).
+// "!env NAME" replies with "NAME=<value>" read from the fake's own
+// environment: how a loop that echoes one of its injected credentials looks
+// from outside, which is what redaction has to catch (#150).
 // "!echo" is the unscripted default as a directive: it replies with the text
 // the turn received, which is how a test reads what Spool prepended to the
 // turn's envelopes. Without a script, every turn echoes.
@@ -274,6 +277,13 @@ func main() {
 				// a test needs to see anything Spool prepends to a turn's
 				// envelopes rather than puts in the system prompt
 				reply = "echo: " + text
+			case strings.HasPrefix(line, "!env "):
+				// A loop reading a credential out of its environment and
+				// putting it in its reply — the thing #150's redaction has
+				// to catch, and the only way a tier-2 test can produce a real
+				// secret value without knowing it.
+				name := strings.TrimSpace(strings.TrimPrefix(line, "!env "))
+				reply = name + "=" + os.Getenv(name)
 			case strings.HasPrefix(line, "!huge "):
 				n, _ := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(line, "!huge ")))
 				reply = strings.Repeat("x", n)
