@@ -1,14 +1,25 @@
 GO ?= go
 export PATH := /usr/local/go/bin:$(PATH)
 
+# Which Spool a build is (#223). The git tag is the source of truth, so a
+# tagged build reports the tag and a build between tags reports how far past
+# it is; --dirty marks a build from a checkout with uncommitted changes, which
+# is most of them during development and should never be mistaken for a
+# release. Outside a checkout these come out empty and the binary answers from
+# what Go recorded in it instead (internal/version).
+VERSION  ?= $(shell git describe --tags --always --dirty 2>/dev/null)
+COMMIT   ?= $(shell git rev-parse --short HEAD 2>/dev/null)
+BUILT_AT ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS  := -X main.buildVersion=$(VERSION) -X main.buildCommit=$(COMMIT) -X main.buildTime=$(BUILT_AT)
+
 .PHONY: build dev test itest lint secret-scan workflow-lint fakeclaude egress vet e2e-context e2e-m1 ui ui-dev image image-multiarch clean
 
 build: ui
-	$(GO) build -o bin/spool ./cmd/spool
+	$(GO) build -ldflags "$(LDFLAGS)" -o bin/spool ./cmd/spool
 
 # backend-only build (uses whatever is in web/dist, placeholder included)
 server:
-	$(GO) build -o bin/spool ./cmd/spool
+	$(GO) build -ldflags "$(LDFLAGS)" -o bin/spool ./cmd/spool
 
 fakeclaude:
 	$(GO) build -o bin/fakeclaude ./cmd/fakeclaude
