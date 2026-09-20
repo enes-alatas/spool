@@ -23,6 +23,10 @@ live fleet, and a credential quoted anywhere here is redacted to <=8 chars + `â€
 
 - [ ] No unredacted credential appears in this PR, its commits, or any attachment;
       any control-room screenshot is fixture-driven.
+- [ ] If this PR adds or changes a workflow that fires on anything but `pull_request`
+      or `push`: a link to a green dispatched run of it **from this branch**, against
+      fixture data. PR CI never fires an issue, comment or schedule event, so nothing
+      else here has exercised it (CONVENTIONS.md "Proving an event-driven workflow").
 -
 
 ## Commit Structure

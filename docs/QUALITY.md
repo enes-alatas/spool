@@ -113,6 +113,11 @@ evaded.
   tier-2-test-required convention carry the real weight; no numeric gate to Goodhart.
 
 **Review (human):**
+- A PR touching an event-driven workflow links a green dispatched run from its
+  branch in Verification (CONVENTIONS.md "Proving an event-driven workflow").
+  This one cannot be mechanical: PR CI cannot fire an issue or schedule event,
+  so the run is evidence only a person can go and produce. The reviewer checks
+  the link the way they check CI.
 - Seam interface changes and new dependencies cite an ADR in the PR description.
 - Envelope/prompt format changes are `feat` and update the tier-2 fixtures.
 - Loop-authored PRs stay under ~400 changed lines; bigger work is split.
