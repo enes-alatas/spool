@@ -34,6 +34,13 @@ ADR instead.*
   reviewer marked fixes optional, the author either declines them on the PR or
   folds them and waits for re-approval. Either way the reviewer pings last
   (#170).
+- **The board sweep reads the pinned "CI health" issue** (#216, mechanism #210).
+  A workflow that fires on issues, comments or a schedule reports its failures
+  nowhere a PR can show them, so `ci-health` posts each one there as a comment.
+  A new comment is triaged on the sweep it appears in: open a `bug` linking the
+  run, and leave the comment as the record that the failure was seen. Silence
+  there is the normal state and is not evidence the sentinel is alive — that is
+  proven by dispatching it at a known-failed run, which a PR touching it links.
 - **A pending operator decision blocks the merge** the way red CI does (#192).
   A PR resting on a question still with the operator carries, in Notes / Risks,
   one live line per question, citing where it was asked so the reviewer can
@@ -213,6 +220,15 @@ agents — Claude sessions today, Spool's own loops from L2.*
   `scripts/workflow-lint.sh` (CI job `workflows`) enforces what a file can
   show: the missing dispatch, a checkout without `contents: read` (#203), and
   an event body interpolated anywhere in a workflow, `env:` included (#207).
+  **The exception is a brand-new workflow**, which cannot be dispatched at
+  all: GitHub dispatches only workflows already on the default branch, and
+  answers `404 … not found on the default branch` for one that lives on a
+  branch (measured on #210). So a PR *adding* a workflow says that in
+  Verification instead of linking a run, carries whatever evidence it can
+  reach — a harness that runs the real step, not a copy of it — and its
+  author dispatches it the moment it lands, reporting the run on the PR. The
+  reviewer holds the author to that last step; until it happens the workflow
+  is unproven, however green the PR was.
 - **Definition of done** — self-check before opening a PR:
   `make lint && make test && make itest` green locally, plus `npm run lint`,
   `npm run format:check` and `npm test` in `web/` when the change touches it;

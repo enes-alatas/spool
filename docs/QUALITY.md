@@ -78,6 +78,13 @@ window regardless of loop count (ADR-0018).
   sentinel's `workflows:` list; and a file the parser cannot read is a
   finding, never a pass. One rule per incident (#203, #207, #209, #210),
   stdlib shell.
+- **Failures of non-PR workflows are reported** (`ci-health`, #210): a run
+  of any workflow but `ci` that does not conclude `success`, `cancelled`,
+  `skipped`, `neutral` or `stale` posts to the pinned "CI health" issue
+  (#216) with its conclusion, run link and head SHA — so a timed-out run and
+  one that never started are reported, and so is a conclusion GitHub adds
+  later. Not a gate — nothing blocks on it —
+  but the sweep triages a new comment the tick it appears (CONVENTIONS.md).
 - **Architecture tests**: a hand-rolled Go test walks the import graph and fails on:
   adapters importing each other; hub packages importing adapter internals; a seam
   importing anything but its own protocol (its implementations included);
