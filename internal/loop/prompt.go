@@ -172,8 +172,10 @@ func missionSection(l *store.Loop) string {
 
 // SystemPrompt builds the per-loop --append-system-prompt text. Enabled
 // fleet rules go ahead of the mission: they exist to constrain every loop,
-// so a mission cannot opt out of them.
-func SystemPrompt(l *store.Loop, cat Catalog, rules []*store.FleetRule) string {
+// so a mission cannot opt out of them. spoolVersion is the build doing the
+// waking, as the binary reports it; "" leaves that line out rather than
+// telling a loop it runs on nothing.
+func SystemPrompt(l *store.Loop, cat Catalog, rules []*store.FleetRule, spoolVersion string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "You are %q, a long-running autonomous loop managed by Spool.\n\n", l.Name)
 	if section := FleetRulesSection(rules); section != "" {
@@ -217,6 +219,8 @@ func SystemPrompt(l *store.Loop, cat Catalog, rules []*store.FleetRule) string {
   room timeline but is delivered to nobody. Not every turn needs a message —
   ending an exchange without one is often right.
 `)
+	b.WriteString(versionLine(spoolVersion))
+
 	if l.Pacing == store.PacingSelf {
 		fmt.Fprintf(&b, `- YOU own your schedule. ALWAYS end your reply with a trailer on its own
   line saying when you should next wake: [next-wake: 45m]  (range %s–%s).
@@ -295,7 +299,11 @@ type Prompt struct {
 //
 // It carries the three sections that change outside a release — the loop's
 // mission, the fleet's rules, and who it can address — each whole, and says
-// plainly that the rest of the prompt may have moved too. Two renderings
+// plainly that the rest of the prompt may have moved too. Since #225 it also
+// carries the version line, which is the one thing that changes *with* a
+// release: a hub restarted onto a new build resumes its loops' sessions, so
+// without this a loop would be told its instructions changed and left
+// believing it still ran the build it was created under. Two renderings
 // were tried and rejected. Naming only the fleet's sections announced a
 // change and then showed a loop its unchanged rules while an edited mission
 // went undelivered, which is #162 one field over. Replaying the prompt
@@ -303,7 +311,7 @@ type Prompt struct {
 // envelope headers by example, so the transcript gained a plausible
 // "ref:42" in a position that reads like an arriving message, which is
 // exactly the invented reference ADR-0025 exists to prevent.
-func StandingInstructionsPreamble(l *store.Loop, cat Catalog, rules []*store.FleetRule) string {
+func StandingInstructionsPreamble(l *store.Loop, cat Catalog, rules []*store.FleetRule, spoolVersion string) string {
 	var b strings.Builder
 	b.WriteString("[system note · your standing instructions changed]\n\n")
 	b.WriteString("These are current and replace what the system prompt at the top of this\n" +
@@ -318,7 +326,25 @@ func StandingInstructionsPreamble(l *store.Loop, cat Catalog, rules []*store.Fle
 		b.WriteString("FLEET RULES\nThere are no fleet rules in force.\n\n")
 	}
 	b.WriteString(cat.section(l))
+	if line := versionLine(spoolVersion); line != "" {
+		b.WriteString("\n" + line)
+	}
 	return b.String()
+}
+
+// versionLine tells a loop which build woke it. One bullet, in both
+// renderings, because there is nothing to say about a version beyond the
+// string — and a bullet is what sits either side of it in both places. It
+// carries no separators of its own: each caller owns the spacing around it,
+// which is the only way the two can agree.
+//
+// An empty version yields nothing at all. A loop that cannot be told which
+// Spool it runs on is better off not being told a blank.
+func versionLine(spoolVersion string) string {
+	if spoolVersion == "" {
+		return ""
+	}
+	return fmt.Sprintf("- You run on Spool %s. Say so when a behaviour of Spool itself is\n  in question, so it is clear which build you are describing.\n", spoolVersion)
 }
 
 // Envelope is one formatted inbound item for a loop, ready to inject.

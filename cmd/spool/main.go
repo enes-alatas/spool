@@ -169,8 +169,8 @@ func main() {
 		RenderPrompt: func(l *store.Loop) loop.Prompt {
 			cat, rules := catalogOf(rdb, l), rulesOf(rdb)
 			return loop.Prompt{
-				System:         loop.SystemPrompt(l, cat, rules),
-				StandingChange: loop.StandingInstructionsPreamble(l, cat, rules),
+				System:         loop.SystemPrompt(l, cat, rules, build.Version),
+				StandingChange: loop.StandingInstructionsPreamble(l, cat, rules, build.Version),
 			}
 		},
 		MCPEndpoint: func(l *store.Loop) string {
