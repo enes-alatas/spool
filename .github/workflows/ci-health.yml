@@ -1,9 +1,9 @@
 # Failures of the event-driven workflows, posted where the fleet reads (#210).
 #
 # `ci` reports itself: a PR failure is a red check on the PR its author is
-# already looking at. The rest — `needs-type`, `secret-redact` — fire on
-# issues and comments, so a failure is a red run in a tab nobody opens and a
-# mail in the operator's inbox. #203 left the redaction guard inert that way
+# already looking at. The rest — `issue-guards` — fires on issues and
+# comments, so a failure is a red run in a tab nobody opens and a mail in the
+# operator's inbox. #203 left the redaction guard inert that way
 # for a day, red the whole time. The fleet reads issues, so failures go to a
 # pinned issue as comments.
 name: ci-health
@@ -13,7 +13,7 @@ on:
   # sentinel silently unless it is added here. scripts/workflow-lint.awk has
   # a rule that fails CI when one is missing — same failure class as #209.
   workflow_run:
-    workflows: [needs-type, secret-redact]
+    workflows: [issue-guards]
     types: [completed]
   # Runnable from a branch against a known-failed run, which is the only way
   # to prove the posting path: a healthy repo never fires the real trigger

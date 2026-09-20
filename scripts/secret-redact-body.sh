@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# The secret-redact workflow's body, as a script rather than a `run:` block.
+# The redaction guard's body, as a script rather than a `run:` block. It is
+# the first step of .github/workflows/secret-redact.yml (the `issue-guards`
+# workflow: the file kept its name, see the header there).
 #
 # It reads the event GitHub wrote to disk, redacts the body it names, writes
 # the result back and posts the incident note. Two things that were wrong when

@@ -218,7 +218,7 @@ agents — Claude sessions today, Spool's own loops from L2.*
   when the value reads as obviously synthetic; production code never may. A hit
   prints at most eight characters, because a CI log is an artefact too.
 - **An issue or comment body is redacted, not rejected**: text posted to GitHub
-  is published before anything can run, so the `secret-redact` workflow edits
+  is published before anything can run, so the redaction guard in the `issue-guards` workflow edits
   the value out and posts what the edit does not fix — the revision history
   still holds the original, and rotation is not optional. Who deletes the
   revision depends on who pasted it: a person does it themselves, from the
