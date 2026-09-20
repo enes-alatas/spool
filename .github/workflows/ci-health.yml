@@ -27,7 +27,14 @@ on:
 
 # No checkout, so no `contents` is needed: the whole point is to survive the
 # failure class where a checkout is what broke (#203).
+#
+# `actions: read` is for the dispatch path, which asks the API for the run it
+# was pointed at. Leaving it out is how this workflow reproduced #203 on its
+# first real drill (#220): an explicit block is a whole grant, the fetch came
+# back 403, and nothing that could be run before the merge — review, the
+# lint, a harness with a stubbed `gh` — was able to see it.
 permissions:
+  actions: read
   issues: write
 
 # One report at a time, so two failures landing together cannot interleave
