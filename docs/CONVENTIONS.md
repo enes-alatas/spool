@@ -199,6 +199,20 @@ agents — Claude sessions today, Spool's own loops from L2.*
   the value out and posts what the edit does not fix — the revision history
   still holds the original, so the author deletes the revision, and rotates
   regardless. Both guards read their shapes from `scripts/secret-rules.awk`.
+- **Proving an event-driven workflow** (#209): a workflow that fires on
+  anything but `pull_request` or `push` — `issues`, `issue_comment`,
+  `schedule`, `workflow_run` — is never exercised by PR CI, so it can merge
+  broken and stay broken until someone reads the Actions tab. Three did in one
+  week (#203, #207). So: every such workflow also declares `workflow_dispatch`
+  with inputs standing in for the event payload, and a PR that adds or changes
+  one links **a green dispatched run from its own branch**, against fixture
+  data, in the template's Verification section. The reviewer checks that link
+  the way they check CI; a PR without it is not ready. After the merge the
+  author runs it once more on `main` via a real event and reports it on the
+  PR — the dispatched run proves the code, the real event proves the trigger.
+  `scripts/workflow-lint.sh` (CI job `workflows`) enforces what a file can
+  show: the missing dispatch, a checkout without `contents: read` (#203), and
+  an event body interpolated anywhere in a workflow, `env:` included (#207).
 - **Definition of done** — self-check before opening a PR:
   `make lint && make test && make itest` green locally, plus `npm run lint`,
   `npm run format:check` and `npm test` in `web/` when the change touches it;
