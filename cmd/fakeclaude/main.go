@@ -35,6 +35,10 @@
 // "!env NAME" replies with "NAME=<value>" read from the fake's own
 // environment: how a loop that echoes one of its injected credentials looks
 // from outside, which is what redaction has to catch (#150).
+// "!get URL" fetches the URL with an ordinary proxy-honouring HTTP client
+// and replies with "get <url>: <status>" or "get <url>: error: …": how a loop
+// reaching out to a host looks from outside, which is what the egress
+// allowlist has to refuse (#193).
 // "!echo" is the unscripted default as a directive: it replies with the text
 // the turn received, which is how a test reads what Spool prepended to the
 // turn's envelopes. Without a script, every turn echoes.
@@ -284,6 +288,13 @@ func main() {
 				// secret value without knowing it.
 				name := strings.TrimSpace(strings.TrimPrefix(line, "!env "))
 				reply = name + "=" + os.Getenv(name)
+			case strings.HasPrefix(line, "!get "):
+				// A loop making an outbound request — the move an exfiltration
+				// would use, and the only way a tier-2 test can see the egress
+				// wall from inside the workstation. The client is the stdlib
+				// default, so HTTP_PROXY applies exactly as it does for the
+				// real CLI.
+				reply = fetch(strings.TrimSpace(strings.TrimPrefix(line, "!get ")))
 			case strings.HasPrefix(line, "!huge "):
 				n, _ := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(line, "!huge ")))
 				reply = strings.Repeat("x", n)
@@ -478,6 +489,20 @@ func mcpConnect(flagConfig string) (*mcp.ClientSession, error) {
 		return sess, nil
 	}
 	return nil, errors.New("mcp config names no server with a url")
+}
+
+// fetch reports an outbound request's outcome as one line: a status when the
+// request completed (403 from the proxy is a completed request), an error
+// when it did not. The body is deliberately not read — what a test needs is
+// whether the host was reachable at all.
+func fetch(rawURL string) string {
+	client := &http.Client{Timeout: 20 * time.Second}
+	resp, err := client.Get(rawURL)
+	if err != nil {
+		return "get " + rawURL + ": error: " + err.Error()
+	}
+	defer resp.Body.Close()
+	return "get " + rawURL + ": " + resp.Status
 }
 
 type headerTransport struct{ headers map[string]string }
