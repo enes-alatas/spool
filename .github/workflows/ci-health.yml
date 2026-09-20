@@ -45,7 +45,17 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # A successful run has nothing to report, and a job that starts to say so
+  # bills a minute (#232): most of what this sentinel watches succeeds, so
+  # most of its spend was waking to conclude there was nothing to say. The
+  # condition is inverted — "not success" rather than a list of bad
+  # conclusions — so a run that timed out or never started still wakes it,
+  # and so does a conclusion GitHub adds later. The step below re-decides the
+  # same question on its own allowlist: it is the one the dispatch path runs
+  # (`github.event.workflow_run` is null there, so this `if:` is true) and
+  # the one #210's tests exercise.
   report:
+    if: github.event.workflow_run.conclusion != 'success'
     runs-on: ubuntu-latest
     steps:
       - name: post an unsuccessful run to the pinned CI-health issue

@@ -84,7 +84,9 @@ window regardless of loop count (ADR-0018).
   `skipped`, `neutral` or `stale` posts to the pinned "CI health" issue
   (#216) with its conclusion, run link and head SHA — so a timed-out run and
   one that never started are reported, and so is a conclusion GitHub adds
-  later. Not a gate — nothing blocks on it —
+  later. A successful run does not start the job at all (#232): the sentinel
+  woke for every success to conclude there was nothing to say, and that was
+  a billed minute each time. Not a gate — nothing blocks on it —
   but the sweep triages a new comment the tick it appears (CONVENTIONS.md).
 - **Architecture tests**: a hand-rolled Go test walks the import graph and fails on:
   adapters importing each other; hub packages importing adapter internals; a seam
