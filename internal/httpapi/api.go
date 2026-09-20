@@ -25,29 +25,20 @@ import (
 	"github.com/enes-alatas/spool/internal/runtime"
 	"github.com/enes-alatas/spool/internal/sched"
 	"github.com/enes-alatas/spool/internal/store"
+	"github.com/enes-alatas/spool/internal/surface"
 )
 
 var nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{1,31}$`)
 
-// Telegram is the slice of the bridge the API needs; nil until M5 wires it.
-type Telegram interface {
-	// ValidateToken calls getMe and returns the bot username.
-	ValidateToken(ctx context.Context, token string) (string, error)
-	// LoopChanged tells the bridge a loop's telegram config changed.
-	LoopChanged(l *store.Loop)
-	// LoopRemoved stops a loop's poller.
-	LoopRemoved(loopID string)
-	// Status describes the bridge state for a loop.
-	Status(loopID string) any
-}
-
 type Server struct {
-	Store     store.Store
-	Bus       *bus.Bus
-	Manager   *loop.Manager
-	Router    *route.Router
-	Sched     *sched.Scheduler
-	Telegram  Telegram // may be nil
+	Store   store.Store
+	Bus     *bus.Bus
+	Manager *loop.Manager
+	Router  *route.Router
+	Sched   *sched.Scheduler
+	// Surface is the chat platform loops are reachable on (ADR-0029); nil
+	// when the hub runs without one.
+	Surface   surface.Surface
 	DataDir   string
 	ClaudeVer string
 	// DefaultRuntime is the kind loops get when a create request doesn't
@@ -388,8 +379,8 @@ func (s *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if l.TGBotToken != "" && s.Telegram != nil {
-		username, err := s.Telegram.ValidateToken(r.Context(), l.TGBotToken)
+	if l.TGBotToken != "" && s.Surface != nil {
+		username, err := s.Surface.ValidateCredential(r.Context(), l.TGBotToken)
 		if err != nil {
 			s.jsonErr(w, 400, "telegram token rejected: %v", err)
 			return
@@ -423,8 +414,8 @@ func (s *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 	// token: two secret values that did not exist a moment ago.
 	s.secretsChanged(r.Context())
 	s.Manager.Add(l)
-	if s.Telegram != nil && l.TGBotToken != "" {
-		s.Telegram.LoopChanged(l)
+	if s.Surface != nil {
+		s.Surface.LoopChanged(r.Context(), l.ID)
 	}
 	// first tick shortly after creation so the mission starts without waiting
 	// a full interval
@@ -532,10 +523,10 @@ func (s *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 	if req.TGBotToken != nil {
 		token := strings.TrimSpace(*req.TGBotToken)
 		username := ""
-		if token != "" && s.Telegram != nil {
+		if token != "" && s.Surface != nil {
 			// A live call to api.telegram.org, which is why nothing read
 			// before this point may be written back afterwards.
-			name, err := s.Telegram.ValidateToken(r.Context(), token)
+			name, err := s.Surface.ValidateCredential(r.Context(), token)
 			if err != nil {
 				s.jsonErr(w, 400, "telegram token rejected: %v", err)
 				return
@@ -558,8 +549,8 @@ func (s *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 	// The stored row, not the edited copy: everything this request did not
 	// name reaches the actor and the surface as it actually stands.
 	s.Manager.UpdateLoop(updated)
-	if s.Telegram != nil && req.TGBotToken != nil {
-		s.Telegram.LoopChanged(updated)
+	if s.Surface != nil {
+		s.Surface.LoopChanged(r.Context(), updated.ID)
 	}
 	writeJSON(w, 200, s.view(r.Context(), updated))
 }
@@ -570,8 +561,8 @@ func (s *Server) handleDeleteLoop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Manager.Remove(l.ID, l.Runtime)
-	if s.Telegram != nil {
-		s.Telegram.LoopRemoved(l.ID)
+	if s.Surface != nil {
+		s.Surface.LoopRemoved(l.ID)
 	}
 	if r.URL.Query().Get("remove_worktree") == "1" && l.WorkspaceMode == store.WorkspaceWorktree {
 		if err := gitws.Remove(l.RepoPath, l.WorktreePath); err != nil {
@@ -785,8 +776,8 @@ func (s *Server) handleTelegramStatus(w http.ResponseWriter, r *http.Request) {
 		"bot_username": l.TGBotUsername,
 		"group_bound":  l.TGGroupChatID != 0,
 	}
-	if s.Telegram != nil {
-		status["bridge"] = s.Telegram.Status(l.ID)
+	if s.Surface != nil {
+		status["bridge"] = s.Surface.Status(l.ID)
 	}
 	writeJSON(w, 200, status)
 }

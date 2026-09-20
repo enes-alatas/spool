@@ -5,9 +5,8 @@
 // in cmd/. It walks the source tree with go/parser — stdlib only — so a PR
 // that erodes a boundary fails CI instead of eroding quietly.
 //
-// When packages move (telegram → surface/telegram at L3), update the rule
-// tables here in the same PR — the rules are the point, the paths are just
-// their current addresses.
+// When packages move, update the rule tables here in the same PR — the rules
+// are the point, the paths are just their current addresses.
 package archtest
 
 import (
@@ -25,9 +24,9 @@ const module = "github.com/enes-alatas/spool"
 // to what it may never import itself.
 var adapters = map[string][]string{
 	// Hub adapters serve the hub and must not reach into the runner at all.
-	module + "/internal/telegram":     runnerPkgs, // Surface (moves under internal/surface at L3)
-	module + "/internal/store/sqlite": runnerPkgs,
-	module + "/web":                   runnerPkgs,
+	module + "/internal/surface/telegram": runnerPkgs, // Surface
+	module + "/internal/store/sqlite":     runnerPkgs,
+	module + "/web":                       runnerPkgs,
 	// SandboxRuntime adapters are the runner's own, so speaking the claude
 	// protocol is their job — but they serve the seam, not the loop actors.
 	module + "/internal/runtime/bare":   {module + "/internal/loop"},
@@ -47,6 +46,7 @@ var runnerPkgs = []string{
 var seamAllowedImports = map[string][]string{
 	module + "/internal/store":   {},                            // the store seam is plain interfaces and rows
 	module + "/internal/runtime": {module + "/internal/claude"}, // the SandboxRuntime seam speaks the claude protocol
+	module + "/internal/surface": {},                            // the Surface seam is plain interfaces: a loop crosses it as an id
 }
 
 // runnerInternals may only be imported by the runner itself and cmd/ wiring.

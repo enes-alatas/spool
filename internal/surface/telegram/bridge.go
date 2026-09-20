@@ -107,9 +107,10 @@ func (br *Bridge) Start(ctx context.Context) {
 	go br.mirror(ctx)
 }
 
-// --- httpapi.Telegram interface ---
+// --- surface.Surface interface ---
 
-func (br *Bridge) ValidateToken(ctx context.Context, token string) (string, error) {
+// ValidateCredential resolves a bot token to its bot username.
+func (br *Bridge) ValidateCredential(ctx context.Context, token string) (string, error) {
 	u, err := NewClientAt(br.apiBase, token).GetMe(ctx)
 	if err != nil {
 		return "", err
@@ -117,11 +118,28 @@ func (br *Bridge) ValidateToken(ctx context.Context, token string) (string, erro
 	return u.Username, nil
 }
 
-func (br *Bridge) LoopChanged(l *store.Loop) {
-	br.stopPoller(l.ID)
-	if l.TGBotToken != "" && l.Status != store.StatusArchived {
-		br.startPoller(l)
+// LoopChanged brings the loop's poller in line with its stored configuration.
+// The row is read here rather than handed in: the hub says only that a loop
+// changed, and which of its fields matter is the bridge's own business — so
+// this is called for every edit, and answering "nothing to do" is part of the
+// job. It has to be: a restart costs a replay. getUpdates offsets are held by
+// the poller, so a new one starts at 0 and Telegram re-sends everything it
+// still holds, for the message key and the dedup LRU to throw away again.
+func (br *Bridge) LoopChanged(ctx context.Context, loopID string) {
+	l, err := br.store.Loops().Get(ctx, loopID)
+	if err != nil {
+		br.log.Error("telegram: read changed loop", "loop", loopID, "err", err)
+		return
 	}
+	if l.TGBotToken == "" || l.Status == store.StatusArchived {
+		br.stopPoller(loopID)
+		return
+	}
+	if p := br.poller(loopID); p != nil && p.token == l.TGBotToken {
+		return // same bot, still polling: the edit was none of our business
+	}
+	br.stopPoller(loopID)
+	br.startPoller(l)
 }
 
 func (br *Bridge) LoopRemoved(loopID string) { br.stopPoller(loopID) }
@@ -147,6 +165,10 @@ func (br *Bridge) Status(loopID string) any {
 type poller struct {
 	loopID string
 	name   string
+	// token is the bot this poller was started for, so LoopChanged can tell
+	// a bot swap — which needs a new poller — from an edit that left the
+	// bot alone.
+	token  string
 	client *Client
 	cancel context.CancelFunc
 	sendCh chan sendReq
@@ -173,6 +195,7 @@ func (br *Bridge) startPoller(l *store.Loop) {
 	p := &poller{
 		loopID: l.ID,
 		name:   l.Name,
+		token:  l.TGBotToken,
 		client: NewClientAt(br.apiBase, l.TGBotToken),
 		cancel: cancel,
 		sendCh: make(chan sendReq, 128),
