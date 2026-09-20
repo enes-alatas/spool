@@ -311,3 +311,66 @@ func TestSendSuccessUnmarksItsFailure(t *testing.T) {
 			got[0].SendFailedAt, got[0].SendError, got[0].SendFailureToldAt)
 	}
 }
+
+// TestSendFailuresSince pins the three ways the Fleet count could lie: by
+// counting a sibling's failures, by going quiet once the loop has been told
+// (the difference from UntoldSendFailures), and by counting a delivered
+// message because its send_failed_at is zero and zero is inside every window.
+func TestSendFailuresSince(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	now := time.Now().UnixMilli()
+	dayAgo := now - int64(24*time.Hour/time.Millisecond)
+
+	recent := &store.Message{TS: now, Origin: store.OriginLoop, Author: "terra",
+		FromLoopID: "l1", Text: "recent", Conversation: store.ConversationGroup}
+	old := &store.Message{TS: now, Origin: store.OriginLoop, Author: "terra",
+		FromLoopID: "l1", Text: "old", Conversation: store.ConversationGroup}
+	sibling := &store.Message{TS: now, Origin: store.OriginLoop, Author: "iris",
+		FromLoopID: "l2", Text: "sibling", Conversation: store.ConversationGroup}
+	delivered := &store.Message{TS: now, Origin: store.OriginLoop, Author: "terra",
+		FromLoopID: "l1", Text: "arrived", Conversation: store.ConversationGroup}
+	for _, m := range []*store.Message{recent, old, sibling, delivered} {
+		if err := db.Messages().Insert(ctx, m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, f := range []struct {
+		m  *store.Message
+		at int64
+	}{{recent, now - 1000}, {old, dayAgo - 1000}, {sibling, now - 1000}} {
+		if err := db.Messages().SetSendResult(ctx, f.m.ID, f.at, "chat not found"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	n, err := db.Messages().SendFailuresSince(ctx, "l1", dayAgo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Errorf("count = %d, want 1: the sibling's failure and the day-old one are outside", n)
+	}
+
+	// Being told is the loop's business, not the operator's: the count stays.
+	if err := db.Messages().MarkSendFailuresTold(ctx, []int64{recent.ID}, now); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := db.Messages().SendFailuresSince(ctx, "l1", dayAgo); err != nil || n != 1 {
+		t.Errorf("count = %d (err %v) after the loop was told, want 1", n, err)
+	}
+
+	// A window reaching back to the epoch still must not count a delivered
+	// message, whose send_failed_at is 0.
+	if n, err := db.Messages().SendFailuresSince(ctx, "l1", 0); err != nil || n != 2 {
+		t.Errorf("count = %d (err %v) over all time, want 2 failures and no delivered message", n, err)
+	}
+
+	if n, err := db.Messages().SendFailuresSince(ctx, "", dayAgo); err != nil || n != 0 {
+		t.Errorf("empty loop id counted %d rows (err %v), want none", n, err)
+	}
+}

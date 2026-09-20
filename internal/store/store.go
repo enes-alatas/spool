@@ -430,6 +430,12 @@ type MessageStore interface {
 	// through and whose sender has not been told, oldest first. The sender,
 	// not the recipient: this is the loop's own news about its own words.
 	UntoldSendFailures(ctx context.Context, loopID string) ([]*Message, error)
+	// SendFailuresSince counts the messages a loop sent that never got
+	// through and whose failure is no older than since (epoch ms). Unlike
+	// UntoldSendFailures this ignores whether the loop has been told: it
+	// answers the operator's question, not the loop's, and an operator who
+	// was not looking is the reason the count exists.
+	SendFailuresSince(ctx context.Context, loopID string, since int64) (int, error)
 	// MarkSendFailuresTold records that the loop has now been told about
 	// these messages. Called once the turn carrying the news has completed,
 	// so a wake that dies before it still owes the news.

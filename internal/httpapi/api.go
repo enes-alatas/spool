@@ -28,6 +28,11 @@ import (
 	"github.com/enes-alatas/spool/internal/surface"
 )
 
+// undeliveredWindow is how far back loopView.Undelivered24h looks. Rolling
+// rather than aligned to the operator's day: a failure at 23:50 should not
+// stop being news ten minutes later.
+const undeliveredWindow = 24 * time.Hour
+
 var nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{1,31}$`)
 
 type Server struct {
@@ -165,7 +170,15 @@ type loopView struct {
 	// server's own zone. A client that shows the number should not have to
 	// work out which day it belongs to, and the boundary is not the one a
 	// UTC client would guess.
-	CostDay           string `json:"cost_day"`
+	CostDay string `json:"cost_day"`
+	// Undelivered24h counts this loop's messages that never reached their
+	// surface and whose failure is less than 24 hours old. The window is
+	// on the failure, not on when the message was sent. Always present, so
+	// a measured zero is distinguishable from a server too old to measure
+	// — the lesson of context_fill_pct (#122). The window is also the
+	// server's: two clocks disagreeing about "last 24 hours" is a bug
+	// report nobody can reproduce.
+	Undelivered24h    int    `json:"undelivered_24h"`
 	HasTGToken        bool   `json:"has_tg_token"`
 	WorkstationUp     bool   `json:"workstation_up"`
 	WorkstationDetail string `json:"workstation_detail,omitempty"`
@@ -242,6 +255,14 @@ func (s *Server) view(ctx context.Context, l *store.Loop) *loopView {
 	out.CostDay = day
 	if cost, err := s.Store.Turns().CostSince(ctx, l.ID, dayStart); err == nil {
 		out.CostToday = cost
+	}
+	since := time.Now().Add(-undeliveredWindow).UnixMilli()
+	if n, err := s.Store.Messages().SendFailuresSince(ctx, l.ID, since); err == nil {
+		out.Undelivered24h = n
+	} else {
+		// The zero this leaves behind is the one thing this field must not
+		// say quietly, so it is said loudly somewhere.
+		s.Log.Error("undelivered count", "loop", l.Name, "err", err)
 	}
 	return out
 }

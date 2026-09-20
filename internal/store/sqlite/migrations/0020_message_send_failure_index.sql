@@ -1,0 +1,11 @@
+-- Fleet counts each loop's recent undelivered messages (#202), once per loop
+-- per page load, and a send failure is rare by construction: the count is a
+-- handful of rows found in a table that holds every message the fleet ever
+-- sent. Without an index that is a full scan per loop, repeated.
+--
+-- from_loop_id leads because the query always names one sender;
+-- send_failed_at follows so the window is a range over the matches rather
+-- than a filter after them, and so the overwhelming majority of rows — the
+-- ones that were delivered, send_failed_at=0 — sit together and are skipped
+-- in one seek.
+CREATE INDEX idx_messages_send_failed ON messages(from_loop_id, send_failed_at);
