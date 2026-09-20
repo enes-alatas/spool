@@ -1,6 +1,6 @@
 # ADR-0026: Loops send through a hub-served MCP tool
 
-Date: 2026-09-15 · Status: accepted (operator interview; implementation pending) · Amended: 2026-09-16 (`owner_dm` routing, twice); 2026-09-18 (undelivered sends)
+Date: 2026-09-15 · Status: accepted (operator interview; implementation pending) · Amended: 2026-09-16 (`owner_dm` routing, twice); 2026-09-18 (undelivered sends); 2026-09-20 (item 1 is a Surface rule)
 
 ## Context
 
@@ -26,6 +26,13 @@ non-delivery guarantees ADR-0025's scenario matrix demands.
    of the owner DM: web messages and their answers stay in the web thread,
    Telegram DMs stay in Telegram. Inbound envelopes expose the message's
    conversation and a stable message reference (representation owned by #79).
+
+   **Amendment (2026-09-20, #198):** the three kinds are a Surface rule
+   (ADR-0029 §5); Telegram's DM and bound group are one surface's instance of
+   the first two, not their definition. A surface supplies `owner_dm` (its DM
+   between the loop's identity and the configured owner) and `group` (the room
+   the loop is bound to). `control_room` is the web thread and belongs to no
+   surface.
 
 2. **Sending is a hub-owned `send_message` tool.** The hub serves it over MCP
    (streamable HTTP) from its existing HTTP server, using the official
