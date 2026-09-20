@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -31,6 +32,7 @@ import (
 	"github.com/enes-alatas/spool/internal/store"
 	"github.com/enes-alatas/spool/internal/store/sqlite"
 	"github.com/enes-alatas/spool/internal/surface/telegram"
+	"github.com/enes-alatas/spool/internal/version"
 	"github.com/enes-alatas/spool/web"
 )
 
@@ -39,6 +41,15 @@ import (
 // this is only the backstop for a write that forgets to — short enough that
 // the window is a blink, long enough that the log's hot path reloads rarely.
 const redactTTL = 5 * time.Second
+
+// Set by the linker: `make server` passes git describe, the commit and the
+// build time. Empty in a plain `go build`, which internal/version answers
+// from what Go recorded in the binary instead.
+var (
+	buildVersion string
+	buildCommit  string
+	buildTime    string
+)
 
 func main() {
 	listen := flag.String("listen", "127.0.0.1:8080", "address to serve the API/UI on")
@@ -53,7 +64,14 @@ func main() {
 	telegramAPI := flag.String("telegram-api-base", telegram.APIBase, "Telegram Bot API base URL (tests point this at a stand-in server)")
 	bindSettleSec := flag.Int("telegram-bind-settle-sec", 0, "seconds a newly bound bot waits before it may ingest a group (0 = the production margin; tests against a stand-in API shorten it)")
 	retentionDays := flag.Int("events-retention-days", 30, "prune raw claude events older than this many days (0 disables; messages and turns are never pruned)")
+	showVersion := flag.Bool("version", false, "print the build's version and exit")
 	flag.Parse()
+
+	build := version.Resolve(buildVersion, buildCommit, buildTime)
+	if *showVersion {
+		fmt.Println(build)
+		return
+	}
 
 	logTo := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})
 	log := slog.New(logTo)
@@ -96,7 +114,8 @@ func main() {
 		log.Warn("claude version differs from the one Spool was verified against",
 			"found", ver, "tested", claude.TestedVersion)
 	}
-	log.Info("runtime ready", "default", defaultRuntime, "claude_version", ver)
+	log.Info("runtime ready", "default", defaultRuntime, "claude_version", ver,
+		"spool_version", build.Version, "commit", build.Commit, "built_at", build.BuiltAt)
 	logEgressPosture(log, dockerRuntime)
 
 	if err := datadir.Secure(*dataDir, log); err != nil {
@@ -217,6 +236,7 @@ func main() {
 		Surface:        bridge,
 		DataDir:        *dataDir,
 		ClaudeVer:      ver,
+		Build:          build,
 		DefaultRuntime: defaultRuntime,
 		RuntimeAvailable: func(ctx context.Context, kind string) error {
 			if kind == store.RuntimeDocker {

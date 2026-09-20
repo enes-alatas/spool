@@ -26,6 +26,7 @@ import (
 	"github.com/enes-alatas/spool/internal/sched"
 	"github.com/enes-alatas/spool/internal/store"
 	"github.com/enes-alatas/spool/internal/surface"
+	"github.com/enes-alatas/spool/internal/version"
 )
 
 // undeliveredWindow is how far back loopView.Undelivered24h looks. Rolling
@@ -46,6 +47,9 @@ type Server struct {
 	Surface   surface.Surface
 	DataDir   string
 	ClaudeVer string
+	// Build is which Spool this is, served verbatim by /api/version so a bug
+	// report and the control room name the same build.
+	Build version.Info
 	// DefaultRuntime is the kind loops get when a create request doesn't
 	// name one (ADR-0017: docker whenever the daemon is reachable).
 	DefaultRuntime string
@@ -73,6 +77,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/health", s.handleHealth)
+	mux.HandleFunc("GET /api/version", s.handleVersion)
 	mux.HandleFunc("GET /api/loops", s.handleListLoops)
 	mux.HandleFunc("POST /api/loops", s.handleCreateLoop)
 	mux.HandleFunc("GET /api/loops/{name}", s.handleGetLoop)
@@ -268,6 +273,13 @@ func (s *Server) view(ctx context.Context, l *store.Loop) *loopView {
 }
 
 // --- handlers ---
+
+// handleVersion names the build. Unauthenticated like health: everything
+// here is already in the binary anyone asking can run, and an operator
+// filing a bug should not have to find a token to say which Spool it was.
+func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, s.Build)
+}
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"ok": true, "claude_version": s.ClaudeVer, "runtime": s.DefaultRuntime})
