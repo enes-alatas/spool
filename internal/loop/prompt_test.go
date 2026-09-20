@@ -9,6 +9,10 @@ import (
 	"github.com/enes-alatas/spool/internal/store"
 )
 
+// testVersion stands in for the build string the binary reports; the tests
+// that care about it assert on it by name.
+const testVersion = "v0.2.0-3-gabc1234"
+
 // TestSystemPromptWorkspaceSection pins the WORKSPACE branch of the prompt
 // contract: a docker loop is told about its persistent workstation, never
 // the bare-mode lines.
@@ -43,7 +47,7 @@ func TestSystemPromptWorkspaceSection(t *testing.T) {
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			prompt := SystemPrompt(&testCase.loop, Catalog{}, nil)
+			prompt := SystemPrompt(&testCase.loop, Catalog{}, nil, testVersion)
 			if !strings.Contains(prompt, testCase.want) {
 				t.Errorf("prompt missing %q:\n%s", testCase.want, prompt)
 			}
@@ -65,7 +69,7 @@ func TestSystemPromptFleetRules(t *testing.T) {
 		{Title: "dormant", Body: "must not appear", Enabled: false},
 		{Title: "one PR at a time", Body: "Never open a second PR\nwhile one is waiting.", Enabled: true},
 	}
-	prompt := SystemPrompt(l, Catalog{}, rules)
+	prompt := SystemPrompt(l, Catalog{}, rules, testVersion)
 
 	wantSection := "FLEET RULES\n" +
 		"1. sign your work\n   End every artifact with your name.\n" +
@@ -84,7 +88,7 @@ func TestSystemPromptFleetRules(t *testing.T) {
 	if got := FleetRulesSection([]*store.FleetRule{{Title: "off", Body: "x"}}); got != "" {
 		t.Errorf("FleetRulesSection with nothing enabled = %q, want empty", got)
 	}
-	if bare := SystemPrompt(l, Catalog{}, nil); strings.Contains(bare, "FLEET RULES") {
+	if bare := SystemPrompt(l, Catalog{}, nil, testVersion); strings.Contains(bare, "FLEET RULES") {
 		t.Errorf("prompt without rules still carries the section:\n%s", bare)
 	}
 }
@@ -97,7 +101,7 @@ func TestSystemPromptFleetRules(t *testing.T) {
 // conversation content into the group, since sessions are shared and only
 // conduct guards it.
 func TestSystemPromptPrivacyRule(t *testing.T) {
-	prompt := SystemPrompt(&store.Loop{Name: "terra", Mission: "m"}, Catalog{}, nil)
+	prompt := SystemPrompt(&store.Loop{Name: "terra", Mission: "m"}, Catalog{}, nil, testVersion)
 	if !strings.Contains(prompt, "never quote or relay it in a group message") {
 		t.Fatalf("prompt missing the private-content rule:\n%s", prompt)
 	}
@@ -250,7 +254,7 @@ func TestCatalogSection(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			prompt := SystemPrompt(l, c.cat, nil)
+			prompt := SystemPrompt(l, c.cat, nil, testVersion)
 			for _, want := range c.want {
 				if !strings.Contains(prompt, want) {
 					t.Errorf("prompt missing %q:\n%s", want, prompt)
@@ -324,7 +328,7 @@ func TestDecidePrompt(t *testing.T) {
 func TestStandingInstructionsPreambleCarriesEverythingThatChanges(t *testing.T) {
 	l := &store.Loop{Name: "aster", Mission: "keep the tests green", Pacing: store.PacingFixed}
 	rules := []*store.FleetRule{{Title: "sign your work", Body: "End every artifact with your name.", Enabled: true}}
-	note := StandingInstructionsPreamble(l, Catalog{}, rules)
+	note := StandingInstructionsPreamble(l, Catalog{}, rules, testVersion)
 
 	if !strings.HasPrefix(note, "[system note · your standing instructions changed]") {
 		t.Fatalf("the note must open with its header:\n%s", note)
@@ -349,7 +353,7 @@ func TestStandingInstructionsPreambleCarriesEverythingThatChanges(t *testing.T) 
 // tell "no rules" from "rules not mentioned".
 func TestStandingInstructionsPreambleWithoutRules(t *testing.T) {
 	l := &store.Loop{Name: "aster", Mission: "m", Pacing: store.PacingFixed}
-	if note := StandingInstructionsPreamble(l, Catalog{}, nil); !strings.Contains(note, "FLEET RULES\nThere are no fleet rules in force.") {
+	if note := StandingInstructionsPreamble(l, Catalog{}, nil, testVersion); !strings.Contains(note, "FLEET RULES\nThere are no fleet rules in force.") {
 		t.Fatalf("a ruleless note does not say so:\n%s", note)
 	}
 }
@@ -430,5 +434,56 @@ func TestSendFailureEnvelopeWithoutAReason(t *testing.T) {
 	}).Text
 	if !strings.Contains(text, "no reason recorded") {
 		t.Errorf("envelope missing the unexplained-failure wording:\n%s", text)
+	}
+}
+
+// TestPromptSaysWhichSpoolWokeTheLoop: a loop can name its own build, in both
+// renderings. The preamble matters as much as the system prompt — a hub
+// restarted onto a new build resumes its loops' sessions, so the preamble is
+// the only place a running loop can learn its version changed (#225).
+func TestPromptSaysWhichSpoolWokeTheLoop(t *testing.T) {
+	l := &store.Loop{Name: "terra", Mission: "m"}
+	want := "You run on Spool " + testVersion + "."
+
+	prompt := SystemPrompt(l, Catalog{}, nil, testVersion)
+	if !strings.Contains(prompt, want) {
+		t.Errorf("the system prompt does not say which Spool woke the loop:\n%s", prompt)
+	}
+	note := StandingInstructionsPreamble(l, Catalog{}, nil, testVersion)
+	if !strings.Contains(note, want) {
+		t.Errorf("the standing-instructions note does not carry the version:\n%s", note)
+	}
+
+	// Shape, not just presence: the line is a bullet in both renderings, and
+	// neither caller leaves a gap around it. A prompt is read, so a stray
+	// blank line or an unbulleted paragraph mid-list is a defect in it.
+	for name, got := range map[string]string{"system prompt": prompt, "standing note": note} {
+		if !strings.Contains(got, "\n- "+want) {
+			t.Errorf("%s does not render the version as a bullet:\n%s", name, got)
+		}
+		if strings.Contains(got, "\n\n\n") {
+			t.Errorf("%s has a double blank line in it:\n%q", name, got)
+		}
+	}
+
+	// In the system prompt it sits inside HOW THIS WORKS, among the bullets
+	// rather than wedged between them and the pacing trailer.
+	how := prompt[strings.Index(prompt, "HOW THIS WORKS"):]
+	if trailer := strings.Index(how, "[next-wake:"); trailer < strings.Index(how, want) {
+		t.Error("the version line falls after the pacing trailer, which ends the section")
+	}
+}
+
+// TestUnknownVersionSaysNothing: a build that cannot name itself must not
+// tell a loop it runs on the empty string.
+func TestUnknownVersionSaysNothing(t *testing.T) {
+	l := &store.Loop{Name: "terra", Mission: "m"}
+	for name, got := range map[string]string{
+		"system prompt": SystemPrompt(l, Catalog{}, nil, ""),
+		"standing note": StandingInstructionsPreamble(l, Catalog{}, nil, ""),
+	} {
+		if strings.Contains(got, "You run on Spool") {
+			t.Errorf("%s names a version it does not have:\n%s", name, got)
+		}
 	}
 }
