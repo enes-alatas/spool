@@ -10,9 +10,15 @@
 #
 # What it does not do, and the workflow's comment has to say so: editing a
 # body does not erase its revisions. GitHub keeps the original in the edit
-# history, so the value stays readable to anyone who opens it until the author
-# deletes the revision — and it has been public regardless, so rotation is not
-# optional. Redaction buys time and stops the casual reader; it is not a fix.
+# history, so the value stays readable to anyone who opens it until someone
+# deletes that revision — and it has been public regardless, so rotation is
+# not optional. Redaction buys time and stops the casual reader; it is not a
+# fix.
+#
+# "Someone", not "the author": deleting a revision is a web-UI action with no
+# API behind it, so a loop that pastes a credential cannot carry out the first
+# instruction the note gives it (#206). The note says that in as many words
+# rather than leaving a loop to discover it, or to assume it was handled.
 #
 # Usage:
 #   scripts/secret-redact.sh < body.md > redacted.md   # status 1 if changed

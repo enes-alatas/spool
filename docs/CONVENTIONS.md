@@ -220,8 +220,12 @@ agents — Claude sessions today, Spool's own loops from L2.*
 - **An issue or comment body is redacted, not rejected**: text posted to GitHub
   is published before anything can run, so the `secret-redact` workflow edits
   the value out and posts what the edit does not fix — the revision history
-  still holds the original, so the author deletes the revision, and rotates
-  regardless. Both guards read their shapes from `scripts/secret-rules.awk`.
+  still holds the original, and rotation is not optional. Who deletes the
+  revision depends on who pasted it: a person does it themselves, from the
+  `edited` menu; a loop cannot, because edit history is read-only in both
+  APIs, so it reports the exposure privately to the operator — what and
+  where, never the value — and the operator deletes it (#206). Both guards
+  read their shapes from `scripts/secret-rules.awk`.
 - **Proving an event-driven workflow** (#209): a workflow that fires on
   anything but `pull_request` or `push` — `issues`, `issue_comment`,
   `schedule`, `workflow_run` — is never exercised by PR CI, so it can merge

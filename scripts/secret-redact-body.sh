@@ -103,7 +103,8 @@ fi
 # an unreadable rules file, an awk that died mid-body — and treating that as a
 # hit would PATCH a truncated body over the report while posting a note saying
 # it had been handled. The original would then survive only in the revision
-# history the note tells the author to delete. Fail loudly, leave the body.
+# history, which a person can delete themselves and a loop cannot — so for a
+# loop it would sit there until the operator did. Fail loudly, leave the body.
 if [ "$status" -ne 1 ] || [ ! -s "$work/redacted.md" ]; then
   echo "secret-redact exited $status; leaving the body untouched" >&2
   exit 1
