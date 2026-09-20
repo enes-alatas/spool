@@ -5,6 +5,15 @@ name: needs-type
 on:
   issues:
     types: [opened, reopened, labeled, unlabeled]
+  # Runnable from a branch against a fixture issue: an issue event never
+  # fires on a PR, so without this a change here merges unexercised (#209).
+  # A number is not attacker-written text, so it can be read through `env:`
+  # the way the event's own number is.
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: issue number to check for a type label
+        required: true
 
 permissions:
   issues: write
@@ -17,7 +26,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          NUM: ${{ github.event.issue.number }}
+          NUM: ${{ github.event.issue.number || inputs.issue }}
         run: |
           types='bug|new feature|improvement|refactor|chore|security|documentation|question'
           labels=$(gh issue view "$NUM" -R "$REPO" --json labels -q '.labels[].name')
