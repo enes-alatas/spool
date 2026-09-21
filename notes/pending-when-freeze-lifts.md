@@ -9,3 +9,4 @@ Every issue edit/comment bills a minute via issue-guards; hold until Enes lifts 
 - Delete notes/l3-surface-seam-agenda.md (stale).
 - Branch protection (#1) required checks, confirmed from ci.yml on origin/main 2026-09-21: `changes`, `checks`, `itest`. Not `guards` (issue-guards) or `report` (ci-health).
 - Flip decided 2026-09-21 10:47: CI stays out until public; flip as soon as Quinn's attachment eye-check and deliverable 6 are done. Pre-flip list sent to Enes (ref:1282); final version after Quinn's counts.
+- Held work as of 2026-09-21 11:00: Terra #246 (folded, needs push), #247 (7f8ce20, needs PR), #240 (starting); Iris #239 login half (feat/operator-login), #234 (starting). Quinn's audits complete; Enes holds the remedy list. Waiting on Enes: image decision (a/b/c), redaction go, own checklist.
