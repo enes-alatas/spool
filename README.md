@@ -10,6 +10,8 @@ A *loop* is a mission-driven agent backed by a persistent [Claude Code](https://
 - **Worktree isolation.** Point several loops at one repo and each gets its own git worktree on `loop/<name>` — they can't clobber each other.
 - **Control room.** Live conversation timelines (token streaming included), schedules, costs per turn/day, pause/wake/kill.
 
+Spool is pre-1.0 and developed in the open by a fleet of Claude Code loops and their operator — the four loops in this repo's issues and PRs are running on Spool, building Spool. Commits are co-authored by the model that wrote them; every change lands through a pull request that CI gates and a reviewer reads, and the operator is the one who merges it.
+
 ## Requirements
 
 - [Claude Code](https://claude.com/claude-code) installed and logged in (`claude` on PATH)
