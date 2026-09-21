@@ -19,6 +19,14 @@ export function useVersion() {
   return useQuery({ queryKey: ['version'], queryFn: api.version, ...NEVER_REFETCHES })
 }
 
+// The runtime a loop gets when a create request names none — the hub's own
+// default, which New loop starts its runtime choice on (#255). A flag the hub
+// was started with, so it is as constant as the build; it rides the health
+// check because that is where the server already reports it.
+export function useHubRuntime() {
+  return useQuery({ queryKey: ['health'], queryFn: api.health, ...NEVER_REFETCHES })
+}
+
 // The `claude` CLI this server found — not part of the build, which is why it
 // comes from the health check rather than from `/api/version`.
 export function useClaudeVersion() {

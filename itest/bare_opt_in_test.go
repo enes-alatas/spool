@@ -99,3 +99,37 @@ func TestControlRoomCannotCreateABareLoopOnADockerHub(t *testing.T) {
 		}
 	}
 }
+
+// The control room decides whether to offer an uncontained loop from what
+// `GET /api/settings` says, so the flag the operator typed at the terminal has
+// to survive the trip (#255). A form that offered the choice on a hub that
+// refuses it would be offering a create that 400s; one that hid it on a hub
+// that allows it would hide the escape hatch `--allow-bare` exists to give.
+func TestSettingsReportsWhetherBareIsAllowed(t *testing.T) {
+	// A bare hub: the shape of a single-machine install, where every loop the
+	// room creates is uncontained and the form has to say so.
+	t.Run("a bare hub allows one", func(t *testing.T) {
+		assertBareAllowed(t, startServer(t, t.TempDir()), true)
+	})
+
+	// The docker cases need a daemon, because `--runtime docker` refuses to
+	// boot without one; startDockerServer skips when it is not there.
+	t.Run("a docker hub does not", func(t *testing.T) {
+		assertBareAllowed(t, startDockerServer(t, t.TempDir()), false)
+	})
+
+	t.Run("--allow-bare is the escape hatch on a docker hub", func(t *testing.T) {
+		assertBareAllowed(t, startDockerServer(t, t.TempDir(), "--allow-bare"), true)
+	})
+}
+
+func assertBareAllowed(t *testing.T, s *server, want bool) {
+	t.Helper()
+	var view struct {
+		BareAllowed bool `json:"bare_allowed"`
+	}
+	s.mustJSON("GET", "/api/settings", nil, &view)
+	if view.BareAllowed != want {
+		t.Errorf("bare_allowed = %v, want %v", view.BareAllowed, want)
+	}
+}
