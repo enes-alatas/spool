@@ -23,6 +23,7 @@ import (
 	"github.com/enes-alatas/spool/internal/egress"
 	"github.com/enes-alatas/spool/internal/httpapi"
 	"github.com/enes-alatas/spool/internal/loop"
+	"github.com/enes-alatas/spool/internal/operator"
 	"github.com/enes-alatas/spool/internal/redact"
 	"github.com/enes-alatas/spool/internal/route"
 	"github.com/enes-alatas/spool/internal/runtime"
@@ -52,8 +53,18 @@ var (
 )
 
 func main() {
+	// `spool token` prints the operator credential for a data directory and
+	// exits: the value is shown once when it is minted, and an operator who
+	// did not keep it needs a way back to it that is not reading the file
+	// path out of the docs (#239).
+	if len(os.Args) > 1 && os.Args[1] == "token" {
+		printToken(os.Args[2:])
+		return
+	}
+
 	listen := flag.String("listen", "127.0.0.1:8080", "address to serve the operator's API/UI on; never reachable from a workstation")
 	mcpListen := flag.String("mcp-listen", "127.0.0.1:8081", "address to serve the loop-facing /mcp endpoint on; the one port of this machine a workstation may reach (#238)")
+	trustedHosts := flag.String("trusted-host", "", "comma-separated Host/Origin names this hub also answers to, each \"host\" or \"host:port\" — for a hub reached through a proxy under that proxy's name (ADR-0030)")
 	dataDir := flag.String("data-dir", defaultDataDir(), "directory for spool.db, loop homes and worktrees")
 	claudeBin := flag.String("claude-bin", "claude", "path to the claude binary (bare runtime)")
 	runtimeChoice := flag.String("runtime", "auto", "default runtime for new loops: auto (docker when the daemon is reachable), docker, or bare")
@@ -141,6 +152,22 @@ func main() {
 		log.Error("data dir", "err", err)
 		os.Exit(1)
 	}
+	// After the directory is private, before anything serves: a token minted
+	// into a world-readable directory would be everyone's.
+	operatorToken, minted, err := operator.Load(*dataDir)
+	if err != nil {
+		log.Error("operator token", "err", err)
+		os.Exit(1)
+	}
+	if minted {
+		// Straight to stdout, once, and never again. The log goes through
+		// redaction and into files an operator shares; this is the one place
+		// the value is meant to be read by a person.
+		fmt.Printf("\nOperator token (this is the only time it is shown):\n\n    %s\n\n"+
+			"The control room asks for it once. `spool token --data-dir %s` prints it again.\n\n",
+			operatorToken, *dataDir)
+	}
+
 	db, err := sqlite.Open(filepath.Join(*dataDir, "spool.db"))
 	if err != nil {
 		log.Error("open db", "err", err)
@@ -269,8 +296,11 @@ func main() {
 				log.Error("reload secrets for redaction", "err", err)
 			}
 		},
-		Log:   log,
-		WebFS: web.Dist(),
+		OperatorToken: operatorToken,
+		ListenAddr:    *listen,
+		TrustedHosts:  splitList(*trustedHosts),
+		Log:           log,
+		WebFS:         web.Dist(),
 	}
 
 	srv := &http.Server{Addr: *listen, Handler: redact.HTTP(api.Handler(), redactor)}
@@ -300,6 +330,26 @@ func main() {
 		log.Error("serve", "err", err)
 	}
 	manager.Shutdown()
+}
+
+// printToken serves `spool token`, which reads the credential rather than
+// minting one where a fleet already runs: an operator who lost the value
+// needs it back, and a data directory with no token yet has had no first run
+// to print it.
+func printToken(args []string) {
+	fs := flag.NewFlagSet("token", flag.ExitOnError)
+	dataDir := fs.String("data-dir", defaultDataDir(), "directory holding the fleet whose token to print")
+	_ = fs.Parse(args)
+
+	token, minted, err := operator.Load(*dataDir)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	if minted {
+		fmt.Fprintf(os.Stderr, "no fleet has run in %s yet; minted a token for it\n", *dataDir)
+	}
+	fmt.Println(token)
 }
 
 // splitMCPListen takes --mcp-listen apart into the host the loop-facing

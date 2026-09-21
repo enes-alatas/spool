@@ -61,6 +61,10 @@ by asking the agent nicely (#193).
    stay direct. `claude`, `gh`, `git`, `go`, `npm` and Go's own HTTP client all
    honour them — which is what makes a *forward* proxy the cheap shape here.
 
+   **Amended by ADR-0030:** the operator listener now carries a credential of
+   its own. This decision remains the reason a workstation cannot reach it at
+   all; that one covers the callers the network cannot tell apart.
+
 4. **The allowlist is a default fleet-wide list, extendable per loop later.**
    The default is what a loop needs to do its job: Anthropic's API and Claude
    Code's install/update hosts, GitHub (api/web/objects/codeload), the Go module

@@ -25,7 +25,13 @@ PORT="${PORT:-8098}"
 # reaches it through the gateway, while the API above stays on loopback
 MCP_PORT="${MCP_PORT:-8198}"
 BASE="http://127.0.0.1:$PORT"
+
 DATA="$(mktemp -d)"
+
+# Every /api request carries the operator token (ADR-0030); /api/health does
+# not need it, and the wait loop below calls that with plain curl.
+api() { curl -sf -H "Authorization: Bearer $(cat "$DATA/operator-token")" "$@"; }
+
 BIN="${BIN:-./bin/spool}"
 MODEL="${MODEL:-claude-haiku-4-5-20251001}"
 # ~15k tokens of filler per message; 200k window / 15k ≈ 14 messages to fill.
@@ -55,7 +61,7 @@ start_spool() {
 }
 
 completed_turns() {
-  curl -sf "$BASE/api/loops/$1/turns?limit=200" | python3 -c 'import json,sys; print(sum(1 for t in json.load(sys.stdin) if t["ended_at"]>0))'
+  api "$BASE/api/loops/$1/turns?limit=200" | python3 -c 'import json,sys; print(sum(1 for t in json.load(sys.stdin) if t["ended_at"]>0))'
 }
 
 wait_turns() {
@@ -69,14 +75,14 @@ wait_turns() {
 
 # context <loop> -> "tokens limit state session"
 context() {
-  curl -sf "$BASE/api/loops/$1" | python3 -c '
+  api "$BASE/api/loops/$1" | python3 -c '
 import json,sys
 v=json.load(sys.stdin)
 print(v["context_tokens"], v["context_limit_tokens"], v["state"], v["current_session_id"])'
 }
 
 last_turn() {
-  curl -sf "$BASE/api/loops/$1/turns?limit=1" | python3 -c '
+  api "$BASE/api/loops/$1/turns?limit=1" | python3 -c '
 import json,sys
 t=json.load(sys.stdin)
 if not t: print("(none)"); raise SystemExit
@@ -88,7 +94,7 @@ print("is_error=%s in=%s cache_read=%s out=%s text=%r" % (
 
 # every spool-origin event, which is where a crash or a failed resume lands
 spool_events() {
-  curl -sf "$BASE/api/loops/$1/events?limit=400" | python3 -c '
+  api "$BASE/api/loops/$1/events?limit=400" | python3 -c '
 import json,sys
 for e in json.load(sys.stdin):
     if e.get("type") == "spool":
@@ -107,7 +113,7 @@ sys.stdout.write(' '.join(words[i % len(words)] for i in range(n)))"
 start_spool
 log "spool up (data: $DATA, model: $MODEL)"
 
-curl -sf -X POST "$BASE/api/loops" -H 'Content-Type: application/json' -d "{
+api -X POST "$BASE/api/loops" -H 'Content-Type: application/json' -d "{
   \"name\": \"ctxprobe\",
   \"mission\": \"You are a context-probe loop. Reply to every message with exactly one word: ok. Never explain. Never use a next-wake trailer.\",
   \"model\": \"$MODEL\",
@@ -124,7 +130,7 @@ if [[ "$MODE" == "oversize" ]]; then
   BASELINE=$(completed_turns ctxprobe)
   printf '%s' "$FILL" > /tmp/ctxfill.txt
   python3 -c 'import json; print(json.dumps({"author":"probe","text":"Read this and reply ok.\n\n"+open("/tmp/ctxfill.txt").read()}))' > /tmp/ctxmsg.json
-  curl -sf -X POST "$BASE/api/loops/ctxprobe/message" -H 'Content-Type: application/json' \
+  api -X POST "$BASE/api/loops/ctxprobe/message" -H 'Content-Type: application/json' \
     --data-binary @/tmp/ctxmsg.json >/dev/null
   if wait_turns ctxprobe $((BASELINE+1)) 300; then
     log "turn completed: $(last_turn ctxprobe)"
@@ -144,7 +150,7 @@ fill, i = sys.argv[1], sys.argv[2]
 print(json.dumps({"author": "probe",
                   "text": "Block %s. Read and reply with one word: ok.\n\n%s" % (i, fill)}))
 PY
-  curl -sf -X POST "$BASE/api/loops/ctxprobe/message" -H 'Content-Type: application/json' \
+  api -X POST "$BASE/api/loops/ctxprobe/message" -H 'Content-Type: application/json' \
     --data-binary @/tmp/ctxmsg.json >/dev/null
   if wait_turns ctxprobe $((BASELINE+1)) 240; then
     log "message $i -> context: $(context ctxprobe)"

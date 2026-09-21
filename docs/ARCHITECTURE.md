@@ -51,6 +51,7 @@ Use these words exactly — in code, UI, docs, and prompts. Don't introduce syno
 | **power controls** | The operator's switches on a workstation: restart, power off, power on, recreate. They act on the loop's *machine*, not the loop — pause is the switch for the loop itself, and the two compose (ADR-0021). |
 | **runner** | The subsystem that executes loops (actors + claude processes + sandboxes). |
 | **hub** | Everything that isn't the runner or a surface: routing, scheduling, store, API. It serves two listeners: the *operator listener* (`--listen`) carries the API and control room, the *loop listener* (`--mcp-listen`) carries the MCP endpoint and nothing else. Workstations may reach the loop listener and no other port of the operator's machine (ADR-0028, #238). |
+| **operator token** | The credential the human running Spool presents to the API: minted at first start into `<data-dir>/operator-token`, traded for a `SameSite=Strict` session cookie by the control room. Distinct from a loop's hub MCP token in every way — different file, different check, different listener — and never given to a loop (ADR-0030). |
 | **connection** | An org-level tool credential/config (GitHub app, MCP server) attachable to loops. |
 | **control room** | The web UI. |
 | **storm guard** | The rate limit on loop→loop delivery. A recipient it refuses is not listed in the message's `delivered_to` — that field names the loops a message reached, not the ones it addressed — and the refusal is recorded as a `storm_drop` event on the sender. |
@@ -112,6 +113,7 @@ internal/store/       hub: interfaces + sqlite/
 internal/httpapi/     hub: REST + SSE
 internal/redact/      known secret values out of logs, writes and responses
 internal/egress/      the host allowlist a workstation's egress is held to
+internal/operator/    the operator's own credential for the API (ADR-0030)
 internal/gitws/       git worktree helper
 internal/datadir/     permissions on the data directory
 web/                  control room (React/Vite/TS, go:embed)
@@ -135,6 +137,15 @@ port alone: the operator listener is on no allowlist, so the API a workstation
 would otherwise reach unauthenticated is not a destination it has (#238). A
 bare loop has the host's own network and no wall — one more thing the
 *uncontained* badge means.
+The hub's trust model is two credentials on two listeners (ADR-0030). On the
+operator listener every `/api` route but `/api/health` and `/api/version`
+requires the operator token, presented as a bearer header or as the session
+cookie `POST /api/login` sets; the same middleware refuses a `Host` this hub
+does not answer to, a cross-site `Origin` or `Sec-Fetch-Site`, and a body that
+is not `application/json`. On the loop listener `/mcp` requires the requesting
+loop's own token. Nothing else is unauthenticated, and neither credential is
+ever handed to the other's audience.
+
 The Surface seam is live with one implementation: `internal/surface` owns the
 interface and `internal/surface/telegram` is the bridge behind it. Only the
 hub-to-surface direction crosses it — inbound goes to the router and outbound
