@@ -469,9 +469,20 @@ func (br *Bridge) recordSentRef(ctx context.Context, p *poller, req sendReq, sen
 // at. Telegram's embedded reply_to_message carries an id in the receiving
 // bot's own numbering, so it resolves directly only for messages that bot
 // sent or saw; for another loop's post — which no other bot ever receives —
-// the embedded copy's text is all that is left to identify it by. A target
-// that resolves to nothing stays 0: the message is delivered as an ordinary
-// one rather than aimed at a guess.
+// what is left to identify it by is the embedded copy's sender and text.
+//
+// The sender is the stronger half: a bot's username names the loop that
+// posted, and the ingesting bot is elected by loop id rather than by
+// authorship (ADR-0020), so most group replies arrive at a bot that is not
+// the author's. Knowing the author first is what makes the text lookup
+// safe — among two loops that posted the same words it no longer has to
+// guess, because only one of them is the one being answered.
+//
+// The text needs undoing first. A loop's reply to another loop's post goes
+// out with a quoted line prepended (ADR-0025 amendment), and Telegram
+// embeds a message as it was sent, so the copy carries a line the stored
+// row does not. A target that resolves to nothing stays 0: the message is
+// delivered as an ordinary one rather than aimed at a guess.
 func (br *Bridge) inboundReplyTarget(ctx context.Context, p *poller, m *tgMsgAlias) int64 {
 	rm := m.ReplyToMessage
 	if rm == nil || rm.From == nil {
@@ -487,12 +498,50 @@ func (br *Bridge) inboundReplyTarget(ctx context.Context, p *poller, m *tgMsgAli
 		}
 		return 0
 	}
-	if rm.Text != "" {
-		if target, err := msgs.LatestGroupTextFrom(ctx, rm.Text); err == nil {
+	author := br.loopIDOfBot(ctx, rm.From.Username)
+	if author == "" || rm.Text == "" {
+		return 0
+	}
+	for _, text := range []string{rm.Text, withoutQuotePrefix(rm.Text)} {
+		if target, err := msgs.LatestGroupPostBy(ctx, author, text); err == nil {
 			return target.ID
 		}
 	}
 	return 0
+}
+
+// loopIDOfBot names the loop whose bot posts under username, or "" for a
+// bot that is not one of ours. Telegram gives usernames without the @ and
+// treats them case-insensitively.
+func (br *Bridge) loopIDOfBot(ctx context.Context, username string) string {
+	username = strings.TrimPrefix(strings.TrimSpace(username), "@")
+	if username == "" {
+		return ""
+	}
+	loops, err := br.store.Loops().List(ctx)
+	if err != nil {
+		br.log.Error("telegram: reply author lookup", "err", err)
+		return ""
+	}
+	for _, l := range loops {
+		if strings.EqualFold(strings.TrimPrefix(l.TGBotUsername, "@"), username) {
+			return l.ID
+		}
+	}
+	return ""
+}
+
+// withoutQuotePrefix removes the line render prepends when it cannot anchor
+// a reply natively, returning what the store holds. Text that carries no
+// such line comes back unchanged, so the caller can try both.
+func withoutQuotePrefix(text string) string {
+	if !strings.HasPrefix(text, quoteMark) {
+		return text
+	}
+	if i := strings.Index(text, "\n\n"); i >= 0 {
+		return text[i+2:]
+	}
+	return text
 }
 
 // render prepares a loop's message for one chat: the native reply anchor
@@ -520,10 +569,14 @@ func (br *Bridge) render(ctx context.Context, mp *route.MessagePayload, chatID i
 // enough that the reply itself stays the message.
 const quoteLen = 80
 
+// quoteMark opens the quoted line, and is how an inbound copy of one is
+// recognised again.
+const quoteMark = "↳ re "
+
 // quotePrefix renders the one line that stands in for a native reply.
 func quotePrefix(target *store.Message) string {
 	quoted := strings.Join(strings.Fields(target.Text), " ")
-	return fmt.Sprintf("↳ re %s: %s\n\n", target.Author, excerpt(quoted, quoteLen))
+	return fmt.Sprintf("%s%s: %s\n\n", quoteMark, target.Author, excerpt(quoted, quoteLen))
 }
 
 // tgMsgAlias keeps handleMessage readable without exporting internals.

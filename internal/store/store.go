@@ -457,12 +457,22 @@ type MessageStore interface {
 	// its identity, whichever bot ingested it. ErrNotFound when it was
 	// never ingested.
 	ByTGKey(ctx context.Context, tgKey string) (*Message, error)
-	// LatestGroupTextFrom finds the one loop-authored group message with
-	// exactly this text — the last resort for identifying a reply target
-	// that no bot holds an id for, such as another loop's post. Ambiguity
-	// is ErrNotFound: two loops that posted the same words cannot be told
-	// apart, and the answer decides delivery, not just rendering.
-	LatestGroupTextFrom(ctx context.Context, text string) (*Message, error)
+	// LatestGroupPostBy finds the group message authored by one loop whose
+	// text is, or begins with, the given text — the last resort for
+	// identifying a reply target that no bot holds an id for, such as
+	// another loop's post. "Begins with" is what a message too long for one
+	// Telegram message needs, and only for its first part: the row holds
+	// the whole message, so a reply to the first part is a prefix of it and
+	// a reply to any later part is not text this can find. Such a reply
+	// resolves to nothing and is delivered as an ordinary message — the
+	// same outcome as before it was split, not a new failure.
+	//
+	// A message whose text is exactly this wins over one that merely starts
+	// with it, however much newer that one is: they are different messages,
+	// and only the first is the one quoted back. Among equals the newest
+	// wins. The author is already known by then, so that choice decides
+	// which message the reply is filed against, not which loop is woken.
+	LatestGroupPostBy(ctx context.Context, authorLoopID, text string) (*Message, error)
 }
 
 type TurnStore interface {

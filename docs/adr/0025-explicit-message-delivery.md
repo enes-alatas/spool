@@ -1,6 +1,6 @@
 # ADR-0025: Private DMs and shared groups with explicit delivery
 
-Date: 2026-09-14 · Status: accepted (operator agreement; implementation pending) · Amended: 2026-09-15 (sending contract); 2026-09-16 (native replies); 2026-09-17 (`@all` eligibility); 2026-09-20 (item 4 is a Surface rule)
+Date: 2026-09-14 · Status: accepted (operator agreement; implementation pending) · Amended: 2026-09-15 (sending contract); 2026-09-16 (native replies); 2026-09-17 (`@all` eligibility); 2026-09-20 (item 4 is a Surface rule); 2026-09-21 (inbound replies resolve by author)
 
 ## Context
 
@@ -184,6 +184,29 @@ woken, not merely how the message looks. The match is therefore exact or
 nothing: two loops that posted the same words resolve to neither, and the
 message is delivered as an ordinary one. An unaimed message is a smaller
 failure than one aimed at the wrong loop.
+
+**Amendment (2026-09-21, #243): the text was never the only thing left.**
+The paragraph above is right that the id is unusable and wrong that
+identification then rests on the text alone. Telegram embeds the target's
+*sender* too, and a bot belongs to exactly one loop — so the author of the
+post being replied to is known before any text is compared, and the text
+only has to pick between that loop's own messages.
+
+Two consequences. The match is scoped to the author and no longer has to be
+exact-or-nothing: where one loop said the same words twice, the newest is
+the answer, because either choice wakes the loop that wrote both. And the
+text compared has to be the text as *sent* — a loop's reply to a peer goes
+out with the quote line this ADR prescribes, which the stored row does not
+carry, and a message too long for one Telegram message is quoted by the
+part the reply was aimed at. Both are undone before the lookup — the
+second only for a message's first part, which is a prefix of the row the
+store holds. A reply to a later part of a split message resolves to
+nothing and arrives unaimed, as it did before this amendment.
+
+The property the exact-or-nothing rule protected is kept, not traded away:
+no loop is woken about a message it did not write. What ends is the silence
+this cost in the common case — a human's reply to a loop's reply, the most
+ordinary shape in a group of loops, reached nobody at all.
 
 **Amendment (2026-09-17, #74): `@all` eligibility.** Item 7 left eligibility
 for paused and offline loops, and the scope across multiple groups, to be

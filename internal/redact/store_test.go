@@ -198,7 +198,7 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			"Get": false, "UntoldSendFailures": false, "SendFailuresSince": false,
 			"MarkSendFailuresTold": false,
 			"PutRef":               false, "Ref": false, "RecordSighting": false, "ByRef": false,
-			"ByTGKey": false, "LatestGroupTextFrom": false,
+			"ByTGKey": false, "LatestGroupPostBy": false,
 		},
 		"InboxStore": {
 			// Push queues an envelope the loop is about to be handed. Its
