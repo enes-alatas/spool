@@ -79,6 +79,18 @@ func main() {
 	showVersion := flag.Bool("version", false, "print the build's version and exit")
 	flag.Parse()
 
+	// Spool takes flags, not subcommands, and Go's flag package stops
+	// parsing at the first non-flag argument rather than complaining about
+	// it. So `spool serve --data-dir /tmp/x` silently discarded every flag
+	// after `serve` and ran the *default* fleet: the operator's own, on the
+	// default port, minting and printing that fleet's operator token into
+	// whatever log the caller was writing (#247). Refusing here is the whole
+	// fix for the class, and it has to be here — ahead of every line that
+	// opens a directory, binds a port or mints a credential.
+	if flag.NArg() > 0 {
+		usageError("unknown argument %q — spool takes flags, not subcommands", flag.Arg(0))
+	}
+
 	build := version.Resolve(buildVersion, buildCommit, buildTime)
 	if *showVersion {
 		fmt.Println(build)
@@ -88,6 +100,12 @@ func main() {
 	logTo := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})
 	log := slog.New(logTo)
 	slog.SetDefault(log)
+
+	// Which fleet this is, said before the directory is opened and long
+	// before a token is minted into it. "Wrong fleet" is then the first line
+	// of the log rather than something inferred afterwards from what changed
+	// (#247).
+	log.Info("fleet", "data", *dataDir)
 
 	// The SandboxRuntime seam (ADR-0004): both implementations stay wired —
 	// the runtime is a per-loop choice (ADR-0017) — and --runtime only picks
@@ -340,6 +358,13 @@ func printToken(args []string) {
 	fs := flag.NewFlagSet("token", flag.ExitOnError)
 	dataDir := fs.String("data-dir", defaultDataDir(), "directory holding the fleet whose token to print")
 	_ = fs.Parse(args)
+	// `spool token ~/.spool` reads as the obvious thing to type and means
+	// nothing: the path is a flag's argument. Printing the *default* fleet's
+	// credential in answer to a command naming another one is the same
+	// mistake as #247, with the value on stdout by design.
+	if fs.NArg() > 0 {
+		usageError("unknown argument %q — the directory goes to --data-dir", fs.Arg(0))
+	}
 
 	token, minted, err := operator.Load(*dataDir)
 	if err != nil {
@@ -573,6 +598,19 @@ func healthCacheTTL(interval time.Duration) time.Duration {
 		ttl = 10 * time.Second
 	}
 	return ttl
+}
+
+// usageError refuses an invocation Spool cannot honour, on stderr and with
+// exit 2: the conventional code for "your command line is wrong", said
+// before anything starts. It names the only subcommand there is and where
+// the flag list lives, because someone who typed a subcommand is exactly who
+// does not know either.
+func usageError(format string, args ...any) {
+	fmt.Fprintf(os.Stderr, "spool: "+format+"\n\n", args...)
+	fmt.Fprint(os.Stderr, "usage: spool [flags]\n"+
+		"  or:  spool token [--data-dir dir]\n\n"+
+		"`spool --help` lists the flags.\n")
+	os.Exit(2)
 }
 
 func defaultDataDir() string {
