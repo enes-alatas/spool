@@ -90,3 +90,5 @@ death and orchestrator restarts (m1), tick scheduling and trailer clamping
 - `docs/adr/` — decision records
 - `AGENTS.md` — orientation for AI agents working on this repo (`CLAUDE.md` is
   a symlink to it)
+- `SECURITY.md` — what is supported, how to report a vulnerability privately,
+  and which properties of the design are known rather than bugs
