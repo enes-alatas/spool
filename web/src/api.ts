@@ -152,6 +152,10 @@ export interface RulesView {
 
 export interface Settings {
   claude_token_set: boolean
+  // Whether this hub was started to allow an uncontained loop (--runtime bare
+  // or --allow-bare). A property of how the hub was started, not of a loop:
+  // New loop offers the choice only where the API would accept it (#255).
+  bare_allowed: boolean
   // Context-rotation thresholds (ADR-0022): effective percentages of the
   // model's window, defaults included.
   context_arm_percent: number
@@ -233,7 +237,9 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 export const EVENT_WINDOW = 300
 
 export const api = {
-  health: () => req<{ ok: boolean; claude_version: string }>('/api/health'),
+  // `runtime` is the kind a loop gets when a create request names none — the
+  // hub's own default, which New loop starts the runtime choice on.
+  health: () => req<{ ok: boolean; claude_version: string; runtime: string }>('/api/health'),
   version: () => req<VersionInfo>('/api/version'),
   loops: () => req<LoopView[]>('/api/loops'),
   loop: (name: string) => req<LoopView>(`/api/loops/${name}`),
