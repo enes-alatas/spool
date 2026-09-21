@@ -9,7 +9,13 @@ PORT="${PORT:-8099}"
 # reaches it through the gateway, while the API above stays on loopback
 MCP_PORT="${MCP_PORT:-8199}"
 BASE="http://127.0.0.1:$PORT"
+
 DATA="$(mktemp -d)"
+
+# Every /api request carries the operator token (ADR-0030); /api/health does
+# not need it, and the wait loop below calls that with plain curl.
+api() { curl -sf -H "Authorization: Bearer $(cat "$DATA/operator-token")" "$@"; }
+
 BIN="${BIN:-./bin/spool}"
 MODEL="${MODEL:-claude-haiku-4-5-20251001}"
 
@@ -36,7 +42,7 @@ start_spool() {
 wait_state() {
   local want="$2" t=0
   while (( t < $3 )); do
-    state=$(curl -sf "$BASE/api/loops/$1" | python3 -c 'import json,sys; print(json.load(sys.stdin)["state"])')
+    state=$(api "$BASE/api/loops/$1" | python3 -c 'import json,sys; print(json.load(sys.stdin)["state"])')
     [[ "$state" == "$want" ]] && return 0
     sleep 1; ((t++)) || true
   done
@@ -44,15 +50,15 @@ wait_state() {
 }
 
 last_reply() {
-  curl -sf "$BASE/api/loops/$1/turns?limit=1" | python3 -c 'import json,sys; t=json.load(sys.stdin); print(t[0]["result_text"] if t else "")'
+  api "$BASE/api/loops/$1/turns?limit=1" | python3 -c 'import json,sys; t=json.load(sys.stdin); print(t[0]["result_text"] if t else "")'
 }
 
 turn_count() {
-  curl -sf "$BASE/api/loops/$1/turns?limit=100" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))'
+  api "$BASE/api/loops/$1/turns?limit=100" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))'
 }
 
 completed_turns() {
-  curl -sf "$BASE/api/loops/$1/turns?limit=100" | python3 -c 'import json,sys; print(sum(1 for t in json.load(sys.stdin) if t["ended_at"]>0))'
+  api "$BASE/api/loops/$1/turns?limit=100" | python3 -c 'import json,sys; print(sum(1 for t in json.load(sys.stdin) if t["ended_at"]>0))'
 }
 
 # wait_turns <loop> <min_completed> <timeout_s>
@@ -66,18 +72,18 @@ wait_turns() {
 }
 
 session_of() {
-  curl -sf "$BASE/api/loops/$1" | python3 -c 'import json,sys; print(json.load(sys.stdin)["current_session_id"])'
+  api "$BASE/api/loops/$1" | python3 -c 'import json,sys; print(json.load(sys.stdin)["current_session_id"])'
 }
 
 pid_of() {
-  curl -sf "$BASE/api/loops/$1" | python3 -c 'import json,sys; print(json.load(sys.stdin)["current_pid"])'
+  api "$BASE/api/loops/$1" | python3 -c 'import json,sys; print(json.load(sys.stdin)["current_pid"])'
 }
 
 start_spool
 log "spool up (data: $DATA)"
 
 log "creating loop 'echo' (interval 1h so ticks don't interfere)"
-curl -sf -X POST "$BASE/api/loops" -H 'Content-Type: application/json' -d "{
+api -X POST "$BASE/api/loops" -H 'Content-Type: application/json' -d "{
   \"name\": \"echo\",
   \"mission\": \"You are a test loop. Answer questions directly and concisely. Never use the next-wake trailer.\",
   \"model\": \"$MODEL\",
@@ -92,7 +98,7 @@ SESSION1=$(session_of echo)
 log "first tick done (completed=$BASELINE, session=$SESSION1)"
 
 log "sending message 1 (remember the word pineapple)"
-curl -sf -X POST "$BASE/api/loops/echo/message" -H 'Content-Type: application/json' \
+api -X POST "$BASE/api/loops/echo/message" -H 'Content-Type: application/json' \
   -d '{"author":"tester","text":"Remember the word: pineapple. Just confirm briefly."}' >/dev/null
 wait_turns echo $((BASELINE+1)) 90
 log "reply 1: $(last_reply echo)"
@@ -108,7 +114,7 @@ log "process reaped, loop asleep"
 
 BASELINE=$(completed_turns echo)
 log "sending message 2 (recall test across process death)"
-curl -sf -X POST "$BASE/api/loops/echo/message" -H 'Content-Type: application/json' \
+api -X POST "$BASE/api/loops/echo/message" -H 'Content-Type: application/json' \
   -d '{"author":"tester","text":"What was the word I asked you to remember? Reply with just the word."}' >/dev/null
 wait_turns echo $((BASELINE+1)) 120
 REPLY=$(last_reply echo)
@@ -122,14 +128,14 @@ kill "$SPOOL_PID"; wait "$SPOOL_PID" 2>/dev/null || true
 start_spool
 BASELINE=$(completed_turns echo)
 log "sending message 3 (recall across orchestrator restart)"
-curl -sf -X POST "$BASE/api/loops/echo/message" -H 'Content-Type: application/json' \
+api -X POST "$BASE/api/loops/echo/message" -H 'Content-Type: application/json' \
   -d '{"author":"tester","text":"Once more: what was the word? Just the word."}' >/dev/null
 wait_turns echo $((BASELINE+1)) 120
 REPLY=$(last_reply echo)
 log "reply 3: $REPLY"
 echo "$REPLY" | grep -qi pineapple || fail "loop forgot 'pineapple' after orchestrator restart (got: $REPLY)"
 
-COST=$(curl -sf "$BASE/api/loops/echo" | python3 -c 'import json,sys; print(json.load(sys.stdin)["cost_today_usd"])')
+COST=$(api "$BASE/api/loops/echo" | python3 -c 'import json,sys; print(json.load(sys.stdin)["cost_today_usd"])')
 log "cost today: \$$COST"
 
 log "PASS — M1 verified (data dir kept at $DATA for inspection)"

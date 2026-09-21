@@ -30,6 +30,9 @@ type server struct {
 	cmd     *exec.Cmd
 	dataDir string
 	fkState string
+	// operatorToken is the credential the hub minted into this server's data
+	// directory at boot; every /api request carries it (#239).
+	operatorToken string
 	// logPath is a copy of everything the orchestrator wrote to stderr.
 	// The output still goes to the test's own stderr; this is the copy a
 	// test can read back and assert on (#150).
@@ -132,6 +135,10 @@ func startServerOn(t *testing.T, dataDir, mcpHost string, extraArgs ...string) *
 		if err == nil {
 			resp.Body.Close()
 			if resp.StatusCode == 200 {
+				// Health is the one route that answers before a caller has a
+				// credential, which is also what makes it the right place to
+				// wait: by the time it answers, the token file exists.
+				s.operatorToken = readOperatorToken(t, dataDir)
 				return s
 			}
 		}
@@ -139,6 +146,18 @@ func startServerOn(t *testing.T, dataDir, mcpHost string, extraArgs ...string) *
 	}
 	t.Fatal("server did not become healthy within 10s")
 	return nil
+}
+
+// readOperatorToken reads the credential the hub minted for this data
+// directory. A test is the operator here, and it reads the token from where
+// the operator would (#239).
+func readOperatorToken(t *testing.T, dataDir string) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(dataDir, "operator-token"))
+	if err != nil {
+		t.Fatalf("operator token: %v", err)
+	}
+	return strings.TrimSpace(string(b))
 }
 
 // port is the port of one of this server's URLs, for a probe that has to name
@@ -196,6 +215,36 @@ func (s *server) do(method, path string, body any) (*http.Response, []byte) {
 		s.t.Fatal(err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+s.operatorToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		s.t.Fatalf("%s %s: %v", method, path, err)
+	}
+	defer resp.Body.Close()
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(resp.Body)
+	return resp, buf.Bytes()
+}
+
+// raw is do without the harness's credential: a request exactly as some
+// other process or page would make it, for the tests that are about who is
+// refused (#239). Headers are set verbatim, Host included.
+func (s *server) raw(method, path string, body io.Reader, headers map[string]string) (*http.Response, []byte) {
+	s.t.Helper()
+	if body == nil {
+		body = bytes.NewReader(nil)
+	}
+	req, err := http.NewRequest(method, s.baseURL+path, body)
+	if err != nil {
+		s.t.Fatal(err)
+	}
+	for k, v := range headers {
+		if k == "Host" {
+			req.Host = v
+			continue
+		}
+		req.Header.Set(k, v)
+	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		s.t.Fatalf("%s %s: %v", method, path, err)

@@ -22,13 +22,15 @@ make build          # builds web UI + single spool binary
 ./bin/spool         # control room on 127.0.0.1:8080, loop endpoint on 127.0.0.1:8081, data in ~/.spool
 ```
 
+On first start Spool prints an **operator token** and stores it in the data directory. The control room asks for it once, then holds a session cookie; `./bin/spool token` prints it again. Every `/api` route but health and version requires it — binding to localhost is not a boundary, since any other local process and any page in your browser can reach that port too (ADR-0030).
+
 Spool serves two listeners. `--listen` is yours: the control room and its API. `--mcp-listen` is the loops': the one port a containerized workstation is allowed to reach, serving the MCP endpoint and nothing else. Keep them apart — a workstation that could reach the API port could read every conversation and create an uncontained loop.
 
 With docker workstations, `--mcp-listen` has to name an address the docker bridge can reach (`--mcp-listen 0.0.0.0:8081` on a machine whose ports are not open to your network, or the bridge address). `--listen` stays on localhost.
 
 Open http://127.0.0.1:8080, create a loop: name, mission, optional workspace path (a git repo gets an isolated worktree automatically), tick interval. The loop starts working immediately and reports in.
 
-> Spool runs loops with `--permission-mode bypassPermissions`. Containment is the workspace you give a loop. Don't point a loop at a directory you wouldn't hand to an autonomous agent, and keep `--listen` on localhost (front it with an authenticated reverse proxy if you expose it) — it has no authentication of its own yet.
+> Spool runs loops with `--permission-mode bypassPermissions`. Containment is the workspace you give a loop: don't point one at a directory you wouldn't hand to an autonomous agent. The API is behind the operator token and workstations can't reach it, but neither of those chooses the workspace for you.
 
 ## Telegram
 
@@ -53,6 +55,11 @@ Every loop has a tick interval (default 30m). After each completed turn, Spool s
 
 ```
 spool --listen 127.0.0.1:8080 --mcp-listen 127.0.0.1:8081 --data-dir ~/.spool --claude-bin claude --partial-messages
+spool token --data-dir ~/.spool     # print the operator token again
+
+# behind a proxy, name the host it is reached as — otherwise the Host and
+# Origin checks refuse every request that posture produces
+spool --listen 127.0.0.1:8080 --trusted-host spool.example.com
 ```
 
 ## Development

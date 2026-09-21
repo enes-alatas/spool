@@ -18,7 +18,13 @@ PORT="${PORT:-8094}"
 # reaches it through the gateway, while the API above stays on loopback
 MCP_PORT="${MCP_PORT:-8194}"
 BASE="http://127.0.0.1:$PORT"
+
 DATA="${DATA:-$(mktemp -d)}"
+
+# Every /api request carries the operator token (ADR-0030); /api/health does
+# not need it, and the wait loop below calls that with plain curl.
+api() { curl -sf -H "Authorization: Bearer $(cat "$DATA/operator-token")" "$@"; }
+
 BIN="${BIN:-./bin/spool}"
 MODEL="${MODEL:-claude-haiku-4-5-20251001}"
 
@@ -32,7 +38,7 @@ SPOOL_PID=$!
 for _ in $(seq 1 50); do curl -sf "$BASE/api/health" >/dev/null 2>&1 && break; sleep 0.2; done
 
 mk() {
-  curl -sf -X POST "$BASE/api/loops" -H 'Content-Type: application/json' -d "{
+  api -X POST "$BASE/api/loops" -H 'Content-Type: application/json' -d "{
     \"name\": \"$1\",
     \"mission\": \"You are a friendly test loop. Answer questions concisely. When asked to contact another loop, @mention it. On ticks reply: standing by. No next-wake trailers.\",
     \"model\": \"$MODEL\", \"tick_interval_sec\": 3600, \"idle_timeout_sec\": 120,
@@ -48,7 +54,7 @@ log ""
 log ">>> In Telegram: add BOTH bots to one group, then send any message in the group."
 log ">>> Waiting for group binding (checks every 5s, up to 5m)…"
 for _ in $(seq 1 60); do
-  BOUND=$(curl -sf "$BASE/api/loops/one/telegram/status" | python3 -c 'import json,sys; print(json.load(sys.stdin)["group_bound"])')
+  BOUND=$(api "$BASE/api/loops/one/telegram/status" | python3 -c 'import json,sys; print(json.load(sys.stdin)["group_bound"])')
   [[ "$BOUND" == "True" ]] && break
   sleep 5
 done
@@ -65,7 +71,7 @@ log ""
 log "Watching messages for 5 minutes — press Ctrl-C when satisfied."
 for _ in $(seq 1 60); do
   sleep 5
-  curl -sf "$BASE/api/activity?limit=8" | python3 -c '
+  api "$BASE/api/activity?limit=8" | python3 -c '
 import json,sys
 for m in reversed(json.load(sys.stdin)):
     print(f"  [{m[\"origin\"]:>14}] @{m[\"author\"]}: {m[\"text\"][:70]}")'

@@ -8,7 +8,13 @@ PORT="${PORT:-8098}"
 # reaches it through the gateway, while the API above stays on loopback
 MCP_PORT="${MCP_PORT:-8198}"
 BASE="http://127.0.0.1:$PORT"
+
 DATA="$(mktemp -d)"
+
+# Every /api request carries the operator token (ADR-0030); /api/health does
+# not need it, and the wait loop below calls that with plain curl.
+api() { curl -sf -H "Authorization: Bearer $(cat "$DATA/operator-token")" "$@"; }
+
 BIN="${BIN:-./bin/spool}"
 MODEL="${MODEL:-claude-haiku-4-5-20251001}"
 
@@ -34,7 +40,7 @@ start_spool() {
 jget() { python3 -c "import json,sys; print(json.load(sys.stdin)$1)"; }
 
 completed_turns() {
-  curl -sf "$BASE/api/loops/ticker/turns?limit=100" | python3 -c 'import json,sys; print(sum(1 for t in json.load(sys.stdin) if t["ended_at"]>0))'
+  api "$BASE/api/loops/ticker/turns?limit=100" | python3 -c 'import json,sys; print(sum(1 for t in json.load(sys.stdin) if t["ended_at"]>0))'
 }
 
 wait_turns() { # <min_completed> <timeout_s>
@@ -47,14 +53,14 @@ wait_turns() { # <min_completed> <timeout_s>
 }
 
 next_tick_delta() {
-  curl -sf "$BASE/api/loops/ticker" | python3 -c 'import json,sys,time; d=json.load(sys.stdin); nt=d["next_tick_at"]; print(int(nt/1000-time.time()) if nt else "none")'
+  api "$BASE/api/loops/ticker" | python3 -c 'import json,sys,time; d=json.load(sys.stdin); nt=d["next_tick_at"]; print(int(nt/1000-time.time()) if nt else "none")'
 }
 
 start_spool
 log "spool up (data: $DATA)"
 
 log "creating loop 'ticker' (interval 60s, min_wake 60s, trailer asks 10s -> must clamp)"
-curl -sf -X POST "$BASE/api/loops" -H 'Content-Type: application/json' -d "{
+api -X POST "$BASE/api/loops" -H 'Content-Type: application/json' -d "{
   \"name\": \"ticker\",
   \"mission\": \"On every tick reply with exactly: tick noted [next-wake: 10s]\",
   \"model\": \"$MODEL\",
@@ -66,7 +72,7 @@ curl -sf -X POST "$BASE/api/loops" -H 'Content-Type: application/json' -d "{
 
 log "waiting for 2 completed tick turns (~90s)"
 wait_turns 2 200
-TRIGGER=$(curl -sf "$BASE/api/loops/ticker/turns?limit=1" | jget '[0]["trigger"]')
+TRIGGER=$(api "$BASE/api/loops/ticker/turns?limit=1" | jget '[0]["trigger"]')
 [[ "$TRIGGER" == "tick" ]] || fail "expected trigger=tick, got $TRIGGER"
 
 DELTA=$(next_tick_delta)
@@ -76,7 +82,7 @@ log "next tick in ${DELTA}s (trailer asked 10s, min_wake 60s)"
 log "trailer clamped to min_wake OK"
 
 log "pausing loop"
-curl -sf -X POST "$BASE/api/loops/ticker/pause" >/dev/null
+api -X POST "$BASE/api/loops/ticker/pause" >/dev/null
 sleep 1
 [[ "$(next_tick_delta)" == "none" ]] || fail "pause did not clear next_tick_at"
 BASE_TURNS=$(completed_turns)
@@ -86,18 +92,18 @@ sleep 75
 log "no ticks while paused OK"
 
 log "resuming loop"
-curl -sf -X POST "$BASE/api/loops/ticker/resume" >/dev/null
+api -X POST "$BASE/api/loops/ticker/resume" >/dev/null
 wait_turns $((BASE_TURNS+1)) 120
 log "tick after resume OK"
 
 log "kill test: killing live process (or asleep is fine), then manual wake resumes session"
-SESSION=$(curl -sf "$BASE/api/loops/ticker" | jget '["current_session_id"]')
-curl -sf -X POST "$BASE/api/loops/ticker/kill" >/dev/null
+SESSION=$(api "$BASE/api/loops/ticker" | jget '["current_session_id"]')
+api -X POST "$BASE/api/loops/ticker/kill" >/dev/null
 sleep 2
 BASE_TURNS=$(completed_turns)
-curl -sf -X POST "$BASE/api/loops/ticker/wake" >/dev/null
+api -X POST "$BASE/api/loops/ticker/wake" >/dev/null
 wait_turns $((BASE_TURNS+1)) 120
-SESSION2=$(curl -sf "$BASE/api/loops/ticker" | jget '["current_session_id"]')
+SESSION2=$(api "$BASE/api/loops/ticker" | jget '["current_session_id"]')
 [[ "$SESSION" == "$SESSION2" ]] || fail "session changed after kill+wake ($SESSION -> $SESSION2)"
 log "kill + wake resumed same session OK"
 

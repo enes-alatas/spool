@@ -61,8 +61,22 @@ type Server struct {
 	// serving its ttl out with a value it has never seen (#150). Wired in
 	// cmd; nil in tests that do not care.
 	SecretsChanged func(ctx context.Context)
-	Log            *slog.Logger
-	WebFS          fs.FS // embedded UI dist; may be nil in dev
+	// OperatorToken is the credential a request must carry to be the
+	// operator's (ADR-0030). Empty is not an open API but a closed one:
+	// every guarded route answers 401, because a hub with no token must not
+	// admit a caller who also presents nothing. cmd always mints one.
+	OperatorToken string
+	// ListenAddr is the address the API is served on, which is what a
+	// legitimate Host header and Origin name. Empty accepts the loopback
+	// spellings only.
+	ListenAddr string
+	// TrustedHosts are additional Host and Origin values this hub answers
+	// to, for the operator who put it behind a proxy: that proxy's name is
+	// one the hub cannot guess and must not accept blindly. Each entry is a
+	// host, optionally with a port.
+	TrustedHosts []string
+	Log          *slog.Logger
+	WebFS        fs.FS // embedded UI dist; may be nil in dev
 
 	// settingsMu serializes the read-validate-write of paired settings, so
 	// two concurrent PUTs cannot interleave into an inverted stored pair.
@@ -115,6 +129,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/workspace/inspect", s.handleWorkspaceInspect)
 	mux.HandleFunc("GET /api/stream", s.handleGlobalStream)
 	mux.HandleFunc("GET /api/loops/{name}/stream", s.handleLoopStream)
+	// The two routes that establish and end a session rather than use one;
+	// the guard lets them past the credential check and nothing else.
+	mux.HandleFunc("POST /api/login", s.handleLogin)
+	mux.HandleFunc("POST /api/logout", s.handleLogout)
 
 	// /mcp lives on the loop listener alone (#238). Saying so explicitly
 	// matters because of what is registered next: the UI's catch-all would
@@ -128,7 +146,10 @@ func (s *Server) Handler() http.Handler {
 	if s.WebFS != nil {
 		mux.HandleFunc("/", s.handleUI)
 	}
-	return mux
+	// Every /api route is behind the guard, including the ones registered
+	// above: a route that is added later and forgets to authenticate is the
+	// failure this shape makes impossible (#239).
+	return s.guard(mux)
 }
 
 // MCPHandler is the loop-facing half of the hub, served on its own listener

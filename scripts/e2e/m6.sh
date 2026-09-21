@@ -9,7 +9,13 @@ PORT="${PORT:-8095}"
 # reaches it through the gateway, while the API above stays on loopback
 MCP_PORT="${MCP_PORT:-8195}"
 BASE="http://127.0.0.1:$PORT"
+
 DATA="$(mktemp -d)"
+
+# Every /api request carries the operator token (ADR-0030); /api/health does
+# not need it, and the wait loop below calls that with plain curl.
+api() { curl -sf -H "Authorization: Bearer $(cat "$DATA/operator-token")" "$@"; }
+
 REPO="$(mktemp -d)"
 BIN="${BIN:-./bin/spool}"
 MODEL="${MODEL:-claude-haiku-4-5-20251001}"
@@ -34,7 +40,7 @@ SPOOL_PID=$!
 for _ in $(seq 1 50); do curl -sf "$BASE/api/health" >/dev/null 2>&1 && break; sleep 0.2; done
 
 mk_loop() {
-  curl -sf -X POST "$BASE/api/loops" -H 'Content-Type: application/json' -d "{
+  api -X POST "$BASE/api/loops" -H 'Content-Type: application/json' -d "{
     \"name\": \"$1\",
     \"mission\": \"You are a test loop working in a git worktree. On tick turns reply exactly: standing by. When asked to commit a file, do exactly that and reply: done. Configure git user.email=loop@spool user.name=$1 locally first if needed. Never use the next-wake trailer.\",
     \"model\": \"$MODEL\",
@@ -45,7 +51,7 @@ mk_loop() {
 }
 
 completed_turns() {
-  curl -sf "$BASE/api/loops/$1/turns?limit=50" | python3 -c 'import json,sys; print(sum(1 for t in json.load(sys.stdin) if t["ended_at"]>0))'
+  api "$BASE/api/loops/$1/turns?limit=50" | python3 -c 'import json,sys; print(sum(1 for t in json.load(sys.stdin) if t["ended_at"]>0))'
 }
 
 wait_turns() { # <loop> <min> <timeout>
@@ -65,7 +71,7 @@ git -C "$REPO" worktree list | grep -q "loop/alpha" || fail "alpha worktree miss
 git -C "$REPO" worktree list | grep -q "loop/beta" || fail "beta worktree missing"
 log "both worktrees exist"
 
-WS_ALPHA=$(curl -sf "$BASE/api/loops/alpha" | python3 -c 'import json,sys; print(json.load(sys.stdin)["workspace_path"])')
+WS_ALPHA=$(api "$BASE/api/loops/alpha" | python3 -c 'import json,sys; print(json.load(sys.stdin)["workspace_path"])')
 [[ "$WS_ALPHA" == "$DATA/worktrees/alpha" ]] || fail "alpha workspace_path unexpected: $WS_ALPHA"
 
 log "waiting for initial ticks to settle"
@@ -74,9 +80,9 @@ wait_turns beta 1 120
 
 log "asking each loop to commit a file named after itself"
 BA=$(completed_turns alpha); BB=$(completed_turns beta)
-curl -sf -X POST "$BASE/api/loops/alpha/message" -H 'Content-Type: application/json' \
+api -X POST "$BASE/api/loops/alpha/message" -H 'Content-Type: application/json' \
   -d '{"author":"tester","text":"Create a file alpha.txt containing the single word hello, then git add and commit it with message: from alpha. Reply: done."}' >/dev/null
-curl -sf -X POST "$BASE/api/loops/beta/message" -H 'Content-Type: application/json' \
+api -X POST "$BASE/api/loops/beta/message" -H 'Content-Type: application/json' \
   -d '{"author":"tester","text":"Create a file beta.txt containing the single word hello, then git add and commit it with message: from beta. Reply: done."}' >/dev/null
 wait_turns alpha $((BA+1)) 180
 wait_turns beta $((BB+1)) 180
@@ -88,7 +94,7 @@ if git -C "$REPO" cat-file -e "loop/alpha:beta.txt" 2>/dev/null; then fail "beta
 log "commits landed on their own branches; main untouched"
 
 log "deleting alpha with remove_worktree=1"
-curl -sf -X DELETE "$BASE/api/loops/alpha?remove_worktree=1" >/dev/null
+api -X DELETE "$BASE/api/loops/alpha?remove_worktree=1" >/dev/null
 sleep 1
 git -C "$REPO" worktree list | grep -q "loop/alpha" && fail "alpha worktree still present"
 git -C "$REPO" rev-parse --verify -q loop/alpha >/dev/null || fail "loop/alpha branch was deleted (should be kept)"
