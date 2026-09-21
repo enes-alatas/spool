@@ -7,3 +7,5 @@ Every issue edit/comment bills a minute via issue-guards; hold until Enes lifts 
 - #245 (method mismatch under /api/ answers 200) has no milestone; triage into L2.
 - Iris's #239 web half: file a child issue if the PR needs a `Closes` target other than #239 (Terra's #244 was "Part of #239").
 - Delete notes/l3-surface-seam-agenda.md (stale).
+- Branch protection (#1) required checks, confirmed from ci.yml on origin/main 2026-09-21: `changes`, `checks`, `itest`. Not `guards` (issue-guards) or `report` (ci-health).
+- Flip decided 2026-09-21 10:47: CI stays out until public; flip as soon as Quinn's attachment eye-check and deliverable 6 are done. Pre-flip list sent to Enes (ref:1282); final version after Quinn's counts.
