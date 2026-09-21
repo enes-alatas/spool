@@ -1,6 +1,6 @@
 # ADR-0010: SandboxRuntime seam; Docker containers first, sbx later maybe
 
-Date: 2026-08-16 · Status: accepted
+Date: 2026-08-16 · Status: accepted · Amended: 2026-09-21 (bare is not fallen back to)
 
 ## Context
 
@@ -18,6 +18,10 @@ implementation on plain Docker via the Engine API: one named container + volume 
 loop (persistence trivial), `claude` exec'd inside with stdio owned by the runner.
 The existing bare-process mode remains the zero-dependency fallback. `sbx`/microVMs
 can become a second, hardened implementation later if it proves drivable.
+
+**Amendment (2026-09-21, #240):** "fallback" above describes availability, not
+selection — nothing falls back to `bare`. It is chosen explicitly, with
+`--runtime bare` or `--allow-bare`, per ADR-0017 §6 as amended.
 
 ## Consequences
 

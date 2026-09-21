@@ -51,8 +51,18 @@ type Server struct {
 	// report and the control room name the same build.
 	Build version.Info
 	// DefaultRuntime is the kind loops get when a create request doesn't
-	// name one (ADR-0017: docker whenever the daemon is reachable).
+	// name one (ADR-0017: docker whenever the daemon is reachable; `auto`
+	// refuses to start rather than choosing bare for the operator).
 	DefaultRuntime string
+	// BareAllowed is whether this hub was started with --runtime bare or
+	// --allow-bare — the second is how a docker-default fleet keeps the
+	// per-loop bare escape hatch ADR-0017 §6 describes. A
+	// bare loop runs uncontained under the operator's own account, so asking
+	// for one is a decision taken when the hub is started, by the person at
+	// the terminal — not one the control room can make later on their behalf
+	// (ADR-0017, #240). Loops created before it was set keep running: this
+	// gates creation, not execution.
+	BareAllowed bool
 	// RuntimeAvailable answers whether a runtime kind can host a new loop
 	// right now; wired in cmd so this package stays free of runtime imports.
 	RuntimeAvailable func(ctx context.Context, kind string) error
@@ -185,6 +195,7 @@ func (s *Server) jsonErrCode(w http.ResponseWriter, status int, reason, msg stri
 const (
 	codeLoopNotRunning = "loop_not_running"
 	codeNoWorkstation  = "no_workstation"
+	codeBareNotEnabled = "bare_runtime_not_enabled"
 )
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -398,6 +409,11 @@ func (s *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 	loopRuntime := defaultStr(req.Runtime, defaultStr(s.DefaultRuntime, store.RuntimeBare))
 	switch loopRuntime {
 	case store.RuntimeBare:
+		if !s.BareAllowed {
+			s.jsonErrCode(w, 400, codeBareNotEnabled,
+				"a bare loop runs uncontained on this machine; start spool with --allow-bare (or --runtime bare) to allow one")
+			return
+		}
 		if req.Image != "" || req.MemMB != 0 || req.CPUs != 0 {
 			s.jsonErr(w, 400, "image, mem_mb and cpus apply to docker loops only")
 			return

@@ -92,7 +92,7 @@ Dependencies point inward: adapters → hub interfaces, never hub → adapter in
 | Seam | Interface (owner) | Implementations |
 |---|---|---|
 | **Surface** | `surface.Surface` — start, validate a loop credential, follow loop config changes; the adapter delivers inbound to the router and mirrors outbound off the bus (ADR-0029) | `telegram` (today), `slack` (L3) |
-| **SandboxRuntime** | `runtime.Runtime` — provision/start/exec/stop a loop's workstation, own claude's stdio inside it, watch workstation liveness | `bare` (direct subprocess; local-edition fallback, badged *uncontained*), `docker` (long-lived named container + volume per loop, driven through the docker CLI; the default whenever the daemon is reachable — ADR-0017, ADR-0018), `sbx` (possible later hardening, ADR-0010) |
+| **SandboxRuntime** | `runtime.Runtime` — provision/start/exec/stop a loop's workstation, own claude's stdio inside it, watch workstation liveness | `bare` (direct subprocess; local edition only, opt-in with `--runtime bare`, badged *uncontained*), `docker` (long-lived named container + volume per loop, driven through the docker CLI; the default whenever the daemon is reachable — ADR-0017, ADR-0018), `sbx` (possible later hardening, ADR-0010) |
 | **Store** | `store.*` interfaces | `sqlite` (today), `postgres` (service era) |
 | **Runner** | the narrow command surface the hub uses: deliver, tick, pause, resume, kill, state | in-process (`internal/loop`) today; extractable to a per-host runner process for the hosted service — the seam exists so this is transport substitution, not redesign |
 
@@ -172,7 +172,8 @@ opportunistically, not big-bang.
 - **API versioning**: `/api/*` stays unversioned while private; freeze and version at
   OSS 1.0 (L6).
 - **Sandbox posture is per-edition** (ADR-0017): the local edition defaults to
-  `docker` with `bare` as an explicit, uncontained-badged fallback; the hosted
+  `docker`, and `bare` is uncontained, badged, and opt-in at startup rather
+  than a fallback `auto` can select (ADR-0017, #240); the hosted
   service is sandbox-mandatory — `bare` is absent from its configuration.
 - **Down is not always wrong** (ADR-0021): a workstation the operator switched
   off is `workstation_off` — really not running, said calmly — while one that

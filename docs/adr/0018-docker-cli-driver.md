@@ -1,6 +1,6 @@
 # ADR-0018: The docker workstation runtime drives Docker through the CLI
 
-Date: 2026-08-18 · Status: accepted
+Date: 2026-08-18 · Status: accepted · Amended: 2026-09-21 (§5, bare is opt-in)
 
 ## Context
 
@@ -37,6 +37,12 @@ context resolution, and Docker Desktop socket quirks (WSL2) for free.
 5. **Per-loop `runtime` field (`bare`|`docker`), set at creation, immutable.**
    Creation defaults to `docker` when the daemon is reachable (ADR-0017 §6);
    switching a loop's runtime means creating a new loop. Revisit if it hurts.
+
+   **Amendment (2026-09-21, #240):** an unreachable daemon no longer makes
+   the default `bare`. `--runtime auto` requires docker or stops; the field
+   still takes `bare`, and the hub must have been started with `--runtime
+   bare` or `--allow-bare` for a loop to be created with it (ADR-0017 §6,
+   as amended).
 6. **Tier-2 runs against real Docker.** A minimal test image carries
    fakeclaude installed as `claude`; the docker suites provision real
    containers, skip with a notice when no daemon is reachable, and always run

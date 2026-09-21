@@ -1,6 +1,6 @@
 # ADR-0017: Workstation design — long-lived Docker containers behind the SandboxRuntime seam
 
-Date: 2026-08-17 · Status: accepted · Amended: 2026-09-20 (redaction)
+Date: 2026-08-17 · Status: accepted · Amended: 2026-09-20 (redaction), 2026-09-21 (bare is opt-in)
 
 ## Context
 
@@ -48,6 +48,22 @@ and later on the hosted service.
    explicit per-loop fallback, badged *uncontained* in the UI. Hosted service:
    sandbox-mandatory — `bare` is absent from service configuration; microVMs
    (`sbx`) stay the hardening path (ADR-0010).
+
+   **Amendment (2026-09-21, #240):** "explicit" is now enforced rather than
+   described. The code had read this clause as a *fallback*: `--runtime auto`
+   silently selected `bare` when the docker daemon was unreachable, so a
+   reader who followed the quickstart without docker got claude with
+   permissions bypassed under their own account, announced by one log line.
+   That is the one outcome someone who typed `auto` cannot have asked for.
+   `auto` now means docker or a startup error naming both remedies, and the
+   API refuses to create a bare loop unless the hub was started with
+   `--runtime bare` or `--allow-bare` — a decision taken at the terminal by
+   the person whose machine it is, not one the control room can make for them
+   afterwards. `--allow-bare` is what keeps this clause's *per-loop* half
+   true: a docker-default fleet can still hold a deliberately bare loop, it
+   just says so when the hub starts.
+   Existing bare loops keep running: this gates creation, not execution.
+   Running uncontained stays a supported choice; it stopped being a default.
 7. **Minimal official image, per-loop override.** `spool-workstation` ships
    claude CLI, git, gh, curl, make, and a non-root user with passwordless
    sudo. Loops install project toolchains themselves (persistent home makes it
@@ -82,6 +98,10 @@ value cannot come back out through anything Spool writes down.
   controls, and that is the only other way one stops.
 - `bypassPermissions` becomes defensible: the wall is the container, not a
   directory convention. Dogfooding at L2 gets its prerequisite.
+- **A machine without docker cannot start Spool with `--runtime auto`** (2026-09-21).
+  That is a worse first run for someone who has not installed docker, traded
+  for a first run that cannot quietly be the uncontained one. The error names
+  `--runtime bare` for anyone who wants it anyway.
 - The workspace concept narrows: for sandboxed loops the workstation *is* the
   workspace; the `workspace` field and worktree feature apply to bare loops
   only.
