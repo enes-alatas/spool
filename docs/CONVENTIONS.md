@@ -79,9 +79,15 @@ ADR instead.*
   `**Amendment (YYYY-MM-DD, #n):**` on the item or section it affects, with the
   date added to the file's `Amended:` header. A change that **reverses** a
   decision is a new ADR; the reversed one gets `superseded by ADR-XXXX` in its
-  status and a pointer, nothing else. **Amendments never touch an existing
-  line**: they add, so the unmarked text still reads as what was accepted and
-  "what did this ADR decide" needs no git archaeology. New text goes where it
+  status and a pointer, nothing else. **A supersession that reverses one clause**
+  of an otherwise-standing ADR (#234) names the clause and the superseding ADR
+  in the status rather than flipping it, and may add one annotation beside the
+  clause that no longer holds — a reader lands on the clause before the header,
+  and the rest of the ADR is still accepted, which a bare `superseded` status
+  would deny. Like an amendment, the annotation adds and rewrites nothing.
+  **Amendments never touch an existing line**: they add, so the unmarked text
+  still reads as what was accepted and "what did this ADR decide" needs no git
+  archaeology. New text goes where it
   reads best — appended after the original, or beside a bullet it pairs with —
   but nothing above it is rewritten or deleted. An amendment block counts as
   decision text from the moment it lands, so the same applies to it: a later
@@ -226,6 +232,14 @@ agents — Claude sessions today, Spool's own loops from L2.*
   APIs, so it reports the exposure privately to the operator — what and
   where, never the value — and the operator deletes it (#206). Both guards
   read their shapes from `scripts/secret-rules.awk`.
+- **The board is world-readable** (ADR-0031): once the repo is public, every
+  issue, comment, review and commit is readable by anyone, history included,
+  and a deletion is not a recall. One rule follows that the redaction rules do
+  not cover: **nothing said in the Telegram group is quoted on GitHub.** The
+  group is where the fleet coordinates and the operator thinks out loud, and
+  neither was written for an audience; an issue or PR that needs the substance
+  of something said there states it in its own words, as the writer's own
+  claim.
 - **Proving an event-driven workflow** (#209): a workflow that fires on
   anything but `pull_request` or `push` — `issues`, `issue_comment`,
   `schedule`, `workflow_run` — is never exercised by PR CI, so it can merge
