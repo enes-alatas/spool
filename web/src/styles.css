@@ -344,6 +344,35 @@ textarea {
   margin-top: 0;
 }
 
+/* ---- login (#239) ---- */
+/* The one screen without the room's chrome: no topbar, no destinations,
+   nothing to do but the one thing. Centred on the canvas so it reads as a
+   door rather than as a page with its content in the corner. */
+.login {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+.login-card {
+  width: 100%;
+  max-width: 24rem;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+/* The wordmark is the topbar's, minus the bar: it is the only thing on this
+   screen that says which product is asking. */
+.login-card .wordmark {
+  justify-content: center;
+}
+/* The lede here explains the field rather than a page, so it carries no
+   bottom margin of its own — the card's gap is the spacing. */
+.login-card .page-lede {
+  margin-bottom: 0;
+  text-align: center;
+}
+
 /* ---- build identity (#224) ---- */
 /* The Build section of Settings: machine facts, in a label/value list. Each
    value is monospace because every one of them is a string to copy exactly —

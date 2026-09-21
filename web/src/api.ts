@@ -299,6 +299,12 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ path }),
     }),
+  // The session (#239). The hub trades its operator token for an HttpOnly
+  // cookie, so the room holds a session and never a credential: nothing here
+  // can read the cookie back, and an EventSource — which cannot carry a
+  // header — authenticates like every other request.
+  login: (token: string) => req<void>('/api/login', { method: 'POST', body: JSON.stringify({ token }) }),
+  logout: () => req<void>('/api/logout', { method: 'POST' }),
   settings: () => req<Settings>('/api/settings'),
   // The token is write-only: send '' to clear it. Presence comes back in Settings.
   setClaudeToken: (token: string) =>

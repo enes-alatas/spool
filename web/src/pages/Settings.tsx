@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type Settings as SettingsView } from '../api'
 import { rotationGate, tokenSubmittable } from '../forms'
 import { buildFacts, useClaudeVersion, useVersion } from '../version'
+import { loginError } from '../session'
 
 export default function Settings() {
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings })
@@ -12,8 +13,49 @@ export default function Settings() {
       <h1>Settings</h1>
       <ClaudeToken settings={settings} />
       <RotationThresholds settings={settings} />
+      <SessionSection />
       <Build />
     </div>
+  )
+}
+
+// Ending the session (#239). The cookie is the credential, so a room left
+// open on a shared screen stays open until something clears it — and the hub
+// serves the route, so the only thing missing was somewhere to press.
+function SessionSection() {
+  const qc = useQueryClient()
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const signOut = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      await api.logout()
+      // Resetting is what puts the login page back up: the next probe has no
+      // cookie to send, and nothing cached outlives the session that fetched
+      // it.
+      qc.resetQueries()
+    } catch (e) {
+      setError(loginError(e))
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      <h2 className="section-head">Session</h2>
+      <p className="page-lede">
+        This browser holds a session cookie, not the token. Signing out clears the cookie here; it revokes
+        nothing, so the token still opens a new session.
+      </p>
+
+      {error && <div className="form-error">{error}</div>}
+
+      <button className="btn" onClick={signOut} disabled={busy}>
+        {busy ? 'Signing out…' : 'Sign out'}
+      </button>
+    </>
   )
 }
 
