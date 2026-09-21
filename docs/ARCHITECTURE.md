@@ -138,13 +138,18 @@ would otherwise reach unauthenticated is not a destination it has (#238). A
 bare loop has the host's own network and no wall — one more thing the
 *uncontained* badge means.
 The hub's trust model is two credentials on two listeners (ADR-0030). On the
-operator listener every `/api` route but `/api/health` and `/api/version`
-requires the operator token, presented as a bearer header or as the session
-cookie `POST /api/login` sets; the same middleware refuses a `Host` this hub
-does not answer to, a cross-site `Origin` or `Sec-Fetch-Site`, and a body that
-is not `application/json`. On the loop listener `/mcp` requires the requesting
-loop's own token. Nothing else is unauthenticated, and neither credential is
-ever handed to the other's audience.
+operator listener every `/api` route requires the operator token — presented
+as a bearer header or as the session cookie `POST /api/login` sets — except
+`/api/health` and `/api/version`, which answer before a caller can have one,
+and `/api/logout`, which asks for nothing because refusing to end an unproven
+session protects no one. `/api/login` needs the token too, from the request
+body rather than a header, since obtaining the cookie is what it is for. The
+same middleware refuses a `Host` this hub does not answer to for every `/api`
+path including the open ones, and a cross-site `Origin` or `Sec-Fetch-Site`
+or a body that is not `application/json` for the rest. On the loop listener
+`/mcp` requires the requesting loop's own token. Those three aside nothing is
+unauthenticated, and neither credential is ever handed to the other's
+audience.
 
 The Surface seam is live with one implementation: `internal/surface` owns the
 interface and `internal/surface/telegram` is the bridge behind it. Only the
