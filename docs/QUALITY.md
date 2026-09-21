@@ -79,6 +79,13 @@ window regardless of loop count (ADR-0018).
   actions, issues or pulls API names that scope in its effective grant; and
   a file the parser cannot read is a finding, never a pass. One rule per
   incident (#203, #207, #209, #210, #220), stdlib shell.
+- **A fork PR runs with less** (ADR-0031): a pull request from a fork gets a
+  read-only `GITHUB_TOKEN` and no secrets, so `issue-guards` and `ci-health`
+  cannot do their work on one — both answer by writing to the board, which a
+  read-only token refuses. What still gates a fork PR is `ci` itself: the
+  `changes`, `checks` and `itest` jobs run as they do for anyone. So for a
+  contribution from outside, the redaction guard is a reviewer reading the
+  diff, and it is the reviewer who is the mechanism rather than the workflow.
 - **Failures of non-PR workflows are reported** (`ci-health`, #210): a run
   of any workflow but `ci` that does not conclude `success`, `cancelled`,
   `skipped`, `neutral` or `stale` posts to the pinned "CI health" issue
