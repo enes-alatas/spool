@@ -14,6 +14,19 @@ import (
 // header gives it to a loop.
 func messageRef(id int64) string { return loop.MessageRef(id) }
 
+// messageTurns counts the turns a loop has run off an inbound message.
+// Comparing it across an event is how a test says "this did not wake it",
+// without mistaking the turn that drove the setup for the one under test.
+func messageTurns(srv *server, loopName string) int {
+	n := 0
+	for _, tn := range srv.completed(loopName) {
+		if tn.Trigger == "message" {
+			n++
+		}
+	}
+	return n
+}
+
 // Explicit message references and native replies (#79, ADR-0025). A
 // reference identifies one message durably; a native reply renders only
 // where the sending bot owns Telegram's id for the target, and the quote
@@ -86,6 +99,60 @@ func TestLoopReplyToPeerAddressesItAndQuotes(t *testing.T) {
 	}
 }
 
+// The shape #243 was filed for: a human natively replies to a loop's post
+// that itself quoted a peer, and the bot that ingests the reply is not the
+// one that posted it. Nothing about it resolves by id — the ingesting bot
+// holds none for a peer's post — and the text Telegram embeds is the text
+// as sent, quote line and all, which is not what the store holds. The
+// author must still be woken.
+func TestNativeReplyToAQuotedLoopReplyWakesItsAuthor(t *testing.T) {
+	operator := user{ID: 5656, First: "Operator", Username: "operator"}
+	// Each script speaks once and then only echoes: the last line repeats
+	// for every later turn, and two loops that keep addressing each other
+	// would answer forever, drowning the one wake this test is counting.
+	wsAlpha := workspaceWithScript(t, "!ctx 0\n"+
+		`!send {"destination":"group","text":"@beta who owns the migration?"}`+"\n!echo\n")
+	wsBeta := workspaceWithScript(t, "!ctx 0\n"+
+		`!send {"destination":"group","text":"I do","reply_to":"$ref"}`+"\n!echo\n")
+	srv, tg := startTelegramFleet(t, operator,
+		map[string]any{"workspace_path": wsAlpha}, map[string]any{"workspace_path": wsBeta})
+
+	srv.message("alpha", "ask")
+
+	// beta's reply carries the quote line, because no bot can thread under
+	// another bot's post. alpha is the group's ingest bot — elected by loop
+	// id, not by who posted — so the reply below arrives at a bot holding
+	// no id for what it answers.
+	betas := tg.sentPostFrom(t, groupChatID, "beta", "I do")
+	if !strings.HasPrefix(betas.text, "↳ re alpha:") {
+		t.Fatalf("the case needs a quoted post to reply to, got %q", betas.text)
+	}
+
+	betaTurns, alphaTurns := messageTurns(srv, "beta"), messageTurns(srv, "alpha")
+
+	const reply = "good, start with the index"
+	tg.postReply(groupChatID, "supergroup", reply, operator, betas)
+	srv.waitForMessage(reply)
+
+	stored := srv.activityWith(reply)
+	if len(stored) != 1 {
+		t.Fatalf("reply stored %d times, want 1", len(stored))
+	}
+	if stored[0].ReplyToID == 0 {
+		t.Error("the reply resolved to no target: the quote line is still being matched verbatim")
+	}
+	if got := stored[0].DeliveredTo; len(got) != 1 {
+		t.Fatalf("delivered_to = %v, want beta alone — the author of what was replied to", got)
+	}
+	time.Sleep(2 * time.Second)
+	if messageTurns(srv, "beta") == betaTurns {
+		t.Error("beta ran no turn for a reply addressed to it")
+	}
+	if got := messageTurns(srv, "alpha"); got != alphaTurns {
+		t.Errorf("the ingesting bot's loop woke on a reply to a peer: %d message turns, want %d", got, alphaTurns)
+	}
+}
+
 // A loop replying to a human's group message threads natively when its own
 // poller saw that message, and never borrows another bot's id.
 func TestLoopReplyToHumanThreadsNatively(t *testing.T) {
@@ -153,10 +220,13 @@ func TestReplyReferencesSurviveRestart(t *testing.T) {
 }
 
 // Two loops can post the same words, and no bot holds an id for another
-// bot's post — so a human's native reply to one of them cannot be told from
-// a reply to the other. The ambiguity must land as an ordinary message
-// rather than wake whichever loop happened to post last.
-func TestAmbiguousNativeReplyWakesNobody(t *testing.T) {
+// bot's post. Telegram names the bot that posted the message being replied
+// to, though, and a bot belongs to exactly one loop — so the words no
+// longer have to carry the identification on their own. #79 protected
+// "never wake a loop about a message it did not write" by declining to
+// answer; the author is known now, so the same property holds with the
+// reply delivered (#243).
+func TestNativeReplyToIdenticalWordsWakesTheOneRepliedTo(t *testing.T) {
 	operator := user{ID: 5555, First: "Operator", Username: "operator"}
 	const ack = "@operator on it"
 	ws := workspaceWithScript(t, "!ctx 0\n"+`!send {"destination":"group","text":"`+ack+`"}`+"\n")
@@ -167,9 +237,10 @@ func TestAmbiguousNativeReplyWakesNobody(t *testing.T) {
 	tg.waitSentFrom(t, groupChatID, "alpha", "on it")
 	srv.message("beta", "ack")
 	// beta is not the group's ingest bot, so the bot that receives the
-	// reply holds no id for beta's post: only the text is left to match on,
-	// and alpha posted the same words.
+	// reply holds no id for beta's post — and alpha posted the same words.
 	betas := tg.sentPostFrom(t, groupChatID, "beta", "on it")
+
+	betaTurns, alphaTurns := messageTurns(srv, "beta"), messageTurns(srv, "alpha")
 
 	const reply = "thanks, both of you"
 	tg.postReply(groupChatID, "supergroup", reply, operator, betas)
@@ -179,11 +250,18 @@ func TestAmbiguousNativeReplyWakesNobody(t *testing.T) {
 	if len(stored) != 1 {
 		t.Fatalf("reply stored %d times, want 1", len(stored))
 	}
-	if stored[0].ReplyToID != 0 {
-		t.Errorf("an ambiguous target was resolved to message %d", stored[0].ReplyToID)
+	if stored[0].ReplyToID == 0 {
+		t.Error("identical words left the target unresolved, though the poster was named")
 	}
-	if len(stored[0].DeliveredTo) != 0 {
-		t.Errorf("delivered_to = %v, want nobody woken by a guess", stored[0].DeliveredTo)
+	if got := stored[0].DeliveredTo; len(got) != 1 {
+		t.Fatalf("delivered_to = %v, want beta alone — the loop whose post was replied to", got)
+	}
+	time.Sleep(2 * time.Second)
+	if messageTurns(srv, "beta") == betaTurns {
+		t.Error("beta ran no turn for a reply to its own post")
+	}
+	if got := messageTurns(srv, "alpha"); got != alphaTurns {
+		t.Errorf("the loop that merely said the same words woke: %d message turns, want %d", got, alphaTurns)
 	}
 }
 

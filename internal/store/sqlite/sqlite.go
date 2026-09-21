@@ -544,21 +544,34 @@ func (r messages) ByTGKey(ctx context.Context, tgKey string) (*store.Message, er
 	return out[0], nil
 }
 
-func (r messages) LatestGroupTextFrom(ctx context.Context, text string) (*store.Message, error) {
+func (r messages) LatestGroupPostBy(ctx context.Context, authorLoopID, text string) (*store.Message, error) {
+	if authorLoopID == "" || text == "" {
+		return nil, store.ErrNotFound
+	}
+	// Exact before longer, then newest. A prefix match exists for the one
+	// shape that needs it — a message too long to send whole, quoted by its
+	// first part — and a post that merely starts with the same words is a
+	// different message. Ordering by id alone would let it win by being
+	// newer, which is the reply filed against the wrong post.
 	out, err := r.query(ctx, `SELECT `+messageCols+` FROM messages
-		WHERE conversation=? AND from_loop_id != '' AND text=?
-		ORDER BY id DESC LIMIT 2`, store.ConversationGroup, text)
+		WHERE conversation=? AND from_loop_id=? AND (text=? OR text LIKE ? ESCAPE '\')
+		ORDER BY (text=?) DESC, id DESC LIMIT 1`,
+		store.ConversationGroup, authorLoopID, text, likePrefix(text), text)
 	if err != nil {
 		return nil, err
 	}
-	// Exact or nothing. Two loops posting the same words — terse acks, in
-	// this fleet — are indistinguishable here, and the answer becomes a
-	// delivery recipient, not just a visual anchor. Picking the newest
-	// would wake a loop about a message it never wrote.
-	if len(out) != 1 {
+	if len(out) == 0 {
 		return nil, store.ErrNotFound
 	}
 	return out[0], nil
+}
+
+// likePrefix turns text into a LIKE pattern matching rows that begin with
+// it. The wildcards are escaped, so a message containing a literal % or _
+// matches itself and nothing else.
+func likePrefix(text string) string {
+	esc := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return esc.Replace(text) + "%"
 }
 
 func (r messages) query(ctx context.Context, q string, args ...any) ([]*store.Message, error) {

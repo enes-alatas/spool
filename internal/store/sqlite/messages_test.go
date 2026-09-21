@@ -166,11 +166,13 @@ func TestMessageReferencesAreOwnedPerBot(t *testing.T) {
 	}
 }
 
-// TestAmbiguousTextTargetIsNoTarget: the last-resort match for a reply
-// target no bot holds an id for is exact or nothing. Two loops posting the
-// same words cannot be told apart, and the answer decides who is woken — so
-// ambiguity must read as "no target", not as the newest candidate (#79).
-func TestAmbiguousTextTargetIsNoTarget(t *testing.T) {
+// TestTextTargetIsScopedToItsAuthor: the last-resort match for a reply
+// target no bot holds an id for is scoped to the loop that posted it, so
+// two loops saying the same words are no longer indistinguishable (#243).
+// The property this protects is the one #79 protected by refusing to
+// answer at all — never wake a loop about a message it did not write — and
+// naming the author keeps it without losing the reply.
+func TestTextTargetIsScopedToItsAuthor(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -179,29 +181,71 @@ func TestAmbiguousTextTargetIsNoTarget(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UnixMilli()
 
-	unique := &store.Message{TS: now, Origin: store.OriginLoop, Author: "aster",
-		FromLoopID: "l1", Text: "index rebuilt", Conversation: store.ConversationGroup}
-	if err := db.Messages().Insert(ctx, unique); err != nil {
-		t.Fatal(err)
-	}
-	got, err := db.Messages().LatestGroupTextFrom(ctx, "index rebuilt")
-	if err != nil || got.ID != unique.ID {
-		t.Fatalf("one candidate: got %v, %v; want message %d", got, err, unique.ID)
-	}
-
-	for i, author := range []string{"aster", "briar"} {
-		if err := db.Messages().Insert(ctx, &store.Message{
-			TS: now + int64(i), Origin: store.OriginLoop, Author: author,
-			FromLoopID: "l" + author[:1], Text: "on it", Conversation: store.ConversationGroup,
-		}); err != nil {
+	insert := func(loopID, author, text string, ts int64) int64 {
+		t.Helper()
+		m := &store.Message{TS: ts, Origin: store.OriginLoop, Author: author,
+			FromLoopID: loopID, Text: text, Conversation: store.ConversationGroup}
+		if err := db.Messages().Insert(ctx, m); err != nil {
 			t.Fatal(err)
 		}
+		return m.ID
 	}
-	if _, err := db.Messages().LatestGroupTextFrom(ctx, "on it"); err != store.ErrNotFound {
-		t.Fatalf("two loops posting the same words resolved to one of them: %v", err)
+
+	aster := insert("l-aster", "aster", "on it", now)
+	briar := insert("l-briar", "briar", "on it", now+1)
+
+	// The words are the same; the author decides, and each resolves to its
+	// own post rather than to the newer of the two.
+	for loopID, want := range map[string]int64{"l-aster": aster, "l-briar": briar} {
+		got, err := db.Messages().LatestGroupPostBy(ctx, loopID, "on it")
+		if err != nil || got.ID != want {
+			t.Fatalf("%s: got %v, %v; want message %d", loopID, got, err, want)
+		}
 	}
-	if _, err := db.Messages().LatestGroupTextFrom(ctx, "never said"); err != store.ErrNotFound {
+
+	// Said twice by one loop, the newest is the answer: whichever it is,
+	// the loop woken is the one that wrote both.
+	again := insert("l-aster", "aster", "on it", now+2)
+	if got, err := db.Messages().LatestGroupPostBy(ctx, "l-aster", "on it"); err != nil || got.ID != again {
+		t.Fatalf("repeat: got %v, %v; want message %d", got, err, again)
+	}
+
+	// A message too long to send whole goes out in parts, and a reply
+	// quotes the part it was aimed at. The row holds all of it, so the
+	// first part is a prefix of the stored text and resolves.
+	long := insert("l-aster", "aster", "the plan\n\npart two", now+3)
+	if got, err := db.Messages().LatestGroupPostBy(ctx, "l-aster", "the plan"); err != nil || got.ID != long {
+		t.Fatalf("first part: got %v, %v; want message %d", got, err, long)
+	}
+
+	// A reply to a later part is not: it is neither the row's text nor a
+	// prefix of it. Pinned as the known limit, so the shape is on record
+	// rather than discovered by someone whose reply went nowhere.
+	if _, err := db.Messages().LatestGroupPostBy(ctx, "l-aster", "part two"); err != store.ErrNotFound {
+		t.Fatalf("a later part resolved = %v; the limit above it has changed", err)
+	}
+
+	// A later post that merely starts with the same words is a different
+	// message, and does not win by being newer: the exact one is the one
+	// that was quoted back.
+	insert("l-aster", "aster", "on it, starting with the index", now+4)
+	if got, err := db.Messages().LatestGroupPostBy(ctx, "l-aster", "on it"); err != nil || got.ID != again {
+		t.Fatalf("longer and newer beat the exact match: got %v, %v; want message %d", got, err, again)
+	}
+
+	// A wildcard in the quoted text is a character to match, not a pattern:
+	// "100%" is a prefix of the message that says 100% and of no other.
+	pct := insert("l-aster", "aster", "100% of the budget", now+5)
+	insert("l-aster", "aster", "100 of the budget", now+6)
+	if got, err := db.Messages().LatestGroupPostBy(ctx, "l-aster", "100%"); err != nil || got.ID != pct {
+		t.Fatalf("literal %%: got %v, %v; want message %d", got, err, pct)
+	}
+
+	if _, err := db.Messages().LatestGroupPostBy(ctx, "l-aster", "never said"); err != store.ErrNotFound {
 		t.Fatalf("absent text = %v, want ErrNotFound", err)
+	}
+	if _, err := db.Messages().LatestGroupPostBy(ctx, "", "on it"); err != store.ErrNotFound {
+		t.Fatalf("no author = %v, want ErrNotFound", err)
 	}
 }
 

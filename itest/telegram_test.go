@@ -277,7 +277,7 @@ func (tg *fakeTelegram) sentPostFrom(t *testing.T, chatID int64, token, text str
 	sent := tg.waitSentFrom(t, chatID, token, text)
 	return &fakePost{
 		ids:   map[string]int64{sent.Token: sent.MessageID},
-		from:  user{ID: 9000, First: botUsername(sent.Token)},
+		from:  user{ID: 9000, First: botUsername(sent.Token), Username: botUsername(sent.Token)},
 		isBot: true,
 		text:  sent.Text,
 		date:  time.Now().Unix(),
