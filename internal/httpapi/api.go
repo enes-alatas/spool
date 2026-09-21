@@ -882,6 +882,11 @@ type settingsView struct {
 	ClaudeTokenSet      bool `json:"claude_token_set"`
 	ContextArmPercent   int  `json:"context_arm_percent"`
 	ContextForcePercent int  `json:"context_force_percent"`
+	// BareAllowed is how the control room knows whether to offer an
+	// uncontained loop at all (#255): the choice is the operator's, taken
+	// at the terminal when the hub was started, and a form that offered it
+	// anyway would be offering a create the API refuses (#254).
+	BareAllowed bool `json:"bare_allowed"`
 }
 
 func (s *Server) settingsView(ctx context.Context) (settingsView, error) {
@@ -894,6 +899,7 @@ func (s *Server) settingsView(ctx context.Context) (settingsView, error) {
 		ClaudeTokenSet:      token != "",
 		ContextArmPercent:   arm,
 		ContextForcePercent: force,
+		BareAllowed:         s.BareAllowed,
 	}, nil
 }
 
