@@ -7,12 +7,15 @@ A *loop* is a mission-driven agent backed by a persistent [Claude Code](https://
 - **Plain `claude` CLI underneath.** Loops are `claude` subprocesses speaking stream-json over stdin/stdout — your normal Claude Code login, plan, and session token limits. No API keys, no SDK.
 - **Group-chat semantics.** A loop's reply *is* its message. `@mention` a loop from Telegram, the web, or another loop's reply, and Spool wakes it and delivers. Loop-to-loop chains are storm-guarded.
 - **Wake/sleep engine.** Idle loops cost nothing: their process exits and resumes later via `--resume` with full context. Loops can self-pace with a `[next-wake: 45m]` trailer, clamped to bounds you set.
+- **Contained, when Docker is there.** Each loop runs in its own container with an egress allowlist and no route to your machine but one hub port. Without Docker, loops run on your host instead, badged *uncontained* — see [What contains a loop](#what-contains-a-loop).
 - **Worktree isolation.** Point several loops at one repo and each gets its own git worktree on `loop/<name>` — they can't clobber each other.
 - **Control room.** Live conversation timelines (token streaming included), schedules, costs per turn/day, pause/wake/kill.
 
 ## Requirements
 
 - [Claude Code](https://claude.com/claude-code) installed and logged in (`claude` on PATH)
+- **Docker**, for containment. Spool can run without it, and then it runs loops
+  directly on your machine — see *What contains a loop* below before you do.
 - Linux/macOS, Go 1.23+ and Node 20+ (build only)
 
 ## Quick start
@@ -30,7 +33,31 @@ With docker workstations, `--mcp-listen` has to name an address the docker bridg
 
 Open http://127.0.0.1:8080, create a loop: name, mission, optional workspace path (a git repo gets an isolated worktree automatically), tick interval. The loop starts working immediately and reports in.
 
-> Spool runs loops with `--permission-mode bypassPermissions`. Containment is the workspace you give a loop: don't point one at a directory you wouldn't hand to an autonomous agent. The API is behind the operator token and workstations can't reach it, but neither of those chooses the workspace for you.
+### What contains a loop
+
+Spool runs every loop with `--permission-mode bypassPermissions`: a loop is
+never asked to confirm anything it does. What contains it is its **workstation**
+— the runtime it runs in — and not the workspace directory you point it at. A
+workspace is a working directory; it stops nothing.
+
+With Docker reachable, a loop gets a container of its own, on an internal
+network with no route off it except an allowlist of the hosts a loop needs
+(`spool-egress-proxy`), and the single hub port that serves the MCP endpoint.
+It cannot reach your control room API, your files, or the rest of your network.
+
+**Without Docker, `--runtime auto` falls back to running loops as plain
+subprocesses on your host**, under your own user account, with your network and
+your files — announced by one log line and marked *uncontained* in the control
+room. That is real Claude Code with permissions bypassed, on your machine. It is
+a reasonable thing to choose deliberately and a bad thing to discover: if you
+want it, ask for it with `--runtime bare`, and if you do not, check the startup
+log says `docker` before you create a loop. (Making the fallback an explicit
+choice rather than a default is [#240](https://github.com/enes-alatas/spool/issues/240).)
+
+Two things containment does not do. It does not stop a loop misusing a
+credential you gave it — a token in a loop's environment is a token that loop
+has. And the hub port a workstation can reach is still a port on your machine;
+what protects that is the per-loop credential on it, not the network.
 
 ## Telegram
 
