@@ -68,6 +68,7 @@ func main() {
 	dataDir := flag.String("data-dir", defaultDataDir(), "directory for spool.db, loop homes and worktrees")
 	claudeBin := flag.String("claude-bin", "claude", "path to the claude binary (bare runtime)")
 	runtimeChoice := flag.String("runtime", "auto", "default runtime for new loops: auto (docker when the daemon is reachable), docker, or bare")
+	allowBare := flag.Bool("allow-bare", false, "let the control room create uncontained bare loops on a hub whose default is docker; implied by --runtime bare (ADR-0017)")
 	workstationImage := flag.String("workstation-image", "spool-workstation", "default image for docker workstations")
 	egressImage := flag.String("egress-image", "spool-egress", "image for the workstation egress proxy; empty leaves workstation egress open (ADR-0028)")
 	egressAllow := flag.String("egress-allow", "", "comma-separated hosts (each \"host\" or \"host:port\") workstations may reach on top of the built-in allowlist")
@@ -303,6 +304,7 @@ func main() {
 		ClaudeVer:      ver,
 		Build:          build,
 		DefaultRuntime: defaultRuntime,
+		BareAllowed:    *allowBare || *runtimeChoice == store.RuntimeBare,
 		RuntimeAvailable: func(ctx context.Context, kind string) error {
 			if kind == store.RuntimeDocker {
 				return dockerRuntime.Available(ctx)
@@ -532,10 +534,18 @@ func rulesOf(db store.Store) []*store.FleetRule {
 }
 
 // selectDefaultRuntime resolves --runtime per ADR-0017: docker is the
-// default whenever the daemon is reachable, bare the explicit uncontained
-// fallback. Preflight failure is fatal only for the chosen default — the
+// default whenever the daemon is reachable, bare the opt-in uncontained
+// alternative. Preflight failure is fatal only for the chosen default — the
 // other runtime stays wired, and a loop on a broken one surfaces
 // workstation_down at wake instead of blocking boot.
+//
+// `auto` means docker or nothing. It used to mean docker-if-you-have-it and
+// otherwise host subprocesses, which is the one outcome a person who wrote
+// `auto` cannot have asked for: claude with permissions bypassed on their own
+// machine, announced by a log line among a hundred others (#240). Running
+// uncontained is a legitimate choice and stays available — it is just not
+// something Spool decides on the operator's behalf because a daemon happened
+// to be down.
 func selectDefaultRuntime(log *slog.Logger, choice string, runtimes map[string]runtime.Runtime) (kind, claudeVersion string) {
 	ctx := context.Background()
 	if choice == "auto" {
@@ -543,8 +553,10 @@ func selectDefaultRuntime(log *slog.Logger, choice string, runtimes map[string]r
 		if err == nil {
 			return store.RuntimeDocker, version
 		}
-		log.Info("docker unreachable; new loops default to the uncontained bare runtime", "err", err)
-		choice = store.RuntimeBare
+		log.Error("--runtime auto needs a reachable docker daemon: install or start docker, "+
+			"or ask for host subprocesses deliberately with --runtime bare, which runs loops "+
+			"uncontained under your own account (ADR-0017)", "err", err)
+		os.Exit(1)
 	}
 	selected, ok := runtimes[choice]
 	if !ok {

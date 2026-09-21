@@ -246,8 +246,12 @@ func TestDockerLoopDeleteRemovesWorkstation(t *testing.T) {
 
 // TestMixedRuntimeFleet pins the per-loop dispatch: an explicit bare loop on
 // a docker-default server still runs as a host subprocess.
+// A fleet may mix runtimes: the docker default does not force a workstation
+// on a loop asked for as bare. Since #240 the uncontained half of that mix is
+// opt-in at startup — the property here is per-loop choice, not a hub that
+// hands out uncontained loops to whoever asks.
 func TestMixedRuntimeFleet(t *testing.T) {
-	s := startDockerServer(t, t.TempDir())
+	s := startDockerServer(t, t.TempDir(), "--allow-bare")
 	s.createLoop("stillbare", map[string]any{"runtime": "bare"})
 	view := s.loop("stillbare")
 	if view.Runtime != "bare" {

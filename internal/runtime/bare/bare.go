@@ -1,8 +1,10 @@
 // Package bare runs a loop's claude process directly on the host: no
-// container, no isolation beyond the workspace directory. It is the
-// zero-dependency fallback of the SandboxRuntime seam (ADR-0010) and the
-// local edition badges loops using it as uncontained (ADR-0017); the hosted
-// service does not ship it at all.
+// container, and so no containment at all — the workspace directory is a
+// working directory, not a boundary. It is the explicitly-chosen
+// implementation of the SandboxRuntime seam (ADR-0010), never a fallback
+// something selects for you: the operator asks for it with --runtime bare or
+// --allow-bare, and the local edition badges loops using it as uncontained
+// (ADR-0017). The hosted service does not ship it at all.
 //
 // There is no workstation to provision or destroy — the host is the
 // workstation — so Ensure, Destroy and Health are trivial, and the power
