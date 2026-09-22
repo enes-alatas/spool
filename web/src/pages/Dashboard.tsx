@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api, LoopView, Settings } from '../api'
 import { formatTokens, fillTone, hasFillPct, formatUsd, sumCostToday } from '../format'
 import { StateDot } from '../components/Spool'
+import { undeliveredNote } from '../messages'
 import { useEffect, useState } from 'react'
 
 function Countdown({ at }: { at: number }) {
@@ -63,15 +64,24 @@ function workstationNote(loop: LoopView): { text: string; bad: boolean } | undef
 // and a wrapping line of its own once the columns no longer fit.
 function FleetRow({ loop, thresholds }: { loop: LoopView; thresholds?: Settings }) {
   const station = workstationNote(loop)
+  const undelivered = undeliveredNote(loop.undelivered_24h)
   return (
     <Link to={`/loops/${loop.name}`} className="fleet-row">
       <div className="identity">
         <span className="loop-name">{loop.name}</span>
         <span className="mission">{loop.mission}</span>
-        {(loop.runtime === 'bare' || station || loop.branch || loop.tg_bot_username) && (
+        {(loop.runtime === 'bare' || station || undelivered || loop.branch || loop.tg_bot_username) && (
           <span className="notes">
             {loop.runtime === 'bare' && <span className="containment-badge">uncontained</span>}
             {station && <span className={station.bad ? 'note bad' : 'note'}>{station.text}</span>}
+            {/* With the faults rather than with the metadata: a loop whose
+                messages are not arriving is something to act on, and the
+                branch and bot handle beside it are not. */}
+            {undelivered && (
+              <span className="note bad" title={undelivered.title}>
+                {undelivered.text}
+              </span>
+            )}
             {loop.workspace_mode === 'worktree' && loop.branch && <span className="note">{loop.branch}</span>}
             {loop.tg_bot_username && <span className="note">@{loop.tg_bot_username}</span>}
           </span>

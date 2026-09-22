@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { undelivered, undeliveredTitle } from './messages'
+import { undelivered, undeliveredNote, undeliveredTitle } from './messages'
 import type { ChatMessage } from './api'
 
 const msg = (over: Partial<ChatMessage>): ChatMessage => ({
@@ -72,5 +72,41 @@ describe('undeliveredTitle', () => {
     const title = undeliveredTitle({ at: Date.parse('2026-09-20T06:11:00Z'), reason: '' })
     expect(title).toContain('never received this')
     expect(title).not.toContain('. .')
+  })
+})
+
+describe('undeliveredNote', () => {
+  it('counts what a Fleet row has room for', () => {
+    expect(undeliveredNote(3)?.text).toBe('3 undelivered')
+  })
+
+  // A healthy loop is the common row; a badge saying "0 undelivered" on every
+  // one of them would train the operator to stop reading the line.
+  it('says nothing about a loop whose messages all arrived', () => {
+    expect(undeliveredNote(0)).toBeNull()
+  })
+
+  // Not "none": a server too old to count them has not checked, and a green
+  // row is a claim this client cannot make on its behalf.
+  it('says nothing when the server never sent a count', () => {
+    expect(undeliveredNote(undefined)).toBeNull()
+  })
+
+  // One message is not "1 messages", and the room's own copy is the only
+  // place this reads as careless.
+  it('counts one message in the singular', () => {
+    expect(undeliveredNote(1)?.title).toContain('1 message this')
+    expect(undeliveredNote(2)?.title).toContain('2 messages this')
+  })
+
+  // The number alone says how many, not what is wrong with them: the row is
+  // as far as an operator who is not already suspicious will read.
+  it('says what the count means and where to look', () => {
+    const note = undeliveredNote(1)
+    expect(note?.title).toContain('never reached the surface')
+    expect(note?.title).toContain('24 hours')
+    // Activity rather than the loop page: the loop page shows the private
+    // conversation and the timeline, so a group send appears on neither.
+    expect(note?.title).toContain('Open Activity')
   })
 })
