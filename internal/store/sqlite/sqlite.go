@@ -373,11 +373,12 @@ func (r messages) Insert(ctx context.Context, m *store.Message) error {
 	return nil
 }
 
-// SetSendResult records how the bridge's last attempt at a message ended.
-// A success clears an earlier failure: the same message is retried by a later
-// attempt, and a stale error would outlive the problem it described. It
-// clears send_failure_told_at with it, so the pair can never read as "told
-// about a failure that is no longer there".
+// SetSendResult records a failed attempt at a message: when the bridge gave
+// up and what it gave up on. A success does not come through here — it calls
+// ResolveSend, which keeps the failure and marks it dealt with.
+//
+// It clears send_failure_told_at, so a fresh failure is fresh news: the pair
+// can never read as "told about a failure the loop has not heard of".
 func (r messages) SetSendResult(ctx context.Context, id, failedAt int64, sendErr string) error {
 	_, err := r.db.ExecContext(ctx,
 		`UPDATE messages SET send_failed_at=?, send_error=?, send_failure_told_at=0 WHERE id=?`,
@@ -387,6 +388,13 @@ func (r messages) SetSendResult(ctx context.Context, id, failedAt int64, sendErr
 
 // UntoldSendFailures finds a loop's own lost messages, oldest first, so the
 // loop is told in the order it said them.
+//
+// A message an operator retried into a successful send is not lost, so it is
+// excluded by its resolution rather than by send_resolved_at: told that a
+// message it in fact delivered never arrived, a loop says it again and the
+// human reads it twice — the doubling ADR-0026 leaves to the loop to avoid.
+// A dismissed failure stays in: that message really did not arrive, and the
+// operator setting it aside is news about their list, not about the send.
 func (r messages) UntoldSendFailures(ctx context.Context, loopID string) ([]*store.Message, error) {
 	if loopID == "" {
 		// every message nobody authored would match; a loop is always named
@@ -394,41 +402,60 @@ func (r messages) UntoldSendFailures(ctx context.Context, loopID string) ([]*sto
 	}
 	return r.query(ctx, `SELECT `+messageCols+` FROM messages
 		WHERE from_loop_id=? AND send_failed_at!=0 AND send_failure_told_at=0
-		ORDER BY id`, loopID)
+		  AND send_resolution!=?
+		ORDER BY id`, loopID, store.SendResolutionDelivered)
 }
 
-// sendFailureWindow is what "undelivered" means, written once: a send that
-// ended in failure, no older than the caller's window. Both the Fleet page's
-// per-loop count and the fleet-wide list below are this predicate with their
-// own scope in front of it, so the badge and the page it opens cannot come to
-// different answers (#263). send_failed_at!=0 is not implied by the window: a
-// since of 0 would otherwise match every delivered message, which is the
-// wrong answer stated confidently.
-const sendFailureWindow = `send_failed_at!=0 AND send_failed_at>=?`
+// unresolvedSendFailure is what "undelivered" means, written once: a send
+// that ended in failure and that nobody has dealt with since. Both the Fleet
+// page's per-loop count and the fleet-wide list below are this predicate with
+// their own scope in front of it, so the badge and the page it opens cannot
+// come to different answers (#263). The two indexes in migration 0022 are
+// partial on exactly these terms.
+const unresolvedSendFailure = `send_failed_at!=0 AND send_resolved_at=0`
 
-func (r messages) SendFailuresSince(ctx context.Context, loopID string, since int64) (int, error) {
+func (r messages) UnresolvedSendFailures(ctx context.Context, loopID string) (int, error) {
 	if loopID == "" {
 		return 0, nil // as above: a loop is always named
 	}
 	var n int
 	err := r.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM messages WHERE from_loop_id=? AND `+sendFailureWindow,
-		loopID, since).Scan(&n)
+		`SELECT COUNT(*) FROM messages WHERE from_loop_id=? AND `+unresolvedSendFailure,
+		loopID).Scan(&n)
 	return n, err
 }
 
-// UndeliveredSince is the fleet-wide list behind the same predicate, newest
+// ResolveSend marks a failure dealt with, and how. Deliberately not a clear
+// of send_failed_at: the row still failed, and the timeline event that says
+// so (#147) would otherwise describe a message the store claims got through.
+//
+// The predicate is the whole guard. A message that never failed has nothing
+// to resolve — every successful send calls this, and most of them are the
+// first attempt — and one already resolved must keep the time and the way it
+// resolved, not the ones of whoever asked again.
+func (r messages) ResolveSend(ctx context.Context, id int64, at int64, resolution string) (bool, error) {
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE messages SET send_resolved_at=?, send_resolution=? WHERE id=? AND `+unresolvedSendFailure,
+		at, resolution, id)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
+// Undelivered is the fleet-wide list behind the same predicate, newest
 // failure first — the operator reads the most recent outage from the top.
 // Requiring a non-empty from_loop_id keeps it to messages a loop sent: an
 // inbound message has no sender to have failed. (Spelled in prose because
 // gofmt rewrites a pair of single quotes in a doc comment into typographic
-// ones, which would leave the SQL misquoted here.) The window predicate is
-// also what makes the partial index (0021) usable: it is declared on
-// send_failed_at!=0, so the planner only takes it when that term is present.
-func (r messages) UndeliveredSince(ctx context.Context, since int64) ([]*store.Message, error) {
+// ones, which would leave the SQL misquoted here.) Sharing the predicate is
+// also what keeps the partial index usable: it is declared on these two
+// terms, so the planner only takes it when both are present.
+func (r messages) Undelivered(ctx context.Context) ([]*store.Message, error) {
 	return r.query(ctx, `SELECT `+messageCols+` FROM messages
-		WHERE from_loop_id!='' AND `+sendFailureWindow+`
-		ORDER BY send_failed_at DESC, id DESC`, since)
+		WHERE from_loop_id!='' AND `+unresolvedSendFailure+`
+		ORDER BY send_failed_at DESC, id DESC`)
 }
 
 func (r messages) MarkSendFailuresTold(ctx context.Context, ids []int64, toldAt int64) error {
@@ -454,7 +481,7 @@ func (r messages) SetDelivered(ctx context.Context, id int64, deliveredTo []stri
 const messageCols = `id, ts, origin, author, from_loop_id, text,
 	mentions, COALESCE(tg_chat_id,0), COALESCE(tg_message_id,0), tg_bot_loop_id, delivered_to,
 	conversation, conversation_loop_id, reply_to_id, send_failed_at, send_error,
-	send_failure_told_at, tg_key`
+	send_failure_told_at, send_resolved_at, send_resolution, tg_key`
 
 func (r messages) List(ctx context.Context, limit int) ([]*store.Message, error) {
 	return r.query(ctx, `SELECT `+messageCols+` FROM messages ORDER BY id DESC LIMIT ?`, limit)
@@ -607,7 +634,8 @@ func (r messages) query(ctx context.Context, q string, args ...any) ([]*store.Me
 		if err := rows.Scan(&m.ID, &m.TS, &m.Origin, &m.Author, &m.FromLoopID, &m.Text,
 			&mentions, &m.TGChatID, &m.TGMessageID, &m.TGBotLoopID, &delivered,
 			&m.Conversation, &m.ConversationLoopID, &m.ReplyToID,
-			&m.SendFailedAt, &m.SendError, &m.SendFailureToldAt, &m.TGKey); err != nil {
+			&m.SendFailedAt, &m.SendError, &m.SendFailureToldAt, &m.SendResolvedAt,
+			&m.SendResolution, &m.TGKey); err != nil {
 			return nil, err
 		}
 		m.Mentions = fromJSON(mentions)

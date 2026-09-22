@@ -1,11 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import {
-  destinationLabel,
-  undelivered,
-  undeliveredNote,
-  undeliveredTitle,
-  UNDELIVERED_WINDOW,
-} from './messages'
+import { destinationLabel, undelivered, undeliveredNote, undeliveredTitle } from './messages'
 import type { ChatMessage } from './api'
 
 const msg = (over: Partial<ChatMessage>): ChatMessage => ({
@@ -110,12 +104,15 @@ describe('undeliveredNote', () => {
   it('says what the count means and where to look', () => {
     const note = undeliveredNote(1)
     expect(note?.title).toContain('never reached the surface')
-    // Interpolated, not spelled out: #269 replaces the window and this is the
-    // hover that would otherwise keep saying 24 hours after the tab stopped.
-    expect(note?.title).toContain(UNDELIVERED_WINDOW)
+    // No window: since #269 a failure counts until someone retries or
+    // dismisses it, so copy naming an age would outlive the rule it rested
+    // on. The negative is the assertion worth keeping — it is what stops a
+    // window phrasing coming back into this string later.
+    expect(note?.title).toContain('no retry has got through')
+    expect(note?.title).not.toContain('24 hours')
     // Undelivered rather than the loop page or Activity: the loop page shows
     // the private conversation and the timeline, so a group send appears on
-    // neither, and Activity is the capped window this tab exists to replace.
+    // neither, and Activity is the capped window that tab exists to replace.
     expect(note?.title).toContain('Open Undelivered')
     expect(note?.title).not.toContain('Open Activity')
   })

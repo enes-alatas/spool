@@ -347,3 +347,58 @@ func (r *Router) recordSend(loopID, destination, text string) {
 	}
 	r.turnSends[loopID] = append(r.turnSends[loopID], fmt.Sprintf("to %s: %q", destination, text))
 }
+
+// Errors RetrySend answers with, both meaning "not this message" rather than
+// "the send failed": one for a message with nothing to retry, one for a loop
+// whose owner has no private chat for the retry to land in.
+var (
+	ErrNoUnresolvedFailure = errors.New("message has no unresolved send failure")
+	ErrNoOwnerDMChat       = errors.New("loop has no private chat with its owner")
+)
+
+// RetrySend asks the surfaces to send a stored message again, after the
+// operator retried a failed send from the control room (#269).
+//
+// It publishes rather than sending: outbound is the surface's half of the
+// seam (ADR-0029), and the mirror rules that decided where this message went
+// the first time are the ones that must decide again. The item carries the
+// row as stored, so a retry cannot quietly become a different message than
+// the one that failed.
+//
+// The owner's DM chat is the one thing re-resolved rather than replayed. The
+// original send pinned it so that a DM arriving mid-flight could not redirect
+// the message; a retry minutes or hours later has no such window to protect,
+// and the chat it pinned may since have been replaced. The loop's current one
+// is the only chat a message can be delivered to now.
+//
+// Errors are about whether the retry can be asked for at all, never about
+// whether it lands: the send is the surface's, and its outcome reaches the
+// operator as the row resolving or its error changing.
+func (r *Router) RetrySend(ctx context.Context, messageID int64) error {
+	msg, err := r.store.Messages().Get(ctx, messageID)
+	if err != nil {
+		return err
+	}
+	if msg.SendFailedAt == 0 || msg.SendResolvedAt != 0 {
+		return ErrNoUnresolvedFailure
+	}
+	if msg.FromLoopID == "" {
+		// An inbound message was never sent by us, so there is nothing to
+		// send again. The list never offers one, but the route is reachable
+		// with any id.
+		return ErrNoUnresolvedFailure
+	}
+	from, err := r.store.Loops().Get(ctx, msg.FromLoopID)
+	if err != nil {
+		return err
+	}
+	payload := &MessagePayload{Message: *msg, FromLoopName: from.Name}
+	if msg.Conversation == store.ConversationOwnerDM {
+		if from.OwnerDMChatID == 0 {
+			return ErrNoOwnerDMChat
+		}
+		payload.OwnerDMChat = from.OwnerDMChatID
+	}
+	r.bus.Publish(bus.Item{Kind: bus.KindSendRetry, LoopID: msg.FromLoopID, Payload: payload})
+	return nil
+}

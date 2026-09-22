@@ -29,11 +29,6 @@ import (
 	"github.com/enes-alatas/spool/internal/version"
 )
 
-// undeliveredWindow is how far back loopView.Undelivered24h looks. Rolling
-// rather than aligned to the operator's day: a failure at 23:50 should not
-// stop being news ten minutes later.
-const undeliveredWindow = 24 * time.Hour
-
 var nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{1,31}$`)
 
 type Server struct {
@@ -126,6 +121,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/loops/{name}/secrets/{key}", s.handleDeleteSecret)
 	mux.HandleFunc("GET /api/activity", s.handleActivity)
 	mux.HandleFunc("GET /api/undelivered", s.handleUndelivered)
+	mux.HandleFunc("POST /api/messages/{id}/retry", s.handleRetrySend)
+	mux.HandleFunc("POST /api/messages/{id}/dismiss", s.handleDismissSend)
 	mux.HandleFunc("GET /api/loops/{name}/conversation", s.handleLoopConversation)
 	mux.HandleFunc("GET /api/settings", s.handleGetSettings)
 	mux.HandleFunc("PUT /api/settings", s.handlePutSettings)
@@ -229,14 +226,13 @@ type loopView struct {
 	// work out which day it belongs to, and the boundary is not the one a
 	// UTC client would guess.
 	CostDay string `json:"cost_day"`
-	// Undelivered24h counts this loop's messages that never reached their
-	// surface and whose failure is less than 24 hours old. The window is
-	// on the failure, not on when the message was sent. Always present, so
-	// a measured zero is distinguishable from a server too old to measure
-	// — the lesson of context_fill_pct (#122). The window is also the
-	// server's: two clocks disagreeing about "last 24 hours" is a bug
-	// report nobody can reproduce.
-	Undelivered24h    int    `json:"undelivered_24h"`
+	// Undelivered counts this loop's messages that never reached their
+	// surface and that nobody has dealt with: no successful retry, no
+	// dismissal (#269). No age limit — a failure stops counting when
+	// someone resolves it, not when a clock decides the operator is done
+	// looking. Always present, so a measured zero is distinguishable from a
+	// server too old to measure — the lesson of context_fill_pct (#122).
+	Undelivered       int    `json:"undelivered"`
 	HasTGToken        bool   `json:"has_tg_token"`
 	WorkstationUp     bool   `json:"workstation_up"`
 	WorkstationDetail string `json:"workstation_detail,omitempty"`
@@ -314,9 +310,8 @@ func (s *Server) view(ctx context.Context, l *store.Loop) *loopView {
 	if cost, err := s.Store.Turns().CostSince(ctx, l.ID, dayStart); err == nil {
 		out.CostToday = cost
 	}
-	since := time.Now().Add(-undeliveredWindow).UnixMilli()
-	if n, err := s.Store.Messages().SendFailuresSince(ctx, l.ID, since); err == nil {
-		out.Undelivered24h = n
+	if n, err := s.Store.Messages().UnresolvedSendFailures(ctx, l.ID); err == nil {
+		out.Undelivered = n
 	} else {
 		// The zero this leaves behind is the one thing this field must not
 		// say quietly, so it is said loudly somewhere.
@@ -1118,22 +1113,20 @@ func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleUndelivered lists the sends the Fleet badge counts: every loop's
-// messages that never reached their surface, within the same window the
-// badge uses, newest failure first (#263). Activity cannot answer this — it
-// is the newest hundred events across everything, so a failure from hours
-// ago has scrolled out of it, which is the whole reason this route exists.
+// messages that never reached their surface and that nobody has resolved,
+// newest failure first (#263, #269). Activity cannot answer this — it is the
+// newest hundred events across everything, so a failure from hours ago has
+// scrolled out of it, which is the whole reason this route exists.
 //
 // No limit, deliberately: a cap is what makes Activity unable to answer the
-// question, and the set is bounded by being one window of failures. A fleet
-// that overflows this has a worse problem than paging.
+// question, and the set is bounded by the operator dealing with it rather
+// than by a clock. A fleet that overflows this has a worse problem than
+// paging.
 //
-// The window is the server's, like the badge's (#202): two clocks disagreeing
-// about "the last 24 hours" is a bug report nobody can reproduce. The rows
-// are whole messages, text included, which is what the Activity feed already
-// serves and sits behind the same operator credential (ADR-0030).
+// The rows are whole messages, text included, which is what the Activity feed
+// already serves and sits behind the same operator credential (ADR-0030).
 func (s *Server) handleUndelivered(w http.ResponseWriter, r *http.Request) {
-	since := time.Now().Add(-undeliveredWindow).UnixMilli()
-	msgs, err := s.Store.Messages().UndeliveredSince(r.Context(), since)
+	msgs, err := s.Store.Messages().Undelivered(r.Context())
 	if err != nil {
 		s.jsonErr(w, 500, "%v", err)
 		return
@@ -1142,6 +1135,68 @@ func (s *Server) handleUndelivered(w http.ResponseWriter, r *http.Request) {
 		msgs = []*store.Message{}
 	}
 	writeJSON(w, 200, msgs)
+}
+
+// handleRetrySend sends a failed message again, to the destination it was
+// sent to the first time (#269). It answers 202 rather than 200: the send is
+// the surface's, it is queued behind whatever that surface is already doing,
+// and an outcome the operator can trust arrives as the row resolving or its
+// error changing — not as this response.
+//
+// A message with nothing to retry is a 404 rather than a 409: from the
+// operator's side the thing they clicked is not there, whether because
+// another window already retried it, because it went through, or because the
+// id names a message that never failed.
+func (s *Server) handleRetrySend(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.messageID(w, r)
+	if !ok {
+		return
+	}
+	switch err := s.Router.RetrySend(r.Context(), id); {
+	case err == nil:
+		writeJSON(w, 202, map[string]bool{"retrying": true})
+	case errors.Is(err, store.ErrNotFound), errors.Is(err, route.ErrNoUnresolvedFailure):
+		s.jsonErr(w, 404, "no unresolved send failure for message %d", id)
+	case errors.Is(err, route.ErrNoOwnerDMChat):
+		// The retry would have nowhere to land. Said as its own refusal
+		// because it is the one case the operator can fix: the owner has to
+		// write to the bot once before a loop can DM them (#73).
+		s.jsonErr(w, 409, "%v", err)
+	default:
+		s.jsonErr(w, 500, "%v", err)
+	}
+}
+
+// handleDismissSend resolves a failure without sending anything: the operator
+// has read it and is done with it. The row keeps what failed and why — this
+// takes it off their list, it does not rewrite history.
+func (s *Server) handleDismissSend(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.messageID(w, r)
+	if !ok {
+		return
+	}
+	resolved, err := s.Store.Messages().ResolveSend(r.Context(), id,
+		time.Now().UnixMilli(), store.SendResolutionDismissed)
+	if err != nil {
+		s.jsonErr(w, 500, "%v", err)
+		return
+	}
+	if !resolved {
+		s.jsonErr(w, 404, "no unresolved send failure for message %d", id)
+		return
+	}
+	writeJSON(w, 200, map[string]bool{"dismissed": true})
+}
+
+// messageID reads the {id} path value, answering 400 when it is not a number
+// rather than looking up message zero.
+func (s *Server) messageID(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		s.jsonErr(w, 400, "message id must be a number")
+		return 0, false
+	}
+	return id, true
 }
 
 func (s *Server) handleListSenders(w http.ResponseWriter, r *http.Request) {

@@ -359,6 +359,7 @@ type activityMessage struct {
 	ReplyToID          int64    `json:"reply_to_id"`
 	SendFailedAt       int64    `json:"send_failed_at"`
 	SendError          string   `json:"send_error"`
+	SendResolvedAt     int64    `json:"send_resolved_at"`
 }
 
 func (s *server) activity() []activityMessage {

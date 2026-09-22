@@ -185,7 +185,7 @@ func TestUndeliveredCountReachesTheFleetView(t *testing.T) {
 		`!send {"destination":"group","text":"@beta nobody hears this"}`+"\n")
 	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws})
 
-	if n := srv.loop("alpha").Undelivered24h; n != 0 {
+	if n := srv.loop("alpha").Undelivered; n != 0 {
 		t.Fatalf("a loop that has not sent anything reports %d undelivered", n)
 	}
 
@@ -194,7 +194,7 @@ func TestUndeliveredCountReachesTheFleetView(t *testing.T) {
 
 	deadline := time.Now().Add(30 * time.Second)
 	for {
-		n := srv.loop("alpha").Undelivered24h
+		n := srv.loop("alpha").Undelivered
 		if n == 1 {
 			break
 		}
@@ -205,7 +205,7 @@ func TestUndeliveredCountReachesTheFleetView(t *testing.T) {
 	}
 
 	// the recipient is not the sender: beta's own messages all arrived
-	if n := srv.loop("beta").Undelivered24h; n != 0 {
+	if n := srv.loop("beta").Undelivered; n != 0 {
 		t.Fatalf("beta reports %d undelivered, but the failed message was alpha's", n)
 	}
 }

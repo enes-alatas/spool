@@ -64,7 +64,7 @@ function workstationNote(loop: LoopView): { text: string; bad: boolean } | undef
 // and a wrapping line of its own once the columns no longer fit.
 function FleetRow({ loop, thresholds }: { loop: LoopView; thresholds?: Settings }) {
   const station = workstationNote(loop)
-  const undelivered = undeliveredNote(loop.undelivered_24h)
+  const undelivered = undeliveredNote(loop.undelivered)
   return (
     <Link to={`/loops/${loop.name}`} className="fleet-row">
       <div className="identity">

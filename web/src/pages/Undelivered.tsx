@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api, ChatMessage, LoopView } from '../api'
-import { destinationLabel, UNDELIVERED_WINDOW, undeliveredTitle } from '../messages'
+import { destinationLabel, undeliveredTitle } from '../messages'
 
 // The failed sends themselves, fleet-wide.
 //
@@ -39,7 +39,7 @@ export default function Undelivered() {
         <h1>Undelivered</h1>
         {msgs && msgs.length > 0 && (
           <span className="fleet-summary">
-            {msgs.length} {msgs.length === 1 ? 'message' : 'messages'} · {UNDELIVERED_WINDOW}
+            {msgs.length} {msgs.length === 1 ? 'message' : 'messages'} · unresolved
           </span>
         )}
       </div>
@@ -84,7 +84,7 @@ export default function Undelivered() {
       {/* Reachable by URL even while the nav entry is hidden, so it needs to
           say what it would have shown. */}
       {msgs && msgs.length === 0 && (
-        <div className="empty">Every message got through in {UNDELIVERED_WINDOW}.</div>
+        <div className="empty">Nothing is waiting: every failed send has been retried or dismissed.</div>
       )}
     </div>
   )
