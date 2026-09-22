@@ -102,7 +102,8 @@ make server         # Go binary only (uses last-built UI)
 make dev            # run backend on :8080
 make ui-dev         # vite dev server with /api proxy
 make test           # tier 1: unit + architecture tests
-make itest          # tier 2: real binary vs fakeclaude (protocol fake), ~8s
+make itest          # tier 2: real binary vs fakeclaude (protocol fake), ~10min
+                    #         (~7min without a docker daemon — two files skip)
 make image          # build the spool-workstation and spool-egress images locally
 make lint           # gofmt + vet + golangci-lint
 make e2e-m1         # tier 3: real claude sessions (spends plan tokens)

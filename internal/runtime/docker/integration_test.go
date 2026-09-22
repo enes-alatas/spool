@@ -21,8 +21,17 @@ import (
 )
 
 const (
-	testImage       = "spool-workstation-itest"
-	testEgressImage = "spool-egress-itest"
+	testImage = "spool-workstation-itest"
+	// A tag of this suite's own, not the one itest/ uses. The egress wall is
+	// named after its image (ADR-0028), so a shared tag means a single
+	// `spool-egress-itest-proxy` for both suites — and they do not merely
+	// share it. The spec hash covers the allowlist, which carries each
+	// suite's own hub port, so each reads the other's proxy as misconfigured,
+	// force-removes it and builds its own. Whichever was mid-provision when
+	// the other's removal landed then failed against a container that had
+	// stopped existing (#221). Two tags, two walls, no race. The Makefile
+	// tags this from the same build, so the image is byte-identical.
+	testEgressImage = "spool-egress-itest-docker"
 )
 
 func requireDocker(t *testing.T) *Runtime {

@@ -34,12 +34,19 @@ egress:
 # tier 2 (docs/QUALITY.md): real binary + fakeclaude over HTTP. The docker
 # workstation suites run against a real daemon and the fakeclaude image;
 # without a reachable daemon they self-skip with a notice.
+#
+# The timeout is a net under a hung test, not a budget for a slow one. At
+# 600s it had stopped being one: the suite lands within a few seconds of it,
+# so a run was lost to the clock rather than to a defect, and the panic it
+# prints reads like a product failure. Raised with room to grow; a suite
+# that gets near 1200s is asking for #182, not a bigger number.
 itest: server fakeclaude egress
 	@if docker version >/dev/null 2>&1; then \
 		docker build -q -t spool-workstation-itest -f itest/testdata/workstation/Dockerfile bin >/dev/null; \
 		docker build -q -t spool-egress-itest -f docker/egress/Dockerfile bin >/dev/null; \
+		docker tag spool-egress-itest spool-egress-itest-docker; \
 	else echo "docker daemon unreachable — docker workstation itests will skip"; fi
-	$(GO) test -tags integration -count=1 -timeout 600s ./itest/... ./internal/runtime/docker/
+	$(GO) test -tags integration -count=1 -timeout 1200s ./itest/... ./internal/runtime/docker/
 
 # Build the workstation image. `image` builds for the host architecture and loads
 # it into the local Docker daemon, so it can be run directly. `image-multiarch`

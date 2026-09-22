@@ -13,7 +13,9 @@ const (
 	workstationTestImage = "spool-workstation-itest"
 	// The suite's own proxy build. The egress wall is named after its image
 	// (ADR-0028), so these tests get their own network and proxy container and
-	// never join a real fleet's.
+	// never join a real fleet's — nor the docker runtime suite's, which runs
+	// beside this one under `make itest` and tags itself
+	// `spool-egress-itest-docker` for that reason (#221).
 	egressTestImage = "spool-egress-itest"
 )
 
