@@ -231,11 +231,16 @@ agents — Claude sessions today, Spool's own loops from L2.*
   `edited` menu; a loop cannot, because edit history is read-only in both
   APIs, so it reports the exposure privately to the operator — what and
   where, never the value — and the operator deletes it (#206). Both guards
-  read their shapes from `scripts/secret-rules.awk`.
+  read their shapes from `scripts/secret-rules.awk`; two of those shapes —
+  a loop's bot handle and the group's chat id — apply to bodies only, since
+  in the tree they are configuration and fixture data rather than a quote of
+  the group (#249).
 - **The board is world-readable** (ADR-0031): once the repo is public, every
   issue, comment, review and commit is readable by anyone, history included,
-  and a deletion is not a recall. One rule follows that the redaction rules do
-  not cover: **nothing said in the Telegram group is quoted on GitHub.** The
+  and a deletion is not a recall. One rule follows, which the redaction rules
+  enforce only the edges of — a bot handle and the group's chat id are taken
+  out of a body automatically, the words are not: **nothing said in the
+  Telegram group is quoted on GitHub.** The
   group is where the fleet coordinates and the operator thinks out loud, and
   neither was written for an audience; an issue or PR that needs the substance
   of something said there states it in its own words, as the writer's own

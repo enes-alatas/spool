@@ -5,6 +5,10 @@
 # not already hold, and scanning context lines would make every later PR
 # inherit an older one's failure.
 BEGIN {
+  # This front end reads the tree, where a bot handle or a group chat id is
+  # configuration and fixture data rather than a quote of the group — so the
+  # body-scoped shapes are not applied here (secret-rules.awk).
+  scan_scope = "diff"
   # Matches are allowed *if the value is obviously synthetic*. The scanner and
   # its own test have to contain the shapes they look for, and a fixture is
   # required to be fake already. Not a blanket: a fixture holding something
@@ -44,6 +48,7 @@ BEGIN {
   # less useful half.
   folded = tolower(content)
   for (i = 1; i <= patterns; i++) {
+    if (!inScope(i)) continue
     if (match(folded, regex[i])) {
       if (path ~ exempt_always) continue
       # synthetic() uses only `~` and substr(), neither of which disturbs
