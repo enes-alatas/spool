@@ -1,6 +1,6 @@
 # ADR-0026: Loops send through a hub-served MCP tool
 
-Date: 2026-09-15 · Status: accepted (operator interview; implementation pending) · Amended: 2026-09-16 (`owner_dm` routing, twice); 2026-09-18 (undelivered sends); 2026-09-20 (item 1 is a Surface rule)
+Date: 2026-09-15 · Status: accepted (operator interview; implementation pending) · Amended: 2026-09-16 (`owner_dm` routing, twice); 2026-09-18 (undelivered sends); 2026-09-20 (item 1 is a Surface rule); 2026-09-22 (a resend names the failure it replaces)
 
 ## Context
 
@@ -186,3 +186,43 @@ is not spent there but deferred, because the mark is only written when a turn
 completes. (The standing-instructions note is withheld from a handoff turn
 too, for a related but distinct reason; that is ADR-0024's contract, amended
 there.)
+
+**Amendment (2026-09-22, #270): a resend names the failure it replaces.**
+The amendment above leaves the decision to resend with the loop, and that is
+still right — but the resend was an unrelated new message, so the failure it
+answered stayed on the operator's list until they cleared it by hand (#269).
+The hub asked a human to finish a job that had finished itself.
+
+`send_message` gains one optional field, `resends`, taking a single message
+reference: the loop's way of saying *these words are that message, again*.
+It is accepted only for a message this loop sent, whose send failed and is
+unresolved, and only to the destination it was lost going to — anything else
+is a named refusal (`resends_not_failed`, `resends_wrong_destination`) and
+the message is not sent, so the loop corrects the call rather than discovers
+afterwards that it said something twice. The destination is part of the
+claim: words that arrive somewhere else did not replace the ones that were
+lost.
+
+The failure resolves when the *new* send gets through, not when the call is
+accepted — the surface's outcome is the only thing that knows the words
+arrived.
+
+A resend can fail too, and then there are two failures for one set of words.
+The loop is told about the new one and may resend that in turn, so what the
+hub holds is a chain: each link claims the failure it was sent to replace,
+the claim is stored on the row rather than carried with the send, and the
+send that finally arrives resolves every link at once. The alternative was
+worse than untidy: the first failure has already been reported, and a loop
+is told about a lost message exactly once, so a claim that did not outlive
+its own send would leave that failure unreportable to the loop and
+unresolvable by anything but a human hand — the outcome this amendment
+exists to remove, reached by a longer road.
+
+A resolved failure names the message that got through, so it stays readable
+rather than merely closed; on a chain that is the send that finally arrived,
+not the next attempt.
+
+This does not add an outbox and does not resend anything: the loop still
+decides, and the hub still does not decide that words are worth saying
+minutes later. What changes is that the loop's decision now finishes the job
+instead of leaving half of it for the operator.

@@ -896,13 +896,23 @@ func (br *Bridge) recordSendResult(ctx context.Context, req sendReq, err error) 
 		return
 	}
 	if err == nil {
+		now := time.Now().UnixMilli()
 		// Called on every success, including a first attempt that never
 		// failed: ResolveSend is a no-op unless the row carries an
 		// unresolved failure, so the caller does not need to know which
 		// kind of success this was.
-		if _, resErr := br.store.Messages().ResolveSend(ctx, req.recordFor,
-			time.Now().UnixMilli(), store.SendResolutionDelivered); resErr != nil {
+		if _, resErr := br.store.Messages().ResolveSend(ctx, req.recordFor, now,
+			store.SendResolutionDelivered, 0); resErr != nil {
 			br.log.Warn("telegram: resolve send failure", "err", resErr)
+		}
+		// And the failures these words were said again for, if the loop
+		// said this message was a resend — the one it named, and anything
+		// that one resent before it. Only on success, and read from the
+		// row rather than from this send: a resend that failed too is
+		// itself resent later, and the chain is what lets that last send
+		// close the failure this one could not (#270).
+		if _, resErr := br.store.Messages().ResolveResends(ctx, req.recordFor, now); resErr != nil {
+			br.log.Warn("telegram: resolve resent failures", "err", resErr)
 		}
 		return
 	}

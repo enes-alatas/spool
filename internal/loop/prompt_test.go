@@ -371,13 +371,17 @@ func TestSendFailureEnvelope(t *testing.T) {
 		SendError:    "telegram: bot was blocked by the user",
 	}})
 	for _, want := range []string{
-		"1 of your message never arrived",
+		"1 of your messages never arrived",
 		"2026-09-18 20:00 UTC",
 		"ref:7",
 		"owner_dm",
 		"telegram: bot was blocked by the user",
 		"the deploy is wedged, can you look",
 		"not sent again unless you send them again",
+		// The loop is told how to close the failure it is about to
+		// resend, or the operator clears by hand a thing that was dealt
+		// with (#270).
+		`send_message's "resends"`,
 	} {
 		if !strings.Contains(env.Text, want) {
 			t.Errorf("envelope missing %q:\n%s", want, env.Text)

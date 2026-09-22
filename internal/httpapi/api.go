@@ -1176,7 +1176,7 @@ func (s *Server) handleDismissSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resolved, err := s.Store.Messages().ResolveSend(r.Context(), id,
-		time.Now().UnixMilli(), store.SendResolutionDismissed)
+		time.Now().UnixMilli(), store.SendResolutionDismissed, 0)
 	if err != nil {
 		s.jsonErr(w, 500, "%v", err)
 		return

@@ -358,11 +358,12 @@ func (r messages) Insert(ctx context.Context, m *store.Message) error {
 	}
 	res, err := r.db.ExecContext(ctx, `INSERT INTO messages
 		(ts, origin, author, from_loop_id, text, mentions, tg_chat_id, tg_message_id,
-		 tg_bot_loop_id, delivered_to, conversation, conversation_loop_id, reply_to_id, tg_key)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		 tg_bot_loop_id, delivered_to, conversation, conversation_loop_id, reply_to_id,
+		 resends_id, tg_key)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		m.TS, m.Origin, m.Author, m.FromLoopID, m.Text, toJSON(m.Mentions), tgChat, tgMsg,
 		m.TGBotLoopID, toJSON(m.DeliveredTo), m.Conversation, m.ConversationLoopID,
-		m.ReplyToID, m.TGKey)
+		m.ReplyToID, m.ResendsID, m.TGKey)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			return store.ErrDuplicate
@@ -389,12 +390,14 @@ func (r messages) SetSendResult(ctx context.Context, id, failedAt int64, sendErr
 // UntoldSendFailures finds a loop's own lost messages, oldest first, so the
 // loop is told in the order it said them.
 //
-// A message an operator retried into a successful send is not lost, so it is
-// excluded by its resolution rather than by send_resolved_at: told that a
+// A failure whose words reached their reader in the end is not lost, so it is
+// excluded by how it resolved rather than by send_resolved_at: told that a
 // message it in fact delivered never arrived, a loop says it again and the
 // human reads it twice — the doubling ADR-0026 leaves to the loop to avoid.
-// A dismissed failure stays in: that message really did not arrive, and the
-// operator setting it aside is news about their list, not about the send.
+// Two resolutions mean the words arrived — an operator's retry that landed,
+// and the loop's own resend (#270) — and a dismissed failure stays in: that
+// message really did not arrive, and the operator setting it aside is news
+// about their list, not about the send.
 func (r messages) UntoldSendFailures(ctx context.Context, loopID string) ([]*store.Message, error) {
 	if loopID == "" {
 		// every message nobody authored would match; a loop is always named
@@ -402,8 +405,8 @@ func (r messages) UntoldSendFailures(ctx context.Context, loopID string) ([]*sto
 	}
 	return r.query(ctx, `SELECT `+messageCols+` FROM messages
 		WHERE from_loop_id=? AND send_failed_at!=0 AND send_failure_told_at=0
-		  AND send_resolution!=?
-		ORDER BY id`, loopID, store.SendResolutionDelivered)
+		  AND send_resolution NOT IN (?,?)
+		ORDER BY id`, loopID, store.SendResolutionDelivered, store.SendResolutionResent)
 }
 
 // unresolvedSendFailure is what "undelivered" means, written once: a send
@@ -433,15 +436,56 @@ func (r messages) UnresolvedSendFailures(ctx context.Context, loopID string) (in
 // to resolve — every successful send calls this, and most of them are the
 // first attempt — and one already resolved must keep the time and the way it
 // resolved, not the ones of whoever asked again.
-func (r messages) ResolveSend(ctx context.Context, id int64, at int64, resolution string) (bool, error) {
+func (r messages) ResolveSend(ctx context.Context, id int64, at int64, resolution string, resentAs int64) (bool, error) {
 	res, err := r.db.ExecContext(ctx,
-		`UPDATE messages SET send_resolved_at=?, send_resolution=? WHERE id=? AND `+unresolvedSendFailure,
-		at, resolution, id)
+		`UPDATE messages SET send_resolved_at=?, send_resolution=?, send_resent_as=? WHERE id=? AND `+unresolvedSendFailure,
+		at, resolution, resentAs, id)
 	if err != nil {
 		return false, err
 	}
 	n, err := res.RowsAffected()
 	return n > 0, err
+}
+
+// maxResendChain bounds the walk below. A chain is one loop saying the same
+// words through an outage, so a handful of links is a long one; the bound is
+// there because a walk over stored ids should not be able to run forever on
+// a row that names itself, however it got that way.
+const maxResendChain = 50
+
+// ResolveResends resolves the failures this message was sent to replace.
+//
+// Usually one: the row its resends_id names. But a resend can fail too, and
+// the loop is then told about that failure and resends it in turn — so what
+// arrives is the end of a chain, and every link is an attempt to say the
+// same words. They all resolve together, naming the message that actually
+// got through rather than the next link, because that is the one an operator
+// reading any of them wants to read.
+//
+// Each link is resolved through the same conditional update as any other
+// resolution, so a link somebody already dismissed keeps their reason and
+// the walk continues past it.
+func (r messages) ResolveResends(ctx context.Context, messageID int64, at int64) (int, error) {
+	resolved := 0
+	id := messageID
+	for i := 0; i < maxResendChain; i++ {
+		m, err := r.Get(ctx, id)
+		if err != nil {
+			return resolved, err
+		}
+		if m.ResendsID == 0 {
+			return resolved, nil
+		}
+		ok, err := r.ResolveSend(ctx, m.ResendsID, at, store.SendResolutionResent, messageID)
+		if err != nil {
+			return resolved, err
+		}
+		if ok {
+			resolved++
+		}
+		id = m.ResendsID
+	}
+	return resolved, fmt.Errorf("resend chain from message %d is longer than %d", messageID, maxResendChain)
 }
 
 // Undelivered is the fleet-wide list behind the same predicate, newest
@@ -481,7 +525,8 @@ func (r messages) SetDelivered(ctx context.Context, id int64, deliveredTo []stri
 const messageCols = `id, ts, origin, author, from_loop_id, text,
 	mentions, COALESCE(tg_chat_id,0), COALESCE(tg_message_id,0), tg_bot_loop_id, delivered_to,
 	conversation, conversation_loop_id, reply_to_id, send_failed_at, send_error,
-	send_failure_told_at, send_resolved_at, send_resolution, tg_key`
+	send_failure_told_at, send_resolved_at, send_resolution, send_resent_as,
+	resends_id, tg_key`
 
 func (r messages) List(ctx context.Context, limit int) ([]*store.Message, error) {
 	return r.query(ctx, `SELECT `+messageCols+` FROM messages ORDER BY id DESC LIMIT ?`, limit)
@@ -635,7 +680,7 @@ func (r messages) query(ctx context.Context, q string, args ...any) ([]*store.Me
 			&mentions, &m.TGChatID, &m.TGMessageID, &m.TGBotLoopID, &delivered,
 			&m.Conversation, &m.ConversationLoopID, &m.ReplyToID,
 			&m.SendFailedAt, &m.SendError, &m.SendFailureToldAt, &m.SendResolvedAt,
-			&m.SendResolution, &m.TGKey); err != nil {
+			&m.SendResolution, &m.SendResentAs, &m.ResendsID, &m.TGKey); err != nil {
 			return nil, err
 		}
 		m.Mentions = fromJSON(mentions)

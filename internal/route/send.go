@@ -27,6 +27,11 @@ type SendRequest struct {
 	Destination string // store.Conversation*
 	ReplyTo     string // reply reference from an inbound envelope ("" = none)
 	Text        string
+	// Resends names a send of this loop's own that failed and that these
+	// words replace ("ref:42", "" = none). When this send gets through,
+	// that failure resolves — the loop dealing with its own lost message
+	// is what takes it off the operator's list (#270).
+	Resends string
 }
 
 // SendError is a typed refusal the model sees in-turn and can correct.
@@ -48,6 +53,11 @@ const (
 	ErrOwnerNotConfigured = "owner_not_configured"
 	ErrOwnerDMUnavailable = "owner_dm_unavailable"
 	ErrSendLimit          = "send_limit"
+	// The two refusals of a resend. Both leave the message unsent, so the
+	// loop can correct the call rather than discover afterwards that it
+	// said something twice or resolved the wrong failure.
+	ErrResendsNotFailed        = "resends_not_failed"
+	ErrResendsWrongDestination = "resends_wrong_destination"
 )
 
 // Send validates, persists, and delivers one explicit loop message
@@ -65,6 +75,10 @@ func (r *Router) Send(ctx context.Context, req SendRequest) (*store.Message, *Se
 	if serr != nil || err != nil {
 		return nil, serr, err
 	}
+	resends, serr, err := r.resendTarget(ctx, req)
+	if serr != nil || err != nil {
+		return nil, serr, err
+	}
 
 	mentions := Mentions(text)
 	msg := &store.Message{
@@ -78,6 +92,12 @@ func (r *Router) Send(ctx context.Context, req SendRequest) (*store.Message, *Se
 	}
 	if replyTo != nil {
 		msg.ReplyToID = replyTo.ID
+	}
+	if resends != nil {
+		// Stored, not carried with the send: this send can fail too, and
+		// the claim has to outlive it for the next resend to close the
+		// whole chain (#270).
+		msg.ResendsID = resends.ID
 	}
 
 	var targets map[string]*store.Loop
@@ -169,6 +189,48 @@ func (r *Router) Send(ctx context.Context, req SendRequest) (*store.Message, *Se
 		}
 	}
 	return msg, nil, nil
+}
+
+// resendTarget resolves an explicit resend reference to the failure it
+// replaces. Only this loop's own unresolved failure, to the very destination
+// being sent to, qualifies — a loop can deal with a message it said and
+// nobody read, and with nothing else.
+//
+// Every refusal leaves the message unsent, which is the point: a loop that
+// discovered the mistake afterwards would have said the words twice, or
+// resolved a failure that is still somebody's to deal with. The destination
+// check is why "say it once more, to the destination named" in the notice is
+// enforceable rather than advisory — words that arrive somewhere else did
+// not replace the ones that were lost.
+func (r *Router) resendTarget(ctx context.Context, req SendRequest) (*store.Message, *SendError, error) {
+	if strings.TrimSpace(req.Resends) == "" {
+		return nil, nil, nil
+	}
+	id, ok := loop.ParseMessageRef(req.Resends)
+	if !ok {
+		return nil, &SendError{ErrResendsNotFailed,
+			fmt.Sprintf("%q is not a message reference; resend only a message the undelivered note named", req.Resends)}, nil
+	}
+	target, err := r.store.Messages().Get(ctx, id)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, &SendError{ErrResendsNotFailed, "no such message; resend only a message the undelivered note named"}, nil
+	} else if err != nil {
+		return nil, nil, err
+	}
+	// Ownership before anything the row says: a loop is told nothing about
+	// another loop's message, not even which destination it was going to.
+	if target.FromLoopID != req.From.ID {
+		return nil, &SendError{ErrResendsNotFailed, "that message is not one you sent"}, nil
+	}
+	if target.SendFailedAt == 0 || target.SendResolvedAt != 0 {
+		return nil, &SendError{ErrResendsNotFailed,
+			"that message has no unresolved send failure; it arrived, or somebody has already dealt with it"}, nil
+	}
+	if target.Conversation != req.Destination {
+		return nil, &SendError{ErrResendsWrongDestination,
+			fmt.Sprintf("that message was going to %s, not %s; say it again where it was lost, or send it as a new message", target.Conversation, req.Destination)}, nil
+	}
+	return target, nil, nil
 }
 
 // replyTarget resolves an explicit reply reference to the message it names.
