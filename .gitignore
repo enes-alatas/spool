@@ -6,6 +6,10 @@ bin/
 /spool
 .data/
 web/node_modules/
+# `make ui-shots` writes the standard screenshot set here: evidence to attach
+# to a PR, never repo content — and a shot is only ever as fresh as the run
+# that took it
+web/shots/
 web/dist/*
 !web/dist/.gitkeep
 *.tsbuildinfo

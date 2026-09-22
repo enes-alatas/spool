@@ -165,9 +165,18 @@ habits below.*
   (`0000000000:AA-not-a-real-bot-token`). This is the one place the rule above
   cannot help, which is what makes it a separate rule.
 - **Screenshots come from fixtures.** A control-room screenshot in a PR is driven
-  against intercepted fixture data, never the live fleet — the timeline renders raw
+  against fixture data, never the live fleet — the timeline renders raw
   assistant text and tool inputs, so anything a loop ever echoed is in the picture.
   The Activity page is never screenshotted at all: it carries the operator's DMs.
+  **`make ui-shots` is how** (#248): it seeds a throwaway store with an invented
+  fleet (`cmd/uifixture`), starts a hub on it, and writes the standard set —
+  Fleet, a loop timeline, New loop, Access, Rules, Settings, the secrets panel —
+  to the gitignored `web/shots/`. The hub and its store are gone the moment the
+  command returns, so a page the set does not cover is covered by adding it to
+  the `shots` list in `web/scripts/ui-shots.mjs` — there is no hub left to
+  shoot a second one against. Taking one by hand against a dev server pointed
+  at a real fleet is what the rule forbids, and it is how the thirteen
+  live-data images the go-public audit found were made.
 - **A live credential in front of you is an incident.** Stop; do not copy it
   anywhere; redact it where you can still reach it; tell the operator privately.
   The value and the steps that reproduce it never go in the group — that an
