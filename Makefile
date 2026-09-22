@@ -12,7 +12,7 @@ COMMIT   ?= $(shell git rev-parse --short HEAD 2>/dev/null)
 BUILT_AT ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS  := -X main.buildVersion=$(VERSION) -X main.buildCommit=$(COMMIT) -X main.buildTime=$(BUILT_AT)
 
-.PHONY: build dev test itest lint secret-scan workflow-lint fakeclaude egress vet e2e-context e2e-m1 ui ui-dev image image-multiarch clean
+.PHONY: build dev test itest lint secret-scan workflow-lint fakeclaude egress vet e2e-context e2e-m1 ui ui-dev ui-shots image image-multiarch clean
 
 build: ui
 	$(GO) build -ldflags "$(LDFLAGS)" -o bin/spool ./cmd/spool
@@ -69,6 +69,15 @@ ui:
 
 ui-dev:
 	cd web && npm run dev
+
+# The control room's standard screenshot set, against a fixture store (#248).
+# A screenshot in a PR is fixture-driven, never the live fleet (CONVENTIONS.md
+# "Screenshots come from fixtures"); this is the path that makes that true by
+# construction rather than by the care of whoever took the shot. The script
+# starts a throwaway hub on a directory cmd/uifixture wrote seconds earlier,
+# and deletes both whatever happens.
+ui-shots: build
+	bash scripts/ui-shots.sh
 
 dev: server
 	./bin/spool --listen 127.0.0.1:8080 --mcp-listen 0.0.0.0:8081 --data-dir ./.data

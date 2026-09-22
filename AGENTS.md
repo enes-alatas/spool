@@ -63,4 +63,5 @@ make build     # web UI + binary          make test    # tier 1 (unit + arch)
 make server    # binary only              make itest   # tier 2 (vs fakeclaude)
 make dev       # run on :8080             make lint    # gofmt + vet + golangci-lint
 make ui-dev    # vite dev server          make e2e-m1  # tier 3 (real claude; ask first)
+make ui-shots  # control-room screenshots from fixture data (web/shots/)
 ```
