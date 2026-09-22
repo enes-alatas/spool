@@ -15,7 +15,9 @@ import { destinationLabel, undelivered, undeliveredTitle } from '../messages'
 // uncapped, so the two cannot disagree.
 //
 // As private as Activity and for the same reason: an undelivered owner DM
-// carries its text here. It is never screenshotted.
+// carries its text here. It is shot only by `make ui-shots`, whose fleet
+// `cmd/uifixture` invented seconds earlier; a shot taken any other way is the
+// violation (CONVENTIONS, "Screenshots come from fixtures").
 
 // The loop that sent it, by id — the message carries `from_loop_id`, and an
 // operator scanning failures across the fleet needs the name.
