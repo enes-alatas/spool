@@ -244,17 +244,24 @@ func seedConversations(ctx context.Context, db store.Store, ids map[string]strin
 		from   string
 		text   string
 		at     time.Duration
+		// failed is the surface's reason when this send never landed; empty
+		// for the ones that did. One message in the fixture is undelivered,
+		// because the room says so in three places — the message, the loop's
+		// timeline, and the count on the Fleet row (#201) — and a store where
+		// everything arrived shoots none of them.
+		failed string
 	}{
 		{author: "rana", text: "@gardener the install page still tells people to run `make setup`, which we removed last week. Can you take a pass?", at: -9 * time.Minute},
 		{author: "gardener", from: ids["gardener"], text: "Three pages, all fixed — PR #48. The quickstart also showed the old output, so that block went too.", at: -8 * time.Minute},
 		{author: "watcher", from: ids["watcher"], text: "Nightly is green again: the break was a missing fixture in 4f1c2ab, fixed in 9d0e77c.", at: -34 * time.Minute},
+		{author: "watcher", from: ids["watcher"], text: "Tonight's run broke again at the same fixture. Not reverting it myself — the change it belongs to is still open.", at: -21 * time.Minute, failed: "timeout reaching the surface"},
 	}
 	for i, m := range group {
 		origin := store.OriginTelegramGroup
 		if m.from != "" {
 			origin = store.OriginLoop
 		}
-		if err := db.Messages().Insert(ctx, &store.Message{
+		msg := &store.Message{
 			TS:         ms(m.at),
 			Origin:     origin,
 			Author:     m.author,
@@ -266,8 +273,20 @@ func seedConversations(ctx context.Context, db store.Store, ids map[string]strin
 			TGMessageID:  int64(4100 + i),
 			Conversation: store.ConversationGroup,
 			DeliveredTo:  []string{"gardener", "watcher"},
-		}); err != nil {
+		}
+		if m.failed != "" {
+			// Nobody received it, so it reached nobody's inbox either.
+			msg.DeliveredTo = nil
+		}
+		if err := db.Messages().Insert(ctx, msg); err != nil {
 			return fmt.Errorf("group message: %w", err)
+		}
+		if m.failed != "" {
+			// Recorded the way the sender records it, after the retries are
+			// spent — the fields are never written by the insert.
+			if err := db.Messages().SetSendResult(ctx, msg.ID, ms(m.at+30*time.Second), m.failed); err != nil {
+				return fmt.Errorf("group message failure: %w", err)
+			}
 		}
 	}
 

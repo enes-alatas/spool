@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/enes-alatas/spool/internal/loop"
 	"github.com/enes-alatas/spool/internal/store"
@@ -114,6 +115,23 @@ func TestSeedWritesAFleetTheRoomCanRender(t *testing.T) {
 		if !seen[typ] {
 			t.Errorf("no %q event seeded: the timeline shot would be missing that row", typ)
 		}
+	}
+
+	// The Fleet row's undelivered count reads a failure in the last 24 hours
+	// (internal/httpapi/api.go), so the fixture needs one — a store where
+	// every message arrived shoots an empty version of that badge.
+	var withFailure int
+	for _, l := range got {
+		n, err := db.Messages().SendFailuresSince(ctx, l.ID, ms(-24*time.Hour))
+		if err != nil {
+			t.Fatalf("send failures %s: %v", l.Name, err)
+		}
+		if n > 0 {
+			withFailure++
+		}
+	}
+	if withFailure == 0 {
+		t.Error("no loop has an undelivered message: the Fleet row's count would be a zero in every row")
 	}
 
 	// Presence only, like every other reader of this store: the panel shows
