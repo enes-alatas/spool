@@ -139,6 +139,17 @@ check 'a clean diff passes' 0 '' \
 check 'a removed secret is not a new one' 0 '' \
   "$(printf 'diff --git a/x.go b/x.go\n--- a/x.go\n+++ b/x.go\n@@ -1 +0,0 @@\n-token := "%s"\n' "$TG")"
 
+# The fleet-identifier shapes are body-scoped (#249): in a body a handle or a
+# group chat id is a quote of the group, in the tree it is how the fleet is
+# configured and tested. A scan that failed a PR for writing down its own
+# fixture chat id would be switched off within the week. The other half of
+# this pair is in scripts/secret-redact-test.sh, where both are replaced.
+check 'a bot handle in the tree is not a scan hit' 0 '' \
+  "$(diff_adding internal/surface/telegram/bridge_test.go 8 '	const bot = "@harbor_spool_bot"')"
+
+check 'a group chat id in the tree is not a scan hit' 0 '' \
+  "$(diff_adding itest/telegram_test.go 30 '	const groupChatID = -1002847193056')"
+
 # Line numbers come from the hunk header, not from a running count.
 check 'the reported line is the added line' 1 'internal/store/sqlite/store.go:412:' \
   "$(diff_adding internal/store/sqlite/store.go 412 "dsn := \"$ANT\"")"

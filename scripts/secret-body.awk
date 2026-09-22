@@ -11,6 +11,9 @@
 # The count goes to stderr, never the value: this output is the body that is
 # about to be written back to a public artefact.
 BEGIN {
+  # A body is a quote of somewhere else, so the fleet-identifier shapes apply
+  # here and nowhere else (secret-rules.awk).
+  scan_scope = "body"
   redactions = 0
   # Named rather than literal so the caller's copy in the incident comment and
   # the text written into the body cannot say two different things.
