@@ -183,6 +183,27 @@ export interface LoopSecret {
   updated_at: number
 }
 
+// What a PATCH did about the loop's running session, mirrored from
+// httpapi's rotation constants. A mission is part of the loop's system
+// prompt, and a running session cannot be given a new one (#162): saving a
+// changed mission asks for a rotation (#261) rather than taking effect where
+// the operator is looking.
+//
+//   none        the mission was not named, or is what it already was
+//   queued      a rotation was asked for; it fires at the next quiet boundary
+//   no_session  the mission saved, but there was no session to rotate
+//
+// Always present, so a server that did not rotate and a server too old to say
+// cannot read the same — the context_fill_pct lesson (#122).
+export type Rotation = 'none' | 'queued' | 'no_session'
+
+// The saved loop, with the one field the loop itself does not have. The
+// server embeds the loop rather than wrapping it, so every field a PATCH
+// already answered is where it was.
+export interface PatchLoopResp extends LoopView {
+  rotation: Rotation
+}
+
 export interface CreateLoopReq {
   name: string
   mission: string
@@ -252,7 +273,7 @@ export const api = {
   createLoop: (body: CreateLoopReq) =>
     req<LoopView>('/api/loops', { method: 'POST', body: JSON.stringify(body) }),
   patchLoop: (name: string, body: Partial<CreateLoopReq>) =>
-    req<LoopView>(`/api/loops/${name}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    req<PatchLoopResp>(`/api/loops/${name}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteLoop: (name: string, removeWorktree: boolean) =>
     req<{ deleted: boolean }>(`/api/loops/${name}?remove_worktree=${removeWorktree ? 1 : 0}`, {
       method: 'DELETE',

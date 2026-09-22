@@ -72,3 +72,15 @@ export function SettingsIcon() {
     </Icon>
   )
 }
+
+// Edit: a pen. Not a destination like the icons above, but drawn in the same
+// family so a panel's action does not read as a different kind of object
+// from the navigation it sits beside.
+export function EditIcon() {
+  return (
+    <Icon>
+      <path d="M13.1 3.65a1.9 1.9 0 0 1 2.7 2.7l-8.3 8.3-3.4.7.7-3.4z" />
+      <path d="M11.9 4.85l2.7 2.7" />
+    </Icon>
+  )
+}

@@ -73,5 +73,15 @@ const secretsFile = `${outDir}/secrets.png`
 await secrets.screenshot({ path: secretsFile })
 taken.push(secretsFile)
 
+// The mission editor is a state of a panel rather than a page, and it is the
+// state worth shooting: the read-only mission is already in the loop shot.
+const mission = page.locator('.side-panel', { has: page.locator('h3', { hasText: /^Mission$/ }) }).first()
+await mission.waitFor({ timeout: 15000 })
+await mission.getByRole('button', { name: 'Edit the mission' }).click()
+await mission.locator('textarea').waitFor({ timeout: 15000 })
+const missionFile = `${outDir}/mission-edit.png`
+await mission.screenshot({ path: missionFile })
+taken.push(missionFile)
+
 await browser.close()
 for (const file of taken) console.log(file)

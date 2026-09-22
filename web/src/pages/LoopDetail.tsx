@@ -14,12 +14,14 @@ import {
 } from '../api'
 import { formatTokens, fillTone, hasFillPct, formatUsd } from '../format'
 import { tokenSubmittable } from '../forms'
+import { missionDraft, missionSaveResult, missionSaveWarning } from '../mission'
 import { MODEL_OPTIONS, EFFORT_OPTIONS, PACING_OPTIONS } from '../options'
 import { useStream } from '../stream'
 import { toEntries, extractDelta } from '../timeline'
 import { UndeliveredMark } from '../components/UndeliveredMark'
 import { Timeline } from '../components/Timeline'
 import { SpoolGlyph } from '../components/Spool'
+import { EditIcon } from '../components/Icons'
 
 function Countdown({ at }: { at: number }) {
   const [s, setS] = useState<number | null>(null)
@@ -144,10 +146,26 @@ function contextTokens(turn: Turn): number {
 // The clamp is CSS, so the whole text stays in the DOM and stays selectable;
 // the toggle only appears when there is something hidden, which is a
 // measurement rather than a guess about length.
-function MissionPanel({ name, mission }: { name: string; mission: string }) {
+function MissionPanel({
+  name,
+  mission,
+  hasSession,
+}: {
+  name: string
+  mission: string
+  // Whether the loop has a session to rotate, which decides what saving
+  // costs it. Read from the loop the page already has rather than asked for:
+  // it is the same row the panel draws the mission from.
+  hasSession: boolean
+}) {
+  const qc = useQueryClient()
   const body = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(() => readMissionChoice(name))
   const [clamped, setClamped] = useState(false)
+  const [draft, setDraft] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [result, setResult] = useState('')
 
   // Whether the clamp is actually hiding anything. Re-measured when the text
   // or the width changes: the same mission clamps at 1440px and may not at
@@ -168,16 +186,110 @@ function MissionPanel({ name, mission }: { name: string; mission: string }) {
     writeMissionChoice(name, next)
   }
 
+  const state = missionDraft(mission, draft ?? '')
+
+  const save = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      // Only the mission: a PATCH naming one field leaves the rest of the
+      // loop as it stands, including whatever the Telegram poller learned
+      // while this panel was open.
+      const saved = await api.patchLoop(name, { mission: (draft ?? '').trim() })
+      // Both, because the Fleet row draws the mission too and a stale one
+      // there is the operator's evidence that the save did not take.
+      qc.invalidateQueries({ queryKey: ['loop', name] })
+      qc.invalidateQueries({ queryKey: ['loops'] })
+      setDraft(null)
+      // The editor closes on a save, so this is the only place the operator
+      // learns what became of the session they were warned about.
+      setResult(missionSaveResult(name, saved.rotation))
+    } catch (e) {
+      // The server's own words: it is the one that refuses an empty mission
+      // or a loop that has since been archived, and it says which.
+      setError(e instanceof Error ? e.message : 'could not save the mission')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (draft !== null) {
+    return (
+      <div className="side-panel">
+        {/* The same head row as the read view, minus its action: the pen
+            opened this, and a panel whose heading jumps when it does is one
+            the operator has to re-find. */}
+        <div className="panel-head">
+          <h3>Mission</h3>
+        </div>
+        <textarea
+          className="mission-edit"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          rows={10}
+          autoFocus
+        />
+        {/* Before Save, not after: a rotation costs the loop its context,
+            and an operator who learns that from the result has already
+            paid it. */}
+        <div className="mission-warning">{missionSaveWarning(name, hasSession)}</div>
+        {state.reason && <div className="form-error">{state.reason}</div>}
+        {error && <div className="form-error">{error}</div>}
+        <div className="controls" style={{ marginTop: 8 }}>
+          <button className="btn primary sm" onClick={save} disabled={busy || !state.canSave}>
+            {busy ? 'Saving…' : 'Save'}
+          </button>
+          <button
+            className="btn sm"
+            onClick={() => {
+              setDraft(null)
+              setError('')
+            }}
+            disabled={busy}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="side-panel">
-      <h3>Mission</h3>
+      {/* The action sits on the heading rather than under the text, where it
+          stood beside the clamp toggle: two underlined words in a row, one
+          changing how much of the mission is shown and one changing the
+          mission, reading as a pair of the same kind of thing. A pen at the
+          panel's corner is the control an operator looks for, and it cannot
+          be mistaken for the toggle it no longer sits next to. */}
+      <div className="panel-head">
+        <h3>Mission</h3>
+        <button
+          className="panel-action"
+          onClick={() => {
+            setDraft(mission)
+            setError('')
+            // Last save's outcome, not this one's.
+            setResult('')
+          }}
+          // Icon-only, so the name is the label: a button whose accessible
+          // name is empty is one a screen reader announces as "button".
+          aria-label="Edit the mission"
+          title="Edit the mission"
+        >
+          <EditIcon />
+        </button>
+      </div>
       <div ref={body} className={`panel-body${open ? '' : ' clamped'}`}>
         {mission}
       </div>
+      {result && <div className="mission-result">{result}</div>}
       {(clamped || open) && (
-        <button className="thinking-toggle mission-toggle" onClick={toggle}>
-          {open ? 'show less' : 'show the whole mission'}
-        </button>
+        <div className="mission-controls">
+          <button className="thinking-toggle mission-toggle" onClick={toggle}>
+            {open ? 'show less' : 'show the whole mission'}
+          </button>
+        </div>
       )}
     </div>
   )
@@ -1175,7 +1287,7 @@ export default function LoopDetail() {
 
           <ModelPanel loop={loop} />
 
-          <MissionPanel name={name} mission={loop.mission} />
+          <MissionPanel name={name} mission={loop.mission} hasSession={loop.current_session_id !== ''} />
 
           <div className="side-panel">
             <h3>Workspace</h3>
