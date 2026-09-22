@@ -170,7 +170,8 @@ habits below.*
   The Activity page is never screenshotted at all: it carries the operator's DMs.
   **`make ui-shots` is how** (#248): it seeds a throwaway store with an invented
   fleet (`cmd/uifixture`), starts a hub on it, and writes the standard set —
-  Fleet, a loop timeline, New loop, Access, Rules, Settings, the secrets panel —
+  Fleet, a loop timeline, New loop, Access, Rules, Settings, the secrets panel,
+  the mission editor —
   to the gitignored `web/shots/`. The hub and its store are gone the moment the
   command returns, so a page the set does not cover is covered by adding it to
   the `shots` list in `web/scripts/ui-shots.mjs` — there is no hub left to
