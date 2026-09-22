@@ -315,6 +315,10 @@ export const api = {
   eventsAfter: (name: string, afterID: number, limit: number) =>
     req<LoopEvent[]>(`/api/loops/${name}/events?after_id=${afterID}&limit=${limit}`),
   turns: (name: string, limit = 50) => req<Turn[]>(`/api/loops/${name}/turns?limit=${limit}`),
+  // The failed sends the Fleet badge counts, fleet-wide and uncapped —
+  // Activity is a newest-100 window across everything, which is why the
+  // badge could name a number the operator could not find (#263).
+  undelivered: () => req<ChatMessage[]>('/api/undelivered'),
   activity: (limit = 100) => req<ChatMessage[]>(`/api/activity?limit=${limit}`),
   conversation: (name: string, kind: 'control_room' | 'owner_dm' = 'control_room', limit = 100) =>
     req<ChatMessage[]>(`/api/loops/${name}/conversation?conversation=${kind}&limit=${limit}`),

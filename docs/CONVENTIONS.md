@@ -167,11 +167,15 @@ habits below.*
 - **Screenshots come from fixtures.** A control-room screenshot in a PR is driven
   against fixture data, never the live fleet — the timeline renders raw
   assistant text and tool inputs, so anything a loop ever echoed is in the picture.
-  The Activity page is never screenshotted at all: it carries the operator's DMs.
+  The Activity page is never screenshotted at all: it carries the operator's
+  DMs. The Undelivered tab (#263) lists the same kind of text — the full body
+  of every message that failed to send, an undelivered owner DM among them —
+  and is covered the other way: it is *in* the standard set, and a shot of it
+  taken any other way is the violation.
   **`make ui-shots` is how** (#248): it seeds a throwaway store with an invented
   fleet (`cmd/uifixture`), starts a hub on it, and writes the standard set —
-  Fleet, a loop timeline, New loop, Access, Rules, Settings, the secrets panel,
-  the mission editor —
+  Fleet, a loop timeline, New loop, Access, Rules, Settings, Undelivered, the
+  secrets panel, the mission editor —
   to the gitignored `web/shots/`. The hub and its store are gone the moment the
   command returns, so a page the set does not cover is covered by adding it to
   the `shots` list in `web/scripts/ui-shots.mjs` — there is no hub left to

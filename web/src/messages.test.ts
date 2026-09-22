@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { undelivered, undeliveredNote, undeliveredTitle } from './messages'
+import {
+  destinationLabel,
+  undelivered,
+  undeliveredNote,
+  undeliveredTitle,
+  UNDELIVERED_WINDOW,
+} from './messages'
 import type { ChatMessage } from './api'
 
 const msg = (over: Partial<ChatMessage>): ChatMessage => ({
@@ -104,9 +110,32 @@ describe('undeliveredNote', () => {
   it('says what the count means and where to look', () => {
     const note = undeliveredNote(1)
     expect(note?.title).toContain('never reached the surface')
-    expect(note?.title).toContain('24 hours')
-    // Activity rather than the loop page: the loop page shows the private
-    // conversation and the timeline, so a group send appears on neither.
-    expect(note?.title).toContain('Open Activity')
+    // Interpolated, not spelled out: #269 replaces the window and this is the
+    // hover that would otherwise keep saying 24 hours after the tab stopped.
+    expect(note?.title).toContain(UNDELIVERED_WINDOW)
+    // Undelivered rather than the loop page or Activity: the loop page shows
+    // the private conversation and the timeline, so a group send appears on
+    // neither, and Activity is the capped window this tab exists to replace.
+    expect(note?.title).toContain('Open Undelivered')
+    expect(note?.title).not.toContain('Open Activity')
+  })
+})
+
+describe('destinationLabel', () => {
+  it("says the store's kinds the way the room says them", () => {
+    expect(destinationLabel('group')).toBe('group')
+    expect(destinationLabel('control_room')).toBe('control room')
+    expect(destinationLabel('owner_dm')).toBe('owner DM')
+  })
+
+  // A kind added server-side before the room learns it is still a real
+  // failure, and the operator is better served by its raw name than by a
+  // dash that hides which conversation lost a message.
+  it('names an unknown kind verbatim', () => {
+    expect(destinationLabel('slack_channel')).toBe('slack_channel')
+  })
+
+  it('has something to say when the kind is missing', () => {
+    expect(destinationLabel('')).toBe('unknown')
   })
 })
