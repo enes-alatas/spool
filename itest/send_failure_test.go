@@ -104,7 +104,7 @@ func TestALostSendIsToldToItsSenderAtTheNextWake(t *testing.T) {
 		return tn.EndedAt >= at && strings.Contains(tn.ResultText, "anything new")
 	})
 	// The prefix, not a substring: the news leads the turn.
-	if !strings.HasPrefix(next.ResultText, "echo: [system note · 1 of your message never arrived") {
+	if !strings.HasPrefix(next.ResultText, "echo: [system note · 1 of your messages never arrived") {
 		t.Fatalf("the turn the loop received does not open with the news:\n%s", next.ResultText)
 	}
 	for _, want := range []string{

@@ -197,8 +197,9 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			"SetDelivered": false, "List": false, "ListConversation": false,
 			"Get": false, "UntoldSendFailures": false, "UnresolvedSendFailures": false,
 			"Undelivered": false,
-			// ResolveSend writes a timestamp and nothing else.
-			"ResolveSend":          false,
+			// ResolveSend and ResolveResends write timestamps and ids,
+			// never text.
+			"ResolveSend": false, "ResolveResends": false,
 			"MarkSendFailuresTold": false,
 			"PutRef":               false, "Ref": false, "RecordSighting": false, "ByRef": false,
 			"ByTGKey": false, "LatestGroupPostBy": false,
