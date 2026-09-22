@@ -418,3 +418,88 @@ func TestSendFailuresSince(t *testing.T) {
 		t.Errorf("empty loop id counted %d rows (err %v), want none", n, err)
 	}
 }
+
+// TestUndeliveredSinceAgreesWithTheCount is the check the shared predicate
+// exists for: the Fleet badge counts a loop's failures and the Undelivered
+// tab lists the fleet's, and an operator who clicks a badge showing 3 and
+// finds 2 rows has been told two different things by one truth (#263). No
+// type can make them agree — tallying the list by loop and comparing it to
+// the count for each loop can.
+func TestUndeliveredSinceAgreesWithTheCount(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	now := time.Now().UnixMilli()
+	dayAgo := now - int64(24*time.Hour/time.Millisecond)
+
+	// Two loops with failures inside the window, one failure outside it, one
+	// delivered message, and one inbound message nobody sent — every row
+	// that could wrongly appear in the list or the count.
+	mk := func(loopID, text string) *store.Message {
+		m := &store.Message{TS: now, Origin: store.OriginLoop, Author: loopID,
+			FromLoopID: loopID, Text: text, Conversation: store.ConversationGroup}
+		if err := db.Messages().Insert(ctx, m); err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+	first, second := mk("l1", "first"), mk("l1", "second")
+	sibling := mk("l2", "sibling")
+	stale := mk("l1", "stale")
+	mk("l1", "arrived")
+	inbound := &store.Message{TS: now, Origin: store.OriginWeb, Author: "operator",
+		Text: "inbound", Conversation: store.ConversationGroup}
+	if err := db.Messages().Insert(ctx, inbound); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Messages().SetSendResult(ctx, inbound.ID, now-500, "never sent"); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []struct {
+		m  *store.Message
+		at int64
+	}{{first, now - 3000}, {second, now - 1000}, {sibling, now - 2000}, {stale, dayAgo - 1000}} {
+		if err := db.Messages().SetSendResult(ctx, f.m.ID, f.at, "chat not found"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	list, err := db.Messages().UndeliveredSince(ctx, dayAgo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tally := map[string]int{}
+	for _, m := range list {
+		tally[m.FromLoopID]++
+	}
+	for _, loopID := range []string{"l1", "l2"} {
+		count, err := db.Messages().SendFailuresSince(ctx, loopID, dayAgo)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if tally[loopID] != count {
+			t.Errorf("loop %s: the list holds %d, the badge counts %d", loopID, tally[loopID], count)
+		}
+	}
+	if len(list) != 3 {
+		t.Fatalf("list holds %d rows, want 3: two of l1's and one of l2's", len(list))
+	}
+
+	// Newest failure first: the operator reads the outage that is still
+	// happening from the top.
+	wantOrder := []int64{second.ID, sibling.ID, first.ID}
+	for i, want := range wantOrder {
+		if list[i].ID != want {
+			t.Fatalf("row %d is message %d, want %d — the list is not newest-failure-first: %v",
+				i, list[i].ID, want, wantOrder)
+		}
+	}
+
+	// And the error text is carried, since it is the whole point of the row.
+	if list[0].SendError != "chat not found" {
+		t.Errorf("send error = %q, want the stored one", list[0].SendError)
+	}
+}
