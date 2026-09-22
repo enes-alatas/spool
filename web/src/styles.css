@@ -484,6 +484,12 @@ textarea {
   margin-top: 0;
   white-space: nowrap;
 }
+/* a failure somebody has dealt with: the words still say what happened, but
+   `--danger` is for what still wants the operator and a resolution is them
+   having dealt with it (#269) */
+.undelivered.resolved {
+  color: var(--text-muted);
+}
 /* the surface's own words, quieter than the fact they explain */
 .undelivered-why {
   color: var(--text-muted);
@@ -497,6 +503,18 @@ textarea {
 }
 .undelivered-link:hover {
   border-bottom-color: var(--danger);
+}
+/* what a retry is waiting on. Muted and full-width: it is an aside to a row
+   the operator has already acted on, and it wraps onto its own line rather
+   than pushing the buttons around. */
+.undelivered-pending,
+.undelivered-error {
+  flex-basis: 100%;
+  font-size: 0.6875rem;
+  line-height: 1.5;
+}
+.undelivered-pending {
+  color: var(--text-muted);
 }
 /* the surface's reason, on the page that exists to show it. Styled like the
    mark rather than like the muted `.undelivered-why` beside it: there the
