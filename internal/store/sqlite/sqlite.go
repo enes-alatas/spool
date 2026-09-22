@@ -397,18 +397,38 @@ func (r messages) UntoldSendFailures(ctx context.Context, loopID string) ([]*sto
 		ORDER BY id`, loopID)
 }
 
+// sendFailureWindow is what "undelivered" means, written once: a send that
+// ended in failure, no older than the caller's window. Both the Fleet page's
+// per-loop count and the fleet-wide list below are this predicate with their
+// own scope in front of it, so the badge and the page it opens cannot come to
+// different answers (#263). send_failed_at!=0 is not implied by the window: a
+// since of 0 would otherwise match every delivered message, which is the
+// wrong answer stated confidently.
+const sendFailureWindow = `send_failed_at!=0 AND send_failed_at>=?`
+
 func (r messages) SendFailuresSince(ctx context.Context, loopID string, since int64) (int, error) {
 	if loopID == "" {
 		return 0, nil // as above: a loop is always named
 	}
-	// send_failed_at!=0 is not implied by the window: a since of 0 would
-	// otherwise count every delivered message, which is the wrong answer
-	// stated confidently.
 	var n int
 	err := r.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM messages
-		WHERE from_loop_id=? AND send_failed_at!=0 AND send_failed_at>=?`, loopID, since).Scan(&n)
+		`SELECT COUNT(*) FROM messages WHERE from_loop_id=? AND `+sendFailureWindow,
+		loopID, since).Scan(&n)
 	return n, err
+}
+
+// UndeliveredSince is the fleet-wide list behind the same predicate, newest
+// failure first — the operator reads the most recent outage from the top.
+// Requiring a non-empty from_loop_id keeps it to messages a loop sent: an
+// inbound message has no sender to have failed. (Spelled in prose because
+// gofmt rewrites a pair of single quotes in a doc comment into typographic
+// ones, which would leave the SQL misquoted here.) The window predicate is
+// also what makes the partial index (0021) usable: it is declared on
+// send_failed_at!=0, so the planner only takes it when that term is present.
+func (r messages) UndeliveredSince(ctx context.Context, since int64) ([]*store.Message, error) {
+	return r.query(ctx, `SELECT `+messageCols+` FROM messages
+		WHERE from_loop_id!='' AND `+sendFailureWindow+`
+		ORDER BY send_failed_at DESC, id DESC`, since)
 }
 
 func (r messages) MarkSendFailuresTold(ctx context.Context, ids []int64, toldAt int64) error {

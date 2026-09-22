@@ -436,6 +436,13 @@ type MessageStore interface {
 	// answers the operator's question, not the loop's, and an operator who
 	// was not looking is the reason the count exists.
 	SendFailuresSince(ctx context.Context, loopID string, since int64) (int, error)
+	// UndeliveredSince is the same question asked of the whole fleet: every
+	// loop's messages that never got through and whose failure is no older
+	// than since, newest failure first. The count the Fleet page shows and
+	// the list the Undelivered tab renders go through one predicate, so a
+	// badge and the page it opens cannot disagree about what they are
+	// counting (#263).
+	UndeliveredSince(ctx context.Context, since int64) ([]*Message, error)
 	// MarkSendFailuresTold records that the loop has now been told about
 	// these messages. Called once the turn carrying the news has completed,
 	// so a wake that dies before it still owes the news.

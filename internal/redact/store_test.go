@@ -196,6 +196,7 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			"Insert": true, "SetSendResult": true,
 			"SetDelivered": false, "List": false, "ListConversation": false,
 			"Get": false, "UntoldSendFailures": false, "SendFailuresSince": false,
+			"UndeliveredSince":     false,
 			"MarkSendFailuresTold": false,
 			"PutRef":               false, "Ref": false, "RecordSighting": false, "ByRef": false,
 			"ByTGKey": false, "LatestGroupPostBy": false,

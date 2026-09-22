@@ -125,6 +125,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/loops/{name}/secrets/{key}", s.handlePutSecret)
 	mux.HandleFunc("DELETE /api/loops/{name}/secrets/{key}", s.handleDeleteSecret)
 	mux.HandleFunc("GET /api/activity", s.handleActivity)
+	mux.HandleFunc("GET /api/undelivered", s.handleUndelivered)
 	mux.HandleFunc("GET /api/loops/{name}/conversation", s.handleLoopConversation)
 	mux.HandleFunc("GET /api/settings", s.handleGetSettings)
 	mux.HandleFunc("PUT /api/settings", s.handlePutSettings)
@@ -1106,6 +1107,33 @@ func (s *Server) handleLoopConversation(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
 	msgs, err := s.Store.Messages().List(r.Context(), queryInt(r, "limit", 100))
+	if err != nil {
+		s.jsonErr(w, 500, "%v", err)
+		return
+	}
+	if msgs == nil {
+		msgs = []*store.Message{}
+	}
+	writeJSON(w, 200, msgs)
+}
+
+// handleUndelivered lists the sends the Fleet badge counts: every loop's
+// messages that never reached their surface, within the same window the
+// badge uses, newest failure first (#263). Activity cannot answer this — it
+// is the newest hundred events across everything, so a failure from hours
+// ago has scrolled out of it, which is the whole reason this route exists.
+//
+// No limit, deliberately: a cap is what makes Activity unable to answer the
+// question, and the set is bounded by being one window of failures. A fleet
+// that overflows this has a worse problem than paging.
+//
+// The window is the server's, like the badge's (#202): two clocks disagreeing
+// about "the last 24 hours" is a bug report nobody can reproduce. The rows
+// are whole messages, text included, which is what the Activity feed already
+// serves and sits behind the same operator credential (ADR-0030).
+func (s *Server) handleUndelivered(w http.ResponseWriter, r *http.Request) {
+	since := time.Now().Add(-undeliveredWindow).UnixMilli()
+	msgs, err := s.Store.Messages().UndeliveredSince(r.Context(), since)
 	if err != nil {
 		s.jsonErr(w, 500, "%v", err)
 		return
