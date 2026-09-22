@@ -44,6 +44,13 @@ export function undeliveredTitle(u: Undelivered): string {
   return `${why}Given up at ${when}; the recipient never received this.`
 }
 
+// The window the undelivered count and its list are of, in the operator's
+// words. One exported string because it is said in three places — the Fleet
+// badge's hover below, the tab's heading and the tab's empty state — and
+// #269 will replace the window with "unresolved" outright. A phrase spelled
+// out at each site is a phrase that gets changed at two of them.
+export const UNDELIVERED_WINDOW = 'the last 24 hours'
+
 // What the Fleet row says about a loop whose messages are not arriving.
 //
 // The mark above answers the operator already reading that conversation. This
@@ -58,13 +65,36 @@ export function undeliveredNote(count: number | undefined): { text: string; titl
   // them together costs nothing.
   if (!count) return null
   const plural = count === 1 ? 'message' : 'messages'
-  // Activity, not the loop page: a loop's group sends are listed on neither
-  // of the loop page's panes — the control-room pane is the private
-  // conversation, and the timeline renders events and turns rather than
-  // messages. Activity carries the mark for every kind of failure, so it is
-  // the one answer that is true whichever conversation the send was in.
+  // Undelivered, not Activity and not the loop page. A loop's group sends
+  // are listed on neither of the loop page's panes — the control-room pane
+  // is the private conversation, and the timeline renders events and turns
+  // rather than messages. Activity carries the mark for every kind of
+  // failure and was the answer until this fleet-wide list existed, but it is
+  // a newest-100 window across every conversation: on a busy fleet it is the
+  // page that cannot answer the number this badge is showing, which is what
+  // #263 was filed for. The tab reads the predicate this count reads,
+  // uncapped.
   return {
     text: `${count} undelivered`,
-    title: `${count} ${plural} this loop sent never reached the surface, given up on in the last 24 hours. Open Activity to see which; a private one is also marked on the loop's control room.`,
+    title: `${count} ${plural} this loop sent never reached the surface, given up on in ${UNDELIVERED_WINDOW}. Open Undelivered to see which; a private one is also marked on the loop's control room.`,
+  }
+}
+
+// Where a message was headed, for a reader who is looking at failures across
+// the whole fleet rather than at one conversation. The store's own kinds
+// (`store.go`: group, control_room, owner_dm), said the way the room says
+// them elsewhere.
+export function destinationLabel(conversation: string): string {
+  switch (conversation) {
+    case 'group':
+      return 'group'
+    case 'control_room':
+      return 'control room'
+    case 'owner_dm':
+      return 'owner DM'
+    default:
+      // A kind this build does not know is still a real row, and naming it
+      // verbatim beats hiding the failure behind a dash.
+      return conversation || 'unknown'
   }
 }

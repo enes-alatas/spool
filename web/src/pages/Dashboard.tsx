@@ -138,6 +138,12 @@ export default function Dashboard() {
   // the rotation thresholds the gauge colours mean something against
   const { data: thresholds } = useQuery({ queryKey: ['settings'], queryFn: api.settings })
 
+  // The list itself, not the sum of the rows' badges: the summary links to
+  // the tab, and a number here that disagreed with what the tab lists is the
+  // defect #263 exists to remove. Same query key as the tab and the nav, so
+  // this costs no request of its own.
+  const { data: undelivered } = useQuery({ queryKey: ['undelivered'], queryFn: api.undelivered })
+
   const busy = (loops ?? []).filter((fleetLoop) => fleetLoop.state === 'busy').length
   // Summed from the rows already on screen: the list endpoint carries each
   // loop's daily cost, so the fleet's bill for the day costs no request of its
@@ -154,6 +160,18 @@ export default function Dashboard() {
           <span className="fleet-summary">
             {loops.length} {loops.length === 1 ? 'loop' : 'loops'}
             {busy > 0 && ` · ${busy} busy`}
+            {/* Outside every row's anchor, which is where a link to the tab
+                can actually live: the row is one `Link` and a link inside a
+                link is invalid. Fleet-wide, like the tab it opens — a
+                per-row link would imply a list filtered to that loop. */}
+            {(undelivered ?? []).length > 0 && (
+              <>
+                {' · '}
+                <Link to="/undelivered" className="undelivered-link">
+                  {undelivered!.length} undelivered
+                </Link>
+              </>
+            )}
             <span title={costDayTitle(loops)}>{` · ${formatUsd(spentToday)} today`}</span>
           </span>
         )}

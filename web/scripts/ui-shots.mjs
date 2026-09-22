@@ -13,6 +13,12 @@
 //
 // The Activity page is never shot, here or by hand: it carries the operator's
 // own DMs. There is no flag for it.
+//
+// The Undelivered tab carries the same kind of text — the full body of every
+// message that failed to send, an undelivered owner DM included — but it is
+// in the set below rather than excluded, because being in the set is what
+// makes a shot of it safe: the fleet it renders is one `cmd/uifixture`
+// invented seconds earlier. Shot here, never by hand.
 import { chromium } from 'playwright'
 import { mkdirSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -51,6 +57,9 @@ const shots = [
   { name: 'access', path: '/access', wait: '.feed-item' },
   { name: 'rules', path: '/rules', wait: '.page' },
   { name: 'settings', path: '/settings', wait: '.page' },
+  // Needs the fixture's one failed send to have something to list; the tab is
+  // empty-by-design on a healthy fleet, and an empty page is not the shot.
+  { name: 'undelivered', path: '/undelivered', wait: '.feed-item' },
 ]
 
 const taken = []
