@@ -561,6 +561,43 @@ func (s *Server) handleGetLoop(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, s.view(r.Context(), l))
 }
 
+// What a PATCH did about the loop's session, reported alongside the loop it
+// saved. A mission is part of the loop's system prompt, and a running session
+// cannot be given a new one (#162): the change is announced to the session it
+// finds — the standing-instructions note carries it at the next wake — but
+// the prompt itself is only replaced when the loop starts a fresh session.
+// #261 settled that saving asks for that rotation rather than waiting for one
+// to come along, which may be hours.
+//
+// The API asks for it rather than leaving it to a client: only the API knows
+// whether the mission it was handed is a change, and a client that rotated
+// unconditionally would charge an operator their loop's whole context for
+// pressing Save on text nobody touched.
+//
+// Always present, so a client can tell a server that did not rotate from one
+// too old to — the lesson of context_fill_pct (#122).
+const (
+	// The mission was not named, or is what it already was. Nothing was asked.
+	rotationNone = "none"
+	// A rotation was asked for. It fires at the loop's next quiet boundary
+	// (ADR-0022): the loop finishes the turn it is in, writes its handoff
+	// note, and continues on a fresh session under the new mission. Queued,
+	// never "in force now".
+	rotationQueued = "queued"
+	// The mission changed and saved, but there is no session to rotate: the
+	// loop has no running actor, or has one that has not started a session.
+	// Not an error — there is no prompt in force to be stale, and the new
+	// mission is the one the loop's next session is built from.
+	rotationNoSession = "no_session"
+)
+
+// missionChanged reports whether an edit asks for a different mission.
+// Compared trimmed: trailing whitespace is what a textarea collects, not
+// something an operator means to spend a session's context on.
+func missionChanged(before, after string) bool {
+	return strings.TrimSpace(before) != strings.TrimSpace(after)
+}
+
 type patchLoopReq struct {
 	Mission         *string `json:"mission"`
 	Model           *string `json:"model"`
@@ -573,6 +610,14 @@ type patchLoopReq struct {
 	TGBotToken      *string `json:"tg_bot_token"`
 }
 
+// patchLoopResp is the saved loop with one field the loop itself does not
+// have: what the save did about its session. Embedded rather than wrapped, so
+// every field a client already reads from a PATCH is where it was.
+type patchLoopResp struct {
+	*loopView
+	Rotation string `json:"rotation"`
+}
+
 func (s *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 	l := s.loopByName(w, r)
 	if l == nil {
@@ -581,6 +626,13 @@ func (s *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 	var req patchLoopReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		s.jsonErr(w, 400, "bad json: %v", err)
+		return
+	}
+	if req.Mission != nil && strings.TrimSpace(*req.Mission) == "" {
+		// The same refusal the create path gives (:396 before this block).
+		// A loop whose instructions are the empty string has no useful
+		// reading, and the column would take one: it is NOT NULL DEFAULT ''.
+		s.jsonErr(w, 400, "mission is required")
 		return
 	}
 	// Built as an edit rather than applied to l: the loop was read before
@@ -642,7 +694,25 @@ func (s *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 	if s.Surface != nil {
 		s.Surface.LoopChanged(r.Context(), updated.ID)
 	}
-	writeJSON(w, 200, s.view(r.Context(), updated))
+	// After UpdateLoop, so the session the rotation starts is built from the
+	// mission this request saved rather than the one it replaced. `l` is the
+	// row as it was read at the top of the handler, which is what makes this
+	// a comparison and not a tautology.
+	rotation := rotationNone
+	if req.Mission != nil && missionChanged(l.Mission, *req.Mission) {
+		rotation = rotationNoSession
+		if actor, ok := s.Manager.Get(updated.ID); ok {
+			// An error here means there is no session to rotate, which is
+			// not a failed save: handleRotate answers 409 for it because an
+			// operator asking for a rotation outright gets nothing, while
+			// here the mission is stored and the loop's next session carries
+			// it. Reported, not raised.
+			if err := actor.Rotate(); err == nil {
+				rotation = rotationQueued
+			}
+		}
+	}
+	writeJSON(w, 200, patchLoopResp{loopView: s.view(r.Context(), updated), Rotation: rotation})
 }
 
 func (s *Server) handleDeleteLoop(w http.ResponseWriter, r *http.Request) {

@@ -202,9 +202,16 @@ func TestFleetRulesReachThePrompt(t *testing.T) {
 // TestStandingInstructionsReachARunningSession is the immediate half of the
 // same promise: a session that cannot be given a new system prompt is told in
 // the only place it can still be reached, ahead of the work that wake brought
-// it. The note carries every section that changes outside a release — the
-// loop's own mission as well as the fleet's rules and catalog — so an edit
-// to any of them is delivered and not merely announced.
+// it. The note carries the prompt whole — the loop's own mission as well as
+// the fleet's rules and catalog — so a change to any part of it is delivered
+// and not merely announced.
+//
+// The edits it makes are a rule and a peer, not the loop's mission. Saving a
+// mission now asks for a rotation (#267), so a session told about its own new
+// mission is a session that is ending: the delivery is the successor's
+// prompt, and TestSavingAMissionRotatesTheSession proves it there. The
+// mission section is still read here — the note quotes it as it stands —
+// which is what would catch a note that stopped carrying it.
 func TestStandingInstructionsReachARunningSession(t *testing.T) {
 	s := startServer(t, t.TempDir())
 	ws := workspaceWithScript(t, "!echo\n")
@@ -216,12 +223,10 @@ func TestStandingInstructionsReachARunningSession(t *testing.T) {
 	})
 	s.waitState("bound", "asleep", 30*time.Second)
 
-	// One edit per section the note carries, so none of the three can be
-	// announced without being delivered. A burst costs one note, not one
-	// each, because the comparison is against the prompt as a whole.
+	// Two edits, two sections, one note: a burst costs one note rather than
+	// one each, because the comparison is against the prompt as a whole.
 	s.createRule("no telemetry", "Never phone home.", true)
 	s.createLoop("witness", map[string]any{"mission": "watch what bound does"})
-	s.mustJSON("PATCH", "/api/loops/bound", map[string]any{"mission": "hold the line"}, nil)
 	changedAt := time.Now().UnixMilli()
 
 	s.message("bound", "second")
@@ -237,7 +242,7 @@ func TestStandingInstructionsReachARunningSession(t *testing.T) {
 	}
 	for _, want := range []string{
 		"FLEET RULES\n1. no telemetry\n   Never phone home.", // the new rule
-		"MISSION\nhold the line",                             // the edited mission
+		"MISSION\nintegration test loop",                     // the mission, quoted whole though nothing changed it
 		"@witness — watch what bound does",                   // the new peer
 		"second",                                             // and the wake's own envelope, after all of it
 	} {
