@@ -4,7 +4,6 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/enes-alatas/spool/internal/loop"
 	"github.com/enes-alatas/spool/internal/store"
@@ -117,12 +116,12 @@ func TestSeedWritesAFleetTheRoomCanRender(t *testing.T) {
 		}
 	}
 
-	// The Fleet row's undelivered count reads a failure in the last 24 hours
+	// The Fleet row's undelivered count reads an unresolved send failure
 	// (internal/httpapi/api.go), so the fixture needs one — a store where
 	// every message arrived shoots an empty version of that badge.
 	var withFailure int
 	for _, l := range got {
-		n, err := db.Messages().SendFailuresSince(ctx, l.ID, ms(-24*time.Hour))
+		n, err := db.Messages().UnresolvedSendFailures(ctx, l.ID)
 		if err != nil {
 			t.Fatalf("send failures %s: %v", l.Name, err)
 		}

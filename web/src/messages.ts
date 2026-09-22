@@ -44,13 +44,6 @@ export function undeliveredTitle(u: Undelivered): string {
   return `${why}Given up at ${when}; the recipient never received this.`
 }
 
-// The window the undelivered count and its list are of, in the operator's
-// words. One exported string because it is said in three places — the Fleet
-// badge's hover below, the tab's heading and the tab's empty state — and
-// #269 will replace the window with "unresolved" outright. A phrase spelled
-// out at each site is a phrase that gets changed at two of them.
-export const UNDELIVERED_WINDOW = 'the last 24 hours'
-
 // What the Fleet row says about a loop whose messages are not arriving.
 //
 // The mark above answers the operator already reading that conversation. This
@@ -65,6 +58,11 @@ export function undeliveredNote(count: number | undefined): { text: string; titl
   // them together costs nothing.
   if (!count) return null
   const plural = count === 1 ? 'message' : 'messages'
+  // The count is of failures nobody has resolved, at any age — not of recent
+  // ones (#269). The two ways out are spelled rather than called
+  // "unresolved", because this hover is where an operator meets the idea
+  // first, and they are the two buttons the room gives them.
+  //
   // Undelivered, not Activity and not the loop page. A loop's group sends
   // are listed on neither of the loop page's panes — the control-room pane
   // is the private conversation, and the timeline renders events and turns
@@ -76,7 +74,7 @@ export function undeliveredNote(count: number | undefined): { text: string; titl
   // uncapped.
   return {
     text: `${count} undelivered`,
-    title: `${count} ${plural} this loop sent never reached the surface, given up on in ${UNDELIVERED_WINDOW}. Open Undelivered to see which; a private one is also marked on the loop's control room.`,
+    title: `${count} ${plural} this loop sent never reached the surface, and no retry has got through and nobody has dismissed ${count === 1 ? 'it' : 'them'}. Open Undelivered to see which; a private one is also marked on the loop's control room.`,
   }
 }
 

@@ -42,12 +42,14 @@ export interface LoopView {
   // Occupancy as a percentage of the window, computed by the server so the
   // gauge and rotation judge the same number (0 = unmeasured).
   context_fill_pct: number
-  // How many messages this loop sent never reached their surface, counted
-  // over the last 24 hours of *failures* rather than of sends (#202). The
-  // server counts it, because the activity feed the client can see is a
-  // newest-N window and would undercount silently on a busy fleet — and a
-  // count quietly wrong about a delivery failure reads as a checked zero.
-  undelivered_24h: number
+  // How many messages this loop sent never reached their surface and that
+  // nobody has dealt with: no successful retry, no dismissal (#202, #269). No age
+  // limit — a failure stops counting when someone resolves it, not when a
+  // clock decides the operator is done looking. The server counts it,
+  // because the activity feed the client can see is a newest-N window and
+  // would undercount silently on a busy fleet — and a count quietly wrong
+  // about a delivery failure reads as a checked zero.
+  undelivered: number
   has_tg_token: boolean
   workstation_up: boolean
   workstation_detail?: string

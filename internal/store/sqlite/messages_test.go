@@ -309,6 +309,40 @@ func TestUntoldSendFailures(t *testing.T) {
 		t.Errorf("told failures came back: %d rows", len(again))
 	}
 
+	// The two resolutions part ways here. A retry that got through means
+	// the message did arrive: telling its sender otherwise is how the human
+	// reads it twice. A dismissal is the operator done looking, and says
+	// nothing about whether the words landed — the sender is still owed it.
+	stale := &store.Message{TS: now + 5, Origin: store.OriginLoop, Author: "terra",
+		FromLoopID: "l1", Text: "retried", Conversation: store.ConversationGroup}
+	setAside := &store.Message{TS: now + 6, Origin: store.OriginLoop, Author: "terra",
+		FromLoopID: "l1", Text: "dismissed", Conversation: store.ConversationGroup}
+	for _, m := range []*store.Message{stale, setAside} {
+		if err := db.Messages().Insert(ctx, m); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Messages().SetSendResult(ctx, m.ID, now, "chat not found"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Messages().ResolveSend(ctx, stale.ID, now, store.SendResolutionDelivered); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Messages().ResolveSend(ctx, setAside.ID, now, store.SendResolutionDismissed); err != nil {
+		t.Fatal(err)
+	}
+	afterResolution, err := db.Messages().UntoldSendFailures(ctx, "l1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(afterResolution) != 1 || afterResolution[0].Text != "dismissed" {
+		got := make([]string, len(afterResolution))
+		for i, m := range afterResolution {
+			got[i] = m.Text
+		}
+		t.Errorf("untold after resolution = %v, want the dismissed one alone", got)
+	}
+
 	// An empty loop id is not "every message nobody authored".
 	unowned, err := db.Messages().UntoldSendFailures(ctx, "")
 	if err != nil {
@@ -356,11 +390,12 @@ func TestSendSuccessUnmarksItsFailure(t *testing.T) {
 	}
 }
 
-// TestSendFailuresSince pins the three ways the Fleet count could lie: by
+// TestUnresolvedSendFailures pins the four ways the Fleet count could lie: by
 // counting a sibling's failures, by going quiet once the loop has been told
-// (the difference from UntoldSendFailures), and by counting a delivered
-// message because its send_failed_at is zero and zero is inside every window.
-func TestSendFailuresSince(t *testing.T) {
+// (the difference from UntoldSendFailures), by counting a delivered message
+// whose send_failed_at is zero, and by still counting a failure somebody has
+// dealt with.
+func TestUnresolvedSendFailures(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -392,40 +427,67 @@ func TestSendFailuresSince(t *testing.T) {
 		}
 	}
 
-	n, err := db.Messages().SendFailuresSince(ctx, "l1", dayAgo)
+	// Age is not the question any more (#269): both of l1's failures count,
+	// the day-old one included, and the sibling's does not.
+	n, err := db.Messages().UnresolvedSendFailures(ctx, "l1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n != 1 {
-		t.Errorf("count = %d, want 1: the sibling's failure and the day-old one are outside", n)
+	if n != 2 {
+		t.Errorf("count = %d, want 2: l1's two failures, whatever their age", n)
+	}
+	// And the delivered message, whose send_failed_at is 0, is not among them.
+	if n, err := db.Messages().UnresolvedSendFailures(ctx, "l2"); err != nil || n != 1 {
+		t.Errorf("sibling count = %d (err %v), want 1", n, err)
 	}
 
 	// Being told is the loop's business, not the operator's: the count stays.
 	if err := db.Messages().MarkSendFailuresTold(ctx, []int64{recent.ID}, now); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := db.Messages().SendFailuresSince(ctx, "l1", dayAgo); err != nil || n != 1 {
-		t.Errorf("count = %d (err %v) after the loop was told, want 1", n, err)
+	if n, err := db.Messages().UnresolvedSendFailures(ctx, "l1"); err != nil || n != 2 {
+		t.Errorf("count = %d (err %v) after the loop was told, want 2", n, err)
 	}
 
-	// A window reaching back to the epoch still must not count a delivered
-	// message, whose send_failed_at is 0.
-	if n, err := db.Messages().SendFailuresSince(ctx, "l1", 0); err != nil || n != 2 {
-		t.Errorf("count = %d (err %v) over all time, want 2 failures and no delivered message", n, err)
+	// Resolving one is what does take it off the count — and only one.
+	resolved, err := db.Messages().ResolveSend(ctx, recent.ID, now, store.SendResolutionDismissed)
+	if err != nil || !resolved {
+		t.Fatalf("ResolveSend = %v (err %v), want true", resolved, err)
+	}
+	if n, err := db.Messages().UnresolvedSendFailures(ctx, "l1"); err != nil || n != 1 {
+		t.Errorf("count = %d (err %v) after one was resolved, want 1", n, err)
+	}
+	// The row keeps what failed and why: resolved is not delivered.
+	if got, err := db.Messages().Get(ctx, recent.ID); err != nil {
+		t.Fatal(err)
+	} else if got.SendFailedAt == 0 || got.SendError == "" || got.SendResolvedAt != now ||
+		got.SendResolution != store.SendResolutionDismissed {
+		t.Errorf("resolved row = failed_at %d, error %q, resolved_at %d, resolution %q; want the failure kept and the resolution recorded",
+			got.SendFailedAt, got.SendError, got.SendResolvedAt, got.SendResolution)
 	}
 
-	if n, err := db.Messages().SendFailuresSince(ctx, "", dayAgo); err != nil || n != 0 {
+	// Resolving it again is a no-op that says so, which is what makes the
+	// operator's second click a 404 rather than a silent success.
+	if again, err := db.Messages().ResolveSend(ctx, recent.ID, now+1, store.SendResolutionDelivered); err != nil || again {
+		t.Errorf("second ResolveSend = %v (err %v), want false", again, err)
+	}
+	// As is resolving a message that never failed.
+	if got, err := db.Messages().ResolveSend(ctx, delivered.ID, now, store.SendResolutionDelivered); err != nil || got {
+		t.Errorf("ResolveSend on a delivered message = %v (err %v), want false", got, err)
+	}
+
+	if n, err := db.Messages().UnresolvedSendFailures(ctx, ""); err != nil || n != 0 {
 		t.Errorf("empty loop id counted %d rows (err %v), want none", n, err)
 	}
 }
 
-// TestUndeliveredSinceAgreesWithTheCount is the check the shared predicate
-// exists for: the Fleet badge counts a loop's failures and the Undelivered
-// tab lists the fleet's, and an operator who clicks a badge showing 3 and
-// finds 2 rows has been told two different things by one truth (#263). No
-// type can make them agree — tallying the list by loop and comparing it to
-// the count for each loop can.
-func TestUndeliveredSinceAgreesWithTheCount(t *testing.T) {
+// TestUndeliveredAgreesWithTheCount is the check the shared predicate exists
+// for: the Fleet badge counts a loop's failures and the Undelivered tab lists
+// the fleet's, and an operator who clicks a badge showing 3 and finds 2 rows
+// has been told two different things by one truth (#263). No type can make
+// them agree — tallying the list by loop and comparing it to the count for
+// each loop can.
+func TestUndeliveredAgreesWithTheCount(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -435,9 +497,10 @@ func TestUndeliveredSinceAgreesWithTheCount(t *testing.T) {
 	now := time.Now().UnixMilli()
 	dayAgo := now - int64(24*time.Hour/time.Millisecond)
 
-	// Two loops with failures inside the window, one failure outside it, one
+	// Two loops with unresolved failures, one resolved failure, one
 	// delivered message, and one inbound message nobody sent — every row
-	// that could wrongly appear in the list or the count.
+	// that could wrongly appear in the list or the count. Age is not among
+	// them since #269: the old failure below is as undelivered as the new.
 	mk := func(loopID, text string) *store.Message {
 		m := &store.Message{TS: now, Origin: store.OriginLoop, Author: loopID,
 			FromLoopID: loopID, Text: text, Conversation: store.ConversationGroup}
@@ -448,7 +511,7 @@ func TestUndeliveredSinceAgreesWithTheCount(t *testing.T) {
 	}
 	first, second := mk("l1", "first"), mk("l1", "second")
 	sibling := mk("l2", "sibling")
-	stale := mk("l1", "stale")
+	dealtWith := mk("l1", "dealt with")
 	mk("l1", "arrived")
 	inbound := &store.Message{TS: now, Origin: store.OriginWeb, Author: "operator",
 		Text: "inbound", Conversation: store.ConversationGroup}
@@ -461,13 +524,18 @@ func TestUndeliveredSinceAgreesWithTheCount(t *testing.T) {
 	for _, f := range []struct {
 		m  *store.Message
 		at int64
-	}{{first, now - 3000}, {second, now - 1000}, {sibling, now - 2000}, {stale, dayAgo - 1000}} {
+	}{{first, dayAgo - 1000}, {second, now - 1000}, {sibling, now - 2000}, {dealtWith, now - 3000}} {
 		if err := db.Messages().SetSendResult(ctx, f.m.ID, f.at, "chat not found"); err != nil {
 			t.Fatal(err)
 		}
 	}
+	// One of l1's is resolved — retried into a send that got through, or
+	// dismissed; the list and the count must both lose exactly that one.
+	if resolved, err := db.Messages().ResolveSend(ctx, dealtWith.ID, now, store.SendResolutionDismissed); err != nil || !resolved {
+		t.Fatalf("ResolveSend = %v (err %v), want true", resolved, err)
+	}
 
-	list, err := db.Messages().UndeliveredSince(ctx, dayAgo)
+	list, err := db.Messages().Undelivered(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -476,7 +544,7 @@ func TestUndeliveredSinceAgreesWithTheCount(t *testing.T) {
 		tally[m.FromLoopID]++
 	}
 	for _, loopID := range []string{"l1", "l2"} {
-		count, err := db.Messages().SendFailuresSince(ctx, loopID, dayAgo)
+		count, err := db.Messages().UnresolvedSendFailures(ctx, loopID)
 		if err != nil {
 			t.Fatal(err)
 		}

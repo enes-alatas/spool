@@ -8,14 +8,16 @@ import (
 	"time"
 )
 
-// message is the subset of the stored message the Undelivered tab renders.
+// undeliveredRow is the subset of the stored message the Undelivered tab
+// renders, plus the resolution the tab's two actions write (#269).
 type undeliveredRow struct {
-	ID           int64  `json:"id"`
-	FromLoopID   string `json:"from_loop_id"`
-	Text         string `json:"text"`
-	Conversation string `json:"conversation"`
-	SendFailedAt int64  `json:"send_failed_at"`
-	SendError    string `json:"send_error"`
+	ID             int64  `json:"id"`
+	FromLoopID     string `json:"from_loop_id"`
+	Text           string `json:"text"`
+	Conversation   string `json:"conversation"`
+	SendFailedAt   int64  `json:"send_failed_at"`
+	SendResolvedAt int64  `json:"send_resolved_at"`
+	SendError      string `json:"send_error"`
 }
 
 // The Fleet badge counts failures the operator then cannot find: Activity is
@@ -71,7 +73,7 @@ func TestUndeliveredListsWhatTheBadgeCounts(t *testing.T) {
 
 	// The badge and the list, from the same predicate: an operator who
 	// clicks a 1 and finds no rows has been told two things by one truth.
-	if n := srv.loop("alpha").Undelivered24h; n != len(rows) {
+	if n := srv.loop("alpha").Undelivered; n != len(rows) {
 		t.Fatalf("the badge counts %d and the list holds %d", n, len(rows))
 	}
 

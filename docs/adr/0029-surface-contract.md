@@ -1,6 +1,6 @@
 # ADR-0029: The Surface contract
 
-Date: 2026-09-20 · Status: accepted · Amends: ADR-0020, ADR-0025 (item 4), ADR-0026 (item 1)
+Date: 2026-09-20 · Status: accepted · Amends: ADR-0020, ADR-0025 (item 4), ADR-0026 (item 1) · Amended: 2026-09-22 (item 2: the bus kinds a surface mirrors)
 
 ## Context
 
@@ -40,9 +40,14 @@ contract.
    Most of a surface's work does not cross the seam in this direction.
    Inbound, the adapter hands a received message to the router like any other
    caller — transport is the surface's, delivery is the hub's (ADR-0002).
-   Outbound, it subscribes to the bus and mirrors what names it (ADR-0025).
-   Adding hub-to-surface methods for those would invert a dependency that is
-   fine as it stands.
+   Outbound, it subscribes to the bus and mirrors what names it (ADR-0025) —
+   every kind that carries a message to a surface, which as of 2026-09-22 is
+   `KindMessage` and `KindSendRetry`. An adapter that subscribes to only the
+   first compiles, passes, and silently drops the operator's retries (#269).
+   Retry is its own kind because the control room renders `KindMessage` as a
+   message said: republishing under it would draw a message the operator
+   retried a second time. Adding hub-to-surface methods for any of this would
+   invert a dependency that is fine as it stands.
 
 3. **No store row crosses the seam.** A loop crosses it as its id and the
    adapter reads the row it wants. This is the same rule the store and runtime

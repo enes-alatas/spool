@@ -213,6 +213,21 @@ type Message struct {
 	// rather than by these (#147).
 	SendFailedAt int64  `json:"send_failed_at,omitempty"`
 	SendError    string `json:"send_error,omitempty"`
+	// SendResolvedAt is when a failure stopped being the operator's
+	// business: a retry of this row got through, or they dismissed it.
+	// Zero while it is still unresolved, which is what the undelivered
+	// count and the Undelivered tab ask for (#269). The failure itself is
+	// not erased — send_failed_at and send_error stay, because what failed
+	// and why is history, and a resolved row that looked like a delivered
+	// one would lose it.
+	SendResolvedAt int64 `json:"send_resolved_at,omitempty"`
+	// SendResolution is which of the two ways it resolved, one of the
+	// SendResolution* constants; empty while unresolved. The operator's two
+	// actions mean different things about the message — delivered says it
+	// did arrive in the end, dismissed says it never did and they are done
+	// looking — and readers that only ask "is it still on my list" should
+	// use SendResolvedAt instead of comparing this.
+	SendResolution string `json:"send_resolution,omitempty"`
 	// SendFailureToldAt is when the loop that sent this message was told the
 	// send failed (0 = not yet). Engine bookkeeping for delivering that news
 	// exactly once (#154), so json:"-" keeps it out of every API response —
@@ -223,6 +238,19 @@ type Message struct {
 	// matched to another bot's sighting of it. Storage detail, not surfaced.
 	TGKey string `json:"-"`
 }
+
+// How a send failure resolved (Message.SendResolution).
+const (
+	// SendResolutionDelivered: a later attempt at the same row got through,
+	// so the message did arrive. Its sender must not be told it was lost —
+	// a loop told that says the message again, and the human gets it twice
+	// (ADR-0026, 2026-09-18 amendment).
+	SendResolutionDelivered = "delivered"
+	// SendResolutionDismissed: the operator read the failure and set it
+	// aside. The message still never arrived, so its sender is still owed
+	// the news; this only takes it off the operator's list.
+	SendResolutionDismissed = "dismissed"
+)
 
 // SurfaceRef is one bot's own id for a message on a surface: what its poller
 // received, or what Telegram returned when it sent it. Telegram numbers
@@ -429,20 +457,36 @@ type MessageStore interface {
 	// UntoldSendFailures returns the messages a loop sent that never got
 	// through and whose sender has not been told, oldest first. The sender,
 	// not the recipient: this is the loop's own news about its own words.
+	//
+	// A failure an operator retried into a successful send is not among
+	// them: that message did arrive, and a loop told otherwise says it
+	// again. A dismissed one still is — dismissal is the operator done
+	// looking, not the message delivered.
 	UntoldSendFailures(ctx context.Context, loopID string) ([]*Message, error)
-	// SendFailuresSince counts the messages a loop sent that never got
-	// through and whose failure is no older than since (epoch ms). Unlike
-	// UntoldSendFailures this ignores whether the loop has been told: it
-	// answers the operator's question, not the loop's, and an operator who
-	// was not looking is the reason the count exists.
-	SendFailuresSince(ctx context.Context, loopID string, since int64) (int, error)
-	// UndeliveredSince is the same question asked of the whole fleet: every
-	// loop's messages that never got through and whose failure is no older
-	// than since, newest failure first. The count the Fleet page shows and
-	// the list the Undelivered tab renders go through one predicate, so a
-	// badge and the page it opens cannot disagree about what they are
-	// counting (#263).
-	UndeliveredSince(ctx context.Context, since int64) ([]*Message, error)
+	// UnresolvedSendFailures counts the messages a loop sent that never got
+	// through and that nothing has resolved — no successful retry, no
+	// dismissal (#269). Unlike UntoldSendFailures this ignores whether the
+	// loop has been told: it answers the operator's question, not the
+	// loop's, and an operator who was not looking is the reason the count
+	// exists. There is no age limit: a failure stops counting when someone
+	// deals with it, not when a clock decides they are done looking.
+	UnresolvedSendFailures(ctx context.Context, loopID string) (int, error)
+	// Undelivered is the same question asked of the whole fleet: every
+	// loop's unresolved failures, newest failure first. The count the Fleet
+	// page shows and the list the Undelivered tab renders go through one
+	// predicate, so a badge and the page it opens cannot disagree about
+	// what they are counting (#263).
+	Undelivered(ctx context.Context) ([]*Message, error)
+	// ResolveSend marks a failure dealt with, at the given time, and
+	// reports whether there was one to mark. Called when a retry of the row
+	// gets through and when the operator dismisses it; the row keeps what
+	// failed and why either way. A row that never failed, or whose failure
+	// is already resolved, is left alone and answers false — which is a
+	// no-op on the send path and a 404 on the operator's.
+	// resolution is one of the SendResolution* constants, saying which of
+	// the two happened; readers that care about the difference — notably
+	// UntoldSendFailures — ask it rather than re-deriving it.
+	ResolveSend(ctx context.Context, id int64, at int64, resolution string) (bool, error)
 	// MarkSendFailuresTold records that the loop has now been told about
 	// these messages. Called once the turn carrying the news has completed,
 	// so a wake that dies before it still owes the news.

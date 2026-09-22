@@ -15,6 +15,17 @@ const (
 	KindSchedule    = "schedule"    // next_tick_at changed
 	KindAccess      = "access"      // telegram sender allowlist changed
 	KindWorkstation = "workstation" // a loop's workstation liveness changed
+	// KindSendRetry asks the surfaces to send an already-persisted message
+	// again, after the operator retried a failed send (#269). It carries
+	// the same payload as KindMessage and is a separate kind precisely so
+	// the control room does not treat it as one: the message was persisted
+	// and rendered once already, and re-publishing it as KindMessage would
+	// show the operator a second copy of what they are trying to un-lose.
+	//
+	// Every surface adapter must mirror it alongside KindMessage; one that
+	// subscribes to KindMessage alone drops the operator's retries without
+	// failing anything (ADR-0029 item 2).
+	KindSendRetry = "send_retry"
 )
 
 type Item struct {

@@ -883,19 +883,31 @@ func (br *Bridge) chatName(ctx context.Context, p *poller, chatID int64) string 
 	}
 }
 
-// recordSendResult marks the message this send carried. A success clears a
-// previous attempt's error, so a message that got through on the retry does
-// not keep describing the failure it survived.
+// recordSendResult marks the message this send carried: a failure with its
+// error, a success by resolving whatever failure the row already carried.
+//
+// A success does not erase send_failed_at. The row did fail, the loop's
+// timeline says so (#147), and a store that quietly disagreed with its own
+// event would be the harder bug. Resolving instead takes it out of the
+// operator's undelivered count and off the Undelivered tab, which is what
+// "the retry worked" actually means to them (#269).
 func (br *Bridge) recordSendResult(ctx context.Context, req sendReq, err error) {
 	if req.recordFor == 0 {
 		return
 	}
-	var failedAt int64
-	var text string
-	if err != nil {
-		failedAt, text = time.Now().UnixMilli(), err.Error()
+	if err == nil {
+		// Called on every success, including a first attempt that never
+		// failed: ResolveSend is a no-op unless the row carries an
+		// unresolved failure, so the caller does not need to know which
+		// kind of success this was.
+		if _, resErr := br.store.Messages().ResolveSend(ctx, req.recordFor,
+			time.Now().UnixMilli(), store.SendResolutionDelivered); resErr != nil {
+			br.log.Warn("telegram: resolve send failure", "err", resErr)
+		}
+		return
 	}
-	if setErr := br.store.Messages().SetSendResult(ctx, req.recordFor, failedAt, text); setErr != nil {
+	if setErr := br.store.Messages().SetSendResult(ctx, req.recordFor,
+		time.Now().UnixMilli(), err.Error()); setErr != nil {
 		br.log.Warn("telegram: record send result", "err", setErr)
 	}
 }
@@ -924,7 +936,12 @@ func excerpt(s string, n int) string {
 
 // mirror consumes message bus items and applies the mirror rules.
 func (br *Bridge) mirror(ctx context.Context) {
-	items, cancel := br.bus.Subscribe(func(i bus.Item) bool { return i.Kind == bus.KindMessage })
+	// Both kinds, one path: a retry (#269) is the same send of the same row,
+	// asked for by the operator instead of by the loop, and anything the
+	// mirror rules decide about a message must decide the same way twice.
+	items, cancel := br.bus.Subscribe(func(i bus.Item) bool {
+		return i.Kind == bus.KindMessage || i.Kind == bus.KindSendRetry
+	})
 	defer cancel()
 	for {
 		select {
