@@ -43,3 +43,28 @@ export function undeliveredTitle(u: Undelivered): string {
   const why = u.reason ? `${u.reason}. ` : ''
   return `${why}Given up at ${when}; the recipient never received this.`
 }
+
+// What the Fleet row says about a loop whose messages are not arriving.
+//
+// The mark above answers the operator already reading that conversation. This
+// answers the one who is not: on 2026-09-20 a loop's DM to the operator timed
+// out and nothing outside the loop's own page would have shown it (#201).
+export function undeliveredNote(count: number | undefined): { text: string; title: string } | null {
+  // Falsy, not `> 0`: a server too old to send the field leaves it undefined,
+  // which means "not measured" and not "none". The context cell has the same
+  // reason to distrust an absent field (#122) but not the same reading — its
+  // `hasFillPct` keeps a measured zero and shows it, because 0% is a fact an
+  // operator wants. Here zero and absent both mean "say nothing", so folding
+  // them together costs nothing.
+  if (!count) return null
+  const plural = count === 1 ? 'message' : 'messages'
+  // Activity, not the loop page: a loop's group sends are listed on neither
+  // of the loop page's panes — the control-room pane is the private
+  // conversation, and the timeline renders events and turns rather than
+  // messages. Activity carries the mark for every kind of failure, so it is
+  // the one answer that is true whichever conversation the send was in.
+  return {
+    text: `${count} undelivered`,
+    title: `${count} ${plural} this loop sent never reached the surface, given up on in the last 24 hours. Open Activity to see which; a private one is also marked on the loop's control room.`,
+  }
+}
