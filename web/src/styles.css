@@ -1044,6 +1044,40 @@ textarea {
   color: var(--text-muted);
   margin-bottom: 10px;
 }
+/* a panel heading that carries an action. The heading keeps its own bottom
+   margin so every other panel is untouched; this row takes it over for the
+   ones that opt in. */
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.panel-head h3 {
+  margin-bottom: 0;
+}
+/* the action itself: an icon at the panel's corner. Muted until it is wanted,
+   and given a real hit area — 16px of pen is smaller than a finger. The hover
+   well inverts to the canvas rather than taking `--surface`, which is the
+   panel's own fill: the same reason `.panel-select` does (ADR-0027 leaves one
+   raised value, so inside a raised panel a well has to go the other way). */
+.panel-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: -6px -6px -6px 0;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-muted);
+}
+.panel-action:hover {
+  color: var(--text);
+  background: var(--canvas);
+}
 .side-panel .row {
   display: flex;
   justify-content: space-between;
@@ -1221,6 +1255,34 @@ textarea {
 }
 .mission-toggle {
   margin-top: 6px;
+}
+/* the clamp toggle, alone under the text it acts on */
+.mission-controls {
+  display: flex;
+  gap: 12px;
+}
+.mission-edit {
+  width: 100%;
+  line-height: 1.5;
+  resize: vertical;
+}
+/* what Save does beyond saving. `--active` rather than `--danger`: nothing
+   is wrong and nothing is destroyed, but an operator who skims past this pays
+   for it in the loop's context — which is what that token is for. */
+.mission-warning {
+  margin-top: 8px;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--active);
+}
+/* what the save did, once it is done. Same size and rhythm as the warning it
+   answers, and muted rather than `--active`: the warning is asking for a
+   decision and this is only the record of one already made. */
+.mission-result {
+  margin-top: 8px;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--text-muted);
 }
 /* whether the Claude token is set. Near neighbour of `.field .hint`, which
    says the same kind of thing in the same kind of place — but a step smaller
