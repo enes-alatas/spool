@@ -119,6 +119,33 @@ export interface ChatMessage {
   // The surface's own reason, scrubbed of credentials by the sender (#155),
   // which is why it can be shown verbatim.
   send_error?: string
+  // When the failure stopped being the operator's business — a retry of this
+  // row got through, or they dismissed it (#269). Absent while it is still
+  // unresolved, which is what the Undelivered tab and the Fleet count ask
+  // for. The failure itself is never erased: `send_failed_at` and
+  // `send_error` stay, so what failed and why survives the resolution.
+  send_resolved_at?: number
+  // What became of it. Three today — 'delivered' (a retry of this row got
+  // through), 'dismissed' (the operator is done looking), 'resent' (the loop
+  // said the words again itself in a later message, and that one arrived,
+  // #270) — and a plain string rather than a union of those three, because
+  // the union would be a claim the room decides this field. It does not: the
+  // hub writes it, a browser tab outlives an upgrade, and a closed union
+  // makes every switch on it look exhaustive to the compiler while the
+  // server can still send a fourth. `messages.ts` narrows it in one place so
+  // the switches stay exhaustive over something the room does control.
+  //
+  // Ask this only to say *what became of* the send; to ask whether it is
+  // still on the operator's list, read `send_resolved_at`.
+  send_resolution?: string
+  // Which message carried the words the second time, for a 'resent'
+  // resolution; absent on the others (#270). The failure's own row says a
+  // resend happened; this says where to read what was actually said.
+  send_resent_as?: number
+  // The failed message these words were said again for — the mirror of
+  // `send_resent_as`, on the message that did the resending. Mirrored for
+  // the api.ts/Go sync rule; nothing in the room reads it yet.
+  resends_id?: number
 }
 
 export interface TGSender {
@@ -321,6 +348,14 @@ export const api = {
   // Activity is a newest-100 window across everything, which is why the
   // badge could name a number the operator could not find (#263).
   undelivered: () => req<ChatMessage[]>('/api/undelivered'),
+  // 202, not 200: the send is the surface's and is queued behind whatever it
+  // is already doing, so the outcome arrives as the row resolving or its
+  // error changing rather than in this response (#269). The room must not
+  // report it as delivered.
+  retrySend: (id: number) => req<{ retrying: boolean }>(`/api/messages/${id}/retry`, { method: 'POST' }),
+  // Resolves the failure without sending anything: the operator has read it
+  // and is done. Takes the row off their list; it does not rewrite history.
+  dismissSend: (id: number) => req<{ dismissed: boolean }>(`/api/messages/${id}/dismiss`, { method: 'POST' }),
   activity: (limit = 100) => req<ChatMessage[]>(`/api/activity?limit=${limit}`),
   conversation: (name: string, kind: 'control_room' | 'owner_dm' = 'control_room', limit = 100) =>
     req<ChatMessage[]>(`/api/loops/${name}/conversation?conversation=${kind}&limit=${limit}`),
