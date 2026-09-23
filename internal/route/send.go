@@ -92,6 +92,7 @@ func (r *Router) Send(ctx context.Context, req SendRequest) (*store.Message, *Se
 		Text:         text,
 		Mentions:     mentions,
 		Conversation: req.Destination,
+		Mirror:       store.MirrorNotMirrored,
 	}
 	if replyTo != nil {
 		msg.ReplyToID = replyTo.ID
@@ -115,6 +116,11 @@ func (r *Router) Send(ctx context.Context, req SendRequest) (*store.Message, *Se
 		if serr != nil || err != nil {
 			return nil, serr, err
 		}
+		if req.From.TGBotToken != "" && req.From.TGGroupChatID != 0 {
+			// the loop's bot sits in the room the fleet channel is
+			// mirrored to, so its words are bound there
+			msg.Mirror = store.MirrorPending
+		}
 	case store.ConversationOwnerDM:
 		// The configured owner, never the DM this turn happens to be
 		// answering: a destination that moved with the incoming message
@@ -129,6 +135,7 @@ func (r *Router) Send(ctx context.Context, req SendRequest) (*store.Message, *Se
 		}
 		ownerChat = req.From.OwnerDMChatID
 		msg.ConversationLoopID = req.From.ID
+		msg.Mirror = store.MirrorPending
 	case store.ConversationControlRoom:
 		msg.ConversationLoopID = req.From.ID
 	default:

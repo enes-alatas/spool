@@ -94,6 +94,11 @@ func (br *Bridge) SetBindSettle(d time.Duration) {
 // Start launches pollers for every configured loop and the mirror consumer.
 func (br *Bridge) Start(ctx context.Context) {
 	br.ctx = ctx
+	// Every pending row is the last process's: nothing in this one can
+	// send yet, because cmd/spool binds the MCP and API listeners only
+	// after Start returns. Moving Start after them would let the sweep
+	// fail a send this process is about to make.
+	br.failInterruptedSends(ctx)
 	loops, err := br.store.Loops().List(ctx)
 	if err != nil {
 		br.log.Error("telegram: list loops", "err", err)
@@ -762,6 +767,8 @@ func (br *Bridge) replyStatus(ctx context.Context, p *poller, chatID int64) {
 
 // --- outbound: per-bot paced sender ---
 
+// enqueueSend queues a bridge notice, which no message row records: a full
+// queue drops it, as it would any notice.
 func (p *poller) enqueueSend(chatID int64, text string) {
 	p.enqueue(sendReq{chatID: chatID, text: text})
 }
@@ -769,7 +776,13 @@ func (p *poller) enqueueSend(chatID int64, text string) {
 // enqueue splits a send into Telegram-sized chunks. Only the first chunk
 // carries the reply anchor and mints the message's surface reference: the
 // continuation chunks are the same message, not new targets.
-func (p *poller) enqueue(req sendReq) {
+//
+// It reports false when the queue was too full to take the first chunk, and
+// then queues nothing: the rest of a message is no use without its start,
+// and the caller must record the loss, since the part that would have
+// recorded it never runs. A continuation chunk dropped later is not
+// reported (#302).
+func (p *poller) enqueue(req sendReq) bool {
 	for i, chunk := range splitMessage(req.text, maxMsgLen) {
 		part := sendReq{chatID: req.chatID, text: chunk}
 		if i == 0 {
@@ -778,8 +791,12 @@ func (p *poller) enqueue(req sendReq) {
 		select {
 		case p.sendCh <- part:
 		default: // queue full: drop rather than block the bridge
+			if i == 0 {
+				return false
+			}
 		}
 	}
+	return true
 }
 
 func (br *Bridge) sendLoop(ctx context.Context, p *poller) {
@@ -847,19 +864,65 @@ func (br *Bridge) failSend(ctx context.Context, p *poller, req sendReq, err erro
 	br.log.Error("telegram send failed; giving up",
 		"loop", p.name, "chat", req.chatID, "attempts", attempts, "err", err)
 	br.recordSendResult(ctx, req, err)
+	br.recordSendFailedEvent(ctx, p.loopID, br.chatName(ctx, p, req.chatID), attempts, err.Error(), req.text)
+}
+
+// recordSendFailedEvent puts a lost send on its loop's timeline, where the
+// operator reading that loop learns its words never left the machine.
+func (br *Bridge) recordSendFailedEvent(ctx context.Context, loopID, chat string, attempts int, sendErr, text string) {
 	e := &store.Event{
-		LoopID:  p.loopID,
+		LoopID:  loopID,
 		TS:      time.Now().UnixMilli(),
 		Type:    "spool",
 		Subtype: "send_failed",
 		Payload: fmt.Sprintf(`{"chat":%q,"attempts":%d,"error":%q,"text":%q}`,
-			br.chatName(ctx, p, req.chatID), attempts, err.Error(), excerpt(req.text, excerptLen)),
+			chat, attempts, sendErr, excerpt(text, excerptLen)),
 	}
 	if _, insErr := br.store.Events().Insert(ctx, e); insErr != nil {
-		br.log.Error("telegram: record send failure", "loop", p.name, "err", insErr)
+		br.log.Error("telegram: record send failure", "loop", loopID, "err", insErr)
 		return
 	}
-	br.bus.Publish(bus.Item{Kind: bus.KindAgentEvent, LoopID: p.loopID, Payload: e})
+	br.bus.Publish(bus.Item{Kind: bus.KindAgentEvent, LoopID: loopID, Payload: e})
+}
+
+// errUnsentAtStop is the failure a send carries when a hub starts and finds
+// it unsettled. It says only what is known: usually the last process stopped
+// mid-send, but a send lost without a record (#302) looks the same by then.
+const errUnsentAtStop = "the hub stopped with this still unsent"
+
+// errQueueFull is the failure a send carries when its bot's send queue had
+// no room for it.
+const errQueueFull = "send queue full"
+
+// failInterruptedSends turns every send the previous process left in flight
+// into a failure. The send queue lives in memory, so such a row has no
+// attempt coming, and left alone it would read as in flight forever. As a
+// failure it is an undelivered message like any other: on the operator's
+// list with retry and dismiss, on its loop's timeline, and news its loop is
+// told at the next wake — the loop believes it spoke.
+func (br *Bridge) failInterruptedSends(ctx context.Context) {
+	lost, err := br.store.Messages().FailInterruptedSends(ctx, time.Now().UnixMilli(), errUnsentAtStop)
+	if err != nil {
+		br.log.Error("telegram: fail interrupted sends", "err", err)
+		return
+	}
+	for _, m := range lost {
+		br.log.Warn("telegram: send unsettled at startup", "message", m.ID, "loop", m.FromLoopID)
+		br.recordSendFailedEvent(ctx, m.FromLoopID, conversationChat(m.Conversation), 0, errUnsentAtStop, m.Text)
+	}
+}
+
+// conversationChat names a send's conversation the way chatName does, for a
+// send that never reached a chat id.
+func conversationChat(conversation string) string {
+	switch conversation {
+	case store.ConversationGroup:
+		return "the group"
+	case store.ConversationOwnerDM:
+		return "the owner"
+	default:
+		return "a chat"
+	}
 }
 
 // chatName says which conversation a send was aimed at, in the operator's
@@ -896,6 +959,9 @@ func (br *Bridge) recordSendResult(ctx context.Context, req sendReq, err error) 
 		return
 	}
 	if err == nil {
+		if mirErr := br.store.Messages().SetMirror(ctx, req.recordFor, store.MirrorMirrored); mirErr != nil {
+			br.log.Warn("telegram: record mirror", "err", mirErr)
+		}
 		now := time.Now().UnixMilli()
 		// Called on every success, including a first attempt that never
 		// failed: ResolveSend is a no-op unless the row carries an
@@ -986,17 +1052,32 @@ func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 	switch mp.Conversation {
 	case store.ConversationGroup:
 		// a loop's explicit group send: post to its bound group as its
-		// own bot. No poller just means the loop has no bot — normal
-		// for a fleet without telegram.
-		if p == nil {
+		// own bot, judged from the loop as it is now rather than as
+		// route.Send saw it — a group bound since the send still gets
+		// the post. No bot or no group means there is no room to carry
+		// it, normal for a fleet without telegram, so the message stays
+		// on the hub. A bound bot with no poller is the same internal
+		// fault as the owner_dm case below.
+		l, err := br.store.Loops().Get(ctx, mp.FromLoopID)
+		if err != nil {
+			br.log.Warn("telegram: read loop for group delivery", "loop", mp.FromLoopID, "err", err)
+			if mp.Mirror == store.MirrorPending {
+				br.failUnsendable(ctx, mp, "group delivery: read loop: "+err.Error())
+			}
 			return
 		}
-		l, err := br.store.Loops().Get(ctx, mp.FromLoopID)
-		if err != nil || l.TGGroupChatID == 0 {
+		if l.TGBotToken == "" || l.TGGroupChatID == 0 {
+			br.stayOnHub(ctx, mp)
+			return
+		}
+		if p == nil {
+			br.failUnsendable(ctx, mp, "group delivery: loop's bot is not running")
 			return
 		}
 		anchor, text := br.render(ctx, mp, l.TGGroupChatID)
-		p.enqueue(sendReq{chatID: l.TGGroupChatID, text: text, replyTo: anchor, recordFor: mp.ID})
+		if !p.enqueue(sendReq{chatID: l.TGGroupChatID, text: text, replyTo: anchor, recordFor: mp.ID}) {
+			br.failUnsendable(ctx, mp, errQueueFull)
+		}
 	case store.ConversationOwnerDM:
 		// a loop's owner_dm send: deliver to the chat route.Send pinned
 		// at send time — never re-resolved here, so a DM arriving
@@ -1006,17 +1087,42 @@ func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 		// fault, not a model error, and must not drop the private
 		// message silently.
 		if p == nil {
-			br.log.Error("owner dm delivery: loop has no bot", "loop", mp.FromLoopID)
+			br.failUnsendable(ctx, mp, "owner dm delivery: loop has no bot")
 			return
 		}
 		if mp.OwnerDMChat == 0 {
-			br.log.Error("owner dm delivery: send carried no pinned chat", "loop", mp.FromLoopID)
+			br.failUnsendable(ctx, mp, "owner dm delivery: send carried no pinned chat")
 			return
 		}
 		anchor, text := br.render(ctx, mp, mp.OwnerDMChat)
-		p.enqueue(sendReq{chatID: mp.OwnerDMChat, text: text, replyTo: anchor, recordFor: mp.ID})
+		if !p.enqueue(sendReq{chatID: mp.OwnerDMChat, text: text, replyTo: anchor, recordFor: mp.ID}) {
+			br.failUnsendable(ctx, mp, errQueueFull)
+		}
 	}
 	// control_room lives in the web UI alone; telegram sees nothing
+}
+
+// stayOnHub records that a loop's send had no room on the surface to go to.
+// route.Send judged it bound for one from the loop's configuration; this is
+// the surface saying the bot or the group went before it could carry it.
+func (br *Bridge) stayOnHub(ctx context.Context, mp *route.MessagePayload) {
+	if mp.Mirror != store.MirrorPending {
+		return
+	}
+	if err := br.store.Messages().SetMirror(ctx, mp.ID, store.MirrorNotMirrored); err != nil {
+		br.log.Warn("telegram: record mirror", "err", err)
+	}
+}
+
+// failUnsendable records a send the bridge cannot even attempt as a failure
+// rather than only logging it, in the same two places failSend leaves one.
+// route.Send refuses what it knows cannot be sent, so reaching this is an
+// internal fault or a queue out of room — but the loop still believes it
+// spoke, and a message must not vanish silently.
+func (br *Bridge) failUnsendable(ctx context.Context, mp *route.MessagePayload, reason string) {
+	br.log.Error("telegram: send not attempted", "loop", mp.FromLoopID, "message", mp.ID, "err", reason)
+	br.recordSendResult(ctx, sendReq{recordFor: mp.ID}, errors.New(reason))
+	br.recordSendFailedEvent(ctx, mp.FromLoopID, conversationChat(mp.Conversation), 0, reason, mp.Text)
 }
 
 func (br *Bridge) poller(loopID string) *poller {

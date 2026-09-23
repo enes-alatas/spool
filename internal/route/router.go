@@ -178,6 +178,7 @@ func (r *Router) Ingest(ctx context.Context, in InboundMessage) error {
 
 		Conversation:       conv,
 		ConversationLoopID: convLoopID,
+		Mirror:             inboundMirror(in.Origin),
 	}
 
 	// resolve recipients before persisting so delivered_to lands in one write
@@ -296,6 +297,19 @@ func (r *Router) Ingest(ctx context.Context, in InboundMessage) error {
 		}
 	}
 	return nil
+}
+
+// inboundMirror says where a message entering through Ingest already is.
+// One that came in from a surface is on it by definition; anything else is a
+// human writing in the control room, and nothing the operator authors leaves
+// the hub (ADR-0032 item 4).
+func inboundMirror(origin string) string {
+	switch origin {
+	case store.OriginTelegramGroup, store.OriginTelegramDM:
+		return store.MirrorMirrored
+	default:
+		return store.MirrorNotMirrored
+	}
 }
 
 func dmChatFor(in InboundMessage) int64 {

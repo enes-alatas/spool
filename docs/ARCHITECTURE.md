@@ -79,13 +79,13 @@ and group input into one answer. A loop sends through the hub-served
 `send_message` MCP tool — immediate, validated in-turn, capped per turn — to
 `owner_dm`, `group` (recipients from @mentions), or `control_room`; the bridge
 and web deliver each send by its conversation, and the final reply text becomes
-a status note delivered nowhere. ADR-0032 moves `group` onto the hub as the
-fleet channel, with an attached surface mirroring it. Built so far: the
-operator's words never leave the hub, a loop is in the channel or not — a
-loop outside it has no group, and every loop starts in it — and the channel
-has endpoints of its own, keyed by no loop (`GET`/`POST /api/group`), and a
-tab on the control room's Fleet page (#286). The mirror's state on each
-message is still to come (#285).
+a status note delivered nowhere. ADR-0032 puts `group` on the hub as the
+fleet channel, with an attached surface mirroring it: the channel has
+endpoints of its own, keyed by no loop (`GET`/`POST /api/group`), and a tab
+on the control room's Fleet page (#286); a loop is in it or not, and every
+loop starts in it; the operator's words never leave the hub; and every
+message's `mirror` says whether it is on the surface too (`not_mirrored`,
+`pending`, `mirrored`), its failures staying on the send fields.
 
 Still open under #44: native-reply references (#79), `@all` broadcast
 eligibility (#74), and a configured owner identity replacing the captured-DM

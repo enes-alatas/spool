@@ -8,6 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/enes-alatas/spool/internal/bus"
 	"github.com/enes-alatas/spool/internal/route"
 	"github.com/enes-alatas/spool/internal/store"
 )
@@ -88,6 +89,73 @@ func TestOwnerDMDeliveryUsesPinnedChat(t *testing.T) {
 		}
 	default:
 		t.Fatal("owner_dm send was not delivered at all")
+	}
+}
+
+// queueFullStore records what the bridge writes when it cannot queue a
+// send. Every other store method panics via the embedded nil interfaces.
+type queueFullStore struct {
+	store.Store
+	msgs   *queueFullMessages
+	events *queueFullEvents
+}
+
+func (s queueFullStore) Messages() store.MessageStore { return s.msgs }
+func (s queueFullStore) Events() store.EventStore     { return s.events }
+
+type queueFullMessages struct {
+	store.MessageStore
+	failedID int64
+	sendErr  string
+}
+
+func (m *queueFullMessages) SetSendResult(_ context.Context, id, _ int64, sendErr string) error {
+	m.failedID, m.sendErr = id, sendErr
+	return nil
+}
+
+type queueFullEvents struct {
+	store.EventStore
+	got []*store.Event
+}
+
+func (e *queueFullEvents) Insert(_ context.Context, ev *store.Event) (int64, error) {
+	e.got = append(e.got, ev)
+	return int64(len(e.got)), nil
+}
+
+// A send whose bot queue has no room is a send failure, recorded where any
+// other is: on the row and on the loop's timeline. Before, the first chunk
+// was dropped with its recordFor, and the row read as in flight until the
+// next restart blamed the restart for it.
+func TestQueueFullIsASendFailure(t *testing.T) {
+	p := &poller{loopID: "l1", sendCh: make(chan sendReq)} // no room at all
+	st := queueFullStore{msgs: &queueFullMessages{}, events: &queueFullEvents{}}
+	br := &Bridge{
+		store:   st,
+		log:     slog.Default(),
+		bus:     bus.New(),
+		pollers: map[string]*poller{"l1": p},
+	}
+
+	br.mirrorMessage(context.Background(), &route.MessagePayload{
+		Message: store.Message{
+			ID:                 7,
+			Origin:             store.OriginLoop,
+			FromLoopID:         "l1",
+			Conversation:       store.ConversationOwnerDM,
+			ConversationLoopID: "l1",
+			Text:               "never queued",
+			Mirror:             store.MirrorPending,
+		},
+		OwnerDMChat: 42,
+	})
+
+	if st.msgs.failedID != 7 || st.msgs.sendErr != errQueueFull {
+		t.Fatalf("row failure = (%d, %q), want (7, %q)", st.msgs.failedID, st.msgs.sendErr, errQueueFull)
+	}
+	if len(st.events.got) != 1 || st.events.got[0].Subtype != "send_failed" {
+		t.Fatalf("timeline events = %+v, want one send_failed", st.events.got)
 	}
 }
 
