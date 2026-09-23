@@ -892,6 +892,8 @@ export default function LoopDetail() {
   const [runningVerb, setRunningVerb] = useState('')
   const [draft, setDraft] = useState('')
   const [dest, setDest] = useState<MessageDestination>('control_room')
+  const [sending, setSending] = useState(false)
+  const [sendError, setSendError] = useState('')
   // The Fleet badge opens this page on its Undelivered pane (`?pane=`, #281);
   // read once, as where the page starts, so switching panes afterwards is not
   // a navigation the back button has to walk through.
@@ -1190,17 +1192,39 @@ export default function LoopDetail() {
     }
   }
 
-  const send = async () => {
+  // The draft is cleared only once the hub has taken the message. A refusal
+  // — a loop outside the fleet channel answers 409 for `group` — keeps what
+  // was typed and says why, where it used to vanish without a word. The
+  // reason is about the draft and destination it was sent with, so changing
+  // either retires it: it never sits under a message it does not describe.
+  const pickDest = (to: MessageDestination) => {
+    setDest(to)
+    setSendError('')
+  }
+  const send = async (to: MessageDestination) => {
     const text = draft.trim()
-    if (!text) return
-    setDraft('')
-    await api.message(name, text, dest)
-    qc.invalidateQueries({ queryKey: ['conversation', name] })
+    if (!text || sending) return
+    setSending(true)
+    setSendError('')
+    try {
+      await api.message(name, text, to)
+      setDraft('')
+      qc.invalidateQueries({ queryKey: ['conversation', name] })
+    } catch (e) {
+      setSendError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSending(false)
+    }
   }
 
   if (!loop) return <div className="page measure placeholder">Loading…</div>
 
   const paused = loop.status === 'paused'
+  // A loop outside the fleet channel has no group to post to. The choice is
+  // still drawn, so it cannot vanish from under a draft meant for it, but it
+  // cannot be picked; a send already aimed there is refused by the hub (409)
+  // and the refusal is shown, rather than the message quietly going private.
+  const outside = !loop.in_fleet_channel
 
   return (
     <div className="page">
@@ -1271,34 +1295,45 @@ export default function LoopDetail() {
             <span className="dest-label">to</span>
             <button
               className={`dest${dest === 'control_room' ? ' on' : ''}`}
-              onClick={() => setDest('control_room')}
+              onClick={() => pickDest('control_room')}
             >
               control room · private
             </button>
-            <button className={`dest${dest === 'group' ? ' on' : ''}`} onClick={() => setDest('group')}>
-              group · the loops, not Telegram
+            <button
+              className={`dest${dest === 'group' ? ' on' : ''}`}
+              onClick={() => pickDest('group')}
+              disabled={outside && dest !== 'group'}
+              title={
+                outside ? `@${loop.name} is not in the fleet channel; the Surfaces panel adds it` : undefined
+              }
+            >
+              {outside ? 'fleet channel · not in it' : 'fleet channel · the loops, not Telegram'}
             </button>
           </div>
           <div className="composer" style={{ marginTop: 8 }}>
             <textarea
               placeholder={
                 dest === 'group'
-                  ? `Post to the group — the loops see it, nothing goes to Telegram; @${loop.name} is delivered either way`
+                  ? `Post to the fleet channel — the loops see it, nothing goes to Telegram; @${loop.name} is delivered either way`
                   : `Message @${loop.name} privately…`
               }
               value={draft}
-              onChange={(e) => setDraft(e.target.value)}
+              onChange={(e) => {
+                setDraft(e.target.value)
+                setSendError('')
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault()
-                  send()
+                  send(dest)
                 }
               }}
             />
-            <button className="btn primary" onClick={send} disabled={!draft.trim()}>
+            <button className="btn primary" onClick={() => send(dest)} disabled={!draft.trim() || sending}>
               Send
             </button>
           </div>
+          {sendError && <div className="form-error">{sendError}</div>}
         </section>
 
         <aside>
