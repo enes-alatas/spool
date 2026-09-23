@@ -50,3 +50,13 @@ export function rotationGate(stored: RotationDraft | null, draft: RotationDraft 
 function digits(value: string): boolean {
   return /^\d+$/.test(value.trim())
 }
+
+// Whether a new loop starts in the fleet channel, the default the New loop
+// form shows (#287, settled by the operator): a fleet of one has nobody to
+// share a channel with, so a first loop starts outside it, and every later
+// one inside — a second loop is what makes a fleet. Any existing loop counts,
+// archived included, as "no other loop exists" reads literally and as the
+// server's default for a create that does not say (#306).
+export function startsInFleetChannel(existing: readonly unknown[]): boolean {
+  return existing.length > 0
+}
