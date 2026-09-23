@@ -124,6 +124,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/messages/{id}/retry", s.handleRetrySend)
 	mux.HandleFunc("POST /api/messages/{id}/dismiss", s.handleDismissSend)
 	mux.HandleFunc("GET /api/loops/{name}/conversation", s.handleLoopConversation)
+	mux.HandleFunc("GET /api/group", s.handleGroupTimeline)
+	mux.HandleFunc("POST /api/group", s.handleGroupPost)
 	mux.HandleFunc("GET /api/settings", s.handleGetSettings)
 	mux.HandleFunc("PUT /api/settings", s.handlePutSettings)
 	mux.HandleFunc("GET /api/rules", s.handleListRules)
@@ -1112,6 +1114,50 @@ func (s *Server) handleLoopConversation(w http.ResponseWriter, r *http.Request) 
 		msgs = []*store.Message{}
 	}
 	writeJSON(w, 200, msgs)
+}
+
+// handleGroupTimeline is the fleet channel's own timeline, newest first like
+// a loop's conversation. The channel is the hub's rather than any loop's
+// (ADR-0032 item 1), so it is not reached through one.
+func (s *Server) handleGroupTimeline(w http.ResponseWriter, r *http.Request) {
+	msgs, err := s.Store.Messages().ListConversation(r.Context(), store.ConversationGroup, "", queryInt(r, "limit", 100))
+	if err != nil {
+		s.jsonErr(w, 500, "%v", err)
+		return
+	}
+	if msgs == nil {
+		msgs = []*store.Message{}
+	}
+	writeJSON(w, 200, msgs)
+}
+
+type postGroupReq struct {
+	Author string `json:"author"`
+	Text   string `json:"text"`
+}
+
+// handleGroupPost is the operator posting to the fleet channel. Unlike a
+// group post from a loop's composer, it names no loop implicitly: it wakes
+// the loops its text addresses and no others, and a post that addresses
+// nobody is kept and wakes nobody — as a human's post in a mirrored room
+// is. It never leaves the hub (ADR-0032 item 4).
+func (s *Server) handleGroupPost(w http.ResponseWriter, r *http.Request) {
+	var req postGroupReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Text) == "" {
+		s.jsonErr(w, 400, "non-empty text required")
+		return
+	}
+	err := s.Router.Ingest(r.Context(), route.InboundMessage{
+		Origin:       store.OriginWeb,
+		Author:       defaultStr(req.Author, "operator"),
+		Text:         req.Text,
+		Conversation: store.ConversationGroup,
+	})
+	if err != nil {
+		s.jsonErr(w, 500, "%v", err)
+		return
+	}
+	writeJSON(w, 202, map[string]bool{"queued": true})
 }
 
 func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
