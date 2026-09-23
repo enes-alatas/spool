@@ -26,3 +26,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 19:35: Iris proposed A (panel on Fleet page, no nav) vs B (fold Activity into the page). Spec: A; B breaks ADR-0025 item 9. Iris posting fixture shots on #300; amend #286 once Enes confirms.
 - 19:55: Enes picked a tab on the Fleet page (Loops / Fleet channel); nav entry gone. #286 body+title amended. #300 head 057be66 back with Quinn.
 - 21:00: Enes asked why local claude is 2.1.281 while Spool shows 2.1.267: version probed once at boot (bare = host binary), stale after auto-update. He said leave it for today; possible improvement later (re-probe on health or 'as of start' label).
+- 21:30: #287 scope settled (a): token out, fleet-channel toggle in, other fields stay, no owner field; title fixed. Iris building.
