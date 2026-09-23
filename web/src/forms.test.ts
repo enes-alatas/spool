@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { rotationGate, tokenSubmittable } from './forms'
+import { rotationGate, tokenSubmittable, startsInFleetChannel } from './forms'
 
 describe('tokenSubmittable', () => {
   // #165: PATCH reads an empty `tg_bot_token` as *disconnect*, so a Save that
@@ -56,5 +56,20 @@ describe('rotationGate', () => {
     expect(rotationGate(stored, { arm: '0', force: '70' }).sendable).toBe(true)
     expect(rotationGate(stored, { arm: '90', force: '10' }).sendable).toBe(true)
     expect(rotationGate(stored, { arm: '40', force: '120' }).sendable).toBe(true)
+  })
+})
+
+describe('startsInFleetChannel', () => {
+  it('keeps a first loop out of the fleet channel', () => {
+    expect(startsInFleetChannel([])).toBe(false)
+  })
+
+  it('puts a loop in once another exists', () => {
+    expect(startsInFleetChannel([{ status: 'active' }])).toBe(true)
+    expect(startsInFleetChannel([{ status: 'paused' }, { status: 'archived' }])).toBe(true)
+  })
+
+  it('counts archived loops, as the server does', () => {
+    expect(startsInFleetChannel([{ status: 'archived' }])).toBe(true)
   })
 })

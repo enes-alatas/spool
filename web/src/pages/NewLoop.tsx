@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
 import { MODEL_OPTIONS, EFFORT_OPTIONS, PACING_OPTIONS, RUNTIME_OPTIONS, runtimeNote } from '../options'
 import { useHubRuntime } from '../version'
+import { startsInFleetChannel } from '../forms'
 
 export default function NewLoop() {
   const nav = useNavigate()
@@ -18,7 +19,6 @@ export default function NewLoop() {
   const [wsPath, setWsPath] = useState('')
   const [wsInfo, setWsInfo] = useState<{ exists: boolean; is_git: boolean } | null>(null)
   const [interval, setIntervalMin] = useState('30')
-  const [token, setToken] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -28,6 +28,13 @@ export default function NewLoop() {
   // default is bare and the warning belongs on every creation (#255).
   const { data: health } = useHubRuntime()
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings })
+  // `null` until the operator touches the switch, so the default follows the
+  // fleet list if it loads after the form. Until that list answers there is
+  // no default to show: the switch waits, and a create sent meanwhile says
+  // nothing, leaving the choice to the server, which reads the same rule.
+  const { data: fleet } = useQuery({ queryKey: ['loops'], queryFn: api.loops })
+  const [inChannel, setInChannel] = useState<boolean | null>(null)
+  const joinsChannel = inChannel ?? (fleet ? startsInFleetChannel(fleet) : undefined)
   // Until both have answered the form knows nothing about this hub, and a
   // guess is worse than the silence it replaces: a create that names `docker`
   // on a bare-only hub is refused, where one that names nothing was always
@@ -72,7 +79,9 @@ export default function NewLoop() {
         runtime: (chosenRuntime as 'bare' | 'docker') || undefined,
         workspace_path: wsPath.trim() || undefined,
         tick_interval_sec: Math.max(60, Number(interval) * 60),
-        tg_bot_token: token.trim() || undefined,
+        // Sent whenever the switch shows a state, so it means what it shows; the
+        // server's own default covers a form that has none yet.
+        in_fleet_channel: joinsChannel,
       })
       qc.invalidateQueries({ queryKey: ['loops'] })
       nav(`/loops/${loop.name}`)
@@ -211,23 +220,26 @@ export default function NewLoop() {
           )}
         </div>
 
-        <div className="field">
-          <label htmlFor="nl-token">Telegram bot token (optional)</label>
+        <label className="switch-row">
           <input
-            id="nl-token"
-            // masked: the first place a token is entered, straight out of
-            // BotFather and usually pasted, often with somebody watching
-            type="password"
-            autoComplete="off"
-            placeholder="123456:ABC-DEF…"
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
+            type="checkbox"
+            role="switch"
+            checked={joinsChannel ?? false}
+            disabled={joinsChannel === undefined}
+            onChange={(e) => setInChannel(e.target.checked)}
           />
-          <div className="hint">
-            Create a bot with @BotFather (/newbot), then: /setprivacy → Disable, so the bot sees group
-            messages. Paste its token here and add the bot to your group.
-          </div>
-        </div>
+          <span>
+            In the fleet channel
+            <span className="hint">
+              {joinsChannel === undefined
+                ? 'Reading the fleet to pick the default…'
+                : joinsChannel
+                  ? 'Hears what is addressed to it in the fleet channel, and can post there.'
+                  : 'Starts outside the fleet channel: nothing posted there reaches it.'}{' '}
+              A Telegram bot, if it wants one, is attached on its page once it exists.
+            </span>
+          </span>
+        </label>
 
         <div>
           <button className="btn primary" onClick={create} disabled={busy || !slugOk || !mission.trim()}>

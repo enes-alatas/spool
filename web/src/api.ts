@@ -261,7 +261,8 @@ export interface CreateLoopReq {
   // Empty on PATCH detaches the bot (#165); optional on create, where a loop
   // may start with no surface (#287).
   tg_bot_token?: string
-  // Whether the loop is in the fleet channel (ADR-0032); PATCH only.
+  // Whether the loop is in the fleet channel (ADR-0032). On create, absent
+  // means the server's default: out for a fleet's first loop, in otherwise.
   in_fleet_channel?: boolean
 }
 
