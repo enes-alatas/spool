@@ -675,7 +675,7 @@ function BotTokenForm({ loop }: { loop: LoopView }) {
   if (!open) {
     return (
       <button className="btn sm" style={{ marginTop: 10 }} onClick={() => setOpen(true)}>
-        {loop.has_tg_token ? 'Replace token' : 'Connect a bot'}
+        {loop.has_tg_token ? 'Replace token' : 'Attach Telegram'}
       </button>
     )
   }
@@ -704,6 +704,86 @@ function BotTokenForm({ loop }: { loop: LoopView }) {
           Cancel
         </button>
       </div>
+    </div>
+  )
+}
+
+// Where the loop is reachable besides this control room: at most one surface
+// (Telegram today, Slack with #230), and whether it is in the fleet channel.
+// A loop starts with no surface and gets one here (#287); a loop without one
+// is a private loop, which is a choice rather than a fault, so the empty
+// state says what it means instead of warning.
+function SurfacesPanel({ loop }: { loop: LoopView }) {
+  const qc = useQueryClient()
+  const [error, setError] = useState('')
+
+  const patch = useMutation({
+    mutationFn: (req: Parameters<typeof api.patchLoop>[1]) => api.patchLoop(loop.name, req),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['loop', loop.name] })
+      qc.invalidateQueries({ queryKey: ['loops'] })
+      setError('')
+    },
+    onError: (e) => setError(e instanceof Error ? e.message : String(e)),
+  })
+
+  // An empty token is how PATCH detaches (#165). The messages the surface
+  // carried stay: they are the hub's, not the bot's.
+  const detach = () => {
+    if (
+      confirm(
+        `Detach Telegram from @${loop.name}? The bot stops polling and the loop can no longer reach Telegram. Its messages stay here.`,
+      )
+    ) {
+      patch.mutate({ tg_bot_token: '' })
+    }
+  }
+
+  return (
+    <div className="side-panel">
+      <h3>Surfaces</h3>
+      {loop.has_tg_token ? (
+        <>
+          <div className="row">
+            <span className="k">telegram</span>
+            <span className="v">@{loop.tg_bot_username || '?'}</span>
+          </div>
+          <div className="row">
+            <span className="k">group</span>
+            <span className="v">{loop.tg_group_chat_id ? 'bound' : 'waiting for a group message…'}</span>
+          </div>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+            <BotTokenForm loop={loop} />
+            <button className="btn sm" style={{ marginTop: 10 }} onClick={detach} disabled={patch.isPending}>
+              Detach
+            </button>
+          </div>
+          <OwnerPanel loop={loop} />
+        </>
+      ) : (
+        <>
+          <div className="panel-empty">No surface: this loop talks to you here only.</div>
+          <BotTokenForm loop={loop} />
+        </>
+      )}
+      <label className="switch-row">
+        <input
+          type="checkbox"
+          role="switch"
+          checked={loop.in_fleet_channel}
+          disabled={patch.isPending}
+          onChange={(e) => patch.mutate({ in_fleet_channel: e.target.checked })}
+        />
+        <span>
+          In the fleet channel
+          <span className="hint">
+            {loop.in_fleet_channel
+              ? 'Hears what is addressed to it in the fleet channel, and can post there.'
+              : 'Nothing posted in the fleet channel reaches it, and it has no group to post to.'}
+          </span>
+        </span>
+      </label>
+      {error && <div className="form-error">{error}</div>}
     </div>
   )
 }
@@ -1330,30 +1410,7 @@ export default function LoopDetail() {
             )}
           </div>
 
-          <div className="side-panel">
-            <h3>Telegram</h3>
-            {loop.has_tg_token ? (
-              <>
-                <div className="row">
-                  <span className="k">bot</span>
-                  <span className="v">@{loop.tg_bot_username || '?'}</span>
-                </div>
-                <div className="row">
-                  <span className="k">group</span>
-                  <span className="v">
-                    {loop.tg_group_chat_id ? 'bound' : 'waiting for a group message…'}
-                  </span>
-                </div>
-                <BotTokenForm loop={loop} />
-                <OwnerPanel loop={loop} />
-              </>
-            ) : (
-              <>
-                <div className="panel-empty">No bot connected — the loop cannot reach Telegram.</div>
-                <BotTokenForm loop={loop} />
-              </>
-            )}
-          </div>
+          <SurfacesPanel loop={loop} />
 
           <SecretsPanel loop={loop} />
 

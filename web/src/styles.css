@@ -1489,6 +1489,71 @@ textarea {
   margin-top: 0;
   margin-bottom: 8px;
 }
+/* A setting that is on or off, with what each state means under its name:
+   the switch, then the label and the consequence it controls. The whole row
+   is the label, so the words are a target too. */
+.switch-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-top: 14px;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+/* An on/off state rather than a form option — a loop is in the fleet channel
+   or is not — drawn as a switch. It stays a native checkbox underneath, so
+   the keyboard and the label click work as before, and `role="switch"` has a
+   screen reader announce it as one. */
+.switch-row input[role='switch'] {
+  appearance: none;
+  flex: none;
+  position: relative;
+  width: 28px;
+  height: 16px;
+  margin: 1px 0 0;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--surface);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+.switch-row input[role='switch']::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition:
+    transform 0.15s,
+    background 0.15s;
+}
+.switch-row input[role='switch']:checked {
+  border-color: var(--text);
+  background: var(--text);
+}
+.switch-row input[role='switch']:checked::before {
+  transform: translateX(12px);
+  background: var(--canvas);
+}
+.switch-row input[role='switch']:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+.switch-row input[role='switch']:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.switch-row .hint {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
 /* a panel with nothing in it yet, saying so */
 .panel-empty {
   font-size: 0.8125rem;
