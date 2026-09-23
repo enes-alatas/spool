@@ -14,3 +14,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 ## 2026-09-23 07:5x — mirror rule flipped
 - Enes (via Terra, recorded on #284): operator posts never leave the hub; no posting as him anywhere. Surface → hub unchanged. Loop-post outward mirror still open on #284.
 - #285 body amended to match (inbound-only for operator, loop outward pending, itest reworded). #286/#287: Iris warned by Terra's ping; check her PRs don't assume two-way.
+- 09:50: #278/#279/#290 merged; no open PRs. #284 settled: hub→surface loop-authored only. #285 body+title finalized. Terra on #284 ADR (docs/adr/0032), Iris on #282 (variant C, fixed columns). Board quiet.
