@@ -253,6 +253,12 @@ type Message struct {
 	// exactly once (#154), so json:"-" keeps it out of every API response —
 	// the operator reads SendFailedAt, which is the fact itself.
 	SendFailureToldAt int64 `json:"-"`
+	// Mirror says whether this message exists on the surface too: one of the
+	// Mirror* constants, never empty once stored and never omitted, so an
+	// absent field means an older server rather than an answer (#285). Its
+	// failures are not here — a mirror that failed is a send that failed,
+	// and carries SendFailedAt like any other (ADR-0032 item 6).
+	Mirror string `json:"mirror"`
 	// TGKey identifies a telegram message by what every bot observing it
 	// sees alike — chat, sender, date, text — so one bot's message can be
 	// matched to another bot's sighting of it. Storage detail, not surfaced.
@@ -276,6 +282,26 @@ const (
 	// one, it means the words reached their reader — so the sender is not
 	// told about this failure either; it is the one that dealt with it.
 	SendResolutionResent = "resent"
+)
+
+// Whether a message exists on the surface too (Message.Mirror). It is a
+// state, not a direction: which way a message crossed is its Origin.
+const (
+	// MirrorNotMirrored: on the hub only, and staying there — the
+	// operator's words (ADR-0032 item 4), a control_room message, a loop
+	// send when the loop has no surface to carry it, and a failed send
+	// the operator dismissed or the loop said again in another message.
+	MirrorNotMirrored = "not_mirrored"
+	// MirrorPending: bound for the surface and not there yet. With
+	// SendFailedAt set, the send failed and the failure fields say why.
+	// Without it, the send has not been settled: normally it is in
+	// flight, though a running hub can still lose one without a record
+	// (#302). Whatever is unsettled when the hub stops is marked failed
+	// at its next start, so no such row outlives a restart.
+	MirrorPending = "pending"
+	// MirrorMirrored: on the surface too — a loop's send that got through,
+	// and everything that came in from the surface in the first place.
+	MirrorMirrored = "mirrored"
 )
 
 // SurfaceRef is one bot's own id for a message on a surface: what its poller
@@ -485,6 +511,18 @@ type MessageStore interface {
 	// the bridge gave up, or empty and 0 when a later attempt got through.
 	// A message nobody tried to send carries neither (#147).
 	SetSendResult(ctx context.Context, id int64, failedAt int64, sendErr string) error
+	// SetMirror records whether a message is on the surface, one of the
+	// Mirror* constants. A resolution sets it too — see ResolveSend — so
+	// this is for the answers that come with no failure attached: a send
+	// that got through first time, or one the surface declined to carry.
+	SetMirror(ctx context.Context, id int64, mirror string) error
+	// FailInterruptedSends marks every unsettled send — pending, no
+	// failure — as failed with sendErr, and returns them. Called once at
+	// startup, before anything can send: a send queue lives in the
+	// process, so a pending row the previous process left would otherwise
+	// read as in flight forever. Once failed, it is an undelivered message
+	// like any other, which the operator can retry and its loop is told of.
+	FailInterruptedSends(ctx context.Context, failedAt int64, sendErr string) ([]*Message, error)
 	// UntoldSendFailures returns the messages a loop sent that never got
 	// through and whose sender has not been told, oldest first. The sender,
 	// not the recipient: this is the loop's own news about its own words.
@@ -519,7 +557,9 @@ type MessageStore interface {
 	// the three happened; readers that care about the difference — notably
 	// UntoldSendFailures — ask it rather than re-deriving it. resentAs
 	// names the message that carried the words again, and is zero for
-	// every resolution but a resend.
+	// every resolution but a resend. The row's Mirror follows: a delivered
+	// resolution put it on the surface, and the other two leave it on the
+	// hub for good.
 	ResolveSend(ctx context.Context, id int64, at int64, resolution string, resentAs int64) (bool, error)
 	// ResolveResends resolves every failure the given message was sent to
 	// replace — the one its ResendsID names, the one that one named, and

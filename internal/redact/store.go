@@ -111,3 +111,9 @@ func (m messages) SetSendResult(ctx context.Context, id, failedAt int64, sendErr
 	// The one that bit us: #146's leak was a transport error, stored here.
 	return m.MessageStore.SetSendResult(ctx, id, failedAt, m.r.Text(sendErr))
 }
+
+func (m messages) FailInterruptedSends(ctx context.Context, failedAt int64, sendErr string) ([]*store.Message, error) {
+	// The hub's own fixed sentence today, but it is stored as a send error,
+	// and that column is where #146's leak lived.
+	return m.MessageStore.FailInterruptedSends(ctx, failedAt, m.r.Text(sendErr))
+}
