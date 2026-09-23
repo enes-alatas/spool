@@ -3,10 +3,11 @@ import { undelivered, undeliveredLabel, undeliveredTitle } from '../messages'
 
 // The mark a message carries when the surface never took it (#201).
 //
-// One component for both places a message is read — the loop's control-room
-// thread and the Activity feed — because the two would otherwise disagree
-// about what an undelivered message looks like, and the operator would learn
-// the mark twice.
+// One component for every place a message is read — the threads that
+// `MessageKnot` draws (a loop's control room) and the
+// Activity feed — because they would otherwise disagree about what an
+// undelivered message looks like, and the operator would learn the mark
+// more than once.
 //
 // The reason is shown inline where there is room for it and always in the
 // title, because the surface's own words ("chat not found") say what went

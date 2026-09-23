@@ -18,7 +18,7 @@ import { missionDraft, missionSaveResult, missionSaveWarning } from '../mission'
 import { MODEL_OPTIONS, EFFORT_OPTIONS, PACING_OPTIONS } from '../options'
 import { useStream } from '../stream'
 import { toEntries, extractDelta } from '../timeline'
-import { UndeliveredMark } from '../components/UndeliveredMark'
+import { MessageKnot } from '../components/MessageKnot'
 import { UndeliveredPane } from '../components/UndeliveredPane'
 import { Timeline } from '../components/Timeline'
 import { SpoolGlyph } from '../components/Spool'
@@ -794,14 +794,7 @@ function ControlRoomThread({ msgs }: { msgs: ChatMessage[] }) {
   return (
     <div className="timeline">
       {[...msgs].reverse().map((m) => (
-        <div key={m.id} className={`knot${m.origin === 'loop' ? '' : ' inbound'}`} data-entry-id={m.id}>
-          <div className="who">
-            <span className="author">@{m.author}</span> ·{' '}
-            {new Date(m.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-          </div>
-          <div className={m.origin === 'loop' ? 'plain' : 'bubble'}>{m.text}</div>
-          <UndeliveredMark msg={m} />
-        </div>
+        <MessageKnot key={m.id} msg={m} />
       ))}
     </div>
   )
