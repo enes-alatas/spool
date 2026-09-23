@@ -263,6 +263,9 @@ type loopView struct {
 	// OwnerUsername is the configured owner's telegram handle, when known —
 	// the name the UI shows instead of a numeric id.
 	OwnerUsername string `json:"owner_username,omitempty"`
+	// InFleetChannel reports that the loop has a group: it receives what
+	// addresses it there and may post to it (ADR-0032 item 2).
+	InFleetChannel bool `json:"in_fleet_channel"`
 }
 
 // localDayStart reports the first instant of now's calendar day, in unix
@@ -284,7 +287,7 @@ func localDayStart(now time.Time) (int64, string) {
 
 func (s *Server) view(ctx context.Context, l *store.Loop) *loopView {
 	out := &loopView{Loop: l, State: loop.StateAsleep, HasTGToken: l.TGBotToken != "", WorkstationUp: true,
-		OwnerDMReady: l.OwnerTGUserID != 0 && l.OwnerDMChatID != 0}
+		OwnerDMReady: l.OwnerTGUserID != 0 && l.OwnerDMChatID != 0, InFleetChannel: !l.OutsideFleetChannel}
 	if l.OwnerTGUserID != 0 {
 		if sender, err := s.Store.TGSenders().Get(ctx, l.OwnerTGUserID); err == nil {
 			out.OwnerUsername = sender.Username
@@ -604,6 +607,7 @@ type patchLoopReq struct {
 	MaxWakeSec      *int    `json:"max_wake_sec"`
 	IdleTimeoutSec  *int    `json:"idle_timeout_sec"`
 	TGBotToken      *string `json:"tg_bot_token"`
+	InFleetChannel  *bool   `json:"in_fleet_channel"`
 }
 
 // patchLoopResp is the saved loop with one field the loop itself does not
@@ -657,6 +661,10 @@ func (s *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 		}
 		pacing := defaultStr(*req.Pacing, store.PacingFixed)
 		edit.Pacing = &pacing
+	}
+	if req.InFleetChannel != nil {
+		outside := !*req.InFleetChannel
+		edit.OutsideFleetChannel = &outside
 	}
 	if req.TGBotToken != nil {
 		token := strings.TrimSpace(*req.TGBotToken)
@@ -857,6 +865,12 @@ func (s *Server) handleLoopMessage(w http.ResponseWriter, r *http.Request) {
 	dest := defaultStr(req.Destination, store.ConversationControlRoom)
 	if dest != store.ConversationControlRoom && dest != store.ConversationGroup {
 		s.jsonErr(w, 400, "destination must be %s or %s", store.ConversationControlRoom, store.ConversationGroup)
+		return
+	}
+	if dest == store.ConversationGroup && l.OutsideFleetChannel {
+		// Refused rather than stored: the post would land in the group and
+		// reach nobody, since the loop it was written to has no group.
+		s.jsonErr(w, 409, "%s is not in the fleet channel", l.Name)
 		return
 	}
 	err := s.Router.Ingest(r.Context(), route.InboundMessage{

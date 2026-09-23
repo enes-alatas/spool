@@ -289,6 +289,7 @@ type loopView struct {
 	Mission            string  `json:"mission"`
 	TGBotUsername      string  `json:"tg_bot_username"`
 	TGGroupChatID      int64   `json:"tg_group_chat_id"`
+	InFleetChannel     bool    `json:"in_fleet_channel"`
 }
 
 type turn struct {

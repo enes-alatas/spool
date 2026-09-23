@@ -23,28 +23,33 @@ var mentionRe = regexp.MustCompile(`(?:^|[^\w@])@([A-Za-z0-9_-]+)`)
 // token never competes with a real name.
 const BroadcastToken = "all"
 
-// broadcastTargets are the loops an @all in chatID reaches, minus the
-// sender. Eligibility, as the operator settled it for #74: bound to that
-// group, not paused, not archived. A loop whose workstation is off stays
-// eligible — its delivery queues and arrives when the machine is back,
-// exactly as a direct mention does — while a paused loop is deliberately
-// out, since pausing is the operator saying "leave this one alone".
+// broadcastTargets are the loops an @all in the group reaches, minus the
+// sender. Eligibility, as the operator settled it for #74 and ADR-0032
+// narrowed it: in the fleet channel, not paused, not archived. A loop whose
+// workstation is off stays eligible — its delivery queues and arrives when
+// the machine is back, exactly as a direct mention does — while a paused
+// loop is deliberately out, since pausing is the operator saying "leave this
+// one alone".
 //
-// chatID 0 means the message has no originating group chat: a composer post
-// from the control room. There is no group to be local to, so every
-// eligible loop receives it.
-func (r *Router) broadcastTargets(loops []*store.Loop, chatID int64, fromLoopID string) map[string]*store.Loop {
+// There is one group, the hub's, so where the message was posted from —
+// Telegram, the control room, a loop — does not narrow it further.
+func (r *Router) broadcastTargets(loops []*store.Loop, fromLoopID string) map[string]*store.Loop {
 	targets := map[string]*store.Loop{}
 	for _, l := range loops {
-		if l.ID == fromLoopID || l.Status != store.StatusActive {
-			continue
-		}
-		if chatID != 0 && l.TGGroupChatID != chatID {
+		if l.ID == fromLoopID || l.Status != store.StatusActive || l.OutsideFleetChannel {
 			continue
 		}
 		targets[l.ID] = l
 	}
 	return targets
+}
+
+// inGroup says whether a group message addressed to l — by mention, by reply
+// or by the composer it was posted from — is delivered to it. A loop outside
+// the fleet channel has no group, so a message naming it there reaches
+// nobody (ADR-0032 item 2).
+func inGroup(l *store.Loop) bool {
+	return l.Status != store.StatusArchived && !l.OutsideFleetChannel
 }
 
 // stormLimit caps deliveries per ordered loop pair per hour so two loops
@@ -217,18 +222,18 @@ func (r *Router) Ingest(ctx context.Context, in InboundMessage) error {
 				// deliberate broadcast: the union with the mentions and the
 				// reply author is deduplicated by loop id, so a loop named
 				// twice over is still delivered to once
-				for id, l := range r.broadcastTargets(loops, in.TGChatID, in.FromLoopID) {
+				for id, l := range r.broadcastTargets(loops, in.FromLoopID) {
 					targets[id] = l
 				}
 				continue
 			}
-			if l, ok := byKey[m]; ok && l.ID != in.FromLoopID && l.Status != store.StatusArchived {
+			if l, ok := byKey[m]; ok && l.ID != in.FromLoopID && inGroup(l) {
 				targets[l.ID] = l
 			}
 		}
 		if replyTo != nil && replyTo.FromLoopID != "" && replyTo.FromLoopID != in.FromLoopID {
 			for _, l := range loops {
-				if l.ID == replyTo.FromLoopID && l.Status != store.StatusArchived {
+				if l.ID == replyTo.FromLoopID && inGroup(l) {
 					targets[l.ID] = l
 				}
 			}
@@ -236,7 +241,10 @@ func (r *Router) Ingest(ctx context.Context, in InboundMessage) error {
 	}
 	if in.ImplicitTo != "" {
 		for _, l := range loops {
-			if l.ID == in.ImplicitTo && l.Status != store.StatusArchived {
+			// a group post from a loop's composer addresses that loop only
+			// if it has a group to be addressed in
+			if l.ID == in.ImplicitTo && l.Status != store.StatusArchived &&
+				(conv != store.ConversationGroup || inGroup(l)) {
 				targets[l.ID] = l
 			}
 		}

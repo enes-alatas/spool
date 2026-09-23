@@ -8,18 +8,23 @@ import (
 	"time"
 )
 
-// @all is deliberate group delivery to the eligible loops of that group
-// (#74, ADR-0025): the sender never wakes itself, overlap with mentions and
-// reply addressing costs one delivery, paused loops stay out, and private
-// text containing @all is still private text.
+// @all is deliberate group delivery to the eligible loops of the fleet
+// channel (#74, ADR-0025, ADR-0032): the sender never wakes itself, overlap
+// with mentions and reply addressing costs one delivery, paused loops and
+// loops outside the fleet channel stay out, and private text containing @all
+// is still private text.
 
-// A human's @all in the group reaches every eligible loop once, and skips
-// the loop the operator paused.
+// A human's @all in the group reaches every eligible loop once — including
+// one with no surface, since the fleet channel is the hub's and not
+// Telegram's — and skips the loop the operator paused and the one taken out
+// of the fleet channel.
 func TestHumanBroadcastReachesEligibleLoopsOnce(t *testing.T) {
 	operator := user{ID: 8181, First: "Operator", Username: "operator"}
 	srv, tg := startTelegramFleet(t, operator)
 	srv.createLoop("gamma", nil)
+	srv.createLoop("delta", nil)
 	srv.mustJSON("POST", "/api/loops/beta/pause", nil, nil)
+	srv.mustJSON("PATCH", "/api/loops/delta", map[string]any{"in_fleet_channel": false}, nil)
 
 	const text = "@all standup in five"
 	tg.post(groupChatID, "supergroup", text, operator)
@@ -37,14 +42,11 @@ func TestHumanBroadcastReachesEligibleLoopsOnce(t *testing.T) {
 		}
 		delivered[id] = true
 	}
-	if got := len(delivered); got != 1 {
-		t.Fatalf("delivered_to = %v, want alpha alone: beta is paused and gamma is in no group",
+	if got := len(delivered); got != 2 || !delivered[srv.loop("alpha").ID] || !delivered[srv.loop("gamma").ID] {
+		t.Fatalf("delivered_to = %v, want alpha and gamma: beta is paused and delta is outside the fleet channel",
 			stored[0].DeliveredTo)
 	}
-	if !delivered[srv.loop("alpha").ID] {
-		t.Fatalf("delivered_to = %v, want alpha", stored[0].DeliveredTo)
-	}
-	for _, name := range []string{"beta", "gamma"} {
+	for _, name := range []string{"beta", "delta"} {
 		for _, tn := range srv.completed(name) {
 			if tn.Trigger == "message" && strings.Contains(tn.ResultText, "standup in five") {
 				t.Fatalf("an ineligible loop (%s) was woken by the broadcast", name)
