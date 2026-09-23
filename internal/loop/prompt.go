@@ -485,16 +485,16 @@ func SendFailureEnvelope(now time.Time, failures []*store.Message) Envelope {
 	if len(shown) > maxSendFailuresTold {
 		shown = shown[:maxSendFailuresTold]
 	}
-	noun := "message"
-	if len(failures) != 1 {
-		noun = "messages"
-	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "[system note · %d of your %s never arrived · %s]\n\n",
-		len(failures), noun, now.UTC().Format("2006-01-02 15:04 UTC"))
+	// "1 of your messages", not "1 of your message": the partitive takes the
+	// plural whatever the count, because it names the set being counted.
+	fmt.Fprintf(&b, "[system note · %d of your messages never arrived · %s]\n\n",
+		len(failures), now.UTC().Format("2006-01-02 15:04 UTC"))
 	b.WriteString("These sends were retried and then given up on, so nobody read them. " +
-		"They are\nnot sent again unless you send them again — say it once more only if it is " +
-		"still\nworth saying, and to the destination named.\n\n")
+		"They are\nnot sent again unless you send them again — say it once more only if it is" +
+		"\nstill worth saying, and to the destination named. When you do, pass that" +
+		"\nmessage's reference as send_message's \"resends\": the failure is then dealt" +
+		"\nwith, and nobody has to clear it by hand.\n\n")
 	for _, m := range shown {
 		fmt.Fprintf(&b, "- %s to %s: %s\n  %q\n",
 			MessageRef(m.ID), destinationOf(m), reasonOf(m), truncate(strings.TrimSpace(m.Text), maxLostExcerpt))

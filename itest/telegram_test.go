@@ -360,6 +360,8 @@ type activityMessage struct {
 	SendFailedAt       int64    `json:"send_failed_at"`
 	SendError          string   `json:"send_error"`
 	SendResolvedAt     int64    `json:"send_resolved_at"`
+	SendResolution     string   `json:"send_resolution"`
+	SendResentAs       int64    `json:"send_resent_as"`
 }
 
 func (s *server) activity() []activityMessage {

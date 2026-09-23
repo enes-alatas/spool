@@ -325,12 +325,34 @@ func TestUntoldSendFailures(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := db.Messages().ResolveSend(ctx, stale.ID, now, store.SendResolutionDelivered); err != nil {
+	if _, err := db.Messages().ResolveSend(ctx, stale.ID, now, store.SendResolutionDelivered, 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Messages().ResolveSend(ctx, setAside.ID, now, store.SendResolutionDismissed); err != nil {
+	if _, err := db.Messages().ResolveSend(ctx, setAside.ID, now, store.SendResolutionDismissed, 0); err != nil {
 		t.Fatal(err)
 	}
+	// A resend is the loop dealing with its own failure (#270), so it leaves
+	// the list for the same reason a landed retry does: those words arrived.
+	saidAgain := &store.Message{TS: now + 7, Origin: store.OriginLoop, Author: "terra",
+		FromLoopID: "l1", Text: "said again", Conversation: store.ConversationGroup}
+	if err := db.Messages().Insert(ctx, saidAgain); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Messages().SetSendResult(ctx, saidAgain.ID, now, "chat not found"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Messages().ResolveSend(ctx, saidAgain.ID, now, store.SendResolutionResent, 999); err != nil {
+		t.Fatal(err)
+	}
+	// Which message carried the words the second time is on the row: the
+	// reason says a resend happened, this says which one to go and read.
+	if got, err := db.Messages().Get(ctx, saidAgain.ID); err != nil {
+		t.Fatal(err)
+	} else if got.SendResolution != store.SendResolutionResent || got.SendResentAs != 999 {
+		t.Errorf("resent row = resolution %q, resent_as %d; want %q and 999",
+			got.SendResolution, got.SendResentAs, store.SendResolutionResent)
+	}
+
 	afterResolution, err := db.Messages().UntoldSendFailures(ctx, "l1")
 	if err != nil {
 		t.Fatal(err)
@@ -450,7 +472,7 @@ func TestUnresolvedSendFailures(t *testing.T) {
 	}
 
 	// Resolving one is what does take it off the count — and only one.
-	resolved, err := db.Messages().ResolveSend(ctx, recent.ID, now, store.SendResolutionDismissed)
+	resolved, err := db.Messages().ResolveSend(ctx, recent.ID, now, store.SendResolutionDismissed, 0)
 	if err != nil || !resolved {
 		t.Fatalf("ResolveSend = %v (err %v), want true", resolved, err)
 	}
@@ -461,18 +483,18 @@ func TestUnresolvedSendFailures(t *testing.T) {
 	if got, err := db.Messages().Get(ctx, recent.ID); err != nil {
 		t.Fatal(err)
 	} else if got.SendFailedAt == 0 || got.SendError == "" || got.SendResolvedAt != now ||
-		got.SendResolution != store.SendResolutionDismissed {
+		got.SendResolution != store.SendResolutionDismissed || got.SendResentAs != 0 {
 		t.Errorf("resolved row = failed_at %d, error %q, resolved_at %d, resolution %q; want the failure kept and the resolution recorded",
 			got.SendFailedAt, got.SendError, got.SendResolvedAt, got.SendResolution)
 	}
 
 	// Resolving it again is a no-op that says so, which is what makes the
 	// operator's second click a 404 rather than a silent success.
-	if again, err := db.Messages().ResolveSend(ctx, recent.ID, now+1, store.SendResolutionDelivered); err != nil || again {
+	if again, err := db.Messages().ResolveSend(ctx, recent.ID, now+1, store.SendResolutionDelivered, 0); err != nil || again {
 		t.Errorf("second ResolveSend = %v (err %v), want false", again, err)
 	}
 	// As is resolving a message that never failed.
-	if got, err := db.Messages().ResolveSend(ctx, delivered.ID, now, store.SendResolutionDelivered); err != nil || got {
+	if got, err := db.Messages().ResolveSend(ctx, delivered.ID, now, store.SendResolutionDelivered, 0); err != nil || got {
 		t.Errorf("ResolveSend on a delivered message = %v (err %v), want false", got, err)
 	}
 
@@ -531,7 +553,7 @@ func TestUndeliveredAgreesWithTheCount(t *testing.T) {
 	}
 	// One of l1's is resolved — retried into a send that got through, or
 	// dismissed; the list and the count must both lose exactly that one.
-	if resolved, err := db.Messages().ResolveSend(ctx, dealtWith.ID, now, store.SendResolutionDismissed); err != nil || !resolved {
+	if resolved, err := db.Messages().ResolveSend(ctx, dealtWith.ID, now, store.SendResolutionDismissed, 0); err != nil || !resolved {
 		t.Fatalf("ResolveSend = %v (err %v), want true", resolved, err)
 	}
 
@@ -569,5 +591,73 @@ func TestUndeliveredAgreesWithTheCount(t *testing.T) {
 	// And the error text is carried, since it is the whole point of the row.
 	if list[0].SendError != "chat not found" {
 		t.Errorf("send error = %q, want the stored one", list[0].SendError)
+	}
+}
+
+// TestResolveResendsWalksTheChain: an outage can cost a loop several
+// attempts at one set of words, each resending the last, and the send that
+// finally arrives ends all of them (#270). The first link is the one that
+// matters: it was reported to the loop before its own resend failed, so
+// nothing will ever name it to the loop again — a walk that stopped at the
+// nearest claim would leave it on the operator's list forever.
+func TestResolveResendsWalksTheChain(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	now := time.Now().UnixMilli()
+
+	say := func(text string, resends int64) *store.Message {
+		m := &store.Message{TS: now, Origin: store.OriginLoop, Author: "terra",
+			FromLoopID: "l1", Text: text, Conversation: store.ConversationGroup,
+			ResendsID: resends}
+		if err := db.Messages().Insert(ctx, m); err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+	first := say("the deploy is wedged", 0)
+	second := say("the deploy is wedged (again)", first.ID)
+	third := say("the deploy is wedged (again, again)", second.ID)
+	unrelated := say("something else entirely", 0)
+	for _, m := range []*store.Message{first, second, unrelated} {
+		if err := db.Messages().SetSendResult(ctx, m.ID, now, "chat not found"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// The third send is the one that got through.
+	n, err := db.Messages().ResolveResends(ctx, third.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Errorf("resolved %d failures, want both links of the chain", n)
+	}
+	for _, m := range []*store.Message{first, second} {
+		got, err := db.Messages().Get(ctx, m.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.SendResolvedAt == 0 || got.SendResolution != store.SendResolutionResent {
+			t.Errorf("%q resolved as %q at %d; want resent", m.Text, got.SendResolution, got.SendResolvedAt)
+		}
+		// The message that arrived, not the next attempt: an operator
+		// reading either failure wants the words that landed.
+		if got.SendResentAs != third.ID {
+			t.Errorf("%q names %d as the resend, want %d", m.Text, got.SendResentAs, third.ID)
+		}
+	}
+	// Nothing outside the chain is touched.
+	if got, err := db.Messages().Get(ctx, unrelated.ID); err != nil {
+		t.Fatal(err)
+	} else if got.SendResolvedAt != 0 {
+		t.Error("a failure the chain never named was resolved with it")
+	}
+	// And a message that resends nothing resolves nothing.
+	if n, err := db.Messages().ResolveResends(ctx, unrelated.ID, now); err != nil || n != 0 {
+		t.Errorf("ResolveResends on a message that resends nothing = %d (err %v), want 0", n, err)
 	}
 }

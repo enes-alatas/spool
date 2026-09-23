@@ -228,6 +228,21 @@ type Message struct {
 	// looking — and readers that only ask "is it still on my list" should
 	// use SendResolvedAt instead of comparing this.
 	SendResolution string `json:"send_resolution,omitempty"`
+	// SendResentAs is the message that carried these words the second time,
+	// when the loop itself said them again against this failure (#270).
+	// Zero for every other resolution. The reason says a resend happened;
+	// this says which message it was, so an operator reading the failure can
+	// read what was actually said rather than take it on trust. When a
+	// resend failed and was itself resent, this is the message that finally
+	// got through, not the next attempt — the words that arrived are what
+	// the operator wants from a failure that is closed.
+	SendResentAs int64 `json:"send_resent_as,omitempty"`
+	// ResendsID is the failed message these words were said again for: the
+	// sender's claim, made when the send was asked for and kept whatever
+	// becomes of it (#270). Zero for a message that resends nothing. A
+	// resend that fails too is itself resent, so this is a chain, and the
+	// send that finally arrives resolves all of it.
+	ResendsID int64 `json:"resends_id,omitempty"`
 	// SendFailureToldAt is when the loop that sent this message was told the
 	// send failed (0 = not yet). Engine bookkeeping for delivering that news
 	// exactly once (#154), so json:"-" keeps it out of every API response —
@@ -250,6 +265,12 @@ const (
 	// aside. The message still never arrived, so its sender is still owed
 	// the news; this only takes it off the operator's list.
 	SendResolutionDismissed = "dismissed"
+	// SendResolutionResent: the loop said the words again itself, naming
+	// this failure in the send that carried them, and that send got
+	// through (#270). Like a delivered resolution and unlike a dismissed
+	// one, it means the words reached their reader — so the sender is not
+	// told about this failure either; it is the one that dealt with it.
+	SendResolutionResent = "resent"
 )
 
 // SurfaceRef is one bot's own id for a message on a surface: what its poller
@@ -458,10 +479,11 @@ type MessageStore interface {
 	// through and whose sender has not been told, oldest first. The sender,
 	// not the recipient: this is the loop's own news about its own words.
 	//
-	// A failure an operator retried into a successful send is not among
-	// them: that message did arrive, and a loop told otherwise says it
-	// again. A dismissed one still is — dismissal is the operator done
-	// looking, not the message delivered.
+	// A failure whose words reached their reader in the end is not among
+	// them — an operator's retry that landed, or the loop's own resend —
+	// because a loop told a delivered message was lost says it again and
+	// the human reads it twice. A dismissed one still is: dismissal is the
+	// operator done looking, not the message delivered.
 	UntoldSendFailures(ctx context.Context, loopID string) ([]*Message, error)
 	// UnresolvedSendFailures counts the messages a loop sent that never got
 	// through and that nothing has resolved — no successful retry, no
@@ -484,9 +506,18 @@ type MessageStore interface {
 	// is already resolved, is left alone and answers false — which is a
 	// no-op on the send path and a 404 on the operator's.
 	// resolution is one of the SendResolution* constants, saying which of
-	// the two happened; readers that care about the difference — notably
-	// UntoldSendFailures — ask it rather than re-deriving it.
-	ResolveSend(ctx context.Context, id int64, at int64, resolution string) (bool, error)
+	// the three happened; readers that care about the difference — notably
+	// UntoldSendFailures — ask it rather than re-deriving it. resentAs
+	// names the message that carried the words again, and is zero for
+	// every resolution but a resend.
+	ResolveSend(ctx context.Context, id int64, at int64, resolution string, resentAs int64) (bool, error)
+	// ResolveResends resolves every failure the given message was sent to
+	// replace — the one its ResendsID names, the one that one named, and
+	// so on — as resent by it, and reports how many it resolved. Called
+	// when a send gets through: the words arrived, so every failure that
+	// was an attempt to say them is dealt with, however many attempts it
+	// took. A message that resends nothing resolves nothing.
+	ResolveResends(ctx context.Context, messageID int64, at int64) (int, error)
 	// MarkSendFailuresTold records that the loop has now been told about
 	// these messages. Called once the turn carrying the news has completed,
 	// so a wake that dies before it still owes the news.
