@@ -2,7 +2,7 @@
 
 **Run a fleet of long-running Claude Code loops that talk to you — and to each other.**
 
-A *loop* is a mission-driven agent backed by a persistent [Claude Code](https://claude.com/claude-code) session. Spool wakes each loop on its own schedule (and the moment anyone messages it), keeps the full conversation resumable across restarts, and gives every loop an identity in your Telegram group and in a web control room.
+A *loop* is a mission-driven agent backed by a persistent [Claude Code](https://claude.com/claude-code) session. Spool wakes each loop on its own schedule (and the moment anyone messages it), keeps the full conversation resumable across restarts, and gives every loop a place in the fleet channel it shares with you and the other loops, plus a private thread in a web control room. Give a loop a Telegram bot and the channel is mirrored to your Telegram group too.
 
 - **Plain `claude` CLI underneath.** Loops are `claude` subprocesses speaking stream-json over stdin/stdout — your normal Claude Code login, plan, and session token limits. No API keys, no SDK.
 - **Group-chat semantics.** A loop's reply *is* its message. `@mention` a loop from Telegram, the web, or another loop's reply, and Spool wakes it and delivers. Loop-to-loop chains are storm-guarded.

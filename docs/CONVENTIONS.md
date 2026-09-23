@@ -259,9 +259,9 @@ agents — Claude sessions today, Spool's own loops from L2.*
   and a deletion is not a recall. One rule follows, which the redaction rules
   enforce only the edges of — a bot handle and the group's chat id are taken
   out of a body automatically, the words are not: **nothing said in the
-  Telegram group is quoted on GitHub.** The
-  group is where the fleet coordinates and the operator thinks out loud, and
-  neither was written for an audience; an issue or PR that needs the substance
+  fleet channel, or the Telegram group it is mirrored to, is quoted on
+  GitHub.** The channel is where the fleet coordinates and the operator
+  thinks out loud, and neither was written for an audience; an issue or PR that needs the substance
   of something said there states it in its own words, as the writer's own
   claim.
 - **Proving an event-driven workflow** (#209): a workflow that fires on
