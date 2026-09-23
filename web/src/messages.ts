@@ -135,9 +135,9 @@ export function undeliveredTitle(u: Undelivered): string {
   const why = u.reason ? `${u.reason}. ` : ''
   switch (u.resolution) {
     case 'delivered':
-      return `${why}Given up at ${when}, then sent again from the Undelivered page; that attempt got through.`
+      return `${why}Given up at ${when}, then sent again from Undelivered; that attempt got through.`
     case 'dismissed':
-      return `${why}Given up at ${when}; the recipient never received this, and it was dismissed from the Undelivered page rather than sent again.`
+      return `${why}Given up at ${when}; the recipient never received this, and it was dismissed from Undelivered rather than sent again.`
     case 'resent':
       return `${why}Given up at ${when}; the recipient never received this. The loop said it again${u.resentAs ? ` as message ${u.resentAs}` : ''}, and that one got through.`
     case 'unknown':
@@ -166,18 +166,18 @@ export function undeliveredNote(count: number | undefined): { text: string; titl
   // "unresolved", because this hover is where an operator meets the idea
   // first, and they are the two buttons the room gives them.
   //
-  // Undelivered, not Activity and not the loop page. A loop's group sends
-  // are listed on neither of the loop page's panes — the control-room pane
-  // is the private conversation, and the timeline renders events and turns
+  // The loop's Undelivered pane, not Activity and not its other panes. A
+  // loop's group sends are listed on neither the control-room pane — the
+  // private conversation — nor the timeline, which renders events and turns
   // rather than messages. Activity carries the mark for every kind of
-  // failure and was the answer until this fleet-wide list existed, but it is
-  // a newest-100 window across every conversation: on a busy fleet it is the
+  // failure and was the answer until the list existed, but it is a
+  // newest-100 window across every conversation: on a busy fleet it is the
   // page that cannot answer the number this badge is showing, which is what
-  // #263 was filed for. The tab reads the predicate this count reads,
-  // uncapped.
+  // #263 was filed for. The pane reads the predicate this count reads, for
+  // this loop, uncapped (#281). Clicking the badge opens it.
   return {
     text: `${count} undelivered`,
-    title: `${count} ${plural} this loop sent never reached the surface, and no retry has got through and nobody has dismissed ${count === 1 ? 'it' : 'them'}. Open Undelivered to see which; a private one is also marked on the loop's control room.`,
+    title: `${count} ${plural} this loop sent never reached the surface, and no retry has got through and nobody has dismissed ${count === 1 ? 'it' : 'them'}. Click to see which on the loop's Undelivered pane; a private one is also marked on its control room.`,
   }
 }
 

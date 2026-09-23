@@ -494,15 +494,18 @@ textarea {
 .undelivered-why {
   color: var(--text-muted);
 }
-/* the one link in the summary line: it has to read as a destination among
-   plain numbers, without turning the line into navigation */
-.undelivered-link {
+/* the fleet's total in the summary line: a fault among plain numbers */
+.undelivered-total {
   color: var(--danger);
-  text-decoration: none;
-  border-bottom: 1px solid var(--danger-line);
 }
-.undelivered-link:hover {
-  border-bottom-color: var(--danger);
+/* the Fleet row's count, which opens that loop's Undelivered pane (#281):
+   it has to read as a way in among the row's plain notes, without looking
+   like a second link fighting the row's own */
+.fleet-row .undelivered-link {
+  cursor: pointer;
+}
+.fleet-row .undelivered-link:hover {
+  border-color: var(--danger);
 }
 /* what a retry is waiting on. Muted and full-width: it is an aside to a row
    the operator has already acted on, and it wraps onto its own line rather
@@ -527,22 +530,27 @@ textarea {
    own grid — `max-content` would size the destination track per row, and the
    reasons would start at a different x on a row whose destination is
    `control room` than on one that says `group`. A column of reasons you can
-   run your eye down is the thing an operator came here for. */
+   run your eye down is the thing an operator came here for.
+
+   No sender column: the rows are one loop's, on that loop's page (#281), so
+   the message takes the width a name would have repeated down every row. */
 .undelivered-row.feed-item {
   display: grid;
   grid-template-columns: 76px 104px minmax(0, 1fr) max-content;
   grid-template-areas:
-    'when author text text'
-    'when dest reason actions';
+    'time text text text'
+    'date dest reason actions';
   column-gap: 12px;
   row-gap: 6px;
   align-items: baseline;
 }
 .undelivered-row .when {
-  grid-area: when;
+  grid-area: time;
 }
-.undelivered-row .author {
-  grid-area: author;
+/* Under the time, on the destination's line, so it costs the row no height
+   and sits on the same baseline as the reason beside it. */
+.undelivered-row .when-date {
+  grid-area: date;
 }
 .undelivered-row .text {
   grid-area: text;
@@ -566,14 +574,13 @@ textarea {
   grid-area: reason;
 }
 /* One line each, so every row is the same height and the columns stay in
-   line. The message keeps its full text in the title (`Undelivered.tsx`);
-   the author and the reason are short enough that clipping is a long-name
-   edge rather than the common case.
+   line. The message keeps its full text in the title (`UndeliveredPane.tsx`);
+   the reason is short enough that clipping it is an edge rather than the
+   common case.
 
    Outweighed rather than restated, for the same reason as `.origin` above:
    `.feed-item .text` sets `white-space: pre-wrap` later at (0,2,0), and
    without `nowrap` the ellipsis never engages — the message just wraps. */
-.undelivered-row.feed-item .author,
 .undelivered-row.feed-item .text,
 .undelivered-row.feed-item .undelivered-reason {
   overflow: hidden;
@@ -847,14 +854,14 @@ textarea {
    of their own. The words the column headers used to supply come back with
    them — a bare "18m" under no heading says nothing. */
 @media (max-width: 720px) {
-  /* Four columns do not fit a phone: the message would be squeezed between a
-     fixed author column and three buttons. Restacked rather than dropped —
-     the destination and the reason stay on one line together, which is the
+  /* Four columns do not fit a phone: the destination and the reason would be
+     squeezed between the time and the buttons. Restacked rather than dropped
+     — the destination and the reason stay on one line together, which is the
      pairing this layout exists for. */
   .undelivered-row.feed-item {
     grid-template-columns: max-content minmax(0, 1fr);
     grid-template-areas:
-      'when author'
+      'time date'
       'text text'
       'dest reason'
       'actions actions';
@@ -1154,6 +1161,14 @@ textarea {
 .dest-picker .dest.on {
   border-color: var(--text);
   color: var(--text);
+}
+/* the Undelivered pane's tab: it only exists while something failed, and it
+   says so in the colour the Fleet badge that led here uses */
+.dest-picker .dest.bad {
+  color: var(--danger);
+}
+.dest-picker .dest.bad.on {
+  border-color: var(--danger);
 }
 .composer textarea {
   flex: 1;

@@ -8,8 +8,8 @@ import (
 	"time"
 )
 
-// undeliveredRow is the subset of the stored message the Undelivered tab
-// renders, plus the resolution the tab's two actions write (#269).
+// undeliveredRow is the subset of the stored message the Undelivered pane
+// renders, plus the resolution the pane's two actions write (#269).
 type undeliveredRow struct {
 	ID             int64  `json:"id"`
 	FromLoopID     string `json:"from_loop_id"`

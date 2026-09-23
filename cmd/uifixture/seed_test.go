@@ -133,12 +133,18 @@ func TestSeedWritesAFleetTheRoomCanRender(t *testing.T) {
 		t.Error("no loop has an undelivered message: the Fleet row's count would be a zero in every row")
 	}
 
-	// And more than one, going to different places. The Undelivered tab puts
-	// its rows in columns (#282), so a single-row fixture shoots a page that
-	// would look the same whether or not the columns line up — which is how
-	// the misalignment survived being screenshotted. Two destinations is the
-	// smallest fixture that can show it.
-	undelivered, err := db.Messages().Undelivered(ctx, "")
+	// And more than one, going to different places, from the loop the shot
+	// opens. The Undelivered pane puts its rows in columns (#282), so a
+	// single-row fixture shoots a pane that would look the same whether or
+	// not the columns line up — which is how the misalignment survived being
+	// screenshotted. Two destinations is the smallest fixture that can show
+	// it, and they have to be one loop's, since the pane lists one loop's
+	// (#281; `web/scripts/ui-shots.mjs` names the loop).
+	archivist, err := db.Loops().GetByName(ctx, "archivist")
+	if err != nil {
+		t.Fatalf("archivist: %v", err)
+	}
+	undelivered, err := db.Messages().Undelivered(ctx, archivist.ID)
 	if err != nil {
 		t.Fatalf("undelivered: %v", err)
 	}
@@ -147,7 +153,7 @@ func TestSeedWritesAFleetTheRoomCanRender(t *testing.T) {
 		dests[m.Conversation] = true
 	}
 	if len(undelivered) < 2 || len(dests) < 2 {
-		t.Errorf("fixture has %d undelivered messages across %d destinations; want at least 2 of each, or the Undelivered shot cannot show its columns",
+		t.Errorf("archivist has %d undelivered messages across %d destinations; want at least 2 of each, or the Undelivered shot cannot show its columns",
 			len(undelivered), len(dests))
 	}
 

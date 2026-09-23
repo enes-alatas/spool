@@ -221,7 +221,7 @@ type Message struct {
 	// SendResolvedAt is when a failure stopped being the operator's
 	// business: a retry of this row got through, or they dismissed it.
 	// Zero while it is still unresolved, which is what the undelivered
-	// count and the Undelivered tab ask for (#269). The failure itself is
+	// count and the Undelivered pane ask for (#269). The failure itself is
 	// not erased — send_failed_at and send_error stay, because what failed
 	// and why is history, and a resolved row that looked like a delivered
 	// one would lose it.

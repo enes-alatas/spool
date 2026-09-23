@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, type UIEvent } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import {
   api,
@@ -19,6 +19,7 @@ import { MODEL_OPTIONS, EFFORT_OPTIONS, PACING_OPTIONS } from '../options'
 import { useStream } from '../stream'
 import { toEntries, extractDelta } from '../timeline'
 import { UndeliveredMark } from '../components/UndeliveredMark'
+import { UndeliveredPane } from '../components/UndeliveredPane'
 import { Timeline } from '../components/Timeline'
 import { SpoolGlyph } from '../components/Spool'
 import { EditIcon } from '../components/Icons'
@@ -806,6 +807,8 @@ function ControlRoomThread({ msgs }: { msgs: ChatMessage[] }) {
   )
 }
 
+type Pane = 'timeline' | 'control_room' | 'undelivered'
+
 export default function LoopDetail() {
   const { name = '' } = useParams()
   const nav = useNavigate()
@@ -816,7 +819,13 @@ export default function LoopDetail() {
   const [runningVerb, setRunningVerb] = useState('')
   const [draft, setDraft] = useState('')
   const [dest, setDest] = useState<MessageDestination>('control_room')
-  const [pane, setPane] = useState<'timeline' | 'control_room'>('timeline')
+  // The Fleet badge opens this page on its Undelivered pane (`?pane=`, #281);
+  // read once, as where the page starts, so switching panes afterwards is not
+  // a navigation the back button has to walk through.
+  const [searchParams] = useSearchParams()
+  const [pane, setPane] = useState<Pane>(() =>
+    searchParams.get('pane') === 'undelivered' ? 'undelivered' : 'timeline',
+  )
   const paneRef = useRef<HTMLDivElement>(null)
   // Whether the pane should follow new entries. A reader who has scrolled up
   // is reading; yanking them back to the tail because a turn arrived loses
@@ -826,11 +835,11 @@ export default function LoopDetail() {
   // Which entry the reader is parked on, and where in the pane it sits, for
   // the moment the window slides under them.
   const anchor = useRef<{ id: string; offset: number } | null>(null)
-  // Both panes render into the same scroll container, so a position recorded
-  // in one means nothing in the other: the ids come from different tables and
+  // The panes render into the same scroll container, so a position recorded
+  // in one means nothing in another: the ids come from different tables and
   // would collide by coincidence. Switching panes starts at the tail, which is
   // where a reader opening a conversation wants to be anyway.
-  const showPane = (next: 'timeline' | 'control_room') => {
+  const showPane = (next: Pane) => {
     following.current = true
     anchor.current = null
     setPane(next)
@@ -1073,7 +1082,9 @@ export default function LoopDetail() {
 
   useLayoutEffect(() => {
     const el = paneRef.current
-    if (!el) return
+    // A list rather than a conversation: it reads from the top, and nothing
+    // arrives at its tail to follow.
+    if (!el || pane === 'undelivered') return
     if (following.current) {
       el.scrollTop = el.scrollHeight
       return
@@ -1151,6 +1162,19 @@ export default function LoopDetail() {
             >
               control room
             </button>
+            {/* Only while there is something in it, like the nav entry it
+                replaces (#263): a permanent tab reading 0 on a healthy loop
+                is one the operator learns to skip. Kept while it is open, so
+                dismissing the last row does not pull the pane out from under
+                the click. The count is the one the Fleet badge shows. */}
+            {(loop.undelivered > 0 || pane === 'undelivered') && (
+              <button
+                className={`dest bad${pane === 'undelivered' ? ' on' : ''}`}
+                onClick={() => showPane('undelivered')}
+              >
+                undelivered{loop.undelivered > 0 && ` · ${loop.undelivered}`}
+              </button>
+            )}
           </div>
           {/* The history scrolls inside the page rather than growing it, so the
               composer below stays where the operator left it however long the
@@ -1164,8 +1188,10 @@ export default function LoopDetail() {
                 loadingOlder={loadingOlder}
                 olderFailed={olderFailed}
               />
-            ) : (
+            ) : pane === 'control_room' ? (
               <ControlRoomThread msgs={thread ?? []} />
+            ) : (
+              <UndeliveredPane name={loop.name} />
             )}
           </div>
           <div className="dest-picker">
