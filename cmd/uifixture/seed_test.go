@@ -170,6 +170,29 @@ func TestSeedWritesAFleetTheRoomCanRender(t *testing.T) {
 		t.Error("no undelivered message is over 200 characters: the Undelivered shot cannot show its one-line clamp")
 	}
 
+	// The fleet channel shot (#286) draws three things a timeline of plain
+	// posts would not show: a reply's quote, the operator's own post, and a
+	// human's that came in from a surface. Each needs a row, or the shot
+	// looks the same with it broken.
+	channel, err := db.Messages().ListConversation(ctx, store.ConversationGroup, "", 100)
+	if err != nil {
+		t.Fatalf("fleet channel: %v", err)
+	}
+	inChannel := map[int64]bool{}
+	for _, m := range channel {
+		inChannel[m.ID] = true
+	}
+	var reply, operator, human bool
+	for _, m := range channel {
+		reply = reply || (m.ReplyToID != 0 && inChannel[m.ReplyToID])
+		operator = operator || m.Origin == store.OriginWeb
+		human = human || m.Origin == store.OriginTelegramGroup
+	}
+	if !reply || !operator || !human {
+		t.Errorf("fleet channel: reply %v, operator post %v, human post %v; want all three, or the channel shot cannot show them",
+			reply, operator, human)
+	}
+
 	// Presence only, like every other reader of this store: the panel shows
 	// names, so the fixture needs names.
 	secrets, err := db.LoopSecrets().List(ctx, gardener.ID)
