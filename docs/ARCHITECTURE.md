@@ -40,11 +40,12 @@ Use these words exactly — in code, UI, docs, and prompts. Don't introduce syno
 | **tick** | A scheduled wake with no inbound message. |
 | **trailer** | The `[next-wake: 45m]` suffix a loop uses to schedule itself. |
 | **envelope** | The bracketed header + body format in which messages/ticks are delivered to a loop. |
-| **conversation** | The unit of privacy and addressing a message belongs to: `owner_dm` (a loop's Telegram DM with its owner), `group` (its bound group), or `control_room` (its private web thread). (ADR-0026) |
+| **conversation** | The unit of privacy and addressing a message belongs to: `owner_dm` (a loop's DM with its owner on its attached surface), `group` (the fleet channel, if the loop is in it), or `control_room` (its private web thread). (ADR-0026, ADR-0032) |
+| **fleet channel** | The conversation the operator and the loops share, living on the hub and native to the control room. Spelled `group` on the wire, in `send_message` and in stored rows; *fleet channel* everywhere a human reads it. A loop is *in* it or is not — membership is per loop, and there is deliberately no loop-noun for it, since **member** names a human org role. (ADR-0032) |
 | **send** | A loop's explicit outgoing message: destination, optional reply reference, text — expressed through the hub-served `send_message` tool. (ADR-0026) |
 | **status note** | A turn's final reply text: stored on the turn and shown in the timeline, carries the trailer, delivered to no conversation. (ADR-0026) |
-| **surface** | A chat platform adapter (Telegram today, Slack at L3). The web control room is not a surface; it talks to the hub directly. |
-| **mirror** | Re-posting hub-routed traffic to its explicit surface destination. Group coordination remains visible to humans; DM traffic stays in its DM. (ADR-0025) |
+| **surface** | A chat platform adapter (Telegram today, Slack at L3), attached to a loop after the loop exists and detachable; at most one per loop, and a loop may have none. The web control room is not a surface; it talks to the hub directly. (ADR-0029, ADR-0032) |
+| **mirror** | An attached surface's two-way relay between its room and the fleet channel — and, for DMs, between its DM and `owner_dm`. Asymmetric in the channel: everything posted in the room comes inward, whoever wrote it; only *loop-authored* messages go outward. Nothing the operator authors leaves the hub. DM traffic stays in its DM. (ADR-0025, ADR-0032) |
 | **visibility** | Who can see a message in its destination conversation; separate from which loops receive it as input. The former coordination/human-facing mirror gate is superseded. (ADR-0025) |
 | **follow** | Deferred opt-in subscription to un-addressed channel chatter. Not enabled in ADR-0025's selective-delivery model. |
 | **workstation** | A loop's persistent sandbox: its home dir, tools, clones. Long-lived — survives sleeps, restarts, and pauses; dies with the loop, or when the operator switches it off or rebuilds it (ADR-0017, ADR-0021). |
@@ -78,7 +79,9 @@ and group input into one answer. A loop sends through the hub-served
 `send_message` MCP tool — immediate, validated in-turn, capped per turn — to
 `owner_dm`, `group` (recipients from @mentions), or `control_room`; the bridge
 and web deliver each send by its conversation, and the final reply text becomes
-a status note delivered nowhere.
+a status note delivered nowhere. ADR-0032 moves `group` onto the hub as the
+fleet channel, with an attached surface mirroring it; that is decided and not
+yet built (#285).
 
 Still open under #44: native-reply references (#79), `@all` broadcast
 eligibility (#74), and a configured owner identity replacing the captured-DM
@@ -187,12 +190,14 @@ opportunistically, not big-bang.
   (the end of a wake that leaves no queued work), forced at ~70% — onto a
   fresh session seeded with a loop-authored handoff note. Thresholds are
   operator settings; no Spool-side `/compact`, ever.
-- **One bot ingests a group, every bot delivers** (ADR-0020): a surface where each
-  loop has its own bot identity sees the same human message N times, numbered
-  differently per bot. Exactly one bot persists it — for Telegram, the lowest loop
-  ID currently polling that group — while the router still fans it out to every
-  mentioned loop and `delivered_to` lists them all. Ingest is transport detail;
-  delivery is the hub's. Any future multi-identity surface inherits this rule.
+- **One bot ingests a room, every bot delivers** (ADR-0020, ADR-0032): a surface
+  where each loop has its own bot identity sees the same human message N times,
+  numbered differently per bot. Exactly one bot carries it inward across the
+  mirror — for Telegram, the lowest loop ID currently polling that room — while
+  the router still fans it out to every mentioned loop and `delivered_to` lists
+  them all. Ingest is transport detail; delivery is the hub's. It elects across
+  the mirror rather than into the fleet channel, which is the hub's own and has
+  no pollers. Any multi-identity surface inherits this rule.
 - **GitHub is not a surface** (ADR-0019): loops do GitHub work — branch, PR,
   review, issues — themselves with `git`/`gh` inside the workstation. Spool models
   the `connection` (the injected credential) and nothing downstream of it: no PR

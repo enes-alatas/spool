@@ -1,6 +1,6 @@
 # ADR-0025: Private DMs and shared groups with explicit delivery
 
-Date: 2026-09-14 · Status: accepted (operator agreement; implementation pending) · Amended: 2026-09-15 (sending contract); 2026-09-16 (native replies); 2026-09-17 (`@all` eligibility); 2026-09-20 (item 4 is a Surface rule); 2026-09-21 (inbound replies resolve by author)
+Date: 2026-09-14 · Status: accepted (operator agreement; implementation pending) · Amended: 2026-09-15 (sending contract); 2026-09-16 (native replies); 2026-09-17 (`@all` eligibility); 2026-09-20 (item 4 is a Surface rule); 2026-09-21 (inbound replies resolve by author); 2026-09-23 (item 2: the group is the hub's, and the mirror is asymmetric)
 
 ## Context
 
@@ -36,6 +36,21 @@ this agreement. Visibility to the owner and delivery to a loop are separate conc
    because of it. Unaddressed loops receive no ambient group context under this
    model. Surface membership/visibility alone does not subscribe a loop.
    Ambient follow is deferred; it is not silently enabled by this change.
+
+   **Amendment (2026-09-23, #284, ADR-0032):** "the group" is a conversation
+   on the hub — the fleet channel — not a room on a surface, and membership
+   in it is per loop rather than given by who is in a platform's room. An
+   attached surface mirrors it, and the mirror is asymmetric: everything
+   posted in the mirrored room comes inward, whoever wrote it, while only
+   *loop-authored* messages go outward. Nothing the operator authors leaves
+   the hub, and Spool holds no means of posting as the operator on any
+   platform — a security-posture decision of the operator's, recorded with
+   his reasoning in ADR-0032 item 4.
+
+   What this does to this item's promise that group traffic stays visible to
+   the human: it stays visible in the control room, which is where the
+   conversation now is. A reader of the mirrored room sees the fleet's half
+   and not the operator's.
 
 3. **Every loop-authored group message has recipients.** A new message uses
    explicit mentions or `@all`. A native reply implicitly addresses the
