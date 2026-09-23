@@ -11,14 +11,18 @@
 // `cmd/uifixture` wrote seconds earlier, so the fleet in every shot is
 // invented by construction rather than by the care of whoever took it.
 //
-// The Activity page is never shot, here or by hand: it carries the operator's
-// own DMs. There is no flag for it.
+// A loop's Undelivered pane carries the full body of every message that
+// failed to send, an undelivered owner DM included, and it is in the set
+// below because being in the set is what makes a shot of it safe: the fleet
+// it renders is one `cmd/uifixture` invented seconds earlier. Shot here,
+// never by hand.
 //
-// A loop's Undelivered pane carries the same kind of text — the full body of every
-// message that failed to send, an undelivered owner DM included — but it is
-// in the set below rather than excluded, because being in the set is what
-// makes a shot of it safe: the fleet it renders is one `cmd/uifixture`
-// invented seconds earlier. Shot here, never by hand.
+// The Activity page carries the same kind of text and is never shot, here or
+// by hand, and there is no flag for it. That is the operator's decision
+// (fleet rules; CONVENTIONS, "Screenshots come from fixtures", #277), not a
+// gap in the argument above: the page that is all the operator's own
+// conversations stays out of every picture, so nobody has to ask whether a
+// shot of it came from the fixture.
 import { chromium } from 'playwright'
 import { mkdirSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
