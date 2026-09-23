@@ -47,6 +47,11 @@ func (r *recordingMessages) SetSendResult(_ context.Context, _, _ int64, sendErr
 	return nil
 }
 
+func (r *recordingMessages) FailInterruptedSends(_ context.Context, _ int64, sendErr string) ([]*store.Message, error) {
+	r.sendErr = sendErr
+	return nil, nil
+}
+
 type recordingLoops struct {
 	store.LoopStore
 	note string
@@ -155,6 +160,20 @@ func TestSendErrorIsRedacted(t *testing.T) {
 	}
 }
 
+// The restart sweep stores its reason in the same column as a transport
+// error, so it goes through the same redaction.
+func TestInterruptedSendErrorIsRedacted(t *testing.T) {
+	s, d := decorated(t)
+
+	if _, err := s.Messages().FailInterruptedSends(context.Background(), 99,
+		"restarted mid-send to bot"+secretValue); err != nil {
+		t.Fatalf("FailInterruptedSends: %v", err)
+	}
+	if want := "restarted mid-send to bot<redacted:GH_TOKEN>"; d.messages.sendErr != want {
+		t.Errorf("stored send error %q", d.messages.sendErr)
+	}
+}
+
 // TestEveryStoreWriteIsClassified walks every sub-interface of the Store
 // seam — all eleven, not just the decorated three — and requires each method
 // to be listed with whether it writes free text a secret could be in.
@@ -193,7 +212,9 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			"ListByLoop": false, "ListByLoopBefore": false, "DeleteBefore": false,
 		},
 		"MessageStore": {
-			"Insert": true, "SetSendResult": true,
+			"Insert": true, "SetSendResult": true, "FailInterruptedSends": true,
+			// SetMirror writes one of three constants, never text.
+			"SetMirror":    false,
 			"SetDelivered": false, "List": false, "ListConversation": false,
 			"Get": false, "UntoldSendFailures": false, "UnresolvedSendFailures": false,
 			"Undelivered": false,

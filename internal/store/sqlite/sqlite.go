@@ -355,6 +355,12 @@ func (r sessions) EndDangling(ctx context.Context, reason string, endedAt int64)
 type messages struct{ db *sql.DB }
 
 func (r messages) Insert(ctx context.Context, m *store.Message) error {
+	if m.Mirror == "" {
+		// The column's promise is a spelled value on every row. A writer
+		// that has no surface in view — a test fixture, a future path — has
+		// written a message that is on the hub only.
+		m.Mirror = store.MirrorNotMirrored
+	}
 	var tgChat, tgMsg any
 	if m.TGChatID != 0 || m.TGMessageID != 0 {
 		tgChat, tgMsg = m.TGChatID, m.TGMessageID
@@ -362,11 +368,11 @@ func (r messages) Insert(ctx context.Context, m *store.Message) error {
 	res, err := r.db.ExecContext(ctx, `INSERT INTO messages
 		(ts, origin, author, from_loop_id, text, mentions, tg_chat_id, tg_message_id,
 		 tg_bot_loop_id, delivered_to, conversation, conversation_loop_id, reply_to_id,
-		 resends_id, tg_key)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		 resends_id, tg_key, mirror)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		m.TS, m.Origin, m.Author, m.FromLoopID, m.Text, toJSON(m.Mentions), tgChat, tgMsg,
 		m.TGBotLoopID, toJSON(m.DeliveredTo), m.Conversation, m.ConversationLoopID,
-		m.ReplyToID, m.ResendsID, m.TGKey)
+		m.ReplyToID, m.ResendsID, m.TGKey, m.Mirror)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			return store.ErrDuplicate
@@ -382,11 +388,13 @@ func (r messages) Insert(ctx context.Context, m *store.Message) error {
 // ResolveSend, which keeps the failure and marks it dealt with.
 //
 // It clears send_failure_told_at, so a fresh failure is fresh news: the pair
-// can never read as "told about a failure the loop has not heard of".
+// can never read as "told about a failure the loop has not heard of". And
+// the message is pending whatever it was: a failed send is not on the
+// surface yet, and stays bound for it until a resolution says otherwise.
 func (r messages) SetSendResult(ctx context.Context, id, failedAt int64, sendErr string) error {
 	_, err := r.db.ExecContext(ctx,
-		`UPDATE messages SET send_failed_at=?, send_error=?, send_failure_told_at=0 WHERE id=?`,
-		failedAt, sendErr, id)
+		`UPDATE messages SET send_failed_at=?, send_error=?, send_failure_told_at=0, mirror=? WHERE id=?`,
+		failedAt, sendErr, store.MirrorPending, id)
 	return err
 }
 
@@ -441,13 +449,44 @@ func (r messages) UnresolvedSendFailures(ctx context.Context, loopID string) (in
 // resolved, not the ones of whoever asked again.
 func (r messages) ResolveSend(ctx context.Context, id int64, at int64, resolution string, resentAs int64) (bool, error) {
 	res, err := r.db.ExecContext(ctx,
-		`UPDATE messages SET send_resolved_at=?, send_resolution=?, send_resent_as=? WHERE id=? AND `+unresolvedSendFailure,
-		at, resolution, resentAs, id)
+		`UPDATE messages SET send_resolved_at=?, send_resolution=?, send_resent_as=?, mirror=?
+		 WHERE id=? AND `+unresolvedSendFailure,
+		at, resolution, resentAs, mirrorAfter(resolution), id)
 	if err != nil {
 		return false, err
 	}
 	n, err := res.RowsAffected()
 	return n > 0, err
+}
+
+// mirrorAfter is where a resolved failure leaves its message: on the surface
+// if a retry of it got through, on the hub for good otherwise — a dismissed
+// message never arrived, and a resent one arrived as another message.
+func mirrorAfter(resolution string) string {
+	if resolution == store.SendResolutionDelivered {
+		return store.MirrorMirrored
+	}
+	return store.MirrorNotMirrored
+}
+
+func (r messages) SetMirror(ctx context.Context, id int64, mirror string) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE messages SET mirror=? WHERE id=?`, mirror, id)
+	return err
+}
+
+func (r messages) FailInterruptedSends(ctx context.Context, failedAt int64, sendErr string) ([]*store.Message, error) {
+	interrupted, err := r.query(ctx, `SELECT `+messageCols+` FROM messages
+		WHERE mirror=? AND send_failed_at=0 ORDER BY id`, store.MirrorPending)
+	if err != nil || len(interrupted) == 0 {
+		return nil, err
+	}
+	for _, m := range interrupted {
+		if err := r.SetSendResult(ctx, m.ID, failedAt, sendErr); err != nil {
+			return nil, err
+		}
+		m.SendFailedAt, m.SendError = failedAt, sendErr
+	}
+	return interrupted, nil
 }
 
 // maxResendChain bounds the walk below. A chain is one loop saying the same
@@ -540,7 +579,7 @@ const messageCols = `id, ts, origin, author, from_loop_id, text,
 	mentions, COALESCE(tg_chat_id,0), COALESCE(tg_message_id,0), tg_bot_loop_id, delivered_to,
 	conversation, conversation_loop_id, reply_to_id, send_failed_at, send_error,
 	send_failure_told_at, send_resolved_at, send_resolution, send_resent_as,
-	resends_id, tg_key`
+	resends_id, tg_key, mirror`
 
 func (r messages) List(ctx context.Context, limit int) ([]*store.Message, error) {
 	return r.query(ctx, `SELECT `+messageCols+` FROM messages ORDER BY id DESC LIMIT ?`, limit)
@@ -694,7 +733,7 @@ func (r messages) query(ctx context.Context, q string, args ...any) ([]*store.Me
 			&mentions, &m.TGChatID, &m.TGMessageID, &m.TGBotLoopID, &delivered,
 			&m.Conversation, &m.ConversationLoopID, &m.ReplyToID,
 			&m.SendFailedAt, &m.SendError, &m.SendFailureToldAt, &m.SendResolvedAt,
-			&m.SendResolution, &m.SendResentAs, &m.ResendsID, &m.TGKey); err != nil {
+			&m.SendResolution, &m.SendResentAs, &m.ResendsID, &m.TGKey, &m.Mirror); err != nil {
 			return nil, err
 		}
 		m.Mentions = fromJSON(mentions)
