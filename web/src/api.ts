@@ -65,6 +65,9 @@ export interface LoopView {
   // chat, so it can only reach an owner who has written to this loop's own
   // bot first (#73).
   owner_dm_ready: boolean
+  // Whether the loop is in the fleet channel: it receives what addresses it
+  // there and may post to it (ADR-0032 item 2). Always present since #295.
+  in_fleet_channel: boolean
 }
 
 export interface Turn {
@@ -108,6 +111,8 @@ export interface ChatMessage {
   from_loop_id?: string
   text: string
   mentions: string[]
+  // The loops the hub delivered this to, by id — not by name. Hub delivery,
+  // not surface delivery: people on an attached surface are never in it.
   delivered_to: string[]
   conversation: string
   conversation_loop_id?: string
@@ -146,6 +151,10 @@ export interface ChatMessage {
   // `send_resent_as`, on the message that did the resending. Mirrored for
   // the api.ts/Go sync rule; nothing in the room reads it yet.
   resends_id?: number
+  // The message this one explicitly replies to, when it is a reply. In the
+  // fleet channel a reply addresses the replied-to loop with no mention
+  // needed (ADR-0025); the channel page draws it as a quote (#286).
+  reply_to_id?: number
 }
 
 export interface TGSender {
@@ -360,6 +369,15 @@ export const api = {
   // and is done. Takes the row off their list; it does not rewrite history.
   dismissSend: (id: number) => req<{ dismissed: boolean }>(`/api/messages/${id}/dismiss`, { method: 'POST' }),
   activity: (limit = 100) => req<ChatMessage[]>(`/api/activity?limit=${limit}`),
+  // The fleet channel's timeline, newest first like a loop's conversation.
+  // It is the hub's rather than any loop's (ADR-0032 item 1), so it is not
+  // reached through one.
+  group: (limit = 100) => req<ChatMessage[]>(`/api/group?limit=${limit}`),
+  // The operator posting to the fleet channel. It wakes the loops the text
+  // addresses and no others, and never leaves the hub (ADR-0032 item 4):
+  // nobody on an attached surface sees it. 202 — delivery is the loops'.
+  postGroup: (text: string) =>
+    req<{ queued: boolean }>('/api/group', { method: 'POST', body: JSON.stringify({ text }) }),
   conversation: (name: string, kind: 'control_room' | 'owner_dm' = 'control_room', limit = 100) =>
     req<ChatMessage[]>(`/api/loops/${name}/conversation?conversation=${kind}&limit=${limit}`),
   telegramStatus: (name: string) =>

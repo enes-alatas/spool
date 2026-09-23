@@ -56,6 +56,9 @@ if (await page.isVisible('#operator-token')) {
 
 const shots = [
   { name: 'fleet', path: '/', wait: '.fleet-row' },
+  // The Fleet page's channel tab: operator, loop and human posts, a reply's
+  // quote, and what each reached (#286).
+  { name: 'channel', path: '/?view=channel', wait: '.knot' },
   { name: 'loop-timeline', path: '/loops/gardener', wait: '.timeline' },
   { name: 'new-loop', path: '/new', wait: '#nl-runtime' },
   { name: 'access', path: '/access', wait: '.feed-item' },

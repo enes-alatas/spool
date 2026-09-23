@@ -4,7 +4,7 @@ import { undelivered, undeliveredLabel, undeliveredTitle } from '../messages'
 // The mark a message carries when the surface never took it (#201).
 //
 // One component for every place a message is read — the threads that
-// `MessageKnot` draws (a loop's control room) and the
+// `MessageKnot` draws (a loop's control room, the fleet channel) and the
 // Activity feed — because they would otherwise disagree about what an
 // undelivered message looks like, and the operator would learn the mark
 // more than once.

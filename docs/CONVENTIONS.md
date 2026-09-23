@@ -179,7 +179,7 @@ habits below.*
   the fixture is a question nobody ever has to answer.
   **`make ui-shots` is how** (#248): it seeds a throwaway store with an invented
   fleet (`cmd/uifixture`), starts a hub on it, and writes the standard set —
-  Fleet, a loop timeline, New loop, Access, Rules, Settings, a loop's Undelivered pane, the
+  Fleet, the fleet channel, a loop timeline, New loop, Access, Rules, Settings, a loop's Undelivered pane, the
   secrets panel, the mission editor —
   to the gitignored `web/shots/`. The hub and its store are gone the moment the
   command returns, so a page the set does not cover is covered by adding it to

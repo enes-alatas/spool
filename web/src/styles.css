@@ -1177,6 +1177,115 @@ textarea {
   min-height: 44px;
 }
 
+/* The Fleet page's two views, its loops and its conversation (#286). Links
+   rather than buttons: each view has a URL, so a reload keeps the one open. */
+.fleet-tabs {
+  display: flex;
+  gap: 22px;
+  border-bottom: 1px solid var(--hairline);
+  margin: 4px 0 18px;
+}
+.fleet-tabs a {
+  padding: 8px 0;
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  text-decoration: none;
+}
+.fleet-tabs a:hover {
+  color: var(--text);
+}
+.fleet-tabs a:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 3px;
+  border-radius: 4px;
+  color: var(--text);
+}
+.fleet-tabs a[aria-current='page'] {
+  color: var(--text);
+  border-bottom-color: var(--text);
+}
+
+/* The fleet channel (#286). Its thread is a loop's control room with two
+   more lines per message: the quote a reply answers, above, and the loops
+   the hub delivered it to, below. Both muted and in the who-line's face, so
+   the message text stays the thing the eye lands on. */
+.reply-quote {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  border-left: 2px solid var(--hairline);
+  padding-left: 8px;
+  margin: 2px 0 6px;
+  max-width: 720px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.reply-quote .author {
+  font-family: var(--mono);
+  font-size: 0.71875rem;
+}
+/* The thread takes the viewport less the header, the tabs and the compose
+   box, so the compose box stays in view below it. */
+.fleet-channel .pane-scroll {
+  max-height: max(18rem, calc(100vh - 22rem));
+}
+.reached {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+/* The compose box and the menu that completes a mention. The menu opens
+   upward, over the thread: the box sits at the foot of the page, and a
+   menu opening downward would open off the screen. */
+.channel-compose {
+  position: relative;
+  margin-top: 16px;
+}
+.mention-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  padding: 4px;
+}
+.mention-option {
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.78125rem;
+  text-align: left;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.mention-option.on {
+  background: var(--canvas);
+}
+.mention-hint {
+  color: var(--text-muted);
+}
+/* Where the post will go, said before it is sent. The warning tone only for
+   a post that would reach nobody, which is the case Send refuses. */
+.channel-reach {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  margin-top: 6px;
+}
+.channel-reach.warn {
+  color: var(--danger);
+}
+
 .side-panel {
   background: var(--surface);
   border: 1px solid var(--hairline);
@@ -1582,6 +1691,16 @@ textarea {
      bar is as tall as its own text, so this clearance is in the same unit. */
   .main {
     padding-bottom: 4rem;
+  }
+  /* The fleet channel's thread, less what narrow screens add below and
+     above it: the fixed bar under the compose box, and the Fleet summary
+     that wraps onto a line of its own. The compose box and the line under it
+     — who a post reaches, that it stays on the hub, why Send is refused —
+     must clear the bar with the page unscrolled. `dvh`, so a phone's browser
+     toolbar is not counted as room. A lower floor than the wide screen's: on
+     a short phone a taller thread would push that line off the screen. */
+  .fleet-channel .pane-scroll {
+    max-height: max(10rem, calc(100dvh - 26rem));
   }
   .detail {
     grid-template-columns: 1fr;

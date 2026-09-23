@@ -1,8 +1,9 @@
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api, LoopView, Settings } from '../api'
 import { formatTokens, fillTone, hasFillPct, formatUsd, sumCostToday } from '../format'
 import { StateDot } from '../components/Spool'
+import { FleetChannel } from '../components/FleetChannel'
 import { undeliveredNote } from '../messages'
 import { useEffect, useState } from 'react'
 
@@ -167,6 +168,11 @@ export default function Dashboard() {
   // — what is this fleet doing right now — and it is the one number in the
   // room the operator was previously running SQL for.
   const spentToday = sumCostToday(loops ?? [])
+  // The fleet channel is the fleet's own conversation, so it is a tab here
+  // rather than a destination in the nav (#286). In the URL, so a link or a
+  // reload lands on the tab that was open.
+  const [params] = useSearchParams()
+  const onChannel = params.get('view') === 'channel'
 
   return (
     <div className="page">
@@ -189,39 +195,54 @@ export default function Dashboard() {
         )}
       </div>
 
-      {isLoading && <div className="fleet-note">Loading the fleet…</div>}
-      {isError && (
-        <div className="form-error">
-          Could not load the fleet: {error instanceof Error ? error.message : String(error)}
-        </div>
-      )}
+      <nav className="fleet-tabs" aria-label="Fleet views">
+        <Link to="/" aria-current={onChannel ? undefined : 'page'}>
+          Loops
+        </Link>
+        <Link to="/?view=channel" aria-current={onChannel ? 'page' : undefined}>
+          Fleet channel
+        </Link>
+      </nav>
 
-      {loops && loops.length === 0 && (
-        <div className="empty">
-          No loops yet. Create one and give it a mission.
-          <div style={{ marginTop: 14 }}>
-            <Link to="/new" className="btn primary">
-              New loop
-            </Link>
-          </div>
-        </div>
-      )}
-
-      {loops && loops.length > 0 && (
-        <div className="fleet-list">
-          <div className="fleet-cols" aria-hidden>
-            <span>loop</span>
-            <span className="f-state">state</span>
-            <div className="f-meta">
-              <span className="f-next">next wake</span>
-              <span className="f-ctx">context</span>
-              <span className="f-today">today</span>
+      {onChannel ? (
+        <FleetChannel />
+      ) : (
+        <>
+          {isLoading && <div className="fleet-note">Loading the fleet…</div>}
+          {isError && (
+            <div className="form-error">
+              Could not load the fleet: {error instanceof Error ? error.message : String(error)}
             </div>
-          </div>
-          {loops.map((fleetLoop) => (
-            <FleetRow key={fleetLoop.id} loop={fleetLoop} thresholds={thresholds} />
-          ))}
-        </div>
+          )}
+
+          {loops && loops.length === 0 && (
+            <div className="empty">
+              No loops yet. Create one and give it a mission.
+              <div style={{ marginTop: 14 }}>
+                <Link to="/new" className="btn primary">
+                  New loop
+                </Link>
+              </div>
+            </div>
+          )}
+
+          {loops && loops.length > 0 && (
+            <div className="fleet-list">
+              <div className="fleet-cols" aria-hidden>
+                <span>loop</span>
+                <span className="f-state">state</span>
+                <div className="f-meta">
+                  <span className="f-next">next wake</span>
+                  <span className="f-ctx">context</span>
+                  <span className="f-today">today</span>
+                </div>
+              </div>
+              {loops.map((fleetLoop) => (
+                <FleetRow key={fleetLoop.id} loop={fleetLoop} thresholds={thresholds} />
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   )
