@@ -377,6 +377,7 @@ type activityMessage struct {
 	SendResolvedAt     int64    `json:"send_resolved_at"`
 	SendResolution     string   `json:"send_resolution"`
 	SendResentAs       int64    `json:"send_resent_as"`
+	Mirror             string   `json:"mirror"`
 }
 
 func (s *server) activity() []activityMessage {
@@ -439,8 +440,15 @@ func (s *server) allowSender(id int64) {
 // Optional overrides merge into alpha's, then beta's, create request.
 func startTelegramFleet(t *testing.T, operator user, overrides ...map[string]any) (*server, *fakeTelegram) {
 	t.Helper()
+	return startTelegramFleetIn(t, t.TempDir(), operator, overrides...)
+}
+
+// startTelegramFleetIn is startTelegramFleet over a data dir the caller
+// holds, for a test that restarts the hub on it.
+func startTelegramFleetIn(t *testing.T, dataDir string, operator user, overrides ...map[string]any) (*server, *fakeTelegram) {
+	t.Helper()
 	tg := startFakeTelegram(t, "alpha", "beta")
-	srv := startTelegramServer(t, t.TempDir(), tg)
+	srv := startTelegramServer(t, dataDir, tg)
 	for i, name := range []string{"alpha", "beta"} {
 		req := map[string]any{"tg_bot_token": name}
 		if i < len(overrides) {
