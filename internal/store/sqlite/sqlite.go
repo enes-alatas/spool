@@ -488,18 +488,29 @@ func (r messages) ResolveResends(ctx context.Context, messageID int64, at int64)
 	return resolved, fmt.Errorf("resend chain from message %d is longer than %d", messageID, maxResendChain)
 }
 
-// Undelivered is the fleet-wide list behind the same predicate, newest
-// failure first — the operator reads the most recent outage from the top.
-// Requiring a non-empty from_loop_id keeps it to messages a loop sent: an
-// inbound message has no sender to have failed. (Spelled in prose because
-// gofmt rewrites a pair of single quotes in a doc comment into typographic
-// ones, which would leave the SQL misquoted here.) Sharing the predicate is
-// also what keeps the partial index usable: it is declared on these two
-// terms, so the planner only takes it when both are present.
-func (r messages) Undelivered(ctx context.Context) ([]*store.Message, error) {
+// Undelivered is the list behind the same predicate, newest failure first —
+// the operator reads the most recent outage from the top. An empty loopID
+// spans the fleet and requires only a non-empty from_loop_id, which keeps it
+// to messages a loop sent: an inbound message has no sender to have failed.
+// (Spelled in prose because gofmt rewrites a pair of single quotes in a doc
+// comment into typographic ones, which would leave the SQL misquoted here.)
+// A loop's id pins from_loop_id to it instead, which is the scope
+// UnresolvedSendFailures counts — so the Fleet badge and the per-loop pane
+// it opens are one predicate under one scope, not two queries that happen to
+// agree (#281). An id and not a name, because that is what the rows carry;
+// the route above is the one that speaks names.
+//
+// Sharing the predicate is also what keeps the partial index usable: it is
+// declared on these two terms, so the planner only takes it when both are
+// present.
+func (r messages) Undelivered(ctx context.Context, loopID string) ([]*store.Message, error) {
+	scope, args := `from_loop_id!=''`, []any(nil)
+	if loopID != "" {
+		scope, args = `from_loop_id=?`, []any{loopID}
+	}
 	return r.query(ctx, `SELECT `+messageCols+` FROM messages
-		WHERE from_loop_id!='' AND `+unresolvedSendFailure+`
-		ORDER BY send_failed_at DESC, id DESC`)
+		WHERE `+scope+` AND `+unresolvedSendFailure+`
+		ORDER BY send_failed_at DESC, id DESC`, args...)
 }
 
 func (r messages) MarkSendFailuresTold(ctx context.Context, ids []int64, toldAt int64) error {

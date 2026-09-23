@@ -1112,11 +1112,23 @@ func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, msgs)
 }
 
-// handleUndelivered lists the sends the Fleet badge counts: every loop's
-// messages that never reached their surface and that nobody has resolved,
-// newest failure first (#263, #269). Activity cannot answer this — it is the
-// newest hundred events across everything, so a failure from hours ago has
-// scrolled out of it, which is the whole reason this route exists.
+// handleUndelivered lists the sends the Fleet badge counts: messages that
+// never reached their surface and that nobody has resolved, newest failure
+// first (#263, #269). Activity cannot answer this — it is the newest hundred
+// events across everything, so a failure from hours ago has scrolled out of
+// it, which is the whole reason this route exists.
+//
+// The optional loop parameter narrows it to one loop's failures. That is the
+// scope the Fleet badge already counts, so the per-loop pane and the badge
+// that opens it run one predicate under one scope rather than two queries
+// that have to be kept in agreement (#281). Narrowing here rather than in the
+// browser also keeps the pane from reading every loop's rows to show one
+// loop's, on a route that deliberately has no limit.
+//
+// It is a loop's name, like every other loop-addressed route, and resolved to
+// the id the rows are keyed by. A name nothing matches is a 404 rather than
+// an empty list: with a filter, silence is the same answer as a healthy loop,
+// so a caller that passed the wrong thing would be told it has no failures.
 //
 // No limit, deliberately: a cap is what makes Activity unable to answer the
 // question, and the set is bounded by the operator dealing with it rather
@@ -1126,7 +1138,20 @@ func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
 // The rows are whole messages, text included, which is what the Activity feed
 // already serves and sits behind the same operator credential (ADR-0030).
 func (s *Server) handleUndelivered(w http.ResponseWriter, r *http.Request) {
-	msgs, err := s.Store.Messages().Undelivered(r.Context())
+	var loopID string
+	if name := r.URL.Query().Get("loop"); name != "" {
+		l, err := s.Store.Loops().GetByName(r.Context(), name)
+		if errors.Is(err, store.ErrNotFound) {
+			s.jsonErr(w, http.StatusNotFound, "loop %q not found", name)
+			return
+		}
+		if err != nil {
+			s.jsonErr(w, 500, "%v", err)
+			return
+		}
+		loopID = l.ID
+	}
+	msgs, err := s.Store.Messages().Undelivered(r.Context(), loopID)
 	if err != nil {
 		s.jsonErr(w, 500, "%v", err)
 		return

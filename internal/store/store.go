@@ -493,12 +493,12 @@ type MessageStore interface {
 	// exists. There is no age limit: a failure stops counting when someone
 	// deals with it, not when a clock decides they are done looking.
 	UnresolvedSendFailures(ctx context.Context, loopID string) (int, error)
-	// Undelivered is the same question asked of the whole fleet: every
-	// loop's unresolved failures, newest failure first. The count the Fleet
-	// page shows and the list the Undelivered tab renders go through one
-	// predicate, so a badge and the page it opens cannot disagree about
-	// what they are counting (#263).
-	Undelivered(ctx context.Context) ([]*Message, error)
+	// Undelivered is the same question asked as a list rather than a count:
+	// unresolved failures, newest failure first. An empty loopID asks it of
+	// the whole fleet; a loop's id asks it of that loop alone, and then it
+	// is UnresolvedSendFailures' own scope, so the badge and the list it
+	// opens cannot disagree about what they are counting (#263, #281).
+	Undelivered(ctx context.Context, loopID string) ([]*Message, error)
 	// ResolveSend marks a failure dealt with, at the given time, and
 	// reports whether there was one to mark. Called when a retry of the row
 	// gets through and when the operator dismisses it; the row keeps what
