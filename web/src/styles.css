@@ -516,6 +516,85 @@ textarea {
 .undelivered-pending {
   color: var(--text-muted);
 }
+/* The failure row: a message line, then a line saying what became of it.
+   Two facts about one failure — where it was going and why it did not get
+   there — which `.feed-item`'s wrapping flex put at opposite ends of the row
+   and, worse, in a different place on every row: whatever fitted, fitted, so
+   a long message pushed the reason up beside the destination on one row and
+   down beside the buttons on the next (#282). A grid fixes the places.
+
+   The columns are fixed rather than content-sized because each row is its
+   own grid — `max-content` would size the destination track per row, and the
+   reasons would start at a different x on a row whose destination is
+   `control room` than on one that says `group`. A column of reasons you can
+   run your eye down is the thing an operator came here for. */
+.undelivered-row.feed-item {
+  display: grid;
+  grid-template-columns: 76px 104px minmax(0, 1fr) max-content;
+  grid-template-areas:
+    'when author text text'
+    'when dest reason actions';
+  column-gap: 12px;
+  row-gap: 6px;
+  align-items: baseline;
+}
+.undelivered-row .when {
+  grid-area: when;
+}
+.undelivered-row .author {
+  grid-area: author;
+}
+.undelivered-row .text {
+  grid-area: text;
+}
+/* `margin-left: auto` on `.feed-item .origin` is what pinned this to the far
+   right of the first line in the flex layout, a column away from the reason
+   it belongs with. That rule is declared later at the same specificity, so
+   it has to be outweighed rather than restated — `.undelivered-row.feed-item`
+   is (0,3,0) against its (0,2,0) — or the margin quietly survives and the
+   alignment below is an accident of the cascade instead of a choice.
+
+   Right-aligned within its column on purpose: the destination and the reason
+   read as one clause, so the gap between them stays constant instead of
+   growing with the length of the word. */
+.undelivered-row.feed-item .origin {
+  grid-area: dest;
+  margin-left: 0;
+  justify-self: end;
+}
+.undelivered-row .undelivered-reason {
+  grid-area: reason;
+}
+/* One line each, so every row is the same height and the columns stay in
+   line. The message keeps its full text in the title (`Undelivered.tsx`);
+   the author and the reason are short enough that clipping is a long-name
+   edge rather than the common case.
+
+   Outweighed rather than restated, for the same reason as `.origin` above:
+   `.feed-item .text` sets `white-space: pre-wrap` later at (0,2,0), and
+   without `nowrap` the ellipsis never engages — the message just wraps. */
+.undelivered-row.feed-item .author,
+.undelivered-row.feed-item .text,
+.undelivered-row.feed-item .undelivered-reason {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The actions are one unit so the grid can place them; inside, they wrap and
+   their notes take a line of their own rather than widening the column. */
+.undelivered-actions {
+  grid-area: actions;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.undelivered-actions .undelivered-pending,
+.undelivered-actions .undelivered-error {
+  flex-basis: 100%;
+  text-align: right;
+}
+
 /* the surface's reason, on the page that exists to show it. Styled like the
    mark rather than like the muted `.undelivered-why` beside it: there the
    reason is an aside to a message being read, here it is the column the
@@ -768,6 +847,21 @@ textarea {
    of their own. The words the column headers used to supply come back with
    them — a bare "18m" under no heading says nothing. */
 @media (max-width: 720px) {
+  /* Four columns do not fit a phone: the message would be squeezed between a
+     fixed author column and three buttons. Restacked rather than dropped —
+     the destination and the reason stay on one line together, which is the
+     pairing this layout exists for. */
+  .undelivered-row.feed-item {
+    grid-template-columns: max-content minmax(0, 1fr);
+    grid-template-areas:
+      'when author'
+      'text text'
+      'dest reason'
+      'actions actions';
+  }
+  .undelivered-actions {
+    justify-content: flex-start;
+  }
   .fleet-cols {
     display: none;
   }

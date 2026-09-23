@@ -101,7 +101,7 @@ function RowActions({ msg, name }: { msg: ChatMessage; name: string }) {
   }
 
   return (
-    <>
+    <span className="undelivered-actions">
       <button
         className="btn sm"
         onClick={() => act('retry')}
@@ -127,7 +127,7 @@ function RowActions({ msg, name }: { msg: ChatMessage; name: string }) {
         </span>
       )}
       {error && <span className="form-error undelivered-error">{error}</span>}
-    </>
+    </span>
   )
 }
 
@@ -169,8 +169,20 @@ export default function Undelivered() {
               })}
             </span>
             <span className="author loop-author">@{name}</span>
-            <span className="text">{m.text}</span>
-            <span className="origin">{destinationLabel(m.conversation)}</span>
+            {/* Clamped to one line by `styles.css`, so the whole of it lives
+                in the hover: the row is for comparing failures, and a
+                message long enough to wrap pushed every row's columns out of
+                line with its neighbours (#282). `open` still leads to the
+                message in its conversation. */}
+            <span className="text" title={m.text}>
+              {m.text}
+            </span>
+            {/* "to group", not "group". The bare label is Activity's, where
+                this slot says where a message came *from*; here it says
+                where it was going, and the same word in the same place
+                meaning the opposite way round is half of why the row read
+                wrong (#282). */}
+            <span className="origin">to {destinationLabel(m.conversation)}</span>
             {/* The surface's own reason, verbatim: the sender scrubbed it of
                 credentials before it was stored (#155). The row carries it
                 rather than hiding it in hover text, because this page exists
