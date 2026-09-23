@@ -53,6 +53,9 @@ const (
 	ErrOwnerNotConfigured = "owner_not_configured"
 	ErrOwnerDMUnavailable = "owner_dm_unavailable"
 	ErrSendLimit          = "send_limit"
+	// ErrNoSuchDestination refuses a send to a conversation this loop does
+	// not have: the group, for a loop outside the fleet channel (ADR-0032).
+	ErrNoSuchDestination = "no_such_destination"
 	// The two refusals of a resend. Both leave the message unsent, so the
 	// loop can correct the call rather than discover afterwards that it
 	// said something twice or resolved the wrong failure.
@@ -104,6 +107,10 @@ func (r *Router) Send(ctx context.Context, req SendRequest) (*store.Message, *Se
 	var ownerChat int64
 	switch req.Destination {
 	case store.ConversationGroup:
+		if req.From.OutsideFleetChannel {
+			return nil, &SendError{ErrNoSuchDestination,
+				"this loop is not in the fleet channel, so it has no group; reach your owner in control_room or owner_dm"}, nil
+		}
 		targets, serr, err = r.groupRecipients(ctx, req.From, mentions, replyTo)
 		if serr != nil || err != nil {
 			return nil, serr, err
@@ -275,7 +282,8 @@ func sameConversation(target *store.Message, destination, fromLoopID string) boo
 	return target.ConversationLoopID == fromLoopID
 }
 
-// groupRecipients resolves a group send's mentions: loops are delivered to;
+// groupRecipients resolves a group send's mentions: loops in the fleet
+// channel are delivered to, and a loop outside it is no recipient at all;
 // a known human (allowed or pending telegram sender) satisfies the
 // recipient requirement without waking anything. A group message that
 // addresses nobody known is refused — recipients are enforced mechanically,
@@ -305,13 +313,13 @@ func (r *Router) groupRecipients(ctx context.Context, from *store.Loop, mentions
 
 	targets := map[string]*store.Loop{}
 	addressed := false
-	// @all is a deliberate broadcast to the loops of this loop's own group,
-	// never to a fleet it cannot see. The sender is excluded — a loop does
+	// @all is a deliberate broadcast to the loops in the fleet channel,
+	// never to one outside it. The sender is excluded — a loop does
 	// not wake itself — and the union with mentions and the reply author is
 	// deduplicated by loop id, so overlap costs one delivery.
 	for _, m := range mentions {
 		if m == BroadcastToken {
-			for id, l := range r.broadcastTargets(loops, from.TGGroupChatID, from.ID) {
+			for id, l := range r.broadcastTargets(loops, from.ID) {
 				targets[id] = l
 			}
 			addressed = true
@@ -327,7 +335,7 @@ func (r *Router) groupRecipients(ctx context.Context, from *store.Loop, mentions
 		case replyTo.FromLoopID == from.ID:
 		case replyTo.FromLoopID != "":
 			for _, l := range loops {
-				if l.ID == replyTo.FromLoopID && l.Status != store.StatusArchived {
+				if l.ID == replyTo.FromLoopID && inGroup(l) {
 					targets[l.ID] = l
 					addressed = true
 				}
@@ -337,7 +345,7 @@ func (r *Router) groupRecipients(ctx context.Context, from *store.Loop, mentions
 		}
 	}
 	for _, m := range mentions {
-		if l, ok := byKey[m]; ok && l.ID != from.ID && l.Status != store.StatusArchived {
+		if l, ok := byKey[m]; ok && l.ID != from.ID && inGroup(l) {
 			targets[l.ID] = l
 			addressed = true
 		} else if humans[m] {
