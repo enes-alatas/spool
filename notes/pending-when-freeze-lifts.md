@@ -17,3 +17,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 09:50: #278/#279/#290 merged; no open PRs. #284 settled: hub→surface loop-authored only. #285 body+title finalized. Terra on #284 ADR (docs/adr/0032), Iris on #282 (variant C, fixed columns). Board quiet.
 - 09:55: #291 (ADR-0032) up, Quinn reviewing. Agreed Terra's call: 'member' stays the org role, a loop 'is in' the fleet channel. Edited #283/#285/#287/#288 to match.
 - 11:55: #291 ADR-0032 and #292 (#282) merged. #293 open: Terra's step 1 of #285, closes the live operator-mirror gap first (good slice). Nudged Iris to #281 web half, then #286.
+- 13:50: #294 (Iris, #281 pane) and #295 (Terra, #285 step 2: a loop can be taken out of the fleet channel) approved by Quinn, awaiting Enes. Quinn: default for new loops unsettled → recorded on #287 as pending, proposed toggle off when no other loop exists, on otherwise; DM'd Enes (ref:1631). Re-nudge if silent for hours. Runtime now v0.2.0-19.
