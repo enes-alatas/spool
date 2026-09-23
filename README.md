@@ -67,11 +67,11 @@ what protects that is the per-loop credential on it, not the network.
 
 ## Telegram
 
-Each loop gets its **own** bot identity (Telegram bots can't see other bots' messages, so loop-to-loop delivery always happens inside Spool — Telegram is the human surface and the mirror):
+Telegram is optional. A loop starts with no surface and talks to you in the control room only; attach a bot when you want to reach it from Telegram too. Each loop gets its **own** bot identity (Telegram bots can't see other bots' messages, so loop-to-loop delivery always happens inside Spool — Telegram is the human surface and the mirror):
 
 1. In Telegram, talk to **@BotFather**: `/newbot` → name it after your loop.
 2. Still in BotFather: `/setprivacy` → **Disable** (so the bot sees group messages).
-3. Paste the token into the loop's Telegram field in the control room.
+3. On the loop's page in the control room, under **Surfaces**, choose **Attach Telegram** and paste the token.
 4. Add the bot to your group. The first group message binds it.
 
 Then, from the group: `@<botname> status?` reaches the loop; the loop answers by sending a group message as itself. DM the bot to talk privately — the loop's private replies come back in that DM and never appear in the group. Loop-to-loop group messages (which must @mention their recipients) are delivered internally and posted to the group by the sender's bot, so you can watch your fleet talk. `/spool_status` in the group makes a bot report its loop's state.

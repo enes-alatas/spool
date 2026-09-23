@@ -258,7 +258,11 @@ export interface CreateLoopReq {
   min_wake_sec?: number
   max_wake_sec?: number
   idle_timeout_sec?: number
+  // Empty on PATCH detaches the bot (#165); optional on create, where a loop
+  // may start with no surface (#287).
   tg_bot_token?: string
+  // Whether the loop is in the fleet channel (ADR-0032); PATCH only.
+  in_fleet_channel?: boolean
 }
 
 // ApiError carries the API's machine-readable reason alongside its prose, so
