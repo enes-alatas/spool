@@ -295,16 +295,27 @@ func seedConversations(ctx context.Context, db store.Store, ids map[string]strin
 		from   string
 		text   string
 		at     time.Duration
+		// The second undelivered message, and deliberately not a second
+		// group one: the Undelivered tab lines its rows up in columns
+		// (#282), and a fixture whose failures all went to the same place
+		// shoots a page that would look identical if they did not. Two
+		// destinations of different widths is what makes the shot show the
+		// alignment. A long reason for the same reason — the short one is
+		// already on the group row. And a long message: the tab clamps each
+		// to one line, and a fixture whose failures all fit on one line
+		// shoots the same page whether the clamp works or not.
+		failed string
 	}{
 		{author: "operator", text: "How far did you get on the incident summary?", at: -2 * time.Hour},
 		{author: "archivist", from: ids["archivist"], text: "Eleven of nineteen reports read. Two have no timeline at all, so they will be one line each rather than a guess.", at: -2*time.Hour + 30*time.Second},
+		{author: "archivist", from: ids["archivist"], text: "The two without timelines are in, one line each. That closes the nineteen. The summary is in the incident folder: seven outages traced to the same expired certificate, four to a config push that skipped review, and the rest one-offs with nothing in common worth a pattern.", at: -96 * time.Minute, failed: "Bad Request: message text is empty after entity parsing"},
 	}
 	for _, m := range room {
 		origin := store.OriginWeb
 		if m.from != "" {
 			origin = store.OriginLoop
 		}
-		if err := db.Messages().Insert(ctx, &store.Message{
+		msg := &store.Message{
 			TS:                 ms(m.at),
 			Origin:             origin,
 			Author:             m.author,
@@ -313,8 +324,17 @@ func seedConversations(ctx context.Context, db store.Store, ids map[string]strin
 			Conversation:       store.ConversationControlRoom,
 			ConversationLoopID: ids["archivist"],
 			DeliveredTo:        []string{"archivist"},
-		}); err != nil {
+		}
+		if m.failed != "" {
+			msg.DeliveredTo = nil
+		}
+		if err := db.Messages().Insert(ctx, msg); err != nil {
 			return fmt.Errorf("control-room message: %w", err)
+		}
+		if m.failed != "" {
+			if err := db.Messages().SetSendResult(ctx, msg.ID, ms(m.at+30*time.Second), m.failed); err != nil {
+				return fmt.Errorf("control-room message failure: %w", err)
+			}
 		}
 	}
 	return nil
