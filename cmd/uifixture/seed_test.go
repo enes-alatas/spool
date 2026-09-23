@@ -133,6 +133,37 @@ func TestSeedWritesAFleetTheRoomCanRender(t *testing.T) {
 		t.Error("no loop has an undelivered message: the Fleet row's count would be a zero in every row")
 	}
 
+	// And more than one, going to different places. The Undelivered tab puts
+	// its rows in columns (#282), so a single-row fixture shoots a page that
+	// would look the same whether or not the columns line up — which is how
+	// the misalignment survived being screenshotted. Two destinations is the
+	// smallest fixture that can show it.
+	undelivered, err := db.Messages().Undelivered(ctx, "")
+	if err != nil {
+		t.Fatalf("undelivered: %v", err)
+	}
+	dests := map[string]bool{}
+	for _, m := range undelivered {
+		dests[m.Conversation] = true
+	}
+	if len(undelivered) < 2 || len(dests) < 2 {
+		t.Errorf("fixture has %d undelivered messages across %d destinations; want at least 2 of each, or the Undelivered shot cannot show its columns",
+			len(undelivered), len(dests))
+	}
+
+	// One of them too long for a line: the tab clamps each message, and a
+	// shot where every message fits looks the same whether the clamp works
+	// or not — which is how a clamp that never engaged got past review.
+	var clamps bool
+	for _, m := range undelivered {
+		if len(m.Text) > 200 {
+			clamps = true
+		}
+	}
+	if !clamps {
+		t.Error("no undelivered message is over 200 characters: the Undelivered shot cannot show its one-line clamp")
+	}
+
 	// Presence only, like every other reader of this store: the panel shows
 	// names, so the fixture needs names.
 	secrets, err := db.LoopSecrets().List(ctx, gardener.ID)
