@@ -255,6 +255,14 @@ func seedConversations(ctx context.Context, db store.Store, ids map[string]strin
 		{author: "gardener", from: ids["gardener"], text: "Three pages, all fixed — PR #48. The quickstart also showed the old output, so that block went too.", at: -8 * time.Minute},
 		{author: "watcher", from: ids["watcher"], text: "Nightly is green again: the break was a missing fixture in 4f1c2ab, fixed in 9d0e77c.", at: -34 * time.Minute},
 		{author: "watcher", from: ids["watcher"], text: "Tonight's run broke again at the same fixture. Not reverting it myself — the change it belongs to is still open.", at: -21 * time.Minute, failed: "timeout reaching the surface"},
+		// The archivist's second failure, and to the group where its first
+		// is to the control room: the Undelivered list is a pane of one
+		// loop's page (#281), so the two destinations the list's columns
+		// need (#282) have to be one loop's. A day old, because a failure
+		// counts at any age (#269) and the pane dates its rows: a fixture
+		// whose failures are all today's shoots a date column that could be
+		// missing a day and look the same.
+		{author: "archivist", from: ids["archivist"], text: "Incident summary is up for review: nineteen reports, two of them one line each.", at: -26 * time.Hour, failed: "timeout reaching the surface"},
 	}
 	for i, m := range group {
 		origin := store.OriginTelegramGroup
@@ -295,15 +303,15 @@ func seedConversations(ctx context.Context, db store.Store, ids map[string]strin
 		from   string
 		text   string
 		at     time.Duration
-		// The second undelivered message, and deliberately not a second
-		// group one: the Undelivered tab lines its rows up in columns
-		// (#282), and a fixture whose failures all went to the same place
-		// shoots a page that would look identical if they did not. Two
-		// destinations of different widths is what makes the shot show the
-		// alignment. A long reason for the same reason — the short one is
-		// already on the group row. And a long message: the tab clamps each
-		// to one line, and a fixture whose failures all fit on one line
-		// shoots the same page whether the clamp works or not.
+		// The archivist's control-room failure, beside its group one above:
+		// the Undelivered pane lines its rows up in columns (#282), and a
+		// loop whose failures all went to the same place shoots a pane that
+		// would look identical if they did not. Two destinations of
+		// different widths is what makes the shot show the alignment. A
+		// long reason for the same reason — the short one is on the group
+		// row. And a long message: the pane clamps each to one line, and a
+		// fixture whose failures all fit on one line shoots the same pane
+		// whether the clamp works or not.
 		failed string
 	}{
 		{author: "operator", text: "How far did you get on the incident summary?", at: -2 * time.Hour},
