@@ -153,6 +153,13 @@ func seed(ctx context.Context, db store.Store) error {
 			l.CPUs = 2
 		}
 		if fl.botUser != "" {
+			// A bot username with no token is a store no operator could have
+			// made, and the loop page reads the token's presence, not the
+			// name, to say a surface is attached (#287). Not token-shaped,
+			// so the secret scan has nothing to weigh, and ui-shots points
+			// the hub's Bot API at a closed local port, so no poller ever
+			// carries it off the machine.
+			l.TGBotToken = "uifixture-not-a-bot"
 			l.TGGroupChatID = -1001000000000 - int64(i)
 			l.TGGroupBoundAt = ms(-20 * 24 * time.Hour)
 			l.OwnerTGUserID = 700000001
