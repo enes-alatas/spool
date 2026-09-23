@@ -40,16 +40,17 @@ export interface Undelivered {
 //
 // The rule is the *sender*, not the presence of a failure record. Of the four
 // origins (`store.go`: web, telegram-group, telegram-dm, loop), one of the
-// operator's can carry these fields too: a web-origin group message is
-// mirrored to Telegram so the lurkers there see the conversation (`bridge.go`
-// enqueues it with `recordFor`), and a failed mirror writes `send_failed_at`
-// onto the original.
+// operator's can carry these fields too, on older rows: until ADR-0032 a
+// web-origin group message was mirrored to Telegram, and a failed mirror wrote
+// `send_failed_at` onto the original. Nothing the operator writes leaves the
+// hub any more, so no new row gets them — but the rows from before are still
+// in the database, and still rendered.
 //
-// The mark stays off it anyway, because of what the mark claims — that the
+// The mark stays off them anyway, because of what the mark claims — that the
 // recipient never received this. The loops did receive it, in process, before
-// any mirror was attempted; what failed is a copy for onlookers, which is a
-// different fact and has no home in the room yet. A telegram-origin message
-// is never mirrored at all, so it cannot carry the fields in the first place.
+// any mirror was attempted; what failed was a copy for onlookers, which is a
+// different fact. A telegram-origin message is never mirrored at all, so it
+// cannot carry the fields in the first place.
 //
 // A resolved failure still returns a mark rather than null. #269 keeps the
 // failure row deliberately — "resolved is not delivered" — so dropping the

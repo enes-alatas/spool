@@ -45,11 +45,12 @@ describe('undelivered', () => {
     expect(undelivered(msg({ origin: 'telegram-dm', author: 'enesalatas' }))).toBeNull()
   })
 
-  // The case the rule exists for. A web-origin group message *is* mirrored
-  // to Telegram (`bridge.go`, `recordFor`), so a failed mirror records the
-  // fields on it — and the mark still stays off, because the loops received
-  // it in process. "The recipient never received this" would be false about
-  // this message; what failed is a copy for onlookers.
+  // The case the rule exists for. Until ADR-0032 a web-origin group message
+  // was mirrored to Telegram, so a failed mirror recorded the fields on it,
+  // and those rows are still in every database that predates the change. The
+  // mark stays off them, because the loops received the message in process.
+  // "The recipient never received this" would be false about it; what failed
+  // was a copy for onlookers.
   it('leaves a web message whose telegram mirror failed unmarked', () => {
     const mirrored = msg({
       origin: 'web',

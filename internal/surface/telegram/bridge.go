@@ -971,70 +971,52 @@ func (br *Bridge) mirror(ctx context.Context) {
 }
 
 func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
-	switch mp.Origin {
-	case store.OriginLoop:
-		p := br.poller(mp.FromLoopID)
-		switch mp.Conversation {
-		case store.ConversationGroup:
-			// a loop's explicit group send: post to its bound group as its
-			// own bot. No poller just means the loop has no bot — normal
-			// for a fleet without telegram.
-			if p == nil {
-				return
-			}
-			l, err := br.store.Loops().Get(ctx, mp.FromLoopID)
-			if err != nil || l.TGGroupChatID == 0 {
-				return
-			}
-			anchor, text := br.render(ctx, mp, l.TGGroupChatID)
-			p.enqueue(sendReq{chatID: l.TGGroupChatID, text: text, replyTo: anchor, recordFor: mp.ID})
-		case store.ConversationOwnerDM:
-			// a loop's owner_dm send: deliver to the chat route.Send pinned
-			// at send time — never re-resolved here, so a DM arriving
-			// between send and delivery cannot redirect it. route.Send
-			// refuses when no chat resolves, and a captured chat implies
-			// the loop had a bot — so a miss on either here is an internal
-			// fault, not a model error, and must not drop the private
-			// message silently.
-			if p == nil {
-				br.log.Error("owner dm delivery: loop has no bot", "loop", mp.FromLoopID)
-				return
-			}
-			if mp.OwnerDMChat == 0 {
-				br.log.Error("owner dm delivery: send carried no pinned chat", "loop", mp.FromLoopID)
-				return
-			}
-			anchor, text := br.render(ctx, mp, mp.OwnerDMChat)
-			p.enqueue(sendReq{chatID: mp.OwnerDMChat, text: text, replyTo: anchor, recordFor: mp.ID})
-		}
-		// control_room lives in the web UI alone; telegram sees nothing
-	case store.OriginWeb:
-		if mp.Conversation != store.ConversationGroup {
-			// a control_room message is private to its loop's web
-			// thread; only the composer's group destination is mirrored
-			return
-		}
-		// mirror web-origin group messages so Telegram lurkers see the
-		// whole conversation; use the first delivered loop's bot that has
-		// a bound group
-		for _, loopID := range mp.DeliveredTo {
-			p := br.poller(loopID)
-			if p == nil {
-				continue
-			}
-			l, err := br.store.Loops().Get(ctx, loopID)
-			if err != nil || l.TGGroupChatID == 0 {
-				continue
-			}
-			p.enqueue(sendReq{
-				chatID:    l.TGGroupChatID,
-				text:      fmt.Sprintf("%s (via web): %s", mp.Author, mp.Text),
-				recordFor: mp.ID,
-			})
-			return
-		}
+	// Only a loop's words leave the hub. Telegram-origin messages are
+	// already visible in telegram, and nothing the operator writes in the
+	// control room is mirrored outward — not to the group, not anywhere
+	// (ADR-0032 item 4). That is the operator's security posture rather
+	// than a gap: Spool holds no means of posting his words on a third
+	// party, so a bug here cannot become a message sent as him. The test
+	// is on the origin, not the conversation, so a destination added later
+	// inherits the rule instead of having to remember it.
+	if mp.Origin != store.OriginLoop {
+		return
 	}
-	// telegram-origin messages are already visible in telegram: no re-mirror
+	p := br.poller(mp.FromLoopID)
+	switch mp.Conversation {
+	case store.ConversationGroup:
+		// a loop's explicit group send: post to its bound group as its
+		// own bot. No poller just means the loop has no bot — normal
+		// for a fleet without telegram.
+		if p == nil {
+			return
+		}
+		l, err := br.store.Loops().Get(ctx, mp.FromLoopID)
+		if err != nil || l.TGGroupChatID == 0 {
+			return
+		}
+		anchor, text := br.render(ctx, mp, l.TGGroupChatID)
+		p.enqueue(sendReq{chatID: l.TGGroupChatID, text: text, replyTo: anchor, recordFor: mp.ID})
+	case store.ConversationOwnerDM:
+		// a loop's owner_dm send: deliver to the chat route.Send pinned
+		// at send time — never re-resolved here, so a DM arriving
+		// between send and delivery cannot redirect it. route.Send
+		// refuses when no chat resolves, and a captured chat implies
+		// the loop had a bot — so a miss on either here is an internal
+		// fault, not a model error, and must not drop the private
+		// message silently.
+		if p == nil {
+			br.log.Error("owner dm delivery: loop has no bot", "loop", mp.FromLoopID)
+			return
+		}
+		if mp.OwnerDMChat == 0 {
+			br.log.Error("owner dm delivery: send carried no pinned chat", "loop", mp.FromLoopID)
+			return
+		}
+		anchor, text := br.render(ctx, mp, mp.OwnerDMChat)
+		p.enqueue(sendReq{chatID: mp.OwnerDMChat, text: text, replyTo: anchor, recordFor: mp.ID})
+	}
+	// control_room lives in the web UI alone; telegram sees nothing
 }
 
 func (br *Bridge) poller(loopID string) *poller {
