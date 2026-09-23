@@ -115,6 +115,11 @@ type Loop struct {
 	// halted workstation from a dead one (ADR-0021). Surfaced to the UI as
 	// down_reason, not as a field of its own.
 	WorkstationOff bool `json:"-"`
+	// OutsideFleetChannel says the operator took this loop out of the fleet
+	// channel: it has no group (ADR-0032 item 2). Stored as the exception so
+	// the zero value is the ordinary loop, which is in it. Surfaced to the
+	// API as in_fleet_channel, the way round a reader asks the question.
+	OutsideFleetChannel bool `json:"-"`
 	// TGGroupBoundAt is when this loop's bot bound to that group. A bot only
 	// ingests group messages Telegram dated after it — see ADR-0020.
 	TGGroupBoundAt int64 `json:"-"`
@@ -376,6 +381,9 @@ type LoopEdit struct {
 	// that did not mention it, which is the revert this type exists to
 	// prevent.
 	ClearGroupBinding bool
+	// OutsideFleetChannel moves the loop out of the fleet channel (true) or
+	// back in (false); nil leaves it where it is.
+	OutsideFleetChannel *bool
 
 	UpdatedAt int64
 }
