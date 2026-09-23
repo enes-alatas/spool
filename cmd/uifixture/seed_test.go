@@ -38,8 +38,19 @@ func TestSeedWritesAFleetTheRoomCanRender(t *testing.T) {
 
 	// The shapes the room draws differently — a screenshot set where every
 	// loop looks the same teaches nothing about the page.
-	var bare, withWorkspace, paused int
+	var bare, withWorkspace, paused, withSurface, withoutSurface int
 	for _, l := range got {
+		// The loop page says a surface is attached from the token's
+		// presence, so a bot name without one draws as a private loop.
+		if (l.TGBotUsername != "") != (l.TGBotToken != "") {
+			t.Errorf("%s: bot username %q with token set %v; a store no operator could make",
+				l.Name, l.TGBotUsername, l.TGBotToken != "")
+		}
+		if l.TGBotToken != "" {
+			withSurface++
+		} else {
+			withoutSurface++
+		}
 		if l.Runtime == store.RuntimeBare {
 			bare++
 		}
@@ -53,7 +64,8 @@ func TestSeedWritesAFleetTheRoomCanRender(t *testing.T) {
 	for _, c := range []struct {
 		what string
 		n    int
-	}{{"uncontained", bare}, {"with a workspace", withWorkspace}, {"paused", paused}} {
+	}{{"uncontained", bare}, {"with a workspace", withWorkspace}, {"paused", paused},
+		{"attached to Telegram", withSurface}, {"without a surface", withoutSurface}} {
 		if c.n == 0 {
 			t.Errorf("no fixture loop is %s, so no shot can show one", c.what)
 		}

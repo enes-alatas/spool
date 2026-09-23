@@ -35,9 +35,14 @@ trap cleanup EXIT
 
 go run ./cmd/uifixture --data-dir "$dir" >/dev/null
 
+# The fixture's bots carry a synthetic token, so the hub starts a poller for
+# each. Port 9 on loopback is closed: every call fails at once and nothing
+# leaves the machine, where the default base would send them to Telegram.
+
 ./bin/spool --data-dir "$dir" \
 	--listen "127.0.0.1:$port" --mcp-listen "127.0.0.1:$((port + 1))" \
-	--runtime bare --egress-image "" >"$dir/hub.log" 2>&1 &
+	--runtime bare --egress-image "" \
+	--telegram-api-base "http://127.0.0.1:9" >"$dir/hub.log" 2>&1 &
 hub=$!
 
 for _ in $(seq 60); do
