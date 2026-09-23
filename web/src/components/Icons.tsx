@@ -84,14 +84,3 @@ export function EditIcon() {
     </Icon>
   )
 }
-
-// Undelivered: an envelope that did not arrive — the flap, struck through.
-export function UndeliveredIcon() {
-  return (
-    <Icon>
-      <path d="M3 5.5h14v9H3z" />
-      <path d="M3 6l7 5 7-5" />
-      <path d="M4 16.5l12-12" />
-    </Icon>
-  )
-}

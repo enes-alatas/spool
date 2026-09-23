@@ -1,6 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { createBrowserRouter, RouterProvider } from 'react-router-dom'
+import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import App from './App'
 import { Session } from './components/Session'
@@ -9,7 +9,6 @@ import Dashboard from './pages/Dashboard'
 import LoopDetail from './pages/LoopDetail'
 import NewLoop from './pages/NewLoop'
 import Activity from './pages/Activity'
-import Undelivered from './pages/Undelivered'
 import Access from './pages/Access'
 import Settings from './pages/Settings'
 import Rules from './pages/Rules'
@@ -37,7 +36,10 @@ const router = createBrowserRouter([
       { path: 'loops/:name', element: <LoopDetail /> },
       { path: 'new', element: <NewLoop /> },
       { path: 'activity', element: <Activity /> },
-      { path: 'undelivered', element: <Undelivered /> },
+      // Undelivered was a page of its own until it became a pane of each loop
+      // (#281). A saved link lands on Fleet, where every loop with a failure
+      // carries the badge that opens its pane, rather than on a router error.
+      { path: 'undelivered', element: <Navigate to="/" replace /> },
       { path: 'access', element: <Access /> },
       { path: 'settings', element: <Settings /> },
       { path: 'rules', element: <Rules /> },

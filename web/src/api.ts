@@ -121,7 +121,7 @@ export interface ChatMessage {
   send_error?: string
   // When the failure stopped being the operator's business — a retry of this
   // row got through, or they dismissed it (#269). Absent while it is still
-  // unresolved, which is what the Undelivered tab and the Fleet count ask
+  // unresolved, which is what the Undelivered pane and the Fleet count ask
   // for. The failure itself is never erased: `send_failed_at` and
   // `send_error` stay, so what failed and why survives the resolution.
   send_resolved_at?: number
@@ -344,10 +344,13 @@ export const api = {
   eventsAfter: (name: string, afterID: number, limit: number) =>
     req<LoopEvent[]>(`/api/loops/${name}/events?after_id=${afterID}&limit=${limit}`),
   turns: (name: string, limit = 50) => req<Turn[]>(`/api/loops/${name}/turns?limit=${limit}`),
-  // The failed sends the Fleet badge counts, fleet-wide and uncapped —
-  // Activity is a newest-100 window across everything, which is why the
-  // badge could name a number the operator could not find (#263).
-  undelivered: () => req<ChatMessage[]>('/api/undelivered'),
+  // One loop's failed sends, uncapped — the list its Fleet badge counts, by
+  // the same predicate over the same scope (#290), so the two cannot
+  // disagree. Activity is a newest-100 window across everything, which is
+  // why the badge could once name a number the operator could not find
+  // (#263). The route also answers fleet-wide without `loop`; nothing in the
+  // room asks for that since the list became a pane of the loop (#281).
+  undelivered: (name: string) => req<ChatMessage[]>(`/api/undelivered?loop=${encodeURIComponent(name)}`),
   // 202, not 200: the send is the surface's and is queued behind whatever it
   // is already doing, so the outcome arrives as the row resolving or its
   // error changing rather than in this response (#269). The room must not

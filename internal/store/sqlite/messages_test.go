@@ -505,7 +505,7 @@ func TestUnresolvedSendFailures(t *testing.T) {
 }
 
 // TestUndeliveredAgreesWithTheCount is the check the shared predicate exists
-// for: the Fleet badge counts a loop's failures and the Undelivered tab lists
+// for: the Fleet badge counts a loop's failures and the Undelivered pane lists
 // the fleet's, and an operator who clicks a badge showing 3 and finds 2 rows
 // has been told two different things by one truth (#263). No type can make
 // them agree — tallying the list by loop and comparing it to the count for

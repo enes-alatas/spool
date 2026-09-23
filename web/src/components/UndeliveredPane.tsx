@@ -1,32 +1,23 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, ChatMessage, LoopView } from '../api'
+import { api, ChatMessage } from '../api'
 import type { Undelivered } from '../messages'
 import { destinationLabel, undelivered, undeliveredTitle } from '../messages'
 
-// The failed sends themselves, fleet-wide.
+// One loop's failed sends, as a pane of its page beside the timeline and the
+// control room (#281).
 //
-// The Fleet badge counts them (#202, #262) and sent the operator to Activity
-// until this page existed — a newest-100 window across every conversation, so
-// on a busy fleet a failure from hours ago is no longer in it and the badge
-// named a number the operator could not find (#263). The badge's hover points
-// here now (`messages.ts`). This page reads the same predicate the count does,
-// uncapped, so the two cannot disagree.
+// The Fleet badge counts them (#202, #262) and its hover points here
+// (`messages.ts`). This was a fleet-wide page of its own until #281, which
+// made the operator find the rows of the loop whose badge they had clicked;
+// the badge was always about one loop. The list is asked for by loop
+// (`?loop=`, #290) rather than narrowed here, so it and the badge are the
+// same store predicate over the same scope and cannot disagree.
 //
 // As private as Activity and for the same reason: an undelivered owner DM
 // carries its text here. It is shot only by `make ui-shots`, whose fleet
 // `cmd/uifixture` invented seconds earlier; a shot taken any other way is the
 // violation (CONVENTIONS, "Screenshots come from fixtures").
-
-// The loop that sent it, by id — the message carries `from_loop_id`, and an
-// operator scanning failures across the fleet needs the name.
-function senderName(msg: ChatMessage, loops: LoopView[]): string {
-  const loop = loops.find((l) => l.id === msg.from_loop_id)
-  // The author is what the surface would have shown; falling back to it
-  // beats an id nobody recognises, and beats a dash.
-  return loop?.name ?? msg.author
-}
 
 // What a row's hover says when the message is not a loop's own send.
 //
@@ -36,6 +27,13 @@ function senderName(msg: ChatMessage, loops: LoopView[]): string {
 // reading; what it has no claim to is the conversation mark.
 function fallback(m: ChatMessage): Undelivered {
   return { at: m.send_failed_at ?? 0, reason: m.send_error ?? '', resolution: '', resentAs: 0 }
+}
+
+// The day a send failed, with the year only when it is not this one.
+function failureDate(at: number): string {
+  const d = new Date(at)
+  const thisYear = d.getFullYear() === new Date().getFullYear()
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric', year: thisYear ? undefined : 'numeric' })
 }
 
 // One row's two actions, and what the server said about them.
@@ -67,10 +65,12 @@ function RowActions({ msg, name }: { msg: ChatMessage; name: string }) {
   // lands.
   const [retrying, setRetrying] = useState(false)
 
-  // Both lists, because the Fleet badge counts what this page lists: one of
-  // them refreshing without the other is the disagreement #263 was about.
+  // The list and both places its count is read — the Fleet badge and this
+  // page's pane tab: one of them refreshing without the others is the
+  // disagreement #263 was about.
   const refresh = () => {
-    qc.invalidateQueries({ queryKey: ['undelivered'] })
+    qc.invalidateQueries({ queryKey: ['undelivered', name] })
+    qc.invalidateQueries({ queryKey: ['loop', name] })
     qc.invalidateQueries({ queryKey: ['loops'] })
   }
 
@@ -118,9 +118,6 @@ function RowActions({ msg, name }: { msg: ChatMessage; name: string }) {
       >
         {busy === 'dismiss' ? 'dismissing…' : 'dismiss'}
       </button>
-      <Link className="btn sm" to={`/loops/${name}`} title={`Open @${name}'s page`}>
-        open
-      </Link>
       {retrying && !error && (
         <span className="undelivered-pending">
           sent again; this row goes when it lands, or says why it did not
@@ -131,26 +128,16 @@ function RowActions({ msg, name }: { msg: ChatMessage; name: string }) {
   )
 }
 
-export default function Undelivered() {
+export function UndeliveredPane({ name }: { name: string }) {
   const {
     data: msgs,
     isLoading,
     isError,
     error,
-  } = useQuery({ queryKey: ['undelivered'], queryFn: api.undelivered })
-  const { data: loops } = useQuery({ queryKey: ['loops'], queryFn: api.loops })
+  } = useQuery({ queryKey: ['undelivered', name], queryFn: () => api.undelivered(name) })
 
   return (
-    <div className="page">
-      <div className="fleet-head">
-        <h1>Undelivered</h1>
-        {msgs && msgs.length > 0 && (
-          <span className="fleet-summary">
-            {msgs.length} {msgs.length === 1 ? 'message' : 'messages'} · unresolved
-          </span>
-        )}
-      </div>
-
+    <div className="undelivered-pane">
       {isLoading && <div className="fleet-note">Loading…</div>}
       {isError && (
         <div className="form-error">
@@ -158,52 +145,50 @@ export default function Undelivered() {
         </div>
       )}
 
-      {(msgs ?? []).map((m) => {
-        const name = senderName(m, loops ?? [])
-        return (
-          <div key={m.id} className="feed-item undelivered-row">
-            <span className="when" title={new Date(m.send_failed_at ?? m.ts).toLocaleString()}>
-              {new Date(m.send_failed_at ?? m.ts).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
-            </span>
-            <span className="author loop-author">@{name}</span>
-            {/* Clamped to one line by `styles.css`, so the whole of it lives
-                in the hover: the row is for comparing failures, and a
-                message long enough to wrap pushed every row's columns out of
-                line with its neighbours (#282). `open` still leads to the
-                message in its conversation. */}
-            <span className="text" title={m.text}>
-              {m.text}
-            </span>
-            {/* "to group", not "group". The bare label is Activity's, where
-                this slot says where a message came *from*; here it says
-                where it was going, and the same word in the same place
-                meaning the opposite way round is half of why the row read
-                wrong (#282). */}
-            <span className="origin">to {destinationLabel(m.conversation)}</span>
-            {/* The surface's own reason, verbatim: the sender scrubbed it of
-                credentials before it was stored (#155). The row carries it
-                rather than hiding it in hover text, because this page exists
-                for exactly the operator who wants to know why. */}
-            {/* Read through `undelivered()` rather than assembled here, so
-                this hover and the mark in the conversation cannot drift
-                apart — and so the resolution is narrowed in the one place
-                that narrows it. Every row here is unresolved, since that is
-                the predicate the route answers; taking it from the row
-                anyway means a row that somehow arrives resolved says so
-                instead of lying. */}
-            <span className="undelivered-reason" title={undeliveredTitle(undelivered(m) ?? fallback(m))}>
-              {m.send_error || 'no reason given'}
-            </span>
-            <RowActions msg={m} name={name} />
-          </div>
-        )
-      })}
+      {(msgs ?? []).map((m) => (
+        <div key={m.id} className="feed-item undelivered-row">
+          {/* The date as well as the time: a failure counts until someone
+              deals with it, at any age (#269), so a bare "01:34 PM" reads
+              as today's when it may be last week's. */}
+          <span className="when" title={new Date(m.send_failed_at ?? m.ts).toLocaleString()}>
+            {new Date(m.send_failed_at ?? m.ts).toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
+          </span>
+          <span className="when when-date">{failureDate(m.send_failed_at ?? m.ts)}</span>
+          {/* Clamped to one line by `styles.css`, so the whole of it lives
+              in the hover: the row is for comparing failures, and a message
+              long enough to wrap pushed every row's columns out of line with
+              its neighbours (#282). No sender beside it: every row is this
+              loop's, and its name is the page's heading. */}
+          <span className="text" title={m.text}>
+            {m.text}
+          </span>
+          {/* "to group", not "group". The bare label is Activity's, where
+              this slot says where a message came *from*; here it says where
+              it was going, and the same word in the same place meaning the
+              opposite way round is half of why the row read wrong (#282). */}
+          <span className="origin">to {destinationLabel(m.conversation)}</span>
+          {/* The surface's own reason, verbatim: the sender scrubbed it of
+              credentials before it was stored (#155). The row carries it
+              rather than hiding it in hover text, because this pane exists
+              for exactly the operator who wants to know why. */}
+          {/* Read through `undelivered()` rather than assembled here, so this
+              hover and the mark in the conversation cannot drift apart — and
+              so the resolution is narrowed in the one place that narrows it.
+              Every row here is unresolved, since that is the predicate the
+              route answers; taking it from the row anyway means a row that
+              somehow arrives resolved says so instead of lying. */}
+          <span className="undelivered-reason" title={undeliveredTitle(undelivered(m) ?? fallback(m))}>
+            {m.send_error || 'no reason given'}
+          </span>
+          <RowActions msg={m} name={name} />
+        </div>
+      ))}
 
-      {/* Reachable by URL even while the nav entry is hidden, so it needs to
-          say what it would have shown. */}
+      {/* The tab stays while it is open, so the last dismissal lands here
+          rather than on a pane that vanished under the click. */}
       {msgs && msgs.length === 0 && (
         <div className="empty">Nothing is waiting: every failed send has been retried or dismissed.</div>
       )}

@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api, LoopView, Settings } from '../api'
 import { formatTokens, fillTone, hasFillPct, formatUsd, sumCostToday } from '../format'
@@ -63,6 +63,7 @@ function workstationNote(loop: LoopView): { text: string; bad: boolean } | undef
 // contents` on a wide screen — its children join the row's grid as columns —
 // and a wrapping line of its own once the columns no longer fit.
 function FleetRow({ loop, thresholds }: { loop: LoopView; thresholds?: Settings }) {
+  const nav = useNavigate()
   const station = workstationNote(loop)
   const undelivered = undeliveredNote(loop.undelivered)
   return (
@@ -77,8 +78,23 @@ function FleetRow({ loop, thresholds }: { loop: LoopView; thresholds?: Settings 
             {/* With the faults rather than with the metadata: a loop whose
                 messages are not arriving is something to act on, and the
                 branch and bot handle beside it are not. */}
+            {/* Opens this loop's Undelivered pane rather than the row's
+                default one (#281). Not a `Link`: the row already is one, and
+                a link inside a link is invalid, so it steers the row's
+                navigation instead of adding its own. */}
             {undelivered && (
-              <span className="note bad" title={undelivered.title}>
+              <span
+                className="note bad undelivered-link"
+                title={undelivered.title}
+                onClick={(e) => {
+                  e.preventDefault()
+                  const pane = `/loops/${loop.name}?pane=undelivered`
+                  // A modified click means a new tab, as it does on the rest
+                  // of the row — on the pane, which is what was clicked.
+                  if (e.metaKey || e.ctrlKey) window.open(pane, '_blank', 'noopener')
+                  else nav(pane)
+                }}
+              >
                 {undelivered.text}
               </span>
             )}
@@ -138,11 +154,11 @@ export default function Dashboard() {
   // the rotation thresholds the gauge colours mean something against
   const { data: thresholds } = useQuery({ queryKey: ['settings'], queryFn: api.settings })
 
-  // The list itself, not the sum of the rows' badges: the summary links to
-  // the tab, and a number here that disagreed with what the tab lists is the
-  // defect #263 exists to remove. Same query key as the tab and the nav, so
-  // this costs no request of its own.
-  const { data: undelivered } = useQuery({ queryKey: ['undelivered'], queryFn: api.undelivered })
+  // The sum of the rows' badges, which are the store's per-loop counts: each
+  // row's badge opens that loop's pane (#281), and the pane lists the same
+  // predicate the badge counts, so the total cannot name a failure no pane
+  // shows.
+  const undelivered = (loops ?? []).reduce((sum, l) => sum + l.undelivered, 0)
 
   const busy = (loops ?? []).filter((fleetLoop) => fleetLoop.state === 'busy').length
   // Summed from the rows already on screen: the list endpoint carries each
@@ -160,16 +176,12 @@ export default function Dashboard() {
           <span className="fleet-summary">
             {loops.length} {loops.length === 1 ? 'loop' : 'loops'}
             {busy > 0 && ` · ${busy} busy`}
-            {/* Outside every row's anchor, which is where a link to the tab
-                can actually live: the row is one `Link` and a link inside a
-                link is invalid. Fleet-wide, like the tab it opens — a
-                per-row link would imply a list filtered to that loop. */}
-            {(undelivered ?? []).length > 0 && (
+            {/* Plain text: there is no fleet-wide list to open any more
+                (#281). The rows with a badge are where to go. */}
+            {undelivered > 0 && (
               <>
                 {' · '}
-                <Link to="/undelivered" className="undelivered-link">
-                  {undelivered!.length} undelivered
-                </Link>
+                <span className="undelivered-total">{undelivered} undelivered</span>
               </>
             )}
             <span title={costDayTitle(loops)}>{` · ${formatUsd(spentToday)} today`}</span>
