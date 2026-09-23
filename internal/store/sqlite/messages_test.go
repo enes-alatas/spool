@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -557,7 +558,7 @@ func TestUndeliveredAgreesWithTheCount(t *testing.T) {
 		t.Fatalf("ResolveSend = %v (err %v), want true", resolved, err)
 	}
 
-	list, err := db.Messages().Undelivered(ctx)
+	list, err := db.Messages().Undelivered(ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -591,6 +592,45 @@ func TestUndeliveredAgreesWithTheCount(t *testing.T) {
 	// And the error text is carried, since it is the whole point of the row.
 	if list[0].SendError != "chat not found" {
 		t.Errorf("send error = %q, want the stored one", list[0].SendError)
+	}
+
+	// Scoped to a loop, the list is the badge's own scope rather than a
+	// second query that agrees with it by luck (#281): for each loop the
+	// rows are exactly the fleet-wide list narrowed to that loop, in the
+	// same order, and as many as the badge counts.
+	for _, loopID := range []string{"l1", "l2"} {
+		var want []int64
+		for _, m := range list {
+			if m.FromLoopID == loopID {
+				want = append(want, m.ID)
+			}
+		}
+		scoped, err := db.Messages().Undelivered(ctx, loopID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := make([]int64, 0, len(scoped))
+		for _, m := range scoped {
+			got = append(got, m.ID)
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("loop %s: scoped list is %v, want the fleet list narrowed to it, %v", loopID, got, want)
+		}
+		count, err := db.Messages().UnresolvedSendFailures(ctx, loopID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(scoped) != count {
+			t.Errorf("loop %s: scoped list holds %d, the badge counts %d", loopID, len(scoped), count)
+		}
+	}
+
+	// An id nothing matches is an empty list, not the fleet — the store's
+	// half of the scope. Telling the caller their id was wrong is the
+	// route's job, and it does it with a 404 before reaching here, because
+	// down here silence and a healthy loop are the same answer.
+	if none, err := db.Messages().Undelivered(ctx, "no-such-loop"); err != nil || len(none) != 0 {
+		t.Errorf("unknown loop id listed %d rows (err %v), want none", len(none), err)
 	}
 }
 
