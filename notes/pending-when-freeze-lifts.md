@@ -20,3 +20,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 13:50: #294 (Iris, #281 pane) and #295 (Terra, #285 step 2: a loop can be taken out of the fleet channel) approved by Quinn, awaiting Enes. Quinn: default for new loops unsettled → recorded on #287 as pending, proposed toggle off when no other loop exists, on otherwise; DM'd Enes (ref:1631). Re-nudge if silent for hours. Runtime now v0.2.0-19.
 - 15:22: Enes approved the new-loop default (toggle off for the first loop, on otherwise); recorded on #287, nothing pending.
 - 15:32: #294 merged. Iris on #277 (#296 up) while #286 waits on #285's API.
+- 18:30: #295 #296 #297 merged; none open. Terra on #285 step 3b (mirrored marks + backfill). Nudged Iris to #286 (unblocked by #297), then #287. Status DM'd to Enes. Runtime v0.2.0-24.
