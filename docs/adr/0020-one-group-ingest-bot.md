@@ -1,6 +1,6 @@
 # ADR-0020: One bot ingests a group; every bot still delivers
 
-Date: 2026-08-20 · Status: accepted · Amended: 2026-09-17 (§1, settle margin); 2026-09-19 (§2, delivered_to); 2026-09-20 (§1–§3 are Surface rules)
+Date: 2026-08-20 · Status: accepted · Amended: 2026-09-17 (§1, settle margin); 2026-09-19 (§2, delivered_to); 2026-09-20 (§1–§3 are Surface rules); 2026-09-23 (§1 elects across the mirror, not into the group)
 
 ## Context
 
@@ -52,6 +52,20 @@ three questions Milo had listed, of which this was the first.
    has no skew to absorb — can shorten it; production never does. `bindSettle`
    above is that value, and still the margin this decision turns on; the 5s it
    defaults to is now a separate `defaultBindSettle`.
+
+   **Amendment (2026-09-23, #284, ADR-0032):** the group is no longer a room
+   on a surface, so this election no longer decides who ingests it. The fleet
+   channel is a hub conversation and has no pollers. What the election decides
+   now is which of a surface's identities carries a human's message *inward
+   across the mirror*, so that one post in the mirrored room becomes one hub
+   message. The rule, the tie-break and the settle margin are unchanged, and
+   so is the reason it exists: a platform that gives each loop its own
+   identity in a shared room hands the same message to all of them.
+
+   The stalled-poller consequence below narrows with it. A stalled poller now
+   makes the *mirror* deaf rather than the fleet channel: the operator and the
+   loops go on talking in the control room, and what is lost is the inbound
+   half of one surface. The remedy is unchanged.
 2. **Ingest is not delivery.** The router still fans a group message out to
    every mentioned loop, and `delivered_to` still lists all of them. Which
    bot's poller carried the bytes is transport detail and is not visible in

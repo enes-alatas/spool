@@ -1,6 +1,6 @@
 # ADR-0026: Loops send through a hub-served MCP tool
 
-Date: 2026-09-15 · Status: accepted (operator interview; implementation pending) · Amended: 2026-09-16 (`owner_dm` routing, twice); 2026-09-18 (undelivered sends); 2026-09-20 (item 1 is a Surface rule); 2026-09-22 (a resend names the failure it replaces)
+Date: 2026-09-15 · Status: accepted (operator interview; implementation pending) · Amended: 2026-09-16 (`owner_dm` routing, twice); 2026-09-18 (undelivered sends); 2026-09-20 (item 1 is a Surface rule); 2026-09-22 (a resend names the failure it replaces); 2026-09-23 (item 1: `group` is a hub conversation)
 
 ## Context
 
@@ -33,6 +33,18 @@ non-delivery guarantees ADR-0025's scenario matrix demands.
    between the loop's identity and the configured owner) and `group` (the room
    the loop is bound to). `control_room` is the web thread and belongs to no
    surface.
+
+   **Amendment (2026-09-23, #284, ADR-0032):** `group` is not a room on a
+   surface either. It is the **fleet channel** — a conversation on the hub,
+   native to the control room, which exists on a fleet with no surface
+   configured at all. A surface supplies `owner_dm` and *mirrors* the fleet
+   channel; it does not provide it. Membership is per loop, and a loop
+   outside the channel has no `group`: a send to it is refused with a typed
+   error inside the turn, as item 2 requires of every refused send.
+
+   The kind is still spelled `group` on the wire, in the tool and in stored
+   rows. "Fleet channel" is its name in prose and in the control room; the
+   two are allowed to differ, and ARCHITECTURE.md's terminology table says so.
 
 2. **Sending is a hub-owned `send_message` tool.** The hub serves it over MCP
    (streamable HTTP) from its existing HTTP server, using the official

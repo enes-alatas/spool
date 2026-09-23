@@ -1,6 +1,6 @@
 # ADR-0029: The Surface contract
 
-Date: 2026-09-20 · Status: accepted · Amends: ADR-0020, ADR-0025 (item 4), ADR-0026 (item 1) · Amended: 2026-09-22 (item 2: the bus kinds a surface mirrors)
+Date: 2026-09-20 · Status: accepted · Amends: ADR-0020, ADR-0025 (item 4), ADR-0026 (item 1) · Amended: 2026-09-22 (item 2: the bus kinds a surface mirrors); 2026-09-23 (items 5 and 7: a surface is attached later and mirrors the fleet channel)
 
 ## Context
 
@@ -86,6 +86,25 @@ contract.
      configured owner, and the room the loop is bound to. `control_room` is
      the web thread and belongs to no surface.
 
+   **Amendment (2026-09-23, #284, ADR-0032):** two of these bullets change,
+   and an adapter is written from this list, so both are corrected here.
+
+   *Mirrors follow the destination* still holds, but "group traffic is
+   mirrored to the group" is now only half true, and the missing half is the
+   one that matters: the mirror is **asymmetric**. Inward, everything posted
+   in the mirrored room crosses to the hub, whoever wrote it. Outward, only
+   *loop-authored* messages cross. Nothing the operator authors ever leaves
+   the hub, and a surface holds no means of posting as the operator — a
+   security-posture decision of the operator's, with his reasoning in
+   ADR-0032 item 4. An adapter that mirrors the operator's posts outward is
+   wrong, however faithfully it follows the destination.
+
+   *The conversation kinds* are unchanged as kinds, but a surface no longer
+   supplies `group`. `group` is the **fleet channel**, a conversation on the
+   hub that exists with no surface configured at all; a surface supplies
+   `owner_dm` and *mirrors* the fleet channel. Membership in it is per loop
+   and is the hub's to decide, not a reading of who is in the platform's room.
+
 6. **These stay Telegram's own**, and an adapter is free to have nothing like
    them: long-polling `getUpdates` for transport, the 4096-character split,
    per-bot send pacing, the pairing-code sender allowlist and `tg_senders`
@@ -94,6 +113,13 @@ contract.
 
 7. **One surface per loop** for now (operator, 2026-09-19). Conversation ids
    and mirrors may assume it.
+
+   **Amendment (2026-09-23, #284, ADR-0032):** *at most* one, and attached
+   after the loop exists. A loop is created with a name, a mission, a runtime
+   and an owner, and is alive with its control room alone; a surface is
+   attached and detached afterwards. Zero surfaces is the state every loop
+   starts in, not a misconfiguration — which makes "a surface may now be
+   absent" (Consequences) the ordinary case rather than an edge.
 
 ## Consequences
 
