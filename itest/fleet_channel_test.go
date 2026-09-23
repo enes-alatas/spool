@@ -3,6 +3,7 @@
 package itest
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -108,5 +109,106 @@ func TestTelegramMentionOfALoopOutsideTheFleetChannelReachesNobody(t *testing.T)
 		if tn.Trigger == "message" && strings.Contains(tn.ResultText, "who owns the deploy") {
 			t.Fatalf("a loop outside the fleet channel was woken from the Telegram group: %s", dump(tn))
 		}
+	}
+}
+
+// The fleet channel has endpoints of its own, keyed by no loop (ADR-0032
+// item 1). The operator's post wakes exactly the loops its text addresses in
+// the channel — no loop is implied by where it was posted from — and one
+// that addresses nobody is kept and wakes nobody. The timeline is the
+// channel's whole conversation, loop posts included, and nothing private.
+func TestOperatorPostsToTheFleetChannel(t *testing.T) {
+	s := startServer(t, t.TempDir())
+	for _, name := range []string{"aster", "briar", "cedar"} {
+		s.createLoop(name, nil)
+	}
+	s.mustJSON("PATCH", "/api/loops/cedar", map[string]any{"in_fleet_channel": false}, nil)
+
+	const addressed = "@aster @cedar the plan changed"
+	const chatter = "morning, nobody in particular"
+	for _, text := range []string{addressed, chatter} {
+		if resp, body := s.do("POST", "/api/group", map[string]any{"text": text}); resp.StatusCode != 202 {
+			t.Fatalf("posting %q to the fleet channel = %d %s, want 202", text, resp.StatusCode, body)
+		}
+	}
+	if resp, _ := s.do("POST", "/api/group", map[string]any{"text": "   "}); resp.StatusCode != 400 {
+		t.Fatalf("an empty post to the fleet channel = %d, want 400", resp.StatusCode)
+	}
+	s.message("briar", "a private control room note")
+
+	s.waitTurn("aster", 30*time.Second, func(tn turn) bool {
+		return strings.Contains(tn.ResultText, "the plan changed")
+	})
+	aster := mcpSession(t, s, hubMCPToken(t, s, "aster"))
+	const reply = "@briar picking it up"
+	if res := callSend(t, aster, map[string]any{"destination": "group", "text": reply}); res.IsError {
+		t.Fatalf("aster's group send refused: %s", resultText(res))
+	}
+	time.Sleep(2 * time.Second) // let any wrong delivery land before looking
+
+	var timeline []activityMessage
+	s.mustJSON("GET", "/api/group", nil, &timeline)
+	byText := map[string]activityMessage{}
+	for _, m := range timeline {
+		if m.Conversation != "group" {
+			t.Fatalf("the fleet channel's timeline carries a %s message: %s", m.Conversation, dump(m))
+		}
+		byText[m.Text] = m
+	}
+	for _, text := range []string{addressed, chatter, reply} {
+		if _, ok := byText[text]; !ok {
+			t.Fatalf("%q is missing from the fleet channel's timeline: %s", text, dump(timeline))
+		}
+	}
+	if m := byText[addressed]; m.Origin != "web" || m.Author != "operator" ||
+		!slices.Equal(m.DeliveredTo, []string{s.loop("aster").ID}) {
+		t.Fatalf("the operator's post = %s, want a web post by the operator delivered to aster alone: "+
+			"cedar is outside the fleet channel and briar was not named", dump(m))
+	}
+	if m := byText[chatter]; len(m.DeliveredTo) != 0 {
+		t.Fatalf("a post addressing nobody was delivered to %v, want nobody", m.DeliveredTo)
+	}
+	for _, tn := range s.completed("cedar") {
+		if tn.Trigger == "message" {
+			t.Fatalf("cedar, outside the fleet channel, was woken by it: %s", dump(tn))
+		}
+	}
+	for _, tn := range s.completed("briar") {
+		if strings.Contains(tn.ResultText, "the plan changed") || strings.Contains(tn.ResultText, "nobody in particular") {
+			t.Fatalf("briar was woken by an operator post that did not address it: %s", dump(tn))
+		}
+	}
+}
+
+// A post to the fleet channel's own endpoint is the operator's, so it stays
+// on the hub (ADR-0032 item 4) while the loop it names is delivered and a
+// human's Telegram post comes inward to the same timeline.
+func TestFleetChannelPostStaysOnTheHub(t *testing.T) {
+	operator := user{ID: 4747, First: "Operator", Username: "operator"}
+	wsAlpha := workspaceWithScript(t, "!ctx 0\n"+
+		`!send {"destination":"group","text":"@beta alpha heard the channel"}`+"\n")
+	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": wsAlpha})
+
+	const inward = "a human in the telegram group"
+	tg.post(groupChatID, "supergroup", inward, operator)
+	srv.waitForMessage(inward)
+	srv.mustJSON("POST", "/api/group", map[string]any{"text": "@alpha the channel is the hub's"}, nil)
+
+	// alpha's answer is the barrier, as in TestOperatorWordsStayOnTheHub:
+	// the mirror consumes in order, so an outward operator post would have
+	// been sent before it.
+	tg.waitSentFrom(t, groupChatID, "alpha", "alpha heard the channel")
+	if m, ok := tg.sentAnywhere("the channel is the hub's"); ok {
+		t.Fatalf("the operator's fleet channel post reached telegram (chat %d, bot %q): %q", m.ChatID, m.Token, m.Text)
+	}
+
+	var timeline []activityMessage
+	srv.mustJSON("GET", "/api/group", nil, &timeline)
+	seen := map[string]bool{}
+	for _, m := range timeline {
+		seen[m.Text] = true
+	}
+	if !seen[inward] || !seen["@alpha the channel is the hub's"] {
+		t.Fatalf("the fleet channel's timeline lacks the Telegram post or the operator's: %s", dump(timeline))
 	}
 }
