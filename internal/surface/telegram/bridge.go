@@ -889,7 +889,7 @@ func (br *Bridge) chatName(ctx context.Context, p *poller, chatID int64) string 
 // A success does not erase send_failed_at. The row did fail, the loop's
 // timeline says so (#147), and a store that quietly disagreed with its own
 // event would be the harder bug. Resolving instead takes it out of the
-// operator's undelivered count and off the Undelivered tab, which is what
+// operator's undelivered count and off the Undelivered pane, which is what
 // "the retry worked" actually means to them (#269).
 func (br *Bridge) recordSendResult(ctx context.Context, req sendReq, err error) {
 	if req.recordFor == 0 {

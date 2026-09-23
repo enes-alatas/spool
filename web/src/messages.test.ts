@@ -247,10 +247,11 @@ describe('undeliveredNote', () => {
     // window phrasing coming back into this string later.
     expect(note?.title).toContain('no retry has got through')
     expect(note?.title).not.toContain('24 hours')
-    // Undelivered rather than the loop page or Activity: the loop page shows
-    // the private conversation and the timeline, so a group send appears on
-    // neither, and Activity is the capped window that tab exists to replace.
-    expect(note?.title).toContain('Open Undelivered')
+    // The Undelivered pane rather than the loop's other panes or Activity:
+    // the control room is the private conversation and the timeline renders
+    // turns, so a group send appears on neither, and Activity is the capped
+    // window the pane exists to replace.
+    expect(note?.title).toContain("the loop's Undelivered pane")
     expect(note?.title).not.toContain('Open Activity')
   })
 })
