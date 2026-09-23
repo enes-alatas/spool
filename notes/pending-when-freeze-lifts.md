@@ -23,3 +23,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 18:30: #295 #296 #297 merged; none open. Terra on #285 step 3b (mirrored marks + backfill). Nudged Iris to #286 (unblocked by #297), then #287. Status DM'd to Enes. Runtime v0.2.0-24.
 - 18:35: Enes wants Opus 5.5 for the opus loops. Filed #298 (chore, both lists + alias check), Terra squeezes it ahead of #285 3b; #289 stays the real fix. Told Enes the alias may already resolve.
 - 19:30: Enes questions #286/#300 (why a page vs Activity). Answered in group: Activity is the audit log incl. DMs, fleet channel is one conversation you post in; recommended it live inside Fleet view as panel/tab, no top-level nav; Iris to show both placements on #300. Enes decides; #300 holds.
+- 19:35: Iris proposed A (panel on Fleet page, no nav) vs B (fold Activity into the page). Spec: A; B breaks ADR-0025 item 9. Iris posting fixture shots on #300; amend #286 once Enes confirms.
