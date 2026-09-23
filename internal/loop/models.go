@@ -7,8 +7,10 @@ import "strings"
 // read as "unknown" rather than "zero": the control room then shows absolute
 // tokens with no percentage rather than a ratio against a guess.
 var contextLimits = map[string]int{
+	"claude-fable-5-1":  1_000_000,
 	"claude-fable-5":    1_000_000,
 	"claude-mythos-5":   1_000_000,
+	"claude-opus-5-5":   1_000_000,
 	"claude-opus-5":     1_000_000,
 	"claude-opus-4-8":   1_000_000,
 	"claude-opus-4-7":   1_000_000,

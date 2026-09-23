@@ -4,8 +4,9 @@
 // model of a family, or a full model ID.
 export const MODEL_OPTIONS = [
   { value: '', label: 'Default (claude config)' },
-  { value: 'fable', label: 'Fable 5 — most capable' },
-  { value: 'opus', label: 'Opus 5 — deep agentic work' },
+  { value: 'fable', label: 'Fable 5.1 — most capable' },
+  { value: 'opus', label: 'Opus 5.5 — deep agentic work' },
+  { value: 'claude-opus-5-5', label: 'Opus 5.5, pinned — stays when the alias moves' },
   { value: 'sonnet', label: 'Sonnet 5 — balanced' },
   { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5 — fast & cheap' },
 ]

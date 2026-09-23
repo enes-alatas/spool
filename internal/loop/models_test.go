@@ -8,6 +8,8 @@ func TestContextLimit(t *testing.T) {
 		want  int
 	}{
 		{"claude-opus-5", 1_000_000},
+		{"claude-opus-5-5", 1_000_000},
+		{"claude-fable-5-1", 1_000_000},
 		{"claude-sonnet-5", 1_000_000},
 		{"claude-haiku-4-5", 200_000},
 		{"claude-haiku-4-5-20251001", 200_000}, // dated snapshot of a known id
