@@ -63,6 +63,7 @@ export function useGlobalStream() {
         break
       case 'message':
         qc.invalidateQueries({ queryKey: ['activity'] })
+        qc.invalidateQueries({ queryKey: ['group'] })
         qc.invalidateQueries({ queryKey: ['loops'] })
         break
       case 'access':

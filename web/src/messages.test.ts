@@ -36,7 +36,7 @@ describe('undelivered', () => {
   })
 
   it('leaves a delivered message unmarked', () => {
-    expect(undelivered(msg({ delivered_to: ['operator'] }))).toBeNull()
+    expect(undelivered(msg({ delivered_to: ['loop-iris'] }))).toBeNull()
   })
 
   // An operator's message from Telegram is never mirrored anywhere, so it
@@ -56,7 +56,7 @@ describe('undelivered', () => {
       origin: 'web',
       author: 'operator',
       conversation: 'group',
-      delivered_to: ['iris', 'terra'],
+      delivered_to: ['loop-iris', 'loop-terra'],
       send_failed_at: Date.parse('2026-09-20T06:11:00Z'),
       send_error: 'bot was blocked by the user',
     })
