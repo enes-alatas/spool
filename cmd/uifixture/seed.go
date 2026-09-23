@@ -235,6 +235,10 @@ func seedCurrentSessions(ctx context.Context, db store.Store, ids map[string]str
 	return nil
 }
 
+// position names an entry of a fixture list by its index, for the fields
+// that are optional: a plain int would make the zero entry the default.
+func position(i int) *int { return &i }
+
 // A group conversation and one control-room thread. Every handle here is
 // invented; the display names are first names with no surname, and none of
 // them belongs to anyone.
@@ -250,11 +254,23 @@ func seedConversations(ctx context.Context, db store.Store, ids map[string]strin
 		// timeline, and the count on the Fleet row (#201) — and a store where
 		// everything arrived shoots none of them.
 		failed string
+		// to is the loops the hub delivered it to, by id as the store keeps
+		// them, which the fleet channel names under a message (#286). Only
+		// the loops a post addresses: a fixture that listed the same two
+		// everywhere would shoot a page claiming every loop reads
+		// everything, and one that stored names would shoot a page that
+		// hides the id-to-name step.
+		to []string
+		// web marks the operator's own post from the channel page: it has
+		// no surface, so no Telegram ids either (ADR-0032 item 4).
+		web bool
+		// replyTo is the position in this list of the message it answers.
+		replyTo *int
 	}{
-		{author: "rana", text: "@gardener the install page still tells people to run `make setup`, which we removed last week. Can you take a pass?", at: -9 * time.Minute},
-		{author: "gardener", from: ids["gardener"], text: "Three pages, all fixed — PR #48. The quickstart also showed the old output, so that block went too.", at: -8 * time.Minute},
-		{author: "watcher", from: ids["watcher"], text: "Nightly is green again: the break was a missing fixture in 4f1c2ab, fixed in 9d0e77c.", at: -34 * time.Minute},
-		{author: "watcher", from: ids["watcher"], text: "Tonight's run broke again at the same fixture. Not reverting it myself — the change it belongs to is still open.", at: -21 * time.Minute, failed: "timeout reaching the surface"},
+		// Oldest first, as the store's ids would be: the channel shows them
+		// in id order, so an entry out of time order here shoots a thread that
+		// jumps back and forth in time.
+		//
 		// The archivist's second failure, and to the group where its first
 		// is to the control room: the Undelivered list is a pane of one
 		// loop's page (#281), so the two destinations the list's columns
@@ -263,7 +279,16 @@ func seedConversations(ctx context.Context, db store.Store, ids map[string]strin
 		// whose failures are all today's shoots a date column that could be
 		// missing a day and look the same.
 		{author: "archivist", from: ids["archivist"], text: "Incident summary is up for review: nineteen reports, two of them one line each.", at: -26 * time.Hour, failed: "timeout reaching the surface"},
+		{author: "watcher", from: ids["watcher"], text: "Nightly is green again: the break was a missing fixture in 4f1c2ab, fixed in 9d0e77c.", at: -34 * time.Minute},
+		{author: "watcher", from: ids["watcher"], text: "Tonight's run broke again at the same fixture. Not reverting it myself — the change it belongs to is still open.", at: -21 * time.Minute, failed: "timeout reaching the surface"},
+		// The operator answering in the channel, as a reply: the page draws
+		// the quote from `reply_to_id`, and a fixture without a reply shoots
+		// a page that could have lost it.
+		{author: "operator", text: "Which change is it? I'll chase the author rather than have you revert it.", at: -19 * time.Minute, to: []string{ids["watcher"]}, web: true, replyTo: position(2)},
+		{author: "rana", text: "@gardener the install page still tells people to run `make setup`, which we removed last week. Can you take a pass?", at: -9 * time.Minute, to: []string{ids["gardener"]}},
+		{author: "gardener", from: ids["gardener"], text: "Three pages, all fixed — PR #48. The quickstart also showed the old output, so that block went too.", at: -8 * time.Minute},
 	}
+	groupIDs := make([]int64, len(group))
 	for i, m := range group {
 		origin := store.OriginTelegramGroup
 		if m.from != "" {
@@ -280,15 +305,18 @@ func seedConversations(ctx context.Context, db store.Store, ids map[string]strin
 			TGChatID:     -1001000000000,
 			TGMessageID:  int64(4100 + i),
 			Conversation: store.ConversationGroup,
-			DeliveredTo:  []string{"gardener", "watcher"},
+			DeliveredTo:  m.to,
 		}
-		if m.failed != "" {
-			// Nobody received it, so it reached nobody's inbox either.
-			msg.DeliveredTo = nil
+		if m.web {
+			msg.Origin, msg.TGChatID, msg.TGMessageID = store.OriginWeb, 0, 0
+		}
+		if m.replyTo != nil {
+			msg.ReplyToID = groupIDs[*m.replyTo]
 		}
 		if err := db.Messages().Insert(ctx, msg); err != nil {
 			return fmt.Errorf("group message: %w", err)
 		}
+		groupIDs[i] = msg.ID
 		if m.failed != "" {
 			// Recorded the way the sender records it, after the retries are
 			// spent — the fields are never written by the insert.
@@ -331,7 +359,7 @@ func seedConversations(ctx context.Context, db store.Store, ids map[string]strin
 			Text:               m.text,
 			Conversation:       store.ConversationControlRoom,
 			ConversationLoopID: ids["archivist"],
-			DeliveredTo:        []string{"archivist"},
+			DeliveredTo:        []string{ids["archivist"]},
 		}
 		if m.failed != "" {
 			msg.DeliveredTo = nil
