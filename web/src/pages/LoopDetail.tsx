@@ -1177,14 +1177,14 @@ export default function LoopDetail() {
               control room · private
             </button>
             <button className={`dest${dest === 'group' ? ' on' : ''}`} onClick={() => setDest('group')}>
-              group · visible to everyone
+              group · the loops, not Telegram
             </button>
           </div>
           <div className="composer" style={{ marginTop: 8 }}>
             <textarea
               placeholder={
                 dest === 'group'
-                  ? `Post to the group as yourself — @${loop.name} is delivered either way`
+                  ? `Post to the group — the loops see it, nothing goes to Telegram; @${loop.name} is delivered either way`
                   : `Message @${loop.name} privately…`
               }
               value={draft}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -326,6 +327,20 @@ func (tg *fakeTelegram) sentTo(chatID int64) []sentMessage {
 	return out
 }
 
+// sentAnywhere reports the first message any bot posted, to any chat, that
+// contains text — the check for words that must not have left the hub at
+// all, where asking about one chat would miss a leak into another.
+func (tg *fakeTelegram) sentAnywhere(text string) (sentMessage, bool) {
+	tg.mu.Lock()
+	defer tg.mu.Unlock()
+	for _, m := range tg.sent {
+		if strings.Contains(m.Text, text) {
+			return m, true
+		}
+	}
+	return sentMessage{}, false
+}
+
 // waitSent blocks until a bot posts a message containing text to chatID.
 func (tg *fakeTelegram) waitSent(t *testing.T, chatID int64, text string) sentMessage {
 	t.Helper()
@@ -571,24 +586,47 @@ func TestOwnerDMSendReachesTheDMChat(t *testing.T) {
 	}
 }
 
-// A web message to one loop is its private control_room thread: it must not
-// be mirrored to the group, while a composer post with the group
-// destination still is.
-func TestControlRoomStaysOutOfTheGroup(t *testing.T) {
+// Nothing the operator writes in the control room leaves the hub (ADR-0032
+// item 4): not a private control_room note, and not a post to the group
+// either. The group post still reaches the loops — they are in the
+// conversation — while a loop's own group send, which the same fleet makes
+// in answer, is mirrored as before. Until ADR-0032 this test asserted the
+// opposite for the group post, which went out as "<author> (via web): ..."
+// through a loop's bot.
+func TestOperatorWordsStayOnTheHub(t *testing.T) {
 	operator := user{ID: 4848, First: "Operator", Username: "operator"}
-	srv, tg := startTelegramFleet(t, operator)
+	wsAlpha := workspaceWithScript(t, "!ctx 0\n"+
+		`!send {"destination":"group","text":"@beta loop words go out"}`+"\n")
+	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": wsAlpha})
 
 	srv.message("alpha", "private control room note")
 	srv.mustJSON("POST", "/api/loops/alpha/message",
-		map[string]any{"author": "operator", "text": "public group post", "destination": "group"}, nil)
+		map[string]any{"author": "operator", "text": "operator words stay home", "destination": "group"}, nil)
 
-	tg.waitSent(t, groupChatID, "public group post")
-	// the mirror consumes bus items in order and alpha's bot queues sends
-	// FIFO: had the earlier private note leaked, it would already be posted
-	for _, m := range tg.sentTo(groupChatID) {
-		if strings.Contains(m.Text, "private control room note") {
-			t.Fatalf("control_room message surfaced in the group: %q", m.Text)
+	// alpha answering in the group is the proof it received the operator's
+	// post, and it is also the barrier for the negative check: the mirror
+	// consumes bus items in order and alpha's bot queues sends FIFO, and
+	// alpha's bot is the one the old path used for an operator's post to
+	// alpha. Had either of the operator's messages gone out, it would have
+	// been posted before this.
+	tg.waitSentFrom(t, groupChatID, "alpha", "loop words go out")
+	for _, leak := range []string{"operator words stay home", "private control room note"} {
+		if m, ok := tg.sentAnywhere(leak); ok {
+			t.Fatalf("the operator's words reached telegram (chat %d, bot %q): %q", m.ChatID, m.Token, m.Text)
 		}
+	}
+
+	// And the post is still the group's, delivered to the loop it named:
+	// staying on the hub is not the same as going nowhere.
+	posts := srv.activityWith("operator words stay home")
+	if len(posts) != 1 {
+		t.Fatalf("the operator's group post is stored %d times, want once: %s", len(posts), dump(posts))
+	}
+	if posts[0].Conversation != "group" {
+		t.Errorf("the operator's post is in %q, want group", posts[0].Conversation)
+	}
+	if alpha := srv.loop("alpha").ID; !slices.Contains(posts[0].DeliveredTo, alpha) {
+		t.Errorf("the operator's post was delivered to %v, want alpha among them", posts[0].DeliveredTo)
 	}
 }
 
@@ -626,15 +664,16 @@ func TestUnaddressedGroupChatterWakesNoLoop(t *testing.T) {
 }
 
 // The per-loop composer declares its destination (ADR-0026): group posts to
-// the shared conversation — delivered to the loop and mirrored to the bound
-// telegram group — and a destination outside the picker's two is refused.
+// the shared conversation and is delivered to the loop, and a destination
+// outside the picker's two is refused. It is not mirrored to the bound
+// telegram group — nothing the operator writes leaves the hub (ADR-0032),
+// which TestOperatorWordsStayOnTheHub asserts.
 func TestComposerGroupDestination(t *testing.T) {
 	operator := user{ID: 5050, First: "Operator", Username: "operator"}
-	srv, tg := startTelegramFleet(t, operator)
+	srv, _ := startTelegramFleet(t, operator)
 
 	srv.mustJSON("POST", "/api/loops/alpha/message",
 		map[string]any{"author": "operator", "text": "to the group", "destination": "group"}, nil)
-	tg.waitSent(t, groupChatID, "to the group")
 	srv.waitTurn("alpha", 30*time.Second, func(tn turn) bool {
 		return strings.Contains(tn.ResultText, "to the group")
 	})
