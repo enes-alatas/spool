@@ -60,7 +60,33 @@ ADR instead.*
   for feature work.
 - **Commits / PR titles**: [Conventional Commits](https://www.conventionalcommits.org)
   — `feat|fix|refactor|docs|test|chore|ci(scope): summary`. Scopes are package names
-  (`loop`, `route`, `surface/telegram`, `web`, …).
+  (`loop`, `route`, `surface/telegram`, `web`, …). The subject rules below
+  (#76) are checked by the author before the PR opens, against
+  `git log --format=%s -50` as well as this list:
+  - **One scope or none.** A scope names exactly one package (or, for `docs`,
+    one doc or `adr`). A change no single package dominates drops the scope —
+    `chore: the model lists know Opus 5.5 and Fable 5.1` — and never lists
+    several (`feat(route,loop)` is wrong).
+  - **The summary says what is true once the commit lands**, as a
+    present-tense statement: `feat(web): the fleet channel is a tab of the
+    Fleet page`, `fix(web): a refused send keeps its draft and says why`. A
+    `feat` may instead be a bare noun phrase naming what it adds. Either way
+    it names one change: an "and" that joins two changes means two commits
+    (atomic commits, above), while one that describes a single change, as in
+    the second example, is fine.
+  - **Self-contained**: the subject reads on its own in `git log --oneline`,
+    with no sibling commit needed to say what it is about. "classify
+    visibility" fails, because it doesn't say visibility of what.
+  - **Length**: about 72 characters is the working ceiling. Almost nine in ten
+    subjects on `main` fit it, and one past 80 is a subject to cut.
+  - **No closing keywords in a commit message**, subject or body: `close`,
+    `closes`, `closed`, `fix`, `fixes`, `fixed`, `resolve`, `resolves` or
+    `resolved` next to `#n`. GitHub closes the issue when the commit reaches
+    `main`, whatever the PR meant, which is how #80 was closed by a commit that
+    said it "closes #80's design questions". The issue link belongs in the PR
+    body (below), where closing is deliberate and reviewed. A commit may say
+    `Part of #n` or name `#n` in prose, since neither closes anything. Write
+    around it: "settles #80's design questions".
 - **Issues & milestones**: work is tracked in GitHub issues; milestones map to the
   ladder rungs (L0…L7). Every issue carries exactly one type label — `bug`,
   `new feature`, `improvement`, `refactor`, `chore`, `security`, `documentation`,

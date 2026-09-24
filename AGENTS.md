@@ -24,7 +24,8 @@ humans and each other. This file orients you; it links, it doesn't duplicate.
 - Conventional Commit titles; branches `<type>/<topic>` (`loop/*` is reserved).
 - Issues are typed (ADR-0014): file via the forms; `gh` filings need exactly one
   type label + the matching form's headings (CI flags strays `needs-type`). PRs
-  link their issue (`Closes #n` / `Part of #n`).
+  link their issue (`Closes #n` / `Part of #n`) in the PR body; a commit
+  message never carries a closing keyword (CONVENTIONS.md, #76).
 - New engine behavior needs a tier-2 test (`itest/`, runs against `fakeclaude`).
 - Prompts/envelopes live in `internal/loop/prompt.go` only; changing them is a
   `feat` and updates tier-2 fixtures.
