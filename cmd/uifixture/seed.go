@@ -307,8 +307,18 @@ func seedConversations(ctx context.Context, db store.Store, ids map[string]strin
 			Conversation: store.ConversationGroup,
 			DeliveredTo:  m.to,
 		}
+		// Mirrored as the hub records it (#285): a post that came in from
+		// Telegram is on Telegram, and so is a loop's send that got through.
+		// A failed send is pending from SetSendResult below. Without this
+		// every row takes the insert's default, not_mirrored, and the channel
+		// shot calls every post "hub only".
+		if m.failed == "" {
+			msg.Mirror = store.MirrorMirrored
+		}
 		if m.web {
 			msg.Origin, msg.TGChatID, msg.TGMessageID = store.OriginWeb, 0, 0
+			// The operator's post never leaves the hub (ADR-0032 item 4).
+			msg.Mirror = store.MirrorNotMirrored
 		}
 		if m.replyTo != nil {
 			msg.ReplyToID = groupIDs[*m.replyTo]
