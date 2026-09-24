@@ -205,6 +205,22 @@ func TestSeedWritesAFleetTheRoomCanRender(t *testing.T) {
 			reply, operator, human)
 	}
 
+	// The channel marks a post that stays on the hub (#285), so the mirror
+	// states have to be the hub's own: the operator's post on the hub only,
+	// everything that came in or got out on the surface too.
+	for _, m := range channel {
+		want := store.MirrorMirrored
+		switch {
+		case m.Origin == store.OriginWeb:
+			want = store.MirrorNotMirrored
+		case m.SendFailedAt != 0:
+			want = store.MirrorPending
+		}
+		if m.Mirror != want {
+			t.Errorf("fleet channel message %d (%s, %s): mirror %q, want %q", m.ID, m.Origin, m.Author, m.Mirror, want)
+		}
+	}
+
 	// Presence only, like every other reader of this store: the panel shows
 	// names, so the fixture needs names.
 	secrets, err := db.LoopSecrets().List(ctx, gardener.ID)
