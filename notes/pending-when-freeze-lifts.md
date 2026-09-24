@@ -33,3 +33,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - Open epic children: #286 (reply button, needs Terra's reply_to_id), #287 (Terra took API half 07:31, Iris pages after), #288 (prompt, next for Terra). #302 filed by Terra (sends lost without record).
 - No open PRs. Nothing to nudge.
 - 07:45: stale claude version after rebuild: hub default runtime is docker, health reports the workstation image's claude (2.1.267, image 3 days old); host is 2.1.281. Fix is make image + restart. Told Enes; offered an issue (say make image where the version shows).
+- 07:50: Enes's agent blamed TestedVersion=2.1.233; it's log-only, not what health shows. Told him: two claude installs on his machine likely (which -a claude). Asked Terra to bump TestedVersion in next internal/claude PR.
