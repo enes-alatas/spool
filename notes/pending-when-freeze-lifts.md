@@ -27,3 +27,8 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 19:55: Enes picked a tab on the Fleet page (Loops / Fleet channel); nav entry gone. #286 body+title amended. #300 head 057be66 back with Quinn.
 - 21:00: Enes asked why local claude is 2.1.281 while Spool shows 2.1.267: version probed once at boot (bare = host binary), stale after auto-update. He said leave it for today; possible improvement later (re-probe on health or 'as of start' label).
 - 21:30: #287 scope settled (a): token out, fleet-channel toggle in, other fields stay, no owner field; title fixed. Iris building.
+
+## 2026-09-24 07:35 — morning sweep
+- Overnight merges: #299 (#298 Opus 5.5 + Fable 5.1 lists), #300 (fleet channel tab, Part of #286: reply button waits on reply_to_id for POST /api/group), #301 (closes #285). #284/#285 closed. Runtime v0.2.0-32.
+- Open epic children: #286 (reply button, needs Terra's reply_to_id), #287 (Terra took API half 07:31, Iris pages after), #288 (prompt, next for Terra). #302 filed by Terra (sends lost without record).
+- No open PRs. Nothing to nudge.
