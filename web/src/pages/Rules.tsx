@@ -7,7 +7,7 @@ import { api, ApiError, FleetRule, RulesBudget } from '../api'
 // write came from.
 function describeError(err: unknown): string {
   if (err instanceof ApiError && err.code === 'rules_too_large') {
-    return `${err.message} — shorten this rule or disable another.`
+    return `${err.message}. Shorten this rule or disable another.`
   }
   return err instanceof Error ? err.message : String(err)
 }
@@ -28,7 +28,7 @@ function BudgetBar({ budget }: { budget: RulesBudget }) {
       </div>
       <div className="rules-note">
         Every enabled rule is injected into every loop's prompt on its next wake, ahead of its mission, and
-        wins where the two conflict. The budget counts the section as rendered — headings included.
+        wins where the two conflict. The budget counts the section as rendered, headings included.
       </div>
     </div>
   )

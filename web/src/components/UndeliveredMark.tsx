@@ -39,7 +39,7 @@ export function UndeliveredMark({ msg, inline = false }: { msg: ChatMessage; inl
   return (
     <div className={className} title={title}>
       {label}
-      {failed.reason && <span className="undelivered-why"> — {failed.reason}</span>}
+      {failed.reason && <span className="undelivered-why">: {failed.reason}</span>}
     </div>
   )
 }

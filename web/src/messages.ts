@@ -130,17 +130,17 @@ export function undeliveredLabel(u: Undelivered): string {
       // Still never arrived — dismissing is the operator done looking, not
       // the message getting through — so the mark keeps its claim and adds
       // why it is no longer on their list.
-      return `${missed} — dismissed`
+      return `${missed}, dismissed`
     case 'resent':
       // Not "delivered": this message never arrived. The loop noticed and
       // said the words again in a later one, which did — so the reader on
       // the other end has them, and this row is history.
-      return `${missed} — said again`
+      return `${missed}, said again`
     case 'unknown':
       // Resolved, and that is genuinely all this build knows. Said as a
       // shortfall of the page rather than a fact about the message,
       // because it is one.
-      return `${missed} — resolved (this page has no words for how)`
+      return `${missed}, resolved (this page has no words for how)`
     case '':
       return missed
   }
@@ -162,7 +162,7 @@ export function undeliveredTitle(u: Undelivered): string {
     case 'resent':
       return `${why}Given up at ${when}; ${lost}. The loop said it again${u.resentAs ? ` as message ${u.resentAs}` : ''}, and that one got through.`
     case 'unknown':
-      return `${why}Given up at ${when}; ${lost}. It has since been resolved in a way this page does not recognise — it is probably older than the hub it is talking to, so reload.`
+      return `${why}Given up at ${when}; ${lost}. It has since been resolved in a way this page does not recognise. It is probably older than the hub it is talking to, so reload.`
     case '':
       return `${why}Given up at ${when}; ${lost}.`
   }

@@ -230,7 +230,7 @@ function Compose({
           placeholder={
             replyTo
               ? `Reply to @${replyTo.author}`
-              : 'Post to the fleet channel — @name the loops it is for, or @all'
+              : 'Post to the fleet channel: @name the loops it is for, or @all'
           }
           value={draft}
           onChange={(e) => track(e.target.value, e.target.selectionStart)}

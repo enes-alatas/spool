@@ -133,7 +133,7 @@ function ClaudeToken({ settings }: { settings?: SettingsView }) {
           />
           <div className="hint">
             Run <code>claude setup-token</code> where you're logged in, then paste the result here. It's
-            stored write-only — the value never leaves this server or appears in a response.
+            stored write-only: the value never leaves this server or appears in a response.
           </div>
         </div>
 
@@ -209,7 +209,7 @@ function RotationThresholds({ settings }: { settings?: SettingsView }) {
       <h2 className="section-head">Context rotation</h2>
       <p className="page-lede">
         A loop rotates its own context before it runs out of window: it writes a handoff note, then carries
-        that note into a fresh session. These are the two percentages of the model's window that decide when —
+        that note into a fresh session. These are the two percentages of the model's window that decide when,
         fleet-wide, applied to each loop from its next measured turn. No restart.
       </p>
 
