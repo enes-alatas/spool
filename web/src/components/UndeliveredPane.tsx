@@ -26,7 +26,13 @@ import { destinationLabel, undelivered, undeliveredTitle } from '../messages'
 // row can in principle be one. It still has a failure and a reason worth
 // reading; what it has no claim to is the conversation mark.
 function fallback(m: ChatMessage): Undelivered {
-  return { at: m.send_failed_at ?? 0, reason: m.send_error ?? '', resolution: '', resentAs: 0 }
+  return {
+    at: m.send_failed_at ?? 0,
+    reason: m.send_error ?? '',
+    resolution: '',
+    resentAs: 0,
+    fleetChannel: m.conversation === 'group',
+  }
 }
 
 // The day a send failed, with the year only when it is not this one.
