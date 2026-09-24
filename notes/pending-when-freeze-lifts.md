@@ -47,3 +47,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 16:55: Iris has #317 (#286 replies) in review; #316 candidates after it lands.
 - 17:00: spin resolved: Windows animation setting (reduce motion). No bug.
 - 17:35: status to Enes: 10 merges today, #318 open. Proposed closing L2 (14 open are hygiene): #289/#258/#272 → L3, rest → L6 OSS 1.0. Awaiting his answer.
+- 17:45: Enes: no early L2 close; clear the 14 first. Slotted after #283 (#287 pages, #288): Terra #19 check, #280, #245, #180, #55, #272, #258, #168, #2, #182, #289 backend; Iris #228, #189, #76, #289 web. #314 after #288. #230 Slack behind L2 cleanup. Estimate 2–3 days.
