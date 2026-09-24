@@ -34,6 +34,16 @@ export interface Undelivered {
   // Which message carried the words the second time ('resent' only, 0
   // otherwise), so the mark can send the reader to what was actually said.
   resentAs: number
+  // Whether this was a post in the fleet channel, which the hub holds and
+  // delivers to the loops it addresses before any surface is involved: what
+  // failed is its mirror, the copy for the surface's room, and the mark says
+  // so. Not a claim that some loop has it — a post that addresses none
+  // reached none, and the page's "reached" line is what says who did. Anywhere else —
+  // a loop's DM to its owner — the surface was the only way to the reader,
+  // and a failure means the message never arrived at all. Said by the
+  // conversation rather than by `mirror`, which only tells the state of the
+  // copy, not whether the copy was all that failed.
+  fleetChannel: boolean
 }
 
 // undelivered reports a loop's own message that the surface never accepted.
@@ -67,6 +77,7 @@ export function undelivered(m: ChatMessage): Undelivered | null {
     // this is the one place that does want to know which of them it was.
     resolution: narrow(m.send_resolution),
     resentAs: m.send_resent_as ?? 0,
+    fleetChannel: m.conversation === 'group',
   }
 }
 
@@ -102,29 +113,36 @@ function narrow(resolution: string | undefined): Undelivered['resolution'] {
 // finishing with it, not the message arriving, and three of the readings
 // describe a message that never did.
 export function undeliveredLabel(u: Undelivered): string {
+  // In the fleet channel the message is on the hub whatever the surface did,
+  // so "not delivered" there sits under a "reached @x" and reads as a
+  // second, contradicting failure (#300 review). What did not arrive is the
+  // mirror, and the mark names that instead.
+  const [missed, retried] = u.fleetChannel
+    ? ['not mirrored', 'mirrored on retry']
+    : ['not delivered', 'delivered on retry']
   switch (u.resolution) {
     case 'delivered':
       // The first send failed and a retry got through, so the recipient does
       // have it. Said in the past tense about the failure rather than the
       // present tense about the message: the row is history now.
-      return 'delivered on retry'
+      return retried
     case 'dismissed':
       // Still never arrived — dismissing is the operator done looking, not
       // the message getting through — so the mark keeps its claim and adds
       // why it is no longer on their list.
-      return 'not delivered — dismissed'
+      return `${missed} — dismissed`
     case 'resent':
       // Not "delivered": this message never arrived. The loop noticed and
       // said the words again in a later one, which did — so the reader on
       // the other end has them, and this row is history.
-      return 'not delivered — said again'
+      return `${missed} — said again`
     case 'unknown':
       // Resolved, and that is genuinely all this build knows. Said as a
       // shortfall of the page rather than a fact about the message,
       // because it is one.
-      return 'not delivered — resolved (this page has no words for how)'
+      return `${missed} — resolved (this page has no words for how)`
     case '':
-      return 'not delivered'
+      return missed
   }
 }
 
@@ -133,17 +151,20 @@ export function undeliveredLabel(u: Undelivered): string {
 export function undeliveredTitle(u: Undelivered): string {
   const when = new Date(u.at).toLocaleString()
   const why = u.reason ? `${u.reason}. ` : ''
+  const lost = u.fleetChannel
+    ? "it is in the fleet channel, but its copy never reached the surface's room"
+    : 'the recipient never received this'
   switch (u.resolution) {
     case 'delivered':
       return `${why}Given up at ${when}, then sent again from Undelivered; that attempt got through.`
     case 'dismissed':
-      return `${why}Given up at ${when}; the recipient never received this, and it was dismissed from Undelivered rather than sent again.`
+      return `${why}Given up at ${when}; ${lost}, and it was dismissed from Undelivered rather than sent again.`
     case 'resent':
-      return `${why}Given up at ${when}; the recipient never received this. The loop said it again${u.resentAs ? ` as message ${u.resentAs}` : ''}, and that one got through.`
+      return `${why}Given up at ${when}; ${lost}. The loop said it again${u.resentAs ? ` as message ${u.resentAs}` : ''}, and that one got through.`
     case 'unknown':
-      return `${why}Given up at ${when}; the recipient never received this. It has since been resolved in a way this page does not recognise — it is probably older than the hub it is talking to, so reload.`
+      return `${why}Given up at ${when}; ${lost}. It has since been resolved in a way this page does not recognise — it is probably older than the hub it is talking to, so reload.`
     case '':
-      return `${why}Given up at ${when}; the recipient never received this.`
+      return `${why}Given up at ${when}; ${lost}.`
   }
 }
 

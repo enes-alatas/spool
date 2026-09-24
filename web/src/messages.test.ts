@@ -32,6 +32,7 @@ describe('undelivered', () => {
       reason: 'chat not found',
       resolution: '',
       resentAs: 0,
+      fleetChannel: false,
     })
   })
 
@@ -69,10 +70,10 @@ describe('undelivered', () => {
   it('still marks a message whose failure was resolved, and says which way', () => {
     expect(
       undelivered(msg({ send_failed_at: 5, send_resolved_at: 9, send_resolution: 'delivered' })),
-    ).toEqual({ at: 5, reason: '', resolution: 'delivered', resentAs: 0 })
+    ).toEqual({ at: 5, reason: '', resolution: 'delivered', resentAs: 0, fleetChannel: false })
     expect(
       undelivered(msg({ send_failed_at: 5, send_resolved_at: 9, send_resolution: 'dismissed' })),
-    ).toEqual({ at: 5, reason: '', resolution: 'dismissed', resentAs: 0 })
+    ).toEqual({ at: 5, reason: '', resolution: 'dismissed', resentAs: 0, fleetChannel: false })
   })
 
   // The loop's own resend (#270, #278): a third resolution, carrying the
@@ -82,7 +83,7 @@ describe('undelivered', () => {
       undelivered(
         msg({ send_failed_at: 5, send_resolved_at: 9, send_resolution: 'resent', send_resent_as: 42 }),
       ),
-    ).toEqual({ at: 5, reason: '', resolution: 'resent', resentAs: 42 })
+    ).toEqual({ at: 5, reason: '', resolution: 'resent', resentAs: 42, fleetChannel: false })
   })
 
   // The hub writes this field and a browser tab outlives an upgrade, so a
@@ -92,7 +93,7 @@ describe('undelivered', () => {
   it('folds a resolution it does not know into one the readers have an arm for', () => {
     expect(
       undelivered(msg({ send_failed_at: 5, send_resolved_at: 9, send_resolution: 'teleported' })),
-    ).toEqual({ at: 5, reason: '', resolution: 'unknown', resentAs: 0 })
+    ).toEqual({ at: 5, reason: '', resolution: 'unknown', resentAs: 0, fleetChannel: false })
   })
 
   // The surface does not always say why, and a mark that needs a reason to
@@ -103,6 +104,7 @@ describe('undelivered', () => {
       reason: '',
       resolution: '',
       resentAs: 0,
+      fleetChannel: false,
     })
   })
 })
@@ -111,14 +113,22 @@ describe('undeliveredLabel', () => {
   // The unresolved reading, unchanged: the message is sitting here and the
   // recipient does not know it exists.
   it('says a message never arrived while nobody has dealt with it', () => {
-    expect(undeliveredLabel({ at: 1, reason: 'timeout', resolution: '', resentAs: 0 })).toBe('not delivered')
+    expect(
+      undeliveredLabel({ at: 1, reason: 'timeout', resolution: '', resentAs: 0, fleetChannel: false }),
+    ).toBe('not delivered')
   })
 
   // The reading the fix is for: after a retry got through, "not delivered" is
   // false, and it was still being shown while the Fleet badge had dropped the
   // message — two answers to one question (#269).
   it('says a retried message did arrive', () => {
-    const label = undeliveredLabel({ at: 1, reason: 'timeout', resolution: 'delivered', resentAs: 0 })
+    const label = undeliveredLabel({
+      at: 1,
+      reason: 'timeout',
+      resolution: 'delivered',
+      resentAs: 0,
+      fleetChannel: false,
+    })
     expect(label).toBe('delivered on retry')
     expect(label).not.toContain('not delivered')
   })
@@ -126,7 +136,13 @@ describe('undeliveredLabel', () => {
   // Dismissing is the operator done looking, not the message getting through,
   // so the claim stays and gains its reason for leaving the list.
   it('keeps the claim for a dismissed message and says why it left the list', () => {
-    const label = undeliveredLabel({ at: 1, reason: 'timeout', resolution: 'dismissed', resentAs: 0 })
+    const label = undeliveredLabel({
+      at: 1,
+      reason: 'timeout',
+      resolution: 'dismissed',
+      resentAs: 0,
+      fleetChannel: false,
+    })
     expect(label).toContain('not delivered')
     expect(label).toContain('dismissed')
   })
@@ -135,7 +151,13 @@ describe('undeliveredLabel', () => {
   // one still never arrived, so the claim stays — the reader on the other
   // end has the words, but not from here.
   it('keeps the claim for a resent message and says the words were said again', () => {
-    const label = undeliveredLabel({ at: 1, reason: 'timeout', resolution: 'resent', resentAs: 42 })
+    const label = undeliveredLabel({
+      at: 1,
+      reason: 'timeout',
+      resolution: 'resent',
+      resentAs: 42,
+      fleetChannel: false,
+    })
     expect(label).toContain('not delivered')
     expect(label).toContain('said again')
   })
@@ -146,7 +168,13 @@ describe('undeliveredLabel', () => {
   // #269 argues against. Asserting non-empty rather than exact wording, so
   // this keeps catching the *next* resolution too.
   it('never comes back empty for a resolution it does not know', () => {
-    const label = undeliveredLabel({ at: 1, reason: 'timeout', resolution: 'unknown', resentAs: 0 })
+    const label = undeliveredLabel({
+      at: 1,
+      reason: 'timeout',
+      resolution: 'unknown',
+      resentAs: 0,
+      fleetChannel: false,
+    })
     expect(label).toBeTruthy()
     expect(label).toContain('not delivered')
   })
@@ -162,6 +190,7 @@ describe('undeliveredTitle', () => {
       reason: 'timeout',
       resolution: '',
       resentAs: 0,
+      fleetChannel: false,
     })
     expect(title).toContain('timeout')
     expect(title).toContain('never received this')
@@ -170,7 +199,13 @@ describe('undeliveredTitle', () => {
   // A retry that landed must not leave the hover claiming the opposite of
   // the label above it.
   it('does not say the recipient never received a message a retry delivered', () => {
-    const title = undeliveredTitle({ at: 1, reason: 'timeout', resolution: 'delivered', resentAs: 0 })
+    const title = undeliveredTitle({
+      at: 1,
+      reason: 'timeout',
+      resolution: 'delivered',
+      resentAs: 0,
+      fleetChannel: false,
+    })
     expect(title).toContain('got through')
     expect(title).not.toContain('never received this')
   })
@@ -178,7 +213,13 @@ describe('undeliveredTitle', () => {
   // Dismissed keeps the consequence — the message really never arrived — and
   // says what the operator did, so the two marks are not confusable.
   it('keeps the consequence for a dismissed message and names the dismissal', () => {
-    const title = undeliveredTitle({ at: 1, reason: 'timeout', resolution: 'dismissed', resentAs: 0 })
+    const title = undeliveredTitle({
+      at: 1,
+      reason: 'timeout',
+      resolution: 'dismissed',
+      resentAs: 0,
+      fleetChannel: false,
+    })
     expect(title).toContain('never received this')
     expect(title).toContain('dismissed')
   })
@@ -187,7 +228,13 @@ describe('undeliveredTitle', () => {
   // words, so the operator can read what was actually said rather than take
   // the resolution on trust.
   it('keeps the consequence for a resent message and names the message that carried it', () => {
-    const title = undeliveredTitle({ at: 1, reason: 'timeout', resolution: 'resent', resentAs: 42 })
+    const title = undeliveredTitle({
+      at: 1,
+      reason: 'timeout',
+      resolution: 'resent',
+      resentAs: 42,
+      fleetChannel: false,
+    })
     expect(title).toContain('never received this')
     expect(title).toContain('message 42')
     expect(title).toContain('got through')
@@ -195,7 +242,13 @@ describe('undeliveredTitle', () => {
 
   // The hover has the same hole as the label had, and the same fix.
   it('never comes back empty for a resolution it does not know', () => {
-    const title = undeliveredTitle({ at: 1, reason: 'timeout', resolution: 'unknown', resentAs: 0 })
+    const title = undeliveredTitle({
+      at: 1,
+      reason: 'timeout',
+      resolution: 'unknown',
+      resentAs: 0,
+      fleetChannel: false,
+    })
     expect(title).toBeTruthy()
     expect(title).toContain('never received this')
   })
@@ -206,6 +259,7 @@ describe('undeliveredTitle', () => {
       reason: '',
       resolution: '',
       resentAs: 0,
+      fleetChannel: false,
     })
     expect(title).toContain('never received this')
     expect(title).not.toContain('. .')
@@ -272,5 +326,43 @@ describe('destinationLabel', () => {
 
   it('has something to say when the kind is missing', () => {
     expect(destinationLabel('')).toBe('unknown')
+  })
+})
+
+describe('the undelivered mark in the fleet channel', () => {
+  const failedPost = (over: Partial<ChatMessage> = {}) =>
+    undelivered(
+      msg({
+        conversation: 'group',
+        delivered_to: ['loop-2'],
+        send_failed_at: Date.parse('2026-09-20T06:11:00Z'),
+        send_error: 'chat not found',
+        ...over,
+      }),
+    )!
+
+  // #300 review: under "reached @x", "not delivered" read as the message
+  // never reaching anyone. It is in the channel; only the mirror failed.
+  it('says the mirror failed, not the message', () => {
+    const u = failedPost()
+    expect(u.fleetChannel).toBe(true)
+    expect(undeliveredLabel(u)).toBe('not mirrored')
+    const title = undeliveredTitle(u)
+    expect(title).toContain('it is in the fleet channel')
+    expect(title).not.toContain('never received this')
+  })
+
+  it('keeps each resolution, said of the mirror', () => {
+    expect(undeliveredLabel(failedPost({ send_resolution: 'delivered' }))).toBe('mirrored on retry')
+    expect(undeliveredLabel(failedPost({ send_resolution: 'dismissed' }))).toBe('not mirrored — dismissed')
+    expect(undeliveredLabel(failedPost({ send_resolution: 'resent' }))).toBe('not mirrored — said again')
+    expect(undeliveredLabel(failedPost({ send_resolution: 'later' }))).toContain('not mirrored')
+  })
+
+  // A DM to the owner has no hub reader: the surface was the only way there.
+  it('still says not delivered outside the fleet channel', () => {
+    const u = failedPost({ conversation: 'owner_dm' })
+    expect(u.fleetChannel).toBe(false)
+    expect(undeliveredLabel(u)).toBe('not delivered')
   })
 })
