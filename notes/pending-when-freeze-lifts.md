@@ -46,3 +46,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 16:50: Enes wants to see size alternatives; Iris (free, #308 merged) told to post shots on #316 before building. 'Nothing spinning': wiring on main is right (busy state, stream invalidation, 15s refetch); told him it needs a busy loop and animations on (reduce-motion disables it); bug if it persists.
 - 16:55: Iris has #317 (#286 replies) in review; #316 candidates after it lands.
 - 17:00: spin resolved: Windows animation setting (reduce motion). No bug.
+- 17:35: status to Enes: 10 merges today, #318 open. Proposed closing L2 (14 open are hygiene): #289/#258/#272 → L3, rest → L6 OSS 1.0. Awaiting his answer.
