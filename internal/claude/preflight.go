@@ -9,7 +9,7 @@ import (
 
 // TestedVersion is the CLI version Spool's stream-json handling was verified
 // against. Other versions are allowed but logged.
-const TestedVersion = "2.1.233"
+const TestedVersion = "2.1.281"
 
 // Preflight checks the claude binary exists and returns its version string.
 func Preflight(ctx context.Context, bin string) (string, error) {

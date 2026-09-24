@@ -106,7 +106,7 @@ func main() {
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--version":
-			fmt.Println("2.1.233 (fakeclaude)")
+			fmt.Println("2.1.281 (fakeclaude)")
 			return
 		case "--session-id":
 			i++

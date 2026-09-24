@@ -30,7 +30,7 @@ down here the first time it costs us something, so the next person reads it
 instead of re-deriving it from a production surprise. Each entry names the
 build it was measured on, and that build is not necessarily `TestedVersion`:
 the probe below ran on the operator's installed CLI, 2.1.276, while
-`internal/claude` pins 2.1.233. Nothing here is pinned behaviour, so treat a
+`internal/claude` then pinned 2.1.233. Nothing here is pinned behaviour, so treat a
 version gap as a reason to re-measure rather than as a contradiction.
 
 The probe, run on 2026-09-18: create a session with `--model haiku`,
