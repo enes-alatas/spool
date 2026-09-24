@@ -54,7 +54,8 @@ const (
 	ErrOwnerDMUnavailable = "owner_dm_unavailable"
 	ErrSendLimit          = "send_limit"
 	// ErrNoSuchDestination refuses a send to a conversation this loop does
-	// not have: the group, for a loop outside the fleet channel (ADR-0032).
+	// not have: the group, for a loop outside the fleet channel, and
+	// owner_dm, for a loop with no surface (ADR-0032).
 	ErrNoSuchDestination = "no_such_destination"
 	// The two refusals of a resend. Both leave the message unsent, so the
 	// loop can correct the call rather than discover afterwards that it
@@ -62,6 +63,13 @@ const (
 	ErrResendsNotFailed        = "resends_not_failed"
 	ErrResendsWrongDestination = "resends_wrong_destination"
 )
+
+// noSuchDestination refuses a destination the loop does not have, and names
+// the ones it does — the same list its prompt teaches — so one refusal is
+// enough to correct the call.
+func noSuchDestination(conv loop.Conversations, why string) *SendError {
+	return &SendError{ErrNoSuchDestination, why + "; you can send to " + strings.Join(conv.Destinations(), ", ")}
+}
 
 // Send validates, persists, and delivers one explicit loop message
 // (ADR-0026). A *SendError is a refusal for the model to correct in-turn;
@@ -104,13 +112,15 @@ func (r *Router) Send(ctx context.Context, req SendRequest) (*store.Message, *Se
 		msg.ResendsID = resends.ID
 	}
 
+	// What the loop has is decided here and nowhere else in Send, from the
+	// source its prompt is rendered from, so the two cannot disagree (#288).
+	conv := loop.ConversationsOf(req.From)
 	var targets map[string]*store.Loop
 	var ownerChat int64
 	switch req.Destination {
 	case store.ConversationGroup:
-		if req.From.OutsideFleetChannel {
-			return nil, &SendError{ErrNoSuchDestination,
-				"this loop is not in the fleet channel, so it has no group; reach your owner in control_room or owner_dm"}, nil
+		if !conv.Group {
+			return nil, noSuchDestination(conv, "this loop is not in the fleet channel, so it has no group"), nil
 		}
 		targets, serr, err = r.groupRecipients(ctx, req.From, mentions, replyTo)
 		if serr != nil || err != nil {
@@ -126,6 +136,8 @@ func (r *Router) Send(ctx context.Context, req SendRequest) (*store.Message, *Se
 		// answering: a destination that moved with the incoming message
 		// could not be used proactively (ADR-0026, amended for #73).
 		switch {
+		case conv.Surface == "":
+			return nil, noSuchDestination(conv, "this loop has no surface attached, so it has no owner_dm"), nil
 		case req.From.OwnerTGUserID == 0:
 			return nil, &SendError{ErrOwnerNotConfigured,
 				"this loop has no owner yet; the operator sets one in the control room"}, nil

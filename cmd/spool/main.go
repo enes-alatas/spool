@@ -479,8 +479,9 @@ func pruneEvents(ctx context.Context, db store.Store, days int, log *slog.Logger
 }
 
 // catalogOf resolves who a loop can address, fresh for each prompt build:
-// its peers, the people allowed to talk to the fleet, and its own owner
-// with whether a private chat to them exists yet (#45).
+// its conversations, its peers in the fleet channel, the people allowed to
+// talk to the fleet, and its own owner with whether a private chat to them
+// exists yet (#45, #288).
 func catalogOf(db store.Store, self *store.Loop) loop.Catalog {
 	ctx := context.Background()
 	// The caller's copy is the actor's, taken when it last loaded the loop;
@@ -489,13 +490,15 @@ func catalogOf(db store.Store, self *store.Loop) loop.Catalog {
 	if fresh, err := db.Loops().Get(ctx, self.ID); err == nil {
 		self = fresh
 	}
-	cat := loop.Catalog{BotUsername: self.TGBotUsername}
+	cat := loop.Catalog{BotUsername: self.TGBotUsername, Conversations: loop.ConversationsOf(self)}
 	loops, err := db.Loops().List(ctx)
 	if err != nil {
 		return cat
 	}
 	for _, l := range loops {
-		if l.ID != self.ID && l.Status == store.StatusActive {
+		// a loop outside the fleet channel is reached by nobody's mention,
+		// so naming it would teach a mention that goes nowhere
+		if l.ID != self.ID && l.Status == store.StatusActive && !l.OutsideFleetChannel {
 			cat.Peers = append(cat.Peers, loop.Peer{
 				Name: l.Name, Mission: l.Mission, BotUsername: l.TGBotUsername,
 			})

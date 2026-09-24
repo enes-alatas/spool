@@ -80,6 +80,52 @@ type Catalog struct {
 	// bot cannot open one, so until the owner writes first an owner_dm send
 	// is refused — the loop should ask in the group instead of retrying.
 	OwnerDMReady bool
+	// Conversations are the destinations this loop has; the prompt teaches
+	// those and no others.
+	Conversations Conversations
+}
+
+// Conversations are the send destinations a loop actually has (ADR-0032):
+// control_room always, group while it is in the fleet channel, and owner_dm
+// while a surface is attached. The prompt's addressing block and the send
+// tool's refusals both read them, so what a loop is told it has and what the
+// hub lets it use cannot drift apart (#288).
+type Conversations struct {
+	// Surface names the attached surface the way a loop reads it ("" =
+	// none, and so no owner_dm).
+	Surface string
+	// Group reports that the loop is in the fleet channel.
+	Group bool
+}
+
+// ConversationsOf reads a loop's conversations off its row.
+func ConversationsOf(l *store.Loop) Conversations {
+	c := Conversations{Group: !l.OutsideFleetChannel}
+	if l.TGBotToken != "" {
+		c.Surface = "Telegram"
+	}
+	return c
+}
+
+// Destinations lists the loop's destinations in the order the prompt
+// teaches them.
+func (c Conversations) Destinations() []string {
+	var d []string
+	if c.Surface != "" {
+		d = append(d, store.ConversationOwnerDM)
+	}
+	if c.Group {
+		d = append(d, store.ConversationGroup)
+	}
+	return append(d, store.ConversationControlRoom)
+}
+
+// private lists the loop's private destinations.
+func (c Conversations) private() []string {
+	if c.Surface != "" {
+		return []string{store.ConversationOwnerDM, store.ConversationControlRoom}
+	}
+	return []string{store.ConversationControlRoom}
 }
 
 // FleetRulesSection renders the enabled fleet rules as the FLEET RULES
@@ -123,22 +169,37 @@ func (cat Catalog) section(l *store.Loop) string {
 	}
 	fmt.Fprintf(&b, "- You are %s.\n", self)
 
+	conv := cat.Conversations
+	askIn := "in the group"
+	if !conv.Group {
+		askIn = "in control_room"
+	}
 	switch {
+	case conv.Surface == "":
+		if cat.Owner != nil {
+			fmt.Fprintf(&b, "- Your owner is %s.\n", cat.Owner.Label())
+		}
+		b.WriteString("- You have no surface attached, so there is no owner_dm: control_room\n" +
+			"  is your private line to the operator.\n")
 	case cat.Owner == nil:
-		b.WriteString("- You have no owner configured, so owner_dm has nobody to reach.\n" +
-			"  Ask in the group for the operator to set one.\n")
+		fmt.Fprintf(&b, "- You have no owner configured, so owner_dm has nobody to reach.\n"+
+			"  Ask %s for the operator to set one.\n", askIn)
 	case cat.OwnerDMReady:
 		fmt.Fprintf(&b, "- Your owner is %s; owner_dm reaches them privately.\n", cat.Owner.Label())
 	default:
 		fmt.Fprintf(&b, `- Your owner is %s, but there is no private chat with
   them yet: a bot cannot open one, so owner_dm is refused until they
-  message your bot once. Ask them in the group rather than retrying.
-`, cat.Owner.Label())
+  message your bot once. Ask %s rather than retrying.
+`, cat.Owner.Label(), askIn)
 	}
 
-	if len(cat.Peers) > 0 {
-		b.WriteString("- The other loops, and what each is for — @mention one in the group to\n" +
-			"  reach it; a name that is not on this list reaches nobody:\n")
+	switch {
+	case !conv.Group:
+		b.WriteString("- You are not in the fleet channel: no other loop can reach you, and\n" +
+			"  you cannot reach them.\n")
+	case len(cat.Peers) > 0:
+		b.WriteString("- The other loops in the fleet channel, and what each is for — @mention\n" +
+			"  one in the group to reach it; a name not on this list reaches nobody:\n")
 		for _, p := range cat.Peers {
 			mission := strings.TrimSpace(p.Mission)
 			if i := strings.IndexByte(mission, '\n'); i >= 0 {
@@ -149,17 +210,22 @@ func (cat Catalog) section(l *store.Loop) string {
 				fmt.Fprintf(&b, "      (posts as @%s in telegram)\n", p.BotUsername)
 			}
 		}
-	} else {
-		b.WriteString("- No other loops are registered right now.\n")
+	default:
+		b.WriteString("- No other loops are in the fleet channel right now.\n")
 	}
 
-	if len(cat.People) > 0 {
+	// People are reached by mention, which only the group carries.
+	if conv.Group && len(cat.People) > 0 {
 		b.WriteString("- The people who can talk to this fleet:\n")
 		for _, person := range cat.People {
 			fmt.Fprintf(&b, "    %s\n", person.Label())
 		}
-		b.WriteString("  @mentioning a person in the group is public: everyone there sees it.\n" +
-			"  Only owner_dm and control_room are private, and only the owner has a DM.\n")
+		b.WriteString("  @mentioning a person in the group is public: everyone there sees it.\n")
+		if conv.Surface != "" {
+			b.WriteString("  Only owner_dm and control_room are private, and only the owner has a DM.\n")
+		} else {
+			b.WriteString("  Only control_room is private.\n")
+		}
 	}
 	return b.String()
 }
@@ -183,42 +249,8 @@ func SystemPrompt(l *store.Loop, cat Catalog, rules []*store.FleetRule, spoolVer
 	}
 	b.WriteString(missionSection(l) + "\n\n")
 
-	b.WriteString(`HOW THIS WORKS
-- You are woken periodically (ticks) and whenever someone sends you a message.
-- Incoming messages arrive as user turns with a bracketed header naming the
-  sender and the conversation it belongs to, e.g.
-  "[message from @enes via telegram · group · ref:42 · ...]" or
-  "[message from enes via web · control_room · ref:43 · ...]". Answer through the
-  send_message destination matching that conversation unless you have a
-  reason to choose another.
-  Tick turns are headed "[tick · ...]".
-- To say anything to anyone, use the send_message tool. Each call sends one
-  message to one destination:
-    owner_dm      your owner's private Telegram chat — the same person
-                  whatever the turn is about, so you can raise something
-                  privately on a tick, not only in reply
-    group         the shared group chat, visible to your owner; only the
-                  loops and people you @mention in the text receive it
-    control_room  your private thread with the operator in the Spool web UI
-- A new group message must @mention at least one known loop or person. Do
-  not @mention yourself. A DM never fans out: names mentioned in private
-  text receive nothing, @all included.
-- @all in a group message reaches every eligible loop of that group at
-  once, you excluded. It is for something the whole fleet must act on — a
-  rule change, an outage — not for news. Naming the two loops that need
-  something is the better message; @all wakes everyone for a full turn.
-- Every header carries that message's reference ("ref:42"). Pass it as
-  reply_to to answer that exact message: in the group it reaches the
-  author with no @mention needed, and mentions add recipients on top. Only
-  a reference you were actually shown works, and only in the conversation
-  it came from — never invent one, and never reply to "the last message"
-  when you mean a specific one. Your own sends report their reference too.
-- A send_message error names what to fix (e.g. no_recipients); correct the
-  call and retry. Never work around an error by switching destination.
-- Your final reply text is a private status note: it appears in the control
-  room timeline but is delivered to nobody. Not every turn needs a message —
-  ending an exchange without one is often right.
-`)
+	conv := cat.Conversations
+	b.WriteString(howThisWorks(conv))
 	b.WriteString(versionLine(spoolVersion))
 
 	if l.Pacing == store.PacingSelf {
@@ -250,16 +282,100 @@ func SystemPrompt(l *store.Loop, cat Catalog, rules []*store.FleetRule, spoolVer
 		b.WriteString("You have no workspace; you are a conversational loop.\n\n")
 	}
 
-	b.WriteString(`CONDUCT
-- Keep messages concise; they are chat, not reports.
-- What you learn in a private conversation (owner_dm, control_room) stays
+	b.WriteString("CONDUCT\n- Keep messages concise; they are chat, not reports.\n")
+	if conv.Group {
+		fmt.Fprintf(&b, `- What you learn in a private conversation (%s) stays
   private: never quote or relay it in a group message unless the person it
   came from asks you to.
-- Between wakes you do not exist: leave notes in your status note or commit
+`, strings.Join(conv.private(), ", "))
+	}
+	b.WriteString(`- Between wakes you do not exist: leave notes in your status note or commit
   work so future turns have context.
 - If you are blocked and need a human, send a message that says exactly what
-  you need: privately via owner_dm or control_room, or @mention them in the
-  group when others should see it.`)
+`)
+	if conv.Group {
+		fmt.Fprintf(&b, "  you need: privately via %s, or @mention them in the\n  group when others should see it.", strings.Join(conv.private(), " or "))
+	} else {
+		fmt.Fprintf(&b, "  you need, via %s.", strings.Join(conv.private(), " or "))
+	}
+	return b.String()
+}
+
+// howThisWorks renders HOW THIS WORKS for the conversations the loop has:
+// the header examples, the destinations and the group's rules name only
+// those, since a destination a loop is taught and does not have is one it
+// will try and be refused (ADR-0032).
+func howThisWorks(conv Conversations) string {
+	var examples []string
+	switch {
+	case conv.Group && conv.Surface != "":
+		examples = append(examples, `"[message from @enes via telegram · group · ref:42 · ...]"`)
+	case conv.Group:
+		examples = append(examples, `"[message from enes via web · group · ref:42 · ...]"`)
+	case conv.Surface != "":
+		examples = append(examples, `"[message from @enes via telegram dm · owner_dm · ref:42 · ...]"`)
+	}
+	examples = append(examples, `"[message from enes via web · control_room · ref:43 · ...]"`)
+
+	var b strings.Builder
+	fmt.Fprintf(&b, `HOW THIS WORKS
+- You are woken periodically (ticks) and whenever someone sends you a message.
+- Incoming messages arrive as user turns with a bracketed header naming the
+  sender and the conversation it belongs to, e.g.
+  %s. Answer through the
+  send_message destination matching that conversation unless you have a
+  reason to choose another.
+  Tick turns are headed "[tick · ...]".
+- To say anything to anyone, use the send_message tool. Each call sends one
+  message to one destination:
+`, strings.Join(examples, " or\n  "))
+	if conv.Surface != "" {
+		fmt.Fprintf(&b, `    owner_dm      your owner's private %s chat — the same person
+                  whatever the turn is about, so you can raise something
+                  privately on a tick, not only in reply
+`, conv.Surface)
+	}
+	if conv.Group {
+		b.WriteString(`    group         the fleet channel, shared by this fleet and visible to
+                  your owner; only the loops and people you @mention in the
+                  text receive it
+`)
+	}
+	b.WriteString("    control_room  your private thread with the operator in the Spool web UI\n")
+
+	if conv.Group {
+		b.WriteString(`- A new group message must @mention at least one known loop or person. Do
+  not @mention yourself. Private text never fans out: names mentioned in
+  it receive nothing, @all included.
+- @all in a group message reaches every other loop in the fleet channel at
+  once. It is for something the whole fleet must act on — a rule change, an
+  outage — not for news. Naming the two loops that need something is the
+  better message; @all wakes everyone for a full turn.
+- Every header carries that message's reference ("ref:42"). Pass it as
+  reply_to to answer that exact message: in the group it reaches the
+  author with no @mention needed, and mentions add recipients on top. Only
+  a reference you were actually shown works, and only in the conversation
+  it came from — never invent one, and never reply to "the last message"
+  when you mean a specific one. Your own sends report their reference too.
+- A send_message error names what to fix (e.g. no_recipients); correct the
+  call and retry. Never work around an error by switching destination.
+`)
+	} else {
+		b.WriteString(`- You have no group, so nothing you send fans out: names you @mention
+  receive nothing, @all included.
+- Every header carries that message's reference ("ref:42"). Pass it as
+  reply_to to answer that exact message. Only a reference you were
+  actually shown works, and only in the conversation it came from — never
+  invent one, and never reply to "the last message" when you mean a
+  specific one. Your own sends report their reference too.
+- A send_message error names what to fix (e.g. empty_text); correct the
+  call and retry. Never work around an error by switching destination.
+`)
+	}
+	b.WriteString(`- Your final reply text is a private status note: it appears in the control
+  room timeline but is delivered to nobody. Not every turn needs a message —
+  ending an exchange without one is often right.
+`)
 	return b.String()
 }
 

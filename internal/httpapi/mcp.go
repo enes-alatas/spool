@@ -19,7 +19,7 @@ import (
 // is stateless, so every POST stands alone and no session state accrues.
 
 type sendMessageIn struct {
-	Destination string `json:"destination" jsonschema:"where this message goes: owner_dm (your owner's private Telegram chat — always the same person, so a tick can open a private conversation), group (the shared group; @mention recipients in the text), or control_room (your private web thread with the operator)"`
+	Destination string `json:"destination" jsonschema:"where this message goes: owner_dm (your owner's private chat on your attached surface — always the same person, so a tick can open a private conversation), group (the fleet channel; @mention recipients in the text), or control_room (your private web thread with the operator). Your system prompt says which of these you have"`
 	ReplyTo     string `json:"reply_to,omitempty" jsonschema:"reference of the message this replies to (\"ref:42\"), exactly as its envelope header gave it; the reply addresses that message's author and, in the group, renders as a native reply. Must belong to this destination's conversation. Omit for a new message."`
 	Text        string `json:"text" jsonschema:"the message text; in the group, @mentions name the recipients"`
 	Resends     string `json:"resends,omitempty" jsonschema:"reference of your own message whose send failed (\"ref:42\"), exactly as the undelivered note gave it, when these words are you saying that message again. The destination must be the one it was lost going to. When this send gets through, that failure stops being the operator's to deal with. Omit unless you are repeating a message you were told never arrived."`
