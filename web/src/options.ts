@@ -1,14 +1,17 @@
 // Shared dropdown options for model / effort / pacing.
 
-// Values are what the `claude` CLI's --model accepts: an alias for the latest
-// model of a family, or a full model ID.
+// Values are what the `claude` CLI's --model accepts. The list names only the
+// four family aliases, which the CLI resolves to that family's latest model,
+// so a Claude Code release that adds a model leaves it current (#289). A
+// full model ID, to pin one version or reach one the aliases don't, goes in
+// the form's custom field, and nothing here enumerates versions. The labels
+// describe a family, not a version, for the same reason.
 export const MODEL_OPTIONS = [
   { value: '', label: 'Default (claude config)' },
-  { value: 'fable', label: 'Fable 5.1 — most capable' },
-  { value: 'opus', label: 'Opus 5.5 — deep agentic work' },
-  { value: 'claude-opus-5-5', label: 'Opus 5.5, pinned — stays when the alias moves' },
-  { value: 'sonnet', label: 'Sonnet 5 — balanced' },
-  { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5 — fast & cheap' },
+  { value: 'fable', label: 'fable — the most capable family' },
+  { value: 'opus', label: 'opus — deep agentic work' },
+  { value: 'sonnet', label: 'sonnet — balanced' },
+  { value: 'haiku', label: 'haiku — fast & cheap' },
 ]
 
 export const EFFORT_OPTIONS = [

@@ -137,7 +137,7 @@ export default function NewLoop() {
             {model === '__custom__' && (
               <input
                 style={{ marginTop: 6 }}
-                placeholder="exact model id, e.g. claude-opus-4-8"
+                placeholder="full model id, e.g. claude-opus-5-5"
                 value={customModel}
                 onChange={(e) => setCustomModel(e.target.value)}
               />
