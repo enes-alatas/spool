@@ -174,7 +174,9 @@ mirrors which way.
   `owner_dm` is unavailable to it and already refuses with a typed error
   naming what is missing (ADR-0026, 2026-09-16 amendment); that error is now
   something a healthy fleet sees, and its wording should read as a fact rather
-  than a fault.
+  than a fault. Since #288 it is `no_such_destination`, the same refusal as a
+  group send from outside the fleet channel, and names the destinations the
+  loop does have.
 
 - **The prompt must tell a loop which conversations it actually has.** A loop
   outside the fleet channel with no surface has one destination, and a prompt

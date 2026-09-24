@@ -23,11 +23,11 @@ func TestCatalogFollowsTheFleet(t *testing.T) {
 	for _, want := range []string{
 		"WHO YOU CAN ADDRESS",
 		"You are @aster",
-		"No other loops are registered right now",
-		"no owner configured, so owner_dm has nobody to reach",
+		"No other loops are in the fleet channel right now",
+		"You have no surface attached, so there is no owner_dm",
 	} {
 		if !strings.Contains(first.ResultText, want) {
-			t.Fatalf("a lone, ownerless loop's catalog lacks %q:\n%s", want, first.ResultText)
+			t.Fatalf("a lone loop's catalog lacks %q:\n%s", want, first.ResultText)
 		}
 	}
 
@@ -74,6 +74,8 @@ func TestCatalogNamesTheOwnerAndDMReadiness(t *testing.T) {
 	before := waitPromptAfterRotation(t, srv, "alpha", minted.SessionID)
 	for _, want := range []string{
 		"posting in telegram as @alpha_bot",
+		"    owner_dm      your owner's private Telegram chat",
+		"    group         the fleet channel",
 		"Your owner is @operator, but there is no private chat with",
 		"@beta —",
 		"The people who can talk to this fleet",
@@ -98,6 +100,78 @@ func TestCatalogNamesTheOwnerAndDMReadiness(t *testing.T) {
 	if strings.Contains(after, "no private chat with") {
 		t.Fatalf("the stale unreachable line survived the capture:\n%s", after)
 	}
+}
+
+// The addressing half of the prompt is rendered from the conversations the
+// loop has (#288): a loop is taught owner_dm only with a surface attached and
+// group only while it is in the fleet channel, and the hub refuses the
+// others with a hint that lists the same destinations.
+func TestPromptDescribesTheLoopsConversations(t *testing.T) {
+	t.Run("no surface, outside the fleet channel", func(t *testing.T) {
+		s := startServer(t, t.TempDir())
+		ws := workspaceWithScript(t, "!sysprompt\n")
+		s.createLoop("aster", map[string]any{"workspace_path": ws, "workspace_mode": "dir", "in_fleet_channel": false})
+		s.createLoop("briar", nil)
+
+		at := time.Now().UnixMilli()
+		s.message("aster", "who is there")
+		prompt := waitPrompt(t, s, "aster", at).ResultText
+		for _, want := range []string{
+			"    control_room  your private thread",
+			"You have no group, so nothing you send fans out",
+			"You have no surface attached, so there is no owner_dm",
+			"You are not in the fleet channel",
+		} {
+			if !strings.Contains(prompt, want) {
+				t.Errorf("prompt lacks %q:\n%s", want, prompt)
+			}
+		}
+		for _, notWant := range []string{"    owner_dm ", "    group ", "@briar", "Telegram"} {
+			if strings.Contains(prompt, notWant) {
+				t.Errorf("prompt teaches %q, which this loop does not have:\n%s", notWant, prompt)
+			}
+		}
+
+		sess := mcpSession(t, s, hubMCPToken(t, s, "aster"))
+		for _, dest := range []string{"owner_dm", "group"} {
+			res := callSend(t, sess, map[string]any{"destination": dest, "text": "@briar hello"})
+			wantSendError(t, res, "no_such_destination")
+			if text := resultText(res); !strings.HasSuffix(strings.TrimSpace(text), "you can send to control_room") {
+				t.Errorf("the %s refusal does not name the one destination aster has: %s", dest, text)
+			}
+		}
+	})
+
+	t.Run("Telegram, outside the fleet channel", func(t *testing.T) {
+		operator := user{ID: 7272, First: "Operator", Username: "operator"}
+		ws := workspaceWithScript(t, "!sysprompt\n")
+		srv, _ := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws, "in_fleet_channel": false})
+
+		at := time.Now().UnixMilli()
+		srv.message("alpha", "who is there")
+		prompt := waitPrompt(t, srv, "alpha", at).ResultText
+		for _, want := range []string{
+			"    owner_dm      your owner's private Telegram chat",
+			"posting in telegram as @alpha_bot",
+			"You are not in the fleet channel",
+		} {
+			if !strings.Contains(prompt, want) {
+				t.Errorf("prompt lacks %q:\n%s", want, prompt)
+			}
+		}
+		for _, notWant := range []string{"    group ", "@beta", "The people who can talk to this fleet"} {
+			if strings.Contains(prompt, notWant) {
+				t.Errorf("prompt teaches %q, which this loop does not have:\n%s", notWant, prompt)
+			}
+		}
+
+		sess := mcpSession(t, srv, hubMCPToken(t, srv, "alpha"))
+		res := callSend(t, sess, map[string]any{"destination": "group", "text": "@beta hello"})
+		wantSendError(t, res, "no_such_destination")
+		if text := resultText(res); !strings.Contains(text, "you can send to owner_dm, control_room") {
+			t.Errorf("the group refusal does not name alpha's destinations: %s", text)
+		}
+	})
 }
 
 // waitPromptAfterRotation returns the system prompt of the session a loop

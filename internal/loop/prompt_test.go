@@ -101,7 +101,7 @@ func TestSystemPromptFleetRules(t *testing.T) {
 // conversation content into the group, since sessions are shared and only
 // conduct guards it.
 func TestSystemPromptPrivacyRule(t *testing.T) {
-	prompt := SystemPrompt(&store.Loop{Name: "terra", Mission: "m"}, Catalog{}, nil, testVersion)
+	prompt := SystemPrompt(&store.Loop{Name: "terra", Mission: "m"}, Catalog{Conversations: Conversations{Group: true}}, nil, testVersion)
 	if !strings.Contains(prompt, "never quote or relay it in a group message") {
 		t.Fatalf("prompt missing the private-content rule:\n%s", prompt)
 	}
@@ -206,6 +206,7 @@ func TestTruncateRespectsRuneBoundaries(t *testing.T) {
 // part it cannot work out for itself — what is missing when it cannot reach
 // someone (#45).
 func TestCatalogSection(t *testing.T) {
+	telegramInGroup := Conversations{Surface: "Telegram", Group: true}
 	l := &store.Loop{Name: "terra", Mission: "m"}
 	enes := Person{Username: "enesalatas", Display: "Enes"}
 	cases := []struct {
@@ -220,6 +221,7 @@ func TestCatalogSection(t *testing.T) {
 				Peers: []Peer{{Name: "milo", Mission: "Product Owner", BotUsername: "milo_spool_bot"},
 					{Name: "quinn", Mission: "Quality Reviewer"}},
 				People: []Person{enes}, Owner: &enes, OwnerDMReady: true,
+				Conversations: telegramInGroup,
 			},
 			want: []string{
 				"You are @terra, posting in telegram as @terra_spool_bot",
@@ -232,24 +234,46 @@ func TestCatalogSection(t *testing.T) {
 		},
 		{
 			name: "an owner who has never written",
-			cat:  Catalog{People: []Person{enes}, Owner: &enes},
+			cat:  Catalog{People: []Person{enes}, Owner: &enes, Conversations: telegramInGroup},
 			want: []string{
 				"there is no private chat with",
-				"until they\n  message your bot once",
+				"until they\n  message your bot once. Ask in the group rather than retrying",
 			},
 			notWant: []string{"owner_dm reaches them privately"},
 		},
 		{
 			name:    "no owner at all",
-			cat:     Catalog{},
-			want:    []string{"no owner configured, so owner_dm has nobody to reach"},
+			cat:     Catalog{Conversations: telegramInGroup},
+			want:    []string{"no owner configured, so owner_dm has nobody to reach.\n  Ask in the group"},
 			notWant: []string{"Your owner is"},
 		},
 		{
 			name:    "a lone loop",
-			cat:     Catalog{Owner: &enes, OwnerDMReady: true},
-			want:    []string{"No other loops are registered right now"},
+			cat:     Catalog{Owner: &enes, OwnerDMReady: true, Conversations: telegramInGroup},
+			want:    []string{"No other loops are in the fleet channel right now"},
 			notWant: []string{"The people who can talk to this fleet"},
+		},
+		{
+			name: "no surface: no owner_dm, and control_room is the private line",
+			cat: Catalog{People: []Person{enes}, Owner: &enes, Peers: []Peer{{Name: "milo", Mission: "PO"}},
+				Conversations: Conversations{Group: true}},
+			want: []string{
+				"Your owner is @enesalatas (Enes).\n",
+				"You have no surface attached, so there is no owner_dm",
+				"@milo — PO",
+				"Only control_room is private.",
+			},
+			notWant: []string{"owner_dm reaches them", "Only owner_dm and control_room", "posting in telegram"},
+		},
+		{
+			name: "outside the fleet channel: no peers, no people, ask in control_room",
+			cat: Catalog{BotUsername: "terra_spool_bot", People: []Person{enes}, Owner: &enes,
+				Peers: []Peer{{Name: "milo", Mission: "PO"}}, Conversations: Conversations{Surface: "Telegram"}},
+			want: []string{
+				"You are not in the fleet channel: no other loop can reach you",
+				"Ask in control_room rather than retrying",
+			},
+			notWant: []string{"@milo", "The people who can talk to this fleet", "Ask in the group"},
 		},
 	}
 	for _, c := range cases {
@@ -488,6 +512,95 @@ func TestUnknownVersionSaysNothing(t *testing.T) {
 	} {
 		if strings.Contains(got, "You run on Spool") {
 			t.Errorf("%s names a version it does not have:\n%s", name, got)
+		}
+	}
+}
+
+// TestPromptTeachesOnlyTheLoopsConversations: the addressing half of the
+// prompt is rendered from the conversations the loop has (#288), so a loop
+// is never taught a destination the hub would refuse it.
+func TestPromptTeachesOnlyTheLoopsConversations(t *testing.T) {
+	l := &store.Loop{Name: "terra", Mission: "m"}
+	cases := []struct {
+		name          string
+		conv          Conversations
+		want, notWant []string
+	}{
+		{
+			name: "no surface, outside the fleet channel",
+			conv: Conversations{},
+			want: []string{
+				"e.g.\n  \"[message from enes via web · control_room · ref:43 · ...]\". Answer",
+				"    control_room  your private thread",
+				"You have no group, so nothing you send fans out",
+				"you need, via control_room.",
+			},
+			notWant: []string{"owner_dm ", "    group ", "Telegram", "telegram", "@all in a group message",
+				"never quote or relay it in a group message"},
+		},
+		{
+			name: "no surface, in the fleet channel",
+			conv: Conversations{Group: true},
+			want: []string{
+				"\"[message from enes via web · group · ref:42 · ...]\" or",
+				"    group         the fleet channel",
+				"@all in a group message reaches every other loop in the fleet channel",
+				"private conversation (control_room) stays",
+				"privately via control_room, or @mention them",
+			},
+			notWant: []string{"    owner_dm ", "Telegram", "telegram"},
+		},
+		{
+			name: "Telegram, outside the fleet channel",
+			conv: Conversations{Surface: "Telegram"},
+			want: []string{
+				"\"[message from @enes via telegram dm · owner_dm · ref:42 · ...]\" or",
+				"    owner_dm      your owner's private Telegram chat",
+				"you need, via owner_dm or control_room.",
+			},
+			notWant: []string{"    group ", "@all in a group message", "via telegram · group"},
+		},
+		{
+			name: "Telegram, in the fleet channel",
+			conv: Conversations{Surface: "Telegram", Group: true},
+			want: []string{
+				"\"[message from @enes via telegram · group · ref:42 · ...]\" or",
+				"    owner_dm      your owner's private Telegram chat",
+				"    group         the fleet channel",
+				"private conversation (owner_dm, control_room) stays",
+			},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			prompt := SystemPrompt(l, Catalog{Conversations: c.conv}, nil, testVersion)
+			for _, want := range c.want {
+				if !strings.Contains(prompt, want) {
+					t.Errorf("prompt missing %q:\n%s", want, prompt)
+				}
+			}
+			for _, notWant := range c.notWant {
+				if strings.Contains(prompt, notWant) {
+					t.Errorf("prompt should not contain %q:\n%s", notWant, prompt)
+				}
+			}
+		})
+	}
+}
+
+func TestConversationsOf(t *testing.T) {
+	cases := []struct {
+		loop store.Loop
+		want string
+	}{
+		{store.Loop{OutsideFleetChannel: true}, "control_room"},
+		{store.Loop{}, "group control_room"},
+		{store.Loop{TGBotToken: "synthetic", OutsideFleetChannel: true}, "owner_dm control_room"},
+		{store.Loop{TGBotToken: "synthetic"}, "owner_dm group control_room"},
+	}
+	for _, c := range cases {
+		if got := strings.Join(ConversationsOf(&c.loop).Destinations(), " "); got != c.want {
+			t.Errorf("ConversationsOf(%+v) = %q, want %q", c.loop, got, c.want)
 		}
 	}
 }
