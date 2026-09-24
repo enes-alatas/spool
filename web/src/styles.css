@@ -1073,7 +1073,11 @@ textarea {
 .tool-line .tool-name {
   color: var(--text);
 }
-.thinking-toggle {
+/* A small action written as a word rather than drawn as a button, such as
+   showing a thinking block or the rest of a clamped mission. Named for what
+   it is rather than for the first control that used it, since every such
+   control shares it. */
+.text-button {
   font-family: var(--mono);
   font-size: 0.6875rem;
   color: var(--text-muted);

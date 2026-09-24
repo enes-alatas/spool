@@ -287,7 +287,7 @@ function MissionPanel({
       {result && <div className="mission-result">{result}</div>}
       {(clamped || open) && (
         <div className="mission-controls">
-          <button className="thinking-toggle mission-toggle" onClick={toggle}>
+          <button className="text-button mission-toggle" onClick={toggle}>
             {open ? 'show less' : 'show the whole mission'}
           </button>
         </div>
