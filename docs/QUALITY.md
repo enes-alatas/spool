@@ -137,6 +137,18 @@ touched, because a credential can be added to any file.
 A change to the workflow runs everything: the gates must prove themselves
 under the gates they are changing.
 
+`itest` is also skipped when the exact content it covers already passed it
+on the same PR (#314). A green run leaves an Actions cache marker keyed on
+one hash of the covered tree — `cmd/`, `internal/`, `itest/`, `docker/`,
+`.github/workflows/`, `go.mod`, `go.sum`, `Makefile`, `.golangci.yml` — as
+it stands in the PR merged into its base; the next run hashes the same and,
+on a hit, skips with a job-summary line naming the marker it trusted. A
+reworded commit, a docs-only fold or a rebase onto a main that moved only
+outside those paths re-proves nothing, so it runs nothing; any covered byte
+changed is a new key and a full run. A PR reads markers of its own runs and
+of `main`, never another PR's. Markers evict after seven days unused, which
+costs a re-run.
+
 A push to `main` runs tier 1 only — `itest` is skipped there, not just
 filtered. Rebase-merge (ADR-0016) lands commits a PR already proved green,
 so re-running tier 2 re-proves nothing unless the base moved; that case is
