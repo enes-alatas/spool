@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { RUNTIME_OPTIONS, runtimeNote } from './options'
+import { MODEL_OPTIONS, RUNTIME_OPTIONS, runtimeNote } from './options'
 
 describe('runtimeNote', () => {
   it('warns about uncontained, in the words the README uses', () => {
@@ -25,5 +25,14 @@ describe('runtimeNote', () => {
 
   it('offers both kinds the API accepts', () => {
     expect(RUNTIME_OPTIONS.map((o) => o.value)).toEqual(['docker', 'bare'])
+  })
+})
+
+describe('MODEL_OPTIONS', () => {
+  // A version in the list goes stale with the next Claude Code release; a
+  // full id belongs in the form's custom field (#289).
+  it('offers the default and the four family aliases, and no version', () => {
+    expect(MODEL_OPTIONS.map((o) => o.value)).toEqual(['', 'fable', 'opus', 'sonnet', 'haiku'])
+    for (const o of MODEL_OPTIONS) expect(o.label).not.toMatch(/\d/)
   })
 })
