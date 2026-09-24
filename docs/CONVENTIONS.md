@@ -409,8 +409,8 @@ agents — Claude sessions today, Spool's own loops from L2.*
 ## Dev environment
 
 - Canonical entry points are `make` targets; if it isn't in the Makefile, it isn't a
-  supported workflow. Go toolchain pinned in `go.mod`; Node 20+; `.editorconfig` at
-  root.
+  supported workflow. Go toolchain pinned in `go.mod`; Node 20.19+ or 22.12+ (vite 7's
+  floor); `.editorconfig` at root.
 - `AGENTS.md` at repo root (with `CLAUDE.md` symlinked to it, ADR-0015) orients
   agent sessions and loops: read VISION → ARCHITECTURE → CONVENTIONS, then the
   package you're touching. It links, it doesn't duplicate.
