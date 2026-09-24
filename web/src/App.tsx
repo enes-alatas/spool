@@ -47,7 +47,7 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <Link to="/" className="wordmark">
-          <SpoolGlyph spinning={busy} />
+          <SpoolGlyph spinning={busy} size={26} />
           spool
         </Link>
 

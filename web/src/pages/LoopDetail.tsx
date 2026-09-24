@@ -1231,7 +1231,7 @@ export default function LoopDetail() {
       <div className="detail">
         <section>
           <h1 style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
-            <SpoolGlyph spinning={loop.state === 'busy'} size={20} />
+            <SpoolGlyph spinning={loop.state === 'busy'} size={28} />
             <span style={{ fontFamily: 'var(--mono)' }}>@{loop.name}</span>
             <span className="state-name">{loop.state}</span>
             {loop.runtime === 'bare' && <span className="containment-badge">uncontained</span>}
