@@ -42,3 +42,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 14:20: #315 (#304) up. Channel call: image tracks apt latest (matches host + TestedVersion), folded into #315; Enes informed, one-line revert if he wants stable.
 - 16:30: Enes: README banner (docs/assets/spool-banner-{dark,light}.svg); wants the logo in the UI + favicon. Colours: dark #d3d3d3, light #24292f. Glyph == existing SpoolGlyph. Told him: currentColor in UI, exact colours in favicon (svg + png + apple-touch), thicker strokes at 16px, wordmark font choice (Nunito vs UI font, I lean UI font). Awaiting go to file for Iris.
 - 16:40: Enes: keep UI font; asked whether to hand over the SVG / replace the coded glyph. Answered: no SVG needed, keep coded glyph, derive favicons. Filed #316 for Iris after her queue.
+- 16:45: Enes wants the topbar glyph bigger, banner proportion; added to #316, Iris to post two sizes for him to pick.
