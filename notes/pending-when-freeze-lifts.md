@@ -32,3 +32,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - Overnight merges: #299 (#298 Opus 5.5 + Fable 5.1 lists), #300 (fleet channel tab, Part of #286: reply button waits on reply_to_id for POST /api/group), #301 (closes #285). #284/#285 closed. Runtime v0.2.0-32.
 - Open epic children: #286 (reply button, needs Terra's reply_to_id), #287 (Terra took API half 07:31, Iris pages after), #288 (prompt, next for Terra). #302 filed by Terra (sends lost without record).
 - No open PRs. Nothing to nudge.
+- 07:45: stale claude version after rebuild: hub default runtime is docker, health reports the workstation image's claude (2.1.267, image 3 days old); host is 2.1.281. Fix is make image + restart. Told Enes; offered an issue (say make image where the version shows).
