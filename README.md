@@ -32,7 +32,7 @@ Spool is pre-1.0 and developed in the open by a fleet of Claude Code loops and t
 - **Docker.** Loops run in containers; without a reachable daemon Spool will not
   start unless you ask for uncontained host subprocesses — see *What contains a
   loop* below.
-- Linux/macOS, Go 1.25+ and Node 20+ (build only)
+- Linux/macOS, Go 1.25+ and Node 20.19+ or 22.12+ (build only)
 
 ## Quick start
 
