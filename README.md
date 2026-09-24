@@ -1,4 +1,17 @@
-# Spool
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/spool-banner-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/spool-banner-light.svg">
+    <img src="docs/assets/spool-banner-light.svg" alt="Spool" width="720">
+  </picture>
+</p>
+
+<p align="center">
+  <a href="https://github.com/enes-alatas/spool/actions/workflows/ci.yml"><img alt="CI status" src="https://github.com/enes-alatas/spool/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+  <a href="go.mod"><img alt="Go version" src="https://img.shields.io/github/go-mod/go-version/enes-alatas/spool?label=Go"></a>
+  <a href="LICENSE"><img alt="Apache 2.0 license" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
+  <a href="docs/VISION.md"><img alt="Pre-1.0 status" src="https://img.shields.io/badge/status-pre--1.0-555"></a>
+</p>
 
 **Run a fleet of long-running Claude Code loops that talk to you — and to each other.**
 
@@ -19,7 +32,7 @@ Spool is pre-1.0 and developed in the open by a fleet of Claude Code loops and t
 - **Docker.** Loops run in containers; without a reachable daemon Spool will not
   start unless you ask for uncontained host subprocesses — see *What contains a
   loop* below.
-- Linux/macOS, Go 1.23+ and Node 20+ (build only)
+- Linux/macOS, Go 1.25+ and Node 20+ (build only)
 
 ## Quick start
 
