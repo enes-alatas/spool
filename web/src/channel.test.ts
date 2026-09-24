@@ -12,10 +12,10 @@ const loop = (over: Partial<LoopView>): LoopView =>
   }) as LoopView
 
 const fleet = [
-  loop({ name: 'aster', tg_bot_username: 'aster_bot' }),
-  loop({ name: 'briar', status: 'paused' }),
-  loop({ name: 'cedar', in_fleet_channel: false }),
-  loop({ name: 'dune', status: 'archived' }),
+  loop({ id: 'l-aster', name: 'aster', tg_bot_username: 'aster_bot' }),
+  loop({ id: 'l-briar', name: 'briar', status: 'paused' }),
+  loop({ id: 'l-cedar', name: 'cedar', in_fleet_channel: false }),
+  loop({ id: 'l-dune', name: 'dune', status: 'archived' }),
 ]
 
 describe('mentionTokens', () => {
@@ -54,6 +54,25 @@ describe('channelRecipients', () => {
   it('reaches nobody when it names nobody', () => {
     expect(channelRecipients('morning, everyone', fleet)).toEqual([])
     expect(channelRecipients('@rana can you look', fleet)).toEqual([])
+  })
+  // ADR-0025: a reply addresses what it answers, so answering a loop needs
+  // no mention — the router adds the replied-to author (#311).
+  it('reaches the loop a reply answers without a mention', () => {
+    expect(channelRecipients('which change?', fleet, { from_loop_id: 'l-briar' })).toEqual(['briar'])
+    expect(channelRecipients('@aster too', fleet, { from_loop_id: 'l-briar' })).toEqual(['aster', 'briar'])
+  })
+
+  // The replied-to loop is still held to `inGroup`: a reply to a loop that
+  // has since left the channel, or been archived, reaches nobody.
+  it('does not reach a replied-to loop outside the channel', () => {
+    expect(channelRecipients('still there?', fleet, { from_loop_id: 'l-cedar' })).toEqual([])
+    expect(channelRecipients('still there?', fleet, { from_loop_id: 'l-dune' })).toEqual([])
+  })
+
+  // A person's post has no loop author; answering it adds nobody, and a
+  // missing field (an operator's or a person's post) reads the same.
+  it('adds nobody for a reply to a person', () => {
+    expect(channelRecipients('thanks', fleet, {})).toEqual([])
   })
 })
 

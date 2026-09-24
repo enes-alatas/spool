@@ -1248,6 +1248,30 @@ textarea {
   position: relative;
   margin-top: 16px;
 }
+/* What the post being written answers, above the box: the quote's look,
+   one line, and a way out. */
+.replying {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  margin-bottom: 6px;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  border-left: 2px solid var(--text);
+  padding-left: 8px;
+}
+.replying-what {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.replying .author {
+  font-family: var(--mono);
+  font-size: 0.71875rem;
+  color: var(--text);
+}
 .mention-menu {
   position: absolute;
   bottom: calc(100% + 6px);

@@ -1,4 +1,4 @@
-import type { LoopView } from './api'
+import type { ChatMessage, LoopView } from './api'
 
 // The fleet channel's addressing, as the compose box needs to see it before
 // the post is sent (#286). The server decides who a post reaches; this
@@ -28,13 +28,24 @@ export function mentionTokens(text: string): string[] {
 // (`inGroup`). `@all` reaches every loop in the channel that is active — a
 // paused loop has to be named (`broadcastTargets`). Names that match nothing
 // reach nobody and are not an error: a human may be named too.
-export function channelRecipients(text: string, loops: LoopView[]): string[] {
+//
+// A reply also reaches the loop that wrote what it answers, with no mention
+// needed, under the same `inGroup` rule (ADR-0025). A reply to a person's
+// post adds nobody — the person is on the surface, where the operator's
+// words never go — and the original's other recipients are not inherited.
+export function channelRecipients(
+  text: string,
+  loops: LoopView[],
+  replyTo?: Pick<ChatMessage, 'from_loop_id'>,
+): string[] {
   const tokens = new Set(mentionTokens(text))
   const all = tokens.has(BROADCAST)
+  const answered = replyTo?.from_loop_id
   return loops
     .filter((l) => {
       if (!l.in_fleet_channel || l.status === 'archived') return false
       if (all && l.status === 'active') return true
+      if (answered && l.id === answered) return true
       return (
         tokens.has(l.name.toLowerCase()) ||
         (!!l.tg_bot_username && tokens.has(l.tg_bot_username.toLowerCase()))
