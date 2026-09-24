@@ -388,8 +388,14 @@ export const api = {
   // The operator posting to the fleet channel. It wakes the loops the text
   // addresses and no others, and never leaves the hub (ADR-0032 item 4):
   // nobody on an attached surface sees it. 202 — delivery is the loops'.
-  postGroup: (text: string) =>
-    req<{ queued: boolean }>('/api/group', { method: 'POST', body: JSON.stringify({ text }) }),
+  // `replyTo` is the fleet-channel message it answers (#311); the server
+  // refuses one that is gone (`unknown_reply_to`) or from another
+  // conversation (`cross_conversation_reply_to`) with a 400.
+  postGroup: (text: string, replyTo?: number) =>
+    req<{ queued: boolean }>('/api/group', {
+      method: 'POST',
+      body: JSON.stringify({ text, reply_to_id: replyTo || undefined }),
+    }),
   conversation: (name: string, kind: 'control_room' | 'owner_dm' = 'control_room', limit = 100) =>
     req<ChatMessage[]>(`/api/loops/${name}/conversation?conversation=${kind}&limit=${limit}`),
   telegramStatus: (name: string) =>

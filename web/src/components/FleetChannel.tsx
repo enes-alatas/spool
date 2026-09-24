@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type KeyboardEvent, type UIEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type UIEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ChatMessage, LoopView } from '../api'
 import { channelRecipients, completeMention, mentionAt, mentionCompletions } from '../channel'
@@ -74,7 +74,33 @@ function ReplyQuote({ msg, byID }: { msg: ChatMessage; byID: Map<number, ChatMes
   )
 }
 
-function Compose({ loops }: { loops: LoopView[] }) {
+// The one-line summary of what a reply answers, above the compose box, with
+// the way out of it: the operator should never send a reply they forgot
+// they had started.
+function Replying({ msg, onCancel }: { msg: ChatMessage; onCancel: () => void }) {
+  return (
+    <div className="replying">
+      <span className="replying-what" title={msg.text}>
+        replying to <span className="author">@{msg.author}</span> {msg.text}
+      </span>
+      <button type="button" className="text-button" onClick={onCancel}>
+        cancel
+      </button>
+    </div>
+  )
+}
+
+function Compose({
+  loops,
+  replyTo,
+  onReplyDone,
+}: {
+  loops: LoopView[]
+  // The message the next post answers, picked from the thread; null for a
+  // plain post.
+  replyTo: ChatMessage | null
+  onReplyDone: () => void
+}) {
   const qc = useQueryClient()
   const [draft, setDraft] = useState('')
   const [caret, setCaret] = useState(0)
@@ -97,7 +123,13 @@ function Compose({ loops }: { loops: LoopView[] }) {
 
   const typing = dismissed ? null : mentionAt(draft, caret)
   const options = typing ? mentionCompletions(typing.query, loops) : []
-  const recipients = channelRecipients(draft, loops)
+  const recipients = channelRecipients(draft, loops, replyTo ?? undefined)
+
+  // Picking a message to answer puts the caret in the box: the reply is
+  // what the operator is about to write.
+  useEffect(() => {
+    if (replyTo) box.current?.focus()
+  }, [replyTo])
   const empty = draft.trim() === ''
 
   const track = (text: string, at: number) => {
@@ -124,8 +156,9 @@ function Compose({ loops }: { loops: LoopView[] }) {
     setSending(true)
     setError('')
     try {
-      await api.postGroup(draft.trim())
+      await api.postGroup(draft.trim(), replyTo?.id)
       track('', 0)
+      onReplyDone()
       qc.invalidateQueries({ queryKey: ['group'] })
     } catch (e) {
       // The draft stays: a post the server refused is still the operator's
@@ -154,6 +187,11 @@ function Compose({ loops }: { loops: LoopView[] }) {
         setDismissed(true)
         return
       }
+    }
+    if (e.key === 'Escape' && replyTo) {
+      e.preventDefault()
+      onReplyDone()
+      return
     }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -185,10 +223,15 @@ function Compose({ loops }: { loops: LoopView[] }) {
           ))}
         </div>
       )}
+      {replyTo && <Replying msg={replyTo} onCancel={onReplyDone} />}
       <div className="composer" style={{ marginTop: 0 }}>
         <textarea
           ref={box}
-          placeholder="Post to the fleet channel — @name the loops it is for, or @all"
+          placeholder={
+            replyTo
+              ? `Reply to @${replyTo.author}`
+              : 'Post to the fleet channel — @name the loops it is for, or @all'
+          }
           value={draft}
           onChange={(e) => track(e.target.value, e.target.selectionStart)}
           onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
@@ -200,9 +243,10 @@ function Compose({ loops }: { loops: LoopView[] }) {
       </div>
       {/* Neutral while a mention is still being typed: "reaches nobody" in
           the warning colour under a half-typed name is a complaint about a
-          keystroke, not about the post. */}
+          keystroke, not about the post. A reply names its loop before a word
+          is typed, so an empty box answering one already says who it reaches. */}
       <div className={`channel-reach${!empty && !typing && recipients.length === 0 ? ' warn' : ''}`}>
-        {empty || (typing && recipients.length === 0)
+        {(empty || typing) && recipients.length === 0
           ? 'Reaches the loops you name. Stays on the hub: people on Telegram never see it.'
           : recipients.length === 0
             ? 'Names no loop in the channel, so it would reach nobody. Mention one with @, or @all.'
@@ -225,6 +269,7 @@ export function FleetChannel() {
     refetchInterval: 5000,
   })
   const { data: loops } = useQuery({ queryKey: ['loops'], queryFn: api.loops })
+  const [replyTo, setReplyTo] = useState<ChatMessage | null>(null)
   const scroller = useRef<HTMLDivElement>(null)
   // Follow the tail unless the reader has scrolled up to read; the same rule
   // as a loop's panes, with a couple of lines of slack.
@@ -261,7 +306,23 @@ export function FleetChannel() {
               <MessageKnot
                 key={m.id}
                 msg={m}
-                meta={surfaceNote(m)}
+                meta={
+                  <>
+                    {surfaceNote(m)}
+                    {' · '}
+                    <button
+                      type="button"
+                      className="text-button"
+                      // A toggle, since it announces itself as one: pressed on
+                      // the message being answered, and pressing it again
+                      // drops the reply, as cancel and Escape do.
+                      aria-pressed={replyTo?.id === m.id}
+                      onClick={() => setReplyTo((cur) => (cur?.id === m.id ? null : m))}
+                    >
+                      reply
+                    </button>
+                  </>
+                }
                 before={<ReplyQuote msg={m} byID={byID} />}
                 after={<Reached msg={m} loops={loops ?? []} />}
               />
@@ -270,7 +331,7 @@ export function FleetChannel() {
         )}
       </div>
 
-      <Compose loops={loops ?? []} />
+      <Compose loops={loops ?? []} replyTo={replyTo} onReplyDone={() => setReplyTo(null)} />
     </div>
   )
 }
