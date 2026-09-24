@@ -38,9 +38,21 @@ RUN install -d -m 0755 /etc/apt/keyrings \
 # `pkill -x claude` used to stop it between wakes matches (a Node-wrapper install
 # would show up as `node` and be missed). Installed from apt, it does not try to
 # self-update, so the version stays fixed until the image is rebuilt.
+#
+# The repo's `latest` channel, not `stable`: `latest` is what the host's native
+# install tracks, so a contained loop runs the CLI the fleet's stream-json
+# handling is verified against (TestedVersion). `stable` lags it.
+#
+# A rebuild must fetch the newest release, and Docker's cache would stop it: it
+# keys this layer on the instruction's text, which a new upstream release does
+# not change, so the old CLI would be reused (#304). CLAUDE_CODE_CACHEBUST is
+# declared here, below the OS and gh layers, so a new value re-runs this install
+# and everything after it and leaves the layers above cached. `make image`
+# passes the time, so every rebuild installs whatever the repo serves then.
+ARG CLAUDE_CODE_CACHEBUST
 RUN curl -fsSL https://downloads.claude.ai/keys/claude-code.asc \
         -o /etc/apt/keyrings/claude-code.asc \
-    && echo "deb [signed-by=/etc/apt/keyrings/claude-code.asc] https://downloads.claude.ai/claude-code/apt/stable stable main" \
+    && echo "deb [signed-by=/etc/apt/keyrings/claude-code.asc] https://downloads.claude.ai/claude-code/apt/latest latest main" \
         > /etc/apt/sources.list.d/claude-code.list \
     && apt-get update && apt-get install -y claude-code \
     && rm -rf /var/lib/apt/lists/*
