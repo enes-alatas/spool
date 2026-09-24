@@ -42,8 +42,8 @@ export default function Login({ onSignedIn }: { onSignedIn: () => void }) {
         </div>
 
         <p className="page-lede">
-          This hub answers to its operator token. Paste it once — the session lives in a cookie this page
-          can't read, and it survives a reload.
+          This hub answers to its operator token. Paste it once. The session lives in a cookie this page can't
+          read, and it survives a reload.
         </p>
 
         <div className="field">

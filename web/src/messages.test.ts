@@ -356,8 +356,8 @@ describe('the undelivered mark in the fleet channel', () => {
 
   it('keeps each resolution, said of the mirror', () => {
     expect(undeliveredLabel(failedPost({ send_resolution: 'delivered' }))).toBe('mirrored on retry')
-    expect(undeliveredLabel(failedPost({ send_resolution: 'dismissed' }))).toBe('not mirrored — dismissed')
-    expect(undeliveredLabel(failedPost({ send_resolution: 'resent' }))).toBe('not mirrored — said again')
+    expect(undeliveredLabel(failedPost({ send_resolution: 'dismissed' }))).toBe('not mirrored, dismissed')
+    expect(undeliveredLabel(failedPost({ send_resolution: 'resent' }))).toBe('not mirrored, said again')
     expect(undeliveredLabel(failedPost({ send_resolution: 'later' }))).toContain('not mirrored')
   })
 

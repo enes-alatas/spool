@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MODEL_OPTIONS, RUNTIME_OPTIONS, runtimeNote } from './options'
+import { EFFORT_OPTIONS, MODEL_OPTIONS, RUNTIME_OPTIONS, runtimeNote } from './options'
 
 describe('runtimeNote', () => {
   it('warns about uncontained, in the words the README uses', () => {
@@ -34,5 +34,14 @@ describe('MODEL_OPTIONS', () => {
   it('offers the default and the four family aliases, and no version', () => {
     expect(MODEL_OPTIONS.map((o) => o.value)).toEqual(['', 'fable', 'opus', 'sonnet', 'haiku'])
     for (const o of MODEL_OPTIONS) expect(o.label).not.toMatch(/\d/)
+  })
+})
+
+describe('option labels', () => {
+  // The operator's call (#331): no em dash in UI text. A label separates its
+  // value from the description with a middle dot or a comma instead.
+  it('carry no em dash', () => {
+    for (const o of [...MODEL_OPTIONS, ...EFFORT_OPTIONS, ...RUNTIME_OPTIONS])
+      expect(o.label).not.toContain('\u2014')
   })
 })

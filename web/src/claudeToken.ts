@@ -21,10 +21,10 @@ export function loopsNeedingClaudeToken(
 export function missingTokenNotice(names: readonly string[]): string {
   const who =
     names.length === 1
-      ? `@${names[0]} cannot start a turn — its workstation`
+      ? `@${names[0]} cannot start a turn: its workstation`
       : names.length <= 3
-        ? `${listed(names.map((n) => `@${n}`))} cannot start a turn — their workstations`
-        : `${names.length} contained loops cannot start a turn — their workstations`
+        ? `${listed(names.map((n) => `@${n}`))} cannot start a turn: their workstations`
+        : `${names.length} contained loops cannot start a turn: their workstations`
   return `No Claude token is set, so ${who} will report down until one is.`
 }
 

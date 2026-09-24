@@ -15,7 +15,7 @@ function Countdown({ at }: { at: number }) {
     const t = setInterval(update, 1000)
     return () => clearInterval(t)
   }, [at])
-  if (!at || s === null) return <span>—</span>
+  if (!at || s === null) return <span className="dim">·</span>
   if (s === 0) return <span className="hot">due</span>
   const h = Math.floor(s / 3600)
   const m = Math.floor((s % 3600) / 60)
@@ -30,7 +30,7 @@ function Countdown({ at }: { at: number }) {
 function ContextStat({ loop, thresholds }: { loop: LoopView; thresholds?: Settings }) {
   // Falsy, not `=== 0`: api.ts describes the API as it will be, so a field an
   // older server doesn't send arrives as undefined and would divide into NaN.
-  if (!loop.context_tokens) return <span className="dim">—</span>
+  if (!loop.context_tokens) return <span className="dim">·</span>
   // The limit, not the percentage, answers "does Spool know the window": the
   // percentage truncates, so a measured loop holding ~1,500 tokens of a 200k
   // window reports 0%, which is a true reading and not an absent one. The loop
@@ -122,7 +122,7 @@ function FleetRow({ loop, thresholds }: { loop: LoopView; thresholds?: Settings 
             // dash under the NEXT WAKE column header, words where there is no
             // header to explain the dash.
             <>
-              <span className="only-wide dim">—</span>
+              <span className="only-wide dim">·</span>
               <span className="only-narrow hot">turn in progress</span>
             </>
           ) : (

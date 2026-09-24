@@ -418,6 +418,11 @@ agents — Claude sessions today, Spool's own loops from L2.*
   and drops its well back to the canvas behind that (ADR-0027 §11). Never the button's
   `opacity` — on a control that manufactures a text colour below the contrast floor.
   Disabling a field while a request is in flight therefore costs no CSS.
+- **No em dashes in UI text** (operator's call, #331): labels, placeholders, hover
+  titles, notices and timeline lines use a colon, comma, full stop or parentheses
+  instead. An option label separates its value from the description with a middle
+  dot (`opus · deep agentic work`), and an empty cell shows a dim middle dot. Code
+  comments are not UI text.
 
 ## API
 

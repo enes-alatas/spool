@@ -32,7 +32,7 @@ function Countdown({ at }: { at: number }) {
     const t = setInterval(update, 1000)
     return () => clearInterval(t)
   }, [at])
-  if (!at || s === null) return <div className="countdown">—</div>
+  if (!at || s === null) return <div className="countdown">·</div>
   if (s === 0) return <div className="countdown due">due now</div>
   const h = Math.floor(s / 3600)
   const m = Math.floor((s % 3600) / 60)
@@ -379,7 +379,7 @@ function ContextPanel({ loop, turns, thresholds }: { loop: LoopView; turns: Turn
             key={turn.id}
             className="ctx-bar"
             style={{ height: `${peak > 0 ? (contextTokens(turn) / peak) * 100 : 0}%` }}
-            title={`${new Date(turn.started_at).toLocaleTimeString()} — ${formatTokens(
+            title={`${new Date(turn.started_at).toLocaleTimeString()} · ${formatTokens(
               contextTokens(turn),
             )} tokens in context`}
           />
@@ -495,8 +495,8 @@ function WorkstationPanel({ loop, runningVerb }: { loop: LoopView; runningVerb: 
             <div className="ws-confirm">
               <div>
                 Recreating destroys this workstation and builds a fresh one from its image.
-                <strong> Gone:</strong> the loop's session memory — it starts its next turn fresh, with no
-                recollection of this conversation — plus anything uncommitted in the workspace and anything it
+                <strong> Gone:</strong> the loop's session memory (it starts its next turn fresh, with no
+                recollection of this conversation), plus anything uncommitted in the workspace and anything it
                 installed. <strong>Kept:</strong> its mission, schedule, secrets, Spool's own record of every
                 message and turn, and anything it pushed to a remote.
               </div>
@@ -531,7 +531,7 @@ function WorkstationPanel({ loop, runningVerb }: { loop: LoopView; runningVerb: 
         </>
       ) : (
         <div className="panel-note">
-          Uncontained — claude runs directly on the host, with the operator's own files in reach. There is no
+          Uncontained: claude runs directly on the host, with the operator's own files in reach. There is no
           workstation to power.
         </div>
       )}
@@ -583,7 +583,7 @@ function SecretsPanel({ loop }: { loop: LoopView }) {
     <div className="side-panel">
       <h3>Secrets</h3>
       <div className="panel-note leading">
-        Env vars injected into every workstation exec (a gh token, API keys). Values are write-only — stored,
+        Env vars injected into every workstation exec (a gh token, API keys). Values are write-only: stored,
         never shown again. Applied from the next wake.
       </div>
       {(secrets ?? []).length === 0 ? (
@@ -852,14 +852,14 @@ function OwnerPanel({ loop }: { loop: LoopView }) {
 // name behind it. The bare id is the last resort for a sender with neither.
 function senderLabel(s: Pick<TGSender, 'tg_user_id' | 'username' | 'display'>): string {
   if (!s.username) return s.display || String(s.tg_user_id)
-  return s.display ? `@${s.username} — ${s.display}` : `@${s.username}`
+  return s.display ? `@${s.username} · ${s.display}` : `@${s.username}`
 }
 
 // What the operator can do about it, in words. Never "ready: false".
 function readiness(loop: LoopView): string {
-  if (!loop.owner_tg_user_id) return 'No owner set — this loop cannot message anyone privately.'
+  if (!loop.owner_tg_user_id) return 'No owner set, so this loop cannot message anyone privately.'
   const owner = loop.owner_username ? `@${loop.owner_username}` : `sender ${loop.owner_tg_user_id}`
-  if (loop.owner_dm_ready) return `Ready — the loop can message ${owner} privately.`
+  if (loop.owner_dm_ready) return `Ready: the loop can message ${owner} privately.`
   const bot = loop.tg_bot_username ? `@${loop.tg_bot_username}` : "this loop's bot"
   return `Waiting for ${owner} to message ${bot}. A bot cannot open a private chat, so there is nowhere to send until they write there first.`
 }
@@ -1239,7 +1239,7 @@ export default function LoopDetail() {
           {!loop.workstation_up &&
             (loop.down_reason === 'powered_off' ? (
               <div className="ws-off-note">
-                Workstation powered off — ticks are skipped and messages queue until it is powered back on.
+                Workstation powered off. Ticks are skipped and messages queue until it is powered back on.
               </div>
             ) : (
               <div className="ws-down-note">
@@ -1314,7 +1314,7 @@ export default function LoopDetail() {
             <textarea
               placeholder={
                 dest === 'group'
-                  ? `Post to the fleet channel — the loops see it, nothing goes to Telegram; @${loop.name} is delivered either way`
+                  ? `Post to the fleet channel: the loops see it, nothing goes to Telegram, and @${loop.name} is delivered either way`
                   : `Message @${loop.name} privately…`
               }
               value={draft}

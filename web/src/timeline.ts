@@ -173,25 +173,25 @@ function spoolNote(e: LoopEvent): Note | null {
       case 'resume_failed':
         // not a seam: the session is still the loop's, and attempt 1 of 2
         // usually resumes on the retry
-        return plain(`session did not load (attempt ${p.attempt}) — retrying`)
+        return plain(`session did not load (attempt ${p.attempt}), retrying`)
       case 'session_lost':
-        return seam('previous session lost — continuing fresh with mission restated')
+        return seam('previous session lost; continuing fresh with mission restated')
       case 'session_unusable':
-        return seam('session would not load twice running — continuing fresh with mission restated')
+        return seam('session would not load twice running; continuing fresh with mission restated')
       case 'session_forgotten':
-        return seam('workstation rebuilt — the session went with it, nothing above is remembered')
+        return seam('workstation rebuilt; the session went with it, and nothing above is remembered')
       case 'context_rotated':
         return seam(rotationNote(p.fill_pct))
       case 'workstation_power':
         return plain(powerNote(p.verb, !!p.ok))
       case 'workstation_down':
-        return plain(`workstation unreachable — ${p.detail}`)
+        return plain(`workstation unreachable: ${p.detail}`)
       case 'workstation_up':
         return plain('workstation reachable again')
       case 'message_too_long':
         return plain(
           `message too long for the model's context window ` +
-            `(${p.messages} messages, ${p.chars.toLocaleString('en-US')} characters) — not delivered`,
+            `(${p.messages} messages, ${p.chars.toLocaleString('en-US')} characters); not delivered`,
         )
       case 'storm_drop':
         return plain(`storm guard: message to @${p.to} dropped (limit ${p.limit_per_hour}/h)`)
@@ -224,7 +224,7 @@ function seam(text: string): Note {
 // same either way, so it is the sentence that always survives.
 function rotationNote(fillPct: number): string {
   const consequence = 'rotated onto a fresh session; the turns above are not carried'
-  return fillPct > 0 ? `context ${fillPct}% full — ${consequence}` : consequence
+  return fillPct > 0 ? `context ${fillPct}% full; ${consequence}` : consequence
 }
 
 // powerNote names what the operator's control did to the machine. A verb that

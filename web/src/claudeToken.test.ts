@@ -27,12 +27,12 @@ describe('loopsNeedingClaudeToken', () => {
 describe('missingTokenNotice', () => {
   it('names one loop', () => {
     expect(missingTokenNotice(['scout'])).toBe(
-      'No Claude token is set, so @scout cannot start a turn — its workstation will report down until one is.',
+      'No Claude token is set, so @scout cannot start a turn: its workstation will report down until one is.',
     )
   })
 
   it('lists up to three', () => {
-    expect(missingTokenNotice(['a', 'b'])).toMatch(/so @a and @b cannot start a turn — their workstations/)
+    expect(missingTokenNotice(['a', 'b'])).toMatch(/so @a and @b cannot start a turn: their workstations/)
     expect(missingTokenNotice(['a', 'b', 'c'])).toMatch(/so @a, @b and @c cannot/)
   })
 

@@ -205,7 +205,7 @@ export default function NewLoop() {
           <label htmlFor="nl-ws">Workspace (optional)</label>
           <input
             id="nl-ws"
-            placeholder="/path/to/repo — leave empty for a conversational loop"
+            placeholder="/path/to/repo, or leave empty for a conversational loop"
             value={wsPath}
             onChange={(e) => inspect(e.target.value)}
           />
@@ -214,8 +214,8 @@ export default function NewLoop() {
               {!wsInfo.exists
                 ? 'Directory not found.'
                 : wsInfo.is_git
-                  ? `Git repo — an isolated worktree will be created on branch loop/${name || '<name>'}.`
-                  : 'Plain directory — the loop works here directly.'}
+                  ? `Git repo: an isolated worktree will be created on branch loop/${name || '<name>'}.`
+                  : 'Plain directory: the loop works here directly.'}
             </div>
           )}
         </div>

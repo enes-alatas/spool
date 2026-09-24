@@ -8,19 +8,19 @@
 // describe a family, not a version, for the same reason.
 export const MODEL_OPTIONS = [
   { value: '', label: 'Default (claude config)' },
-  { value: 'fable', label: 'fable — the most capable family' },
-  { value: 'opus', label: 'opus — deep agentic work' },
-  { value: 'sonnet', label: 'sonnet — balanced' },
-  { value: 'haiku', label: 'haiku — fast & cheap' },
+  { value: 'fable', label: 'fable · the most capable family' },
+  { value: 'opus', label: 'opus · deep agentic work' },
+  { value: 'sonnet', label: 'sonnet · balanced' },
+  { value: 'haiku', label: 'haiku · fast & cheap' },
 ]
 
 export const EFFORT_OPTIONS = [
   { value: '', label: 'Default effort' },
-  { value: 'low', label: 'low — quick, scoped' },
-  { value: 'medium', label: 'medium — cost-conscious' },
-  { value: 'high', label: 'high — thorough' },
-  { value: 'xhigh', label: 'xhigh — hard agentic work' },
-  { value: 'max', label: 'max — correctness over cost' },
+  { value: 'low', label: 'low · quick, scoped' },
+  { value: 'medium', label: 'medium · cost-conscious' },
+  { value: 'high', label: 'high · thorough' },
+  { value: 'xhigh', label: 'xhigh · hard agentic work' },
+  { value: 'max', label: 'max · correctness over cost' },
 ]
 
 export const PACING_OPTIONS = [
@@ -35,8 +35,8 @@ export const PACING_OPTIONS = [
 // mechanism, since "docker" and "bare" are the API's words and containment is
 // what is being chosen (ADR-0017).
 export const RUNTIME_OPTIONS = [
-  { value: 'docker', label: 'Container — isolated from this machine' },
-  { value: 'bare', label: 'Uncontained — runs on this machine' },
+  { value: 'docker', label: 'Container, isolated from this machine' },
+  { value: 'bare', label: 'Uncontained, runs on this machine' },
 ]
 
 export interface RuntimeNote {

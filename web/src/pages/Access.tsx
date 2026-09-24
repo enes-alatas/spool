@@ -55,7 +55,7 @@ export default function Access() {
       <h1>Access</h1>
       <p className="page-lede">
         Only people on this list can talk to your loops from Telegram. Anyone else who messages a bot is
-        silently ignored and appears here as pending — check the pairing code with them before allowing.
+        silently ignored and appears here as pending. Check the pairing code with them before allowing.
         Blocked senders are dropped without any reply.
       </p>
 
