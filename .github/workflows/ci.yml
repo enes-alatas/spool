@@ -25,6 +25,15 @@
 #      The gap this leaves is a merge from a stale base; branch protection's
 #      "require branches to be up to date" closes it, and until that is on,
 #      the tier-1 steps are the smoke that would catch a mechanical mismerge.
+#   5. `itest` is skipped when the content it covers already passed it on
+#      this PR (#314). Rebase-merge makes two to five force-pushes per PR
+#      the norm — a reworded commit, a docs-only fold, a rebase onto a main
+#      that moved elsewhere — and each re-ran eight minutes on Go content
+#      already proved. A green `itest` leaves a cache marker keyed on a hash
+#      of the covered tree; a later run of the same PR that hashes the same
+#      finds it and skips. Any byte of covered content changed is a new key.
+#      A PR reads markers of its own runs and of main, never another PR's,
+#      so no PR can vouch for another's content.
 #
 name: ci
 
@@ -58,7 +67,10 @@ jobs:
       # `unit` gates the tier-1 steps of `checks`, and it is the only flag a
       # push to main sets: see lever 4 above.
       unit: ${{ steps.filter.outputs.unit }}
-      itest: ${{ steps.filter.outputs.itest }}
+      # `itest` is the filter's answer less what lever 5 trusts, and
+      # `itest_key` the marker a green run of it leaves behind.
+      itest: ${{ steps.trust.outputs.itest }}
+      itest_key: ${{ steps.covered.outputs.key }}
       web: ${{ steps.filter.outputs.web }}
       workflows: ${{ steps.filter.outputs.workflows }}
     steps:
@@ -96,6 +108,44 @@ jobs:
             workflows=true
           fi
           printf 'unit=%s\nitest=%s\nweb=%s\nworkflows=%s\n' "$go" "$go" "$web" "$workflows" >> "$GITHUB_OUTPUT"
+
+      # Lever 5. The content `itest` covers, as git already names it: the
+      # tree id of each covered directory and the blob id of each covered
+      # file, hashed together. HEAD is the merge of the PR into its base,
+      # which is what `itest` checks out and tests, so a base that moved in
+      # covered content moves the key too. `docker/` is in the hash though
+      # not in the filter: `make itest` builds the egress image from it, and
+      # a hash that is too wide only costs a re-run.
+      - id: covered
+        if: steps.filter.outputs.itest == 'true'
+        run: |
+          set -euo pipefail
+          ids=""
+          for path in cmd internal itest docker .github/workflows go.mod go.sum Makefile .golangci.yml; do
+            ids+="$path $(git rev-parse --verify --quiet "HEAD:$path" || echo absent)"$'\n'
+          done
+          printf '%s' "$ids"
+          echo "key=itest-green-$(printf '%s' "$ids" | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - id: proved
+        if: steps.filter.outputs.itest == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: .itest-green
+          key: ${{ steps.covered.outputs.key }}
+          lookup-only: true
+      - id: trust
+        env:
+          FILTERED: ${{ steps.filter.outputs.itest }}
+          PROVED: ${{ steps.proved.outputs.cache-hit }}
+          KEY: ${{ steps.covered.outputs.key }}
+        run: |
+          set -euo pipefail
+          if [ "$FILTERED" = true ] && [ "$PROVED" = true ]; then
+            echo 'itest=false' >> "$GITHUB_OUTPUT"
+            echo "itest skipped: the content it covers already passed it on this PR (marker \`$KEY\`, over cmd/ internal/ itest/ docker/ .github/workflows/ go.mod go.sum Makefile .golangci.yml)." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "itest=$FILTERED" >> "$GITHUB_OUTPUT"
+          fi
 
   # One job, four areas. Each area keeps its own filter as a step-level `if:`;
   # what went away is three extra runners. A started job bills a whole minute
@@ -244,3 +294,11 @@ jobs:
           go-version-file: go.mod
       - name: integration tests (tier 2, vs fakeclaude)
         run: make itest
+      # Lever 5: only reached when the tests passed. The marker's content is
+      # nothing; its key is the claim.
+      - name: remember that this content passed
+        run: touch .itest-green
+      - uses: actions/cache/save@v4
+        with:
+          path: .itest-green
+          key: ${{ needs.changes.outputs.itest_key }}
