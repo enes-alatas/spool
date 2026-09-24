@@ -368,6 +368,9 @@ type createLoopReq struct {
 	MaxWakeSec      int     `json:"max_wake_sec"`
 	IdleTimeoutSec  int     `json:"idle_timeout_sec"`
 	TGBotToken      string  `json:"tg_bot_token"`
+	// InFleetChannel places the new loop in the fleet channel or outside
+	// it; absent, the server decides (defaultInFleetChannel).
+	InFleetChannel *bool `json:"in_fleet_channel"`
 }
 
 var validEfforts = map[string]bool{"": true, "low": true, "medium": true, "high": true, "xhigh": true, "max": true}
@@ -492,6 +495,20 @@ func (s *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 	// A new loop starts owned by the same person as the rest of the fleet:
 	// the first allowlisted sender, reassignable per loop (#73).
 	l.OwnerTGUserID = s.defaultOwnerID(r.Context())
+
+	// Membership is settled before the loop exists, never patched in after:
+	// a loop created in the channel and then taken out would be reachable
+	// by an @all in between.
+	inFleet := req.InFleetChannel
+	if inFleet == nil {
+		in, err := s.defaultInFleetChannel(r.Context())
+		if err != nil {
+			s.jsonErr(w, 500, "%v", err)
+			return
+		}
+		inFleet = &in
+	}
+	l.OutsideFleetChannel = !*inFleet
 
 	if err := s.Store.Loops().Create(r.Context(), l); err != nil {
 		if errors.Is(err, store.ErrDuplicate) {
@@ -1480,6 +1497,20 @@ func (s *Server) defaultOwnerID(ctx context.Context) int64 {
 		return 0
 	}
 	return owner.TGUserID
+}
+
+// defaultInFleetChannel is where a new loop starts when its creator did not
+// say: outside the fleet channel when no other loop exists, in it
+// otherwise. A fleet of one has no one to talk to in the channel (ADR-0032
+// item 2), and the second loop is what makes a fleet — the operator's rule
+// on #287. Any loop counts, archived included, as the New loop form counts
+// them: an archived loop is still the fleet's, and could be restored.
+func (s *Server) defaultInFleetChannel(ctx context.Context) (bool, error) {
+	loops, err := s.Store.Loops().List(ctx)
+	if err != nil {
+		return false, fmt.Errorf("list loops: %w", err)
+	}
+	return len(loops) > 0, nil
 }
 
 // adoptDefaultOwner gives every ownerless loop this sender as its owner.

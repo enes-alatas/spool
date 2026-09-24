@@ -42,7 +42,8 @@ mk() {
     \"name\": \"$1\",
     \"mission\": \"You are a friendly test loop. Answer questions concisely. When asked to contact another loop, @mention it. On ticks reply: standing by. No next-wake trailers.\",
     \"model\": \"$MODEL\", \"tick_interval_sec\": 3600, \"idle_timeout_sec\": 120,
-    \"tg_bot_token\": \"$2\"
+    \"tg_bot_token\": \"$2\",
+    \"in_fleet_channel\": true
   }" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("tg_bot_username") or d.get("error"))'
 }
 
