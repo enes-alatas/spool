@@ -25,7 +25,7 @@ function Thinking({ text }: { text: string }) {
   const [open, setOpen] = useState(false)
   return (
     <div>
-      <button className="thinking-toggle" onClick={() => setOpen(!open)}>
+      <button className="text-button" onClick={() => setOpen(!open)}>
         {open ? 'hide thinking' : 'thinking…'}
       </button>
       {open && <div className="thinking-body">{text}</div>}
