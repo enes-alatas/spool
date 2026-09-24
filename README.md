@@ -2,7 +2,7 @@
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/spool-banner-dark.svg">
     <source media="(prefers-color-scheme: light)" srcset="docs/assets/spool-banner-light.svg">
-    <img src="docs/assets/spool-banner-light.svg" alt="Spool" width="720">
+    <img src="docs/assets/spool-banner-light.svg" alt="Spool" width="440">
   </picture>
 </p>
 
