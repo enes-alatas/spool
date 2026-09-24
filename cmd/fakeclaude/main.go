@@ -14,6 +14,13 @@
 // contained loop, whose working directory lives inside its workstation where
 // a test cannot write the file.
 //
+// A --model containing "nosuch" is one the API does not know: every turn
+// ends in the real CLI's errored result for it (api_error_status 404, the
+// sentence naming the model, nothing billed) and uses up no script line;
+// the session is kept, and resumes on another model. One containing
+// "nosuch-slow" takes three seconds to say so: time for a test to edit the
+// model while the refused turn is still running.
+//
 // Directives: "!crash" exits 2 mid-turn without a result; "!lost" dies
 // mid-turn the way a lost session does (exit 1, canonical stderr);
 // "!huge <bytes>" replies with that many bytes; "!hang <seconds>" sleeps
@@ -206,6 +213,30 @@ func main() {
 			})
 		}
 
+		if unrecognizedModel(model) {
+			if strings.Contains(model, "nosuch-slow") {
+				time.Sleep(3 * time.Second)
+			}
+			// The API's 404 on the messages call, as the real CLI reports
+			// it (verified against 2.1.282, #289): an errored result that
+			// names the model and bills nothing. The session is kept, and
+			// the failed turn uses up no line of the script.
+			emit(map[string]any{
+				"type": "result", "subtype": "success", "is_error": true,
+				"api_error_status": 404, "terminal_reason": "api_error",
+				"total_cost_usd": state.CostUSD, "duration_ms": 5, "num_turns": state.Turns,
+				"result": "There's an issue with the selected model (" + model + "). It may not exist " +
+					"or you may not have access to it. Run --model to pick a different model.",
+				"session_id": id,
+				"usage": map[string]any{
+					"input_tokens": 0, "output_tokens": 0,
+					"cache_creation_input_tokens": 0, "cache_read_input_tokens": 0,
+				},
+			})
+			persist(stateDir, id, state)
+			continue
+		}
+
 		state.Turns++
 		reply := "echo: " + text
 		ctxTokens := 0
@@ -341,10 +372,7 @@ func main() {
 			"result": reply, "usage": usage(ctxTokens, steps), "session_id": id,
 		})
 
-		b, _ := json.Marshal(state)
-		if err := os.WriteFile(filepath.Join(stateDir, id+".json"), b, 0o644); err != nil {
-			fmt.Fprintf(os.Stderr, "fakeclaude: persist session: %v\n", err)
-		}
+		persist(stateDir, id, state)
 	}
 	// stdin closed: clean exit, like the real CLI.
 }
@@ -393,6 +421,20 @@ func usage(ctxTokens, steps int) map[string]any {
 		"input_tokens": input * steps, "output_tokens": 5 * steps,
 		"cache_creation_input_tokens": 0, "cache_read_input_tokens": 0,
 	}
+}
+
+// persist writes the session's state, which is what makes it resumable.
+func persist(stateDir, id string, state any) {
+	b, _ := json.Marshal(state)
+	if err := os.WriteFile(filepath.Join(stateDir, id+".json"), b, 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "fakeclaude: persist session: %v\n", err)
+	}
+}
+
+// unrecognizedModel reports whether --model names a model the API does not
+// know: in this fake, any id containing "nosuch".
+func unrecognizedModel(model string) bool {
+	return strings.Contains(model, "nosuch")
 }
 
 // initModel is what the init event reports: the model the runner asked for,
