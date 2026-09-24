@@ -53,15 +53,23 @@ itest: server fakeclaude egress
 # builds amd64 and arm64 together for pushing to a registry (one-time setup:
 # `docker buildx create --use`); a multi-arch build can't be loaded into the local
 # daemon, so it's for publishing rather than local use.
+#
+# Both reinstall Claude Code on every run, so a rebuild picks up a new CLI
+# release (#304); the layers above it stay cached. Fix the value to reuse the
+# installed CLI instead, e.g. `make image CLAUDE_CODE_CACHEBUST=keep` offline.
+CLAUDE_CODE_CACHEBUST ?= $(shell date +%s)
+
 image: egress
-	docker build -t spool-workstation -f docker/workstation/Dockerfile .
+	docker build -t spool-workstation -f docker/workstation/Dockerfile \
+	    --build-arg CLAUDE_CODE_CACHEBUST=$(CLAUDE_CODE_CACHEBUST) .
 	docker build -t spool-egress -f docker/egress/Dockerfile bin
 
 image-multiarch:
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build -o bin/spool-egress-amd64 ./cmd/spool-egress
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GO) build -o bin/spool-egress-arm64 ./cmd/spool-egress
 	docker buildx build --platform linux/amd64,linux/arm64 \
-	    -t spool-workstation -f docker/workstation/Dockerfile .
+	    -t spool-workstation -f docker/workstation/Dockerfile \
+	    --build-arg CLAUDE_CODE_CACHEBUST=$(CLAUDE_CODE_CACHEBUST) .
 	docker buildx build --platform linux/amd64,linux/arm64 \
 	    -t spool-egress -f docker/egress/Dockerfile bin
 
