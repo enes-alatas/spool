@@ -53,3 +53,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 18:45: #321 (#288) and #324 (#228) merged, #318 merged 15:38. Closed #287 and epic #283. Open PR: #320 (Dependabot, superseded by #322 when it lands). L2 cleanup queue is now live for both devs.
 - 19:10: closed #320 (Dependabot) on Enes's ask, superseded by #322.
 - 21:10: Terra's #326 (#314 itest marker) in review. Reordered: Terra #289 backend right after #326 + #19 check, so Iris's #289 web half isn't blocked behind ten items. Iris: #322 → #189 → #76 → #289 web (dropdown can go first).
+- 21:45: #289 reshaped on Terra's evidence: the CLI's model check is the /v1/messages 404, so a probe on a known model is a real inference. Accepted creation-tick validation (model_unrecognized down reason, patch clears + wakes only if down for it); Models API ruled out (credential file, ADR-0018).
