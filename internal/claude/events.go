@@ -50,6 +50,9 @@ type ResultInfo struct {
 	NumTurns   int     `json:"num_turns"`
 	ResultText string  `json:"result"`
 	Usage      Usage   `json:"usage"`
+	// APIErrorStatus is the HTTP status of the API call the turn failed on,
+	// 0 when it failed on none.
+	APIErrorStatus int `json:"api_error_status"`
 }
 
 type RateLimitInfo struct {

@@ -32,3 +32,18 @@ func IsPromptTooLong(res *ResultInfo) bool {
 	}
 	return strings.Contains(strings.ToLower(res.ResultText), "prompt is too long")
 }
+
+// IsUnrecognizedModel reports whether a turn failed because the API does not
+// know the model it asked for. Verified against 2.1.282 (#289): the CLI
+// resolves an alias itself and puts the id straight into the messages call,
+// with no lookup first, so an unknown model is the API's 404 on that call.
+// The CLI logs "unrecognized_model" to stderr and returns an ordinary errored
+// result: api_error_status 404, nothing billed, and a sentence naming the
+// model, which is what the operator should read.
+//
+// Like a payload that does not fit, it is a verdict and not a fault: every
+// turn under that model fails the same way, so the caller must not retry
+// until the model changes.
+func IsUnrecognizedModel(res *ResultInfo) bool {
+	return res != nil && res.IsError && res.APIErrorStatus == 404
+}

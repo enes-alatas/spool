@@ -290,6 +290,9 @@ type loopView struct {
 	TGBotUsername      string  `json:"tg_bot_username"`
 	TGGroupChatID      int64   `json:"tg_group_chat_id"`
 	InFleetChannel     bool    `json:"in_fleet_channel"`
+	Model              string  `json:"model"`
+	ModelRefusal       string  `json:"model_refusal"`
+	ResolvedModel      string  `json:"resolved_model"`
 }
 
 type turn struct {

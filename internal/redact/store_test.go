@@ -54,7 +54,13 @@ func (r *recordingMessages) FailInterruptedSends(_ context.Context, _ int64, sen
 
 type recordingLoops struct {
 	store.LoopStore
-	note string
+	note    string
+	refusal string
+}
+
+func (r *recordingLoops) SetModelRefusal(_ context.Context, _, _, refusal string, _ int64) error {
+	r.refusal = refusal
+	return nil
 }
 
 func (r *recordingLoops) SetRotation(_ context.Context, _ string, _ bool, note string) error {
@@ -108,6 +114,18 @@ func TestTurnTextIsRedactedOnTheWayIn(t *testing.T) {
 		if got := d.turns.got.ResultText; got != "here is <redacted:GH_TOKEN>" {
 			t.Errorf("%s stored %q", write.name, got)
 		}
+	}
+}
+
+// A model refusal is the refused turn's result text, stored on the loop.
+func TestModelRefusalIsRedacted(t *testing.T) {
+	s, d := decorated(t)
+
+	if err := s.Loops().SetModelRefusal(context.Background(), "loop", "m", "no model named "+secretValue, 1); err != nil {
+		t.Fatalf("SetModelRefusal: %v", err)
+	}
+	if want := "no model named <redacted:GH_TOKEN>"; d.loops.refusal != want {
+		t.Errorf("stored refusal %q", d.loops.refusal)
 	}
 }
 
@@ -191,7 +209,8 @@ func TestInterruptedSendErrorIsRedacted(t *testing.T) {
 func TestEveryStoreWriteIsClassified(t *testing.T) {
 	classified := map[string]map[string]bool{
 		"LoopStore": {
-			"SetRotation": true, // the loop's own handoff note
+			"SetRotation":     true, // the loop's own handoff note
+			"SetModelRefusal": true, // the refused turn's result text
 			// Create and Edit carry the bot and hub-MCP tokens themselves.
 			// Redacting those would write a placeholder where the
 			// credential belongs; the mission is operator-written text, and

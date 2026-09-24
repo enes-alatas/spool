@@ -187,8 +187,18 @@ opportunistically, not big-bang.
   off is `workstation_off` — really not running, said calmly — while one that
   died is `workstation_down`, the alert that outranks every other state. The
   difference is intent, which a health poll cannot observe, so it is recorded
-  in the DB and survives a restart. Precedence: `workstation_down` > `paused` >
-  `workstation_off`.
+  in the DB and survives a restart. Precedence: `workstation_down` >
+  `model_unrecognized` > `paused` > `workstation_off`.
+- **A refused model holds the loop** (#289): the CLI resolves a model and
+  sends it straight to the API, whose 404 is the only check there is, so an
+  unknown model is found by the loop's first turn — free, and within seconds
+  of saving. The loop is then `model_unrecognized` with the CLI's sentence as
+  `model_refusal`, takes no turns, and keeps what it is told for later; an
+  edit of the model clears it and wakes the loop, and saving the same model
+  again checks it again. A refusal belongs to the model the turn ran on: one
+  that lands after an edit replaced that model holds nothing, and the turn is
+  retried on the new one. The loop view reports the configured `model` and the
+  `resolved_model` its latest turn ran on.
 - **Context is rotated before the wall** (ADR-0022): the CLI's auto-compact
   fires only near a full window, deep in the degradation zone, so the runner
   rotates proactively instead — armed at ~40% fill, run at a quiet boundary
