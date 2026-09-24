@@ -13,7 +13,7 @@ body:
     id: defect
     attributes:
       label: What is wrong or missing
-      description: The mismatch with code or the gap, in 2-3 sentences.
+      description: 'The mismatch with code or the gap, in 2-3 sentences. If this is a child of an epic: write `Part of #n` here and attach it as a sub-issue of #n after filing.'
     validations:
       required: true
   - type: textarea

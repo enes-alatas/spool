@@ -6,7 +6,7 @@ body:
     id: problem
     attributes:
       label: Problem statement
-      description: 2-3 sentences. State the problem once; do not restate it in later sections.
+      description: '2-3 sentences. State the problem once; do not restate it in later sections. If this is a child of an epic: write `Part of #n` here and attach it as a sub-issue of #n after filing.'
     validations:
       required: true
   - type: textarea

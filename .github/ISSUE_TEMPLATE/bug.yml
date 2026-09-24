@@ -6,7 +6,7 @@ body:
     id: observed
     attributes:
       label: Observed behavior
-      description: What happens, in 2-3 sentences. Include the exact error if there is one.
+      description: 'What happens, in 2-3 sentences. Include the exact error if there is one. If this is a child of an epic: write `Part of #n` here and attach it as a sub-issue of #n after filing.'
     validations:
       required: true
   - type: textarea

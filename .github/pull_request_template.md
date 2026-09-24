@@ -1,7 +1,9 @@
 ## Issue
 
 <!-- `Closes #<id>` for the issue this PR fully resolves; `Part of #<id>` for a parent epic
-or an issue this PR only advances. A child PR of an epic usually has both. If none, say why. -->
+or an issue this PR only advances. A child PR of an epic usually has both. If none, say why.
+If this PR opens a child issue of an epic: write `Part of #n` in it and attach it as a
+sub-issue of #n (`gh issue edit <child> --parent n`). -->
 
 Closes #
 
