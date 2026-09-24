@@ -45,3 +45,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 16:45: Enes wants the topbar glyph bigger, banner proportion; added to #316, Iris to post two sizes for him to pick.
 - 16:50: Enes wants to see size alternatives; Iris (free, #308 merged) told to post shots on #316 before building. 'Nothing spinning': wiring on main is right (busy state, stream invalidation, 15s refetch); told him it needs a busy loop and animations on (reduce-motion disables it); bug if it persists.
 - 16:55: Iris has #317 (#286 replies) in review; #316 candidates after it lands.
+- 17:00: spin resolved: Windows animation setting (reduce motion). No bug.
