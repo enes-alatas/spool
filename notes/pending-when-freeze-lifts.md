@@ -38,3 +38,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 08:00: Enes's local agent filed #304 (make image reuses cached claude-code layer). Retitled, refined (cache-bust vs pinned version, itest image unaffected), slotted for Terra after #287 API + TestedVersion chore.
 - 08:05: Enes: missing-token banner on an all-bare fleet. Cause: App.tsx tokenMissing ignores runtime; only docker loops need the token. Filed #305 (bug, low), Iris before #287 pages. Told Enes.
 - 11:00: #306 (#287 API, new-loop default) and #307 (#305) merged. Open: #308 Iris #287 pages, #309 Terra TestedVersion. Nudged Terra: reply_to_id (closes #286) → #304 → #288.
+- 13:10: Enes: skip itest when a rebase brings no code change. Docs-only already skips (path filter); folds/rebases re-run. Filed #314 (content-hash + Actions cache marker), Terra after #304/#288 unless Enes wants sooner. Runtime v0.2.0-39.
