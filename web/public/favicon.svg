@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none">
+  <!-- The spool glyph (web/src/components/Spool.tsx) with heavier strokes, so
+       the rings stay apart at 16px. Coloured like the README banner: #24292f
+       on a light browser, #d3d3d3 on a dark one. -->
+  <style>
+    .g { stroke: #24292f; }
+    @media (prefers-color-scheme: dark) { .g { stroke: #d3d3d3; } }
+  </style>
+  <g class="g">
+    <circle cx="10" cy="10" r="8.2" stroke-width="2.4" />
+    <circle cx="10" cy="10" r="3.2" stroke-width="2.2" />
+    <line x1="10" y1="1.2" x2="10" y2="6.2" stroke-width="2.2" />
+    <line x1="10" y1="13.8" x2="10" y2="18.8" stroke-width="2.2" />
+  </g>
+</svg>
