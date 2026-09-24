@@ -151,6 +151,13 @@ export interface ChatMessage {
   // `send_resent_as`, on the message that did the resending. Mirrored for
   // the api.ts/Go sync rule; nothing in the room reads it yet.
   resends_id?: number
+  // Whether this message is on the surface too (#285, ADR-0032 item 6):
+  // 'not_mirrored' (on the hub only, and staying there — the operator's
+  // posts, a loop with no surface), 'pending' (bound for the surface and not
+  // there yet), 'mirrored'. A plain string for the reason `send_resolution`
+  // is one, narrowed in `messages.ts`. Optional because a server from before
+  // #301 omits it, and an absent field is that server, not an answer.
+  mirror?: string
   // The message this one explicitly replies to, when it is a reply. In the
   // fleet channel a reply addresses the replied-to loop with no mention
   // needed (ADR-0025); the channel page draws it as a quote (#286).

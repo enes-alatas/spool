@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ChatMessage, LoopView } from '../api'
 import { channelRecipients, completeMention, mentionAt, mentionCompletions } from '../channel'
 import { MessageKnot } from './MessageKnot'
+import { hubOnly } from '../messages'
 
 // The fleet channel: the conversation the operator and the loops share,
 // which lives on the hub and is native to the control room (ADR-0032, #286).
@@ -23,12 +24,13 @@ import { MessageKnot } from './MessageKnot'
 // it: a human's post arrived through a surface, and naming the surface is
 // how the operator learns this person cannot read a reply written here.
 //
-// The operator's own posts are not marked "hub only" from their origin:
-// before #293 a composer post to the group did go out to Telegram, so the
-// origin cannot say whether one stayed. The message's mirror state (#285)
-// will; until then the compose box carries the rule.
-function originNote(m: ChatMessage): string {
-  return m.origin === 'telegram-group' ? ' · via Telegram' : ''
+// Where a message went, for the ones that stayed: "hub only" is read from
+// the message's mirror state (#285), not from its origin, because before
+// #293 a composer post to the group did go out to Telegram and the origin
+// cannot say whether one stayed.
+function surfaceNote(m: ChatMessage): string {
+  if (m.origin === 'telegram-group') return ' · via Telegram'
+  return hubOnly(m) ? ' · hub only' : ''
 }
 
 // The loops the hub delivered a message to — the message's `delivered_to`.
@@ -259,7 +261,7 @@ export function FleetChannel() {
               <MessageKnot
                 key={m.id}
                 msg={m}
-                meta={originNote(m)}
+                meta={surfaceNote(m)}
                 before={<ReplyQuote msg={m} byID={byID} />}
                 after={<Reached msg={m} loops={loops ?? []} />}
               />

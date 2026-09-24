@@ -220,3 +220,31 @@ export function destinationLabel(conversation: string): string {
       return conversation || 'unknown'
   }
 }
+
+// Whether a message is on the surface too, as one of the room's own words.
+//
+// The one place `mirror` is compared, for the reason `narrow` is the one
+// place a resolution is: the hub writes the field, and a value this build
+// does not know is 'unknown' rather than a guess. So is an absent field — a
+// server from before #285 — because it says nothing about the message.
+export type Mirror = 'not_mirrored' | 'pending' | 'mirrored' | 'unknown'
+
+export function mirrorOf(m: ChatMessage): Mirror {
+  switch (m.mirror) {
+    case 'not_mirrored':
+    case 'pending':
+    case 'mirrored':
+      return m.mirror
+    default:
+      return 'unknown'
+  }
+}
+
+// Whether a fleet-channel message stayed on the hub by design, which the
+// channel page says beside its time: the operator's posts (ADR-0032 item 4)
+// and a loop's when it has no surface. A failed mirror is not this — it was
+// meant to leave and did not, which is the undelivered mark's to say, so a
+// message carrying that mark is never also called hub only.
+export function hubOnly(m: ChatMessage): boolean {
+  return mirrorOf(m) === 'not_mirrored' && !undelivered(m)
+}

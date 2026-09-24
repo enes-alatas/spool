@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   destinationLabel,
+  hubOnly,
+  mirrorOf,
   undelivered,
   undeliveredNote,
   undeliveredTitle,
@@ -364,5 +366,52 @@ describe('the undelivered mark in the fleet channel', () => {
     const u = failedPost({ conversation: 'owner_dm' })
     expect(u.fleetChannel).toBe(false)
     expect(undeliveredLabel(u)).toBe('not delivered')
+  })
+})
+
+describe('mirrorOf', () => {
+  it("passes the server's three states through", () => {
+    expect(mirrorOf(msg({ mirror: 'not_mirrored' }))).toBe('not_mirrored')
+    expect(mirrorOf(msg({ mirror: 'pending' }))).toBe('pending')
+    expect(mirrorOf(msg({ mirror: 'mirrored' }))).toBe('mirrored')
+  })
+
+  // An absent field is a server from before #285, and a new value is a
+  // server newer than this page; neither says anything about the message.
+  it('folds an absent or unfamiliar state into unknown', () => {
+    expect(mirrorOf(msg({}))).toBe('unknown')
+    expect(mirrorOf(msg({ mirror: 'sideways' }))).toBe('unknown')
+  })
+})
+
+describe('hubOnly', () => {
+  // ADR-0032 item 4: nothing the operator writes leaves the hub.
+  it("says so of the operator's post", () => {
+    expect(
+      hubOnly(msg({ origin: 'web', author: 'operator', conversation: 'group', mirror: 'not_mirrored' })),
+    ).toBe(true)
+  })
+
+  it("says so of a loop's post when the loop has no surface", () => {
+    expect(hubOnly(msg({ conversation: 'group', mirror: 'not_mirrored' }))).toBe(true)
+  })
+
+  // Meant to leave and did not: the undelivered mark says that, and "hub
+  // only" beside it would call a failure a choice.
+  it('leaves a failed mirror to the undelivered mark', () => {
+    const dismissed = msg({
+      conversation: 'group',
+      mirror: 'not_mirrored',
+      send_failed_at: 5,
+      send_resolution: 'dismissed',
+      send_resolved_at: 6,
+    })
+    expect(hubOnly(dismissed)).toBe(false)
+  })
+
+  it('says nothing of a mirrored, pending or unknown message', () => {
+    expect(hubOnly(msg({ conversation: 'group', mirror: 'mirrored' }))).toBe(false)
+    expect(hubOnly(msg({ conversation: 'group', mirror: 'pending' }))).toBe(false)
+    expect(hubOnly(msg({ conversation: 'group' }))).toBe(false)
   })
 })
