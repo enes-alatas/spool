@@ -1,6 +1,6 @@
 # ADR-0010: SandboxRuntime seam; Docker containers first, sbx later maybe
 
-Date: 2026-08-16 · Status: accepted · Amended: 2026-09-21 (bare is not fallen back to)
+Date: 2026-08-16 · Status: accepted · Amended: 2026-09-21 (bare is not fallen back to), 2026-09-24 (the Engine API clause, ADR-0018)
 
 ## Context
 
@@ -22,6 +22,11 @@ can become a second, hardened implementation later if it proves drivable.
 **Amendment (2026-09-21, #240):** "fallback" above describes availability, not
 selection — nothing falls back to `bare`. It is chosen explicitly, with
 `--runtime bare` or `--allow-bare`, per ADR-0017 §6 as amended.
+
+**Amendment (2026-09-24, #189):** "via the Engine API" above is narrowed by
+ADR-0018 (2026-08-18): the docker runtime drives Docker through the `docker`
+CLI, not the Engine API. The seam still leaves the transport swappable. This
+block only records that; ADR-0018 is the decision.
 
 ## Consequences
 
