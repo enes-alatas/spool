@@ -1151,6 +1151,9 @@ func (s *Server) handleGroupTimeline(w http.ResponseWriter, r *http.Request) {
 type postGroupReq struct {
 	Author string `json:"author"`
 	Text   string `json:"text"`
+	// ReplyToID is the fleet-channel message this post answers, or 0 for
+	// a plain post.
+	ReplyToID int64 `json:"reply_to_id"`
 }
 
 // handleGroupPost is the operator posting to the fleet channel. Unlike a
@@ -1158,10 +1161,16 @@ type postGroupReq struct {
 // the loops its text addresses and no others, and a post that addresses
 // nobody is kept and wakes nobody — as a human's post in a mirrored room
 // is. It never leaves the hub (ADR-0032 item 4).
+//
+// A reply addresses the author of what it answers, as a native reply does
+// (ADR-0025), so a loop can be answered without a mention.
 func (s *Server) handleGroupPost(w http.ResponseWriter, r *http.Request) {
 	var req postGroupReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Text) == "" {
 		s.jsonErr(w, 400, "non-empty text required")
+		return
+	}
+	if req.ReplyToID != 0 && !s.groupReplyTarget(r.Context(), w, req.ReplyToID) {
 		return
 	}
 	err := s.Router.Ingest(r.Context(), route.InboundMessage{
@@ -1169,12 +1178,36 @@ func (s *Server) handleGroupPost(w http.ResponseWriter, r *http.Request) {
 		Author:       defaultStr(req.Author, "operator"),
 		Text:         req.Text,
 		Conversation: store.ConversationGroup,
+		ReplyToID:    req.ReplyToID,
 	})
 	if err != nil {
 		s.jsonErr(w, 500, "%v", err)
 		return
 	}
 	writeJSON(w, 202, map[string]bool{"queued": true})
+}
+
+// groupReplyTarget checks that id names a message of the fleet channel,
+// answering the refusal itself when it does not. The operator picked a real
+// message, so one that is missing means the page is stale, and one from
+// another conversation would add a private message's author to the
+// channel's recipients. Both are refused with the codes a loop's own send
+// gets for the same mistakes.
+func (s *Server) groupReplyTarget(ctx context.Context, w http.ResponseWriter, id int64) bool {
+	target, err := s.Store.Messages().Get(ctx, id)
+	if errors.Is(err, store.ErrNotFound) {
+		s.jsonErrCode(w, 400, route.ErrUnknownReplyTo, "no message %d to reply to", id)
+		return false
+	} else if err != nil {
+		s.jsonErr(w, 500, "%v", err)
+		return false
+	}
+	if target.Conversation != store.ConversationGroup {
+		s.jsonErrCode(w, 400, route.ErrCrossConversation,
+			"message %d is in %s, not the fleet channel; a reply stays in its own conversation", id, target.Conversation)
+		return false
+	}
+	return true
 }
 
 func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {

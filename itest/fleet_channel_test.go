@@ -290,3 +290,62 @@ func archiveLoop(t *testing.T, dataDir, name string) {
 		t.Fatalf("archive %s touched %d rows, want 1 (%v)", name, n, err)
 	}
 }
+
+// The operator can reply to a message in the fleet channel, as a human can
+// natively in a mirrored room: the reply addresses the author of what it
+// answers, so a loop is woken with no mention (ADR-0025). The target must
+// be a message of the channel itself. One from a private conversation would
+// add its author to the channel's recipients, and one that does not exist
+// means the page is stale, so both are refused and nothing is stored.
+func TestOperatorReplyInTheFleetChannelAddressesItsAuthor(t *testing.T) {
+	s := startServer(t, t.TempDir())
+	for _, name := range []string{"aster", "briar"} {
+		s.createLoop(name, nil)
+	}
+	aster := mcpSession(t, s, hubMCPToken(t, s, "aster"))
+	const status = "@briar migration is halfway"
+	if res := callSend(t, aster, map[string]any{"destination": "group", "text": status}); res.IsError {
+		t.Fatalf("aster's group send refused: %s", resultText(res))
+	}
+	posted := s.activityWith(status)
+	if len(posted) != 1 {
+		t.Fatalf("aster's post stored %d times, want 1", len(posted))
+	}
+	s.message("briar", "a private control room note")
+	private := s.activityWith("a private control room note")
+	if len(private) != 1 {
+		t.Fatalf("briar's control room message stored %d times, want 1", len(private))
+	}
+
+	const reply = "thanks, keep going"
+	if resp, body := s.do("POST", "/api/group", map[string]any{"text": reply, "reply_to_id": posted[0].ID}); resp.StatusCode != 202 {
+		t.Fatalf("replying to aster's post = %d %s, want 202", resp.StatusCode, body)
+	}
+	s.waitTurn("aster", 30*time.Second, func(tn turn) bool {
+		return strings.Contains(tn.ResultText, reply)
+	})
+	stored := s.activityWith(reply)
+	if len(stored) != 1 || stored[0].ReplyToID != posted[0].ID ||
+		!slices.Equal(stored[0].DeliveredTo, []string{s.loop("aster").ID}) {
+		t.Fatalf("the reply = %s, want one message replying to %d and delivered to aster alone: "+
+			"a reply addresses its target's author and inherits none of its recipients",
+			dump(stored), posted[0].ID)
+	}
+
+	for _, c := range []struct {
+		name, text string
+		target     int64
+		code       string
+	}{
+		{"a message in a private conversation", "crossing over", private[0].ID, "cross_conversation_reply_to"},
+		{"a message that does not exist", "answering nothing", 1 << 40, "unknown_reply_to"},
+	} {
+		resp, body := s.do("POST", "/api/group", map[string]any{"text": c.text, "reply_to_id": c.target})
+		if resp.StatusCode != 400 || !strings.Contains(string(body), c.code) {
+			t.Fatalf("replying to %s = %d %s, want 400 %s", c.name, resp.StatusCode, body, c.code)
+		}
+		if got := s.activityWith(c.text); len(got) != 0 {
+			t.Fatalf("a refused reply to %s was stored: %s", c.name, dump(got))
+		}
+	}
+}
