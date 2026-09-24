@@ -6,7 +6,7 @@ body:
     id: current-shape
     attributes:
       label: Current shape
-      description: File/path map of the structure being changed and what makes it costly, one path per line.
+      description: 'File/path map of the structure being changed and what makes it costly, one path per line. If this is a child of an epic: write `Part of #n` here and attach it as a sub-issue of #n after filing.'
     validations:
       required: true
   - type: textarea

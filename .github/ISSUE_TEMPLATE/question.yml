@@ -6,6 +6,6 @@ body:
     id: question
     attributes:
       label: Question
-      description: What you need to know and the context that makes it non-obvious.
+      description: 'What you need to know and the context that makes it non-obvious. If this is a child of an epic: write `Part of #n` here and attach it as a sub-issue of #n after filing.'
     validations:
       required: true

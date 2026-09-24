@@ -69,6 +69,12 @@ ADR instead.*
   replicate the matching form's headings in the body — CI flags untyped issues
   `needs-type`. Mirror a bug/security form's severity as a `severity:*` label. The
   type names the branch that closes it (bug→`fix/`, new feature→`feat/`, …).
+- **Epic children** (#228) carry `Part of #n` in the body **and** are attached
+  to the epic as a GitHub sub-issue when filed, so the epic shows its progress
+  and the child shows its parent. Whoever files the child does both:
+  `gh issue create --parent n`, or `gh issue edit <child> --parent n` after the
+  fact. The `Part of` line stays, because PR bodies and search read it and a
+  sub-issue link is invisible to both.
 - **PRs** follow `.github/pull_request_template.md`: link the issue (`Closes #n` /
   `Part of #n` — if none, say why), and cite ADRs for seam changes and new deps.
 - **Decisions**: any choice that constrains future work gets an ADR in `docs/adr/`
