@@ -1,6 +1,6 @@
 # ADR-0032: The fleet channel is a hub conversation; surfaces are attached later and mirror it
 
-Date: 2026-09-23 · Status: accepted (operator decisions of 2026-09-22/23) · Amends: ADR-0020 (§1 is the mirror's rule), ADR-0025 (item 2), ADR-0026 (item 1), ADR-0029 (items 5 and 7)
+Date: 2026-09-23 · Status: accepted (operator decisions of 2026-09-22/23) · Amended: 2026-09-24 (item 2: where a new loop starts) · Amends: ADR-0020 (§1 is the mirror's rule), ADR-0025 (item 2), ADR-0026 (item 1), ADR-0029 (items 5 and 7)
 
 ## Context
 
@@ -53,6 +53,14 @@ mirrors which way.
    control-room thread, and in `owner_dm` if it has a surface. That is a
    coherent loop — a personal assistant, a loop doing sensitive work — and it
    is the configuration a fleet of one should default to.
+
+   **Amendment (2026-09-24, #287): where a new loop starts.** The operator
+   settled the rule for the second loop onward: a new loop starts outside
+   the fleet channel when no other loop exists, and in it otherwise — the
+   second loop is what makes a fleet. The server applies it when a create
+   does not say; the New loop form shows it as the toggle's default, and the
+   operator's choice there is obeyed. It is read once, at creation: a loop
+   already outside the channel stays there when a second loop arrives.
 
    We say a loop *is in* the fleet channel, or *is not*. Deliberately no
    loop-noun: **member** already names a human org role in the ubiquitous

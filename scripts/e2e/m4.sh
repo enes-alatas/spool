@@ -38,7 +38,8 @@ mk_loop() {
     \"mission\": \"You are half of a ping-pong relay test. When a message you receive contains a number N, reply with exactly: @$other M   (where M = N + 1). Nothing else, no extra words. On tick turns reply exactly: standing by. Never use the next-wake trailer.\",
     \"model\": \"$MODEL\",
     \"tick_interval_sec\": 3600,
-    \"idle_timeout_sec\": 300
+    \"idle_timeout_sec\": 300,
+    \"in_fleet_channel\": true
   }" >/dev/null
 }
 

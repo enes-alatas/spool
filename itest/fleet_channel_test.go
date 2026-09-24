@@ -3,6 +3,8 @@
 package itest
 
 import (
+	"database/sql"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -19,7 +21,7 @@ func TestLoopOutsideTheFleetChannelHasNoGroup(t *testing.T) {
 		s.createLoop(name, nil)
 	}
 	if !s.loop("cedar").InFleetChannel {
-		t.Fatal("a new loop is outside the fleet channel; it should start in it")
+		t.Fatal("cedar was created in the fleet channel, and its view says otherwise")
 	}
 	var patched loopView
 	s.mustJSON("PATCH", "/api/loops/cedar", map[string]any{"in_fleet_channel": false}, &patched)
@@ -210,5 +212,81 @@ func TestFleetChannelPostStaysOnTheHub(t *testing.T) {
 	}
 	if !seen[inward] || !seen["@alpha the channel is the hub's"] {
 		t.Fatalf("the fleet channel's timeline lacks the Telegram post or the operator's: %s", dump(timeline))
+	}
+}
+
+// A new loop's place in the fleet channel, when its creator does not say:
+// outside for the first loop, since a fleet of one has nobody to talk to
+// there (ADR-0032 item 2), and in for every loop after it, since the second
+// loop is what makes a fleet (#287). The default reads the fleet at create
+// time and moves no loop that already exists, and a creator who says
+// in_fleet_channel is obeyed either way.
+func TestNewLoopStartsInTheFleetChannelOnceThereIsAFleet(t *testing.T) {
+	s := startServer(t, t.TempDir())
+	serverDefault := map[string]any{"in_fleet_channel": nil}
+
+	s.createLoop("aster", serverDefault)
+	if s.loop("aster").InFleetChannel {
+		t.Fatal("the fleet's first loop started in the fleet channel; alone, it should start outside")
+	}
+	s.createLoop("briar", serverDefault)
+	if !s.loop("briar").InFleetChannel {
+		t.Fatal("the second loop started outside the fleet channel; a fleet's loops start in it")
+	}
+	if s.loop("aster").InFleetChannel {
+		t.Fatal("creating a second loop moved the first into the fleet channel")
+	}
+	s.createLoop("cedar", map[string]any{"in_fleet_channel": false})
+	if s.loop("cedar").InFleetChannel {
+		t.Fatal("a loop created with in_fleet_channel false is in the fleet channel")
+	}
+
+	// the fleet emptied is a fleet of one again
+	for _, name := range []string{"aster", "briar", "cedar"} {
+		s.mustJSON("DELETE", "/api/loops/"+name, nil, nil)
+	}
+	s.createLoop("delta", serverDefault)
+	if s.loop("delta").InFleetChannel {
+		t.Fatal("the only loop left in an emptied fleet started in the fleet channel")
+	}
+
+	// and the creator's word wins for a first loop too
+	fresh := startServer(t, t.TempDir())
+	fresh.createLoop("solo", map[string]any{"in_fleet_channel": true})
+	if !fresh.loop("solo").InFleetChannel {
+		t.Fatal("a first loop created with in_fleet_channel true is outside the fleet channel")
+	}
+
+	// An archived loop is still the fleet's, as the New loop form counts it,
+	// so the loop after it starts in the channel. No API archives a loop, so
+	// the test writes the status itself, with the server stopped.
+	dir := t.TempDir()
+	withArchive := startServer(t, dir)
+	withArchive.createLoop("elder", serverDefault)
+	withArchive.stop()
+	archiveLoop(t, dir, "elder")
+	withArchive = startServer(t, dir)
+	withArchive.createLoop("heir", serverDefault)
+	if !withArchive.loop("heir").InFleetChannel {
+		t.Fatal("a loop created beside an archived one started outside the fleet channel; the archived loop still counts")
+	}
+}
+
+// archiveLoop sets a loop's status to archived directly in spool.db, the
+// way setNextTick rewrites a schedule: no API archives a loop yet. The
+// server must be stopped.
+func archiveLoop(t *testing.T, dataDir, name string) {
+	t.Helper()
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(dataDir, "spool.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	res, err := db.Exec(`UPDATE loops SET status='archived' WHERE name=?`, name)
+	if err != nil {
+		t.Fatalf("archive %s: %v", name, err)
+	}
+	if n, err := res.RowsAffected(); err != nil || n != 1 {
+		t.Fatalf("archive %s touched %d rows, want 1 (%v)", name, n, err)
 	}
 }

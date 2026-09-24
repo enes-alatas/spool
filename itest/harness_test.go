@@ -306,6 +306,10 @@ type turn struct {
 }
 
 // createLoop makes a loop with fast-test defaults; overrides merge on top.
+// Every loop starts in the fleet channel, the first one included: a test
+// fleet is built to talk, and the server would leave a fleet's first loop
+// outside it. A test of that default overrides in_fleet_channel with nil,
+// which sends null, which the server reads as absent.
 func (s *server) createLoop(name string, overrides map[string]any) {
 	s.t.Helper()
 	req := map[string]any{
@@ -314,6 +318,7 @@ func (s *server) createLoop(name string, overrides map[string]any) {
 		"tick_interval_sec": 3600,
 		"min_wake_sec":      60,
 		"idle_timeout_sec":  2,
+		"in_fleet_channel":  true,
 	}
 	for k, v := range overrides {
 		req[k] = v

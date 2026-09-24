@@ -82,8 +82,9 @@ and web deliver each send by its conversation, and the final reply text becomes
 a status note delivered nowhere. ADR-0032 puts `group` on the hub as the
 fleet channel, with an attached surface mirroring it: the channel has
 endpoints of its own, keyed by no loop (`GET`/`POST /api/group`), and a tab
-on the control room's Fleet page (#286); a loop is in it or not, and every
-loop starts in it; the operator's words never leave the hub; and every
+on the control room's Fleet page (#286); a loop is in it or not, and a new
+loop starts outside it when it is the fleet's only loop and in it otherwise
+(#287); the operator's words never leave the hub; and every
 message's `mirror` says whether it is on the surface too (`not_mirrored`,
 `pending`, `mirrored`), its failures staying on the send fields.
 
