@@ -260,6 +260,57 @@ func TestLoopPromptHash(t *testing.T) {
 	}
 }
 
+// A refusal belongs to the model it refused: other edits keep it, an edit
+// of the model clears it in the same statement, and a refusal of a model
+// already replaced is never written (#289).
+func TestLoopModelRefusal(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+
+	now := time.Now().UnixMilli()
+	loop := &store.Loop{
+		ID: "l1", Name: "refused", Mission: "m", Model: "claude-nosuch-1", Status: store.StatusActive,
+		WorkspaceMode: store.WorkspaceNone, Pacing: store.PacingFixed,
+		Runtime: store.RuntimeBare, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.Loops().Create(ctx, loop); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Loops().SetModelRefusal(ctx, "l1", "claude-nosuch-1", "no such model", now+1); err != nil {
+		t.Fatal(err)
+	}
+	mission := "edited"
+	got, err := db.Loops().Edit(ctx, "l1", store.LoopEdit{Mission: &mission, UpdatedAt: now + 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ModelRefusal != "no such model" {
+		t.Fatalf("refusal = %q after a mission edit, want it kept", got.ModelRefusal)
+	}
+	model := "haiku"
+	if got, err = db.Loops().Edit(ctx, "l1", store.LoopEdit{Model: &model, UpdatedAt: now + 3}); err != nil {
+		t.Fatal(err)
+	}
+	if got.ModelRefusal != "" || got.Model != "haiku" {
+		t.Fatalf("after a model edit: model %q, refusal %q; want haiku and none", got.Model, got.ModelRefusal)
+	}
+
+	// The refused turn's result can reach the actor after the edit landed.
+	if err := db.Loops().SetModelRefusal(ctx, "l1", "claude-nosuch-1", "no such model", now+4); err != nil {
+		t.Fatal(err)
+	}
+	if got, err = db.Loops().Get(ctx, "l1"); err != nil {
+		t.Fatal(err)
+	}
+	if got.ModelRefusal != "" {
+		t.Fatalf("refusal = %q written onto the replacing model, want none", got.ModelRefusal)
+	}
+}
+
 // TestTelegramColumnsSurviveAConcurrentWriter pins why the Telegram columns
 // have their own setters instead of going through Update. Two writers touch a
 // loop row at once — the hub assigning an owner, the poller binding a group —

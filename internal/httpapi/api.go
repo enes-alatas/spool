@@ -254,6 +254,11 @@ type loopView struct {
 	// and the UI cannot each arrive at their own. 0 when either side of the
 	// ratio is unknown: unmeasured, never empty.
 	ContextFillPct int `json:"context_fill_pct"`
+	// ResolvedModel is the model id the CLI reported for the loop's latest
+	// turn — what an alias like "opus" resolved to, or the configured id
+	// itself — and "" before any turn has run (#289). The configured model
+	// is Loop.Model; a refused one says so in Loop.ModelRefusal.
+	ResolvedModel string `json:"resolved_model"`
 	// DownReason distinguishes a workstation the operator switched off from
 	// one that died; empty while it is up (ADR-0021).
 	DownReason string `json:"down_reason"`
@@ -302,10 +307,15 @@ func (s *Server) view(ctx context.Context, l *store.Loop) *loopView {
 		out.WorkstationDetail = health.Detail
 		out.DownReason = actor.DownReason()
 	}
-	if latest, err := s.Store.Turns().Latest(ctx, l.ID); err == nil && latest.SessionID == l.CurrentSessionID {
-		out.ContextTokens = latest.ContextTokens
-		out.ContextLimitTokens = loop.ContextLimit(latest.Model)
-		out.ContextFillPct = loop.FillPercent(out.ContextTokens, out.ContextLimitTokens)
+	if latest, err := s.Store.Turns().Latest(ctx, l.ID); err == nil {
+		// what the configured model resolved to, whichever session ran it:
+		// an alias names a family, and this is the release it meant then
+		out.ResolvedModel = latest.Model
+		if latest.SessionID == l.CurrentSessionID {
+			out.ContextTokens = latest.ContextTokens
+			out.ContextLimitTokens = loop.ContextLimit(latest.Model)
+			out.ContextFillPct = loop.FillPercent(out.ContextTokens, out.ContextLimitTokens)
+		}
 	}
 	if entry, err := s.Store.Schedule().Get(ctx, l.ID); err == nil {
 		out.NextTickAt = entry.NextTickAt

@@ -152,6 +152,12 @@ type Loop struct {
 	// rule or catalog change is noticed. Engine bookkeeping like the pair
 	// above, and json:"-" for the same reason.
 	PromptHash string `json:"-"`
+	// ModelRefusal is what the CLI said when the API did not recognize the
+	// loop's model: a sentence naming it, "" while the model has not been
+	// refused (#289). A loop with one takes no turns until its model is
+	// edited, which clears it. Always present in the API, so a client can
+	// tell "not refused" from a server too old to say.
+	ModelRefusal string `json:"model_refusal"`
 
 	CreatedAt int64 `json:"created_at"`
 	UpdatedAt int64 `json:"updated_at"`
@@ -460,6 +466,11 @@ type LoopStore interface {
 	// workstation. Written from the actor goroutine, which runs alongside the
 	// Telegram poller — the same reason the columns above are narrow.
 	SetWorkstationOff(ctx context.Context, id string, off bool, updatedAt int64) error
+	// SetModelRefusal records that the API refused model, with the CLI's
+	// sentence, if model is still the loop's: a refusal of a model the
+	// operator has already replaced is not written. Written from the actor
+	// goroutine; an edit of the model clears it in the same statement (#289).
+	SetModelRefusal(ctx context.Context, id, model, refusal string, updatedAt int64) error
 }
 
 // LoopSecretStore holds a loop's secret env vars. Callers pass the timestamp

@@ -37,6 +37,12 @@ const (
 	// wrong — and it yields to pause, which is a statement about the loop
 	// rather than its machine.
 	StateWorkstationOff = "workstation_off"
+	// StateModelUnrecognized: the API does not know the loop's model, so
+	// every turn would fail the same way (#289). The loop takes none until
+	// the operator edits the model; the refusal's sentence is on the loop
+	// as model_refusal. It outranks pause, because pause will not fix it,
+	// and yields to a dead workstation, which must be fixed first.
+	StateModelUnrecognized = "model_unrecognized"
 )
 
 // Why a workstation is down, for the control room: nothing when it is up,
@@ -163,6 +169,7 @@ type Actor struct {
 	sawInit      bool         // current process got as far as announcing itself
 	deadResumes  int          // consecutive resumes that died before announcing
 	activeModel  string       // model the CLI reported at init, for the turn record
+	spawnModel   string       // model the running process was started on, which an edit does not change
 	lastCall     claude.Usage // usage of the in-flight turn's latest API call (assistant event)
 	backoff      time.Duration
 
@@ -302,7 +309,7 @@ func (actor *Actor) run() {
 func (actor *Actor) handleCmd(command cmd) {
 	switch command.kind {
 	case "deliver":
-		if actor.paused || actor.loop.WorkstationOff {
+		if actor.holdsWork() {
 			if b, err := json.Marshal(command.env); err == nil {
 				_ = actor.deps.Store.Inbox().Push(context.Background(), actor.loop.ID, string(b), now())
 			}
@@ -311,9 +318,10 @@ func (actor *Actor) handleCmd(command cmd) {
 		actor.enqueue(command.env)
 		actor.pump()
 	case "tick":
-		if actor.paused || actor.loop.WorkstationOff {
+		if actor.holdsWork() {
 			// a switched-off workstation stays off: ticks are skipped, not
-			// queued, so power-on isn't met by a backlog of stale wakes
+			// queued, so power-on isn't met by a backlog of stale wakes —
+			// and the same goes for a refused model and a paused loop
 			return
 		}
 		if actor.state == StateBusy || actor.state == StateWaking {
@@ -353,13 +361,45 @@ func (actor *Actor) handleCmd(command cmd) {
 		// but only the actor knows what it last spawned with (#162)
 		actor.loop.PromptHash = token.PromptHash
 		actor.paused = actor.loop.Status == store.StatusPaused
+		if token.ModelRefusal != "" && actor.loop.ModelRefusal == "" {
+			// An edit of the model cleared the refusal in the same statement:
+			// a new model, or the same one saved again, since access may have
+			// been granted since. The next turn is its check, so take it now
+			// rather than at the next tick: whatever waited meanwhile, or a
+			// tick when nothing did (#289). An edit whose row was read before
+			// the refusal was recorded carries none either; it costs one free
+			// check, which refuses again if nothing changed. Either way the
+			// row is written to match, so the API and the loop agree.
+			if err := actor.deps.Store.Loops().SetModelRefusal(context.Background(),
+				actor.loop.ID, actor.loop.Model, "", now()); err != nil {
+				actor.log().Error("clear model refusal", "err", err)
+			}
+			actor.storeSpoolEvent("model_retry", fmt.Sprintf(`{"model":%q}`, actor.loop.Model))
+			if !actor.paused && !actor.loop.WorkstationOff {
+				actor.drainStoredInbox()
+				if len(actor.inbox) == 0 {
+					actor.enqueue(TickEnvelope(time.Now(), &actor.loop))
+				}
+			}
+			actor.publishState()
+			actor.pump()
+			return
+		}
 		actor.publishState()
 	}
 }
 
+// holdsWork reports that the loop is not taking turns — paused, its
+// workstation switched off, or its model refused — so a message is stored
+// until it can be heard and a tick is skipped.
+func (actor *Actor) holdsWork() bool {
+	return actor.paused || actor.loop.WorkstationOff || actor.loop.ModelRefusal != ""
+}
+
 // drainStoredInbox re-queues the messages that arrived while the loop was
-// not accepting work — paused, or its workstation switched off. Whatever was
-// said to the loop meanwhile is said again the moment it can hear it.
+// not accepting work — paused, its workstation switched off, or its model
+// refused. Whatever was said to the loop meanwhile is said again the moment
+// it can hear it.
 func (actor *Actor) drainStoredInbox() {
 	envs, err := actor.deps.Store.Inbox().Drain(context.Background(), actor.loop.ID)
 	if err != nil {
@@ -384,7 +424,7 @@ func (actor *Actor) enqueue(env Envelope) {
 
 // pump advances the state machine when there is queued work.
 func (actor *Actor) pump() {
-	if len(actor.inbox) == 0 || actor.loop.WorkstationOff {
+	if len(actor.inbox) == 0 || actor.loop.WorkstationOff || actor.loop.ModelRefusal != "" {
 		return
 	}
 	switch actor.state {
@@ -409,6 +449,7 @@ func (actor *Actor) wake() {
 	actor.reconcilePrompt(ctx, fresh, prompt)
 	actor.collectSendFailures(ctx)
 	spec := actor.wakeSpec(fresh, prompt.System)
+	actor.spawnModel = spec.Model
 
 	loopRuntime := actor.deps.runtimeFor(actor.loop.Runtime)
 	if loopRuntime == nil {
@@ -894,6 +935,14 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 			actor.deps.OnTurnDone(&actor.loop, trailer, hasTrailer)
 		}
 	}
+	if claude.IsUnrecognizedModel(res) && !actor.handoffTurn {
+		if actor.spawnModel == actor.loop.Model {
+			actor.refuseModel(res.ResultText)
+		} else {
+			actor.retryEditedModel()
+		}
+		return
+	}
 	actor.turn = nil
 	actor.currentBatch = nil
 	actor.lostSends = nil
@@ -1115,6 +1164,60 @@ func (actor *Actor) handleProcExit() {
 		actor.storeSpoolEvent("crash", fmt.Sprintf(`{"code":%d,"stderr":%q}`, exit.Code, tail(exit.Stderr, 2000)))
 		actor.log().Warn("claude process crashed", "code", exit.Code, "stderr", tail(exit.Stderr, 500))
 		actor.crashBackoff()
+	}
+}
+
+// refuseModel stops the loop on a model the API does not know (#289). Every
+// turn would fail the same way, free and fast, so retrying is a loop that
+// looks alive and does nothing. What the refused turn carried, and whatever
+// queued behind it, is stored to be said again once the model is fixed, as
+// for a paused loop; ticks are dropped, since the fix brings its own.
+func (actor *Actor) refuseModel(sentence string) {
+	ctx := context.Background()
+	for _, env := range append(actor.currentBatch, actor.inbox...) {
+		if env.Trigger == store.TriggerTick {
+			continue
+		}
+		if raw, err := json.Marshal(env); err == nil {
+			_ = actor.deps.Store.Inbox().Push(ctx, actor.loop.ID, string(raw), now())
+		}
+	}
+	actor.inbox = nil
+
+	actor.loop.ModelRefusal = sentence
+	if err := actor.deps.Store.Loops().SetModelRefusal(ctx, actor.loop.ID, actor.spawnModel, sentence, now()); err != nil {
+		actor.log().Error("record model refusal", "err", err)
+	}
+	actor.storeSpoolEvent("model_unrecognized",
+		fmt.Sprintf(`{"model":%q,"detail":%q}`, actor.spawnModel, sentence))
+	actor.log().Warn("model not recognized; loop holds until it is edited", "model", actor.spawnModel)
+	actor.drainRefusedProcess()
+}
+
+// retryEditedModel handles a refusal of a model the operator replaced while
+// the turn ran (#289). The refusal is about a model the loop no longer runs
+// on, so nothing holds and nothing is recorded: the turn's batch, tick
+// included, goes back to the front of the queue, and the process that ran
+// the old model is drained so that the next one is spawned on the new.
+func (actor *Actor) retryEditedModel() {
+	actor.storeSpoolEvent("model_retry",
+		fmt.Sprintf(`{"model":%q,"refused":%q}`, actor.loop.Model, actor.spawnModel))
+	actor.inbox = append(append([]Envelope(nil), actor.currentBatch...), actor.inbox...)
+	actor.drainRefusedProcess()
+}
+
+// drainRefusedProcess ends a refused turn and the process it ran in:
+// nothing that process could do under its model is worth keeping it for.
+// The notes the turn owed stay owed: it did not deliver them.
+func (actor *Actor) drainRefusedProcess() {
+	actor.turn = nil
+	actor.currentBatch = nil
+	actor.lostSends = nil
+	actor.state = StateDraining
+	actor.publishState()
+	if actor.proc != nil {
+		_ = actor.proc.CloseStdin()
+		actor.idleTimer.Reset(drainGrace)
 	}
 }
 
@@ -1658,6 +1761,9 @@ func (actor *Actor) publishState() {
 	}
 	if actor.paused {
 		state = StatePaused
+	}
+	if actor.loop.ModelRefusal != "" {
+		state = StateModelUnrecognized
 	}
 	if actor.wsDown {
 		// the alert outranks everything: a dead workstation needs the operator

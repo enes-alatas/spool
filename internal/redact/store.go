@@ -57,6 +57,13 @@ func (l loops) SetRotation(ctx context.Context, id string, pending bool, note st
 	return l.LoopStore.SetRotation(ctx, id, pending, l.r.Text(note))
 }
 
+func (l loops) SetModelRefusal(ctx context.Context, id, model, refusal string, updatedAt int64) error {
+	// The CLI's sentence around the configured model id. It is the refused
+	// turn's result text, which the turn row stores redacted, so the loop
+	// row stores the same.
+	return l.LoopStore.SetModelRefusal(ctx, id, model, l.r.Text(refusal), updatedAt)
+}
+
 // Each decorator embeds the interface it wraps, so a method added to the
 // store seam keeps compiling here and passes straight through. That is the
 // right default for reads; a new *write* of free text has to be added below,

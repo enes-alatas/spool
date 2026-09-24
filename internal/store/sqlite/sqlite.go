@@ -122,7 +122,7 @@ const loopCols = `id, name, mission, model, workspace_mode, workspace_path, repo
 	pacing, effort, tg_bot_token, tg_bot_username, tg_group_chat_id, tg_group_bound_at,
 	owner_tg_user_id, owner_dm_chat_id,
 	workstation_off, outside_fleet_channel, status, current_session_id, current_pid, created_at, updated_at,
-	runtime, image, mem_mb, cpus, hub_mcp_token, rotate_pending, handoff_note, prompt_hash`
+	runtime, image, mem_mb, cpus, hub_mcp_token, rotate_pending, handoff_note, prompt_hash, model_refusal`
 
 func scanLoop(row interface{ Scan(...any) error }) (*store.Loop, error) {
 	var l store.Loop
@@ -133,7 +133,7 @@ func scanLoop(row interface{ Scan(...any) error }) (*store.Loop, error) {
 		&l.OwnerTGUserID, &l.OwnerDMChatID, &l.WorkstationOff, &l.OutsideFleetChannel,
 		&l.Status, &l.CurrentSessionID, &l.CurrentPID,
 		&l.CreatedAt, &l.UpdatedAt, &l.Runtime, &l.Image, &l.MemMB, &l.CPUs, &l.HubMCPToken,
-		&l.RotatePending, &l.HandoffNote, &l.PromptHash)
+		&l.RotatePending, &l.HandoffNote, &l.PromptHash, &l.ModelRefusal)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, store.ErrNotFound
 	}
@@ -152,7 +152,7 @@ func (r loops) Create(ctx context.Context, l *store.Loop) error {
 		l.HubMCPToken = store.NewHubMCPToken()
 	}
 	_, err := r.db.ExecContext(ctx, `INSERT INTO loops (`+loopCols+`) VALUES
-		(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		l.ID, l.Name, l.Mission, l.Model, l.WorkspaceMode, l.WorkspacePath, l.RepoPath,
 		l.WorktreePath, l.Branch, l.TickIntervalSec, l.MinWakeSec, l.MaxWakeSec,
 		l.IdleTimeoutSec, l.Pacing, l.Effort, l.TGBotToken, l.TGBotUsername,
@@ -160,7 +160,7 @@ func (r loops) Create(ctx context.Context, l *store.Loop) error {
 		l.WorkstationOff, l.OutsideFleetChannel, l.Status, l.CurrentSessionID, l.CurrentPID,
 		l.CreatedAt, l.UpdatedAt,
 		l.Runtime, l.Image, l.MemMB, l.CPUs, l.HubMCPToken, l.RotatePending, l.HandoffNote,
-		l.PromptHash)
+		l.PromptHash, l.ModelRefusal)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return store.ErrDuplicate
 	}
@@ -182,6 +182,9 @@ func (r loops) Edit(ctx context.Context, id string, edit store.LoopEdit) (*store
 	}
 	if edit.Model != nil {
 		set("model", *edit.Model)
+		// a refusal was of the model being replaced; the next turn is the
+		// new one's check (#289)
+		set("model_refusal", "")
 	}
 	if edit.Effort != nil {
 		set("effort", *edit.Effort)
@@ -306,6 +309,12 @@ func (r loops) SetStatus(ctx context.Context, id, status string, updatedAt int64
 func (r loops) SetWorkstationOff(ctx context.Context, id string, off bool, updatedAt int64) error {
 	_, err := r.db.ExecContext(ctx,
 		`UPDATE loops SET workstation_off=?, updated_at=? WHERE id=?`, off, updatedAt, id)
+	return err
+}
+
+func (r loops) SetModelRefusal(ctx context.Context, id, model, refusal string, updatedAt int64) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE loops SET model_refusal=?, updated_at=? WHERE id=? AND model=?`, refusal, updatedAt, id, model)
 	return err
 }
 

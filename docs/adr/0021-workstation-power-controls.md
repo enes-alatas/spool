@@ -1,6 +1,6 @@
 # ADR-0021: The operator can power a workstation, and switched-off is not down
 
-Date: 2026-08-20 · Status: accepted
+Date: 2026-08-20 · Status: accepted · Amended: 2026-09-24 (item 5, model_unrecognized)
 
 ## Context
 
@@ -50,6 +50,10 @@ reachable. Rendered naively, a successful power-off shows up as the alert
    `down_reason` (`""` | `powered_off` | `unreachable`) on the loop view and
    on a new `workstation` SSE frame, so a panel about the machine can read the
    fact directly instead of decoding a state with precedence rules.
+
+   **Amendment (2026-09-24, #289):** the precedence gains `model_unrecognized`
+   between `workstation_down` and `paused`: a statement about the loop that
+   pause cannot fix. It is not a `down_reason`, which stays about the machine.
 6. **A switched-off workstation stays off.** While the intent stands, ticks are
    skipped — not queued, so power-on is not met by a backlog of stale wakes —
    and inbound messages go to the loop's stored inbox without waking it. They
