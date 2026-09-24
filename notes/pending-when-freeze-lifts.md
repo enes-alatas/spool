@@ -57,3 +57,6 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 22:50: Enes's follow-ups to #329: #331 (no em dashes, Iris now), #332 (alias resolutions + custom model list). Answered #332's open question: no resolution run, use observed init-message resolutions hub-wide; Terra after #289 backend, Iris after #331.
 - 22:55: Terra: CLI resolves aliases locally; a loopback-stub run gives the id at zero tokens but is a new invocation mode (Enes's call). Kept turn-row resolutions for #332; stub recorded as later option. #332 backend after Terra's #330.
 - 23:00: Enes decided (to Iris): bare aliases unacceptable; hub resolves aliases up front via the zero-token loopback-stub run. Filed #334 (ADR, amends ADR-0018; credential-at-stub rule, where/when, timeout, zero-token test). Terra: #330 → #334 → #289 backend → #332 backend.
+
+## 2026-09-25 00:00 — night sweep
+- #329 merged. #330 (#289 backend, refused model holds the loop) approved by Quinn 20:51, awaiting Enes. #333 (#331 no em dashes) changes requested 20:50, Iris folded, Quinn re-review pending. L2: 12 open. Nothing to nudge until morning.
