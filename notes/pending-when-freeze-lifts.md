@@ -35,3 +35,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 07:45: stale claude version after rebuild: hub default runtime is docker, health reports the workstation image's claude (2.1.267, image 3 days old); host is 2.1.281. Fix is make image + restart. Told Enes; offered an issue (say make image where the version shows).
 - 07:50: Enes's agent blamed TestedVersion=2.1.233; it's log-only, not what health shows. Told him: two claude installs on his machine likely (which -a claude). Asked Terra to bump TestedVersion in next internal/claude PR.
 - 07:55: Terra ships TestedVersion bump as its own chore PR after #287 API (also fakeclaude version + ADR-0001 sentence).
+- 08:00: Enes's local agent filed #304 (make image reuses cached claude-code layer). Retitled, refined (cache-bust vs pinned version, itest image unaffected), slotted for Terra after #287 API + TestedVersion chore.
