@@ -50,3 +50,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 17:45: Enes: no early L2 close; clear the 14 first. Slotted after #283 (#287 pages, #288): Terra #19 check, #280, #245, #180, #55, #272, #258, #168, #2, #182, #289 backend; Iris #228, #189, #76, #289 web. #314 after #288. #230 Slack behind L2 cleanup. Estimate 2–3 days.
 - 18:15: Quinn filed #322 (npm Dependabot alerts, security medium; #320 auto-bump can't land). Decided: react-router 6.30.6 now, v7 as #323. Iris takes #322 after #318, before L2 docs. Runtime v0.2.0-50.
 - 18:20: Iris has #324 (#228 docs) open; #322 after it.
+- 18:45: #321 (#288) and #324 (#228) merged, #318 merged 15:38. Closed #287 and epic #283. Open PR: #320 (Dependabot, superseded by #322 when it lands). L2 cleanup queue is now live for both devs.
