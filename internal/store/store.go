@@ -185,6 +185,35 @@ type FleetRule struct {
 	UpdatedAt int64  `json:"updated_at"`
 }
 
+// ModelResolution is what a model name runs as on this hub (ADR-0033): a
+// family alias, or an entry on the custom model list. Resolved is "" until
+// something has said.
+type ModelResolution struct {
+	Model    string `json:"model"`
+	Resolved string `json:"resolved"`
+	// Source is ResolutionProbe or ResolutionTurn: the hub's own run, or
+	// what a real turn on the default runtime reported at init.
+	Source string `json:"source"`
+	// CLIVersion is the version the probe ran, "" for a turn.
+	CLIVersion string `json:"cli_version"`
+	ResolvedAt int64  `json:"resolved_at"`
+}
+
+// Where a resolution came from.
+const (
+	ResolutionProbe = "probe"
+	ResolutionTurn  = "turn"
+)
+
+// CustomModel is an operator-added entry on the model list, offered in the
+// dropdowns after the family aliases (#332). Label is optional.
+type CustomModel struct {
+	ID        string `json:"id"`
+	Model     string `json:"model"`
+	Label     string `json:"label"`
+	CreatedAt int64  `json:"created_at"`
+}
+
 type Session struct {
 	ID        string `json:"id"` // the claude session uuid (minted by Spool)
 	LoopID    string `json:"loop_id"`
@@ -495,6 +524,26 @@ type FleetRuleStore interface {
 	List(ctx context.Context) ([]*FleetRule, error)
 }
 
+// ModelStore holds the model list's own state: what each name resolves to,
+// and the operator's custom entries.
+type ModelStore interface {
+	// Resolutions returns every stored resolution.
+	Resolutions(ctx context.Context) ([]*ModelResolution, error)
+	// SetResolution stores r for r.Model, replacing any before it.
+	SetResolution(ctx context.Context, r *ModelResolution) error
+	// ListCustom returns the custom entries in the order they were added.
+	ListCustom(ctx context.Context) ([]*CustomModel, error)
+	// AddCustom inserts an entry; ErrDuplicate if its model is already on
+	// the list.
+	AddCustom(ctx context.Context, m *CustomModel) error
+	// SetCustomLabel relabels an entry and returns it; ErrNotFound if there
+	// is none with that id.
+	SetCustomLabel(ctx context.Context, id, label string) (*CustomModel, error)
+	// DeleteCustom removes an entry and its resolution; ErrNotFound if there
+	// is none with that id.
+	DeleteCustom(ctx context.Context, id string) error
+}
+
 type SessionStore interface {
 	Create(ctx context.Context, s *Session) error
 	End(ctx context.Context, id, reason string, endedAt int64) error
@@ -707,6 +756,7 @@ type Store interface {
 	Inbox() InboxStore
 	Settings() SettingsStore
 	TGSenders() TGSenderStore
+	Models() ModelStore
 	Close() error
 }
 
