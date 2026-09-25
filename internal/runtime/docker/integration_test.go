@@ -414,3 +414,40 @@ func TestHaltStopsWithoutDestroying(t *testing.T) {
 		t.Fatalf("Halt of a workstation that isn't there must be a no-op: %v", err)
 	}
 }
+
+// A resolution run is a throwaway container with no network, removed when
+// its init has been read (ADR-0033).
+func TestResolveModelRunsInAThrowawayContainerWithNoNetwork(t *testing.T) {
+	rt := requireDocker(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	// Hubs the itest suite stopped mid-resolution may have left containers
+	// of their own; this run must add none.
+	before := resolveContainers(t)
+
+	resolved, err := rt.ResolveModel(ctx, "opus")
+	if err != nil {
+		t.Fatalf("ResolveModel: %v", err)
+	}
+	if resolved != "claude-opus-5-5" {
+		t.Fatalf("resolved = %q, want what the image's claude reported at init", resolved)
+	}
+	for name := range resolveContainers(t) {
+		if !before[name] {
+			t.Fatalf("resolution container %s left behind", name)
+		}
+	}
+}
+
+func resolveContainers(t *testing.T) map[string]bool {
+	t.Helper()
+	out, err := exec.Command("docker", "ps", "-a", "--filter", "label=spool.resolve=1", "--format", "{{.Names}}").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, name := range strings.Fields(string(out)) {
+		names[name] = true
+	}
+	return names
+}
