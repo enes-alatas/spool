@@ -60,10 +60,21 @@ function ScheduleEditor({
   })
   return (
     <div className="row" style={{ alignItems: 'center' }}>
-      <span className="k">interval</span>
+      {/* Named by both words, so a screen reader says "interval min" rather
+          than a bare number with nothing to say what it counts (#353). */}
+      <span className="k" id="tick-label">
+        interval
+      </span>
       <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-        <input className="tick-input" value={tick} onChange={(e) => setTick(e.target.value)} />
-        <span className="k">min</span>
+        <input
+          className="tick-input"
+          aria-labelledby="tick-label tick-unit"
+          value={tick}
+          onChange={(e) => setTick(e.target.value)}
+        />
+        <span className="k" id="tick-unit">
+          min
+        </span>
         <button className="btn sm" onClick={() => mut.mutate()} disabled={mut.isPending}>
           Set
         </button>
@@ -122,9 +133,12 @@ function ModelPanel({ loop }: { loop: LoopView }) {
     <div className="side-panel">
       <h3>Model & pacing</h3>
       <div className="row" style={{ alignItems: 'center' }}>
-        <span className="k">model</span>
+        <label className="k" htmlFor="model-select">
+          model
+        </label>
       </div>
       <select
+        id="model-select"
         className="panel-select"
         value={custom === null ? loop.model : '__custom__'}
         onChange={(e) => chooseModel(e.target.value)}
@@ -170,9 +184,12 @@ function ModelPanel({ loop }: { loop: LoopView }) {
           </div>
         )}
       <div className="row" style={{ marginTop: 8 }}>
-        <span className="k">effort</span>
+        <label className="k" htmlFor="effort-select">
+          effort
+        </label>
       </div>
       <select
+        id="effort-select"
         className="panel-select"
         value={loop.effort}
         onChange={(e) => patch({ effort: e.target.value })}
@@ -184,9 +201,12 @@ function ModelPanel({ loop }: { loop: LoopView }) {
         ))}
       </select>
       <div className="row" style={{ marginTop: 8 }}>
-        <span className="k">pacing</span>
+        <label className="k" htmlFor="pacing-select">
+          pacing
+        </label>
       </div>
       <select
+        id="pacing-select"
         className="panel-select"
         value={loop.pacing}
         onChange={(e) => patch({ pacing: e.target.value })}
