@@ -64,8 +64,8 @@ func TestAnUnrecognizedModelHoldsTheLoopUntilTheModelIsEdited(t *testing.T) {
 	if v.ModelRefusal != "" || v.State == "model_unrecognized" {
 		t.Fatalf("after the model edit: state %q, refusal %q; want neither", v.State, v.ModelRefusal)
 	}
-	if v.ResolvedModel != "haiku" {
-		t.Fatalf("resolved_model = %q, want the edited model's", v.ResolvedModel)
+	if v.ResolvedModel != "claude-haiku-4-5-20251001" {
+		t.Fatalf("resolved_model = %q, want what the edited alias resolves to", v.ResolvedModel)
 	}
 }
 
@@ -85,8 +85,8 @@ func TestARefusalOfAModelEditedMidTurnHoldsNothing(t *testing.T) {
 	if v.ModelRefusal != "" || v.State == "model_unrecognized" {
 		t.Fatalf("after an edit that raced the refusal: state %q, refusal %q; want neither", v.State, v.ModelRefusal)
 	}
-	if v.ResolvedModel != "haiku" {
-		t.Fatalf("resolved_model = %q, want the edited model's", v.ResolvedModel)
+	if v.ResolvedModel != "claude-haiku-4-5-20251001" {
+		t.Fatalf("resolved_model = %q, want what the edited alias resolves to", v.ResolvedModel)
 	}
 	// The run took the race: the refusal arrived after the edit.
 	raced := false

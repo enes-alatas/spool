@@ -438,12 +438,27 @@ func unrecognizedModel(model string) bool {
 }
 
 // initModel is what the init event reports: the model the runner asked for,
-// or a name of our own when it asked for none.
+// resolved if it is a family alias, or a name of our own when it asked for
+// none.
 func initModel(model string) string {
 	if model == "" {
 		return "fakeclaude"
 	}
+	if id, ok := familyAliases[model]; ok {
+		return id
+	}
 	return model
+}
+
+// familyAliases is what the real CLI's init reports for each family alias:
+// it resolves an alias locally and names the result there, before any
+// request (measured on 2.1.282 on the host and 2.1.281 in the workstation
+// image, ADR-0033). A full id is reported as given.
+var familyAliases = map[string]string{
+	"fable":  "claude-fable-5-1",
+	"opus":   "claude-opus-5-5",
+	"sonnet": "claude-sonnet-5",
+	"haiku":  "claude-haiku-4-5-20251001",
 }
 
 // refRe finds the reference an envelope header carries. The message's own
