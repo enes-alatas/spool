@@ -227,13 +227,27 @@ jobs:
       - name: unit tests (tier 1 + arch)
         if: needs.changes.outputs.unit == 'true'
         run: go test -coverprofile=cover.out ./...
+      # Informational, never a gate (ADR-0013), so a failure here cannot turn
+      # the job red. On a PR the report is the changed lines' (#2): which
+      # statements the PR adds or edits ran under tier 1, and where the rest
+      # are. The whole-repo total follows it, as one line.
       - name: coverage (informational)
         if: needs.changes.outputs.unit == 'true'
+        continue-on-error: true
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
         run: |
-          echo '## Coverage (informational — not a gate)' >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          go tool cover -func=cover.out | tail -25 >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          if [ "$EVENT" = pull_request ]; then
+            # To a file first: in a pipe, a failed diff (under `bash -e`, no
+            # pipefail) would reach the script as an empty change and the
+            # summary would say the PR touched no Go.
+            git diff -U0 "$BASE" HEAD -- '*.go' > "$RUNNER_TEMP/go.diff"
+            bash scripts/diff-coverage.sh cover.out < "$RUNNER_TEMP/go.diff" >> "$GITHUB_STEP_SUMMARY"
+            echo >> "$GITHUB_STEP_SUMMARY"
+          fi
+          total=$(go tool cover -func=cover.out | awk 'END { print $NF }')
+          echo "Whole repo: $total of statements ran under tier 1." >> "$GITHUB_STEP_SUMMARY"
       - name: govulncheck
         if: needs.changes.outputs.unit == 'true'
         run: |
@@ -277,6 +291,11 @@ jobs:
       - name: the failure sentinel still reports what it claims to
         if: needs.changes.outputs.workflows == 'true'
         run: bash scripts/ci-health-test.sh
+      # The coverage report is informational, so nothing else would notice it
+      # miscounting (#2).
+      - name: the diff coverage still counts what it claims to
+        if: needs.changes.outputs.workflows == 'true'
+        run: bash scripts/diff-coverage-test.sh
 
   # The one job still filtered at job level, because it is the one worth
   # skipping outright: ~8 of the ~10 minutes a full run used to bill. A job
