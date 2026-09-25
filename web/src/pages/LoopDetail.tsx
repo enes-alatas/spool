@@ -1103,8 +1103,11 @@ export default function LoopDetail() {
     queryFn: () => api.loop(name),
     refetchInterval: 10000,
   })
-  const { data: events } = useQuery({ queryKey: ['events', name], queryFn: () => api.events(name) })
-  const { data: thread } = useQuery({
+  const { data: events, error: eventsError } = useQuery({
+    queryKey: ['events', name],
+    queryFn: () => api.events(name),
+  })
+  const { data: thread, error: threadError } = useQuery({
     queryKey: ['conversation', name],
     queryFn: () => api.conversation(name),
     enabled: pane === 'control_room',
@@ -1463,6 +1466,15 @@ export default function LoopDetail() {
               composer below stays where the operator left it however long the
               loop has been running. */}
           <div className="pane-scroll" ref={paneRef} onScroll={readingPosition}>
+            {/* A failed load is said in the pane. An empty timeline or thread
+                is also what a new loop shows, so without this a failure read
+                as "nothing has happened" (#350). The stream adds no entries
+                of its own: the in-progress reply still renders under the
+                error, and the refetch the next event triggers replaces the
+                error once it succeeds. */}
+            {pane === 'timeline' && eventsError && !events && (
+              <div className="form-error">Could not load the timeline: {eventsError.message}</div>
+            )}
             {pane === 'timeline' ? (
               <Timeline
                 entries={entries}
@@ -1472,7 +1484,13 @@ export default function LoopDetail() {
                 olderFailed={olderFailed}
               />
             ) : pane === 'control_room' ? (
-              <ControlRoomThread msgs={thread ?? []} />
+              // In place of the thread, whose empty state would otherwise
+              // claim "Nothing yet" under the error.
+              threadError && !thread ? (
+                <div className="form-error">Could not load the conversation: {threadError.message}</div>
+              ) : (
+                <ControlRoomThread msgs={thread ?? []} />
+              )
             ) : (
               <UndeliveredPane name={loop.name} />
             )}
