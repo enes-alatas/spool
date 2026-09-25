@@ -46,7 +46,12 @@ function SenderRow({ s }: { s: TGSender }) {
 }
 
 export default function Access() {
-  const { data: senders } = useQuery({ queryKey: ['senders'], queryFn: api.senders })
+  const {
+    data: senders,
+    isLoading,
+    isError,
+    error,
+  } = useQuery({ queryKey: ['senders'], queryFn: api.senders })
   const pending = (senders ?? []).filter((s) => s.status === 'pending')
   const others = (senders ?? []).filter((s) => s.status !== 'pending')
 
@@ -58,6 +63,16 @@ export default function Access() {
         silently ignored and appears here as pending. Check the pairing code with them before allowing.
         Blocked senders are dropped without any reply.
       </p>
+
+      {/* Loading and a failed load both have no list to draw, and the page
+          used to show its intro and nothing else for either. That reads as
+          nobody waiting, which after a failure hides a pending sender (#352). */}
+      {isLoading && <div className="fleet-note">Loading senders…</div>}
+      {isError && (
+        <div className="form-error">
+          Could not load senders: {error instanceof Error ? error.message : String(error)}
+        </div>
+      )}
 
       {pending.length > 0 && (
         <>
