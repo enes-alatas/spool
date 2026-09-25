@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"testing/fstest"
 )
 
 // guarded returns the guard wrapped around the session routes plus a stand-in
@@ -410,27 +411,74 @@ func TestSessionCookieIsSecureOverTLS(t *testing.T) {
 }
 
 // The two routes that need no credential are the two where a method mismatch
-// is reachable by anyone, and a ServeMux will not catch it for them: it
-// synthesises 405 only when no pattern matched, and the control room's
-// catch-all matches every method at every path. Without the guard's own
-// check, GET /api/login answers 200 with index.html at an API URL. This lives
-// at tier 1 because `make server` skips vite, so tier 2 runs against a binary
-// with no catch-all registered and would assert the mux's 405 and pass.
+// is reachable by anyone. The guard lets them past the token check and
+// nothing more; apiFallback refuses the wrong method, as on any route (#245).
+// This lives at tier 1 because only here is the control room's catch-all
+// behind the fallback, as it is in the shipped binary: `make server` skips
+// vite, so tier 2 has none.
 func TestSessionRoutesRefuseTheWrongMethod(t *testing.T) {
 	for _, path := range []string{loginPath, logoutPath} {
 		for _, method := range []string{http.MethodGet, http.MethodDelete} {
 			t.Run(method+" "+path, func(t *testing.T) {
-				h, reached := guarded(t, testToken)
 				rec := httptest.NewRecorder()
-				h.ServeHTTP(rec, httptest.NewRequest(method, "http://127.0.0.1:8080"+path, nil))
-				if rec.Code != http.StatusMethodNotAllowed {
-					t.Errorf("%s %s = %d, want 405", method, path, rec.Code)
-				}
-				if *reached {
-					t.Error("the UI catch-all answered an API path")
+				shipped(t).ServeHTTP(rec, httptest.NewRequest(method, "http://127.0.0.1:8080"+path, nil))
+				if rec.Code != http.StatusMethodNotAllowed || rec.Header().Get("Allow") != "POST" {
+					t.Errorf("%s %s = %d, Allow %q; want 405, Allow POST", method, path, rec.Code, rec.Header().Get("Allow"))
 				}
 			})
 		}
+	}
+}
+
+// shipped is the whole API as the shipped binary serves it: the real route
+// list, with an embedded control room, and so the UI's catch-all behind
+// every route. A build without the UI registers no catch-all, which is why
+// tier 2 (make itest builds without vite) cannot see what this sees (#245).
+func shipped(t *testing.T) http.Handler {
+	t.Helper()
+	s := &Server{OperatorToken: testToken, ListenAddr: "127.0.0.1:8080",
+		WebFS: fstest.MapFS{"index.html": {Data: []byte("<!doctype html>")}}}
+	return s.Handler()
+}
+
+// Under /api/ the answer is always JSON: a method the path does not take is
+// 405 naming the ones it does, a path no route has is 404, and the control
+// room's index.html is never the answer, with a 200 that says it worked.
+func TestAPIRefusalsAreNeverTheUI(t *testing.T) {
+	cases := []struct {
+		method, path string
+		code         int
+		allow        string
+	}{
+		{"DELETE", "/api/settings", 405, "GET, PUT"},
+		{"GET", "/api/loops/greeter/wake", 405, "POST"},
+		{"POST", "/api/loops/greeter", 405, "GET, PATCH, DELETE"},
+		{"GET", "/api/no-such-route", 404, ""},
+		{"POST", "/api/loops/greeter/no-such-action", 404, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
+			req := httptest.NewRequest(tc.method, "http://127.0.0.1:8080"+tc.path, nil)
+			req.Header.Set("Authorization", "Bearer "+testToken)
+			rec := httptest.NewRecorder()
+			shipped(t).ServeHTTP(rec, req)
+			if rec.Code != tc.code {
+				t.Fatalf("status = %d, want %d: %s", rec.Code, tc.code, rec.Body)
+			}
+			if got := rec.Header().Get("Allow"); got != tc.allow {
+				t.Errorf("Allow = %q, want %q", got, tc.allow)
+			}
+			var body struct{ Error string }
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || body.Error == "" {
+				t.Errorf("body is not the JSON error shape: %q", rec.Body)
+			}
+		})
+	}
+	// And the UI is still the UI.
+	rec := httptest.NewRecorder()
+	shipped(t).ServeHTTP(rec, httptest.NewRequest("GET", "http://127.0.0.1:8080/loops/greeter", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "<!doctype html>") {
+		t.Errorf("GET /loops/greeter = %d %q, want the control room", rec.Code, rec.Body)
 	}
 }
 
