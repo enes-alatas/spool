@@ -70,3 +70,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 12:50: Terra posted #332 API shape (GET /api/models, custom CRUD, SSE frame); accepted. ADR-0033 PR #338: no credential in the run at all, auxiliary-run kind on ADR-0018; checked vs #334, all five points. DM'd Enes: security-posture ADR, his read.
 - 13:40: Enes: session limit nearly full, hold until 17:30 local (~14:30 UTC). Holding.
 - 14:00: limit reset, fleet resumes.
+- 15:25: #337, #338 (ADR-0033), #340 (#332 backend) merged; #339 (#332 web) approved; #342 Terra (#280) up. Iris free → #2 diff coverage (off Terra's list). L2 remaining Go for Terra: #19, #245, #180, #55, #272, #258, #168, #182.
