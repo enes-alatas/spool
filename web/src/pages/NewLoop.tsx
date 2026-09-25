@@ -2,9 +2,10 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
-import { MODEL_OPTIONS, EFFORT_OPTIONS, PACING_OPTIONS, RUNTIME_OPTIONS, runtimeNote } from '../options'
+import { EFFORT_OPTIONS, PACING_OPTIONS, RUNTIME_OPTIONS, runtimeNote } from '../options'
+import { useModelOptions } from '../models'
 import { useHubRuntime } from '../version'
-import { startsInFleetChannel } from '../forms'
+import { customModelError, startsInFleetChannel } from '../forms'
 
 export default function NewLoop() {
   const nav = useNavigate()
@@ -13,6 +14,7 @@ export default function NewLoop() {
   const [mission, setMission] = useState('')
   const [model, setModel] = useState('')
   const [customModel, setCustomModel] = useState('')
+  const modelOptions = useModelOptions()
   const [effort, setEffort] = useState('')
   const [pacing, setPacing] = useState<'fixed' | 'self'>('fixed')
   const [runtime, setRuntime] = useState('')
@@ -61,10 +63,17 @@ export default function NewLoop() {
   }
 
   const create = async () => {
+    const chosenModel = model === '__custom__' ? customModel.trim() : model
+    // Loop create passes the model straight to --model, so this is the only
+    // gate between a typo and a loop refused at its first turn.
+    const invalid = model === '__custom__' ? customModelError(chosenModel) : ''
+    if (invalid) {
+      setError(invalid)
+      return
+    }
     setBusy(true)
     setError('')
     try {
-      const chosenModel = model === '__custom__' ? customModel.trim() : model
       const loop = await api.createLoop({
         name: name.trim(),
         mission: mission.trim(),
@@ -127,7 +136,7 @@ export default function NewLoop() {
           <div className="field">
             <label htmlFor="nl-model">Model</label>
             <select id="nl-model" value={model} onChange={(e) => setModel(e.target.value)}>
-              {MODEL_OPTIONS.map((o) => (
+              {modelOptions.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
                 </option>

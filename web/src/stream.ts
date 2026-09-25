@@ -23,6 +23,8 @@ export function useStream(url: string, onItem: (item: BusItem) => void, onOpen?:
   useEffect(() => {
     const es = new EventSource(url)
     es.onopen = () => opened.current?.()
+    // A named SSE event reaches only a listener for that name, so a kind
+    // missing here is dropped silently even when a case below handles it.
     const kinds = [
       'message',
       'loop_status',
@@ -31,6 +33,7 @@ export function useStream(url: string, onItem: (item: BusItem) => void, onOpen?:
       'schedule',
       'access',
       'workstation',
+      'models',
     ]
     const listeners = kinds.map((kind) => {
       const fn = (e: MessageEvent) => {
@@ -68,6 +71,9 @@ export function useGlobalStream() {
         break
       case 'access':
         qc.invalidateQueries({ queryKey: ['senders'] })
+        break
+      case 'models':
+        qc.invalidateQueries({ queryKey: ['models'] })
         break
     }
   })

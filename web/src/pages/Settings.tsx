@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type Settings as SettingsView } from '../api'
-import { rotationGate, tokenSubmittable } from '../forms'
+import { api, ApiError, type CustomModel, type Settings as SettingsView } from '../api'
+import { customModelError, MODEL_LABEL_MAX, rotationGate, tokenSubmittable } from '../forms'
+import { customModelNote } from '../options'
 import { buildFacts, useClaudeVersion, useVersion } from '../version'
 import { loginError } from '../session'
 
@@ -12,6 +13,7 @@ export default function Settings() {
     <div className="page measure">
       <h1>Settings</h1>
       <ClaudeToken settings={settings} />
+      <CustomModels />
       <RotationThresholds settings={settings} />
       <SessionSection />
       <Build />
@@ -257,5 +259,197 @@ function RotationThresholds({ settings }: { settings?: SettingsView }) {
         </div>
       </div>
     </>
+  )
+}
+
+// The operator's own model ids, offered in every model dropdown after the
+// families (#332). Claude Code's picker keeps custom models beside the
+// available ones, and this is that list: an older pinned model, or one the
+// aliases don't reach, without typing it into Custom… each time. Removing an
+// entry changes no loop; the list only feeds the dropdowns.
+function CustomModels() {
+  const qc = useQueryClient()
+  const { data, isPending, error: loadError } = useQuery({ queryKey: ['models'], queryFn: api.models })
+  const [model, setModel] = useState('')
+  const [label, setLabel] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const refresh = () => qc.invalidateQueries({ queryKey: ['models'] })
+
+  const add = async () => {
+    const id = model.trim()
+    const invalid = customModelError(id)
+    if (invalid) {
+      setError(invalid)
+      return
+    }
+    setBusy(true)
+    setError('')
+    try {
+      await api.addCustomModel({ model: id, label: label.trim() })
+      setModel('')
+      setLabel('')
+      refresh()
+    } catch (e) {
+      // 409 is a duplicate or an alias, and the server's sentence names which.
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // A hub that predates the list is not a failed load: say what to do.
+  const missing = loadError instanceof ApiError && loadError.status === 404
+
+  return (
+    <>
+      <h2 className="section-head">Custom models</h2>
+      <p className="page-lede">
+        Model ids offered in every model dropdown, after the families. Removing one changes no loop; a loop
+        already on it keeps it.
+      </p>
+
+      {missing ? (
+        <div className="form-error">
+          This orchestrator has no model-list API. Update Spool to keep a list here.
+        </div>
+      ) : loadError ? (
+        <div className="form-error">
+          Could not load the model list: {loadError instanceof Error ? loadError.message : String(loadError)}
+        </div>
+      ) : isPending ? null : (
+        <>
+          {data.custom.length > 0 && (
+            <div className="model-list">
+              {data.custom.map((entry) => (
+                <CustomModelRow key={entry.id} entry={entry} onChange={refresh} />
+              ))}
+            </div>
+          )}
+
+          <div className="form">
+            <div className="field-row">
+              <div className="field">
+                <label htmlFor="cm-model">Model id</label>
+                <input
+                  id="cm-model"
+                  className="mono"
+                  placeholder="claude-opus-4-1"
+                  value={model}
+                  disabled={busy}
+                  onChange={(e) => setModel(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && add()}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="cm-label">Label (optional)</label>
+                <input
+                  id="cm-label"
+                  placeholder="Opus 4.1 (pinned)"
+                  maxLength={MODEL_LABEL_MAX}
+                  value={label}
+                  disabled={busy}
+                  onChange={(e) => setLabel(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && add()}
+                />
+              </div>
+            </div>
+
+            {error && <div className="form-error">{error}</div>}
+
+            <div>
+              <button className="btn primary" onClick={add} disabled={busy || !model.trim()}>
+                {busy ? 'Adding…' : 'Add model'}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+    </>
+  )
+}
+
+// One custom model: its id, its label, what it resolved to, and the two
+// edits the API allows. The id itself is not editable: a different id is a
+// different entry, so it is deleted and added.
+function CustomModelRow({ entry, onChange }: { entry: CustomModel; onChange: () => void }) {
+  const [draft, setDraft] = useState<string | null>(null)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const note = customModelNote(entry)
+
+  const run = async (request: () => Promise<unknown>, after?: () => void) => {
+    setBusy(true)
+    setError('')
+    try {
+      await request()
+      after?.()
+      onChange()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const saveLabel = () =>
+    run(
+      () => api.relabelCustomModel(entry.id, (draft ?? '').trim()),
+      () => setDraft(null),
+    )
+
+  return (
+    <div className="model-row">
+      <div className="model-row-head">
+        <code className="model-id">{entry.model}</code>
+        {draft === null ? (
+          entry.label && <span className="model-label">{entry.label}</span>
+        ) : (
+          <input
+            className="model-label-input"
+            aria-label={`Label for ${entry.model}`}
+            maxLength={MODEL_LABEL_MAX}
+            value={draft}
+            autoFocus
+            disabled={busy}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') saveLabel()
+              if (e.key === 'Escape') setDraft(null)
+            }}
+          />
+        )}
+        <span className="model-row-actions">
+          {draft === null ? (
+            <button className="btn sm" onClick={() => setDraft(entry.label)} disabled={busy}>
+              {entry.label ? 'Relabel' : 'Add label'}
+            </button>
+          ) : (
+            <>
+              <button className="btn sm" onClick={saveLabel} disabled={busy}>
+                Save
+              </button>
+              <button className="btn sm" onClick={() => setDraft(null)} disabled={busy}>
+                Cancel
+              </button>
+            </>
+          )}
+          <button
+            className="btn sm danger"
+            disabled={busy}
+            onClick={() => {
+              if (confirm(`Remove ${entry.model} from the dropdowns? Loops already on it keep it.`)) {
+                run(() => api.deleteCustomModel(entry.id))
+              }
+            }}
+          >
+            Remove
+          </button>
+        </span>
+      </div>
+      {note && <div className="model-note">{note}</div>}
+      {error && <div className="form-error">{error}</div>}
+    </div>
   )
 }

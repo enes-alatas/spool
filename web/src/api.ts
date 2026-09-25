@@ -211,6 +211,31 @@ export interface RulesView {
   budget: RulesBudget
 }
 
+// What a model resolves to on this hub (#332, ADR-0033). resolved is the id
+// the model runs as, "" until the hub has one; source says how it learned
+// it: "probe" is the hub's zero-token run at start, "turn" a real turn's
+// init, which wins. cli_version is the CLI the probe ran, "" for a turn.
+export interface ModelResolution {
+  model: string
+  resolved: string
+  source: '' | 'probe' | 'turn'
+  cli_version: string
+  resolved_at: number
+}
+
+// A model id the operator added to the dropdowns. label is optional ("").
+export interface CustomModel extends ModelResolution {
+  id: string
+  label: string
+}
+
+// Everything a model dropdown needs. aliases is the families the hub
+// offers, in the order it offers them; custom is ordered as added.
+export interface ModelList {
+  aliases: ModelResolution[]
+  custom: CustomModel[]
+}
+
 export interface Settings {
   claude_token_set: boolean
   // Whether this hub was started to allow an uncontained loop (--runtime bare
@@ -454,6 +479,12 @@ export const api = {
   patchRule: (id: string, body: Partial<{ title: string; body: string; enabled: boolean }>) =>
     req<FleetRule>(`/api/rules/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteRule: (id: string) => req<void>(`/api/rules/${id}`, { method: 'DELETE' }),
+  models: () => req<ModelList>('/api/models'),
+  addCustomModel: (body: { model: string; label: string }) =>
+    req<CustomModel>('/api/models/custom', { method: 'POST', body: JSON.stringify(body) }),
+  relabelCustomModel: (id: string, label: string) =>
+    req<CustomModel>(`/api/models/custom/${id}`, { method: 'PATCH', body: JSON.stringify({ label }) }),
+  deleteCustomModel: (id: string) => req<void>(`/api/models/custom/${id}`, { method: 'DELETE' }),
   // Secret values are write-only: the list returns names only.
   loopSecrets: (name: string) => req<LoopSecret[]>(`/api/loops/${name}/secrets`),
   setLoopSecret: (name: string, key: string, value: string) =>

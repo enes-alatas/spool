@@ -60,3 +60,22 @@ function digits(value: string): boolean {
 export function startsInFleetChannel(existing: readonly unknown[]): boolean {
   return existing.length > 0
 }
+
+// Why a typed model id can't be sent, or '' when it can: the refusals POST
+// /api/models/custom answers 400 with (#332), checked before the request so
+// the sentence lands beside the field. A leading dash is refused because the
+// id is handed to the CLI as --model's value, where it reads as a flag. Loop
+// create and the loop's model PATCH check none of these, so on both Custom…
+// entries (New loop and the loop page) this is the only gate: an id with a
+// space in it would reach --model and be refused only at the loop's next
+// turn. The caller trims first. Labels are capped at the list's own limit.
+export const MODEL_ID_MAX = 200
+export const MODEL_LABEL_MAX = 100
+
+export function customModelError(model: string): string {
+  if (model === '') return 'Enter a model id.'
+  if (model.startsWith('-')) return 'A model id cannot start with a dash.'
+  if (/\s/.test(model)) return 'A model id has no spaces.'
+  if (model.length > MODEL_ID_MAX) return `A model id is at most ${MODEL_ID_MAX} characters.`
+  return ''
+}

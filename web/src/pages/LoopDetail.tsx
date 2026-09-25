@@ -13,9 +13,10 @@ import {
   Turn,
 } from '../api'
 import { formatTokens, fillTone, hasFillPct, formatUsd, nextWake } from '../format'
-import { tokenSubmittable } from '../forms'
+import { customModelError, tokenSubmittable } from '../forms'
 import { missionDraft, missionSaveResult, missionSaveWarning } from '../mission'
-import { MODEL_OPTIONS, EFFORT_OPTIONS, PACING_OPTIONS } from '../options'
+import { EFFORT_OPTIONS, PACING_OPTIONS } from '../options'
+import { useModelOptions } from '../models'
 import { useStream } from '../stream'
 import { toEntries, extractDelta } from '../timeline'
 import { MessageKnot } from '../components/MessageKnot'
@@ -74,13 +75,47 @@ function ScheduleEditor({
 // loop's next wake.
 function ModelPanel({ loop }: { loop: LoopView }) {
   const qc = useQueryClient()
+  const modelOptions = useModelOptions()
+  // Null while the select shows a model; a string while the operator types a
+  // one-off id under Custom…, the same entry New loop has (#332).
+  const [custom, setCustom] = useState<string | null>(null)
+  const [error, setError] = useState('')
   const patch = (body: Record<string, string>) =>
     api.patchLoop(loop.name, body).then(() => {
       qc.invalidateQueries({ queryKey: ['loop', loop.name] })
       qc.invalidateQueries({ queryKey: ['loops'] })
     })
 
-  const knownModel = MODEL_OPTIONS.some((o) => o.value === loop.model)
+  const chooseModel = (value: string) => {
+    setError('')
+    if (value === '__custom__') {
+      setCustom('')
+      return
+    }
+    setCustom(null)
+    patch({ model: value })
+  }
+
+  // Backing out restores the loop's model in the select, so a refusal of
+  // the abandoned id has nothing left to be about.
+  const cancelCustom = () => {
+    setCustom(null)
+    setError('')
+  }
+
+  const setCustomModel = () => {
+    const model = (custom ?? '').trim()
+    const invalid = customModelError(model)
+    if (invalid) {
+      setError(invalid)
+      return
+    }
+    patch({ model })
+      .then(() => setCustom(null))
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+  }
+
+  const knownModel = modelOptions.some((o) => o.value === loop.model)
 
   return (
     <div className="side-panel">
@@ -88,22 +123,51 @@ function ModelPanel({ loop }: { loop: LoopView }) {
       <div className="row" style={{ alignItems: 'center' }}>
         <span className="k">model</span>
       </div>
-      <select className="panel-select" value={loop.model} onChange={(e) => patch({ model: e.target.value })}>
-        {MODEL_OPTIONS.map((o) => (
+      <select
+        className="panel-select"
+        value={custom === null ? loop.model : '__custom__'}
+        onChange={(e) => chooseModel(e.target.value)}
+      >
+        {modelOptions.map((o) => (
           <option key={o.value} value={o.value}>
             {o.label}
           </option>
         ))}
         {!knownModel && <option value={loop.model}>{loop.model}</option>}
+        <option value="__custom__">Custom…</option>
       </select>
-      {/* What the latest turn actually ran on: an alias or the default says
-          nothing about the version until the CLI reports one (#289). Not
-          while refused: the last turn that ran is not what the loop runs. */}
-      {loop.resolved_model && loop.resolved_model !== loop.model && !loop.model_refusal && (
-        <div className="panel-note">
-          runs as <code>{loop.resolved_model}</code>
+      {custom !== null && (
+        <div className="panel-custom">
+          <input
+            className="panel-input"
+            placeholder="full model id"
+            value={custom}
+            autoFocus
+            onChange={(e) => setCustom(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') setCustomModel()
+              if (e.key === 'Escape') cancelCustom()
+            }}
+          />
+          <button className="btn sm" onClick={setCustomModel} disabled={!custom.trim()}>
+            Set
+          </button>
         </div>
       )}
+      {error && <div className="form-error">{error}</div>}
+      {/* What the latest turn actually ran on: an alias or the default says
+          nothing about the version until the CLI reports one (#289). Not
+          while refused: the last turn that ran is not what the loop runs.
+          Not while a custom id is being typed either: the select reads
+          Custom…, and a note about another model would sit under it. */}
+      {loop.resolved_model &&
+        loop.resolved_model !== loop.model &&
+        !loop.model_refusal &&
+        custom === null && (
+          <div className="panel-note">
+            runs as <code>{loop.resolved_model}</code>
+          </div>
+        )}
       <div className="row" style={{ marginTop: 8 }}>
         <span className="k">effort</span>
       </div>
