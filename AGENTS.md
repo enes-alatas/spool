@@ -29,7 +29,9 @@ humans and each other. This file orients you; it links, it doesn't duplicate.
 - New engine behavior needs a tier-2 test (`itest/`, runs against `fakeclaude`).
 - Prompts/envelopes live in `internal/loop/prompt.go` only; changing them is a
   `feat` and updates tier-2 fixtures.
-- Stdlib-first: argue any new dependency in the PR description, citing an ADR.
+- Stdlib-first: every new dependency takes a human interview and an argument in
+  the PR description; one the shipped binary carries also takes an ADR
+  (CONVENTIONS.md).
 - Secrets never in code, logs, API responses — or evidence: quote credentials
   redacted (≤8 chars + `…`), keep fixtures synthetic, screenshot fixtures rather
   than the live room, and treat a live credential as an incident. No telemetry, ever.
