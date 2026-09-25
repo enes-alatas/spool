@@ -14,7 +14,7 @@ Closes #
 ## ADRs
 
 <!-- Cite any ADR this change relies on or touches (`docs/adr/`); seam changes and new
-dependencies must cite one (docs/QUALITY.md review gates). Write "none" if none. -->
+shipped dependencies must cite one (docs/QUALITY.md review gates). Write "none" if none. -->
 
 -
 

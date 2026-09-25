@@ -175,7 +175,9 @@ workflow and not in its `paths:`.
   This one cannot be mechanical: PR CI cannot fire an issue or schedule event,
   so the run is evidence only a person can go and produce. The reviewer checks
   the link the way they check CI.
-- Seam interface changes and new dependencies cite an ADR in the PR description.
+- Seam interface changes and new shipped dependencies cite an ADR in the PR
+  description; a dev-only dependency is argued there without one, after the
+  same interview (CONVENTIONS.md "Dependencies").
 - Envelope/prompt format changes are `feat` and update the tier-2 fixtures.
 - Loop-authored PRs stay under ~400 changed lines; bigger work is split.
 - Behavior changes update the relevant living doc in the same PR.

@@ -326,9 +326,22 @@ agents — Claude sessions today, Spool's own loops from L2.*
   when behavior or rules changed; an ADR when a constraining decision was made.
 - **Ask vs proceed**: implementation details — reversible choices inside
   existing rules — proceed autonomously. Anything that constrains the future
-  stops for a human interview and gets an ADR: a new dependency, a seam or
-  prompt-contract change, terminology, public API shape, security posture, or
-  spending real plan tokens (tier-3 e2e).
+  stops for a human interview and gets an ADR: a new dependency (a dev-only one
+  skips the ADR, see Dependencies), a seam or prompt-contract change,
+  terminology, public API shape, security posture, or spending real plan tokens
+  (tier-3 e2e).
+- **Dependencies** are stdlib-first in Go and the control room alike (#266).
+  Every new one stops for a human interview, whatever it reaches, and is
+  argued in its PR description. One the shipped binary carries (a module the
+  binary's non-test code imports, or an entry in `web/package.json`
+  `dependencies`) reaches every operator's install, so it also gets an ADR the
+  PR cites, as `modelcontextprotocol/go-sdk` took ADR-0026. A `devDependency`,
+  or a tool that runs only on a maintainer's machine or in CI (a Go module
+  only tests or a `tool` directive use), can be removed without changing what
+  an operator runs, so it takes no ADR, unless it adds or changes a CI gate,
+  which amends ADR-0013 as Vitest did. The manifests are where to look, not a
+  copy here: `go.mod`'s `require` block holds both kinds, so check what
+  imports a module; `web/package.json` splits them itself.
 - **Flag and continue** is the third state, between those two (#192). Where
   stopping would idle a PR, the author may put the question to the operator and
   keep working — but only when the work stays correct under either answer, or
@@ -381,8 +394,8 @@ agents — Claude sessions today, Spool's own loops from L2.*
   they're universal in Go and carry no domain meaning: `err`, `ok`, `ctx`, `i`/`j`
   as numeric loop indices, and `t *testing.T`. The MVP code predates the rule —
   don't add more, and rename what you touch.
-- **Stdlib-first**: a new dependency must be argued for in its PR description.
-  (Current allowlist: `modernc.org/sqlite`.)
+- **Stdlib-first**: see **Dependencies** under Agent workflow; the rule is the
+  same in both languages.
 - Errors: wrap with `fmt.Errorf("…: %w", err)`; sentinel errors as package vars
   (`store.ErrNotFound` pattern); no panics outside `main` wiring.
 - `context.Context` first parameter on anything that blocks or touches I/O.
