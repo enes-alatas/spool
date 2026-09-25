@@ -130,3 +130,20 @@ func TestOperatorCookieLogin(t *testing.T) {
 		t.Error("logout must expire the session cookie")
 	}
 }
+
+// A method a route does not take is 405 with Allow, and a path no route has
+// is 404, both as JSON (#245). Tier 2 runs a binary with no control room
+// embedded, so this proves the answer on that build; the build that embeds
+// one is proved at tier 1 (TestAPIRefusalsAreNeverTheUI).
+func TestAPIMethodAndPathRefusals(t *testing.T) {
+	s := startServer(t, t.TempDir())
+	resp, body := s.do("DELETE", "/api/settings", nil)
+	if resp.StatusCode != http.StatusMethodNotAllowed || resp.Header.Get("Allow") != "GET, PUT" {
+		t.Fatalf("DELETE /api/settings = %d, Allow %q: %s; want 405, Allow GET, PUT",
+			resp.StatusCode, resp.Header.Get("Allow"), body)
+	}
+	resp, body = s.do("GET", "/api/no-such-route", nil)
+	if resp.StatusCode != http.StatusNotFound || !json.Valid(body) {
+		t.Fatalf("GET /api/no-such-route = %d %s, want a JSON 404", resp.StatusCode, body)
+	}
+}

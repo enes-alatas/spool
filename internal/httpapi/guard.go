@@ -81,20 +81,9 @@ func (s *Server) guard(next http.Handler) http.Handler {
 		// The session routes are registered on the mux like everything else,
 		// so the route list stays the route list; what they skip is the
 		// token check, because obtaining the token is what one of them is
-		// for and the other asks for nothing.
-		//
-		// Their method is checked here rather than left to the mux: a
-		// ServeMux only synthesises 405 when no pattern matched at all, and
-		// the control room's catch-all matches every method at every path,
-		// so in the shipped binary a GET would be answered with index.html
-		// at an API URL. These two are the paths where that is reachable
-		// without a credential, and this is where the guard already knows
-		// them.
+		// for and the other asks for nothing. A wrong method on them gets
+		// apiFallback's 405, as on any route (#245).
 		if sessionPath(r.URL.Path) {
-			if r.Method != http.MethodPost {
-				s.jsonErr(w, http.StatusMethodNotAllowed, "%s takes POST", r.URL.Path)
-				return
-			}
 			next.ServeHTTP(w, r)
 			return
 		}

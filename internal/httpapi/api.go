@@ -160,6 +160,9 @@ func (s *Server) Handler() http.Handler {
 		http.NotFound(w, r)
 	})
 
+	// Registered in every build, not just one that embeds the control
+	// room, so tier 2 sees what the shipped binary answers (#245).
+	mux.HandleFunc("/api/", s.apiFallback(mux))
 	if s.WebFS != nil {
 		mux.HandleFunc("/", s.handleUI)
 	}
@@ -1720,6 +1723,34 @@ func (s *Server) handleLoopStream(w http.ResponseWriter, r *http.Request) {
 		}
 		return i.LoopID == id
 	})
+}
+
+// routeMethods are the methods apiFallback asks the mux about.
+var routeMethods = []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete}
+
+// apiFallback answers an /api/ request no route took. A ServeMux synthesises
+// 405 only when no pattern matched at all, and this one, like the control
+// room's catch-all behind it, matches every method at every path; so it asks
+// the mux itself which methods the path would have taken. Some: 405 with
+// Allow. None: 404. Either way JSON, and never index.html at an API URL
+// (#245).
+func (s *Server) apiFallback(mux *http.ServeMux) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var allowed []string
+		for _, method := range routeMethods {
+			probe := r.Clone(r.Context())
+			probe.Method = method
+			if _, pattern := mux.Handler(probe); pattern != "/api/" && pattern != "" {
+				allowed = append(allowed, method)
+			}
+		}
+		if len(allowed) == 0 {
+			s.jsonErr(w, http.StatusNotFound, "no such route: %s", r.URL.Path)
+			return
+		}
+		w.Header().Set("Allow", strings.Join(allowed, ", "))
+		s.jsonErr(w, http.StatusMethodNotAllowed, "%s takes %s", r.URL.Path, strings.Join(allowed, ", "))
+	}
 }
 
 // handleUI serves the embedded SPA with an index.html fallback.
