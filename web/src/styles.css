@@ -1964,8 +1964,13 @@ textarea {
   padding: 14px 16px;
   margin-bottom: 12px;
 }
-.rule-item.disabled {
-  opacity: 0.55;
+/* a disabled rule is inert text, so its text mutes to the token; the buttons
+   stay at full strength, since Enable and Delete still act. Not opacity:
+   0.55 took the badge to 2.16:1 and Delete to 2.46:1, under ADR-0027 §7's
+   floor, which is the colour-nobody-measured that §11 rules out (#348). */
+.rule-item.disabled .rule-title,
+.rule-item.disabled .rule-body {
+  color: var(--text-muted);
 }
 .rule-head {
   display: flex;
