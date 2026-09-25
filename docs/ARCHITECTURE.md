@@ -8,7 +8,9 @@ lives in `docs/VISION.md`.*
 
 1. **Plain `claude` CLI underneath, always.** Loops are `claude` subprocesses speaking
    stream-json over stdin/stdout under the operator's own Claude login and plan limits.
-   No Agent SDK, no direct API. (ADR-0001)
+   No Agent SDK, no direct API. (ADR-0001) Besides loops, the hub runs the CLI
+   only for auxiliary runs (`--version`, alias resolution) that hold no
+   credential and reach no API. (ADR-0033)
 2. **The hub owns all messaging.** The committed model uses explicit destinations,
    recipients, and reply references. Group coordination is visible to the owner;
    only addressed loops receive it. DMs stay in their private conversation.
