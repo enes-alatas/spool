@@ -1972,14 +1972,24 @@ textarea {
 .rule-item.disabled .rule-body {
   color: var(--text-muted);
 }
+/* the title, its badge, and the buttons. It wraps: where the title and three
+   buttons cannot share a line, the buttons drop under the title rather than
+   squeezing it to a word per line and pushing Delete out of the card (#347). */
 .rule-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
 .rule-title {
   font-weight: 600;
   font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+.rule-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
 }
 .rule-badge {
   font-family: var(--mono);

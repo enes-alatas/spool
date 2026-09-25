@@ -179,7 +179,7 @@ export default function Rules() {
           <div className="rule-head">
             <span className="rule-title">{rule.title}</span>
             {!rule.enabled && <span className="rule-badge">disabled</span>}
-            <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+            <span className="rule-actions">
               <button
                 className="btn sm"
                 onClick={() => actOnRule(rule.id, () => api.patchRule(rule.id, { enabled: !rule.enabled }))}
