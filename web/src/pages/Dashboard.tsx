@@ -1,7 +1,7 @@
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api, LoopView, Settings } from '../api'
-import { formatTokens, fillTone, hasFillPct, formatUsd, sumCostToday } from '../format'
+import { formatTokens, fillTone, hasFillPct, formatUsd, nextWake, sumCostToday } from '../format'
 import { StateDot } from '../components/Spool'
 import { FleetChannel } from '../components/FleetChannel'
 import { undeliveredNote } from '../messages'
@@ -126,7 +126,7 @@ function FleetRow({ loop, thresholds }: { loop: LoopView; thresholds?: Settings 
               <span className="only-narrow hot">turn in progress</span>
             </>
           ) : (
-            <Countdown at={loop.next_tick_at} />
+            <Countdown at={nextWake(loop)} />
           )}
         </span>
         <span className="f-ctx">

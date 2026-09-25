@@ -193,6 +193,20 @@ function spoolNote(e: LoopEvent): Note | null {
           `message too long for the model's context window ` +
             `(${p.messages} messages, ${p.chars.toLocaleString('en-US')} characters); not delivered`,
         )
+      case 'model_unrecognized':
+        return plain(
+          `${p.model ? `model ${p.model}` : 'the default model'} not recognized; ` +
+            'the loop holds until its model is changed',
+        )
+      case 'model_retry':
+        // With refused, the refusal was about a model the operator had
+        // already replaced mid-turn, so the turn runs again on the new one.
+        // Without it, an edit released a held loop, which checks the new
+        // model with a turn now.
+        if (p.refused) {
+          return plain(`model ${p.refused} was replaced mid-turn; retrying on ${p.model || 'the default'}`)
+        }
+        return plain(`model changed to ${p.model || 'the default'}; checking it with a turn now`)
       case 'storm_drop':
         return plain(`storm guard: message to @${p.to} dropped (limit ${p.limit_per_hour}/h)`)
       case 'send_failed':

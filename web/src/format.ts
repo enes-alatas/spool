@@ -54,3 +54,11 @@ export interface RotationThresholds {
   context_arm_percent: number
   context_force_percent: number
 }
+
+// When the loop next wakes, as the countdown shows it: 0, the empty dot, while
+// its model is refused. The schedule still holds a tick then, but the actor
+// skips it until the model is changed (#289), so a countdown would promise a
+// wake that does not come.
+export function nextWake(loop: { next_tick_at: number; model_refusal: string }): number {
+  return loop.model_refusal ? 0 : loop.next_tick_at
+}

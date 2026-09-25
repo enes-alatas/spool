@@ -129,3 +129,44 @@ describe('toEntries result costs across a hole', () => {
     ])
   })
 })
+
+describe('toEntries model notes', () => {
+  const notes = (events: LoopEvent[]) =>
+    toEntries(events)
+      .filter((e) => e.kind === 'note')
+      .map((e) => (e.kind === 'note' ? e.text : ''))
+
+  // #289: without its copy a spool subtype renders nothing, and a loop that
+  // stopped taking turns would show no reason in its own timeline.
+  it('says a refused model holds the loop', () => {
+    const refused = ev('spool', 's1', { model: 'claude-nosuch-1', detail: 'x' }, 'model_unrecognized')
+    expect(notes([refused])).toEqual([
+      'model claude-nosuch-1 not recognized; the loop holds until its model is changed',
+    ])
+  })
+
+  it('names the default when the refused model is the default', () => {
+    const refused = ev('spool', 's1', { model: '', detail: 'x' }, 'model_unrecognized')
+    expect(notes([refused])).toEqual([
+      'the default model not recognized; the loop holds until its model is changed',
+    ])
+  })
+
+  it('says a turn on a replaced model runs again on the new one', () => {
+    const retry = ev('spool', 's1', { model: 'haiku', refused: 'claude-nosuch-1' }, 'model_retry')
+    const toDefault = ev('spool', 's1', { model: '', refused: 'claude-nosuch-1' }, 'model_retry')
+    expect(notes([retry, toDefault])).toEqual([
+      'model claude-nosuch-1 was replaced mid-turn; retrying on haiku',
+      'model claude-nosuch-1 was replaced mid-turn; retrying on the default',
+    ])
+  })
+
+  it('says an edit that releases a held loop checks the new model', () => {
+    const release = ev('spool', 's1', { model: 'haiku' }, 'model_retry')
+    const toDefault = ev('spool', 's1', { model: '' }, 'model_retry')
+    expect(notes([release, toDefault])).toEqual([
+      'model changed to haiku; checking it with a turn now',
+      'model changed to the default; checking it with a turn now',
+    ])
+  })
+})
