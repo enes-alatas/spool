@@ -28,6 +28,10 @@ type server struct {
 	baseURL string
 	mcpURL  string
 	cmd     *exec.Cmd
+	// exited closes when the orchestrator process has been reaped and its
+	// output fully copied, and exitErr then says how it ended.
+	exited  chan struct{}
+	exitErr error
 	dataDir string
 	fkState string
 	// operatorToken is the credential the hub minted into this server's data
@@ -114,6 +118,9 @@ func startServerOn(t *testing.T, dataDir, mcpHost string, extraArgs ...string) *
 	cmd.Env = append(os.Environ(), "FAKECLAUDE_STATE="+fkState)
 	cmd.Stdout = io.MultiWriter(os.Stderr, logFile)
 	cmd.Stderr = cmd.Stdout
+	// Wait copies the hub's output through a pipe after the hub is gone;
+	// the delay bounds that if a child ever holds the pipe open.
+	cmd.WaitDelay = 2 * time.Second
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -123,14 +130,26 @@ func startServerOn(t *testing.T, dataDir, mcpHost string, extraArgs ...string) *
 		baseURL: "http://" + addr,
 		mcpURL:  "http://" + net.JoinHostPort("127.0.0.1", mcpPort),
 		cmd:     cmd,
+		exited:  make(chan struct{}),
 		dataDir: dataDir,
 		fkState: fkState,
 		logPath: logPath,
 	}
+	go func() {
+		s.exitErr = cmd.Wait()
+		close(s.exited)
+	}()
 	t.Cleanup(s.stop)
 
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
+		select {
+		case <-s.exited:
+			// A hub that refused its flags looks, at the deadline, just like
+			// one that was slow to start; only this says which it was (#280).
+			t.Fatalf("server exited before it became healthy (%v); its log is above", s.exitErr)
+		default:
+		}
 		resp, err := http.Get(s.baseURL + "/api/health")
 		if err == nil {
 			resp.Body.Close()
@@ -194,13 +213,11 @@ func (s *server) stop() {
 		return
 	}
 	_ = s.cmd.Process.Signal(syscall.SIGTERM)
-	done := make(chan struct{})
-	go func() { _, _ = s.cmd.Process.Wait(); close(done) }()
 	select {
-	case <-done:
+	case <-s.exited:
 	case <-time.After(10 * time.Second):
 		_ = s.cmd.Process.Kill()
-		<-done
+		<-s.exited
 	}
 }
 
