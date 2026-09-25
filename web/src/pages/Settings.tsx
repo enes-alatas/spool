@@ -7,14 +7,14 @@ import { buildFacts, useClaudeVersion, useVersion } from '../version'
 import { loginError } from '../session'
 
 export default function Settings() {
-  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings })
+  const { data: settings, error: loadError } = useQuery({ queryKey: ['settings'], queryFn: api.settings })
 
   return (
     <div className="page measure">
       <h1>Settings</h1>
-      <ClaudeToken settings={settings} />
+      <ClaudeToken settings={settings} loadError={loadError} />
       <CustomModels />
-      <RotationThresholds settings={settings} />
+      <RotationThresholds settings={settings} loadError={loadError} />
       <SessionSection />
       <Build />
     </div>
@@ -88,13 +88,23 @@ function Build() {
   )
 }
 
-function ClaudeToken({ settings }: { settings?: SettingsView }) {
+// The sentence for a failed settings load. Both sections that read the
+// settings say it in their own place, since each is what an operator came to
+// that section to find out.
+function loadFailure(loadError: Error): string {
+  return `Could not load settings: ${loadError.message}`
+}
+
+function ClaudeToken({ settings, loadError }: { settings?: SettingsView; loadError: Error | null }) {
   const qc = useQueryClient()
   const [token, setToken] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const configured = settings?.claude_token_set ?? false
+  // Unknown until the settings arrive. A failed load used to fall through to
+  // "Not configured", which asserts a state nobody read and invites pasting
+  // a token that is already set (#351).
+  const configured = settings?.claude_token_set
 
   const submit = async (value: string) => {
     setBusy(true)
@@ -122,9 +132,18 @@ function ClaudeToken({ settings }: { settings?: SettingsView }) {
       <div className="form">
         <div className="field">
           <label htmlFor="claude-token">Claude setup-token</label>
-          <div className={`token-state${configured ? ' ok' : ''}`}>
-            {configured ? '● Configured' : '○ Not configured'}
-          </div>
+          {settings ? (
+            <div className={`token-state${configured ? ' ok' : ''}`}>
+              {configured ? '● Configured' : '○ Not configured'}
+            </div>
+          ) : loadError ? (
+            // the gap .token-state keeps above the input
+            <div className="form-error" style={{ marginBottom: 8 }}>
+              {loadFailure(loadError)}
+            </div>
+          ) : (
+            <div className="token-state">Checking…</div>
+          )}
           <input
             id="claude-token"
             type="password"
@@ -164,7 +183,7 @@ function ClaudeToken({ settings }: { settings?: SettingsView }) {
 // one pair for the fleet and answers with the effective values, defaults
 // included, so there is no separate "unset" to render: a field always shows
 // the number rotation is actually being judged by.
-function RotationThresholds({ settings }: { settings?: SettingsView }) {
+function RotationThresholds({ settings, loadError }: { settings?: SettingsView; loadError: Error | null }) {
   const qc = useQueryClient()
   // Null until the operator types: the stored values are the source of truth
   // and a draft only overlays them, so a save that lands elsewhere is visible
@@ -245,6 +264,9 @@ function RotationThresholds({ settings }: { settings?: SettingsView }) {
           </div>
         </div>
 
+        {/* The fields are empty and disabled without the stored pair; this
+            says why, where an empty field would otherwise read as unset. */}
+        {!settings && loadError && <div className="form-error">{loadFailure(loadError)}</div>}
         {error && <div className="form-error">{error}</div>}
 
         <div style={{ display: 'flex', gap: 8 }}>
