@@ -1,6 +1,6 @@
 # ADR-0001: Loops are plain `claude` CLI subprocesses
 
-Date: 2026-08-15 (backfilled 2026-08-16) · Status: accepted
+Date: 2026-08-15 (backfilled 2026-08-16) · Status: accepted · Amended: 2026-09-25 (auxiliary runs, ADR-0033)
 
 ## Context
 
@@ -14,6 +14,13 @@ Loops are always plain `claude` subprocesses: `-p --verbose --input-format strea
 --output-format stream-json`, spawned and resumed (`--session-id`/`--resume`) by Spool.
 No Agent SDK, no direct API, no API keys — locally *and* on the hosted service, where
 customers connect their own Claude logins (see VISION).
+
+**Amendment (2026-09-25, #334):** besides a loop's turns, the hub runs the CLI
+for auxiliary runs: `claude --version` at preflight, and alias resolution
+(ADR-0033). An auxiliary run holds no credential, reaches no API, is bounded
+in time and never runs per request. The host `--version` inherits the hub's
+environment until ADR-0033's implementation builds it as alias resolution
+does. An auxiliary run is not a loop and uses no plan.
 
 ## Consequences
 
@@ -66,3 +73,10 @@ its system prompt holds.
   tier 2 cannot answer for them — `cmd/fakeclaude` consumes and ignores each
   one, permissive in exactly the direction that would hide a pin. Do not
   assume either way; record the answers here when someone measures them.
+- **Aliases resolve locally, and init reports the id (added 2026-09-25,
+  #334).** Measured on 2.1.282 on the host and 2.1.281 in the workstation
+  image, with no login, a synthetic key and no reachable API. `--model opus`
+  reported `claude-opus-5-5` in `system/init` and put the same id in the
+  `/v1/messages` body. Init arrived about 1.2 s after start and before any
+  answer from the base URL, which the CLI then retried until killed. ADR-0033's
+  alias resolution rests on both facts.
