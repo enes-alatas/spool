@@ -122,6 +122,11 @@ type Deps struct {
 	// configured. Workstation (contained) runtimes inject it as
 	// CLAUDE_CODE_OAUTH_TOKEN; bare loops use the host login and never call it.
 	ClaudeToken func(ctx context.Context) (string, error)
+	// ObserveModel is told, at each init, what the loop's process reported
+	// for the model it was spawned on: the model list keeps what the
+	// default runtime's aliases run as (ADR-0033). Nil in tests that do not
+	// care.
+	ObserveModel func(l *store.Loop, spawned, resolved string)
 }
 
 // runtimeFor picks the runtime a loop runs on. Unknown kinds return nil —
@@ -854,6 +859,9 @@ func (actor *Actor) handleEvent(ev claude.Event) {
 				// otherwise rotation stays off in total silence, and the loop
 				// rides to the CLI's end-of-window compaction unnoticed
 				actor.log().Warn("context window unknown; rotation will not trigger", "model", actor.activeModel)
+			}
+			if actor.deps.ObserveModel != nil {
+				actor.deps.ObserveModel(&actor.loop, actor.spawnModel, actor.activeModel)
 			}
 		}
 		actor.storeClaudeEvent(ev)

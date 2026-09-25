@@ -15,6 +15,7 @@ const (
 	KindSchedule    = "schedule"    // next_tick_at changed
 	KindAccess      = "access"      // telegram sender allowlist changed
 	KindWorkstation = "workstation" // a loop's workstation liveness changed
+	KindModels      = "models"      // the model list or a resolution on it changed
 	// KindSendRetry asks the surfaces to send an already-persisted message
 	// again, after the operator retried a failed send (#269). It carries
 	// the same payload as KindMessage and is a separate kind precisely so

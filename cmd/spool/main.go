@@ -272,6 +272,8 @@ func main() {
 			return token, err
 		},
 	}
+	models := loop.NewModels(rdb, b, runtimes[defaultRuntime], defaultRuntime, ver, log)
+	deps.ObserveModel = models.Observe
 	manager := loop.NewManager(deps)
 	router = route.New(rdb, b, manager, log)
 	scheduler = sched.New(rdb, b, manager, log)
@@ -287,6 +289,7 @@ func main() {
 	_ = rdb.Sessions().EndDangling(ctx, store.EndReasonCrash, time.Now().UnixMilli())
 
 	go scheduler.Run(ctx)
+	models.Start(ctx)
 	go pruneEvents(ctx, rdb, *retentionDays, log)
 
 	bridge := telegram.NewBridge(rdb, b, router, log, *telegramAPI)
@@ -299,6 +302,7 @@ func main() {
 		Manager:        manager,
 		Router:         router,
 		Sched:          scheduler,
+		Models:         models,
 		Surface:        bridge,
 		DataDir:        *dataDir,
 		ClaudeVer:      ver,

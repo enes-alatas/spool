@@ -98,6 +98,7 @@ func (s *DB) Schedule() store.ScheduleStore      { return schedule{s.db} }
 func (s *DB) Inbox() store.InboxStore            { return inbox{s.db} }
 func (s *DB) Settings() store.SettingsStore      { return settings{s.db} }
 func (s *DB) TGSenders() store.TGSenderStore     { return tgSenders{s.db} }
+func (s *DB) Models() store.ModelStore           { return models{s.db} }
 
 func toJSON(v []string) string {
 	if v == nil {

@@ -201,6 +201,12 @@ opportunistically, not big-bang.
   that lands after an edit replaced that model holds nothing, and the turn is
   retried on the new one. The loop view reports the configured `model` and the
   `resolved_model` its latest turn ran on.
+- **The model list says what each name runs as** (ADR-0033, #332): the
+  dropdowns offer the family aliases and the operator's custom entries, and
+  each shows the id it resolves to on this hub. The hub resolves them at start
+  with a run of the default runtime's CLI that can reach nothing, and a turn
+  on the default runtime and image refreshes its alias. A name nothing has
+  resolved shows bare.
 - **Context is rotated before the wall** (ADR-0022): the CLI's auto-compact
   fires only near a full window, deep in the degradation zone, so the runner
   rotates proactively instead — armed at ~40% fill, run at a quiet boundary

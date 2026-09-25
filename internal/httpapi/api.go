@@ -37,6 +37,9 @@ type Server struct {
 	Manager *loop.Manager
 	Router  *route.Router
 	Sched   *sched.Scheduler
+	// Models is the model list the dropdowns offer, with what each name
+	// runs as on this hub (ADR-0033).
+	Models *loop.Models
 	// Surface is the chat platform loops are reachable on (ADR-0029); nil
 	// when the hub runs without one.
 	Surface   surface.Surface
@@ -132,6 +135,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/rules", s.handleCreateRule)
 	mux.HandleFunc("PATCH /api/rules/{id}", s.handlePatchRule)
 	mux.HandleFunc("DELETE /api/rules/{id}", s.handleDeleteRule)
+	mux.HandleFunc("GET /api/models", s.handleListModels)
+	mux.HandleFunc("POST /api/models/custom", s.handleAddCustomModel)
+	mux.HandleFunc("PATCH /api/models/custom/{id}", s.handlePatchCustomModel)
+	mux.HandleFunc("DELETE /api/models/custom/{id}", s.handleDeleteCustomModel)
 	mux.HandleFunc("GET /api/telegram/senders", s.handleListSenders)
 	mux.HandleFunc("POST /api/telegram/senders/{id}/allow", s.handleSenderStatus(store.SenderAllowed))
 	mux.HandleFunc("POST /api/telegram/senders/{id}/block", s.handleSenderStatus(store.SenderBlocked))

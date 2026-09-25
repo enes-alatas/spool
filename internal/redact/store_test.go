@@ -193,7 +193,7 @@ func TestInterruptedSendErrorIsRedacted(t *testing.T) {
 }
 
 // TestEveryStoreWriteIsClassified walks every sub-interface of the Store
-// seam — all eleven, not just the decorated three — and requires each method
+// seam — all twelve, not just the decorated three — and requires each method
 // to be listed with whether it writes free text a secret could be in.
 //
 // The walk is this wide because the narrow version lied. It covered the three
@@ -272,6 +272,12 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 		},
 		"TGSenderStore": {
 			"Create": false, "SetStatus": false, "Delete": false, "Get": false, "List": false,
+		},
+		"ModelStore": {
+			// A resolution is a model id the CLI reported at init. A custom
+			// entry is an operator-typed model id and label, like a rule.
+			"SetResolution": false, "AddCustom": false, "SetCustomLabel": false,
+			"DeleteCustom": false, "Resolutions": false, "ListCustom": false,
 		},
 	}
 
