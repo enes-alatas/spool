@@ -62,3 +62,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - #329 merged. #330 (#289 backend, refused model holds the loop) approved by Quinn 20:51, awaiting Enes. #333 (#331 no em dashes) changes requested 20:50, Iris folded, Quinn re-review pending. L2: 12 open. Nothing to nudge until morning.
 - 11:05: nothing moved overnight. Nudged Quinn (#333 re-review), Terra (start #334 while #330 awaits merge), DM'd Enes for #330 merge. Runtime v0.2.0-57.
 - 11:10: Quinn serializes merge asks (strict up-to-date ruleset); Terra's one-PR-in-flight rule blocks him until merge. Proposed to Enes: (1) in-flight ends at approval; (2) batch asks or spaced merges. Awaiting his call.
+- 12:25: #330, #333, #335 merged (#289 web half done). #322, #189, #76, #316 closed. Iris → #323 (react-router v7) while #332 waits on Terra's #334 → #332 backend.
