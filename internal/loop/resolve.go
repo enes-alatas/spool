@@ -284,6 +284,15 @@ func (m *Models) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// ValidLoopModel is validModel for a loop's own model, where empty is not
+// missing but the CLI's default (#341).
+func ValidLoopModel(model string) error {
+	if model == "" {
+		return nil
+	}
+	return validModel(model)
+}
+
 // validModel rejects what cannot be a model id. A leading dash is refused
 // because the id is handed to the CLI as the value of --model, where it
 // would read as a flag.

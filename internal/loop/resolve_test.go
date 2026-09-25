@@ -136,6 +136,21 @@ func TestModelsAProbeDoesNotOverwriteATurnSinceStart(t *testing.T) {
 	}
 }
 
+// A loop's own model is handed to --model as the list's entries are, so it
+// is held to the same rule; only empty differs, being the CLI's default.
+func TestValidLoopModel(t *testing.T) {
+	for _, good := range []string{"", "opus", "claude-opus-4-1"} {
+		if err := ValidLoopModel(good); err != nil {
+			t.Errorf("ValidLoopModel(%q) = %v, want nil", good, err)
+		}
+	}
+	for _, bad := range []string{"-p", "--dangerously-skip-permissions", "claude opus", string(make([]byte, maxModelLen+1))} {
+		if err := ValidLoopModel(bad); !errors.Is(err, ErrInvalidModel) {
+			t.Errorf("ValidLoopModel(%q) = %v, want ErrInvalidModel", bad, err)
+		}
+	}
+}
+
 func TestModelsAddValidates(t *testing.T) {
 	m, _ := newTestModels(t, map[string]string{"claude-opus-4-1": "claude-opus-4-1"})
 	ctx := context.Background()
