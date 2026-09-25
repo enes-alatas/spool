@@ -66,3 +66,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 12:30: Enes: (1) yes, in-flight ends at approval; (2) no, merge asks stay serialized. Relayed in group; asked Enes to edit Terra's/Iris's mission line so it survives rotation.
 - 12:35: closed #289 (#329/#330/#335). L2 11 open. Status to Enes: Terra's Go list is the long pole (~2 days); Iris #336 (v7) up, then #332 web.
 - 12:40: #336 approved, Iris free → #266 docs, then assess #264 vs #294/#300. Asked Terra to post #332's API shape early so Iris can build ahead.
+- 12:45: #264 closed as covered by #294/#300 (Iris's assessment).
