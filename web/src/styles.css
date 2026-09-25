@@ -1386,6 +1386,41 @@ textarea {
   text-align: right;
   word-break: break-all;
 }
+/* the Attach Slack step: three instructions, the manifest, and the way out
+   to Slack. The manifest scrolls in its own well rather than stretching the
+   side column by sixty lines; it is there to be copied, not read through. */
+.slack-step {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 0.8125rem;
+}
+.slack-step ol {
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.slack-step code {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+}
+.slack-step .hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.slack-manifest {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  background: var(--canvas);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: 8px 10px;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre;
+}
 /* how full the model's own context window is */
 .ctx-fill {
   position: relative;

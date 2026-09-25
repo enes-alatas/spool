@@ -14,6 +14,7 @@ import {
 } from '../api'
 import { formatTokens, fillTone, hasFillPct, formatUsd, nextWake } from '../format'
 import { customModelError, tokenSubmittable } from '../forms'
+import { slackCreateAppURL, slackManifest } from '../slackManifest'
 import { missionDraft, missionSaveResult, missionSaveWarning } from '../mission'
 import { EFFORT_OPTIONS, PACING_OPTIONS } from '../options'
 import { useModelOptions } from '../models'
@@ -709,9 +710,20 @@ function SecretsPanel({ loop }: { loop: LoopView }) {
 // old copy sent the operator to "loop settings" for a control that was never
 // built, so the only way to change a token was the API; the 2026-09-18
 // rotation was three curl calls (#157).
-function BotTokenForm({ loop }: { loop: LoopView }) {
+//
+// Opened by a caller that owns the choice of surface (`startOpen`), it is
+// that step alone and hands the choice back on close (`onClose`).
+function BotTokenForm({
+  loop,
+  startOpen,
+  onClose,
+}: {
+  loop: LoopView
+  startOpen?: boolean
+  onClose?: () => void
+}) {
   const qc = useQueryClient()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(startOpen ?? false)
   const [token, setToken] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -720,6 +732,7 @@ function BotTokenForm({ loop }: { loop: LoopView }) {
     setOpen(false)
     setToken('')
     setError('')
+    onClose?.()
   }
 
   const save = async () => {
@@ -788,6 +801,10 @@ function BotTokenForm({ loop }: { loop: LoopView }) {
 function SurfacesPanel({ loop }: { loop: LoopView }) {
   const qc = useQueryClient()
   const [error, setError] = useState('')
+  // Which surface's step is open on a loop with none. One at a time: the
+  // choice is a row of buttons until it is made, then that surface's step
+  // alone, and closing the step brings the row back.
+  const [attaching, setAttaching] = useState<'' | 'telegram' | 'slack'>('')
 
   const patch = useMutation({
     mutationFn: (req: Parameters<typeof api.patchLoop>[1]) => api.patchLoop(loop.name, req),
@@ -835,7 +852,20 @@ function SurfacesPanel({ loop }: { loop: LoopView }) {
       ) : (
         <>
           <div className="panel-empty">No surface: this loop talks to you here only.</div>
-          <BotTokenForm loop={loop} />
+          {attaching === '' && (
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button className="btn sm" style={{ marginTop: 10 }} onClick={() => setAttaching('telegram')}>
+                Attach Telegram
+              </button>
+              <button className="btn sm" style={{ marginTop: 10 }} onClick={() => setAttaching('slack')}>
+                Attach Slack
+              </button>
+            </div>
+          )}
+          {attaching === 'telegram' && (
+            <BotTokenForm loop={loop} startOpen onClose={() => setAttaching('')} />
+          )}
+          {attaching === 'slack' && <SlackStep loop={loop} onClose={() => setAttaching('')} />}
         </>
       )}
       <label className="switch-row">
@@ -856,6 +886,62 @@ function SurfacesPanel({ loop }: { loop: LoopView }) {
         </span>
       </label>
       {error && <div className="form-error">{error}</div>}
+    </div>
+  )
+}
+
+// Attaching Slack, as far as it goes before the surface exists (#345): the
+// app the loop will run as, for the operator to create and install now. The
+// tokens it yields have nowhere to go until #230, and the step says so rather
+// than offering fields that would store nothing.
+function SlackStep({ loop, onClose }: { loop: LoopView; onClose: () => void }) {
+  const manifest = useMemo(() => slackManifest(loop.name), [loop.name])
+  const text = useMemo(() => JSON.stringify(manifest, null, 2), [manifest])
+  const [copied, setCopied] = useState<'' | 'ok' | 'failed'>('')
+
+  // The clipboard API exists only in a secure context: a hub reached over
+  // plain http on a LAN address has none, so the failure says what to do
+  // instead of leaving a button that did nothing.
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied('ok')
+    } catch {
+      setCopied('failed')
+    }
+  }
+
+  return (
+    <div className="slack-step">
+      <ol>
+        <li>
+          Create the loop's Slack app from this manifest, in the workspace the loop will work in. The link
+          opens Slack with it filled in.
+        </li>
+        <li>
+          Install it to the workspace. The bot token, <code>xoxb-…</code>, is under OAuth &amp; Permissions.
+        </li>
+        <li>
+          Under Basic Information, generate an app-level token, <code>xapp-…</code>, with the{' '}
+          <code>connections:write</code> scope. A manifest cannot create this one.
+        </li>
+      </ol>
+      <pre className="slack-manifest">{text}</pre>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <a className="btn sm primary" href={slackCreateAppURL(manifest)} target="_blank" rel="noreferrer">
+          Create app from manifest
+        </a>
+        <button className="btn sm" onClick={copy}>
+          {copied === 'ok' ? 'Copied' : 'Copy manifest'}
+        </button>
+        <button className="btn sm" onClick={onClose}>
+          Close
+        </button>
+      </div>
+      {copied === 'failed' && (
+        <div className="form-error">The browser refused the clipboard; select the text instead.</div>
+      )}
+      <div className="hint">Token paste arrives with the Slack surface (#230).</div>
     </div>
   )
 }
