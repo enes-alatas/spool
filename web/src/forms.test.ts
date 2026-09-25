@@ -75,8 +75,8 @@ describe('startsInFleetChannel', () => {
 })
 
 describe('customModelError', () => {
-  // The same refusals as the API's 400 (#332), and the only gate on the loop
-  // page's Custom… entry, whose PATCH checks none of them.
+  // The same refusals as the API's 400 (#332, #341), made before the request
+  // so the sentence lands beside the Custom… entry.
   it('passes an id', () => {
     expect(customModelError('claude-opus-4-1')).toBe('')
   })

@@ -422,6 +422,12 @@ func (s *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 		s.jsonErr(w, 400, "effort must be one of: low, medium, high, xhigh, max (or empty for default)")
 		return
 	}
+	// Trimmed as the model list trims what it is given.
+	req.Model = strings.TrimSpace(req.Model)
+	if err := loop.ValidLoopModel(req.Model); err != nil {
+		s.jsonErr(w, 400, "%v", err)
+		return
+	}
 	if !validPacing(req.Pacing) {
 		s.jsonErr(w, 400, "pacing must be 'fixed' or 'self'")
 		return
@@ -670,6 +676,14 @@ func (s *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 		// reading, and the column would take one: it is NOT NULL DEFAULT ''.
 		s.jsonErr(w, 400, "mission is required")
 		return
+	}
+	if req.Model != nil {
+		model := strings.TrimSpace(*req.Model)
+		req.Model = &model
+		if err := loop.ValidLoopModel(model); err != nil {
+			s.jsonErr(w, 400, "%v", err)
+			return
+		}
 	}
 	// Built as an edit rather than applied to l: the loop was read before
 	// the token round-trip below, and writing that copy back reverts

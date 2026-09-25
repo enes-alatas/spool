@@ -64,8 +64,8 @@ export default function NewLoop() {
 
   const create = async () => {
     const chosenModel = model === '__custom__' ? customModel.trim() : model
-    // Loop create passes the model straight to --model, so this is the only
-    // gate between a typo and a loop refused at its first turn.
+    // Loop create refuses the same ids (#341); checked here too so the
+    // sentence lands beside the field rather than after the request.
     const invalid = model === '__custom__' ? customModelError(chosenModel) : ''
     if (invalid) {
       setError(invalid)

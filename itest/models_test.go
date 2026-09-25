@@ -4,6 +4,7 @@ package itest
 
 import (
 	"encoding/json"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -185,4 +186,39 @@ func TestATurnOnTheDefaultRuntimeRefreshesItsAlias(t *testing.T) {
 		}
 		return false
 	})
+}
+
+// A loop's own model is the value after --model, so the create and edit
+// paths refuse what the model list refuses: one that reads as a flag would
+// not be a model at all (#341). Empty still means the CLI's default.
+func TestALoopsModelCannotReadAsAFlag(t *testing.T) {
+	s := startServer(t, t.TempDir())
+
+	resp, body := s.do("POST", "/api/loops", map[string]any{
+		"name": "flagged", "mission": "Keep the ledger.", "model": "--dangerously-skip-permissions",
+	})
+	if resp.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), "cannot start with a dash") {
+		t.Fatalf("create with a flag for a model: %d %s, want 400 naming the dash", resp.StatusCode, body)
+	}
+	if resp, _ := s.do("GET", "/api/loops/flagged", nil); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("GET the refused loop: %d, want 404: a refused create writes nothing", resp.StatusCode)
+	}
+
+	s.createLoop("keeper", map[string]any{"model": " haiku "})
+	if got := s.loop("keeper").Model; got != "haiku" {
+		t.Fatalf("model = %q, want it trimmed as the model list trims", got)
+	}
+	for _, bad := range []string{"-p", "claude opus"} {
+		resp, body := s.do("PATCH", "/api/loops/keeper", map[string]any{"model": bad})
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("PATCH model %q: %d %s, want 400", bad, resp.StatusCode, body)
+		}
+	}
+	if got := s.loop("keeper").Model; got != "haiku" {
+		t.Fatalf("model = %q, want the refused edits to have written nothing", got)
+	}
+	s.mustJSON("PATCH", "/api/loops/keeper", map[string]any{"model": ""}, nil)
+	if got := s.loop("keeper").Model; got != "" {
+		t.Fatalf("model = %q, want empty: the CLI's default is still a choice", got)
+	}
 }

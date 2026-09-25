@@ -62,13 +62,12 @@ export function startsInFleetChannel(existing: readonly unknown[]): boolean {
 }
 
 // Why a typed model id can't be sent, or '' when it can: the refusals POST
-// /api/models/custom answers 400 with (#332), checked before the request so
-// the sentence lands beside the field. A leading dash is refused because the
-// id is handed to the CLI as --model's value, where it reads as a flag. Loop
-// create and the loop's model PATCH check none of these, so on both Custom…
-// entries (New loop and the loop page) this is the only gate: an id with a
-// space in it would reach --model and be refused only at the loop's next
-// turn. The caller trims first. Labels are capped at the list's own limit.
+// /api/models/custom answers 400 with (#332), and loop create and the loop's
+// model PATCH with it (#341). The API is the gate; this is checked before the
+// request only so the sentence lands beside the field, on both Custom…
+// entries (New loop and the loop page). A leading dash is refused because the
+// id is handed to the CLI as --model's value, where it reads as a flag. The
+// caller trims first. Labels are capped at the list's own limit.
 export const MODEL_ID_MAX = 200
 export const MODEL_LABEL_MAX = 100
 
