@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, type UIEvent } from 'react'
-import { useParams, useNavigate, useSearchParams } from 'react-router'
+import { Link, useParams, useNavigate, useSearchParams } from 'react-router'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import {
   api,
+  ApiError,
   ChatMessage,
   EVENT_WINDOW,
   LoopEvent,
@@ -14,6 +15,7 @@ import {
 } from '../api'
 import { formatTokens, fillTone, hasFillPct, formatUsd, nextWake } from '../format'
 import { customModelError, tokenSubmittable } from '../forms'
+import { needsLogin } from '../session'
 import { slackCreateAppURL, slackManifest } from '../slackManifest'
 import { missionDraft, missionSaveResult, missionSaveWarning } from '../mission'
 import { EFFORT_OPTIONS, PACING_OPTIONS } from '../options'
@@ -1060,6 +1062,11 @@ function ControlRoomThread({ msgs }: { msgs: ChatMessage[] }) {
 
 type Pane = 'timeline' | 'control_room' | 'undelivered'
 
+// Whether the hub answered that there is no such loop.
+function isMissing(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 404
+}
+
 export default function LoopDetail() {
   const { name = '' } = useParams()
   const nav = useNavigate()
@@ -1098,10 +1105,14 @@ export default function LoopDetail() {
     setPane(next)
   }
 
-  const { data: loop } = useQuery({
+  const { data: loop, error: loopError } = useQuery({
     queryKey: ['loop', name],
     queryFn: () => api.loop(name),
     refetchInterval: 10000,
+    // The global rule plus one: a 404 is an answer, not a blip, and
+    // retrying it only holds "Loading…" on screen for the length of the
+    // backoff before saying there is no such loop (#349).
+    retry: (failureCount, error) => !needsLogin(error) && !isMissing(error) && failureCount < 3,
   })
   const { data: events, error: eventsError } = useQuery({
     queryKey: ['events', name],
@@ -1398,7 +1409,29 @@ export default function LoopDetail() {
     }
   }
 
-  if (!loop) return <div className="page measure placeholder">Loading…</div>
+  if (!loop) {
+    // A failed load is not a slow one (#349). A missing loop is the case an
+    // operator reaches by a stale link or a typo, so it says so and offers
+    // the way back; anything else says what went wrong.
+    if (!loopError) return <div className="page measure placeholder">Loading…</div>
+    return (
+      <div className="page measure">
+        <h1>@{name}</h1>
+        {isMissing(loopError) ? (
+          <>
+            <p className="page-lede">There is no loop called @{name} on this hub.</p>
+            <Link to="/" className="btn sm">
+              Back to the fleet
+            </Link>
+          </>
+        ) : (
+          <div className="form-error">
+            Could not load @{name}: {loopError.message}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   const paused = loop.status === 'paused'
   // A loop outside the fleet channel has no group to post to. The choice is
