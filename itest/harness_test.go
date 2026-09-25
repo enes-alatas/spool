@@ -89,9 +89,9 @@ func startServerOn(t *testing.T, dataDir, mcpHost string, extraArgs ...string) *
 		}
 	}
 
-	addr := freeAddr(t, "127.0.0.1")
 	// The API always stays on loopback, where nothing inside the wall can go.
-	mcpAddr := freeAddr(t, mcpHost)
+	addrs := freeAddrs(t, "127.0.0.1", mcpHost)
+	addr, mcpAddr := addrs[0], addrs[1]
 	_, mcpPort, _ := net.SplitHostPort(mcpAddr)
 
 	fkState := filepath.Join(dataDir, "fkstate")
@@ -171,16 +171,22 @@ func (s *server) port(rawURL string) string {
 	return port
 }
 
-// freeAddr reserves a port by binding and releasing it: the orchestrator
-// binds it a moment later, and nothing else on the machine is racing for it.
-func freeAddr(t *testing.T, host string) string {
+// freeAddrs reserves one port per host by binding and releasing it: the
+// orchestrator binds them a moment later, and nothing else on the machine is
+// racing for them. Every port is held until all are drawn, so no two of them
+// can be the same one (#280).
+func freeAddrs(t *testing.T, hosts ...string) []string {
 	t.Helper()
-	l, err := net.Listen("tcp", host+":0")
-	if err != nil {
-		t.Fatal(err)
+	addrs := make([]string, 0, len(hosts))
+	for _, host := range hosts {
+		l, err := net.Listen("tcp", host+":0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = l.Close() }()
+		addrs = append(addrs, net.JoinHostPort(host, strconv.Itoa(l.Addr().(*net.TCPAddr).Port)))
 	}
-	defer l.Close()
-	return net.JoinHostPort(host, strconv.Itoa(l.Addr().(*net.TCPAddr).Port))
+	return addrs
 }
 
 func (s *server) stop() {
