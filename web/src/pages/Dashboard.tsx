@@ -1,4 +1,4 @@
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
 import { api, LoopView, Settings } from '../api'
 import { formatTokens, fillTone, hasFillPct, formatUsd, nextWake, sumCostToday } from '../format'
