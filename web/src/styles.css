@@ -472,6 +472,13 @@ textarea {
   background: var(--danger);
   box-shadow: 0 0 6px var(--danger);
 }
+/* the loop's model was refused (#289): stopped like paused, hence the square,
+   and the operator's to fix, hence the colour; no glow, which is kept for a
+   workstation that died */
+.state-model_unrecognized {
+  background: var(--danger);
+  border-radius: 2px;
+}
 /* a message the surface never took: the fault belongs to the message, so it
    reads as an annotation on it rather than as another message in the thread */
 .undelivered {
@@ -784,7 +791,7 @@ textarea {
 .fleet-row .note.bad {
   color: var(--danger);
 }
-/* the column is sized for the longest state name (workstation_down): these
+/* the column is sized for the longest state name (model_unrecognized): these
    are single identifiers, and breaking one across lines invents a word. The
    heading shares the layout and nothing else — its type is the heading row's,
    set on `.fleet-cols`, the same as the four labels beside it. */
@@ -887,7 +894,7 @@ textarea {
     grid-area: identity;
   }
   /* The name and the state share one line here. A state is an identifier and
-     would rather not break, but `workstation_down` at a large text size is
+     would rather not break, but `model_unrecognized` at a large text size is
      wider than half a narrow screen, and squeezing the name to nothing to
      keep the state intact is the wrong trade: the name is what the operator
      is looking for. So the state yields first. */

@@ -5,6 +5,11 @@ export interface LoopView {
   name: string
   mission: string
   model: string
+  // The CLI's sentence refusing \`model\`, recorded when a turn failed on the
+  // API's 404 (#289); '' when the model is not refused. While it is set the
+  // loop is \`model_unrecognized\` and takes no turns; an edit of the model
+  // clears it.
+  model_refusal: string
   workspace_mode: 'none' | 'dir' | 'worktree'
   workspace_path: string
   repo_path: string
@@ -27,6 +32,8 @@ export interface LoopView {
   current_pid: number
   created_at: number
   updated_at: number
+  // busy, idle, waking, draining, asleep, paused, workstation_off,
+  // workstation_down or model_unrecognized (#289).
   state: string
   next_tick_at: number
   cost_today_usd: number
@@ -42,6 +49,9 @@ export interface LoopView {
   // Occupancy as a percentage of the window, computed by the server so the
   // gauge and rotation judge the same number (0 = unmeasured).
   context_fill_pct: number
+  // The model id the CLI reported for the latest turn: what an alias like
+  // "opus" resolved to, or the configured id itself. '' before any turn (#289).
+  resolved_model: string
   // How many messages this loop sent never reached their surface and that
   // nobody has dealt with: no successful retry, no dismissal (#202, #269). No age
   // limit — a failure stops counting when someone resolves it, not when a

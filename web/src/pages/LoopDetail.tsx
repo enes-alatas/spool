@@ -12,7 +12,7 @@ import {
   TGSender,
   Turn,
 } from '../api'
-import { formatTokens, fillTone, hasFillPct, formatUsd } from '../format'
+import { formatTokens, fillTone, hasFillPct, formatUsd, nextWake } from '../format'
 import { tokenSubmittable } from '../forms'
 import { missionDraft, missionSaveResult, missionSaveWarning } from '../mission'
 import { MODEL_OPTIONS, EFFORT_OPTIONS, PACING_OPTIONS } from '../options'
@@ -96,6 +96,14 @@ function ModelPanel({ loop }: { loop: LoopView }) {
         ))}
         {!knownModel && <option value={loop.model}>{loop.model}</option>}
       </select>
+      {/* What the latest turn actually ran on: an alias or the default says
+          nothing about the version until the CLI reports one (#289). Not
+          while refused: the last turn that ran is not what the loop runs. */}
+      {loop.resolved_model && loop.resolved_model !== loop.model && !loop.model_refusal && (
+        <div className="panel-note">
+          runs as <code>{loop.resolved_model}</code>
+        </div>
+      )}
       <div className="row" style={{ marginTop: 8 }}>
         <span className="k">effort</span>
       </div>
@@ -1246,6 +1254,14 @@ export default function LoopDetail() {
                 Workstation down{loop.workstation_detail ? `: ${loop.workstation_detail}` : ''}
               </div>
             ))}
+          {/* On the refusal rather than the state: a dead workstation outranks
+              model_unrecognized, and the model still needs changing (#289). */}
+          {loop.model_refusal && (
+            <div className="ws-down-note">
+              Model refused. Claude Code said: “{loop.model_refusal}” The loop takes no turns, and keeps what
+              it is told, until its model is changed under Model &amp; pacing.
+            </div>
+          )}
           <div className="dest-picker" style={{ marginTop: 0, marginBottom: 12 }}>
             <button
               className={`dest${pane === 'timeline' ? ' on' : ''}`}
@@ -1339,7 +1355,7 @@ export default function LoopDetail() {
         <aside>
           <div className="side-panel">
             <h3>Next wake</h3>
-            <Countdown at={loop.next_tick_at} />
+            <Countdown at={nextWake(loop)} />
             <div className="row">
               <span className="k">today</span>
               <span className="v" title={loop.cost_day ? `spend on ${loop.cost_day}` : undefined}>

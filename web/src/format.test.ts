@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { fillTone, hasFillPct, formatTokens, formatUsd, sumCostToday } from './format'
+import { fillTone, hasFillPct, formatTokens, formatUsd, nextWake, sumCostToday } from './format'
 
 describe('hasFillPct', () => {
   // #122: a server older than `context_fill_pct` sends nothing, the field
@@ -63,5 +63,13 @@ describe('formatUsd', () => {
   it('always shows cents', () => {
     expect(formatUsd(0)).toBe('$0.00')
     expect(formatUsd(12.5)).toBe('$12.50')
+  })
+})
+
+describe('nextWake', () => {
+  // A refused loop keeps its schedule entry, and the actor skips the tick.
+  it('shows no wake while the model is refused', () => {
+    expect(nextWake({ next_tick_at: 1000, model_refusal: 'refused' })).toBe(0)
+    expect(nextWake({ next_tick_at: 1000, model_refusal: '' })).toBe(1000)
   })
 })
