@@ -117,6 +117,7 @@ secret-scan:
 workflow-lint:
 	bash scripts/workflow-lint-test.sh
 	bash scripts/ci-health-test.sh
+	bash scripts/diff-coverage-test.sh
 
 e2e-m1: server
 	bash scripts/e2e/m1.sh

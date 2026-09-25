@@ -166,8 +166,12 @@ check pending forever, which is why the filtering happens inside the
 workflow and not in its `paths:`.
 
 **CI (informational, never blocking):**
-- Diff coverage of changed lines, posted on the PR. Reviewer judgment + the
-  tier-2-test-required convention carry the real weight; no numeric gate to Goodhart.
+- Diff coverage of changed lines, in the `checks` job's summary on every PR
+  (`scripts/diff-coverage.sh`, #2): of the Go statements the PR adds or edits
+  outside test files, how many ran under tier 1, partly or not at all, and the
+  line ranges to look at, per file. Tier 1 only, so a line only `itest`
+  reaches reads as not run. Reviewer judgment + the tier-2-test-required
+  convention carry the real weight; no numeric gate to Goodhart.
 
 **Review (human):**
 - A PR touching an event-driven workflow links a green dispatched run from its
