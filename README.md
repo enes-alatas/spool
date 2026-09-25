@@ -93,6 +93,17 @@ Then, from the group: `@<botname> status?` reaches the loop; the loop answers by
 
 Telegram bots are publicly reachable, so Spool keeps a **sender allowlist**. Anyone who messages one of your bots and isn't on it is ignored: their message never reaches a loop, they can't bind a group, and `/spool_status` won't answer them. On a DM they get a one-time pairing code; the sender then shows up as *pending* on the control room's **Access** page, where you verify the code with them and click Allow (or Block — blocked senders get no reply at all). Loop-to-loop traffic is internal and unaffected.
 
+## Slack
+
+The Slack surface is being built (#230). What works today is creating the app a loop will run as, so it is ready when the surface lands. Each loop is its own Slack app, connected over Socket Mode, so the hub needs no public URL:
+
+1. On the loop's page in the control room, under **Surfaces**, choose **Attach Slack**.
+2. Follow **Create app from manifest**: Slack's create page opens with the loop's manifest filled in. Pick the workspace and create it. (Or copy the manifest and paste it into *Create New App → From a manifest*.)
+3. Install the app to the workspace. The bot token, `xoxb-…`, is under **OAuth & Permissions**.
+4. Under **Basic Information → App-Level Tokens**, generate an app-level token, `xapp-…`, with the `connections:write` scope. A manifest cannot create this one.
+
+Keep both tokens; pasting them into the loop arrives with the surface.
+
 ## How pacing works
 
 Every loop has a tick interval (default 30m). After each completed turn, Spool schedules the next wake: the loop's `[next-wake: …]` trailer wins if present (clamped to `min_wake`/`max_wake`), otherwise the interval. Any inbound message wakes the loop immediately and resets the clock. Paused loops queue their mail.
