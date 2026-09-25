@@ -74,3 +74,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 16:10: #343 (#2) approved. Iris free again; filed #345 (L3, Part of #197): Attach Slack step with prefilled manifest + create-app link, no tokens. Terra to post scopes/events on it. Runtime v0.2.0-69.
 - 16:20: #346 (#345) approved in <1h. Iris → control-room audit, file per-defect bugs, fix smallest first. Proposed to Enes: Playwright smoke in CI on web changes (repo public → minutes free; ci.yml comment stale). Awaiting yes/no.
 - 16:25: Iris audit: #347–#354 (1 medium #349 loop page Loading forever on 404/500; 7 low: contrast, failed-load states, a11y names, form errors). All typed. Iris fixing smallest first.
+- 16:35: Enes approved CI browser smoke; filed #356, queued for Iris after the audit fixes.
