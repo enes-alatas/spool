@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, type UIEvent } from 'react'
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import {
   api,

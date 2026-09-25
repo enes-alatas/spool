@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
 import { MODEL_OPTIONS, EFFORT_OPTIONS, PACING_OPTIONS, RUNTIME_OPTIONS, runtimeNote } from '../options'

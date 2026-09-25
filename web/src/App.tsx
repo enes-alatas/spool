@@ -1,4 +1,4 @@
-import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
+import { Link, NavLink, Outlet, useLocation } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
 import { api } from './api'
 import { useGlobalStream } from './stream'
