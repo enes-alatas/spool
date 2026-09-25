@@ -59,6 +59,8 @@ type Runtime struct {
 	healthAt  time.Time
 	fleet     map[string]runtime.Health
 	fleetErr  error
+
+	sweepOnce sync.Once // resolution containers a stopped hub left behind
 }
 
 // Options configures a docker runtime. Only Bin and HealthTTL have defaults;

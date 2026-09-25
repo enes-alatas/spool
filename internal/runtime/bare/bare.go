@@ -14,6 +14,7 @@ package bare
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -212,4 +213,50 @@ func (proc *hostProc) PID() int {
 		return 0
 	}
 	return proc.cmd.Process.Pid
+}
+
+// ResolveModel runs the host's claude with model and returns the id its init
+// reports (ADR-0033). The run's environment is built from nothing, and its
+// base URL is a loopback port held for the run and never read: no other
+// process can be listening there, and nothing the CLI sends is answered.
+func (host *Runtime) ResolveModel(ctx context.Context, model string) (string, error) {
+	hold, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = hold.Close() }()
+	home, err := os.MkdirTemp("", "spool-aux-")
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = os.RemoveAll(home) }()
+	args, err := claude.ResolveArgs(model)
+	if err != nil {
+		return "", err
+	}
+
+	cmd := exec.Command(host.bin, args...)
+	cmd.Dir = home
+	cmd.Env = claude.AuxEnv(os.Getenv("PATH"), home, "http://"+hold.Addr().String())
+	cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGTERM}
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return "", err
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", err
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return "", err
+	}
+	if err := cmd.Start(); err != nil {
+		return "", fmt.Errorf("claude: start %s: %w", host.bin, err)
+	}
+	defer func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	}()
+	return claude.ResolvedModel(ctx, claude.Attach(stdin, stdout, stderr))
 }

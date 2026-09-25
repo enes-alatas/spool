@@ -126,6 +126,12 @@ type Runtime interface {
 
 	// Health reports whether the loop's workstation is up.
 	Health(ctx context.Context, loopID string) (Health, error)
+
+	// ResolveModel reports the model id that model runs as under the claude
+	// this runtime gives a loop by default, read from the init event of a run
+	// that holds no credential and can reach nothing (ADR-0033). The run is
+	// ended at init; ctx bounds it.
+	ResolveModel(ctx context.Context, model string) (string, error)
 }
 
 // Proc is a claude process running inside a workstation, speaking
