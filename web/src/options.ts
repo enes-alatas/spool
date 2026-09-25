@@ -1,18 +1,53 @@
+import type { ModelList } from './api'
+
 // Shared dropdown options for model / effort / pacing.
 
-// Values are what the `claude` CLI's --model accepts. The list names only the
-// four family aliases, which the CLI resolves to that family's latest model,
-// so a Claude Code release that adds a model leaves it current (#289). A
-// full model ID, to pin one version or reach one the aliases don't, goes in
-// the form's custom field, and nothing here enumerates versions. The labels
-// describe a family, not a version, for the same reason.
-export const MODEL_OPTIONS = [
-  { value: '', label: 'Default (claude config)' },
-  { value: 'fable', label: 'fable · the most capable family' },
-  { value: 'opus', label: 'opus · deep agentic work' },
-  { value: 'sonnet', label: 'sonnet · balanced' },
-  { value: 'haiku', label: 'haiku · fast & cheap' },
-]
+// Values are what the `claude` CLI's --model accepts. The hub names the
+// families it offers and what each resolves to on this machine (#332), so a
+// Claude Code release that moves an alias to a new model shows here without
+// a web change, and nothing in this file enumerates versions (#289). A full
+// id the operator keeps offering goes on the custom list in Settings; a
+// one-off goes in the form's Custom… field.
+export interface ModelOption {
+  value: string
+  label: string
+}
+
+export const DEFAULT_MODEL_OPTION: ModelOption = { value: '', label: 'Default (claude config)' }
+
+// What each family is for, shown while the hub has no id for it. Keyed by
+// alias: a family the hub offers that this build has no words for still
+// shows, as its bare name.
+const FAMILY_NOTES: Record<string, string> = {
+  fable: 'the most capable family',
+  opus: 'deep agentic work',
+  sonnet: 'balanced',
+  haiku: 'fast & cheap',
+}
+
+// The families to offer before the hub has answered, or on a hub that
+// predates GET /api/models: the four the CLI has always accepted.
+const FALLBACK_FAMILIES = ['fable', 'opus', 'sonnet', 'haiku']
+
+// The model dropdown's options: the default, then each family the hub
+// offers, then the operator's custom models. A resolved family reads as
+// `opus · claude-opus-5-5`, which is the question the operator asked the
+// dropdown (#332); an unresolved one keeps its description. A custom model
+// reads as `label · id`, or its id alone.
+export function modelOptions(list?: ModelList): ModelOption[] {
+  const families = list?.aliases ?? FALLBACK_FAMILIES.map((model) => ({ model, resolved: '' }))
+  return [
+    DEFAULT_MODEL_OPTION,
+    ...families.map(({ model, resolved }) => {
+      const detail = resolved || FAMILY_NOTES[model]
+      return { value: model, label: detail ? `${model} · ${detail}` : model }
+    }),
+    ...(list?.custom ?? []).map(({ model, label }) => ({
+      value: model,
+      label: label ? `${label} · ${model}` : model,
+    })),
+  ]
+}
 
 export const EFFORT_OPTIONS = [
   { value: '', label: 'Default effort' },
@@ -66,4 +101,16 @@ export function runtimeNote(kind: string): RuntimeNote {
     }
   }
   return { text: 'The loop runs in its own container: its own filesystem, its own network.', warn: false }
+}
+
+// What the Settings list says about a custom model's resolution, or '' when
+// there is nothing to say. A full id usually resolves to itself, and saying
+// so would be noise; one that resolves elsewhere, or not yet, is news. The
+// probe can't tell whether the API knows an id, so a resolved id can still be
+// refused at the loop's first turn (#330); this says what the CLI reported,
+// never that the model works.
+export function customModelNote(entry: { model: string; resolved: string }): string {
+  if (entry.resolved === '') return 'not resolved yet'
+  if (entry.resolved !== entry.model) return `runs as ${entry.resolved}`
+  return ''
 }

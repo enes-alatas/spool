@@ -1671,6 +1671,76 @@ textarea {
   font-family: var(--mono);
   font-size: 0.75rem;
 }
+/* the one-off id under the model select's Custom…: the field takes the
+   width, Set sits beside it, and the id is mono like the minutes field */
+.panel-custom {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 6px;
+}
+.panel-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--canvas);
+  border-radius: 5px;
+  padding: 2px 6px;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+}
+
+/* ---- custom models (Settings) ----
+   A row per id: the id in mono, since it is what --model receives; the label
+   beside it in the body face; the edits at the end. The same card as a fleet
+   rule, lighter, since a row carries one line rather than a paragraph. */
+.model-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.model-row {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+.model-row-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.model-id {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+.model-label {
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+}
+.model-label-input {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 6px;
+  font-size: 0.8125rem;
+}
+.model-row-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.model-note {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+/* the id field takes what --model takes, so it reads as one */
+.field input.mono {
+  font-family: var(--mono);
+}
 
 /* ---- activity feed ---- */
 .feed-item {

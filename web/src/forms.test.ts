@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { rotationGate, tokenSubmittable, startsInFleetChannel } from './forms'
+import { customModelError, MODEL_ID_MAX, rotationGate, tokenSubmittable, startsInFleetChannel } from './forms'
 
 describe('tokenSubmittable', () => {
   // #165: PATCH reads an empty `tg_bot_token` as *disconnect*, so a Save that
@@ -71,5 +71,21 @@ describe('startsInFleetChannel', () => {
 
   it('counts archived loops, as the server does', () => {
     expect(startsInFleetChannel([{ status: 'archived' }])).toBe(true)
+  })
+})
+
+describe('customModelError', () => {
+  // The same refusals as the API's 400 (#332), and the only gate on the loop
+  // page's Custom… entry, whose PATCH checks none of them.
+  it('passes an id', () => {
+    expect(customModelError('claude-opus-4-1')).toBe('')
+  })
+
+  it('refuses an empty id, a leading dash, a space inside one, and one over the limit', () => {
+    expect(customModelError('')).toMatch(/Enter a model id/)
+    expect(customModelError('--dangerously-skip-permissions')).toMatch(/dash/)
+    expect(customModelError('claude opus')).toMatch(/no spaces/)
+    expect(customModelError('x'.repeat(MODEL_ID_MAX))).toBe('')
+    expect(customModelError('x'.repeat(MODEL_ID_MAX + 1))).toMatch(/at most 200/)
   })
 })
