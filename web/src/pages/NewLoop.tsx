@@ -4,7 +4,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
 import { EFFORT_OPTIONS, PACING_OPTIONS, RUNTIME_OPTIONS, runtimeNote } from '../options'
 import { useModelOptions } from '../models'
-import { useHubRuntime } from '../version'
 import { customModelError, startsInFleetChannel } from '../forms'
 
 export default function NewLoop() {
@@ -28,7 +27,6 @@ export default function NewLoop() {
   // loop at all. Both are constants under a running server; the form reads
   // them rather than assuming docker, because on a single-machine install the
   // default is bare and the warning belongs on every creation (#255).
-  const { data: health } = useHubRuntime()
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings })
   // `null` until the operator touches the switch, so the default follows the
   // fleet list if it loads after the form. Until that list answers there is
@@ -37,15 +35,15 @@ export default function NewLoop() {
   const { data: fleet } = useQuery({ queryKey: ['loops'], queryFn: api.loops })
   const [inChannel, setInChannel] = useState<boolean | null>(null)
   const joinsChannel = inChannel ?? (fleet ? startsInFleetChannel(fleet) : undefined)
-  // Until both have answered the form knows nothing about this hub, and a
+  // Until the settings have answered the form knows nothing about this hub, and a
   // guess is worse than the silence it replaces: a create that names `docker`
   // on a bare-only hub is refused, where one that names nothing was always
   // right. So an unanswered hub sends no runtime and says it is still asking
   // — and it stays that way if the request failed, rather than settling into
   // a wrong answer that submits.
-  const hubKnown = health !== undefined && settings !== undefined
+  const hubKnown = settings !== undefined
   const bareAllowed = settings?.bare_allowed === true
-  const chosenRuntime = runtime || (hubKnown ? (health?.runtime ?? 'docker') : '')
+  const chosenRuntime = runtime || (settings?.default_runtime ?? '')
   const note = chosenRuntime
     ? runtimeNote(chosenRuntime)
     : { text: 'Asking this hub what it runs loops as…', warn: false }

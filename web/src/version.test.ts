@@ -49,11 +49,11 @@ describe('buildFacts', () => {
     ])
   })
 
-  it('leaves out the Claude version until the health check has answered', () => {
+  it('leaves out the Claude version until the settings have answered', () => {
     expect(buildFacts(built).some((f) => f.label === 'Claude Code')).toBe(false)
   })
 
-  it('leaves it out when the health check answers with nothing to say', () => {
+  it('leaves it out when the settings answer with nothing to say', () => {
     expect(buildFacts(built, '  ').some((f) => f.label === 'Claude Code')).toBe(false)
   })
 })
