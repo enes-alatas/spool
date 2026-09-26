@@ -51,16 +51,16 @@ type Person struct {
 // something the handle does not. Someone with neither is named by id — not
 // addressable, but visible, which is the honest rendering of a person the
 // fleet knows and cannot mention.
-func (p Person) Label() string {
+func (person Person) Label() string {
 	switch {
-	case p.Username != "" && p.Display != "" && !strings.EqualFold(p.Username, p.Display):
-		return "@" + p.Username + " (" + p.Display + ")"
-	case p.Username != "":
-		return "@" + p.Username
-	case p.Display != "":
-		return p.Display
+	case person.Username != "" && person.Display != "" && !strings.EqualFold(person.Username, person.Display):
+		return "@" + person.Username + " (" + person.Display + ")"
+	case person.Username != "":
+		return "@" + person.Username
+	case person.Display != "":
+		return person.Display
 	default:
-		return fmt.Sprintf("telegram user %d (no handle — you cannot mention them)", p.TGUserID)
+		return fmt.Sprintf("telegram user %d (no handle — you cannot mention them)", person.TGUserID)
 	}
 }
 
@@ -99,30 +99,30 @@ type Conversations struct {
 }
 
 // ConversationsOf reads a loop's conversations off its row.
-func ConversationsOf(l *store.Loop) Conversations {
-	c := Conversations{Group: !l.OutsideFleetChannel}
-	if l.TGBotToken != "" {
-		c.Surface = "Telegram"
+func ConversationsOf(loopRecord *store.Loop) Conversations {
+	conversations := Conversations{Group: !loopRecord.OutsideFleetChannel}
+	if loopRecord.TGBotToken != "" {
+		conversations.Surface = "Telegram"
 	}
-	return c
+	return conversations
 }
 
 // Destinations lists the loop's destinations in the order the prompt
 // teaches them.
-func (c Conversations) Destinations() []string {
-	var d []string
-	if c.Surface != "" {
-		d = append(d, store.ConversationOwnerDM)
+func (conversations Conversations) Destinations() []string {
+	var destinations []string
+	if conversations.Surface != "" {
+		destinations = append(destinations, store.ConversationOwnerDM)
 	}
-	if c.Group {
-		d = append(d, store.ConversationGroup)
+	if conversations.Group {
+		destinations = append(destinations, store.ConversationGroup)
 	}
-	return append(d, store.ConversationControlRoom)
+	return append(destinations, store.ConversationControlRoom)
 }
 
 // private lists the loop's private destinations.
-func (c Conversations) private() []string {
-	if c.Surface != "" {
+func (conversations Conversations) private() []string {
+	if conversations.Surface != "" {
 		return []string{store.ConversationOwnerDM, store.ConversationControlRoom}
 	}
 	return []string{store.ConversationControlRoom}
@@ -134,40 +134,40 @@ func (c Conversations) private() []string {
 // identical between wakes. The API measures this exact text against the
 // section cap, so the budget an operator sees is the budget the prompt pays.
 func FleetRulesSection(rules []*store.FleetRule) string {
-	var b strings.Builder
-	n := 0
-	for _, r := range rules {
-		if !r.Enabled {
+	var text strings.Builder
+	count := 0
+	for _, rule := range rules {
+		if !rule.Enabled {
 			continue
 		}
-		if n == 0 {
-			b.WriteString("FLEET RULES\n")
+		if count == 0 {
+			text.WriteString("FLEET RULES\n")
 		}
-		n++
-		fmt.Fprintf(&b, "%d. %s\n", n, strings.TrimSpace(r.Title))
-		for _, line := range strings.Split(strings.TrimSpace(r.Body), "\n") {
-			fmt.Fprintf(&b, "   %s\n", line)
+		count++
+		fmt.Fprintf(&text, "%d. %s\n", count, strings.TrimSpace(rule.Title))
+		for _, line := range strings.Split(strings.TrimSpace(rule.Body), "\n") {
+			fmt.Fprintf(&text, "   %s\n", line)
 		}
 	}
-	if n == 0 {
+	if count == 0 {
 		return ""
 	}
-	b.WriteString("Where a fleet rule and your mission conflict, the fleet rule wins.")
-	return b.String()
+	text.WriteString("Where a fleet rule and your mission conflict, the fleet rule wins.")
+	return text.String()
 }
 
 // section renders WHO YOU CAN ADDRESS: the identities this loop can name,
 // and what is missing when it cannot reach someone. Addressing is the one
 // thing a loop cannot work out for itself — a name it guesses reaches
 // nobody, and a mention it invents is a message that silently goes nowhere.
-func (cat Catalog) section(l *store.Loop) string {
-	var b strings.Builder
-	b.WriteString("WHO YOU CAN ADDRESS\n")
-	self := "@" + l.Name
+func (cat Catalog) section(loopRecord *store.Loop) string {
+	var text strings.Builder
+	text.WriteString("WHO YOU CAN ADDRESS\n")
+	self := "@" + loopRecord.Name
 	if cat.BotUsername != "" {
 		self += ", posting in telegram as @" + cat.BotUsername
 	}
-	fmt.Fprintf(&b, "- You are %s.\n", self)
+	fmt.Fprintf(&text, "- You are %s.\n", self)
 
 	conv := cat.Conversations
 	askIn := "in the group"
@@ -177,17 +177,17 @@ func (cat Catalog) section(l *store.Loop) string {
 	switch {
 	case conv.Surface == "":
 		if cat.Owner != nil {
-			fmt.Fprintf(&b, "- Your owner is %s.\n", cat.Owner.Label())
+			fmt.Fprintf(&text, "- Your owner is %s.\n", cat.Owner.Label())
 		}
-		b.WriteString("- You have no surface attached, so there is no owner_dm: control_room\n" +
+		text.WriteString("- You have no surface attached, so there is no owner_dm: control_room\n" +
 			"  is your private line to the operator.\n")
 	case cat.Owner == nil:
-		fmt.Fprintf(&b, "- You have no owner configured, so owner_dm has nobody to reach.\n"+
+		fmt.Fprintf(&text, "- You have no owner configured, so owner_dm has nobody to reach.\n"+
 			"  Ask %s for the operator to set one.\n", askIn)
 	case cat.OwnerDMReady:
-		fmt.Fprintf(&b, "- Your owner is %s; owner_dm reaches them privately.\n", cat.Owner.Label())
+		fmt.Fprintf(&text, "- Your owner is %s; owner_dm reaches them privately.\n", cat.Owner.Label())
 	default:
-		fmt.Fprintf(&b, `- Your owner is %s, but there is no private chat with
+		fmt.Fprintf(&text, `- Your owner is %s, but there is no private chat with
   them yet: a bot cannot open one, so owner_dm is refused until they
   message your bot once. Ask %s rather than retrying.
 `, cat.Owner.Label(), askIn)
@@ -195,45 +195,45 @@ func (cat Catalog) section(l *store.Loop) string {
 
 	switch {
 	case !conv.Group:
-		b.WriteString("- You are not in the fleet channel: no other loop can reach you, and\n" +
+		text.WriteString("- You are not in the fleet channel: no other loop can reach you, and\n" +
 			"  you cannot reach them.\n")
 	case len(cat.Peers) > 0:
-		b.WriteString("- The other loops in the fleet channel, and what each is for — @mention\n" +
+		text.WriteString("- The other loops in the fleet channel, and what each is for — @mention\n" +
 			"  one in the group to reach it; a name not on this list reaches nobody:\n")
-		for _, p := range cat.Peers {
-			mission := strings.TrimSpace(p.Mission)
+		for _, peer := range cat.Peers {
+			mission := strings.TrimSpace(peer.Mission)
 			if i := strings.IndexByte(mission, '\n'); i >= 0 {
 				mission = mission[:i]
 			}
-			fmt.Fprintf(&b, "    @%s — %s\n", p.Name, truncate(mission, 120))
-			if p.BotUsername != "" {
-				fmt.Fprintf(&b, "      (posts as @%s in telegram)\n", p.BotUsername)
+			fmt.Fprintf(&text, "    @%s — %s\n", peer.Name, truncate(mission, 120))
+			if peer.BotUsername != "" {
+				fmt.Fprintf(&text, "      (posts as @%s in telegram)\n", peer.BotUsername)
 			}
 		}
 	default:
-		b.WriteString("- No other loops are in the fleet channel right now.\n")
+		text.WriteString("- No other loops are in the fleet channel right now.\n")
 	}
 
 	// People are reached by mention, which only the group carries.
 	if conv.Group && len(cat.People) > 0 {
-		b.WriteString("- The people who can talk to this fleet:\n")
+		text.WriteString("- The people who can talk to this fleet:\n")
 		for _, person := range cat.People {
-			fmt.Fprintf(&b, "    %s\n", person.Label())
+			fmt.Fprintf(&text, "    %s\n", person.Label())
 		}
-		b.WriteString("  @mentioning a person in the group is public: everyone there sees it.\n")
+		text.WriteString("  @mentioning a person in the group is public: everyone there sees it.\n")
 		if conv.Surface != "" {
-			b.WriteString("  Only owner_dm and control_room are private, and only the owner has a DM.\n")
+			text.WriteString("  Only owner_dm and control_room are private, and only the owner has a DM.\n")
 		} else {
-			b.WriteString("  Only control_room is private.\n")
+			text.WriteString("  Only control_room is private.\n")
 		}
 	}
-	return b.String()
+	return text.String()
 }
 
 // missionSection renders MISSION: the loop's own standing instructions, as
 // against the fleet's.
-func missionSection(l *store.Loop) string {
-	return "MISSION\n" + strings.TrimSpace(l.Mission)
+func missionSection(loopRecord *store.Loop) string {
+	return "MISSION\n" + strings.TrimSpace(loopRecord.Mission)
 }
 
 // SystemPrompt builds the per-loop --append-system-prompt text. Enabled
@@ -241,64 +241,64 @@ func missionSection(l *store.Loop) string {
 // so a mission cannot opt out of them. spoolVersion is the build doing the
 // waking, as the binary reports it; "" leaves that line out rather than
 // telling a loop it runs on nothing.
-func SystemPrompt(l *store.Loop, cat Catalog, rules []*store.FleetRule, spoolVersion string) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "You are %q, a long-running autonomous loop managed by Spool.\n\n", l.Name)
+func SystemPrompt(loopRecord *store.Loop, cat Catalog, rules []*store.FleetRule, spoolVersion string) string {
+	var text strings.Builder
+	fmt.Fprintf(&text, "You are %q, a long-running autonomous loop managed by Spool.\n\n", loopRecord.Name)
 	if section := FleetRulesSection(rules); section != "" {
-		b.WriteString(section + "\n\n")
+		text.WriteString(section + "\n\n")
 	}
-	b.WriteString(missionSection(l) + "\n\n")
+	text.WriteString(missionSection(loopRecord) + "\n\n")
 
 	conv := cat.Conversations
-	b.WriteString(howThisWorks(conv))
-	b.WriteString(versionLine(spoolVersion))
+	text.WriteString(howThisWorks(conv))
+	text.WriteString(versionLine(spoolVersion))
 
-	if l.Pacing == store.PacingSelf {
-		fmt.Fprintf(&b, `- YOU own your schedule. ALWAYS end your reply with a trailer on its own
+	if loopRecord.Pacing == store.PacingSelf {
+		fmt.Fprintf(&text, `- YOU own your schedule. ALWAYS end your reply with a trailer on its own
   line saying when you should next wake: [next-wake: 45m]  (range %s–%s).
   Pick the time your mission actually needs: short when something is in motion,
   long when the situation is quiet. If you ever omit the trailer you will be
   woken after %s as a fallback.
 
-`, dur(l.MinWakeSec), dur(l.MaxWakeSec), dur(l.TickIntervalSec))
+`, dur(loopRecord.MinWakeSec), dur(loopRecord.MaxWakeSec), dur(loopRecord.TickIntervalSec))
 	} else {
-		fmt.Fprintf(&b, `- To control when you next wake, end your reply with a trailer on its own
+		fmt.Fprintf(&text, `- To control when you next wake, end your reply with a trailer on its own
   line: [next-wake: 45m]  (range %s–%s; omit to use the default interval of %s).
 
-`, dur(l.MinWakeSec), dur(l.MaxWakeSec), dur(l.TickIntervalSec))
+`, dur(loopRecord.MinWakeSec), dur(loopRecord.MaxWakeSec), dur(loopRecord.TickIntervalSec))
 	}
 
-	b.WriteString(cat.section(l) + "\n")
+	text.WriteString(cat.section(loopRecord) + "\n")
 
-	b.WriteString("WORKSPACE\n")
+	text.WriteString("WORKSPACE\n")
 	switch {
-	case l.Runtime == store.RuntimeDocker:
-		fmt.Fprintf(&b, "You work in %s inside your own persistent workstation: your home directory,\nanything you install, and processes you leave running survive across wakes.\n\n", l.WorkspacePath)
-	case l.WorkspaceMode == store.WorkspaceWorktree:
-		fmt.Fprintf(&b, "You work in %s, an isolated git worktree on branch %s.\nCommit your work to this branch; never switch branches.\n\n", l.WorkspacePath, l.Branch)
-	case l.WorkspaceMode == store.WorkspaceDir:
-		fmt.Fprintf(&b, "You work in %s (not a git repo managed by Spool).\n\n", l.WorkspacePath)
+	case loopRecord.Runtime == store.RuntimeDocker:
+		fmt.Fprintf(&text, "You work in %s inside your own persistent workstation: your home directory,\nanything you install, and processes you leave running survive across wakes.\n\n", loopRecord.WorkspacePath)
+	case loopRecord.WorkspaceMode == store.WorkspaceWorktree:
+		fmt.Fprintf(&text, "You work in %s, an isolated git worktree on branch %s.\nCommit your work to this branch; never switch branches.\n\n", loopRecord.WorkspacePath, loopRecord.Branch)
+	case loopRecord.WorkspaceMode == store.WorkspaceDir:
+		fmt.Fprintf(&text, "You work in %s (not a git repo managed by Spool).\n\n", loopRecord.WorkspacePath)
 	default:
-		b.WriteString("You have no workspace; you are a conversational loop.\n\n")
+		text.WriteString("You have no workspace; you are a conversational loop.\n\n")
 	}
 
-	b.WriteString("CONDUCT\n- Keep messages concise; they are chat, not reports.\n")
+	text.WriteString("CONDUCT\n- Keep messages concise; they are chat, not reports.\n")
 	if conv.Group {
-		fmt.Fprintf(&b, `- What you learn in a private conversation (%s) stays
+		fmt.Fprintf(&text, `- What you learn in a private conversation (%s) stays
   private: never quote or relay it in a group message unless the person it
   came from asks you to.
 `, strings.Join(conv.private(), ", "))
 	}
-	b.WriteString(`- Between wakes you do not exist: leave notes in your status note or commit
+	text.WriteString(`- Between wakes you do not exist: leave notes in your status note or commit
   work so future turns have context.
 - If you are blocked and need a human, send a message that says exactly what
 `)
 	if conv.Group {
-		fmt.Fprintf(&b, "  you need: privately via %s, or @mention them in the\n  group when others should see it.", strings.Join(conv.private(), " or "))
+		fmt.Fprintf(&text, "  you need: privately via %s, or @mention them in the\n  group when others should see it.", strings.Join(conv.private(), " or "))
 	} else {
-		fmt.Fprintf(&b, "  you need, via %s.", strings.Join(conv.private(), " or "))
+		fmt.Fprintf(&text, "  you need, via %s.", strings.Join(conv.private(), " or "))
 	}
-	return b.String()
+	return text.String()
 }
 
 // howThisWorks renders HOW THIS WORKS for the conversations the loop has:
@@ -317,8 +317,8 @@ func howThisWorks(conv Conversations) string {
 	}
 	examples = append(examples, `"[message from enes via web · control_room · ref:43 · ...]"`)
 
-	var b strings.Builder
-	fmt.Fprintf(&b, `HOW THIS WORKS
+	var text strings.Builder
+	fmt.Fprintf(&text, `HOW THIS WORKS
 - You are woken periodically (ticks) and whenever someone sends you a message.
 - Incoming messages arrive as user turns with a bracketed header naming the
   sender and the conversation it belongs to, e.g.
@@ -330,21 +330,21 @@ func howThisWorks(conv Conversations) string {
   message to one destination:
 `, strings.Join(examples, " or\n  "))
 	if conv.Surface != "" {
-		fmt.Fprintf(&b, `    owner_dm      your owner's private %s chat — the same person
+		fmt.Fprintf(&text, `    owner_dm      your owner's private %s chat — the same person
                   whatever the turn is about, so you can raise something
                   privately on a tick, not only in reply
 `, conv.Surface)
 	}
 	if conv.Group {
-		b.WriteString(`    group         the fleet channel, shared by this fleet and visible to
+		text.WriteString(`    group         the fleet channel, shared by this fleet and visible to
                   your owner; only the loops and people you @mention in the
                   text receive it
 `)
 	}
-	b.WriteString("    control_room  your private thread with the operator in the Spool web UI\n")
+	text.WriteString("    control_room  your private thread with the operator in the Spool web UI\n")
 
 	if conv.Group {
-		b.WriteString(`- A new group message must @mention at least one known loop or person. Do
+		text.WriteString(`- A new group message must @mention at least one known loop or person. Do
   not @mention yourself. Private text never fans out: names mentioned in
   it receive nothing, @all included.
 - @all in a group message reaches every other loop in the fleet channel at
@@ -361,7 +361,7 @@ func howThisWorks(conv Conversations) string {
   call and retry. Never work around an error by switching destination.
 `)
 	} else {
-		b.WriteString(`- You have no group, so nothing you send fans out: names you @mention
+		text.WriteString(`- You have no group, so nothing you send fans out: names you @mention
   receive nothing, @all included.
 - Every header carries that message's reference ("ref:42"). Pass it as
   reply_to to answer that exact message. Only a reference you were
@@ -372,11 +372,11 @@ func howThisWorks(conv Conversations) string {
   call and retry. Never work around an error by switching destination.
 `)
 	}
-	b.WriteString(`- Your final reply text is a private status note: it appears in the control
+	text.WriteString(`- Your final reply text is a private status note: it appears in the control
   room timeline but is delivered to nobody. Not every turn needs a message —
   ending an exchange without one is often right.
 `)
-	return b.String()
+	return text.String()
 }
 
 // PromptHash identifies a rendered system prompt. It is compared with the
@@ -427,25 +427,25 @@ type Prompt struct {
 // envelope headers by example, so the transcript gained a plausible
 // "ref:42" in a position that reads like an arriving message, which is
 // exactly the invented reference ADR-0025 exists to prevent.
-func StandingInstructionsPreamble(l *store.Loop, cat Catalog, rules []*store.FleetRule, spoolVersion string) string {
-	var b strings.Builder
-	b.WriteString("[system note · your standing instructions changed]\n\n")
-	b.WriteString("These are current and replace what the system prompt at the top of this\n" +
+func StandingInstructionsPreamble(loopRecord *store.Loop, cat Catalog, rules []*store.FleetRule, spoolVersion string) string {
+	var text strings.Builder
+	text.WriteString("[system note · your standing instructions changed]\n\n")
+	text.WriteString("These are current and replace what the system prompt at the top of this\n" +
 		"session says; that prompt was written when the session started and cannot\n" +
 		"be rewritten while it runs. Where the two disagree, this note wins. Other\n" +
 		"parts of the prompt may have changed too and are not repeated here; the\n" +
 		"whole of it catches up when your context next rotates.\n\n")
-	b.WriteString(missionSection(l) + "\n\n")
+	text.WriteString(missionSection(loopRecord) + "\n\n")
 	if section := FleetRulesSection(rules); section != "" {
-		b.WriteString(section + "\n\n")
+		text.WriteString(section + "\n\n")
 	} else {
-		b.WriteString("FLEET RULES\nThere are no fleet rules in force.\n\n")
+		text.WriteString("FLEET RULES\nThere are no fleet rules in force.\n\n")
 	}
-	b.WriteString(cat.section(l))
+	text.WriteString(cat.section(loopRecord))
 	if line := versionLine(spoolVersion); line != "" {
-		b.WriteString("\n" + line)
+		text.WriteString("\n" + line)
 	}
-	return b.String()
+	return text.String()
 }
 
 // versionLine tells a loop which build woke it. One bullet, in both
@@ -477,15 +477,15 @@ type Envelope struct {
 // conversationKey is what the actor batches turns by: the conversation kind,
 // plus the DM chat so distinct DMs never share a turn. Ticks and legacy
 // queued envelopes key separately from any conversation.
-func (e Envelope) conversationKey() string {
-	if e.Trigger == store.TriggerTick {
+func (env Envelope) conversationKey() string {
+	if env.Trigger == store.TriggerTick {
 		return "tick"
 	}
-	return fmt.Sprintf("%s:%d", e.Conversation, e.TGChatID)
+	return fmt.Sprintf("%s:%d", env.Conversation, env.TGChatID)
 }
 
-func header(now time.Time, s string) string {
-	return fmt.Sprintf("[%s · %s]", s, now.UTC().Format("2006-01-02 15:04 UTC"))
+func header(now time.Time, label string) string {
+	return fmt.Sprintf("[%s · %s]", label, now.UTC().Format("2006-01-02 15:04 UTC"))
 }
 
 // MessageRef renders a message's reply reference — the token a loop reads in
@@ -553,19 +553,19 @@ func MessageEnvelope(now time.Time, in Inbound) Envelope {
 }
 
 // TickEnvelope formats a scheduler tick.
-func TickEnvelope(now time.Time, l *store.Loop) Envelope {
+func TickEnvelope(now time.Time, loopRecord *store.Loop) Envelope {
 	ts := now.UTC().Format("2006-01-02 15:04 UTC")
-	if l.Pacing == store.PacingSelf {
+	if loopRecord.Pacing == store.PacingSelf {
 		head := fmt.Sprintf("[tick · %s · self-paced]", ts)
 		body := fmt.Sprintf(`Continue working toward your mission. If nothing needs doing right now, reply
 with a one-line status note. Remember: you schedule yourself — end your reply
-with [next-wake: ...] (allowed range: %s–%s).`, dur(l.MinWakeSec), dur(l.MaxWakeSec))
+with [next-wake: ...] (allowed range: %s–%s).`, dur(loopRecord.MinWakeSec), dur(loopRecord.MaxWakeSec))
 		return Envelope{Trigger: store.TriggerTick, Text: head + "\n\n" + body}
 	}
-	head := fmt.Sprintf("[tick · %s · interval %s]", ts, dur(l.TickIntervalSec))
+	head := fmt.Sprintf("[tick · %s · interval %s]", ts, dur(loopRecord.TickIntervalSec))
 	body := fmt.Sprintf(`Continue working toward your mission. If nothing needs doing right now, reply
 with a one-line status note. You may schedule your next wake by ending your
-reply with a trailer like [next-wake: 45m] (allowed range: %s–%s).`, dur(l.MinWakeSec), dur(l.MaxWakeSec))
+reply with a trailer like [next-wake: 45m] (allowed range: %s–%s).`, dur(loopRecord.MinWakeSec), dur(loopRecord.MaxWakeSec))
 	return Envelope{Trigger: store.TriggerTick, Text: head + "\n\n" + body}
 }
 
@@ -601,31 +601,31 @@ func SendFailureEnvelope(now time.Time, failures []*store.Message) Envelope {
 	if len(shown) > maxSendFailuresTold {
 		shown = shown[:maxSendFailuresTold]
 	}
-	var b strings.Builder
+	var text strings.Builder
 	// "1 of your messages", not "1 of your message": the partitive takes the
 	// plural whatever the count, because it names the set being counted.
-	fmt.Fprintf(&b, "[system note · %d of your messages never arrived · %s]\n\n",
+	fmt.Fprintf(&text, "[system note · %d of your messages never arrived · %s]\n\n",
 		len(failures), now.UTC().Format("2006-01-02 15:04 UTC"))
-	b.WriteString("These sends were retried and then given up on, so nobody read them. " +
+	text.WriteString("These sends were retried and then given up on, so nobody read them. " +
 		"They are\nnot sent again unless you send them again — say it once more only if it is" +
 		"\nstill worth saying, and to the destination named. When you do, pass that" +
 		"\nmessage's reference as send_message's \"resends\": the failure is then dealt" +
 		"\nwith, and nobody has to clear it by hand.\n\n")
-	for _, m := range shown {
-		fmt.Fprintf(&b, "- %s to %s: %s\n  %q\n",
-			MessageRef(m.ID), destinationOf(m), reasonOf(m), truncate(strings.TrimSpace(m.Text), maxLostExcerpt))
+	for _, message := range shown {
+		fmt.Fprintf(&text, "- %s to %s: %s\n  %q\n",
+			MessageRef(message.ID), destinationOf(message), reasonOf(message), truncate(strings.TrimSpace(message.Text), maxLostExcerpt))
 	}
 	if rest := len(failures) - len(shown); rest > 0 {
-		fmt.Fprintf(&b, "- and %d more, which the control room lists in full\n", rest)
+		fmt.Fprintf(&text, "- and %d more, which the control room lists in full\n", rest)
 	}
-	return Envelope{Trigger: store.TriggerTick, Text: strings.TrimRight(b.String(), "\n")}
+	return Envelope{Trigger: store.TriggerTick, Text: strings.TrimRight(text.String(), "\n")}
 }
 
 // destinationOf names where a lost message was going in the words a loop
 // sends with — the send_message destination, not a chat id, so the loop can
 // act on it without translating.
-func destinationOf(m *store.Message) string {
-	switch m.Conversation {
+func destinationOf(message *store.Message) string {
+	switch message.Conversation {
 	case store.ConversationOwnerDM:
 		return "owner_dm"
 	case store.ConversationGroup:
@@ -640,8 +640,8 @@ func destinationOf(m *store.Message) string {
 // reasonOf is why the send was given up on, as the surface said it. Raw
 // rather than interpreted: a loop reads the difference between "chat not
 // found" and a timeout better than a category we invent would let it.
-func reasonOf(m *store.Message) string {
-	if reason := strings.TrimSpace(m.SendError); reason != "" {
+func reasonOf(message *store.Message) string {
+	if reason := strings.TrimSpace(message.SendError); reason != "" {
 		return truncate(reason, 200)
 	}
 	return "no reason recorded"
@@ -683,52 +683,52 @@ const maxHandoffNote = 4000
 
 // SessionLostPreamble is prepended to the first envelope of a fresh session
 // after a failed resume.
-func SessionLostPreamble(l *store.Loop, recentTurns []string) string {
-	var b strings.Builder
-	b.WriteString("[system note · your previous session could not be resumed; this is a fresh session]\n\n")
-	fmt.Fprintf(&b, "Your mission (restated): %s\n", strings.TrimSpace(l.Mission))
-	writeRecentReplies(&b, recentTurns)
-	return b.String()
+func SessionLostPreamble(loopRecord *store.Loop, recentTurns []string) string {
+	var text strings.Builder
+	text.WriteString("[system note · your previous session could not be resumed; this is a fresh session]\n\n")
+	fmt.Fprintf(&text, "Your mission (restated): %s\n", strings.TrimSpace(loopRecord.Mission))
+	writeRecentReplies(&text, recentTurns)
+	return text.String()
 }
 
 // RotationPreamble opens the fresh session after a deliberate context
 // rotation, carrying the note the previous session wrote on its way out.
 // After a mission change it says so: the successor starts under a mission
 // its predecessor never ran, and the note was written against the old one.
-func RotationPreamble(l *store.Loop, reason, note string, recentTurns []string) string {
-	var b strings.Builder
+func RotationPreamble(loopRecord *store.Loop, reason, note string, recentTurns []string) string {
+	var text strings.Builder
 	noteFrom := "Handoff note from your previous session:"
 	if reason == store.RotationReasonMission {
-		b.WriteString("[system note · your mission was changed and your context rotated; this fresh session continues your work under the new mission]\n\n")
+		text.WriteString("[system note · your mission was changed and your context rotated; this fresh session continues your work under the new mission]\n\n")
 		noteFrom = "Handoff note from your previous session, written under your previous mission:"
 	} else {
-		b.WriteString("[system note · your context was rotated; this fresh session continues your work]\n\n")
+		text.WriteString("[system note · your context was rotated; this fresh session continues your work]\n\n")
 	}
-	fmt.Fprintf(&b, "Your mission (restated): %s\n", strings.TrimSpace(l.Mission))
-	fmt.Fprintf(&b, "%s\n%s\n", noteFrom, truncate(strings.TrimSpace(note), maxHandoffNote))
-	writeRecentReplies(&b, recentTurns)
-	return b.String()
+	fmt.Fprintf(&text, "Your mission (restated): %s\n", strings.TrimSpace(loopRecord.Mission))
+	fmt.Fprintf(&text, "%s\n%s\n", noteFrom, truncate(strings.TrimSpace(note), maxHandoffNote))
+	writeRecentReplies(&text, recentTurns)
+	return text.String()
 }
 
-func writeRecentReplies(b *strings.Builder, recentTurns []string) {
+func writeRecentReplies(text *strings.Builder, recentTurns []string) {
 	if len(recentTurns) == 0 {
 		return
 	}
-	b.WriteString("Recent context (your latest replies, oldest first):\n")
-	for _, t := range recentTurns {
-		t = truncate(strings.TrimSpace(t), 500)
-		fmt.Fprintf(b, "- %s\n", strings.ReplaceAll(t, "\n", " "))
+	text.WriteString("Recent context (your latest replies, oldest first):\n")
+	for _, reply := range recentTurns {
+		reply = truncate(strings.TrimSpace(reply), 500)
+		fmt.Fprintf(text, "- %s\n", strings.ReplaceAll(reply, "\n", " "))
 	}
 }
 
 func dur(sec int) string {
-	d := time.Duration(sec) * time.Second
+	duration := time.Duration(sec) * time.Second
 	switch {
-	case d >= time.Hour && d%time.Hour == 0:
-		return fmt.Sprintf("%dh", int(d.Hours()))
-	case d >= time.Minute && d%time.Minute == 0:
-		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case duration >= time.Hour && duration%time.Hour == 0:
+		return fmt.Sprintf("%dh", int(duration.Hours()))
+	case duration >= time.Minute && duration%time.Minute == 0:
+		return fmt.Sprintf("%dm", int(duration.Minutes()))
 	default:
-		return fmt.Sprintf("%ds", int(d.Seconds()))
+		return fmt.Sprintf("%ds", int(duration.Seconds()))
 	}
 }
