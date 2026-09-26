@@ -10,6 +10,7 @@ import {
   LoopView,
   MessageDestination,
   Settings,
+  SlackStatus,
   TGSender,
   Turn,
 } from '../api'
@@ -17,6 +18,15 @@ import { formatTokens, fillTone, hasFillPct, formatUsd, nextWake } from '../form
 import { customModelError, tokenSubmittable } from '../forms'
 import { needsLogin } from '../session'
 import { slackCreateAppURL, slackManifest } from '../slackManifest'
+import {
+  hubHasSlack,
+  loopSurface,
+  slackAttachError,
+  SlackAttachError,
+  slackPairSubmittable,
+  slackReadiness,
+  slackSenderLabel,
+} from '../slack'
 import { missionDraft, missionSaveResult, missionSaveWarning } from '../mission'
 import { EFFORT_OPTIONS, PACING_OPTIONS } from '../options'
 import { useModelOptions } from '../models'
@@ -839,8 +849,8 @@ function BotTokenForm({
   )
 }
 
-// Where the loop is reachable besides this control room: at most one surface
-// (Telegram today, Slack with #230), and whether it is in the fleet channel.
+// Where the loop is reachable besides this control room: at most one surface,
+// Telegram or Slack (#230), and whether it is in the fleet channel.
 // A loop starts with no surface and gets one here (#287); a loop without one
 // is a private loop, which is a choice rather than a fault, so the empty
 // state says what it means instead of warning.
@@ -862,22 +872,31 @@ function SurfacesPanel({ loop }: { loop: LoopView }) {
     onError: (e) => setError(e instanceof Error ? e.message : String(e)),
   })
 
-  // An empty token is how PATCH detaches (#165). The messages the surface
-  // carried stay: they are the hub's, not the bot's.
+  const surface = loopSurface(loop)
+
+  // An empty token is how PATCH detaches (#165), and for Slack an empty pair
+  // (#230). The messages the surface carried stay: they are the hub's, not
+  // the bot's.
   const detach = () => {
     if (
-      confirm(
-        `Detach Telegram from @${loop.name}? The bot stops polling and the loop can no longer reach Telegram. Its messages stay here.`,
-      )
+      surface === 'slack'
+        ? confirm(
+            `Detach Slack from @${loop.name}? The app disconnects and the loop's channel binding is cleared. The owner stays, so attaching again in the same workspace keeps them. Its messages stay here.`,
+          )
+        : confirm(
+            `Detach Telegram from @${loop.name}? The bot stops polling and the loop can no longer reach Telegram. Its messages stay here.`,
+          )
     ) {
-      patch.mutate({ tg_bot_token: '' })
+      patch.mutate(surface === 'slack' ? { slack_app_token: '', slack_bot_token: '' } : { tg_bot_token: '' })
     }
   }
 
   return (
     <div className="side-panel">
       <h3>Surfaces</h3>
-      {loop.has_tg_token ? (
+      {surface === 'slack' ? (
+        <SlackSurface loop={loop} onDetach={detach} detaching={patch.isPending} />
+      ) : surface === 'telegram' ? (
         <>
           <div className="row">
             <span className="k">telegram</span>
@@ -940,10 +959,10 @@ function SurfacesPanel({ loop }: { loop: LoopView }) {
   )
 }
 
-// Attaching Slack, as far as it goes before the surface exists (#345): the
-// app the loop will run as, for the operator to create and install now. The
-// tokens it yields have nowhere to go until #230, and the step says so rather
-// than offering fields that would store nothing.
+// Attaching Slack: the app the loop will run as (#345), then the two tokens
+// it yields (#230). The manifest carries the scopes, so the fields only need
+// to say where each token is found. On a hub without the surface the fields
+// would store nothing, so the step says so instead of offering them.
 function SlackStep({ loop, onClose }: { loop: LoopView; onClose: () => void }) {
   const manifest = useMemo(() => slackManifest(loop.name), [loop.name])
   const text = useMemo(() => JSON.stringify(manifest, null, 2), [manifest])
@@ -993,7 +1012,235 @@ function SlackStep({ loop, onClose }: { loop: LoopView; onClose: () => void }) {
           The browser refused the clipboard; select the text instead.
         </div>
       )}
-      <div className="hint">Token paste arrives with the Slack surface (#230).</div>
+      {hubHasSlack(loop) ? (
+        <SlackTokenForm loop={loop} onDone={onClose} />
+      ) : (
+        <div className="hint">Token paste arrives with the Slack surface (#230).</div>
+      )}
+    </div>
+  )
+}
+
+// The token pair, for attaching or rotating. Both go in one PATCH: a Slack
+// app is one pair, and the hub checks both with Slack before it stores
+// either, so a rejected pair never reaches the loop. The error names the
+// field Slack refused when it was one of the two.
+function SlackTokenForm({ loop, onDone }: { loop: LoopView; onDone: () => void }) {
+  const qc = useQueryClient()
+  const [appToken, setAppToken] = useState('')
+  const [botToken, setBotToken] = useState('')
+  const [error, setError] = useState<SlackAttachError | null>(null)
+  const [busy, setBusy] = useState(false)
+  const rotating = !!loop.has_slack_tokens
+
+  const save = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      await api.patchLoop(loop.name, { slack_app_token: appToken.trim(), slack_bot_token: botToken.trim() })
+      qc.invalidateQueries({ queryKey: ['loop', loop.name] })
+      qc.invalidateQueries({ queryKey: ['loops'] })
+      qc.invalidateQueries({ queryKey: ['slack-status', loop.name] })
+      onDone()
+    } catch (e) {
+      setError(slackAttachError(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const errorID = `slack-token-error-${loop.name}`
+  return (
+    <div className="slack-tokens">
+      <div className="field">
+        <label htmlFor={`slack-app-token-${loop.name}`}>app-level token</label>
+        <input
+          id={`slack-app-token-${loop.name}`}
+          type="password"
+          placeholder="xapp-…"
+          value={appToken}
+          onChange={(e) => setAppToken(e.target.value)}
+          // as for the Telegram token: not a login to remember
+          autoComplete="off"
+          aria-invalid={error?.field === 'app' || undefined}
+          aria-describedby={error?.field === 'app' ? errorID : undefined}
+        />
+        <div className="hint">Basic Information, App-Level Tokens.</div>
+      </div>
+      <div className="field">
+        <label htmlFor={`slack-bot-token-${loop.name}`}>bot token</label>
+        <input
+          id={`slack-bot-token-${loop.name}`}
+          type="password"
+          placeholder="xoxb-…"
+          value={botToken}
+          onChange={(e) => setBotToken(e.target.value)}
+          autoComplete="off"
+          aria-invalid={error?.field === 'bot' || undefined}
+          aria-describedby={error?.field === 'bot' ? errorID : undefined}
+        />
+        <div className="hint">OAuth &amp; Permissions, after installing the app.</div>
+      </div>
+      {rotating && (
+        <div className="hint">Saving replaces both tokens. The loop keeps its channel and its owner.</div>
+      )}
+      {error && (
+        <div className="form-error" role="alert" id={errorID}>
+          {error.message}
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 6 }}>
+        {/* Both or neither: an empty pair is how PATCH detaches. */}
+        <button
+          className="btn primary"
+          onClick={save}
+          disabled={busy || !slackPairSubmittable(appToken, botToken)}
+        >
+          {busy ? 'Checking with Slack…' : rotating ? 'Replace tokens' : 'Attach'}
+        </button>
+        <button className="btn" onClick={onDone} disabled={busy}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// A Slack loop's side of the panel: which app and workspace, the channel it
+// is bound to, whether the socket is up, and the owner. Read from the status
+// route, which asks the surface rather than the stored row, so it is polled
+// while the page is open, as the context gauge is.
+function SlackSurface({
+  loop,
+  onDetach,
+  detaching,
+}: {
+  loop: LoopView
+  onDetach: () => void
+  detaching: boolean
+}) {
+  const [replacing, setReplacing] = useState(false)
+  const {
+    data: status,
+    isError,
+    error,
+  } = useQuery({
+    queryKey: ['slack-status', loop.name],
+    queryFn: () => api.slackStatus(loop.name),
+    refetchInterval: 15_000,
+  })
+
+  return (
+    <>
+      <div className="row">
+        <span className="k">slack</span>
+        <span className="v">{status ? `@${status.bot_name}` : '…'}</span>
+      </div>
+      <div className="row">
+        <span className="k">workspace</span>
+        <span className="v">{status ? status.team_name : '…'}</span>
+      </div>
+      <div className="row">
+        <span className="k">channel</span>
+        <span className="v">{status ? slackChannel(status) : '…'}</span>
+      </div>
+      <div className="row">
+        <span className="k">socket</span>
+        <span className={`v ${status?.bridge.connected ? 'ok' : status ? 'bad' : ''}`}>
+          {status ? (status.bridge.connected ? 'connected' : 'not connected') : '…'}
+        </span>
+      </div>
+      {status?.bridge.last_error && (
+        <div className="form-error" role="alert">
+          Slack: {status.bridge.last_error}
+        </div>
+      )}
+      {!!status?.bridge.ignored_events && (
+        <div className="hint surface-hint">
+          Ignored {status.bridge.ignored_events} {status.bridge.ignored_events === 1 ? 'event' : 'events'}{' '}
+          from channels it does not listen in. It hears{' '}
+          {status.channel_name ? `#${status.channel_name}` : 'its first channel'} only, so it was invited
+          somewhere else too.
+        </div>
+      )}
+      {isError && (
+        <div className="form-error" role="alert">
+          Could not load the Slack status: {error instanceof Error ? error.message : String(error)}
+        </div>
+      )}
+      {replacing ? (
+        <SlackTokenForm loop={loop} onDone={() => setReplacing(false)} />
+      ) : (
+        <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+          <button className="btn sm" style={{ marginTop: 10 }} onClick={() => setReplacing(true)}>
+            Replace tokens
+          </button>
+          <button className="btn sm" style={{ marginTop: 10 }} onClick={onDetach} disabled={detaching}>
+            Detach
+          </button>
+        </div>
+      )}
+      <SlackOwnerPanel loop={loop} status={status} />
+    </>
+  )
+}
+
+// The channel, or what binds one: the first channel the bot is invited into
+// or hears in becomes its group (#230).
+function slackChannel(status: SlackStatus): string {
+  if (!status.channel_id) return 'not bound yet: invite the bot to a channel'
+  return status.channel_name ? `#${status.channel_name}` : status.channel_id
+}
+
+// Who a Slack loop may message privately. Only an allowed sender in the
+// loop's workspace can be owner, so only they are offered; the current owner
+// stays in the list even if since blocked, as on Telegram.
+function SlackOwnerPanel({ loop, status }: { loop: LoopView; status?: SlackStatus }) {
+  const qc = useQueryClient()
+  const { data: senders } = useQuery({ queryKey: ['slack-senders'], queryFn: api.slackSenders })
+  const [error, setError] = useState('')
+
+  const teamID = status?.team_id
+  const options = useMemo(() => {
+    const allowed = (senders ?? []).filter((s) => s.status === 'allowed' && (!teamID || s.team_id === teamID))
+    const id = loop.owner_slack_user_id
+    if (id && !allowed.some((s) => s.slack_user_id === id)) {
+      return [...allowed, { slack_user_id: id, username: '', display: loop.owner_username ?? '' }]
+    }
+    return allowed
+  }, [senders, teamID, loop.owner_slack_user_id, loop.owner_username])
+
+  const setOwner = useMutation({
+    mutationFn: (id: string) => api.setSlackOwner(loop.name, id),
+    onSuccess: (updated) => {
+      qc.setQueryData(['loop', loop.name], updated)
+      setError('')
+    },
+    onError: (e) => setError(e instanceof Error ? e.message : String(e)),
+  })
+
+  return (
+    <div className="field" style={{ marginTop: 12 }}>
+      <label htmlFor="owner-select">owner</label>
+      <select
+        id="owner-select"
+        value={loop.owner_slack_user_id ?? ''}
+        disabled={setOwner.isPending}
+        onChange={(e) => setOwner.mutate(e.target.value)}
+      >
+        {!loop.owner_slack_user_id && <option value="">No owner set</option>}
+        {options.map((s) => (
+          <option key={s.slack_user_id} value={s.slack_user_id}>
+            {slackSenderLabel(s)}
+          </option>
+        ))}
+      </select>
+      {error && (
+        <div className="form-error" role="alert" style={{ marginTop: 6 }}>
+          {error}
+        </div>
+      )}
+      <div className={`hint ${loop.owner_dm_ready ? 'ok' : ''}`}>{slackReadiness(loop, status)}</div>
     </div>
   )
 }

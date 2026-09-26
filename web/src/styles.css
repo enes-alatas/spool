@@ -1441,6 +1441,31 @@ textarea {
   font-size: 0.75rem;
   color: var(--text-muted);
 }
+/* the token pair under the manifest, or in place of the buttons on a Slack
+   loop being rotated */
+.slack-tokens {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+/* the field Slack refused, so the operator knows which of two identical
+   password boxes to redo; the message under the pair says why */
+.slack-tokens input[aria-invalid='true'] {
+  border-color: var(--danger-line);
+}
+/* the socket line on a Slack loop: state, so it takes the state colours */
+.side-panel .row .v.ok {
+  color: var(--ready);
+}
+.side-panel .row .v.bad {
+  color: var(--danger);
+}
+.side-panel .surface-hint {
+  margin-top: 6px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
 .slack-manifest {
   font-family: var(--mono);
   font-size: 0.6875rem;
