@@ -367,7 +367,10 @@ func (server *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, map[string]any{"ok": true, "claude_version": server.ClaudeVer, "runtime": server.DefaultRuntime})
+	// Liveness and nothing else: this answers anyone who can reach the port.
+	// Facts about the host (its default runtime, its claude CLI) are the
+	// operator's, and live in settings (#258).
+	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
 // defaultRuntime is the kind a loop is created as when its request names

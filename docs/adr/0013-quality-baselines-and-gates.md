@@ -1,6 +1,6 @@
 # ADR-0013: Quality baselines and gates
 
-Date: 2026-08-16 · Status: accepted · Amended: 2026-09-18 (control-room tier 1)
+Date: 2026-08-16 · Status: accepted · Amended: 2026-09-18 (control-room tier 1), 2026-09-26 (health is liveness only)
 
 ## Context
 
@@ -54,3 +54,13 @@ component into a module rather than tested through a rendered tree; a DOM
 environment is opt-in per file and earns its way in only where a defect has
 already bitten in the markup. Browser automation stays a manual verification
 tool, never CI. Coverage stays informational here as everywhere.
+
+**Amendment (2026-09-26, #258): `/api/health` is liveness only.** The
+"rich `/api/health`" above predates the API's credential (ADR-0030), which
+left health as one of two routes anyone reaching the port can read. Its rich
+fields were facts about the host, not about liveness: the default runtime,
+which says whether loops here run uncontained, and the `claude` CLI version.
+The operator decided that health answers `{"ok":true}` only, and that
+facts about the hub are served behind the credential, in `GET /api/settings`.
+Observability otherwise stands as decided: structured logs, and the metrics
+endpoint deferred.

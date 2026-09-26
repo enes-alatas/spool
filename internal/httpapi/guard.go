@@ -44,7 +44,9 @@ func sessionPath(path string) bool { return path == loginPath || path == logoutP
 
 // openPaths answer without a credential: a supervisor restarting the hub and
 // an operator reporting a bug both need them before they have a token, and
-// neither names anything a loop or a stranger does not already know.
+// neither names anything a loop or a stranger does not already know. Keeping
+// that true is on whoever adds a field to either: health says only that the
+// hub is up, and what the host runs is served behind the credential (#258).
 func openPath(path string) bool {
 	return path == "/api/health" || path == "/api/version"
 }

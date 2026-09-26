@@ -202,5 +202,7 @@ workflow and not in its `paths:`.
 - All logging via `log/slog`: component-tagged key-value, JSON output behind a flag,
   levels used honestly (info = state changes, debug = mechanics). Loops debugging
   Spool read these logs — write them for that reader.
-- `/api/health` stays rich (claude version, store, surface states).
+- `/api/health` is liveness only (`{"ok":true}`): it answers anyone who can reach
+  the port, so facts about the hub are served behind the credential, in
+  `GET /api/settings` (ADR-0013 amendment, #258).
 - Metrics endpoint (Prometheus): parking lot until the service era.
