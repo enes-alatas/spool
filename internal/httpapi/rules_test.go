@@ -35,26 +35,26 @@ func TestValidateRuleText(t *testing.T) {
 // only a write that leaves the section over the cap AND larger than before,
 // so shrinking an oversized set is never refused.
 func TestWithinRulesBudget(t *testing.T) {
-	s := &Server{}
-	big := func(n int) *store.FleetRule {
-		return &store.FleetRule{Title: "t", Body: strings.Repeat("x", n), Enabled: true}
+	server := &Server{}
+	big := func(size int) *store.FleetRule {
+		return &store.FleetRule{Title: "t", Body: strings.Repeat("x", size), Enabled: true}
 	}
 	under := []*store.FleetRule{big(1000)}
 	over := []*store.FleetRule{big(1200), big(1200), big(1200), big(1200)}
 	lessOver := []*store.FleetRule{big(1200), big(1200), big(1200), big(1100)}
 
-	if s.withinRulesBudget(httptest.NewRecorder(), under, over) {
+	if server.withinRulesBudget(httptest.NewRecorder(), under, over) {
 		t.Error("growing past the cap was allowed")
 	}
-	if !s.withinRulesBudget(httptest.NewRecorder(), over, lessOver) {
+	if !server.withinRulesBudget(httptest.NewRecorder(), over, lessOver) {
 		t.Error("shrinking an oversized section was refused")
 	}
-	if !s.withinRulesBudget(httptest.NewRecorder(), under, under) {
+	if !server.withinRulesBudget(httptest.NewRecorder(), under, under) {
 		t.Error("an unchanged set under the cap was refused")
 	}
 
 	rec := httptest.NewRecorder()
-	s.withinRulesBudget(rec, under, over)
+	server.withinRulesBudget(rec, under, over)
 	if rec.Code != 400 || !strings.Contains(rec.Body.String(), `"code":"`+codeRulesTooLarge+`"`) {
 		t.Fatalf("rejection = %d %s, want 400 with code %s", rec.Code, rec.Body.String(), codeRulesTooLarge)
 	}

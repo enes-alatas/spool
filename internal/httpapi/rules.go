@@ -56,10 +56,10 @@ type ruleWriteView struct {
 	Budget rulesBudget      `json:"budget"`
 }
 
-func (s *Server) handleListRules(w http.ResponseWriter, r *http.Request) {
-	rules, err := s.Store.FleetRules().List(r.Context())
+func (server *Server) handleListRules(w http.ResponseWriter, r *http.Request) {
+	rules, err := server.Store.FleetRules().List(r.Context())
 	if err != nil {
-		s.jsonErr(w, 500, "%v", err)
+		server.jsonErr(w, 500, "%v", err)
 		return
 	}
 	if rules == nil {
@@ -76,10 +76,10 @@ type ruleReq struct {
 	Enabled *bool `json:"enabled"`
 }
 
-func (s *Server) handleCreateRule(w http.ResponseWriter, r *http.Request) {
+func (server *Server) handleCreateRule(w http.ResponseWriter, r *http.Request) {
 	var req ruleReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.jsonErr(w, 400, "bad json: %v", err)
+		server.jsonErr(w, 400, "bad json: %v", err)
 		return
 	}
 	now := time.Now().UnixMilli()
@@ -94,40 +94,40 @@ func (s *Server) handleCreateRule(w http.ResponseWriter, r *http.Request) {
 		rule.Enabled = *req.Enabled
 	}
 	if err := validateRuleText(rule.Title, rule.Body); err != nil {
-		s.jsonErr(w, 400, "%v", err)
+		server.jsonErr(w, 400, "%v", err)
 		return
 	}
 
-	s.rulesMu.Lock()
-	defer s.rulesMu.Unlock()
-	current, err := s.Store.FleetRules().List(r.Context())
+	server.rulesMu.Lock()
+	defer server.rulesMu.Unlock()
+	current, err := server.Store.FleetRules().List(r.Context())
 	if err != nil {
-		s.jsonErr(w, 500, "%v", err)
+		server.jsonErr(w, 500, "%v", err)
 		return
 	}
 	proposed := append(append([]*store.FleetRule{}, current...), rule)
-	if !s.withinRulesBudget(w, current, proposed) {
+	if !server.withinRulesBudget(w, current, proposed) {
 		return
 	}
-	if err := s.Store.FleetRules().Create(r.Context(), rule); err != nil {
-		s.jsonErr(w, 500, "%v", err)
+	if err := server.Store.FleetRules().Create(r.Context(), rule); err != nil {
+		server.jsonErr(w, 500, "%v", err)
 		return
 	}
 	writeJSON(w, 201, ruleWriteView{Rule: rule, Budget: budgetOf(proposed)})
 }
 
-func (s *Server) handlePatchRule(w http.ResponseWriter, r *http.Request) {
+func (server *Server) handlePatchRule(w http.ResponseWriter, r *http.Request) {
 	var req ruleReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.jsonErr(w, 400, "bad json: %v", err)
+		server.jsonErr(w, 400, "bad json: %v", err)
 		return
 	}
 
-	s.rulesMu.Lock()
-	defer s.rulesMu.Unlock()
-	current, err := s.Store.FleetRules().List(r.Context())
+	server.rulesMu.Lock()
+	defer server.rulesMu.Unlock()
+	current, err := server.Store.FleetRules().List(r.Context())
 	if err != nil {
-		s.jsonErr(w, 500, "%v", err)
+		server.jsonErr(w, 500, "%v", err)
 		return
 	}
 	var rule *store.FleetRule
@@ -142,7 +142,7 @@ func (s *Server) handlePatchRule(w http.ResponseWriter, r *http.Request) {
 		proposed = append(proposed, rule)
 	}
 	if rule == nil {
-		s.jsonErr(w, 404, "rule not found")
+		server.jsonErr(w, 404, "rule not found")
 		return
 	}
 	if req.Title != nil {
@@ -155,33 +155,33 @@ func (s *Server) handlePatchRule(w http.ResponseWriter, r *http.Request) {
 		rule.Enabled = *req.Enabled
 	}
 	if err := validateRuleText(rule.Title, rule.Body); err != nil {
-		s.jsonErr(w, 400, "%v", err)
+		server.jsonErr(w, 400, "%v", err)
 		return
 	}
-	if !s.withinRulesBudget(w, current, proposed) {
+	if !server.withinRulesBudget(w, current, proposed) {
 		return
 	}
 	rule.UpdatedAt = time.Now().UnixMilli()
-	if err := s.Store.FleetRules().Update(r.Context(), rule); err != nil {
-		s.storeErr(w, err, "rule")
+	if err := server.Store.FleetRules().Update(r.Context(), rule); err != nil {
+		server.storeErr(w, err, "rule")
 		return
 	}
 	writeJSON(w, 200, ruleWriteView{Rule: rule, Budget: budgetOf(proposed)})
 }
 
-func (s *Server) handleDeleteRule(w http.ResponseWriter, r *http.Request) {
-	s.rulesMu.Lock()
-	defer s.rulesMu.Unlock()
-	if _, err := s.Store.FleetRules().Get(r.Context(), r.PathValue("id")); err != nil {
+func (server *Server) handleDeleteRule(w http.ResponseWriter, r *http.Request) {
+	server.rulesMu.Lock()
+	defer server.rulesMu.Unlock()
+	if _, err := server.Store.FleetRules().Get(r.Context(), r.PathValue("id")); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			s.jsonErr(w, 404, "rule not found")
+			server.jsonErr(w, 404, "rule not found")
 		} else {
-			s.jsonErr(w, 500, "%v", err)
+			server.jsonErr(w, 500, "%v", err)
 		}
 		return
 	}
-	if err := s.Store.FleetRules().Delete(r.Context(), r.PathValue("id")); err != nil {
-		s.jsonErr(w, 500, "%v", err)
+	if err := server.Store.FleetRules().Delete(r.Context(), r.PathValue("id")); err != nil {
+		server.jsonErr(w, 500, "%v", err)
 		return
 	}
 	w.WriteHeader(204)
@@ -206,7 +206,7 @@ func validateRuleText(title, body string) error {
 // rejected with the budget it would have produced. A write that shrinks an
 // oversized section always goes through, so an operator is never locked out
 // of the fix. Callers hold rulesMu so the read-check-write cannot interleave.
-func (s *Server) withinRulesBudget(w http.ResponseWriter, current, proposed []*store.FleetRule) bool {
+func (server *Server) withinRulesBudget(w http.ResponseWriter, current, proposed []*store.FleetRule) bool {
 	before, after := budgetOf(current), budgetOf(proposed)
 	if after.SectionChars <= maxRulesSectionChars || after.SectionChars <= before.SectionChars {
 		return true

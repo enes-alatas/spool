@@ -33,39 +33,39 @@ type sendMessageOut struct {
 	Ref string `json:"ref"`
 }
 
-func (s *Server) mcpHandler() http.Handler {
+func (server *Server) mcpHandler() http.Handler {
 	inner := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
-		l, ok := r.Context().Value(mcpLoopKey{}).(*store.Loop)
+		caller, ok := r.Context().Value(mcpLoopKey{}).(*store.Loop)
 		if !ok {
 			return nil
 		}
-		srv := mcp.NewServer(&mcp.Implementation{Name: "spool", Version: s.ClaudeVer}, nil)
-		mcp.AddTool(srv, &mcp.Tool{
+		mcpServer := mcp.NewServer(&mcp.Implementation{Name: "spool", Version: server.ClaudeVer}, nil)
+		mcp.AddTool(mcpServer, &mcp.Tool{
 			Name: "send_message",
 			Description: "Send one explicitly addressed message. Each call is one message to one " +
 				"destination; call again for another destination or recipient set. Errors are " +
 				"correctable: fix what the message names and retry.",
-		}, s.sendMessageTool(l))
-		return srv
-	}, &mcp.StreamableHTTPOptions{Stateless: true, Logger: s.Log})
+		}, server.sendMessageTool(caller))
+		return mcpServer
+	}, &mcp.StreamableHTTPOptions{Stateless: true, Logger: server.Log})
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		l, err := s.Store.Loops().GetByHubMCPToken(r.Context(), token)
+		caller, err := server.Store.Loops().GetByHubMCPToken(r.Context(), token)
 		if err != nil {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		inner.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), mcpLoopKey{}, l)))
+		inner.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), mcpLoopKey{}, caller)))
 	})
 }
 
 type mcpLoopKey struct{}
 
-func (s *Server) sendMessageTool(l *store.Loop) func(context.Context, *mcp.CallToolRequest, sendMessageIn) (*mcp.CallToolResult, sendMessageOut, error) {
+func (server *Server) sendMessageTool(caller *store.Loop) func(context.Context, *mcp.CallToolRequest, sendMessageIn) (*mcp.CallToolResult, sendMessageOut, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in sendMessageIn) (*mcp.CallToolResult, sendMessageOut, error) {
-		msg, serr, err := s.Router.Send(ctx, route.SendRequest{
-			From:        l,
+		msg, serr, err := server.Router.Send(ctx, route.SendRequest{
+			From:        caller,
 			Destination: in.Destination,
 			ReplyTo:     in.ReplyTo,
 			Text:        in.Text,
@@ -77,7 +77,7 @@ func (s *Server) sendMessageTool(l *store.Loop) func(context.Context, *mcp.CallT
 			return nil, sendMessageOut{}, serr
 		}
 		if err != nil {
-			s.Log.Error("send_message", "loop", l.Name, "err", err)
+			server.Log.Error("send_message", "loop", caller.Name, "err", err)
 			return nil, sendMessageOut{}, fmt.Errorf("internal error; try again")
 		}
 		return nil, sendMessageOut{MessageID: msg.ID, Ref: loop.MessageRef(msg.ID)}, nil
