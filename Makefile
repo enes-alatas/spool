@@ -92,7 +92,7 @@ ui-dev:
 # starts a throwaway hub on a directory cmd/uifixture wrote seconds earlier,
 # and deletes both whatever happens.
 ui-shots: build
-	bash scripts/ui-shots.sh
+	bash scripts/fixture-hub.sh node scripts/ui-shots.mjs
 
 dev: server
 	./bin/spool --listen 127.0.0.1:8080 --mcp-listen 0.0.0.0:8081 --data-dir ./.data
