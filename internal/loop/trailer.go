@@ -18,21 +18,21 @@ func ParseTrailer(text string) (time.Duration, bool) {
 		start = 0
 	}
 	tail := strings.Join(lines[start:], "\n")
-	m := trailerRe.FindStringSubmatch(tail)
-	if m == nil {
+	match := trailerRe.FindStringSubmatch(tail)
+	if match == nil {
 		return 0, false
 	}
-	n, err := strconv.Atoi(m[1])
+	amount, err := strconv.Atoi(match[1])
 	if err != nil {
 		return 0, false
 	}
-	switch strings.ToLower(m[2]) {
+	switch strings.ToLower(match[2]) {
 	case "s":
-		return time.Duration(n) * time.Second, true
+		return time.Duration(amount) * time.Second, true
 	case "m", "min":
-		return time.Duration(n) * time.Minute, true
+		return time.Duration(amount) * time.Minute, true
 	default: // h, hr
-		return time.Duration(n) * time.Hour, true
+		return time.Duration(amount) * time.Hour, true
 	}
 }
 
@@ -42,12 +42,12 @@ func StripTrailer(text string) string {
 }
 
 // Clamp bounds a requested wake duration to [min, max].
-func Clamp(d, min, max time.Duration) time.Duration {
-	if d < min {
+func Clamp(duration, min, max time.Duration) time.Duration {
+	if duration < min {
 		return min
 	}
-	if d > max {
+	if duration > max {
 		return max
 	}
-	return d
+	return duration
 }
