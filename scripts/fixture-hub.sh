@@ -45,12 +45,18 @@ trap cleanup EXIT
 
 go run ./cmd/uifixture --data-dir "$dir" >/dev/null
 
+# The hub runs fakeclaude, never whatever `claude` is on PATH. A CI runner has
+# none, and the hub refuses to start without one it can ask for a version. On
+# a workstation the real CLI is there, and a tick falling due while the hub is
+# up would spend the operator's plan on a fixture loop.
+go build -o "$dir/fakeclaude" ./cmd/fakeclaude
+
 # The fixture's bots carry a synthetic token, so the hub starts a poller for
 # each. Port 9 on loopback is closed: every call fails at once and nothing
 # leaves the machine, where the default base would send them to Telegram.
 ./bin/spool --data-dir "$dir" \
 	--listen "127.0.0.1:$port" --mcp-listen "127.0.0.1:$((port + 1))" \
-	--runtime bare --egress-image "" \
+	--runtime bare --egress-image "" --claude-bin "$dir/fakeclaude" \
 	--telegram-api-base "http://127.0.0.1:9" >"$dir/hub.log" 2>&1 &
 hub=$!
 
