@@ -113,10 +113,12 @@ protection (#1) requires all three:
 - `itest` — tier 2.
 
 They are three rather than six because GitHub bills a started job a whole
-minute however little it does, and Actions minutes are capped on a private
-repo (#181, #232). Inside `checks`, each area keeps its own path filter as a
-step condition; `itest` is filtered at job level, so it is skipped outright
-when nothing it covers changed.
+minute however little it does (#181, #232). While the repo was private that
+came out of a capped allowance. It has been public since 2026-09-21, so the
+minutes are free, but a job is still runner time and wall time on every PR.
+Inside `checks`, each area keeps its own path filter as a step condition;
+`itest` is filtered at job level, so it is skipped outright when nothing it
+covers changed.
 
 `checks` runs even when `changes` failed, so a broken filter cannot silence
 the secret scans — before the fold they were the one job with no `needs:`.
