@@ -211,7 +211,7 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 		"LoopStore": {
 			"SetRotation":     true, // the loop's own handoff note
 			"SetModelRefusal": true, // the refused turn's result text
-			// Create and Edit carry the bot and hub-MCP tokens themselves.
+			// Create and Edit carry the surface and hub-MCP tokens themselves.
 			// Redacting those would write a placeholder where the
 			// credential belongs; the mission is operator-written text, and
 			// an operator pasting their own secret into it is #30's problem.
@@ -220,6 +220,9 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			"GetByName": false, "List": false, "SetGroupBinding": false,
 			"SetOwner": false, "SetOwnerDMChat": false, "SetPromptHash": false,
 			"SetRuntime": false, "SetStatus": false, "SetWorkstationOff": false,
+			// Slack ids and a timestamp, the counterparts of the three
+			// Telegram setters above.
+			"SetSlackBinding": false, "SetSlackOwner": false, "SetSlackOwnerDM": false,
 		},
 		"TurnStore": {
 			"Create": true, "Finish": true,
@@ -271,6 +274,9 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			"Set": false, "SetLastTick": false, "Get": false, "All": false, "Delete": false,
 		},
 		"TGSenderStore": {
+			"Create": false, "SetStatus": false, "Delete": false, "Get": false, "List": false,
+		},
+		"SlackSenderStore": {
 			"Create": false, "SetStatus": false, "Delete": false, "Get": false, "List": false,
 		},
 		"ModelStore": {

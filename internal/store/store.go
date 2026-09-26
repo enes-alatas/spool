@@ -139,6 +139,29 @@ type Loop struct {
 	// nowhere to send — reported, never substituted (ADR-0025).
 	OwnerDMChatID int64 `json:"-"`
 
+	// The loop's identity on Slack (#230), written together by LoopEdit.Slack
+	// from what the bot token's auth.test answered. Both tokens are secret,
+	// like TGBotToken. A loop has at most one surface (ADR-0029 item 7): the
+	// hub keeps these empty while TGBotToken is set, and the other way round.
+	// The store accepts both.
+	SlackAppToken  string `json:"-"`
+	SlackBotToken  string `json:"-"`
+	SlackBotUserID string `json:"slack_bot_user_id,omitempty"`
+	SlackBotName   string `json:"slack_bot_name,omitempty"`
+	SlackTeamID    string `json:"slack_team_id,omitempty"`
+	SlackTeamName  string `json:"slack_team_name,omitempty"`
+	// SlackChannelID is the channel the fleet channel is mirrored to on
+	// Slack, and SlackChannelBoundAt when the bot bound to it: the same
+	// election input TGGroupBoundAt is for a Telegram group (ADR-0020).
+	SlackChannelID      string `json:"-"`
+	SlackChannelBoundAt int64  `json:"-"`
+	// OwnerSlackUserID is the allowlisted Slack sender configured as this
+	// loop's owner ("" = none). OwnerSlackDMChannel is the DM the bot opened
+	// with them. Unlike a Telegram bot, a Slack bot can open that DM itself,
+	// so it is a cache of conversations.open, not a precondition for sending.
+	OwnerSlackUserID    string `json:"owner_slack_user_id,omitempty"`
+	OwnerSlackDMChannel string `json:"-"`
+
 	Status           string `json:"status"`
 	CurrentSessionID string `json:"current_session_id"`
 	CurrentPID       int    `json:"current_pid"`
@@ -451,11 +474,32 @@ type LoopEdit struct {
 	// that did not mention it, which is the revert this type exists to
 	// prevent.
 	ClearGroupBinding bool
+	// Slack writes the loop's whole Slack identity at once, for the same
+	// reason TGBotToken and TGBotUsername move together: every field but the
+	// tokens is what the tokens answered. nil leaves it alone; a zero
+	// SlackIdentity detaches the app. Any write also drops the owner's DM
+	// channel, which belonged to the bot it replaces; the owner stays.
+	Slack *SlackIdentity
+	// ClearSlackBinding drops the channel the loop's Slack bot was bound to.
+	// Set when the app is detached, never as a side effect, like
+	// ClearGroupBinding.
+	ClearSlackBinding bool
 	// OutsideFleetChannel moves the loop out of the fleet channel (true) or
 	// back in (false); nil leaves it where it is.
 	OutsideFleetChannel *bool
 
 	UpdatedAt int64
+}
+
+// SlackIdentity is a Slack app as a loop holds it: the token pair the
+// operator pasted and what Slack said the bot token names.
+type SlackIdentity struct {
+	AppToken  string
+	BotToken  string
+	BotUserID string
+	BotName   string
+	TeamID    string
+	TeamName  string
 }
 
 type LoopStore interface {
@@ -499,6 +543,16 @@ type LoopStore interface {
 	// SetOwnerDMChat records the private chat the owner has written from,
 	// which is the only way a bot learns an address it cannot open itself.
 	SetOwnerDMChat(ctx context.Context, id string, chatID, updatedAt int64) error
+	// SetSlackBinding records which Slack channel this loop's bot is bound
+	// to, and when. Narrow for the same reason as SetGroupBinding: the Slack
+	// connection writes it while the hub writes other columns.
+	SetSlackBinding(ctx context.Context, id, channelID string, boundAt, updatedAt int64) error
+	// SetSlackOwner records the loop's Slack owner and the DM channel with
+	// them; changing the owner passes "" for the channel, which belonged to
+	// the previous owner. ErrNotFound if the loop is gone.
+	SetSlackOwner(ctx context.Context, id, userID, dmChannel string, updatedAt int64) error
+	// SetSlackOwnerDM records the DM channel the bot opened with its owner.
+	SetSlackOwnerDM(ctx context.Context, id, dmChannel string, updatedAt int64) error
 	// SetStatus records whether a loop is active, paused or archived.
 	SetStatus(ctx context.Context, id, status string, updatedAt int64) error
 	// SetWorkstationOff records the operator's power intent for a loop's
@@ -755,6 +809,31 @@ type TGSenderStore interface {
 	Delete(ctx context.Context, tgUserID int64) error
 }
 
+// SlackSender is a Slack user known to Spool: the pairing allowlist that
+// TGSender is for Telegram (operator, 2026-09-22 on #230). Only 'allowed'
+// senders reach loops; workspace membership alone admits nobody.
+type SlackSender struct {
+	SlackUserID  string `json:"slack_user_id"`
+	TeamID       string `json:"team_id"`
+	Username     string `json:"username"`
+	Display      string `json:"display"`
+	Status       string `json:"status"` // pending|allowed|blocked
+	PairCode     string `json:"pair_code"`
+	FirstSeenVia string `json:"first_seen_via"` // "dm:<loop>" | "group:<loop>"
+	CreatedAt    int64  `json:"created_at"`
+	UpdatedAt    int64  `json:"updated_at"`
+}
+
+type SlackSenderStore interface {
+	Get(ctx context.Context, slackUserID string) (*SlackSender, error)
+	// Create inserts a new (pending) sender; ErrDuplicate if already known.
+	Create(ctx context.Context, s *SlackSender) error
+	// SetStatus is ErrNotFound for an unknown sender.
+	SetStatus(ctx context.Context, slackUserID, status string, updatedAt int64) error
+	List(ctx context.Context) ([]*SlackSender, error)
+	Delete(ctx context.Context, slackUserID string) error
+}
+
 type Store interface {
 	Loops() LoopStore
 	LoopSecrets() LoopSecretStore
@@ -767,6 +846,7 @@ type Store interface {
 	Inbox() InboxStore
 	Settings() SettingsStore
 	TGSenders() TGSenderStore
+	SlackSenders() SlackSenderStore
 	Models() ModelStore
 	Close() error
 }
