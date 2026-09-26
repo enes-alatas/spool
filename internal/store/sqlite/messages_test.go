@@ -33,8 +33,8 @@ func TestMessageConversationRoundTrip(t *testing.T) {
 		Text: "@milo done", Mentions: []string{"milo"}, DeliveredTo: []string{"l2"},
 		Conversation: store.ConversationGroup,
 	}
-	for _, m := range []*store.Message{dm, group} {
-		if err := db.Messages().Insert(ctx, m); err != nil {
+	for _, message := range []*store.Message{dm, group} {
+		if err := db.Messages().Insert(ctx, message); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -69,7 +69,7 @@ func TestListConversation(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UnixMilli()
 
-	for i, m := range []*store.Message{
+	for i, message := range []*store.Message{
 		{TS: now, Origin: store.OriginWeb, Author: "operator", Text: "question",
 			Conversation: store.ConversationControlRoom, ConversationLoopID: "l1"},
 		{TS: now + 1, Origin: store.OriginLoop, Author: "terra", FromLoopID: "l1", Text: "answer",
@@ -79,7 +79,7 @@ func TestListConversation(t *testing.T) {
 		{TS: now + 3, Origin: store.OriginLoop, Author: "terra", FromLoopID: "l1", Text: "@milo group",
 			Conversation: store.ConversationGroup},
 	} {
-		if err := db.Messages().Insert(ctx, m); err != nil {
+		if err := db.Messages().Insert(ctx, message); err != nil {
 			t.Fatalf("insert %d: %v", i, err)
 		}
 	}
@@ -114,8 +114,8 @@ func TestMessageReferencesAreOwnedPerBot(t *testing.T) {
 		TS: now + 1, Origin: store.OriginLoop, Author: "terra", FromLoopID: "l1",
 		Text: "on it", Conversation: store.ConversationGroup,
 	}
-	for _, m := range []*store.Message{human, reply} {
-		if err := db.Messages().Insert(ctx, m); err != nil {
+	for _, message := range []*store.Message{human, reply} {
+		if err := db.Messages().Insert(ctx, message); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -132,7 +132,7 @@ func TestMessageReferencesAreOwnedPerBot(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, c := range []struct {
+	for _, testCase := range []struct {
 		name   string
 		bot    string
 		msg    int64
@@ -142,12 +142,12 @@ func TestMessageReferencesAreOwnedPerBot(t *testing.T) {
 		{"another bot's sighting of the same message", "l2", human.ID, 512},
 		{"the sender's own post", "l1", reply.ID, 12},
 	} {
-		ref, err := db.Messages().Ref(ctx, c.msg, c.bot)
+		ref, err := db.Messages().Ref(ctx, testCase.msg, testCase.bot)
 		if err != nil {
-			t.Fatalf("%s: %v", c.name, err)
+			t.Fatalf("%s: %v", testCase.name, err)
 		}
-		if ref.TGMessageID != c.wantID {
-			t.Errorf("%s: got id %d, want %d", c.name, ref.TGMessageID, c.wantID)
+		if ref.TGMessageID != testCase.wantID {
+			t.Errorf("%s: got id %d, want %d", testCase.name, ref.TGMessageID, testCase.wantID)
 		}
 	}
 
@@ -184,12 +184,12 @@ func TestTextTargetIsScopedToItsAuthor(t *testing.T) {
 
 	insert := func(loopID, author, text string, ts int64) int64 {
 		t.Helper()
-		m := &store.Message{TS: ts, Origin: store.OriginLoop, Author: author,
+		message := &store.Message{TS: ts, Origin: store.OriginLoop, Author: author,
 			FromLoopID: loopID, Text: text, Conversation: store.ConversationGroup}
-		if err := db.Messages().Insert(ctx, m); err != nil {
+		if err := db.Messages().Insert(ctx, message); err != nil {
 			t.Fatal(err)
 		}
-		return m.ID
+		return message.ID
 	}
 
 	aster := insert("l-aster", "aster", "on it", now)
@@ -274,13 +274,13 @@ func TestUntoldSendFailures(t *testing.T) {
 		Text: "inbound", Conversation: store.ConversationOwnerDM, ConversationLoopID: "l1"}
 	delivered := &store.Message{TS: now + 4, Origin: store.OriginLoop, Author: "terra",
 		FromLoopID: "l1", Text: "got there", Conversation: store.ConversationGroup}
-	for _, m := range append(mine, theirs, inbound, delivered) {
-		if err := db.Messages().Insert(ctx, m); err != nil {
+	for _, message := range append(mine, theirs, inbound, delivered) {
+		if err := db.Messages().Insert(ctx, message); err != nil {
 			t.Fatal(err)
 		}
 	}
-	for _, m := range append(mine, theirs) {
-		if err := db.Messages().SetSendResult(ctx, m.ID, now, "chat not found"); err != nil {
+	for _, message := range append(mine, theirs) {
+		if err := db.Messages().SetSendResult(ctx, message.ID, now, "chat not found"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -318,11 +318,11 @@ func TestUntoldSendFailures(t *testing.T) {
 		FromLoopID: "l1", Text: "retried", Conversation: store.ConversationGroup}
 	setAside := &store.Message{TS: now + 6, Origin: store.OriginLoop, Author: "terra",
 		FromLoopID: "l1", Text: "dismissed", Conversation: store.ConversationGroup}
-	for _, m := range []*store.Message{stale, setAside} {
-		if err := db.Messages().Insert(ctx, m); err != nil {
+	for _, message := range []*store.Message{stale, setAside} {
+		if err := db.Messages().Insert(ctx, message); err != nil {
 			t.Fatal(err)
 		}
-		if err := db.Messages().SetSendResult(ctx, m.ID, now, "chat not found"); err != nil {
+		if err := db.Messages().SetSendResult(ctx, message.ID, now, "chat not found"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -360,8 +360,8 @@ func TestUntoldSendFailures(t *testing.T) {
 	}
 	if len(afterResolution) != 1 || afterResolution[0].Text != "dismissed" {
 		got := make([]string, len(afterResolution))
-		for i, m := range afterResolution {
-			got[i] = m.Text
+		for i, message := range afterResolution {
+			got[i] = message.Text
 		}
 		t.Errorf("untold after resolution = %v, want the dismissed one alone", got)
 	}
@@ -388,18 +388,18 @@ func TestSendSuccessUnmarksItsFailure(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UnixMilli()
 
-	m := &store.Message{TS: now, Origin: store.OriginLoop, Author: "terra",
+	message := &store.Message{TS: now, Origin: store.OriginLoop, Author: "terra",
 		FromLoopID: "l1", Text: "eventually", Conversation: store.ConversationGroup}
-	if err := db.Messages().Insert(ctx, m); err != nil {
+	if err := db.Messages().Insert(ctx, message); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Messages().SetSendResult(ctx, m.ID, now, "timeout"); err != nil {
+	if err := db.Messages().SetSendResult(ctx, message.ID, now, "timeout"); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Messages().MarkSendFailuresTold(ctx, []int64{m.ID}, now); err != nil {
+	if err := db.Messages().MarkSendFailuresTold(ctx, []int64{message.ID}, now); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Messages().SetSendResult(ctx, m.ID, 0, ""); err != nil {
+	if err := db.Messages().SetSendResult(ctx, message.ID, 0, ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -436,40 +436,40 @@ func TestUnresolvedSendFailures(t *testing.T) {
 		FromLoopID: "l2", Text: "sibling", Conversation: store.ConversationGroup}
 	delivered := &store.Message{TS: now, Origin: store.OriginLoop, Author: "terra",
 		FromLoopID: "l1", Text: "arrived", Conversation: store.ConversationGroup}
-	for _, m := range []*store.Message{recent, old, sibling, delivered} {
-		if err := db.Messages().Insert(ctx, m); err != nil {
+	for _, message := range []*store.Message{recent, old, sibling, delivered} {
+		if err := db.Messages().Insert(ctx, message); err != nil {
 			t.Fatal(err)
 		}
 	}
-	for _, f := range []struct {
-		m  *store.Message
-		at int64
+	for _, fixture := range []struct {
+		message *store.Message
+		at      int64
 	}{{recent, now - 1000}, {old, dayAgo - 1000}, {sibling, now - 1000}} {
-		if err := db.Messages().SetSendResult(ctx, f.m.ID, f.at, "chat not found"); err != nil {
+		if err := db.Messages().SetSendResult(ctx, fixture.message.ID, fixture.at, "chat not found"); err != nil {
 			t.Fatal(err)
 		}
 	}
 
 	// Age is not the question any more (#269): both of l1's failures count,
 	// the day-old one included, and the sibling's does not.
-	n, err := db.Messages().UnresolvedSendFailures(ctx, "l1")
+	unresolved, err := db.Messages().UnresolvedSendFailures(ctx, "l1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n != 2 {
-		t.Errorf("count = %d, want 2: l1's two failures, whatever their age", n)
+	if unresolved != 2 {
+		t.Errorf("count = %d, want 2: l1's two failures, whatever their age", unresolved)
 	}
 	// And the delivered message, whose send_failed_at is 0, is not among them.
-	if n, err := db.Messages().UnresolvedSendFailures(ctx, "l2"); err != nil || n != 1 {
-		t.Errorf("sibling count = %d (err %v), want 1", n, err)
+	if unresolved, err := db.Messages().UnresolvedSendFailures(ctx, "l2"); err != nil || unresolved != 1 {
+		t.Errorf("sibling count = %d (err %v), want 1", unresolved, err)
 	}
 
 	// Being told is the loop's business, not the operator's: the count stays.
 	if err := db.Messages().MarkSendFailuresTold(ctx, []int64{recent.ID}, now); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := db.Messages().UnresolvedSendFailures(ctx, "l1"); err != nil || n != 2 {
-		t.Errorf("count = %d (err %v) after the loop was told, want 2", n, err)
+	if unresolved, err := db.Messages().UnresolvedSendFailures(ctx, "l1"); err != nil || unresolved != 2 {
+		t.Errorf("count = %d (err %v) after the loop was told, want 2", unresolved, err)
 	}
 
 	// Resolving one is what does take it off the count — and only one.
@@ -477,8 +477,8 @@ func TestUnresolvedSendFailures(t *testing.T) {
 	if err != nil || !resolved {
 		t.Fatalf("ResolveSend = %v (err %v), want true", resolved, err)
 	}
-	if n, err := db.Messages().UnresolvedSendFailures(ctx, "l1"); err != nil || n != 1 {
-		t.Errorf("count = %d (err %v) after one was resolved, want 1", n, err)
+	if unresolved, err := db.Messages().UnresolvedSendFailures(ctx, "l1"); err != nil || unresolved != 1 {
+		t.Errorf("count = %d (err %v) after one was resolved, want 1", unresolved, err)
 	}
 	// The row keeps what failed and why: resolved is not delivered.
 	if got, err := db.Messages().Get(ctx, recent.ID); err != nil {
@@ -499,8 +499,8 @@ func TestUnresolvedSendFailures(t *testing.T) {
 		t.Errorf("ResolveSend on a delivered message = %v (err %v), want false", got, err)
 	}
 
-	if n, err := db.Messages().UnresolvedSendFailures(ctx, ""); err != nil || n != 0 {
-		t.Errorf("empty loop id counted %d rows (err %v), want none", n, err)
+	if unresolved, err := db.Messages().UnresolvedSendFailures(ctx, ""); err != nil || unresolved != 0 {
+		t.Errorf("empty loop id counted %d rows (err %v), want none", unresolved, err)
 	}
 }
 
@@ -525,12 +525,12 @@ func TestUndeliveredAgreesWithTheCount(t *testing.T) {
 	// that could wrongly appear in the list or the count. Age is not among
 	// them since #269: the old failure below is as undelivered as the new.
 	mk := func(loopID, text string) *store.Message {
-		m := &store.Message{TS: now, Origin: store.OriginLoop, Author: loopID,
+		message := &store.Message{TS: now, Origin: store.OriginLoop, Author: loopID,
 			FromLoopID: loopID, Text: text, Conversation: store.ConversationGroup}
-		if err := db.Messages().Insert(ctx, m); err != nil {
+		if err := db.Messages().Insert(ctx, message); err != nil {
 			t.Fatal(err)
 		}
-		return m
+		return message
 	}
 	first, second := mk("l1", "first"), mk("l1", "second")
 	sibling := mk("l2", "sibling")
@@ -544,11 +544,11 @@ func TestUndeliveredAgreesWithTheCount(t *testing.T) {
 	if err := db.Messages().SetSendResult(ctx, inbound.ID, now-500, "never sent"); err != nil {
 		t.Fatal(err)
 	}
-	for _, f := range []struct {
-		m  *store.Message
-		at int64
+	for _, fixture := range []struct {
+		message *store.Message
+		at      int64
 	}{{first, dayAgo - 1000}, {second, now - 1000}, {sibling, now - 2000}, {dealtWith, now - 3000}} {
-		if err := db.Messages().SetSendResult(ctx, f.m.ID, f.at, "chat not found"); err != nil {
+		if err := db.Messages().SetSendResult(ctx, fixture.message.ID, fixture.at, "chat not found"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -563,8 +563,8 @@ func TestUndeliveredAgreesWithTheCount(t *testing.T) {
 		t.Fatal(err)
 	}
 	tally := map[string]int{}
-	for _, m := range list {
-		tally[m.FromLoopID]++
+	for _, message := range list {
+		tally[message.FromLoopID]++
 	}
 	for _, loopID := range []string{"l1", "l2"} {
 		count, err := db.Messages().UnresolvedSendFailures(ctx, loopID)
@@ -600,9 +600,9 @@ func TestUndeliveredAgreesWithTheCount(t *testing.T) {
 	// same order, and as many as the badge counts.
 	for _, loopID := range []string{"l1", "l2"} {
 		var want []int64
-		for _, m := range list {
-			if m.FromLoopID == loopID {
-				want = append(want, m.ID)
+		for _, message := range list {
+			if message.FromLoopID == loopID {
+				want = append(want, message.ID)
 			}
 		}
 		scoped, err := db.Messages().Undelivered(ctx, loopID)
@@ -610,8 +610,8 @@ func TestUndeliveredAgreesWithTheCount(t *testing.T) {
 			t.Fatal(err)
 		}
 		got := make([]int64, 0, len(scoped))
-		for _, m := range scoped {
-			got = append(got, m.ID)
+		for _, message := range scoped {
+			got = append(got, message.ID)
 		}
 		if !slices.Equal(got, want) {
 			t.Errorf("loop %s: scoped list is %v, want the fleet list narrowed to it, %v", loopID, got, want)
@@ -650,44 +650,44 @@ func TestResolveResendsWalksTheChain(t *testing.T) {
 	now := time.Now().UnixMilli()
 
 	say := func(text string, resends int64) *store.Message {
-		m := &store.Message{TS: now, Origin: store.OriginLoop, Author: "terra",
+		message := &store.Message{TS: now, Origin: store.OriginLoop, Author: "terra",
 			FromLoopID: "l1", Text: text, Conversation: store.ConversationGroup,
 			ResendsID: resends}
-		if err := db.Messages().Insert(ctx, m); err != nil {
+		if err := db.Messages().Insert(ctx, message); err != nil {
 			t.Fatal(err)
 		}
-		return m
+		return message
 	}
 	first := say("the deploy is wedged", 0)
 	second := say("the deploy is wedged (again)", first.ID)
 	third := say("the deploy is wedged (again, again)", second.ID)
 	unrelated := say("something else entirely", 0)
-	for _, m := range []*store.Message{first, second, unrelated} {
-		if err := db.Messages().SetSendResult(ctx, m.ID, now, "chat not found"); err != nil {
+	for _, message := range []*store.Message{first, second, unrelated} {
+		if err := db.Messages().SetSendResult(ctx, message.ID, now, "chat not found"); err != nil {
 			t.Fatal(err)
 		}
 	}
 
 	// The third send is the one that got through.
-	n, err := db.Messages().ResolveResends(ctx, third.ID, now)
+	resolved, err := db.Messages().ResolveResends(ctx, third.ID, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n != 2 {
-		t.Errorf("resolved %d failures, want both links of the chain", n)
+	if resolved != 2 {
+		t.Errorf("resolved %d failures, want both links of the chain", resolved)
 	}
-	for _, m := range []*store.Message{first, second} {
-		got, err := db.Messages().Get(ctx, m.ID)
+	for _, message := range []*store.Message{first, second} {
+		got, err := db.Messages().Get(ctx, message.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if got.SendResolvedAt == 0 || got.SendResolution != store.SendResolutionResent {
-			t.Errorf("%q resolved as %q at %d; want resent", m.Text, got.SendResolution, got.SendResolvedAt)
+			t.Errorf("%q resolved as %q at %d; want resent", message.Text, got.SendResolution, got.SendResolvedAt)
 		}
 		// The message that arrived, not the next attempt: an operator
 		// reading either failure wants the words that landed.
 		if got.SendResentAs != third.ID {
-			t.Errorf("%q names %d as the resend, want %d", m.Text, got.SendResentAs, third.ID)
+			t.Errorf("%q names %d as the resend, want %d", message.Text, got.SendResentAs, third.ID)
 		}
 	}
 	// Nothing outside the chain is touched.
@@ -697,7 +697,7 @@ func TestResolveResendsWalksTheChain(t *testing.T) {
 		t.Error("a failure the chain never named was resolved with it")
 	}
 	// And a message that resends nothing resolves nothing.
-	if n, err := db.Messages().ResolveResends(ctx, unrelated.ID, now); err != nil || n != 0 {
-		t.Errorf("ResolveResends on a message that resends nothing = %d (err %v), want 0", n, err)
+	if resolved, err := db.Messages().ResolveResends(ctx, unrelated.ID, now); err != nil || resolved != 0 {
+		t.Errorf("ResolveResends on a message that resends nothing = %d (err %v), want 0", resolved, err)
 	}
 }

@@ -88,15 +88,15 @@ func TestLoopHubMCPToken(t *testing.T) {
 
 	now := time.Now().UnixMilli()
 	for _, name := range []string{"terra", "iris"} {
-		l := &store.Loop{
+		loopRecord := &store.Loop{
 			ID: "l_" + name, Name: name, Mission: "m", Status: store.StatusActive,
 			WorkspaceMode: store.WorkspaceNone, Pacing: store.PacingFixed,
 			Runtime: store.RuntimeBare, CreatedAt: now, UpdatedAt: now,
 		}
-		if err := db.Loops().Create(ctx, l); err != nil {
+		if err := db.Loops().Create(ctx, loopRecord); err != nil {
 			t.Fatalf("create %s: %v", name, err)
 		}
-		if l.HubMCPToken == "" {
+		if loopRecord.HubMCPToken == "" {
 			t.Fatalf("create %s left HubMCPToken empty", name)
 		}
 	}
@@ -161,12 +161,12 @@ func TestMigrateWithoutAllowlistedSender(t *testing.T) {
 		t.Fatalf("reopening a database with loops and no allowlisted sender: %v", err)
 	}
 	defer reopened.Close()
-	l, err := reopened.Loops().Get(ctx, "l1")
+	loopRecord, err := reopened.Loops().Get(ctx, "l1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if l.OwnerTGUserID != 0 || l.OwnerDMChatID != 0 {
-		t.Fatalf("owner = %d, chat = %d; want an ownerless loop", l.OwnerTGUserID, l.OwnerDMChatID)
+	if loopRecord.OwnerTGUserID != 0 || loopRecord.OwnerDMChatID != 0 {
+		t.Fatalf("owner = %d, chat = %d; want an ownerless loop", loopRecord.OwnerTGUserID, loopRecord.OwnerDMChatID)
 	}
 }
 

@@ -29,8 +29,8 @@ func TestFleetRulesRoundTrip(t *testing.T) {
 		Enabled: true, CreatedAt: 10, UpdatedAt: 10}
 	second := &store.FleetRule{ID: "rule_2", Title: "one PR at a time", Body: "Never open a second PR.",
 		Enabled: false, CreatedAt: 20, UpdatedAt: 20}
-	for _, r := range []*store.FleetRule{second, first} { // inserted out of order on purpose
-		if err := rules.Create(ctx, r); err != nil {
+	for _, rule := range []*store.FleetRule{second, first} { // inserted out of order on purpose
+		if err := rules.Create(ctx, rule); err != nil {
 			t.Fatal(err)
 		}
 	}
