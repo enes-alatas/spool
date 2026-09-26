@@ -8,8 +8,9 @@ import (
 )
 
 // StoreSource reads every secret Spool holds out of the store: the
-// operator's Claude token, and per loop its bot token, its hub MCP token and
-// its tool secrets.
+// operator's Claude token, and per loop its surface credentials (a Telegram
+// bot token, or a Slack app's two tokens), its hub MCP token and its tool
+// secrets.
 //
 // It reads through the *undecorated* store. Nothing here is persisted, so
 // there is nothing to redact, and a redactor asking a redacted store for the
@@ -36,6 +37,14 @@ func (s StoreSource) Secrets(ctx context.Context) ([]Secret, error) {
 	for _, l := range loops {
 		if l.TGBotToken != "" {
 			out = append(out, Secret{Name: "tg_bot_token", Value: l.TGBotToken})
+		}
+		// A Slack app is two credentials, and either one opens it: the app
+		// token opens its Socket Mode connection, the bot token posts as it.
+		if l.SlackAppToken != "" {
+			out = append(out, Secret{Name: "slack_app_token", Value: l.SlackAppToken})
+		}
+		if l.SlackBotToken != "" {
+			out = append(out, Secret{Name: "slack_bot_token", Value: l.SlackBotToken})
 		}
 		if l.HubMCPToken != "" {
 			out = append(out, Secret{Name: "hub_mcp_token", Value: l.HubMCPToken})
