@@ -76,3 +76,6 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 16:25: Iris audit: #347–#354 (1 medium #349 loop page Loading forever on 404/500; 7 low: contrast, failed-load states, a11y names, form errors). All typed. Iris fixing smallest first.
 - 16:35: Enes approved CI browser smoke; filed #356, queued for Iris after the audit fixes.
 - 18:30: merged #342 (#280), #343 (#2), #346 (#345), #355 (#348), #358 (#347). Open: #357 Terra (model can't read as CLI flag). L2: 8 open (272 258 245 182 180 168 55 19). Iris on audit fixes, then #356. Quiet.
+
+## 2026-09-26 10:00 — morning sweep
+- Merged last night: #357, #359 (#353), #361 (#352), #362 (#245). L2: 7 open (272 258 182 180 168 55 19). Audit open: #349 #350 #351 (taken by Iris 18:40, no PR) #354. No PR open; nudged both devs.
