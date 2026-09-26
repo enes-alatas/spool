@@ -163,7 +163,7 @@ func (s *Server) handlePatchRule(w http.ResponseWriter, r *http.Request) {
 	}
 	rule.UpdatedAt = time.Now().UnixMilli()
 	if err := s.Store.FleetRules().Update(r.Context(), rule); err != nil {
-		s.jsonErr(w, 500, "%v", err)
+		s.storeErr(w, err, "rule")
 		return
 	}
 	writeJSON(w, 200, ruleWriteView{Rule: rule, Budget: budgetOf(proposed)})

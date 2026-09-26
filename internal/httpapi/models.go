@@ -68,10 +68,8 @@ func (s *Server) handlePatchCustomModel(w http.ResponseWriter, r *http.Request) 
 	switch {
 	case errors.Is(err, loop.ErrInvalidModel):
 		s.jsonErr(w, 400, "%v", err)
-	case errors.Is(err, store.ErrNotFound):
-		s.jsonErr(w, 404, "custom model not found")
 	case err != nil:
-		s.jsonErr(w, 500, "%v", err)
+		s.storeErr(w, err, "custom model")
 	default:
 		writeJSON(w, 200, entry)
 	}
@@ -79,12 +77,9 @@ func (s *Server) handlePatchCustomModel(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleDeleteCustomModel(w http.ResponseWriter, r *http.Request) {
 	err := s.Models.Delete(r.Context(), r.PathValue("id"))
-	switch {
-	case errors.Is(err, store.ErrNotFound):
-		s.jsonErr(w, 404, "custom model not found")
-	case err != nil:
-		s.jsonErr(w, 500, "%v", err)
-	default:
-		w.WriteHeader(204)
+	if err != nil {
+		s.storeErr(w, err, "custom model")
+		return
 	}
+	w.WriteHeader(204)
 }
