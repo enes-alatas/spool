@@ -370,6 +370,12 @@ func (server *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"ok": true, "claude_version": server.ClaudeVer, "runtime": server.DefaultRuntime})
 }
 
+// defaultRuntime is the kind a loop is created as when its request names
+// none: the one the hub was started with, bare when it was given none.
+func (server *Server) defaultRuntime() string {
+	return defaultStr(server.DefaultRuntime, store.RuntimeBare)
+}
+
 func (server *Server) handleListLoops(w http.ResponseWriter, r *http.Request) {
 	loops, err := server.Store.Loops().List(r.Context())
 	if err != nil {
@@ -448,7 +454,7 @@ func (server *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	loopRuntime := defaultStr(req.Runtime, defaultStr(server.DefaultRuntime, store.RuntimeBare))
+	loopRuntime := defaultStr(req.Runtime, server.defaultRuntime())
 	switch loopRuntime {
 	case store.RuntimeBare:
 		if !server.BareAllowed {
@@ -1032,6 +1038,14 @@ type settingsView struct {
 	// at the terminal when the hub was started, and a form that offered it
 	// anyway would be offering a create the API refuses (#254).
 	BareAllowed bool `json:"bare_allowed"`
+	// DefaultRuntime is the kind a loop gets when a create request names
+	// none: the value handleCreateLoop falls back to, so New loop can start
+	// its runtime choice where the API would land anyway (#255).
+	DefaultRuntime string `json:"default_runtime"`
+	// ClaudeVersion is the `claude` CLI this hub found at start, "" when it
+	// found none. It describes the host rather than its liveness, so it is
+	// served here, behind the operator credential, and not on health (#258).
+	ClaudeVersion string `json:"claude_version"`
 }
 
 func (server *Server) settingsView(ctx context.Context) (settingsView, error) {
@@ -1045,6 +1059,8 @@ func (server *Server) settingsView(ctx context.Context) (settingsView, error) {
 		ContextArmPercent:   arm,
 		ContextForcePercent: force,
 		BareAllowed:         server.BareAllowed,
+		DefaultRuntime:      server.defaultRuntime(),
+		ClaudeVersion:       server.ClaudeVer,
 	}, nil
 }
 

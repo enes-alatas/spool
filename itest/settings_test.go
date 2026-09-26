@@ -8,7 +8,8 @@ import (
 )
 
 type settingsView struct {
-	ClaudeTokenSet bool `json:"claude_token_set"`
+	ClaudeTokenSet bool   `json:"claude_token_set"`
+	ClaudeVersion  string `json:"claude_version"`
 }
 
 func (s *server) settings() settingsView {
@@ -16,6 +17,16 @@ func (s *server) settings() settingsView {
 	var v settingsView
 	s.mustJSON("GET", "/api/settings", nil, &v)
 	return v
+}
+
+// TestSettingsReportsClaudeVersion: the CLI the hub found at start is served
+// to the operator, behind the credential (#258). It describes the host, so it
+// is not health's to answer.
+func TestSettingsReportsClaudeVersion(t *testing.T) {
+	s := startServer(t, t.TempDir())
+	if got := s.settings().ClaudeVersion; !strings.Contains(got, "fakeclaude") {
+		t.Errorf("claude_version = %q, want the version fakeclaude reports", got)
+	}
 }
 
 // TestSettingsClaudeToken drives the operator setup-token endpoint end to end:

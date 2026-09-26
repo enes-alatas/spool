@@ -101,36 +101,43 @@ func TestControlRoomCannotCreateABareLoopOnADockerHub(t *testing.T) {
 	}
 }
 
-// The control room decides whether to offer an uncontained loop from what
-// `GET /api/settings` says, so the flag the operator typed at the terminal has
-// to survive the trip (#255). A form that offered the choice on a hub that
-// refuses it would be offering a create that 400s; one that hid it on a hub
-// that allows it would hide the escape hatch `--allow-bare` exists to give.
+// The control room decides whether to offer an uncontained loop, and which
+// runtime New loop starts on, from what `GET /api/settings` says, so the
+// flags the operator typed at the terminal have to survive the trip (#255,
+// #258). A form that offered the choice on a hub that refuses it would be
+// offering a create that 400s; one that hid it on a hub that allows it would
+// hide the escape hatch `--allow-bare` exists to give.
 func TestSettingsReportsWhetherBareIsAllowed(t *testing.T) {
 	// A bare hub: the shape of a single-machine install, where every loop the
 	// room creates is uncontained and the form has to say so.
 	t.Run("a bare hub allows one", func(t *testing.T) {
-		assertBareAllowed(t, startServer(t, t.TempDir()), true)
+		assertHubRuntime(t, startServer(t, t.TempDir()), true, "bare")
 	})
 
 	// The docker cases need a daemon, because `--runtime docker` refuses to
 	// boot without one; startDockerServer skips when it is not there.
 	t.Run("a docker hub does not", func(t *testing.T) {
-		assertBareAllowed(t, startDockerServer(t, t.TempDir()), false)
+		assertHubRuntime(t, startDockerServer(t, t.TempDir()), false, "docker")
 	})
 
+	// Allowing bare does not make it the default: a create that names no
+	// runtime still gets a workstation.
 	t.Run("--allow-bare is the escape hatch on a docker hub", func(t *testing.T) {
-		assertBareAllowed(t, startDockerServer(t, t.TempDir(), "--allow-bare"), true)
+		assertHubRuntime(t, startDockerServer(t, t.TempDir(), "--allow-bare"), true, "docker")
 	})
 }
 
-func assertBareAllowed(t *testing.T, s *server, want bool) {
+func assertHubRuntime(t *testing.T, s *server, wantBareAllowed bool, wantDefault string) {
 	t.Helper()
 	var view struct {
-		BareAllowed bool `json:"bare_allowed"`
+		BareAllowed    bool   `json:"bare_allowed"`
+		DefaultRuntime string `json:"default_runtime"`
 	}
 	s.mustJSON("GET", "/api/settings", nil, &view)
-	if view.BareAllowed != want {
-		t.Errorf("bare_allowed = %v, want %v", view.BareAllowed, want)
+	if view.BareAllowed != wantBareAllowed {
+		t.Errorf("bare_allowed = %v, want %v", view.BareAllowed, wantBareAllowed)
+	}
+	if view.DefaultRuntime != wantDefault {
+		t.Errorf("default_runtime = %q, want %q", view.DefaultRuntime, wantDefault)
 	}
 }
