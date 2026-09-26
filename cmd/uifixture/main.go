@@ -28,6 +28,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/enes-alatas/spool/internal/datadir"
+	"github.com/enes-alatas/spool/internal/operator"
 	"github.com/enes-alatas/spool/internal/store"
 	"github.com/enes-alatas/spool/internal/store/sqlite"
 )
@@ -49,7 +51,34 @@ func main() {
 	if err := seed(context.Background(), db); err != nil {
 		log.Fatalf("uifixture: %v", err)
 	}
+	if err := writeOperatorToken(*dir); err != nil {
+		log.Fatalf("uifixture: %v", err)
+	}
 	fmt.Println(*dir)
+}
+
+// fixtureOperatorToken is the operator token of every hub started on a
+// fixture directory. A hub reads an existing token file rather than minting
+// one (operator.Load), so this is the value the login form, the session
+// cookie and a failed smoke's public trace carry. Minted, it would be a
+// random 64-hex string that a reader of that trace could only judge harmless
+// by knowing the hub is gone; this one says what it is.
+const fixtureOperatorToken = "uifixture-operator-token-not-a-secret"
+
+// writeOperatorToken seeds that token. It never replaces one that is already
+// there: pointed at a real data directory by mistake, a truncating write
+// would swap that hub's credential for one published in this repo, and the
+// next start would accept it.
+func writeOperatorToken(dir string) error {
+	f, err := os.OpenFile(operator.Path(dir), os.O_WRONLY|os.O_CREATE|os.O_EXCL, datadir.FileMode)
+	if err != nil {
+		return fmt.Errorf("operator token: %w", err)
+	}
+	if _, err := f.WriteString(fixtureOperatorToken + "\n"); err != nil {
+		f.Close()
+		return fmt.Errorf("operator token: %w", err)
+	}
+	return f.Close()
 }
 
 // The clock the fixture is written against. Times are relative to now so the

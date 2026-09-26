@@ -305,8 +305,9 @@ jobs:
         env:
           SPOOL_SMOKE_TRACE: ${{ runner.temp }}/smoke-trace.zip
         run: bash scripts/fixture-hub.sh npm run -s test:smoke
-      # The trace holds the throwaway hub's operator token, which opens nothing
-      # once the job ends: the hub and its directory are gone with the runner.
+      # The trace holds the fixture hub's operator token, which cmd/uifixture
+      # seeds as a synthetic value, so the public artifact carries no
+      # credential.
       - name: browser smoke, keep the trace
         if: failure() && needs.changes.outputs.smoke == 'true'
         uses: actions/upload-artifact@v4
