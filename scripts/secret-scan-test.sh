@@ -84,6 +84,15 @@ check 'a real-looking value under itest still fails' 1 'itest/harness_test.go:40
 check 'a synthetic fixture in a unit test is allowed' 0 '' \
   "$(diff_adding internal/telegram/api_test.go 20 '	const token = "0000000000:AA-not-a-real-bot-token-0000000000000"')"
 
+# The UI fixture writes a data directory, not a test, and its token has to be
+# long enough to trip the assigned-secret shape. It is held to the same rule:
+# a value that says it is synthetic passes, one that does not still fails.
+check 'a synthetic value in the UI fixture is allowed' 0 '' \
+  "$(diff_adding cmd/uifixture/main.go 72 'const fixtureOperatorToken = "uifixture-operator-token-not-a-secret"')"
+
+check 'a real-looking value in the UI fixture still fails' 1 'cmd/uifixture/main.go:72: assigned-secret' \
+  "$(diff_adding cmd/uifixture/main.go 72 'const fixtureOperatorToken = "9fJ2mQ8xR4tLwZbnKpVcHdSg"')"
+
 # Sequential characters read as hand-written too — that is how fixture authors
 # fill a length requirement when they are not holding down one key.
 check 'a sequential fixture is allowed' 0 '' \
