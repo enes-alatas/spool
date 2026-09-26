@@ -236,6 +236,37 @@ textarea {
   border-radius: 5px;
 }
 
+/* The header's New loop is always on screen, so it is quiet (#360): white
+   text with no surface or border. A filled button there outweighed the
+   page under it. The padding is the 44px hit area, with no box drawn around
+   it. The negative margins let that area overlap the bar's own padding, so
+   the bar is no taller for it and the text stays on the bar's edges. It is
+   inline-block on a 44px line rather than flex, because a flex item trims
+   the space after the plus and runs it into the label. Fleet's empty-state
+   creation button stays a `.btn.primary`. */
+.new-loop {
+  display: inline-block;
+  min-width: 44px;
+  line-height: 44px;
+  text-align: center;
+  padding: 0 10px;
+  margin: -6px -10px;
+  font-family: var(--sans);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  border-radius: 6px;
+  transition: text-shadow 120ms;
+}
+.new-loop:hover {
+  text-shadow: 0 0 10px color-mix(in srgb, var(--text) 35%, transparent);
+}
+.new-loop:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: -2px;
+}
+
 /* ---- primary navigation ---- */
 /* No fill, no container, no underline: selection is carried by colour,
    weight and a restrained bloom, so it survives without the glow. */

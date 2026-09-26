@@ -54,7 +54,7 @@ export default function App() {
         <Destinations variant="top" />
 
         <div className="meta">
-          <Link to="/new" className="btn sm primary">
+          <Link to="/new" className="new-loop">
             <span aria-hidden>+ </span>New loop
           </Link>
         </div>
