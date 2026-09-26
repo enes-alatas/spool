@@ -192,6 +192,18 @@ func (s *Server) jsonErr(w http.ResponseWriter, code int, msg string, args ...an
 	json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf(msg, args...)})
 }
 
+// storeErr answers a write the store refused. store.ErrNotFound is 404: the
+// subject was there when the handler looked it up and gone by the write, and
+// a caller who asked to change something that no longer exists broke
+// nothing. Anything else is the store failing, 500 (#180).
+func (s *Server) storeErr(w http.ResponseWriter, err error, subject string) {
+	if errors.Is(err, store.ErrNotFound) {
+		s.jsonErr(w, http.StatusNotFound, "%s not found", subject)
+		return
+	}
+	s.jsonErr(w, http.StatusInternalServerError, "%v", err)
+}
+
 // jsonErrCode is jsonErr plus a stable machine-readable reason, for the
 // cases where one status covers outcomes a client must tell apart. The
 // prose stays the human's, the code is the client's.
@@ -739,7 +751,7 @@ func (s *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 	}
 	updated, err := s.Store.Loops().Edit(r.Context(), l.ID, edit)
 	if err != nil {
-		s.jsonErr(w, 500, "%v", err)
+		s.storeErr(w, err, "loop")
 		return
 	}
 	if req.TGBotToken != nil {
@@ -1462,7 +1474,7 @@ func (s *Server) handlePutSecret(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Store.LoopSecrets().Set(r.Context(), l.ID, name, req.Value, time.Now().UnixMilli()); err != nil {
-		s.jsonErr(w, 500, "%v", err)
+		s.storeErr(w, err, "loop")
 		return
 	}
 	s.secretsChanged(r.Context())
@@ -1526,11 +1538,7 @@ func (s *Server) handleSenderStatus(status string) http.HandlerFunc {
 			return
 		}
 		if err := s.Store.TGSenders().SetStatus(r.Context(), id, status, time.Now().UnixMilli()); err != nil {
-			if errors.Is(err, store.ErrNotFound) {
-				s.jsonErr(w, 404, "sender not found")
-			} else {
-				s.jsonErr(w, 500, "%v", err)
-			}
+			s.storeErr(w, err, "sender")
 			return
 		}
 		sender, _ := s.Store.TGSenders().Get(r.Context(), id)
@@ -1649,7 +1657,7 @@ func (s *Server) handlePutOwner(w http.ResponseWriter, r *http.Request) {
 		l.OwnerTGUserID, l.OwnerDMChatID = req.TGUserID, 0
 		l.UpdatedAt = time.Now().UnixMilli()
 		if err := s.Store.Loops().SetOwner(r.Context(), l.ID, l.OwnerTGUserID, 0, l.UpdatedAt); err != nil {
-			s.jsonErr(w, 500, "%v", err)
+			s.storeErr(w, err, "loop")
 			return
 		}
 	}

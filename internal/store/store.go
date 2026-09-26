@@ -484,7 +484,7 @@ type LoopStore interface {
 	// SetOwner records who the loop may message privately, and the chat its
 	// bot reaches them in. Changing the owner passes 0 for the chat: the
 	// captured one belonged to the previous owner. Narrow for the same
-	// reason as SetGroupBinding.
+	// reason as SetGroupBinding. ErrNotFound if the loop is gone.
 	SetOwner(ctx context.Context, id string, tgUserID, dmChatID, updatedAt int64) error
 	// SetOwnerDMChat records the private chat the owner has written from,
 	// which is the only way a bot learns an address it cannot open itself.
@@ -505,7 +505,8 @@ type LoopStore interface {
 // LoopSecretStore holds a loop's secret env vars. Callers pass the timestamp
 // (the store never reads the clock), matching the rest of the interfaces.
 type LoopSecretStore interface {
-	// Set upserts one secret by (loopID, name).
+	// Set upserts one secret by (loopID, name); ErrNotFound if the loop is
+	// gone.
 	Set(ctx context.Context, loopID, name, value string, updatedAt int64) error
 	Delete(ctx context.Context, loopID, name string) error
 	// List returns a loop's secrets name-sorted, values included: the injector

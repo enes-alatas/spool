@@ -289,10 +289,16 @@ func (r loops) SetGroupBinding(ctx context.Context, id string, chatID, boundAt, 
 }
 
 func (r loops) SetOwner(ctx context.Context, id string, tgUserID, dmChatID, updatedAt int64) error {
-	_, err := r.db.ExecContext(ctx,
+	res, err := r.db.ExecContext(ctx,
 		`UPDATE loops SET owner_tg_user_id=?, owner_dm_chat_id=?, updated_at=? WHERE id=?`,
 		tgUserID, dmChatID, updatedAt, id)
-	return err
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
 }
 
 func (r loops) SetOwnerDMChat(ctx context.Context, id string, chatID, updatedAt int64) error {
@@ -1049,6 +1055,9 @@ func (r loopSecrets) Set(ctx context.Context, loopID, name, value string, update
 	_, err := r.db.ExecContext(ctx, `INSERT INTO loop_secrets (loop_id, name, value, updated_at) VALUES (?,?,?,?)
 		ON CONFLICT(loop_id, name) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`,
 		loopID, name, value, updatedAt)
+	if err != nil && strings.Contains(err.Error(), "FOREIGN KEY") {
+		return store.ErrNotFound
+	}
 	return err
 }
 

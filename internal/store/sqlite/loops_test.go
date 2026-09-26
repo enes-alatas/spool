@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -455,5 +456,28 @@ func TestLoopFleetChannelMembership(t *testing.T) {
 	}
 	if got.OutsideFleetChannel {
 		t.Fatal("the edit putting the loop back in the fleet channel did not land")
+	}
+}
+
+// A write to a loop that is gone says so, rather than succeeding at nothing
+// or failing as if the store broke: the API answers it 404 (#180).
+func TestWritesToAGoneLoopAreNotFound(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	now := time.Now().UnixMilli()
+
+	mission := "Keep the ledger."
+	if _, err := db.Loops().Edit(ctx, "loop_gone", store.LoopEdit{Mission: &mission, UpdatedAt: now}); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("Edit: err = %v, want ErrNotFound", err)
+	}
+	if err := db.Loops().SetOwner(ctx, "loop_gone", 42, 0, now); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("SetOwner: err = %v, want ErrNotFound", err)
+	}
+	if err := db.LoopSecrets().Set(ctx, "loop_gone", "FIXTURE_NAME", "fixture-value", now); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("LoopSecrets.Set: err = %v, want ErrNotFound", err)
 	}
 }

@@ -442,6 +442,8 @@ agents — Claude sessions today, Spool's own loops from L2.*
 - REST under `/api/`, method-routed stdlib mux, JSON snake_case. SSE for streams.
 - Every mutating endpoint validates server-side (the UI's dropdowns are convenience,
   not enforcement).
+- A write whose subject is gone answers 404, not 500: the store returns `ErrNotFound`
+  and the handler maps it with `storeErr`. 500 means the server broke.
 - Secrets (bot tokens, connection creds) never appear in API responses (`json:"-"`).
 
 ## Prompts
