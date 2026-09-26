@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ApiError, type CustomModel, type Settings as SettingsView } from '../api'
 import { customModelError, MODEL_LABEL_MAX, rotationGate, tokenSubmittable } from '../forms'
 import { customModelNote } from '../options'
-import { buildFacts, useClaudeVersion, useVersion } from '../version'
+import { buildFacts, useVersion } from '../version'
 import { loginError } from '../session'
 
 export default function Settings() {
@@ -71,7 +71,8 @@ function SessionSection() {
 // reference detail competing with the work.
 function Build() {
   const { data: build } = useVersion()
-  const { data: health } = useClaudeVersion()
+  // The Claude CLI rides the settings read, behind the credential (#258).
+  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings })
 
   return (
     <>
@@ -81,7 +82,7 @@ function Build() {
       </p>
 
       <dl className="facts">
-        {buildFacts(build, health?.claude_version).map((fact) => (
+        {buildFacts(build, settings?.claude_version).map((fact) => (
           <div key={fact.label} className="fact">
             <dt>{fact.label}</dt>
             <dd>{fact.value}</dd>

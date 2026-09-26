@@ -242,6 +242,12 @@ export interface Settings {
   // or --allow-bare). A property of how the hub was started, not of a loop:
   // New loop offers the choice only where the API would accept it (#255).
   bare_allowed: boolean
+  // The runtime a loop gets when a create request names none — the hub's own
+  // default, which New loop starts the runtime choice on (#255).
+  default_runtime: 'bare' | 'docker'
+  // The `claude` CLI this hub found at start; '' when it found none. Served
+  // here, behind the credential, because it describes the host (#258).
+  claude_version: string
   // Context-rotation thresholds (ADR-0022): effective percentages of the
   // model's window, defaults included.
   context_arm_percent: number
@@ -349,9 +355,6 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 export const EVENT_WINDOW = 300
 
 export const api = {
-  // `runtime` is the kind a loop gets when a create request names none — the
-  // hub's own default, which New loop starts the runtime choice on.
-  health: () => req<{ ok: boolean; claude_version: string; runtime: string }>('/api/health'),
   version: () => req<VersionInfo>('/api/version'),
   loops: () => req<LoopView[]>('/api/loops'),
   loop: (name: string) => req<LoopView>(`/api/loops/${name}`),
