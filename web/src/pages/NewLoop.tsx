@@ -107,7 +107,11 @@ export default function NewLoop() {
     <div className="page measure">
       <h1>New loop</h1>
       <div className="form">
-        {error && <div className="form-error">{error}</div>}
+        {error && (
+          <div className="form-error" role="alert">
+            {error}
+          </div>
+        )}
 
         <div className="field">
           <label htmlFor="nl-name">Name</label>

@@ -210,7 +210,7 @@ export default function Dashboard() {
         <>
           {isLoading && <div className="fleet-note">Loading the fleet…</div>}
           {isError && (
-            <div className="form-error">
+            <div className="form-error" role="alert">
               Could not load the fleet: {error instanceof Error ? error.message : String(error)}
             </div>
           )}

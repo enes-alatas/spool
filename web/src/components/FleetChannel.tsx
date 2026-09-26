@@ -252,7 +252,11 @@ function Compose({
             ? 'Names no loop in the channel, so it would reach nobody. Mention one with @, or @all.'
             : `Reaches ${recipients.map((n) => `@${n}`).join(', ')}. Stays on the hub: people on Telegram never see it.`}
       </div>
-      {error && <div className="form-error">{error}</div>}
+      {error && (
+        <div className="form-error" role="alert">
+          {error}
+        </div>
+      )}
     </div>
   )
 }
@@ -292,7 +296,7 @@ export function FleetChannel() {
     <div className="fleet-channel">
       {isLoading && <div className="fleet-note">Loading…</div>}
       {isError && (
-        <div className="form-error">
+        <div className="form-error" role="alert">
           Could not load the fleet channel: {error instanceof Error ? error.message : String(error)}
         </div>
       )}

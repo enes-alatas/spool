@@ -171,7 +171,11 @@ function ModelPanel({ loop }: { loop: LoopView }) {
           </button>
         </div>
       )}
-      {error && <div className="form-error">{error}</div>}
+      {error && (
+        <div className="form-error" role="alert">
+          {error}
+        </div>
+      )}
       {/* What the latest turn actually ran on: an alias or the default says
           nothing about the version until the CLI reports one (#289). Not
           while refused: the last turn that ran is not what the loop runs.
@@ -329,8 +333,16 @@ function MissionPanel({
             and an operator who learns that from the result has already
             paid it. */}
         <div className="mission-warning">{missionSaveWarning(name, hasSession)}</div>
-        {state.reason && <div className="form-error">{state.reason}</div>}
-        {error && <div className="form-error">{error}</div>}
+        {state.reason && (
+          <div className="form-error" role="alert">
+            {state.reason}
+          </div>
+        )}
+        {error && (
+          <div className="form-error" role="alert">
+            {error}
+          </div>
+        )}
         <div className="controls" style={{ marginTop: 8 }}>
           <button className="btn primary sm" onClick={save} disabled={busy || !state.canSave}>
             {busy ? 'Saving…' : 'Save'}
@@ -622,7 +634,11 @@ function WorkstationPanel({ loop, runningVerb }: { loop: LoopView; runningVerb: 
           {runningVerb && (
             <div className="ws-progress">{VERB_PROGRESS[runningVerb] ?? `${runningVerb}…`}</div>
           )}
-          {error && <div className="form-error">{error}</div>}
+          {error && (
+            <div className="form-error" role="alert">
+              {error}
+            </div>
+          )}
         </>
       ) : (
         <div className="panel-note">
@@ -714,7 +730,11 @@ function SecretsPanel({ loop }: { loop: LoopView }) {
           value={value}
           onChange={(e) => setValue(e.target.value)}
         />
-        {error && <div className="form-error">{error}</div>}
+        {error && (
+          <div className="form-error" role="alert">
+            {error}
+          </div>
+        )}
         <button className="btn primary" onClick={add} disabled={busy || !name.trim() || !value}>
           {busy ? 'Saving…' : 'Add secret'}
         </button>
@@ -800,7 +820,11 @@ function BotTokenForm({
         autoComplete="off"
         autoFocus
       />
-      {error && <div className="form-error">{error}</div>}
+      {error && (
+        <div className="form-error" role="alert">
+          {error}
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 6 }}>
         {/* `tokenSubmittable` is load-bearing, not tidiness — see its comment:
             PATCH reads an empty `tg_bot_token` as *disconnect*. */}
@@ -907,7 +931,11 @@ function SurfacesPanel({ loop }: { loop: LoopView }) {
           </span>
         </span>
       </label>
-      {error && <div className="form-error">{error}</div>}
+      {error && (
+        <div className="form-error" role="alert">
+          {error}
+        </div>
+      )}
     </div>
   )
 }
@@ -961,7 +989,9 @@ function SlackStep({ loop, onClose }: { loop: LoopView; onClose: () => void }) {
         </button>
       </div>
       {copied === 'failed' && (
-        <div className="form-error">The browser refused the clipboard; select the text instead.</div>
+        <div className="form-error" role="alert">
+          The browser refused the clipboard; select the text instead.
+        </div>
       )}
       <div className="hint">Token paste arrives with the Slack surface (#230).</div>
     </div>
@@ -1019,7 +1049,7 @@ function OwnerPanel({ loop }: { loop: LoopView }) {
         ))}
       </select>
       {error && (
-        <div className="form-error" style={{ marginTop: 6 }}>
+        <div className="form-error" role="alert" style={{ marginTop: 6 }}>
           {error}
         </div>
       )}
@@ -1425,7 +1455,7 @@ export default function LoopDetail() {
             </Link>
           </>
         ) : (
-          <div className="form-error">
+          <div className="form-error" role="alert">
             Could not load @{name}: {loopError.message}
           </div>
         )}
@@ -1506,7 +1536,9 @@ export default function LoopDetail() {
                 error, and the refetch the next event triggers replaces the
                 error once it succeeds. */}
             {pane === 'timeline' && eventsError && !events && (
-              <div className="form-error">Could not load the timeline: {eventsError.message}</div>
+              <div className="form-error" role="alert">
+                Could not load the timeline: {eventsError.message}
+              </div>
             )}
             {pane === 'timeline' ? (
               <Timeline
@@ -1520,7 +1552,9 @@ export default function LoopDetail() {
               // In place of the thread, whose empty state would otherwise
               // claim "Nothing yet" under the error.
               threadError && !thread ? (
-                <div className="form-error">Could not load the conversation: {threadError.message}</div>
+                <div className="form-error" role="alert">
+                  Could not load the conversation: {threadError.message}
+                </div>
               ) : (
                 <ControlRoomThread msgs={thread ?? []} />
               )
@@ -1570,7 +1604,11 @@ export default function LoopDetail() {
               Send
             </button>
           </div>
-          {sendError && <div className="form-error">{sendError}</div>}
+          {sendError && (
+            <div className="form-error" role="alert">
+              {sendError}
+            </div>
+          )}
         </section>
 
         <aside>

@@ -129,7 +129,11 @@ function RowActions({ msg, name }: { msg: ChatMessage; name: string }) {
           sent again; this row goes when it lands, or says why it did not
         </span>
       )}
-      {error && <span className="form-error undelivered-error">{error}</span>}
+      {error && (
+        <span className="form-error undelivered-error" role="alert">
+          {error}
+        </span>
+      )}
     </span>
   )
 }
@@ -146,7 +150,7 @@ export function UndeliveredPane({ name }: { name: string }) {
     <div className="undelivered-pane">
       {isLoading && <div className="fleet-note">Loading…</div>}
       {isError && (
-        <div className="form-error">
+        <div className="form-error" role="alert">
           Could not load the undelivered messages: {error instanceof Error ? error.message : String(error)}
         </div>
       )}
