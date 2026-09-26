@@ -12,6 +12,21 @@ import (
 	"github.com/enes-alatas/spool/internal/store"
 )
 
+// recheckInterval is the longest Run waits before it reads the schedule
+// against the wall clock again. A timer counts monotonic time, which stops
+// while the machine is suspended, and next_tick_at is wall time: waiting on
+// one timer for the earliest tick let a tick that came due during a suspend
+// fire only after the timer had also counted the time the suspend took from
+// it, hours late. fireDue decides what is due by the wall clock, so waking
+// this often bounds the catch-up after a resume to one interval.
+const recheckInterval = 30 * time.Second
+
+// lateTickThreshold is how far past its next_tick_at a tick may fire before
+// it is logged as late. Recheck granularity alone never gets near it, so a
+// late tick means the process did not run for a while: a suspended machine,
+// or a scheduler that stalled.
+const lateTickThreshold = 2 * recheckInterval
+
 type Ticker interface {
 	Tick(loopID string) bool
 }
@@ -47,28 +62,18 @@ func (s *Scheduler) Run(ctx context.Context) {
 	}
 
 	for {
-		next := s.earliest(ctx)
-		var timer *time.Timer
-		var fire <-chan time.Time
-		if next != 0 {
-			d := time.Until(time.UnixMilli(next))
-			if d < 0 {
-				d = 0
-			}
-			timer = time.NewTimer(d)
-			fire = timer.C
+		wait := recheckInterval
+		if next := s.earliest(ctx); next != 0 {
+			wait = min(wait, max(time.Until(time.UnixMilli(next)), 0))
 		}
+		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
-			if timer != nil {
-				timer.Stop()
-			}
+			timer.Stop()
 			return
 		case <-s.poke:
-			if timer != nil {
-				timer.Stop()
-			}
-		case <-fire:
+			timer.Stop()
+		case <-timer.C:
 			s.fireDue(ctx)
 		}
 	}
@@ -149,6 +154,9 @@ func (s *Scheduler) fireDue(ctx context.Context) {
 	for _, e := range entries {
 		if e.NextTickAt == 0 || e.NextTickAt > nowMS {
 			continue
+		}
+		if late := time.Duration(nowMS-e.NextTickAt) * time.Millisecond; late > lateTickThreshold {
+			s.log.Warn("tick fired late", "loop_id", e.LoopID, "late", late.Round(time.Second))
 		}
 		// Clear before firing; the runtime's OnTurnDone (or the busy-skip
 		// below) sets the next one.

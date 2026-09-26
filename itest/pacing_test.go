@@ -103,14 +103,42 @@ func TestOverdueTickFiresSoonAfterRestart(t *testing.T) {
 	}
 }
 
+// TestTickDueDuringSuspendStillFires: a tick that comes due while the machine
+// is suspended fires soon after it resumes, not after the scheduler's timer
+// has counted the suspended hours too. A timer counts monotonic time, which a
+// suspend stops, while next_tick_at is wall time. A test cannot suspend the
+// machine, but it can make the two disagree the same way: move the tick an
+// hour into the past behind the running scheduler's back, with no poke. A
+// scheduler waiting on one timer for the tick it last read would sleep out
+// the rest of its two-hour interval; one that rechecks the wall clock wakes
+// the loop within a recheck interval, and says the tick was late.
+func TestTickDueDuringSuspendStillFires(t *testing.T) {
+	dataDir := t.TempDir()
+	s := startServer(t, dataDir)
+	s.createLoop("sleeper", map[string]any{"tick_interval_sec": 7200})
+	first := s.waitTurn("sleeper", 30*time.Second, func(turn) bool { return true })
+	s.waitState("sleeper", "asleep", 30*time.Second)
+
+	setNextTick(t, dataDir, "sleeper", time.Now().Add(-time.Hour).UnixMilli())
+
+	woken := s.waitTurn("sleeper", 60*time.Second, func(tr turn) bool { return tr.ID != first.ID })
+	if woken.Trigger != "tick" {
+		t.Fatalf("the overdue tick came back as trigger %q", woken.Trigger)
+	}
+	if !strings.Contains(s.log(), "tick fired late") {
+		t.Fatalf("an hour-late tick fired without a warning; the log is where a suspend shows:\n%s", s.log())
+	}
+}
+
 // setNextTick rewrites a loop's scheduled tick directly in spool.db, which is
 // how a test makes a tick overdue without waiting for one: the API has no way
 // to say "this was due an hour ago", and sleeping through a real interval
-// would cost the suite a minute per assertion. The server must be stopped —
-// its own writes would race this one.
+// would cost the suite a minute per assertion. The server must be stopped, or
+// the loop asleep with nothing else due: the server's own writes to the row
+// would race this one.
 func setNextTick(t *testing.T, dataDir, name string, at int64) {
 	t.Helper()
-	db, err := sql.Open("sqlite", "file:"+filepath.Join(dataDir, "spool.db"))
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(dataDir, "spool.db")+"?_pragma=busy_timeout(5000)")
 	if err != nil {
 		t.Fatal(err)
 	}
