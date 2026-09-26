@@ -43,7 +43,13 @@ func main() {
 	if err := os.MkdirAll(*dir, 0o700); err != nil {
 		log.Fatalf("uifixture: %v", err)
 	}
-	db, err := sqlite.Open(filepath.Join(*dir, "spool.db"))
+	// A directory that already holds a store is someone's data, not a fixture
+	// to write: seeding it would mix invented loops into a real fleet.
+	dbPath := filepath.Join(*dir, "spool.db")
+	if _, err := os.Stat(dbPath); err == nil {
+		log.Fatalf("uifixture: %s already exists; give it a fresh directory", dbPath)
+	}
+	db, err := sqlite.Open(dbPath)
 	if err != nil {
 		log.Fatalf("uifixture: %v", err)
 	}
