@@ -147,3 +147,22 @@ func TestAPIMethodAndPathRefusals(t *testing.T) {
 		t.Fatalf("GET /api/no-such-route = %d %s, want a JSON 404", resp.StatusCode, body)
 	}
 }
+
+// Health answers anyone who can reach the port, so it says the hub is up and
+// nothing about the host (#258): not the runtime its loops get, which tells a
+// scanner whether they run uncontained, and not the claude CLI it found.
+func TestHealthSaysOnlyThatTheHubIsUp(t *testing.T) {
+	s := startServer(t, t.TempDir())
+
+	resp, body := s.raw("GET", "/api/health", nil, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/health without a credential = %d, want 200 (%s)", resp.StatusCode, body)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(body, &fields); err != nil {
+		t.Fatalf("decode health: %v (%s)", err, body)
+	}
+	if len(fields) != 1 || fields["ok"] != true {
+		t.Errorf("health = %s, want exactly {\"ok\":true}", body)
+	}
+}

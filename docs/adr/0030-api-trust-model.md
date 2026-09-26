@@ -1,6 +1,6 @@
 # ADR-0030: The API's trust model is a credential, not a port
 
-Date: 2026-09-21 · Status: accepted · Amends: ADR-0028 (consequence: "the operator listener")
+Date: 2026-09-21 · Status: accepted · Amends: ADR-0028 (consequence: "the operator listener") · Amended: 2026-09-26 (§2, health answers liveness only)
 
 ## Context
 
@@ -40,6 +40,14 @@ callers the network cannot distinguish.
    second, and neither names anything a stranger does not already know. The
    check is middleware wrapping the whole mux rather than a call in each
    handler, so a route added later cannot forget it.
+
+   **Amendment (2026-09-26, #258):** when this was written, health also
+   served the hub's default runtime and its `claude` CLI version, and both
+   name something a stranger does not know: whether loops here run
+   uncontained, and which CLI to look up. The operator decided that health
+   answers `{"ok":true}` and nothing else, and those two facts moved to the
+   authenticated `GET /api/settings`. An open route serves what a caller
+   without a credential needs, and no more.
 
 3. **Loops never receive it.** It is not in any exec env, secret, prompt or
    API response. A loop's credential is its own per-loop MCP token, checked by
