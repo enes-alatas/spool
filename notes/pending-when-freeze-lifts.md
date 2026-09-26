@@ -84,3 +84,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 12:20: #371 (#360) up. Iris filed #372 (low, header overlap at 200% text) — her queue: #354, #372, #356.
 - 14:50: merged #370 (#19), #371 (#360), #373 (#363: host suspend, timer ignores suspended time), #374 (#354), #376 (#272). #375 (#356) in review. L2: 258 182 168 55. Iris: #372 next. DM'd Enes: rebuild worth it.
 - 16:15: #375 merged (#356 closed). Iris → #378 (fixture hub obviously-fake token), then #372.
+- 18:15: merged #375 (#356), #377, #379 (#378). Open: #380 (#372), #382 (#19 loop pkg). L2: 258 182 168 55 19. Asked Terra to post #230's control-room contract after #382 so Iris can build Slack token/pairing UI in parallel. Runtime v0.2.0-96.
