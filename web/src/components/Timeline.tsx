@@ -78,7 +78,11 @@ export function Timeline({
           </button>
           {/* Said here rather than logged: a button that re-enables itself with
               the history unmoved reads exactly like reaching the first event. */}
-          {olderFailed && <span className="load-older-failed">could not reach the store</span>}
+          {olderFailed && (
+            <span className="load-older-failed" role="alert">
+              could not reach the store
+            </span>
+          )}
         </div>
       )}
       {entries.map((e) => {

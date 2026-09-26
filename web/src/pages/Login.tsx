@@ -63,7 +63,11 @@ export default function Login({ onSignedIn }: { onSignedIn: () => void }) {
           </div>
         </div>
 
-        {error && <div className="form-error">{error}</div>}
+        {error && (
+          <div className="form-error" role="alert">
+            {error}
+          </div>
+        )}
 
         <button className="btn primary" type="submit" disabled={busy || !tokenSubmittable(token)}>
           {busy ? 'Signing in…' : 'Sign in'}

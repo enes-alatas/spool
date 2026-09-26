@@ -93,7 +93,11 @@ function RuleEditor({
         rows={4}
         placeholder="Write it as an instruction to every loop."
       />
-      {error && <div className="form-error">{error}</div>}
+      {error && (
+        <div className="form-error" role="alert">
+          {error}
+        </div>
+      )}
       <div className="controls" style={{ marginTop: 8 }}>
         <button
           className="btn primary"
@@ -153,7 +157,7 @@ export default function Rules() {
     return (
       <div className="page measure">
         <h1>Fleet rules</h1>
-        <div className="form-error">
+        <div className="form-error" role="alert">
           {missing
             ? 'This orchestrator has no fleet-rules API. Update Spool to manage rules from here.'
             : `Could not load fleet rules: ${describeError(loadError)}`}
@@ -166,7 +170,11 @@ export default function Rules() {
     <div className="page measure">
       <h1>Fleet rules</h1>
       <BudgetBar budget={data.budget} />
-      {error && <div className="form-error">{error}</div>}
+      {error && (
+        <div className="form-error" role="alert">
+          {error}
+        </div>
+      )}
 
       {data.rules.length === 0 && (
         <div className="empty">
@@ -201,7 +209,11 @@ export default function Rules() {
               </button>
             </span>
           </div>
-          {ruleErrors[rule.id] && <div className="form-error">{ruleErrors[rule.id]}</div>}
+          {ruleErrors[rule.id] && (
+            <div className="form-error" role="alert">
+              {ruleErrors[rule.id]}
+            </div>
+          )}
           {editing === rule.id ? (
             <RuleEditor
               budget={data.budget}

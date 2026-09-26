@@ -52,7 +52,11 @@ function SessionSection() {
         nothing, so the token still opens a new session.
       </p>
 
-      {error && <div className="form-error">{error}</div>}
+      {error && (
+        <div className="form-error" role="alert">
+          {error}
+        </div>
+      )}
 
       <button className="btn" onClick={signOut} disabled={busy}>
         {busy ? 'Signing out…' : 'Sign out'}
@@ -138,7 +142,7 @@ function ClaudeToken({ settings, loadError }: { settings?: SettingsView; loadErr
             </div>
           ) : loadError ? (
             // the gap .token-state keeps above the input
-            <div className="form-error" style={{ marginBottom: 8 }}>
+            <div className="form-error" role="alert" style={{ marginBottom: 8 }}>
               {loadFailure(loadError)}
             </div>
           ) : (
@@ -158,7 +162,11 @@ function ClaudeToken({ settings, loadError }: { settings?: SettingsView; loadErr
           </div>
         </div>
 
-        {error && <div className="form-error">{error}</div>}
+        {error && (
+          <div className="form-error" role="alert">
+            {error}
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: 8 }}>
           <button
@@ -266,8 +274,16 @@ function RotationThresholds({ settings, loadError }: { settings?: SettingsView; 
 
         {/* The fields are empty and disabled without the stored pair; this
             says why, where an empty field would otherwise read as unset. */}
-        {!settings && loadError && <div className="form-error">{loadFailure(loadError)}</div>}
-        {error && <div className="form-error">{error}</div>}
+        {!settings && loadError && (
+          <div className="form-error" role="alert">
+            {loadFailure(loadError)}
+          </div>
+        )}
+        {error && (
+          <div className="form-error" role="alert">
+            {error}
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn primary" onClick={save} disabled={busy || !sendable}>
@@ -333,11 +349,11 @@ function CustomModels() {
       </p>
 
       {missing ? (
-        <div className="form-error">
+        <div className="form-error" role="alert">
           This orchestrator has no model-list API. Update Spool to keep a list here.
         </div>
       ) : loadError ? (
-        <div className="form-error">
+        <div className="form-error" role="alert">
           Could not load the model list: {loadError instanceof Error ? loadError.message : String(loadError)}
         </div>
       ) : isPending ? null : (
@@ -378,7 +394,11 @@ function CustomModels() {
               </div>
             </div>
 
-            {error && <div className="form-error">{error}</div>}
+            {error && (
+              <div className="form-error" role="alert">
+                {error}
+              </div>
+            )}
 
             <div>
               <button className="btn primary" onClick={add} disabled={busy || !model.trim()}>
@@ -471,7 +491,11 @@ function CustomModelRow({ entry, onChange }: { entry: CustomModel; onChange: () 
         </span>
       </div>
       {note && <div className="model-note">{note}</div>}
-      {error && <div className="form-error">{error}</div>}
+      {error && (
+        <div className="form-error" role="alert">
+          {error}
+        </div>
+      )}
     </div>
   )
 }

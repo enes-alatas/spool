@@ -69,7 +69,7 @@ export default function Access() {
           nobody waiting, which after a failure hides a pending sender (#352). */}
       {isLoading && <div className="fleet-note">Loading senders…</div>}
       {isError && (
-        <div className="form-error">
+        <div className="form-error" role="alert">
           Could not load senders: {error instanceof Error ? error.message : String(error)}
         </div>
       )}
