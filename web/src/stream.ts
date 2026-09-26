@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { accessSurface } from './slack'
 
 export type StreamPayload = { type?: string } & Record<string, unknown>
 
@@ -69,8 +70,12 @@ export function useGlobalStream() {
         qc.invalidateQueries({ queryKey: ['group'] })
         qc.invalidateQueries({ queryKey: ['loops'] })
         break
+      // The payload is the sender that changed. Its `surface` says which
+      // allowlist, so a Slack pairing does not refetch Telegram's (#230).
       case 'access':
-        qc.invalidateQueries({ queryKey: ['senders'] })
+        qc.invalidateQueries({
+          queryKey: accessSurface(item.payload) === 'slack' ? ['slack-senders'] : ['senders'],
+        })
         break
       case 'models':
         qc.invalidateQueries({ queryKey: ['models'] })

@@ -61,6 +61,13 @@ export interface LoopView {
   // about a delivery failure reads as a checked zero.
   undelivered: number
   has_tg_token: boolean
+  // Which surface the loop is attached to: one at most, '' for none (#230).
+  // Optional because a hub from before the Slack surface omits it; read it
+  // through `loopSurface` in slack.ts, which falls back to has_tg_token.
+  surface?: '' | 'telegram' | 'slack'
+  // Whether both Slack tokens are stored. The tokens themselves are
+  // write-only, as the Telegram one is.
+  has_slack_tokens?: boolean
   workstation_up: boolean
   workstation_detail?: string
   // Why the workstation is down: '' while it is up, 'powered_off' when the
@@ -70,6 +77,9 @@ export interface LoopView {
   // handle to show for them. Absent when no owner is configured; the handle
   // is absent when the sender record carries no username.
   owner_tg_user_id?: number
+  // The Slack owner, by Slack user id (U…), on a Slack loop. owner_username
+  // then carries their display name.
+  owner_slack_user_id?: string
   owner_username?: string
   // Whether the loop can actually DM its owner: a bot cannot open a private
   // chat, so it can only reach an owner who has written to this loop's own
@@ -183,6 +193,41 @@ export interface TGSender {
   first_seen_via: string
   created_at: number
   updated_at: number
+}
+
+// A Slack sender on the pairing allowlist (#230). The same lifecycle as a
+// Telegram sender, keyed by Slack user id within its workspace: being in the
+// workspace does not admit anyone.
+export interface SlackSender {
+  slack_user_id: string
+  team_id: string
+  username: string
+  display: string
+  status: 'pending' | 'allowed' | 'blocked'
+  pair_code: string
+  first_seen_via: string
+  created_at: number
+  updated_at: number
+}
+
+// A Slack loop's live state (#230). The channel binds the way a Telegram
+// group does, to the first one the bot is invited into or hears in, so
+// channel_id is '' until then. ignored_events counts events from channels it
+// does not listen in: the hint that the bot was invited somewhere else.
+export interface SlackStatus {
+  configured: boolean
+  bot_user_id: string
+  bot_name: string
+  team_id: string
+  team_name: string
+  channel_id: string
+  channel_name: string
+  bridge: {
+    connected: boolean
+    last_event_at: number
+    last_error: string
+    ignored_events: number
+  }
 }
 
 // A fleet rule: one instruction injected into every loop's prompt, ahead of
@@ -309,6 +354,10 @@ export interface CreateLoopReq {
   // Empty on PATCH detaches the bot (#165); optional on create, where a loop
   // may start with no surface (#287).
   tg_bot_token?: string
+  // A Slack app is one pair, so the two go together: both set attaches or
+  // rotates, both '' detaches, and one alone is a 400 (#230).
+  slack_app_token?: string
+  slack_bot_token?: string
   // Whether the loop is in the fleet channel (ADR-0032). On create, absent
   // means the server's default: out for a fleet's first loop, in otherwise.
   in_fleet_channel?: boolean
@@ -375,6 +424,12 @@ export const api = {
     req<LoopView>(`/api/loops/${name}/owner`, {
       method: 'PUT',
       body: JSON.stringify({ tg_user_id: tgUserID }),
+    }),
+  // The id must be an allowed Slack sender in the loop's workspace (#230).
+  setSlackOwner: (name: string, slackUserID: string) =>
+    req<LoopView>(`/api/loops/${name}/owner`, {
+      method: 'PUT',
+      body: JSON.stringify({ slack_user_id: slackUserID }),
     }),
   message: (
     name: string,
@@ -445,6 +500,14 @@ export const api = {
   blockSender: (id: number) => req<TGSender>(`/api/telegram/senders/${id}/block`, { method: 'POST' }),
   deleteSender: (id: number) =>
     req<{ deleted: boolean }>(`/api/telegram/senders/${id}`, { method: 'DELETE' }),
+  slackStatus: (name: string) => req<SlackStatus>(`/api/loops/${name}/slack/status`),
+  slackSenders: () => req<SlackSender[]>('/api/slack/senders'),
+  allowSlackSender: (id: string) =>
+    req<SlackSender>(`/api/slack/senders/${encodeURIComponent(id)}/allow`, { method: 'POST' }),
+  blockSlackSender: (id: string) =>
+    req<SlackSender>(`/api/slack/senders/${encodeURIComponent(id)}/block`, { method: 'POST' }),
+  deleteSlackSender: (id: string) =>
+    req<{ deleted: boolean }>(`/api/slack/senders/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   inspectWorkspace: (path: string) =>
     req<{ path: string; exists: boolean; is_git: boolean }>('/api/workspace/inspect', {
       method: 'POST',
