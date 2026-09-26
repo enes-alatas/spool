@@ -63,7 +63,7 @@ func (r *recordingLoops) SetModelRefusal(_ context.Context, _, _, refusal string
 	return nil
 }
 
-func (r *recordingLoops) SetRotation(_ context.Context, _ string, _ bool, note string) error {
+func (r *recordingLoops) SetRotation(_ context.Context, _ string, _ bool, _, note string) error {
 	r.note = note
 	return nil
 }

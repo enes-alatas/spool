@@ -54,7 +54,7 @@ func (m *Manager) Boot(ctx context.Context) error {
 			// still seeds the fresh session (#66, ADR-0022).
 			_ = m.deps.Store.Sessions().End(ctx, l.CurrentSessionID, store.EndReasonRotated, nowMS)
 			_ = m.deps.Store.Loops().SetRuntime(ctx, l.ID, "", 0)
-			_ = m.deps.Store.Loops().SetRotation(ctx, l.ID, false, l.HandoffNote)
+			_ = m.deps.Store.Loops().SetRotation(ctx, l.ID, false, l.RotateReason, l.HandoffNote)
 			m.log().Info("rotation completed after restart", "loop", l.Name, "old_session", l.CurrentSessionID)
 			l.CurrentSessionID = ""
 			l.RotatePending = false

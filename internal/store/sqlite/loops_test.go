@@ -171,9 +171,9 @@ func TestMigrateWithoutAllowlistedSender(t *testing.T) {
 }
 
 // TestLoopRotationState pins the rotation columns (#66): a loop starts with
-// no rotation pending and no note, SetRotation round-trips both, and Update —
-// which the API calls with whatever a settings form sent — cannot silently
-// erase a rotation in progress.
+// no rotation pending, no reason and no note, SetRotation round-trips all
+// three, and Update — which the API calls with whatever a settings form
+// sent — cannot silently erase a rotation in progress.
 func TestLoopRotationState(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -195,17 +195,17 @@ func TestLoopRotationState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.RotatePending || got.HandoffNote != "" {
+	if got.RotatePending || got.RotateReason != "" || got.HandoffNote != "" {
 		t.Fatalf("a new loop starts mid-rotation: %+v", got)
 	}
 
-	if err := db.Loops().SetRotation(ctx, "l1", true, "pick up the release"); err != nil {
+	if err := db.Loops().SetRotation(ctx, "l1", true, store.RotationReasonMission, "pick up the release"); err != nil {
 		t.Fatal(err)
 	}
 	if got, err = db.Loops().Get(ctx, "l1"); err != nil {
 		t.Fatal(err)
 	}
-	if !got.RotatePending || got.HandoffNote != "pick up the release" {
+	if !got.RotatePending || got.RotateReason != store.RotationReasonMission || got.HandoffNote != "pick up the release" {
 		t.Fatalf("rotation state did not round-trip: %+v", got)
 	}
 
@@ -213,7 +213,7 @@ func TestLoopRotationState(t *testing.T) {
 	if got, err = db.Loops().Edit(ctx, "l1", store.LoopEdit{Mission: &mission, UpdatedAt: now + 1}); err != nil {
 		t.Fatal(err)
 	}
-	if !got.RotatePending || got.HandoffNote != "pick up the release" {
+	if !got.RotatePending || got.RotateReason != store.RotationReasonMission || got.HandoffNote != "pick up the release" {
 		t.Fatalf("an unrelated edit dropped the rotation in progress: %+v", got)
 	}
 }

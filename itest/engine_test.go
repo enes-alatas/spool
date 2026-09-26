@@ -348,6 +348,10 @@ func TestContextRotationAtQuietBoundary(t *testing.T) {
 	if !s.hasEvent("shedder", "context_rotated", 30*time.Second) {
 		t.Fatal("rotation was not recorded as a spool event")
 	}
+	// the fill is the cause here, and the loop is told so (#272)
+	if !strings.Contains(handoff.ResultText, "Your context window is filling up") {
+		t.Fatalf("a fill rotation did not name the fill as its cause:\n%s", handoff.ResultText)
+	}
 
 	// the next message runs on a fresh session, seeded with the note the old
 	// session wrote — the echo shows the preamble carrying it
@@ -635,6 +639,12 @@ func TestManualRotation(t *testing.T) {
 	handoff := s.waitTurn("aster", 30*time.Second, func(tn turn) bool {
 		return tn.Trigger == "rotation" && strings.Contains(tn.ResultText, "handoff note from the old self")
 	})
+	// The loop is told the operator asked, not that its context is full: it
+	// is not, and the note it writes depends on which it believes (#272).
+	asked := strings.Join(s.turnInputs("aster")[handoff.ID], "\n")
+	if !strings.Contains(asked, "The operator asked for a fresh context") || strings.Contains(asked, "filling up") {
+		t.Fatalf("an operator-asked rotation told the loop the wrong cause:\n%s", asked)
+	}
 
 	s.message("aster", "carry on fresh")
 	fresh := s.waitTurn("aster", 30*time.Second, func(tn turn) bool {

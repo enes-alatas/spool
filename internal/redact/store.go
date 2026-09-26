@@ -50,11 +50,11 @@ type loops struct {
 	r *Redactor
 }
 
-func (l loops) SetRotation(ctx context.Context, id string, pending bool, note string) error {
+func (l loops) SetRotation(ctx context.Context, id string, pending bool, reason, note string) error {
 	// The handoff note is written by the loop, in its own words, and read
 	// back into the next session's prompt — free text with a turn's worth of
 	// whatever it was holding.
-	return l.LoopStore.SetRotation(ctx, id, pending, l.r.Text(note))
+	return l.LoopStore.SetRotation(ctx, id, pending, reason, l.r.Text(note))
 }
 
 func (l loops) SetModelRefusal(ctx context.Context, id, model, refusal string, updatedAt int64) error {

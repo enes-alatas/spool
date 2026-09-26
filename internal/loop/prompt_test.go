@@ -147,14 +147,37 @@ func TestMessageEnvelopeNamesConversation(t *testing.T) {
 }
 
 func TestRotationEnvelope(t *testing.T) {
-	env := RotationEnvelope(time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC))
-	if env.Trigger != store.TriggerRotation {
-		t.Errorf("trigger = %q, want %q", env.Trigger, store.TriggerRotation)
+	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+	cases := []struct {
+		reason string
+		cause  string
+	}{
+		{store.RotationReasonFill, "Your context window is filling up"},
+		{store.RotationReasonOperator, "The operator asked for a fresh context"},
+		{store.RotationReasonMission, "The operator rewrote your mission"},
 	}
-	for _, want := range []string{"[context rotation ·", "handoff note", "do not include a [next-wake] trailer"} {
-		if !strings.Contains(env.Text, want) {
-			t.Errorf("envelope missing %q:\n%s", want, env.Text)
-		}
+	for _, c := range cases {
+		t.Run(c.reason, func(t *testing.T) {
+			env := RotationEnvelope(now, c.reason)
+			if env.Trigger != store.TriggerRotation {
+				t.Errorf("trigger = %q, want %q", env.Trigger, store.TriggerRotation)
+			}
+			for _, want := range []string{"[context rotation ·", c.cause, "handoff note", "do not include a [next-wake] trailer"} {
+				if !strings.Contains(env.Text, want) {
+					t.Errorf("envelope missing %q:\n%s", want, env.Text)
+				}
+			}
+			// Only a mission change asks the note to be judged against the
+			// new instructions; the other two keep the work as it was.
+			if asks := strings.Contains(env.Text, "judge it against"); asks != (c.reason == store.RotationReasonMission) {
+				t.Errorf("envelope asks for the work against a new mission = %v:\n%s", asks, env.Text)
+			}
+			// The cause is told once: the fill sentence must not ride along
+			// on a rotation the operator asked for.
+			if c.reason != store.RotationReasonFill && strings.Contains(env.Text, "filling up") {
+				t.Errorf("a %s rotation still blames the context window:\n%s", c.reason, env.Text)
+			}
+		})
 	}
 }
 
@@ -163,7 +186,7 @@ func TestRotationEnvelope(t *testing.T) {
 // the recent replies.
 func TestRotationPreamble(t *testing.T) {
 	l := &store.Loop{Name: "r", Mission: "keep the tests green"}
-	preamble := RotationPreamble(l, "resume reviewing PR 7", []string{"looked at PR 7"})
+	preamble := RotationPreamble(l, store.RotationReasonFill, "resume reviewing PR 7", []string{"looked at PR 7"})
 	for _, want := range []string{
 		"your context was rotated",
 		"keep the tests green",
@@ -176,12 +199,28 @@ func TestRotationPreamble(t *testing.T) {
 	}
 
 	huge := strings.Repeat("x", maxHandoffNote+1000)
-	capped := RotationPreamble(l, huge, nil)
+	capped := RotationPreamble(l, store.RotationReasonFill, huge, nil)
 	if strings.Contains(capped, huge) {
 		t.Error("oversized handoff note was carried uncapped")
 	}
 	if !strings.Contains(capped, strings.Repeat("x", maxHandoffNote)+"…") {
 		t.Error("capped handoff note missing its truncation marker")
+	}
+
+	// After a mission change the successor is told its mission is new and
+	// the note predates it; after any other rotation, neither.
+	changed := RotationPreamble(l, store.RotationReasonMission, "resume reviewing PR 7", nil)
+	for _, want := range []string{
+		"your mission was changed and your context rotated",
+		"keep the tests green",
+		"written under your previous mission:\nresume reviewing PR 7",
+	} {
+		if !strings.Contains(changed, want) {
+			t.Errorf("mission-change preamble missing %q:\n%s", want, changed)
+		}
+	}
+	if strings.Contains(preamble, "mission was changed") || strings.Contains(preamble, "previous mission") {
+		t.Errorf("a fill rotation's preamble speaks of a mission change:\n%s", preamble)
 	}
 }
 
