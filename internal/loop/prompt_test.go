@@ -63,13 +63,13 @@ func TestSystemPromptWorkspaceSection(t *testing.T) {
 // given, the section sits ahead of MISSION and ends with the conflict line,
 // and with nothing enabled the section is absent entirely.
 func TestSystemPromptFleetRules(t *testing.T) {
-	l := &store.Loop{Name: "r", Mission: "keep the tests green"}
+	loopRecord := &store.Loop{Name: "r", Mission: "keep the tests green"}
 	rules := []*store.FleetRule{
 		{Title: "sign your work", Body: "End every artifact with your name.", Enabled: true},
 		{Title: "dormant", Body: "must not appear", Enabled: false},
 		{Title: "one PR at a time", Body: "Never open a second PR\nwhile one is waiting.", Enabled: true},
 	}
-	prompt := SystemPrompt(l, Catalog{}, rules, testVersion)
+	prompt := SystemPrompt(loopRecord, Catalog{}, rules, testVersion)
 
 	wantSection := "FLEET RULES\n" +
 		"1. sign your work\n   End every artifact with your name.\n" +
@@ -88,7 +88,7 @@ func TestSystemPromptFleetRules(t *testing.T) {
 	if got := FleetRulesSection([]*store.FleetRule{{Title: "off", Body: "x"}}); got != "" {
 		t.Errorf("FleetRulesSection with nothing enabled = %q, want empty", got)
 	}
-	if bare := SystemPrompt(l, Catalog{}, nil, testVersion); strings.Contains(bare, "FLEET RULES") {
+	if bare := SystemPrompt(loopRecord, Catalog{}, nil, testVersion); strings.Contains(bare, "FLEET RULES") {
 		t.Errorf("prompt without rules still carries the section:\n%s", bare)
 	}
 }
@@ -139,9 +139,9 @@ func TestMessageEnvelopeNamesConversation(t *testing.T) {
 			Conversation: store.ConversationGroup, FromLoop: true, Ref: MessageRef(43), ReplyTo: MessageRef(42)}),
 			"· ref:43 · in reply to ref:42 ·"},
 	}
-	for _, c := range cases {
-		if !strings.Contains(c.env.Text, c.want) {
-			t.Errorf("%s: header %q missing %q", c.name, c.env.Text, c.want)
+	for _, testCase := range cases {
+		if !strings.Contains(testCase.env.Text, testCase.want) {
+			t.Errorf("%s: header %q missing %q", testCase.name, testCase.env.Text, testCase.want)
 		}
 	}
 }
@@ -156,26 +156,26 @@ func TestRotationEnvelope(t *testing.T) {
 		{store.RotationReasonOperator, "The operator asked for a fresh context"},
 		{store.RotationReasonMission, "The operator rewrote your mission"},
 	}
-	for _, c := range cases {
-		t.Run(c.reason, func(t *testing.T) {
-			env := RotationEnvelope(now, c.reason)
+	for _, testCase := range cases {
+		t.Run(testCase.reason, func(t *testing.T) {
+			env := RotationEnvelope(now, testCase.reason)
 			if env.Trigger != store.TriggerRotation {
 				t.Errorf("trigger = %q, want %q", env.Trigger, store.TriggerRotation)
 			}
-			for _, want := range []string{"[context rotation ·", c.cause, "handoff note", "do not include a [next-wake] trailer"} {
+			for _, want := range []string{"[context rotation ·", testCase.cause, "handoff note", "do not include a [next-wake] trailer"} {
 				if !strings.Contains(env.Text, want) {
 					t.Errorf("envelope missing %q:\n%s", want, env.Text)
 				}
 			}
 			// Only a mission change asks the note to be judged against the
 			// new instructions; the other two keep the work as it was.
-			if asks := strings.Contains(env.Text, "judge it against"); asks != (c.reason == store.RotationReasonMission) {
+			if asks := strings.Contains(env.Text, "judge it against"); asks != (testCase.reason == store.RotationReasonMission) {
 				t.Errorf("envelope asks for the work against a new mission = %v:\n%s", asks, env.Text)
 			}
 			// The cause is told once: the fill sentence must not ride along
 			// on a rotation the operator asked for.
-			if c.reason != store.RotationReasonFill && strings.Contains(env.Text, "filling up") {
-				t.Errorf("a %s rotation still blames the context window:\n%s", c.reason, env.Text)
+			if testCase.reason != store.RotationReasonFill && strings.Contains(env.Text, "filling up") {
+				t.Errorf("a %s rotation still blames the context window:\n%s", testCase.reason, env.Text)
 			}
 		})
 	}
@@ -185,8 +185,8 @@ func TestRotationEnvelope(t *testing.T) {
 // deliberate rotation: the restated mission, the handoff note (capped), and
 // the recent replies.
 func TestRotationPreamble(t *testing.T) {
-	l := &store.Loop{Name: "r", Mission: "keep the tests green"}
-	preamble := RotationPreamble(l, store.RotationReasonFill, "resume reviewing PR 7", []string{"looked at PR 7"})
+	loopRecord := &store.Loop{Name: "r", Mission: "keep the tests green"}
+	preamble := RotationPreamble(loopRecord, store.RotationReasonFill, "resume reviewing PR 7", []string{"looked at PR 7"})
 	for _, want := range []string{
 		"your context was rotated",
 		"keep the tests green",
@@ -199,7 +199,7 @@ func TestRotationPreamble(t *testing.T) {
 	}
 
 	huge := strings.Repeat("x", maxHandoffNote+1000)
-	capped := RotationPreamble(l, store.RotationReasonFill, huge, nil)
+	capped := RotationPreamble(loopRecord, store.RotationReasonFill, huge, nil)
 	if strings.Contains(capped, huge) {
 		t.Error("oversized handoff note was carried uncapped")
 	}
@@ -209,7 +209,7 @@ func TestRotationPreamble(t *testing.T) {
 
 	// After a mission change the successor is told its mission is new and
 	// the note predates it; after any other rotation, neither.
-	changed := RotationPreamble(l, store.RotationReasonMission, "resume reviewing PR 7", nil)
+	changed := RotationPreamble(loopRecord, store.RotationReasonMission, "resume reviewing PR 7", nil)
 	for _, want := range []string{
 		"your mission was changed and your context rotated",
 		"keep the tests green",
@@ -246,7 +246,7 @@ func TestTruncateRespectsRuneBoundaries(t *testing.T) {
 // someone (#45).
 func TestCatalogSection(t *testing.T) {
 	telegramInGroup := Conversations{Surface: "Telegram", Group: true}
-	l := &store.Loop{Name: "terra", Mission: "m"}
+	loopRecord := &store.Loop{Name: "terra", Mission: "m"}
 	enes := Person{Username: "enesalatas", Display: "Enes"}
 	cases := []struct {
 		name          string
@@ -315,15 +315,15 @@ func TestCatalogSection(t *testing.T) {
 			notWant: []string{"@milo", "The people who can talk to this fleet", "Ask in the group"},
 		},
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			prompt := SystemPrompt(l, c.cat, nil, testVersion)
-			for _, want := range c.want {
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			prompt := SystemPrompt(loopRecord, testCase.cat, nil, testVersion)
+			for _, want := range testCase.want {
 				if !strings.Contains(prompt, want) {
 					t.Errorf("prompt missing %q:\n%s", want, prompt)
 				}
 			}
-			for _, notWant := range c.notWant {
+			for _, notWant := range testCase.notWant {
 				if strings.Contains(prompt, notWant) {
 					t.Errorf("prompt should not contain %q:\n%s", notWant, prompt)
 				}
@@ -345,9 +345,9 @@ func TestPersonLabel(t *testing.T) {
 		{Person{Display: "Enes"}, "Enes"},
 		{Person{TGUserID: 4242}, "telegram user 4242 (no handle — you cannot mention them)"},
 	}
-	for _, c := range cases {
-		if got := c.person.Label(); got != c.want {
-			t.Errorf("Label(%+v) = %q, want %q", c.person, got, c.want)
+	for _, testCase := range cases {
+		if got := testCase.person.Label(); got != testCase.want {
+			t.Errorf("Label(%+v) = %q, want %q", testCase.person, got, testCase.want)
 		}
 	}
 }
@@ -358,7 +358,7 @@ func TestPersonLabel(t *testing.T) {
 // must adopt this wake's prompt rather than be left untracked, or the first
 // rule saved after the migration goes unannounced.
 func TestDecidePrompt(t *testing.T) {
-	for _, c := range []struct {
+	for _, testCase := range []struct {
 		name     string
 		fresh    bool
 		known    string
@@ -371,9 +371,9 @@ func TestDecidePrompt(t *testing.T) {
 		{"an unchanged prompt says nothing", false, "abc", "abc", promptUnchanged},
 		{"a changed prompt is announced", false, "old", "abc", promptChanged},
 	} {
-		if got := decidePrompt(c.fresh, c.known, c.rendered); got != c.want {
+		if got := decidePrompt(testCase.fresh, testCase.known, testCase.rendered); got != testCase.want {
 			t.Errorf("%s: decidePrompt(%v, %q, %q) = %v, want %v",
-				c.name, c.fresh, c.known, c.rendered, got, c.want)
+				testCase.name, testCase.fresh, testCase.known, testCase.rendered, got, testCase.want)
 		}
 	}
 }
@@ -389,9 +389,9 @@ func TestDecidePrompt(t *testing.T) {
 // "ref:42" into the transcript in a position that reads like an arriving
 // message — the invented reference ADR-0025 exists to prevent.
 func TestStandingInstructionsPreambleCarriesEverythingThatChanges(t *testing.T) {
-	l := &store.Loop{Name: "aster", Mission: "keep the tests green", Pacing: store.PacingFixed}
+	loopRecord := &store.Loop{Name: "aster", Mission: "keep the tests green", Pacing: store.PacingFixed}
 	rules := []*store.FleetRule{{Title: "sign your work", Body: "End every artifact with your name.", Enabled: true}}
-	note := StandingInstructionsPreamble(l, Catalog{}, rules, testVersion)
+	note := StandingInstructionsPreamble(loopRecord, Catalog{}, rules, testVersion)
 
 	if !strings.HasPrefix(note, "[system note · your standing instructions changed]") {
 		t.Fatalf("the note must open with its header:\n%s", note)
@@ -415,8 +415,8 @@ func TestStandingInstructionsPreambleCarriesEverythingThatChanges(t *testing.T) 
 // the section: a loop that just had its last rule disabled must be able to
 // tell "no rules" from "rules not mentioned".
 func TestStandingInstructionsPreambleWithoutRules(t *testing.T) {
-	l := &store.Loop{Name: "aster", Mission: "m", Pacing: store.PacingFixed}
-	if note := StandingInstructionsPreamble(l, Catalog{}, nil, testVersion); !strings.Contains(note, "FLEET RULES\nThere are no fleet rules in force.") {
+	loopRecord := &store.Loop{Name: "aster", Mission: "m", Pacing: store.PacingFixed}
+	if note := StandingInstructionsPreamble(loopRecord, Catalog{}, nil, testVersion); !strings.Contains(note, "FLEET RULES\nThere are no fleet rules in force.") {
 		t.Fatalf("a ruleless note does not say so:\n%s", note)
 	}
 }
@@ -509,14 +509,14 @@ func TestSendFailureEnvelopeWithoutAReason(t *testing.T) {
 // restarted onto a new build resumes its loops' sessions, so the preamble is
 // the only place a running loop can learn its version changed (#225).
 func TestPromptSaysWhichSpoolWokeTheLoop(t *testing.T) {
-	l := &store.Loop{Name: "terra", Mission: "m"}
+	loopRecord := &store.Loop{Name: "terra", Mission: "m"}
 	want := "You run on Spool " + testVersion + "."
 
-	prompt := SystemPrompt(l, Catalog{}, nil, testVersion)
+	prompt := SystemPrompt(loopRecord, Catalog{}, nil, testVersion)
 	if !strings.Contains(prompt, want) {
 		t.Errorf("the system prompt does not say which Spool woke the loop:\n%s", prompt)
 	}
-	note := StandingInstructionsPreamble(l, Catalog{}, nil, testVersion)
+	note := StandingInstructionsPreamble(loopRecord, Catalog{}, nil, testVersion)
 	if !strings.Contains(note, want) {
 		t.Errorf("the standing-instructions note does not carry the version:\n%s", note)
 	}
@@ -544,10 +544,10 @@ func TestPromptSaysWhichSpoolWokeTheLoop(t *testing.T) {
 // TestUnknownVersionSaysNothing: a build that cannot name itself must not
 // tell a loop it runs on the empty string.
 func TestUnknownVersionSaysNothing(t *testing.T) {
-	l := &store.Loop{Name: "terra", Mission: "m"}
+	loopRecord := &store.Loop{Name: "terra", Mission: "m"}
 	for name, got := range map[string]string{
-		"system prompt": SystemPrompt(l, Catalog{}, nil, ""),
-		"standing note": StandingInstructionsPreamble(l, Catalog{}, nil, ""),
+		"system prompt": SystemPrompt(loopRecord, Catalog{}, nil, ""),
+		"standing note": StandingInstructionsPreamble(loopRecord, Catalog{}, nil, ""),
 	} {
 		if strings.Contains(got, "You run on Spool") {
 			t.Errorf("%s names a version it does not have:\n%s", name, got)
@@ -559,7 +559,7 @@ func TestUnknownVersionSaysNothing(t *testing.T) {
 // prompt is rendered from the conversations the loop has (#288), so a loop
 // is never taught a destination the hub would refuse it.
 func TestPromptTeachesOnlyTheLoopsConversations(t *testing.T) {
-	l := &store.Loop{Name: "terra", Mission: "m"}
+	loopRecord := &store.Loop{Name: "terra", Mission: "m"}
 	cases := []struct {
 		name          string
 		conv          Conversations
@@ -610,15 +610,15 @@ func TestPromptTeachesOnlyTheLoopsConversations(t *testing.T) {
 			},
 		},
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			prompt := SystemPrompt(l, Catalog{Conversations: c.conv}, nil, testVersion)
-			for _, want := range c.want {
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			prompt := SystemPrompt(loopRecord, Catalog{Conversations: testCase.conv}, nil, testVersion)
+			for _, want := range testCase.want {
 				if !strings.Contains(prompt, want) {
 					t.Errorf("prompt missing %q:\n%s", want, prompt)
 				}
 			}
-			for _, notWant := range c.notWant {
+			for _, notWant := range testCase.notWant {
 				if strings.Contains(prompt, notWant) {
 					t.Errorf("prompt should not contain %q:\n%s", notWant, prompt)
 				}
@@ -637,9 +637,9 @@ func TestConversationsOf(t *testing.T) {
 		{store.Loop{TGBotToken: "synthetic", OutsideFleetChannel: true}, "owner_dm control_room"},
 		{store.Loop{TGBotToken: "synthetic"}, "owner_dm group control_room"},
 	}
-	for _, c := range cases {
-		if got := strings.Join(ConversationsOf(&c.loop).Destinations(), " "); got != c.want {
-			t.Errorf("ConversationsOf(%+v) = %q, want %q", c.loop, got, c.want)
+	for _, testCase := range cases {
+		if got := strings.Join(ConversationsOf(&testCase.loop).Destinations(), " "); got != testCase.want {
+			t.Errorf("ConversationsOf(%+v) = %q, want %q", testCase.loop, got, testCase.want)
 		}
 	}
 }

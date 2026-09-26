@@ -19,10 +19,10 @@ func TestParseTrailer(t *testing.T) {
 		// trailer buried too deep (not in last 5 lines) is ignored
 		{"[next-wake: 5m]\na\nb\nc\nd\ne\nf", 0, false},
 	}
-	for _, c := range cases {
-		got, ok := ParseTrailer(c.in)
-		if ok != c.ok || got != c.want {
-			t.Errorf("ParseTrailer(%q) = %v,%v want %v,%v", c.in, got, ok, c.want, c.ok)
+	for _, testCase := range cases {
+		got, ok := ParseTrailer(testCase.in)
+		if ok != testCase.ok || got != testCase.want {
+			t.Errorf("ParseTrailer(%q) = %v,%v want %v,%v", testCase.in, got, ok, testCase.want, testCase.ok)
 		}
 	}
 }

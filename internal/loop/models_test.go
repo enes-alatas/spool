@@ -27,9 +27,9 @@ func TestContextLimit(t *testing.T) {
 		{"claude-sonnet-4-5-20250929", 0},
 		{"claude-3-7-sonnet-20250219", 0},
 	}
-	for _, c := range cases {
-		if got := ContextLimit(c.model); got != c.want {
-			t.Errorf("ContextLimit(%q) = %d, want %d", c.model, got, c.want)
+	for _, testCase := range cases {
+		if got := ContextLimit(testCase.model); got != testCase.want {
+			t.Errorf("ContextLimit(%q) = %d, want %d", testCase.model, got, testCase.want)
 		}
 	}
 }

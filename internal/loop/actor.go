@@ -104,20 +104,20 @@ type Deps struct {
 
 	// RenderPrompt builds a loop's prompt text for one wake (peers and rules
 	// are resolved at call time so every wake sees the current fleet).
-	RenderPrompt func(l *store.Loop) Prompt
+	RenderPrompt func(loopRecord *store.Loop) Prompt
 	// MCPEndpoint returns the hub MCP URL reachable from this loop's
 	// runtime ("" = don't connect the tool). Wired in cmd, which knows the
 	// listen address and each runtime's network path to it (ADR-0026).
-	MCPEndpoint func(l *store.Loop) string
+	MCPEndpoint func(loopRecord *store.Loop) string
 	// OnTurnStart opens the loop's per-turn send budget (ADR-0026).
-	OnTurnStart func(l *store.Loop)
+	OnTurnStart func(loopRecord *store.Loop)
 	// SendsThisTurn summarizes the messages the loop has sent since its
 	// budget last opened — what a redelivered batch's fresh session is told,
 	// so it can identify the lost turn's sends and not repeat them
 	// (ADR-0026 decision 5).
 	SendsThisTurn func(loopID string) []string
 	// OnTurnDone reschedules the loop's next tick after any completed turn.
-	OnTurnDone func(l *store.Loop, trailer time.Duration, hasTrailer bool)
+	OnTurnDone func(loopRecord *store.Loop, trailer time.Duration, hasTrailer bool)
 	// ClaudeToken returns the operator's stored setup-token, or "" when none is
 	// configured. Workstation (contained) runtimes inject it as
 	// CLAUDE_CODE_OAUTH_TOKEN; bare loops use the host login and never call it.
@@ -126,7 +126,7 @@ type Deps struct {
 	// for the model it was spawned on: the model list keeps what the
 	// default runtime's aliases run as (ADR-0033). Nil in tests that do not
 	// care.
-	ObserveModel func(l *store.Loop, spawned, resolved string)
+	ObserveModel func(loopRecord *store.Loop, spawned, resolved string)
 }
 
 // runtimeFor picks the runtime a loop runs on. Unknown kinds return nil —
@@ -216,26 +216,26 @@ type Actor struct {
 	healthTimer *time.Timer
 }
 
-func NewActor(deps Deps, l *store.Loop) *Actor {
+func NewActor(deps Deps, loopRecord *store.Loop) *Actor {
 	actor := &Actor{
 		deps:  deps,
 		cmds:  make(chan cmd, 32),
-		loop:  *l,
+		loop:  *loopRecord,
 		state: StateAsleep,
 		// the defaults hold until the first wake reads the operator's:
 		// a zero force threshold would read as "every turn is over it"
 		armPct:   DefaultContextArmPercent,
 		forcePct: DefaultContextForcePercent,
 	}
-	actor.paused = l.Status == store.StatusPaused
+	actor.paused = loopRecord.Status == store.StatusPaused
 	// A rotation the previous process completed left its note in the store;
 	// the successor session has not had its first turn yet, so this actor is
 	// the one that owes it the preamble (#66).
-	actor.handoffNote = l.HandoffNote
-	actor.handoffReason = l.RotateReason
-	actor.offSnap.Store(l.WorkstationOff)
+	actor.handoffNote = loopRecord.HandoffNote
+	actor.handoffReason = loopRecord.RotateReason
+	actor.offSnap.Store(loopRecord.WorkstationOff)
 	actor.healthSnap.Store(runtime.Health{Up: true}) // optimistic until the first poll
-	if l.WorkstationOff {
+	if loopRecord.WorkstationOff {
 		// switched off before the orchestrator restarted: it is still off,
 		// and still calmly so
 		actor.healthSnap.Store(runtime.Health{Up: false, Detail: poweredOffDetail})
@@ -276,7 +276,9 @@ func (actor *Actor) Power(verb string) error {
 	actor.cmds <- cmd{kind: "power", verb: verb, reply: reply}
 	return <-reply
 }
-func (actor *Actor) UpdateLoop(l *store.Loop) { actor.cmds <- cmd{kind: "update", loop: l} }
+func (actor *Actor) UpdateLoop(loopRecord *store.Loop) {
+	actor.cmds <- cmd{kind: "update", loop: loopRecord}
+}
 
 // Shutdown stops the actor, killing any live process. Blocks until done.
 func (actor *Actor) Shutdown() {
@@ -321,8 +323,8 @@ func (actor *Actor) handleCmd(command cmd) {
 	switch command.kind {
 	case "deliver":
 		if actor.holdsWork() {
-			if b, err := json.Marshal(command.env); err == nil {
-				_ = actor.deps.Store.Inbox().Push(context.Background(), actor.loop.ID, string(b), now())
+			if payload, err := json.Marshal(command.env); err == nil {
+				_ = actor.deps.Store.Inbox().Push(context.Background(), actor.loop.ID, string(payload), now())
 			}
 			return
 		}
@@ -650,8 +652,8 @@ func (actor *Actor) collectSendFailures(ctx context.Context) {
 	env := SendFailureEnvelope(time.Now(), lost)
 	actor.sendFailure = &env
 	actor.sendFailureIDs = make([]int64, 0, len(lost))
-	for _, m := range lost {
-		actor.sendFailureIDs = append(actor.sendFailureIDs, m.ID)
+	for _, message := range lost {
+		actor.sendFailureIDs = append(actor.sendFailureIDs, message.ID)
 	}
 }
 
@@ -806,8 +808,8 @@ func (actor *Actor) sendBatch(batch []Envelope) {
 		if len(actor.lostSends) > 0 {
 			var note strings.Builder
 			note.WriteString("[system note · a previous attempt at this turn already sent the following; do not send them again]")
-			for _, s := range actor.lostSends {
-				note.WriteString("\n- " + s)
+			for _, lost := range actor.lostSends {
+				note.WriteString("\n- " + lost)
 			}
 			text = note.String() + "\n\n---\n\n" + text
 		}
@@ -849,8 +851,8 @@ func (actor *Actor) sendBatch(batch []Envelope) {
 	actor.lastCall = claude.Usage{}
 
 	for _, env := range batch {
-		if b, err := json.Marshal(env); err == nil {
-			actor.storeEventFull("envelope", env.Trigger, string(b))
+		if payload, err := json.Marshal(env); err == nil {
+			actor.storeEventFull("envelope", env.Trigger, string(payload))
 		}
 	}
 
@@ -921,18 +923,18 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 		actor.recordOversizedBatch()
 	}
 	if actor.turn != nil && res != nil {
-		t := actor.turn
-		t.EndedAt = now()
-		t.IsError = res.IsError
-		t.ResultText = res.ResultText
+		turn := actor.turn
+		turn.EndedAt = now()
+		turn.IsError = res.IsError
+		turn.ResultText = res.ResultText
 		// The CLI reports the session's running total, not this turn's price
 		// (#191). The turn cost what the total gained, measured against the
 		// store rather than a remembered value so a restart mid-session
 		// prices the next turn correctly. Clamped at zero: a total that
 		// failed to grow means nothing was spent — an errored turn repeats
 		// the previous figure — never that a turn earned money back.
-		t.SessionCostUSD = res.CostUSD
-		prior, err := actor.deps.Store.Turns().SessionCost(context.Background(), actor.loop.ID, t.SessionID)
+		turn.SessionCostUSD = res.CostUSD
+		prior, err := actor.deps.Store.Turns().SessionCost(context.Background(), actor.loop.ID, turn.SessionID)
 		if err != nil {
 			// Price it as a first turn: the whole total. Wrong when the
 			// session had earlier turns, and wrong in the direction that
@@ -940,18 +942,18 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 			actor.log().Error("session cost unavailable", "err", err)
 			prior = 0
 		}
-		t.CostUSD = max(0, res.CostUSD-prior)
-		t.InputTokens = res.Usage.InputTokens
-		t.OutputTokens = res.Usage.OutputTokens
-		t.CacheReadTokens = res.Usage.CacheReadTokens
-		t.CacheWriteTokens = res.Usage.CacheCreationTokens
-		t.ContextTokens = contextOccupancy(actor.lastCall)
-		t.DurationMS = res.DurationMS
-		t.Model = actor.activeModel
-		if err := actor.deps.Store.Turns().Finish(context.Background(), t); err != nil {
+		turn.CostUSD = max(0, res.CostUSD-prior)
+		turn.InputTokens = res.Usage.InputTokens
+		turn.OutputTokens = res.Usage.OutputTokens
+		turn.CacheReadTokens = res.Usage.CacheReadTokens
+		turn.CacheWriteTokens = res.Usage.CacheCreationTokens
+		turn.ContextTokens = contextOccupancy(actor.lastCall)
+		turn.DurationMS = res.DurationMS
+		turn.Model = actor.activeModel
+		if err := actor.deps.Store.Turns().Finish(context.Background(), turn); err != nil {
 			actor.log().Error("turn finish", "err", err)
 		}
-		actor.deps.Bus.Publish(bus.Item{Kind: bus.KindTurnResult, LoopID: actor.loop.ID, Payload: t})
+		actor.deps.Bus.Publish(bus.Item{Kind: bus.KindTurnResult, LoopID: actor.loop.ID, Payload: turn})
 
 		// The final reply is the turn's status note (ADR-0026): stored and
 		// published above, delivered to no conversation — a loop that wants
@@ -1064,8 +1066,8 @@ func (actor *Actor) setRotationState(pending bool, note string) {
 // window after this API call: the prompt it sent, the cached prefix it
 // reread, and the suffix it just wrote to the cache (the next call rereads
 // that too). The same formula backs the CLI's own /context gauge.
-func contextOccupancy(u claude.Usage) int {
-	return u.InputTokens + u.CacheReadTokens + u.CacheCreationTokens
+func contextOccupancy(usage claude.Usage) int {
+	return usage.InputTokens + usage.CacheReadTokens + usage.CacheCreationTokens
 }
 
 // measureContext records how full the model's window was when the turn that
@@ -1089,11 +1091,11 @@ func (actor *Actor) measureContext() {
 }
 
 func (actor *Actor) armIdleTimer() {
-	d := time.Duration(actor.loop.IdleTimeoutSec) * time.Second
-	if d <= 0 {
-		d = 90 * time.Second
+	timeout := time.Duration(actor.loop.IdleTimeoutSec) * time.Second
+	if timeout <= 0 {
+		timeout = 90 * time.Second
 	}
-	actor.idleTimer.Reset(d)
+	actor.idleTimer.Reset(timeout)
 }
 
 func (actor *Actor) handleIdleTimeout() {
@@ -1142,10 +1144,10 @@ func (actor *Actor) handleProcExit() {
 
 	if inTurn {
 		// process died mid-turn
-		t := actor.turn
-		t.EndedAt = now()
-		t.IsError = true
-		_ = actor.deps.Store.Turns().Finish(context.Background(), t)
+		turn := actor.turn
+		turn.EndedAt = now()
+		turn.IsError = true
+		_ = actor.deps.Store.Turns().Finish(context.Background(), turn)
 		actor.turn = nil
 	}
 
@@ -1418,11 +1420,11 @@ func buildExecEnv(system map[string]string, secrets []*store.LoopSecret) map[str
 		return nil
 	}
 	env := make(map[string]string, len(system)+len(secrets))
-	for k, v := range system {
-		env[k] = v
+	for name, value := range system {
+		env[name] = value
 	}
-	for _, s := range secrets {
-		env[s.Name] = s.Value
+	for _, secret := range secrets {
+		env[secret.Name] = secret.Value
 	}
 	return env
 }
@@ -1740,7 +1742,7 @@ func (actor *Actor) recentReplies() []string {
 }
 
 func (actor *Actor) storeClaudeEvent(ev claude.Event) {
-	e := &store.Event{
+	event := &store.Event{
 		LoopID:    actor.loop.ID,
 		SessionID: actor.loop.CurrentSessionID,
 		TS:        now(),
@@ -1749,12 +1751,12 @@ func (actor *Actor) storeClaudeEvent(ev claude.Event) {
 		Payload:   string(ev.Raw),
 	}
 	if actor.turn != nil {
-		e.TurnID = actor.turn.ID
+		event.TurnID = actor.turn.ID
 	}
-	if _, err := actor.deps.Store.Events().Insert(context.Background(), e); err != nil {
+	if _, err := actor.deps.Store.Events().Insert(context.Background(), event); err != nil {
 		actor.log().Error("event insert", "err", err)
 	}
-	actor.deps.Bus.Publish(bus.Item{Kind: bus.KindAgentEvent, LoopID: actor.loop.ID, Payload: e})
+	actor.deps.Bus.Publish(bus.Item{Kind: bus.KindAgentEvent, LoopID: actor.loop.ID, Payload: event})
 }
 
 func (actor *Actor) storeSpoolEvent(subtype, payload string) {
@@ -1762,7 +1764,7 @@ func (actor *Actor) storeSpoolEvent(subtype, payload string) {
 }
 
 func (actor *Actor) storeEventFull(typ, subtype, payload string) {
-	e := &store.Event{
+	event := &store.Event{
 		LoopID:    actor.loop.ID,
 		SessionID: actor.loop.CurrentSessionID,
 		TS:        now(),
@@ -1771,18 +1773,18 @@ func (actor *Actor) storeEventFull(typ, subtype, payload string) {
 		Payload:   payload,
 	}
 	if actor.turn != nil {
-		e.TurnID = actor.turn.ID
+		event.TurnID = actor.turn.ID
 	}
-	if _, err := actor.deps.Store.Events().Insert(context.Background(), e); err != nil {
+	if _, err := actor.deps.Store.Events().Insert(context.Background(), event); err != nil {
 		actor.log().Error("event insert", "err", err)
 	}
-	actor.deps.Bus.Publish(bus.Item{Kind: bus.KindAgentEvent, LoopID: actor.loop.ID, Payload: e})
+	actor.deps.Bus.Publish(bus.Item{Kind: bus.KindAgentEvent, LoopID: actor.loop.ID, Payload: event})
 }
 
 // State returns the last published loop state (safe from any goroutine).
 func (actor *Actor) State() string {
-	if s, ok := actor.stateSnap.Load().(string); ok {
-		return s
+	if state, ok := actor.stateSnap.Load().(string); ok {
+		return state
 	}
 	return StateAsleep
 }
@@ -1821,22 +1823,22 @@ func (actor *Actor) log() *slog.Logger {
 
 func now() int64 { return time.Now().UnixMilli() }
 
-func tail(s string, n int) string {
-	if len(s) <= n {
-		return s
+func tail(text string, limit int) string {
+	if len(text) <= limit {
+		return text
 	}
-	return s[len(s)-n:]
+	return text[len(text)-limit:]
 }
 
 // newUUID returns a random v4 UUID (claude --session-id requires valid UUIDs).
 func newUUID() string {
-	var b [16]byte
-	if _, err := crand.Read(b[:]); err != nil {
+	var random [16]byte
+	if _, err := crand.Read(random[:]); err != nil {
 		panic(err)
 	}
-	b[6] = (b[6] & 0x0f) | 0x40
-	b[8] = (b[8] & 0x3f) | 0x80
+	random[6] = (random[6] & 0x0f) | 0x40
+	random[8] = (random[8] & 0x3f) | 0x80
 	dst := make([]byte, 32)
-	hex.Encode(dst, b[:])
+	hex.Encode(dst, random[:])
 	return fmt.Sprintf("%s-%s-%s-%s-%s", dst[0:8], dst[8:12], dst[12:16], dst[16:20], dst[20:32])
 }
