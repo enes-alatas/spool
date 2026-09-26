@@ -1867,9 +1867,14 @@ textarea {
 }
 
 /* Enter the narrow composition well before the centred row can reach the
-   brand or the New loop action — five labelled destinations plus both ends
-   stop fitting around 900px. */
-@media (max-width: 900px) {
+   brand or the New loop action. The row is text plus fixed gaps, so the width
+   it needs grows with the reader's text size: about 380px of padding and gaps
+   plus 22.3em of labels (739px at 16px text, 1096px at 32px). The switch keeps
+   that shape with the same headroom the wide bar always had, which is 900px at
+   the default size and 1260px at 200%. A px breakpoint stayed at 900 while the
+   labels doubled, and the row overlapped the action just above it (#372). In a
+   media query an em is the browser's text size, not the page's. */
+@media (max-width: calc(540px + 22.5em)) {
   /* Once the destinations move to the bottom bar the top row is only brand
      and New loop, so it can be a wrapping line: at a large text size the two
      stop fitting side by side and the action drops below the wordmark
