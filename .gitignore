@@ -10,6 +10,8 @@ web/node_modules/
 # to a PR, never repo content — and a shot is only ever as fresh as the run
 # that took it
 web/shots/
+# `make ui-smoke` leaves its Playwright trace here when the walk fails
+web/smoke-trace.zip
 web/dist/*
 !web/dist/.gitkeep
 *.tsbuildinfo

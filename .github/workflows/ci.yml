@@ -74,6 +74,7 @@ jobs:
       itest: ${{ steps.trust.outputs.itest }}
       itest_key: ${{ steps.covered.outputs.key }}
       web: ${{ steps.filter.outputs.web }}
+      smoke: ${{ steps.filter.outputs.smoke }}
       workflows: ${{ steps.filter.outputs.workflows }}
     steps:
       - uses: actions/checkout@v4
@@ -85,7 +86,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "${{ github.event_name }}" != "pull_request" ]; then
-            printf 'unit=true\nitest=false\nweb=false\nworkflows=false\n' >> "$GITHUB_OUTPUT"
+            printf 'unit=true\nitest=false\nweb=false\nsmoke=false\nworkflows=false\n' >> "$GITHUB_OUTPUT"
             echo 'Push to main: unit tests only — this content was green on its PR (ADR-0016).' >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
@@ -99,6 +100,7 @@ jobs:
           # running; add to these rather than trimming them.
           go=false
           web=false
+          smoke=false
           workflows=false
           if echo "$files" | grep -qE '^(cmd/|internal/|itest/|go\.(mod|sum)$|Makefile$|\.golangci\.ya?ml$|\.github/workflows/)'; then
             go=true
@@ -106,10 +108,16 @@ jobs:
           if echo "$files" | grep -qE '^(web/|\.github/workflows/)'; then
             web=true
           fi
+          # The browser smoke walks the room on a hub cmd/uifixture seeded,
+          # launched by scripts/fixture-hub.sh, so a change to either can
+          # break it as surely as one to web/ (#356).
+          if echo "$files" | grep -qE '^(web/|cmd/uifixture/|scripts/fixture-hub\.sh$|\.github/workflows/)'; then
+            smoke=true
+          fi
           if echo "$files" | grep -qE '^(\.github/workflows/|scripts/)'; then
             workflows=true
           fi
-          printf 'unit=%s\nitest=%s\nweb=%s\nworkflows=%s\n' "$go" "$go" "$web" "$workflows" >> "$GITHUB_OUTPUT"
+          printf 'unit=%s\nitest=%s\nweb=%s\nsmoke=%s\nworkflows=%s\n' "$go" "$go" "$web" "$smoke" "$workflows" >> "$GITHUB_OUTPUT"
 
       # Lever 5. The content `itest` covers, as git already names it: the
       # tree id of each covered directory and the blob id of each covered
@@ -206,8 +214,9 @@ jobs:
           echo "the changes job concluded '${{ needs.changes.result }}', so no path filter is available and nothing below this step could run." >&2
           exit 1
 
+      # The browser smoke needs Go too: it builds the binary and seeds its hub.
       - uses: actions/setup-go@v5
-        if: needs.changes.outputs.unit == 'true'
+        if: needs.changes.outputs.unit == 'true' || needs.changes.outputs.smoke == 'true'
         with:
           go-version-file: go.mod
       - name: gofmt
@@ -257,13 +266,13 @@ jobs:
           govulncheck ./...
 
       - uses: actions/setup-node@v4
-        if: needs.changes.outputs.web == 'true'
+        if: needs.changes.outputs.web == 'true' || needs.changes.outputs.smoke == 'true'
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
-        if: needs.changes.outputs.web == 'true'
+        if: needs.changes.outputs.web == 'true' || needs.changes.outputs.smoke == 'true'
         working-directory: web
       - run: npm run lint
         if: needs.changes.outputs.web == 'true'
@@ -277,6 +286,35 @@ jobs:
       - run: npm run build
         if: needs.changes.outputs.web == 'true'
         working-directory: web
+
+      # The browser smoke (#356). The steps above read the source; this opens
+      # the room as it ships, `make build` served by bin/spool on a hub
+      # cmd/uifixture seeded, and walks it: login, each page, the stream. A
+      # page that renders blank or never leaves "Loading…" fails here. On a
+      # failure the Playwright trace is kept as an artifact, so the reason is
+      # readable without a rerun.
+      - name: browser smoke, build the room as it ships
+        if: needs.changes.outputs.smoke == 'true'
+        run: make build
+      - name: browser smoke, install Chromium
+        if: needs.changes.outputs.smoke == 'true'
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+      - name: browser smoke
+        if: needs.changes.outputs.smoke == 'true'
+        env:
+          SPOOL_SMOKE_TRACE: ${{ runner.temp }}/smoke-trace.zip
+        run: bash scripts/fixture-hub.sh npm run -s test:smoke
+      # The trace holds the throwaway hub's operator token, which opens nothing
+      # once the job ends: the hub and its directory are gone with the runner.
+      - name: browser smoke, keep the trace
+        if: failure() && needs.changes.outputs.smoke == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-trace
+          path: ${{ runner.temp }}/smoke-trace.zip
+          if-no-files-found: ignore
+          retention-days: 7
 
       # The event-driven workflows are the blind spot these two steps exist
       # for: they fire on issues, comments and schedules, so no PR ever runs

@@ -70,6 +70,15 @@ window regardless of loop count (ADR-0018).
   and `npm test` in the web steps of `checks`. The docker workstation suites in tier 2
   run against a real daemon: CI runners always have one; locally they skip
   with a notice when none is reachable.
+- **The browser smoke** (`make ui-smoke`, a step of `checks`, #356): a tier-1 web
+  gate that opens the room as it ships. `make build` is served by `bin/spool` on
+  a hub `cmd/uifixture` seeded (`scripts/fixture-hub.sh`), and headless Chromium
+  walks it: login, Fleet and its channel tab, a loop page with no "Loading…"
+  left, Rules, Settings, Access, the Activity route, and the global stream's
+  connection. Each check is a text or role query, never pixels. A failure keeps
+  the Playwright trace as the `smoke-trace` artifact. It runs on a change to
+  `web/`, `cmd/uifixture/` or `scripts/fixture-hub.sh`. On its first CI run it
+  took 47s: 6s to build, 35s to install Chromium, 6s to walk.
 - **Workflow rules** (`checks` job, `scripts/workflow-lint.sh`): every
   workflow with a trigger other than `pull_request`/`push` declares a
   `workflow_dispatch`; no job runs `actions/checkout` under an effective
@@ -125,13 +134,13 @@ the secret scans — before the fold they were the one job with no `needs:`.
 The rest of that job then fails fast rather than reading an empty filter and
 deciding each area has nothing to do. The mapping:
 
-| touched | tier 1 + lint + govulncheck | tier 2 (itest) | web | workflows |
-|---|---|---|---|---|
-| `cmd/`, `internal/`, `itest/`, `go.mod`, `go.sum`, `Makefile` | yes | yes | no | no |
-| `web/` | no | no | yes | no |
-| `scripts/` | no | no | no | yes |
-| `docs/`, `README`, anything else | no | no | no | no |
-| `.github/workflows/` | yes | yes | yes | yes |
+| touched | tier 1 + lint + govulncheck | tier 2 (itest) | web | browser smoke | workflows |
+|---|---|---|---|---|---|
+| `cmd/`, `internal/`, `itest/`, `go.mod`, `go.sum`, `Makefile` | yes | yes | no | only `cmd/uifixture/` | no |
+| `web/` | no | no | yes | yes | no |
+| `scripts/` | no | no | no | only `scripts/fixture-hub.sh` | yes |
+| `docs/`, `README`, anything else | no | no | no | no | no |
+| `.github/workflows/` | yes | yes | yes | yes | yes |
 
 The secret scans are in no row: they run on every pull request whatever it
 touched, because a credential can be added to any file.
