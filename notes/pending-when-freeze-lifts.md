@@ -83,3 +83,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 12:15: Enes asked about Iris's pace → #360 (unboxed New loop) to Iris before #356. Found #363 (scheduler stops ticking, medium; explains overnight stall) → Terra after #370, ahead of L2 rest. Told Enes; restart is the workaround.
 - 12:20: #371 (#360) up. Iris filed #372 (low, header overlap at 200% text) — her queue: #354, #372, #356.
 - 14:50: merged #370 (#19), #371 (#360), #373 (#363: host suspend, timer ignores suspended time), #374 (#354), #376 (#272). #375 (#356) in review. L2: 258 182 168 55. Iris: #372 next. DM'd Enes: rebuild worth it.
+- 16:15: #375 merged (#356 closed). Iris → #378 (fixture hub obviously-fake token), then #372.
