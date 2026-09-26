@@ -12,7 +12,7 @@ COMMIT   ?= $(shell git rev-parse --short HEAD 2>/dev/null)
 BUILT_AT ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS  := -X main.buildVersion=$(VERSION) -X main.buildCommit=$(COMMIT) -X main.buildTime=$(BUILT_AT)
 
-.PHONY: build dev test itest lint secret-scan workflow-lint fakeclaude egress vet e2e-context e2e-m1 ui ui-dev ui-shots image image-multiarch clean
+.PHONY: build dev test itest lint secret-scan workflow-lint fakeclaude egress vet e2e-context e2e-m1 ui ui-dev ui-shots ui-smoke image image-multiarch clean
 
 build: ui
 	$(GO) build -ldflags "$(LDFLAGS)" -o bin/spool ./cmd/spool
@@ -93,6 +93,12 @@ ui-dev:
 # and deletes both whatever happens.
 ui-shots: build
 	bash scripts/fixture-hub.sh node scripts/ui-shots.mjs
+
+# A browser walk of the room on the same kind of hub: login, each page, the
+# stream (#356). CI runs it on a web change. A failure leaves its Playwright
+# trace at web/smoke-trace.zip.
+ui-smoke: build
+	bash scripts/fixture-hub.sh npm run -s test:smoke
 
 dev: server
 	./bin/spool --listen 127.0.0.1:8080 --mcp-listen 0.0.0.0:8081 --data-dir ./.data
