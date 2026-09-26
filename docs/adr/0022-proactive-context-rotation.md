@@ -1,6 +1,6 @@
 # ADR-0022: Context is rotated proactively, before the degradation zone
 
-Date: 2026-08-21 · Status: accepted
+Date: 2026-08-21 · Status: accepted · Amended: 2026-09-26 (§1, the handoff request names its cause)
 
 ## Context
 
@@ -42,6 +42,15 @@ path above — is fully observable, and fakeclaude can test it end to end.
    session and starts a fresh one whose first turn carries the handoff and
    the recent replies. The mission (and any fleet-wide rules) are re-injected
    every wake regardless, so the handoff carries conversational state only.
+
+   **Amendment (2026-09-26, #272):** the handoff request says why this
+   rotation is happening, because the note a loop writes depends on it: the
+   fill threshold, the operator asking outright, or the operator rewriting
+   the mission. After a mission change the fresh session's first turn also
+   says its mission changed and that the note was written under the old one.
+   When causes overlap, a mission change outranks an operator's ask, which
+   outranks the fill. The reason is stored with the note (§5), so a restart
+   keeps it. The operator approved the wording on #272.
 2. **Armed at a soft threshold, fired at a quiet boundary.** Crossing the
    soft threshold arms the loop; rotation runs at the end of the next wake
    that leaves no queued work. A mid-task context is never summarized out
