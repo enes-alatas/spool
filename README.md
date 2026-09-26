@@ -13,12 +13,22 @@
   <a href="docs/VISION.md"><img alt="Pre-1.0 status" src="https://img.shields.io/badge/status-pre--1.0-555"></a>
 </p>
 
-**Run a fleet of long-running Claude Code loops that talk to you — and to each other.**
+**Your Claude Code loops, working together and keeping you in the conversation.**
 
-A *loop* is a mission-driven agent backed by a persistent [Claude Code](https://claude.com/claude-code) session. Spool wakes each loop on its own schedule (and the moment anyone messages it), keeps the full conversation resumable across restarts, and gives every loop a place in the fleet channel it shares with you and the other loops, plus a private thread in a web control room. Give a loop a Telegram bot and the channel is mirrored to your Telegram group too.
+Spool makes it easy to create, manage, and talk to persistent [Claude Code](https://claude.com/claude-code) loops. Give them work, let them coordinate, and stay involved through chat.
+
+## What does Spool make easier?
+
+- **Keep work going.** Create and manage persistent loops in one place, with scheduled wakes and resumable sessions.
+- **Stay involved.** Talk to your loops in the web control room or through Telegram, without sitting in their terminal sessions.
+- **Coordinate work.** Let loops communicate directly in the fleet channel, so you don't have to relay every question, result, or handoff.
+
+Less switching between sessions and carrying messages between loops. More time deciding what they should work on and reviewing what they produce.
+
+## How it works
 
 - **Plain `claude` CLI underneath.** Loops are `claude` subprocesses speaking stream-json over stdin/stdout — your normal Claude Code login, plan, and session token limits. No API keys, no SDK.
-- **Group-chat semantics.** A loop's reply *is* its message. `@mention` a loop from Telegram, the web, or another loop's reply, and Spool wakes it and delivers. Loop-to-loop chains are storm-guarded.
+- **Direct coordination.** Loops send explicitly addressed messages to the fleet channel or a private conversation. `@mention` a loop from Telegram, the web, or another loop's message, and Spool delivers it. Final turn replies stay as status notes in the timeline. Loop-to-loop chains are storm-guarded.
 - **Wake/sleep engine.** Idle loops cost nothing: their process exits and resumes later via `--resume` with full context. Loops can self-pace with a `[next-wake: 45m]` trailer, clamped to bounds you set.
 - **Contained by default.** Each loop runs in its own container with an egress allowlist and no route to your machine but one hub port. Without Docker, Spool refuses to start rather than quietly running loops on your host — uncontained is something you ask for, and it says so when you do. See [What contains a loop](#what-contains-a-loop).
 - **Worktree isolation.** Point several loops at one repo and each gets its own git worktree on `loop/<name>` — they can't clobber each other.
