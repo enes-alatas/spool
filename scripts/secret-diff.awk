@@ -23,8 +23,10 @@ BEGIN {
   exempt_always = "^scripts/secret-"
   # Test files and fixtures are exempt only when the value reads as fake.
   # That is the case that actually costs someone a rotation: a fixture is
-  # where a real token gets pasted "just to see it work".
-  exempt_if_fake = "(^itest/|^cmd/fakeclaude/|_test\\.go$|\\.test\\.tsx?$)"
+  # where a real token gets pasted "just to see it work". cmd/uifixture is a
+  # fixture too: it writes the data directory the screenshots and the browser
+  # smoke run against, and promises that no value in it is a real credential.
+  exempt_if_fake = "(^itest/|^cmd/fakeclaude/|^cmd/uifixture/|_test\\.go$|\\.test\\.tsx?$)"
   hits = 0
 }
 
