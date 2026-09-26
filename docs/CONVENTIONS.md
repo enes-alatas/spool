@@ -392,7 +392,8 @@ agents — Claude sessions today, Spool's own loops from L2.*
   `actor`, not `a`; `stream`, not `s`. Tooling can't catch this and a reader
   three months later can't guess it, so it's a review rule. Exceptions, because
   they're universal in Go and carry no domain meaning: `err`, `ok`, `ctx`, `i`/`j`
-  as numeric loop indices, and `t *testing.T`. The MVP code predates the rule —
+  as numeric loop indices, `t *testing.T`, and `w http.ResponseWriter` with
+  `r *http.Request` as a handler's parameters. The MVP code predates the rule —
   don't add more, and rename what you touch.
 - **Stdlib-first**: see **Dependencies** under Agent workflow; the rule is the
   same in both languages.
