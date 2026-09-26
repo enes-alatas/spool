@@ -44,11 +44,11 @@ func TestCostBackfillRewritesHistory(t *testing.T) {
 	if err := unmigrate0019(db); err != nil {
 		t.Fatal(err)
 	}
-	for _, r := range rows {
+	for _, row := range rows {
 		if _, err := db.db.Exec(
 			`INSERT INTO turns (id, loop_id, session_id, started_at, ended_at, cost_usd)
 			 VALUES (?,?,?,?,?,?)`,
-			r.id, "l1", r.session, r.startedAt, r.startedAt+1, r.cumulative); err != nil {
+			row.id, "l1", row.session, row.startedAt, row.startedAt+1, row.cumulative); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -63,14 +63,14 @@ func TestCostBackfillRewritesHistory(t *testing.T) {
 		"t4": {0, 9.08},
 		"t5": {0.29, 0.29},
 	}
-	for id, w := range want {
+	for id, expected := range want {
 		var cost, session float64
 		if err := db.db.QueryRow(
 			`SELECT cost_usd, session_cost_usd FROM turns WHERE id=?`, id).Scan(&cost, &session); err != nil {
 			t.Fatal(err)
 		}
-		if !nearly(cost, w.cost) || !nearly(session, w.session) {
-			t.Errorf("%s: cost %v / session %v, want %v / %v", id, cost, session, w.cost, w.session)
+		if !nearly(cost, expected.cost) || !nearly(session, expected.session) {
+			t.Errorf("%s: cost %v / session %v, want %v / %v", id, cost, session, expected.cost, expected.session)
 		}
 	}
 
@@ -102,16 +102,16 @@ func TestSessionCostIsTheSessionsHighest(t *testing.T) {
 		t.Fatalf("unknown session: got %v, %v; want 0, nil", got, err)
 	}
 
-	for _, c := range []struct {
+	for _, testCase := range []struct {
 		id      string
 		session float64
 	}{{"t1", 0.40}, {"t2", 0.75}} {
-		turn := &store.Turn{ID: c.id, LoopID: "l1", SessionID: "s1", StartedAt: 1}
+		turn := &store.Turn{ID: testCase.id, LoopID: "l1", SessionID: "s1", StartedAt: 1}
 		if err := db.Turns().Create(ctx, turn); err != nil {
 			t.Fatal(err)
 		}
 		turn.EndedAt = 2
-		turn.SessionCostUSD = c.session
+		turn.SessionCostUSD = testCase.session
 		if err := db.Turns().Finish(ctx, turn); err != nil {
 			t.Fatal(err)
 		}
@@ -180,11 +180,11 @@ func TestCostBackfillPricesAgainstTheSessionHigh(t *testing.T) {
 		{"t3", 300, 0}, // dipped
 		{"t4", 400, 9.08},
 	}
-	for _, r := range rows {
+	for _, row := range rows {
 		if _, err := db.db.Exec(
 			`INSERT INTO turns (id, loop_id, session_id, started_at, ended_at, cost_usd)
 			 VALUES (?,?,?,?,?,?)`,
-			r.id, "l1", "s1", r.startedAt, r.startedAt+1, r.cumulative); err != nil {
+			row.id, "l1", "s1", row.startedAt, row.startedAt+1, row.cumulative); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -222,6 +222,6 @@ func testLoop() *store.Loop {
 }
 
 func nearly(got, want float64) bool {
-	d := got - want
-	return d < 0.0001 && d > -0.0001
+	diff := got - want
+	return diff < 0.0001 && diff > -0.0001
 }

@@ -20,10 +20,10 @@ func TestEventsDeleteBefore(t *testing.T) {
 	ctx := context.Background()
 
 	now := time.Now().UnixMilli()
-	l := &store.Loop{ID: "l1", Name: "pruned", Mission: "m", Status: store.StatusActive,
+	loopRecord := &store.Loop{ID: "l1", Name: "pruned", Mission: "m", Status: store.StatusActive,
 		WorkspaceMode: store.WorkspaceNone, Runtime: store.RuntimeBare, Pacing: store.PacingFixed,
 		CreatedAt: now, UpdatedAt: now}
-	if err := db.Loops().Create(ctx, l); err != nil {
+	if err := db.Loops().Create(ctx, loopRecord); err != nil {
 		t.Fatal(err)
 	}
 
@@ -34,12 +34,12 @@ func TestEventsDeleteBefore(t *testing.T) {
 		}
 	}
 
-	n, err := db.Events().DeleteBefore(ctx, now-30*day)
+	deleted, err := db.Events().DeleteBefore(ctx, now-30*day)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n != 2 {
-		t.Fatalf("pruned %d rows, want 2", n)
+	if deleted != 2 {
+		t.Fatalf("pruned %d rows, want 2", deleted)
 	}
 	left, err := db.Events().ListByLoop(ctx, "l1", 0, 10)
 	if err != nil {
@@ -64,10 +64,10 @@ func TestEventsNewestWindow(t *testing.T) {
 
 	now := time.Now().UnixMilli()
 	for _, id := range []string{"l1", "l2"} {
-		l := &store.Loop{ID: id, Name: "loop-" + id, Mission: "m", Status: store.StatusActive,
+		loopRecord := &store.Loop{ID: id, Name: "loop-" + id, Mission: "m", Status: store.StatusActive,
 			WorkspaceMode: store.WorkspaceNone, Runtime: store.RuntimeBare, Pacing: store.PacingFixed,
 			CreatedAt: now, UpdatedAt: now}
-		if err := db.Loops().Create(ctx, l); err != nil {
+		if err := db.Loops().Create(ctx, loopRecord); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -111,12 +111,12 @@ func TestEventsNewestWindow(t *testing.T) {
 }
 
 func dumpIDs(events []*store.Event) string {
-	var b strings.Builder
-	for i, e := range events {
+	var ids strings.Builder
+	for i, event := range events {
 		if i > 0 {
-			b.WriteString(",")
+			ids.WriteString(",")
 		}
-		b.WriteString(strconv.FormatInt(e.ID, 10))
+		ids.WriteString(strconv.FormatInt(event.ID, 10))
 	}
-	return "[" + b.String() + "]"
+	return "[" + ids.String() + "]"
 }

@@ -18,21 +18,21 @@ func openTestDB(t *testing.T) *DB {
 	return db
 }
 
-func insertMessage(t *testing.T, db *DB, m *store.Message) *store.Message {
+func insertMessage(t *testing.T, db *DB, message *store.Message) *store.Message {
 	t.Helper()
-	if err := db.Messages().Insert(context.Background(), m); err != nil {
+	if err := db.Messages().Insert(context.Background(), message); err != nil {
 		t.Fatal(err)
 	}
-	return m
+	return message
 }
 
 func mirrorOf(t *testing.T, db *DB, id int64) string {
 	t.Helper()
-	m, err := db.Messages().Get(context.Background(), id)
+	message, err := db.Messages().Get(context.Background(), id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return m.Mirror
+	return message.Mirror
 }
 
 // TestMirrorFollowsTheResolution: a resolved failure settles where its
@@ -49,18 +49,18 @@ func TestMirrorFollowsTheResolution(t *testing.T) {
 	for resolution, want := range cases {
 		// mirrored first, so the test proves a failure sets pending rather
 		// than leaving whatever the row held
-		m := insertMessage(t, db, &store.Message{Origin: store.OriginLoop, FromLoopID: "l1",
+		message := insertMessage(t, db, &store.Message{Origin: store.OriginLoop, FromLoopID: "l1",
 			Text: "lost", Conversation: store.ConversationGroup, Mirror: store.MirrorMirrored})
-		if err := db.Messages().SetSendResult(ctx, m.ID, 10, "timeout"); err != nil {
+		if err := db.Messages().SetSendResult(ctx, message.ID, 10, "timeout"); err != nil {
 			t.Fatal(err)
 		}
-		if got := mirrorOf(t, db, m.ID); got != store.MirrorPending {
+		if got := mirrorOf(t, db, message.ID); got != store.MirrorPending {
 			t.Fatalf("a failed send is %q, want %q until it resolves", got, store.MirrorPending)
 		}
-		if ok, err := db.Messages().ResolveSend(ctx, m.ID, 20, resolution, 0); err != nil || !ok {
+		if ok, err := db.Messages().ResolveSend(ctx, message.ID, 20, resolution, 0); err != nil || !ok {
 			t.Fatalf("resolving as %s: %v, %v", resolution, ok, err)
 		}
-		if got := mirrorOf(t, db, m.ID); got != want {
+		if got := mirrorOf(t, db, message.ID); got != want {
 			t.Errorf("a failure resolved as %s is %q, want %q", resolution, got, want)
 		}
 	}
@@ -98,9 +98,9 @@ func TestFailInterruptedSends(t *testing.T) {
 	if before, _ := db.Messages().Get(ctx, failed.ID); before.SendFailedAt != 5 {
 		t.Errorf("an earlier failure was rewritten: failed at %d", before.SendFailedAt)
 	}
-	for _, m := range []*store.Message{sent, operator} {
-		if other, _ := db.Messages().Get(ctx, m.ID); other.SendFailedAt != 0 {
-			t.Errorf("%q was marked failed: %+v", m.Text, other)
+	for _, message := range []*store.Message{sent, operator} {
+		if other, _ := db.Messages().Get(ctx, message.ID); other.SendFailedAt != 0 {
+			t.Errorf("%q was marked failed: %+v", message.Text, other)
 		}
 	}
 	if got := mirrorOf(t, db, operator.ID); got != store.MirrorNotMirrored {
@@ -132,10 +132,10 @@ func TestMirrorBackfill(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()
 	want := map[int64]string{}
-	add := func(m *store.Message, mirror string) *store.Message {
-		insertMessage(t, db, m)
-		want[m.ID] = mirror
-		return m
+	add := func(message *store.Message, mirror string) *store.Message {
+		insertMessage(t, db, message)
+		want[message.ID] = mirror
+		return message
 	}
 	add(&store.Message{Origin: store.OriginTelegramGroup, Text: "human", TGChatID: -1, TGMessageID: 1,
 		Conversation: store.ConversationGroup}, store.MirrorMirrored)
@@ -156,8 +156,8 @@ func TestMirrorBackfill(t *testing.T) {
 	add(&store.Message{Origin: store.OriginLoop, FromLoopID: "l1", Text: "status",
 		Conversation: store.ConversationControlRoom, ConversationLoopID: "l1"}, store.MirrorNotMirrored)
 
-	for _, m := range []*store.Message{unresolved, retried, dismissed} {
-		if err := db.Messages().SetSendResult(ctx, m.ID, 10, "timeout"); err != nil {
+	for _, message := range []*store.Message{unresolved, retried, dismissed} {
+		if err := db.Messages().SetSendResult(ctx, message.ID, 10, "timeout"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -179,12 +179,12 @@ func TestMirrorBackfill(t *testing.T) {
 		t.Fatal(err)
 	}
 	for id, mirror := range want {
-		m, err := db.Messages().Get(ctx, id)
+		message, err := db.Messages().Get(ctx, id)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if m.Mirror != mirror {
-			t.Errorf("%q (%s, %s) backfilled as %q, want %q", m.Text, m.Origin, m.Conversation, m.Mirror, mirror)
+		if message.Mirror != mirror {
+			t.Errorf("%q (%s, %s) backfilled as %q, want %q", message.Text, message.Origin, message.Conversation, message.Mirror, mirror)
 		}
 	}
 }
