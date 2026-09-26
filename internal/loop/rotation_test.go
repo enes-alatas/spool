@@ -11,15 +11,15 @@ import (
 // fakeSettings is the settings rows a threshold read sees.
 type fakeSettings map[string]string
 
-func (f fakeSettings) Get(_ context.Context, key string) (string, error) {
-	if value, ok := f[key]; ok {
+func (settings fakeSettings) Get(_ context.Context, key string) (string, error) {
+	if value, ok := settings[key]; ok {
 		return value, nil
 	}
 	return "", store.ErrNotFound
 }
 
-func (f fakeSettings) Set(_ context.Context, key, value string) error {
-	f[key] = value
+func (settings fakeSettings) Set(_ context.Context, key, value string) error {
+	settings[key] = value
 	return nil
 }
 
@@ -48,17 +48,17 @@ func TestRotationThresholds(t *testing.T) {
 			store.SettingContextForcePercent: "30",
 		}, DefaultContextArmPercent, DefaultContextForcePercent},
 	}
-	for _, c := range cases {
-		arm, force := RotationThresholds(context.Background(), c.rows, quiet)
-		if arm != c.wantArm || force != c.wantForce {
-			t.Errorf("%s: thresholds = %d/%d, want %d/%d", c.name, arm, force, c.wantArm, c.wantForce)
+	for _, testCase := range cases {
+		arm, force := RotationThresholds(context.Background(), testCase.rows, quiet)
+		if arm != testCase.wantArm || force != testCase.wantForce {
+			t.Errorf("%s: thresholds = %d/%d, want %d/%d", testCase.name, arm, force, testCase.wantArm, testCase.wantForce)
 		}
 	}
 }
 
 type discard struct{}
 
-func (discard) Write(p []byte) (int, error) { return len(p), nil }
+func (discard) Write(data []byte) (int, error) { return len(data), nil }
 
 // TestValidThresholds is the one rule the API's writes and the actor's reads
 // both go through, so the two cannot disagree about what is storable.
@@ -74,9 +74,9 @@ func TestValidThresholds(t *testing.T) {
 		{0, 70, false},   // not a percentage
 		{40, 100, false}, // a full window is not a threshold
 	}
-	for _, c := range cases {
-		if got := ValidThresholds(c.arm, c.force); got != c.want {
-			t.Errorf("ValidThresholds(%d, %d) = %v, want %v", c.arm, c.force, got, c.want)
+	for _, testCase := range cases {
+		if got := ValidThresholds(testCase.arm, testCase.force); got != testCase.want {
+			t.Errorf("ValidThresholds(%d, %d) = %v, want %v", testCase.arm, testCase.force, got, testCase.want)
 		}
 	}
 }
@@ -91,9 +91,9 @@ func TestFillPercent(t *testing.T) {
 		{140000, 200000, 70},
 		{260000, 200000, 100},
 	}
-	for _, c := range cases {
-		if got := FillPercent(c.tokens, c.window); got != c.want {
-			t.Errorf("FillPercent(%d, %d) = %d, want %d", c.tokens, c.window, got, c.want)
+	for _, testCase := range cases {
+		if got := FillPercent(testCase.tokens, testCase.window); got != testCase.want {
+			t.Errorf("FillPercent(%d, %d) = %d, want %d", testCase.tokens, testCase.window, got, testCase.want)
 		}
 	}
 }

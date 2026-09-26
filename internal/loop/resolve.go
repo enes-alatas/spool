@@ -53,8 +53,8 @@ type Models struct {
 
 // NewModels returns the model list for a hub whose default runtime is rt, of
 // kind kind, running claude cliVersion.
-func NewModels(st store.Store, b *bus.Bus, rt runtime.Runtime, kind, cliVersion string, log *slog.Logger) *Models {
-	return &Models{store: st, bus: b, runtime: rt, kind: kind, cliVersion: cliVersion, log: log,
+func NewModels(st store.Store, publisher *bus.Bus, rt runtime.Runtime, kind, cliVersion string, log *slog.Logger) *Models {
+	return &Models{store: st, bus: publisher, runtime: rt, kind: kind, cliVersion: cliVersion, log: log,
 		startedAt: time.Now().UnixMilli(), inflight: map[string]bool{}}
 }
 
@@ -74,56 +74,56 @@ type CustomModelView struct {
 // Start resolves every name on the list in the background: the family
 // aliases, and the custom entries, so one whose run failed gets another
 // chance. Nothing waits on it.
-func (m *Models) Start(ctx context.Context) {
+func (models *Models) Start(ctx context.Context) {
 	names := append([]string{}, FamilyAliases...)
-	custom, err := m.store.Models().ListCustom(ctx)
+	custom, err := models.store.Models().ListCustom(ctx)
 	if err != nil {
-		m.log.Error("list custom models", "err", err)
+		models.log.Error("list custom models", "err", err)
 	}
 	for _, entry := range custom {
 		names = append(names, entry.Model)
 	}
 	for _, name := range names {
-		m.resolve(ctx, name)
+		models.resolve(ctx, name)
 	}
 }
 
 // resolve starts a run for name unless one is already going. The result is
 // stored and published; a failure is logged and leaves the name showing bare.
-func (m *Models) resolve(ctx context.Context, name string) {
-	m.mu.Lock()
-	if m.inflight[name] {
-		m.mu.Unlock()
+func (models *Models) resolve(ctx context.Context, name string) {
+	models.mu.Lock()
+	if models.inflight[name] {
+		models.mu.Unlock()
 		return
 	}
-	m.inflight[name] = true
-	m.mu.Unlock()
+	models.inflight[name] = true
+	models.mu.Unlock()
 
 	go func() {
 		defer func() {
-			m.mu.Lock()
-			delete(m.inflight, name)
-			m.mu.Unlock()
+			models.mu.Lock()
+			delete(models.inflight, name)
+			models.mu.Unlock()
 		}()
 		runCtx, cancel := context.WithTimeout(ctx, resolveTimeout)
 		defer cancel()
-		resolved, err := m.runtime.ResolveModel(runCtx, name)
+		resolved, err := models.runtime.ResolveModel(runCtx, name)
 		if err != nil {
 			if ctx.Err() == nil {
-				m.log.Warn("model not resolved; it shows bare until the next start", "model", name, "err", err)
+				models.log.Warn("model not resolved; it shows bare until the next start", "model", name, "err", err)
 			}
 			return
 		}
-		current, err := m.resolutions(ctx)
+		current, err := models.resolutions(ctx)
 		if err != nil {
-			m.log.Error("read model resolutions", "err", err)
+			models.log.Error("read model resolutions", "err", err)
 			return
 		}
-		if res, ok := current[name]; ok && res.Source == store.ResolutionTurn && res.ResolvedAt >= m.startedAt {
+		if res, ok := current[name]; ok && res.Source == store.ResolutionTurn && res.ResolvedAt >= models.startedAt {
 			return // a real turn has already said, under the operator's login
 		}
-		m.set(ctx, &store.ModelResolution{Model: name, Resolved: resolved,
-			Source: store.ResolutionProbe, CLIVersion: m.cliVersion, ResolvedAt: time.Now().UnixMilli()})
+		models.set(ctx, &store.ModelResolution{Model: name, Resolved: resolved,
+			Source: store.ResolutionProbe, CLIVersion: models.cliVersion, ResolvedAt: time.Now().UnixMilli()})
 	}()
 }
 
@@ -132,35 +132,35 @@ func (m *Models) resolve(ctx context.Context, name string) {
 // counts, since that is the claude the probe asks (ADR-0033 item 4): a loop
 // on an image of its own says what it ran on through its own resolved_model
 // and leaves the list alone.
-func (m *Models) Observe(l *store.Loop, spawned, resolved string) {
-	if resolved == "" || spawned == "" || l.Runtime != m.kind || l.Image != "" {
+func (models *Models) Observe(loopRecord *store.Loop, spawned, resolved string) {
+	if resolved == "" || spawned == "" || loopRecord.Runtime != models.kind || loopRecord.Image != "" {
 		return
 	}
 	ctx := context.Background()
-	if !m.listed(ctx, spawned) {
+	if !models.listed(ctx, spawned) {
 		return
 	}
-	current, err := m.resolutions(ctx)
+	current, err := models.resolutions(ctx)
 	if err != nil {
-		m.log.Error("read model resolutions", "err", err)
+		models.log.Error("read model resolutions", "err", err)
 		return
 	}
 	if res, ok := current[spawned]; ok && res.Resolved == resolved && res.Source == store.ResolutionTurn {
 		return
 	}
-	m.set(ctx, &store.ModelResolution{Model: spawned, Resolved: resolved,
+	models.set(ctx, &store.ModelResolution{Model: spawned, Resolved: resolved,
 		Source: store.ResolutionTurn, ResolvedAt: time.Now().UnixMilli()})
 }
 
 // listed reports whether name is on the list: a family alias or a custom
 // entry. A loop on a model typed in once is not.
-func (m *Models) listed(ctx context.Context, name string) bool {
+func (models *Models) listed(ctx context.Context, name string) bool {
 	for _, alias := range FamilyAliases {
 		if name == alias {
 			return true
 		}
 	}
-	custom, err := m.store.Models().ListCustom(ctx)
+	custom, err := models.store.Models().ListCustom(ctx)
 	if err != nil {
 		return false
 	}
@@ -172,16 +172,16 @@ func (m *Models) listed(ctx context.Context, name string) bool {
 	return false
 }
 
-func (m *Models) set(ctx context.Context, res *store.ModelResolution) {
-	if err := m.store.Models().SetResolution(ctx, res); err != nil {
-		m.log.Error("store model resolution", "model", res.Model, "err", err)
+func (models *Models) set(ctx context.Context, res *store.ModelResolution) {
+	if err := models.store.Models().SetResolution(ctx, res); err != nil {
+		models.log.Error("store model resolution", "model", res.Model, "err", err)
 		return
 	}
-	m.publish(ctx)
+	models.publish(ctx)
 }
 
-func (m *Models) resolutions(ctx context.Context) (map[string]store.ModelResolution, error) {
-	rows, err := m.store.Models().Resolutions(ctx)
+func (models *Models) resolutions(ctx context.Context) (map[string]store.ModelResolution, error) {
+	rows, err := models.store.Models().Resolutions(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -194,12 +194,12 @@ func (m *Models) resolutions(ctx context.Context) (map[string]store.ModelResolut
 
 // View returns the list with each name's resolution. A name nothing has
 // resolved carries only itself.
-func (m *Models) View(ctx context.Context) (ModelsView, error) {
-	resolved, err := m.resolutions(ctx)
+func (models *Models) View(ctx context.Context) (ModelsView, error) {
+	resolved, err := models.resolutions(ctx)
 	if err != nil {
 		return ModelsView{}, err
 	}
-	custom, err := m.store.Models().ListCustom(ctx)
+	custom, err := models.store.Models().ListCustom(ctx)
 	if err != nil {
 		return ModelsView{}, err
 	}
@@ -222,19 +222,19 @@ func resolutionOf(resolved map[string]store.ModelResolution, name string) store.
 }
 
 // publish sends the whole list to the control room, which renders from it.
-func (m *Models) publish(ctx context.Context) {
-	view, err := m.View(ctx)
+func (models *Models) publish(ctx context.Context) {
+	view, err := models.View(ctx)
 	if err != nil {
-		m.log.Error("read model list", "err", err)
+		models.log.Error("read model list", "err", err)
 		return
 	}
-	m.bus.Publish(bus.Item{Kind: bus.KindModels, Payload: view})
+	models.bus.Publish(bus.Item{Kind: bus.KindModels, Payload: view})
 }
 
 // Add puts a custom entry on the list and starts resolving it. The model is
 // an id as the CLI's --model takes it; ErrInvalidModel if it cannot be one,
 // store.ErrDuplicate if it is already listed, aliases included.
-func (m *Models) Add(ctx context.Context, model, label string) (*CustomModelView, error) {
+func (models *Models) Add(ctx context.Context, model, label string) (*CustomModelView, error) {
 	model, label = strings.TrimSpace(model), strings.TrimSpace(label)
 	if err := validModel(model); err != nil {
 		return nil, err
@@ -248,39 +248,39 @@ func (m *Models) Add(ctx context.Context, model, label string) (*CustomModelView
 		}
 	}
 	entry := &store.CustomModel{ID: "cm_" + newUUID(), Model: model, Label: label, CreatedAt: time.Now().UnixMilli()}
-	if err := m.store.Models().AddCustom(ctx, entry); err != nil {
+	if err := models.store.Models().AddCustom(ctx, entry); err != nil {
 		return nil, err
 	}
-	m.publish(ctx)
-	m.resolve(context.WithoutCancel(ctx), model)
+	models.publish(ctx)
+	models.resolve(context.WithoutCancel(ctx), model)
 	return &CustomModelView{ID: entry.ID, Label: entry.Label, ModelResolution: store.ModelResolution{Model: model}}, nil
 }
 
 // Relabel changes a custom entry's label.
-func (m *Models) Relabel(ctx context.Context, id, label string) (*CustomModelView, error) {
+func (models *Models) Relabel(ctx context.Context, id, label string) (*CustomModelView, error) {
 	label = strings.TrimSpace(label)
 	if len(label) > maxLabelLen {
 		return nil, fmt.Errorf("%w: a label is at most %d characters", ErrInvalidModel, maxLabelLen)
 	}
-	entry, err := m.store.Models().SetCustomLabel(ctx, id, label)
+	entry, err := models.store.Models().SetCustomLabel(ctx, id, label)
 	if err != nil {
 		return nil, err
 	}
-	resolved, err := m.resolutions(ctx)
+	resolved, err := models.resolutions(ctx)
 	if err != nil {
 		return nil, err
 	}
-	m.publish(ctx)
+	models.publish(ctx)
 	return &CustomModelView{ID: entry.ID, Label: entry.Label, ModelResolution: resolutionOf(resolved, entry.Model)}, nil
 }
 
 // Delete takes a custom entry off the list. Loops already on that model keep
 // it: the list only feeds the dropdowns.
-func (m *Models) Delete(ctx context.Context, id string) error {
-	if err := m.store.Models().DeleteCustom(ctx, id); err != nil {
+func (models *Models) Delete(ctx context.Context, id string) error {
+	if err := models.store.Models().DeleteCustom(ctx, id); err != nil {
 		return err
 	}
-	m.publish(ctx)
+	models.publish(ctx)
 	return nil
 }
 
