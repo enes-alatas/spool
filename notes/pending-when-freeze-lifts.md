@@ -79,3 +79,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 
 ## 2026-09-26 10:00 — morning sweep
 - Merged last night: #357, #359 (#353), #361 (#352), #362 (#245). L2: 7 open (272 258 182 180 168 55 19). Audit open: #349 #350 #351 (taken by Iris 18:40, no PR) #354. No PR open; nudged both devs.
+- 12:00: merged #364 (#351), #365 (#180), #367 (#350), #369 (#349). #370 (#19) in review. L2: 6 open (272 258 182 168 55 19). Iris → #354, #356.
