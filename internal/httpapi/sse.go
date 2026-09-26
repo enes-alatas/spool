@@ -10,7 +10,7 @@ import (
 )
 
 // serveSSE streams bus items matching filter to one client until it leaves.
-func serveSSE(w http.ResponseWriter, r *http.Request, b *bus.Bus, filter func(bus.Item) bool) {
+func serveSSE(w http.ResponseWriter, r *http.Request, events *bus.Bus, filter func(bus.Item) bool) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
@@ -22,7 +22,7 @@ func serveSSE(w http.ResponseWriter, r *http.Request, b *bus.Bus, filter func(bu
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
-	items, cancel := b.Subscribe(filter)
+	items, cancel := events.Subscribe(filter)
 	defer cancel()
 
 	ping := time.NewTicker(25 * time.Second)

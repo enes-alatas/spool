@@ -95,61 +95,61 @@ type Server struct {
 	rulesMu sync.Mutex
 }
 
-func (s *Server) Handler() http.Handler {
+func (server *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("GET /api/health", s.handleHealth)
-	mux.HandleFunc("GET /api/version", s.handleVersion)
-	mux.HandleFunc("GET /api/loops", s.handleListLoops)
-	mux.HandleFunc("POST /api/loops", s.handleCreateLoop)
-	mux.HandleFunc("GET /api/loops/{name}", s.handleGetLoop)
-	mux.HandleFunc("PATCH /api/loops/{name}", s.handlePatchLoop)
-	mux.HandleFunc("DELETE /api/loops/{name}", s.handleDeleteLoop)
-	mux.HandleFunc("POST /api/loops/{name}/pause", s.handlePause)
-	mux.HandleFunc("POST /api/loops/{name}/resume", s.handleResume)
-	mux.HandleFunc("POST /api/loops/{name}/wake", s.handleWake)
-	mux.HandleFunc("POST /api/loops/{name}/kill", s.handleKill)
-	mux.HandleFunc("POST /api/loops/{name}/rotate", s.handleRotate)
-	mux.HandleFunc("POST /api/loops/{name}/workstation/restart", s.handlePower(loop.PowerRestart))
-	mux.HandleFunc("POST /api/loops/{name}/workstation/poweroff", s.handlePower(loop.PowerOff))
-	mux.HandleFunc("POST /api/loops/{name}/workstation/poweron", s.handlePower(loop.PowerOn))
-	mux.HandleFunc("POST /api/loops/{name}/workstation/recreate", s.handlePower(loop.PowerRecreate))
-	mux.HandleFunc("POST /api/loops/{name}/message", s.handleLoopMessage)
-	mux.HandleFunc("GET /api/loops/{name}/events", s.handleLoopEvents)
-	mux.HandleFunc("GET /api/loops/{name}/turns", s.handleLoopTurns)
-	mux.HandleFunc("GET /api/loops/{name}/telegram/status", s.handleTelegramStatus)
-	mux.HandleFunc("PUT /api/loops/{name}/owner", s.handlePutOwner)
-	mux.HandleFunc("GET /api/loops/{name}/secrets", s.handleListSecrets)
-	mux.HandleFunc("PUT /api/loops/{name}/secrets/{key}", s.handlePutSecret)
-	mux.HandleFunc("DELETE /api/loops/{name}/secrets/{key}", s.handleDeleteSecret)
-	mux.HandleFunc("GET /api/activity", s.handleActivity)
-	mux.HandleFunc("GET /api/undelivered", s.handleUndelivered)
-	mux.HandleFunc("POST /api/messages/{id}/retry", s.handleRetrySend)
-	mux.HandleFunc("POST /api/messages/{id}/dismiss", s.handleDismissSend)
-	mux.HandleFunc("GET /api/loops/{name}/conversation", s.handleLoopConversation)
-	mux.HandleFunc("GET /api/group", s.handleGroupTimeline)
-	mux.HandleFunc("POST /api/group", s.handleGroupPost)
-	mux.HandleFunc("GET /api/settings", s.handleGetSettings)
-	mux.HandleFunc("PUT /api/settings", s.handlePutSettings)
-	mux.HandleFunc("GET /api/rules", s.handleListRules)
-	mux.HandleFunc("POST /api/rules", s.handleCreateRule)
-	mux.HandleFunc("PATCH /api/rules/{id}", s.handlePatchRule)
-	mux.HandleFunc("DELETE /api/rules/{id}", s.handleDeleteRule)
-	mux.HandleFunc("GET /api/models", s.handleListModels)
-	mux.HandleFunc("POST /api/models/custom", s.handleAddCustomModel)
-	mux.HandleFunc("PATCH /api/models/custom/{id}", s.handlePatchCustomModel)
-	mux.HandleFunc("DELETE /api/models/custom/{id}", s.handleDeleteCustomModel)
-	mux.HandleFunc("GET /api/telegram/senders", s.handleListSenders)
-	mux.HandleFunc("POST /api/telegram/senders/{id}/allow", s.handleSenderStatus(store.SenderAllowed))
-	mux.HandleFunc("POST /api/telegram/senders/{id}/block", s.handleSenderStatus(store.SenderBlocked))
-	mux.HandleFunc("DELETE /api/telegram/senders/{id}", s.handleDeleteSender)
-	mux.HandleFunc("POST /api/workspace/inspect", s.handleWorkspaceInspect)
-	mux.HandleFunc("GET /api/stream", s.handleGlobalStream)
-	mux.HandleFunc("GET /api/loops/{name}/stream", s.handleLoopStream)
+	mux.HandleFunc("GET /api/health", server.handleHealth)
+	mux.HandleFunc("GET /api/version", server.handleVersion)
+	mux.HandleFunc("GET /api/loops", server.handleListLoops)
+	mux.HandleFunc("POST /api/loops", server.handleCreateLoop)
+	mux.HandleFunc("GET /api/loops/{name}", server.handleGetLoop)
+	mux.HandleFunc("PATCH /api/loops/{name}", server.handlePatchLoop)
+	mux.HandleFunc("DELETE /api/loops/{name}", server.handleDeleteLoop)
+	mux.HandleFunc("POST /api/loops/{name}/pause", server.handlePause)
+	mux.HandleFunc("POST /api/loops/{name}/resume", server.handleResume)
+	mux.HandleFunc("POST /api/loops/{name}/wake", server.handleWake)
+	mux.HandleFunc("POST /api/loops/{name}/kill", server.handleKill)
+	mux.HandleFunc("POST /api/loops/{name}/rotate", server.handleRotate)
+	mux.HandleFunc("POST /api/loops/{name}/workstation/restart", server.handlePower(loop.PowerRestart))
+	mux.HandleFunc("POST /api/loops/{name}/workstation/poweroff", server.handlePower(loop.PowerOff))
+	mux.HandleFunc("POST /api/loops/{name}/workstation/poweron", server.handlePower(loop.PowerOn))
+	mux.HandleFunc("POST /api/loops/{name}/workstation/recreate", server.handlePower(loop.PowerRecreate))
+	mux.HandleFunc("POST /api/loops/{name}/message", server.handleLoopMessage)
+	mux.HandleFunc("GET /api/loops/{name}/events", server.handleLoopEvents)
+	mux.HandleFunc("GET /api/loops/{name}/turns", server.handleLoopTurns)
+	mux.HandleFunc("GET /api/loops/{name}/telegram/status", server.handleTelegramStatus)
+	mux.HandleFunc("PUT /api/loops/{name}/owner", server.handlePutOwner)
+	mux.HandleFunc("GET /api/loops/{name}/secrets", server.handleListSecrets)
+	mux.HandleFunc("PUT /api/loops/{name}/secrets/{key}", server.handlePutSecret)
+	mux.HandleFunc("DELETE /api/loops/{name}/secrets/{key}", server.handleDeleteSecret)
+	mux.HandleFunc("GET /api/activity", server.handleActivity)
+	mux.HandleFunc("GET /api/undelivered", server.handleUndelivered)
+	mux.HandleFunc("POST /api/messages/{id}/retry", server.handleRetrySend)
+	mux.HandleFunc("POST /api/messages/{id}/dismiss", server.handleDismissSend)
+	mux.HandleFunc("GET /api/loops/{name}/conversation", server.handleLoopConversation)
+	mux.HandleFunc("GET /api/group", server.handleGroupTimeline)
+	mux.HandleFunc("POST /api/group", server.handleGroupPost)
+	mux.HandleFunc("GET /api/settings", server.handleGetSettings)
+	mux.HandleFunc("PUT /api/settings", server.handlePutSettings)
+	mux.HandleFunc("GET /api/rules", server.handleListRules)
+	mux.HandleFunc("POST /api/rules", server.handleCreateRule)
+	mux.HandleFunc("PATCH /api/rules/{id}", server.handlePatchRule)
+	mux.HandleFunc("DELETE /api/rules/{id}", server.handleDeleteRule)
+	mux.HandleFunc("GET /api/models", server.handleListModels)
+	mux.HandleFunc("POST /api/models/custom", server.handleAddCustomModel)
+	mux.HandleFunc("PATCH /api/models/custom/{id}", server.handlePatchCustomModel)
+	mux.HandleFunc("DELETE /api/models/custom/{id}", server.handleDeleteCustomModel)
+	mux.HandleFunc("GET /api/telegram/senders", server.handleListSenders)
+	mux.HandleFunc("POST /api/telegram/senders/{id}/allow", server.handleSenderStatus(store.SenderAllowed))
+	mux.HandleFunc("POST /api/telegram/senders/{id}/block", server.handleSenderStatus(store.SenderBlocked))
+	mux.HandleFunc("DELETE /api/telegram/senders/{id}", server.handleDeleteSender)
+	mux.HandleFunc("POST /api/workspace/inspect", server.handleWorkspaceInspect)
+	mux.HandleFunc("GET /api/stream", server.handleGlobalStream)
+	mux.HandleFunc("GET /api/loops/{name}/stream", server.handleLoopStream)
 	// The two routes that establish and end a session rather than use one;
 	// the guard lets them past the credential check and nothing else.
-	mux.HandleFunc("POST /api/login", s.handleLogin)
-	mux.HandleFunc("POST /api/logout", s.handleLogout)
+	mux.HandleFunc("POST /api/login", server.handleLogin)
+	mux.HandleFunc("POST /api/logout", server.handleLogout)
 
 	// /mcp lives on the loop listener alone (#238). Saying so explicitly
 	// matters because of what is registered next: the UI's catch-all would
@@ -162,14 +162,14 @@ func (s *Server) Handler() http.Handler {
 
 	// Registered in every build, not just one that embeds the control
 	// room, so tier 2 sees what the shipped binary answers (#245).
-	mux.HandleFunc("/api/", s.apiFallback(mux))
-	if s.WebFS != nil {
-		mux.HandleFunc("/", s.handleUI)
+	mux.HandleFunc("/api/", server.apiFallback(mux))
+	if server.WebFS != nil {
+		mux.HandleFunc("/", server.handleUI)
 	}
 	// Every /api route is behind the guard, including the ones registered
 	// above: a route that is added later and forgets to authenticate is the
 	// failure this shape makes impossible (#239).
-	return s.guard(mux)
+	return server.guard(mux)
 }
 
 // MCPHandler is the loop-facing half of the hub, served on its own listener
@@ -178,15 +178,15 @@ func (s *Server) Handler() http.Handler {
 // at the network layer, before any question of authentication. Nothing but
 // the MCP endpoint is routed here: every other path is 404 and never reaches
 // the API mux.
-func (s *Server) MCPHandler() http.Handler {
+func (server *Server) MCPHandler() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("/mcp", s.mcpHandler())
+	mux.Handle("/mcp", server.mcpHandler())
 	return mux
 }
 
 // --- helpers ---
 
-func (s *Server) jsonErr(w http.ResponseWriter, code int, msg string, args ...any) {
+func (server *Server) jsonErr(w http.ResponseWriter, code int, msg string, args ...any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf(msg, args...)})
@@ -196,18 +196,18 @@ func (s *Server) jsonErr(w http.ResponseWriter, code int, msg string, args ...an
 // subject was there when the handler looked it up and gone by the write, and
 // a caller who asked to change something that no longer exists broke
 // nothing. Anything else is the store failing, 500 (#180).
-func (s *Server) storeErr(w http.ResponseWriter, err error, subject string) {
+func (server *Server) storeErr(w http.ResponseWriter, err error, subject string) {
 	if errors.Is(err, store.ErrNotFound) {
-		s.jsonErr(w, http.StatusNotFound, "%s not found", subject)
+		server.jsonErr(w, http.StatusNotFound, "%s not found", subject)
 		return
 	}
-	s.jsonErr(w, http.StatusInternalServerError, "%v", err)
+	server.jsonErr(w, http.StatusInternalServerError, "%v", err)
 }
 
 // jsonErrCode is jsonErr plus a stable machine-readable reason, for the
 // cases where one status covers outcomes a client must tell apart. The
 // prose stays the human's, the code is the client's.
-func (s *Server) jsonErrCode(w http.ResponseWriter, status int, reason, msg string, args ...any) {
+func (server *Server) jsonErrCode(w http.ResponseWriter, status int, reason, msg string, args ...any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf(msg, args...), "code": reason})
@@ -220,23 +220,23 @@ const (
 	codeBareNotEnabled = "bare_runtime_not_enabled"
 )
 
-func writeJSON(w http.ResponseWriter, code int, v any) {
+func writeJSON(w http.ResponseWriter, code int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(v)
+	json.NewEncoder(w).Encode(body)
 }
 
-func (s *Server) loopByName(w http.ResponseWriter, r *http.Request) *store.Loop {
-	l, err := s.Store.Loops().GetByName(r.Context(), r.PathValue("name"))
+func (server *Server) loopByName(w http.ResponseWriter, r *http.Request) *store.Loop {
+	loopRecord, err := server.Store.Loops().GetByName(r.Context(), r.PathValue("name"))
 	if errors.Is(err, store.ErrNotFound) {
-		s.jsonErr(w, http.StatusNotFound, "loop %q not found", r.PathValue("name"))
+		server.jsonErr(w, http.StatusNotFound, "loop %q not found", r.PathValue("name"))
 		return nil
 	}
 	if err != nil {
-		s.jsonErr(w, http.StatusInternalServerError, "%v", err)
+		server.jsonErr(w, http.StatusInternalServerError, "%v", err)
 		return nil
 	}
-	return l
+	return loopRecord
 }
 
 // loopView is a loop plus live runtime info for the UI.
@@ -314,45 +314,45 @@ func localDayStart(now time.Time) (int64, string) {
 	return start.UnixMilli(), start.Format("2006-01-02")
 }
 
-func (s *Server) view(ctx context.Context, l *store.Loop) *loopView {
-	out := &loopView{Loop: l, State: loop.StateAsleep, HasTGToken: l.TGBotToken != "", WorkstationUp: true,
-		OwnerDMReady: l.OwnerTGUserID != 0 && l.OwnerDMChatID != 0, InFleetChannel: !l.OutsideFleetChannel}
-	if l.OwnerTGUserID != 0 {
-		if sender, err := s.Store.TGSenders().Get(ctx, l.OwnerTGUserID); err == nil {
+func (server *Server) view(ctx context.Context, loopRecord *store.Loop) *loopView {
+	out := &loopView{Loop: loopRecord, State: loop.StateAsleep, HasTGToken: loopRecord.TGBotToken != "", WorkstationUp: true,
+		OwnerDMReady: loopRecord.OwnerTGUserID != 0 && loopRecord.OwnerDMChatID != 0, InFleetChannel: !loopRecord.OutsideFleetChannel}
+	if loopRecord.OwnerTGUserID != 0 {
+		if sender, err := server.Store.TGSenders().Get(ctx, loopRecord.OwnerTGUserID); err == nil {
 			out.OwnerUsername = sender.Username
 		}
 	}
-	if actor, ok := s.Manager.Get(l.ID); ok {
+	if actor, ok := server.Manager.Get(loopRecord.ID); ok {
 		out.State = actor.State()
 		health := actor.WorkstationHealth()
 		out.WorkstationUp = health.Up
 		out.WorkstationDetail = health.Detail
 		out.DownReason = actor.DownReason()
 	}
-	if latest, err := s.Store.Turns().Latest(ctx, l.ID); err == nil {
+	if latest, err := server.Store.Turns().Latest(ctx, loopRecord.ID); err == nil {
 		// what the configured model resolved to, whichever session ran it:
 		// an alias names a family, and this is the release it meant then
 		out.ResolvedModel = latest.Model
-		if latest.SessionID == l.CurrentSessionID {
+		if latest.SessionID == loopRecord.CurrentSessionID {
 			out.ContextTokens = latest.ContextTokens
 			out.ContextLimitTokens = loop.ContextLimit(latest.Model)
 			out.ContextFillPct = loop.FillPercent(out.ContextTokens, out.ContextLimitTokens)
 		}
 	}
-	if entry, err := s.Store.Schedule().Get(ctx, l.ID); err == nil {
+	if entry, err := server.Store.Schedule().Get(ctx, loopRecord.ID); err == nil {
 		out.NextTickAt = entry.NextTickAt
 	}
 	dayStart, day := localDayStart(time.Now())
 	out.CostDay = day
-	if cost, err := s.Store.Turns().CostSince(ctx, l.ID, dayStart); err == nil {
+	if cost, err := server.Store.Turns().CostSince(ctx, loopRecord.ID, dayStart); err == nil {
 		out.CostToday = cost
 	}
-	if n, err := s.Store.Messages().UnresolvedSendFailures(ctx, l.ID); err == nil {
-		out.Undelivered = n
+	if failures, err := server.Store.Messages().UnresolvedSendFailures(ctx, loopRecord.ID); err == nil {
+		out.Undelivered = failures
 	} else {
 		// The zero this leaves behind is the one thing this field must not
 		// say quietly, so it is said loudly somewhere.
-		s.Log.Error("undelivered count", "loop", l.Name, "err", err)
+		server.Log.Error("undelivered count", "loop", loopRecord.Name, "err", err)
 	}
 	return out
 }
@@ -362,23 +362,23 @@ func (s *Server) view(ctx context.Context, l *store.Loop) *loopView {
 // handleVersion names the build. Unauthenticated like health: everything
 // here is already in the binary anyone asking can run, and an operator
 // filing a bug should not have to find a token to say which Spool it was.
-func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, s.Build)
+func (server *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, server.Build)
 }
 
-func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, map[string]any{"ok": true, "claude_version": s.ClaudeVer, "runtime": s.DefaultRuntime})
+func (server *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, map[string]any{"ok": true, "claude_version": server.ClaudeVer, "runtime": server.DefaultRuntime})
 }
 
-func (s *Server) handleListLoops(w http.ResponseWriter, r *http.Request) {
-	loops, err := s.Store.Loops().List(r.Context())
+func (server *Server) handleListLoops(w http.ResponseWriter, r *http.Request) {
+	loops, err := server.Store.Loops().List(r.Context())
 	if err != nil {
-		s.jsonErr(w, 500, "%v", err)
+		server.jsonErr(w, 500, "%v", err)
 		return
 	}
 	views := make([]*loopView, 0, len(loops))
-	for _, l := range loops {
-		views = append(views, s.view(r.Context(), l))
+	for _, loopRecord := range loops {
+		views = append(views, server.view(r.Context(), loopRecord))
 	}
 	writeJSON(w, 200, views)
 }
@@ -407,85 +407,85 @@ type createLoopReq struct {
 
 var validEfforts = map[string]bool{"": true, "low": true, "medium": true, "high": true, "xhigh": true, "max": true}
 
-func validPacing(p string) bool {
-	return p == "" || p == store.PacingFixed || p == store.PacingSelf
+func validPacing(pacing string) bool {
+	return pacing == "" || pacing == store.PacingFixed || pacing == store.PacingSelf
 }
 
-func (s *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
+func (server *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 	var req createLoopReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.jsonErr(w, 400, "bad json: %v", err)
+		server.jsonErr(w, 400, "bad json: %v", err)
 		return
 	}
 	req.Name = strings.ToLower(strings.TrimSpace(req.Name))
 	if !nameRe.MatchString(req.Name) {
-		s.jsonErr(w, 400, "name must match %s", nameRe.String())
+		server.jsonErr(w, 400, "name must match %s", nameRe.String())
 		return
 	}
 	if req.Name == route.BroadcastToken {
 		// @all addresses the group's eligible loops; a loop of that name
 		// could never be mentioned, only broadcast to (#74).
-		s.jsonErr(w, 400, "%q is reserved: @%s addresses every eligible loop in the group",
+		server.jsonErr(w, 400, "%q is reserved: @%s addresses every eligible loop in the group",
 			route.BroadcastToken, route.BroadcastToken)
 		return
 	}
 	if strings.TrimSpace(req.Mission) == "" {
-		s.jsonErr(w, 400, "mission is required")
+		server.jsonErr(w, 400, "mission is required")
 		return
 	}
 	if !validEfforts[req.Effort] {
-		s.jsonErr(w, 400, "effort must be one of: low, medium, high, xhigh, max (or empty for default)")
+		server.jsonErr(w, 400, "effort must be one of: low, medium, high, xhigh, max (or empty for default)")
 		return
 	}
 	// Trimmed as the model list trims what it is given.
 	req.Model = strings.TrimSpace(req.Model)
 	if err := loop.ValidLoopModel(req.Model); err != nil {
-		s.jsonErr(w, 400, "%v", err)
+		server.jsonErr(w, 400, "%v", err)
 		return
 	}
 	if !validPacing(req.Pacing) {
-		s.jsonErr(w, 400, "pacing must be 'fixed' or 'self'")
+		server.jsonErr(w, 400, "pacing must be 'fixed' or 'self'")
 		return
 	}
 
-	loopRuntime := defaultStr(req.Runtime, defaultStr(s.DefaultRuntime, store.RuntimeBare))
+	loopRuntime := defaultStr(req.Runtime, defaultStr(server.DefaultRuntime, store.RuntimeBare))
 	switch loopRuntime {
 	case store.RuntimeBare:
-		if !s.BareAllowed {
-			s.jsonErrCode(w, 400, codeBareNotEnabled,
+		if !server.BareAllowed {
+			server.jsonErrCode(w, 400, codeBareNotEnabled,
 				"a bare loop runs uncontained on this machine; start spool with --allow-bare (or --runtime bare) to allow one")
 			return
 		}
 		if req.Image != "" || req.MemMB != 0 || req.CPUs != 0 {
-			s.jsonErr(w, 400, "image, mem_mb and cpus apply to docker loops only")
+			server.jsonErr(w, 400, "image, mem_mb and cpus apply to docker loops only")
 			return
 		}
 	case store.RuntimeDocker:
 		if req.WorkspacePath != "" {
-			s.jsonErr(w, 400, "a docker loop's workstation is its workspace; workspace_path applies to bare loops only")
+			server.jsonErr(w, 400, "a docker loop's workstation is its workspace; workspace_path applies to bare loops only")
 			return
 		}
 		if req.MemMB != 0 && (req.MemMB < 256 || req.MemMB > 262144) {
-			s.jsonErr(w, 400, "mem_mb must be between 256 and 262144")
+			server.jsonErr(w, 400, "mem_mb must be between 256 and 262144")
 			return
 		}
 		if req.CPUs != 0 && (req.CPUs < 0.1 || req.CPUs > 64) {
-			s.jsonErr(w, 400, "cpus must be between 0.1 and 64")
+			server.jsonErr(w, 400, "cpus must be between 0.1 and 64")
 			return
 		}
-		if s.RuntimeAvailable != nil {
-			if err := s.RuntimeAvailable(r.Context(), store.RuntimeDocker); err != nil {
-				s.jsonErr(w, 400, "docker runtime unavailable: %v", err)
+		if server.RuntimeAvailable != nil {
+			if err := server.RuntimeAvailable(r.Context(), store.RuntimeDocker); err != nil {
+				server.jsonErr(w, 400, "docker runtime unavailable: %v", err)
 				return
 			}
 		}
 	default:
-		s.jsonErr(w, 400, "runtime must be 'bare' or 'docker' (or empty for the server default)")
+		server.jsonErr(w, 400, "runtime must be 'bare' or 'docker' (or empty for the server default)")
 		return
 	}
 
 	nowMS := time.Now().UnixMilli()
-	l := &store.Loop{
+	loopRecord := &store.Loop{
 		ID:              loopID(),
 		Name:            req.Name,
 		Mission:         req.Mission,
@@ -503,84 +503,84 @@ func (s *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt:       nowMS,
 	}
 	if loopRuntime == store.RuntimeDocker {
-		l.Image = strings.TrimSpace(req.Image)
-		l.MemMB = defaultInt(req.MemMB, 4096)
-		l.CPUs = req.CPUs
-		if l.CPUs == 0 {
-			l.CPUs = 2
+		loopRecord.Image = strings.TrimSpace(req.Image)
+		loopRecord.MemMB = defaultInt(req.MemMB, 4096)
+		loopRecord.CPUs = req.CPUs
+		if loopRecord.CPUs == 0 {
+			loopRecord.CPUs = 2
 		}
 	}
 
-	if l.TGBotToken != "" && s.Surface != nil {
-		username, err := s.Surface.ValidateCredential(r.Context(), l.TGBotToken)
+	if loopRecord.TGBotToken != "" && server.Surface != nil {
+		username, err := server.Surface.ValidateCredential(r.Context(), loopRecord.TGBotToken)
 		if err != nil {
-			s.jsonErr(w, 400, "telegram token rejected: %v", err)
+			server.jsonErr(w, 400, "telegram token rejected: %v", err)
 			return
 		}
-		l.TGBotUsername = username
+		loopRecord.TGBotUsername = username
 	}
 
-	if l.Runtime == store.RuntimeDocker {
+	if loopRecord.Runtime == store.RuntimeDocker {
 		// The workstation is the workspace (ADR-0017): claude's cwd is the
 		// volume-backed home inside the container, stable across wakes.
-		l.WorkspaceMode = store.WorkspaceNone
-		l.WorkspacePath = runtime.WorkstationHome
-	} else if err := s.resolveWorkspace(l, req.WorkspacePath, req.WorkspaceMode); err != nil {
-		s.jsonErr(w, 400, "%v", err)
+		loopRecord.WorkspaceMode = store.WorkspaceNone
+		loopRecord.WorkspacePath = runtime.WorkstationHome
+	} else if err := server.resolveWorkspace(loopRecord, req.WorkspacePath, req.WorkspaceMode); err != nil {
+		server.jsonErr(w, 400, "%v", err)
 		return
 	}
 
 	// A new loop starts owned by the same person as the rest of the fleet:
 	// the first allowlisted sender, reassignable per loop (#73).
-	l.OwnerTGUserID = s.defaultOwnerID(r.Context())
+	loopRecord.OwnerTGUserID = server.defaultOwnerID(r.Context())
 
 	// Membership is settled before the loop exists, never patched in after:
 	// a loop created in the channel and then taken out would be reachable
 	// by an @all in between.
 	inFleet := req.InFleetChannel
 	if inFleet == nil {
-		in, err := s.defaultInFleetChannel(r.Context())
+		in, err := server.defaultInFleetChannel(r.Context())
 		if err != nil {
-			s.jsonErr(w, 500, "%v", err)
+			server.jsonErr(w, 500, "%v", err)
 			return
 		}
 		inFleet = &in
 	}
-	l.OutsideFleetChannel = !*inFleet
+	loopRecord.OutsideFleetChannel = !*inFleet
 
-	if err := s.Store.Loops().Create(r.Context(), l); err != nil {
+	if err := server.Store.Loops().Create(r.Context(), loopRecord); err != nil {
 		if errors.Is(err, store.ErrDuplicate) {
-			s.jsonErr(w, 409, "a loop named %q already exists", l.Name)
+			server.jsonErr(w, 409, "a loop named %q already exists", loopRecord.Name)
 		} else {
-			s.jsonErr(w, 500, "%v", err)
+			server.jsonErr(w, 500, "%v", err)
 		}
 		return
 	}
 	// A new loop is minted with a hub MCP token, and may arrive with a bot
 	// token: two secret values that did not exist a moment ago.
-	s.secretsChanged(r.Context())
-	s.Manager.Add(l)
-	if s.Surface != nil {
-		s.Surface.LoopChanged(r.Context(), l.ID)
+	server.secretsChanged(r.Context())
+	server.Manager.Add(loopRecord)
+	if server.Surface != nil {
+		server.Surface.LoopChanged(r.Context(), loopRecord.ID)
 	}
 	// first tick shortly after creation so the mission starts without waiting
 	// a full interval
-	s.Sched.ScheduleNow(l.ID)
-	writeJSON(w, 201, s.view(r.Context(), l))
+	server.Sched.ScheduleNow(loopRecord.ID)
+	writeJSON(w, 201, server.view(r.Context(), loopRecord))
 }
 
 // resolveWorkspace decides the loop's cwd. Every loop needs a stable cwd
 // (claude sessions are keyed by it); workspace-less loops get a home dir
 // under the data dir.
-func (s *Server) resolveWorkspace(l *store.Loop, path, mode string) error {
+func (server *Server) resolveWorkspace(loopRecord *store.Loop, path, mode string) error {
 	path = strings.TrimSpace(path)
 	if path == "" || mode == "none" {
-		home := filepath.Join(s.DataDir, "homes", l.Name)
+		home := filepath.Join(server.DataDir, "homes", loopRecord.Name)
 		if err := os.MkdirAll(home, 0o755); err != nil {
 			return err
 		}
-		l.WorkspaceMode = store.WorkspaceNone
-		l.WorkspacePath = home
+		loopRecord.WorkspaceMode = store.WorkspaceNone
+		loopRecord.WorkspacePath = home
 		return nil
 	}
 	abs, err := filepath.Abs(path)
@@ -592,29 +592,29 @@ func (s *Server) resolveWorkspace(l *store.Loop, path, mode string) error {
 		return fmt.Errorf("workspace path %s is not a directory", abs)
 	}
 	if mode != "dir" && gitws.IsGitRepo(abs) {
-		wt := filepath.Join(s.DataDir, "worktrees", l.Name)
-		branch, err := gitws.Create(abs, wt, l.Name)
+		wt := filepath.Join(server.DataDir, "worktrees", loopRecord.Name)
+		branch, err := gitws.Create(abs, wt, loopRecord.Name)
 		if err != nil {
 			return err
 		}
-		l.WorkspaceMode = store.WorkspaceWorktree
-		l.RepoPath = abs
-		l.WorktreePath = wt
-		l.WorkspacePath = wt
-		l.Branch = branch
+		loopRecord.WorkspaceMode = store.WorkspaceWorktree
+		loopRecord.RepoPath = abs
+		loopRecord.WorktreePath = wt
+		loopRecord.WorkspacePath = wt
+		loopRecord.Branch = branch
 		return nil
 	}
-	l.WorkspaceMode = store.WorkspaceDir
-	l.WorkspacePath = abs
+	loopRecord.WorkspaceMode = store.WorkspaceDir
+	loopRecord.WorkspacePath = abs
 	return nil
 }
 
-func (s *Server) handleGetLoop(w http.ResponseWriter, r *http.Request) {
-	l := s.loopByName(w, r)
-	if l == nil {
+func (server *Server) handleGetLoop(w http.ResponseWriter, r *http.Request) {
+	loopRecord := server.loopByName(w, r)
+	if loopRecord == nil {
 		return
 	}
-	writeJSON(w, 200, s.view(r.Context(), l))
+	writeJSON(w, 200, server.view(r.Context(), loopRecord))
 }
 
 // What a PATCH did about the loop's session, reported alongside the loop it
@@ -675,32 +675,32 @@ type patchLoopResp struct {
 	Rotation string `json:"rotation"`
 }
 
-func (s *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
-	l := s.loopByName(w, r)
-	if l == nil {
+func (server *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
+	loopRecord := server.loopByName(w, r)
+	if loopRecord == nil {
 		return
 	}
 	var req patchLoopReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.jsonErr(w, 400, "bad json: %v", err)
+		server.jsonErr(w, 400, "bad json: %v", err)
 		return
 	}
 	if req.Mission != nil && strings.TrimSpace(*req.Mission) == "" {
 		// The same refusal the create path gives (:396 before this block).
 		// A loop whose instructions are the empty string has no useful
 		// reading, and the column would take one: it is NOT NULL DEFAULT ''.
-		s.jsonErr(w, 400, "mission is required")
+		server.jsonErr(w, 400, "mission is required")
 		return
 	}
 	if req.Model != nil {
 		model := strings.TrimSpace(*req.Model)
 		req.Model = &model
 		if err := loop.ValidLoopModel(model); err != nil {
-			s.jsonErr(w, 400, "%v", err)
+			server.jsonErr(w, 400, "%v", err)
 			return
 		}
 	}
-	// Built as an edit rather than applied to l: the loop was read before
+	// Built as an edit rather than applied to loopRecord: the loop was read before
 	// the token round-trip below, and writing that copy back reverts
 	// whatever the Telegram poller learned meanwhile (#164).
 	edit := store.LoopEdit{
@@ -714,14 +714,14 @@ func (s *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Effort != nil {
 		if !validEfforts[*req.Effort] {
-			s.jsonErr(w, 400, "effort must be one of: low, medium, high, xhigh, max (or empty for default)")
+			server.jsonErr(w, 400, "effort must be one of: low, medium, high, xhigh, max (or empty for default)")
 			return
 		}
 		edit.Effort = req.Effort
 	}
 	if req.Pacing != nil {
 		if !validPacing(*req.Pacing) {
-			s.jsonErr(w, 400, "pacing must be 'fixed' or 'self'")
+			server.jsonErr(w, 400, "pacing must be 'fixed' or 'self'")
 			return
 		}
 		pacing := defaultStr(*req.Pacing, store.PacingFixed)
@@ -734,12 +734,12 @@ func (s *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 	if req.TGBotToken != nil {
 		token := strings.TrimSpace(*req.TGBotToken)
 		username := ""
-		if token != "" && s.Surface != nil {
+		if token != "" && server.Surface != nil {
 			// A live call to api.telegram.org, which is why nothing read
 			// before this point may be written back afterwards.
-			name, err := s.Surface.ValidateCredential(r.Context(), token)
+			name, err := server.Surface.ValidateCredential(r.Context(), token)
 			if err != nil {
-				s.jsonErr(w, 400, "telegram token rejected: %v", err)
+				server.jsonErr(w, 400, "telegram token rejected: %v", err)
 				return
 			}
 			username = name
@@ -749,28 +749,28 @@ func (s *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 		// keeps it: the group is the same group, and the poller rebinds.
 		edit.ClearGroupBinding = token == ""
 	}
-	updated, err := s.Store.Loops().Edit(r.Context(), l.ID, edit)
+	updated, err := server.Store.Loops().Edit(r.Context(), loopRecord.ID, edit)
 	if err != nil {
-		s.storeErr(w, err, "loop")
+		server.storeErr(w, err, "loop")
 		return
 	}
 	if req.TGBotToken != nil {
-		s.secretsChanged(r.Context())
+		server.secretsChanged(r.Context())
 	}
 	// The stored row, not the edited copy: everything this request did not
 	// name reaches the actor and the surface as it actually stands.
-	s.Manager.UpdateLoop(updated)
-	if s.Surface != nil {
-		s.Surface.LoopChanged(r.Context(), updated.ID)
+	server.Manager.UpdateLoop(updated)
+	if server.Surface != nil {
+		server.Surface.LoopChanged(r.Context(), updated.ID)
 	}
 	// After UpdateLoop, so the session the rotation starts is built from the
-	// mission this request saved rather than the one it replaced. `l` is the
-	// row as it was read at the top of the handler, which is what makes this
-	// a comparison and not a tautology.
+	// mission this request saved rather than the one it replaced. `loopRecord`
+	// is the row as it was read at the top of the handler, which is what makes
+	// this a comparison and not a tautology.
 	rotation := rotationNone
-	if req.Mission != nil && missionChanged(l.Mission, *req.Mission) {
+	if req.Mission != nil && missionChanged(loopRecord.Mission, *req.Mission) {
 		rotation = rotationNoSession
-		if actor, ok := s.Manager.Get(updated.ID); ok {
+		if actor, ok := server.Manager.Get(updated.ID); ok {
 			// An error here means there is no session to rotate, which is
 			// not a failed save: handleRotate answers 409 for it because an
 			// operator asking for a rotation outright gets nothing, while
@@ -781,108 +781,108 @@ func (s *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	writeJSON(w, 200, patchLoopResp{loopView: s.view(r.Context(), updated), Rotation: rotation})
+	writeJSON(w, 200, patchLoopResp{loopView: server.view(r.Context(), updated), Rotation: rotation})
 }
 
-func (s *Server) handleDeleteLoop(w http.ResponseWriter, r *http.Request) {
-	l := s.loopByName(w, r)
-	if l == nil {
+func (server *Server) handleDeleteLoop(w http.ResponseWriter, r *http.Request) {
+	loopRecord := server.loopByName(w, r)
+	if loopRecord == nil {
 		return
 	}
-	s.Manager.Remove(l.ID, l.Runtime)
-	if s.Surface != nil {
-		s.Surface.LoopRemoved(l.ID)
+	server.Manager.Remove(loopRecord.ID, loopRecord.Runtime)
+	if server.Surface != nil {
+		server.Surface.LoopRemoved(loopRecord.ID)
 	}
-	if r.URL.Query().Get("remove_worktree") == "1" && l.WorkspaceMode == store.WorkspaceWorktree {
-		if err := gitws.Remove(l.RepoPath, l.WorktreePath); err != nil {
-			s.Log.Warn("worktree remove", "err", err)
+	if r.URL.Query().Get("remove_worktree") == "1" && loopRecord.WorkspaceMode == store.WorkspaceWorktree {
+		if err := gitws.Remove(loopRecord.RepoPath, loopRecord.WorktreePath); err != nil {
+			server.Log.Warn("worktree remove", "err", err)
 		}
 	}
-	_ = s.Store.Sessions().End(r.Context(), l.CurrentSessionID, store.EndReasonKilled, time.Now().UnixMilli())
-	if err := s.Store.Loops().Delete(r.Context(), l.ID); err != nil {
-		s.jsonErr(w, 500, "%v", err)
+	_ = server.Store.Sessions().End(r.Context(), loopRecord.CurrentSessionID, store.EndReasonKilled, time.Now().UnixMilli())
+	if err := server.Store.Loops().Delete(r.Context(), loopRecord.ID); err != nil {
+		server.jsonErr(w, 500, "%v", err)
 		return
 	}
 	writeJSON(w, 200, map[string]bool{"deleted": true})
 }
 
-func (s *Server) handlePause(w http.ResponseWriter, r *http.Request) {
-	l := s.loopByName(w, r)
-	if l == nil {
+func (server *Server) handlePause(w http.ResponseWriter, r *http.Request) {
+	loopRecord := server.loopByName(w, r)
+	if loopRecord == nil {
 		return
 	}
-	l.Status = store.StatusPaused
-	l.UpdatedAt = time.Now().UnixMilli()
-	_ = s.Store.Loops().SetStatus(r.Context(), l.ID, l.Status, l.UpdatedAt)
-	if actor, ok := s.Manager.Get(l.ID); ok {
+	loopRecord.Status = store.StatusPaused
+	loopRecord.UpdatedAt = time.Now().UnixMilli()
+	_ = server.Store.Loops().SetStatus(r.Context(), loopRecord.ID, loopRecord.Status, loopRecord.UpdatedAt)
+	if actor, ok := server.Manager.Get(loopRecord.ID); ok {
 		actor.Pause()
 	}
-	s.Sched.Suspend(l.ID)
-	writeJSON(w, 200, s.view(r.Context(), l))
+	server.Sched.Suspend(loopRecord.ID)
+	writeJSON(w, 200, server.view(r.Context(), loopRecord))
 }
 
 // handlePower runs one of the operator's power controls on a loop's
 // workstation and answers with the loop as it stands afterwards — the call
 // is synchronous, so the control room can render the result rather than
 // wait for the stream to correct it (ADR-0021).
-func (s *Server) handlePower(verb string) http.HandlerFunc {
+func (server *Server) handlePower(verb string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		l := s.loopByName(w, r)
-		if l == nil {
+		loopRecord := server.loopByName(w, r)
+		if loopRecord == nil {
 			return
 		}
-		actor, ok := s.Manager.Get(l.ID)
+		actor, ok := server.Manager.Get(loopRecord.ID)
 		if !ok {
-			s.jsonErrCode(w, http.StatusConflict, codeLoopNotRunning,
-				"loop %s is not running", l.Name)
+			server.jsonErrCode(w, http.StatusConflict, codeLoopNotRunning,
+				"loop %s is not running", loopRecord.Name)
 			return
 		}
 		switch err := actor.Power(verb); {
 		case errors.Is(err, runtime.ErrUnsupported):
-			s.jsonErrCode(w, http.StatusConflict, codeNoWorkstation,
-				"loop %s runs on the %s runtime, which has no workstation to %s", l.Name, l.Runtime, verb)
+			server.jsonErrCode(w, http.StatusConflict, codeNoWorkstation,
+				"loop %s runs on the %s runtime, which has no workstation to %s", loopRecord.Name, loopRecord.Runtime, verb)
 			return
 		case err != nil:
-			s.jsonErr(w, http.StatusInternalServerError, "%s: %v", verb, err)
+			server.jsonErr(w, http.StatusInternalServerError, "%s: %v", verb, err)
 			return
 		}
-		if fresh, err := s.Store.Loops().Get(r.Context(), l.ID); err == nil {
-			l = fresh
+		if fresh, err := server.Store.Loops().Get(r.Context(), loopRecord.ID); err == nil {
+			loopRecord = fresh
 		}
-		writeJSON(w, 200, s.view(r.Context(), l))
+		writeJSON(w, 200, server.view(r.Context(), loopRecord))
 	}
 }
 
-func (s *Server) handleResume(w http.ResponseWriter, r *http.Request) {
-	l := s.loopByName(w, r)
-	if l == nil {
+func (server *Server) handleResume(w http.ResponseWriter, r *http.Request) {
+	loopRecord := server.loopByName(w, r)
+	if loopRecord == nil {
 		return
 	}
-	l.Status = store.StatusActive
-	l.UpdatedAt = time.Now().UnixMilli()
-	_ = s.Store.Loops().SetStatus(r.Context(), l.ID, l.Status, l.UpdatedAt)
-	if actor, ok := s.Manager.Get(l.ID); ok {
+	loopRecord.Status = store.StatusActive
+	loopRecord.UpdatedAt = time.Now().UnixMilli()
+	_ = server.Store.Loops().SetStatus(r.Context(), loopRecord.ID, loopRecord.Status, loopRecord.UpdatedAt)
+	if actor, ok := server.Manager.Get(loopRecord.ID); ok {
 		actor.Resume()
 	}
-	s.Sched.Resume(l.ID)
-	writeJSON(w, 200, s.view(r.Context(), l))
+	server.Sched.Resume(loopRecord.ID)
+	writeJSON(w, 200, server.view(r.Context(), loopRecord))
 }
 
-func (s *Server) handleWake(w http.ResponseWriter, r *http.Request) {
-	l := s.loopByName(w, r)
-	if l == nil {
+func (server *Server) handleWake(w http.ResponseWriter, r *http.Request) {
+	loopRecord := server.loopByName(w, r)
+	if loopRecord == nil {
 		return
 	}
-	s.Manager.Tick(l.ID)
+	server.Manager.Tick(loopRecord.ID)
 	writeJSON(w, 200, map[string]bool{"woken": true})
 }
 
-func (s *Server) handleKill(w http.ResponseWriter, r *http.Request) {
-	l := s.loopByName(w, r)
-	if l == nil {
+func (server *Server) handleKill(w http.ResponseWriter, r *http.Request) {
+	loopRecord := server.loopByName(w, r)
+	if loopRecord == nil {
 		return
 	}
-	if actor, ok := s.Manager.Get(l.ID); ok {
+	if actor, ok := server.Manager.Get(loopRecord.ID); ok {
 		actor.Kill()
 	}
 	writeJSON(w, 200, map[string]bool{"killed": true})
@@ -891,18 +891,18 @@ func (s *Server) handleKill(w http.ResponseWriter, r *http.Request) {
 // handleRotate queues an operator-asked context rotation (ADR-0022): the
 // loop writes its handoff note at the next quiet boundary and continues on
 // a fresh session seeded from it.
-func (s *Server) handleRotate(w http.ResponseWriter, r *http.Request) {
-	l := s.loopByName(w, r)
-	if l == nil {
+func (server *Server) handleRotate(w http.ResponseWriter, r *http.Request) {
+	loopRecord := server.loopByName(w, r)
+	if loopRecord == nil {
 		return
 	}
-	actor, ok := s.Manager.Get(l.ID)
+	actor, ok := server.Manager.Get(loopRecord.ID)
 	if !ok {
-		s.jsonErr(w, 409, "loop has no running actor")
+		server.jsonErr(w, 409, "loop has no running actor")
 		return
 	}
 	if err := actor.Rotate(); err != nil {
-		s.jsonErr(w, 409, "%v", err)
+		server.jsonErr(w, 409, "%v", err)
 		return
 	}
 	writeJSON(w, 202, map[string]bool{"rotating": true})
@@ -917,44 +917,44 @@ type postMessageReq struct {
 	Destination string `json:"destination"`
 }
 
-func (s *Server) handleLoopMessage(w http.ResponseWriter, r *http.Request) {
-	l := s.loopByName(w, r)
-	if l == nil {
+func (server *Server) handleLoopMessage(w http.ResponseWriter, r *http.Request) {
+	loopRecord := server.loopByName(w, r)
+	if loopRecord == nil {
 		return
 	}
 	var req postMessageReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Text) == "" {
-		s.jsonErr(w, 400, "author and non-empty text required")
+		server.jsonErr(w, 400, "author and non-empty text required")
 		return
 	}
 	dest := defaultStr(req.Destination, store.ConversationControlRoom)
 	if dest != store.ConversationControlRoom && dest != store.ConversationGroup {
-		s.jsonErr(w, 400, "destination must be %s or %s", store.ConversationControlRoom, store.ConversationGroup)
+		server.jsonErr(w, 400, "destination must be %s or %s", store.ConversationControlRoom, store.ConversationGroup)
 		return
 	}
-	if dest == store.ConversationGroup && l.OutsideFleetChannel {
+	if dest == store.ConversationGroup && loopRecord.OutsideFleetChannel {
 		// Refused rather than stored: the post would land in the group and
 		// reach nobody, since the loop it was written to has no group.
-		s.jsonErr(w, 409, "%s is not in the fleet channel", l.Name)
+		server.jsonErr(w, 409, "%s is not in the fleet channel", loopRecord.Name)
 		return
 	}
-	err := s.Router.Ingest(r.Context(), route.InboundMessage{
+	err := server.Router.Ingest(r.Context(), route.InboundMessage{
 		Origin:       store.OriginWeb,
 		Author:       defaultStr(req.Author, "operator"),
 		Text:         req.Text,
-		ImplicitTo:   l.ID,
+		ImplicitTo:   loopRecord.ID,
 		Conversation: dest,
 	})
 	if err != nil {
-		s.jsonErr(w, 500, "%v", err)
+		server.jsonErr(w, 500, "%v", err)
 		return
 	}
 	writeJSON(w, 202, map[string]bool{"queued": true})
 }
 
-func (s *Server) handleLoopEvents(w http.ResponseWriter, r *http.Request) {
-	l := s.loopByName(w, r)
-	if l == nil {
+func (server *Server) handleLoopEvents(w http.ResponseWriter, r *http.Request) {
+	loopRecord := server.loopByName(w, r)
+	if loopRecord == nil {
 		return
 	}
 	limit := queryInt(r, "limit", 200)
@@ -970,13 +970,13 @@ func (s *Server) handleLoopEvents(w http.ResponseWriter, r *http.Request) {
 	var err error
 	if query.Has("before_id") {
 		beforeID, _ := strconv.ParseInt(query.Get("before_id"), 10, 64)
-		events, err = s.Store.Events().ListByLoopBefore(r.Context(), l.ID, beforeID, limit)
+		events, err = server.Store.Events().ListByLoopBefore(r.Context(), loopRecord.ID, beforeID, limit)
 	} else {
 		afterID, _ := strconv.ParseInt(query.Get("after_id"), 10, 64)
-		events, err = s.Store.Events().ListByLoop(r.Context(), l.ID, afterID, limit)
+		events, err = server.Store.Events().ListByLoop(r.Context(), loopRecord.ID, afterID, limit)
 	}
 	if err != nil {
-		s.jsonErr(w, 500, "%v", err)
+		server.jsonErr(w, 500, "%v", err)
 		return
 	}
 	if events == nil {
@@ -985,14 +985,14 @@ func (s *Server) handleLoopEvents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, events)
 }
 
-func (s *Server) handleLoopTurns(w http.ResponseWriter, r *http.Request) {
-	l := s.loopByName(w, r)
-	if l == nil {
+func (server *Server) handleLoopTurns(w http.ResponseWriter, r *http.Request) {
+	loopRecord := server.loopByName(w, r)
+	if loopRecord == nil {
 		return
 	}
-	turns, err := s.Store.Turns().ListByLoop(r.Context(), l.ID, queryInt(r, "limit", 50))
+	turns, err := server.Store.Turns().ListByLoop(r.Context(), loopRecord.ID, queryInt(r, "limit", 50))
 	if err != nil {
-		s.jsonErr(w, 500, "%v", err)
+		server.jsonErr(w, 500, "%v", err)
 		return
 	}
 	if turns == nil {
@@ -1001,18 +1001,18 @@ func (s *Server) handleLoopTurns(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, turns)
 }
 
-func (s *Server) handleTelegramStatus(w http.ResponseWriter, r *http.Request) {
-	l := s.loopByName(w, r)
-	if l == nil {
+func (server *Server) handleTelegramStatus(w http.ResponseWriter, r *http.Request) {
+	loopRecord := server.loopByName(w, r)
+	if loopRecord == nil {
 		return
 	}
 	status := map[string]any{
-		"configured":   l.TGBotToken != "",
-		"bot_username": l.TGBotUsername,
-		"group_bound":  l.TGGroupChatID != 0,
+		"configured":   loopRecord.TGBotToken != "",
+		"bot_username": loopRecord.TGBotUsername,
+		"group_bound":  loopRecord.TGGroupChatID != 0,
 	}
-	if s.Surface != nil {
-		status["bridge"] = s.Surface.Status(l.ID)
+	if server.Surface != nil {
+		status["bridge"] = server.Surface.Status(loopRecord.ID)
 	}
 	writeJSON(w, 200, status)
 }
@@ -1034,24 +1034,24 @@ type settingsView struct {
 	BareAllowed bool `json:"bare_allowed"`
 }
 
-func (s *Server) settingsView(ctx context.Context) (settingsView, error) {
-	token, err := s.claudeToken(ctx)
+func (server *Server) settingsView(ctx context.Context) (settingsView, error) {
+	token, err := server.claudeToken(ctx)
 	if err != nil {
 		return settingsView{}, err
 	}
-	arm, force := loop.RotationThresholds(ctx, s.Store.Settings(), s.Log)
+	arm, force := loop.RotationThresholds(ctx, server.Store.Settings(), server.Log)
 	return settingsView{
 		ClaudeTokenSet:      token != "",
 		ContextArmPercent:   arm,
 		ContextForcePercent: force,
-		BareAllowed:         s.BareAllowed,
+		BareAllowed:         server.BareAllowed,
 	}, nil
 }
 
-func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
-	view, err := s.settingsView(r.Context())
+func (server *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
+	view, err := server.settingsView(r.Context())
 	if err != nil {
-		s.jsonErr(w, 500, "%v", err)
+		server.jsonErr(w, 500, "%v", err)
 		return
 	}
 	writeJSON(w, 200, view)
@@ -1067,10 +1067,10 @@ type putSettingsReq struct {
 	ContextForcePercent *int `json:"context_force_percent"`
 }
 
-func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
+func (server *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	var req putSettingsReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.jsonErr(w, 400, "bad json: %v", err)
+		server.jsonErr(w, 400, "bad json: %v", err)
 		return
 	}
 	if req.ClaudeOAuthToken != nil {
@@ -1078,21 +1078,21 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		if strings.TrimSpace(*req.ClaudeOAuthToken) != "" {
 			validated, err := validateClaudeToken(*req.ClaudeOAuthToken)
 			if err != nil {
-				s.jsonErr(w, 400, "%v", err)
+				server.jsonErr(w, 400, "%v", err)
 				return
 			}
 			token = validated
 		}
-		if err := s.Store.Settings().Set(r.Context(), store.SettingClaudeOAuthToken, token); err != nil {
-			s.jsonErr(w, 500, "%v", err)
+		if err := server.Store.Settings().Set(r.Context(), store.SettingClaudeOAuthToken, token); err != nil {
+			server.jsonErr(w, 500, "%v", err)
 			return
 		}
-		s.secretsChanged(r.Context())
+		server.secretsChanged(r.Context())
 	}
 	if req.ContextArmPercent != nil || req.ContextForcePercent != nil {
-		s.settingsMu.Lock()
-		defer s.settingsMu.Unlock()
-		arm, force := loop.RotationThresholds(r.Context(), s.Store.Settings(), s.Log)
+		server.settingsMu.Lock()
+		defer server.settingsMu.Unlock()
+		arm, force := loop.RotationThresholds(r.Context(), server.Store.Settings(), server.Log)
 		if req.ContextArmPercent != nil {
 			arm = *req.ContextArmPercent
 		}
@@ -1100,21 +1100,21 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			force = *req.ContextForcePercent
 		}
 		if !loop.ValidThresholds(arm, force) {
-			s.jsonErr(w, 400, "rotation thresholds must be percentages 1-99 with arm below force (got arm %d, force %d)", arm, force)
+			server.jsonErr(w, 400, "rotation thresholds must be percentages 1-99 with arm below force (got arm %d, force %d)", arm, force)
 			return
 		}
-		if err := s.Store.Settings().Set(r.Context(), store.SettingContextArmPercent, strconv.Itoa(arm)); err != nil {
-			s.jsonErr(w, 500, "%v", err)
+		if err := server.Store.Settings().Set(r.Context(), store.SettingContextArmPercent, strconv.Itoa(arm)); err != nil {
+			server.jsonErr(w, 500, "%v", err)
 			return
 		}
-		if err := s.Store.Settings().Set(r.Context(), store.SettingContextForcePercent, strconv.Itoa(force)); err != nil {
-			s.jsonErr(w, 500, "%v", err)
+		if err := server.Store.Settings().Set(r.Context(), store.SettingContextForcePercent, strconv.Itoa(force)); err != nil {
+			server.jsonErr(w, 500, "%v", err)
 			return
 		}
 	}
-	view, err := s.settingsView(r.Context())
+	view, err := server.settingsView(r.Context())
 	if err != nil {
-		s.jsonErr(w, 500, "%v", err)
+		server.jsonErr(w, 500, "%v", err)
 		return
 	}
 	writeJSON(w, 200, view)
@@ -1122,8 +1122,8 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 
 // claudeToken reads the stored setup-token, mapping an unset key to empty so
 // callers can treat "never configured" and "" alike.
-func (s *Server) claudeToken(ctx context.Context) (string, error) {
-	token, err := s.Store.Settings().Get(ctx, store.SettingClaudeOAuthToken)
+func (server *Server) claudeToken(ctx context.Context) (string, error) {
+	token, err := server.Store.Settings().Get(ctx, store.SettingClaudeOAuthToken)
 	if errors.Is(err, store.ErrNotFound) {
 		return "", nil
 	}
@@ -1158,19 +1158,19 @@ func validateClaudeToken(raw string) (string, error) {
 // handleLoopConversation serves one of the loop's private conversation
 // threads: control_room (the default) or owner_dm. The shared group has no
 // per-loop thread — it lives on /api/activity.
-func (s *Server) handleLoopConversation(w http.ResponseWriter, r *http.Request) {
-	l := s.loopByName(w, r)
-	if l == nil {
+func (server *Server) handleLoopConversation(w http.ResponseWriter, r *http.Request) {
+	loopRecord := server.loopByName(w, r)
+	if loopRecord == nil {
 		return
 	}
 	kind := defaultStr(r.URL.Query().Get("conversation"), store.ConversationControlRoom)
 	if kind != store.ConversationControlRoom && kind != store.ConversationOwnerDM {
-		s.jsonErr(w, 400, "conversation must be %s or %s", store.ConversationControlRoom, store.ConversationOwnerDM)
+		server.jsonErr(w, 400, "conversation must be %s or %s", store.ConversationControlRoom, store.ConversationOwnerDM)
 		return
 	}
-	msgs, err := s.Store.Messages().ListConversation(r.Context(), kind, l.ID, queryInt(r, "limit", 100))
+	msgs, err := server.Store.Messages().ListConversation(r.Context(), kind, loopRecord.ID, queryInt(r, "limit", 100))
 	if err != nil {
-		s.jsonErr(w, 500, "%v", err)
+		server.jsonErr(w, 500, "%v", err)
 		return
 	}
 	if msgs == nil {
@@ -1182,10 +1182,10 @@ func (s *Server) handleLoopConversation(w http.ResponseWriter, r *http.Request) 
 // handleGroupTimeline is the fleet channel's own timeline, newest first like
 // a loop's conversation. The channel is the hub's rather than any loop's
 // (ADR-0032 item 1), so it is not reached through one.
-func (s *Server) handleGroupTimeline(w http.ResponseWriter, r *http.Request) {
-	msgs, err := s.Store.Messages().ListConversation(r.Context(), store.ConversationGroup, "", queryInt(r, "limit", 100))
+func (server *Server) handleGroupTimeline(w http.ResponseWriter, r *http.Request) {
+	msgs, err := server.Store.Messages().ListConversation(r.Context(), store.ConversationGroup, "", queryInt(r, "limit", 100))
 	if err != nil {
-		s.jsonErr(w, 500, "%v", err)
+		server.jsonErr(w, 500, "%v", err)
 		return
 	}
 	if msgs == nil {
@@ -1210,16 +1210,16 @@ type postGroupReq struct {
 //
 // A reply addresses the author of what it answers, as a native reply does
 // (ADR-0025), so a loop can be answered without a mention.
-func (s *Server) handleGroupPost(w http.ResponseWriter, r *http.Request) {
+func (server *Server) handleGroupPost(w http.ResponseWriter, r *http.Request) {
 	var req postGroupReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Text) == "" {
-		s.jsonErr(w, 400, "non-empty text required")
+		server.jsonErr(w, 400, "non-empty text required")
 		return
 	}
-	if req.ReplyToID != 0 && !s.groupReplyTarget(r.Context(), w, req.ReplyToID) {
+	if req.ReplyToID != 0 && !server.groupReplyTarget(r.Context(), w, req.ReplyToID) {
 		return
 	}
-	err := s.Router.Ingest(r.Context(), route.InboundMessage{
+	err := server.Router.Ingest(r.Context(), route.InboundMessage{
 		Origin:       store.OriginWeb,
 		Author:       defaultStr(req.Author, "operator"),
 		Text:         req.Text,
@@ -1227,7 +1227,7 @@ func (s *Server) handleGroupPost(w http.ResponseWriter, r *http.Request) {
 		ReplyToID:    req.ReplyToID,
 	})
 	if err != nil {
-		s.jsonErr(w, 500, "%v", err)
+		server.jsonErr(w, 500, "%v", err)
 		return
 	}
 	writeJSON(w, 202, map[string]bool{"queued": true})
@@ -1239,27 +1239,27 @@ func (s *Server) handleGroupPost(w http.ResponseWriter, r *http.Request) {
 // another conversation would add a private message's author to the
 // channel's recipients. Both are refused with the codes a loop's own send
 // gets for the same mistakes.
-func (s *Server) groupReplyTarget(ctx context.Context, w http.ResponseWriter, id int64) bool {
-	target, err := s.Store.Messages().Get(ctx, id)
+func (server *Server) groupReplyTarget(ctx context.Context, w http.ResponseWriter, id int64) bool {
+	target, err := server.Store.Messages().Get(ctx, id)
 	if errors.Is(err, store.ErrNotFound) {
-		s.jsonErrCode(w, 400, route.ErrUnknownReplyTo, "no message %d to reply to", id)
+		server.jsonErrCode(w, 400, route.ErrUnknownReplyTo, "no message %d to reply to", id)
 		return false
 	} else if err != nil {
-		s.jsonErr(w, 500, "%v", err)
+		server.jsonErr(w, 500, "%v", err)
 		return false
 	}
 	if target.Conversation != store.ConversationGroup {
-		s.jsonErrCode(w, 400, route.ErrCrossConversation,
+		server.jsonErrCode(w, 400, route.ErrCrossConversation,
 			"message %d is in %s, not the fleet channel; a reply stays in its own conversation", id, target.Conversation)
 		return false
 	}
 	return true
 }
 
-func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
-	msgs, err := s.Store.Messages().List(r.Context(), queryInt(r, "limit", 100))
+func (server *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
+	msgs, err := server.Store.Messages().List(r.Context(), queryInt(r, "limit", 100))
 	if err != nil {
-		s.jsonErr(w, 500, "%v", err)
+		server.jsonErr(w, 500, "%v", err)
 		return
 	}
 	if msgs == nil {
@@ -1293,23 +1293,23 @@ func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
 //
 // The rows are whole messages, text included, which is what the Activity feed
 // already serves and sits behind the same operator credential (ADR-0030).
-func (s *Server) handleUndelivered(w http.ResponseWriter, r *http.Request) {
+func (server *Server) handleUndelivered(w http.ResponseWriter, r *http.Request) {
 	var loopID string
 	if name := r.URL.Query().Get("loop"); name != "" {
-		l, err := s.Store.Loops().GetByName(r.Context(), name)
+		loopRecord, err := server.Store.Loops().GetByName(r.Context(), name)
 		if errors.Is(err, store.ErrNotFound) {
-			s.jsonErr(w, http.StatusNotFound, "loop %q not found", name)
+			server.jsonErr(w, http.StatusNotFound, "loop %q not found", name)
 			return
 		}
 		if err != nil {
-			s.jsonErr(w, 500, "%v", err)
+			server.jsonErr(w, 500, "%v", err)
 			return
 		}
-		loopID = l.ID
+		loopID = loopRecord.ID
 	}
-	msgs, err := s.Store.Messages().Undelivered(r.Context(), loopID)
+	msgs, err := server.Store.Messages().Undelivered(r.Context(), loopID)
 	if err != nil {
-		s.jsonErr(w, 500, "%v", err)
+		server.jsonErr(w, 500, "%v", err)
 		return
 	}
 	if msgs == nil {
@@ -1328,42 +1328,42 @@ func (s *Server) handleUndelivered(w http.ResponseWriter, r *http.Request) {
 // operator's side the thing they clicked is not there, whether because
 // another window already retried it, because it went through, or because the
 // id names a message that never failed.
-func (s *Server) handleRetrySend(w http.ResponseWriter, r *http.Request) {
-	id, ok := s.messageID(w, r)
+func (server *Server) handleRetrySend(w http.ResponseWriter, r *http.Request) {
+	id, ok := server.messageID(w, r)
 	if !ok {
 		return
 	}
-	switch err := s.Router.RetrySend(r.Context(), id); {
+	switch err := server.Router.RetrySend(r.Context(), id); {
 	case err == nil:
 		writeJSON(w, 202, map[string]bool{"retrying": true})
 	case errors.Is(err, store.ErrNotFound), errors.Is(err, route.ErrNoUnresolvedFailure):
-		s.jsonErr(w, 404, "no unresolved send failure for message %d", id)
+		server.jsonErr(w, 404, "no unresolved send failure for message %d", id)
 	case errors.Is(err, route.ErrNoOwnerDMChat):
 		// The retry would have nowhere to land. Said as its own refusal
 		// because it is the one case the operator can fix: the owner has to
 		// write to the bot once before a loop can DM them (#73).
-		s.jsonErr(w, 409, "%v", err)
+		server.jsonErr(w, 409, "%v", err)
 	default:
-		s.jsonErr(w, 500, "%v", err)
+		server.jsonErr(w, 500, "%v", err)
 	}
 }
 
 // handleDismissSend resolves a failure without sending anything: the operator
 // has read it and is done with it. The row keeps what failed and why — this
 // takes it off their list, it does not rewrite history.
-func (s *Server) handleDismissSend(w http.ResponseWriter, r *http.Request) {
-	id, ok := s.messageID(w, r)
+func (server *Server) handleDismissSend(w http.ResponseWriter, r *http.Request) {
+	id, ok := server.messageID(w, r)
 	if !ok {
 		return
 	}
-	resolved, err := s.Store.Messages().ResolveSend(r.Context(), id,
+	resolved, err := server.Store.Messages().ResolveSend(r.Context(), id,
 		time.Now().UnixMilli(), store.SendResolutionDismissed, 0)
 	if err != nil {
-		s.jsonErr(w, 500, "%v", err)
+		server.jsonErr(w, 500, "%v", err)
 		return
 	}
 	if !resolved {
-		s.jsonErr(w, 404, "no unresolved send failure for message %d", id)
+		server.jsonErr(w, 404, "no unresolved send failure for message %d", id)
 		return
 	}
 	writeJSON(w, 200, map[string]bool{"dismissed": true})
@@ -1371,19 +1371,19 @@ func (s *Server) handleDismissSend(w http.ResponseWriter, r *http.Request) {
 
 // messageID reads the {id} path value, answering 400 when it is not a number
 // rather than looking up message zero.
-func (s *Server) messageID(w http.ResponseWriter, r *http.Request) (int64, bool) {
+func (server *Server) messageID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		s.jsonErr(w, 400, "message id must be a number")
+		server.jsonErr(w, 400, "message id must be a number")
 		return 0, false
 	}
 	return id, true
 }
 
-func (s *Server) handleListSenders(w http.ResponseWriter, r *http.Request) {
-	senders, err := s.Store.TGSenders().List(r.Context())
+func (server *Server) handleListSenders(w http.ResponseWriter, r *http.Request) {
+	senders, err := server.Store.TGSenders().List(r.Context())
 	if err != nil {
-		s.jsonErr(w, 500, "%v", err)
+		server.jsonErr(w, 500, "%v", err)
 		return
 	}
 	if senders == nil {
@@ -1411,8 +1411,8 @@ type secretView struct {
 	UpdatedAt int64  `json:"updated_at"`
 }
 
-func (s *Server) secretViews(ctx context.Context, loopID string) ([]secretView, error) {
-	secrets, err := s.Store.LoopSecrets().List(ctx, loopID)
+func (server *Server) secretViews(ctx context.Context, loopID string) ([]secretView, error) {
+	secrets, err := server.Store.LoopSecrets().List(ctx, loopID)
 	if err != nil {
 		return nil, err
 	}
@@ -1423,14 +1423,14 @@ func (s *Server) secretViews(ctx context.Context, loopID string) ([]secretView, 
 	return views, nil
 }
 
-func (s *Server) handleListSecrets(w http.ResponseWriter, r *http.Request) {
-	l := s.loopByName(w, r)
-	if l == nil {
+func (server *Server) handleListSecrets(w http.ResponseWriter, r *http.Request) {
+	loopRecord := server.loopByName(w, r)
+	if loopRecord == nil {
 		return
 	}
-	views, err := s.secretViews(r.Context(), l.ID)
+	views, err := server.secretViews(r.Context(), loopRecord.ID)
 	if err != nil {
-		s.jsonErr(w, 500, "%v", err)
+		server.jsonErr(w, 500, "%v", err)
 		return
 	}
 	writeJSON(w, 200, views)
@@ -1440,72 +1440,72 @@ type putSecretReq struct {
 	Value string `json:"value"`
 }
 
-func (s *Server) handlePutSecret(w http.ResponseWriter, r *http.Request) {
-	l := s.loopByName(w, r)
-	if l == nil {
+func (server *Server) handlePutSecret(w http.ResponseWriter, r *http.Request) {
+	loopRecord := server.loopByName(w, r)
+	if loopRecord == nil {
 		return
 	}
 	name := r.PathValue("key")
 	if err := validateSecretName(name); err != nil {
-		s.jsonErr(w, 400, "%v", err)
+		server.jsonErr(w, 400, "%v", err)
 		return
 	}
 	var req putSecretReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.jsonErr(w, 400, "bad json: %v", err)
+		server.jsonErr(w, 400, "bad json: %v", err)
 		return
 	}
 	switch {
 	case req.Value == "":
-		s.jsonErr(w, 400, "secret value is empty (use DELETE to remove a secret)")
+		server.jsonErr(w, 400, "secret value is empty (use DELETE to remove a secret)")
 		return
 	case len(req.Value) > maxSecretValueLen:
-		s.jsonErr(w, 400, "secret value too large (max %d bytes)", maxSecretValueLen)
+		server.jsonErr(w, 400, "secret value too large (max %d bytes)", maxSecretValueLen)
 		return
 	}
-	existing, err := s.Store.LoopSecrets().List(r.Context(), l.ID)
+	existing, err := server.Store.LoopSecrets().List(r.Context(), loopRecord.ID)
 	if err != nil {
-		s.jsonErr(w, 500, "%v", err)
+		server.jsonErr(w, 500, "%v", err)
 		return
 	}
 	// The cap bounds distinct names; replacing an existing one never grows it.
 	if len(existing) >= maxSecretsPerLoop && !hasSecret(existing, name) {
-		s.jsonErr(w, 400, "too many secrets on this loop (max %d)", maxSecretsPerLoop)
+		server.jsonErr(w, 400, "too many secrets on this loop (max %d)", maxSecretsPerLoop)
 		return
 	}
-	if err := s.Store.LoopSecrets().Set(r.Context(), l.ID, name, req.Value, time.Now().UnixMilli()); err != nil {
-		s.storeErr(w, err, "loop")
+	if err := server.Store.LoopSecrets().Set(r.Context(), loopRecord.ID, name, req.Value, time.Now().UnixMilli()); err != nil {
+		server.storeErr(w, err, "loop")
 		return
 	}
-	s.secretsChanged(r.Context())
-	views, err := s.secretViews(r.Context(), l.ID)
+	server.secretsChanged(r.Context())
+	views, err := server.secretViews(r.Context(), loopRecord.ID)
 	if err != nil {
-		s.jsonErr(w, 500, "%v", err)
+		server.jsonErr(w, 500, "%v", err)
 		return
 	}
 	writeJSON(w, 200, views)
 }
 
-func (s *Server) handleDeleteSecret(w http.ResponseWriter, r *http.Request) {
-	l := s.loopByName(w, r)
-	if l == nil {
+func (server *Server) handleDeleteSecret(w http.ResponseWriter, r *http.Request) {
+	loopRecord := server.loopByName(w, r)
+	if loopRecord == nil {
 		return
 	}
 	// Delete is idempotent: removing an absent name still reports success.
-	if err := s.Store.LoopSecrets().Delete(r.Context(), l.ID, r.PathValue("key")); err != nil {
-		s.jsonErr(w, 500, "%v", err)
+	if err := server.Store.LoopSecrets().Delete(r.Context(), loopRecord.ID, r.PathValue("key")); err != nil {
+		server.jsonErr(w, 500, "%v", err)
 		return
 	}
-	s.secretsChanged(r.Context())
+	server.secretsChanged(r.Context())
 	writeJSON(w, 200, map[string]bool{"deleted": true})
 }
 
 // secretsChanged tells the redactor to reload. A delete counts: the
 // value is gone from the store, so a redactor still holding it would keep
 // blanking text that no longer contains a secret.
-func (s *Server) secretsChanged(ctx context.Context) {
-	if s.SecretsChanged != nil {
-		s.SecretsChanged(ctx)
+func (server *Server) secretsChanged(ctx context.Context) {
+	if server.SecretsChanged != nil {
+		server.SecretsChanged(ctx)
 	}
 }
 
@@ -1530,32 +1530,32 @@ func hasSecret(secrets []*store.LoopSecret, name string) bool {
 	return false
 }
 
-func (s *Server) handleSenderStatus(status string) http.HandlerFunc {
+func (server *Server) handleSenderStatus(status string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 		if err != nil {
-			s.jsonErr(w, 400, "bad sender id")
+			server.jsonErr(w, 400, "bad sender id")
 			return
 		}
-		if err := s.Store.TGSenders().SetStatus(r.Context(), id, status, time.Now().UnixMilli()); err != nil {
-			s.storeErr(w, err, "sender")
+		if err := server.Store.TGSenders().SetStatus(r.Context(), id, status, time.Now().UnixMilli()); err != nil {
+			server.storeErr(w, err, "sender")
 			return
 		}
-		sender, _ := s.Store.TGSenders().Get(r.Context(), id)
+		sender, _ := server.Store.TGSenders().Get(r.Context(), id)
 		if status == store.SenderAllowed {
-			s.adoptDefaultOwner(r.Context(), id)
+			server.adoptDefaultOwner(r.Context(), id)
 		} else {
-			s.disownLoopsOf(r.Context(), id)
+			server.disownLoopsOf(r.Context(), id)
 		}
-		s.Bus.Publish(bus.Item{Kind: bus.KindAccess, Payload: sender})
+		server.Bus.Publish(bus.Item{Kind: bus.KindAccess, Payload: sender})
 		writeJSON(w, 200, sender)
 	}
 }
 
 // defaultOwnerID is the first person the operator allowlisted, or 0 when
 // nobody is.
-func (s *Server) defaultOwnerID(ctx context.Context) int64 {
-	senders, err := s.Store.TGSenders().List(ctx)
+func (server *Server) defaultOwnerID(ctx context.Context) int64 {
+	senders, err := server.Store.TGSenders().List(ctx)
 	if err != nil {
 		return 0
 	}
@@ -1580,8 +1580,8 @@ func (s *Server) defaultOwnerID(ctx context.Context) int64 {
 // item 2), and the second loop is what makes a fleet — the operator's rule
 // on #287. Any loop counts, archived included, as the New loop form counts
 // them: an archived loop is still the fleet's, and could be restored.
-func (s *Server) defaultInFleetChannel(ctx context.Context) (bool, error) {
-	loops, err := s.Store.Loops().List(ctx)
+func (server *Server) defaultInFleetChannel(ctx context.Context) (bool, error) {
+	loops, err := server.Store.Loops().List(ctx)
 	if err != nil {
 		return false, fmt.Errorf("list loops: %w", err)
 	}
@@ -1591,17 +1591,17 @@ func (s *Server) defaultInFleetChannel(ctx context.Context) (bool, error) {
 // adoptDefaultOwner gives every ownerless loop this sender as its owner.
 // The first person the operator allowlists is the owner by default — the
 // fleet is built for one operator — and they can reassign per loop.
-func (s *Server) adoptDefaultOwner(ctx context.Context, tgUserID int64) {
-	loops, err := s.Store.Loops().List(ctx)
+func (server *Server) adoptDefaultOwner(ctx context.Context, tgUserID int64) {
+	loops, err := server.Store.Loops().List(ctx)
 	if err != nil {
 		return
 	}
-	for _, l := range loops {
-		if l.OwnerTGUserID != 0 || l.Status == store.StatusArchived {
+	for _, loopRecord := range loops {
+		if loopRecord.OwnerTGUserID != 0 || loopRecord.Status == store.StatusArchived {
 			continue
 		}
-		if err := s.Store.Loops().SetOwner(ctx, l.ID, tgUserID, 0, time.Now().UnixMilli()); err != nil {
-			s.Log.Error("default owner", "loop", l.Name, "err", err)
+		if err := server.Store.Loops().SetOwner(ctx, loopRecord.ID, tgUserID, 0, time.Now().UnixMilli()); err != nil {
+			server.Log.Error("default owner", "loop", loopRecord.Name, "err", err)
 		}
 	}
 }
@@ -1611,17 +1611,17 @@ func (s *Server) adoptDefaultOwner(ctx context.Context, tgUserID int64) {
 // invariant has to survive the reverse transitions too: otherwise blocking
 // or deleting someone leaves the loops they own still messaging them
 // privately, with the control room reporting those loops as ready to do it.
-func (s *Server) disownLoopsOf(ctx context.Context, tgUserID int64) {
-	loops, err := s.Store.Loops().List(ctx)
+func (server *Server) disownLoopsOf(ctx context.Context, tgUserID int64) {
+	loops, err := server.Store.Loops().List(ctx)
 	if err != nil {
 		return
 	}
-	for _, l := range loops {
-		if l.OwnerTGUserID != tgUserID {
+	for _, loopRecord := range loops {
+		if loopRecord.OwnerTGUserID != tgUserID {
 			continue
 		}
-		if err := s.Store.Loops().SetOwner(ctx, l.ID, 0, 0, time.Now().UnixMilli()); err != nil {
-			s.Log.Error("disown loop", "loop", l.Name, "err", err)
+		if err := server.Store.Loops().SetOwner(ctx, loopRecord.ID, 0, 0, time.Now().UnixMilli()); err != nil {
+			server.Log.Error("disown loop", "loop", loopRecord.Name, "err", err)
 		}
 	}
 }
@@ -1635,47 +1635,47 @@ type putOwnerReq struct {
 // owning the loop it belongs to (#73). Changing the owner drops the captured
 // chat — it belonged to the previous one — and the new owner's first DM to
 // this bot captures theirs.
-func (s *Server) handlePutOwner(w http.ResponseWriter, r *http.Request) {
-	l := s.loopByName(w, r)
-	if l == nil {
+func (server *Server) handlePutOwner(w http.ResponseWriter, r *http.Request) {
+	loopRecord := server.loopByName(w, r)
+	if loopRecord == nil {
 		return
 	}
 	var req putOwnerReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.jsonErr(w, 400, "bad json")
+		server.jsonErr(w, 400, "bad json")
 		return
 	}
-	sender, err := s.Store.TGSenders().Get(r.Context(), req.TGUserID)
+	sender, err := server.Store.TGSenders().Get(r.Context(), req.TGUserID)
 	if errors.Is(err, store.ErrNotFound) || (err == nil && sender.Status != store.SenderAllowed) {
-		s.jsonErr(w, 400, "owner must be an allowed telegram sender")
+		server.jsonErr(w, 400, "owner must be an allowed telegram sender")
 		return
 	} else if err != nil {
-		s.jsonErr(w, 500, "%v", err)
+		server.jsonErr(w, 500, "%v", err)
 		return
 	}
-	if l.OwnerTGUserID != req.TGUserID {
-		l.OwnerTGUserID, l.OwnerDMChatID = req.TGUserID, 0
-		l.UpdatedAt = time.Now().UnixMilli()
-		if err := s.Store.Loops().SetOwner(r.Context(), l.ID, l.OwnerTGUserID, 0, l.UpdatedAt); err != nil {
-			s.storeErr(w, err, "loop")
+	if loopRecord.OwnerTGUserID != req.TGUserID {
+		loopRecord.OwnerTGUserID, loopRecord.OwnerDMChatID = req.TGUserID, 0
+		loopRecord.UpdatedAt = time.Now().UnixMilli()
+		if err := server.Store.Loops().SetOwner(r.Context(), loopRecord.ID, loopRecord.OwnerTGUserID, 0, loopRecord.UpdatedAt); err != nil {
+			server.storeErr(w, err, "loop")
 			return
 		}
 	}
-	writeJSON(w, 200, s.view(r.Context(), l))
+	writeJSON(w, 200, server.view(r.Context(), loopRecord))
 }
 
-func (s *Server) handleDeleteSender(w http.ResponseWriter, r *http.Request) {
+func (server *Server) handleDeleteSender(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		s.jsonErr(w, 400, "bad sender id")
+		server.jsonErr(w, 400, "bad sender id")
 		return
 	}
-	if err := s.Store.TGSenders().Delete(r.Context(), id); err != nil {
-		s.jsonErr(w, 500, "%v", err)
+	if err := server.Store.TGSenders().Delete(r.Context(), id); err != nil {
+		server.jsonErr(w, 500, "%v", err)
 		return
 	}
-	s.disownLoopsOf(r.Context(), id)
-	s.Bus.Publish(bus.Item{Kind: bus.KindAccess, Payload: map[string]any{"deleted": id}})
+	server.disownLoopsOf(r.Context(), id)
+	server.Bus.Publish(bus.Item{Kind: bus.KindAccess, Payload: map[string]any{"deleted": id}})
 	writeJSON(w, 200, map[string]bool{"deleted": true})
 }
 
@@ -1683,15 +1683,15 @@ type inspectReq struct {
 	Path string `json:"path"`
 }
 
-func (s *Server) handleWorkspaceInspect(w http.ResponseWriter, r *http.Request) {
+func (server *Server) handleWorkspaceInspect(w http.ResponseWriter, r *http.Request) {
 	var req inspectReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.jsonErr(w, 400, "bad json")
+		server.jsonErr(w, 400, "bad json")
 		return
 	}
 	abs, err := filepath.Abs(strings.TrimSpace(req.Path))
 	if err != nil {
-		s.jsonErr(w, 400, "%v", err)
+		server.jsonErr(w, 400, "%v", err)
 		return
 	}
 	info, statErr := os.Stat(abs)
@@ -1703,33 +1703,33 @@ func (s *Server) handleWorkspaceInspect(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-func (s *Server) handleGlobalStream(w http.ResponseWriter, r *http.Request) {
-	serveSSE(w, r, s.Bus, func(i bus.Item) bool {
-		return i.Kind != bus.KindAgentEvent
+func (server *Server) handleGlobalStream(w http.ResponseWriter, r *http.Request) {
+	serveSSE(w, r, server.Bus, func(item bus.Item) bool {
+		return item.Kind != bus.KindAgentEvent
 	})
 }
 
-func (s *Server) handleLoopStream(w http.ResponseWriter, r *http.Request) {
-	l := s.loopByName(w, r)
-	if l == nil {
+func (server *Server) handleLoopStream(w http.ResponseWriter, r *http.Request) {
+	loopRecord := server.loopByName(w, r)
+	if loopRecord == nil {
 		return
 	}
-	id := l.ID
-	serveSSE(w, r, s.Bus, func(i bus.Item) bool {
-		if i.Kind == bus.KindMessage {
-			if mp, ok := i.Payload.(*route.MessagePayload); ok {
+	id := loopRecord.ID
+	serveSSE(w, r, server.Bus, func(item bus.Item) bool {
+		if item.Kind == bus.KindMessage {
+			if mp, ok := item.Payload.(*route.MessagePayload); ok {
 				if mp.FromLoopID == id {
 					return true
 				}
-				for _, d := range mp.DeliveredTo {
-					if d == id {
+				for _, deliveredTo := range mp.DeliveredTo {
+					if deliveredTo == id {
 						return true
 					}
 				}
 			}
 			return false
 		}
-		return i.LoopID == id
+		return item.LoopID == id
 	})
 }
 
@@ -1742,7 +1742,7 @@ var routeMethods = []string{http.MethodGet, http.MethodPost, http.MethodPut, htt
 // the mux itself which methods the path would have taken. Some: 405 with
 // Allow. None: 404. Either way JSON, and never index.html at an API URL
 // (#245).
-func (s *Server) apiFallback(mux *http.ServeMux) http.HandlerFunc {
+func (server *Server) apiFallback(mux *http.ServeMux) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var allowed []string
 		for _, method := range routeMethods {
@@ -1753,49 +1753,49 @@ func (s *Server) apiFallback(mux *http.ServeMux) http.HandlerFunc {
 			}
 		}
 		if len(allowed) == 0 {
-			s.jsonErr(w, http.StatusNotFound, "no such route: %s", r.URL.Path)
+			server.jsonErr(w, http.StatusNotFound, "no such route: %s", r.URL.Path)
 			return
 		}
 		w.Header().Set("Allow", strings.Join(allowed, ", "))
-		s.jsonErr(w, http.StatusMethodNotAllowed, "%s takes %s", r.URL.Path, strings.Join(allowed, ", "))
+		server.jsonErr(w, http.StatusMethodNotAllowed, "%s takes %s", r.URL.Path, strings.Join(allowed, ", "))
 	}
 }
 
 // handleUI serves the embedded SPA with an index.html fallback.
-func (s *Server) handleUI(w http.ResponseWriter, r *http.Request) {
+func (server *Server) handleUI(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/")
 	if path == "" {
 		path = "index.html"
 	}
-	if f, err := s.WebFS.Open(path); err == nil {
-		f.Close()
-		http.ServeFileFS(w, r, s.WebFS, path)
+	if file, err := server.WebFS.Open(path); err == nil {
+		file.Close()
+		http.ServeFileFS(w, r, server.WebFS, path)
 		return
 	}
-	http.ServeFileFS(w, r, s.WebFS, "index.html")
+	http.ServeFileFS(w, r, server.WebFS, "index.html")
 }
 
 // --- small utils ---
 
-func defaultInt(v, d int) int {
-	if v <= 0 {
-		return d
+func defaultInt(value, fallback int) int {
+	if value <= 0 {
+		return fallback
 	}
-	return v
+	return value
 }
 
-func defaultStr(v, d string) string {
-	if strings.TrimSpace(v) == "" {
-		return d
+func defaultStr(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
 	}
-	return v
+	return value
 }
 
-func queryInt(r *http.Request, key string, d int) int {
-	if v, err := strconv.Atoi(r.URL.Query().Get(key)); err == nil && v > 0 {
-		return v
+func queryInt(r *http.Request, key string, fallback int) int {
+	if value, err := strconv.Atoi(r.URL.Query().Get(key)); err == nil && value > 0 {
+		return value
 	}
-	return d
+	return fallback
 }
 
 // Ids are creation-ordered: base36 nanoseconds behind a type prefix.

@@ -25,15 +25,15 @@ func guarded(t *testing.T, token string) (http.Handler, *bool) {
 func guardedOn(t *testing.T, token, listenAddr string) (http.Handler, *bool) {
 	t.Helper()
 	reached := false
-	s := &Server{OperatorToken: token, ListenAddr: listenAddr}
+	server := &Server{OperatorToken: token, ListenAddr: listenAddr}
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /api/login", s.handleLogin)
-	mux.HandleFunc("POST /api/logout", s.handleLogout)
+	mux.HandleFunc("POST /api/login", server.handleLogin)
+	mux.HandleFunc("POST /api/logout", server.handleLogout)
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		reached = true
 		w.WriteHeader(http.StatusOK)
 	})
-	return s.guard(mux), &reached
+	return server.guard(mux), &reached
 }
 
 // A real token's length, and obviously not one: the leading run is what
@@ -119,20 +119,20 @@ func TestGuardRefusals(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			h, reached := guarded(t, testToken)
+			handler, reached := guarded(t, testToken)
 			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
 			req.Host = "127.0.0.1:8080"
-			for k, v := range tc.header {
-				if k == "Host" {
-					req.Host = v
+			for name, value := range tc.header {
+				if name == "Host" {
+					req.Host = value
 					continue
 				}
-				req.Header.Set(k, v)
+				req.Header.Set(name, value)
 			}
-			w := httptest.NewRecorder()
-			h.ServeHTTP(w, req)
-			if w.Code != tc.want {
-				t.Errorf("status = %d, want %d (body %s)", w.Code, tc.want, w.Body.String())
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+			if recorder.Code != tc.want {
+				t.Errorf("status = %d, want %d (body %s)", recorder.Code, tc.want, recorder.Body.String())
 			}
 			if *reached {
 				t.Error("the request reached the route — a refusal after the work is not a refusal")
@@ -196,21 +196,21 @@ func TestGuardAdmits(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			h, reached := guarded(t, testToken)
+			handler, reached := guarded(t, testToken)
 			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
 			req.Host = "127.0.0.1:8080"
-			for k, v := range tc.header {
-				if k == "Host" {
-					req.Host = v
+			for name, value := range tc.header {
+				if name == "Host" {
+					req.Host = value
 					continue
 				}
-				req.Header.Set(k, v)
+				req.Header.Set(name, value)
 			}
-			w := httptest.NewRecorder()
-			h.ServeHTTP(w, req)
-			if w.Code != http.StatusOK || !*reached {
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+			if recorder.Code != http.StatusOK || !*reached {
 				t.Errorf("status = %d, reached = %v; want 200 and the route reached (body %s)",
-					w.Code, *reached, w.Body.String())
+					recorder.Code, *reached, recorder.Body.String())
 			}
 		})
 	}
@@ -220,27 +220,27 @@ func TestGuardAdmits(t *testing.T) {
 // unreachable from script: a credential a page can read is a credential the
 // next injected script exfiltrates.
 func TestLoginIssuesAnHTTPOnlyCookie(t *testing.T) {
-	h, _ := guarded(t, testToken)
+	handler, _ := guarded(t, testToken)
 
 	req := httptest.NewRequest("POST", loginPath, strings.NewReader(`{"token":"`+testToken+`"}`))
 	req.Host = "127.0.0.1:8080"
 	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, req)
-	if w.Code != http.StatusNoContent {
-		t.Fatalf("login = %d, want 204 (%s)", w.Code, w.Body.String())
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("login = %d, want 204 (%s)", recorder.Code, recorder.Body.String())
 	}
-	cookies := w.Result().Cookies()
+	cookies := recorder.Result().Cookies()
 	if len(cookies) != 1 {
 		t.Fatalf("login set %d cookies, want 1", len(cookies))
 	}
-	c := cookies[0]
+	cookie := cookies[0]
 	switch {
-	case c.Name != SessionCookie:
-		t.Errorf("cookie name = %q, want %q", c.Name, SessionCookie)
-	case !c.HttpOnly:
+	case cookie.Name != SessionCookie:
+		t.Errorf("cookie name = %q, want %q", cookie.Name, SessionCookie)
+	case !cookie.HttpOnly:
 		t.Error("the session cookie must be HttpOnly — script must not be able to read it")
-	case c.SameSite != http.SameSiteStrictMode:
+	case cookie.SameSite != http.SameSiteStrictMode:
 		t.Error("the session cookie must be SameSite=Strict — it must not ride a cross-site request")
 	}
 
@@ -248,12 +248,12 @@ func TestLoginIssuesAnHTTPOnlyCookie(t *testing.T) {
 	bad := httptest.NewRequest("POST", loginPath, strings.NewReader(`{"token":"nope"}`))
 	bad.Host = "127.0.0.1:8080"
 	bad.Header.Set("Content-Type", "application/json")
-	w = httptest.NewRecorder()
-	h.ServeHTTP(w, bad)
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("login with a wrong token = %d, want 401", w.Code)
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(recorder, bad)
+	if recorder.Code != http.StatusUnauthorized {
+		t.Errorf("login with a wrong token = %d, want 401", recorder.Code)
 	}
-	if got := w.Result().Cookies(); len(got) != 0 {
+	if got := recorder.Result().Cookies(); len(got) != 0 {
 		t.Errorf("a refused login set %d cookies, want none", len(got))
 	}
 }
@@ -261,13 +261,13 @@ func TestLoginIssuesAnHTTPOnlyCookie(t *testing.T) {
 // A refusal is JSON like every other error the API returns, so the control
 // room can tell "log in again" from "that failed" without parsing prose.
 func TestUnauthorizedIsMachineReadable(t *testing.T) {
-	h, _ := guarded(t, testToken)
+	handler, _ := guarded(t, testToken)
 	req := httptest.NewRequest("GET", "/api/loops", nil)
 	req.Host = "127.0.0.1:8080"
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, req)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
 
-	body, _ := io.ReadAll(w.Result().Body)
+	body, _ := io.ReadAll(recorder.Result().Body)
 	var out map[string]string
 	if err := json.Unmarshal(body, &out); err != nil {
 		t.Fatalf("refusal body is not json: %v (%s)", err, body)
@@ -281,11 +281,11 @@ func TestUnauthorizedIsMachineReadable(t *testing.T) {
 // asks for the token has to load before anyone has presented one.
 func TestGuardLeavesTheUIAlone(t *testing.T) {
 	for _, path := range []string{"/", "/assets/index.js", "/loops/greeter"} {
-		h, reached := guarded(t, testToken)
+		handler, reached := guarded(t, testToken)
 		req := httptest.NewRequest("GET", path, nil)
 		req.Host = "127.0.0.1:8080"
-		w := httptest.NewRecorder()
-		h.ServeHTTP(w, req)
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, req)
 		if !*reached {
 			t.Errorf("GET %s was refused; the login page must be servable", path)
 		}
@@ -310,14 +310,14 @@ func TestWildcardListenerTakesAddressesNotNames(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.host, func(t *testing.T) {
-			h, _ := guardedOn(t, testToken, "0.0.0.0:8080")
+			handler, _ := guardedOn(t, testToken, "0.0.0.0:8080")
 			req := httptest.NewRequest("GET", "/api/loops", nil)
 			req.Host = tc.host
 			req.Header.Set("Authorization", "Bearer "+testToken)
-			w := httptest.NewRecorder()
-			h.ServeHTTP(w, req)
-			if w.Code != tc.want {
-				t.Errorf("Host %q = %d, want %d", tc.host, w.Code, tc.want)
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+			if recorder.Code != tc.want {
+				t.Errorf("Host %q = %d, want %d", tc.host, recorder.Code, tc.want)
 			}
 		})
 	}
@@ -328,18 +328,18 @@ func TestWildcardListenerTakesAddressesNotNames(t *testing.T) {
 func TestTrustedHostAdmitsTheProxysName(t *testing.T) {
 	newHub := func() (http.Handler, *bool) {
 		reached := false
-		s := &Server{
+		server := &Server{
 			OperatorToken: testToken,
 			ListenAddr:    "127.0.0.1:8080",
 			TrustedHosts:  []string{"spool.example.com"},
 		}
 		mux := http.NewServeMux()
-		mux.HandleFunc("POST /api/login", s.handleLogin)
+		mux.HandleFunc("POST /api/login", server.handleLogin)
 		mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 			reached = true
 			w.WriteHeader(http.StatusOK)
 		})
-		return s.guard(mux), &reached
+		return server.guard(mux), &reached
 	}
 
 	cases := []struct {
@@ -360,17 +360,17 @@ func TestTrustedHostAdmitsTheProxysName(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			h, _ := newHub()
+			handler, _ := newHub()
 			req := httptest.NewRequest("GET", "/api/loops", nil)
 			req.Host = tc.host
 			req.Header.Set("Authorization", "Bearer "+testToken)
 			if tc.origin != "" {
 				req.Header.Set("Origin", tc.origin)
 			}
-			w := httptest.NewRecorder()
-			h.ServeHTTP(w, req)
-			if w.Code != tc.want {
-				t.Errorf("Host %q Origin %q = %d, want %d", tc.host, tc.origin, w.Code, tc.want)
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+			if recorder.Code != tc.want {
+				t.Errorf("Host %q Origin %q = %d, want %d", tc.host, tc.origin, recorder.Code, tc.want)
 			}
 		})
 	}
@@ -389,17 +389,17 @@ func TestSessionCookieIsSecureOverTLS(t *testing.T) {
 		{name: "behind a TLS proxy", proto: "https", want: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			h, _ := guarded(t, testToken)
+			handler, _ := guarded(t, testToken)
 			req := httptest.NewRequest("POST", loginPath, strings.NewReader(`{"token":"`+testToken+`"}`))
 			req.Host = "127.0.0.1:8080"
 			req.Header.Set("Content-Type", "application/json")
 			if tc.proto != "" {
 				req.Header.Set("X-Forwarded-Proto", tc.proto)
 			}
-			w := httptest.NewRecorder()
-			h.ServeHTTP(w, req)
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
 
-			cookies := w.Result().Cookies()
+			cookies := recorder.Result().Cookies()
 			if len(cookies) != 1 {
 				t.Fatalf("login set %d cookies, want 1", len(cookies))
 			}
@@ -436,9 +436,9 @@ func TestSessionRoutesRefuseTheWrongMethod(t *testing.T) {
 // tier 2 (make itest builds without vite) cannot see what this sees (#245).
 func shipped(t *testing.T) http.Handler {
 	t.Helper()
-	s := &Server{OperatorToken: testToken, ListenAddr: "127.0.0.1:8080",
+	server := &Server{OperatorToken: testToken, ListenAddr: "127.0.0.1:8080",
 		WebFS: fstest.MapFS{"index.html": {Data: []byte("<!doctype html>")}}}
-	return s.Handler()
+	return server.Handler()
 }
 
 // Under /api/ the answer is always JSON: a method the path does not take is
@@ -490,12 +490,12 @@ func TestAPIRefusalsAreNeverTheUI(t *testing.T) {
 func TestTrustedIPv6LiteralIsNotMistakenForAPort(t *testing.T) {
 	for _, host := range []string{"[2001:db8::1]", "[2001:db8::1]:8443"} {
 		t.Run(host, func(t *testing.T) {
-			s := &Server{
+			server := &Server{
 				OperatorToken: testToken,
 				ListenAddr:    "127.0.0.1:8080",
 				TrustedHosts:  []string{"[2001:db8::1]"},
 			}
-			if !s.hostAllowed(host) {
+			if !server.hostAllowed(host) {
 				t.Errorf("hostAllowed(%q) = false, want true", host)
 			}
 		})

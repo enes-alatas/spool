@@ -40,26 +40,26 @@ const (
 // sessionPath names the two routes that establish and end a session rather
 // than use one. They are still behind the Host, origin and content-type
 // checks above — only the credential is what they do not require.
-func sessionPath(p string) bool { return p == loginPath || p == logoutPath }
+func sessionPath(path string) bool { return path == loginPath || path == logoutPath }
 
 // openPaths answer without a credential: a supervisor restarting the hub and
 // an operator reporting a bug both need them before they have a token, and
 // neither names anything a loop or a stranger does not already know.
-func openPath(p string) bool {
-	return p == "/api/health" || p == "/api/version"
+func openPath(path string) bool {
+	return path == "/api/health" || path == "/api/version"
 }
 
 // guard is the middleware every /api route is served behind. Paths outside
 // /api — the control room's own assets — are left alone: the login page has
 // to load before there is anything to authenticate with.
-func (s *Server) guard(next http.Handler) http.Handler {
+func (server *Server) guard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.URL.Path, "/api/") {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if !s.hostAllowed(r.Host) {
-			s.jsonErr(w, http.StatusForbidden, "unexpected Host %q", r.Host)
+		if !server.hostAllowed(r.Host) {
+			server.jsonErr(w, http.StatusForbidden, "unexpected Host %q", r.Host)
 			return
 		}
 		if openPath(r.URL.Path) {
@@ -67,15 +67,15 @@ func (s *Server) guard(next http.Handler) http.Handler {
 			return
 		}
 		if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" && site != "none" {
-			s.jsonErr(w, http.StatusForbidden, "cross-site request refused")
+			server.jsonErr(w, http.StatusForbidden, "cross-site request refused")
 			return
 		}
-		if origin := r.Header.Get("Origin"); origin != "" && !s.originAllowed(origin) {
-			s.jsonErr(w, http.StatusForbidden, "cross-origin request refused")
+		if origin := r.Header.Get("Origin"); origin != "" && !server.originAllowed(origin) {
+			server.jsonErr(w, http.StatusForbidden, "cross-origin request refused")
 			return
 		}
 		if r.ContentLength != 0 && !isJSON(r.Header.Get("Content-Type")) {
-			s.jsonErr(w, http.StatusUnsupportedMediaType, "this route takes application/json")
+			server.jsonErr(w, http.StatusUnsupportedMediaType, "this route takes application/json")
 			return
 		}
 		// The session routes are registered on the mux like everything else,
@@ -87,8 +87,8 @@ func (s *Server) guard(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if !operator.Matches(s.OperatorToken, presentedToken(r)) {
-			s.jsonErrCode(w, http.StatusUnauthorized, "no_operator_token",
+		if !operator.Matches(server.OperatorToken, presentedToken(r)) {
+			server.jsonErrCode(w, http.StatusUnauthorized, "no_operator_token",
 				"this route needs the operator token — run `spool token` to print it")
 			return
 		}
@@ -105,8 +105,8 @@ func presentedToken(r *http.Request) string {
 		}
 		return ""
 	}
-	if c, err := r.Cookie(SessionCookie); err == nil {
-		return c.Value
+	if cookie, err := r.Cookie(SessionCookie); err == nil {
+		return cookie.Value
 	}
 	return ""
 }
@@ -122,7 +122,7 @@ func presentedToken(r *http.Request) string {
 // guess and must not accept blindly (ADR-0030). A hub on a wildcard address
 // also accepts any Host that is a literal IP: the operator asked for every
 // interface, and a rebinding attack needs a *name*.
-func (s *Server) hostAllowed(host string) bool {
+func (server *Server) hostAllowed(host string) bool {
 	if host == "" {
 		return false
 	}
@@ -130,7 +130,7 @@ func (s *Server) hostAllowed(host string) bool {
 	if err != nil {
 		name, port = host, ""
 	}
-	for _, trusted := range s.TrustedHosts {
+	for _, trusted := range server.TrustedHosts {
 		// An entry is a name, optionally with a port. With a port it has to
 		// match whole; without one it matches the name whatever port the
 		// request named, because a proxy on 443 sends no port at all and an
@@ -148,7 +148,7 @@ func (s *Server) hostAllowed(host string) bool {
 			}
 		}
 	}
-	if _, listenPort, err := net.SplitHostPort(s.ListenAddr); err == nil {
+	if _, listenPort, err := net.SplitHostPort(server.ListenAddr); err == nil {
 		// A port the hub does not listen on is somebody's proxy, and unless
 		// the operator named it above, the Origin behind it is not one this
 		// can vouch for.
@@ -160,7 +160,7 @@ func (s *Server) hostAllowed(host string) bool {
 	case "localhost", "127.0.0.1", "::1", "[::1]":
 		return true
 	}
-	if listenHost, _, err := net.SplitHostPort(s.ListenAddr); err == nil {
+	if listenHost, _, err := net.SplitHostPort(server.ListenAddr); err == nil {
 		if strings.EqualFold(name, listenHost) {
 			return true
 		}
@@ -175,12 +175,12 @@ func (s *Server) hostAllowed(host string) bool {
 // control room itself. Same host rules as above, and the scheme has to be
 // http or https so an extension or a file:// page ("null") is not an origin
 // this trusts.
-func (s *Server) originAllowed(origin string) bool {
+func (server *Server) originAllowed(origin string) bool {
 	scheme, rest, ok := strings.Cut(origin, "://")
 	if !ok || (scheme != "http" && scheme != "https") {
 		return false
 	}
-	return s.hostAllowed(rest)
+	return server.hostAllowed(rest)
 }
 
 func isWildcardHost(host string) bool {
@@ -204,21 +204,21 @@ func isJSON(ct string) bool {
 // authenticate like every other request. It is the one route that may be
 // called without the cookie — it is how the cookie is obtained — and it is
 // still behind the Host, origin and content-type checks above.
-func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+func (server *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Token string `json:"token"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		s.jsonErr(w, http.StatusBadRequest, "bad json: %v", err)
+		server.jsonErr(w, http.StatusBadRequest, "bad json: %v", err)
 		return
 	}
-	if !operator.Matches(s.OperatorToken, strings.TrimSpace(in.Token)) {
-		s.jsonErrCode(w, http.StatusUnauthorized, "bad_operator_token", "that is not this hub's token")
+	if !operator.Matches(server.OperatorToken, strings.TrimSpace(in.Token)) {
+		server.jsonErrCode(w, http.StatusUnauthorized, "bad_operator_token", "that is not this hub's token")
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     SessionCookie,
-		Value:    s.OperatorToken,
+		Value:    server.OperatorToken,
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   overTLS(r),
@@ -243,7 +243,7 @@ func overTLS(r *http.Request) bool {
 // handleLogout drops the cookie. It asks for no credential: a caller who can
 // only reach this route can only end a session, and refusing to let someone
 // log out because they are not logged in helps nobody.
-func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+func (server *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     SessionCookie,
 		Value:    "",

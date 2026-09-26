@@ -31,21 +31,21 @@ func TestCreateBareLoopNeedsTheHubStartedWithBare(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			s := &Server{DefaultRuntime: tc.defaultKind}
+			server := &Server{DefaultRuntime: tc.defaultKind}
 			raw, _ := json.Marshal(map[string]any{"name": "probe", "mission": "m", "runtime": tc.runtime})
 			req := httptest.NewRequest("POST", "/api/loops", strings.NewReader(string(raw)))
-			w := httptest.NewRecorder()
+			recorder := httptest.NewRecorder()
 
-			s.handleCreateLoop(w, req)
-			if w.Code != http.StatusBadRequest {
-				t.Fatalf("status = %d, want 400 (%s)", w.Code, w.Body)
+			server.handleCreateLoop(recorder, req)
+			if recorder.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400 (%s)", recorder.Code, recorder.Body)
 			}
 			var errBody struct {
 				Code  string `json:"code"`
 				Error string `json:"error"`
 			}
-			if err := json.Unmarshal(w.Body.Bytes(), &errBody); err != nil {
-				t.Fatalf("refusal is not json: %v (%s)", err, w.Body)
+			if err := json.Unmarshal(recorder.Body.Bytes(), &errBody); err != nil {
+				t.Fatalf("refusal is not json: %v (%s)", err, recorder.Body)
 			}
 			if errBody.Code != codeBareNotEnabled {
 				t.Errorf("code = %q, want %q", errBody.Code, codeBareNotEnabled)
@@ -60,16 +60,16 @@ func TestCreateBareLoopNeedsTheHubStartedWithBare(t *testing.T) {
 // The gate is about the bare runtime alone: a docker hub still creates docker
 // loops, and the refusal above must not be reachable for them.
 func TestDockerLoopIsUnaffectedByTheBareGate(t *testing.T) {
-	s := &Server{DefaultRuntime: store.RuntimeDocker}
+	server := &Server{DefaultRuntime: store.RuntimeDocker}
 	raw, _ := json.Marshal(map[string]any{"name": "probe", "mission": "m", "runtime": "docker", "workspace_path": "/tmp"})
 	req := httptest.NewRequest("POST", "/api/loops", strings.NewReader(string(raw)))
-	w := httptest.NewRecorder()
-	s.handleCreateLoop(w, req)
+	recorder := httptest.NewRecorder()
+	server.handleCreateLoop(recorder, req)
 
-	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "workspace_path") {
-		t.Fatalf("expected the docker-specific refusal, got %d %s", w.Code, w.Body)
+	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "workspace_path") {
+		t.Fatalf("expected the docker-specific refusal, got %d %s", recorder.Code, recorder.Body)
 	}
-	if strings.Contains(w.Body.String(), codeBareNotEnabled) {
-		t.Errorf("a docker loop hit the bare gate: %s", w.Body)
+	if strings.Contains(recorder.Body.String(), codeBareNotEnabled) {
+		t.Errorf("a docker loop hit the bare gate: %s", recorder.Body)
 	}
 }
