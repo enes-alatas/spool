@@ -2,10 +2,12 @@
 # tests), integration vs fakeclaude (tier 2), web lint+build, govulncheck.
 # Coverage is informational (job summary), never a gate.
 #
-# What runs when is a cost decision, not a quality one (#181, #232). This
-# repo is private, so Actions minutes are capped, and GitHub bills a started
-# job a whole minute however little it does. Four rules keep that spend
-# proportionate; none of them weakens a gate:
+# What runs when is a cost decision, not a quality one (#181, #232). GitHub
+# bills a started job a whole minute however little it does. While the repo
+# was private that came out of a capped allowance. It has been public since
+# 2026-09-21, so the minutes are free, but they are still runner time and
+# wall time on every PR. Five rules keep that spend proportionate; none of
+# them weakens a gate:
 #
 #   1. A superseded run is cancelled. Review-fix force-pushes routinely
 #      produced 3-7 runs of the same PR, all but the last of them answering
