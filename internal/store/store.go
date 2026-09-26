@@ -42,6 +42,12 @@ const (
 	TriggerManual   = "manual"
 	TriggerRotation = "rotation" // the handoff turn a context rotation injects
 
+	// Why a context rotation was taken, which decides what the handoff turn
+	// and the fresh session after it are told (#272).
+	RotationReasonFill     = "fill"     // the context window crossed a rotation threshold
+	RotationReasonOperator = "operator" // the operator asked for one outright
+	RotationReasonMission  = "mission"  // the operator rewrote the loop's mission
+
 	OriginWeb           = "web"
 	OriginTelegramGroup = "telegram-group"
 	OriginTelegramDM    = "telegram-dm"
@@ -140,10 +146,13 @@ type Loop struct {
 	// Rotation state that has to outlive the orchestrator (#66, ADR-0022).
 	// RotatePending says a handoff turn has been asked for and the session it
 	// ran on must not be resumed; HandoffNote is the note that session wrote,
-	// waiting for its successor's first turn. Both are engine bookkeeping
+	// waiting for its successor's first turn. RotateReason is why the
+	// rotation was taken (a store.RotationReason* value), kept with the note
+	// because the successor is told both. All three are engine bookkeeping
 	// rather than loop configuration, and the note is the loop's own words —
-	// json:"-" keeps the pair out of every API response.
+	// json:"-" keeps them out of every API response.
 	RotatePending bool   `json:"-"`
+	RotateReason  string `json:"-"`
 	HandoffNote   string `json:"-"`
 	// PromptHash identifies the system prompt the current session was created
 	// with. A resumed session keeps that prompt whatever Spool passes on the
@@ -465,10 +474,11 @@ type LoopStore interface {
 	List(ctx context.Context) ([]*Loop, error)
 	SetRuntime(ctx context.Context, id, sessionID string, pid int) error
 	// SetRotation persists a rotation in progress: whether the current session
-	// has been retired by a handoff turn, and the note it wrote for its
-	// successor. Written at the points the actor changes its mind, so a
-	// restart reads the decision rather than starting the loop over.
-	SetRotation(ctx context.Context, id string, pending bool, note string) error
+	// has been retired by a handoff turn, why the rotation was taken, and the
+	// note it wrote for its successor. Written at the points the actor changes
+	// its mind, so a restart reads the decision rather than starting the loop
+	// over.
+	SetRotation(ctx context.Context, id string, pending bool, reason, note string) error
 	// SetPromptHash records the system prompt the loop's current session was
 	// created with, so a later wake can tell whether the prompt it renders is
 	// the one that session is running (#162). Narrow for the same reason as

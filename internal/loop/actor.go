@@ -140,12 +140,13 @@ func (deps *Deps) runtimeFor(kind string) runtime.Runtime {
 }
 
 type cmd struct {
-	kind  string // deliver|tick|pause|resume|kill|update|power|shutdown
-	env   Envelope
-	loop  *store.Loop
-	verb  string        // for power
-	reply chan error    // for power: the caller waits on the result
-	done  chan struct{} // for shutdown
+	kind   string // deliver|tick|pause|resume|kill|update|power|shutdown
+	env    Envelope
+	loop   *store.Loop
+	verb   string        // for power
+	reason string        // for rotate: a store.RotationReason* value
+	reply  chan error    // for power: the caller waits on the result
+	done   chan struct{} // for shutdown
 }
 
 // Actor owns one loop: a single goroutine serializing every command,
@@ -190,10 +191,13 @@ type Actor struct {
 	armPct       int
 	forcePct     int
 	armed        bool   // fill crossed the arm threshold; rotate at the next quiet boundary
-	rotateAsked  bool   // operator asked for a rotation at the next quiet boundary
+	rotateAsked  string // why a rotation was asked for at the next quiet boundary ("" = not asked)
 	handoffTurn  bool   // the in-flight turn is the rotation's handoff request
 	rotateOnExit bool   // rotate to a fresh session once the draining process exits
 	handoffNote  string // captured handoff reply, carried into the next fresh session's preamble
+	// handoffReason is why the latest rotation was taken: what its handoff
+	// turn was told, and what the fresh session after it is told.
+	handoffReason string
 	// The standing-instructions note this session is owed, and the hash it
 	// will be worth once the note lands. Both are held until a turn carries
 	// the note, so a spawn that dies first still owes it (#162).
@@ -228,6 +232,7 @@ func NewActor(deps Deps, l *store.Loop) *Actor {
 	// the successor session has not had its first turn yet, so this actor is
 	// the one that owes it the preamble (#66).
 	actor.handoffNote = l.HandoffNote
+	actor.handoffReason = l.RotateReason
 	actor.offSnap.Store(l.WorkstationOff)
 	actor.healthSnap.Store(runtime.Health{Up: true}) // optimistic until the first poll
 	if l.WorkstationOff {
@@ -254,10 +259,11 @@ func (actor *Actor) Kill()                { actor.cmds <- cmd{kind: "kill"} }
 
 // Rotate asks the loop to shed its context through the ADR-0022 handoff flow
 // at the next quiet boundary, and blocks for the immediate verdict: an error
-// means there is no session to rotate.
-func (actor *Actor) Rotate() error {
+// means there is no session to rotate. The reason, a store.RotationReason*
+// value, is what the handoff turn tells the loop about why.
+func (actor *Actor) Rotate(reason string) error {
 	reply := make(chan error, 1)
-	actor.cmds <- cmd{kind: "rotate", reply: reply}
+	actor.cmds <- cmd{kind: "rotate", reason: reason, reply: reply}
 	return <-reply
 }
 
@@ -346,7 +352,7 @@ func (actor *Actor) handleCmd(command cmd) {
 	case "power":
 		command.reply <- actor.power(command.verb)
 	case "rotate":
-		command.reply <- actor.requestRotation()
+		command.reply <- actor.requestRotation(command.reason)
 	case "kill":
 		if actor.proc != nil {
 			_ = actor.proc.Kill()
@@ -516,7 +522,7 @@ func (actor *Actor) wake() {
 	// send queued work immediately rather than waiting for init.
 	if len(actor.inbox) > 0 {
 		actor.startTurn()
-	} else if actor.rotateAsked {
+	} else if actor.rotateAsked != "" {
 		// woken for nothing but an operator-asked rotation: the handoff
 		// turn is the session's only business
 		actor.startHandoffTurn()
@@ -716,11 +722,14 @@ func (actor *Actor) needsForcedRotation() bool {
 // flow, on demand instead of at a fill threshold. Queued work still runs
 // first — the handoff turn takes the next quiet boundary — while an idle
 // loop rotates now, and an asleep one is woken just to write its note.
-func (actor *Actor) requestRotation() error {
+// Two asks before that boundary are one rotation, told the stronger reason.
+func (actor *Actor) requestRotation(reason string) error {
 	if actor.loop.CurrentSessionID == "" {
 		return fmt.Errorf("the loop has no session to rotate")
 	}
-	actor.rotateAsked = true
+	if rotationPrecedence[reason] > rotationPrecedence[actor.rotateAsked] {
+		actor.rotateAsked = reason
+	}
 	if actor.paused || actor.loop.WorkstationOff || len(actor.inbox) > 0 {
 		return nil // latched; the next quiet boundary takes it
 	}
@@ -733,17 +742,32 @@ func (actor *Actor) requestRotation() error {
 	return nil
 }
 
+// rotationPrecedence ranks the reasons a rotation is taken for, so a
+// rotation with more than one is told the one that matters most to the note.
+// A rewritten mission outranks the operator's plain ask: the successor starts
+// under instructions the note has to be judged against. Either outranks the
+// fill threshold, which a rotation that was asked for sheds anyway.
+var rotationPrecedence = map[string]int{
+	store.RotationReasonFill:     1,
+	store.RotationReasonOperator: 2,
+	store.RotationReasonMission:  3,
+}
+
 // startHandoffTurn asks the loop, as this session's last turn, to write the
 // handoff note its successor starts from. The inbox stays put; it is
 // delivered to the fresh session after rotation.
 func (actor *Actor) startHandoffTurn() {
 	actor.handoffTurn = true
+	actor.handoffReason = actor.rotateAsked
+	if actor.handoffReason == "" {
+		actor.handoffReason = store.RotationReasonFill
+	}
 	// Recorded before the turn runs, not after it: from this moment the
 	// session has been told it ends here, and a restart in the window that
 	// follows — mid-turn, or mid-drain after it — must retire the session
 	// rather than resume one its own last turn retired (#66).
 	actor.setRotationState(true, actor.handoffNote)
-	actor.sendBatch([]Envelope{RotationEnvelope(time.Now())})
+	actor.sendBatch([]Envelope{RotationEnvelope(time.Now(), actor.handoffReason)})
 }
 
 // sendBatch runs one turn over the given envelopes.
@@ -805,7 +829,7 @@ func (actor *Actor) sendBatch(batch []Envelope) {
 			// that dies before this turn completes must not cost it. It is
 			// cleared when a turn finishes, by which point the fresh session
 			// has the preamble in its history.
-			text = RotationPreamble(&actor.loop, actor.handoffNote, actor.recentReplies()) + "\n\n---\n\n" + text
+			text = RotationPreamble(&actor.loop, actor.handoffReason, actor.handoffNote, actor.recentReplies()) + "\n\n---\n\n" + text
 		case actor.loopHadHistory():
 			text = SessionLostPreamble(&actor.loop, actor.recentReplies()) + "\n\n---\n\n" + text
 		}
@@ -954,18 +978,19 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 	actor.turn = nil
 	actor.currentBatch = nil
 	actor.lostSends = nil
-	// A completed turn means any pending handoff note reached its session;
-	// finishHandoff below sets the next one after this clears the old.
-	if actor.handoffNote != "" {
-		actor.setRotationState(actor.loop.RotatePending, "")
-	}
-	actor.handoffNote = ""
-
 	if actor.handoffTurn {
 		// A handoff turn carries neither note — sendBatch withholds both —
 		// so neither is spent here: both stay owed to the next session.
+		// finishHandoff replaces the handoff note with the one this turn
+		// wrote, and keeps the reason it was asked for.
 		actor.finishHandoff(res)
 		return
+	}
+	// A completed turn means any pending handoff note reached its session,
+	// and the reason told with it is spent too.
+	if actor.handoffNote != "" || actor.handoffReason != "" {
+		actor.handoffNote, actor.handoffReason = "", ""
+		actor.setRotationState(actor.loop.RotatePending, "")
 	}
 	if len(actor.sendFailureIDs) > 0 {
 		// The news is in the session's history now. Marked on completion
@@ -990,7 +1015,7 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 		actor.startTurn()
 		return
 	}
-	if (actor.armed || actor.rotateAsked) && !actor.paused {
+	if (actor.armed || actor.rotateAsked != "") && !actor.paused {
 		// quiet boundary: the wake left no queued work, so this is the
 		// cheapest moment to shed the context (ADR-0022) — whether the
 		// fill armed it or the operator asked for it
@@ -1008,6 +1033,7 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 // rotation lands on a dead process rather than under a live one.
 func (actor *Actor) finishHandoff(res *claude.ResultInfo) {
 	actor.handoffTurn = false
+	actor.handoffNote = ""
 	if res != nil && !res.IsError {
 		actor.handoffNote = strings.TrimSpace(res.ResultText)
 	}
@@ -1027,8 +1053,9 @@ func (actor *Actor) finishHandoff(res *claude.ResultInfo) {
 // old behaviour, never the rotation.
 func (actor *Actor) setRotationState(pending bool, note string) {
 	actor.loop.RotatePending = pending
+	actor.loop.RotateReason = actor.handoffReason
 	actor.loop.HandoffNote = note
-	if err := actor.deps.Store.Loops().SetRotation(context.Background(), actor.loop.ID, pending, note); err != nil {
+	if err := actor.deps.Store.Loops().SetRotation(context.Background(), actor.loop.ID, pending, actor.handoffReason, note); err != nil {
 		actor.log().Error("persist rotation state", "err", err)
 	}
 }
@@ -1309,7 +1336,7 @@ func (actor *Actor) retireSession() {
 	_ = actor.deps.Store.Loops().SetRuntime(context.Background(), actor.loop.ID, "", 0)
 	actor.deadResumes = 0
 	actor.armed = false
-	actor.rotateAsked = false
+	actor.rotateAsked = ""
 	// The successor session is created with the current prompt, so it is
 	// owed no note; the one the old session had not yet been given dies
 	// with it.
@@ -1531,7 +1558,7 @@ func (actor *Actor) forgetSession(ctx context.Context) {
 	// would force a pointless rotation as the new empty session's first turn
 	actor.fillPct = 0
 	actor.armed = false
-	actor.rotateAsked = false
+	actor.rotateAsked = ""
 	// and the rotation this session was asked for: recreate answers the
 	// question it was asked — the session is gone — and a pending flag left
 	// standing would have the next restart retire the healthy session that

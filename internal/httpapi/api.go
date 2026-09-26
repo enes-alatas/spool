@@ -776,7 +776,7 @@ func (server *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 			// operator asking for a rotation outright gets nothing, while
 			// here the mission is stored and the loop's next session carries
 			// it. Reported, not raised.
-			if err := actor.Rotate(); err == nil {
+			if err := actor.Rotate(store.RotationReasonMission); err == nil {
 				rotation = rotationQueued
 			}
 		}
@@ -901,7 +901,7 @@ func (server *Server) handleRotate(w http.ResponseWriter, r *http.Request) {
 		server.jsonErr(w, 409, "loop has no running actor")
 		return
 	}
-	if err := actor.Rotate(); err != nil {
+	if err := actor.Rotate(store.RotationReasonOperator); err != nil {
 		server.jsonErr(w, 409, "%v", err)
 		return
 	}

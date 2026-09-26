@@ -16,6 +16,57 @@ type patchResult struct {
 	Rotation string `json:"rotation"`
 }
 
+// A rotation a mission save asked for tells the loop why (#272): its last
+// turn hears that the mission was rewritten and that it has not seen the new
+// one, and the fresh session hears that its mission changed and that the
+// note it inherits was written under the old one. Told instead that the
+// context was full, the loop writes a note for work that no longer applies.
+// The server restarts between the two, so the reason is proven to travel
+// with the note through the store rather than only in memory.
+func TestMissionRotationTellsTheLoopWhy(t *testing.T) {
+	dataDir := t.TempDir()
+	s := startServer(t, dataDir)
+	s.createLoop("clerk", map[string]any{"mission": "Keep the ledger."})
+	s.waitTurn("clerk", 30*time.Second, func(turn) bool { return true })
+	s.waitState("clerk", "asleep", 30*time.Second)
+
+	var saved patchResult
+	s.mustJSON("PATCH", "/api/loops/clerk", map[string]any{"mission": "Read the ledger."}, &saved)
+	if saved.Rotation != "queued" {
+		t.Fatalf("rotation = %q, want %q", saved.Rotation, "queued")
+	}
+	// fakeclaude echoes what it is sent, so the replies show the texts
+	handoff := s.waitTurn("clerk", 30*time.Second, func(tn turn) bool { return tn.Trigger == "rotation" })
+	for _, want := range []string{"The operator rewrote your mission", "which you have not seen", "judge it against"} {
+		if !strings.Contains(handoff.ResultText, want) {
+			t.Fatalf("the handoff turn after a mission save is missing %q:\n%s", want, handoff.ResultText)
+		}
+	}
+	if strings.Contains(handoff.ResultText, "filling up") {
+		t.Fatalf("a mission rotation blamed the context window:\n%s", handoff.ResultText)
+	}
+
+	if !s.hasEvent("clerk", "context_rotated", 30*time.Second) {
+		t.Fatal("the mission save's rotation was not recorded as a spool event")
+	}
+	s.waitState("clerk", "asleep", 30*time.Second)
+	s.stop()
+
+	s = startServer(t, dataDir)
+	s.message("clerk", "first under the new mission")
+	fresh := s.waitTurn("clerk", 30*time.Second, func(tn turn) bool {
+		return strings.Contains(tn.ResultText, "first under the new mission")
+	})
+	if fresh.SessionID == handoff.SessionID {
+		t.Fatalf("work after the mission save stayed on the retired session %s", handoff.SessionID)
+	}
+	for _, want := range []string{"your mission was changed and your context rotated", "written under your previous mission"} {
+		if !strings.Contains(fresh.ResultText, want) {
+			t.Fatalf("the fresh session after a mission save is missing %q:\n%s", want, fresh.ResultText)
+		}
+	}
+}
+
 // A mission is part of the loop's prompt, and a running session cannot be
 // given a new one (#162) — so a saved mission is not in force until the loop
 // rotates. Saving asks for that rotation (#261), and the proof is the prompt

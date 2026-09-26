@@ -648,13 +648,30 @@ func reasonOf(m *store.Message) string {
 }
 
 // RotationEnvelope is the last turn of a session about to be rotated: it asks
-// the loop for the handoff note its successor starts from (ADR-0022).
-func RotationEnvelope(now time.Time) Envelope {
+// the loop for the handoff note its successor starts from (ADR-0022). It
+// opens with why this rotation is happening, because a note written under
+// "my context is full" is a different note from one written under "my
+// mission changed", and the loop cannot tell which it is otherwise.
+func RotationEnvelope(now time.Time, reason string) Envelope {
 	head := header(now, "context rotation")
-	body := `Your context window is filling up, so this session ends here and a fresh
-session continues your work. Reply with a handoff note for your successor —
-it is the only conversational memory that carries across. Cover: work in
-progress and its exact state, decisions made and why, and what to do next.
+	var cause string
+	switch reason {
+	case store.RotationReasonOperator:
+		cause = `The operator asked for a fresh context, so this session ends here and a
+fresh session continues your work.`
+	case store.RotationReasonMission:
+		cause = `The operator rewrote your mission, so this session ends here and a fresh
+session continues your work under the new mission, which you have not seen.
+Say in your note where each piece of work stands, so your successor can
+judge it against the new mission.`
+	default:
+		cause = `Your context window is filling up, so this session ends here and a fresh
+session continues your work.`
+	}
+	body := cause + `
+Reply with a handoff note for your successor — it is the only conversational
+memory that carries across. Cover: work in progress and its exact state,
+decisions made and why, and what to do next.
 Your mission and operating instructions reach the new session automatically;
 do not restate them, and do not include a [next-wake] trailer.`
 	return Envelope{Trigger: store.TriggerRotation, Text: head + "\n\n" + body}
@@ -676,11 +693,19 @@ func SessionLostPreamble(l *store.Loop, recentTurns []string) string {
 
 // RotationPreamble opens the fresh session after a deliberate context
 // rotation, carrying the note the previous session wrote on its way out.
-func RotationPreamble(l *store.Loop, note string, recentTurns []string) string {
+// After a mission change it says so: the successor starts under a mission
+// its predecessor never ran, and the note was written against the old one.
+func RotationPreamble(l *store.Loop, reason, note string, recentTurns []string) string {
 	var b strings.Builder
-	b.WriteString("[system note · your context was rotated; this fresh session continues your work]\n\n")
+	noteFrom := "Handoff note from your previous session:"
+	if reason == store.RotationReasonMission {
+		b.WriteString("[system note · your mission was changed and your context rotated; this fresh session continues your work under the new mission]\n\n")
+		noteFrom = "Handoff note from your previous session, written under your previous mission:"
+	} else {
+		b.WriteString("[system note · your context was rotated; this fresh session continues your work]\n\n")
+	}
 	fmt.Fprintf(&b, "Your mission (restated): %s\n", strings.TrimSpace(l.Mission))
-	fmt.Fprintf(&b, "Handoff note from your previous session:\n%s\n", truncate(strings.TrimSpace(note), maxHandoffNote))
+	fmt.Fprintf(&b, "%s\n%s\n", noteFrom, truncate(strings.TrimSpace(note), maxHandoffNote))
 	writeRecentReplies(&b, recentTurns)
 	return b.String()
 }
