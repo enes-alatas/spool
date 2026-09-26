@@ -14,8 +14,8 @@
 // without a rerun: `npx playwright show-trace <file>`.
 //
 // The trace records the fixture hub's operator token, as the login form and
-// the session cookie carry it. That token belongs to a hub on a temp
-// directory that is deleted when the walk ends, so it opens nothing.
+// the session cookie carry it. cmd/uifixture seeds that token, and it is
+// synthetic, so a public trace holds no credential.
 import { chromium } from 'playwright'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'

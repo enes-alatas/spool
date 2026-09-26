@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/enes-alatas/spool/internal/loop"
+	"github.com/enes-alatas/spool/internal/operator"
 	"github.com/enes-alatas/spool/internal/store"
 	"github.com/enes-alatas/spool/internal/store/sqlite"
 )
@@ -229,5 +231,40 @@ func TestSeedWritesAFleetTheRoomCanRender(t *testing.T) {
 	}
 	if len(secrets) == 0 {
 		t.Error("no secrets seeded: the secrets panel would shoot its empty state")
+	}
+}
+
+// The token only helps if the hub takes it instead of minting its own.
+func TestTheHubReadsTheFixtureOperatorToken(t *testing.T) {
+	dir := t.TempDir()
+	if err := writeOperatorToken(dir); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	got, minted, err := operator.Load(dir)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if minted || got != fixtureOperatorToken {
+		t.Fatalf("hub token = %q (minted %v), want the fixture's %q", got, minted, fixtureOperatorToken)
+	}
+}
+
+// A real token already in the directory survives: the fixture refuses rather
+// than replacing it with a value this repo publishes.
+func TestTheFixtureNeverReplacesAnOperatorToken(t *testing.T) {
+	dir := t.TempDir()
+	const existing = "an-existing-operator-token"
+	if err := os.WriteFile(operator.Path(dir), []byte(existing), 0o600); err != nil {
+		t.Fatalf("seed a token: %v", err)
+	}
+	if err := writeOperatorToken(dir); err == nil {
+		t.Fatal("writeOperatorToken over an existing token: no error, want a refusal")
+	}
+	got, err := os.ReadFile(operator.Path(dir))
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(got) != existing {
+		t.Fatalf("token after the refusal = %q, want the original %q", got, existing)
 	}
 }
