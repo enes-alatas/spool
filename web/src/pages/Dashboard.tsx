@@ -5,6 +5,7 @@ import { formatTokens, fillTone, hasFillPct, formatUsd, nextWake, sumCostToday }
 import { StateDot } from '../components/Spool'
 import { FleetChannel } from '../components/FleetChannel'
 import { undeliveredNote } from '../messages'
+import { workstationNote } from '../workstation'
 import { useEffect, useState } from 'react'
 
 function Countdown({ at }: { at: number }) {
@@ -48,15 +49,6 @@ function ContextStat({ loop, thresholds }: { loop: LoopView; thresholds?: Settin
       {loop.context_fill_pct}%
     </span>
   )
-}
-
-// A workstation the operator switched off is not a fault; only an unreachable
-// one is worth flagging. Both are said in the row rather than in hover text —
-// a warning nobody can see on a touch screen is not a warning.
-function workstationNote(loop: LoopView): { text: string; bad: boolean } | undefined {
-  if (loop.workstation_up) return undefined
-  if (loop.down_reason === 'powered_off') return { text: 'workstation off', bad: false }
-  return { text: `workstation down: ${loop.workstation_detail || 'unreachable'}`, bad: true }
 }
 
 // One row per loop: identity on the left, the four operational numbers to the

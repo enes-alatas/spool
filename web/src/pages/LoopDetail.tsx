@@ -31,6 +31,7 @@ import { missionDraft, missionSaveResult, missionSaveWarning } from '../mission'
 import { EFFORT_OPTIONS, PACING_OPTIONS } from '../options'
 import { useModelOptions } from '../models'
 import { useStream } from '../stream'
+import { workstationCondition } from '../workstation'
 import { toEntries, extractDelta } from '../timeline'
 import { MessageKnot } from '../components/MessageKnot'
 import { UndeliveredPane } from '../components/UndeliveredPane'
@@ -521,6 +522,36 @@ const VERB_PROGRESS: Record<string, string> = {
   recreate: 'Recreating…',
 }
 
+// The line under the loop's name when its workstation is not up: what the
+// condition means for the loop. A missing token is named and no more: it is
+// only ever reported while no token is set, which is exactly when the banner
+// above the page says where it is fixed, once.
+function WorkstationNote({ loop }: { loop: LoopView }) {
+  if (loop.workstation_up) return null
+  switch (loop.down_reason) {
+    case 'powered_off':
+      return (
+        <div className="ws-off-note">
+          Workstation powered off. Ticks are skipped and messages queue until it is powered back on.
+        </div>
+      )
+    case 'not_provisioned':
+      return (
+        <div className="ws-off-note">
+          Workstation not built yet. The loop's first wake builds it, or Power on does now.
+        </div>
+      )
+    case 'unauthenticated':
+      return <div className="ws-down-note">Workstation down: no Claude token.</div>
+    default:
+      return (
+        <div className="ws-down-note">
+          Workstation down{loop.workstation_detail ? `: ${loop.workstation_detail}` : ''}
+        </div>
+      )
+  }
+}
+
 // WorkstationPanel shows where a loop's claude actually runs (ADR-0017) — the
 // container or the bare host — and whether that machine is reachable right now.
 function WorkstationPanel({ loop, runningVerb }: { loop: LoopView; runningVerb: string }) {
@@ -545,15 +576,15 @@ function WorkstationPanel({ loop, runningVerb }: { loop: LoopView; runningVerb: 
   // The verb the server says is under way outranks our own pending call: it
   // survives a dropped connection, which a ten-minute recreate may not.
   const busy = power.isPending || runningVerb !== ''
-  const poweredOff = !loop.workstation_up && loop.down_reason === 'powered_off'
-  const status = loop.workstation_up ? 'up' : poweredOff ? 'powered off' : 'down'
-  // A workstation the operator switched off is not a fault: it reads calm,
-  // while one that died on its own keeps the alarm.
+  // A workstation that is off or not built yet is not a fault: it reads calm,
+  // while one that died on its own, or has no token to run under, keeps the
+  // alarm.
+  const condition = workstationCondition(loop)
   const statusDot = loop.workstation_up
     ? 'state-idle'
-    : poweredOff
-      ? 'state-asleep'
-      : 'state-workstation_down'
+    : condition.alert
+      ? 'state-workstation_down'
+      : 'state-asleep'
 
   const recreate = () => {
     setConfirming(false)
@@ -568,7 +599,7 @@ function WorkstationPanel({ loop, runningVerb }: { loop: LoopView; runningVerb: 
         <span className="k">status</span>
         <span className="v" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span className={`state-dot ${statusDot}`} />
-          {status}
+          {condition.status}
         </span>
       </div>
       <div className="row">
@@ -595,10 +626,16 @@ function WorkstationPanel({ loop, runningVerb }: { loop: LoopView; runningVerb: 
               <button className="btn sm" onClick={() => power.mutate('poweroff')} disabled={busy}>
                 Power off
               </button>
-            ) : (
+            ) : condition.powerOnHelps ? (
               <button className="btn sm" onClick={() => power.mutate('poweron')} disabled={busy}>
                 Power on
               </button>
+            ) : (
+              // a missing token is fixed in Settings, and a button that
+              // cannot fix it would point the operator away from the fix
+              <Link className="btn sm" to="/settings">
+                Add a Claude token
+              </Link>
             )}
             <button
               className="btn sm danger"
@@ -1727,16 +1764,7 @@ export default function LoopDetail() {
             <span className="state-name">{loop.state}</span>
             {loop.runtime === 'bare' && <span className="containment-badge">uncontained</span>}
           </h1>
-          {!loop.workstation_up &&
-            (loop.down_reason === 'powered_off' ? (
-              <div className="ws-off-note">
-                Workstation powered off. Ticks are skipped and messages queue until it is powered back on.
-              </div>
-            ) : (
-              <div className="ws-down-note">
-                Workstation down{loop.workstation_detail ? `: ${loop.workstation_detail}` : ''}
-              </div>
-            ))}
+          <WorkstationNote loop={loop} />
           {/* On the refusal rather than the state: a dead workstation outranks
               model_unrecognized, and the model still needs changing (#289). */}
           {loop.model_refusal && (

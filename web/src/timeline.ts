@@ -1,5 +1,6 @@
 // Turns raw loop events into renderable timeline entries.
 import type { LoopEvent } from './api'
+import { workstationDownEvent } from './workstation'
 
 export interface ContentBlock {
   type: string
@@ -185,7 +186,7 @@ function spoolNote(e: LoopEvent): Note | null {
       case 'workstation_power':
         return plain(powerNote(p.verb, !!p.ok))
       case 'workstation_down':
-        return plain(`workstation unreachable: ${p.detail}`)
+        return plain(workstationDownEvent(p.reason, p.detail))
       case 'workstation_up':
         return plain('workstation reachable again')
       case 'message_too_long':
