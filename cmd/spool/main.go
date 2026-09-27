@@ -32,6 +32,7 @@ import (
 	"github.com/enes-alatas/spool/internal/sched"
 	"github.com/enes-alatas/spool/internal/store"
 	"github.com/enes-alatas/spool/internal/store/sqlite"
+	"github.com/enes-alatas/spool/internal/surface"
 	"github.com/enes-alatas/spool/internal/surface/telegram"
 	"github.com/enes-alatas/spool/internal/version"
 	"github.com/enes-alatas/spool/web"
@@ -303,7 +304,7 @@ func main() {
 		Router:         router,
 		Sched:          scheduler,
 		Models:         models,
-		Surface:        bridge,
+		Surfaces:       map[string]surface.Surface{store.SurfaceTelegram: bridge},
 		DataDir:        *dataDir,
 		ClaudeVer:      ver,
 		Build:          build,

@@ -65,6 +65,11 @@ const (
 	RuntimeBare   = "bare"   // host subprocess, uncontained (ADR-0017)
 	RuntimeDocker = "docker" // long-lived container + volume workstation
 
+	// A loop's surface: the chat platform it has an identity on, if any
+	// (ADR-0029 item 7: at most one, attached after the loop exists).
+	SurfaceTelegram = "telegram"
+	SurfaceSlack    = "slack"
+
 	SenderPending = "pending"
 	SenderAllowed = "allowed"
 	SenderBlocked = "blocked"
@@ -193,6 +198,19 @@ type Loop struct {
 
 	CreatedAt int64 `json:"created_at"`
 	UpdatedAt int64 `json:"updated_at"`
+}
+
+// Surface names the platform the loop has an identity on, or "" when it has
+// none. It is read off which credential is stored, so it cannot disagree
+// with them.
+func (l *Loop) Surface() string {
+	switch {
+	case l.TGBotToken != "":
+		return SurfaceTelegram
+	case l.SlackBotToken != "":
+		return SurfaceSlack
+	}
+	return ""
 }
 
 // LoopSecret is one per-loop secret env var: a name/value pair injected into
