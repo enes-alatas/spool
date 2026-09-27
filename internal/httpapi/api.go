@@ -40,9 +40,10 @@ type Server struct {
 	// Models is the model list the dropdowns offer, with what each name
 	// runs as on this hub (ADR-0033).
 	Models *loop.Models
-	// Surface is the chat platform loops are reachable on (ADR-0029); nil
-	// when the hub runs without one.
-	Surface   surface.Surface
+	// Surfaces are the chat platforms loops can be reachable on (ADR-0029),
+	// by kind (store.SurfaceTelegram, store.SurfaceSlack). A kind the hub
+	// runs without is absent, and an empty map is a hub with none.
+	Surfaces  map[string]surface.Surface
 	DataDir   string
 	ClaudeVer string
 	// Build is which Spool this is, served verbatim by /api/version so a bug
@@ -373,6 +374,16 @@ func (server *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
+// loopChanged tells every surface a loop's configuration changed. Every one,
+// not the loop's own: a detach from one surface and an attach to another are
+// both changes, and whether an edit concerns a surface is the surface's call
+// (ADR-0029 item 3).
+func (server *Server) loopChanged(ctx context.Context, loopID string) {
+	for _, loopSurface := range server.Surfaces {
+		loopSurface.LoopChanged(ctx, loopID)
+	}
+}
+
 // defaultRuntime is the kind a loop is created as when its request names
 // none: the one the hub was started with, bare when it was given none.
 func (server *Server) defaultRuntime() string {
@@ -520,8 +531,8 @@ func (server *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if loopRecord.TGBotToken != "" && server.Surface != nil {
-		identity, err := server.Surface.ValidateCredential(r.Context(), surface.Credential{Token: loopRecord.TGBotToken})
+	if telegram := server.Surfaces[store.SurfaceTelegram]; loopRecord.TGBotToken != "" && telegram != nil {
+		identity, err := telegram.ValidateCredential(r.Context(), surface.Credential{Token: loopRecord.TGBotToken})
 		if err != nil {
 			server.jsonErr(w, 400, "telegram token rejected: %v", err)
 			return
@@ -569,9 +580,7 @@ func (server *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 	// token: two secret values that did not exist a moment ago.
 	server.secretsChanged(r.Context())
 	server.Manager.Add(loopRecord)
-	if server.Surface != nil {
-		server.Surface.LoopChanged(r.Context(), loopRecord.ID)
-	}
+	server.loopChanged(r.Context(), loopRecord.ID)
 	// first tick shortly after creation so the mission starts without waiting
 	// a full interval
 	server.Sched.ScheduleNow(loopRecord.ID)
@@ -743,10 +752,10 @@ func (server *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 	if req.TGBotToken != nil {
 		token := strings.TrimSpace(*req.TGBotToken)
 		username := ""
-		if token != "" && server.Surface != nil {
+		if telegram := server.Surfaces[store.SurfaceTelegram]; token != "" && telegram != nil {
 			// A live call to api.telegram.org, which is why nothing read
 			// before this point may be written back afterwards.
-			identity, err := server.Surface.ValidateCredential(r.Context(), surface.Credential{Token: token})
+			identity, err := telegram.ValidateCredential(r.Context(), surface.Credential{Token: token})
 			if err != nil {
 				server.jsonErr(w, 400, "telegram token rejected: %v", err)
 				return
@@ -769,9 +778,7 @@ func (server *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 	// The stored row, not the edited copy: everything this request did not
 	// name reaches the actor and the surface as it actually stands.
 	server.Manager.UpdateLoop(updated)
-	if server.Surface != nil {
-		server.Surface.LoopChanged(r.Context(), updated.ID)
-	}
+	server.loopChanged(r.Context(), updated.ID)
 	// After UpdateLoop, so the session the rotation starts is built from the
 	// mission this request saved rather than the one it replaced. `loopRecord`
 	// is the row as it was read at the top of the handler, which is what makes
@@ -799,8 +806,8 @@ func (server *Server) handleDeleteLoop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	server.Manager.Remove(loopRecord.ID, loopRecord.Runtime)
-	if server.Surface != nil {
-		server.Surface.LoopRemoved(loopRecord.ID)
+	for _, loopSurface := range server.Surfaces {
+		loopSurface.LoopRemoved(loopRecord.ID)
 	}
 	if r.URL.Query().Get("remove_worktree") == "1" && loopRecord.WorkspaceMode == store.WorkspaceWorktree {
 		if err := gitws.Remove(loopRecord.RepoPath, loopRecord.WorktreePath); err != nil {
@@ -1020,8 +1027,8 @@ func (server *Server) handleTelegramStatus(w http.ResponseWriter, r *http.Reques
 		"bot_username": loopRecord.TGBotUsername,
 		"group_bound":  loopRecord.TGGroupChatID != 0,
 	}
-	if server.Surface != nil {
-		status["bridge"] = server.Surface.Status(loopRecord.ID)
+	if telegram := server.Surfaces[store.SurfaceTelegram]; telegram != nil {
+		status["bridge"] = telegram.Status(loopRecord.ID)
 	}
 	writeJSON(w, 200, status)
 }
