@@ -309,7 +309,9 @@ func (actor *Actor) run() {
 		case <-actor.idleTimer.C:
 			actor.handleIdleTimeout()
 		case <-actor.retryTimer.C:
-			if len(actor.inbox) > 0 && actor.state == StateAsleep && !actor.loop.WorkstationOff {
+			// a loop holding its work (paused, switched off, model refused)
+			// is not retried: what it holds waits for the switch that let it go
+			if len(actor.inbox) > 0 && actor.state == StateAsleep && !actor.holdsWork() {
 				actor.wake()
 			}
 		case <-actor.healthTimer.C:
