@@ -25,6 +25,7 @@ const module = "github.com/enes-alatas/spool"
 var adapters = map[string][]string{
 	// Hub adapters serve the hub and must not reach into the runner at all.
 	module + "/internal/surface/telegram": runnerPkgs, // Surface
+	module + "/internal/surface/slack":    runnerPkgs, // Surface
 	module + "/internal/store/sqlite":     runnerPkgs,
 	module + "/web":                       runnerPkgs,
 	// SandboxRuntime adapters are the runner's own, so speaking the claude
