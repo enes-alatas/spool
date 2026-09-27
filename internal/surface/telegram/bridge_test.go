@@ -30,12 +30,12 @@ func TestBoundBefore(t *testing.T) {
 		{"bound while handling this very message", msgDate * 1000, false},
 		{"bound after the message, catching up on a backlog", (msgDate + 60) * 1000, false},
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			got := boundBefore(&store.Loop{TGGroupBoundAt: c.boundAtMS}, msgDate, defaultBindSettle)
-			if got != c.want {
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			got := boundBefore(&store.Loop{TGGroupBoundAt: testCase.boundAtMS}, msgDate, defaultBindSettle)
+			if got != testCase.want {
 				t.Fatalf("boundBefore(bound_at=%d, date=%d) = %v, want %v",
-					c.boundAtMS, msgDate, got, c.want)
+					testCase.boundAtMS, msgDate, got, testCase.want)
 			}
 		})
 	}
@@ -64,11 +64,11 @@ func (laterCaptureMessages) OwnerDMChat(context.Context, string) (int64, error) 
 // so this fails if the bridge ever resolves OwnerDMChat again instead of
 // using the chat route.Send pinned on the payload.
 func TestOwnerDMDeliveryUsesPinnedChat(t *testing.T) {
-	p := &poller{loopID: "l1", sendCh: make(chan sendReq, 4)}
+	bot := &poller{loopID: "l1", sendCh: make(chan sendReq, 4)}
 	br := &Bridge{
 		store:   laterCaptureStore{},
 		log:     slog.Default(),
-		pollers: map[string]*poller{"l1": p},
+		pollers: map[string]*poller{"l1": bot},
 	}
 
 	br.mirrorMessage(context.Background(), &route.MessagePayload{
@@ -83,7 +83,7 @@ func TestOwnerDMDeliveryUsesPinnedChat(t *testing.T) {
 	})
 
 	select {
-	case req := <-p.sendCh:
+	case req := <-bot.sendCh:
 		if req.chatID != 42 {
 			t.Fatalf("owner_dm delivered to chat %d, want the pinned 42", req.chatID)
 		}
@@ -100,8 +100,8 @@ type queueFullStore struct {
 	events *queueFullEvents
 }
 
-func (s queueFullStore) Messages() store.MessageStore { return s.msgs }
-func (s queueFullStore) Events() store.EventStore     { return s.events }
+func (fake queueFullStore) Messages() store.MessageStore { return fake.msgs }
+func (fake queueFullStore) Events() store.EventStore     { return fake.events }
 
 type queueFullMessages struct {
 	store.MessageStore
@@ -109,8 +109,8 @@ type queueFullMessages struct {
 	sendErr  string
 }
 
-func (m *queueFullMessages) SetSendResult(_ context.Context, id, _ int64, sendErr string) error {
-	m.failedID, m.sendErr = id, sendErr
+func (messages *queueFullMessages) SetSendResult(_ context.Context, id, _ int64, sendErr string) error {
+	messages.failedID, messages.sendErr = id, sendErr
 	return nil
 }
 
@@ -119,9 +119,9 @@ type queueFullEvents struct {
 	got []*store.Event
 }
 
-func (e *queueFullEvents) Insert(_ context.Context, ev *store.Event) (int64, error) {
-	e.got = append(e.got, ev)
-	return int64(len(e.got)), nil
+func (events *queueFullEvents) Insert(_ context.Context, ev *store.Event) (int64, error) {
+	events.got = append(events.got, ev)
+	return int64(len(events.got)), nil
 }
 
 // A send whose bot queue has no room is a send failure, recorded where any
@@ -129,13 +129,13 @@ func (e *queueFullEvents) Insert(_ context.Context, ev *store.Event) (int64, err
 // was dropped with its recordFor, and the row read as in flight until the
 // next restart blamed the restart for it.
 func TestQueueFullIsASendFailure(t *testing.T) {
-	p := &poller{loopID: "l1", sendCh: make(chan sendReq)} // no room at all
+	bot := &poller{loopID: "l1", sendCh: make(chan sendReq)} // no room at all
 	st := queueFullStore{msgs: &queueFullMessages{}, events: &queueFullEvents{}}
 	br := &Bridge{
 		store:   st,
 		log:     slog.Default(),
 		bus:     bus.New(),
-		pollers: map[string]*poller{"l1": p},
+		pollers: map[string]*poller{"l1": bot},
 	}
 
 	br.mirrorMessage(context.Background(), &route.MessagePayload{
@@ -167,15 +167,15 @@ func TestExcerptCutsOnRuneBoundary(t *testing.T) {
 	const limit = 12
 	body := strings.Repeat("çalışıyor ", 8)
 	for pad := 0; pad < 16; pad++ {
-		s := strings.Repeat("a", pad) + body
-		got := excerpt(s, limit)
+		text := strings.Repeat("a", pad) + body
+		got := excerpt(text, limit)
 		if !utf8.ValidString(got) {
 			t.Fatalf("pad=%d: excerpt is not valid UTF-8: %q", pad, got)
 		}
 		if len(got) > limit+len("…") {
 			t.Fatalf("pad=%d: excerpt %q exceeds the cap", pad, got)
 		}
-		if !strings.HasPrefix(s, strings.TrimSuffix(got, "…")) {
+		if !strings.HasPrefix(text, strings.TrimSuffix(got, "…")) {
 			t.Fatalf("pad=%d: excerpt %q is not the opening of the message", pad, got)
 		}
 	}

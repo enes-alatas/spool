@@ -52,22 +52,24 @@ type APIError struct {
 	RetryAfter int
 }
 
-func (e *APIError) Error() string { return fmt.Sprintf("telegram %d: %s", e.Code, e.Desc) }
+func (apiErr *APIError) Error() string {
+	return fmt.Sprintf("telegram %d: %s", apiErr.Code, apiErr.Desc)
+}
 
-func (c *Client) call(ctx context.Context, method string, params any, result any) error {
+func (client *Client) call(ctx context.Context, method string, params any, result any) error {
 	body, err := json.Marshal(params)
 	if err != nil {
 		return err
 	}
-	url := c.base + "/bot" + c.token + "/" + method
+	url := client.base + "/bot" + client.token + "/" + method
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
-		return redactToken(err, c.token)
+		return redactToken(err, client.token)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.http.Do(req)
+	resp, err := client.http.Do(req)
 	if err != nil {
-		return redactToken(err, c.token)
+		return redactToken(err, client.token)
 	}
 	defer resp.Body.Close()
 	var ar apiResponse
@@ -75,11 +77,11 @@ func (c *Client) call(ctx context.Context, method string, params any, result any
 		return fmt.Errorf("telegram %s: decode: %w", method, err)
 	}
 	if !ar.OK {
-		e := &APIError{Code: ar.ErrorCode, Desc: ar.Description}
+		apiErr := &APIError{Code: ar.ErrorCode, Desc: ar.Description}
 		if ar.Parameters != nil {
-			e.RetryAfter = ar.Parameters.RetryAfter
+			apiErr.RetryAfter = ar.Parameters.RetryAfter
 		}
-		return e
+		return apiErr
 	}
 	if result != nil {
 		return json.Unmarshal(ar.Result, result)
@@ -135,22 +137,22 @@ type Update struct {
 	Message  *Message `json:"message"`
 }
 
-func (c *Client) GetMe(ctx context.Context) (*User, error) {
-	var u User
-	if err := c.call(ctx, "getMe", struct{}{}, &u); err != nil {
+func (client *Client) GetMe(ctx context.Context) (*User, error) {
+	var user User
+	if err := client.call(ctx, "getMe", struct{}{}, &user); err != nil {
 		return nil, err
 	}
-	return &u, nil
+	return &user, nil
 }
 
-func (c *Client) GetUpdates(ctx context.Context, offset int64, timeoutSec int) ([]Update, error) {
+func (client *Client) GetUpdates(ctx context.Context, offset int64, timeoutSec int) ([]Update, error) {
 	params := map[string]any{
 		"offset":          offset,
 		"timeout":         timeoutSec,
 		"allowed_updates": []string{"message"},
 	}
 	var updates []Update
-	if err := c.call(ctx, "getUpdates", params, &updates); err != nil {
+	if err := client.call(ctx, "getUpdates", params, &updates); err != nil {
 		return nil, err
 	}
 	return updates, nil
@@ -160,7 +162,7 @@ func (c *Client) GetUpdates(ctx context.Context, offset int64, timeoutSec int) (
 // whose message_id is this bot's own reference to it — the only id this bot
 // may later use as a reply target (ADR-0020). replyTo is such an id from
 // this bot's numbering, or 0 for a plain post.
-func (c *Client) SendMessage(ctx context.Context, chatID int64, text string, replyTo int64) (*Message, error) {
+func (client *Client) SendMessage(ctx context.Context, chatID int64, text string, replyTo int64) (*Message, error) {
 	// plain text (no parse_mode) avoids entity-escaping pitfalls
 	params := map[string]any{"chat_id": chatID, "text": text}
 	if replyTo != 0 {
@@ -172,7 +174,7 @@ func (c *Client) SendMessage(ctx context.Context, chatID int64, text string, rep
 		}
 	}
 	var sent Message
-	if err := c.call(ctx, "sendMessage", params, &sent); err != nil {
+	if err := client.call(ctx, "sendMessage", params, &sent); err != nil {
 		return nil, err
 	}
 	return &sent, nil
