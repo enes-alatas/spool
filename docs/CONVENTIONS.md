@@ -101,6 +101,16 @@ ADR instead.*
   `gh issue create --parent n`, or `gh issue edit <child> --parent n` after the
   fact. The `Part of` line stays, because PR bodies and search read it and a
   sub-issue link is invisible to both.
+- **The issue body is the spec of record; comments are history** (#388). A
+  loop rotates and reads the body first, so a decision that exists only in
+  a comment gets asked again: #230's body still called the WebSocket
+  dependency open four days after the operator settled it. Whoever records
+  an operator decision on an issue amends the body in the same sitting. The
+  affected section states the decision with its date, and the Open
+  questions entry is removed or marked settled. The body may cite the
+  comment, but a reader of the body alone must get the current answer. A
+  reviewer checks the body against the thread before approving a PR that
+  closes the issue.
 - **PRs** follow `.github/pull_request_template.md`: link the issue (`Closes #n` /
   `Part of #n` — if none, say why), and cite ADRs for seam changes and new deps.
 - **Decisions**: any choice that constrains future work gets an ADR in `docs/adr/`
@@ -347,7 +357,7 @@ agents — Claude sessions today, Spool's own loops from L2.*
   keep working — but only when the work stays correct under either answer, or
   the answer is cheap to fold. The PR carries the `Operator decision pending:`
   line until the answer arrives, and the answer is recorded where the decision
-  lives (an issue comment or an ADR), never only in chat.
+  lives (the issue's body, or an ADR), never only in chat.
 - **Scoped delegation**: the interview may end with the human delegating the
   decision back ("you decide"). That delegation is per-decision: it covers
   exactly the questions put to the human, and the ADR or issue recording the
