@@ -96,3 +96,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 11:35: Terra on #55; #230 slice 2 finished, parked on feat/slack-contract (no PR) until L2 clears.
 - 11:45: Enes: the L2 reorder was an over-read of a status question; don't interrupt devs, ask first. Reversed: Terra opens slice 2 PR, then #55.
 - 12:30: Quinn: #344 (itest port race) hit CI three times today. Slotted for Terra after #396 (slice 2 PR), before #55. Open: #393 (Iris), #396 (Terra).
+- 12:30: Enes yes on the AGENTS.md line. Filed #397 → Iris after #393. Mission-text line is Enes's edit.
