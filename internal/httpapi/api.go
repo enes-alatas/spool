@@ -119,6 +119,7 @@ func (server *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/loops/{name}/events", server.handleLoopEvents)
 	mux.HandleFunc("GET /api/loops/{name}/turns", server.handleLoopTurns)
 	mux.HandleFunc("GET /api/loops/{name}/telegram/status", server.handleTelegramStatus)
+	mux.HandleFunc("GET /api/loops/{name}/slack/status", server.handleSlackStatus)
 	mux.HandleFunc("PUT /api/loops/{name}/owner", server.handlePutOwner)
 	mux.HandleFunc("GET /api/loops/{name}/secrets", server.handleListSecrets)
 	mux.HandleFunc("PUT /api/loops/{name}/secrets/{key}", server.handlePutSecret)
@@ -257,8 +258,14 @@ type loopView struct {
 	// someone resolves it, not when a clock decides the operator is done
 	// looking. Always present, so a measured zero is distinguishable from a
 	// server too old to measure — the lesson of context_fill_pct (#122).
-	Undelivered       int    `json:"undelivered"`
-	HasTGToken        bool   `json:"has_tg_token"`
+	Undelivered int  `json:"undelivered"`
+	HasTGToken  bool `json:"has_tg_token"`
+	// HasSlackTokens reports a stored Slack app; the tokens themselves are
+	// write-only, like the Telegram token.
+	HasSlackTokens bool `json:"has_slack_tokens"`
+	// Surface is the platform the loop has an identity on: "telegram",
+	// "slack", or "" for none (ADR-0029 item 7).
+	Surface           string `json:"surface"`
 	WorkstationUp     bool   `json:"workstation_up"`
 	WorkstationDetail string `json:"workstation_detail,omitempty"`
 	// ContextTokens is the context occupancy the last finished turn of the
@@ -316,7 +323,8 @@ func localDayStart(now time.Time) (int64, string) {
 }
 
 func (server *Server) view(ctx context.Context, loopRecord *store.Loop) *loopView {
-	out := &loopView{Loop: loopRecord, State: loop.StateAsleep, HasTGToken: loopRecord.TGBotToken != "", WorkstationUp: true,
+	out := &loopView{Loop: loopRecord, State: loop.StateAsleep, HasTGToken: loopRecord.TGBotToken != "",
+		HasSlackTokens: loopRecord.SlackBotToken != "", Surface: loopRecord.Surface(), WorkstationUp: true,
 		OwnerDMReady: loopRecord.OwnerTGUserID != 0 && loopRecord.OwnerDMChatID != 0, InFleetChannel: !loopRecord.OutsideFleetChannel}
 	if loopRecord.OwnerTGUserID != 0 {
 		if sender, err := server.Store.TGSenders().Get(ctx, loopRecord.OwnerTGUserID); err == nil {
@@ -420,6 +428,10 @@ type createLoopReq struct {
 	MaxWakeSec      int     `json:"max_wake_sec"`
 	IdleTimeoutSec  int     `json:"idle_timeout_sec"`
 	TGBotToken      string  `json:"tg_bot_token"`
+	// SlackAppToken and SlackBotToken give the new loop a Slack app instead
+	// of a Telegram bot; both or neither.
+	SlackAppToken string `json:"slack_app_token"`
+	SlackBotToken string `json:"slack_bot_token"`
 	// InFleetChannel places the new loop in the fleet channel or outside
 	// it; absent, the server decides (defaultInFleetChannel).
 	InFleetChannel *bool `json:"in_fleet_channel"`
@@ -539,6 +551,20 @@ func (server *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 		}
 		loopRecord.TGBotUsername = identity.Name
 	}
+	if strings.TrimSpace(req.SlackAppToken) != "" || strings.TrimSpace(req.SlackBotToken) != "" {
+		if loopRecord.TGBotToken != "" {
+			server.refuse(w, oneSurface(""))
+			return
+		}
+		identity, refusal := server.slackIdentity(r.Context(), loopRecord.ID, req.SlackAppToken, req.SlackBotToken)
+		if refusal != nil {
+			server.refuse(w, refusal)
+			return
+		}
+		loopRecord.SlackAppToken, loopRecord.SlackBotToken = identity.AppToken, identity.BotToken
+		loopRecord.SlackBotUserID, loopRecord.SlackBotName = identity.BotUserID, identity.BotName
+		loopRecord.SlackTeamID, loopRecord.SlackTeamName = identity.TeamID, identity.TeamName
+	}
 
 	if loopRecord.Runtime == store.RuntimeDocker {
 		// The workstation is the workspace (ADR-0017): claude's cwd is the
@@ -577,7 +603,8 @@ func (server *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// A new loop is minted with a hub MCP token, and may arrive with a bot
-	// token: two secret values that did not exist a moment ago.
+	// token or a Slack app's pair: secret values that did not exist a
+	// moment ago.
 	server.secretsChanged(r.Context())
 	server.Manager.Add(loopRecord)
 	server.loopChanged(r.Context(), loopRecord.ID)
@@ -682,7 +709,11 @@ type patchLoopReq struct {
 	MaxWakeSec      *int    `json:"max_wake_sec"`
 	IdleTimeoutSec  *int    `json:"idle_timeout_sec"`
 	TGBotToken      *string `json:"tg_bot_token"`
-	InFleetChannel  *bool   `json:"in_fleet_channel"`
+	// SlackAppToken and SlackBotToken attach, rotate or (both "") detach the
+	// loop's Slack app. Both or neither.
+	SlackAppToken  *string `json:"slack_app_token"`
+	SlackBotToken  *string `json:"slack_bot_token"`
+	InFleetChannel *bool   `json:"in_fleet_channel"`
 }
 
 // patchLoopResp is the saved loop with one field the loop itself does not
@@ -749,6 +780,36 @@ func (server *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 		outside := !*req.InFleetChannel
 		edit.OutsideFleetChannel = &outside
 	}
+	// One surface per loop (ADR-0029 item 7), judged on what the loop would
+	// hold after this request and before any live call is made.
+	slackGiven := req.SlackAppToken != nil || req.SlackBotToken != nil
+	if slackGiven && (req.SlackAppToken == nil || req.SlackBotToken == nil) {
+		server.jsonErr(w, 400, "slack_app_token and slack_bot_token go together: one Slack app is one pair")
+		return
+	}
+	holdsTelegram := loopRecord.TGBotToken != ""
+	if req.TGBotToken != nil {
+		holdsTelegram = strings.TrimSpace(*req.TGBotToken) != ""
+	}
+	holdsSlack := loopRecord.SlackBotToken != ""
+	if slackGiven {
+		holdsSlack = strings.TrimSpace(*req.SlackBotToken) != "" || strings.TrimSpace(*req.SlackAppToken) != ""
+	}
+	if holdsTelegram && holdsSlack {
+		server.refuse(w, oneSurface(loopRecord.Surface()))
+		return
+	}
+	if slackGiven {
+		identity, refusal := server.slackIdentity(r.Context(), loopRecord.ID, *req.SlackAppToken, *req.SlackBotToken)
+		if refusal != nil {
+			server.refuse(w, refusal)
+			return
+		}
+		edit.Slack = &identity
+		// Detaching leaves no bot to hold the channel. Rotating keeps it, as
+		// a replaced Telegram token keeps its group.
+		edit.ClearSlackBinding = identity.BotToken == ""
+	}
 	if req.TGBotToken != nil {
 		token := strings.TrimSpace(*req.TGBotToken)
 		username := ""
@@ -772,7 +833,7 @@ func (server *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 		server.storeErr(w, err, "loop")
 		return
 	}
-	if req.TGBotToken != nil {
+	if req.TGBotToken != nil || slackGiven {
 		server.secretsChanged(r.Context())
 	}
 	// The stored row, not the edited copy: everything this request did not
