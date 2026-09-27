@@ -89,3 +89,6 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 21:00: Enes (via Terra) approved a CONVENTIONS rule: issue body is the spec of record, recorded decisions amend it. Filed #388 (documentation, unslotted milestone) → Iris after #380, before #383. #230's body already amended. Open PRs: #380, #382.
 - 21:05: Iris already has #384 (#383) open, CI green, waiting on #230 for a live check. Ruled: review now in fixture mode, live check lands with #230; approval frees Iris for #388. Quinn queue: #380, #382, #384.
 - 21:10: #380 (#372) and #382 (#19 loop pkg) merged. Quinn on #384: gate the token form on loop.surface (today's hub answers 200 and stores nothing); Iris folding. #19 still open, Terra to say whether loop was the last package. L2: 258 182 168 55 (19).
+
+## 2026-09-27 09:00 — morning sweep
+- Merged last night: #384 (#383 Slack web half), #387 (readme), #258 closed (health ok-only, runtime → /api/settings). Terra sliced #230 into 4 PRs (store, hub plumbing, adapter+fakeslack, control-room contract) and opened #390 (slice 1) ahead of the L2 rest; Quinn's findings folded 21:13, re-review pending → nudged. L2: 182 168 55 19. Iris took #388; #381 (fleet list at 200%) next for her. Quinn filed #389 (itest flake, low).
