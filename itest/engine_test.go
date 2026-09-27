@@ -750,3 +750,63 @@ func waitForRetries(t *testing.T, s *server, name string, n int, timeout time.Du
 	t.Fatalf("loop %s scheduled fewer than %d retries", name, n)
 	return nil
 }
+
+// A loop paused while a crash retry is pending is not woken by it: pause
+// holds the loop's work until resume lets it go, and a retry is not an
+// exception. A refused model holds work through the same test, so this
+// covers it too.
+func TestPauseHoldsAPendingCrashRetry(t *testing.T) {
+	workspace := t.TempDir()
+	s := startServer(t, t.TempDir())
+	s.createLoop("held", map[string]any{
+		"workspace_path": workspace,
+		"workspace_mode": "dir",
+	})
+	s.message("held", "first thing")
+	s.waitTurn("held", 30*time.Second, func(tr turn) bool {
+		return strings.Contains(tr.ResultText, "first thing")
+	})
+	s.waitState("held", "asleep", 30*time.Second)
+
+	// the session stops resuming: the next wake dies, and keeps its batch
+	// for a retry
+	broken := filepath.Join(workspace, ".fakeclaude-resume-broken")
+	if err := os.WriteFile(broken, []byte("resume"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s.message("held", "second thing")
+	waits := waitForRetries(t, s, "held", 1, 30*time.Second)
+	s.mustJSON("POST", "/api/loops/held/pause", nil, nil)
+	spawns := countEvents(t, s, "held", "proc_spawn")
+
+	time.Sleep(time.Duration(waits[0])*time.Millisecond + 3*time.Second)
+	if view := s.loop("held"); view.State != "paused" {
+		t.Fatalf("a paused loop is %q after its retry was due", view.State)
+	}
+	if after := countEvents(t, s, "held", "proc_spawn"); after != spawns {
+		t.Fatalf("a paused loop was woken by its crash retry: %d spawns, then %d", spawns, after)
+	}
+
+	// resume lets the held batch go
+	if err := os.Remove(broken); err != nil {
+		t.Fatal(err)
+	}
+	s.mustJSON("POST", "/api/loops/held/resume", nil, nil)
+	s.waitTurn("held", 30*time.Second, func(tr turn) bool {
+		return strings.Contains(tr.ResultText, "second thing")
+	})
+}
+
+// countEvents counts a loop's spool events of one subtype.
+func countEvents(t *testing.T, s *server, name, subtype string) int {
+	t.Helper()
+	var events []spoolEvent
+	s.mustJSON("GET", "/api/loops/"+name+"/events?limit=500", nil, &events)
+	count := 0
+	for _, e := range events {
+		if e.Subtype == subtype {
+			count++
+		}
+	}
+	return count
+}
