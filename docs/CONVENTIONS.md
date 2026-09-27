@@ -339,7 +339,9 @@ agents — Claude sessions today, Spool's own loops from L2.*
   stops for a human interview and gets an ADR: a new dependency (a dev-only one
   skips the ADR, see Dependencies), a seam or prompt-contract change,
   terminology, public API shape, security posture, or spending real plan tokens
-  (tier-3 e2e).
+  (tier-3 e2e). A question from the operator is a question. Reprioritizing or
+  interrupting in-flight work takes an explicit yes; finished work gets its PR
+  before any redirect.
 - **Dependencies** are stdlib-first in Go and the control room alike (#266).
   Every new one stops for a human interview, whatever it reaches, and is
   argued in its PR description. One the shipped binary carries (a module the
