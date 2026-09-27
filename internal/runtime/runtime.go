@@ -70,6 +70,10 @@ type Spec struct {
 type Health struct {
 	Up     bool
 	Detail string // human-readable reason when Up is false
+	// Missing says the loop has no workstation at all: none has been built
+	// yet, or it was removed. The caller, which knows whether the loop has
+	// ever run, decides which (#55).
+	Missing bool
 }
 
 // Runtime owns a loop's workstation: it provisions it, execs claude inside

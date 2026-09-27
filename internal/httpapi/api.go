@@ -293,8 +293,9 @@ type loopView struct {
 	// itself — and "" before any turn has run (#289). The configured model
 	// is Loop.Model; a refused one says so in Loop.ModelRefusal.
 	ResolvedModel string `json:"resolved_model"`
-	// DownReason distinguishes a workstation the operator switched off from
-	// one that died; empty while it is up (ADR-0021).
+	// DownReason says why the workstation is not up, empty while it is:
+	// powered_off, not_provisioned, unauthenticated or unreachable
+	// (ADR-0021 item 5).
 	DownReason string `json:"down_reason"`
 	// OwnerDMReady reports that the loop can message its owner privately:
 	// an owner is configured and has opened a chat with this loop's own

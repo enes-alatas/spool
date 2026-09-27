@@ -363,7 +363,7 @@ func TestHealthReflectsContainerState(t *testing.T) {
 	}
 	awaitHealth(t, rt, spec.LoopID, false, "Exited")
 
-	if health, err := rt.Health(context.Background(), "no-such-loop"); err != nil || health.Up || health.Detail != "workstation not found" {
+	if health, err := rt.Health(context.Background(), "no-such-loop"); err != nil || health.Up || !health.Missing {
 		t.Fatalf("unknown loop health = %+v, %v", health, err)
 	}
 }

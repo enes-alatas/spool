@@ -71,8 +71,10 @@ export interface LoopView {
   workstation_up: boolean
   workstation_detail?: string
   // Why the workstation is down: '' while it is up, 'powered_off' when the
-  // operator switched it off, 'unreachable' when it died on its own.
-  down_reason: '' | 'powered_off' | 'unreachable'
+  // operator switched it off, 'not_provisioned' before a wake has built it,
+  // 'unauthenticated' when there is no Claude token to run under, and
+  // 'unreachable' when it should be running and isn't.
+  down_reason: '' | 'powered_off' | 'not_provisioned' | 'unauthenticated' | 'unreachable'
   // The allowlisted Telegram sender this loop may message privately, and the
   // handle to show for them. Absent when no owner is configured; the handle
   // is absent when the sender record carries no username.
