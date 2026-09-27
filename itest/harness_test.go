@@ -6,15 +6,16 @@
 package itest
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -94,14 +95,13 @@ func startServerOn(t *testing.T, dataDir, mcpHost string, extraArgs ...string) *
 	}
 
 	// The API always stays on loopback, where nothing inside the wall can go.
-	addrs := freeAddrs(t, "127.0.0.1", mcpHost)
-	addr, mcpAddr := addrs[0], addrs[1]
-	_, mcpPort, _ := net.SplitHostPort(mcpAddr)
-
+	// Both ports are the kernel's pick, made by the hub as it binds, and read
+	// back from its log: nothing is reserved here and released, so nothing
+	// else on the machine can take a port before the hub has it (#344).
 	fkState := filepath.Join(dataDir, "fkstate")
 	args := []string{
-		"--listen", addr,
-		"--mcp-listen", mcpAddr,
+		"--listen", "127.0.0.1:0",
+		"--mcp-listen", net.JoinHostPort(mcpHost, "0"),
 		"--data-dir", dataDir,
 		"--claude-bin", fakeBin,
 		"--partial-messages=false",
@@ -116,7 +116,8 @@ func startServerOn(t *testing.T, dataDir, mcpHost string, extraArgs ...string) *
 	t.Cleanup(func() { logFile.Close() })
 
 	cmd.Env = append(os.Environ(), "FAKECLAUDE_STATE="+fkState)
-	cmd.Stdout = io.MultiWriter(os.Stderr, logFile)
+	output, listening := watchListening(io.MultiWriter(os.Stderr, logFile))
+	cmd.Stdout = output
 	cmd.Stderr = cmd.Stdout
 	// Wait copies the hub's output through a pipe after the hub is gone;
 	// the delay bounds that if a child ever holds the pipe open.
@@ -127,8 +128,6 @@ func startServerOn(t *testing.T, dataDir, mcpHost string, extraArgs ...string) *
 
 	s := &server{
 		t:       t,
-		baseURL: "http://" + addr,
-		mcpURL:  "http://" + net.JoinHostPort("127.0.0.1", mcpPort),
 		cmd:     cmd,
 		exited:  make(chan struct{}),
 		dataDir: dataDir,
@@ -137,11 +136,24 @@ func startServerOn(t *testing.T, dataDir, mcpHost string, extraArgs ...string) *
 	}
 	go func() {
 		s.exitErr = cmd.Wait()
+		_ = output.Close()
 		close(s.exited)
 	}()
 	t.Cleanup(s.stop)
 
 	deadline := time.Now().Add(10 * time.Second)
+	select {
+	case bound := <-listening:
+		_, mcpPort, _ := net.SplitHostPort(bound.mcpAddr)
+		s.baseURL = "http://" + bound.addr
+		s.mcpURL = "http://" + net.JoinHostPort("127.0.0.1", mcpPort)
+	case <-s.exited:
+		// A hub that refused its flags looks, at the deadline, just like
+		// one that was slow to start; only this says which it was (#280).
+		t.Fatalf("server exited before it said where it listens (%v); its log is above", s.exitErr)
+	case <-time.After(time.Until(deadline)):
+		t.Fatal("server did not say where it listens within 10s")
+	}
 	for time.Now().Before(deadline) {
 		select {
 		case <-s.exited:
@@ -190,22 +202,41 @@ func (s *server) port(rawURL string) string {
 	return port
 }
 
-// freeAddrs reserves one port per host by binding and releasing it: the
-// orchestrator binds them a moment later, and nothing else on the machine is
-// racing for them. Every port is held until all are drawn, so no two of them
-// can be the same one (#280).
-func freeAddrs(t *testing.T, hosts ...string) []string {
-	t.Helper()
-	addrs := make([]string, 0, len(hosts))
-	for _, host := range hosts {
-		l, err := net.Listen("tcp", host+":0")
-		if err != nil {
-			t.Fatal(err)
+// boundAddrs is where a hub says it listens, from its "spool listening" line.
+type boundAddrs struct{ addr, mcpAddr string }
+
+// watchListening passes a hub's output through to out and reports the
+// addresses on its "spool listening" line, the one place a port of 0 is
+// resolved (#344). Close the returned writer once the hub has exited.
+func watchListening(out io.Writer) (io.WriteCloser, <-chan boundAddrs) {
+	reader, writer := io.Pipe()
+	listening := make(chan boundAddrs, 1)
+	go func() {
+		scanner := bufio.NewScanner(reader)
+		scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+		said := false
+		for scanner.Scan() {
+			line := scanner.Text()
+			_, _ = fmt.Fprintln(out, line)
+			if said || !strings.Contains(line, `msg="spool listening"`) {
+				continue
+			}
+			var bound boundAddrs
+			for _, field := range strings.Fields(line) {
+				if value, ok := strings.CutPrefix(field, "addr="); ok {
+					bound.addr = value
+				} else if value, ok := strings.CutPrefix(field, "mcp_addr="); ok {
+					bound.mcpAddr = value
+				}
+			}
+			listening <- bound
+			said = true
 		}
-		defer func() { _ = l.Close() }()
-		addrs = append(addrs, net.JoinHostPort(host, strconv.Itoa(l.Addr().(*net.TCPAddr).Port)))
-	}
-	return addrs
+		// drain whatever a line too long to scan left behind, so the hub
+		// never blocks writing its log
+		_, _ = io.Copy(out, reader)
+	}()
+	return writer, listening
 }
 
 func (s *server) stop() {
