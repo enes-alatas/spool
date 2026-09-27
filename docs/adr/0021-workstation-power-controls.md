@@ -1,6 +1,6 @@
 # ADR-0021: The operator can power a workstation, and switched-off is not down
 
-Date: 2026-08-20 · Status: accepted · Amended: 2026-09-24 (item 5, model_unrecognized)
+Date: 2026-08-20 · Status: accepted · Amended: 2026-09-24 (item 5, model_unrecognized), 2026-09-27 (item 5, down_reason values)
 
 ## Context
 
@@ -54,6 +54,19 @@ reachable. Rendered naively, a successful power-off shows up as the alert
    **Amendment (2026-09-24, #289):** the precedence gains `model_unrecognized`
    between `workstation_down` and `paused`: a statement about the loop that
    pause cannot fix. It is not a `down_reason`, which stays about the machine.
+
+   **Amendment (2026-09-27, #55):** `unreachable` covered three faults that
+   ask different things of the operator, so `down_reason` gains two values.
+   `not_provisioned`: no workstation exists, and none was ever built for this
+   loop. The runtime seam's `Health` reports the absence as `Missing`, and the
+   actor, which knows whether the workstation has ever been up, decides what
+   it means. It is calm, not the alert: nothing has been lost, and the first
+   wake builds the machine. A workstation that goes missing after the loop has
+   run is still `unreachable`. `unauthenticated`: there is no Claude token to
+   run claude under. It is still the `workstation_down` alert, since the loop
+   cannot run, but its fix is the Settings page, not a power control.
+   `unreachable` now means only what the alert was for: a machine that should
+   be running and isn't.
 6. **A switched-off workstation stays off.** While the intent stands, ticks are
    skipped — not queued, so power-on is not met by a backlog of stale wakes —
    and inbound messages go to the loop's stored inbox without waking it. They

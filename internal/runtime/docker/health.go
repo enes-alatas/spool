@@ -22,7 +22,7 @@ func (rt *Runtime) Health(ctx context.Context, loopID string) (runtime.Health, e
 	if health, ok := fleet[loopID]; ok {
 		return health, nil
 	}
-	return runtime.Health{Up: false, Detail: "workstation not found"}, nil
+	return runtime.Health{Up: false, Missing: true, Detail: "workstation not found"}, nil
 }
 
 func (rt *Runtime) fleetHealth(ctx context.Context) (map[string]runtime.Health, error) {

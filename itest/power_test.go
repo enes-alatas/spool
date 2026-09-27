@@ -170,3 +170,60 @@ func TestDockerFailedPowerOnKeepsTheOffIntent(t *testing.T) {
 			view.State, view.DownReason)
 	}
 }
+
+// A workstation that is not up says which of its faults it has, because each
+// asks something different of the operator (#55): a missing Claude token is
+// fixed in Settings, a loop with no machine yet has nothing to fix, and only a
+// machine that should run and doesn't is the power controls' alert.
+func TestDockerDownReasonNamesTheFault(t *testing.T) {
+	s := startDockerServer(t, t.TempDir())
+
+	// no token: the creation tick cannot run claude, and says why
+	s.mustJSON("PUT", "/api/settings", map[string]any{"claude_oauth_token": ""}, nil)
+	s.createLoop("wsfault", map[string]any{"idle_timeout_sec": 30})
+	loopID := s.loop("wsfault").ID
+	cleanupWorkstation(t, loopID)
+
+	awaitDownReason := func(want, wantState string) {
+		t.Helper()
+		deadline := time.Now().Add(20 * time.Second)
+		for {
+			view := s.loop("wsfault")
+			if view.DownReason == want && view.State == wantState {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("down_reason=%q state=%q, want %q and %q", view.DownReason, view.State, want, wantState)
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+	}
+	awaitDownReason("unauthenticated", "workstation_down")
+
+	// the token comes back while the loop is paused, so nothing wakes it: no
+	// machine has been built, and that is not an alert
+	s.mustJSON("POST", "/api/loops/wsfault/pause", nil, nil)
+	s.mustJSON("PUT", "/api/settings", map[string]any{"claude_oauth_token": dockerTestToken}, nil)
+	awaitDownReason("not_provisioned", "paused")
+	// and the failed wake's retry, due 10s after it, waits for the resume
+	time.Sleep(12 * time.Second)
+	if view := s.loop("wsfault"); view.DownReason != "not_provisioned" || view.State != "paused" {
+		t.Fatalf("a paused loop was retried: down_reason=%q state=%q", view.DownReason, view.State)
+	}
+
+	// the first wake builds it
+	s.mustJSON("POST", "/api/loops/wsfault/resume", nil, nil)
+	s.message("wsfault", "build the machine")
+	s.waitTurn("wsfault", 60*time.Second, func(tr turn) bool {
+		return strings.Contains(tr.ResultText, "build the machine")
+	})
+	if view := s.loop("wsfault"); !view.WorkstationUp || view.DownReason != "" {
+		t.Fatalf("after the first wake: up=%v down_reason=%q, want up with no reason", view.WorkstationUp, view.DownReason)
+	}
+
+	// a machine that should run and doesn't is the alert
+	if out, err := exec.Command("docker", "stop", "--time", "1", "spool-ws-"+loopID).CombinedOutput(); err != nil {
+		t.Fatalf("docker stop: %v (%s)", err, out)
+	}
+	awaitDownReason("unreachable", "workstation_down")
+}

@@ -46,9 +46,20 @@ const (
 )
 
 // Why a workstation is down, for the control room: nothing when it is up,
-// and otherwise whether the operator meant it.
+// and otherwise which of these it is, since each asks something different
+// of the operator (ADR-0021 item 5, #55).
 const (
-	DownReasonPoweredOff  = "powered_off"
+	// DownReasonPoweredOff: the operator switched it off. Calm.
+	DownReasonPoweredOff = "powered_off"
+	// DownReasonNotProvisioned: there is no workstation, and none has ever
+	// been seen up, so none was built. Calm: the first wake builds it. A
+	// workstation that goes missing after that is unreachable.
+	DownReasonNotProvisioned = "not_provisioned"
+	// DownReasonUnauthenticated: the machine may be fine, but there is no
+	// Claude token to run claude under. The fix is on the Settings page, not
+	// in the power controls.
+	DownReasonUnauthenticated = "unauthenticated"
+	// DownReasonUnreachable: it should be running and isn't. The alert.
 	DownReasonUnreachable = "unreachable"
 )
 
@@ -155,15 +166,17 @@ type Actor struct {
 	deps       Deps
 	cmds       chan cmd
 	stateSnap  atomic.Value // string; last published state, for REST reads
-	healthSnap atomic.Value // runtime.Health; last workstation poll, for REST reads
+	healthSnap atomic.Value // workstationSnap; last workstation poll, for REST reads
 	offSnap    atomic.Bool  // the operator's power-off intent, for REST reads
 
 	// goroutine-owned state below
 	loop         store.Loop
 	state        string
 	paused       bool
-	wsDown       bool   // workstation unreachable; overlays the state
-	wsDetail     string // why, when wsDown
+	wsDown       bool   // workstation down and the operator must act; overlays the state
+	wsReason     string // the down_reason, when the workstation is not up
+	wsDetail     string // why, when the workstation is not up
+	wsEverUp     bool   // seen up once, so built: missing after that is lost, not unbuilt
 	proc         runtime.Proc
 	procEvents   <-chan claude.Event
 	inbox        []Envelope
@@ -234,11 +247,16 @@ func NewActor(deps Deps, loopRecord *store.Loop) *Actor {
 	actor.handoffNote = loopRecord.HandoffNote
 	actor.handoffReason = loopRecord.RotateReason
 	actor.offSnap.Store(loopRecord.WorkstationOff)
-	actor.healthSnap.Store(runtime.Health{Up: true}) // optimistic until the first poll
+	actor.healthSnap.Store(workstationSnap{Health: runtime.Health{Up: true}}) // optimistic until the first poll
+	// a loop that has finished a turn had a workstation once, so one missing
+	// after a restart was lost rather than never built
+	if _, err := deps.Store.Turns().Latest(context.Background(), loopRecord.ID); err == nil {
+		actor.wsEverUp = true
+	}
 	if loopRecord.WorkstationOff {
 		// switched off before the orchestrator restarted: it is still off,
 		// and still calmly so
-		actor.healthSnap.Store(runtime.Health{Up: false, Detail: poweredOffDetail})
+		actor.healthSnap.Store(workstationSnap{Health: runtime.Health{Up: false, Detail: poweredOffDetail}})
 	}
 	actor.idleTimer = time.NewTimer(time.Hour)
 	actor.idleTimer.Stop()
@@ -469,7 +487,7 @@ func (actor *Actor) wake() {
 	loopRuntime := actor.deps.runtimeFor(actor.loop.Runtime)
 	if loopRuntime == nil {
 		actor.log().Error("workstation not ready", "err", fmt.Errorf("no %q runtime available", actor.loop.Runtime))
-		actor.setWorkstationDown(fmt.Sprintf("no %q runtime available", actor.loop.Runtime))
+		actor.setWorkstationDown(DownReasonUnreachable, fmt.Sprintf("no %q runtime available", actor.loop.Runtime))
 		actor.crashBackoff()
 		return
 	}
@@ -479,11 +497,11 @@ func (actor *Actor) wake() {
 		switch {
 		case err != nil:
 			actor.log().Error("workstation not ready", "err", err)
-			actor.setWorkstationDown(err.Error())
+			actor.setWorkstationDown(DownReasonUnreachable, err.Error())
 			actor.crashBackoff()
 			return
 		case token == "":
-			actor.setWorkstationDown(noClaudeTokenDetail)
+			actor.setWorkstationDown(DownReasonUnauthenticated, noClaudeTokenDetail)
 			actor.crashBackoff()
 			return
 		}
@@ -495,21 +513,21 @@ func (actor *Actor) wake() {
 	secrets, err := actor.deps.Store.LoopSecrets().List(ctx, actor.loop.ID)
 	if err != nil {
 		actor.log().Error("workstation not ready", "err", err)
-		actor.setWorkstationDown(err.Error())
+		actor.setWorkstationDown(DownReasonUnreachable, err.Error())
 		actor.crashBackoff()
 		return
 	}
 	spec.Env = buildExecEnv(system, secrets)
 	if err := loopRuntime.Ensure(ctx, spec); err != nil {
 		actor.log().Error("workstation not ready", "err", err)
-		actor.setWorkstationDown(err.Error())
+		actor.setWorkstationDown(DownReasonUnreachable, err.Error())
 		actor.crashBackoff()
 		return
 	}
 	proc, err := loopRuntime.Start(ctx, spec)
 	if err != nil {
 		actor.log().Error("spawn failed", "err", err)
-		actor.setWorkstationDown(err.Error())
+		actor.setWorkstationDown(DownReasonUnreachable, err.Error())
 		actor.crashBackoff()
 		return
 	}
@@ -1508,7 +1526,7 @@ func (actor *Actor) power(verb string) error {
 			// changed nothing, and the caller gets the error
 			actor.checkWorkstation()
 		} else {
-			actor.setWorkstationDown(err.Error())
+			actor.setWorkstationDown(DownReasonUnreachable, err.Error())
 		}
 		return err
 	}
@@ -1591,27 +1609,28 @@ func (actor *Actor) checkWorkstation() {
 		// don't poll something the operator switched off: it is down, and
 		// the reason is already known
 		actor.wsDown = false
+		actor.wsReason = ""
 		actor.wsDetail = ""
-		actor.healthSnap.Store(runtime.Health{Up: false, Detail: poweredOffDetail})
+		actor.healthSnap.Store(workstationSnap{Health: runtime.Health{Up: false, Detail: poweredOffDetail}})
 		actor.publishState()
 		actor.publishWorkstation()
 		return
 	}
 	loopRuntime := actor.deps.runtimeFor(actor.loop.Runtime)
 	if loopRuntime == nil {
-		actor.setWorkstationDown(fmt.Sprintf("no %q runtime available", actor.loop.Runtime))
+		actor.setWorkstationDown(DownReasonUnreachable, fmt.Sprintf("no %q runtime available", actor.loop.Runtime))
 		return
 	}
 	if needsClaudeToken(loopRuntime) {
 		token, err := actor.claudeToken(context.Background())
 		switch {
 		case err != nil:
-			actor.setWorkstationDown(err.Error())
+			actor.setWorkstationDown(DownReasonUnreachable, err.Error())
 			return
 		case token == "":
 			// A contained loop can't run without the operator token; say so
 			// here too, so the poll doesn't overwrite it with "not found".
-			actor.setWorkstationDown(noClaudeTokenDetail)
+			actor.setWorkstationDown(DownReasonUnauthenticated, noClaudeTokenDetail)
 			return
 		}
 	}
@@ -1620,11 +1639,14 @@ func (actor *Actor) checkWorkstation() {
 	health, err := loopRuntime.Health(ctx, actor.loop.ID)
 	switch {
 	case err != nil:
-		actor.setWorkstationDown(err.Error())
+		actor.setWorkstationDown(DownReasonUnreachable, err.Error())
 	case health.Up:
 		actor.setWorkstationUp()
+	case health.Missing && !actor.wsEverUp:
+		// never built: nothing has been lost
+		actor.setWorkstationDown(DownReasonNotProvisioned, health.Detail)
 	default:
-		actor.setWorkstationDown(health.Detail)
+		actor.setWorkstationDown(DownReasonUnreachable, health.Detail)
 	}
 }
 
@@ -1639,45 +1661,66 @@ func (actor *Actor) healthInterval() time.Duration {
 	return interval + jitter
 }
 
-func (actor *Actor) setWorkstationDown(detail string) {
-	actor.healthSnap.Store(runtime.Health{Up: false, Detail: detail})
-	if actor.wsDown && actor.wsDetail == detail {
+// setWorkstationDown records a workstation that is not up, and why. Every
+// reason but not_provisioned raises the workstation_down alert: a loop that
+// has never been woken has lost nothing, and its next wake builds the machine.
+func (actor *Actor) setWorkstationDown(reason, detail string) {
+	actor.healthSnap.Store(workstationSnap{Health: runtime.Health{Up: false, Detail: detail}, reason: reason})
+	alert := reason != DownReasonNotProvisioned
+	if actor.wsReason == reason && actor.wsDetail == detail && actor.wsDown == alert {
 		return
 	}
-	wasUp := !actor.wsDown
-	actor.wsDown = true
+	raised := alert && !actor.wsDown
+	actor.wsDown = alert
+	actor.wsReason = reason
 	actor.wsDetail = detail
-	if wasUp {
-		actor.storeSpoolEvent("workstation_down", fmt.Sprintf(`{"detail":%q}`, detail))
-		actor.log().Warn("workstation down", "detail", detail)
+	if raised {
+		actor.storeSpoolEvent("workstation_down", fmt.Sprintf(`{"reason":%q,"detail":%q}`, reason, detail))
+		actor.log().Warn("workstation down", "reason", reason, "detail", detail)
 	}
 	actor.publishState()
 	actor.publishWorkstation()
 }
 
 func (actor *Actor) setWorkstationUp() {
-	actor.healthSnap.Store(runtime.Health{Up: true})
-	if !actor.wsDown {
+	actor.healthSnap.Store(workstationSnap{Health: runtime.Health{Up: true}})
+	actor.wsEverUp = true
+	if actor.wsReason == "" {
 		return
 	}
+	wasAlert := actor.wsDown
 	actor.wsDown = false
+	actor.wsReason = ""
 	actor.wsDetail = ""
-	actor.storeSpoolEvent("workstation_up", "{}")
-	actor.log().Info("workstation up")
+	if wasAlert {
+		actor.storeSpoolEvent("workstation_up", "{}")
+		actor.log().Info("workstation up")
+	}
 	actor.publishState()
 	actor.publishWorkstation()
 }
 
+// workstationSnap is the last workstation verdict, published for reads from
+// other goroutines: the health, and the down_reason when it is not up.
+type workstationSnap struct {
+	runtime.Health
+	reason string
+}
+
 // DownReason says why the workstation is not up: nothing when it is,
-// powered_off when the operator switched it off, unreachable otherwise.
+// powered_off when the operator switched it off, and otherwise the reason
+// the last poll or wake found.
 func (actor *Actor) DownReason() string {
-	if actor.WorkstationHealth().Up {
+	snap, ok := actor.healthSnap.Load().(workstationSnap)
+	switch {
+	case !ok || snap.Up:
 		return ""
-	}
-	if actor.PoweredOff() {
+	case actor.PoweredOff():
 		return DownReasonPoweredOff
+	case snap.reason == "":
+		return DownReasonUnreachable
 	}
-	return DownReasonUnreachable
+	return snap.reason
 }
 
 // PoweredOff reports the operator's power-off intent (safe from any
@@ -1715,8 +1758,8 @@ func (actor *Actor) publishWorkstationVerb(verb string) {
 // WorkstationHealth returns the last observed workstation health (safe from
 // any goroutine; REST reads never touch the runtime).
 func (actor *Actor) WorkstationHealth() runtime.Health {
-	if health, ok := actor.healthSnap.Load().(runtime.Health); ok {
-		return health
+	if snap, ok := actor.healthSnap.Load().(workstationSnap); ok {
+		return snap.Health
 	}
 	return runtime.Health{Up: true}
 }
