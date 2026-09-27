@@ -98,3 +98,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 12:30: Quinn: #344 (itest port race) hit CI three times today. Slotted for Terra after #396 (slice 2 PR), before #55. Open: #393 (Iris), #396 (Terra).
 - 12:30: Enes yes on the AGENTS.md line. Filed #397 → Iris after #393. Mission-text line is Enes's edit.
 - 14:30: merged #393 (#381), #396 (#230 slice 2, contract). #399 (#344 port race) in review. Iris → #397. Iris filed #398 (owner_dm_ready false on Slack, low); Terra: covered by slice 3. L2: 182 168 55 19.
+- 15:25: Iris scope call on #394: dropping the state column cap amends ADR-0027 §9. Ruled yes (cap's reason kept via restack), in-place amendment in the same PR.
