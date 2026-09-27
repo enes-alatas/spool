@@ -71,11 +71,11 @@ type Bridge struct {
 
 // NewBridge builds the bridge. apiBase is the Bot API to talk to; "" means
 // the live one.
-func NewBridge(st store.Store, b *bus.Bus, r *route.Router, log *slog.Logger, apiBase string) *Bridge {
+func NewBridge(st store.Store, publisher *bus.Bus, router *route.Router, log *slog.Logger, apiBase string) *Bridge {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Bridge{store: st, bus: b, router: r, log: log, apiBase: apiBase,
+	return &Bridge{store: st, bus: publisher, router: router, log: log, apiBase: apiBase,
 		bindSettle: defaultBindSettle,
 		pollers:    map[string]*poller{}, dedup: newDedupLRU(dedupSize),
 		pairNotified: map[int64]bool{}, notOwnerNotified: map[string]bool{}}
@@ -86,9 +86,9 @@ func NewBridge(st store.Store, b *bus.Bus, r *route.Router, log *slog.Logger, ap
 // at a stand-in API should call it at all — against the real Telegram the
 // margin is what keeps a newly bound bot from duplicating what the incumbent
 // already ingested. A value of 0 or less keeps the default.
-func (br *Bridge) SetBindSettle(d time.Duration) {
-	if d > 0 {
-		br.bindSettle = d
+func (br *Bridge) SetBindSettle(settle time.Duration) {
+	if settle > 0 {
+		br.bindSettle = settle
 	}
 }
 
@@ -105,9 +105,9 @@ func (br *Bridge) Start(ctx context.Context) {
 		br.log.Error("telegram: list loops", "err", err)
 		return
 	}
-	for _, l := range loops {
-		if l.TGBotToken != "" && l.Status != store.StatusArchived {
-			br.startPoller(l)
+	for _, loopRecord := range loops {
+		if loopRecord.TGBotToken != "" && loopRecord.Status != store.StatusArchived {
+			br.startPoller(loopRecord)
 		}
 	}
 	go br.mirror(ctx)
@@ -118,7 +118,7 @@ func (br *Bridge) Start(ctx context.Context) {
 // ValidateCredential resolves a bot token to its bot username. Telegram has
 // one token per bot, so a refusal is always of the token.
 func (br *Bridge) ValidateCredential(ctx context.Context, credential surface.Credential) (surface.Identity, error) {
-	u, err := NewClientAt(br.apiBase, credential.Token).GetMe(ctx)
+	user, err := NewClientAt(br.apiBase, credential.Token).GetMe(ctx)
 	if err != nil {
 		var refused *APIError
 		if errors.As(err, &refused) {
@@ -126,7 +126,7 @@ func (br *Bridge) ValidateCredential(ctx context.Context, credential surface.Cre
 		}
 		return surface.Identity{}, err
 	}
-	return surface.Identity{Name: u.Username}, nil
+	return surface.Identity{Name: user.Username}, nil
 }
 
 // LoopChanged brings the loop's poller in line with its stored configuration.
@@ -137,20 +137,20 @@ func (br *Bridge) ValidateCredential(ctx context.Context, credential surface.Cre
 // the poller, so a new one starts at 0 and Telegram re-sends everything it
 // still holds, for the message key and the dedup LRU to throw away again.
 func (br *Bridge) LoopChanged(ctx context.Context, loopID string) {
-	l, err := br.store.Loops().Get(ctx, loopID)
+	loopRecord, err := br.store.Loops().Get(ctx, loopID)
 	if err != nil {
 		br.log.Error("telegram: read changed loop", "loop", loopID, "err", err)
 		return
 	}
-	if l.TGBotToken == "" || l.Status == store.StatusArchived {
+	if loopRecord.TGBotToken == "" || loopRecord.Status == store.StatusArchived {
 		br.stopPoller(loopID)
 		return
 	}
-	if p := br.poller(loopID); p != nil && p.token == l.TGBotToken {
+	if bot := br.poller(loopID); bot != nil && bot.token == loopRecord.TGBotToken {
 		return // same bot, still polling: the edit was none of our business
 	}
 	br.stopPoller(loopID)
-	br.startPoller(l)
+	br.startPoller(loopRecord)
 }
 
 func (br *Bridge) LoopRemoved(loopID string) { br.stopPoller(loopID) }
@@ -158,16 +158,16 @@ func (br *Bridge) LoopRemoved(loopID string) { br.stopPoller(loopID) }
 func (br *Bridge) Status(loopID string) any {
 	br.mu.Lock()
 	defer br.mu.Unlock()
-	p, ok := br.pollers[loopID]
+	bot, ok := br.pollers[loopID]
 	if !ok {
 		return map[string]any{"polling": false}
 	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	bot.mu.Lock()
+	defer bot.mu.Unlock()
 	return map[string]any{
 		"polling":        true,
-		"last_update_at": p.lastUpdate,
-		"last_error":     p.lastError,
+		"last_update_at": bot.lastUpdate,
+		"last_error":     bot.lastError,
 	}
 }
 
@@ -201,56 +201,56 @@ type sendReq struct {
 	recordFor int64
 }
 
-func (br *Bridge) startPoller(l *store.Loop) {
+func (br *Bridge) startPoller(loopRecord *store.Loop) {
 	ctx, cancel := context.WithCancel(br.ctx)
-	p := &poller{
-		loopID: l.ID,
-		name:   l.Name,
-		token:  l.TGBotToken,
-		client: NewClientAt(br.apiBase, l.TGBotToken),
+	bot := &poller{
+		loopID: loopRecord.ID,
+		name:   loopRecord.Name,
+		token:  loopRecord.TGBotToken,
+		client: NewClientAt(br.apiBase, loopRecord.TGBotToken),
 		cancel: cancel,
 		sendCh: make(chan sendReq, 128),
 	}
 	br.mu.Lock()
-	br.pollers[l.ID] = p
+	br.pollers[loopRecord.ID] = bot
 	br.mu.Unlock()
-	go br.pollLoop(ctx, p)
-	go br.sendLoop(ctx, p)
-	br.log.Info("telegram poller started", "loop", l.Name, "bot", l.TGBotUsername)
+	go br.pollLoop(ctx, bot)
+	go br.sendLoop(ctx, bot)
+	br.log.Info("telegram poller started", "loop", loopRecord.Name, "bot", loopRecord.TGBotUsername)
 }
 
 func (br *Bridge) stopPoller(loopID string) {
 	br.mu.Lock()
-	p, ok := br.pollers[loopID]
+	bot, ok := br.pollers[loopID]
 	if ok {
 		delete(br.pollers, loopID)
 	}
 	br.mu.Unlock()
 	if ok {
-		p.cancel()
+		bot.cancel()
 	}
 }
 
-func (br *Bridge) pollLoop(ctx context.Context, p *poller) {
+func (br *Bridge) pollLoop(ctx context.Context, bot *poller) {
 	var offset int64
 	backoff := time.Second
 	for ctx.Err() == nil {
-		updates, err := p.client.GetUpdates(ctx, offset, pollTimeoutSec)
+		updates, err := bot.client.GetUpdates(ctx, offset, pollTimeoutSec)
 		if err != nil {
 			if ctx.Err() != nil {
 				return
 			}
-			p.mu.Lock()
-			p.lastError = err.Error()
-			p.mu.Unlock()
+			bot.mu.Lock()
+			bot.lastError = err.Error()
+			bot.mu.Unlock()
 			var apiErr *APIError
 			if errors.As(err, &apiErr) {
 				switch apiErr.Code {
 				case 401:
-					br.log.Error("telegram token invalid; poller stopped", "loop", p.name)
+					br.log.Error("telegram token invalid; poller stopped", "loop", bot.name)
 					return
 				case 409:
-					br.log.Error("telegram 409: another getUpdates consumer for this bot; poller paused 60s", "loop", p.name)
+					br.log.Error("telegram 409: another getUpdates consumer for this bot; poller paused 60s", "loop", bot.name)
 					sleepCtx(ctx, time.Minute)
 					continue
 				case 429:
@@ -263,52 +263,52 @@ func (br *Bridge) pollLoop(ctx context.Context, p *poller) {
 			continue
 		}
 		backoff = time.Second
-		p.mu.Lock()
-		p.lastError = ""
-		p.lastUpdate = time.Now().UnixMilli()
-		p.mu.Unlock()
-		for _, u := range updates {
-			if u.UpdateID >= offset {
-				offset = u.UpdateID + 1
+		bot.mu.Lock()
+		bot.lastError = ""
+		bot.lastUpdate = time.Now().UnixMilli()
+		bot.mu.Unlock()
+		for _, update := range updates {
+			if update.UpdateID >= offset {
+				offset = update.UpdateID + 1
 			}
-			if u.Message != nil {
-				br.handleMessage(ctx, p, u.Message)
+			if update.Message != nil {
+				br.handleMessage(ctx, bot, update.Message)
 			}
 		}
 	}
 }
 
-func (br *Bridge) handleMessage(ctx context.Context, p *poller, m *tgMsgAlias) {
-	if m.From == nil || m.From.IsBot {
+func (br *Bridge) handleMessage(ctx context.Context, bot *poller, message *tgMsgAlias) {
+	if message.From == nil || message.From.IsBot {
 		return // defensive: Telegram shouldn't deliver bot messages at all
 	}
-	text := strings.TrimSpace(m.Text)
+	text := strings.TrimSpace(message.Text)
 	if text == "" {
 		return
 	}
 	author := "someone"
-	if m.From.Username != "" {
-		author = m.From.Username
-	} else if m.From.FirstName != "" {
-		author = m.From.FirstName
+	if message.From.Username != "" {
+		author = message.From.Username
+	} else if message.From.FirstName != "" {
+		author = message.From.FirstName
 	}
 
-	isGroup := m.Chat.Type == "group" || m.Chat.Type == "supergroup"
+	isGroup := message.Chat.Type == "group" || message.Chat.Type == "supergroup"
 
 	// Access gate: only allowlisted senders reach loops or affect state.
 	// Unknown senders get a pending record + pairing code; strangers can't
 	// bind groups, trigger /spool_status, or message loops.
-	if !br.senderAllowed(ctx, p, m, author, isGroup) {
+	if !br.senderAllowed(ctx, bot, message, author, isGroup) {
 		return
 	}
 
 	if isGroup {
-		br.maybeBindGroup(ctx, p, m.Chat.ID)
+		br.maybeBindGroup(ctx, bot, message.Chat.ID)
 	}
 
 	// /spool_status works even with bot privacy mode on and forces binding
 	if strings.HasPrefix(text, "/spool_status") {
-		br.replyStatus(ctx, p, m.Chat.ID)
+		br.replyStatus(ctx, bot, message.Chat.ID)
 		return
 	}
 
@@ -316,26 +316,26 @@ func (br *Bridge) handleMessage(ctx context.Context, p *poller, m *tgMsgAlias) {
 	// not it is the one that ingests it. That sighting is what later lets
 	// this bot's reply thread under the message: it cannot borrow the
 	// ingesting bot's id, which belongs to another numbering (ADR-0020).
-	br.recordSighting(ctx, p, m)
+	br.recordSighting(ctx, bot, message)
 
 	if isGroup {
 		// Every bot in the group sees this message under its own message_id,
 		// so exactly one of them may persist it.
-		if br.groupIngestLoopID(ctx, m.Chat.ID, m.Date) != p.loopID {
+		if br.groupIngestLoopID(ctx, message.Chat.ID, message.Date) != bot.loopID {
 			return
 		}
-		if !br.dedup.Add(dedupKey(p.loopID, m.Chat.ID, m.MessageID)) {
+		if !br.dedup.Add(dedupKey(bot.loopID, message.Chat.ID, message.MessageID)) {
 			return
 		}
 		err := br.router.Ingest(ctx, route.InboundMessage{
 			Origin:      store.OriginTelegramGroup,
 			Author:      author,
 			Text:        text,
-			TGChatID:    m.Chat.ID,
-			TGMessageID: m.MessageID,
-			TGBotLoopID: p.loopID,
-			TGKey:       tgKey(m),
-			ReplyToID:   br.inboundReplyTarget(ctx, p, m),
+			TGChatID:    message.Chat.ID,
+			TGMessageID: message.MessageID,
+			TGBotLoopID: bot.loopID,
+			TGKey:       tgKey(message),
+			ReplyToID:   br.inboundReplyTarget(ctx, bot, message),
 		})
 		if err != nil && !errors.Is(err, store.ErrDuplicate) {
 			br.log.Error("telegram group ingest", "err", err)
@@ -343,31 +343,31 @@ func (br *Bridge) handleMessage(ctx context.Context, p *poller, m *tgMsgAlias) {
 		return
 	}
 
-	if m.Chat.Type == "private" {
-		br.maybeCaptureOwnerDM(ctx, p, m)
-		if !br.ownerOf(ctx, p, m.From.ID) {
-			br.logTurnedAway(p, m, author, "sender is not this loop's owner")
+	if message.Chat.Type == "private" {
+		br.maybeCaptureOwnerDM(ctx, bot, message)
+		if !br.ownerOf(ctx, bot, message.From.ID) {
+			br.logTurnedAway(bot, message, author, "sender is not this loop's owner")
 			// Not the loop's owner. Delivering this would leave the loop
 			// unable to answer — owner_dm addresses the owner, so the reply
 			// would land in someone else's chat. Until non-owner private
 			// conversations are designed, say so instead of going silent
 			// (ADR-0026 amendment).
-			br.notifyNotOwner(ctx, p, m.Chat.ID)
+			br.notifyNotOwner(ctx, bot, message.Chat.ID)
 			return
 		}
-		if !br.dedup.Add(dedupKey(p.loopID, m.Chat.ID, m.MessageID)) {
+		if !br.dedup.Add(dedupKey(bot.loopID, message.Chat.ID, message.MessageID)) {
 			return
 		}
 		err := br.router.Ingest(ctx, route.InboundMessage{
 			Origin:      store.OriginTelegramDM,
 			Author:      author,
 			Text:        text,
-			TGChatID:    m.Chat.ID,
-			TGMessageID: m.MessageID,
-			TGBotLoopID: p.loopID,
-			TGKey:       tgKey(m),
-			ReplyToID:   br.inboundReplyTarget(ctx, p, m),
-			ImplicitTo:  p.loopID,
+			TGChatID:    message.Chat.ID,
+			TGMessageID: message.MessageID,
+			TGBotLoopID: bot.loopID,
+			TGKey:       tgKey(message),
+			ReplyToID:   br.inboundReplyTarget(ctx, bot, message),
+			ImplicitTo:  bot.loopID,
 		})
 		if err != nil && !errors.Is(err, store.ErrDuplicate) {
 			br.log.Error("telegram dm ingest", "err", err)
@@ -405,34 +405,34 @@ func (br *Bridge) groupIngestLoopID(ctx context.Context, chatID, msgDate int64) 
 	br.mu.Lock()
 	defer br.mu.Unlock()
 	ingest := ""
-	for _, l := range loops {
-		if l.TGGroupChatID != chatID || l.Status == store.StatusArchived {
+	for _, loopRecord := range loops {
+		if loopRecord.TGGroupChatID != chatID || loopRecord.Status == store.StatusArchived {
 			continue
 		}
-		if !boundBefore(l, msgDate, br.bindSettle) {
+		if !boundBefore(loopRecord, msgDate, br.bindSettle) {
 			continue
 		}
-		if _, polling := br.pollers[l.ID]; !polling {
+		if _, polling := br.pollers[loopRecord.ID]; !polling {
 			continue
 		}
-		if ingest == "" || l.ID < ingest {
-			ingest = l.ID
+		if ingest == "" || loopRecord.ID < ingest {
+			ingest = loopRecord.ID
 		}
 	}
 	return ingest
 }
 
-// boundBefore reports whether l's bot was bound to its group early enough to
-// ingest a message Telegram dated at msgDate. The settle margin covers the skew
-// between Telegram's clock and ours: erring long only delays a newcomer's
-// first ingest by a few seconds, while erring short would let it duplicate
-// what the incumbent already took. A binding from before this rule existed
-// is recorded as 0 and always qualifies.
-func boundBefore(l *store.Loop, msgDate int64, settle time.Duration) bool {
-	if l.TGGroupBoundAt == 0 {
+// boundBefore reports whether loopRecord's bot was bound to its group early
+// enough to ingest a message Telegram dated at msgDate. The settle margin
+// covers the skew between Telegram's clock and ours: erring long only delays a
+// newcomer's first ingest by a few seconds, while erring short would let it
+// duplicate what the incumbent already took. A binding from before this rule
+// existed is recorded as 0 and always qualifies.
+func boundBefore(loopRecord *store.Loop, msgDate int64, settle time.Duration) bool {
+	if loopRecord.TGGroupBoundAt == 0 {
 		return true
 	}
-	return msgDate > l.TGGroupBoundAt/1000+int64(settle.Seconds())
+	return msgDate > loopRecord.TGGroupBoundAt/1000+int64(settle.Seconds())
 }
 
 // dedupKey identifies a telegram message: the chat, the id, and the bot that
@@ -446,33 +446,33 @@ func dedupKey(loopID string, chatID, messageID int64) string {
 // alike: the chat, the sender, Telegram's own date, and the text. Bots agree
 // on all four while disagreeing on message_id, so it is the only join
 // between one bot's sighting and another's ingested row.
-func tgKey(m *tgMsgAlias) string {
-	sum := sha256.Sum256(fmt.Appendf(nil, "%d|%d|%d|%s", m.Chat.ID, m.From.ID, m.Date, m.Text))
+func tgKey(message *tgMsgAlias) string {
+	sum := sha256.Sum256(fmt.Appendf(nil, "%d|%d|%d|%s", message.Chat.ID, message.From.ID, message.Date, message.Text))
 	return hex.EncodeToString(sum[:16])
 }
 
 // recordSighting stores this bot's own id for a message it received —
 // every inbound message, group or DM, since a DM's only reference is the
 // receiving bot's sighting of it.
-func (br *Bridge) recordSighting(ctx context.Context, p *poller, m *tgMsgAlias) {
-	err := br.store.Messages().RecordSighting(ctx, tgKey(m), p.loopID, m.Chat.ID, m.MessageID, time.Now().UnixMilli())
+func (br *Bridge) recordSighting(ctx context.Context, bot *poller, message *tgMsgAlias) {
+	err := br.store.Messages().RecordSighting(ctx, tgKey(message), bot.loopID, message.Chat.ID, message.MessageID, time.Now().UnixMilli())
 	if err != nil {
-		br.log.Warn("telegram: record sighting", "loop", p.name, "err", err)
+		br.log.Warn("telegram: record sighting", "loop", bot.name, "err", err)
 	}
 }
 
 // recordSentRef maps an internal message to the id Telegram minted for it in
 // this bot's numbering, so a later reply can target it.
-func (br *Bridge) recordSentRef(ctx context.Context, p *poller, req sendReq, sent *Message) {
+func (br *Bridge) recordSentRef(ctx context.Context, bot *poller, req sendReq, sent *Message) {
 	if req.recordFor == 0 || sent == nil || sent.MessageID == 0 {
 		return
 	}
 	err := br.store.Messages().PutRef(ctx, &store.SurfaceRef{
-		MessageID: req.recordFor, BotLoopID: p.loopID,
+		MessageID: req.recordFor, BotLoopID: bot.loopID,
 		TGChatID: req.chatID, TGMessageID: sent.MessageID,
 	})
 	if err != nil {
-		br.log.Warn("telegram: record sent reference", "loop", p.name, "err", err)
+		br.log.Warn("telegram: record sent reference", "loop", bot.name, "err", err)
 	}
 }
 
@@ -494,13 +494,13 @@ func (br *Bridge) recordSentRef(ctx context.Context, p *poller, req sendReq, sen
 // embeds a message as it was sent, so the copy carries a line the stored
 // row does not. A target that resolves to nothing stays 0: the message is
 // delivered as an ordinary one rather than aimed at a guess.
-func (br *Bridge) inboundReplyTarget(ctx context.Context, p *poller, m *tgMsgAlias) int64 {
-	rm := m.ReplyToMessage
+func (br *Bridge) inboundReplyTarget(ctx context.Context, bot *poller, message *tgMsgAlias) int64 {
+	rm := message.ReplyToMessage
 	if rm == nil || rm.From == nil {
 		return 0
 	}
 	msgs := br.store.Messages()
-	if target, err := msgs.ByRef(ctx, p.loopID, m.Chat.ID, rm.MessageID); err == nil {
+	if target, err := msgs.ByRef(ctx, bot.loopID, message.Chat.ID, rm.MessageID); err == nil {
 		return target.ID
 	}
 	if !rm.From.IsBot {
@@ -534,9 +534,9 @@ func (br *Bridge) loopIDOfBot(ctx context.Context, username string) string {
 		br.log.Error("telegram: reply author lookup", "err", err)
 		return ""
 	}
-	for _, l := range loops {
-		if strings.EqualFold(strings.TrimPrefix(l.TGBotUsername, "@"), username) {
-			return l.ID
+	for _, loopRecord := range loops {
+		if strings.EqualFold(strings.TrimPrefix(loopRecord.TGBotUsername, "@"), username) {
+			return loopRecord.ID
 		}
 	}
 	return ""
@@ -595,24 +595,24 @@ type tgMsgAlias = Message
 
 // senderAllowed enforces the allowlist. Unknown senders are registered as
 // pending with a pairing code; on DM they are told the code once per run.
-func (br *Bridge) senderAllowed(ctx context.Context, p *poller, m *tgMsgAlias, author string, isGroup bool) bool {
-	sender, err := br.store.TGSenders().Get(ctx, m.From.ID)
+func (br *Bridge) senderAllowed(ctx context.Context, bot *poller, message *tgMsgAlias, author string, isGroup bool) bool {
+	sender, err := br.store.TGSenders().Get(ctx, message.From.ID)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		br.log.Error("sender lookup", "err", err)
-		br.logTurnedAway(p, m, author, "sender lookup failed")
+		br.logTurnedAway(bot, message, author, "sender lookup failed")
 		return false // fail closed
 	}
 
 	if errors.Is(err, store.ErrNotFound) {
-		via := "dm:" + p.name
+		via := "dm:" + bot.name
 		if isGroup {
-			via = "group:" + p.name
+			via = "group:" + bot.name
 		}
 		now := time.Now().UnixMilli()
 		sender = &store.TGSender{
-			TGUserID:     m.From.ID,
-			Username:     m.From.Username,
-			Display:      strings.TrimSpace(m.From.FirstName),
+			TGUserID:     message.From.ID,
+			Username:     message.From.Username,
+			Display:      strings.TrimSpace(message.From.FirstName),
 			Status:       store.SenderPending,
 			PairCode:     pairCode(),
 			FirstSeenVia: via,
@@ -622,16 +622,16 @@ func (br *Bridge) senderAllowed(ctx context.Context, p *poller, m *tgMsgAlias, a
 		if cerr := br.store.TGSenders().Create(ctx, sender); cerr != nil {
 			if !errors.Is(cerr, store.ErrDuplicate) {
 				br.log.Error("sender create", "err", cerr)
-				br.logTurnedAway(p, m, author, "sender could not be registered")
+				br.logTurnedAway(bot, message, author, "sender could not be registered")
 				return false
 			}
 			// another poller registered them first; re-read
-			if sender, err = br.store.TGSenders().Get(ctx, m.From.ID); err != nil {
-				br.logTurnedAway(p, m, author, "sender registered by another poller but unreadable")
+			if sender, err = br.store.TGSenders().Get(ctx, message.From.ID); err != nil {
+				br.logTurnedAway(bot, message, author, "sender registered by another poller but unreadable")
 				return false
 			}
 		} else {
-			br.log.Info("new telegram sender pending approval", "user", author, "id", m.From.ID)
+			br.log.Info("new telegram sender pending approval", "user", author, "id", message.From.ID)
 			br.bus.Publish(bus.Item{Kind: bus.KindAccess, Payload: sender.Frame()})
 		}
 	}
@@ -640,21 +640,21 @@ func (br *Bridge) senderAllowed(ctx context.Context, p *poller, m *tgMsgAlias, a
 	case store.SenderAllowed:
 		return true
 	case store.SenderBlocked:
-		br.logTurnedAway(p, m, author, "sender is blocked")
+		br.logTurnedAway(bot, message, author, "sender is blocked")
 		return false
 	default: // pending
 		if !isGroup {
 			br.pairMu.Lock()
-			notified := br.pairNotified[m.From.ID]
-			br.pairNotified[m.From.ID] = true
+			notified := br.pairNotified[message.From.ID]
+			br.pairNotified[message.From.ID] = true
 			br.pairMu.Unlock()
 			if !notified {
-				p.enqueueSend(m.Chat.ID, fmt.Sprintf(
+				bot.enqueueSend(message.Chat.ID, fmt.Sprintf(
 					"Spool: you're not authorized yet. Your pairing code is %s — ask the operator to approve you in the Spool control room (Access page).",
 					sender.PairCode))
 			}
 		}
-		br.logTurnedAway(p, m, author, "sender is pending approval")
+		br.logTurnedAway(bot, message, author, "sender is pending approval")
 		return false
 	}
 }
@@ -670,38 +670,38 @@ func (br *Bridge) senderAllowed(ctx context.Context, p *poller, m *tgMsgAlias, a
 // message that will not arrive. The routine returns are deliberately not
 // logged — losing a group ingest election or a dedup hit means another bot
 // took the message, not that it was lost.
-func (br *Bridge) logTurnedAway(p *poller, m *tgMsgAlias, author, reason string) {
-	br.log.Info("telegram inbound discarded", "loop", p.name, "reason", reason,
-		"author", author, "chat_type", m.Chat.Type, "chat_id", m.Chat.ID,
-		"message_id", m.MessageID)
+func (br *Bridge) logTurnedAway(bot *poller, message *tgMsgAlias, author, reason string) {
+	br.log.Info("telegram inbound discarded", "loop", bot.name, "reason", reason,
+		"author", author, "chat_type", message.Chat.Type, "chat_id", message.Chat.ID,
+		"message_id", message.MessageID)
 }
 
 const pairAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 func pairCode() string {
-	var b [6]byte
-	if _, err := rand.Read(b[:]); err != nil {
+	var code [6]byte
+	if _, err := rand.Read(code[:]); err != nil {
 		return "ERRTRY"
 	}
-	for i := range b {
-		b[i] = pairAlphabet[int(b[i])%len(pairAlphabet)]
+	for i := range code {
+		code[i] = pairAlphabet[int(code[i])%len(pairAlphabet)]
 	}
-	return string(b[:])
+	return string(code[:])
 }
 
-func (br *Bridge) maybeBindGroup(ctx context.Context, p *poller, chatID int64) {
-	l, err := br.store.Loops().Get(ctx, p.loopID)
-	if err != nil || l.TGGroupChatID == chatID {
+func (br *Bridge) maybeBindGroup(ctx context.Context, bot *poller, chatID int64) {
+	loopRecord, err := br.store.Loops().Get(ctx, bot.loopID)
+	if err != nil || loopRecord.TGGroupChatID == chatID {
 		return
 	}
 	boundAt := time.Now().UnixMilli()
-	if err := br.store.Loops().SetGroupBinding(ctx, l.ID, chatID, boundAt, boundAt); err != nil {
+	if err := br.store.Loops().SetGroupBinding(ctx, loopRecord.ID, chatID, boundAt, boundAt); err != nil {
 		br.log.Error("group bind", "err", err)
 		return
 	}
-	br.log.Info("telegram group bound", "loop", l.Name, "chat_id", chatID)
-	br.bus.Publish(bus.Item{Kind: bus.KindLoopStatus, LoopID: l.ID, Payload: map[string]any{
-		"loop_id": l.ID, "name": l.Name, "tg_group_bound": true,
+	br.log.Info("telegram group bound", "loop", loopRecord.Name, "chat_id", chatID)
+	br.bus.Publish(bus.Item{Kind: bus.KindLoopStatus, LoopID: loopRecord.ID, Payload: map[string]any{
+		"loop_id": loopRecord.ID, "name": loopRecord.Name, "tg_group_bound": true,
 	}})
 }
 
@@ -711,36 +711,36 @@ func (br *Bridge) maybeBindGroup(ctx context.Context, p *poller, chatID int64) {
 // is that bot's chat, not another's (#73). Only the configured owner's chat
 // is captured: being allowlisted, or messaging first, does not make someone
 // the owner.
-func (br *Bridge) maybeCaptureOwnerDM(ctx context.Context, p *poller, m *tgMsgAlias) {
-	l, err := br.store.Loops().Get(ctx, p.loopID)
-	if err != nil || l.OwnerTGUserID == 0 || l.OwnerTGUserID != m.From.ID {
+func (br *Bridge) maybeCaptureOwnerDM(ctx context.Context, bot *poller, message *tgMsgAlias) {
+	loopRecord, err := br.store.Loops().Get(ctx, bot.loopID)
+	if err != nil || loopRecord.OwnerTGUserID == 0 || loopRecord.OwnerTGUserID != message.From.ID {
 		return
 	}
-	if l.OwnerDMChatID == m.Chat.ID {
+	if loopRecord.OwnerDMChatID == message.Chat.ID {
 		return
 	}
-	if err := br.store.Loops().SetOwnerDMChat(ctx, l.ID, m.Chat.ID, time.Now().UnixMilli()); err != nil {
-		br.log.Error("owner dm capture", "loop", l.Name, "err", err)
+	if err := br.store.Loops().SetOwnerDMChat(ctx, loopRecord.ID, message.Chat.ID, time.Now().UnixMilli()); err != nil {
+		br.log.Error("owner dm capture", "loop", loopRecord.Name, "err", err)
 		return
 	}
-	br.log.Info("owner dm captured", "loop", l.Name, "chat_id", m.Chat.ID)
-	br.bus.Publish(bus.Item{Kind: bus.KindLoopStatus, LoopID: l.ID, Payload: map[string]any{
-		"loop_id": l.ID, "name": l.Name, "owner_dm_ready": true,
+	br.log.Info("owner dm captured", "loop", loopRecord.Name, "chat_id", message.Chat.ID)
+	br.bus.Publish(bus.Item{Kind: bus.KindLoopStatus, LoopID: loopRecord.ID, Payload: map[string]any{
+		"loop_id": loopRecord.ID, "name": loopRecord.Name, "owner_dm_ready": true,
 	}})
 }
 
 // ownerOf reports whether tgUserID is the loop's configured owner.
-func (br *Bridge) ownerOf(ctx context.Context, p *poller, tgUserID int64) bool {
-	l, err := br.store.Loops().Get(ctx, p.loopID)
-	return err == nil && l.OwnerTGUserID != 0 && l.OwnerTGUserID == tgUserID
+func (br *Bridge) ownerOf(ctx context.Context, bot *poller, tgUserID int64) bool {
+	loopRecord, err := br.store.Loops().Get(ctx, bot.loopID)
+	return err == nil && loopRecord.OwnerTGUserID != 0 && loopRecord.OwnerTGUserID == tgUserID
 }
 
 // notifyNotOwner tells a non-owner, once per loop per run, why their DM
 // goes unanswered. The same pacing as the pairing code — a turned away
 // sender should learn the reason, not be answered on every message — but
 // per loop, because each one answers a different owner.
-func (br *Bridge) notifyNotOwner(ctx context.Context, p *poller, chatID int64) {
-	key := fmt.Sprintf("%s:%d", p.loopID, chatID)
+func (br *Bridge) notifyNotOwner(ctx context.Context, bot *poller, chatID int64) {
+	key := fmt.Sprintf("%s:%d", bot.loopID, chatID)
 	br.pairMu.Lock()
 	notified := br.notOwnerNotified[key]
 	br.notOwnerNotified[key] = true
@@ -749,34 +749,34 @@ func (br *Bridge) notifyNotOwner(ctx context.Context, p *poller, chatID int64) {
 		return
 	}
 	owner := "its owner"
-	if l, err := br.store.Loops().Get(ctx, p.loopID); err == nil && l.OwnerTGUserID != 0 {
-		if s, err := br.store.TGSenders().Get(ctx, l.OwnerTGUserID); err == nil && s.Username != "" {
-			owner = "@" + s.Username
+	if loopRecord, err := br.store.Loops().Get(ctx, bot.loopID); err == nil && loopRecord.OwnerTGUserID != 0 {
+		if sender, err := br.store.TGSenders().Get(ctx, loopRecord.OwnerTGUserID); err == nil && sender.Username != "" {
+			owner = "@" + sender.Username
 		}
 	}
-	p.enqueueSend(chatID, fmt.Sprintf(
+	bot.enqueueSend(chatID, fmt.Sprintf(
 		"Spool: %s reads direct messages only from %s for now. Reach it in the group instead.",
-		p.name, owner))
+		bot.name, owner))
 }
 
-func (br *Bridge) replyStatus(ctx context.Context, p *poller, chatID int64) {
-	l, err := br.store.Loops().Get(ctx, p.loopID)
+func (br *Bridge) replyStatus(ctx context.Context, bot *poller, chatID int64) {
+	loopRecord, err := br.store.Loops().Get(ctx, bot.loopID)
 	if err != nil {
 		return
 	}
 	next := "none scheduled"
-	if e, err := br.store.Schedule().Get(ctx, l.ID); err == nil && e.NextTickAt > 0 {
-		next = time.UnixMilli(e.NextTickAt).UTC().Format("15:04 UTC")
+	if entry, err := br.store.Schedule().Get(ctx, loopRecord.ID); err == nil && entry.NextTickAt > 0 {
+		next = time.UnixMilli(entry.NextTickAt).UTC().Format("15:04 UTC")
 	}
-	p.enqueueSend(chatID, fmt.Sprintf("spool: loop %q is %s · next tick %s", l.Name, l.Status, next))
+	bot.enqueueSend(chatID, fmt.Sprintf("spool: loop %q is %s · next tick %s", loopRecord.Name, loopRecord.Status, next))
 }
 
 // --- outbound: per-bot paced sender ---
 
 // enqueueSend queues a bridge notice, which no message row records: a full
 // queue drops it, as it would any notice.
-func (p *poller) enqueueSend(chatID int64, text string) {
-	p.enqueue(sendReq{chatID: chatID, text: text})
+func (bot *poller) enqueueSend(chatID int64, text string) {
+	bot.enqueue(sendReq{chatID: chatID, text: text})
 }
 
 // enqueue splits a send into Telegram-sized chunks. Only the first chunk
@@ -788,14 +788,14 @@ func (p *poller) enqueueSend(chatID int64, text string) {
 // and the caller must record the loss, since the part that would have
 // recorded it never runs. A continuation chunk dropped later is not
 // reported (#302).
-func (p *poller) enqueue(req sendReq) bool {
+func (bot *poller) enqueue(req sendReq) bool {
 	for i, chunk := range splitMessage(req.text, maxMsgLen) {
 		part := sendReq{chatID: req.chatID, text: chunk}
 		if i == 0 {
 			part.replyTo, part.recordFor = req.replyTo, req.recordFor
 		}
 		select {
-		case p.sendCh <- part:
+		case bot.sendCh <- part:
 		default: // queue full: drop rather than block the bridge
 			if i == 0 {
 				return false
@@ -805,13 +805,13 @@ func (p *poller) enqueue(req sendReq) bool {
 	return true
 }
 
-func (br *Bridge) sendLoop(ctx context.Context, p *poller) {
+func (br *Bridge) sendLoop(ctx context.Context, bot *poller) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case req := <-p.sendCh:
-			br.sendWithRetries(ctx, p, req)
+		case req := <-bot.sendCh:
+			br.sendWithRetries(ctx, bot, req)
 			sleepCtx(ctx, sendSpacing)
 		}
 	}
@@ -827,12 +827,12 @@ func (br *Bridge) sendLoop(ctx context.Context, p *poller) {
 // event, so the loop's timeline shows the gap where its words should be.
 // Nothing here is silent (#147) — except a cancelled context, which means the
 // process is going away and there is no live context left to record through.
-func (br *Bridge) sendWithRetries(ctx context.Context, p *poller, req sendReq) {
+func (br *Bridge) sendWithRetries(ctx context.Context, bot *poller, req sendReq) {
 	var lastErr error
 	for attempt := 0; attempt < sendAttempts; attempt++ {
-		sent, err := p.client.SendMessage(ctx, req.chatID, req.text, req.replyTo)
+		sent, err := bot.client.SendMessage(ctx, req.chatID, req.text, req.replyTo)
 		if err == nil {
-			br.recordSentRef(ctx, p, req, sent)
+			br.recordSentRef(ctx, bot, req, sent)
 			br.recordSendResult(ctx, req, nil)
 			return
 		}
@@ -848,12 +848,12 @@ func (br *Bridge) sendWithRetries(ctx context.Context, p *poller, req sendReq) {
 				sleepCtx(ctx, time.Duration(max(apiErr.RetryAfter, 1))*time.Second)
 			}
 		case errors.As(err, &apiErr) && apiErr.Code >= 400 && apiErr.Code < 500:
-			br.failSend(ctx, p, req, err, attempt+1)
+			br.failSend(ctx, bot, req, err, attempt+1)
 			return
 		default:
 			if attempt < sendAttempts-1 {
 				br.log.Warn("telegram send failed; retrying",
-					"loop", p.name, "attempt", attempt+1, "err", err)
+					"loop", bot.name, "attempt", attempt+1, "err", err)
 				sleepCtx(ctx, sendBackoff<<attempt)
 			}
 		}
@@ -861,22 +861,22 @@ func (br *Bridge) sendWithRetries(ctx context.Context, p *poller, req sendReq) {
 			return
 		}
 	}
-	br.failSend(ctx, p, req, lastErr, sendAttempts)
+	br.failSend(ctx, bot, req, lastErr, sendAttempts)
 }
 
 // failSend gives up on a send and leaves the evidence in the two places
 // somebody would look: the message row and the loop's timeline.
-func (br *Bridge) failSend(ctx context.Context, p *poller, req sendReq, err error, attempts int) {
+func (br *Bridge) failSend(ctx context.Context, bot *poller, req sendReq, err error, attempts int) {
 	br.log.Error("telegram send failed; giving up",
-		"loop", p.name, "chat", req.chatID, "attempts", attempts, "err", err)
+		"loop", bot.name, "chat", req.chatID, "attempts", attempts, "err", err)
 	br.recordSendResult(ctx, req, err)
-	br.recordSendFailedEvent(ctx, p.loopID, br.chatName(ctx, p, req.chatID), attempts, err.Error(), req.text)
+	br.recordSendFailedEvent(ctx, bot.loopID, br.chatName(ctx, bot, req.chatID), attempts, err.Error(), req.text)
 }
 
 // recordSendFailedEvent puts a lost send on its loop's timeline, where the
 // operator reading that loop learns its words never left the machine.
 func (br *Bridge) recordSendFailedEvent(ctx context.Context, loopID, chat string, attempts int, sendErr, text string) {
-	e := &store.Event{
+	event := &store.Event{
 		LoopID:  loopID,
 		TS:      time.Now().UnixMilli(),
 		Type:    "spool",
@@ -884,11 +884,11 @@ func (br *Bridge) recordSendFailedEvent(ctx context.Context, loopID, chat string
 		Payload: fmt.Sprintf(`{"chat":%q,"attempts":%d,"error":%q,"text":%q}`,
 			chat, attempts, sendErr, excerpt(text, excerptLen)),
 	}
-	if _, insErr := br.store.Events().Insert(ctx, e); insErr != nil {
+	if _, insErr := br.store.Events().Insert(ctx, event); insErr != nil {
 		br.log.Error("telegram: record send failure", "loop", loopID, "err", insErr)
 		return
 	}
-	br.bus.Publish(bus.Item{Kind: bus.KindAgentEvent, LoopID: loopID, Payload: e})
+	br.bus.Publish(bus.Item{Kind: bus.KindAgentEvent, LoopID: loopID, Payload: event})
 }
 
 // errUnsentAtStop is the failure a send carries when a hub starts and finds
@@ -912,9 +912,9 @@ func (br *Bridge) failInterruptedSends(ctx context.Context) {
 		br.log.Error("telegram: fail interrupted sends", "err", err)
 		return
 	}
-	for _, m := range lost {
-		br.log.Warn("telegram: send unsettled at startup", "message", m.ID, "loop", m.FromLoopID)
-		br.recordSendFailedEvent(ctx, m.FromLoopID, conversationChat(m.Conversation), 0, errUnsentAtStop, m.Text)
+	for _, message := range lost {
+		br.log.Warn("telegram: send unsettled at startup", "message", message.ID, "loop", message.FromLoopID)
+		br.recordSendFailedEvent(ctx, message.FromLoopID, conversationChat(message.Conversation), 0, errUnsentAtStop, message.Text)
 	}
 }
 
@@ -934,18 +934,18 @@ func conversationChat(conversation string) string {
 // chatName says which conversation a send was aimed at, in the operator's
 // terms rather than Telegram's. A chat id names nothing a reader knows; what
 // they need from a lost message is who never heard it.
-func (br *Bridge) chatName(ctx context.Context, p *poller, chatID int64) string {
-	l, err := br.store.Loops().Get(ctx, p.loopID)
+func (br *Bridge) chatName(ctx context.Context, bot *poller, chatID int64) string {
+	loopRecord, err := br.store.Loops().Get(ctx, bot.loopID)
 	if err != nil {
 		// The operator reads "a chat" either way, but a store that cannot be
 		// read during a send failure is a second problem, not a naming one.
-		br.log.Warn("telegram: name chat for send failure", "loop", p.name, "err", err)
+		br.log.Warn("telegram: name chat for send failure", "loop", bot.name, "err", err)
 		return "a chat"
 	}
 	switch chatID {
-	case l.TGGroupChatID:
+	case loopRecord.TGGroupChatID:
 		return "the group"
-	case l.OwnerDMChatID:
+	case loopRecord.OwnerDMChatID:
 		return "the owner"
 	default:
 		return "a chat"
@@ -998,20 +998,20 @@ func (br *Bridge) recordSendResult(ctx context.Context, req sendReq, err error) 
 // enough to recognise which message it was, not the message over again.
 const excerptLen = 200
 
-// excerpt keeps the opening of s, within n bytes. The head, because a message
-// is recognised by how it starts — the same choice quotePrefix and prompt.go's
-// truncate make. The cut walks back to a rune boundary: slicing bytes at an
-// arbitrary offset halves a multi-byte character, and the note then begins in
-// a stray continuation byte.
-func excerpt(s string, n int) string {
-	if len(s) <= n {
-		return s
+// excerpt keeps the opening of text, within limit bytes. The head, because a
+// message is recognised by how it starts — the same choice quotePrefix and
+// prompt.go's truncate make. The cut walks back to a rune boundary: slicing
+// bytes at an arbitrary offset halves a multi-byte character, and the note then
+// begins in a stray continuation byte.
+func excerpt(text string, limit int) string {
+	if len(text) <= limit {
+		return text
 	}
-	cut := n
-	for cut > 0 && !utf8.RuneStart(s[cut]) {
+	cut := limit
+	for cut > 0 && !utf8.RuneStart(text[cut]) {
 		cut--
 	}
-	return s[:cut] + "…"
+	return text[:cut] + "…"
 }
 
 // --- mirroring ---
@@ -1021,8 +1021,8 @@ func (br *Bridge) mirror(ctx context.Context) {
 	// Both kinds, one path: a retry (#269) is the same send of the same row,
 	// asked for by the operator instead of by the loop, and anything the
 	// mirror rules decide about a message must decide the same way twice.
-	items, cancel := br.bus.Subscribe(func(i bus.Item) bool {
-		return i.Kind == bus.KindMessage || i.Kind == bus.KindSendRetry
+	items, cancel := br.bus.Subscribe(func(item bus.Item) bool {
+		return item.Kind == bus.KindMessage || item.Kind == bus.KindSendRetry
 	})
 	defer cancel()
 	for {
@@ -1054,7 +1054,7 @@ func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 	if mp.Origin != store.OriginLoop {
 		return
 	}
-	p := br.poller(mp.FromLoopID)
+	bot := br.poller(mp.FromLoopID)
 	switch mp.Conversation {
 	case store.ConversationGroup:
 		// a loop's explicit group send: post to its bound group as its
@@ -1064,7 +1064,7 @@ func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 		// it, normal for a fleet without telegram, so the message stays
 		// on the hub. A bound bot with no poller is the same internal
 		// fault as the owner_dm case below.
-		l, err := br.store.Loops().Get(ctx, mp.FromLoopID)
+		loopRecord, err := br.store.Loops().Get(ctx, mp.FromLoopID)
 		if err != nil {
 			br.log.Warn("telegram: read loop for group delivery", "loop", mp.FromLoopID, "err", err)
 			if mp.Mirror == store.MirrorPending {
@@ -1072,16 +1072,16 @@ func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 			}
 			return
 		}
-		if l.TGBotToken == "" || l.TGGroupChatID == 0 {
+		if loopRecord.TGBotToken == "" || loopRecord.TGGroupChatID == 0 {
 			br.stayOnHub(ctx, mp)
 			return
 		}
-		if p == nil {
+		if bot == nil {
 			br.failUnsendable(ctx, mp, "group delivery: loop's bot is not running")
 			return
 		}
-		anchor, text := br.render(ctx, mp, l.TGGroupChatID)
-		if !p.enqueue(sendReq{chatID: l.TGGroupChatID, text: text, replyTo: anchor, recordFor: mp.ID}) {
+		anchor, text := br.render(ctx, mp, loopRecord.TGGroupChatID)
+		if !bot.enqueue(sendReq{chatID: loopRecord.TGGroupChatID, text: text, replyTo: anchor, recordFor: mp.ID}) {
 			br.failUnsendable(ctx, mp, errQueueFull)
 		}
 	case store.ConversationOwnerDM:
@@ -1092,7 +1092,7 @@ func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 		// the loop had a bot — so a miss on either here is an internal
 		// fault, not a model error, and must not drop the private
 		// message silently.
-		if p == nil {
+		if bot == nil {
 			br.failUnsendable(ctx, mp, "owner dm delivery: loop has no bot")
 			return
 		}
@@ -1101,7 +1101,7 @@ func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 			return
 		}
 		anchor, text := br.render(ctx, mp, mp.OwnerDMChat)
-		if !p.enqueue(sendReq{chatID: mp.OwnerDMChat, text: text, replyTo: anchor, recordFor: mp.ID}) {
+		if !bot.enqueue(sendReq{chatID: mp.OwnerDMChat, text: text, replyTo: anchor, recordFor: mp.ID}) {
 			br.failUnsendable(ctx, mp, errQueueFull)
 		}
 	}
@@ -1151,17 +1151,17 @@ func newDedupLRU(max int) *dedupLRU {
 }
 
 // Add returns true if key was NOT seen before (and records it).
-func (d *dedupLRU) Add(key string) bool {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if d.seen[key] {
+func (dedup *dedupLRU) Add(key string) bool {
+	dedup.mu.Lock()
+	defer dedup.mu.Unlock()
+	if dedup.seen[key] {
 		return false
 	}
-	d.seen[key] = true
-	d.order = append(d.order, key)
-	if len(d.order) > d.max {
-		delete(d.seen, d.order[0])
-		d.order = d.order[1:]
+	dedup.seen[key] = true
+	dedup.order = append(dedup.order, key)
+	if len(dedup.order) > dedup.max {
+		delete(dedup.seen, dedup.order[0])
+		dedup.order = dedup.order[1:]
 	}
 	return true
 }
@@ -1185,25 +1185,25 @@ func splitMessage(text string, limit int) []string {
 	return out
 }
 
-func sleepCtx(ctx context.Context, d time.Duration) {
-	t := time.NewTimer(d)
-	defer t.Stop()
+func sleepCtx(ctx context.Context, duration time.Duration) {
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
 	select {
 	case <-ctx.Done():
-	case <-t.C:
+	case <-timer.C:
 	}
 }
 
-func minDur(a, b time.Duration) time.Duration {
-	if a < b {
-		return a
+func minDur(left, right time.Duration) time.Duration {
+	if left < right {
+		return left
 	}
-	return b
+	return right
 }
 
-func max(a, b int) int {
-	if a > b {
-		return a
+func max(left, right int) int {
+	if left > right {
+		return left
 	}
-	return b
+	return right
 }
