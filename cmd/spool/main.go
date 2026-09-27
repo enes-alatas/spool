@@ -33,6 +33,7 @@ import (
 	"github.com/enes-alatas/spool/internal/store"
 	"github.com/enes-alatas/spool/internal/store/sqlite"
 	"github.com/enes-alatas/spool/internal/surface"
+	"github.com/enes-alatas/spool/internal/surface/slack"
 	"github.com/enes-alatas/spool/internal/surface/telegram"
 	"github.com/enes-alatas/spool/internal/version"
 	"github.com/enes-alatas/spool/web"
@@ -76,6 +77,7 @@ func main() {
 	healthSec := flag.Int("workstation-health-sec", 45, "seconds between workstation liveness polls")
 	partials := flag.Bool("partial-messages", true, "stream token deltas to the UI (--include-partial-messages)")
 	telegramAPI := flag.String("telegram-api-base", telegram.APIBase, "Telegram Bot API base URL (tests point this at a stand-in server)")
+	slackAPI := flag.String("slack-api-base", slack.APIBase, "Slack Web API base URL (tests point this at a stand-in server)")
 	bindSettleSec := flag.Int("telegram-bind-settle-sec", 0, "seconds a newly bound bot waits before it may ingest a group (0 = the production margin; tests against a stand-in API shorten it)")
 	retentionDays := flag.Int("events-retention-days", 30, "prune raw claude events older than this many days (0 disables; messages and turns are never pruned)")
 	showVersion := flag.Bool("version", false, "print the build's version and exit")
@@ -296,15 +298,20 @@ func main() {
 	bridge := telegram.NewBridge(rdb, b, router, log, *telegramAPI)
 	bridge.SetBindSettle(time.Duration(*bindSettleSec) * time.Second)
 	bridge.Start(ctx)
+	slackSurface := slack.New(log, *slackAPI)
+	slackSurface.Start(ctx)
 
 	api := &httpapi.Server{
-		Store:          rdb,
-		Bus:            b,
-		Manager:        manager,
-		Router:         router,
-		Sched:          scheduler,
-		Models:         models,
-		Surfaces:       map[string]surface.Surface{store.SurfaceTelegram: bridge},
+		Store:   rdb,
+		Bus:     b,
+		Manager: manager,
+		Router:  router,
+		Sched:   scheduler,
+		Models:  models,
+		Surfaces: map[string]surface.Surface{
+			store.SurfaceTelegram: bridge,
+			store.SurfaceSlack:    slackSurface,
+		},
 		DataDir:        *dataDir,
 		ClaudeVer:      ver,
 		Build:          build,
