@@ -751,12 +751,14 @@ textarea {
   padding: 18px 0;
 }
 /* The row grid, shared with the column labels so the two cannot drift. The
-   identity column takes what is left; the four numbers are fixed so they
-   align down the list. */
+   identity column takes what is left; the other four are fixed so they align
+   down the list. The three number tracks are in rem because they exist to
+   hold text and follow it (ADR-0027 §9); the state track is the deliberate
+   px cap §9 names, explained where its content is styled below. */
 .fleet-row,
 .fleet-cols {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 152px 92px 76px 80px;
+  grid-template-columns: minmax(0, 1fr) 152px 5.75rem 4.75rem 5rem;
   align-items: start;
   gap: 16px;
 }
@@ -823,7 +825,9 @@ textarea {
   color: var(--danger);
 }
 /* the column is sized for the longest state name (model_unrecognized): these
-   are single identifiers, and breaking one across lines invents a word. The
+   are single identifiers, and breaking one across lines invents a word. Its
+   track stays in px at any text size, the cap ADR-0027 §9 names: a track
+   that grew with the identifier would squeeze the loop name to nothing. The
    heading shares the layout and nothing else — its type is the heading row's,
    set on `.fleet-cols`, the same as the four labels beside it. */
 .fleet-row .f-state,
