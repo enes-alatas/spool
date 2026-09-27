@@ -27,15 +27,13 @@ func TestAutoRuntimeRefusesToFallBackToBare(t *testing.T) {
 	}
 	dataDir := t.TempDir()
 
-	// Distinct free ports: two ":0" spellings are the same literal address,
-	// which --mcp-listen refuses before the runtime is resolved (#238) and
-	// would have this test passing on the wrong refusal.
-	addrs := freeAddrs(t, "127.0.0.1", "127.0.0.1")
+	// Both ports are the kernel's pick, which --mcp-listen accepts (#344), so
+	// the refusal this test sees is the runtime's and not the listeners'.
 	cmd := exec.Command(spoolBin,
 		"--runtime", "auto",
 		"--data-dir", dataDir,
-		"--listen", addrs[0],
-		"--mcp-listen", addrs[1],
+		"--listen", "127.0.0.1:0",
+		"--mcp-listen", "127.0.0.1:0",
 	)
 	cmd.Env = append(os.Environ(), "DOCKER_HOST=tcp://127.0.0.1:1", "HOME="+t.TempDir())
 	out, err := cmd.CombinedOutput()
