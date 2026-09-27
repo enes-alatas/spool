@@ -29,15 +29,15 @@ func New(log *slog.Logger, apiBase string) *Adapter {
 var _ surface.Surface = (*Adapter)(nil)
 
 // Start has nothing to bring up until the Socket Mode connection lands.
-func (a *Adapter) Start(ctx context.Context) {}
+func (adapter *Adapter) Start(ctx context.Context) {}
 
 // ValidateCredential checks both of an app's tokens before either is stored.
 // The bot token must be a bot's: auth.test answers for a user token too,
 // and a loop that posted as a person would be a different product. The
 // app-level token must open a Socket Mode connection. Asking for the URL
 // does not connect to it, and an unused one expires.
-func (a *Adapter) ValidateCredential(ctx context.Context, credential surface.Credential) (surface.Identity, error) {
-	who, err := a.client.AuthTest(ctx, credential.Token)
+func (adapter *Adapter) ValidateCredential(ctx context.Context, credential surface.Credential) (surface.Identity, error) {
+	who, err := adapter.client.AuthTest(ctx, credential.Token)
 	if err != nil {
 		return surface.Identity{}, refusal(surface.PartToken, err)
 	}
@@ -45,7 +45,7 @@ func (a *Adapter) ValidateCredential(ctx context.Context, credential surface.Cre
 		return surface.Identity{}, &surface.RejectedError{Part: surface.PartToken,
 			Err: errors.New("not a bot token: paste the Bot User OAuth Token (xoxb-…)")}
 	}
-	if _, err := a.client.OpenConnection(ctx, credential.AppToken); err != nil {
+	if _, err := adapter.client.OpenConnection(ctx, credential.AppToken); err != nil {
 		return surface.Identity{}, refusal(surface.PartAppToken, err)
 	}
 	return surface.Identity{Name: who.User, UserID: who.UserID, TeamID: who.TeamID, TeamName: who.Team}, nil
@@ -61,14 +61,14 @@ func refusal(part string, err error) error {
 	return err
 }
 
-func (a *Adapter) LoopChanged(ctx context.Context, loopID string) {}
+func (adapter *Adapter) LoopChanged(ctx context.Context, loopID string) {}
 
-func (a *Adapter) LoopRemoved(loopID string) {}
+func (adapter *Adapter) LoopRemoved(loopID string) {}
 
 // Status reports the Socket Mode link for one loop, in the shape the control
 // room renders (#230). Nothing connects yet, so every loop reads as not
 // connected, which is true.
-func (a *Adapter) Status(loopID string) any {
+func (adapter *Adapter) Status(loopID string) any {
 	return map[string]any{
 		"connected":      false,
 		"last_event_at":  int64(0),

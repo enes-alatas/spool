@@ -38,7 +38,9 @@ type APIError struct {
 	Code   string
 }
 
-func (e *APIError) Error() string { return fmt.Sprintf("slack %s: %s", e.Method, e.Code) }
+func (apiErr *APIError) Error() string {
+	return fmt.Sprintf("slack %s: %s", apiErr.Method, apiErr.Code)
+}
 
 // transient are the codes with which Slack declines to answer rather than
 // answering no: the credential has not been judged.
@@ -48,19 +50,19 @@ var transient = map[string]bool{
 }
 
 // Refused reports whether Slack judged the credential and said no.
-func (e *APIError) Refused() bool { return !transient[e.Code] }
+func (apiErr *APIError) Refused() bool { return !transient[apiErr.Code] }
 
 // call posts a form-encoded Web API request as token and decodes the answer
 // into result, which must carry the envelope's ok and error fields through
 // apiEnvelope.
-func (c *Client) call(ctx context.Context, token, method string, params url.Values, result interface{ envelope() apiEnvelope }) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+"/"+method, strings.NewReader(params.Encode()))
+func (client *Client) call(ctx context.Context, token, method string, params url.Values, result interface{ envelope() apiEnvelope }) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, client.base+"/"+method, strings.NewReader(params.Encode()))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := c.http.Do(req)
+	resp, err := client.http.Do(req)
 	if err != nil {
 		return err
 	}
@@ -85,7 +87,7 @@ type apiEnvelope struct {
 	Error string `json:"error"`
 }
 
-func (e apiEnvelope) envelope() apiEnvelope { return e }
+func (envelope apiEnvelope) envelope() apiEnvelope { return envelope }
 
 // AuthTest is what auth.test says a token is. BotID is empty for a token
 // that is not a bot's.
@@ -98,9 +100,9 @@ type AuthTest struct {
 	BotID  string `json:"bot_id"`
 }
 
-func (c *Client) AuthTest(ctx context.Context, token string) (*AuthTest, error) {
+func (client *Client) AuthTest(ctx context.Context, token string) (*AuthTest, error) {
 	var result AuthTest
-	if err := c.call(ctx, token, "auth.test", url.Values{}, &result); err != nil {
+	if err := client.call(ctx, token, "auth.test", url.Values{}, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
@@ -113,9 +115,9 @@ type connectionsOpen struct {
 
 // OpenConnection asks for a Socket Mode URL with an app-level token. Only an
 // app-level token with connections:write gets one.
-func (c *Client) OpenConnection(ctx context.Context, appToken string) (string, error) {
+func (client *Client) OpenConnection(ctx context.Context, appToken string) (string, error) {
 	var result connectionsOpen
-	if err := c.call(ctx, appToken, "apps.connections.open", url.Values{}, &result); err != nil {
+	if err := client.call(ctx, appToken, "apps.connections.open", url.Values{}, &result); err != nil {
 		return "", err
 	}
 	return result.URL, nil
