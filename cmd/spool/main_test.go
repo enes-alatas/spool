@@ -23,6 +23,8 @@ func TestSplitMCPListen(t *testing.T) {
 		{name: "empty port", api: "127.0.0.1:8080", mcp: "127.0.0.1:", wantErr: true},
 		// one socket spelled two ways is still one socket
 		{name: "localhost and its address", api: "localhost:8080", mcp: "127.0.0.1:8080", wantErr: true},
+		// the kernel picks each, and never picks a port already bound
+		{name: "both ports left to the kernel", api: "127.0.0.1:0", mcp: "127.0.0.1:0", want: "0"},
 	}
 
 	for _, tc := range cases {

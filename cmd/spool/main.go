@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -130,11 +131,28 @@ func main() {
 	// are allowlisted to the MCP port alone, so the API port must not be it
 	// (#238). One address serving both would hand every workstation the
 	// unauthenticated API back.
-	mcpHost, mcpPort, err := splitMCPListen(*listen, *mcpListen)
+	mcpHost, _, err := splitMCPListen(*listen, *mcpListen)
 	if err != nil {
 		log.Error("--mcp-listen", "err", err)
 		os.Exit(1)
 	}
+	// Both listeners are bound here, before anything reads the MCP port, and
+	// served later on these very sockets. A port of 0 is then the kernel's
+	// choice, made once, and the address the hub reports is the one it holds:
+	// nothing is released and bound again, so nothing else on the machine can
+	// take a port in between (#344). A port that is taken fails the start.
+	apiListener, err := net.Listen("tcp", *listen)
+	if err != nil {
+		log.Error("--listen", "err", err)
+		os.Exit(1)
+	}
+	mcpListener, err := net.Listen("tcp", *mcpListen)
+	if err != nil {
+		log.Error("--mcp-listen", "err", err)
+		os.Exit(1)
+	}
+	apiAddr, mcpAddr := boundAddr(*listen, apiListener), boundAddr(*mcpListen, mcpListener)
+	_, mcpPort, _ := net.SplitHostPort(mcpAddr)
 
 	dockerRuntime := docker.New(docker.Options{
 		DefaultImage: *workstationImage,
@@ -164,7 +182,7 @@ func main() {
 	// runtime is only resolved above.
 	if defaultRuntime == store.RuntimeDocker && isLoopback(mcpHost) {
 		log.Warn("docker workstations cannot reach --mcp-listen on loopback — bind it to an address the docker bridge can reach (#238)",
-			"mcp_listen", *mcpListen, "example", "0.0.0.0:"+mcpPort)
+			"mcp_listen", mcpAddr, "example", "0.0.0.0:"+mcpPort)
 	}
 	log.Info("runtime ready", "default", defaultRuntime, "claude_version", ver,
 		"spool_version", build.Version, "commit", build.Commit, "built_at", build.BuiltAt)
@@ -242,7 +260,7 @@ func main() {
 			}
 		},
 		MCPEndpoint: func(l *store.Loop) string {
-			host, port, err := net.SplitHostPort(*mcpListen)
+			host, port, err := net.SplitHostPort(mcpAddr)
 			if err != nil {
 				return ""
 			}
@@ -329,14 +347,14 @@ func main() {
 			}
 		},
 		OperatorToken: operatorToken,
-		ListenAddr:    *listen,
+		ListenAddr:    apiAddr,
 		TrustedHosts:  splitList(*trustedHosts),
 		Log:           log,
 		WebFS:         web.Dist(),
 	}
 
-	srv := &http.Server{Addr: *listen, Handler: redact.HTTP(api.Handler(), redactor)}
-	mcpSrv := &http.Server{Addr: *mcpListen, Handler: redact.HTTP(api.MCPHandler(), redactor)}
+	srv := &http.Server{Handler: redact.HTTP(api.Handler(), redactor)}
+	mcpSrv := &http.Server{Handler: redact.HTTP(api.MCPHandler(), redactor)}
 	go func() {
 		<-ctx.Done()
 		log.Info("shutting down")
@@ -351,14 +369,16 @@ func main() {
 	// workstation with no hub to reach cannot take a turn, and a fleet that
 	// looks healthy and never wakes is the worse failure.
 	go func() {
-		if err := mcpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := mcpSrv.Serve(mcpListener); err != nil && err != http.ErrServerClosed {
 			log.Error("serve mcp", "err", err)
 			stop()
 		}
 	}()
 
-	log.Info("spool listening", "addr", *listen, "mcp_addr", *mcpListen, "data", *dataDir, "ui", api.WebFS != nil)
-	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	// The bound addresses, not the flags: with a port of 0 this line is the
+	// only place the ports are said, and the itest harness reads them here.
+	log.Info("spool listening", "addr", apiAddr, "mcp_addr", mcpAddr, "data", *dataDir, "ui", api.WebFS != nil)
+	if err := srv.Serve(apiListener); err != nil && err != http.ErrServerClosed {
 		log.Error("serve", "err", err)
 	}
 	manager.Shutdown()
@@ -409,10 +429,20 @@ func splitMCPListen(apiAddr, mcpAddr string) (host, port string, err error) {
 	if mcpPort == "" {
 		return "", "", fmt.Errorf("%q names no port", mcpAddr)
 	}
-	if mcpPort == apiPort && sameInterface(apiHost, mcpHost) {
+	// Port 0 is the kernel's pick, which is never a port already bound.
+	if mcpPort == apiPort && mcpPort != "0" && sameInterface(apiHost, mcpHost) {
 		return "", "", fmt.Errorf("%q would serve /mcp on the API's own port; workstations reach this port, and the API must not be on it", mcpAddr)
 	}
 	return mcpHost, mcpPort, nil
+}
+
+// boundAddr is the address a listener holds, spelled with the host its flag
+// named: the port is the one actually bound, which differs from the flag's
+// when that asked for 0, and the host stays as the operator wrote it, since
+// the API's Host check compares requests against that spelling.
+func boundAddr(flagAddr string, listener net.Listener) string {
+	host, _, _ := net.SplitHostPort(flagAddr)
+	return net.JoinHostPort(host, strconv.Itoa(listener.Addr().(*net.TCPAddr).Port))
 }
 
 // sameInterface reports whether two host halves on one port could be the same
