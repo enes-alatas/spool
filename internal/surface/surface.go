@@ -65,8 +65,8 @@ const (
 
 // Error is the platform's reason alone: the part refused is for the caller
 // to key on, and every caller already says what it was validating.
-func (e *RejectedError) Error() string { return e.Err.Error() }
-func (e *RejectedError) Unwrap() error { return e.Err }
+func (rejected *RejectedError) Error() string { return rejected.Err.Error() }
+func (rejected *RejectedError) Unwrap() error { return rejected.Err }
 
 // RejectedPart reports which part of a credential err refused, or "" when err
 // is not a refusal: a platform that could not be reached has not judged the
