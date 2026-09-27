@@ -27,6 +27,17 @@ func messageTurns(srv *server, loopName string) int {
 	return n
 }
 
+// turnReads reports whether one of a loop's turns was handed an envelope
+// containing text.
+func turnReads(srv *server, loopName, turnID, text string) bool {
+	for _, envelope := range srv.turnInputs(loopName)[turnID] {
+		if strings.Contains(envelope, text) {
+			return true
+		}
+	}
+	return false
+}
+
 // Explicit message references and native replies (#79, ADR-0025). A
 // reference identifies one message durably; a native reply renders only
 // where the sending bot owns Telegram's id for the target, and the quote
@@ -128,6 +139,12 @@ func TestNativeReplyToAQuotedLoopReplyWakesItsAuthor(t *testing.T) {
 		t.Fatalf("the case needs a quoted post to reply to, got %q", betas.text)
 	}
 
+	// beta's reply answers alpha, so it wakes alpha, and the post above only
+	// says it reached Telegram. Counting alpha's turns before that wake has
+	// finished would charge it to the reply below (#389).
+	srv.waitTurn("alpha", 15*time.Second, func(tn turn) bool {
+		return tn.Trigger == "message" && turnReads(srv, "alpha", tn.ID, "I do")
+	})
 	betaTurns, alphaTurns := messageTurns(srv, "beta"), messageTurns(srv, "alpha")
 
 	const reply = "good, start with the index"
