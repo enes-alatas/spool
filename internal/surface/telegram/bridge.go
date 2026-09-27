@@ -632,7 +632,7 @@ func (br *Bridge) senderAllowed(ctx context.Context, p *poller, m *tgMsgAlias, a
 			}
 		} else {
 			br.log.Info("new telegram sender pending approval", "user", author, "id", m.From.ID)
-			br.bus.Publish(bus.Item{Kind: bus.KindAccess, Payload: sender})
+			br.bus.Publish(bus.Item{Kind: bus.KindAccess, Payload: sender.Frame()})
 		}
 	}
 

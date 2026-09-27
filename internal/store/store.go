@@ -496,12 +496,17 @@ type LoopEdit struct {
 	// reason TGBotToken and TGBotUsername move together: every field but the
 	// tokens is what the tokens answered. nil leaves it alone; a zero
 	// SlackIdentity detaches the app. Any write also drops the owner's DM
-	// channel, which belonged to the bot it replaces; the owner stays.
+	// channel, which belonged to the bot it replaces; the owner stays unless
+	// ClearSlackOwner says otherwise.
 	Slack *SlackIdentity
 	// ClearSlackBinding drops the channel the loop's Slack bot was bound to.
 	// Set when the app is detached, never as a side effect, like
 	// ClearGroupBinding.
 	ClearSlackBinding bool
+	// ClearSlackOwner drops the loop's Slack owner. Set when an app from
+	// another workspace is attached: the kept owner is not a sender there,
+	// so its bot could never reach them.
+	ClearSlackOwner bool
 	// OutsideFleetChannel moves the loop out of the fleet channel (true) or
 	// back in (false); nil leaves it where it is.
 	OutsideFleetChannel *bool
@@ -841,6 +846,28 @@ type SlackSender struct {
 	CreatedAt    int64  `json:"created_at"`
 	UpdatedAt    int64  `json:"updated_at"`
 }
+
+// The access stream carries Telegram and Slack senders alike, so each frame
+// is marked with its surface (#230). Every publisher builds its frame with
+// Frame, the bridge's included, so no frame goes out without the mark.
+
+// TGSenderFrame is a Telegram sender on the access stream.
+type TGSenderFrame struct {
+	*TGSender
+	Surface string `json:"surface"`
+}
+
+// Frame marks the sender for the access stream.
+func (s *TGSender) Frame() TGSenderFrame { return TGSenderFrame{s, SurfaceTelegram} }
+
+// SlackSenderFrame is a Slack sender on the access stream.
+type SlackSenderFrame struct {
+	*SlackSender
+	Surface string `json:"surface"`
+}
+
+// Frame marks the sender for the access stream.
+func (s *SlackSender) Frame() SlackSenderFrame { return SlackSenderFrame{s, SurfaceSlack} }
 
 type SlackSenderStore interface {
 	Get(ctx context.Context, slackUserID string) (*SlackSender, error)

@@ -145,6 +145,10 @@ func (server *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/telegram/senders/{id}/allow", server.handleSenderStatus(store.SenderAllowed))
 	mux.HandleFunc("POST /api/telegram/senders/{id}/block", server.handleSenderStatus(store.SenderBlocked))
 	mux.HandleFunc("DELETE /api/telegram/senders/{id}", server.handleDeleteSender)
+	mux.HandleFunc("GET /api/slack/senders", server.handleListSlackSenders)
+	mux.HandleFunc("POST /api/slack/senders/{id}/allow", server.handleSlackSenderStatus(store.SenderAllowed))
+	mux.HandleFunc("POST /api/slack/senders/{id}/block", server.handleSlackSenderStatus(store.SenderBlocked))
+	mux.HandleFunc("DELETE /api/slack/senders/{id}", server.handleDeleteSlackSender)
 	mux.HandleFunc("POST /api/workspace/inspect", server.handleWorkspaceInspect)
 	mux.HandleFunc("GET /api/stream", server.handleGlobalStream)
 	mux.HandleFunc("GET /api/loops/{name}/stream", server.handleLoopStream)
@@ -329,6 +333,11 @@ func (server *Server) view(ctx context.Context, loopRecord *store.Loop) *loopVie
 	if loopRecord.OwnerTGUserID != 0 {
 		if sender, err := server.Store.TGSenders().Get(ctx, loopRecord.OwnerTGUserID); err == nil {
 			out.OwnerUsername = sender.Username
+		}
+	}
+	if loopRecord.Surface() == store.SurfaceSlack && loopRecord.OwnerSlackUserID != "" {
+		if sender, err := server.Store.SlackSenders().Get(ctx, loopRecord.OwnerSlackUserID); err == nil {
+			out.OwnerUsername = defaultStr(sender.Display, sender.Username)
 		}
 	}
 	if actor, ok := server.Manager.Get(loopRecord.ID); ok {
@@ -809,6 +818,9 @@ func (server *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 		// Detaching leaves no bot to hold the channel. Rotating keeps it, as
 		// a replaced Telegram token keeps its group.
 		edit.ClearSlackBinding = identity.BotToken == ""
+		// Detaching keeps the owner, for a re-attach in the same workspace.
+		// An app from another workspace cannot reach them, so they go.
+		edit.ClearSlackOwner = !server.ownerInTeam(r.Context(), loopRecord.OwnerSlackUserID, identity.TeamID)
 	}
 	if req.TGBotToken != nil {
 		token := strings.TrimSpace(*req.TGBotToken)
@@ -1634,7 +1646,7 @@ func (server *Server) handleSenderStatus(status string) http.HandlerFunc {
 		} else {
 			server.disownLoopsOf(r.Context(), id)
 		}
-		server.Bus.Publish(bus.Item{Kind: bus.KindAccess, Payload: sender})
+		server.Bus.Publish(bus.Item{Kind: bus.KindAccess, Payload: sender.Frame()})
 		writeJSON(w, 200, sender)
 	}
 }
@@ -1715,6 +1727,8 @@ func (server *Server) disownLoopsOf(ctx context.Context, tgUserID int64) {
 
 type putOwnerReq struct {
 	TGUserID int64 `json:"tg_user_id"`
+	// SlackUserID names a Slack owner instead (#230); one or the other.
+	SlackUserID string `json:"slack_user_id"`
 }
 
 // handlePutOwner sets which person a loop may message privately. Only an
@@ -1730,6 +1744,18 @@ func (server *Server) handlePutOwner(w http.ResponseWriter, r *http.Request) {
 	var req putOwnerReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		server.jsonErr(w, 400, "bad json")
+		return
+	}
+	if req.SlackUserID != "" {
+		if refusal := server.putSlackOwner(r.Context(), loopRecord, req.SlackUserID); refusal != nil {
+			server.refuse(w, refusal)
+			return
+		}
+		writeJSON(w, 200, server.view(r.Context(), loopRecord))
+		return
+	}
+	if loopRecord.Surface() == store.SurfaceSlack {
+		server.jsonErr(w, 400, "this loop is on slack: its owner is a slack sender (slack_user_id)")
 		return
 	}
 	sender, err := server.Store.TGSenders().Get(r.Context(), req.TGUserID)
@@ -1762,7 +1788,7 @@ func (server *Server) handleDeleteSender(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	server.disownLoopsOf(r.Context(), id)
-	server.Bus.Publish(bus.Item{Kind: bus.KindAccess, Payload: map[string]any{"deleted": id}})
+	server.Bus.Publish(bus.Item{Kind: bus.KindAccess, Payload: map[string]any{"deleted": id, "surface": store.SurfaceTelegram}})
 	writeJSON(w, 200, map[string]bool{"deleted": true})
 }
 

@@ -3,9 +3,11 @@
 package itest
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -203,5 +205,125 @@ func TestSlackAttachRefusals(t *testing.T) {
 	srv.mustJSON("GET", "/api/loops/on-telegram", nil, &stillTelegram)
 	if stillTelegram.Surface != "telegram" || stillTelegram.HasSlackTokens {
 		t.Errorf("the Telegram loop reads %+v", stillTelegram)
+	}
+}
+
+// seedSlackSender writes a Slack sender straight into spool.db, the way
+// archiveLoop writes a status: nothing registers one until the Socket Mode
+// slice lands. The server must be stopped.
+func seedSlackSender(t *testing.T, dataDir, userID, teamID, display, status string) {
+	t.Helper()
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(dataDir, "spool.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`INSERT INTO slack_senders
+		(slack_user_id, team_id, username, display, status, pair_code, first_seen_via, created_at, updated_at)
+		VALUES (?,?,?,?,?,'123456','dm:terra',1,1)`, userID, teamID, strings.ToLower(display), display, status); err != nil {
+		t.Fatalf("seed %s: %v", userID, err)
+	}
+}
+
+type slackOwnerView struct {
+	OwnerSlackUserID string `json:"owner_slack_user_id"`
+	OwnerUsername    string `json:"owner_username"`
+}
+
+// A Slack loop's owner is an allowed Slack sender in its workspace, chosen in
+// the control room, and a sender who stops being allowed stops owning it
+// (#230).
+func TestSlackSendersAndOwner(t *testing.T) {
+	slack := startFakeSlack(t)
+	slack.addApp(slackBotToken, slackAppToken, terraBot)
+	dataDir := t.TempDir()
+	srv := startServerArgs(t, dataDir, "--runtime", "bare", "--slack-api-base", slack.srv.URL)
+	srv.createLoop("terra", slackPair(slackAppToken, slackBotToken))
+	srv.stop()
+	seedSlackSender(t, dataDir, "U0ALICE", "T0ACME", "Alice", "pending")
+	seedSlackSender(t, dataDir, "U0MALLORY", "T0OTHER", "Mallory", "allowed")
+	srv = startServerArgs(t, dataDir, "--runtime", "bare", "--slack-api-base", slack.srv.URL)
+
+	var senders []struct {
+		SlackUserID string `json:"slack_user_id"`
+		Status      string `json:"status"`
+		PairCode    string `json:"pair_code"`
+	}
+	srv.mustJSON("GET", "/api/slack/senders", nil, &senders)
+	if len(senders) != 2 {
+		t.Fatalf("senders = %+v, want the two seeded", senders)
+	}
+
+	owner := func(userID string) (int, []byte) {
+		resp, body := srv.do("PUT", "/api/loops/terra/owner", map[string]any{"slack_user_id": userID})
+		return resp.StatusCode, body
+	}
+	if status, body := owner("U0ALICE"); status != http.StatusBadRequest {
+		t.Errorf("a pending sender became owner: %d %s", status, body)
+	}
+	if status, body := owner("U0MALLORY"); status != http.StatusBadRequest {
+		t.Errorf("a sender from another workspace became owner: %d %s", status, body)
+	}
+
+	srv.mustJSON("POST", "/api/slack/senders/U0ALICE/allow", nil, nil)
+	if status, body := owner("U0ALICE"); status != http.StatusOK {
+		t.Fatalf("an allowed sender in the workspace could not own the loop: %d %s", status, body)
+	}
+	var owned slackOwnerView
+	srv.mustJSON("GET", "/api/loops/terra", nil, &owned)
+	if owned.OwnerSlackUserID != "U0ALICE" || owned.OwnerUsername != "Alice" {
+		t.Fatalf("owner reads %+v", owned)
+	}
+
+	srv.mustJSON("POST", "/api/slack/senders/U0ALICE/block", nil, nil)
+	var disowned slackOwnerView
+	srv.mustJSON("GET", "/api/loops/terra", nil, &disowned)
+	if disowned.OwnerSlackUserID != "" {
+		t.Errorf("a blocked sender still owns the loop: %+v", disowned)
+	}
+
+	srv.mustJSON("DELETE", "/api/slack/senders/U0ALICE", nil, nil)
+	if resp, body := srv.do("POST", "/api/slack/senders/U0ALICE/allow", nil); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("allowing a deleted sender = %d %s, want 404", resp.StatusCode, body)
+	}
+
+	// A Telegram owner for a Slack loop is refused, not stored.
+	if resp, body := srv.do("PUT", "/api/loops/terra/owner", map[string]any{"tg_user_id": 42}); resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("a telegram owner on a slack loop = %d %s, want 400", resp.StatusCode, body)
+	}
+}
+
+// A detached loop keeps its Slack owner for a re-attach in the same
+// workspace, and loses them to an app from another: that app's bot could
+// never reach them, and the owner endpoint refuses the pairing outright.
+func TestSlackOwnerFollowsTheWorkspace(t *testing.T) {
+	slack := startFakeSlack(t)
+	slack.addApp(slackBotToken, slackAppToken, terraBot)
+	slack.addApp(slackOtherBotToken, slackOtherAppToken,
+		slackBot{UserID: "U0ELSE", Name: "else", TeamID: "T0OTHER", TeamName: "Other"})
+	dataDir := t.TempDir()
+	srv := startServerArgs(t, dataDir, "--runtime", "bare", "--slack-api-base", slack.srv.URL)
+	srv.createLoop("terra", slackPair(slackAppToken, slackBotToken))
+	srv.stop()
+	seedSlackSender(t, dataDir, "U0ALICE", "T0ACME", "Alice", "allowed")
+	srv = startServerArgs(t, dataDir, "--runtime", "bare", "--slack-api-base", slack.srv.URL)
+	srv.mustJSON("PUT", "/api/loops/terra/owner", map[string]any{"slack_user_id": "U0ALICE"}, nil)
+
+	ownerAfter := func(pair map[string]any) string {
+		t.Helper()
+		srv.mustJSON("PATCH", "/api/loops/terra", pair, nil)
+		var view slackOwnerView
+		srv.mustJSON("GET", "/api/loops/terra", nil, &view)
+		return view.OwnerSlackUserID
+	}
+	if got := ownerAfter(slackPair("", "")); got != "U0ALICE" {
+		t.Fatalf("detaching dropped the owner: %q", got)
+	}
+	if got := ownerAfter(slackPair(slackAppToken, slackBotToken)); got != "U0ALICE" {
+		t.Fatalf("re-attaching in the same workspace dropped the owner: %q", got)
+	}
+	ownerAfter(slackPair("", ""))
+	if got := ownerAfter(slackPair(slackOtherAppToken, slackOtherBotToken)); got != "" {
+		t.Fatalf("an app from another workspace kept owner %q", got)
 	}
 }
