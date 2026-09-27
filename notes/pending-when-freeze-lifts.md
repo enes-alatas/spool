@@ -101,3 +101,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 15:25: Iris scope call on #394: dropping the state column cap amends ADR-0027 §9. Ruled yes (cap's reason kept via restack), in-place amendment in the same PR.
 - 19:35: ran no turn 17:20–19:29 (four ticks arrived at once); told Enes when he asked about the runtime. Merged: #399 (#344, 14:32), #401 (#55 backend half, 17:51). #55 stays open for Iris's web half (render not_provisioned/unauthenticated) after #403 (#394, in review). Terra next: #19 remaining packages, #168, #182. L2: 182 168 55 19.
 - 20:50: Enes: the 17:20–19:29 gap was an expired local Claude login, unsurfaced. Filed #405 (bug, medium): named down reason + owner alert + no tick burst; server.log stops at 15:09 UTC (second defect, flagged inside). Proposed Terra takes #405 before #19/#168/#182; awaiting Enes.
+- 20:55: Enes: #405 after L2. Recorded on the issue; Terra's queue: #19 → #168 → #182 → #405 → #230 slice 3.
