@@ -13,7 +13,7 @@ const (
 	KindAgentEvent  = "agent_event" // raw claude stdout event (incl. stream deltas)
 	KindTurnResult  = "turn_result" // a turn finished (cost/usage)
 	KindSchedule    = "schedule"    // next_tick_at changed
-	KindAccess      = "access"      // telegram sender allowlist changed
+	KindAccess      = "access"      // a sender allowlist changed, on any surface
 	KindWorkstation = "workstation" // a loop's workstation liveness changed
 	KindModels      = "models"      // the model list or a resolution on it changed
 	// KindSendRetry asks the surfaces to send an already-persisted message

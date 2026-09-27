@@ -2,9 +2,12 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/enes-alatas/spool/internal/bus"
 	"github.com/enes-alatas/spool/internal/store"
 	"github.com/enes-alatas/spool/internal/surface"
 )
@@ -126,4 +129,106 @@ func (server *Server) handleSlackStatus(w http.ResponseWriter, r *http.Request) 
 		status["bridge"] = slack.Status(loopRecord.ID)
 	}
 	writeJSON(w, http.StatusOK, status)
+}
+
+// --- Slack senders: the pairing allowlist (#230) ---
+
+func (server *Server) handleListSlackSenders(w http.ResponseWriter, r *http.Request) {
+	senders, err := server.Store.SlackSenders().List(r.Context())
+	if err != nil {
+		server.jsonErr(w, http.StatusInternalServerError, "%v", err)
+		return
+	}
+	if senders == nil {
+		senders = []*store.SlackSender{}
+	}
+	writeJSON(w, http.StatusOK, senders)
+}
+
+func (server *Server) handleSlackSenderStatus(status string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		if err := server.Store.SlackSenders().SetStatus(r.Context(), id, status, time.Now().UnixMilli()); err != nil {
+			server.storeErr(w, err, "sender")
+			return
+		}
+		sender, err := server.Store.SlackSenders().Get(r.Context(), id)
+		if err != nil {
+			server.storeErr(w, err, "sender")
+			return
+		}
+		// Only an allowed sender may own a loop, so one who is not allowed
+		// any more owns none.
+		if status != store.SenderAllowed {
+			server.disownLoopsOfSlackUser(r.Context(), id)
+		}
+		server.Bus.Publish(bus.Item{Kind: bus.KindAccess, Payload: sender.Frame()})
+		writeJSON(w, http.StatusOK, sender)
+	}
+}
+
+func (server *Server) handleDeleteSlackSender(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := server.Store.SlackSenders().Delete(r.Context(), id); err != nil {
+		server.jsonErr(w, http.StatusInternalServerError, "%v", err)
+		return
+	}
+	server.disownLoopsOfSlackUser(r.Context(), id)
+	server.Bus.Publish(bus.Item{Kind: bus.KindAccess, Payload: map[string]any{"deleted": id, "surface": store.SurfaceSlack}})
+	writeJSON(w, http.StatusOK, map[string]bool{"deleted": true})
+}
+
+func (server *Server) disownLoopsOfSlackUser(ctx context.Context, slackUserID string) {
+	loops, err := server.Store.Loops().List(ctx)
+	if err != nil {
+		return
+	}
+	for _, loopRecord := range loops {
+		if loopRecord.OwnerSlackUserID != slackUserID {
+			continue
+		}
+		if err := server.Store.Loops().SetSlackOwner(ctx, loopRecord.ID, "", "", time.Now().UnixMilli()); err != nil {
+			server.Log.Error("disown loop", "loop", loopRecord.Name, "err", err)
+		}
+	}
+}
+
+// ownerInTeam reports whether a loop's Slack owner can stay with an app in
+// team: there is no owner, no team (a detach), or the owner is a sender there.
+func (server *Server) ownerInTeam(ctx context.Context, ownerSlackUserID, team string) bool {
+	if ownerSlackUserID == "" || team == "" {
+		return true
+	}
+	sender, err := server.Store.SlackSenders().Get(ctx, ownerSlackUserID)
+	return err == nil && sender.TeamID == team
+}
+
+// putSlackOwner sets a loop's Slack owner: an allowed Slack sender in the
+// loop's workspace, on a loop that is not on Telegram. It answers the
+// refusal, or nil once the owner is stored.
+func (server *Server) putSlackOwner(ctx context.Context, loopRecord *store.Loop, slackUserID string) *requestError {
+	if loopRecord.Surface() == store.SurfaceTelegram {
+		return &requestError{status: http.StatusBadRequest, msg: "this loop is on telegram: its owner is a telegram sender"}
+	}
+	sender, err := server.Store.SlackSenders().Get(ctx, slackUserID)
+	if errors.Is(err, store.ErrNotFound) || (err == nil && sender.Status != store.SenderAllowed) {
+		return &requestError{status: http.StatusBadRequest, msg: "owner must be an allowed slack sender"}
+	} else if err != nil {
+		return &requestError{status: http.StatusInternalServerError, msg: err.Error()}
+	}
+	if loopRecord.SlackTeamID != "" && sender.TeamID != loopRecord.SlackTeamID {
+		return &requestError{status: http.StatusBadRequest, msg: "owner must be in the loop's slack workspace"}
+	}
+	if loopRecord.OwnerSlackUserID == slackUserID {
+		return nil
+	}
+	loopRecord.OwnerSlackUserID, loopRecord.OwnerSlackDMChannel = slackUserID, ""
+	loopRecord.UpdatedAt = time.Now().UnixMilli()
+	if err := server.Store.Loops().SetSlackOwner(ctx, loopRecord.ID, slackUserID, "", loopRecord.UpdatedAt); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return &requestError{status: http.StatusNotFound, msg: "loop not found"}
+		}
+		return &requestError{status: http.StatusInternalServerError, msg: err.Error()}
+	}
+	return nil
 }

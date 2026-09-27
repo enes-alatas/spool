@@ -243,6 +243,9 @@ func (table loops) Edit(ctx context.Context, id string, edit store.LoopEdit) (*s
 		set("slack_channel_id", "")
 		set("slack_channel_bound_at", 0)
 	}
+	if edit.ClearSlackOwner {
+		set("owner_slack_user_id", "")
+	}
 	if _, err := table.db.ExecContext(ctx,
 		`UPDATE loops SET `+strings.Join(sets, ", ")+` WHERE id=?`, append(args, id)...); err != nil {
 		return nil, err
