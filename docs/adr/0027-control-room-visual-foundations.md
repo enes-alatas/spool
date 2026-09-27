@@ -1,6 +1,6 @@
 # ADR-0027: Colour means something, or it is white
 
-Date: 2026-09-16 · Status: accepted · Amended: 2026-09-17 (§9, units; §6 and §10, rendering); 2026-09-19 (§11, disabled controls)
+Date: 2026-09-16 · Status: accepted · Amended: 2026-09-17 (§9, units; §6 and §10, rendering); 2026-09-19 (§11, disabled controls); 2026-09-27 (§9, fleet state column)
 
 ## Context
 
@@ -77,6 +77,13 @@ need the operator to look.
    destination bar's labels, where five of them share the viewport's width,
    and the fleet row's state column, where an identifier would otherwise
    squeeze the loop name to nothing.
+   **Amendment (2026-09-27, #394):** the fleet row's state column no longer
+   caps. Its track follows the text like the three number tracks beside it,
+   and what keeps the identifiers from squeezing the loop name is the row
+   restacking to its narrow composition once the list is too narrow for the
+   loop column beside all four tracks. The list's own width decides that, not
+   the viewport's, because the page stops widening while the text keeps
+   growing. The bottom destination bar's labels are the one deliberate cap.
 
 10. **A hairline is specified in CSS and drawn in device pixels, and the two
     are not the same thing** (added 2026-09-17, #132). At a fractional display
