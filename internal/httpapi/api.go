@@ -521,12 +521,12 @@ func (server *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if loopRecord.TGBotToken != "" && server.Surface != nil {
-		username, err := server.Surface.ValidateCredential(r.Context(), loopRecord.TGBotToken)
+		identity, err := server.Surface.ValidateCredential(r.Context(), surface.Credential{Token: loopRecord.TGBotToken})
 		if err != nil {
 			server.jsonErr(w, 400, "telegram token rejected: %v", err)
 			return
 		}
-		loopRecord.TGBotUsername = username
+		loopRecord.TGBotUsername = identity.Name
 	}
 
 	if loopRecord.Runtime == store.RuntimeDocker {
@@ -746,12 +746,12 @@ func (server *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 		if token != "" && server.Surface != nil {
 			// A live call to api.telegram.org, which is why nothing read
 			// before this point may be written back afterwards.
-			name, err := server.Surface.ValidateCredential(r.Context(), token)
+			identity, err := server.Surface.ValidateCredential(r.Context(), surface.Credential{Token: token})
 			if err != nil {
 				server.jsonErr(w, 400, "telegram token rejected: %v", err)
 				return
 			}
-			username = name
+			username = identity.Name
 		}
 		edit.TGBotToken, edit.TGBotUsername = &token, &username
 		// A cleared token leaves no bot to hold the binding. A replaced one

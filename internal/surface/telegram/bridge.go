@@ -20,6 +20,7 @@ import (
 	"github.com/enes-alatas/spool/internal/bus"
 	"github.com/enes-alatas/spool/internal/route"
 	"github.com/enes-alatas/spool/internal/store"
+	"github.com/enes-alatas/spool/internal/surface"
 )
 
 const (
@@ -114,13 +115,18 @@ func (br *Bridge) Start(ctx context.Context) {
 
 // --- surface.Surface interface ---
 
-// ValidateCredential resolves a bot token to its bot username.
-func (br *Bridge) ValidateCredential(ctx context.Context, token string) (string, error) {
-	u, err := NewClientAt(br.apiBase, token).GetMe(ctx)
+// ValidateCredential resolves a bot token to its bot username. Telegram has
+// one token per bot, so a refusal is always of the token.
+func (br *Bridge) ValidateCredential(ctx context.Context, credential surface.Credential) (surface.Identity, error) {
+	u, err := NewClientAt(br.apiBase, credential.Token).GetMe(ctx)
 	if err != nil {
-		return "", err
+		var refused *APIError
+		if errors.As(err, &refused) {
+			return surface.Identity{}, &surface.RejectedError{Part: surface.PartToken, Err: err}
+		}
+		return surface.Identity{}, err
 	}
-	return u.Username, nil
+	return surface.Identity{Name: u.Username}, nil
 }
 
 // LoopChanged brings the loop's poller in line with its stored configuration.

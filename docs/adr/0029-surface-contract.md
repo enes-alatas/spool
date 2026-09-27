@@ -1,6 +1,6 @@
 # ADR-0029: The Surface contract
 
-Date: 2026-09-20 · Status: accepted · Amends: ADR-0020, ADR-0025 (item 4), ADR-0026 (item 1) · Amended: 2026-09-22 (item 2: the bus kinds a surface mirrors); 2026-09-23 (items 5 and 7: a surface is attached later and mirrors the fleet channel)
+Date: 2026-09-20 · Status: accepted · Amends: ADR-0020, ADR-0025 (item 4), ADR-0026 (item 1) · Amended: 2026-09-22 (item 2: the bus kinds a surface mirrors); 2026-09-23 (items 5 and 7: a surface is attached later and mirrors the fleet channel); 2026-09-27 (item 2: a credential and an identity are structs)
 
 ## Context
 
@@ -48,6 +48,19 @@ contract.
    message said: republishing under it would draw a message the operator
    retried a second time. Adding hub-to-surface methods for any of this would
    invert a dependency that is fine as it stands.
+
+   **Amendment (2026-09-27, #230):** the second adapter proved one method's
+   signature too narrow, as the Context says it would. A Slack app is two
+   tokens (the bot token and the app-level token that opens Socket Mode),
+   and what they name is four facts, not one: the bot's name, its user id
+   (what a mention names), and the workspace's id and name. So
+   `ValidateCredential` takes a `surface.Credential` (`Token`, and
+   `AppToken`, which is "" on Telegram) and returns a `surface.Identity`
+   (`Name`, plus `UserID`, `TeamID` and `TeamName`, which are "" on
+   Telegram). A refusal is a `*surface.RejectedError` naming the part
+   refused, because the operator pasted two tokens and has to be told
+   which one to fix; any other error means the platform gave no answer.
+   The method count and the direction of every call are unchanged.
 
 3. **No store row crosses the seam.** A loop crosses it as its id and the
    adapter reads the row it wants. This is the same rule the store and runtime
