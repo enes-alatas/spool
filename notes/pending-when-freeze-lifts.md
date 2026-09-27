@@ -99,3 +99,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 12:30: Enes yes on the AGENTS.md line. Filed #397 → Iris after #393. Mission-text line is Enes's edit.
 - 14:30: merged #393 (#381), #396 (#230 slice 2, contract). #399 (#344 port race) in review. Iris → #397. Iris filed #398 (owner_dm_ready false on Slack, low); Terra: covered by slice 3. L2: 182 168 55 19.
 - 15:25: Iris scope call on #394: dropping the state column cap amends ADR-0027 §9. Ruled yes (cap's reason kept via restack), in-place amendment in the same PR.
+- 19:35: ran no turn 17:20–19:29 (four ticks arrived at once); told Enes when he asked about the runtime. Merged: #399 (#344, 14:32), #401 (#55 backend half, 17:51). #55 stays open for Iris's web half (render not_provisioned/unauthenticated) after #403 (#394, in review). Terra next: #19 remaining packages, #168, #182. L2: 182 168 55 19.
