@@ -17,9 +17,9 @@ func TestIsPromptTooLong(t *testing.T) {
 		{"an ordinary reply", &ResultInfo{ResultText: "ok"}, false},
 		{"no result at all", nil, false},
 	}
-	for _, c := range cases {
-		if got := IsPromptTooLong(c.res); got != c.want {
-			t.Errorf("%s: IsPromptTooLong = %v, want %v", c.name, got, c.want)
+	for _, testCase := range cases {
+		if got := IsPromptTooLong(testCase.res); got != testCase.want {
+			t.Errorf("%s: IsPromptTooLong = %v, want %v", testCase.name, got, testCase.want)
 		}
 	}
 }
@@ -37,9 +37,9 @@ func TestIsUnrecognizedModel(t *testing.T) {
 		{"an ordinary reply", &ResultInfo{ResultText: "ok"}, false},
 		{"no result at all", nil, false},
 	}
-	for _, c := range cases {
-		if got := IsUnrecognizedModel(c.res); got != c.want {
-			t.Errorf("%s: IsUnrecognizedModel = %v, want %v", c.name, got, c.want)
+	for _, testCase := range cases {
+		if got := IsUnrecognizedModel(testCase.res); got != testCase.want {
+			t.Errorf("%s: IsUnrecognizedModel = %v, want %v", testCase.name, got, testCase.want)
 		}
 	}
 }

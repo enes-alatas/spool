@@ -117,7 +117,7 @@ func TestArgsOptionalFlags(t *testing.T) {
 					t.Errorf("unexpected %s in %v", flag, got)
 				}
 			}
-			if n := len(tc.opts.ExtraArgs); n > 0 && !slices.Equal(got[len(got)-n:], tc.opts.ExtraArgs) {
+			if extra := len(tc.opts.ExtraArgs); extra > 0 && !slices.Equal(got[len(got)-extra:], tc.opts.ExtraArgs) {
 				t.Errorf("extra args not last: %v", got)
 			}
 		})
