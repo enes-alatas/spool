@@ -114,3 +114,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 20:00: #414 (#168) and #413 (#410, ADR-citation check) merged. #415 (#182, parallel itest) up 19:44. L2: 182 only. When #415 merges: close L2 milestone, tell Enes, Terra → #405 then #230 slice 3.
 - 20:25: #415 merged, L2 at zero → closed milestone L2 Connections (71 closed). Told Enes: tag v0.3.0 (operator tags, generate-notes, no release workflow). Terra → #405, then #230 slice 3.
 - 20:30: on Enes's ask, created release v0.3.0 at main 3e3483c with generated notes (operator delegated the tag). Fleet runs v0.2.0-133 until rebuilt.
+- 20:45: #416 (#405 smallest slice) up. Terra filed follow-ups: #418 (web copy) → Iris now; #419 (owner message) → Terra after #416, before #230 slice 3; #420 (tick burst) → after slice 3.
