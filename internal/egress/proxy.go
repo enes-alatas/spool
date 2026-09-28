@@ -34,30 +34,30 @@ func NewProxy(allow *Allowlist, log *slog.Logger) *Proxy {
 	return &Proxy{allow: allow, log: log}
 }
 
-func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodConnect {
-		p.connect(w, r)
+		proxy.connect(w, r)
 		return
 	}
-	p.forward(w, r)
+	proxy.forward(w, r)
 }
 
 // connect tunnels TLS: once the client is told the tunnel is open it speaks a
 // protocol the proxy neither reads nor understands, which is the whole point —
 // nothing here terminates TLS (ADR-0028).
-func (p *Proxy) connect(w http.ResponseWriter, r *http.Request) {
+func (proxy *Proxy) connect(w http.ResponseWriter, r *http.Request) {
 	target := r.URL.Host
 	if target == "" {
 		target = r.Host
 	}
 	host, port, err := splitHostPort(target, "443")
-	if err != nil || !p.allow.Allows(host, port) {
-		p.refuse(w, r, host, port, err)
+	if err != nil || !proxy.allow.Allows(host, port) {
+		proxy.refuse(w, r, host, port, err)
 		return
 	}
-	upstream, err := p.dialer()("tcp", net.JoinHostPort(host, port))
+	upstream, err := proxy.dialer()("tcp", net.JoinHostPort(host, port))
 	if err != nil {
-		p.log.Warn("egress dial failed", "host", host, "err", err)
+		proxy.log.Warn("egress dial failed", "host", host, "err", err)
 		http.Error(w, "spool-egress: cannot reach "+host, http.StatusBadGateway)
 		return
 	}
@@ -65,13 +65,13 @@ func (p *Proxy) connect(w http.ResponseWriter, r *http.Request) {
 
 	hj, ok := w.(http.Hijacker)
 	if !ok {
-		p.log.Error("egress hijack unsupported", "host", host)
+		proxy.log.Error("egress hijack unsupported", "host", host)
 		http.Error(w, "spool-egress: tunnel unsupported", http.StatusInternalServerError)
 		return
 	}
 	client, buffered, err := hj.Hijack()
 	if err != nil {
-		p.log.Error("egress hijack failed", "host", host, "err", err)
+		proxy.log.Error("egress hijack failed", "host", host, "err", err)
 		http.Error(w, "spool-egress: tunnel unsupported", http.StatusInternalServerError)
 		return
 	}
@@ -79,7 +79,7 @@ func (p *Proxy) connect(w http.ResponseWriter, r *http.Request) {
 	if _, err := io.WriteString(client, "HTTP/1.1 200 Connection Established\r\n\r\n"); err != nil {
 		return
 	}
-	p.log.Debug("egress allowed", "host", host, "port", port, "method", r.Method)
+	proxy.log.Debug("egress allowed", "host", host, "port", port, "method", r.Method)
 
 	// A client that sent its first TLS bytes straight after the CONNECT line
 	// has them sitting in the hijacked reader already; reading the socket
@@ -101,14 +101,14 @@ func (p *Proxy) connect(w http.ResponseWriter, r *http.Request) {
 
 // forward relays a plain-HTTP request, which a client sends in absolute form
 // (`GET http://host/path`) when it is talking to a proxy.
-func (p *Proxy) forward(w http.ResponseWriter, r *http.Request) {
+func (proxy *Proxy) forward(w http.ResponseWriter, r *http.Request) {
 	if !r.URL.IsAbs() || r.URL.Host == "" {
 		http.Error(w, "spool-egress: this is a proxy; use an absolute URL or CONNECT", http.StatusBadRequest)
 		return
 	}
 	host, port, err := splitHostPort(r.URL.Host, "80")
-	if err != nil || !p.allow.Allows(host, port) {
-		p.refuse(w, r, host, port, err)
+	if err != nil || !proxy.allow.Allows(host, port) {
+		proxy.refuse(w, r, host, port, err)
 		return
 	}
 
@@ -116,14 +116,14 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request) {
 	outbound.RequestURI = ""
 	stripHopByHop(outbound.Header)
 
-	resp, err := p.transport().RoundTrip(outbound)
+	resp, err := proxy.transport().RoundTrip(outbound)
 	if err != nil {
-		p.log.Warn("egress request failed", "host", host, "err", err)
+		proxy.log.Warn("egress request failed", "host", host, "err", err)
 		http.Error(w, "spool-egress: cannot reach "+host, http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close()
-	p.log.Debug("egress allowed", "host", host, "port", port, "method", r.Method)
+	proxy.log.Debug("egress allowed", "host", host, "port", port, "method", r.Method)
 
 	stripHopByHop(resp.Header)
 	for key, values := range resp.Header {
@@ -138,12 +138,12 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request) {
 // log line records the attempt by host only: a URL can carry a credential in
 // its query string, and this log is the one place a blocked exfiltration shows
 // up (ADR-0028).
-func (p *Proxy) refuse(w http.ResponseWriter, r *http.Request, host, port string, parseErr error) {
+func (proxy *Proxy) refuse(w http.ResponseWriter, r *http.Request, host, port string, parseErr error) {
 	if parseErr != nil {
 		http.Error(w, "spool-egress: unreadable target", http.StatusBadRequest)
 		return
 	}
-	p.log.Warn("egress refused", "host", host, "port", port, "method", r.Method)
+	proxy.log.Warn("egress refused", "host", host, "port", port, "method", r.Method)
 	http.Error(w, fmt.Sprintf(
 		"spool-egress: %s:%s is not on this workstation's egress allowlist, so the request was refused "+
 			"(ADR-0028). The allowlist names hosts and ports, so an allowed host on another port is refused too. "+
@@ -151,19 +151,19 @@ func (p *Proxy) refuse(w http.ResponseWriter, r *http.Request, host, port string
 		http.StatusForbidden)
 }
 
-func (p *Proxy) dialer() func(network, addr string) (net.Conn, error) {
-	if p.dial != nil {
-		return p.dial
+func (proxy *Proxy) dialer() func(network, addr string) (net.Conn, error) {
+	if proxy.dial != nil {
+		return proxy.dial
 	}
-	d := &net.Dialer{Timeout: dialTimeout}
-	return d.Dial
+	dialer := &net.Dialer{Timeout: dialTimeout}
+	return dialer.Dial
 }
 
 // transport carries plain-HTTP forwarding. It dials through the same hook the
 // tunnel uses, so a test can point the whole proxy at a stand-in server.
-func (p *Proxy) transport() http.RoundTripper {
+func (proxy *Proxy) transport() http.RoundTripper {
 	return &http.Transport{
-		Dial:                  p.dialer(), //nolint:staticcheck // DialContext's ctx is unused here; one hook serves both paths
+		Dial:                  proxy.dialer(), //nolint:staticcheck // DialContext's ctx is unused here; one hook serves both paths
 		ResponseHeaderTimeout: dialTimeout,
 	}
 }
@@ -175,15 +175,15 @@ var hopByHop = []string{
 	"Proxy-Authorization", "Te", "Trailer", "Transfer-Encoding", "Upgrade",
 }
 
-func stripHopByHop(h http.Header) {
+func stripHopByHop(header http.Header) {
 	// Connection names further headers that are themselves hop-by-hop.
-	for _, name := range h.Values("Connection") {
+	for _, name := range header.Values("Connection") {
 		for _, part := range strings.Split(name, ",") {
-			h.Del(strings.TrimSpace(part))
+			header.Del(strings.TrimSpace(part))
 		}
 	}
 	for _, name := range hopByHop {
-		h.Del(name)
+		header.Del(name)
 	}
 }
 
