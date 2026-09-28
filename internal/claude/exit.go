@@ -47,3 +47,17 @@ func IsPromptTooLong(res *ResultInfo) bool {
 func IsUnrecognizedModel(res *ResultInfo) bool {
 	return res != nil && res.IsError && res.APIErrorStatus == 404
 }
+
+// IsLoginRejected reports whether the API refused the credential the CLI ran
+// under: an expired login that would not refresh, a revoked token. Observed
+// on the dogfood fleet on 2026-09-27 (#405): the CLI stands in an assistant
+// message of its own with error "authentication_failed" and the sentence the
+// operator should read, then returns an errored result with nothing billed
+// and no api_error_status, so the status check that finds an unknown model
+// does not find this.
+//
+// It is a verdict on the login, not on the turn: every turn fails the same
+// way until the operator logs in again, which happens outside Spool.
+func IsLoginRejected(msg *AssistantInfo) bool {
+	return msg != nil && msg.Error == "authentication_failed"
+}
