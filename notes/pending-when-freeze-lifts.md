@@ -107,3 +107,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - Merged last night: #403 (#394), #404 (#19 surface pkg), #406 (#55 web half, #55 closed). No open PR. L2: 182 168 19. Terra on #19's next packages. Iris free → #366 (relax comment rule, operator agreed per #368). #168 stays Terra's (verification column needs tier-3 history). #405 after L2.
 - 08:35: lost send ref:2181 moot: Iris opened #409 (#366) anyway; #407 (hers, earlier) merged. Terra #411 (#19 redact pkg) up.
 - 11:40: #409 approved 06:41, unmerged (Enes); #411 approval follows its rebase. Quinn filed #410 (ADR section citations in comments). L2: 182 168 19. Quiet.
+- 14:40: #409 (#366) merged. #411 rebased 14:02, awaiting Quinn. Iris free (no web work until slice 3). L2: 182 168 19.
