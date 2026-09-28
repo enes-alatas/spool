@@ -20,10 +20,10 @@ func TestMentions(t *testing.T) {
 		{"none here", nil},
 		{"@planner_spool_bot hello", []string{"planner_spool_bot"}},
 	}
-	for _, c := range cases {
-		got := Mentions(c.in)
-		if !reflect.DeepEqual(got, c.want) {
-			t.Errorf("Mentions(%q) = %v want %v", c.in, got, c.want)
+	for _, testCase := range cases {
+		got := Mentions(testCase.in)
+		if !reflect.DeepEqual(got, testCase.want) {
+			t.Errorf("Mentions(%q) = %v want %v", testCase.in, got, testCase.want)
 		}
 	}
 }
@@ -45,29 +45,29 @@ func TestConversationFor(t *testing.T) {
 			Conversation: store.ConversationControlRoom}, store.ConversationControlRoom, "l2"},
 		{"unaddressed web message", InboundMessage{Origin: store.OriginWeb}, store.ConversationGroup, ""},
 	}
-	for _, c := range cases {
-		kind, loopID := conversationFor(c.in)
-		if kind != c.kind || loopID != c.loopID {
-			t.Errorf("%s: conversationFor = %q/%q, want %q/%q", c.name, kind, loopID, c.kind, c.loopID)
+	for _, testCase := range cases {
+		kind, loopID := conversationFor(testCase.in)
+		if kind != testCase.kind || loopID != testCase.loopID {
+			t.Errorf("%s: conversationFor = %q/%q, want %q/%q", testCase.name, kind, loopID, testCase.kind, testCase.loopID)
 		}
 	}
 }
 
 func TestSendBudget(t *testing.T) {
-	r := &Router{}
+	router := &Router{}
 	for i := 0; i < SendCapPerTurn; i++ {
-		if !r.sendAllow("l1") {
+		if !router.sendAllow("l1") {
 			t.Fatalf("send %d refused before the cap", i+1)
 		}
 	}
-	if r.sendAllow("l1") {
+	if router.sendAllow("l1") {
 		t.Fatal("send beyond the cap allowed")
 	}
-	if !r.sendAllow("l2") {
+	if !router.sendAllow("l2") {
 		t.Fatal("another loop's budget affected")
 	}
-	r.StartTurn("l1")
-	if !r.sendAllow("l1") {
+	router.StartTurn("l1")
+	if !router.sendAllow("l1") {
 		t.Fatal("send refused after a fresh turn")
 	}
 }
@@ -96,9 +96,9 @@ func TestSameConversation(t *testing.T) {
 		{"group message answered in a DM",
 			store.Message{Conversation: store.ConversationGroup}, store.ConversationOwnerDM, false},
 	}
-	for _, c := range cases {
-		if got := sameConversation(&c.target, c.destination, "l1"); got != c.want {
-			t.Errorf("%s: sameConversation = %v, want %v", c.name, got, c.want)
+	for _, testCase := range cases {
+		if got := sameConversation(&testCase.target, testCase.destination, "l1"); got != testCase.want {
+			t.Errorf("%s: sameConversation = %v, want %v", testCase.name, got, testCase.want)
 		}
 	}
 }
