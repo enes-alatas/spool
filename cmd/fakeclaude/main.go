@@ -65,6 +65,13 @@
 // diagnostic on stderr, exit 1, no stream-json. Fresh sessions still work —
 // unless the file's contents are "all", which fails a fresh spawn the same
 // way: a loop that cannot run at all, whatever session it is given.
+//
+// A "login-expired" file in $FAKECLAUDE_STATE is a login the API refuses, for
+// every loop of the hub that shares it, as the host's login is shared: each
+// turn ends the way the real CLI's did on the fleet (2.1.283, #405), with a
+// stand-in assistant message carrying error "authentication_failed" and an
+// errored result that bills nothing. The turn uses up no script line, and
+// removing the file is logging in again.
 package main
 
 import (
@@ -214,6 +221,31 @@ func main() {
 				"type": "system", "subtype": "init",
 				"session_id": id, "cwd": cwd, "model": initModel(model),
 			})
+		}
+
+		if _, err := os.Stat(filepath.Join(stateDir, "login-expired")); err == nil {
+			const refusal = "Failed to authenticate: OAuth session expired and could not be refreshed"
+			emit(map[string]any{
+				"type": "assistant", "session_id": id,
+				"error": "authentication_failed", "is_api_error_message": true,
+				"message": map[string]any{
+					"model": "<synthetic>", "role": "assistant",
+					"content": []map[string]any{{"type": "text", "text": refusal}},
+					"usage":   map[string]any{"input_tokens": 0, "output_tokens": 0},
+				},
+			})
+			emit(map[string]any{
+				"type": "result", "subtype": "success", "is_error": true,
+				"terminal_reason": "api_error",
+				"total_cost_usd":  state.CostUSD, "duration_ms": 5, "num_turns": state.Turns,
+				"result": refusal, "session_id": id,
+				"usage": map[string]any{
+					"input_tokens": 0, "output_tokens": 0,
+					"cache_creation_input_tokens": 0, "cache_read_input_tokens": 0,
+				},
+			})
+			persist(stateDir, id, state)
+			continue
 		}
 
 		if unrecognizedModel(model) {
