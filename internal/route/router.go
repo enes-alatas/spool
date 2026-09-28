@@ -33,23 +33,23 @@ const BroadcastToken = "all"
 //
 // There is one group, the hub's, so where the message was posted from —
 // Telegram, the control room, a loop — does not narrow it further.
-func (r *Router) broadcastTargets(loops []*store.Loop, fromLoopID string) map[string]*store.Loop {
+func (router *Router) broadcastTargets(loops []*store.Loop, fromLoopID string) map[string]*store.Loop {
 	targets := map[string]*store.Loop{}
-	for _, l := range loops {
-		if l.ID == fromLoopID || l.Status != store.StatusActive || l.OutsideFleetChannel {
+	for _, loopRecord := range loops {
+		if loopRecord.ID == fromLoopID || loopRecord.Status != store.StatusActive || loopRecord.OutsideFleetChannel {
 			continue
 		}
-		targets[l.ID] = l
+		targets[loopRecord.ID] = loopRecord
 	}
 	return targets
 }
 
-// inGroup says whether a group message addressed to l — by mention, by reply
-// or by the composer it was posted from — is delivered to it. A loop outside
-// the fleet channel has no group, so a message naming it there reaches
+// inGroup says whether a group message addressed to loopRecord — by mention, by
+// reply or by the composer it was posted from — is delivered to it. A loop
+// outside the fleet channel has no group, so a message naming it there reaches
 // nobody (ADR-0032 item 2).
-func inGroup(l *store.Loop) bool {
-	return l.Status != store.StatusArchived && !l.OutsideFleetChannel
+func inGroup(loopRecord *store.Loop) bool {
+	return loopRecord.Status != store.StatusArchived && !loopRecord.OutsideFleetChannel
 }
 
 // stormLimit caps deliveries per ordered loop pair per hour so two loops
@@ -117,19 +117,19 @@ type Router struct {
 	turnSends map[string][]string
 }
 
-func New(st store.Store, b *bus.Bus, d Deliverer, log *slog.Logger) *Router {
+func New(st store.Store, publisher *bus.Bus, deliverer Deliverer, log *slog.Logger) *Router {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Router{store: st, bus: b, deliver: d, log: log, storm: map[string][]time.Time{}}
+	return &Router{store: st, bus: publisher, deliver: deliverer, log: log, storm: map[string][]time.Time{}}
 }
 
 // Mentions extracts unique lowercase mention tokens from a text.
 func Mentions(text string) []string {
 	seen := map[string]bool{}
 	var out []string
-	for _, m := range mentionRe.FindAllStringSubmatch(text, -1) {
-		name := strings.ToLower(m[1])
+	for _, match := range mentionRe.FindAllStringSubmatch(text, -1) {
+		name := strings.ToLower(match[1])
 		if !seen[name] {
 			seen[name] = true
 			out = append(out, name)
@@ -160,7 +160,7 @@ func conversationFor(in InboundMessage) (kind, loopID string) {
 
 // Ingest persists and routes one message. Returns store.ErrDuplicate when
 // the same bot's poller re-reads a telegram message it already ingested.
-func (r *Router) Ingest(ctx context.Context, in InboundMessage) error {
+func (router *Router) Ingest(ctx context.Context, in InboundMessage) error {
 	mentions := Mentions(in.Text)
 	conv, convLoopID := conversationFor(in)
 	msg := &store.Message{
@@ -182,19 +182,19 @@ func (r *Router) Ingest(ctx context.Context, in InboundMessage) error {
 	}
 
 	// resolve recipients before persisting so delivered_to lands in one write
-	loops, err := r.store.Loops().List(ctx)
+	loops, err := router.store.Loops().List(ctx)
 	if err != nil {
 		return err
 	}
 	byKey := map[string]*store.Loop{} // name and bot-username → loop
 	var fromLoop *store.Loop
-	for _, l := range loops {
-		byKey[strings.ToLower(l.Name)] = l
-		if l.TGBotUsername != "" {
-			byKey[strings.ToLower(l.TGBotUsername)] = l
+	for _, loopRecord := range loops {
+		byKey[strings.ToLower(loopRecord.Name)] = loopRecord
+		if loopRecord.TGBotUsername != "" {
+			byKey[strings.ToLower(loopRecord.TGBotUsername)] = loopRecord
 		}
-		if l.ID == in.FromLoopID {
-			fromLoop = l
+		if loopRecord.ID == in.FromLoopID {
+			fromLoop = loopRecord
 		}
 	}
 
@@ -208,9 +208,9 @@ func (r *Router) Ingest(ctx context.Context, in InboundMessage) error {
 	var replyTo *store.Message
 	replyRef := ""
 	if in.ReplyToID != 0 {
-		target, err := r.store.Messages().Get(ctx, in.ReplyToID)
+		target, err := router.store.Messages().Get(ctx, in.ReplyToID)
 		if err != nil {
-			r.log.Warn("reply target vanished", "id", in.ReplyToID, "err", err)
+			router.log.Warn("reply target vanished", "id", in.ReplyToID, "err", err)
 		} else {
 			replyTo, replyRef = target, loop.MessageRef(target.ID)
 		}
@@ -218,35 +218,35 @@ func (r *Router) Ingest(ctx context.Context, in InboundMessage) error {
 
 	targets := map[string]*store.Loop{}
 	if conv == store.ConversationGroup {
-		for _, m := range mentions {
-			if m == BroadcastToken {
+		for _, mention := range mentions {
+			if mention == BroadcastToken {
 				// deliberate broadcast: the union with the mentions and the
 				// reply author is deduplicated by loop id, so a loop named
 				// twice over is still delivered to once
-				for id, l := range r.broadcastTargets(loops, in.FromLoopID) {
-					targets[id] = l
+				for id, loopRecord := range router.broadcastTargets(loops, in.FromLoopID) {
+					targets[id] = loopRecord
 				}
 				continue
 			}
-			if l, ok := byKey[m]; ok && l.ID != in.FromLoopID && inGroup(l) {
-				targets[l.ID] = l
+			if loopRecord, ok := byKey[mention]; ok && loopRecord.ID != in.FromLoopID && inGroup(loopRecord) {
+				targets[loopRecord.ID] = loopRecord
 			}
 		}
 		if replyTo != nil && replyTo.FromLoopID != "" && replyTo.FromLoopID != in.FromLoopID {
-			for _, l := range loops {
-				if l.ID == replyTo.FromLoopID && inGroup(l) {
-					targets[l.ID] = l
+			for _, loopRecord := range loops {
+				if loopRecord.ID == replyTo.FromLoopID && inGroup(loopRecord) {
+					targets[loopRecord.ID] = loopRecord
 				}
 			}
 		}
 	}
 	if in.ImplicitTo != "" {
-		for _, l := range loops {
+		for _, loopRecord := range loops {
 			// a group post from a loop's composer addresses that loop only
 			// if it has a group to be addressed in
-			if l.ID == in.ImplicitTo && l.Status != store.StatusArchived &&
-				(conv != store.ConversationGroup || inGroup(l)) {
-				targets[l.ID] = l
+			if loopRecord.ID == in.ImplicitTo && loopRecord.Status != store.StatusArchived &&
+				(conv != store.ConversationGroup || inGroup(loopRecord)) {
+				targets[loopRecord.ID] = loopRecord
 			}
 		}
 	}
@@ -257,7 +257,7 @@ func (r *Router) Ingest(ctx context.Context, in InboundMessage) error {
 	}
 	msg.DeliveredTo = delivered
 
-	if err := r.store.Messages().Insert(ctx, msg); err != nil {
+	if err := router.store.Messages().Insert(ctx, msg); err != nil {
 		return err // includes ErrDuplicate for telegram double-polls
 	}
 
@@ -265,7 +265,7 @@ func (r *Router) Ingest(ctx context.Context, in InboundMessage) error {
 	if fromLoop != nil {
 		fromLoopName = fromLoop.Name
 	}
-	r.bus.Publish(bus.Item{Kind: bus.KindMessage, LoopID: in.FromLoopID, Payload: &MessagePayload{
+	router.bus.Publish(bus.Item{Kind: bus.KindMessage, LoopID: in.FromLoopID, Payload: &MessagePayload{
 		Message:      *msg,
 		FromLoopName: fromLoopName,
 	}})
@@ -278,8 +278,8 @@ func (r *Router) Ingest(ctx context.Context, in InboundMessage) error {
 	// loop-origin ingest path ever appears, that stops being so (#143).
 	nowT := time.Now()
 	for _, target := range targets {
-		if in.FromLoopID != "" && !r.stormAllow(in.FromLoopID, target.ID, nowT) {
-			r.recordStormDrop(ctx, in.FromLoopID, fromLoopName, target)
+		if in.FromLoopID != "" && !router.stormAllow(in.FromLoopID, target.ID, nowT) {
+			router.recordStormDrop(ctx, in.FromLoopID, fromLoopName, target)
 			continue
 		}
 		env := loop.MessageEnvelope(nowT, loop.Inbound{
@@ -292,8 +292,8 @@ func (r *Router) Ingest(ctx context.Context, in InboundMessage) error {
 			Ref:          loop.MessageRef(msg.ID),
 			ReplyTo:      replyRef,
 		})
-		if !r.deliver.Deliver(target.ID, env) {
-			r.log.Warn("deliver to unknown runtime", "loop", target.Name)
+		if !router.deliver.Deliver(target.ID, env) {
+			router.log.Warn("deliver to unknown runtime", "loop", target.Name)
 		}
 	}
 	return nil
@@ -319,36 +319,36 @@ func dmChatFor(in InboundMessage) int64 {
 	return 0
 }
 
-func (r *Router) stormAllow(fromID, toID string, now time.Time) bool {
+func (router *Router) stormAllow(fromID, toID string, now time.Time) bool {
 	key := fromID + "→" + toID
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	times := r.storm[key]
+	router.mu.Lock()
+	defer router.mu.Unlock()
+	times := router.storm[key]
 	cutoff := now.Add(-stormWindow)
 	kept := times[:0]
-	for _, t := range times {
-		if t.After(cutoff) {
-			kept = append(kept, t)
+	for _, sentAt := range times {
+		if sentAt.After(cutoff) {
+			kept = append(kept, sentAt)
 		}
 	}
 	if len(kept) >= stormLimit {
-		r.storm[key] = kept
+		router.storm[key] = kept
 		return false
 	}
-	r.storm[key] = append(kept, now)
+	router.storm[key] = append(kept, now)
 	return true
 }
 
-func (r *Router) recordStormDrop(ctx context.Context, fromID, fromName string, target *store.Loop) {
-	r.log.Warn("storm guard dropped delivery", "from", fromName, "to", target.Name)
-	e := &store.Event{
+func (router *Router) recordStormDrop(ctx context.Context, fromID, fromName string, target *store.Loop) {
+	router.log.Warn("storm guard dropped delivery", "from", fromName, "to", target.Name)
+	event := &store.Event{
 		LoopID:  fromID,
 		TS:      time.Now().UnixMilli(),
 		Type:    "spool",
 		Subtype: "storm_drop",
 		Payload: fmt.Sprintf(`{"from":%q,"to":%q,"limit_per_hour":%d}`, fromName, target.Name, stormLimit),
 	}
-	if _, err := r.store.Events().Insert(ctx, e); err == nil {
-		r.bus.Publish(bus.Item{Kind: bus.KindAgentEvent, LoopID: fromID, Payload: e})
+	if _, err := router.store.Events().Insert(ctx, event); err == nil {
+		router.bus.Publish(bus.Item{Kind: bus.KindAgentEvent, LoopID: fromID, Payload: event})
 	}
 }
