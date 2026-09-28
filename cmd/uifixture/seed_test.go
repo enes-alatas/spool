@@ -41,35 +41,35 @@ func TestSeedWritesAFleetTheRoomCanRender(t *testing.T) {
 	// The shapes the room draws differently — a screenshot set where every
 	// loop looks the same teaches nothing about the page.
 	var bare, withWorkspace, paused, withSurface, withoutSurface int
-	for _, l := range got {
+	for _, loopRecord := range got {
 		// The loop page says a surface is attached from the token's
 		// presence, so a bot name without one draws as a private loop.
-		if (l.TGBotUsername != "") != (l.TGBotToken != "") {
+		if (loopRecord.TGBotUsername != "") != (loopRecord.TGBotToken != "") {
 			t.Errorf("%s: bot username %q with token set %v; a store no operator could make",
-				l.Name, l.TGBotUsername, l.TGBotToken != "")
+				loopRecord.Name, loopRecord.TGBotUsername, loopRecord.TGBotToken != "")
 		}
-		if l.TGBotToken != "" {
+		if loopRecord.TGBotToken != "" {
 			withSurface++
 		} else {
 			withoutSurface++
 		}
-		if l.Runtime == store.RuntimeBare {
+		if loopRecord.Runtime == store.RuntimeBare {
 			bare++
 		}
-		if l.WorkspaceMode == store.WorkspaceWorktree {
+		if loopRecord.WorkspaceMode == store.WorkspaceWorktree {
 			withWorkspace++
 		}
-		if l.Status == store.StatusPaused {
+		if loopRecord.Status == store.StatusPaused {
 			paused++
 		}
 	}
-	for _, c := range []struct {
-		what string
-		n    int
+	for _, check := range []struct {
+		what  string
+		count int
 	}{{"uncontained", bare}, {"with a workspace", withWorkspace}, {"paused", paused},
 		{"attached to Telegram", withSurface}, {"without a surface", withoutSurface}} {
-		if c.n == 0 {
-			t.Errorf("no fixture loop is %s, so no shot can show one", c.what)
+		if check.count == 0 {
+			t.Errorf("no fixture loop is %s, so no shot can show one", check.what)
 		}
 	}
 
@@ -78,30 +78,30 @@ func TestSeedWritesAFleetTheRoomCanRender(t *testing.T) {
 	// to the session the loop is currently in. A fixture that seeds context
 	// tokens but never points a loop at their session renders a dash in
 	// every row while looking, in the seed code, entirely correct.
-	for _, l := range got {
-		latest, err := db.Turns().Latest(ctx, l.ID)
+	for _, loopRecord := range got {
+		latest, err := db.Turns().Latest(ctx, loopRecord.ID)
 		if err != nil {
-			t.Errorf("%s has no finished turn: its row shows no context and no spend", l.Name)
+			t.Errorf("%s has no finished turn: its row shows no context and no spend", loopRecord.Name)
 			continue
 		}
-		if latest.SessionID != l.CurrentSessionID {
+		if latest.SessionID != loopRecord.CurrentSessionID {
 			t.Errorf("%s: latest turn is in session %q but the loop's current session is %q, so CONTEXT renders as a dash",
-				l.Name, latest.SessionID, l.CurrentSessionID)
+				loopRecord.Name, latest.SessionID, loopRecord.CurrentSessionID)
 		}
 		// The percentage needs a model the room knows; an unknown one shows
 		// bare tokens, which is a different cell than the one being shot.
 		if loop.ContextLimit(latest.Model) == 0 {
-			t.Errorf("%s: latest turn reports model %q, whose context window the room does not know", l.Name, latest.Model)
+			t.Errorf("%s: latest turn reports model %q, whose context window the room does not know", loopRecord.Name, latest.Model)
 		}
 		// And the session has to be open: naming an ended one as current
 		// would report a finished session's last figure as a live one.
-		sessions, err := db.Sessions().ListByLoop(ctx, l.ID, 20)
+		sessions, err := db.Sessions().ListByLoop(ctx, loopRecord.ID, 20)
 		if err != nil {
-			t.Fatalf("sessions %s: %v", l.Name, err)
+			t.Fatalf("sessions %s: %v", loopRecord.Name, err)
 		}
 		for _, sess := range sessions {
-			if sess.ID == l.CurrentSessionID && sess.EndedAt != 0 {
-				t.Errorf("%s: current session %s is already ended", l.Name, sess.ID)
+			if sess.ID == loopRecord.CurrentSessionID && sess.EndedAt != 0 {
+				t.Errorf("%s: current session %s is already ended", loopRecord.Name, sess.ID)
 			}
 		}
 	}
@@ -121,8 +121,8 @@ func TestSeedWritesAFleetTheRoomCanRender(t *testing.T) {
 		t.Fatalf("list events: %v", err)
 	}
 	seen := map[string]bool{}
-	for _, e := range events {
-		seen[e.Type] = true
+	for _, event := range events {
+		seen[event.Type] = true
 	}
 	for _, typ := range []string{"envelope", "assistant", "result", "spool"} {
 		if !seen[typ] {
@@ -134,12 +134,12 @@ func TestSeedWritesAFleetTheRoomCanRender(t *testing.T) {
 	// (internal/httpapi/api.go), so the fixture needs one — a store where
 	// every message arrived shoots an empty version of that badge.
 	var withFailure int
-	for _, l := range got {
-		n, err := db.Messages().UnresolvedSendFailures(ctx, l.ID)
+	for _, loopRecord := range got {
+		failures, err := db.Messages().UnresolvedSendFailures(ctx, loopRecord.ID)
 		if err != nil {
-			t.Fatalf("send failures %s: %v", l.Name, err)
+			t.Fatalf("send failures %s: %v", loopRecord.Name, err)
 		}
-		if n > 0 {
+		if failures > 0 {
 			withFailure++
 		}
 	}
@@ -163,8 +163,8 @@ func TestSeedWritesAFleetTheRoomCanRender(t *testing.T) {
 		t.Fatalf("undelivered: %v", err)
 	}
 	dests := map[string]bool{}
-	for _, m := range undelivered {
-		dests[m.Conversation] = true
+	for _, message := range undelivered {
+		dests[message.Conversation] = true
 	}
 	if len(undelivered) < 2 || len(dests) < 2 {
 		t.Errorf("archivist has %d undelivered messages across %d destinations; want at least 2 of each, or the Undelivered shot cannot show its columns",
@@ -175,8 +175,8 @@ func TestSeedWritesAFleetTheRoomCanRender(t *testing.T) {
 	// shot where every message fits looks the same whether the clamp works
 	// or not — which is how a clamp that never engaged got past review.
 	var clamps bool
-	for _, m := range undelivered {
-		if len(m.Text) > 200 {
+	for _, message := range undelivered {
+		if len(message.Text) > 200 {
 			clamps = true
 		}
 	}
@@ -193,14 +193,14 @@ func TestSeedWritesAFleetTheRoomCanRender(t *testing.T) {
 		t.Fatalf("fleet channel: %v", err)
 	}
 	inChannel := map[int64]bool{}
-	for _, m := range channel {
-		inChannel[m.ID] = true
+	for _, message := range channel {
+		inChannel[message.ID] = true
 	}
 	var reply, operator, human bool
-	for _, m := range channel {
-		reply = reply || (m.ReplyToID != 0 && inChannel[m.ReplyToID])
-		operator = operator || m.Origin == store.OriginWeb
-		human = human || m.Origin == store.OriginTelegramGroup
+	for _, message := range channel {
+		reply = reply || (message.ReplyToID != 0 && inChannel[message.ReplyToID])
+		operator = operator || message.Origin == store.OriginWeb
+		human = human || message.Origin == store.OriginTelegramGroup
 	}
 	if !reply || !operator || !human {
 		t.Errorf("fleet channel: reply %v, operator post %v, human post %v; want all three, or the channel shot cannot show them",
@@ -210,16 +210,16 @@ func TestSeedWritesAFleetTheRoomCanRender(t *testing.T) {
 	// The channel marks a post that stays on the hub (#285), so the mirror
 	// states have to be the hub's own: the operator's post on the hub only,
 	// everything that came in or got out on the surface too.
-	for _, m := range channel {
+	for _, message := range channel {
 		want := store.MirrorMirrored
 		switch {
-		case m.Origin == store.OriginWeb:
+		case message.Origin == store.OriginWeb:
 			want = store.MirrorNotMirrored
-		case m.SendFailedAt != 0:
+		case message.SendFailedAt != 0:
 			want = store.MirrorPending
 		}
-		if m.Mirror != want {
-			t.Errorf("fleet channel message %d (%s, %s): mirror %q, want %q", m.ID, m.Origin, m.Author, m.Mirror, want)
+		if message.Mirror != want {
+			t.Errorf("fleet channel message %d (%s, %s): mirror %q, want %q", message.ID, message.Origin, message.Author, message.Mirror, want)
 		}
 	}
 

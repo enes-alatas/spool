@@ -90,8 +90,8 @@ func seedTimeline(ctx context.Context, db store.Store, loopID string) error {
 			},
 		}},
 	}
-	for _, e := range events {
-		raw, err := json.Marshal(e.payload)
+	for _, event := range events {
+		raw, err := json.Marshal(event.payload)
 		if err != nil {
 			return fmt.Errorf("payload: %w", err)
 		}
@@ -99,12 +99,12 @@ func seedTimeline(ctx context.Context, db store.Store, loopID string) error {
 			LoopID:    loopID,
 			SessionID: sessionID,
 			TurnID:    turn.ID,
-			TS:        ms(e.at),
-			Type:      e.typ,
-			Subtype:   e.subtype,
+			TS:        ms(event.at),
+			Type:      event.typ,
+			Subtype:   event.subtype,
 			Payload:   string(raw),
 		}); err != nil {
-			return fmt.Errorf("event %s: %w", e.typ, err)
+			return fmt.Errorf("event %s: %w", event.typ, err)
 		}
 	}
 	return nil
@@ -138,25 +138,25 @@ func seedSpend(ctx context.Context, db store.Store, ids map[string]string) error
 			// Spread across the last day, so the day's spend is a day's worth.
 			at := -24*time.Hour + time.Duration(i)*29*time.Minute
 			running += spend.cost
-			t := &store.Turn{
+			turn := &store.Turn{
 				ID:        fmt.Sprintf("turn_fixture_%s_%02d", name, i),
 				LoopID:    loopID,
 				SessionID: sessionID,
 				Trigger:   store.TriggerTick,
 				StartedAt: ms(at),
 			}
-			if err := db.Turns().Create(ctx, t); err != nil {
+			if err := db.Turns().Create(ctx, turn); err != nil {
 				return fmt.Errorf("history turn %s: %w", name, err)
 			}
-			t.EndedAt = ms(at + 40*time.Second)
-			t.DurationMS = 40_000
-			t.CostUSD = spend.cost
-			t.SessionCostUSD = running
-			t.InputTokens = 2_100
-			t.OutputTokens = 480
-			t.ContextTokens = 38_000
-			t.ResultText = "Nothing to report."
-			if err := db.Turns().Finish(ctx, t); err != nil {
+			turn.EndedAt = ms(at + 40*time.Second)
+			turn.DurationMS = 40_000
+			turn.CostUSD = spend.cost
+			turn.SessionCostUSD = running
+			turn.InputTokens = 2_100
+			turn.OutputTokens = 480
+			turn.ContextTokens = 38_000
+			turn.ResultText = "Nothing to report."
+			if err := db.Turns().Finish(ctx, turn); err != nil {
 				return fmt.Errorf("finish history turn %s: %w", name, err)
 			}
 		}
@@ -206,7 +206,7 @@ func seedCurrentSessions(ctx context.Context, db store.Store, ids map[string]str
 		}); err != nil {
 			return fmt.Errorf("current session %s: %w", cur.name, err)
 		}
-		t := &store.Turn{
+		turn := &store.Turn{
 			ID:        "turn_fixture_" + cur.name + "_current",
 			LoopID:    loopID,
 			SessionID: sessionID,
@@ -214,18 +214,18 @@ func seedCurrentSessions(ctx context.Context, db store.Store, ids map[string]str
 			Model:     cur.model,
 			StartedAt: ms(cur.endedAt - 40*time.Second),
 		}
-		if err := db.Turns().Create(ctx, t); err != nil {
+		if err := db.Turns().Create(ctx, turn); err != nil {
 			return fmt.Errorf("current turn %s: %w", cur.name, err)
 		}
-		t.EndedAt = ms(cur.endedAt)
-		t.DurationMS = 40_000
-		t.CostUSD = cur.cost
-		t.SessionCostUSD = cur.cost
-		t.InputTokens = 2_100
-		t.OutputTokens = 480
-		t.ContextTokens = cur.tokens
-		t.ResultText = "Nothing to report."
-		if err := db.Turns().Finish(ctx, t); err != nil {
+		turn.EndedAt = ms(cur.endedAt)
+		turn.DurationMS = 40_000
+		turn.CostUSD = cur.cost
+		turn.SessionCostUSD = cur.cost
+		turn.InputTokens = 2_100
+		turn.OutputTokens = 480
+		turn.ContextTokens = cur.tokens
+		turn.ResultText = "Nothing to report."
+		if err := db.Turns().Finish(ctx, turn); err != nil {
 			return fmt.Errorf("finish current turn %s: %w", cur.name, err)
 		}
 		if err := db.Loops().SetRuntime(ctx, loopID, sessionID, 0); err != nil {
@@ -237,7 +237,7 @@ func seedCurrentSessions(ctx context.Context, db store.Store, ids map[string]str
 
 // position names an entry of a fixture list by its index, for the fields
 // that are optional: a plain int would make the zero entry the default.
-func position(i int) *int { return &i }
+func position(index int) *int { return &index }
 
 // A group conversation and one control-room thread. Every handle here is
 // invented; the display names are first names with no surname, and none of
@@ -289,48 +289,48 @@ func seedConversations(ctx context.Context, db store.Store, ids map[string]strin
 		{author: "gardener", from: ids["gardener"], text: "Three pages, all fixed — PR #48. The quickstart also showed the old output, so that block went too.", at: -8 * time.Minute},
 	}
 	groupIDs := make([]int64, len(group))
-	for i, m := range group {
+	for i, message := range group {
 		origin := store.OriginTelegramGroup
-		if m.from != "" {
+		if message.from != "" {
 			origin = store.OriginLoop
 		}
 		msg := &store.Message{
-			TS:         ms(m.at),
+			TS:         ms(message.at),
 			Origin:     origin,
-			Author:     m.author,
-			FromLoopID: m.from,
-			Text:       m.text,
+			Author:     message.author,
+			FromLoopID: message.from,
+			Text:       message.text,
 			// Telegram numbers message_id per bot conversation (ADR-0020),
 			// so these have to differ: the store keys a sighting on the pair.
 			TGChatID:     -1001000000000,
 			TGMessageID:  int64(4100 + i),
 			Conversation: store.ConversationGroup,
-			DeliveredTo:  m.to,
+			DeliveredTo:  message.to,
 		}
 		// Mirrored as the hub records it (#285): a post that came in from
 		// Telegram is on Telegram, and so is a loop's send that got through.
 		// A failed send is pending from SetSendResult below. Without this
 		// every row takes the insert's default, not_mirrored, and the channel
 		// shot calls every post "hub only".
-		if m.failed == "" {
+		if message.failed == "" {
 			msg.Mirror = store.MirrorMirrored
 		}
-		if m.web {
+		if message.web {
 			msg.Origin, msg.TGChatID, msg.TGMessageID = store.OriginWeb, 0, 0
 			// The operator's post never leaves the hub (ADR-0032 item 4).
 			msg.Mirror = store.MirrorNotMirrored
 		}
-		if m.replyTo != nil {
-			msg.ReplyToID = groupIDs[*m.replyTo]
+		if message.replyTo != nil {
+			msg.ReplyToID = groupIDs[*message.replyTo]
 		}
 		if err := db.Messages().Insert(ctx, msg); err != nil {
 			return fmt.Errorf("group message: %w", err)
 		}
 		groupIDs[i] = msg.ID
-		if m.failed != "" {
+		if message.failed != "" {
 			// Recorded the way the sender records it, after the retries are
 			// spent — the fields are never written by the insert.
-			if err := db.Messages().SetSendResult(ctx, msg.ID, ms(m.at+30*time.Second), m.failed); err != nil {
+			if err := db.Messages().SetSendResult(ctx, msg.ID, ms(message.at+30*time.Second), message.failed); err != nil {
 				return fmt.Errorf("group message failure: %w", err)
 			}
 		}
@@ -356,29 +356,29 @@ func seedConversations(ctx context.Context, db store.Store, ids map[string]strin
 		{author: "archivist", from: ids["archivist"], text: "Eleven of nineteen reports read. Two have no timeline at all, so they will be one line each rather than a guess.", at: -2*time.Hour + 30*time.Second},
 		{author: "archivist", from: ids["archivist"], text: "The two without timelines are in, one line each. That closes the nineteen. The summary is in the incident folder: seven outages traced to the same expired certificate, four to a config push that skipped review, and the rest one-offs with nothing in common worth a pattern.", at: -96 * time.Minute, failed: "Bad Request: message text is empty after entity parsing"},
 	}
-	for _, m := range room {
+	for _, message := range room {
 		origin := store.OriginWeb
-		if m.from != "" {
+		if message.from != "" {
 			origin = store.OriginLoop
 		}
 		msg := &store.Message{
-			TS:                 ms(m.at),
+			TS:                 ms(message.at),
 			Origin:             origin,
-			Author:             m.author,
-			FromLoopID:         m.from,
-			Text:               m.text,
+			Author:             message.author,
+			FromLoopID:         message.from,
+			Text:               message.text,
 			Conversation:       store.ConversationControlRoom,
 			ConversationLoopID: ids["archivist"],
 			DeliveredTo:        []string{ids["archivist"]},
 		}
-		if m.failed != "" {
+		if message.failed != "" {
 			msg.DeliveredTo = nil
 		}
 		if err := db.Messages().Insert(ctx, msg); err != nil {
 			return fmt.Errorf("control-room message: %w", err)
 		}
-		if m.failed != "" {
-			if err := db.Messages().SetSendResult(ctx, msg.ID, ms(m.at+30*time.Second), m.failed); err != nil {
+		if message.failed != "" {
+			if err := db.Messages().SetSendResult(ctx, msg.ID, ms(message.at+30*time.Second), message.failed); err != nil {
 				return fmt.Errorf("control-room message failure: %w", err)
 			}
 		}
@@ -400,22 +400,22 @@ func seedSenders(ctx context.Context, db store.Store) error {
 		{id: 700000002, user: "devrim_example", display: "Devrim", status: store.SenderPending, via: "dm:watcher"},
 		{id: 700000003, user: "passerby_example", display: "Passer-by", status: store.SenderBlocked, via: "group:watcher"},
 	}
-	for _, s := range senders {
+	for _, sender := range senders {
 		if err := db.TGSenders().Create(ctx, &store.TGSender{
-			TGUserID:     s.id,
-			Username:     s.user,
-			Display:      s.display,
+			TGUserID:     sender.id,
+			Username:     sender.user,
+			Display:      sender.display,
 			Status:       store.SenderPending,
-			PairCode:     fmt.Sprintf("%06d", s.id%1000000),
-			FirstSeenVia: s.via,
+			PairCode:     fmt.Sprintf("%06d", sender.id%1000000),
+			FirstSeenVia: sender.via,
 			CreatedAt:    ms(-13 * 24 * time.Hour),
 			UpdatedAt:    ms(-13 * 24 * time.Hour),
 		}); err != nil {
-			return fmt.Errorf("sender %s: %w", s.user, err)
+			return fmt.Errorf("sender %s: %w", sender.user, err)
 		}
-		if s.status != store.SenderPending {
-			if err := db.TGSenders().SetStatus(ctx, s.id, s.status, ms(-12*24*time.Hour)); err != nil {
-				return fmt.Errorf("sender status %s: %w", s.user, err)
+		if sender.status != store.SenderPending {
+			if err := db.TGSenders().SetStatus(ctx, sender.id, sender.status, ms(-12*24*time.Hour)); err != nil {
+				return fmt.Errorf("sender status %s: %w", sender.user, err)
 			}
 		}
 	}
@@ -431,9 +431,9 @@ func seedSecrets(ctx context.Context, db store.Store, loopID string) error {
 		{"GITHUB_TOKEN", "ghp_000000000000_not_a_real_token"},
 		{"HANDBOOK_DEPLOY_KEY", "not-a-real-deploy-key-0000"},
 	}
-	for _, s := range secrets {
-		if err := db.LoopSecrets().Set(ctx, loopID, s.name, s.value, ms(-6*24*time.Hour)); err != nil {
-			return fmt.Errorf("secret %s: %w", s.name, err)
+	for _, secret := range secrets {
+		if err := db.LoopSecrets().Set(ctx, loopID, secret.name, secret.value, ms(-6*24*time.Hour)); err != nil {
+			return fmt.Errorf("secret %s: %w", secret.name, err)
 		}
 	}
 	return nil
@@ -454,12 +454,12 @@ func seedRules(ctx context.Context, db store.Store) error {
 			body: "Between 22:00 and 07:00 local, hold anything that is not an outage until morning.",
 		},
 	}
-	for _, r := range rules {
+	for _, rule := range rules {
 		if err := db.FleetRules().Create(ctx, &store.FleetRule{
-			ID: r.id, Title: r.title, Body: r.body, Enabled: r.enabled,
+			ID: rule.id, Title: rule.title, Body: rule.body, Enabled: rule.enabled,
 			CreatedAt: ms(-30 * 24 * time.Hour), UpdatedAt: ms(-30 * 24 * time.Hour),
 		}); err != nil {
-			return fmt.Errorf("rule %s: %w", r.title, err)
+			return fmt.Errorf("rule %s: %w", rule.title, err)
 		}
 	}
 	return nil

@@ -76,15 +76,15 @@ const fixtureOperatorToken = "uifixture-operator-token-not-a-secret"
 // would swap that hub's credential for one published in this repo, and the
 // next start would accept it.
 func writeOperatorToken(dir string) error {
-	f, err := os.OpenFile(operator.Path(dir), os.O_WRONLY|os.O_CREATE|os.O_EXCL, datadir.FileMode)
+	file, err := os.OpenFile(operator.Path(dir), os.O_WRONLY|os.O_CREATE|os.O_EXCL, datadir.FileMode)
 	if err != nil {
 		return fmt.Errorf("operator token: %w", err)
 	}
-	if _, err := f.WriteString(fixtureOperatorToken + "\n"); err != nil {
-		f.Close()
+	if _, err := file.WriteString(fixtureOperatorToken + "\n"); err != nil {
+		file.Close()
 		return fmt.Errorf("operator token: %w", err)
 	}
-	return f.Close()
+	return file.Close()
 }
 
 // The clock the fixture is written against. Times are relative to now so the
@@ -92,7 +92,7 @@ func writeOperatorToken(dir string) error {
 // a broken fleet rather than a working one.
 var now = time.Now()
 
-func ms(d time.Duration) int64 { return now.Add(d).UnixMilli() }
+func ms(offset time.Duration) int64 { return now.Add(offset).UnixMilli() }
 
 type fixtureLoop struct {
 	name     string
@@ -154,7 +154,7 @@ var loops = []fixtureLoop{
 func seed(ctx context.Context, db store.Store) error {
 	ids := map[string]string{}
 	for i, fl := range loops {
-		l := &store.Loop{
+		loopRecord := &store.Loop{
 			ID:              fmt.Sprintf("loop_fixture%02d", i+1),
 			Name:            fl.name,
 			Mission:         fl.mission,
@@ -173,19 +173,19 @@ func seed(ctx context.Context, db store.Store) error {
 			UpdatedAt:       ms(-4 * time.Minute),
 		}
 		if fl.repoPath != "" {
-			l.WorkspaceMode = store.WorkspaceWorktree
-			l.RepoPath = fl.repoPath
-			l.WorktreePath = filepath.Join("/srv/example/worktrees", fl.name)
-			l.WorkspacePath = l.WorktreePath
-			l.Branch = fl.branch
+			loopRecord.WorkspaceMode = store.WorkspaceWorktree
+			loopRecord.RepoPath = fl.repoPath
+			loopRecord.WorktreePath = filepath.Join("/srv/example/worktrees", fl.name)
+			loopRecord.WorkspacePath = loopRecord.WorktreePath
+			loopRecord.Branch = fl.branch
 		}
 		if fl.runtime == store.RuntimeDocker {
 			// The API fills these in on every contained loop it creates
 			// (internal/httpapi/api.go), so a store where they are zero is
 			// one no operator could have made — and the workstation panel
 			// renders the zero as "0 MB · 0 cpu".
-			l.MemMB = 4096
-			l.CPUs = 2
+			loopRecord.MemMB = 4096
+			loopRecord.CPUs = 2
 		}
 		if fl.botUser != "" {
 			// A bot username with no token is a store no operator could have
@@ -194,21 +194,21 @@ func seed(ctx context.Context, db store.Store) error {
 			// so the secret scan has nothing to weigh, and ui-shots points
 			// the hub's Bot API at a closed local port, so no poller ever
 			// carries it off the machine.
-			l.TGBotToken = "uifixture-not-a-bot"
-			l.TGGroupChatID = -1001000000000 - int64(i)
-			l.TGGroupBoundAt = ms(-20 * 24 * time.Hour)
-			l.OwnerTGUserID = 700000001
-			l.OwnerDMChatID = 700000001
+			loopRecord.TGBotToken = "uifixture-not-a-bot"
+			loopRecord.TGGroupChatID = -1001000000000 - int64(i)
+			loopRecord.TGGroupBoundAt = ms(-20 * 24 * time.Hour)
+			loopRecord.OwnerTGUserID = 700000001
+			loopRecord.OwnerDMChatID = 700000001
 		}
-		if err := db.Loops().Create(ctx, l); err != nil {
+		if err := db.Loops().Create(ctx, loopRecord); err != nil {
 			return fmt.Errorf("create %s: %w", fl.name, err)
 		}
-		ids[fl.name] = l.ID
+		ids[fl.name] = loopRecord.ID
 		next := ms(12 * time.Minute)
 		if fl.status == store.StatusPaused {
 			next = 0
 		}
-		if err := db.Schedule().Set(ctx, l.ID, next); err != nil {
+		if err := db.Schedule().Set(ctx, loopRecord.ID, next); err != nil {
 			return fmt.Errorf("schedule %s: %w", fl.name, err)
 		}
 	}
