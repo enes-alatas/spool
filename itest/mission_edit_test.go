@@ -24,6 +24,7 @@ type patchResult struct {
 // The server restarts between the two, so the reason is proven to travel
 // with the note through the store rather than only in memory.
 func TestMissionRotationTellsTheLoopWhy(t *testing.T) {
+	t.Parallel()
 	dataDir := t.TempDir()
 	s := startServer(t, dataDir)
 	s.createLoop("clerk", map[string]any{"mission": "Keep the ledger."})
@@ -72,6 +73,7 @@ func TestMissionRotationTellsTheLoopWhy(t *testing.T) {
 // rotates. Saving asks for that rotation (#261), and the proof is the prompt
 // the successor session runs: the new mission in it, the old one gone.
 func TestSavingAMissionRotatesTheSession(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	ws := workspaceWithScript(t, "!sysprompt\n")
 	s.createLoop("scribe", map[string]any{
@@ -113,6 +115,7 @@ func TestSavingAMissionRotatesTheSession(t *testing.T) {
 // rotation costs the loop every turn of context it has, so a Save on text
 // nobody changed must not buy one.
 func TestSavingAnUnchangedMissionDoesNotRotate(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	ws := workspaceWithScript(t, "!sysprompt\n")
 	s.createLoop("keeper", map[string]any{
@@ -141,6 +144,7 @@ func TestSavingAnUnchangedMissionDoesNotRotate(t *testing.T) {
 // A loop with no mission is a loop with no instructions, and the column
 // would take one: the create path refuses an empty mission, and so does this.
 func TestPatchRefusesAnEmptyMission(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	s.createLoop("warden", map[string]any{"mission": "Keep the ledger."})
 

@@ -51,6 +51,7 @@ func mirrorIs(want string) func(activityMessage) bool {
 // pending with the failure on the send fields, and a retry that lands
 // mirrors it.
 func TestMirrorSaysWhereAMessageIs(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 5151, First: "Operator", Username: "operator"}
 	srv, tg := startTelegramFleet(t, operator)
 	srv.createLoop("gamma", nil)
@@ -101,6 +102,7 @@ func TestMirrorSaysWhereAMessageIs(t *testing.T) {
 // stopped process, so nothing would ever send it. As a failure it is on the
 // operator's list, retryable, and on its loop's timeline.
 func TestSendInterruptedByARestartIsAFailure(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 5252, First: "Operator", Username: "operator"}
 	dir := t.TempDir()
 	srv, tg := startTelegramFleetIn(t, dir, operator)

@@ -28,6 +28,7 @@ type ownedLoop struct {
 // sender who is not yet allowed is refused by design — a different outcome
 // with the same shape, which would make a failure here ambiguous.
 func TestAllowlistingTheOperatorKeepsEveryLoopOwned(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 5454, First: "Operator", Username: "operator"}
 	names := []string{"alpha", "beta", "gamma", "delta", "epsilon", "zeta"}
 

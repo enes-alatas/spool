@@ -18,6 +18,7 @@ import (
 // the script sends "$ref", which the stand-in fills from the turn it is
 // answering, so the ref travels the same path a real loop's would.
 func TestALoopsResendResolvesTheFailureItNames(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 7781, First: "Operator", Username: "operator"}
 	ws := workspaceWithScript(t, "!ctx 0\n"+
 		`!send {"destination":"group","text":"@beta the deploy is wedged"}`+"\n"+
@@ -83,6 +84,7 @@ func TestALoopsResendResolvesTheFailureItNames(t *testing.T) {
 // rather than find out afterwards that it said something in the wrong room
 // and closed a failure that is still the operator's.
 func TestAResendToAnotherDestinationIsRefused(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 7782, First: "Operator", Username: "operator"}
 	ws := workspaceWithScript(t, "!ctx 0\n"+
 		`!send {"destination":"group","text":"@beta the deploy is wedged"}`+"\n"+
@@ -127,6 +129,7 @@ func TestAResendToAnotherDestinationIsRefused(t *testing.T) {
 // the message unsent, because a loop that learned of the mistake afterwards
 // would already have said the words twice.
 func TestResendsRefusesWhatItCannotResolve(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	s.createLoop("aster", nil)
 	s.createLoop("briar", nil)
@@ -182,6 +185,7 @@ func TestResendsRefusesWhatItCannotResolve(t *testing.T) {
 // and nothing but a human hand could take it off the operator's list, for
 // words that did in the end arrive.
 func TestAFailedResendIsResolvedByTheNextOne(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 7783, First: "Operator", Username: "operator"}
 	ws := workspaceWithScript(t, "!ctx 0\n"+
 		`!send {"destination":"group","text":"@beta the deploy is wedged"}`+"\n"+

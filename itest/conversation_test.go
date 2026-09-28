@@ -12,6 +12,7 @@ import (
 // message queued behind a busy turn must not blend into one answer — the
 // actor runs one turn per conversation (ADR-0026).
 func TestSeparateTurnsPerConversation(t *testing.T) {
+	t.Parallel()
 	// alpha's first turn hangs long enough for both arrivals to queue;
 	// afterwards it echoes (a bare !ctx keeps the echo reply), so each
 	// turn's reply names its own inputs.
@@ -22,9 +23,9 @@ func TestSeparateTurnsPerConversation(t *testing.T) {
 	s.createLoop("beta", map[string]any{"workspace_path": wsBeta})
 
 	s.message("alpha", "start hanging")
-	time.Sleep(300 * time.Millisecond) // alpha is inside the hang
-	s.message("alpha", "web note")     // control_room conversation
-	s.message("beta", "go")            // beta's turn group-sends to alpha
+	s.waitState("alpha", "busy", 10*time.Second) // alpha is inside the hang
+	s.message("alpha", "web note")               // control_room conversation
+	s.message("beta", "go")                      // beta's turn group-sends to alpha
 
 	webTurn := s.waitTurn("alpha", 30*time.Second, func(tn turn) bool {
 		return strings.Contains(tn.ResultText, "web note")
@@ -54,6 +55,7 @@ func TestSeparateTurnsPerConversation(t *testing.T) {
 // loop's control_room sends, newest first — and refuses the group kind,
 // which has no per-loop thread.
 func TestControlRoomThreadEndpoint(t *testing.T) {
+	t.Parallel()
 	ws := workspaceWithScript(t, "!ctx 0\n"+
 		`!send {"destination":"control_room","text":"thread reply"}`+"\n")
 	s := startServer(t, t.TempDir())

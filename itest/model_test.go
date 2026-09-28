@@ -14,6 +14,7 @@ import (
 // checks it again; an edit of the model clears the refusal and wakes the
 // loop on the new one.
 func TestAnUnrecognizedModelHoldsTheLoopUntilTheModelIsEdited(t *testing.T) {
+	t.Parallel()
 	dataDir := t.TempDir()
 	s := startServer(t, dataDir)
 	s.createLoop("aster", map[string]any{"model": "claude-nosuch-1"})
@@ -74,6 +75,7 @@ func TestAnUnrecognizedModelHoldsTheLoopUntilTheModelIsEdited(t *testing.T) {
 // not find the loop held on the corrected model: the refusal that arrives
 // after the edit holds nothing, and the turn runs again on the new model.
 func TestARefusalOfAModelEditedMidTurnHoldsNothing(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	s.createLoop("aster", map[string]any{"model": "claude-nosuch-slow-1"})
 

@@ -44,6 +44,41 @@ func startDockerServer(t *testing.T, dataDir string, extraArgs ...string) *serve
 	return s
 }
 
+// TestDockerRows runs every row that drives the real daemon, one at a time.
+// The rows share the daemon and more than that: the egress wall is named
+// after its image (ADR-0028), so every hub on the suite's image joins one
+// proxy and one network. They share nothing with the bare rows, so the
+// series as a whole runs in parallel with those (#182). As subtests of one
+// parallel test they hold one of the -parallel slots between them; as
+// parallel tests queued on a lock, the waiting ones would hold the rest.
+func TestDockerRows(t *testing.T) {
+	t.Parallel()
+	for _, row := range []struct {
+		name string
+		run  func(*testing.T)
+	}{
+		{"ControlRoomCannotCreateABareLoopOnADockerHub", controlRoomCannotCreateABareLoopOnADockerHub},
+		{"SettingsReportsWhetherBareIsAllowed", settingsReportsWhetherBareIsAllowed},
+		{"DockerEgressAllowlist", dockerEgressAllowlist},
+		{"DockerWorkstationCannotReachTheAPI", dockerWorkstationCannotReachTheAPI},
+		{"DockerEchoTurn", dockerEchoTurn},
+		{"DockerScriptedTurn", dockerScriptedTurn},
+		{"DockerWorkstationCustomSpec", dockerWorkstationCustomSpec},
+		{"DockerIdleDrainAndResume", dockerIdleDrainAndResume},
+		{"DockerOrchestratorRestartReconnects", dockerOrchestratorRestartReconnects},
+		{"DockerWorkstationDownSurfacesAndHeals", dockerWorkstationDownSurfacesAndHeals},
+		{"DockerLoopDeleteRemovesWorkstation", dockerLoopDeleteRemovesWorkstation},
+		{"MixedRuntimeFleet", mixedRuntimeFleet},
+		{"DockerWorkstationNeedsClaudeToken", dockerWorkstationNeedsClaudeToken},
+		{"DockerWorkstationPowerCycle", dockerWorkstationPowerCycle},
+		{"DockerPowerOnLeavesARunningTurnAlone", dockerPowerOnLeavesARunningTurnAlone},
+		{"DockerFailedPowerOnKeepsTheOffIntent", dockerFailedPowerOnKeepsTheOffIntent},
+		{"DockerDownReasonNamesTheFault", dockerDownReasonNamesTheFault},
+	} {
+		t.Run(row.name, row.run)
+	}
+}
+
 func requireWorkstationImage(t *testing.T) {
 	t.Helper()
 	if err := exec.Command("docker", "version").Run(); err != nil {
@@ -72,7 +107,7 @@ func dockerInspect(format, name string) (string, error) {
 	return strings.TrimSpace(string(out)), err
 }
 
-func TestDockerEchoTurn(t *testing.T) {
+func dockerEchoTurn(t *testing.T) {
 	s := startDockerServer(t, t.TempDir())
 	s.createLoop("wsecho", nil)
 	view := s.loop("wsecho")
@@ -100,13 +135,13 @@ func TestDockerEchoTurn(t *testing.T) {
 	}
 }
 
-// TestDockerScriptedTurn: a contained loop can be scripted exactly as a bare
+// dockerScriptedTurn: a contained loop can be scripted exactly as a bare
 // one is, which tier 2 could not do before — a docker loop's working
 // directory is inside its workstation, so the .fakeclaude file never reached
 // it and every contained turn could only echo (#117). Without scripting,
 // nothing that depends on what a turn *does* — a crash, a hang, a full
 // context — could be tested against a workstation at all.
-func TestDockerScriptedTurn(t *testing.T) {
+func dockerScriptedTurn(t *testing.T) {
 	s := startDockerServer(t, t.TempDir())
 	s.createLoop("wsscript", nil)
 	cleanupWorkstation(t, s.loop("wsscript").ID)
@@ -129,10 +164,10 @@ func TestDockerScriptedTurn(t *testing.T) {
 	}
 }
 
-// TestDockerWorkstationCustomSpec pins that a loop's own image and limits —
+// dockerWorkstationCustomSpec pins that a loop's own image and limits —
 // not the server defaults — reach docker run. The image is a distinct tag of
 // the test image so the assertion can tell the two apart.
-func TestDockerWorkstationCustomSpec(t *testing.T) {
+func dockerWorkstationCustomSpec(t *testing.T) {
 	s := startDockerServer(t, t.TempDir())
 	altImage := workstationTestImage + "-alt"
 	if err := exec.Command("docker", "tag", workstationTestImage, altImage).Run(); err != nil {
@@ -154,10 +189,10 @@ func TestDockerWorkstationCustomSpec(t *testing.T) {
 	}
 }
 
-// TestDockerIdleDrainAndResume is the containerized analog of the bare
+// dockerIdleDrainAndResume is the containerized analog of the bare
 // idle-reap test: the idle timeout drains the exec via stdin EOF, and the
 // next message resumes the same session off the volume-backed home.
-func TestDockerIdleDrainAndResume(t *testing.T) {
+func dockerIdleDrainAndResume(t *testing.T) {
 	s := startDockerServer(t, t.TempDir())
 	s.createLoop("wsidle", nil)
 	cleanupWorkstation(t, s.loop("wsidle").ID)
@@ -173,7 +208,7 @@ func TestDockerIdleDrainAndResume(t *testing.T) {
 	}
 }
 
-func TestDockerOrchestratorRestartReconnects(t *testing.T) {
+func dockerOrchestratorRestartReconnects(t *testing.T) {
 	dataDir := t.TempDir()
 	s := startDockerServer(t, dataDir)
 	s.createLoop("wsrestart", nil)
@@ -200,7 +235,7 @@ func TestDockerOrchestratorRestartReconnects(t *testing.T) {
 	}
 }
 
-func TestDockerWorkstationDownSurfacesAndHeals(t *testing.T) {
+func dockerWorkstationDownSurfacesAndHeals(t *testing.T) {
 	s := startDockerServer(t, t.TempDir())
 	s.createLoop("wsdown", nil)
 	loopID := s.loop("wsdown").ID
@@ -228,7 +263,7 @@ func TestDockerWorkstationDownSurfacesAndHeals(t *testing.T) {
 	}
 }
 
-func TestDockerLoopDeleteRemovesWorkstation(t *testing.T) {
+func dockerLoopDeleteRemovesWorkstation(t *testing.T) {
 	s := startDockerServer(t, t.TempDir())
 	s.createLoop("wsgone", nil)
 	loopID := s.loop("wsgone").ID
@@ -246,13 +281,13 @@ func TestDockerLoopDeleteRemovesWorkstation(t *testing.T) {
 	}
 }
 
-// TestMixedRuntimeFleet pins the per-loop dispatch: an explicit bare loop on
+// mixedRuntimeFleet pins the per-loop dispatch: an explicit bare loop on
 // a docker-default server still runs as a host subprocess.
 // A fleet may mix runtimes: the docker default does not force a workstation
 // on a loop asked for as bare. Since #240 the uncontained half of that mix is
 // opt-in at startup — the property here is per-loop choice, not a hub that
 // hands out uncontained loops to whoever asks.
-func TestMixedRuntimeFleet(t *testing.T) {
+func mixedRuntimeFleet(t *testing.T) {
 	s := startDockerServer(t, t.TempDir(), "--allow-bare")
 	s.createLoop("stillbare", map[string]any{"runtime": "bare"})
 	view := s.loop("stillbare")
@@ -266,11 +301,11 @@ func TestMixedRuntimeFleet(t *testing.T) {
 	}
 }
 
-// TestDockerWorkstationNeedsClaudeToken pins the wake-time gate: with no
+// dockerWorkstationNeedsClaudeToken pins the wake-time gate: with no
 // operator setup-token a contained loop refuses to wake — it surfaces the
 // reason and provisions nothing, rather than execing claude with no login —
 // and setting the token lets the same loop run.
-func TestDockerWorkstationNeedsClaudeToken(t *testing.T) {
+func dockerWorkstationNeedsClaudeToken(t *testing.T) {
 	s := startDockerServer(t, t.TempDir())
 	s.mustJSON("PUT", "/api/settings", map[string]any{"claude_oauth_token": ""}, nil)
 
@@ -305,6 +340,7 @@ func TestDockerWorkstationNeedsClaudeToken(t *testing.T) {
 // TestCreateLoopRuntimeValidation needs no daemon: every case fails before
 // the availability probe, so it runs on every machine.
 func TestCreateLoopRuntimeValidation(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	cases := []struct {
 		name string

@@ -52,6 +52,7 @@ func (s *server) createRule(title, body string, enabled bool) ruleWriteView {
 // section cap reject server-side with a machine-readable code, a shrinking
 // edit is never refused, and DELETE answers 204.
 func TestFleetRulesCRUD(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 
 	fresh := s.rules()
@@ -153,6 +154,7 @@ func TestFleetRulesCRUD(t *testing.T) {
 // is replaced by the loop's next rotation, asked for here so the row does
 // not wait on one the loop would have had for its own reasons.
 func TestFleetRulesReachThePrompt(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	rule := s.createRule("sign your work", "End every artifact with your name.", true)
 
@@ -213,6 +215,7 @@ func TestFleetRulesReachThePrompt(t *testing.T) {
 // mission section is still read here — the note quotes it as it stands —
 // which is what would catch a note that stopped carrying it.
 func TestStandingInstructionsReachARunningSession(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	ws := workspaceWithScript(t, "!echo\n")
 	s.createLoop("bound", map[string]any{"workspace_path": ws, "workspace_mode": "dir"})
@@ -277,6 +280,7 @@ func TestStandingInstructionsReachARunningSession(t *testing.T) {
 // it is not told either, and must not be: a note announcing a change to a
 // session whose own system prompt already contains it is noise.
 func TestStandingInstructionsAreNotSpentOnAHandoffTurn(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	ws := workspaceWithScript(t, "!echo\n")
 	s.createLoop("rotator", map[string]any{"workspace_path": ws, "workspace_mode": "dir"})

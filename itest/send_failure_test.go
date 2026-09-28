@@ -17,6 +17,7 @@ import (
 // TestSendSurvivesABlip: a send refused twice gets through on a later
 // attempt, and the message carries no failure afterwards.
 func TestSendSurvivesABlip(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 7711, First: "Operator", Username: "operator"}
 	ws := workspaceWithScript(t, "!ctx 0\n"+
 		`!send {"destination":"group","text":"@beta worth saying twice"}`+"\n")
@@ -44,6 +45,7 @@ func TestSendSurvivesABlip(t *testing.T) {
 // that words meant for them never arrived, which is the whole point — the
 // loop's own view of the world already says it spoke.
 func TestSendThatNeverGetsThroughIsRecorded(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 7722, First: "Operator", Username: "operator"}
 	ws := workspaceWithScript(t, "!ctx 0\n"+
 		`!send {"destination":"group","text":"@beta into the void"}`+"\n")
@@ -85,6 +87,7 @@ func TestSendThatNeverGetsThroughIsRecorded(t *testing.T) {
 // told — and it is told ahead of that wake's own envelopes, so it knows what
 // it failed to say before it decides what to say next (#154).
 func TestALostSendIsToldToItsSenderAtTheNextWake(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 7733, First: "Operator", Username: "operator"}
 	ws := workspaceWithScript(t, "!ctx 0\n"+
 		`!send {"destination":"group","text":"@beta the deploy is wedged"}`+"\n"+
@@ -138,6 +141,7 @@ func TestALostSendIsToldToItsSenderAtTheNextWake(t *testing.T) {
 // told. It is deferred instead: nothing is marked until a turn completes, so
 // the successor's first turn is where the loop hears it (#154, ADR-0024).
 func TestALostSendIsNotSpentOnAHandoffTurn(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 7744, First: "Operator", Username: "operator"}
 	ws := workspaceWithScript(t, "!ctx 0\n"+
 		`!send {"destination":"group","text":"@beta said into a dead line"}`+"\n"+
@@ -180,6 +184,7 @@ func TestALostSendIsNotSpentOnAHandoffTurn(t *testing.T) {
 // the loop's own view, and it counts the sender's failures — the loop that
 // was merely mentioned is healthy and says so (#202).
 func TestUndeliveredCountReachesTheFleetView(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 7733, First: "Operator", Username: "operator"}
 	ws := workspaceWithScript(t, "!ctx 0\n"+
 		`!send {"destination":"group","text":"@beta nobody hears this"}`+"\n")

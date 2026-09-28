@@ -110,6 +110,7 @@ func slackPair(appToken, botToken string) map[string]any {
 // Slack loop without either token ever appearing in a response, and is
 // detached by clearing both (#230's control-room contract).
 func TestSlackAppAttachesAndDetaches(t *testing.T) {
+	t.Parallel()
 	slack := startFakeSlack(t)
 	slack.addApp(slackBotToken, slackAppToken, terraBot)
 	srv := startSlackServer(t, slack)
@@ -160,6 +161,7 @@ func TestSlackAppAttachesAndDetaches(t *testing.T) {
 // Every refusal the attach form keys on has its code, and none of them
 // stores anything (#230).
 func TestSlackAttachRefusals(t *testing.T) {
+	t.Parallel()
 	slack := startFakeSlack(t)
 	slack.addApp(slackBotToken, slackAppToken, terraBot)
 	slack.addApp(slackOtherBotToken, slackOtherAppToken,
@@ -234,6 +236,7 @@ type slackOwnerView struct {
 // the control room, and a sender who stops being allowed stops owning it
 // (#230).
 func TestSlackSendersAndOwner(t *testing.T) {
+	t.Parallel()
 	slack := startFakeSlack(t)
 	slack.addApp(slackBotToken, slackAppToken, terraBot)
 	dataDir := t.TempDir()
@@ -297,6 +300,7 @@ func TestSlackSendersAndOwner(t *testing.T) {
 // workspace, and loses them to an app from another: that app's bot could
 // never reach them, and the owner endpoint refuses the pairing outright.
 func TestSlackOwnerFollowsTheWorkspace(t *testing.T) {
+	t.Parallel()
 	slack := startFakeSlack(t)
 	slack.addApp(slackBotToken, slackAppToken, terraBot)
 	slack.addApp(slackOtherBotToken, slackOtherAppToken,

@@ -20,6 +20,7 @@ import (
 // is delivered, not dropped, which is what makes pause safe to use on a loop
 // mid-conversation.
 func TestPauseHoldsWorkUntilResume(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	s.createLoop("restive", map[string]any{"tick_interval_sec": 2})
 
@@ -54,6 +55,7 @@ func TestPauseHoldsWorkUntilResume(t *testing.T) {
 // same as losing its session. The next wake resumes where it was — the kill
 // is a way to stop a turn, not to make the loop forget.
 func TestKillThenWakeResumesTheSameSession(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	s.createLoop("interruptible", nil)
 
@@ -77,6 +79,7 @@ func TestKillThenWakeResumesTheSameSession(t *testing.T) {
 // does not spawn at once (internal/sched) — and this pins that the schedule
 // is rewritten to the jitter window rather than pushed an interval out.
 func TestOverdueTickFiresSoonAfterRestart(t *testing.T) {
+	t.Parallel()
 	dataDir := t.TempDir()
 	s := startServer(t, dataDir)
 	// a long interval, so a tick scheduled the ordinary way is hours out and
@@ -113,6 +116,7 @@ func TestOverdueTickFiresSoonAfterRestart(t *testing.T) {
 // the rest of its two-hour interval; one that rechecks the wall clock wakes
 // the loop within a recheck interval, and says the tick was late.
 func TestTickDueDuringSuspendStillFires(t *testing.T) {
+	t.Parallel()
 	dataDir := t.TempDir()
 	s := startServer(t, dataDir)
 	s.createLoop("sleeper", map[string]any{"tick_interval_sec": 7200})

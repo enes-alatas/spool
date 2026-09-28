@@ -23,6 +23,7 @@ func (s *server) secrets(loop string) []secretView {
 // are visible but values never echo, PUT upserts in place, malformed names and
 // empty values are rejected server-side, and DELETE removes one.
 func TestLoopSecrets(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	s.createLoop("vault", nil)
 

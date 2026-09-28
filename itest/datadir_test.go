@@ -14,6 +14,7 @@ import (
 // answering — and the loop homes underneath it are unreachable to other
 // accounts because the directory above them denies traversal (#149).
 func TestServerTightensItsDataDir(t *testing.T) {
+	t.Parallel()
 	dataDir := filepath.Join(t.TempDir(), "spool")
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		t.Fatal(err)

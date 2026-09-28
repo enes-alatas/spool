@@ -47,6 +47,7 @@ func turnReads(srv *server, loopName, turnID, text string) bool {
 // A human's native reply to a loop, with no mention at all, is addressed to
 // that loop and to nobody else.
 func TestNativeReplyToLoopReachesThatLoopOnly(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 5151, First: "Operator", Username: "operator"}
 	// alpha answers the creation tick, then posts to the group
 	wsAlpha := workspaceWithScript(t, "!ctx 0\n"+
@@ -79,6 +80,7 @@ func TestNativeReplyToLoopReachesThatLoopOnly(t *testing.T) {
 // natively: it is posted plainly, quoting what it answers (ADR-0025
 // amendment).
 func TestLoopReplyToPeerAddressesItAndQuotes(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 5252, First: "Operator", Username: "operator"}
 	wsAlpha := workspaceWithScript(t, "!ctx 0\n"+
 		`!send {"destination":"group","text":"@beta who owns the migration?"}`+"\n")
@@ -117,6 +119,7 @@ func TestLoopReplyToPeerAddressesItAndQuotes(t *testing.T) {
 // as sent, quote line and all, which is not what the store holds. The
 // author must still be woken.
 func TestNativeReplyToAQuotedLoopReplyWakesItsAuthor(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 5656, First: "Operator", Username: "operator"}
 	// Each script speaks once and then only echoes: the last line repeats
 	// for every later turn, and two loops that keep addressing each other
@@ -173,6 +176,7 @@ func TestNativeReplyToAQuotedLoopReplyWakesItsAuthor(t *testing.T) {
 // A loop replying to a human's group message threads natively when its own
 // poller saw that message, and never borrows another bot's id.
 func TestLoopReplyToHumanThreadsNatively(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 5353, First: "Operator", Username: "operator"}
 	wsAlpha := workspaceWithScript(t, "!ctx 0\n"+
 		`!send {"destination":"group","text":"@operator on it","reply_to":"$ref"}`+"\n")
@@ -195,6 +199,7 @@ func TestLoopReplyToHumanThreadsNatively(t *testing.T) {
 // References are durable: the mapping a reply needs survives a restart of
 // the orchestrator, and still resolves to the same message.
 func TestReplyReferencesSurviveRestart(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 5454, First: "Operator", Username: "operator"}
 	dir := t.TempDir()
 	tg := startFakeTelegram(t, "alpha", "beta")
@@ -244,6 +249,7 @@ func TestReplyReferencesSurviveRestart(t *testing.T) {
 // answer; the author is known now, so the same property holds with the
 // reply delivered (#243).
 func TestNativeReplyToIdenticalWordsWakesTheOneRepliedTo(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 5555, First: "Operator", Username: "operator"}
 	const ack = "@operator on it"
 	ws := workspaceWithScript(t, "!ctx 0\n"+`!send {"destination":"group","text":"`+ack+`"}`+"\n")
@@ -285,6 +291,7 @@ func TestNativeReplyToIdenticalWordsWakesTheOneRepliedTo(t *testing.T) {
 // A reply plus a mention delivers once to each addressed loop, and to no
 // other: the original's own recipients are never inherited.
 func TestReplyPlusMentionDeliversOnceToEach(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	for _, name := range []string{"aster", "briar", "cedar", "dahlia"} {
 		s.createLoop(name, nil)
@@ -332,6 +339,7 @@ func TestReplyPlusMentionDeliversOnceToEach(t *testing.T) {
 // A reference the loop was never given, or one from another conversation, is
 // refused in-turn. Neither silently becomes a plain post or a broadcast.
 func TestReplyToUnusableReferenceIsRefused(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	s.createLoop("aster", nil)
 	s.createLoop("briar", nil)
@@ -370,6 +378,7 @@ func TestReplyToUnusableReferenceIsRefused(t *testing.T) {
 // Two identical messages stay distinct: a reply to the older one targets it,
 // not the newest lookalike.
 func TestReplyTargetsTheNamedMessageNotTheLatest(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	s.createLoop("aster", nil)
 	s.createLoop("briar", nil)

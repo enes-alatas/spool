@@ -23,6 +23,7 @@ type versionView struct {
 // linker's values are the ones under test; a build that lost them would still
 // answer, with the fallback shape, and the assertions below hold either way.
 func TestVersionEndpointNamesTheBuild(t *testing.T) {
+	t.Parallel()
 	srv := startServer(t, t.TempDir())
 
 	var got versionView
@@ -43,6 +44,7 @@ func TestVersionEndpointNamesTheBuild(t *testing.T) {
 // an operator at a terminal asks, /api/version is what the control room asks,
 // and they must not be able to disagree.
 func TestVersionFlagAndEndpointAgree(t *testing.T) {
+	t.Parallel()
 	srv := startServer(t, t.TempDir())
 
 	var served versionView

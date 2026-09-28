@@ -14,6 +14,7 @@ import (
 // binary, not a handler in a test: what another process on the machine, or a
 // page in the operator's browser, actually gets back.
 func TestAPIRefusesWhatIsNotTheOperator(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	s.createLoop("guarded", nil)
 
@@ -72,6 +73,7 @@ func TestAPIRefusesWhatIsNotTheOperator(t *testing.T) {
 // not. Proved end to end against the running hub, because the cookie's
 // attributes only mean anything to a real client.
 func TestOperatorCookieLogin(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	s.createLoop("cookied", nil)
 
@@ -136,6 +138,7 @@ func TestOperatorCookieLogin(t *testing.T) {
 // embedded, so this proves the answer on that build; the build that embeds
 // one is proved at tier 1 (TestAPIRefusalsAreNeverTheUI).
 func TestAPIMethodAndPathRefusals(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	resp, body := s.do("DELETE", "/api/settings", nil)
 	if resp.StatusCode != http.StatusMethodNotAllowed || resp.Header.Get("Allow") != "GET, PUT" {
@@ -152,6 +155,7 @@ func TestAPIMethodAndPathRefusals(t *testing.T) {
 // nothing about the host (#258): not the runtime its loops get, which tells a
 // scanner whether they run uncontained, and not the claude CLI it found.
 func TestHealthSaysOnlyThatTheHubIsUp(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 
 	resp, body := s.raw("GET", "/api/health", nil, nil)

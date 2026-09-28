@@ -19,6 +19,7 @@ import (
 // Telegram's — and skips the loop the operator paused and the one taken out
 // of the fleet channel.
 func TestHumanBroadcastReachesEligibleLoopsOnce(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 8181, First: "Operator", Username: "operator"}
 	srv, tg := startTelegramFleet(t, operator)
 	srv.createLoop("gamma", nil)
@@ -58,6 +59,7 @@ func TestHumanBroadcastReachesEligibleLoopsOnce(t *testing.T) {
 // A loop's own @all reaches its peers and never itself, and a peer named in
 // the same text is delivered to once, not twice.
 func TestLoopBroadcastExcludesItselfAndDeduplicates(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 8282, First: "Operator", Username: "operator"}
 	ws := workspaceWithScript(t, "!ctx 0\n"+
 		`!send {"destination":"group","text":"@all @beta the deploy is frozen"}`+"\n")
@@ -84,6 +86,7 @@ func TestLoopBroadcastExcludesItselfAndDeduplicates(t *testing.T) {
 // @all inside a DM is literal text: private conversations never expand
 // mentions into recipients.
 func TestBroadcastInADMStaysPrivate(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 8383, First: "Operator", Username: "operator"}
 	srv, tg := startTelegramFleet(t, operator)
 
@@ -111,6 +114,7 @@ func TestBroadcastInADMStaysPrivate(t *testing.T) {
 
 // "all" cannot be a loop name: the token would be unmentionable.
 func TestAllIsAReservedLoopName(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	resp, body := s.do("POST", "/api/loops", map[string]any{
 		"name": "all", "mission": "should never exist",
@@ -127,6 +131,7 @@ func TestAllIsAReservedLoopName(t *testing.T) {
 // broadcast: @all is deliberate addressing, not a way around the per-pair
 // hourly cap. The loops it has not exhausted still receive it.
 func TestBroadcastDoesNotBypassTheStormGuard(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	for _, name := range []string{"aster", "briar", "cedar"} {
 		s.createLoop(name, nil)

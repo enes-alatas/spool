@@ -20,6 +20,7 @@ func (s *server) power(name, verb string) (int, []byte) {
 // A bare loop's workstation is the operator's host, so there is nothing for
 // the power controls to act on and every verb says so rather than pretending.
 func TestPowerControlsRejectedOnBare(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	s.createLoop("hostloop", nil)
 
@@ -45,7 +46,7 @@ func TestPowerControlsRejectedOnBare(t *testing.T) {
 // The full power cycle on a real workstation: power off ends the turn and
 // leaves the loop calmly off (ticks included), power on brings the same
 // session back, and recreate rebuilds the machine with a fresh one.
-func TestDockerWorkstationPowerCycle(t *testing.T) {
+func dockerWorkstationPowerCycle(t *testing.T) {
 	s := startDockerServer(t, t.TempDir())
 	// a short tick interval so the "stays off" assertion has ticks to survive
 	s.createLoop("wspower", map[string]any{"tick_interval_sec": 2, "min_wake_sec": 1})
@@ -111,7 +112,7 @@ func TestDockerWorkstationPowerCycle(t *testing.T) {
 // poweron is documented idempotent, so it must not end a turn running on a
 // workstation that is already up — the UI hides the button, but the endpoint
 // is the enforcement.
-func TestDockerPowerOnLeavesARunningTurnAlone(t *testing.T) {
+func dockerPowerOnLeavesARunningTurnAlone(t *testing.T) {
 	s := startDockerServer(t, t.TempDir())
 	s.createLoop("wsidem", map[string]any{"idle_timeout_sec": 30})
 	loopID := s.loop("wsidem").ID
@@ -146,7 +147,7 @@ func TestDockerPowerOnLeavesARunningTurnAlone(t *testing.T) {
 // can never come up — its image does not exist — so poweron fails and the
 // operator's off-intent must survive: the loop stays calmly off rather than
 // flipping to the alert and ticking against a machine that isn't there.
-func TestDockerFailedPowerOnKeepsTheOffIntent(t *testing.T) {
+func dockerFailedPowerOnKeepsTheOffIntent(t *testing.T) {
 	s := startDockerServer(t, t.TempDir())
 	s.createLoop("wsnoimage", map[string]any{
 		"image":             "spool-workstation-itest-does-not-exist",
@@ -175,7 +176,7 @@ func TestDockerFailedPowerOnKeepsTheOffIntent(t *testing.T) {
 // asks something different of the operator (#55): a missing Claude token is
 // fixed in Settings, a loop with no machine yet has nothing to fix, and only a
 // machine that should run and doesn't is the power controls' alert.
-func TestDockerDownReasonNamesTheFault(t *testing.T) {
+func dockerDownReasonNamesTheFault(t *testing.T) {
 	s := startDockerServer(t, t.TempDir())
 
 	// no token: the creation tick cannot run claude, and says why

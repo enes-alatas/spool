@@ -39,14 +39,27 @@ egress:
 # 600s it had stopped being one: the suite lands within a few seconds of it,
 # so a run was lost to the clock rather than to a defect, and the panic it
 # prints reads like a product failure. Raised with room to grow; a suite
-# that gets near 1200s is asking for #182, not a bigger number.
+# that gets near 1200s wants cutting, not a bigger number.
+#
+# Tests that share nothing call t.Parallel() (#182); ITEST_PARALLEL caps how
+# many run at once. The docker rows share the daemon, so they run in series
+# as TestDockerRows, and that series is the longest thing in the suite. It
+# gets a go test of its own, started beside the rest: inside one run it
+# would start whenever the scheduler reached it, and the suite would take
+# that long plus the series.
+ITEST_PARALLEL ?= 4
+ITEST = $(GO) test -tags integration -count=1 -timeout 1200s
 itest: server fakeclaude egress
 	@if docker version >/dev/null 2>&1; then \
 		docker build -q -t spool-workstation-itest -f itest/testdata/workstation/Dockerfile bin >/dev/null; \
 		docker build -q -t spool-egress-itest -f docker/egress/Dockerfile bin >/dev/null; \
 		docker tag spool-egress-itest spool-egress-itest-docker; \
 	else echo "docker daemon unreachable — docker workstation itests will skip"; fi
-	$(GO) test -tags integration -count=1 -timeout 1200s ./itest/... ./internal/runtime/docker/
+	@$(ITEST) -run '^TestDockerRows$$' ./itest/ & docker_rows=$$!; \
+	status=0; \
+	$(ITEST) -skip '^TestDockerRows$$' -parallel $(ITEST_PARALLEL) ./itest/... ./internal/runtime/docker/ || status=1; \
+	wait $$docker_rows || status=1; \
+	exit $$status
 
 # Build the workstation image. `image` builds for the host architecture and loads
 # it into the local Docker daemon, so it can be run directly. `image-multiarch`

@@ -51,6 +51,7 @@ func gitOut(t *testing.T, repo string, args ...string) string {
 }
 
 func TestLoopsSharingARepoGetTheirOwnWorktrees(t *testing.T) {
+	t.Parallel()
 	repo := gitRepo(t)
 	mainSHA := gitOut(t, repo, "rev-parse", "main")
 	dataDir := t.TempDir()

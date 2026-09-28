@@ -13,11 +13,11 @@ import (
 	"time"
 )
 
-// TestDockerEgressAllowlist is the evidence #193 asked for: from inside a
+// dockerEgressAllowlist is the evidence #193 asked for: from inside a
 // workstation, a host off the allowlist is refused and one on it is reached.
 // Two loops of the same fleet, behind the same proxy, so the difference
 // between them is the allowlist and nothing else.
-func TestDockerEgressAllowlist(t *testing.T) {
+func dockerEgressAllowlist(t *testing.T) {
 	allowed := startHostReachableServer(t)
 
 	// The stand-in host is allowlisted the way an operator would allowlist
@@ -103,12 +103,12 @@ func startHostReachableServer(t *testing.T) int {
 	return listener.Addr().(*net.TCPAddr).Port
 }
 
-// TestDockerWorkstationCannotReachTheAPI is the L1 safety claim itself (#238):
+// dockerWorkstationCannotReachTheAPI is the L1 safety claim itself (#238):
 // from inside a real workstation, behind the real wall, the hub's loop-facing
 // port answers and the hub's API port does not exist as a destination. The
 // probe runs as the loop's own turn, which is the position an attacker
 // steering a loop would actually be in.
-func TestDockerWorkstationCannotReachTheAPI(t *testing.T) {
+func dockerWorkstationCannotReachTheAPI(t *testing.T) {
 	s := startDockerServer(t, t.TempDir())
 
 	// The API port is on no allowlist, so the proxy refuses it before it

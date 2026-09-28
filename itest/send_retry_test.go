@@ -39,6 +39,7 @@ func (s *server) waitUndelivered(n int, timeout time.Duration) []undeliveredRow 
 // failure — the count only fell when a 24-hour window slid past it, which is
 // a clock deciding when the operator is done looking.
 func TestRetryingALostSendResolvesIt(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 7766, First: "Operator", Username: "operator"}
 	ws := workspaceWithScript(t, "!ctx 0\n"+
 		`!send {"destination":"group","text":"@beta the deploy is wedged"}`+"\n"+
@@ -98,6 +99,7 @@ func TestRetryingALostSendResolvesIt(t *testing.T) {
 // Dismiss is the other way out: the operator has read the failure and is done
 // with it, and nothing is sent.
 func TestDismissingALostSendResolvesItWithoutSending(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 7767, First: "Operator", Username: "operator"}
 	ws := workspaceWithScript(t, "!ctx 0\n"+
 		`!send {"destination":"group","text":"@beta said into a dead line"}`+"\n"+
@@ -133,6 +135,7 @@ func TestDismissingALostSendResolvesItWithoutSending(t *testing.T) {
 
 // A message that never failed is not retryable, whatever id the caller has.
 func TestRetryingADeliveredMessageIsNotFound(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 7768, First: "Operator", Username: "operator"}
 	srv, _ := startTelegramFleet(t, operator)
 
@@ -159,6 +162,7 @@ func TestRetryingADeliveredMessageIsNotFound(t *testing.T) {
 // it again and the human reads it twice, which is the doubling the amendment
 // exists to prevent, arriving from the other side.
 func TestARetriedSendIsNotToldToItsSenderAsLost(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 7769, First: "Operator", Username: "operator"}
 	ws := workspaceWithScript(t, "!ctx 0\n"+
 		`!send {"destination":"group","text":"@beta the deploy is wedged"}`+"\n"+
@@ -195,6 +199,7 @@ func TestARetriedSendIsNotToldToItsSenderAsLost(t *testing.T) {
 // the failure is still there and still theirs to deal with — and the row is
 // left unresolved, because nothing was sent.
 func TestRetryingAPrivateMessageWithNoChatIsRefused(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 7770, First: "Operator", Username: "operator"}
 	colleague := user{ID: 7771, First: "Colleague", Username: "colleague"}
 	ws := workspaceWithScript(t, "!ctx 0\n"+
