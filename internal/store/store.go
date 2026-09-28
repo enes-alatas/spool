@@ -15,11 +15,11 @@ import (
 // call it from Create when the caller left the token empty, so every loop
 // holds one no matter which path created it.
 func NewHubMCPToken() string {
-	b := make([]byte, 24)
-	if _, err := rand.Read(b); err != nil {
+	random := make([]byte, 24)
+	if _, err := rand.Read(random); err != nil {
 		panic("store: crypto/rand unavailable: " + err.Error())
 	}
-	return hex.EncodeToString(b)
+	return hex.EncodeToString(random)
 }
 
 const (
@@ -203,11 +203,11 @@ type Loop struct {
 // Surface names the platform the loop has an identity on, or "" when it has
 // none. It is read off which credential is stored, so it cannot disagree
 // with them.
-func (l *Loop) Surface() string {
+func (loopRecord *Loop) Surface() string {
 	switch {
-	case l.TGBotToken != "":
+	case loopRecord.TGBotToken != "":
 		return SurfaceTelegram
-	case l.SlackBotToken != "":
+	case loopRecord.SlackBotToken != "":
 		return SurfaceSlack
 	}
 	return ""
@@ -526,7 +526,7 @@ type SlackIdentity struct {
 }
 
 type LoopStore interface {
-	Create(ctx context.Context, l *Loop) error
+	Create(ctx context.Context, loopRecord *Loop) error
 	// Edit writes the fields an operator named and nothing else, returning
 	// the row as it stands afterwards. There is deliberately no whole-row
 	// writer: every column of a loop has an owner, and several of them are
@@ -605,8 +605,8 @@ type LoopSecretStore interface {
 // order, enabled or not, so the rendered section stays stable between wakes
 // and the API can show disabled rules alongside the live ones.
 type FleetRuleStore interface {
-	Create(ctx context.Context, r *FleetRule) error
-	Update(ctx context.Context, r *FleetRule) error
+	Create(ctx context.Context, rule *FleetRule) error
+	Update(ctx context.Context, rule *FleetRule) error
 	Delete(ctx context.Context, id string) error
 	Get(ctx context.Context, id string) (*FleetRule, error)
 	List(ctx context.Context) ([]*FleetRule, error)
@@ -618,12 +618,12 @@ type ModelStore interface {
 	// Resolutions returns every stored resolution.
 	Resolutions(ctx context.Context) ([]*ModelResolution, error)
 	// SetResolution stores r for r.Model, replacing any before it.
-	SetResolution(ctx context.Context, r *ModelResolution) error
+	SetResolution(ctx context.Context, resolution *ModelResolution) error
 	// ListCustom returns the custom entries in the order they were added.
 	ListCustom(ctx context.Context) ([]*CustomModel, error)
 	// AddCustom inserts an entry; ErrDuplicate if its model is already on
 	// the list.
-	AddCustom(ctx context.Context, m *CustomModel) error
+	AddCustom(ctx context.Context, model *CustomModel) error
 	// SetCustomLabel relabels an entry and returns it; ErrNotFound if there
 	// is none with that id.
 	SetCustomLabel(ctx context.Context, id, label string) (*CustomModel, error)
@@ -633,7 +633,7 @@ type ModelStore interface {
 }
 
 type SessionStore interface {
-	Create(ctx context.Context, s *Session) error
+	Create(ctx context.Context, session *Session) error
 	End(ctx context.Context, id, reason string, endedAt int64) error
 	ListByLoop(ctx context.Context, loopID string, limit int) ([]*Session, error)
 	// EndDangling closes any sessions left open (orchestrator crash).
@@ -643,7 +643,7 @@ type SessionStore interface {
 type MessageStore interface {
 	// Insert persists a message. For telegram-sourced messages, (tgChatID,
 	// tgMessageID) is unique; a duplicate returns ErrDuplicate.
-	Insert(ctx context.Context, m *Message) error
+	Insert(ctx context.Context, message *Message) error
 	SetDelivered(ctx context.Context, id int64, deliveredTo []string) error
 	List(ctx context.Context, limit int) ([]*Message, error)
 	// ListConversation returns one conversation's messages, newest first.
@@ -756,8 +756,8 @@ type MessageStore interface {
 }
 
 type TurnStore interface {
-	Create(ctx context.Context, t *Turn) error
-	Finish(ctx context.Context, t *Turn) error
+	Create(ctx context.Context, turn *Turn) error
+	Finish(ctx context.Context, turn *Turn) error
 	ListByLoop(ctx context.Context, loopID string, limit int) ([]*Turn, error)
 	// Latest returns the loop's most recent finished turn, or ErrNotFound
 	// when it has none. Its token counts are the freshest measure of how
@@ -776,7 +776,7 @@ type TurnStore interface {
 }
 
 type EventStore interface {
-	Insert(ctx context.Context, e *Event) (int64, error)
+	Insert(ctx context.Context, event *Event) (int64, error)
 	// ListByLoop returns up to limit events after afterID, oldest first —
 	// the tail-following form: afterID 0 is the oldest end of the timeline.
 	ListByLoop(ctx context.Context, loopID string, afterID int64, limit int) ([]*Event, error)
@@ -826,7 +826,7 @@ type TGSender struct {
 type TGSenderStore interface {
 	Get(ctx context.Context, tgUserID int64) (*TGSender, error)
 	// Create inserts a new (pending) sender; ErrDuplicate if already known.
-	Create(ctx context.Context, s *TGSender) error
+	Create(ctx context.Context, sender *TGSender) error
 	SetStatus(ctx context.Context, tgUserID int64, status string, updatedAt int64) error
 	List(ctx context.Context) ([]*TGSender, error)
 	Delete(ctx context.Context, tgUserID int64) error
@@ -858,7 +858,7 @@ type TGSenderFrame struct {
 }
 
 // Frame marks the sender for the access stream.
-func (s *TGSender) Frame() TGSenderFrame { return TGSenderFrame{s, SurfaceTelegram} }
+func (sender *TGSender) Frame() TGSenderFrame { return TGSenderFrame{sender, SurfaceTelegram} }
 
 // SlackSenderFrame is a Slack sender on the access stream.
 type SlackSenderFrame struct {
@@ -867,12 +867,12 @@ type SlackSenderFrame struct {
 }
 
 // Frame marks the sender for the access stream.
-func (s *SlackSender) Frame() SlackSenderFrame { return SlackSenderFrame{s, SurfaceSlack} }
+func (sender *SlackSender) Frame() SlackSenderFrame { return SlackSenderFrame{sender, SurfaceSlack} }
 
 type SlackSenderStore interface {
 	Get(ctx context.Context, slackUserID string) (*SlackSender, error)
 	// Create inserts a new (pending) sender; ErrDuplicate if already known.
-	Create(ctx context.Context, s *SlackSender) error
+	Create(ctx context.Context, sender *SlackSender) error
 	// SetStatus is ErrNotFound for an unknown sender.
 	SetStatus(ctx context.Context, slackUserID, status string, updatedAt int64) error
 	List(ctx context.Context) ([]*SlackSender, error)
@@ -899,7 +899,7 @@ type Store interface {
 // ErrNotFound / ErrDuplicate are sentinel errors shared by implementations.
 type sentinelError string
 
-func (e sentinelError) Error() string { return string(e) }
+func (sentinel sentinelError) Error() string { return string(sentinel) }
 
 const (
 	ErrNotFound  = sentinelError("store: not found")
