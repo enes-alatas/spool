@@ -48,6 +48,7 @@ Use these words exactly — in code, UI, docs, and prompts. Don't introduce syno
 | **status note** | A turn's final reply text: stored on the turn and shown in the timeline, carries the trailer, delivered to no conversation. (ADR-0026) |
 | **surface** | A chat platform adapter (Telegram today, Slack at L3), attached to a loop after the loop exists and detachable; at most one per loop, and a loop may have none. The web control room is not a surface; it talks to the hub directly. (ADR-0029, ADR-0032) |
 | **mirror** | An attached surface's two-way relay between its room and the fleet channel — and, for DMs, between its DM and `owner_dm`. Asymmetric in the channel: everything posted in the room comes inward, whoever wrote it; only *loop-authored* messages go outward. Nothing the operator authors leaves the hub. DM traffic stays in its DM. (ADR-0025, ADR-0032) |
+| **hub notice** | Something the hub itself tells a loop's owner, prefixed `Spool:` and carried on the loop's surface identity to its owner's DM. It is not a message: no row records it, and the loop's timeline notes that it went out. At most once per condition, and today there is one, the login notice: the owner is told that a refused Claude login stopped their loops, and told again when it works. (ADR-0029 item 8) |
 | **visibility** | Who can see a message in its destination conversation; separate from which loops receive it as input. The former coordination/human-facing mirror gate is superseded. (ADR-0025) |
 | **follow** | Deferred opt-in subscription to un-addressed channel chatter. Not enabled in ADR-0025's selective-delivery model. |
 | **workstation** | A loop's persistent sandbox: its home dir, tools, clones. Long-lived — survives sleeps, restarts, and pauses; dies with the loop, or when the operator switches it off or rebuilds it (ADR-0017, ADR-0021). |
@@ -165,7 +166,9 @@ The Surface seam is live with one implementation: `internal/surface` owns the
 interface and `internal/surface/telegram` is the bridge behind it. Only the
 hub-to-surface direction crosses it — inbound goes to the router and outbound
 comes off the bus, like any other caller. ADR-0029 records the contract and
-which of ADR-0020's, ADR-0025's and ADR-0026's rules every adapter owes.
+which of ADR-0020's, ADR-0025's and ADR-0026's rules every adapter owes. The
+one thing the hub says in its own voice, a hub notice, also comes off the bus
+(ADR-0029 item 8).
 Messaging still awaits the ADR-0025 migration described above. Migrate
 opportunistically, not big-bang.
 

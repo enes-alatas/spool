@@ -27,6 +27,12 @@ const (
 	// subscribes to KindMessage alone drops the operator's retries without
 	// failing anything (ADR-0029).
 	KindSendRetry = "send_retry"
+	// KindClaudeLogin says a loop's Claude login was refused, or ran again
+	// after a refusal (#419). Its payload is a surface.LoginNotice, and every
+	// surface adapter must deliver it to the loop's owner (ADR-0029).
+	// The refusal is published once per outage of each loop, not once per
+	// refused retry.
+	KindClaudeLogin = "claude_login"
 )
 
 type Item struct {

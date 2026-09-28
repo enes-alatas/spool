@@ -11,6 +11,7 @@ import (
 	"github.com/enes-alatas/spool/internal/bus"
 	"github.com/enes-alatas/spool/internal/route"
 	"github.com/enes-alatas/spool/internal/store"
+	"github.com/enes-alatas/spool/internal/surface"
 )
 
 // A group's ingest election only counts bots whose binding predates the
@@ -178,5 +179,97 @@ func TestExcerptCutsOnRuneBoundary(t *testing.T) {
 		if !strings.HasPrefix(text, strings.TrimSuffix(got, "…")) {
 			t.Fatalf("pad=%d: excerpt %q is not the opening of the message", pad, got)
 		}
+	}
+}
+
+// loginStore serves loop rows by id and records timeline events. Every other
+// store method panics via the embedded nil interfaces.
+type loginStore struct {
+	store.Store
+	loops  loginLoops
+	events *queueFullEvents
+}
+
+func (fake loginStore) Loops() store.LoopStore   { return fake.loops }
+func (fake loginStore) Events() store.EventStore { return fake.events }
+
+type loginLoops struct {
+	store.LoopStore
+	rows map[string]*store.Loop
+}
+
+func (loops loginLoops) Get(_ context.Context, id string) (*store.Loop, error) {
+	return loops.rows[id], nil
+}
+
+// One refused login stops every loop that shares it, each at its own next
+// turn, and the owner hears about it once (#419): from the first loop that
+// can reach them privately, with the all-clear in the same chat, whichever
+// loop gets through first. A loop that cannot reach them leaves the telling
+// to the next, and a login that fails separately is a separate notice.
+func TestLoginNoticeOncePerOwnerPerOutage(t *testing.T) {
+	const owner, chat = 6100, 6100
+	bots := map[string]*poller{}
+	rows := map[string]*store.Loop{}
+	for _, id := range []string{"nochat", "alpha", "beta", "boxed"} {
+		bots[id] = &poller{loopID: id, sendCh: make(chan sendReq, 4)}
+		rows[id] = &store.Loop{ID: id, Name: id, TGBotToken: id, OwnerTGUserID: owner, OwnerDMChatID: chat}
+	}
+	rows["nochat"].OwnerDMChatID = 0
+	st := loginStore{loops: loginLoops{rows: rows}, events: &queueFullEvents{}}
+	br := &Bridge{store: st, log: slog.Default(), bus: bus.New(), pollers: bots,
+		loginTold: map[loginOutage]loginTeller{}}
+
+	refused := func(id string, host bool) {
+		br.noticeLogin(context.Background(), &surface.LoginNotice{
+			LoopID: id, LoopName: id, Refused: true, Sentence: "OAuth session expired", HostLogin: host})
+	}
+	works := func(id string, host bool) {
+		br.noticeLogin(context.Background(), &surface.LoginNotice{LoopID: id, LoopName: id, HostLogin: host})
+	}
+	sent := func() map[string]string {
+		got := map[string]string{}
+		for id, bot := range bots {
+			select {
+			case req := <-bot.sendCh:
+				if req.chatID != chat {
+					t.Fatalf("%s's notice went to chat %d, want the owner's %d", id, req.chatID, chat)
+				}
+				got[id] = req.text
+			default:
+			}
+		}
+		return got
+	}
+
+	refused("nochat", true)
+	if got := sent(); len(got) != 0 {
+		t.Fatalf("a loop with no private chat sent %v", got)
+	}
+	if n := len(st.events.got); n != 1 || !strings.Contains(st.events.got[0].Payload, `"sent":false`) {
+		t.Fatalf("timeline events = %+v, want one unsent owner_notice", st.events.got)
+	}
+
+	refused("alpha", true)
+	refused("beta", true)
+	got := sent()
+	if len(got) != 1 || !strings.Contains(got["alpha"], "alpha has stopped") ||
+		!strings.Contains(got["alpha"], "Every bare loop") {
+		t.Fatalf("after two refusals of the host login: sent %v, want alpha's notice alone", got)
+	}
+
+	refused("boxed", false)
+	if got := sent(); len(got) != 1 || !strings.Contains(got["boxed"], "setup-token") {
+		t.Fatalf("a refused setup-token beside a refused host login: sent %v, want boxed's own notice", got)
+	}
+
+	works("beta", true)
+	works("nochat", true)
+	if got := sent(); len(got) != 1 || !strings.Contains(got["alpha"], "works again") {
+		t.Fatalf("after the host login worked again: sent %v, want one all-clear in alpha's chat", got)
+	}
+	refused("beta", true)
+	if got := sent(); len(got) != 1 || got["beta"] == "" {
+		t.Fatalf("a refusal after the all-clear is a new outage: sent %v, want beta's notice", got)
 	}
 }

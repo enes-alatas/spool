@@ -1,6 +1,6 @@
 # ADR-0029: The Surface contract
 
-Date: 2026-09-20 · Status: accepted · Amends: ADR-0020, ADR-0025 (item 4), ADR-0026 (item 1) · Amended: 2026-09-22 (item 2: the bus kinds a surface mirrors); 2026-09-23 (items 5 and 7: a surface is attached later and mirrors the fleet channel); 2026-09-27 (item 2: a credential and an identity are structs)
+Date: 2026-09-20 · Status: accepted · Amends: ADR-0020, ADR-0025 (item 4), ADR-0026 (item 1) · Amended: 2026-09-22 (item 2: the bus kinds a surface mirrors); 2026-09-23 (items 5 and 7: a surface is attached later and mirrors the fleet channel); 2026-09-27 (item 2: a credential and an identity are structs); 2026-09-28 (item 8: hub notices)
 
 ## Context
 
@@ -133,6 +133,42 @@ contract.
    attached and detached afterwards. Zero surfaces is the state every loop
    starts in, not a misconfiguration — which makes "a surface may now be
    absent" (Consequences) the ordinary case rather than an edge.
+
+8. **Amendment (2026-09-28, #419): the hub may speak to an owner itself,
+   in a *hub notice*.** Everything an owner receives is a loop's send, with
+   one class of exception: a notice the hub writes when the loop cannot
+   speak or is not the one who should. A hub notice
+   - opens with `Spool:`, so the owner can tell the hub from the loop whose
+     identity carries it;
+   - goes out on that loop's identity, to its owner's DM, because that is
+     the only route to the owner a surface has;
+   - is **not a message**: no message row records it, and neither the
+     fleet channel nor the control room shows it. The loop's timeline
+     records an `owner_notice` event saying whether it went out and, if it
+     did not, why;
+   - is rare by rule: at most once per condition, not once per occurrence.
+
+   The one the hub raises today is the **login notice**. When the API
+   refuses a loop's Claude login, the loop has no turn to say so with,
+   and nobody watching the control room sees the alert (the fleet stood
+   still for two hours on 2026-09-27). The loop publishes
+   `bus.KindClaudeLogin` with a `surface.LoginNotice` on its first refusal
+   of an outage and when a turn runs again. Every surface adapter delivers
+   it, and the notice's text is the seam's (`LoginNotice.Text`), the same
+   on every surface. One login stops every loop that shares it, so the
+   adapter tells each owner once per outage per login (the host's login
+   and the Settings setup-token fail separately). It uses the first of
+   their loops that can reach them privately, and sends the all-clear in
+   the same chat. What was told lasts for the hub's run: a hub restarted
+   mid-outage tells the owner once more, which is the better failure than
+   silence.
+
+   So item 2's list of kinds a surface subscribes to is now
+   `KindMessage`, `KindSendRetry` and `KindClaudeLogin`. The Telegram
+   adapter's older notices (the pairing code, and "reads direct messages
+   only from its owner") were hub notices before the term existed, and
+   stay Telegram's own (item 6). Slack has no outbound path yet, so a
+   Slack-only owner hears nothing until #230 gives it one.
 
 ## Consequences
 
