@@ -3,7 +3,8 @@
 // the version pinned in internal/claude/preflight.go: silence until the first
 // stdin user message, then system/init followed by assistant + result events
 // per turn; --resume of an unknown session exits 1 with the canonical stderr
-// line; stdin EOF exits 0.
+// line; stdin EOF exits 0. FIDELITY.md records, for every behaviour below,
+// how it was verified against a real claude, or that it is assumed.
 //
 // Session state (a file per session id) lives in $FAKECLAUDE_STATE so resume
 // semantics survive process death, like the real CLI's session files.
@@ -152,7 +153,7 @@ func main() {
 	// A session the CLI can no longer load: a resume that dies before init,
 	// with a diagnostic on stderr and no stream-json at all. The stderr line
 	// is invented. No real signature was ever observed, and the engine
-	// classifies the early exit, never the text (#47, #59). A fresh
+	// classifies the early exit, never the text (FIDELITY.md). A fresh
 	// session still works, so a runner that rotates recovers and one that
 	// retries does not.
 	if marker, err := os.ReadFile(".fakeclaude-resume-broken"); err == nil {
@@ -288,7 +289,7 @@ func main() {
 				os.Exit(2)
 			case line == "!lost":
 				// mid-turn session loss, reported the way a failed resume is
-				// (assumed)
+				// (assumed: FIDELITY.md)
 				out.Flush()
 				fmt.Fprintf(os.Stderr, "No conversation found with session ID: %s\n", id)
 				os.Exit(1)
