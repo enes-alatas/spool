@@ -178,9 +178,9 @@ func main() {
 	cwd, _ := os.Getwd()
 
 	out := bufio.NewWriter(os.Stdout)
-	emit := func(v any) {
-		b, _ := json.Marshal(v)
-		out.Write(b)
+	emit := func(value any) {
+		line, _ := json.Marshal(value)
+		out.Write(line)
 		out.WriteByte('\n')
 		out.Flush()
 	}
@@ -201,8 +201,8 @@ func main() {
 			continue
 		}
 		text := ""
-		for _, c := range msg.Message.Content {
-			text += c.Text
+		for _, block := range msg.Message.Content {
+			text += block.Text
 		}
 
 		if first {
@@ -252,8 +252,8 @@ func main() {
 				}
 				if strings.HasPrefix(line, "!steps ") {
 					numStr, rest, _ := strings.Cut(strings.TrimPrefix(line, "!steps "), " ")
-					if n, err := strconv.Atoi(numStr); err == nil && n > 0 {
-						steps = n
+					if count, err := strconv.Atoi(numStr); err == nil && count > 0 {
+						steps = count
 					}
 					line = strings.TrimSpace(rest)
 					continue
@@ -327,12 +327,12 @@ func main() {
 				// real CLI.
 				reply = fetch(strings.TrimSpace(strings.TrimPrefix(line, "!get ")))
 			case strings.HasPrefix(line, "!huge "):
-				n, _ := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(line, "!huge ")))
-				reply = strings.Repeat("x", n)
+				size, _ := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(line, "!huge ")))
+				reply = strings.Repeat("x", size)
 			case strings.HasPrefix(line, "!hang "):
-				s, _ := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(line, "!hang ")))
-				time.Sleep(time.Duration(s) * time.Second)
-				reply = "hung " + strconv.Itoa(s) + "s"
+				seconds, _ := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(line, "!hang ")))
+				time.Sleep(time.Duration(seconds) * time.Second)
+				reply = "hung " + strconv.Itoa(seconds) + "s"
 			default:
 				reply = line
 			}
@@ -397,9 +397,9 @@ func loadScript() []string {
 		}
 	}
 	var lines []string
-	for _, l := range strings.Split(strings.TrimRight(string(data), "\n"), "\n") {
-		if strings.TrimSpace(l) != "" {
-			lines = append(lines, l)
+	for _, line := range strings.Split(strings.TrimRight(string(data), "\n"), "\n") {
+		if strings.TrimSpace(line) != "" {
+			lines = append(lines, line)
 		}
 	}
 	if len(lines) == 0 {
@@ -425,8 +425,8 @@ func usage(ctxTokens, steps int) map[string]any {
 
 // persist writes the session's state, which is what makes it resumable.
 func persist(stateDir, id string, state any) {
-	b, _ := json.Marshal(state)
-	if err := os.WriteFile(filepath.Join(stateDir, id+".json"), b, 0o644); err != nil {
+	data, _ := json.Marshal(state)
+	if err := os.WriteFile(filepath.Join(stateDir, id+".json"), data, 0o644); err != nil {
 		fmt.Fprintf(os.Stderr, "fakeclaude: persist session: %v\n", err)
 	}
 }
@@ -489,8 +489,8 @@ func mcpSend(flagConfig string, args map[string]any) string {
 		return "send error: " + err.Error()
 	}
 	var parts []string
-	for _, c := range res.Content {
-		if tc, ok := c.(*mcp.TextContent); ok {
+	for _, content := range res.Content {
+		if tc, ok := content.(*mcp.TextContent); ok {
 			parts = append(parts, tc.Text)
 		}
 	}
@@ -564,9 +564,9 @@ func fetch(rawURL string) string {
 
 type headerTransport struct{ headers map[string]string }
 
-func (h headerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	for k, v := range h.headers {
-		r.Header.Set(k, v)
+func (transport headerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	for name, value := range transport.headers {
+		r.Header.Set(name, value)
 	}
 	return http.DefaultTransport.RoundTrip(r)
 }
