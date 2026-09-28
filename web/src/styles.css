@@ -857,8 +857,16 @@ textarea {
   font-size: 0.75rem;
   color: var(--text-muted);
 }
-.fleet-row .f-today {
+/* A cost lines up on its decimal point, so the column is right-aligned, and
+   its heading with it: a left-aligned TODAY sat a column's slack away from
+   the figures it names (#395). The heading's letter-spacing trails its last
+   letter too, so it is taken back to meet the figures' edge. */
+.fleet-row .f-today,
+.fleet-cols .f-today {
   text-align: right;
+}
+.fleet-cols .f-today {
+  margin-right: -0.12em;
 }
 .fleet-row .hot {
   color: var(--active);
