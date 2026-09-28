@@ -23,40 +23,40 @@ import (
 // writers here (the JSON encoder, the SSE frame printer) emit a whole
 // document per call, and the store decorator means a stored secret should
 // not reach this layer at all.
-func HTTP(next http.Handler, r *Redactor) http.Handler {
+func HTTP(next http.Handler, redactor *Redactor) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		next.ServeHTTP(&responseWriter{ResponseWriter: w, r: r}, req)
+		next.ServeHTTP(&responseWriter{ResponseWriter: w, redactor: redactor}, req)
 	})
 }
 
 type responseWriter struct {
 	http.ResponseWriter
-	r *Redactor
+	redactor *Redactor
 }
 
-func (w *responseWriter) Write(b []byte) (int, error) {
-	if !redactable(w.Header().Get("Content-Type")) {
-		return w.ResponseWriter.Write(b)
+func (writer *responseWriter) Write(data []byte) (int, error) {
+	if !redactable(writer.Header().Get("Content-Type")) {
+		return writer.ResponseWriter.Write(data)
 	}
-	clean := w.r.Text(string(b))
-	if clean == string(b) {
-		return w.ResponseWriter.Write(b)
+	clean := writer.redactor.Text(string(data))
+	if clean == string(data) {
+		return writer.ResponseWriter.Write(data)
 	}
-	if _, err := w.ResponseWriter.Write([]byte(clean)); err != nil {
+	if _, err := writer.ResponseWriter.Write([]byte(clean)); err != nil {
 		return 0, err
 	}
 	// Report the caller's own length: a short count means "wrote less than
 	// you asked" to every io.Writer user, and the redacted body is
 	// deliberately a different size.
-	return len(b), nil
+	return len(data), nil
 }
 
 // Flush keeps SSE streaming: serveSSE type-asserts its writer to
 // http.Flusher, and a wrapper that does not implement it turns the live
 // timeline into a hang.
-func (w *responseWriter) Flush() {
-	if f, ok := w.ResponseWriter.(http.Flusher); ok {
-		f.Flush()
+func (writer *responseWriter) Flush() {
+	if flusher, ok := writer.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
 	}
 }
 

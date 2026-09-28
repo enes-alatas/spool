@@ -11,8 +11,8 @@ import (
 
 func logger(t *testing.T, buf *bytes.Buffer, secrets ...Secret) *slog.Logger {
 	t.Helper()
-	r, _ := loaded(t, secrets...)
-	return slog.New(Handler(slog.NewTextHandler(buf, nil), r))
+	redactor, _ := loaded(t, secrets...)
+	return slog.New(Handler(slog.NewTextHandler(buf, nil), redactor))
 }
 
 func TestHandlerRedactsMessageAndAttrs(t *testing.T) {
@@ -25,8 +25,8 @@ func TestHandlerRedactsMessageAndAttrs(t *testing.T) {
 	if strings.Contains(out, "1234:AAsecrettoken") {
 		t.Fatalf("log line carried the secret: %s", out)
 	}
-	if n := strings.Count(out, "<redacted:BOT>"); n != 2 {
-		t.Errorf("got %d placeholders in %s, want one in the message and one in the attr", n, out)
+	if count := strings.Count(out, "<redacted:BOT>"); count != 2 {
+		t.Errorf("got %d placeholders in %s, want one in the message and one in the attr", count, out)
 	}
 }
 
@@ -73,17 +73,17 @@ func TestHandlerRedactsAttrsFromWithAndGroups(t *testing.T) {
 	if strings.Contains(out, "ghp_secretvalue") {
 		t.Fatalf("log line carried the secret: %s", out)
 	}
-	if n := strings.Count(out, "<redacted:GH>"); n != 2 {
-		t.Errorf("got %d placeholders in %s, want one from With and one from the group", n, out)
+	if count := strings.Count(out, "<redacted:GH>"); count != 2 {
+		t.Errorf("got %d placeholders in %s, want one from With and one from the group", count, out)
 	}
 }
 
 func TestHandlerRespectsTheWrappedLevel(t *testing.T) {
 	var buf bytes.Buffer
-	r, _ := loaded(t)
-	h := Handler(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}), r)
+	redactor, _ := loaded(t)
+	logHandler := Handler(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}), redactor)
 
-	if h.Enabled(context.Background(), slog.LevelInfo) {
+	if logHandler.Enabled(context.Background(), slog.LevelInfo) {
 		t.Error("Enabled(Info) = true through a Warn-level handler")
 	}
 }

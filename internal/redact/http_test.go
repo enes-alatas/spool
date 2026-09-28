@@ -8,11 +8,11 @@ import (
 	"testing"
 )
 
-func served(t *testing.T, h http.HandlerFunc) *httptest.ResponseRecorder {
+func served(t *testing.T, handler http.HandlerFunc) *httptest.ResponseRecorder {
 	t.Helper()
-	r, _ := loaded(t, Secret{Name: "GH_TOKEN", Value: secretValue})
+	redactor, _ := loaded(t, Secret{Name: "GH_TOKEN", Value: secretValue})
 	rec := httptest.NewRecorder()
-	HTTP(h, r).ServeHTTP(rec, httptest.NewRequest("GET", "/api/anything", nil))
+	HTTP(handler, redactor).ServeHTTP(rec, httptest.NewRequest("GET", "/api/anything", nil))
 	return rec
 }
 
@@ -61,12 +61,12 @@ func TestOtherContentTypesPassThroughUntouched(t *testing.T) {
 func TestWrapperStaysFlushable(t *testing.T) {
 	var flushed bool
 	served(t, func(w http.ResponseWriter, _ *http.Request) {
-		f, ok := w.(http.Flusher)
+		flusher, ok := w.(http.Flusher)
 		if !ok {
 			t.Error("wrapped writer is not an http.Flusher")
 			return
 		}
-		f.Flush()
+		flusher.Flush()
 		flushed = true
 	})
 	if !flushed {
@@ -80,12 +80,12 @@ func TestWriteReportsTheCallersLength(t *testing.T) {
 	in := []byte(`{"t":"` + secretValue + `"}`)
 	served(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		n, err := w.Write(in)
+		written, err := w.Write(in)
 		if err != nil {
 			t.Errorf("Write: %v", err)
 		}
-		if n != len(in) {
-			t.Errorf("Write returned %d, want %d", n, len(in))
+		if written != len(in) {
+			t.Errorf("Write returned %d, want %d", written, len(in))
 		}
 	})
 }

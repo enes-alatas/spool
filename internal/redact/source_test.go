@@ -12,9 +12,9 @@ type sourceStore struct {
 	loops []*store.Loop
 }
 
-func (s sourceStore) Settings() store.SettingsStore      { return noSettings{} }
-func (s sourceStore) Loops() store.LoopStore             { return listedLoops{loops: s.loops} }
-func (s sourceStore) LoopSecrets() store.LoopSecretStore { return noLoopSecrets{} }
+func (fake sourceStore) Settings() store.SettingsStore      { return noSettings{} }
+func (fake sourceStore) Loops() store.LoopStore             { return listedLoops{loops: fake.loops} }
+func (fake sourceStore) LoopSecrets() store.LoopSecretStore { return noLoopSecrets{} }
 
 type noSettings struct{ store.SettingsStore }
 
@@ -25,7 +25,7 @@ type listedLoops struct {
 	loops []*store.Loop
 }
 
-func (l listedLoops) List(context.Context) ([]*store.Loop, error) { return l.loops, nil }
+func (listed listedLoops) List(context.Context) ([]*store.Loop, error) { return listed.loops, nil }
 
 type noLoopSecrets struct{ store.LoopSecretStore }
 

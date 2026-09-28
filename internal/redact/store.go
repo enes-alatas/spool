@@ -27,19 +27,30 @@ import (
 // write-back field turns out to be. The second is that the caller usually
 // goes on to publish the same struct on the bus, and the copy it published
 // would still hold the secret.
-func Store(inner store.Store, r *Redactor) store.Store {
-	return redactedStore{Store: inner, r: r}
+func Store(inner store.Store, redactor *Redactor) store.Store {
+	return redactedStore{Store: inner, redactor: redactor}
 }
 
 type redactedStore struct {
 	store.Store
-	r *Redactor
+	redactor *Redactor
 }
 
-func (s redactedStore) Loops() store.LoopStore       { return loops{s.Store.Loops(), s.r} }
-func (s redactedStore) Turns() store.TurnStore       { return turns{s.Store.Turns(), s.r} }
-func (s redactedStore) Events() store.EventStore     { return events{s.Store.Events(), s.r} }
-func (s redactedStore) Messages() store.MessageStore { return messages{s.Store.Messages(), s.r} }
+func (redacted redactedStore) Loops() store.LoopStore {
+	return loops{redacted.Store.Loops(), redacted.redactor}
+}
+
+func (redacted redactedStore) Turns() store.TurnStore {
+	return turns{redacted.Store.Turns(), redacted.redactor}
+}
+
+func (redacted redactedStore) Events() store.EventStore {
+	return events{redacted.Store.Events(), redacted.redactor}
+}
+
+func (redacted redactedStore) Messages() store.MessageStore {
+	return messages{redacted.Store.Messages(), redacted.redactor}
+}
 
 // loops redacts the one free-text field a loop row carries. Its token fields
 // are deliberately untouched: those values *are* the secrets, and a decorator
@@ -47,21 +58,21 @@ func (s redactedStore) Messages() store.MessageStore { return messages{s.Store.M
 // token belongs and take the loop's bot down with it.
 type loops struct {
 	store.LoopStore
-	r *Redactor
+	redactor *Redactor
 }
 
-func (l loops) SetRotation(ctx context.Context, id string, pending bool, reason, note string) error {
+func (loopStore loops) SetRotation(ctx context.Context, id string, pending bool, reason, note string) error {
 	// The handoff note is written by the loop, in its own words, and read
 	// back into the next session's prompt — free text with a turn's worth of
 	// whatever it was holding.
-	return l.LoopStore.SetRotation(ctx, id, pending, reason, l.r.Text(note))
+	return loopStore.LoopStore.SetRotation(ctx, id, pending, reason, loopStore.redactor.Text(note))
 }
 
-func (l loops) SetModelRefusal(ctx context.Context, id, model, refusal string, updatedAt int64) error {
+func (loopStore loops) SetModelRefusal(ctx context.Context, id, model, refusal string, updatedAt int64) error {
 	// The CLI's sentence around the configured model id. It is the refused
 	// turn's result text, which the turn row stores redacted, so the loop
 	// row stores the same.
-	return l.LoopStore.SetModelRefusal(ctx, id, model, l.r.Text(refusal), updatedAt)
+	return loopStore.LoopStore.SetModelRefusal(ctx, id, model, loopStore.redactor.Text(refusal), updatedAt)
 }
 
 // Each decorator embeds the interface it wraps, so a method added to the
@@ -70,57 +81,57 @@ func (l loops) SetModelRefusal(ctx context.Context, id, model, refusal string, u
 // and the tier-1 test that walks the interfaces is what says so.
 type turns struct {
 	store.TurnStore
-	r *Redactor
+	redactor *Redactor
 }
 
-func (t turns) Create(ctx context.Context, turn *store.Turn) error {
-	t.clean(turn)
-	return t.TurnStore.Create(ctx, turn)
+func (turnStore turns) Create(ctx context.Context, turn *store.Turn) error {
+	turnStore.clean(turn)
+	return turnStore.TurnStore.Create(ctx, turn)
 }
 
-func (t turns) Finish(ctx context.Context, turn *store.Turn) error {
-	t.clean(turn)
-	return t.TurnStore.Finish(ctx, turn)
+func (turnStore turns) Finish(ctx context.Context, turn *store.Turn) error {
+	turnStore.clean(turn)
+	return turnStore.TurnStore.Finish(ctx, turn)
 }
 
-func (t turns) clean(turn *store.Turn) {
+func (turnStore turns) clean(turn *store.Turn) {
 	if turn != nil {
-		turn.ResultText = t.r.Text(turn.ResultText)
+		turn.ResultText = turnStore.redactor.Text(turn.ResultText)
 	}
 }
 
 type events struct {
 	store.EventStore
-	r *Redactor
+	redactor *Redactor
 }
 
-func (e events) Insert(ctx context.Context, ev *store.Event) (int64, error) {
+func (eventStore events) Insert(ctx context.Context, ev *store.Event) (int64, error) {
 	if ev != nil {
-		ev.Payload = e.r.Text(ev.Payload)
+		ev.Payload = eventStore.redactor.Text(ev.Payload)
 	}
-	return e.EventStore.Insert(ctx, ev)
+	return eventStore.EventStore.Insert(ctx, ev)
 }
 
 type messages struct {
 	store.MessageStore
-	r *Redactor
+	redactor *Redactor
 }
 
-func (m messages) Insert(ctx context.Context, msg *store.Message) error {
+func (messageStore messages) Insert(ctx context.Context, msg *store.Message) error {
 	if msg != nil {
-		msg.Text = m.r.Text(msg.Text)
-		msg.SendError = m.r.Text(msg.SendError)
+		msg.Text = messageStore.redactor.Text(msg.Text)
+		msg.SendError = messageStore.redactor.Text(msg.SendError)
 	}
-	return m.MessageStore.Insert(ctx, msg)
+	return messageStore.MessageStore.Insert(ctx, msg)
 }
 
-func (m messages) SetSendResult(ctx context.Context, id, failedAt int64, sendErr string) error {
+func (messageStore messages) SetSendResult(ctx context.Context, id, failedAt int64, sendErr string) error {
 	// The one that bit us: #146's leak was a transport error, stored here.
-	return m.MessageStore.SetSendResult(ctx, id, failedAt, m.r.Text(sendErr))
+	return messageStore.MessageStore.SetSendResult(ctx, id, failedAt, messageStore.redactor.Text(sendErr))
 }
 
-func (m messages) FailInterruptedSends(ctx context.Context, failedAt int64, sendErr string) ([]*store.Message, error) {
+func (messageStore messages) FailInterruptedSends(ctx context.Context, failedAt int64, sendErr string) ([]*store.Message, error) {
 	// The hub's own fixed sentence today, but it is stored as a send error,
 	// and that column is where #146's leak lived.
-	return m.MessageStore.FailInterruptedSends(ctx, failedAt, m.r.Text(sendErr))
+	return messageStore.MessageStore.FailInterruptedSends(ctx, failedAt, messageStore.redactor.Text(sendErr))
 }
