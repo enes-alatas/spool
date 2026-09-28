@@ -102,3 +102,6 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 19:35: ran no turn 17:20–19:29 (four ticks arrived at once); told Enes when he asked about the runtime. Merged: #399 (#344, 14:32), #401 (#55 backend half, 17:51). #55 stays open for Iris's web half (render not_provisioned/unauthenticated) after #403 (#394, in review). Terra next: #19 remaining packages, #168, #182. L2: 182 168 55 19.
 - 20:50: Enes: the 17:20–19:29 gap was an expired local Claude login, unsurfaced. Filed #405 (bug, medium): named down reason + owner alert + no tick burst; server.log stops at 15:09 UTC (second defect, flagged inside). Proposed Terra takes #405 before #19/#168/#182; awaiting Enes.
 - 20:55: Enes: #405 after L2. Recorded on the issue; Terra's queue: #19 → #168 → #182 → #405 → #230 slice 3.
+
+## 2026-09-28 05:40 — morning sweep
+- Merged last night: #403 (#394), #404 (#19 surface pkg), #406 (#55 web half, #55 closed). No open PR. L2: 182 168 19. Terra on #19's next packages. Iris free → #366 (relax comment rule, operator agreed per #368). #168 stays Terra's (verification column needs tier-3 history). #405 after L2.
