@@ -66,7 +66,7 @@ type domainRule struct {
 // dropped), and anything Validate rejects — an empty entry from a stray
 // comma, a pasted URL, a scheme where a port belongs — is left out.
 func New(entries []string) *Allowlist {
-	a := &Allowlist{exact: map[string]map[string]bool{}}
+	allowlist := &Allowlist{exact: map[string]map[string]bool{}}
 	for _, entry := range entries {
 		// An entry that cannot be acted on is left out rather than kept as a
 		// rule matching nothing: whoever accepted it reports it (Validate),
@@ -78,36 +78,36 @@ func New(entries []string) *Allowlist {
 		switch {
 		case host == "" || host == ".":
 		case strings.HasPrefix(host, "."):
-			a.domains = append(a.domains, domainRule{suffix: host, ports: ports})
+			allowlist.domains = append(allowlist.domains, domainRule{suffix: host, ports: ports})
 		default:
-			if a.exact[host] == nil {
-				a.exact[host] = map[string]bool{}
+			if allowlist.exact[host] == nil {
+				allowlist.exact[host] = map[string]bool{}
 			}
 			for port := range ports {
-				a.exact[host][port] = true
+				allowlist.exact[host][port] = true
 			}
 		}
 	}
-	sort.Slice(a.domains, func(i, j int) bool { return a.domains[i].suffix < a.domains[j].suffix })
-	return a
+	sort.Slice(allowlist.domains, func(i, j int) bool { return allowlist.domains[i].suffix < allowlist.domains[j].suffix })
+	return allowlist
 }
 
 // Allows reports whether host may be reached on port. Both are the values the
 // client asked for, already split apart by the caller — Allows does no parsing
 // of its own, so handing it "example.com:443" as the host refuses.
-func (a *Allowlist) Allows(host, port string) bool {
+func (allowlist *Allowlist) Allows(host, port string) bool {
 	host = normalize(host)
 	if host == "" || port == "" {
 		return false
 	}
-	if ports, ok := a.exact[host]; ok && ports[port] {
+	if ports, ok := allowlist.exact[host]; ok && ports[port] {
 		return true
 	}
-	for _, d := range a.domains {
+	for _, domain := range allowlist.domains {
 		// ".example.com" covers "api.example.com" and "example.com" itself,
 		// which is what an operator writing the dotted form means.
-		if strings.HasSuffix(host, d.suffix) || host == d.suffix[1:] {
-			if d.ports[port] {
+		if strings.HasSuffix(host, domain.suffix) || host == domain.suffix[1:] {
+			if domain.ports[port] {
 				return true
 			}
 		}
@@ -117,13 +117,13 @@ func (a *Allowlist) Allows(host, port string) bool {
 
 // Entries returns what this allowlist permits, sorted, host:port per line —
 // for logging what a proxy is enforcing.
-func (a *Allowlist) Entries() []string {
+func (allowlist *Allowlist) Entries() []string {
 	var entries []string
-	for host, ports := range a.exact {
+	for host, ports := range allowlist.exact {
 		entries = append(entries, render(host, ports)...)
 	}
-	for _, d := range a.domains {
-		entries = append(entries, render(d.suffix, d.ports)...)
+	for _, domain := range allowlist.domains {
+		entries = append(entries, render(domain.suffix, domain.ports)...)
 	}
 	sort.Strings(entries)
 	return entries
