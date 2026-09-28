@@ -4,7 +4,7 @@ Tier 2 is only as strict as this fake. A fake more permissive than the real
 CLI turns a green row into a test of our own assumptions: #162 had two rows
 green on a system prompt the real CLI never re-reads on `--resume`. This file
 lists every CLI behaviour `fakeclaude` models, and for each one how it was
-checked against a real `claude`, or that it wasn't (ADR-0009).
+checked against a real `claude`, or that it wasn't (ADR-0009, amended by #168).
 
 **Verified** means a real CLI was observed doing it: the build, the date, and
 where the observation is recorded. **Partly** means some of the modelled
@@ -14,6 +14,13 @@ is our guess. Measurements from probes live in ADR-0001 "Recorded CLI
 behaviour"; this file points at them rather than restating them. A build here
 is the one the observation ran on, which is not always
 `internal/claude.TestedVersion` (2.1.281).
+
+The rules, in `docs/QUALITY.md` "Review (human)":
+
+- A PR that adds or changes a behaviour of the fake adds or updates its line.
+- A PR that changes engine behaviour resting on an **assumed** or **partly**
+  line runs the tier-3 check first, and records it here. That spends the
+  operator's plan tokens, so ask first.
 
 ## Process and stream-json framing
 
