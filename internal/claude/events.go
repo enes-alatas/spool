@@ -122,9 +122,9 @@ func textFromContent(content json.RawMessage) string {
 		return ""
 	}
 	out := ""
-	for _, b := range blocks {
-		if b.Type == "text" {
-			out += b.Text
+	for _, block := range blocks {
+		if block.Type == "text" {
+			out += block.Text
 		}
 	}
 	return out

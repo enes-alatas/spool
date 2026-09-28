@@ -53,8 +53,8 @@ func Args(opts Opts) ([]string, error) {
 	if opts.AppendSystemPrompt != "" {
 		args = append(args, "--append-system-prompt", opts.AppendSystemPrompt)
 	}
-	for _, d := range opts.AddDirs {
-		args = append(args, "--add-dir", d)
+	for _, dir := range opts.AddDirs {
+		args = append(args, "--add-dir", dir)
 	}
 	if opts.PartialMessages {
 		args = append(args, "--include-partial-messages")
@@ -68,7 +68,7 @@ func Args(opts Opts) ([]string, error) {
 // MCPConfigJSON renders the --mcp-config contents pointing claude at the
 // hub's MCP endpoint as the loop it runs (ADR-0026).
 func MCPConfigJSON(url, token string) string {
-	b, _ := json.Marshal(map[string]any{
+	config, _ := json.Marshal(map[string]any{
 		"mcpServers": map[string]any{
 			"spool": map[string]any{
 				"type":    "http",
@@ -77,5 +77,5 @@ func MCPConfigJSON(url, token string) string {
 			},
 		},
 	})
-	return string(b)
+	return string(config)
 }

@@ -48,8 +48,8 @@ func ResolveArgs(model string) ([]string, error) {
 	}
 	id[6] = id[6]&0x0f | 0x40 // a version-4 uuid, which --session-id requires
 	id[8] = id[8]&0x3f | 0x80
-	h := hex.EncodeToString(id)
-	session := h[:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:]
+	digits := hex.EncodeToString(id)
+	session := digits[:8] + "-" + digits[8:12] + "-" + digits[12:16] + "-" + digits[16:20] + "-" + digits[20:]
 	return Args(Opts{Model: model, SessionID: session})
 }
 
@@ -81,9 +81,9 @@ func ResolvedModel(ctx context.Context, stream *Stream) (string, error) {
 	}
 }
 
-func tailOf(s string, n int) string {
-	if len(s) > n {
-		return s[len(s)-n:]
+func tailOf(text string, limit int) string {
+	if len(text) > limit {
+		return text[len(text)-limit:]
 	}
-	return s
+	return text
 }
