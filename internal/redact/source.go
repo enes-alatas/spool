@@ -17,10 +17,10 @@ import (
 // values it redacts by is a loop worth not building.
 type StoreSource struct{ Store store.Store }
 
-func (s StoreSource) Secrets(ctx context.Context) ([]Secret, error) {
+func (source StoreSource) Secrets(ctx context.Context) ([]Secret, error) {
 	var out []Secret
 
-	token, err := s.Store.Settings().Get(ctx, store.SettingClaudeOAuthToken)
+	token, err := source.Store.Settings().Get(ctx, store.SettingClaudeOAuthToken)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return nil, err
 	}
@@ -30,26 +30,26 @@ func (s StoreSource) Secrets(ctx context.Context) ([]Secret, error) {
 
 	// Every loop, archived included: an archived loop's token still opens
 	// its bot, and its old transcripts are still served.
-	loops, err := s.Store.Loops().List(ctx)
+	loops, err := source.Store.Loops().List(ctx)
 	if err != nil {
 		return nil, err
 	}
-	for _, l := range loops {
-		if l.TGBotToken != "" {
-			out = append(out, Secret{Name: "tg_bot_token", Value: l.TGBotToken})
+	for _, loopRecord := range loops {
+		if loopRecord.TGBotToken != "" {
+			out = append(out, Secret{Name: "tg_bot_token", Value: loopRecord.TGBotToken})
 		}
 		// A Slack app is two credentials, and either one opens it: the app
 		// token opens its Socket Mode connection, the bot token posts as it.
-		if l.SlackAppToken != "" {
-			out = append(out, Secret{Name: "slack_app_token", Value: l.SlackAppToken})
+		if loopRecord.SlackAppToken != "" {
+			out = append(out, Secret{Name: "slack_app_token", Value: loopRecord.SlackAppToken})
 		}
-		if l.SlackBotToken != "" {
-			out = append(out, Secret{Name: "slack_bot_token", Value: l.SlackBotToken})
+		if loopRecord.SlackBotToken != "" {
+			out = append(out, Secret{Name: "slack_bot_token", Value: loopRecord.SlackBotToken})
 		}
-		if l.HubMCPToken != "" {
-			out = append(out, Secret{Name: "hub_mcp_token", Value: l.HubMCPToken})
+		if loopRecord.HubMCPToken != "" {
+			out = append(out, Secret{Name: "hub_mcp_token", Value: loopRecord.HubMCPToken})
 		}
-		secrets, err := s.Store.LoopSecrets().List(ctx, l.ID)
+		secrets, err := source.Store.LoopSecrets().List(ctx, loopRecord.ID)
 		if err != nil {
 			return nil, err
 		}

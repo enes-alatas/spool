@@ -85,29 +85,29 @@ func New(src Source, ttl time.Duration) *Redactor {
 
 // Refresh reloads the secrets. Call it after writing one, so the very next
 // log line covers it rather than waiting out the ttl.
-func (r *Redactor) Refresh(ctx context.Context) error {
-	r.refreshing.Lock()
-	defer r.refreshing.Unlock()
-	return r.reload(ctx)
+func (redactor *Redactor) Refresh(ctx context.Context) error {
+	redactor.refreshing.Lock()
+	defer redactor.refreshing.Unlock()
+	return redactor.reload(ctx)
 }
 
-func (r *Redactor) reload(ctx context.Context) error {
-	secrets, err := r.src.Secrets(ctx)
+func (redactor *Redactor) reload(ctx context.Context) error {
+	secrets, err := redactor.src.Secrets(ctx)
 	if err != nil {
 		// Keep the previous snapshot: a store hiccup must not quietly turn
 		// redaction off. It goes stale, which the ttl cannot fix either —
 		// staleness is recoverable, an empty replacer is a leak.
 		return err
 	}
-	r.snap.Store(compile(secrets, r.now()))
+	redactor.snap.Store(compile(secrets, redactor.now()))
 	return nil
 }
 
 func compile(secrets []Secret, at time.Time) *snapshot {
 	usable := make([]Secret, 0, len(secrets))
-	for _, s := range secrets {
-		if len(s.Value) >= MinLength {
-			usable = append(usable, s)
+	for _, secret := range secrets {
+		if len(secret.Value) >= MinLength {
+			usable = append(usable, secret)
 		}
 	}
 	if len(usable) == 0 {
@@ -117,28 +117,28 @@ func compile(secrets []Secret, at time.Time) *snapshot {
 		return len(usable[i].Value) > len(usable[j].Value)
 	})
 	pairs := make([]string, 0, 2*len(usable))
-	for _, s := range usable {
-		pairs = append(pairs, s.Value, "<redacted:"+s.Name+">")
+	for _, secret := range usable {
+		pairs = append(pairs, secret.Value, "<redacted:"+secret.Name+">")
 	}
 	return &snapshot{replacer: strings.NewReplacer(pairs...), loadedAt: at}
 }
 
-// Text returns s with every known secret value replaced. It never blocks on
-// the store: a stale snapshot redacts what it knows, and the ttl decides when
-// the next caller reloads.
-func (r *Redactor) Text(s string) string {
-	if s == "" {
-		return s
+// Text returns text with every known secret value replaced. It never blocks
+// on the store: a stale snapshot redacts what it knows, and the ttl decides
+// when the next caller reloads.
+func (redactor *Redactor) Text(text string) string {
+	if text == "" {
+		return text
 	}
-	snap := r.current()
+	snap := redactor.current()
 	if snap == nil || snap.empty {
-		return s
+		return text
 	}
-	return snap.replacer.Replace(s)
+	return snap.replacer.Replace(text)
 }
 
-// Redacted reports whether s contains a known secret value.
-func (r *Redactor) Redacted(s string) bool { return r.Text(s) != s }
+// Redacted reports whether text contains a known secret value.
+func (redactor *Redactor) Redacted(text string) bool { return redactor.Text(text) != text }
 
 // current returns the snapshot to redact against, reloading first if the ttl
 // has passed. The caller that finds the snapshot expired pays for the reload,
@@ -147,24 +147,24 @@ func (r *Redactor) Redacted(s string) bool { return r.Text(s) != s }
 // query behind a reload logs on failure, and a log line waiting on the
 // reload it is part of would deadlock. A caller that cannot take the lock
 // redacts against the snapshot it has, which is the safe direction.
-func (r *Redactor) current() *snapshot {
-	snap := r.snap.Load()
+func (redactor *Redactor) current() *snapshot {
+	snap := redactor.snap.Load()
 	if snap == nil {
 		return nil
 	}
-	if r.ttl <= 0 || r.now().Sub(snap.loadedAt) < r.ttl {
+	if redactor.ttl <= 0 || redactor.now().Sub(snap.loadedAt) < redactor.ttl {
 		return snap
 	}
-	if !r.refreshing.TryLock() {
+	if !redactor.refreshing.TryLock() {
 		return snap
 	}
-	defer r.refreshing.Unlock()
+	defer redactor.refreshing.Unlock()
 	// A reload may have landed between the load above and the lock.
-	if snap := r.snap.Load(); r.now().Sub(snap.loadedAt) < r.ttl {
+	if snap := redactor.snap.Load(); redactor.now().Sub(snap.loadedAt) < redactor.ttl {
 		return snap
 	}
-	if err := r.reload(context.Background()); err != nil {
+	if err := redactor.reload(context.Background()); err != nil {
 		return snap
 	}
-	return r.snap.Load()
+	return redactor.snap.Load()
 }

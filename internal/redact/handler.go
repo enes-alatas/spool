@@ -15,58 +15,58 @@ import (
 // that happened to quote the URL it had failed on, token and all — so the
 // defence has to sit where every line goes, not where a careful author puts
 // it.
-func Handler(next slog.Handler, r *Redactor) slog.Handler {
-	return &handler{next: next, r: r}
+func Handler(next slog.Handler, redactor *Redactor) slog.Handler {
+	return &handler{next: next, redactor: redactor}
 }
 
 type handler struct {
-	next slog.Handler
-	r    *Redactor
+	next     slog.Handler
+	redactor *Redactor
 }
 
-func (h *handler) Enabled(ctx context.Context, l slog.Level) bool {
-	return h.next.Enabled(ctx, l)
+func (logHandler *handler) Enabled(ctx context.Context, level slog.Level) bool {
+	return logHandler.next.Enabled(ctx, level)
 }
 
-func (h *handler) Handle(ctx context.Context, rec slog.Record) error {
-	out := slog.NewRecord(rec.Time, rec.Level, h.r.Text(rec.Message), rec.PC)
-	rec.Attrs(func(a slog.Attr) bool {
-		out.AddAttrs(h.attr(a))
+func (logHandler *handler) Handle(ctx context.Context, rec slog.Record) error {
+	out := slog.NewRecord(rec.Time, rec.Level, logHandler.redactor.Text(rec.Message), rec.PC)
+	rec.Attrs(func(attr slog.Attr) bool {
+		out.AddAttrs(logHandler.attr(attr))
 		return true
 	})
-	return h.next.Handle(ctx, out)
+	return logHandler.next.Handle(ctx, out)
 }
 
-func (h *handler) WithAttrs(attrs []slog.Attr) slog.Handler {
+func (logHandler *handler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	clean := make([]slog.Attr, len(attrs))
-	for i, a := range attrs {
-		clean[i] = h.attr(a)
+	for i, attr := range attrs {
+		clean[i] = logHandler.attr(attr)
 	}
-	return &handler{next: h.next.WithAttrs(clean), r: h.r}
+	return &handler{next: logHandler.next.WithAttrs(clean), redactor: logHandler.redactor}
 }
 
-func (h *handler) WithGroup(name string) slog.Handler {
-	return &handler{next: h.next.WithGroup(name), r: h.r}
+func (logHandler *handler) WithGroup(name string) slog.Handler {
+	return &handler{next: logHandler.next.WithGroup(name), redactor: logHandler.redactor}
 }
 
 // attr redacts one attribute, recursing into groups. A LogValuer is resolved
 // first: the value the handler would print is the value that has to be clean,
 // and a lazily-computed one is no exception.
-func (h *handler) attr(a slog.Attr) slog.Attr {
-	a.Key = h.r.Text(a.Key)
-	a.Value = h.value(a.Value.Resolve())
-	return a
+func (logHandler *handler) attr(attr slog.Attr) slog.Attr {
+	attr.Key = logHandler.redactor.Text(attr.Key)
+	attr.Value = logHandler.value(attr.Value.Resolve())
+	return attr
 }
 
-func (h *handler) value(v slog.Value) slog.Value {
-	switch v.Kind() {
+func (logHandler *handler) value(value slog.Value) slog.Value {
+	switch value.Kind() {
 	case slog.KindString:
-		return slog.StringValue(h.r.Text(v.String()))
+		return slog.StringValue(logHandler.redactor.Text(value.String()))
 	case slog.KindGroup:
-		attrs := v.Group()
+		attrs := value.Group()
 		clean := make([]slog.Attr, len(attrs))
-		for i, a := range attrs {
-			clean[i] = h.attr(a)
+		for i, attr := range attrs {
+			clean[i] = logHandler.attr(attr)
 		}
 		return slog.GroupValue(clean...)
 	case slog.KindAny:
@@ -76,13 +76,13 @@ func (h *handler) value(v slog.Value) slog.Value {
 		// redaction actually changed something — so ordinary values keep
 		// their type, their formatting and their %+v detail, and only a
 		// value that was about to print a secret is flattened.
-		text := fmt.Sprintf("%+v", v.Any())
-		if clean := h.r.Text(text); clean != text {
+		text := fmt.Sprintf("%+v", value.Any())
+		if clean := logHandler.redactor.Text(text); clean != text {
 			return slog.StringValue(clean)
 		}
-		return v
+		return value
 	default:
 		// Numbers, bools, times, durations: no room for a secret in them.
-		return v
+		return value
 	}
 }

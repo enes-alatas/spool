@@ -17,16 +17,23 @@ type recordingTurns struct {
 	got *store.Turn
 }
 
-func (r *recordingTurns) Create(_ context.Context, t *store.Turn) error { r.got = t; return nil }
-func (r *recordingTurns) Finish(_ context.Context, t *store.Turn) error { r.got = t; return nil }
+func (recorder *recordingTurns) Create(_ context.Context, turn *store.Turn) error {
+	recorder.got = turn
+	return nil
+}
+
+func (recorder *recordingTurns) Finish(_ context.Context, turn *store.Turn) error {
+	recorder.got = turn
+	return nil
+}
 
 type recordingEvents struct {
 	store.EventStore
 	got *store.Event
 }
 
-func (r *recordingEvents) Insert(_ context.Context, e *store.Event) (int64, error) {
-	r.got = e
+func (recorder *recordingEvents) Insert(_ context.Context, event *store.Event) (int64, error) {
+	recorder.got = event
 	return 7, nil
 }
 
@@ -36,19 +43,19 @@ type recordingMessages struct {
 	sendErr string
 }
 
-func (r *recordingMessages) Insert(_ context.Context, m *store.Message) error {
-	r.got = m
-	m.ID = 42 // the sqlite store fills the new row's id in; so must the double
+func (recorder *recordingMessages) Insert(_ context.Context, message *store.Message) error {
+	recorder.got = message
+	message.ID = 42 // the sqlite store fills the new row's id in; so must the double
 	return nil
 }
 
-func (r *recordingMessages) SetSendResult(_ context.Context, _, _ int64, sendErr string) error {
-	r.sendErr = sendErr
+func (recorder *recordingMessages) SetSendResult(_ context.Context, _, _ int64, sendErr string) error {
+	recorder.sendErr = sendErr
 	return nil
 }
 
-func (r *recordingMessages) FailInterruptedSends(_ context.Context, _ int64, sendErr string) ([]*store.Message, error) {
-	r.sendErr = sendErr
+func (recorder *recordingMessages) FailInterruptedSends(_ context.Context, _ int64, sendErr string) ([]*store.Message, error) {
+	recorder.sendErr = sendErr
 	return nil, nil
 }
 
@@ -58,13 +65,13 @@ type recordingLoops struct {
 	refusal string
 }
 
-func (r *recordingLoops) SetModelRefusal(_ context.Context, _, _, refusal string, _ int64) error {
-	r.refusal = refusal
+func (recorder *recordingLoops) SetModelRefusal(_ context.Context, _, _, refusal string, _ int64) error {
+	recorder.refusal = refusal
 	return nil
 }
 
-func (r *recordingLoops) SetRotation(_ context.Context, _ string, _ bool, _, note string) error {
-	r.note = note
+func (recorder *recordingLoops) SetRotation(_ context.Context, _ string, _ bool, _, note string) error {
+	recorder.note = note
 	return nil
 }
 
@@ -76,10 +83,10 @@ type fakeStore struct {
 	messages store.MessageStore
 }
 
-func (f fakeStore) Loops() store.LoopStore       { return f.loops }
-func (f fakeStore) Turns() store.TurnStore       { return f.turns }
-func (f fakeStore) Events() store.EventStore     { return f.events }
-func (f fakeStore) Messages() store.MessageStore { return f.messages }
+func (fake fakeStore) Loops() store.LoopStore       { return fake.loops }
+func (fake fakeStore) Turns() store.TurnStore       { return fake.turns }
+func (fake fakeStore) Events() store.EventStore     { return fake.events }
+func (fake fakeStore) Messages() store.MessageStore { return fake.messages }
 
 const secretValue = "ghp_storedsecretvalue"
 
@@ -92,26 +99,26 @@ type doubles struct {
 
 func decorated(t *testing.T) (store.Store, doubles) {
 	t.Helper()
-	r, _ := loaded(t, Secret{Name: "GH_TOKEN", Value: secretValue})
-	d := doubles{&recordingLoops{}, &recordingTurns{}, &recordingEvents{}, &recordingMessages{}}
-	inner := fakeStore{loops: d.loops, turns: d.turns, events: d.events, messages: d.messages}
-	return Store(inner, r), d
+	redactor, _ := loaded(t, Secret{Name: "GH_TOKEN", Value: secretValue})
+	recorders := doubles{&recordingLoops{}, &recordingTurns{}, &recordingEvents{}, &recordingMessages{}}
+	inner := fakeStore{loops: recorders.loops, turns: recorders.turns, events: recorders.events, messages: recorders.messages}
+	return Store(inner, redactor), recorders
 }
 
 func TestTurnTextIsRedactedOnTheWayIn(t *testing.T) {
-	s, d := decorated(t)
+	redacting, recorders := decorated(t)
 
 	for _, write := range []struct {
 		name string
 		call func(*store.Turn) error
 	}{
-		{"Create", func(turn *store.Turn) error { return s.Turns().Create(context.Background(), turn) }},
-		{"Finish", func(turn *store.Turn) error { return s.Turns().Finish(context.Background(), turn) }},
+		{"Create", func(turn *store.Turn) error { return redacting.Turns().Create(context.Background(), turn) }},
+		{"Finish", func(turn *store.Turn) error { return redacting.Turns().Finish(context.Background(), turn) }},
 	} {
 		if err := write.call(&store.Turn{ResultText: "here is " + secretValue}); err != nil {
 			t.Fatalf("%s: %v", write.name, err)
 		}
-		if got := d.turns.got.ResultText; got != "here is <redacted:GH_TOKEN>" {
+		if got := recorders.turns.got.ResultText; got != "here is <redacted:GH_TOKEN>" {
 			t.Errorf("%s stored %q", write.name, got)
 		}
 	}
@@ -119,22 +126,22 @@ func TestTurnTextIsRedactedOnTheWayIn(t *testing.T) {
 
 // A model refusal is the refused turn's result text, stored on the loop.
 func TestModelRefusalIsRedacted(t *testing.T) {
-	s, d := decorated(t)
+	redacting, recorders := decorated(t)
 
-	if err := s.Loops().SetModelRefusal(context.Background(), "loop", "m", "no model named "+secretValue, 1); err != nil {
+	if err := redacting.Loops().SetModelRefusal(context.Background(), "loop", "m", "no model named "+secretValue, 1); err != nil {
 		t.Fatalf("SetModelRefusal: %v", err)
 	}
-	if want := "no model named <redacted:GH_TOKEN>"; d.loops.refusal != want {
-		t.Errorf("stored refusal %q", d.loops.refusal)
+	if want := "no model named <redacted:GH_TOKEN>"; recorders.loops.refusal != want {
+		t.Errorf("stored refusal %q", recorders.loops.refusal)
 	}
 }
 
 // The raw claude event is where a tool input lands, which is how a secret
 // passed to a command ends up in the transcript.
 func TestEventPayloadIsRedactedOnTheWayIn(t *testing.T) {
-	s, d := decorated(t)
+	redacting, recorders := decorated(t)
 
-	id, err := s.Events().Insert(context.Background(), &store.Event{
+	id, err := redacting.Events().Insert(context.Background(), &store.Event{
 		Payload: `{"type":"tool_use","input":{"env":"` + secretValue + `"}}`,
 	})
 	if err != nil {
@@ -143,52 +150,52 @@ func TestEventPayloadIsRedactedOnTheWayIn(t *testing.T) {
 	if id != 7 {
 		t.Errorf("Insert returned id %d, want the inner store's 7", id)
 	}
-	if got := d.events.got.Payload; got != `{"type":"tool_use","input":{"env":"<redacted:GH_TOKEN>"}}` {
+	if got := recorders.events.got.Payload; got != `{"type":"tool_use","input":{"env":"<redacted:GH_TOKEN>"}}` {
 		t.Errorf("stored payload %q", got)
 	}
 }
 
 func TestMessageTextIsRedactedAndTheNewIDStillComesBack(t *testing.T) {
-	s, d := decorated(t)
+	redacting, recorders := decorated(t)
 
-	m := &store.Message{Text: "the token is " + secretValue}
-	if err := s.Messages().Insert(context.Background(), m); err != nil {
+	message := &store.Message{Text: "the token is " + secretValue}
+	if err := redacting.Messages().Insert(context.Background(), message); err != nil {
 		t.Fatalf("Insert: %v", err)
 	}
-	if got := d.messages.got.Text; got != "the token is <redacted:GH_TOKEN>" {
+	if got := recorders.messages.got.Text; got != "the token is <redacted:GH_TOKEN>" {
 		t.Errorf("stored text %q", got)
 	}
 	// Redacting a copy would drop this, and the router routes by it.
-	if m.ID != 42 {
-		t.Errorf("caller's message id = %d, want the id the store assigned", m.ID)
+	if message.ID != 42 {
+		t.Errorf("caller's message id = %d, want the id the store assigned", message.ID)
 	}
 }
 
 // #146 itself: the transport error that quoted the URL it failed on.
 func TestSendErrorIsRedacted(t *testing.T) {
-	s, d := decorated(t)
+	redacting, recorders := decorated(t)
 
-	err := s.Messages().SetSendResult(context.Background(), 1, 99,
+	err := redacting.Messages().SetSendResult(context.Background(), 1, 99,
 		`Post "https://api.telegram.org/bot`+secretValue+`/send": timeout`)
 	if err != nil {
 		t.Fatalf("SetSendResult: %v", err)
 	}
-	if want := `Post "https://api.telegram.org/bot<redacted:GH_TOKEN>/send": timeout`; d.messages.sendErr != want {
-		t.Errorf("stored send error %q", d.messages.sendErr)
+	if want := `Post "https://api.telegram.org/bot<redacted:GH_TOKEN>/send": timeout`; recorders.messages.sendErr != want {
+		t.Errorf("stored send error %q", recorders.messages.sendErr)
 	}
 }
 
 // The restart sweep stores its reason in the same column as a transport
 // error, so it goes through the same redaction.
 func TestInterruptedSendErrorIsRedacted(t *testing.T) {
-	s, d := decorated(t)
+	redacting, recorders := decorated(t)
 
-	if _, err := s.Messages().FailInterruptedSends(context.Background(), 99,
+	if _, err := redacting.Messages().FailInterruptedSends(context.Background(), 99,
 		"restarted mid-send to bot"+secretValue); err != nil {
 		t.Fatalf("FailInterruptedSends: %v", err)
 	}
-	if want := "restarted mid-send to bot<redacted:GH_TOKEN>"; d.messages.sendErr != want {
-		t.Errorf("stored send error %q", d.messages.sendErr)
+	if want := "restarted mid-send to bot<redacted:GH_TOKEN>"; recorders.messages.sendErr != want {
+		t.Errorf("stored send error %q", recorders.messages.sendErr)
 	}
 }
 
