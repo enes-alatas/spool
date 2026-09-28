@@ -102,12 +102,12 @@ func collectImports(t *testing.T) map[string][]string {
 	out := map[string][]string{}
 	fset := token.NewFileSet()
 
-	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() {
-			switch d.Name() {
+		if entry.IsDir() {
+			switch entry.Name() {
 			case ".git", "bin", "node_modules", "dist", ".data", "scripts", "docs":
 				return filepath.SkipDir
 			}
@@ -116,7 +116,7 @@ func collectImports(t *testing.T) map[string][]string {
 		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
-		f, err := parser.ParseFile(fset, path, nil, parser.ImportsOnly)
+		file, err := parser.ParseFile(fset, path, nil, parser.ImportsOnly)
 		if err != nil {
 			return err
 		}
@@ -128,7 +128,7 @@ func collectImports(t *testing.T) map[string][]string {
 		if rel != "." {
 			pkg = module + "/" + filepath.ToSlash(rel)
 		}
-		for _, imp := range f.Imports {
+		for _, imp := range file.Imports {
 			out[pkg] = append(out[pkg], strings.Trim(imp.Path.Value, `"`))
 		}
 		return nil
@@ -142,9 +142,9 @@ func collectImports(t *testing.T) map[string][]string {
 	return out
 }
 
-func contains(list []string, s string) bool {
-	for _, v := range list {
-		if v == s {
+func contains(list []string, want string) bool {
+	for _, item := range list {
+		if item == want {
 			return true
 		}
 	}
