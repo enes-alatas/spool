@@ -238,7 +238,7 @@ func main() {
 	slog.SetDefault(log)
 	rdb := redact.Store(db, redactor)
 
-	b := bus.New()
+	pubsub := bus.New()
 
 	// wire the object graph; router and manager reference each other through
 	// late-bound deps
@@ -247,25 +247,25 @@ func main() {
 
 	deps := loop.Deps{
 		Store:                     rdb,
-		Bus:                       b,
+		Bus:                       pubsub,
 		Runtimes:                  runtimes,
 		WorkstationHealthInterval: healthInterval,
 		PartialMessages:           *partials,
 		Logger:                    log,
-		RenderPrompt: func(l *store.Loop) loop.Prompt {
-			cat, rules := catalogOf(rdb, l), rulesOf(rdb)
+		RenderPrompt: func(loopRecord *store.Loop) loop.Prompt {
+			cat, rules := catalogOf(rdb, loopRecord), rulesOf(rdb)
 			return loop.Prompt{
-				System:         loop.SystemPrompt(l, cat, rules, build.Version),
-				StandingChange: loop.StandingInstructionsPreamble(l, cat, rules, build.Version),
+				System:         loop.SystemPrompt(loopRecord, cat, rules, build.Version),
+				StandingChange: loop.StandingInstructionsPreamble(loopRecord, cat, rules, build.Version),
 			}
 		},
-		MCPEndpoint: func(l *store.Loop) string {
+		MCPEndpoint: func(loopRecord *store.Loop) string {
 			host, port, err := net.SplitHostPort(mcpAddr)
 			if err != nil {
 				return ""
 			}
 			switch {
-			case l.Runtime == store.RuntimeDocker:
+			case loopRecord.Runtime == store.RuntimeDocker:
 				// containers reach the host through the gateway alias the
 				// proxy is created with; --mcp-listen must therefore name an
 				// address the docker bridge can reach — and only it, the
@@ -276,14 +276,14 @@ func main() {
 			}
 			return "http://" + net.JoinHostPort(host, port) + "/mcp"
 		},
-		OnTurnStart: func(l *store.Loop) {
-			router.StartTurn(l.ID)
+		OnTurnStart: func(loopRecord *store.Loop) {
+			router.StartTurn(loopRecord.ID)
 		},
 		SendsThisTurn: func(loopID string) []string {
 			return router.TurnSends(loopID)
 		},
-		OnTurnDone: func(l *store.Loop, trailer time.Duration, has bool) {
-			scheduler.ScheduleAfterTurn(l, trailer, has)
+		OnTurnDone: func(loopRecord *store.Loop, trailer time.Duration, has bool) {
+			scheduler.ScheduleAfterTurn(loopRecord, trailer, has)
 		},
 		ClaudeToken: func(ctx context.Context) (string, error) {
 			token, err := rdb.Settings().Get(ctx, store.SettingClaudeOAuthToken)
@@ -293,11 +293,11 @@ func main() {
 			return token, err
 		},
 	}
-	models := loop.NewModels(rdb, b, runtimes[defaultRuntime], defaultRuntime, ver, log)
+	models := loop.NewModels(rdb, pubsub, runtimes[defaultRuntime], defaultRuntime, ver, log)
 	deps.ObserveModel = models.Observe
 	manager := loop.NewManager(deps)
-	router = route.New(rdb, b, manager, log)
-	scheduler = sched.New(rdb, b, manager, log)
+	router = route.New(rdb, pubsub, manager, log)
+	scheduler = sched.New(rdb, pubsub, manager, log)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -313,7 +313,7 @@ func main() {
 	models.Start(ctx)
 	go pruneEvents(ctx, rdb, *retentionDays, log)
 
-	bridge := telegram.NewBridge(rdb, b, router, log, *telegramAPI)
+	bridge := telegram.NewBridge(rdb, pubsub, router, log, *telegramAPI)
 	bridge.SetBindSettle(time.Duration(*bindSettleSec) * time.Second)
 	bridge.Start(ctx)
 	slackSurface := slack.New(log, *slackAPI)
@@ -321,7 +321,7 @@ func main() {
 
 	api := &httpapi.Server{
 		Store:   rdb,
-		Bus:     b,
+		Bus:     pubsub,
 		Manager: manager,
 		Router:  router,
 		Sched:   scheduler,
@@ -451,18 +451,18 @@ func boundAddr(flagAddr string, listener net.Listener) string {
 // operator writing the two listeners differently is exactly the case where a
 // silent collision would cost the most; a name that does not resolve falls
 // back to its spelling, which is all there is to go on.
-func sameInterface(a, b string) bool {
-	if isWildcard(a) || isWildcard(b) || a == b {
+func sameInterface(hostA, hostB string) bool {
+	if isWildcard(hostA) || isWildcard(hostB) || hostA == hostB {
 		return true
 	}
-	aIPs, errA := net.LookupIP(a)
-	bIPs, errB := net.LookupIP(b)
+	aIPs, errA := net.LookupIP(hostA)
+	bIPs, errB := net.LookupIP(hostB)
 	if errA != nil || errB != nil {
 		return false
 	}
-	for _, x := range aIPs {
-		for _, y := range bIPs {
-			if x.Equal(y) {
+	for _, ipA := range aIPs {
+		for _, ipB := range bIPs {
+			if ipA.Equal(ipB) {
 				return true
 			}
 		}
@@ -507,10 +507,10 @@ func pruneEvents(ctx context.Context, db store.Store, days int, log *slog.Logger
 	defer tick.Stop()
 	for {
 		cutoff := time.Now().AddDate(0, 0, -days).UnixMilli()
-		if n, err := db.Events().DeleteBefore(ctx, cutoff); err != nil {
+		if pruned, err := db.Events().DeleteBefore(ctx, cutoff); err != nil {
 			log.Warn("events prune", "err", err)
-		} else if n > 0 {
-			log.Info("events pruned", "rows", n, "older_than_days", days)
+		} else if pruned > 0 {
+			log.Info("events pruned", "rows", pruned, "older_than_days", days)
 		}
 		select {
 		case <-ctx.Done():
@@ -537,12 +537,12 @@ func catalogOf(db store.Store, self *store.Loop) loop.Catalog {
 	if err != nil {
 		return cat
 	}
-	for _, l := range loops {
+	for _, loopRecord := range loops {
 		// a loop outside the fleet channel is reached by nobody's mention,
 		// so naming it would teach a mention that goes nowhere
-		if l.ID != self.ID && l.Status == store.StatusActive && !l.OutsideFleetChannel {
+		if loopRecord.ID != self.ID && loopRecord.Status == store.StatusActive && !loopRecord.OutsideFleetChannel {
 			cat.Peers = append(cat.Peers, loop.Peer{
-				Name: l.Name, Mission: l.Mission, BotUsername: l.TGBotUsername,
+				Name: loopRecord.Name, Mission: loopRecord.Mission, BotUsername: loopRecord.TGBotUsername,
 			})
 		}
 	}
@@ -553,13 +553,13 @@ func catalogOf(db store.Store, self *store.Loop) loop.Catalog {
 	// oldest first, so the catalog reads in the order people joined and
 	// does not reshuffle between wakes
 	for i := len(senders) - 1; i >= 0; i-- {
-		s := senders[i]
-		if s.Status != store.SenderAllowed {
+		sender := senders[i]
+		if sender.Status != store.SenderAllowed {
 			continue
 		}
-		person := loop.Person{Username: s.Username, Display: s.Display, TGUserID: s.TGUserID}
+		person := loop.Person{Username: sender.Username, Display: sender.Display, TGUserID: sender.TGUserID}
 		cat.People = append(cat.People, person)
-		if s.TGUserID == self.OwnerTGUserID {
+		if sender.TGUserID == self.OwnerTGUserID {
 			owner := person
 			cat.Owner = &owner
 			cat.OwnerDMReady = self.OwnerDMChatID != 0
