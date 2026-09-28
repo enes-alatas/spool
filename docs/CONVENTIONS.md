@@ -419,11 +419,13 @@ agents — Claude sessions today, Spool's own loops from L2.*
 ## Comments
 
 - **Self-contained.** A comment must be meaningful on its own, without sending the
-  reader elsewhere to understand it. Don't cite issues, PRs, ADR section numbers,
-  or milestones — they drift as issues close and ADRs are renumbered, and the
-  comment is silently left behind. State the reason in place; cite an ADR by bare
-  number only when a decision genuinely can't be restated locally, never a
-  specific section. Review-enforced.
+  reader elsewhere to understand it. State the reason in place. A trailing `(#n)`
+  may follow as provenance, a pointer to the history behind the comment, but the
+  sentence must still read correctly if that issue or PR is gone: never "see #n"
+  or "per #n" in place of the reason. Don't cite ADR section numbers or
+  milestones, which drift as ADRs are amended and milestones close; cite an ADR by
+  bare number only when a decision genuinely can't be restated locally.
+  Review-enforced.
 
 ## Web
 
