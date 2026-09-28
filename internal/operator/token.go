@@ -54,10 +54,10 @@ func Path(dataDir string) string { return filepath.Join(dataDir, TokenFile) }
 // too.
 func Load(dataDir string) (token string, minted bool, err error) {
 	path := Path(dataDir)
-	b, err := os.ReadFile(path)
+	data, err := os.ReadFile(path)
 	switch {
 	case err == nil:
-		token = strings.TrimSpace(string(b))
+		token = strings.TrimSpace(string(data))
 		if token == "" {
 			// An empty file is not a token. Treating it as one would
 			// authenticate every request that presents nothing.
@@ -76,19 +76,19 @@ func Load(dataDir string) (token string, minted bool, err error) {
 }
 
 func mint(path string) (string, error) {
-	b := make([]byte, tokenBytes)
-	if _, err := rand.Read(b); err != nil {
+	random := make([]byte, tokenBytes)
+	if _, err := rand.Read(random); err != nil {
 		return "", fmt.Errorf("operator token: %w", err)
 	}
-	token := hex.EncodeToString(b)
+	token := hex.EncodeToString(random)
 	// O_EXCL so two hubs racing on one data directory cannot each believe
 	// they minted the token the other is now checking against.
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, datadir.FileMode)
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, datadir.FileMode)
 	if err != nil {
 		return "", fmt.Errorf("operator token: %w", err)
 	}
-	defer f.Close()
-	if _, err := f.WriteString(token + "\n"); err != nil {
+	defer file.Close()
+	if _, err := file.WriteString(token + "\n"); err != nil {
 		return "", fmt.Errorf("operator token: %w", err)
 	}
 	return token, nil
