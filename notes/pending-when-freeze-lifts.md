@@ -109,3 +109,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 11:40: #409 approved 06:41, unmerged (Enes); #411 approval follows its rebase. Quinn filed #410 (ADR section citations in comments). L2: 182 168 19. Quiet.
 - 14:40: #409 (#366) merged. #411 rebased 14:02, awaiting Quinn. Iris free (no web work until slice 3). L2: 182 168 19.
 - 15:00: runtime rebuilt, v0.2.0-133. No board change since 14:40.
+- 16:25: #411, #412 merged; #19 closed. L2: 182 168. Told Enes: closes tomorrow if #182 goes to plan.
