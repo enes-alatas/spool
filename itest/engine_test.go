@@ -227,10 +227,11 @@ func TestContextUsageOnTheLoopView(t *testing.T) {
 	}
 }
 
-// A session that can no longer be resumed — an over-full context window is
-// the case we expect — must not become an endless retry against itself. The
-// loop rotates onto a fresh session, carries its mission and recent replies
-// across, and answers the message that was waiting.
+// A session that can no longer be resumed, whatever the cause, must not
+// become an endless retry against itself. An over-full context window was
+// the case this was written for, and `make e2e-context` later showed it is
+// not one. The loop rotates onto a fresh session, carries its mission and
+// recent replies across, and answers the message that was waiting.
 func TestUnresumableSessionRotatesInsteadOfRetrying(t *testing.T) {
 	workspace := t.TempDir()
 	s := startServer(t, t.TempDir())
