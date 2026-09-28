@@ -47,7 +47,7 @@ const (
 
 // Why a workstation is down, for the control room: nothing when it is up,
 // and otherwise which of these it is, since each asks something different
-// of the operator (ADR-0021 item 5, #55).
+// of the operator (ADR-0021, #55).
 const (
 	// DownReasonPoweredOff: the operator switched it off. Calm.
 	DownReasonPoweredOff = "powered_off"
@@ -125,7 +125,7 @@ type Deps struct {
 	// SendsThisTurn summarizes the messages the loop has sent since its
 	// budget last opened — what a redelivered batch's fresh session is told,
 	// so it can identify the lost turn's sends and not repeat them
-	// (ADR-0026 decision 5).
+	// (ADR-0026).
 	SendsThisTurn func(loopID string) []string
 	// OnTurnDone reschedules the loop's next tick after any completed turn.
 	OnTurnDone func(loopRecord *store.Loop, trailer time.Duration, hasTrailer bool)

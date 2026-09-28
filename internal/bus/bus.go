@@ -25,7 +25,7 @@ const (
 	//
 	// Every surface adapter must mirror it alongside KindMessage; one that
 	// subscribes to KindMessage alone drops the operator's retries without
-	// failing anything (ADR-0029 item 2).
+	// failing anything (ADR-0029).
 	KindSendRetry = "send_retry"
 )
 

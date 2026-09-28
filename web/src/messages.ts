@@ -241,7 +241,7 @@ export function mirrorOf(m: ChatMessage): Mirror {
 }
 
 // Whether a fleet-channel message stayed on the hub by design, which the
-// channel page says beside its time: the operator's posts (ADR-0032 item 4)
+// channel page says beside its time: the operator's posts (ADR-0032)
 // and a loop's when it has no surface. A failed mirror is not this — it was
 // meant to leave and did not, which is the undelivered mark's to say, so a
 // message carrying that mark is never also called hub only.

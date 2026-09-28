@@ -96,8 +96,8 @@ func TestSystemPromptFleetRules(t *testing.T) {
 // TestRotationEnvelope pins the handoff request of the rotation contract
 // (ADR-0022): it asks for a handoff note, carries the rotation trigger, and
 // forbids the trailer a normal reply may end with.
-// TestSystemPromptPrivacyRule pins the behavioral half of ADR-0026
-// decision 4: the prompt must carry the rule against quoting private
+// TestSystemPromptPrivacyRule pins the behavioral half of ADR-0026's
+// privacy decision: the prompt must carry the rule against quoting private
 // conversation content into the group, since sessions are shared and only
 // conduct guards it.
 func TestSystemPromptPrivacyRule(t *testing.T) {

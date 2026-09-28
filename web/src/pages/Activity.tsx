@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../api'
 import { UndeliveredMark } from '../components/UndeliveredMark'
 
-// Activity is a read-only operator overview (ADR-0025 item 9): it filters
+// Activity is a read-only operator overview (ADR-0025): it filters
 // nothing and sends nothing. The messaging action links to the loop's own
 // composer, where the destination is declared.
 export default function Activity() {

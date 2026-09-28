@@ -45,7 +45,7 @@ export function missionDraft(original: string, draft: string): MissionDraft {
 // is.
 //
 // It names the boundary rather than promising immediacy. A rotation fires at
-// a quiet boundary (ADR-0022 decision 2; `actor.go`'s Rotate and the API's
+// a quiet boundary (ADR-0022; `actor.go`'s Rotate and the API's
 // handleRotate both say so), and the handoff note in the next clause is
 // itself written in a turn. A loop mid-turn finishes that turn under the old
 // mission and runs the handoff turn on the old session — so "at once" would

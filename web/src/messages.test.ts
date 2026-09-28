@@ -385,7 +385,7 @@ describe('mirrorOf', () => {
 })
 
 describe('hubOnly', () => {
-  // ADR-0032 item 4: nothing the operator writes leaves the hub.
+  // ADR-0032: nothing the operator writes leaves the hub.
   it("says so of the operator's post", () => {
     expect(
       hubOnly(msg({ origin: 'web', author: 'operator', conversation: 'group', mirror: 'not_mirrored' })),

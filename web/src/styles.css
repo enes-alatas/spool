@@ -111,9 +111,10 @@ select:focus {
    The text is the signal: #f2f1ed to --text-muted is 3.8:1 against itself and
    fires on every control in every context. Not the button's `opacity: 0.45` —
    that manufactures a colour nobody measured (#706f6d, 4.06:1 on the canvas
-   and 4.13:1 on a panel, under ADR-0027 §7's floor), and a field holds data an
-   operator reads rather than a label they know by shape. `.btn.primary`
-   already splits off the opacity idiom for the same reason.
+   and 4.13:1 on a panel, under the 4.5:1 floor ADR-0027 sets for text), and
+   a field holds data an operator reads rather than a label they know by
+   shape. `.btn.primary` already splits off the opacity idiom for the same
+   reason.
 
    The fill change reinforces, it does not carry: --surface to --canvas is
    1.043:1, which reads only where the control sits on a raised panel, and is a
@@ -122,8 +123,8 @@ select:focus {
    right thing for a control that cannot be typed into, not because it is
    visible on its own.
 
-   The hairline stays: it is what marks where the field is, and §1 gives the
-   room's structure to hairlines rather than to fills. */
+   The hairline stays: it is what marks where the field is, and the room
+   gives its structure to hairlines rather than to fills. */
 input:disabled,
 textarea:disabled,
 select:disabled {
@@ -756,7 +757,7 @@ textarea {
 /* The row grid, shared with the column labels so the two cannot drift. The
    identity column takes what is left; the other four are fixed so they align
    down the list, and in rem because they exist to hold text and follow it
-   (ADR-0027 §9). What keeps them from squeezing the loop name is the restack
+   (ADR-0027). What keeps them from squeezing the loop name is the restack
    below, which the list's own width decides. */
 .fleet-row,
 .fleet-cols {
@@ -2051,8 +2052,9 @@ textarea {
 }
 /* a disabled rule is inert text, so its text mutes to the token; the buttons
    stay at full strength, since Enable and Delete still act. Not opacity:
-   0.55 took the badge to 2.16:1 and Delete to 2.46:1, under ADR-0027 §7's
-   floor, which is the colour-nobody-measured that §11 rules out (#348). */
+   0.55 took the badge to 2.16:1 and Delete to 2.46:1, under the
+   4.5:1 text floor, a colour nobody measured, which ADR-0027 rules out
+   (#348). */
 .rule-item.disabled .rule-title,
 .rule-item.disabled .rule-body {
   color: var(--text-muted);

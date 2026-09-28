@@ -16,7 +16,7 @@ import (
 const resolveHome = "/tmp/spool-aux"
 
 // resolveLifetime is how long a resolution container may live, enforced
-// inside it by coreutils timeout (ADR-0018 item 7 requires coreutils). A hub
+// inside it by coreutils timeout (ADR-0018 requires coreutils). A hub
 // stopped mid-run cannot remove its container, and the CLI in it would retry
 // a refused connection forever; this ends it, and --rm then removes it.
 const resolveLifetime = "60"
@@ -69,7 +69,7 @@ func (rt *Runtime) ResolveModel(ctx context.Context, model string) (string, erro
 		return "", fmt.Errorf("docker run %s: %w", name, err)
 	}
 	defer func() {
-		// Killing the client leaves the container running (ADR-0018 item 4),
+		// Killing the client leaves the container running (ADR-0018),
 		// so the container is removed by name.
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()

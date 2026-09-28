@@ -164,7 +164,7 @@ func TestTheCustomModelList(t *testing.T) {
 }
 
 // A turn on the default runtime refreshes what its alias runs as: that turn
-// ran under the operator's login (ADR-0033 item 4).
+// ran under the operator's login (ADR-0033).
 func TestATurnOnTheDefaultRuntimeRefreshesItsAlias(t *testing.T) {
 	s := startServer(t, t.TempDir())
 	s.waitModels(15*time.Second, func(v modelsView) bool {

@@ -262,7 +262,7 @@ func seedConversations(ctx context.Context, db store.Store, ids map[string]strin
 		// hides the id-to-name step.
 		to []string
 		// web marks the operator's own post from the channel page: it has
-		// no surface, so no Telegram ids either (ADR-0032 item 4).
+		// no surface, so no Telegram ids either (ADR-0032).
 		web bool
 		// replyTo is the position in this list of the message it answers.
 		replyTo *int
@@ -317,7 +317,7 @@ func seedConversations(ctx context.Context, db store.Store, ids map[string]strin
 		}
 		if message.web {
 			msg.Origin, msg.TGChatID, msg.TGMessageID = store.OriginWeb, 0, 0
-			// The operator's post never leaves the hub (ADR-0032 item 4).
+			// The operator's post never leaves the hub (ADR-0032).
 			msg.Mirror = store.MirrorNotMirrored
 		}
 		if message.replyTo != nil {

@@ -129,7 +129,7 @@ func (models *Models) resolve(ctx context.Context, name string) {
 
 // Observe takes what a turn's init reported as resolved for the model l's
 // process was spawned on. Only a loop on the default runtime and image
-// counts, since that is the claude the probe asks (ADR-0033 item 4): a loop
+// counts, since that is the claude the probe asks (ADR-0033): a loop
 // on an image of its own says what it ran on through its own resolved_model
 // and leaves the list alone.
 func (models *Models) Observe(loopRecord *store.Loop, spawned, resolved string) {
