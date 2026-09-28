@@ -572,10 +572,17 @@ textarea {
    run your eye down is the thing an operator came here for.
 
    No sender column: the rows are one loop's, on that loop's page (#281), so
-   the message takes the width a name would have repeated down every row. */
+   the message takes the width a name would have repeated down every row.
+
+   The time and destination tracks are in rem because they exist to hold
+   text: in px, "03:47 PM" and "to control room" wrapped a word per line at a
+   large text size (#402). */
+.undelivered-pane {
+  container: undelivered / inline-size;
+}
 .undelivered-row.feed-item {
   display: grid;
-  grid-template-columns: 76px 104px minmax(0, 1fr) max-content;
+  grid-template-columns: 4.75rem 6.5rem minmax(0, 1fr) max-content;
   grid-template-areas:
     'time text text text'
     'date dest reason actions';
@@ -585,6 +592,11 @@ textarea {
 }
 .undelivered-row .when {
   grid-area: time;
+}
+/* The tracks size the time and the date: `.feed-item .when`'s fixed 76px is
+   the timeline's column, and at a large text size it wraps the time in two. */
+.undelivered-row.feed-item .when {
+  width: auto;
 }
 /* Under the time, on the destination's line, so it costs the row no height
    and sits on the same baseline as the reason beside it. */
@@ -611,6 +623,11 @@ textarea {
 }
 .undelivered-row .undelivered-reason {
   grid-area: reason;
+}
+/* The destination and the reason's wrapper: no box of its own here, so the
+   two are the grid's columns. The narrow layout gives it one. */
+.undelivered-where {
+  display: contents;
 }
 /* One line each, so every row is the same height and the columns stay in
    line. The message keeps its full text in the title (`UndeliveredPane.tsx`);
@@ -900,18 +917,37 @@ textarea {
 .fleet-row .only-narrow {
   display: none;
 }
-/* Four columns do not fit a phone: the destination and the reason would be
-   squeezed between the time and the buttons. Restacked rather than dropped
-   — the destination and the reason stay on one line together, which is the
-   pairing this layout exists for. */
-@media (max-width: 720px) {
+/* Four columns stop fitting when the reason, squeezed between the
+   destination and the buttons, has less than about 16rem to show itself in.
+   Restacked rather than dropped — the destination and the reason stay on
+   one line together, which is the pairing this layout exists for.
+
+   The pane answers, not the viewport: the loop page's side panel takes a
+   share of a wide screen, so the pane is narrower on a 1000px screen than on
+   a 720px one, and a viewport breakpoint kept four columns at a large text
+   size on any screen (#402). The threshold is the three gaps, plus the time
+   and destination tracks, about 8rem for the buttons, and the 16rem reason:
+   600px of pane at the default text size.
+
+   The date keeps the time's track width before it, so it stands at the same
+   place on every row. The destination and the reason take a line of their
+   own rather than the time's column: sharing it, a long destination pushed
+   the date right on its row and not on the next. */
+@container undelivered (max-width: calc(36px + 35.25rem)) {
   .undelivered-row.feed-item {
-    grid-template-columns: max-content minmax(0, 1fr);
+    grid-template-columns: 4.75rem minmax(0, 1fr);
     grid-template-areas:
       'time date'
       'text text'
-      'dest reason'
+      'where where'
       'actions actions';
+  }
+  .undelivered-where {
+    grid-area: where;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    min-width: 0;
   }
   .undelivered-actions {
     justify-content: flex-start;

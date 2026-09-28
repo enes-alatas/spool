@@ -175,23 +175,28 @@ export function UndeliveredPane({ name }: { name: string }) {
           <span className="text" title={m.text}>
             {m.text}
           </span>
-          {/* "to group", not "group". The bare label is Activity's, where
-              this slot says where a message came *from*; here it says where
-              it was going, and the same word in the same place meaning the
-              opposite way round is half of why the row read wrong (#282). */}
-          <span className="origin">to {destinationLabel(m.conversation)}</span>
-          {/* The surface's own reason, verbatim: the sender scrubbed it of
-              credentials before it was stored (#155). The row carries it
-              rather than hiding it in hover text, because this pane exists
-              for exactly the operator who wants to know why. */}
-          {/* Read through `undelivered()` rather than assembled here, so this
-              hover and the mark in the conversation cannot drift apart — and
-              so the resolution is narrowed in the one place that narrows it.
-              Every row here is unresolved, since that is the predicate the
-              route answers; taking it from the row anyway means a row that
-              somehow arrives resolved says so instead of lying. */}
-          <span className="undelivered-reason" title={undeliveredTitle(undelivered(m) ?? fallback(m))}>
-            {m.send_error || 'no reason given'}
+          {/* One unit, so the narrow layout can set the destination and the
+              reason on a line of their own; the wide one lays the two out as
+              grid columns through it (`display: contents`, styles.css). */}
+          <span className="undelivered-where">
+            {/* "to group", not "group". The bare label is Activity's, where
+                this slot says where a message came *from*; here it says where
+                it was going, and the same word in the same place meaning the
+                opposite way round is half of why the row read wrong (#282). */}
+            <span className="origin">to {destinationLabel(m.conversation)}</span>
+            {/* The surface's own reason, verbatim: the sender scrubbed it of
+                credentials before it was stored (#155). The row carries it
+                rather than hiding it in hover text, because this pane exists
+                for exactly the operator who wants to know why. */}
+            {/* Read through `undelivered()` rather than assembled here, so this
+                hover and the mark in the conversation cannot drift apart — and
+                so the resolution is narrowed in the one place that narrows it.
+                Every row here is unresolved, since that is the predicate the
+                route answers; taking it from the row anyway means a row that
+                somehow arrives resolved says so instead of lying. */}
+            <span className="undelivered-reason" title={undeliveredTitle(undelivered(m) ?? fallback(m))}>
+              {m.send_error || 'no reason given'}
+            </span>
           </span>
           <RowActions msg={m} name={name} />
         </div>
