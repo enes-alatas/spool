@@ -39,7 +39,7 @@ describe('channelRecipients', () => {
   })
 
   // Named explicitly, a paused loop is still delivered to; outside the
-  // channel or archived, nobody is (`inGroup`, ADR-0032 item 2).
+  // channel or archived, nobody is (`inGroup`, ADR-0032).
   it('reaches only loops in the channel', () => {
     expect(channelRecipients('@briar @cedar @dune', fleet)).toEqual(['briar'])
   })

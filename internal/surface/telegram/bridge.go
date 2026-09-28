@@ -1046,7 +1046,7 @@ func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 	// Only a loop's words leave the hub. Telegram-origin messages are
 	// already visible in telegram, and nothing the operator writes in the
 	// control room is mirrored outward — not to the group, not anywhere
-	// (ADR-0032 item 4). That is the operator's security posture rather
+	// (ADR-0032). That is the operator's security posture rather
 	// than a gap: Spool holds no means of posting his words on a third
 	// party, so a bug here cannot become a message sent as him. The test
 	// is on the origin, not the conversation, so a destination added later

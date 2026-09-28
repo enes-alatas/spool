@@ -11,10 +11,10 @@ import { hubOnly } from '../messages'
 // The one conversation that belongs to no loop, so it is not a pane of a
 // loop's page; it is the fleet's, so it is a tab of the Fleet page rather
 // than a destination of its own. Not a part of Activity: that is a read-only
-// log of every conversation, owner DMs included (ADR-0025 item 9), and a
+// log of every conversation, owner DMs included (ADR-0025), and a
 // compose box there would sit beside them.
 //
-// Nothing posted here leaves the hub (ADR-0032 item 4). An attached surface
+// Nothing posted here leaves the hub (ADR-0032). An attached surface
 // brings its room's posts in, so people on Telegram appear in this timeline,
 // but they never see what the operator writes here. The compose box says
 // so, because a timeline with humans in it looks like a place they can be

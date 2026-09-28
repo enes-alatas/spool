@@ -47,7 +47,7 @@ func (router *Router) broadcastTargets(loops []*store.Loop, fromLoopID string) m
 // inGroup says whether a group message addressed to loopRecord — by mention, by
 // reply or by the composer it was posted from — is delivered to it. A loop
 // outside the fleet channel has no group, so a message naming it there reaches
-// nobody (ADR-0032 item 2).
+// nobody (ADR-0032).
 func inGroup(loopRecord *store.Loop) bool {
 	return loopRecord.Status != store.StatusArchived && !loopRecord.OutsideFleetChannel
 }
@@ -302,7 +302,7 @@ func (router *Router) Ingest(ctx context.Context, in InboundMessage) error {
 // inboundMirror says where a message entering through Ingest already is.
 // One that came in from a surface is on it by definition; anything else is a
 // human writing in the control room, and nothing the operator authors leaves
-// the hub (ADR-0032 item 4).
+// the hub (ADR-0032).
 func inboundMirror(origin string) string {
 	switch origin {
 	case store.OriginTelegramGroup, store.OriginTelegramDM:

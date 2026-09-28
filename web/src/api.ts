@@ -88,7 +88,7 @@ export interface LoopView {
   // bot first (#73).
   owner_dm_ready: boolean
   // Whether the loop is in the fleet channel: it receives what addresses it
-  // there and may post to it (ADR-0032 item 2). Always present since #295.
+  // there and may post to it (ADR-0032). Always present since #295.
   in_fleet_channel: boolean
 }
 
@@ -173,7 +173,7 @@ export interface ChatMessage {
   // `send_resent_as`, on the message that did the resending. Mirrored for
   // the api.ts/Go sync rule; nothing in the room reads it yet.
   resends_id?: number
-  // Whether this message is on the surface too (#285, ADR-0032 item 6):
+  // Whether this message is on the surface too (#285, ADR-0032):
   // 'not_mirrored' (on the hub only, and staying there — the operator's
   // posts, a loop with no surface), 'pending' (bound for the surface and not
   // there yet), 'mirrored'. A plain string for the reason `send_resolution`
@@ -477,11 +477,11 @@ export const api = {
   dismissSend: (id: number) => req<{ dismissed: boolean }>(`/api/messages/${id}/dismiss`, { method: 'POST' }),
   activity: (limit = 100) => req<ChatMessage[]>(`/api/activity?limit=${limit}`),
   // The fleet channel's timeline, newest first like a loop's conversation.
-  // It is the hub's rather than any loop's (ADR-0032 item 1), so it is not
+  // It is the hub's rather than any loop's (ADR-0032), so it is not
   // reached through one.
   group: (limit = 100) => req<ChatMessage[]>(`/api/group?limit=${limit}`),
   // The operator posting to the fleet channel. It wakes the loops the text
-  // addresses and no others, and never leaves the hub (ADR-0032 item 4):
+  // addresses and no others, and never leaves the hub (ADR-0032):
   // nobody on an attached surface sees it. 202 — delivery is the loops'.
   // `replyTo` is the fleet-channel message it answers (#311); the server
   // refuses one that is gone (`unknown_reply_to`) or from another

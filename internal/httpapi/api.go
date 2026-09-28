@@ -55,7 +55,7 @@ type Server struct {
 	DefaultRuntime string
 	// BareAllowed is whether this hub was started with --runtime bare or
 	// --allow-bare — the second is how a docker-default fleet keeps the
-	// per-loop bare escape hatch ADR-0017 §6 describes. A
+	// per-loop bare escape hatch ADR-0017 describes. A
 	// bare loop runs uncontained under the operator's own account, so asking
 	// for one is a decision taken when the hub is started, by the person at
 	// the terminal — not one the control room can make later on their behalf
@@ -268,7 +268,7 @@ type loopView struct {
 	// write-only, like the Telegram token.
 	HasSlackTokens bool `json:"has_slack_tokens"`
 	// Surface is the platform the loop has an identity on: "telegram",
-	// "slack", or "" for none (ADR-0029 item 7).
+	// "slack", or "" for none (ADR-0029).
 	Surface           string `json:"surface"`
 	WorkstationUp     bool   `json:"workstation_up"`
 	WorkstationDetail string `json:"workstation_detail,omitempty"`
@@ -295,7 +295,7 @@ type loopView struct {
 	ResolvedModel string `json:"resolved_model"`
 	// DownReason says why the workstation is not up, empty while it is:
 	// powered_off, not_provisioned, unauthenticated or unreachable
-	// (ADR-0021 item 5).
+	// (ADR-0021).
 	DownReason string `json:"down_reason"`
 	// OwnerDMReady reports that the loop can message its owner privately:
 	// an owner is configured and has opened a chat with this loop's own
@@ -306,7 +306,7 @@ type loopView struct {
 	// the name the UI shows instead of a numeric id.
 	OwnerUsername string `json:"owner_username,omitempty"`
 	// InFleetChannel reports that the loop has a group: it receives what
-	// addresses it there and may post to it (ADR-0032 item 2).
+	// addresses it there and may post to it (ADR-0032).
 	InFleetChannel bool `json:"in_fleet_channel"`
 }
 
@@ -395,7 +395,7 @@ func (server *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 // loopChanged tells every surface a loop's configuration changed. Every one,
 // not the loop's own: a detach from one surface and an attach to another are
 // both changes, and whether an edit concerns a surface is the surface's call
-// (ADR-0029 item 3).
+// (ADR-0029).
 func (server *Server) loopChanged(ctx context.Context, loopID string) {
 	for _, loopSurface := range server.Surfaces {
 		loopSurface.LoopChanged(ctx, loopID)
@@ -790,7 +790,7 @@ func (server *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 		outside := !*req.InFleetChannel
 		edit.OutsideFleetChannel = &outside
 	}
-	// One surface per loop (ADR-0029 item 7), judged on what the loop would
+	// One surface per loop (ADR-0029), judged on what the loop would
 	// hold after this request and before any live call is made.
 	slackGiven := req.SlackAppToken != nil || req.SlackBotToken != nil
 	if slackGiven && (req.SlackAppToken == nil || req.SlackBotToken == nil) {
@@ -1281,7 +1281,7 @@ func (server *Server) handleLoopConversation(w http.ResponseWriter, r *http.Requ
 
 // handleGroupTimeline is the fleet channel's own timeline, newest first like
 // a loop's conversation. The channel is the hub's rather than any loop's
-// (ADR-0032 item 1), so it is not reached through one.
+// (ADR-0032), so it is not reached through one.
 func (server *Server) handleGroupTimeline(w http.ResponseWriter, r *http.Request) {
 	msgs, err := server.Store.Messages().ListConversation(r.Context(), store.ConversationGroup, "", queryInt(r, "limit", 100))
 	if err != nil {
@@ -1306,7 +1306,7 @@ type postGroupReq struct {
 // group post from a loop's composer, it names no loop implicitly: it wakes
 // the loops its text addresses and no others, and a post that addresses
 // nobody is kept and wakes nobody — as a human's post in a mirrored room
-// is. It never leaves the hub (ADR-0032 item 4).
+// is. It never leaves the hub (ADR-0032).
 //
 // A reply addresses the author of what it answers, as a native reply does
 // (ADR-0025), so a loop can be answered without a mention.
@@ -1676,8 +1676,8 @@ func (server *Server) defaultOwnerID(ctx context.Context) int64 {
 
 // defaultInFleetChannel is where a new loop starts when its creator did not
 // say: outside the fleet channel when no other loop exists, in it
-// otherwise. A fleet of one has no one to talk to in the channel (ADR-0032
-// item 2), and the second loop is what makes a fleet — the operator's rule
+// otherwise. A fleet of one has no one to talk to in the channel (ADR-0032),
+// and the second loop is what makes a fleet — the operator's rule
 // on #287. Any loop counts, archived included, as the New loop form counts
 // them: an archived loop is still the fleet's, and could be restored.
 func (server *Server) defaultInFleetChannel(ctx context.Context) (bool, error) {

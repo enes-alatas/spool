@@ -66,7 +66,7 @@ const (
 	RuntimeDocker = "docker" // long-lived container + volume workstation
 
 	// A loop's surface: the chat platform it has an identity on, if any
-	// (ADR-0029 item 7: at most one, attached after the loop exists).
+	// (ADR-0029: at most one, attached after the loop exists).
 	SurfaceTelegram = "telegram"
 	SurfaceSlack    = "slack"
 
@@ -127,7 +127,7 @@ type Loop struct {
 	// down_reason, not as a field of its own.
 	WorkstationOff bool `json:"-"`
 	// OutsideFleetChannel says the operator took this loop out of the fleet
-	// channel: it has no group (ADR-0032 item 2). Stored as the exception so
+	// channel: it has no group (ADR-0032). Stored as the exception so
 	// the zero value is the ordinary loop, which is in it. Surfaced to the
 	// API as in_fleet_channel, the way round a reader asks the question.
 	OutsideFleetChannel bool `json:"-"`
@@ -146,7 +146,7 @@ type Loop struct {
 
 	// The loop's identity on Slack (#230), written together by LoopEdit.Slack
 	// from what the bot token's auth.test answered. Both tokens are secret,
-	// like TGBotToken. A loop has at most one surface (ADR-0029 item 7): the
+	// like TGBotToken. A loop has at most one surface (ADR-0029): the
 	// hub keeps these empty while TGBotToken is set, and the other way round.
 	// The store accepts both.
 	SlackAppToken  string `json:"-"`
@@ -342,7 +342,7 @@ type Message struct {
 	// Mirror* constants, never empty once stored and never omitted, so an
 	// absent field means an older server rather than an answer (#285). Its
 	// failures are not here — a mirror that failed is a send that failed,
-	// and carries SendFailedAt like any other (ADR-0032 item 6).
+	// and carries SendFailedAt like any other (ADR-0032).
 	Mirror string `json:"mirror"`
 	// TGKey identifies a telegram message by what every bot observing it
 	// sees alike — chat, sender, date, text — so one bot's message can be
@@ -373,7 +373,7 @@ const (
 // state, not a direction: which way a message crossed is its Origin.
 const (
 	// MirrorNotMirrored: on the hub only, and staying there — the
-	// operator's words (ADR-0032 item 4), a control_room message, a loop
+	// operator's words (ADR-0032), a control_room message, a loop
 	// send when the loop has no surface to carry it, and a failed send
 	// the operator dismissed or the loop said again in another message.
 	MirrorNotMirrored = "not_mirrored"

@@ -90,7 +90,7 @@ func TestModelsResolveTheAliasesAtStart(t *testing.T) {
 }
 
 // Only a turn on the default runtime and image refreshes a resolution, and
-// only for a name on the list (ADR-0033 item 4).
+// only for a name on the list (ADR-0033).
 func TestModelsObserveOnlyTheDefaultRuntimesTurns(t *testing.T) {
 	models, _ := newTestModels(t, nil)
 	onDefault := &store.Loop{Runtime: store.RuntimeDocker}

@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// A loop is in the fleet channel or it is not (ADR-0032 item 2). One outside
+// A loop is in the fleet channel or it is not (ADR-0032). One outside
 // it has no group: a mention of it there is delivered to nobody, @all passes
 // it by, and its own send to the group is refused in-turn. Moving it back in
 // restores all three. None of it needs a surface.
@@ -89,7 +89,7 @@ func TestLoopOutsideTheFleetChannelHasNoGroup(t *testing.T) {
 
 // A human posting in the mirrored Telegram group reaches the loops in the
 // fleet channel and not a loop outside it, even one whose bot sits in that
-// very group: ingest is not delivery (ADR-0020 §2, ADR-0032 item 5).
+// very group: ingest is not delivery (ADR-0020, ADR-0032).
 func TestTelegramMentionOfALoopOutsideTheFleetChannelReachesNobody(t *testing.T) {
 	operator := user{ID: 8484, First: "Operator", Username: "operator"}
 	srv, tg := startTelegramFleet(t, operator)
@@ -114,8 +114,8 @@ func TestTelegramMentionOfALoopOutsideTheFleetChannelReachesNobody(t *testing.T)
 	}
 }
 
-// The fleet channel has endpoints of its own, keyed by no loop (ADR-0032
-// item 1). The operator's post wakes exactly the loops its text addresses in
+// The fleet channel has endpoints of its own, keyed by no loop (ADR-0032).
+// The operator's post wakes exactly the loops its text addresses in
 // the channel — no loop is implied by where it was posted from — and one
 // that addresses nobody is kept and wakes nobody. The timeline is the
 // channel's whole conversation, loop posts included, and nothing private.
@@ -183,7 +183,7 @@ func TestOperatorPostsToTheFleetChannel(t *testing.T) {
 }
 
 // A post to the fleet channel's own endpoint is the operator's, so it stays
-// on the hub (ADR-0032 item 4) while the loop it names is delivered and a
+// on the hub (ADR-0032) while the loop it names is delivered and a
 // human's Telegram post comes inward to the same timeline.
 func TestFleetChannelPostStaysOnTheHub(t *testing.T) {
 	operator := user{ID: 4747, First: "Operator", Username: "operator"}
@@ -217,7 +217,7 @@ func TestFleetChannelPostStaysOnTheHub(t *testing.T) {
 
 // A new loop's place in the fleet channel, when its creator does not say:
 // outside for the first loop, since a fleet of one has nobody to talk to
-// there (ADR-0032 item 2), and in for every loop after it, since the second
+// there (ADR-0032), and in for every loop after it, since the second
 // loop is what makes a fleet (#287). The default reads the fleet at create
 // time and moves no loop that already exists, and a creator who says
 // in_fleet_channel is obeyed either way.

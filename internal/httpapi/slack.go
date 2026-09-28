@@ -38,7 +38,7 @@ func (server *Server) refuse(w http.ResponseWriter, refusal *requestError) {
 }
 
 // oneSurface refuses a request that would leave a loop on two surfaces
-// (ADR-0029 item 7). current is the surface the loop is on now, "" when the
+// (ADR-0029). current is the surface the loop is on now, "" when the
 // request itself names both.
 func oneSurface(current string) *requestError {
 	if current == "" {

@@ -412,7 +412,7 @@ func (router *Router) StartTurn(loopID string) {
 // TurnSends reports what the loop has sent since its budget last opened,
 // one summary per send — how the runner tells a redelivered turn what its
 // lost attempt already sent, so it can identify (not just count) them
-// (ADR-0026 decision 5).
+// (ADR-0026).
 func (router *Router) TurnSends(loopID string) []string {
 	router.mu.Lock()
 	defer router.mu.Unlock()

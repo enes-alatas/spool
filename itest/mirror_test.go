@@ -44,7 +44,7 @@ func mirrorIs(want string) func(activityMessage) bool {
 	return func(m activityMessage) bool { return m.Mirror == want }
 }
 
-// Every message says whether it is on the surface too (ADR-0032 item 6), as
+// Every message says whether it is on the surface too (ADR-0032), as
 // a spelled state: what came in from Telegram is on it; a loop's send is
 // pending until the bridge's send lands and mirrored after; the operator's
 // words and a surface-less loop's send stay on the hub. A failed send is

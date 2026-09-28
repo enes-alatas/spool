@@ -594,8 +594,8 @@ func TestOwnerDMSendReachesTheDMChat(t *testing.T) {
 	}
 }
 
-// Nothing the operator writes in the control room leaves the hub (ADR-0032
-// item 4): not a private control_room note, and not a post to the group
+// Nothing the operator writes in the control room leaves the hub (ADR-0032):
+// not a private control_room note, and not a post to the group
 // either. The group post still reaches the loops — they are in the
 // conversation — while a loop's own group send, which the same fleet makes
 // in answer, is mirrored as before. Until ADR-0032 this test asserted the
