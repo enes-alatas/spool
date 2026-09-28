@@ -16,6 +16,7 @@ import (
 	"github.com/enes-alatas/spool/internal/claude"
 	"github.com/enes-alatas/spool/internal/runtime"
 	"github.com/enes-alatas/spool/internal/store"
+	"github.com/enes-alatas/spool/internal/surface"
 )
 
 // Loop states (exposed to the UI via loop_status bus items).
@@ -1013,6 +1014,7 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 	if actor.loginRejected && !actor.handoffTurn {
 		actor.loginRejected = false
 		actor.log().Info("claude login accepted again")
+		actor.publishLoginNotice(surface.LoginNotice{HostLogin: !actor.runsOnSetupToken()})
 		actor.setWorkstationUp()
 	}
 	if claude.IsUnrecognizedModel(res) && !actor.handoffTurn {
@@ -1291,14 +1293,36 @@ func (actor *Actor) refuseModel(sentence string) {
 // the model, so it goes back to the front of the queue, and the notes the
 // turn owed stay owed.
 func (actor *Actor) rejectLogin(sentence string) {
+	hostLogin := !actor.runsOnSetupToken()
 	fix := "log in again with claude on the host"
-	if loopRuntime := actor.deps.runtimeFor(actor.loop.Runtime); loopRuntime != nil && needsClaudeToken(loopRuntime) {
+	if !hostLogin {
 		fix = "replace the setup-token in Settings"
+	}
+	if !actor.loginRejected {
+		// the first refusal of this outage; the retries that follow it are
+		// refused the same way and have nothing new to tell the owner
+		actor.publishLoginNotice(surface.LoginNotice{Refused: true, Sentence: sentence, HostLogin: hostLogin})
 	}
 	actor.loginRejected = true
 	actor.setWorkstationDown(DownReasonUnauthenticated, fmt.Sprintf("The Claude login was rejected (%s); %s", sentence, fix))
 	actor.inbox = append(append([]Envelope(nil), actor.currentBatch...), actor.inbox...)
 	actor.drainRefusedProcess()
+}
+
+// runsOnSetupToken reports whether the loop's claude logs in with the
+// setup-token saved in Settings rather than the host's own login.
+func (actor *Actor) runsOnSetupToken() bool {
+	loopRuntime := actor.deps.runtimeFor(actor.loop.Runtime)
+	return loopRuntime != nil && needsClaudeToken(loopRuntime)
+}
+
+// publishLoginNotice hands the surfaces a change in the loop's Claude login,
+// for them to tell its owner (#419). The loop cannot tell them itself: a
+// refused login leaves it no turn to speak with.
+func (actor *Actor) publishLoginNotice(notice surface.LoginNotice) {
+	notice.LoopID = actor.loop.ID
+	notice.LoopName = actor.loop.Name
+	actor.deps.Bus.Publish(bus.Item{Kind: bus.KindClaudeLogin, LoopID: actor.loop.ID, Payload: &notice})
 }
 
 // retryEditedModel handles a refusal of a model the operator replaced while

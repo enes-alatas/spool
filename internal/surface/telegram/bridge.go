@@ -67,6 +67,27 @@ type Bridge struct {
 	// human's user id in every bot's numbering, so a fleet-wide key would
 	// let the first bot's notice silence all the others.
 	notOwnerNotified map[string]bool
+
+	// loginTold holds, for each owner told that a Claude login was refused,
+	// the loop whose bot told them, so the owner hears once per outage and
+	// the all-clear arrives in the same chat. Only the mirror goroutine
+	// touches it.
+	loginTold map[loginOutage]loginTeller
+}
+
+// loginOutage is one refused login as one owner experiences it. The host's
+// login and the Settings setup-token fail independently, so an owner with
+// loops on both hears about each.
+type loginOutage struct {
+	owner     int64
+	hostLogin bool
+}
+
+// loginTeller is the loop whose bot told the owner about an outage, and the
+// chat it told them in.
+type loginTeller struct {
+	loopID string
+	chatID int64
 }
 
 // NewBridge builds the bridge. apiBase is the Bot API to talk to; "" means
@@ -78,7 +99,8 @@ func NewBridge(st store.Store, publisher *bus.Bus, router *route.Router, log *sl
 	return &Bridge{store: st, bus: publisher, router: router, log: log, apiBase: apiBase,
 		bindSettle: defaultBindSettle,
 		pollers:    map[string]*poller{}, dedup: newDedupLRU(dedupSize),
-		pairNotified: map[int64]bool{}, notOwnerNotified: map[string]bool{}}
+		pairNotified: map[int64]bool{}, notOwnerNotified: map[string]bool{},
+		loginTold: map[loginOutage]loginTeller{}}
 }
 
 // SetBindSettle overrides the ingest-election margin, and must be called
@@ -1016,13 +1038,14 @@ func excerpt(text string, limit int) string {
 
 // --- mirroring ---
 
-// mirror consumes message bus items and applies the mirror rules.
+// mirror consumes message bus items and applies the mirror rules, and
+// delivers the hub's login notices to owners.
 func (br *Bridge) mirror(ctx context.Context) {
 	// Both kinds, one path: a retry (#269) is the same send of the same row,
 	// asked for by the operator instead of by the loop, and anything the
 	// mirror rules decide about a message must decide the same way twice.
 	items, cancel := br.bus.Subscribe(func(item bus.Item) bool {
-		return item.Kind == bus.KindMessage || item.Kind == bus.KindSendRetry
+		return item.Kind == bus.KindMessage || item.Kind == bus.KindSendRetry || item.Kind == bus.KindClaudeLogin
 	})
 	defer cancel()
 	for {
@@ -1033,11 +1056,12 @@ func (br *Bridge) mirror(ctx context.Context) {
 			if !ok {
 				return
 			}
-			mp, ok := item.Payload.(*route.MessagePayload)
-			if !ok {
-				continue
+			switch payload := item.Payload.(type) {
+			case *route.MessagePayload:
+				br.mirrorMessage(ctx, payload)
+			case *surface.LoginNotice:
+				br.noticeLogin(ctx, payload)
 			}
-			br.mirrorMessage(ctx, mp)
 		}
 	}
 }
@@ -1106,6 +1130,85 @@ func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 		}
 	}
 	// control_room lives in the web UI alone; telegram sees nothing
+}
+
+// noticeLogin tells a loop's owner, in its bot's private chat with them, that
+// the Claude login was refused, and later that it works again (#419). One
+// login stops every loop that shares it, each at its own next turn, so only
+// the first refusal an owner hears about is told; the rest of the outage is
+// already known to them. A loop that cannot reach its owner privately leaves
+// the telling to the next one that can, and its timeline says so.
+//
+// What was told is remembered for this run only. A hub restarted mid-outage
+// tells the owner again, once, which is the better failure than silence.
+func (br *Bridge) noticeLogin(ctx context.Context, notice *surface.LoginNotice) {
+	loopRecord, err := br.store.Loops().Get(ctx, notice.LoopID)
+	if err != nil {
+		br.log.Warn("telegram: read loop for login notice", "loop", notice.LoopID, "err", err)
+		return
+	}
+	if loopRecord.TGBotToken == "" || loopRecord.OwnerTGUserID == 0 {
+		// not a telegram loop, or one with nobody to tell
+		return
+	}
+	outage := loginOutage{owner: loopRecord.OwnerTGUserID, hostLogin: notice.HostLogin}
+	teller, told := br.loginTold[outage]
+	if notice.Refused == told {
+		// a refusal the owner already heard of, or a login working again
+		// that they never heard was refused
+		return
+	}
+	if !notice.Refused {
+		delete(br.loginTold, outage)
+		br.sendLoginNotice(ctx, teller.loopID, teller.chatID, notice)
+		return
+	}
+	chatID := loopRecord.OwnerDMChatID
+	if chatID == 0 {
+		br.recordLoginNotice(ctx, notice.LoopID, notice, "the owner has not written to this loop's bot privately yet")
+		return
+	}
+	if br.sendLoginNotice(ctx, notice.LoopID, chatID, notice) {
+		br.loginTold[outage] = loginTeller{loopID: notice.LoopID, chatID: chatID}
+	}
+}
+
+// sendLoginNotice queues a login notice on a loop's bot and records on the
+// loop's timeline whether it was, reporting the same.
+func (br *Bridge) sendLoginNotice(ctx context.Context, loopID string, chatID int64, notice *surface.LoginNotice) bool {
+	bot := br.poller(loopID)
+	switch {
+	case bot == nil:
+		br.recordLoginNotice(ctx, loopID, notice, "the loop's bot is not running")
+		return false
+	case !bot.enqueue(sendReq{chatID: chatID, text: notice.Text()}):
+		br.recordLoginNotice(ctx, loopID, notice, errQueueFull)
+		return false
+	}
+	br.recordLoginNotice(ctx, loopID, notice, "")
+	return true
+}
+
+// recordLoginNotice puts an owner notice on the loop's timeline: sent when
+// unsent is "", and otherwise why it was not. The notice is the hub's words,
+// not the loop's, so no message row records it.
+func (br *Bridge) recordLoginNotice(ctx context.Context, loopID string, notice *surface.LoginNotice, unsent string) {
+	kind := "login_works"
+	if notice.Refused {
+		kind = "login_refused"
+	}
+	event := &store.Event{
+		LoopID:  loopID,
+		TS:      time.Now().UnixMilli(),
+		Type:    "spool",
+		Subtype: "owner_notice",
+		Payload: fmt.Sprintf(`{"notice":%q,"sent":%t,"error":%q}`, kind, unsent == "", unsent),
+	}
+	if _, err := br.store.Events().Insert(ctx, event); err != nil {
+		br.log.Error("telegram: record owner notice", "loop", loopID, "err", err)
+		return
+	}
+	br.bus.Publish(bus.Item{Kind: bus.KindAgentEvent, LoopID: loopID, Payload: event})
 }
 
 // stayOnHub records that a loop's send had no room on the surface to go to.
