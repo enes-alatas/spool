@@ -38,9 +38,10 @@ type server struct {
 	// operatorToken is the credential the hub minted into this server's data
 	// directory at boot; every /api request carries it (#239).
 	operatorToken string
-	// logPath is a copy of everything the orchestrator wrote to stderr.
-	// The output still goes to the test's own stderr; this is the copy a
-	// test can read back and assert on (#150).
+	// logPath holds everything the orchestrator wrote to stderr: a test
+	// reads it back and asserts on it (#150), and a failed test prints it.
+	// It is not echoed to the shared stderr, where the logs of tests running
+	// in parallel would interleave (#182).
 	logPath string
 }
 
@@ -108,15 +109,17 @@ func startServerOn(t *testing.T, dataDir, mcpHost string, extraArgs ...string) *
 	}
 	args = append(args, extraArgs...)
 	cmd := exec.Command(spoolBin, args...)
-	logPath := filepath.Join(dataDir, "spool.log")
-	logFile, err := os.Create(logPath)
+	// Each hub gets its own file: a test that restarts its hub over the same
+	// data directory keeps the first hub's log for when it fails.
+	logFile, err := os.CreateTemp(dataDir, "spool-*.log")
 	if err != nil {
 		t.Fatal(err)
 	}
+	logPath := logFile.Name()
 	t.Cleanup(func() { logFile.Close() })
 
 	cmd.Env = append(os.Environ(), "FAKECLAUDE_STATE="+fkState)
-	output, listening := watchListening(io.MultiWriter(os.Stderr, logFile))
+	output, listening, copied := watchListening(logFile)
 	cmd.Stdout = output
 	cmd.Stderr = cmd.Stdout
 	// Wait copies the hub's output through a pipe after the hub is gone;
@@ -137,6 +140,7 @@ func startServerOn(t *testing.T, dataDir, mcpHost string, extraArgs ...string) *
 	go func() {
 		s.exitErr = cmd.Wait()
 		_ = output.Close()
+		<-copied
 		close(s.exited)
 	}()
 	t.Cleanup(s.stop)
@@ -150,7 +154,7 @@ func startServerOn(t *testing.T, dataDir, mcpHost string, extraArgs ...string) *
 	case <-s.exited:
 		// A hub that refused its flags looks, at the deadline, just like
 		// one that was slow to start; only this says which it was (#280).
-		t.Fatalf("server exited before it said where it listens (%v); its log is above", s.exitErr)
+		t.Fatalf("server exited before it said where it listens (%v); its log follows", s.exitErr)
 	case <-time.After(time.Until(deadline)):
 		t.Fatal("server did not say where it listens within 10s")
 	}
@@ -159,7 +163,7 @@ func startServerOn(t *testing.T, dataDir, mcpHost string, extraArgs ...string) *
 		case <-s.exited:
 			// A hub that refused its flags looks, at the deadline, just like
 			// one that was slow to start; only this says which it was (#280).
-			t.Fatalf("server exited before it became healthy (%v); its log is above", s.exitErr)
+			t.Fatalf("server exited before it became healthy (%v); its log follows", s.exitErr)
 		default:
 		}
 		resp, err := http.Get(s.baseURL + "/api/health")
@@ -207,11 +211,14 @@ type boundAddrs struct{ addr, mcpAddr string }
 
 // watchListening passes a hub's output through to out and reports the
 // addresses on its "spool listening" line, the one place a port of 0 is
-// resolved (#344). Close the returned writer once the hub has exited.
-func watchListening(out io.Writer) (io.WriteCloser, <-chan boundAddrs) {
+// resolved (#344). Close the returned writer once the hub has exited; copied
+// closes once the last of its output has reached out.
+func watchListening(out io.Writer) (io.WriteCloser, <-chan boundAddrs, <-chan struct{}) {
 	reader, writer := io.Pipe()
 	listening := make(chan boundAddrs, 1)
+	copied := make(chan struct{})
 	go func() {
+		defer close(copied)
 		scanner := bufio.NewScanner(reader)
 		scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 		said := false
@@ -236,7 +243,7 @@ func watchListening(out io.Writer) (io.WriteCloser, <-chan boundAddrs) {
 		// never blocks writing its log
 		_, _ = io.Copy(out, reader)
 	}()
-	return writer, listening
+	return writer, listening, copied
 }
 
 func (s *server) stop() {
@@ -249,6 +256,9 @@ func (s *server) stop() {
 	case <-time.After(10 * time.Second):
 		_ = s.cmd.Process.Kill()
 		<-s.exited
+	}
+	if s.t.Failed() {
+		s.t.Logf("spool log (%s):\n%s", s.logPath, s.log())
 	}
 }
 
