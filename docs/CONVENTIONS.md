@@ -378,6 +378,13 @@ agents — Claude sessions today, Spool's own loops from L2.*
 
 - New engine behavior needs a tier-2 test; a bug found in tier 3 gets a tier-2
   regression reproducing it via fakeclaude.
+- A tier-2 test calls `t.Parallel()` first (#182). Each test owns its data
+  directory, its ports and its stand-in Telegram or Slack, so tests are
+  isolated by construction. Two kinds stay out of the parallel set, and
+  each says why. A test that drives the real docker daemon is a row of
+  `TestDockerRows`, run in series with the other rows, because hubs on one
+  image share the egress wall (ADR-0028). A test that changes the
+  environment every hub inherits (`t.Setenv`) runs serially.
 - The web's tier 1 is pure logic: formatting, timeline entry building, form
   gates, API type guards. Logic worth testing gets lifted out of the component
   into a module of its own rather than tested through a rendered tree. A DOM

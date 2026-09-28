@@ -21,6 +21,7 @@ import (
 // "default fleet" the mistyped command would have reached is a temporary one
 // this test can then prove is untouched.
 func TestAMistypedSubcommandIsRefused(t *testing.T) {
+	t.Parallel()
 	spoolBin := filepath.Join(repoRoot(t), "bin", "spool")
 	if _, err := os.Stat(spoolBin); err != nil {
 		t.Fatalf("%s missing — run via `make itest`", spoolBin)
@@ -84,6 +85,7 @@ func TestAMistypedSubcommandIsRefused(t *testing.T) {
 // The refusal must not cost a working invocation anything: `spool token` is a
 // real subcommand and the only one.
 func TestTokenSubcommandStillWorks(t *testing.T) {
+	t.Parallel()
 	spoolBin := filepath.Join(repoRoot(t), "bin", "spool")
 	dataDir := t.TempDir()
 

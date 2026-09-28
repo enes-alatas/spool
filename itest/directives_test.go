@@ -20,6 +20,7 @@ import (
 // crash costs a turn rather than the loop, not that the reply after one is
 // any good.
 func TestCrashedTurnIsRecordedAndTheLoopIsNotWedged(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	s.createLoop("brittle", map[string]any{
 		"workspace_path": workspaceWithScript(t, "!crash\n"),
@@ -49,6 +50,7 @@ func TestCrashedTurnIsRecordedAndTheLoopIsNotWedged(t *testing.T) {
 // spans buffers and must still arrive whole — a truncated result would be a
 // silently corrupted turn rather than a visible failure.
 func TestHugeReplyCrossesTheStreamReader(t *testing.T) {
+	t.Parallel()
 	const size = 512 * 1024
 	s := startServer(t, t.TempDir())
 	s.createLoop("verbose", map[string]any{
@@ -75,6 +77,7 @@ func TestHugeReplyCrossesTheStreamReader(t *testing.T) {
 // the turn closed as errored rather than left hanging, and the loop must
 // settle asleep instead of waiting on a process that is gone.
 func TestKillEndsATurnInFlight(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	s.createLoop("stuck", map[string]any{
 		"workspace_path": workspaceWithScript(t, "!hang 30\n"),

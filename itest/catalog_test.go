@@ -13,6 +13,7 @@ import (
 // owner configured, a private chat finally captured — without a restart.
 
 func TestCatalogFollowsTheFleet(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	ws := workspaceWithScript(t, "!sysprompt\n")
 	s.createLoop("aster", map[string]any{"workspace_path": ws, "workspace_mode": "dir"})
@@ -60,6 +61,7 @@ func TestCatalogFollowsTheFleet(t *testing.T) {
 // cannot discover for itself, since owner_dm simply fails until the owner
 // has written.
 func TestCatalogNamesTheOwnerAndDMReadiness(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 7171, First: "Operator", Username: "operator"}
 	ws := workspaceWithScript(t, "!sysprompt\n")
 	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws})
@@ -107,6 +109,7 @@ func TestCatalogNamesTheOwnerAndDMReadiness(t *testing.T) {
 // group only while it is in the fleet channel, and the hub refuses the
 // others with a hint that lists the same destinations.
 func TestPromptDescribesTheLoopsConversations(t *testing.T) {
+	t.Parallel()
 	t.Run("no surface, outside the fleet channel", func(t *testing.T) {
 		s := startServer(t, t.TempDir())
 		ws := workspaceWithScript(t, "!sysprompt\n")

@@ -16,6 +16,7 @@ import (
 // comes to rest is checked for the value, and for the placeholder that
 // should stand in its place.
 func TestSecretsNeverReachTheRecord(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	s.createLoop("leaky", nil)
 
@@ -74,6 +75,7 @@ func TestSecretsNeverReachTheRecord(t *testing.T) {
 // the process runs is in the clear for as long as the last snapshot lives —
 // and the first thing a new secret does is get used.
 func TestASecretIsRedactedAsSoonAsItIsWritten(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	s.createLoop("fresh", nil)
 	s.scriptLoop("fresh", "!env LATE_TOKEN")

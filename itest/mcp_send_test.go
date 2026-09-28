@@ -94,6 +94,7 @@ func wantSendError(t *testing.T, res *mcp.CallToolResult, code string) {
 // TestMCPSendGroupDeliversToMentionedLoop: a group send @mentioning a peer is
 // stored as a group message and delivered to that peer only.
 func TestMCPSendGroupDeliversToMentionedLoop(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	s.createLoop("aster", nil)
 	s.createLoop("briar", nil)
@@ -126,6 +127,7 @@ func TestMCPSendGroupDeliversToMentionedLoop(t *testing.T) {
 // TestMCPSendRefusals: the typed errors of the send contract, each
 // correctable in-turn — and none of them stores or delivers anything.
 func TestMCPSendRefusals(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	s.createLoop("aster", nil)
 	sess := mcpSession(t, s, hubMCPToken(t, s, "aster"))
@@ -159,6 +161,7 @@ func TestMCPSendRefusals(t *testing.T) {
 // TestMCPSendControlRoom: a control_room send is the loop's private web
 // thread — stored against the loop, delivered to no loop.
 func TestMCPSendControlRoom(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	s.createLoop("aster", nil)
 	sess := mcpSession(t, s, hubMCPToken(t, s, "aster"))
@@ -181,6 +184,7 @@ func TestMCPSendControlRoom(t *testing.T) {
 // TestMCPSendCap: the per-turn budget refuses the send after the cap, with
 // the typed code the model can act on.
 func TestMCPSendCap(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	s.createLoop("aster", nil)
 	// Every turn start reopens the budget, and this test counts sends
@@ -203,6 +207,7 @@ func TestMCPSendCap(t *testing.T) {
 
 // TestMCPBadToken: an unknown bearer never reaches the tool.
 func TestMCPBadToken(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	s.createLoop("aster", nil)
 	client := mcp.NewClient(&mcp.Implementation{Name: "itest", Version: "0"}, nil)
@@ -222,6 +227,7 @@ func TestMCPBadToken(t *testing.T) {
 // the runner passes to every claude spawn; the turn's final text reports the
 // outcomes.
 func TestFakeclaudeSendDirective(t *testing.T) {
+	t.Parallel()
 	ws := workspaceWithScript(t,
 		`!send {"destination":"control_room","text":"first note"} !send {"destination":"control_room","text":"second note"}`+"\n")
 	s := startServer(t, t.TempDir())
@@ -250,6 +256,7 @@ func TestFakeclaudeSendDirective(t *testing.T) {
 // not starve the next turn — the runner reopens the budget at every turn
 // start.
 func TestSendBudgetResetsPerTurn(t *testing.T) {
+	t.Parallel()
 	// line 1 absorbs the creation tick (fakeclaude scripts are per-turn);
 	// line 2 spends the whole cap, line 3 sends once more.
 	full := strings.Repeat(`!send {"destination":"control_room","text":"burst"} `, 10)
@@ -279,6 +286,7 @@ func TestSendBudgetResetsPerTurn(t *testing.T) {
 // the redelivered batch's fresh session is told what was already sent, and
 // the send is stored exactly once.
 func TestRedeliveredTurnKnowsItsSends(t *testing.T) {
+	t.Parallel()
 	// line 1 absorbs the creation tick; line 2 sends and then dies the way
 	// a lost session does; the fresh session's turn 1 is line 1 again and
 	// echoes the redelivered batch.
@@ -314,6 +322,7 @@ func TestRedeliveredTurnKnowsItsSends(t *testing.T) {
 // routed onto the API's. Workstations are allowlisted to this port, so
 // anything reachable here is reachable by every loop in the fleet.
 func TestMCPListenerServesOnlyMCP(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	s.createLoop("mcponly", nil)
 

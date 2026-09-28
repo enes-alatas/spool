@@ -21,6 +21,7 @@ const stormLimit = 12
 // deliveries per direction, the rest dropped and recorded as events an
 // operator can see.
 func TestStormGuardHaltsALoopRelay(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 9191, First: "Operator", Username: "operator"}
 	// line 1 absorbs each loop's creation tick; line 2 is the relay, and it
 	// repeats for every turn after

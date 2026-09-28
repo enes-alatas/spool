@@ -496,6 +496,7 @@ const groupChatID int64 = -1001234567890
 // it, and still reach every loop it mentions: ingest is one bot's job,
 // delivery is the router's.
 func TestGroupMessageIngestedOnceAndDeliveredToAllMentions(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 4242, First: "Operator", Username: "operator"}
 	srv, tg := startTelegramFleet(t, operator)
 
@@ -519,6 +520,7 @@ func TestGroupMessageIngestedOnceAndDeliveredToAllMentions(t *testing.T) {
 // incumbents are already handling that message, and a set read as "whoever
 // is bound right now" changes underneath them mid-message.
 func TestBotJoiningLiveGroupDoesNotDoubleIngest(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 4444, First: "Operator", Username: "operator"}
 	srv, tg := startTelegramFleet(t, operator)
 
@@ -547,6 +549,7 @@ func TestBotJoiningLiveGroupDoesNotDoubleIngest(t *testing.T) {
 // reuse message_id per bot, so they used to collide on the dedup key and the
 // second one vanished. Both must land, each for its own loop.
 func TestDirectMessagesToDifferentBotsBothLand(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 4343, First: "Operator", Username: "operator"}
 	srv, tg := startTelegramFleet(t, operator)
 
@@ -568,6 +571,7 @@ func TestDirectMessagesToDifferentBotsBothLand(t *testing.T) {
 // bot, never surface in the group, and deliver nothing to a peer the private
 // text names (ADR-0025 scenarios, #37).
 func TestOwnerDMSendReachesTheDMChat(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 4747, First: "Operator", Username: "operator"}
 	// line 1 answers the creation tick; line 2 answers the owner's DM
 	wsAlpha := workspaceWithScript(t, "!ctx 0\n"+
@@ -602,6 +606,7 @@ func TestOwnerDMSendReachesTheDMChat(t *testing.T) {
 // opposite for the group post, which went out as "<author> (via web): ..."
 // through a loop's bot.
 func TestOperatorWordsStayOnTheHub(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 4848, First: "Operator", Username: "operator"}
 	wsAlpha := workspaceWithScript(t, "!ctx 0\n"+
 		`!send {"destination":"group","text":"@beta loop words go out"}`+"\n")
@@ -641,6 +646,7 @@ func TestOperatorWordsStayOnTheHub(t *testing.T) {
 // Unaddressed human group chatter is stored and visible but wakes no loop;
 // a mention delivers to the mentioned loop alone (ADR-0025 selective wake).
 func TestUnaddressedGroupChatterWakesNoLoop(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 4949, First: "Operator", Username: "operator"}
 	srv, tg := startTelegramFleet(t, operator)
 
@@ -677,6 +683,7 @@ func TestUnaddressedGroupChatterWakesNoLoop(t *testing.T) {
 // telegram group — nothing the operator writes leaves the hub (ADR-0032),
 // which TestOperatorWordsStayOnTheHub asserts.
 func TestComposerGroupDestination(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 5050, First: "Operator", Username: "operator"}
 	srv, _ := startTelegramFleet(t, operator)
 
@@ -700,6 +707,7 @@ func TestComposerGroupDestination(t *testing.T) {
 // mentions in owner_dm or control_room text never add recipients, the named
 // peer gets no input or wake, and nothing surfaces in the group (ADR-0025).
 func TestPrivateInboundNeverFansOut(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 5454, First: "Operator", Username: "operator"}
 	srv, tg := startTelegramFleet(t, operator)
 
@@ -736,6 +744,7 @@ func TestPrivateInboundNeverFansOut(t *testing.T) {
 // DM chat, the group's reaches the group, and neither crosses over
 // (ADR-0025 scenarios).
 func TestMixedDMAndGroupArrivalsAnswerSeparately(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 5151, First: "Operator", Username: "operator"}
 	// line 1 answers the creation tick; line 2 hangs so both arrivals
 	// queue; lines 3 and 4 answer each queued conversation with a real
@@ -798,6 +807,7 @@ func TestMixedDMAndGroupArrivalsAnswerSeparately(t *testing.T) {
 // stranger's arrives alongside it. Isolating *two* humans' private
 // conversations returns with the non-owner DM design.
 func TestOnlyTheOwnerHoldsAPrivateConversation(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 5252, First: "Operator", Username: "operator"}
 	friend := user{ID: 5353, First: "Friend", Username: "friend"}
 	ws := workspaceWithScript(t, "!ctx 0\n!hang 4\n"+

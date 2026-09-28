@@ -48,6 +48,7 @@ func costShape(t *testing.T, s *server, loop string) (sum, sessionTotal float64)
 // and storing that verbatim made every sum overstate spend by as much as an
 // order of magnitude (#191) — the control room's cost figures are such a sum.
 func TestTurnCostIsPerTurnNotSessionTotal(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	s.createLoop("spender", nil)
 
@@ -75,6 +76,7 @@ func TestTurnCostIsPerTurnNotSessionTotal(t *testing.T) {
 // first turn after a restart at the whole session's spend — the same bug the
 // column was fixed for, rarer and harder to see.
 func TestTurnCostSurvivesRestartMidSession(t *testing.T) {
+	t.Parallel()
 	dataDir := t.TempDir()
 	s := startServer(t, dataDir)
 	s.createLoop("resumer", nil)

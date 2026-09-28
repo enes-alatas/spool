@@ -16,6 +16,7 @@ import (
 // asks a loop what it was told; they have to match, or a loop citing its
 // build in an argument is citing a guess.
 func TestPromptNamesTheBuildThatWokeTheLoop(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	ws := workspaceWithScript(t, "!sysprompt\n")
 	s.createLoop("aster", map[string]any{"workspace_path": ws, "workspace_mode": "dir"})

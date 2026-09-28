@@ -16,6 +16,7 @@ import (
 // it by, and its own send to the group is refused in-turn. Moving it back in
 // restores all three. None of it needs a surface.
 func TestLoopOutsideTheFleetChannelHasNoGroup(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	for _, name := range []string{"aster", "briar", "cedar"} {
 		s.createLoop(name, nil)
@@ -91,6 +92,7 @@ func TestLoopOutsideTheFleetChannelHasNoGroup(t *testing.T) {
 // fleet channel and not a loop outside it, even one whose bot sits in that
 // very group: ingest is not delivery (ADR-0020, ADR-0032).
 func TestTelegramMentionOfALoopOutsideTheFleetChannelReachesNobody(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 8484, First: "Operator", Username: "operator"}
 	srv, tg := startTelegramFleet(t, operator)
 	srv.mustJSON("PATCH", "/api/loops/beta", map[string]any{"in_fleet_channel": false}, nil)
@@ -120,6 +122,7 @@ func TestTelegramMentionOfALoopOutsideTheFleetChannelReachesNobody(t *testing.T)
 // that addresses nobody is kept and wakes nobody. The timeline is the
 // channel's whole conversation, loop posts included, and nothing private.
 func TestOperatorPostsToTheFleetChannel(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	for _, name := range []string{"aster", "briar", "cedar"} {
 		s.createLoop(name, nil)
@@ -186,6 +189,7 @@ func TestOperatorPostsToTheFleetChannel(t *testing.T) {
 // on the hub (ADR-0032) while the loop it names is delivered and a
 // human's Telegram post comes inward to the same timeline.
 func TestFleetChannelPostStaysOnTheHub(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 4747, First: "Operator", Username: "operator"}
 	wsAlpha := workspaceWithScript(t, "!ctx 0\n"+
 		`!send {"destination":"group","text":"@beta alpha heard the channel"}`+"\n")
@@ -222,6 +226,7 @@ func TestFleetChannelPostStaysOnTheHub(t *testing.T) {
 // time and moves no loop that already exists, and a creator who says
 // in_fleet_channel is obeyed either way.
 func TestNewLoopStartsInTheFleetChannelOnceThereIsAFleet(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	serverDefault := map[string]any{"in_fleet_channel": nil}
 
@@ -298,6 +303,7 @@ func archiveLoop(t *testing.T, dataDir, name string) {
 // add its author to the channel's recipients, and one that does not exist
 // means the page is stale, so both are refused and nothing is stored.
 func TestOperatorReplyInTheFleetChannelAddressesItsAuthor(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	for _, name := range []string{"aster", "briar"} {
 		s.createLoop(name, nil)

@@ -15,6 +15,7 @@ import (
 // The first allowlisted sender owns the fleet by default, and a proactive
 // owner_dm on a turn with no inbound DM reaches their chat.
 func TestProactiveOwnerDMWithoutAnInboundDM(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 6161, First: "Operator", Username: "operator"}
 	// line 1 answers the creation tick; line 2 answers a control_room
 	// message — a turn that is not a DM at all
@@ -51,6 +52,7 @@ func TestProactiveOwnerDMWithoutAnInboundDM(t *testing.T) {
 // Messaging a bot does not make you its owner: a second allowlisted sender's
 // DM neither reassigns the owner nor reaches the loop, and they are told why.
 func TestAnotherSenderCannotBecomeTheOwner(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 6262, First: "Operator", Username: "operator"}
 	srv, tg := startTelegramFleet(t, operator)
 	stranger := user{ID: 6263, First: "Stranger", Username: "stranger"}
@@ -79,6 +81,7 @@ func TestAnotherSenderCannotBecomeTheOwner(t *testing.T) {
 // doing it. An owner is an allowed sender — the check at set-time only
 // establishes that; the reverse transitions have to keep it true.
 func TestRevokingAccessDisownsTheLoop(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 6565, First: "Operator", Username: "operator"}
 	// line 1 answers the creation tick, line 2 the owner's DM, and only the
 	// third — a turn taken after the owner is blocked — tries to send
@@ -126,6 +129,7 @@ func TestRevokingAccessDisownsTheLoop(t *testing.T) {
 // already" would leave every loop after the first silent — the outcome the
 // notice exists to avoid.
 func TestEveryLoopTellsANonOwnerWhyItIsQuiet(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 6666, First: "Operator", Username: "operator"}
 	srv, tg := startTelegramFleet(t, operator)
 	stranger := user{ID: 6667, First: "Stranger", Username: "stranger"}
@@ -142,6 +146,7 @@ func TestEveryLoopTellsANonOwnerWhyItIsQuiet(t *testing.T) {
 // The operator can reassign a loop's owner, and doing so drops the captured
 // chat: it belonged to the previous owner's bot conversation.
 func TestOwnerIsReassignableAndCaptureFollows(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 6363, First: "Operator", Username: "operator"}
 	srv, tg := startTelegramFleet(t, operator)
 	colleague := user{ID: 6364, First: "Colleague", Username: "colleague"}
@@ -171,6 +176,7 @@ func TestOwnerIsReassignableAndCaptureFollows(t *testing.T) {
 // The owner's address is stored, not rediscovered: it survives a restart of
 // the orchestrator.
 func TestOwnerDMSurvivesRestart(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 6464, First: "Operator", Username: "operator"}
 	dir := t.TempDir()
 	tg := startFakeTelegram(t, "alpha", "beta")

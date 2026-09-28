@@ -26,6 +26,7 @@ type undeliveredRow struct {
 // badge points at, and the thing worth proving is that it answers with the
 // same rows the badge counted.
 func TestUndeliveredListsWhatTheBadgeCounts(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 7755, First: "Operator", Username: "operator"}
 	ws := workspaceWithScript(t, "!ctx 0\n"+
 		`!send {"destination":"group","text":"@beta the deploy is wedged"}`+"\n"+
@@ -100,6 +101,7 @@ func TestUndeliveredListsWhatTheBadgeCounts(t *testing.T) {
 // failing at once, which is the only arrangement where a filter that does
 // nothing still looks right.
 func TestUndeliveredScopesToOneLoop(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 7756, First: "Operator", Username: "operator"}
 	// A workspace each, because the fleet harness applies one override per
 	// loop and a group message has to name someone other than its sender.

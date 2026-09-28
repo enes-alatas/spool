@@ -21,6 +21,7 @@ import (
 // what it says. DOCKER_HOST points at a closed port, so the daemon is
 // unreachable whether or not this machine has one.
 func TestAutoRuntimeRefusesToFallBackToBare(t *testing.T) {
+	t.Parallel()
 	spoolBin := filepath.Join(repoRoot(t), "bin", "spool")
 	if _, err := os.Stat(spoolBin); err != nil {
 		t.Fatalf("%s missing — run via `make itest`", spoolBin)
@@ -61,7 +62,7 @@ func TestAutoRuntimeRefusesToFallBackToBare(t *testing.T) {
 // Creating a bare loop is a decision taken at the terminal, by the person who
 // started the hub — not one the control room can make for them afterwards. A
 // hub started on docker refuses it and says how to allow it.
-func TestControlRoomCannotCreateABareLoopOnADockerHub(t *testing.T) {
+func controlRoomCannotCreateABareLoopOnADockerHub(t *testing.T) {
 	s := startDockerServer(t, t.TempDir())
 
 	resp, body := s.do("POST", "/api/loops", map[string]any{
@@ -105,7 +106,7 @@ func TestControlRoomCannotCreateABareLoopOnADockerHub(t *testing.T) {
 // #258). A form that offered the choice on a hub that refuses it would be
 // offering a create that 400s; one that hid it on a hub that allows it would
 // hide the escape hatch `--allow-bare` exists to give.
-func TestSettingsReportsWhetherBareIsAllowed(t *testing.T) {
+func settingsReportsWhetherBareIsAllowed(t *testing.T) {
 	// A bare hub: the shape of a single-machine install, where every loop the
 	// room creates is uncontained and the form has to say so.
 	t.Run("a bare hub allows one", func(t *testing.T) {

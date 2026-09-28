@@ -15,6 +15,7 @@ import (
 // TestEchoTurn: create → message → completed turn with the echoed text, cost
 // recorded, session id present.
 func TestEchoTurn(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	s.createLoop("echoer", nil)
 	s.message("echoer", "hello pineapple")
@@ -33,6 +34,7 @@ func TestEchoTurn(t *testing.T) {
 // TestIdleReapResumesSameSession: after the idle timeout the process dies;
 // the next message must resume the same claude session, not mint a new one.
 func TestIdleReapResumesSameSession(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	s.createLoop("napper", nil)
 
@@ -55,6 +57,7 @@ func TestIdleReapResumesSameSession(t *testing.T) {
 // TestResumeAcrossServerRestart: kill the whole orchestrator; the session
 // must survive into the next server generation (crash-only, QUALITY.md).
 func TestResumeAcrossServerRestart(t *testing.T) {
+	t.Parallel()
 	dataDir := t.TempDir()
 	s := startServer(t, dataDir)
 	s.createLoop("phoenix", nil)
@@ -79,6 +82,7 @@ func TestResumeAcrossServerRestart(t *testing.T) {
 // (exit 1 + canonical stderr); the runtime must mint a fresh session and the
 // message must still be answered.
 func TestSessionLostRecovery(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	s.createLoop("amnesiac", nil)
 	s.message("amnesiac", "remember me")
@@ -105,6 +109,7 @@ func TestSessionLostRecovery(t *testing.T) {
 // and this row keeps it honest on the runtime CI always exercises, so a
 // broken env route cannot hide behind a skipped docker suite (#117).
 func TestLoopScriptedBySecret(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	// a workspace with no .fakeclaude in it: the script has one way in
 	s.createLoop("enveloped", map[string]any{
@@ -130,6 +135,7 @@ func TestLoopScriptedBySecret(t *testing.T) {
 // as the loop's outgoing message... (stripping is asserted in the mention
 // test via delivery; here we assert the clamp window).
 func TestTrailerClampedByMinWake(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	ws := workspaceWithScript(t, "all quiet [next-wake: 1m]\n")
 	s.createLoop("pacer", map[string]any{
@@ -159,6 +165,7 @@ func TestTrailerClampedByMinWake(t *testing.T) {
 // message-triggered turn on callee. Caller's own final reply is a status
 // note and must reach nobody — even when it names a peer.
 func TestSendRoutedLoopToLoop(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	wsCallee := workspaceWithScript(t, "received.\n")
 	s.createLoop("callee", map[string]any{"workspace_path": wsCallee})
@@ -195,6 +202,7 @@ func TestSendRoutedLoopToLoop(t *testing.T) {
 // loaded, measured against the window of the model it ran on. An unknown
 // model reports its tokens with a zero limit rather than a guessed ratio.
 func TestContextUsageOnTheLoopView(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	s.createLoop("ctxknown", map[string]any{"model": "claude-haiku-4-5"})
 	s.createLoop("ctxunknown", nil) // no model: fakeclaude reports its own name
@@ -233,6 +241,7 @@ func TestContextUsageOnTheLoopView(t *testing.T) {
 // not one. The loop rotates onto a fresh session, carries its mission and
 // recent replies across, and answers the message that was waiting.
 func TestUnresumableSessionRotatesInsteadOfRetrying(t *testing.T) {
+	t.Parallel()
 	workspace := t.TempDir()
 	s := startServer(t, t.TempDir())
 	s.createLoop("rotator", map[string]any{
@@ -273,6 +282,7 @@ func TestUnresumableSessionRotatesInsteadOfRetrying(t *testing.T) {
 // there; both forms come back oldest first, so a reader assembles a page the
 // same way whichever end it asked from.
 func TestEventsNewestWindow(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	s.createLoop("historian", nil)
 
@@ -328,6 +338,7 @@ func TestEventsNewestWindow(t *testing.T) {
 // (ADR-0022). Every fakeclaude turn echoes and reports 100k of a 200k
 // window (50%, past the 40% arm default, below the 70% force ceiling).
 func TestContextRotationAtQuietBoundary(t *testing.T) {
+	t.Parallel()
 	workspace := workspaceWithScript(t, "!ctx 100000\n")
 	s := startServer(t, t.TempDir())
 	s.createLoop("shedder", map[string]any{
@@ -388,6 +399,7 @@ func TestContextRotationAtQuietBoundary(t *testing.T) {
 // sum to 240k (120%, past every threshold) yet occupy 15%: the loop must not
 // rotate, and the turn must record the last call's measure, not the sum.
 func TestContextMeasuredAtLastCallNotTurnSum(t *testing.T) {
+	t.Parallel()
 	workspace := workspaceWithScript(t, "!ctx 30000 !steps 8\n")
 	s := startServer(t, t.TempDir())
 	s.createLoop("stepper", map[string]any{
@@ -424,6 +436,7 @@ func TestContextMeasuredAtLastCallNotTurnSum(t *testing.T) {
 // turn hangs 2s at 150k of the 200k window (75%, past the 70% force default),
 // so a message sent during a turn is reliably queued behind a forced context.
 func TestContextRotationForcedBeforeQueuedWork(t *testing.T) {
+	t.Parallel()
 	workspace := workspaceWithScript(t, "!ctx 150000 !hang 2\n")
 	s := startServer(t, t.TempDir())
 	s.createLoop("presser", map[string]any{
@@ -433,8 +446,8 @@ func TestContextRotationForcedBeforeQueuedWork(t *testing.T) {
 	})
 
 	s.message("presser", "one")
-	time.Sleep(500 * time.Millisecond) // let a turn start its hang
-	s.message("presser", "two")        // queues behind the hot context
+	s.waitState("presser", "busy", 10*time.Second) // the turn is inside its hang
+	s.message("presser", "two")                    // queues behind the hot context
 
 	handoff := s.waitTurn("presser", 60*time.Second, func(tr turn) bool {
 		return tr.Trigger == "rotation"
@@ -453,6 +466,7 @@ func TestContextRotationForcedBeforeQueuedWork(t *testing.T) {
 // restarts — the cleared session id is persisted at rotation time, not at the
 // next wake (ADR-0022; found in manual testing, 2026-08-21).
 func TestContextRotationSurvivesServerRestart(t *testing.T) {
+	t.Parallel()
 	workspace := workspaceWithScript(t, "!ctx 100000\n")
 	dataDir := t.TempDir()
 	s := startServer(t, dataDir)
@@ -488,6 +502,7 @@ func TestContextRotationSurvivesServerRestart(t *testing.T) {
 // with the "could not be resumed" preamble, which is not what happened to a
 // loop that retired its own session on purpose (#66, ADR-0022).
 func TestRotationNoteSurvivesServerRestart(t *testing.T) {
+	t.Parallel()
 	workspace := workspaceWithScript(t, "!ctx 100000\n")
 	dataDir := t.TempDir()
 	s := startServer(t, dataDir)
@@ -533,6 +548,7 @@ func TestRotationNoteSurvivesServerRestart(t *testing.T) {
 // the handoff twice (#66). The handoff turn hangs, so the shutdown reliably
 // falls inside that window.
 func TestRotationIntentSurvivesServerRestart(t *testing.T) {
+	t.Parallel()
 	// every turn reports 50% (past the 40% arm default) and hangs; the hang
 	// is what makes the shutdown land inside the handoff turn rather than
 	// racing it
@@ -572,6 +588,7 @@ func TestRotationIntentSurvivesServerRestart(t *testing.T) {
 // turn that dies with its process still rotates, just without a note, and
 // later work is answered on the fresh session.
 func TestContextRotationSurvivesHandoffCrash(t *testing.T) {
+	t.Parallel()
 	// turn 1 arms at 75%; turn 2 — the handoff request — crashes mid-turn
 	workspace := workspaceWithScript(t, "!ctx 150000\n!crash\n")
 	s := startServer(t, t.TempDir())
@@ -600,6 +617,7 @@ func TestContextRotationSurvivesHandoffCrash(t *testing.T) {
 // must call that what it is — a payload that will never fit — rather than
 // filing it with every other model error, and must carry on afterwards.
 func TestOverWindowMessageIsRecordedAsTooLong(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	s.createLoop("oversize", map[string]any{
 		"workspace_path": workspaceWithScript(t, "first turn fits\n!toolong"),
@@ -631,6 +649,7 @@ func TestOverWindowMessageIsRecordedAsTooLong(t *testing.T) {
 // handoff flow on demand — the loop writes its note now and continues on a
 // fresh session seeded from it, with no fill threshold involved.
 func TestManualRotation(t *testing.T) {
+	t.Parallel()
 	ws := workspaceWithScript(t, "!ctx 0\nhandoff note from the old self\n")
 	s := startServer(t, t.TempDir())
 	s.createLoop("aster", map[string]any{"workspace_path": ws})
@@ -663,6 +682,7 @@ func TestManualRotation(t *testing.T) {
 // A rotate request while a turn is running must not interrupt it: the turn
 // completes and the handoff takes the following quiet boundary.
 func TestManualRotationWaitsForTheRunningTurn(t *testing.T) {
+	t.Parallel()
 	ws := workspaceWithScript(t, "!ctx 0\n!hang 3\nlate handoff note\n")
 	s := startServer(t, t.TempDir())
 	s.createLoop("aster", map[string]any{"workspace_path": ws})
@@ -688,6 +708,7 @@ func TestManualRotationWaitsForTheRunningTurn(t *testing.T) {
 // so a broken loop respawned every few seconds forever and blamed a fresh
 // session each round (#89).
 func TestRetryLadderSurvivesAFailureRotation(t *testing.T) {
+	t.Parallel()
 	workspace := t.TempDir()
 	s := startServer(t, t.TempDir())
 	s.createLoop("broken", map[string]any{
@@ -757,6 +778,7 @@ func waitForRetries(t *testing.T, s *server, name string, n int, timeout time.Du
 // exception. A refused model holds work through the same test, so this
 // covers it too.
 func TestPauseHoldsAPendingCrashRetry(t *testing.T) {
+	t.Parallel()
 	workspace := t.TempDir()
 	s := startServer(t, t.TempDir())
 	s.createLoop("held", map[string]any{

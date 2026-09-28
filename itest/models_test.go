@@ -66,7 +66,9 @@ func recordingClaude(t *testing.T, dir string) string {
 }
 
 // The hub resolves every family alias at start, with a run that holds none
-// of its credentials and records no turn (ADR-0033, #332).
+// of its credentials and records no turn (ADR-0033, #332). Serial: it sets
+// the environment every hub inherits, which t.Setenv refuses to do under
+// t.Parallel.
 func TestTheHubResolvesTheAliasesAtStartWithARunThatHoldsNoCredential(t *testing.T) {
 	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "fixture-oauth-token")
 	runs := t.TempDir()
@@ -119,6 +121,7 @@ func TestTheHubResolvesTheAliasesAtStartWithARunThatHoldsNoCredential(t *testing
 // The custom list: an entry is added, resolved in the background, relabeled
 // and removed, and names that cannot be entries are refused (#332).
 func TestTheCustomModelList(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 
 	var entry customModel
@@ -166,6 +169,7 @@ func TestTheCustomModelList(t *testing.T) {
 // A turn on the default runtime refreshes what its alias runs as: that turn
 // ran under the operator's login (ADR-0033).
 func TestATurnOnTheDefaultRuntimeRefreshesItsAlias(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	s.waitModels(15*time.Second, func(v modelsView) bool {
 		for _, a := range v.Aliases {
@@ -192,6 +196,7 @@ func TestATurnOnTheDefaultRuntimeRefreshesItsAlias(t *testing.T) {
 // paths refuse what the model list refuses: one that reads as a flag would
 // not be a model at all (#341). Empty still means the CLI's default.
 func TestALoopsModelCannotReadAsAFlag(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 
 	resp, body := s.do("POST", "/api/loops", map[string]any{

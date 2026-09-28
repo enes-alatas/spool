@@ -19,6 +19,7 @@ import (
 // open rather than racing for it: getMe hangs until the test lets go, and the
 // owner's DM lands while the save is inside it.
 func TestReplacingATokenKeepsWhatThePollerLearnedMeanwhile(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 6464, First: "Operator", Username: "operator"}
 	srv, tg := startTelegramFleet(t, operator)
 
@@ -73,6 +74,7 @@ func TestReplacingATokenKeepsWhatThePollerLearnedMeanwhile(t *testing.T) {
 // save that names the mission writes the mission. Cheap to state and the
 // thing a future whole-row writer would break first.
 func TestSavingOneFieldTouchesNoOther(t *testing.T) {
+	t.Parallel()
 	operator := user{ID: 6465, First: "Operator", Username: "operator"}
 	srv, _ := startTelegramFleet(t, operator)
 

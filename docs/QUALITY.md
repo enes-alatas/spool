@@ -69,7 +69,9 @@ window regardless of loop count (ADR-0018).
 - Test tiers 1 + 2 (CONVENTIONS.md), Go and web both — `make test`, `make itest`,
   and `npm test` in the web steps of `checks`. The docker workstation suites in tier 2
   run against a real daemon: CI runners always have one; locally they skip
-  with a notice when none is reachable.
+  with a notice when none is reachable. They run in series with each other and
+  beside the rest of tier 2, which runs `ITEST_PARALLEL` (4) tests at a time
+  (#182).
 - **The browser smoke** (`make ui-smoke`, a step of `checks`, #356): a tier-1 web
   gate that opens the room as it ships. `make build` is served by `bin/spool` on
   a hub `cmd/uifixture` seeded (`scripts/fixture-hub.sh`), and headless Chromium

@@ -23,6 +23,7 @@ func (s *server) settings() settingsView {
 // to the operator, behind the credential (#258). It describes the host, so it
 // is not health's to answer.
 func TestSettingsReportsClaudeVersion(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	if got := s.settings().ClaudeVersion; !strings.Contains(got, "fakeclaude") {
 		t.Errorf("claude_version = %q, want the version fakeclaude reports", got)
@@ -33,6 +34,7 @@ func TestSettingsReportsClaudeVersion(t *testing.T) {
 // malformed pastes are rejected server-side, a well-formed token stores as
 // presence-only, its value never appears in a response, and "" clears it.
 func TestSettingsClaudeToken(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 	const token = "sk-ant-oat01-itesttokenABCDEFGHIJKLMNOP0123456789"
 
@@ -77,6 +79,7 @@ func TestSettingsClaudeToken(t *testing.T) {
 // (ADR-0022): defaults come back effective, valid pairs store, and an
 // inverted or out-of-range pair is rejected without clobbering the stored one.
 func TestSettingsRotationThresholds(t *testing.T) {
+	t.Parallel()
 	s := startServer(t, t.TempDir())
 
 	var v struct {
