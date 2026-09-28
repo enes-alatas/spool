@@ -235,6 +235,11 @@ jobs:
           # (v2.1 was built with go1.24 and refused go1.25). Revisit if a
           # release ever breaks us.
           version: latest
+      # Go and the room's TS and CSS share the comment rule, so either area
+      # runs it (CONVENTIONS.md "Comments").
+      - name: comments cite no ADR sections
+        if: needs.changes.outputs.unit == 'true' || needs.changes.outputs.web == 'true'
+        run: bash scripts/comment-refs.sh
       - name: unit tests (tier 1 + arch)
         if: needs.changes.outputs.unit == 'true'
         run: go test -coverprofile=cover.out ./...
@@ -337,6 +342,9 @@ jobs:
       - name: the diff coverage still counts what it claims to
         if: needs.changes.outputs.workflows == 'true'
         run: bash scripts/diff-coverage-test.sh
+      - name: the comment check still catches what it claims to
+        if: needs.changes.outputs.workflows == 'true'
+        run: bash scripts/comment-refs-test.sh
 
   # The one job still filtered at job level, because it is the one worth
   # skipping outright: ~8 of the ~10 minutes a full run used to bill. A job

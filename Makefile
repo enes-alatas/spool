@@ -78,6 +78,7 @@ lint:
 	@fmtout=$$(gofmt -l cmd internal itest); if [ -n "$$fmtout" ]; then echo "gofmt needed:"; echo "$$fmtout"; exit 1; fi
 	$(GO) vet ./...
 	@if command -v golangci-lint >/dev/null 2>&1; then golangci-lint run ./...; else echo "golangci-lint not installed — skipped (CI runs it)"; fi
+	@bash scripts/comment-refs.sh
 
 ui:
 	cd web && npm install --silent && npm run build
@@ -124,6 +125,7 @@ workflow-lint:
 	bash scripts/workflow-lint-test.sh
 	bash scripts/ci-health-test.sh
 	bash scripts/diff-coverage-test.sh
+	bash scripts/comment-refs-test.sh
 
 e2e-m1: server
 	bash scripts/e2e/m1.sh

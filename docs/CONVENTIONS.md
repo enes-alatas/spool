@@ -422,12 +422,12 @@ agents — Claude sessions today, Spool's own loops from L2.*
 
 - **Self-contained.** A comment must be meaningful on its own, without sending the
   reader elsewhere to understand it. State the reason in place. A trailing `(#n)`
-  may follow as provenance, a pointer to the history behind the comment, but the
-  sentence must still read correctly if that issue or PR is gone: never "see #n"
-  or "per #n" in place of the reason. Don't cite ADR section numbers or
-  milestones, which drift as ADRs are amended and milestones close; cite an ADR by
-  bare number only when a decision genuinely can't be restated locally.
-  Review-enforced.
+  or `(ADR-nnnn)` may follow as provenance, a pointer to the history behind the
+  comment, but the sentence must still read correctly if that issue, PR or ADR is
+  gone: never "see #n" or "per ADR-nnnn" in place of the reason. Don't cite ADR
+  section numbers or milestones, which drift as ADRs are amended and milestones
+  close. `scripts/comment-refs.sh` fails `make lint` and CI on an ADR section
+  number in a Go, TS or CSS comment; the rest is review-enforced.
 
 ## Web
 
