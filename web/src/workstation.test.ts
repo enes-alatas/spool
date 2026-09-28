@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import type { LoopView } from './api'
-import { workstationCondition, workstationDownEvent, workstationNote } from './workstation'
+import { claudeLoginDown, workstationCondition, workstationDownEvent, workstationNote } from './workstation'
 
-const down = (down_reason: string, workstation_detail = '') =>
-  ({ workstation_up: false, down_reason, workstation_detail }) as Pick<
+const down = (down_reason: string, workstation_detail = '', runtime: 'bare' | 'docker' = 'docker') =>
+  ({ workstation_up: false, down_reason, workstation_detail, runtime }) as Pick<
     LoopView,
-    'workstation_up' | 'down_reason' | 'workstation_detail'
+    'workstation_up' | 'down_reason' | 'workstation_detail' | 'runtime'
   >
+
+// The hub's two unauthenticated details, as internal/loop/actor.go writes them.
+const notConfigured = 'Claude token not configured. Please add a setup-token in Settings'
+const refusedBare =
+  'The Claude login was rejected (Failed to authenticate: OAuth session expired and could not be refreshed); log in again with claude on the host'
 const up = down('')
 up.workstation_up = true
 
@@ -28,9 +33,9 @@ describe('workstationCondition', () => {
     })
   })
 
-  it('alerts on a missing token without offering Power on, which cannot fix it', () => {
+  it('alerts on a missing or refused login without offering Power on, which cannot fix it', () => {
     expect(workstationCondition(down('unauthenticated'))).toEqual({
-      status: 'no Claude token',
+      status: 'no Claude login',
       alert: true,
       powerOnHelps: false,
     })
@@ -56,9 +61,13 @@ describe('workstationNote', () => {
     })
   })
 
-  it('names a missing token instead of quoting its detail', () => {
-    expect(workstationNote(down('unauthenticated', 'Claude token not configured'))).toEqual({
-      text: 'workstation down: no Claude token',
+  it('quotes the login fault’s detail, which names the cause and the fix', () => {
+    expect(workstationNote(down('unauthenticated', notConfigured))).toEqual({
+      text: `workstation down: ${notConfigured}`,
+      bad: true,
+    })
+    expect(workstationNote(down('unauthenticated', refusedBare, 'bare'))).toEqual({
+      text: `workstation down: ${refusedBare}`,
       bad: true,
     })
   })
@@ -79,9 +88,26 @@ describe('workstationDownEvent', () => {
     )
   })
 
-  it('names a missing token', () => {
-    expect(workstationDownEvent('unauthenticated', 'Claude token not configured')).toBe(
-      'workstation down: no Claude token to run claude under',
+  it('quotes a login fault’s detail, and names the fault without one', () => {
+    expect(workstationDownEvent('unauthenticated', refusedBare)).toBe(`workstation down: ${refusedBare}`)
+    expect(workstationDownEvent('unauthenticated', undefined)).toBe(
+      'workstation down: no usable Claude login to run claude under',
+    )
+  })
+})
+
+describe('claudeLoginDown', () => {
+  it('is the hub’s detail when there is one', () => {
+    expect(claudeLoginDown(down('unauthenticated', notConfigured))).toBe(notConfigured)
+    expect(claudeLoginDown(down('unauthenticated', refusedBare, 'bare'))).toBe(refusedBare)
+  })
+
+  it('without one, names both causes and the fix for the loop’s runtime', () => {
+    expect(claudeLoginDown(down('unauthenticated', '', 'docker'))).toBe(
+      'no Claude setup-token is set, or the one set was refused. Add or replace it in Settings',
+    )
+    expect(claudeLoginDown(down('unauthenticated', '', 'bare'))).toBe(
+      'the host has no Claude login, or its login was refused. Log in again with claude on the host',
     )
   })
 })

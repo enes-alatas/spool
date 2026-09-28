@@ -31,7 +31,7 @@ import { missionDraft, missionSaveResult, missionSaveWarning } from '../mission'
 import { EFFORT_OPTIONS, PACING_OPTIONS } from '../options'
 import { useModelOptions } from '../models'
 import { useStream } from '../stream'
-import { workstationCondition } from '../workstation'
+import { claudeLoginDown, workstationCondition } from '../workstation'
 import { toEntries, extractDelta } from '../timeline'
 import { MessageKnot } from '../components/MessageKnot'
 import { UndeliveredPane } from '../components/UndeliveredPane'
@@ -523,9 +523,9 @@ const VERB_PROGRESS: Record<string, string> = {
 }
 
 // The line under the loop's name when its workstation is not up: what the
-// condition means for the loop. A missing token is named and no more: it is
-// only ever reported while no token is set, which is exactly when the banner
-// above the page says where it is fixed, once.
+// condition means for the loop. A login fault says its cause and its fix: a
+// refused login happens with a token set, where the missing-token banner
+// above the page says nothing, and on a bare loop, which it never covers.
 function WorkstationNote({ loop }: { loop: LoopView }) {
   if (loop.workstation_up) return null
   switch (loop.down_reason) {
@@ -542,7 +542,7 @@ function WorkstationNote({ loop }: { loop: LoopView }) {
         </div>
       )
     case 'unauthenticated':
-      return <div className="ws-down-note">Workstation down: no Claude token.</div>
+      return <div className="ws-down-note">Workstation down: {claudeLoginDown(loop)}.</div>
     default:
       return (
         <div className="ws-down-note">
@@ -577,8 +577,8 @@ function WorkstationPanel({ loop, runningVerb }: { loop: LoopView; runningVerb: 
   // survives a dropped connection, which a ten-minute recreate may not.
   const busy = power.isPending || runningVerb !== ''
   // A workstation that is off or not built yet is not a fault: it reads calm,
-  // while one that died on its own, or has no token to run under, keeps the
-  // alarm.
+  // while one that died on its own, or has no usable login to run under,
+  // keeps the alarm.
   const condition = workstationCondition(loop)
   const statusDot = loop.workstation_up
     ? 'state-idle'
@@ -631,10 +631,11 @@ function WorkstationPanel({ loop, runningVerb }: { loop: LoopView; runningVerb: 
                 Power on
               </button>
             ) : (
-              // a missing token is fixed in Settings, and a button that
-              // cannot fix it would point the operator away from the fix
+              // a missing or refused token is fixed in Settings, and a
+              // button that cannot fix it would point the operator away
+              // from the fix
               <Link className="btn sm" to="/settings">
-                Add a Claude token
+                Set the Claude token
               </Link>
             )}
             <button
