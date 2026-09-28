@@ -149,10 +149,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	// A session the CLI can no longer load — what an over-full context looks
-	// like from the outside: a resume that dies with a diagnostic on stderr
-	// and no stream-json at all. A fresh session still works, so a runner
-	// that rotates recovers and one that retries does not.
+	// A session the CLI can no longer load: a resume that dies before init,
+	// with a diagnostic on stderr and no stream-json at all. The stderr line
+	// is invented. No real signature was ever observed, and the engine
+	// classifies the early exit, never the text (#47, #59). A fresh
+	// session still works, so a runner that rotates recovers and one that
+	// retries does not.
 	if marker, err := os.ReadFile(".fakeclaude-resume-broken"); err == nil {
 		if resumeID != "" || strings.TrimSpace(string(marker)) == "all" {
 			fmt.Fprintln(os.Stderr, "API Error: 400 prompt is too long: 251000 tokens > 200000 maximum")
@@ -285,7 +287,8 @@ func main() {
 				out.Flush()
 				os.Exit(2)
 			case line == "!lost":
-				// mid-turn session loss, exactly as the real CLI reports it
+				// mid-turn session loss, reported the way a failed resume is
+				// (assumed)
 				out.Flush()
 				fmt.Fprintf(os.Stderr, "No conversation found with session ID: %s\n", id)
 				os.Exit(1)
