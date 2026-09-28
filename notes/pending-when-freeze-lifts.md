@@ -111,3 +111,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 15:00: runtime rebuilt, v0.2.0-133. No board change since 14:40.
 - 16:25: #411, #412 merged; #19 closed. L2: 182 168. Told Enes: closes tomorrow if #182 goes to plan.
 - 16:30: Enes asked if Terra was on #168/#182; neither claimed, nothing woke Terra since #412 merged 15:42. Pinged Terra: #168 then #182.
+- 20:00: #414 (#168) and #413 (#410, ADR-citation check) merged. #415 (#182, parallel itest) up 19:44. L2: 182 only. When #415 merges: close L2 milestone, tell Enes, Terra → #405 then #230 slice 3.
