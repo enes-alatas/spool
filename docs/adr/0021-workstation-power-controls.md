@@ -1,6 +1,6 @@
 # ADR-0021: The operator can power a workstation, and switched-off is not down
 
-Date: 2026-08-20 · Status: accepted · Amended: 2026-09-24 (item 5, model_unrecognized), 2026-09-27 (item 5, down_reason values)
+Date: 2026-08-20 · Status: accepted · Amended: 2026-09-24 (item 5, model_unrecognized), 2026-09-27 (item 5, down_reason values), 2026-09-28 (item 5, a rejected login)
 
 ## Context
 
@@ -67,6 +67,20 @@ reachable. Rendered naively, a successful power-off shows up as the alert
    cannot run, but its fix is the Settings page, not a power control.
    `unreachable` now means only what the alert was for: a machine that should
    be running and isn't.
+
+   **Amendment (2026-09-28, #405):** `unauthenticated` also covers a Claude
+   login the API refuses: an expired login that would not refresh, or a
+   revoked token. The value now means that the loop has no usable Claude
+   credential, whether none is configured or the one in use was refused.
+   That is not about the machine, but it is the same fault to the operator:
+   the loop cannot run, and no power control fixes it. The detail says where
+   the fix is: logging in again with `claude` on the host for a bare loop, or
+   Settings for a contained one. The alert holds through the spawns and
+   health polls that would otherwise clear it, since a machine answering
+   says nothing about the login, and clears on the first turn that
+   authenticates. A new login happens outside Spool, so the loop finds it by
+   retrying on the crash ladder. A refused turn bills nothing, and the work
+   it carried goes back to the queue, since it never reached the model.
 6. **A switched-off workstation stays off.** While the intent stands, ticks are
    skipped — not queued, so power-on is not met by a backlog of stale wakes —
    and inbound messages go to the loop's stored inbox without waking it. They

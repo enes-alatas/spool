@@ -43,3 +43,31 @@ func TestIsUnrecognizedModel(t *testing.T) {
 		}
 	}
 }
+
+func TestIsLoginRejected(t *testing.T) {
+	// the stand-in message the CLI printed for an expired login (#405),
+	// trimmed to the fields that matter
+	rejected := `{"type":"assistant","message":{"model":"<synthetic>","role":"assistant",` +
+		`"content":[{"type":"text","text":"Failed to authenticate: OAuth session expired and could not be refreshed"}],` +
+		`"usage":{"input_tokens":0,"output_tokens":0}},"error":"authentication_failed","is_api_error_message":true}`
+	quoted := `{"type":"assistant","message":{"role":"assistant",` +
+		`"content":[{"type":"text","text":"the CLI says authentication_failed when a login expires"}],` +
+		`"usage":{"input_tokens":12,"output_tokens":9}}}`
+	cases := []struct {
+		name string
+		line string
+		want bool
+	}{
+		{"an expired login", rejected, true},
+		{"a reply that quotes the error", quoted, false},
+	}
+	for _, testCase := range cases {
+		msg := DecodeEvent([]byte(testCase.line)).Assistant
+		if got := IsLoginRejected(msg); got != testCase.want {
+			t.Errorf("%s: IsLoginRejected = %v, want %v", testCase.name, got, testCase.want)
+		}
+	}
+	if IsLoginRejected(nil) {
+		t.Error("no message at all: IsLoginRejected = true")
+	}
+}

@@ -29,11 +29,14 @@ type InitInfo struct {
 // AssistantInfo carries the API message of an assistant event. Content is kept
 // raw for storage/UI; Text is the concatenation of its text blocks. Usage is
 // this one API call's usage — unlike the result event's, which sums every
-// call of the turn and says nothing about context occupancy.
+// call of the turn and says nothing about context occupancy. Error is set
+// when the CLI stands in for a call the API refused: the message is then the
+// CLI's own, naming the failure, not the model's.
 type AssistantInfo struct {
 	Text    string
 	Content json.RawMessage
 	Usage   Usage
+	Error   string
 }
 
 type Usage struct {
@@ -89,12 +92,14 @@ func DecodeEvent(line []byte) Event {
 				Content json.RawMessage `json:"content"`
 				Usage   Usage           `json:"usage"`
 			} `json:"message"`
+			Error string `json:"error"`
 		}
 		if json.Unmarshal(line, &body) == nil {
 			ev.Assistant = &AssistantInfo{
 				Text:    textFromContent(body.Message.Content),
 				Content: body.Message.Content,
 				Usage:   body.Message.Usage,
+				Error:   body.Error,
 			}
 		}
 	case "result":

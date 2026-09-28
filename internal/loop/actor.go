@@ -56,8 +56,9 @@ const (
 	// workstation that goes missing after that is unreachable.
 	DownReasonNotProvisioned = "not_provisioned"
 	// DownReasonUnauthenticated: the machine may be fine, but there is no
-	// Claude token to run claude under. The fix is on the Settings page, not
-	// in the power controls.
+	// usable Claude credential to run claude under: none is configured, or
+	// the API refused the one in use (#405). The fix is on the Settings page
+	// or in the host's login, not in the power controls.
 	DownReasonUnauthenticated = "unauthenticated"
 	// DownReasonUnreachable: it should be running and isn't. The alert.
 	DownReasonUnreachable = "unreachable"
@@ -191,6 +192,14 @@ type Actor struct {
 	spawnModel   string       // model the running process was started on, which an edit does not change
 	lastCall     claude.Usage // usage of the in-flight turn's latest API call (assistant event)
 	backoff      time.Duration
+
+	// loginRejected holds the unauthenticated alert through the spawns and
+	// health polls that would otherwise clear it: the machine is up, the
+	// login is not, and only a turn that authenticates says it is back.
+	loginRejected bool
+	// turnRefusal is the CLI's sentence when the API refused the running
+	// turn's login, empty otherwise.
+	turnRefusal string
 
 	// Context rotation (ADR-0022): the loop sheds its context proactively,
 	// before the window's degradation zone, by writing a handoff note as its
@@ -869,6 +878,7 @@ func (actor *Actor) sendBatch(batch []Envelope) {
 	}
 	actor.turn = turn
 	actor.lastCall = claude.Usage{}
+	actor.turnRefusal = ""
 
 	for _, env := range batch {
 		if payload, err := json.Marshal(env); err == nil {
@@ -923,6 +933,9 @@ func (actor *Actor) handleEvent(ev claude.Event) {
 		if ev.Assistant != nil && ev.Assistant.Usage != (claude.Usage{}) {
 			actor.lastCall = ev.Assistant.Usage
 		}
+		if claude.IsLoginRejected(ev.Assistant) {
+			actor.turnRefusal = ev.Assistant.Text
+		}
 		actor.storeClaudeEvent(ev)
 	case ev.Type == "stream_event":
 		// live deltas: publish only, never persist
@@ -936,9 +949,13 @@ func (actor *Actor) handleEvent(ev claude.Event) {
 }
 
 func (actor *Actor) finishTurn(ev claude.Event) {
-	actor.backoff = 0
-	actor.freshSpawn = false
 	res := ev.Result
+	loginRejected := actor.turnRefusal != "" && res != nil && res.IsError && !actor.handoffTurn
+	if !loginRejected {
+		// a refused login is not a turn that ran: the ladder keeps climbing
+		actor.backoff = 0
+	}
+	actor.freshSpawn = false
 	if claude.IsPromptTooLong(res) {
 		actor.recordOversizedBatch()
 	}
@@ -988,6 +1005,15 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 		if actor.deps.OnTurnDone != nil && !actor.handoffTurn {
 			actor.deps.OnTurnDone(&actor.loop, trailer, hasTrailer)
 		}
+	}
+	if loginRejected {
+		actor.rejectLogin(actor.turnRefusal)
+		return
+	}
+	if actor.loginRejected && !actor.handoffTurn {
+		actor.loginRejected = false
+		actor.log().Info("claude login accepted again")
+		actor.setWorkstationUp()
 	}
 	if claude.IsUnrecognizedModel(res) && !actor.handoffTurn {
 		if actor.spawnModel == actor.loop.Model {
@@ -1185,6 +1211,12 @@ func (actor *Actor) handleProcExit() {
 			actor.rotateContext("")
 			return
 		}
+		if actor.loginRejected {
+			// the work waits on the ladder, not on the next spawn: an
+			// immediate wake would only be refused again
+			actor.crashBackoff()
+			return
+		}
 		actor.state = StateAsleep
 		actor.publishState()
 		if len(actor.inbox) > 0 && !actor.paused && !actor.loop.WorkstationOff && !actor.powering {
@@ -1248,6 +1280,24 @@ func (actor *Actor) refuseModel(sentence string) {
 	actor.storeSpoolEvent("model_unrecognized",
 		fmt.Sprintf(`{"model":%q,"detail":%q}`, actor.spawnModel, sentence))
 	actor.log().Warn("model not recognized; loop holds until it is edited", "model", actor.spawnModel)
+	actor.drainRefusedProcess()
+}
+
+// rejectLogin holds the loop on a login the API refused (#405). Every turn
+// would fail the same way, free and fast, until the operator logs in again,
+// and that happens outside Spool, so nothing here can wait for it: the loop
+// raises the unauthenticated alert and climbs the crash ladder, each rung a
+// free probe of whether the login is back. The refused batch never reached
+// the model, so it goes back to the front of the queue, and the notes the
+// turn owed stay owed.
+func (actor *Actor) rejectLogin(sentence string) {
+	fix := "log in again with claude on the host"
+	if loopRuntime := actor.deps.runtimeFor(actor.loop.Runtime); loopRuntime != nil && needsClaudeToken(loopRuntime) {
+		fix = "replace the setup-token in Settings"
+	}
+	actor.loginRejected = true
+	actor.setWorkstationDown(DownReasonUnauthenticated, fmt.Sprintf("The Claude login was rejected (%s); %s", sentence, fix))
+	actor.inbox = append(append([]Envelope(nil), actor.currentBatch...), actor.inbox...)
 	actor.drainRefusedProcess()
 }
 
@@ -1683,8 +1733,12 @@ func (actor *Actor) setWorkstationDown(reason, detail string) {
 }
 
 func (actor *Actor) setWorkstationUp() {
-	actor.healthSnap.Store(workstationSnap{Health: runtime.Health{Up: true}})
 	actor.wsEverUp = true
+	if actor.loginRejected {
+		// the machine answering says nothing about the login
+		return
+	}
+	actor.healthSnap.Store(workstationSnap{Health: runtime.Health{Up: true}})
 	if actor.wsReason == "" {
 		return
 	}
