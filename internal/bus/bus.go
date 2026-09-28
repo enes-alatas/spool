@@ -52,33 +52,33 @@ func New() *Bus {
 
 // Subscribe returns a channel of items matching filter (nil = all) and a
 // cancel func. The channel is buffered; items are dropped if it fills.
-func (b *Bus) Subscribe(filter func(Item) bool) (<-chan Item, func()) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	id := b.next
-	b.next++
+func (bus *Bus) Subscribe(filter func(Item) bool) (<-chan Item, func()) {
+	bus.mu.Lock()
+	defer bus.mu.Unlock()
+	id := bus.next
+	bus.next++
 	sub := &subscriber{ch: make(chan Item, 256), filter: filter}
-	b.subs[id] = sub
+	bus.subs[id] = sub
 	cancel := func() {
-		b.mu.Lock()
-		defer b.mu.Unlock()
-		if s, ok := b.subs[id]; ok {
-			delete(b.subs, id)
-			close(s.ch)
+		bus.mu.Lock()
+		defer bus.mu.Unlock()
+		if registered, ok := bus.subs[id]; ok {
+			delete(bus.subs, id)
+			close(registered.ch)
 		}
 	}
 	return sub.ch, cancel
 }
 
-func (b *Bus) Publish(item Item) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	for _, s := range b.subs {
-		if s.filter != nil && !s.filter(item) {
+func (bus *Bus) Publish(item Item) {
+	bus.mu.Lock()
+	defer bus.mu.Unlock()
+	for _, sub := range bus.subs {
+		if sub.filter != nil && !sub.filter(item) {
 			continue
 		}
 		select {
-		case s.ch <- item:
+		case sub.ch <- item:
 		default: // drop for slow consumers
 		}
 	}
