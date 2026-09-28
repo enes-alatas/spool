@@ -9,8 +9,8 @@ import (
 
 func buildInfo(settings map[string]string) *debug.BuildInfo {
 	bi := &debug.BuildInfo{}
-	for k, v := range settings {
-		bi.Settings = append(bi.Settings, debug.BuildSetting{Key: k, Value: v})
+	for key, value := range settings {
+		bi.Settings = append(bi.Settings, debug.BuildSetting{Key: key, Value: value})
 	}
 	return bi
 }

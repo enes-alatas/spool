@@ -44,14 +44,14 @@ func resolve(version, commit, builtAt string, bi *debug.BuildInfo, ok bool) Info
 	var revision, vcsTime string
 	var dirty bool
 	if ok && bi != nil {
-		for _, s := range bi.Settings {
-			switch s.Key {
+		for _, setting := range bi.Settings {
+			switch setting.Key {
 			case "vcs.revision":
-				revision = s.Value
+				revision = setting.Value
 			case "vcs.time":
-				vcsTime = s.Value
+				vcsTime = setting.Value
 			case "vcs.modified":
-				dirty = s.Value == "true"
+				dirty = setting.Value == "true"
 			}
 		}
 	}
@@ -77,17 +77,17 @@ func resolve(version, commit, builtAt string, bi *debug.BuildInfo, ok bool) Info
 
 // String is the --version line: everything on one line, in the order a human
 // reads it — which build, from what, when, with which Go.
-func (i Info) String() string {
-	out := "spool " + i.Version
+func (info Info) String() string {
+	out := "spool " + info.Version
 	var parts []string
-	if i.Commit != "" {
-		parts = append(parts, i.Commit)
+	if info.Commit != "" {
+		parts = append(parts, info.Commit)
 	}
-	if i.BuiltAt != "" {
-		parts = append(parts, "built "+i.BuiltAt)
+	if info.BuiltAt != "" {
+		parts = append(parts, "built "+info.BuiltAt)
 	}
-	if i.Go != "" {
-		parts = append(parts, i.Go)
+	if info.Go != "" {
+		parts = append(parts, info.Go)
 	}
 	if len(parts) > 0 {
 		out += " (" + strings.Join(parts, ", ") + ")"
