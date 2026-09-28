@@ -390,6 +390,8 @@ agents — Claude sessions today, Spool's own loops from L2.*
 - fakeclaude scenarios are declarative fixtures checked into the repo; fakeclaude
   itself must track the real CLI's observed behavior (version-noted, like
   `claude/preflight.go`'s TestedVersion).
+  `cmd/fakeclaude/FIDELITY.md` is that record: one line per modelled
+  behaviour, verified or assumed, with the review rule in `docs/QUALITY.md`.
 - A scenario reaches a loop one of two ways: a `.fakeclaude` file in a bare
   loop's workspace, or the `FAKECLAUDE_SCRIPT` secret, which the engine injects
   into every exec. The secret is the only route into a contained loop, whose

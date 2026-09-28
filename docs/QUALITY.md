@@ -194,6 +194,14 @@ workflow and not in its `paths:`.
   description; a dev-only dependency is argued there without one, after the
   same interview (CONVENTIONS.md "Dependencies").
 - Envelope/prompt format changes are `feat` and update the tier-2 fixtures.
+- **fakeclaude fidelity** (ADR-0009, #168): `cmd/fakeclaude/FIDELITY.md`
+  lists every CLI behaviour the fake models, each marked verified (the real
+  build, the date, where it was observed), partly, or assumed. A PR that adds
+  or changes a fake behaviour adds or updates its line. A PR whose engine
+  change rests on an assumed or partly line runs the tier-3 check first, after
+  asking, because it spends the operator's plan tokens. A green tier-2 row is
+  only as strict as the fake, and #162 had two rows green on a behaviour the
+  real CLI does not have.
 - Loop-authored PRs stay under ~400 changed lines; bigger work is split.
 - Behavior changes update the relevant living doc in the same PR.
 
