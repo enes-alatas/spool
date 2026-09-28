@@ -72,7 +72,8 @@ export interface LoopView {
   workstation_detail?: string
   // Why the workstation is down: '' while it is up, 'powered_off' when the
   // operator switched it off, 'not_provisioned' before a wake has built it,
-  // 'unauthenticated' when there is no Claude token to run under, and
+  // 'unauthenticated' when there is no usable Claude login to run under
+  // (none is configured, or the API refused the one in use), and
   // 'unreachable' when it should be running and isn't.
   down_reason: '' | 'powered_off' | 'not_provisioned' | 'unauthenticated' | 'unreachable'
   // The allowlisted Telegram sender this loop may message privately, and the
