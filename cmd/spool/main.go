@@ -316,7 +316,7 @@ func main() {
 	bridge := telegram.NewBridge(rdb, pubsub, router, log, *telegramAPI)
 	bridge.SetBindSettle(time.Duration(*bindSettleSec) * time.Second)
 	bridge.Start(ctx)
-	slackSurface := slack.New(log, *slackAPI)
+	slackSurface := slack.New(rdb, log, *slackAPI)
 	slackSurface.Start(ctx)
 
 	api := &httpapi.Server{
