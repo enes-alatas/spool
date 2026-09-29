@@ -215,6 +215,34 @@ func (loopRecord *Loop) Surface() string {
 	return ""
 }
 
+// OwnerConfigured reports whether the loop has an owner on its own surface.
+// Every loop carries the hub's default Telegram owner once a Telegram sender
+// is allowed, whatever it is attached to, so a Slack loop's owner is only
+// ever its Slack one.
+func (loopRecord *Loop) OwnerConfigured() bool {
+	switch loopRecord.Surface() {
+	case SurfaceTelegram:
+		return loopRecord.OwnerTGUserID != 0
+	case SurfaceSlack:
+		return loopRecord.OwnerSlackUserID != ""
+	}
+	return false
+}
+
+// OwnerDMReady reports whether the loop can write to its owner privately
+// now. On Telegram that takes the owner's own first message, since a bot
+// cannot open a private chat; a Slack app opens the DM itself, so an owner
+// is enough.
+func (loopRecord *Loop) OwnerDMReady() bool {
+	switch loopRecord.Surface() {
+	case SurfaceTelegram:
+		return loopRecord.OwnerTGUserID != 0 && loopRecord.OwnerDMChatID != 0
+	case SurfaceSlack:
+		return loopRecord.OwnerSlackUserID != ""
+	}
+	return false
+}
+
 // LoopSecret is one per-loop secret env var: a name/value pair injected into
 // every workstation exec as a tool credential. Value is write-only — json:"-"
 // keeps it out of every API response, the same rule a loop's bot token follows.

@@ -538,7 +538,8 @@ func catalogOf(db store.Store, self *store.Loop) loop.Catalog {
 	if fresh, err := db.Loops().Get(ctx, self.ID); err == nil {
 		self = fresh
 	}
-	cat := loop.Catalog{BotUsername: self.TGBotUsername, Conversations: loop.ConversationsOf(self)}
+	cat := loop.Catalog{Conversations: loop.ConversationsOf(self), OwnerDMReady: self.OwnerDMReady()}
+	cat.BotUsername, _ = botOf(self)
 	loops, err := db.Loops().List(ctx)
 	if err != nil {
 		return cat
@@ -547,31 +548,57 @@ func catalogOf(db store.Store, self *store.Loop) loop.Catalog {
 		// a loop outside the fleet channel is reached by nobody's mention,
 		// so naming it would teach a mention that goes nowhere
 		if loopRecord.ID != self.ID && loopRecord.Status == store.StatusActive && !loopRecord.OutsideFleetChannel {
+			bot, onSurface := botOf(loopRecord)
 			cat.Peers = append(cat.Peers, loop.Peer{
-				Name: loopRecord.Name, Mission: loopRecord.Mission, BotUsername: loopRecord.TGBotUsername,
+				Name: loopRecord.Name, Mission: loopRecord.Mission, BotUsername: bot, Surface: onSurface,
 			})
 		}
 	}
-	senders, err := db.TGSenders().List(ctx)
-	if err != nil {
-		return cat
-	}
 	// oldest first, so the catalog reads in the order people joined and
 	// does not reshuffle between wakes
-	for i := len(senders) - 1; i >= 0; i-- {
-		sender := senders[i]
-		if sender.Status != store.SenderAllowed {
-			continue
+	if senders, err := db.TGSenders().List(ctx); err == nil {
+		for i := len(senders) - 1; i >= 0; i-- {
+			sender := senders[i]
+			if sender.Status != store.SenderAllowed {
+				continue
+			}
+			person := loop.Person{Username: sender.Username, Display: sender.Display, TGUserID: sender.TGUserID}
+			cat.People = append(cat.People, person)
+			// every loop carries the hub's default Telegram owner, so a
+			// Slack loop's owner is only ever read from its Slack senders
+			if sender.TGUserID == self.OwnerTGUserID && self.Surface() != store.SurfaceSlack {
+				owner := person
+				cat.Owner = &owner
+			}
 		}
-		person := loop.Person{Username: sender.Username, Display: sender.Display, TGUserID: sender.TGUserID}
-		cat.People = append(cat.People, person)
-		if sender.TGUserID == self.OwnerTGUserID {
-			owner := person
-			cat.Owner = &owner
-			cat.OwnerDMReady = self.OwnerDMChatID != 0
+	}
+	if senders, err := db.SlackSenders().List(ctx); err == nil {
+		for i := len(senders) - 1; i >= 0; i-- {
+			sender := senders[i]
+			if sender.Status != store.SenderAllowed {
+				continue
+			}
+			person := loop.Person{Username: sender.Username, Display: sender.Display, SlackUserID: sender.SlackUserID}
+			cat.People = append(cat.People, person)
+			if sender.SlackUserID == self.OwnerSlackUserID && self.Surface() == store.SurfaceSlack {
+				owner := person
+				cat.Owner = &owner
+			}
 		}
 	}
 	return cat
+}
+
+// botOf names the bot a loop posts as and the surface it posts on, or two
+// empty strings for a loop with none.
+func botOf(loopRecord *store.Loop) (bot, onSurface string) {
+	switch loopRecord.Surface() {
+	case store.SurfaceTelegram:
+		return loopRecord.TGBotUsername, store.SurfaceTelegram
+	case store.SurfaceSlack:
+		return loopRecord.SlackBotName, store.SurfaceSlack
+	}
+	return "", ""
 }
 
 // rulesOf reads the fleet rules fresh for each prompt build, so an edit in
