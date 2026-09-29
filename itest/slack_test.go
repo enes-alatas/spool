@@ -3,6 +3,7 @@
 package itest
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
@@ -11,17 +12,30 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
+
+	"github.com/coder/websocket"
 )
 
-// fakeSlack stands in for the Slack Web API, in the spirit of fakeclaude
-// (ADR-0009): enough of it for the paths under test, with synthetic tokens.
-// Socket Mode is not here yet; it arrives with the slice that connects.
+// fakeSlack stands in for Slack, in the spirit of fakeclaude (ADR-0009):
+// enough of the Web API and of Socket Mode for the paths under test, with
+// synthetic tokens. apps.connections.open hands out a URL on this same
+// server, where each app's Socket Mode connection lands.
 type fakeSlack struct {
 	srv *httptest.Server
 
-	mu   sync.Mutex
-	bots map[string]slackBot // by bot token
-	apps map[string]bool     // app-level tokens that open a connection
+	mu    sync.Mutex
+	bots  map[string]slackBot // by bot token
+	apps  map[string]bool     // app-level tokens that open a connection
+	opens map[string]int      // apps.connections.open calls answered, by app token
+	live  map[string]*fakeSocket
+	acks  map[string][]string // envelope ids acknowledged, by app token
+}
+
+// fakeSocket is one app's live Socket Mode connection.
+type fakeSocket struct {
+	conn   *websocket.Conn
+	closed chan struct{}
 }
 
 type slackBot struct {
@@ -30,7 +44,8 @@ type slackBot struct {
 
 func startFakeSlack(t *testing.T) *fakeSlack {
 	t.Helper()
-	slack := &fakeSlack{bots: map[string]slackBot{}, apps: map[string]bool{}}
+	slack := &fakeSlack{bots: map[string]slackBot{}, apps: map[string]bool{},
+		opens: map[string]int{}, live: map[string]*fakeSocket{}, acks: map[string][]string{}}
 	slack.srv = httptest.NewServer(http.HandlerFunc(slack.handle))
 	t.Cleanup(slack.srv.Close)
 	return slack
@@ -46,6 +61,10 @@ func (slack *fakeSlack) addApp(botToken, appToken string, bot slackBot) {
 }
 
 func (slack *fakeSlack) handle(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/link" {
+		slack.serveSocket(w, r)
+		return
+	}
 	slack.mu.Lock()
 	defer slack.mu.Unlock()
 	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
@@ -59,13 +78,120 @@ func (slack *fakeSlack) handle(w http.ResponseWriter, r *http.Request) {
 	case "/apps.connections.open":
 		switch {
 		case slack.apps[token]:
-			answer = map[string]any{"ok": true, "url": "wss://example.invalid/link"}
+			slack.opens[token]++
+			answer = map[string]any{"ok": true,
+				"url": "ws" + strings.TrimPrefix(slack.srv.URL, "http") + "/link?app=" + token}
 		case strings.HasPrefix(token, "xoxb-"):
 			answer = map[string]any{"ok": false, "error": "not_allowed_token_type"}
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(answer)
+}
+
+// serveSocket is one Socket Mode connection: hello first, then whatever the
+// test pushes, with every acknowledgement recorded.
+func (slack *fakeSlack) serveSocket(w http.ResponseWriter, r *http.Request) {
+	app := r.URL.Query().Get("app")
+	conn, err := websocket.Accept(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer conn.CloseNow()
+	socket := &fakeSocket{conn: conn, closed: make(chan struct{})}
+	defer close(socket.closed)
+	hello, _ := json.Marshal(map[string]any{"type": "hello", "num_connections": 1,
+		"debug_info": map[string]any{"approximate_connection_time": 18060}})
+	if conn.Write(r.Context(), websocket.MessageText, hello) != nil {
+		return
+	}
+	slack.mu.Lock()
+	slack.live[app] = socket
+	slack.mu.Unlock()
+	defer func() {
+		slack.mu.Lock()
+		if slack.live[app] == socket {
+			delete(slack.live, app)
+		}
+		slack.mu.Unlock()
+	}()
+	for {
+		_, data, err := conn.Read(r.Context())
+		if err != nil {
+			return
+		}
+		var ack struct {
+			EnvelopeID string `json:"envelope_id"`
+		}
+		if json.Unmarshal(data, &ack) == nil && ack.EnvelopeID != "" {
+			slack.mu.Lock()
+			slack.acks[app] = append(slack.acks[app], ack.EnvelopeID)
+			slack.mu.Unlock()
+		}
+	}
+}
+
+// socket waits for app's live connection.
+func (slack *fakeSlack) socket(t *testing.T, app string) *fakeSocket {
+	t.Helper()
+	for deadline := time.Now().Add(15 * time.Second); time.Now().Before(deadline); {
+		slack.mu.Lock()
+		socket := slack.live[app]
+		slack.mu.Unlock()
+		if socket != nil {
+			return socket
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("app %s never connected over Socket Mode", app)
+	return nil
+}
+
+// push sends one frame down app's live connection.
+func (slack *fakeSlack) push(t *testing.T, app string, msg map[string]any) *fakeSocket {
+	t.Helper()
+	socket := slack.socket(t, app)
+	data, _ := json.Marshal(msg)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := socket.conn.Write(ctx, websocket.MessageText, data); err != nil {
+		t.Fatalf("push to %s: %v", app, err)
+	}
+	return socket
+}
+
+// pushEnvelope sends an events_api envelope with a message event in it.
+func (slack *fakeSlack) pushEnvelope(t *testing.T, app, envelopeID string) {
+	t.Helper()
+	slack.push(t, app, map[string]any{"type": "events_api", "envelope_id": envelopeID,
+		"accepts_response_payload": false,
+		"payload": map[string]any{"type": "event_callback",
+			"event": map[string]any{"type": "message", "channel": "C0FLEET", "user": "U0HUMAN",
+				"text": "hello", "ts": "1727600000.000100"}}})
+}
+
+// waitAck blocks until app has acknowledged envelopeID.
+func (slack *fakeSlack) waitAck(t *testing.T, app, envelopeID string) {
+	t.Helper()
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); {
+		slack.mu.Lock()
+		acks := append([]string(nil), slack.acks[app]...)
+		slack.mu.Unlock()
+		for _, id := range acks {
+			if id == envelopeID {
+				return
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("app %s never acknowledged envelope %s", app, envelopeID)
+}
+
+// opened is how many Socket Mode URLs app has been handed.
+func (slack *fakeSlack) opened(app string) int {
+	slack.mu.Lock()
+	defer slack.mu.Unlock()
+	return slack.opens[app]
 }
 
 func startSlackServer(t *testing.T, slack *fakeSlack) *server {
@@ -91,7 +217,10 @@ type slackStatus struct {
 	TeamName   string `json:"team_name"`
 	ChannelID  string `json:"channel_id"`
 	Bridge     struct {
-		Connected bool `json:"connected"`
+		Connected     bool   `json:"connected"`
+		LastEventAt   int64  `json:"last_event_at"`
+		LastError     string `json:"last_error"`
+		IgnoredEvents int    `json:"ignored_events"`
 	} `json:"bridge"`
 }
 
@@ -137,9 +266,7 @@ func TestSlackAppAttachesAndDetaches(t *testing.T) {
 		status.TeamID != "T0ACME" || status.TeamName != "Acme" || status.ChannelID != "" {
 		t.Errorf("status = %+v", status)
 	}
-	if status.Bridge.Connected {
-		t.Error("the status claims a connection, and nothing connects to Slack yet")
-	}
+	srv.waitSlackLink("terra", func(link slackStatus) bool { return link.Bridge.Connected })
 
 	srv.mustJSON("PATCH", "/api/loops/terra", slackPair("", ""), nil)
 	var detached surfaceView
@@ -329,5 +456,99 @@ func TestSlackOwnerFollowsTheWorkspace(t *testing.T) {
 	ownerAfter(slackPair("", ""))
 	if got := ownerAfter(slackPair(slackOtherAppToken, slackOtherBotToken)); got != "" {
 		t.Fatalf("an app from another workspace kept owner %q", got)
+	}
+}
+
+// waitSlackLink polls a loop's Slack status until pred holds.
+func (s *server) waitSlackLink(name string, pred func(slackStatus) bool) slackStatus {
+	s.t.Helper()
+	var status slackStatus
+	for deadline := time.Now().Add(15 * time.Second); time.Now().Before(deadline); {
+		s.mustJSON("GET", "/api/loops/"+name+"/slack/status", nil, &status)
+		if pred(status) {
+			return status
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	s.t.Fatalf("%s's Slack link never got there: %+v", name, status)
+	return status
+}
+
+// A loop with a Slack app holds a Socket Mode connection (#230) and keeps
+// it: every envelope is acknowledged, or Slack would deliver it again and
+// wake the loop twice for one message; a refresh Slack asks for is taken
+// at once; a connection the server drops without a disconnect is dialled
+// again; and detaching the app closes it. A connection that dies silently,
+// which only the ping notices, is tier 1's (TestUnansweredPingDropsTheLink).
+func TestSlackSocketModeLinkIsKept(t *testing.T) {
+	t.Parallel()
+	slack := startFakeSlack(t)
+	slack.addApp(slackBotToken, slackAppToken, terraBot)
+	srv := startSlackServer(t, slack)
+	srv.createLoop("terra", slackPair(slackAppToken, slackBotToken))
+	srv.waitSlackLink("terra", func(link slackStatus) bool { return link.Bridge.Connected })
+
+	slack.pushEnvelope(t, slackAppToken, "env-1")
+	slack.waitAck(t, slackAppToken, "env-1")
+	// Nothing is ingested before the next slice; the envelope is counted
+	// as heard and set aside, and the status says so.
+	status := srv.waitSlackLink("terra", func(link slackStatus) bool { return link.Bridge.IgnoredEvents == 1 })
+	if status.Bridge.LastEventAt == 0 {
+		t.Errorf("an acknowledged envelope left last_event_at unset: %+v", status.Bridge)
+	}
+
+	// Validating the app at attach asked for a URL too, so count from here.
+	before := slack.opened(slackAppToken)
+	first := slack.push(t, slackAppToken, map[string]any{"type": "disconnect", "reason": "refresh_requested"})
+	<-first.closed
+	slack.pushEnvelope(t, slackAppToken, "env-2")
+	slack.waitAck(t, slackAppToken, "env-2")
+	if n := slack.opened(slackAppToken) - before; n != 1 {
+		t.Fatalf("a refresh took %d connection URLs, want 1", n)
+	}
+
+	// The server drops the connection without a disconnect frame.
+	dead := slack.socket(t, slackAppToken)
+	dead.conn.CloseNow()
+	<-dead.closed
+	slack.pushEnvelope(t, slackAppToken, "env-3")
+	slack.waitAck(t, slackAppToken, "env-3")
+
+	last := slack.socket(t, slackAppToken)
+	srv.mustJSON("PATCH", "/api/loops/terra", slackPair("", ""), nil)
+	select {
+	case <-last.closed:
+	case <-time.After(10 * time.Second):
+		t.Fatal("detaching the app left its Socket Mode connection open")
+	}
+	srv.waitSlackLink("terra", func(link slackStatus) bool { return !link.Bridge.Connected })
+}
+
+// Slack disables an app's Socket Mode with a disconnect that says so, and
+// says nothing when the operator turns it back on. So the link goes down,
+// says why and what brings it back, and checks again only at the longest
+// backoff, minutes away, rather than dialling at once. That the check finds
+// it re-enabled is tier 1's (TestDisabledLinkComesBackWhenReenabled): a
+// five-minute wait has no place here.
+func TestSlackDisabledLinkWaitsToBeReenabled(t *testing.T) {
+	t.Parallel()
+	slack := startFakeSlack(t)
+	slack.addApp(slackBotToken, slackAppToken, terraBot)
+	srv := startSlackServer(t, slack)
+	srv.createLoop("terra", slackPair(slackAppToken, slackBotToken))
+	srv.waitSlackLink("terra", func(link slackStatus) bool { return link.Bridge.Connected })
+
+	before := slack.opened(slackAppToken)
+	socket := slack.push(t, slackAppToken, map[string]any{"type": "disconnect", "reason": "link_disabled"})
+	<-socket.closed
+	status := srv.waitSlackLink("terra", func(link slackStatus) bool { return !link.Bridge.Connected })
+	for _, want := range []string{"disabled Socket Mode", "Turn it back on"} {
+		if !strings.Contains(status.Bridge.LastError, want) {
+			t.Errorf("last_error = %q, want it to carry %q", status.Bridge.LastError, want)
+		}
+	}
+	time.Sleep(3 * time.Second)
+	if n := slack.opened(slackAppToken) - before; n != 0 {
+		t.Fatalf("a disabled link asked for %d more connection URLs within 3s, want none", n)
 	}
 }

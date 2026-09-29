@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/coder/websocket"
+
 	"github.com/enes-alatas/spool/internal/surface"
 )
 
@@ -43,7 +45,7 @@ func standIn(t *testing.T, rateLimited bool) *Adapter {
 		_ = json.NewEncoder(w).Encode(answer)
 	}))
 	t.Cleanup(srv.Close)
-	return New(slog.New(slog.NewTextHandler(io.Discard, nil)), srv.URL)
+	return New(nil, slog.New(slog.NewTextHandler(io.Discard, nil)), srv.URL)
 }
 
 // Both tokens are judged before either is stored, and a refusal names the
@@ -86,5 +88,22 @@ func TestValidateCredentialRateLimitedIsNoVerdict(t *testing.T) {
 	}
 	if part := surface.RejectedPart(err); part != "" {
 		t.Errorf("rate limiting read as a refusal of %q", part)
+	}
+}
+
+// A Socket Mode URL carries a ticket that opens the app's connection, and a
+// failed dial's error is logged and shown in the control room. The error
+// says what failed, not where it was going.
+func TestDialErrorLeavesOutTheURL(t *testing.T) {
+	const ticket = "synthetic-ticket-7f3a"
+	_, _, err := websocket.Dial(context.Background(), "ws://127.0.0.1:1/link?ticket="+ticket, nil)
+	if err == nil {
+		t.Fatal("dialling a closed port succeeded")
+	}
+	if !strings.Contains(err.Error(), ticket) {
+		t.Fatalf("the library's own error no longer carries the URL, so this test proves nothing: %v", err)
+	}
+	if got := withoutURL(err).Error(); strings.Contains(got, ticket) || strings.Contains(got, "127.0.0.1:1/link") {
+		t.Fatalf("withoutURL kept the URL: %s", got)
 	}
 }
