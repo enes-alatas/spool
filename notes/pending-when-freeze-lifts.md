@@ -118,3 +118,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 06:30: #230 had been closed by #396's closing reference on 27th (slice 3 unbuilt); reopened. Merged overnight: #416 (#405), #417, #421 (#419). #422 (#418) approved 21:47, awaiting Enes. Terra → #230 slice 3 now. Runtime v0.2.0-133; rebuild warranted (416/421 touch internal/).
 - 06:55: Terra opened #423 (#230 slice 3). Quinn filed #424 (high: operator native reply to a loop group post delivered to nobody) → Terra after #423, before #420. Lost send ref:2270 moot.
 - 07:00: #230 slice 3 is now 3a (#423, Socket Mode), 3b inbound, 3c outbound; 3c closes. #424 sits after #423's approval, before 3b. Retracted a wrong body-check on #423.
+- 08:45: Enes: runtime dropdown 'frozen' on local hub = docker-default without --allow-bare (ADR-0017), select disabled with one choice. Answered; filed #426 (signpost the lock) → Iris.
