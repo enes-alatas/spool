@@ -77,7 +77,7 @@ type link struct {
 	connected   bool
 	lastEventAt int64 // unix ms of the last envelope, 0 = none yet
 	lastError   string
-	ignored     int // envelopes acknowledged and not ingested
+	ignored     int // messages from channels other than the one it hears
 }
 
 // status is the link as the control room renders it (#230).
@@ -108,12 +108,17 @@ func (link *link) down(reason string) {
 	}
 }
 
-// received counts an envelope. Nothing is ingested yet (#230's next
-// slice), so every one is counted as ignored.
+// received notes that an envelope arrived.
 func (link *link) received() {
 	link.mu.Lock()
 	defer link.mu.Unlock()
 	link.lastEventAt = time.Now().UnixMilli()
+}
+
+// ignore counts a message from a channel the loop's app does not hear.
+func (link *link) ignore() {
+	link.mu.Lock()
+	defer link.mu.Unlock()
 	link.ignored++
 }
 
@@ -122,9 +127,22 @@ func (link *link) received() {
 const linkDisabled = "Slack disabled Socket Mode for this app. Turn it back on in the app's settings; " +
 	"the link checks every few minutes and reconnects once it is on"
 
-// run keeps the link connected until ctx ends.
+// run keeps the link connected until ctx ends. What its connections hear
+// is ingested in order by one goroutine, which outlives each connection
+// and finishes before the link counts as closed: a detached app must not
+// still be delivering.
 func (adapter *Adapter) run(ctx context.Context, link *link) {
 	defer close(link.done)
+	payloads := make(chan json.RawMessage, events)
+	ingested := make(chan struct{})
+	go func() {
+		defer close(ingested)
+		adapter.ingestLoop(ctx, link, payloads)
+	}()
+	defer func() {
+		close(payloads)
+		<-ingested
+	}()
 	timing := adapter.timing
 	backoff := time.Duration(0)
 	disabled := false
@@ -138,7 +156,7 @@ func (adapter *Adapter) run(ctx context.Context, link *link) {
 			case <-timer.C:
 			}
 		}
-		reachedHello, reason, err := adapter.connect(ctx, link, timing)
+		reachedHello, reason, err := adapter.connect(ctx, link, timing, payloads)
 		if ctx.Err() != nil {
 			link.down("")
 			return
@@ -177,7 +195,7 @@ func (adapter *Adapter) run(ctx context.Context, link *link) {
 // connect runs one Socket Mode connection to its end. It returns whether
 // Slack said hello on it, and either the reason Slack gave for closing it
 // or the error that ended it.
-func (adapter *Adapter) connect(ctx context.Context, link *link, timing linkTiming) (reachedHello bool, reason string, err error) {
+func (adapter *Adapter) connect(ctx context.Context, link *link, timing linkTiming, payloads chan<- json.RawMessage) (reachedHello bool, reason string, err error) {
 	socketURL, err := adapter.client.OpenConnection(ctx, link.credential)
 	if err != nil {
 		return false, "", err
@@ -211,6 +229,15 @@ func (adapter *Adapter) connect(ctx context.Context, link *link, timing linkTimi
 				return reachedHello, "", fmt.Errorf("slack socket mode: ack: %w", err)
 			}
 			link.received()
+			if msg.Type == "events_api" {
+				// A full queue holds the read up rather than drop a
+				// message it has acknowledged.
+				select {
+				case payloads <- msg.Payload:
+				case <-connCtx.Done():
+					return reachedHello, "", connCtx.Err()
+				}
+			}
 			continue
 		}
 		switch msg.Type {

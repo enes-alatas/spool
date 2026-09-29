@@ -75,6 +75,12 @@ func (slack *fakeSlack) handle(w http.ResponseWriter, r *http.Request) {
 			answer = map[string]any{"ok": true, "user_id": bot.UserID, "user": bot.Name,
 				"team_id": bot.TeamID, "team": bot.TeamName, "bot_id": "B" + bot.UserID}
 		}
+	case "/users.info":
+		if _, ok := slack.bots[token]; ok {
+			userID := r.FormValue("user")
+			answer = map[string]any{"ok": true, "user": map[string]any{"id": userID, "team_id": "T0ACME",
+				"name": strings.ToLower(userID), "profile": map[string]any{"display_name": userID}}}
+		}
 	case "/apps.connections.open":
 		switch {
 		case slack.apps[token]:
@@ -168,6 +174,17 @@ func (slack *fakeSlack) pushEnvelope(t *testing.T, app, envelopeID string) {
 		"payload": map[string]any{"type": "event_callback",
 			"event": map[string]any{"type": "message", "channel": "C0FLEET", "user": "U0HUMAN",
 				"text": "hello", "ts": "1727600000.000100"}}})
+}
+
+// pushMessage sends a message event down app's connection, as Slack does
+// for message.channels (channelType "channel") and message.im ("im").
+func (slack *fakeSlack) pushMessage(t *testing.T, app, channelType, channel, user, text, ts string) {
+	t.Helper()
+	slack.push(t, app, map[string]any{"type": "events_api", "envelope_id": app + ":" + channel + ":" + ts,
+		"accepts_response_payload": false,
+		"payload": map[string]any{"type": "event_callback", "team_id": "T0ACME",
+			"event": map[string]any{"type": "message", "channel_type": channelType, "channel": channel,
+				"user": user, "text": text, "ts": ts}}})
 }
 
 // waitAck blocks until app has acknowledged envelopeID.
@@ -490,12 +507,7 @@ func TestSlackSocketModeLinkIsKept(t *testing.T) {
 
 	slack.pushEnvelope(t, slackAppToken, "env-1")
 	slack.waitAck(t, slackAppToken, "env-1")
-	// Nothing is ingested before the next slice; the envelope is counted
-	// as heard and set aside, and the status says so.
-	status := srv.waitSlackLink("terra", func(link slackStatus) bool { return link.Bridge.IgnoredEvents == 1 })
-	if status.Bridge.LastEventAt == 0 {
-		t.Errorf("an acknowledged envelope left last_event_at unset: %+v", status.Bridge)
-	}
+	srv.waitSlackLink("terra", func(link slackStatus) bool { return link.Bridge.LastEventAt != 0 })
 
 	// Validating the app at attach asked for a URL too, so count from here.
 	before := slack.opened(slackAppToken)

@@ -2,10 +2,10 @@
 // #230): one Slack app per loop, reached over Socket Mode so a hub needs no
 // public URL.
 //
-// It validates an app's tokens, so a loop can be given one, and keeps each
-// such loop's Socket Mode connection up. Ingest and mirrors are the next
-// slices of #230: until they land, what arrives is acknowledged and counted,
-// and Status says so.
+// It validates an app's tokens, so a loop can be given one, keeps each such
+// loop's Socket Mode connection up, and hands the router what a human says
+// to the app. Posting, the mirrors and thread replies, is #230's next
+// slice.
 package slack
 
 import (
@@ -14,12 +14,16 @@ import (
 	"log/slog"
 	"sync"
 
+	"github.com/enes-alatas/spool/internal/bus"
+	"github.com/enes-alatas/spool/internal/route"
 	"github.com/enes-alatas/spool/internal/store"
 	"github.com/enes-alatas/spool/internal/surface"
 )
 
 type Adapter struct {
 	store  store.Store
+	bus    *bus.Bus
+	router *route.Router
 	client *Client
 	log    *slog.Logger
 	timing linkTiming
@@ -36,8 +40,9 @@ type Adapter struct {
 
 // New returns the Slack surface talking to the Web API at apiBase, APIBase
 // in production.
-func New(st store.Store, log *slog.Logger, apiBase string) *Adapter {
-	return &Adapter{store: st, client: NewClientAt(apiBase), log: log, timing: defaultLinkTiming, links: map[string]*link{}}
+func New(st store.Store, publisher *bus.Bus, router *route.Router, log *slog.Logger, apiBase string) *Adapter {
+	return &Adapter{store: st, bus: publisher, router: router, client: NewClientAt(apiBase), log: log,
+		timing: defaultLinkTiming, links: map[string]*link{}}
 }
 
 var _ surface.Surface = (*Adapter)(nil)

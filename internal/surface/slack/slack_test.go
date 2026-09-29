@@ -45,7 +45,7 @@ func standIn(t *testing.T, rateLimited bool) *Adapter {
 		_ = json.NewEncoder(w).Encode(answer)
 	}))
 	t.Cleanup(srv.Close)
-	return New(nil, slog.New(slog.NewTextHandler(io.Discard, nil)), srv.URL)
+	return New(nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), srv.URL)
 }
 
 // Both tokens are judged before either is stored, and a refusal names the

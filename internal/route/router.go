@@ -75,6 +75,10 @@ type InboundMessage struct {
 	// TGKey joins this message to the sightings other bots recorded of it,
 	// which is how a bot that did not ingest it can still reply natively.
 	TGKey string
+	// SlackChannelID and SlackTS are a Slack message's identity (slack
+	// origins), the same for every loop's app that heard it.
+	SlackChannelID string
+	SlackTS        string
 	// ReplyToID is the message a native reply points at (0 = not a reply).
 	// The surface adapter resolves it; the router never infers one.
 	ReplyToID int64
@@ -141,7 +145,7 @@ func Mentions(text string) []string {
 
 // conversationFor resolves the conversation a message belongs to (ADR-0026).
 // An explicit destination — the web composer's picker — wins; otherwise it
-// derives from the origin: a DM to a loop's bot is that loop's owner_dm, the
+// derives from the origin: a DM to a loop's bot or app is that loop's owner_dm, the
 // per-loop web composer is its control_room, and everything else — group
 // traffic and loop replies — is the shared group.
 func conversationFor(in InboundMessage) (kind, loopID string) {
@@ -150,7 +154,7 @@ func conversationFor(in InboundMessage) (kind, loopID string) {
 		return store.ConversationGroup, ""
 	case in.Conversation != "":
 		return in.Conversation, in.ImplicitTo
-	case in.Origin == store.OriginTelegramDM:
+	case in.Origin == store.OriginTelegramDM, in.Origin == store.OriginSlackDM:
 		return store.ConversationOwnerDM, in.ImplicitTo
 	case in.Origin == store.OriginWeb && in.ImplicitTo != "":
 		return store.ConversationControlRoom, in.ImplicitTo
@@ -160,7 +164,8 @@ func conversationFor(in InboundMessage) (kind, loopID string) {
 }
 
 // Ingest persists and routes one message. Returns store.ErrDuplicate when
-// the same bot's poller re-reads a telegram message it already ingested.
+// the same bot's poller re-reads a telegram message it already ingested, or
+// when another loop's Slack app already stored a message this one heard.
 func (router *Router) Ingest(ctx context.Context, in InboundMessage) error {
 	mentions := Mentions(in.Text)
 	conv, convLoopID := conversationFor(in)
@@ -176,6 +181,9 @@ func (router *Router) Ingest(ctx context.Context, in InboundMessage) error {
 		TGBotLoopID: in.TGBotLoopID,
 		TGKey:       in.TGKey,
 		ReplyToID:   in.ReplyToID,
+
+		SlackChannelID: in.SlackChannelID,
+		SlackTS:        in.SlackTS,
 
 		Conversation:       conv,
 		ConversationLoopID: convLoopID,
@@ -272,9 +280,9 @@ func (router *Router) Ingest(ctx context.Context, in InboundMessage) error {
 	}})
 
 	// The guard cannot fire here while no caller sets FromLoopID: every
-	// Ingest today is human-origin (the telegram bridge and the web
-	// composer), and a loop's own message is written by Send, which
-	// guards and delivers it directly. Which is why delivered_to above
+	// Ingest today is human-origin (the surfaces and the web composer),
+	// and a loop's own message is written by Send, which guards and
+	// delivers it directly. Which is why delivered_to above
 	// is assembled from the targets and is still the truth — if a
 	// loop-origin ingest path ever appears, that stops being so (#143).
 	nowT := time.Now()
@@ -345,7 +353,7 @@ func (router *Router) DeliverAdoptedReply(ctx context.Context, msg *store.Messag
 // the hub (ADR-0032).
 func inboundMirror(origin string) string {
 	switch origin {
-	case store.OriginTelegramGroup, store.OriginTelegramDM:
+	case store.OriginTelegramGroup, store.OriginTelegramDM, store.OriginSlackChannel, store.OriginSlackDM:
 		return store.MirrorMirrored
 	default:
 		return store.MirrorNotMirrored
