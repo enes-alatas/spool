@@ -6,7 +6,6 @@ package telegram
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -705,7 +704,7 @@ func (br *Bridge) senderAllowed(ctx context.Context, bot *poller, message *tgMsg
 			Username:     message.From.Username,
 			Display:      strings.TrimSpace(message.From.FirstName),
 			Status:       store.SenderPending,
-			PairCode:     pairCode(),
+			PairCode:     surface.PairCode(),
 			FirstSeenVia: via,
 			CreatedAt:    now,
 			UpdatedAt:    now,
@@ -765,19 +764,6 @@ func (br *Bridge) logTurnedAway(bot *poller, message *tgMsgAlias, author, reason
 	br.log.Info("telegram inbound discarded", "loop", bot.name, "reason", reason,
 		"author", author, "chat_type", message.Chat.Type, "chat_id", message.Chat.ID,
 		"message_id", message.MessageID)
-}
-
-const pairAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-
-func pairCode() string {
-	var code [6]byte
-	if _, err := rand.Read(code[:]); err != nil {
-		return "ERRTRY"
-	}
-	for i := range code {
-		code[i] = pairAlphabet[int(code[i])%len(pairAlphabet)]
-	}
-	return string(code[:])
 }
 
 func (br *Bridge) maybeBindGroup(ctx context.Context, bot *poller, chatID int64) {
