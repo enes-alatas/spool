@@ -165,7 +165,8 @@ audience.
 The Surface seam is live: `internal/surface` owns the interface,
 `internal/surface/telegram` is the bridge behind it, and `internal/surface/slack`
 is the second adapter. Slack keeps each loop's app connected over Socket Mode
-(ADR-0034); its ingest and mirrors are #230's remaining slices. Only the
+(ADR-0034) and hands the router what humans say to it; its mirrors are #230's
+remaining slice. Only the
 hub-to-surface direction crosses it — inbound goes to the router and outbound
 comes off the bus, like any other caller. ADR-0029 records the contract and
 which of ADR-0020's, ADR-0025's and ADR-0026's rules every adapter owes. The

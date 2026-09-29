@@ -533,6 +533,10 @@ func MessageEnvelope(now time.Time, in Inbound) Envelope {
 		from = fmt.Sprintf("message from @%s via telegram · group", in.Author)
 	case in.Origin == store.OriginTelegramDM:
 		from = fmt.Sprintf("message from @%s via telegram dm · owner_dm", in.Author)
+	case in.Origin == store.OriginSlackChannel:
+		from = fmt.Sprintf("message from @%s via slack · group", in.Author)
+	case in.Origin == store.OriginSlackDM:
+		from = fmt.Sprintf("message from @%s via slack dm · owner_dm", in.Author)
 	case in.Conversation == store.ConversationControlRoom:
 		from = fmt.Sprintf("message from %s via web · control_room", in.Author)
 	default:

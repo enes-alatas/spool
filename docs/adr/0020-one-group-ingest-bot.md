@@ -1,6 +1,6 @@
 # ADR-0020: One bot ingests a group; every bot still delivers
 
-Date: 2026-08-20 · Status: accepted · Amended: 2026-09-17 (§1, settle margin); 2026-09-19 (§2, delivered_to); 2026-09-20 (§1–§3 are Surface rules); 2026-09-23 (§1 elects across the mirror, not into the group); 2026-09-29 (§2, a reply's target can come from another bot)
+Date: 2026-08-20 · Status: accepted · Amended: 2026-09-17 (§1, settle margin); 2026-09-19 (§2, delivered_to); 2026-09-20 (§1–§3 are Surface rules); 2026-09-23 (§1 elects across the mirror, not into the group); 2026-09-29 (§2, a reply's target can come from another bot); 2026-09-29 (§1 on Slack, the key elects)
 
 ## Context
 
@@ -66,6 +66,24 @@ three questions Milo had listed, of which this was the first.
    makes the *mirror* deaf rather than the fleet channel: the operator and the
    loops go on talking in the control room, and what is lost is the inbound
    half of one surface. The remedy is unchanged.
+
+   **Amendment (2026-09-29, #230): on Slack, the key is the election.** Slack
+   gives a message one `ts` per channel, not one per app, so every loop's
+   app in a channel sees the same `(channel, ts)` for the same message. That
+   is the room-global id §3's #198 amendment foresaw, and on Slack it does
+   the electing. `messages` is unique on the pair, every link that hears a
+   message tries to store it, and the first insert wins. The others get a
+   duplicate and stop before delivering anything, because the router
+   delivers only a row it has stored (§2).
+
+   Nothing here reads binding times or which links are up, so none of this
+   item's machinery has a Slack counterpart: no settle margin, no candidate
+   set, and no "lowest loop ID". Two consequences below are Telegram's
+   alone. A stalled link leaves no channel deaf, since any other link in the
+   channel stores the message. A newcomer cannot duplicate one either,
+   because the key is the same whoever inserts. What Slack still owes this
+   item is its reason: one post in the mirrored room becomes one hub
+   message.
 2. **Ingest is not delivery.** The router still fans a group message out to
    every mentioned loop, and `delivered_to` still lists all of them. Which
    bot's poller carried the bytes is transport detail and is not visible in

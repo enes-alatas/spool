@@ -122,3 +122,39 @@ func (client *Client) OpenConnection(ctx context.Context, appToken string) (stri
 	}
 	return result.URL, nil
 }
+
+// User is who users.info says a Slack user is. Name is their handle, which
+// Slack no longer shows but still keeps unique; DisplayName is what it
+// shows, and may be "".
+type User struct {
+	ID          string
+	TeamID      string
+	Name        string
+	DisplayName string
+}
+
+type usersInfo struct {
+	apiEnvelope
+	User struct {
+		ID      string `json:"id"`
+		TeamID  string `json:"team_id"`
+		Name    string `json:"name"`
+		Profile struct {
+			DisplayName string `json:"display_name"`
+			RealName    string `json:"real_name"`
+		} `json:"profile"`
+	} `json:"user"`
+}
+
+// UserInfo asks who userID is, as the bot token's app. It needs users:read.
+func (client *Client) UserInfo(ctx context.Context, botToken, userID string) (*User, error) {
+	var result usersInfo
+	if err := client.call(ctx, botToken, "users.info", url.Values{"user": {userID}}, &result); err != nil {
+		return nil, err
+	}
+	display := result.User.Profile.DisplayName
+	if display == "" {
+		display = result.User.Profile.RealName
+	}
+	return &User{ID: result.User.ID, TeamID: result.User.TeamID, Name: result.User.Name, DisplayName: display}, nil
+}

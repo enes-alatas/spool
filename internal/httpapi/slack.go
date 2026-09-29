@@ -121,8 +121,8 @@ func (server *Server) handleSlackStatus(w http.ResponseWriter, r *http.Request) 
 		"team_id":     loopRecord.SlackTeamID,
 		"team_name":   loopRecord.SlackTeamName,
 		"channel_id":  loopRecord.SlackChannelID,
-		// Named from conversations.info when the connection binds a
-		// channel, which the Socket Mode slice of #230 brings.
+		// Named from conversations.info once the app can call it, which
+		// #230's outbound slice brings.
 		"channel_name": "",
 	}
 	if slack := server.Surfaces[store.SurfaceSlack]; slack != nil {
