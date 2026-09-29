@@ -5,7 +5,9 @@ import {
   hubHasSlack,
   loopSurface,
   SLACK_ATTACH_CODES,
+  SLACK_UNBOUND_HINT,
   slackAttachError,
+  slackChannel,
   slackPairSubmittable,
   slackReadiness,
   slackReason,
@@ -166,5 +168,21 @@ describe('slackReadiness', () => {
     expect(slackReadiness({ owner_slack_user_id: 'U0SYNTH01', owner_dm_ready: false }, down)).toBe(
       'Waiting for the Slack app to connect before it can message U0SYNTH01.',
     )
+  })
+})
+
+describe('slackChannel', () => {
+  it('names the bound channel, or its id before the name is known', () => {
+    expect(slackChannel({ channel_id: 'C0FLEET', channel_name: 'fleet-room' })).toBe('#fleet-room')
+    expect(slackChannel({ channel_id: 'C0FLEET', channel_name: '' })).toBe('C0FLEET')
+  })
+
+  // #438: an invite does not bind the channel; an allowed sender's message
+  // does, and a pending sender's is dropped first.
+  it('says what binds an unbound channel, not that an invite does', () => {
+    expect(slackChannel({ channel_id: '', channel_name: '' })).toBe('not bound yet')
+    expect(SLACK_UNBOUND_HINT).toMatch(/allowed sender/)
+    expect(SLACK_UNBOUND_HINT).toMatch(/pending sender does not count/)
+    expect(SLACK_UNBOUND_HINT).not.toMatch(/invite the bot/)
   })
 })
