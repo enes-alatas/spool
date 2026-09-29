@@ -1,6 +1,6 @@
 # ADR-0011: Go for the core
 
-Date: 2026-08-16 · Status: accepted
+Date: 2026-08-16 · Status: accepted · Amended: 2026-09-29 (Consequences: Slack takes a third path, ADR-0034)
 
 ## Context
 
@@ -26,6 +26,8 @@ Go stays.
 
 - Slack (L3) uses the community `slack-go` or a hand-rolled Socket Mode client —
   argued in that PR (Slack's official SDKs are JS/Python).
+  **Amended 2026-09-29 (ADR-0034):** neither. Slack takes a third path, with
+  `coder/websocket` for the framing and the Socket Mode protocol written here.
 - The repo carries two languages regardless (TS for the control room, ADR-0012).
 - Accepted verbosity in exchange for the above. Revisit only if a requirement breaks
   one of the four pillars listed in the decision.
