@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"github.com/enes-alatas/spool/internal/route"
 )
 
 // Socket Mode (ADR-0034) is how a loop's app hears from Slack without a
@@ -72,6 +74,9 @@ type link struct {
 	credential string // the app-level token the link connects with
 	cancel     context.CancelFunc
 	done       chan struct{}
+	// sends is the loop's posts waiting their turn; one goroutine per
+	// link posts them in order.
+	sends chan *route.MessagePayload
 
 	mu          sync.Mutex
 	connected   bool
@@ -128,9 +133,10 @@ const linkDisabled = "Slack disabled Socket Mode for this app. Turn it back on i
 	"the link checks every few minutes and reconnects once it is on"
 
 // run keeps the link connected until ctx ends. What its connections hear
-// is ingested in order by one goroutine, which outlives each connection
-// and finishes before the link counts as closed: a detached app must not
-// still be delivering.
+// is ingested in order by one goroutine, and what the loop says is posted
+// by another. Both outlive each connection and finish before the link
+// counts as closed: a detached app must not still be delivering, and a
+// send it had queued must be failed, not lost.
 func (adapter *Adapter) run(ctx context.Context, link *link) {
 	defer close(link.done)
 	payloads := make(chan json.RawMessage, events)
@@ -143,6 +149,12 @@ func (adapter *Adapter) run(ctx context.Context, link *link) {
 		close(payloads)
 		<-ingested
 	}()
+	sent := make(chan struct{})
+	go func() {
+		defer close(sent)
+		adapter.sendLoop(ctx, link)
+	}()
+	defer func() { <-sent }()
 	timing := adapter.timing
 	backoff := time.Duration(0)
 	disabled := false

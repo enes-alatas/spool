@@ -158,3 +158,42 @@ func (client *Client) UserInfo(ctx context.Context, botToken, userID string) (*U
 	}
 	return &User{ID: result.User.ID, TeamID: result.User.TeamID, Name: result.User.Name, DisplayName: display}, nil
 }
+
+type posted struct {
+	apiEnvelope
+	Channel string `json:"channel"`
+	TS      string `json:"ts"`
+}
+
+// PostMessage posts text to channel as the bot token's app, in the thread
+// threadTS starts ("" = a top-level post), and returns the ts Slack gave
+// the post. Text is Slack mrkdwn: the caller escapes it.
+func (client *Client) PostMessage(ctx context.Context, botToken, channel, text, threadTS string) (string, error) {
+	params := url.Values{"channel": {channel}, "text": {text}}
+	if threadTS != "" {
+		params.Set("thread_ts", threadTS)
+	}
+	var result posted
+	if err := client.call(ctx, botToken, "chat.postMessage", params, &result); err != nil {
+		return "", err
+	}
+	return result.TS, nil
+}
+
+type opened struct {
+	apiEnvelope
+	Channel struct {
+		ID string `json:"id"`
+	} `json:"channel"`
+}
+
+// OpenDM returns the DM channel between the bot token's app and userID,
+// opening it if it is not open yet. It needs im:write. Unlike a Telegram
+// bot, a Slack app can write to someone first.
+func (client *Client) OpenDM(ctx context.Context, botToken, userID string) (string, error) {
+	var result opened
+	if err := client.call(ctx, botToken, "conversations.open", url.Values{"users": {userID}}, &result); err != nil {
+		return "", err
+	}
+	return result.Channel.ID, nil
+}

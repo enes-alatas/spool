@@ -686,6 +686,14 @@ func (table messages) BySlackTS(ctx context.Context, channelID, ts string) (*sto
 	return out[0], nil
 }
 
+func (table messages) SetSlackRef(ctx context.Context, id int64, channelID, ts string) error {
+	_, err := table.db.ExecContext(ctx, `UPDATE messages SET slack_channel_id=?, slack_ts=? WHERE id=?`, channelID, ts, id)
+	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
+		return store.ErrDuplicate
+	}
+	return err
+}
+
 func (table messages) PutRef(ctx context.Context, ref *store.SurfaceRef) error {
 	_, err := table.db.ExecContext(ctx, `INSERT INTO message_refs
 		(message_id, bot_loop_id, tg_chat_id, tg_message_id) VALUES (?,?,?,?)

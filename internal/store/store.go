@@ -667,6 +667,9 @@ type MessageStore interface {
 	// BySlackTS returns the message Slack knows as ts in channelID, or
 	// ErrNotFound.
 	BySlackTS(ctx context.Context, channelID, ts string) (*Message, error)
+	// SetSlackRef records the channel and ts Slack gave a message a loop's
+	// app posted, so a reply in its thread can be traced back to it.
+	SetSlackRef(ctx context.Context, id int64, channelID, ts string) error
 	// SetSendResult records how a surface send ended: an error and the time
 	// the bridge gave up, or empty and 0 when a later attempt got through.
 	// A message nobody tried to send carries neither (#147).

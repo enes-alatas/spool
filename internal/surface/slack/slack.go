@@ -3,9 +3,8 @@
 // public URL.
 //
 // It validates an app's tokens, so a loop can be given one, keeps each such
-// loop's Socket Mode connection up, and hands the router what a human says
-// to the app. Posting, the mirrors and thread replies, is #230's next
-// slice.
+// loop's Socket Mode connection up, hands the router what a human says to
+// the app, and posts what the loop says as the app.
 package slack
 
 import (
@@ -18,12 +17,14 @@ import (
 	"github.com/enes-alatas/spool/internal/route"
 	"github.com/enes-alatas/spool/internal/store"
 	"github.com/enes-alatas/spool/internal/surface"
+	"github.com/enes-alatas/spool/internal/surface/outbound"
 )
 
 type Adapter struct {
 	store  store.Store
 	bus    *bus.Bus
 	router *route.Router
+	ledger *outbound.Ledger
 	client *Client
 	log    *slog.Logger
 	timing linkTiming
@@ -42,16 +43,19 @@ type Adapter struct {
 // in production.
 func New(st store.Store, publisher *bus.Bus, router *route.Router, log *slog.Logger, apiBase string) *Adapter {
 	return &Adapter{store: st, bus: publisher, router: router, client: NewClientAt(apiBase), log: log,
+		ledger: &outbound.Ledger{Store: st, Bus: publisher, Log: log, Surface: "slack"},
 		timing: defaultLinkTiming, links: map[string]*link{}}
 }
 
 var _ surface.Surface = (*Adapter)(nil)
 
-// Start connects every loop that has a Slack app.
+// Start connects every loop that has a Slack app, and starts carrying their
+// sends.
 func (adapter *Adapter) Start(ctx context.Context) {
 	adapter.mu.Lock()
 	adapter.ctx = ctx
 	adapter.mu.Unlock()
+	go adapter.mirror(ctx)
 	loops, err := adapter.store.Loops().List(ctx)
 	if err != nil {
 		adapter.log.Error("slack: list loops", "err", err)
@@ -151,7 +155,8 @@ func (adapter *Adapter) startLink(loopRecord *store.Loop) {
 		return
 	}
 	ctx, cancel := context.WithCancel(adapter.ctx)
-	started := &link{loopID: loopRecord.ID, credential: loopRecord.SlackAppToken, cancel: cancel, done: make(chan struct{})}
+	started := &link{loopID: loopRecord.ID, credential: loopRecord.SlackAppToken, cancel: cancel, done: make(chan struct{}),
+		sends: make(chan *route.MessagePayload, sends)}
 	adapter.links[loopRecord.ID] = started
 	go adapter.run(ctx, started)
 }
