@@ -128,3 +128,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 15:05: Enes still busy, will get back on the docker-loop flow; no re-nudge needed, he owns the timing.
 - 15:10: Iris live check of Slack half passed on main 8608944 (stand-in Slack); #398 closed; #437, #438 (web copy) filed, Iris doing both in one PR.
 - 18:10: #436 (#420), #439 (#437/#438), #440 (#302) merged. No open PR. Terra → #441 then #4. Iris idle (nothing decided web-side; #123 attachments needs Enes's prompt/seam contract). Pending for Enes: docker-loop flow (#429), real-Slack check on his workspace then close epic #197, #123 contract.
+- 18:20: Terra blocked on two Enes calls: #441 Surface.Stop(ctx) seam change (my read yes), #442 SQLite synchronous=NORMAL for wake p95 551→55 ms (my read yes, durability trade). DM'd Enes with both. Terra → #253 meanwhile. Perf smoke (#4) written, waits on #442.
