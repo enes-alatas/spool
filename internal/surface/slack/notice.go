@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/enes-alatas/spool/internal/store"
+	"github.com/enes-alatas/spool/internal/surface"
 	"github.com/enes-alatas/spool/internal/surface/outbound"
 )
 
@@ -112,4 +113,55 @@ func (adapter *Adapter) tellNotOwner(loopRecord *store.Loop, event messageEvent)
 // escape makes text literal in Slack mrkdwn, where &, < and > are markup.
 func escape(text string) string {
 	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(text)
+}
+
+// loginOutage is one refused login as one Slack owner experiences it. The
+// host's login and the Settings setup-token fail independently, so an
+// owner with loops on both hears about each.
+type loginOutage struct {
+	owner     string
+	hostLogin bool
+}
+
+// noticeLogin tells a Slack loop's owner, in its app's DM with them, that
+// the Claude login was refused, and later that it works again (#419). One
+// login stops every loop that shares it, so only the first refusal an owner
+// hears of is told, and the all-clear goes out on the loop that told it.
+// The app opens the DM itself, so any loop with an owner can tell them.
+// What was told lasts for the hub's run: a hub restarted mid-outage tells
+// the owner once more, which is the better failure than silence. Only the
+// mirror goroutine calls it, so loginTold needs no lock.
+func (adapter *Adapter) noticeLogin(ctx context.Context, loginNotice *surface.LoginNotice) {
+	loopRecord, err := adapter.store.Loops().Get(ctx, loginNotice.LoopID)
+	if err != nil {
+		adapter.log.Warn("slack: read loop for login notice", "loop", loginNotice.LoopID, "err", err)
+		return
+	}
+	if loopRecord.Surface() != store.SurfaceSlack || loopRecord.OwnerSlackUserID == "" {
+		// not a Slack loop, or one with nobody to tell
+		return
+	}
+	outage := loginOutage{owner: loopRecord.OwnerSlackUserID, hostLogin: loginNotice.HostLogin}
+	teller, told := adapter.loginTold[outage]
+	if loginNotice.Refused == told {
+		// a refusal the owner already heard of, or a login working again
+		// that they never heard was refused
+		return
+	}
+	if !loginNotice.Refused {
+		delete(adapter.loginTold, outage)
+		adapter.sendLoginNotice(ctx, teller, outage.owner, loginNotice)
+		return
+	}
+	if adapter.sendLoginNotice(ctx, loopRecord.ID, outage.owner, loginNotice) {
+		adapter.loginTold[outage] = loopRecord.ID
+	}
+}
+
+// sendLoginNotice queues a login notice to owner on a loop's app and
+// records on the loop's timeline whether it was, reporting the same.
+func (adapter *Adapter) sendLoginNotice(ctx context.Context, loopID, owner string, loginNotice *surface.LoginNotice) bool {
+	unsent := adapter.notify(loopID, notice{user: owner, text: escape(loginNotice.Text())})
+	adapter.ledger.LoginNoticeEvent(ctx, loopID, loginNotice, unsent)
+	return unsent == ""
 }

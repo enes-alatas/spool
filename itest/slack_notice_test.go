@@ -3,6 +3,8 @@
 package itest
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -72,4 +74,65 @@ func countPosts(slack *fakeSlack, text string) int {
 		}
 	}
 	return n
+}
+
+// A Slack owner hears of a refused Claude login in their DM with a loop's
+// app, which opens it, once for the outage however many of their loops it
+// stopped, and once more when it works again, from the same app (#419,
+// #230).
+func TestSlackOwnerIsToldOfARefusedLoginOnce(t *testing.T) {
+	t.Parallel()
+	srv, slack := startSlackFleet(t)
+	appOf := map[string]string{slackBotToken: "terra", slackMiloBotToken: "milo"}
+	for _, name := range []string{"terra", "milo"} {
+		srv.mustJSON("PUT", "/api/loops/"+name+"/owner", map[string]any{"slack_user_id": slackOperator}, nil)
+		srv.message(name, "hi "+name)
+		srv.waitTurn(name, 30*time.Second, func(tn turn) bool {
+			return !tn.IsError && strings.Contains(tn.ResultText, "hi "+name)
+		})
+	}
+
+	expired := filepath.Join(srv.fkState, "login-expired")
+	if err := os.MkdirAll(srv.fkState, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(expired, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"terra", "milo"} {
+		srv.message(name, "are you there, "+name)
+	}
+	for _, name := range []string{"terra", "milo"} {
+		srv.waitState(name, "workstation_down", 30*time.Second)
+	}
+	const refusedText = "the Claude login was refused"
+	told := slack.waitPost(t, refusedText)
+	teller := appOf[told.Token]
+	if told.Channel != "D"+slackOperator || !strings.Contains(told.Text, teller+" has stopped") {
+		t.Fatalf("the owner was told %+v, want the notice naming the loop whose app posted it, in the owner's DM", told)
+	}
+	time.Sleep(2 * time.Second)
+	if n := countPosts(slack, refusedText); n != 1 {
+		t.Fatalf("the owner was told of one refused login %d times, want once", n)
+	}
+	if !srv.hasEvent(teller, "owner_notice", 5*time.Second) {
+		t.Fatalf("%s told the owner without an owner_notice on its timeline", teller)
+	}
+
+	if err := os.Remove(expired); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"terra", "milo"} {
+		srv.waitTurn(name, 60*time.Second, func(tn turn) bool {
+			return !tn.IsError && strings.Contains(tn.ResultText, "are you there, "+name)
+		})
+	}
+	const worksText = "the Claude login works again"
+	if works := slack.waitPost(t, worksText); works.Token != told.Token || works.Channel != told.Channel {
+		t.Fatalf("the all-clear was posted as %+v, want %s's app in the DM it told", works, teller)
+	}
+	time.Sleep(2 * time.Second)
+	if n := countPosts(slack, worksText); n != 1 {
+		t.Fatalf("the owner was told the login works again %d times, want once", n)
+	}
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/enes-alatas/spool/internal/bus"
 	"github.com/enes-alatas/spool/internal/route"
 	"github.com/enes-alatas/spool/internal/store"
+	"github.com/enes-alatas/spool/internal/surface"
 	"github.com/enes-alatas/spool/internal/surface/outbound"
 )
 
@@ -36,12 +37,12 @@ const (
 	postLimit = 3900
 )
 
-// mirror carries loop sends, and operator retries of failed ones, to Slack.
-// A retry (#269) is the same send of the same row, and is decided the same
-// way.
+// mirror carries loop sends, and operator retries of failed ones, to Slack,
+// and tells owners of their loops' login notices. A retry (#269) is the
+// same send of the same row, and is decided the same way.
 func (adapter *Adapter) mirror(ctx context.Context) {
 	items, cancel := adapter.bus.Subscribe(func(item bus.Item) bool {
-		return item.Kind == bus.KindMessage || item.Kind == bus.KindSendRetry
+		return item.Kind == bus.KindMessage || item.Kind == bus.KindSendRetry || item.Kind == bus.KindClaudeLogin
 	})
 	defer cancel()
 	for {
@@ -52,8 +53,11 @@ func (adapter *Adapter) mirror(ctx context.Context) {
 			if !ok {
 				return
 			}
-			if payload, isMessage := item.Payload.(*route.MessagePayload); isMessage {
+			switch payload := item.Payload.(type) {
+			case *route.MessagePayload:
 				adapter.mirrorMessage(ctx, payload)
+			case *surface.LoginNotice:
+				adapter.noticeLogin(ctx, payload)
 			}
 		}
 	}
