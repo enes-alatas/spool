@@ -126,3 +126,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 13:00: reminded Enes (docker-loop flow: #429 refusal/form warning, quickstart line, GitHub token step). Merged today: #423 #430 #434 (Slack 3a/3b/3c), #425 (#424), #428 (#426), #432 (#427), #433. #435 (turned-away senders, login notice) in review, closes #230.
 - 15:05: #435 merged, #230 closed. Terra on #436 (#420), then #302. Iris → live audit of the Slack half against main, #398 close if fixed, per-defect bugs. #429 waits on Enes's flow talk (no reply yet to the 13:00 reminder).
 - 15:05: Enes still busy, will get back on the docker-loop flow; no re-nudge needed, he owns the timing.
+- 15:10: Iris live check of Slack half passed on main 8608944 (stand-in Slack); #398 closed; #437, #438 (web copy) filed, Iris doing both in one PR.
