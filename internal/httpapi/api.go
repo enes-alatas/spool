@@ -298,9 +298,9 @@ type loopView struct {
 	// (ADR-0021).
 	DownReason string `json:"down_reason"`
 	// OwnerDMReady reports that the loop can message its owner privately:
-	// an owner is configured and has opened a chat with this loop's own
-	// bot. A bot cannot open one, so until the owner writes there is
-	// nowhere to send (#73).
+	// an owner is configured and, on Telegram, has opened a chat with this
+	// loop's own bot. A bot cannot open one, so until the owner writes
+	// there is nowhere to send (#73). A Slack app opens the DM itself.
 	OwnerDMReady bool `json:"owner_dm_ready"`
 	// OwnerUsername is the configured owner's telegram handle, when known —
 	// the name the UI shows instead of a numeric id.
@@ -330,7 +330,7 @@ func localDayStart(now time.Time) (int64, string) {
 func (server *Server) view(ctx context.Context, loopRecord *store.Loop) *loopView {
 	out := &loopView{Loop: loopRecord, State: loop.StateAsleep, HasTGToken: loopRecord.TGBotToken != "",
 		HasSlackTokens: loopRecord.SlackBotToken != "", Surface: loopRecord.Surface(), WorkstationUp: true,
-		OwnerDMReady: loopRecord.OwnerTGUserID != 0 && loopRecord.OwnerDMChatID != 0, InFleetChannel: !loopRecord.OutsideFleetChannel}
+		OwnerDMReady: loopRecord.OwnerDMReady(), InFleetChannel: !loopRecord.OutsideFleetChannel}
 	if loopRecord.OwnerTGUserID != 0 {
 		if sender, err := server.Store.TGSenders().Get(ctx, loopRecord.OwnerTGUserID); err == nil {
 			out.OwnerUsername = sender.Username

@@ -263,7 +263,7 @@ func TestCatalogSection(t *testing.T) {
 			name: "a fleet with peers, people and a reachable owner",
 			cat: Catalog{
 				BotUsername: "terra_spool_bot",
-				Peers: []Peer{{Name: "milo", Mission: "Product Owner", BotUsername: "milo_spool_bot"},
+				Peers: []Peer{{Name: "milo", Mission: "Product Owner", BotUsername: "milo_spool_bot", Surface: "telegram"},
 					{Name: "quinn", Mission: "Quality Reviewer"}},
 				People: []Person{enes}, Owner: &enes, OwnerDMReady: true,
 				Conversations: telegramInGroup,
@@ -276,6 +276,23 @@ func TestCatalogSection(t *testing.T) {
 				"@quinn — Quality Reviewer",
 				"@mentioning a person in the group is public",
 			},
+		},
+		{
+			name: "a loop on Slack",
+			cat: Catalog{
+				BotUsername: "terra",
+				Peers:       []Peer{{Name: "milo", Mission: "Product Owner", BotUsername: "milo", Surface: "slack"}},
+				People:      []Person{enes}, Owner: &enes, OwnerDMReady: true,
+				Conversations: Conversations{Surface: "Slack", Group: true},
+			},
+			want: []string{
+				"You are @terra, posting in slack as @terra",
+				"(posts as @milo in slack)",
+				"Your owner is @enesalatas (Enes); owner_dm reaches them privately",
+				"owner_dm      your owner's private Slack chat",
+				`"[message from @enes via slack · group · ref:42 · ...]"`,
+			},
+			notWant: []string{"telegram"},
 		},
 		{
 			name: "an owner who has never written",
@@ -350,6 +367,7 @@ func TestPersonLabel(t *testing.T) {
 		{Person{Username: "enes"}, "@enes"},
 		{Person{Display: "Enes"}, "Enes"},
 		{Person{TGUserID: 4242}, "telegram user 4242 (no handle — you cannot mention them)"},
+		{Person{SlackUserID: "U0ENES"}, "slack user U0ENES (no handle — you cannot mention them)"},
 	}
 	for _, testCase := range cases {
 		if got := testCase.person.Label(); got != testCase.want {

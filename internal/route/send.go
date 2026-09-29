@@ -117,6 +117,7 @@ func (router *Router) Send(ctx context.Context, req SendRequest) (*store.Message
 	conv := loop.ConversationsOf(req.From)
 	var targets map[string]*store.Loop
 	var ownerChat int64
+	var ownerSlackUser string
 	switch req.Destination {
 	case store.ConversationGroup:
 		if !conv.Group {
@@ -126,7 +127,8 @@ func (router *Router) Send(ctx context.Context, req SendRequest) (*store.Message
 		if serr != nil || err != nil {
 			return nil, serr, err
 		}
-		if req.From.TGBotToken != "" && req.From.TGGroupChatID != 0 {
+		if (req.From.TGBotToken != "" && req.From.TGGroupChatID != 0) ||
+			(req.From.SlackBotToken != "" && req.From.SlackChannelID != "") {
 			// the loop's bot sits in the room the fleet channel is
 			// mirrored to, so its words are bound there
 			msg.Mirror = store.MirrorPending
@@ -135,17 +137,19 @@ func (router *Router) Send(ctx context.Context, req SendRequest) (*store.Message
 		// The configured owner, never the DM this turn happens to be
 		// answering: a destination that moved with the incoming message
 		// could not be used proactively (ADR-0026, amended for #73).
+		// A Slack app can open the DM itself, so on Slack an owner is
+		// all it takes.
 		switch {
 		case conv.Surface == "":
 			return nil, noSuchDestination(conv, "this loop has no surface attached, so it has no owner_dm"), nil
-		case req.From.OwnerTGUserID == 0:
+		case !req.From.OwnerConfigured():
 			return nil, &SendError{ErrOwnerNotConfigured,
 				"this loop has no owner yet; the operator sets one in the control room"}, nil
-		case req.From.OwnerDMChatID == 0:
+		case !req.From.OwnerDMReady():
 			return nil, &SendError{ErrOwnerDMUnavailable,
 				"no private chat with the owner yet; a bot cannot open one, so the owner must message this loop's bot once"}, nil
 		}
-		ownerChat = req.From.OwnerDMChatID
+		ownerChat, ownerSlackUser = req.From.OwnerDMChatID, req.From.OwnerSlackUserID
 		msg.ConversationLoopID = req.From.ID
 		msg.Mirror = store.MirrorPending
 	case store.ConversationControlRoom:
@@ -190,9 +194,10 @@ func (router *Router) Send(ctx context.Context, req SendRequest) (*store.Message
 	}
 	router.recordSend(req.From.ID, req.Destination, text)
 	router.bus.Publish(bus.Item{Kind: bus.KindMessage, LoopID: req.From.ID, Payload: &MessagePayload{
-		Message:      *msg,
-		FromLoopName: req.From.Name,
-		OwnerDMChat:  ownerChat,
+		Message:        *msg,
+		FromLoopName:   req.From.Name,
+		OwnerDMChat:    ownerChat,
+		OwnerSlackUser: ownerSlackUser,
 	}})
 
 	for _, target := range delivering {
@@ -303,7 +308,7 @@ func sameConversation(target *store.Message, destination, fromLoopID string) boo
 
 // groupRecipients resolves a group send's mentions: loops in the fleet
 // channel are delivered to, and a loop outside it is no recipient at all;
-// a known human (allowed or pending telegram sender) satisfies the
+// a known human (an allowed or pending sender on a surface) satisfies the
 // recipient requirement without waking anything. A group message that
 // addresses nobody known is refused — recipients are enforced mechanically,
 // not just in prompt prose (ADR-0025).
@@ -325,6 +330,15 @@ func (router *Router) groupRecipients(ctx context.Context, from *store.Loop, men
 		return nil, nil, err
 	}
 	for _, sender := range senders {
+		if sender.Username != "" {
+			humans[strings.ToLower(sender.Username)] = true
+		}
+	}
+	slackSenders, err := router.store.SlackSenders().List(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, sender := range slackSenders {
 		if sender.Username != "" {
 			humans[strings.ToLower(sender.Username)] = true
 		}
@@ -454,11 +468,12 @@ var (
 // row as stored, so a retry cannot quietly become a different message than
 // the one that failed.
 //
-// The owner's DM chat is the one thing re-resolved rather than replayed. The
-// original send pinned it so that a DM arriving mid-flight could not redirect
-// the message; a retry minutes or hours later has no such window to protect,
-// and the chat it pinned may since have been replaced. The loop's current one
-// is the only chat a message can be delivered to now.
+// The owner's DM chat, or on Slack the owner, is the one thing re-resolved
+// rather than replayed. The original send pinned it so that a DM arriving
+// mid-flight could not redirect the message; a retry minutes or hours later
+// has no such window to protect, and the chat it pinned may since have been
+// replaced. The loop's current one is the only chat a message can be
+// delivered to now.
 //
 // Errors are about whether the retry can be asked for at all, never about
 // whether it lands: the send is the surface's, and its outcome reaches the
@@ -483,10 +498,10 @@ func (router *Router) RetrySend(ctx context.Context, messageID int64) error {
 	}
 	payload := &MessagePayload{Message: *msg, FromLoopName: from.Name}
 	if msg.Conversation == store.ConversationOwnerDM {
-		if from.OwnerDMChatID == 0 {
+		if !from.OwnerDMReady() {
 			return ErrNoOwnerDMChat
 		}
-		payload.OwnerDMChat = from.OwnerDMChatID
+		payload.OwnerDMChat, payload.OwnerSlackUser = from.OwnerDMChatID, from.OwnerSlackUserID
 	}
 	router.bus.Publish(bus.Item{Kind: bus.KindSendRetry, LoopID: msg.FromLoopID, Payload: payload})
 	return nil

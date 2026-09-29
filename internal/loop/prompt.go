@@ -30,20 +30,23 @@ func truncate(text string, max int) string {
 type Peer struct {
 	Name    string
 	Mission string
-	// BotUsername is the peer's telegram bot, so a loop can recognise the
-	// handle that posts as that peer in the group ("" = no bot).
+	// BotUsername is the peer's bot on its surface, so a loop can recognise
+	// the handle that posts as that peer in the group ("" = no bot), and
+	// Surface is where it posts ("telegram", "slack").
 	BotUsername string
+	Surface     string
 }
 
-// Person is a human Spool knows: an allowlisted telegram sender.
+// Person is a human Spool knows: an allowlisted sender on a surface.
 type Person struct {
-	// Username is their telegram handle without the @ ("" when they have
-	// none — then Display is all there is to go on).
+	// Username is their handle without the @ ("" when they have none —
+	// then Display is all there is to go on).
 	Username string
 	Display  string
-	// TGUserID identifies them when they have neither, so a catalog entry
-	// is never a blank line.
-	TGUserID int64
+	// TGUserID or SlackUserID identifies them when they have neither, so a
+	// catalog entry is never a blank line.
+	TGUserID    int64
+	SlackUserID string
 }
 
 // Label renders a person the way a loop should address them. A handle is
@@ -59,6 +62,8 @@ func (person Person) Label() string {
 		return "@" + person.Username
 	case person.Display != "":
 		return person.Display
+	case person.SlackUserID != "":
+		return fmt.Sprintf("slack user %s (no handle — you cannot mention them)", person.SlackUserID)
 	default:
 		return fmt.Sprintf("telegram user %d (no handle — you cannot mention them)", person.TGUserID)
 	}
@@ -68,7 +73,8 @@ func (person Person) Label() string {
 // a new peer, a new owner, or a newly captured owner DM is visible on the
 // next turn rather than at the next restart (#45).
 type Catalog struct {
-	// BotUsername is this loop's own telegram bot ("" = none configured).
+	// BotUsername is this loop's own bot on its surface ("" = none
+	// configured).
 	BotUsername string
 	Peers       []Peer
 	// People are the humans allowed to talk to the fleet.
@@ -76,9 +82,10 @@ type Catalog struct {
 	// Owner is the person this loop may message privately, when one is
 	// configured (#73).
 	Owner *Person
-	// OwnerDMReady reports that the private chat with the owner exists. A
-	// bot cannot open one, so until the owner writes first an owner_dm send
-	// is refused — the loop should ask in the group instead of retrying.
+	// OwnerDMReady reports that the private chat with the owner exists, or
+	// can be opened. A Telegram bot cannot open one, so until the owner
+	// writes first an owner_dm send is refused — the loop should ask in the
+	// group instead of retrying. A Slack app opens it itself.
 	OwnerDMReady bool
 	// Conversations are the destinations this loop has; the prompt teaches
 	// those and no others.
@@ -101,8 +108,11 @@ type Conversations struct {
 // ConversationsOf reads a loop's conversations off its row.
 func ConversationsOf(loopRecord *store.Loop) Conversations {
 	conversations := Conversations{Group: !loopRecord.OutsideFleetChannel}
-	if loopRecord.TGBotToken != "" {
+	switch loopRecord.Surface() {
+	case store.SurfaceTelegram:
 		conversations.Surface = "Telegram"
+	case store.SurfaceSlack:
+		conversations.Surface = "Slack"
 	}
 	return conversations
 }
@@ -164,8 +174,8 @@ func (cat Catalog) section(loopRecord *store.Loop) string {
 	var text strings.Builder
 	text.WriteString("WHO YOU CAN ADDRESS\n")
 	self := "@" + loopRecord.Name
-	if cat.BotUsername != "" {
-		self += ", posting in telegram as @" + cat.BotUsername
+	if cat.BotUsername != "" && cat.Conversations.Surface != "" {
+		self += ", posting in " + strings.ToLower(cat.Conversations.Surface) + " as @" + cat.BotUsername
 	}
 	fmt.Fprintf(&text, "- You are %s.\n", self)
 
@@ -206,8 +216,8 @@ func (cat Catalog) section(loopRecord *store.Loop) string {
 				mission = mission[:i]
 			}
 			fmt.Fprintf(&text, "    @%s — %s\n", peer.Name, truncate(mission, 120))
-			if peer.BotUsername != "" {
-				fmt.Fprintf(&text, "      (posts as @%s in telegram)\n", peer.BotUsername)
+			if peer.BotUsername != "" && peer.Surface != "" {
+				fmt.Fprintf(&text, "      (posts as @%s in %s)\n", peer.BotUsername, peer.Surface)
 			}
 		}
 	default:
@@ -307,13 +317,14 @@ func SystemPrompt(loopRecord *store.Loop, cat Catalog, rules []*store.FleetRule,
 // will try and be refused (ADR-0032).
 func howThisWorks(conv Conversations) string {
 	var examples []string
+	via := strings.ToLower(conv.Surface)
 	switch {
 	case conv.Group && conv.Surface != "":
-		examples = append(examples, `"[message from @enes via telegram · group · ref:42 · ...]"`)
+		examples = append(examples, `"[message from @enes via `+via+` · group · ref:42 · ...]"`)
 	case conv.Group:
 		examples = append(examples, `"[message from enes via web · group · ref:42 · ...]"`)
 	case conv.Surface != "":
-		examples = append(examples, `"[message from @enes via telegram dm · owner_dm · ref:42 · ...]"`)
+		examples = append(examples, `"[message from @enes via `+via+` dm · owner_dm · ref:42 · ...]"`)
 	}
 	examples = append(examples, `"[message from enes via web · control_room · ref:43 · ...]"`)
 

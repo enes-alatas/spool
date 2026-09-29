@@ -4,7 +4,10 @@ package itest
 
 import (
 	"fmt"
+	"net/http"
+	"strings"
 	"testing"
+	"time"
 )
 
 // A loop's group send is its own app's post in the channel the app is bound
@@ -65,5 +68,118 @@ func TestSlackGroupSendIsTheAppsPost(t *testing.T) {
 		if taken.Token == slackMiloBotToken {
 			t.Fatalf("milo's app posted with no channel bound: %+v", taken)
 		}
+	}
+}
+
+// owner_dm on Slack is the owner's DM with the loop's app, which the app
+// opens itself when the owner has never written: unlike a Telegram bot, a
+// Slack app can write first (#230). Only the Slack surface carries it, so
+// the row is mirrored and carries no failure from any other surface.
+func TestSlackOwnerDMOpensTheDM(t *testing.T) {
+	t.Parallel()
+	srv, slack := startSlackFleet(t)
+	if resp, body := srv.do("PUT", "/api/loops/terra/owner", map[string]any{"slack_user_id": slackOperator}); resp.StatusCode != http.StatusOK {
+		t.Fatalf("set owner: %d %s", resp.StatusCode, body)
+	}
+	if !srv.loop("terra").OwnerDMReady {
+		t.Fatal("a Slack loop with an owner does not read owner_dm_ready")
+	}
+
+	terra := mcpSession(t, srv, hubMCPToken(t, srv, "terra"))
+	if res := callSend(t, terra, map[string]any{"destination": "owner_dm", "text": "for your eyes only"}); res.IsError {
+		t.Fatalf("terra's owner_dm refused: %s", resultText(res))
+	}
+	post := slack.waitPost(t, "for your eyes only")
+	if post.Token != slackBotToken || post.Channel != "D"+slackOperator {
+		t.Fatalf("owner_dm was posted as %+v, want terra's app in the DM it opened with the owner", post)
+	}
+	var sent activityMessage
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
+		if got := srv.activityWith("for your eyes only"); len(got) == 1 && got[0].Mirror == "mirrored" {
+			sent = got[0]
+			break
+		}
+	}
+	if sent.Mirror != "mirrored" || sent.SendFailedAt != 0 || sent.Conversation != "owner_dm" {
+		t.Fatalf("the owner_dm row reads %s", dump(srv.activityWith("for your eyes only")))
+	}
+
+	// The DM the app opened is the owner's: the owner writing in it reaches
+	// terra, and a later send goes to it without opening another.
+	slack.pushMessage(t, slackAppToken, "im", "D"+slackOperator, slackOperator, "got it", "1727600000.000500")
+	srv.waitInput("terra", "via slack dm · owner_dm", "got it")
+}
+
+// A Slack loop's system prompt names the app it posts as and its peers'
+// apps, teaches Slack's envelope headers, and knows owner_dm is open to it
+// as soon as it has an owner.
+func TestSlackCatalog(t *testing.T) {
+	t.Parallel()
+	slack := startFakeSlack(t)
+	slack.addApp(slackBotToken, slackAppToken, terraBot)
+	slack.addApp(slackMiloBotToken, slackMiloAppToken, miloBot)
+	srv := startSlackServer(t, slack)
+	ws := workspaceWithScript(t, "!sysprompt\n")
+	terraReq := slackPair(slackAppToken, slackBotToken)
+	terraReq["workspace_path"], terraReq["workspace_mode"] = ws, "dir"
+	srv.createLoop("terra", terraReq)
+	srv.createLoop("milo", slackPair(slackMiloAppToken, slackMiloBotToken))
+	srv.waitSlackLink("terra", func(link slackStatus) bool { return link.Bridge.Connected })
+	slack.pushMessage(t, slackAppToken, "channel", slackChannel, slackOperator, "hello", "1727600000.000001")
+	srv.allowSlackSender(slackOperator)
+	srv.mustJSON("PUT", "/api/loops/terra/owner", map[string]any{"slack_user_id": slackOperator}, nil)
+
+	first := waitPrompt(t, srv, "terra", 0)
+	prompt := waitPromptAfterRotation(t, srv, "terra", first.SessionID)
+	for _, want := range []string{
+		"You are @terra, posting in slack as @terra",
+		"(posts as @milo in slack)",
+		"Your owner is @u0oper",
+		"owner_dm reaches them privately",
+		"your owner's private Slack chat",
+		`"[message from @enes via slack · group · ref:42 · ...]"`,
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("a Slack loop's prompt lacks %q:\n%s", want, prompt)
+		}
+	}
+}
+
+// A Slack loop's owner is its Slack owner only. On a hub with an allowed
+// Telegram sender every loop carries that sender as its Telegram owner,
+// and attaching a Slack app clears nothing, so a Slack loop with no Slack
+// owner must still read as having none: owner_dm refused as not configured,
+// and a prompt that says so rather than teaching Telegram's "message the
+// bot once".
+func TestSlackLoopIgnoresTheTelegramOwner(t *testing.T) {
+	t.Parallel()
+	slack := startFakeSlack(t)
+	slack.addApp(slackBotToken, slackAppToken, terraBot)
+	tg := startFakeTelegram(t, "tgbot")
+	srv := startServerArgs(t, t.TempDir(), "--runtime", "bare",
+		"--slack-api-base", slack.srv.URL, "--telegram-api-base", tg.srv.URL)
+	ws := workspaceWithScript(t, "!sysprompt\n")
+	terraReq := slackPair(slackAppToken, slackBotToken)
+	terraReq["workspace_path"], terraReq["workspace_mode"] = ws, "dir"
+	srv.createLoop("terra", terraReq)
+	srv.createLoop("on-telegram", map[string]any{"tg_bot_token": "tgbot"})
+
+	operator := user{ID: 5454, First: "Operator", Username: "operator"}
+	tg.post(groupChatID, "supergroup", "hello", operator)
+	srv.allowSender(operator.ID)
+	if got := srv.loop("terra").OwnerTGUserID; got != operator.ID {
+		t.Fatalf("the Slack loop's Telegram owner is %d, want the adopted %d: the row proves nothing", got, operator.ID)
+	}
+
+	terra := mcpSession(t, srv, hubMCPToken(t, srv, "terra"))
+	res := callSend(t, terra, map[string]any{"destination": "owner_dm", "text": "anyone there?"})
+	if !res.IsError || !strings.Contains(resultText(res), "owner_not_configured") {
+		t.Fatalf("owner_dm from a Slack loop with no Slack owner: %s", resultText(res))
+	}
+
+	first := waitPrompt(t, srv, "terra", 0)
+	prompt := waitPromptAfterRotation(t, srv, "terra", first.SessionID)
+	if !strings.Contains(prompt, "You have no owner configured") || strings.Contains(prompt, "Your owner is") {
+		t.Fatalf("a Slack loop with no Slack owner reads its owner as:\n%s", prompt)
 	}
 }
