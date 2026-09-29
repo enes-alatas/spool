@@ -116,3 +116,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 20:30: on Enes's ask, created release v0.3.0 at main 3e3483c with generated notes (operator delegated the tag). Fleet runs v0.2.0-133 until rebuilt.
 - 20:45: #416 (#405 smallest slice) up. Terra filed follow-ups: #418 (web copy) → Iris now; #419 (owner message) → Terra after #416, before #230 slice 3; #420 (tick burst) → after slice 3.
 - 06:30: #230 had been closed by #396's closing reference on 27th (slice 3 unbuilt); reopened. Merged overnight: #416 (#405), #417, #421 (#419). #422 (#418) approved 21:47, awaiting Enes. Terra → #230 slice 3 now. Runtime v0.2.0-133; rebuild warranted (416/421 touch internal/).
+- 06:55: Terra opened #423 (#230 slice 3). Quinn filed #424 (high: operator native reply to a loop group post delivered to nobody) → Terra after #423, before #420. Lost send ref:2270 moot.
