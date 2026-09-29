@@ -52,6 +52,15 @@ func TestBoundBefore(t *testing.T) {
 type laterCaptureStore struct{ store.Store }
 
 func (laterCaptureStore) Messages() store.MessageStore { return laterCaptureMessages{} }
+func (laterCaptureStore) Loops() store.LoopStore       { return telegramLoops{} }
+
+// telegramLoops answers every loop as one on Telegram, which is all a
+// delivery reads a loop for.
+type telegramLoops struct{ store.LoopStore }
+
+func (telegramLoops) Get(_ context.Context, id string) (*store.Loop, error) {
+	return &store.Loop{ID: id, TGBotToken: "synthetic-" + id}, nil
+}
 
 type laterCaptureMessages struct{ store.MessageStore }
 
@@ -103,6 +112,7 @@ type queueFullStore struct {
 
 func (fake queueFullStore) Messages() store.MessageStore { return fake.msgs }
 func (fake queueFullStore) Events() store.EventStore     { return fake.events }
+func (fake queueFullStore) Loops() store.LoopStore       { return telegramLoops{} }
 
 type queueFullMessages struct {
 	store.MessageStore

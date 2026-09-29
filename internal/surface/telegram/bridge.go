@@ -996,6 +996,21 @@ func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 	if mp.Origin != store.OriginLoop {
 		return
 	}
+	loopRecord, err := br.store.Loops().Get(ctx, mp.FromLoopID)
+	if err != nil {
+		br.log.Warn("telegram: read loop for delivery", "loop", mp.FromLoopID, "err", err)
+		if mp.Mirror == store.MirrorPending {
+			br.ledger.Unsendable(ctx, mp, "delivery: read loop: "+err.Error())
+		}
+		return
+	}
+	// A loop on another surface is that surface's to carry: a loop has one
+	// (ADR-0029). A loop on none is still this bridge's to settle, as it
+	// always was: a send bound for a bot that has since gone stays on the
+	// hub, or fails, below.
+	if onSurface := loopRecord.Surface(); onSurface != "" && onSurface != store.SurfaceTelegram {
+		return
+	}
 	bot := br.poller(mp.FromLoopID)
 	switch mp.Conversation {
 	case store.ConversationGroup:
@@ -1006,14 +1021,6 @@ func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 		// it, normal for a fleet without telegram, so the message stays
 		// on the hub. A bound bot with no poller is the same internal
 		// fault as the owner_dm case below.
-		loopRecord, err := br.store.Loops().Get(ctx, mp.FromLoopID)
-		if err != nil {
-			br.log.Warn("telegram: read loop for group delivery", "loop", mp.FromLoopID, "err", err)
-			if mp.Mirror == store.MirrorPending {
-				br.ledger.Unsendable(ctx, mp, "group delivery: read loop: "+err.Error())
-			}
-			return
-		}
 		if loopRecord.TGBotToken == "" || loopRecord.TGGroupChatID == 0 {
 			br.ledger.StayOnHub(ctx, mp)
 			return
