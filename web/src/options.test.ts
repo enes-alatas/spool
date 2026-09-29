@@ -7,6 +7,7 @@ import {
   RUNTIME_OPTIONS,
   runtimeFieldNote,
   runtimeNote,
+  workspaceFieldNote,
 } from './options'
 
 describe('runtimeNote', () => {
@@ -151,5 +152,18 @@ describe('option labels', () => {
   it('carry no em dash', () => {
     for (const o of [...modelOptions(), ...EFFORT_OPTIONS, ...RUNTIME_OPTIONS])
       expect(o.label).not.toContain('\u2014')
+  })
+})
+
+describe('workspaceFieldNote', () => {
+  it('says a docker loop’s workspace is its workstation', () => {
+    expect(workspaceFieldNote('docker')).toBe(
+      'A Docker loop works inside its workstation; the workspace lives there.',
+    )
+  })
+
+  it('leaves the field open for a bare loop, and says nothing before the hub answers', () => {
+    expect(workspaceFieldNote('bare')).toBe('')
+    expect(workspaceFieldNote('')).toBe('')
   })
 })
