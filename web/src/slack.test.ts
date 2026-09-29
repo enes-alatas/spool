@@ -8,6 +8,7 @@ import {
   slackAttachError,
   slackPairSubmittable,
   slackReadiness,
+  slackReason,
   slackSenderLabel,
 } from './slack'
 
@@ -65,6 +66,36 @@ describe('slackAttachError', () => {
     expect(app.field).toBe('app')
     expect(app.message).toContain('missing_scope')
     expect(app.message).toContain('connections:write')
+  })
+
+  // #437: the hub's error wraps Slack's reason in its own sentence, and
+  // quoting it whole said the refusal twice.
+  it("quotes Slack's reason once, out of the hub's sentence", () => {
+    const bot = new ApiError(
+      400,
+      'slack bot token rejected: slack auth.test: invalid_auth',
+      'slack_bot_token_rejected',
+    )
+    expect(slackAttachError(bot).message).toBe('Slack rejected the bot token: invalid_auth')
+    const app = new ApiError(
+      400,
+      'slack app-level token rejected: slack apps.connections.open: not_allowed_token_type',
+      'slack_app_token_rejected',
+    )
+    expect(slackAttachError(app).message).toMatch(
+      /^Slack rejected the app-level token: not_allowed_token_type\. /,
+    )
+  })
+
+  // A transport failure reaches the hub as Go's *url.Error, with no
+  // "slack <method>:" wrapper, so its last segment is prose, not a code.
+  it('keeps the detail of a reason that is not a Slack code', () => {
+    expect(
+      slackReason(
+        'slack bot token rejected: Post "https://slack.com/api/auth.test": dial tcp: lookup slack.com: no such host',
+      ),
+    ).toBe('Post "https://slack.com/api/auth.test": dial tcp: lookup slack.com: no such host')
+    expect(slackReason('invalid_auth')).toBe('invalid_auth')
   })
 
   // A missing scope is one cause among several. invalid_auth is as often

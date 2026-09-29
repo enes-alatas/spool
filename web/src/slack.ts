@@ -47,12 +47,26 @@ export interface SlackAttachError {
   message: string
 }
 
-// What a failed attach says. The server's `error` is Slack's own reason for
-// the two rejections, so it is quoted; the other two are the hub's rules and
-// are said in full, with what to do about them.
+// Slack's own reason inside the hub's sentence for a rejected token, which
+// wraps it twice: "slack bot token rejected: slack auth.test: invalid_auth".
+// Quoting the sentence whole after "Slack rejected the bot token" said the
+// refusal twice (#437). Slack's reasons are snake_case codes, so a last
+// segment that is one is the reason; anything else, a network error say,
+// keeps its detail and loses only the hub's prefix.
+export function slackReason(message: string): string {
+  const cut = message.lastIndexOf(': ')
+  const last = cut < 0 ? message : message.slice(cut + 2)
+  if (/^[a-z][a-z0-9_]*$/.test(last)) return last
+  return message.replace(/^slack (bot|app-level) token rejected: /, '')
+}
+
+// What a failed attach says. For the two rejections it quotes Slack's own
+// reason; the other two are the hub's rules and are said in full, with what
+// to do about them.
 export function slackAttachError(e: unknown): SlackAttachError {
-  const reason = e instanceof Error ? e.message : String(e)
+  const message = e instanceof Error ? e.message : String(e)
   const code = e instanceof ApiError ? e.code : ''
+  const reason = slackReason(message)
   switch (code as SlackAttachCode) {
     case 'slack_bot_token_rejected':
       return { field: 'bot', message: `Slack rejected the bot token: ${reason}` }
@@ -77,7 +91,7 @@ export function slackAttachError(e: unknown): SlackAttachError {
           "This app is in a different workspace from this hub's other Slack loops. A hub's Slack loops share one workspace, because the fleet channel is one channel. Create the app in that workspace instead.",
       }
   }
-  return { field: '', message: reason || 'could not save the tokens' }
+  return { field: '', message: message || 'could not save the tokens' }
 }
 
 // Which list an `access` frame changed. Telegram's frames predate the field,
