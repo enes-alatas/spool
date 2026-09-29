@@ -133,6 +133,7 @@ func (adapter *Adapter) ingestDM(ctx context.Context, loopRecord *store.Loop, te
 	}
 	if loopRecord.OwnerSlackUserID == "" || loopRecord.OwnerSlackUserID != event.User {
 		adapter.turnedAway(loopRecord, event, "sender is not this loop's owner")
+		adapter.tellNotOwner(loopRecord, event)
 		return
 	}
 	if loopRecord.OwnerSlackDMChannel != event.Channel {
@@ -174,6 +175,7 @@ func (adapter *Adapter) allowedSender(ctx context.Context, loopRecord *store.Loo
 		adapter.turnedAway(loopRecord, event, "sender is blocked")
 	default:
 		adapter.turnedAway(loopRecord, event, "sender is pending approval")
+		adapter.tellPairCode(loopRecord, sender, event)
 	}
 	return nil
 }
@@ -208,8 +210,8 @@ func (adapter *Adapter) registerSender(ctx context.Context, loopRecord *store.Lo
 
 // turnedAway records a message that reached a loop's app and goes no
 // further: a person whose words went nowhere, who has no way to tell, so
-// the reason is logged (#161). Until the app can post, it cannot tell them
-// either.
+// the reason is logged (#161). A pending sender in a DM, and a sender DMing
+// a loop that is not theirs, are also told (notice.go).
 func (adapter *Adapter) turnedAway(loopRecord *store.Loop, event messageEvent, reason string) {
 	adapter.log.Info("slack inbound discarded", "loop", loopRecord.Name, "reason", reason,
 		"user", event.User, "channel_type", event.ChannelType, "channel", event.Channel, "ts", event.TS)
