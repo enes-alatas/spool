@@ -116,7 +116,7 @@ cmd/spool-egress/     the workstation egress proxy (ADR-0028)
 internal/claude/      claude's stream-json protocol: args, stdio, events (runner-internal)
 internal/loop/        loop actors, prompts, trailers (runner)
 internal/runtime/     SandboxRuntime seam + bare/, docker/
-internal/surface/     Surface seam + telegram/ (slack/ at L3)
+internal/surface/     Surface seam + telegram/, slack/; outbound/ records how a send ended
 internal/route/       hub: routing, mentions, storm guard
 internal/sched/       hub: tick scheduling
 internal/bus/         hub: pub/sub

@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"unicode/utf8"
 
 	"github.com/enes-alatas/spool/internal/bus"
 	"github.com/enes-alatas/spool/internal/route"
 	"github.com/enes-alatas/spool/internal/store"
 	"github.com/enes-alatas/spool/internal/surface"
+	"github.com/enes-alatas/spool/internal/surface/outbound"
 )
 
 // A group's ingest election only counts bots whose binding predates the
@@ -66,11 +66,11 @@ func (laterCaptureMessages) OwnerDMChat(context.Context, string) (int64, error) 
 // using the chat route.Send pinned on the payload.
 func TestOwnerDMDeliveryUsesPinnedChat(t *testing.T) {
 	bot := &poller{loopID: "l1", sendCh: make(chan sendReq, 4)}
-	br := &Bridge{
+	br := withLedger(&Bridge{
 		store:   laterCaptureStore{},
 		log:     slog.Default(),
 		pollers: map[string]*poller{"l1": bot},
-	}
+	})
 
 	br.mirrorMessage(context.Background(), &route.MessagePayload{
 		Message: store.Message{
@@ -132,12 +132,12 @@ func (events *queueFullEvents) Insert(_ context.Context, ev *store.Event) (int64
 func TestQueueFullIsASendFailure(t *testing.T) {
 	bot := &poller{loopID: "l1", sendCh: make(chan sendReq)} // no room at all
 	st := queueFullStore{msgs: &queueFullMessages{}, events: &queueFullEvents{}}
-	br := &Bridge{
+	br := withLedger(&Bridge{
 		store:   st,
 		log:     slog.Default(),
 		bus:     bus.New(),
 		pollers: map[string]*poller{"l1": bot},
-	}
+	})
 
 	br.mirrorMessage(context.Background(), &route.MessagePayload{
 		Message: store.Message{
@@ -152,33 +152,11 @@ func TestQueueFullIsASendFailure(t *testing.T) {
 		OwnerDMChat: 42,
 	})
 
-	if st.msgs.failedID != 7 || st.msgs.sendErr != errQueueFull {
-		t.Fatalf("row failure = (%d, %q), want (7, %q)", st.msgs.failedID, st.msgs.sendErr, errQueueFull)
+	if st.msgs.failedID != 7 || st.msgs.sendErr != outbound.ErrQueueFull {
+		t.Fatalf("row failure = (%d, %q), want (7, %q)", st.msgs.failedID, st.msgs.sendErr, outbound.ErrQueueFull)
 	}
 	if len(st.events.got) != 1 || st.events.got[0].Subtype != "send_failed" {
 		t.Fatalf("timeline events = %+v, want one send_failed", st.events.got)
-	}
-}
-
-// TestExcerptCutsOnRuneBoundary pins the property that matters for a note the
-// operator reads: the excerpt of a lost message is always valid UTF-8, whatever
-// byte length the message happens to have. Turkish, because it is the language
-// the note is most likely to be quoting.
-func TestExcerptCutsOnRuneBoundary(t *testing.T) {
-	const limit = 12
-	body := strings.Repeat("çalışıyor ", 8)
-	for pad := 0; pad < 16; pad++ {
-		text := strings.Repeat("a", pad) + body
-		got := excerpt(text, limit)
-		if !utf8.ValidString(got) {
-			t.Fatalf("pad=%d: excerpt is not valid UTF-8: %q", pad, got)
-		}
-		if len(got) > limit+len("…") {
-			t.Fatalf("pad=%d: excerpt %q exceeds the cap", pad, got)
-		}
-		if !strings.HasPrefix(text, strings.TrimSuffix(got, "…")) {
-			t.Fatalf("pad=%d: excerpt %q is not the opening of the message", pad, got)
-		}
 	}
 }
 
@@ -217,8 +195,8 @@ func TestLoginNoticeOncePerOwnerPerOutage(t *testing.T) {
 	}
 	rows["nochat"].OwnerDMChatID = 0
 	st := loginStore{loops: loginLoops{rows: rows}, events: &queueFullEvents{}}
-	br := &Bridge{store: st, log: slog.Default(), bus: bus.New(), pollers: bots,
-		loginTold: map[loginOutage]loginTeller{}}
+	br := withLedger(&Bridge{store: st, log: slog.Default(), bus: bus.New(), pollers: bots,
+		loginTold: map[loginOutage]loginTeller{}})
 
 	refused := func(id string, host bool) {
 		br.noticeLogin(context.Background(), &surface.LoginNotice{
@@ -272,4 +250,10 @@ func TestLoginNoticeOncePerOwnerPerOutage(t *testing.T) {
 	if got := sent(); len(got) != 1 || got["beta"] == "" {
 		t.Fatalf("a refusal after the all-clear is a new outage: sent %v, want beta's notice", got)
 	}
+}
+
+// withLedger gives a bridge built field by field the ledger NewBridge would.
+func withLedger(br *Bridge) *Bridge {
+	br.ledger = &outbound.Ledger{Store: br.store, Bus: br.bus, Log: br.log, Surface: "telegram"}
+	return br
 }
