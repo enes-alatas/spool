@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { ModelList } from './api'
-import { customModelNote, EFFORT_OPTIONS, modelOptions, RUNTIME_OPTIONS, runtimeNote } from './options'
+import {
+  customModelNote,
+  EFFORT_OPTIONS,
+  modelOptions,
+  RUNTIME_OPTIONS,
+  runtimeFieldNote,
+  runtimeNote,
+} from './options'
 
 describe('runtimeNote', () => {
   it('warns about uncontained, in the words the README uses', () => {
@@ -26,6 +33,41 @@ describe('runtimeNote', () => {
 
   it('offers both kinds the API accepts', () => {
     expect(RUNTIME_OPTIONS.map((o) => o.value)).toEqual(['docker', 'bare'])
+  })
+})
+
+describe('runtimeFieldNote', () => {
+  const dockerOnly = { default_runtime: 'docker', bare_allowed: false } as const
+  const either = { default_runtime: 'docker', bare_allowed: true } as const
+
+  it('says it is still asking before the hub answers', () => {
+    expect(runtimeFieldNote(undefined, false, '')).toEqual({
+      text: 'Asking this hub what it runs loops as…',
+      warn: false,
+    })
+  })
+
+  it('says the hub did not answer when the request failed, rather than that it is still asking', () => {
+    const note = runtimeFieldNote(undefined, true, '')
+    expect(note.text).toMatch(/did not answer/)
+    expect(note.text).not.toMatch(/Asking/)
+    expect(note.warn).toBe(true)
+  })
+
+  it('says why docker is the only choice, and how to offer bare', () => {
+    const note = runtimeFieldNote(dockerOnly, false, '')
+    expect(note.text).toBe(
+      'This hub runs loops in Docker. To offer uncontained bare loops, start spool with --allow-bare.',
+    )
+    expect(note.warn).toBe(false)
+  })
+
+  it('describes the chosen kind where there is a choice, defaulting to the hub’s own', () => {
+    expect(runtimeFieldNote(either, false, '')).toEqual(runtimeNote('docker'))
+    expect(runtimeFieldNote(either, false, 'bare')).toEqual(runtimeNote('bare'))
+    expect(runtimeFieldNote({ default_runtime: 'bare', bare_allowed: true }, false, '')).toEqual(
+      runtimeNote('bare'),
+    )
   })
 })
 

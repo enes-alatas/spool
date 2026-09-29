@@ -1,4 +1,4 @@
-import type { ModelList } from './api'
+import type { ModelList, Settings } from './api'
 
 // Shared dropdown options for model / effort / pacing.
 
@@ -101,6 +101,36 @@ export function runtimeNote(kind: string): RuntimeNote {
     }
   }
   return { text: 'The loop runs in its own container: its own filesystem, its own network.', warn: false }
+}
+
+// The note under the runtime choice, for the whole field: what the chosen
+// kind means, or why there is no choice to make. A disabled select that says
+// nothing reads as a frozen one (#426), so each way it can be disabled says
+// why. Before the settings answer, the form is still asking, or, if the
+// request failed, the hub did not answer. On a hub that does not allow a bare
+// loop (ADR-0017: bare is opt-in on a docker-default hub, decided where the
+// hub is started), docker is the only choice, and the note says how to offer
+// the other.
+export function runtimeFieldNote(
+  hub: Pick<Settings, 'default_runtime' | 'bare_allowed'> | undefined,
+  failed: boolean,
+  chosen: string,
+): RuntimeNote {
+  if (!hub) {
+    return failed
+      ? {
+          text: 'This hub did not answer, so the form cannot tell what it runs loops as. Reload to ask again.',
+          warn: true,
+        }
+      : { text: 'Asking this hub what it runs loops as…', warn: false }
+  }
+  if (!hub.bare_allowed) {
+    return {
+      text: 'This hub runs loops in Docker. To offer uncontained bare loops, start spool with --allow-bare.',
+      warn: false,
+    }
+  }
+  return runtimeNote(chosen || hub.default_runtime)
 }
 
 // What the Settings list says about a custom model's resolution, or '' when
