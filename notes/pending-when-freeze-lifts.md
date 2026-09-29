@@ -122,3 +122,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 08:50: Enes: lock the workspace path for docker loops too (ADR-0017 already says so). Filed #427 → Iris with #426; asked Terra whether the API refuses or ignores workspace_path on docker.
 - 08:55: Terra: API 400s workspace_path on docker, ignores workspace_mode; #427 body amended, form omits both.
 - 09:25: Enes's docker loop can't reach the hub (502 host.docker.internal): loop listener on loopback, hub default bare so no startup warning. Filed #429 (bug, medium; refuse create / down reason / README). Asked Enes to confirm his flag; slot for Terra after that. 30m wake = missing trailer fallback.
+- 10:30: Enes fixed his mcp-listen; wants to talk about the docker-loop setup flow. REMIND HIM at 13:00 UTC (15:00 his time, +02:00). #429 unslotted until then. Runtime now v0.3.0-10.
