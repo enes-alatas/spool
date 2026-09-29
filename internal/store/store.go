@@ -51,6 +51,8 @@ const (
 	OriginWeb           = "web"
 	OriginTelegramGroup = "telegram-group"
 	OriginTelegramDM    = "telegram-dm"
+	OriginSlackChannel  = "slack-channel"
+	OriginSlackDM       = "slack-dm"
 	OriginLoop          = "loop"
 
 	// A message's conversation: the unit of privacy and addressing
@@ -348,6 +350,12 @@ type Message struct {
 	// sees alike — chat, sender, date, text — so one bot's message can be
 	// matched to another bot's sighting of it. Storage detail, not surfaced.
 	TGKey string `json:"-"`
+	// SlackChannelID and SlackTS identify a message on Slack: the channel
+	// it is in and Slack's ts for it. Slack numbers ts per channel, not per
+	// app, so unlike a Telegram message_id the pair names the message for
+	// every loop's app alike, and is unique. Storage detail, not surfaced.
+	SlackChannelID string `json:"-"`
+	SlackTS        string `json:"-"`
 }
 
 // How a send failure resolved (Message.SendResolution).
@@ -642,7 +650,8 @@ type SessionStore interface {
 
 type MessageStore interface {
 	// Insert persists a message. For telegram-sourced messages, (tgChatID,
-	// tgMessageID) is unique; a duplicate returns ErrDuplicate.
+	// tgMessageID, tgBotLoopID) is unique, and for slack-sourced ones
+	// (slackChannelID, slackTS); a duplicate returns ErrDuplicate.
 	Insert(ctx context.Context, message *Message) error
 	SetDelivered(ctx context.Context, id int64, deliveredTo []string) error
 	List(ctx context.Context, limit int) ([]*Message, error)
@@ -655,6 +664,9 @@ type MessageStore interface {
 	// Get returns one message by id, or ErrNotFound. Reply targets are
 	// resolved through it.
 	Get(ctx context.Context, id int64) (*Message, error)
+	// BySlackTS returns the message Slack knows as ts in channelID, or
+	// ErrNotFound.
+	BySlackTS(ctx context.Context, channelID, ts string) (*Message, error)
 	// SetSendResult records how a surface send ended: an error and the time
 	// the bridge gave up, or empty and 0 when a later attempt got through.
 	// A message nobody tried to send carries neither (#147).

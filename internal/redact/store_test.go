@@ -252,7 +252,7 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			"ResolveSend": false, "ResolveResends": false,
 			"MarkSendFailuresTold": false,
 			"PutRef":               false, "Ref": false, "RecordSighting": false, "ByRef": false,
-			"ByTGKey": false, "LatestGroupPostBy": false,
+			"ByTGKey": false, "LatestGroupPostBy": false, "BySlackTS": false,
 			// A reply target is a message id, read or written; never text.
 			"SightedReplyTarget": false, "AdoptReplyTarget": false,
 		},
