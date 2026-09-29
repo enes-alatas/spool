@@ -2,6 +2,8 @@ package slack
 
 import (
 	"context"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -95,5 +97,46 @@ func TestRenderThreadsAReply(t *testing.T) {
 		if quoted := strings.HasPrefix(text, "↳ re "); quoted != testCase.wantQuote || !strings.HasSuffix(text, "on it") {
 			t.Errorf("%s: text %q, quoted %v, want quoted %v", testCase.name, text, quoted, testCase.wantQuote)
 		}
+	}
+}
+
+// landThenStop answers every post as Slack does when the message landed,
+// and stops the app as it does: a detach or swap arriving with the
+// response.
+type landThenStop struct{ stop context.CancelFunc }
+
+func (answer landThenStop) RoundTrip(*http.Request) (*http.Response, error) {
+	answer.stop()
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": {"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"ok":true,"ts":"9.9"}`)),
+	}, nil
+}
+
+// A message that landed as its app stopped is recorded as landed. Blaming
+// the stop would be false, and the operator's retry would post it twice.
+func TestASendThatLandsAsItsAppStopsIsSent(t *testing.T) {
+	adapter, db, _ := inboundFixture(t)
+	ctx := context.Background()
+	adapter.ctx = ctx // the hub is running
+	linkCtx, stop := context.WithCancel(ctx)
+	defer stop()
+	adapter.client.http = &http.Client{Transport: landThenStop{stop: stop}}
+	msg := &store.Message{Origin: store.OriginLoop, FromLoopID: "loop_terra", Conversation: store.ConversationGroup,
+		Text: "landed", Mirror: store.MirrorPending}
+	if err := db.Messages().Insert(ctx, msg); err != nil {
+		t.Fatal(err)
+	}
+
+	adapter.send(linkCtx, &route.MessagePayload{Message: *msg})
+
+	got, err := db.Messages().Get(ctx, msg.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Mirror != store.MirrorMirrored || got.SlackTS != "9.9" || got.SendError != "" {
+		t.Fatalf("settled as mirror=%q ts=%q err=%q, want mirrored at 9.9 with no failure",
+			got.Mirror, got.SlackTS, got.SendError)
 	}
 }

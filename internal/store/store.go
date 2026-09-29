@@ -415,10 +415,10 @@ const (
 	MirrorNotMirrored = "not_mirrored"
 	// MirrorPending: bound for the surface and not there yet. With
 	// SendFailedAt set, the send failed and the failure fields say why.
-	// Without it, the send has not been settled: normally it is in
-	// flight, though a running hub can still lose one without a record
-	// (#302). Whatever is unsettled when the hub stops is marked failed
-	// at its next start, so no such row outlives a restart.
+	// Without it, the send is in flight: a running hub settles every send
+	// it accepted, as landed or as failed (#302). Only a hub that stops
+	// leaves one unsettled, and its next start marks that failed, so no
+	// such row outlives a restart.
 	MirrorPending = "pending"
 	// MirrorMirrored: on the surface too — a loop's send that got through,
 	// and everything that came in from the surface in the first place.

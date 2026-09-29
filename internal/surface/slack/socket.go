@@ -77,6 +77,11 @@ type link struct {
 	// sends is the loop's posts waiting their turn; one goroutine per
 	// link posts them in order.
 	sends chan *route.MessagePayload
+	// stopped is set, under sendMu, once the send loop has quit and taken
+	// what sends held: a send queued after that would sit there unsent and
+	// unrecorded.
+	sendMu  sync.Mutex
+	stopped bool
 	// notices is the hub's own posts as the app, taking turns with sends
 	// under the same pacing.
 	notices chan notice

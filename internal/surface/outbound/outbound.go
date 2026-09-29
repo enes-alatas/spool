@@ -33,8 +33,9 @@ type Ledger struct {
 }
 
 // ErrUnsentAtStop is the failure a send carries when a hub starts and finds
-// it unsettled. It says only what is known: usually the last process stopped
-// mid-send, but a send lost without a record (#302) looks the same by then.
+// it unsettled: the last process stopped before it landed. A running hub
+// settles every send it accepted (#302), so a stop is the only way to leave
+// one unsettled.
 const ErrUnsentAtStop = "the hub stopped with this still unsent"
 
 // ErrQueueFull is the failure a send carries when its sender's queue had no

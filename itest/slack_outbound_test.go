@@ -183,3 +183,45 @@ func TestSlackLoopIgnoresTheTelegramOwner(t *testing.T) {
 		t.Fatalf("a Slack loop with no Slack owner reads its owner as:\n%s", prompt)
 	}
 }
+
+// A long message goes out as several posts, and one after the first that
+// never landed used to be logged and forgotten, the row reading mirrored
+// (#302). Now the message is a failure that says which part. And a send
+// the app was still retrying when it was detached fails then, rather than
+// sit pending until the hub's next start.
+func TestSlackLostSendsAreFailures(t *testing.T) {
+	t.Parallel()
+	srv, slack := startSlackFleet(t)
+	slack.pushMessage(t, slackAppToken, "channel", slackChannel, slackOperator, "morning", "1727600000.000010")
+	srv.waitSlackLink("terra", func(link slackStatus) bool { return link.ChannelID == slackChannel })
+	terra := mcpSession(t, srv, hubMCPToken(t, srv, "terra"))
+
+	long := "@milo the start " + strings.Repeat("filler ", 600) + "the lost tail"
+	slack.failPostsContaining("the lost tail")
+	if res := callSend(t, terra, map[string]any{"destination": "group", "text": long}); res.IsError {
+		t.Fatalf("terra's group send refused: %s", resultText(res))
+	}
+	slack.waitPost(t, "the start")
+	failed := srv.waitGroupMessage(long, func(m activityMessage) bool { return m.SendFailedAt != 0 })
+	if !strings.Contains(failed.SendError, "part 2 of 2") || failed.Mirror == "mirrored" {
+		t.Fatalf("a message missing its tail reads %s", dump(failed))
+	}
+	slack.failPostsContaining("")
+
+	slack.setFailPosts(-1) // retried with a backoff of seconds: the window
+	before := slack.postAttempts()
+	const held = "@milo held when the app went"
+	if res := callSend(t, terra, map[string]any{"destination": "group", "text": held}); res.IsError {
+		t.Fatalf("terra's group send refused: %s", resultText(res))
+	}
+	for deadline := time.Now().Add(10 * time.Second); slack.postAttempts() == before; time.Sleep(50 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the app never attempted the send")
+		}
+	}
+	srv.mustJSON("PATCH", "/api/loops/terra", slackPair("", ""), nil)
+	dropped := srv.waitGroupMessage(held, func(m activityMessage) bool { return m.SendFailedAt != 0 })
+	if !strings.Contains(dropped.SendError, "replaced or detached before this was sent") {
+		t.Fatalf("a send its app dropped records %q", dropped.SendError)
+	}
+}
