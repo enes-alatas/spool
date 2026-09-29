@@ -120,3 +120,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 07:00: #230 slice 3 is now 3a (#423, Socket Mode), 3b inbound, 3c outbound; 3c closes. #424 sits after #423's approval, before 3b. Retracted a wrong body-check on #423.
 - 08:45: Enes: runtime dropdown 'frozen' on local hub = docker-default without --allow-bare (ADR-0017), select disabled with one choice. Answered; filed #426 (signpost the lock) → Iris.
 - 08:50: Enes: lock the workspace path for docker loops too (ADR-0017 already says so). Filed #427 → Iris with #426; asked Terra whether the API refuses or ignores workspace_path on docker.
+- 08:55: Terra: API 400s workspace_path on docker, ignores workspace_mode; #427 body amended, form omits both.
