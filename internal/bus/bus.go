@@ -1,6 +1,6 @@
 // Package bus is a small in-process pub/sub used to fan events out to SSE
-// clients and the Telegram mirror. Slow subscribers drop items rather than
-// block producers.
+// clients and the surface mirrors. Nothing blocks producers: a slow
+// subscriber drops items, and a lossless one queues them.
 package bus
 
 import (
@@ -44,6 +44,14 @@ type Item struct {
 type subscriber struct {
 	ch     chan Item
 	filter func(Item) bool
+	// lossless subscribers queue what their channel cannot take yet in
+	// pending, and forward it from a goroutine of their own, rather than
+	// drop it; done ends that goroutine.
+	lossless bool
+	mu       sync.Mutex
+	pending  []Item
+	wake     chan struct{}
+	done     chan struct{}
 }
 
 type Bus struct {
@@ -59,18 +67,38 @@ func New() *Bus {
 // Subscribe returns a channel of items matching filter (nil = all) and a
 // cancel func. The channel is buffered; items are dropped if it fills.
 func (bus *Bus) Subscribe(filter func(Item) bool) (<-chan Item, func()) {
+	return bus.subscribe(&subscriber{ch: make(chan Item, 256), filter: filter})
+}
+
+// SubscribeLossless is Subscribe for a consumer that must see every item,
+// such as a surface mirror, for which a dropped loop send is a message lost
+// without a record (#302). What its channel cannot take yet waits in memory
+// instead of being dropped, so Publish still never blocks. The consumer
+// must keep reading: nothing bounds the backlog of one that stops.
+func (bus *Bus) SubscribeLossless(filter func(Item) bool) (<-chan Item, func()) {
+	sub := &subscriber{ch: make(chan Item, 256), filter: filter, lossless: true,
+		wake: make(chan struct{}, 1), done: make(chan struct{})}
+	go sub.forward()
+	return bus.subscribe(sub)
+}
+
+func (bus *Bus) subscribe(sub *subscriber) (<-chan Item, func()) {
 	bus.mu.Lock()
 	defer bus.mu.Unlock()
 	id := bus.next
 	bus.next++
-	sub := &subscriber{ch: make(chan Item, 256), filter: filter}
 	bus.subs[id] = sub
 	cancel := func() {
 		bus.mu.Lock()
 		defer bus.mu.Unlock()
 		if registered, ok := bus.subs[id]; ok {
 			delete(bus.subs, id)
-			close(registered.ch)
+			if registered.lossless {
+				// the forwarder owns the channel, and closes it
+				close(registered.done)
+			} else {
+				close(registered.ch)
+			}
 		}
 	}
 	return sub.ch, cancel
@@ -83,9 +111,48 @@ func (bus *Bus) Publish(item Item) {
 		if sub.filter != nil && !sub.filter(item) {
 			continue
 		}
+		if sub.lossless {
+			sub.queue(item)
+			continue
+		}
 		select {
 		case sub.ch <- item:
 		default: // drop for slow consumers
+		}
+	}
+}
+
+// queue holds item for a lossless subscriber's forwarder.
+func (sub *subscriber) queue(item Item) {
+	sub.mu.Lock()
+	sub.pending = append(sub.pending, item)
+	sub.mu.Unlock()
+	select {
+	case sub.wake <- struct{}{}:
+	default: // a wake is already due
+	}
+}
+
+// forward hands a lossless subscriber's queued items to its channel, in
+// the order they were published, until the subscription is cancelled.
+func (sub *subscriber) forward() {
+	defer close(sub.ch)
+	for {
+		sub.mu.Lock()
+		batch := sub.pending
+		sub.pending = nil
+		sub.mu.Unlock()
+		for _, item := range batch {
+			select {
+			case sub.ch <- item:
+			case <-sub.done:
+				return
+			}
+		}
+		select {
+		case <-sub.wake:
+		case <-sub.done:
+			return
 		}
 	}
 }

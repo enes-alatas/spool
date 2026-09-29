@@ -962,7 +962,9 @@ func (br *Bridge) mirror(ctx context.Context) {
 	// Both kinds, one path: a retry (#269) is the same send of the same row,
 	// asked for by the operator instead of by the loop, and anything the
 	// mirror rules decide about a message must decide the same way twice.
-	items, cancel := br.bus.Subscribe(func(item bus.Item) bool {
+	// Lossless: an item dropped here is a loop's send lost without a
+	// record (#302).
+	items, cancel := br.bus.SubscribeLossless(func(item bus.Item) bool {
 		return item.Kind == bus.KindMessage || item.Kind == bus.KindSendRetry || item.Kind == bus.KindClaudeLogin
 	})
 	defer cancel()
