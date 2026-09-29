@@ -172,3 +172,59 @@ func countSent(tg *fakeTelegram, chatID int64, text string) int {
 	}
 	return n
 }
+
+// Ticks keep arriving while a loop's login is refused, and each one used to
+// wait behind the refused batch, so the first turn that authenticated woke
+// the loop four times at once (#420). The loop keeps one tick, the latest,
+// and every message.
+func TestARefusedLoginKeepsOneTick(t *testing.T) {
+	t.Parallel()
+	s := startServer(t, t.TempDir())
+	expired := filepath.Join(s.fkState, "login-expired")
+	if err := os.MkdirAll(s.fkState, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(expired, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s.createLoop("aster", nil)
+	s.waitState("aster", "workstation_down", 30*time.Second)
+
+	s.message("aster", "first word")
+	// each tick lands between retries, as the scheduler's do over an
+	// outage, so it is queued rather than skipped as a wake mid-spawn
+	for range 3 {
+		refused := len(s.completed("aster"))
+		s.mustJSON("POST", "/api/loops/aster/wake", nil, nil)
+		s.waitTurn("aster", 30*time.Second, func(tn turn) bool {
+			return tn.IsError && len(s.completed("aster")) > refused
+		})
+	}
+	s.message("aster", "second word")
+
+	if err := os.Remove(expired); err != nil {
+		t.Fatal(err)
+	}
+	s.waitTurn("aster", 60*time.Second, func(tn turn) bool {
+		return !tn.IsError && strings.Contains(tn.ResultText, "second word")
+	})
+	time.Sleep(2 * time.Second) // let any tick queued behind it run
+	// a turn batches one conversation, so the ticks and the messages
+	// arrive in turns of their own
+	inputs := s.turnInputs("aster")
+	var after []string
+	for _, tn := range s.completed("aster") {
+		if !tn.IsError {
+			after = append(after, inputs[tn.ID]...)
+		}
+	}
+	all := strings.Join(after, "\n")
+	if n := strings.Count(all, "[tick · "); n != 1 {
+		t.Fatalf("the turns after the outage carried %d ticks, want 1:\n%s", n, all)
+	}
+	for _, want := range []string{"first word", "second word"} {
+		if !strings.Contains(all, want) {
+			t.Fatalf("the turns after the outage lost %q:\n%s", want, all)
+		}
+	}
+}

@@ -458,6 +458,12 @@ func (actor *Actor) drainStoredInbox() {
 }
 
 func (actor *Actor) enqueue(env Envelope) {
+	if actor.loginRejected && env.Trigger == store.TriggerTick {
+		// every tick of an outage would otherwise reach the first turn
+		// that authenticates, as a burst of stale wakes (#420)
+		actor.inbox = latestTickOnly(append(actor.inbox, env))
+		return
+	}
 	if len(actor.inbox) >= maxInbox {
 		actor.log().Warn("inbox overflow, dropping oldest")
 		actor.inbox = actor.inbox[1:]
@@ -1291,7 +1297,8 @@ func (actor *Actor) refuseModel(sentence string) {
 // raises the unauthenticated alert and climbs the crash ladder, each rung a
 // free probe of whether the login is back. The refused batch never reached
 // the model, so it goes back to the front of the queue, and the notes the
-// turn owed stay owed.
+// turn owed stay owed. Its ticks do not pile up behind it: the queue keeps
+// one, the latest, until a turn authenticates (#420).
 func (actor *Actor) rejectLogin(sentence string) {
 	hostLogin := !actor.runsOnSetupToken()
 	fix := "log in again with claude on the host"
@@ -1305,8 +1312,36 @@ func (actor *Actor) rejectLogin(sentence string) {
 	}
 	actor.loginRejected = true
 	actor.setWorkstationDown(DownReasonUnauthenticated, fmt.Sprintf("The Claude login was rejected (%s); %s", sentence, fix))
-	actor.inbox = append(append([]Envelope(nil), actor.currentBatch...), actor.inbox...)
+	actor.inbox = latestTickOnly(append(append([]Envelope(nil), actor.currentBatch...), actor.inbox...))
 	actor.drainRefusedProcess()
+}
+
+// latestTickOnly leaves one tick in envs: the latest, whose header tells
+// the loop the time it wakes at, in the place of the first, so the queue's
+// order is otherwise untouched. Messages are kept as they are.
+func latestTickOnly(envs []Envelope) []Envelope {
+	first, last := -1, -1
+	for i, env := range envs {
+		if env.Trigger == store.TriggerTick {
+			if first < 0 {
+				first = i
+			}
+			last = i
+		}
+	}
+	if first == last {
+		return envs
+	}
+	kept := make([]Envelope, 0, len(envs))
+	for i, env := range envs {
+		switch {
+		case i == first:
+			kept = append(kept, envs[last])
+		case env.Trigger != store.TriggerTick:
+			kept = append(kept, env)
+		}
+	}
+	return kept
 }
 
 // runsOnSetupToken reports whether the loop's claude logs in with the
