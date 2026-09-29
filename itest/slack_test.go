@@ -109,6 +109,11 @@ func (slack *fakeSlack) handle(w http.ResponseWriter, r *http.Request) {
 		if _, ok := slack.bots[token]; ok {
 			answer = map[string]any{"ok": true, "channel": map[string]any{"id": "D" + r.FormValue("users")}}
 		}
+	case "/conversations.info":
+		if _, ok := slack.bots[token]; ok {
+			answer = map[string]any{"ok": true, "channel": map[string]any{"id": r.FormValue("channel"),
+				"name": strings.ToLower(r.FormValue("channel"))}}
+		}
 	case "/apps.connections.open":
 		switch {
 		case slack.apps[token]:
@@ -295,13 +300,14 @@ const (
 var terraBot = slackBot{UserID: "U0TERRA", Name: "terra", TeamID: "T0ACME", TeamName: "Acme"}
 
 type slackStatus struct {
-	Configured bool   `json:"configured"`
-	BotUserID  string `json:"bot_user_id"`
-	BotName    string `json:"bot_name"`
-	TeamID     string `json:"team_id"`
-	TeamName   string `json:"team_name"`
-	ChannelID  string `json:"channel_id"`
-	Bridge     struct {
+	Configured  bool   `json:"configured"`
+	BotUserID   string `json:"bot_user_id"`
+	BotName     string `json:"bot_name"`
+	TeamID      string `json:"team_id"`
+	TeamName    string `json:"team_name"`
+	ChannelID   string `json:"channel_id"`
+	ChannelName string `json:"channel_name"`
+	Bridge      struct {
 		Connected     bool   `json:"connected"`
 		LastEventAt   int64  `json:"last_event_at"`
 		LastError     string `json:"last_error"`

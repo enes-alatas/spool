@@ -197,3 +197,20 @@ func (client *Client) OpenDM(ctx context.Context, botToken, userID string) (stri
 	}
 	return result.Channel.ID, nil
 }
+
+type conversationInfo struct {
+	apiEnvelope
+	Channel struct {
+		Name string `json:"name"`
+	} `json:"channel"`
+}
+
+// ChannelName is channel's name as its members see it, without the #. It
+// needs channels:read, or groups:read for a private channel.
+func (client *Client) ChannelName(ctx context.Context, botToken, channel string) (string, error) {
+	var result conversationInfo
+	if err := client.call(ctx, botToken, "conversations.info", url.Values{"channel": {channel}}, &result); err != nil {
+		return "", err
+	}
+	return result.Channel.Name, nil
+}

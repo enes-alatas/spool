@@ -121,12 +121,18 @@ func (server *Server) handleSlackStatus(w http.ResponseWriter, r *http.Request) 
 		"team_id":     loopRecord.SlackTeamID,
 		"team_name":   loopRecord.SlackTeamName,
 		"channel_id":  loopRecord.SlackChannelID,
-		// Named from conversations.info once the app can call it, which
-		// #230's outbound slice brings.
+		// the link asks Slack for it; "" until it has
 		"channel_name": "",
 	}
 	if slack := server.Surfaces[store.SurfaceSlack]; slack != nil {
-		status["bridge"] = slack.Status(loopRecord.ID)
+		bridge := slack.Status(loopRecord.ID)
+		if link, ok := bridge.(map[string]any); ok {
+			if name, ok := link["channel_name"].(string); ok {
+				status["channel_name"] = name
+			}
+			delete(link, "channel_name")
+		}
+		status["bridge"] = bridge
 	}
 	writeJSON(w, http.StatusOK, status)
 }

@@ -109,6 +109,7 @@ func (adapter *Adapter) ingestChannel(ctx context.Context, link *link, loopRecor
 	}
 	if loopRecord.SlackChannelID == "" {
 		adapter.bindChannel(ctx, loopRecord, event.Channel)
+		adapter.nameChannel(ctx, link, loopRecord, event.Channel)
 	}
 	err := adapter.router.Ingest(ctx, route.InboundMessage{
 		Origin:         store.OriginSlackChannel,
@@ -227,6 +228,20 @@ func (adapter *Adapter) bindChannel(ctx context.Context, loopRecord *store.Loop,
 	adapter.bus.Publish(bus.Item{Kind: bus.KindLoopStatus, LoopID: loopRecord.ID, Payload: map[string]any{
 		"loop_id": loopRecord.ID, "name": loopRecord.Name, "slack_channel_bound": true,
 	}})
+}
+
+// nameChannel asks Slack what the loop's bound channel is called, for the
+// control room to show. A channel it will not name keeps showing its id.
+func (adapter *Adapter) nameChannel(ctx context.Context, link *link, loopRecord *store.Loop, channelID string) {
+	if channelID == "" {
+		return
+	}
+	name, err := adapter.client.ChannelName(ctx, loopRecord.SlackBotToken, channelID)
+	if err != nil {
+		adapter.log.Warn("slack: name the bound channel", "loop", loopRecord.Name, "channel", channelID, "err", err)
+		return
+	}
+	link.named(name)
 }
 
 // captureOwnerDM records the DM the owner wrote to the app in, which is
