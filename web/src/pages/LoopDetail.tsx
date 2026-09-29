@@ -21,7 +21,9 @@ import { slackCreateAppURL, slackManifest } from '../slackManifest'
 import {
   hubHasSlack,
   loopSurface,
+  SLACK_UNBOUND_HINT,
   slackAttachError,
+  slackChannel,
   SlackAttachError,
   slackPairSubmittable,
   slackReadiness,
@@ -1188,6 +1190,7 @@ function SlackSurface({
           {status ? (status.bridge.connected ? 'connected' : 'not connected') : '…'}
         </span>
       </div>
+      {status && !status.channel_id && <div className="hint surface-hint">{SLACK_UNBOUND_HINT}</div>}
       {status?.bridge.last_error && (
         <div className="form-error" role="alert">
           Slack: {status.bridge.last_error}
@@ -1221,13 +1224,6 @@ function SlackSurface({
       <SlackOwnerPanel loop={loop} status={status} />
     </>
   )
-}
-
-// The channel, or what binds one: the first channel the bot is invited into
-// or hears in becomes its group (#230).
-function slackChannel(status: SlackStatus): string {
-  if (!status.channel_id) return 'not bound yet: invite the bot to a channel'
-  return status.channel_name ? `#${status.channel_name}` : status.channel_id
 }
 
 // Who a Slack loop may message privately. Only an allowed sender in the

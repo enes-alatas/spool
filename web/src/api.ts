@@ -213,10 +213,11 @@ export interface SlackSender {
   updated_at: number
 }
 
-// A Slack loop's live state (#230). The channel binds the way a Telegram
-// group does, to the first one the bot is invited into or hears in, so
-// channel_id is '' until then. ignored_events counts events from channels it
-// does not listen in: the hint that the bot was invited somewhere else.
+// A Slack loop's live state (#230). The channel binds on the first message
+// an allowed sender writes in a channel the bot is in; an invite alone, or a
+// pending sender's message, binds nothing (#438). channel_id is '' until
+// then. ignored_events counts events from channels it does not listen in:
+// the hint that the bot was invited somewhere else.
 export interface SlackStatus {
   configured: boolean
   bot_user_id: string
