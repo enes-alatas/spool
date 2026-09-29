@@ -123,3 +123,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 08:55: Terra: API 400s workspace_path on docker, ignores workspace_mode; #427 body amended, form omits both.
 - 09:25: Enes's docker loop can't reach the hub (502 host.docker.internal): loop listener on loopback, hub default bare so no startup warning. Filed #429 (bug, medium; refuse create / down reason / README). Asked Enes to confirm his flag; slot for Terra after that. 30m wake = missing trailer fallback.
 - 10:30: Enes fixed his mcp-listen; wants to talk about the docker-loop setup flow. REMIND HIM at 13:00 UTC (15:00 his time, +02:00). #429 unslotted until then. Runtime now v0.3.0-10.
+- 13:00: reminded Enes (docker-loop flow: #429 refusal/form warning, quickstart line, GitHub token step). Merged today: #423 #430 #434 (Slack 3a/3b/3c), #425 (#424), #428 (#426), #432 (#427), #433. #435 (turned-away senders, login notice) in review, closes #230.
