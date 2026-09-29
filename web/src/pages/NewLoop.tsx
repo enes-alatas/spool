@@ -2,7 +2,13 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
-import { EFFORT_OPTIONS, PACING_OPTIONS, RUNTIME_OPTIONS, runtimeFieldNote } from '../options'
+import {
+  EFFORT_OPTIONS,
+  PACING_OPTIONS,
+  RUNTIME_OPTIONS,
+  runtimeFieldNote,
+  workspaceFieldNote,
+} from '../options'
 import { useModelOptions } from '../models'
 import { customModelError, startsInFleetChannel } from '../forms'
 
@@ -49,6 +55,18 @@ export default function NewLoop() {
   const chosenRuntime = runtime || (settings?.default_runtime ?? '')
   const note = runtimeFieldNote(settings, settingsFailed, chosenRuntime)
   const runtimeChoices = RUNTIME_OPTIONS.filter((o) => o.value !== 'bare' || bareAllowed)
+  // The workspace is a bare loop's alone (#427). The field waits with the
+  // runtime select until the hub answers, and stays shut on docker.
+  const wsNote = workspaceFieldNote(chosenRuntime)
+  const wsLocked = !hubKnown || wsNote !== ''
+
+  const chooseRuntime = (kind: string) => {
+    setRuntime(kind)
+    if (workspaceFieldNote(kind)) {
+      setWsPath('')
+      setWsInfo(null)
+    }
+  }
 
   const inspect = async (p: string) => {
     setWsPath(p)
@@ -85,7 +103,7 @@ export default function NewLoop() {
         // choice existed: the hub resolves its own default, and that cannot
         // be wrong.
         runtime: (chosenRuntime as 'bare' | 'docker') || undefined,
-        workspace_path: wsPath.trim() || undefined,
+        workspace_path: (!wsLocked && wsPath.trim()) || undefined,
         tick_interval_sec: Math.max(60, Number(interval) * 60),
         // Sent whenever the switch shows a state, so it means what it shows; the
         // server's own default covers a form that has none yet.
@@ -200,7 +218,7 @@ export default function NewLoop() {
           <select
             id="nl-runtime"
             value={chosenRuntime}
-            onChange={(e) => setRuntime(e.target.value)}
+            onChange={(e) => chooseRuntime(e.target.value)}
             disabled={!hubKnown || runtimeChoices.length < 2}
           >
             {!chosenRuntime && <option value="">…</option>}
@@ -217,11 +235,13 @@ export default function NewLoop() {
           <label htmlFor="nl-ws">Workspace (optional)</label>
           <input
             id="nl-ws"
-            placeholder="/path/to/repo, or leave empty for a conversational loop"
-            value={wsPath}
+            placeholder={wsNote ? '' : '/path/to/repo, or leave empty for a conversational loop'}
+            value={wsLocked ? '' : wsPath}
             onChange={(e) => inspect(e.target.value)}
+            disabled={wsLocked}
           />
-          {wsInfo && wsPath.trim() && (
+          {wsNote && <div className="hint">{wsNote}</div>}
+          {!wsLocked && wsInfo && wsPath.trim() && (
             <div className={`hint ${wsInfo.exists ? (wsInfo.is_git ? 'ok' : '') : 'warn'}`}>
               {!wsInfo.exists
                 ? 'Directory not found.'

@@ -133,6 +133,16 @@ export function runtimeFieldNote(
   return runtimeNote(chosen || hub.default_runtime)
 }
 
+// The note under the workspace field, or '' when the field is open. A
+// docker loop's workstation is its workspace (ADR-0017): a host path means
+// nothing to it, and the API refuses one (#427), so the field is locked and
+// says where the workspace is instead.
+export function workspaceFieldNote(chosenRuntime: string): string {
+  return chosenRuntime === 'docker'
+    ? 'A Docker loop works inside its workstation; the workspace lives there.'
+    : ''
+}
+
 // What the Settings list says about a custom model's resolution, or '' when
 // there is nothing to say. A full id usually resolves to itself, and saying
 // so would be noise; one that resolves elsewhere, or not yet, is news. The
