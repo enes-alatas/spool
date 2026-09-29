@@ -3,6 +3,7 @@
 package itest
 
 import (
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -66,9 +67,8 @@ func TestAMistypedSubcommandIsRefused(t *testing.T) {
 				t.Errorf("the hub started on a command line it should have refused:\n%s", out)
 			}
 
-			// 2 is "your command line is wrong". Not compared against what a
-			// running hub exits with: one that fails to bind exits 0 today,
-			// which is its own bug (#253) and not this test's business.
+			// 2 is "your command line is wrong", apart from the 1 a hub that
+			// cannot serve exits with
 			exit, ok := err.(*exec.ExitError)
 			if !ok {
 				t.Errorf("spool %s did not exit non-zero: err=%v", strings.Join(args, " "), err)
@@ -77,6 +77,47 @@ func TestAMistypedSubcommandIsRefused(t *testing.T) {
 			}
 			if !strings.Contains(string(out), "unknown argument") {
 				t.Errorf("stderr does not name the offending argument:\n%s", out)
+			}
+		})
+	}
+}
+
+// A hub that cannot serve exits non-zero and says which address it could not
+// have: a supervisor reads the exit status, and the operator reads the log
+// (#253). Either listener's port being taken fails the start.
+func TestAHubThatCannotBindExitsNonZero(t *testing.T) {
+	t.Parallel()
+	root := repoRoot(t)
+	spoolBin := filepath.Join(root, "bin", "spool")
+	if _, err := os.Stat(spoolBin); err != nil {
+		t.Fatalf("%s missing — run via `make itest`", spoolBin)
+	}
+	held, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+	taken := held.Addr().String()
+
+	for _, flag := range []string{"--listen", "--mcp-listen"} {
+		t.Run(flag, func(t *testing.T) {
+			args := []string{"--listen", "127.0.0.1:0", "--mcp-listen", "127.0.0.1:0",
+				"--data-dir", t.TempDir(), "--runtime", "bare",
+				"--claude-bin", filepath.Join(root, "bin", "fakeclaude")}
+			for i := range args {
+				if args[i] == flag {
+					args[i+1] = taken
+				}
+			}
+			out, err := exec.Command(spoolBin, args...).CombinedOutput()
+			if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 1 {
+				t.Errorf("spool with %s on a taken port: err=%v, want exit status 1; output:\n%s", flag, err, out)
+			}
+			if !strings.Contains(string(out), taken) {
+				t.Errorf("the log does not name the address it could not bind, %s:\n%s", taken, out)
+			}
+			if strings.Contains(string(out), "spool listening") {
+				t.Errorf("the hub said it was listening:\n%s", out)
 			}
 		})
 	}
