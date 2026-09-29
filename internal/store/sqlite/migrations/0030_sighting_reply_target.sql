@@ -1,0 +1,13 @@
+-- In a basic Telegram group each bot has its own copy of every message, and
+-- a bot never receives another bot's post. So only the author's bot finds
+-- a reply to that post embedded in the update; every other bot, the elected
+-- ingest bot included, sees a message that replies to nothing (#424). The
+-- sighting of the bot that could tell carries what it resolved the reply
+-- to, for the ingested row to take.
+ALTER TABLE tg_sightings ADD COLUMN reply_to_id INTEGER NOT NULL DEFAULT 0;
+--
+-- 0013 said a wrong tg_key match "never changes who a message is delivered
+-- to". With a target on the sighting that stops being quite true: two
+-- identical messages from one sender in the same second could now take each
+-- other's reply target, and so wake the wrong author. It is the same
+-- collision 0013 accepted, with a larger consequence.

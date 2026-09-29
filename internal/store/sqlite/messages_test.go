@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -121,10 +122,10 @@ func TestMessageReferencesAreOwnedPerBot(t *testing.T) {
 	}
 	// l1 ingested the human message under id 11; l2 saw the same message as
 	// 512, its own numbering. l1 also posted a reply, which Telegram gave id 12.
-	if err := db.Messages().RecordSighting(ctx, "k1", "l1", -100, 11, now); err != nil {
+	if err := db.Messages().RecordSighting(ctx, "k1", "l1", -100, 11, 0, now); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Messages().RecordSighting(ctx, "k1", "l2", -100, 512, now); err != nil {
+	if err := db.Messages().RecordSighting(ctx, "k1", "l2", -100, 512, 0, now); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Messages().PutRef(ctx, &store.SurfaceRef{
@@ -699,5 +700,46 @@ func TestResolveResendsWalksTheChain(t *testing.T) {
 	// And a message that resends nothing resolves nothing.
 	if resolved, err := db.Messages().ResolveResends(ctx, unrelated.ID, now); err != nil || resolved != 0 {
 		t.Errorf("ResolveResends on a message that resends nothing = %d (err %v), want 0", resolved, err)
+	}
+}
+
+// A reply target learned after ingest is taken by the row once (#424). Two
+// pollers may both learn it, and only the first to adopt it delivers.
+func TestAdoptReplyTargetOnce(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+
+	if _, err := db.Messages().SightedReplyTarget(ctx, "k1"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("no sighting yet: err = %v, want ErrNotFound", err)
+	}
+	if _, err := db.Messages().AdoptReplyTarget(ctx, "k1", 7); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("adopting before the row exists: err = %v, want ErrNotFound", err)
+	}
+	if err := db.Messages().RecordSighting(ctx, "k1", "l1", -100, 11, 0, 1000); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Messages().RecordSighting(ctx, "k1", "l2", -100, 512, 7, 1001); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := db.Messages().SightedReplyTarget(ctx, "k1"); err != nil || got != 7 {
+		t.Fatalf("sighted target = %d, %v; want the one l2 resolved, 7", got, err)
+	}
+
+	row := &store.Message{TS: 1002, Origin: store.OriginTelegramGroup, Author: "operator",
+		Text: "it seems out of date", TGChatID: -100, TGMessageID: 11, TGBotLoopID: "l1", TGKey: "k1",
+		Conversation: store.ConversationGroup}
+	if err := db.Messages().Insert(ctx, row); err != nil {
+		t.Fatal(err)
+	}
+	adopted, err := db.Messages().AdoptReplyTarget(ctx, "k1", 7)
+	if err != nil || adopted.ID != row.ID || adopted.ReplyToID != 7 {
+		t.Fatalf("first adopt = %+v, %v; want row %d with target 7", adopted, err, row.ID)
+	}
+	if _, err := db.Messages().AdoptReplyTarget(ctx, "k1", 7); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("second adopt: err = %v, want ErrNotFound", err)
 	}
 }

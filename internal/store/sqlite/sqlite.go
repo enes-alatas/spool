@@ -711,15 +711,40 @@ func (table messages) Ref(ctx context.Context, messageID int64, botLoopID string
 // this renders without a native anchor rather than keeping every id forever.
 const sightingRetention = 30 * 24 * 60 * 60 * 1000 // ms
 
-func (table messages) RecordSighting(ctx context.Context, tgKey, botLoopID string, chatID, messageID, seenAt int64) error {
+func (table messages) RecordSighting(ctx context.Context, tgKey, botLoopID string, chatID, messageID, replyToID, seenAt int64) error {
 	if _, err := table.db.ExecContext(ctx, `INSERT INTO tg_sightings
-		(tg_key, bot_loop_id, tg_chat_id, tg_message_id, seen_at) VALUES (?,?,?,?,?)
+		(tg_key, bot_loop_id, tg_chat_id, tg_message_id, reply_to_id, seen_at) VALUES (?,?,?,?,?,?)
 		ON CONFLICT (tg_key, bot_loop_id) DO NOTHING`,
-		tgKey, botLoopID, chatID, messageID, seenAt); err != nil {
+		tgKey, botLoopID, chatID, messageID, replyToID, seenAt); err != nil {
 		return err
 	}
 	_, err := table.db.ExecContext(ctx, `DELETE FROM tg_sightings WHERE seen_at < ?`, seenAt-sightingRetention)
 	return err
+}
+
+func (table messages) SightedReplyTarget(ctx context.Context, tgKey string) (int64, error) {
+	var target int64
+	err := table.db.QueryRowContext(ctx, `SELECT reply_to_id FROM tg_sightings
+		WHERE tg_key=? AND reply_to_id!=0 ORDER BY seen_at LIMIT 1`, tgKey).Scan(&target)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, store.ErrNotFound
+	}
+	return target, err
+}
+
+func (table messages) AdoptReplyTarget(ctx context.Context, tgKey string, replyToID int64) (*store.Message, error) {
+	if tgKey == "" || replyToID == 0 {
+		return nil, store.ErrNotFound
+	}
+	out, err := table.query(ctx, `UPDATE messages SET reply_to_id=?
+		WHERE tg_key=? AND reply_to_id=0 RETURNING `+messageCols, replyToID, tgKey)
+	if err != nil {
+		return nil, err
+	}
+	if len(out) == 0 {
+		return nil, store.ErrNotFound
+	}
+	return out[0], nil
 }
 
 func (table messages) ByRef(ctx context.Context, botLoopID string, chatID, tgMessageID int64) (*store.Message, error) {

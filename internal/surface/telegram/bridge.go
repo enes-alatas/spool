@@ -338,30 +338,13 @@ func (br *Bridge) handleMessage(ctx context.Context, bot *poller, message *tgMsg
 	// not it is the one that ingests it. That sighting is what later lets
 	// this bot's reply thread under the message: it cannot borrow the
 	// ingesting bot's id, which belongs to another numbering (ADR-0020).
-	br.recordSighting(ctx, bot, message)
+	// It also carries what the message replies to, when this bot can tell
+	// by its own id for the target (#424).
+	sightedTarget := br.ownReplyTarget(ctx, bot, message)
+	br.recordSighting(ctx, bot, message, sightedTarget)
 
 	if isGroup {
-		// Every bot in the group sees this message under its own message_id,
-		// so exactly one of them may persist it.
-		if br.groupIngestLoopID(ctx, message.Chat.ID, message.Date) != bot.loopID {
-			return
-		}
-		if !br.dedup.Add(dedupKey(bot.loopID, message.Chat.ID, message.MessageID)) {
-			return
-		}
-		err := br.router.Ingest(ctx, route.InboundMessage{
-			Origin:      store.OriginTelegramGroup,
-			Author:      author,
-			Text:        text,
-			TGChatID:    message.Chat.ID,
-			TGMessageID: message.MessageID,
-			TGBotLoopID: bot.loopID,
-			TGKey:       tgKey(message),
-			ReplyToID:   br.inboundReplyTarget(ctx, bot, message),
-		})
-		if err != nil && !errors.Is(err, store.ErrDuplicate) {
-			br.log.Error("telegram group ingest", "err", err)
-		}
+		br.ingestGroupMessage(ctx, bot, message, author, text, sightedTarget)
 		return
 	}
 
@@ -475,9 +458,10 @@ func tgKey(message *tgMsgAlias) string {
 
 // recordSighting stores this bot's own id for a message it received —
 // every inbound message, group or DM, since a DM's only reference is the
-// receiving bot's sighting of it.
-func (br *Bridge) recordSighting(ctx context.Context, bot *poller, message *tgMsgAlias) {
-	err := br.store.Messages().RecordSighting(ctx, tgKey(message), bot.loopID, message.Chat.ID, message.MessageID, time.Now().UnixMilli())
+// receiving bot's sighting of it — and what this bot resolved it to reply
+// to, 0 for nothing.
+func (br *Bridge) recordSighting(ctx context.Context, bot *poller, message *tgMsgAlias, replyToID int64) {
+	err := br.store.Messages().RecordSighting(ctx, tgKey(message), bot.loopID, message.Chat.ID, message.MessageID, replyToID, time.Now().UnixMilli())
 	if err != nil {
 		br.log.Warn("telegram: record sighting", "loop", bot.name, "err", err)
 	}
@@ -541,6 +525,91 @@ func (br *Bridge) inboundReplyTarget(ctx context.Context, bot *poller, message *
 		}
 	}
 	return 0
+}
+
+// ingestGroupMessage persists a group message if this bot is the one elected
+// to, and otherwise lends it the reply target only this bot could see.
+func (br *Bridge) ingestGroupMessage(ctx context.Context, bot *poller, message *tgMsgAlias, author, text string, sightedTarget int64) {
+	// Every bot in the group sees this message under its own message_id,
+	// so exactly one of them may persist it.
+	if br.groupIngestLoopID(ctx, message.Chat.ID, message.Date) != bot.loopID {
+		// In a basic group only the author's bot sees what a reply to
+		// its post answers, and it is seldom the one that ingests. It
+		// hands the ingested row the target, if the row is already
+		// there; if not, the ingesting bot finds it in the sighting.
+		if sightedTarget != 0 {
+			br.adoptReplyTarget(ctx, bot, tgKey(message), sightedTarget)
+		}
+		return
+	}
+	if !br.dedup.Add(dedupKey(bot.loopID, message.Chat.ID, message.MessageID)) {
+		return
+	}
+	replyTo := br.inboundReplyTarget(ctx, bot, message)
+	if replyTo == 0 {
+		if sighted, err := br.store.Messages().SightedReplyTarget(ctx, tgKey(message)); err == nil {
+			replyTo = sighted
+		}
+	}
+	err := br.router.Ingest(ctx, route.InboundMessage{
+		Origin:      store.OriginTelegramGroup,
+		Author:      author,
+		Text:        text,
+		TGChatID:    message.Chat.ID,
+		TGMessageID: message.MessageID,
+		TGBotLoopID: bot.loopID,
+		TGKey:       tgKey(message),
+		ReplyToID:   replyTo,
+	})
+	if err != nil && !errors.Is(err, store.ErrDuplicate) {
+		br.log.Error("telegram group ingest", "err", err)
+	}
+	if err == nil && replyTo == 0 {
+		// The author's bot may have recorded the target between the
+		// look above and the insert, and looked for the row before it
+		// existed. Looking again after the insert closes that gap: of
+		// the two, whichever looks last sees the other's write.
+		if sighted, err := br.store.Messages().SightedReplyTarget(ctx, tgKey(message)); err == nil {
+			br.adoptReplyTarget(ctx, bot, tgKey(message), sighted)
+		} else {
+			br.log.Debug("telegram: group message replies to nothing this hub can name",
+				"loop", bot.name, "embedded", message.ReplyToMessage != nil)
+		}
+	}
+}
+
+// ownReplyTarget is the message a reply answers, when this bot holds its own
+// id for it: a message it sent or saw. That is certain where every other
+// resolution is a match, and in a basic group it is the only one that works
+// for a reply to a loop's post, because only the author's bot finds the
+// post embedded in the reply (#424).
+func (br *Bridge) ownReplyTarget(ctx context.Context, bot *poller, message *tgMsgAlias) int64 {
+	rm := message.ReplyToMessage
+	if rm == nil || rm.MessageID == 0 {
+		return 0
+	}
+	target, err := br.store.Messages().ByRef(ctx, bot.loopID, message.Chat.ID, rm.MessageID)
+	if err != nil {
+		return 0
+	}
+	return target.ID
+}
+
+// adoptReplyTarget gives an ingested group message the reply target it was
+// ingested without, and delivers it to that target's author. Two bots may
+// both try; the store lets one of them.
+func (br *Bridge) adoptReplyTarget(ctx context.Context, bot *poller, key string, targetID int64) {
+	adopted, err := br.store.Messages().AdoptReplyTarget(ctx, key, targetID)
+	if errors.Is(err, store.ErrNotFound) {
+		return
+	}
+	if err != nil {
+		br.log.Error("telegram: adopt reply target", "loop", bot.name, "err", err)
+		return
+	}
+	if err := br.router.DeliverAdoptedReply(ctx, adopted); err != nil {
+		br.log.Error("telegram: deliver adopted reply", "loop", bot.name, "message", adopted.ID, "err", err)
+	}
 }
 
 // loopIDOfBot names the loop whose bot posts under username, or "" for a

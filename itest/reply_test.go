@@ -173,6 +173,67 @@ func TestNativeReplyToAQuotedLoopReplyWakesItsAuthor(t *testing.T) {
 	}
 }
 
+// The same shape in a basic group, which is what the fleet's group is, and
+// where it failed on 2026-09-28 (#424): Iris's post, Quinn's quoted reply
+// to it, and the operator's native reply to Quinn's. There the ingesting
+// bot's update carries no reply_to_message at all, since it has no copy of
+// another bot's post, and only the author's bot can say what the reply
+// answers. The author must still be woken, and only the author.
+func TestNativeReplyInABasicGroupWakesTheAuthorItAnswers(t *testing.T) {
+	t.Parallel()
+	operator := user{ID: 5757, First: "Operator", Username: "operator"}
+	wsAlpha := workspaceWithScript(t, "!ctx 0\n"+
+		`!send {"destination":"group","text":"@beta PR is ready for review"}`+"\n!echo\n")
+	wsBeta := workspaceWithScript(t, "!ctx 0\n"+
+		`!send {"destination":"group","text":"@operator approved, please merge","reply_to":"$ref"}`+"\n!echo\n")
+	srv, tg := startTelegramFleet(t, operator,
+		map[string]any{"workspace_path": wsAlpha}, map[string]any{"workspace_path": wsBeta})
+
+	srv.message("alpha", "ask")
+	betas := tg.sentPostFrom(t, groupChatID, "beta", "approved, please merge")
+	if !strings.HasPrefix(betas.text, "↳ re alpha:") {
+		t.Fatalf("the case needs a quoted post to reply to, got %q", betas.text)
+	}
+	// alpha is the elected ingest bot, and beta the author: the reply below
+	// reaches alpha's bot as a message that replies to nothing.
+	srv.waitTurn("alpha", 15*time.Second, func(tn turn) bool {
+		return tn.Trigger == "message" && turnReads(srv, "alpha", tn.ID, "approved, please merge")
+	})
+	betaTurns, alphaTurns := messageTurns(srv, "beta"), messageTurns(srv, "alpha")
+
+	const reply = "it seems out of date"
+	tg.postReply(groupChatID, "group", reply, operator, betas)
+	srv.waitForMessage(reply)
+
+	var stored activityMessage
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
+		if rows := srv.activityWith(reply); len(rows) == 1 && len(rows[0].DeliveredTo) > 0 {
+			stored = rows[0]
+			break
+		}
+	}
+	if stored.ReplyToID == 0 {
+		t.Fatalf("the reply resolved to no target: %+v", srv.activityWith(reply))
+	}
+	if got := stored.DeliveredTo; len(got) != 1 {
+		t.Fatalf("delivered_to = %v, want beta alone — the author of what was replied to", got)
+	}
+	srv.waitTurn("beta", 15*time.Second, func(tn turn) bool {
+		return tn.Trigger == "message" && turnReads(srv, "beta", tn.ID, reply) &&
+			turnReads(srv, "beta", tn.ID, messageRef(stored.ReplyToID))
+	})
+	if n := len(srv.activityWith(reply)); n != 1 {
+		t.Fatalf("reply stored %d times, want 1", n)
+	}
+	time.Sleep(2 * time.Second)
+	if got := messageTurns(srv, "beta"); got != betaTurns+1 {
+		t.Errorf("beta ran %d message turns for one reply, want 1", got-betaTurns)
+	}
+	if got := messageTurns(srv, "alpha"); got != alphaTurns {
+		t.Errorf("the ingesting bot's loop woke on a reply to a peer: %d message turns, want %d", got, alphaTurns)
+	}
+}
+
 // A loop replying to a human's group message threads natively when its own
 // poller saw that message, and never borrows another bot's id.
 func TestLoopReplyToHumanThreadsNatively(t *testing.T) {
