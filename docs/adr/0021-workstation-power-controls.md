@@ -1,6 +1,6 @@
 # ADR-0021: The operator can power a workstation, and switched-off is not down
 
-Date: 2026-08-20 · Status: accepted · Amended: 2026-09-24 (item 5, model_unrecognized), 2026-09-27 (item 5, down_reason values), 2026-09-28 (item 5, a rejected login)
+Date: 2026-08-20 · Status: accepted · Amended: 2026-09-24 (item 5, model_unrecognized), 2026-09-27 (item 5, down_reason values), 2026-09-28 (item 5, a rejected login), 2026-09-29 (item 5, one tick through a rejected login)
 
 ## Context
 
@@ -81,6 +81,13 @@ reachable. Rendered naively, a successful power-off shows up as the alert
    authenticates. A new login happens outside Spool, so the loop finds it by
    retrying on the crash ladder. A refused turn bills nothing, and the work
    it carried goes back to the queue, since it never reached the model.
+
+   **Amendment (2026-09-29, #420):** the queue keeps every message through
+   a rejected login but only one tick, the latest. Ticks keep arriving
+   while the loop retries, and each would otherwise wait behind the refused
+   batch, so the first turn that authenticates met a backlog of stale
+   wakes. Unlike item 6, a tick is still queued, because the loop has not
+   been switched off: its retries need the tick to probe the login.
 6. **A switched-off workstation stays off.** While the intent stands, ticks are
    skipped — not queued, so power-on is not met by a backlog of stale wakes —
    and inbound messages go to the loop's stored inbox without waking it. They
