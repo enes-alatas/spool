@@ -108,10 +108,29 @@ func (adapter *Adapter) mirrorMessage(ctx context.Context, mp *route.MessagePayl
 		adapter.ledger.Unsendable(ctx, mp, "the loop's Slack app is not connected")
 		return
 	}
+	if unsent := current.enqueue(mp); unsent != "" {
+		adapter.ledger.Unsendable(ctx, mp, unsent)
+	}
+}
+
+// errAppStopped is the failure of a send a loop's app stopped before
+// sending: it was replaced or detached, or its loop archived.
+const errAppStopped = "the loop's Slack app was replaced or detached before this was sent"
+
+// enqueue queues a send on the link, and returns "" when it did and
+// otherwise why not. The caller records the loss, since the send loop that
+// would have recorded it never sees the send.
+func (link *link) enqueue(mp *route.MessagePayload) string {
+	link.sendMu.Lock()
+	defer link.sendMu.Unlock()
+	if link.stopped {
+		return errAppStopped
+	}
 	select {
-	case current.sends <- mp:
+	case link.sends <- mp:
+		return ""
 	default:
-		adapter.ledger.Unsendable(ctx, mp, outbound.ErrQueueFull)
+		return outbound.ErrQueueFull
 	}
 }
 
@@ -122,11 +141,13 @@ func (adapter *Adapter) sendLoop(ctx context.Context, link *link) {
 	for {
 		select {
 		case <-ctx.Done():
+			link.sendMu.Lock()
+			link.stopped = true
+			link.sendMu.Unlock()
 			for {
 				select {
 				case mp := <-link.sends:
-					// ctx is spent, and the failure must still be written
-					adapter.ledger.Unsendable(context.WithoutCancel(ctx), mp, "the loop's Slack app was replaced or detached before this was sent")
+					adapter.unsent(ctx, mp, errAppStopped)
 				default:
 					return
 				}
@@ -145,7 +166,11 @@ func (adapter *Adapter) sendLoop(ctx context.Context, link *link) {
 	}
 }
 
-// send posts one message and records how it ended.
+// send posts one message in parts Slack takes whole, and records how it
+// ended. The first part becomes the message's ts, which is how a reply in
+// its thread is traced back to it; the rest follow in the same place. A
+// part that does not land fails the whole message, since the loop's words
+// did not all arrive, even when their start did.
 func (adapter *Adapter) send(ctx context.Context, mp *route.MessagePayload) {
 	loopRecord, err := adapter.store.Loops().Get(ctx, mp.FromLoopID)
 	if err != nil {
@@ -160,56 +185,115 @@ func (adapter *Adapter) send(ctx context.Context, mp *route.MessagePayload) {
 		}
 	}
 	threadTS, text := adapter.render(ctx, mp, channel)
-	var lastErr error
-	for attempt := 0; attempt < sendAttempts; attempt++ {
-		lastErr = adapter.post(ctx, loopRecord.SlackBotToken, channel, text, threadTS, mp.ID)
-		if lastErr == nil {
-			adapter.ledger.Result(ctx, mp.ID, nil)
+	parts := split(text, postLimit)
+	for i, part := range parts {
+		if i > 0 && !pause(ctx, sendSpacing) {
+			adapter.unsent(ctx, mp, partOf(errAppStopped, i, len(parts)))
 			return
 		}
-		var apiErr *APIError
-		if errors.As(lastErr, &apiErr) && apiErr.Refused() {
-			// Slack judged the post and said no — channel_not_found,
-			// not_in_channel, is_archived — and would again
-			adapter.fail(ctx, mp, lastErr, attempt+1)
-			return
-		}
-		if attempt < sendAttempts-1 {
-			adapter.log.Warn("slack send failed; retrying", "loop", loopRecord.Name, "attempt", attempt+1, "err", lastErr)
-			timer := time.NewTimer(sendBackoff << attempt)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return
-			case <-timer.C:
-			}
-		}
-	}
-	adapter.fail(ctx, mp, lastErr, sendAttempts)
-}
-
-// post sends text in chunks Slack takes whole. The first chunk carries the
-// thread and becomes the message's ts, which is how a reply in its thread
-// is traced back to it; the rest follow in the same place.
-func (adapter *Adapter) post(ctx context.Context, botToken, channel, text, threadTS string, messageID int64) error {
-	for i, chunk := range split(text, postLimit) {
-		ts, err := adapter.client.PostMessage(ctx, botToken, channel, chunk, threadTS)
+		ts, attempts, err := adapter.postWithRetries(ctx, loopRecord, channel, part, threadTS)
 		if err != nil {
-			if i > 0 {
-				// the message's start is on Slack; posting it again on a
-				// retry would repeat it
-				adapter.log.Warn("slack: continuation of a long message lost", "message", messageID, "chunk", i, "err", err)
-				return nil
+			if ctx.Err() != nil {
+				// The app stopped under the attempt: that, not Slack's
+				// answer, is why this part never arrived.
+				adapter.unsent(ctx, mp, partOf(errAppStopped, i, len(parts)))
+				return
 			}
-			return err
+			if len(parts) > 1 {
+				err = fmt.Errorf("part %d of %d: %w", i+1, len(parts), err)
+			}
+			adapter.fail(ctx, mp, err, attempts)
+			return
 		}
 		if i == 0 {
-			if err := adapter.store.Messages().SetSlackRef(ctx, messageID, channel, ts); err != nil {
-				adapter.log.Warn("slack: record sent reference", "message", messageID, "err", err)
+			if record, ok := adapter.settleCtx(ctx); ok {
+				if err := adapter.store.Messages().SetSlackRef(record, mp.ID, channel, ts); err != nil {
+					adapter.log.Warn("slack: record sent reference", "message", mp.ID, "err", err)
+				}
 			}
 		}
 	}
-	return nil
+	if record, ok := adapter.settleCtx(ctx); ok {
+		adapter.ledger.Result(record, mp.ID, nil)
+	}
+}
+
+// partOf names the part of an n-part message a failure ended at, index i;
+// a message sent whole needs no part named.
+func partOf(reason string, i, n int) string {
+	if n == 1 {
+		return reason
+	}
+	return fmt.Sprintf("part %d of %d: %s", i+1, n, reason)
+}
+
+// postWithRetries posts one part, retrying what may be a blip, and returns
+// the ts Slack gave it, how many attempts it made, and the error the last
+// one ended on. A cancelled context ends it early.
+func (adapter *Adapter) postWithRetries(ctx context.Context, loopRecord *store.Loop, channel, text, threadTS string) (string, int, error) {
+	var lastErr error
+	for attempt := 0; attempt < sendAttempts; attempt++ {
+		ts, err := adapter.client.PostMessage(ctx, loopRecord.SlackBotToken, channel, text, threadTS)
+		if err == nil {
+			return ts, attempt + 1, nil
+		}
+		if ctx.Err() != nil {
+			return "", attempt + 1, ctx.Err()
+		}
+		lastErr = err
+		var apiErr *APIError
+		if errors.As(err, &apiErr) && apiErr.Refused() {
+			// Slack judged the post and said no — channel_not_found,
+			// not_in_channel, is_archived — and would again
+			return "", attempt + 1, err
+		}
+		if attempt < sendAttempts-1 {
+			adapter.log.Warn("slack send failed; retrying", "loop", loopRecord.Name, "attempt", attempt+1, "err", err)
+			if !pause(ctx, sendBackoff<<attempt) {
+				return "", attempt + 1, ctx.Err()
+			}
+		}
+	}
+	return "", sendAttempts, lastErr
+}
+
+// pause waits d, and reports false if ctx ended first.
+func pause(ctx context.Context, d time.Duration) bool {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
+// unsent records a send its app stopped before finishing, as failed with
+// reason.
+func (adapter *Adapter) unsent(ctx context.Context, mp *route.MessagePayload, reason string) {
+	if record, ok := adapter.settleCtx(ctx); ok {
+		adapter.ledger.Unsendable(record, mp, reason)
+	}
+}
+
+// settleCtx is the context a send's outcome is written through: its link's
+// own, until the link stops. A send that ends as its app stops, whether it
+// was cut short or its last part landed, must still be recorded, so a
+// spent context is traded for one without the cancel. A hub that is
+// stopping reports false: the store is closing under the send, which stays
+// pending for the next start to fail (FailInterruptedSends).
+func (adapter *Adapter) settleCtx(ctx context.Context) (context.Context, bool) {
+	if ctx.Err() == nil {
+		return ctx, true
+	}
+	adapter.mu.Lock()
+	hubStopping := adapter.ctx == nil || adapter.ctx.Err() != nil
+	adapter.mu.Unlock()
+	if hubStopping {
+		return nil, false
+	}
+	return context.WithoutCancel(ctx), true
 }
 
 // fail records a send that did not get through.

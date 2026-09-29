@@ -35,6 +35,10 @@ type fakeSlack struct {
 	// failPosts answers that many chat.postMessage calls with a transient
 	// error before taking one; -1 fails every one.
 	failPosts int
+	// failText fails, the same way, every post whose text contains it: how
+	// a test fails one part of a long message and not the others.
+	failText  string
+	postCalls int
 }
 
 // slackPost is one chat.postMessage the fake took.
@@ -93,6 +97,11 @@ func (slack *fakeSlack) handle(w http.ResponseWriter, r *http.Request) {
 		}
 	case "/chat.postMessage":
 		if _, ok := slack.bots[token]; ok {
+			slack.postCalls++
+			if slack.failText != "" && strings.Contains(r.FormValue("text"), slack.failText) {
+				answer = map[string]any{"ok": false, "error": "internal_error"}
+				break
+			}
 			if slack.failPosts != 0 {
 				if slack.failPosts > 0 {
 					slack.failPosts--
@@ -252,6 +261,21 @@ func (slack *fakeSlack) postsTaken() []slackPost {
 	slack.mu.Lock()
 	defer slack.mu.Unlock()
 	return append([]slackPost(nil), slack.posts...)
+}
+
+// failPostsContaining fails every post whose text contains text, until the
+// test clears it with "".
+func (slack *fakeSlack) failPostsContaining(text string) {
+	slack.mu.Lock()
+	defer slack.mu.Unlock()
+	slack.failText = text
+}
+
+// postAttempts counts every chat.postMessage an app made, failed or not.
+func (slack *fakeSlack) postAttempts() int {
+	slack.mu.Lock()
+	defer slack.mu.Unlock()
+	return slack.postCalls
 }
 
 func (slack *fakeSlack) setFailPosts(n int) {
