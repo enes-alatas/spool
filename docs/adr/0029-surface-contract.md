@@ -1,6 +1,6 @@
 # ADR-0029: The Surface contract
 
-Date: 2026-09-20 · Status: accepted · Amends: ADR-0020, ADR-0025 (item 4), ADR-0026 (item 1) · Amended: 2026-09-22 (item 2: the bus kinds a surface mirrors); 2026-09-23 (items 5 and 7: a surface is attached later and mirrors the fleet channel); 2026-09-27 (item 2: a credential and an identity are structs); 2026-09-28 (item 8: hub notices); 2026-09-29 (item 8: Slack's notices and login notice)
+Date: 2026-09-20 · Status: accepted · Amends: ADR-0020, ADR-0025 (item 4), ADR-0026 (item 1) · Amended: 2026-09-22 (item 2: the bus kinds a surface mirrors); 2026-09-23 (items 5 and 7: a surface is attached later and mirrors the fleet channel); 2026-09-27 (item 2: a credential and an identity are structs); 2026-09-28 (item 8: hub notices); 2026-09-29 (item 8: Slack's notices and login notice); 2026-09-29 (item 2: the mirror subscription is lossless)
 
 ## Context
 
@@ -48,6 +48,11 @@ contract.
    message said: republishing under it would draw a message the operator
    retried a second time. Adding hub-to-surface methods for any of this would
    invert a dependency that is fine as it stands.
+
+   **Amendment (2026-09-29, #302):** the adapter subscribes with
+   `bus.SubscribeLossless`. A plain subscription drops what a slow reader
+   has not taken, and a dropped `KindMessage` is a loop's send that no
+   surface ever tries and no record ever fails.
 
    **Amendment (2026-09-27, #230):** the second adapter proved one method's
    signature too narrow, as the Context says it would. A Slack app is two

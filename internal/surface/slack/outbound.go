@@ -41,7 +41,9 @@ const (
 // and tells owners of their loops' login notices. A retry (#269) is the
 // same send of the same row, and is decided the same way.
 func (adapter *Adapter) mirror(ctx context.Context) {
-	items, cancel := adapter.bus.Subscribe(func(item bus.Item) bool {
+	// lossless: an item dropped here is a loop's send lost without a
+	// record (#302)
+	items, cancel := adapter.bus.SubscribeLossless(func(item bus.Item) bool {
 		return item.Kind == bus.KindMessage || item.Kind == bus.KindSendRetry || item.Kind == bus.KindClaudeLogin
 	})
 	defer cancel()
