@@ -14,12 +14,12 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"github.com/enes-alatas/spool/internal/bus"
 	"github.com/enes-alatas/spool/internal/route"
 	"github.com/enes-alatas/spool/internal/store"
 	"github.com/enes-alatas/spool/internal/surface"
+	"github.com/enes-alatas/spool/internal/surface/outbound"
 )
 
 const (
@@ -51,6 +51,7 @@ type Bridge struct {
 	router  *route.Router
 	log     *slog.Logger
 	apiBase string
+	ledger  *outbound.Ledger
 
 	ctx context.Context
 
@@ -96,6 +97,7 @@ func NewBridge(st store.Store, publisher *bus.Bus, router *route.Router, log *sl
 		log = slog.Default()
 	}
 	return &Bridge{store: st, bus: publisher, router: router, log: log, apiBase: apiBase,
+		ledger:     &outbound.Ledger{Store: st, Bus: publisher, Log: log, Surface: "telegram"},
 		bindSettle: defaultBindSettle,
 		pollers:    map[string]*poller{}, dedup: newDedupLRU(dedupSize),
 		pairNotified: map[int64]bool{}, notOwnerNotified: map[string]bool{},
@@ -116,11 +118,6 @@ func (br *Bridge) SetBindSettle(settle time.Duration) {
 // Start launches pollers for every configured loop and the mirror consumer.
 func (br *Bridge) Start(ctx context.Context) {
 	br.ctx = ctx
-	// Every pending row is the last process's: nothing in this one can
-	// send yet, because cmd/spool binds the MCP and API listeners only
-	// after Start returns. Moving Start after them would let the sweep
-	// fail a send this process is about to make.
-	br.failInterruptedSends(ctx)
 	loops, err := br.store.Loops().List(ctx)
 	if err != nil {
 		br.log.Error("telegram: list loops", "err", err)
@@ -636,7 +633,7 @@ func (br *Bridge) loopIDOfBot(ctx context.Context, username string) string {
 // a reply natively, returning what the store holds. Text that carries no
 // such line comes back unchanged, so the caller can try both.
 func withoutQuotePrefix(text string) string {
-	if !strings.HasPrefix(text, quoteMark) {
+	if !strings.HasPrefix(text, outbound.QuoteMark) {
 		return text
 	}
 	if i := strings.Index(text, "\n\n"); i >= 0 {
@@ -663,21 +660,7 @@ func (br *Bridge) render(ctx context.Context, mp *route.MessagePayload, chatID i
 	if err != nil {
 		return 0, mp.Text
 	}
-	return 0, quotePrefix(target) + mp.Text
-}
-
-// quoteLen caps the quoted line; long enough to identify the message, short
-// enough that the reply itself stays the message.
-const quoteLen = 80
-
-// quoteMark opens the quoted line, and is how an inbound copy of one is
-// recognised again.
-const quoteMark = "↳ re "
-
-// quotePrefix renders the one line that stands in for a native reply.
-func quotePrefix(target *store.Message) string {
-	quoted := strings.Join(strings.Fields(target.Text), " ")
-	return fmt.Sprintf("%s%s: %s\n\n", quoteMark, target.Author, excerpt(quoted, quoteLen))
+	return 0, outbound.QuotePrefix(target) + mp.Text
 }
 
 // tgMsgAlias keeps handleMessage readable without exporting internals.
@@ -910,7 +893,7 @@ func (br *Bridge) sendWithRetries(ctx context.Context, bot *poller, req sendReq)
 		sent, err := bot.client.SendMessage(ctx, req.chatID, req.text, req.replyTo)
 		if err == nil {
 			br.recordSentRef(ctx, bot, req, sent)
-			br.recordSendResult(ctx, req, nil)
+			br.ledger.Result(ctx, req.recordFor, nil)
 			return
 		}
 		lastErr = err
@@ -946,66 +929,8 @@ func (br *Bridge) sendWithRetries(ctx context.Context, bot *poller, req sendReq)
 func (br *Bridge) failSend(ctx context.Context, bot *poller, req sendReq, err error, attempts int) {
 	br.log.Error("telegram send failed; giving up",
 		"loop", bot.name, "chat", req.chatID, "attempts", attempts, "err", err)
-	br.recordSendResult(ctx, req, err)
-	br.recordSendFailedEvent(ctx, bot.loopID, br.chatName(ctx, bot, req.chatID), attempts, err.Error(), req.text)
-}
-
-// recordSendFailedEvent puts a lost send on its loop's timeline, where the
-// operator reading that loop learns its words never left the machine.
-func (br *Bridge) recordSendFailedEvent(ctx context.Context, loopID, chat string, attempts int, sendErr, text string) {
-	event := &store.Event{
-		LoopID:  loopID,
-		TS:      time.Now().UnixMilli(),
-		Type:    "spool",
-		Subtype: "send_failed",
-		Payload: fmt.Sprintf(`{"chat":%q,"attempts":%d,"error":%q,"text":%q}`,
-			chat, attempts, sendErr, excerpt(text, excerptLen)),
-	}
-	if _, insErr := br.store.Events().Insert(ctx, event); insErr != nil {
-		br.log.Error("telegram: record send failure", "loop", loopID, "err", insErr)
-		return
-	}
-	br.bus.Publish(bus.Item{Kind: bus.KindAgentEvent, LoopID: loopID, Payload: event})
-}
-
-// errUnsentAtStop is the failure a send carries when a hub starts and finds
-// it unsettled. It says only what is known: usually the last process stopped
-// mid-send, but a send lost without a record (#302) looks the same by then.
-const errUnsentAtStop = "the hub stopped with this still unsent"
-
-// errQueueFull is the failure a send carries when its bot's send queue had
-// no room for it.
-const errQueueFull = "send queue full"
-
-// failInterruptedSends turns every send the previous process left in flight
-// into a failure. The send queue lives in memory, so such a row has no
-// attempt coming, and left alone it would read as in flight forever. As a
-// failure it is an undelivered message like any other: on the operator's
-// list with retry and dismiss, on its loop's timeline, and news its loop is
-// told at the next wake — the loop believes it spoke.
-func (br *Bridge) failInterruptedSends(ctx context.Context) {
-	lost, err := br.store.Messages().FailInterruptedSends(ctx, time.Now().UnixMilli(), errUnsentAtStop)
-	if err != nil {
-		br.log.Error("telegram: fail interrupted sends", "err", err)
-		return
-	}
-	for _, message := range lost {
-		br.log.Warn("telegram: send unsettled at startup", "message", message.ID, "loop", message.FromLoopID)
-		br.recordSendFailedEvent(ctx, message.FromLoopID, conversationChat(message.Conversation), 0, errUnsentAtStop, message.Text)
-	}
-}
-
-// conversationChat names a send's conversation the way chatName does, for a
-// send that never reached a chat id.
-func conversationChat(conversation string) string {
-	switch conversation {
-	case store.ConversationGroup:
-		return "the group"
-	case store.ConversationOwnerDM:
-		return "the owner"
-	default:
-		return "a chat"
-	}
+	br.ledger.Result(ctx, req.recordFor, err)
+	br.ledger.FailedEvent(ctx, bot.loopID, br.chatName(ctx, bot, req.chatID), attempts, err.Error(), req.text)
 }
 
 // chatName says which conversation a send was aimed at, in the operator's
@@ -1027,68 +952,6 @@ func (br *Bridge) chatName(ctx context.Context, bot *poller, chatID int64) strin
 	default:
 		return "a chat"
 	}
-}
-
-// recordSendResult marks the message this send carried: a failure with its
-// error, a success by resolving whatever failure the row already carried.
-//
-// A success does not erase send_failed_at. The row did fail, the loop's
-// timeline says so (#147), and a store that quietly disagreed with its own
-// event would be the harder bug. Resolving instead takes it out of the
-// operator's undelivered count and off the Undelivered pane, which is what
-// "the retry worked" actually means to them (#269).
-func (br *Bridge) recordSendResult(ctx context.Context, req sendReq, err error) {
-	if req.recordFor == 0 {
-		return
-	}
-	if err == nil {
-		if mirErr := br.store.Messages().SetMirror(ctx, req.recordFor, store.MirrorMirrored); mirErr != nil {
-			br.log.Warn("telegram: record mirror", "err", mirErr)
-		}
-		now := time.Now().UnixMilli()
-		// Called on every success, including a first attempt that never
-		// failed: ResolveSend is a no-op unless the row carries an
-		// unresolved failure, so the caller does not need to know which
-		// kind of success this was.
-		if _, resErr := br.store.Messages().ResolveSend(ctx, req.recordFor, now,
-			store.SendResolutionDelivered, 0); resErr != nil {
-			br.log.Warn("telegram: resolve send failure", "err", resErr)
-		}
-		// And the failures these words were said again for, if the loop
-		// said this message was a resend — the one it named, and anything
-		// that one resent before it. Only on success, and read from the
-		// row rather than from this send: a resend that failed too is
-		// itself resent later, and the chain is what lets that last send
-		// close the failure this one could not (#270).
-		if _, resErr := br.store.Messages().ResolveResends(ctx, req.recordFor, now); resErr != nil {
-			br.log.Warn("telegram: resolve resent failures", "err", resErr)
-		}
-		return
-	}
-	if setErr := br.store.Messages().SetSendResult(ctx, req.recordFor,
-		time.Now().UnixMilli(), err.Error()); setErr != nil {
-		br.log.Warn("telegram: record send result", "err", setErr)
-	}
-}
-
-// excerptLen caps the excerpt of a lost message an event payload carries:
-// enough to recognise which message it was, not the message over again.
-const excerptLen = 200
-
-// excerpt keeps the opening of text, within limit bytes. The head, because a
-// message is recognised by how it starts — the same choice quotePrefix and
-// prompt.go's truncate make. The cut walks back to a rune boundary: slicing
-// bytes at an arbitrary offset halves a multi-byte character, and the note then
-// begins in a stray continuation byte.
-func excerpt(text string, limit int) string {
-	if len(text) <= limit {
-		return text
-	}
-	cut := limit
-	for cut > 0 && !utf8.RuneStart(text[cut]) {
-		cut--
-	}
-	return text[:cut] + "…"
 }
 
 // --- mirroring ---
@@ -1147,21 +1010,21 @@ func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 		if err != nil {
 			br.log.Warn("telegram: read loop for group delivery", "loop", mp.FromLoopID, "err", err)
 			if mp.Mirror == store.MirrorPending {
-				br.failUnsendable(ctx, mp, "group delivery: read loop: "+err.Error())
+				br.ledger.Unsendable(ctx, mp, "group delivery: read loop: "+err.Error())
 			}
 			return
 		}
 		if loopRecord.TGBotToken == "" || loopRecord.TGGroupChatID == 0 {
-			br.stayOnHub(ctx, mp)
+			br.ledger.StayOnHub(ctx, mp)
 			return
 		}
 		if bot == nil {
-			br.failUnsendable(ctx, mp, "group delivery: loop's bot is not running")
+			br.ledger.Unsendable(ctx, mp, "group delivery: loop's bot is not running")
 			return
 		}
 		anchor, text := br.render(ctx, mp, loopRecord.TGGroupChatID)
 		if !bot.enqueue(sendReq{chatID: loopRecord.TGGroupChatID, text: text, replyTo: anchor, recordFor: mp.ID}) {
-			br.failUnsendable(ctx, mp, errQueueFull)
+			br.ledger.Unsendable(ctx, mp, outbound.ErrQueueFull)
 		}
 	case store.ConversationOwnerDM:
 		// a loop's owner_dm send: deliver to the chat route.Send pinned
@@ -1172,16 +1035,16 @@ func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 		// fault, not a model error, and must not drop the private
 		// message silently.
 		if bot == nil {
-			br.failUnsendable(ctx, mp, "owner dm delivery: loop has no bot")
+			br.ledger.Unsendable(ctx, mp, "owner dm delivery: loop has no bot")
 			return
 		}
 		if mp.OwnerDMChat == 0 {
-			br.failUnsendable(ctx, mp, "owner dm delivery: send carried no pinned chat")
+			br.ledger.Unsendable(ctx, mp, "owner dm delivery: send carried no pinned chat")
 			return
 		}
 		anchor, text := br.render(ctx, mp, mp.OwnerDMChat)
 		if !bot.enqueue(sendReq{chatID: mp.OwnerDMChat, text: text, replyTo: anchor, recordFor: mp.ID}) {
-			br.failUnsendable(ctx, mp, errQueueFull)
+			br.ledger.Unsendable(ctx, mp, outbound.ErrQueueFull)
 		}
 	}
 	// control_room lives in the web UI alone; telegram sees nothing
@@ -1220,7 +1083,7 @@ func (br *Bridge) noticeLogin(ctx context.Context, notice *surface.LoginNotice) 
 	}
 	chatID := loopRecord.OwnerDMChatID
 	if chatID == 0 {
-		br.recordLoginNotice(ctx, notice.LoopID, notice, "the owner has not written to this loop's bot privately yet")
+		br.ledger.LoginNoticeEvent(ctx, notice.LoopID, notice, "the owner has not written to this loop's bot privately yet")
 		return
 	}
 	if br.sendLoginNotice(ctx, notice.LoopID, chatID, notice) {
@@ -1234,59 +1097,14 @@ func (br *Bridge) sendLoginNotice(ctx context.Context, loopID string, chatID int
 	bot := br.poller(loopID)
 	switch {
 	case bot == nil:
-		br.recordLoginNotice(ctx, loopID, notice, "the loop's bot is not running")
+		br.ledger.LoginNoticeEvent(ctx, loopID, notice, "the loop's bot is not running")
 		return false
 	case !bot.enqueue(sendReq{chatID: chatID, text: notice.Text()}):
-		br.recordLoginNotice(ctx, loopID, notice, errQueueFull)
+		br.ledger.LoginNoticeEvent(ctx, loopID, notice, outbound.ErrQueueFull)
 		return false
 	}
-	br.recordLoginNotice(ctx, loopID, notice, "")
+	br.ledger.LoginNoticeEvent(ctx, loopID, notice, "")
 	return true
-}
-
-// recordLoginNotice puts an owner notice on the loop's timeline: sent when
-// unsent is "", and otherwise why it was not. The notice is the hub's words,
-// not the loop's, so no message row records it.
-func (br *Bridge) recordLoginNotice(ctx context.Context, loopID string, notice *surface.LoginNotice, unsent string) {
-	kind := "login_works"
-	if notice.Refused {
-		kind = "login_refused"
-	}
-	event := &store.Event{
-		LoopID:  loopID,
-		TS:      time.Now().UnixMilli(),
-		Type:    "spool",
-		Subtype: "owner_notice",
-		Payload: fmt.Sprintf(`{"notice":%q,"sent":%t,"error":%q}`, kind, unsent == "", unsent),
-	}
-	if _, err := br.store.Events().Insert(ctx, event); err != nil {
-		br.log.Error("telegram: record owner notice", "loop", loopID, "err", err)
-		return
-	}
-	br.bus.Publish(bus.Item{Kind: bus.KindAgentEvent, LoopID: loopID, Payload: event})
-}
-
-// stayOnHub records that a loop's send had no room on the surface to go to.
-// route.Send judged it bound for one from the loop's configuration; this is
-// the surface saying the bot or the group went before it could carry it.
-func (br *Bridge) stayOnHub(ctx context.Context, mp *route.MessagePayload) {
-	if mp.Mirror != store.MirrorPending {
-		return
-	}
-	if err := br.store.Messages().SetMirror(ctx, mp.ID, store.MirrorNotMirrored); err != nil {
-		br.log.Warn("telegram: record mirror", "err", err)
-	}
-}
-
-// failUnsendable records a send the bridge cannot even attempt as a failure
-// rather than only logging it, in the same two places failSend leaves one.
-// route.Send refuses what it knows cannot be sent, so reaching this is an
-// internal fault or a queue out of room — but the loop still believes it
-// spoke, and a message must not vanish silently.
-func (br *Bridge) failUnsendable(ctx context.Context, mp *route.MessagePayload, reason string) {
-	br.log.Error("telegram: send not attempted", "loop", mp.FromLoopID, "message", mp.ID, "err", reason)
-	br.recordSendResult(ctx, sendReq{recordFor: mp.ID}, errors.New(reason))
-	br.recordSendFailedEvent(ctx, mp.FromLoopID, conversationChat(mp.Conversation), 0, reason, mp.Text)
 }
 
 func (br *Bridge) poller(loopID string) *poller {

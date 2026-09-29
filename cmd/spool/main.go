@@ -34,6 +34,7 @@ import (
 	"github.com/enes-alatas/spool/internal/store"
 	"github.com/enes-alatas/spool/internal/store/sqlite"
 	"github.com/enes-alatas/spool/internal/surface"
+	"github.com/enes-alatas/spool/internal/surface/outbound"
 	"github.com/enes-alatas/spool/internal/surface/slack"
 	"github.com/enes-alatas/spool/internal/surface/telegram"
 	"github.com/enes-alatas/spool/internal/version"
@@ -313,6 +314,11 @@ func main() {
 	models.Start(ctx)
 	go pruneEvents(ctx, rdb, *retentionDays, log)
 
+	// Every pending send is the last process's: nothing in this one can
+	// send yet, because the MCP and API listeners are bound only after the
+	// surfaces start. Sweeping after them would fail a send this process
+	// is about to make.
+	(&outbound.Ledger{Store: rdb, Bus: pubsub, Log: log, Surface: "hub"}).FailInterruptedSends(ctx)
 	bridge := telegram.NewBridge(rdb, pubsub, router, log, *telegramAPI)
 	bridge.SetBindSettle(time.Duration(*bindSettleSec) * time.Second)
 	bridge.Start(ctx)
