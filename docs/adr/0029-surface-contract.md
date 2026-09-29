@@ -1,6 +1,6 @@
 # ADR-0029: The Surface contract
 
-Date: 2026-09-20 · Status: accepted · Amends: ADR-0020, ADR-0025 (item 4), ADR-0026 (item 1) · Amended: 2026-09-22 (item 2: the bus kinds a surface mirrors); 2026-09-23 (items 5 and 7: a surface is attached later and mirrors the fleet channel); 2026-09-27 (item 2: a credential and an identity are structs); 2026-09-28 (item 8: hub notices); 2026-09-29 (item 8: Slack's notices)
+Date: 2026-09-20 · Status: accepted · Amends: ADR-0020, ADR-0025 (item 4), ADR-0026 (item 1) · Amended: 2026-09-22 (item 2: the bus kinds a surface mirrors); 2026-09-23 (items 5 and 7: a surface is attached later and mirrors the fleet channel); 2026-09-27 (item 2: a credential and an identity are structs); 2026-09-28 (item 8: hub notices); 2026-09-29 (item 8: Slack's notices and login notice)
 
 ## Context
 
@@ -169,8 +169,9 @@ contract.
    only from its owner") were hub notices before the term existed. What a
    surface turns away stays its own to decide (item 6), and the Slack
    adapter tells the same two, once each, in the DM the person wrote in
-   (#230). Slack has no outbound path yet, so a
-   Slack-only owner hears nothing until #230 gives it one.
+   (#230). A Slack owner hears the login notice in the app's DM with
+   them, which the app opens itself, so any of their Slack loops can tell
+   them (ADR-0026's 2026-09-29 amendment).
 
 ## Consequences
 

@@ -43,6 +43,9 @@ type Adapter struct {
 	toldMu       sync.Mutex
 	pairTold     map[string]bool // Slack user ID
 	notOwnerTold map[string]bool // loop ID + ":" + DM channel
+	// loginTold holds, for each owner told that a Claude login was
+	// refused, the loop whose app told them.
+	loginTold map[loginOutage]string
 }
 
 // New returns the Slack surface talking to the Web API at apiBase, APIBase
@@ -51,7 +54,7 @@ func New(st store.Store, publisher *bus.Bus, router *route.Router, log *slog.Log
 	return &Adapter{store: st, bus: publisher, router: router, client: NewClientAt(apiBase), log: log,
 		ledger: &outbound.Ledger{Store: st, Bus: publisher, Log: log, Surface: "slack"},
 		timing: defaultLinkTiming, links: map[string]*link{},
-		pairTold: map[string]bool{}, notOwnerTold: map[string]bool{}}
+		pairTold: map[string]bool{}, notOwnerTold: map[string]bool{}, loginTold: map[loginOutage]string{}}
 }
 
 var _ surface.Surface = (*Adapter)(nil)
