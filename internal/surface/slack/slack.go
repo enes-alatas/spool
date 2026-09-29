@@ -169,6 +169,7 @@ func (adapter *Adapter) startLink(loopRecord *store.Loop) {
 		sends: make(chan *route.MessagePayload, sends), notices: make(chan notice, notices)}
 	adapter.links[loopRecord.ID] = started
 	go adapter.run(ctx, started)
+	go adapter.nameChannel(ctx, started, loopRecord, loopRecord.SlackChannelID)
 }
 
 // stopLink closes a loop's connection, and waits for it to close: a link

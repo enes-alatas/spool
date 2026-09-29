@@ -155,3 +155,27 @@ func TestSlackOwnerDMReachesItsLoop(t *testing.T) {
 		t.Fatalf("a DM from someone other than the owner was stored: %s", dump(got))
 	}
 }
+
+// The link status names the channel a loop's app is bound to, as Slack
+// names it, both when the app binds and when its link comes back up after
+// a restart (#230).
+func TestSlackLinkNamesItsChannel(t *testing.T) {
+	t.Parallel()
+	slack := startFakeSlack(t)
+	slack.addApp(slackBotToken, slackAppToken, terraBot)
+	dataDir := t.TempDir()
+	srv := startServerArgs(t, dataDir, "--runtime", "bare", "--slack-api-base", slack.srv.URL)
+	srv.createLoop("terra", slackPair(slackAppToken, slackBotToken))
+	srv.waitSlackLink("terra", func(link slackStatus) bool { return link.Bridge.Connected })
+	slack.pushMessage(t, slackAppToken, "channel", slackChannel, slackOperator, "hello", "1727600000.000001")
+	srv.allowSlackSender(slackOperator)
+	slack.pushMessage(t, slackAppToken, "channel", slackChannel, slackOperator, "binding", "1727600000.000002")
+	named := func(link slackStatus) bool {
+		return link.ChannelID == slackChannel && link.ChannelName == strings.ToLower(slackChannel)
+	}
+	srv.waitSlackLink("terra", named)
+
+	srv.stop()
+	srv = startServerArgs(t, dataDir, "--runtime", "bare", "--slack-api-base", slack.srv.URL)
+	srv.waitSlackLink("terra", named)
+}
