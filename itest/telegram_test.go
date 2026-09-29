@@ -216,10 +216,17 @@ func (tg *fakeTelegram) post(chatID int64, chatType, text string, from user) *fa
 	return tg.postReply(chatID, chatType, text, from, nil)
 }
 
-// postReply is post with a native reply attached. Every bot receives the
-// embedded target under its own id for it, and a bot that never saw the
-// target — another bot's post — receives the embedded copy with no usable
-// id, which is exactly the case the text has to identify.
+// postReply is post with a native reply attached. In a supergroup every bot
+// receives the embedded target under its own id for it, and a bot that never
+// saw the target — another bot's post — receives the embedded copy with no
+// usable id, which is the case the text has to identify.
+//
+// A basic group ("group") is different, and the fleet's own group is one. Each
+// member there has its own copy of every message, and a bot never receives
+// another bot's post, so it has no copy to embed: only a bot holding the
+// target finds reply_to_message in the update at all. The fleet's store
+// showed it on #424. The other bots' ids for the reply run on from their
+// last message with no gap where the post would be.
 func (tg *fakeTelegram) postReply(chatID int64, chatType, text string, from user, target *fakePost) *fakePost {
 	tg.mu.Lock()
 	defer tg.mu.Unlock()
@@ -238,7 +245,7 @@ func (tg *fakeTelegram) postReply(chatID int64, chatType, text string, from user
 			},
 			"chat": map[string]any{"id": chatID, "type": chatType},
 		}
-		if target != nil {
+		if target != nil && (chatType != "group" || target.ids[token] != 0) {
 			msg["reply_to_message"] = target.embed(token, chatID, chatType)
 		}
 		tg.queued[token] = append(tg.queued[token], map[string]any{
