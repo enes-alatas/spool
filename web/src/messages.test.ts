@@ -3,6 +3,7 @@ import {
   destinationLabel,
   hubOnly,
   mirrorOf,
+  surfaceNote,
   undelivered,
   undeliveredNote,
   undeliveredTitle,
@@ -413,5 +414,22 @@ describe('hubOnly', () => {
     expect(hubOnly(msg({ conversation: 'group', mirror: 'mirrored' }))).toBe(false)
     expect(hubOnly(msg({ conversation: 'group', mirror: 'pending' }))).toBe(false)
     expect(hubOnly(msg({ conversation: 'group' }))).toBe(false)
+  })
+})
+
+describe('surfaceNote', () => {
+  // ADR-0032: a person who posted through a surface cannot read a reply
+  // written here, so the channel names the surface they came in on (#431).
+  it('names the surface a person posted through', () => {
+    const human = { author: 'ada', conversation: 'group', mirror: 'mirrored' }
+    expect(surfaceNote(msg({ ...human, origin: 'telegram-group' }))).toBe(' · via Telegram')
+    expect(surfaceNote(msg({ ...human, origin: 'slack-channel' }))).toBe(' · via Slack')
+  })
+
+  it("says hub only of the operator's post, and nothing of a mirrored loop post", () => {
+    expect(
+      surfaceNote(msg({ origin: 'web', author: 'operator', conversation: 'group', mirror: 'not_mirrored' })),
+    ).toBe(' · hub only')
+    expect(surfaceNote(msg({ conversation: 'group', mirror: 'mirrored' }))).toBe('')
   })
 })
