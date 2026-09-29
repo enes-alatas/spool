@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -295,6 +296,45 @@ func (router *Router) Ingest(ctx context.Context, in InboundMessage) error {
 		if !router.deliver.Deliver(target.ID, env) {
 			router.log.Warn("deliver to unknown runtime", "loop", target.Name)
 		}
+	}
+	return nil
+}
+
+// DeliverAdoptedReply delivers a group message to the author of the message
+// it answers, when that target was learned only after the message was
+// ingested and delivered (#424). Ingest delivered it to whomever it
+// mentioned; a native reply also addresses its target's author (ADR-0025),
+// who is added here unless they already had it. Nothing is republished on
+// the bus: the message is already there, and the control room reads the
+// target on its next refresh.
+func (router *Router) DeliverAdoptedReply(ctx context.Context, msg *store.Message) error {
+	if msg.Conversation != store.ConversationGroup || msg.ReplyToID == 0 {
+		return nil
+	}
+	target, err := router.store.Messages().Get(ctx, msg.ReplyToID)
+	if err != nil {
+		return err
+	}
+	if target.FromLoopID == "" || target.FromLoopID == msg.FromLoopID || slices.Contains(msg.DeliveredTo, target.FromLoopID) {
+		return nil
+	}
+	author, err := router.store.Loops().Get(ctx, target.FromLoopID)
+	if err != nil || !inGroup(author) {
+		return err
+	}
+	if err := router.store.Messages().SetDelivered(ctx, msg.ID, append(slices.Clone(msg.DeliveredTo), author.ID)); err != nil {
+		return err
+	}
+	env := loop.MessageEnvelope(time.Now(), loop.Inbound{
+		Origin:       msg.Origin,
+		Author:       msg.Author,
+		Text:         msg.Text,
+		Conversation: msg.Conversation,
+		Ref:          loop.MessageRef(msg.ID),
+		ReplyTo:      loop.MessageRef(target.ID),
+	})
+	if !router.deliver.Deliver(author.ID, env) {
+		router.log.Warn("deliver to unknown runtime", "loop", author.Name)
 	}
 	return nil
 }

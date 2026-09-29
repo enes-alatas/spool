@@ -253,6 +253,8 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			"MarkSendFailuresTold": false,
 			"PutRef":               false, "Ref": false, "RecordSighting": false, "ByRef": false,
 			"ByTGKey": false, "LatestGroupPostBy": false,
+			// A reply target is a message id, read or written; never text.
+			"SightedReplyTarget": false, "AdoptReplyTarget": false,
 		},
 		"InboxStore": {
 			// Push queues an envelope the loop is about to be handed. Its

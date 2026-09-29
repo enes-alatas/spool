@@ -1,6 +1,6 @@
 # ADR-0020: One bot ingests a group; every bot still delivers
 
-Date: 2026-08-20 · Status: accepted · Amended: 2026-09-17 (§1, settle margin); 2026-09-19 (§2, delivered_to); 2026-09-20 (§1–§3 are Surface rules); 2026-09-23 (§1 elects across the mirror, not into the group)
+Date: 2026-08-20 · Status: accepted · Amended: 2026-09-17 (§1, settle margin); 2026-09-19 (§2, delivered_to); 2026-09-20 (§1–§3 are Surface rules); 2026-09-23 (§1 elects across the mirror, not into the group); 2026-09-29 (§2, a reply's target can come from another bot)
 
 ## Context
 
@@ -78,6 +78,29 @@ three questions Milo had listed, of which this was the first.
    path the guard cannot fire while no caller gives an ingest a loop origin,
    so nothing here changed; the field is also filled by `Send`, where it did.
    The election is untouched.
+
+   **Amendment (2026-09-29, #424):** the ingesting bot can be missing part
+   of the message, and another bot supplies it. In a basic Telegram group
+   each member has its own copy of every message, and a bot never receives
+   another bot's post. So when a human natively replies to a loop's post,
+   only the author's bot finds the post embedded in the update. Every other
+   bot, the elected one included, sees a message that replies to nothing.
+   On 2026-09-28 the operator's reply to a merge ask reached no loop this way.
+
+   Every bot now records in its sighting what it resolved a message to be a
+   reply to, and only by its own id for the target. The ingesting bot takes
+   the target from the sightings before it inserts, and looks again after.
+   A bot that is not ingesting and resolved a target gives it to the row if
+   the row is already there. The row takes a target once
+   (`AdoptReplyTarget`), and whichever bot gave it delivers the message to
+   the target's author, as ADR-0025's inbound replies require. Each side
+   writes before it reads the other's write, so however the two pollers
+   interleave, at least one of them sees the other.
+
+   The election is still untouched: one bot persists the message. What
+   changed is that delivery may complete a moment after ingest. The
+   pathology is Telegram's (ADR-0029, item 6), and a platform that embeds a
+   reply's target for every member never takes this path.
 3. **A message's identity includes the bot that saw it.** `messages` is keyed
    `UNIQUE (tg_chat_id, tg_message_id, tg_bot_loop_id)`, and the in-memory
    dedup LRU keys the same way. That is now an idempotency net for one poller

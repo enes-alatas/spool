@@ -727,8 +727,18 @@ type MessageStore interface {
 	// rendered. A sighting recorded by a non-ingesting poller counts.
 	Ref(ctx context.Context, messageID int64, botLoopID string) (*SurfaceRef, error)
 	// RecordSighting stores a poller's own id for a telegram message it
-	// observed, whether or not it was the bot that ingested it.
-	RecordSighting(ctx context.Context, tgKey, botLoopID string, chatID, messageID, seenAt int64) error
+	// observed, whether or not it was the bot that ingested it, and what
+	// that poller resolved the message to be a reply to (0 = nothing).
+	RecordSighting(ctx context.Context, tgKey, botLoopID string, chatID, messageID, replyToID, seenAt int64) error
+	// SightedReplyTarget returns the reply target any poller's sighting of
+	// a telegram message resolved, or ErrNotFound when none did (#424).
+	SightedReplyTarget(ctx context.Context, tgKey string) (int64, error)
+	// AdoptReplyTarget gives the ingested message with this tg_key the reply
+	// target it was ingested without, and returns the updated row. It
+	// changes nothing and returns ErrNotFound when there is no such row yet
+	// or the row already has a target: of the two pollers that might both
+	// learn the target, exactly one adopts it.
+	AdoptReplyTarget(ctx context.Context, tgKey string, replyToID int64) (*Message, error)
 	// ByRef resolves a surface id back to the message it belongs to, from
 	// the perspective of one bot: what that bot sent, or what it saw.
 	// ErrNotFound when it maps to nothing.
