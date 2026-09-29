@@ -37,6 +37,12 @@ type Adapter struct {
 	// changing serializes LoopChanged and LoopRemoved, so two edits of one
 	// loop cannot both find it unlinked and connect its app twice.
 	changing sync.Mutex
+
+	// toldMu guards pairTold and notOwnerTold, which every link's ingest
+	// writes: the notices already given this run (notice.go).
+	toldMu       sync.Mutex
+	pairTold     map[string]bool // Slack user ID
+	notOwnerTold map[string]bool // loop ID + ":" + DM channel
 }
 
 // New returns the Slack surface talking to the Web API at apiBase, APIBase
@@ -44,7 +50,8 @@ type Adapter struct {
 func New(st store.Store, publisher *bus.Bus, router *route.Router, log *slog.Logger, apiBase string) *Adapter {
 	return &Adapter{store: st, bus: publisher, router: router, client: NewClientAt(apiBase), log: log,
 		ledger: &outbound.Ledger{Store: st, Bus: publisher, Log: log, Surface: "slack"},
-		timing: defaultLinkTiming, links: map[string]*link{}}
+		timing: defaultLinkTiming, links: map[string]*link{},
+		pairTold: map[string]bool{}, notOwnerTold: map[string]bool{}}
 }
 
 var _ surface.Surface = (*Adapter)(nil)
@@ -156,7 +163,7 @@ func (adapter *Adapter) startLink(loopRecord *store.Loop) {
 	}
 	ctx, cancel := context.WithCancel(adapter.ctx)
 	started := &link{loopID: loopRecord.ID, credential: loopRecord.SlackAppToken, cancel: cancel, done: make(chan struct{}),
-		sends: make(chan *route.MessagePayload, sends)}
+		sends: make(chan *route.MessagePayload, sends), notices: make(chan notice, notices)}
 	adapter.links[loopRecord.ID] = started
 	go adapter.run(ctx, started)
 }

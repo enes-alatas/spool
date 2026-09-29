@@ -77,6 +77,9 @@ type link struct {
 	// sends is the loop's posts waiting their turn; one goroutine per
 	// link posts them in order.
 	sends chan *route.MessagePayload
+	// notices is the hub's own posts as the app, taking turns with sends
+	// under the same pacing.
+	notices chan notice
 
 	mu          sync.Mutex
 	connected   bool

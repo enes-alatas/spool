@@ -109,9 +109,9 @@ func (adapter *Adapter) mirrorMessage(ctx context.Context, mp *route.MessagePayl
 	}
 }
 
-// sendLoop posts a link's queued sends in order, paced, until the link
-// stops. What is still queued then fails rather than vanish: the loop
-// believes it spoke.
+// sendLoop posts a link's queued sends and notices in order, paced, until
+// the link stops. A send still queued then fails rather than vanish: the
+// loop believes it spoke. A notice is only dropped.
 func (adapter *Adapter) sendLoop(ctx context.Context, link *link) {
 	for {
 		select {
@@ -127,12 +127,14 @@ func (adapter *Adapter) sendLoop(ctx context.Context, link *link) {
 			}
 		case mp := <-link.sends:
 			adapter.send(ctx, mp)
-			timer := time.NewTimer(sendSpacing)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-			case <-timer.C:
-			}
+		case queued := <-link.notices:
+			adapter.postNotice(ctx, link.loopID, queued)
+		}
+		timer := time.NewTimer(sendSpacing)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+		case <-timer.C:
 		}
 	}
 }
@@ -279,7 +281,7 @@ var mentioned = regexp.MustCompile(`(^|[^\w@])@([A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]
 // Spool knows becomes Slack's mention of them, which notifies a person
 // where a bare @name would not.
 func (adapter *Adapter) slackText(ctx context.Context, text string) string {
-	text = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(text)
+	text = escape(text)
 	userOf := map[string]string{} // lowercase name → Slack user id
 	if senders, err := adapter.store.SlackSenders().List(ctx); err == nil {
 		for _, sender := range senders {
