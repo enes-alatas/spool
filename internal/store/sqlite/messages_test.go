@@ -743,3 +743,43 @@ func TestAdoptReplyTargetOnce(t *testing.T) {
 		t.Fatalf("second adopt: err = %v, want ErrNotFound", err)
 	}
 }
+
+// A Slack message is one row whichever loop's app stores it: Slack gives
+// every app the same channel and ts for it, and the pair is unique. Other
+// messages carry no pair and are never caught by it.
+func TestSlackMessageIsKeyedByChannelAndTS(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	heard := func(channel, ts string) *store.Message {
+		return &store.Message{TS: 1, Origin: store.OriginSlackChannel, Author: "alice", Text: "hi",
+			Conversation: store.ConversationGroup, SlackChannelID: channel, SlackTS: ts}
+	}
+	first := heard("C0FLEET", "1727600000.000100")
+	if err := db.Messages().Insert(ctx, first); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Messages().Insert(ctx, heard("C0FLEET", "1727600000.000100")); !errors.Is(err, store.ErrDuplicate) {
+		t.Fatalf("a second app storing the same message = %v, want ErrDuplicate", err)
+	}
+	if err := db.Messages().Insert(ctx, heard("C0OTHER", "1727600000.000100")); err != nil {
+		t.Fatalf("the same ts in another channel is another message: %v", err)
+	}
+	for range 2 {
+		if err := db.Messages().Insert(ctx, &store.Message{TS: 2, Origin: store.OriginWeb, Author: "enes",
+			Text: "hi", Conversation: store.ConversationGroup}); err != nil {
+			t.Fatalf("a message with no Slack identity was caught by its key: %v", err)
+		}
+	}
+
+	found, err := db.Messages().BySlackTS(ctx, "C0FLEET", "1727600000.000100")
+	if err != nil || found.ID != first.ID || found.SlackChannelID != "C0FLEET" || found.SlackTS != "1727600000.000100" {
+		t.Fatalf("BySlackTS = %+v, %v; want message %d", found, err, first.ID)
+	}
+	if _, err := db.Messages().BySlackTS(ctx, "", ""); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("BySlackTS with no identity = %v, want ErrNotFound", err)
+	}
+}
