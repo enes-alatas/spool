@@ -99,6 +99,10 @@ type MessagePayload struct {
 	// send time — pinned then so a DM arriving before bridge delivery
 	// cannot redirect it. Internal delivery detail, not surfaced.
 	OwnerDMChat int64 `json:"-"`
+	// OwnerSlackUser is the Slack owner an owner_dm send was resolved to,
+	// pinned the same way: an owner changed after the send does not receive
+	// what was written to the one before.
+	OwnerSlackUser string `json:"-"`
 }
 
 type Deliverer interface {

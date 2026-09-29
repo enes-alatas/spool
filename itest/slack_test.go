@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -30,6 +31,15 @@ type fakeSlack struct {
 	opens map[string]int      // apps.connections.open calls answered, by app token
 	live  map[string]*fakeSocket
 	acks  map[string][]string // envelope ids acknowledged, by app token
+	posts []slackPost
+	// failPosts answers that many chat.postMessage calls with a transient
+	// error before taking one; -1 fails every one.
+	failPosts int
+}
+
+// slackPost is one chat.postMessage the fake took.
+type slackPost struct {
+	Token, Channel, Text, ThreadTS, TS string
 }
 
 // fakeSocket is one app's live Socket Mode connection.
@@ -80,6 +90,24 @@ func (slack *fakeSlack) handle(w http.ResponseWriter, r *http.Request) {
 			userID := r.FormValue("user")
 			answer = map[string]any{"ok": true, "user": map[string]any{"id": userID, "team_id": "T0ACME",
 				"name": strings.ToLower(userID), "profile": map[string]any{"display_name": userID}}}
+		}
+	case "/chat.postMessage":
+		if _, ok := slack.bots[token]; ok {
+			if slack.failPosts != 0 {
+				if slack.failPosts > 0 {
+					slack.failPosts--
+				}
+				answer = map[string]any{"ok": false, "error": "internal_error"}
+				break
+			}
+			post := slackPost{Token: token, Channel: r.FormValue("channel"), Text: r.FormValue("text"),
+				ThreadTS: r.FormValue("thread_ts"), TS: fmt.Sprintf("1727700000.%06d", len(slack.posts)+1)}
+			slack.posts = append(slack.posts, post)
+			answer = map[string]any{"ok": true, "channel": post.Channel, "ts": post.TS}
+		}
+	case "/conversations.open":
+		if _, ok := slack.bots[token]; ok {
+			answer = map[string]any{"ok": true, "channel": map[string]any{"id": "D" + r.FormValue("users")}}
 		}
 	case "/apps.connections.open":
 		switch {
@@ -180,11 +208,51 @@ func (slack *fakeSlack) pushEnvelope(t *testing.T, app, envelopeID string) {
 // for message.channels (channelType "channel") and message.im ("im").
 func (slack *fakeSlack) pushMessage(t *testing.T, app, channelType, channel, user, text, ts string) {
 	t.Helper()
+	slack.pushReply(t, app, channelType, channel, user, text, ts, "")
+}
+
+// pushReply is pushMessage for a reply in the thread threadTS starts.
+func (slack *fakeSlack) pushReply(t *testing.T, app, channelType, channel, user, text, ts, threadTS string) {
+	t.Helper()
+	event := map[string]any{"type": "message", "channel_type": channelType, "channel": channel,
+		"user": user, "text": text, "ts": ts}
+	if threadTS != "" {
+		event["thread_ts"] = threadTS
+	}
 	slack.push(t, app, map[string]any{"type": "events_api", "envelope_id": app + ":" + channel + ":" + ts,
 		"accepts_response_payload": false,
-		"payload": map[string]any{"type": "event_callback", "team_id": "T0ACME",
-			"event": map[string]any{"type": "message", "channel_type": channelType, "channel": channel,
-				"user": user, "text": text, "ts": ts}}})
+		"payload":                  map[string]any{"type": "event_callback", "team_id": "T0ACME", "event": event}})
+}
+
+// waitPost blocks until a post whose text contains text has been taken,
+// and returns it.
+func (slack *fakeSlack) waitPost(t *testing.T, text string) slackPost {
+	t.Helper()
+	for deadline := time.Now().Add(20 * time.Second); time.Now().Before(deadline); {
+		slack.mu.Lock()
+		for _, post := range slack.posts {
+			if strings.Contains(post.Text, text) {
+				slack.mu.Unlock()
+				return post
+			}
+		}
+		slack.mu.Unlock()
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("no post with %q; posts: %s", text, dump(slack.postsTaken()))
+	return slackPost{}
+}
+
+func (slack *fakeSlack) postsTaken() []slackPost {
+	slack.mu.Lock()
+	defer slack.mu.Unlock()
+	return append([]slackPost(nil), slack.posts...)
+}
+
+func (slack *fakeSlack) setFailPosts(n int) {
+	slack.mu.Lock()
+	defer slack.mu.Unlock()
+	slack.failPosts = n
 }
 
 // waitAck blocks until app has acknowledged envelopeID.
