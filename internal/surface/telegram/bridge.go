@@ -201,12 +201,19 @@ type poller struct {
 	client *Client
 	cancel context.CancelFunc
 	sendCh chan sendReq
+	// stopped is set, under sendMu, once the send loop has quit and taken
+	// what sendCh held: a send queued after that would sit there unsent
+	// and unrecorded.
+	sendMu  sync.Mutex
+	stopped bool
 
 	mu         sync.Mutex
 	lastUpdate int64
 	lastError  string
 }
 
+// sendReq is one message to send: a long one is split when it is sent, and
+// lands or fails whole.
 type sendReq struct {
 	chatID int64
 	text   string
@@ -839,62 +846,147 @@ func (bot *poller) enqueueSend(chatID int64, text string) {
 	bot.enqueue(sendReq{chatID: chatID, text: text})
 }
 
-// enqueue splits a send into Telegram-sized chunks. Only the first chunk
-// carries the reply anchor and mints the message's surface reference: the
-// continuation chunks are the same message, not new targets.
-//
-// It reports false when the queue was too full to take the first chunk, and
-// then queues nothing: the rest of a message is no use without its start,
-// and the caller must record the loss, since the part that would have
-// recorded it never runs. A continuation chunk dropped later is not
-// reported (#302).
-func (bot *poller) enqueue(req sendReq) bool {
-	for i, chunk := range splitMessage(req.text, maxMsgLen) {
-		part := sendReq{chatID: req.chatID, text: chunk}
-		if i == 0 {
-			part.replyTo, part.recordFor = req.replyTo, req.recordFor
-		}
-		select {
-		case bot.sendCh <- part:
-		default: // queue full: drop rather than block the bridge
-			if i == 0 {
-				return false
-			}
-		}
+// enqueue queues a send whole, and returns "" when it did and otherwise why
+// not: the queue is full, or the bot has stopped. The caller records the
+// loss, since the send loop that would have recorded it never sees the send.
+func (bot *poller) enqueue(req sendReq) string {
+	bot.sendMu.Lock()
+	defer bot.sendMu.Unlock()
+	if bot.stopped {
+		return errBotStopped
 	}
-	return true
+	select {
+	case bot.sendCh <- req:
+		return ""
+	default: // queue full: drop rather than block the bridge
+		return outbound.ErrQueueFull
+	}
 }
+
+// errBotStopped is the failure of a send a loop's bot stopped before
+// sending: it was replaced, removed, or its loop archived.
+const errBotStopped = "the loop's Telegram bot stopped before this was sent"
 
 func (br *Bridge) sendLoop(ctx context.Context, bot *poller) {
 	for {
 		select {
 		case <-ctx.Done():
+			br.abandonQueue(ctx, bot)
 			return
 		case req := <-bot.sendCh:
-			br.sendWithRetries(ctx, bot, req)
+			br.deliver(ctx, bot, req)
 			sleepCtx(ctx, sendSpacing)
 		}
 	}
 }
 
+// abandonQueue fails what a stopped bot still had queued, and refuses what
+// comes after: the loop believes it spoke, and a send left in the queue of
+// a bot that is gone would be lost without a record (#302).
+func (br *Bridge) abandonQueue(ctx context.Context, bot *poller) {
+	bot.sendMu.Lock()
+	bot.stopped = true
+	bot.sendMu.Unlock()
+	for {
+		select {
+		case req := <-bot.sendCh:
+			br.unsent(ctx, bot, req, errors.New(errBotStopped))
+		default:
+			return
+		}
+	}
+}
+
+// unsent records a send its bot stopped before finishing, as failed with
+// err. A notice is only dropped: no row records it, and the timeline has no
+// gap to show.
+func (br *Bridge) unsent(ctx context.Context, bot *poller, req sendReq, err error) {
+	if req.recordFor == 0 {
+		return
+	}
+	if record, ok := br.settleCtx(ctx); ok {
+		br.failSend(record, bot, req, err, 0)
+	}
+}
+
+// settleCtx is the context a send's outcome is written through: its bot's
+// own, until the bot stops. A send that ends as its bot stops, whether it
+// was cut short or its last part landed, must still be recorded, so a
+// spent context is traded for one without the cancel. A hub that is
+// stopping reports false: the store is closing under the send, which stays
+// pending for the next start to fail (FailInterruptedSends).
+func (br *Bridge) settleCtx(ctx context.Context) (context.Context, bool) {
+	if ctx.Err() == nil {
+		return ctx, true
+	}
+	if br.ctx == nil || br.ctx.Err() != nil {
+		return nil, false
+	}
+	return context.WithoutCancel(ctx), true
+}
+
+// deliver sends a message in Telegram-sized parts, and records how it
+// ended. Only the first part carries the reply anchor and mints the
+// message's surface reference: the rest are the same message, not new
+// targets. A part that does not land fails the whole message, since the
+// loop's words did not all arrive, even when its start did.
+func (br *Bridge) deliver(ctx context.Context, bot *poller, req sendReq) {
+	parts := splitMessage(req.text, maxMsgLen)
+	for i, text := range parts {
+		if i > 0 && !sleepCtx(ctx, sendSpacing) {
+			br.unsent(ctx, bot, req, partOf(errors.New(errBotStopped), i, len(parts)))
+			return
+		}
+		part := sendReq{chatID: req.chatID, text: text}
+		if i == 0 {
+			part.replyTo = req.replyTo
+		}
+		sent, attempts, err := br.sendWithRetries(ctx, bot, part)
+		if err != nil {
+			if ctx.Err() != nil {
+				// The bot stopped under the attempt: that, not Telegram's
+				// answer, is why this part never arrived.
+				br.unsent(ctx, bot, req, partOf(errors.New(errBotStopped), i, len(parts)))
+				return
+			}
+			br.failSend(ctx, bot, req, partOf(err, i, len(parts)), attempts)
+			return
+		}
+		if i == 0 {
+			if record, ok := br.settleCtx(ctx); ok {
+				br.recordSentRef(record, bot, req, sent)
+			}
+		}
+	}
+	if record, ok := br.settleCtx(ctx); ok {
+		br.ledger.Result(record, req.recordFor, nil)
+	}
+}
+
+// partOf names the part of an n-part message err ended at, index i; a
+// message sent whole needs no part named.
+func partOf(err error, i, n int) error {
+	if n == 1 {
+		return err
+	}
+	return fmt.Errorf("part %d of %d: %w", i+1, n, err)
+}
+
 // sendWithRetries makes a send survive the ordinary failure — a timeout or a
 // 5xx against api.telegram.org — instead of costing the message. A rejection
 // Telegram means (a 4xx that is not 429) is not retried: sending it again
-// would fail the same way, slower.
-//
-// A send that runs out of attempts is recorded rather than only logged: on
-// the message, so the record answers "did that reach them", and as a spool
-// event, so the loop's timeline shows the gap where its words should be.
-// Nothing here is silent (#147) — except a cancelled context, which means the
-// process is going away and there is no live context left to record through.
-func (br *Bridge) sendWithRetries(ctx context.Context, bot *poller, req sendReq) {
+// would fail the same way, slower. It returns the error the last attempt
+// ended on, and how many attempts it made; a cancelled context ends it
+// early.
+func (br *Bridge) sendWithRetries(ctx context.Context, bot *poller, req sendReq) (*Message, int, error) {
 	var lastErr error
 	for attempt := 0; attempt < sendAttempts; attempt++ {
 		sent, err := bot.client.SendMessage(ctx, req.chatID, req.text, req.replyTo)
 		if err == nil {
-			br.recordSentRef(ctx, bot, req, sent)
-			br.ledger.Result(ctx, req.recordFor, nil)
-			return
+			return sent, attempt + 1, nil
+		}
+		if ctx.Err() != nil {
+			return nil, attempt + 1, ctx.Err()
 		}
 		lastErr = err
 		var apiErr *APIError
@@ -905,23 +997,23 @@ func (br *Bridge) sendWithRetries(ctx context.Context, bot *poller, req sendReq)
 			// tens of seconds and sendLoop is serial per bot, so waiting
 			// after the last attempt holds the whole queue for nothing.
 			if attempt < sendAttempts-1 {
-				sleepCtx(ctx, time.Duration(max(apiErr.RetryAfter, 1))*time.Second)
+				if !sleepCtx(ctx, time.Duration(max(apiErr.RetryAfter, 1))*time.Second) {
+					return nil, attempt + 1, ctx.Err()
+				}
 			}
 		case errors.As(err, &apiErr) && apiErr.Code >= 400 && apiErr.Code < 500:
-			br.failSend(ctx, bot, req, err, attempt+1)
-			return
+			return nil, attempt + 1, err
 		default:
 			if attempt < sendAttempts-1 {
 				br.log.Warn("telegram send failed; retrying",
 					"loop", bot.name, "attempt", attempt+1, "err", err)
-				sleepCtx(ctx, sendBackoff<<attempt)
+				if !sleepCtx(ctx, sendBackoff<<attempt) {
+					return nil, attempt + 1, ctx.Err()
+				}
 			}
 		}
-		if ctx.Err() != nil {
-			return
-		}
 	}
-	br.failSend(ctx, bot, req, lastErr, sendAttempts)
+	return nil, sendAttempts, lastErr
 }
 
 // failSend gives up on a send and leaves the evidence in the two places
@@ -1032,8 +1124,8 @@ func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 			return
 		}
 		anchor, text := br.render(ctx, mp, loopRecord.TGGroupChatID)
-		if !bot.enqueue(sendReq{chatID: loopRecord.TGGroupChatID, text: text, replyTo: anchor, recordFor: mp.ID}) {
-			br.ledger.Unsendable(ctx, mp, outbound.ErrQueueFull)
+		if unsent := bot.enqueue(sendReq{chatID: loopRecord.TGGroupChatID, text: text, replyTo: anchor, recordFor: mp.ID}); unsent != "" {
+			br.ledger.Unsendable(ctx, mp, unsent)
 		}
 	case store.ConversationOwnerDM:
 		// a loop's owner_dm send: deliver to the chat route.Send pinned
@@ -1052,8 +1144,8 @@ func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 			return
 		}
 		anchor, text := br.render(ctx, mp, mp.OwnerDMChat)
-		if !bot.enqueue(sendReq{chatID: mp.OwnerDMChat, text: text, replyTo: anchor, recordFor: mp.ID}) {
-			br.ledger.Unsendable(ctx, mp, outbound.ErrQueueFull)
+		if unsent := bot.enqueue(sendReq{chatID: mp.OwnerDMChat, text: text, replyTo: anchor, recordFor: mp.ID}); unsent != "" {
+			br.ledger.Unsendable(ctx, mp, unsent)
 		}
 	}
 	// control_room lives in the web UI alone; telegram sees nothing
@@ -1104,12 +1196,12 @@ func (br *Bridge) noticeLogin(ctx context.Context, notice *surface.LoginNotice) 
 // loop's timeline whether it was, reporting the same.
 func (br *Bridge) sendLoginNotice(ctx context.Context, loopID string, chatID int64, notice *surface.LoginNotice) bool {
 	bot := br.poller(loopID)
-	switch {
-	case bot == nil:
+	if bot == nil {
 		br.ledger.LoginNoticeEvent(ctx, loopID, notice, "the loop's bot is not running")
 		return false
-	case !bot.enqueue(sendReq{chatID: chatID, text: notice.Text()}):
-		br.ledger.LoginNoticeEvent(ctx, loopID, notice, outbound.ErrQueueFull)
+	}
+	if unsent := bot.enqueue(sendReq{chatID: chatID, text: notice.Text()}); unsent != "" {
+		br.ledger.LoginNoticeEvent(ctx, loopID, notice, unsent)
 		return false
 	}
 	br.ledger.LoginNoticeEvent(ctx, loopID, notice, "")
@@ -1170,12 +1262,15 @@ func splitMessage(text string, limit int) []string {
 	return out
 }
 
-func sleepCtx(ctx context.Context, duration time.Duration) {
+// sleepCtx waits duration, and reports false if ctx ended first.
+func sleepCtx(ctx context.Context, duration time.Duration) bool {
 	timer := time.NewTimer(duration)
 	defer timer.Stop()
 	select {
 	case <-ctx.Done():
+		return false
 	case <-timer.C:
+		return true
 	}
 }
 

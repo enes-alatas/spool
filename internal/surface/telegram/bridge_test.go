@@ -2,7 +2,9 @@ package telegram
 
 import (
 	"context"
+	"io"
 	"log/slog"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -267,3 +269,92 @@ func withLedger(br *Bridge) *Bridge {
 	br.ledger = &outbound.Ledger{Store: br.store, Bus: br.bus, Log: br.log, Surface: "telegram"}
 	return br
 }
+
+// settleMessages records how a send was settled, writing only through a
+// live context the way the SQLite store does. Every other method panics via
+// the embedded nil interface.
+type settleMessages struct {
+	store.MessageStore
+	mirrored bool
+	ref      int64
+	sendErr  string
+}
+
+func (messages *settleMessages) SetMirror(ctx context.Context, _ int64, mirror string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	messages.mirrored = mirror == store.MirrorMirrored
+	return nil
+}
+
+func (messages *settleMessages) ResolveSend(ctx context.Context, _, _ int64, _ string, _ int64) (bool, error) {
+	return false, ctx.Err()
+}
+
+func (messages *settleMessages) ResolveResends(ctx context.Context, _, _ int64) (int, error) {
+	return 0, ctx.Err()
+}
+
+func (messages *settleMessages) PutRef(ctx context.Context, ref *store.SurfaceRef) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	messages.ref = ref.TGMessageID
+	return nil
+}
+
+func (messages *settleMessages) SetSendResult(ctx context.Context, _, _ int64, sendErr string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	messages.sendErr = sendErr
+	return nil
+}
+
+// landThenStop answers every sendMessage as Telegram does when the message
+// landed, and stops the bot as it does: a detach or swap arriving with the
+// response.
+type landThenStop struct{ stop context.CancelFunc }
+
+func (answer landThenStop) RoundTrip(*http.Request) (*http.Response, error) {
+	answer.stop()
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": {"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"ok":true,"result":{"message_id":55}}`)),
+	}, nil
+}
+
+// A message that landed as its bot stopped is recorded as landed. Blaming
+// the stop would be false, and the operator's retry would post it twice.
+func TestASendThatLandsAsItsBotStopsIsSent(t *testing.T) {
+	botCtx, stop := context.WithCancel(context.Background())
+	defer stop()
+	client := NewClientAt("http://telegram.invalid", "synthetic-token")
+	client.http = &http.Client{Transport: landThenStop{stop: stop}}
+	bot := &poller{loopID: "l1", name: "alpha", client: client}
+	msgs := &settleMessages{}
+	br := withLedger(&Bridge{
+		ctx:   context.Background(), // the hub is running
+		store: settleStore{msgs: msgs},
+		log:   slog.Default(),
+		bus:   bus.New(),
+	})
+
+	br.deliver(botCtx, bot, sendReq{chatID: 42, text: "landed", recordFor: 7})
+
+	if !msgs.mirrored || msgs.ref != 55 || msgs.sendErr != "" {
+		t.Fatalf("settled as mirrored=%v ref=%d err=%q, want mirrored with ref 55 and no failure",
+			msgs.mirrored, msgs.ref, msgs.sendErr)
+	}
+}
+
+// settleStore serves settleMessages. Every other store method panics via
+// the embedded nil interface.
+type settleStore struct {
+	store.Store
+	msgs *settleMessages
+}
+
+func (fake settleStore) Messages() store.MessageStore { return fake.msgs }

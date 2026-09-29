@@ -32,7 +32,10 @@ type fakeTelegram struct {
 	// records nothing in sent: the message never existed for the chat.
 	failSends   int
 	failForever bool
-	sendCalls   int
+	// failText refuses, the same way, every send whose text contains it:
+	// how a test fails one part of a long message and not the others.
+	failText  string
+	sendCalls int
 	// holdGetMe stands in for a slow api.telegram.org: getMe blocks on it
 	// until the test lets go. Real getMe calls take a round-trip, and the
 	// hub holds a copy of the loop row across one (#164) — a window a test
@@ -68,6 +71,14 @@ func (tg *fakeTelegram) failNextSends(n int) {
 	tg.mu.Lock()
 	defer tg.mu.Unlock()
 	tg.failSends, tg.failForever = n, n < 0
+}
+
+// failSendsContaining makes the stand-in refuse every send whose text
+// contains text, until the test clears it with "".
+func (tg *fakeTelegram) failSendsContaining(text string) {
+	tg.mu.Lock()
+	defer tg.mu.Unlock()
+	tg.failText = text
 }
 
 // sendAttempts counts every sendMessage call the bridge made, refused or not
@@ -158,8 +169,8 @@ func (tg *fakeTelegram) handle(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&req)
 		tg.mu.Lock()
 		tg.sendCalls++
-		if tg.failForever || tg.failSends > 0 {
-			if !tg.failForever {
+		if tg.failForever || tg.failSends > 0 || (tg.failText != "" && strings.Contains(req.Text, tg.failText)) {
+			if !tg.failForever && tg.failSends > 0 {
 				tg.failSends--
 			}
 			tg.mu.Unlock()

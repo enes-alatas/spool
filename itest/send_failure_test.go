@@ -214,3 +214,71 @@ func TestUndeliveredCountReachesTheFleetView(t *testing.T) {
 		t.Fatalf("beta reports %d undelivered, but the failed message was alpha's", n)
 	}
 }
+
+// A long message goes out in parts, and a part after the first that never
+// lands used to be lost without a record: the row read mirrored because its
+// start arrived, and nobody learned the rest had not (#302). Now the
+// message is a failure, which says which part.
+func TestALostPartFailsTheWholeMessage(t *testing.T) {
+	t.Parallel()
+	operator := user{ID: 7733, First: "Operator", Username: "operator"}
+	long := "@beta the start " + strings.Repeat("filler ", 700) + "the lost tail"
+	ws := workspaceWithScript(t, "!ctx 0\n"+
+		`!send {"destination":"group","text":"`+long+`"}`+"\n")
+	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws})
+
+	tg.failSendsContaining("the lost tail")
+	srv.message("alpha", "say it")
+
+	tg.waitSent(t, groupChatID, "the start")
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		stored := srv.activityWith(long)
+		if len(stored) == 1 && stored[0].SendFailedAt > 0 {
+			if !strings.Contains(stored[0].SendError, "part 2 of 2") {
+				t.Fatalf("the message records %q, which does not say which part was lost", stored[0].SendError)
+			}
+			if stored[0].Mirror == "mirrored" {
+				t.Fatalf("a message missing its tail reads mirrored: %s", dump(stored[0]))
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("a message whose tail never arrived was never marked undelivered: %s", dump(stored))
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	if !srv.hasEvent("alpha", "send_failed", 5*time.Second) {
+		t.Fatal("a lost part left nothing on the loop's timeline")
+	}
+}
+
+// A send its loop's bot was still trying when the bot stopped (detached,
+// swapped or archived) used to be abandoned without a record, pending until
+// the hub's next start (#302). Now it fails as soon as the bot stops.
+func TestASendHeldByAStoppedBotIsAFailure(t *testing.T) {
+	t.Parallel()
+	operator := user{ID: 7744, First: "Operator", Username: "operator"}
+	srv, tg := startTelegramFleet(t, operator)
+
+	tg.failNextSends(-1) // retried with a backoff of seconds: the window
+	alpha := mcpSession(t, srv, hubMCPToken(t, srv, "alpha"))
+	const text = "@beta held when the bot went"
+	if res := callSend(t, alpha, map[string]any{"destination": "group", "text": text}); res.IsError {
+		t.Fatalf("alpha's group send refused: %s", resultText(res))
+	}
+	for deadline := time.Now().Add(10 * time.Second); tg.sendAttempts() == 0; time.Sleep(50 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the bridge never attempted the send")
+		}
+	}
+	srv.mustJSON("PATCH", "/api/loops/alpha", map[string]any{"tg_bot_token": ""}, nil)
+
+	failed := srv.waitGroupMessage(text, func(m activityMessage) bool { return m.SendFailedAt != 0 })
+	if !strings.Contains(failed.SendError, "bot stopped before this was sent") {
+		t.Fatalf("the send records %q, which does not say its bot stopped", failed.SendError)
+	}
+	if !srv.hasEvent("alpha", "send_failed", 5*time.Second) {
+		t.Fatal("a send its bot dropped left nothing on the loop's timeline")
+	}
+}
