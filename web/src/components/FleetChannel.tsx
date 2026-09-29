@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ChatMessage, LoopView } from '../api'
 import { channelRecipients, completeMention, mentionAt, mentionCompletions } from '../channel'
 import { MessageKnot } from './MessageKnot'
-import { hubOnly } from '../messages'
+import { surfaceNote } from '../messages'
 
 // The fleet channel: the conversation the operator and the loops share,
 // which lives on the hub and is native to the control room (ADR-0032, #286).
@@ -15,26 +15,13 @@ import { hubOnly } from '../messages'
 // compose box there would sit beside them.
 //
 // Nothing posted here leaves the hub (ADR-0032). An attached surface
-// brings its room's posts in, so people on Telegram appear in this timeline,
-// but they never see what the operator writes here. The compose box says
-// so, because a timeline with humans in it looks like a place they can be
-// answered.
-
-// Where a message came from, for the ones whose author alone does not say
-// it: a human's post arrived through a surface, and naming the surface is
-// how the operator learns this person cannot read a reply written here.
-//
-// Where a message went, for the ones that stayed: "hub only" is read from
-// the message's mirror state (#285), not from its origin, because before
-// #293 a composer post to the group did go out to Telegram and the origin
-// cannot say whether one stayed.
-function surfaceNote(m: ChatMessage): string {
-  if (m.origin === 'telegram-group') return ' · via Telegram'
-  return hubOnly(m) ? ' · hub only' : ''
-}
+// brings its room's posts in, so people on Telegram or Slack appear in this
+// timeline, but they never see what the operator writes here. The compose
+// box says so, because a timeline with humans in it looks like a place they
+// can be answered.
 
 // The loops the hub delivered a message to — the message's `delivered_to`.
-// Hub delivery, not surface delivery: a person on Telegram is never in this
+// Hub delivery, not surface delivery: a person on a surface is never in this
 // list, and a loop's failure to reach the surface is the undelivered mark's
 // to say.
 //
@@ -247,10 +234,10 @@ function Compose({
           is typed, so an empty box answering one already says who it reaches. */}
       <div className={`channel-reach${!empty && !typing && recipients.length === 0 ? ' warn' : ''}`}>
         {(empty || typing) && recipients.length === 0
-          ? 'Reaches the loops you name. Stays on the hub: people on Telegram never see it.'
+          ? 'Reaches the loops you name. Stays on the hub: people on Telegram or Slack never see it.'
           : recipients.length === 0
             ? 'Names no loop in the channel, so it would reach nobody. Mention one with @, or @all.'
-            : `Reaches ${recipients.map((n) => `@${n}`).join(', ')}. Stays on the hub: people on Telegram never see it.`}
+            : `Reaches ${recipients.map((n) => `@${n}`).join(', ')}. Stays on the hub: people on Telegram or Slack never see it.`}
       </div>
       {error && (
         <div className="form-error" role="alert">

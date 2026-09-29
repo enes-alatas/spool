@@ -48,19 +48,19 @@ export interface Undelivered {
 
 // undelivered reports a loop's own message that the surface never accepted.
 //
-// The rule is the *sender*, not the presence of a failure record. Of the four
-// origins (`store.go`: web, telegram-group, telegram-dm, loop), one of the
-// operator's can carry these fields too, on older rows: until ADR-0032 a
-// web-origin group message was mirrored to Telegram, and a failed mirror wrote
-// `send_failed_at` onto the original. Nothing the operator writes leaves the
-// hub any more, so no new row gets them — but the rows from before are still
-// in the database, and still rendered.
+// The rule is the *sender*, not the presence of a failure record. Of the six
+// origins (`store.go`: web, telegram-group, telegram-dm, slack-channel,
+// slack-dm, loop), one of the operator's can carry these fields too, on older
+// rows: until ADR-0032 a web-origin group message was mirrored to Telegram,
+// and a failed mirror wrote `send_failed_at` onto the original. Nothing the
+// operator writes leaves the hub any more, so no new row gets them — but the
+// rows from before are still in the database, and still rendered.
 //
 // The mark stays off them anyway, because of what the mark claims — that the
 // recipient never received this. The loops did receive it, in process, before
 // any mirror was attempted; what failed was a copy for onlookers, which is a
-// different fact. A telegram-origin message is never mirrored at all, so it
-// cannot carry the fields in the first place.
+// different fact. A message that came in from a surface is never sent back
+// out, so it cannot carry the fields in the first place.
 //
 // A resolved failure still returns a mark rather than null. #269 keeps the
 // failure row deliberately — "resolved is not delivered" — so dropping the
@@ -247,4 +247,23 @@ export function mirrorOf(m: ChatMessage): Mirror {
 // message carrying that mark is never also called hub only.
 export function hubOnly(m: ChatMessage): boolean {
   return mirrorOf(m) === 'not_mirrored' && !undelivered(m)
+}
+
+// The surface a fleet-channel post came in through, by its origin. A
+// human's post arrived through one of these, and naming it is how the
+// operator learns this person cannot read a reply written here (ADR-0032).
+const CHANNEL_SURFACES: Record<string, string> = {
+  'telegram-group': 'Telegram',
+  'slack-channel': 'Slack',
+}
+
+// Where a message came from, for the ones whose author alone does not say
+// it, or where it went, for the ones that stayed. "Hub only" is read from
+// the message's mirror state (#285), not from its origin, because before
+// #293 a composer post to the group did go out to Telegram and the origin
+// cannot say whether one stayed.
+export function surfaceNote(m: ChatMessage): string {
+  const surface = CHANNEL_SURFACES[m.origin]
+  if (surface) return ` · via ${surface}`
+  return hubOnly(m) ? ' · hub only' : ''
 }
