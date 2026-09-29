@@ -361,33 +361,64 @@ func main() {
 
 	srv := &http.Server{Handler: redact.HTTP(api.Handler(), redactor)}
 	mcpSrv := &http.Server{Handler: redact.HTTP(api.MCPHandler(), redactor)}
-	go func() {
-		<-ctx.Done()
-		log.Info("shutting down")
-		shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		_ = srv.Shutdown(shutCtx)
-		_ = mcpSrv.Shutdown(shutCtx)
-	}()
-
-	// The loop-facing listener runs on its own goroutine; serving the API
-	// blocks below. Failing to bind it takes the whole hub down: a
-	// workstation with no hub to reach cannot take a turn, and a fleet that
-	// looks healthy and never wakes is the worse failure.
-	go func() {
-		if err := mcpSrv.Serve(mcpListener); err != nil && err != http.ErrServerClosed {
-			log.Error("serve mcp", "err", err)
-			stop()
-		}
-	}()
 
 	// The bound addresses, not the flags: with a port of 0 this line is the
 	// only place the ports are said, and the itest harness reads them here.
 	log.Info("spool listening", "addr", apiAddr, "mcp_addr", mcpAddr, "data", *dataDir, "ui", api.WebFS != nil)
-	if err := srv.Serve(apiListener); err != nil && err != http.ErrServerClosed {
-		log.Error("serve", "err", err)
+	serveErr := serve(ctx, log,
+		served{name: "api", srv: srv, listener: apiListener, addr: apiAddr},
+		// Failing the loop-facing listener takes the whole hub down: a
+		// workstation with no hub to reach cannot take a turn, and a fleet
+		// that looks healthy and never wakes is the worse failure.
+		served{name: "mcp", srv: mcpSrv, listener: mcpListener, addr: mcpAddr})
+	stop() // a listener that failed takes the rest of the hub down with it
+	if serveErr != nil {
+		log.Error("serve", "err", serveErr)
 	}
 	manager.Shutdown()
+	if serveErr != nil {
+		// A hub that stopped serving is a failed hub, whatever it did
+		// before: a supervisor reads the exit status, not the log (#253).
+		// os.Exit skips the deferred close.
+		_ = db.Close()
+		os.Exit(1)
+	}
+}
+
+// served is one of the hub's listeners and the server on it.
+type served struct {
+	name     string
+	srv      *http.Server
+	listener net.Listener
+	addr     string
+}
+
+// serve serves every listener until ctx ends or one of them fails, then
+// shuts them all down. It returns the failure, naming the listener and its
+// address, or nil for a shutdown the operator asked for.
+func serve(ctx context.Context, log *slog.Logger, listeners ...served) error {
+	failed := make(chan error, len(listeners))
+	for _, one := range listeners {
+		go func() {
+			// Serve returns only on a failure, until Shutdown makes it
+			// return ErrServerClosed
+			if err := one.srv.Serve(one.listener); !errors.Is(err, http.ErrServerClosed) {
+				failed <- fmt.Errorf("%s listener on %s: %w", one.name, one.addr, err)
+			}
+		}()
+	}
+	var serveErr error
+	select {
+	case <-ctx.Done():
+		log.Info("shutting down")
+	case serveErr = <-failed:
+	}
+	shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	for _, one := range listeners {
+		_ = one.srv.Shutdown(shutCtx)
+	}
+	return serveErr
 }
 
 // printToken serves `spool token`, which reads the credential rather than
