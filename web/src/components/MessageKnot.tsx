@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import type { ChatMessage } from '../api'
+import { AttachmentList } from './Attachments'
 import { UndeliveredMark } from './UndeliveredMark'
 
 // When a message was sent, said so it cannot be misread: the time alone for
@@ -20,7 +21,8 @@ export function messageTime(ts: number, now = new Date()): string {
 }
 
 // One message on a thread's rail: who, when, what, and the mark it carries
-// if its surface never took it.
+// if its surface never took it, with the files that came with it under the
+// words.
 //
 // Shared by every place the room renders a conversation as a thread — a
 // loop's control room and the fleet channel (#286) — for the reason
@@ -48,6 +50,7 @@ export function MessageKnot({
       </div>
       {before}
       <div className={fromLoop ? 'plain' : 'bubble'}>{msg.text}</div>
+      <AttachmentList items={msg.attachments} />
       <UndeliveredMark msg={msg} />
       {after}
     </div>
