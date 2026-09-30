@@ -39,6 +39,17 @@
   --sans: 'Segoe UI Variable Text', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
 
+/* The wordmark's face: the README banner's Nunito, served by the hub itself
+   and used for the one word "spool" (ADR-0027, #456). If it fails to load,
+   the wordmark falls back to the sans stack. */
+@font-face {
+  font-family: 'Nunito';
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url('/fonts/nunito-latin-400.woff2') format('woff2');
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -169,10 +180,20 @@ textarea {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-family: var(--mono);
-  font-size: 1.0625rem;
-  letter-spacing: 0.14em;
+  font-family: 'Nunito', var(--sans);
+  font-size: 1.4375rem;
+  letter-spacing: 0.01em;
   color: var(--text);
+}
+/* A centred row puts the middle of the text's line box on the glyph's
+   centre, but Nunito's line box sits higher above the baseline than below
+   it, so the lowercase letters sit 1.5px low at this size (measured on the
+   rendered pixels: the "s" against the glyph's rings). The lift is a
+   transform because a relative `top` snaps to whole pixels and overshot by
+   half a pixel. */
+.wordmark-text {
+  display: inline-block;
+  transform: translateY(-0.065em);
 }
 .wordmark .spool-glyph {
   color: var(--text);

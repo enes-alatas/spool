@@ -38,7 +38,7 @@ export default function Login({ onSignedIn }: { onSignedIn: () => void }) {
       <form className="login-card" onSubmit={submit}>
         <div className="wordmark">
           <SpoolGlyph size={26} />
-          spool
+          <span className="wordmark-text">spool</span>
         </div>
 
         <p className="page-lede">
