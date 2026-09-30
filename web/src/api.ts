@@ -185,7 +185,48 @@ export interface ChatMessage {
   // fleet channel a reply addresses the replied-to loop with no mention
   // needed (ADR-0025); the channel page draws it as a quote (#286).
   reply_to_id?: number
+  // The files that came with it (#460). Absent when there are none.
+  attachments?: Attachment[]
 }
+
+// A file that came with a message, from a chat surface, a loop's send, or
+// the operator's composer (#123). The hub keeps the bytes for 30 days; the
+// row outlives them, so a message still says what came with it.
+export interface Attachment {
+  id: number
+  // 0 on a fresh upload, until the message that carries it is sent.
+  message_id: number
+  name: string
+  // "" when the file never arrived.
+  mime: string
+  kind: 'image' | 'file'
+  // Bytes. For a file that never arrived, what the surface declared (may
+  // be 0).
+  size: number
+  // Images only, when the hub could read them.
+  width?: number
+  height?: number
+  // Why the file never arrived: 'too_large' or 'fetch_failed'. A plain
+  // string for the reason `send_resolution` is one: the hub writes it.
+  not_kept?: string
+  created_at: number
+  // When retention removed the bytes.
+  removed_at?: number
+}
+
+// The largest file the hub keeps; the upload route refuses anything bigger
+// (`attachment_too_large`), so the composer says so before sending it.
+export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
+
+// Where an attachment's bytes are. The session cookie authenticates it, so
+// it works as an <img> source and a link. The types in INLINE_IMAGE_TYPES
+// are served inline, anything else as a download.
+export const attachmentURL = (id: number) => `/api/attachments/${id}`
+
+// The image types the hub serves inline, mirroring `inlineImages` in
+// internal/httpapi/attachments.go. Any other image, a BMP or an icon, goes
+// out as a download with nosniff, which an <img> will not draw.
+export const INLINE_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
 
 export interface TGSender {
   tg_user_id: number
@@ -439,11 +480,25 @@ export const api = {
     name: string,
     text: string,
     destination: MessageDestination = 'control_room',
-    author = 'operator',
+    attachmentID?: number,
   ) =>
     req<{ queued: boolean }>(`/api/loops/${name}/message`, {
       method: 'POST',
-      body: JSON.stringify({ author, text, destination }),
+      body: JSON.stringify({
+        author: 'operator',
+        text,
+        destination,
+        attachment_id: attachmentID || undefined,
+      }),
+    }),
+  // The first of a send's two steps: the raw bytes, kept by the hub for an
+  // hour until a message names the returned id as its `attachment_id`. The
+  // one route whose body is not JSON.
+  uploadAttachment: (file: File) =>
+    req<Attachment>(`/api/attachments?name=${encodeURIComponent(file.name)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: file,
     }),
   // The newest window, not the oldest: `before_id=0` means "the newest end of
   // the timeline" and the server returns the page oldest-first, so a loop with
@@ -488,10 +543,14 @@ export const api = {
   // `replyTo` is the fleet-channel message it answers (#311); the server
   // refuses one that is gone (`unknown_reply_to`) or from another
   // conversation (`cross_conversation_reply_to`) with a 400.
-  postGroup: (text: string, replyTo?: number) =>
+  postGroup: (text: string, replyTo?: number, attachmentID?: number) =>
     req<{ queued: boolean }>('/api/group', {
       method: 'POST',
-      body: JSON.stringify({ text, reply_to_id: replyTo || undefined }),
+      body: JSON.stringify({
+        text,
+        reply_to_id: replyTo || undefined,
+        attachment_id: attachmentID || undefined,
+      }),
     }),
   conversation: (name: string, kind: 'control_room' | 'owner_dm' = 'control_room', limit = 100) =>
     req<ChatMessage[]>(`/api/loops/${name}/conversation?conversation=${kind}&limit=${limit}`),
