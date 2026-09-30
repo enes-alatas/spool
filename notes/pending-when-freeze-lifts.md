@@ -133,3 +133,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 
 ## 2026-09-30 06:05 — morning sweep
 - #443 (#253) merged. No open PR. Terra: #441 → #442 → #4. Iris idle. With Enes, unnudged: docker-loop flow (#429), real-Slack check + close #197, #123 contract.
+- 07:30: Enes: rewrite + move README Quick start. Filed #446 → Iris. Asked Terra on #429 whether the binary should pick a bridge-reachable loop listener by default (Enes decides).
