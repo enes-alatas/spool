@@ -101,6 +101,14 @@ ADR instead.*
   `gh issue create --parent n`, or `gh issue edit <child> --parent n` after the
   fact. The `Part of` line stays, because PR bodies and search read it and a
   sub-issue link is invisible to both.
+- **One PR, one issue** (#462). An issue that will take more than one PR is
+  split before its first PR opens: each slice is a typed sub-issue of it,
+  filed under the epic-children rule above, with one owner and its own
+  acceptance bar, and each PR closes exactly one slice. The parent keeps only
+  the contract and the recorded decisions, and closes when its last slice
+  does. Posting a slice plan on the parent is the trigger: whoever posts it
+  files the slices in the same sitting. Without them a reader reconstructs
+  from the PR list which slice is done, in review or next (#123, #420).
 - **The issue body is the spec of record; comments are history** (#388). A
   loop rotates and reads the body first, so a decision that exists only in
   a comment gets asked again: #230's body still called the WebSocket
