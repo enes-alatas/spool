@@ -356,7 +356,13 @@ agents — Claude sessions today, Spool's own loops from L2.*
   terminology, public API shape, security posture, or spending real plan tokens
   (tier-3 e2e). A question from the operator is a question. Reprioritizing or
   interrupting in-flight work takes an explicit yes; finished work gets its PR
-  before any redirect.
+  before any redirect. **A decision is not a reorder** either (#462): backlog
+  talk with the operator reaches a developer only once it is a decision, and
+  the decision joins the back of that developer's queue. Whoever relays it
+  files the issue, notes the queue position on it, and holds the assignment
+  until the developer's current PR merges. Only an explicit "first" or "now"
+  from the operator moves it ahead, and even then not past work one step from
+  its PR.
 - **Dependencies** are stdlib-first in Go and the control room alike (#266).
   Every new one stops for a human interview, whatever it reaches, and is
   argued in its PR description. One the shipped binary carries (a module the
