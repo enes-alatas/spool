@@ -25,7 +25,13 @@ type DB struct {
 }
 
 func Open(path string) (*DB, error) {
-	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)", path)
+	// synchronous(NORMAL): a commit reaches the WAL, in the OS's hands,
+	// without waiting on an fsync, which comes at the checkpoint. A killed
+	// hub loses nothing; a machine that loses power can lose the commits
+	// since the last checkpoint, never the database's consistency. Waiting
+	// on one fsync per commit, through one connection, queued a burst of
+	// wakes past the wake-overhead baseline (ADR-0035).
+	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)", path)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
