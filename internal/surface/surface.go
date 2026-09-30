@@ -28,6 +28,7 @@ package surface
 import (
 	"context"
 	"errors"
+	"sync"
 )
 
 // Credential is what the operator pastes to give a loop its identity on a
@@ -84,8 +85,15 @@ func RejectedPart(err error) string {
 // handlers while their own pollers run.
 type Surface interface {
 	// Start brings up the surface for every loop already configured, and
-	// runs until ctx is cancelled.
+	// runs until ctx is cancelled or Stop is called.
 	Start(ctx context.Context)
+
+	// Stop ends the surface and returns once it has settled every send it
+	// held, queued or mid-retry, as failed with the reason it stopped. It
+	// waits at most until ctx ends. The hub calls it as it shuts down,
+	// before the store closes (ADR-0036); a surface that was never
+	// started returns at once.
+	Stop(ctx context.Context)
 
 	// ValidateCredential checks a loop credential against the platform and
 	// returns the identity it names: a bot username on Telegram; a bot user,
@@ -109,4 +117,18 @@ type Surface interface {
 	// Status describes what the surface is doing for one loop, for the
 	// control room to render. The shape is the implementation's own.
 	Status(loopID string) any
+}
+
+// Wait waits for running to finish, or for ctx to end first: a surface's
+// Stop, bounded by the hub's shutdown deadline.
+func Wait(ctx context.Context, running *sync.WaitGroup) {
+	done := make(chan struct{})
+	go func() {
+		running.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-ctx.Done():
+	}
 }

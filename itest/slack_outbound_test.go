@@ -225,3 +225,32 @@ func TestSlackLostSendsAreFailures(t *testing.T) {
 		t.Fatalf("a send its app dropped records %q", dropped.SendError)
 	}
 }
+
+// A Slack send the hub is stopped in the middle of is failed as the hub
+// stops, before the store closes (ADR-0036), as a Telegram one is.
+func TestSlackSendInterruptedByAShutdownIsAFailure(t *testing.T) {
+	t.Parallel()
+	srv, slack := startSlackFleet(t)
+	slack.pushMessage(t, slackAppToken, "channel", slackChannel, slackOperator, "morning", "1727600000.000010")
+	srv.waitSlackLink("terra", func(link slackStatus) bool { return link.ChannelID == slackChannel })
+	terra := mcpSession(t, srv, hubMCPToken(t, srv, "terra"))
+
+	slack.setFailPosts(-1) // retried with a backoff of seconds: the window
+	before := slack.postAttempts()
+	const held = "@milo held when the hub went"
+	if res := callSend(t, terra, map[string]any{"destination": "group", "text": held}); res.IsError {
+		t.Fatalf("terra's group send refused: %s", resultText(res))
+	}
+	for deadline := time.Now().Add(10 * time.Second); slack.postAttempts() == before; time.Sleep(50 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the app never attempted the send")
+		}
+	}
+	srv.stop()
+
+	failedAt, sendErr, events := storedSendFailure(t, srv.dataDir, held)
+	if failedAt == 0 || !strings.Contains(sendErr, "hub stopped") || events != 1 {
+		t.Fatalf("after the shutdown the send reads failed_at=%d error=%q with %d send_failed events, want one failure saying the hub stopped with it unsent",
+			failedAt, sendErr, events)
+	}
+}

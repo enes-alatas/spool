@@ -147,7 +147,7 @@ func (adapter *Adapter) sendLoop(ctx context.Context, link *link) {
 			for {
 				select {
 				case mp := <-link.sends:
-					adapter.unsent(ctx, mp, errAppStopped)
+					adapter.unsent(ctx, mp, adapter.stopReason())
 				default:
 					return
 				}
@@ -188,7 +188,7 @@ func (adapter *Adapter) send(ctx context.Context, mp *route.MessagePayload) {
 	parts := split(text, postLimit)
 	for i, part := range parts {
 		if i > 0 && !pause(ctx, sendSpacing) {
-			adapter.unsent(ctx, mp, partOf(errAppStopped, i, len(parts)))
+			adapter.unsent(ctx, mp, partOf(adapter.stopReason(), i, len(parts)))
 			return
 		}
 		ts, attempts, err := adapter.postWithRetries(ctx, loopRecord, channel, part, threadTS)
@@ -196,7 +196,7 @@ func (adapter *Adapter) send(ctx context.Context, mp *route.MessagePayload) {
 			if ctx.Err() != nil {
 				// The app stopped under the attempt: that, not Slack's
 				// answer, is why this part never arrived.
-				adapter.unsent(ctx, mp, partOf(errAppStopped, i, len(parts)))
+				adapter.unsent(ctx, mp, partOf(adapter.stopReason(), i, len(parts)))
 				return
 			}
 			if len(parts) > 1 {
@@ -206,16 +206,12 @@ func (adapter *Adapter) send(ctx context.Context, mp *route.MessagePayload) {
 			return
 		}
 		if i == 0 {
-			if record, ok := adapter.settleCtx(ctx); ok {
-				if err := adapter.store.Messages().SetSlackRef(record, mp.ID, channel, ts); err != nil {
-					adapter.log.Warn("slack: record sent reference", "message", mp.ID, "err", err)
-				}
+			if err := adapter.store.Messages().SetSlackRef(settleCtx(ctx), mp.ID, channel, ts); err != nil {
+				adapter.log.Warn("slack: record sent reference", "message", mp.ID, "err", err)
 			}
 		}
 	}
-	if record, ok := adapter.settleCtx(ctx); ok {
-		adapter.ledger.Result(record, mp.ID, nil)
-	}
+	adapter.ledger.Result(settleCtx(ctx), mp.ID, nil)
 }
 
 // partOf names the part of an n-part message a failure ended at, index i;
@@ -272,28 +268,30 @@ func pause(ctx context.Context, d time.Duration) bool {
 // unsent records a send its app stopped before finishing, as failed with
 // reason.
 func (adapter *Adapter) unsent(ctx context.Context, mp *route.MessagePayload, reason string) {
-	if record, ok := adapter.settleCtx(ctx); ok {
-		adapter.ledger.Unsendable(record, mp, reason)
+	adapter.ledger.Unsendable(settleCtx(ctx), mp, reason)
+}
+
+// stopReason is why a send its app held never went: the hub stopping, or
+// the app alone.
+func (adapter *Adapter) stopReason() string {
+	adapter.mu.Lock()
+	defer adapter.mu.Unlock()
+	if adapter.ctx != nil && adapter.ctx.Err() != nil {
+		return outbound.ErrUnsentAtStop
 	}
+	return errAppStopped
 }
 
 // settleCtx is the context a send's outcome is written through: its link's
 // own, until the link stops. A send that ends as its app stops, whether it
 // was cut short or its last part landed, must still be recorded, so a
-// spent context is traded for one without the cancel. A hub that is
-// stopping reports false: the store is closing under the send, which stays
-// pending for the next start to fail (FailInterruptedSends).
-func (adapter *Adapter) settleCtx(ctx context.Context) (context.Context, bool) {
+// spent context is traded for one without the cancel. The hub closes the
+// store only once Stop has waited for that write.
+func settleCtx(ctx context.Context) context.Context {
 	if ctx.Err() == nil {
-		return ctx, true
+		return ctx
 	}
-	adapter.mu.Lock()
-	hubStopping := adapter.ctx == nil || adapter.ctx.Err() != nil
-	adapter.mu.Unlock()
-	if hubStopping {
-		return nil, false
-	}
-	return context.WithoutCancel(ctx), true
+	return context.WithoutCancel(ctx)
 }
 
 // fail records a send that did not get through.

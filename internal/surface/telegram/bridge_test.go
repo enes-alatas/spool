@@ -358,3 +358,15 @@ type settleStore struct {
 }
 
 func (fake settleStore) Messages() store.MessageStore { return fake.msgs }
+
+// A bridge that was never started has nothing to settle, and its Stop
+// returns without waiting for a deadline.
+func TestStopBeforeStartReturns(t *testing.T) {
+	br := &Bridge{log: slog.Default(), pollers: map[string]*poller{}}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	br.Stop(ctx)
+	if ctx.Err() != nil {
+		t.Fatal("Stop on a bridge never started waited for its deadline")
+	}
+}

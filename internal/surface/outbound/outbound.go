@@ -32,10 +32,10 @@ type Ledger struct {
 	Surface string
 }
 
-// ErrUnsentAtStop is the failure a send carries when a hub starts and finds
-// it unsettled: the last process stopped before it landed. A running hub
-// settles every send it accepted (#302), so a stop is the only way to leave
-// one unsettled.
+// ErrUnsentAtStop is the failure a send carries when the hub stopped before
+// it landed. A running hub settles every send it accepted (#302), and a
+// stopping one fails what its surfaces still held (ADR-0036), so this is
+// recorded as the hub stops, or at the next start after a crash.
 const ErrUnsentAtStop = "the hub stopped with this still unsent"
 
 // ErrQueueFull is the failure a send carries when its sender's queue had no
@@ -126,23 +126,25 @@ func (ledger *Ledger) StayOnHub(ctx context.Context, mp *route.MessagePayload) {
 	}
 }
 
-// FailInterruptedSends turns every send the previous process left in flight
-// into a failure, on every surface at once: a send queue lives in memory, so
+// FailInterruptedSends turns every send left in flight with nothing to send
+// it into a failure, on every surface at once: a send queue lives in memory, so
 // such a row has no attempt coming, and left alone it would read as in
 // flight forever. As a failure it is an undelivered message like any other:
 // on the operator's list with retry and dismiss, on its loop's timeline, and
 // news its loop is told at the next wake — the loop believes it spoke.
 //
-// Call it once at startup, before anything can send: every pending row is
-// then the last process's.
-func (ledger *Ledger) FailInterruptedSends(ctx context.Context) {
+// Call it at startup, before anything can send, when every pending row is
+// the last process's, and at shutdown, once every surface has stopped, when
+// no pending row has anything left to settle it. when says which, for the
+// log.
+func (ledger *Ledger) FailInterruptedSends(ctx context.Context, when string) {
 	lost, err := ledger.Store.Messages().FailInterruptedSends(ctx, time.Now().UnixMilli(), ErrUnsentAtStop)
 	if err != nil {
 		ledger.Log.Error(ledger.Surface+": fail interrupted sends", "err", err)
 		return
 	}
 	for _, message := range lost {
-		ledger.Log.Warn(ledger.Surface+": send unsettled at startup", "message", message.ID, "loop", message.FromLoopID)
+		ledger.Log.Warn(ledger.Surface+": send unsettled "+when, "message", message.ID, "loop", message.FromLoopID)
 		ledger.FailedEvent(ctx, message.FromLoopID, ConversationChat(message.Conversation), 0, ErrUnsentAtStop, message.Text)
 	}
 }

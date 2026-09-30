@@ -53,7 +53,11 @@ type Bridge struct {
 	apiBase string
 	ledger  *outbound.Ledger
 
-	ctx context.Context
+	// ctx is Start's, which Stop cancels. Every goroutine the bridge runs
+	// is counted in running, and Stop waits for them.
+	ctx     context.Context
+	cancel  context.CancelFunc
+	running sync.WaitGroup
 
 	mu      sync.Mutex
 	pollers map[string]*poller // loop ID → poller
@@ -117,7 +121,10 @@ func (br *Bridge) SetBindSettle(settle time.Duration) {
 
 // Start launches pollers for every configured loop and the mirror consumer.
 func (br *Bridge) Start(ctx context.Context) {
-	br.ctx = ctx
+	br.mu.Lock()
+	br.ctx, br.cancel = context.WithCancel(ctx)
+	ctx = br.ctx
+	br.mu.Unlock()
 	loops, err := br.store.Loops().List(ctx)
 	if err != nil {
 		br.log.Error("telegram: list loops", "err", err)
@@ -128,7 +135,21 @@ func (br *Bridge) Start(ctx context.Context) {
 			br.startPoller(loopRecord)
 		}
 	}
-	go br.mirror(ctx)
+	br.running.Go(func() { br.mirror(ctx) })
+}
+
+// Stop cancels the mirror and every poller, and waits for them: each send
+// loop fails what its bot still held on the way out.
+func (br *Bridge) Stop(ctx context.Context) {
+	br.mu.Lock()
+	cancel := br.cancel
+	if cancel != nil {
+		cancel()
+	}
+	br.mu.Unlock()
+	if cancel != nil {
+		surface.Wait(ctx, &br.running)
+	}
 }
 
 // --- surface.Surface interface ---
@@ -227,6 +248,13 @@ type sendReq struct {
 }
 
 func (br *Bridge) startPoller(loopRecord *store.Loop) {
+	br.mu.Lock()
+	defer br.mu.Unlock()
+	// A stopped bridge starts nothing: Stop has cancelled, under this lock,
+	// and may already be waiting for the last poller to finish.
+	if br.ctx == nil || br.ctx.Err() != nil {
+		return
+	}
 	ctx, cancel := context.WithCancel(br.ctx)
 	bot := &poller{
 		loopID: loopRecord.ID,
@@ -236,11 +264,9 @@ func (br *Bridge) startPoller(loopRecord *store.Loop) {
 		cancel: cancel,
 		sendCh: make(chan sendReq, 128),
 	}
-	br.mu.Lock()
 	br.pollers[loopRecord.ID] = bot
-	br.mu.Unlock()
-	go br.pollLoop(ctx, bot)
-	go br.sendLoop(ctx, bot)
+	br.running.Go(func() { br.pollLoop(ctx, bot) })
+	br.running.Go(func() { br.sendLoop(ctx, bot) })
 	br.log.Info("telegram poller started", "loop", loopRecord.Name, "bot", loopRecord.TGBotUsername)
 }
 
@@ -890,7 +916,7 @@ func (br *Bridge) abandonQueue(ctx context.Context, bot *poller) {
 	for {
 		select {
 		case req := <-bot.sendCh:
-			br.unsent(ctx, bot, req, errors.New(errBotStopped))
+			br.unsent(ctx, bot, req, errors.New(br.stopReason()))
 		default:
 			return
 		}
@@ -904,25 +930,28 @@ func (br *Bridge) unsent(ctx context.Context, bot *poller, req sendReq, err erro
 	if req.recordFor == 0 {
 		return
 	}
-	if record, ok := br.settleCtx(ctx); ok {
-		br.failSend(record, bot, req, err, 0)
+	br.failSend(settleCtx(ctx), bot, req, err, 0)
+}
+
+// stopReason is why a send its bot held never went: the hub stopping, or
+// the bot alone.
+func (br *Bridge) stopReason() string {
+	if br.ctx != nil && br.ctx.Err() != nil {
+		return outbound.ErrUnsentAtStop
 	}
+	return errBotStopped
 }
 
 // settleCtx is the context a send's outcome is written through: its bot's
 // own, until the bot stops. A send that ends as its bot stops, whether it
 // was cut short or its last part landed, must still be recorded, so a
-// spent context is traded for one without the cancel. A hub that is
-// stopping reports false: the store is closing under the send, which stays
-// pending for the next start to fail (FailInterruptedSends).
-func (br *Bridge) settleCtx(ctx context.Context) (context.Context, bool) {
+// spent context is traded for one without the cancel. The hub closes the
+// store only once Stop has waited for that write.
+func settleCtx(ctx context.Context) context.Context {
 	if ctx.Err() == nil {
-		return ctx, true
+		return ctx
 	}
-	if br.ctx == nil || br.ctx.Err() != nil {
-		return nil, false
-	}
-	return context.WithoutCancel(ctx), true
+	return context.WithoutCancel(ctx)
 }
 
 // deliver sends a message in Telegram-sized parts, and records how it
@@ -934,7 +963,7 @@ func (br *Bridge) deliver(ctx context.Context, bot *poller, req sendReq) {
 	parts := splitMessage(req.text, maxMsgLen)
 	for i, text := range parts {
 		if i > 0 && !sleepCtx(ctx, sendSpacing) {
-			br.unsent(ctx, bot, req, partOf(errors.New(errBotStopped), i, len(parts)))
+			br.unsent(ctx, bot, req, partOf(errors.New(br.stopReason()), i, len(parts)))
 			return
 		}
 		part := sendReq{chatID: req.chatID, text: text}
@@ -946,21 +975,17 @@ func (br *Bridge) deliver(ctx context.Context, bot *poller, req sendReq) {
 			if ctx.Err() != nil {
 				// The bot stopped under the attempt: that, not Telegram's
 				// answer, is why this part never arrived.
-				br.unsent(ctx, bot, req, partOf(errors.New(errBotStopped), i, len(parts)))
+				br.unsent(ctx, bot, req, partOf(errors.New(br.stopReason()), i, len(parts)))
 				return
 			}
 			br.failSend(ctx, bot, req, partOf(err, i, len(parts)), attempts)
 			return
 		}
 		if i == 0 {
-			if record, ok := br.settleCtx(ctx); ok {
-				br.recordSentRef(record, bot, req, sent)
-			}
+			br.recordSentRef(settleCtx(ctx), bot, req, sent)
 		}
 	}
-	if record, ok := br.settleCtx(ctx); ok {
-		br.ledger.Result(record, req.recordFor, nil)
-	}
+	br.ledger.Result(settleCtx(ctx), req.recordFor, nil)
 }
 
 // partOf names the part of an n-part message err ended at, index i; a

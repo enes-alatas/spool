@@ -63,6 +63,8 @@ window regardless of loop count (ADR-0018).
 - Accepted inbound messages are persisted **before** the surface is acked (e.g.
   Telegram offset advance) — asserted in tier 2.
 - SIGTERM drains: in-flight turns finish (bounded), then processes close cleanly.
+  The surfaces then stop and fail every send they still held, before the store
+  closes (ADR-0036).
 - Crash-only covers the process, not the machine. The store commits to its WAL
   without waiting on an fsync (`synchronous=NORMAL`, ADR-0035), so a killed or
   crashed hub loses nothing it committed. A machine that crashes or loses power
