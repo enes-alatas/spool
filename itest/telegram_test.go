@@ -42,6 +42,11 @@ type fakeTelegram struct {
 	// cannot hit reliably by timing alone.
 	holdGetMe  chan struct{}
 	getMeEntry chan struct{}
+	// files are the bytes behind each file_id a media message names, and
+	// downloads counts every fetch of one — how a test sees that a file
+	// several bots saw was downloaded once (#123).
+	files     map[string][]byte
+	downloads int
 }
 
 // blockGetMe makes every getMe from here on hang until the returned release
@@ -115,6 +120,7 @@ func startFakeTelegram(t *testing.T, tokens ...string) *fakeTelegram {
 	tg := &fakeTelegram{
 		queued: map[string][]map[string]any{},
 		nextID: map[string]int64{},
+		files:  map[string][]byte{},
 	}
 	for _, token := range tokens {
 		tg.addBot(token)
@@ -136,6 +142,22 @@ func (tg *fakeTelegram) addBot(token string) {
 }
 
 func (tg *fakeTelegram) handle(w http.ResponseWriter, r *http.Request) {
+	if rest, ok := strings.CutPrefix(r.URL.Path, "/file/bot"); ok {
+		// /file/bot<token>/<file_path>, where getFile's file_path is the id
+		_, fileID, _ := strings.Cut(rest, "/")
+		tg.mu.Lock()
+		body, found := tg.files[fileID]
+		if found {
+			tg.downloads++
+		}
+		tg.mu.Unlock()
+		if !found {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write(body)
+		return
+	}
 	// /bot<token>/<method>
 	parts := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/bot"), "/", 2)
 	if len(parts) != 2 {
@@ -158,6 +180,19 @@ func (tg *fakeTelegram) handle(w http.ResponseWriter, r *http.Request) {
 		writeOK(w, map[string]any{"id": 1, "is_bot": true, "username": botUsername(token)})
 	case "getUpdates":
 		writeOK(w, tg.drain(token))
+	case "getFile":
+		var req struct {
+			FileID string `json:"file_id"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		tg.mu.Lock()
+		body, found := tg.files[req.FileID]
+		tg.mu.Unlock()
+		if !found {
+			http.Error(w, `{"ok":false,"error_code":400,"description":"Bad Request: invalid file_id"}`, 400)
+			return
+		}
+		writeOK(w, map[string]any{"file_id": req.FileID, "file_size": len(body), "file_path": req.FileID})
 	case "sendMessage":
 		var req struct {
 			ChatID          int64  `json:"chat_id"`
@@ -324,6 +359,65 @@ func (tg *fakeTelegram) dm(token string, from user, text string) {
 			"chat": map[string]any{"id": from.ID, "type": "private"},
 		},
 	})
+}
+
+// media is a photo or a document to attach to a posted message, as
+// Telegram describes it. The bytes are served under the file id; size is
+// what the message declares, which a test can set larger than the bytes.
+type media struct {
+	photo  bool
+	name   string
+	bytes  []byte
+	size   int64
+	width  int
+	height int
+}
+
+// withMedia is post and dm for a message carrying a file, the caption as
+// its words. It serves the file's bytes, and puts the same file_id in every
+// bot's copy — Telegram's file ids differ per bot, but a test that counts
+// downloads wants one file.
+func (tg *fakeTelegram) withMedia(tokens []string, chatID int64, chatType, caption string, from user, file media) {
+	tg.mu.Lock()
+	defer tg.mu.Unlock()
+	fileID := fmt.Sprintf("file-%d", len(tg.files)+1)
+	tg.files[fileID] = file.bytes
+	size := file.size
+	if size == 0 {
+		size = int64(len(file.bytes))
+	}
+	date := time.Now().Unix()
+	for _, token := range tokens {
+		tg.nextID[token]++
+		tg.updates++
+		msg := map[string]any{
+			"message_id": tg.nextID[token],
+			"date":       date,
+			"caption":    caption,
+			"from": map[string]any{
+				"id": from.ID, "is_bot": false,
+				"first_name": from.First, "username": from.Username,
+			},
+			"chat": map[string]any{"id": chatID, "type": chatType},
+		}
+		if file.photo {
+			// a thumbnail first, then the full size: the bridge takes the last
+			msg["photo"] = []map[string]any{
+				{"file_id": "thumb-" + fileID, "width": 8, "height": 4, "file_size": 64},
+				{"file_id": fileID, "width": file.width, "height": file.height, "file_size": size},
+			}
+		} else {
+			msg["document"] = map[string]any{"file_id": fileID, "file_name": file.name, "file_size": size}
+		}
+		tg.queued[token] = append(tg.queued[token], map[string]any{"update_id": tg.updates, "message": msg})
+	}
+}
+
+// downloadCount is how many file downloads the bots have made.
+func (tg *fakeTelegram) downloadCount() int {
+	tg.mu.Lock()
+	defer tg.mu.Unlock()
+	return tg.downloads
 }
 
 type user struct {

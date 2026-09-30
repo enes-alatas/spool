@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -130,11 +131,67 @@ type Message struct {
 	// numbering, but the embedded sender, date and text are what every bot
 	// sees alike — which is what makes the target identifiable at all.
 	ReplyToMessage *Message `json:"reply_to_message,omitempty"`
+	// A photo or a document message carries its words as Caption, not
+	// Text (#123). Photo lists the sizes Telegram made of one image,
+	// smallest first.
+	Caption  string      `json:"caption,omitempty"`
+	Photo    []PhotoSize `json:"photo,omitempty"`
+	Document *Document   `json:"document,omitempty"`
+}
+
+type PhotoSize struct {
+	FileID   string `json:"file_id"`
+	Width    int    `json:"width"`
+	Height   int    `json:"height"`
+	FileSize int64  `json:"file_size"`
+}
+
+type Document struct {
+	FileID   string `json:"file_id"`
+	FileName string `json:"file_name"`
+	MimeType string `json:"mime_type"`
+	FileSize int64  `json:"file_size"`
+}
+
+// File is what getFile answers: where the bytes of a file_id can be
+// downloaded from, for about an hour.
+type File struct {
+	FileID   string `json:"file_id"`
+	FileSize int64  `json:"file_size"`
+	FilePath string `json:"file_path"`
 }
 
 type Update struct {
 	UpdateID int64    `json:"update_id"`
 	Message  *Message `json:"message"`
+}
+
+// Download fetches a file's bytes by its file_id: getFile, then a GET on the
+// file URL. The URL carries the bot token, so no error it produces is let
+// out with the token in it. Telegram serves bots files up to 20 MB, the same
+// limit the hub keeps.
+func (client *Client) Download(ctx context.Context, fileID string) (io.ReadCloser, error) {
+	var file File
+	if err := client.call(ctx, "getFile", map[string]any{"file_id": fileID}, &file); err != nil {
+		return nil, err
+	}
+	if file.FilePath == "" {
+		return nil, errors.New("telegram getFile: no file_path")
+	}
+	url := client.base + "/file/bot" + client.token + "/" + file.FilePath
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, redactToken(err, client.token)
+	}
+	resp, err := client.http.Do(req)
+	if err != nil {
+		return nil, redactToken(err, client.token)
+	}
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, fmt.Errorf("telegram file download: %s", resp.Status)
+	}
+	return resp.Body, nil
 }
 
 func (client *Client) GetMe(ctx context.Context) (*User, error) {

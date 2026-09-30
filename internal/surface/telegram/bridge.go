@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"strings"
 	"sync"
@@ -335,6 +336,10 @@ func (br *Bridge) handleMessage(ctx context.Context, bot *poller, message *tgMsg
 	}
 	text := strings.TrimSpace(message.Text)
 	if text == "" {
+		text = strings.TrimSpace(message.Caption)
+	}
+	attachments := attachmentsOf(bot, message)
+	if text == "" && len(attachments) == 0 {
 		return
 	}
 	author := "someone"
@@ -373,7 +378,7 @@ func (br *Bridge) handleMessage(ctx context.Context, bot *poller, message *tgMsg
 	br.recordSighting(ctx, bot, message, sightedTarget)
 
 	if isGroup {
-		br.ingestGroupMessage(ctx, bot, message, author, text, sightedTarget)
+		br.ingestGroupMessage(ctx, bot, message, author, text, attachments, sightedTarget)
 		return
 	}
 
@@ -402,6 +407,7 @@ func (br *Bridge) handleMessage(ctx context.Context, bot *poller, message *tgMsg
 			TGKey:       tgKey(message),
 			ReplyToID:   br.inboundReplyTarget(ctx, bot, message),
 			ImplicitTo:  bot.loopID,
+			Attachments: attachments,
 		})
 		if err != nil && !errors.Is(err, store.ErrDuplicate) {
 			br.log.Error("telegram dm ingest", "err", err)
@@ -481,8 +487,41 @@ func dedupKey(loopID string, chatID, messageID int64) string {
 // on all four while disagreeing on message_id, so it is the only join
 // between one bot's sighting and another's ingested row.
 func tgKey(message *tgMsgAlias) string {
-	sum := sha256.Sum256(fmt.Appendf(nil, "%d|%d|%d|%s", message.Chat.ID, message.From.ID, message.Date, message.Text))
+	// A photo's words are its caption; a text message has none, so its key
+	// is what it always was.
+	sum := sha256.Sum256(fmt.Appendf(nil, "%d|%d|%d|%s", message.Chat.ID, message.From.ID, message.Date, message.Text+message.Caption))
 	return hex.EncodeToString(sum[:16])
+}
+
+// attachmentsOf is the file a message carries, as the router takes it:
+// fetched through the bot that saw it, and only if its message is stored
+// (#123). A photo is the largest size Telegram made of it.
+func attachmentsOf(bot *poller, message *tgMsgAlias) []route.InboundAttachment {
+	fetch := func(fileID string) func(context.Context) (io.ReadCloser, error) {
+		return func(ctx context.Context) (io.ReadCloser, error) { return bot.client.Download(ctx, fileID) }
+	}
+	switch {
+	case len(message.Photo) > 0:
+		largest := message.Photo[len(message.Photo)-1]
+		return []route.InboundAttachment{{
+			// Telegram gives a photo no name; its message id makes one
+			Name:  fmt.Sprintf("photo-%d.jpg", message.MessageID),
+			Kind:  store.AttachmentImage,
+			Size:  largest.FileSize,
+			Fetch: fetch(largest.FileID),
+		}}
+	case message.Document != nil:
+		name := message.Document.FileName
+		if name == "" {
+			name = fmt.Sprintf("document-%d", message.MessageID)
+		}
+		return []route.InboundAttachment{{
+			Name:  name,
+			Size:  message.Document.FileSize,
+			Fetch: fetch(message.Document.FileID),
+		}}
+	}
+	return nil
 }
 
 // recordSighting stores this bot's own id for a message it received —
@@ -558,7 +597,7 @@ func (br *Bridge) inboundReplyTarget(ctx context.Context, bot *poller, message *
 
 // ingestGroupMessage persists a group message if this bot is the one elected
 // to, and otherwise lends it the reply target only this bot could see.
-func (br *Bridge) ingestGroupMessage(ctx context.Context, bot *poller, message *tgMsgAlias, author, text string, sightedTarget int64) {
+func (br *Bridge) ingestGroupMessage(ctx context.Context, bot *poller, message *tgMsgAlias, author, text string, attachments []route.InboundAttachment, sightedTarget int64) {
 	// Every bot in the group sees this message under its own message_id,
 	// so exactly one of them may persist it.
 	if br.groupIngestLoopID(ctx, message.Chat.ID, message.Date) != bot.loopID {
@@ -589,6 +628,7 @@ func (br *Bridge) ingestGroupMessage(ctx context.Context, bot *poller, message *
 		TGBotLoopID: bot.loopID,
 		TGKey:       tgKey(message),
 		ReplyToID:   replyTo,
+		Attachments: attachments,
 	})
 	if err != nil && !errors.Is(err, store.ErrDuplicate) {
 		br.log.Error("telegram group ingest", "err", err)

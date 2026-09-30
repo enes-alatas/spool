@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 	"time"
@@ -40,11 +41,21 @@ func (rt *Runtime) command(ctx context.Context, timeout time.Duration, args ...s
 // commandInput is command with the given stdin — how content reaches a
 // workstation without crossing host argv.
 func (rt *Runtime) commandInput(ctx context.Context, timeout time.Duration, stdin string, args ...string) ([]byte, error) {
+	var reader io.Reader
+	if stdin != "" {
+		reader = strings.NewReader(stdin)
+	}
+	return rt.commandStream(ctx, timeout, reader, args...)
+}
+
+// commandStream is commandInput for content that is not text, or not small:
+// a file streamed in without being held in memory.
+func (rt *Runtime) commandStream(ctx context.Context, timeout time.Duration, stdin io.Reader, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, rt.bin, args...)
-	if stdin != "" {
-		cmd.Stdin = strings.NewReader(stdin)
+	if stdin != nil {
+		cmd.Stdin = stdin
 	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

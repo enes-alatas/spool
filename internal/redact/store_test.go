@@ -155,6 +155,38 @@ func TestEventPayloadIsRedactedOnTheWayIn(t *testing.T) {
 	}
 }
 
+type recordingAttachments struct {
+	store.AttachmentStore
+	got *store.Attachment
+}
+
+func (recorder *recordingAttachments) Insert(_ context.Context, attachment *store.Attachment) error {
+	recorder.got = attachment
+	attachment.ID = 9
+	return nil
+}
+
+type attachmentStore struct {
+	store.Store
+	attachments store.AttachmentStore
+}
+
+func (fake attachmentStore) Attachments() store.AttachmentStore { return fake.attachments }
+
+// An attachment's name is the sender's to choose, so it is free text.
+func TestAttachmentNameIsRedacted(t *testing.T) {
+	redactor, _ := loaded(t, Secret{Name: "GH_TOKEN", Value: secretValue})
+	recorder := &recordingAttachments{}
+	redacting := Store(attachmentStore{attachments: recorder}, redactor)
+	attachment := &store.Attachment{Name: secretValue + ".txt"}
+	if err := redacting.Attachments().Insert(context.Background(), attachment); err != nil {
+		t.Fatal(err)
+	}
+	if recorder.got.Name != "<redacted:GH_TOKEN>.txt" || attachment.ID != 9 {
+		t.Errorf("stored %+v", recorder.got)
+	}
+}
+
 func TestMessageTextIsRedactedAndTheNewIDStillComesBack(t *testing.T) {
 	redacting, recorders := decorated(t)
 
@@ -257,6 +289,11 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			"SetSlackRef": false,
 			// A reply target is a message id, read or written; never text.
 			"SightedReplyTarget": false, "AdoptReplyTarget": false,
+		},
+		"AttachmentStore": {
+			"Insert": true,
+			// Expire writes a timestamp; the reads return rows as stored.
+			"Expire": false, "Get": false, "ByMessage": false,
 		},
 		"InboxStore": {
 			// Push queues an envelope the loop is about to be handed. Its

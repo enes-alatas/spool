@@ -98,6 +98,7 @@ func (database *DB) LoopSecrets() store.LoopSecretStore   { return loopSecrets{d
 func (database *DB) FleetRules() store.FleetRuleStore     { return fleetRules{database.db} }
 func (database *DB) Sessions() store.SessionStore         { return sessions{database.db} }
 func (database *DB) Messages() store.MessageStore         { return messages{database.db} }
+func (database *DB) Attachments() store.AttachmentStore   { return attachments{database.db} }
 func (database *DB) Turns() store.TurnStore               { return turns{database.db} }
 func (database *DB) Events() store.EventStore             { return events{database.db} }
 func (database *DB) Schedule() store.ScheduleStore        { return schedule{database.db} }
@@ -861,6 +862,64 @@ func (table messages) query(ctx context.Context, statement string, args ...any) 
 		message.Mentions = fromJSON(mentions)
 		message.DeliveredTo = fromJSON(delivered)
 		out = append(out, &message)
+	}
+	return out, rows.Err()
+}
+
+// --- attachments ---
+
+type attachments struct{ db *sql.DB }
+
+const attachmentCols = `id, message_id, name, mime, kind, size, sha256, width, height, path, not_kept, created_at, removed_at`
+
+func (table attachments) Insert(ctx context.Context, attachment *store.Attachment) error {
+	res, err := table.db.ExecContext(ctx, `INSERT INTO attachments
+		(message_id, name, mime, kind, size, sha256, width, height, path, not_kept, created_at, removed_at)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+		attachment.MessageID, attachment.Name, attachment.MIME, attachment.Kind, attachment.Size, attachment.SHA256,
+		attachment.Width, attachment.Height, attachment.Path, attachment.NotKept, attachment.CreatedAt, attachment.RemovedAt)
+	if err != nil {
+		return err
+	}
+	attachment.ID, _ = res.LastInsertId()
+	return nil
+}
+
+func (table attachments) Get(ctx context.Context, id int64) (*store.Attachment, error) {
+	out, err := table.query(ctx, `SELECT `+attachmentCols+` FROM attachments WHERE id=?`, id)
+	if err != nil {
+		return nil, err
+	}
+	if len(out) == 0 {
+		return nil, store.ErrNotFound
+	}
+	return out[0], nil
+}
+
+func (table attachments) ByMessage(ctx context.Context, messageID int64) ([]*store.Attachment, error) {
+	return table.query(ctx, `SELECT `+attachmentCols+` FROM attachments WHERE message_id=? ORDER BY id`, messageID)
+}
+
+func (table attachments) Expire(ctx context.Context, cutoff, removedAt int64) ([]*store.Attachment, error) {
+	return table.query(ctx, `UPDATE attachments SET removed_at=? WHERE removed_at=0 AND path!='' AND created_at<?
+		RETURNING `+attachmentCols, removedAt, cutoff)
+}
+
+func (table attachments) query(ctx context.Context, statement string, args ...any) ([]*store.Attachment, error) {
+	rows, err := table.db.QueryContext(ctx, statement, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*store.Attachment
+	for rows.Next() {
+		var attachment store.Attachment
+		if err := rows.Scan(&attachment.ID, &attachment.MessageID, &attachment.Name, &attachment.MIME, &attachment.Kind,
+			&attachment.Size, &attachment.SHA256, &attachment.Width, &attachment.Height, &attachment.Path,
+			&attachment.NotKept, &attachment.CreatedAt, &attachment.RemovedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, &attachment)
 	}
 	return out, rows.Err()
 }

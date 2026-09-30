@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/enes-alatas/spool/internal/attach"
 	"github.com/enes-alatas/spool/internal/bus"
 	"github.com/enes-alatas/spool/internal/claude"
 	"github.com/enes-alatas/spool/internal/datadir"
@@ -299,6 +300,12 @@ func main() {
 	deps.ObserveModel = models.Observe
 	manager := loop.NewManager(deps)
 	router = route.New(rdb, pubsub, manager, log)
+	files, err := attach.Open(filepath.Join(*dataDir, "files"))
+	if err != nil {
+		log.Error("files directory", "err", err)
+		os.Exit(1)
+	}
+	router.SetFiles(files, redactor.Text)
 	scheduler = sched.New(rdb, pubsub, manager, log)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -314,6 +321,7 @@ func main() {
 	go scheduler.Run(ctx)
 	models.Start(ctx)
 	go pruneEvents(ctx, rdb, *retentionDays, log)
+	go expireAttachments(ctx, router, log)
 
 	// Every pending send is the last process's: nothing in this one can
 	// send yet, because the MCP and API listeners are bound only after the
@@ -564,6 +572,26 @@ func isLoopback(host string) bool {
 		}
 	}
 	return true
+}
+
+// expireAttachments removes kept files past their 30 days, hourly (#123).
+// Unlike events it is not the operator's to tune: 30 days is the retention
+// the operator decided on for files, and the rows outlive it anyway.
+func expireAttachments(ctx context.Context, router *route.Router, log *slog.Logger) {
+	tick := time.NewTicker(time.Hour)
+	defer tick.Stop()
+	for {
+		if expired, err := router.ExpireAttachments(ctx); err != nil {
+			log.Warn("attachments expiry", "err", err)
+		} else if expired > 0 {
+			log.Info("attachments expired", "files", expired)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+		}
+	}
 }
 
 // pruneEvents enforces the events-retention baseline (docs/QUALITY.md):

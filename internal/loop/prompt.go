@@ -483,6 +483,18 @@ type Envelope struct {
 	// The actor batches one turn per conversation from it (ADR-0026).
 	Conversation string `json:"conversation,omitempty"`
 	TGChatID     int64  `json:"tg_chat_id,omitempty"` // source DM chat (0 = none)
+	// Files are the attachments the text names by a workstation path that
+	// the file is not at yet: the actor copies each one in before the turn
+	// starts (#123). Empty when every path is already readable, as on a
+	// bare loop, which is shown the hub's own copy.
+	Files []FileCopy `json:"files,omitempty"`
+}
+
+// FileCopy is one kept file to put in a workstation: From is the hub's copy
+// on the host, To the path the envelope names.
+type FileCopy struct {
+	From string `json:"from"`
+	To   string `json:"to"`
 }
 
 // conversationKey is what the actor batches turns by: the conversation kind,
@@ -526,6 +538,74 @@ type Inbound struct {
 	TGChatID     int64  // source DM chat (0 = none)
 	Ref          string // this message's reply reference (MessageRef)
 	ReplyTo      string // the reference this message itself replies to
+	Attachments  []Attachment
+}
+
+// Attachment is one file a message carries, as the loop is shown it.
+type Attachment struct {
+	Kind   string // store.AttachmentImage | store.AttachmentFile
+	Name   string
+	Size   int64
+	Width  int
+	Height int
+	// Path is where the loop can read the file, in its own workstation.
+	// Empty when there is no file to read, and NotKept says why: a
+	// store.NotKept* reason, or NotKeptRemoved.
+	Path    string
+	NotKept string
+}
+
+// notKeptReasons is how an envelope says why an attachment has no file.
+var notKeptReasons = map[string]string{
+	store.NotKeptTooLarge: "over the 20 MB limit",
+	store.NotKeptFailed:   "the surface would not hand it over",
+	NotKeptRemoved:        "no longer kept",
+}
+
+// attachmentLine is how an envelope shows one attachment: kind, name, what
+// the loop can tell about it without opening it, and where to open it.
+//
+//	[image: shot.png · 1280×720 · 240 KB · /home/loop/.spool/files/…-shot.png]
+//	[file not kept: dump.bin · 34.1 MB · over the 20 MB limit]
+func attachmentLine(attachment Attachment) string {
+	parts := []string{attachment.Name}
+	if attachment.Width > 0 && attachment.Height > 0 {
+		parts = append(parts, fmt.Sprintf("%d×%d", attachment.Width, attachment.Height))
+	}
+	parts = append(parts, byteSize(attachment.Size))
+	label := attachment.Kind
+	if attachment.Path == "" {
+		label += " not kept"
+		if reason := notKeptReasons[attachment.NotKept]; reason != "" {
+			parts = append(parts, reason)
+		}
+	} else {
+		parts = append(parts, attachment.Path)
+	}
+	return "[" + label + ": " + strings.Join(parts, " · ") + "]"
+}
+
+// FilesNotCopiedNote tells a loop which attachment paths in this turn's
+// messages hold nothing, because the copy into its workstation failed. ""
+// when every copy landed.
+func FilesNotCopiedNote(paths []string) string {
+	if len(paths) == 0 {
+		return ""
+	}
+	return "[system note · these attachments could not be copied into your workstation, so their paths below hold nothing: " +
+		strings.Join(paths, ", ") + "]"
+}
+
+// byteSize renders a size the way a person reads one.
+func byteSize(size int64) string {
+	switch {
+	case size >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(size)/(1<<20))
+	case size >= 1<<10:
+		return fmt.Sprintf("%d KB", (size+512)>>10)
+	default:
+		return fmt.Sprintf("%d B", size)
+	}
 }
 
 // MessageEnvelope formats an inbound chat message for injection.
@@ -559,9 +639,18 @@ func MessageEnvelope(now time.Time, in Inbound) Envelope {
 	if in.ReplyTo != "" {
 		from += " · in reply to " + in.ReplyTo
 	}
+	text := header(now, from)
+	// Attachments come under the header and before the words, which are
+	// usually about them: a caption, or "see the screenshot".
+	for _, attachment := range in.Attachments {
+		text += "\n" + attachmentLine(attachment)
+	}
+	if in.Text != "" {
+		text += "\n\n" + in.Text
+	}
 	return Envelope{
 		Trigger:      store.TriggerMessage,
-		Text:         header(now, from) + "\n\n" + in.Text,
+		Text:         text,
 		Conversation: in.Conversation,
 		TGChatID:     in.TGChatID,
 	}

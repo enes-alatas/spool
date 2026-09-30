@@ -131,6 +131,13 @@ type Runtime interface {
 	// Health reports whether the loop's workstation is up.
 	Health(ctx context.Context, loopID string) (Health, error)
 
+	// PutFile copies a file from the host into the loop's workstation at
+	// path, readable by the loop, making the directory it goes in (#123).
+	// It is how a file a message carries reaches a workstation with a
+	// filesystem of its own. A runtime whose workstation is the host treats
+	// a path equal to hostPath as already there.
+	PutFile(ctx context.Context, loopID, hostPath, path string) error
+
 	// ResolveModel reports the model id that model runs as under the claude
 	// this runtime gives a loop by default, read from the init event of a run
 	// that holds no credential and can reach nothing (ADR-0033). The run is
