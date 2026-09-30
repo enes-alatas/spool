@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/enes-alatas/spool/internal/attach"
 	"github.com/enes-alatas/spool/internal/datadir"
 	"github.com/enes-alatas/spool/internal/operator"
 	"github.com/enes-alatas/spool/internal/store"
@@ -54,7 +55,12 @@ func main() {
 		log.Fatalf("uifixture: %v", err)
 	}
 	defer db.Close()
-	if err := seed(context.Background(), db); err != nil {
+	// Where the hub keeps files, so it serves the fixture's attachments.
+	files, err := attach.Open(filepath.Join(*dir, "files"))
+	if err != nil {
+		log.Fatalf("uifixture: %v", err)
+	}
+	if err := seed(context.Background(), db, files); err != nil {
 		log.Fatalf("uifixture: %v", err)
 	}
 	if err := writeOperatorToken(*dir); err != nil {
@@ -151,7 +157,7 @@ var loops = []fixtureLoop{
 	},
 }
 
-func seed(ctx context.Context, db store.Store) error {
+func seed(ctx context.Context, db store.Store, files *attach.Files) error {
 	ids := map[string]string{}
 	for i, fl := range loops {
 		loopRecord := &store.Loop{
@@ -232,7 +238,7 @@ func seed(ctx context.Context, db store.Store) error {
 	if err := seedCurrentSessions(ctx, db, ids); err != nil {
 		return err
 	}
-	if err := seedConversations(ctx, db, ids); err != nil {
+	if err := seedConversations(ctx, db, files, ids); err != nil {
 		return err
 	}
 	if err := seedSenders(ctx, db); err != nil {
