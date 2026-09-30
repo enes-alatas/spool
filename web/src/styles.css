@@ -1352,6 +1352,56 @@ textarea {
   resize: vertical;
   min-height: 44px;
 }
+/* On a phone the paperclip narrows the box until the fleet channel's
+   placeholder takes three lines: room for all three (the 18px is the
+   textarea's padding and border). */
+@media (max-width: 520px) {
+  .composer textarea {
+    min-height: calc(3lh + 18px);
+  }
+}
+/* the composer's paperclip: square, the icon centred on the textarea's
+   height as Send's label is */
+.composer .attach-btn {
+  flex: none;
+  display: grid;
+  place-items: center;
+  padding: 0 10px;
+  color: var(--text-muted);
+}
+.composer .attach-btn:hover {
+  color: var(--text);
+}
+/* the file the next send carries, above the composer until it goes */
+.attached-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 8px;
+  padding: 4px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--text);
+}
+.attached-file svg {
+  flex: none;
+  color: var(--text-muted);
+}
+.attached-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attached-size {
+  flex: none;
+  color: var(--text-muted);
+}
 
 /* The Fleet page's two views, its loops and its conversation (#286). Links
    rather than buttons: each view has a URL, so a reload keeps the one open. */

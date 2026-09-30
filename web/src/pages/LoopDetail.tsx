@@ -35,6 +35,7 @@ import { useModelOptions } from '../models'
 import { useStream } from '../stream'
 import { claudeLoginDown, workstationCondition } from '../workstation'
 import { toEntries, extractDelta } from '../timeline'
+import { AttachButton, AttachedFile, attachmentErrorText, pickRefusal } from '../components/Attachments'
 import { MessageKnot } from '../components/MessageKnot'
 import { UndeliveredPane } from '../components/UndeliveredPane'
 import { Timeline } from '../components/Timeline'
@@ -1390,6 +1391,7 @@ export default function LoopDetail() {
   const [dest, setDest] = useState<MessageDestination>('control_room')
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState('')
+  const [file, setFile] = useState<File | null>(null)
   // The Fleet badge opens this page on its Undelivered pane (`?pane=`, #281);
   // read once, as where the page starts, so switching panes afterwards is not
   // a navigation the back button has to walk through.
@@ -1704,17 +1706,26 @@ export default function LoopDetail() {
     setDest(to)
     setSendError('')
   }
+  const pickFile = (picked: File) => {
+    const refused = pickRefusal(picked)
+    setSendError(refused)
+    if (!refused) setFile(picked)
+  }
   const send = async (to: MessageDestination) => {
     const text = draft.trim()
     if (!text || sending) return
     setSending(true)
     setSendError('')
     try {
-      await api.message(name, text, to)
+      // Uploaded at send rather than at pick: the hub drops an upload no
+      // message names within the hour, and a draft can sit longer than that.
+      const attached = file ? await api.uploadAttachment(file) : undefined
+      await api.message(name, text, to, attached?.id)
       setDraft('')
+      setFile(null)
       qc.invalidateQueries({ queryKey: ['conversation', name] })
     } catch (e) {
-      setSendError(e instanceof Error ? e.message : String(e))
+      setSendError(attachmentErrorText(e))
     } finally {
       setSending(false)
     }
@@ -1853,7 +1864,9 @@ export default function LoopDetail() {
               {outside ? 'fleet channel · not in it' : 'fleet channel · the loops, not Telegram'}
             </button>
           </div>
+          {file && <AttachedFile file={file} onRemove={() => setFile(null)} />}
           <div className="composer" style={{ marginTop: 8 }}>
+            <AttachButton onPick={pickFile} disabled={sending} />
             <textarea
               placeholder={
                 dest === 'group'

@@ -1,4 +1,6 @@
-import { INLINE_IMAGE_TYPES, attachmentURL, type Attachment } from '../api'
+import { useRef } from 'react'
+import { ApiError, INLINE_IMAGE_TYPES, MAX_ATTACHMENT_BYTES, attachmentURL, type Attachment } from '../api'
+import { AttachIcon } from './Icons'
 
 // A size said the way a file manager says it: whole bytes under a kilobyte,
 // one decimal while the number is small, none once it is not.
@@ -72,5 +74,82 @@ export function AttachmentList({ items }: { items?: Attachment[] }) {
         )
       })}
     </ul>
+  )
+}
+
+// What the operator reads when a send with a file is refused, by the
+// server's `code`; anything else keeps the server's own words.
+export function attachmentErrorText(e: unknown): string {
+  if (e instanceof ApiError) {
+    switch (e.code) {
+      case 'attachment_too_large':
+        return `The file is over ${formatBytes(MAX_ATTACHMENT_BYTES)}, the most the hub keeps.`
+      case 'attachment_name_required':
+        return 'The file has no name, so the hub refused it.'
+      case 'attachment_not_found':
+        return 'The upload expired before it was sent. Send again to upload it afresh.'
+      case 'attachment_empty':
+        return 'The file is empty, so there is nothing to send.'
+      case 'attachment_unavailable':
+        return 'This hub keeps no files, so it cannot take one.'
+    }
+  }
+  return e instanceof Error ? e.message : String(e)
+}
+
+// Why a picked file cannot be sent, or '' when it can. Checked here rather
+// than left to the upload: the upload route refuses both anyway, but only
+// after the browser has sent every byte.
+export function pickRefusal(file: File): string {
+  if (file.size === 0) return `${file.name} is empty; there is nothing to send.`
+  if (file.size > MAX_ATTACHMENT_BYTES)
+    return `${file.name} is ${formatBytes(file.size)}; the hub keeps files up to ${formatBytes(MAX_ATTACHMENT_BYTES)}.`
+  return ''
+}
+
+// The composer's file picker: a paperclip button over a hidden input. One
+// file per send; picking again replaces it.
+export function AttachButton({ onPick, disabled }: { onPick: (file: File) => void; disabled?: boolean }) {
+  const input = useRef<HTMLInputElement>(null)
+  return (
+    <>
+      <button
+        type="button"
+        className="btn attach-btn"
+        onClick={() => input.current?.click()}
+        disabled={disabled}
+        title={`Attach a file, up to ${formatBytes(MAX_ATTACHMENT_BYTES)}`}
+        aria-label="Attach a file"
+      >
+        <AttachIcon />
+      </button>
+      <input
+        ref={input}
+        type="file"
+        hidden
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          // Cleared so picking the same file again still fires a change.
+          e.target.value = ''
+          if (file) onPick(file)
+        }}
+      />
+    </>
+  )
+}
+
+// The picked file, above the composer, until it is sent or taken off.
+export function AttachedFile({ file, onRemove }: { file: File; onRemove: () => void }) {
+  return (
+    <div className="attached-file">
+      <AttachIcon />
+      <span className="attached-name" title={file.name}>
+        {file.name}
+      </span>
+      <span className="attached-size">{formatBytes(file.size)}</span>
+      <button type="button" className="text-button" onClick={onRemove} aria-label={`Remove ${file.name}`}>
+        remove
+      </button>
+    </div>
   )
 }
