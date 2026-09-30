@@ -229,6 +229,13 @@ habits below.*
   shoot a second one against. Taking one by hand against a dev server pointed
   at a real fleet is what the rule forbids, and it is how the thirteen
   live-data images the go-public audit found were made.
+  **`make demo`** records the README video the same way (#447): Playwright
+  drives the room on a fixture hub, and Remotion (`web/demo/`, a package of
+  its own that the binary never carries) composes and renders it. The mp4 is
+  uploaded as a GitHub attachment, never committed. Remotion is
+  source-available, not open source: it is free for individuals, non-profits
+  and companies of up to three people, and anyone else needs a company licence
+  from remotion.pro before running the target.
 - **A live credential in front of you is an incident.** Stop; do not copy it
   anywhere; redact it where you can still reach it; tell the operator privately.
   The value and the steps that reproduce it never go in the group — that an
