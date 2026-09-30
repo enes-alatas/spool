@@ -22,6 +22,8 @@ describe('slackManifest', () => {
             'channels:read',
             'groups:read',
             'users:read',
+            'files:read',
+            'files:write',
           ],
         },
       },

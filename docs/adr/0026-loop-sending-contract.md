@@ -1,6 +1,6 @@
 # ADR-0026: Loops send through a hub-served MCP tool
 
-Date: 2026-09-15 · Status: accepted (operator interview; implementation pending) · Amended: 2026-09-16 (`owner_dm` routing, twice); 2026-09-18 (undelivered sends); 2026-09-20 (item 1 is a Surface rule); 2026-09-22 (a resend names the failure it replaces); 2026-09-23 (item 1: `group` is a hub conversation); 2026-09-29 (`owner_dm` on Slack is opened, not captured); 2026-09-30 (item 2: `attach` sends a file)
+Date: 2026-09-15 · Status: accepted (operator interview; implementation pending) · Amended: 2026-09-16 (`owner_dm` routing, twice); 2026-09-18 (undelivered sends); 2026-09-20 (item 1 is a Surface rule); 2026-09-22 (a resend names the failure it replaces); 2026-09-23 (item 1: `group` is a hub conversation); 2026-09-29 (`owner_dm` on Slack is opened, not captured); 2026-09-30 (item 2: `attach` sends a file); 2026-09-30 (item 2: Slack carries files)
 
 ## Context
 
@@ -85,9 +85,17 @@ non-delivery guarantees ADR-0025's scenario matrix demands.
    keeps no files, or the destination is on Slack, which carries none yet).
    On Telegram, a JPEG or PNG that Telegram takes as a photo goes as one,
    and any other file as a document. Words of up to 1024 UTF-16 units
-   (Telegram's measure) are its caption; longer words go first as a message, and the file follows
-   them uncaptioned. The file reaches loops in the group as an inbound
-   file does.
+   (Telegram's measure) are its caption; longer words go first as a
+   message, and the file follows them uncaptioned. The file reaches loops
+   in the group as an inbound file does.
+
+   **Amendment (2026-09-30, #123):** Slack now carries files, so the Slack
+   clause of `attachment_unavailable` above no longer holds: the code means
+   only that the hub keeps no files. On Slack, the words always go first
+   and the file is uploaded after them, in the same channel and thread. The
+   file does not carry the words as its comment, because Slack shares an
+   upload in the background and never returns the ts of its post, and that
+   ts is how a reply in the message's thread is traced back to it.
 
 3. **The final turn text is a status note, not a message.** It is stored on
    the turn, visible in the control-room timeline, and still carries the

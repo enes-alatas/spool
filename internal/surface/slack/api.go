@@ -3,9 +3,13 @@ package slack
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -21,6 +25,10 @@ const APIBase = "https://slack.com/api"
 type Client struct {
 	base string
 	http *http.Client
+	// transfer moves a file's bytes. It has no timeout of its own: 20 MB
+	// on a slow link outlasts the Web API's, and the caller's context
+	// bounds it instead.
+	transfer *http.Client
 }
 
 // NewClientAt talks to a Web API at base, APIBase in production.
@@ -28,7 +36,7 @@ func NewClientAt(base string) *Client {
 	if base == "" {
 		base = APIBase
 	}
-	return &Client{base: strings.TrimSuffix(base, "/"), http: &http.Client{Timeout: 30 * time.Second}}
+	return &Client{base: strings.TrimSuffix(base, "/"), http: &http.Client{Timeout: 30 * time.Second}, transfer: &http.Client{}}
 }
 
 // APIError is Slack answering a call with "ok": false. Code is Slack's own
@@ -213,4 +221,136 @@ func (client *Client) ChannelName(ctx context.Context, botToken, channel string)
 		return "", err
 	}
 	return result.Channel.Name, nil
+}
+
+// File is a file as Slack describes it on a message event and in
+// files.info (#123). A file shared from another organization can arrive
+// with its id alone and FileAccess "check_file_info", its details left to
+// files.info.
+type File struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Mimetype    string `json:"mimetype"`
+	Size        int64  `json:"size"`
+	DownloadURL string `json:"url_private_download"`
+	FileAccess  string `json:"file_access"`
+	// Mode "tombstone" is a deleted file, "hidden_by_limit" one a free
+	// workspace no longer shows; neither can be downloaded.
+	Mode string `json:"mode"`
+}
+
+type fileInfo struct {
+	apiEnvelope
+	File File `json:"file"`
+}
+
+// FileInfo asks Slack for a file's details. It needs files:read.
+func (client *Client) FileInfo(ctx context.Context, botToken, fileID string) (*File, error) {
+	var result fileInfo
+	if err := client.call(ctx, botToken, "files.info", url.Values{"file": {fileID}}, &result); err != nil {
+		return nil, err
+	}
+	return &result.File, nil
+}
+
+// fileHost is where Slack serves the files shared in a workspace.
+const fileHost = "files.slack.com"
+
+// Download fetches a file's bytes from its url_private_download, as the
+// bot token's app. The URL comes from the event, so the token goes only to
+// Slack's file host, or to the Web API's own host, which is where a test's
+// stand-in serves files; anywhere else is refused before a request. Without
+// files:read Slack answers with its sign-in page rather than an error, so an
+// HTML answer is one.
+func (client *Client) Download(ctx context.Context, botToken, fileURL string) (io.ReadCloser, error) {
+	if err := client.fileURLAllowed(fileURL); err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fileURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+botToken)
+	resp, err := client.transfer.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case resp.StatusCode != http.StatusOK:
+		resp.Body.Close()
+		return nil, fmt.Errorf("slack file download: HTTP %d", resp.StatusCode)
+	case strings.HasPrefix(resp.Header.Get("Content-Type"), "text/html"):
+		resp.Body.Close()
+		return nil, errors.New("slack file download: answered with a sign-in page; the app needs files:read, so reinstall it")
+	}
+	return resp.Body, nil
+}
+
+// fileURLAllowed refuses a download URL the bot token must not be sent to:
+// one not on https at Slack's file host, and not on the Web API's own host.
+func (client *Client) fileURLAllowed(fileURL string) error {
+	target, err := url.Parse(fileURL)
+	if err != nil {
+		return fmt.Errorf("slack file download: unreadable URL: %w", err)
+	}
+	if target.Scheme == "https" && target.Host == fileHost {
+		return nil
+	}
+	if base, err := url.Parse(client.base); err == nil && target.Scheme == base.Scheme && target.Host == base.Host {
+		return nil
+	}
+	return fmt.Errorf("slack file download: refused %s://%s, which is not Slack's file host", target.Scheme, target.Host)
+}
+
+type uploadURL struct {
+	apiEnvelope
+	UploadURL string `json:"upload_url"`
+	FileID    string `json:"file_id"`
+}
+
+// Upload shares the file at hostPath in channel as the bot token's app, in
+// the thread threadTS starts ("" = top level), named name. It is Slack's
+// three steps: ask for an upload URL, send the bytes there, and complete
+// the upload into the channel. It needs files:write.
+func (client *Client) Upload(ctx context.Context, botToken, channel, threadTS, hostPath, name string) error {
+	file, err := os.Open(hostPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	var target uploadURL
+	if err := client.call(ctx, botToken, "files.getUploadURLExternal", url.Values{
+		"filename": {name}, "length": {strconv.FormatInt(info.Size(), 10)},
+	}, &target); err != nil {
+		return err
+	}
+	// The upload URL is presigned: it takes the bytes without the token.
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target.UploadURL, file)
+	if err != nil {
+		return err
+	}
+	req.ContentLength = info.Size()
+	req.Header.Set("Content-Type", "application/octet-stream")
+	resp, err := client.transfer.Do(req)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("slack file upload: HTTP %d", resp.StatusCode)
+	}
+	files, err := json.Marshal([]map[string]string{{"id": target.FileID, "title": name}})
+	if err != nil {
+		return err
+	}
+	params := url.Values{"files": {string(files)}, "channel_id": {channel}}
+	if threadTS != "" {
+		params.Set("thread_ts", threadTS)
+	}
+	var done apiEnvelope
+	return client.call(ctx, botToken, "files.completeUploadExternal", params, &done)
 }

@@ -35,6 +35,9 @@ const (
 	// postLimit is where a long message is split. Slack truncates a post
 	// past 40,000 characters and advises staying under 4,000.
 	postLimit = 3900
+	// uploadTimeout bounds one attempt at a file: 20 MB is seconds, and an
+	// upload that stalls would hold every send queued behind it.
+	uploadTimeout = 2 * time.Minute
 )
 
 // mirror carries loop sends, and operator retries of failed ones, to Slack,
@@ -166,15 +169,24 @@ func (adapter *Adapter) sendLoop(ctx context.Context, link *link) {
 	}
 }
 
-// send posts one message in parts Slack takes whole, and records how it
-// ended. The first part becomes the message's ts, which is how a reply in
-// its thread is traced back to it; the rest follow in the same place. A
-// part that does not land fails the whole message, since the loop's words
-// did not all arrive, even when their start did.
+// send posts one message in parts Slack takes whole, then the file it
+// carries, and records how it ended. The first part becomes the message's
+// ts, which is how a reply in its thread is traced back to it; the rest,
+// and the file, follow in the same place. The file does not carry the words
+// as its comment: Slack shares an upload in the background and never says
+// the ts of its post. A part that does not land fails the whole message,
+// since the loop's words did not all arrive, even when their start did.
 func (adapter *Adapter) send(ctx context.Context, mp *route.MessagePayload) {
 	loopRecord, err := adapter.store.Loops().Get(ctx, mp.FromLoopID)
 	if err != nil {
 		adapter.ledger.Unsendable(ctx, mp, "read loop: "+err.Error())
+		return
+	}
+	file, hostPath, err := adapter.sentFile(ctx, mp)
+	if err != nil {
+		// the loop sent the words and the file together; the words alone
+		// would say less than it meant
+		adapter.ledger.Unsendable(ctx, mp, "attachment: "+err.Error())
 		return
 	}
 	channel := loopRecord.SlackChannelID
@@ -185,13 +197,17 @@ func (adapter *Adapter) send(ctx context.Context, mp *route.MessagePayload) {
 		}
 	}
 	threadTS, text := adapter.render(ctx, mp, channel)
-	parts := split(text, postLimit)
+	parts := adapter.sendParts(loopRecord, channel, threadTS, text, file, hostPath)
 	for i, part := range parts {
 		if i > 0 && !pause(ctx, sendSpacing) {
 			adapter.unsent(ctx, mp, partOf(adapter.stopReason(), i, len(parts)))
 			return
 		}
-		ts, attempts, err := adapter.postWithRetries(ctx, loopRecord, channel, part, threadTS)
+		var ts string
+		attempts, err := adapter.withRetries(ctx, loopRecord, func(ctx context.Context) (err error) {
+			ts, err = part(ctx)
+			return err
+		})
 		if err != nil {
 			if ctx.Err() != nil {
 				// The app stopped under the attempt: that, not Slack's
@@ -223,34 +239,66 @@ func partOf(reason string, i, n int) string {
 	return fmt.Sprintf("part %d of %d: %s", i+1, n, reason)
 }
 
-// postWithRetries posts one part, retrying what may be a blip, and returns
-// the ts Slack gave it, how many attempts it made, and the error the last
-// one ended on. A cancelled context ends it early.
-func (adapter *Adapter) postWithRetries(ctx context.Context, loopRecord *store.Loop, channel, text, threadTS string) (string, int, error) {
+// sendPart is one Web API exchange a message is sent in. It returns the
+// ts of the post it made, "" for a file's.
+type sendPart func(ctx context.Context) (string, error)
+
+// sendParts splits a message into the exchanges that send it: its words in
+// posts Slack takes whole, then its file, if it carries one.
+func (adapter *Adapter) sendParts(loopRecord *store.Loop, channel, threadTS, text string, file *store.Attachment, hostPath string) []sendPart {
+	var parts []sendPart
+	for _, words := range split(text, postLimit) {
+		parts = append(parts, func(ctx context.Context) (string, error) {
+			return adapter.client.PostMessage(ctx, loopRecord.SlackBotToken, channel, words, threadTS)
+		})
+	}
+	if file != nil {
+		parts = append(parts, func(ctx context.Context) (string, error) {
+			ctx, cancel := context.WithTimeout(ctx, uploadTimeout)
+			defer cancel()
+			return "", adapter.client.Upload(ctx, loopRecord.SlackBotToken, channel, threadTS, hostPath, file.Name)
+		})
+	}
+	return parts
+}
+
+// sentFile is the file a loop's message carries and the hub's copy of it,
+// nil for none.
+func (adapter *Adapter) sentFile(ctx context.Context, mp *route.MessagePayload) (*store.Attachment, string, error) {
+	if adapter.router == nil {
+		return nil, "", nil // an adapter built for its delivery rules alone, in tests
+	}
+	return adapter.router.SentAttachment(ctx, mp.ID)
+}
+
+// withRetries makes one exchange, retrying what may be a blip, and returns
+// how many attempts it made and the error the last one ended on. A
+// cancelled context ends it early.
+func (adapter *Adapter) withRetries(ctx context.Context, loopRecord *store.Loop, try func(context.Context) error) (int, error) {
 	var lastErr error
 	for attempt := 0; attempt < sendAttempts; attempt++ {
-		ts, err := adapter.client.PostMessage(ctx, loopRecord.SlackBotToken, channel, text, threadTS)
+		err := try(ctx)
 		if err == nil {
-			return ts, attempt + 1, nil
+			return attempt + 1, nil
 		}
 		if ctx.Err() != nil {
-			return "", attempt + 1, ctx.Err()
+			return attempt + 1, ctx.Err()
 		}
 		lastErr = err
 		var apiErr *APIError
 		if errors.As(err, &apiErr) && apiErr.Refused() {
 			// Slack judged the post and said no — channel_not_found,
 			// not_in_channel, is_archived — and would again
-			return "", attempt + 1, err
+			return attempt + 1, err
 		}
 		if attempt < sendAttempts-1 {
 			adapter.log.Warn("slack send failed; retrying", "loop", loopRecord.Name, "attempt", attempt+1, "err", err)
 			if !pause(ctx, sendBackoff<<attempt) {
-				return "", attempt + 1, ctx.Err()
+				return attempt + 1, ctx.Err()
 			}
 		}
 	}
-	return "", sendAttempts, lastErr
+	return sendAttempts, lastErr
 }
 
 // pause waits d, and reports false if ctx ended first.
