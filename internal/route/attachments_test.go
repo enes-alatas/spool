@@ -5,10 +5,12 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/enes-alatas/spool/internal/attach"
+	"github.com/enes-alatas/spool/internal/runtime"
 	"github.com/enes-alatas/spool/internal/store"
 )
 
@@ -118,5 +120,69 @@ func TestAFileNameIsRedactedBeforeAnythingIsDerivedFromIt(t *testing.T) {
 	}
 	if !strings.HasSuffix(rows[0].Path, "-a-_redacted_T_.txt") {
 		t.Errorf("kept as %q", rows[0].Path)
+	}
+}
+
+// workstation is a loop's files, or the error reading one gives.
+type workstation map[string]any
+
+func (files workstation) GetFile(_ context.Context, _ *store.Loop, path string, limit int64) ([]byte, error) {
+	switch value := files[path].(type) {
+	case string:
+		if int64(len(value)) > limit {
+			return nil, runtime.ErrFileTooLarge
+		}
+		return []byte(value), nil
+	case error:
+		return nil, value
+	}
+	return nil, runtime.ErrNoSuchFile
+}
+
+func TestASentFileIsRefusedForEachReasonTheLoopCanCorrect(t *testing.T) {
+	router, _, files := testRouter(t)
+	router.redactName = func(text string) string { return strings.ReplaceAll(text, "hunter2hunter2", "<redacted:PW>") }
+	router.SetWorkstations(workstation{
+		"shot.png":   "png bytes",
+		"creds.txt":  "password=hunter2hunter2",
+		"../x":       runtime.ErrNotOwned,
+		"dir":        runtime.ErrNotAFile,
+		"huge.bin":   runtime.ErrFileTooLarge,
+		"broken.txt": errors.New("docker exec: container is not running"),
+	})
+	bare := &store.Loop{ID: "l1", WorkspacePath: "/w"}
+	send := func(from *store.Loop, destination, path string) (*store.Attachment, *SendError, error) {
+		return router.keepSent(context.Background(), SendRequest{From: from, Destination: destination, Attach: path})
+	}
+
+	for path, code := range map[string]string{
+		"../x":      ErrAttachmentNotOwned,
+		"nope.txt":  ErrAttachmentNotFound,
+		"dir":       ErrAttachmentNotFound,
+		"huge.bin":  ErrAttachmentTooLarge,
+		"creds.txt": ErrSecretInAttachment,
+	} {
+		kept, serr, err := send(bare, store.ConversationOwnerDM, path)
+		if err != nil || serr == nil || serr.Code != code || kept != nil {
+			t.Errorf("%s: kept %v, refusal %v, err %v; want %s", path, kept, serr, err, code)
+		}
+	}
+	if _, serr, err := send(bare, store.ConversationOwnerDM, "broken.txt"); serr != nil || err == nil {
+		t.Errorf("a workstation that cannot be read is the hub's fault, not the loop's: %v, %v", serr, err)
+	}
+	slack := &store.Loop{ID: "l2", SlackBotToken: "xoxb-synthetic", SlackAppToken: "xapp-synthetic"}
+	if _, serr, _ := send(slack, store.ConversationGroup, "shot.png"); serr == nil || serr.Code != ErrAttachmentUnavailable {
+		t.Errorf("a Slack loop's file bound for Slack: %v, want %s", serr, ErrAttachmentUnavailable)
+	}
+	if entries, _ := os.ReadDir(filepath.Dir(files.Path("x"))); len(entries) != 0 {
+		t.Errorf("a refused file was kept: %v", entries)
+	}
+
+	kept, serr, err := send(bare, store.ConversationOwnerDM, "shot.png")
+	if err != nil || serr != nil || kept == nil || kept.Name != "shot.png" {
+		t.Fatalf("kept %+v, %v, %v", kept, serr, err)
+	}
+	if body, err := os.ReadFile(files.Path(kept.Path)); err != nil || string(body) != "png bytes" {
+		t.Errorf("the kept copy reads %q, %v", body, err)
 	}
 }

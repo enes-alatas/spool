@@ -13,8 +13,10 @@ package bare
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"os"
 	"os/exec"
@@ -39,6 +41,8 @@ type Runtime struct {
 	cfgOnce sync.Once
 	cfgDir  string // private dir for per-loop MCP config files
 	cfgErr  error
+
+	keepOut string // the hub's data directory, which GetFile never reads
 }
 
 // New returns a bare runtime spawning bin (default "claude").
@@ -48,6 +52,11 @@ func New(bin string) *Runtime {
 	}
 	return &Runtime{bin: bin}
 }
+
+// KeepOut names the hub's data directory: the database and every token
+// are in it, so no loop may send a file from it. Call it before the
+// runtime is used.
+func (host *Runtime) KeepOut(dir string) { host.keepOut = dir }
 
 func (host *Runtime) Kind() string { return "bare" }
 
@@ -95,6 +104,105 @@ func (host *Runtime) PutFile(ctx context.Context, loopID, hostPath, path string)
 		return err
 	}
 	return target.Close()
+}
+
+// GetFile reads a file inside the loop's working directory, and nothing
+// else: the host is the workstation, and it holds the operator's keys and
+// the hub's own data beside the loop's work (#123). The open goes through an
+// os.Root on workDir, which refuses a path that leaves it, by ".." or by a
+// symlink, at the open itself, so no check made before it can be raced.
+func (host *Runtime) GetFile(ctx context.Context, loopID, workDir, path string, limit int64) ([]byte, error) {
+	if workDir == "" || host.holdsHubData(workDir) {
+		return nil, runtime.ErrNotOwned
+	}
+	rel, ok := insideDir(workDir, path)
+	if !ok {
+		return nil, runtime.ErrNotOwned
+	}
+	root, err := os.OpenRoot(workDir)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = root.Close() }()
+	file, err := root.Open(rel)
+	if err != nil {
+		return nil, openError(err)
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, runtime.ErrNotAFile
+	}
+	// A hard link is the one way to put a file from outside inside that
+	// os.Root cannot see: it is the same file under a second name. A file
+	// the loop wrote has one name.
+	if stat, ok := info.Sys().(*syscall.Stat_t); ok && stat.Nlink > 1 {
+		return nil, fmt.Errorf("%w: %s has other names", runtime.ErrNotOwned, rel)
+	}
+	if info.Size() > limit {
+		return nil, runtime.ErrFileTooLarge
+	}
+	// A file that grew since the Stat is caught here instead.
+	body, err := io.ReadAll(io.LimitReader(file, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(body)) > limit {
+		return nil, runtime.ErrFileTooLarge
+	}
+	return body, nil
+}
+
+// holdsHubData reports whether workDir contains the hub's data directory,
+// as an operator-chosen workspace such as a home directory can. The os.Root
+// keeps a read inside workDir, not out of a directory within it, so a loop
+// working there may send nothing at all.
+func (host *Runtime) holdsHubData(workDir string) bool {
+	if host.keepOut == "" {
+		return false
+	}
+	resolve := func(path string) string {
+		if resolved, err := filepath.EvalSymlinks(path); err == nil {
+			return resolved
+		}
+		return filepath.Clean(path)
+	}
+	rel, err := filepath.Rel(resolve(workDir), resolve(host.keepOut))
+	return err == nil && (rel == "." || filepath.IsLocal(rel))
+}
+
+// insideDir is path relative to dir, if it names something inside dir
+// lexically. An absolute path may spell dir through a symlink, so it is
+// tried against dir as resolved too. The os.Root that opens the result is
+// what enforces the boundary; this only turns a path into its name there.
+func insideDir(dir, path string) (string, bool) {
+	if !filepath.IsAbs(path) {
+		return filepath.Clean(path), filepath.IsLocal(path)
+	}
+	dirs := []string{dir}
+	if resolved, err := filepath.EvalSymlinks(dir); err == nil && resolved != dir {
+		dirs = append(dirs, resolved)
+	}
+	for _, candidate := range dirs {
+		if rel, err := filepath.Rel(candidate, path); err == nil && filepath.IsLocal(rel) {
+			return rel, true
+		}
+	}
+	return "", false
+}
+
+// openError says why os.Root would not open rel. A missing file says so.
+// Anything else is a path the loop cannot send from: one that escapes, an
+// absolute symlink (which os.Root refuses even when it points back inside),
+// or a file the loop cannot read.
+func openError(err error) error {
+	if errors.Is(err, fs.ErrNotExist) {
+		return runtime.ErrNoSuchFile
+	}
+	return fmt.Errorf("%w: %w", runtime.ErrNotOwned, err)
 }
 
 // Health is always up: if the orchestrator is running, so is the host.

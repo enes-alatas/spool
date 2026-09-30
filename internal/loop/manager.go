@@ -146,6 +146,17 @@ func (manager *Manager) Deliver(id string, env Envelope) bool {
 	return true
 }
 
+// GetFile reads a file the loop owns out of its workstation, for a message
+// it sends with one (#123). Which files those are is the loop's runtime's
+// to say.
+func (manager *Manager) GetFile(ctx context.Context, loopRecord *store.Loop, path string, limit int64) ([]byte, error) {
+	loopRuntime := manager.deps.runtimeFor(loopRecord.Runtime)
+	if loopRuntime == nil {
+		return nil, fmt.Errorf("no %q runtime available", loopRecord.Runtime)
+	}
+	return loopRuntime.GetFile(ctx, loopRecord.ID, loopRecord.WorkspacePath, path, limit)
+}
+
 func (manager *Manager) Tick(id string) bool {
 	actor, ok := manager.Get(id)
 	if !ok {

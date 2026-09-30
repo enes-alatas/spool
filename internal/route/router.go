@@ -122,6 +122,8 @@ type Router struct {
 	files *attach.Files
 	// redactName cleans a sender's file name first (SetFiles).
 	redactName func(string) string
+	// workstations reads the file a loop sends (SetWorkstations).
+	workstations Workstations
 
 	mu    sync.Mutex
 	storm map[string][]time.Time // "fromID→toID" → delivery timestamps

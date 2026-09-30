@@ -1,6 +1,6 @@
 # ADR-0037: Attachments are kept by the hub and read from the workstation
 
-Date: 2026-09-30 · Status: accepted. The shape follows the operator's decisions of 2026-09-30 on #123, including item 4's change to the SandboxRuntime seam. · Amends: ADR-0004 (the SandboxRuntime seam gains `PutFile`)
+Date: 2026-09-30 · Status: accepted. The shape follows the operator's decisions of 2026-09-30 on #123, including item 4's change to the SandboxRuntime seam. · Amends: ADR-0004 (the SandboxRuntime seam gains `PutFile`) · Amended: 2026-09-30 (the outbound half, ADR-0026)
 
 ## Context
 
@@ -68,3 +68,8 @@ loop there cannot read a host file the hub holds.
   volume.
 - The seam's substitutability holds: a new runtime has to implement
   `PutFile`, and a bare-like runtime can do it trivially.
+
+**Amendment (2026-09-30, #123):** the outbound half landed as ADR-0026's
+`attach` field. A file a loop sends is kept here like an inbound one, on
+the same 20 MB limit and 30-day retention, and a runtime now implements
+`GetFile` as well, to read it out of the workstation.

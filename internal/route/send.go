@@ -32,6 +32,9 @@ type SendRequest struct {
 	// that failure resolves — the loop dealing with its own lost message
 	// is what takes it off the operator's list (#270).
 	Resends string
+	// Attach is a path in the sender's workstation to one file the message
+	// carries ("" = none, #123).
+	Attach string
 }
 
 // SendError is a typed refusal the model sees in-turn and can correct.
@@ -62,6 +65,13 @@ const (
 	// said something twice or resolved the wrong failure.
 	ErrResendsNotFailed        = "resends_not_failed"
 	ErrResendsWrongDestination = "resends_wrong_destination"
+	// The refusals of an attachment (#123). None stores the message: the
+	// loop meant the words and the file together.
+	ErrAttachmentNotFound    = "attachment_not_found"
+	ErrAttachmentNotOwned    = "attachment_not_owned"
+	ErrAttachmentTooLarge    = "attachment_too_large"
+	ErrSecretInAttachment    = "attachment_contains_secret"
+	ErrAttachmentUnavailable = "attachment_unavailable"
 )
 
 // noSuchDestination refuses a destination the loop does not have, and names
@@ -159,7 +169,13 @@ func (router *Router) Send(ctx context.Context, req SendRequest) (*store.Message
 			fmt.Sprintf("destination must be %s, %s or %s", store.ConversationOwnerDM, store.ConversationGroup, store.ConversationControlRoom)}, nil
 	}
 
+	// Last of the refusals, as the one that costs a read of the file.
+	sent, serr, err := router.keepSent(ctx, req)
+	if serr != nil || err != nil {
+		return nil, serr, err
+	}
 	if !router.sendAllow(req.From.ID) {
+		router.dropKept(sent)
 		return nil, &SendError{ErrSendLimit,
 			fmt.Sprintf("this turn already sent %d messages; batch what remains or wait for the next turn", SendCapPerTurn)}, nil
 	}
@@ -185,7 +201,21 @@ func (router *Router) Send(ctx context.Context, req SendRequest) (*store.Message
 		// not be delivered, so a later send can be dropped against it. Error
 		// path only, and it errs toward dropping rather than over-claiming,
 		// which is the direction this change is moving in anyway.
+		router.dropKept(sent)
 		return nil, nil, err
+	}
+	// Recorded before the message is published, so a surface that sends it
+	// finds its file. The message is stored by now, so a file that cannot
+	// be recorded is dropped and logged, and the words still go.
+	var sentRows []*store.Attachment
+	if sent != nil {
+		sent.MessageID, sent.CreatedAt = msg.ID, time.Now().UnixMilli()
+		if err := router.store.Attachments().Insert(ctx, sent); err != nil {
+			router.log.Error("sent attachment not recorded; sending the words alone", "message", msg.ID, "err", err)
+			router.dropKept(sent)
+		} else {
+			sentRows = []*store.Attachment{sent}
+		}
 	}
 	// After the insert, so a relay's tail reads in the order it happened:
 	// the message, then the drops it caused.
@@ -201,6 +231,7 @@ func (router *Router) Send(ctx context.Context, req SendRequest) (*store.Message
 	}})
 
 	for _, target := range delivering {
+		shown, copies := router.present(target, sentRows)
 		env := loop.MessageEnvelope(now, loop.Inbound{
 			Origin:       store.OriginLoop,
 			Author:       req.From.Name,
@@ -209,7 +240,9 @@ func (router *Router) Send(ctx context.Context, req SendRequest) (*store.Message
 			FromLoop:     true,
 			Ref:          loop.MessageRef(msg.ID),
 			ReplyTo:      replyRef(replyTo),
+			Attachments:  shown,
 		})
+		env.Files = copies
 		if !router.deliver.Deliver(target.ID, env) {
 			// The row already says delivered. The runtime is unknown to the
 			// hub, not refusing — a loop mid-restart, say — and the envelope
