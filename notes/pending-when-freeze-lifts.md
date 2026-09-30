@@ -148,3 +148,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 16:00: Iris queue: #459 → #456 (logo/wordmark, waits on Enes's pick) → #460 → #447 re-record (already on 3rd draft with Enes).
 - 16:05: Terra posted #460's API (attachments[] on every message response and SSE frame, GET /api/attachments/{id}, upload-then-send); builds it as #123 slice 4 after #458. Iris builds against it.
 - 19:20: #459 (#457), #461 (#456) merged. #458 approved 17:14, awaiting Enes. Iris → #460. Terra → #123 slice 4 after #458. Runtime v0.3.0-39.
+- 20:05: Enes yes on the sub-issue rule (ref:2504). #458 merged 19:50. Filed #462 (CONVENTIONS: every slice of a multi-PR issue is its own sub-issue) → Terra, one small PR before #123 slice 4; slice 4 itself becomes a sub-issue of #123 under the new rule.
