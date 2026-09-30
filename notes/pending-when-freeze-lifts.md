@@ -145,3 +145,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 12:50: Enes had already decided both with Terra (recorded on #429 07:38, #450 09:50): bridge gateway default; cases out of git, cap 15% of a 5h session, #450 parked behind L3, #453 draft. My 12:45 nudge was stale: CHECK THE THREAD before nudging.
 - 12:55: #450 cap operationalised: batches of ~10, cost_usd posted per batch, Enes watches meter.
 - 15:55: #455 (#123 outbound) merged; #458 (Slack files) and #459 (#457 trend bar) in review; #453 draft parked. Filed control-room attachments child (Part of #123) for Iris after #459; Terra to post the API on it. #447 storyboard not started (no comments).
+- 16:00: Iris queue: #459 → #456 (logo/wordmark, waits on Enes's pick) → #460 → #447 re-record (already on 3rd draft with Enes).
