@@ -6,10 +6,10 @@
     .g { stroke: #24292f; }
     @media (prefers-color-scheme: dark) { .g { stroke: #d3d3d3; } }
   </style>
-  <g class="g">
-    <circle cx="10" cy="10" r="8.2" stroke-width="2.4" />
-    <circle cx="10" cy="10" r="3.2" stroke-width="2.2" />
-    <line x1="10" y1="1.2" x2="10" y2="6.2" stroke-width="2.2" />
-    <line x1="10" y1="13.8" x2="10" y2="18.8" stroke-width="2.2" />
+  <g class="g" stroke-width="1.5">
+    <circle cx="10" cy="10" r="9.15" />
+    <circle cx="10" cy="10" r="3.1" />
+    <line x1="10" y1="1.6" x2="10" y2="6.9" />
+    <line x1="10" y1="13.1" x2="10" y2="18.4" />
   </g>
 </svg>

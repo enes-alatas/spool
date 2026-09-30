@@ -1,4 +1,7 @@
 // The spool glyph: a thread spool seen from the side. Spins while busy.
+// Drawn to the README banner's proportions (#456): hairline rings, the inner
+// one about 0.36 of the outer, and spokes running from rim to hub. The stroke
+// is heavier than the banner's own ratio, which would vanish at 26px.
 export function SpoolGlyph({ size = 18, spinning = false }: { size?: number; spinning?: boolean }) {
   return (
     <svg
@@ -7,12 +10,14 @@ export function SpoolGlyph({ size = 18, spinning = false }: { size?: number; spi
       height={size}
       viewBox="0 0 20 20"
       fill="none"
+      stroke="currentColor"
+      strokeWidth="0.9"
       aria-hidden
     >
-      <circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.6" />
-      <circle cx="10" cy="10" r="3.2" stroke="currentColor" strokeWidth="1.4" />
-      <line x1="10" y1="1.6" x2="10" y2="6.4" stroke="currentColor" strokeWidth="1.4" />
-      <line x1="10" y1="13.6" x2="10" y2="18.4" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="10" cy="10" r="8.7" />
+      <circle cx="10" cy="10" r="3.1" />
+      <line x1="10" y1="1.3" x2="10" y2="6.9" />
+      <line x1="10" y1="13.1" x2="10" y2="18.7" />
     </svg>
   )
 }
