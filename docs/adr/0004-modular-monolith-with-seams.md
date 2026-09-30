@@ -1,6 +1,6 @@
 # ADR-0004: Modular monolith with four seams
 
-Date: 2026-08-16 · Status: accepted
+Date: 2026-08-16 · Status: accepted · Amended: 2026-09-30 (the SandboxRuntime seam copies a file in, ADR-0037)
 
 ## Context
 
@@ -16,6 +16,13 @@ One binary, one process — with four interface seams owned by the hub: **Surfac
 **Runner** (the narrow command surface for loop execution, in-process today,
 extractable to a per-host process for the service). Adapters implement seams and never
 import each other; dependencies point inward.
+
+**Amendment (2026-09-30, #123, ADR-0037):** the **SandboxRuntime** seam also
+copies a file into a loop's workstation: `PutFile(ctx, loopID, hostPath, path)`.
+A file a human sends a loop is kept once by the hub, and a workstation with a
+filesystem of its own (docker) cannot read the hub's copy, so the runtime that
+owns the workstation is the one that puts it there. The bare runtime's
+workstation is the host, and its `PutFile` is a plain copy.
 
 ## Consequences
 

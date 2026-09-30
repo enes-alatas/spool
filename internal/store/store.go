@@ -386,6 +386,42 @@ type Message struct {
 	SlackTS        string `json:"-"`
 }
 
+// Attachment is a file that crossed a chat surface with a message (#123):
+// kept once by the hub, referenced from the message, and presented to a
+// loop as a path it can read. The row outlives the file: retention removes
+// the file and sets RemovedAt, and the message still says what was sent.
+type Attachment struct {
+	ID        int64  `json:"id"`
+	MessageID int64  `json:"message_id"`
+	Name      string `json:"name"`
+	MIME      string `json:"mime"`
+	Kind      string `json:"kind"` // AttachmentImage | AttachmentFile
+	Size      int64  `json:"size"`
+	SHA256    string `json:"-"`
+	Width     int    `json:"width,omitempty"`
+	Height    int    `json:"height,omitempty"`
+	// Path is the kept file's location relative to the hub's files
+	// directory. Storage detail, not surfaced.
+	Path string `json:"-"`
+	// NotKept says why a file never arrived (NotKept*); "" when it did.
+	NotKept   string `json:"not_kept,omitempty"`
+	CreatedAt int64  `json:"created_at"`
+	RemovedAt int64  `json:"removed_at,omitempty"` // 0 = the file is kept
+}
+
+// Attachment kinds: an image is presented with its dimensions and sent as
+// native media where the surface has it; anything else is a file.
+const (
+	AttachmentImage = "image"
+	AttachmentFile  = "file"
+)
+
+// Why an attachment has no file (Attachment.NotKept).
+const (
+	NotKeptTooLarge = "too_large"    // over the size limit; never downloaded
+	NotKeptFailed   = "fetch_failed" // the surface would not hand it over
+)
+
 // How a send failure resolved (Message.SendResolution).
 const (
 	// SendResolutionDelivered: a later attempt at the same row got through,
@@ -810,6 +846,19 @@ type MessageStore interface {
 	LatestGroupPostBy(ctx context.Context, authorLoopID, text string) (*Message, error)
 }
 
+// AttachmentStore records the files kept for messages (#123).
+type AttachmentStore interface {
+	// Insert records an attachment and fills in its ID.
+	Insert(ctx context.Context, attachment *Attachment) error
+	Get(ctx context.Context, id int64) (*Attachment, error)
+	// ByMessage returns a message's attachments, in the order they came.
+	ByMessage(ctx context.Context, messageID int64) ([]*Attachment, error)
+	// Expire marks every attachment created before cutoff and still kept
+	// as removed at removedAt, and returns them, so the caller can delete
+	// their files. The rows stay.
+	Expire(ctx context.Context, cutoff, removedAt int64) ([]*Attachment, error)
+}
+
 type TurnStore interface {
 	Create(ctx context.Context, turn *Turn) error
 	Finish(ctx context.Context, turn *Turn) error
@@ -940,6 +989,7 @@ type Store interface {
 	FleetRules() FleetRuleStore
 	Sessions() SessionStore
 	Messages() MessageStore
+	Attachments() AttachmentStore
 	Turns() TurnStore
 	Events() EventStore
 	Schedule() ScheduleStore

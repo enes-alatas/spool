@@ -693,6 +693,29 @@ func (actor *Actor) collectSendFailures(ctx context.Context) {
 	}
 }
 
+// putFiles copies the batch's attachments into the workstation before the
+// turn reads them (#123), and returns a note naming any it could not. The
+// turn goes ahead either way: the words arrived even if a file did not.
+func (actor *Actor) putFiles(batch []Envelope) string {
+	loopRuntime := actor.deps.runtimeFor(actor.loop.Runtime)
+	var failed []string
+	for _, env := range batch {
+		for _, file := range env.Files {
+			var err error
+			if loopRuntime == nil {
+				err = fmt.Errorf("no %q runtime available", actor.loop.Runtime)
+			} else {
+				err = loopRuntime.PutFile(context.Background(), actor.loop.ID, file.From, file.To)
+			}
+			if err != nil {
+				actor.log().Warn("attachment not copied in", "path", file.To, "err", err)
+				failed = append(failed, file.To)
+			}
+		}
+	}
+	return FilesNotCopiedNote(failed)
+}
+
 // wakeSpec describes this wake to the runtime. The system prompt is passed in
 // rather than rendered here: wake compares it with the one the session was
 // created with first, and both must be the same text (#162).
@@ -891,6 +914,9 @@ func (actor *Actor) sendBatch(batch []Envelope) {
 		if payload, err := json.Marshal(env); err == nil {
 			actor.storeEventFull("envelope", env.Trigger, string(payload))
 		}
+	}
+	if notes := actor.putFiles(batch); notes != "" {
+		text = notes + "\n\n---\n\n" + text
 	}
 
 	if err := actor.proc.Send(text); err != nil {

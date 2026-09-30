@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/enes-alatas/spool/internal/attach"
 	"github.com/enes-alatas/spool/internal/bus"
 	"github.com/enes-alatas/spool/internal/loop"
 	"github.com/enes-alatas/spool/internal/store"
@@ -89,6 +90,9 @@ type InboundMessage struct {
 	// composer's declared destination (ADR-0026). Empty means derive it
 	// from the origin. Callers pass a validated store.Conversation* value.
 	Conversation string
+	// Attachments are the files the message carries (#123), fetched and
+	// kept only once the message is stored.
+	Attachments []InboundAttachment
 }
 
 // MessagePayload is what KindMessage bus items carry (UI + telegram mirror).
@@ -114,6 +118,10 @@ type Router struct {
 	bus     *bus.Bus
 	deliver Deliverer
 	log     *slog.Logger
+	// files keeps attachments (#123); nil keeps none.
+	files *attach.Files
+	// redactName cleans a sender's file name first (SetFiles).
+	redactName func(string) string
 
 	mu    sync.Mutex
 	storm map[string][]time.Time // "fromID→toID" → delivery timestamps
@@ -273,6 +281,9 @@ func (router *Router) Ingest(ctx context.Context, in InboundMessage) error {
 	if err := router.store.Messages().Insert(ctx, msg); err != nil {
 		return err // includes ErrDuplicate for telegram double-polls
 	}
+	// Only once the message is stored: the surface that lost the ingest
+	// race has nothing to download.
+	attachments := router.keepAttachments(ctx, msg.ID, in.Attachments)
 
 	fromLoopName := ""
 	if fromLoop != nil {
@@ -295,6 +306,7 @@ func (router *Router) Ingest(ctx context.Context, in InboundMessage) error {
 			router.recordStormDrop(ctx, in.FromLoopID, fromLoopName, target)
 			continue
 		}
+		shown, copies := router.present(target, attachments)
 		env := loop.MessageEnvelope(nowT, loop.Inbound{
 			Origin:       in.Origin,
 			Author:       in.Author,
@@ -304,7 +316,9 @@ func (router *Router) Ingest(ctx context.Context, in InboundMessage) error {
 			TGChatID:     dmChatFor(in),
 			Ref:          loop.MessageRef(msg.ID),
 			ReplyTo:      replyRef,
+			Attachments:  shown,
 		})
+		env.Files = copies
 		if !router.deliver.Deliver(target.ID, env) {
 			router.log.Warn("deliver to unknown runtime", "loop", target.Name)
 		}
@@ -337,6 +351,11 @@ func (router *Router) DeliverAdoptedReply(ctx context.Context, msg *store.Messag
 	if err := router.store.Messages().SetDelivered(ctx, msg.ID, append(slices.Clone(msg.DeliveredTo), author.ID)); err != nil {
 		return err
 	}
+	attachments, err := router.store.Attachments().ByMessage(ctx, msg.ID)
+	if err != nil {
+		return err
+	}
+	shown, copies := router.present(author, attachments)
 	env := loop.MessageEnvelope(time.Now(), loop.Inbound{
 		Origin:       msg.Origin,
 		Author:       msg.Author,
@@ -344,7 +363,9 @@ func (router *Router) DeliverAdoptedReply(ctx context.Context, msg *store.Messag
 		Conversation: msg.Conversation,
 		Ref:          loop.MessageRef(msg.ID),
 		ReplyTo:      loop.MessageRef(target.ID),
+		Attachments:  shown,
 	})
+	env.Files = copies
 	if !router.deliver.Deliver(author.ID, env) {
 		router.log.Warn("deliver to unknown runtime", "loop", author.Name)
 	}

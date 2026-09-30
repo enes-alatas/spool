@@ -14,6 +14,7 @@ package bare
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -70,6 +71,31 @@ func (host *Runtime) Destroy(ctx context.Context, loopID string) error { return 
 // HasWorkstation is false: the host is the workstation, so there is nothing
 // the operator's power controls could halt or rebuild.
 func (host *Runtime) HasWorkstation() bool { return false }
+
+// PutFile has nothing to do for the path a bare loop is shown, which is the
+// hub's own copy on the same host. Any other path is a plain copy.
+func (host *Runtime) PutFile(ctx context.Context, loopID, hostPath, path string) error {
+	if filepath.Clean(hostPath) == filepath.Clean(path) {
+		return nil
+	}
+	source, err := os.Open(hostPath)
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	target, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(target, source); err != nil {
+		_ = target.Close()
+		return err
+	}
+	return target.Close()
+}
 
 // Health is always up: if the orchestrator is running, so is the host.
 func (host *Runtime) Health(ctx context.Context, loopID string) (runtime.Health, error) {

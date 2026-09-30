@@ -6,12 +6,15 @@
 package docker
 
 import (
+	"bytes"
 	"context"
 	crand "crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -450,4 +453,36 @@ func resolveContainers(t *testing.T) map[string]bool {
 		names[name] = true
 	}
 	return names
+}
+
+// A file a message carries lands inside the workstation at the path the
+// envelope names, byte for byte, owned by the user the loop runs as — a
+// root-owned copy would name a file the loop cannot open (#123).
+func TestPutFileLandsReadableForTheLoop(t *testing.T) {
+	rt := requireDocker(t)
+	spec := testSpec(t, rt)
+	mustEnsure(t, rt, spec)
+
+	content := []byte("\x89PNG\r\n\x1a\nnot really a png, but binary all the same\x00\xff")
+	hostPath := filepath.Join(t.TempDir(), "shot.png")
+	if err := os.WriteFile(hostPath, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	target := runtime.WorkstationHome + "/.spool/files/ab12-shot.png"
+	if err := rt.PutFile(context.Background(), spec.LoopID, hostPath, target); err != nil {
+		t.Fatalf("PutFile: %v", err)
+	}
+
+	got, err := exec.Command("docker", "exec", containerName(spec.LoopID), "cat", target).Output()
+	if err != nil {
+		t.Fatalf("reading it back: %v", err)
+	}
+	if !bytes.Equal(got, content) {
+		t.Errorf("read back %q, want %q", got, content)
+	}
+	owner, _ := dockerOut(t, "exec", containerName(spec.LoopID), "stat", "-c", "%U", target)
+	user, _ := dockerOut(t, "exec", containerName(spec.LoopID), "id", "-un")
+	if owner != user {
+		t.Errorf("file owned by %q, the loop runs as %q", owner, user)
+	}
 }

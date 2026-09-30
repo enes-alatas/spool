@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -369,6 +370,28 @@ func (rt *Runtime) writeMCPConfig(ctx context.Context, spec runtime.Spec) error 
 	_, err := rt.commandInput(ctx, queryTimeout, spec.MCPConfig,
 		"exec", "--interactive", containerName(spec.LoopID),
 		"sh", "-c", "umask 077 && cat > "+mcpConfigPath)
+	return err
+}
+
+// putFileTimeout bounds one file's copy in: 20 MB through docker exec is
+// seconds, and a daemon that takes minutes is not going to finish.
+const putFileTimeout = 2 * time.Minute
+
+// PutFile streams the file into the workstation over exec stdin, as the
+// workstation's own user, so the loop owns what it is given. The same exec
+// clears files there older than the hub keeps its own copies: the
+// workstation's are copies of those, and would otherwise outlive them.
+func (rt *Runtime) PutFile(ctx context.Context, loopID, hostPath, target string) error {
+	file, err := os.Open(hostPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	// an in-container path: POSIX whatever the host is
+	dir := path.Dir(target)
+	_, err = rt.commandStream(ctx, putFileTimeout, file,
+		"exec", "--interactive", containerName(loopID),
+		"sh", "-c", `mkdir -p "$1" && find "$1" -type f -mtime +30 -delete 2>/dev/null; cat > "$2"`, "sh", dir, target)
 	return err
 }
 

@@ -86,7 +86,7 @@ func TestReplyTargetOnlyTheAuthorsBotSaw(t *testing.T) {
 			handle := func(bot *poller, message *Message) {
 				target := br.ownReplyTarget(ctx, bot, message)
 				br.recordSighting(ctx, bot, message, target)
-				br.ingestGroupMessage(ctx, bot, message, "operator", message.Text, target)
+				br.ingestGroupMessage(ctx, bot, message, "operator", message.Text, nil, target)
 			}
 			if order == "author first" {
 				handle(beta, seenByBeta)

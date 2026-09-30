@@ -30,6 +30,7 @@ scale arrives via runner extraction (ADR-0004), not by inflating this envelope.
 | SSE fan-out | 10 clients, no visible lag |
 | UI initial load (localhost) | < 1 s |
 | Events retention | raw claude events pruned after 30 days (configurable); messages/turns kept forever; stream deltas never stored |
+| Attachment retention | files kept 30 days, then removed; the attachment row stays (ADR-0037) |
 
 The perf smoke (`TestPerfSmokeAtTheScaleEnvelope` in `itest/perf_test.go`, #4)
 asserts the first four rows against fakeclaude. It builds the envelope, 100

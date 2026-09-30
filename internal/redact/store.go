@@ -52,6 +52,25 @@ func (redacted redactedStore) Messages() store.MessageStore {
 	return messages{redacted.Store.Messages(), redacted.redactor}
 }
 
+func (redacted redactedStore) Attachments() store.AttachmentStore {
+	return attachments{redacted.Store.Attachments(), redacted.redactor}
+}
+
+// attachments redacts the one free-text field an attachment row carries:
+// its name, which the sender chose. The file is not text the redactor can
+// read, and is never logged.
+type attachments struct {
+	store.AttachmentStore
+	redactor *Redactor
+}
+
+func (attachmentStore attachments) Insert(ctx context.Context, attachment *store.Attachment) error {
+	if attachment != nil {
+		attachment.Name = attachmentStore.redactor.Text(attachment.Name)
+	}
+	return attachmentStore.AttachmentStore.Insert(ctx, attachment)
+}
+
 // loops redacts the one free-text field a loop row carries. Its token fields
 // are deliberately untouched: those values *are* the secrets, and a decorator
 // that redacted them on the way in would write a placeholder where the bot
