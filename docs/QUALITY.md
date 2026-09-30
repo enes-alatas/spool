@@ -44,6 +44,11 @@ window regardless of loop count (ADR-0018).
 - Accepted inbound messages are persisted **before** the surface is acked (e.g.
   Telegram offset advance) — asserted in tier 2.
 - SIGTERM drains: in-flight turns finish (bounded), then processes close cleanly.
+- Crash-only covers the process, not the machine. The store commits to its WAL
+  without waiting on an fsync (`synchronous=NORMAL`, ADR-0035), so a killed or
+  crashed hub loses nothing it committed. A machine that crashes or loses power
+  can lose the commits since the last checkpoint, never the database's
+  consistency.
 - Every recovery behavior (orphan pid cleanup, dangling-turn interruption, overdue-tick
   jitter, session-lost preamble) has a tier-2 test.
 
