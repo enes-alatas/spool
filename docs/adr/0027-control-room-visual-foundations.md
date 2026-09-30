@@ -56,6 +56,17 @@ need the operator to look.
    Windows 11 ships a newer one drawn with optical sizes that `system-ui`
    does not select. Machines without it fall through to exactly what they
    had.
+   **Amendment (2026-09-30, #456):** one exception, the wordmark. The word
+   "spool" in the topbar and on the login card is set in Nunito, the README
+   banner's face, at the operator's request, so the product's name reads the
+   same in both places. The face is a 16 KB latin subset served by the hub
+   itself from `web/public/fonts/`, with its SIL OFL 1.1 licence alongside.
+   Nothing comes from a third-party host, so a hub without internet access
+   renders the same. It applies to that one word only: titles, prose and the
+   operational register stay on the system stacks above, and the wordmark
+   falls back to the sans stack if the file fails to load. This supersedes the
+   operator's call of 2026-09-24 on #316, which kept the wordmark in the UI
+   font.
 7. **Contrast is a floor, not a preference.** Every text token clears 4.5:1
    against every background it can land on. The approved muted grey
    `#77777c` measures 4.58:1 on the canvas but 4.39:1 on the hover fill, so
