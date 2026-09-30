@@ -642,6 +642,15 @@ textarea {
   margin-left: 0;
   justify-self: end;
 }
+/* On Activity, a message's files take their own line under the row, lined up
+   with the author: the time column is 76px and the row's gap 12px */
+.feed-item .attachments {
+  flex-basis: 100%;
+  margin: 0 0 0 88px;
+}
+.feed-item .attachment-thumb img {
+  max-height: 120px;
+}
 .undelivered-row .undelivered-reason {
   grid-area: reason;
 }
@@ -1183,6 +1192,49 @@ textarea {
   white-space: pre-wrap;
   word-break: break-word;
   max-width: 720px;
+}
+
+/* A message's files, under its words (#460): one line each, quieter than
+   the text, and an image as a thumbnail above its line. The thumbnail is
+   scaled here, since the hub serves the original bytes. */
+.attachments {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 0.71875rem;
+  color: var(--text-muted);
+}
+.attachment {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.attachment a:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+.attachment-thumb {
+  display: block;
+  width: fit-content;
+  margin-bottom: 4px;
+}
+.attachment-thumb img {
+  display: block;
+  max-width: min(320px, 100%);
+  max-height: 200px;
+  width: auto;
+  height: auto;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--surface);
+}
+/* the bytes are gone: the line stays to say what came, and why it is
+   not a link, a step quieter than a file that is still there */
+.attachment.gone {
+  opacity: 0.6;
 }
 .tool-line {
   font-family: var(--mono);
