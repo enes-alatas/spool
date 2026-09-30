@@ -134,3 +134,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 ## 2026-09-30 06:05 — morning sweep
 - #443 (#253) merged. No open PR. Terra: #441 → #442 → #4. Iris idle. With Enes, unnudged: docker-loop flow (#429), real-Slack check + close #197, #123 contract.
 - 07:30: Enes: rewrite + move README Quick start. Filed #446 → Iris. Asked Terra on #429 whether the binary should pick a bridge-reachable loop listener by default (Enes decides).
+- 07:35: #444 (#442 + #4 perf smoke) merged; #442, #4 closed by hand. Terra on #441. Terra's #429 answer: auto-bind loop listener to the docker bridge gateway (not 0.0.0.0), loopback fallback if daemon silent. DM'd Enes with my yes; #429 → Terra after #441 once decided.
