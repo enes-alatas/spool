@@ -84,3 +84,12 @@ export function EditIcon() {
     </Icon>
   )
 }
+
+// Attach: a paperclip, for the composer's file picker.
+export function AttachIcon() {
+  return (
+    <Icon>
+      <path d="M15.5 9.25 9.6 15.15a3.6 3.6 0 0 1-5.1-5.1l6.2-6.2a2.4 2.4 0 0 1 3.4 3.4l-6.15 6.15a1.2 1.2 0 0 1-1.7-1.7l5.6-5.6" />
+    </Icon>
+  )
+}

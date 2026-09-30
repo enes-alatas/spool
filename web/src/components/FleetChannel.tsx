@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ChatMessage, LoopView } from '../api'
 import { channelRecipients, completeMention, mentionAt, mentionCompletions } from '../channel'
+import { AttachButton, AttachedFile, attachmentErrorText, pickRefusal } from './Attachments'
 import { MessageKnot } from './MessageKnot'
 import { surfaceNote } from '../messages'
 
@@ -95,6 +96,7 @@ function Compose({
   const [dismissed, setDismissed] = useState(false)
   const [error, setError] = useState('')
   const [sending, setSending] = useState(false)
+  const [file, setFile] = useState<File | null>(null)
   const box = useRef<HTMLTextAreaElement>(null)
   // Where the caret goes once a completion's text is in the box. Set in a
   // layout effect, before the browser paints or takes another keystroke: a
@@ -143,14 +145,18 @@ function Compose({
     setSending(true)
     setError('')
     try {
-      await api.postGroup(draft.trim(), replyTo?.id)
+      // Uploaded at send, as on a loop's composer: an upload no message
+      // names is dropped within the hour.
+      const attached = file ? await api.uploadAttachment(file) : undefined
+      await api.postGroup(draft.trim(), replyTo?.id, attached?.id)
       track('', 0)
+      setFile(null)
       onReplyDone()
       qc.invalidateQueries({ queryKey: ['group'] })
     } catch (e) {
       // The draft stays: a post the server refused is still the operator's
       // words, and clearing it would make them type it again.
-      setError(e instanceof Error ? e.message : 'could not post to the fleet channel')
+      setError(attachmentErrorText(e))
     } finally {
       setSending(false)
     }
@@ -211,7 +217,16 @@ function Compose({
         </div>
       )}
       {replyTo && <Replying msg={replyTo} onCancel={onReplyDone} />}
+      {file && <AttachedFile file={file} onRemove={() => setFile(null)} />}
       <div className="composer" style={{ marginTop: 0 }}>
+        <AttachButton
+          onPick={(picked) => {
+            const refused = pickRefusal(picked)
+            setError(refused)
+            if (!refused) setFile(picked)
+          }}
+          disabled={sending}
+        />
         <textarea
           ref={box}
           placeholder={
