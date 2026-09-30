@@ -393,7 +393,7 @@ agents — Claude sessions today, Spool's own loops from L2.*
   verification tool (the screenshot practice), never CI.
 - Quality baselines (perf numbers, scale envelope, reliability/security rules) and
   the full CI gate list live in `docs/QUALITY.md` (ADR-0013). Arch tests enforce the
-  seams mechanically; a perf smoke runs per milestone.
+  seams mechanically; a perf smoke at the scale envelope runs with tier 2.
 - fakeclaude scenarios are declarative fixtures checked into the repo; fakeclaude
   itself must track the real CLI's observed behavior (version-noted, like
   `claude/preflight.go`'s TestedVersion).
