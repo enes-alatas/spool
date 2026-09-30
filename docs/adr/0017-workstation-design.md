@@ -1,6 +1,6 @@
 # ADR-0017: Workstation design — long-lived Docker containers behind the SandboxRuntime seam
 
-Date: 2026-08-17 · Status: accepted · Amended: 2026-09-20 (redaction), 2026-09-21 (bare is opt-in)
+Date: 2026-08-17 · Status: accepted · Amended: 2026-09-20 (redaction), 2026-09-21 (bare is opt-in), 2026-09-30 (the perf smoke covers bare loops only)
 
 ## Context
 
@@ -107,6 +107,8 @@ value cannot come back out through anything Spool writes down.
   only.
 - Idle workstations cost a keepalive process each — within the QUALITY.md
   envelope (100 defined / 15 awake), negligible; the perf smoke (#4) verifies.
+  *Amended 2026-09-30:* the perf smoke that landed runs bare loops, so this
+  claim is not yet verified; #445 tracks running it on workstations.
 - **Injected secrets are readable by the loop.** Env-var injection — the setup-
   token and per-loop secrets alike — necessarily puts credentials where the
   agent can read them, since it must use them. A loop can therefore be steered

@@ -1,6 +1,6 @@
 # ADR-0013: Quality baselines and gates
 
-Date: 2026-08-16 · Status: accepted · Amended: 2026-09-18 (control-room tier 1), 2026-09-26 (health is liveness only)
+Date: 2026-08-16 · Status: accepted · Amended: 2026-09-18 (control-room tier 1), 2026-09-26 (health is liveness only), 2026-09-30 (the perf smoke runs with tier 2)
 
 ## Context
 
@@ -28,6 +28,9 @@ especially once loops author PRs (L2).
 
 - L0's CI must ship: lint/vet/golangci-lint, eslint/prettier, tiers 1+2, arch tests,
   govulncheck, diff-coverage comment. A perf smoke runs per milestone.
+  **Amended 2026-09-30 (#4):** the perf smoke runs in about 10s, so it is an
+  ordinary tier-2 test and runs with every `itest` run; the baselines it
+  asserts are unchanged.
 - Baseline numbers change only via a superseding ADR.
 - The slog migration touches every package once, at L0, while the codebase is small.
 

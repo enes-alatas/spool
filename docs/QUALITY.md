@@ -31,8 +31,27 @@ scale arrives via runner extraction (ADR-0004), not by inflating this envelope.
 | UI initial load (localhost) | < 1 s |
 | Events retention | raw claude events pruned after 30 days (configurable); messages/turns kept forever; stream deltas never stored |
 
-A perf smoke (tier-2, fakeclaude, envelope-sized fixtures) runs per milestone and
-whenever engine hot paths change — not on every PR.
+The perf smoke (`TestPerfSmokeAtTheScaleEnvelope` in `itest/perf_test.go`, #4)
+asserts the first four rows against fakeclaude. It builds the envelope, 100
+loops with 15 held awake, and measures the hub process alone, from `/proc`.
+Idle CPU and RSS are sampled once the fleet has settled. Wake overhead is
+sampled over three bursts of 15 asleep loops messaged at once, as a message
+to every loop in the fleet channel wakes them. Boot recovery is measured after
+a `kill -9` with every awake loop mid-turn and every tick overdue. It runs in
+about 10s, so it is an ordinary tier-2 test that runs on every `itest` run,
+not a separate step anyone has to remember. Its budgets are the table's
+numbers, set as constants at the top of the file. Measured on its first runs
+(2026-09-30, local, three runs):
+
+| Metric | Measured | Budget |
+|---|---|---|
+| Idle CPU at the envelope | 0.00% of one core over 5s | < 1% |
+| Idle RSS at the envelope | 70–75 MB | < 100 MB |
+| Wake overhead, bursts of 15 | p50 21–27 ms, p95 56–92 ms | p95 < 500 ms |
+| Boot recovery after a `kill -9` | 65–80 ms | < 3 s |
+
+The first run found the wake baseline broken: a burst's p95 was 551 ms until
+the store stopped waiting on an fsync per commit (ADR-0035).
 
 Workstation liveness polling honours the idle-CPU baseline by construction: the
 docker runtime answers per-loop `Health` reads from a short-TTL cache filled by
