@@ -125,6 +125,8 @@ func (server *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/loops/{name}/secrets/{key}", server.handlePutSecret)
 	mux.HandleFunc("DELETE /api/loops/{name}/secrets/{key}", server.handleDeleteSecret)
 	mux.HandleFunc("GET /api/activity", server.handleActivity)
+	mux.HandleFunc("GET /api/attachments/{id}", server.handleAttachment)
+	mux.HandleFunc("POST "+uploadPath, server.handleUpload)
 	mux.HandleFunc("GET /api/undelivered", server.handleUndelivered)
 	mux.HandleFunc("POST /api/messages/{id}/retry", server.handleRetrySend)
 	mux.HandleFunc("POST /api/messages/{id}/dismiss", server.handleDismissSend)
@@ -1005,6 +1007,9 @@ type postMessageReq struct {
 	// control_room (the default) keeps the message in the loop's private
 	// web thread; group posts it to the shared group conversation.
 	Destination string `json:"destination"`
+	// AttachmentID is a file uploaded to POST /api/attachments to send
+	// with the message (#460), 0 for none.
+	AttachmentID int64 `json:"attachment_id"`
 }
 
 func (server *Server) handleLoopMessage(w http.ResponseWriter, r *http.Request) {
@@ -1034,9 +1039,10 @@ func (server *Server) handleLoopMessage(w http.ResponseWriter, r *http.Request) 
 		Text:         req.Text,
 		ImplicitTo:   loopRecord.ID,
 		Conversation: dest,
+		UploadID:     req.AttachmentID,
 	})
 	if err != nil {
-		server.jsonErr(w, 500, "%v", err)
+		server.ingestErr(w, err)
 		return
 	}
 	writeJSON(w, 202, map[string]bool{"queued": true})
@@ -1276,7 +1282,7 @@ func (server *Server) handleLoopConversation(w http.ResponseWriter, r *http.Requ
 	if msgs == nil {
 		msgs = []*store.Message{}
 	}
-	writeJSON(w, 200, msgs)
+	server.writeMessages(w, r, msgs)
 }
 
 // handleGroupTimeline is the fleet channel's own timeline, newest first like
@@ -1291,7 +1297,7 @@ func (server *Server) handleGroupTimeline(w http.ResponseWriter, r *http.Request
 	if msgs == nil {
 		msgs = []*store.Message{}
 	}
-	writeJSON(w, 200, msgs)
+	server.writeMessages(w, r, msgs)
 }
 
 type postGroupReq struct {
@@ -1300,6 +1306,8 @@ type postGroupReq struct {
 	// ReplyToID is the fleet-channel message this post answers, or 0 for
 	// a plain post.
 	ReplyToID int64 `json:"reply_to_id"`
+	// AttachmentID is as on a loop's composer (postMessageReq).
+	AttachmentID int64 `json:"attachment_id"`
 }
 
 // handleGroupPost is the operator posting to the fleet channel. Unlike a
@@ -1325,9 +1333,10 @@ func (server *Server) handleGroupPost(w http.ResponseWriter, r *http.Request) {
 		Text:         req.Text,
 		Conversation: store.ConversationGroup,
 		ReplyToID:    req.ReplyToID,
+		UploadID:     req.AttachmentID,
 	})
 	if err != nil {
-		server.jsonErr(w, 500, "%v", err)
+		server.ingestErr(w, err)
 		return
 	}
 	writeJSON(w, 202, map[string]bool{"queued": true})
@@ -1365,7 +1374,7 @@ func (server *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
 	if msgs == nil {
 		msgs = []*store.Message{}
 	}
-	writeJSON(w, 200, msgs)
+	server.writeMessages(w, r, msgs)
 }
 
 // handleUndelivered lists the sends the Fleet badge counts: messages that
@@ -1415,7 +1424,7 @@ func (server *Server) handleUndelivered(w http.ResponseWriter, r *http.Request) 
 	if msgs == nil {
 		msgs = []*store.Message{}
 	}
-	writeJSON(w, 200, msgs)
+	server.writeMessages(w, r, msgs)
 }
 
 // handleRetrySend sends a failed message again, to the destination it was

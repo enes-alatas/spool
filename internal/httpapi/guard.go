@@ -76,7 +76,7 @@ func (server *Server) guard(next http.Handler) http.Handler {
 			server.jsonErr(w, http.StatusForbidden, "cross-origin request refused")
 			return
 		}
-		if r.ContentLength != 0 && !isJSON(r.Header.Get("Content-Type")) {
+		if r.ContentLength != 0 && !isJSON(r.Header.Get("Content-Type")) && !isUpload(r) {
 			server.jsonErr(w, http.StatusUnsupportedMediaType, "this route takes application/json")
 			return
 		}
@@ -192,13 +192,27 @@ func isWildcardHost(host string) bool {
 // isJSON accepts the body types the API decodes, ignoring parameters so a
 // charset does not make a well-formed request fail. Everything else — the
 // form and text types a cross-origin POST can send without a preflight —
-// stops here rather than at a decoder.
+// stops here rather than at a decoder, but for the one upload isUpload
+// admits.
 func isJSON(ct string) bool {
 	mt, _, err := mime.ParseMediaType(ct)
 	if err != nil {
 		return false
 	}
 	return mt == "application/json"
+}
+
+// isUpload is the one exception to JSON bodies (ADR-0030, amended for
+// #460): the composer's file, raw, to the upload route. A cross-site form
+// cannot send application/octet-stream without a preflight, so it takes no
+// shape off the table that JSON put there.
+func isUpload(r *http.Request) bool {
+	return isOctetStream(r.Header.Get("Content-Type")) && r.Method == http.MethodPost && r.URL.Path == uploadPath
+}
+
+func isOctetStream(ct string) bool {
+	mt, _, err := mime.ParseMediaType(ct)
+	return err == nil && mt == "application/octet-stream"
 }
 
 // handleLogin takes the token once and hands back a cookie, so the control

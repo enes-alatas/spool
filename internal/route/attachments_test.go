@@ -37,6 +37,17 @@ func (table *memAttachments) Expire(_ context.Context, cutoff, removedAt int64) 
 	return out, nil
 }
 
+func (table *memAttachments) ExpireUnsent(_ context.Context, cutoff, removedAt int64) ([]*store.Attachment, error) {
+	var out []*store.Attachment
+	for _, row := range table.rows {
+		if row.MessageID == 0 && row.RemovedAt == 0 && row.Path != "" && row.CreatedAt < cutoff {
+			row.RemovedAt = removedAt
+			out = append(out, row)
+		}
+	}
+	return out, nil
+}
+
 type attachmentsOnly struct {
 	store.Store
 	table *memAttachments
@@ -180,5 +191,32 @@ func TestASentFileIsRefusedForEachReasonTheLoopCanCorrect(t *testing.T) {
 	}
 	if body, err := os.ReadFile(files.Path(kept.Path)); err != nil || string(body) != "png bytes" {
 		t.Errorf("the kept copy reads %q, %v", body, err)
+	}
+}
+
+// An upload the operator never sends goes after UploadWait, and one a
+// message took stays for the whole retention.
+func TestAnUnsentUploadExpiresAndASentOneStays(t *testing.T) {
+	router, table, files := testRouter(t)
+	unsent, err := router.KeepUpload(context.Background(), strings.NewReader("draft"), "draft.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sent, err := router.KeepUpload(context.Background(), strings.NewReader("final"), "final.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sent.MessageID = 3 // a message claimed it
+	unsent.CreatedAt -= UploadWait.Milliseconds() + 1
+	sent.CreatedAt -= UploadWait.Milliseconds() + 1
+
+	if expired, err := router.ExpireAttachments(context.Background()); err != nil || expired != 1 {
+		t.Fatalf("expired %d, %v; want the unsent upload", expired, err)
+	}
+	if _, err := os.Stat(files.Path(unsent.Path)); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the unsent upload's file is still there: %v", err)
+	}
+	if _, err := os.Stat(files.Path(sent.Path)); err != nil || len(table.rows) != 2 || sent.RemovedAt != 0 {
+		t.Errorf("the sent upload went too: %v, %+v", err, sent)
 	}
 }

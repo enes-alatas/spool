@@ -1,6 +1,6 @@
 # ADR-0030: The API's trust model is a credential, not a port
 
-Date: 2026-09-21 · Status: accepted · Amends: ADR-0028 (consequence: "the operator listener") · Amended: 2026-09-26 (§2, health answers liveness only)
+Date: 2026-09-21 · Status: accepted · Amends: ADR-0028 (consequence: "the operator listener") · Amended: 2026-09-26 (§2, health answers liveness only); 2026-09-30 (§4, one raw upload route)
 
 ## Context
 
@@ -83,6 +83,16 @@ callers the network cannot distinguish.
      `application/json`, refused with 415 *before* any decoding. This is what
      takes the no-preflight shapes off the table: a cross-origin `POST` cannot
      send that content type without asking permission first.
+
+     **Amendment (2026-09-30, #460):** one route takes a body that is not
+     JSON, by operator decision. `POST /api/attachments` takes the
+     composer's file raw, as `application/octet-stream`, and only that
+     route takes only that type. A cross-origin `POST` cannot send
+     `application/octet-stream` without a preflight either, so the property
+     above holds. The Host, Origin, `Sec-Fetch-Site` and credential checks
+     apply as on every route. The alternative, the file base64-encoded in a
+     JSON body, would have kept the rule literal at a third more bytes per
+     upload, and taken nothing more off the table.
 
 5. **The control room trades the token for a session cookie.** `POST
    /api/login` takes the token once and sets `spool_operator`, `HttpOnly` and

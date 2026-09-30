@@ -123,6 +123,7 @@ func (router *Router) present(target *store.Loop, rows []*store.Attachment) ([]l
 
 // ExpireAttachments removes every kept file older than attach.Retention,
 // keeping the rows (#123). Run hourly by the wiring, next to event pruning.
+// Uploads the operator never sent go after UploadWait, the same way.
 func (router *Router) ExpireAttachments(ctx context.Context) (int, error) {
 	if router.files == nil {
 		return 0, nil
@@ -132,12 +133,101 @@ func (router *Router) ExpireAttachments(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	unsent, err := router.store.Attachments().ExpireUnsent(ctx, now.Add(-UploadWait).UnixMilli(), now.UnixMilli())
+	if err != nil {
+		return 0, err
+	}
+	expired = append(expired, unsent...)
 	for _, row := range expired {
 		if err := router.files.Remove(row.Path); err != nil {
 			router.log.Warn("expired attachment not removed", "id", row.ID, "err", err)
 		}
 	}
 	return len(expired), nil
+}
+
+// AttachmentFile is an attachment and the hub's copy of it, for the control
+// room to serve (#460). An unknown id is store.ErrNotFound; a file that is
+// not kept, because it never arrived or retention removed it, is
+// ErrAttachmentGone.
+func (router *Router) AttachmentFile(ctx context.Context, id int64) (*store.Attachment, string, error) {
+	row, err := router.store.Attachments().Get(ctx, id)
+	if err != nil {
+		return nil, "", err
+	}
+	if row.Path == "" || row.RemovedAt != 0 || router.files == nil {
+		return row, "", ErrAttachmentGone
+	}
+	return row, router.files.Path(row.Path), nil
+}
+
+// UploadWait is how long a file the operator uploaded waits for the message
+// that sends it (#460). The hourly expiry removes it after that, so it may
+// wait up to twice as long, never less.
+const UploadWait = time.Hour
+
+// ErrUploadNotFound refuses a message whose upload is not waiting to be
+// sent: unknown, expired, or already sent with another message.
+var ErrUploadNotFound = errors.New("no upload with that id is waiting to be sent")
+
+// ErrNoFiles refuses an upload to a hub that keeps no files.
+var ErrNoFiles = errors.New("this hub keeps no files")
+
+// KeepUpload keeps a file the operator uploaded from the control room
+// (#460). It waits, claimed by no message, until a message sends it or
+// UploadWait passes. Its name is redacted before anything is derived from
+// it, as a surface's file's is; its bytes are the operator's own and go
+// only to loops, so they are not checked for secrets.
+func (router *Router) KeepUpload(ctx context.Context, body io.Reader, name string) (*store.Attachment, error) {
+	if router.files == nil {
+		return nil, ErrNoFiles
+	}
+	if router.redactName != nil {
+		name = router.redactName(name)
+	}
+	kept, err := router.files.Keep(body, name)
+	if err != nil {
+		return nil, err
+	}
+	kept.CreatedAt = time.Now().UnixMilli()
+	if err := router.store.Attachments().Insert(ctx, kept); err != nil {
+		router.dropKept(kept)
+		return nil, err
+	}
+	return kept, nil
+}
+
+// uploadWaiting checks, before a message is stored, that the upload it
+// sends is waiting to be sent.
+func (router *Router) uploadWaiting(ctx context.Context, id int64) error {
+	row, err := router.store.Attachments().Get(ctx, id)
+	if errors.Is(err, store.ErrNotFound) {
+		return ErrUploadNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if row.MessageID != 0 || row.RemovedAt != 0 || row.Path == "" {
+		return ErrUploadNotFound
+	}
+	return nil
+}
+
+// claimUpload gives a stored message the upload it sends. uploadWaiting
+// found it waiting a moment ago; one that another message or the expiry
+// took since then is logged, and the words go without it, since the
+// message is stored already.
+func (router *Router) claimUpload(ctx context.Context, id, messageID int64) []*store.Attachment {
+	if err := router.store.Attachments().Claim(ctx, id, messageID); err != nil {
+		router.log.Warn("upload taken before its message was sent; sending the words alone", "upload", id, "message", messageID, "err", err)
+		return nil
+	}
+	row, err := router.store.Attachments().Get(ctx, id)
+	if err != nil {
+		router.log.Warn("claimed upload unreadable", "upload", id, "err", err)
+		return nil
+	}
+	return []*store.Attachment{row}
 }
 
 // Workstations reads the file a loop sends out of its workstation

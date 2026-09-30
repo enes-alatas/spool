@@ -857,6 +857,15 @@ type AttachmentStore interface {
 	// as removed at removedAt, and returns them, so the caller can delete
 	// their files. The rows stay.
 	Expire(ctx context.Context, cutoff, removedAt int64) ([]*Attachment, error)
+	// ByMessages returns the attachments of each message in messageIDs
+	// that has any, by message, each in the order they came.
+	ByMessages(ctx context.Context, messageIDs []int64) (map[int64][]*Attachment, error)
+	// Claim gives the operator's upload id (MessageID 0) to messageID. An
+	// upload that is not waiting, because it is already sent, removed or
+	// unknown, is ErrNotFound.
+	Claim(ctx context.Context, id, messageID int64) error
+	// ExpireUnsent is Expire for uploads no message has claimed.
+	ExpireUnsent(ctx context.Context, cutoff, removedAt int64) ([]*Attachment, error)
 }
 
 type TurnStore interface {

@@ -1,6 +1,6 @@
 # ADR-0037: Attachments are kept by the hub and read from the workstation
 
-Date: 2026-09-30 · Status: accepted. The shape follows the operator's decisions of 2026-09-30 on #123, including item 4's change to the SandboxRuntime seam. · Amends: ADR-0004 (the SandboxRuntime seam gains `PutFile`) · Amended: 2026-09-30 (the outbound half, ADR-0026)
+Date: 2026-09-30 · Status: accepted. The shape follows the operator's decisions of 2026-09-30 on #123, including item 4's change to the SandboxRuntime seam. · Amends: ADR-0004 (the SandboxRuntime seam gains `PutFile`) · Amended: 2026-09-30 (the outbound half, ADR-0026); 2026-09-30 (item 3: control-room uploads)
 
 ## Context
 
@@ -35,6 +35,12 @@ loop there cannot read a host file the hub holds.
 3. **Retention.** An hourly job removes files older than 30 days and sets
    `removed_at`. The row stays, so a message still says what it carried.
    Unlike events, this is not a flag: 30 days is the operator's decision.
+
+   **Amendment (2026-09-30, #460):** the operator can send a file from the
+   control room. It is uploaded first and kept like any other, with no
+   message yet, and the message that sends it claims it by id. An upload
+   no message claims within an hour is removed by the same hourly job, so
+   an abandoned upload does not sit for 30 days.
 4. **The SandboxRuntime seam gains `PutFile(ctx, loopID, hostPath, path)`.**
    The router names each attachment by a path in the recipient's
    workstation. A bare loop runs on the host, so it is shown the hub's own

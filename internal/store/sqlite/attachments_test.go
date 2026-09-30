@@ -55,3 +55,49 @@ func TestAttachmentsOutliveTheirFiles(t *testing.T) {
 		t.Errorf("Get(999) err = %v, want ErrNotFound", err)
 	}
 }
+
+// TestAnUploadWaitsForOneMessage pins the control room's upload (#460): an
+// upload waits unclaimed, one message claims it, and a second claim, or a
+// claim after expiry, is refused. Expiry of unsent uploads leaves sent ones.
+func TestAnUploadWaitsForOneMessage(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	table := db.Attachments()
+
+	sent := &store.Attachment{Name: "a.png", Kind: store.AttachmentImage, Size: 1, Path: "aa-a.png", CreatedAt: 1_000}
+	unsent := &store.Attachment{Name: "b.txt", Kind: store.AttachmentFile, Size: 1, Path: "bb-b.txt", CreatedAt: 1_000}
+	other := &store.Attachment{MessageID: 9, Name: "c.txt", Kind: store.AttachmentFile, Size: 1, Path: "cc-c.txt", CreatedAt: 1_000}
+	for _, attachment := range []*store.Attachment{sent, unsent, other} {
+		if err := table.Insert(ctx, attachment); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := table.Claim(ctx, sent.ID, 7); err != nil {
+		t.Fatalf("claim a waiting upload: %v", err)
+	}
+	for _, id := range []int64{sent.ID, other.ID, 999} {
+		if err := table.Claim(ctx, id, 8); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("claim %d: %v, want ErrNotFound", id, err)
+		}
+	}
+
+	expired, err := table.ExpireUnsent(ctx, 2_000, 3_000)
+	if err != nil || len(expired) != 1 || expired[0].ID != unsent.ID {
+		t.Fatalf("expired %+v, %v; want the unsent upload alone", expired, err)
+	}
+	if err := table.Claim(ctx, unsent.ID, 8); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("claim of an expired upload: %v, want ErrNotFound", err)
+	}
+
+	byMessage, err := table.ByMessages(ctx, []int64{7, 9, 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(byMessage) != 2 || byMessage[7][0].ID != sent.ID || byMessage[9][0].ID != other.ID {
+		t.Errorf("by message %+v", byMessage)
+	}
+}
