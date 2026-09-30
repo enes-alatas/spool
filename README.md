@@ -25,6 +25,25 @@ Spool makes it easy to create, manage, and talk to persistent [Claude Code](http
 
 Less switching between sessions and carrying messages between loops. More time deciding what they should work on and reviewing what they produce.
 
+## Quick start
+
+From a clone to a loop that answers you on Telegram. Each step is one command or one action.
+
+1. **Have the prerequisites.** Linux or macOS, [Claude Code](https://claude.com/claude-code) installed and logged in (`claude` on PATH), Docker running, and Go 1.25+ with Node 20.19+ or 22.12+ for the build.
+2. **Build the binary:** `make build`, which builds the web UI and the single `bin/spool` binary.
+3. **Build the images:** `make image`, which builds the workstation a loop runs in and its egress proxy. Spool runs them from your local Docker; it never pulls them.
+4. **Start the hub:** `./bin/spool --mcp-listen 0.0.0.0:8081`. The control room stays on 127.0.0.1:8080, and data goes in `~/.spool`. The loop listener has to be reachable from the Docker bridge, so it listens on every interface. On a machine whose ports are open to your network, name the bridge address instead; see [What contains a loop](#what-contains-a-loop).
+5. **Log in to the control room:** open http://127.0.0.1:8080 and paste the operator token the hub printed. `./bin/spool token` prints it again.
+6. **Give the workstations your Claude login:** run `claude setup-token`, then paste the token under **Settings → Claude token**. A workstation cannot use your machine's `~/.claude`, so this is how a loop runs on your plan.
+7. **Create a loop:** **New loop**, then a name, a mission and a tick interval. Leave the workspace empty; it is for bare loops only.
+8. **Attach Telegram:** in Telegram, send **@BotFather** `/newbot`. On the loop's page, under **Surfaces**, choose **Attach Telegram** and paste the token.
+9. **Allow yourself:** DM the bot. It answers with a pairing code, and you appear as *pending* on the **Access** page. Check the code and click **Allow**, then choose yourself as the **owner** on the loop's page.
+10. **Say hello:** DM the bot again. Your message wakes the loop, and it answers in that DM.
+
+**No Docker?** Start with `./bin/spool --runtime bare` instead, and skip steps 3 and 6. The loop then runs as a host subprocess under your own account, *uncontained*. Read [What contains a loop](#what-contains-a-loop) before you choose that.
+
+To bring loops into a Telegram group, and for who can reach them there, see [Telegram](#telegram).
+
 ## How it works
 
 - **Plain `claude` CLI underneath.** Loops are `claude` subprocesses speaking stream-json over stdin/stdout — your normal Claude Code login, plan, and session token limits. No API keys, no SDK.
@@ -36,30 +55,7 @@ Less switching between sessions and carrying messages between loops. More time d
 
 Spool is pre-1.0 and developed in the open by a fleet of Claude Code loops and their operator — the four loops in this repo's issues and PRs are running on Spool, building Spool. Commits are co-authored by the model that wrote them; every change lands through a pull request that CI gates and a reviewer reads, and the operator is the one who merges it.
 
-## Requirements
-
-- [Claude Code](https://claude.com/claude-code) installed and logged in (`claude` on PATH)
-- **Docker.** Loops run in containers; without a reachable daemon Spool will not
-  start unless you ask for uncontained host subprocesses — see *What contains a
-  loop* below.
-- Linux/macOS, Go 1.25+ and Node 20.19+ or 22.12+ (build only)
-
-## Quick start
-
-```bash
-make build          # builds web UI + single spool binary
-./bin/spool         # control room on 127.0.0.1:8080, loop endpoint on 127.0.0.1:8081, data in ~/.spool
-```
-
-On first start Spool prints an **operator token** and stores it in the data directory. The control room asks for it once, then holds a session cookie; `./bin/spool token` prints it again. Every `/api` route but health and version requires it — binding to localhost is not a boundary, since any other local process and any page in your browser can reach that port too (ADR-0030).
-
-Spool serves two listeners. `--listen` is yours: the control room and its API. `--mcp-listen` is the loops': the one port a containerized workstation is allowed to reach, serving the MCP endpoint and nothing else. Keep them apart — a workstation that could reach the API port could read every conversation and create an uncontained loop.
-
-With docker workstations, `--mcp-listen` has to name an address the docker bridge can reach (`--mcp-listen 0.0.0.0:8081` on a machine whose ports are not open to your network, or the bridge address). `--listen` stays on localhost.
-
-Open http://127.0.0.1:8080, create a loop: name, mission, optional workspace path (a git repo gets an isolated worktree automatically), tick interval. The loop starts working immediately and reports in.
-
-### What contains a loop
+## What contains a loop
 
 Spool runs every loop with `--permission-mode bypassPermissions`: a loop is
 never asked to confirm anything it does. What contains it is its **workstation**
@@ -87,6 +83,12 @@ Two things containment does not do. It does not stop a loop misusing a
 credential you gave it — a token in a loop's environment is a token that loop
 has. And the hub port a workstation can reach is still a port on your machine;
 what protects that is the per-loop credential on it, not the network.
+
+Spool serves two listeners. `--listen` is yours: the control room and its API. `--mcp-listen` belongs to the loops: it is the one port a containerized workstation is allowed to reach, and it serves the MCP endpoint and nothing else. Keep them apart. A workstation that could reach the API port could read every conversation and create an uncontained loop.
+
+With Docker workstations, `--mcp-listen` has to name an address the Docker bridge can reach: `--mcp-listen 0.0.0.0:8081` on a machine whose ports are not open to your network, or else the bridge address. `--listen` stays on localhost.
+
+On first start, Spool prints an **operator token** and stores it in the data directory. The control room asks for it once and then holds a session cookie. Every `/api` route except health and version requires it. Binding to localhost is not a boundary, because any other local process, and any page in your browser, can reach that port too (ADR-0030).
 
 ## Telegram
 
@@ -121,7 +123,7 @@ Every loop has a tick interval (default 30m). After each completed turn, Spool s
 ## Flags
 
 ```
-spool --listen 127.0.0.1:8080 --mcp-listen 127.0.0.1:8081 --data-dir ~/.spool --claude-bin claude --partial-messages
+spool --listen 127.0.0.1:8080 --mcp-listen 0.0.0.0:8081 --data-dir ~/.spool --claude-bin claude --partial-messages
 spool token --data-dir ~/.spool     # print the operator token again
 
 # behind a proxy, name the host it is reached as — otherwise the Host and
