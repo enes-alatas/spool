@@ -228,6 +228,7 @@ func (router *Router) Send(ctx context.Context, req SendRequest) (*store.Message
 		FromLoopName:   req.From.Name,
 		OwnerDMChat:    ownerChat,
 		OwnerSlackUser: ownerSlackUser,
+		Attachments:    sentRows,
 	}})
 
 	for _, target := range delivering {

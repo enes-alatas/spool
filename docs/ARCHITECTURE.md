@@ -42,7 +42,7 @@ Use these words exactly — in code, UI, docs, and prompts. Don't introduce syno
 | **tick** | A scheduled wake with no inbound message. |
 | **trailer** | The `[next-wake: 45m]` suffix a loop uses to schedule itself. |
 | **envelope** | The bracketed header + body format in which messages/ticks are delivered to a loop. |
-| **attachment** | A file that crosses a surface with a message: kept once by the hub for 30 days, and shown to a loop in its envelope as a path it can read in its workstation (ADR-0037). A loop sends one with `send_message`'s `attach`, and only a file it owns (ADR-0026). |
+| **attachment** | A file that crosses a surface with a message: kept once by the hub for 30 days, and shown to a loop in its envelope as a path it can read in its workstation (ADR-0037). A loop sends one with `send_message`'s `attach`, and only a file it owns (ADR-0026); the operator sends one from the control room by uploading it first (ADR-0037). |
 | **conversation** | The unit of privacy and addressing a message belongs to: `owner_dm` (a loop's DM with its owner on its attached surface), `group` (the fleet channel, if the loop is in it), or `control_room` (its private web thread). (ADR-0026, ADR-0032) |
 | **fleet channel** | The conversation the operator and the loops share, living on the hub and native to the control room. Spelled `group` on the wire, in `send_message` and in stored rows; *fleet channel* everywhere a human reads it. A loop is *in* it or is not — membership is per loop, and there is deliberately no loop-noun for it, since **member** names a human org role. (ADR-0032) |
 | **send** | A loop's explicit outgoing message: destination, optional reply reference, text — expressed through the hub-served `send_message` tool. (ADR-0026) |

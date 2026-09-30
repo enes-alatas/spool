@@ -905,6 +905,44 @@ func (table attachments) Expire(ctx context.Context, cutoff, removedAt int64) ([
 		RETURNING `+attachmentCols, removedAt, cutoff)
 }
 
+func (table attachments) ByMessages(ctx context.Context, messageIDs []int64) (map[int64][]*store.Attachment, error) {
+	out := map[int64][]*store.Attachment{}
+	if len(messageIDs) == 0 {
+		return out, nil
+	}
+	ids, err := json.Marshal(messageIDs)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := table.query(ctx, `SELECT `+attachmentCols+` FROM attachments
+		WHERE message_id IN (SELECT value FROM json_each(?)) ORDER BY id`, string(ids))
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		out[row.MessageID] = append(out[row.MessageID], row)
+	}
+	return out, nil
+}
+
+func (table attachments) Claim(ctx context.Context, id, messageID int64) error {
+	res, err := table.db.ExecContext(ctx, `UPDATE attachments SET message_id=?
+		WHERE id=? AND message_id=0 AND removed_at=0 AND path!=''`, messageID, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
+func (table attachments) ExpireUnsent(ctx context.Context, cutoff, removedAt int64) ([]*store.Attachment, error) {
+	return table.query(ctx, `UPDATE attachments SET removed_at=?
+		WHERE message_id=0 AND removed_at=0 AND path!='' AND created_at<?
+		RETURNING `+attachmentCols, removedAt, cutoff)
+}
+
 func (table attachments) query(ctx context.Context, statement string, args ...any) ([]*store.Attachment, error) {
 	rows, err := table.db.QueryContext(ctx, statement, args...)
 	if err != nil {

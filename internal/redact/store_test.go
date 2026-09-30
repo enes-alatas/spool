@@ -294,6 +294,9 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			"Insert": true,
 			// Expire writes a timestamp; the reads return rows as stored.
 			"Expire": false, "Get": false, "ByMessage": false,
+			// Claim writes a message id and ExpireUnsent a timestamp; the
+			// name was redacted when the upload was inserted.
+			"ByMessages": false, "Claim": false, "ExpireUnsent": false,
 		},
 		"InboxStore": {
 			// Push queues an envelope the loop is about to be handed. Its

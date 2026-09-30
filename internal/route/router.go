@@ -93,12 +93,19 @@ type InboundMessage struct {
 	// Attachments are the files the message carries (#123), fetched and
 	// kept only once the message is stored.
 	Attachments []InboundAttachment
+	// UploadID is a file the operator uploaded from the control room to
+	// send with this message (#460), 0 for none. One that is not waiting
+	// to be sent refuses the message with ErrUploadNotFound.
+	UploadID int64
 }
 
 // MessagePayload is what KindMessage bus items carry (UI + telegram mirror).
 type MessagePayload struct {
 	store.Message
 	FromLoopName string `json:"from_loop_name,omitempty"`
+	// Attachments are the files the message carries (#460), as the
+	// control room reads them.
+	Attachments []*store.Attachment `json:"attachments,omitempty"`
 	// OwnerDMChat is the telegram chat an owner_dm send was resolved to at
 	// send time — pinned then so a DM arriving before bridge delivery
 	// cannot redirect it. Internal delivery detail, not surfaced.
@@ -280,12 +287,20 @@ func (router *Router) Ingest(ctx context.Context, in InboundMessage) error {
 	}
 	msg.DeliveredTo = delivered
 
+	if in.UploadID != 0 {
+		if err := router.uploadWaiting(ctx, in.UploadID); err != nil {
+			return err
+		}
+	}
 	if err := router.store.Messages().Insert(ctx, msg); err != nil {
 		return err // includes ErrDuplicate for telegram double-polls
 	}
 	// Only once the message is stored: the surface that lost the ingest
 	// race has nothing to download.
 	attachments := router.keepAttachments(ctx, msg.ID, in.Attachments)
+	if in.UploadID != 0 {
+		attachments = append(attachments, router.claimUpload(ctx, in.UploadID, msg.ID)...)
+	}
 
 	fromLoopName := ""
 	if fromLoop != nil {
@@ -294,6 +309,7 @@ func (router *Router) Ingest(ctx context.Context, in InboundMessage) error {
 	router.bus.Publish(bus.Item{Kind: bus.KindMessage, LoopID: in.FromLoopID, Payload: &MessagePayload{
 		Message:      *msg,
 		FromLoopName: fromLoopName,
+		Attachments:  attachments,
 	}})
 
 	// The guard cannot fire here while no caller sets FromLoopID: every
