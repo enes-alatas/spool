@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -40,6 +42,8 @@ type messageEvent struct {
 	// ThreadTS is the ts of the thread's first message, on every message
 	// in a thread, that first one included.
 	ThreadTS string `json:"thread_ts"`
+	// Files are what a file_share message carries (#123).
+	Files []File `json:"files"`
 }
 
 // events is how many envelopes a link holds for ingest while it keeps
@@ -59,9 +63,10 @@ func (adapter *Adapter) ingestLoop(ctx context.Context, link *link, payloads <-c
 }
 
 // ingest takes one event: a human's message, from someone Spool allows,
-// in the loop's owner DM or its channel. Everything else is dropped here:
-// edits, joins and other subtypes, and every bot's post, the loops' own
-// mirrored ones included, which would otherwise come back in as new.
+// in the loop's owner DM or its channel, with the files it shares. Everything
+// else is dropped here: edits, joins and other subtypes, and every bot's
+// post, the loops' own mirrored ones included, which would otherwise come
+// back in as new.
 func (adapter *Adapter) ingest(ctx context.Context, link *link, payload json.RawMessage) {
 	var callback eventCallback
 	if err := json.Unmarshal(payload, &callback); err != nil {
@@ -69,8 +74,14 @@ func (adapter *Adapter) ingest(ctx context.Context, link *link, payload json.Raw
 		return
 	}
 	event := callback.Event
-	if event.Type != "message" || event.Subtype != "" || event.BotID != "" || event.User == "" ||
-		strings.TrimSpace(event.Text) == "" {
+	if event.Type != "message" || (event.Subtype != "" && event.Subtype != "file_share") ||
+		event.BotID != "" || event.User == "" {
+		return
+	}
+	// a deleted file is not shared, and a message of nothing else says
+	// nothing
+	event.Files = slices.DeleteFunc(event.Files, func(file File) bool { return file.Mode == "tombstone" })
+	if strings.TrimSpace(event.Text) == "" && len(event.Files) == 0 {
 		return
 	}
 	loopRecord, err := adapter.store.Loops().Get(ctx, link.loopID)
@@ -79,6 +90,11 @@ func (adapter *Adapter) ingest(ctx context.Context, link *link, payload json.Raw
 		return
 	}
 	if event.User == loopRecord.SlackBotUserID {
+		return
+	}
+	if event.Subtype == "file_share" && adapter.isLoopApp(ctx, event.User) {
+		// a loop's file, which its app shares as its bot user and with no
+		// bot_id to tell it by
 		return
 	}
 	switch event.ChannelType {
@@ -118,6 +134,7 @@ func (adapter *Adapter) ingestChannel(ctx context.Context, link *link, loopRecor
 		SlackChannelID: event.Channel,
 		SlackTS:        event.TS,
 		ReplyToID:      adapter.threadRoot(ctx, event),
+		Attachments:    adapter.attachmentsOf(ctx, loopRecord, event),
 	})
 	if err != nil && !errors.Is(err, store.ErrDuplicate) {
 		adapter.log.Error("slack channel ingest", "loop", loopRecord.Name, "err", err)
@@ -148,6 +165,7 @@ func (adapter *Adapter) ingestDM(ctx context.Context, loopRecord *store.Loop, te
 		SlackTS:        event.TS,
 		ReplyToID:      adapter.threadRoot(ctx, event),
 		ImplicitTo:     loopRecord.ID,
+		Attachments:    adapter.attachmentsOf(ctx, loopRecord, event),
 	})
 	if err != nil && !errors.Is(err, store.ErrDuplicate) {
 		adapter.log.Error("slack dm ingest", "loop", loopRecord.Name, "err", err)
@@ -270,6 +288,58 @@ func (adapter *Adapter) threadRoot(ctx context.Context, event messageEvent) int6
 		return 0
 	}
 	return root.ID
+}
+
+// isLoopApp reports whether userID is any loop's app.
+func (adapter *Adapter) isLoopApp(ctx context.Context, userID string) bool {
+	loops, err := adapter.store.Loops().List(ctx)
+	if err != nil {
+		adapter.log.Error("slack: list loops for a file share", "err", err)
+		return false
+	}
+	for _, loopRecord := range loops {
+		if loopRecord.SlackBotUserID == userID {
+			return true
+		}
+	}
+	return false
+}
+
+// attachmentsOf is the files a message shares, as the router takes them:
+// downloaded as the app that heard the message, and only if the message is
+// stored (#123). A deleted file is left out; one Slack no longer shows is
+// recorded as not kept. A file the event gives by its id alone, as Slack
+// does for one shared from another organization, is asked about first, so
+// it is named as its sender named it.
+func (adapter *Adapter) attachmentsOf(ctx context.Context, loopRecord *store.Loop, event messageEvent) []route.InboundAttachment {
+	var out []route.InboundAttachment
+	for _, file := range event.Files {
+		if file.FileAccess == "check_file_info" {
+			if described, err := adapter.client.FileInfo(ctx, loopRecord.SlackBotToken, file.ID); err == nil {
+				file = *described
+			} else {
+				adapter.log.Warn("slack: describe a shared file", "loop", loopRecord.Name, "file", file.ID, "err", err)
+			}
+		}
+		if file.Mode == "tombstone" {
+			continue
+		}
+		item := route.InboundAttachment{Name: file.Name, Size: file.Size}
+		if item.Name == "" {
+			item.Name = "file-" + file.ID
+		}
+		if strings.HasPrefix(file.Mimetype, "image/") {
+			item.Kind = store.AttachmentImage
+		}
+		if file.Mode != "hidden_by_limit" && file.DownloadURL != "" {
+			botToken, fileURL := loopRecord.SlackBotToken, file.DownloadURL
+			item.Fetch = func(ctx context.Context) (io.ReadCloser, error) {
+				return adapter.client.Download(ctx, botToken, fileURL)
+			}
+		}
+		out = append(out, item)
+	}
+	return out
 }
 
 // authorName is how a sender is named to a loop: their handle, which a

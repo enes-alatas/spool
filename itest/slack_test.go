@@ -7,9 +7,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -39,6 +41,27 @@ type fakeSlack struct {
 	// a test fails one part of a long message and not the others.
 	failText  string
 	postCalls int
+	// files are what a file_share event can point at, by id; downloads
+	// counts each served, by id. uploads are the files apps shared, and
+	// pending the ones whose bytes arrived before the upload completed.
+	files     map[string]fakeSlackFile
+	downloads map[string]int
+	pending   map[string]*slackUpload
+	uploads   []slackUpload
+}
+
+// fakeSlackFile is a file someone shared, as Slack serves it.
+type fakeSlackFile struct {
+	Name, Mimetype string
+	Body           []byte
+}
+
+// slackUpload is one file an app shared. Posts is how many posts the fake
+// had taken when the upload completed, which orders it against them.
+type slackUpload struct {
+	Token, Channel, ThreadTS, Title string
+	Body                            []byte
+	Posts                           int
 }
 
 // slackPost is one chat.postMessage the fake took.
@@ -59,7 +82,8 @@ type slackBot struct {
 func startFakeSlack(t *testing.T) *fakeSlack {
 	t.Helper()
 	slack := &fakeSlack{bots: map[string]slackBot{}, apps: map[string]bool{},
-		opens: map[string]int{}, live: map[string]*fakeSocket{}, acks: map[string][]string{}}
+		opens: map[string]int{}, live: map[string]*fakeSocket{}, acks: map[string][]string{},
+		files: map[string]fakeSlackFile{}, downloads: map[string]int{}, pending: map[string]*slackUpload{}}
 	slack.srv = httptest.NewServer(http.HandlerFunc(slack.handle))
 	t.Cleanup(slack.srv.Close)
 	return slack
@@ -82,8 +106,50 @@ func (slack *fakeSlack) handle(w http.ResponseWriter, r *http.Request) {
 	slack.mu.Lock()
 	defer slack.mu.Unlock()
 	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if id, ok := strings.CutPrefix(r.URL.Path, "/download/"); ok {
+		slack.serveDownload(w, token, id)
+		return
+	}
+	if id, ok := strings.CutPrefix(r.URL.Path, "/upload/"); ok {
+		upload := slack.pending[id]
+		body, err := io.ReadAll(r.Body)
+		if upload == nil || err != nil || int64(len(body)) != r.ContentLength {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		upload.Body = body
+		_, _ = io.WriteString(w, "OK - "+strconv.Itoa(len(body)))
+		return
+	}
 	answer := map[string]any{"ok": false, "error": "invalid_auth"}
 	switch r.URL.Path {
+	case "/files.info":
+		if _, ok := slack.bots[token]; ok {
+			id := r.FormValue("file")
+			answer = map[string]any{"ok": false, "error": "file_not_found"}
+			if file, ok := slack.files[id]; ok {
+				answer = map[string]any{"ok": true, "file": slack.describe(id, file)}
+			}
+		}
+	case "/files.getUploadURLExternal":
+		if _, ok := slack.bots[token]; ok {
+			id := fmt.Sprintf("F0UP%d", len(slack.pending)+1)
+			slack.pending[id] = &slackUpload{Token: token, Title: r.FormValue("filename")}
+			answer = map[string]any{"ok": true, "file_id": id, "upload_url": slack.srv.URL + "/upload/" + id}
+		}
+	case "/files.completeUploadExternal":
+		if _, ok := slack.bots[token]; ok {
+			var files []struct{ ID, Title string }
+			_ = json.Unmarshal([]byte(r.FormValue("files")), &files)
+			answer = map[string]any{"ok": false, "error": "invalid_arguments"}
+			if len(files) == 1 && slack.pending[files[0].ID] != nil && slack.pending[files[0].ID].Body != nil {
+				upload := *slack.pending[files[0].ID]
+				upload.Channel, upload.ThreadTS, upload.Title = r.FormValue("channel_id"), r.FormValue("thread_ts"), files[0].Title
+				upload.Posts = len(slack.posts)
+				slack.uploads = append(slack.uploads, upload)
+				answer = map[string]any{"ok": true, "files": []map[string]any{{"id": files[0].ID, "title": files[0].Title}}}
+			}
+		}
 	case "/auth.test":
 		if bot, ok := slack.bots[token]; ok {
 			answer = map[string]any{"ok": true, "user_id": bot.UserID, "user": bot.Name,
@@ -135,6 +201,70 @@ func (slack *fakeSlack) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(answer)
+}
+
+// serveDownload serves a shared file to a bot token, and to anyone else
+// Slack's sign-in page, which is what Slack answers an app without
+// files:read with.
+func (slack *fakeSlack) serveDownload(w http.ResponseWriter, token, id string) {
+	file, ok := slack.files[id]
+	if _, known := slack.bots[token]; !known || !ok {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = io.WriteString(w, "<html>sign in</html>")
+		return
+	}
+	slack.downloads[id]++
+	w.Header().Set("Content-Type", file.Mimetype)
+	_, _ = w.Write(file.Body)
+}
+
+// addFile makes a file someone shared downloadable, and returns how a
+// message event describes it.
+func (slack *fakeSlack) addFile(id, name, mimetype string, body []byte) map[string]any {
+	slack.mu.Lock()
+	defer slack.mu.Unlock()
+	file := fakeSlackFile{Name: name, Mimetype: mimetype, Body: body}
+	slack.files[id] = file
+	return slack.describe(id, file)
+}
+
+func (slack *fakeSlack) describe(id string, file fakeSlackFile) map[string]any {
+	return map[string]any{"id": id, "name": file.Name, "mimetype": file.Mimetype, "size": len(file.Body),
+		"url_private_download": slack.srv.URL + "/download/" + id}
+}
+
+// downloaded is how many times the file id was served.
+func (slack *fakeSlack) downloaded(id string) int {
+	slack.mu.Lock()
+	defer slack.mu.Unlock()
+	return slack.downloads[id]
+}
+
+// waitUpload blocks until an app has shared a file titled title, and
+// returns it.
+func (slack *fakeSlack) waitUpload(t *testing.T, title string) slackUpload {
+	t.Helper()
+	for deadline := time.Now().Add(20 * time.Second); time.Now().Before(deadline); {
+		slack.mu.Lock()
+		for _, upload := range slack.uploads {
+			if upload.Title == title {
+				slack.mu.Unlock()
+				return upload
+			}
+		}
+		slack.mu.Unlock()
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("no file %q was shared", title)
+	return slackUpload{}
+}
+
+// pushEvent sends one message event down app's connection as it is given.
+func (slack *fakeSlack) pushEvent(t *testing.T, app string, event map[string]any) {
+	t.Helper()
+	slack.push(t, app, map[string]any{"type": "events_api", "envelope_id": fmt.Sprintf("%s:%v:%v", app, event["channel"], event["ts"]),
+		"accepts_response_payload": false,
+		"payload":                  map[string]any{"type": "event_callback", "team_id": "T0ACME", "event": event}})
 }
 
 // serveSocket is one Socket Mode connection: hello first, then whatever the

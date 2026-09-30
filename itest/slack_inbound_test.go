@@ -3,6 +3,7 @@
 package itest
 
 import (
+	"maps"
 	"net/http"
 	"strings"
 	"testing"
@@ -26,11 +27,19 @@ var miloBot = slackBot{UserID: "U0MILO", Name: "milo", TeamID: "T0ACME", TeamNam
 // nobody.
 func startSlackFleet(t *testing.T) (*server, *fakeSlack) {
 	t.Helper()
+	return startSlackFleetWith(t, nil)
+}
+
+// startSlackFleetWith is startSlackFleet with terra created with overrides.
+func startSlackFleetWith(t *testing.T, terraOverrides map[string]any) (*server, *fakeSlack) {
+	t.Helper()
 	slack := startFakeSlack(t)
 	slack.addApp(slackBotToken, slackAppToken, terraBot)
 	slack.addApp(slackMiloBotToken, slackMiloAppToken, miloBot)
 	srv := startSlackServer(t, slack)
-	srv.createLoop("terra", slackPair(slackAppToken, slackBotToken))
+	terra := slackPair(slackAppToken, slackBotToken)
+	maps.Copy(terra, terraOverrides)
+	srv.createLoop("terra", terra)
 	srv.createLoop("milo", slackPair(slackMiloAppToken, slackMiloBotToken))
 	for _, name := range []string{"terra", "milo"} {
 		srv.waitSlackLink(name, func(link slackStatus) bool { return link.Bridge.Connected })

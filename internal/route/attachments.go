@@ -163,11 +163,6 @@ func (router *Router) keepSent(ctx context.Context, req SendRequest) (*store.Att
 	if router.files == nil || router.workstations == nil {
 		return nil, &SendError{ErrAttachmentUnavailable, "this hub keeps no files, so a message cannot carry one; send the words alone"}, nil
 	}
-	if req.From.Surface() == store.SurfaceSlack && req.Destination != store.ConversationControlRoom {
-		// Slack carries no files yet (#123), and words sent there without
-		// the file they came with would say less than the loop meant.
-		return nil, &SendError{ErrAttachmentUnavailable, "Slack does not carry files yet; send the words alone, or the file to control_room"}, nil
-	}
 	body, err := router.workstations.GetFile(ctx, req.From, path, attach.MaxSize)
 	switch {
 	case errors.Is(err, runtime.ErrNotOwned):

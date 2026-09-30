@@ -170,10 +170,6 @@ func TestASentFileIsRefusedForEachReasonTheLoopCanCorrect(t *testing.T) {
 	if _, serr, err := send(bare, store.ConversationOwnerDM, "broken.txt"); serr != nil || err == nil {
 		t.Errorf("a workstation that cannot be read is the hub's fault, not the loop's: %v, %v", serr, err)
 	}
-	slack := &store.Loop{ID: "l2", SlackBotToken: "xoxb-synthetic", SlackAppToken: "xapp-synthetic"}
-	if _, serr, _ := send(slack, store.ConversationGroup, "shot.png"); serr == nil || serr.Code != ErrAttachmentUnavailable {
-		t.Errorf("a Slack loop's file bound for Slack: %v, want %s", serr, ErrAttachmentUnavailable)
-	}
 	if entries, _ := os.ReadDir(filepath.Dir(files.Path("x"))); len(entries) != 0 {
 		t.Errorf("a refused file was kept: %v", entries)
 	}

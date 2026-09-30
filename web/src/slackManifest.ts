@@ -26,6 +26,11 @@ export const slackBotScopes = [
   'groups:read',
   // who a sender is, for the envelope and the pairing prompt
   'users:read',
+  // files: downloading what a sender shares, and uploading what a loop
+  // sends (#123). An app created before these must be reinstalled to get
+  // them; until then its words still cross.
+  'files:read',
+  'files:write',
 ] as const
 
 // What Slack pushes over the socket. No `app_mention`: the channel events
