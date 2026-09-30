@@ -140,3 +140,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 09:30: Enes asked about the eval-design/hillclimb article (claude-api skill: build-eval, hillclimb). Assessed: fit = an eval for prompt.go from redacted store transcripts + programmatic fleet-rule graders, baseline on haiku, capped. Proposed a Terra spike; awaiting his yes. Product angle (mission evals) is L4/L5, his direction call.
 - 09:40: filed #450 (eval spike → Terra after #449; Enes sets token cap), #451 (prompt-eval gate + hillclimb, blocked on #450), #452 (mission evals in control room, L5, direction call).
 - 09:45: Enes: L3 backend before the spike. Order for Terra: #449 → #123 backend → #450. Asked Enes three #123 contract answers (path vs description; 20MB/30d; send_message attach arg). Real-Slack check for #197 is his.
+- 09:50: Enes yes on all three #123 answers; body amended, comment posted. Terra: #449 → #123 backend → #450.
