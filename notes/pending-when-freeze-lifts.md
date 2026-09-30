@@ -142,3 +142,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 09:45: Enes: L3 backend before the spike. Order for Terra: #449 → #123 backend → #450. Asked Enes three #123 contract answers (path vs description; 20MB/30d; send_message attach arg). Real-Slack check for #197 is his.
 - 09:50: Enes yes on all three #123 answers; body amended, comment posted. Terra: #449 → #123 backend → #450.
 - 12:45: merged #448 (#446), #449 (#441), #454 (#123 inbound slice). Closing refs link again. #453 (#450 tooling) in review; baseline waits on Enes's token cap. Enes settled export posture with Terra directly (cases stay out of git). Nudged Enes: #429 default + #450 cap.
+- 12:50: Enes had already decided both with Terra (recorded on #429 07:38, #450 09:50): bridge gateway default; cases out of git, cap 15% of a 5h session, #450 parked behind L3, #453 draft. My 12:45 nudge was stale: CHECK THE THREAD before nudging.
