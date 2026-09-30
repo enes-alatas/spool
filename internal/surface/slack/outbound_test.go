@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/enes-alatas/spool/internal/route"
@@ -138,5 +139,17 @@ func TestASendThatLandsAsItsAppStopsIsSent(t *testing.T) {
 	if got.Mirror != store.MirrorMirrored || got.SlackTS != "9.9" || got.SendError != "" {
 		t.Fatalf("settled as mirror=%q ts=%q err=%q, want mirrored at 9.9 with no failure",
 			got.Mirror, got.SlackTS, got.SendError)
+	}
+}
+
+// An adapter that was never started has nothing to settle, and its Stop
+// returns without waiting for a deadline.
+func TestStopBeforeStartReturns(t *testing.T) {
+	adapter := New(nil, nil, nil, nil, "")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	adapter.Stop(ctx)
+	if ctx.Err() != nil {
+		t.Fatal("Stop on an adapter never started waited for its deadline")
 	}
 }

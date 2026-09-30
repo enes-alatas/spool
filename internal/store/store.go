@@ -416,9 +416,10 @@ const (
 	// MirrorPending: bound for the surface and not there yet. With
 	// SendFailedAt set, the send failed and the failure fields say why.
 	// Without it, the send is in flight: a running hub settles every send
-	// it accepted, as landed or as failed (#302). Only a hub that stops
-	// leaves one unsettled, and its next start marks that failed, so no
-	// such row outlives a restart.
+	// it accepted, as landed or as failed (#302), and a stopping one fails
+	// what it still held before its store closes (ADR-0036). Only a hub
+	// that crashes leaves one unsettled, and its next start marks that
+	// failed, so no such row outlives a restart.
 	MirrorPending = "pending"
 	// MirrorMirrored: on the surface too — a loop's send that got through,
 	// and everything that came in from the surface in the first place.
@@ -708,10 +709,11 @@ type MessageStore interface {
 	// that got through first time, or one the surface declined to carry.
 	SetMirror(ctx context.Context, id int64, mirror string) error
 	// FailInterruptedSends marks every unsettled send — pending, no
-	// failure — as failed with sendErr, and returns them. Called once at
-	// startup, before anything can send: a send queue lives in the
-	// process, so a pending row the previous process left would otherwise
-	// read as in flight forever. Once failed, it is an undelivered message
+	// failure — as failed with sendErr, and returns them. Called at
+	// startup, before anything can send, and at shutdown, once every
+	// surface has stopped: a send queue lives in the process, so a pending
+	// row with no process left to send it would otherwise read as in
+	// flight forever. Once failed, it is an undelivered message
 	// like any other, which the operator can retry and its loop is told of.
 	FailInterruptedSends(ctx context.Context, failedAt int64, sendErr string) ([]*Message, error)
 	// UntoldSendFailures returns the messages a loop sent that never got

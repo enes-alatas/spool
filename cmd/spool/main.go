@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -318,7 +319,8 @@ func main() {
 	// send yet, because the MCP and API listeners are bound only after the
 	// surfaces start. Sweeping after them would fail a send this process
 	// is about to make.
-	(&outbound.Ledger{Store: rdb, Bus: pubsub, Log: log, Surface: "hub"}).FailInterruptedSends(ctx)
+	hubLedger := &outbound.Ledger{Store: rdb, Bus: pubsub, Log: log, Surface: "hub"}
+	hubLedger.FailInterruptedSends(ctx, "at startup")
 	bridge := telegram.NewBridge(rdb, pubsub, router, log, *telegramAPI)
 	bridge.SetBindSettle(time.Duration(*bindSettleSec) * time.Second)
 	bridge.Start(ctx)
@@ -376,6 +378,13 @@ func main() {
 		log.Error("serve", "err", serveErr)
 	}
 	manager.Shutdown()
+	if stopSurfaces(log, bridge, slackSurface) {
+		// Every surface has settled what it held. A send still pending was
+		// on its way to one when it stopped, and nothing is left to send
+		// it: it fails now, with the store still open, rather than at the
+		// next start (ADR-0036).
+		hubLedger.FailInterruptedSends(context.Background(), "at shutdown")
+	}
 	if serveErr != nil {
 		// A hub that stopped serving is a failed hub, whatever it did
 		// before: a supervisor reads the exit status, not the log (#253).
@@ -383,6 +392,29 @@ func main() {
 		_ = db.Close()
 		os.Exit(1)
 	}
+}
+
+// surfaceStopTimeout bounds how long a stopping hub waits for its surfaces
+// to settle their sends. A send still mid-request when it runs out is left
+// pending, and the next start fails it.
+const surfaceStopTimeout = 10 * time.Second
+
+// stopSurfaces stops every surface, all at once, and reports whether each
+// settled its sends before the timeout ran out. One that did not may still
+// be sending, so nothing it held can be called unsent yet.
+func stopSurfaces(log *slog.Logger, surfaces ...surface.Surface) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), surfaceStopTimeout)
+	defer cancel()
+	var stopping sync.WaitGroup
+	for _, one := range surfaces {
+		stopping.Go(func() { one.Stop(ctx) })
+	}
+	stopping.Wait()
+	if ctx.Err() != nil {
+		log.Warn("surfaces did not stop in time; their unsettled sends fail at the next start", "timeout", surfaceStopTimeout)
+		return false
+	}
+	return true
 }
 
 // served is one of the hub's listeners and the server on it.

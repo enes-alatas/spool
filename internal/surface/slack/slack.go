@@ -30,10 +30,13 @@ type Adapter struct {
 	timing linkTiming
 
 	// ctx is Start's, which every link runs under: a link outlives the
-	// request that attached its app.
-	ctx   context.Context
-	mu    sync.Mutex
-	links map[string]*link // loop ID → its Socket Mode link
+	// request that attached its app. Stop cancels it, and waits for every
+	// goroutine counted in running.
+	ctx     context.Context
+	cancel  context.CancelFunc
+	running sync.WaitGroup
+	mu      sync.Mutex
+	links   map[string]*link // loop ID → its Socket Mode link
 	// changing serializes LoopChanged and LoopRemoved, so two edits of one
 	// loop cannot both find it unlinked and connect its app twice.
 	changing sync.Mutex
@@ -63,9 +66,10 @@ var _ surface.Surface = (*Adapter)(nil)
 // sends.
 func (adapter *Adapter) Start(ctx context.Context) {
 	adapter.mu.Lock()
-	adapter.ctx = ctx
+	adapter.ctx, adapter.cancel = context.WithCancel(ctx)
+	ctx = adapter.ctx
+	adapter.running.Go(func() { adapter.mirror(ctx) })
 	adapter.mu.Unlock()
-	go adapter.mirror(ctx)
 	loops, err := adapter.store.Loops().List(ctx)
 	if err != nil {
 		adapter.log.Error("slack: list loops", "err", err)
@@ -75,6 +79,20 @@ func (adapter *Adapter) Start(ctx context.Context) {
 		if connects(loopRecord) {
 			adapter.startLink(loopRecord)
 		}
+	}
+}
+
+// Stop closes every link and the mirror, and waits for them: each link's
+// send loop fails what its app still held on the way out.
+func (adapter *Adapter) Stop(ctx context.Context) {
+	adapter.mu.Lock()
+	cancel := adapter.cancel
+	if cancel != nil {
+		cancel()
+	}
+	adapter.mu.Unlock()
+	if cancel != nil {
+		surface.Wait(ctx, &adapter.running)
 	}
 }
 
@@ -157,19 +175,21 @@ func (adapter *Adapter) Status(loopID string) any {
 }
 
 // startLink connects a loop's app. Before Start there is no context to run
-// a link under, and Start connects every loop anyway.
+// a link under, and Start connects every loop anyway. After Stop there is
+// none either: Stop has cancelled it under this lock, and may already be
+// waiting for the last link to close.
 func (adapter *Adapter) startLink(loopRecord *store.Loop) {
 	adapter.mu.Lock()
 	defer adapter.mu.Unlock()
-	if adapter.ctx == nil {
+	if adapter.ctx == nil || adapter.ctx.Err() != nil {
 		return
 	}
 	ctx, cancel := context.WithCancel(adapter.ctx)
 	started := &link{loopID: loopRecord.ID, credential: loopRecord.SlackAppToken, cancel: cancel, done: make(chan struct{}),
 		sends: make(chan *route.MessagePayload, sends), notices: make(chan notice, notices)}
 	adapter.links[loopRecord.ID] = started
-	go adapter.run(ctx, started)
-	go adapter.nameChannel(ctx, started, loopRecord, loopRecord.SlackChannelID)
+	adapter.running.Go(func() { adapter.run(ctx, started) })
+	adapter.running.Go(func() { adapter.nameChannel(ctx, started, loopRecord, loopRecord.SlackChannelID) })
 }
 
 // stopLink closes a loop's connection, and waits for it to close: a link
