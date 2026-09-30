@@ -1571,7 +1571,14 @@ textarea {
   font-size: 0.65625rem;
   color: var(--text);
 }
-/* per-turn context occupancy, oldest turn on the left */
+/* per-turn context occupancy, oldest turn on the left. A bar keeps one width
+   however many turns there are: grown to share the row, a loop's first turn
+   was a single full-width block and read as a meter, not a trend (#457). 22px
+   is what ten bars, the most the page fetches, get in the two-column layout's
+   side column, so there a full trend spans it. Anywhere the row is wider,
+   such as the stacked layout (.detail at 1fr), where the side panel is the
+   page's width, the bars stay 22px from the left and leave the rest empty, as
+   fewer turns do. */
 .ctx-trend {
   display: flex;
   align-items: flex-end;
@@ -1580,7 +1587,7 @@ textarea {
   margin-top: 10px;
 }
 .ctx-bar {
-  flex: 1;
+  flex: 0 1 22px;
   min-height: 2px;
   background: var(--fill);
   border-radius: 2px 2px 0 0;
