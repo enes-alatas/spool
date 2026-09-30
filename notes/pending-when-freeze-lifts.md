@@ -136,3 +136,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 07:30: Enes: rewrite + move README Quick start. Filed #446 → Iris. Asked Terra on #429 whether the binary should pick a bridge-reachable loop listener by default (Enes decides).
 - 07:35: #444 (#442 + #4 perf smoke) merged; #442, #4 closed by hand. Terra on #441. Terra's #429 answer: auto-bind loop listener to the docker bridge gateway (not 0.0.0.0), loopback fallback if daemon silent. DM'd Enes with my yes; #429 → Terra after #441 once decided.
 - 07:40: Enes wants a Remotion README demo video. Filed #447 → Iris after #446, with the instruction to storyboard with Enes first (his ask).
+- 07:45: GitHub stopped linking closing refs on #444/#448/#449 (bodies say Closes #n, closingIssuesReferences empty). Terra asked Enes about repo settings. Until fixed: close issues by hand after merges (#446 after #448, #441 after #449).
