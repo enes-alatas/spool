@@ -373,9 +373,9 @@ func (rt *Runtime) writeMCPConfig(ctx context.Context, spec runtime.Spec) error 
 	return err
 }
 
-// putFileTimeout bounds one file's copy in: 20 MB through docker exec is
-// seconds, and a daemon that takes minutes is not going to finish.
-const putFileTimeout = 2 * time.Minute
+// fileCopyTimeout bounds one file's copy in or out: 20 MB through docker
+// exec is seconds, and a daemon that takes minutes is not going to finish.
+const fileCopyTimeout = 2 * time.Minute
 
 // PutFile streams the file into the workstation over exec stdin, as the
 // workstation's own user, so the loop owns what it is given. The same exec
@@ -389,10 +389,33 @@ func (rt *Runtime) PutFile(ctx context.Context, loopID, hostPath, target string)
 	defer file.Close()
 	// an in-container path: POSIX whatever the host is
 	dir := path.Dir(target)
-	_, err = rt.commandStream(ctx, putFileTimeout, file,
+	_, err = rt.commandStream(ctx, fileCopyTimeout, file,
 		"exec", "--interactive", containerName(loopID),
 		"sh", "-c", `mkdir -p "$1" && find "$1" -type f -mtime +30 -delete 2>/dev/null; cat > "$2"`, "sh", dir, target)
 	return err
+}
+
+// GetFile reads a file out of the workstation as its own user, so the loop
+// can send only what it can read itself. The whole container is the loop's,
+// so any path in it is one the loop owns. The script's exit status says why
+// a file is refused; only then is it read, and never past limit.
+func (rt *Runtime) GetFile(ctx context.Context, loopID, workDir, target string, limit int64) ([]byte, error) {
+	out, err := rt.command(ctx, fileCopyTimeout,
+		"exec", "--workdir", workDir, containerName(loopID),
+		"sh", "-c", `[ -e "$1" ] || exit 64; [ -f "$1" ] || exit 65; [ "$(wc -c < "$1")" -le "$2" ] || exit 66; exec head -c "$2" -- "$1"`,
+		"sh", target, strconv.FormatInt(limit, 10))
+	var failure *cliError
+	if errors.As(err, &failure) {
+		switch failure.exitCode {
+		case 64:
+			return nil, runtime.ErrNoSuchFile
+		case 65:
+			return nil, runtime.ErrNotAFile
+		case 66:
+			return nil, runtime.ErrFileTooLarge
+		}
+	}
+	return out, err
 }
 
 // environ returns the exec client's environment: inherited, plus the loop's

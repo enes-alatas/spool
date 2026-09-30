@@ -21,6 +21,16 @@ import (
 // workstation cannot do — halting the host it runs on, say.
 var ErrUnsupported = errors.New("runtime: operation not supported")
 
+// What GetFile refuses with, each for the loop to correct: a path that is
+// not a file the loop owns, one that names no file, one that names
+// something other than a regular file, and one over the caller's limit.
+var (
+	ErrNotOwned     = errors.New("runtime: not a file the loop owns")
+	ErrNoSuchFile   = errors.New("runtime: no such file")
+	ErrNotAFile     = errors.New("runtime: not a regular file")
+	ErrFileTooLarge = errors.New("runtime: file over the limit")
+)
+
 // WorkstationHome is where a containerized runtime mounts the loop's volume
 // and where its claude runs — the image convention fixed by ADR-0018. Bare
 // loops have host workspaces instead.
@@ -137,6 +147,14 @@ type Runtime interface {
 	// filesystem of its own. A runtime whose workstation is the host treats
 	// a path equal to hostPath as already there.
 	PutFile(ctx context.Context, loopID, hostPath, path string) error
+
+	// GetFile reads a file the loop owns out of its workstation, whole, for
+	// a message the loop sends with it (#123). A relative path is taken
+	// from workDir, the loop's working directory in the runtime's own
+	// filesystem. A file over limit bytes is refused with ErrFileTooLarge
+	// before it is read. A runtime whose workstation is the host confines
+	// the read to workDir: the host holds far more than the loop owns.
+	GetFile(ctx context.Context, loopID, workDir, path string, limit int64) ([]byte, error)
 
 	// ResolveModel reports the model id that model runs as under the claude
 	// this runtime gives a loop by default, read from the init event of a run

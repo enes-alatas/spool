@@ -23,6 +23,7 @@ type sendMessageIn struct {
 	ReplyTo     string `json:"reply_to,omitempty" jsonschema:"reference of the message this replies to (\"ref:42\"), exactly as its envelope header gave it; the reply addresses that message's author and, in the group, renders as a native reply. Must belong to this destination's conversation. Omit for a new message."`
 	Text        string `json:"text" jsonschema:"the message text; in the group, @mentions name the recipients"`
 	Resends     string `json:"resends,omitempty" jsonschema:"reference of your own message whose send failed (\"ref:42\"), exactly as the undelivered note gave it, when these words are you saying that message again. The destination must be the one it was lost going to. When this send gets through, that failure stops being the operator's to deal with. Omit unless you are repeating a message you were told never arrived."`
+	Attach      string `json:"attach,omitempty" jsonschema:"path of one file in your workspace to send with this message, at most 20 MB; an image is shown as a photo where the surface can. The text goes with it. Omit to send words alone."`
 }
 
 type sendMessageOut struct {
@@ -70,6 +71,7 @@ func (server *Server) sendMessageTool(caller *store.Loop) func(context.Context, 
 			ReplyTo:     in.ReplyTo,
 			Text:        in.Text,
 			Resends:     in.Resends,
+			Attach:      in.Attach,
 		})
 		if serr != nil {
 			// A typed refusal: the SDK renders a returned error as an

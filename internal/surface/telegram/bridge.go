@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf16"
 
 	"github.com/enes-alatas/spool/internal/bus"
 	"github.com/enes-alatas/spool/internal/route"
@@ -26,8 +27,11 @@ import (
 const (
 	pollTimeoutSec = 50
 	maxMsgLen      = 4096
-	sendSpacing    = time.Second // per-bot pacing (Telegram: ~1 msg/s)
-	dedupSize      = 512
+	// maxCaptionLen is the most text a photo or document carries as its
+	// caption. Longer words go ahead of the file as a message of their own.
+	maxCaptionLen = 1024
+	sendSpacing   = time.Second // per-bot pacing (Telegram: ~1 msg/s)
+	dedupSize     = 512
 	// sendAttempts and sendBackoff bound the retry a failed send gets: a
 	// timeout against api.telegram.org is ordinary, and one attempt made it
 	// cost the message (#147). Four attempts over ~7s of backoff outlast a
@@ -246,6 +250,8 @@ type sendReq struct {
 	// recordFor is the internal message whose surface id this send mints;
 	// 0 when the send is not worth referencing later.
 	recordFor int64
+	// media is the file the message carries (#123), nil for words alone.
+	media *Media
 }
 
 func (br *Bridge) startPoller(loopRecord *store.Loop) {
@@ -994,23 +1000,19 @@ func settleCtx(ctx context.Context) context.Context {
 	return context.WithoutCancel(ctx)
 }
 
-// deliver sends a message in Telegram-sized parts, and records how it
-// ended. Only the first part carries the reply anchor and mints the
+// deliver sends a message in Telegram-sized parts, then the file it
+// carries, and records how it ended. Only the first part carries the reply anchor and mints the
 // message's surface reference: the rest are the same message, not new
 // targets. A part that does not land fails the whole message, since the
 // loop's words did not all arrive, even when its start did.
 func (br *Bridge) deliver(ctx context.Context, bot *poller, req sendReq) {
-	parts := splitMessage(req.text, maxMsgLen)
-	for i, text := range parts {
+	parts := sendParts(bot.client, req)
+	for i, send := range parts {
 		if i > 0 && !sleepCtx(ctx, sendSpacing) {
 			br.unsent(ctx, bot, req, partOf(errors.New(br.stopReason()), i, len(parts)))
 			return
 		}
-		part := sendReq{chatID: req.chatID, text: text}
-		if i == 0 {
-			part.replyTo = req.replyTo
-		}
-		sent, attempts, err := br.sendWithRetries(ctx, bot, part)
+		sent, attempts, err := br.sendWithRetries(ctx, bot, send)
 		if err != nil {
 			if ctx.Err() != nil {
 				// The bot stopped under the attempt: that, not Telegram's
@@ -1028,6 +1030,47 @@ func (br *Bridge) deliver(ctx context.Context, bot *poller, req sendReq) {
 	br.ledger.Result(settleCtx(ctx), req.recordFor, nil)
 }
 
+// sendPart is one Bot API call a message is sent in.
+type sendPart func(ctx context.Context) (*Message, error)
+
+// sendParts splits a message into the calls that send it: its words in
+// Telegram-sized parts, the first replying to req.replyTo, then its file.
+// Words short enough to caption the file go with it as one call instead.
+func sendParts(client *Client, req sendReq) []sendPart {
+	if req.media != nil && utf16Len(req.text) <= maxCaptionLen {
+		return []sendPart{func(ctx context.Context) (*Message, error) {
+			return client.SendMedia(ctx, req.chatID, *req.media, req.text, req.replyTo)
+		}}
+	}
+	var parts []sendPart
+	for i, text := range splitMessage(req.text, maxMsgLen) {
+		replyTo := int64(0)
+		if i == 0 {
+			replyTo = req.replyTo
+		}
+		parts = append(parts, func(ctx context.Context) (*Message, error) {
+			return client.SendMessage(ctx, req.chatID, text, replyTo)
+		})
+	}
+	if req.media != nil {
+		parts = append(parts, func(ctx context.Context) (*Message, error) {
+			return client.SendMedia(ctx, req.chatID, *req.media, "", 0)
+		})
+	}
+	return parts
+}
+
+// utf16Len is text's length as Telegram measures its limits: in UTF-16
+// code units, so a character outside the Basic Multilingual Plane, as most
+// emoji are, counts twice.
+func utf16Len(text string) int {
+	n := 0
+	for _, r := range text {
+		n += utf16.RuneLen(r)
+	}
+	return n
+}
+
 // partOf names the part of an n-part message err ended at, index i; a
 // message sent whole needs no part named.
 func partOf(err error, i, n int) error {
@@ -1043,10 +1086,10 @@ func partOf(err error, i, n int) error {
 // would fail the same way, slower. It returns the error the last attempt
 // ended on, and how many attempts it made; a cancelled context ends it
 // early.
-func (br *Bridge) sendWithRetries(ctx context.Context, bot *poller, req sendReq) (*Message, int, error) {
+func (br *Bridge) sendWithRetries(ctx context.Context, bot *poller, send sendPart) (*Message, int, error) {
 	var lastErr error
 	for attempt := 0; attempt < sendAttempts; attempt++ {
-		sent, err := bot.client.SendMessage(ctx, req.chatID, req.text, req.replyTo)
+		sent, err := send(ctx)
 		if err == nil {
 			return sent, attempt + 1, nil
 		}
@@ -1188,8 +1231,12 @@ func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 			br.ledger.Unsendable(ctx, mp, "group delivery: loop's bot is not running")
 			return
 		}
+		media, ok := br.sentMedia(ctx, mp)
+		if !ok {
+			return
+		}
 		anchor, text := br.render(ctx, mp, loopRecord.TGGroupChatID)
-		if unsent := bot.enqueue(sendReq{chatID: loopRecord.TGGroupChatID, text: text, replyTo: anchor, recordFor: mp.ID}); unsent != "" {
+		if unsent := bot.enqueue(sendReq{chatID: loopRecord.TGGroupChatID, text: text, replyTo: anchor, recordFor: mp.ID, media: media}); unsent != "" {
 			br.ledger.Unsendable(ctx, mp, unsent)
 		}
 	case store.ConversationOwnerDM:
@@ -1208,12 +1255,48 @@ func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 			br.ledger.Unsendable(ctx, mp, "owner dm delivery: send carried no pinned chat")
 			return
 		}
+		media, ok := br.sentMedia(ctx, mp)
+		if !ok {
+			return
+		}
 		anchor, text := br.render(ctx, mp, mp.OwnerDMChat)
-		if unsent := bot.enqueue(sendReq{chatID: mp.OwnerDMChat, text: text, replyTo: anchor, recordFor: mp.ID}); unsent != "" {
+		if unsent := bot.enqueue(sendReq{chatID: mp.OwnerDMChat, text: text, replyTo: anchor, recordFor: mp.ID, media: media}); unsent != "" {
 			br.ledger.Unsendable(ctx, mp, unsent)
 		}
 	}
 	// control_room lives in the web UI alone; telegram sees nothing
+}
+
+// sentMedia is the file a loop's message carries, nil for none. A file the
+// hub no longer keeps, or cannot look up, fails the send rather than
+// sending the words without it: the loop sent them together. ok is false
+// when it has.
+func (br *Bridge) sentMedia(ctx context.Context, mp *route.MessagePayload) (*Media, bool) {
+	if br.router == nil {
+		return nil, true // a bridge built for its delivery rules alone, in tests
+	}
+	row, hostPath, err := br.router.SentAttachment(ctx, mp.ID)
+	if err != nil {
+		br.ledger.Unsendable(ctx, mp, "attachment: "+err.Error())
+		return nil, false
+	}
+	if row == nil {
+		return nil, true
+	}
+	return &Media{Path: hostPath, Name: row.Name, Photo: asPhoto(row)}, true
+}
+
+// asPhoto reports whether Telegram takes a file as a photo: a JPEG or PNG
+// of at most 10 MB, its sides summing to at most 10000 and neither more
+// than 20 times the other. Anything else goes as a document, which only
+// the 50 MB bot upload limit bounds, well above the hub's own.
+func asPhoto(row *store.Attachment) bool {
+	if row.MIME != "image/jpeg" && row.MIME != "image/png" {
+		return false
+	}
+	width, height := row.Width, row.Height
+	return row.Size <= 10<<20 && width > 0 && height > 0 &&
+		width+height <= 10000 && width <= 20*height && height <= 20*width
 }
 
 // noticeLogin tells a loop's owner, in its bot's private chat with them, that

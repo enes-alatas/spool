@@ -1,6 +1,6 @@
 # ADR-0026: Loops send through a hub-served MCP tool
 
-Date: 2026-09-15 · Status: accepted (operator interview; implementation pending) · Amended: 2026-09-16 (`owner_dm` routing, twice); 2026-09-18 (undelivered sends); 2026-09-20 (item 1 is a Surface rule); 2026-09-22 (a resend names the failure it replaces); 2026-09-23 (item 1: `group` is a hub conversation); 2026-09-29 (`owner_dm` on Slack is opened, not captured)
+Date: 2026-09-15 · Status: accepted (operator interview; implementation pending) · Amended: 2026-09-16 (`owner_dm` routing, twice); 2026-09-18 (undelivered sends); 2026-09-20 (item 1 is a Surface rule); 2026-09-22 (a resend names the failure it replaces); 2026-09-23 (item 1: `group` is a hub conversation); 2026-09-29 (`owner_dm` on Slack is opened, not captured); 2026-09-30 (item 2: `attach` sends a file)
 
 ## Context
 
@@ -58,6 +58,36 @@ non-delivery guarantees ADR-0025's scenario matrix demands.
    a typed error *inside the turn*, so the model can correct instead of
    falling back. Routing, persistence, storm guards, and mirroring stay in the
    hub; the tool is an entrance to them, not a second authority.
+
+   **Amendment (2026-09-30, #123, ADR-0037):** a fifth field, optional
+   `attach`, names one file for the message to carry: a path in the loop's
+   workstation, relative to its working directory or absolute. The hub
+   reads it through the SandboxRuntime seam's `GetFile`, keeps it as it
+   keeps an inbound file (ADR-0037), and records it on the message, so a
+   retry sends the file again with the words. A loop may send only a file
+   it owns, by operator decision:
+   - A bare loop's workstation is the host, so it owns only what is inside
+     its working directory. The read goes through an `os.Root` there, which
+     refuses `..`, absolute paths outside it, and symlinks that leave it or
+     are absolute, at the open itself. A file with a second hard link is
+     refused, since that is how a file from outside gets a name inside. A
+     working directory that holds the hub's data directory (a home
+     directory, say) sends nothing at all.
+   - A containerized loop owns its container, and the read runs there as
+     the loop's own user.
+   - A file whose bytes hold a secret the hub knows is never sent. The
+     redactor cannot rewrite a file on its way out, so the send is refused.
+
+   Each refusal is a typed error that stores and sends nothing:
+   `attachment_not_owned`, `attachment_not_found` (no such file, or not a
+   regular file), `attachment_too_large` (over 20 MB),
+   `attachment_contains_secret`, and `attachment_unavailable` (the hub
+   keeps no files, or the destination is on Slack, which carries none yet).
+   On Telegram, a JPEG or PNG that Telegram takes as a photo goes as one,
+   and any other file as a document. Words of up to 1024 UTF-16 units
+   (Telegram's measure) are its caption; longer words go first as a message, and the file follows
+   them uncaptioned. The file reaches loops in the group as an inbound
+   file does.
 
 3. **The final turn text is a status note, not a message.** It is stored on
    the turn, visible in the control-room timeline, and still carries the

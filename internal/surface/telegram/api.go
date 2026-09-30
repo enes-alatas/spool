@@ -7,7 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -62,12 +65,18 @@ func (client *Client) call(ctx context.Context, method string, params any, resul
 	if err != nil {
 		return err
 	}
+	return client.post(ctx, method, "application/json", bytes.NewReader(body), result)
+}
+
+// post sends one Bot API request whose body is already encoded, and decodes
+// the answer into result.
+func (client *Client) post(ctx context.Context, method, contentType string, body io.Reader, result any) error {
 	url := client.base + "/bot" + client.token + "/" + method
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, body)
 	if err != nil {
 		return redactToken(err, client.token)
 	}
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", contentType)
 	resp, err := client.http.Do(req)
 	if err != nil {
 		return redactToken(err, client.token)
@@ -235,4 +244,70 @@ func (client *Client) SendMessage(ctx context.Context, chatID int64, text string
 		return nil, err
 	}
 	return &sent, nil
+}
+
+// Media is a file to send with a message, as SendMedia uploads it.
+type Media struct {
+	Path string // the file on the host
+	Name string // what the chat calls it
+	// Photo sends it as a photo, which Telegram recompresses and shows
+	// inline; otherwise it goes as a document, byte for byte.
+	Photo bool
+}
+
+// SendMedia uploads a file to a chat as a photo or a document, with caption
+// as its words ("" for none), and returns the message Telegram created.
+// replyTo is as SendMessage's. The file is read afresh on every call, so a
+// retry sends it whole.
+func (client *Client) SendMedia(ctx context.Context, chatID int64, media Media, caption string, replyTo int64) (*Message, error) {
+	file, err := os.Open(media.Path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	method, field := "sendDocument", "document"
+	if media.Photo {
+		method, field = "sendPhoto", "photo"
+	}
+	// Streamed through a pipe rather than built in memory: a 20 MB file
+	// need not sit in the hub twice.
+	reader, writer := io.Pipe()
+	form := multipart.NewWriter(writer)
+	go func() {
+		writer.CloseWithError(writeMediaForm(form, file, field, media.Name, chatID, caption, replyTo))
+	}()
+	defer func() { _ = reader.Close() }()
+	var sent Message
+	if err := client.post(ctx, method, form.FormDataContentType(), reader, &sent); err != nil {
+		return nil, err
+	}
+	return &sent, nil
+}
+
+// writeMediaForm writes SendMedia's multipart body.
+func writeMediaForm(form *multipart.Writer, file io.Reader, field, name string, chatID int64, caption string, replyTo int64) error {
+	fields := map[string]string{"chat_id": strconv.FormatInt(chatID, 10)}
+	if caption != "" {
+		fields["caption"] = caption
+	}
+	if replyTo != 0 {
+		// as SendMessage: a vanished target still gets the file, unthreaded
+		fields["reply_parameters"] = fmt.Sprintf(`{"message_id":%d,"allow_sending_without_reply":true}`, replyTo)
+	}
+	for _, key := range []string{"chat_id", "caption", "reply_parameters"} {
+		if value, ok := fields[key]; ok {
+			if err := form.WriteField(key, value); err != nil {
+				return err
+			}
+		}
+	}
+	part, err := form.CreateFormFile(field, name)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(part, file); err != nil {
+		return err
+	}
+	return form.Close()
 }

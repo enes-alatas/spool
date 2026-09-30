@@ -1,8 +1,10 @@
 package route
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"path/filepath"
 	"strings"
@@ -10,6 +12,7 @@ import (
 
 	"github.com/enes-alatas/spool/internal/attach"
 	"github.com/enes-alatas/spool/internal/loop"
+	"github.com/enes-alatas/spool/internal/runtime"
 	"github.com/enes-alatas/spool/internal/store"
 )
 
@@ -135,4 +138,93 @@ func (router *Router) ExpireAttachments(ctx context.Context) (int, error) {
 		}
 	}
 	return len(expired), nil
+}
+
+// Workstations reads the file a loop sends out of its workstation
+// (loop.Manager).
+type Workstations interface {
+	GetFile(ctx context.Context, loopRecord *store.Loop, path string, limit int64) ([]byte, error)
+}
+
+// SetWorkstations lets the router read a file a loop sends. Without it, a
+// send with an attachment is refused.
+func (router *Router) SetWorkstations(workstations Workstations) { router.workstations = workstations }
+
+// keepSent reads the file a send attaches out of the sender's workstation
+// and keeps it, before the message is stored (#123). Every reason it is
+// refused is the loop's to correct, so each is a SendError naming what to
+// change. The kept attachment has no MessageID yet, and it is the caller's
+// to record or, if the send goes no further, to remove.
+func (router *Router) keepSent(ctx context.Context, req SendRequest) (*store.Attachment, *SendError, error) {
+	path := strings.TrimSpace(req.Attach)
+	if path == "" {
+		return nil, nil, nil
+	}
+	if router.files == nil || router.workstations == nil {
+		return nil, &SendError{ErrAttachmentUnavailable, "this hub keeps no files, so a message cannot carry one; send the words alone"}, nil
+	}
+	if req.From.Surface() == store.SurfaceSlack && req.Destination != store.ConversationControlRoom {
+		// Slack carries no files yet (#123), and words sent there without
+		// the file they came with would say less than the loop meant.
+		return nil, &SendError{ErrAttachmentUnavailable, "Slack does not carry files yet; send the words alone, or the file to control_room"}, nil
+	}
+	body, err := router.workstations.GetFile(ctx, req.From, path, attach.MaxSize)
+	switch {
+	case errors.Is(err, runtime.ErrNotOwned):
+		return nil, &SendError{ErrAttachmentNotOwned,
+			fmt.Sprintf("%s is not a file you own; attach a file inside your workspace, %s", path, req.From.WorkspacePath)}, nil
+	case errors.Is(err, runtime.ErrNoSuchFile):
+		return nil, &SendError{ErrAttachmentNotFound, fmt.Sprintf("there is no file at %s", path)}, nil
+	case errors.Is(err, runtime.ErrNotAFile):
+		return nil, &SendError{ErrAttachmentNotFound, fmt.Sprintf("%s is not a regular file; attach one file", path)}, nil
+	case errors.Is(err, runtime.ErrFileTooLarge):
+		return nil, &SendError{ErrAttachmentTooLarge, fmt.Sprintf("%s is over the %d MB limit", path, attach.MaxSize>>20)}, nil
+	case err != nil:
+		return nil, nil, fmt.Errorf("read attachment: %w", err)
+	}
+	name := filepath.Base(path)
+	if router.redactName != nil {
+		// A file's bytes never pass through redaction on their way out,
+		// so a file holding a secret the hub knows is not sent at all.
+		if router.redactName(string(body)) != string(body) {
+			return nil, &SendError{ErrSecretInAttachment,
+				fmt.Sprintf("%s holds a secret this hub knows, and a file is never sent with one; attach a copy without it", path)}, nil
+		}
+		name = router.redactName(name)
+	}
+	kept, err := router.files.Keep(bytes.NewReader(body), name)
+	if err != nil {
+		return nil, nil, fmt.Errorf("keep attachment: %w", err)
+	}
+	return kept, nil, nil
+}
+
+// SentAttachment is the file a loop's message carries, for a surface to
+// send with it: the row and the hub's copy of it. It answers nil for a
+// message with none. A file that is no longer kept is an error, since the
+// message cannot be sent as it was written.
+func (router *Router) SentAttachment(ctx context.Context, messageID int64) (*store.Attachment, string, error) {
+	rows, err := router.store.Attachments().ByMessage(ctx, messageID)
+	if err != nil || len(rows) == 0 {
+		return nil, "", err
+	}
+	row := rows[0]
+	if row.Path == "" || row.RemovedAt != 0 || router.files == nil {
+		return nil, "", ErrAttachmentGone
+	}
+	return row, router.files.Path(row.Path), nil
+}
+
+// ErrAttachmentGone fails the send of a message whose file is no longer
+// kept: retention removed it before a retry.
+var ErrAttachmentGone = errors.New("the attached file is no longer kept")
+
+// dropKept removes a file kept for a send that went no further.
+func (router *Router) dropKept(kept *store.Attachment) {
+	if kept == nil {
+		return
+	}
+	if err := router.files.Remove(kept.Path); err != nil {
+		router.log.Warn("unsent attachment not removed", "path", kept.Path, "err", err)
+	}
 }

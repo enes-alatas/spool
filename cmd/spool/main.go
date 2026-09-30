@@ -164,8 +164,10 @@ func main() {
 		EgressAllow:  allowEntries,
 		HealthTTL:    healthCacheTTL(healthInterval),
 	})
+	hostRuntime := bare.New(*claudeBin)
+	hostRuntime.KeepOut(*dataDir)
 	runtimes := map[string]runtime.Runtime{
-		store.RuntimeBare:   bare.New(*claudeBin),
+		store.RuntimeBare:   hostRuntime,
 		store.RuntimeDocker: dockerRuntime,
 	}
 
@@ -306,6 +308,7 @@ func main() {
 		os.Exit(1)
 	}
 	router.SetFiles(files, redactor.Text)
+	router.SetWorkstations(manager)
 	scheduler = sched.New(rdb, pubsub, manager, log)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

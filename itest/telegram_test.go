@@ -5,9 +5,11 @@ package itest
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -102,6 +104,11 @@ type sentMessage struct {
 	// the id it asked Telegram to thread under (0 = a plain post).
 	MessageID int64
 	ReplyTo   int64
+	// Method is the Bot API call that sent it. A sendPhoto or sendDocument
+	// carries its caption as Text, and the file it uploaded (#123).
+	Method   string
+	FileName string
+	File     []byte
 }
 
 // fakePost is one message as the chat holds it: the ids differ per bot,
@@ -220,6 +227,37 @@ func (tg *fakeTelegram) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		tg.sent = append(tg.sent, sentMessage{Token: token, ChatID: req.ChatID,
 			Text: req.Text, MessageID: id, ReplyTo: replyTo})
+		tg.mu.Unlock()
+		writeOK(w, map[string]any{"message_id": id})
+	case "sendPhoto", "sendDocument":
+		field := map[string]string{"sendPhoto": "photo", "sendDocument": "document"}[method]
+		file, header, err := r.FormFile(field)
+		if err != nil {
+			http.Error(w, `{"ok":false,"error_code":400,"description":"Bad Request: no file"}`, 400)
+			return
+		}
+		body, _ := io.ReadAll(file)
+		chatID, _ := strconv.ParseInt(r.FormValue("chat_id"), 10, 64)
+		var reply struct {
+			MessageID int64 `json:"message_id"`
+		}
+		if params := r.FormValue("reply_parameters"); params != "" {
+			_ = json.Unmarshal([]byte(params), &reply)
+		}
+		tg.mu.Lock()
+		tg.sendCalls++
+		if tg.failForever || tg.failSends > 0 {
+			if !tg.failForever {
+				tg.failSends--
+			}
+			tg.mu.Unlock()
+			http.Error(w, `{"ok":false,"error_code":502,"description":"Bad Gateway"}`, 502)
+			return
+		}
+		tg.nextID[token]++
+		id := tg.nextID[token]
+		tg.sent = append(tg.sent, sentMessage{Token: token, ChatID: chatID, Text: r.FormValue("caption"),
+			MessageID: id, ReplyTo: reply.MessageID, Method: method, FileName: header.Filename, File: body})
 		tg.mu.Unlock()
 		writeOK(w, map[string]any{"message_id": id})
 	default:

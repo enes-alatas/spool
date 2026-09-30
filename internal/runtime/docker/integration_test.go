@@ -486,3 +486,39 @@ func TestPutFileLandsReadableForTheLoop(t *testing.T) {
 		t.Errorf("file owned by %q, the loop runs as %q", owner, user)
 	}
 }
+
+// GetFile reads a file back out as the loop, relative to its working
+// directory or by absolute path, and says why when it will not.
+func TestGetFileReadsWhatTheLoopCanRead(t *testing.T) {
+	rt := requireDocker(t)
+	spec := testSpec(t, rt)
+	mustEnsure(t, rt, spec)
+
+	content := []byte("\x89PNG\r\n\x1a\nbinary\x00\xff")
+	hostPath := filepath.Join(t.TempDir(), "shot.png")
+	if err := os.WriteFile(hostPath, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := rt.PutFile(context.Background(), spec.LoopID, hostPath, runtime.WorkstationHome+"/out/shot.png"); err != nil {
+		t.Fatalf("PutFile: %v", err)
+	}
+	for _, path := range []string{"out/shot.png", runtime.WorkstationHome + "/out/shot.png"} {
+		got, err := rt.GetFile(context.Background(), spec.LoopID, runtime.WorkstationHome, path, 1024)
+		if err != nil || !bytes.Equal(got, content) {
+			t.Errorf("%s: read %q, %v; want the file", path, got, err)
+		}
+	}
+	for _, c := range []struct {
+		path  string
+		limit int64
+		want  error
+	}{
+		{"out/missing.png", 1024, runtime.ErrNoSuchFile},
+		{"out", 1024, runtime.ErrNotAFile},
+		{"out/shot.png", int64(len(content)) - 1, runtime.ErrFileTooLarge},
+	} {
+		if _, err := rt.GetFile(context.Background(), spec.LoopID, runtime.WorkstationHome, c.path, c.limit); !errors.Is(err, c.want) {
+			t.Errorf("%s (limit %d): %v, want %v", c.path, c.limit, err, c.want)
+		}
+	}
+}
