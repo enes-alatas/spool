@@ -3,7 +3,7 @@ import tseslint from 'typescript-eslint'
 import reactHooks from 'eslint-plugin-react-hooks'
 
 export default tseslint.config(
-  { ignores: ['dist/**', 'node_modules/**'] },
+  { ignores: ['dist/**', 'node_modules/**', 'demo/node_modules/**', 'demo/out/**', 'demo/public/**'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -13,6 +13,22 @@ export default tseslint.config(
     // Listed rather than pulled from the `globals` package: three names is
     // less than a dependency.
     languageOptions: { globals: { console: 'readonly', process: 'readonly', URL: 'readonly' } },
+  },
+  {
+    // The README demo's recorder (#447) is a node tool too, and the
+    // functions it hands to `page.evaluate` run in the page, so it also
+    // names the three browser globals they use.
+    files: ['demo/record.mjs'],
+    languageOptions: {
+      globals: {
+        console: 'readonly',
+        process: 'readonly',
+        URL: 'readonly',
+        document: 'readonly',
+        addEventListener: 'readonly',
+        requestAnimationFrame: 'readonly',
+      },
+    },
   },
   {
     files: ['src/**/*.{ts,tsx}'],

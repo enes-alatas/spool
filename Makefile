@@ -12,7 +12,7 @@ COMMIT   ?= $(shell git rev-parse --short HEAD 2>/dev/null)
 BUILT_AT ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS  := -X main.buildVersion=$(VERSION) -X main.buildCommit=$(COMMIT) -X main.buildTime=$(BUILT_AT)
 
-.PHONY: build dev test itest lint secret-scan workflow-lint fakeclaude egress vet e2e-context e2e-m1 ui ui-dev ui-shots ui-smoke image image-multiarch clean
+.PHONY: build dev test itest lint secret-scan workflow-lint fakeclaude egress vet e2e-context e2e-m1 ui ui-dev ui-shots ui-smoke demo image image-multiarch clean
 
 build: ui
 	$(GO) build -ldflags "$(LDFLAGS)" -o bin/spool ./cmd/spool
@@ -113,6 +113,15 @@ ui-shots: build
 # trace at web/smoke-trace.zip.
 ui-smoke: build
 	bash scripts/fixture-hub.sh npm run -s test:smoke
+
+# The README demo video (#447): record control-room footage from a fixture
+# hub, like ui-shots, then compose and render it with Remotion. web/demo is a
+# package of its own so the control room never ships its dependencies. The
+# mp4 lands in web/demo/out and is uploaded to GitHub, never committed.
+demo: build
+	cd web/demo && npm install --silent
+	bash scripts/fixture-hub.sh node demo/record.mjs
+	cd web/demo && npm run -s render
 
 dev: server
 	./bin/spool --listen 127.0.0.1:8080 --mcp-listen 0.0.0.0:8081 --data-dir ./.data
