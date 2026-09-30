@@ -1,0 +1,21 @@
+{
+  "loop": "terra",
+  "trigger": "tick",
+  "pacing": "self",
+  "min_wake_sec": 300,
+  "max_wake_sec": 14400,
+  "recipients": [
+    "iris",
+    "quinn",
+    "enesalatas"
+  ],
+  "shown_refs": [],
+  "sends": [],
+  "github_writes": [],
+  "final_text": "Nothing new.\n\n[next-wake: 1h]\n[doing: PR #9 waits on review, PR #12 waits on the operator's live run, and #15 is next]",
+  "id": "synthetic-doing-too-long",
+  "slip": "a [doing:] line the store cuts short",
+  "input": [
+    "[tick · 2026-11-26 10:00 UTC · self-paced]"
+  ]
+}

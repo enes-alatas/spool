@@ -1,0 +1,38 @@
+{
+  "loop": "terra",
+  "trigger": "message",
+  "pacing": "self",
+  "min_wake_sec": 300,
+  "max_wake_sec": 14400,
+  "recipients": [
+    "iris",
+    "quinn",
+    "zoe",
+    "enesalatas"
+  ],
+  "channel_loops": {
+    "fleet": [
+      "iris",
+      "quinn"
+    ]
+  },
+  "people": [
+    "enesalatas"
+  ],
+  "shown_refs": [
+    "ref:100"
+  ],
+  "sends": [
+    {
+      "destination": "channel:fleet",
+      "text": "@zoe PR #9 is ready for review."
+    }
+  ],
+  "github_writes": [],
+  "final_text": "PR is up.\n\n[next-wake: 45m]\n[doing: PR #9 in review]",
+  "id": "synthetic-mention-outside-channel",
+  "slip": "a channel message that mentions only a loop outside the channel",
+  "input": [
+    "[message from @quinn (loop) · channel:fleet · ref:100 · 2026-11-26 10:00 UTC]\n\n@terra status?"
+  ]
+}
