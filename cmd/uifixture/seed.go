@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/enes-alatas/spool/internal/attach"
 	"github.com/enes-alatas/spool/internal/store"
 )
 
@@ -242,7 +243,7 @@ func position(index int) *int { return &index }
 // A group conversation and one control-room thread. Every handle here is
 // invented; the display names are first names with no surname, and none of
 // them belongs to anyone.
-func seedConversations(ctx context.Context, db store.Store, ids map[string]string) error {
+func seedConversations(ctx context.Context, db store.Store, files *attach.Files, ids map[string]string) error {
 	group := []struct {
 		author string
 		from   string
@@ -266,6 +267,8 @@ func seedConversations(ctx context.Context, db store.Store, ids map[string]strin
 		web bool
 		// replyTo is the position in this list of the message it answers.
 		replyTo *int
+		// files came with it, one per state the room draws (#460).
+		files []fixtureFile
 	}{
 		// Oldest first, as the store's ids would be: the channel shows them
 		// in id order, so an entry out of time order here shoots a thread that
@@ -278,14 +281,25 @@ func seedConversations(ctx context.Context, db store.Store, ids map[string]strin
 		// counts at any age (#269) and the pane dates its rows: a fixture
 		// whose failures are all today's shoots a date column that could be
 		// missing a day and look the same.
+		// The oldest, and a month old: retention has removed its photo and
+		// the recording was never kept, so the channel shows both greyed
+		// lines. Addressed to the archivist, which is where it went.
+		{author: "rana", text: "@archivist notes from the planning call: the whiteboard, and the recording for anyone who missed it.", at: -33 * 24 * time.Hour, to: []string{ids["archivist"]}, files: []fixtureFile{
+			{name: "whiteboard.png", body: fixtureScreenshot(), removed: true},
+			{name: "planning-call.mp4", notKept: store.NotKeptTooLarge, size: 48_234_496},
+		}},
 		{author: "archivist", from: ids["archivist"], text: "Incident summary is up for review: nineteen reports, two of them one line each.", at: -26 * time.Hour, failed: "timeout reaching the surface"},
 		{author: "watcher", from: ids["watcher"], text: "Nightly is green again: the break was a missing fixture in 4f1c2ab, fixed in 9d0e77c.", at: -34 * time.Minute},
-		{author: "watcher", from: ids["watcher"], text: "Tonight's run broke again at the same fixture. Not reverting it myself — the change it belongs to is still open.", at: -21 * time.Minute, failed: "timeout reaching the surface"},
+		{author: "watcher", from: ids["watcher"], text: "Tonight's run broke again at the same fixture. Not reverting it myself — the change it belongs to is still open.", at: -21 * time.Minute, failed: "timeout reaching the surface", files: []fixtureFile{
+			{name: "nightly.log", body: fixtureLog()},
+		}},
 		// The operator answering in the channel, as a reply: the page draws
 		// the quote from `reply_to_id`, and a fixture without a reply shoots
 		// a page that could have lost it.
-		{author: "operator", text: "Which change is it? I'll chase the author rather than have you revert it.", at: -19 * time.Minute, to: []string{ids["watcher"]}, web: true, replyTo: position(2)},
-		{author: "rana", text: "@gardener the install page still tells people to run `make setup`, which we removed last week. Can you take a pass?", at: -9 * time.Minute, to: []string{ids["gardener"]}},
+		{author: "operator", text: "Which change is it? I'll chase the author rather than have you revert it.", at: -19 * time.Minute, to: []string{ids["watcher"]}, web: true, replyTo: position(3)},
+		{author: "rana", text: "@gardener the install page still tells people to run `make setup`, which we removed last week. Can you take a pass?", at: -9 * time.Minute, to: []string{ids["gardener"]}, files: []fixtureFile{
+			{name: "install-page.png", body: fixtureScreenshot()},
+		}},
 		{author: "gardener", from: ids["gardener"], text: "Three pages, all fixed — PR #48. The quickstart also showed the old output, so that block went too.", at: -8 * time.Minute},
 	}
 	groupIDs := make([]int64, len(group))
@@ -327,6 +341,9 @@ func seedConversations(ctx context.Context, db store.Store, ids map[string]strin
 			return fmt.Errorf("group message: %w", err)
 		}
 		groupIDs[i] = msg.ID
+		if err := keepFixtureFiles(ctx, db, files, msg.ID, message.at, message.files); err != nil {
+			return err
+		}
 		if message.failed != "" {
 			// Recorded the way the sender records it, after the retries are
 			// spent — the fields are never written by the insert.

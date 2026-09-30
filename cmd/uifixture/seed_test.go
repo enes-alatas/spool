@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/enes-alatas/spool/internal/attach"
 	"github.com/enes-alatas/spool/internal/loop"
 	"github.com/enes-alatas/spool/internal/operator"
 	"github.com/enes-alatas/spool/internal/store"
@@ -25,8 +26,12 @@ func TestSeedWritesAFleetTheRoomCanRender(t *testing.T) {
 	}
 	defer db.Close()
 
+	files, err := attach.Open(filepath.Join(t.TempDir(), "files"))
+	if err != nil {
+		t.Fatalf("files: %v", err)
+	}
 	ctx := context.Background()
-	if err := seed(ctx, db); err != nil {
+	if err := seed(ctx, db, files); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 
@@ -266,5 +271,70 @@ func TestTheFixtureNeverReplacesAnOperatorToken(t *testing.T) {
 	}
 	if string(got) != existing {
 		t.Fatalf("token after the refusal = %q, want the original %q", got, existing)
+	}
+}
+
+// The room draws an attachment four ways (#460): an image it thumbnails, a
+// file it links, and the greyed lines for bytes retention removed and for a
+// file never kept. A fixture missing one shoots a channel where that line
+// could be broken and look the same. The kept ones must be on disk, or the
+// hub answers the thumbnail with a 404.
+func TestSeedCarriesEveryAttachmentState(t *testing.T) {
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "spool.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	files, err := attach.Open(filepath.Join(t.TempDir(), "files"))
+	if err != nil {
+		t.Fatalf("files: %v", err)
+	}
+	ctx := context.Background()
+	if err := seed(ctx, db, files); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	msgs, err := db.Messages().ListConversation(ctx, store.ConversationGroup, "", 100)
+	if err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	var image, file, removed, notKept int
+	for _, msg := range msgs {
+		rows, err := db.Attachments().ByMessage(ctx, msg.ID)
+		if err != nil {
+			t.Fatalf("attachments of %d: %v", msg.ID, err)
+		}
+		for _, row := range rows {
+			_, statErr := os.Stat(files.Path(row.Path))
+			switch {
+			case row.NotKept != "":
+				notKept++
+			case row.RemovedAt != 0:
+				removed++
+				if statErr == nil {
+					t.Errorf("%s: removed at %d but still on disk", row.Name, row.RemovedAt)
+				}
+			default:
+				if statErr != nil {
+					t.Errorf("%s: kept but not on disk: %v", row.Name, statErr)
+				}
+				if row.Kind == store.AttachmentImage {
+					image++
+					if row.Width == 0 || row.Height == 0 {
+						t.Errorf("%s: an image without dimensions", row.Name)
+					}
+				} else {
+					file++
+				}
+			}
+		}
+	}
+	for _, check := range []struct {
+		what  string
+		count int
+	}{{"a kept image", image}, {"a kept file", file}, {"removed by retention", removed}, {"never kept", notKept}} {
+		if check.count == 0 {
+			t.Errorf("no fixture attachment is %s, so no shot can show one", check.what)
+		}
 	}
 }
