@@ -154,3 +154,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 20:20: Enes yes to the scheduling rule in CONVENTIONS; added to #462's body as a second rule ("A decision is not a reorder"). Terra keeps #462 in a gap; no re-ping.
 - 20:25: Terra acted on the first ping: #465 (#462) open, Quinn reviewing; it predates the second rule, asked on the PR to fold it. Terra filed #464 (backend slice of #460); I filed #466 (web slice, Iris) as sub-issues of #460, which is now the parent under #123. #464 PR opens after #465 merges. Iris's PR closes #466.
 - 20:30: Terra reordered to match: #467 (#464, control-room attachment API) in review first; #465 (#462) back to draft, parked, still owes the second-rule fold. Iris builds #466 against #467.
+- 20:35: #465 has both #462 rules, two atomic commits (Quinn's ask, fine). Draft behind #467.
