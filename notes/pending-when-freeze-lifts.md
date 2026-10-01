@@ -155,3 +155,9 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 20:25: Terra acted on the first ping: #465 (#462) open, Quinn reviewing; it predates the second rule, asked on the PR to fold it. Terra filed #464 (backend slice of #460); I filed #466 (web slice, Iris) as sub-issues of #460, which is now the parent under #123. #464 PR opens after #465 merges. Iris's PR closes #466.
 - 20:30: Terra reordered to match: #467 (#464, control-room attachment API) in review first; #465 (#462) back to draft, parked, still owes the second-rule fold. Iris builds #466 against #467.
 - 20:35: #465 has both #462 rules, two atomic commits (Quinn's ask, fine). Draft behind #467.
+
+## 2026-10-01 07:10 — morning sweep
+- Overnight: #467 (#464 API) and Iris's web half (#466, three commits) merged; #447 demo video merged; runtime v0.3.0-47. Closed #460 and #123 (all slices on main). L3 = only Enes's real-Slack check, then #197.
+- #465 (#462, both rules) out of draft, green, rebased, unreviewed since 21:14 → nudged Quinn.
+- Sliced #368 into sub-issues under the new rule: #470 (procedures move out, docs) → Iris now; #471 (comment rule loosened, docs) → Iris after; #472 (mechanical checks, chore, three PRs) → Terra after #429/#450. #472 relabelled chore after a mis-file.
+- Terra: #429 → #450 → #472. Iris: #470 → #471. DM'd Enes the status (typo "#370-series" meant #470-series).
