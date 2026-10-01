@@ -116,8 +116,9 @@ func (tg *fakeTelegram) nameChat(chatID int64, title string) {
 // A second Telegram group the bots hear from is recorded unbound and
 // ingests nothing, the fleet channel's group staying where it was. Once the
 // operator binds it to a channel, the channel's posts go there and not to
-// the fleet room, and a person's message there arrives as the channel's,
-// stored once and addressed among its loops (ADR-0038).
+// the fleet room, a person there is a recipient, and a person's message
+// there arrives as the channel's, stored once and addressed among its loops
+// (ADR-0038).
 func TestARoomCarriesItsChannel(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 7171, First: "Operator", Username: "operator"}
@@ -168,6 +169,12 @@ func TestARoomCarriesItsChannel(t *testing.T) {
 			t.Fatalf("send %v refused: %s", send, resultText(res))
 		}
 	}
+	// The room puts people in the channel: a send naming only a person is
+	// a send to them, as in the group.
+	if res := callSend(t, alpha, map[string]any{"destination": "channel:backend", "text": "@operator please look"}); res.IsError {
+		t.Fatalf("a person in the channel's room was no recipient: %s", resultText(res))
+	}
+	tg.waitSentFrom(t, backendChat, "alpha", "please look")
 	tg.waitSentFrom(t, backendChat, "alpha", "@beta backend words")
 	tg.waitSentFrom(t, groupChatID, "alpha", "@beta fleet words")
 	for _, sent := range tg.sentTo(groupChatID) {
@@ -208,6 +215,19 @@ func TestARoomCarriesItsChannel(t *testing.T) {
 	if sent := tg.waitSentFrom(t, backendChat, "alpha", "threaded answer"); sent.ReplyTo == 0 {
 		t.Errorf("the reply was posted unthreaded: %+v", sent)
 	}
+
+	// A loop in the channel with no room of its own reaches no person there:
+	// woken by a person through another loop's room, its reply to them is
+	// refused rather than said on the hub alone, where nobody reads it.
+	srv.createLoop("gamma", nil)
+	srv.wantRefusal("PUT", "/api/channels/backend/loops/gamma", nil, 204, "")
+	const toGamma = "@gamma from a room that is not yours"
+	tg.post(backendChat, "supergroup", toGamma, operator)
+	srv.waitForMessage(toGamma)
+	gamma := mcpSession(t, srv, hubMCPToken(t, srv, "gamma"))
+	toPerson := map[string]any{"destination": "channel:backend", "text": "an answer nobody would read",
+		"reply_to": "ref:" + strconv.FormatInt(srv.activityWith(toGamma)[0].ID, 10)}
+	wantSendError(t, callSend(t, gamma, toPerson), "no_recipients")
 }
 
 // upgrade turns a basic group into a supergroup under a new chat id, as
