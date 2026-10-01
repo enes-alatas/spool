@@ -1,6 +1,6 @@
 # ADR-0020: One bot ingests a group; every bot still delivers
 
-Date: 2026-08-20 · Status: accepted · Amended: 2026-09-17 (§1, settle margin); 2026-09-19 (§2, delivered_to); 2026-09-20 (§1–§3 are Surface rules); 2026-09-23 (§1 elects across the mirror, not into the group); 2026-09-29 (§2, a reply's target can come from another bot); 2026-09-29 (§1 on Slack, the key elects)
+Date: 2026-08-20 · Status: accepted · Amended: 2026-09-17 (§1, settle margin); 2026-09-19 (§2, delivered_to); 2026-09-20 (§1–§3 are Surface rules); 2026-09-23 (§1 elects across the mirror, not into the group); 2026-09-29 (§2, a reply's target can come from another bot); 2026-09-29 (§1 on Slack, the key elects); 2026-10-01 (§1 per room)
 
 ## Context
 
@@ -66,6 +66,12 @@ three questions Milo had listed, of which this was the first.
    makes the *mirror* deaf rather than the fleet channel: the operator and the
    loops go on talking in the control room, and what is lost is the inbound
    half of one surface. The remedy is unchanged.
+
+   **Amendment (2026-10-01, #514, ADR-0038): per room.** On Telegram the
+   candidates are the loops whose room in the chat is bound to a channel,
+   and a candidate's binding time is its room's. A chat carries one channel,
+   so the election is per channel as well as per chat. A bot whose room
+   there is unbound is no candidate.
 
    **Amendment (2026-09-29, #230): on Slack, the key is the election.** Slack
    gives a message one `ts` per channel, not one per app, so every loop's

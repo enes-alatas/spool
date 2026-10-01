@@ -1,6 +1,6 @@
 # ADR-0029: The Surface contract
 
-Date: 2026-09-20 · Status: accepted · Amends: ADR-0020, ADR-0025 (item 4), ADR-0026 (item 1) · Amended: 2026-09-22 (item 2: the bus kinds a surface mirrors); 2026-09-23 (items 5 and 7: a surface is attached later and mirrors the fleet channel); 2026-09-27 (item 2: a credential and an identity are structs); 2026-09-28 (item 8: hub notices); 2026-09-29 (item 8: Slack's notices and login notice); 2026-09-29 (item 2: the mirror subscription is lossless); 2026-09-30 (item 2: `Stop`, ADR-0036)
+Date: 2026-09-20 · Status: accepted · Amends: ADR-0020, ADR-0025 (item 4), ADR-0026 (item 1) · Amended: 2026-09-22 (item 2: the bus kinds a surface mirrors); 2026-09-23 (items 5 and 7: a surface is attached later and mirrors the fleet channel); 2026-09-27 (item 2: a credential and an identity are structs); 2026-09-28 (item 8: hub notices); 2026-09-29 (item 8: Slack's notices and login notice); 2026-09-29 (item 2: the mirror subscription is lossless); 2026-09-30 (item 2: `Stop`, ADR-0036); 2026-10-01 (item 5: a mirror per room, ADR-0038)
 
 ## Context
 
@@ -126,6 +126,15 @@ contract.
    hub that exists with no surface configured at all; a surface supplies
    `owner_dm` and *mirrors* the fleet channel. Membership in it is per loop
    and is the hub's to decide, not a reading of who is in the platform's room.
+
+   **Amendment (2026-10-01, #514, ADR-0038):** a surface mirrors each channel
+   the loop has a room for, not the fleet channel alone. The hub asks two
+   things of it per channel. Outward, it posts a loop's message in a channel
+   to the room the loop has bound to that channel, and keeps it on the hub
+   when there is none. Inward, it records a chat it has no room for as an
+   unbound room, ingests nothing from it, and says which channel a message
+   from a bound room was said in. Telegram does this from slice 3; Slack
+   mirrors its one channel until slice 4.
 
 6. **These stay Telegram's own**, and an adapter is free to have nothing like
    them: long-polling `getUpdates` for transport, the 4096-character split,
