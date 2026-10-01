@@ -256,29 +256,13 @@ agents — Claude sessions today, Spool's own loops from L2.*
   thinks out loud, and neither was written for an audience; an issue or PR that needs the substance
   of something said there states it in its own words, as the writer's own
   claim.
-- **Proving an event-driven workflow** (#209): a workflow that fires on
-  anything but `pull_request` or `push` — `issues`, `issue_comment`,
-  `schedule`, `workflow_run` — is never exercised by PR CI, so it can merge
-  broken and stay broken until someone reads the Actions tab. Three did in one
-  week (#203, #207). So: every such workflow also declares `workflow_dispatch`
-  with inputs standing in for the event payload, and a PR that adds or changes
-  one links **a green dispatched run from its own branch**, against fixture
-  data, in the template's Verification section. The reviewer checks that link
-  the way they check CI; a PR without it is not ready. After the merge the
-  author runs it once more on `main` via a real event and reports it on the
-  PR — the dispatched run proves the code, the real event proves the trigger.
-  `scripts/workflow-lint.sh` (a step of CI's `checks` job) enforces what a file can
-  show: the missing dispatch, a checkout without `contents: read` (#203), and
-  an event body interpolated anywhere in a workflow, `env:` included (#207).
-  **The exception is a brand-new workflow**, which cannot be dispatched at
-  all: GitHub dispatches only workflows already on the default branch, and
-  answers `404 … not found on the default branch` for one that lives on a
-  branch (measured on #210). So a PR *adding* a workflow says that in
-  Verification instead of linking a run, carries whatever evidence it can
-  reach — a harness that runs the real step, not a copy of it — and its
-  author dispatches it the moment it lands, reporting the run on the PR. The
-  reviewer holds the author to that last step; until it happens the workflow
-  is unproven, however green the PR was.
+- **Proving an event-driven workflow** (#209): a workflow firing on anything
+  but `pull_request` or `push` declares `workflow_dispatch`, and a PR that
+  adds or changes one links a green dispatched run from its own branch in
+  Verification. A brand-new workflow, which cannot be dispatched yet, is the
+  exception until it lands, when its author dispatches it and reports the run
+  on the PR. Procedure: `/prove-event-workflow`
+  (`.claude/skills/prove-event-workflow/`).
 - **Definition of done** — self-check before opening a PR:
   `make lint && make test && make itest` green locally, plus `npm run lint`,
   `npm run format:check` and `npm test` in `web/` when the change touches it;
