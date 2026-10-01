@@ -65,12 +65,16 @@ func Args(opts Opts) ([]string, error) {
 	return append(args, opts.ExtraArgs...), nil
 }
 
+// SpoolMCPServer is the hub's MCP server's name in a loop's --mcp-config,
+// and so in the servers the CLI reports at init.
+const SpoolMCPServer = "spool"
+
 // MCPConfigJSON renders the --mcp-config contents pointing claude at the
 // hub's MCP endpoint as the loop it runs (ADR-0026).
 func MCPConfigJSON(url, token string) string {
 	config, _ := json.Marshal(map[string]any{
 		"mcpServers": map[string]any{
-			"spool": map[string]any{
+			SpoolMCPServer: map[string]any{
 				"type":    "http",
 				"url":     url,
 				"headers": map[string]string{"Authorization": "Bearer " + token},
