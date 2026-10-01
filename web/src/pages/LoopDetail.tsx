@@ -33,7 +33,7 @@ import { missionDraft, missionSaveResult, missionSaveWarning } from '../mission'
 import { EFFORT_OPTIONS, PACING_OPTIONS } from '../options'
 import { useModelOptions } from '../models'
 import { useStream } from '../stream'
-import { claudeLoginDown, workstationCondition } from '../workstation'
+import { claudeLoginDown, hubUnreachable, workstationCondition } from '../workstation'
 import { toEntries, extractDelta } from '../timeline'
 import { AttachButton, AttachedFile, attachmentErrorText, pickRefusal } from '../components/Attachments'
 import { MessageKnot } from '../components/MessageKnot'
@@ -546,6 +546,10 @@ function WorkstationNote({ loop }: { loop: LoopView }) {
       )
     case 'unauthenticated':
       return <div className="ws-down-note">Workstation down: {claudeLoginDown(loop)}.</div>
+    case 'hub_unreachable':
+      return (
+        <div className="ws-down-note">Can't reach the hub: {hubUnreachable(loop.workstation_detail)}.</div>
+      )
     default:
       return (
         <div className="ws-down-note">
@@ -633,14 +637,14 @@ function WorkstationPanel({ loop, runningVerb }: { loop: LoopView; runningVerb: 
               <button className="btn sm" onClick={() => power.mutate('poweron')} disabled={busy}>
                 Power on
               </button>
-            ) : (
+            ) : loop.down_reason === 'unauthenticated' ? (
               // a missing or refused token is fixed in Settings, and a
               // button that cannot fix it would point the operator away
               // from the fix
               <Link className="btn sm" to="/settings">
                 Set the Claude token
               </Link>
-            )}
+            ) : null}
             <button
               className="btn sm danger"
               onClick={() => setConfirming(true)}

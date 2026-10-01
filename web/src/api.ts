@@ -75,7 +75,7 @@ export interface LoopView {
   // 'unauthenticated' when there is no usable Claude login to run under
   // (none is configured, or the API refused the one in use), and
   // 'unreachable' when it should be running and isn't.
-  down_reason: '' | 'powered_off' | 'not_provisioned' | 'unauthenticated' | 'unreachable'
+  down_reason: '' | 'powered_off' | 'not_provisioned' | 'unauthenticated' | 'unreachable' | 'hub_unreachable'
   // The allowlisted Telegram sender this loop may message privately, and the
   // handle to show for them. Absent when no owner is configured; the handle
   // is absent when the sender record carries no username.
