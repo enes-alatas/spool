@@ -93,3 +93,12 @@ export function AttachIcon() {
     </Icon>
   )
 }
+
+// Channels: the hash a channel is named with.
+export function ChannelsIcon() {
+  return (
+    <Icon>
+      <path d="M8 3.5 6.5 16.5M13.5 3.5 12 16.5M3.75 7.5h13M3.25 12.5h13" />
+    </Icon>
+  )
+}

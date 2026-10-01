@@ -9,6 +9,7 @@ import Dashboard from './pages/Dashboard'
 import LoopDetail from './pages/LoopDetail'
 import NewLoop from './pages/NewLoop'
 import Activity from './pages/Activity'
+import Channels from './pages/Channels'
 import Access from './pages/Access'
 import Settings from './pages/Settings'
 import Rules from './pages/Rules'
@@ -41,6 +42,7 @@ const router = createBrowserRouter([
       // carries the badge that opens its pane, rather than on a router error.
       { path: 'undelivered', element: <Navigate to="/" replace /> },
       { path: 'access', element: <Access /> },
+      { path: 'channels', element: <Channels /> },
       { path: 'settings', element: <Settings /> },
       { path: 'rules', element: <Rules /> },
     ],
