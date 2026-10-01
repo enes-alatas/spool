@@ -21,9 +21,30 @@ type Event struct {
 }
 
 type InitInfo struct {
-	SessionID string `json:"session_id"`
-	Cwd       string `json:"cwd"`
-	Model     string `json:"model"`
+	SessionID  string      `json:"session_id"`
+	Cwd        string      `json:"cwd"`
+	Model      string      `json:"model"`
+	MCPServers []MCPServer `json:"mcp_servers"`
+}
+
+// MCPServer is one MCP server as the CLI reports it at init: its name in
+// --mcp-config, and whether it connected ("connected", "failed", ...).
+type MCPServer struct {
+	Name   string `json:"name"`
+	Status string `json:"status"`
+}
+
+// SpoolMCPFailure is the status the CLI gave the hub's MCP server when it
+// did not connect, and empty when it did or the process has none: without
+// it the loop runs its turns unable to send anything (#476). Pending is not
+// a failure; the CLI may still be connecting.
+func (init *InitInfo) SpoolMCPFailure() string {
+	for _, server := range init.MCPServers {
+		if server.Name == SpoolMCPServer && server.Status != "connected" && server.Status != "pending" {
+			return server.Status
+		}
+	}
+	return ""
 }
 
 // AssistantInfo carries the API message of an assistant event. Content is kept

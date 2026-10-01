@@ -1,6 +1,6 @@
 # ADR-0021: The operator can power a workstation, and switched-off is not down
 
-Date: 2026-08-20 · Status: accepted · Amended: 2026-09-24 (item 5, model_unrecognized), 2026-09-27 (item 5, down_reason values), 2026-09-28 (item 5, a rejected login), 2026-09-29 (item 5, one tick through a rejected login)
+Date: 2026-08-20 · Status: accepted · Amended: 2026-09-24 (item 5, model_unrecognized), 2026-09-27 (item 5, down_reason values), 2026-09-28 (item 5, a rejected login), 2026-09-29 (item 5, one tick through a rejected login), 2026-10-01 (item 5, hub_unreachable)
 
 ## Context
 
@@ -88,6 +88,19 @@ reachable. Rendered naively, a successful power-off shows up as the alert
    batch, so the first turn that authenticates met a backlog of stale
    wakes. Unlike item 6, a tick is still queued, because the loop has not
    been switched off: its retries need the tick to probe the login.
+
+   **Amendment (2026-10-01, #476):** `down_reason` gains `hub_unreachable`:
+   claude runs, but the Spool MCP server it was given did not connect, so
+   the loop cannot send anything. The workstation cannot reach the hub's
+   loop listener, or the hub refused its token. It is the `workstation_down`
+   alert, held through spawns and health polls the way a rejected login is,
+   and it clears on the first spawn whose Spool MCP server connects. The CLI
+   names the failure in its init event, before the turn's first API call,
+   so the process is killed there: the turn bills next to nothing, and its
+   batch goes back to the front of the queue, untouched by the model. The
+   loop retries on the crash ladder, and the queue keeps one tick as it
+   does through a rejected login. A handoff turn is let run, since its note
+   needs no tools and the rotation it is for still happens.
 6. **A switched-off workstation stays off.** While the intent stands, ticks are
    skipped — not queued, so power-on is not met by a backlog of stale wakes —
    and inbound messages go to the loop's stored inbox without waking it. They

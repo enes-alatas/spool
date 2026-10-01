@@ -63,6 +63,10 @@ const (
 	DownReasonUnauthenticated = "unauthenticated"
 	// DownReasonUnreachable: it should be running and isn't. The alert.
 	DownReasonUnreachable = "unreachable"
+	// DownReasonHubUnreachable: claude runs, but its Spool MCP server did
+	// not connect, so the loop cannot send anything (#476). The workstation
+	// cannot reach the hub's loop listener, or the hub refused its token.
+	DownReasonHubUnreachable = "hub_unreachable"
 )
 
 // The operator's power controls, as passed to Power.
@@ -198,6 +202,10 @@ type Actor struct {
 	// health polls that would otherwise clear it: the machine is up, the
 	// login is not, and only a turn that authenticates says it is back.
 	loginRejected bool
+	// hubUnreachable holds the hub_unreachable alert the same way: the
+	// machine is up, its claude cannot reach the hub, and only a spawn whose
+	// Spool MCP server connects says it can again.
+	hubUnreachable bool
 	// turnRefusal is the CLI's sentence when the API refused the running
 	// turn's login, empty otherwise.
 	turnRefusal string
@@ -458,7 +466,7 @@ func (actor *Actor) drainStoredInbox() {
 }
 
 func (actor *Actor) enqueue(env Envelope) {
-	if actor.loginRejected && env.Trigger == store.TriggerTick {
+	if (actor.loginRejected || actor.hubUnreachable) && env.Trigger == store.TriggerTick {
 		// every tick of an outage would otherwise reach the first turn
 		// that authenticates, as a burst of stale wakes (#420)
 		actor.inbox = latestTickOnly(append(actor.inbox, env))
@@ -954,6 +962,17 @@ func (actor *Actor) handleEvent(ev claude.Event) {
 			}
 		}
 		actor.storeClaudeEvent(ev)
+		if ev.Init != nil {
+			if status := ev.Init.SpoolMCPFailure(); status != "" {
+				actor.holdWithoutHub(status)
+				return
+			}
+			if actor.hubUnreachable {
+				actor.hubUnreachable = false
+				actor.log().Info("spool MCP server connected again")
+				actor.setWorkstationUp()
+			}
+		}
 		if actor.state == StateWaking && actor.turn == nil {
 			// spawned with no work (shouldn't normally happen)
 			actor.state = StateIdle
@@ -975,6 +994,11 @@ func (actor *Actor) handleEvent(ev claude.Event) {
 		actor.deps.Bus.Publish(bus.Item{Kind: bus.KindAgentEvent, LoopID: actor.loop.ID, Payload: json.RawMessage(ev.Raw)})
 	case ev.Type == "result":
 		actor.storeClaudeEvent(ev)
+		if actor.hubUnreachable && actor.state == StateDraining && actor.turn == nil {
+			// a turn that outran the kill holdWithoutHub sent: its batch
+			// is back in the queue, and it ran without the hub's tools
+			return
+		}
 		actor.finishTurn(ev)
 	default:
 		actor.storeClaudeEvent(ev)
@@ -1245,7 +1269,7 @@ func (actor *Actor) handleProcExit() {
 			actor.rotateContext("")
 			return
 		}
-		if actor.loginRejected {
+		if actor.loginRejected || actor.hubUnreachable {
 			// the work waits on the ladder, not on the next spawn: an
 			// immediate wake would only be refused again
 			actor.crashBackoff()
@@ -1340,6 +1364,38 @@ func (actor *Actor) rejectLogin(sentence string) {
 	actor.setWorkstationDown(DownReasonUnauthenticated, fmt.Sprintf("The Claude login was rejected (%s); %s", sentence, fix))
 	actor.inbox = latestTickOnly(append(append([]Envelope(nil), actor.currentBatch...), actor.inbox...))
 	actor.drainRefusedProcess()
+}
+
+// holdWithoutHub holds the loop on a claude whose Spool MCP server did not
+// connect (#476). Its turns would run without the hub's tools, so nothing
+// the loop said would reach anyone, and the fleet would show it healthy.
+// The CLI reports this at init, before the turn's first API call, so the
+// process is killed there and the batch goes back to the front of the
+// queue, untouched by the model. The fault is outside the loop (a listener
+// the workstation cannot reach, a token the hub refuses), so the loop finds
+// it fixed by retrying on the crash ladder, holding one tick as a refused
+// login does. A handoff turn is let run: its note needs no tools, and the
+// rotation it is for still happens.
+func (actor *Actor) holdWithoutHub(status string) {
+	actor.hubUnreachable = true
+	actor.setWorkstationDown(DownReasonHubUnreachable, fmt.Sprintf(
+		"claude reported its Spool MCP server %s, so the loop cannot send anything: the workstation cannot reach the hub's loop listener, or the hub refused its token", status))
+	if actor.handoffTurn {
+		return
+	}
+	if actor.turn != nil {
+		actor.turn.EndedAt = now()
+		actor.turn.IsError = true
+		_ = actor.deps.Store.Turns().Finish(context.Background(), actor.turn)
+	}
+	actor.inbox = latestTickOnly(append(append([]Envelope(nil), actor.currentBatch...), actor.inbox...))
+	actor.turn = nil
+	actor.currentBatch = nil
+	actor.state = StateDraining
+	actor.publishState()
+	if actor.proc != nil {
+		_ = actor.proc.Kill()
+	}
 }
 
 // latestTickOnly leaves one tick in envs: the latest, whose header tells
@@ -1819,8 +1875,9 @@ func (actor *Actor) setWorkstationDown(reason, detail string) {
 
 func (actor *Actor) setWorkstationUp() {
 	actor.wsEverUp = true
-	if actor.loginRejected {
-		// the machine answering says nothing about the login
+	if actor.loginRejected || actor.hubUnreachable {
+		// the machine answering says nothing about the login, or about
+		// whether its claude can reach the hub
 		return
 	}
 	actor.healthSnap.Store(workstationSnap{Health: runtime.Health{Up: true}})

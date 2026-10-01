@@ -72,6 +72,13 @@
 // stand-in assistant message carrying error "authentication_failed" and an
 // errored result that bills nothing. The turn uses up no script line, and
 // removing the file is logging in again.
+//
+// The init event lists the spool MCP server whenever there is an MCP config,
+// as connected; it does not dial it to find out. An "mcp-failed" file in
+// $FAKECLAUDE_STATE reports it failed instead, for every loop of the hub, as
+// the real CLI's init did on a loop whose workstation could not reach the
+// hub (#476). The turn then runs on, as the real one did; removing the file
+// is the connection coming back.
 package main
 
 import (
@@ -217,10 +224,18 @@ func main() {
 
 		if first {
 			first = false
-			emit(map[string]any{
+			init := map[string]any{
 				"type": "system", "subtype": "init",
 				"session_id": id, "cwd": cwd, "model": initModel(model),
-			})
+			}
+			if mcpConfig != "" || os.Getenv("FAKECLAUDE_MCP_CONFIG") != "" {
+				status := "connected"
+				if _, err := os.Stat(filepath.Join(stateDir, "mcp-failed")); err == nil {
+					status = "failed"
+				}
+				init["mcp_servers"] = []map[string]any{{"name": "spool", "status": status, "source": "dynamic"}}
+			}
+			emit(init)
 		}
 
 		if _, err := os.Stat(filepath.Join(stateDir, "login-expired")); err == nil {
