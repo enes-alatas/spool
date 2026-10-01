@@ -17,7 +17,9 @@ the operator updates the running fleet, so "what the fleet runs" always has
 a name rather than a merge time. Notes come from the Conventional Commit
 titles, `gh release create <tag> --generate-notes`; there is no CHANGELOG
 file, because a generated list and a hand-kept one disagree eventually and
-the generated one is the honest half.
+the generated one is the honest half. A release is titled with its tag
+alone (`v0.4.0`, #485): the rung a tag completes is on its milestone, not
+in the name.
 
 **A build says which Spool it is** (#223): `git describe --tags --always
 --dirty` is baked in by the Makefile, so a tagged build reports the tag, a
