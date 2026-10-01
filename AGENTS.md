@@ -13,7 +13,7 @@ humans and each other. This file orients you; it links, it doesn't duplicate.
 5. `docs/adr/` — why things are the way they are; never contradict an accepted
    ADR silently. A narrowing or clarification is a dated in-place
    `**Amendment (YYYY-MM-DD, #n):**` block that adds lines; a reversal is a
-   new, superseding ADR. Existing lines stay as accepted — CONVENTIONS.md
+   new, superseding ADR. Existing lines stay as accepted — `/amend-adr`
    lists the three exceptions (a bare rename, a rewrap, bookkeeping) (#141)
 
 ## Non-negotiables (digest — CONVENTIONS.md is authoritative)
