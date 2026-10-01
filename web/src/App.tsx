@@ -4,7 +4,14 @@ import { api } from './api'
 import { useGlobalStream } from './stream'
 import { SpoolGlyph } from './components/Spool'
 import { loopsNeedingClaudeToken, missingTokenNotice } from './claudeToken'
-import { AccessIcon, ActivityIcon, FleetIcon, RulesIcon, SettingsIcon } from './components/Icons'
+import {
+  AccessIcon,
+  ActivityIcon,
+  ChannelsIcon,
+  FleetIcon,
+  RulesIcon,
+  SettingsIcon,
+} from './components/Icons'
 
 // The primary destinations, in one list so the centred desktop row and the
 // mobile bottom bar can never drift apart. Undelivered was one until it
@@ -12,6 +19,7 @@ import { AccessIcon, ActivityIcon, FleetIcon, RulesIcon, SettingsIcon } from './
 const DESTINATIONS = [
   { to: '/', label: 'Fleet', Icon: FleetIcon, end: true },
   { to: '/activity', label: 'Activity', Icon: ActivityIcon },
+  { to: '/channels', label: 'Channels', Icon: ChannelsIcon },
   { to: '/access', label: 'Access', Icon: AccessIcon },
   { to: '/rules', label: 'Rules', Icon: RulesIcon },
   { to: '/settings', label: 'Settings', Icon: SettingsIcon },
