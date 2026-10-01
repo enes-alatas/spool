@@ -19,9 +19,9 @@ import (
 // is stateless, so every POST stands alone and no session state accrues.
 
 type sendMessageIn struct {
-	Destination string `json:"destination" jsonschema:"where this message goes: owner_dm (your owner's private chat on your attached surface — always the same person, so a tick can open a private conversation), group (the fleet channel; @mention recipients in the text), or control_room (your private web thread with the operator). Your system prompt says which of these you have"`
+	Destination string `json:"destination" jsonschema:"where this message goes: owner_dm (your owner's private chat on your attached surface — always the same person, so a tick can open a private conversation), group (the fleet channel; @mention recipients in the text), channel:<name> (another channel you are in; @mention recipients in it), or control_room (your private web thread with the operator). Your system prompt says which of these you have"`
 	ReplyTo     string `json:"reply_to,omitempty" jsonschema:"reference of the message this replies to (\"ref:42\"), exactly as its envelope header gave it; the reply addresses that message's author and, in the group, renders as a native reply. Must belong to this destination's conversation. Omit for a new message."`
-	Text        string `json:"text" jsonschema:"the message text; in the group, @mentions name the recipients"`
+	Text        string `json:"text" jsonschema:"the message text; in the group or a channel, @mentions name the recipients"`
 	Resends     string `json:"resends,omitempty" jsonschema:"reference of your own message whose send failed (\"ref:42\"), exactly as the undelivered note gave it, when these words are you saying that message again. The destination must be the one it was lost going to. When this send gets through, that failure stops being the operator's to deal with. Omit unless you are repeating a message you were told never arrived."`
 	Attach      string `json:"attach,omitempty" jsonschema:"path of one file in your workspace to send with this message, at most 20 MB; an image is shown as a photo where the surface can. The text goes with it. Omit to send words alone."`
 }

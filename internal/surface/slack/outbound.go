@@ -87,7 +87,10 @@ func (adapter *Adapter) mirrorMessage(ctx context.Context, mp *route.MessagePayl
 	if loopRecord.Surface() != store.SurfaceSlack {
 		return
 	}
-	switch mp.Conversation {
+	// By destination, not kind: a channel other than the fleet channel has
+	// no room on any surface yet, so its messages stay on the hub
+	// (ADR-0038) and fall to the default.
+	switch mp.Destination() {
 	case store.ConversationGroup:
 		// judged from the loop as it is now: a channel bound since the
 		// send still gets the post, and with none there is no room to
@@ -102,7 +105,7 @@ func (adapter *Adapter) mirrorMessage(ctx context.Context, mp *route.MessagePayl
 			return
 		}
 	default:
-		return // control_room lives in the web UI alone
+		return // control_room, and another channel, live on the hub alone
 	}
 	adapter.mu.Lock()
 	current := adapter.links[mp.FromLoopID]

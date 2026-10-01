@@ -138,6 +138,12 @@ func TestMessageEnvelopeNamesConversation(t *testing.T) {
 		{"loop group send", MessageEnvelope(now, Inbound{Origin: store.OriginLoop, Author: "terra", Text: "x",
 			Conversation: store.ConversationGroup, FromLoop: true}),
 			"message from @terra (loop) · group"},
+		{"loop send to the fleet channel by name", MessageEnvelope(now, Inbound{Origin: store.OriginLoop, Author: "terra", Text: "x",
+			Conversation: store.ConversationGroup, Channel: store.FleetChannel, FromLoop: true}),
+			"message from @terra (loop) · group"},
+		{"loop channel send", MessageEnvelope(now, Inbound{Origin: store.OriginLoop, Author: "terra", Text: "x",
+			Conversation: store.ConversationGroup, Channel: "backend", FromLoop: true}),
+			"message from @terra (loop) · channel:backend"},
 		{"reference", MessageEnvelope(now, Inbound{Origin: store.OriginTelegramGroup, Author: "enes", Text: "x",
 			Conversation: store.ConversationGroup, Ref: MessageRef(42)}),
 			"· group · ref:42 ·"},
@@ -149,6 +155,26 @@ func TestMessageEnvelopeNamesConversation(t *testing.T) {
 		if !strings.Contains(testCase.env.Text, testCase.want) {
 			t.Errorf("%s: header %q missing %q", testCase.name, testCase.env.Text, testCase.want)
 		}
+	}
+}
+
+// Two channels never share a turn, and the fleet channel named outright
+// batches with an envelope that names none, as one queued before channels
+// did.
+func TestEnvelopesBatchPerChannel(t *testing.T) {
+	now := time.Now()
+	envelope := func(channel string) Envelope {
+		return MessageEnvelope(now, Inbound{Origin: store.OriginLoop, Author: "milo", Text: "x",
+			Conversation: store.ConversationGroup, Channel: channel, FromLoop: true})
+	}
+	if envelope("backend").conversationKey() == envelope("release").conversationKey() {
+		t.Error("two channels share a turn")
+	}
+	if envelope("backend").conversationKey() == envelope("").conversationKey() {
+		t.Error("a channel shares a turn with the fleet channel")
+	}
+	if envelope(store.FleetChannel).conversationKey() != envelope("").conversationKey() {
+		t.Error("the fleet channel named outright keys apart from the fleet channel")
 	}
 }
 
@@ -624,6 +650,39 @@ func TestPromptTeachesOnlyTheLoopsConversations(t *testing.T) {
 			notWant: []string{"    group ", "@all in a group message", "via telegram · group"},
 		},
 		{
+			name: "in the fleet channel and another",
+			conv: Conversations{Group: true, Channels: []Channel{{Name: "backend", Description: "Go core", Loops: []string{"milo", "quinn"}}}},
+			want: []string{
+				"    group         the fleet channel",
+				"    channel:<name>\n                  one of your channels",
+				"@all in a group message reaches every other loop in the fleet channel",
+				"- Each of your channels keeps those rules on its own",
+				"    channel:backend — Go core\n      loops: @milo, @quinn\n",
+				"never quote or relay it in the group or a channel unless",
+				"@mention them in the\n  group when others should see it.",
+				"only the loops you @mention in it receive it; no person\n                  is in a channel yet",
+				"must @mention a loop in it",
+			},
+			notWant: []string{"loops and people you @mention in it", "@mention them in\n  the group or a channel"},
+		},
+		{
+			name: "outside the fleet channel, in another",
+			conv: Conversations{Channels: []Channel{{Name: "backend"}}},
+			want: []string{
+				"    channel:<name>\n",
+				"- A new message in a channel must @mention",
+				"@all in a channel reaches every other loop in that channel",
+				"in a channel it reaches the\n  author",
+				"only the loops in your channels below\n  can reach you",
+				"    channel:backend\n      no other loop is in it yet, so nothing said there reaches anyone\n",
+				"never quote or relay it in a channel unless",
+				"- A new message in a channel must @mention at least one loop in it; no\n  person is in a channel yet.",
+				"you need, via control_room.",
+			},
+			notWant: []string{"    group ", "You have no group", "@all in a group message", "no other loop can reach you",
+				"The people who can talk to this fleet", "@mention them in"},
+		},
+		{
 			name: "Telegram, in the fleet channel",
 			conv: Conversations{Surface: "Telegram", Group: true},
 			want: []string{
@@ -662,8 +721,40 @@ func TestConversationsOf(t *testing.T) {
 		{store.Loop{TGBotToken: "synthetic"}, "owner_dm group control_room"},
 	}
 	for _, testCase := range cases {
-		if got := strings.Join(ConversationsOf(&testCase.loop).Destinations(), " "); got != testCase.want {
+		if got := strings.Join(ConversationsOf(&testCase.loop, nil, nil).Destinations(), " "); got != testCase.want {
 			t.Errorf("ConversationsOf(%+v) = %q, want %q", testCase.loop, got, testCase.want)
 		}
+	}
+}
+
+// A loop's channels are the ones it is a member of, the fleet channel aside
+// since its row says that, and each lists the other active loops in it.
+func TestConversationsOfChannels(t *testing.T) {
+	self := &store.Loop{ID: "l1", Name: "terra", Status: store.StatusActive}
+	loops := []*store.Loop{
+		self,
+		{ID: "l2", Name: "quinn", Status: store.StatusActive},
+		{ID: "l3", Name: "milo", Status: store.StatusActive},
+		{ID: "l4", Name: "iris", Status: store.StatusPaused},
+	}
+	channels := []*store.Channel{
+		{Name: store.FleetChannel, LoopIDs: []string{"l1", "l2", "l3", "l4"}},
+		{Name: "backend", Description: "Go core", LoopIDs: []string{"l2", "l1", "l3", "l4"}},
+		{Name: "design", LoopIDs: []string{"l4"}},
+		{Name: "release", LoopIDs: []string{"l1"}},
+	}
+	conv := ConversationsOf(self, channels, loops)
+	if got := strings.Join(conv.Destinations(), " "); got != "group channel:backend channel:release control_room" {
+		t.Errorf("destinations = %q", got)
+	}
+	backend, ok := conv.Channel("backend")
+	if !ok || backend.Description != "Go core" || strings.Join(backend.Loops, " ") != "milo quinn" {
+		t.Errorf("backend = %+v, %v; want its description and the other active loops by name", backend, ok)
+	}
+	if _, ok := conv.Channel("design"); ok {
+		t.Error("a channel the loop is not in is one of its conversations")
+	}
+	if _, ok := conv.Channel(store.FleetChannel); ok {
+		t.Error("the fleet channel is listed as another channel")
 	}
 }

@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -93,8 +95,9 @@ type Catalog struct {
 }
 
 // Conversations are the send destinations a loop actually has (ADR-0032):
-// control_room always, group while it is in the fleet channel, and owner_dm
-// while a surface is attached. The prompt's addressing block and the send
+// control_room always, group while it is in the fleet channel, owner_dm
+// while a surface is attached, and channel:<name> for each other channel the
+// operator put it in (ADR-0038). The prompt's addressing block and the send
 // tool's refusals both read them, so what a loop is told it has and what the
 // hub lets it use cannot drift apart (#288).
 type Conversations struct {
@@ -103,10 +106,24 @@ type Conversations struct {
 	Surface string
 	// Group reports that the loop is in the fleet channel.
 	Group bool
+	// Channels are the other channels the loop is in, by name.
+	Channels []Channel
 }
 
-// ConversationsOf reads a loop's conversations off its row.
-func ConversationsOf(loopRecord *store.Loop) Conversations {
+// Channel is one channel other than the fleet channel that a loop is in, as
+// its prompt shows it.
+type Channel struct {
+	Name        string
+	Description string
+	// Loops are the other active loops in it, by name: the ones a mention
+	// there reaches and the prompt can honestly list.
+	Loops []string
+}
+
+// ConversationsOf reads a loop's conversations off its row and the hub's
+// channels. channels and loops are the stores' lists; a nil channels lists
+// none beyond the fleet channel, which the row itself records.
+func ConversationsOf(loopRecord *store.Loop, channels []*store.Channel, loops []*store.Loop) Conversations {
 	conversations := Conversations{Group: !loopRecord.OutsideFleetChannel}
 	switch loopRecord.Surface() {
 	case store.SurfaceTelegram:
@@ -114,7 +131,41 @@ func ConversationsOf(loopRecord *store.Loop) Conversations {
 	case store.SurfaceSlack:
 		conversations.Surface = "Slack"
 	}
+	names := map[string]string{}
+	for _, other := range loops {
+		if other.ID != loopRecord.ID && other.Status == store.StatusActive {
+			names[other.ID] = other.Name
+		}
+	}
+	for _, channel := range channels {
+		if channel.Name == store.FleetChannel || !slices.Contains(channel.LoopIDs, loopRecord.ID) {
+			continue
+		}
+		mine := Channel{Name: channel.Name, Description: channel.Description}
+		for _, id := range channel.LoopIDs {
+			if name, ok := names[id]; ok {
+				mine.Loops = append(mine.Loops, name)
+			}
+		}
+		sort.Strings(mine.Loops)
+		conversations.Channels = append(conversations.Channels, mine)
+	}
 	return conversations
+}
+
+// Channel returns the loop's channel by name, other than the fleet channel.
+func (conversations Conversations) Channel(name string) (Channel, bool) {
+	for _, channel := range conversations.Channels {
+		if channel.Name == name {
+			return channel, true
+		}
+	}
+	return Channel{}, false
+}
+
+// shared reports that the loop has a conversation other loops are in.
+func (conversations Conversations) shared() bool {
+	return conversations.Group || len(conversations.Channels) > 0
 }
 
 // Destinations lists the loop's destinations in the order the prompt
@@ -126,6 +177,9 @@ func (conversations Conversations) Destinations() []string {
 	}
 	if conversations.Group {
 		destinations = append(destinations, store.ConversationGroup)
+	}
+	for _, channel := range conversations.Channels {
+		destinations = append(destinations, store.ChannelDestination(channel.Name))
 	}
 	return append(destinations, store.ConversationControlRoom)
 }
@@ -204,6 +258,9 @@ func (cat Catalog) section(loopRecord *store.Loop) string {
 	}
 
 	switch {
+	case !conv.Group && len(conv.Channels) > 0:
+		text.WriteString("- You are not in the fleet channel: only the loops in your channels below\n" +
+			"  can reach you, and you can reach only them.\n")
 	case !conv.Group:
 		text.WriteString("- You are not in the fleet channel: no other loop can reach you, and\n" +
 			"  you cannot reach them.\n")
@@ -224,13 +281,35 @@ func (cat Catalog) section(loopRecord *store.Loop) string {
 		text.WriteString("- No other loops are in the fleet channel right now.\n")
 	}
 
-	// People are reached by mention, which only the group carries.
+	if len(conv.Channels) > 0 {
+		text.WriteString(`- Your other channels, each its own conversation: send to one as
+  channel:<name> and @mention the loops in it there. A loop not listed under
+  a channel is not in it, so a mention of it there reaches nobody:
+`)
+		for _, channel := range conv.Channels {
+			fmt.Fprintf(&text, "    channel:%s", channel.Name)
+			if channel.Description != "" {
+				fmt.Fprintf(&text, " — %s", channel.Description)
+			}
+			if len(channel.Loops) == 0 {
+				text.WriteString("\n      no other loop is in it yet, so nothing said there reaches anyone\n")
+			} else {
+				fmt.Fprintf(&text, "\n      loops: @%s\n", strings.Join(channel.Loops, ", @"))
+			}
+		}
+	}
+
+	// People are reached by mention, which only the group carries: another
+	// channel has no room on any surface yet, so no person is in it.
 	if conv.Group && len(cat.People) > 0 {
 		text.WriteString("- The people who can talk to this fleet:\n")
 		for _, person := range cat.People {
 			fmt.Fprintf(&text, "    %s\n", person.Label())
 		}
 		text.WriteString("  @mentioning a person in the group is public: everyone there sees it.\n")
+		if len(conv.Channels) > 0 {
+			text.WriteString("  No person is in your other channels yet: reach people in the group or\n  privately.\n")
+		}
 		if conv.Surface != "" {
 			text.WriteString("  Only owner_dm and control_room are private, and only the owner has a DM.\n")
 		} else {
@@ -293,9 +372,20 @@ func SystemPrompt(loopRecord *store.Loop, cat Catalog, rules []*store.FleetRule,
 	}
 
 	text.WriteString("CONDUCT\n- Keep messages concise; they are chat, not reports.\n")
-	if conv.Group {
+	switch {
+	case conv.Group && len(conv.Channels) == 0:
 		fmt.Fprintf(&text, `- What you learn in a private conversation (%s) stays
   private: never quote or relay it in a group message unless the person it
+  came from asks you to.
+`, strings.Join(conv.private(), ", "))
+	case conv.Group:
+		fmt.Fprintf(&text, `- What you learn in a private conversation (%s) stays
+  private: never quote or relay it in the group or a channel unless the
+  person it came from asks you to.
+`, strings.Join(conv.private(), ", "))
+	case conv.shared():
+		fmt.Fprintf(&text, `- What you learn in a private conversation (%s) stays
+  private: never quote or relay it in a channel unless the person it
   came from asks you to.
 `, strings.Join(conv.private(), ", "))
 	}
@@ -303,9 +393,12 @@ func SystemPrompt(loopRecord *store.Loop, cat Catalog, rules []*store.FleetRule,
   work so future turns have context.
 - If you are blocked and need a human, send a message that says exactly what
 `)
-	if conv.Group {
+	// A person is reached in public only in the group: no other channel
+	// has a room yet.
+	switch {
+	case conv.Group:
 		fmt.Fprintf(&text, "  you need: privately via %s, or @mention them in the\n  group when others should see it.", strings.Join(conv.private(), " or "))
-	} else {
+	default:
 		fmt.Fprintf(&text, "  you need, via %s.", strings.Join(conv.private(), " or "))
 	}
 	return text.String()
@@ -352,6 +445,14 @@ func howThisWorks(conv Conversations) string {
                   text receive it
 `)
 	}
+	if len(conv.Channels) > 0 {
+		text.WriteString(`    channel:<name>
+                  one of your channels, listed under WHO YOU CAN ADDRESS;
+                  a message said in one is headed "· channel:<name> ·", and
+                  only the loops you @mention in it receive it; no person
+                  is in a channel yet
+`)
+	}
 	text.WriteString("    control_room  your private thread with the operator in the Spool web UI\n")
 
 	if conv.Group {
@@ -364,6 +465,29 @@ func howThisWorks(conv Conversations) string {
   better message; @all wakes everyone for a full turn.
 - Every header carries that message's reference ("ref:42"). Pass it as
   reply_to to answer that exact message: in the group it reaches the
+  author with no @mention needed, and mentions add recipients on top. Only
+  a reference you were actually shown works, and only in the conversation
+  it came from — never invent one, and never reply to "the last message"
+  when you mean a specific one. Your own sends report their reference too.
+- A send_message error names what to fix (e.g. no_recipients); correct the
+  call and retry. Never work around an error by switching destination.
+`)
+		if len(conv.Channels) > 0 {
+			text.WriteString(`- Each of your channels keeps those rules on its own, with loops alone: a
+  new message in one must @mention a loop in it, @all there reaches every
+  other loop in that channel and no one else, and reply_to takes only a
+  reference said in that channel.
+`)
+		}
+	} else if len(conv.Channels) > 0 {
+		text.WriteString(`- A new message in a channel must @mention at least one loop in it; no
+  person is in a channel yet. Do not @mention yourself. Private text never
+  fans out: names mentioned in it receive nothing, @all included.
+- @all in a channel reaches every other loop in that channel at once. It is
+  for something they all must act on, not for news: it wakes each of them
+  for a full turn.
+- Every header carries that message's reference ("ref:42"). Pass it as
+  reply_to to answer that exact message: in a channel it reaches the
   author with no @mention needed, and mentions add recipients on top. Only
   a reference you were actually shown works, and only in the conversation
   it came from — never invent one, and never reply to "the last message"
@@ -482,7 +606,11 @@ type Envelope struct {
 	// ("" for ticks and envelopes queued before conversations existed).
 	// The actor batches one turn per conversation from it (ADR-0026).
 	Conversation string `json:"conversation,omitempty"`
-	TGChatID     int64  `json:"tg_chat_id,omitempty"` // source DM chat (0 = none)
+	// Channel names the channel a group message was said in ("" for the
+	// fleet channel and the private kinds), so two channels never share a
+	// turn.
+	Channel  string `json:"channel,omitempty"`
+	TGChatID int64  `json:"tg_chat_id,omitempty"` // source DM chat (0 = none)
 	// Files are the attachments the text names by a workstation path that
 	// the file is not at yet: the actor copies each one in before the turn
 	// starts (#123). Empty when every path is already readable, as on a
@@ -498,11 +626,15 @@ type FileCopy struct {
 }
 
 // conversationKey is what the actor batches turns by: the conversation kind,
-// plus the DM chat so distinct DMs never share a turn. Ticks and legacy
+// plus the channel and the DM chat so distinct channels and DMs never share
+// a turn. Ticks and legacy
 // queued envelopes key separately from any conversation.
 func (env Envelope) conversationKey() string {
 	if env.Trigger == store.TriggerTick {
 		return "tick"
+	}
+	if env.Channel != "" {
+		return fmt.Sprintf("%s:%s", env.Conversation, env.Channel)
 	}
 	return fmt.Sprintf("%s:%d", env.Conversation, env.TGChatID)
 }
@@ -534,11 +666,14 @@ type Inbound struct {
 	Author       string // display name, no @
 	Text         string
 	Conversation string // store.Conversation* kind
-	FromLoop     bool
-	TGChatID     int64  // source DM chat (0 = none)
-	Ref          string // this message's reply reference (MessageRef)
-	ReplyTo      string // the reference this message itself replies to
-	Attachments  []Attachment
+	// Channel names the channel a group message was said in; "" or
+	// store.FleetChannel is the fleet channel.
+	Channel     string
+	FromLoop    bool
+	TGChatID    int64  // source DM chat (0 = none)
+	Ref         string // this message's reply reference (MessageRef)
+	ReplyTo     string // the reference this message itself replies to
+	Attachments []Attachment
 }
 
 // Attachment is one file a message carries, as the loop is shown it.
@@ -616,10 +751,16 @@ func byteSize(size int64) string {
 // reference is never guessed from ordering (ADR-0025): if the loop did not
 // read it in a header, it cannot reply to it.
 func MessageEnvelope(now time.Time, in Inbound) Envelope {
+	// The fleet channel keeps its plain name in a header, as in a send;
+	// another channel is named as a send names it (ADR-0038).
+	channel := store.ConversationGroup
+	if in.Channel != "" {
+		channel = store.ChannelDestination(in.Channel)
+	}
 	var from string
 	switch {
 	case in.FromLoop:
-		from = fmt.Sprintf("message from @%s (loop) · group", in.Author)
+		from = fmt.Sprintf("message from @%s (loop) · %s", in.Author, channel)
 	case in.Origin == store.OriginTelegramGroup:
 		from = fmt.Sprintf("message from @%s via telegram · group", in.Author)
 	case in.Origin == store.OriginTelegramDM:
@@ -631,7 +772,7 @@ func MessageEnvelope(now time.Time, in Inbound) Envelope {
 	case in.Conversation == store.ConversationControlRoom:
 		from = fmt.Sprintf("message from %s via web · control_room", in.Author)
 	default:
-		from = fmt.Sprintf("message from %s via web · group", in.Author)
+		from = fmt.Sprintf("message from %s via web · %s", in.Author, channel)
 	}
 	if in.Ref != "" {
 		from += " · " + in.Ref
@@ -652,8 +793,18 @@ func MessageEnvelope(now time.Time, in Inbound) Envelope {
 		Trigger:      store.TriggerMessage,
 		Text:         text,
 		Conversation: in.Conversation,
+		Channel:      envelopeChannel(in.Channel),
 		TGChatID:     in.TGChatID,
 	}
+}
+
+// envelopeChannel is the channel an envelope batches by: none for the fleet
+// channel, so an envelope queued before channels keys as it always did.
+func envelopeChannel(channel string) string {
+	if channel == store.FleetChannel {
+		return ""
+	}
+	return channel
 }
 
 // TickEnvelope formats a scheduler tick.
@@ -732,10 +883,8 @@ func destinationOf(message *store.Message) string {
 	switch message.Conversation {
 	case store.ConversationOwnerDM:
 		return "owner_dm"
-	case store.ConversationGroup:
-		return "group"
-	case store.ConversationControlRoom:
-		return "control_room"
+	case store.ConversationGroup, store.ConversationControlRoom:
+		return message.Destination()
 	default:
 		return "an unknown destination"
 	}
