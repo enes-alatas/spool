@@ -318,6 +318,13 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			"Create": false, "Update": false,
 			"Delete": false, "Get": false, "List": false,
 		},
+		"ChannelStore": {
+			// A channel's description is operator-written text for the
+			// loops in it to read, like a rule; the rest are names, ids and
+			// timestamps.
+			"Create": false, "SetDescription": false, "Delete": false,
+			"AddLoop": false, "RemoveLoop": false, "Get": false, "List": false,
+		},
 		"SessionStore": {
 			"Create": false, "End": false, "EndDangling": false, "ListByLoop": false,
 		},

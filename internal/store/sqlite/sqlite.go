@@ -94,6 +94,7 @@ func (database *DB) migrate() error {
 func (database *DB) Close() error { return database.db.Close() }
 
 func (database *DB) Loops() store.LoopStore               { return loops{database.db} }
+func (database *DB) Channels() store.ChannelStore         { return channels{database.db} }
 func (database *DB) LoopSecrets() store.LoopSecretStore   { return loopSecrets{database.db} }
 func (database *DB) FleetRules() store.FleetRuleStore     { return fleetRules{database.db} }
 func (database *DB) Sessions() store.SessionStore         { return sessions{database.db} }
@@ -438,6 +439,11 @@ func (table messages) Insert(ctx context.Context, message *store.Message) error 
 		// written a message that is on the hub only.
 		message.Mirror = store.MirrorNotMirrored
 	}
+	if message.Conversation == store.ConversationGroup && message.Channel == "" {
+		// Every group message is in a channel; until a writer names
+		// another, it is the fleet channel's (ADR-0038).
+		message.Channel = store.FleetChannel
+	}
 	var tgChat, tgMsg any
 	if message.TGChatID != 0 || message.TGMessageID != 0 {
 		tgChat, tgMsg = message.TGChatID, message.TGMessageID
@@ -445,11 +451,11 @@ func (table messages) Insert(ctx context.Context, message *store.Message) error 
 	res, err := table.db.ExecContext(ctx, `INSERT INTO messages
 		(ts, origin, author, from_loop_id, text, mentions, tg_chat_id, tg_message_id,
 		 tg_bot_loop_id, delivered_to, conversation, conversation_loop_id, reply_to_id,
-		 resends_id, tg_key, mirror, slack_channel_id, slack_ts)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		 resends_id, tg_key, mirror, slack_channel_id, slack_ts, channel)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		message.TS, message.Origin, message.Author, message.FromLoopID, message.Text, toJSON(message.Mentions), tgChat, tgMsg,
 		message.TGBotLoopID, toJSON(message.DeliveredTo), message.Conversation, message.ConversationLoopID,
-		message.ReplyToID, message.ResendsID, message.TGKey, message.Mirror, message.SlackChannelID, message.SlackTS)
+		message.ReplyToID, message.ResendsID, message.TGKey, message.Mirror, message.SlackChannelID, message.SlackTS, message.Channel)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			return store.ErrDuplicate
@@ -656,7 +662,7 @@ const messageCols = `id, ts, origin, author, from_loop_id, text,
 	mentions, COALESCE(tg_chat_id,0), COALESCE(tg_message_id,0), tg_bot_loop_id, delivered_to,
 	conversation, conversation_loop_id, reply_to_id, send_failed_at, send_error,
 	send_failure_told_at, send_resolved_at, send_resolution, send_resent_as,
-	resends_id, tg_key, mirror, slack_channel_id, slack_ts`
+	resends_id, tg_key, mirror, slack_channel_id, slack_ts, channel`
 
 func (table messages) List(ctx context.Context, limit int) ([]*store.Message, error) {
 	return table.query(ctx, `SELECT `+messageCols+` FROM messages ORDER BY id DESC LIMIT ?`, limit)
@@ -856,7 +862,7 @@ func (table messages) query(ctx context.Context, statement string, args ...any) 
 			&message.Conversation, &message.ConversationLoopID, &message.ReplyToID,
 			&message.SendFailedAt, &message.SendError, &message.SendFailureToldAt, &message.SendResolvedAt,
 			&message.SendResolution, &message.SendResentAs, &message.ResendsID, &message.TGKey, &message.Mirror,
-			&message.SlackChannelID, &message.SlackTS); err != nil {
+			&message.SlackChannelID, &message.SlackTS, &message.Channel); err != nil {
 			return nil, err
 		}
 		message.Mentions = fromJSON(mentions)
