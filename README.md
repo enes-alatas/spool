@@ -34,7 +34,7 @@ From a clone to a loop that answers you on Telegram. Each step is one command or
 1. **Have the prerequisites.** Linux or macOS, [Claude Code](https://claude.com/claude-code) installed and logged in (`claude` on PATH), Docker running, and Go 1.25+ with Node 20.19+ or 22.12+ for the build.
 2. **Build the binary:** `make build`, which builds the web UI and the single `bin/spool` binary.
 3. **Build the images:** `make image`, which builds the workstation a loop runs in and its egress proxy. Spool runs them from your local Docker; it never pulls them.
-4. **Start the hub:** `./bin/spool --mcp-listen 0.0.0.0:8081`. The control room stays on 127.0.0.1:8080, and data goes in `~/.spool`. The loop listener has to be reachable from the Docker bridge, so it listens on every interface. On a machine whose ports are open to your network, name the bridge address instead; see [What contains a loop](#what-contains-a-loop).
+4. **Start the hub:** `./bin/spool`. The control room is on 127.0.0.1:8080, and data goes in `~/.spool`. The loop listener goes where your workstations can reach it, and the hub logs where that is; see [What contains a loop](#what-contains-a-loop).
 5. **Log in to the control room:** open http://127.0.0.1:8080 and paste the operator token the hub printed. `./bin/spool token` prints it again.
 6. **Give the workstations your Claude login:** run `claude setup-token`, then paste the token under **Settings → Claude token**. A workstation cannot use your machine's `~/.claude`, so this is how a loop runs on your plan.
 7. **Create a loop:** **New loop**, then a name, a mission and a tick interval. Leave the workspace empty; it is for bare loops only.
@@ -90,7 +90,7 @@ A loop reaches only Spool's own MCP server, which carries the one tool it needs 
 
 Spool serves two listeners. `--listen` is yours: the control room and its API. `--mcp-listen` belongs to the loops: it is the one port a containerized workstation is allowed to reach, and it serves the MCP endpoint and nothing else. Keep them apart. A workstation that could reach the API port could read every conversation and create an uncontained loop.
 
-With Docker workstations, `--mcp-listen` has to name an address the Docker bridge can reach: `--mcp-listen 0.0.0.0:8081` on a machine whose ports are not open to your network, or else the bridge address. `--listen` stays on localhost.
+Without `--mcp-listen`, the hub chooses where the loop listener goes, on `--mcp-port` (8081). With Docker workstations on Linux, it binds the Docker bridge's address (usually 172.17.0.1). Your workstations can reach that address. Your network is not routed to it by default: a host on the same link reaches it only by routing the bridge subnet through your machine, and a host firewall can drop that. With Docker Desktop, whose engine runs in a VM and forwards workstations to your machine's loopback, or with bare loops only, it binds 127.0.0.1. The hub logs which it chose and why (ADR-0039). An explicit `--mcp-listen` always wins. `--listen` stays on localhost.
 
 On first start, Spool prints an **operator token** and stores it in the data directory. The control room asks for it once and then holds a session cookie. Every `/api` route except health and version requires it. Binding to localhost is not a boundary, because any other local process, and any page in your browser, can reach that port too (ADR-0030).
 
@@ -127,7 +127,8 @@ Every loop has a tick interval (default 30m). After each completed turn, Spool s
 ## Flags
 
 ```
-spool --listen 127.0.0.1:8080 --mcp-listen 0.0.0.0:8081 --data-dir ~/.spool --claude-bin claude --partial-messages
+spool --listen 127.0.0.1:8080 --mcp-port 8081 --data-dir ~/.spool --claude-bin claude --partial-messages
+spool --mcp-listen 172.17.0.1:8081  # name the loop listener's address yourself
 spool token --data-dir ~/.spool     # print the operator token again
 
 # behind a proxy, name the host it is reached as — otherwise the Host and

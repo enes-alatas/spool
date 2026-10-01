@@ -69,7 +69,8 @@ func main() {
 	}
 
 	listen := flag.String("listen", "127.0.0.1:8080", "address to serve the operator's API/UI on; never reachable from a workstation")
-	mcpListen := flag.String("mcp-listen", "127.0.0.1:8081", "address to serve the loop-facing /mcp endpoint on; the one port of this machine a workstation may reach (#238)")
+	mcpListen := flag.String("mcp-listen", "", "address to serve the loop-facing /mcp endpoint on; the one port of this machine a workstation may reach (#238). Unset: the docker bridge's gateway when it is an address of this machine, else loopback, on --mcp-port (#475)")
+	mcpPortFlag := flag.String("mcp-port", "8081", "port of the loop listener when --mcp-listen is unset")
 	trustedHosts := flag.String("trusted-host", "", "comma-separated Host/Origin names this hub also answers to, each \"host\" or \"host:port\" — for a hub reached through a proxy under that proxy's name (ADR-0030)")
 	dataDir := flag.String("data-dir", defaultDataDir(), "directory for spool.db, loop homes and worktrees")
 	claudeBin := flag.String("claude-bin", "claude", "path to the claude binary (bare runtime)")
@@ -130,13 +131,8 @@ func main() {
 		}
 	}
 
-	// The two listeners are the boundary this fleet rests on: workstations
-	// are allowlisted to the MCP port alone, so the API port must not be it
-	// (#238). One address serving both would hand every workstation the
-	// unauthenticated API back.
-	_, _, err := splitMCPListen(*listen, *mcpListen)
-	if err != nil {
-		log.Error("--mcp-listen", "err", err)
+	if *mcpListen != "" && flagPassed("mcp-port") {
+		log.Error("--mcp-port", "err", "it names the port when --mcp-listen is unset; --mcp-listen already names one")
 		os.Exit(1)
 	}
 	// Both listeners are bound here, before anything reads the MCP port, and
@@ -149,12 +145,18 @@ func main() {
 		log.Error("--listen", "err", err)
 		os.Exit(1)
 	}
-	mcpListener, err := net.Listen("tcp", *mcpListen)
+	// Only a hub whose loops default to docker workstations looks for the
+	// bridge: --runtime auto resolves to docker or stops the hub below.
+	var bridgeGateway func(context.Context) (string, error)
+	if *runtimeChoice != store.RuntimeBare {
+		bridgeGateway = docker.New(docker.Options{}).BridgeGateway
+	}
+	mcpListener, mcpFlagAddr, err := bindLoopListener(context.Background(), log, *listen, *mcpListen, *mcpPortFlag, bridgeGateway)
 	if err != nil {
 		log.Error("--mcp-listen", "err", err)
 		os.Exit(1)
 	}
-	apiAddr, mcpAddr := boundAddr(*listen, apiListener), boundAddr(*mcpListen, mcpListener)
+	apiAddr, mcpAddr := boundAddr(*listen, apiListener), boundAddr(mcpFlagAddr, mcpListener)
 	_, mcpPort, _ := net.SplitHostPort(mcpAddr)
 
 	dockerRuntime := docker.New(docker.Options{
@@ -495,6 +497,65 @@ func printToken(args []string) {
 		fmt.Fprintf(os.Stderr, "no fleet has run in %s yet; minted a token for it\n", *dataDir)
 	}
 	fmt.Println(token)
+}
+
+// bindLoopListener binds the loop listener where --mcp-listen says, and,
+// when it is unset, on loopback for a hub of bare loops (a nil
+// bridgeGateway), or where a docker workstation can reach it (#475): the
+// docker bridge's gateway, an address the workstations come in at and the
+// network around this machine is not routed to by default (a same-link host
+// reaches it only by routing the bridge subnet here), when it is one of this
+// machine's addresses. An engine in a VM, Docker Desktop's, has no such address here
+// and forwards workstations to this machine's loopback, which is where the
+// listener goes then, and whenever docker does not answer or the gateway
+// will not bind. Every bare loop reaches either. It returns the listener and
+// the address it was bound for, spelled as asked.
+func bindLoopListener(ctx context.Context, log *slog.Logger, apiAddr, flagAddr, port string, bridgeGateway func(context.Context) (string, error)) (net.Listener, string, error) {
+	if flagAddr != "" {
+		listener, err := listenLoop(apiAddr, flagAddr)
+		return listener, flagAddr, err
+	}
+	loopback := net.JoinHostPort("127.0.0.1", port)
+	if bridgeGateway == nil {
+		listener, err := listenLoop(apiAddr, loopback)
+		return listener, loopback, err
+	}
+	gateway, err := bridgeGateway(ctx)
+	switch {
+	case err != nil:
+		log.Info("loop listener on loopback: docker reports no bridge to bind", "err", err)
+	case !isLocalAddress(gateway):
+		log.Info("loop listener on loopback: the docker bridge is not on this machine, so its engine forwards workstations to loopback", "bridge_gateway", gateway)
+	default:
+		addr := net.JoinHostPort(gateway, port)
+		listener, err := listenLoop(apiAddr, addr)
+		if err == nil {
+			log.Info("loop listener on the docker bridge: workstations reach it, other hosts only by routing the bridge subnet through this machine", "mcp_listen", addr)
+			return listener, addr, nil
+		}
+		log.Warn("loop listener on loopback: the docker bridge would not bind, so docker workstations cannot reach the hub", "mcp_listen", addr, "err", err)
+	}
+	listener, err := listenLoop(apiAddr, loopback)
+	return listener, loopback, err
+}
+
+// listenLoop binds the loop listener on addr. The two listeners are the
+// boundary this fleet rests on: workstations are allowlisted to the MCP port
+// alone, so the API's address must not be it (#238). One address serving
+// both would hand every workstation the operator's API back.
+func listenLoop(apiAddr, addr string) (net.Listener, error) {
+	if _, _, err := splitMCPListen(apiAddr, addr); err != nil {
+		return nil, err
+	}
+	return net.Listen("tcp", addr)
+}
+
+// flagPassed reports whether a flag was set on the command line, as opposed
+// to left at its default.
+func flagPassed(name string) bool {
+	passed := false
+	flag.Visit(func(f *flag.Flag) { passed = passed || f.Name == name })
+	return passed
 }
 
 // splitMCPListen takes --mcp-listen apart into the host the loop-facing

@@ -82,8 +82,10 @@ func startServerArgs(t *testing.T, dataDir string, extraArgs ...string) *server 
 // startServerOn is startServerArgs with a say in where the loop-facing
 // listener binds. Only the docker suites need it off loopback — a workstation
 // reaches the hub over the bridge — and this is a PR's worth of argument that
-// what binds where is the security property, so the wildcard is asked for
-// where it is needed rather than taken everywhere (#238).
+// what binds where is the security property, so the bridge is asked for
+// where it is needed rather than taken everywhere (#238). An empty mcpHost
+// names no address and leaves the choice to the hub, as an operator who
+// passes no --mcp-listen does (#475).
 func startServerOn(t *testing.T, dataDir, mcpHost string, extraArgs ...string) *server {
 	t.Helper()
 	root := repoRoot(t)
@@ -100,13 +102,18 @@ func startServerOn(t *testing.T, dataDir, mcpHost string, extraArgs ...string) *
 	// back from its log: nothing is reserved here and released, so nothing
 	// else on the machine can take a port before the hub has it (#344).
 	fkState := filepath.Join(dataDir, "fkstate")
-	args := []string{
-		"--listen", "127.0.0.1:0",
-		"--mcp-listen", net.JoinHostPort(mcpHost, "0"),
+	args := []string{"--listen", "127.0.0.1:0"}
+	if mcpHost == "" {
+		// the hub's own choice, as an operator who names none gets (#475)
+		args = append(args, "--mcp-port", "0")
+	} else {
+		args = append(args, "--mcp-listen", net.JoinHostPort(mcpHost, "0"))
+	}
+	args = append(args,
 		"--data-dir", dataDir,
 		"--claude-bin", fakeBin,
 		"--partial-messages=false",
-	}
+	)
 	args = append(args, extraArgs...)
 	cmd := exec.Command(spoolBin, args...)
 	// Each hub gets its own file: a test that restarts its hub over the same
@@ -148,9 +155,12 @@ func startServerOn(t *testing.T, dataDir, mcpHost string, extraArgs ...string) *
 	deadline := time.Now().Add(10 * time.Second)
 	select {
 	case bound := <-listening:
-		_, mcpPort, _ := net.SplitHostPort(bound.mcpAddr)
+		mcpHost, mcpPort, _ := net.SplitHostPort(bound.mcpAddr)
+		if mcpHost == "" || net.ParseIP(mcpHost).IsUnspecified() {
+			mcpHost = "127.0.0.1"
+		}
 		s.baseURL = "http://" + bound.addr
-		s.mcpURL = "http://" + net.JoinHostPort("127.0.0.1", mcpPort)
+		s.mcpURL = "http://" + net.JoinHostPort(mcpHost, mcpPort)
 	case <-s.exited:
 		// A hub that refused its flags looks, at the deadline, just like
 		// one that was slow to start; only this says which it was (#280).
