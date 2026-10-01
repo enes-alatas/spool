@@ -276,7 +276,7 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			"Insert": true, "SetSendResult": true, "FailInterruptedSends": true,
 			// SetMirror writes one of three constants, never text.
 			"SetMirror":    false,
-			"SetDelivered": false, "List": false, "ListConversation": false,
+			"SetDelivered": false, "List": false, "ListConversation": false, "ListChannel": false,
 			"Get": false, "UntoldSendFailures": false, "UnresolvedSendFailures": false,
 			"Undelivered": false,
 			// ResolveSend and ResolveResends write timestamps and ids,

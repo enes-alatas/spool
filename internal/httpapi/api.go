@@ -140,6 +140,7 @@ func (server *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/channels", server.handleListChannels)
 	mux.HandleFunc("POST /api/channels", server.handleCreateChannel)
 	mux.HandleFunc("GET /api/channels/{name}", server.handleGetChannel)
+	mux.HandleFunc("GET /api/channels/{name}/messages", server.handleChannelMessages)
 	mux.HandleFunc("PATCH /api/channels/{name}", server.handlePatchChannel)
 	mux.HandleFunc("DELETE /api/channels/{name}", server.handleDeleteChannel)
 	mux.HandleFunc("PUT /api/channels/{name}/loops/{loop}", server.handleChannelLoop(true))
@@ -1307,9 +1308,10 @@ func (server *Server) handleLoopConversation(w http.ResponseWriter, r *http.Requ
 
 // handleGroupTimeline is the fleet channel's own timeline, newest first like
 // a loop's conversation. The channel is the hub's rather than any loop's
-// (ADR-0032), so it is not reached through one.
+// (ADR-0032), so it is not reached through one, and it holds no message said
+// in another channel (ADR-0038).
 func (server *Server) handleGroupTimeline(w http.ResponseWriter, r *http.Request) {
-	msgs, err := server.Store.Messages().ListConversation(r.Context(), store.ConversationGroup, "", queryInt(r, "limit", 100))
+	msgs, err := server.Store.Messages().ListChannel(r.Context(), store.FleetChannel, queryInt(r, "limit", 100))
 	if err != nil {
 		server.jsonErr(w, 500, "%v", err)
 		return

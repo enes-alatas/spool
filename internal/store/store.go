@@ -726,10 +726,13 @@ type MessageStore interface {
 	List(ctx context.Context, limit int) ([]*Message, error)
 	// ListConversation returns one conversation's messages, newest first.
 	// A private kind — ConversationOwnerDM or ConversationControlRoom — is
-	// keyed to its loop. ConversationGroup, the fleet channel, is the hub's
+	// keyed to its loop. ConversationGroup is every channel's, the hub's
 	// rather than any loop's (ADR-0032), so its rows carry no loop key and
-	// it is asked for with loopID "".
+	// it is asked for with loopID ""; ListChannel reads one channel.
 	ListConversation(ctx context.Context, kind, loopID string, limit int) ([]*Message, error)
+	// ListChannel returns the messages said in one channel, newest first:
+	// the fleet channel's under FleetChannel, and no other's (ADR-0038).
+	ListChannel(ctx context.Context, name string, limit int) ([]*Message, error)
 	// Get returns one message by id, or ErrNotFound. Reply targets are
 	// resolved through it.
 	Get(ctx context.Context, id int64) (*Message, error)
