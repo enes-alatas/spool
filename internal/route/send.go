@@ -186,19 +186,11 @@ func (router *Router) Send(ctx context.Context, req SendRequest) (*store.Message
 		if _, ok := conv.Channel(name); !ok {
 			return nil, noSuchDestination(conv, fmt.Sprintf("you are in no channel named %q", name)), nil
 		}
-		// A channel's members as stored, not as its prompt lists them: a
-		// paused member is delivered to by mention, as in the fleet
-		// channel, and only @all leaves it be.
-		member := map[string]bool{}
+		var member func(*store.Loop) bool
 		for _, channel := range channels {
 			if channel.Name == name {
-				for _, id := range channel.LoopIDs {
-					member[id] = true
-				}
+				member = inChannel(channel)
 			}
-		}
-		inChannel := func(loopRecord *store.Loop) bool {
-			return loopRecord.Status != store.StatusArchived && member[loopRecord.ID]
 		}
 		// No person is in a channel until a room mirrors it, so naming one
 		// there is no recipient: the refusal says where people are.
@@ -208,14 +200,26 @@ func (router *Router) Send(ctx context.Context, req SendRequest) (*store.Message
 				elsewhere = append(elsewhere, destination)
 			}
 		}
-		targets, serr, err = router.sharedRecipients(ctx, req.From, loops, inChannel, req.Destination,
+		targets, serr, err = router.sharedRecipients(ctx, req.From, loops, member, req.Destination,
 			strings.Join(elsewhere, ", "), mentions, replyTo)
 		if serr != nil || err != nil {
 			return nil, serr, err
 		}
-		// Said on the hub alone: a channel other than the fleet channel
-		// has no room on any surface to be mirrored to yet (#275).
 		msg.Conversation, msg.Channel = store.ConversationGroup, name
+		// Mirrored where the loop's bot sits in a room bound to the
+		// channel; said on the hub alone where it does not, and always on
+		// Slack until its rooms bind (#275).
+		if req.From.TGBotToken != "" {
+			rooms, err := router.store.Rooms().List(ctx, req.From.ID)
+			if err != nil {
+				return nil, nil, err
+			}
+			for _, room := range rooms {
+				if room.Surface == store.SurfaceTelegram && room.Channel == name {
+					msg.Mirror = store.MirrorPending
+				}
+			}
+		}
 	}
 
 	// Last of the refusals, as the one that costs a read of the file.

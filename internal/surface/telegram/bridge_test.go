@@ -35,7 +35,7 @@ func TestBoundBefore(t *testing.T) {
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			got := boundBefore(&store.Loop{TGGroupBoundAt: testCase.boundAtMS}, msgDate, defaultBindSettle)
+			got := boundBefore(testCase.boundAtMS, msgDate, defaultBindSettle)
 			if got != testCase.want {
 				t.Fatalf("boundBefore(bound_at=%d, date=%d) = %v, want %v",
 					testCase.boundAtMS, msgDate, got, testCase.want)

@@ -338,6 +338,16 @@ func (br *Bridge) pollLoop(ctx context.Context, bot *poller) {
 }
 
 func (br *Bridge) handleMessage(ctx context.Context, bot *poller, message *tgMsgAlias) {
+	// Telegram's own word that a chat changed id, read before any sender
+	// check: an anonymous admin's upgrade arrives from a bot.
+	switch {
+	case message.MigrateToChatID != 0:
+		br.moveRoom(ctx, bot, message.Chat.ID, message.MigrateToChatID)
+		return
+	case message.MigrateFromChatID != 0:
+		br.moveRoom(ctx, bot, message.MigrateFromChatID, message.Chat.ID)
+		return
+	}
 	if message.From == nil || message.From.IsBot {
 		return // defensive: Telegram shouldn't deliver bot messages at all
 	}
@@ -365,13 +375,22 @@ func (br *Bridge) handleMessage(ctx context.Context, bot *poller, message *tgMsg
 		return
 	}
 
+	channel := ""
 	if isGroup {
-		br.maybeBindGroup(ctx, bot, message.Chat.ID)
+		channel = br.roomChannel(ctx, bot, message)
 	}
 
-	// /spool_status works even with bot privacy mode on and forces binding
+	// /spool_status works even with bot privacy mode on, and binds a loop
+	// whose fleet channel has no room yet, as any group message does
 	if strings.HasPrefix(text, "/spool_status") {
 		br.replyStatus(ctx, bot, message.Chat.ID)
+		return
+	}
+	if isGroup && channel == "" {
+		// The room is recorded, but not this message, not even its
+		// sighting: until the operator binds the room, the loop is not in
+		// that conversation.
+		br.logTurnedAway(bot, message, author, "the room is bound to no channel")
 		return
 	}
 
@@ -385,7 +404,7 @@ func (br *Bridge) handleMessage(ctx context.Context, bot *poller, message *tgMsg
 	br.recordSighting(ctx, bot, message, sightedTarget)
 
 	if isGroup {
-		br.ingestGroupMessage(ctx, bot, message, author, text, attachments, sightedTarget)
+		br.ingestGroupMessage(ctx, bot, message, channel, author, text, attachments, sightedTarget)
 		return
 	}
 
@@ -429,14 +448,16 @@ func (br *Bridge) handleMessage(ctx context.Context, bot *poller, message *tgMsg
 // reliable dedup is to let a single poller through.
 //
 // The election is the lowest loop ID among the bots polling that group whose
-// binding predates the message. That second clause is what makes every
-// poller agree on one answer: a bot binds to a group in the middle of
-// handling a message, so a candidate set read as "whoever is bound right
-// now" differs between pollers racing on the same message. A message dated
-// after a committed bind, by contrast, was received after that bind — so
-// every poller handling it reads the same set, whatever order they run in,
-// and a bot that joins a live group (or is catching up on a backlog) leaves
-// the incumbent to finish the messages that predate it.
+// room there is bound to a channel, and was bound before the message. That
+// second clause is what makes every poller agree on one answer: a bot binds
+// to a group in the middle of handling a message, so a candidate set read as
+// "whoever is bound right now" differs between pollers racing on the same
+// message. A message dated after a committed bind, by contrast, was received
+// after that bind — so every poller handling it reads the same set, whatever
+// order they run in, and a bot that joins a live group (or is catching up on
+// a backlog) leaves the incumbent to finish the messages that predate it.
+// A room carries one channel whichever loops bound it, so the election is
+// per channel as well as per chat (ADR-0038).
 //
 // While the elected poller is down but still registered — a 409 pause, say —
 // the group is deaf: nobody steps in, because stepping in on a live poller's
@@ -444,42 +465,52 @@ func (br *Bridge) handleMessage(ctx context.Context, bot *poller, message *tgMsg
 // is eligible (a brand-new group, where the first message is what binds the
 // bots); the caller drops the message rather than let every bot ingest it.
 func (br *Bridge) groupIngestLoopID(ctx context.Context, chatID, msgDate int64) string {
+	rooms, err := br.store.Rooms().ListByRoom(ctx, store.SurfaceTelegram, strconv.FormatInt(chatID, 10))
+	if err != nil {
+		br.log.Error("telegram: group ingest election", "err", err)
+		return ""
+	}
 	loops, err := br.store.Loops().List(ctx)
 	if err != nil {
 		br.log.Error("telegram: group ingest election", "err", err)
 		return ""
 	}
+	archived := map[string]bool{}
+	for _, loopRecord := range loops {
+		archived[loopRecord.ID] = loopRecord.Status == store.StatusArchived
+	}
 	br.mu.Lock()
 	defer br.mu.Unlock()
 	ingest := ""
-	for _, loopRecord := range loops {
-		if loopRecord.TGGroupChatID != chatID || loopRecord.Status == store.StatusArchived {
+	for _, room := range rooms {
+		if room.Channel == "" || archived[room.LoopID] {
 			continue
 		}
-		if !boundBefore(loopRecord, msgDate, br.bindSettle) {
+		if !boundBefore(room.BoundAt, msgDate, br.bindSettle) {
 			continue
 		}
-		if _, polling := br.pollers[loopRecord.ID]; !polling {
+		if _, polling := br.pollers[room.LoopID]; !polling {
 			continue
 		}
-		if ingest == "" || loopRecord.ID < ingest {
-			ingest = loopRecord.ID
+		if ingest == "" || room.LoopID < ingest {
+			ingest = room.LoopID
 		}
 	}
 	return ingest
 }
 
-// boundBefore reports whether loopRecord's bot was bound to its group early
-// enough to ingest a message Telegram dated at msgDate. The settle margin
-// covers the skew between Telegram's clock and ours: erring long only delays a
-// newcomer's first ingest by a few seconds, while erring short would let it
-// duplicate what the incumbent already took. A binding from before this rule
-// existed is recorded as 0 and always qualifies.
-func boundBefore(loopRecord *store.Loop, msgDate int64, settle time.Duration) bool {
-	if loopRecord.TGGroupBoundAt == 0 {
+// boundBefore reports whether a bot whose room was bound at boundAt (unix
+// millis) was bound early enough to ingest a message Telegram dated at
+// msgDate. The settle margin covers the skew between Telegram's clock and
+// ours: erring long only delays a newcomer's first ingest by a few seconds,
+// while erring short would let it duplicate what the incumbent already took.
+// A binding from before this rule existed is recorded as 0 and always
+// qualifies.
+func boundBefore(boundAt, msgDate int64, settle time.Duration) bool {
+	if boundAt == 0 {
 		return true
 	}
-	return msgDate > loopRecord.TGGroupBoundAt/1000+int64(settle.Seconds())
+	return msgDate > boundAt/1000+int64(settle.Seconds())
 }
 
 // dedupKey identifies a telegram message: the chat, the id, and the bot that
@@ -604,7 +635,7 @@ func (br *Bridge) inboundReplyTarget(ctx context.Context, bot *poller, message *
 
 // ingestGroupMessage persists a group message if this bot is the one elected
 // to, and otherwise lends it the reply target only this bot could see.
-func (br *Bridge) ingestGroupMessage(ctx context.Context, bot *poller, message *tgMsgAlias, author, text string, attachments []route.InboundAttachment, sightedTarget int64) {
+func (br *Bridge) ingestGroupMessage(ctx context.Context, bot *poller, message *tgMsgAlias, channel, author, text string, attachments []route.InboundAttachment, sightedTarget int64) {
 	// Every bot in the group sees this message under its own message_id,
 	// so exactly one of them may persist it.
 	if br.groupIngestLoopID(ctx, message.Chat.ID, message.Date) != bot.loopID {
@@ -628,6 +659,7 @@ func (br *Bridge) ingestGroupMessage(ctx context.Context, bot *poller, message *
 	}
 	err := br.router.Ingest(ctx, route.InboundMessage{
 		Origin:      store.OriginTelegramGroup,
+		Channel:     channel,
 		Author:      author,
 		Text:        text,
 		TGChatID:    message.Chat.ID,
@@ -829,21 +861,77 @@ func (br *Bridge) logTurnedAway(bot *poller, message *tgMsgAlias, author, reason
 		"message_id", message.MessageID)
 }
 
-func (br *Bridge) maybeBindGroup(ctx context.Context, bot *poller, chatID int64) {
+// roomChannel is the channel a group chat carries for this loop's bot, ""
+// for none. A chat the bot has no room for is recorded as one, unbound, for
+// the operator to bind from the loop page (ADR-0038). The one chat
+// bound without asking is the first a loop hears from while its fleet
+// channel has no room, as the fleet channel's group always was: a new fleet
+// still binds by its first message. A later group never moves it.
+func (br *Bridge) roomChannel(ctx context.Context, bot *poller, message *tgMsgAlias) string {
+	now := time.Now().UnixMilli()
+	roomID := strconv.FormatInt(message.Chat.ID, 10)
+	room, added, err := br.store.Rooms().Sight(ctx, &store.Room{LoopID: bot.loopID, Surface: store.SurfaceTelegram,
+		RoomID: roomID, Title: message.Chat.Title, FirstSeenAt: now})
+	if err != nil {
+		br.log.Error("telegram: record room", "loop", bot.name, "err", err)
+		return ""
+	}
+	if room.Channel != "" {
+		return room.Channel
+	}
 	loopRecord, err := br.store.Loops().Get(ctx, bot.loopID)
-	if err != nil || loopRecord.TGGroupChatID == chatID {
+	if err != nil {
+		br.log.Error("telegram: read loop for room", "loop", bot.name, "err", err)
+		return ""
+	}
+	if loopRecord.TGGroupChatID == 0 {
+		_, err := br.store.Rooms().Bind(ctx, loopRecord.ID, store.SurfaceTelegram, roomID, store.FleetChannel, now)
+		switch {
+		case err == nil:
+			br.log.Info("telegram group bound", "loop", loopRecord.Name, "chat_id", message.Chat.ID)
+			br.bus.Publish(bus.Item{Kind: bus.KindLoopStatus, LoopID: loopRecord.ID, Payload: map[string]any{
+				"loop_id": loopRecord.ID, "name": loopRecord.Name, "tg_group_bound": true, "rooms_changed": true,
+			}})
+			return store.FleetChannel
+		case !errors.Is(err, store.ErrRoomInUse):
+			br.log.Error("group bind", "err", err)
+			return ""
+		}
+		// another loop's room for another channel: this one waits unbound
+	}
+	if added {
+		br.log.Info("telegram room recorded unbound", "loop", loopRecord.Name, "chat_id", message.Chat.ID)
+		br.bus.Publish(bus.Item{Kind: bus.KindLoopStatus, LoopID: loopRecord.ID, Payload: map[string]any{
+			"loop_id": loopRecord.ID, "name": loopRecord.Name, "rooms_changed": true,
+		}})
+	}
+	return ""
+}
+
+// moveRoom follows a group upgraded to a supergroup to its new chat id:
+// every loop's room for the old id moves there, bound as it was, so the
+// channel it carries neither goes deaf nor posts to a chat that is gone.
+// Each bot in the chat hears both service messages; the first to arrive
+// moves every loop's room and the rest find nothing left to move.
+func (br *Bridge) moveRoom(ctx context.Context, bot *poller, fromChatID, toChatID int64) {
+	moved, err := br.store.Rooms().Move(ctx, store.SurfaceTelegram,
+		strconv.FormatInt(fromChatID, 10), strconv.FormatInt(toChatID, 10))
+	if err != nil {
+		br.log.Error("telegram: move room to the upgraded chat", "loop", bot.name,
+			"from_chat_id", fromChatID, "to_chat_id", toChatID, "err", err)
 		return
 	}
-	boundAt := time.Now().UnixMilli()
-	if _, err := br.store.Rooms().Bind(ctx, loopRecord.ID, store.SurfaceTelegram, strconv.FormatInt(chatID, 10),
-		store.FleetChannel, boundAt); err != nil {
-		br.log.Error("group bind", "err", err)
-		return
+	for _, loopID := range moved {
+		loopRecord, err := br.store.Loops().Get(ctx, loopID)
+		if err != nil {
+			continue // deleted since: its rooms went with it
+		}
+		br.log.Info("telegram room moved to the upgraded chat", "loop", loopRecord.Name,
+			"from_chat_id", fromChatID, "to_chat_id", toChatID)
+		br.bus.Publish(bus.Item{Kind: bus.KindLoopStatus, LoopID: loopID, Payload: map[string]any{
+			"loop_id": loopID, "name": loopRecord.Name, "rooms_changed": true,
+		}})
 	}
-	br.log.Info("telegram group bound", "loop", loopRecord.Name, "chat_id", chatID)
-	br.bus.Publish(bus.Item{Kind: bus.KindLoopStatus, LoopID: loopRecord.ID, Payload: map[string]any{
-		"loop_id": loopRecord.ID, "name": loopRecord.Name, "tg_group_bound": true,
-	}})
 }
 
 // maybeCaptureOwnerDM records where this loop's bot can write privately to
@@ -1151,12 +1239,41 @@ func (br *Bridge) chatName(ctx context.Context, bot *poller, chatID int64) strin
 		return "the group"
 	case loopRecord.OwnerDMChatID:
 		return "the owner"
-	default:
+	}
+	rooms, err := br.store.Rooms().List(ctx, loopRecord.ID)
+	if err != nil {
+		br.log.Warn("telegram: name chat for send failure", "loop", bot.name, "err", err)
 		return "a chat"
 	}
+	for _, room := range rooms {
+		if room.Channel != "" && room.RoomID == strconv.FormatInt(chatID, 10) {
+			return "the " + room.Channel + " channel's room"
+		}
+	}
+	return "a chat"
 }
 
 // --- mirroring ---
+
+// roomOf is the Telegram chat a loop's bot carries a channel in, 0 for none.
+// The fleet channel's is read with the loop; any other's from its rooms.
+func (br *Bridge) roomOf(ctx context.Context, loopRecord *store.Loop, channel string) int64 {
+	if channel == "" || channel == store.FleetChannel {
+		return loopRecord.TGGroupChatID
+	}
+	rooms, err := br.store.Rooms().List(ctx, loopRecord.ID)
+	if err != nil {
+		br.log.Warn("telegram: read rooms for delivery", "loop", loopRecord.Name, "err", err)
+		return 0
+	}
+	for _, room := range rooms {
+		if room.Surface == store.SurfaceTelegram && room.Channel == channel {
+			chatID, _ := strconv.ParseInt(room.RoomID, 10, 64)
+			return chatID
+		}
+	}
+	return 0
+}
 
 // mirror consumes message bus items and applies the mirror rules, and
 // delivers the hub's login notices to owners.
@@ -1216,19 +1333,18 @@ func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 		return
 	}
 	bot := br.poller(mp.FromLoopID)
-	// By destination, not kind: a channel other than the fleet channel has
-	// no room on any surface yet, so its messages stay on the hub
-	// (ADR-0038) and match no case here.
-	switch mp.Destination() {
+	switch mp.Conversation {
 	case store.ConversationGroup:
-		// a loop's explicit group send: post to its bound group as its
-		// own bot, judged from the loop as it is now rather than as
-		// route.Send saw it — a group bound since the send still gets
-		// the post. No bot or no group means there is no room to carry
-		// it, normal for a fleet without telegram, so the message stays
-		// on the hub. A bound bot with no poller is the same internal
-		// fault as the owner_dm case below.
-		if loopRecord.TGBotToken == "" || loopRecord.TGGroupChatID == 0 {
+		// a loop's send to a channel: post to the room its bot has bound
+		// to that channel, as its own bot, judged from the loop as it is
+		// now rather than as route.Send saw it — a room bound since the
+		// send still gets the post. No bot or no room means nothing
+		// carries the channel here, normal for a fleet without telegram
+		// or a channel kept on the hub, so the message stays on the hub.
+		// A bound bot with no poller is the same internal fault as the
+		// owner_dm case below.
+		chatID := br.roomOf(ctx, loopRecord, mp.Channel)
+		if loopRecord.TGBotToken == "" || chatID == 0 {
 			br.ledger.StayOnHub(ctx, mp)
 			return
 		}
@@ -1240,8 +1356,8 @@ func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 		if !ok {
 			return
 		}
-		anchor, text := br.render(ctx, mp, loopRecord.TGGroupChatID)
-		if unsent := bot.enqueue(sendReq{chatID: loopRecord.TGGroupChatID, text: text, replyTo: anchor, recordFor: mp.ID, media: media}); unsent != "" {
+		anchor, text := br.render(ctx, mp, chatID)
+		if unsent := bot.enqueue(sendReq{chatID: chatID, text: text, replyTo: anchor, recordFor: mp.ID, media: media}); unsent != "" {
 			br.ledger.Unsendable(ctx, mp, unsent)
 		}
 	case store.ConversationOwnerDM:

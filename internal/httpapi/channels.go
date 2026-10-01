@@ -14,7 +14,7 @@ import (
 
 // Channels (ADR-0038): the hub's named conversations and the loops in each.
 // The operator creates and describes them here and chooses who is in them;
-// nothing posts to one but the fleet channel yet.
+// a loop's rooms (rooms.go) are where people read them.
 
 const (
 	codeChannelNameInvalid = "channel_name_invalid"
