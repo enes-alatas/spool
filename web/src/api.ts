@@ -187,6 +187,11 @@ export interface ChatMessage {
   reply_to_id?: number
   // The files that came with it (#460). Absent when there are none.
   attachments?: Attachment[]
+  // The channel a channel message was posted in: 'group' for the fleet
+  // channel. Absent on owner_dm and control_room messages, and on a server
+  // from before channels (#483). Mirrored for the api.ts/Go sync rule;
+  // nothing in the room reads it yet.
+  channel?: string
 }
 
 // A file that came with a message, from a chat surface, a loop's send, or
@@ -299,6 +304,18 @@ export interface RulesBudget {
 export interface RulesView {
   rules: FleetRule[]
   budget: RulesBudget
+}
+
+// A channel: a conversation the hub holds, and the loops in it (#483).
+// `group` is the fleet channel; it always exists, and its loops are the ones
+// with in_fleet_channel set.
+export interface Channel {
+  name: string
+  // "" when unset.
+  description: string
+  created_at: number
+  // Loop names, sorted.
+  loops: string[]
 }
 
 // What a model resolves to on this hub (#332, ADR-0033). resolved is the id
@@ -608,6 +625,19 @@ export const api = {
   patchRule: (id: string, body: Partial<{ title: string; body: string; enabled: boolean }>) =>
     req<FleetRule>(`/api/rules/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteRule: (id: string) => req<void>(`/api/rules/${id}`, { method: 'DELETE' }),
+  // `group` first, then by name.
+  channels: () => req<Channel[]>('/api/channels'),
+  createChannel: (body: { name: string; description: string }) =>
+    req<Channel>('/api/channels', { method: 'POST', body: JSON.stringify(body) }),
+  patchChannel: (name: string, body: { description: string }) =>
+    req<Channel>(`/api/channels/${name}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteChannel: (name: string) => req<void>(`/api/channels/${name}`, { method: 'DELETE' }),
+  // Both idempotent. On `group` these are the same write as PATCHing the
+  // loop's in_fleet_channel.
+  addChannelLoop: (channel: string, loop: string) =>
+    req<void>(`/api/channels/${channel}/loops/${loop}`, { method: 'PUT' }),
+  removeChannelLoop: (channel: string, loop: string) =>
+    req<void>(`/api/channels/${channel}/loops/${loop}`, { method: 'DELETE' }),
   models: () => req<ModelList>('/api/models'),
   addCustomModel: (body: { model: string; label: string }) =>
     req<CustomModel>('/api/models/custom', { method: 'POST', body: JSON.stringify(body) }),
