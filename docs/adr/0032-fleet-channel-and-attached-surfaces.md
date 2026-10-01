@@ -1,6 +1,6 @@
 # ADR-0032: The fleet channel is a hub conversation; surfaces are attached later and mirror it
 
-Date: 2026-09-23 · Status: accepted (operator decisions of 2026-09-22/23) · Amended: 2026-09-24 (item 2: where a new loop starts); 2026-10-01 (item 2: membership per channel) · Amends: ADR-0020 (§1 is the mirror's rule), ADR-0025 (item 2), ADR-0026 (item 1), ADR-0029 (items 5 and 7)
+Date: 2026-09-23 · Status: accepted (operator decisions of 2026-09-22/23) · Amended: 2026-09-24 (item 2: where a new loop starts); 2026-10-01 (item 2: membership per channel); 2026-10-01 (item 3: a mirror per room) · Amends: ADR-0020 (§1 is the mirror's rule), ADR-0025 (item 2), ADR-0026 (item 1), ADR-0029 (items 5 and 7)
 
 ## Context
 
@@ -81,6 +81,10 @@ mirrors which way.
    mirrors the fleet channel. ADR-0029 item 7's "one surface per loop" is
    unchanged in substance and now says *at most* one: zero is the state a loop
    starts in, not an error.
+
+   **Amendment (2026-10-01, #514, ADR-0038):** a surface mirrors every
+   channel the loop is in that has a room bound to it, not the fleet channel
+   alone. Item 4's asymmetry holds in each room.
 
 4. **The mirror is asymmetric, and the asymmetry is the decision.**
 

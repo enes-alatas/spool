@@ -1,6 +1,6 @@
 # ADR-0038: Channels are the hub's named conversations, and the fleet channel is the first of them
 
-Date: 2026-10-01 · Status: accepted (operator decisions of 2026-10-01, recorded on #275) · Amends: ADR-0026 (item 1), ADR-0032 (item 2) · Amended: 2026-10-01 (item 4: routing by channel, #493)
+Date: 2026-10-01 · Status: accepted (operator decisions of 2026-10-01, recorded on #275) · Amends: ADR-0026 (item 1), ADR-0032 (item 2) · Amended: 2026-10-01 (item 4: routing by channel, #493); 2026-10-01 (item 5: Telegram rooms, #514)
 
 ## Context
 
@@ -133,6 +133,50 @@ something it leaves open.
    - **One surface per loop:** ADR-0029 item 7 is untouched.
 
    Binding lands with the surface slices.
+
+   **Amendment (2026-10-01, #514): Telegram rooms.** Slice 3 binds rooms on
+   Telegram, and decides what item 5 left open.
+   - **A room is a loop's.** A room is a chat as one loop's bot knows it,
+     bound to one of the loop's channels or to none. A loop has at most one
+     room per channel and any number unbound. The fleet channel's Telegram
+     group is the room bound to `group`. The hub keeps rooms in a table of
+     their own, and the group's chat id moved there from the loop's row.
+   - **A room carries one channel.** Several loops bind the same chat, one
+     bot each, and all of them to the same channel. A bind that would put a
+     second channel in a chat another loop holds is refused (`room_in_use`).
+     A chat with two channels in it would leave a person's message in
+     neither.
+   - **An unknown chat is recorded, not ingested.** The first message from a
+     group the loop has no room for records the room unbound, with the
+     chat's title, and nothing else. The message is dropped and the log says
+     why. The operator binds the room from the loop page or by pasting its id
+     (`PUT /api/loops/{name}/rooms`).
+   - **The fleet channel still binds itself.** While a loop's fleet channel
+     has no room, the first group its bot hears from becomes it, as before:
+     a new fleet still binds by its first message. Once it has one, a later
+     group never moves it. Before, every new group took the fleet channel
+     over. A group upgraded to a supergroup gets a new chat id, and its
+     rooms follow it there, bound as they were, so neither the fleet
+     channel nor any other goes deaf.
+   - **A bound room carries its channel both ways for that loop.** A
+     person's message there is said in the channel. The ingest election
+     (ADR-0020) runs among the loops whose room in that chat is bound, so it
+     is per channel as well as per chat. The loop's posts to the channel
+     mirror to the room, a reply threading under the message it answers in
+     that room. A channel the loop has no room for stays on the hub, as
+     before.
+   - **A room's binding follows the channel.** Taking a loop out of a channel
+     other than the fleet channel unbinds its room for it, and so does
+     deleting the channel. The fleet channel's room stays bound when a loop
+     leaves the fleet channel, as the group binding always did. Clearing a
+     loop's bot token forgets all of its Telegram rooms.
+   - **A room puts people in its channel.** Item 4 kept people out of every
+     channel but the fleet channel until a room mirrors it; a bound room
+     lifts that for the loop whose room it is. In a channel the loop's bot
+     carries, a known person counts as a recipient, as in the fleet channel,
+     and the prompt lists the channel with its room and teaches people there.
+     A channel the loop has no room for keeps item 4's rule and wording.
+   - **Slack keeps its one channel** until slice 4.
 
 6. **Deleting a channel removes it and its membership, not its history.**
    Messages said in it keep its name. A channel created later under the same
