@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ApiError, FleetRule, RulesBudget } from '../api'
+import { CharCount } from '../components/CharCount'
 
 // The guard's rejection is not a failure to save — it is the budget doing its
 // job — so it gets the sentence that says what to do about it, wherever the
@@ -32,10 +33,6 @@ function BudgetBar({ budget }: { budget: RulesBudget }) {
       </div>
     </div>
   )
-}
-
-function CharCount({ used, max }: { used: number; max: number }) {
-  return <span className={`char-count${used > max ? ' over' : ''}`}>{`${used} / ${max}`}</span>
 }
 
 // RuleEditor is both the create form and the edit form: the same fields, the
