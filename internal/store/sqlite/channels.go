@@ -103,14 +103,22 @@ func (table channels) SetDescription(ctx context.Context, name, description stri
 }
 
 func (table channels) Delete(ctx context.Context, name string) error {
-	res, err := table.db.ExecContext(ctx, `DELETE FROM channels WHERE name=?`, name)
+	tx, err := table.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	res, err := tx.ExecContext(ctx, `DELETE FROM channels WHERE name=?`, name)
 	if err != nil {
 		return err
 	}
 	if affected, _ := res.RowsAffected(); affected == 0 {
 		return store.ErrNotFound
 	}
-	return nil
+	if _, err := tx.ExecContext(ctx, `UPDATE rooms SET channel='', bound_at=0 WHERE channel=?`, name); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (table channels) AddLoop(ctx context.Context, name, loopID string, at int64) error {
@@ -145,6 +153,17 @@ func (table channels) setMember(ctx context.Context, name, loopID string, in boo
 		}
 		return err
 	}
-	_, err := table.db.ExecContext(ctx, `DELETE FROM channel_loops WHERE channel=? AND loop_id=?`, name, loopID)
-	return err
+	// out of the channel, the loop's room for it carries nothing
+	tx, err := table.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM channel_loops WHERE channel=? AND loop_id=?`, name, loopID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE rooms SET channel='', bound_at=0 WHERE channel=? AND loop_id=?`, name, loopID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

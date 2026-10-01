@@ -256,11 +256,11 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			// an operator pasting their own secret into it is #30's problem.
 			"Create": false, "Edit": false,
 			"Delete": false, "Get": false, "GetByHubMCPToken": false,
-			"GetByName": false, "List": false, "SetGroupBinding": false,
+			"GetByName": false, "List": false,
 			"SetOwner": false, "SetOwnerDMChat": false, "SetPromptHash": false,
 			"SetRuntime": false, "SetStatus": false, "SetWorkstationOff": false,
-			// Slack ids and a timestamp, the counterparts of the three
-			// Telegram setters above.
+			// Slack ids and a timestamp, the counterparts of the two
+			// Telegram setters above and the fleet channel's room.
 			"SetSlackBinding": false, "SetSlackOwner": false, "SetSlackOwnerDM": false,
 		},
 		"TurnStore": {
@@ -324,6 +324,12 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			// timestamps.
 			"Create": false, "SetDescription": false, "Delete": false,
 			"AddLoop": false, "RemoveLoop": false, "Get": false, "List": false,
+		},
+		"RoomStore": {
+			// Ids, channel names and timestamps, and a chat's title as the
+			// surface reports it: a name people chose for a room, written
+			// by no loop.
+			"Sight": false, "Bind": false, "Forget": false, "Move": false, "List": false, "ListByRoom": false,
 		},
 		"SessionStore": {
 			"Create": false, "End": false, "EndDangling": false, "ListByLoop": false,

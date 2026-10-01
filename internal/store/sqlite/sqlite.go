@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/enes-alatas/spool/internal/store"
@@ -95,6 +96,7 @@ func (database *DB) Close() error { return database.db.Close() }
 
 func (database *DB) Loops() store.LoopStore               { return loops{database.db} }
 func (database *DB) Channels() store.ChannelStore         { return channels{database.db} }
+func (database *DB) Rooms() store.RoomStore               { return rooms{database.db} }
 func (database *DB) LoopSecrets() store.LoopSecretStore   { return loopSecrets{database.db} }
 func (database *DB) FleetRules() store.FleetRuleStore     { return fleetRules{database.db} }
 func (database *DB) Sessions() store.SessionStore         { return sessions{database.db} }
@@ -127,28 +129,38 @@ func fromJSON(encoded string) []string {
 
 type loops struct{ db *sql.DB }
 
+// loopCols are the columns of a loops row, in the order Create writes them.
+// loopReadCols reads them back with the fleet channel's Telegram room, which
+// is kept in rooms (ADR-0038) and read as the loop's own two fields.
 const loopCols = `id, name, mission, model, workspace_mode, workspace_path, repo_path,
 	worktree_path, branch, tick_interval_sec, min_wake_sec, max_wake_sec, idle_timeout_sec,
-	pacing, effort, tg_bot_token, tg_bot_username, tg_group_chat_id, tg_group_bound_at,
+	pacing, effort, tg_bot_token, tg_bot_username,
 	owner_tg_user_id, owner_dm_chat_id,
 	workstation_off, outside_fleet_channel, status, current_session_id, current_pid, created_at, updated_at,
 	runtime, image, mem_mb, cpus, hub_mcp_token, rotate_pending, rotate_reason, handoff_note, prompt_hash, model_refusal,
 	slack_app_token, slack_bot_token, slack_bot_user_id, slack_bot_name, slack_team_id, slack_team_name,
 	slack_channel_id, slack_channel_bound_at, owner_slack_user_id, owner_slack_dm_channel`
 
+const loopReadCols = loopCols + `,
+	COALESCE((SELECT CAST(room_id AS INTEGER) FROM rooms WHERE rooms.loop_id=loops.id
+		AND surface='` + store.SurfaceTelegram + `' AND channel='` + store.FleetChannel + `'), 0),
+	COALESCE((SELECT bound_at FROM rooms WHERE rooms.loop_id=loops.id
+		AND surface='` + store.SurfaceTelegram + `' AND channel='` + store.FleetChannel + `'), 0)`
+
 func scanLoop(row interface{ Scan(...any) error }) (*store.Loop, error) {
 	var loopRecord store.Loop
 	err := row.Scan(&loopRecord.ID, &loopRecord.Name, &loopRecord.Mission, &loopRecord.Model, &loopRecord.WorkspaceMode, &loopRecord.WorkspacePath,
 		&loopRecord.RepoPath, &loopRecord.WorktreePath, &loopRecord.Branch, &loopRecord.TickIntervalSec, &loopRecord.MinWakeSec,
 		&loopRecord.MaxWakeSec, &loopRecord.IdleTimeoutSec, &loopRecord.Pacing, &loopRecord.Effort, &loopRecord.TGBotToken,
-		&loopRecord.TGBotUsername, &loopRecord.TGGroupChatID, &loopRecord.TGGroupBoundAt,
+		&loopRecord.TGBotUsername,
 		&loopRecord.OwnerTGUserID, &loopRecord.OwnerDMChatID, &loopRecord.WorkstationOff, &loopRecord.OutsideFleetChannel,
 		&loopRecord.Status, &loopRecord.CurrentSessionID, &loopRecord.CurrentPID,
 		&loopRecord.CreatedAt, &loopRecord.UpdatedAt, &loopRecord.Runtime, &loopRecord.Image, &loopRecord.MemMB, &loopRecord.CPUs, &loopRecord.HubMCPToken,
 		&loopRecord.RotatePending, &loopRecord.RotateReason, &loopRecord.HandoffNote, &loopRecord.PromptHash, &loopRecord.ModelRefusal,
 		&loopRecord.SlackAppToken, &loopRecord.SlackBotToken, &loopRecord.SlackBotUserID, &loopRecord.SlackBotName,
 		&loopRecord.SlackTeamID, &loopRecord.SlackTeamName, &loopRecord.SlackChannelID, &loopRecord.SlackChannelBoundAt,
-		&loopRecord.OwnerSlackUserID, &loopRecord.OwnerSlackDMChannel)
+		&loopRecord.OwnerSlackUserID, &loopRecord.OwnerSlackDMChannel,
+		&loopRecord.TGGroupChatID, &loopRecord.TGGroupBoundAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, store.ErrNotFound
 	}
@@ -167,11 +179,11 @@ func (table loops) Create(ctx context.Context, loopRecord *store.Loop) error {
 		loopRecord.HubMCPToken = store.NewHubMCPToken()
 	}
 	_, err := table.db.ExecContext(ctx, `INSERT INTO loops (`+loopCols+`) VALUES
-		(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		loopRecord.ID, loopRecord.Name, loopRecord.Mission, loopRecord.Model, loopRecord.WorkspaceMode, loopRecord.WorkspacePath, loopRecord.RepoPath,
 		loopRecord.WorktreePath, loopRecord.Branch, loopRecord.TickIntervalSec, loopRecord.MinWakeSec, loopRecord.MaxWakeSec,
 		loopRecord.IdleTimeoutSec, loopRecord.Pacing, loopRecord.Effort, loopRecord.TGBotToken, loopRecord.TGBotUsername,
-		loopRecord.TGGroupChatID, loopRecord.TGGroupBoundAt, loopRecord.OwnerTGUserID, loopRecord.OwnerDMChatID,
+		loopRecord.OwnerTGUserID, loopRecord.OwnerDMChatID,
 		loopRecord.WorkstationOff, loopRecord.OutsideFleetChannel, loopRecord.Status, loopRecord.CurrentSessionID, loopRecord.CurrentPID,
 		loopRecord.CreatedAt, loopRecord.UpdatedAt,
 		loopRecord.Runtime, loopRecord.Image, loopRecord.MemMB, loopRecord.CPUs, loopRecord.HubMCPToken, loopRecord.RotatePending, loopRecord.RotateReason,
@@ -182,6 +194,12 @@ func (table loops) Create(ctx context.Context, loopRecord *store.Loop) error {
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return store.ErrDuplicate
 	}
+	if err != nil || loopRecord.TGGroupChatID == 0 {
+		return err
+	}
+	// A loop created already bound, as a fixture's are: its group is a room.
+	_, err = rooms(table).Bind(ctx, loopRecord.ID, store.SurfaceTelegram,
+		strconv.FormatInt(loopRecord.TGGroupChatID, 10), store.FleetChannel, loopRecord.TGGroupBoundAt)
 	return err
 }
 
@@ -231,10 +249,6 @@ func (table loops) Edit(ctx context.Context, id string, edit store.LoopEdit) (*s
 	if edit.OutsideFleetChannel != nil {
 		set("outside_fleet_channel", *edit.OutsideFleetChannel)
 	}
-	if edit.ClearGroupBinding {
-		set("tg_group_chat_id", 0)
-		set("tg_group_bound_at", 0)
-	}
 	if slack := edit.Slack; slack != nil {
 		set("slack_app_token", slack.AppToken)
 		set("slack_bot_token", slack.BotToken)
@@ -254,8 +268,21 @@ func (table loops) Edit(ctx context.Context, id string, edit store.LoopEdit) (*s
 	if edit.ClearSlackOwner {
 		set("owner_slack_user_id", "")
 	}
-	if _, err := table.db.ExecContext(ctx,
+	tx, err := table.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx,
 		`UPDATE loops SET `+strings.Join(sets, ", ")+` WHERE id=?`, append(args, id)...); err != nil {
+		return nil, err
+	}
+	if edit.ClearTelegramRooms {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM rooms WHERE loop_id=? AND surface=?`, id, store.SurfaceTelegram); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 	return table.Get(ctx, id)
@@ -267,11 +294,11 @@ func (table loops) Delete(ctx context.Context, id string) error {
 }
 
 func (table loops) Get(ctx context.Context, id string) (*store.Loop, error) {
-	return scanLoop(table.db.QueryRowContext(ctx, `SELECT `+loopCols+` FROM loops WHERE id=?`, id))
+	return scanLoop(table.db.QueryRowContext(ctx, `SELECT `+loopReadCols+` FROM loops WHERE id=?`, id))
 }
 
 func (table loops) GetByName(ctx context.Context, name string) (*store.Loop, error) {
-	return scanLoop(table.db.QueryRowContext(ctx, `SELECT `+loopCols+` FROM loops WHERE name=?`, name))
+	return scanLoop(table.db.QueryRowContext(ctx, `SELECT `+loopReadCols+` FROM loops WHERE name=?`, name))
 }
 
 func (table loops) GetByHubMCPToken(ctx context.Context, token string) (*store.Loop, error) {
@@ -279,11 +306,11 @@ func (table loops) GetByHubMCPToken(ctx context.Context, token string) (*store.L
 		// Every pre-backfill row would match ''; an empty bearer is never valid.
 		return nil, store.ErrNotFound
 	}
-	return scanLoop(table.db.QueryRowContext(ctx, `SELECT `+loopCols+` FROM loops WHERE hub_mcp_token=?`, token))
+	return scanLoop(table.db.QueryRowContext(ctx, `SELECT `+loopReadCols+` FROM loops WHERE hub_mcp_token=?`, token))
 }
 
 func (table loops) List(ctx context.Context) ([]*store.Loop, error) {
-	rows, err := table.db.QueryContext(ctx, `SELECT `+loopCols+` FROM loops ORDER BY created_at`)
+	rows, err := table.db.QueryContext(ctx, `SELECT `+loopReadCols+` FROM loops ORDER BY created_at`)
 	if err != nil {
 		return nil, err
 	}
@@ -314,13 +341,6 @@ func (table loops) SetRotation(ctx context.Context, id string, pending bool, rea
 func (table loops) SetPromptHash(ctx context.Context, id, hash string) error {
 	_, err := table.db.ExecContext(ctx,
 		`UPDATE loops SET prompt_hash=? WHERE id=?`, hash, id)
-	return err
-}
-
-func (table loops) SetGroupBinding(ctx context.Context, id string, chatID, boundAt, updatedAt int64) error {
-	_, err := table.db.ExecContext(ctx,
-		`UPDATE loops SET tg_group_chat_id=?, tg_group_bound_at=?, updated_at=? WHERE id=?`,
-		chatID, boundAt, updatedAt, id)
 	return err
 }
 

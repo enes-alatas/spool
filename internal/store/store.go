@@ -118,7 +118,9 @@ type Loop struct {
 
 	TGBotToken    string `json:"-"`
 	TGBotUsername string `json:"tg_bot_username"`
-	TGGroupChatID int64  `json:"tg_group_chat_id"`
+	// TGGroupChatID is the Telegram group the fleet channel's room is, read
+	// from the loop's rooms (0 = none bound).
+	TGGroupChatID int64 `json:"tg_group_chat_id"`
 	// HubMCPToken is the bearer token this loop's claude process presents to
 	// the hub's MCP endpoint (ADR-0026). Minted at creation, immutable, and
 	// secret: json:"-" keeps it out of every API response, like TGBotToken.
@@ -133,8 +135,9 @@ type Loop struct {
 	// the zero value is the ordinary loop, which is in it. Surfaced to the
 	// API as in_fleet_channel, the way round a reader asks the question.
 	OutsideFleetChannel bool `json:"-"`
-	// TGGroupBoundAt is when this loop's bot bound to that group. A bot only
-	// ingests group messages Telegram dated after it — see ADR-0020.
+	// TGGroupBoundAt is when this loop's bot bound to that group, read with
+	// it. A bot only ingests group messages Telegram dated after it — see
+	// ADR-0020.
 	TGGroupBoundAt int64 `json:"-"`
 	// OwnerTGUserID is the allowlisted Telegram sender configured as this
 	// loop's owner (0 = none). Being known to Spool does not make someone
@@ -563,12 +566,12 @@ type LoopEdit struct {
 	// name a bot the token does not open.
 	TGBotToken    *string
 	TGBotUsername *string
-	// ClearGroupBinding drops the group this loop's bot was bound to, which
-	// a new token invalidates — the binding belonged to the old bot. Set
-	// only when the token is cleared, never as a side effect of an edit
+	// ClearTelegramRooms forgets every Telegram room this loop's bot knew,
+	// bound or not: with the token cleared there is no bot in any of them.
+	// Set only when the token is cleared, never as a side effect of an edit
 	// that did not mention it, which is the revert this type exists to
 	// prevent.
-	ClearGroupBinding bool
+	ClearTelegramRooms bool
 	// Slack writes the loop's whole Slack identity at once, for the same
 	// reason TGBotToken and TGBotUsername move together: every field but the
 	// tokens is what the tokens answered. nil leaves it alone; a zero
@@ -578,7 +581,7 @@ type LoopEdit struct {
 	Slack *SlackIdentity
 	// ClearSlackBinding drops the channel the loop's Slack bot was bound to.
 	// Set when the app is detached, never as a side effect, like
-	// ClearGroupBinding.
+	// ClearTelegramRooms.
 	ClearSlackBinding bool
 	// ClearSlackOwner drops the loop's Slack owner. Set when an app from
 	// another workspace is attached: the kept owner is not a sender there,
@@ -629,22 +632,19 @@ type LoopStore interface {
 	// the setters below: the actor writes it while other writers touch other
 	// columns of the same row.
 	SetPromptHash(ctx context.Context, id, hash string) error
-	// SetGroupBinding records which group chat this loop's bot is bound to,
-	// and when. Narrow rather than a whole-row Update because the Telegram
-	// poller writes this while the hub writes other columns of the same row:
-	// two read-modify-write cycles interleave and the later one silently
-	// reverts the earlier one's column (#161).
-	SetGroupBinding(ctx context.Context, id string, chatID, boundAt, updatedAt int64) error
 	// SetOwner records who the loop may message privately, and the chat its
 	// bot reaches them in. Changing the owner passes 0 for the chat: the
-	// captured one belonged to the previous owner. Narrow for the same
-	// reason as SetGroupBinding. ErrNotFound if the loop is gone.
+	// captured one belonged to the previous owner. Narrow rather than a
+	// whole-row Update because a surface writes the loop's columns while the
+	// hub writes others of the same row: two read-modify-write cycles
+	// interleave and the later one silently reverts the earlier one's
+	// column (#161). ErrNotFound if the loop is gone.
 	SetOwner(ctx context.Context, id string, tgUserID, dmChatID, updatedAt int64) error
 	// SetOwnerDMChat records the private chat the owner has written from,
 	// which is the only way a bot learns an address it cannot open itself.
 	SetOwnerDMChat(ctx context.Context, id string, chatID, updatedAt int64) error
 	// SetSlackBinding records which Slack channel this loop's bot is bound
-	// to, and when. Narrow for the same reason as SetGroupBinding: the Slack
+	// to, and when. Narrow for the same reason as SetOwner: the Slack
 	// connection writes it while the hub writes other columns.
 	SetSlackBinding(ctx context.Context, id, channelID string, boundAt, updatedAt int64) error
 	// SetSlackOwner records the loop's Slack owner and the DM channel with
@@ -1002,6 +1002,7 @@ type SlackSenderStore interface {
 type Store interface {
 	Loops() LoopStore
 	Channels() ChannelStore
+	Rooms() RoomStore
 	LoopSecrets() LoopSecretStore
 	FleetRules() FleetRuleStore
 	Sessions() SessionStore
@@ -1087,15 +1088,68 @@ type ChannelStore interface {
 	// SetDescription rewrites a channel's description and returns it;
 	// ErrNotFound if there is none by that name.
 	SetDescription(ctx context.Context, name, description string) (*Channel, error)
-	// Delete removes a channel and its membership; ErrNotFound if there is
-	// none. Messages said in it keep its name. The fleet channel is not
-	// deletable, and the caller refuses it before asking.
+	// Delete removes a channel and its membership, and unbinds every room
+	// bound to it; ErrNotFound if there is none. Messages said in it keep
+	// its name. The fleet channel is not deletable, and the caller refuses
+	// it before asking.
 	Delete(ctx context.Context, name string) error
 	// AddLoop puts a loop in a channel and RemoveLoop takes it out; both
 	// are no-ops when it already is, or is not, there, and ErrNotFound when
-	// the channel is not. at stamps the write.
+	// the channel is not. at stamps the write. Taking a loop out of a
+	// channel other than the fleet channel unbinds its room for it; the
+	// fleet channel's room stays bound, as it did before rooms, so a loop
+	// put back in finds its group where it was.
 	AddLoop(ctx context.Context, name, loopID string, at int64) error
 	RemoveLoop(ctx context.Context, name, loopID string, at int64) error
+}
+
+// Room is a surface's chat as one loop's bot knows it (ADR-0038): a
+// Telegram group, bound to one of the loop's channels or, while Channel is
+// "", to none. A bound room carries its channel both ways for that loop; an
+// unbound one carries nothing and waits for the operator to bind it.
+type Room struct {
+	LoopID  string
+	Surface string
+	// RoomID is the surface's id for the chat, as text so every surface's
+	// fits: a Telegram chat id in decimal.
+	RoomID string
+	// Title is the chat's name as the surface last reported it, "" when
+	// the room was bound by id before it was ever heard from.
+	Title       string
+	Channel     string
+	FirstSeenAt int64
+	// BoundAt is when the room was bound to its channel, 0 while unbound.
+	// The ingest election reads it, as it read TGGroupBoundAt (ADR-0020).
+	BoundAt int64
+}
+
+// RoomStore holds every loop's rooms. A room carries one channel: per loop,
+// by the (loop, channel) uniqueness, and across loops, by Bind's refusal.
+type RoomStore interface {
+	// List returns a loop's rooms, bound or not, newest first.
+	List(ctx context.Context, loopID string) ([]*Room, error)
+	// ListByRoom returns every loop's row for one chat.
+	ListByRoom(ctx context.Context, surface, roomID string) ([]*Room, error)
+	// Sight records a chat the loop's bot heard from: added unbound if
+	// the loop had no row for it, its title refreshed if it had. It
+	// returns the row as stored and whether it was added.
+	Sight(ctx context.Context, room *Room) (*Room, bool, error)
+	// Bind binds a loop's room to a channel, adding the room if the loop
+	// had none by that id, and returns it. The room the loop had for that
+	// channel, if another, goes back to unbound. Binding a room to the
+	// channel it already carries keeps its BoundAt. ErrRoomInUse when
+	// another loop's row binds the room to another channel.
+	Bind(ctx context.Context, loopID, surface, roomID, channel string, at int64) (*Room, error)
+	// Forget removes a loop's room; ErrNotFound if it had none.
+	Forget(ctx context.Context, loopID, surface, roomID string) error
+	// Move carries every loop's room for a chat over to the chat's new id,
+	// as a Telegram group upgraded to a supergroup gets one: channel,
+	// title and BoundAt kept, so the binding and the ingest election stand.
+	// The unbound row a loop may already have for the new id gives way; a
+	// loop whose row for it is bound keeps that one. It returns the loops
+	// whose room moved, and ErrRoomInUse when the new id carries another
+	// channel already.
+	Move(ctx context.Context, surface, fromRoomID, toRoomID string) ([]string, error)
 }
 
 // ErrNotFound / ErrDuplicate are sentinel errors shared by implementations.
@@ -1106,4 +1160,7 @@ func (sentinel sentinelError) Error() string { return string(sentinel) }
 const (
 	ErrNotFound  = sentinelError("store: not found")
 	ErrDuplicate = sentinelError("store: duplicate")
+	// ErrRoomInUse is a room that carries another channel already: a chat
+	// with two channels in it would leave a person's message in neither.
+	ErrRoomInUse = sentinelError("store: room carries another channel")
 )

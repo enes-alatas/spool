@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -834,7 +835,8 @@ func (br *Bridge) maybeBindGroup(ctx context.Context, bot *poller, chatID int64)
 		return
 	}
 	boundAt := time.Now().UnixMilli()
-	if err := br.store.Loops().SetGroupBinding(ctx, loopRecord.ID, chatID, boundAt, boundAt); err != nil {
+	if _, err := br.store.Rooms().Bind(ctx, loopRecord.ID, store.SurfaceTelegram, strconv.FormatInt(chatID, 10),
+		store.FleetChannel, boundAt); err != nil {
 		br.log.Error("group bind", "err", err)
 		return
 	}
