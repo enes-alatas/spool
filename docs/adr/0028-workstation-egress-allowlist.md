@@ -1,6 +1,6 @@
 # ADR-0028: Workstation egress runs through an allowlist proxy
 
-Date: 2026-09-20 · Status: accepted · Amends: ADR-0017 (decision 9, "open egress") · Amended 2026-09-20 (decision 3: the hub entry is the MCP listener, #238); 2026-10-01 (consequences: a docker loop behind a loopback listener is refused, #474)
+Date: 2026-09-20 · Status: accepted · Amends: ADR-0017 (decision 9, "open egress") · Amended 2026-09-20 (decision 3: the hub entry is the MCP listener, #238); 2026-10-01 (consequences: a docker loop behind a loopback listener is refused, #474); 2026-10-01 (decision 3: the loop listener does not refuse a host.docker.internal Host, #508)
 
 ## Context
 
@@ -64,6 +64,17 @@ by asking the agent nicely (#193).
    **Amended by ADR-0030:** the operator listener now carries a credential of
    its own. This decision remains the reason a workstation cannot reach it at
    all; that one covers the callers the network cannot tell apart.
+
+   **Amendment (2026-10-01, #508):** the loop listener turns off the MCP
+   SDK's DNS-rebinding guard. The guard refuses a request that arrives on a
+   loopback address naming another host. Docker Desktop delivers every
+   workstation's request that way, on the host's loopback while naming
+   `host.docker.internal`, so on Docker Desktop no docker loop reached the
+   hub. The guard protects an endpoint that takes no credential. On this
+   listener every request has shown a loop's bearer token before the SDK
+   sees it, and a page that rebinds a name to 127.0.0.1 cannot know one, so
+   the token is what keeps such a page out. The operator approved the change
+   on 2026-10-01.
 
 4. **The allowlist is a default fleet-wide list, extendable per loop later.**
    The default is what a loop needs to do its job: Anthropic's API and Claude
