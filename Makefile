@@ -12,7 +12,7 @@ COMMIT   ?= $(shell git rev-parse --short HEAD 2>/dev/null)
 BUILT_AT ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS  := -X main.buildVersion=$(VERSION) -X main.buildCommit=$(COMMIT) -X main.buildTime=$(BUILT_AT)
 
-.PHONY: build dev test itest lint secret-scan workflow-lint fakeclaude egress vet e2e-context e2e-m1 ui ui-dev ui-shots ui-smoke demo image image-multiarch clean
+.PHONY: build dev test itest lint secret-scan workflow-lint fakeclaude egress vet vet-darwin e2e-context e2e-m1 ui ui-dev ui-shots ui-smoke demo image image-multiarch clean
 
 build: ui
 	$(GO) build -ldflags "$(LDFLAGS)" -o bin/spool ./cmd/spool
@@ -92,6 +92,14 @@ lint:
 	$(GO) vet ./...
 	@if command -v golangci-lint >/dev/null 2>&1; then golangci-lint run ./...; else echo "golangci-lint not installed — skipped (CI runs it)"; fi
 	@bash scripts/comment-refs.sh
+	@$(MAKE) -s vet-darwin
+
+# macOS is a supported platform, and CI builds on Linux only: type-check
+# every package, tier 2's included, as darwin sees it (#497). Spool is pure
+# Go, so this is the build a Mac does, short of linking.
+vet-darwin:
+	GOOS=darwin GOARCH=arm64 $(GO) vet ./...
+	GOOS=darwin GOARCH=arm64 $(GO) vet -tags integration ./itest/
 
 ui:
 	cd web && npm install --silent && npm run build
