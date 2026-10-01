@@ -2375,6 +2375,14 @@ textarea {
 .channel-note.bad {
   color: var(--danger);
 }
+/* the loop page's line of channels: links in the value's own colour, since
+   the line is read as a list of names before it is used as links */
+.side-panel .loop-channels {
+  margin-top: 10px;
+}
+.side-panel .loop-channels a {
+  color: var(--text);
+}
 .rule-editor textarea {
   line-height: 1.5;
   resize: vertical;

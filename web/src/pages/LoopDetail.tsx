@@ -890,6 +890,29 @@ function BotTokenForm({
   )
 }
 
+// The channels the loop is in, each a link to the Channels page, where they
+// are edited. Absent on a hub from before channels, which has no list to read.
+function LoopChannels({ loop }: { loop: LoopView }) {
+  const { data } = useQuery({ queryKey: ['channels'], queryFn: api.channels, retry: false })
+  if (!data) return null
+  const mine = data.filter((channel) => channel.loops.includes(loop.name))
+  return (
+    <div className="row loop-channels">
+      <span className="k">channels</span>
+      <span className="v">
+        {mine.length === 0
+          ? 'none'
+          : mine.map((channel, n) => (
+              <span key={channel.name}>
+                {n > 0 && ' · '}
+                <Link to="/channels">#{channel.name}</Link>
+              </span>
+            ))}
+      </span>
+    </div>
+  )
+}
+
 // Where the loop is reachable besides this control room: at most one surface,
 // Telegram or Slack (#230), and whether it is in the fleet channel.
 // A loop starts with no surface and gets one here (#287); a loop without one
@@ -908,6 +931,8 @@ function SurfacesPanel({ loop }: { loop: LoopView }) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['loop', loop.name] })
       qc.invalidateQueries({ queryKey: ['loops'] })
+      // The fleet-channel switch is a change to `group`'s loops.
+      qc.invalidateQueries({ queryKey: ['channels'] })
       setError('')
     },
     onError: (e) => setError(e instanceof Error ? e.message : String(e)),
@@ -991,6 +1016,7 @@ function SurfacesPanel({ loop }: { loop: LoopView }) {
           </span>
         </span>
       </label>
+      <LoopChannels loop={loop} />
       {error && (
         <div className="form-error" role="alert">
           {error}
