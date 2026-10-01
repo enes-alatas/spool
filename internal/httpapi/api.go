@@ -864,7 +864,7 @@ func (server *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 		}
 		edit.TGBotToken, edit.TGBotUsername = &token, &username
 		// A cleared token leaves no bot in any room. A replaced one keeps
-		// them: the groups are the same groups, and the poller rebinds.
+		// them as they are: the groups are the same groups.
 		edit.ClearTelegramRooms = token == ""
 	}
 	updated, err := server.Store.Loops().Edit(r.Context(), loopRecord.ID, edit)

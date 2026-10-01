@@ -146,6 +146,11 @@ type Message struct {
 	Caption  string      `json:"caption,omitempty"`
 	Photo    []PhotoSize `json:"photo,omitempty"`
 	Document *Document   `json:"document,omitempty"`
+	// A group upgraded to a supergroup gets a new chat id: Telegram says so
+	// with a service message in each, MigrateToChatID in the old chat and
+	// MigrateFromChatID in the new one.
+	MigrateToChatID   int64 `json:"migrate_to_chat_id,omitempty"`
+	MigrateFromChatID int64 `json:"migrate_from_chat_id,omitempty"`
 }
 
 type PhotoSize struct {

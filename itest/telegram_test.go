@@ -49,6 +49,9 @@ type fakeTelegram struct {
 	// several bots saw was downloaded once (#123).
 	files     map[string][]byte
 	downloads int
+	// titles are the group titles Telegram reports, by chat; a chat with
+	// none is reported untitled.
+	titles map[int64]string
 }
 
 // blockGetMe makes every getMe from here on hang until the returned release
@@ -327,7 +330,7 @@ func (tg *fakeTelegram) postReply(chatID int64, chatType, text string, from user
 				"id": from.ID, "is_bot": false,
 				"first_name": from.First, "username": from.Username,
 			},
-			"chat": map[string]any{"id": chatID, "type": chatType},
+			"chat": map[string]any{"id": chatID, "type": chatType, "title": tg.titles[chatID]},
 		}
 		if target != nil && (chatType != "group" || target.ids[token] != 0) {
 			msg["reply_to_message"] = target.embed(token, chatID, chatType)

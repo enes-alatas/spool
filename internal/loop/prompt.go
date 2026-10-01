@@ -762,11 +762,11 @@ func MessageEnvelope(now time.Time, in Inbound) Envelope {
 	case in.FromLoop:
 		from = fmt.Sprintf("message from @%s (loop) · %s", in.Author, channel)
 	case in.Origin == store.OriginTelegramGroup:
-		from = fmt.Sprintf("message from @%s via telegram · group", in.Author)
+		from = fmt.Sprintf("message from @%s via telegram · %s", in.Author, channel)
 	case in.Origin == store.OriginTelegramDM:
 		from = fmt.Sprintf("message from @%s via telegram dm · owner_dm", in.Author)
 	case in.Origin == store.OriginSlackChannel:
-		from = fmt.Sprintf("message from @%s via slack · group", in.Author)
+		from = fmt.Sprintf("message from @%s via slack · %s", in.Author, channel)
 	case in.Origin == store.OriginSlackDM:
 		from = fmt.Sprintf("message from @%s via slack dm · owner_dm", in.Author)
 	case in.Conversation == store.ConversationControlRoom:

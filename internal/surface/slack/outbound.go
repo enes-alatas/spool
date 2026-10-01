@@ -88,8 +88,8 @@ func (adapter *Adapter) mirrorMessage(ctx context.Context, mp *route.MessagePayl
 		return
 	}
 	// By destination, not kind: a channel other than the fleet channel has
-	// no room on any surface yet, so its messages stay on the hub
-	// (ADR-0038) and fall to the default.
+	// no room on Slack yet, so its messages stay on the hub (ADR-0038) and
+	// fall to the default.
 	switch mp.Destination() {
 	case store.ConversationGroup:
 		// judged from the loop as it is now: a channel bound since the

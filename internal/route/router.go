@@ -54,6 +54,29 @@ func inGroup(loopRecord *store.Loop) bool {
 	return loopRecord.Status != store.StatusArchived && !loopRecord.OutsideFleetChannel
 }
 
+// inChannel says whether a message said in a channel other than the fleet
+// channel, and addressed to loopRecord, is delivered to it: a loop in the
+// channel as stored, not as its prompt lists it, so a paused member is
+// reached by a mention as in the fleet channel and only @all leaves it be.
+func inChannel(channel *store.Channel) func(*store.Loop) bool {
+	return func(loopRecord *store.Loop) bool {
+		return loopRecord.Status != store.StatusArchived && slices.Contains(channel.LoopIDs, loopRecord.ID)
+	}
+}
+
+// memberOf is inGroup for the fleet channel and inChannel for any other,
+// named as a message names it ("" is the fleet channel).
+func (router *Router) memberOf(ctx context.Context, name string) (func(*store.Loop) bool, error) {
+	if name == "" || name == store.FleetChannel {
+		return inGroup, nil
+	}
+	channel, err := router.store.Channels().Get(ctx, name)
+	if err != nil {
+		return nil, fmt.Errorf("channel %q: %w", name, err)
+	}
+	return inChannel(channel), nil
+}
+
 // stormLimit caps deliveries per ordered loop pair per hour so two loops
 // can't ping-pong forever.
 const (
@@ -86,6 +109,9 @@ type InboundMessage struct {
 	// ImplicitTo optionally targets a loop with no mention needed
 	// (DM to a loop's bot, or POST /api/loops/{name}/message).
 	ImplicitTo string // loop ID
+	// Channel is the channel a group message was said in, as the room it
+	// came through carries it; "" is the fleet channel.
+	Channel string
 	// Conversation optionally names the destination outright — the web
 	// composer's declared destination (ADR-0026). Empty means derive it
 	// from the origin. Callers pass a validated store.Conversation* value.
@@ -210,6 +236,15 @@ func (router *Router) Ingest(ctx context.Context, in InboundMessage) error {
 		ConversationLoopID: convLoopID,
 		Mirror:             inboundMirror(in.Origin),
 	}
+	if conv == store.ConversationGroup {
+		msg.Channel = in.Channel
+	}
+	// Mentions, @all and a reply resolve among the loops of the channel the
+	// message was said in (ADR-0038).
+	member, err := router.memberOf(ctx, msg.Channel)
+	if err != nil {
+		return err
+	}
 
 	// resolve recipients before persisting so delivered_to lands in one write
 	loops, err := router.store.Loops().List(ctx)
@@ -253,18 +288,18 @@ func (router *Router) Ingest(ctx context.Context, in InboundMessage) error {
 				// deliberate broadcast: the union with the mentions and the
 				// reply author is deduplicated by loop id, so a loop named
 				// twice over is still delivered to once
-				for id, loopRecord := range router.broadcastTargets(loops, in.FromLoopID, inGroup) {
+				for id, loopRecord := range router.broadcastTargets(loops, in.FromLoopID, member) {
 					targets[id] = loopRecord
 				}
 				continue
 			}
-			if loopRecord, ok := byKey[mention]; ok && loopRecord.ID != in.FromLoopID && inGroup(loopRecord) {
+			if loopRecord, ok := byKey[mention]; ok && loopRecord.ID != in.FromLoopID && member(loopRecord) {
 				targets[loopRecord.ID] = loopRecord
 			}
 		}
 		if replyTo != nil && replyTo.FromLoopID != "" && replyTo.FromLoopID != in.FromLoopID {
 			for _, loopRecord := range loops {
-				if loopRecord.ID == replyTo.FromLoopID && inGroup(loopRecord) {
+				if loopRecord.ID == replyTo.FromLoopID && member(loopRecord) {
 					targets[loopRecord.ID] = loopRecord
 				}
 			}
@@ -275,7 +310,7 @@ func (router *Router) Ingest(ctx context.Context, in InboundMessage) error {
 			// a group post from a loop's composer addresses that loop only
 			// if it has a group to be addressed in
 			if loopRecord.ID == in.ImplicitTo && loopRecord.Status != store.StatusArchived &&
-				(conv != store.ConversationGroup || inGroup(loopRecord)) {
+				(conv != store.ConversationGroup || member(loopRecord)) {
 				targets[loopRecord.ID] = loopRecord
 			}
 		}
@@ -330,6 +365,7 @@ func (router *Router) Ingest(ctx context.Context, in InboundMessage) error {
 			Author:       in.Author,
 			Text:         in.Text,
 			Conversation: conv,
+			Channel:      msg.Channel,
 			FromLoop:     in.FromLoopID != "",
 			TGChatID:     dmChatFor(in),
 			Ref:          loop.MessageRef(msg.ID),
@@ -363,7 +399,11 @@ func (router *Router) DeliverAdoptedReply(ctx context.Context, msg *store.Messag
 		return nil
 	}
 	author, err := router.store.Loops().Get(ctx, target.FromLoopID)
-	if err != nil || !inGroup(author) {
+	if err != nil {
+		return err
+	}
+	member, err := router.memberOf(ctx, msg.Channel)
+	if err != nil || !member(author) {
 		return err
 	}
 	if err := router.store.Messages().SetDelivered(ctx, msg.ID, append(slices.Clone(msg.DeliveredTo), author.ID)); err != nil {
@@ -379,6 +419,7 @@ func (router *Router) DeliverAdoptedReply(ctx context.Context, msg *store.Messag
 		Author:       msg.Author,
 		Text:         msg.Text,
 		Conversation: msg.Conversation,
+		Channel:      msg.Channel,
 		Ref:          loop.MessageRef(msg.ID),
 		ReplyTo:      loop.MessageRef(target.ID),
 		Attachments:  shown,
