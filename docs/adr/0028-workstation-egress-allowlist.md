@@ -1,6 +1,6 @@
 # ADR-0028: Workstation egress runs through an allowlist proxy
 
-Date: 2026-09-20 · Status: accepted · Amends: ADR-0017 (decision 9, "open egress") · Amended 2026-09-20 (decision 3: the hub entry is the MCP listener, #238)
+Date: 2026-09-20 · Status: accepted · Amends: ADR-0017 (decision 9, "open egress") · Amended 2026-09-20 (decision 3: the hub entry is the MCP listener, #238); 2026-10-01 (consequences: a docker loop behind a loopback listener is refused, #474)
 
 ## Context
 
@@ -135,6 +135,18 @@ by asking the agent nicely (#193).
   at boot when the default runtime is docker and `--mcp-listen` is on loopback
   — a fleet whose one allowed destination is the one it cannot route to comes
   up looking healthy and never wakes.
+
+  **Amendment (2026-10-01, #474):** the boot warning reached only a hub whose
+  *default* runtime was docker, so a docker loop on a bare-default hub came
+  up mute with nothing said. Creating a docker loop is now refused (`400
+  loop_listener_unreachable`, naming `--mcp-listen <bridge gateway>:<port>`)
+  when the bridge gateway is an address of this machine, which is how a
+  workstation reaches the hub on an engine that runs here, and `--mcp-listen`
+  is bound to neither a wildcard nor that gateway: loopback, or any other one
+  address, refuses the connection. The boot warning applies the same test. An engine in a VM, such
+  as Docker Desktop's, has no bridge gateway on this machine and forwards
+  `host.docker.internal` to its loopback itself, so neither the warning nor
+  the refusal fires there, nor when the engine cannot report its bridge.
 - Proxy denials are logged by host, never by URL: a query string can carry a
   credential, and this log is the one place a blocked exfiltration attempt is
   visible at all.

@@ -134,7 +134,7 @@ func main() {
 	// are allowlisted to the MCP port alone, so the API port must not be it
 	// (#238). One address serving both would hand every workstation the
 	// unauthenticated API back.
-	mcpHost, _, err := splitMCPListen(*listen, *mcpListen)
+	_, _, err := splitMCPListen(*listen, *mcpListen)
 	if err != nil {
 		log.Error("--mcp-listen", "err", err)
 		os.Exit(1)
@@ -180,14 +180,19 @@ func main() {
 		log.Warn("claude version differs from the one Spool was verified against",
 			"found", ver, "tested", claude.TestedVersion)
 	}
-	// A containerized loop reaches the hub through the docker bridge, which
-	// has no route to loopback: the one destination it is allowed is then the
-	// one it cannot use, and the fleet comes up looking healthy and never
-	// wakes. The hub knows both halves here and nowhere earlier — the default
-	// runtime is only resolved above.
-	if defaultRuntime == store.RuntimeDocker && isLoopback(mcpHost) {
-		log.Warn("docker workstations cannot reach --mcp-listen on loopback — bind it to an address the docker bridge can reach (#238)",
-			"mcp_listen", mcpAddr, "example", "0.0.0.0:"+mcpPort)
+	// A containerized loop reaches the hub at the docker bridge gateway, so a
+	// loop listener bound to loopback or to any other one address is the one
+	// destination it is allowed and cannot use, and the fleet comes up
+	// looking healthy and never wakes. The hub knows both halves here and nowhere earlier — the default
+	// runtime is only resolved above. Creating a docker loop is refused for
+	// the same reason (#474).
+	listenerReachable := func(ctx context.Context) error {
+		return loopListenerReachable(ctx, dockerRuntime, mcpListener.Addr().(*net.TCPAddr).IP, mcpPort)
+	}
+	if defaultRuntime == store.RuntimeDocker {
+		if err := listenerReachable(context.Background()); err != nil {
+			log.Warn("docker workstations cannot reach the loop listener (#238)", "mcp_listen", mcpAddr, "err", err)
+		}
 	}
 	log.Info("runtime ready", "default", defaultRuntime, "claude_version", ver,
 		"spool_version", build.Version, "commit", build.Commit, "built_at", build.BuiltAt)
@@ -360,6 +365,7 @@ func main() {
 			}
 			return nil
 		},
+		LoopListenerReachable: listenerReachable,
 		SecretsChanged: func(ctx context.Context) {
 			if err := redactor.Refresh(ctx); err != nil {
 				log.Error("reload secrets for redaction", "err", err)
@@ -557,24 +563,41 @@ func isWildcard(host string) bool {
 	return host == "" || host == "0.0.0.0" || host == "::"
 }
 
-// isLoopback reports whether an address's host half is reachable only from
-// this machine — which a docker workstation, coming in over the bridge, is
-// not. An unresolvable name is not called loopback: the warning it would
-// raise is worse than the one it would miss.
-func isLoopback(host string) bool {
-	if isWildcard(host) {
+// loopListenerReachable refuses a loop listener a docker workstation cannot
+// reach (#474). On an engine that runs on this machine, a workstation comes
+// in at the bridge gateway, an address of this machine, so the listener
+// must be bound to that address or to every address: loopback, or any other
+// one address, refuses the connection. An engine in a VM, Docker Desktop's,
+// has no such gateway here and forwards host.docker.internal to this
+// machine itself, so nothing is refused there, nor when the engine cannot
+// say where its bridge is: a guess that refuses a working setup is worse
+// than the miss.
+func loopListenerReachable(ctx context.Context, dockerRuntime *docker.Runtime, bound net.IP, mcpPort string) error {
+	if bound.IsUnspecified() {
+		return nil
+	}
+	gateway, err := dockerRuntime.BridgeGateway(ctx)
+	if err != nil || !isLocalAddress(gateway) || bound.Equal(net.ParseIP(gateway)) {
+		return nil
+	}
+	return fmt.Errorf("docker workstations reach the loop listener over the docker bridge at %s, and --mcp-listen is bound to %s; start spool with --mcp-listen %s",
+		gateway, bound, net.JoinHostPort(gateway, mcpPort))
+}
+
+// isLocalAddress reports whether an IP is one of this machine's interface
+// addresses.
+func isLocalAddress(addr string) bool {
+	ip := net.ParseIP(addr)
+	addrs, err := net.InterfaceAddrs()
+	if ip == nil || err != nil {
 		return false
 	}
-	ips, err := net.LookupIP(host)
-	if err != nil || len(ips) == 0 {
-		return false
-	}
-	for _, ip := range ips {
-		if !ip.IsLoopback() {
-			return false
+	for _, ifaceAddr := range addrs {
+		if ipNet, ok := ifaceAddr.(*net.IPNet); ok && ipNet.IP.Equal(ip) {
+			return true
 		}
 	}
-	return true
+	return false
 }
 
 // expireAttachments removes kept files past their 30 days, hourly (#123).

@@ -56,25 +56,21 @@ func TestSplitMCPListen(t *testing.T) {
 	}
 }
 
-// The docker default and the --mcp-listen default cannot both be taken: a
-// workstation comes in over the bridge, which has no route to loopback. The
-// hub warns rather than refuses, so a fleet running only bare loops on a
-// docker-equipped machine still starts.
-func TestIsLoopback(t *testing.T) {
+// A workstation's view of the hub turns on whether the bridge gateway is
+// an address of this machine (#474): loopback always is, a documentation
+// address never is, and a name is not an address.
+func TestIsLocalAddress(t *testing.T) {
 	for _, tc := range []struct {
-		host string
+		addr string
 		want bool
 	}{
-		{host: "127.0.0.1", want: true},
-		{host: "localhost", want: true},
-		{host: "::1", want: true},
-		{host: "0.0.0.0", want: false},
-		{host: "", want: false},
-		{host: "::", want: false},
-		{host: "no-such-host.invalid", want: false},
+		{addr: "127.0.0.1", want: true},
+		{addr: "192.0.2.1", want: false},
+		{addr: "localhost", want: false},
+		{addr: "", want: false},
 	} {
-		if got := isLoopback(tc.host); got != tc.want {
-			t.Errorf("isLoopback(%q) = %v, want %v", tc.host, got, tc.want)
+		if got := isLocalAddress(tc.addr); got != tc.want {
+			t.Errorf("isLocalAddress(%q) = %v, want %v", tc.addr, got, tc.want)
 		}
 	}
 }

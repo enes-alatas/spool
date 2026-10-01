@@ -3,6 +3,7 @@
 package itest
 
 import (
+	"net"
 	"os/exec"
 	"strings"
 	"testing"
@@ -369,4 +370,79 @@ func TestCreateLoopRuntimeValidation(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A docker loop on a hub whose loop listener its workstation cannot reach
+// could never talk: on an engine running on this machine, the workstation
+// comes in at the bridge gateway, so a listener bound to loopback or to any
+// other one address refuses it. Creating one is refused, naming the address
+// that works, and nothing is stored; a listener on the gateway itself is
+// reachable and is not refused (#474).
+func TestDockerLoopRefusedOnAnUnreachableLoopListener(t *testing.T) {
+	t.Parallel()
+	out, err := exec.Command("docker", "network", "inspect", "bridge", "--format", "{{range .IPAM.Config}}{{.Gateway}} {{end}}").Output()
+	if err != nil {
+		t.Skip("docker daemon not reachable — the bridge has no gateway to check")
+	}
+	fields := strings.Fields(string(out))
+	if len(fields) == 0 || !localAddress(fields[0]) {
+		t.Skipf("the bridge gateway %q is not on this machine: an engine in a VM forwards to loopback itself", out)
+	}
+	gateway := fields[0]
+
+	refused := map[string]string{"loopback": "127.0.0.1"}
+	if other := otherLocalAddress(gateway); other != "" {
+		refused["another address of this machine"] = other
+	}
+	for why, host := range refused {
+		t.Run(why, func(t *testing.T) {
+			t.Parallel()
+			s := startServerOn(t, t.TempDir(), host, "--runtime", "bare")
+			resp, body := s.do("POST", "/api/loops", map[string]any{"name": "walled", "mission": "m", "runtime": "docker"})
+			if resp.StatusCode != 400 || errorCode(body) != "loop_listener_unreachable" {
+				t.Fatalf("a docker loop behind a listener on %s = %d %s, want 400 loop_listener_unreachable", host, resp.StatusCode, body)
+			}
+			if !strings.Contains(string(body), "--mcp-listen "+gateway+":") {
+				t.Errorf("the refusal %s does not name the bridge address %s", body, gateway)
+			}
+			if _, loops := s.do("GET", "/api/loops", nil); strings.Contains(string(loops), "walled") {
+				t.Errorf("the refused loop was stored: %s", loops)
+			}
+		})
+	}
+	t.Run("the bridge gateway", func(t *testing.T) {
+		t.Parallel()
+		s := startServerOn(t, t.TempDir(), gateway, "--runtime", "bare")
+		resp, body := s.do("POST", "/api/loops", map[string]any{"name": "reachable", "mission": "m", "runtime": "docker"})
+		if resp.StatusCode != 201 {
+			t.Fatalf("a docker loop behind a listener on the gateway itself = %d %s, want 201", resp.StatusCode, body)
+		}
+		// No Claude token is set, so no workstation was provisioned; the
+		// delete leaves nothing behind either way.
+		s.do("DELETE", "/api/loops/reachable", nil)
+	})
+}
+
+func localAddress(addr string) bool {
+	ip := net.ParseIP(addr)
+	addrs, _ := net.InterfaceAddrs()
+	for _, ifaceAddr := range addrs {
+		if ipNet, ok := ifaceAddr.(*net.IPNet); ok && ip != nil && ipNet.IP.Equal(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// otherLocalAddress is an IPv4 address of this machine that is neither
+// loopback nor the gateway, "" when there is none.
+func otherLocalAddress(gateway string) string {
+	addrs, _ := net.InterfaceAddrs()
+	for _, ifaceAddr := range addrs {
+		ipNet, ok := ifaceAddr.(*net.IPNet)
+		if ok && ipNet.IP.To4() != nil && !ipNet.IP.IsLoopback() && ipNet.IP.String() != gateway {
+			return ipNet.IP.String()
+		}
+	}
+	return ""
 }

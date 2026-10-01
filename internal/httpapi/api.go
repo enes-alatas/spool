@@ -65,6 +65,10 @@ type Server struct {
 	// RuntimeAvailable answers whether a runtime kind can host a new loop
 	// right now; wired in cmd so this package stays free of runtime imports.
 	RuntimeAvailable func(ctx context.Context, kind string) error
+	// LoopListenerReachable answers whether a docker workstation can reach
+	// the loop listener; an error is the reason, naming the fix (#474). A
+	// docker loop that cannot would come up looking healthy and never talk.
+	LoopListenerReachable func(ctx context.Context) error
 	// SecretsChanged is called after a write that adds, replaces or removes
 	// a secret value, so the redactor reloads at once instead of
 	// serving its ttl out with a value it has never seen (#150). Wired in
@@ -226,6 +230,9 @@ const (
 	codeLoopNotRunning = "loop_not_running"
 	codeNoWorkstation  = "no_workstation"
 	codeBareNotEnabled = "bare_runtime_not_enabled"
+	// A docker loop on a hub whose loop listener its workstation cannot
+	// reach (#474).
+	codeLoopListenerUnreachable = "loop_listener_unreachable"
 )
 
 func writeJSON(w http.ResponseWriter, code int, body any) {
@@ -520,6 +527,12 @@ func (server *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 		if server.RuntimeAvailable != nil {
 			if err := server.RuntimeAvailable(r.Context(), store.RuntimeDocker); err != nil {
 				server.jsonErr(w, 400, "docker runtime unavailable: %v", err)
+				return
+			}
+		}
+		if server.LoopListenerReachable != nil {
+			if err := server.LoopListenerReachable(r.Context()); err != nil {
+				server.jsonErrCode(w, 400, codeLoopListenerUnreachable, "%v", err)
 				return
 			}
 		}
