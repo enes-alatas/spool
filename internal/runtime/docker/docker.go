@@ -24,7 +24,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/enes-alatas/spool/internal/claude"
@@ -220,7 +219,7 @@ func (rt *Runtime) Start(ctx context.Context, spec runtime.Spec) (runtime.Proc, 
 	}
 	cmd := exec.Command(rt.bin, argv...)
 	cmd.Env = environ(spec.Env)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGTERM}
+	cmd.SysProcAttr = runtime.ChildAttr()
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

@@ -213,8 +213,8 @@ func (host *Runtime) Health(ctx context.Context, loopID string) (runtime.Health,
 // Start spawns claude in the loop's workspace. It returns as soon as the
 // process is started; the system/init event arrives on Events(). ctx governs
 // the spawn attempt only: there is deliberately no kill-on-cancel goroutine
-// — the process outlives the call and is torn down by Kill, by Wait, or by
-// Pdeathsig when the orchestrator dies.
+// — the process outlives the call and is torn down by Kill, by Wait, or,
+// on Linux, by Pdeathsig when the orchestrator dies (runtime.ChildAttr).
 func (host *Runtime) Start(ctx context.Context, spec runtime.Spec) (runtime.Proc, error) {
 	opts := claude.Opts{
 		Model:              spec.Model,
@@ -251,7 +251,7 @@ func (host *Runtime) Start(ctx context.Context, spec runtime.Spec) (runtime.Proc
 	cmd := exec.Command(host.bin, args...)
 	cmd.Dir = spec.WorkDir
 	cmd.Env = environ(spec.Env)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGTERM}
+	cmd.SysProcAttr = runtime.ChildAttr()
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -273,7 +273,8 @@ func (host *Runtime) Start(ctx context.Context, spec runtime.Spec) (runtime.Proc
 }
 
 // Reap terminates a claude process left behind by a previous orchestrator
-// run. Pdeathsig should have handled it, but belt and braces.
+// run. On Linux Pdeathsig should have handled it, so this is belt and
+// braces; elsewhere it is how a crashed hub's claude is stopped.
 func (host *Runtime) Reap(ctx context.Context, loopID string, pid int) error {
 	if pid <= 1 {
 		return nil
@@ -372,7 +373,7 @@ func (host *Runtime) ResolveModel(ctx context.Context, model string) (string, er
 	cmd := exec.Command(host.bin, args...)
 	cmd.Dir = home
 	cmd.Env = claude.AuxEnv(os.Getenv("PATH"), home, "http://"+hold.Addr().String())
-	cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGTERM}
+	cmd.SysProcAttr = runtime.ChildAttr()
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return "", err
