@@ -674,6 +674,15 @@ func (table messages) ListConversation(ctx context.Context, kind, loopID string,
 		ORDER BY id DESC LIMIT ?`, kind, loopID, limit)
 }
 
+// ListChannel walks the fleet-wide conversation index newest first and keeps
+// the channel's rows: a channel's rows carry no loop key, as the fleet
+// channel's never did.
+func (table messages) ListChannel(ctx context.Context, name string, limit int) ([]*store.Message, error) {
+	return table.query(ctx, `SELECT `+messageCols+` FROM messages
+		WHERE conversation=? AND conversation_loop_id='' AND channel=?
+		ORDER BY id DESC LIMIT ?`, store.ConversationGroup, name, limit)
+}
+
 // Get resolves one message by id — how a reply target named in a send
 // becomes the message it refers to.
 func (table messages) Get(ctx context.Context, id int64) (*store.Message, error) {

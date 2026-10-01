@@ -94,6 +94,49 @@ func TestListConversation(t *testing.T) {
 	}
 }
 
+// TestListChannel pins a channel's timeline: its own messages newest first,
+// with no bleed from another channel or from a private thread (ADR-0038). A
+// group message written with no channel is the fleet channel's.
+func TestListChannel(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	now := time.Now().UnixMilli()
+
+	for i, message := range []*store.Message{
+		{TS: now, Origin: store.OriginLoop, Author: "terra", FromLoopID: "l1", Text: "@milo fleet",
+			Conversation: store.ConversationGroup},
+		{TS: now + 1, Origin: store.OriginLoop, Author: "terra", FromLoopID: "l1", Text: "@milo backend",
+			Conversation: store.ConversationGroup, Channel: "backend"},
+		{TS: now + 2, Origin: store.OriginLoop, Author: "milo", FromLoopID: "l2", Text: "@terra backend again",
+			Conversation: store.ConversationGroup, Channel: "backend"},
+		{TS: now + 3, Origin: store.OriginWeb, Author: "operator", Text: "private",
+			Conversation: store.ConversationControlRoom, ConversationLoopID: "l1"},
+	} {
+		if err := db.Messages().Insert(ctx, message); err != nil {
+			t.Fatalf("insert %d: %v", i, err)
+		}
+	}
+
+	backend, err := db.Messages().ListChannel(ctx, "backend", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(backend) != 2 || backend[0].Text != "@terra backend again" || backend[1].Text != "@milo backend" {
+		t.Fatalf("ListChannel(backend) = %+v, want its 2 newest-first", backend)
+	}
+	fleet, err := db.Messages().ListChannel(ctx, store.FleetChannel, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fleet) != 1 || fleet[0].Text != "@milo fleet" {
+		t.Fatalf("ListChannel(group) = %+v, want the fleet channel's one", fleet)
+	}
+}
+
 // TestMessageReferencesAreOwnedPerBot pins what makes a reply target
 // resolvable (#79): a surface id belongs to one bot, and the bot that only
 // saw a message — never ingested it — still finds its own id for it.

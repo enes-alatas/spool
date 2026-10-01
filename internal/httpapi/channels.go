@@ -100,6 +100,27 @@ func (server *Server) handleGetChannel(w http.ResponseWriter, r *http.Request) {
 	server.writeChannel(w, r, 200, channel)
 }
 
+// handleChannelMessages is one channel's timeline, newest first, as
+// /api/group is the fleet channel's. It answers by name whether or not the
+// channel still exists: messages said in a deleted channel keep its name,
+// and a channel created again under it continues that history (ADR-0038).
+func (server *Server) handleChannelMessages(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if !store.ValidChannelName(name) {
+		server.jsonErrCode(w, 400, codeChannelNameInvalid, "a channel name is 1 to 32 of a-z, 0-9 and '-', not starting with '-'")
+		return
+	}
+	msgs, err := server.Store.Messages().ListChannel(r.Context(), name, queryInt(r, "limit", 100))
+	if err != nil {
+		server.jsonErr(w, 500, "%v", err)
+		return
+	}
+	if msgs == nil {
+		msgs = []*store.Message{}
+	}
+	server.writeMessages(w, r, msgs)
+}
+
 func (server *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name        string `json:"name"`
