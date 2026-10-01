@@ -404,7 +404,9 @@ func seedConversations(ctx context.Context, db store.Store, files *attach.Files,
 }
 
 // The sender catalogue the Access page lists: one allowed, one pending, one
-// blocked, so the page shows all three states. Invented people.
+// blocked, so the page shows all three states. Invented people, with codes
+// in the shape surface.PairCode mints, since the operator types the pending
+// one to allow them.
 func seedSenders(ctx context.Context, db store.Store) error {
 	senders := []struct {
 		id      int64
@@ -412,10 +414,11 @@ func seedSenders(ctx context.Context, db store.Store) error {
 		display string
 		status  string
 		via     string
+		code    string
 	}{
-		{id: 700000001, user: "rana_example", display: "Rana", status: store.SenderAllowed, via: "group:gardener"},
-		{id: 700000002, user: "devrim_example", display: "Devrim", status: store.SenderPending, via: "dm:watcher"},
-		{id: 700000003, user: "passerby_example", display: "Passer-by", status: store.SenderBlocked, via: "group:watcher"},
+		{id: 700000001, user: "rana_example", display: "Rana", status: store.SenderAllowed, via: "group:gardener", code: "K7QM3X"},
+		{id: 700000002, user: "devrim_example", display: "Devrim", status: store.SenderPending, via: "dm:watcher", code: "R4TZ8P"},
+		{id: 700000003, user: "passerby_example", display: "Passer-by", status: store.SenderBlocked, via: "group:watcher", code: "H2WN6C"},
 	}
 	for _, sender := range senders {
 		if err := db.TGSenders().Create(ctx, &store.TGSender{
@@ -423,7 +426,7 @@ func seedSenders(ctx context.Context, db store.Store) error {
 			Username:     sender.user,
 			Display:      sender.display,
 			Status:       store.SenderPending,
-			PairCode:     fmt.Sprintf("%06d", sender.id%1000000),
+			PairCode:     sender.code,
 			FirstSeenVia: sender.via,
 			CreatedAt:    ms(-13 * 24 * time.Hour),
 			UpdatedAt:    ms(-13 * 24 * time.Hour),
