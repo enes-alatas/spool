@@ -48,10 +48,27 @@ func (server *Server) mcpHandler() http.Handler {
 				"correctable: fix what the message names and retry.",
 		}, server.sendMessageTool(caller))
 		return mcpServer
-	}, &mcp.StreamableHTTPOptions{Stateless: true, Logger: server.Log})
+	}, &mcp.StreamableHTTPOptions{
+		Stateless: true,
+		Logger:    server.Log,
+		// The SDK refuses a request that comes in on loopback naming
+		// another host, against DNS rebinding. Docker Desktop delivers
+		// every workstation's request that way: on the host's loopback,
+		// still naming host.docker.internal (#508). The guard is for an
+		// endpoint that takes no credential; every request here has
+		// already shown its loop's bearer token, which a rebinding page
+		// cannot know (ADR-0028).
+		DisableLocalhostProtection: true,
+	})
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		// Refused before the lookup, so no row with an empty token can ever
+		// answer for it: this check is all that keeps a rebinding page out.
+		if token == "" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
 		caller, err := server.Store.Loops().GetByHubMCPToken(r.Context(), token)
 		if err != nil {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
