@@ -6,9 +6,9 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os/exec"
-	"syscall"
 
 	"github.com/enes-alatas/spool/internal/claude"
+	"github.com/enes-alatas/spool/internal/runtime"
 )
 
 // resolveHome is the run's HOME inside the container: under /tmp, which the
@@ -52,7 +52,7 @@ func (rt *Runtime) ResolveModel(ctx context.Context, model string) (string, erro
 	argv = append(argv, args...)
 
 	cmd := exec.Command(rt.bin, argv...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGTERM}
+	cmd.SysProcAttr = runtime.ChildAttr()
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return "", err
