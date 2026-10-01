@@ -1,6 +1,6 @@
 # ADR-0026: Loops send through a hub-served MCP tool
 
-Date: 2026-09-15 · Status: accepted (operator interview; implementation pending) · Amended: 2026-09-16 (`owner_dm` routing, twice); 2026-09-18 (undelivered sends); 2026-09-20 (item 1 is a Surface rule); 2026-09-22 (a resend names the failure it replaces); 2026-09-23 (item 1: `group` is a hub conversation); 2026-09-29 (`owner_dm` on Slack is opened, not captured); 2026-09-30 (item 2: `attach` sends a file); 2026-09-30 (item 2: Slack carries files)
+Date: 2026-09-15 · Status: accepted (operator interview; implementation pending) · Amended: 2026-09-16 (`owner_dm` routing, twice); 2026-09-18 (undelivered sends); 2026-09-20 (item 1 is a Surface rule); 2026-09-22 (a resend names the failure it replaces); 2026-09-23 (item 1: `group` is a hub conversation); 2026-09-29 (`owner_dm` on Slack is opened, not captured); 2026-09-30 (item 2: `attach` sends a file); 2026-09-30 (item 2: Slack carries files); 2026-10-01 (item 1: `group` holds named channels)
 
 ## Context
 
@@ -45,6 +45,12 @@ non-delivery guarantees ADR-0025's scenario matrix demands.
    The kind is still spelled `group` on the wire, in the tool and in stored
    rows. "Fleet channel" is its name in prose and in the control room; the
    two are allowed to differ, and ARCHITECTURE.md's terminology table says so.
+
+   **Amendment (2026-10-01, #483, ADR-0038):** `group` is the kind of every
+   shared conversation, and there may be several: each is a **channel** with
+   a name, and a group message names the channel it was said in. The fleet
+   channel is the channel named `group`, so every `group` already written
+   still means it. The private kinds are in no channel.
 
 2. **Sending is a hub-owned `send_message` tool.** The hub serves it over MCP
    (streamable HTTP) from its existing HTTP server, using the official
