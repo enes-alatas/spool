@@ -116,7 +116,9 @@ function ChannelCard({
             <button
               className="btn sm danger"
               onClick={() => {
-                if (confirm(`Delete #${channel.name}? Its loops leave it.`)) {
+                if (
+                  confirm(`Delete #${channel.name}? Its loops leave it, and it drops out of their prompts.`)
+                ) {
                   act(() => api.deleteChannel(channel.name))
                 }
               }}
@@ -287,9 +289,10 @@ export default function Channels() {
     <div className="page measure">
       <h1>Channels</h1>
       <p className="page-lede">
-        Set up channels here: create one, say what it is for, and choose which loops are in it. For now only
-        the fleet channel carries messages. The others carry them, and each loop learns the channels it is in,
-        once routing by channel is in place.
+        Set up channels here: create one, say what it is for, and choose which loops are in it. The loops in a
+        channel read and post to it, and each is told the channels it is in. For now a channel other than the
+        fleet channel stays in Spool: its messages show in Activity, and no Telegram or Slack room carries
+        them yet.
       </p>
       {channels.data.map((channel) => (
         <ChannelCard key={channel.name} channel={channel} loops={loopNames} refresh={refresh} />
