@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { LoopView } from './api'
-import { claudeLoginDown, workstationCondition, workstationDownEvent, workstationNote } from './workstation'
+import {
+  claudeLoginDown,
+  hubUnreachable,
+  workstationCondition,
+  workstationDownEvent,
+  workstationNote,
+} from './workstation'
 
 const down = (down_reason: string, workstation_detail = '', runtime: 'bare' | 'docker' = 'docker') =>
   ({ workstation_up: false, down_reason, workstation_detail, runtime }) as Pick<
@@ -12,6 +18,9 @@ const down = (down_reason: string, workstation_detail = '', runtime: 'bare' | 'd
 const notConfigured = 'Claude token not configured. Please add a setup-token in Settings'
 const refusedBare =
   'The Claude login was rejected (Failed to authenticate: OAuth session expired and could not be refreshed); log in again with claude on the host'
+// The hub_unreachable detail, as internal/loop/actor.go writes it.
+const mcpFailed =
+  "claude reported its Spool MCP server failed, so the loop cannot send anything: the workstation cannot reach the hub's loop listener, or the hub refused its token"
 const up = down('')
 up.workstation_up = true
 
@@ -36,6 +45,14 @@ describe('workstationCondition', () => {
   it('alerts on a missing or refused login without offering Power on, which cannot fix it', () => {
     expect(workstationCondition(down('unauthenticated'))).toEqual({
       status: 'no Claude login',
+      alert: true,
+      powerOnHelps: false,
+    })
+  })
+
+  it('alerts on a claude that cannot reach the hub without offering Power on, which cannot fix it', () => {
+    expect(workstationCondition(down('hub_unreachable'))).toEqual({
+      status: "can't reach the hub",
       alert: true,
       powerOnHelps: false,
     })
@@ -79,6 +96,16 @@ describe('workstationNote', () => {
     })
     expect(workstationNote(down('unreachable'))).toEqual({ text: 'workstation down: unreachable', bad: true })
   })
+  it('quotes the hub fault’s detail, and names both causes without one', () => {
+    expect(workstationNote(down('hub_unreachable', mcpFailed))).toEqual({
+      text: `can't reach the hub: ${mcpFailed}`,
+      bad: true,
+    })
+    expect(workstationNote(down('hub_unreachable'))).toEqual({
+      text: `can't reach the hub: ${hubUnreachable(undefined)}`,
+      bad: true,
+    })
+  })
 })
 
 describe('workstationDownEvent', () => {
@@ -92,6 +119,13 @@ describe('workstationDownEvent', () => {
     expect(workstationDownEvent('unauthenticated', refusedBare)).toBe(`workstation down: ${refusedBare}`)
     expect(workstationDownEvent('unauthenticated', undefined)).toBe(
       'workstation down: no usable Claude login to run claude under',
+    )
+  })
+
+  it('does not call a claude that cannot reach the hub an unreachable machine', () => {
+    expect(workstationDownEvent('hub_unreachable', mcpFailed)).toBe(`can't reach the hub: ${mcpFailed}`)
+    expect(workstationDownEvent('hub_unreachable', undefined)).toBe(
+      `can't reach the hub: ${hubUnreachable(undefined)}`,
     )
   })
 })
