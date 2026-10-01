@@ -1,5 +1,7 @@
+import { useId, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ApiError, SlackSender, TGSender } from '../api'
+import { checkPairCode, pairInput } from '../pairing'
 
 // One sender as the page draws it, whichever surface they came from. The two
 // allowlists work the same way (#230) and differ only in how a person is
@@ -17,29 +19,47 @@ interface SenderEntry {
 }
 
 function SenderRow({ s, refresh }: { s: SenderEntry; refresh: () => void }) {
+  const pending = s.status === 'pending'
+  const [typed, setTyped] = useState('')
+  const check = checkPairCode(typed, s.pair_code)
+  const hintId = useId()
+  const allow = () => s.allow().then(refresh)
   return (
     <div className="feed-item" style={{ alignItems: 'center' }}>
       {/* Here the dot is the only thing carrying the status — the text beside
-          it is the pairing code and the first-seen line — so the word comes
-          with it. Hidden rather than shown: a visible status column is a
-          design change, and this is not one. */}
+          it is the first-seen line — so the word comes with it. Hidden rather
+          than shown: a visible status column is a design change, and this is
+          not one. */}
       <span className={`state-dot sender-${s.status}`} />
       <span className="sr-only">{s.status}</span>
       <span className="author" style={{ minWidth: 140 }}>
         {s.name}
       </span>
       <span className="text sender-meta">
-        {s.status === 'pending' && (
-          <>
-            pairing code <b style={{ fontFamily: 'var(--mono)', color: 'var(--active)' }}>{s.pair_code}</b>
-            {' · '}
-          </>
-        )}
         first seen via {s.first_seen_via || 'unknown'} · {new Date(s.created_at).toLocaleDateString()}
       </span>
-      <span style={{ marginLeft: 'auto', display: 'flex', gap: 8, flex: 'none' }}>
+      <span style={{ marginLeft: 'auto', display: 'flex', gap: 8, flex: 'none', alignItems: 'center' }}>
+        {pending && (
+          <input
+            className="pair-input"
+            value={typed}
+            onChange={(e) => setTyped(pairInput(e.target.value, s.pair_code))}
+            onKeyDown={(e) => e.key === 'Enter' && check === 'match' && allow()}
+            placeholder="code"
+            aria-label={`The pairing code ${s.name} was sent`}
+            aria-invalid={check === 'wrong'}
+            aria-describedby={check === 'partial' || check === 'wrong' ? hintId : undefined}
+            autoComplete="off"
+            autoCapitalize="characters"
+            spellCheck={false}
+          />
+        )}
         {s.status !== 'allowed' && (
-          <button className="btn sm" onClick={() => s.allow().then(refresh)}>
+          <button
+            className={pending ? 'btn sm primary' : 'btn sm'}
+            disabled={pending && check !== 'match'}
+            onClick={allow}
+          >
             Allow
           </button>
         )}
@@ -52,6 +72,20 @@ function SenderRow({ s, refresh }: { s: SenderEntry; refresh: () => void }) {
           Remove
         </button>
       </span>
+      {/* Says where the code comes from once the operator starts typing one,
+          and that it is wrong once a full-length one is not the code. Hidden
+          before that, so a row nobody is allowing stays one line. */}
+      {check === 'partial' && (
+        <span id={hintId} className="pair-hint">
+          Ask {s.name} for the code a bot sent them. Someone who has only written in a group gets one by
+          messaging a bot directly.
+        </span>
+      )}
+      {check === 'wrong' && (
+        <span id={hintId} className="pair-hint wrong">
+          That is not the code {s.name} was sent. Check it with them.
+        </span>
+      )}
     </div>
   )
 }
@@ -142,8 +176,8 @@ export default function Access() {
       <p className="page-lede">
         Only people on these lists can talk to your loops from Telegram or Slack. Being in a group or a
         workspace is not enough. Anyone else who messages a bot is silently ignored and appears here as
-        pending. Check the pairing code with them before allowing. Blocked senders are dropped without any
-        reply.
+        pending. To allow one, ask them for the pairing code a bot sent them when they messaged it directly,
+        and type it in. Blocked senders are dropped without any reply.
       </p>
 
       <h2 className="section-head">Telegram</h2>
