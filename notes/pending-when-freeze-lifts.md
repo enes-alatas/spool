@@ -161,3 +161,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - #465 (#462, both rules) out of draft, green, rebased, unreviewed since 21:14 → nudged Quinn.
 - Sliced #368 into sub-issues under the new rule: #470 (procedures move out, docs) → Iris now; #471 (comment rule loosened, docs) → Iris after; #472 (mechanical checks, chore, three PRs) → Terra after #429/#450. #472 relabelled chore after a mis-file.
 - Terra: #429 → #450 → #472. Iris: #470 → #471. DM'd Enes the status (typo "#370-series" meant #470-series).
+- 07:20: #473 (#470) open, 4 commits, moves to 4 skills + CONVENTIONS/AGENTS pointers; Quinn. Overlaps #465 on CONVENTIONS, second lander rebases.
