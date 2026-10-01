@@ -1,6 +1,6 @@
 # ADR-0025: Private DMs and shared groups with explicit delivery
 
-Date: 2026-09-14 · Status: accepted (operator agreement; implementation pending) · Amended: 2026-09-15 (sending contract); 2026-09-16 (native replies); 2026-09-17 (`@all` eligibility); 2026-09-20 (item 4 is a Surface rule); 2026-09-21 (inbound replies resolve by author); 2026-09-23 (item 2: the group is the hub's, and the mirror is asymmetric)
+Date: 2026-09-14 · Status: accepted (operator agreement; implementation pending) · Amended: 2026-09-15 (sending contract); 2026-09-16 (native replies); 2026-09-17 (`@all` eligibility); 2026-09-20 (item 4 is a Surface rule); 2026-09-21 (inbound replies resolve by author); 2026-09-23 (item 2: the group is the hub's, and the mirror is asymmetric); 2026-10-01 (items 2 and 7 hold per channel, ADR-0038)
 
 ## Context
 
@@ -238,3 +238,9 @@ competes with a real name. Storm protection is unchanged and applies per
 recipient pair, which is what keeps a broadcast from being a way around it.
 A broadcast satisfies the recipients requirement by construction: `@all` is
 explicit addressing even in a fleet where it currently reaches nobody.
+
+**Amendment (2026-10-01, #493, ADR-0038): per channel.** "The group" in items
+2 and 7 is now each channel a loop is in, the fleet channel being the one
+named `group`. Recipients, `@all` and reply targets resolve inside the
+channel a message is said in, never across two. ADR-0038's item 4 amendment
+records the destination syntax and the envelope header.

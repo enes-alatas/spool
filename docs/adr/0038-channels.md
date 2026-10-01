@@ -1,6 +1,6 @@
 # ADR-0038: Channels are the hub's named conversations, and the fleet channel is the first of them
 
-Date: 2026-10-01 · Status: accepted (operator decisions of 2026-10-01, recorded on #275) · Amends: ADR-0026 (item 1), ADR-0032 (item 2)
+Date: 2026-10-01 · Status: accepted (operator decisions of 2026-10-01, recorded on #275) · Amends: ADR-0026 (item 1), ADR-0032 (item 2) · Amended: 2026-10-01 (item 4: routing by channel, #493)
 
 ## Context
 
@@ -71,6 +71,52 @@ something it leaves open.
    and `send_message`'s syntax for a channel other than `group` are decided
    with routing (#275 slice 2) as an amendment to this ADR. Until then nothing
    posts to a channel but the fleet channel, and no prompt changes.
+
+   **Amendment (2026-10-01, #493): routing by channel.** Slice 2 decides the
+   syntax, the wording and the delivery rules:
+   - **`send_message` takes `channel:<name>`** for a channel other than the
+     fleet channel, which stays `group`. `channel:group` is refused as an
+     invalid destination rather than kept as an alias, so the fleet channel
+     has one spelling. A name the loop is not in, or no channel has, is
+     refused as `no_such_destination`, and the refusal lists the
+     destinations the loop has.
+   - **Recipients are per channel** (ADR-0025 items 2 and 7). A mention
+     reaches a loop in that channel. `@all` reaches its active members
+     except the sender. A reply addresses its author when the author is in
+     the channel. A loop outside the channel is no recipient there. No
+     person is in a channel other than the fleet channel until a room
+     mirrors it, so naming one there reaches nobody and counts for nothing:
+     a message that names no loop in the channel is refused as
+     `no_recipients`, and when it named a person the refusal says where
+     people are. In the fleet channel a known person still counts, as
+     before. A paused member is reached by a mention, as in the
+     fleet channel, and left out of `@all`. The storm guard and the per-turn
+     send cap are unchanged: they count pairs and turns, not channels.
+   - **A reply stays in its channel.** `reply_to` takes only a message said
+     in the channel being sent to. A reference from another channel, the
+     fleet channel included, is refused as `cross_conversation_reply_to`.
+   - **The envelope names the channel.** A message said in another channel
+     arrives headed `· channel:<name> ·`, the destination that answers it.
+     The fleet channel's header still says `group`. Two channels never share
+     a turn.
+   - **The prompt lists the loop's other channels** under WHO YOU CAN
+     ADDRESS, after the fleet channel's peers. Each entry gives the channel's
+     name, its description and the other active loops in it. HOW THIS WORKS
+     teaches `channel:<name>` and the per-channel rules. A loop in no other
+     channel is shown exactly the prompt it was shown before.
+   - **Another channel is kept on the hub alone** until the surface slices
+     bind rooms to it. Its messages are never mirrored. The fleet channel's
+     timeline (`/api/group`) holds its own messages only. A channel's own
+     timeline is `/api/channels/{name}/messages`, which answers by name, so
+     a deleted channel's history stays readable.
+
+   People are reached in the fleet channel and privately, not in another
+   channel yet. A person joins a channel only through a room that mirrors
+   it, and rooms come with the surface slices. So the prompt teaches loops
+   alone as a channel's recipients, keeps the people a loop can mention
+   under the fleet channel, and sends a blocked loop to the group or a
+   private conversation to ask a human, never to a channel. The surface
+   slices lift this when they bind rooms.
 
 5. **A channel is created only in Spool, and a surface room is bound to one.**
    Channels are created in the Channels page or the API, never by a surface.
