@@ -2067,12 +2067,36 @@ textarea {
   white-space: pre-wrap;
   word-break: break-word;
 }
-/* a sender's detail line: the pairing code and where they were first seen.
-   Quieter than a message's text, which is what `.text` above dresses it as,
-   so it follows that rule rather than preceding it */
+/* a sender's detail line: where they were first seen. Quieter than a
+   message's text, which is what `.text` above dresses it as, so it follows
+   that rule rather than preceding it */
 .feed-item .sender-meta {
   font-size: 0.78125rem;
   color: var(--text-muted);
+}
+/* the field a pending sender's code is typed into, beside the Allow it
+   unlocks. Monospace and spaced so a misread character stands out, and wide
+   enough for six spaced characters: narrower clipped the last one */
+.pair-input {
+  width: calc(7.4ch + 1.2em + 20px);
+  padding: 5px 8px;
+  font-family: var(--mono);
+  letter-spacing: 0.2em;
+  text-align: center;
+}
+.pair-input[aria-invalid='true'] {
+  border-color: var(--danger-line);
+}
+/* the line under a pending row while its code is being typed. A whole line
+   of the wrapping row, indented to the name past the dot and its gap */
+.feed-item .pair-hint {
+  flex-basis: 100%;
+  padding-left: 20px;
+  font-size: 0.78125rem;
+  color: var(--text-muted);
+}
+.feed-item .pair-hint.wrong {
+  color: var(--danger);
 }
 .feed-item .origin {
   margin-left: auto;

@@ -39,7 +39,7 @@ From a clone to a loop that answers you on Telegram. Each step is one command or
 6. **Give the workstations your Claude login:** run `claude setup-token`, then paste the token under **Settings → Claude token**. A workstation cannot use your machine's `~/.claude`, so this is how a loop runs on your plan.
 7. **Create a loop:** **New loop**, then a name, a mission and a tick interval. Leave the workspace empty; it is for bare loops only.
 8. **Attach Telegram:** in Telegram, send **@BotFather** `/newbot`. On the loop's page, under **Surfaces**, choose **Attach Telegram** and paste the token.
-9. **Allow yourself:** DM the bot. It answers with a pairing code, and you appear as *pending* on the **Access** page. Check the code and click **Allow**, then choose yourself as the **owner** on the loop's page.
+9. **Allow yourself:** DM the bot. It answers with a pairing code, and you appear as *pending* on the **Access** page. Type the code into your row and click **Allow**, then choose yourself as the **owner** on the loop's page.
 10. **Say hello:** DM the bot again. Your message wakes the loop, and it answers in that DM.
 
 **No Docker?** Start with `./bin/spool --runtime bare` instead, and skip steps 3 and 6. The loop then runs as a host subprocess under your own account, *uncontained*. Read [What contains a loop](#what-contains-a-loop) before you choose that.
@@ -105,7 +105,7 @@ Then, from the group: `@<botname> status?` reaches the loop; the loop answers by
 
 ### Who can talk to your loops
 
-Telegram bots are publicly reachable, so Spool keeps a **sender allowlist**. Anyone who messages one of your bots and isn't on it is ignored: their message never reaches a loop, they can't bind a group, and `/spool_status` won't answer them. On a DM they get a one-time pairing code; the sender then shows up as *pending* on the control room's **Access** page, where you verify the code with them and click Allow (or Block — blocked senders get no reply at all). Loop-to-loop traffic is internal and unaffected.
+Telegram bots are publicly reachable, so Spool keeps a **sender allowlist**. Anyone who messages one of your bots and isn't on it is ignored: their message never reaches a loop, they can't bind a group, and `/spool_status` won't answer them. On a DM they get a one-time pairing code; the sender then shows up as *pending* on the control room's **Access** page, where you type in the code they quote and click Allow (or Block — blocked senders get no reply at all). Loop-to-loop traffic is internal and unaffected.
 
 ## Slack
 
