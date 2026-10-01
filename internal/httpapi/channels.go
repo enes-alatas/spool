@@ -193,9 +193,18 @@ func (server *Server) handleDeleteChannel(w http.ResponseWriter, r *http.Request
 		server.jsonErrCode(w, 400, codeChannelReserved, "the fleet channel cannot be deleted; take loops out of it instead")
 		return
 	}
-	if err := server.Store.Channels().Delete(r.Context(), r.PathValue("name")); err != nil {
+	channel, err := server.Store.Channels().Get(r.Context(), r.PathValue("name"))
+	if err != nil {
 		server.channelErr(w, r, err)
 		return
+	}
+	if err := server.Store.Channels().Delete(r.Context(), channel.Name); err != nil {
+		server.channelErr(w, r, err)
+		return
+	}
+	// its rooms were unbound with it
+	for _, loopID := range channel.LoopIDs {
+		server.roomsChanged(r, loopID)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -231,6 +240,9 @@ func (server *Server) handleChannelLoop(in bool) http.HandlerFunc {
 			}
 			server.Manager.UpdateLoop(updated)
 			server.loopChanged(r.Context(), updated.ID)
+		} else if !in {
+			// its room for the channel was unbound with it
+			server.roomsChanged(r, loopRecord.ID)
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}
