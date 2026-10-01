@@ -229,6 +229,11 @@ export default function NewLoop() {
             ))}
           </select>
           <div className={`hint ${note.warn ? 'warn' : ''}`}>{note.text}</div>
+          <div className="hint">
+            A loop reaches only Spool's own MCP server, which carries the one tool it needs to send messages.
+            MCP servers and connectors on your Claude account are never passed to a loop (
+            <code>--strict-mcp-config</code>).
+          </div>
         </div>
 
         <div className="field">
