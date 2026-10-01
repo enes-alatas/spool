@@ -346,7 +346,7 @@ func TestTelegramColumnsSurviveAConcurrentWriter(t *testing.T) {
 	if err := db.Loops().SetOwner(ctx, "l1", 5454, 0, now+1); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Loops().SetGroupBinding(ctx, "l1", -100123, now+2, now+2); err != nil {
+	if _, err := db.Rooms().Bind(ctx, "l1", store.SurfaceTelegram, "-100123", store.FleetChannel, now+2); err != nil {
 		t.Fatal(err)
 	}
 
@@ -382,7 +382,7 @@ func TestTelegramColumnsSurviveAConcurrentWriter(t *testing.T) {
 	if err := db.Loops().SetOwner(ctx, "l1", 5454, 0, now+4); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Loops().SetGroupBinding(ctx, "l1", -100123, now+4, now+4); err != nil {
+	if _, err := db.Rooms().Bind(ctx, "l1", store.SurfaceTelegram, "-100123", store.FleetChannel, now+4); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Loops().SetOwnerDMChat(ctx, "l1", 777, now+5); err != nil {

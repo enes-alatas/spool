@@ -860,9 +860,9 @@ func (server *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 			username = identity.Name
 		}
 		edit.TGBotToken, edit.TGBotUsername = &token, &username
-		// A cleared token leaves no bot to hold the binding. A replaced one
-		// keeps it: the group is the same group, and the poller rebinds.
-		edit.ClearGroupBinding = token == ""
+		// A cleared token leaves no bot in any room. A replaced one keeps
+		// them: the groups are the same groups, and the poller rebinds.
+		edit.ClearTelegramRooms = token == ""
 	}
 	updated, err := server.Store.Loops().Edit(r.Context(), loopRecord.ID, edit)
 	if err != nil {
