@@ -227,6 +227,9 @@ jobs:
       - name: go vet
         if: needs.changes.outputs.unit == 'true'
         run: go vet ./...
+      - name: go vet as darwin
+        if: needs.changes.outputs.unit == 'true'
+        run: make vet-darwin
       - name: golangci-lint
         if: needs.changes.outputs.unit == 'true'
         uses: golangci/golangci-lint-action@v8

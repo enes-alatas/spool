@@ -92,7 +92,8 @@ window regardless of loop count (ADR-0018).
 ## Maintainability & extensibility gates
 
 **CI (mechanical, blocking):**
-- `gofmt`, `go vet`, `golangci-lint`; `eslint`, `prettier`; build incl. web.
+- `gofmt`, `go vet` (also as darwin, since macOS is supported and CI runs on
+  Linux), `golangci-lint`; `eslint`, `prettier`; build incl. web.
 - Test tiers 1 + 2 (CONVENTIONS.md), Go and web both — `make test`, `make itest`,
   and `npm test` in the web steps of `checks`. The docker workstation suites in tier 2
   run against a real daemon: CI runners always have one; locally they skip

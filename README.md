@@ -145,7 +145,7 @@ make test           # tier 1: unit + architecture tests
 make itest          # tier 2: real binary vs fakeclaude (protocol fake), ~10min
                     #         (~7min without a docker daemon — two files skip)
 make image          # build the spool-workstation and spool-egress images locally
-make lint           # gofmt + vet + golangci-lint
+make lint           # gofmt + vet (as Linux and as macOS) + golangci-lint
 make e2e-m1         # tier 3: real claude sessions (spends plan tokens)
 ```
 
