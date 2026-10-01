@@ -163,3 +163,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - Terra: #429 → #450 → #472. Iris: #470 → #471. DM'd Enes the status (typo "#370-series" meant #470-series).
 - 07:20: #473 (#470) open, 4 commits, moves to 4 skills + CONVENTIONS/AGENTS pointers; Quinn. Overlaps #465 on CONVENTIONS, second lander rebases.
 - 07:50: Enes testing attachments on v0.3.0-47 in the DM: inbound image arrived at ~/.spool/files/<hash>-<name>.png and read fine (ref:2554). Sent notes/scratch/milo-attach-test.png back with attach (ref:2556); awaiting his confirmation.
+- 07:55: Enes confirmed the photo arrived. Attachments both ways live on Telegram; recorded on #197. Slack-side check still his.
