@@ -149,3 +149,66 @@ func TestServeStopsCleanlyOnShutdown(t *testing.T) {
 		t.Fatal("serve kept running after its context ended")
 	}
 }
+
+// With no --mcp-listen the hub binds where docker workstations reach it:
+// the bridge gateway when it is an address of this machine, and loopback
+// whenever it is not, docker cannot say, or the gateway will not bind
+// (#475). A named address always wins.
+func TestBindLoopListener(t *testing.T) {
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	ctx := context.Background()
+	gatewayAt := func(addr string) func(context.Context) (string, error) {
+		return func(context.Context) (string, error) { return addr, nil }
+	}
+	noDocker := func(context.Context) (string, error) { return "", errors.New("docker: command not found") }
+	bindHost := func(t *testing.T, flagAddr, port string, gateway func(context.Context) (string, error)) string {
+		t.Helper()
+		listener, addr, err := bindLoopListener(ctx, quiet, "127.0.0.1:1", flagAddr, port, gateway)
+		if err != nil {
+			t.Fatalf("bindLoopListener: %v", err)
+		}
+		_ = listener.Close()
+		host, _, _ := net.SplitHostPort(addr)
+		if bound := listener.Addr().(*net.TCPAddr).IP.String(); bound != host {
+			t.Fatalf("bound %s, reported %s", bound, addr)
+		}
+		return host
+	}
+
+	if got := bindHost(t, "127.0.0.1:0", "0", gatewayAt("192.0.2.1")); got != "127.0.0.1" {
+		t.Errorf("a named address bound %s", got)
+	}
+	if got := bindHost(t, "", "0", nil); got != "127.0.0.1" {
+		t.Errorf("a hub of bare loops bound %s, want loopback", got)
+	}
+	if got := bindHost(t, "", "0", noDocker); got != "127.0.0.1" {
+		t.Errorf("with no docker the listener went to %s, want loopback", got)
+	}
+	if got := bindHost(t, "", "0", gatewayAt("192.0.2.1")); got != "127.0.0.1" {
+		t.Errorf("with a bridge in a VM the listener went to %s, want loopback", got)
+	}
+
+	local := ""
+	addrs, _ := net.InterfaceAddrs()
+	for _, ifaceAddr := range addrs {
+		if ipNet, ok := ifaceAddr.(*net.IPNet); ok && ipNet.IP.To4() != nil && !ipNet.IP.IsLoopback() {
+			local = ipNet.IP.String()
+			break
+		}
+	}
+	if local == "" {
+		t.Skip("no non-loopback IPv4 address on this machine to stand in for the bridge")
+	}
+	if got := bindHost(t, "", "0", gatewayAt(local)); got != local {
+		t.Errorf("with the bridge on this machine at %s the listener went to %s", local, got)
+	}
+	taken, err := net.Listen("tcp", net.JoinHostPort(local, "0"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = taken.Close() }()
+	_, port, _ := net.SplitHostPort(taken.Addr().String())
+	if got := bindHost(t, "", port, gatewayAt(local)); got != "127.0.0.1" {
+		t.Errorf("with the bridge's port taken the listener went to %s, want loopback", got)
+	}
+}

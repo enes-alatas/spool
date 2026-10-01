@@ -39,8 +39,10 @@ func startDockerServer(t *testing.T, dataDir string, extraArgs ...string) *serve
 		"--workstation-health-sec", "2",
 	}, extraArgs...)
 	// A workstation is allowlisted to the MCP port and reaches it over the
-	// docker bridge, which has no route to loopback (#238).
-	s := startServerOn(t, dataDir, "0.0.0.0", args...)
+	// docker bridge, which has no route to loopback (#238). The hub picks
+	// that address itself when told none (#475), so every docker row runs
+	// on the listener an operator who names none gets.
+	s := startServerOn(t, dataDir, "", args...)
 	s.mustJSON("PUT", "/api/settings", map[string]any{"claude_oauth_token": dockerTestToken}, nil)
 	return s
 }
@@ -421,6 +423,41 @@ func TestDockerLoopRefusedOnAnUnreachableLoopListener(t *testing.T) {
 		// delete leaves nothing behind either way.
 		s.do("DELETE", "/api/loops/reachable", nil)
 	})
+}
+
+// An operator who names no loop listener gets one their docker loops can
+// reach: on an engine running on this machine, the hub binds the bridge
+// gateway, which the network around the machine is not routed to by default,
+// rather than loopback, which the workstations cannot reach (#475). The docker rows prove a
+// workstation reaches /mcp on it; this pins where it went.
+func TestTheLoopListenerBindsTheBridgeWhenNoneIsNamed(t *testing.T) {
+	t.Parallel()
+	out, err := exec.Command("docker", "network", "inspect", "bridge", "--format", "{{range .IPAM.Config}}{{.Gateway}} {{end}}").Output()
+	if err != nil {
+		t.Skip("docker daemon not reachable — the bridge has no gateway to bind")
+	}
+	fields := strings.Fields(string(out))
+	if len(fields) == 0 || !localAddress(fields[0]) {
+		t.Skipf("the bridge gateway %q is not on this machine: an engine in a VM forwards to loopback itself", out)
+	}
+	gateway := fields[0]
+
+	// A hub of bare loops has no workstation to reach it, so it stays on
+	// loopback.
+	bare := startServerOn(t, t.TempDir(), "", "--runtime", "bare")
+	if host, _, _ := net.SplitHostPort(strings.TrimPrefix(bare.mcpURL, "http://")); host != "127.0.0.1" {
+		t.Fatalf("a hub of bare loops put its loop listener at %s, want loopback", bare.mcpURL)
+	}
+
+	s := startServerOn(t, t.TempDir(), "", "--runtime", "docker")
+	if host, _, _ := net.SplitHostPort(strings.TrimPrefix(s.mcpURL, "http://")); host != gateway {
+		t.Fatalf("with no --mcp-listen the loop listener is at %s, want the bridge gateway %s", s.mcpURL, gateway)
+	}
+	resp, body := s.do("POST", "/api/loops", map[string]any{"name": "reachable", "mission": "m", "runtime": "docker"})
+	if resp.StatusCode != 201 {
+		t.Fatalf("a docker loop on the default loop listener = %d %s, want 201", resp.StatusCode, body)
+	}
+	s.do("DELETE", "/api/loops/reachable", nil)
 }
 
 func localAddress(addr string) bool {
