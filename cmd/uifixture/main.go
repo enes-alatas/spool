@@ -247,5 +247,8 @@ func seed(ctx context.Context, db store.Store, files *attach.Files) error {
 	if err := seedSecrets(ctx, db, ids["gardener"]); err != nil {
 		return err
 	}
+	if err := seedChannels(ctx, db, ids); err != nil {
+		return err
+	}
 	return seedRules(ctx, db)
 }

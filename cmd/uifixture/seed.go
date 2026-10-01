@@ -459,6 +459,34 @@ func seedSecrets(ctx context.Context, db store.Store, loopID string) error {
 	return nil
 }
 
+// Three channels besides the fleet channel, for the Channels page and the
+// loop page's channels line (#484). They differ in the ways the page draws
+// differently: two loops, one loop, and a loop that is in two channels.
+// Each pairs loops whose missions would plausibly share the room.
+func seedChannels(ctx context.Context, db store.Store, ids map[string]string) error {
+	channels := []struct {
+		name, description string
+		loops             []string
+	}{
+		{name: "docs", description: "The handbook and the incident write-ups: what changed, and what went stale.", loops: []string{"gardener", "archivist"}},
+		{name: "on-call", description: "A broken build, said once, with the commit that broke it.", loops: []string{"watcher"}},
+		{name: "releases", description: "Release dates, and anything that moves one.", loops: []string{"courier", "watcher"}},
+	}
+	for _, channel := range channels {
+		if err := db.Channels().Create(ctx, &store.Channel{
+			Name: channel.name, Description: channel.description, CreatedAt: ms(-20 * 24 * time.Hour),
+		}); err != nil {
+			return fmt.Errorf("channel %s: %w", channel.name, err)
+		}
+		for _, name := range channel.loops {
+			if err := db.Channels().AddLoop(ctx, channel.name, ids[name], ms(-20*24*time.Hour)); err != nil {
+				return fmt.Errorf("channel %s, loop %s: %w", channel.name, name, err)
+			}
+		}
+	}
+	return nil
+}
+
 // Two fleet rules, because one rule does not show that they are a list.
 func seedRules(ctx context.Context, db store.Store) error {
 	rules := []struct {
