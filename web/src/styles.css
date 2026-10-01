@@ -1766,6 +1766,11 @@ textarea {
 .field .hint.warn {
   color: var(--danger);
 }
+/* a flag or command named in a hint is one token: broken at its hyphen, a
+   flag reads as a stray "--" and a word that is not one */
+.field .hint code {
+  white-space: nowrap;
+}
 .field-row {
   display: flex;
   gap: 12px;
