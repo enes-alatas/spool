@@ -1,6 +1,6 @@
 # ADR-0032: The fleet channel is a hub conversation; surfaces are attached later and mirror it
 
-Date: 2026-09-23 · Status: accepted (operator decisions of 2026-09-22/23) · Amended: 2026-09-24 (item 2: where a new loop starts) · Amends: ADR-0020 (§1 is the mirror's rule), ADR-0025 (item 2), ADR-0026 (item 1), ADR-0029 (items 5 and 7)
+Date: 2026-09-23 · Status: accepted (operator decisions of 2026-09-22/23) · Amended: 2026-09-24 (item 2: where a new loop starts); 2026-10-01 (item 2: membership per channel) · Amends: ADR-0020 (§1 is the mirror's rule), ADR-0025 (item 2), ADR-0026 (item 1), ADR-0029 (items 5 and 7)
 
 ## Context
 
@@ -61,6 +61,12 @@ mirrors which way.
    does not say; the New loop form shows it as the toggle's default, and the
    operator's choice there is obeyed. It is read once, at creation: a loop
    already outside the channel stays there when a second loop arrives.
+
+   **Amendment (2026-10-01, #483, ADR-0038):** the fleet channel is one of
+   several channels, and membership is per loop per channel. The rule above,
+   in unless taken out and the second loop joining by default, holds for the
+   fleet channel alone. Every other channel is opt-in: a loop is in it only
+   when the operator put it there.
 
    We say a loop *is in* the fleet channel, or *is not*. Deliberately no
    loop-noun: **member** already names a human org role in the ubiquitous
