@@ -16,6 +16,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path"
@@ -116,6 +117,23 @@ func (rt *Runtime) Available(ctx context.Context) error {
 		return fmt.Errorf("docker daemon unreachable: %w", err)
 	}
 	return nil
+}
+
+// BridgeGateway is the default bridge's gateway address. A workstation's
+// egress proxy reaches the hub as host.docker.internal, which the proxy is
+// created to resolve to host-gateway: that address, on an engine that does
+// not configure host-gateway-ip (#474).
+func (rt *Runtime) BridgeGateway(ctx context.Context) (string, error) {
+	out, err := rt.command(ctx, queryTimeout, "network", "inspect", "bridge", "--format", "{{range .IPAM.Config}}{{.Gateway}} {{end}}")
+	if err != nil {
+		return "", err
+	}
+	for _, field := range strings.Fields(string(out)) {
+		if ip := net.ParseIP(field); ip != nil && ip.To4() != nil {
+			return ip.String(), nil
+		}
+	}
+	return "", fmt.Errorf("the docker bridge reports no IPv4 gateway (%q)", strings.TrimSpace(string(out)))
 }
 
 // Preflight verifies the CLI can reach a daemon. The claude version is
