@@ -338,3 +338,59 @@ func TestSeedCarriesEveryAttachmentState(t *testing.T) {
 		}
 	}
 }
+
+// The Channels page draws a card per channel and a chip per loop in it
+// (#484), and the loop page lists the channels a loop is in. A store with
+// only the fleet channel shoots one card that looks the same whether the
+// list works or not.
+func TestSeedFillsTheChannelsPage(t *testing.T) {
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "spool.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	files, err := attach.Open(filepath.Join(t.TempDir(), "files"))
+	if err != nil {
+		t.Fatalf("files: %v", err)
+	}
+	ctx := context.Background()
+	if err := seed(ctx, db, files); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	channelList, err := db.Channels().List(ctx)
+	if err != nil {
+		t.Fatalf("channels: %v", err)
+	}
+	var several, single int
+	inHowMany := map[string]int{}
+	for _, channel := range channelList {
+		if channel.Name == store.FleetChannel {
+			continue
+		}
+		switch len(channel.LoopIDs) {
+		case 0:
+		case 1:
+			single++
+		default:
+			several++
+		}
+		for _, id := range channel.LoopIDs {
+			inHowMany[id]++
+		}
+	}
+	var inTwo int
+	for _, count := range inHowMany {
+		if count > 1 {
+			inTwo++
+		}
+	}
+	for _, check := range []struct {
+		what  string
+		count int
+	}{{"several loops", several}, {"a single loop", single}, {"a loop that is in another channel too", inTwo}} {
+		if check.count == 0 {
+			t.Errorf("no fixture channel shows %s, so no shot can show one", check.what)
+		}
+	}
+}
