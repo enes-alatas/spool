@@ -368,10 +368,11 @@ agents — Claude sessions today, Spool's own loops from L2.*
 ## Comments
 
 - **Self-contained.** A comment must be meaningful on its own, without sending the
-  reader elsewhere to understand it. State the reason in place. A trailing `(#n)`
-  or `(ADR-nnnn)` may follow as provenance, a pointer to the history behind the
-  comment, but the sentence must still read correctly if that issue, PR or ADR is
-  gone: never "see #n" or "per ADR-nnnn" in place of the reason. Don't cite ADR
+  reader elsewhere to understand it. State the reason in place. A bare `#n` or
+  `ADR-nnnn` may appear anywhere in it as a pointer to the history behind the
+  comment (#368), but the comment must still read correctly if that issue, PR
+  or ADR is gone, since a reader should not need GitHub to understand the code:
+  never "see #n" or "per ADR-nnnn" in place of the reason. Don't cite ADR
   section numbers or milestones, which drift as ADRs are amended and milestones
   close. `scripts/comment-refs.sh` fails `make lint` and CI on an ADR section
   number in a Go, TS or CSS comment; the rest is review-enforced.
