@@ -77,6 +77,11 @@ window regardless of loop count (ADR-0018).
 ## Security baselines
 
 - Listener binds localhost by default; exposing is an explicit operator act.
+  One stated exception (ADR-0039): with no `--mcp-listen`, a docker hub's loop
+  listener binds the docker bridge's gateway, which the network is not routed
+  to by default: beyond this machine and its containers, a same-link host
+  reaches it only by routing the bridge subnet through this machine, and a
+  host firewall can drop that.
 - Secrets (bot tokens, connection creds) never appear in API responses, **logs** or
   stored transcripts. This is enforced, not remembered: `internal/redact` holds every
   secret value Spool knows and every log line, store write and JSON/SSE response
