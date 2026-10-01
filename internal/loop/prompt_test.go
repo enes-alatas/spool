@@ -716,6 +716,92 @@ func TestPromptTeachesOnlyTheLoopsConversations(t *testing.T) {
 	}
 }
 
+// A channel a room carries has people in it, and the prompt says so where
+// it lists the channel, in the people block and in the channel rules; a
+// channel no room carries still has none (ADR-0038).
+func TestPromptTeachesPeopleWhereRoomsAre(t *testing.T) {
+	loopRecord := &store.Loop{Name: "terra", Mission: "m"}
+	people := []Person{{Username: "enesalatas"}}
+	backend := Channel{Name: "backend", Loops: []string{"milo"}, Room: true}
+	release := Channel{Name: "release", Loops: []string{"quinn"}}
+	cases := []struct {
+		name          string
+		conv          Conversations
+		want, notWant []string
+	}{
+		{
+			name: "in the fleet channel, one channel with a room and one without",
+			conv: Conversations{Surface: "Telegram", Group: true, Channels: []Channel{backend, release}},
+			want: []string{
+				"    channel:backend\n      loops: @milo\n      its Telegram room carries it, so the people there read it\n",
+				"    channel:release\n      loops: @quinn\n- The people",
+				"@mentioning a person in the group or a channel's room is public: everyone\n  there sees it.",
+				"No person is in a channel without a room yet: reach people in the group,\n  in a room, or privately.",
+				"only those you @mention in it receive it; a person is in\n                  a channel only where its room is listed",
+				"must @mention a loop in it (or a person, where its room is listed), @all",
+				"@mention them in the\n  group when others should see it.",
+			},
+			notWant: []string{"No person is in your other channels yet", "with loops alone", "no person\n                  is in a channel yet"},
+		},
+		{
+			name:    "every channel with a room",
+			conv:    Conversations{Surface: "Telegram", Group: true, Channels: []Channel{backend}},
+			notWant: []string{"No person is in"},
+		},
+		{
+			name: "outside the fleet channel, in a channel with a room",
+			conv: Conversations{Surface: "Telegram", Channels: []Channel{{Name: "backend", Room: true}}},
+			want: []string{
+				"    channel:backend\n      no other loop is in it yet\n      its Telegram room carries it",
+				"- The people who can talk to this fleet:\n    @enesalatas\n",
+				"@mentioning a person in a channel's room is public: everyone there sees it.",
+				"- A new message in a channel must @mention at least one loop in it, or a\n  person where its room is listed.",
+				"or @mention them in a\n  channel's room when others should see it.",
+				"only those in your channels below can\n  reach you",
+			},
+			notWant: []string{"nothing said there reaches anyone", "No person is in", "no\n  person is in a channel yet"},
+		},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			prompt := SystemPrompt(loopRecord, Catalog{Conversations: testCase.conv, People: people}, nil, testVersion)
+			for _, want := range testCase.want {
+				if !strings.Contains(prompt, want) {
+					t.Errorf("prompt missing %q:\n%s", want, prompt)
+				}
+			}
+			for _, notWant := range testCase.notWant {
+				if strings.Contains(prompt, notWant) {
+					t.Errorf("prompt should not contain %q:\n%s", notWant, prompt)
+				}
+			}
+		})
+	}
+}
+
+// A loop's channel is carried by a room only when the loop's own surface
+// has bound one to it: an unbound room, or a room on another surface,
+// carries nothing.
+func TestConversationsOfReadsRooms(t *testing.T) {
+	self := &store.Loop{ID: "l1", Name: "terra", TGBotToken: "t", Status: store.StatusActive}
+	channels := []*store.Channel{
+		{Name: "backend", LoopIDs: []string{"l1"}},
+		{Name: "release", LoopIDs: []string{"l1"}},
+		{Name: "design", LoopIDs: []string{"l1"}},
+	}
+	rooms := []*store.Room{
+		{LoopID: "l1", Surface: store.SurfaceTelegram, RoomID: "-1", Channel: "backend"},
+		{LoopID: "l1", Surface: store.SurfaceSlack, RoomID: "C1", Channel: "release"},
+		{LoopID: "l1", Surface: store.SurfaceTelegram, RoomID: "-2"},
+	}
+	conv := ConversationsOf(self, channels, []*store.Loop{self}, rooms)
+	for name, want := range map[string]bool{"backend": true, "release": false, "design": false} {
+		if channel, _ := conv.Channel(name); channel.Room != want {
+			t.Errorf("%s carried by a room = %v, want %v", name, channel.Room, want)
+		}
+	}
+}
+
 func TestConversationsOf(t *testing.T) {
 	cases := []struct {
 		loop store.Loop
@@ -727,7 +813,7 @@ func TestConversationsOf(t *testing.T) {
 		{store.Loop{TGBotToken: "synthetic"}, "owner_dm group control_room"},
 	}
 	for _, testCase := range cases {
-		if got := strings.Join(ConversationsOf(&testCase.loop, nil, nil).Destinations(), " "); got != testCase.want {
+		if got := strings.Join(ConversationsOf(&testCase.loop, nil, nil, nil).Destinations(), " "); got != testCase.want {
 			t.Errorf("ConversationsOf(%+v) = %q, want %q", testCase.loop, got, testCase.want)
 		}
 	}
@@ -749,7 +835,7 @@ func TestConversationsOfChannels(t *testing.T) {
 		{Name: "design", LoopIDs: []string{"l4"}},
 		{Name: "release", LoopIDs: []string{"l1"}},
 	}
-	conv := ConversationsOf(self, channels, loops)
+	conv := ConversationsOf(self, channels, loops, nil)
 	if got := strings.Join(conv.Destinations(), " "); got != "group channel:backend channel:release control_room" {
 		t.Errorf("destinations = %q", got)
 	}

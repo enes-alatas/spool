@@ -118,12 +118,16 @@ type Channel struct {
 	// Loops are the other active loops in it, by name: the ones a mention
 	// there reaches and the prompt can honestly list.
 	Loops []string
+	// Room reports that the loop's bot sits in a room bound to the
+	// channel, so people read it there and a mention of one reaches them.
+	Room bool
 }
 
-// ConversationsOf reads a loop's conversations off its row and the hub's
-// channels. channels and loops are the stores' lists; a nil channels lists
-// none beyond the fleet channel, which the row itself records.
-func ConversationsOf(loopRecord *store.Loop, channels []*store.Channel, loops []*store.Loop) Conversations {
+// ConversationsOf reads a loop's conversations off its row, the hub's
+// channels and the loop's rooms. channels and loops are the stores' lists; a
+// nil channels lists none beyond the fleet channel, which the row itself
+// records.
+func ConversationsOf(loopRecord *store.Loop, channels []*store.Channel, loops []*store.Loop, rooms []*store.Room) Conversations {
 	conversations := Conversations{Group: !loopRecord.OutsideFleetChannel}
 	switch loopRecord.Surface() {
 	case store.SurfaceTelegram:
@@ -142,6 +146,13 @@ func ConversationsOf(loopRecord *store.Loop, channels []*store.Channel, loops []
 			continue
 		}
 		mine := Channel{Name: channel.Name, Description: channel.Description}
+		for _, room := range rooms {
+			// a room is carried by the loop's bot, so only on the surface
+			// the loop has
+			if room.Channel == channel.Name && room.Surface == loopRecord.Surface() {
+				mine.Room = true
+			}
+		}
 		for _, id := range channel.LoopIDs {
 			if name, ok := names[id]; ok {
 				mine.Loops = append(mine.Loops, name)
@@ -161,6 +172,17 @@ func (conversations Conversations) Channel(name string) (Channel, bool) {
 		}
 	}
 	return Channel{}, false
+}
+
+// roomed reports that a room carries one of the loop's channels, so a
+// person is in it.
+func (conversations Conversations) roomed() bool {
+	for _, channel := range conversations.Channels {
+		if channel.Room {
+			return true
+		}
+	}
+	return false
 }
 
 // shared reports that the loop has a conversation other loops are in.
@@ -258,6 +280,9 @@ func (cat Catalog) section(loopRecord *store.Loop) string {
 	}
 
 	switch {
+	case !conv.Group && conv.roomed():
+		text.WriteString("- You are not in the fleet channel: only those in your channels below can\n" +
+			"  reach you, and you can reach only them.\n")
 	case !conv.Group && len(conv.Channels) > 0:
 		text.WriteString("- You are not in the fleet channel: only the loops in your channels below\n" +
 			"  can reach you, and you can reach only them.\n")
@@ -291,24 +316,47 @@ func (cat Catalog) section(loopRecord *store.Loop) string {
 			if channel.Description != "" {
 				fmt.Fprintf(&text, " — %s", channel.Description)
 			}
-			if len(channel.Loops) == 0 {
+			switch {
+			case len(channel.Loops) == 0 && channel.Room:
+				text.WriteString("\n      no other loop is in it yet\n")
+			case len(channel.Loops) == 0:
 				text.WriteString("\n      no other loop is in it yet, so nothing said there reaches anyone\n")
-			} else {
+			default:
 				fmt.Fprintf(&text, "\n      loops: @%s\n", strings.Join(channel.Loops, ", @"))
+			}
+			if channel.Room {
+				fmt.Fprintf(&text, "      its %s room carries it, so the people there read it\n", conv.Surface)
 			}
 		}
 	}
 
-	// People are reached by mention, which only the group carries: another
-	// channel has no room on any surface yet, so no person is in it.
-	if conv.Group && len(cat.People) > 0 {
+	// People are reached by mention in the group and in a channel's room. A
+	// channel no room carries has no person in it.
+	withRoom, withoutRoom := conv.roomed(), false
+	for _, channel := range conv.Channels {
+		withoutRoom = withoutRoom || !channel.Room
+	}
+	if (conv.Group || withRoom) && len(cat.People) > 0 {
 		text.WriteString("- The people who can talk to this fleet:\n")
 		for _, person := range cat.People {
 			fmt.Fprintf(&text, "    %s\n", person.Label())
 		}
-		text.WriteString("  @mentioning a person in the group is public: everyone there sees it.\n")
-		if len(conv.Channels) > 0 {
+		switch {
+		case !withRoom:
+			text.WriteString("  @mentioning a person in the group is public: everyone there sees it.\n")
+		case conv.Group:
+			text.WriteString("  @mentioning a person in the group or a channel's room is public: everyone\n  there sees it.\n")
+		default:
+			text.WriteString("  @mentioning a person in a channel's room is public: everyone there sees it.\n")
+		}
+		switch {
+		case !withoutRoom:
+		case !withRoom:
 			text.WriteString("  No person is in your other channels yet: reach people in the group or\n  privately.\n")
+		case conv.Group:
+			text.WriteString("  No person is in a channel without a room yet: reach people in the group,\n  in a room, or privately.\n")
+		default:
+			text.WriteString("  No person is in a channel without a room yet: reach people in a room or\n  privately.\n")
 		}
 		if conv.Surface != "" {
 			text.WriteString("  Only owner_dm and control_room are private, and only the owner has a DM.\n")
@@ -393,11 +441,13 @@ func SystemPrompt(loopRecord *store.Loop, cat Catalog, rules []*store.FleetRule,
   work so future turns have context.
 - If you are blocked and need a human, send a message that says exactly what
 `)
-	// A person is reached in public only in the group: no other channel
-	// has a room yet.
+	// A person is reached in public in the group, or else in a channel's
+	// room; a channel no room carries has no person in it.
 	switch {
 	case conv.Group:
 		fmt.Fprintf(&text, "  you need: privately via %s, or @mention them in the\n  group when others should see it.", strings.Join(conv.private(), " or "))
+	case conv.roomed():
+		fmt.Fprintf(&text, "  you need: privately via %s, or @mention them in a\n  channel's room when others should see it.", strings.Join(conv.private(), " or "))
 	default:
 		fmt.Fprintf(&text, "  you need, via %s.", strings.Join(conv.private(), " or "))
 	}
@@ -445,7 +495,15 @@ func howThisWorks(conv Conversations) string {
                   text receive it
 `)
 	}
-	if len(conv.Channels) > 0 {
+	switch {
+	case conv.roomed():
+		text.WriteString(`    channel:<name>
+                  one of your channels, listed under WHO YOU CAN ADDRESS;
+                  a message said in one is headed "· channel:<name> ·", and
+                  only those you @mention in it receive it; a person is in
+                  a channel only where its room is listed
+`)
+	case len(conv.Channels) > 0:
 		text.WriteString(`    channel:<name>
                   one of your channels, listed under WHO YOU CAN ADDRESS;
                   a message said in one is headed "· channel:<name> ·", and
@@ -472,7 +530,14 @@ func howThisWorks(conv Conversations) string {
 - A send_message error names what to fix (e.g. no_recipients); correct the
   call and retry. Never work around an error by switching destination.
 `)
-		if len(conv.Channels) > 0 {
+		switch {
+		case conv.roomed():
+			text.WriteString(`- Each of your channels keeps those rules on its own: a new message in one
+  must @mention a loop in it (or a person, where its room is listed), @all
+  there reaches every other loop in that channel and no one else, and
+  reply_to takes only a reference said in that channel.
+`)
+		case len(conv.Channels) > 0:
 			text.WriteString(`- Each of your channels keeps those rules on its own, with loops alone: a
   new message in one must @mention a loop in it, @all there reaches every
   other loop in that channel and no one else, and reply_to takes only a
@@ -480,10 +545,18 @@ func howThisWorks(conv Conversations) string {
 `)
 		}
 	} else if len(conv.Channels) > 0 {
-		text.WriteString(`- A new message in a channel must @mention at least one loop in it; no
+		if conv.roomed() {
+			text.WriteString(`- A new message in a channel must @mention at least one loop in it, or a
+  person where its room is listed. Do not @mention yourself. Private text
+  never fans out: names mentioned in it receive nothing, @all included.
+`)
+		} else {
+			text.WriteString(`- A new message in a channel must @mention at least one loop in it; no
   person is in a channel yet. Do not @mention yourself. Private text never
   fans out: names mentioned in it receive nothing, @all included.
-- @all in a channel reaches every other loop in that channel at once. It is
+`)
+		}
+		text.WriteString(`- @all in a channel reaches every other loop in that channel at once. It is
   for something they all must act on, not for news: it wakes each of them
   for a full turn.
 - Every header carries that message's reference ("ref:42"). Pass it as

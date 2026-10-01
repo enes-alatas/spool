@@ -720,7 +720,9 @@ func catalogOf(db store.Store, self *store.Loop) loop.Catalog {
 	// a hub whose channels cannot be read teaches the fleet channel alone,
 	// which is what the row records
 	channels, _ := db.Channels().List(ctx)
-	cat := loop.Catalog{Conversations: loop.ConversationsOf(self, channels, loops), OwnerDMReady: self.OwnerDMReady()}
+	// and one whose rooms cannot be read teaches its channels as hub-only
+	rooms, _ := db.Rooms().List(ctx, self.ID)
+	cat := loop.Catalog{Conversations: loop.ConversationsOf(self, channels, loops, rooms), OwnerDMReady: self.OwnerDMReady()}
 	cat.BotUsername, _ = botOf(self)
 	if loopsErr != nil {
 		return cat

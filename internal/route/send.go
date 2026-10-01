@@ -132,7 +132,11 @@ func (router *Router) Send(ctx context.Context, req SendRequest) (*store.Message
 	if err != nil {
 		return nil, nil, err
 	}
-	conv := loop.ConversationsOf(req.From, channels, loops)
+	rooms, err := router.store.Rooms().List(ctx, req.From.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	conv := loop.ConversationsOf(req.From, channels, loops, rooms)
 	var targets map[string]*store.Loop
 	var ownerChat int64
 	var ownerSlackUser string
@@ -183,7 +187,8 @@ func (router *Router) Send(ctx context.Context, req SendRequest) (*store.Message
 			return nil, &SendError{ErrInvalidDestination,
 				"the fleet channel is sent to as " + store.ConversationGroup + ", not " + req.Destination}, nil
 		}
-		if _, ok := conv.Channel(name); !ok {
+		mine, ok := conv.Channel(name)
+		if !ok {
 			return nil, noSuchDestination(conv, fmt.Sprintf("you are in no channel named %q", name)), nil
 		}
 		var member func(*store.Loop) bool
@@ -192,12 +197,15 @@ func (router *Router) Send(ctx context.Context, req SendRequest) (*store.Message
 				member = inChannel(channel)
 			}
 		}
-		// No person is in a channel until a room mirrors it, so naming one
-		// there is no recipient: the refusal says where people are.
+		// No person is in a channel until a room carries it, so naming one
+		// there is no recipient: the refusal says where people are. In the
+		// room the loop's bot sits in, a person reads it as in the group.
 		var elsewhere []string
-		for _, destination := range conv.Destinations() {
-			if !strings.HasPrefix(destination, store.ChannelDestinationPrefix) {
-				elsewhere = append(elsewhere, destination)
+		if !mine.Room {
+			for _, destination := range conv.Destinations() {
+				if !strings.HasPrefix(destination, store.ChannelDestinationPrefix) {
+					elsewhere = append(elsewhere, destination)
+				}
 			}
 		}
 		targets, serr, err = router.sharedRecipients(ctx, req.From, loops, member, req.Destination,
@@ -207,18 +215,9 @@ func (router *Router) Send(ctx context.Context, req SendRequest) (*store.Message
 		}
 		msg.Conversation, msg.Channel = store.ConversationGroup, name
 		// Mirrored where the loop's bot sits in a room bound to the
-		// channel; said on the hub alone where it does not, and always on
-		// Slack until its rooms bind (#275).
-		if req.From.TGBotToken != "" {
-			rooms, err := router.store.Rooms().List(ctx, req.From.ID)
-			if err != nil {
-				return nil, nil, err
-			}
-			for _, room := range rooms {
-				if room.Surface == store.SurfaceTelegram && room.Channel == name {
-					msg.Mirror = store.MirrorPending
-				}
-			}
+		// channel; said on the hub alone where it does not (#275).
+		if mine.Room {
+			msg.Mirror = store.MirrorPending
 		}
 	}
 
@@ -399,9 +398,9 @@ func sameConversation(target *store.Message, destination, fromLoopID string) boo
 // loop outside it is no recipient at all. In the fleet channel a known human
 // (an allowed or pending sender on a surface) satisfies the recipient
 // requirement without waking anything, since its room carries the message
-// to them. Another channel has no room yet, so peopleElsewhere names where
-// people are instead, and a person named there is no recipient ("" = people
-// are in this channel). A message that addresses nobody it reaches is
+// to them. In a channel the loop has no room for, peopleElsewhere names where
+// people are instead, and a person named or replied to there is no recipient
+// ("" = people are in this channel). A message that addresses nobody it reaches is
 // refused — recipients are enforced mechanically, not just in prompt prose
 // (ADR-0025), and per channel (ADR-0038).
 func (router *Router) sharedRecipients(ctx context.Context, from *store.Loop, loops []*store.Loop, member func(*store.Loop) bool,
@@ -451,7 +450,9 @@ func (router *Router) sharedRecipients(ctx context.Context, from *store.Loop, lo
 	// A reply addresses the message's author without a mention, and adds to
 	// the mentions rather than inheriting the original's other recipients
 	// (ADR-0025). A human author addresses the message without waking
-	// anything; replying to one's own message addresses nobody by itself.
+	// anything, as a named person does — and like one, only where people
+	// are; replying to one's own message addresses nobody by itself.
+	namedPerson := false
 	if replyTo != nil {
 		switch {
 		case replyTo.FromLoopID == from.ID:
@@ -462,11 +463,11 @@ func (router *Router) sharedRecipients(ctx context.Context, from *store.Loop, lo
 					addressed = true
 				}
 			}
-		default:
-			addressed = true // a human wrote it
+		default: // a human wrote it
+			namedPerson = true
+			addressed = addressed || peopleElsewhere == ""
 		}
 	}
-	namedPerson := false
 	for _, mention := range mentions {
 		if loopRecord, ok := byKey[mention]; ok && loopRecord.ID != from.ID && member(loopRecord) {
 			targets[loopRecord.ID] = loopRecord
