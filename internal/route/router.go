@@ -25,20 +25,20 @@ var mentionRe = regexp.MustCompile(`(?:^|[^\w@])@([A-Za-z0-9_-]+)`)
 // token never competes with a real name.
 const BroadcastToken = "all"
 
-// broadcastTargets are the loops an @all in the group reaches, minus the
-// sender. Eligibility, as the operator settled it for #74 and ADR-0032
-// narrowed it: in the fleet channel, not paused, not archived. A loop whose
+// broadcastTargets are the loops an @all in a channel reaches, minus the
+// sender. Eligibility, as the operator settled it for #74 and ADR-0032 and
+// ADR-0038 narrowed it: in the channel (member), not paused, not archived. A loop whose
 // workstation is off stays eligible — its delivery queues and arrives when
 // the machine is back, exactly as a direct mention does — while a paused
 // loop is deliberately out, since pausing is the operator saying "leave this
 // one alone".
 //
-// There is one group, the hub's, so where the message was posted from —
-// Telegram, the control room, a loop — does not narrow it further.
-func (router *Router) broadcastTargets(loops []*store.Loop, fromLoopID string) map[string]*store.Loop {
+// A channel is the hub's, so where the message was posted from — Telegram,
+// the control room, a loop — does not narrow it further.
+func (router *Router) broadcastTargets(loops []*store.Loop, fromLoopID string, member func(*store.Loop) bool) map[string]*store.Loop {
 	targets := map[string]*store.Loop{}
 	for _, loopRecord := range loops {
-		if loopRecord.ID == fromLoopID || loopRecord.Status != store.StatusActive || loopRecord.OutsideFleetChannel {
+		if loopRecord.ID == fromLoopID || loopRecord.Status != store.StatusActive || !member(loopRecord) {
 			continue
 		}
 		targets[loopRecord.ID] = loopRecord
@@ -253,7 +253,7 @@ func (router *Router) Ingest(ctx context.Context, in InboundMessage) error {
 				// deliberate broadcast: the union with the mentions and the
 				// reply author is deduplicated by loop id, so a loop named
 				// twice over is still delivered to once
-				for id, loopRecord := range router.broadcastTargets(loops, in.FromLoopID) {
+				for id, loopRecord := range router.broadcastTargets(loops, in.FromLoopID, inGroup) {
 					targets[id] = loopRecord
 				}
 				continue

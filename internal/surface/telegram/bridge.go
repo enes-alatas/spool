@@ -1214,7 +1214,10 @@ func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 		return
 	}
 	bot := br.poller(mp.FromLoopID)
-	switch mp.Conversation {
+	// By destination, not kind: a channel other than the fleet channel has
+	// no room on any surface yet, so its messages stay on the hub
+	// (ADR-0038) and match no case here.
+	switch mp.Destination() {
 	case store.ConversationGroup:
 		// a loop's explicit group send: post to its bound group as its
 		// own bot, judged from the loop as it is now rather than as

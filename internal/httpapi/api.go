@@ -1379,9 +1379,9 @@ func (server *Server) groupReplyTarget(ctx context.Context, w http.ResponseWrite
 		server.jsonErr(w, 500, "%v", err)
 		return false
 	}
-	if target.Conversation != store.ConversationGroup {
+	if target.Destination() != store.ConversationGroup {
 		server.jsonErrCode(w, 400, route.ErrCrossConversation,
-			"message %d is in %s, not the fleet channel; a reply stays in its own conversation", id, target.Conversation)
+			"message %d is in %s, not the fleet channel; a reply stays in its own conversation", id, target.Destination())
 		return false
 	}
 	return true

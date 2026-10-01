@@ -124,7 +124,15 @@ func (router *Router) Send(ctx context.Context, req SendRequest) (*store.Message
 
 	// What the loop has is decided here and nowhere else in Send, from the
 	// source its prompt is rendered from, so the two cannot disagree (#288).
-	conv := loop.ConversationsOf(req.From)
+	loops, err := router.store.Loops().List(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	channels, err := router.store.Channels().List(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	conv := loop.ConversationsOf(req.From, channels, loops)
 	var targets map[string]*store.Loop
 	var ownerChat int64
 	var ownerSlackUser string
@@ -133,7 +141,7 @@ func (router *Router) Send(ctx context.Context, req SendRequest) (*store.Message
 		if !conv.Group {
 			return nil, noSuchDestination(conv, "this loop is not in the fleet channel, so it has no group"), nil
 		}
-		targets, serr, err = router.groupRecipients(ctx, req.From, mentions, replyTo)
+		targets, serr, err = router.sharedRecipients(ctx, req.From, loops, inGroup, req.Destination, "", mentions, replyTo)
 		if serr != nil || err != nil {
 			return nil, serr, err
 		}
@@ -165,8 +173,49 @@ func (router *Router) Send(ctx context.Context, req SendRequest) (*store.Message
 	case store.ConversationControlRoom:
 		msg.ConversationLoopID = req.From.ID
 	default:
-		return nil, &SendError{ErrInvalidDestination,
-			fmt.Sprintf("destination must be %s, %s or %s", store.ConversationOwnerDM, store.ConversationGroup, store.ConversationControlRoom)}, nil
+		name, ok := strings.CutPrefix(req.Destination, store.ChannelDestinationPrefix)
+		switch {
+		case !ok:
+			return nil, &SendError{ErrInvalidDestination,
+				fmt.Sprintf("destination must be %s, %s, %s or %s<name>", store.ConversationOwnerDM, store.ConversationGroup,
+					store.ConversationControlRoom, store.ChannelDestinationPrefix)}, nil
+		case name == store.FleetChannel:
+			return nil, &SendError{ErrInvalidDestination,
+				"the fleet channel is sent to as " + store.ConversationGroup + ", not " + req.Destination}, nil
+		}
+		if _, ok := conv.Channel(name); !ok {
+			return nil, noSuchDestination(conv, fmt.Sprintf("you are in no channel named %q", name)), nil
+		}
+		// A channel's members as stored, not as its prompt lists them: a
+		// paused member is delivered to by mention, as in the fleet
+		// channel, and only @all leaves it be.
+		member := map[string]bool{}
+		for _, channel := range channels {
+			if channel.Name == name {
+				for _, id := range channel.LoopIDs {
+					member[id] = true
+				}
+			}
+		}
+		inChannel := func(loopRecord *store.Loop) bool {
+			return loopRecord.Status != store.StatusArchived && member[loopRecord.ID]
+		}
+		// No person is in a channel until a room mirrors it, so naming one
+		// there is no recipient: the refusal says where people are.
+		var elsewhere []string
+		for _, destination := range conv.Destinations() {
+			if !strings.HasPrefix(destination, store.ChannelDestinationPrefix) {
+				elsewhere = append(elsewhere, destination)
+			}
+		}
+		targets, serr, err = router.sharedRecipients(ctx, req.From, loops, inChannel, req.Destination,
+			strings.Join(elsewhere, ", "), mentions, replyTo)
+		if serr != nil || err != nil {
+			return nil, serr, err
+		}
+		// Said on the hub alone: a channel other than the fleet channel
+		// has no room on any surface to be mirrored to yet (#275).
+		msg.Conversation, msg.Channel = store.ConversationGroup, name
 	}
 
 	// Last of the refusals, as the one that costs a read of the file.
@@ -238,6 +287,7 @@ func (router *Router) Send(ctx context.Context, req SendRequest) (*store.Message
 			Author:       req.From.Name,
 			Text:         text,
 			Conversation: store.ConversationGroup,
+			Channel:      msg.Channel,
 			FromLoop:     true,
 			Ref:          loop.MessageRef(msg.ID),
 			ReplyTo:      replyRef(replyTo),
@@ -291,9 +341,9 @@ func (router *Router) resendTarget(ctx context.Context, req SendRequest) (*store
 		return nil, &SendError{ErrResendsNotFailed,
 			"that message has no unresolved send failure; it arrived, or somebody has already dealt with it"}, nil
 	}
-	if target.Conversation != req.Destination {
+	if target.Destination() != req.Destination {
 		return nil, &SendError{ErrResendsWrongDestination,
-			fmt.Sprintf("that message was going to %s, not %s; say it again where it was lost, or send it as a new message", target.Conversation, req.Destination)}, nil
+			fmt.Sprintf("that message was going to %s, not %s; say it again where it was lost, or send it as a new message", target.Destination(), req.Destination)}, nil
 	}
 	return target, nil, nil
 }
@@ -320,37 +370,38 @@ func (router *Router) replyTarget(ctx context.Context, req SendRequest) (*store.
 	}
 	if !sameConversation(target, req.Destination, req.From.ID) {
 		return nil, &SendError{ErrCrossConversation,
-			fmt.Sprintf("that message is in %s, not %s; a reply stays in its own conversation", target.Conversation, req.Destination)}, nil
+			fmt.Sprintf("that message is in %s, not %s; a reply stays in its own conversation", target.Destination(), req.Destination)}, nil
 	}
 	return target, nil, nil
 }
 
 // sameConversation reports whether target is a message of the very
-// conversation being sent to. Only the group leaves ConversationLoopID
-// empty; reading that sentinel as "matches anyone" would let a loop quote a
-// private message keyed to no loop — which migration 0009 can leave behind —
-// into its own DM.
+// conversation being sent to: the same channel, for a shared one. Only a
+// channel leaves ConversationLoopID empty; reading that sentinel as "matches
+// anyone" would let a loop quote a private message keyed to no loop — which
+// migration 0009 can leave behind — into its own DM.
 func sameConversation(target *store.Message, destination, fromLoopID string) bool {
-	if target.Conversation != destination {
+	if target.Destination() != destination {
 		return false
 	}
-	if destination == store.ConversationGroup {
+	if target.Conversation == store.ConversationGroup {
 		return true
 	}
 	return target.ConversationLoopID == fromLoopID
 }
 
-// groupRecipients resolves a group send's mentions: loops in the fleet
-// channel are delivered to, and a loop outside it is no recipient at all;
-// a known human (an allowed or pending sender on a surface) satisfies the
-// recipient requirement without waking anything. A group message that
-// addresses nobody known is refused — recipients are enforced mechanically,
-// not just in prompt prose (ADR-0025).
-func (router *Router) groupRecipients(ctx context.Context, from *store.Loop, mentions []string, replyTo *store.Message) (map[string]*store.Loop, *SendError, error) {
-	loops, err := router.store.Loops().List(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
+// sharedRecipients resolves the mentions of a send to a channel, the fleet
+// channel or another: loops member says are in it are delivered to, and a
+// loop outside it is no recipient at all. In the fleet channel a known human
+// (an allowed or pending sender on a surface) satisfies the recipient
+// requirement without waking anything, since its room carries the message
+// to them. Another channel has no room yet, so peopleElsewhere names where
+// people are instead, and a person named there is no recipient ("" = people
+// are in this channel). A message that addresses nobody it reaches is
+// refused — recipients are enforced mechanically, not just in prompt prose
+// (ADR-0025), and per channel (ADR-0038).
+func (router *Router) sharedRecipients(ctx context.Context, from *store.Loop, loops []*store.Loop, member func(*store.Loop) bool,
+	destination, peopleElsewhere string, mentions []string, replyTo *store.Message) (map[string]*store.Loop, *SendError, error) {
 	byKey := map[string]*store.Loop{}
 	for _, loopRecord := range loops {
 		byKey[strings.ToLower(loopRecord.Name)] = loopRecord
@@ -380,13 +431,13 @@ func (router *Router) groupRecipients(ctx context.Context, from *store.Loop, men
 
 	targets := map[string]*store.Loop{}
 	addressed := false
-	// @all is a deliberate broadcast to the loops in the fleet channel,
-	// never to one outside it. The sender is excluded — a loop does
+	// @all is a deliberate broadcast to the loops in the channel, never to
+	// one outside it. The sender is excluded — a loop does
 	// not wake itself — and the union with mentions and the reply author is
 	// deduplicated by loop id, so overlap costs one delivery.
 	for _, mention := range mentions {
 		if mention == BroadcastToken {
-			for id, loopRecord := range router.broadcastTargets(loops, from.ID) {
+			for id, loopRecord := range router.broadcastTargets(loops, from.ID, member) {
 				targets[id] = loopRecord
 			}
 			addressed = true
@@ -402,7 +453,7 @@ func (router *Router) groupRecipients(ctx context.Context, from *store.Loop, men
 		case replyTo.FromLoopID == from.ID:
 		case replyTo.FromLoopID != "":
 			for _, loopRecord := range loops {
-				if loopRecord.ID == replyTo.FromLoopID && inGroup(loopRecord) {
+				if loopRecord.ID == replyTo.FromLoopID && member(loopRecord) {
 					targets[loopRecord.ID] = loopRecord
 					addressed = true
 				}
@@ -411,16 +462,25 @@ func (router *Router) groupRecipients(ctx context.Context, from *store.Loop, men
 			addressed = true // a human wrote it
 		}
 	}
+	namedPerson := false
 	for _, mention := range mentions {
-		if loopRecord, ok := byKey[mention]; ok && loopRecord.ID != from.ID && inGroup(loopRecord) {
+		if loopRecord, ok := byKey[mention]; ok && loopRecord.ID != from.ID && member(loopRecord) {
 			targets[loopRecord.ID] = loopRecord
 			addressed = true
 		} else if humans[mention] {
-			addressed = true
+			namedPerson = true
+			addressed = addressed || peopleElsewhere == ""
 		}
 	}
-	if !addressed {
-		return nil, &SendError{ErrNoRecipients, "a group message must @mention at least one known loop or person, or reply to one"}, nil
+	switch {
+	case addressed:
+	case namedPerson:
+		return nil, &SendError{ErrNoRecipients, fmt.Sprintf("no person is in %s yet, since no room on a surface carries it; "+
+			"@mention a loop in it, or reach the person in %s", destination, peopleElsewhere)}, nil
+	case peopleElsewhere != "":
+		return nil, &SendError{ErrNoRecipients, fmt.Sprintf("a message to %s must @mention at least one loop in it, or reply to one", destination)}, nil
+	default:
+		return nil, &SendError{ErrNoRecipients, fmt.Sprintf("a message to %s must @mention at least one known loop or person in it, or reply to one", destination)}, nil
 	}
 	return targets, nil, nil
 }

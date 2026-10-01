@@ -705,9 +705,9 @@ func pruneEvents(ctx context.Context, db store.Store, days int, log *slog.Logger
 }
 
 // catalogOf resolves who a loop can address, fresh for each prompt build:
-// its conversations, its peers in the fleet channel, the people allowed to
-// talk to the fleet, and its own owner with whether a private chat to them
-// exists yet (#45, #288).
+// its conversations and the channels among them, its peers in the fleet
+// channel, the people allowed to talk to the fleet, and its own owner with
+// whether a private chat to them exists yet (#45, #288).
 func catalogOf(db store.Store, self *store.Loop) loop.Catalog {
 	ctx := context.Background()
 	// The caller's copy is the actor's, taken when it last loaded the loop;
@@ -716,10 +716,13 @@ func catalogOf(db store.Store, self *store.Loop) loop.Catalog {
 	if fresh, err := db.Loops().Get(ctx, self.ID); err == nil {
 		self = fresh
 	}
-	cat := loop.Catalog{Conversations: loop.ConversationsOf(self), OwnerDMReady: self.OwnerDMReady()}
+	loops, loopsErr := db.Loops().List(ctx)
+	// a hub whose channels cannot be read teaches the fleet channel alone,
+	// which is what the row records
+	channels, _ := db.Channels().List(ctx)
+	cat := loop.Catalog{Conversations: loop.ConversationsOf(self, channels, loops), OwnerDMReady: self.OwnerDMReady()}
 	cat.BotUsername, _ = botOf(self)
-	loops, err := db.Loops().List(ctx)
-	if err != nil {
+	if loopsErr != nil {
 		return cat
 	}
 	for _, loopRecord := range loops {

@@ -58,7 +58,7 @@ const (
 	// A message's conversation: the unit of privacy and addressing
 	// (ADR-0026). The private kinds are keyed to a loop; group is shared.
 	ConversationOwnerDM     = "owner_dm"     // a loop's Telegram DM with its owner
-	ConversationGroup       = "group"        // the loop's bound Telegram group
+	ConversationGroup       = "group"        // a channel: the fleet channel, or another by Message.Channel
 	ConversationControlRoom = "control_room" // a loop's private web thread
 
 	PacingFixed = "fixed" // orchestrator interval; trailer optional
@@ -1047,6 +1047,29 @@ func ValidChannelName(name string) bool {
 		}
 	}
 	return true
+}
+
+// ChannelDestinationPrefix is how send_message names a channel other than
+// the fleet channel: channel:<name>. The fleet channel keeps its plain name,
+// group, so no prompt or row written before channels changes (ADR-0038).
+const ChannelDestinationPrefix = "channel:"
+
+// ChannelDestination names a channel as a send destination.
+func ChannelDestination(name string) string {
+	if name == FleetChannel {
+		return ConversationGroup
+	}
+	return ChannelDestinationPrefix + name
+}
+
+// Destination names the conversation a message is in the way a loop sends
+// to it: its kind, or channel:<name> for a channel other than the fleet
+// channel.
+func (message *Message) Destination() string {
+	if message.Conversation == ConversationGroup && message.Channel != "" {
+		return ChannelDestination(message.Channel)
+	}
+	return message.Conversation
 }
 
 // ChannelStore holds the hub's channels and who is in them. The fleet

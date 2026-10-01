@@ -521,6 +521,7 @@ type activityMessage struct {
 	DeliveredTo        []string `json:"delivered_to"`
 	Conversation       string   `json:"conversation"`
 	ConversationLoopID string   `json:"conversation_loop_id"`
+	Channel            string   `json:"channel"`
 	ReplyToID          int64    `json:"reply_to_id"`
 	SendFailedAt       int64    `json:"send_failed_at"`
 	SendError          string   `json:"send_error"`
