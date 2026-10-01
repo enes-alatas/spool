@@ -323,6 +323,10 @@ type Message struct {
 	// ConversationLoopID keys the private conversation kinds (owner_dm,
 	// control_room) to their loop; empty for the shared group.
 	ConversationLoopID string `json:"conversation_loop_id,omitempty"`
+	// Channel names the channel a group message was said in, FleetChannel
+	// for the fleet channel; empty for the private kinds, which are in none
+	// (ADR-0038).
+	Channel string `json:"channel,omitempty"`
 	// ReplyToID is the message this one explicitly replies to (0 = none).
 	// A reply is always chosen, never inferred from ordering (ADR-0025).
 	ReplyToID int64 `json:"reply_to_id,omitempty"`
@@ -994,6 +998,7 @@ type SlackSenderStore interface {
 
 type Store interface {
 	Loops() LoopStore
+	Channels() ChannelStore
 	LoopSecrets() LoopSecretStore
 	FleetRules() FleetRuleStore
 	Sessions() SessionStore
@@ -1008,6 +1013,63 @@ type Store interface {
 	SlackSenders() SlackSenderStore
 	Models() ModelStore
 	Close() error
+}
+
+// FleetChannel is the channel every fleet starts with: the group
+// conversation of ADR-0032, under the name everything already used for it
+// (ADR-0038). It cannot be created or deleted, and a loop is in it unless
+// the operator took it out.
+const FleetChannel = "group"
+
+// Channel is a conversation several loops and people share (ADR-0038).
+type Channel struct {
+	Name        string
+	Description string
+	CreatedAt   int64
+	// LoopIDs are the loops in the channel, in no promised order.
+	LoopIDs []string
+}
+
+// ValidChannelName reports whether a name may name a channel: 1–32 of
+// a-z, 0-9 and '-', not starting with '-'. Underscores are left out so a
+// channel can never be spelled like a private destination (owner_dm).
+func ValidChannelName(name string) bool {
+	if name == "" || len(name) > 32 || name[0] == '-' {
+		return false
+	}
+	for _, r := range name {
+		lower, digit := r >= 'a' && r <= 'z', r >= '0' && r <= '9'
+		if !lower && !digit && r != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+// ChannelStore holds the hub's channels and who is in them. The fleet
+// channel's membership is the loops' own OutsideFleetChannel, read and
+// written through here as any other channel's is, so a caller never asks
+// which channel it holds.
+type ChannelStore interface {
+	// List returns every channel, the fleet channel first, then by name.
+	List(ctx context.Context) ([]*Channel, error)
+	// Get returns one channel, or ErrNotFound.
+	Get(ctx context.Context, name string) (*Channel, error)
+	// Create adds a channel with no loops in it; ErrDuplicate if the name
+	// is taken.
+	Create(ctx context.Context, channel *Channel) error
+	// SetDescription rewrites a channel's description and returns it;
+	// ErrNotFound if there is none by that name.
+	SetDescription(ctx context.Context, name, description string) (*Channel, error)
+	// Delete removes a channel and its membership; ErrNotFound if there is
+	// none. Messages said in it keep its name. The fleet channel is not
+	// deletable, and the caller refuses it before asking.
+	Delete(ctx context.Context, name string) error
+	// AddLoop puts a loop in a channel and RemoveLoop takes it out; both
+	// are no-ops when it already is, or is not, there, and ErrNotFound when
+	// the channel is not. at stamps the write.
+	AddLoop(ctx context.Context, name, loopID string, at int64) error
+	RemoveLoop(ctx context.Context, name, loopID string, at int64) error
 }
 
 // ErrNotFound / ErrDuplicate are sentinel errors shared by implementations.
