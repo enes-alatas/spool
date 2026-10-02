@@ -196,6 +196,11 @@ jobs:
       - name: the redaction step still acts on a hit
         if: github.event_name == 'pull_request'
         run: bash scripts/secret-redact-body-test.sh
+      # The welcome step posts on an event no PR fires, so this is the only
+      # run it gets before it ships: under `bash -e`, with a stub gh (#503).
+      - name: the welcome step still replies once, and only with its note
+        if: github.event_name == 'pull_request'
+        run: bash scripts/community-welcome-test.sh
       - name: scan the lines this PR adds
         if: github.event_name == 'pull_request'
         env:

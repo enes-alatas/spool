@@ -19,7 +19,8 @@ and the surface you use).
 
 ## What happens next
 
-Within one working day, the project's product owner:
+A reply comes at once, automatically, saying what follows. Then, within one
+working day, the project's product owner:
 
 1. reproduces the problem, or asks you for what is missing;
 2. gives the issue a type (bug, improvement, and so on) and, for a bug, a
