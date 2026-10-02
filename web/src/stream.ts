@@ -35,6 +35,7 @@ export function useStream(url: string, onItem: (item: BusItem) => void, onOpen?:
       'access',
       'workstation',
       'models',
+      'reaction',
     ]
     const listeners = kinds.map((kind) => {
       const fn = (e: MessageEvent) => {
@@ -79,6 +80,13 @@ export function useGlobalStream() {
         break
       case 'models':
         qc.invalidateQueries({ queryKey: ['models'] })
+        break
+      // A reaction added or removed (ADR-0040): it carries no loop, and any
+      // timeline may hold its message, so each list of messages refetches.
+      case 'reaction':
+        qc.invalidateQueries({ queryKey: ['activity'] })
+        qc.invalidateQueries({ queryKey: ['group'] })
+        qc.invalidateQueries({ queryKey: ['conversation'] })
         break
     }
   })

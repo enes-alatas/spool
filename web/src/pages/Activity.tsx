@@ -2,6 +2,7 @@ import { Link } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api'
 import { AttachmentList } from '../components/Attachments'
+import { ReactionList } from '../components/Reactions'
 import { UndeliveredMark } from '../components/UndeliveredMark'
 
 // Activity is a read-only operator overview (ADR-0025): it filters
@@ -31,6 +32,7 @@ export default function Activity() {
             </Link>
           )}
           <AttachmentList items={m.attachments} />
+          <ReactionList items={m.reactions} />
         </div>
       ))}
       {msgs && msgs.length === 0 && (
