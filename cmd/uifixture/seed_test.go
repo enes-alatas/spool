@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -450,5 +451,48 @@ func TestSeedFillsTheLoopsRooms(t *testing.T) {
 		if room.Channel == store.FleetChannel && room.RoomID != strconv.FormatInt(gardener.TGGroupChatID, 10) {
 			t.Errorf("the fleet channel's room is %s, but gardener's group is %d", room.RoomID, gardener.TGGroupChatID)
 		}
+	}
+}
+
+// The channel shot has a message with reactions on it, one emoji put there
+// by two people, so the room's count and its list of who are both in a shot
+// (#535).
+func TestSeedPutsReactionsOnTheChannel(t *testing.T) {
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "spool.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	files, err := attach.Open(filepath.Join(t.TempDir(), "files"))
+	if err != nil {
+		t.Fatalf("files: %v", err)
+	}
+	ctx := context.Background()
+	if err := seed(ctx, db, files); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	msgs, err := db.Messages().ListChannel(ctx, store.FleetChannel, 100)
+	if err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	ids := make([]int64, len(msgs))
+	for i, msg := range msgs {
+		ids[i] = msg.ID
+	}
+	reactions, err := db.Reactions().ListByMessages(ctx, ids)
+	if err != nil {
+		t.Fatalf("reactions: %v", err)
+	}
+	reactors := map[string]int{}
+	for _, reaction := range reactions {
+		reactors[fmt.Sprintf("%d %s", reaction.MessageID, reaction.Emoji)]++
+	}
+	shared := false
+	for _, count := range reactors {
+		shared = shared || count > 1
+	}
+	if len(reactions) == 0 || !shared {
+		t.Errorf("the fleet channel's reactions are %v, want one emoji from two reactors", reactors)
 	}
 }

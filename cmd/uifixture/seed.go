@@ -354,6 +354,31 @@ func seedConversations(ctx context.Context, db store.Store, files *attach.Files,
 		}
 	}
 
+	// Reactions on two of the group's posts (#535): an emoji two people put
+	// on the same message, so a chip counts more than one, a loop's own
+	// beside them, and one emoji alone on another post. Rana is the allowed
+	// sender above, by her Telegram id; the operator reacted there too.
+	rana := store.PersonReactor(store.SurfaceTelegram, "700000001")
+	operatorKey := store.PersonReactor(store.SurfaceTelegram, "700000000")
+	reactions := []struct {
+		on      int
+		key     string
+		reactor string
+		emoji   string
+		at      time.Duration
+	}{
+		{on: 6, key: rana, reactor: "Rana", emoji: "👍", at: -7 * time.Minute},
+		{on: 6, key: operatorKey, reactor: "operator", emoji: "👍", at: -6 * time.Minute},
+		{on: 6, key: store.LoopReactor(ids["watcher"]), reactor: "watcher", emoji: "🎉", at: -6 * time.Minute},
+		{on: 2, key: rana, reactor: "Rana", emoji: "✅", at: -30 * time.Minute},
+	}
+	for _, reaction := range reactions {
+		if _, err := db.Reactions().Add(ctx, &store.Reaction{MessageID: groupIDs[reaction.on], ReactorKey: reaction.key,
+			Reactor: reaction.reactor, Emoji: reaction.emoji, TS: ms(reaction.at)}); err != nil {
+			return fmt.Errorf("reaction: %w", err)
+		}
+	}
+
 	room := []struct {
 		author string
 		from   string
