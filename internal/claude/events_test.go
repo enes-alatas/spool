@@ -25,3 +25,19 @@ func TestSpoolMCPFailure(t *testing.T) {
 		}
 	}
 }
+
+// An init's tools count toward MCP only when a server supplied them, and
+// toward a server only when they carry its prefix: a server whose name
+// starts another's does not borrow its tools.
+func TestMCPTools(t *testing.T) {
+	ev := DecodeEvent([]byte(`{"type":"system","subtype":"init","tools":["Bash","Read","mcp__spool__send_message",` +
+		`"mcp__spool_extra__lookup","mcp__spool_extra__fetch"]}`))
+	if ev.Init == nil {
+		t.Fatal("no init decoded")
+	}
+	for server, want := range map[string]int{"": 3, "spool": 1, "spool_extra": 2, "absent": 0} {
+		if got := ev.Init.MCPTools(server); got != want {
+			t.Errorf("MCPTools(%q) = %d, want %d", server, got, want)
+		}
+	}
+}
