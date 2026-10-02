@@ -92,7 +92,9 @@ fleet channel, with an attached surface mirroring it: the channel has
 endpoints of its own, keyed by no loop (`GET`/`POST /api/group`), and a tab
 on the control room's Fleet page (#286); a loop is in it or not, and a new
 loop starts outside it when it is the fleet's only loop and in it otherwise
-(#287); the operator's words never leave the hub; and every
+(#287); every channel, the fleet channel included, answers the same pair by
+name (`GET`/`POST /api/channels/{name}/messages`, ADR-0038, #549); the
+operator's words never leave the hub; and every
 message's `mirror` says whether it is on the surface too (`not_mirrored`,
 `pending`, `mirrored`), its failures staying on the send fields.
 

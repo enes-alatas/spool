@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/enes-alatas/spool/internal/route"
 	"github.com/enes-alatas/spool/internal/store"
 )
 
@@ -119,6 +120,41 @@ func (server *Server) handleChannelMessages(w http.ResponseWriter, r *http.Reque
 		msgs = []*store.Message{}
 	}
 	server.writeMessages(w, r, msgs)
+}
+
+// handleChannelPost is the operator posting into a channel from the control
+// room, which is in every channel. It is handleGroupPost for any channel,
+// and the same post on the fleet channel: it wakes the loops its text
+// addresses among the channel's, and never leaves the hub (ADR-0032,
+// ADR-0038). A channel that does not exist has no one to hear it.
+func (server *Server) handleChannelPost(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if _, err := server.Store.Channels().Get(r.Context(), name); err != nil {
+		server.channelErr(w, r, err)
+		return
+	}
+	var req postGroupReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Text) == "" {
+		server.jsonErr(w, 400, "non-empty text required")
+		return
+	}
+	if req.ReplyToID != 0 && !server.channelReplyTarget(r.Context(), w, req.ReplyToID, name) {
+		return
+	}
+	err := server.Router.Ingest(r.Context(), route.InboundMessage{
+		Origin:       store.OriginWeb,
+		Author:       defaultStr(req.Author, "operator"),
+		Text:         req.Text,
+		Conversation: store.ConversationGroup,
+		Channel:      name,
+		ReplyToID:    req.ReplyToID,
+		UploadID:     req.AttachmentID,
+	})
+	if err != nil {
+		server.ingestErr(w, err)
+		return
+	}
+	writeJSON(w, 202, map[string]bool{"queued": true})
 }
 
 func (server *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request) {
