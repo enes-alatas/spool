@@ -144,6 +144,7 @@ func (server *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/channels", server.handleCreateChannel)
 	mux.HandleFunc("GET /api/channels/{name}", server.handleGetChannel)
 	mux.HandleFunc("GET /api/channels/{name}/messages", server.handleChannelMessages)
+	mux.HandleFunc("POST /api/channels/{name}/messages", server.handleChannelPost)
 	mux.HandleFunc("PATCH /api/channels/{name}", server.handlePatchChannel)
 	mux.HandleFunc("DELETE /api/channels/{name}", server.handleDeleteChannel)
 	mux.HandleFunc("PUT /api/channels/{name}/loops/{loop}", server.handleChannelLoop(true))
@@ -1370,7 +1371,7 @@ func (server *Server) handleGroupPost(w http.ResponseWriter, r *http.Request) {
 		server.jsonErr(w, 400, "non-empty text required")
 		return
 	}
-	if req.ReplyToID != 0 && !server.groupReplyTarget(r.Context(), w, req.ReplyToID) {
+	if req.ReplyToID != 0 && !server.channelReplyTarget(r.Context(), w, req.ReplyToID, store.FleetChannel) {
 		return
 	}
 	err := server.Router.Ingest(r.Context(), route.InboundMessage{
@@ -1388,13 +1389,13 @@ func (server *Server) handleGroupPost(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 202, map[string]bool{"queued": true})
 }
 
-// groupReplyTarget checks that id names a message of the fleet channel,
+// channelReplyTarget checks that id names a message of the channel,
 // answering the refusal itself when it does not. The operator picked a real
 // message, so one that is missing means the page is stale, and one from
-// another conversation would add a private message's author to the
-// channel's recipients. Both are refused with the codes a loop's own send
-// gets for the same mistakes.
-func (server *Server) groupReplyTarget(ctx context.Context, w http.ResponseWriter, id int64) bool {
+// another conversation would add its author to the channel's recipients:
+// a private message's, or a loop's that is not in this channel. Both are
+// refused with the codes a loop's own send gets for the same mistakes.
+func (server *Server) channelReplyTarget(ctx context.Context, w http.ResponseWriter, id int64, channel string) bool {
 	target, err := server.Store.Messages().Get(ctx, id)
 	if errors.Is(err, store.ErrNotFound) {
 		server.jsonErrCode(w, 400, route.ErrUnknownReplyTo, "no message %d to reply to", id)
@@ -1403,9 +1404,9 @@ func (server *Server) groupReplyTarget(ctx context.Context, w http.ResponseWrite
 		server.jsonErr(w, 500, "%v", err)
 		return false
 	}
-	if target.Destination() != store.ConversationGroup {
+	if want := store.ChannelDestination(channel); target.Destination() != want {
 		server.jsonErrCode(w, 400, route.ErrCrossConversation,
-			"message %d is in %s, not the fleet channel; a reply stays in its own conversation", id, target.Destination())
+			"message %d is in %s, not %s; a reply stays in its own conversation", id, target.Destination(), want)
 		return false
 	}
 	return true
