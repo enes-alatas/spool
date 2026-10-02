@@ -42,6 +42,11 @@ export function Rooms({ loop }: { loop: LoopView }) {
         A group shows up here once someone @mentions {bot} in it: by default, Telegram passes a bot only the
         messages that mention it or reply to it.
       </div>
+      {/* ADR-0040: the platform's limits on reactions, said where they bite */}
+      <div className="rooms-note">
+        Reactions: in a group, {bot} hears them only as an administrator. It sets one reaction per message, so
+        a loop's second reaction on a message replaces its first.
+      </div>
     </div>
   )
 }
