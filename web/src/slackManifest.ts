@@ -31,12 +31,24 @@ export const slackBotScopes = [
   // them; until then its words still cross.
   'files:read',
   'files:write',
+  // reactions: hearing a person's on a hub message, and setting a loop's
+  // (ADR-0040). An app created before these must be reinstalled to get
+  // them; until then reactions stay on the hub.
+  'reactions:read',
+  'reactions:write',
 ] as const
 
 // What Slack pushes over the socket. No `app_mention`: the channel events
 // already carry every message in the group, mentions included, and the
 // router finds mentions in the text, so it would deliver each one twice.
-export const slackBotEvents = ['message.im', 'message.channels', 'message.groups'] as const
+// The reaction events are a person's reactions in the app's conversations.
+export const slackBotEvents = [
+  'message.im',
+  'message.channels',
+  'message.groups',
+  'reaction_added',
+  'reaction_removed',
+] as const
 
 export interface SlackManifest {
   display_information: { name: string; description: string }

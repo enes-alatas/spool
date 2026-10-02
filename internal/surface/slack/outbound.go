@@ -41,13 +41,15 @@ const (
 )
 
 // mirror carries loop sends, and operator retries of failed ones, to Slack,
-// and tells owners of their loops' login notices. A retry (#269) is the
-// same send of the same row, and is decided the same way.
+// sets loops' reactions, and tells owners of their loops' login notices. A
+// retry (#269) is the same send of the same row, and is decided the same
+// way.
 func (adapter *Adapter) mirror(ctx context.Context) {
 	// lossless: an item dropped here is a loop's send lost without a
 	// record (#302)
 	items, cancel := adapter.bus.SubscribeLossless(func(item bus.Item) bool {
-		return item.Kind == bus.KindMessage || item.Kind == bus.KindSendRetry || item.Kind == bus.KindClaudeLogin
+		return item.Kind == bus.KindMessage || item.Kind == bus.KindSendRetry || item.Kind == bus.KindClaudeLogin ||
+			item.Kind == bus.KindReaction
 	})
 	defer cancel()
 	for {
@@ -63,6 +65,8 @@ func (adapter *Adapter) mirror(ctx context.Context) {
 				adapter.mirrorMessage(ctx, payload)
 			case *surface.LoginNotice:
 				adapter.noticeLogin(ctx, payload)
+			case *route.ReactionPayload:
+				adapter.mirrorReaction(payload)
 			}
 		}
 	}
@@ -119,6 +123,62 @@ func (adapter *Adapter) mirrorMessage(ctx context.Context, mp *route.MessagePayl
 	}
 }
 
+// reactions is how many reactions a link queues. A full queue drops one,
+// logged: the hub has recorded it, and Slack only shows it.
+const reactions = 64
+
+// mirrorReaction queues a loop's reaction on its own app (ADR-0040). A
+// person's reaction is already where they made it, and a loop's goes out
+// only through its own app, as its words do.
+func (adapter *Adapter) mirrorReaction(reaction *route.ReactionPayload) {
+	loopID, ok := store.ReactorLoop(reaction.ReactorKey)
+	if !ok {
+		return
+	}
+	adapter.mu.Lock()
+	current := adapter.links[loopID]
+	adapter.mu.Unlock()
+	if current == nil {
+		return // not a Slack loop, or its app is not connected
+	}
+	select {
+	case current.reactions <- reaction:
+	default:
+		adapter.log.Warn("slack: reaction queue full; dropping", "loop", loopID)
+	}
+}
+
+// setReaction adds or removes a loop's reaction on the message as Slack
+// knows it, where its app can see it: the loop's channel or its owner's
+// DM. Unlike a Telegram bot, an app keeps every reaction it adds, so each
+// one is set as the loop made it. A target with no Slack message, or one
+// the app is in no conversation for, stays on the hub, as a send to a
+// channel with no room does. A failure is logged, after the retries a
+// send gets: a reaction has no row to fail.
+func (adapter *Adapter) setReaction(ctx context.Context, loopID string, reaction *route.ReactionPayload) {
+	loopRecord, err := adapter.store.Loops().Get(ctx, loopID)
+	if err != nil {
+		adapter.log.Warn("slack: read loop for a reaction", "loop", loopID, "err", err)
+		return
+	}
+	target, err := adapter.store.Messages().Get(ctx, reaction.MessageID)
+	if err != nil || target.SlackTS == "" ||
+		(target.SlackChannelID != loopRecord.SlackChannelID && target.SlackChannelID != loopRecord.OwnerSlackDMChannel) {
+		return
+	}
+	name := slackName(reaction.Emoji)
+	if name == "" {
+		adapter.log.Warn("slack: no Slack name for a reaction", "loop", loopRecord.Name, "emoji", reaction.Emoji)
+		return
+	}
+	_, err = adapter.withRetries(ctx, loopRecord, func(ctx context.Context) error {
+		return adapter.client.React(ctx, loopRecord.SlackBotToken, target.SlackChannelID, target.SlackTS, name, reaction.Removed)
+	})
+	if err != nil {
+		adapter.log.Warn("slack: reaction not set", "loop", loopRecord.Name, "message", target.ID, "err", err)
+	}
+}
+
 // errAppStopped is the failure of a send a loop's app stopped before
 // sending: it was replaced or detached, or its loop archived.
 const errAppStopped = "the loop's Slack app was replaced or detached before this was sent"
@@ -162,6 +222,8 @@ func (adapter *Adapter) sendLoop(ctx context.Context, link *link) {
 			adapter.send(ctx, mp)
 		case queued := <-link.notices:
 			adapter.postNotice(ctx, link.loopID, queued)
+		case reaction := <-link.reactions:
+			adapter.setReaction(ctx, link.loopID, reaction)
 		}
 		timer := time.NewTimer(sendSpacing)
 		select {
