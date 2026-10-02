@@ -11,6 +11,8 @@ import {
 } from '../options'
 import { useModelOptions } from '../models'
 import { customModelError, startsInFleetChannel } from '../forms'
+import { PACE_HINT, type Pace } from '../pace'
+import { PaceRange } from '../components/PaceRange'
 
 export default function NewLoop() {
   const nav = useNavigate()
@@ -25,7 +27,9 @@ export default function NewLoop() {
   const [runtime, setRuntime] = useState('')
   const [wsPath, setWsPath] = useState('')
   const [wsInfo, setWsInfo] = useState<{ exists: boolean; is_git: boolean } | null>(null)
-  const [interval, setIntervalMin] = useState('30')
+  // The hub's own min and max wake defaults, 5 min and 4 h, shown so the
+  // range is chosen with the tick rather than discovered after it.
+  const [pace, setPace] = useState<Pace>({ min: 300, tick: 1800, max: 14400 })
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -104,7 +108,9 @@ export default function NewLoop() {
         // be wrong.
         runtime: (chosenRuntime as 'bare' | 'docker') || undefined,
         workspace_path: (!wsLocked && wsPath.trim()) || undefined,
-        tick_interval_sec: Math.max(60, Number(interval) * 60),
+        tick_interval_sec: pace.tick,
+        min_wake_sec: pace.min,
+        max_wake_sec: pace.max,
         // Sent whenever the switch shows a state, so it means what it shows; the
         // server's own default covers a form that has none yet.
         in_fleet_channel: joinsChannel,
@@ -201,15 +207,14 @@ export default function NewLoop() {
             </select>
             <div className="hint">
               {pacing === 'self'
-                ? 'The loop picks its own next-wake time each turn; the interval below is only a fallback.'
-                : 'Spool wakes the loop on the interval below; the loop may still adjust with a trailer.'}
+                ? 'The loop picks its own next-wake time each turn; the tick is only a fallback.'
+                : 'Spool wakes the loop on the tick; the loop may still adjust with a trailer.'}
             </div>
           </div>
           <div className="field">
-            <label htmlFor="nl-interval">
-              {pacing === 'self' ? 'Fallback interval (minutes)' : 'Tick interval (minutes)'}
-            </label>
-            <input id="nl-interval" value={interval} onChange={(e) => setIntervalMin(e.target.value)} />
+            <label id="nl-pace-label">Pace</label>
+            <PaceRange pace={pace} onChange={setPace} labelledBy="nl-pace-label" />
+            <div className="hint">{PACE_HINT}</div>
           </div>
         </div>
 
