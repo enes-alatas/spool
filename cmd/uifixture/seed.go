@@ -486,8 +486,10 @@ func seedSecrets(ctx context.Context, db store.Store, loopID string) error {
 }
 
 // Three channels besides the fleet channel, for the Channels page and the
-// loop page's channels line (#484). They differ in the ways the page draws
-// differently: two loops, one loop, and a loop that is in two channels.
+// loop page's Channels panel (#484, #549). They differ in the ways the pages
+// draw differently: several loops, one loop, and a loop that is in more than
+// one. Gardener is in releases for the release notes, and no group carries
+// releases for it, so its panel shows a channel waiting for a group.
 // Each pairs loops whose missions would plausibly share the room.
 func seedChannels(ctx context.Context, db store.Store, ids map[string]string) error {
 	channels := []struct {
@@ -496,7 +498,7 @@ func seedChannels(ctx context.Context, db store.Store, ids map[string]string) er
 	}{
 		{name: "docs", description: "The handbook and the incident write-ups: what changed, and what went stale.", loops: []string{"gardener", "archivist"}},
 		{name: "on-call", description: "A broken build, said once, with the commit that broke it.", loops: []string{"watcher"}},
-		{name: "releases", description: "Release dates, and anything that moves one.", loops: []string{"courier", "watcher"}},
+		{name: "releases", description: "Release dates, and anything that moves one.", loops: []string{"courier", "gardener", "watcher"}},
 	}
 	for _, channel := range channels {
 		if err := db.Channels().Create(ctx, &store.Channel{
@@ -513,23 +515,76 @@ func seedChannels(ctx context.Context, db store.Store, ids map[string]string) er
 	return nil
 }
 
+// Traffic in docs, a channel besides the fleet channel (#549): Activity's
+// channel filter narrows to it, and every row names its channel. A fixture
+// whose channel traffic was all the fleet channel's shoots a filter that
+// could be ignoring its pick and a label that could be hard-coded.
+func seedChannelTraffic(ctx context.Context, db store.Store, ids map[string]string) error {
+	docs := []struct {
+		author, from, text string
+		at                 time.Duration
+		to                 []string
+		web                bool
+	}{
+		{author: "archivist", from: ids["archivist"], text: "@gardener the incident write-up template links the old runbook. Yours or mine?", at: -48 * time.Minute, to: []string{ids["gardener"]}},
+		{author: "gardener", from: ids["gardener"], text: "Mine, it moved with the handbook. Fixed in the same PR as the install page.", at: -12 * time.Minute, to: []string{ids["archivist"]}},
+		{author: "operator", text: "@archivist once that lands, close the stale-runbook issue too.", at: -5 * time.Minute, to: []string{ids["archivist"]}, web: true},
+	}
+	for _, message := range docs {
+		msg := &store.Message{
+			TS: ms(message.at), Origin: store.OriginLoop, Author: message.author, FromLoopID: message.from,
+			Text: message.text, Conversation: store.ConversationGroup, Channel: "docs",
+			DeliveredTo: message.to, Mirror: store.MirrorMirrored,
+		}
+		if message.web {
+			// The operator's post never leaves the hub (ADR-0032).
+			msg.Origin, msg.Mirror = store.OriginWeb, store.MirrorNotMirrored
+		}
+		if err := db.Messages().Insert(ctx, msg); err != nil {
+			return fmt.Errorf("docs message: %w", err)
+		}
+	}
+	return nil
+}
+
 // The rooms the loop page lists under gardener's Telegram rows (#515): the
 // fleet channel's group, a group carrying docs, and one the bot has heard
 // from that nobody has bound yet, the row the page asks the operator about.
-// The fleet channel's room is the group the loop record already names, so
-// the two agree.
-func seedRooms(ctx context.Context, db store.Store, loopID string) error {
-	gardener, err := db.Loops().Get(ctx, loopID)
-	if err != nil {
-		return fmt.Errorf("rooms: %w", err)
+// Watcher's bot is in that same chat and carries releases there, so a
+// channel's pane shows two loops in one channel whose bots differ (#549).
+// Each loop's fleet channel room is the group its loop record already
+// names, so the two agree.
+type fixtureRoom struct {
+	id, title, channel string
+}
+
+func seedRooms(ctx context.Context, db store.Store, ids map[string]string) error {
+	for _, name := range []string{"gardener", "watcher"} {
+		loopRecord, err := db.Loops().Get(ctx, ids[name])
+		if err != nil {
+			return fmt.Errorf("rooms: %w", err)
+		}
+		fleetRoom := fixtureRoom{id: strconv.FormatInt(loopRecord.TGGroupChatID, 10), channel: store.FleetChannel}
+		var rooms []fixtureRoom
+		switch name {
+		case "gardener":
+			fleetRoom.title = "Handbook crew"
+			rooms = []fixtureRoom{fleetRoom,
+				{id: "-1002000000001", title: "Docs reviewers", channel: "docs"},
+				{id: "-1002000000002", title: "Release chat"}}
+		case "watcher":
+			fleetRoom.title = "Build alerts"
+			rooms = []fixtureRoom{fleetRoom,
+				{id: "-1002000000002", title: "Release chat", channel: "releases"}}
+		}
+		if err := seedLoopRooms(ctx, db, loopRecord.ID, rooms); err != nil {
+			return err
+		}
 	}
-	rooms := []struct {
-		id, title, channel string
-	}{
-		{id: strconv.FormatInt(gardener.TGGroupChatID, 10), title: "Handbook crew", channel: store.FleetChannel},
-		{id: "-1002000000001", title: "Docs reviewers", channel: "docs"},
-		{id: "-1002000000002", title: "Release chat"},
-	}
+	return nil
+}
+
+func seedLoopRooms(ctx context.Context, db store.Store, loopID string, rooms []fixtureRoom) error {
 	for n, room := range rooms {
 		seen := ms(-time.Duration(19-n) * 24 * time.Hour)
 		if _, _, err := db.Rooms().Sight(ctx, &store.Room{

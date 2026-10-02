@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -494,5 +495,57 @@ func TestSeedPutsReactionsOnTheChannel(t *testing.T) {
 	}
 	if len(reactions) == 0 || !shared {
 		t.Errorf("the fleet channel's reactions are %v, want one emoji from two reactors", reactors)
+	}
+}
+
+// Activity's channel filter has a channel besides the fleet channel to narrow
+// to, and the loop page a channel with no group to bind one to (#549).
+func TestSeedFillsAChannelBesidesTheFleetChannel(t *testing.T) {
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "spool.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	files, err := attach.Open(filepath.Join(t.TempDir(), "files"))
+	if err != nil {
+		t.Fatalf("files: %v", err)
+	}
+	ctx := context.Background()
+	if err := seed(ctx, db, files); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	msgs, err := db.Messages().ListChannel(ctx, "docs", 100)
+	if err != nil {
+		t.Fatalf("docs: %v", err)
+	}
+	if len(msgs) == 0 {
+		t.Error("docs has no messages, so no shot can show Activity narrowed to a channel")
+	}
+
+	gardener, err := db.Loops().GetByName(ctx, "gardener")
+	if err != nil {
+		t.Fatalf("gardener: %v", err)
+	}
+	rooms, err := db.Rooms().List(ctx, gardener.ID)
+	if err != nil {
+		t.Fatalf("rooms: %v", err)
+	}
+	carried := map[string]bool{}
+	for _, room := range rooms {
+		carried[room.Channel] = true
+	}
+	channels, err := db.Channels().List(ctx)
+	if err != nil {
+		t.Fatalf("channels: %v", err)
+	}
+	var waiting int
+	for _, channel := range channels {
+		if channel.Name != store.FleetChannel && slices.Contains(channel.LoopIDs, gardener.ID) && !carried[channel.Name] {
+			waiting++
+		}
+	}
+	if waiting == 0 {
+		t.Error("every channel gardener is in has a group, so no shot can show one waiting for a group")
 	}
 }
