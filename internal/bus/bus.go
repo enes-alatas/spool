@@ -39,6 +39,12 @@ const (
 	// would draw it as one said. Every surface adapter that mirrors outward
 	// sets a loop's reaction from it (ADR-0029).
 	KindReaction = "reaction"
+	// KindPoll says a poll's ballot changed after it was sent: a vote, or
+	// the close (ADR-0041). Its payload is a route.PollPayload. The poll
+	// itself went out as KindMessage; a vote is not a message, so it is
+	// never published as one. Every surface adapter that mirrors outward
+	// updates or stops the platform's poll from it (ADR-0029).
+	KindPoll = "poll"
 )
 
 type Item struct {
