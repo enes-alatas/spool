@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -253,6 +254,11 @@ type sendReq struct {
 	recordFor int64
 	// media is the file the message carries (#123), nil for words alone.
 	media *Media
+	// reactTo makes the send a reaction instead of a post: this bot's own
+	// id for the message reacted to, with emoji the reaction it sets ("" to
+	// clear its own). 0 for a post.
+	reactTo int64
+	emoji   string
 }
 
 func (br *Bridge) startPoller(loopRecord *store.Loop) {
@@ -332,6 +338,9 @@ func (br *Bridge) pollLoop(ctx context.Context, bot *poller) {
 			}
 			if update.Message != nil {
 				br.handleMessage(ctx, bot, update.Message)
+			}
+			if update.MessageReaction != nil {
+				br.handleReaction(ctx, bot, update.MessageReaction)
 			}
 		}
 	}
@@ -775,6 +784,98 @@ func (br *Bridge) render(ctx context.Context, mp *route.MessagePayload, chatID i
 	return 0, outbound.QuotePrefix(target) + mp.Text
 }
 
+// handleReaction hands the router what changed in a person's reactions on
+// a hub message (ADR-0040). Every bot in the chat may hear the same change,
+// and each reports it: the hub keeps one row per reactor, emoji and message,
+// so no bot is elected. A reaction passes the sender gate a message does,
+// but registers nobody: a stranger is given a pairing code when they write.
+// A message the hub never held, from a room the loop has no binding for or
+// from before its bot was there, carries nothing.
+func (br *Bridge) handleReaction(ctx context.Context, bot *poller, update *MessageReactionUpdated) {
+	if update.User == nil || update.User.IsBot || br.router == nil {
+		return // an anonymous admin, a chat, or a bot: no person to record
+	}
+	sender, err := br.store.TGSenders().Get(ctx, update.User.ID)
+	if err != nil || sender.Status != store.SenderAllowed {
+		br.log.Info("telegram reaction discarded", "loop", bot.name, "reason", "sender is not allowed",
+			"chat_id", update.Chat.ID, "message_id", update.MessageID)
+		return
+	}
+	target, err := br.store.Messages().ByRef(ctx, bot.loopID, update.Chat.ID, update.MessageID)
+	if err != nil {
+		return
+	}
+	reactor := update.User.Username
+	if reactor == "" {
+		reactor = update.User.FirstName
+	}
+	before, after := emojisOf(update.OldReaction), emojisOf(update.NewReaction)
+	reaction := route.InboundReaction{MessageID: target.ID, Reactor: reactor,
+		ReactorKey: store.PersonReactor(store.SurfaceTelegram, strconv.FormatInt(update.User.ID, 10))}
+	for _, change := range []struct {
+		emojis, against []string
+		removed         bool
+	}{{after, before, false}, {before, after, true}} {
+		for _, emoji := range change.emojis {
+			if slices.Contains(change.against, emoji) {
+				continue
+			}
+			reaction.Emoji, reaction.Removed = emoji, change.removed
+			if err := br.router.React(ctx, reaction); err != nil {
+				br.log.Error("telegram: record reaction", "loop", bot.name, "message", target.ID, "err", err)
+			}
+		}
+	}
+}
+
+// emojisOf is the Unicode emoji among a reactor's reactions. A custom emoji
+// is an image with no Unicode form, and a paid reaction names none.
+func emojisOf(reactions []ReactionType) []string {
+	emojis := []string{}
+	for _, reaction := range reactions {
+		if reaction.Type == "emoji" && reaction.Emoji != "" {
+			emojis = append(emojis, reaction.Emoji)
+		}
+	}
+	return emojis
+}
+
+// mirrorReaction sets a loop's reaction on the message its bot knows the
+// target by (ADR-0040). A bot sets one reaction per message, so what it sets
+// is the loop's newest reaction still on the message, and a removal of the
+// last clears it. A person's reaction is already where they made it. A
+// target the loop's bot never sent or saw has no message here to react on,
+// and the reaction stays on the hub, as a send to a channel with no room
+// does.
+func (br *Bridge) mirrorReaction(ctx context.Context, reaction *route.ReactionPayload) {
+	loopID, ok := store.ReactorLoop(reaction.ReactorKey)
+	if !ok {
+		return
+	}
+	bot := br.poller(loopID)
+	if bot == nil {
+		return // not a Telegram loop, or its bot is not running
+	}
+	ref, err := br.store.Messages().Ref(ctx, reaction.MessageID, loopID)
+	if err != nil {
+		return
+	}
+	onMessage, err := br.store.Reactions().ListByMessages(ctx, []int64{reaction.MessageID})
+	if err != nil {
+		br.log.Error("telegram: read reactions to mirror", "loop", bot.name, "err", err)
+		return
+	}
+	emoji := ""
+	for _, current := range onMessage { // oldest first: the last of the loop's is its newest
+		if current.ReactorKey == reaction.ReactorKey {
+			emoji = current.Emoji
+		}
+	}
+	if unsent := bot.enqueue(sendReq{chatID: ref.TGChatID, reactTo: ref.TGMessageID, emoji: emoji}); unsent != "" {
+		br.log.Warn("telegram: reaction not sent", "loop", bot.name, "reason", unsent)
+	}
+}
+
 // tgMsgAlias keeps handleMessage readable without exporting internals.
 type tgMsgAlias = Message
 
@@ -1096,6 +1197,10 @@ func settleCtx(ctx context.Context) context.Context {
 // targets. A part that does not land fails the whole message, since the
 // loop's words did not all arrive, even when its start did.
 func (br *Bridge) deliver(ctx context.Context, bot *poller, req sendReq) {
+	if req.reactTo != 0 {
+		br.deliverReaction(ctx, bot, req)
+		return
+	}
 	parts := sendParts(bot.client, req)
 	for i, send := range parts {
 		if i > 0 && !sleepCtx(ctx, sendSpacing) {
@@ -1118,6 +1223,20 @@ func (br *Bridge) deliver(ctx context.Context, bot *poller, req sendReq) {
 		}
 	}
 	br.ledger.Result(settleCtx(ctx), req.recordFor, nil)
+}
+
+// deliverReaction sets a loop's reaction, retried as a post is. A reaction
+// that never lands is logged and nothing more: it is no message, so there
+// is no row to fail and no send for the loop to repeat. Telegram refuses an
+// emoji outside its reaction set, which is the likely cause.
+func (br *Bridge) deliverReaction(ctx context.Context, bot *poller, req sendReq) {
+	_, attempts, err := br.sendWithRetries(ctx, bot, func(ctx context.Context) (*Message, error) {
+		return nil, bot.client.SetMessageReaction(ctx, req.chatID, req.reactTo, req.emoji)
+	})
+	if err != nil && ctx.Err() == nil {
+		br.log.Warn("telegram reaction failed; giving up", "loop", bot.name, "chat", req.chatID,
+			"emoji", req.emoji, "attempts", attempts, "err", err)
+	}
 }
 
 // sendPart is one Bot API call a message is sent in.
@@ -1284,7 +1403,8 @@ func (br *Bridge) mirror(ctx context.Context) {
 	// Lossless: an item dropped here is a loop's send lost without a
 	// record (#302).
 	items, cancel := br.bus.SubscribeLossless(func(item bus.Item) bool {
-		return item.Kind == bus.KindMessage || item.Kind == bus.KindSendRetry || item.Kind == bus.KindClaudeLogin
+		return item.Kind == bus.KindMessage || item.Kind == bus.KindSendRetry || item.Kind == bus.KindClaudeLogin ||
+			item.Kind == bus.KindReaction
 	})
 	defer cancel()
 	for {
@@ -1300,6 +1420,8 @@ func (br *Bridge) mirror(ctx context.Context) {
 				br.mirrorMessage(ctx, payload)
 			case *surface.LoginNotice:
 				br.noticeLogin(ctx, payload)
+			case *route.ReactionPayload:
+				br.mirrorReaction(ctx, payload)
 			}
 		}
 	}
