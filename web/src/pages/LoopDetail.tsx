@@ -40,6 +40,7 @@ import { MessageKnot } from '../components/MessageKnot'
 import { UndeliveredPane } from '../components/UndeliveredPane'
 import { Timeline } from '../components/Timeline'
 import { Rooms } from '../components/Rooms'
+import { MCPReach } from '../components/MCPReach'
 import { SpoolGlyph } from '../components/Spool'
 import { EditIcon } from '../components/Icons'
 
@@ -626,6 +627,7 @@ function WorkstationPanel({ loop, runningVerb }: { loop: LoopView; runningVerb: 
               {loop.mem_mb} MB · {loop.cpus} cpu
             </span>
           </div>
+          <MCPReach loop={loop} />
           <div className="controls" style={{ marginTop: 12 }}>
             <button className="btn sm" onClick={() => power.mutate('restart')} disabled={busy}>
               Restart
@@ -697,10 +699,13 @@ function WorkstationPanel({ loop, runningVerb }: { loop: LoopView; runningVerb: 
           )}
         </>
       ) : (
-        <div className="panel-note">
-          Uncontained: claude runs directly on the host, with the operator's own files in reach. There is no
-          workstation to power.
-        </div>
+        <>
+          <MCPReach loop={loop} />
+          <div className="panel-note">
+            Uncontained: claude runs directly on the host, with the operator's own files in reach. There is no
+            workstation to power.
+          </div>
+        </>
       )}
     </div>
   )

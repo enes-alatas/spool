@@ -2479,3 +2479,23 @@ textarea {
 .side-panel .room-forget {
   padding: 1px 8px;
 }
+/* What the loop's session reached through MCP, under the runtime row (#519):
+   a server per line, its status in the state colours, and the session the
+   list is from under them, quieter. */
+.side-panel .row .v.mcp-servers {
+  word-break: normal;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.side-panel .mcp-servers .ok {
+  color: var(--ready);
+}
+.side-panel .mcp-servers .bad {
+  color: var(--danger);
+}
+.side-panel .mcp-session,
+.side-panel .row .v.mcp-pending {
+  color: var(--text-muted);
+}
