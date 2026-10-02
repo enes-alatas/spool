@@ -1730,7 +1730,8 @@ textarea {
   font-weight: 300;
   color: var(--text);
 }
-.countdown.due {
+.countdown.due,
+.countdown.awake {
   color: var(--active);
 }
 

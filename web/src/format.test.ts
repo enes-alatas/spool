@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { fillTone, hasFillPct, formatTokens, formatUsd, nextWake, sumCostToday } from './format'
+import { fillTone, hasFillPct, formatTokens, formatUsd, inTurn, nextWake, sumCostToday } from './format'
 
 describe('hasFillPct', () => {
   // #122: a server older than `context_fill_pct` sends nothing, the field
@@ -71,5 +71,21 @@ describe('nextWake', () => {
   it('shows no wake while the model is refused', () => {
     expect(nextWake({ next_tick_at: 1000, model_refusal: 'refused' })).toBe(0)
     expect(nextWake({ next_tick_at: 1000, model_refusal: '' })).toBe(1000)
+  })
+})
+
+describe('inTurn', () => {
+  // #524: a fired tick leaves the fallback interval in next_tick_at until the
+  // turn ends, so a waking or busy loop has no wake to count down to.
+  it('holds while the loop wakes into a turn or runs it', () => {
+    expect(inTurn('waking')).toBe(true)
+    expect(inTurn('busy')).toBe(true)
+  })
+
+  // An idle or draining loop's turn is over, and its end set the next wake.
+  it('does not hold between turns', () => {
+    for (const state of ['idle', 'draining', 'asleep', 'paused', 'workstation_off', 'workstation_down']) {
+      expect(inTurn(state)).toBe(false)
+    }
   })
 })
