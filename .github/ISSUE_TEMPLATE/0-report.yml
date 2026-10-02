@@ -1,0 +1,52 @@
+# The form for anyone outside the team. Every other form is written for the
+# people building Spool, and asks for things an outside reporter cannot know
+# (Coupling points, Where it lives). This one asks only what a user saw.
+#
+# Its labels are `community` and `triage`, and no type label: the product
+# owner sets the type at triage (ADR-0014, amended by #502). The issue guard
+# leaves a `community` issue unflagged while it waits for that.
+#
+# The `0-` prefix puts it first on the chooser, which lists forms by filename.
+name: Report a problem
+description: Something in Spool went wrong for you. Start here if you are not on the team.
+labels: ["community", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Someone answers within one working day: see [CONTRIBUTING.md](https://github.com/enes-alatas/spool/blob/main/CONTRIBUTING.md) for what happens next, and who "someone" may be.
+
+        **Found a security problem?** Don't file it here. Report it privately instead: [SECURITY.md](https://github.com/enes-alatas/spool/blob/main/SECURITY.md).
+
+        **Never paste a real credential.** If a token or key matters, quote at most its first eight characters and then `…`.
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+      description: What you did, and what Spool did. Include the exact error text if there was one.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: What you thought would happen instead.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Spool version
+      description: The output of `spool --version`, or the release tag you installed.
+      placeholder: v0.3.0
+    validations:
+      required: true
+  - type: textarea
+    id: platform
+    attributes:
+      label: Platform
+      description: Your OS, whether loops run in Docker or bare (`--runtime`), and the surface you use (control room, Telegram, Slack).
+      placeholder: |
+        macOS 15, docker runtime, Telegram
+    validations:
+      required: true

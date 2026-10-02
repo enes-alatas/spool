@@ -20,6 +20,9 @@ the fix and advisory can be drafted in place.
 Please do not open a public issue for something exploitable, and do not test
 against anyone else's Spool.
 
+For a problem that is not a vulnerability, use the **Report a problem** issue
+form instead ([CONTRIBUTING.md](CONTRIBUTING.md)).
+
 **Never put a real credential in a report.** If a token or key is part of the
 finding, quote at most eight characters of it and then an ellipsis —
 `ghp_abcd…`. A structural prefix counts toward the eight, unless the prefix is
