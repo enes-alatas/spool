@@ -685,6 +685,9 @@ export const api = {
   deleteRule: (id: string) => req<void>(`/api/rules/${id}`, { method: 'DELETE' }),
   // `group` first, then by name.
   channels: () => req<Channel[]>('/api/channels'),
+  // One channel's messages, newest first; a deleted channel's still read.
+  channelMessages: (name: string, limit = 100) =>
+    req<ChatMessage[]>(`/api/channels/${name}/messages?limit=${limit}`),
   createChannel: (body: { name: string; description: string }) =>
     req<Channel>('/api/channels', { method: 'POST', body: JSON.stringify(body) }),
   patchChannel: (name: string, body: { description: string }) =>
