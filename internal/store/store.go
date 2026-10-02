@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"strings"
 )
 
 // NewHubMCPToken mints the bearer token a loop presents to the hub's own MCP
@@ -1175,6 +1176,9 @@ type Reaction struct {
 
 // LoopReactor is the reactor key of a loop.
 func LoopReactor(loopID string) string { return "loop:" + loopID }
+
+// ReactorLoop is the loop a reactor key names, and false for a person.
+func ReactorLoop(reactorKey string) (string, bool) { return strings.CutPrefix(reactorKey, "loop:") }
 
 // PersonReactor is the reactor key of a person, by their user id on a
 // surface.
