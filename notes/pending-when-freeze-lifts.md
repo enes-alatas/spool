@@ -203,3 +203,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 ## 2026-10-02 07:00 — morning sweep
 - Overnight: #513 (#495) and #516 (#514) merged. No open PRs but #453 draft. Iris took #502 at 06:57 (then #503 → #515 → #489 page). Pinged Terra: #489 engine → #491 → #492 → #504 → #450 → #480 → #472. DM'd Enes: rebuild warranted (two prompt changes), pace improvement still unanswered. To file when slice 3 proves out: #275 slice 4 (Slack rooms) and 5 (polish).
 - 07:05: Terra took #489 engine half, posted the loop-view fields. Filed #520 (engine, Terra) and #521 (page, Iris after #502 → #503 → #515) as #489 sub-issues; told both.
+- 07:10: Race: Terra and I filed #489's sub-issues in the same second; his #518 (engine) and #519 (page) stand, my #520/#521 closed as duplicates. Put #518/#519 on L4 Catalog. Lesson: when a dev says "no sub-issue exists, file one if you want", answer first; don't file in parallel.
