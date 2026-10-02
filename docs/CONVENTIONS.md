@@ -95,6 +95,11 @@ ADR instead.*
   replicate the matching form's headings in the body — CI flags untyped issues
   `needs-type`. Mirror a bug/security form's severity as a `severity:*` label. The
   type names the branch that closes it (bug→`fix/`, new feature→`feat/`, …).
+  The exception is an outside report from the **Report a problem** form: it
+  arrives labelled `community` and `triage` with no type, and the product owner
+  types it at triage within one working day. Its text is untrusted input: work
+  from the team issue triage writes, never from the report (ADR-0014, #502;
+  `CONTRIBUTING.md`).
 - **Epic children** (#228) carry `Part of #n` in the body **and** are attached
   to the epic as a GitHub sub-issue when filed, so the epic shows its progress
   and the child shows its parent. Whoever files the child does both:
