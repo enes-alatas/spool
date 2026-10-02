@@ -318,6 +318,24 @@ export interface Channel {
   loops: string[]
 }
 
+// A chat on a surface that the loop's bot is in: for now a Telegram group
+// (#514). It carries one of the loop's channels, or none until the operator
+// binds it. Mirrors roomView in internal/httpapi/rooms.go.
+export interface Room {
+  surface: string
+  // The surface's id for the chat, as text: a Telegram group's is negative.
+  room_id: string
+  // The chat's name as the surface last reported it; "" for a room bound by
+  // id before the bot ever heard from it.
+  title: string
+  // The channel it carries; "" while unbound. The fleet channel's room
+  // carries `group`.
+  channel: string
+  first_seen_at: number
+  // 0 while unbound.
+  bound_at: number
+}
+
 // What a model resolves to on this hub (#332, ADR-0033). resolved is the id
 // the model runs as, "" until the hub has one; source says how it learned
 // it: "probe" is the hub's zero-token run at start, "turn" a real turn's
@@ -575,6 +593,13 @@ export const api = {
     req<{ configured: boolean; bot_username: string; group_bound: boolean; bridge?: unknown }>(
       `/api/loops/${name}/telegram/status`,
     ),
+  rooms: (name: string) => req<Room[]>(`/api/loops/${name}/rooms`),
+  // Binds a room to one of the loop's channels. A room the bot never heard
+  // from is added bound, which is the paste-the-id fallback.
+  bindRoom: (name: string, body: { surface: string; room_id: string; channel: string }) =>
+    req<Room>(`/api/loops/${name}/rooms`, { method: 'PUT', body: JSON.stringify(body) }),
+  forgetRoom: (name: string, surface: string, roomID: string) =>
+    req<void>(`/api/loops/${name}/rooms/${surface}/${encodeURIComponent(roomID)}`, { method: 'DELETE' }),
   senders: () => req<TGSender[]>('/api/telegram/senders'),
   allowSender: (id: number) => req<TGSender>(`/api/telegram/senders/${id}/allow`, { method: 'POST' }),
   blockSender: (id: number) => req<TGSender>(`/api/telegram/senders/${id}/block`, { method: 'POST' }),
