@@ -199,3 +199,6 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 19:50: #510 (#499) merged; pinged Iris: #495 → #502 → #503 → #489 page. #512 (#493) approved 18:54, unmerged → DM nudge. Terra after #512: #489 engine → #491 → #492 → #450 → #480 → #472.
 - 20:30: #512 (#493) merged. Terra asked next; filed #514 (#275 slice 3, Telegram rooms, Surfaces) and pinged: #514 → #489 engine → #491 → #492 → #504 → #450 → #480 → #472. Slice 4 (Slack rooms) and 5 (polish) still to file; Iris gets the rooms pick-list sub-issue once Terra posts the API. Runtime update: #512 is a prompt change, DM'd with the merge nudge.
 - 20:35: Terra posted #514's rooms API and flagged the prompt change (people become recipients once a room is bound); decided: stays in #514, own commit, rendered prompt on the PR. Filed the web half as a #275 sub-issue for Iris after #495/#502/#503.
+
+## 2026-10-02 07:00 — morning sweep
+- Overnight: #513 (#495) and #516 (#514) merged. No open PRs but #453 draft. Iris took #502 at 06:57 (then #503 → #515 → #489 page). Pinged Terra: #489 engine → #491 → #492 → #504 → #450 → #480 → #472. DM'd Enes: rebuild warranted (two prompt changes), pace improvement still unanswered. To file when slice 3 proves out: #275 slice 4 (Slack rooms) and 5 (polish).
