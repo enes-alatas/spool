@@ -56,6 +56,26 @@ func (redacted redactedStore) Attachments() store.AttachmentStore {
 	return attachments{redacted.Store.Attachments(), redacted.redactor}
 }
 
+func (redacted redactedStore) Polls() store.PollStore {
+	return polls{redacted.Store.Polls(), redacted.redactor}
+}
+
+// polls redacts a ballot's options, which the loop that polled wrote. Its
+// question is the poll message's text, redacted where the message is.
+type polls struct {
+	store.PollStore
+	redactor *Redactor
+}
+
+func (pollStore polls) Create(ctx context.Context, poll *store.Poll) error {
+	if poll != nil {
+		for i, option := range poll.Options {
+			poll.Options[i] = pollStore.redactor.Text(option)
+		}
+	}
+	return pollStore.PollStore.Create(ctx, poll)
+}
+
 // attachments redacts the one free-text field an attachment row carries:
 // its name, which the sender chose. The file is not text the redactor can
 // read, and is never logged.

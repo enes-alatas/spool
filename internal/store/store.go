@@ -1006,6 +1006,7 @@ type Store interface {
 	Channels() ChannelStore
 	Rooms() RoomStore
 	Reactions() ReactionStore
+	Polls() PollStore
 	LoopSecrets() LoopSecretStore
 	FleetRules() FleetRuleStore
 	Sessions() SessionStore
@@ -1220,6 +1221,75 @@ type ReactionStore interface {
 	Seen(ctx context.Context, emoji string) (bool, error)
 }
 
+// Poll is the ballot a poll message carries (ADR-0041). The message's text
+// is the question; the ballot is kept beside it, keyed by it, and never
+// changes after it is sent, except that it closes.
+type Poll struct {
+	MessageID int64 `json:"message_id"`
+	// Options are two to ten, in order. A vote names them by index.
+	Options  []string `json:"options"`
+	Multiple bool     `json:"multiple"`
+	// ClosesAt is when the hub closes the poll, 0 for one its author
+	// closes. ClosedAt is when it closed, 0 while it is open.
+	ClosesAt int64 `json:"closes_at"`
+	ClosedAt int64 `json:"closed_at"`
+	// CloseToldAt is when the author was told the result, 0 until then.
+	// Engine bookkeeping, like Reaction.ToldAt.
+	CloseToldAt int64 `json:"-"`
+}
+
+// Vote is one voter's whole choice in one poll (ADR-0041). A new vote
+// replaces the voter's previous one, and an empty choice retracts it.
+type Vote struct {
+	ID     int64 `json:"id"`
+	PollID int64 `json:"poll_id"`
+	// VoterKey says who voted, keyed as a reactor is: LoopReactor's for a
+	// loop, PersonReactor's for a person.
+	VoterKey string `json:"voter_key"`
+	// Voter is the voter's name as it was shown when they voted.
+	Voter string `json:"voter"`
+	// Choice is the indexes of the options picked, ascending; empty once
+	// retracted.
+	Choice []int `json:"choice"`
+	TS     int64 `json:"ts"`
+	// ToldAt is when the poll's author was told of this choice, 0 until
+	// then. Engine bookkeeping, like Reaction.ToldAt.
+	ToldAt int64 `json:"-"`
+}
+
+// PollStore holds the hub's polls and their votes.
+type PollStore interface {
+	// Create records the ballot of a poll message. ErrNotFound when the
+	// message is not the hub's, ErrDuplicate when it already carries one.
+	Create(ctx context.Context, poll *Poll) error
+	// Get returns a message's ballot. ErrNotFound when it carries none.
+	Get(ctx context.Context, messageID int64) (*Poll, error)
+	// ListByMessages returns the ballots the given messages carry.
+	ListByMessages(ctx context.Context, messageIDs []int64) ([]*Poll, error)
+	// Vote records a voter's whole choice, replacing their previous one,
+	// and reports whether it changed. ErrNotFound when there is no such
+	// poll, ErrPollClosed once it has closed.
+	Vote(ctx context.Context, vote *Vote) (bool, error)
+	// Votes returns the votes in the given polls, oldest first, retracted
+	// ones included.
+	Votes(ctx context.Context, pollIDs []int64) ([]*Vote, error)
+	// Close closes an open poll, and reports whether it was open.
+	Close(ctx context.Context, messageID, closedAt int64) (bool, error)
+	// Due returns the open polls whose close time is at or before now.
+	Due(ctx context.Context, now int64) ([]*Poll, error)
+	// UntoldVotes returns the votes in a loop's own polls, by anyone but
+	// the loop itself, whose current choice it has not been told of,
+	// oldest first.
+	UntoldVotes(ctx context.Context, loopID string) ([]*Vote, error)
+	// MarkVotesTold records that the loop was told of these votes.
+	MarkVotesTold(ctx context.Context, ids []int64, toldAt int64) error
+	// UntoldCloses returns a loop's own closed polls whose result it has
+	// not been told, oldest close first.
+	UntoldCloses(ctx context.Context, loopID string) ([]*Poll, error)
+	// MarkClosesTold records that the loop was told these polls' results.
+	MarkClosesTold(ctx context.Context, messageIDs []int64, toldAt int64) error
+}
+
 // ErrNotFound / ErrDuplicate are sentinel errors shared by implementations.
 type sentinelError string
 
@@ -1231,4 +1301,6 @@ const (
 	// ErrRoomInUse is a room that carries another channel already: a chat
 	// with two channels in it would leave a person's message in neither.
 	ErrRoomInUse = sentinelError("store: room carries another channel")
+	// ErrPollClosed refuses a vote in a poll that has closed (ADR-0041).
+	ErrPollClosed = sentinelError("store: poll closed")
 )

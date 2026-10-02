@@ -98,6 +98,7 @@ func (database *DB) Loops() store.LoopStore               { return loops{databas
 func (database *DB) Channels() store.ChannelStore         { return channels{database.db} }
 func (database *DB) Rooms() store.RoomStore               { return rooms{database.db} }
 func (database *DB) Reactions() store.ReactionStore       { return reactions{database.db} }
+func (database *DB) Polls() store.PollStore               { return polls{database.db} }
 func (database *DB) LoopSecrets() store.LoopSecretStore   { return loopSecrets{database.db} }
 func (database *DB) FleetRules() store.FleetRuleStore     { return fleetRules{database.db} }
 func (database *DB) Sessions() store.SessionStore         { return sessions{database.db} }
