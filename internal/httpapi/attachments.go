@@ -33,14 +33,16 @@ const (
 // uploadPath is the one route whose body is not JSON (ADR-0030, amended).
 const uploadPath = "/api/attachments"
 
-// messageView is a message as the control room reads it: the stored row
-// and the files it carries.
+// messageView is a message as the control room reads it: the stored row,
+// the files it carries, and its reactions, oldest first (ADR-0040).
 type messageView struct {
 	*store.Message
 	Attachments []*store.Attachment `json:"attachments,omitempty"`
+	Reactions   []*store.Reaction   `json:"reactions,omitempty"`
 }
 
-// messageViews gives each message its attachments, in one query.
+// messageViews gives each message its attachments and its reactions, in one
+// query each.
 func (server *Server) messageViews(ctx context.Context, msgs []*store.Message) ([]messageView, error) {
 	ids := make([]int64, len(msgs))
 	for i, msg := range msgs {
@@ -50,9 +52,17 @@ func (server *Server) messageViews(ctx context.Context, msgs []*store.Message) (
 	if err != nil {
 		return nil, err
 	}
+	reactions, err := server.Store.Reactions().ListByMessages(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	reactionsByMessage := map[int64][]*store.Reaction{}
+	for _, reaction := range reactions {
+		reactionsByMessage[reaction.MessageID] = append(reactionsByMessage[reaction.MessageID], reaction)
+	}
 	views := make([]messageView, len(msgs))
 	for i, msg := range msgs {
-		views[i] = messageView{Message: msg, Attachments: byMessage[msg.ID]}
+		views[i] = messageView{Message: msg, Attachments: byMessage[msg.ID], Reactions: reactionsByMessage[msg.ID]}
 	}
 	return views, nil
 }
