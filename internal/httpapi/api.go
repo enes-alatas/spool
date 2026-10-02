@@ -328,6 +328,19 @@ type loopView struct {
 	// InFleetChannel reports that the loop has a group: it receives what
 	// addresses it there and may post to it (ADR-0032).
 	InFleetChannel bool `json:"in_fleet_channel"`
+	// MCPSessionID, MCPServers and ToolCount are what the loop's latest
+	// session init in this hub run said it can reach through MCP (#489),
+	// all three absent before one. ToolCount counts MCP tools only.
+	MCPSessionID string           `json:"mcp_session_id,omitempty"`
+	MCPServers   *[]mcpServerView `json:"mcp_servers,omitempty"` // [] for an init with none
+	ToolCount    *int             `json:"tool_count,omitempty"`
+}
+
+// mcpServerView is one MCP server as the session's init reported it.
+type mcpServerView struct {
+	Name      string `json:"name"`
+	Status    string `json:"status"`
+	ToolCount int    `json:"tool_count"`
 }
 
 // localDayStart reports the first instant of now's calendar day, in unix
@@ -367,6 +380,14 @@ func (server *Server) view(ctx context.Context, loopRecord *store.Loop) *loopVie
 		out.WorkstationUp = health.Up
 		out.WorkstationDetail = health.Detail
 		out.DownReason = actor.DownReason()
+		if reach, ok := actor.MCPReach(); ok {
+			out.MCPSessionID, out.ToolCount = reach.SessionID, &reach.ToolCount
+			servers := []mcpServerView{}
+			for _, server := range reach.Servers {
+				servers = append(servers, mcpServerView{server.Name, server.Status, server.ToolCount})
+			}
+			out.MCPServers = &servers
+		}
 	}
 	if latest, err := server.Store.Turns().Latest(ctx, loopRecord.ID); err == nil {
 		// what the configured model resolved to, whichever session ran it:

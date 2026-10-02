@@ -228,13 +228,19 @@ func main() {
 				"type": "system", "subtype": "init",
 				"session_id": id, "cwd": cwd, "model": initModel(model),
 			}
+			tools := []string{"Bash", "Read"}
 			if mcpConfig != "" || os.Getenv("FAKECLAUDE_MCP_CONFIG") != "" {
 				status := "connected"
 				if _, err := os.Stat(filepath.Join(stateDir, "mcp-failed")); err == nil {
 					status = "failed"
 				}
 				init["mcp_servers"] = []map[string]any{{"name": "spool", "status": status, "source": "dynamic"}}
+				if status == "connected" {
+					// a server that did not connect gave no tools
+					tools = append(tools, "mcp__spool__send_message")
+				}
 			}
+			init["tools"] = tools
 			emit(init)
 		}
 
