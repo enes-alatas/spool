@@ -23,6 +23,7 @@ import { slackCreateAppURL, slackManifest } from '../slackManifest'
 import {
   hubHasSlack,
   loopSurface,
+  SLACK_REACTIONS_HINT,
   SLACK_UNBOUND_HINT,
   slackAttachError,
   slackChannel,
@@ -1228,6 +1229,7 @@ function SlackSurface({
         </span>
       </div>
       {status && !status.channel_id && <div className="hint surface-hint">{SLACK_UNBOUND_HINT}</div>}
+      <div className="hint surface-hint">{SLACK_REACTIONS_HINT}</div>
       {status?.bridge.last_error && (
         <div className="form-error" role="alert">
           Slack: {status.bridge.last_error}

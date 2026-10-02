@@ -134,3 +134,9 @@ export function slackChannel(status: Pick<SlackStatus, 'channel_id' | 'channel_n
 // is already there (#438).
 export const SLACK_UNBOUND_HINT =
   'The channel binds on the first message an allowed sender writes in a channel the bot is in. A pending sender does not count: allow them on Access.'
+
+// An app created from a manifest older than ADR-0040 lacks the reaction
+// scopes and events. Slack keeps the app as created, so nothing here can add
+// them: the operator updates the manifest and reinstalls once (#535).
+export const SLACK_REACTIONS_HINT =
+  'Reactions need the reactions:read and reactions:write scopes and the reaction_added and reaction_removed events. An app created before them gets them under OAuth & Permissions and Event Subscriptions in its Slack settings, then a reinstall; until then reactions stay on the hub.'
