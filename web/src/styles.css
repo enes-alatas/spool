@@ -2413,3 +2413,69 @@ textarea {
 .char-count.over {
   color: var(--danger);
 }
+/* The loop's rooms, a panel of their own under Surfaces (#515): one block
+   per room, its name and the channel it carries on a line, the chat id under
+   it, and the controls under that. An unbound room says so in the active colour: its
+   messages are not read until it is bound, which is the one thing here that
+   asks for the operator. */
+.side-panel .rooms {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.side-panel .rooms-empty,
+.side-panel .rooms-note {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.side-panel .room {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--hairline);
+  font-size: 0.8125rem;
+}
+.side-panel .room:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+.side-panel .room-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.side-panel .room-title {
+  overflow-wrap: anywhere;
+}
+.side-panel .room-channel,
+.side-panel .room-unbound {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+.side-panel .room-unbound {
+  color: var(--active);
+}
+.side-panel .room-id {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+}
+.side-panel .room-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.side-panel .room-actions .panel-select {
+  flex: 1;
+  min-width: 0;
+}
+.side-panel .room .hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.side-panel .room-forget {
+  padding: 1px 8px;
+}

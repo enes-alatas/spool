@@ -39,6 +39,7 @@ import { AttachButton, AttachedFile, attachmentErrorText, pickRefusal } from '..
 import { MessageKnot } from '../components/MessageKnot'
 import { UndeliveredPane } from '../components/UndeliveredPane'
 import { Timeline } from '../components/Timeline'
+import { Rooms } from '../components/Rooms'
 import { SpoolGlyph } from '../components/Spool'
 import { EditIcon } from '../components/Icons'
 
@@ -972,10 +973,6 @@ function SurfacesPanel({ loop }: { loop: LoopView }) {
             <span className="k">telegram</span>
             <span className="v">@{loop.tg_bot_username || '?'}</span>
           </div>
-          <div className="row">
-            <span className="k">group</span>
-            <span className="v">{loop.tg_group_chat_id ? 'bound' : 'waiting for a group message…'}</span>
-          </div>
           <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
             <BotTokenForm loop={loop} />
             <button className="btn sm" style={{ marginTop: 10 }} onClick={detach} disabled={patch.isPending}>
@@ -1493,6 +1490,8 @@ export default function LoopDetail() {
         qc.invalidateQueries({ queryKey: ['loop', name] })
       } else if (item.kind === 'loop_status' || item.kind === 'schedule') {
         qc.invalidateQueries({ queryKey: ['loop', name] })
+        // a group heard from, bound or forgotten (#514)
+        if (item.payload?.rooms_changed) qc.invalidateQueries({ queryKey: ['rooms', name] })
       }
     },
     () => {
@@ -2036,6 +2035,13 @@ export default function LoopDetail() {
           </div>
 
           <SurfacesPanel loop={loop} />
+
+          {loopSurface(loop) === 'telegram' && (
+            <div className="side-panel">
+              <h3>Rooms</h3>
+              <Rooms loop={loop} />
+            </div>
+          )}
 
           <SecretsPanel loop={loop} />
 
