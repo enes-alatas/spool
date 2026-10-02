@@ -187,6 +187,37 @@ func TestAttachmentNameIsRedacted(t *testing.T) {
 	}
 }
 
+type recordingPolls struct {
+	store.PollStore
+	got *store.Poll
+}
+
+func (recorder *recordingPolls) Create(_ context.Context, poll *store.Poll) error {
+	recorder.got = poll
+	return nil
+}
+
+type pollStore struct {
+	store.Store
+	polls store.PollStore
+}
+
+func (fake pollStore) Polls() store.PollStore { return fake.polls }
+
+// A poll's options are the polling loop's words, so they are free text.
+func TestPollOptionsAreRedacted(t *testing.T) {
+	redactor, _ := loaded(t, Secret{Name: "GH_TOKEN", Value: secretValue})
+	recorder := &recordingPolls{}
+	redacting := Store(pollStore{polls: recorder}, redactor)
+	poll := &store.Poll{Options: []string{"keep", "use " + secretValue}}
+	if err := redacting.Polls().Create(context.Background(), poll); err != nil {
+		t.Fatal(err)
+	}
+	if got := recorder.got.Options; got[0] != "keep" || got[1] != "use <redacted:GH_TOKEN>" {
+		t.Errorf("stored options %q", got)
+	}
+}
+
 func TestMessageTextIsRedactedAndTheNewIDStillComesBack(t *testing.T) {
 	redacting, recorders := decorated(t)
 
@@ -331,6 +362,15 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			// accepted as an emoji and nothing else (route.SendReaction),
 			// so it cannot carry text.
 			"Add": false, "Remove": false, "ListByMessages": false, "Untold": false, "MarkTold": false, "Seen": false,
+		},
+		"PollStore": {
+			// A ballot's options are the polling loop's words.
+			"Create": true,
+			// A vote is option indexes, a voter's display name as the
+			// surface reports it, and ids; a close is a timestamp.
+			"Vote": false, "Close": false, "MarkVotesTold": false, "MarkClosesTold": false,
+			"Get": false, "ListByMessages": false, "Votes": false, "Due": false,
+			"UntoldVotes": false, "UntoldCloses": false,
 		},
 		"RoomStore": {
 			// Ids, channel names and timestamps, and a chat's title as the
