@@ -33,6 +33,12 @@ const (
 	// The refusal is published once per outage of each loop, not once per
 	// refused retry.
 	KindClaudeLogin = "claude_login"
+	// KindReaction says a reaction on a message was added or removed
+	// (ADR-0040). Its payload is a route.ReactionPayload. A reaction is not
+	// a message, so it is never published as KindMessage: the control room
+	// would draw it as one said. Every surface adapter that mirrors outward
+	// sets a loop's reaction from it (ADR-0029).
+	KindReaction = "reaction"
 )
 
 type Item struct {
