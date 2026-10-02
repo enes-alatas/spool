@@ -325,6 +325,11 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			"Create": false, "SetDescription": false, "Delete": false,
 			"AddLoop": false, "RemoveLoop": false, "Get": false, "List": false,
 		},
+		"ReactionStore": {
+			// Ids, timestamps, an emoji and a reactor's display name as
+			// the surface reports it: nothing a loop writes as text.
+			"Add": false, "Remove": false, "ListByMessages": false, "Untold": false, "MarkTold": false,
+		},
 		"RoomStore": {
 			// Ids, channel names and timestamps, and a chat's title as the
 			// surface reports it: a name people chose for a room, written
