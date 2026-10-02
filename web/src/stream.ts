@@ -69,6 +69,7 @@ export function useGlobalStream() {
       case 'message':
         qc.invalidateQueries({ queryKey: ['activity'] })
         qc.invalidateQueries({ queryKey: ['group'] })
+        qc.invalidateQueries({ queryKey: ['channel'] })
         qc.invalidateQueries({ queryKey: ['loops'] })
         break
       // The payload is the sender that changed. Its `surface` says which
@@ -86,6 +87,7 @@ export function useGlobalStream() {
       case 'reaction':
         qc.invalidateQueries({ queryKey: ['activity'] })
         qc.invalidateQueries({ queryKey: ['group'] })
+        qc.invalidateQueries({ queryKey: ['channel'] })
         qc.invalidateQueries({ queryKey: ['conversation'] })
         break
     }

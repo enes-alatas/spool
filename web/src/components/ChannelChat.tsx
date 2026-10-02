@@ -1,19 +1,28 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type UIEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ChatMessage, LoopView } from '../api'
-import { channelRecipients, completeMention, mentionAt, mentionCompletions } from '../channel'
+import {
+  channelRecipients,
+  completeMention,
+  inChannelOf,
+  inFleetChannel,
+  mentionAt,
+  mentionCompletions,
+  type InChannel,
+} from '../channel'
+import { FLEET_CHANNEL } from '../channels'
 import { AttachButton, AttachedFile, attachmentErrorText, pickRefusal } from './Attachments'
 import { MessageKnot } from './MessageKnot'
 import { surfaceNote } from '../messages'
 
-// The fleet channel: the conversation the operator and the loops share,
-// which lives on the hub and is native to the control room (ADR-0032, #286).
-//
-// The one conversation that belongs to no loop, so it is not a pane of a
-// loop's page; it is the fleet's, so it is a tab of the Fleet page rather
-// than a destination of its own. Not a part of Activity: that is a read-only
-// log of every conversation, owner DMs included (ADR-0025), and a
-// compose box there would sit beside them.
+// A channel's conversation: its thread and a composer, which live on the hub
+// and are native to the control room (ADR-0032, #286). Any channel a loop
+// is in is a pane of that loop's page (#549), read and posted by the
+// channel's name. Given no channel, it is the fleet channel, the one
+// conversation that belongs to no loop; that is the fleet's, so it is a tab
+// of the Fleet page rather than a destination of its own. Not a part of
+// Activity: that is a read-only log of every conversation, owner DMs
+// included (ADR-0025), and a compose box there would sit beside them.
 //
 // Nothing posted here leaves the hub (ADR-0032). An attached surface
 // brings its room's posts in, so people on Telegram or Slack appear in this
@@ -79,10 +88,14 @@ function Replying({ msg, onCancel }: { msg: ChatMessage; onCancel: () => void })
 }
 
 function Compose({
+  channel,
+  inChannel,
   loops,
   replyTo,
   onReplyDone,
 }: {
+  channel: string
+  inChannel: InChannel
   loops: LoopView[]
   // The message the next post answers, picked from the thread; null for a
   // plain post.
@@ -111,8 +124,8 @@ function Compose({
   }, [draft])
 
   const typing = dismissed ? null : mentionAt(draft, caret)
-  const options = typing ? mentionCompletions(typing.query, loops) : []
-  const recipients = channelRecipients(draft, loops, replyTo ?? undefined)
+  const options = typing ? mentionCompletions(typing.query, loops, inChannel) : []
+  const recipients = channelRecipients(draft, loops, replyTo ?? undefined, inChannel)
 
   // Picking a message to answer puts the caret in the box: the reply is
   // what the operator is about to write.
@@ -148,11 +161,15 @@ function Compose({
       // Uploaded at send, as on a loop's composer: an upload no message
       // names is dropped within the hour.
       const attached = file ? await api.uploadAttachment(file) : undefined
-      await api.postGroup(draft.trim(), replyTo?.id, attached?.id)
+      if (channel === FLEET_CHANNEL) {
+        await api.postGroup(draft.trim(), replyTo?.id, attached?.id)
+      } else {
+        await api.postChannel(channel, draft.trim(), replyTo?.id, attached?.id)
+      }
       track('', 0)
       setFile(null)
       onReplyDone()
-      qc.invalidateQueries({ queryKey: ['group'] })
+      qc.invalidateQueries({ queryKey: channelKey(channel) })
     } catch (e) {
       // The draft stays: a post the server refused is still the operator's
       // words, and clearing it would make them type it again.
@@ -195,7 +212,7 @@ function Compose({
   return (
     <div className="channel-compose">
       {options.length > 0 && (
-        <div className="mention-menu" role="listbox" aria-label="Loops in the fleet channel">
+        <div className="mention-menu" role="listbox" aria-label={`Loops in ${channelPhrase(channel)}`}>
           {options.map((name, i) => (
             <button
               key={name}
@@ -232,7 +249,7 @@ function Compose({
           placeholder={
             replyTo
               ? `Reply to @${replyTo.author}`
-              : 'Post to the fleet channel: @name the loops it is for, or @all'
+              : `Post to ${channelPhrase(channel)}: @name the loops it is for, or @all`
           }
           value={draft}
           onChange={(e) => track(e.target.value, e.target.selectionStart)}
@@ -263,18 +280,29 @@ function Compose({
   )
 }
 
-export function FleetChannel() {
+// The query a channel's thread is under: the fleet channel keeps its own
+// key, which the stream and the composer on a loop's page refetch by.
+function channelKey(channel: string): string[] {
+  return channel === FLEET_CHANNEL ? ['group'] : ['channel', channel]
+}
+
+function channelPhrase(channel: string): string {
+  return channel === FLEET_CHANNEL ? 'the fleet channel' : `#${channel}`
+}
+
+export function ChannelChat({ channel = FLEET_CHANNEL, members }: { channel?: string; members?: string[] }) {
   const {
     data: msgs,
     isLoading,
     isError,
     error,
   } = useQuery({
-    queryKey: ['group'],
-    queryFn: () => api.group(),
+    queryKey: channelKey(channel),
+    queryFn: () => (channel === FLEET_CHANNEL ? api.group() : api.channelMessages(channel)),
     refetchInterval: 5000,
   })
   const { data: loops } = useQuery({ queryKey: ['loops'], queryFn: api.loops })
+  const inChannel = channel === FLEET_CHANNEL || !members ? inFleetChannel : inChannelOf(members)
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null)
   const scroller = useRef<HTMLDivElement>(null)
   // Follow the tail unless the reader has scrolled up to read; the same rule
@@ -299,13 +327,13 @@ export function FleetChannel() {
       {isLoading && <div className="fleet-note">Loading…</div>}
       {isError && (
         <div className="form-error" role="alert">
-          Could not load the fleet channel: {error instanceof Error ? error.message : String(error)}
+          Could not load {channelPhrase(channel)}: {error instanceof Error ? error.message : String(error)}
         </div>
       )}
 
       <div className="pane-scroll" ref={scroller} onScroll={onScroll}>
         {msgs && msgs.length === 0 ? (
-          <div className="empty">Nothing in the fleet channel yet. Name a loop below to start it.</div>
+          <div className="empty">Nothing in {channelPhrase(channel)} yet. Name a loop below to start it.</div>
         ) : (
           <div className="timeline">
             {thread.map((m) => (
@@ -337,7 +365,13 @@ export function FleetChannel() {
         )}
       </div>
 
-      <Compose loops={loops ?? []} replyTo={replyTo} onReplyDone={() => setReplyTo(null)} />
+      <Compose
+        channel={channel}
+        inChannel={inChannel}
+        loops={loops ?? []}
+        replyTo={replyTo}
+        onReplyDone={() => setReplyTo(null)}
+      />
     </div>
   )
 }

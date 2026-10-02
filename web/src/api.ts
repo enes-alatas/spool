@@ -688,6 +688,17 @@ export const api = {
   // One channel's messages, newest first; a deleted channel's still read.
   channelMessages: (name: string, limit = 100) =>
     req<ChatMessage[]>(`/api/channels/${name}/messages?limit=${limit}`),
+  // The operator posting into a channel: as postGroup, which it is for
+  // `group`. The reply must be from the same channel.
+  postChannel: (name: string, text: string, replyTo?: number, attachmentID?: number) =>
+    req<{ queued: boolean }>(`/api/channels/${name}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({
+        text,
+        reply_to_id: replyTo || undefined,
+        attachment_id: attachmentID || undefined,
+      }),
+    }),
   createChannel: (body: { name: string; description: string }) =>
     req<Channel>('/api/channels', { method: 'POST', body: JSON.stringify(body) }),
   patchChannel: (name: string, body: { description: string }) =>

@@ -21,29 +21,41 @@ export function mentionTokens(text: string): string[] {
   return [...seen]
 }
 
+// Whether a loop is in the channel a post is for. The fleet channel's
+// membership is on the loop itself; any other channel's is its loop list
+// (ADR-0038), and the router resolves names among the same loops.
+export type InChannel = (loop: LoopView) => boolean
+
+export const inFleetChannel: InChannel = (loop) => loop.in_fleet_channel
+
+export function inChannelOf(members: string[]): InChannel {
+  return (loop) => members.includes(loop.name)
+}
+
 // The loops a post would reach, by name, in the order the loop list gives.
 //
 // A name matches a loop's name or its bot's username, case-insensitively,
-// and reaches it only while it is in the fleet channel and not archived
-// (`inGroup`). `@all` reaches every loop in the channel that is active — a
+// and reaches it only while it is in the channel and not archived
+// (`memberOf`). `@all` reaches every loop in the channel that is active — a
 // paused loop has to be named (`broadcastTargets`). Names that match nothing
 // reach nobody and are not an error: a human may be named too.
 //
 // A reply also reaches the loop that wrote what it answers, with no mention
-// needed, under the same `inGroup` rule (ADR-0025). A reply to a person's
+// needed, under the same `memberOf` rule (ADR-0025). A reply to a person's
 // post adds nobody — the person is on the surface, where the operator's
 // words never go — and the original's other recipients are not inherited.
 export function channelRecipients(
   text: string,
   loops: LoopView[],
   replyTo?: Pick<ChatMessage, 'from_loop_id'>,
+  inChannel: InChannel = inFleetChannel,
 ): string[] {
   const tokens = new Set(mentionTokens(text))
   const all = tokens.has(BROADCAST)
   const answered = replyTo?.from_loop_id
   return loops
     .filter((l) => {
-      if (!l.in_fleet_channel || l.status === 'archived') return false
+      if (!inChannel(l) || l.status === 'archived') return false
       if (all && l.status === 'active') return true
       if (answered && l.id === answered) return true
       return (
@@ -69,10 +81,14 @@ export function mentionAt(text: string, caret: number): { start: number; query: 
 // name starts with it, then `@all` when it fits. Archived loops are gone and
 // loops outside the channel would reach nobody, so offering either would be
 // offering a mistake.
-export function mentionCompletions(query: string, loops: LoopView[]): string[] {
+export function mentionCompletions(
+  query: string,
+  loops: LoopView[],
+  inChannel: InChannel = inFleetChannel,
+): string[] {
   const q = query.toLowerCase()
   const names = loops
-    .filter((l) => l.in_fleet_channel && l.status !== 'archived' && l.name.toLowerCase().startsWith(q))
+    .filter((l) => inChannel(l) && l.status !== 'archived' && l.name.toLowerCase().startsWith(q))
     .map((l) => l.name)
   return BROADCAST.startsWith(q) ? [...names, BROADCAST] : names
 }
