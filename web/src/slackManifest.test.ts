@@ -24,11 +24,21 @@ describe('slackManifest', () => {
             'users:read',
             'files:read',
             'files:write',
+            'reactions:read',
+            'reactions:write',
           ],
         },
       },
       settings: {
-        event_subscriptions: { bot_events: ['message.im', 'message.channels', 'message.groups'] },
+        event_subscriptions: {
+          bot_events: [
+            'message.im',
+            'message.channels',
+            'message.groups',
+            'reaction_added',
+            'reaction_removed',
+          ],
+        },
         interactivity: { is_enabled: false },
         org_deploy_enabled: false,
         socket_mode_enabled: true,

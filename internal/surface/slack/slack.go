@@ -186,7 +186,8 @@ func (adapter *Adapter) startLink(loopRecord *store.Loop) {
 	}
 	ctx, cancel := context.WithCancel(adapter.ctx)
 	started := &link{loopID: loopRecord.ID, credential: loopRecord.SlackAppToken, cancel: cancel, done: make(chan struct{}),
-		sends: make(chan *route.MessagePayload, sends), notices: make(chan notice, notices)}
+		sends: make(chan *route.MessagePayload, sends), notices: make(chan notice, notices),
+		reactions: make(chan *route.ReactionPayload, reactions)}
 	adapter.links[loopRecord.ID] = started
 	adapter.running.Go(func() { adapter.run(ctx, started) })
 	adapter.running.Go(func() { adapter.nameChannel(ctx, started, loopRecord, loopRecord.SlackChannelID) })

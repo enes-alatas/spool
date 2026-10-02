@@ -48,6 +48,14 @@ type fakeSlack struct {
 	downloads map[string]int
 	pending   map[string]*slackUpload
 	uploads   []slackUpload
+	// reacted are the reactions.add and reactions.remove calls apps made.
+	reacted []slackReaction
+}
+
+// slackReaction is one reactions.add or reactions.remove an app made.
+type slackReaction struct {
+	Token, Channel, TS, Name string
+	Removed                  bool
 }
 
 // fakeSlackFile is a file someone shared, as Slack serves it.
@@ -179,6 +187,12 @@ func (slack *fakeSlack) handle(w http.ResponseWriter, r *http.Request) {
 				ThreadTS: r.FormValue("thread_ts"), TS: fmt.Sprintf("1727700000.%06d", len(slack.posts)+1)}
 			slack.posts = append(slack.posts, post)
 			answer = map[string]any{"ok": true, "channel": post.Channel, "ts": post.TS}
+		}
+	case "/reactions.add", "/reactions.remove":
+		if _, ok := slack.bots[token]; ok {
+			slack.reacted = append(slack.reacted, slackReaction{Token: token, Channel: r.FormValue("channel"),
+				TS: r.FormValue("timestamp"), Name: r.FormValue("name"), Removed: r.URL.Path == "/reactions.remove"})
+			answer = map[string]any{"ok": true}
 		}
 	case "/conversations.open":
 		if _, ok := slack.bots[token]; ok {

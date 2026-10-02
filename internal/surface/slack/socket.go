@@ -85,6 +85,9 @@ type link struct {
 	// notices is the hub's own posts as the app, taking turns with sends
 	// under the same pacing.
 	notices chan notice
+	// reactions is the loop's reactions to set, taking turns with sends
+	// under the same pacing (ADR-0040).
+	reactions chan *route.ReactionPayload
 
 	mu          sync.Mutex
 	connected   bool

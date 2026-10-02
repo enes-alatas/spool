@@ -188,6 +188,24 @@ func (client *Client) PostMessage(ctx context.Context, botToken, channel, text, 
 	return result.TS, nil
 }
 
+// React adds the bot token's app's reaction, by Slack's name for it, to
+// the message Slack knows as ts in channel, or removes it. It needs
+// reactions:write. Adding one the app already has, or removing one it does
+// not, is the state asked for, not a failure.
+func (client *Client) React(ctx context.Context, botToken, channel, ts, name string, remove bool) error {
+	method, already := "reactions.add", "already_reacted"
+	if remove {
+		method, already = "reactions.remove", "no_reaction"
+	}
+	var result apiEnvelope
+	err := client.call(ctx, botToken, method, url.Values{"channel": {channel}, "timestamp": {ts}, "name": {name}}, &result)
+	var apiErr *APIError
+	if errors.As(err, &apiErr) && apiErr.Code == already {
+		return nil
+	}
+	return err
+}
+
 type opened struct {
 	apiEnvelope
 	Channel struct {

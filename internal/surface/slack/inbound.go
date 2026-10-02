@@ -16,10 +16,11 @@ import (
 	"github.com/enes-alatas/spool/internal/surface"
 )
 
-// Inbound: what a loop's app hears over Socket Mode becomes a hub message.
-// The app subscribes to message.im, message.channels and message.groups
-// (the manifest the control room hands out), so every event that matters
-// is a message event, in the owner's DM or in a channel.
+// Inbound: what a loop's app hears over Socket Mode becomes a hub message,
+// or a reaction on one. The app subscribes to message.im, message.channels
+// and message.groups, and to reaction_added and reaction_removed (the
+// manifest the control room hands out), so every event that matters is a
+// message, in the owner's DM or in a channel, or a reaction to one.
 
 // eventCallback is an events_api envelope's payload, reduced to what
 // ingest reads.
@@ -44,6 +45,14 @@ type messageEvent struct {
 	ThreadTS string `json:"thread_ts"`
 	// Files are what a file_share message carries (#123).
 	Files []File `json:"files"`
+	// Reaction is the name of the emoji a reaction event adds or removes,
+	// and Item what it is on.
+	Reaction string `json:"reaction"`
+	Item     struct {
+		Type    string `json:"type"`
+		Channel string `json:"channel"`
+		TS      string `json:"ts"`
+	} `json:"item"`
 }
 
 // events is how many envelopes a link holds for ingest while it keeps
@@ -74,6 +83,10 @@ func (adapter *Adapter) ingest(ctx context.Context, link *link, payload json.Raw
 		return
 	}
 	event := callback.Event
+	if event.Type == "reaction_added" || event.Type == "reaction_removed" {
+		adapter.ingestReaction(ctx, link, event)
+		return
+	}
 	if event.Type != "message" || (event.Subtype != "" && event.Subtype != "file_share") ||
 		event.BotID != "" || event.User == "" {
 		return
@@ -102,6 +115,35 @@ func (adapter *Adapter) ingest(ctx context.Context, link *link, payload json.Raw
 		adapter.ingestDM(ctx, loopRecord, callback.TeamID, event)
 	case "channel", "group":
 		adapter.ingestChannel(ctx, link, loopRecord, callback.TeamID, event)
+	}
+}
+
+// ingestReaction hands the router a person's reaction added to or removed
+// from a hub message (ADR-0040). Every loop's app in the channel hears it,
+// and each reports it: the hub keeps one row per reactor, emoji and
+// message, so no app is elected. A reaction passes the sender gate a
+// message does, but registers nobody: a stranger is given a pairing code
+// when they write. A loop's own reaction, which its app made, is already
+// the hub's.
+func (adapter *Adapter) ingestReaction(ctx context.Context, link *link, event messageEvent) {
+	if event.Item.Type != "message" || event.User == "" || event.Reaction == "" {
+		return
+	}
+	sender, err := adapter.store.SlackSenders().Get(ctx, event.User)
+	if err != nil || sender.Status != store.SenderAllowed {
+		adapter.log.Info("slack reaction discarded", "loop", link.loopID, "reason", "sender is not allowed",
+			"user", event.User, "channel", event.Item.Channel, "ts", event.Item.TS)
+		return
+	}
+	target, err := adapter.store.Messages().BySlackTS(ctx, event.Item.Channel, event.Item.TS)
+	if err != nil {
+		return // a message the hub never held
+	}
+	err = adapter.router.React(ctx, route.InboundReaction{MessageID: target.ID, Reactor: authorName(sender),
+		ReactorKey: store.PersonReactor(store.SurfaceSlack, event.User), Emoji: emojiOf(event.Reaction),
+		Removed: event.Type == "reaction_removed"})
+	if err != nil {
+		adapter.log.Error("slack: record reaction", "loop", link.loopID, "message", target.ID, "err", err)
 	}
 }
 
