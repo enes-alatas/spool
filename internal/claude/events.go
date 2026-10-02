@@ -2,6 +2,7 @@ package claude
 
 import (
 	"encoding/json"
+	"strings"
 )
 
 // Event is one decoded stdout line from a claude subprocess. Raw always holds
@@ -25,6 +26,25 @@ type InitInfo struct {
 	Cwd        string      `json:"cwd"`
 	Model      string      `json:"model"`
 	MCPServers []MCPServer `json:"mcp_servers"`
+	// Tools names every tool the session can call: the CLI's built-ins,
+	// and each MCP server's as mcp__<server>__<tool>.
+	Tools []string `json:"tools"`
+}
+
+// MCPTools counts the session's tools that came from an MCP server, or from
+// the named one when server is not "" (#489).
+func (init *InitInfo) MCPTools(server string) int {
+	prefix := "mcp__"
+	if server != "" {
+		prefix += server + "__"
+	}
+	count := 0
+	for _, tool := range init.Tools {
+		if strings.HasPrefix(tool, prefix) {
+			count++
+		}
+	}
+	return count
 }
 
 // MCPServer is one MCP server as the CLI reports it at init: its name in

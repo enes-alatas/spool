@@ -174,6 +174,7 @@ type Actor struct {
 	stateSnap  atomic.Value // string; last published state, for REST reads
 	healthSnap atomic.Value // workstationSnap; last workstation poll, for REST reads
 	offSnap    atomic.Bool  // the operator's power-off intent, for REST reads
+	mcpSnap    atomic.Value // MCPReach; the latest init's, for REST reads
 
 	// goroutine-owned state below
 	loop         store.Loop
@@ -963,6 +964,7 @@ func (actor *Actor) handleEvent(ev claude.Event) {
 		}
 		actor.storeClaudeEvent(ev)
 		if ev.Init != nil {
+			actor.recordMCPReach(ev.Init)
 			if status := ev.Init.SpoolMCPFailure(); status != "" {
 				actor.holdWithoutHub(status)
 				return
@@ -1958,6 +1960,47 @@ func (actor *Actor) WorkstationHealth() runtime.Health {
 		return snap.Health
 	}
 	return runtime.Health{Up: true}
+}
+
+// MCPReach is what a session's init said it can reach through MCP: every
+// server the CLI connected or tried, and the tools each gave (#489). It is
+// the evidence for what --strict-mcp-config promises, read rather than
+// assumed.
+type MCPReach struct {
+	// SessionID is the session whose init this is.
+	SessionID string
+	Servers   []MCPServerReach
+	// ToolCount counts the session's MCP tools; built-ins are not counted.
+	ToolCount int
+}
+
+// MCPServerReach is one MCP server as the init reported it.
+type MCPServerReach struct {
+	Name string
+	// Status is the CLI's word for it: connected, failed, pending, ...
+	Status    string
+	ToolCount int
+}
+
+// recordMCPReach keeps the init's MCP servers and tools, replacing the
+// previous session's, and tells the control room they changed.
+func (actor *Actor) recordMCPReach(init *claude.InitInfo) {
+	reach := MCPReach{SessionID: actor.loop.CurrentSessionID, Servers: []MCPServerReach{}, ToolCount: init.MCPTools("")}
+	for _, server := range init.MCPServers {
+		reach.Servers = append(reach.Servers, MCPServerReach{Name: server.Name, Status: server.Status,
+			ToolCount: init.MCPTools(server.Name)})
+	}
+	actor.mcpSnap.Store(reach)
+	actor.deps.Bus.Publish(bus.Item{Kind: bus.KindLoopStatus, LoopID: actor.loop.ID, Payload: map[string]any{
+		"loop_id": actor.loop.ID, "name": actor.loop.Name, "mcp_changed": true,
+	}})
+}
+
+// MCPReach returns what the latest init in this hub run said the loop can
+// reach through MCP, and false before any (safe from any goroutine).
+func (actor *Actor) MCPReach() (MCPReach, bool) {
+	reach, ok := actor.mcpSnap.Load().(MCPReach)
+	return reach, ok
 }
 
 // --- helpers ---
