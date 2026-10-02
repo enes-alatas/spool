@@ -153,6 +153,7 @@ secret-scan:
 # enough to run on any change to .github/workflows or scripts.
 workflow-lint:
 	bash scripts/workflow-lint-test.sh
+	bash scripts/community-welcome-test.sh
 	bash scripts/ci-health-test.sh
 	bash scripts/diff-coverage-test.sh
 	bash scripts/comment-refs-test.sh
