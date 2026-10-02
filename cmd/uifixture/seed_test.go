@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/enes-alatas/spool/internal/attach"
@@ -391,6 +392,63 @@ func TestSeedFillsTheChannelsPage(t *testing.T) {
 	}{{"several loops", several}, {"a single loop", single}, {"a loop that is in another channel too", inTwo}} {
 		if check.count == 0 {
 			t.Errorf("no fixture channel shows %s, so no shot can show one", check.what)
+		}
+	}
+}
+
+// The loop page lists a loop's rooms and asks about the unbound ones (#515).
+// A fixture where every room is bound shoots a list that looks the same
+// whether the pick-list works or not, and one with no rooms shoots only the
+// empty state.
+func TestSeedFillsTheLoopsRooms(t *testing.T) {
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "spool.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	files, err := attach.Open(filepath.Join(t.TempDir(), "files"))
+	if err != nil {
+		t.Fatalf("files: %v", err)
+	}
+	ctx := context.Background()
+	if err := seed(ctx, db, files); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	gardener, err := db.Loops().GetByName(ctx, "gardener")
+	if err != nil {
+		t.Fatalf("gardener: %v", err)
+	}
+	rooms, err := db.Rooms().List(ctx, gardener.ID)
+	if err != nil {
+		t.Fatalf("rooms: %v", err)
+	}
+	var bound, unbound, fleet int
+	for _, room := range rooms {
+		switch room.Channel {
+		case "":
+			unbound++
+		case store.FleetChannel:
+			fleet++
+			bound++
+		default:
+			bound++
+		}
+	}
+	for _, check := range []struct {
+		what  string
+		count int
+	}{{"a bound room", bound}, {"an unbound room", unbound}, {"the fleet channel's room", fleet}} {
+		if check.count == 0 {
+			t.Errorf("gardener has no %s, so no shot can show one", check.what)
+		}
+	}
+	// The fleet channel's room and the loop record name the same group:
+	// binding writes both, and a fixture where they differ is a store the
+	// hub could not have made.
+	for _, room := range rooms {
+		if room.Channel == store.FleetChannel && room.RoomID != strconv.FormatInt(gardener.TGGroupChatID, 10) {
+			t.Errorf("the fleet channel's room is %s, but gardener's group is %d", room.RoomID, gardener.TGGroupChatID)
 		}
 	}
 }
