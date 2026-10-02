@@ -178,6 +178,28 @@ type File struct {
 type Update struct {
 	UpdateID int64    `json:"update_id"`
 	Message  *Message `json:"message"`
+	// MessageReaction is a person's reactions on a message changing. In a
+	// group a bot hears it only as an administrator (ADR-0040).
+	MessageReaction *MessageReactionUpdated `json:"message_reaction"`
+}
+
+// MessageReactionUpdated is one reactor's reactions on one message, before
+// and after a change. MessageID is in the receiving bot's own numbering
+// (ADR-0020). User is nil when an anonymous admin or a chat reacted.
+type MessageReactionUpdated struct {
+	Chat        Chat           `json:"chat"`
+	MessageID   int64          `json:"message_id"`
+	User        *User          `json:"user"`
+	Date        int64          `json:"date"`
+	OldReaction []ReactionType `json:"old_reaction"`
+	NewReaction []ReactionType `json:"new_reaction"`
+}
+
+// ReactionType is one reaction. Only Type "emoji" names a Unicode emoji;
+// "custom_emoji" and "paid" carry none.
+type ReactionType struct {
+	Type  string `json:"type"`
+	Emoji string `json:"emoji,omitempty"`
 }
 
 // Download fetches a file's bytes by its file_id: getFile, then a GET on the
@@ -220,7 +242,7 @@ func (client *Client) GetUpdates(ctx context.Context, offset int64, timeoutSec i
 	params := map[string]any{
 		"offset":          offset,
 		"timeout":         timeoutSec,
-		"allowed_updates": []string{"message"},
+		"allowed_updates": []string{"message", "message_reaction"},
 	}
 	var updates []Update
 	if err := client.call(ctx, "getUpdates", params, &updates); err != nil {
@@ -249,6 +271,19 @@ func (client *Client) SendMessage(ctx context.Context, chatID int64, text string
 		return nil, err
 	}
 	return &sent, nil
+}
+
+// SetMessageReaction sets this bot's reaction on a message, by this bot's
+// own id for it, or clears it when emoji is "". A bot sets one reaction per
+// message, so it replaces whatever the bot had there.
+func (client *Client) SetMessageReaction(ctx context.Context, chatID, messageID int64, emoji string) error {
+	reaction := []ReactionType{}
+	if emoji != "" {
+		reaction = append(reaction, ReactionType{Type: "emoji", Emoji: emoji})
+	}
+	var ok bool
+	return client.call(ctx, "setMessageReaction",
+		map[string]any{"chat_id": chatID, "message_id": messageID, "reaction": reaction}, &ok)
 }
 
 // Media is a file to send with a message, as SendMedia uploads it.
