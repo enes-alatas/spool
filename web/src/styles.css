@@ -2031,6 +2031,20 @@ textarea {
 }
 
 /* ---- activity feed ---- */
+/* the channel filter under the title: a narrowing of the page, not a
+   setting, so it sits small and to the left of the feed it narrows */
+.activity-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+}
+.activity-filter .panel-select {
+  width: auto;
+}
 .feed-item {
   /* contains the hidden status label, which is pinned to its row */
   position: relative;
