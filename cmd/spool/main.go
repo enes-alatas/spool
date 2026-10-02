@@ -344,6 +344,10 @@ func main() {
 	bridge.Start(ctx)
 	slackSurface := slack.New(rdb, pubsub, router, log, *slackAPI)
 	slackSurface.Start(ctx)
+	// After the surfaces start, though their mirrors subscribe as they come
+	// up and may miss a close published at once: an adapter also stops a
+	// platform poll that is voted in after its close (ADR-0041).
+	go closePolls(ctx, router, log)
 
 	api := &httpapi.Server{
 		Store:   rdb,
@@ -672,6 +676,26 @@ func expireAttachments(ctx context.Context, router *route.Router, log *slog.Logg
 			log.Warn("attachments expiry", "err", err)
 		} else if expired > 0 {
 			log.Info("attachments expired", "files", expired)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+		}
+	}
+}
+
+// closePolls closes each poll when its close time comes (ADR-0041). The
+// first pass runs at startup, for the polls whose time passed while the hub
+// was down.
+func closePolls(ctx context.Context, router *route.Router, log *slog.Logger) {
+	tick := time.NewTicker(route.PollCloseInterval)
+	defer tick.Stop()
+	for {
+		if closed, err := router.CloseDuePolls(ctx); err != nil {
+			log.Warn("polls close", "err", err)
+		} else if closed > 0 {
+			log.Info("polls closed", "polls", closed)
 		}
 		select {
 		case <-ctx.Done():
