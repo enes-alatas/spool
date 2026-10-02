@@ -1,6 +1,6 @@
 # ADR-0029: The Surface contract
 
-Date: 2026-09-20 · Status: accepted · Amends: ADR-0020, ADR-0025 (item 4), ADR-0026 (item 1) · Amended: 2026-09-22 (item 2: the bus kinds a surface mirrors); 2026-09-23 (items 5 and 7: a surface is attached later and mirrors the fleet channel); 2026-09-27 (item 2: a credential and an identity are structs); 2026-09-28 (item 8: hub notices); 2026-09-29 (item 8: Slack's notices and login notice); 2026-09-29 (item 2: the mirror subscription is lossless); 2026-09-30 (item 2: `Stop`, ADR-0036); 2026-10-01 (item 5: a mirror per room, ADR-0038)
+Date: 2026-09-20 · Status: accepted · Amends: ADR-0020, ADR-0025 (item 4), ADR-0026 (item 1) · Amended: 2026-09-22 (item 2: the bus kinds a surface mirrors); 2026-09-23 (items 5 and 7: a surface is attached later and mirrors the fleet channel); 2026-09-27 (item 2: a credential and an identity are structs); 2026-09-28 (item 8: hub notices); 2026-09-29 (item 8: Slack's notices and login notice); 2026-09-29 (item 2: the mirror subscription is lossless); 2026-09-30 (item 2: `Stop`, ADR-0036); 2026-10-01 (item 5: a mirror per room, ADR-0038); 2026-10-02 (items 2 and 5: reactions, ADR-0040)
 
 ## Context
 
@@ -57,6 +57,12 @@ contract.
    `bus.SubscribeLossless`. A plain subscription drops what a slow reader
    has not taken, and a dropped `KindMessage` is a loop's send that no
    surface ever tries and no record ever fails.
+
+   **Amendment (2026-10-02, #531, ADR-0040):** the kinds that carry
+   something to a surface are now four. `reaction` joins `KindMessage`,
+   `KindSendRetry` and `KindClaudeLogin` (item 8), and an adapter that
+   mirrors outward subscribes to it, losslessly as well. A reaction is not a message: the control room draws
+   a `KindMessage` frame as a message said.
 
    **Amendment (2026-09-27, #230):** the second adapter proved one method's
    signature too narrow, as the Context says it would. A Slack app is two
@@ -135,6 +141,15 @@ contract.
    unbound room, ingests nothing from it, and says which channel a message
    from a bound room was said in. Telegram does this from slice 3; Slack
    mirrors its one channel until slice 4.
+
+   **Amendment (2026-10-02, #531, ADR-0040):** reactions cross the seam the
+   way messages do. Outward, an adapter sets a loop's reaction on the
+   platform message it recorded (item 2). Inward, it resolves the platform
+   message reacted to into the hub's, as it does a native reply's target,
+   and hands every reaction it receives, added or removed, to the router.
+   The reaction passes the adapter's sender gate as a message would. Unlike
+   a message, a shared room's reactions need no election: every identity may
+   report one, and the hub keeps one row per reactor, emoji and message.
 
 6. **These stay Telegram's own**, and an adapter is free to have nothing like
    them: long-polling `getUpdates` for transport, the 4096-character split,
