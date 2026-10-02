@@ -16,6 +16,8 @@ import {
 } from '../api'
 import { formatTokens, fillTone, hasFillPct, formatUsd, inTurn, nextWake } from '../format'
 import { customModelError, tokenSubmittable } from '../forms'
+import { PACE_HINT, type Pace } from '../pace'
+import { PaceRange } from '../components/PaceRange'
 import { needsLogin } from '../session'
 import { slackCreateAppURL, slackManifest } from '../slackManifest'
 import {
@@ -71,32 +73,34 @@ function ScheduleEditor({
   current: { tick: number; min: number; max: number; idle: number }
 }) {
   const qc = useQueryClient()
-  const [tick, setTick] = useState(String(Math.round(current.tick / 60)))
+  const [pace, setPace] = useState<Pace>({ min: current.min, tick: current.tick, max: current.max })
+  const [error, setError] = useState('')
+  const changed = pace.min !== current.min || pace.tick !== current.tick || pace.max !== current.max
   const mut = useMutation({
-    mutationFn: () => api.patchLoop(name, { tick_interval_sec: Math.max(60, Number(tick) * 60) }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['loop', name] }),
+    mutationFn: () =>
+      api.patchLoop(name, { tick_interval_sec: pace.tick, min_wake_sec: pace.min, max_wake_sec: pace.max }),
+    onSuccess: () => {
+      setError('')
+      qc.invalidateQueries({ queryKey: ['loop', name] })
+    },
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
   })
   return (
-    <div className="row" style={{ alignItems: 'center' }}>
-      {/* Named by both words, so a screen reader says "interval min" rather
-          than a bare number with nothing to say what it counts (#353). */}
-      <span className="k" id="tick-label">
-        interval
-      </span>
-      <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-        <input
-          className="tick-input"
-          aria-labelledby="tick-label tick-unit"
-          value={tick}
-          onChange={(e) => setTick(e.target.value)}
-        />
-        <span className="k" id="tick-unit">
-          min
-        </span>
-        <button className="btn sm" onClick={() => mut.mutate()} disabled={mut.isPending}>
-          Set
-        </button>
-      </span>
+    <div className="schedule-editor">
+      <PaceRange pace={pace} onChange={setPace} disabled={mut.isPending} />
+      <div className="hint">{PACE_HINT}</div>
+      {error && (
+        <div className="form-error" role="alert">
+          {error}
+        </div>
+      )}
+      <button
+        className="btn sm schedule-save"
+        onClick={() => mut.mutate()}
+        disabled={!changed || mut.isPending}
+      >
+        Set
+      </button>
     </div>
   )
 }

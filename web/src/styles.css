@@ -2500,3 +2500,163 @@ textarea {
 .side-panel .row .v.mcp-pending {
   color: var(--text-muted);
 }
+/* The loop page's schedule editor (#523): the three numbers, each with what
+   it does under it, and one Set for all three. */
+.side-panel .schedule-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+.side-panel .schedule-editor .hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.side-panel .schedule-save {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+/* The pace control (#523): one track, three native range inputs laid over
+   it. The inputs' own tracks are invisible and ignore the pointer; their
+   thumbs take it, so each handle drags and keys on its own. Min and max wake
+   are hollow rings at the ends of the lit span, the tick a solid dot in the
+   active colour inside it. */
+.pace-range {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 0 2px;
+}
+.pace-track {
+  position: relative;
+  height: 20px;
+}
+.pace-track::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 9px;
+  height: 2px;
+  background: var(--hairline);
+  border-radius: 1px;
+}
+.pace-span {
+  position: absolute;
+  top: 9px;
+  height: 2px;
+  background: var(--text-muted);
+}
+.pace-handle {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 20px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+  background: none;
+  pointer-events: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.pace-handle::-webkit-slider-runnable-track {
+  height: 20px;
+  background: none;
+  border: none;
+}
+.pace-handle::-moz-range-track {
+  background: none;
+  border: none;
+}
+.pace-handle::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  pointer-events: auto;
+  width: 14px;
+  height: 14px;
+  margin-top: 3px;
+  border-radius: 50%;
+  border: 2px solid var(--text);
+  background: var(--surface);
+  cursor: grab;
+}
+.pace-handle::-moz-range-thumb {
+  pointer-events: auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--text);
+  background: var(--surface);
+  cursor: grab;
+}
+.pace-handle.pace-tick::-webkit-slider-thumb {
+  border-color: var(--active);
+  background: var(--active);
+}
+.pace-handle.pace-tick::-moz-range-thumb {
+  border-color: var(--active);
+  background: var(--active);
+}
+.pace-handle:focus-visible {
+  outline: none;
+}
+.pace-handle:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px var(--hairline);
+}
+.pace-handle:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 3px var(--hairline);
+}
+.pace-ends {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+}
+.pace-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.pace-legend > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.pace-legend b,
+.pace-tick-box {
+  margin-left: auto;
+}
+.pace-tick-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text);
+}
+.pace-tick-box .tick-input {
+  width: 56px;
+  padding: 2px 6px;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+}
+.pace-legend b {
+  font-family: var(--mono);
+  font-weight: 400;
+  color: var(--text);
+}
+.pace-key {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  vertical-align: 0;
+}
+.pace-key-range {
+  border: 1.5px solid var(--text);
+}
+.pace-key-tick {
+  background: var(--active);
+}
