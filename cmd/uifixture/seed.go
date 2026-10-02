@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/enes-alatas/spool/internal/attach"
@@ -482,6 +483,40 @@ func seedChannels(ctx context.Context, db store.Store, ids map[string]string) er
 			if err := db.Channels().AddLoop(ctx, channel.name, ids[name], ms(-20*24*time.Hour)); err != nil {
 				return fmt.Errorf("channel %s, loop %s: %w", channel.name, name, err)
 			}
+		}
+	}
+	return nil
+}
+
+// The rooms the loop page lists under gardener's Telegram rows (#515): the
+// fleet channel's group, a group carrying docs, and one the bot has heard
+// from that nobody has bound yet, the row the page asks the operator about.
+// The fleet channel's room is the group the loop record already names, so
+// the two agree.
+func seedRooms(ctx context.Context, db store.Store, loopID string) error {
+	gardener, err := db.Loops().Get(ctx, loopID)
+	if err != nil {
+		return fmt.Errorf("rooms: %w", err)
+	}
+	rooms := []struct {
+		id, title, channel string
+	}{
+		{id: strconv.FormatInt(gardener.TGGroupChatID, 10), title: "Handbook crew", channel: store.FleetChannel},
+		{id: "-1002000000001", title: "Docs reviewers", channel: "docs"},
+		{id: "-1002000000002", title: "Release chat"},
+	}
+	for n, room := range rooms {
+		seen := ms(-time.Duration(19-n) * 24 * time.Hour)
+		if _, _, err := db.Rooms().Sight(ctx, &store.Room{
+			LoopID: loopID, Surface: store.SurfaceTelegram, RoomID: room.id, Title: room.title, FirstSeenAt: seen,
+		}); err != nil {
+			return fmt.Errorf("room %s: %w", room.title, err)
+		}
+		if room.channel == "" {
+			continue
+		}
+		if _, err := db.Rooms().Bind(ctx, loopID, store.SurfaceTelegram, room.id, room.channel, seen); err != nil {
+			return fmt.Errorf("bind %s: %w", room.title, err)
 		}
 	}
 	return nil
