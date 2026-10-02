@@ -91,6 +91,21 @@ export interface LoopView {
   // Whether the loop is in the fleet channel: it receives what addresses it
   // there and may post to it (ADR-0032). Always present since #295.
   in_fleet_channel: boolean
+  // What the loop's latest session init in this hub run said it can reach
+  // through MCP (#489): the session that init was, every server it reported
+  // in its order, and how many MCP tools it has, built-ins and skills left
+  // out. All three are absent until a session starts in this hub run.
+  mcp_session_id?: string
+  mcp_servers?: MCPServer[]
+  tool_count?: number
+}
+
+// One MCP server as the session's init reported it. Status is the CLI's own
+// word: connected, failed, pending, …
+export interface MCPServer {
+  name: string
+  status: string
+  tool_count: number
 }
 
 export interface Turn {
