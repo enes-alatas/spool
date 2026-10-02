@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import type { ChatMessage } from '../api'
 import { AttachmentList } from './Attachments'
+import { ReactionList } from './Reactions'
 import { UndeliveredMark } from './UndeliveredMark'
 
 // When a message was sent, said so it cannot be misread: the time alone for
@@ -51,6 +52,7 @@ export function MessageKnot({
       {before}
       <div className={fromLoop ? 'plain' : 'bubble'}>{msg.text}</div>
       <AttachmentList items={msg.attachments} />
+      <ReactionList items={msg.reactions} />
       <UndeliveredMark msg={msg} />
       {after}
     </div>

@@ -202,11 +202,29 @@ export interface ChatMessage {
   reply_to_id?: number
   // The files that came with it (#460). Absent when there are none.
   attachments?: Attachment[]
+  // Its reactions, oldest first (ADR-0040, #535). Absent when there are none.
+  reactions?: Reaction[]
   // The channel a channel message was posted in: 'group' for the fleet
   // channel. Absent on owner_dm and control_room messages, and on a server
   // from before channels (#483). Mirrored for the api.ts/Go sync rule;
   // nothing in the room reads it yet.
   channel?: string
+}
+
+// One reactor's emoji on one hub message, as store.Reaction has it
+// (ADR-0040). A reaction is no message of its own: it has no conversation and
+// no recipients.
+export interface Reaction {
+  id: number
+  message_id: number
+  // Who reacted, the same whichever bot reported it: `loop:<id>` for a loop,
+  // `<surface>:<user id>` for a person.
+  reactor_key: string
+  // The reactor's name as it was shown when they reacted.
+  reactor: string
+  // The Unicode the surface reported, or :name: for a custom emoji with none.
+  emoji: string
+  ts: number
 }
 
 // A file that came with a message, from a chat surface, a loop's send, or
