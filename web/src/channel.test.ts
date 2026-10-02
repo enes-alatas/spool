@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { channelRecipients, completeMention, mentionAt, mentionCompletions, mentionTokens } from './channel'
+import {
+  channelRecipients,
+  completeMention,
+  inChannelOf,
+  mentionAt,
+  mentionCompletions,
+  mentionTokens,
+} from './channel'
 import type { LoopView } from './api'
 
 const loop = (over: Partial<LoopView>): LoopView =>
@@ -105,5 +112,16 @@ describe('completeMention', () => {
   it('replaces the partial name and puts the caret after it', () => {
     expect(completeMention('hi @as there', 3, 6, 'aster')).toEqual({ text: 'hi @aster  there', caret: 10 })
     expect(completeMention('@', 0, 1, 'all')).toEqual({ text: '@all ', caret: 5 })
+  })
+})
+
+describe('a channel besides the fleet channel', () => {
+  // aster is in both; briar is in the fleet channel but not docs, and cedar
+  // the other way round, so the two rules are told apart.
+  const docs = inChannelOf(['aster', 'cedar'])
+
+  it('reaches and offers its own loops, whatever their fleet channel membership', () => {
+    expect(channelRecipients('@aster @briar @cedar hi', fleet, undefined, docs)).toEqual(['aster', 'cedar'])
+    expect(mentionCompletions('', fleet, docs)).toEqual(['aster', 'cedar', 'all'])
   })
 })

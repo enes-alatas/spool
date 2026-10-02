@@ -42,7 +42,9 @@ import { AttachButton, AttachedFile, attachmentErrorText, pickRefusal } from '..
 import { MessageKnot } from '../components/MessageKnot'
 import { UndeliveredPane } from '../components/UndeliveredPane'
 import { Timeline } from '../components/Timeline'
-import { Rooms } from '../components/Rooms'
+import { ChannelHead, TelegramGroups } from '../components/LoopChannels'
+import { ChannelChat } from '../components/ChannelChat'
+import { channelLabel } from '../channels'
 import { MCPReach } from '../components/MCPReach'
 import { SpoolGlyph } from '../components/Spool'
 import { EditIcon } from '../components/Icons'
@@ -905,29 +907,6 @@ function BotTokenForm({
   )
 }
 
-// The channels the loop is in, each a link to the Channels page, where they
-// are edited. Absent on a hub from before channels, which has no list to read.
-function LoopChannels({ loop }: { loop: LoopView }) {
-  const { data } = useQuery({ queryKey: ['channels'], queryFn: api.channels, retry: false })
-  if (!data) return null
-  const mine = data.filter((channel) => channel.loops.includes(loop.name))
-  return (
-    <div className="row loop-channels">
-      <span className="k">channels</span>
-      <span className="v">
-        {mine.length === 0
-          ? 'none'
-          : mine.map((channel, n) => (
-              <span key={channel.name}>
-                {n > 0 && ' · '}
-                <Link to="/channels">#{channel.name}</Link>
-              </span>
-            ))}
-      </span>
-    </div>
-  )
-}
-
 // Where the loop is reachable besides this control room: at most one surface,
 // Telegram or Slack (#230), and whether it is in the fleet channel.
 // A loop starts with no surface and gets one here (#287); a loop without one
@@ -1027,7 +1006,6 @@ function SurfacesPanel({ loop }: { loop: LoopView }) {
           </span>
         </span>
       </label>
-      <LoopChannels loop={loop} />
       {error && (
         <div className="form-error" role="alert">
           {error}
@@ -1410,7 +1388,7 @@ function ControlRoomThread({ msgs }: { msgs: ChatMessage[] }) {
   )
 }
 
-type Pane = 'timeline' | 'control_room' | 'undelivered'
+type Pane = 'timeline' | 'control_room' | 'undelivered' | 'channel'
 
 // Whether the hub answered that there is no such loop.
 function isMissing(error: unknown): boolean {
@@ -1430,13 +1408,20 @@ export default function LoopDetail() {
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState('')
   const [file, setFile] = useState<File | null>(null)
-  // The Fleet badge opens this page on its Undelivered pane (`?pane=`, #281);
-  // read once, as where the page starts, so switching panes afterwards is not
-  // a navigation the back button has to walk through.
-  const [searchParams] = useSearchParams()
-  const [pane, setPane] = useState<Pane>(() =>
-    searchParams.get('pane') === 'undelivered' ? 'undelivered' : 'timeline',
+  // The Fleet badge opens this page on its Undelivered pane (`?pane=`, #281),
+  // and a channel's pane is in the URL as `?channel=` (#549), so a link or a
+  // reload lands on it. Read once, as where the page starts; switching panes
+  // afterwards replaces the URL rather than adding to it, so it is not a
+  // navigation the back button has to walk through.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [chosenPane, setPane] = useState<Pane>(() =>
+    searchParams.get('channel')
+      ? 'channel'
+      : searchParams.get('pane') === 'undelivered'
+        ? 'undelivered'
+        : 'timeline',
   )
+  const [paneChannel, setPaneChannel] = useState(() => searchParams.get('channel') ?? '')
   const paneRef = useRef<HTMLDivElement>(null)
   // Whether the pane should follow new entries. A reader who has scrolled up
   // is reading; yanking them back to the tail because a turn arrived loses
@@ -1450,11 +1435,26 @@ export default function LoopDetail() {
   // in one means nothing in another: the ids come from different tables and
   // would collide by coincidence. Switching panes starts at the tail, which is
   // where a reader opening a conversation wants to be anyway.
-  const showPane = (next: Pane) => {
+  const showPane = (next: Pane, channel = '') => {
     following.current = true
     anchor.current = null
     setPane(next)
+    setPaneChannel(channel)
+    setSearchParams(channel ? { channel } : {}, { replace: true })
   }
+  // The channels the loop is in, each a pane of its own (#549). Absent on a
+  // hub from before channels, which has no list to read.
+  const { data: channelList, isPending: channelsPending } = useQuery({
+    queryKey: ['channels'],
+    queryFn: api.channels,
+    retry: false,
+  })
+  const loopChannels = (channelList ?? []).filter((channel) => channel.loops.includes(name))
+  const openChannel = chosenPane === 'channel' ? loopChannels.find((c) => c.name === paneChannel) : undefined
+  // A `?channel=` naming no channel of the loop's, once the list is in to
+  // say so (a typo, a channel it has left, a hub from before channels),
+  // shows the timeline rather than a pane with nothing to show.
+  const pane = chosenPane === 'channel' && !channelsPending && !openChannel ? 'timeline' : chosenPane
 
   const { data: loop, error: loopError } = useQuery({
     queryKey: ['loop', name],
@@ -1834,6 +1834,15 @@ export default function LoopDetail() {
             >
               control room
             </button>
+            {loopChannels.map((channel) => (
+              <button
+                key={channel.name}
+                className={`dest${openChannel?.name === channel.name ? ' on' : ''}`}
+                onClick={() => showPane('channel', channel.name)}
+              >
+                {channelLabel(channel.name)}
+              </button>
+            ))}
             {/* Only while there is something in it, like the nav entry it
                 replaces (#263): a permanent tab reading 0 on a healthy loop
                 is one the operator learns to skip. Kept while it is open, so
@@ -1848,91 +1857,110 @@ export default function LoopDetail() {
               </button>
             )}
           </div>
-          {/* The history scrolls inside the page rather than growing it, so the
+          {pane === 'channel' ? (
+            openChannel ? (
+              <>
+                <ChannelHead loop={loop} channel={openChannel} />
+                <ChannelChat channel={openChannel.name} members={openChannel.loops} />
+              </>
+            ) : (
+              <div className="placeholder">Loading…</div>
+            )
+          ) : (
+            <>
+              {/* The history scrolls inside the page rather than growing it, so the
               composer below stays where the operator left it however long the
               loop has been running. */}
-          <div className="pane-scroll" ref={paneRef} onScroll={readingPosition}>
-            {/* A failed load is said in the pane. An empty timeline or thread
+              <div className="pane-scroll" ref={paneRef} onScroll={readingPosition}>
+                {/* A failed load is said in the pane. An empty timeline or thread
                 is also what a new loop shows, so without this a failure read
                 as "nothing has happened" (#350). The stream adds no entries
                 of its own: the in-progress reply still renders under the
                 error, and the refetch the next event triggers replaces the
                 error once it succeeds. */}
-            {pane === 'timeline' && eventsError && !events && (
-              <div className="form-error" role="alert">
-                Could not load the timeline: {eventsError.message}
+                {pane === 'timeline' && eventsError && !events && (
+                  <div className="form-error" role="alert">
+                    Could not load the timeline: {eventsError.message}
+                  </div>
+                )}
+                {pane === 'timeline' ? (
+                  <Timeline
+                    entries={entries}
+                    liveText={liveText}
+                    onLoadOlder={atFirstEvent ? undefined : loadOlder}
+                    loadingOlder={loadingOlder}
+                    olderFailed={olderFailed}
+                  />
+                ) : pane === 'control_room' ? (
+                  // In place of the thread, whose empty state would otherwise
+                  // claim "Nothing yet" under the error.
+                  threadError && !thread ? (
+                    <div className="form-error" role="alert">
+                      Could not load the conversation: {threadError.message}
+                    </div>
+                  ) : (
+                    <ControlRoomThread msgs={thread ?? []} />
+                  )
+                ) : (
+                  <UndeliveredPane name={loop.name} />
+                )}
               </div>
-            )}
-            {pane === 'timeline' ? (
-              <Timeline
-                entries={entries}
-                liveText={liveText}
-                onLoadOlder={atFirstEvent ? undefined : loadOlder}
-                loadingOlder={loadingOlder}
-                olderFailed={olderFailed}
-              />
-            ) : pane === 'control_room' ? (
-              // In place of the thread, whose empty state would otherwise
-              // claim "Nothing yet" under the error.
-              threadError && !thread ? (
+              <div className="dest-picker">
+                <span className="dest-label">to</span>
+                <button
+                  className={`dest${dest === 'control_room' ? ' on' : ''}`}
+                  onClick={() => pickDest('control_room')}
+                >
+                  control room · private
+                </button>
+                <button
+                  className={`dest${dest === 'group' ? ' on' : ''}`}
+                  onClick={() => pickDest('group')}
+                  disabled={outside && dest !== 'group'}
+                  title={
+                    outside
+                      ? `@${loop.name} is not in the fleet channel; the Surfaces panel adds it`
+                      : undefined
+                  }
+                >
+                  {outside ? 'fleet channel · not in it' : 'fleet channel · the loops, not Telegram'}
+                </button>
+              </div>
+              {file && <AttachedFile file={file} onRemove={() => setFile(null)} />}
+              <div className="composer" style={{ marginTop: 8 }}>
+                <AttachButton onPick={pickFile} disabled={sending} />
+                <textarea
+                  placeholder={
+                    dest === 'group'
+                      ? `Post to the fleet channel: the loops see it, nothing goes to Telegram, and @${loop.name} is delivered either way`
+                      : `Message @${loop.name} privately…`
+                  }
+                  value={draft}
+                  onChange={(e) => {
+                    setDraft(e.target.value)
+                    setSendError('')
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      send(dest)
+                    }
+                  }}
+                />
+                <button
+                  className="btn primary"
+                  onClick={() => send(dest)}
+                  disabled={!draft.trim() || sending}
+                >
+                  Send
+                </button>
+              </div>
+              {sendError && (
                 <div className="form-error" role="alert">
-                  Could not load the conversation: {threadError.message}
+                  {sendError}
                 </div>
-              ) : (
-                <ControlRoomThread msgs={thread ?? []} />
-              )
-            ) : (
-              <UndeliveredPane name={loop.name} />
-            )}
-          </div>
-          <div className="dest-picker">
-            <span className="dest-label">to</span>
-            <button
-              className={`dest${dest === 'control_room' ? ' on' : ''}`}
-              onClick={() => pickDest('control_room')}
-            >
-              control room · private
-            </button>
-            <button
-              className={`dest${dest === 'group' ? ' on' : ''}`}
-              onClick={() => pickDest('group')}
-              disabled={outside && dest !== 'group'}
-              title={
-                outside ? `@${loop.name} is not in the fleet channel; the Surfaces panel adds it` : undefined
-              }
-            >
-              {outside ? 'fleet channel · not in it' : 'fleet channel · the loops, not Telegram'}
-            </button>
-          </div>
-          {file && <AttachedFile file={file} onRemove={() => setFile(null)} />}
-          <div className="composer" style={{ marginTop: 8 }}>
-            <AttachButton onPick={pickFile} disabled={sending} />
-            <textarea
-              placeholder={
-                dest === 'group'
-                  ? `Post to the fleet channel: the loops see it, nothing goes to Telegram, and @${loop.name} is delivered either way`
-                  : `Message @${loop.name} privately…`
-              }
-              value={draft}
-              onChange={(e) => {
-                setDraft(e.target.value)
-                setSendError('')
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault()
-                  send(dest)
-                }
-              }}
-            />
-            <button className="btn primary" onClick={() => send(dest)} disabled={!draft.trim() || sending}>
-              Send
-            </button>
-          </div>
-          {sendError && (
-            <div className="form-error" role="alert">
-              {sendError}
-            </div>
+              )}
+            </>
           )}
         </section>
 
@@ -2052,9 +2080,9 @@ export default function LoopDetail() {
           <SurfacesPanel loop={loop} />
 
           {loopSurface(loop) === 'telegram' && (
-            <div className="side-panel">
-              <h3>Rooms</h3>
-              <Rooms loop={loop} />
+            <div className="side-panel" id="telegram-groups">
+              <h3>Telegram groups</h3>
+              <TelegramGroups loop={loop} />
             </div>
           )}
 

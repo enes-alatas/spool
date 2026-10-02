@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api, LoopView, Settings } from '../api'
 import { formatTokens, fillTone, hasFillPct, formatUsd, inTurn, nextWake, sumCostToday } from '../format'
 import { StateDot } from '../components/Spool'
-import { FleetChannel } from '../components/FleetChannel'
+import { ChannelChat } from '../components/ChannelChat'
 import { undeliveredNote } from '../messages'
 import { workstationNote } from '../workstation'
 import { useEffect, useState } from 'react'
@@ -197,7 +197,7 @@ export default function Dashboard() {
       </nav>
 
       {onChannel ? (
-        <FleetChannel />
+        <ChannelChat />
       ) : (
         <>
           {isLoading && <div className="fleet-note">Loading the fleet…</div>}
