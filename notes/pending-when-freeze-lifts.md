@@ -217,3 +217,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 18:10: #546 (#541) approved 16:23, #547 (#535) approved 17:24, both unmerged → DM nudge. After #547, #491 closes (all five slices). Terra presumably on #492 sub-issues next; Iris free after #547 (next for her: nothing queued; candidates #542's page half later, #275 slice 5 polish to file).
 - 18:15: Filed #548 (#275 slice 4, Slack rooms, Terra after #492/#529/#504 unless Enes wants Slack sooner) and #549 (slice 5, Activity by channel + loop page Channels section, Iris after #547). Ping Iris for #549 when #547 merges.
 - 19:30: #547 merged; Iris took #549 (mockups to Enes first). Closed #491. #546 (#541) still unmerged. Terra on #492 sub-issues presumably; verify next sweep.
+- 21:30: Runtime v0.4.0-51. #546 (#541) merged 20:04; no open PRs. Terra took #492 at 21:02 (ADR + five sub-issues first). Iris on #549 (mockups with Enes, first commit local). Nothing pending on Enes. Quiet.
