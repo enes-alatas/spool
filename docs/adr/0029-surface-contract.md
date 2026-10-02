@@ -1,6 +1,6 @@
 # ADR-0029: The Surface contract
 
-Date: 2026-09-20 · Status: accepted · Amends: ADR-0020, ADR-0025 (item 4), ADR-0026 (item 1) · Amended: 2026-09-22 (item 2: the bus kinds a surface mirrors); 2026-09-23 (items 5 and 7: a surface is attached later and mirrors the fleet channel); 2026-09-27 (item 2: a credential and an identity are structs); 2026-09-28 (item 8: hub notices); 2026-09-29 (item 8: Slack's notices and login notice); 2026-09-29 (item 2: the mirror subscription is lossless); 2026-09-30 (item 2: `Stop`, ADR-0036); 2026-10-01 (item 5: a mirror per room, ADR-0038); 2026-10-02 (items 2 and 5: reactions, ADR-0040)
+Date: 2026-09-20 · Status: accepted · Amends: ADR-0020, ADR-0025 (item 4), ADR-0026 (item 1) · Amended: 2026-09-22 (item 2: the bus kinds a surface mirrors); 2026-09-23 (items 5 and 7: a surface is attached later and mirrors the fleet channel); 2026-09-27 (item 2: a credential and an identity are structs); 2026-09-28 (item 8: hub notices); 2026-09-29 (item 8: Slack's notices and login notice); 2026-09-29 (item 2: the mirror subscription is lossless); 2026-09-30 (item 2: `Stop`, ADR-0036); 2026-10-01 (item 5: a mirror per room, ADR-0038); 2026-10-02 (items 2 and 5: reactions, ADR-0040); 2026-10-02 (items 2 and 5: polls, ADR-0041)
 
 ## Context
 
@@ -63,6 +63,13 @@ contract.
    `KindSendRetry` and `KindClaudeLogin` (item 8), and an adapter that
    mirrors outward subscribes to it, losslessly as well. A reaction is not a message: the control room draws
    a `KindMessage` frame as a message said.
+
+   **Amendment (2026-10-02, #492, ADR-0041):** `poll` joins them, as the
+   fifth. A poll itself is sent as a message and travels as `KindMessage`,
+   and the adapter reads its ballot from the store. A `poll` frame says the
+   ballot changed afterwards, by a vote or by the close, and an adapter
+   that mirrors outward subscribes to it losslessly, to update or stop the
+   platform's poll.
 
    **Amendment (2026-09-27, #230):** the second adapter proved one method's
    signature too narrow, as the Context says it would. A Slack app is two
@@ -150,6 +157,15 @@ contract.
    The reaction passes the adapter's sender gate as a message would. Unlike
    a message, a shared room's reactions need no election: every identity may
    report one, and the hub keeps one row per reactor, emoji and message.
+
+   **Amendment (2026-10-02, #492, ADR-0041):** a poll crosses the seam as
+   a message with a ballot. Outward, an adapter renders a loop's poll the
+   way its platform can: natively, or as a message with one button per
+   option. Inward, it hands each voter's whole choice in a poll its own
+   identity sent to the router, past the sender gate as a reaction is. Only
+   the identity that sent a poll hears its votes, so no election is needed.
+   A poll a person starts on the platform reaches the hub as its text, and
+   is not tallied.
 
 6. **These stay Telegram's own**, and an adapter is free to have nothing like
    them: long-polling `getUpdates` for transport, the 4096-character split,
