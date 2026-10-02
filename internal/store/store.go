@@ -1003,6 +1003,7 @@ type Store interface {
 	Loops() LoopStore
 	Channels() ChannelStore
 	Rooms() RoomStore
+	Reactions() ReactionStore
 	LoopSecrets() LoopSecretStore
 	FleetRules() FleetRuleStore
 	Sessions() SessionStore
@@ -1150,6 +1151,51 @@ type RoomStore interface {
 	// whose room moved, and ErrRoomInUse when the new id carries another
 	// channel already.
 	Move(ctx context.Context, surface, fromRoomID, toRoomID string) ([]string, error)
+}
+
+// Reaction is one reactor's emoji on one hub message (ADR-0040). It is not a
+// message: it has no conversation, no recipients and no mirror state of its
+// own.
+type Reaction struct {
+	ID        int64 `json:"id"`
+	MessageID int64 `json:"message_id"`
+	// ReactorKey says who reacted, the same across every bot that reported
+	// it: LoopReactor's for a loop, PersonReactor's for a person.
+	ReactorKey string `json:"reactor_key"`
+	// Reactor is the reactor's name as it was shown when they reacted.
+	Reactor string `json:"reactor"`
+	// Emoji is the Unicode the surface reported, or :name: for a custom
+	// emoji that has none.
+	Emoji string `json:"emoji"`
+	TS    int64  `json:"ts"`
+	// ToldAt is when the loop that wrote the message was told of it, 0
+	// until then. Engine bookkeeping, like SendFailureToldAt.
+	ToldAt int64 `json:"-"`
+}
+
+// LoopReactor is the reactor key of a loop.
+func LoopReactor(loopID string) string { return "loop:" + loopID }
+
+// PersonReactor is the reactor key of a person, by their user id on a
+// surface.
+func PersonReactor(surface, userID string) string { return surface + ":" + userID }
+
+// ReactionStore holds the hub's reactions.
+type ReactionStore interface {
+	// Add records a reaction, and reports whether it was new: the same
+	// reactor's same emoji on the same message is one row, however many
+	// bots report it. ErrNotFound when the message is not the hub's.
+	Add(ctx context.Context, reaction *Reaction) (bool, error)
+	// Remove deletes a reaction, and reports whether there was one.
+	Remove(ctx context.Context, messageID int64, reactorKey, emoji string) (bool, error)
+	// ListByMessages returns the reactions on the given messages, oldest
+	// first.
+	ListByMessages(ctx context.Context, messageIDs []int64) ([]*Reaction, error)
+	// Untold returns the reactions on a loop's own messages, by anyone but
+	// the loop itself, that it has not been told of, oldest first.
+	Untold(ctx context.Context, loopID string) ([]*Reaction, error)
+	// MarkTold records that the loop was told of these reactions.
+	MarkTold(ctx context.Context, ids []int64, toldAt int64) error
 }
 
 // ErrNotFound / ErrDuplicate are sentinel errors shared by implementations.

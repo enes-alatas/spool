@@ -97,6 +97,7 @@ func (database *DB) Close() error { return database.db.Close() }
 func (database *DB) Loops() store.LoopStore               { return loops{database.db} }
 func (database *DB) Channels() store.ChannelStore         { return channels{database.db} }
 func (database *DB) Rooms() store.RoomStore               { return rooms{database.db} }
+func (database *DB) Reactions() store.ReactionStore       { return reactions{database.db} }
 func (database *DB) LoopSecrets() store.LoopSecretStore   { return loopSecrets{database.db} }
 func (database *DB) FleetRules() store.FleetRuleStore     { return fleetRules{database.db} }
 func (database *DB) Sessions() store.SessionStore         { return sessions{database.db} }
