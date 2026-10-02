@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -241,7 +242,13 @@ type Actor struct {
 	// leaves it to be collected again (#154).
 	sendFailure    *Envelope
 	sendFailureIDs []int64
-	powering       bool // a power verb is running; nothing may spawn a process under it
+	// The reactions to the loop's messages that the next turn tells it of,
+	// and their rows: collected before each turn, marked told when one
+	// completes, as the lost-send news is (ADR-0040).
+	reactionNote *Envelope
+	reactionIDs  []int64
+
+	powering bool // a power verb is running; nothing may spawn a process under it
 
 	idleTimer   *time.Timer
 	retryTimer  *time.Timer
@@ -487,9 +494,13 @@ func (actor *Actor) pump() {
 	}
 	switch actor.state {
 	case StateAsleep:
-		actor.wake()
+		if actor.hasWork() {
+			actor.wake()
+		}
 	case StateIdle:
-		actor.startTurn()
+		if actor.hasWork() {
+			actor.startTurn()
+		}
 	case StateWaking, StateBusy, StateDraining:
 		// queued; picked up on init / result / exit respectively
 	}
@@ -702,6 +713,54 @@ func (actor *Actor) collectSendFailures(ctx context.Context) {
 	}
 }
 
+// collectReactions gathers the reactions to the loop's messages that it has
+// not been told of, for the next turn to carry (ADR-0040). Read before every
+// turn, not once a wake: a reaction rides with the next turn, whatever woke
+// it.
+func (actor *Actor) collectReactions(ctx context.Context) {
+	actor.reactionNote, actor.reactionIDs = nil, nil
+	untold, err := actor.deps.Store.Reactions().Untold(ctx, actor.loop.ID)
+	if err != nil {
+		// Not worth a turn: the rows stay untold and the next turn tries
+		// again.
+		actor.log().Error("collect reactions", "err", err)
+		return
+	}
+	told := make([]ToldReaction, 0, len(untold))
+	ids := make([]int64, 0, len(untold))
+	messages := map[int64]*store.Message{}
+	for _, reaction := range untold {
+		message, ok := messages[reaction.MessageID]
+		if !ok {
+			if message, err = actor.deps.Store.Messages().Get(ctx, reaction.MessageID); err != nil {
+				actor.log().Error("collect reactions", "message", reaction.MessageID, "err", err)
+				continue
+			}
+			messages[reaction.MessageID] = message
+		}
+		told = append(told, ToldReaction{Reactor: reaction.Reactor, Emoji: reaction.Emoji, Message: message})
+		ids = append(ids, reaction.ID)
+	}
+	if len(told) == 0 {
+		return
+	}
+	env := ReactionsEnvelope(time.Now(), told)
+	actor.reactionNote, actor.reactionIDs = &env, ids
+}
+
+// hasWork reports whether the inbox holds anything to start a turn on. It
+// collects the reactions the turn would carry first, and drops the wakes
+// that came for a reaction when none is left to tell: one removed before
+// the loop heard of it is never told (ADR-0040), and a wake with nothing to
+// say is no turn.
+func (actor *Actor) hasWork() bool {
+	actor.collectReactions(context.Background())
+	if actor.reactionNote == nil {
+		actor.inbox = slices.DeleteFunc(actor.inbox, Envelope.wakeOnly)
+	}
+	return len(actor.inbox) > 0
+}
+
 // putFiles copies the batch's attachments into the workstation before the
 // turn reads them (#123), and returns a note naming any it could not. The
 // turn goes ahead either way: the words arrived even if a file did not.
@@ -853,14 +912,27 @@ func (actor *Actor) sendBatch(batch []Envelope) {
 		// would be spent on it; the field keeps it for the successor.
 		batch = append([]Envelope{*actor.sendFailure}, batch...)
 	}
+	if actor.reactionNote != nil && !actor.handoffTurn {
+		// after the lost sends and before the work, as news about what the
+		// loop already said; withheld from a handoff turn like that news
+		at := 0
+		if actor.sendFailure != nil {
+			at = 1
+		}
+		batch = slices.Insert(batch, at, *actor.reactionNote)
+	}
 
 	texts := make([]string, 0, len(batch))
 	trigger := store.TriggerTick
 	for _, env := range batch {
-		texts = append(texts, env.Text)
 		if env.Trigger != store.TriggerTick {
 			trigger = env.Trigger
 		}
+		if env.wakeOnly() {
+			// it woke the loop for a reaction, which the note above tells
+			continue
+		}
+		texts = append(texts, env.Text)
 	}
 	text := strings.Join(texts, "\n\n---\n\n")
 	if actor.redelivered {
@@ -1110,6 +1182,14 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 		}
 		actor.sendFailure, actor.sendFailureIDs = nil, nil
 	}
+	if len(actor.reactionIDs) > 0 {
+		// Told now, for the same reason: a turn that never finished owes
+		// them again (ADR-0040).
+		if err := actor.deps.Store.Reactions().MarkTold(context.Background(), actor.reactionIDs, now()); err != nil {
+			actor.log().Error("mark reactions told", "err", err)
+		}
+		actor.reactionNote, actor.reactionIDs = nil, nil
+	}
 	if actor.promptDelta != "" {
 		// The note is in the session's history now, so it is paid for, and
 		// the hash it earned becomes the one later wakes compare against:
@@ -1119,7 +1199,7 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 	}
 	actor.measureContext()
 
-	if len(actor.inbox) > 0 && !actor.paused {
+	if !actor.paused && actor.hasWork() {
 		actor.startTurn()
 		return
 	}

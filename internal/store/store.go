@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"strconv"
 	"strings"
 )
 
@@ -1184,6 +1185,19 @@ func ReactorLoop(reactorKey string) (string, bool) { return strings.CutPrefix(re
 // surface.
 func PersonReactor(surface, userID string) string { return surface + ":" + userID }
 
+// OwnerReactor is the reactor key of the loop's owner on its own surface, ""
+// when it has none.
+func (loopRecord *Loop) OwnerReactor() string {
+	switch {
+	case !loopRecord.OwnerConfigured():
+		return ""
+	case loopRecord.Surface() == SurfaceTelegram:
+		return PersonReactor(SurfaceTelegram, strconv.FormatInt(loopRecord.OwnerTGUserID, 10))
+	default:
+		return PersonReactor(loopRecord.Surface(), loopRecord.OwnerSlackUserID)
+	}
+}
+
 // ReactionStore holds the hub's reactions.
 type ReactionStore interface {
 	// Add records a reaction, and reports whether it was new: the same
@@ -1200,6 +1214,10 @@ type ReactionStore interface {
 	Untold(ctx context.Context, loopID string) ([]*Reaction, error)
 	// MarkTold records that the loop was told of these reactions.
 	MarkTold(ctx context.Context, ids []int64, toldAt int64) error
+	// Seen reports whether a person's reaction with this emoji is on any
+	// message: how the hub tells a custom :name: a surface reported from
+	// one a loop made up.
+	Seen(ctx context.Context, emoji string) (bool, error)
 }
 
 // ErrNotFound / ErrDuplicate are sentinel errors shared by implementations.

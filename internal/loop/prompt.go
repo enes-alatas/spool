@@ -580,7 +580,10 @@ func howThisWorks(conv Conversations) string {
   call and retry. Never work around an error by switching destination.
 `)
 	}
-	text.WriteString(`- Your final reply text is a private status note: it appears in the control
+	text.WriteString(`- To react to a message instead of answering it, call send_message with
+  react (one emoji), reply_to and no text. It wakes nobody. Reactions to
+  your own messages reach you as a line ahead of your next turn.
+- Your final reply text is a private status note: it appears in the control
   room timeline but is delivered to nobody. Not every turn needs a message —
   ending an exchange without one is often right.
 `)
@@ -947,6 +950,61 @@ func SendFailureEnvelope(now time.Time, failures []*store.Message) Envelope {
 		fmt.Fprintf(&text, "- and %d more, which the control room lists in full\n", rest)
 	}
 	return Envelope{Trigger: store.TriggerTick, Text: strings.TrimRight(text.String(), "\n")}
+}
+
+// OwnerReactionWake is the envelope that wakes a loop for its owner's
+// reaction in their private conversation (ADR-0040). It carries no words of
+// its own: what wakes the loop is the reaction, and the reaction is told
+// the way every other one is, ahead of the turn. It batches with the
+// owner's messages, as a message from them would. The actor drops it when
+// there is no longer a reaction to tell.
+func OwnerReactionWake(tgChatID int64) Envelope {
+	return Envelope{Trigger: store.TriggerMessage, Conversation: store.ConversationOwnerDM, TGChatID: tgChatID}
+}
+
+// wakeOnly reports whether an envelope is a wake with no words of its own.
+func (env Envelope) wakeOnly() bool { return env.Text == "" }
+
+// ToldReaction is one reaction to a loop's message, as the loop is told of
+// it.
+type ToldReaction struct {
+	Reactor string
+	Emoji   string
+	// Message is the message reacted to.
+	Message *store.Message
+}
+
+// maxReactionsTold caps how many reactions one note lists; the rest are
+// counted. A busy room can pile up reactions while a loop sleeps, and they
+// are acknowledgements, not work.
+const maxReactionsTold = 10
+
+// maxReactedExcerpt is how much of the reacted-to message a line quotes:
+// enough to recognise it.
+const maxReactedExcerpt = 80
+
+// ReactionsEnvelope tells a loop who reacted to its messages since it was
+// last told (ADR-0040), one line each, ahead of its turn. A reaction never
+// wakes a loop by itself, except its owner's in owner_dm, so this rides
+// with whatever turn comes next. It says that a reaction asks for nothing:
+// answering a 👍 with words is the message the reaction saved.
+func ReactionsEnvelope(now time.Time, reactions []ToldReaction) Envelope {
+	shown := reactions
+	if len(shown) > maxReactionsTold {
+		shown = shown[:maxReactionsTold]
+	}
+	var text strings.Builder
+	text.WriteString(header(now, "reactions to your messages"))
+	text.WriteString("\nA reaction asks for no answer; reply only if it changes what you do.\n")
+	for _, reaction := range shown {
+		fmt.Fprintf(&text, "\n- %s reacted %s to your %s in %s: %q", reaction.Reactor, reaction.Emoji,
+			MessageRef(reaction.Message.ID), reaction.Message.Destination(),
+			truncate(strings.TrimSpace(reaction.Message.Text), maxReactedExcerpt))
+	}
+	if rest := len(reactions) - len(shown); rest > 0 {
+		fmt.Fprintf(&text, "\n- and %d more", rest)
+	}
+	return Envelope{Trigger: store.TriggerTick, Text: text.String()}
 }
 
 // destinationOf names where a lost message was going in the words a loop

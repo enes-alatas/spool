@@ -35,6 +35,9 @@ type SendRequest struct {
 	// Attach is a path in the sender's workstation to one file the message
 	// carries ("" = none, #123).
 	Attach string
+	// React is one emoji to put on the message ReplyTo names, instead of
+	// saying anything ("" = a message, ADR-0040). SendReaction takes it.
+	React string
 }
 
 // SendError is a typed refusal the model sees in-turn and can correct.
@@ -72,6 +75,10 @@ const (
 	ErrAttachmentTooLarge    = "attachment_too_large"
 	ErrSecretInAttachment    = "attachment_contains_secret"
 	ErrAttachmentUnavailable = "attachment_unavailable"
+	// The refusals of a reaction (ADR-0040): one that is not a single
+	// emoji, and one that also carries words, a file or a resend.
+	ErrInvalidReaction = "invalid_reaction"
+	ErrReactionAlone   = "reaction_carries_nothing_else"
 )
 
 // noSuchDestination refuses a destination the loop does not have, and names

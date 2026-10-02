@@ -36,12 +36,21 @@ func (table *memReactions) Remove(_ context.Context, messageID int64, reactorKey
 	return removed, nil
 }
 
+// groupMessages holds every message as one said in the group, which no
+// reaction wakes a loop for.
+type groupMessages struct{ store.MessageStore }
+
+func (groupMessages) Get(_ context.Context, id int64) (*store.Message, error) {
+	return &store.Message{ID: id, Conversation: store.ConversationGroup, FromLoopID: "l1"}, nil
+}
+
 type reactionsOnly struct {
 	store.Store
 	table *memReactions
 }
 
 func (fake reactionsOnly) Reactions() store.ReactionStore { return fake.table }
+func (reactionsOnly) Messages() store.MessageStore        { return groupMessages{} }
 
 // Every bot in a room reports the same reaction, and the bus hears it once;
 // a removal is heard once too, and a reaction to no message is refused.
@@ -77,5 +86,28 @@ func TestReactPublishesOnlyAChange(t *testing.T) {
 	}
 	if err := router.React(ctx, InboundReaction{MessageID: 7, ReactorKey: person}); err == nil {
 		t.Fatal("a reaction with no emoji was accepted")
+	}
+}
+
+// A react value is one emoji however many code points draw it, and no word
+// gets through.
+func TestIsEmoji(t *testing.T) {
+	for _, emoji := range []string{"👍", "❤️", "👍🏽", "👩‍💻", "👨‍👩‍👧", "🏳️‍🌈", "🏳️‍⚧️", "❤️‍🔥", "🐻‍❄️", "🇹🇷", "ⓐ", "1️⃣", "#⃣",
+		"🏴\U000E0067\U000E0062\U000E0073\U000E0063\U000E0074\U000E007F", "🎉", "©"} {
+		if !isEmoji(emoji) {
+			t.Errorf("isEmoji(%q) = false, want true", emoji)
+		}
+	}
+	for _, text := range []string{"", "ok", "👍 ok", "👍👍", "👍\u200d", "\u200d👍", "🇹", "🇹🇷🇹🇷", "1", "1⃣x",
+		"🏽", "a\u20e3", "👍\n", ":+1:",
+		// tag characters spell ASCII invisibly, and only a subdivision
+		// flag's own spelling may use them
+		"🏴\U000E0073\U000E006B\U000E002D\U000E0061\U000E006E\U000E0074\U000E002D\U000E0061\U000E0070\U000E0069\U000E0030\U000E0033\U000E002D\U000E0078",
+		"🏴\U000E0078\U000E0079\U000E007A\U000E007F", "👍\U000E0067\U000E007F",
+		// joined letter-drawing symbols spell words
+		"ⓢ\u200dⓔ\u200dⓒ\u200dⓡ\u200dⓔ\u200dⓣ", "⠎\u200d⠑\u200d⠉\u200d⠗", "🄰\u200d🄱\u200d🄲", "🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥"} {
+		if isEmoji(text) {
+			t.Errorf("isEmoji(%q) = true, want false", text)
+		}
 	}
 }

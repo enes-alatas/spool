@@ -326,9 +326,11 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			"AddLoop": false, "RemoveLoop": false, "Get": false, "List": false,
 		},
 		"ReactionStore": {
-			// Ids, timestamps, an emoji and a reactor's display name as
-			// the surface reports it: nothing a loop writes as text.
-			"Add": false, "Remove": false, "ListByMessages": false, "Untold": false, "MarkTold": false,
+			// Ids, timestamps, a reactor's display name as the surface
+			// reports it, and an emoji. A loop's emoji is one the hub
+			// accepted as an emoji and nothing else (route.SendReaction),
+			// so it cannot carry text.
+			"Add": false, "Remove": false, "ListByMessages": false, "Untold": false, "MarkTold": false, "Seen": false,
 		},
 		"RoomStore": {
 			// Ids, channel names and timestamps, and a chat's title as the

@@ -90,3 +90,10 @@ func (table reactions) MarkTold(ctx context.Context, ids []int64, toldAt int64) 
 		`UPDATE reactions SET told_at=? WHERE id IN (`+strings.Repeat(",?", len(ids))[1:]+`)`, args...)
 	return err
 }
+
+func (table reactions) Seen(ctx context.Context, emoji string) (bool, error) {
+	var seen bool
+	err := table.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM reactions
+		WHERE emoji=? AND reactor_key NOT LIKE 'loop:%')`, emoji).Scan(&seen)
+	return seen, err
+}
