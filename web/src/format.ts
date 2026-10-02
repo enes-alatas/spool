@@ -62,3 +62,11 @@ export interface RotationThresholds {
 export function nextWake(loop: { next_tick_at: number; model_refusal: string }): number {
   return loop.model_refusal ? 0 : loop.next_tick_at
 }
+
+// Whether the loop is in a turn, waking into one or running it (#524). Its
+// next_tick_at is no decided wake then: a tick that fires resets it to the
+// fallback interval, and only the turn's end sets the real one, so a
+// countdown would show a wake the loop has not chosen.
+export function inTurn(state: string): boolean {
+  return state === 'waking' || state === 'busy'
+}

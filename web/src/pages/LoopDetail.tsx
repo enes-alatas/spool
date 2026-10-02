@@ -14,7 +14,7 @@ import {
   TGSender,
   Turn,
 } from '../api'
-import { formatTokens, fillTone, hasFillPct, formatUsd, nextWake } from '../format'
+import { formatTokens, fillTone, hasFillPct, formatUsd, inTurn, nextWake } from '../format'
 import { customModelError, tokenSubmittable } from '../forms'
 import { needsLogin } from '../session'
 import { slackCreateAppURL, slackManifest } from '../slackManifest'
@@ -1933,7 +1933,11 @@ export default function LoopDetail() {
         <aside>
           <div className="side-panel">
             <h3>Next wake</h3>
-            <Countdown at={nextWake(loop)} />
+            {inTurn(loop.state) ? (
+              <div className="countdown awake">awake</div>
+            ) : (
+              <Countdown at={nextWake(loop)} />
+            )}
             <div className="row">
               <span className="k">today</span>
               <span className="v" title={loop.cost_day ? `spend on ${loop.cost_day}` : undefined}>

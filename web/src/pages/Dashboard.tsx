@@ -1,7 +1,7 @@
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
 import { api, LoopView, Settings } from '../api'
-import { formatTokens, fillTone, hasFillPct, formatUsd, nextWake, sumCostToday } from '../format'
+import { formatTokens, fillTone, hasFillPct, formatUsd, inTurn, nextWake, sumCostToday } from '../format'
 import { StateDot } from '../components/Spool'
 import { FleetChannel } from '../components/FleetChannel'
 import { undeliveredNote } from '../messages'
@@ -104,12 +104,12 @@ function FleetRow({ loop, thresholds }: { loop: LoopView; thresholds?: Settings 
         <span className="f-next">
           {/* "next turn in progress" would be one word too many: the words
               already say what the label would. */}
-          {loop.state !== 'busy' && (
+          {!inTurn(loop.state) && (
             <>
               <span className="lbl">next</span>{' '}
             </>
           )}
-          {loop.state === 'busy' ? (
+          {inTurn(loop.state) ? (
             // The approved designs say this differently at the two widths: a
             // dash under the NEXT WAKE column header, words where there is no
             // header to explain the dash.
