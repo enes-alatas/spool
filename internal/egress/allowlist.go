@@ -36,6 +36,10 @@ var DefaultHosts = []string{
 	"proxy.golang.org",
 	"sum.golang.org",
 	"registry.npmjs.org",
+	// pip resolves a package on pypi.org's index and downloads it from
+	// files.pythonhosted.org; either alone fails the install.
+	"pypi.org",
+	"files.pythonhosted.org",
 	"deb.debian.org",
 	"security.debian.org",
 	"cli.github.com",

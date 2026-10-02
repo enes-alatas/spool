@@ -116,7 +116,8 @@ func TestPortSpellingIsCanonical(t *testing.T) {
 
 func TestDefaultHostsCoverTheWorkAndNothingElse(t *testing.T) {
 	allow := New(DefaultHosts)
-	for _, host := range []string{"api.anthropic.com", "github.com", "api.github.com", "proxy.golang.org"} {
+	for _, host := range []string{"api.anthropic.com", "github.com", "api.github.com", "proxy.golang.org",
+		"pypi.org", "files.pythonhosted.org"} {
 		if !allow.Allows(host, "443") {
 			t.Errorf("default allowlist refuses %q, which a loop needs", host)
 		}
