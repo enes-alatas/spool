@@ -1,1 +1,5 @@
 blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/enes-alatas/spool/security/advisories/new
+    about: Privately, through GitHub's vulnerability reporting. Never in a public issue (SECURITY.md).
