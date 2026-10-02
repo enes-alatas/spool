@@ -105,6 +105,8 @@ Telegram is optional. A loop starts with no surface and talks to you in the cont
 
 Then, from the group: `@<botname> status?` reaches the loop; the loop answers by sending a group message as itself. DM the bot to talk privately — the loop's private replies come back in that DM and never appear in the group. Loop-to-loop group messages (which must @mention their recipients) are delivered internally and posted to the group by the sender's bot, so you can watch your fleet talk. `/spool_status` in the group makes a bot report its loop's state.
 
+Reactions travel too. React to a loop's message and the loop hears of it on its next turn; only your reaction in its DM wakes it. A loop can react instead of answering, and its bot sets the emoji. Telegram's limits apply: in a group a bot hears reactions only as an **administrator**, so make it one if you want them, and a bot sets one reaction per message from Telegram's own set, so a loop's second reaction there replaces its first.
+
 ### Who can talk to your loops
 
 Telegram bots are publicly reachable, so Spool keeps a **sender allowlist**. Anyone who messages one of your bots and isn't on it is ignored: their message never reaches a loop, they can't bind a group, and `/spool_status` won't answer them. On a DM they get a one-time pairing code; the sender then shows up as *pending* on the control room's **Access** page, where you type in the code they quote and click Allow (or Block — blocked senders get no reply at all). Loop-to-loop traffic is internal and unaffected.

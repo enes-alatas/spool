@@ -21,17 +21,21 @@ import (
 type sendMessageIn struct {
 	Destination string `json:"destination" jsonschema:"where this message goes: owner_dm (your owner's private chat on your attached surface — always the same person, so a tick can open a private conversation), group (the fleet channel; @mention recipients in the text), channel:<name> (another channel you are in; @mention recipients in it), or control_room (your private web thread with the operator). Your system prompt says which of these you have"`
 	ReplyTo     string `json:"reply_to,omitempty" jsonschema:"reference of the message this replies to (\"ref:42\"), exactly as its envelope header gave it; the reply addresses that message's author and, in the group, renders as a native reply. Must belong to this destination's conversation. Omit for a new message."`
-	Text        string `json:"text" jsonschema:"the message text; in the group or a channel, @mentions name the recipients"`
+	Text        string `json:"text,omitempty" jsonschema:"the message text; in the group or a channel, @mentions name the recipients. Omit only with react."`
 	Resends     string `json:"resends,omitempty" jsonschema:"reference of your own message whose send failed (\"ref:42\"), exactly as the undelivered note gave it, when these words are you saying that message again. The destination must be the one it was lost going to. When this send gets through, that failure stops being the operator's to deal with. Omit unless you are repeating a message you were told never arrived."`
 	Attach      string `json:"attach,omitempty" jsonschema:"path of one file in your workspace to send with this message, at most 20 MB; an image is shown as a photo where the surface can. The text goes with it. Omit to send words alone."`
+	React       string `json:"react,omitempty" jsonschema:"one emoji to react with to the message reply_to names, instead of answering it in words; send no text with it. It wakes nobody, and counts as a send. Omit to send a message."`
 }
 
 type sendMessageOut struct {
-	MessageID int64 `json:"message_id"`
+	MessageID int64 `json:"message_id,omitempty"`
 	// Ref is the sent message's reply reference, in the same form every
 	// envelope header uses — so a loop can reply to its own message with
 	// what it was handed, not a form it has to infer.
-	Ref string `json:"ref"`
+	Ref string `json:"ref,omitempty"`
+	// ReactedTo is the reference of the message a reaction was put on, in
+	// place of the two above: a reaction is no message of its own.
+	ReactedTo string `json:"reacted_to,omitempty"`
 }
 
 func (server *Server) mcpHandler() http.Handler {
@@ -82,14 +86,21 @@ type mcpLoopKey struct{}
 
 func (server *Server) sendMessageTool(caller *store.Loop) func(context.Context, *mcp.CallToolRequest, sendMessageIn) (*mcp.CallToolResult, sendMessageOut, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in sendMessageIn) (*mcp.CallToolResult, sendMessageOut, error) {
-		msg, serr, err := server.Router.Send(ctx, route.SendRequest{
+		req := route.SendRequest{
 			From:        caller,
 			Destination: in.Destination,
 			ReplyTo:     in.ReplyTo,
 			Text:        in.Text,
 			Resends:     in.Resends,
 			Attach:      in.Attach,
-		})
+			React:       in.React,
+		}
+		reacting := strings.TrimSpace(in.React) != ""
+		send := server.Router.Send
+		if reacting {
+			send = server.Router.SendReaction
+		}
+		msg, serr, err := send(ctx, req)
 		if serr != nil {
 			// A typed refusal: the SDK renders a returned error as an
 			// isError tool result, which is what lets the model correct.
@@ -98,6 +109,9 @@ func (server *Server) sendMessageTool(caller *store.Loop) func(context.Context, 
 		if err != nil {
 			server.Log.Error("send_message", "loop", caller.Name, "err", err)
 			return nil, sendMessageOut{}, fmt.Errorf("internal error; try again")
+		}
+		if reacting {
+			return nil, sendMessageOut{ReactedTo: loop.MessageRef(msg.ID)}, nil
 		}
 		return nil, sendMessageOut{MessageID: msg.ID, Ref: loop.MessageRef(msg.ID)}, nil
 	}

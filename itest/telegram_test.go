@@ -52,6 +52,17 @@ type fakeTelegram struct {
 	// titles are the group titles Telegram reports, by chat; a chat with
 	// none is reported untitled.
 	titles map[int64]string
+	// reactionsSet are the setMessageReaction calls the bridge made.
+	reactionsSet []setReaction
+}
+
+// setReaction is one setMessageReaction call: a bot's reaction on a
+// message, by that bot's id for it ("" = cleared).
+type setReaction struct {
+	Token     string
+	ChatID    int64
+	MessageID int64
+	Emoji     string
 }
 
 // blockGetMe makes every getMe from here on hang until the returned release
@@ -263,6 +274,23 @@ func (tg *fakeTelegram) handle(w http.ResponseWriter, r *http.Request) {
 			MessageID: id, ReplyTo: reply.MessageID, Method: method, FileName: header.Filename, File: body})
 		tg.mu.Unlock()
 		writeOK(w, map[string]any{"message_id": id})
+	case "setMessageReaction":
+		var req struct {
+			ChatID    int64 `json:"chat_id"`
+			MessageID int64 `json:"message_id"`
+			Reaction  []struct {
+				Emoji string `json:"emoji"`
+			} `json:"reaction"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		set := setReaction{Token: token, ChatID: req.ChatID, MessageID: req.MessageID}
+		if len(req.Reaction) > 0 {
+			set.Emoji = req.Reaction[0].Emoji
+		}
+		tg.mu.Lock()
+		tg.reactionsSet = append(tg.reactionsSet, set)
+		tg.mu.Unlock()
+		writeOK(w, true)
 	default:
 		writeOK(w, map[string]any{})
 	}
