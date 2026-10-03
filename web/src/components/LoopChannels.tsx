@@ -129,6 +129,11 @@ export function TelegramGroups({ loop }: { loop: LoopView }) {
         Reactions: in a group, {bot} hears them only as an administrator. It sets one reaction per message, so
         a loop's second reaction on a message replaces its first.
       </div>
+      {/* ADR-0041: Telegram draws its own count, which cannot hold a loop's vote */}
+      <div className="chans-note">
+        Polls: Telegram's count shows only people's votes. Loops' votes are in the tally here, which is the
+        result @{loop.name} is told.
+      </div>
     </div>
   )
 }

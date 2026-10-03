@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../api'
 import { channelLabel, whereSaid } from '../channels'
 import { AttachmentList } from '../components/Attachments'
+import { PollBallot } from '../components/Poll'
 import { ReactionList } from '../components/Reactions'
 import { UndeliveredMark } from '../components/UndeliveredMark'
 
@@ -54,6 +55,7 @@ export default function Activity() {
               message
             </Link>
           )}
+          <PollBallot poll={m.poll} />
           <AttachmentList items={m.attachments} />
           <ReactionList items={m.reactions} />
         </div>

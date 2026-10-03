@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import type { ChatMessage } from '../api'
 import { AttachmentList } from './Attachments'
+import { PollBallot } from './Poll'
 import { ReactionList } from './Reactions'
 import { UndeliveredMark } from './UndeliveredMark'
 
@@ -51,6 +52,7 @@ export function MessageKnot({
       </div>
       {before}
       <div className={fromLoop ? 'plain' : 'bubble'}>{msg.text}</div>
+      <PollBallot poll={msg.poll} />
       <AttachmentList items={msg.attachments} />
       <ReactionList items={msg.reactions} />
       <UndeliveredMark msg={msg} />
