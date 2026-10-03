@@ -1,0 +1,24 @@
+{
+  "loop": "terra",
+  "trigger": "tick",
+  "pacing": "self",
+  "min_wake_sec": 300,
+  "max_wake_sec": 14400,
+  "recipients": [
+    "iris",
+    "milo",
+    "quinn",
+    "enesalatas"
+  ],
+  "shown_refs": [
+    "ref:100"
+  ],
+  "sends": [],
+  "github_writes": [],
+  "final_text": "Nothing to do; waiting on review.",
+  "id": "synthetic-missing-trailer",
+  "slip": "2026-09-29: a reply with no [next-wake:] trailer fell back to 30 minutes",
+  "input": [
+    "[tick · 2026-09-29 10:00 UTC · self-paced]\n\nContinue working toward your mission."
+  ]
+}

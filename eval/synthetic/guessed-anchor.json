@@ -1,0 +1,29 @@
+{
+  "loop": "terra",
+  "trigger": "message",
+  "pacing": "self",
+  "min_wake_sec": 300,
+  "max_wake_sec": 14400,
+  "recipients": [
+    "iris",
+    "milo",
+    "quinn",
+    "enesalatas"
+  ],
+  "shown_refs": [
+    "ref:100"
+  ],
+  "sends": [
+    {
+      "destination": "owner_dm",
+      "text": "Decision posted: https://github.com/enes-alatas/spool/issues/1#issuecomment-1"
+    }
+  ],
+  "github_writes": [],
+  "final_text": "PR is up.\n\n[next-wake: 45m]",
+  "id": "synthetic-guessed-anchor",
+  "slip": "#419: a link anchor guessed before the comment existed",
+  "input": [
+    "[message from @milo (loop) · group · ref:100 · 2026-09-29 10:00 UTC]\n\n@terra post the decision on #1 and DM Enes the link."
+  ]
+}
