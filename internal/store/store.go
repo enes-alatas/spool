@@ -350,12 +350,12 @@ type Message struct {
 	// and why is history, and a resolved row that looked like a delivered
 	// one would lose it.
 	SendResolvedAt int64 `json:"send_resolved_at,omitempty"`
-	// SendResolution is which of the two ways it resolved, one of the
-	// SendResolution* constants; empty while unresolved. The operator's two
-	// actions mean different things about the message — delivered says it
-	// did arrive in the end, dismissed says it never did and they are done
-	// looking — and readers that only ask "is it still on my list" should
-	// use SendResolvedAt instead of comparing this.
+	// SendResolution is how it resolved, one of the SendResolution*
+	// constants; empty while unresolved. The ways mean different things
+	// about the message — delivered says it did arrive in the end,
+	// dismissed says it never did and someone is done looking — and readers
+	// that only ask "is it still on my list" should use SendResolvedAt
+	// instead of comparing this.
 	SendResolution string `json:"send_resolution,omitempty"`
 	// SendResentAs is the message that carried these words the second time,
 	// when the loop itself said them again against this failure (#270).
@@ -372,11 +372,19 @@ type Message struct {
 	// resend that fails too is itself resent, so this is a chain, and the
 	// send that finally arrives resolves all of it.
 	ResendsID int64 `json:"resends_id,omitempty"`
-	// SendFailureToldAt is when the loop that sent this message was told the
-	// send failed (0 = not yet). Engine bookkeeping for delivering that news
-	// exactly once (#154), so json:"-" keeps it out of every API response —
-	// the operator reads SendFailedAt, which is the fact itself.
-	SendFailureToldAt int64 `json:"-"`
+	// SendFailureToldAt is when the loop that sent this message was last
+	// told the send failed (0 = not yet), and SendFailureTellings how many
+	// turns have told it: the first telling, then the reminders (#154,
+	// #561). Engine bookkeeping, so json:"-" keeps both out of every API
+	// response — the operator reads SendFailedAt, which is the fact itself,
+	// and SendLeftByLoop, which is what the count comes to.
+	SendFailureToldAt   int64 `json:"-"`
+	SendFailureTellings int   `json:"-"`
+	// SendLeftByLoop says the loop was told of this failure and reminded
+	// of it as often as it will be, and neither resent nor dismissed it: it
+	// left it for the operator (#561). Only an unresolved failure is left;
+	// the operator's own dismissal or retry ends that.
+	SendLeftByLoop bool `json:"send_left_by_loop,omitempty"`
 	// Mirror says whether this message exists on the surface too: one of the
 	// Mirror* constants, never empty once stored and never omitted, so an
 	// absent field means an older server rather than an answer (#285). Its
@@ -448,7 +456,17 @@ const (
 	// one, it means the words reached their reader — so the sender is not
 	// told about this failure either; it is the one that dealt with it.
 	SendResolutionResent = "resent"
+	// SendResolutionDismissedByLoop: the loop read the failure and decided
+	// the words are no longer worth saying (#561). The message never
+	// arrived, as with the operator's dismissal, but the sender is the one
+	// that decided, so it is not told again either.
+	SendResolutionDismissedByLoop = "dismissed_by_loop"
 )
+
+// SendFailureTellings is how many turns carry a lost send's news while it
+// is unresolved: the first telling and two reminders (#561). After that the
+// failure is the operator's, and the loop has left it to them.
+const SendFailureTellings = 3
 
 // Whether a message exists on the surface too (Message.Mirror). It is a
 // state, not a direction: which way a message crossed is its Origin.
@@ -761,19 +779,22 @@ type MessageStore interface {
 	// flight forever. Once failed, it is an undelivered message
 	// like any other, which the operator can retry and its loop is told of.
 	FailInterruptedSends(ctx context.Context, failedAt int64, sendErr string) ([]*Message, error)
-	// UntoldSendFailures returns the messages a loop sent that never got
-	// through and whose sender has not been told, oldest first. The sender,
-	// not the recipient: this is the loop's own news about its own words.
+	// SendFailuresToTell returns the messages a loop sent that never got
+	// through and that its next turn tells it of, oldest first: those it
+	// has not been told of, and the unresolved ones it has been told of
+	// fewer than SendFailureTellings times (#561). The sender, not the
+	// recipient: this is the loop's own news about its own words.
 	//
 	// A failure whose words reached their reader in the end is not among
 	// them — an operator's retry that landed, or the loop's own resend —
 	// because a loop told a delivered message was lost says it again and
-	// the human reads it twice. A dismissed one still is: dismissal is the
-	// operator done looking, not the message delivered.
-	UntoldSendFailures(ctx context.Context, loopID string) ([]*Message, error)
+	// the human reads it twice; nor is one the loop dismissed itself. One
+	// the operator dismissed is told once: dismissal is the operator done
+	// looking, not the message delivered.
+	SendFailuresToTell(ctx context.Context, loopID string) ([]*Message, error)
 	// UnresolvedSendFailures counts the messages a loop sent that never got
 	// through and that nothing has resolved — no successful retry, no
-	// dismissal (#269). Unlike UntoldSendFailures this ignores whether the
+	// dismissal (#269). Unlike SendFailuresToTell this ignores whether the
 	// loop has been told: it answers the operator's question, not the
 	// loop's, and an operator who was not looking is the reason the count
 	// exists. There is no age limit: a failure stops counting when someone
@@ -787,17 +808,17 @@ type MessageStore interface {
 	Undelivered(ctx context.Context, loopID string) ([]*Message, error)
 	// ResolveSend marks a failure dealt with, at the given time, and
 	// reports whether there was one to mark. Called when a retry of the row
-	// gets through and when the operator dismisses it; the row keeps what
-	// failed and why either way. A row that never failed, or whose failure
-	// is already resolved, is left alone and answers false — which is a
-	// no-op on the send path and a 404 on the operator's.
-	// resolution is one of the SendResolution* constants, saying which of
-	// the three happened; readers that care about the difference — notably
-	// UntoldSendFailures — ask it rather than re-deriving it. resentAs
+	// gets through, and when the operator or the loop dismisses it; the row
+	// keeps what failed and why either way. A row that never failed, or
+	// whose failure is already resolved, is left alone and answers false —
+	// which is a no-op on the send path and a 404 on the operator's.
+	// resolution is one of the SendResolution* constants, saying which
+	// happened; readers that care about the difference — notably
+	// SendFailuresToTell — ask it rather than re-deriving it. resentAs
 	// names the message that carried the words again, and is zero for
 	// every resolution but a resend. The row's Mirror follows: a delivered
-	// resolution put it on the surface, and the other two leave it on the
-	// hub for good.
+	// resolution put it on the surface, and the others leave it on the hub
+	// for good.
 	ResolveSend(ctx context.Context, id int64, at int64, resolution string, resentAs int64) (bool, error)
 	// ResolveResends resolves every failure the given message was sent to
 	// replace — the one its ResendsID names, the one that one named, and
@@ -807,8 +828,9 @@ type MessageStore interface {
 	// took. A message that resends nothing resolves nothing.
 	ResolveResends(ctx context.Context, messageID int64, at int64) (int, error)
 	// MarkSendFailuresTold records that the loop has now been told about
-	// these messages. Called once the turn carrying the news has completed,
-	// so a wake that dies before it still owes the news.
+	// these messages once more, counting the telling. Called once the turn
+	// carrying the news has completed, so a turn that dies before it still
+	// owes the news.
 	MarkSendFailuresTold(ctx context.Context, ids []int64, toldAt int64) error
 	// PutRef records a bot's own surface id for a message.
 	PutRef(ctx context.Context, ref *SurfaceRef) error

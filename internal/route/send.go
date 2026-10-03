@@ -49,10 +49,13 @@ type SendRequest struct {
 	// ClosePoll is the reference of the loop's own poll to close ("" =
 	// none, ADR-0041). SendClosePoll takes it.
 	ClosePoll string
+	// Dismiss is the reference of the loop's own failed send that it has
+	// decided not to say again ("" = none, #561). SendDismiss takes it.
+	Dismiss string
 }
 
 // Kind is which of the router's sends a request is: "react", "vote",
-// "close_poll", or "" for a message, a poll's included. A *SendError
+// "close_poll", "dismiss", or "" for a message, a poll's included. A *SendError
 // refuses a request that asks for two.
 func (req SendRequest) Kind() (string, *SendError) {
 	var kinds []string
@@ -65,6 +68,9 @@ func (req SendRequest) Kind() (string, *SendError) {
 	if strings.TrimSpace(req.ClosePoll) != "" {
 		kinds = append(kinds, "close_poll")
 	}
+	if strings.TrimSpace(req.Dismiss) != "" {
+		kinds = append(kinds, "dismiss")
+	}
 	switch len(kinds) {
 	case 0:
 		return "", nil
@@ -72,7 +78,7 @@ func (req SendRequest) Kind() (string, *SendError) {
 		return kinds[0], nil
 	}
 	return "", &SendError{ErrOneKindOfSend,
-		"a send is one of a message, a react, a vote or a close_poll; this one is " + strings.Join(kinds, " and ")}
+		"a send is one of a message, a react, a vote, a close_poll or a dismiss; this one is " + strings.Join(kinds, " and ")}
 }
 
 // SendError is a typed refusal the model sees in-turn and can correct.
@@ -103,6 +109,12 @@ const (
 	// said something twice or resolved the wrong failure.
 	ErrResendsNotFailed        = "resends_not_failed"
 	ErrResendsWrongDestination = "resends_wrong_destination"
+	// The refusals of a dismissal (#561), the resend's two under its own
+	// name, and one that also carries words or a file: a dismissal says
+	// nothing.
+	ErrDismissNotFailed        = "dismiss_not_failed"
+	ErrDismissWrongDestination = "dismiss_wrong_destination"
+	ErrDismissAlone            = "dismiss_carries_nothing_else"
 	// The refusals of an attachment (#123). None stores the message: the
 	// loop meant the words and the file together.
 	ErrAttachmentNotFound    = "attachment_not_found"
@@ -115,7 +127,7 @@ const (
 	ErrInvalidReaction = "invalid_reaction"
 	ErrReactionAlone   = "reaction_carries_nothing_else"
 	// ErrOneKindOfSend refuses a send that asks for two of a message, a
-	// reaction, a vote and a close (ADR-0041).
+	// reaction, a vote, a close and a dismissal (ADR-0041, #561).
 	ErrOneKindOfSend = "one_kind_of_send"
 )
 

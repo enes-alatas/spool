@@ -522,7 +522,6 @@ func (actor *Actor) wake() {
 		actor.mintSession(ctx)
 	}
 	actor.reconcilePrompt(ctx, fresh, prompt)
-	actor.collectSendFailures(ctx)
 	spec := actor.wakeSpec(fresh, prompt.System)
 	actor.spawnModel = spec.Model
 
@@ -692,18 +691,20 @@ func (actor *Actor) setPromptHash(ctx context.Context, hash string) {
 }
 
 // collectSendFailures gathers the loop's own messages that never arrived and
-// have not been reported to it, so this wake can say so (#154). A send is
-// immediate and its outcome lands after the turn that made it ended, so the
-// next wake is the first moment the sender can be told.
+// that this turn tells it of: news it has not had, and reminders of what it
+// has neither resent nor dismissed (#154, #561). A send is immediate and its
+// outcome lands after the turn that made it ended, so the next turn is the
+// first moment the sender can be told.
 //
-// Read at wake rather than at every turn: a failure recorded mid-turn waits
-// for the following wake, which is what the operator chose — the alternative
-// wakes a loop per failure, and an outage is many failures.
+// Read before every turn, as reactions are, so a reminder is a turn's and
+// not a wake's. No failure wakes a loop: an outage is many failures, and one
+// wake each is a storm (ADR-0026), so the news waits for whatever turn comes
+// next.
 func (actor *Actor) collectSendFailures(ctx context.Context) {
-	lost, err := actor.deps.Store.Messages().UntoldSendFailures(ctx, actor.loop.ID)
+	lost, err := actor.deps.Store.Messages().SendFailuresToTell(ctx, actor.loop.ID)
 	if err != nil {
-		// The wake is not worth failing over news about an old message; the
-		// rows keep their unreported marks and the next wake tries again.
+		// The turn is not worth failing over news about an old message; the
+		// rows keep their counts and the next turn tries again.
 		actor.log().Error("collect send failures", "err", err)
 		return
 	}
@@ -916,6 +917,7 @@ func (actor *Actor) startTurn() {
 		}
 	}
 	actor.inbox = rest
+	actor.collectSendFailures(context.Background())
 	actor.sendBatch(batch)
 }
 
