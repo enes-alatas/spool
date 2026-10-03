@@ -34,15 +34,25 @@ const (
 const uploadPath = "/api/attachments"
 
 // messageView is a message as the control room reads it: the stored row,
-// the files it carries, and its reactions, oldest first (ADR-0040).
+// the files it carries, its reactions, oldest first (ADR-0040), and the
+// ballot it carries if it is a poll (ADR-0041).
 type messageView struct {
 	*store.Message
 	Attachments []*store.Attachment `json:"attachments,omitempty"`
 	Reactions   []*store.Reaction   `json:"reactions,omitempty"`
+	Poll        *pollView           `json:"poll,omitempty"`
 }
 
-// messageViews gives each message its attachments and its reactions, in one
-// query each.
+// pollView is a ballot with each voter's current choice, oldest first. A
+// retracted vote is left out: it is no choice, and the room tallies what
+// the votes pick.
+type pollView struct {
+	*store.Poll
+	Votes []*store.Vote `json:"votes"`
+}
+
+// messageViews gives each message its attachments, its reactions and its
+// ballot, in one query each, and one more for the ballots' votes.
 func (server *Server) messageViews(ctx context.Context, msgs []*store.Message) ([]messageView, error) {
 	ids := make([]int64, len(msgs))
 	for i, msg := range msgs {
@@ -60,9 +70,42 @@ func (server *Server) messageViews(ctx context.Context, msgs []*store.Message) (
 	for _, reaction := range reactions {
 		reactionsByMessage[reaction.MessageID] = append(reactionsByMessage[reaction.MessageID], reaction)
 	}
+	polls, err := server.pollViews(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
 	views := make([]messageView, len(msgs))
 	for i, msg := range msgs {
-		views[i] = messageView{Message: msg, Attachments: byMessage[msg.ID], Reactions: reactionsByMessage[msg.ID]}
+		views[i] = messageView{
+			Message:     msg,
+			Attachments: byMessage[msg.ID],
+			Reactions:   reactionsByMessage[msg.ID],
+			Poll:        polls[msg.ID],
+		}
+	}
+	return views, nil
+}
+
+// pollViews returns the ballots the given messages carry, by message.
+func (server *Server) pollViews(ctx context.Context, messageIDs []int64) (map[int64]*pollView, error) {
+	polls, err := server.Store.Polls().ListByMessages(ctx, messageIDs)
+	if err != nil || len(polls) == 0 {
+		return nil, err
+	}
+	views := make(map[int64]*pollView, len(polls))
+	pollIDs := make([]int64, len(polls))
+	for i, poll := range polls {
+		views[poll.MessageID] = &pollView{Poll: poll, Votes: []*store.Vote{}}
+		pollIDs[i] = poll.MessageID
+	}
+	votes, err := server.Store.Polls().Votes(ctx, pollIDs)
+	if err != nil {
+		return nil, err
+	}
+	for _, vote := range votes {
+		if view := views[vote.PollID]; view != nil && len(vote.Choice) > 0 {
+			view.Votes = append(view.Votes, vote)
+		}
 	}
 	return views, nil
 }
