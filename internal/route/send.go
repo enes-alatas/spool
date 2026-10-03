@@ -390,29 +390,47 @@ func (router *Router) resendTarget(ctx context.Context, req SendRequest) (*store
 	if strings.TrimSpace(req.Resends) == "" {
 		return nil, nil, nil
 	}
-	id, ok := loop.ParseMessageRef(req.Resends)
+	return router.lostSend(ctx, req, req.Resends, lostSendRefusals{
+		verb: "resend", notFailed: ErrResendsNotFailed, wrongDestination: ErrResendsWrongDestination,
+		elsewhere: "say it again where it was lost, or send it as a new message",
+	})
+}
+
+// lostSendRefusals words lostSend's refusals for the send that names the
+// failure: a resend or a dismissal.
+type lostSendRefusals struct {
+	verb                        string
+	notFailed, wrongDestination string
+	elsewhere                   string // what to do instead, when the destination is wrong
+}
+
+// lostSend resolves a reference to a failure the loop may deal with: its
+// own send, failed and unresolved, lost going to the destination the
+// request names.
+func (router *Router) lostSend(ctx context.Context, req SendRequest, ref string, refuse lostSendRefusals) (*store.Message, *SendError, error) {
+	id, ok := loop.ParseMessageRef(ref)
 	if !ok {
-		return nil, &SendError{ErrResendsNotFailed,
-			fmt.Sprintf("%q is not a message reference; resend only a message the undelivered note named", req.Resends)}, nil
+		return nil, &SendError{refuse.notFailed,
+			fmt.Sprintf("%q is not a message reference; %s only a message the undelivered note named", ref, refuse.verb)}, nil
 	}
 	target, err := router.store.Messages().Get(ctx, id)
 	if errors.Is(err, store.ErrNotFound) {
-		return nil, &SendError{ErrResendsNotFailed, "no such message; resend only a message the undelivered note named"}, nil
+		return nil, &SendError{refuse.notFailed, "no such message; " + refuse.verb + " only a message the undelivered note named"}, nil
 	} else if err != nil {
 		return nil, nil, err
 	}
 	// Ownership before anything the row says: a loop is told nothing about
 	// another loop's message, not even which destination it was going to.
 	if target.FromLoopID != req.From.ID {
-		return nil, &SendError{ErrResendsNotFailed, "that message is not one you sent"}, nil
+		return nil, &SendError{refuse.notFailed, "that message is not one you sent"}, nil
 	}
 	if target.SendFailedAt == 0 || target.SendResolvedAt != 0 {
-		return nil, &SendError{ErrResendsNotFailed,
+		return nil, &SendError{refuse.notFailed,
 			"that message has no unresolved send failure; it arrived, or somebody has already dealt with it"}, nil
 	}
 	if target.Destination() != req.Destination {
-		return nil, &SendError{ErrResendsWrongDestination,
-			fmt.Sprintf("that message was going to %s, not %s; say it again where it was lost, or send it as a new message", target.Destination(), req.Destination)}, nil
+		return nil, &SendError{refuse.wrongDestination,
+			fmt.Sprintf("that message was going to %s, not %s; %s", target.Destination(), req.Destination, refuse.elsewhere)}, nil
 	}
 	return target, nil, nil
 }
