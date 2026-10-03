@@ -3,6 +3,7 @@ package telegram
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -73,11 +74,17 @@ func newClient(base, token string, answerTimeout time.Duration) *Client {
 // http1Transport is a connection pool of its own that speaks HTTP/1.1 only
 // and waits answerTimeout for an answer's headers once the request is
 // written (0 = no wait of its own beyond the call's).
+//
+// Protocols alone is not enough: a clone of http.DefaultTransport still
+// offers h2 in its TLS handshake, api.telegram.org takes the offer, and
+// an HTTP/1 reader fails every call on the SETTINGS frame that follows
+// (#570). The TLS config names http/1.1 as the one protocol it speaks.
 func http1Transport(answerTimeout time.Duration) *http.Transport {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	var protocols http.Protocols
 	protocols.SetHTTP1(true)
 	transport.Protocols = &protocols
+	transport.TLSClientConfig = &tls.Config{NextProtos: []string{"http/1.1"}}
 	transport.ResponseHeaderTimeout = answerTimeout
 	return transport
 }
