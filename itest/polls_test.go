@@ -70,7 +70,11 @@ func TestAPollDueWhileTheHubWasDownClosesAtStartup(t *testing.T) {
 			t.Errorf("the %s poll was closed at %d", name, at)
 		}
 	}
-	if !strings.Contains(s.log(), "polls closed") {
-		t.Errorf("the startup close was not logged:\n%s", s.log())
+	// logged once the pass returns, a moment after the row is written
+	for deadline := time.Now().Add(5 * time.Second); !strings.Contains(s.log(), "polls closed"); {
+		if time.Now().After(deadline) {
+			t.Fatalf("the startup close was not logged:\n%s", s.log())
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }
