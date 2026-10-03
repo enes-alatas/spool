@@ -74,6 +74,7 @@ func main() {
 	trustedHosts := flag.String("trusted-host", "", "comma-separated Host/Origin names this hub also answers to, each \"host\" or \"host:port\" — for a hub reached through a proxy under that proxy's name (ADR-0030)")
 	dataDir := flag.String("data-dir", defaultDataDir(), "directory for spool.db, loop homes and worktrees")
 	claudeBin := flag.String("claude-bin", "claude", "path to the claude binary (bare runtime)")
+	hookBin := flag.String("hook-bin", "", "path to spool-hook, the PreToolUse hook bare loops run (ADR-0042); unset: spool-hook next to this binary")
 	runtimeChoice := flag.String("runtime", "auto", "default runtime for new loops: auto (docker when the daemon is reachable), docker, or bare")
 	allowBare := flag.Bool("allow-bare", false, "let the control room create uncontained bare loops on a hub whose default is docker; implied by --runtime bare (ADR-0017)")
 	workstationImage := flag.String("workstation-image", "spool-workstation", "default image for docker workstations")
@@ -165,10 +166,16 @@ func main() {
 		EgressImage:  *egressImage,
 		MCPPort:      mcpPort,
 		EgressAllow:  allowEntries,
+		Hook:         docker.WorkstationHook,
 		HealthTTL:    healthCacheTTL(healthInterval),
 	})
 	hostRuntime := bare.New(*claudeBin)
 	hostRuntime.KeepOut(*dataDir)
+	if hook := bareHook(*hookBin); hook != "" {
+		hostRuntime.PinHook(hook)
+	} else {
+		log.Warn("spool-hook not found: bare loops run without the fleet-rule hook (ADR-0042)", "hook_bin", *hookBin)
+	}
 	runtimes := map[string]runtime.Runtime{
 		store.RuntimeBare:   hostRuntime,
 		store.RuntimeDocker: dockerRuntime,
@@ -922,4 +929,26 @@ func defaultDataDir() string {
 
 func containsVersion(full, version string) bool {
 	return len(full) >= len(version) && full[:len(version)] == version
+}
+
+// bareHook resolves the hook bare loops run: the --hook-bin path, or
+// spool-hook next to this binary, where make builds it. It returns "" when
+// there is no such file, so a hub built without it starts, and says so.
+func bareHook(flagPath string) string {
+	path := flagPath
+	if path == "" {
+		self, err := os.Executable()
+		if err != nil {
+			return ""
+		}
+		path = filepath.Join(filepath.Dir(self), "spool-hook")
+	}
+	path, err := filepath.Abs(path)
+	if err != nil {
+		return ""
+	}
+	if info, err := os.Stat(path); err != nil || info.IsDir() {
+		return ""
+	}
+	return path
 }

@@ -305,6 +305,14 @@ agents — Claude sessions today, Spool's own loops from L2.*
   the answer is cheap to fold. The PR carries the `Operator decision pending:`
   line until the answer arrives, and the answer is recorded where the decision
   lives (the issue's body, or an ADR), never only in chat.
+- **Refused at the tool call** (ADR-0042): a loop's Bash calls pass
+  `spool-hook` first, and the mechanical rules it knows are refused before the
+  command runs, with the reason in the loop's turn. Today that is the host's
+  shared state: a `git stash` with no named entry (push without `-m`, `pop`,
+  `apply` or `drop` with none named, `clear`), `pkill` and `killall` (kill by
+  PID), a force push to or deletion of `main`, and `git add -A`/`--all`/`.`
+  (stage by path). The hook catches slips. A rule it enforces still binds a
+  human, and a rule it does not know binds everyone as before.
 - **Scoped delegation**: the interview may end with the human delegating the
   decision back ("you decide"). That delegation is per-decision: it covers
   exactly the questions put to the human, and the ADR or issue recording the

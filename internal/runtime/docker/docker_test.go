@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os/exec"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -20,7 +21,7 @@ func TestExecArgvCarriesNoEnvValues(t *testing.T) {
 			"API_KEY":                 "hunter2",
 		},
 	}
-	argv, err := execArgv(spec, nil)
+	argv, err := execArgv(spec, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +46,7 @@ func TestExecArgvCarriesNoEnvValues(t *testing.T) {
 }
 
 func TestExecArgvRequiresSession(t *testing.T) {
-	if _, err := execArgv(runtime.Spec{LoopID: "abc"}, nil); err == nil {
+	if _, err := execArgv(runtime.Spec{LoopID: "abc"}, nil, ""); err == nil {
 		t.Fatal("want the claude.Args session error to propagate")
 	}
 }
@@ -86,7 +87,7 @@ func TestRunArgvImageOverrideAndNoLimits(t *testing.T) {
 // host-gateway alias it used to reach the hub directly.
 func TestEgressShapesTheWorkstation(t *testing.T) {
 	walledRT := &Runtime{egressImage: "spool-egress", mcpPort: "8081"}
-	argv, err := execArgv(runtime.Spec{LoopID: "abc", SessionID: "sess-1"}, walledRT.egressEnv())
+	argv, err := execArgv(runtime.Spec{LoopID: "abc", SessionID: "sess-1"}, walledRT.egressEnv(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,4 +189,17 @@ func contains(list []string, item string) bool {
 		}
 	}
 	return false
+}
+
+// TestExecPinsTheHook: a workstation's claude runs the hook the image
+// carries, pinned through --settings (ADR-0042).
+func TestExecPinsTheHook(t *testing.T) {
+	argv, err := execArgv(runtime.Spec{LoopID: "abc", SessionID: "sess-1"}, nil, WorkstationHook)
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := slices.Index(argv, "--settings")
+	if at < 0 || !strings.Contains(argv[at+1], WorkstationHook) || !strings.Contains(argv[at+1], `"disableAllHooks":false`) {
+		t.Fatalf("the hook is not pinned: %q", argv)
+	}
 }

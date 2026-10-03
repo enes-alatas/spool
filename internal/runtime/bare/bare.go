@@ -43,6 +43,7 @@ type Runtime struct {
 	cfgErr  error
 
 	keepOut string // the hub's data directory, which GetFile never reads
+	hook    string // the PreToolUse hook every claude runs, "" for none
 }
 
 // New returns a bare runtime spawning bin (default "claude").
@@ -52,6 +53,10 @@ func New(bin string) *Runtime {
 	}
 	return &Runtime{bin: bin}
 }
+
+// PinHook makes every claude this runtime starts run the hook at path
+// before each Bash call (ADR-0042). Call it before the runtime is used.
+func (host *Runtime) PinHook(path string) { host.hook = path }
 
 // KeepOut names the hub's data directory: the database and every token
 // are in it, so no loop may send a file from it. Call it before the
@@ -223,6 +228,7 @@ func (host *Runtime) Start(ctx context.Context, spec runtime.Spec) (runtime.Proc
 		ResumeID:           spec.ResumeID,
 		AppendSystemPrompt: spec.AppendSystemPrompt,
 		PartialMessages:    spec.PartialMessages,
+		PreToolUseHook:     host.hook,
 	}
 	if spec.MCPConfig != "" {
 		// The config carries the loop's hub token: a 0600 file keeps it out
