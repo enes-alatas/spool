@@ -634,13 +634,12 @@ textarea {
    is (0,3,0) against its (0,2,0) — or the margin quietly survives and the
    alignment below is an accident of the cascade instead of a choice.
 
-   Right-aligned within its column on purpose: the destination and the reason
-   read as one clause, so the gap between them stays constant instead of
-   growing with the length of the word. */
+   Left-aligned, under the message it belongs to: right-aligned, every row's
+   destination started at a different x and none of them under the text above
+   it, so the line read as misaligned rather than as a column (#561). */
 .undelivered-row.feed-item .origin {
   grid-area: dest;
   margin-left: 0;
-  justify-self: end;
 }
 /* On Activity, a message's files take their own line under the row, lined up
    with the author: the time column is 76px and the row's gap 12px */
