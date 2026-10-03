@@ -204,11 +204,43 @@ export interface ChatMessage {
   attachments?: Attachment[]
   // Its reactions, oldest first (ADR-0040, #535). Absent when there are none.
   reactions?: Reaction[]
+  // The ballot it carries if it is a loop's poll (ADR-0041, #554). Absent on
+  // every other message.
+  poll?: Poll
   // The channel a channel message was posted in: 'group' for the fleet
   // channel. Absent on owner_dm and control_room messages, and on a server
   // from before channels (#483). Mirrored for the api.ts/Go sync rule;
   // nothing in the room reads it yet.
   channel?: string
+}
+
+// A poll's ballot, as store.Poll has it, with each voter's current choice
+// (ADR-0041). The message's text is the question. A retracted vote is not
+// in `votes`.
+export interface Poll {
+  message_id: number
+  // Two to ten, in order. A vote names them by index.
+  options: string[]
+  multiple: boolean
+  // When the hub closes it, 0 for one its author closes; when it closed, 0
+  // while it is open. Unix milliseconds.
+  closes_at: number
+  closed_at: number
+  // Oldest first.
+  votes: Vote[]
+}
+
+// One voter's whole choice in one poll, as store.Vote has it.
+export interface Vote {
+  id: number
+  poll_id: number
+  // Who voted, keyed as a reactor is: `loop:<id>` or `<surface>:<user id>`.
+  voter_key: string
+  // The voter's name as it was shown when they voted.
+  voter: string
+  // The indexes of the options picked, ascending.
+  choice: number[]
+  ts: number
 }
 
 // One reactor's emoji on one hub message, as store.Reaction has it

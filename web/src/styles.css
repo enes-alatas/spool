@@ -2811,6 +2811,71 @@ textarea {
   font-size: 0.6875rem;
   color: var(--text-muted);
 }
+/* A poll's ballot under its question (#554): one row per option, its bar a
+   share of everyone who voted drawn behind the label, its count at the end
+   in mono. Open, the bars are in the active colour; closed, they go quiet
+   and the state says when. Who chose an option is on hover. */
+.poll {
+  margin-top: 6px;
+  max-width: 420px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.8125rem;
+}
+.poll-head,
+.poll-foot {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+}
+.poll .poll-state {
+  color: var(--active);
+}
+.poll.closed .poll-state {
+  color: var(--text-muted);
+}
+.poll-options {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.poll-option {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  cursor: default;
+}
+.poll-bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: color-mix(in srgb, var(--active) 22%, transparent);
+}
+.poll.closed .poll-bar {
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+}
+.poll-label {
+  position: relative;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.poll-count {
+  position: relative;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+}
+.feed-item .poll {
+  flex-basis: 100%;
+  margin: 0 0 0 88px;
+}
 .feed-item .reactions {
   flex-basis: 100%;
   margin: 0 0 0 88px;

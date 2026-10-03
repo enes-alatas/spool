@@ -140,3 +140,9 @@ export const SLACK_UNBOUND_HINT =
 // them: the operator updates the manifest and reinstalls once (#535).
 export const SLACK_REACTIONS_HINT =
   'Reactions need the reactions:read and reactions:write scopes and the reaction_added and reaction_removed events. An app created before them gets them under OAuth & Permissions and Event Subscriptions in its Slack settings, then a reinstall; until then reactions stay on the hub.'
+
+// An app created from a manifest older than ADR-0041 has interactivity off,
+// so a click on a poll's buttons never reaches it. Slack keeps the app as
+// created: the operator switches it on once (#552, #554).
+export const SLACK_POLLS_HINT =
+  'Polls need interactivity. An app created before polls gets it under Interactivity & Shortcuts in its Slack settings; until then its polls show, and clicks on them do nothing.'
