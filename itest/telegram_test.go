@@ -38,6 +38,11 @@ type fakeTelegram struct {
 	// how a test fails one part of a long message and not the others.
 	failText  string
 	sendCalls int
+	// stallSends holds the next n sendMessage calls without an answer
+	// until the bridge hangs up on them: a connection that died after the
+	// request was written, as the hub sees one. A held call records nothing
+	// in sent.
+	stallSends int
 	// holdGetMe stands in for a slow api.telegram.org: getMe blocks on it
 	// until the test lets go. Real getMe calls take a round-trip, and the
 	// hub holds a copy of the loop row across one (#164) — a window a test
@@ -96,6 +101,13 @@ func (tg *fakeTelegram) failNextSends(n int) {
 	tg.mu.Lock()
 	defer tg.mu.Unlock()
 	tg.failSends, tg.failForever = n, n < 0
+}
+
+// stallNextSends makes the stand-in leave the next n sends unanswered.
+func (tg *fakeTelegram) stallNextSends(n int) {
+	tg.mu.Lock()
+	defer tg.mu.Unlock()
+	tg.stallSends = n
 }
 
 // failSendsContaining makes the stand-in refuse every send whose text
@@ -227,8 +239,17 @@ func (tg *fakeTelegram) handle(w http.ResponseWriter, r *http.Request) {
 			} `json:"reply_parameters"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&req)
+		// read whole, so the server watches the connection and sees the
+		// bridge hang up on a held call
+		_, _ = io.Copy(io.Discard, r.Body)
 		tg.mu.Lock()
 		tg.sendCalls++
+		if tg.stallSends > 0 {
+			tg.stallSends--
+			tg.mu.Unlock()
+			<-r.Context().Done()
+			return
+		}
 		if tg.failForever || tg.failSends > 0 || (tg.failText != "" && strings.Contains(req.Text, tg.failText)) {
 			if !tg.failForever && tg.failSends > 0 {
 				tg.failSends--
@@ -694,6 +715,8 @@ func startTelegramFleetIn(t *testing.T, dataDir string, operator user, overrides
 }
 
 // startTelegramServer spawns a server pointed at the stand-in Telegram API.
+// The stand-in answers at once, so a call it leaves unanswered is given up
+// on after five seconds rather than the production 20s.
 // Every test that binds bots goes through here rather than calling
 // startServerArgs itself, so the shortened bind margin and settleBindings
 // cannot drift apart: the margin exists to cover Telegram's clock skew, the
@@ -703,7 +726,8 @@ func startTelegramServer(t *testing.T, dataDir string, tg *fakeTelegram) *server
 	t.Helper()
 	return startServerArgs(t, dataDir, "--runtime", "bare",
 		"--telegram-api-base", tg.srv.URL,
-		"--telegram-bind-settle-sec", "1")
+		"--telegram-bind-settle-sec", "1",
+		"--telegram-answer-timeout-sec", "5")
 }
 
 // settleBindings waits out the margin a freshly bound bot serves before it

@@ -24,18 +24,62 @@ const APIBase = "https://api.telegram.org"
 type Client struct {
 	token string
 	base  string
-	http  *http.Client
+	// http carries every call but the long poll, and longPoll that alone:
+	// Telegram holds a getUpdates open for up to pollTimeoutSec before it
+	// answers, and answers everything else in seconds, so the two wait on
+	// different clocks.
+	http     *http.Client
+	longPoll *http.Client
 }
+
+const (
+	// DefaultAnswerTimeout is how long a call other than the long poll waits
+	// for Telegram's answer once its request is written. Telegram answers
+	// in about a second; a call left waiting longer is on a connection that
+	// died under it, and a retry gets through on a fresh one (#559). Before
+	// this the wait was the long poll's 70s, so one dead connection held a
+	// bot's sends for minutes and gave up messages a new connection would
+	// have carried.
+	DefaultAnswerTimeout = 20 * time.Second
+	// callTimeout bounds a call whole, upload included: the 20 MB file
+	// Telegram takes outlasts any answer timeout on a slow link.
+	callTimeout = 70 * time.Second
+)
 
 func NewClient(token string) *Client { return NewClientAt(APIBase, token) }
 
 // NewClientAt talks to a Bot API at base — APIBase in production.
 func NewClientAt(base, token string) *Client {
+	return newClient(base, token, DefaultAnswerTimeout)
+}
+
+// newClient is NewClientAt with the answer timeout a test may shorten.
+//
+// Each client dials its own connections, over HTTP/1.1. Over HTTP/2 every
+// bot multiplexed onto one shared connection to api.telegram.org, and a
+// call that timed out left that connection pooled: when it died, every
+// bot's every retry was written into it and waited out the full timeout.
+// Over HTTP/1.1 a call that times out closes its connection, so a retry
+// dials fresh, and one bot's connections are no other bot's.
+func newClient(base, token string, answerTimeout time.Duration) *Client {
 	if base == "" {
 		base = APIBase
 	}
 	return &Client{token: token, base: strings.TrimSuffix(base, "/"),
-		http: &http.Client{Timeout: 70 * time.Second}}
+		http:     &http.Client{Timeout: callTimeout, Transport: http1Transport(answerTimeout)},
+		longPoll: &http.Client{Timeout: callTimeout, Transport: http1Transport(0)}}
+}
+
+// http1Transport is a connection pool of its own that speaks HTTP/1.1 only
+// and waits answerTimeout for an answer's headers once the request is
+// written (0 = no wait of its own beyond the call's).
+func http1Transport(answerTimeout time.Duration) *http.Transport {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	var protocols http.Protocols
+	protocols.SetHTTP1(true)
+	transport.Protocols = &protocols
+	transport.ResponseHeaderTimeout = answerTimeout
+	return transport
 }
 
 type apiResponse struct {
@@ -77,7 +121,11 @@ func (client *Client) post(ctx context.Context, method, contentType string, body
 		return redactToken(err, client.token)
 	}
 	req.Header.Set("Content-Type", contentType)
-	resp, err := client.http.Do(req)
+	caller := client.http
+	if method == "getUpdates" {
+		caller = client.longPoll
+	}
+	resp, err := caller.Do(req)
 	if err != nil {
 		return redactToken(err, client.token)
 	}

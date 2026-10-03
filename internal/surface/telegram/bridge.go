@@ -37,7 +37,9 @@ const (
 	// sendAttempts and sendBackoff bound the retry a failed send gets: a
 	// timeout against api.telegram.org is ordinary, and one attempt made it
 	// cost the message (#147). Four attempts over ~7s of backoff outlast a
-	// blip without holding the bot's paced queue for a minute.
+	// blip. A failure answers at once, so they hold the bot's paced queue
+	// for seconds; four calls left unanswered hold it for the answer
+	// timeout four times over, ~87s at DefaultAnswerTimeout.
 	sendAttempts = 4
 	sendBackoff  = time.Second
 	// defaultBindSettle is how long after binding a bot waits before it may win a
@@ -52,6 +54,9 @@ type Bridge struct {
 	// bindSettle is this bridge's ingest-election margin, defaultBindSettle
 	// unless SetBindSettle shortened it for a test.
 	bindSettle time.Duration
+	// answerTimeout is how long each bot's calls wait for Telegram's answer,
+	// DefaultAnswerTimeout unless SetAnswerTimeout shortened it for a test.
+	answerTimeout time.Duration
 
 	store   store.Store
 	bus     *bus.Bus
@@ -109,8 +114,8 @@ func NewBridge(st store.Store, publisher *bus.Bus, router *route.Router, log *sl
 	}
 	return &Bridge{store: st, bus: publisher, router: router, log: log, apiBase: apiBase,
 		ledger:     &outbound.Ledger{Store: st, Bus: publisher, Log: log, Surface: "telegram"},
-		bindSettle: defaultBindSettle,
-		pollers:    map[string]*poller{}, dedup: newDedupLRU(dedupSize),
+		bindSettle: defaultBindSettle, answerTimeout: DefaultAnswerTimeout,
+		pollers: map[string]*poller{}, dedup: newDedupLRU(dedupSize),
 		pairNotified: map[int64]bool{}, notOwnerNotified: map[string]bool{},
 		loginTold: map[loginOutage]loginTeller{}}
 }
@@ -123,6 +128,17 @@ func NewBridge(st store.Store, publisher *bus.Bus, router *route.Router, log *sl
 func (br *Bridge) SetBindSettle(settle time.Duration) {
 	if settle > 0 {
 		br.bindSettle = settle
+	}
+}
+
+// SetAnswerTimeout overrides how long a bot's call waits for Telegram's
+// answer before it is retried on a fresh connection, and must be called
+// before Start. Only a test harness pointed at a stand-in API should call
+// it: one that stalls a call has the harness wait this out. A value of 0 or
+// less keeps the default.
+func (br *Bridge) SetAnswerTimeout(timeout time.Duration) {
+	if timeout > 0 {
+		br.answerTimeout = timeout
 	}
 }
 
@@ -280,7 +296,7 @@ func (br *Bridge) startPoller(loopRecord *store.Loop) {
 		loopID: loopRecord.ID,
 		name:   loopRecord.Name,
 		token:  loopRecord.TGBotToken,
-		client: NewClientAt(br.apiBase, loopRecord.TGBotToken),
+		client: newClient(br.apiBase, loopRecord.TGBotToken, br.answerTimeout),
 		cancel: cancel,
 		sendCh: make(chan sendReq, 128),
 	}
