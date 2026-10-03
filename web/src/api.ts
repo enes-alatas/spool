@@ -168,10 +168,11 @@ export interface ChatMessage {
   // for. The failure itself is never erased: `send_failed_at` and
   // `send_error` stay, so what failed and why survives the resolution.
   send_resolved_at?: number
-  // What became of it. Three today — 'delivered' (a retry of this row got
+  // What became of it. Four today — 'delivered' (a retry of this row got
   // through), 'dismissed' (the operator is done looking), 'resent' (the loop
   // said the words again itself in a later message, and that one arrived,
-  // #270) — and a plain string rather than a union of those three, because
+  // #270), 'dismissed_by_loop' (the loop decided not to say it again, #561)
+  // — and a plain string rather than a union of those four, because
   // the union would be a claim the room decides this field. It does not: the
   // hub writes it, a browser tab outlives an upgrade, and a closed union
   // makes every switch on it look exhaustive to the compiler while the
@@ -185,6 +186,11 @@ export interface ChatMessage {
   // resolution; absent on the others (#270). The failure's own row says a
   // resend happened; this says where to read what was actually said.
   send_resent_as?: number
+  // The loop was told of this failure as often as it will be, and neither
+  // resent nor dismissed it (#561): it is the operator's alone now. Not
+  // always reminded: a failure from before migration 0038 was told once, and
+  // that migration counts it as told in full. True only while the failure is unresolved; absent otherwise.
+  send_left_by_loop?: boolean
   // The failed message these words were said again for — the mirror of
   // `send_resent_as`, on the message that did the resending. Mirrored for
   // the api.ts/Go sync rule; nothing in the room reads it yet.

@@ -17,7 +17,8 @@ export interface Undelivered {
   // words for. '' is still unresolved and still theirs to deal with;
   // 'delivered' is a retry of this same row getting through; 'dismissed' is
   // the operator done looking; 'resent' is the loop saying the words again
-  // in a later message that did arrive.
+  // in a later message that did arrive; 'dismissed_by_loop' is the loop
+  // deciding not to (#561).
   //
   // States rather than a boolean, because they are different things to tell
   // the reader of a conversation, and only one of them is "still yours".
@@ -30,10 +31,14 @@ export interface Undelivered {
   // no arm for it. #278 arriving as the third is what made this concrete:
   // against a closed two-value union both switches returned `undefined` and
   // the mark rendered empty.
-  resolution: '' | 'delivered' | 'dismissed' | 'resent' | 'unknown'
+  resolution: '' | 'delivered' | 'dismissed' | 'resent' | 'dismissed_by_loop' | 'unknown'
   // Which message carried the words the second time ('resent' only, 0
   // otherwise), so the mark can send the reader to what was actually said.
   resentAs: number
+  // Whether the loop was told of this failure as often as it will be and did
+  // nothing about it (#561). Only ever true while it is unresolved:
+  // it says whose the failure is now, not what became of it.
+  leftByLoop: boolean
   // Whether this was a post in the fleet channel, which the hub holds and
   // delivers to the loops it addresses before any surface is involved: what
   // failed is its mirror, the copy for the surface's room, and the mark says
@@ -77,6 +82,7 @@ export function undelivered(m: ChatMessage): Undelivered | null {
     // this is the one place that does want to know which of them it was.
     resolution: narrow(m.send_resolution),
     resentAs: m.send_resent_as ?? 0,
+    leftByLoop: m.send_left_by_loop ?? false,
     fleetChannel: m.conversation === 'group',
   }
 }
@@ -92,6 +98,7 @@ function narrow(resolution: string | undefined): Undelivered['resolution'] {
     case 'delivered':
     case 'dismissed':
     case 'resent':
+    case 'dismissed_by_loop':
       return resolution
     case '':
     case undefined:
@@ -131,6 +138,10 @@ export function undeliveredLabel(u: Undelivered): string {
       // the message getting through — so the mark keeps its claim and adds
       // why it is no longer on their list.
       return `${missed}, dismissed`
+    case 'dismissed_by_loop':
+      // The same claim, and whose call it was: the loop's, not the
+      // operator's, which is the difference the reader needs (#561).
+      return `${missed}, dismissed by the loop`
     case 'resent':
       // Not "delivered": this message never arrived. The loop noticed and
       // said the words again in a later one, which did — so the reader on
@@ -142,7 +153,9 @@ export function undeliveredLabel(u: Undelivered): string {
       // because it is one.
       return `${missed}, resolved (this page has no words for how)`
     case '':
-      return missed
+      // Still the operator's either way; the loop having left it is said,
+      // because it means nobody else is going to deal with it.
+      return u.leftByLoop ? `${missed}, the loop left it` : missed
   }
 }
 
@@ -159,12 +172,16 @@ export function undeliveredTitle(u: Undelivered): string {
       return `${why}Given up at ${when}, then sent again from Undelivered; that attempt got through.`
     case 'dismissed':
       return `${why}Given up at ${when}; ${lost}, and it was dismissed from Undelivered rather than sent again.`
+    case 'dismissed_by_loop':
+      return `${why}Given up at ${when}; ${lost}, and the loop dismissed it rather than saying it again.`
     case 'resent':
       return `${why}Given up at ${when}; ${lost}. The loop said it again${u.resentAs ? ` as message ${u.resentAs}` : ''}, and that one got through.`
     case 'unknown':
       return `${why}Given up at ${when}; ${lost}. It has since been resolved in a way this page does not recognise. It is probably older than the hub it is talking to, so reload.`
     case '':
-      return `${why}Given up at ${when}; ${lost}.`
+      return u.leftByLoop
+        ? `${why}Given up at ${when}; ${lost}. The loop was told and neither said it again nor dismissed it, so it is left to you: retry or dismiss it from Undelivered.`
+        : `${why}Given up at ${when}; ${lost}.`
   }
 }
 
