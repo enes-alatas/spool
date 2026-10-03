@@ -155,7 +155,7 @@ func TestRetryingADeliveredMessageIsNotFound(t *testing.T) {
 	}
 }
 
-// A retry that lands before the sender's next wake must also cancel the news
+// A retry that lands before the sender's next turn must also cancel the news
 // owed to it. The loop is told a send was lost so that it can decide whether
 // the words are still worth saying (ADR-0026, 2026-09-18 amendment) — told
 // that about a message the operator just delivered, a well-behaved loop says

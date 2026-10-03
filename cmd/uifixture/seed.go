@@ -256,6 +256,10 @@ func seedConversations(ctx context.Context, db store.Store, files *attach.Files,
 		// timeline, and the count on the Fleet row (#201) — and a store where
 		// everything arrived shoots none of them.
 		failed string
+		// left marks a failure its loop was told of and reminded of as
+		// often as it will be, and neither resent nor dismissed (#561), so
+		// the Undelivered pane has one row of each kind to draw.
+		left bool
 		// to is the loops the hub delivered it to, by id as the store keeps
 		// them, which the fleet channel names under a message (#286). Only
 		// the loops a post addresses: a fixture that listed the same two
@@ -289,7 +293,7 @@ func seedConversations(ctx context.Context, db store.Store, files *attach.Files,
 			{name: "whiteboard.png", body: fixtureScreenshot(), removed: true},
 			{name: "planning-call.mp4", notKept: store.NotKeptTooLarge, size: 48_234_496},
 		}},
-		{author: "archivist", from: ids["archivist"], text: "Incident summary is up for review: nineteen reports, two of them one line each.", at: -26 * time.Hour, failed: "timeout reaching the surface"},
+		{author: "archivist", from: ids["archivist"], text: "Incident summary is up for review: nineteen reports, two of them one line each.", at: -26 * time.Hour, failed: "timeout reaching the surface", left: true},
 		{author: "watcher", from: ids["watcher"], text: "Nightly is green again: the break was a missing fixture in 4f1c2ab, fixed in 9d0e77c.", at: -34 * time.Minute},
 		{author: "watcher", from: ids["watcher"], text: "Tonight's run broke again at the same fixture. Not reverting it myself — the change it belongs to is still open.", at: -21 * time.Minute, failed: "timeout reaching the surface", files: []fixtureFile{
 			{name: "nightly.log", body: fixtureLog()},
@@ -350,6 +354,11 @@ func seedConversations(ctx context.Context, db store.Store, files *attach.Files,
 			// spent — the fields are never written by the insert.
 			if err := db.Messages().SetSendResult(ctx, msg.ID, ms(message.at+30*time.Second), message.failed); err != nil {
 				return fmt.Errorf("group message failure: %w", err)
+			}
+		}
+		for telling := 0; message.left && telling < store.SendFailureTellings; telling++ {
+			if err := db.Messages().MarkSendFailuresTold(ctx, []int64{msg.ID}, ms(message.at+time.Duration(telling+1)*time.Hour)); err != nil {
+				return fmt.Errorf("group message tellings: %w", err)
 			}
 		}
 	}

@@ -1,6 +1,6 @@
 # ADR-0026: Loops send through a hub-served MCP tool
 
-Date: 2026-09-15 · Status: accepted (operator interview; implementation pending) · Amended: 2026-09-16 (`owner_dm` routing, twice); 2026-09-18 (undelivered sends); 2026-09-20 (item 1 is a Surface rule); 2026-09-22 (a resend names the failure it replaces); 2026-09-23 (item 1: `group` is a hub conversation); 2026-09-29 (`owner_dm` on Slack is opened, not captured); 2026-09-30 (item 2: `attach` sends a file); 2026-09-30 (item 2: Slack carries files); 2026-10-01 (item 1: `group` holds named channels)
+Date: 2026-09-15 · Status: accepted (operator interview; implementation pending) · Amended: 2026-09-16 (`owner_dm` routing, twice); 2026-09-18 (undelivered sends); 2026-09-20 (item 1 is a Surface rule); 2026-09-22 (a resend names the failure it replaces); 2026-09-23 (item 1: `group` is a hub conversation); 2026-09-29 (`owner_dm` on Slack is opened, not captured); 2026-09-30 (item 2: `attach` sends a file); 2026-09-30 (item 2: Slack carries files); 2026-10-01 (item 1: `group` holds named channels); 2026-10-03 (a loop dismisses a lost send, and is reminded until it does)
 
 ## Context
 
@@ -293,3 +293,32 @@ This does not add an outbox and does not resend anything: the loop still
 decides, and the hub still does not decide that words are worth saying
 minutes later. What changes is that the loop's decision now finishes the job
 instead of leaving half of it for the operator.
+
+**Amendment (2026-10-03, #561): a loop can dismiss a lost send, and is
+reminded until it does.** The two amendments above give a loop one way to
+deal with a lost message, saying it again, and tell it once. A loop that
+decided the words were stale, or wrote a fresh message instead, left the
+failure on the operator's list, and nothing told it again that the failure
+was still open.
+
+`send_message` gains `dismiss`, a single message reference, sent with the
+destination the message was lost going to and no text. It is accepted under
+`resends`' rule: this loop's own send, failed and unresolved, to that
+destination; anything else is a named refusal (`dismiss_not_failed`,
+`dismiss_wrong_destination`, `dismiss_carries_nothing_else`). The failure
+resolves at once as `dismissed_by_loop`: it never arrived, as with the
+operator's dismissal, but the sender decided, so the sender is not told of
+it. A dismissal says nothing, wakes nobody and spends no send budget.
+
+The news is no longer told once. It rides with the loop's next turn rather
+than its next wake, and while the failure is unresolved it rides with the
+next two turns as well, each line marked as a reminder and the last as the
+last. A failure is told three times at most (`SendFailureTellings`); one the
+loop neither resent nor dismissed by then is one it left to the operator,
+and the control room says so. Leaving it is not a resolution: it stays on
+the operator's list. Turns rather than wakes because a wake can run several
+turns; no failure wakes a loop, so the storm the #154 amendment ruled out is
+still ruled out. One failure is told once and not reminded of: one the
+operator dismissed, since it is no longer the loop's to deal with. Nor is a
+failure a later send claims to resend, so a resend that fails again is named
+by its own failure alone, and a further resend resolves the whole chain.

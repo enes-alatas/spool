@@ -294,10 +294,11 @@ func TestTextTargetIsScopedToItsAuthor(t *testing.T) {
 	}
 }
 
-// TestUntoldSendFailures pins the exactly-once bookkeeping behind telling a
-// loop its own words never arrived (#154): only the sender's own failures,
-// oldest first, and only until they have been told.
-func TestUntoldSendFailures(t *testing.T) {
+// TestSendFailuresToTell pins the bookkeeping behind telling a loop its own
+// words never arrived (#154, #561): only the sender's own failures, oldest
+// first, told and then reminded of while unresolved, SendFailureTellings
+// times in all, after which the loop has left them to the operator.
+func TestSendFailuresToTell(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -329,12 +330,12 @@ func TestUntoldSendFailures(t *testing.T) {
 		}
 	}
 
-	lost, err := db.Messages().UntoldSendFailures(ctx, "l1")
+	lost, err := db.Messages().SendFailuresToTell(ctx, "l1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(lost) != 2 {
-		t.Fatalf("got %d untold failures, want 2 (mine only)", len(lost))
+		t.Fatalf("got %d failures to tell, want 2 (mine only)", len(lost))
 	}
 	if lost[0].Text != "first" || lost[1].Text != "second" {
 		t.Errorf("failures out of order: %q then %q", lost[0].Text, lost[1].Text)
@@ -343,21 +344,59 @@ func TestUntoldSendFailures(t *testing.T) {
 		t.Errorf("send error = %q, want the surface's reason", lost[0].SendError)
 	}
 
-	if err := db.Messages().MarkSendFailuresTold(ctx, []int64{lost[0].ID, lost[1].ID}, now); err != nil {
-		t.Fatal(err)
+	// Told, and still unresolved: each comes back as a reminder until it
+	// has been told SendFailureTellings times, counting each telling.
+	for telling := 1; telling <= store.SendFailureTellings; telling++ {
+		if err := db.Messages().MarkSendFailuresTold(ctx, []int64{lost[0].ID, lost[1].ID}, now); err != nil {
+			t.Fatal(err)
+		}
+		again, err := db.Messages().SendFailuresToTell(ctx, "l1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if telling < store.SendFailureTellings {
+			if len(again) != 2 || again[0].SendFailureTellings != telling {
+				t.Fatalf("after telling %d: %d rows to tell, want both as reminders counting %d", telling, len(again), telling)
+			}
+			if again[0].SendLeftByLoop {
+				t.Fatalf("after telling %d: a failure still being reminded of reads as left", telling)
+			}
+			continue
+		}
+		if len(again) != 0 {
+			t.Errorf("reminded past the last reminder: %d rows", len(again))
+		}
 	}
-	again, err := db.Messages().UntoldSendFailures(ctx, "l1")
+	// Left by the loop, and so still the operator's: unresolved, on their
+	// list, and marked as one the loop chose not to deal with.
+	left, err := db.Messages().Get(ctx, lost[0].ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(again) != 0 {
-		t.Errorf("told failures came back: %d rows", len(again))
+	if !left.SendLeftByLoop || left.SendResolvedAt != 0 {
+		t.Errorf("a failure past its reminders: left %v, resolved at %d; want left and unresolved",
+			left.SendLeftByLoop, left.SendResolvedAt)
+	}
+	if undelivered, err := db.Messages().Undelivered(ctx, "l1"); err != nil {
+		t.Fatal(err)
+	} else if len(undelivered) != 2 {
+		t.Errorf("the operator's list holds %d after the loop left them, want 2", len(undelivered))
+	}
+	if _, err := db.Messages().ResolveSend(ctx, left.ID, now, store.SendResolutionDismissed, 0); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := db.Messages().Get(ctx, left.ID); err != nil {
+		t.Fatal(err)
+	} else if got.SendLeftByLoop {
+		t.Error("a failure the operator dismissed still reads as left by the loop")
 	}
 
-	// The two resolutions part ways here. A retry that got through means
-	// the message did arrive: telling its sender otherwise is how the human
-	// reads it twice. A dismissal is the operator done looking, and says
-	// nothing about whether the words landed — the sender is still owed it.
+	// The resolutions part ways here. A retry that got through means the
+	// message did arrive: telling its sender otherwise is how the human
+	// reads it twice. The operator's dismissal is them done looking, and
+	// says nothing about whether the words landed — the sender is still
+	// owed it. The loop's own dismissal is the sender deciding, so there is
+	// nothing to tell it.
 	stale := &store.Message{TS: now + 5, Origin: store.OriginLoop, Author: "terra",
 		FromLoopID: "l1", Text: "retried", Conversation: store.ConversationGroup}
 	setAside := &store.Message{TS: now + 6, Origin: store.OriginLoop, Author: "terra",
@@ -398,7 +437,19 @@ func TestUntoldSendFailures(t *testing.T) {
 			got.SendResolution, got.SendResentAs, store.SendResolutionResent)
 	}
 
-	afterResolution, err := db.Messages().UntoldSendFailures(ctx, "l1")
+	byLoop := &store.Message{TS: now + 8, Origin: store.OriginLoop, Author: "terra",
+		FromLoopID: "l1", Text: "dismissed by the loop", Conversation: store.ConversationGroup}
+	if err := db.Messages().Insert(ctx, byLoop); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Messages().SetSendResult(ctx, byLoop.ID, now, "chat not found"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Messages().ResolveSend(ctx, byLoop.ID, now, store.SendResolutionDismissedByLoop, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	afterResolution, err := db.Messages().SendFailuresToTell(ctx, "l1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -407,11 +458,52 @@ func TestUntoldSendFailures(t *testing.T) {
 		for i, message := range afterResolution {
 			got[i] = message.Text
 		}
-		t.Errorf("untold after resolution = %v, want the dismissed one alone", got)
+		t.Errorf("to tell after resolution = %v, want the dismissed one alone", got)
+	}
+
+	// The operator's dismissal is told once, and not reminded of: it is no
+	// longer the loop's to deal with.
+	if err := db.Messages().MarkSendFailuresTold(ctx, []int64{setAside.ID}, now); err != nil {
+		t.Fatal(err)
+	}
+	if reminded, err := db.Messages().SendFailuresToTell(ctx, "l1"); err != nil {
+		t.Fatal(err)
+	} else if len(reminded) != 0 {
+		t.Errorf("a failure the operator dismissed was reminded of: %d rows", len(reminded))
+	}
+
+	// A failure a later send claims to resend is not reminded of: the loop
+	// hears of that send instead, so it resends the newest link of the
+	// chain and the whole chain resolves when it lands.
+	resentLost := &store.Message{TS: now + 9, Origin: store.OriginLoop, Author: "terra",
+		FromLoopID: "l1", Text: "lost, then resent", Conversation: store.ConversationGroup}
+	if err := db.Messages().Insert(ctx, resentLost); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Messages().SetSendResult(ctx, resentLost.ID, now, "chat not found"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Messages().MarkSendFailuresTold(ctx, []int64{resentLost.ID}, now); err != nil {
+		t.Fatal(err)
+	}
+	if reminded, err := db.Messages().SendFailuresToTell(ctx, "l1"); err != nil {
+		t.Fatal(err)
+	} else if len(reminded) != 1 || reminded[0].ID != resentLost.ID {
+		t.Fatalf("an unclaimed failure told once is not reminded of: %d rows", len(reminded))
+	}
+	resend := &store.Message{TS: now + 10, Origin: store.OriginLoop, Author: "terra", FromLoopID: "l1",
+		Text: "lost, then resent (again)", Conversation: store.ConversationGroup, ResendsID: resentLost.ID}
+	if err := db.Messages().Insert(ctx, resend); err != nil {
+		t.Fatal(err)
+	}
+	if reminded, err := db.Messages().SendFailuresToTell(ctx, "l1"); err != nil {
+		t.Fatal(err)
+	} else if len(reminded) != 0 {
+		t.Errorf("a failure a later send resends was reminded of: %d rows", len(reminded))
 	}
 
 	// An empty loop id is not "every message nobody authored".
-	unowned, err := db.Messages().UntoldSendFailures(ctx, "")
+	unowned, err := db.Messages().SendFailuresToTell(ctx, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -451,9 +543,9 @@ func TestSendSuccessUnmarksItsFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got[0].SendFailedAt != 0 || got[0].SendError != "" || got[0].SendFailureToldAt != 0 {
-		t.Errorf("success left failure state behind: failed=%d err=%q told=%d",
-			got[0].SendFailedAt, got[0].SendError, got[0].SendFailureToldAt)
+	if got[0].SendFailedAt != 0 || got[0].SendError != "" || got[0].SendFailureToldAt != 0 || got[0].SendFailureTellings != 0 {
+		t.Errorf("success left failure state behind: failed=%d err=%q told=%d tellings=%d",
+			got[0].SendFailedAt, got[0].SendError, got[0].SendFailureToldAt, got[0].SendFailureTellings)
 	}
 }
 
