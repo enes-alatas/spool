@@ -226,3 +226,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 13:00: Enes go: #559 right after #551. Pinged Terra. Terra: #551 → #559 → #552 → #553 → #529 → #504 → #548 → #505 → #507 → #542 → #450 → #480 → #472.
 - 13:05: Enes: loops don't resend or dismiss undelivered sends; he dismisses by hand. Proposed feature: send_message `dismiss: ref`, undelivered note repeats each turn (twice, then "loop left it"). Awaiting go; file behind #559 for Terra.
 - 13:20: Terra: #558 (#552 Slack polls) merged, #560 (#553) with Quinn; #559 next, then #529. Iris gets #554 (poll rendering) after #556 and #560 land.
+- 13:45: #556 (#549) merged; #275 slices 1,2,3,5 done, slice 4 (#548 Slack rooms) pending Terra. Iris → #554 (poll rendering) now; then #506 after #504. Closing #275 waits for #548.
