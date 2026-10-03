@@ -403,8 +403,13 @@ func seedConversations(ctx context.Context, db store.Store, files *attach.Files,
 		// fixture whose failures all fit on one line shoots the same pane
 		// whether the clamp works or not.
 		failed string
+		// dismissedByLoop resolves the failure the way a loop does when its
+		// next message makes the lost one stale (#561), so the thread shows
+		// that mark beside the unresolved one.
+		dismissedByLoop bool
 	}{
 		{author: "operator", text: "How far did you get on the incident summary?", at: -2 * time.Hour},
+		{author: "archivist", from: ids["archivist"], text: "On it: reading the reports now.", at: -2*time.Hour + 10*time.Second, failed: "timeout reaching the surface", dismissedByLoop: true},
 		{author: "archivist", from: ids["archivist"], text: "Eleven of nineteen reports read. Two have no timeline at all, so they will be one line each rather than a guess.", at: -2*time.Hour + 30*time.Second},
 		{author: "archivist", from: ids["archivist"], text: "The two without timelines are in, one line each. That closes the nineteen. The summary is in the incident folder: seven outages traced to the same expired certificate, four to a config push that skipped review, and the rest one-offs with nothing in common worth a pattern.", at: -96 * time.Minute, failed: "Bad Request: message text is empty after entity parsing"},
 	}
@@ -432,6 +437,11 @@ func seedConversations(ctx context.Context, db store.Store, files *attach.Files,
 		if message.failed != "" {
 			if err := db.Messages().SetSendResult(ctx, msg.ID, ms(message.at+30*time.Second), message.failed); err != nil {
 				return fmt.Errorf("control-room message failure: %w", err)
+			}
+			if message.dismissedByLoop {
+				if _, err := db.Messages().ResolveSend(ctx, msg.ID, ms(message.at+time.Minute), store.SendResolutionDismissedByLoop, 0); err != nil {
+					return fmt.Errorf("control-room message dismissal: %w", err)
+				}
 			}
 		}
 	}
