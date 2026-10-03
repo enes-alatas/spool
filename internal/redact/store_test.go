@@ -371,6 +371,8 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			"Vote": false, "Close": false, "MarkVotesTold": false, "MarkClosesTold": false,
 			"Get": false, "ListByMessages": false, "Votes": false, "Due": false,
 			"UntoldVotes": false, "UntoldCloses": false,
+			// Telegram's id for a poll, never text.
+			"SetTGPollID": false, "ByTGPollID": false,
 		},
 		"RoomStore": {
 			// Ids, channel names and timestamps, and a chat's title as the

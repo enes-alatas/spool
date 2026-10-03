@@ -97,6 +97,20 @@ func TestAFileIsSentWithItsWords(t *testing.T) {
 	}
 }
 
+// A poll's file goes after the poll, bare: Telegram's poll carries none,
+// and its words are the question, not a caption.
+func TestAPollsFileIsSentAfterIt(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "plan.txt")
+	if err := os.WriteFile(path, []byte("PLAN"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got := sendAll(t, sendReq{chatID: 1, text: "ship it?", replyTo: 42,
+		poll: &store.Poll{MessageID: 7, Options: []string{"yes", "no"}}, media: &Media{Path: path, Name: "plan.txt"}})
+	if len(got) != 2 || got[0] != "sendPoll" || got[1] != "sendDocument plan.txt=PLAN caption= reply=" {
+		t.Errorf("a poll with a file: %q", got)
+	}
+}
+
 func TestOnlyWhatTelegramTakesAsAPhotoIsSentAsOne(t *testing.T) {
 	for _, c := range []struct {
 		row  store.Attachment
