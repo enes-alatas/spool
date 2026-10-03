@@ -12,7 +12,7 @@ import (
 
 // A poll whose close time passed while the hub was down closes as the hub
 // starts, and a poll still running or closed by hand stays open (ADR-0041).
-// No API starts a poll until slice 4 (#553), so the ballots are written
+// No send makes a poll that is already overdue, so the ballots are written
 // into spool.db while the hub is stopped, beside a message it holds.
 func TestAPollDueWhileTheHubWasDownClosesAtStartup(t *testing.T) {
 	t.Parallel()

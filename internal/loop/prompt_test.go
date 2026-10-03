@@ -1,6 +1,7 @@
 package loop
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -848,5 +849,49 @@ func TestConversationsOfChannels(t *testing.T) {
 	}
 	if _, ok := conv.Channel(store.FleetChannel); ok {
 		t.Error("the fleet channel is listed as another channel")
+	}
+}
+
+// A loop is told each voter's choice by option number and text, a vote
+// taken back as such, at most maxVotesTold of them with the rest counted,
+// and a closed poll's whole tally.
+func TestPollsEnvelope(t *testing.T) {
+	poll := &store.Poll{MessageID: 42, Options: []string{"yes", "no", "later"}, Multiple: true}
+	message := &store.Message{ID: 42, Conversation: store.ConversationGroup, Text: "ship friday?"}
+	votes := []ToldVote{
+		{Voter: "milo", Choice: []int{0, 2}, Poll: poll, Message: message},
+		{Voter: "quinn", Choice: []int{}, Poll: poll, Message: message},
+	}
+	for i := range maxVotesTold {
+		votes = append(votes, ToldVote{Voter: fmt.Sprintf("v%d", i), Choice: []int{1}, Poll: poll, Message: message})
+	}
+	closes := []ToldClose{{Poll: poll, Message: message, Votes: []*store.Vote{
+		{Voter: "milo", Choice: []int{0, 2}}, {Voter: "iris", Choice: []int{0}},
+	}}}
+	text := PollsEnvelope(time.Now(), votes, closes).Text
+	for _, want := range []string{
+		`- milo chose 1. yes, 3. later in your poll ref:42 in group, "ship friday?"`,
+		`- quinn took back their vote in your poll ref:42`,
+		"- and 2 more",
+		`- your poll ref:42 in group, "ship friday?" has closed. The result:` +
+			"\n  1. yes: 2 (milo, iris)\n  2. no: 0\n  3. later: 1 (milo)",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the note lacks %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "v8 chose") {
+		t.Errorf("the note lists more than %d votes:\n%s", maxVotesTold, text)
+	}
+}
+
+// A poll delivered to a loop shows its ballot under the question, the
+// options numbered as a vote names them.
+func TestAPollIsShownNumbered(t *testing.T) {
+	closes := time.Date(2026, 10, 3, 14, 0, 0, 0, time.UTC)
+	env := MessageEnvelope(time.Now(), Inbound{Author: "alpha", FromLoop: true, Text: "ship friday?", Ref: "ref:42",
+		Poll: &store.Poll{Options: []string{"yes", "no"}, Multiple: true, ClosesAt: closes.UnixMilli()}})
+	if want := "ship friday?\n\n[poll · pick any · closes 2026-10-03 14:00 UTC]\n1. yes\n2. no"; !strings.HasSuffix(env.Text, want) {
+		t.Errorf("the envelope ends %q, want %q", env.Text, want)
 	}
 }

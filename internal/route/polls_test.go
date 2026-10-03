@@ -68,7 +68,8 @@ type pollsOnly struct {
 	table *memPolls
 }
 
-func (fake pollsOnly) Polls() store.PollStore { return fake.table }
+func (fake pollsOnly) Polls() store.PollStore  { return fake.table }
+func (pollsOnly) Messages() store.MessageStore { return groupMessages{} }
 
 func pollRouter(polls ...*store.Poll) (*Router, <-chan bus.Item, func()) {
 	table := &memPolls{polls: map[int64]*store.Poll{}, votes: map[[2]any][]int{}}

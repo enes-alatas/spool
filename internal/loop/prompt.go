@@ -583,6 +583,10 @@ func howThisWorks(conv Conversations) string {
 	text.WriteString(`- To react to a message instead of answering it, call send_message with
   react (one emoji), reply_to and no text. It wakes nobody. Reactions to
   your own messages reach you as a line ahead of your next turn.
+- To poll, add poll {options, multiple, closes_in} to a send whose text is
+  the question; to vote, send vote (option numbers, [] to take yours back)
+  with reply_to and no text; to close your own poll, send close_poll with
+  its reference — votes and the result reach you ahead of your next turn.
 - Your final reply text is a private status note: it appears in the control
   room timeline but is delivered to nobody. Not every turn needs a message —
   ending an exchange without one is often right.
@@ -750,6 +754,8 @@ type Inbound struct {
 	Ref         string // this message's reply reference (MessageRef)
 	ReplyTo     string // the reference this message itself replies to
 	Attachments []Attachment
+	// Poll is the ballot the message carries, nil for none (ADR-0041).
+	Poll *store.Poll
 }
 
 // Attachment is one file a message carries, as the loop is shown it.
@@ -865,6 +871,9 @@ func MessageEnvelope(now time.Time, in Inbound) Envelope {
 	if in.Text != "" {
 		text += "\n\n" + in.Text
 	}
+	if in.Poll != nil {
+		text += "\n\n" + pollBallot(in.Poll)
+	}
 	return Envelope{
 		Trigger:      store.TriggerMessage,
 		Text:         text,
@@ -872,6 +881,27 @@ func MessageEnvelope(now time.Time, in Inbound) Envelope {
 		Channel:      envelopeChannel(in.Channel),
 		TGChatID:     in.TGChatID,
 	}
+}
+
+// pollBallot is how a loop is shown a poll's ballot under its question:
+// how to vote, then the options numbered, as a vote names them.
+//
+//	[poll · pick one · closes 2026-10-03 14:00 UTC]
+//	1. yes
+//	2. no
+func pollBallot(poll *store.Poll) string {
+	head := "[poll · pick one"
+	if poll.Multiple {
+		head = "[poll · pick any"
+	}
+	if poll.ClosesAt != 0 {
+		head += " · closes " + time.UnixMilli(poll.ClosesAt).UTC().Format("2006-01-02 15:04 UTC")
+	}
+	lines := []string{head + "]"}
+	for i, option := range poll.Options {
+		lines = append(lines, fmt.Sprintf("%d. %s", i+1, option))
+	}
+	return strings.Join(lines, "\n")
 }
 
 // envelopeChannel is the channel an envelope batches by: none for the fleet
@@ -952,13 +982,14 @@ func SendFailureEnvelope(now time.Time, failures []*store.Message) Envelope {
 	return Envelope{Trigger: store.TriggerTick, Text: strings.TrimRight(text.String(), "\n")}
 }
 
-// OwnerReactionWake is the envelope that wakes a loop for its owner's
-// reaction in their private conversation (ADR-0040). It carries no words of
-// its own: what wakes the loop is the reaction, and the reaction is told
-// the way every other one is, ahead of the turn. It batches with the
-// owner's messages, as a message from them would. The actor drops it when
-// there is no longer a reaction to tell.
-func OwnerReactionWake(tgChatID int64) Envelope {
+// OwnerAnswerWake is the envelope that wakes a loop for its owner's
+// reaction to its message, or vote in its poll, in their private
+// conversation (ADR-0040, ADR-0041). It carries no words of its own: what
+// wakes the loop is the answer, and the answer is told the way every other
+// one is, in the notes ahead of the turn. It batches with the owner's
+// messages, as a message from them would. The actor drops it when no note
+// is left to tell.
+func OwnerAnswerWake(tgChatID int64) Envelope {
 	return Envelope{Trigger: store.TriggerMessage, Conversation: store.ConversationOwnerDM, TGChatID: tgChatID}
 }
 
@@ -1005,6 +1036,88 @@ func ReactionsEnvelope(now time.Time, reactions []ToldReaction) Envelope {
 		fmt.Fprintf(&text, "\n- and %d more", rest)
 	}
 	return Envelope{Trigger: store.TriggerTick, Text: text.String()}
+}
+
+// ToldVote is one voter's current choice in a loop's poll, as the loop is
+// told of it.
+type ToldVote struct {
+	Voter string
+	// Choice is the indexes of the options picked; empty once taken back.
+	Choice  []int
+	Poll    *store.Poll
+	Message *store.Message
+}
+
+// ToldClose is a loop's poll that has closed, with every vote in it, as
+// the loop is told the result.
+type ToldClose struct {
+	Poll    *store.Poll
+	Message *store.Message
+	Votes   []*store.Vote
+}
+
+// maxVotesTold caps how many votes one note lists; the rest are counted,
+// as reactions are. A close is always told whole: it is the result.
+const maxVotesTold = 10
+
+// PollsEnvelope tells a loop how its polls stand since it was last told
+// (ADR-0041): one line per voter whose choice changed, as it now stands,
+// and the result of each poll that closed. Neither wakes a loop by
+// itself, except its owner's vote in owner_dm, so this rides with whatever
+// turn comes next.
+func PollsEnvelope(now time.Time, votes []ToldVote, closes []ToldClose) Envelope {
+	var text strings.Builder
+	text.WriteString(header(now, "your polls"))
+	text.WriteString("\nA vote asks for no answer; reply only if it changes what you do.\n")
+	shown := votes
+	if len(shown) > maxVotesTold {
+		shown = shown[:maxVotesTold]
+	}
+	for _, vote := range shown {
+		if len(vote.Choice) == 0 {
+			fmt.Fprintf(&text, "\n- %s took back their vote in %s", vote.Voter, pollNamed(vote.Message))
+			continue
+		}
+		fmt.Fprintf(&text, "\n- %s chose %s in %s", vote.Voter, optionsNamed(vote.Poll, vote.Choice), pollNamed(vote.Message))
+	}
+	if rest := len(votes) - len(shown); rest > 0 {
+		fmt.Fprintf(&text, "\n- and %d more", rest)
+	}
+	for _, closed := range closes {
+		fmt.Fprintf(&text, "\n- %s has closed. The result:", pollNamed(closed.Message))
+		for i, option := range closed.Poll.Options {
+			var voters []string
+			for _, vote := range closed.Votes {
+				if slices.Contains(vote.Choice, i) {
+					voters = append(voters, vote.Voter)
+				}
+			}
+			fmt.Fprintf(&text, "\n  %d. %s: %d", i+1, option, len(voters))
+			if len(voters) > 0 {
+				fmt.Fprintf(&text, " (%s)", strings.Join(voters, ", "))
+			}
+		}
+	}
+	return Envelope{Trigger: store.TriggerTick, Text: text.String()}
+}
+
+// pollNamed names a loop's poll in a line: its reference, where it was
+// asked, and enough of its question to recognise it.
+func pollNamed(message *store.Message) string {
+	return fmt.Sprintf("your poll %s in %s, %q", MessageRef(message.ID), message.Destination(),
+		truncate(strings.TrimSpace(message.Text), maxReactedExcerpt))
+}
+
+// optionsNamed is a choice as the loop was shown the options: by number
+// and text.
+func optionsNamed(poll *store.Poll, choice []int) string {
+	named := make([]string, 0, len(choice))
+	for _, i := range choice {
+		if i >= 0 && i < len(poll.Options) {
+			named = append(named, fmt.Sprintf("%d. %s", i+1, poll.Options[i]))
+		}
+	}
+	return strings.Join(named, ", ")
 }
 
 // destinationOf names where a lost message was going in the words a loop
