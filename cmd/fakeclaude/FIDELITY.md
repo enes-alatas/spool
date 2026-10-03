@@ -58,6 +58,15 @@ The rules, in `docs/QUALITY.md` "Review (human)":
 | Crash mid-turn (`!crash`): exit 2, no result | assumed | The real CLI's exit code on a crash is not recorded. The engine classifies any non-zero exit without a result, so the code itself carries nothing. |
 | An unresumable session (`.fakeclaude-resume-broken`): exit 1 before init, a diagnostic on stderr, no stream-json | assumed | The stderr line is invented. #47 set out to find a stderr signature and found none, which is why the engine classifies "exited non-zero before init" and never reads the text (#59). `make e2e-context` then showed an over-full context is not what causes this failure. A marker whose contents are `all` fails fresh spawns the same way. That is a test instrument, a loop that cannot run at all, and not a CLI claim. |
 
+## Hooks
+
+| Behaviour | Status | Evidence |
+|---|---|---|
+| `--settings` (inline JSON or a path) is read, and its hooks run | verified | 2.1.288, 2026-10-03: SessionStart and UserPromptSubmit hooks from `--settings` fired (probe on #529). The fake runs only PreToolUse, on `!bash`. |
+| `disableAllHooks: true` in the workspace's `settings.json` or `settings.local.json`, or the user's `settings.json`, turns off every hook, `--settings` ones included, unless `--settings` sets it false | verified | 2.1.288, 2026-10-03, nine-case probe recorded on #529. |
+| A PreToolUse hook that exits 2 blocks the call, and its stderr reaches the model as the reason; any other exit lets the call run | partly | 2.1.288 with haiku-4-5, 2026-10-03, one tier-3 call on #564 with `spool-hook` as the `--settings` hook. Recorded: `echo` ran (exit 0); `git stash pop` was blocked, the stash left in place, and the tool result was an error reading `PreToolUse:Bash hook error: [<hook command>]: ` followed by the hook's stderr. The fake replies `blocked: ` and the stderr instead. Not recorded: an exit other than 0 or 2. |
+| The PreToolUse input carries `session_id`, `cwd`, `hook_event_name`, `tool_name` and `tool_input.command` for a Bash call | partly | `internal/hook` reads only `tool_name` and `tool_input`, and refused the right command in the tier-3 call above, so those two are recorded. The other fields are the documented contract. |
+
 ## Directives that are test instruments
 
 These drive the engine from outside and make no claim about the CLI beyond
@@ -71,4 +80,5 @@ the row they rest on.
 | `!hang <seconds>`, `nosuch-slow` | A slow turn. |
 | `!env NAME` | A loop echoing an injected credential, which is what redaction has to catch (#150). |
 | `!get URL` | A loop's outbound request, through Go's proxy-honouring client (#193). That the real CLI honours `HTTP_PROXY`/`HTTPS_PROXY` is **assumed**: ADR-0028 states it, and nothing records a measurement. |
+| `!bash <command>` | The model calling the Bash tool. The PreToolUse hooks run on it (see Hooks above); the command itself never runs, and the reply is `blocked: <stderr>` or `ran: <command>`. |
 | `!send {json}` | The model calling the hub's `send_message` tool mid-turn (ADR-0026). The call shape is the MCP SDK's and runs daily on the real fleet. Assumed: the inline-JSON `--mcp-config` form (production passes a path) and one connection per session. |

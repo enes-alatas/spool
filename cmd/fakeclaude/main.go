@@ -47,6 +47,11 @@
 // and replies with "get <url>: <status>" or "get <url>: error: …": how a loop
 // reaching out to a host looks from outside, which is what the egress
 // allowlist has to refuse (#193).
+// "!bash <command>" is the model calling the Bash tool: the PreToolUse
+// hooks from --settings run on it first, and the reply is "blocked: <the
+// hook's stderr>" or "ran: <command>"; the command itself never runs. A
+// disableAllHooks of true in the workspace's or the user's settings files
+// turns the hooks off unless --settings pins it false (#529).
 // "!echo" is the unscripted default as a directive: it replies with the text
 // the turn received, which is how a test reads what Spool prepended to the
 // turn's envelopes. Without a script, every turn echoes.
@@ -83,12 +88,14 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -121,7 +128,7 @@ type sessionState struct {
 const costPerTurn = 0.001
 
 func main() {
-	var sessionID, resumeID, model, systemPrompt, mcpConfig string
+	var sessionID, resumeID, model, systemPrompt, mcpConfig, settings string
 	partials := false
 
 	args := os.Args[1:]
@@ -147,6 +154,9 @@ func main() {
 		case "--mcp-config":
 			i++
 			mcpConfig = args[i] // inline JSON or a file path, like the real CLI
+		case "--settings":
+			i++
+			settings = args[i] // inline JSON or a file path; its hooks run on !bash
 		case "--input-format", "--output-format", "--permission-mode",
 			"--effort", "--add-dir":
 			i++ // value consumed, ignored
@@ -383,6 +393,11 @@ func main() {
 				// default, so HTTP_PROXY applies exactly as it does for the
 				// real CLI.
 				reply = fetch(strings.TrimSpace(strings.TrimPrefix(line, "!get ")))
+			case strings.HasPrefix(line, "!bash "):
+				// The model calling the Bash tool: the PreToolUse hooks run
+				// first, and one that exits 2 blocks the call. The command
+				// itself is not run; the reply says whether it would have.
+				reply = bashCall(settings, id, cwd, strings.TrimPrefix(line, "!bash "))
 			case strings.HasPrefix(line, "!huge "):
 				size, _ := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(line, "!huge ")))
 				reply = strings.Repeat("x", size)
@@ -626,4 +641,91 @@ func (transport headerTransport) RoundTrip(r *http.Request) (*http.Response, err
 		r.Header.Set(name, value)
 	}
 	return http.DefaultTransport.RoundTrip(r)
+}
+
+// hookSettings is the part of a settings file the fake's hooks read.
+type hookSettings struct {
+	DisableAllHooks *bool `json:"disableAllHooks"`
+	Hooks           struct {
+		PreToolUse []struct {
+			Matcher string `json:"matcher"`
+			Hooks   []struct {
+				Type    string `json:"type"`
+				Command string `json:"command"`
+			} `json:"hooks"`
+		} `json:"PreToolUse"`
+	} `json:"hooks"`
+}
+
+// readSettings parses a settings value given inline or as a file path; a
+// missing or unreadable one is no settings.
+func readSettings(value string) hookSettings {
+	var parsed hookSettings
+	data := []byte(value)
+	if !strings.HasPrefix(strings.TrimSpace(value), "{") {
+		data, _ = os.ReadFile(value)
+	}
+	_ = json.Unmarshal(data, &parsed)
+	return parsed
+}
+
+// hooksDisabled is disableAllHooks as the real CLI resolves it: --settings
+// outranks the local, project and user settings files, and any of those set
+// true turns every hook off (2.1.288, #529).
+func hooksDisabled(flag hookSettings, cwd string) bool {
+	if flag.DisableAllHooks != nil {
+		return *flag.DisableAllHooks
+	}
+	userDir := os.Getenv("CLAUDE_CONFIG_DIR")
+	if userDir == "" {
+		home, _ := os.UserHomeDir()
+		userDir = filepath.Join(home, ".claude")
+	}
+	for _, path := range []string{
+		filepath.Join(cwd, ".claude", "settings.local.json"),
+		filepath.Join(cwd, ".claude", "settings.json"),
+		filepath.Join(userDir, "settings.json"),
+	} {
+		if disabled := readSettings(path).DisableAllHooks; disabled != nil && *disabled {
+			return true
+		}
+	}
+	return false
+}
+
+// bashCall runs the PreToolUse hooks a Bash call meets and says how the
+// call ended.
+func bashCall(settings, sessionID, cwd, command string) string {
+	flag := readSettings(settings)
+	if settings == "" || hooksDisabled(flag, cwd) {
+		return "ran: " + command
+	}
+	input, _ := json.Marshal(map[string]any{
+		"session_id": sessionID, "cwd": cwd, "hook_event_name": "PreToolUse",
+		"tool_name": "Bash", "tool_input": map[string]string{"command": command},
+	})
+	for _, entry := range flag.Hooks.PreToolUse {
+		if entry.Matcher != "" && entry.Matcher != "*" {
+			if matched, _ := regexp.MatchString("^(?:"+entry.Matcher+")$", "Bash"); !matched {
+				continue
+			}
+		}
+		for _, hook := range entry.Hooks {
+			if hook.Type != "command" {
+				continue
+			}
+			cmd := exec.Command("sh", "-c", hook.Command)
+			cmd.Dir = cwd
+			cmd.Stdin = bytes.NewReader(input)
+			var stderr bytes.Buffer
+			cmd.Stderr = &stderr
+			if err := cmd.Run(); err != nil {
+				var exit *exec.ExitError
+				if errors.As(err, &exit) && exit.ExitCode() == 2 {
+					return "blocked: " + strings.TrimSpace(stderr.String())
+				}
+			}
+		}
+	}
+	return "ran: " + command
 }
