@@ -56,9 +56,9 @@ const (
 const disconnectLinkDisabled = "link_disabled"
 
 // frame is one message Slack sends down a Socket Mode connection. An
-// envelope (events_api, and the interactive kinds a loop's app does not
-// subscribe to) carries an EnvelopeID and must be acknowledged, or Slack
-// delivers it again.
+// envelope (events_api, interactive for a click on a poll's button, and
+// the kinds a loop's app does not use) carries an EnvelopeID and must be
+// acknowledged, or Slack delivers it again.
 type frame struct {
 	Type       string          `json:"type"`
 	EnvelopeID string          `json:"envelope_id"`
@@ -88,6 +88,11 @@ type link struct {
 	// reactions is the loop's reactions to set, taking turns with sends
 	// under the same pacing (ADR-0040).
 	reactions chan *route.ReactionPayload
+	// pollEdits signals, taking turns with sends under the same pacing,
+	// that pollsDue holds a poll whose post needs redrawing (ADR-0041).
+	pollEdits chan struct{}
+	pollMu    sync.Mutex
+	pollsDue  map[int64]bool
 
 	mu          sync.Mutex
 	connected   bool
@@ -162,7 +167,7 @@ const linkDisabled = "Slack disabled Socket Mode for this app. Turn it back on i
 // send it had queued must be failed, not lost.
 func (adapter *Adapter) run(ctx context.Context, link *link) {
 	defer close(link.done)
-	payloads := make(chan json.RawMessage, events)
+	payloads := make(chan frame, events)
 	ingested := make(chan struct{})
 	go func() {
 		defer close(ingested)
@@ -230,7 +235,7 @@ func (adapter *Adapter) run(ctx context.Context, link *link) {
 // connect runs one Socket Mode connection to its end. It returns whether
 // Slack said hello on it, and either the reason Slack gave for closing it
 // or the error that ended it.
-func (adapter *Adapter) connect(ctx context.Context, link *link, timing linkTiming, payloads chan<- json.RawMessage) (reachedHello bool, reason string, err error) {
+func (adapter *Adapter) connect(ctx context.Context, link *link, timing linkTiming, payloads chan<- frame) (reachedHello bool, reason string, err error) {
 	socketURL, err := adapter.client.OpenConnection(ctx, link.credential)
 	if err != nil {
 		return false, "", err
@@ -264,11 +269,11 @@ func (adapter *Adapter) connect(ctx context.Context, link *link, timing linkTimi
 				return reachedHello, "", fmt.Errorf("slack socket mode: ack: %w", err)
 			}
 			link.received()
-			if msg.Type == "events_api" {
+			if msg.Type == "events_api" || msg.Type == "interactive" {
 				// A full queue holds the read up rather than drop a
 				// message it has acknowledged.
 				select {
-				case payloads <- msg.Payload:
+				case payloads <- msg:
 				case <-connCtx.Done():
 					return reachedHello, "", connCtx.Err()
 				}

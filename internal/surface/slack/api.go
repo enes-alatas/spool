@@ -188,6 +188,39 @@ func (client *Client) PostMessage(ctx context.Context, botToken, channel, text, 
 	return result.TS, nil
 }
 
+// PostBlocks posts Block Kit blocks to channel as the bot token's app, in
+// the thread threadTS starts ("" = a top-level post), and returns the ts
+// Slack gave the post. Text is what a notification shows in place of the
+// blocks. Both are Slack mrkdwn: the caller escapes them.
+func (client *Client) PostBlocks(ctx context.Context, botToken, channel, text string, blocks []block, threadTS string) (string, error) {
+	encoded, err := json.Marshal(blocks)
+	if err != nil {
+		return "", err
+	}
+	params := url.Values{"channel": {channel}, "text": {text}, "blocks": {string(encoded)}}
+	if threadTS != "" {
+		params.Set("thread_ts", threadTS)
+	}
+	var result posted
+	if err := client.call(ctx, botToken, "chat.postMessage", params, &result); err != nil {
+		return "", err
+	}
+	return result.TS, nil
+}
+
+// UpdateBlocks replaces the text and blocks of the bot token's app's post
+// that Slack knows as ts in channel. An app can edit only its own posts.
+func (client *Client) UpdateBlocks(ctx context.Context, botToken, channel, ts, text string, blocks []block) error {
+	encoded, err := json.Marshal(blocks)
+	if err != nil {
+		return err
+	}
+	var result apiEnvelope
+	return client.call(ctx, botToken, "chat.update", url.Values{
+		"channel": {channel}, "ts": {ts}, "text": {text}, "blocks": {string(encoded)},
+	}, &result)
+}
+
 // React adds the bot token's app's reaction, by Slack's name for it, to
 // the message Slack knows as ts in channel, or removes it. It needs
 // reactions:write. Adding one the app already has, or removing one it does

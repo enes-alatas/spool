@@ -41,15 +41,15 @@ const (
 )
 
 // mirror carries loop sends, and operator retries of failed ones, to Slack,
-// sets loops' reactions, and tells owners of their loops' login notices. A
-// retry (#269) is the same send of the same row, and is decided the same
-// way.
+// sets loops' reactions, redraws their polls, and tells owners of their
+// loops' login notices. A retry (#269) is the same send of the same row,
+// and is decided the same way.
 func (adapter *Adapter) mirror(ctx context.Context) {
 	// lossless: an item dropped here is a loop's send lost without a
 	// record (#302)
 	items, cancel := adapter.bus.SubscribeLossless(func(item bus.Item) bool {
 		return item.Kind == bus.KindMessage || item.Kind == bus.KindSendRetry || item.Kind == bus.KindClaudeLogin ||
-			item.Kind == bus.KindReaction
+			item.Kind == bus.KindReaction || item.Kind == bus.KindPoll
 	})
 	defer cancel()
 	for {
@@ -67,6 +67,8 @@ func (adapter *Adapter) mirror(ctx context.Context) {
 				adapter.noticeLogin(ctx, payload)
 			case *route.ReactionPayload:
 				adapter.mirrorReaction(payload)
+			case *route.PollPayload:
+				adapter.mirrorPoll(ctx, payload)
 			}
 		}
 	}
@@ -224,6 +226,12 @@ func (adapter *Adapter) sendLoop(ctx context.Context, link *link) {
 			adapter.postNotice(ctx, link.loopID, queued)
 		case reaction := <-link.reactions:
 			adapter.setReaction(ctx, link.loopID, reaction)
+		case <-link.pollEdits:
+			pollID, ok := link.nextPollDue()
+			if !ok {
+				continue
+			}
+			adapter.editPoll(ctx, link.loopID, pollID)
 		}
 		timer := time.NewTimer(sendSpacing)
 		select {
@@ -241,6 +249,7 @@ func (adapter *Adapter) sendLoop(ctx context.Context, link *link) {
 // as its comment: Slack shares an upload in the background and never says
 // the ts of its post. A part that does not land fails the whole message,
 // since the loop's words did not all arrive, even when their start did.
+// A poll is one post, its question and buttons, then its file (poll.go).
 func (adapter *Adapter) send(ctx context.Context, mp *route.MessagePayload) {
 	loopRecord, err := adapter.store.Loops().Get(ctx, mp.FromLoopID)
 	if err != nil {
@@ -261,8 +270,18 @@ func (adapter *Adapter) send(ctx context.Context, mp *route.MessagePayload) {
 			return
 		}
 	}
+	poll, err := adapter.pollOf(ctx, mp.ID)
+	if err != nil {
+		adapter.ledger.Unsendable(ctx, mp, "read poll: "+err.Error())
+		return
+	}
 	threadTS, text := adapter.render(ctx, mp, channel)
-	parts := adapter.sendParts(loopRecord, channel, threadTS, text, file, hostPath)
+	var parts []sendPart
+	if poll != nil {
+		parts = adapter.pollParts(loopRecord, channel, threadTS, text, poll, file, hostPath)
+	} else {
+		parts = adapter.sendParts(loopRecord, channel, threadTS, text, file, hostPath)
+	}
 	for i, part := range parts {
 		if i > 0 && !pause(ctx, sendSpacing) {
 			adapter.unsent(ctx, mp, partOf(adapter.stopReason(), i, len(parts)))
@@ -318,13 +337,18 @@ func (adapter *Adapter) sendParts(loopRecord *store.Loop, channel, threadTS, tex
 		})
 	}
 	if file != nil {
-		parts = append(parts, func(ctx context.Context) (string, error) {
-			ctx, cancel := context.WithTimeout(ctx, uploadTimeout)
-			defer cancel()
-			return "", adapter.client.Upload(ctx, loopRecord.SlackBotToken, channel, threadTS, hostPath, file.Name)
-		})
+		parts = append(parts, adapter.uploadPart(loopRecord, channel, threadTS, file, hostPath))
 	}
 	return parts
+}
+
+// uploadPart is the exchange that shares a message's file.
+func (adapter *Adapter) uploadPart(loopRecord *store.Loop, channel, threadTS string, file *store.Attachment, hostPath string) sendPart {
+	return func(ctx context.Context) (string, error) {
+		ctx, cancel := context.WithTimeout(ctx, uploadTimeout)
+		defer cancel()
+		return "", adapter.client.Upload(ctx, loopRecord.SlackBotToken, channel, threadTS, hostPath, file.Name)
+	}
 }
 
 // sentFile is the file a loop's message carries and the hub's copy of it,
