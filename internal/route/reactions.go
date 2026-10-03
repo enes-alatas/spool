@@ -118,23 +118,8 @@ func (router *Router) SendReaction(ctx context.Context, req SendRequest) (*store
 	if serr, err := router.checkEmoji(ctx, emoji); serr != nil || err != nil {
 		return nil, serr, err
 	}
-	// The loop's own destinations, from the source its prompt is rendered
-	// from, as Send decides them (#288).
-	loops, err := router.store.Loops().List(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	channels, err := router.store.Channels().List(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	rooms, err := router.store.Rooms().List(ctx, req.From.ID)
-	if err != nil {
-		return nil, nil, err
-	}
-	conv := loop.ConversationsOf(req.From, channels, loops, rooms)
-	if !slices.Contains(conv.Destinations(), req.Destination) {
-		return nil, noSuchDestination(conv, fmt.Sprintf("you have no destination %q", req.Destination)), nil
+	if serr, err := router.ownDestination(ctx, req); serr != nil || err != nil {
+		return nil, serr, err
 	}
 	target, serr, err := router.replyTarget(ctx, req)
 	if serr != nil || err != nil {
@@ -156,6 +141,30 @@ func (router *Router) SendReaction(ctx context.Context, req SendRequest) (*store
 			Payload: &ReactionPayload{Reaction: reaction}})
 	}
 	return target, nil, nil
+}
+
+// ownDestination refuses a destination the loop does not have, decided
+// from the source its prompt is rendered from, as Send decides it (#288).
+// A send that answers a message rather than saying one, a reaction or a
+// vote, needs no more of Send's rules than this and reply_to's.
+func (router *Router) ownDestination(ctx context.Context, req SendRequest) (*SendError, error) {
+	loops, err := router.store.Loops().List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	channels, err := router.store.Channels().List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rooms, err := router.store.Rooms().List(ctx, req.From.ID)
+	if err != nil {
+		return nil, err
+	}
+	conv := loop.ConversationsOf(req.From, channels, loops, rooms)
+	if !slices.Contains(conv.Destinations(), req.Destination) {
+		return noSuchDestination(conv, fmt.Sprintf("you have no destination %q", req.Destination)), nil
+	}
+	return nil, nil
 }
 
 // customEmoji is how a surface's custom emoji with no Unicode form is kept.
