@@ -45,10 +45,6 @@ func (slack *fakeSlack) updatesOf(ts string) []slackPost {
 // is no one's. When its close time comes the hub closes the poll and the
 // app draws it closed, without buttons; a click still made then redraws it
 // closed and changes nothing (ADR-0041).
-//
-// No API starts a poll until slice 4 (#553), so the ballot is written into
-// spool.db beside a loop's message whose first send failed, and the
-// operator's retry sends it as the poll.
 func TestSlackPollCarriesVotesToTheHub(t *testing.T) {
 	t.Parallel()
 	srv, slack := startSlackFleet(t)
@@ -57,21 +53,16 @@ func TestSlackPollCarriesVotesToTheHub(t *testing.T) {
 	terra := mcpSession(t, srv, hubMCPToken(t, srv, "terra"))
 	const question = "@milo ship on friday?"
 
-	slack.setFailPosts(-1)
-	if res := callSend(t, terra, map[string]any{"destination": "group", "text": question}); res.IsError {
-		t.Fatalf("send refused: %s", resultText(res))
+	if res := callSend(t, terra, map[string]any{"destination": "group", "text": question,
+		"poll": map[string]any{"options": []string{"yes", "no"}}}); res.IsError {
+		t.Fatalf("poll refused: %s", resultText(res))
 	}
-	failed := srv.waitGroupMessage(question, func(m activityMessage) bool { return m.SendFailedAt != 0 })
+	asked := srv.waitGroupMessage(question, func(activityMessage) bool { return true })
 	db, err := sql.Open("sqlite", "file:"+filepath.Join(srv.dataDir, "spool.db")+"?_pragma=busy_timeout(5000)")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	if _, err := db.Exec(`INSERT INTO polls (message_id, options) VALUES (?, '["yes","no"]')`, failed.ID); err != nil {
-		t.Fatal(err)
-	}
-	slack.setFailPosts(0)
-	srv.mustJSON("POST", fmt.Sprintf("/api/messages/%d/retry", failed.ID), nil, nil)
 
 	post := slack.waitPost(t, "ship on friday?")
 	if post.Token != slackBotToken || post.Channel != slackChannel ||
@@ -82,7 +73,7 @@ func TestSlackPollCarriesVotesToTheHub(t *testing.T) {
 	person := "slack:" + slackOperator
 	choiceOf := func() string {
 		var choice string
-		_ = db.QueryRow(`SELECT choice FROM votes WHERE poll_id=? AND voter_key=?`, failed.ID, person).Scan(&choice)
+		_ = db.QueryRow(`SELECT choice FROM votes WHERE poll_id=? AND voter_key=?`, asked.ID, person).Scan(&choice)
 		return choice
 	}
 	redrawnWith := func(want ...string) func() bool {
@@ -105,12 +96,12 @@ func TestSlackPollCarriesVotesToTheHub(t *testing.T) {
 	eventually(t, "the operator's vote tallied", func() bool { return choiceOf() == "[1]" })
 	eventually(t, "the counts redrawn", redrawnWith("yes  `0`", "no  `1`", "spool_vote_0"))
 	var voters int
-	if err := db.QueryRow(`SELECT count(*) FROM votes WHERE poll_id=?`, failed.ID).Scan(&voters); err != nil || voters != 1 {
+	if err := db.QueryRow(`SELECT count(*) FROM votes WHERE poll_id=?`, asked.ID).Scan(&voters); err != nil || voters != 1 {
 		t.Fatalf("%d voters tallied (%v), want the operator alone: a stranger's click is no one's", voters, err)
 	}
 
 	// The close time comes now, and the hub's next look closes the poll.
-	if _, err := db.Exec(`UPDATE polls SET closes_at=? WHERE message_id=?`, time.Now().UnixMilli(), failed.ID); err != nil {
+	if _, err := db.Exec(`UPDATE polls SET closes_at=? WHERE message_id=?`, time.Now().UnixMilli(), asked.ID); err != nil {
 		t.Fatal(err)
 	}
 	closedDrawn := func() bool {
