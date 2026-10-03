@@ -64,6 +64,14 @@ RUN useradd --create-home --shell /bin/bash loop \
     && echo 'loop ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/loop \
     && chmod 0440 /etc/sudoers.d/loop
 
+# The PreToolUse hook the hub pins on every loop's claude (ADR-0042), which
+# refuses a tool call that breaks a mechanical fleet rule. `make image` builds
+# it for the image's architecture into bin/ first. Owned by root and outside
+# the loop's volume, though the loop's sudo means it guards against slips, not
+# a loop set on getting past it.
+ARG TARGETARCH
+COPY bin/spool-hook-${TARGETARCH} /usr/local/bin/spool-hook
+
 # Turn off all non-essential network traffic — telemetry, error reporting, and
 # update checks. Spool sends no telemetry.
 ENV CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
