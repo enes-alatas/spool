@@ -549,3 +549,56 @@ func TestSeedFillsAChannelBesidesTheFleetChannel(t *testing.T) {
 		t.Error("every channel gardener is in has a group, so no shot can show one waiting for a group")
 	}
 }
+
+// The poll shots have an open poll in the fleet channel and a closed one in
+// docs, the closed one with a voter who picked two options (#554).
+func TestSeedPutsAnOpenAndAClosedPoll(t *testing.T) {
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "spool.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	files, err := attach.Open(filepath.Join(t.TempDir(), "files"))
+	if err != nil {
+		t.Fatalf("files: %v", err)
+	}
+	ctx := context.Background()
+	if err := seed(ctx, db, files); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	ballots := map[string][]*store.Poll{}
+	votes := map[string][]*store.Vote{}
+	for _, channel := range []string{store.FleetChannel, "docs"} {
+		msgs, err := db.Messages().ListChannel(ctx, channel, 100)
+		if err != nil {
+			t.Fatalf("%s: %v", channel, err)
+		}
+		ids := make([]int64, len(msgs))
+		for i, msg := range msgs {
+			ids[i] = msg.ID
+		}
+		if ballots[channel], err = db.Polls().ListByMessages(ctx, ids); err != nil {
+			t.Fatalf("%s polls: %v", channel, err)
+		}
+		for _, poll := range ballots[channel] {
+			pollVotes, err := db.Polls().Votes(ctx, []int64{poll.MessageID})
+			if err != nil {
+				t.Fatalf("votes: %v", err)
+			}
+			votes[channel] = append(votes[channel], pollVotes...)
+		}
+	}
+	if open := ballots[store.FleetChannel]; len(open) != 1 || open[0].ClosedAt != 0 || open[0].ClosesAt == 0 ||
+		len(votes[store.FleetChannel]) < 2 {
+		t.Errorf("the fleet channel's polls are %v with %d votes, want one open with a close time and votes", open, len(votes[store.FleetChannel]))
+	}
+	closed := ballots["docs"]
+	picksTwo := false
+	for _, vote := range votes["docs"] {
+		picksTwo = picksTwo || len(vote.Choice) > 1
+	}
+	if len(closed) != 1 || closed[0].ClosedAt == 0 || !closed[0].Multiple || !picksTwo {
+		t.Errorf("docs' polls are %v, want one closed multiple-choice poll with a two-option vote", closed)
+	}
+}

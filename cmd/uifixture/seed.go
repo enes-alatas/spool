@@ -547,6 +547,79 @@ func seedChannelTraffic(ctx context.Context, db store.Store, ids map[string]stri
 	return nil
 }
 
+// Two polls (#554), each its channel's newest message, since a thread runs
+// in insert order: an open single-choice one in the fleet channel, with
+// a close time still ahead and votes from a person, the operator and a
+// loop, and a closed multiple-choice one in docs. A fixture with one poll
+// shoots a ballot that could be ignoring its close, its choice kind, or a
+// voter who picked two options.
+func seedPolls(ctx context.Context, db store.Store, ids map[string]string) error {
+	rana := store.PersonReactor(store.SurfaceTelegram, "700000001")
+	operatorKey := store.PersonReactor(store.SurfaceTelegram, "700000000")
+	polls := []struct {
+		author, channel, text string
+		at                    time.Duration
+		to                    []string
+		options               []string
+		multiple              bool
+		closesIn, closedAgo   time.Duration
+		votes                 []store.Vote
+	}{
+		{
+			author: "gardener", channel: store.FleetChannel, at: -4 * time.Minute,
+			text:     "@watcher @archivist the handbook freeze for the release: which day?",
+			to:       []string{ids["watcher"], ids["archivist"]},
+			options:  []string{"Thursday", "Friday", "after the release"},
+			closesIn: 2 * time.Hour,
+			votes: []store.Vote{
+				{VoterKey: rana, Voter: "Rana", Choice: []int{1}, TS: ms(-3 * time.Minute)},
+				{VoterKey: store.LoopReactor(ids["watcher"]), Voter: "watcher", Choice: []int{1}, TS: ms(-3 * time.Minute)},
+				{VoterKey: operatorKey, Voter: "operator", Choice: []int{0}, TS: ms(-2 * time.Minute)},
+			},
+		},
+		{
+			author: "archivist", channel: "docs", at: -3 * time.Minute,
+			text:     "@gardener which write-ups should move into the handbook?",
+			to:       []string{ids["gardener"]},
+			options:  []string{"the certificate outages", "the config push", "the one-offs"},
+			multiple: true, closedAgo: time.Minute,
+			votes: []store.Vote{
+				{VoterKey: store.LoopReactor(ids["gardener"]), Voter: "gardener", Choice: []int{0, 1}, TS: ms(-150 * time.Second)},
+				{VoterKey: rana, Voter: "Rana", Choice: []int{0}, TS: ms(-2 * time.Minute)},
+			},
+		},
+	}
+	for _, poll := range polls {
+		msg := &store.Message{
+			TS: ms(poll.at), Origin: store.OriginLoop, Author: poll.author, FromLoopID: ids[poll.author],
+			Text: poll.text, Conversation: store.ConversationGroup, Channel: poll.channel,
+			DeliveredTo: poll.to, Mirror: store.MirrorMirrored,
+		}
+		if err := db.Messages().Insert(ctx, msg); err != nil {
+			return fmt.Errorf("poll message: %w", err)
+		}
+		ballot := &store.Poll{MessageID: msg.ID, Options: poll.options, Multiple: poll.multiple}
+		if poll.closesIn > 0 {
+			ballot.ClosesAt = ms(poll.closesIn)
+		}
+		if err := db.Polls().Create(ctx, ballot); err != nil {
+			return fmt.Errorf("poll: %w", err)
+		}
+		for _, vote := range poll.votes {
+			vote.PollID = msg.ID
+			if _, err := db.Polls().Vote(ctx, &vote); err != nil {
+				return fmt.Errorf("vote: %w", err)
+			}
+		}
+		if poll.closedAgo > 0 {
+			if _, err := db.Polls().Close(ctx, msg.ID, ms(-poll.closedAgo)); err != nil {
+				return fmt.Errorf("poll close: %w", err)
+			}
+		}
+	}
+	return nil
+}
+
 // The rooms the loop page lists under gardener's Telegram rows (#515): the
 // fleet channel's group, a group carrying docs, and one the bot has heard
 // from that nobody has bound yet, the row the page asks the operator about.
