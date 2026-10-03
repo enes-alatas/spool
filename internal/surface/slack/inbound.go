@@ -20,7 +20,8 @@ import (
 // or a reaction on one. The app subscribes to message.im, message.channels
 // and message.groups, and to reaction_added and reaction_removed (the
 // manifest the control room hands out), so every event that matters is a
-// message, in the owner's DM or in a channel, or a reaction to one.
+// message, in the owner's DM or in a channel, or a reaction to one. A
+// click on a poll's button is an interactive envelope instead (poll.go).
 
 // eventCallback is an events_api envelope's payload, reduced to what
 // ingest reads.
@@ -60,13 +61,19 @@ type messageEvent struct {
 // would leave the ping's answer unread.
 const events = 256
 
-// ingestLoop hands a link's events to ingest one at a time, in the order
-// Slack sent them, until the link closes the channel. What is left once
-// the link is stopping is drained, not ingested.
-func (adapter *Adapter) ingestLoop(ctx context.Context, link *link, payloads <-chan json.RawMessage) {
-	for payload := range payloads {
-		if ctx.Err() == nil {
-			adapter.ingest(ctx, link, payload)
+// ingestLoop hands a link's envelopes on one at a time, in the order Slack
+// sent them, until the link closes the channel: an event to ingest, and a
+// click to ingestInteraction. What is left once the link is stopping is
+// drained, not ingested.
+func (adapter *Adapter) ingestLoop(ctx context.Context, link *link, envelopes <-chan frame) {
+	for envelope := range envelopes {
+		if ctx.Err() != nil {
+			continue
+		}
+		if envelope.Type == "interactive" {
+			adapter.ingestInteraction(ctx, link, envelope.Payload)
+		} else {
+			adapter.ingest(ctx, link, envelope.Payload)
 		}
 	}
 }

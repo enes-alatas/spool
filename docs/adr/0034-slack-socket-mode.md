@@ -1,6 +1,6 @@
 # ADR-0034: Slack over Socket Mode, on coder/websocket, with the protocol ours
 
-Date: 2026-09-29 · Status: accepted (operator decision of 2026-09-22 on #230) · Amends: ADR-0011 (its Slack consequence names two paths; this is a third)
+Date: 2026-09-29 · Status: accepted (operator decision of 2026-09-22 on #230) · Amends: ADR-0011 (its Slack consequence names two paths; this is a third) · Amended: 2026-10-03 (Consequences: a poll's clicks, ADR-0041)
 
 ## Context
 
@@ -87,6 +87,13 @@ protocol written here. The comparison is recorded on #230. In short:
   only (no slash commands, no interactivity), and the redelivery and
   refresh behaviour is visible in our code and our tests rather than
   inherited.
+
+  **Amendment (2026-10-03, #552, ADR-0041):** a loop's app now has
+  interactivity, for one thing: a click on a poll's button reaches it as
+  an `interactive` envelope carrying a `block_actions` payload. The link
+  acknowledges it as it does every envelope, and hands it to ingest in
+  order with the events. There are still no slash commands, shortcuts or
+  modals.
 - The Web API stays a thin client of our own (`internal/surface/slack/api.go`),
   as the Telegram Bot API client is.
 - ADR-0011's sentence that Slack "uses the community `slack-go` or a

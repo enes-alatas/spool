@@ -50,6 +50,9 @@ type fakeSlack struct {
 	uploads   []slackUpload
 	// reacted are the reactions.add and reactions.remove calls apps made.
 	reacted []slackReaction
+	// updates are the chat.update calls apps made, each the post as it
+	// was redrawn.
+	updates []slackPost
 }
 
 // slackReaction is one reactions.add or reactions.remove an app made.
@@ -72,9 +75,10 @@ type slackUpload struct {
 	Posts                           int
 }
 
-// slackPost is one chat.postMessage the fake took.
+// slackPost is one chat.postMessage, or chat.update, the fake took.
+// Blocks is the Block Kit JSON it carried, "" for none.
 type slackPost struct {
-	Token, Channel, Text, ThreadTS, TS string
+	Token, Channel, Text, ThreadTS, TS, Blocks string
 }
 
 // fakeSocket is one app's live Socket Mode connection.
@@ -184,9 +188,16 @@ func (slack *fakeSlack) handle(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 			post := slackPost{Token: token, Channel: r.FormValue("channel"), Text: r.FormValue("text"),
-				ThreadTS: r.FormValue("thread_ts"), TS: fmt.Sprintf("1727700000.%06d", len(slack.posts)+1)}
+				ThreadTS: r.FormValue("thread_ts"), TS: fmt.Sprintf("1727700000.%06d", len(slack.posts)+1),
+				Blocks: r.FormValue("blocks")}
 			slack.posts = append(slack.posts, post)
 			answer = map[string]any{"ok": true, "channel": post.Channel, "ts": post.TS}
+		}
+	case "/chat.update":
+		if _, ok := slack.bots[token]; ok {
+			slack.updates = append(slack.updates, slackPost{Token: token, Channel: r.FormValue("channel"),
+				Text: r.FormValue("text"), TS: r.FormValue("ts"), Blocks: r.FormValue("blocks")})
+			answer = map[string]any{"ok": true, "channel": r.FormValue("channel"), "ts": r.FormValue("ts")}
 		}
 	case "/reactions.add", "/reactions.remove":
 		if _, ok := slack.bots[token]; ok {
