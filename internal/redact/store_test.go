@@ -344,6 +344,11 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 		"SettingsStore": {
 			"Set": false, "Get": false, // holds the operator's Claude token, same reason
 		},
+		"ConnectionStore": {
+			// A connection's secret, same reason; its config is operator-
+			// written, like a rule, and read back in full.
+			"Create": false, "Delete": false, "Get": false, "List": false,
+		},
 		"FleetRuleStore": {
 			// Operator-written rule text, rendered into every prompt.
 			"Create": false, "Update": false,
