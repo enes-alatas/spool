@@ -39,7 +39,7 @@ describe('slackManifest', () => {
             'reaction_removed',
           ],
         },
-        interactivity: { is_enabled: false },
+        interactivity: { is_enabled: true },
         org_deploy_enabled: false,
         socket_mode_enabled: true,
         token_rotation_enabled: false,

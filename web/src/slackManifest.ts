@@ -61,7 +61,7 @@ export interface SlackManifest {
   oauth_config: { scopes: { bot: string[] } }
   settings: {
     event_subscriptions: { bot_events: string[] }
-    interactivity: { is_enabled: false }
+    interactivity: { is_enabled: true }
     org_deploy_enabled: false
     socket_mode_enabled: true
     token_rotation_enabled: false
@@ -86,7 +86,9 @@ export function slackManifest(loopName: string): SlackManifest {
     oauth_config: { scopes: { bot: [...slackBotScopes] } },
     settings: {
       event_subscriptions: { bot_events: [...slackBotEvents] },
-      interactivity: { is_enabled: false },
+      // A click on a poll's button reaches the app over the socket, so
+      // interactivity needs no request URL (ADR-0041).
+      interactivity: { is_enabled: true },
       org_deploy_enabled: false,
       socket_mode_enabled: true,
       // Rotation would expire the bot token every twelve hours, and the
