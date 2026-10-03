@@ -192,6 +192,25 @@ func TestSeedWritesAFleetTheRoomCanRender(t *testing.T) {
 		t.Error("no undelivered message is over 200 characters: the Undelivered shot cannot show its one-line clamp")
 	}
 
+	// One of each loop-side outcome (#561): a row on the pane the loop has
+	// left, and a failure in its control room the loop dismissed itself.
+	var left bool
+	for _, message := range undelivered {
+		left = left || message.SendLeftByLoop
+	}
+	room, err := db.Messages().ListConversation(ctx, store.ConversationControlRoom, archivist.ID, 100)
+	if err != nil {
+		t.Fatalf("control room: %v", err)
+	}
+	var dismissedByLoop bool
+	for _, message := range room {
+		dismissedByLoop = dismissedByLoop || message.SendResolution == store.SendResolutionDismissedByLoop
+	}
+	if !left || !dismissedByLoop {
+		t.Errorf("archivist has a left failure %v and a failure it dismissed %v; want both, or the shots cannot show either mark",
+			left, dismissedByLoop)
+	}
+
 	// The fleet channel shot (#286) draws three things a timeline of plain
 	// posts would not show: a reply's quote, the operator's own post, and a
 	// human's that came in from a surface. Each needs a row, or the shot
