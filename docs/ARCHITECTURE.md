@@ -120,6 +120,7 @@ Dependencies point inward: adapters → hub interfaces, never hub → adapter in
 cmd/spool/            wiring, flags
 cmd/fakeclaude/       stream-json protocol fake for CI (ADR-0009)
 cmd/spool-egress/     the workstation egress proxy (ADR-0028)
+cmd/spool-hook/       the PreToolUse hook pinned on every loop's claude (ADR-0042)
 internal/claude/      claude's stream-json protocol: args, stdio, events (runner-internal)
 internal/loop/        loop actors, prompts, trailers (runner)
 internal/runtime/     SandboxRuntime seam + bare/, docker/
@@ -132,6 +133,7 @@ internal/httpapi/     hub: REST + SSE
 internal/redact/      known secret values out of logs, writes and responses
 internal/attach/      the hub's files directory: attachments kept, sized, expired
 internal/egress/      the host allowlist a workstation's egress is held to
+internal/hook/        the mechanical fleet rules spool-hook refuses a tool call on
 internal/operator/    the operator's own credential for the API (ADR-0030)
 internal/gitws/       git worktree helper
 internal/datadir/     permissions on the data directory

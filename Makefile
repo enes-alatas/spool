@@ -12,14 +12,16 @@ COMMIT   ?= $(shell git rev-parse --short HEAD 2>/dev/null)
 BUILT_AT ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS  := -X main.buildVersion=$(VERSION) -X main.buildCommit=$(COMMIT) -X main.buildTime=$(BUILT_AT)
 
-.PHONY: build dev test itest lint secret-scan workflow-lint fakeclaude egress vet vet-darwin e2e-context e2e-m1 ui ui-dev ui-shots ui-smoke demo image image-multiarch clean
+.PHONY: build dev test itest lint secret-scan workflow-lint fakeclaude egress hook vet vet-darwin e2e-context e2e-m1 ui ui-dev ui-shots ui-smoke demo image image-multiarch clean
 
 build: ui
 	$(GO) build -ldflags "$(LDFLAGS)" -o bin/spool ./cmd/spool
+	$(GO) build -o bin/spool-hook ./cmd/spool-hook
 
 # backend-only build (uses whatever is in web/dist, placeholder included)
 server:
 	$(GO) build -ldflags "$(LDFLAGS)" -o bin/spool ./cmd/spool
+	$(GO) build -o bin/spool-hook ./cmd/spool-hook
 
 fakeclaude:
 	$(GO) build -o bin/fakeclaude ./cmd/fakeclaude
@@ -30,6 +32,13 @@ fakeclaude:
 egress:
 	CGO_ENABLED=0 GOOS=linux GOARCH=$$($(GO) env GOARCH) \
 	    $(GO) build -o bin/spool-egress-$$($(GO) env GOARCH) ./cmd/spool-egress
+
+# The PreToolUse hook for the workstation image (ADR-0042), built static,
+# for Linux, and arch-suffixed as the egress proxy is. bin/spool-hook, built
+# with the hub, is the host's own for bare loops.
+hook:
+	CGO_ENABLED=0 GOOS=linux GOARCH=$$($(GO) env GOARCH) \
+	    $(GO) build -o bin/spool-hook-$$($(GO) env GOARCH) ./cmd/spool-hook
 
 # tier 2 (docs/QUALITY.md): real binary + fakeclaude over HTTP. The docker
 # workstation suites run against a real daemon and the fakeclaude image;
@@ -72,7 +81,7 @@ itest: server fakeclaude egress
 # installed CLI instead, e.g. `make image CLAUDE_CODE_CACHEBUST=keep` offline.
 CLAUDE_CODE_CACHEBUST ?= $(shell date +%s)
 
-image: egress
+image: egress hook
 	docker build -t spool-workstation -f docker/workstation/Dockerfile \
 	    --build-arg CLAUDE_CODE_CACHEBUST=$(CLAUDE_CODE_CACHEBUST) .
 	docker build -t spool-egress -f docker/egress/Dockerfile bin
@@ -80,6 +89,8 @@ image: egress
 image-multiarch:
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build -o bin/spool-egress-amd64 ./cmd/spool-egress
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GO) build -o bin/spool-egress-arm64 ./cmd/spool-egress
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build -o bin/spool-hook-amd64 ./cmd/spool-hook
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GO) build -o bin/spool-hook-arm64 ./cmd/spool-hook
 	docker buildx build --platform linux/amd64,linux/arm64 \
 	    -t spool-workstation -f docker/workstation/Dockerfile \
 	    --build-arg CLAUDE_CODE_CACHEBUST=$(CLAUDE_CODE_CACHEBUST) .
