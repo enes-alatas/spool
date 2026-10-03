@@ -151,6 +151,13 @@ type Message struct {
 	// MigrateFromChatID in the new one.
 	MigrateToChatID   int64 `json:"migrate_to_chat_id,omitempty"`
 	MigrateFromChatID int64 `json:"migrate_from_chat_id,omitempty"`
+	// Poll is the poll a message carries; sendPoll answers with one.
+	Poll *Poll `json:"poll,omitempty"`
+}
+
+// Poll is a native poll. Its ID, not its message, is what each vote names.
+type Poll struct {
+	ID string `json:"id"`
 }
 
 type PhotoSize struct {
@@ -181,6 +188,17 @@ type Update struct {
 	// MessageReaction is a person's reactions on a message changing. In a
 	// group a bot hears it only as an administrator (ADR-0040).
 	MessageReaction *MessageReactionUpdated `json:"message_reaction"`
+	// PollAnswer is a person's choice in a poll changing. A bot hears it
+	// only in a non-anonymous poll it sent itself (ADR-0041).
+	PollAnswer *PollAnswer `json:"poll_answer"`
+}
+
+// PollAnswer is one voter's whole choice in one poll: OptionIDs are the
+// options picked, empty once retracted. User is nil when a chat voted.
+type PollAnswer struct {
+	PollID    string `json:"poll_id"`
+	User      *User  `json:"user"`
+	OptionIDs []int  `json:"option_ids"`
 }
 
 // MessageReactionUpdated is one reactor's reactions on one message, before
@@ -242,7 +260,7 @@ func (client *Client) GetUpdates(ctx context.Context, offset int64, timeoutSec i
 	params := map[string]any{
 		"offset":          offset,
 		"timeout":         timeoutSec,
-		"allowed_updates": []string{"message", "message_reaction"},
+		"allowed_updates": []string{"message", "message_reaction", "poll_answer"},
 	}
 	var updates []Update
 	if err := client.call(ctx, "getUpdates", params, &updates); err != nil {
@@ -271,6 +289,33 @@ func (client *Client) SendMessage(ctx context.Context, chatID int64, text string
 		return nil, err
 	}
 	return &sent, nil
+}
+
+// SendPoll sends a native poll, non-anonymous so each vote names its voter
+// (ADR-0041). replyTo is as SendMessage's.
+func (client *Client) SendPoll(ctx context.Context, chatID int64, question string, options []string, multiple bool, replyTo int64) (*Message, error) {
+	inputs := make([]map[string]string, len(options))
+	for i, option := range options {
+		inputs[i] = map[string]string{"text": option}
+	}
+	params := map[string]any{"chat_id": chatID, "question": question, "options": inputs,
+		"is_anonymous": false, "allows_multiple_answers": multiple}
+	if replyTo != 0 {
+		params["reply_parameters"] = map[string]any{
+			"message_id": replyTo, "allow_sending_without_reply": true,
+		}
+	}
+	var sent Message
+	if err := client.call(ctx, "sendPoll", params, &sent); err != nil {
+		return nil, err
+	}
+	return &sent, nil
+}
+
+// StopPoll closes a poll this bot sent, by its own id for the message.
+func (client *Client) StopPoll(ctx context.Context, chatID, messageID int64) error {
+	var stopped Poll
+	return client.call(ctx, "stopPoll", map[string]any{"chat_id": chatID, "message_id": messageID}, &stopped)
 }
 
 // SetMessageReaction sets this bot's reaction on a message, by this bot's

@@ -179,3 +179,24 @@ func TestDuePollsAndDeletion(t *testing.T) {
 		t.Errorf("the votes outlived their poll: %v, %v", choices(votes), err)
 	}
 }
+
+// Telegram reports a vote by its own poll id alone, so the id the bot was
+// given finds the poll, and an id no bot was given finds none.
+func TestAPollIsFoundByItsTelegramID(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	poll := createPoll(t, db, "l1", 0)
+	if _, err := db.Polls().ByTGPollID(ctx, ""); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("an unsent poll found by the empty id: err=%v", err)
+	}
+	if err := db.Polls().SetTGPollID(ctx, poll.MessageID, "5"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := db.Polls().ByTGPollID(ctx, "5")
+	if err != nil || got.MessageID != poll.MessageID || got.TGPollID != "5" {
+		t.Fatalf("ByTGPollID = %+v, %v", got, err)
+	}
+	if _, err := db.Polls().ByTGPollID(ctx, "6"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("an id no bot was given: err=%v", err)
+	}
+}

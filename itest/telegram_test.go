@@ -54,6 +54,10 @@ type fakeTelegram struct {
 	titles map[int64]string
 	// reactionsSet are the setMessageReaction calls the bridge made.
 	reactionsSet []setReaction
+	// pollsSent and pollsStopped are the sendPoll and stopPoll calls the
+	// bridge made.
+	pollsSent    []sentPoll
+	pollsStopped []setReaction
 }
 
 // setReaction is one setMessageReaction call: a bot's reaction on a
@@ -274,6 +278,44 @@ func (tg *fakeTelegram) handle(w http.ResponseWriter, r *http.Request) {
 			MessageID: id, ReplyTo: reply.MessageID, Method: method, FileName: header.Filename, File: body})
 		tg.mu.Unlock()
 		writeOK(w, map[string]any{"message_id": id})
+	case "sendPoll":
+		var req struct {
+			ChatID   int64  `json:"chat_id"`
+			Question string `json:"question"`
+			Options  []struct {
+				Text string `json:"text"`
+			} `json:"options"`
+			IsAnonymous *bool `json:"is_anonymous"`
+			Multiple    bool  `json:"allows_multiple_answers"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		tg.mu.Lock()
+		tg.sendCalls++
+		if tg.failForever {
+			tg.mu.Unlock()
+			http.Error(w, `{"ok":false,"error_code":502,"description":"Bad Gateway"}`, 502)
+			return
+		}
+		tg.nextID[token]++
+		poll := sentPoll{Token: token, ChatID: req.ChatID, Question: req.Question, MessageID: tg.nextID[token],
+			PollID: fmt.Sprintf("poll-%s-%d", token, tg.nextID[token]), Multiple: req.Multiple,
+			Anonymous: req.IsAnonymous == nil || *req.IsAnonymous} // Telegram's default is anonymous
+		for _, option := range req.Options {
+			poll.Options = append(poll.Options, option.Text)
+		}
+		tg.pollsSent = append(tg.pollsSent, poll)
+		tg.mu.Unlock()
+		writeOK(w, map[string]any{"message_id": poll.MessageID, "poll": map[string]any{"id": poll.PollID}})
+	case "stopPoll":
+		var req struct {
+			ChatID    int64 `json:"chat_id"`
+			MessageID int64 `json:"message_id"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		tg.mu.Lock()
+		tg.pollsStopped = append(tg.pollsStopped, setReaction{Token: token, ChatID: req.ChatID, MessageID: req.MessageID})
+		tg.mu.Unlock()
+		writeOK(w, map[string]any{"is_closed": true})
 	case "setMessageReaction":
 		var req struct {
 			ChatID    int64 `json:"chat_id"`

@@ -1236,6 +1236,9 @@ type Poll struct {
 	// CloseToldAt is when the author was told the result, 0 until then.
 	// Engine bookkeeping, like Reaction.ToldAt.
 	CloseToldAt int64 `json:"-"`
+	// TGPollID is the id Telegram gave the poll the loop's bot sent, by
+	// which Telegram reports each vote; "" for a poll no bot sent.
+	TGPollID string `json:"-"`
 }
 
 // Vote is one voter's whole choice in one poll (ADR-0041). A new vote
@@ -1288,6 +1291,11 @@ type PollStore interface {
 	UntoldCloses(ctx context.Context, loopID string) ([]*Poll, error)
 	// MarkClosesTold records that the loop was told these polls' results.
 	MarkClosesTold(ctx context.Context, messageIDs []int64, toldAt int64) error
+	// SetTGPollID records the id Telegram gave the poll a bot sent.
+	SetTGPollID(ctx context.Context, messageID int64, tgPollID string) error
+	// ByTGPollID returns the poll Telegram knows by tgPollID. ErrNotFound
+	// when no bot sent one by that id.
+	ByTGPollID(ctx context.Context, tgPollID string) (*Poll, error)
 }
 
 // ErrNotFound / ErrDuplicate are sentinel errors shared by implementations.

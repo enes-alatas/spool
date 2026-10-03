@@ -259,6 +259,12 @@ type sendReq struct {
 	// clear its own). 0 for a post.
 	reactTo int64
 	emoji   string
+	// poll sends the message as a native poll, its text the question
+	// (ADR-0041); nil for a post.
+	poll *store.Poll
+	// stopPollAt makes the send a stopPoll instead of a post: this bot's
+	// own id for the poll's message. 0 for a post.
+	stopPollAt int64
 }
 
 func (br *Bridge) startPoller(loopRecord *store.Loop) {
@@ -341,6 +347,9 @@ func (br *Bridge) pollLoop(ctx context.Context, bot *poller) {
 			}
 			if update.MessageReaction != nil {
 				br.handleReaction(ctx, bot, update.MessageReaction)
+			}
+			if update.PollAnswer != nil {
+				br.handlePollAnswer(ctx, bot, update.PollAnswer)
 			}
 		}
 	}
@@ -876,6 +885,100 @@ func (br *Bridge) mirrorReaction(ctx context.Context, reaction *route.ReactionPa
 	}
 }
 
+// handlePollAnswer hands the router a person's whole choice in a poll the
+// loop's bot sent (ADR-0041). Telegram tells only the bot that sent a poll
+// of its votes, so no bot is elected. A vote passes the sender gate a
+// message does, but registers nobody. A vote in a poll the hub has closed
+// means the bot never stopped it, at startup or across a crash, so it is
+// stopped now and the vote dropped.
+func (br *Bridge) handlePollAnswer(ctx context.Context, bot *poller, answer *PollAnswer) {
+	if answer.User == nil || answer.User.IsBot || br.router == nil {
+		return // a chat voted, or a bot: no person to record
+	}
+	poll, err := br.store.Polls().ByTGPollID(ctx, answer.PollID)
+	if err != nil {
+		return // not a poll the hub sent
+	}
+	if poll.ClosedAt != 0 {
+		br.stopPoll(ctx, bot, poll.MessageID)
+		return
+	}
+	sender, err := br.store.TGSenders().Get(ctx, answer.User.ID)
+	if err != nil || sender.Status != store.SenderAllowed {
+		br.log.Info("telegram vote discarded", "loop", bot.name, "reason", "sender is not allowed",
+			"poll", poll.MessageID)
+		return
+	}
+	voter := answer.User.Username
+	if voter == "" {
+		voter = answer.User.FirstName
+	}
+	err = br.router.Vote(ctx, route.InboundVote{PollID: poll.MessageID, Voter: voter, Choice: answer.OptionIDs,
+		VoterKey: store.PersonReactor(store.SurfaceTelegram, strconv.FormatInt(answer.User.ID, 10))})
+	if err != nil {
+		br.log.Error("telegram: record vote", "loop", bot.name, "poll", poll.MessageID, "err", err)
+	}
+}
+
+// mirrorPoll stops a loop's poll on Telegram when the hub closes it, so
+// Telegram shows the final count and takes no more votes (ADR-0041). A vote
+// changes nothing here: Telegram counts its own users' votes, and a loop's
+// vote is the hub's alone.
+func (br *Bridge) mirrorPoll(ctx context.Context, frame *route.PollPayload) {
+	if !frame.Closed {
+		return
+	}
+	message, err := br.store.Messages().Get(ctx, frame.PollID)
+	if err != nil {
+		br.log.Warn("telegram: read closed poll", "poll", frame.PollID, "err", err)
+		return
+	}
+	bot := br.poller(message.FromLoopID)
+	if bot == nil {
+		return // not a Telegram loop, or its bot is not running
+	}
+	br.stopPoll(ctx, bot, frame.PollID)
+}
+
+// stopPoll queues a stopPoll for the poll message the loop's bot sent. A
+// poll its bot never sent, kept on the hub, has nothing to stop.
+func (br *Bridge) stopPoll(ctx context.Context, bot *poller, pollID int64) {
+	ref, err := br.store.Messages().Ref(ctx, pollID, bot.loopID)
+	if err != nil {
+		return
+	}
+	if unsent := bot.enqueue(sendReq{chatID: ref.TGChatID, stopPollAt: ref.TGMessageID}); unsent != "" {
+		br.log.Warn("telegram: poll not stopped", "loop", bot.name, "poll", pollID, "reason", unsent)
+	}
+}
+
+// sentPoll is the ballot a loop's message carries, nil for a message that
+// is no poll. A ballot the store cannot read fails the send rather than
+// posting the question as words: the loop asked a poll. ok is false when
+// it has.
+func (br *Bridge) sentPoll(ctx context.Context, mp *route.MessagePayload) (*store.Poll, bool) {
+	poll, err := br.store.Polls().Get(ctx, mp.ID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, true
+	}
+	if err != nil {
+		br.ledger.Unsendable(ctx, mp, "read poll: "+err.Error())
+		return nil, false
+	}
+	return poll, true
+}
+
+// recordSentPoll keeps the id Telegram gave a poll the bot sent, by which
+// Telegram reports each vote in it.
+func (br *Bridge) recordSentPoll(ctx context.Context, bot *poller, req sendReq, sent *Message) {
+	if req.poll == nil || sent == nil || sent.Poll == nil {
+		return
+	}
+	if err := br.store.Polls().SetTGPollID(ctx, req.poll.MessageID, sent.Poll.ID); err != nil {
+		br.log.Warn("telegram: record sent poll", "loop", bot.name, "poll", req.poll.MessageID, "err", err)
+	}
+}
+
 // tgMsgAlias keeps handleMessage readable without exporting internals.
 type tgMsgAlias = Message
 
@@ -1201,6 +1304,10 @@ func (br *Bridge) deliver(ctx context.Context, bot *poller, req sendReq) {
 		br.deliverReaction(ctx, bot, req)
 		return
 	}
+	if req.stopPollAt != 0 {
+		br.deliverStopPoll(ctx, bot, req)
+		return
+	}
 	parts := sendParts(bot.client, req)
 	for i, send := range parts {
 		if i > 0 && !sleepCtx(ctx, sendSpacing) {
@@ -1220,6 +1327,7 @@ func (br *Bridge) deliver(ctx context.Context, bot *poller, req sendReq) {
 		}
 		if i == 0 {
 			br.recordSentRef(settleCtx(ctx), bot, req, sent)
+			br.recordSentPoll(settleCtx(ctx), bot, req, sent)
 		}
 	}
 	br.ledger.Result(settleCtx(ctx), req.recordFor, nil)
@@ -1239,13 +1347,40 @@ func (br *Bridge) deliverReaction(ctx context.Context, bot *poller, req sendReq)
 	}
 }
 
+// deliverStopPoll stops a poll, retried as a post is. A poll Telegram
+// already closed is stopped. Any other failure is logged and nothing more:
+// the hub has closed the poll, and a vote still made on Telegram stops it
+// again (handlePollAnswer).
+func (br *Bridge) deliverStopPoll(ctx context.Context, bot *poller, req sendReq) {
+	_, attempts, err := br.sendWithRetries(ctx, bot, func(ctx context.Context) (*Message, error) {
+		return nil, bot.client.StopPoll(ctx, req.chatID, req.stopPollAt)
+	})
+	if err != nil && ctx.Err() == nil && !strings.Contains(err.Error(), "already been closed") {
+		br.log.Warn("telegram poll stop failed; giving up", "loop", bot.name, "chat", req.chatID,
+			"attempts", attempts, "err", err)
+	}
+}
+
 // sendPart is one Bot API call a message is sent in.
 type sendPart func(ctx context.Context) (*Message, error)
 
 // sendParts splits a message into the calls that send it: its words in
 // Telegram-sized parts, the first replying to req.replyTo, then its file.
 // Words short enough to caption the file go with it as one call instead.
+// A poll's words are its question, and Telegram's poll carries no file, so
+// a poll's file goes after it, bare.
 func sendParts(client *Client, req sendReq) []sendPart {
+	if req.poll != nil {
+		parts := []sendPart{func(ctx context.Context) (*Message, error) {
+			return client.SendPoll(ctx, req.chatID, req.text, req.poll.Options, req.poll.Multiple, req.replyTo)
+		}}
+		if req.media != nil {
+			parts = append(parts, func(ctx context.Context) (*Message, error) {
+				return client.SendMedia(ctx, req.chatID, *req.media, "", 0)
+			})
+		}
+		return parts
+	}
 	if req.media != nil && utf16Len(req.text) <= maxCaptionLen {
 		return []sendPart{func(ctx context.Context) (*Message, error) {
 			return client.SendMedia(ctx, req.chatID, *req.media, req.text, req.replyTo)
@@ -1404,7 +1539,7 @@ func (br *Bridge) mirror(ctx context.Context) {
 	// record (#302).
 	items, cancel := br.bus.SubscribeLossless(func(item bus.Item) bool {
 		return item.Kind == bus.KindMessage || item.Kind == bus.KindSendRetry || item.Kind == bus.KindClaudeLogin ||
-			item.Kind == bus.KindReaction
+			item.Kind == bus.KindReaction || item.Kind == bus.KindPoll
 	})
 	defer cancel()
 	for {
@@ -1422,6 +1557,8 @@ func (br *Bridge) mirror(ctx context.Context) {
 				br.noticeLogin(ctx, payload)
 			case *route.ReactionPayload:
 				br.mirrorReaction(ctx, payload)
+			case *route.PollPayload:
+				br.mirrorPoll(ctx, payload)
 			}
 		}
 	}
@@ -1478,8 +1615,16 @@ func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 		if !ok {
 			return
 		}
+		poll, ok := br.sentPoll(ctx, mp)
+		if !ok {
+			return
+		}
 		anchor, text := br.render(ctx, mp, chatID)
-		if unsent := bot.enqueue(sendReq{chatID: chatID, text: text, replyTo: anchor, recordFor: mp.ID, media: media}); unsent != "" {
+		if poll != nil {
+			text = mp.Text // a question carries no quoted line
+		}
+		if unsent := bot.enqueue(sendReq{chatID: chatID, text: text, replyTo: anchor, recordFor: mp.ID, media: media,
+			poll: poll}); unsent != "" {
 			br.ledger.Unsendable(ctx, mp, unsent)
 		}
 	case store.ConversationOwnerDM:
@@ -1502,8 +1647,16 @@ func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 		if !ok {
 			return
 		}
+		poll, ok := br.sentPoll(ctx, mp)
+		if !ok {
+			return
+		}
 		anchor, text := br.render(ctx, mp, mp.OwnerDMChat)
-		if unsent := bot.enqueue(sendReq{chatID: mp.OwnerDMChat, text: text, replyTo: anchor, recordFor: mp.ID, media: media}); unsent != "" {
+		if poll != nil {
+			text = mp.Text // a question carries no quoted line
+		}
+		if unsent := bot.enqueue(sendReq{chatID: mp.OwnerDMChat, text: text, replyTo: anchor, recordFor: mp.ID,
+			media: media, poll: poll}); unsent != "" {
 			br.ledger.Unsendable(ctx, mp, unsent)
 		}
 	}

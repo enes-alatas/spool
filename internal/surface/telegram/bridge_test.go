@@ -53,6 +53,15 @@ func TestBoundBefore(t *testing.T) {
 // panics via the embedded nil interfaces: delivery must not need them.
 type laterCaptureStore struct{ store.Store }
 
+// noPolls is a poll store holding none: every message mirrored is a post.
+type noPolls struct{ store.PollStore }
+
+func (noPolls) Get(context.Context, int64) (*store.Poll, error) { return nil, store.ErrNotFound }
+
+func (laterCaptureStore) Polls() store.PollStore { return noPolls{} }
+func (queueFullStore) Polls() store.PollStore    { return noPolls{} }
+func (settleStore) Polls() store.PollStore       { return noPolls{} }
+
 func (laterCaptureStore) Messages() store.MessageStore { return laterCaptureMessages{} }
 func (laterCaptureStore) Loops() store.LoopStore       { return telegramLoops{} }
 

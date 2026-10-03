@@ -13,7 +13,7 @@ import (
 // (ADR-0041).
 type polls struct{ db *sql.DB }
 
-const pollCols = `p.message_id, p.options, p.multiple, p.closes_at, p.closed_at, p.close_told_at`
+const pollCols = `p.message_id, p.options, p.multiple, p.closes_at, p.closed_at, p.close_told_at, p.tg_poll_id`
 
 const voteCols = `v.id, v.poll_id, v.voter_key, v.voter, v.choice, v.ts, v.told_at`
 
@@ -27,7 +27,7 @@ func scanPolls(rows *sql.Rows, err error) ([]*store.Poll, error) {
 		var poll store.Poll
 		var options string
 		if err := rows.Scan(&poll.MessageID, &options, &poll.Multiple, &poll.ClosesAt, &poll.ClosedAt,
-			&poll.CloseToldAt); err != nil {
+			&poll.CloseToldAt, &poll.TGPollID); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(options), &poll.Options); err != nil {
@@ -201,4 +201,24 @@ func (table polls) MarkClosesTold(ctx context.Context, messageIDs []int64, toldA
 	in, args := placeholders(messageIDs, toldAt)
 	_, err := table.db.ExecContext(ctx, `UPDATE polls SET close_told_at=? WHERE message_id IN (`+in+`)`, args...)
 	return err
+}
+
+func (table polls) SetTGPollID(ctx context.Context, messageID int64, tgPollID string) error {
+	_, err := table.db.ExecContext(ctx, `UPDATE polls SET tg_poll_id=? WHERE message_id=?`, tgPollID, messageID)
+	return err
+}
+
+func (table polls) ByTGPollID(ctx context.Context, tgPollID string) (*store.Poll, error) {
+	if tgPollID == "" {
+		return nil, store.ErrNotFound
+	}
+	got, err := scanPolls(table.db.QueryContext(ctx, `SELECT `+pollCols+` FROM polls AS p WHERE p.tg_poll_id=?`,
+		tgPollID))
+	if err != nil {
+		return nil, err
+	}
+	if len(got) == 0 {
+		return nil, store.ErrNotFound
+	}
+	return got[0], nil
 }
