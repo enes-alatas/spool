@@ -9,12 +9,16 @@ import (
 
 type sourceStore struct {
 	store.Store
-	loops []*store.Loop
+	loops       []*store.Loop
+	connections []*store.Connection
 }
 
 func (fake sourceStore) Settings() store.SettingsStore      { return noSettings{} }
 func (fake sourceStore) Loops() store.LoopStore             { return listedLoops{loops: fake.loops} }
 func (fake sourceStore) LoopSecrets() store.LoopSecretStore { return noLoopSecrets{} }
+func (fake sourceStore) Connections() store.ConnectionStore {
+	return listedConnections{connections: fake.connections}
+}
 
 type noSettings struct{ store.SettingsStore }
 
@@ -26,6 +30,15 @@ type listedLoops struct {
 }
 
 func (listed listedLoops) List(context.Context) ([]*store.Loop, error) { return listed.loops, nil }
+
+type listedConnections struct {
+	store.ConnectionStore
+	connections []*store.Connection
+}
+
+func (listed listedConnections) List(context.Context) ([]*store.Connection, error) {
+	return listed.connections, nil
+}
 
 type noLoopSecrets struct{ store.LoopSecretStore }
 
@@ -57,5 +70,22 @@ func TestStoreSourceNamesEverySurfaceCredential(t *testing.T) {
 		if got[name] != value {
 			t.Errorf("secret %s = %q, want %q", name, got[name], value)
 		}
+	}
+}
+
+// Every connection's secret is redacted, attached or not, and a connection
+// without one (an mcp-server may have none) adds nothing (ADR-0043).
+func TestStoreSourceNamesEveryConnectionSecret(t *testing.T) {
+	source := StoreSource{Store: sourceStore{connections: []*store.Connection{
+		{Name: "github", Kind: store.ConnectionEnvCredential, Secret: "ghp-synthetic-connection"},
+		{Name: "docs", Kind: store.ConnectionMCPServer},
+	}}}
+
+	secrets, err := source.Secrets(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(secrets) != 1 || secrets[0] != (Secret{Name: "connection:github", Value: "ghp-synthetic-connection"}) {
+		t.Fatalf("secrets = %+v, want only connection:github's", secrets)
 	}
 }

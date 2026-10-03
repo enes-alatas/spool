@@ -1030,6 +1030,7 @@ type Store interface {
 	Reactions() ReactionStore
 	Polls() PollStore
 	LoopSecrets() LoopSecretStore
+	Connections() ConnectionStore
 	FleetRules() FleetRuleStore
 	Sessions() SessionStore
 	Messages() MessageStore
@@ -1063,7 +1064,11 @@ type Channel struct {
 // ValidChannelName reports whether a name may name a channel: 1–32 of
 // a-z, 0-9 and '-', not starting with '-'. Underscores are left out so a
 // channel can never be spelled like a private destination (owner_dm).
-func ValidChannelName(name string) bool {
+func ValidChannelName(name string) bool { return validHandle(name) }
+
+// validHandle is the alphabet the operator names hub objects in: 1–32 of
+// a-z, 0-9 and '-', not starting with '-'.
+func validHandle(name string) bool {
 	if name == "" || len(name) > 32 || name[0] == '-' {
 		return false
 	}
@@ -1334,3 +1339,58 @@ const (
 	// ErrPollClosed refuses a vote in a poll that has closed (ADR-0041).
 	ErrPollClosed = sentinelError("store: poll closed")
 )
+
+// Connection is an org-level tool credential or config, defined once under
+// a name and attachable to loops (ADR-0043). Secret is write-only: json:"-"
+// keeps it out of every API response, the rule a loop's bot token follows.
+type Connection struct {
+	Name      string
+	Kind      string
+	Config    ConnectionConfig
+	Secret    string `json:"-"`
+	CreatedAt int64
+}
+
+// The kinds a connection can be (ADR-0043).
+const (
+	// ConnectionEnvCredential is a secret a loop's tools read from one env
+	// var: a GitHub token, an API key.
+	ConnectionEnvCredential = "env-credential"
+	// ConnectionMCPServer is an MCP server a loop's claude can be given.
+	ConnectionMCPServer = "mcp-server"
+)
+
+// The transports an mcp-server connection reaches its server by.
+const (
+	MCPTransportHTTP  = "http"
+	MCPTransportStdio = "stdio"
+)
+
+// ConnectionConfig is what a connection says about itself besides its
+// secret. Which fields it uses is its kind's: Env for an env-credential;
+// Transport, and URL or Command with Args, for an mcp-server. It is read
+// back in full, so nothing secret belongs in it.
+type ConnectionConfig struct {
+	Env       string   `json:"env,omitempty"`
+	Transport string   `json:"transport,omitempty"`
+	URL       string   `json:"url,omitempty"`
+	Command   string   `json:"command,omitempty"`
+	Args      []string `json:"args,omitempty"`
+}
+
+// ValidConnectionName reports whether a name may name a connection: the
+// alphabet a channel is named in.
+func ValidConnectionName(name string) bool { return validHandle(name) }
+
+// ConnectionStore holds the hub's connections (ADR-0043).
+type ConnectionStore interface {
+	// List returns every connection name-sorted, secrets included: the
+	// redactor redacts by them, and the API drops them.
+	List(ctx context.Context) ([]*Connection, error)
+	// Get is ErrNotFound for an unknown name.
+	Get(ctx context.Context, name string) (*Connection, error)
+	// Create is ErrDuplicate when the name is taken.
+	Create(ctx context.Context, connection *Connection) error
+	// Delete is ErrNotFound for an unknown name.
+	Delete(ctx context.Context, name string) error
+}
