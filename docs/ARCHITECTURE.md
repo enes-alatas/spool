@@ -190,6 +190,12 @@ opportunistically, not big-bang.
 - **Multi-tenancy**: `org` appears as a column and a concept at L5, not before. Until
   then the local edition is one implicit org. Nothing today may assume global
   singletons that would break under orgs (e.g. loop names unique *per org* later).
+- **Connections are org-level from the start** (ADR-0043, #504): a connection is
+  defined once under a name (`GET`/`POST /api/connections`,
+  `GET`/`DELETE /api/connections/{name}`), its secret write-only and redacted
+  from the moment it is stored; no loop owns one, so explicit orgs at L5 scope
+  it without a reshape. Per-loop secrets stay the injection path until
+  attachments land.
 - **Runner extraction**: the hosted service will run runners near customer sandboxes.
   Anything crossing the Runner seam must stay serializable (no passing live channels
   or callbacks across it as its API matures).
