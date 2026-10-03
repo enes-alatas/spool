@@ -59,21 +59,21 @@ func (router *Router) React(ctx context.Context, in InboundReaction) error {
 	}
 	router.bus.Publish(bus.Item{Kind: bus.KindReaction, Payload: &ReactionPayload{Reaction: reaction, Removed: in.Removed}})
 	if !in.Removed {
-		router.wakeForOwner(ctx, reaction)
+		router.wakeForOwner(ctx, reaction.MessageID, reaction.ReactorKey)
 	}
 	return nil
 }
 
-// wakeForOwner wakes a loop whose owner reacted to its message in their
-// private conversation, as a message from them would (ADR-0040). The wake
-// carries no words: the reaction is told the way every other one is, ahead
-// of the turn it starts. Best effort, like a delivery: the reaction is
-// recorded either way, and rides with the loop's next turn if this one
-// does not happen.
-func (router *Router) wakeForOwner(ctx context.Context, reaction *store.Reaction) {
-	message, err := router.store.Messages().Get(ctx, reaction.MessageID)
+// wakeForOwner wakes a loop whose owner reacted to its message, or voted
+// in its poll, in their private conversation, as a message from them would
+// (ADR-0040, ADR-0041). The wake carries no words: the reaction or vote is
+// told the way every other one is, ahead of the turn it starts. Best
+// effort, like a delivery: it is recorded either way, and rides with the
+// loop's next turn if this one does not happen.
+func (router *Router) wakeForOwner(ctx context.Context, messageID int64, reactorKey string) {
+	message, err := router.store.Messages().Get(ctx, messageID)
 	if err != nil {
-		router.log.Warn("reaction target vanished", "message", reaction.MessageID, "err", err)
+		router.log.Warn("wake target vanished", "message", messageID, "err", err)
 		return
 	}
 	if message.Conversation != store.ConversationOwnerDM || message.FromLoopID == "" ||
@@ -82,10 +82,10 @@ func (router *Router) wakeForOwner(ctx context.Context, reaction *store.Reaction
 	}
 	author, err := router.store.Loops().Get(ctx, message.FromLoopID)
 	if err != nil {
-		router.log.Warn("reacted-to loop vanished", "loop", message.FromLoopID, "err", err)
+		router.log.Warn("woken loop vanished", "loop", message.FromLoopID, "err", err)
 		return
 	}
-	if author.OwnerReactor() != reaction.ReactorKey || author.Status == store.StatusArchived {
+	if author.OwnerReactor() != reactorKey || author.Status == store.StatusArchived {
 		return
 	}
 	chat := int64(0)
@@ -93,7 +93,7 @@ func (router *Router) wakeForOwner(ctx context.Context, reaction *store.Reaction
 		// the chat a message from the owner would batch by (dmChatFor)
 		chat = author.OwnerDMChatID
 	}
-	if !router.deliver.Deliver(author.ID, loop.OwnerReactionWake(chat)) {
+	if !router.deliver.Deliver(author.ID, loop.OwnerAnswerWake(chat)) {
 		router.log.Warn("deliver to unknown runtime", "loop", author.Name)
 	}
 }
@@ -106,9 +106,9 @@ func (router *Router) wakeForOwner(ctx context.Context, reaction *store.Reaction
 // it on the platform message it recorded for the target. It returns the
 // message reacted to.
 func (router *Router) SendReaction(ctx context.Context, req SendRequest) (*store.Message, *SendError, error) {
-	if strings.TrimSpace(req.Text) != "" || req.Attach != "" || req.Resends != "" {
+	if strings.TrimSpace(req.Text) != "" || req.Attach != "" || req.Resends != "" || req.Poll != nil {
 		return nil, &SendError{ErrReactionAlone,
-			"react carries no text, file or resends; send the words as a message of their own"}, nil
+			"react carries no text, file, resends or poll; send the words as a message of their own"}, nil
 	}
 	if strings.TrimSpace(req.ReplyTo) == "" {
 		return nil, &SendError{ErrUnknownReplyTo,

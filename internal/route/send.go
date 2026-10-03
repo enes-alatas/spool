@@ -38,6 +38,41 @@ type SendRequest struct {
 	// React is one emoji to put on the message ReplyTo names, instead of
 	// saying anything ("" = a message, ADR-0040). SendReaction takes it.
 	React string
+	// Poll is the ballot the message carries, its text the question (nil =
+	// none, ADR-0041).
+	Poll *PollRequest
+	// Voting says the send is a vote in the poll ReplyTo names, and Vote
+	// the option numbers it picks, from 1; an empty Vote takes the loop's
+	// vote back (ADR-0041). SendVote takes it.
+	Voting bool
+	Vote   []int
+	// ClosePoll is the reference of the loop's own poll to close ("" =
+	// none, ADR-0041). SendClosePoll takes it.
+	ClosePoll string
+}
+
+// Kind is which of the router's sends a request is: "react", "vote",
+// "close_poll", or "" for a message, a poll's included. A *SendError
+// refuses a request that asks for two.
+func (req SendRequest) Kind() (string, *SendError) {
+	var kinds []string
+	if strings.TrimSpace(req.React) != "" {
+		kinds = append(kinds, "react")
+	}
+	if req.Voting {
+		kinds = append(kinds, "vote")
+	}
+	if strings.TrimSpace(req.ClosePoll) != "" {
+		kinds = append(kinds, "close_poll")
+	}
+	switch len(kinds) {
+	case 0:
+		return "", nil
+	case 1:
+		return kinds[0], nil
+	}
+	return "", &SendError{ErrOneKindOfSend,
+		"a send is one of a message, a react, a vote or a close_poll; this one is " + strings.Join(kinds, " and ")}
 }
 
 // SendError is a typed refusal the model sees in-turn and can correct.
@@ -79,6 +114,9 @@ const (
 	// emoji, and one that also carries words, a file or a resend.
 	ErrInvalidReaction = "invalid_reaction"
 	ErrReactionAlone   = "reaction_carries_nothing_else"
+	// ErrOneKindOfSend refuses a send that asks for two of a message, a
+	// reaction, a vote and a close (ADR-0041).
+	ErrOneKindOfSend = "one_kind_of_send"
 )
 
 // noSuchDestination refuses a destination the loop does not have, and names
@@ -97,7 +135,17 @@ func noSuchDestination(conv loop.Conversations, why string) *SendError {
 func (router *Router) Send(ctx context.Context, req SendRequest) (*store.Message, *SendError, error) {
 	text := strings.TrimSpace(req.Text)
 	if text == "" {
+		if req.Poll != nil {
+			return nil, &SendError{ErrEmptyText, "a poll's text is its question, and it is empty"}, nil
+		}
 		return nil, &SendError{ErrEmptyText, "message text is empty"}, nil
+	}
+	var poll *store.Poll
+	if req.Poll != nil {
+		var serr *SendError
+		if poll, serr = checkPoll(text, req.Poll, time.Now()); serr != nil {
+			return nil, serr, nil
+		}
 	}
 	replyTo, serr, err := router.replyTarget(ctx, req)
 	if serr != nil || err != nil {
@@ -276,6 +324,16 @@ func (router *Router) Send(ctx context.Context, req SendRequest) (*store.Message
 			sentRows = []*store.Attachment{sent}
 		}
 	}
+	// The ballot too, so a surface that sends the message sends it as a
+	// poll. As with a file, the message is stored by now: a ballot that
+	// cannot be recorded leaves a message, and that is logged.
+	if poll != nil {
+		poll.MessageID = msg.ID
+		if err := router.store.Polls().Create(ctx, poll); err != nil {
+			router.log.Error("poll not recorded; sending the question alone", "message", msg.ID, "err", err)
+			poll = nil
+		}
+	}
 	// After the insert, so a relay's tail reads in the order it happened:
 	// the message, then the drops it caused.
 	for _, target := range dropped {
@@ -302,6 +360,7 @@ func (router *Router) Send(ctx context.Context, req SendRequest) (*store.Message
 			Ref:          loop.MessageRef(msg.ID),
 			ReplyTo:      replyRef(replyTo),
 			Attachments:  shown,
+			Poll:         poll,
 		})
 		env.Files = copies
 		if !router.deliver.Deliver(target.ID, env) {

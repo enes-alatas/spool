@@ -39,8 +39,9 @@ var ErrInvalidVote = errors.New("route: invalid vote")
 // choice equal to the one recorded changes nothing and is not published.
 // A vote in a closed poll is dropped: the surface may report one in
 // flight as the poll closes, and the close has the last word. The poll's
-// author is told on its next turn; Vote wakes nobody. store.ErrNotFound
-// when the poll is not the hub's.
+// author is told on its next turn, and only its owner's vote in its
+// owner_dm wakes it for that turn (ADR-0041). store.ErrNotFound when the
+// poll is not the hub's.
 func (router *Router) Vote(ctx context.Context, in InboundVote) error {
 	if in.PollID == 0 || in.VoterKey == "" {
 		return errors.New("route: a vote needs its poll and its voter")
@@ -64,6 +65,9 @@ func (router *Router) Vote(ctx context.Context, in InboundVote) error {
 		return err
 	}
 	router.bus.Publish(bus.Item{Kind: bus.KindPoll, Payload: &PollPayload{PollID: in.PollID, Vote: vote}})
+	if len(choice) > 0 {
+		router.wakeForOwner(ctx, in.PollID, in.VoterKey)
+	}
 	return nil
 }
 

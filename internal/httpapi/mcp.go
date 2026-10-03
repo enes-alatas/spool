@@ -19,12 +19,21 @@ import (
 // is stateless, so every POST stands alone and no session state accrues.
 
 type sendMessageIn struct {
-	Destination string `json:"destination" jsonschema:"where this message goes: owner_dm (your owner's private chat on your attached surface — always the same person, so a tick can open a private conversation), group (the fleet channel; @mention recipients in the text), channel:<name> (another channel you are in; @mention recipients in it), or control_room (your private web thread with the operator). Your system prompt says which of these you have"`
-	ReplyTo     string `json:"reply_to,omitempty" jsonschema:"reference of the message this replies to (\"ref:42\"), exactly as its envelope header gave it; the reply addresses that message's author and, in the group, renders as a native reply. Must belong to this destination's conversation. Omit for a new message."`
-	Text        string `json:"text,omitempty" jsonschema:"the message text; in the group or a channel, @mentions name the recipients. Omit only with react."`
-	Resends     string `json:"resends,omitempty" jsonschema:"reference of your own message whose send failed (\"ref:42\"), exactly as the undelivered note gave it, when these words are you saying that message again. The destination must be the one it was lost going to. When this send gets through, that failure stops being the operator's to deal with. Omit unless you are repeating a message you were told never arrived."`
-	Attach      string `json:"attach,omitempty" jsonschema:"path of one file in your workspace to send with this message, at most 20 MB; an image is shown as a photo where the surface can. The text goes with it. Omit to send words alone."`
-	React       string `json:"react,omitempty" jsonschema:"one emoji to react with to the message reply_to names, instead of answering it in words; send no text with it. It wakes nobody, and counts as a send. Omit to send a message."`
+	Destination string  `json:"destination" jsonschema:"where this message goes: owner_dm (your owner's private chat on your attached surface — always the same person, so a tick can open a private conversation), group (the fleet channel; @mention recipients in the text), channel:<name> (another channel you are in; @mention recipients in it), or control_room (your private web thread with the operator). Your system prompt says which of these you have"`
+	ReplyTo     string  `json:"reply_to,omitempty" jsonschema:"reference of the message this replies to (\"ref:42\"), exactly as its envelope header gave it; the reply addresses that message's author and, in the group, renders as a native reply. Must belong to this destination's conversation. Omit for a new message."`
+	Text        string  `json:"text,omitempty" jsonschema:"the message text, or a poll's question; in the group or a channel, @mentions name the recipients. Omit only with react, vote or close_poll."`
+	Resends     string  `json:"resends,omitempty" jsonschema:"reference of your own message whose send failed (\"ref:42\"), exactly as the undelivered note gave it, when these words are you saying that message again. The destination must be the one it was lost going to. When this send gets through, that failure stops being the operator's to deal with. Omit unless you are repeating a message you were told never arrived."`
+	Attach      string  `json:"attach,omitempty" jsonschema:"path of one file in your workspace to send with this message, at most 20 MB; an image is shown as a photo where the surface can. The text goes with it. Omit to send words alone."`
+	React       string  `json:"react,omitempty" jsonschema:"one emoji to react with to the message reply_to names, instead of answering it in words; send no text with it. It wakes nobody, and counts as a send. Omit to send a message."`
+	Poll        *pollIn `json:"poll,omitempty" jsonschema:"makes this message a poll: its text is the question, at most 300 characters. Votes in it reach you ahead of your next turn, and so does the result once it closes. Omit for a plain message."`
+	Vote        *[]int  `json:"vote,omitempty" jsonschema:"your vote in the poll reply_to names: the numbers of the options you pick, as the poll listed them, or [] to take your vote back; send no text with it. It wakes nobody, and counts as a send. Omit unless voting."`
+	ClosePoll   string  `json:"close_poll,omitempty" jsonschema:"reference of your own poll to close (\"ref:42\"); send no text with it. It stops taking votes, and its result reaches you ahead of your next turn. Omit unless closing a poll."`
+}
+
+type pollIn struct {
+	Options  []string `json:"options" jsonschema:"the answers to choose from, 2 to 10, each at most 100 characters"`
+	Multiple bool     `json:"multiple,omitempty" jsonschema:"true lets a voter pick more than one option; omit for one each"`
+	ClosesIn string   `json:"closes_in,omitempty" jsonschema:"how long the poll stays open, up to 7 days, such as 90m, 4h or 2d; omit to keep it open until you close it"`
 }
 
 type sendMessageOut struct {
@@ -36,6 +45,10 @@ type sendMessageOut struct {
 	// ReactedTo is the reference of the message a reaction was put on, in
 	// place of the two above: a reaction is no message of its own.
 	ReactedTo string `json:"reacted_to,omitempty"`
+	// VotedIn and Closed are the reference of the poll a vote was cast in,
+	// or that was closed, in their place too.
+	VotedIn string `json:"voted_in,omitempty"`
+	Closed  string `json:"closed,omitempty"`
 }
 
 func (server *Server) mcpHandler() http.Handler {
@@ -94,11 +107,27 @@ func (server *Server) sendMessageTool(caller *store.Loop) func(context.Context, 
 			Resends:     in.Resends,
 			Attach:      in.Attach,
 			React:       in.React,
+			Voting:      in.Vote != nil,
+			ClosePoll:   in.ClosePoll,
 		}
-		reacting := strings.TrimSpace(in.React) != ""
+		if in.Poll != nil {
+			req.Poll = &route.PollRequest{Options: in.Poll.Options, Multiple: in.Poll.Multiple, ClosesIn: in.Poll.ClosesIn}
+		}
+		if in.Vote != nil {
+			req.Vote = *in.Vote
+		}
+		kind, serr := req.Kind()
+		if serr != nil {
+			return nil, sendMessageOut{}, serr
+		}
 		send := server.Router.Send
-		if reacting {
+		switch kind {
+		case "react":
 			send = server.Router.SendReaction
+		case "vote":
+			send = server.Router.SendVote
+		case "close_poll":
+			send = server.Router.SendClosePoll
 		}
 		msg, serr, err := send(ctx, req)
 		if serr != nil {
@@ -110,8 +139,13 @@ func (server *Server) sendMessageTool(caller *store.Loop) func(context.Context, 
 			server.Log.Error("send_message", "loop", caller.Name, "err", err)
 			return nil, sendMessageOut{}, fmt.Errorf("internal error; try again")
 		}
-		if reacting {
+		switch kind {
+		case "react":
 			return nil, sendMessageOut{ReactedTo: loop.MessageRef(msg.ID)}, nil
+		case "vote":
+			return nil, sendMessageOut{VotedIn: loop.MessageRef(msg.ID)}, nil
+		case "close_poll":
+			return nil, sendMessageOut{Closed: loop.MessageRef(msg.ID)}, nil
 		}
 		return nil, sendMessageOut{MessageID: msg.ID, Ref: loop.MessageRef(msg.ID)}, nil
 	}

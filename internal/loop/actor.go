@@ -247,6 +247,12 @@ type Actor struct {
 	// completes, as the lost-send news is (ADR-0040).
 	reactionNote *Envelope
 	reactionIDs  []int64
+	// The votes in the loop's polls and the polls that closed, which the
+	// next turn tells it of, and their rows: collected and marked as the
+	// reactions are (ADR-0041).
+	pollNote     *Envelope
+	pollVoteIDs  []int64
+	pollCloseIDs []int64
 
 	powering bool // a power verb is running; nothing may spawn a process under it
 
@@ -748,14 +754,90 @@ func (actor *Actor) collectReactions(ctx context.Context) {
 	actor.reactionNote, actor.reactionIDs = &env, ids
 }
 
+// collectPolls gathers the votes in the loop's polls and the closes it has
+// not been told of, for the next turn to carry (ADR-0041). Read before
+// every turn, as reactions are: both ride with the next turn, whatever
+// woke it.
+func (actor *Actor) collectPolls(ctx context.Context) {
+	actor.pollNote, actor.pollVoteIDs, actor.pollCloseIDs = nil, nil, nil
+	polls := actor.deps.Store.Polls()
+	untold, err := polls.UntoldVotes(ctx, actor.loop.ID)
+	if err != nil {
+		// Not worth a turn: the rows stay untold and the next turn tries
+		// again.
+		actor.log().Error("collect votes", "err", err)
+		return
+	}
+	closed, err := polls.UntoldCloses(ctx, actor.loop.ID)
+	if err != nil {
+		actor.log().Error("collect poll closes", "err", err)
+		return
+	}
+	ballots := map[int64]*store.Poll{}
+	for _, poll := range closed {
+		ballots[poll.MessageID] = poll
+	}
+	messages := map[int64]*store.Message{}
+	lookup := func(pollID int64) (*store.Poll, *store.Message, bool) {
+		poll, ok := ballots[pollID]
+		if !ok {
+			if poll, err = polls.Get(ctx, pollID); err != nil {
+				actor.log().Error("collect votes", "poll", pollID, "err", err)
+				return nil, nil, false
+			}
+			ballots[pollID] = poll
+		}
+		message, ok := messages[pollID]
+		if !ok {
+			if message, err = actor.deps.Store.Messages().Get(ctx, pollID); err != nil {
+				actor.log().Error("collect votes", "message", pollID, "err", err)
+				return nil, nil, false
+			}
+			messages[pollID] = message
+		}
+		return poll, message, true
+	}
+	var votes []ToldVote
+	var voteIDs []int64
+	for _, vote := range untold {
+		poll, message, ok := lookup(vote.PollID)
+		if !ok {
+			continue
+		}
+		votes = append(votes, ToldVote{Voter: vote.Voter, Choice: vote.Choice, Poll: poll, Message: message})
+		voteIDs = append(voteIDs, vote.ID)
+	}
+	var closes []ToldClose
+	var closeIDs []int64
+	for _, poll := range closed {
+		_, message, ok := lookup(poll.MessageID)
+		if !ok {
+			continue
+		}
+		all, err := polls.Votes(ctx, []int64{poll.MessageID})
+		if err != nil {
+			actor.log().Error("collect poll closes", "poll", poll.MessageID, "err", err)
+			continue
+		}
+		closes = append(closes, ToldClose{Poll: poll, Message: message, Votes: all})
+		closeIDs = append(closeIDs, poll.MessageID)
+	}
+	if len(votes) == 0 && len(closes) == 0 {
+		return
+	}
+	env := PollsEnvelope(time.Now(), votes, closes)
+	actor.pollNote, actor.pollVoteIDs, actor.pollCloseIDs = &env, voteIDs, closeIDs
+}
+
 // hasWork reports whether the inbox holds anything to start a turn on. It
-// collects the reactions the turn would carry first, and drops the wakes
-// that came for a reaction when none is left to tell: one removed before
-// the loop heard of it is never told (ADR-0040), and a wake with nothing to
-// say is no turn.
+// collects the reactions and votes the turn would carry first, and drops
+// the wakes that came for one when none is left to tell: a reaction
+// removed before the loop heard of it is never told (ADR-0040), and a
+// wake with nothing to say is no turn.
 func (actor *Actor) hasWork() bool {
 	actor.collectReactions(context.Background())
-	if actor.reactionNote == nil {
+	actor.collectPolls(context.Background())
+	if actor.reactionNote == nil && actor.pollNote == nil {
 		actor.inbox = slices.DeleteFunc(actor.inbox, Envelope.wakeOnly)
 	}
 	return len(actor.inbox) > 0
@@ -921,6 +1003,17 @@ func (actor *Actor) sendBatch(batch []Envelope) {
 		}
 		batch = slices.Insert(batch, at, *actor.reactionNote)
 	}
+	if actor.pollNote != nil && !actor.handoffTurn {
+		// after the reactions, as news about what the loop asked
+		at := 0
+		if actor.sendFailure != nil {
+			at++
+		}
+		if actor.reactionNote != nil {
+			at++
+		}
+		batch = slices.Insert(batch, at, *actor.pollNote)
+	}
 
 	texts := make([]string, 0, len(batch))
 	trigger := store.TriggerTick
@@ -929,7 +1022,7 @@ func (actor *Actor) sendBatch(batch []Envelope) {
 			trigger = env.Trigger
 		}
 		if env.wakeOnly() {
-			// it woke the loop for a reaction, which the note above tells
+			// it woke the loop for a reaction or vote, which the notes above tell
 			continue
 		}
 		texts = append(texts, env.Text)
@@ -1189,6 +1282,16 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 			actor.log().Error("mark reactions told", "err", err)
 		}
 		actor.reactionNote, actor.reactionIDs = nil, nil
+	}
+	if actor.pollNote != nil {
+		// Told now, for the same reason (ADR-0041).
+		if err := actor.deps.Store.Polls().MarkVotesTold(context.Background(), actor.pollVoteIDs, now()); err != nil {
+			actor.log().Error("mark votes told", "err", err)
+		}
+		if err := actor.deps.Store.Polls().MarkClosesTold(context.Background(), actor.pollCloseIDs, now()); err != nil {
+			actor.log().Error("mark poll closes told", "err", err)
+		}
+		actor.pollNote, actor.pollVoteIDs, actor.pollCloseIDs = nil, nil, nil
 	}
 	if actor.promptDelta != "" {
 		// The note is in the session's history now, so it is paid for, and

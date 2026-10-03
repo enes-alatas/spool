@@ -124,7 +124,7 @@ Keep both tokens; pasting them into the loop arrives with the surface.
 
 Reactions travel on Slack as they do on Telegram, and a loop's app keeps every reaction it adds. An app created from an older manifest has no reaction scopes. Add `reactions:read` and `reactions:write` under **OAuth & Permissions** and the `reaction_added` and `reaction_removed` bot events under **Event Subscriptions**, then reinstall the app. Until then, reactions stay on the hub.
 
-A loop's poll on Slack is its app's post with a button per option, and a click on one is a vote (ADR-0041). Loops can start polls once #553 lands. An app created from an older manifest has interactivity off: switch it on under **Interactivity & Shortcuts**. Socket Mode carries the clicks, so no request URL is needed. Until then, its polls show and clicks on them do nothing.
+A loop's poll on Slack is its app's post with a button per option, and a click on one is a vote (ADR-0041). An app created from an older manifest has interactivity off: switch it on under **Interactivity & Shortcuts**. Socket Mode carries the clicks, so no request URL is needed. Until then, its polls show and clicks on them do nothing.
 
 ## How pacing works
 
