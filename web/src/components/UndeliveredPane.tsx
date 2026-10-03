@@ -31,6 +31,7 @@ function fallback(m: ChatMessage): Undelivered {
     reason: m.send_error ?? '',
     resolution: '',
     resentAs: 0,
+    leftByLoop: m.send_left_by_loop ?? false,
     fleetChannel: m.conversation === 'group',
   }
 }
@@ -194,7 +195,13 @@ export function UndeliveredPane({ name }: { name: string }) {
                 Every row here is unresolved, since that is the predicate the
                 route answers; taking it from the row anyway means a row that
                 somehow arrives resolved says so instead of lying. */}
+            {/* A row the loop has left (#561) says so ahead of the reason,
+                where the one-line clamp cannot cut it off: the loop was
+                told and did nothing, so nobody but the operator will.
+                In parentheses, so it reads as an aside about the loop rather
+                than as part of the destination beside it. */}
             <span className="undelivered-reason" title={undeliveredTitle(undelivered(m) ?? fallback(m))}>
+              {m.send_left_by_loop && <span className="undelivered-left">(loop left it) </span>}
               {m.send_error || 'no reason given'}
             </span>
           </span>

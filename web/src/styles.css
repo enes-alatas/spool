@@ -699,6 +699,12 @@ textarea {
   color: var(--danger);
   padding-top: 2px;
 }
+/* Who has given up on it, ahead of the reason and quieter than it: a fact
+   about the loop rather than about what went wrong, so it is set apart in
+   parentheses rather than read as part of the destination (#561). */
+.undelivered-left {
+  color: var(--text-muted);
+}
 
 /* one fleet-wide fault, said once at the top instead of per loop */
 .fleet-alert {

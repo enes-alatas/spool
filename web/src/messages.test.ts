@@ -35,6 +35,7 @@ describe('undelivered', () => {
       reason: 'chat not found',
       resolution: '',
       resentAs: 0,
+      leftByLoop: false,
       fleetChannel: false,
     })
   })
@@ -73,10 +74,24 @@ describe('undelivered', () => {
   it('still marks a message whose failure was resolved, and says which way', () => {
     expect(
       undelivered(msg({ send_failed_at: 5, send_resolved_at: 9, send_resolution: 'delivered' })),
-    ).toEqual({ at: 5, reason: '', resolution: 'delivered', resentAs: 0, fleetChannel: false })
+    ).toEqual({
+      at: 5,
+      reason: '',
+      resolution: 'delivered',
+      resentAs: 0,
+      leftByLoop: false,
+      fleetChannel: false,
+    })
     expect(
       undelivered(msg({ send_failed_at: 5, send_resolved_at: 9, send_resolution: 'dismissed' })),
-    ).toEqual({ at: 5, reason: '', resolution: 'dismissed', resentAs: 0, fleetChannel: false })
+    ).toEqual({
+      at: 5,
+      reason: '',
+      resolution: 'dismissed',
+      resentAs: 0,
+      leftByLoop: false,
+      fleetChannel: false,
+    })
   })
 
   // The loop's own resend (#270, #278): a third resolution, carrying the
@@ -86,7 +101,14 @@ describe('undelivered', () => {
       undelivered(
         msg({ send_failed_at: 5, send_resolved_at: 9, send_resolution: 'resent', send_resent_as: 42 }),
       ),
-    ).toEqual({ at: 5, reason: '', resolution: 'resent', resentAs: 42, fleetChannel: false })
+    ).toEqual({
+      at: 5,
+      reason: '',
+      resolution: 'resent',
+      resentAs: 42,
+      leftByLoop: false,
+      fleetChannel: false,
+    })
   })
 
   // The hub writes this field and a browser tab outlives an upgrade, so a
@@ -96,7 +118,14 @@ describe('undelivered', () => {
   it('folds a resolution it does not know into one the readers have an arm for', () => {
     expect(
       undelivered(msg({ send_failed_at: 5, send_resolved_at: 9, send_resolution: 'teleported' })),
-    ).toEqual({ at: 5, reason: '', resolution: 'unknown', resentAs: 0, fleetChannel: false })
+    ).toEqual({
+      at: 5,
+      reason: '',
+      resolution: 'unknown',
+      resentAs: 0,
+      leftByLoop: false,
+      fleetChannel: false,
+    })
   })
 
   // The surface does not always say why, and a mark that needs a reason to
@@ -107,6 +136,7 @@ describe('undelivered', () => {
       reason: '',
       resolution: '',
       resentAs: 0,
+      leftByLoop: false,
       fleetChannel: false,
     })
   })
@@ -117,7 +147,14 @@ describe('undeliveredLabel', () => {
   // recipient does not know it exists.
   it('says a message never arrived while nobody has dealt with it', () => {
     expect(
-      undeliveredLabel({ at: 1, reason: 'timeout', resolution: '', resentAs: 0, fleetChannel: false }),
+      undeliveredLabel({
+        at: 1,
+        reason: 'timeout',
+        resolution: '',
+        resentAs: 0,
+        leftByLoop: false,
+        fleetChannel: false,
+      }),
     ).toBe('not delivered')
   })
 
@@ -130,6 +167,7 @@ describe('undeliveredLabel', () => {
       reason: 'timeout',
       resolution: 'delivered',
       resentAs: 0,
+      leftByLoop: false,
       fleetChannel: false,
     })
     expect(label).toBe('delivered on retry')
@@ -144,6 +182,7 @@ describe('undeliveredLabel', () => {
       reason: 'timeout',
       resolution: 'dismissed',
       resentAs: 0,
+      leftByLoop: false,
       fleetChannel: false,
     })
     expect(label).toContain('not delivered')
@@ -159,6 +198,7 @@ describe('undeliveredLabel', () => {
       reason: 'timeout',
       resolution: 'resent',
       resentAs: 42,
+      leftByLoop: false,
       fleetChannel: false,
     })
     expect(label).toContain('not delivered')
@@ -176,6 +216,7 @@ describe('undeliveredLabel', () => {
       reason: 'timeout',
       resolution: 'unknown',
       resentAs: 0,
+      leftByLoop: false,
       fleetChannel: false,
     })
     expect(label).toBeTruthy()
@@ -193,6 +234,7 @@ describe('undeliveredTitle', () => {
       reason: 'timeout',
       resolution: '',
       resentAs: 0,
+      leftByLoop: false,
       fleetChannel: false,
     })
     expect(title).toContain('timeout')
@@ -207,6 +249,7 @@ describe('undeliveredTitle', () => {
       reason: 'timeout',
       resolution: 'delivered',
       resentAs: 0,
+      leftByLoop: false,
       fleetChannel: false,
     })
     expect(title).toContain('got through')
@@ -221,6 +264,7 @@ describe('undeliveredTitle', () => {
       reason: 'timeout',
       resolution: 'dismissed',
       resentAs: 0,
+      leftByLoop: false,
       fleetChannel: false,
     })
     expect(title).toContain('never received this')
@@ -236,6 +280,7 @@ describe('undeliveredTitle', () => {
       reason: 'timeout',
       resolution: 'resent',
       resentAs: 42,
+      leftByLoop: false,
       fleetChannel: false,
     })
     expect(title).toContain('never received this')
@@ -250,6 +295,7 @@ describe('undeliveredTitle', () => {
       reason: 'timeout',
       resolution: 'unknown',
       resentAs: 0,
+      leftByLoop: false,
       fleetChannel: false,
     })
     expect(title).toBeTruthy()
@@ -262,6 +308,7 @@ describe('undeliveredTitle', () => {
       reason: '',
       resolution: '',
       resentAs: 0,
+      leftByLoop: false,
       fleetChannel: false,
     })
     expect(title).toContain('never received this')
@@ -431,5 +478,32 @@ describe('surfaceNote', () => {
       surfaceNote(msg({ origin: 'web', author: 'operator', conversation: 'group', mirror: 'not_mirrored' })),
     ).toBe(' · hub only')
     expect(surfaceNote(msg({ conversation: 'group', mirror: 'mirrored' }))).toBe('')
+  })
+})
+
+describe('the loop-side outcomes', () => {
+  const failed = { at: 1, reason: 'timeout', resentAs: 0, fleetChannel: false }
+
+  // The loop's call, said as the loop's: the operator reading the thread
+  // needs to know they did not dismiss it themselves (#561).
+  it('keeps the claim for a message the loop dismissed and says it was the loop', () => {
+    const u = { ...failed, resolution: 'dismissed_by_loop' as const, leftByLoop: false }
+    expect(undeliveredLabel(u)).toBe('not delivered, dismissed by the loop')
+    expect(undeliveredTitle(u)).toContain('the loop dismissed it')
+  })
+
+  it('says a failure the loop left is still the operator to deal with', () => {
+    const u = { ...failed, resolution: '' as const, leftByLoop: true }
+    expect(undeliveredLabel(u)).toBe('not delivered, the loop left it')
+    expect(undeliveredTitle(u)).toContain('left to you')
+  })
+
+  it('reads both from the message', () => {
+    const lost = { send_failed_at: 5 }
+    expect(
+      undelivered(msg({ ...lost, send_resolution: 'dismissed_by_loop', send_resolved_at: 6 }))?.resolution,
+    ).toBe('dismissed_by_loop')
+    expect(undelivered(msg({ ...lost, send_left_by_loop: true }))?.leftByLoop).toBe(true)
+    expect(undelivered(msg(lost))?.leftByLoop).toBe(false)
   })
 })
