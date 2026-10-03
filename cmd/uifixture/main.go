@@ -253,6 +253,9 @@ func seed(ctx context.Context, db store.Store, files *attach.Files) error {
 	if err := seedChannelTraffic(ctx, db, ids); err != nil {
 		return err
 	}
+	if err := seedPolls(ctx, db, ids); err != nil {
+		return err
+	}
 	if err := seedRooms(ctx, db, ids); err != nil {
 		return err
 	}
