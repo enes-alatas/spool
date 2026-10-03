@@ -1,6 +1,7 @@
 package claude
 
 import (
+	"encoding/json"
 	"slices"
 	"strings"
 	"testing"
@@ -146,5 +147,47 @@ func TestArgsNoEmptyValues(t *testing.T) {
 		if strings.TrimSpace(arg) == "" {
 			t.Errorf("empty argument at %d: %v", i, got)
 		}
+	}
+}
+
+// TestTheHookIsPinnedOn: the hub's hook rides in --settings with
+// disableAllHooks false, the one setting that outranks a loop's own
+// settings files turning every hook off (#529).
+func TestTheHookIsPinnedOn(t *testing.T) {
+	args, err := Args(Opts{SessionID: "s-1", PreToolUseHook: "/opt/spool bin/spool-hook"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := slices.Index(args, "--settings")
+	if at < 0 || at+1 >= len(args) {
+		t.Fatalf("no --settings in %v", args)
+	}
+	var settings struct {
+		DisableAllHooks *bool `json:"disableAllHooks"`
+		Hooks           struct {
+			PreToolUse []struct {
+				Matcher string `json:"matcher"`
+				Hooks   []struct {
+					Type    string `json:"type"`
+					Command string `json:"command"`
+				} `json:"hooks"`
+			} `json:"PreToolUse"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal([]byte(args[at+1]), &settings); err != nil {
+		t.Fatalf("--settings is not JSON: %v", err)
+	}
+	if settings.DisableAllHooks == nil || *settings.DisableAllHooks {
+		t.Fatalf("disableAllHooks is not pinned false: %s", args[at+1])
+	}
+	hooks := settings.Hooks.PreToolUse
+	if len(hooks) != 1 || hooks[0].Matcher != "Bash" || len(hooks[0].Hooks) != 1 ||
+		hooks[0].Hooks[0].Type != "command" || hooks[0].Hooks[0].Command != "'/opt/spool bin/spool-hook'" {
+		t.Fatalf("the hook reads %s", args[at+1])
+	}
+
+	plain, _ := Args(Opts{SessionID: "s-1"})
+	if slices.Contains(plain, "--settings") {
+		t.Fatalf("a run with no hook passes --settings: %v", plain)
 	}
 }

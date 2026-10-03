@@ -8,6 +8,7 @@ RUN useradd --create-home --shell /bin/bash loop \
     && apt-get install -y --no-install-recommends procps \
     && rm -rf /var/lib/apt/lists/*
 COPY fakeclaude /usr/local/bin/claude
+COPY spool-hook /usr/local/bin/spool-hook
 ENV FAKECLAUDE_STATE=/home/loop/.fakeclaude-state
 USER loop
 WORKDIR /home/loop

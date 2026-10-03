@@ -54,6 +54,7 @@ type Runtime struct {
 	egressImage  string   // the allowlist proxy's image ("" leaves egress open)
 	mcpPort      string   // the hub's loop-facing MCP port, allowlisted on the gateway
 	egressAllow  []string // fleet-wide allowlist entries on top of the defaults
+	hook         string   // the PreToolUse hook inside the workstation, "" for none
 
 	healthMu  sync.Mutex
 	healthTTL time.Duration
@@ -81,6 +82,11 @@ type Options struct {
 	// defaults, each "host" or "host:port".
 	EgressAllow []string
 
+	// Hook is the PreToolUse hook every claude runs, a path inside the
+	// workstation (ADR-0042); "" runs none. The default image carries it at
+	// WorkstationHook, and an image without it runs its loop unguarded.
+	Hook string
+
 	// HealthTTL bounds the batched liveness sweep; 0 means the default.
 	HealthTTL time.Duration
 }
@@ -99,6 +105,7 @@ func New(opts Options) *Runtime {
 		egressImage:  opts.EgressImage,
 		mcpPort:      opts.MCPPort,
 		egressAllow:  opts.EgressAllow,
+		hook:         opts.Hook,
 		healthTTL:    opts.HealthTTL,
 	}
 }
@@ -213,7 +220,7 @@ func (rt *Runtime) Start(ctx context.Context, spec runtime.Spec) (runtime.Proc, 
 			return nil, err
 		}
 	}
-	argv, err := execArgv(spec, rt.egressEnv())
+	argv, err := execArgv(spec, rt.egressEnv(), rt.hook)
 	if err != nil {
 		return nil, err
 	}
@@ -350,8 +357,9 @@ func runArgv(spec runtime.Spec, defaultImage string, network []string) []string 
 // execArgv builds the docker exec for one wake. Env vars cross as
 // value-less --env KEY flags — docker resolves them from the client
 // process's environment, so credential values never appear in argv where
-// host ps or logs could see them (ADR-0018).
-func execArgv(spec runtime.Spec, egressEnv []string) ([]string, error) {
+// host ps or logs could see them (ADR-0018). hook is the PreToolUse hook
+// claude runs, "" for none.
+func execArgv(spec runtime.Spec, egressEnv []string, hook string) ([]string, error) {
 	opts := claude.Opts{
 		Model:              spec.Model,
 		Effort:             spec.Effort,
@@ -359,6 +367,7 @@ func execArgv(spec runtime.Spec, egressEnv []string) ([]string, error) {
 		ResumeID:           spec.ResumeID,
 		AppendSystemPrompt: spec.AppendSystemPrompt,
 		PartialMessages:    spec.PartialMessages,
+		PreToolUseHook:     hook,
 	}
 	if spec.MCPConfig != "" {
 		opts.MCPConfigPath = mcpConfigPath
@@ -375,6 +384,10 @@ func execArgv(spec runtime.Spec, egressEnv []string) ([]string, error) {
 	argv = append(argv, containerName(spec.LoopID), "claude")
 	return append(argv, claudeArgs...), nil
 }
+
+// WorkstationHook is where the default workstation image carries the
+// PreToolUse hook (docker/workstation/Dockerfile).
+const WorkstationHook = "/usr/local/bin/spool-hook"
 
 // mcpConfigPath is where a workstation keeps its loop's hub MCP config,
 // written fresh at every wake.

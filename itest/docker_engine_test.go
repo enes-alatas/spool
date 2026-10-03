@@ -66,6 +66,7 @@ func TestDockerRows(t *testing.T) {
 		{"DockerWorkstationCannotReachTheAPI", dockerWorkstationCannotReachTheAPI},
 		{"DockerEchoTurn", dockerEchoTurn},
 		{"DockerScriptedTurn", dockerScriptedTurn},
+		{"DockerHookRefusesASharedStateCommand", dockerHookRefusesASharedStateCommand},
 		{"DockerWorkstationCustomSpec", dockerWorkstationCustomSpec},
 		{"DockerIdleDrainAndResume", dockerIdleDrainAndResume},
 		{"DockerOrchestratorRestartReconnects", dockerOrchestratorRestartReconnects},

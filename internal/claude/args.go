@@ -3,6 +3,7 @@ package claude
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // Opts describes one claude invocation: everything that becomes a command
@@ -23,7 +24,11 @@ type Opts struct {
 	// config carries the loop's hub token, which must stay out of argv where
 	// ps could see it — runtimes materialize the file (ADR-0026).
 	MCPConfigPath string
-	ExtraArgs     []string
+	// PreToolUseHook is the command claude runs before each Bash call, pinned
+	// on through --settings so no settings file of the loop's can turn it
+	// off (ADR-0042). Empty runs no hook of Spool's.
+	PreToolUseHook string
+	ExtraArgs      []string
 }
 
 // Args builds the argument list for a stream-json claude run. Every runtime
@@ -62,7 +67,38 @@ func Args(opts Opts) ([]string, error) {
 	if opts.MCPConfigPath != "" {
 		args = append(args, "--mcp-config", opts.MCPConfigPath, "--strict-mcp-config")
 	}
+	if opts.PreToolUseHook != "" {
+		args = append(args, "--settings", HookSettingsJSON(opts.PreToolUseHook))
+	}
 	return append(args, opts.ExtraArgs...), nil
+}
+
+// HookSettingsJSON renders the --settings that run command before each
+// Bash call. It is inline JSON, unlike the MCP config, because it holds no
+// secret. disableAllHooks is set false outright: --settings outranks the
+// user, project and local settings files, so a disableAllHooks of true in
+// any of them, which would otherwise turn off every hook, this one
+// included, is overridden (probed on Claude Code 2.1.288, #529).
+func HookSettingsJSON(command string) string {
+	settings, _ := json.Marshal(map[string]any{
+		"disableAllHooks": false,
+		"hooks": map[string]any{
+			"PreToolUse": []any{map[string]any{
+				"matcher": "Bash",
+				"hooks":   []any{map[string]any{"type": "command", "command": shellQuote(command)}},
+			}},
+		},
+	})
+	return string(settings)
+}
+
+// shellQuote makes a path one word for the shell Claude Code runs a hook
+// command with.
+func shellQuote(path string) string {
+	if path != "" && strings.Trim(path, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/._-") == "" {
+		return path
+	}
+	return "'" + strings.ReplaceAll(path, "'", `'\''`) + "'"
 }
 
 // SpoolMCPServer is the hub's MCP server's name in a loop's --mcp-config,
