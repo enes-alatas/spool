@@ -49,10 +49,13 @@ type SendRequest struct {
 	// ClosePoll is the reference of the loop's own poll to close ("" =
 	// none, ADR-0041). SendClosePoll takes it.
 	ClosePoll string
+	// Dismiss is the reference of the loop's own failed send that it has
+	// decided not to say again ("" = none, #561). SendDismiss takes it.
+	Dismiss string
 }
 
 // Kind is which of the router's sends a request is: "react", "vote",
-// "close_poll", or "" for a message, a poll's included. A *SendError
+// "close_poll", "dismiss", or "" for a message, a poll's included. A *SendError
 // refuses a request that asks for two.
 func (req SendRequest) Kind() (string, *SendError) {
 	var kinds []string
@@ -65,6 +68,9 @@ func (req SendRequest) Kind() (string, *SendError) {
 	if strings.TrimSpace(req.ClosePoll) != "" {
 		kinds = append(kinds, "close_poll")
 	}
+	if strings.TrimSpace(req.Dismiss) != "" {
+		kinds = append(kinds, "dismiss")
+	}
 	switch len(kinds) {
 	case 0:
 		return "", nil
@@ -72,7 +78,7 @@ func (req SendRequest) Kind() (string, *SendError) {
 		return kinds[0], nil
 	}
 	return "", &SendError{ErrOneKindOfSend,
-		"a send is one of a message, a react, a vote or a close_poll; this one is " + strings.Join(kinds, " and ")}
+		"a send is one of a message, a react, a vote, a close_poll or a dismiss; this one is " + strings.Join(kinds, " and ")}
 }
 
 // SendError is a typed refusal the model sees in-turn and can correct.
@@ -103,6 +109,12 @@ const (
 	// said something twice or resolved the wrong failure.
 	ErrResendsNotFailed        = "resends_not_failed"
 	ErrResendsWrongDestination = "resends_wrong_destination"
+	// The refusals of a dismissal (#561), the resend's two under its own
+	// name, and one that also carries words or a file: a dismissal says
+	// nothing.
+	ErrDismissNotFailed        = "dismiss_not_failed"
+	ErrDismissWrongDestination = "dismiss_wrong_destination"
+	ErrDismissAlone            = "dismiss_carries_nothing_else"
 	// The refusals of an attachment (#123). None stores the message: the
 	// loop meant the words and the file together.
 	ErrAttachmentNotFound    = "attachment_not_found"
@@ -115,7 +127,7 @@ const (
 	ErrInvalidReaction = "invalid_reaction"
 	ErrReactionAlone   = "reaction_carries_nothing_else"
 	// ErrOneKindOfSend refuses a send that asks for two of a message, a
-	// reaction, a vote and a close (ADR-0041).
+	// reaction, a vote, a close and a dismissal (ADR-0041, #561).
 	ErrOneKindOfSend = "one_kind_of_send"
 )
 
@@ -390,29 +402,47 @@ func (router *Router) resendTarget(ctx context.Context, req SendRequest) (*store
 	if strings.TrimSpace(req.Resends) == "" {
 		return nil, nil, nil
 	}
-	id, ok := loop.ParseMessageRef(req.Resends)
+	return router.lostSend(ctx, req, req.Resends, lostSendRefusals{
+		verb: "resend", notFailed: ErrResendsNotFailed, wrongDestination: ErrResendsWrongDestination,
+		elsewhere: "say it again where it was lost, or send it as a new message",
+	})
+}
+
+// lostSendRefusals words lostSend's refusals for the send that names the
+// failure: a resend or a dismissal.
+type lostSendRefusals struct {
+	verb                        string
+	notFailed, wrongDestination string
+	elsewhere                   string // what to do instead, when the destination is wrong
+}
+
+// lostSend resolves a reference to a failure the loop may deal with: its
+// own send, failed and unresolved, lost going to the destination the
+// request names.
+func (router *Router) lostSend(ctx context.Context, req SendRequest, ref string, refuse lostSendRefusals) (*store.Message, *SendError, error) {
+	id, ok := loop.ParseMessageRef(ref)
 	if !ok {
-		return nil, &SendError{ErrResendsNotFailed,
-			fmt.Sprintf("%q is not a message reference; resend only a message the undelivered note named", req.Resends)}, nil
+		return nil, &SendError{refuse.notFailed,
+			fmt.Sprintf("%q is not a message reference; %s only a message the undelivered note named", ref, refuse.verb)}, nil
 	}
 	target, err := router.store.Messages().Get(ctx, id)
 	if errors.Is(err, store.ErrNotFound) {
-		return nil, &SendError{ErrResendsNotFailed, "no such message; resend only a message the undelivered note named"}, nil
+		return nil, &SendError{refuse.notFailed, "no such message; " + refuse.verb + " only a message the undelivered note named"}, nil
 	} else if err != nil {
 		return nil, nil, err
 	}
 	// Ownership before anything the row says: a loop is told nothing about
 	// another loop's message, not even which destination it was going to.
 	if target.FromLoopID != req.From.ID {
-		return nil, &SendError{ErrResendsNotFailed, "that message is not one you sent"}, nil
+		return nil, &SendError{refuse.notFailed, "that message is not one you sent"}, nil
 	}
 	if target.SendFailedAt == 0 || target.SendResolvedAt != 0 {
-		return nil, &SendError{ErrResendsNotFailed,
+		return nil, &SendError{refuse.notFailed,
 			"that message has no unresolved send failure; it arrived, or somebody has already dealt with it"}, nil
 	}
 	if target.Destination() != req.Destination {
-		return nil, &SendError{ErrResendsWrongDestination,
-			fmt.Sprintf("that message was going to %s, not %s; say it again where it was lost, or send it as a new message", target.Destination(), req.Destination)}, nil
+		return nil, &SendError{refuse.wrongDestination,
+			fmt.Sprintf("that message was going to %s, not %s; %s", target.Destination(), req.Destination, refuse.elsewhere)}, nil
 	}
 	return target, nil, nil
 }

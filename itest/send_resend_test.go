@@ -180,10 +180,10 @@ func TestResendsRefusesWhatItCannotResolve(t *testing.T) {
 // lands, both failures resolve.
 //
 // This is the path a claim carried only with the send could not serve. The
-// first failure has been reported by then — a loop is told about a lost
-// message exactly once — so nothing would ever name it to the loop again,
-// and nothing but a human hand could take it off the operator's list, for
-// words that did in the end arrive.
+// first failure has been reported by then, and a failure a later send
+// claims to resend is not named to the loop again (#561) — so nothing but a
+// human hand could take it off the operator's list, for words that did in
+// the end arrive.
 func TestAFailedResendIsResolvedByTheNextOne(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 7783, First: "Operator", Username: "operator"}
@@ -219,9 +219,9 @@ func TestAFailedResendIsResolvedByTheNextOne(t *testing.T) {
 	}
 	srv.waitState("alpha", "asleep", 60*time.Second)
 
-	// The surface is back. This wake's notice names the second failure —
-	// the first has been reported already and is never named again — so the
-	// loop's third send claims the second, and the chain does the rest.
+	// The surface is back. This turn's notice names the second failure —
+	// the first is claimed by the second, so it is not reminded of — and
+	// the loop's third send claims the second; the chain does the rest.
 	tg.failNextSends(0)
 	srv.message("alpha", "and now")
 	tg.waitSent(t, groupChatID, "third time")

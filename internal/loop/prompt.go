@@ -587,6 +587,9 @@ func howThisWorks(conv Conversations) string {
   the question; to vote, send vote (option numbers, [] to take yours back)
   with reply_to and no text; to close your own poll, send close_poll with
   its reference — votes and the result reach you ahead of your next turn.
+- A note that some of your messages never arrived names each one's
+  reference: resend it with resends, dismiss it with dismiss and no text,
+  or leave it for the operator. Until you do, it repeats for two turns.
 - Your final reply text is a private status note: it appears in the control
   room timeline but is delivered to nobody. Not every turn needs a message —
   ending an exchange without one is often right.
@@ -939,24 +942,27 @@ reply with a trailer like [next-wake: 45m] (allowed range: %s–%s).`, dur(loopR
 const maxSendFailuresTold = 5
 
 // maxLostExcerpt is how much of a lost message the note quotes: enough to
-// recognise which one it was, not the message over again. The bridge's
-// timeline event makes the same choice.
-const maxLostExcerpt = 160
+// recognise which one it was, not the message over again — and the note
+// repeats while the failure is unresolved, so it stays short (#561).
+const maxLostExcerpt = 60
 
 // SendFailureEnvelope tells a loop which of its own messages never arrived.
 //
 // A send is immediate (ADR-0026) and its outcome lands after the turn that
 // made it has ended, so a loop that DMs someone and hears nothing cannot
 // tell "they are busy" from "it never got there", and will not resend
-// (#154). This is the news, at the loop's next wake, ahead of that wake's
+// (#154). This is the news, at the loop's next turn, ahead of that turn's
 // own envelopes: a loop should know what it failed to say before it decides
 // what to say next.
 //
-// Each line carries the reference, so a resend is a deliberate act the loop
-// can take against a message it can name, and the reason, because "blocked
-// by the recipient" and "the API timed out" call for different answers.
-// Nothing is resent automatically: the hub does not decide that words are
-// still worth saying minutes later.
+// Each line carries the reference, so a resend or a dismissal is a
+// deliberate act the loop can take against a message it can name; the age,
+// because words worth saying an hour ago may not be now; and the reason,
+// because "blocked by the recipient" and "the API timed out" call for
+// different answers. Nothing is resent automatically: the hub does not
+// decide that words are still worth saying minutes later. A failure the
+// loop neither resends nor dismisses is listed again at its next two turns,
+// marked as a reminder, and then left to the operator (#561).
 func SendFailureEnvelope(now time.Time, failures []*store.Message) Envelope {
 	shown := failures
 	if len(shown) > maxSendFailuresTold {
@@ -967,19 +973,54 @@ func SendFailureEnvelope(now time.Time, failures []*store.Message) Envelope {
 	// plural whatever the count, because it names the set being counted.
 	fmt.Fprintf(&text, "[system note · %d of your messages never arrived · %s]\n\n",
 		len(failures), now.UTC().Format("2006-01-02 15:04 UTC"))
-	text.WriteString("These sends were retried and then given up on, so nobody read them. " +
-		"They are\nnot sent again unless you send them again — say it once more only if it is" +
-		"\nstill worth saying, and to the destination named. When you do, pass that" +
-		"\nmessage's reference as send_message's \"resends\": the failure is then dealt" +
-		"\nwith, and nobody has to clear it by hand.\n\n")
+	text.WriteString(`These sends were retried and then given up on, so nobody read them. They are
+not sent again unless you send them again. Deal with each one: if it is still
+worth saying, say it once more to the destination named, passing its reference
+as send_message's "resends"; if it no longer is, send_message with "dismiss"
+set to its reference, its destination and no text; or leave it for the
+operator. One you neither resend nor dismiss is listed again at your next two
+turns, marked as a reminder, and then left to the operator.
+
+`)
 	for _, message := range shown {
-		fmt.Fprintf(&text, "- %s to %s: %s\n  %q\n",
-			MessageRef(message.ID), destinationOf(message), reasonOf(message), truncate(strings.TrimSpace(message.Text), maxLostExcerpt))
+		fmt.Fprintf(&text, "- %s to %s, %s%s: %s\n  %q\n",
+			MessageRef(message.ID), destinationOf(message), failedAgo(now, message.SendFailedAt), reminderOf(message),
+			reasonOf(message), truncate(strings.TrimSpace(message.Text), maxLostExcerpt))
 	}
 	if rest := len(failures) - len(shown); rest > 0 {
 		fmt.Fprintf(&text, "- and %d more, which the control room lists in full\n", rest)
 	}
 	return Envelope{Trigger: store.TriggerTick, Text: strings.TrimRight(text.String(), "\n")}
+}
+
+// failedAgo is how long ago a send was given up on, at the grain a loop
+// weighs it by: minutes within the hour, hours within two days, then days.
+func failedAgo(now time.Time, failedAt int64) string {
+	age := now.Sub(time.UnixMilli(failedAt))
+	switch {
+	case age < time.Minute:
+		return "just now"
+	case age < time.Hour:
+		return fmt.Sprintf("%dm ago", int(age/time.Minute))
+	case age < 48*time.Hour:
+		return fmt.Sprintf("%dh ago", int(age/time.Hour))
+	default:
+		return fmt.Sprintf("%dd ago", int(age/(24*time.Hour)))
+	}
+}
+
+// reminderOf marks a line the loop has been told before, and says when the
+// reminders end: the last one is the loop's last turn to act before the
+// failure is left to the operator.
+func reminderOf(message *store.Message) string {
+	switch reminder := message.SendFailureTellings; {
+	case reminder == 0:
+		return ""
+	case reminder >= store.SendFailureTellings-1:
+		return ", last reminder"
+	default:
+		return fmt.Sprintf(", reminder %d of %d", reminder, store.SendFailureTellings-1)
+	}
 }
 
 // OwnerAnswerWake is the envelope that wakes a loop for its owner's

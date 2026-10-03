@@ -131,7 +131,7 @@ func (ledger *Ledger) StayOnHub(ctx context.Context, mp *route.MessagePayload) {
 // such a row has no attempt coming, and left alone it would read as in
 // flight forever. As a failure it is an undelivered message like any other:
 // on the operator's list with retry and dismiss, on its loop's timeline, and
-// news its loop is told at the next wake — the loop believes it spoke.
+// news its loop is told at its next turn — the loop believes it spoke.
 //
 // Call it at startup, before anything can send, when every pending row is
 // the last process's, and at shutdown, once every surface has stopped, when

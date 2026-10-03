@@ -18,6 +18,7 @@ type undeliveredRow struct {
 	SendFailedAt   int64  `json:"send_failed_at"`
 	SendResolvedAt int64  `json:"send_resolved_at"`
 	SendError      string `json:"send_error"`
+	SendLeftByLoop bool   `json:"send_left_by_loop"`
 }
 
 // The Fleet badge counts failures the operator then cannot find: Activity is

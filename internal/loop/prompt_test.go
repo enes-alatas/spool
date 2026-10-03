@@ -487,7 +487,7 @@ func TestSendFailureEnvelope(t *testing.T) {
 		ID:           7,
 		Conversation: store.ConversationOwnerDM,
 		Text:         "the deploy is wedged, can you look",
-		SendFailedAt: 1,
+		SendFailedAt: now.Add(-12 * time.Minute).UnixMilli(),
 		SendError:    "telegram: bot was blocked by the user",
 	}})
 	for _, want := range []string{
@@ -500,8 +500,13 @@ func TestSendFailureEnvelope(t *testing.T) {
 		"not sent again unless you send them again",
 		// The loop is told how to close the failure it is about to
 		// resend, or the operator clears by hand a thing that was dealt
-		// with (#270).
+		// with (#270), and how to close one it will not say again (#561).
 		`send_message's "resends"`,
+		`send_message with "dismiss"`,
+		"leave it for the\noperator",
+		"next two\nturns, marked as a reminder",
+		// how stale the words are, which bears on whether to say them
+		"ref:7 to owner_dm, 12m ago:",
 	} {
 		if !strings.Contains(env.Text, want) {
 			t.Errorf("envelope missing %q:\n%s", want, env.Text)
@@ -893,5 +898,58 @@ func TestAPollIsShownNumbered(t *testing.T) {
 		Poll: &store.Poll{Options: []string{"yes", "no"}, Multiple: true, ClosesAt: closes.UnixMilli()}})
 	if want := "ship friday?\n\n[poll · pick any · closes 2026-10-03 14:00 UTC]\n1. yes\n2. no"; !strings.HasSuffix(env.Text, want) {
 		t.Errorf("the envelope ends %q, want %q", env.Text, want)
+	}
+}
+
+// TestSendFailureEnvelopeMarksReminders pins that a failure the loop has
+// been told of before reads as a reminder, and that the last one says so:
+// it is the loop's last turn to act before the failure is the operator's
+// (#561). A first telling carries no mark.
+func TestSendFailureEnvelopeMarksReminders(t *testing.T) {
+	now := time.Date(2026, 10, 3, 18, 0, 0, 0, time.UTC)
+	failed := now.Add(-3 * time.Hour).UnixMilli()
+	text := SendFailureEnvelope(now, []*store.Message{
+		{ID: 1, Conversation: store.ConversationGroup, Text: "new", SendFailedAt: failed, SendError: "timeout"},
+		{ID: 2, Conversation: store.ConversationGroup, Text: "once", SendFailedAt: failed, SendError: "timeout",
+			SendFailureTellings: 1},
+		{ID: 3, Conversation: store.ConversationGroup, Text: "twice", SendFailedAt: failed, SendError: "timeout",
+			SendFailureTellings: 2},
+	}).Text
+	for _, want := range []string{
+		"- ref:1 to group, 3h ago: timeout",
+		"- ref:2 to group, 3h ago, reminder 1 of 2: timeout",
+		"- ref:3 to group, 3h ago, last reminder: timeout",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("envelope missing %q:\n%s", want, text)
+		}
+	}
+}
+
+// TestFailedAgo pins the grain of a lost send's age.
+func TestFailedAgo(t *testing.T) {
+	now := time.Date(2026, 10, 3, 18, 0, 0, 0, time.UTC)
+	for age, want := range map[time.Duration]string{
+		10 * time.Second: "just now",
+		59 * time.Minute: "59m ago",
+		47 * time.Hour:   "47h ago",
+		72 * time.Hour:   "3d ago",
+	} {
+		if got := failedAgo(now, now.Add(-age).UnixMilli()); got != want {
+			t.Errorf("failedAgo(%v) = %q, want %q", age, got, want)
+		}
+	}
+}
+
+// TestSendFailureEnvelopeQuotesShort pins the excerpt's length: the note
+// repeats while a failure is unresolved, so it quotes enough to recognise
+// the message and no more (#561).
+func TestSendFailureEnvelopeQuotesShort(t *testing.T) {
+	long := strings.Repeat("a", 59) + "bcdef"
+	text := SendFailureEnvelope(time.Now(), []*store.Message{
+		{ID: 1, Conversation: store.ConversationGroup, Text: long, SendFailedAt: 1},
+	}).Text
+	if !strings.Contains(text, strings.Repeat("a", 59)) || strings.Contains(text, "bcdef") {
+		t.Errorf("the excerpt is not the first %d characters:\n%s", maxLostExcerpt, text)
 	}
 }

@@ -83,10 +83,10 @@ func TestSendThatNeverGetsThroughIsRecorded(t *testing.T) {
 
 // TestALostSendIsToldToItsSenderAtTheNextWake: the loop that said something
 // nobody read finds out. The outcome of a send lands after the turn that
-// made it has ended, so the next wake is the first moment the sender can be
-// told — and it is told ahead of that wake's own envelopes, so it knows what
+// made it has ended, so the next turn is the first moment the sender can be
+// told — and it is told ahead of that turn's own envelopes, so it knows what
 // it failed to say before it decides what to say next (#154).
-func TestALostSendIsToldToItsSenderAtTheNextWake(t *testing.T) {
+func TestALostSendIsToldToItsSenderAtTheNextTurn(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 7733, First: "Operator", Username: "operator"}
 	ws := workspaceWithScript(t, "!ctx 0\n"+
@@ -111,26 +111,44 @@ func TestALostSendIsToldToItsSenderAtTheNextWake(t *testing.T) {
 		t.Fatalf("the turn the loop received does not open with the news:\n%s", next.ResultText)
 	}
 	for _, want := range []string{
-		"to group:",                  // where it was going, in send_message's words
+		"to group, just now:",        // where it was going, in send_message's words, and when
 		"502",                        // and why, as the surface said it
 		"@beta the deploy is wedged", // enough of it to know which message
-		"anything new",               // and the wake's own envelope, after all of it
+		"anything new",               // and the turn's own envelope, after all of it
 	} {
 		if !strings.Contains(next.ResultText, want) {
 			t.Fatalf("the news lacks %q:\n%s", want, next.ResultText)
 		}
 	}
 
-	// And it is said once: a loop told twice about the same lost message
-	// would resend it twice, or distrust the news.
-	srv.waitState("alpha", "asleep", 60*time.Second)
-	again := time.Now().UnixMilli()
-	srv.message("alpha", "and now")
-	third := srv.waitTurn("alpha", 30*time.Second, func(tn turn) bool {
-		return tn.EndedAt >= again && strings.Contains(tn.ResultText, "and now")
-	})
-	if strings.Contains(third.ResultText, "never arrived") {
-		t.Fatalf("the loop was told about the same lost message twice:\n%s", third.ResultText)
+	// Then reminded at the next two turns while the loop neither resends
+	// nor dismisses it, each marked as a reminder, the second as the last
+	// (#561) — and not a third time: after that the failure is the
+	// operator's, which the undelivered list says.
+	for _, c := range []struct{ say, mark string }{
+		{"and now", "reminder 1 of 2"},
+		{"and again", "last reminder"},
+		{"and once more", ""},
+	} {
+		at := time.Now().UnixMilli()
+		srv.message("alpha", c.say)
+		got := srv.waitTurn("alpha", 30*time.Second, func(tn turn) bool {
+			return tn.EndedAt >= at && strings.Contains(tn.ResultText, c.say)
+		})
+		if c.mark == "" {
+			if strings.Contains(got.ResultText, "never arrived") {
+				t.Fatalf("the loop was reminded past the last reminder:\n%s", got.ResultText)
+			}
+			continue
+		}
+		if !strings.HasPrefix(got.ResultText, "echo: [system note · 1 of your messages never arrived") ||
+			!strings.Contains(got.ResultText, "to group, ") || !strings.Contains(got.ResultText, c.mark) {
+			t.Fatalf("the turn for %q does not open with the reminder marked %q:\n%s", c.say, c.mark, got.ResultText)
+		}
+	}
+	rows := srv.undelivered()
+	if len(rows) != 1 || !rows[0].SendLeftByLoop || rows[0].SendResolvedAt != 0 {
+		t.Fatalf("a failure the loop was reminded of and left is not on the operator's list as left: %s", dump(rows))
 	}
 }
 

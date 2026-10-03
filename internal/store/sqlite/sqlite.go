@@ -492,37 +492,50 @@ func (table messages) Insert(ctx context.Context, message *store.Message) error 
 // up and what it gave up on. A success does not come through here — it calls
 // ResolveSend, which keeps the failure and marks it dealt with.
 //
-// It clears send_failure_told_at, so a fresh failure is fresh news: the pair
-// can never read as "told about a failure the loop has not heard of". And
+// It clears send_failure_told_at and send_failure_tellings, so a fresh
+// failure is fresh news: the row can never read as "told about a failure the
+// loop has not heard of". And
 // the message is pending whatever it was: a failed send is not on the
 // surface yet, and stays bound for it until a resolution says otherwise.
 func (table messages) SetSendResult(ctx context.Context, id, failedAt int64, sendErr string) error {
 	_, err := table.db.ExecContext(ctx,
-		`UPDATE messages SET send_failed_at=?, send_error=?, send_failure_told_at=0, mirror=? WHERE id=?`,
+		`UPDATE messages SET send_failed_at=?, send_error=?, send_failure_told_at=0, send_failure_tellings=0, mirror=?
+		 WHERE id=?`,
 		failedAt, sendErr, store.MirrorPending, id)
 	return err
 }
 
-// UntoldSendFailures finds a loop's own lost messages, oldest first, so the
-// loop is told in the order it said them.
+// SendFailuresToTell finds a loop's own lost messages that its next turn
+// carries, oldest first, so the loop is told in the order it said them: the
+// failures it has not heard of, and the unresolved ones it is still being
+// reminded of (#561).
 //
-// A failure whose words reached their reader in the end is not lost, so it is
-// excluded by how it resolved rather than by send_resolved_at: told that a
-// message it in fact delivered never arrived, a loop says it again and the
-// human reads it twice — the doubling ADR-0026 leaves to the loop to avoid.
-// Two resolutions mean the words arrived — an operator's retry that landed,
-// and the loop's own resend (#270) — and a dismissed failure stays in: that
-// message really did not arrive, and the operator setting it aside is news
-// about their list, not about the send.
-func (table messages) UntoldSendFailures(ctx context.Context, loopID string) ([]*store.Message, error) {
+// A failure whose words reached their reader in the end is not news, so a
+// first telling excludes it by how it resolved rather than by
+// send_resolved_at: told that a message it in fact delivered never arrived,
+// a loop says it again and the human reads it twice — the doubling ADR-0026
+// leaves to the loop to avoid. Two resolutions mean the words arrived — an
+// operator's retry that landed, and the loop's own resend (#270) — and the
+// loop's own dismissal means it knows already. An operator's dismissal stays
+// in: that message really did not arrive, and their setting it aside is news
+// about their list, not about the send. A reminder is only for a failure
+// still unresolved: once anyone has dealt with it, there is nothing left for
+// the loop to do. Nor is one reminded of that a later send claims to resend
+// (#270): those words are in flight or failed again, and the loop hears of
+// that send instead — named twice, it would resend the older link and leave
+// the newer one on the operator's list.
+func (table messages) SendFailuresToTell(ctx context.Context, loopID string) ([]*store.Message, error) {
 	if loopID == "" {
 		// every message nobody authored would match; a loop is always named
 		return nil, nil
 	}
 	return table.query(ctx, `SELECT `+messageCols+` FROM messages
-		WHERE from_loop_id=? AND send_failed_at!=0 AND send_failure_told_at=0
-		  AND send_resolution NOT IN (?,?)
-		ORDER BY id`, loopID, store.SendResolutionDelivered, store.SendResolutionResent)
+		WHERE from_loop_id=? AND send_failed_at!=0 AND (
+		  (send_failure_tellings=0 AND send_resolution NOT IN (?,?,?))
+		  OR (send_failure_tellings BETWEEN 1 AND ? AND send_resolved_at=0
+		      AND NOT EXISTS (SELECT 1 FROM messages later WHERE later.resends_id=messages.id)))
+		ORDER BY id`, loopID, store.SendResolutionDelivered, store.SendResolutionResent,
+		store.SendResolutionDismissedByLoop, store.SendFailureTellings-1)
 }
 
 // unresolvedSendFailure is what "undelivered" means, written once: a send
@@ -671,7 +684,8 @@ func (table messages) MarkSendFailuresTold(ctx context.Context, ids []int64, tol
 		args = append(args, id)
 	}
 	_, err := table.db.ExecContext(ctx,
-		`UPDATE messages SET send_failure_told_at=? WHERE id IN (`+marks+`)`, args...)
+		`UPDATE messages SET send_failure_told_at=?, send_failure_tellings=send_failure_tellings+1
+		 WHERE id IN (`+marks+`)`, args...)
 	return err
 }
 
@@ -683,7 +697,7 @@ func (table messages) SetDelivered(ctx context.Context, id int64, deliveredTo []
 const messageCols = `id, ts, origin, author, from_loop_id, text,
 	mentions, COALESCE(tg_chat_id,0), COALESCE(tg_message_id,0), tg_bot_loop_id, delivered_to,
 	conversation, conversation_loop_id, reply_to_id, send_failed_at, send_error,
-	send_failure_told_at, send_resolved_at, send_resolution, send_resent_as,
+	send_failure_told_at, send_failure_tellings, send_resolved_at, send_resolution, send_resent_as,
 	resends_id, tg_key, mirror, slack_channel_id, slack_ts, channel`
 
 func (table messages) List(ctx context.Context, limit int) ([]*store.Message, error) {
@@ -891,13 +905,14 @@ func (table messages) query(ctx context.Context, statement string, args ...any) 
 		if err := rows.Scan(&message.ID, &message.TS, &message.Origin, &message.Author, &message.FromLoopID, &message.Text,
 			&mentions, &message.TGChatID, &message.TGMessageID, &message.TGBotLoopID, &delivered,
 			&message.Conversation, &message.ConversationLoopID, &message.ReplyToID,
-			&message.SendFailedAt, &message.SendError, &message.SendFailureToldAt, &message.SendResolvedAt,
+			&message.SendFailedAt, &message.SendError, &message.SendFailureToldAt, &message.SendFailureTellings, &message.SendResolvedAt,
 			&message.SendResolution, &message.SendResentAs, &message.ResendsID, &message.TGKey, &message.Mirror,
 			&message.SlackChannelID, &message.SlackTS, &message.Channel); err != nil {
 			return nil, err
 		}
 		message.Mentions = fromJSON(mentions)
 		message.DeliveredTo = fromJSON(delivered)
+		message.SendLeftByLoop = message.SendResolvedAt == 0 && message.SendFailureTellings >= store.SendFailureTellings
 		out = append(out, &message)
 	}
 	return out, rows.Err()
