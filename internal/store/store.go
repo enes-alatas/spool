@@ -85,6 +85,12 @@ const (
 // Claude login. Write-only through the API; never logged.
 const SettingClaudeOAuthToken = "claude_oauth_token"
 
+// SettingOnboardingCompleted is set the first time the hub finds
+// every onboarding pillar done (#580). It is what keeps the first-run page
+// aside once the operator is through it, whatever a pillar reads later, and
+// deleting the fleet's last loop clears it, in the same transaction.
+const SettingOnboardingCompleted = "onboarding_completed"
+
 // Context-rotation thresholds (ADR-0022), stored as integer percentages of
 // the model's context window. A loop arms rotation at the first and stops
 // waiting for a quiet boundary at the second.
@@ -479,6 +485,13 @@ const (
 	MirrorMirrored = "mirrored"
 )
 
+// SurfaceTraffic is what one chat surface has carried (#580).
+type SurfaceTraffic struct {
+	Surface  string // SurfaceTelegram or SurfaceSlack
+	Sent     bool   // a loop's send got through to it
+	Received bool   // a person's message came in from it
+}
+
 // SurfaceRef is one bot's own id for a message on a surface: what its poller
 // received, or what Telegram returned when it sent it. Telegram numbers
 // message_id per bot conversation (ADR-0020), so a reference is only ever
@@ -624,7 +637,8 @@ type LoopStore interface {
 	Edit(ctx context.Context, id string, edit LoopEdit) (*Loop, error)
 	// Delete removes the loop and the connections only it held, so a value
 	// the operator gave one loop goes with it (ADR-0043); a connection
-	// another loop holds stays, detached from this one.
+	// another loop holds stays, detached from this one. Deleting the last
+	// loop also clears SettingOnboardingCompleted.
 	Delete(ctx context.Context, id string) error
 	Get(ctx context.Context, id string) (*Loop, error)
 	GetByName(ctx context.Context, name string) (*Loop, error)
@@ -724,6 +738,11 @@ type MessageStore interface {
 	// (slackChannelID, slackTS); a duplicate returns ErrDuplicate.
 	Insert(ctx context.Context, message *Message) error
 	SetDelivered(ctx context.Context, id int64, deliveredTo []string) error
+	// Traffic reports, for each chat surface, whether a loop still in the
+	// fleet has carried a message each way there: its send got through,
+	// and a person wrote in to it. Only an allowlisted person's message is
+	// ever stored, so any one counts.
+	Traffic(ctx context.Context) ([]SurfaceTraffic, error)
 	List(ctx context.Context, limit int) ([]*Message, error)
 	// ListConversation returns one conversation's messages, newest first.
 	// A private kind — ConversationOwnerDM or ConversationControlRoom — is
@@ -888,6 +907,9 @@ type TurnStore interface {
 	// when it has none. Its token counts are the freshest measure of how
 	// full the loop's context is.
 	Latest(ctx context.Context, loopID string) (*Turn, error)
+	// AnyCompleted reports whether any loop has finished a turn without
+	// an error: a loop has woken and done its work.
+	AnyCompleted(ctx context.Context) (bool, error)
 	// InterruptDangling marks unfinished turns as errored (orchestrator crash).
 	InterruptDangling(ctx context.Context, endedAt int64) error
 	CostSince(ctx context.Context, loopID string, since int64) (float64, error)

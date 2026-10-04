@@ -296,7 +296,7 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 		},
 		"TurnStore": {
 			"Create": true, "Finish": true,
-			"ListByLoop": false, "Latest": false, "InterruptDangling": false,
+			"ListByLoop": false, "Latest": false, "AnyCompleted": false, "InterruptDangling": false,
 			"CostSince": false, "SessionCost": false,
 		},
 		"EventStore": {
@@ -307,7 +307,7 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			"Insert": true, "SetSendResult": true, "FailInterruptedSends": true,
 			// SetMirror writes one of three constants, never text.
 			"SetMirror":    false,
-			"SetDelivered": false, "List": false, "ListConversation": false, "ListChannel": false,
+			"SetDelivered": false, "Traffic": false, "List": false, "ListConversation": false, "ListChannel": false,
 			"Get": false, "SendFailuresToTell": false, "UnresolvedSendFailures": false,
 			"Undelivered": false,
 			// ResolveSend and ResolveResends write timestamps and ids,

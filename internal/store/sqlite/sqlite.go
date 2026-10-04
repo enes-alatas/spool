@@ -304,6 +304,11 @@ func (table loops) Delete(ctx context.Context, id string) error {
 	if _, err := tx.ExecContext(ctx, `DELETE FROM loops WHERE id=?`, id); err != nil {
 		return err
 	}
+	// the fleet is empty again, so the first-run page comes back (#580)
+	if _, err := tx.ExecContext(ctx, `DELETE FROM settings WHERE key=? AND NOT EXISTS (SELECT 1 FROM loops)`,
+		store.SettingOnboardingCompleted); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -706,6 +711,31 @@ func (table messages) SetDelivered(ctx context.Context, id int64, deliveredTo []
 	return err
 }
 
+// Traffic asks each surface for both directions. A loop's send that got
+// through is mirrored; on Slack it carries the ts Slack gave it, and on
+// Telegram none. Messages outlive their loops, so each half counts only
+// traffic a loop still in the fleet carried: its send, or a person's
+// message its bot took in, it was delivered to, or that is in its private
+// conversation.
+func (table messages) Traffic(ctx context.Context) ([]store.SurfaceTraffic, error) {
+	const sent = `EXISTS (SELECT 1 FROM messages WHERE origin = ? AND mirror = ? AND slack_ts %s ''
+		AND from_loop_id IN (SELECT id FROM loops))`
+	const received = `EXISTS (SELECT 1 FROM messages WHERE origin IN (?, ?) AND (
+		tg_bot_loop_id IN (SELECT id FROM loops) OR conversation_loop_id IN (SELECT id FROM loops)
+		OR EXISTS (SELECT 1 FROM json_each(messages.delivered_to) WHERE value IN (SELECT id FROM loops))))`
+	telegram := store.SurfaceTraffic{Surface: store.SurfaceTelegram}
+	slack := store.SurfaceTraffic{Surface: store.SurfaceSlack}
+	err := table.db.QueryRowContext(ctx,
+		`SELECT `+fmt.Sprintf(sent, "=")+`, `+received+`, `+fmt.Sprintf(sent, "!=")+`, `+received,
+		store.OriginLoop, store.MirrorMirrored, store.OriginTelegramGroup, store.OriginTelegramDM,
+		store.OriginLoop, store.MirrorMirrored, store.OriginSlackChannel, store.OriginSlackDM,
+	).Scan(&telegram.Sent, &telegram.Received, &slack.Sent, &slack.Received)
+	if err != nil {
+		return nil, err
+	}
+	return []store.SurfaceTraffic{telegram, slack}, nil
+}
+
 const messageCols = `id, ts, origin, author, from_loop_id, text,
 	mentions, COALESCE(tg_chat_id,0), COALESCE(tg_message_id,0), tg_bot_loop_id, delivered_to,
 	conversation, conversation_loop_id, reply_to_id, send_failed_at, send_error,
@@ -1069,6 +1099,14 @@ func (table turns) Latest(ctx context.Context, loopID string) (*store.Turn, erro
 	}
 	turn.IsError = isErr != 0
 	return &turn, nil
+}
+
+// AnyCompleted asks across every loop; a deleted loop's turns went with it.
+func (table turns) AnyCompleted(ctx context.Context) (bool, error) {
+	var completed bool
+	err := table.db.QueryRowContext(ctx,
+		`SELECT EXISTS (SELECT 1 FROM turns WHERE ended_at > 0 AND is_error = 0)`).Scan(&completed)
+	return completed, err
 }
 
 func (table turns) ListByLoop(ctx context.Context, loopID string, limit int) ([]*store.Turn, error) {
