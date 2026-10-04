@@ -98,7 +98,7 @@ type link struct {
 	connected   bool
 	lastEventAt int64 // unix ms of the last envelope, 0 = none yet
 	lastError   string
-	ignored     int // messages from channels other than the one it hears
+	ignored     int // messages from channels it has no bound room in
 	// channelName is the bound channel's name, asked of Slack when the
 	// link starts and when the app binds, so a rename shows after the
 	// next reconnect. "" until Slack has answered.

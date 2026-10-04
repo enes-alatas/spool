@@ -124,6 +124,9 @@ func TestASendThatLandsAsItsAppStopsIsSent(t *testing.T) {
 	linkCtx, stop := context.WithCancel(ctx)
 	defer stop()
 	adapter.client.http = &http.Client{Transport: landThenStop{stop: stop}}
+	if _, err := db.Rooms().Bind(ctx, "loop_terra", store.SurfaceSlack, "C0FLEET", store.FleetChannel, 1); err != nil {
+		t.Fatal(err)
+	}
 	msg := &store.Message{Origin: store.OriginLoop, FromLoopID: "loop_terra", Conversation: store.ConversationGroup,
 		Text: "landed", Mirror: store.MirrorPending}
 	if err := db.Messages().Insert(ctx, msg); err != nil {

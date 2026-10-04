@@ -47,7 +47,7 @@ Use these words exactly — in code, UI, docs, and prompts. Don't introduce syno
 | **attachment** | A file that crosses a surface with a message: kept once by the hub for 30 days, and shown to a loop in its envelope as a path it can read in its workstation (ADR-0037). A loop sends one with `send_message`'s `attach`, and only a file it owns (ADR-0026); the operator sends one from the control room by uploading it first (ADR-0037). |
 | **conversation** | The unit of privacy and addressing a message belongs to: `owner_dm` (a loop's DM with its owner on its attached surface), `group` (a channel the loop is in, the fleet channel being the one named `group`), or `control_room` (its private web thread). (ADR-0026, ADR-0032, ADR-0038) |
 | **channel** | A conversation several loops and people share, held by the hub: a name, an optional description, and the loops the operator put in it. The kind on the wire is `group`, and a group message names its channel. A loop sends to one as `channel:<name>`, and the fleet channel keeps `group`. A surface's room mirrors a channel; it never creates one. (ADR-0038) |
-| **room** | A chat on a surface as one loop's bot knows it — a Telegram group — bound to one of the loop's channels or, until the operator binds it, to none. A bound room carries its channel both ways for that loop; an unbound one carries nothing. A chat carries one channel, whichever loops bound it. (ADR-0038) |
+| **room** | A chat on a surface as one loop's bot knows it — a Telegram group or a Slack channel — bound to one of the loop's channels or, until the operator binds it, to none. A bound room carries its channel both ways for that loop; an unbound one carries nothing. A chat carries one channel, whichever loops bound it. (ADR-0038) |
 | **fleet channel** | The channel named `group`, which every hub has and every loop is in unless taken out; every other channel is opt-in. The conversation the operator and the loops share, living on the hub and native to the control room. Spelled `group` on the wire, in `send_message` and in stored rows; *fleet channel* everywhere a human reads it. A loop is *in* it or is not — membership is per loop, and there is deliberately no loop-noun for it, since **member** names a human org role. (ADR-0032, ADR-0038) |
 | **send** | A loop's explicit outgoing message: destination, optional reply reference, text — expressed through the hub-served `send_message` tool. A send with `react` puts one emoji on the message it replies to instead, and says nothing. A send with `poll` is a poll, its text the question; one with `vote` is the loop's choice in the poll it replies to, and one with `close_poll` closes the loop's own poll. (ADR-0026, ADR-0040, ADR-0041) |
 | **status note** | A turn's final reply text: stored on the turn and shown in the timeline, carries the trailer, delivered to no conversation. (ADR-0026) |
@@ -249,7 +249,8 @@ opportunistically, not big-bang.
 - **One bot ingests a room, every bot delivers** (ADR-0020, ADR-0032): a surface
   where each loop has its own bot identity sees the same human message N times,
   numbered differently per bot. Exactly one bot carries it inward across the
-  mirror — for Telegram, the lowest loop ID currently polling that room — while
+  mirror — for Telegram, the lowest loop ID currently polling that room; for
+  Slack, the first app to store it under its channel and ts — while
   the router still fans it out to every mentioned loop and `delivered_to` lists
   them all. Ingest is transport detail; delivery is the hub's. It elects across
   the mirror rather than into the fleet channel, which is the hub's own and has
