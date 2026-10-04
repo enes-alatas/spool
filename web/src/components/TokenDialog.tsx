@@ -1,28 +1,20 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
 import { tokenSubmittable } from '../forms'
 import { CheckIcon } from './Icons'
+import { StepDialog } from './StepDialog'
 
 // The Harness card's setup-token dialog (#588): the token field Settings has,
 // over the first-run page, so setting up the harness doesn't leave it.
 // Saving a token starts the hub's login check (ADR-0044); the dialog stays
 // open to show what the check found, and closing it lands back on the page.
-//
-// A native modal `<dialog>`, as Add connection is: backdrop, focus trap and
-// Escape come with it.
 export function TokenDialog({ replacing, onClose }: { replacing: boolean; onClose: () => void }) {
-  const ref = useRef<HTMLDialogElement>(null)
   const qc = useQueryClient()
   const [token, setToken] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState(false)
-
-  useEffect(() => {
-    const dialog = ref.current
-    if (dialog && !dialog.open) dialog.showModal()
-  }, [])
 
   // Read only once a token is saved, and quickly while its check runs.
   const { data: onboarding } = useQuery({
@@ -60,26 +52,11 @@ export function TokenDialog({ replacing, onClose }: { replacing: boolean; onClos
   }
 
   const harness = saved ? onboarding?.harness : undefined
-  const close = () => ref.current?.close()
-
   return (
-    <dialog
-      ref={ref}
-      className="connection-dialog token-dialog"
-      aria-labelledby="token-dialog-title"
-      onClose={onClose}
-      // A click on the backdrop lands on the dialog element itself.
-      onClick={(e) => e.target === e.currentTarget && close()}
-    >
-      <div className="panel-head">
-        <h3 id="token-dialog-title">Claude setup-token</h3>
-        <button className="panel-action" onClick={close} aria-label="Close" title="Close">
-          ✕
-        </button>
-      </div>
+    <StepDialog title="Claude setup-token" onClose={onClose}>
       {saved ? (
         <div className="form">
-          <p className="token-dialog-state" aria-live="polite">
+          <p className="step-dialog-state" aria-live="polite">
             {harness?.done ? (
               <span className="ok">
                 <CheckIcon size={14} /> Token saved. Loops have a Claude login to use.
@@ -87,22 +64,20 @@ export function TokenDialog({ replacing, onClose }: { replacing: boolean; onClos
             ) : harness && !harness.checking ? (
               <>
                 Token saved, but the login check didn't pass.
-                <span className="token-dialog-reason">{harness.reason}</span>
+                <span className="step-dialog-reason">{harness.reason}</span>
               </>
             ) : (
               <span>Token saved. Checking the login…</span>
             )}
           </p>
-          <div className="pillar-actions">
-            <button className="btn primary" onClick={close}>
-              {harness?.done ? 'Done' : 'Close'}
-            </button>
+          <form method="dialog" className="pillar-actions">
+            <button className="btn primary">{harness?.done ? 'Done' : 'Close'}</button>
             {harness && !harness.done && !harness.checking && (
-              <button className="btn" onClick={() => setSaved(false)}>
+              <button type="button" className="btn" onClick={() => setSaved(false)}>
                 Try another token
               </button>
             )}
-          </div>
+          </form>
         </div>
       ) : (
         <form
@@ -140,6 +115,6 @@ export function TokenDialog({ replacing, onClose }: { replacing: boolean; onClos
           </div>
         </form>
       )}
-    </dialog>
+    </StepDialog>
   )
 }
