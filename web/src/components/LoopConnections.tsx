@@ -66,8 +66,10 @@ export function LoopConnections({ loop }: { loop: LoopView }) {
       ) : (
         attached.map((c) => (
           <div className="row loop-connection" key={c.name}>
-            <span className="loop-connection-name">{c.name}</span>
-            <span className="loop-connection-kind">{kindLabel(c.kind)}</span>
+            <span className="loop-connection-label">
+              <span className="loop-connection-name">{c.name}</span>
+              <span className="loop-connection-kind">{kindLabel(c.kind)}</span>
+            </span>
             <button
               className="btn sm danger"
               onClick={() => detach(c.name)}

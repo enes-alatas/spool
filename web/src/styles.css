@@ -2341,16 +2341,29 @@ textarea {
     justify-self: start;
   }
 }
-/* A loop's attached connections, in its side panel: the name, and its kind
-   pushed to the right beside the detach button. */
+/* A loop's attached connections, in its side panel: one box each, the
+   name and its kind on the left, the detach button on the right. */
 .side-panel .loop-connection {
   align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+}
+.side-panel .loop-connection + .loop-connection {
+  margin-top: 6px;
+}
+/* The name with its kind under it: a migrated secret's name runs to 32
+   characters, so the name gets the row's width rather than sharing it. */
+.loop-connection-label {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 .loop-connection-name {
   font-family: var(--mono);
+  overflow-wrap: anywhere;
 }
 .loop-connection-kind {
-  margin-left: auto;
   font-size: 0.75rem;
   color: var(--text-muted);
 }
