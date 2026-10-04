@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"regexp"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/enes-alatas/spool/internal/bus"
@@ -74,16 +76,9 @@ func (server *Server) handlePutRoom(w http.ResponseWriter, r *http.Request) {
 		server.jsonErr(w, 400, "bad json: %v", err)
 		return
 	}
-	// Telegram alone this slice: a Slack channel binds with slice 4.
-	if body.Surface != store.SurfaceTelegram {
-		server.jsonErrCode(w, 400, codeRoomSurface, "rooms can be bound on %s only", store.SurfaceTelegram)
-		return
-	}
-	// A Telegram group's chat id is negative; spelled back in decimal so a
-	// pasted id and a heard one are the same row.
-	chatID, err := strconv.ParseInt(body.RoomID, 10, 64)
-	if err != nil || chatID >= 0 {
-		server.jsonErrCode(w, 400, codeRoomIDInvalid, "a Telegram group's id is a negative number, like -1001234567890")
+	roomID, refused := roomIDOf(body.Surface, body.RoomID)
+	if refused != nil {
+		server.refuse(w, refused)
 		return
 	}
 	channel, err := server.Store.Channels().Get(r.Context(), body.Channel)
@@ -99,11 +94,15 @@ func (server *Server) handlePutRoom(w http.ResponseWriter, r *http.Request) {
 		server.jsonErrCode(w, 409, codeNotInChannel, "%s is not in channel %q; add it there first", loopRecord.Name, channel.Name)
 		return
 	}
-	if loopRecord.TGBotToken == "" {
+	if body.Surface == store.SurfaceTelegram && loopRecord.TGBotToken == "" {
 		server.jsonErrCode(w, 409, codeNoBot, "%s has no Telegram bot to sit in the room", loopRecord.Name)
 		return
 	}
-	room, err := server.Store.Rooms().Bind(r.Context(), loopRecord.ID, body.Surface, strconv.FormatInt(chatID, 10),
+	if body.Surface == store.SurfaceSlack && loopRecord.SlackBotToken == "" {
+		server.jsonErrCode(w, 409, codeNoBot, "%s has no Slack app to sit in the channel", loopRecord.Name)
+		return
+	}
+	room, err := server.Store.Rooms().Bind(r.Context(), loopRecord.ID, body.Surface, roomID,
 		channel.Name, time.Now().UnixMilli())
 	if errors.Is(err, store.ErrRoomInUse) {
 		server.jsonErrCode(w, 409, codeRoomInUse, "that room carries another channel for another loop; a room carries one channel")
@@ -115,6 +114,35 @@ func (server *Server) handlePutRoom(w http.ResponseWriter, r *http.Request) {
 	}
 	server.roomsChanged(r, loopRecord.ID)
 	writeJSON(w, 200, viewOfRoom(room))
+}
+
+// slackChannelID is a Slack channel's id as Slack spells it: C for a
+// public channel, G for a private one an older workspace made. A DM's D id
+// is no room.
+var slackChannelID = regexp.MustCompile(`^[CG][A-Z0-9]{2,}$`)
+
+// roomIDOf reads a room id as its surface spells it, so a pasted id and a
+// heard one are the same row.
+func roomIDOf(surface, raw string) (string, *requestError) {
+	raw = strings.TrimSpace(raw)
+	switch surface {
+	case store.SurfaceTelegram:
+		// a Telegram group's chat id is negative, spelled back in decimal
+		chatID, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || chatID >= 0 {
+			return "", &requestError{status: http.StatusBadRequest, code: codeRoomIDInvalid,
+				msg: "a Telegram group's id is a negative number, like -1001234567890"}
+		}
+		return strconv.FormatInt(chatID, 10), nil
+	case store.SurfaceSlack:
+		if !slackChannelID.MatchString(raw) {
+			return "", &requestError{status: http.StatusBadRequest, code: codeRoomIDInvalid,
+				msg: "a Slack channel's id starts with C, like C0123456789"}
+		}
+		return raw, nil
+	}
+	return "", &requestError{status: http.StatusBadRequest, code: codeRoomSurface,
+		msg: "rooms are bound on telegram or slack"}
 }
 
 func (server *Server) handleDeleteRoom(w http.ResponseWriter, r *http.Request) {

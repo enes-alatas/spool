@@ -40,7 +40,8 @@ func roomBody(roomID int64, channel string) map[string]any {
 }
 
 // The operator binds a loop's rooms by id, one per channel, only to a
-// channel the loop is in and only for a loop with a bot to sit there; a
+// channel the loop is in and only for a loop with a bot or app to sit
+// there, the id spelled as its surface spells it; a
 // room carries one channel across loops; leaving a channel unbinds its
 // room, and a forgotten room is gone (ADR-0038).
 func TestRoomsRoundTrip(t *testing.T) {
@@ -70,17 +71,18 @@ func TestRoomsRoundTrip(t *testing.T) {
 	srv.mustJSON("POST", "/api/channels", map[string]any{"name": "release"}, nil)
 	srv.wantRefusal("PUT", "/api/loops/alpha/rooms", roomBody(-1009000000002, "release"), 409, "not_in_channel")
 	srv.wantRefusal("PUT", "/api/loops/gamma/rooms", roomBody(-1009000000002, "backend"), 409, "no_bot")
+	srv.wantRefusal("PUT", "/api/loops/alpha/rooms",
+		map[string]any{"surface": "slack", "room_id": "C0123", "channel": "backend"}, 409, "no_bot")
 	for _, body := range []map[string]any{
-		{"surface": "slack", "room_id": "C123", "channel": "backend"},
 		{"surface": "telegram", "room_id": "42", "channel": "backend"},
 		{"surface": "telegram", "room_id": "group", "channel": "backend"},
+		{"surface": "slack", "room_id": "D0123", "channel": "backend"},
+		{"surface": "slack", "room_id": "-1009000000002", "channel": "backend"},
 	} {
-		code := "room_id_invalid"
-		if body["surface"] == "slack" {
-			code = "room_surface_unsupported"
-		}
-		srv.wantRefusal("PUT", "/api/loops/alpha/rooms", body, 400, code)
+		srv.wantRefusal("PUT", "/api/loops/alpha/rooms", body, 400, "room_id_invalid")
 	}
+	srv.wantRefusal("PUT", "/api/loops/alpha/rooms",
+		map[string]any{"surface": "teams", "room_id": "x", "channel": "backend"}, 400, "room_surface_unsupported")
 	srv.wantRefusal("PUT", "/api/loops/nobody/rooms", roomBody(backendRoom, "backend"), 404, "")
 
 	// A second room for backend replaces the first, which stays listed unbound.

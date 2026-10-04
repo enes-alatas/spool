@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -93,15 +94,13 @@ func (adapter *Adapter) mirrorMessage(ctx context.Context, mp *route.MessagePayl
 	if loopRecord.Surface() != store.SurfaceSlack {
 		return
 	}
-	// By destination, not kind: a channel other than the fleet channel has
-	// no room on Slack yet, so its messages stay on the hub (ADR-0038) and
-	// fall to the default.
-	switch mp.Destination() {
+	switch mp.Conversation {
 	case store.ConversationGroup:
-		// judged from the loop as it is now: a channel bound since the
-		// send still gets the post, and with none there is no room to
-		// carry it
-		if loopRecord.SlackChannelID == "" {
+		// a send to a channel goes to the room the app has bound to it
+		// (ADR-0038), judged from the loop as it is now: a room bound
+		// since the send still gets the post, and with none there is
+		// nothing to carry it
+		if adapter.roomOf(ctx, loopRecord, mp.Channel) == "" {
 			adapter.ledger.StayOnHub(ctx, mp)
 			return
 		}
@@ -111,7 +110,7 @@ func (adapter *Adapter) mirrorMessage(ctx context.Context, mp *route.MessagePayl
 			return
 		}
 	default:
-		return // control_room, and another channel, live on the hub alone
+		return // control_room lives on the hub alone
 	}
 	adapter.mu.Lock()
 	current := adapter.links[mp.FromLoopID]
@@ -151,8 +150,8 @@ func (adapter *Adapter) mirrorReaction(reaction *route.ReactionPayload) {
 }
 
 // setReaction adds or removes a loop's reaction on the message as Slack
-// knows it, where its app can see it: the loop's channel or its owner's
-// DM. Unlike a Telegram bot, an app keeps every reaction it adds, so each
+// knows it, where its app can see it: one of the loop's bound rooms or its
+// owner's DM. Unlike a Telegram bot, an app keeps every reaction it adds, so each
 // one is set as the loop made it. A target with no Slack message, or one
 // the app is in no conversation for, stays on the hub, as a send to a
 // channel with no room does. A failure is logged, after the retries a
@@ -165,7 +164,7 @@ func (adapter *Adapter) setReaction(ctx context.Context, loopID string, reaction
 	}
 	target, err := adapter.store.Messages().Get(ctx, reaction.MessageID)
 	if err != nil || target.SlackTS == "" ||
-		(target.SlackChannelID != loopRecord.SlackChannelID && target.SlackChannelID != loopRecord.OwnerSlackDMChannel) {
+		(target.SlackChannelID != loopRecord.OwnerSlackDMChannel && !adapter.boundRoom(ctx, loopRecord, target.SlackChannelID)) {
 		return
 	}
 	name := slackName(reaction.Emoji)
@@ -179,6 +178,45 @@ func (adapter *Adapter) setReaction(ctx context.Context, loopID string, reaction
 	if err != nil {
 		adapter.log.Warn("slack: reaction not set", "loop", loopRecord.Name, "message", target.ID, "err", err)
 	}
+}
+
+// roomOf is the Slack channel a loop's app carries a hub channel in, ""
+// for none. The fleet channel's is read with the loop; any other's from
+// its rooms.
+func (adapter *Adapter) roomOf(ctx context.Context, loopRecord *store.Loop, channel string) string {
+	if channel == "" || channel == store.FleetChannel {
+		return loopRecord.SlackChannelID
+	}
+	rooms, err := adapter.store.Rooms().List(ctx, loopRecord.ID)
+	if err != nil {
+		adapter.log.Warn("slack: read rooms for delivery", "loop", loopRecord.Name, "err", err)
+		return ""
+	}
+	for _, room := range rooms {
+		if room.Surface == store.SurfaceSlack && room.Channel == channel {
+			return room.RoomID
+		}
+	}
+	return ""
+}
+
+// boundRoom says whether a Slack channel is one of the loop's rooms bound
+// to a hub channel.
+func (adapter *Adapter) boundRoom(ctx context.Context, loopRecord *store.Loop, channelID string) bool {
+	if channelID == "" {
+		return false
+	}
+	if channelID == loopRecord.SlackChannelID {
+		return true
+	}
+	rooms, err := adapter.store.Rooms().List(ctx, loopRecord.ID)
+	if err != nil {
+		adapter.log.Warn("slack: read rooms for a reaction", "loop", loopRecord.Name, "err", err)
+		return false
+	}
+	return slices.ContainsFunc(rooms, func(room *store.Room) bool {
+		return room.Surface == store.SurfaceSlack && room.RoomID == channelID && room.Channel != ""
+	})
 }
 
 // errAppStopped is the failure of a send a loop's app stopped before
@@ -263,7 +301,12 @@ func (adapter *Adapter) send(ctx context.Context, mp *route.MessagePayload) {
 		adapter.ledger.Unsendable(ctx, mp, "attachment: "+err.Error())
 		return
 	}
-	channel := loopRecord.SlackChannelID
+	channel := adapter.roomOf(ctx, loopRecord, mp.Channel)
+	if mp.Conversation == store.ConversationGroup && channel == "" {
+		// the room was unbound while the send waited in the queue
+		adapter.ledger.StayOnHub(ctx, mp)
+		return
+	}
 	if mp.Conversation == store.ConversationOwnerDM {
 		if channel, err = adapter.ownerDM(ctx, loopRecord, mp.OwnerSlackUser); err != nil {
 			adapter.fail(ctx, mp, err, 1)

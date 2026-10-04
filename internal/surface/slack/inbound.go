@@ -154,30 +154,31 @@ func (adapter *Adapter) ingestReaction(ctx context.Context, link *link, event me
 	}
 }
 
-// ingestChannel takes a channel message into the fleet channel. A loop's
-// app hears one channel, the first it hears an allowed sender in, as a
-// Telegram bot binds its group; a message from any other is counted, which
-// is the control room's hint that the app was invited somewhere else.
+// ingestChannel takes a channel message into the channel its room carries
+// (ADR-0038). A Slack channel the app has no room for is recorded as one,
+// unbound, for the operator to bind from the loop page; a message there is
+// counted and goes no further, which is the control room's hint that the
+// app was invited somewhere it carries nothing yet.
 //
 // Every loop's app in the channel hears the message, and Slack gives each
 // the same ts for it. So the ingest election is the store's key on the
 // channel and ts (ADR-0020): the first link to insert the message stores
-// and delivers it, and the others find it there.
+// and delivers it, and the others find it there. A room carries one
+// channel for every loop that binds it, so whichever link wins, the
+// message lands in the same channel.
 func (adapter *Adapter) ingestChannel(ctx context.Context, link *link, loopRecord *store.Loop, teamID string, event messageEvent) {
-	if loopRecord.SlackChannelID != "" && loopRecord.SlackChannelID != event.Channel {
-		link.ignore()
-		return
-	}
 	sender := adapter.allowedSender(ctx, loopRecord, teamID, event, "group:"+loopRecord.Name)
 	if sender == nil {
 		return
 	}
-	if loopRecord.SlackChannelID == "" {
-		adapter.bindChannel(ctx, loopRecord, event.Channel)
-		adapter.nameChannel(ctx, link, loopRecord, event.Channel)
+	channel := adapter.roomChannel(ctx, link, loopRecord, event.Channel)
+	if channel == "" {
+		link.ignore()
+		return
 	}
 	err := adapter.router.Ingest(ctx, route.InboundMessage{
 		Origin:         store.OriginSlackChannel,
+		Channel:        channel,
 		Author:         authorName(sender),
 		Text:           adapter.readable(ctx, event.Text),
 		SlackChannelID: event.Channel,
@@ -187,6 +188,69 @@ func (adapter *Adapter) ingestChannel(ctx context.Context, link *link, loopRecor
 	})
 	if err != nil && !errors.Is(err, store.ErrDuplicate) {
 		adapter.log.Error("slack channel ingest", "loop", loopRecord.Name, "err", err)
+	}
+}
+
+// roomChannel is the hub channel a Slack channel carries for this loop's
+// app, "" for none. A Slack channel the app has no room for is recorded as
+// one, unbound, under the name Slack gives it; any room still untitled is
+// named the same way. The one bound without
+// asking is the first a loop hears an allowed sender in while its fleet
+// channel has no room, as a Telegram bot's first group is: a new fleet
+// still binds by its first message, and a later channel never moves it.
+func (adapter *Adapter) roomChannel(ctx context.Context, link *link, loopRecord *store.Loop, channelID string) string {
+	now := time.Now().UnixMilli()
+	room, added, err := adapter.store.Rooms().Sight(ctx, &store.Room{LoopID: loopRecord.ID, Surface: store.SurfaceSlack,
+		RoomID: channelID, FirstSeenAt: now})
+	if err != nil {
+		adapter.log.Error("slack: record room", "loop", loopRecord.Name, "err", err)
+		return ""
+	}
+	if room.Title == "" {
+		// a room bound before the app heard from it, by a pasted id or as
+		// the fleet room an upgrade made, is named at its first message
+		adapter.titleRoom(ctx, loopRecord, channelID, now)
+	}
+	if room.Channel != "" {
+		return room.Channel
+	}
+	if loopRecord.SlackChannelID == "" {
+		_, err := adapter.store.Rooms().Bind(ctx, loopRecord.ID, store.SurfaceSlack, channelID, store.FleetChannel, now)
+		switch {
+		case err == nil:
+			adapter.log.Info("slack channel bound", "loop", loopRecord.Name, "channel", channelID)
+			adapter.bus.Publish(bus.Item{Kind: bus.KindLoopStatus, LoopID: loopRecord.ID, Payload: map[string]any{
+				"loop_id": loopRecord.ID, "name": loopRecord.Name, "slack_channel_bound": true, "rooms_changed": true,
+			}})
+			adapter.nameChannel(ctx, link, loopRecord, channelID)
+			return store.FleetChannel
+		case !errors.Is(err, store.ErrRoomInUse):
+			adapter.log.Error("slack: bind channel", "loop", loopRecord.Name, "err", err)
+			return ""
+		}
+		// another loop's room for another channel: this one waits unbound
+	}
+	if added {
+		adapter.log.Info("slack room recorded unbound", "loop", loopRecord.Name, "channel", channelID)
+		adapter.bus.Publish(bus.Item{Kind: bus.KindLoopStatus, LoopID: loopRecord.ID, Payload: map[string]any{
+			"loop_id": loopRecord.ID, "name": loopRecord.Name, "rooms_changed": true,
+		}})
+	}
+	return ""
+}
+
+// titleRoom names a room the way the loop page lists it, with the name
+// Slack gives the channel. A channel Slack will not name is listed by its
+// id, and asked about again at its next message.
+func (adapter *Adapter) titleRoom(ctx context.Context, loopRecord *store.Loop, channelID string, now int64) {
+	name, err := adapter.client.ChannelName(ctx, loopRecord.SlackBotToken, channelID)
+	if err != nil {
+		adapter.log.Warn("slack: name a room", "loop", loopRecord.Name, "channel", channelID, "err", err)
+		return
+	}
+	if _, _, err := adapter.store.Rooms().Sight(ctx, &store.Room{LoopID: loopRecord.ID, Surface: store.SurfaceSlack,
+		RoomID: channelID, Title: name, FirstSeenAt: now}); err != nil {
+		adapter.log.Error("slack: title room", "loop", loopRecord.Name, "err", err)
 	}
 }
 
@@ -283,18 +347,6 @@ func (adapter *Adapter) registerSender(ctx context.Context, loopRecord *store.Lo
 func (adapter *Adapter) turnedAway(loopRecord *store.Loop, event messageEvent, reason string) {
 	adapter.log.Info("slack inbound discarded", "loop", loopRecord.Name, "reason", reason,
 		"user", event.User, "channel_type", event.ChannelType, "channel", event.Channel, "ts", event.TS)
-}
-
-func (adapter *Adapter) bindChannel(ctx context.Context, loopRecord *store.Loop, channelID string) {
-	boundAt := time.Now().UnixMilli()
-	if _, err := adapter.store.Rooms().Bind(ctx, loopRecord.ID, store.SurfaceSlack, channelID, store.FleetChannel, boundAt); err != nil {
-		adapter.log.Error("slack: bind channel", "loop", loopRecord.Name, "err", err)
-		return
-	}
-	adapter.log.Info("slack channel bound", "loop", loopRecord.Name, "channel", channelID)
-	adapter.bus.Publish(bus.Item{Kind: bus.KindLoopStatus, LoopID: loopRecord.ID, Payload: map[string]any{
-		"loop_id": loopRecord.ID, "name": loopRecord.Name, "slack_channel_bound": true,
-	}})
 }
 
 // nameChannel asks Slack what the loop's bound channel is called, for the

@@ -1,6 +1,6 @@
 # ADR-0038: Channels are the hub's named conversations, and the fleet channel is the first of them
 
-Date: 2026-10-01 · Status: accepted (operator decisions of 2026-10-01, recorded on #275) · Amends: ADR-0026 (item 1), ADR-0032 (item 2) · Amended: 2026-10-01 (item 4: routing by channel, #493); 2026-10-01 (item 5: Telegram rooms, #514)
+Date: 2026-10-01 · Status: accepted (operator decisions of 2026-10-01, recorded on #275) · Amends: ADR-0026 (item 1), ADR-0032 (item 2) · Amended: 2026-10-01 (item 4: routing by channel, #493); 2026-10-01 (item 5: Telegram rooms, #514); 2026-10-04 (item 5: Slack rooms, #548)
 
 ## Context
 
@@ -177,6 +177,26 @@ something it leaves open.
      and the prompt lists the channel with its room and teaches people there.
      A channel the loop has no room for keeps item 4's rule and wording.
    - **Slack keeps its one channel** until slice 4.
+
+   **Amendment (2026-10-04, #548): Slack rooms.** Slice 4 binds rooms on
+   Slack by the same rules, with a Slack channel's id where Telegram has a
+   chat id.
+   - **The fleet channel's Slack channel is its room.** The channel a loop's
+     app was bound to becomes the room bound to `group`, bound when it was,
+     and the loops table no longer holds it.
+   - **The app records what it hears.** A message from an allowed sender in
+     a Slack channel the app has no room for records the room unbound, under
+     the name Slack gives the channel, and goes no further; the link's
+     ignored count still says so. The first channel heard from while the
+     loop's fleet channel has no room binds to `group`, as before.
+   - **The ingest election is the message key.** Every bound app hears a
+     message and Slack gives each the same ts, so the first to store it
+     under its channel and ts carries it in (ADR-0020). A room carries one
+     channel, so whichever app wins, the message lands in the same channel.
+   - **A pasted id is a channel's.** `PUT /api/loops/{name}/rooms` takes a
+     Slack channel id (C…, or G… for an older private channel) for a loop
+     with a Slack app; a DM's id is refused. Detaching the app forgets all
+     of the loop's Slack rooms; rotating it keeps them.
 
 6. **Deleting a channel removes it and its membership, not its history.**
    Messages said in it keep its name. A channel created later under the same
