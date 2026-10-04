@@ -187,5 +187,60 @@ await tokenForm.screenshot({ path: loginCheckFile })
 taken.push(loginCheckFile)
 await page.unroute('**/api/onboarding')
 
+// The Loops and Chat surface cards' dialogs (#589), opened over the
+// first-run page. The fixture's loops all carry Telegram bots; the attach
+// shot strips them so the dialog offers the surface choice, and the pair
+// shot stands in a pending sender for the operator's first message.
+await page.route('**/api/onboarding', (route) => route.fulfill({ json: firstRun.refused }))
+await page.goto(base + '/', { waitUntil: 'networkidle' })
+await page.getByRole('button', { name: 'New loop', exact: true }).first().click()
+await page.locator('.step-dialog #nl-name').waitFor({ timeout: 15000 })
+await page.fill('#nl-name', 'aster')
+const loopDialogFile = `${outDir}/first-run-loop-dialog.png`
+await page.screenshot({ path: loopDialogFile })
+taken.push(loopDialogFile)
+await page.unroute('**/api/onboarding')
+
+await page.route('**/api/onboarding', (route) => route.fulfill({ json: firstRun.two }))
+await page.route('**/api/loops', async (route) => {
+  const loops = await (await route.fetch()).json()
+  await route.fulfill({
+    json: loops.map((l) => ({ ...l, surface: '', has_tg_token: false, tg_bot_username: '' })),
+  })
+})
+await page.goto(base + '/', { waitUntil: 'networkidle' })
+await page.getByRole('button', { name: 'Attach a bot' }).click()
+await page.locator('.surface-dialog').waitFor({ timeout: 15000 })
+const surfaceAttachFile = `${outDir}/first-run-surface-attach.png`
+await page.screenshot({ path: surfaceAttachFile })
+taken.push(surfaceAttachFile)
+await page.unroute('**/api/loops')
+
+const now = Date.now()
+await page.route('**/api/telegram/senders', (route) =>
+  route.fulfill({
+    json: [
+      {
+        tg_user_id: 4242,
+        username: 'operator_fixture',
+        display: 'Operator',
+        status: 'pending',
+        pair_code: 'K7Q2PX',
+        first_seen_via: 'aster',
+        created_at: now,
+        updated_at: now,
+      },
+    ],
+  }),
+)
+await page.goto(base + '/', { waitUntil: 'networkidle' })
+await page.getByRole('button', { name: 'Attach a bot' }).click()
+await page.locator('.surface-dialog .feed-item').waitFor({ timeout: 15000 })
+const surfacePairFile = `${outDir}/first-run-surface-pair.png`
+await page.screenshot({ path: surfacePairFile })
+taken.push(surfacePairFile)
+await page.unroute('**/api/telegram/senders')
+await page.unroute('**/api/onboarding')
+
 await browser.close()
 for (const file of taken) console.log(file)

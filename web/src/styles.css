@@ -3236,6 +3236,12 @@ textarea {
   margin: 0 0 16px;
   color: var(--text-muted);
 }
+.step-dialog-lede {
+  margin: 0 0 12px;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
 .step-dialog-state .ok {
   display: inline-flex;
   align-items: center;

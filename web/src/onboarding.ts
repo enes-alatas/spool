@@ -17,10 +17,7 @@ export interface PillarSpec {
   bareHow?: string
   // What is true, once it is.
   doneText: string
-  // Where its button leads. The surface card has none of its own: it opens
-  // a loop's page, which `surfaceTarget` picks from the fleet. The harness
-  // card has none either: its button opens the token dialog in place.
-  to?: string
+  // Its button, which opens the step's dialog over the page (#588, #589).
   action: string
 }
 
@@ -38,15 +35,14 @@ export const PILLARS: PillarSpec[] = [
     title: 'Loops',
     how: 'Create a loop, give it a mission, and let it wake once.',
     doneText: 'A loop has woken.',
-    to: '/new',
     action: 'New loop',
   },
   {
     key: 'surface',
     title: 'Chat surface',
-    how: "Attach a Telegram or Slack bot on your loop's page, message it, and approve yourself in Access.",
+    how: 'Attach a Telegram or Slack bot to a loop, message it, and allow yourself with the code it sends.',
     doneText: 'A bot has carried messages both ways.',
-    action: 'Open your loop',
+    action: 'Attach a bot',
   },
 ]
 
