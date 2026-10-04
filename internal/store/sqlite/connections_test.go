@@ -28,7 +28,7 @@ func TestConnectionsRoundTrip(t *testing.T) {
 	}
 
 	github := &store.Connection{
-		Name: "github", Kind: store.ConnectionEnvCredential,
+		Name: "github", Kind: store.ConnectionEnvVar,
 		Config: store.ConnectionConfig{Env: "GH_TOKEN"}, Secret: "ghp-synthetic", CreatedAt: 1,
 	}
 	docs := &store.Connection{
@@ -89,7 +89,7 @@ func TestConnectionAttachments(t *testing.T) {
 	}
 	connections := db.Connections()
 	for _, name := range []string{"github", "docs"} {
-		if err := connections.Create(ctx, &store.Connection{Name: name, Kind: store.ConnectionEnvCredential, Secret: "s-" + name}); err != nil {
+		if err := connections.Create(ctx, &store.Connection{Name: name, Kind: store.ConnectionEnvVar, Secret: "s-" + name}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -141,5 +141,34 @@ func TestConnectionAttachments(t *testing.T) {
 	}
 	if err := connections.Delete(ctx, "github"); err != nil {
 		t.Fatalf("Delete(github) once unattached: %v", err)
+	}
+}
+
+// TestConnectionKindMigratesToEnvVar: a connection stored as an
+// env-credential before the rename reads back as an env-var (#574).
+func TestConnectionKindMigratesToEnvVar(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.db")
+	db, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := db.db.ExecContext(ctx, `INSERT INTO connections (name, kind, config, secret, created_at)
+		VALUES ('github', 'env-credential', '{"env":"GH_TOKEN"}', 's', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.db.ExecContext(ctx, `DELETE FROM schema_migrations WHERE version = '0041_connection_kind_env_var.sql'`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	db, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	github, err := db.Connections().Get(ctx, "github")
+	if err != nil || github.Kind != store.ConnectionEnvVar || github.Config.Env != "GH_TOKEN" {
+		t.Fatalf("github after migrating = %+v, %v; want an env-var on GH_TOKEN", github, err)
 	}
 }

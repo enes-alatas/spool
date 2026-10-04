@@ -190,14 +190,14 @@ func connectionProblem(connection *store.Connection) (code, problem string) {
 		return codeConnectionSecretInvalid, "the secret is too large (max 16 KiB)"
 	}
 	switch connection.Kind {
-	case store.ConnectionEnvCredential:
+	case store.ConnectionEnvVar:
 		switch {
 		case validateSecretName(config.Env) != nil:
-			return codeConnectionConfigInvalid, "an env-credential's config.env must be an env var name ([A-Za-z_][A-Za-z0-9_]*)"
+			return codeConnectionConfigInvalid, "an env-var's config.env must be an env var name ([A-Za-z_][A-Za-z0-9_]*)"
 		case config.Transport != "" || config.URL != "" || config.Command != "" || len(config.Args) > 0:
-			return codeConnectionConfigInvalid, "an env-credential's config has env and nothing else"
+			return codeConnectionConfigInvalid, "an env-var's config has env and nothing else"
 		case connection.Secret == "":
-			return codeConnectionSecretInvalid, "an env-credential needs a secret: the value its env var carries"
+			return codeConnectionSecretInvalid, "an env-var needs a secret: the value it carries"
 		}
 	case store.ConnectionMCPServer:
 		if config.Env != "" {
@@ -228,7 +228,7 @@ func connectionProblem(connection *store.Connection) (code, problem string) {
 			return codeConnectionConfigInvalid, "an mcp-server's config.transport is http or stdio"
 		}
 	default:
-		return codeConnectionKindInvalid, "a connection's kind is env-credential or mcp-server"
+		return codeConnectionKindInvalid, "a connection's kind is env-var or mcp-server"
 	}
 	return "", ""
 }

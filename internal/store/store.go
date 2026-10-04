@@ -1360,9 +1360,10 @@ type Connection struct {
 
 // The kinds a connection can be (ADR-0043).
 const (
-	// ConnectionEnvCredential is a secret a loop's tools read from one env
-	// var: a GitHub token, an API key.
-	ConnectionEnvCredential = "env-credential"
+	// ConnectionEnvVar is one env var a loop's tools read, its value kept
+	// like any secret whether or not it is one: a GitHub token, an API
+	// key, a username.
+	ConnectionEnvVar = "env-var"
 	// ConnectionMCPServer is an MCP server a loop's claude can be given.
 	ConnectionMCPServer = "mcp-server"
 )
@@ -1374,7 +1375,7 @@ const (
 )
 
 // ConnectionConfig is what a connection says about itself besides its
-// secret. Which fields it uses is its kind's: Env for an env-credential;
+// secret. Which fields it uses is its kind's: Env for an env-var;
 // Transport, and URL or Command with Args, for an mcp-server. It is read
 // back in full, so nothing secret belongs in it.
 type ConnectionConfig struct {

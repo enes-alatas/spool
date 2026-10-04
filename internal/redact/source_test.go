@@ -77,7 +77,7 @@ func TestStoreSourceNamesEverySurfaceCredential(t *testing.T) {
 // without one (an mcp-server may have none) adds nothing (ADR-0043).
 func TestStoreSourceNamesEveryConnectionSecret(t *testing.T) {
 	source := StoreSource{Store: sourceStore{connections: []*store.Connection{
-		{Name: "github", Kind: store.ConnectionEnvCredential, Secret: "ghp-synthetic-connection"},
+		{Name: "github", Kind: store.ConnectionEnvVar, Secret: "ghp-synthetic-connection"},
 		{Name: "docs", Kind: store.ConnectionMCPServer},
 	}}}
 
