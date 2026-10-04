@@ -18,6 +18,7 @@ import { formatTokens, fillTone, hasFillPct, formatUsd, inTurn, nextWake } from 
 import { customModelError, tokenSubmittable } from '../forms'
 import { PACE_HINT, type Pace } from '../pace'
 import { PaceRange } from '../components/PaceRange'
+import { LoopConnections } from '../components/LoopConnections'
 import { needsLogin } from '../session'
 import { slackCreateAppURL, slackManifest } from '../slackManifest'
 import {
@@ -2089,6 +2090,8 @@ export default function LoopDetail() {
           )}
 
           <SecretsPanel loop={loop} />
+
+          <LoopConnections loop={loop} />
 
           <div className="side-panel">
             <h3>Recent turns</h3>

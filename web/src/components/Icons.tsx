@@ -96,6 +96,15 @@ export function EditIcon() {
   )
 }
 
+// Add: a plus, for a panel that adds to its list (a loop's connections).
+export function PlusIcon() {
+  return (
+    <Icon>
+      <path d="M10 4v12M4 10h12" />
+    </Icon>
+  )
+}
+
 // Attach: a paperclip, for the composer's file picker.
 export function AttachIcon() {
   return (

@@ -2341,6 +2341,59 @@ textarea {
     justify-self: start;
   }
 }
+/* A loop's attached connections, in its side panel: the name, and its kind
+   pushed to the right beside the detach button. */
+.side-panel .loop-connection {
+  align-items: center;
+}
+.loop-connection-name {
+  font-family: var(--mono);
+}
+.loop-connection-kind {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+/* The loop's Add connection dialog: a raised card over a dimmed page, as
+   wide as the create form it can hold. */
+.connection-dialog {
+  /* The reset zeroes every margin, and a modal dialog centres itself with
+     `margin: auto`: without this it opens in the corner. */
+  margin: auto;
+  width: min(36rem, calc(100vw - 32px));
+  max-height: calc(100dvh - 64px);
+  padding: 20px 22px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+}
+.connection-dialog::backdrop {
+  background: color-mix(in srgb, var(--canvas) 70%, transparent);
+}
+.connection-dialog .form {
+  max-width: none;
+}
+.connection-dialog-tabs {
+  margin: 0 0 16px;
+}
+/* A connection on offer: the same name and kind as the page's row, what it
+   points at under them, and Attach at the end of the first line. */
+.connection-pick {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content max-content;
+  grid-template-areas:
+    'name kind attach'
+    'detail detail attach';
+  column-gap: 12px;
+  row-gap: 2px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.connection-pick .btn {
+  grid-area: attach;
+}
 .connection-new {
   margin: 28px 0 12px;
 }

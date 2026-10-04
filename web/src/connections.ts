@@ -99,6 +99,14 @@ export function connectionShape(c: Connection): ConnectionShape | null {
   return null
 }
 
+// A kind alone, for where the transport is not known: a loop's view lists
+// its connections by name and kind only.
+export function kindLabel(kind: string): string {
+  if (kind === 'env-var') return 'env variable'
+  if (kind === 'mcp-server') return 'MCP server'
+  return kind
+}
+
 export function connectionKindLabel(c: Connection): string {
   const shape = connectionShape(c)
   const known = CONNECTION_SHAPES.find((s) => s.value === shape)

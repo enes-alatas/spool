@@ -95,6 +95,16 @@ const secretsFile = `${outDir}/secrets.png`
 await secrets.screenshot({ path: secretsFile })
 taken.push(secretsFile)
 
+// The gardener's attached connections and the pick-list for the one left
+// (#506), shot as the card for the same reason as Secrets.
+const connections = page
+  .locator('.side-panel', { has: page.locator('h3', { hasText: /^Connections$/ }) })
+  .first()
+await connections.waitFor({ timeout: 15000 })
+const connectionsFile = `${outDir}/loop-connections.png`
+await connections.screenshot({ path: connectionsFile })
+taken.push(connectionsFile)
+
 // The mission editor is a state of a panel rather than a page, and it is the
 // state worth shooting: the read-only mission is already in the loop shot.
 const mission = page.locator('.side-panel', { has: page.locator('h3', { hasText: /^Mission$/ }) }).first()

@@ -9,9 +9,9 @@ import { ConnectionForm } from '../components/ConnectionForm'
 // each defined once under a name. A secret is typed into the create form,
 // sent, and never rendered back; the list knows only whether there is one.
 //
-// Handing an attached connection to its loop is #505's, so the page says what
-// attaching does today and no more (the copy is true at merge, not at the
-// epic's end).
+// Attaching is done from the loop's page (`LoopConnections`). Handing an
+// attached connection to its loop is #505's, so the page says what attaching
+// does today and no more (the copy is true at merge, not at the epic's end).
 
 function ConnectionRow({ c, onDeleted }: { c: Connection; onDeleted: () => void }) {
   const [error, setError] = useState('')
@@ -48,7 +48,7 @@ function ConnectionRow({ c, onDeleted }: { c: Connection; onDeleted: () => void 
       <span className="connection-detail" title={detail}>
         {detail}
       </span>
-      {/* Each loop a link to its page. */}
+      {/* Each loop a link to its page, where it is detached. */}
       <span className="connection-loops">
         {attached ? (
           <>
@@ -98,8 +98,9 @@ export default function Connections() {
     <div className="page measure">
       <h1>Connections</h1>
       <p className="page-lede">
-        A connection is an env variable or an MCP server, defined once for the whole fleet. An attached
-        connection doesn't reach its loop yet. Its secret is redacted from everything the hub records.
+        A connection is an env variable or an MCP server, defined once for the whole fleet and attached to
+        loops on their pages. An attached connection doesn't reach its loop yet. Its secret is redacted from
+        everything the hub records.
       </p>
       {!data ? (
         <div className="form-error" role="alert">
