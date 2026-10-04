@@ -23,6 +23,7 @@ const (
 	codeConnectionSecretInvalid = "connection_secret_invalid"
 	codeConnectionNotFound      = "connection_not_found"
 	codeConnectionAttached      = "connection_attached"
+	codeConnectionEnvTaken      = "connection_env_taken"
 )
 
 // connectionView is a connection as the control room reads it: everything
@@ -146,8 +147,13 @@ func (server *Server) handleLoopConnection(attach bool) http.HandlerFunc {
 			return
 		}
 		name := r.PathValue("connection")
+		server.envMu.Lock()
+		defer server.envMu.Unlock()
 		var err error
 		if attach {
+			if !server.envFree(w, r, name, loopRecord) {
+				return
+			}
 			err = server.Store.Connections().Attach(r.Context(), name, loopRecord.ID, time.Now().UnixMilli())
 		} else {
 			err = server.Store.Connections().Detach(r.Context(), name, loopRecord.ID)
@@ -161,6 +167,32 @@ func (server *Server) handleLoopConnection(attach bool) http.HandlerFunc {
 		server.loopChanged(r.Context(), loopRecord.ID)
 		w.WriteHeader(http.StatusNoContent)
 	}
+}
+
+// envFree reports whether the named connection can be attached to the loop
+// without two env-vars setting one variable, which would leave the loop's
+// value to whichever the env build read last. It answers the request when
+// it can't.
+func (server *Server) envFree(w http.ResponseWriter, r *http.Request, name string, loopRecord *store.Loop) bool {
+	connection, err := server.Store.Connections().Get(r.Context(), name)
+	if err != nil {
+		server.connectionErr(w, r, err)
+		return false
+	}
+	if connection.Kind != store.ConnectionEnvVar {
+		return true
+	}
+	byEnv, err := server.loopEnvVars(r.Context(), loopRecord.ID)
+	if err != nil {
+		server.jsonErr(w, 500, "%v", err)
+		return false
+	}
+	if holder, ok := byEnv[connection.Config.Env]; ok && holder.Name != name {
+		server.jsonErrCode(w, 409, codeConnectionEnvTaken, "%s already sets %s on loop %q; detach it first",
+			holder.Name, connection.Config.Env, loopRecord.Name)
+		return false
+	}
+	return true
 }
 
 // connectionErr answers a store error about the connection the path names:

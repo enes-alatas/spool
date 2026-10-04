@@ -102,8 +102,8 @@ type Server struct {
 	// between the check and the store.
 	rulesMu sync.Mutex
 	// envMu serializes changes to which env-vars a loop holds: a secret
-	// PUT or DELETE reads the loop's variables before writing, and two
-	// interleaving could leave two env-vars setting one.
+	// PUT or DELETE and an attach each read the loop's variables before
+	// writing, and two interleaving could leave two env-vars setting one.
 	envMu sync.Mutex
 }
 

@@ -88,10 +88,11 @@ func TestLoopSecrets(t *testing.T) {
 }
 
 // A loop's secrets are its attached env-var connections (ADR-0043): one set
-// through the shortcut is a connection attached to that loop alone, one
-// shared with another loop is changed on the connection and not through
-// either loop, and removing one deletes the connection once nothing holds
-// it, so the value does not linger.
+// through the shortcut is a connection attached to that loop alone, no two
+// attached env-vars set one variable, one shared with another loop is
+// changed on the connection and not through either loop, and removing one
+// deletes the connection once nothing holds it, so the value does not
+// linger.
 func TestLoopSecretsAreConnections(t *testing.T) {
 	t.Parallel()
 	s := startServer(t, t.TempDir())
@@ -107,6 +108,16 @@ func TestLoopSecretsAreConnections(t *testing.T) {
 		t.Fatalf("connections after the shortcut = %+v, want one aster-api-key-… env-var on API_KEY, attached to aster", list)
 	}
 	own := list[0].Name
+
+	// One variable, one connection: another env-var on API_KEY can't join
+	// aster while its own sets it.
+	s.mustJSON("POST", "/api/connections", map[string]any{
+		"name": "api", "kind": "env-var", "config": map[string]any{"env": "API_KEY"}, "secret": "fixture-other-key-0000",
+	}, nil)
+	s.wantRefusal("PUT", "/api/loops/aster/connections/api", nil, 409, "connection_env_taken")
+	if resp, body := s.do("PUT", "/api/loops/aster/connections/"+own, nil); resp.StatusCode != 204 {
+		t.Errorf("re-attaching aster's own API_KEY = %d %s, want 204", resp.StatusCode, body)
+	}
 
 	// A shared connection sets the variable for both loops; neither loop's
 	// shortcut may change it under the other.
@@ -161,17 +172,21 @@ func TestDeletedLoopTakesItsSecrets(t *testing.T) {
 	}
 }
 
-// Concurrent writes to one loop's variable, a double-submitted secret,
-// still leave one env-var setting it.
+// Concurrent writes to one loop's variable, a double-submitted secret and
+// an attach racing it, still leave one env-var setting it.
 func TestLoopSecretWritesDoNotRace(t *testing.T) {
 	t.Parallel()
 	s := startServer(t, t.TempDir())
 	s.createLoop("aster", nil)
+	s.mustJSON("POST", "/api/connections", map[string]any{
+		"name": "github", "kind": "env-var", "config": map[string]any{"env": "GH_TOKEN"}, "secret": "ghp_fixtureRACEvalue0000",
+	}, nil)
 
 	var wg sync.WaitGroup
 	for range 8 {
 		wg.Go(func() { s.do("PUT", "/api/loops/aster/secrets/GH_TOKEN", map[string]any{"value": "fixture-own-0000"}) })
 	}
+	wg.Go(func() { s.do("PUT", "/api/loops/aster/connections/github", nil) })
 	wg.Wait()
 
 	var setters []string
