@@ -9,8 +9,8 @@ import (
 
 // StoreSource reads every secret Spool holds out of the store: the
 // operator's Claude token, and per loop its surface credentials (a Telegram
-// bot token, or a Slack app's two tokens), its hub MCP token and its tool
-// secrets; and every connection's secret.
+// bot token, or a Slack app's two tokens) and its hub MCP token; and every
+// connection's secret, the loops' tool secrets among them.
 //
 // It reads through the *undecorated* store. Nothing here is persisted, so
 // there is nothing to redact, and a redactor asking a redacted store for the
@@ -49,25 +49,25 @@ func (source StoreSource) Secrets(ctx context.Context) ([]Secret, error) {
 		if loopRecord.HubMCPToken != "" {
 			out = append(out, Secret{Name: "hub_mcp_token", Value: loopRecord.HubMCPToken})
 		}
-		secrets, err := source.Store.LoopSecrets().List(ctx, loopRecord.ID)
-		if err != nil {
-			return nil, err
-		}
-		for _, sec := range secrets {
-			out = append(out, Secret{Name: sec.Name, Value: sec.Value})
-		}
 	}
 
 	// Every connection, attached or not: a value the hub holds is one a
-	// later attachment can hand a loop (ADR-0043).
+	// later attachment can hand a loop (ADR-0043). An env-var is named by its
+	// variable, as the per-loop secret it replaced was: what was removed was
+	// a GH_TOKEN, whichever connection held it.
 	connections, err := source.Store.Connections().List(ctx)
 	if err != nil {
 		return nil, err
 	}
 	for _, connection := range connections {
-		if connection.Secret != "" {
-			out = append(out, Secret{Name: "connection:" + connection.Name, Value: connection.Secret})
+		if connection.Secret == "" {
+			continue
 		}
+		name := "connection:" + connection.Name
+		if connection.Kind == store.ConnectionEnvVar {
+			name = connection.Config.Env
+		}
+		out = append(out, Secret{Name: name, Value: connection.Secret})
 	}
 	return out, nil
 }

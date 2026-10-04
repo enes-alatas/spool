@@ -196,8 +196,9 @@ opportunistically, not big-bang.
   from the moment it is stored; no loop owns one, so explicit orgs at L5 scope
   it without a reshape. It is attached to loops one at a time
   (`PUT`/`DELETE /api/loops/{name}/connections/{connection}`) and can't be
-  deleted while attached. Per-loop secrets stay the env path until attached
-  env-vars replace them (#504).
+  deleted while attached; a deleted loop takes the ones only it held. A
+  loop's env is its attached env-vars; the per-loop secrets routes are a
+  shortcut onto them (#576).
 - **Runner extraction**: the hosted service will run runners near customer sandboxes.
   Anything crossing the Runner seam must stay serializable (no passing live channels
   or callbacks across it as its API matures).

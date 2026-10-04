@@ -12,8 +12,9 @@ import (
 
 // TestConnectionsRoundTrip pins the connection store: Create keeps every
 // field, the config included, and the secret for the redactor; a taken name
-// is ErrDuplicate; List is name-sorted; Delete removes one, and an unknown
-// name is ErrNotFound to Get and Delete alike.
+// is ErrDuplicate; List is name-sorted; SetSecret replaces the secret and
+// stamps it; Delete removes one, and an unknown name is ErrNotFound to Get,
+// SetSecret and Delete alike.
 func TestConnectionsRoundTrip(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -57,6 +58,16 @@ func TestConnectionsRoundTrip(t *testing.T) {
 		t.Fatalf("List = %+v, want [docs github] as created", list)
 	}
 
+	if err := connections.SetSecret(ctx, "github", "ghp-replaced", 5); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := connections.Get(ctx, "github"); got.Secret != "ghp-replaced" || got.UpdatedAt != 5 || got.CreatedAt != 1 {
+		t.Fatalf("github after SetSecret = %+v, want the new secret stamped 5, created 1", got)
+	}
+	if err := connections.SetSecret(ctx, "nowhere", "s", 5); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("SetSecret(nowhere): err = %v, want ErrNotFound", err)
+	}
+
 	if err := connections.Delete(ctx, "docs"); err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +82,8 @@ func TestConnectionsRoundTrip(t *testing.T) {
 // TestConnectionAttachments pins a connection's loops: Attach is
 // idempotent and knows neither an unknown connection nor an unknown loop,
 // an attached connection refuses Delete, ListByLoop reads one loop's, and a
-// deleted loop takes its attachments with it.
+// deleted loop takes its attachments with it, and the connections only it
+// held.
 func TestConnectionAttachments(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -133,11 +145,20 @@ func TestConnectionAttachments(t *testing.T) {
 		t.Fatalf("Detach(nowhere): err = %v, want ErrNotFound", err)
 	}
 
-	if err := db.Loops().Delete(ctx, "l2"); err != nil {
+	if err := connections.Attach(ctx, "github", "l1", 14); err != nil {
 		t.Fatal(err)
 	}
-	if github, _ := connections.Get(ctx, "github"); len(github.LoopIDs) != 0 {
-		t.Fatalf("github's loops after detaching l1 and deleting l2 = %v, want none", github.LoopIDs)
+	if err := db.Loops().Delete(ctx, "l1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := connections.Get(ctx, "docs"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("docs after deleting l1, its only loop: err = %v, want ErrNotFound", err)
+	}
+	if github, err := connections.Get(ctx, "github"); err != nil || !reflect.DeepEqual(github.LoopIDs, []string{"l2"}) {
+		t.Fatalf("github's loops after deleting l1 = %+v, %v; want [l2]", github, err)
+	}
+	if err := connections.Detach(ctx, "github", "l2"); err != nil {
+		t.Fatal(err)
 	}
 	if err := connections.Delete(ctx, "github"); err != nil {
 		t.Fatalf("Delete(github) once unattached: %v", err)
@@ -170,5 +191,69 @@ func TestConnectionKindMigratesToEnvVar(t *testing.T) {
 	github, err := db.Connections().Get(ctx, "github")
 	if err != nil || github.Kind != store.ConnectionEnvVar || github.Config.Env != "GH_TOKEN" {
 		t.Fatalf("github after migrating = %+v, %v; want an env-var on GH_TOKEN", github, err)
+	}
+}
+
+// TestLoopSecretDisplacesAnAttachedEnvVar: an env-var the operator
+// attached on a variable the loop also had a per-loop secret for is
+// detached when the secret moves, so the loop keeps the secret's value
+// and one env-var per variable; one on another variable stays (#576).
+func TestLoopSecretDisplacesAnAttachedEnvVar(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.db")
+	db, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := db.Loops().Create(ctx, &store.Loop{
+		ID: "l1", Name: "aster", Status: store.StatusActive,
+		WorkspaceMode: store.WorkspaceNone, Pacing: store.PacingFixed, Runtime: store.RuntimeBare,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, connection := range []*store.Connection{
+		{Name: "github", Kind: store.ConnectionEnvVar, Config: store.ConnectionConfig{Env: "GH_TOKEN"}, Secret: "s-github"},
+		{Name: "npm", Kind: store.ConnectionEnvVar, Config: store.ConnectionConfig{Env: "NPM_TOKEN"}, Secret: "s-npm"},
+	} {
+		if err := db.Connections().Create(ctx, connection); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Connections().Attach(ctx, connection.Name, "l1", 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, stmt := range []string{
+		`ALTER TABLE connections DROP COLUMN updated_at`,
+		`CREATE TABLE loop_secrets (
+			loop_id TEXT NOT NULL REFERENCES loops(id) ON DELETE CASCADE,
+			name TEXT NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL,
+			PRIMARY KEY (loop_id, name))`,
+		`INSERT INTO loop_secrets (loop_id, name, value, updated_at) VALUES ('l1', 'GH_TOKEN', 's-own', 2)`,
+		`DELETE FROM schema_migrations WHERE version = '0042_loop_secrets_are_connections.sql'`,
+	} {
+		if _, err := db.db.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+	db.Close()
+
+	db, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	held, err := db.Connections().ListByLoop(ctx, "l1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	byEnv := map[string][]string{}
+	for _, connection := range held {
+		byEnv[connection.Config.Env] = append(byEnv[connection.Config.Env], connection.Secret)
+	}
+	if want := map[string][]string{"GH_TOKEN": {"s-own"}, "NPM_TOKEN": {"s-npm"}}; !reflect.DeepEqual(byEnv, want) {
+		t.Fatalf("aster's env-vars after migrating = %v, want %v", byEnv, want)
+	}
+	if github, err := db.Connections().Get(ctx, "github"); err != nil || len(github.LoopIDs) != 0 {
+		t.Fatalf("github after migrating = %+v, %v; want it kept, unattached", github, err)
 	}
 }

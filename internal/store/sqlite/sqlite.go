@@ -99,7 +99,6 @@ func (database *DB) Channels() store.ChannelStore         { return channels{data
 func (database *DB) Rooms() store.RoomStore               { return rooms{database.db} }
 func (database *DB) Reactions() store.ReactionStore       { return reactions{database.db} }
 func (database *DB) Polls() store.PollStore               { return polls{database.db} }
-func (database *DB) LoopSecrets() store.LoopSecretStore   { return loopSecrets{database.db} }
 func (database *DB) Connections() store.ConnectionStore   { return connections{database.db} }
 func (database *DB) FleetRules() store.FleetRuleStore     { return fleetRules{database.db} }
 func (database *DB) Sessions() store.SessionStore         { return sessions{database.db} }
@@ -292,8 +291,20 @@ func (table loops) Edit(ctx context.Context, id string, edit store.LoopEdit) (*s
 }
 
 func (table loops) Delete(ctx context.Context, id string) error {
-	_, err := table.db.ExecContext(ctx, `DELETE FROM loops WHERE id=?`, id)
-	return err
+	tx, err := table.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM connections WHERE name IN (
+		SELECT connection FROM connection_loops GROUP BY connection
+		HAVING COUNT(*) = 1 AND MAX(loop_id) = ?)`, id); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM loops WHERE id=?`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (table loops) Get(ctx context.Context, id string) (*store.Loop, error) {
@@ -1301,43 +1312,6 @@ func (table settings) Set(ctx context.Context, key, value string) error {
 	_, err := table.db.ExecContext(ctx, `INSERT INTO settings (key, value) VALUES (?,?)
 		ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, value)
 	return err
-}
-
-// --- loop secrets ---
-
-type loopSecrets struct{ db *sql.DB }
-
-func (table loopSecrets) Set(ctx context.Context, loopID, name, value string, updatedAt int64) error {
-	_, err := table.db.ExecContext(ctx, `INSERT INTO loop_secrets (loop_id, name, value, updated_at) VALUES (?,?,?,?)
-		ON CONFLICT(loop_id, name) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`,
-		loopID, name, value, updatedAt)
-	if err != nil && strings.Contains(err.Error(), "FOREIGN KEY") {
-		return store.ErrNotFound
-	}
-	return err
-}
-
-func (table loopSecrets) Delete(ctx context.Context, loopID, name string) error {
-	_, err := table.db.ExecContext(ctx, `DELETE FROM loop_secrets WHERE loop_id=? AND name=?`, loopID, name)
-	return err
-}
-
-func (table loopSecrets) List(ctx context.Context, loopID string) ([]*store.LoopSecret, error) {
-	rows, err := table.db.QueryContext(ctx, `SELECT loop_id, name, value, updated_at
-		FROM loop_secrets WHERE loop_id=? ORDER BY name`, loopID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []*store.LoopSecret
-	for rows.Next() {
-		var secret store.LoopSecret
-		if err := rows.Scan(&secret.LoopID, &secret.Name, &secret.Value, &secret.UpdatedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, &secret)
-	}
-	return out, rows.Err()
 }
 
 // --- fleet rules ---

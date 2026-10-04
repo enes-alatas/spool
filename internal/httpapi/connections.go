@@ -137,8 +137,8 @@ func (server *Server) handleDeleteConnection(w http.ResponseWriter, r *http.Requ
 }
 
 // handleLoopConnection attaches the connection to the loop (attach) or
-// detaches it. Either is idempotent. What the loop receives does not
-// change yet: per-loop secrets are still its env (ADR-0043).
+// detaches it. Either is idempotent, and an attached env-var is in the
+// loop's env from its next wake (ADR-0043).
 func (server *Server) handleLoopConnection(attach bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		loopRecord := server.loopByName(w, r)

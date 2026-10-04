@@ -101,7 +101,8 @@ func TestConnectionsRoundTrip(t *testing.T) {
 	}
 	s.wantRefusal("GET", "/api/connections/nowhere", nil, 404, "connection_not_found")
 
-	// Stored is known: a message carrying the value keeps only its name.
+	// Stored is known: a message carrying the value keeps only its
+	// variable's name.
 	s.mustJSON("POST", "/api/channels/group/messages", map[string]any{"text": "the key is " + value}, nil)
 	var said []struct {
 		Text string `json:"text"`
@@ -109,7 +110,7 @@ func TestConnectionsRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(keep("GET", "/api/channels/group/messages", nil, 200), &said); err != nil {
 		t.Fatal(err)
 	}
-	if len(said) != 1 || said[0].Text != "the key is <redacted:connection:github>" {
+	if len(said) != 1 || said[0].Text != "the key is <redacted:GH_TOKEN>" {
 		t.Errorf("a connection's secret was not redacted from a message: %+v", said)
 	}
 
@@ -130,7 +131,7 @@ func TestConnectionsRoundTrip(t *testing.T) {
 // The operator attaches a connection to loops and detaches it again; the
 // connection lists its loops and each loop its connections, by name and
 // kind and never by value. An attached connection can't be deleted until
-// it is detached, and a deleted loop lets go of its own (ADR-0043).
+// it is detached, and a deleted loop takes the ones only it held (ADR-0043).
 func TestConnectionAttachments(t *testing.T) {
 	t.Parallel()
 	s := startServer(t, t.TempDir())
@@ -187,10 +188,10 @@ func TestConnectionAttachments(t *testing.T) {
 	}
 	s.wantRefusal("DELETE", "/api/connections/github", nil, 409, "connection_attached") // briar still holds it
 
+	// briar held it last, so it goes with briar; docs, which aster holds, stays.
 	s.mustJSON("DELETE", "/api/loops/briar", nil, nil)
-	s.mustJSON("GET", "/api/connections/github", nil, &github)
-	if len(github.Loops) != 0 {
-		t.Fatalf("github's loops after briar was deleted = %v, want none", github.Loops)
+	s.wantRefusal("GET", "/api/connections/github", nil, 404, "connection_not_found")
+	if got := s.loopConnections("aster"); !reflect.DeepEqual(got, want[:1]) {
+		t.Errorf("aster's connections after briar was deleted = %+v, want only docs", got)
 	}
-	s.mustJSON("DELETE", "/api/connections/github", nil, nil)
 }

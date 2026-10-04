@@ -2,6 +2,7 @@ package redact
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	"github.com/enes-alatas/spool/internal/store"
@@ -13,9 +14,8 @@ type sourceStore struct {
 	connections []*store.Connection
 }
 
-func (fake sourceStore) Settings() store.SettingsStore      { return noSettings{} }
-func (fake sourceStore) Loops() store.LoopStore             { return listedLoops{loops: fake.loops} }
-func (fake sourceStore) LoopSecrets() store.LoopSecretStore { return noLoopSecrets{} }
+func (fake sourceStore) Settings() store.SettingsStore { return noSettings{} }
+func (fake sourceStore) Loops() store.LoopStore        { return listedLoops{loops: fake.loops} }
 func (fake sourceStore) Connections() store.ConnectionStore {
 	return listedConnections{connections: fake.connections}
 }
@@ -39,10 +39,6 @@ type listedConnections struct {
 func (listed listedConnections) List(context.Context) ([]*store.Connection, error) {
 	return listed.connections, nil
 }
-
-type noLoopSecrets struct{ store.LoopSecretStore }
-
-func (noLoopSecrets) List(context.Context, string) ([]*store.LoopSecret, error) { return nil, nil }
 
 // Every surface credential a loop holds is a secret the redactor knows by
 // value: a Telegram bot token, and both of a Slack app's tokens, since
@@ -73,11 +69,14 @@ func TestStoreSourceNamesEverySurfaceCredential(t *testing.T) {
 	}
 }
 
-// Every connection's secret is redacted, attached or not, and a connection
-// without one (an mcp-server may have none) adds nothing (ADR-0043).
+// Every connection's secret is redacted, attached or not: an env-var's
+// under its variable's name, another kind's under the connection's. A
+// connection without one (an mcp-server may have none) adds nothing
+// (ADR-0043).
 func TestStoreSourceNamesEveryConnectionSecret(t *testing.T) {
 	source := StoreSource{Store: sourceStore{connections: []*store.Connection{
-		{Name: "github", Kind: store.ConnectionEnvVar, Secret: "ghp-synthetic-connection"},
+		{Name: "github", Kind: store.ConnectionEnvVar, Config: store.ConnectionConfig{Env: "GH_TOKEN"}, Secret: "ghp-synthetic-connection"},
+		{Name: "search", Kind: store.ConnectionMCPServer, Secret: "mcp-synthetic-connection"},
 		{Name: "docs", Kind: store.ConnectionMCPServer},
 	}}}
 
@@ -85,7 +84,11 @@ func TestStoreSourceNamesEveryConnectionSecret(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(secrets) != 1 || secrets[0] != (Secret{Name: "connection:github", Value: "ghp-synthetic-connection"}) {
-		t.Fatalf("secrets = %+v, want only connection:github's", secrets)
+	want := []Secret{
+		{Name: "GH_TOKEN", Value: "ghp-synthetic-connection"},
+		{Name: "connection:search", Value: "mcp-synthetic-connection"},
+	}
+	if !reflect.DeepEqual(secrets, want) {
+		t.Fatalf("secrets = %+v, want %+v", secrets, want)
 	}
 }

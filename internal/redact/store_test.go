@@ -336,18 +336,16 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			// would edit what the loop is told, not just what is kept.
 			"Push": false, "Drain": false,
 		},
-		"LoopSecretStore": {
-			// The secret values themselves. Redacting a secret on its way
-			// into the table it is read back out of is a circle.
-			"Set": false, "Delete": false, "List": false,
-		},
 		"SettingsStore": {
-			"Set": false, "Get": false, // holds the operator's Claude token, same reason
+			// Holds the operator's Claude token. Redacting a secret on its
+			// way into the table it is read back out of is a circle.
+			"Set": false, "Get": false,
 		},
 		"ConnectionStore": {
-			// A connection's secret, same reason; its config is operator-
-			// written, like a rule, and read back in full.
-			"Create": false, "Delete": false, "Get": false, "List": false,
+			// A connection's secret, the loops' tool secrets among them,
+			// same reason; its config is operator-written, like a rule, and
+			// read back in full.
+			"Create": false, "SetSecret": false, "Delete": false, "Get": false, "List": false,
 			// Names, loop ids and a timestamp.
 			"Attach": false, "Detach": false, "ListByLoop": false,
 		},

@@ -3,6 +3,8 @@ package httpapi
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -98,6 +101,10 @@ type Server struct {
 	// against the whole enabled set, so two writes must not interleave
 	// between the check and the store.
 	rulesMu sync.Mutex
+	// envMu serializes changes to which env-vars a loop holds: a secret
+	// PUT or DELETE reads the loop's variables before writing, and two
+	// interleaving could leave two env-vars setting one.
+	envMu sync.Mutex
 }
 
 func (server *Server) Handler() http.Handler {
@@ -962,6 +969,7 @@ func (server *Server) handleDeleteLoop(w http.ResponseWriter, r *http.Request) {
 		server.jsonErr(w, 500, "%v", err)
 		return
 	}
+	server.secretsChanged(r.Context()) // the connections only it held went with it
 	writeJSON(w, 200, map[string]bool{"deleted": true})
 }
 
@@ -1581,6 +1589,16 @@ const (
 	maxSecretsPerLoop = 64
 )
 
+// A loop's secrets are the env-var connections attached to it (ADR-0043).
+// These routes are the shortcut the per-loop secrets panel has always
+// used: a loop secret is set, read and removed by its variable's name, and
+// the connection behind it is the hub's business.
+
+// codeSecretShared refuses setting a variable through one loop when the
+// connection that carries it is attached to others too: their value would
+// change with it.
+const codeSecretShared = "secret_shared"
+
 // secretView reports a loop secret as name + timestamp only. The value is
 // write-only, the same rule the operator's setup-token and a bot token follow.
 type secretView struct {
@@ -1588,15 +1606,32 @@ type secretView struct {
 	UpdatedAt int64  `json:"updated_at"`
 }
 
-func (server *Server) secretViews(ctx context.Context, loopID string) ([]secretView, error) {
-	secrets, err := server.Store.LoopSecrets().List(ctx, loopID)
+// loopEnvVars returns the env-var connections attached to a loop, by the
+// variable each sets.
+func (server *Server) loopEnvVars(ctx context.Context, loopID string) (map[string]*store.Connection, error) {
+	connections, err := server.Store.Connections().ListByLoop(ctx, loopID)
 	if err != nil {
 		return nil, err
 	}
-	views := make([]secretView, 0, len(secrets))
-	for _, sc := range secrets {
-		views = append(views, secretView{Name: sc.Name, UpdatedAt: sc.UpdatedAt})
+	byEnv := map[string]*store.Connection{}
+	for _, connection := range connections {
+		if connection.Kind == store.ConnectionEnvVar {
+			byEnv[connection.Config.Env] = connection
+		}
 	}
+	return byEnv, nil
+}
+
+func (server *Server) secretViews(ctx context.Context, loopID string) ([]secretView, error) {
+	byEnv, err := server.loopEnvVars(ctx, loopID)
+	if err != nil {
+		return nil, err
+	}
+	views := make([]secretView, 0, len(byEnv))
+	for env, connection := range byEnv {
+		views = append(views, secretView{Name: env, UpdatedAt: connection.UpdatedAt})
+	}
+	sort.Slice(views, func(i, j int) bool { return views[i].Name < views[j].Name })
 	return views, nil
 }
 
@@ -1617,6 +1652,9 @@ type putSecretReq struct {
 	Value string `json:"value"`
 }
 
+// handlePutSecret sets a loop's variable: it replaces the value of the
+// env-var that sets it when that connection is this loop's alone, and
+// creates and attaches one when nothing sets it yet.
 func (server *Server) handlePutSecret(w http.ResponseWriter, r *http.Request) {
 	loopRecord := server.loopByName(w, r)
 	if loopRecord == nil {
@@ -1640,19 +1678,35 @@ func (server *Server) handlePutSecret(w http.ResponseWriter, r *http.Request) {
 		server.jsonErr(w, 400, "secret value too large (max %d bytes)", maxSecretValueLen)
 		return
 	}
-	existing, err := server.Store.LoopSecrets().List(r.Context(), loopRecord.ID)
+	server.envMu.Lock()
+	defer server.envMu.Unlock()
+	byEnv, err := server.loopEnvVars(r.Context(), loopRecord.ID)
 	if err != nil {
 		server.jsonErr(w, 500, "%v", err)
 		return
 	}
-	// The cap bounds distinct names; replacing an existing one never grows it.
-	if len(existing) >= maxSecretsPerLoop && !hasSecret(existing, name) {
-		server.jsonErr(w, 400, "too many secrets on this loop (max %d)", maxSecretsPerLoop)
-		return
-	}
-	if err := server.Store.LoopSecrets().Set(r.Context(), loopRecord.ID, name, req.Value, time.Now().UnixMilli()); err != nil {
-		server.storeErr(w, err, "loop")
-		return
+	now := time.Now().UnixMilli()
+	if existing, ok := byEnv[name]; ok {
+		if len(existing.LoopIDs) > 1 {
+			server.jsonErrCode(w, 409, codeSecretShared,
+				"%s comes from connection %q, which other loops hold too; set it on the connection", name, existing.Name)
+			return
+		}
+		if err := server.Store.Connections().SetSecret(r.Context(), existing.Name, req.Value, now); err != nil {
+			server.jsonErr(w, 500, "%v", err)
+			return
+		}
+	} else {
+		// The cap bounds distinct names; replacing an existing one never grows it.
+		if len(byEnv) >= maxSecretsPerLoop {
+			server.jsonErr(w, 400, "too many secrets on this loop (max %d)", maxSecretsPerLoop)
+			return
+		}
+		if err := server.createLoopEnvVar(r.Context(), loopRecord, name, req.Value, now); err != nil {
+			server.storeErr(w, err, "loop")
+			return
+		}
+		server.loopChanged(r.Context(), loopRecord.ID)
 	}
 	server.secretsChanged(r.Context())
 	views, err := server.secretViews(r.Context(), loopRecord.ID)
@@ -1663,17 +1717,73 @@ func (server *Server) handlePutSecret(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, views)
 }
 
+// createLoopEnvVar creates the env-var connection a loop secret is, named
+// as migration 0042 names a moved one, and attaches it to the loop alone.
+func (server *Server) createLoopEnvVar(ctx context.Context, loopRecord *store.Loop, env, value string, now int64) error {
+	connection := &store.Connection{Kind: store.ConnectionEnvVar, Config: store.ConnectionConfig{Env: env},
+		Secret: value, CreatedAt: now}
+	var err error
+	for range 3 { // six random hex characters meet another name rarely, and three times never
+		connection.Name = loopSecretConnectionName(loopRecord.Name, env)
+		if err = server.Store.Connections().Create(ctx, connection); !errors.Is(err, store.ErrDuplicate) {
+			break
+		}
+	}
+	if err != nil {
+		return err
+	}
+	if err := server.Store.Connections().Attach(ctx, connection.Name, loopRecord.ID, now); err != nil {
+		// the loop went away in between: the connection has no one to serve
+		_ = server.Store.Connections().Delete(ctx, connection.Name)
+		return err
+	}
+	return nil
+}
+
+// loopSecretConnectionName joins a loop's name and a variable's in the
+// connection alphabet: lower case, '_' as '-', cut to 25, then '-' and six
+// random hex characters. A loop name may hold '_', so two pairs could
+// otherwise meet on one name.
+func loopSecretConnectionName(loop, env string) string {
+	prefix := strings.ReplaceAll(strings.ToLower(loop+"-"+env), "_", "-")
+	if len(prefix) > 25 {
+		prefix = prefix[:25]
+	}
+	suffix := make([]byte, 3)
+	_, _ = rand.Read(suffix)
+	return prefix + "-" + hex.EncodeToString(suffix)
+}
+
+// handleDeleteSecret removes a variable from a loop: it detaches the
+// env-var that sets it, and deletes that connection once no loop holds it,
+// so a removed value does not linger in the hub. Removing an absent name
+// still reports success.
 func (server *Server) handleDeleteSecret(w http.ResponseWriter, r *http.Request) {
 	loopRecord := server.loopByName(w, r)
 	if loopRecord == nil {
 		return
 	}
-	// Delete is idempotent: removing an absent name still reports success.
-	if err := server.Store.LoopSecrets().Delete(r.Context(), loopRecord.ID, r.PathValue("key")); err != nil {
+	server.envMu.Lock()
+	defer server.envMu.Unlock()
+	byEnv, err := server.loopEnvVars(r.Context(), loopRecord.ID)
+	if err != nil {
 		server.jsonErr(w, 500, "%v", err)
 		return
 	}
-	server.secretsChanged(r.Context())
+	if existing, ok := byEnv[r.PathValue("key")]; ok {
+		if err := server.Store.Connections().Detach(r.Context(), existing.Name, loopRecord.ID); err != nil {
+			server.jsonErr(w, 500, "%v", err)
+			return
+		}
+		// held elsewhere, Delete refuses, and the connection stays theirs
+		err := server.Store.Connections().Delete(r.Context(), existing.Name)
+		if err != nil && !errors.Is(err, store.ErrConnectionAttached) && !errors.Is(err, store.ErrNotFound) {
+			server.jsonErr(w, 500, "%v", err)
+			return
+		}
+		server.loopChanged(r.Context(), loopRecord.ID)
+		server.secretsChanged(r.Context())
+	}
 	writeJSON(w, 200, map[string]bool{"deleted": true})
 }
 
@@ -1696,15 +1806,6 @@ func validateSecretName(name string) error {
 		return fmt.Errorf("secret name must be a valid env var identifier ([A-Za-z_][A-Za-z0-9_]*)")
 	}
 	return nil
-}
-
-func hasSecret(secrets []*store.LoopSecret, name string) bool {
-	for _, sc := range secrets {
-		if sc.Name == name {
-			return true
-		}
-	}
-	return false
 }
 
 func (server *Server) handleSenderStatus(status string) http.HandlerFunc {
