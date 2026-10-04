@@ -694,6 +694,52 @@ func seedLoopRooms(ctx context.Context, db store.Store, loopID string, rooms []f
 	return nil
 }
 
+// Three connections, one for each shape the Connections page draws
+// differently (#506): an env variable, an http MCP server with a secret,
+// and a stdio MCP server without one. The secrets are obviously fake and the
+// API never answers them, only that they are there (ADR-0043).
+//
+// GitHub is on two loops and the tracker on one, so the page shows a list
+// of loops and the gardener's panel shows a list of connections; the
+// handbook search is on none, so the page shows that too, and the panel has
+// something left to attach.
+func seedConnections(ctx context.Context, db store.Store, ids map[string]string) error {
+	connections := []*store.Connection{
+		{
+			Name: "github", Kind: store.ConnectionEnvVar,
+			Config: store.ConnectionConfig{Env: "GH_TOKEN"},
+			Secret: "ghp_000000000000_not_a_real_token", CreatedAt: ms(-9 * 24 * time.Hour),
+		},
+		{
+			Name: "tracker", Kind: store.ConnectionMCPServer,
+			Config: store.ConnectionConfig{Transport: store.MCPTransportHTTP, URL: "https://mcp.tracker.example/mcp"},
+			Secret: "not-a-real-tracker-key-0000", CreatedAt: ms(-4 * 24 * time.Hour),
+		},
+		{
+			Name: "handbook-search", Kind: store.ConnectionMCPServer,
+			Config: store.ConnectionConfig{
+				Transport: store.MCPTransportStdio, Command: "handbook-mcp",
+				Args: []string{"--index", "/srv/handbook", "--read-only"},
+			},
+			CreatedAt: ms(-2 * 24 * time.Hour),
+		},
+	}
+	for _, connection := range connections {
+		if err := db.Connections().Create(ctx, connection); err != nil {
+			return fmt.Errorf("connection %s: %w", connection.Name, err)
+		}
+	}
+	attachments := []struct{ connection, loop string }{
+		{"github", "gardener"}, {"github", "archivist"}, {"tracker", "gardener"},
+	}
+	for _, attachment := range attachments {
+		if err := db.Connections().Attach(ctx, attachment.connection, ids[attachment.loop], ms(-24*time.Hour)); err != nil {
+			return fmt.Errorf("attach %s to %s: %w", attachment.connection, attachment.loop, err)
+		}
+	}
+	return nil
+}
+
 // Two fleet rules, because one rule does not show that they are a list.
 func seedRules(ctx context.Context, db store.Store) error {
 	rules := []struct {
