@@ -11,8 +11,9 @@ import (
 )
 
 type pillarJSON struct {
-	Done   bool   `json:"done"`
-	Reason string `json:"reason"`
+	Done     bool   `json:"done"`
+	Reason   string `json:"reason"`
+	Checking bool   `json:"checking"`
 }
 
 type onboardingJSON struct {
@@ -105,21 +106,78 @@ func TestOnboardingPillars(t *testing.T) {
 	}
 }
 
-// On a docker hub the harness pillar reads the setup-token before any loop
-// has woken: none saved is not done, one saved is done until a wake says
-// otherwise, and the reason says which.
-func TestOnboardingHarnessReadsTheSetupToken(t *testing.T) {
+// On a docker hub, saving a setup-token checks it (ADR-0044): one run of
+// the workstation image's claude under the token, behind the egress wall,
+// whose answer makes the harness pillar done. Removing the token forgets
+// the check, and asking for one with no token to check is refused.
+func TestOnboardingChecksASavedSetupToken(t *testing.T) {
 	t.Parallel()
-	s := startDockerServer(t, t.TempDir())
-	if got := s.onboarding().Harness; !got.Done || got.Reason != "setup-token saved; the first wake confirms it" {
-		t.Errorf("harness with a token saved and no loop = %+v", got)
+	s := startDockerServer(t, t.TempDir()) // saves a token as it starts
+	got := s.waitOnboarding(90*time.Second, func(v onboardingJSON) bool { return !v.Harness.Checking })
+	if !got.Harness.Done || got.Harness.Reason != "the login check authenticated" {
+		t.Fatalf("harness after the saved token was checked = %+v", got.Harness)
 	}
+
 	s.mustJSON("PUT", "/api/settings", map[string]any{"claude_oauth_token": ""}, nil)
 	if got := s.onboarding().Harness; got.Done || got.Reason != "no setup-token saved in Settings" {
 		t.Errorf("harness with no token = %+v", got)
 	}
+	s.wantRefusal("POST", "/api/onboarding/harness-check", nil, 409, "no_setup_token")
 	view := s.onboarding()
 	if view.Completed || view.Surface.Done || view.Loops.Reason != "no loops" {
-		t.Errorf("a fresh hub = %+v, want nothing done but what is configured", view)
+		t.Errorf("a fresh hub = %+v, want nothing done", view)
+	}
+}
+
+// On a bare hub the check runs the host's claude under the operator's own
+// login, only when asked (ADR-0044). It reports a login the API accepts, and
+// a refused one with the CLI's sentence; a turn that authenticates after a
+// refused check is newer evidence and wins.
+func TestOnboardingChecksTheHostLogin(t *testing.T) {
+	t.Parallel()
+	s := startServer(t, t.TempDir())
+	if got := s.onboarding().Harness; got.Done || got.Reason != "the host's claude login is not checked yet" {
+		t.Fatalf("harness on a fresh bare hub = %+v", got)
+	}
+
+	// a check the page can wait on: checking until it answers
+	slow := filepath.Join(s.fkState, "login-slow")
+	if err := os.MkdirAll(s.fkState, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(slow, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var started onboardingJSON
+	s.mustJSON("POST", "/api/onboarding/harness-check", nil, &started)
+	if got := started.Harness; got.Done || !got.Checking || got.Reason != "the host's claude login is being checked" {
+		t.Fatalf("harness as the check starts = %+v, want checking", got)
+	}
+	got := s.waitOnboarding(30*time.Second, func(v onboardingJSON) bool { return !v.Harness.Checking })
+	if !got.Harness.Done || got.Harness.Reason != "the login check authenticated" {
+		t.Fatalf("harness after an accepted check = %+v", got.Harness)
+	}
+	if err := os.Remove(slow); err != nil {
+		t.Fatal(err)
+	}
+
+	expired := filepath.Join(s.fkState, "login-expired")
+	if err := os.WriteFile(expired, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s.mustJSON("POST", "/api/onboarding/harness-check", nil, nil)
+	got = s.waitOnboarding(30*time.Second, func(v onboardingJSON) bool { return !v.Harness.Done && strings.Contains(v.Harness.Reason, "refused") })
+	if want := "the login check was refused: Failed to authenticate: OAuth session expired"; !strings.HasPrefix(got.Harness.Reason, want) {
+		t.Fatalf("harness after a refused check = %+v, want the CLI's sentence", got.Harness)
+	}
+
+	// logging in again, then a loop's turn authenticating
+	if err := os.Remove(expired); err != nil {
+		t.Fatal(err)
+	}
+	s.createLoop("aster", nil)
+	got = s.waitOnboarding(30*time.Second, func(v onboardingJSON) bool { return v.Harness.Done })
+	if got.Harness.Reason != "a turn authenticated" {
+		t.Fatalf("harness after a turn authenticated = %+v", got.Harness)
 	}
 }

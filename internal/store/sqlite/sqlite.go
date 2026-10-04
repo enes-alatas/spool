@@ -1101,12 +1101,12 @@ func (table turns) Latest(ctx context.Context, loopID string) (*store.Turn, erro
 	return &turn, nil
 }
 
-// AnyCompleted asks across every loop; a deleted loop's turns went with it.
-func (table turns) AnyCompleted(ctx context.Context) (bool, error) {
-	var completed bool
+// LastCompleted asks across every loop; a deleted loop's turns went with it.
+func (table turns) LastCompleted(ctx context.Context) (int64, error) {
+	var endedAt int64
 	err := table.db.QueryRowContext(ctx,
-		`SELECT EXISTS (SELECT 1 FROM turns WHERE ended_at > 0 AND is_error = 0)`).Scan(&completed)
-	return completed, err
+		`SELECT COALESCE(MAX(ended_at), 0) FROM turns WHERE ended_at > 0 AND is_error = 0`).Scan(&endedAt)
+	return endedAt, err
 }
 
 func (table turns) ListByLoop(ctx context.Context, loopID string, limit int) ([]*store.Turn, error) {

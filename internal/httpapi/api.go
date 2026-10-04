@@ -43,6 +43,10 @@ type Server struct {
 	// Models is the model list the dropdowns offer, with what each name
 	// runs as on this hub (ADR-0033).
 	Models *loop.Models
+	// LoginChecker asks the API whether it accepts the default runtime's
+	// login, when a setup-token is saved and when the operator asks
+	// (ADR-0044). Nil runs no check.
+	LoginChecker *loop.LoginChecker
 	// Surfaces are the chat platforms loops can be reachable on (ADR-0029),
 	// by kind (store.SurfaceTelegram, store.SurfaceSlack). A kind the hub
 	// runs without is absent, and an empty map is a hub with none.
@@ -164,6 +168,7 @@ func (server *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/channels/{name}/loops/{loop}", server.handleChannelLoop(false))
 	mux.HandleFunc("GET /api/settings", server.handleGetSettings)
 	mux.HandleFunc("GET /api/onboarding", server.handleOnboarding)
+	mux.HandleFunc("POST /api/onboarding/harness-check", server.handleLoginCheck)
 	mux.HandleFunc("PUT /api/settings", server.handlePutSettings)
 	mux.HandleFunc("GET /api/rules", server.handleListRules)
 	mux.HandleFunc("POST /api/rules", server.handleCreateRule)
@@ -1270,6 +1275,10 @@ func (server *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		server.secretsChanged(r.Context())
+		if err := server.loginTokenChanged(r.Context(), token); err != nil {
+			server.jsonErr(w, 500, "%v", err)
+			return
+		}
 	}
 	if req.ContextArmPercent != nil || req.ContextForcePercent != nil {
 		server.settingsMu.Lock()
@@ -1599,6 +1608,10 @@ const (
 // connection that carries it is attached to others too: their value would
 // change with it.
 const codeSecretShared = "secret_shared"
+
+// codeNoSetupToken refuses a login check on a docker hub with no setup-token
+// to check.
+const codeNoSetupToken = "no_setup_token"
 
 // secretView reports a loop secret as name + timestamp only. The value is
 // write-only, the same rule the operator's setup-token and a bot token follow.

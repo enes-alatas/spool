@@ -359,12 +359,13 @@ func main() {
 	go closePolls(ctx, router, log)
 
 	api := &httpapi.Server{
-		Store:   rdb,
-		Bus:     pubsub,
-		Manager: manager,
-		Router:  router,
-		Sched:   scheduler,
-		Models:  models,
+		Store:        rdb,
+		Bus:          pubsub,
+		Manager:      manager,
+		Router:       router,
+		Sched:        scheduler,
+		Models:       models,
+		LoginChecker: loop.NewLoginChecker(rdb, runtimes[defaultRuntime], log),
 		Surfaces: map[string]surface.Surface{
 			store.SurfaceTelegram: bridge,
 			store.SurfaceSlack:    slackSurface,
