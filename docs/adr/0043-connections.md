@@ -1,6 +1,6 @@
 # ADR-0043: Connections are org-level credentials and configs, defined once and attachable to loops
 
-Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504)
+Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572)
 
 ## Context
 
@@ -57,6 +57,17 @@ follow in their own slice and amend this ADR.
    reaches no loop until attachments land. Loops keep getting their
    per-loop secrets exactly as before (ADR-0017 item 8). Injecting the
    `mcp-server` kind is #505.
+
+   **Amendment (2026-10-04, #572): attachments.** The operator attaches a
+   connection to a loop and detaches it again, one loop at a time
+   (`PUT`/`DELETE /api/loops/{name}/connections/{connection}`). Either is
+   idempotent. A connection lists its loops by name, and a loop lists its
+   connections by name and kind, never by value. A connection a loop still
+   holds can't be deleted: detaching it first is the operator saying the
+   loop can do without it. A deleted loop lets go of its own. Attaching
+   still changes nothing a loop receives: per-loop secrets stay its env
+   until #504's last slice moves them onto attached env-credentials, and
+   an `mcp-server` reaches a loop with #505.
 
 ## Consequences
 
