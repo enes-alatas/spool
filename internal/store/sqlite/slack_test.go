@@ -50,7 +50,7 @@ func TestLoopSlackIdentity(t *testing.T) {
 		t.Fatalf("identity did not round-trip: %+v", attached)
 	}
 
-	if err := loops.SetSlackBinding(ctx, "l1", "C0FLEET", 3, 3); err != nil {
+	if _, err := database.Rooms().Bind(ctx, "l1", store.SurfaceSlack, "C0FLEET", store.FleetChannel, 3); err != nil {
 		t.Fatal(err)
 	}
 	if err := loops.SetSlackOwner(ctx, "l1", "U0OWNER", "", 4); err != nil {
@@ -71,7 +71,7 @@ func TestLoopSlackIdentity(t *testing.T) {
 		t.Fatalf("an unrelated edit touched the Slack columns: %+v", edited)
 	}
 
-	detached, err := loops.Edit(ctx, "l1", store.LoopEdit{Slack: &store.SlackIdentity{}, ClearSlackBinding: true, UpdatedAt: 7})
+	detached, err := loops.Edit(ctx, "l1", store.LoopEdit{Slack: &store.SlackIdentity{}, ClearSlackRooms: true, UpdatedAt: 7})
 	if err != nil {
 		t.Fatal(err)
 	}

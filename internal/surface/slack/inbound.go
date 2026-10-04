@@ -287,7 +287,7 @@ func (adapter *Adapter) turnedAway(loopRecord *store.Loop, event messageEvent, r
 
 func (adapter *Adapter) bindChannel(ctx context.Context, loopRecord *store.Loop, channelID string) {
 	boundAt := time.Now().UnixMilli()
-	if err := adapter.store.Loops().SetSlackBinding(ctx, loopRecord.ID, channelID, boundAt, boundAt); err != nil {
+	if _, err := adapter.store.Rooms().Bind(ctx, loopRecord.ID, store.SurfaceSlack, channelID, store.FleetChannel, boundAt); err != nil {
 		adapter.log.Error("slack: bind channel", "loop", loopRecord.Name, "err", err)
 		return
 	}

@@ -898,9 +898,9 @@ func (server *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		edit.Slack = &identity
-		// Detaching leaves no bot to hold the channel. Rotating keeps it, as
-		// a replaced Telegram token keeps its group.
-		edit.ClearSlackBinding = identity.BotToken == ""
+		// Detaching leaves no app in any of its rooms. Rotating keeps them,
+		// as a replaced Telegram token keeps its groups.
+		edit.ClearSlackRooms = identity.BotToken == ""
 		// Detaching keeps the owner, for a re-attach in the same workspace.
 		// An app from another workspace cannot reach them, so they go.
 		edit.ClearSlackOwner = !server.ownerInTeam(r.Context(), loopRecord.OwnerSlackUserID, identity.TeamID)
