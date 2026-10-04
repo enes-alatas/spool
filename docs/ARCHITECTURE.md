@@ -10,7 +10,9 @@ lives in `docs/VISION.md`.*
    stream-json over stdin/stdout under the operator's own Claude login and plan limits.
    No Agent SDK, no direct API. (ADR-0001) Besides loops, the hub runs the CLI
    only for auxiliary runs (`--version`, alias resolution) that hold no
-   credential and reach no API. (ADR-0033)
+   credential and reach no API (ADR-0033), and for the login check: one
+   haiku answer under the operator's login, when a setup-token is saved or
+   the operator asks. (ADR-0044)
 2. **The hub owns all messaging.** The committed model uses explicit destinations,
    recipients, and reply references. Group coordination is visible to the owner;
    only addressed loops receive it. DMs stay in their private conversation.

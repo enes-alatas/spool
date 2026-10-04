@@ -296,7 +296,7 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 		},
 		"TurnStore": {
 			"Create": true, "Finish": true,
-			"ListByLoop": false, "Latest": false, "AnyCompleted": false, "InterruptDangling": false,
+			"ListByLoop": false, "Latest": false, "LastCompleted": false, "InterruptDangling": false,
 			"CostSince": false, "SessionCost": false,
 		},
 		"EventStore": {

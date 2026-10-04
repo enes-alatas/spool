@@ -85,6 +85,26 @@ const (
 // Claude login. Write-only through the API; never logged.
 const SettingClaudeOAuthToken = "claude_oauth_token"
 
+// SettingLoginCheck holds the last login check's outcome (ADR-0044), a
+// LoginCheckRecord as JSON. Saving a setup-token resets it to pending.
+const SettingLoginCheck = "login_check"
+
+// LoginCheckRecord is a login check as the hub remembers it: its status and,
+// for a refusal, the sentence the CLI gave. At is when the check began.
+type LoginCheckRecord struct {
+	Status  string `json:"status"`
+	Refusal string `json:"refusal,omitempty"`
+	At      int64  `json:"at"`
+}
+
+// How a login check ended, or that it has not yet.
+const (
+	LoginCheckPending      = "pending"
+	LoginCheckOK           = "ok"
+	LoginCheckRefused      = "refused"
+	LoginCheckInconclusive = "inconclusive"
+)
+
 // SettingOnboardingCompleted is set the first time the hub finds
 // every onboarding pillar done (#580). It is what keeps the first-run page
 // aside once the operator is through it, whatever a pillar reads later, and
@@ -907,9 +927,10 @@ type TurnStore interface {
 	// when it has none. Its token counts are the freshest measure of how
 	// full the loop's context is.
 	Latest(ctx context.Context, loopID string) (*Turn, error)
-	// AnyCompleted reports whether any loop has finished a turn without
-	// an error: a loop has woken and done its work.
-	AnyCompleted(ctx context.Context) (bool, error)
+	// LastCompleted returns when the newest turn any loop finished without
+	// an error ended, 0 when none has: a loop has woken and done its work,
+	// and the login it ran under was accepted then.
+	LastCompleted(ctx context.Context) (int64, error)
 	// InterruptDangling marks unfinished turns as errored (orchestrator crash).
 	InterruptDangling(ctx context.Context, endedAt int64) error
 	CostSince(ctx context.Context, loopID string, since int64) (float64, error)

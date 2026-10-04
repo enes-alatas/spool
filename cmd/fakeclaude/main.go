@@ -76,7 +76,9 @@
 // turn ends the way the real CLI's did on the fleet (2.1.283, #405), with a
 // stand-in assistant message carrying error "authentication_failed" and an
 // errored result that bills nothing. The turn uses up no script line, and
-// removing the file is logging in again.
+// removing the file is logging in again. A "login-slow" file there holds
+// every turn two seconds before it answers, so a test can read a login
+// check while it is still running.
 //
 // The init event lists the spool MCP server whenever there is an MCP config,
 // as connected; it does not dial it to find out. An "mcp-failed" file in
@@ -254,6 +256,9 @@ func main() {
 			emit(init)
 		}
 
+		if _, err := os.Stat(filepath.Join(stateDir, "login-slow")); err == nil {
+			time.Sleep(2 * time.Second)
+		}
 		if _, err := os.Stat(filepath.Join(stateDir, "login-expired")); err == nil {
 			const refusal = "Failed to authenticate: OAuth session expired and could not be refreshed"
 			emit(map[string]any{

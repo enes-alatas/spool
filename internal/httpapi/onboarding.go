@@ -25,6 +25,9 @@ type onboardingView struct {
 type pillarView struct {
 	Done   bool   `json:"done"`
 	Reason string `json:"reason,omitempty"`
+	// Checking says a login check is running, so the page can wait on it
+	// without keying on the reason's wording. Harness only.
+	Checking bool `json:"checking,omitempty"`
 }
 
 // handleOnboarding reads the three pillars. Cheap enough to poll: a handful
@@ -66,33 +69,82 @@ func (server *Server) handleOnboarding(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, view)
 }
 
-// harnessPillar reads whether claude can log in. The hub never calls claude
-// to find out, so it goes by what it has: a loop whose login was refused
-// says no, a turn that finished says yes, and before either the credential
-// the default runtime needs being in place counts.
+// harnessPillar reads whether claude can log in (ADR-0044). A loop whose
+// login is refused now says no, whatever else said yes. Otherwise the newer
+// of two pieces of evidence decides: the last login check, and the last turn
+// a loop finished, which authenticated too. Saving a setup-token starts a
+// check, so a turn from before the save says nothing about the new token.
 func (server *Server) harnessPillar(ctx context.Context, loops []*store.Loop) (pillarView, error) {
 	for _, loopRecord := range loops {
 		if actor, ok := server.Manager.Get(loopRecord.ID); ok && actor.DownReason() == loop.DownReasonUnauthenticated {
 			return pillarView{Reason: "the Claude login was refused on loop " + loopRecord.Name}, nil
 		}
 	}
-	completed, err := server.Store.Turns().AnyCompleted(ctx)
-	switch {
-	case err != nil:
-		return pillarView{}, err
-	case completed:
-		return pillarView{Done: true, Reason: "a turn authenticated"}, nil
-	case server.defaultRuntime() == store.RuntimeBare:
-		return pillarView{Done: true, Reason: "bare loops use the host's claude login"}, nil
+	bare := server.defaultRuntime() == store.RuntimeBare
+	if !bare {
+		token, err := server.claudeToken(ctx)
+		if err != nil || token == "" {
+			return pillarView{Reason: "no setup-token saved in Settings"}, err
+		}
 	}
-	token, err := server.claudeToken(ctx)
-	switch {
-	case err != nil:
+	check, err := loop.LastLoginCheck(ctx, server.Store.Settings())
+	if err != nil {
 		return pillarView{}, err
-	case token == "":
-		return pillarView{Reason: "no setup-token saved in Settings"}, nil
 	}
-	return pillarView{Done: true, Reason: "setup-token saved; the first wake confirms it"}, nil
+	lastTurn, err := server.Store.Turns().LastCompleted(ctx)
+	if err != nil {
+		return pillarView{}, err
+	}
+	view := harnessEvidence(bare, check, lastTurn)
+	view.Checking = check.Status == store.LoginCheckPending
+	return view, nil
+}
+
+// harnessEvidence reads the newer of the last login check and the last
+// completed turn.
+func harnessEvidence(bare bool, check store.LoginCheckRecord, lastTurn int64) pillarView {
+	if lastTurn > check.At {
+		return pillarView{Done: true, Reason: "a turn authenticated"}
+	}
+	switch check.Status {
+	case store.LoginCheckOK:
+		return pillarView{Done: true, Reason: "the login check authenticated"}
+	case store.LoginCheckRefused:
+		return pillarView{Reason: "the login check was refused: " + check.Refusal}
+	case store.LoginCheckInconclusive:
+		return pillarView{Reason: "the login check did not finish; run it again"}
+	case store.LoginCheckPending:
+		if bare {
+			return pillarView{Reason: "the host's claude login is being checked"}
+		}
+		return pillarView{Reason: "the setup-token is being checked"}
+	}
+	if bare {
+		return pillarView{Reason: "the host's claude login is not checked yet"}
+	}
+	return pillarView{Reason: "setup-token saved; not checked yet"}
+}
+
+// handleLoginCheck runs the login check on the operator's request and
+// answers at once with the read it started from; the outcome reaches the
+// harness pillar when the check ends. Each request spends a haiku answer,
+// which is why only the operator asks, never a timer (ADR-0044).
+func (server *Server) handleLoginCheck(w http.ResponseWriter, r *http.Request) {
+	if server.LoginChecker == nil {
+		server.jsonErr(w, 503, "this hub runs no login check")
+		return
+	}
+	if server.defaultRuntime() != store.RuntimeBare {
+		if token, err := server.claudeToken(r.Context()); err != nil || token == "" {
+			server.jsonErrCode(w, 409, codeNoSetupToken, "no setup-token saved in Settings to check")
+			return
+		}
+	}
+	if err := server.LoginChecker.Start(r.Context()); err != nil {
+		server.jsonErr(w, 500, "%v", err)
+		return
+	}
+	server.handleOnboarding(w, r)
 }
 
 // surfacePillar reads whether one chat surface has carried a message each
@@ -121,9 +173,23 @@ func (server *Server) loopsPillar(ctx context.Context, loops []*store.Loop) (pil
 	if len(loops) == 0 {
 		return pillarView{Reason: "no loops"}, nil
 	}
-	completed, err := server.Store.Turns().AnyCompleted(ctx)
-	if err != nil || !completed {
+	lastTurn, err := server.Store.Turns().LastCompleted(ctx)
+	if err != nil || lastTurn == 0 {
 		return pillarView{Reason: "no loop has woken"}, err
 	}
 	return pillarView{Done: true}, nil
+}
+
+// loginTokenChanged checks a setup-token as it is saved, so a wrong one
+// shows before any loop wakes on it, and forgets the last check when the
+// token is removed (ADR-0044). A bare hub's loops do not run on the token,
+// so saving one there checks nothing.
+func (server *Server) loginTokenChanged(ctx context.Context, token string) error {
+	if server.LoginChecker == nil || server.defaultRuntime() == store.RuntimeBare {
+		return nil
+	}
+	if token == "" {
+		return server.LoginChecker.Clear(ctx)
+	}
+	return server.LoginChecker.Start(ctx)
 }

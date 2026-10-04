@@ -86,9 +86,10 @@ func TestTraffic(t *testing.T) {
 	}
 }
 
-// TestOnboardingFacts pins the rest of the read: AnyCompleted counts a
-// finished turn without an error and nothing else, and deleting the fleet's
-// last loop, not any earlier one, clears the completed flag (#580).
+// TestOnboardingFacts pins the rest of the read: LastCompleted is when the
+// newest turn that finished without an error ended, and nothing else
+// counts, and deleting the fleet's last loop, not any earlier one, clears
+// the completed flag (#580).
 func TestOnboardingFacts(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -104,13 +105,13 @@ func TestOnboardingFacts(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	anyCompleted := func() bool {
+	lastCompleted := func() int64 {
 		t.Helper()
-		completed, err := db.Turns().AnyCompleted(ctx)
+		endedAt, err := db.Turns().LastCompleted(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return completed
+		return endedAt
 	}
 
 	running := &store.Turn{ID: "t1", LoopID: "l1", SessionID: "s1", StartedAt: 1}
@@ -124,15 +125,15 @@ func TestOnboardingFacts(t *testing.T) {
 	if err := db.Turns().Finish(ctx, refused); err != nil {
 		t.Fatal(err)
 	}
-	if anyCompleted() {
-		t.Fatal("AnyCompleted with one turn running and one refused = true, want false")
+	if got := lastCompleted(); got != 0 {
+		t.Fatalf("LastCompleted with one turn running and one refused = %d, want 0", got)
 	}
 	running.EndedAt = 4
 	if err := db.Turns().Finish(ctx, running); err != nil {
 		t.Fatal(err)
 	}
-	if !anyCompleted() {
-		t.Fatal("AnyCompleted after a turn finished cleanly = false, want true")
+	if got := lastCompleted(); got != 4 {
+		t.Fatalf("LastCompleted after a turn finished cleanly at 4 = %d, want 4", got)
 	}
 
 	if err := db.Settings().Set(ctx, store.SettingOnboardingCompleted, "1"); err != nil {
