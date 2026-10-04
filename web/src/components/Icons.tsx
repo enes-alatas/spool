@@ -4,11 +4,13 @@
 // 1.5 stroke so the row reads as one set, and renders at 16px.
 import type { ReactNode } from 'react'
 
-function Icon({ children }: { children: ReactNode }) {
+// The size defaults to the nav's 16px; the first-run page draws its pillars
+// larger from the same glyphs.
+function Icon({ children, size = 16 }: { children: ReactNode; size?: number }) {
   return (
     <svg
-      width="16"
-      height="16"
+      width={size}
+      height={size}
       viewBox="0 0 20 20"
       fill="none"
       stroke="currentColor"
@@ -119,6 +121,47 @@ export function ChannelsIcon() {
   return (
     <Icon>
       <path d="M8 3.5 6.5 16.5M13.5 3.5 12 16.5M3.75 7.5h13M3.25 12.5h13" />
+    </Icon>
+  )
+}
+
+// The first-run pillars (#581). Harness: a terminal prompt — Claude Code
+// running on this machine.
+export function HarnessIcon({ size }: { size?: number }) {
+  return (
+    <Icon size={size}>
+      <rect x="2.5" y="3.75" width="15" height="12.5" rx="1.75" />
+      <path d="M6 8.25l2.25 1.75L6 11.75M10.25 12h3.5" />
+    </Icon>
+  )
+}
+
+// Chat surface: a speech bubble — where the operator talks to the fleet.
+export function SurfaceIcon({ size }: { size?: number }) {
+  return (
+    <Icon size={size}>
+      <path d="M3.25 5.25a1.75 1.75 0 0 1 1.75-1.75h10a1.75 1.75 0 0 1 1.75 1.75v6.5A1.75 1.75 0 0 1 15 13.5H8.5l-3.75 3v-3h0A1.75 1.75 0 0 1 3.25 11.75z" />
+      <path d="M7 8.5h.01M10 8.5h.01M13 8.5h.01" />
+    </Icon>
+  )
+}
+
+// Loops: the spool itself, in this family's stroke.
+export function LoopsIcon({ size }: { size?: number }) {
+  return (
+    <Icon size={size}>
+      <circle cx="10" cy="10" r="7.25" />
+      <circle cx="10" cy="10" r="2.5" />
+      <path d="M10 2.75v4.75M10 12.5v4.75" />
+    </Icon>
+  )
+}
+
+// Done: a check, beside the words that say so.
+export function CheckIcon({ size }: { size?: number }) {
+  return (
+    <Icon size={size}>
+      <path d="M4.5 10.5l3.5 3.5 7.5-8" />
     </Icon>
   )
 }

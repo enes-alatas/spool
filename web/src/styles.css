@@ -3043,3 +3043,96 @@ textarea {
   flex-basis: 100%;
   margin: 0 0 0 88px;
 }
+/* The first-run page (#581): a heading and three pillar cards, centred in
+   the room. Cards are outlined, never filled: white marks the next step's
+   button alone (ADR-0027), and green says done on the pillar that is. */
+.first-run {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+.first-run .page-lede {
+  margin-inline: auto;
+  max-width: 34rem;
+}
+.first-run-count {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 22px;
+}
+.pillars {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  width: 100%;
+  max-width: 900px;
+  text-align: left;
+}
+.pillar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 20px;
+  border: 1px solid var(--hairline);
+  border-radius: 7px;
+}
+.pillar.next {
+  border-color: var(--text-muted);
+}
+.pillar-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 6px;
+}
+.pillar-icon {
+  color: var(--text);
+}
+.pillar.done .pillar-icon {
+  color: var(--text-muted);
+}
+.pillar-step {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.page .pillar-title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+.pillar-how {
+  flex: 1;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.pillar-state {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.pillar.done .pillar-state {
+  color: var(--ready);
+}
+.pillar .btn {
+  align-self: flex-start;
+  text-decoration: none;
+}
+/* A phone stacks the three in order; the step number still says which. */
+@media (max-width: 720px) {
+  .first-run {
+    justify-content: flex-start;
+  }
+  .pillars {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
