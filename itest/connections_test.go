@@ -19,8 +19,24 @@ type connectionJSON struct {
 		Command   string   `json:"command"`
 		Args      []string `json:"args"`
 	} `json:"config"`
-	HasSecret bool  `json:"has_secret"`
-	CreatedAt int64 `json:"created_at"`
+	HasSecret bool     `json:"has_secret"`
+	CreatedAt int64    `json:"created_at"`
+	Loops     []string `json:"loops"`
+}
+
+type loopConnectionJSON struct {
+	Name string `json:"name"`
+	Kind string `json:"kind"`
+}
+
+// loopConnections is the loop view's connections field.
+func (s *server) loopConnections(loop string) []loopConnectionJSON {
+	s.t.Helper()
+	var view struct {
+		Connections []loopConnectionJSON `json:"connections"`
+	}
+	s.mustJSON("GET", "/api/loops/"+loop, nil, &view)
+	return view.Connections
 }
 
 // The operator defines a connection once, reads it back without its secret,
@@ -109,4 +125,72 @@ func TestConnectionsRoundTrip(t *testing.T) {
 			t.Fatalf("a response carried the connection's secret: %s", body)
 		}
 	}
+}
+
+// The operator attaches a connection to loops and detaches it again; the
+// connection lists its loops and each loop its connections, by name and
+// kind and never by value. An attached connection can't be deleted until
+// it is detached, and a deleted loop lets go of its own (ADR-0043).
+func TestConnectionAttachments(t *testing.T) {
+	t.Parallel()
+	s := startServer(t, t.TempDir())
+	for _, name := range []string{"aster", "briar"} {
+		s.createLoop(name, nil)
+	}
+	const value = "ghp_fixtureATTACHEDsecret0000"
+	s.mustJSON("POST", "/api/connections", map[string]any{
+		"name": "github", "kind": "env-credential", "config": map[string]any{"env": "GH_TOKEN"}, "secret": value,
+	}, nil)
+	s.mustJSON("POST", "/api/connections", map[string]any{
+		"name": "docs", "kind": "mcp-server", "config": map[string]any{"transport": "http", "url": "https://mcp.example.test/"},
+	}, nil)
+
+	if got := s.loopConnections("aster"); got == nil || len(got) != 0 {
+		t.Fatalf("a fresh loop's connections = %#v, want []", got)
+	}
+	for _, path := range []string{
+		"/api/loops/aster/connections/github",
+		"/api/loops/aster/connections/github", // again: nothing changes
+		"/api/loops/briar/connections/github",
+		"/api/loops/aster/connections/docs",
+	} {
+		if resp, body := s.do("PUT", path, nil); resp.StatusCode != 204 {
+			t.Fatalf("PUT %s = %d %s, want 204", path, resp.StatusCode, body)
+		}
+	}
+	s.wantRefusal("PUT", "/api/loops/aster/connections/nowhere", nil, 404, "connection_not_found")
+	s.wantRefusal("PUT", "/api/loops/nobody/connections/github", nil, 404, "")
+
+	var github connectionJSON
+	s.mustJSON("GET", "/api/connections/github", nil, &github)
+	if !reflect.DeepEqual(github.Loops, []string{"aster", "briar"}) {
+		t.Errorf("github's loops = %v, want [aster briar]", github.Loops)
+	}
+	want := []loopConnectionJSON{{"docs", "mcp-server"}, {"github", "env-credential"}}
+	if got := s.loopConnections("aster"); !reflect.DeepEqual(got, want) {
+		t.Errorf("aster's connections = %+v, want %+v", got, want)
+	}
+	for _, path := range []string{"/api/loops/aster", "/api/loops", "/api/connections"} {
+		if _, body := s.do("GET", path, nil); strings.Contains(string(body), value) {
+			t.Fatalf("GET %s carried the attached connection's secret: %s", path, body)
+		}
+	}
+
+	s.wantRefusal("DELETE", "/api/connections/github", nil, 409, "connection_attached")
+	for _, path := range []string{"/api/loops/aster/connections/github", "/api/loops/aster/connections/github"} {
+		if resp, body := s.do("DELETE", path, nil); resp.StatusCode != 204 {
+			t.Fatalf("DELETE %s = %d %s, want 204", path, resp.StatusCode, body)
+		}
+	}
+	if got := s.loopConnections("aster"); !reflect.DeepEqual(got, want[:1]) {
+		t.Errorf("aster's connections after detaching github = %+v, want only docs", got)
+	}
+	s.wantRefusal("DELETE", "/api/connections/github", nil, 409, "connection_attached") // briar still holds it
+
+	s.mustJSON("DELETE", "/api/loops/briar", nil, nil)
+	s.mustJSON("GET", "/api/connections/github", nil, &github)
+	if len(github.Loops) != 0 {
+		t.Fatalf("github's loops after briar was deleted = %v, want none", github.Loops)
+	}
+	s.mustJSON("DELETE", "/api/connections/github", nil, nil)
 }
