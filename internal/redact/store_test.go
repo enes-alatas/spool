@@ -292,7 +292,7 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			"SetRuntime": false, "SetStatus": false, "SetWorkstationOff": false,
 			// Slack ids and a timestamp, the counterparts of the two
 			// Telegram setters above and the fleet channel's room.
-			"SetSlackBinding": false, "SetSlackOwner": false, "SetSlackOwnerDM": false,
+			"SetSlackOwner": false, "SetSlackOwnerDM": false,
 		},
 		"TurnStore": {
 			"Create": true, "Finish": true,

@@ -141,13 +141,17 @@ const loopCols = `id, name, mission, model, workspace_mode, workspace_path, repo
 	workstation_off, outside_fleet_channel, status, current_session_id, current_pid, created_at, updated_at,
 	runtime, image, mem_mb, cpus, hub_mcp_token, rotate_pending, rotate_reason, handoff_note, prompt_hash, model_refusal,
 	slack_app_token, slack_bot_token, slack_bot_user_id, slack_bot_name, slack_team_id, slack_team_name,
-	slack_channel_id, slack_channel_bound_at, owner_slack_user_id, owner_slack_dm_channel`
+	owner_slack_user_id, owner_slack_dm_channel`
 
 const loopReadCols = loopCols + `,
 	COALESCE((SELECT CAST(room_id AS INTEGER) FROM rooms WHERE rooms.loop_id=loops.id
 		AND surface='` + store.SurfaceTelegram + `' AND channel='` + store.FleetChannel + `'), 0),
 	COALESCE((SELECT bound_at FROM rooms WHERE rooms.loop_id=loops.id
-		AND surface='` + store.SurfaceTelegram + `' AND channel='` + store.FleetChannel + `'), 0)`
+		AND surface='` + store.SurfaceTelegram + `' AND channel='` + store.FleetChannel + `'), 0),
+	COALESCE((SELECT room_id FROM rooms WHERE rooms.loop_id=loops.id
+		AND surface='` + store.SurfaceSlack + `' AND channel='` + store.FleetChannel + `'), ''),
+	COALESCE((SELECT bound_at FROM rooms WHERE rooms.loop_id=loops.id
+		AND surface='` + store.SurfaceSlack + `' AND channel='` + store.FleetChannel + `'), 0)`
 
 func scanLoop(row interface{ Scan(...any) error }) (*store.Loop, error) {
 	var loopRecord store.Loop
@@ -160,9 +164,10 @@ func scanLoop(row interface{ Scan(...any) error }) (*store.Loop, error) {
 		&loopRecord.CreatedAt, &loopRecord.UpdatedAt, &loopRecord.Runtime, &loopRecord.Image, &loopRecord.MemMB, &loopRecord.CPUs, &loopRecord.HubMCPToken,
 		&loopRecord.RotatePending, &loopRecord.RotateReason, &loopRecord.HandoffNote, &loopRecord.PromptHash, &loopRecord.ModelRefusal,
 		&loopRecord.SlackAppToken, &loopRecord.SlackBotToken, &loopRecord.SlackBotUserID, &loopRecord.SlackBotName,
-		&loopRecord.SlackTeamID, &loopRecord.SlackTeamName, &loopRecord.SlackChannelID, &loopRecord.SlackChannelBoundAt,
+		&loopRecord.SlackTeamID, &loopRecord.SlackTeamName,
 		&loopRecord.OwnerSlackUserID, &loopRecord.OwnerSlackDMChannel,
-		&loopRecord.TGGroupChatID, &loopRecord.TGGroupBoundAt)
+		&loopRecord.TGGroupChatID, &loopRecord.TGGroupBoundAt,
+		&loopRecord.SlackChannelID, &loopRecord.SlackChannelBoundAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, store.ErrNotFound
 	}
@@ -181,7 +186,7 @@ func (table loops) Create(ctx context.Context, loopRecord *store.Loop) error {
 		loopRecord.HubMCPToken = store.NewHubMCPToken()
 	}
 	_, err := table.db.ExecContext(ctx, `INSERT INTO loops (`+loopCols+`) VALUES
-		(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		loopRecord.ID, loopRecord.Name, loopRecord.Mission, loopRecord.Model, loopRecord.WorkspaceMode, loopRecord.WorkspacePath, loopRecord.RepoPath,
 		loopRecord.WorktreePath, loopRecord.Branch, loopRecord.TickIntervalSec, loopRecord.MinWakeSec, loopRecord.MaxWakeSec,
 		loopRecord.IdleTimeoutSec, loopRecord.Pacing, loopRecord.Effort, loopRecord.TGBotToken, loopRecord.TGBotUsername,
@@ -191,18 +196,29 @@ func (table loops) Create(ctx context.Context, loopRecord *store.Loop) error {
 		loopRecord.Runtime, loopRecord.Image, loopRecord.MemMB, loopRecord.CPUs, loopRecord.HubMCPToken, loopRecord.RotatePending, loopRecord.RotateReason,
 		loopRecord.HandoffNote, loopRecord.PromptHash, loopRecord.ModelRefusal,
 		loopRecord.SlackAppToken, loopRecord.SlackBotToken, loopRecord.SlackBotUserID, loopRecord.SlackBotName,
-		loopRecord.SlackTeamID, loopRecord.SlackTeamName, loopRecord.SlackChannelID, loopRecord.SlackChannelBoundAt,
+		loopRecord.SlackTeamID, loopRecord.SlackTeamName,
 		loopRecord.OwnerSlackUserID, loopRecord.OwnerSlackDMChannel)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return store.ErrDuplicate
 	}
-	if err != nil || loopRecord.TGGroupChatID == 0 {
+	if err != nil {
 		return err
 	}
-	// A loop created already bound, as a fixture's are: its group is a room.
-	_, err = rooms(table).Bind(ctx, loopRecord.ID, store.SurfaceTelegram,
-		strconv.FormatInt(loopRecord.TGGroupChatID, 10), store.FleetChannel, loopRecord.TGGroupBoundAt)
-	return err
+	// A loop created already bound, as a fixture's are: its group or its
+	// Slack channel is a room.
+	if loopRecord.TGGroupChatID != 0 {
+		if _, err := rooms(table).Bind(ctx, loopRecord.ID, store.SurfaceTelegram,
+			strconv.FormatInt(loopRecord.TGGroupChatID, 10), store.FleetChannel, loopRecord.TGGroupBoundAt); err != nil {
+			return err
+		}
+	}
+	if loopRecord.SlackChannelID != "" {
+		if _, err := rooms(table).Bind(ctx, loopRecord.ID, store.SurfaceSlack,
+			loopRecord.SlackChannelID, store.FleetChannel, loopRecord.SlackChannelBoundAt); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Edit writes the named fields in one statement and reads the row back, so
@@ -263,10 +279,6 @@ func (table loops) Edit(ctx context.Context, id string, edit store.LoopEdit) (*s
 		// idempotent conversations.open.
 		set("owner_slack_dm_channel", "")
 	}
-	if edit.ClearSlackBinding {
-		set("slack_channel_id", "")
-		set("slack_channel_bound_at", 0)
-	}
 	if edit.ClearSlackOwner {
 		set("owner_slack_user_id", "")
 	}
@@ -281,6 +293,11 @@ func (table loops) Edit(ctx context.Context, id string, edit store.LoopEdit) (*s
 	}
 	if edit.ClearTelegramRooms {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM rooms WHERE loop_id=? AND surface=?`, id, store.SurfaceTelegram); err != nil {
+			return nil, err
+		}
+	}
+	if edit.ClearSlackRooms {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM rooms WHERE loop_id=? AND surface=?`, id, store.SurfaceSlack); err != nil {
 			return nil, err
 		}
 	}
@@ -379,13 +396,6 @@ func (table loops) SetOwner(ctx context.Context, id string, tgUserID, dmChatID, 
 func (table loops) SetOwnerDMChat(ctx context.Context, id string, chatID, updatedAt int64) error {
 	_, err := table.db.ExecContext(ctx,
 		`UPDATE loops SET owner_dm_chat_id=?, updated_at=? WHERE id=?`, chatID, updatedAt, id)
-	return err
-}
-
-func (table loops) SetSlackBinding(ctx context.Context, id, channelID string, boundAt, updatedAt int64) error {
-	_, err := table.db.ExecContext(ctx,
-		`UPDATE loops SET slack_channel_id=?, slack_channel_bound_at=?, updated_at=? WHERE id=?`,
-		channelID, boundAt, updatedAt, id)
 	return err
 }
 

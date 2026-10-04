@@ -188,9 +188,9 @@ type Loop struct {
 	SlackBotName   string `json:"slack_bot_name,omitempty"`
 	SlackTeamID    string `json:"slack_team_id,omitempty"`
 	SlackTeamName  string `json:"slack_team_name,omitempty"`
-	// SlackChannelID is the channel the fleet channel is mirrored to on
-	// Slack, and SlackChannelBoundAt when the bot bound to it: the same
-	// election input TGGroupBoundAt is for a Telegram group (ADR-0020).
+	// SlackChannelID is the Slack channel the fleet channel's room is, and
+	// SlackChannelBoundAt when the app bound to it, both read from the loop's
+	// rooms ("" = none bound), as TGGroupChatID and TGGroupBoundAt are.
 	SlackChannelID      string `json:"-"`
 	SlackChannelBoundAt int64  `json:"-"`
 	// OwnerSlackUserID is the allowlisted Slack sender configured as this
@@ -622,10 +622,10 @@ type LoopEdit struct {
 	// channel, which belonged to the bot it replaces; the owner stays unless
 	// ClearSlackOwner says otherwise.
 	Slack *SlackIdentity
-	// ClearSlackBinding drops the channel the loop's Slack bot was bound to.
-	// Set when the app is detached, never as a side effect, like
+	// ClearSlackRooms forgets every Slack room this loop's app knew, bound
+	// or not. Set when the app is detached, never as a side effect, like
 	// ClearTelegramRooms.
-	ClearSlackBinding bool
+	ClearSlackRooms bool
 	// ClearSlackOwner drops the loop's Slack owner. Set when an app from
 	// another workspace is attached: the kept owner is not a sender there,
 	// so its bot could never reach them.
@@ -690,10 +690,6 @@ type LoopStore interface {
 	// SetOwnerDMChat records the private chat the owner has written from,
 	// which is the only way a bot learns an address it cannot open itself.
 	SetOwnerDMChat(ctx context.Context, id string, chatID, updatedAt int64) error
-	// SetSlackBinding records which Slack channel this loop's bot is bound
-	// to, and when. Narrow for the same reason as SetOwner: the Slack
-	// connection writes it while the hub writes other columns.
-	SetSlackBinding(ctx context.Context, id, channelID string, boundAt, updatedAt int64) error
 	// SetSlackOwner records the loop's Slack owner and the DM channel with
 	// them; changing the owner passes "" for the channel, which belonged to
 	// the previous owner. ErrNotFound if the loop is gone.

@@ -293,3 +293,57 @@ func TestRoomsMigrationKeepsTheGroup(t *testing.T) {
 		t.Errorf("an unbound loop migrated into %d rooms, want none", len(left))
 	}
 }
+
+// unmigrate0043 returns the database to its shape before Slack rooms, the
+// fleet channel's Slack channel back in the loops columns it was read from.
+func unmigrate0043(db *DB) error {
+	for _, stmt := range []string{
+		`ALTER TABLE loops ADD COLUMN slack_channel_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE loops ADD COLUMN slack_channel_bound_at INTEGER NOT NULL DEFAULT 0`,
+		`UPDATE loops SET
+			slack_channel_id = COALESCE((SELECT room_id FROM rooms WHERE loop_id=loops.id AND surface='slack' AND channel='group'), ''),
+			slack_channel_bound_at = COALESCE((SELECT bound_at FROM rooms WHERE loop_id=loops.id AND surface='slack' AND channel='group'), 0)`,
+		`DELETE FROM rooms WHERE surface='slack'`,
+		`DELETE FROM schema_migrations WHERE version='0043_slack_rooms.sql'`,
+	} {
+		if _, err := db.db.Exec(stmt); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// An existing fleet upgrades with every loop's Slack channel as its fleet
+// channel's room on Slack, bound when it was, and its Telegram room as it
+// was (#548).
+func TestRoomsMigrationKeepsTheSlackChannel(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	createLoops(t, db, "l1", "l2")
+	if _, err := db.Rooms().Bind(ctx, "l1", store.SurfaceSlack, "C0FLEET", store.FleetChannel, 77); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Rooms().Bind(ctx, "l2", store.SurfaceTelegram, "-1001234567890", store.FleetChannel, 78); err != nil {
+		t.Fatal(err)
+	}
+	if err := unmigrate0043(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.migrate(); err != nil {
+		t.Fatal(err)
+	}
+	for id, want := range map[string]struct {
+		channel string
+		at      int64
+		group   int64
+	}{"l1": {"C0FLEET", 77, 0}, "l2": {"", 0, -1001234567890}} {
+		loopRecord, err := db.Loops().Get(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if loopRecord.SlackChannelID != want.channel || loopRecord.SlackChannelBoundAt != want.at || loopRecord.TGGroupChatID != want.group {
+			t.Errorf("%s migrated to slack %q at %d, group %d; want %+v", id,
+				loopRecord.SlackChannelID, loopRecord.SlackChannelBoundAt, loopRecord.TGGroupChatID, want)
+		}
+	}
+}
