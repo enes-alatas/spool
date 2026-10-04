@@ -86,7 +86,7 @@ window regardless of loop count (ADR-0018).
   stored transcripts. This is enforced, not remembered: `internal/redact` holds every
   secret value Spool knows and every log line, store write and JSON/SSE response
   passes through it (#150). Its reach is Spool's own secrets — the operator's Claude
-  token, each loop's bot and hub-MCP tokens, per-loop secrets — and it matches them
+  token, each loop's bot and hub-MCP tokens, every connection's secret — and it matches them
   literally; a credential a loop invents, or one that survives only re-encoded, is
   #30's problem, not this one's.
 - Message bodies are logged at debug level only — loops carry private team chatter.

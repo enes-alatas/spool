@@ -248,16 +248,6 @@ func (loopRecord *Loop) OwnerDMReady() bool {
 	return false
 }
 
-// LoopSecret is one per-loop secret env var: a name/value pair injected into
-// every workstation exec as a tool credential. Value is write-only — json:"-"
-// keeps it out of every API response, the same rule a loop's bot token follows.
-type LoopSecret struct {
-	LoopID    string `json:"loop_id"`
-	Name      string `json:"name"`
-	Value     string `json:"-"`
-	UpdatedAt int64  `json:"updated_at"`
-}
-
 // FleetRule is one operator-defined rule every loop follows. Enabled rules
 // render into every loop's system prompt as the FLEET RULES section, ahead of
 // its mission (ADR-0024). A rule's text is data; only the section is contract.
@@ -632,6 +622,9 @@ type LoopStore interface {
 	// writer: every column of a loop has an owner, and several of them are
 	// written by the Telegram poller while the hub is mid-edit (#164).
 	Edit(ctx context.Context, id string, edit LoopEdit) (*Loop, error)
+	// Delete removes the loop and the connections only it held, so a value
+	// the operator gave one loop goes with it (ADR-0043); a connection
+	// another loop holds stays, detached from this one.
 	Delete(ctx context.Context, id string) error
 	Get(ctx context.Context, id string) (*Loop, error)
 	GetByName(ctx context.Context, name string) (*Loop, error)
@@ -684,18 +677,6 @@ type LoopStore interface {
 	// operator has already replaced is not written. Written from the actor
 	// goroutine; an edit of the model clears it in the same statement (#289).
 	SetModelRefusal(ctx context.Context, id, model, refusal string, updatedAt int64) error
-}
-
-// LoopSecretStore holds a loop's secret env vars. Callers pass the timestamp
-// (the store never reads the clock), matching the rest of the interfaces.
-type LoopSecretStore interface {
-	// Set upserts one secret by (loopID, name); ErrNotFound if the loop is
-	// gone.
-	Set(ctx context.Context, loopID, name, value string, updatedAt int64) error
-	Delete(ctx context.Context, loopID, name string) error
-	// List returns a loop's secrets name-sorted, values included: the injector
-	// needs the values; the API maps these rows to names only.
-	List(ctx context.Context, loopID string) ([]*LoopSecret, error)
 }
 
 // FleetRuleStore holds the fleet's rules. List returns them in creation
@@ -1029,7 +1010,6 @@ type Store interface {
 	Rooms() RoomStore
 	Reactions() ReactionStore
 	Polls() PollStore
-	LoopSecrets() LoopSecretStore
 	Connections() ConnectionStore
 	FleetRules() FleetRuleStore
 	Sessions() SessionStore
@@ -1353,6 +1333,9 @@ type Connection struct {
 	Config    ConnectionConfig
 	Secret    string `json:"-"`
 	CreatedAt int64
+	// UpdatedAt is when the secret was last set: CreatedAt until it is
+	// replaced.
+	UpdatedAt int64
 	// LoopIDs are the loops the connection is attached to, in no promised
 	// order.
 	LoopIDs []string
@@ -1402,6 +1385,9 @@ type ConnectionStore interface {
 	// Delete is ErrNotFound for an unknown name, and ErrConnectionAttached
 	// while any loop holds it.
 	Delete(ctx context.Context, name string) error
+	// SetSecret replaces the secret and stamps UpdatedAt. ErrNotFound for
+	// an unknown name.
+	SetSecret(ctx context.Context, name, secret string, at int64) error
 	// Attach gives a loop the connection; attaching it again changes
 	// nothing. ErrNotFound for an unknown connection or loop.
 	Attach(ctx context.Context, name, loopID string, at int64) error

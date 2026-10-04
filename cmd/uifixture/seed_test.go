@@ -250,9 +250,9 @@ func TestSeedWritesAFleetTheRoomCanRender(t *testing.T) {
 		}
 	}
 
-	// Presence only, like every other reader of this store: the panel shows
+	// Presence only, like every reader of a loop's secrets: the panel shows
 	// names, so the fixture needs names.
-	secrets, err := db.LoopSecrets().List(ctx, gardener.ID)
+	secrets, err := db.Connections().ListByLoop(ctx, gardener.ID)
 	if err != nil {
 		t.Fatalf("list secrets: %v", err)
 	}

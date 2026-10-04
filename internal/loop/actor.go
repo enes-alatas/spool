@@ -548,17 +548,17 @@ func (actor *Actor) wake() {
 		}
 		system["CLAUDE_CODE_OAUTH_TOKEN"] = token
 	}
-	// Per-loop secrets are read fresh each wake, so an edit lands on the next
-	// wake. A read failure fails closed: a loop running without its expected
-	// credentials could act on the wrong ones.
-	secrets, err := actor.deps.Store.LoopSecrets().List(ctx, actor.loop.ID)
+	// The loop's connections are read fresh each wake, so an edit lands on
+	// the next wake. A read failure fails closed: a loop running without its
+	// expected credentials could act on the wrong ones.
+	connections, err := actor.deps.Store.Connections().ListByLoop(ctx, actor.loop.ID)
 	if err != nil {
 		actor.log().Error("workstation not ready", "err", err)
 		actor.setWorkstationDown(DownReasonUnreachable, err.Error())
 		actor.crashBackoff()
 		return
 	}
-	spec.Env = buildExecEnv(system, secrets)
+	spec.Env = buildExecEnv(system, connections)
 	if err := loopRuntime.Ensure(ctx, spec); err != nil {
 		actor.log().Error("workstation not ready", "err", err)
 		actor.setWorkstationDown(DownReasonUnreachable, err.Error())
@@ -1808,21 +1808,24 @@ func needsClaudeToken(loopRuntime runtime.Runtime) bool {
 	return loopRuntime.Kind() != store.RuntimeBare
 }
 
-// buildExecEnv assembles a wake's env: the system-injected vars first, then the
-// loop's own secrets overlaid on top. Secrets are applied last on purpose — a
-// loop secret wins a name collision with a system var, the operator's
-// deliberate escape hatch (a per-loop CLAUDE_CODE_OAUTH_TOKEN, say). Returns
+// buildExecEnv assembles a wake's env: the system-injected vars first, then
+// each attached env-var connection's variable overlaid on top (ADR-0043).
+// They are applied last on purpose — an attached env-var wins a name
+// collision with a system var, the operator's deliberate escape hatch (a
+// per-loop CLAUDE_CODE_OAUTH_TOKEN, say). Other kinds are not env. Returns
 // nil when there is nothing to inject, so spec.Env stays unset.
-func buildExecEnv(system map[string]string, secrets []*store.LoopSecret) map[string]string {
-	if len(system) == 0 && len(secrets) == 0 {
-		return nil
-	}
-	env := make(map[string]string, len(system)+len(secrets))
+func buildExecEnv(system map[string]string, connections []*store.Connection) map[string]string {
+	env := make(map[string]string, len(system)+len(connections))
 	for name, value := range system {
 		env[name] = value
 	}
-	for _, secret := range secrets {
-		env[secret.Name] = secret.Value
+	for _, connection := range connections {
+		if connection.Kind == store.ConnectionEnvVar {
+			env[connection.Config.Env] = connection.Secret
+		}
+	}
+	if len(env) == 0 {
+		return nil
 	}
 	return env
 }

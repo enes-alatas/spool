@@ -15,7 +15,7 @@ import (
 // connection_loops rows (ADR-0043).
 type connections struct{ db *sql.DB }
 
-const connectionColumns = `name, kind, config, secret, created_at`
+const connectionColumns = `name, kind, config, secret, created_at, updated_at`
 
 func (table connections) List(ctx context.Context) ([]*store.Connection, error) {
 	return table.list(ctx, `SELECT `+connectionColumns+` FROM connections ORDER BY name`)
@@ -88,8 +88,11 @@ func (table connections) Create(ctx context.Context, connection *store.Connectio
 	if err != nil {
 		return err
 	}
-	_, err = table.db.ExecContext(ctx, `INSERT INTO connections (`+connectionColumns+`) VALUES (?,?,?,?,?)`,
-		connection.Name, connection.Kind, string(config), connection.Secret, connection.CreatedAt)
+	if connection.UpdatedAt == 0 {
+		connection.UpdatedAt = connection.CreatedAt
+	}
+	_, err = table.db.ExecContext(ctx, `INSERT INTO connections (`+connectionColumns+`) VALUES (?,?,?,?,?,?)`,
+		connection.Name, connection.Kind, string(config), connection.Secret, connection.CreatedAt, connection.UpdatedAt)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return store.ErrDuplicate
 	}
@@ -120,6 +123,17 @@ func (table connections) Delete(ctx context.Context, name string) error {
 	return tx.Commit()
 }
 
+func (table connections) SetSecret(ctx context.Context, name, secret string, at int64) error {
+	res, err := table.db.ExecContext(ctx, `UPDATE connections SET secret=?, updated_at=? WHERE name=?`, secret, at, name)
+	if err != nil {
+		return err
+	}
+	if affected, _ := res.RowsAffected(); affected == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
 func (table connections) Attach(ctx context.Context, name, loopID string, at int64) error {
 	_, err := table.db.ExecContext(ctx, `INSERT INTO connection_loops (connection, loop_id, attached_at) VALUES (?,?,?)
 		ON CONFLICT (connection, loop_id) DO NOTHING`, name, loopID, at)
@@ -140,7 +154,7 @@ func (table connections) Detach(ctx context.Context, name, loopID string) error 
 func scanConnection(row interface{ Scan(...any) error }) (*store.Connection, error) {
 	var connection store.Connection
 	var config string
-	if err := row.Scan(&connection.Name, &connection.Kind, &config, &connection.Secret, &connection.CreatedAt); err != nil {
+	if err := row.Scan(&connection.Name, &connection.Kind, &config, &connection.Secret, &connection.CreatedAt, &connection.UpdatedAt); err != nil {
 		return nil, err
 	}
 	if err := json.Unmarshal([]byte(config), &connection.Config); err != nil {

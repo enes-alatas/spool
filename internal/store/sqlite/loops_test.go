@@ -477,7 +477,11 @@ func TestWritesToAGoneLoopAreNotFound(t *testing.T) {
 	if err := db.Loops().SetOwner(ctx, "loop_gone", 42, 0, now); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("SetOwner: err = %v, want ErrNotFound", err)
 	}
-	if err := db.LoopSecrets().Set(ctx, "loop_gone", "FIXTURE_NAME", "fixture-value", now); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("LoopSecrets.Set: err = %v, want ErrNotFound", err)
+	if err := db.Connections().Create(ctx, &store.Connection{Name: "fixture", Kind: store.ConnectionEnvVar,
+		Config: store.ConnectionConfig{Env: "FIXTURE_NAME"}, Secret: "fixture-value", CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Connections().Attach(ctx, "fixture", "loop_gone", now); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("Connections.Attach: err = %v, want ErrNotFound", err)
 	}
 }

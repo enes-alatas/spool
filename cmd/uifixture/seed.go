@@ -487,18 +487,25 @@ func seedSenders(ctx context.Context, db store.Store) error {
 	return nil
 }
 
-// Per-loop secrets, for the panel that shows names and never values. The
-// values here are obviously fake and are never rendered anywhere — the API
-// answers presence only — but they are written as fixtures all the same
-// (CONVENTIONS.md "Fixtures are synthetic").
+// Per-loop secrets, for the panel that shows names and never values: each
+// an env-var connection attached to the one loop, as the secrets shortcut
+// makes them (ADR-0043). The values here are obviously fake and are never
+// rendered anywhere — the API answers presence only — but they are written
+// as fixtures all the same (CONVENTIONS.md "Fixtures are synthetic").
 func seedSecrets(ctx context.Context, db store.Store, loopID string) error {
-	secrets := []struct{ name, value string }{
-		{"GITHUB_TOKEN", "ghp_000000000000_not_a_real_token"},
-		{"HANDBOOK_DEPLOY_KEY", "not-a-real-deploy-key-0000"},
+	secrets := []struct{ connection, env, value string }{
+		{"gardener-github-token-0f1a7e", "GITHUB_TOKEN", "ghp_000000000000_not_a_real_token"},
+		{"gardener-handbook-deploy-0f1a7e", "HANDBOOK_DEPLOY_KEY", "not-a-real-deploy-key-0000"},
 	}
+	at := ms(-6 * 24 * time.Hour)
 	for _, secret := range secrets {
-		if err := db.LoopSecrets().Set(ctx, loopID, secret.name, secret.value, ms(-6*24*time.Hour)); err != nil {
-			return fmt.Errorf("secret %s: %w", secret.name, err)
+		connection := &store.Connection{Name: secret.connection, Kind: store.ConnectionEnvVar,
+			Config: store.ConnectionConfig{Env: secret.env}, Secret: secret.value, CreatedAt: at}
+		if err := db.Connections().Create(ctx, connection); err != nil {
+			return fmt.Errorf("secret %s: %w", secret.env, err)
+		}
+		if err := db.Connections().Attach(ctx, secret.connection, loopID, at); err != nil {
+			return fmt.Errorf("secret %s: %w", secret.env, err)
 		}
 	}
 	return nil
