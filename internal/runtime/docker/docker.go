@@ -62,7 +62,12 @@ type Runtime struct {
 	fleet     map[string]runtime.Health
 	fleetErr  error
 
-	sweepOnce sync.Once // resolution containers a stopped hub left behind
+	// egressMu serializes ensureEgress: a provision and a login check can
+	// both find a stale proxy, and two removals of it collide.
+	egressMu sync.Mutex
+
+	sweepOnce      sync.Once // resolution containers a stopped hub left behind
+	loginSweepOnce sync.Once // login-check containers, the same way
 }
 
 // Options configures a docker runtime. Only Bin and HealthTTL have defaults;

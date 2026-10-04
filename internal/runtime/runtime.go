@@ -161,6 +161,13 @@ type Runtime interface {
 	// that holds no credential and can reach nothing (ADR-0033). The run is
 	// ended at init; ctx bounds it.
 	ResolveModel(ctx context.Context, model string) (string, error)
+
+	// CheckLogin asks the API, once, whether it accepts the login this
+	// runtime gives a loop by default (ADR-0044): the setup-token, which a
+	// runtime that needs one is handed as token, or the host's own login.
+	// It is one haiku turn that can run no tool; ctx bounds it. An error is
+	// a check that proved nothing either way.
+	CheckLogin(ctx context.Context, token string) (claude.LoginCheck, error)
 }
 
 // Proc is a claude process running inside a workstation, speaking
