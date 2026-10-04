@@ -3225,27 +3225,28 @@ textarea {
     grid-template-columns: minmax(0, 1fr);
   }
 }
-/* The Harness card's token dialog. It opens inside the first-run page,
+/* A first-run card's step dialog. It opens inside the first-run page,
    whose text is centred; a form reads from the left. */
-.token-dialog {
+.step-dialog {
   text-align: start;
 }
-/* What the harness's login check found, once the dialog's token is saved. */
-.token-dialog-state {
+/* Where the step stands once the dialog has done its part: what the
+   harness's login check found, say. */
+.step-dialog-state {
   margin: 0 0 16px;
   color: var(--text-muted);
 }
-.token-dialog-state .ok {
+.step-dialog-state .ok {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   color: var(--ready);
 }
-.token-dialog-reason {
+.step-dialog-reason {
   display: block;
   margin-top: 6px;
   font-family: var(--mono);
   font-size: 0.75rem;
-  /* a login that does not work is what is wrong (ADR-0027) */
+  /* a step that did not take is what is wrong (ADR-0027) */
   color: var(--danger);
 }

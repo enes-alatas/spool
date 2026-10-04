@@ -171,7 +171,7 @@ await page.route('**/api/settings', dockerSettings(false))
 await page.route('**/api/onboarding', (route) => route.fulfill({ json: firstRun.none }))
 await page.goto(base + '/', { waitUntil: 'networkidle' })
 await page.locator('.pillar').first().locator('.pillar-actions .btn').first().click()
-await page.locator('.token-dialog').waitFor({ timeout: 15000 })
+await page.locator('.step-dialog').waitFor({ timeout: 15000 })
 const tokenDialogFile = `${outDir}/first-run-token-dialog.png`
 await page.screenshot({ path: tokenDialogFile })
 taken.push(tokenDialogFile)
