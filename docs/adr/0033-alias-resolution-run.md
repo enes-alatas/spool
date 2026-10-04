@@ -1,6 +1,6 @@
 # ADR-0033: The hub resolves model aliases with a CLI run that can reach nothing
 
-Date: 2026-09-25 · Status: accepted (operator decisions of 2026-09-24 on #332 and 2026-09-25 on this shape) · Amends: ADR-0001 (the CLI is run for one thing besides a loop's turns)
+Date: 2026-09-25 · Status: accepted (operator decisions of 2026-09-24 on #332 and 2026-09-25 on this shape) · Amends: ADR-0001 (the CLI is run for one thing besides a loop's turns) · Amended: 2026-10-04 (item 6: the login check, ADR-0044, #585)
 
 ## Context
 
@@ -121,6 +121,13 @@ Anthropic in any run:
 
    An auxiliary run that needs the operator's login, or a real answer from the
    API, is not one of these and needs its own ADR.
+
+   **Amendment (2026-10-04, #585): the login check.** ADR-0044 is that ADR
+   for the login check. It is one haiku turn under the operator's login,
+   run only when a setup-token is saved and when the operator asks. It is
+   the fourth way the CLI is invoked, and it is not an auxiliary run: it
+   holds the credential and reaches the API by design, under ADR-0044's
+   rules. The three runs above keep this item's.
 
 ## Consequences
 
