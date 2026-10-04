@@ -115,5 +115,39 @@ const missionFile = `${outDir}/mission-edit.png`
 await mission.screenshot({ path: missionFile })
 taken.push(missionFile)
 
+// The first-run page (#581) in the three states its cards draw. The fixture
+// hub has done all three pillars, so it opens on Fleet; these answers stand
+// in for a hub that has not, worded as #580's reasons are. Every other read
+// on the page is still the fixture's.
+const firstRun = {
+  none: {
+    completed: false,
+    harness: { done: false, reason: 'no setup-token saved in Settings' },
+    surface: { done: false, reason: 'no chat surface has carried a message yet' },
+    loops: { done: false, reason: 'no loops' },
+  },
+  two: {
+    completed: false,
+    harness: { done: true, reason: 'a turn authenticated' },
+    surface: { done: false, reason: 'no message received from the operator on telegram yet' },
+    loops: { done: true },
+  },
+  all: {
+    completed: false,
+    harness: { done: true, reason: 'a turn authenticated' },
+    surface: { done: true },
+    loops: { done: true },
+  },
+}
+for (const [state, body] of Object.entries(firstRun)) {
+  await page.route('**/api/onboarding', (route) => route.fulfill({ json: body }))
+  await page.goto(base + '/', { waitUntil: 'networkidle' })
+  await page.waitForSelector('.pillars', { timeout: 15000 })
+  const file = `${outDir}/first-run-${state}.png`
+  await page.screenshot({ path: file, fullPage: true })
+  taken.push(file)
+  await page.unroute('**/api/onboarding')
+}
+
 await browser.close()
 for (const file of taken) console.log(file)

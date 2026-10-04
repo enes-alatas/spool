@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import App from './App'
 import { Session } from './components/Session'
 import { needsLogin } from './session'
-import Dashboard from './pages/Dashboard'
+import Home from './pages/Home'
 import LoopDetail from './pages/LoopDetail'
 import NewLoop from './pages/NewLoop'
 import Activity from './pages/Activity'
@@ -34,7 +34,7 @@ const router = createBrowserRouter([
     path: '/',
     element: <App />,
     children: [
-      { index: true, element: <Dashboard /> },
+      { index: true, element: <Home /> },
       { path: 'loops/:name', element: <LoopDetail /> },
       { path: 'new', element: <NewLoop /> },
       { path: 'activity', element: <Activity /> },

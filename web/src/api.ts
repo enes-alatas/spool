@@ -468,6 +468,25 @@ export interface LoopSecret {
   updated_at: number
 }
 
+// Onboarding readiness (#580): one live fact per pillar, and whether the
+// fleet has ever had all three at once. `completed` is the hub's memory: set
+// the first time every pillar is done, cleared when the last loop is
+// deleted. The pillars stay live, so a revoked token reads not done without
+// bringing the first-run page back. Mirrors httpapi's onboarding view.
+export interface OnboardingPillar {
+  done: boolean
+  // Why, in a few words: what is missing, or for some done pillars what made
+  // them so (a bare runtime's harness uses the host's login).
+  reason?: string
+}
+
+export interface Onboarding {
+  completed: boolean
+  harness: OnboardingPillar
+  surface: OnboardingPillar
+  loops: OnboardingPillar
+}
+
 // A connection (ADR-0043): an org-level env variable or tool config, defined
 // once under a name and attachable to loops (#572). An attached env-var is
 // set in its loop's env from the next wake; an mcp-server reaches its loop
@@ -762,6 +781,7 @@ export const api = {
   // workstation to power.
   workstationPower: (name: string, verb: 'restart' | 'poweroff' | 'poweron' | 'recreate') =>
     req<LoopView>(`/api/loops/${name}/workstation/${verb}`, { method: 'POST' }),
+  onboarding: () => req<Onboarding>('/api/onboarding'),
   // Connections, by name as the server lists them. Refusals carry a
   // `connection_*` code (ApiError.code).
   connections: () => req<Connection[]>('/api/connections'),
