@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api } from '../api'
+import { api, type LoopView } from '../api'
 import {
   EFFORT_OPTIONS,
   PACING_OPTIONS,
@@ -16,6 +16,17 @@ import { PaceRange } from '../components/PaceRange'
 
 export default function NewLoop() {
   const nav = useNavigate()
+  return (
+    <div className="page measure">
+      <h1>New loop</h1>
+      <NewLoopForm onCreated={(loop) => nav(`/loops/${loop.name}`)} />
+    </div>
+  )
+}
+
+// The form itself, without the page: the first-run Loops card opens it in a
+// dialog (#589), and what happens once the loop exists is the caller's.
+export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void }) {
   const qc = useQueryClient()
   const [name, setName] = useState('')
   const [mission, setMission] = useState('')
@@ -116,7 +127,7 @@ export default function NewLoop() {
         in_fleet_channel: joinsChannel,
       })
       qc.invalidateQueries({ queryKey: ['loops'] })
-      nav(`/loops/${loop.name}`)
+      onCreated(loop)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -127,167 +138,164 @@ export default function NewLoop() {
   const slugOk = /^[a-z0-9][a-z0-9_-]{1,31}$/.test(name.trim().toLowerCase())
 
   return (
-    <div className="page measure">
-      <h1>New loop</h1>
-      <div className="form">
-        {error && (
-          <div className="form-error" role="alert">
-            {error}
-          </div>
-        )}
+    <div className="form">
+      {error && (
+        <div className="form-error" role="alert">
+          {error}
+        </div>
+      )}
 
+      <div className="field">
+        <label htmlFor="nl-name">Name</label>
+        <input
+          id="nl-name"
+          placeholder="e.g. watcher, fixer, researcher"
+          value={name}
+          onChange={(e) => setName(e.target.value.toLowerCase())}
+          autoFocus
+        />
+        <div className="hint">Lowercase, 2–32 chars. Others reach this loop as @{name || 'name'}.</div>
+      </div>
+
+      <div className="field">
+        <label htmlFor="nl-mission">Mission</label>
+        <textarea
+          id="nl-mission"
+          rows={4}
+          placeholder="What should this loop keep doing? It wakes on a schedule and whenever someone messages it."
+          value={mission}
+          onChange={(e) => setMission(e.target.value)}
+        />
+      </div>
+
+      <div className="field-row">
         <div className="field">
-          <label htmlFor="nl-name">Name</label>
-          <input
-            id="nl-name"
-            placeholder="e.g. watcher, fixer, researcher"
-            value={name}
-            onChange={(e) => setName(e.target.value.toLowerCase())}
-            autoFocus
-          />
-          <div className="hint">Lowercase, 2–32 chars. Others reach this loop as @{name || 'name'}.</div>
+          <label htmlFor="nl-model">Model</label>
+          <select id="nl-model" value={model} onChange={(e) => setModel(e.target.value)}>
+            {modelOptions.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+            <option value="__custom__">Custom…</option>
+          </select>
+          {model === '__custom__' && (
+            <input
+              style={{ marginTop: 6 }}
+              placeholder="full model id, e.g. claude-opus-5-5"
+              value={customModel}
+              onChange={(e) => setCustomModel(e.target.value)}
+            />
+          )}
         </div>
-
         <div className="field">
-          <label htmlFor="nl-mission">Mission</label>
-          <textarea
-            id="nl-mission"
-            rows={4}
-            placeholder="What should this loop keep doing? It wakes on a schedule and whenever someone messages it."
-            value={mission}
-            onChange={(e) => setMission(e.target.value)}
-          />
-        </div>
-
-        <div className="field-row">
-          <div className="field">
-            <label htmlFor="nl-model">Model</label>
-            <select id="nl-model" value={model} onChange={(e) => setModel(e.target.value)}>
-              {modelOptions.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-              <option value="__custom__">Custom…</option>
-            </select>
-            {model === '__custom__' && (
-              <input
-                style={{ marginTop: 6 }}
-                placeholder="full model id, e.g. claude-opus-5-5"
-                value={customModel}
-                onChange={(e) => setCustomModel(e.target.value)}
-              />
-            )}
-          </div>
-          <div className="field">
-            <label htmlFor="nl-effort">Effort</label>
-            <select id="nl-effort" value={effort} onChange={(e) => setEffort(e.target.value)}>
-              {EFFORT_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div className="field-row">
-          <div className="field">
-            <label htmlFor="nl-pacing">Pacing</label>
-            <select
-              id="nl-pacing"
-              value={pacing}
-              onChange={(e) => setPacing(e.target.value as 'fixed' | 'self')}
-            >
-              {PACING_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-            <div className="hint">
-              {pacing === 'self'
-                ? 'The loop picks its own next-wake time each turn; the tick is only a fallback.'
-                : 'Spool wakes the loop on the tick; the loop may still adjust with a trailer.'}
-            </div>
-          </div>
-          <div className="field">
-            <label id="nl-pace-label">Pace</label>
-            <PaceRange pace={pace} onChange={setPace} labelledBy="nl-pace-label" />
-            <div className="hint">{PACE_HINT}</div>
-          </div>
-        </div>
-
-        <div className="field">
-          <label htmlFor="nl-runtime">Runtime</label>
-          <select
-            id="nl-runtime"
-            value={chosenRuntime}
-            onChange={(e) => chooseRuntime(e.target.value)}
-            disabled={!hubKnown || runtimeChoices.length < 2}
-          >
-            {!chosenRuntime && <option value="">…</option>}
-            {runtimeChoices.map((o) => (
+          <label htmlFor="nl-effort">Effort</label>
+          <select id="nl-effort" value={effort} onChange={(e) => setEffort(e.target.value)}>
+            {EFFORT_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>
             ))}
           </select>
-          <div className={`hint ${note.warn ? 'warn' : ''}`}>{note.text}</div>
+        </div>
+      </div>
+
+      <div className="field-row">
+        <div className="field">
+          <label htmlFor="nl-pacing">Pacing</label>
+          <select
+            id="nl-pacing"
+            value={pacing}
+            onChange={(e) => setPacing(e.target.value as 'fixed' | 'self')}
+          >
+            {PACING_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
           <div className="hint">
-            A loop reaches only Spool's own MCP server, which carries the one tool it needs to send messages.
-            MCP servers and connectors on your Claude account are never passed to a loop (
-            <code>--strict-mcp-config</code>).
+            {pacing === 'self'
+              ? 'The loop picks its own next-wake time each turn; the tick is only a fallback.'
+              : 'Spool wakes the loop on the tick; the loop may still adjust with a trailer.'}
           </div>
         </div>
-
         <div className="field">
-          <label htmlFor="nl-ws">Workspace (optional)</label>
-          <input
-            id="nl-ws"
-            placeholder={wsNote ? '' : '/path/to/repo, or leave empty for a conversational loop'}
-            value={wsLocked ? '' : wsPath}
-            onChange={(e) => inspect(e.target.value)}
-            disabled={wsLocked}
-          />
-          {wsNote && <div className="hint">{wsNote}</div>}
-          {!wsLocked && wsInfo && wsPath.trim() && (
-            <div className={`hint ${wsInfo.exists ? (wsInfo.is_git ? 'ok' : '') : 'warn'}`}>
-              {!wsInfo.exists
-                ? 'Directory not found.'
-                : wsInfo.is_git
-                  ? `Git repo: an isolated worktree will be created on branch loop/${name || '<name>'}.`
-                  : 'Plain directory: the loop works here directly.'}
-            </div>
-          )}
+          <label id="nl-pace-label">Pace</label>
+          <PaceRange pace={pace} onChange={setPace} labelledBy="nl-pace-label" />
+          <div className="hint">{PACE_HINT}</div>
         </div>
+      </div>
 
-        <label className="switch-row">
-          <input
-            type="checkbox"
-            role="switch"
-            checked={joinsChannel ?? false}
-            disabled={joinsChannel === undefined}
-            onChange={(e) => setInChannel(e.target.checked)}
-          />
-          <span>
-            In the fleet channel
-            <span className="hint">
-              {joinsChannel === undefined
-                ? 'Reading the fleet to pick the default…'
-                : joinsChannel
-                  ? 'Hears what is addressed to it in the fleet channel, and can post there.'
-                  : 'Starts outside the fleet channel: nothing posted there reaches it.'}{' '}
-              A Telegram bot, if it wants one, is attached on its page once it exists.
-            </span>
+      <div className="field">
+        <label htmlFor="nl-runtime">Runtime</label>
+        <select
+          id="nl-runtime"
+          value={chosenRuntime}
+          onChange={(e) => chooseRuntime(e.target.value)}
+          disabled={!hubKnown || runtimeChoices.length < 2}
+        >
+          {!chosenRuntime && <option value="">…</option>}
+          {runtimeChoices.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <div className={`hint ${note.warn ? 'warn' : ''}`}>{note.text}</div>
+        <div className="hint">
+          A loop reaches only Spool's own MCP server, which carries the one tool it needs to send messages.
+          MCP servers and connectors on your Claude account are never passed to a loop (
+          <code>--strict-mcp-config</code>).
+        </div>
+      </div>
+
+      <div className="field">
+        <label htmlFor="nl-ws">Workspace (optional)</label>
+        <input
+          id="nl-ws"
+          placeholder={wsNote ? '' : '/path/to/repo, or leave empty for a conversational loop'}
+          value={wsLocked ? '' : wsPath}
+          onChange={(e) => inspect(e.target.value)}
+          disabled={wsLocked}
+        />
+        {wsNote && <div className="hint">{wsNote}</div>}
+        {!wsLocked && wsInfo && wsPath.trim() && (
+          <div className={`hint ${wsInfo.exists ? (wsInfo.is_git ? 'ok' : '') : 'warn'}`}>
+            {!wsInfo.exists
+              ? 'Directory not found.'
+              : wsInfo.is_git
+                ? `Git repo: an isolated worktree will be created on branch loop/${name || '<name>'}.`
+                : 'Plain directory: the loop works here directly.'}
+          </div>
+        )}
+      </div>
+
+      <label className="switch-row">
+        <input
+          type="checkbox"
+          role="switch"
+          checked={joinsChannel ?? false}
+          disabled={joinsChannel === undefined}
+          onChange={(e) => setInChannel(e.target.checked)}
+        />
+        <span>
+          In the fleet channel
+          <span className="hint">
+            {joinsChannel === undefined
+              ? 'Reading the fleet to pick the default…'
+              : joinsChannel
+                ? 'Hears what is addressed to it in the fleet channel, and can post there.'
+                : 'Starts outside the fleet channel: nothing posted there reaches it.'}{' '}
+            A Telegram bot, if it wants one, is attached on its page once it exists.
           </span>
-        </label>
+        </span>
+      </label>
 
-        <div>
-          <button className="btn primary" onClick={create} disabled={busy || !slugOk || !mission.trim()}>
-            {busy ? 'Creating…' : 'Create loop'}
-          </button>
-        </div>
+      <div>
+        <button className="btn primary" onClick={create} disabled={busy || !slugOk || !mission.trim()}>
+          {busy ? 'Creating…' : 'Create loop'}
+        </button>
       </div>
     </div>
   )
