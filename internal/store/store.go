@@ -1336,6 +1336,10 @@ const (
 	// ErrRoomInUse is a room that carries another channel already: a chat
 	// with two channels in it would leave a person's message in neither.
 	ErrRoomInUse = sentinelError("store: room carries another channel")
+	// ErrConnectionAttached refuses deleting a connection a loop still
+	// holds: detaching first is the operator saying the loop can do
+	// without it (ADR-0043).
+	ErrConnectionAttached = sentinelError("store: connection attached")
 	// ErrPollClosed refuses a vote in a poll that has closed (ADR-0041).
 	ErrPollClosed = sentinelError("store: poll closed")
 )
@@ -1349,6 +1353,9 @@ type Connection struct {
 	Config    ConnectionConfig
 	Secret    string `json:"-"`
 	CreatedAt int64
+	// LoopIDs are the loops the connection is attached to, in no promised
+	// order.
+	LoopIDs []string
 }
 
 // The kinds a connection can be (ADR-0043).
@@ -1391,6 +1398,16 @@ type ConnectionStore interface {
 	Get(ctx context.Context, name string) (*Connection, error)
 	// Create is ErrDuplicate when the name is taken.
 	Create(ctx context.Context, connection *Connection) error
-	// Delete is ErrNotFound for an unknown name.
+	// Delete is ErrNotFound for an unknown name, and ErrConnectionAttached
+	// while any loop holds it.
 	Delete(ctx context.Context, name string) error
+	// Attach gives a loop the connection; attaching it again changes
+	// nothing. ErrNotFound for an unknown connection or loop.
+	Attach(ctx context.Context, name, loopID string, at int64) error
+	// Detach takes it away again; detaching what is not attached changes
+	// nothing. ErrNotFound for an unknown connection.
+	Detach(ctx context.Context, name, loopID string) error
+	// ListByLoop returns the connections attached to one loop, name-sorted,
+	// secrets included for the injector.
+	ListByLoop(ctx context.Context, loopID string) ([]*Connection, error)
 }
