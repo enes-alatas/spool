@@ -163,6 +163,7 @@ func (server *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/channels/{name}/loops/{loop}", server.handleChannelLoop(true))
 	mux.HandleFunc("DELETE /api/channels/{name}/loops/{loop}", server.handleChannelLoop(false))
 	mux.HandleFunc("GET /api/settings", server.handleGetSettings)
+	mux.HandleFunc("GET /api/onboarding", server.handleOnboarding)
 	mux.HandleFunc("PUT /api/settings", server.handlePutSettings)
 	mux.HandleFunc("GET /api/rules", server.handleListRules)
 	mux.HandleFunc("POST /api/rules", server.handleCreateRule)
