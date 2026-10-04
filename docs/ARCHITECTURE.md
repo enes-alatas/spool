@@ -197,7 +197,7 @@ opportunistically, not big-bang.
   it without a reshape. It is attached to loops one at a time
   (`PUT`/`DELETE /api/loops/{name}/connections/{connection}`) and can't be
   deleted while attached. Per-loop secrets stay the env path until attached
-  env-credentials replace them (#504).
+  env-vars replace them (#504).
 - **Runner extraction**: the hosted service will run runners near customer sandboxes.
   Anything crossing the Runner seam must stay serializable (no passing live channels
   or callbacks across it as its API matures).

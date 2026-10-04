@@ -61,7 +61,7 @@ func TestConnectionsRoundTrip(t *testing.T) {
 	}
 
 	keep("POST", "/api/connections", map[string]any{
-		"name": "github", "kind": "env-credential", "config": map[string]any{"env": "GH_TOKEN"}, "secret": value,
+		"name": "github", "kind": "env-var", "config": map[string]any{"env": "GH_TOKEN"}, "secret": value,
 	}, 201)
 	keep("POST", "/api/connections", map[string]any{
 		"name": "docs", "kind": "mcp-server", "config": map[string]any{"transport": "stdio", "command": "docs-mcp", "args": []string{"--read-only"}},
@@ -79,23 +79,23 @@ func TestConnectionsRoundTrip(t *testing.T) {
 		docs.Config.Command != "docs-mcp" || !reflect.DeepEqual(docs.Config.Args, []string{"--read-only"}) {
 		t.Errorf("docs = %+v, want a stdio mcp-server with no secret", docs)
 	}
-	if github.Kind != "env-credential" || !github.HasSecret || github.Config.Env != "GH_TOKEN" || github.CreatedAt == 0 {
-		t.Errorf("github = %+v, want an env-credential on GH_TOKEN with a secret", github)
+	if github.Kind != "env-var" || !github.HasSecret || github.Config.Env != "GH_TOKEN" || github.CreatedAt == 0 {
+		t.Errorf("github = %+v, want an env-var on GH_TOKEN with a secret", github)
 	}
 	keep("GET", "/api/connections/github", nil, 200)
 
 	s.wantRefusal("POST", "/api/connections", map[string]any{
-		"name": "github", "kind": "env-credential", "config": map[string]any{"env": "GH_TOKEN"}, "secret": "other",
+		"name": "github", "kind": "env-var", "config": map[string]any{"env": "GH_TOKEN"}, "secret": "other",
 	}, 409, "connection_exists")
 	for _, refused := range []struct {
 		body map[string]any
 		code string
 	}{
-		{map[string]any{"name": "Git_Hub", "kind": "env-credential", "config": map[string]any{"env": "X"}, "secret": "s"}, "connection_name_invalid"},
+		{map[string]any{"name": "Git_Hub", "kind": "env-var", "config": map[string]any{"env": "X"}, "secret": "s"}, "connection_name_invalid"},
 		{map[string]any{"name": "app", "kind": "github-app", "config": map[string]any{"env": "X"}, "secret": "s"}, "connection_kind_invalid"},
-		{map[string]any{"name": "env", "kind": "env-credential", "config": map[string]any{"env": "GH-TOKEN"}, "secret": "s"}, "connection_config_invalid"},
+		{map[string]any{"name": "env", "kind": "env-var", "config": map[string]any{"env": "GH-TOKEN"}, "secret": "s"}, "connection_config_invalid"},
 		{map[string]any{"name": "mcp", "kind": "mcp-server", "config": map[string]any{"transport": "http", "url": "ftp://example.test"}}, "connection_config_invalid"},
-		{map[string]any{"name": "bare", "kind": "env-credential", "config": map[string]any{"env": "X"}}, "connection_secret_invalid"},
+		{map[string]any{"name": "bare", "kind": "env-var", "config": map[string]any{"env": "X"}}, "connection_secret_invalid"},
 	} {
 		s.wantRefusal("POST", "/api/connections", refused.body, 400, refused.code)
 	}
@@ -139,7 +139,7 @@ func TestConnectionAttachments(t *testing.T) {
 	}
 	const value = "ghp_fixtureATTACHEDsecret0000"
 	s.mustJSON("POST", "/api/connections", map[string]any{
-		"name": "github", "kind": "env-credential", "config": map[string]any{"env": "GH_TOKEN"}, "secret": value,
+		"name": "github", "kind": "env-var", "config": map[string]any{"env": "GH_TOKEN"}, "secret": value,
 	}, nil)
 	s.mustJSON("POST", "/api/connections", map[string]any{
 		"name": "docs", "kind": "mcp-server", "config": map[string]any{"transport": "http", "url": "https://mcp.example.test/"},
@@ -166,7 +166,7 @@ func TestConnectionAttachments(t *testing.T) {
 	if !reflect.DeepEqual(github.Loops, []string{"aster", "briar"}) {
 		t.Errorf("github's loops = %v, want [aster briar]", github.Loops)
 	}
-	want := []loopConnectionJSON{{"docs", "mcp-server"}, {"github", "env-credential"}}
+	want := []loopConnectionJSON{{"docs", "mcp-server"}, {"github", "env-var"}}
 	if got := s.loopConnections("aster"); !reflect.DeepEqual(got, want) {
 		t.Errorf("aster's connections = %+v, want %+v", got, want)
 	}
