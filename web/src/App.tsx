@@ -8,6 +8,7 @@ import {
   AccessIcon,
   ActivityIcon,
   ChannelsIcon,
+  ConnectionsIcon,
   FleetIcon,
   RulesIcon,
   SettingsIcon,
@@ -20,6 +21,7 @@ const DESTINATIONS = [
   { to: '/', label: 'Fleet', Icon: FleetIcon, end: true },
   { to: '/activity', label: 'Activity', Icon: ActivityIcon },
   { to: '/channels', label: 'Channels', Icon: ChannelsIcon },
+  { to: '/connections', label: 'Connections', Icon: ConnectionsIcon },
   { to: '/access', label: 'Access', Icon: AccessIcon },
   { to: '/rules', label: 'Rules', Icon: RulesIcon },
   { to: '/settings', label: 'Settings', Icon: SettingsIcon },
@@ -31,7 +33,9 @@ function Destinations({ variant }: { variant: 'top' | 'bottom' }) {
       {DESTINATIONS.map(({ to, label, Icon, end }) => (
         <NavLink key={to} to={to} end={end} className="nav-item">
           <Icon />
-          <span>{label}</span>
+          {/* The bottom bar is icons only: seven labels do not fit a phone's
+              width (#506). The label stays as the link's accessible name. */}
+          <span className={variant === 'bottom' ? 'sr-only' : undefined}>{label}</span>
         </NavLink>
       ))}
     </nav>

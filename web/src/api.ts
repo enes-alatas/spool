@@ -465,6 +465,44 @@ export interface LoopSecret {
   updated_at: number
 }
 
+// A connection (ADR-0043): an org-level env variable or tool config, defined
+// once under a name and attachable to loops (#572); what an attachment hands
+// its loop is #505's. Mirrors httpapi's
+// connectionView. The secret is write-only: a create sends it, and no
+// response carries it — only whether there is one.
+export type ConnectionKind = 'env-var' | 'mcp-server'
+export type MCPTransport = 'http' | 'stdio'
+
+// Which fields are set is the kind's: `env` for an env-var;
+// `transport`, then `url` or `command` with `args`, for an mcp-server. Read
+// back in full, so nothing secret belongs in it. Empty fields are omitted.
+export interface ConnectionConfig {
+  env?: string
+  transport?: MCPTransport
+  url?: string
+  command?: string
+  args?: string[]
+}
+
+export interface Connection {
+  name: string
+  kind: ConnectionKind
+  config: ConnectionConfig
+  has_secret: boolean
+  created_at: number
+  // The loops it is attached to, by name, sorted. A connection with any is
+  // refused deletion (`connection_attached`) until it is detached. Absent
+  // from a hub too old to attach.
+  loops?: string[]
+}
+
+export interface CreateConnectionReq {
+  name: string
+  kind: ConnectionKind
+  config: ConnectionConfig
+  secret?: string
+}
+
 // What a PATCH did about the loop's running session, mirrored from
 // httpapi's rotation constants. A mission is part of the loop's system
 // prompt, and a running session cannot be given a new one (#162): saving a
@@ -715,6 +753,13 @@ export const api = {
   // workstation to power.
   workstationPower: (name: string, verb: 'restart' | 'poweroff' | 'poweron' | 'recreate') =>
     req<LoopView>(`/api/loops/${name}/workstation/${verb}`, { method: 'POST' }),
+  // Connections, by name as the server lists them. Refusals carry a
+  // `connection_*` code (ApiError.code).
+  connections: () => req<Connection[]>('/api/connections'),
+  createConnection: (body: CreateConnectionReq) =>
+    req<Connection>('/api/connections', { method: 'POST', body: JSON.stringify(body) }),
+  deleteConnection: (name: string) =>
+    req<{ deleted: boolean }>(`/api/connections/${name}`, { method: 'DELETE' }),
   rules: () => req<RulesView>('/api/rules'),
   createRule: (body: { title: string; body: string; enabled: boolean }) =>
     req<FleetRule>('/api/rules', { method: 'POST', body: JSON.stringify(body) }),

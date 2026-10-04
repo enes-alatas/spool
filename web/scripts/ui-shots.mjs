@@ -63,6 +63,9 @@ const shots = [
   { name: 'channels', path: '/channels', wait: '.channel-loop' },
   { name: 'loop-timeline', path: '/loops/gardener', wait: '.timeline' },
   { name: 'new-loop', path: '/new', wait: '#nl-runtime' },
+  // One connection of each shape the page draws, with and without a secret
+  // (#506); the create form is under them.
+  { name: 'connections', path: '/connections', wait: '.connection-row' },
   { name: 'access', path: '/access', wait: '.feed-item' },
   { name: 'rules', path: '/rules', wait: '.page' },
   { name: 'settings', path: '/settings', wait: '.page' },

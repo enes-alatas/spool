@@ -2031,7 +2031,8 @@ textarea {
   margin-top: 4px;
 }
 /* the id field takes what --model takes, so it reads as one */
-.field input.mono {
+.field input.mono,
+.field textarea.mono {
   font-family: var(--mono);
 }
 
@@ -2180,22 +2181,21 @@ textarea {
   .page {
     padding: 20px 16px;
   }
+  /* Icons only, their labels kept as accessible names (`App.tsx`): seven
+     labels do not fit a phone's width, and a label shrunk until it fits is
+     one nobody can read (#506). Positioned, because the label's `.sr-only`
+     box is pinned to its nearest positioned ancestor. */
   .nav-bottom .nav-item {
+    position: relative;
     flex: 1;
-    flex-direction: column;
-    gap: 3px;
     min-width: 0;
     min-height: 46px;
     justify-content: center;
     padding: 4px 2px;
-    /* Five labels share the viewport's width, so this one cannot simply
-       follow the reader's text size: past a point it would clip instead of
-       enlarge. It grows with the text until the bar runs out of room, and
-       the icons and the accessible names carry it from there. */
-    font-size: min(0.65625rem, 3.4vw);
   }
-  /* The fixed bar must never sit on top of the last row of content, and the
-     bar is as tall as its own text, so this clearance is in the same unit. */
+  /* The fixed bar must never sit on top of the last row of content. In rem,
+     so the clearance grows with the text size along with everything it
+     clears. */
   .main {
     padding-bottom: 4rem;
   }
@@ -2253,6 +2253,98 @@ textarea {
   font-size: 0.65625rem;
   color: var(--text);
 }
+/* ---- connections (#506) ----
+   One row per connection: its name, its kind and whether it has a secret on
+   the first line, and what it points at on the second, where a URL or a
+   command line has the row's width rather than a column's. The name track is
+   fixed, not content-sized, because each row is its own grid and the kinds
+   should start at one x down the list (the #282 lesson). */
+.connection-list {
+  container: connections / inline-size;
+  border-top: 1px solid var(--hairline);
+  margin-bottom: 8px;
+}
+.connection-row {
+  display: grid;
+  grid-template-columns: minmax(0, 10rem) minmax(0, 1fr) max-content max-content;
+  grid-template-areas:
+    'name kind secret delete'
+    'detail detail loops delete'
+    'error error error error';
+  column-gap: 12px;
+  row-gap: 2px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.connection-name {
+  grid-area: name;
+  font-family: var(--mono);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.connection-kind {
+  grid-area: kind;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.connection-detail {
+  grid-area: detail;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.connection-secret {
+  grid-area: secret;
+  justify-self: end;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+}
+/* The loops it is on, beside what it points at. It and the secret note
+   above it are right-aligned: their column is as wide as the longer of the
+   two on each row, so a shared left edge would move from row to row. */
+.connection-loops {
+  grid-area: loops;
+  justify-self: end;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+/* "no secret" is a fact, not a fault: an MCP server may need none */
+.connection-secret.none {
+  color: var(--text-muted);
+}
+.connection-row .btn {
+  grid-area: delete;
+}
+.connection-error {
+  grid-area: error;
+  margin-top: 6px;
+}
+/* Narrow, the kind takes the name's line's width under it instead of a
+   squeezed column beside it, where "MCP server · stdio" broke a word a line. */
+@container connections (max-width: 34rem) {
+  .connection-row {
+    grid-template-columns: minmax(0, 1fr) max-content max-content;
+    grid-template-areas:
+      'name secret delete'
+      'kind kind delete'
+      'detail detail detail'
+      'loops loops loops'
+      'error error error';
+  }
+  .connection-loops {
+    justify-self: start;
+  }
+}
+.connection-new {
+  margin: 28px 0 12px;
+}
+
 .rules-note {
   font-size: 0.75rem;
   color: var(--text-muted);
