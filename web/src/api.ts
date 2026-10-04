@@ -469,10 +469,10 @@ export interface LoopSecret {
 }
 
 // A connection (ADR-0043): an org-level env variable or tool config, defined
-// once under a name and attachable to loops (#572); what an attachment hands
-// its loop is #505's. Mirrors httpapi's
-// connectionView. The secret is write-only: a create sends it, and no
-// response carries it — only whether there is one.
+// once under a name and attachable to loops (#572). An attached env-var is
+// set in its loop's env from the next wake; an mcp-server reaches its loop
+// with #505. Mirrors httpapi's connectionView. The secret is write-only: a
+// create sends it, and no response carries it — only whether there is one.
 export type ConnectionKind = 'env-var' | 'mcp-server'
 export type MCPTransport = 'http' | 'stdio'
 

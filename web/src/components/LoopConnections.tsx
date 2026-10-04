@@ -10,9 +10,9 @@ import { PlusIcon } from './Icons'
 // each, and a + that opens a dialog to attach an existing connection or
 // create one and attach it in the same step.
 //
-// Attaching records the pairing and nothing else yet: handing a connection
-// to its loop is #505's. The note says so rather than promising a next wake,
-// which would be true of a per-loop secret and is not true of this.
+// An attached env variable is set in the loop's env from its next wake, as
+// a value set in its Secrets panel is. An MCP server is only recorded:
+// handing one to its loop is #505's, so the note tells the two kinds apart.
 export function LoopConnections({ loop }: { loop: LoopView }) {
   const qc = useQueryClient()
   const { data: all } = useQuery({ queryKey: ['connections'], queryFn: api.connections })
@@ -58,8 +58,8 @@ export function LoopConnections({ loop }: { loop: LoopView }) {
         </button>
       </div>
       <div className="panel-note leading">
-        Defined once for the fleet on the <Link to="/connections">Connections</Link> page. Attaching records
-        it here; it doesn't reach the loop yet.
+        Defined once for the fleet on the <Link to="/connections">Connections</Link> page. An env variable is
+        set from the next wake; an MCP server doesn't reach the loop yet.
       </div>
       {attached.length === 0 ? (
         <div className="panel-empty">None attached.</div>
