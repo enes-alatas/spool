@@ -259,6 +259,31 @@ func TestSeedWritesAFleetTheRoomCanRender(t *testing.T) {
 	if len(secrets) == 0 {
 		t.Error("no secrets seeded: the secrets panel would shoot its empty state")
 	}
+
+	// The page draws each shape differently, so each must be there: an env
+	// credential, an http server with a secret, a stdio one without (#506).
+	connections, err := db.Connections().List(ctx)
+	if err != nil {
+		t.Fatalf("list connections: %v", err)
+	}
+	shapes := map[string]bool{}
+	attached, unattached := 0, 0
+	for _, connection := range connections {
+		if len(connection.LoopIDs) > 0 {
+			attached++
+		} else {
+			unattached++
+		}
+		shapes[connection.Kind+"/"+connection.Config.Transport+"/"+strconv.FormatBool(connection.Secret != "")] = true
+	}
+	for _, want := range []string{"env-var//true", "mcp-server/http/true", "mcp-server/stdio/false"} {
+		if !shapes[want] {
+			t.Errorf("no %s connection seeded: the Connections page would not shoot that shape", want)
+		}
+	}
+	if attached == 0 || unattached == 0 {
+		t.Errorf("%d attached and %d unattached connections: the page shows both, and the loop panel needs one left to attach", attached, unattached)
+	}
 }
 
 // The token only helps if the hub takes it instead of minting its own.
