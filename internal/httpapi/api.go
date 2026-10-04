@@ -144,6 +144,8 @@ func (server *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/connections", server.handleCreateConnection)
 	mux.HandleFunc("GET /api/connections/{name}", server.handleGetConnection)
 	mux.HandleFunc("DELETE /api/connections/{name}", server.handleDeleteConnection)
+	mux.HandleFunc("PUT /api/loops/{name}/connections/{connection}", server.handleLoopConnection(true))
+	mux.HandleFunc("DELETE /api/loops/{name}/connections/{connection}", server.handleLoopConnection(false))
 	mux.HandleFunc("GET /api/channels", server.handleListChannels)
 	mux.HandleFunc("POST /api/channels", server.handleCreateChannel)
 	mux.HandleFunc("GET /api/channels/{name}", server.handleGetChannel)
@@ -333,12 +335,21 @@ type loopView struct {
 	// InFleetChannel reports that the loop has a group: it receives what
 	// addresses it there and may post to it (ADR-0032).
 	InFleetChannel bool `json:"in_fleet_channel"`
+	// Connections are the connections attached to the loop, name-sorted,
+	// by name and kind only: never a value (ADR-0043).
+	Connections []loopConnectionView `json:"connections"`
 	// MCPSessionID, MCPServers and ToolCount are what the loop's latest
 	// session init in this hub run said it can reach through MCP (#489),
 	// all three absent before one. ToolCount counts MCP tools only.
 	MCPSessionID string           `json:"mcp_session_id,omitempty"`
 	MCPServers   *[]mcpServerView `json:"mcp_servers,omitempty"` // [] for an init with none
 	ToolCount    *int             `json:"tool_count,omitempty"`
+}
+
+// loopConnectionView is one connection a loop holds.
+type loopConnectionView struct {
+	Name string `json:"name"`
+	Kind string `json:"kind"`
 }
 
 // mcpServerView is one MCP server as the session's init reported it.
@@ -368,7 +379,13 @@ func localDayStart(now time.Time) (int64, string) {
 func (server *Server) view(ctx context.Context, loopRecord *store.Loop) *loopView {
 	out := &loopView{Loop: loopRecord, State: loop.StateAsleep, HasTGToken: loopRecord.TGBotToken != "",
 		HasSlackTokens: loopRecord.SlackBotToken != "", Surface: loopRecord.Surface(), WorkstationUp: true,
-		OwnerDMReady: loopRecord.OwnerDMReady(), InFleetChannel: !loopRecord.OutsideFleetChannel}
+		OwnerDMReady: loopRecord.OwnerDMReady(), InFleetChannel: !loopRecord.OutsideFleetChannel,
+		Connections: []loopConnectionView{}}
+	if connections, err := server.Store.Connections().ListByLoop(ctx, loopRecord.ID); err == nil {
+		for _, connection := range connections {
+			out.Connections = append(out.Connections, loopConnectionView{Name: connection.Name, Kind: connection.Kind})
+		}
+	}
 	if loopRecord.OwnerTGUserID != 0 {
 		if sender, err := server.Store.TGSenders().Get(ctx, loopRecord.OwnerTGUserID); err == nil {
 			out.OwnerUsername = sender.Username

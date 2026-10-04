@@ -194,8 +194,10 @@ opportunistically, not big-bang.
   defined once under a name (`GET`/`POST /api/connections`,
   `GET`/`DELETE /api/connections/{name}`), its secret write-only and redacted
   from the moment it is stored; no loop owns one, so explicit orgs at L5 scope
-  it without a reshape. Per-loop secrets stay the injection path until
-  attachments land.
+  it without a reshape. It is attached to loops one at a time
+  (`PUT`/`DELETE /api/loops/{name}/connections/{connection}`) and can't be
+  deleted while attached. Per-loop secrets stay the env path until attached
+  env-credentials replace them (#504).
 - **Runner extraction**: the hosted service will run runners near customer sandboxes.
   Anything crossing the Runner seam must stay serializable (no passing live channels
   or callbacks across it as its API matures).
