@@ -5,6 +5,8 @@ import { customModelError, MODEL_LABEL_MAX, rotationGate, tokenSubmittable } fro
 import { customModelNote } from '../options'
 import { buildFacts, useVersion } from '../version'
 import { loginError } from '../session'
+import { HarnessCheck } from '../components/HarnessCheck'
+import { loginCheckTone } from '../onboarding'
 
 export default function Settings() {
   const { data: settings, error: loadError } = useQuery({ queryKey: ['settings'], queryFn: api.settings })
@@ -183,8 +185,31 @@ function ClaudeToken({ settings, loadError }: { settings?: SettingsView; loadErr
             </button>
           )}
         </div>
+
+        <LoginCheck />
       </div>
     </>
+  )
+}
+
+// The harness's last login check (ADR-0044), as the onboarding read words
+// it, and a way to run one. Polled quickly only while a check runs.
+function LoginCheck() {
+  const { data } = useQuery({
+    queryKey: ['onboarding'],
+    queryFn: api.onboarding,
+    refetchInterval: (q) => (q.state.data?.harness.checking ? 2000 : false),
+    retry: false,
+  })
+  const harness = data?.harness
+  if (!harness) return null
+  return (
+    <div className="login-check">
+      <span className={`login-check-state ${loginCheckTone(harness)}`}>
+        {harness.reason ?? (harness.done ? 'the login works' : 'the login is not checked yet')}
+      </span>
+      <HarnessCheck pillar={harness} />
+    </div>
   )
 }
 

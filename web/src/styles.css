@@ -1945,6 +1945,34 @@ textarea {
 .token-state.ok {
   color: var(--ready);
 }
+/* Settings' login check (#588): what the last one found, and "Check now"
+   beside it, under the token's own controls. */
+.login-check {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--hairline);
+}
+.login-check-state {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.login-check-state.ok {
+  color: var(--ready);
+}
+.login-check-state.active {
+  color: var(--active);
+}
+.login-check-state.danger {
+  color: var(--danger);
+}
+.login-check .form-error {
+  flex-basis: 100%;
+}
 /* The two controls a side panel carries. Both sit on the raised fill the panel
    already has, so the well inverts to the canvas to stay a well; both are
    compact because they are inside a panel of rows, not a form. */
@@ -3124,8 +3152,69 @@ textarea {
   color: var(--ready);
 }
 .pillar .btn {
-  align-self: flex-start;
   text-decoration: none;
+}
+/* A done step keeps its head and title, and the rest of the card is a tick.
+   Drawn in (ring, then mark) only when it turns done on screen. */
+.pillar-tick {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  min-height: 96px;
+  color: var(--ready);
+}
+.pillar-tick svg {
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.pillar-tick-ring {
+  opacity: 0.35;
+  /* the stroke starts at three o'clock; the draw-in starts at twelve */
+  transform: rotate(-90deg);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.pillar-tick.animate .pillar-tick-ring,
+.pillar-tick.animate .pillar-tick-mark {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: tick-draw 420ms ease-out forwards;
+}
+.pillar-tick.animate .pillar-tick-mark {
+  animation-delay: 300ms;
+}
+.pillar-tick.animate svg {
+  animation: tick-settle 360ms ease-out 620ms;
+}
+@keyframes tick-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes tick-settle {
+  50% {
+    transform: scale(1.08);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pillar-tick.animate .pillar-tick-ring,
+  .pillar-tick.animate .pillar-tick-mark,
+  .pillar-tick.animate svg {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}
+/* The card's way on, and on the harness card "Check now" beside it; an
+   error from the check takes the row under them. */
+.pillar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.pillar-actions .form-error {
+  flex-basis: 100%;
 }
 /* A phone stacks the three in order; the step number still says which. */
 @media (max-width: 720px) {
@@ -3135,4 +3224,28 @@ textarea {
   .pillars {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+/* The Harness card's token dialog. It opens inside the first-run page,
+   whose text is centred; a form reads from the left. */
+.token-dialog {
+  text-align: start;
+}
+/* What the harness's login check found, once the dialog's token is saved. */
+.token-dialog-state {
+  margin: 0 0 16px;
+  color: var(--text-muted);
+}
+.token-dialog-state .ok {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ready);
+}
+.token-dialog-reason {
+  display: block;
+  margin-top: 6px;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  /* a login that does not work is what is wrong (ADR-0027) */
+  color: var(--danger);
 }

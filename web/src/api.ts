@@ -478,6 +478,9 @@ export interface OnboardingPillar {
   // Why, in a few words: what is missing, or for some done pillars what made
   // them so (a bare runtime's harness uses the host's login).
   reason?: string
+  // The harness's login check (ADR-0044) is running: set from the moment a
+  // check starts until it answers, so a "Check now" stays busy that long.
+  checking?: boolean
 }
 
 export interface Onboarding {
@@ -782,6 +785,9 @@ export const api = {
   workstationPower: (name: string, verb: 'restart' | 'poweroff' | 'poweron' | 'recreate') =>
     req<LoopView>(`/api/loops/${name}/workstation/${verb}`, { method: 'POST' }),
   onboarding: () => req<Onboarding>('/api/onboarding'),
+  // Starts a login check and answers with the readiness it leaves; 409
+  // `no_setup_token` on a docker hub with no token to check.
+  checkHarness: () => req<Onboarding>('/api/onboarding/harness-check', { method: 'POST' }),
   // Connections, by name as the server lists them. Refusals carry a
   // `connection_*` code (ApiError.code).
   connections: () => req<Connection[]>('/api/connections'),

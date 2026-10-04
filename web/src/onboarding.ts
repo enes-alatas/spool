@@ -1,4 +1,4 @@
-import type { Onboarding } from './api'
+import { ApiError, type Onboarding, type OnboardingPillar } from './api'
 
 // The first-run page's three pillars (#581), in the order an operator does
 // them: the harness a loop runs on, the first loop, and the surface they talk
@@ -11,10 +11,15 @@ export interface PillarSpec {
   title: string
   // What to do, before it is done.
   how: string
+  // What to do on a hub whose loops default to the bare runtime, where
+  // they use the host's own claude login and a saved token changes
+  // nothing; how is used when unset.
+  bareHow?: string
   // What is true, once it is.
   doneText: string
   // Where its button leads. The surface card has none of its own: it opens
-  // a loop's page, which `surfaceTarget` picks from the fleet.
+  // a loop's page, which `surfaceTarget` picks from the fleet. The harness
+  // card has none either: its button opens the token dialog in place.
   to?: string
   action: string
 }
@@ -23,10 +28,10 @@ export const PILLARS: PillarSpec[] = [
   {
     key: 'harness',
     title: 'Harness',
-    how: 'Loops run on Claude Code, and it has to be signed in. Paste a token from claude setup-token in Settings.',
+    how: 'Loops run on Claude Code, and it has to be signed in. Add a token from claude setup-token.',
+    bareHow: "Loops run on Claude Code with this machine's own claude login. Check that it works.",
     doneText: 'Loops have a Claude login to use.',
-    to: '/settings',
-    action: 'Open Settings',
+    action: 'Add token',
   },
   {
     key: 'loops',
@@ -44,6 +49,12 @@ export const PILLARS: PillarSpec[] = [
     action: 'Open your loop',
   },
 ]
+
+// What a pillar asks for on this hub, by the runtime its new loops get.
+// Until the settings answer, the general text stands.
+export function pillarHow(p: PillarSpec, runtime: 'bare' | 'docker' | undefined): string {
+  return runtime === 'bare' && p.bareHow ? p.bareHow : p.how
+}
 
 // The page shows while the hub has never seen all three done. A hub from
 // before #580 has no answer, and the room opens on Fleet as it always did.
@@ -66,4 +77,24 @@ export function nextPillar(o: Onboarding): PillarKey | undefined {
 // With no loop there is nowhere yet, and the card says to create one first.
 export function surfaceTarget(loopNames: string[]): string | undefined {
   return loopNames.length > 0 ? `/loops/${loopNames[0]}` : undefined
+}
+
+// What a refused "Check now" tells the operator. A docker hub with no token
+// has nothing to check: say what to do rather than what went wrong.
+export function checkError(e: Error): string {
+  if (e instanceof ApiError && e.code === 'no_setup_token') return 'Save a setup-token first.'
+  return e.message
+}
+
+// The colour of what the harness's last login check found (ADR-0027): a
+// login that works is ready, a check in flight is work happening now, and
+// a login that does not work is what is wrong. Only a check that has not
+// run yet is neutral. The hub words that state "… not checked yet" (#587).
+export type LoginCheckTone = 'ok' | 'active' | 'danger' | 'muted'
+
+export function loginCheckTone(harness: OnboardingPillar): LoginCheckTone {
+  if (harness.done) return 'ok'
+  if (harness.checking) return 'active'
+  if (harness.reason === undefined || harness.reason.endsWith('not checked yet')) return 'muted'
+  return 'danger'
 }
