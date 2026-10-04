@@ -91,6 +91,9 @@ export interface LoopView {
   // Whether the loop is in the fleet channel: it receives what addresses it
   // there and may post to it (ADR-0032). Always present since #295.
   in_fleet_channel: boolean
+  // The connections attached to the loop (ADR-0043), name-sorted, by name
+  // and kind only: never a value. Absent from a hub too old to attach.
+  connections?: LoopConnection[]
   // What the loop's latest session init in this hub run said it can reach
   // through MCP (#489): the session that init was, every server it reported
   // in its order, and how many MCP tools it has, built-ins and skills left
@@ -496,6 +499,12 @@ export interface Connection {
   loops?: string[]
 }
 
+// A connection as a loop's view lists it: what it is, never what it holds.
+export interface LoopConnection {
+  name: string
+  kind: ConnectionKind
+}
+
 export interface CreateConnectionReq {
   name: string
   kind: ConnectionKind
@@ -760,6 +769,12 @@ export const api = {
     req<Connection>('/api/connections', { method: 'POST', body: JSON.stringify(body) }),
   deleteConnection: (name: string) =>
     req<{ deleted: boolean }>(`/api/connections/${name}`, { method: 'DELETE' }),
+  // Both 204 and idempotent: attaching twice, or detaching what is not
+  // attached, changes nothing.
+  attachConnection: (loop: string, connection: string) =>
+    req<void>(`/api/loops/${loop}/connections/${connection}`, { method: 'PUT' }),
+  detachConnection: (loop: string, connection: string) =>
+    req<void>(`/api/loops/${loop}/connections/${connection}`, { method: 'DELETE' }),
   rules: () => req<RulesView>('/api/rules'),
   createRule: (body: { title: string; body: string; enabled: boolean }) =>
     req<FleetRule>('/api/rules', { method: 'POST', body: JSON.stringify(body) }),

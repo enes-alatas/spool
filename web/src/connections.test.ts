@@ -5,6 +5,7 @@ import {
   connectionArgs,
   connectionDetail,
   connectionKindLabel,
+  kindLabel,
   connectionRequest,
   connectionSubmittable,
 } from './connections'
@@ -125,5 +126,15 @@ describe('reading a connection back', () => {
 describe('connectionArgs', () => {
   it('drops blank lines only', () => {
     expect(connectionArgs('a\n  \n b ')).toEqual(['a', ' b '])
+  })
+})
+
+describe('kindLabel', () => {
+  it('names a kind without its transport, as a loop lists it', () => {
+    expect(['env-var', 'mcp-server', 'github-app'].map(kindLabel)).toEqual([
+      'env variable',
+      'MCP server',
+      'github-app',
+    ])
   })
 })
