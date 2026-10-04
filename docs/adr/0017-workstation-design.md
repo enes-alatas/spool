@@ -1,6 +1,6 @@
 # ADR-0017: Workstation design — long-lived Docker containers behind the SandboxRuntime seam
 
-Date: 2026-08-17 · Status: accepted · Amended: 2026-09-20 (redaction), 2026-09-21 (bare is opt-in), 2026-09-30 (the perf smoke covers bare loops only)
+Date: 2026-08-17 · Status: accepted · Amended: 2026-09-20 (redaction), 2026-09-21 (bare is opt-in), 2026-09-30 (the perf smoke covers bare loops only), 2026-10-04 (item 8: per-loop secrets are connections, ADR-0043)
 
 ## Context
 
@@ -84,6 +84,11 @@ the Store, and the API's response writer. Injection is unchanged — a loop
 still receives its secrets in the clear, which is the point of having them
 (ADR-0019 notes they are loop-readable by design). What changes is that the
 value cannot come back out through anything Spool writes down.
+
+**Amendment (2026-10-04, #576): the catalog arrived.** Item 8's per-loop
+secret env vars are now `env-var` connections attached to their loop
+(ADR-0043). The injection path is unchanged: every attached `env-var` is
+in every exec's env, still write-only through the API and redacted.
 
 9. **Default resource caps, open egress.** Per-loop memory/CPU limits
    (defaults 4GB / 2 CPUs, configurable); full outbound network; no published
