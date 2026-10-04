@@ -1,6 +1,6 @@
 # ADR-0043: Connections are org-level credentials and configs, defined once and attachable to loops
 
-Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572); 2026-10-04 (item 2: the env-var kind, #574)
+Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572); 2026-10-04 (item 2: the env-var kind, #574); 2026-10-04 (item 5: per-loop secrets are connections, #576)
 
 ## Context
 
@@ -79,6 +79,29 @@ follow in their own slice and amend this ADR.
    still changes nothing a loop receives: per-loop secrets stay its env
    until #504's last slice moves them onto attached env-credentials, and
    an `mcp-server` reaches a loop with #505.
+
+   **Amendment (2026-10-04, #576): per-loop secrets are connections.** A
+   loop's env is the system's variables overlaid by every `env-var`
+   attached to it, read fresh at each wake as per-loop secrets were. An
+   attached `env-var` still wins a clash with a system variable. No two
+   attached `env-var`s set one variable on a loop: attaching a second is
+   refused. The per-loop secrets were moved, each into an `env-var` on the
+   same variable with the same value, attached to its loop alone, so no
+   loop's env changed. Their table is gone. The per-loop secrets routes
+   stay as a shortcut onto connections:
+   - Setting a variable replaces the value of the `env-var` that sets it,
+     if no other loop holds that connection, or creates one and attaches it.
+   - A connection other loops share is changed on the connection, never
+     through one loop.
+   - Removing a variable detaches it, and deletes the connection once no
+     loop holds it, so a value the operator removed doesn't linger.
+   Deleting a loop deletes the connections only it held, as removing a
+   variable does, so a value goes with the loop it was given to; one
+   another loop holds stays. Detaching on the connection's own route
+   still never deletes. Enes decided this on 2026-10-04 (#576).
+   An `env-var` is redacted under its variable's name, as the per-loop
+   secret was. This settles the "per-loop secret env vars" ADR-0017 item 8
+   kept until the catalog. The injection path is the one it described.
 
 ## Consequences
 
