@@ -1,6 +1,6 @@
 # ADR-0043: Connections are org-level credentials and configs, defined once and attachable to loops
 
-Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572)
+Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572); 2026-10-04 (item 2: the env-var kind, #574)
 
 ## Context
 
@@ -42,6 +42,17 @@ follow in their own slice and amend this ADR.
    - **The secret** is the credential itself. An `env-credential` must have
      one. An `mcp-server` may not need one. How an `mcp-server`'s secret
      reaches its server is #505's to decide.
+
+   **Amendment (2026-10-04, #574): the env-var kind.** The operator renamed
+   `env-credential` to `env-var`, labelled "env variable" in the control
+   room, on 2026-10-04 (recorded on #504). Not every value a loop reads
+   from an env var is a credential: a username is one that isn't. Every
+   such value is still kept like a secret, which is sometimes necessary
+   and never harmful. An `env-var` names its variable in `config.env` and
+   must have a value, which is its secret: write-only and redacted. The
+   wire value is `env-var` in the backend and the UI alike. Stored rows
+   are rewritten by migration, and `env-credential` is refused as an
+   unknown kind. Item 4's GitHub token is an `env-var` on `GH_TOKEN`.
 
 3. **The secret is write-only.** No response carries it: the API reports
    only `has_secret`. The config is read back in full, so nothing secret
