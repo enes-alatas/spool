@@ -11,9 +11,10 @@ import (
 	"github.com/enes-alatas/spool/internal/runtime"
 )
 
-// resolveHome is the run's HOME inside the container: under /tmp, which the
-// image's loop user can write, and gone with the container.
-const resolveHome = "/tmp/spool-aux"
+// auxHome is the HOME inside a container run outside a loop's turns, for
+// alias resolution and the login check: under /tmp, which the image's loop
+// user can write, and gone with the container.
+const auxHome = "/tmp/spool-aux"
 
 // resolveLifetime is how long a resolution container may live, enforced
 // inside it by coreutils timeout (ADR-0018 requires coreutils). A hub
@@ -45,7 +46,7 @@ func (rt *Runtime) ResolveModel(ctx context.Context, model string) (string, erro
 	rt.sweepOnce.Do(func() { rt.sweepResolveLeftovers(ctx) })
 	name := "spool-resolve-" + hex.EncodeToString(suffix)
 	argv := []string{"run", "--rm", "-i", "--name", name, "--network", "none", "--label", resolveLabel}
-	for _, kv := range claude.AuxEnv("", resolveHome, resolveBaseURL) {
+	for _, kv := range claude.AuxEnv("", auxHome, resolveBaseURL) {
 		argv = append(argv, "-e", kv) // synthetic values only: nothing here is a secret
 	}
 	argv = append(argv, "--workdir", "/tmp", rt.defaultImage, "timeout", resolveLifetime, "claude")

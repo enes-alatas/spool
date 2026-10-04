@@ -401,3 +401,38 @@ func (host *Runtime) ResolveModel(ctx context.Context, model string) (string, er
 	}()
 	return claude.ResolvedModel(ctx, claude.Attach(stdin, stdout, stderr))
 }
+
+// CheckLogin runs the host's claude as a bare loop runs it, under the
+// operator's own login and environment, in a directory of its own that goes
+// with it (ADR-0044). The token is a docker workstation's and is not used.
+func (host *Runtime) CheckLogin(ctx context.Context, _ string) (claude.LoginCheck, error) {
+	dir, err := os.MkdirTemp("", "spool-login-check-")
+	if err != nil {
+		return claude.LoginCheck{}, err
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+
+	cmd := exec.Command(host.bin, claude.LoginCheckArgs()...)
+	cmd.Dir = dir
+	cmd.SysProcAttr = runtime.ChildAttr()
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return claude.LoginCheck{}, err
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return claude.LoginCheck{}, err
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return claude.LoginCheck{}, err
+	}
+	if err := cmd.Start(); err != nil {
+		return claude.LoginCheck{}, fmt.Errorf("claude: start %s: %w", host.bin, err)
+	}
+	defer func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	}()
+	return claude.CheckLogin(ctx, claude.Attach(stdin, stdout, stderr))
+}

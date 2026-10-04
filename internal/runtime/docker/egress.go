@@ -58,6 +58,8 @@ func (rt *Runtime) ensureEgress(ctx context.Context) error {
 	if !rt.egressEnabled() {
 		return nil
 	}
+	rt.egressMu.Lock()
+	defer rt.egressMu.Unlock()
 	if err := rt.ensureEgressNetwork(ctx); err != nil {
 		return err
 	}
