@@ -10,6 +10,7 @@ import LoopDetail from './pages/LoopDetail'
 import NewLoop from './pages/NewLoop'
 import Activity from './pages/Activity'
 import Channels from './pages/Channels'
+import Connections from './pages/Connections'
 import Access from './pages/Access'
 import Settings from './pages/Settings'
 import Rules from './pages/Rules'
@@ -43,6 +44,7 @@ const router = createBrowserRouter([
       { path: 'undelivered', element: <Navigate to="/" replace /> },
       { path: 'access', element: <Access /> },
       { path: 'channels', element: <Channels /> },
+      { path: 'connections', element: <Connections /> },
       { path: 'settings', element: <Settings /> },
       { path: 'rules', element: <Rules /> },
     ],

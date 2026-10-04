@@ -42,6 +42,17 @@ export function ActivityIcon() {
   )
 }
 
+// Connections: a plug — a tool the fleet is wired to.
+export function ConnectionsIcon() {
+  return (
+    <Icon>
+      <path d="M7.5 2.75v3.5M12.5 2.75v3.5" />
+      <path d="M5 6.25h10v3.25a5 5 0 0 1-10 0z" />
+      <path d="M10 14.5v2.75" />
+    </Icon>
+  )
+}
+
 // Access: a key — who may reach the room.
 export function AccessIcon() {
   return (
