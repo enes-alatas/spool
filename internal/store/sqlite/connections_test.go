@@ -68,13 +68,13 @@ func TestConnectionsRoundTrip(t *testing.T) {
 		t.Fatalf("SetSecret(nowhere): err = %v, want ErrNotFound", err)
 	}
 
-	if err := connections.Delete(ctx, "docs"); err != nil {
+	if err := connections.Delete(ctx, "docs", 1); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := connections.Get(ctx, "docs"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("Get(docs) after Delete: err = %v, want ErrNotFound", err)
 	}
-	if err := connections.Delete(ctx, "docs"); !errors.Is(err, store.ErrNotFound) {
+	if err := connections.Delete(ctx, "docs", 1); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("Delete(docs) twice: err = %v, want ErrNotFound", err)
 	}
 }
@@ -133,22 +133,22 @@ func TestConnectionAttachments(t *testing.T) {
 		t.Fatalf("ListByLoop(l1) = %+v, %v; want [docs github] with secrets", held, err)
 	}
 
-	if err := connections.Delete(ctx, "github"); !errors.Is(err, store.ErrConnectionAttached) {
+	if err := connections.Delete(ctx, "github", 1); !errors.Is(err, store.ErrConnectionAttached) {
 		t.Fatalf("Delete(github) while attached: err = %v, want ErrConnectionAttached", err)
 	}
 	for range 2 {
-		if err := connections.Detach(ctx, "github", "l1"); err != nil {
+		if err := connections.Detach(ctx, "github", "l1", 1); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := connections.Detach(ctx, "nowhere", "l1"); !errors.Is(err, store.ErrNotFound) {
+	if err := connections.Detach(ctx, "nowhere", "l1", 1); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("Detach(nowhere): err = %v, want ErrNotFound", err)
 	}
 
 	if err := connections.Attach(ctx, "github", "l1", 14); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Loops().Delete(ctx, "l1"); err != nil {
+	if err := db.Loops().Delete(ctx, "l1", 1); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := connections.Get(ctx, "docs"); !errors.Is(err, store.ErrNotFound) {
@@ -157,10 +157,10 @@ func TestConnectionAttachments(t *testing.T) {
 	if github, err := connections.Get(ctx, "github"); err != nil || !reflect.DeepEqual(github.LoopIDs, []string{"l2"}) {
 		t.Fatalf("github's loops after deleting l1 = %+v, %v; want [l2]", github, err)
 	}
-	if err := connections.Detach(ctx, "github", "l2"); err != nil {
+	if err := connections.Detach(ctx, "github", "l2", 1); err != nil {
 		t.Fatal(err)
 	}
-	if err := connections.Delete(ctx, "github"); err != nil {
+	if err := connections.Delete(ctx, "github", 1); err != nil {
 		t.Fatalf("Delete(github) once unattached: %v", err)
 	}
 }
@@ -305,7 +305,7 @@ func TestPrivateConnections(t *testing.T) {
 		t.Fatalf("Attach(mine, l1) again: %v", err)
 	}
 
-	if err := connections.Delete(ctx, "mine"); err != nil {
+	if err := connections.Delete(ctx, "mine", 1); err != nil {
 		t.Fatalf("Delete(mine) while its owner holds it: %v", err)
 	}
 	if _, err := connections.Get(ctx, "mine"); !errors.Is(err, store.ErrNotFound) {
@@ -316,27 +316,27 @@ func TestPrivateConnections(t *testing.T) {
 		t.Fatal(err)
 	}
 	for range 2 {
-		if err := connections.Share(ctx, "given"); err != nil {
+		if err := connections.Share(ctx, "given", 1); err != nil {
 			t.Fatalf("Share(given): %v", err)
 		}
 	}
 	if err := connections.Attach(ctx, "given", "l2", 1); err != nil {
 		t.Fatalf("Attach(given, l2) once shared: %v", err)
 	}
-	if err := connections.Delete(ctx, "given"); !errors.Is(err, store.ErrConnectionAttached) {
+	if err := connections.Delete(ctx, "given", 1); !errors.Is(err, store.ErrConnectionAttached) {
 		t.Fatalf("Delete(given) while shared and held: %v, want ErrConnectionAttached", err)
 	}
-	if err := connections.Share(ctx, "nope"); !errors.Is(err, store.ErrNotFound) {
+	if err := connections.Share(ctx, "nope", 1); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("Share(nope): %v, want ErrNotFound", err)
 	}
 
 	if err := connections.Create(ctx, private("left")); err != nil {
 		t.Fatal(err)
 	}
-	if err := connections.Detach(ctx, "left", "l1"); err != nil {
+	if err := connections.Detach(ctx, "left", "l1", 1); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Loops().Delete(ctx, "l1"); err != nil {
+	if err := db.Loops().Delete(ctx, "l1", 1); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := connections.Get(ctx, "left"); !errors.Is(err, store.ErrNotFound) {
@@ -418,5 +418,159 @@ func TestLoopSecretsBecomePrivate(t *testing.T) {
 	}
 	if !reflect.DeepEqual(owners, want) {
 		t.Fatalf("owners after migrating = %v, want %v", owners, want)
+	}
+}
+
+// TestConnectionEvents pins the record (#606): every change is a row, in
+// the order made, with the loop's name; one that changes nothing is none;
+// a loop's delete records each attachment ending and each connection it
+// takes; and the record outlives the connection and the loop.
+func TestConnectionEvents(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	for _, id := range []string{"l1", "l2"} {
+		if err := db.Loops().Create(ctx, &store.Loop{
+			ID: id, Name: "loop-" + id, Status: store.StatusActive,
+			WorkspaceMode: store.WorkspaceNone, Pacing: store.PacingFixed, Runtime: store.RuntimeBare,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	connections := db.Connections()
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(connections.Create(ctx, &store.Connection{Name: "github", Kind: store.ConnectionEnvVar,
+		Config: store.ConnectionConfig{Env: "GH_TOKEN"}, Secret: "s", CreatedAt: 1}))
+	must(connections.Attach(ctx, "github", "l1", 2))
+	must(connections.Attach(ctx, "github", "l1", 3)) // changes nothing
+	must(connections.SetSecret(ctx, "github", "s2", 4))
+	must(connections.SetSecret(ctx, "github", "s2", 5)) // changes nothing
+	must(connections.Detach(ctx, "github", "l2", 6))    // changes nothing
+	must(connections.Attach(ctx, "github", "l2", 7))
+	must(connections.Detach(ctx, "github", "l2", 8))
+	must(connections.Create(ctx, &store.Connection{Name: "mine", Kind: store.ConnectionEnvVar,
+		Config: store.ConnectionConfig{Env: "NPM_TOKEN"}, Secret: "s", CreatedAt: 9, OwnerLoopID: "l2"}))
+	must(connections.Share(ctx, "mine", 10))
+	must(connections.Share(ctx, "mine", 11)) // changes nothing
+	must(connections.Create(ctx, &store.Connection{Name: "theirs", Kind: store.ConnectionEnvVar,
+		Config: store.ConnectionConfig{Env: "API_KEY"}, Secret: "s", CreatedAt: 12, OwnerLoopID: "l2"}))
+	must(connections.Delete(ctx, "theirs", 13))
+	must(db.Loops().Delete(ctx, "l1", 14))
+
+	type row struct {
+		action, connection, loop string
+		at                       int64
+	}
+	rows := func(filter store.ConnectionEventFilter) []row {
+		t.Helper()
+		events, err := connections.Events(ctx, filter)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []row
+		for i := len(events) - 1; i >= 0; i-- { // oldest first, to read as a story
+			out = append(out, row{events[i].Action, events[i].Connection, events[i].LoopName, events[i].At})
+		}
+		return out
+	}
+	if got, want := rows(store.ConnectionEventFilter{Connection: "github"}), []row{
+		{"create", "github", "", 1},
+		{"attach", "github", "loop-l1", 2},
+		{"rotate", "github", "", 4},
+		{"attach", "github", "loop-l2", 7},
+		{"detach", "github", "loop-l2", 8},
+		{"detach", "github", "loop-l1", 14},
+		{"delete", "github", "loop-l1", 14},
+	}; !reflect.DeepEqual(got, want) {
+		t.Errorf("github's record = %v,\nwant %v", got, want)
+	}
+	if got, want := rows(store.ConnectionEventFilter{LoopID: "l2"}), []row{
+		{"attach", "github", "loop-l2", 7},
+		{"detach", "github", "loop-l2", 8},
+		{"attach", "mine", "loop-l2", 9},
+		{"share", "mine", "loop-l2", 10},
+		{"attach", "theirs", "loop-l2", 12},
+		{"detach", "theirs", "loop-l2", 13},
+		{"delete", "theirs", "loop-l2", 13},
+	}; !reflect.DeepEqual(got, want) {
+		t.Errorf("loop-l2's record = %v,\nwant %v", got, want)
+	}
+	if github, err := connections.Get(ctx, "github"); err == nil || !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("Get(github) after its only loop's delete = %+v, %v; want ErrNotFound", github, err)
+	}
+	if err := connections.SetSecret(ctx, "github", "s3", 15); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("SetSecret(github) once deleted: %v, want ErrNotFound", err)
+	}
+	if got := rows(store.ConnectionEventFilter{LoopName: "loop-l1"}); len(got) != 3 {
+		t.Errorf("loop-l1's record once it is gone = %v, want its attach, detach and delete", got)
+	}
+}
+
+// TestConnectionEventsStartFromWhatIsStored: a hub upgraded to the record
+// starts it with each connection's creation and each attachment in place,
+// in time order across the two.
+func TestConnectionEventsStartFromWhatIsStored(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.db")
+	db, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := db.Loops().Create(ctx, &store.Loop{
+		ID: "l1", Name: "aster", Status: store.StatusActive,
+		WorkspaceMode: store.WorkspaceNone, Pacing: store.PacingFixed, Runtime: store.RuntimeBare,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Connections().Create(ctx, &store.Connection{Name: "github", Kind: store.ConnectionEnvVar,
+		Config: store.ConnectionConfig{Env: "GH_TOKEN"}, Secret: "s", CreatedAt: 10}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Connections().Attach(ctx, "github", "l1", 20); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Connections().Create(ctx, &store.Connection{Name: "docs", Kind: store.ConnectionEnvVar,
+		Config: store.ConnectionConfig{Env: "DOCS_TOKEN"}, Secret: "s", CreatedAt: 30}); err != nil {
+		t.Fatal(err)
+	}
+	for _, stmt := range []string{
+		`DROP TABLE connection_events`,
+		`DELETE FROM schema_migrations WHERE version = '0045_connection_events.sql'`,
+	} {
+		if _, err := db.db.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+	db.Close()
+
+	db, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	events, err := db.Connections().Events(ctx, store.ConnectionEventFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []store.ConnectionEvent
+	for _, event := range events {
+		event.ID = 0
+		got = append(got, *event)
+	}
+	want := []store.ConnectionEvent{
+		{Action: "create", Connection: "docs", At: 30},
+		{Action: "attach", Connection: "github", LoopID: "l1", LoopName: "aster", At: 20},
+		{Action: "create", Connection: "github", At: 10},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("the record after upgrading = %+v,\nwant %+v, newest first", got, want)
 	}
 }

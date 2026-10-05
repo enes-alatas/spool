@@ -205,6 +205,9 @@ opportunistically, not big-bang.
   one it can be attached to, until `POST /api/connections/{name}/share` shares
   it for good (#600). A loop's env is its attached env-vars; the per-loop
   secrets routes are a shortcut onto them, creating private ones (#576).
+  Every change to a connection is on an append-only record, listed per
+  connection (`GET /api/connections/{name}/events`) and per loop
+  (`GET /api/loops/{name}/connection-events`) (#606).
 - **Runner extraction**: the hosted service will run runners near customer sandboxes.
   Anything crossing the Runner seam must stay serializable (no passing live channels
   or callbacks across it as its API matures).

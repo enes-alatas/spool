@@ -661,7 +661,7 @@ type LoopStore interface {
 	// the operator gave one loop goes with it (ADR-0043); a connection
 	// another loop holds stays, detached from this one. Deleting the last
 	// loop also clears SettingOnboardingCompleted.
-	Delete(ctx context.Context, id string) error
+	Delete(ctx context.Context, id string, at int64) error
 	Get(ctx context.Context, id string) (*Loop, error)
 	GetByName(ctx context.Context, name string) (*Loop, error)
 	// GetByHubMCPToken resolves the loop presenting a bearer token to the
@@ -1458,13 +1458,13 @@ type ConnectionStore interface {
 	// Delete is ErrNotFound for an unknown name, and ErrConnectionAttached
 	// while any loop but a private one's owner holds it. A private one is
 	// detached from its owner in the same step.
-	Delete(ctx context.Context, name string) error
+	Delete(ctx context.Context, name string, at int64) error
 	// Share makes a private connection the fleet's, for good: its value may
 	// be in another loop's env from then on. Sharing a shared one changes
 	// nothing. ErrNotFound for an unknown name.
-	Share(ctx context.Context, name string) error
-	// SetSecret replaces the secret and stamps UpdatedAt. ErrNotFound for
-	// an unknown name.
+	Share(ctx context.Context, name string, at int64) error
+	// SetSecret replaces the secret and stamps UpdatedAt; setting the value
+	// it holds changes nothing. ErrNotFound for an unknown name.
 	SetSecret(ctx context.Context, name, secret string, at int64) error
 	// Attach gives a loop the connection; attaching it again changes
 	// nothing. ErrNotFound for an unknown connection or loop, and
@@ -1472,8 +1472,46 @@ type ConnectionStore interface {
 	Attach(ctx context.Context, name, loopID string, at int64) error
 	// Detach takes it away again; detaching what is not attached changes
 	// nothing. ErrNotFound for an unknown connection.
-	Detach(ctx context.Context, name, loopID string) error
+	Detach(ctx context.Context, name, loopID string, at int64) error
 	// ListByLoop returns the connections attached to one loop, name-sorted,
 	// secrets included for the injector.
 	ListByLoop(ctx context.Context, loopID string) ([]*Connection, error)
+	// Events returns the record of changes the filter matches, newest
+	// first: in the order they were made, whatever their timestamps say.
+	// Every write above records its change in the same step, and one that
+	// changes nothing records nothing.
+	Events(ctx context.Context, filter ConnectionEventFilter) ([]*ConnectionEvent, error)
+}
+
+// ConnectionEvent is one change to a connection, on its append-only
+// record (ADR-0043). It names the connection and the loop, the loop's name
+// as it was, so it outlives both. LoopID and LoopName are "" for a change
+// no loop is part of.
+type ConnectionEvent struct {
+	ID         int64
+	Action     string
+	Connection string
+	LoopID     string
+	LoopName   string
+	At         int64
+}
+
+// The changes a connection's record holds.
+const (
+	ConnectionEventCreate = "create"
+	ConnectionEventDelete = "delete"
+	ConnectionEventAttach = "attach"
+	ConnectionEventDetach = "detach"
+	ConnectionEventShare  = "share"
+	// ConnectionEventRotate is a connection's value replaced.
+	ConnectionEventRotate = "rotate"
+)
+
+// ConnectionEventFilter picks a connection's record, or a loop's: by the
+// loop's id while it exists, by its name once it is gone. A zero field
+// matches everything.
+type ConnectionEventFilter struct {
+	Connection string
+	LoopID     string
+	LoopName   string
 }

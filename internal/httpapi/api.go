@@ -156,6 +156,8 @@ func (server *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/connections/{name}", server.handleGetConnection)
 	mux.HandleFunc("DELETE /api/connections/{name}", server.handleDeleteConnection)
 	mux.HandleFunc("POST /api/connections/{name}/share", server.handleShareConnection)
+	mux.HandleFunc("GET /api/connections/{name}/events", server.handleConnectionEvents)
+	mux.HandleFunc("GET /api/loops/{name}/connection-events", server.handleLoopConnectionEvents)
 	mux.HandleFunc("PUT /api/loops/{name}/connections/{connection}", server.handleLoopConnection(true))
 	mux.HandleFunc("DELETE /api/loops/{name}/connections/{connection}", server.handleLoopConnection(false))
 	mux.HandleFunc("GET /api/channels", server.handleListChannels)
@@ -972,7 +974,7 @@ func (server *Server) handleDeleteLoop(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	_ = server.Store.Sessions().End(r.Context(), loopRecord.CurrentSessionID, store.EndReasonKilled, time.Now().UnixMilli())
-	if err := server.Store.Loops().Delete(r.Context(), loopRecord.ID); err != nil {
+	if err := server.Store.Loops().Delete(r.Context(), loopRecord.ID, time.Now().UnixMilli()); err != nil {
 		server.jsonErr(w, 500, "%v", err)
 		return
 	}
@@ -1779,12 +1781,13 @@ func (server *Server) handleDeleteSecret(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if existing, ok := byEnv[r.PathValue("key")]; ok {
-		if err := server.Store.Connections().Detach(r.Context(), existing.Name, loopRecord.ID); err != nil {
+		now := time.Now().UnixMilli()
+		if err := server.Store.Connections().Detach(r.Context(), existing.Name, loopRecord.ID, now); err != nil {
 			server.jsonErr(w, 500, "%v", err)
 			return
 		}
 		// held elsewhere, Delete refuses, and the connection stays theirs
-		err := server.Store.Connections().Delete(r.Context(), existing.Name)
+		err := server.Store.Connections().Delete(r.Context(), existing.Name, now)
 		if err != nil && !errors.Is(err, store.ErrConnectionAttached) && !errors.Is(err, store.ErrNotFound) {
 			server.jsonErr(w, 500, "%v", err)
 			return

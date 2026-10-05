@@ -105,6 +105,9 @@ func (table connections) Create(ctx context.Context, connection *store.Connectio
 	if err != nil {
 		return err
 	}
+	if err := recordEvent(ctx, tx, store.ConnectionEventCreate, connection.Name, "", connection.CreatedAt); err != nil {
+		return err
+	}
 	connection.LoopIDs = []string{}
 	if connection.OwnerLoopID != "" {
 		_, err = tx.ExecContext(ctx, `INSERT INTO connection_loops (connection, loop_id, attached_at) VALUES (?,?,?)`,
@@ -115,12 +118,15 @@ func (table connections) Create(ctx context.Context, connection *store.Connectio
 		if err != nil {
 			return err
 		}
+		if err := recordEvent(ctx, tx, store.ConnectionEventAttach, connection.Name, connection.OwnerLoopID, connection.CreatedAt); err != nil {
+			return err
+		}
 		connection.LoopIDs = []string{connection.OwnerLoopID}
 	}
 	return tx.Commit()
 }
 
-func (table connections) Delete(ctx context.Context, name string) error {
+func (table connections) Delete(ctx context.Context, name string, at int64) error {
 	tx, err := table.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -138,24 +144,39 @@ func (table connections) Delete(ctx context.Context, name string) error {
 	if attached {
 		return store.ErrConnectionAttached
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM connection_loops WHERE connection=?`, name); err != nil {
-		return err
+	if owner != "" {
+		if err := detachRecorded(ctx, tx, name, owner, at); err != nil {
+			return err
+		}
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM connections WHERE name=?`, name); err != nil {
+		return err
+	}
+	// a private one's owner, so the loop's record shows it gone
+	if err := recordEvent(ctx, tx, store.ConnectionEventDelete, name, owner, at); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
-func (table connections) Share(ctx context.Context, name string) error {
-	res, err := table.db.ExecContext(ctx, `UPDATE connections SET owner_loop=NULL WHERE name=?`, name)
+func (table connections) Share(ctx context.Context, name string, at int64) error {
+	tx, err := table.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	if affected, _ := res.RowsAffected(); affected == 0 {
-		return store.ErrNotFound
+	defer tx.Rollback()
+	owner, err := connectionOwner(ctx, tx, name)
+	if err != nil || owner == "" {
+		return err
 	}
-	return nil
+	if _, err := tx.ExecContext(ctx, `UPDATE connections SET owner_loop=NULL WHERE name=?`, name); err != nil {
+		return err
+	}
+	// the loop it was private to, so its record says what it gave away
+	if err := recordEvent(ctx, tx, store.ConnectionEventShare, name, owner, at); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // connectionOwner is a connection's owner loop, "" for a shared one.
@@ -170,14 +191,25 @@ func connectionOwner(ctx context.Context, tx *sql.Tx, name string) (string, erro
 }
 
 func (table connections) SetSecret(ctx context.Context, name, secret string, at int64) error {
-	res, err := table.db.ExecContext(ctx, `UPDATE connections SET secret=?, updated_at=? WHERE name=?`, secret, at, name)
+	tx, err := table.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := connectionOwner(ctx, tx, name); err != nil {
+		return err
+	}
+	res, err := tx.ExecContext(ctx, `UPDATE connections SET secret=?, updated_at=? WHERE name=? AND secret<>?`, secret, at, name, secret)
 	if err != nil {
 		return err
 	}
 	if affected, _ := res.RowsAffected(); affected == 0 {
-		return store.ErrNotFound
+		return nil // it holds this value already
 	}
-	return nil
+	if err := recordEvent(ctx, tx, store.ConnectionEventRotate, name, "", at); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (table connections) Attach(ctx context.Context, name, loopID string, at int64) error {
@@ -193,7 +225,7 @@ func (table connections) Attach(ctx context.Context, name, loopID string, at int
 	if owner != "" && owner != loopID {
 		return store.ErrConnectionPrivate
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO connection_loops (connection, loop_id, attached_at) VALUES (?,?,?)
+	res, err := tx.ExecContext(ctx, `INSERT INTO connection_loops (connection, loop_id, attached_at) VALUES (?,?,?)
 		ON CONFLICT (connection, loop_id) DO NOTHING`, name, loopID, at)
 	if err != nil && strings.Contains(err.Error(), "FOREIGN KEY") {
 		return store.ErrNotFound
@@ -201,15 +233,74 @@ func (table connections) Attach(ctx context.Context, name, loopID string, at int
 	if err != nil {
 		return err
 	}
+	if affected, _ := res.RowsAffected(); affected == 0 {
+		return nil // attached already
+	}
+	if err := recordEvent(ctx, tx, store.ConnectionEventAttach, name, loopID, at); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
-func (table connections) Detach(ctx context.Context, name, loopID string) error {
-	if _, err := table.Get(ctx, name); err != nil {
+func (table connections) Detach(ctx context.Context, name, loopID string, at int64) error {
+	tx, err := table.db.BeginTx(ctx, nil)
+	if err != nil {
 		return err
 	}
-	_, err := table.db.ExecContext(ctx, `DELETE FROM connection_loops WHERE connection=? AND loop_id=?`, name, loopID)
+	defer tx.Rollback()
+	if _, err := connectionOwner(ctx, tx, name); err != nil {
+		return err
+	}
+	if err := detachRecorded(ctx, tx, name, loopID, at); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// detachRecorded detaches a connection from a loop and records it, or does
+// nothing when it isn't attached.
+func detachRecorded(ctx context.Context, tx *sql.Tx, name, loopID string, at int64) error {
+	res, err := tx.ExecContext(ctx, `DELETE FROM connection_loops WHERE connection=? AND loop_id=?`, name, loopID)
+	if err != nil {
+		return err
+	}
+	if affected, _ := res.RowsAffected(); affected == 0 {
+		return nil
+	}
+	return recordEvent(ctx, tx, store.ConnectionEventDetach, name, loopID, at)
+}
+
+// recordEvent appends a change to the connection's record, with the loop's
+// name as it is now. loopID is "" for a change no loop is part of.
+func recordEvent(ctx context.Context, tx *sql.Tx, action, connection, loopID string, at int64) error {
+	_, err := tx.ExecContext(ctx, `INSERT INTO connection_events (action, connection, loop_id, loop_name, at)
+		VALUES (?, ?, ?, COALESCE((SELECT name FROM loops WHERE id=?), ''), ?)`, action, connection, loopID, loopID, at)
 	return err
+}
+
+func (table connections) Events(ctx context.Context, filter store.ConnectionEventFilter) ([]*store.ConnectionEvent, error) {
+	query := `SELECT id, action, connection, loop_id, loop_name, at FROM connection_events WHERE 1=1`
+	var args []any
+	for column, value := range map[string]string{"connection": filter.Connection, "loop_id": filter.LoopID, "loop_name": filter.LoopName} {
+		if value != "" {
+			query += ` AND ` + column + `=?`
+			args = append(args, value)
+		}
+	}
+	rows, err := table.db.QueryContext(ctx, query+` ORDER BY id DESC`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	events := []*store.ConnectionEvent{}
+	for rows.Next() {
+		var event store.ConnectionEvent
+		if err := rows.Scan(&event.ID, &event.Action, &event.Connection, &event.LoopID, &event.LoopName, &event.At); err != nil {
+			return nil, err
+		}
+		events = append(events, &event)
+	}
+	return events, rows.Err()
 }
 
 func scanConnection(row interface{ Scan(...any) error }) (*store.Connection, error) {

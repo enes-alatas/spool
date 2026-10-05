@@ -176,7 +176,7 @@ func (server *Server) handleDeleteConnection(w http.ResponseWriter, r *http.Requ
 		server.connectionErr(w, r, err)
 		return
 	}
-	if err := server.Store.Connections().Delete(r.Context(), connection.Name); err != nil {
+	if err := server.Store.Connections().Delete(r.Context(), connection.Name, time.Now().UnixMilli()); err != nil {
 		server.connectionErr(w, r, err)
 		return
 	}
@@ -192,7 +192,7 @@ func (server *Server) handleDeleteConnection(w http.ResponseWriter, r *http.Requ
 // answers as if it had just been shared.
 func (server *Server) handleShareConnection(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	if err := server.Store.Connections().Share(r.Context(), name); err != nil {
+	if err := server.Store.Connections().Share(r.Context(), name, time.Now().UnixMilli()); err != nil {
 		server.connectionErr(w, r, err)
 		return
 	}
@@ -202,6 +202,52 @@ func (server *Server) handleShareConnection(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	server.writeConnection(w, r, 200, connection)
+}
+
+// connectionEventView is one change on a connection's record. Loop is the
+// loop's name as it was, absent for a change no loop is part of.
+type connectionEventView struct {
+	Action     string `json:"action"`
+	Connection string `json:"connection"`
+	Loop       string `json:"loop,omitempty"`
+	At         int64  `json:"at"`
+}
+
+func (server *Server) writeConnectionEvents(w http.ResponseWriter, r *http.Request, filter store.ConnectionEventFilter) {
+	events, err := server.Store.Connections().Events(r.Context(), filter)
+	if err != nil {
+		server.jsonErr(w, 500, "%v", err)
+		return
+	}
+	views := make([]connectionEventView, 0, len(events))
+	for _, event := range events {
+		views = append(views, connectionEventView{Action: event.Action, Connection: event.Connection, Loop: event.LoopName, At: event.At})
+	}
+	writeJSON(w, 200, views)
+}
+
+// handleConnectionEvents lists a connection's record, newest first. It
+// outlives the connection, so a name with no connection behind it is
+// still answered, with whatever its record holds.
+func (server *Server) handleConnectionEvents(w http.ResponseWriter, r *http.Request) {
+	server.writeConnectionEvents(w, r, store.ConnectionEventFilter{Connection: r.PathValue("name")})
+}
+
+// handleLoopConnectionEvents lists the changes a loop was part of, newest
+// first: by the loop's id while it exists, so a new loop doesn't inherit
+// the record of a deleted one it shares a name with, and by the name once
+// the loop is gone.
+func (server *Server) handleLoopConnectionEvents(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	loopRecord, err := server.Store.Loops().GetByName(r.Context(), name)
+	switch {
+	case err == nil:
+		server.writeConnectionEvents(w, r, store.ConnectionEventFilter{LoopID: loopRecord.ID})
+	case errors.Is(err, store.ErrNotFound):
+		server.writeConnectionEvents(w, r, store.ConnectionEventFilter{LoopName: name})
+	default:
+		server.jsonErr(w, 500, "%v", err)
+	}
 }
 
 // handleLoopConnection attaches the connection to the loop (attach) or
@@ -223,7 +269,7 @@ func (server *Server) handleLoopConnection(attach bool) http.HandlerFunc {
 			}
 			err = server.Store.Connections().Attach(r.Context(), name, loopRecord.ID, time.Now().UnixMilli())
 		} else {
-			err = server.Store.Connections().Detach(r.Context(), name, loopRecord.ID)
+			err = server.Store.Connections().Detach(r.Context(), name, loopRecord.ID, time.Now().UnixMilli())
 		}
 		if err != nil {
 			// The loop was found a moment ago, so a missing row is the

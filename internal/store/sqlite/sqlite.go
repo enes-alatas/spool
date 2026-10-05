@@ -307,16 +307,30 @@ func (table loops) Edit(ctx context.Context, id string, edit store.LoopEdit) (*s
 	return table.Get(ctx, id)
 }
 
-func (table loops) Delete(ctx context.Context, id string) error {
+func (table loops) Delete(ctx context.Context, id string, at int64) error {
 	tx, err := table.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	// its private connections, and any other only it held, go with it
-	if _, err := tx.ExecContext(ctx, `DELETE FROM connections WHERE owner_loop = ? OR name IN (
+	// Its private connections, and any other only it held, go with it. The
+	// record says so first, while the loop's name and attachments are still
+	// there to read: each attachment ends, then each of those connections,
+	// on the loop's record too.
+	const goesWithIt = `owner_loop = ?1 OR name IN (
 		SELECT connection FROM connection_loops GROUP BY connection
-		HAVING COUNT(*) = 1 AND MAX(loop_id) = ?)`, id, id); err != nil {
+		HAVING COUNT(*) = 1 AND MAX(loop_id) = ?1)`
+	if _, err := tx.ExecContext(ctx, `INSERT INTO connection_events (action, connection, loop_id, loop_name, at)
+		SELECT ?, connection, loop_id, loops.name, ? FROM connection_loops JOIN loops ON loops.id = loop_id
+		WHERE loop_id = ? ORDER BY connection`, store.ConnectionEventDetach, at, id); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO connection_events (action, connection, loop_id, loop_name, at)
+		SELECT ?2, name, ?1, (SELECT name FROM loops WHERE id = ?1), ?3 FROM connections WHERE `+goesWithIt+` ORDER BY name`,
+		id, store.ConnectionEventDelete, at); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM connections WHERE `+goesWithIt, id); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM loops WHERE id=?`, id); err != nil {

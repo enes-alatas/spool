@@ -1,6 +1,6 @@
 # ADR-0043: Connections are org-level credentials and configs, defined once and attachable to loops
 
-Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572); 2026-10-04 (item 2: the env-var kind, #574); 2026-10-04 (item 5: per-loop secrets are connections, #576); 2026-10-05 (item 2: an mcp-server reaches its loop, #597); 2026-10-05 (item 1: private connections, #600)
+Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572); 2026-10-04 (item 2: the env-var kind, #574); 2026-10-04 (item 5: per-loop secrets are connections, #576); 2026-10-05 (item 2: an mcp-server reaches its loop, #597); 2026-10-05 (item 1: private connections, #600); 2026-10-05 (item 5: the record of changes, #606)
 
 ## Context
 
@@ -164,6 +164,36 @@ follow in their own slice and amend this ADR.
    An `env-var` is redacted under its variable's name, as the per-loop
    secret was. This settles the "per-loop secret env vars" ADR-0017 item 8
    kept until the catalog. The injection path is the one it described.
+
+   **Amendment (2026-10-05, #606): every change is on record.** VISION's
+   L4 says connections are auditable, so each change to a connection is a
+   row on an append-only record: `create`, `delete`, `attach`, `detach`,
+   `share`, and `rotate` for a value replaced.
+   - **Written with the change.** The store writes each row in the same
+     transaction as the change it records. A change that changes nothing
+     is no row: attaching what is attached, detaching what isn't, sharing
+     a shared connection, setting the value a connection already holds.
+   - **Outlives what it names.** A row names its connection, and its loop
+     by name as the loop was then, rather than referencing either. A
+     deleted loop's record shows each attachment ending, then each
+     connection that went with it.
+   - **Read two ways.** `GET /api/connections/{name}/events` lists one
+     connection's record, and `GET /api/loops/{name}/connection-events`
+     lists a loop's, newest first. A loop's record is matched by its id
+     while the loop exists, so a new loop doesn't inherit a deleted one's
+     under the same name.
+   - **Sessions read against it.** Which sessions ran with a connection
+     reads off this record beside the sessions' own times. A change
+     reaches a loop at its next wake, not at the row's time.
+   - **A rotation is the connection's.** A replaced value reaches every
+     loop holding the connection, whichever route replaced it, so its row
+     names no loop. A loop's rotations are the connection's `rotate` rows
+     between that loop's `attach` and `detach`.
+   - **Starts from what is stored.** A hub upgraded to the record starts it
+     with each connection's creation and each attachment in place. What
+     happened before left nothing to read back.
+   It has no "who": one operator acts in the local edition, and attribution
+   comes with users (L5).
 
 ## Consequences
 
