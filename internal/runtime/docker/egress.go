@@ -83,8 +83,9 @@ func (rt *Runtime) ensureEgressProxy(ctx context.Context) error {
 	if err == nil {
 		// A proxy running an older configuration — a different image, or a
 		// hub that has moved to another port — is the wrong wall, and its run
-		// arguments are fixed at creation. Replacing it is cheap: it holds no
-		// state, and a workstation reconnects to the name.
+		// arguments are fixed at creation. Replacing it is cheap: its one
+		// state, the loops' own entries, is the hub's to copy back in, and a
+		// workstation reconnects to the name.
 		current, readErr := rt.egressSpec(ctx)
 		if readErr != nil {
 			return readErr
@@ -93,12 +94,12 @@ func (rt *Runtime) ensureEgressProxy(ctx context.Context) error {
 			if _, rmErr := rt.command(ctx, startTimeout, "rm", "--force", rt.egressContainer()); rmErr != nil && !notFound(rmErr) {
 				return rmErr
 			}
-			return rt.provisionEgressProxy(ctx)
+			return rt.provisionEgressProxyWithLoops(ctx)
 		}
 	}
 	switch {
 	case errors.Is(err, errNotFound):
-		return rt.provisionEgressProxy(ctx)
+		return rt.provisionEgressProxyWithLoops(ctx)
 	case err != nil:
 		return err
 	case state.Paused:
@@ -110,6 +111,15 @@ func (rt *Runtime) ensureEgressProxy(ctx context.Context) error {
 		_, err := rt.command(ctx, startTimeout, "start", rt.egressContainer())
 		return err
 	}
+}
+
+// provisionEgressProxyWithLoops provisions a proxy and gives it back the
+// loops' own entries, which a new container doesn't have.
+func (rt *Runtime) provisionEgressProxyWithLoops(ctx context.Context) error {
+	if err := rt.provisionEgressProxy(ctx); err != nil {
+		return err
+	}
+	return rt.rewriteLoopEgress(ctx)
 }
 
 func (rt *Runtime) provisionEgressProxy(ctx context.Context) error {
@@ -148,6 +158,7 @@ func (rt *Runtime) egressRunArgv() []string {
 		"--label", egressSpecLabel + "=" + rt.egressSpecHash(),
 		rt.egressImage,
 		"--listen", ":" + egressPort,
+		"--loops-file", loopEgressFile,
 	}
 	if allow := rt.egressEntries(); len(allow) > 0 {
 		argv = append(argv, "--allow", strings.Join(allow, ","))
@@ -195,7 +206,9 @@ func (rt *Runtime) egressEnabled() bool { return rt.egressImage != "" }
 // egressEnv points every client inside the workstation at the proxy. These
 // are not credentials, so unlike the loop's own variables they cross in argv
 // as KEY=VALUE — nothing here is worth hiding from host `ps`, and a value in
-// argv is one fewer thing the exec client's environment has to carry.
+// argv is one fewer thing the exec client's environment has to carry. A wake
+// with egress entries of its own is the exception: its proxy URL carries a
+// token, and goes with the loop's variables instead (loopegress.go).
 //
 // NO_PROXY keeps a loop's own local servers direct: a dev server it starts on
 // localhost is inside the wall already and has no business going out and back.
@@ -204,19 +217,34 @@ func (rt *Runtime) egressEnv() []string {
 		return nil
 	}
 	url := rt.egressProxyURL()
-	proxy := []string{
-		"HTTP_PROXY=" + url,
-		"HTTPS_PROXY=" + url,
-		"http_proxy=" + url,
-		"https_proxy=" + url,
-		"NO_PROXY=localhost,127.0.0.1,::1",
-		"no_proxy=localhost,127.0.0.1,::1",
+	var argv []string
+	for _, name := range proxyVars {
+		argv = append(argv, "--env", name+"="+url)
 	}
-	argv := make([]string, 0, len(proxy)*2)
-	for _, kv := range proxy {
-		argv = append(argv, "--env", kv)
+	return append(argv, rt.noProxyEnv()...)
+}
+
+// proxyVars are the variables every client finds the proxy by.
+var proxyVars = []string{"HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"}
+
+// noProxyEnv is egressEnv without the proxy's URL, for a wake whose URL
+// carries its loop's token and so goes with the loop's own variables.
+func (rt *Runtime) noProxyEnv() []string {
+	return []string{"--env", "NO_PROXY=localhost,127.0.0.1,::1", "--env", "no_proxy=localhost,127.0.0.1,::1"}
+}
+
+// withProxy is env with every proxy variable set to proxyURL, on a copy. A
+// variable the loop's own env already sets keeps its value, as an attached
+// env-var wins every clash with what the hub sets (ADR-0043).
+func withProxy(env map[string]string, proxyURL string) map[string]string {
+	out := make(map[string]string, len(env)+len(proxyVars))
+	for _, name := range proxyVars {
+		out[name] = proxyURL
 	}
-	return argv
+	for name, value := range env {
+		out[name] = value
+	}
+	return out
 }
 
 // networkArgs puts a workstation behind the wall. A runtime with no egress

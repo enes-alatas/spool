@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"net/url"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -559,6 +560,8 @@ func (actor *Actor) wake() {
 		system["CLAUDE_CODE_OAUTH_TOKEN"] = token
 	}
 	spec.Env = buildExecEnv(system, connections)
+	spec.EgressAllow = egressAllow(connections)
+	spec.EgressToken = actor.loop.HubMCPToken
 	if err := loopRuntime.Ensure(ctx, spec); err != nil {
 		actor.log().Error("workstation not ready", "err", err)
 		actor.setWorkstationDown(DownReasonUnreachable, err.Error())
@@ -1872,6 +1875,29 @@ func mcpServers(connections []*store.Connection) []claude.MCPServerConfig {
 		servers = append(servers, server)
 	}
 	return servers
+}
+
+// egressAllow are the hosts a loop's attached http MCP servers live on, as
+// the egress entries its workstation's wall opens for it alone (#599). A
+// loopback server is inside the wall already, and a stdio server's hosts
+// can't be read from its config.
+func egressAllow(connections []*store.Connection) []string {
+	var entries []string
+	for _, connection := range connections {
+		if connection.Kind != store.ConnectionMCPServer || connection.Config.Transport != store.MCPTransportHTTP {
+			continue
+		}
+		parsed, err := url.Parse(connection.Config.URL)
+		if err != nil || connection.Config.Loopback() {
+			continue
+		}
+		entry := parsed.Hostname()
+		if port := parsed.Port(); port != "" && port != "80" && port != "443" {
+			entry += ":" + port
+		}
+		entries = append(entries, entry)
+	}
+	return entries
 }
 
 // claudeToken reads the operator's stored setup-token, treating a missing
