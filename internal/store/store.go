@@ -7,6 +7,8 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"net"
+	"net/url"
 	"strconv"
 	"strings"
 )
@@ -1406,6 +1408,22 @@ type ConnectionConfig struct {
 	URL       string   `json:"url,omitempty"`
 	Command   string   `json:"command,omitempty"`
 	Args      []string `json:"args,omitempty"`
+}
+
+// Cleartext reports whether an http mcp-server's URL would carry its secret
+// unencrypted off the machine: plain http to a host that isn't loopback. A
+// local server on http is fine; the bearer token never leaves the host.
+func (config ConnectionConfig) Cleartext() bool {
+	parsed, err := url.Parse(config.URL)
+	if err != nil || parsed.Scheme != "http" {
+		return false
+	}
+	host := parsed.Hostname()
+	if host == "localhost" {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip == nil || !ip.IsLoopback()
 }
 
 // ValidConnectionName reports whether a name may name a connection: the

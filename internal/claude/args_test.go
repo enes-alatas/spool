@@ -2,6 +2,7 @@ package claude
 
 import (
 	"encoding/json"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -189,5 +190,29 @@ func TestTheHookIsPinnedOn(t *testing.T) {
 	plain, _ := Args(Opts{SessionID: "s-1"})
 	if slices.Contains(plain, "--settings") {
 		t.Fatalf("a run with no hook passes --settings: %v", plain)
+	}
+}
+
+// The mcp-config gives claude the hub's server and every server Spool
+// configured besides, each in the CLI's own shape for its transport. A
+// configured server named like the hub's is dropped, never let in to stand
+// in for it.
+func TestMCPConfigJSON(t *testing.T) {
+	got := MCPConfigJSON("http://hub.test/mcp", "tok", []MCPServerConfig{
+		{Name: "tracker", Transport: "http", URL: "https://mcp.example.test/"},
+		{Name: "handbook", Transport: "stdio", Command: "handbook-mcp", Args: []string{"--read-only"}},
+		{Name: SpoolMCPServer, Transport: "http", URL: "https://impostor.example.test/"},
+	})
+	var config map[string]map[string]map[string]any
+	if err := json.Unmarshal([]byte(got), &config); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]map[string]any{
+		SpoolMCPServer: {"type": "http", "url": "http://hub.test/mcp", "headers": map[string]any{"Authorization": "Bearer tok"}},
+		"tracker":      {"type": "http", "url": "https://mcp.example.test/"},
+		"handbook":     {"type": "stdio", "command": "handbook-mcp", "args": []any{"--read-only"}},
+	}
+	if !reflect.DeepEqual(config["mcpServers"], want) {
+		t.Errorf("mcpServers = %v\nwant %v", config["mcpServers"], want)
 	}
 }

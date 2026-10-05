@@ -522,7 +522,17 @@ func (actor *Actor) wake() {
 		actor.mintSession(ctx)
 	}
 	actor.reconcilePrompt(ctx, fresh, prompt)
-	spec := actor.wakeSpec(fresh, prompt.System)
+	// The loop's connections are read fresh each wake, so an edit lands on
+	// the next wake. A read failure fails closed: a loop running without its
+	// expected credentials or servers could act on the wrong ones.
+	connections, err := actor.deps.Store.Connections().ListByLoop(ctx, actor.loop.ID)
+	if err != nil {
+		actor.log().Error("workstation not ready", "err", err)
+		actor.setWorkstationDown(DownReasonUnreachable, err.Error())
+		actor.crashBackoff()
+		return
+	}
+	spec := actor.wakeSpec(fresh, prompt.System, connections)
 	actor.spawnModel = spec.Model
 
 	loopRuntime := actor.deps.runtimeFor(actor.loop.Runtime)
@@ -547,16 +557,6 @@ func (actor *Actor) wake() {
 			return
 		}
 		system["CLAUDE_CODE_OAUTH_TOKEN"] = token
-	}
-	// The loop's connections are read fresh each wake, so an edit lands on
-	// the next wake. A read failure fails closed: a loop running without its
-	// expected credentials could act on the wrong ones.
-	connections, err := actor.deps.Store.Connections().ListByLoop(ctx, actor.loop.ID)
-	if err != nil {
-		actor.log().Error("workstation not ready", "err", err)
-		actor.setWorkstationDown(DownReasonUnreachable, err.Error())
-		actor.crashBackoff()
-		return
 	}
 	spec.Env = buildExecEnv(system, connections)
 	if err := loopRuntime.Ensure(ctx, spec); err != nil {
@@ -870,7 +870,7 @@ func (actor *Actor) putFiles(batch []Envelope) string {
 // wakeSpec describes this wake to the runtime. The system prompt is passed in
 // rather than rendered here: wake compares it with the one the session was
 // created with first, and both must be the same text (#162).
-func (actor *Actor) wakeSpec(fresh bool, prompt string) runtime.Spec {
+func (actor *Actor) wakeSpec(fresh bool, prompt string, connections []*store.Connection) runtime.Spec {
 	spec := runtime.Spec{
 		LoopID:             actor.loop.ID,
 		LoopName:           actor.loop.Name,
@@ -885,7 +885,7 @@ func (actor *Actor) wakeSpec(fresh bool, prompt string) runtime.Spec {
 	}
 	if actor.deps.MCPEndpoint != nil && actor.loop.HubMCPToken != "" {
 		if url := actor.deps.MCPEndpoint(&actor.loop); url != "" {
-			spec.MCPConfig = claude.MCPConfigJSON(url, actor.loop.HubMCPToken)
+			spec.MCPConfig = claude.MCPConfigJSON(url, actor.loop.HubMCPToken, mcpServers(connections))
 		}
 	}
 	if fresh {
@@ -1830,6 +1830,50 @@ func buildExecEnv(system map[string]string, connections []*store.Connection) map
 	return env
 }
 
+// SpoolMCPServer is the hub's own server's name in a loop's --mcp-config,
+// which no mcp-server connection may take.
+const SpoolMCPServer = claude.SpoolMCPServer
+
+// mcpServers are the attached mcp-server connections as the servers a
+// wake's --mcp-config gives claude besides the hub's, each with its secret:
+// an http server's as a bearer token, a stdio server's in the env var its
+// config names (ADR-0043).
+func mcpServers(connections []*store.Connection) []claude.MCPServerConfig {
+	var servers []claude.MCPServerConfig
+	for _, connection := range connections {
+		if connection.Kind != store.ConnectionMCPServer {
+			continue
+		}
+		server := claude.MCPServerConfig{
+			Name:      connection.Name,
+			Transport: connection.Config.Transport,
+			URL:       connection.Config.URL,
+			Command:   connection.Config.Command,
+			Args:      connection.Config.Args,
+		}
+		// The secret goes to the server alone, never into claude's env,
+		// which every Bash call of the loop inherits.
+		if connection.Secret != "" {
+			switch connection.Config.Transport {
+			case store.MCPTransportHTTP:
+				// a server stored before plain http off the host was refused
+				// is never sent its secret in the clear
+				if !connection.Config.Cleartext() {
+					server.Headers = map[string]string{"Authorization": "Bearer " + connection.Secret}
+				}
+			case store.MCPTransportStdio:
+				// a stdio server stored before it could name its env var
+				// has nowhere to be handed its secret
+				if connection.Config.Env != "" {
+					server.Env = map[string]string{connection.Config.Env: connection.Secret}
+				}
+			}
+		}
+		servers = append(servers, server)
+	}
+	return servers
+}
+
 // claudeToken reads the operator's stored setup-token, treating a missing
 // wiring as "unconfigured" rather than panicking a loop's goroutine.
 func (actor *Actor) claudeToken(ctx context.Context) (string, error) {
@@ -1865,7 +1909,7 @@ func (actor *Actor) power(verb string) error {
 	// The workstation verbs below never start a claude process, so this
 	// spec's prompt is only along for the ride; rendering it would cost a
 	// fleet-wide read for text nothing here passes to anything.
-	spec := actor.wakeSpec(actor.loop.CurrentSessionID == "", "")
+	spec := actor.wakeSpec(actor.loop.CurrentSessionID == "", "", nil)
 
 	// The operator's intent is recorded only once the verb it describes has
 	// actually happened. A verb that fails leaves everything as it found it:

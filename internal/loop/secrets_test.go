@@ -1,8 +1,10 @@
 package loop
 
 import (
+	"reflect"
 	"testing"
 
+	"github.com/enes-alatas/spool/internal/claude"
 	"github.com/enes-alatas/spool/internal/store"
 )
 
@@ -45,4 +47,39 @@ func TestBuildExecEnv(t *testing.T) {
 			t.Fatalf("got %q, want the env-var to win the collision", env["CLAUDE_CODE_OAUTH_TOKEN"])
 		}
 	})
+}
+
+// An attached mcp-server's secret goes to its server alone: an http
+// server's as a bearer token, a stdio server's in the env var its config
+// names. An env-var is no server. A stdio server with no env var named, and
+// a server on plain http off the host, are given no secret (ADR-0043).
+func TestMCPServersCarryTheirSecrets(t *testing.T) {
+	got := mcpServers([]*store.Connection{
+		{Name: "github", Kind: store.ConnectionEnvVar, Config: store.ConnectionConfig{Env: "GH_TOKEN"}, Secret: "fixture-gh"},
+		{Name: "tracker", Kind: store.ConnectionMCPServer, Secret: "fixture-tracker",
+			Config: store.ConnectionConfig{Transport: store.MCPTransportHTTP, URL: "https://mcp.example.test/"}},
+		{Name: "handbook", Kind: store.ConnectionMCPServer, Secret: "fixture-handbook",
+			Config: store.ConnectionConfig{Transport: store.MCPTransportStdio, Command: "handbook-mcp", Env: "HANDBOOK_KEY"}},
+		{Name: "open-docs", Kind: store.ConnectionMCPServer,
+			Config: store.ConnectionConfig{Transport: store.MCPTransportHTTP, URL: "https://docs.example.test/"}},
+		{Name: "legacy", Kind: store.ConnectionMCPServer, Secret: "fixture-legacy",
+			Config: store.ConnectionConfig{Transport: store.MCPTransportStdio, Command: "legacy-mcp"}},
+		{Name: "cleartext", Kind: store.ConnectionMCPServer, Secret: "fixture-cleartext",
+			Config: store.ConnectionConfig{Transport: store.MCPTransportHTTP, URL: "http://mcp.example.test/"}},
+		{Name: "local", Kind: store.ConnectionMCPServer, Secret: "fixture-local",
+			Config: store.ConnectionConfig{Transport: store.MCPTransportHTTP, URL: "http://127.0.0.1:8931/mcp"}},
+	})
+	want := []claude.MCPServerConfig{
+		{Name: "tracker", Transport: "http", URL: "https://mcp.example.test/",
+			Headers: map[string]string{"Authorization": "Bearer fixture-tracker"}},
+		{Name: "handbook", Transport: "stdio", Command: "handbook-mcp", Env: map[string]string{"HANDBOOK_KEY": "fixture-handbook"}},
+		{Name: "open-docs", Transport: "http", URL: "https://docs.example.test/"},
+		{Name: "legacy", Transport: "stdio", Command: "legacy-mcp"},
+		{Name: "cleartext", Transport: "http", URL: "http://mcp.example.test/"},
+		{Name: "local", Transport: "http", URL: "http://127.0.0.1:8931/mcp",
+			Headers: map[string]string{"Authorization": "Bearer fixture-local"}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("mcpServers =\n%+v\nwant\n%+v", got, want)
+	}
 }

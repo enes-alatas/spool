@@ -86,7 +86,7 @@ credential you gave it — a token in a loop's environment is a token that loop
 has. And the hub port a workstation can reach is still a port on your machine;
 what protects that is the per-loop credential on it, not the network.
 
-A loop reaches only Spool's own MCP server, which carries the one tool it needs to send messages. MCP servers and connectors on your Claude account are never passed to a loop (`--strict-mcp-config`).
+A loop reaches Spool's own MCP server, which carries the one tool it needs to send messages, plus any MCP server you attach to it as a connection. MCP servers and connectors on your Claude account are never passed to a loop (`--strict-mcp-config`).
 
 Spool serves two listeners. `--listen` is yours: the control room and its API. `--mcp-listen` belongs to the loops: it is the one port a containerized workstation is allowed to reach, and it serves the MCP endpoint and nothing else. Keep them apart. A workstation that could reach the API port could read every conversation and create an uncontained loop.
 

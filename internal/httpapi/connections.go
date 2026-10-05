@@ -8,6 +8,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/enes-alatas/spool/internal/loop"
 	"github.com/enes-alatas/spool/internal/store"
 )
 
@@ -232,8 +233,9 @@ func connectionProblem(connection *store.Connection) (code, problem string) {
 			return codeConnectionSecretInvalid, "an env-var needs a secret: the value it carries"
 		}
 	case store.ConnectionMCPServer:
-		if config.Env != "" {
-			return codeConnectionConfigInvalid, "an mcp-server's config has no env"
+		if connection.Name == loop.SpoolMCPServer {
+			// the hub's own server's name in a loop's --mcp-config
+			return codeConnectionNameInvalid, "an mcp-server can't be named spool: that is the hub's own server"
 		}
 		switch config.Transport {
 		case store.MCPTransportHTTP:
@@ -246,8 +248,11 @@ func connectionProblem(connection *store.Connection) (code, problem string) {
 				// in full and redacted by nobody.
 				return codeConnectionConfigInvalid, "an http mcp-server's config.url carries no user:password; put the credential in secret"
 			}
-			if config.Command != "" || len(config.Args) > 0 {
-				return codeConnectionConfigInvalid, "an http mcp-server's config has a url, not a command or args"
+			if config.Command != "" || len(config.Args) > 0 || config.Env != "" {
+				return codeConnectionConfigInvalid, "an http mcp-server's config has a url, not a command, args or env"
+			}
+			if connection.Secret != "" && config.Cleartext() {
+				return codeConnectionConfigInvalid, "an http mcp-server with a secret needs an https url, or http to a loopback host: the secret is sent as a bearer token"
 			}
 		case store.MCPTransportStdio:
 			if config.Command == "" {
@@ -255,6 +260,14 @@ func connectionProblem(connection *store.Connection) (code, problem string) {
 			}
 			if config.URL != "" {
 				return codeConnectionConfigInvalid, "a stdio mcp-server's config has a command, not a url"
+			}
+			// a stdio server is handed its secret in the env var config.env
+			// names, so one is never given without the other
+			if config.Env != "" && validateSecretName(config.Env) != nil {
+				return codeConnectionConfigInvalid, "a stdio mcp-server's config.env must be an env var name ([A-Za-z_][A-Za-z0-9_]*)"
+			}
+			if (config.Env == "") != (connection.Secret == "") {
+				return codeConnectionConfigInvalid, "a stdio mcp-server's secret is handed to it in the env var config.env names: give both or neither"
 			}
 		default:
 			return codeConnectionConfigInvalid, "an mcp-server's config.transport is http or stdio"
