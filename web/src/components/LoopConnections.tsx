@@ -6,13 +6,15 @@ import { connectionDetail, connectionKindLabel, kindLabel } from '../connections
 import { ConnectionForm } from './ConnectionForm'
 import { PlusIcon } from './Icons'
 
-// The connections attached to one loop (#506): the list with a detach on
-// each, and a + that opens a dialog to attach an existing connection or
-// create one and attach it in the same step.
+// The connections attached to one loop (#506): the list, and a + that opens
+// a dialog to attach a shared connection, create one and attach it, or add
+// an env variable private to this loop (#601), which is what the Secrets
+// panel was. A private row says so, and offers Share, which is
+// one way, and Remove, since a private connection serves nobody else; a
+// shared row offers Detach.
 //
-// An attached env variable is set in the loop's env from its next wake, as
-// a value set in its Secrets panel is. An MCP server is only recorded:
-// handing one to its loop is #505's, so the note tells the two kinds apart.
+// An attached env variable is set in the loop's env from its next wake, and
+// an MCP server is in its MCP config from then.
 export function LoopConnections({ loop }: { loop: LoopView }) {
   const qc = useQueryClient()
   const { data: all } = useQuery({ queryKey: ['connections'], queryFn: api.connections })
@@ -21,7 +23,15 @@ export function LoopConnections({ loop }: { loop: LoopView }) {
   const [busy, setBusy] = useState(false)
 
   const attached = loop.connections ?? []
-  const attachable = (all ?? []).filter((c) => !attached.some((a) => a.name === c.name))
+  // The fleet list says which are private and what each points at; the
+  // loop's view has names and kinds only.
+  const byName = new Map((all ?? []).map((c) => [c.name, c]))
+  // Another loop's private connection is never on offer (#600). This
+  // loop's own is, should it ever be detached here: nothing else could
+  // attach or delete it again.
+  const attachable = (all ?? []).filter(
+    (c) => (!c.owner_loop || c.owner_loop === loop.name) && !attached.some((a) => a.name === c.name),
+  )
 
   // The loop's view lists what is attached, and the Connections page lists
   // the loops each one is on: both change together.
@@ -31,17 +41,38 @@ export function LoopConnections({ loop }: { loop: LoopView }) {
       qc.invalidateQueries({ queryKey: ['connections'] }),
     ])
 
-  const detach = async (name: string) => {
+  const act = async (run: () => Promise<unknown>) => {
     setBusy(true)
     setError('')
     try {
-      await api.detachConnection(loop.name, name)
-      await refresh()
+      await run()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
+      await refresh()
       setBusy(false)
     }
+  }
+
+  const detach = (name: string) => act(() => api.detachConnection(loop.name, name))
+  // A private connection detached from its owner would serve nobody, so it
+  // goes, as a secret removed from the Secrets panel did.
+  const remove = (c: Connection) => {
+    const what = c.config.env ?? c.name
+    if (!confirm(`Remove ${what} from ${loop.name}? Its value is deleted, and the hub stops redacting it.`))
+      return
+    // The hub detaches a private one from its owner as it deletes it.
+    return act(() => api.deleteConnection(c.name))
+  }
+  const share = (c: Connection) => {
+    const what = c.config.env ?? c.name
+    if (
+      !confirm(
+        `Share ${what} with the fleet? Any loop can then be given it from its page. This cannot be undone: once another loop holds the value, it may already be in that loop's env.`,
+      )
+    )
+      return
+    return act(() => api.shareConnection(c.name))
   }
 
   return (
@@ -58,29 +89,63 @@ export function LoopConnections({ loop }: { loop: LoopView }) {
         </button>
       </div>
       <div className="panel-note leading">
-        Defined once for the fleet on the <Link to="/connections">Connections</Link> page. An env variable is
-        set from the next wake; an MCP server doesn't reach the loop yet.
+        Env variables and MCP servers, applied from the next wake. A private one is this loop's alone; a
+        shared one is defined once for the fleet on the <Link to="/connections">Connections</Link> page.
       </div>
       {attached.length === 0 ? (
         <div className="panel-empty">None attached.</div>
       ) : (
-        attached.map((c) => (
-          <div className="row loop-connection" key={c.name}>
-            <span className="loop-connection-label">
-              <span className="loop-connection-name">{c.name}</span>
-              <span className="loop-connection-kind">{kindLabel(c.kind)}</span>
-            </span>
-            <button
-              className="btn sm danger"
-              onClick={() => detach(c.name)}
-              disabled={busy}
-              title={`Detach ${c.name}`}
-              aria-label={`Detach ${c.name}`}
-            >
-              ✕
-            </button>
-          </div>
-        ))
+        attached.map((a) => {
+          const c = byName.get(a.name)
+          const mine = c?.owner_loop === loop.name
+          return (
+            <div className="row loop-connection" key={a.name}>
+              <span className="loop-connection-label">
+                <span className="loop-connection-name">
+                  {/* A private env variable is its variable: its name is the
+                      hub's, made up when it was added. */}
+                  {mine && c.config.env ? c.config.env : a.name}
+                </span>
+                <span className="loop-connection-kind">
+                  {kindLabel(a.kind)}
+                  {mine && <span className="connection-private">private</span>}
+                </span>
+                {mine && (
+                  <button
+                    className="text-button loop-connection-share"
+                    onClick={() => share(c)}
+                    disabled={busy}
+                  >
+                    Share with the fleet
+                  </button>
+                )}
+              </span>
+              {mine ? (
+                <button
+                  className="btn sm danger"
+                  onClick={() => remove(c)}
+                  disabled={busy}
+                  title={`Remove ${c.config.env ?? a.name}`}
+                  aria-label={`Remove ${c.config.env ?? a.name}`}
+                >
+                  ✕
+                </button>
+              ) : (
+                <button
+                  className="btn sm danger"
+                  onClick={() => detach(a.name)}
+                  // Until the fleet list says which rows are private, a
+                  // private one reads as shared, and Detach would strand it.
+                  disabled={busy || !all}
+                  title={`Detach ${a.name}`}
+                  aria-label={`Detach ${a.name}`}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          )
+        })
       )}
       {error && (
         <div className="form-error" role="alert">
@@ -99,9 +164,77 @@ export function LoopConnections({ loop }: { loop: LoopView }) {
   )
 }
 
-// Two ways to give a loop a connection: pick one the fleet already has, or
-// define a new one, which is then attached here too. It opens on the first
-// when there is anything to pick, and on the second when there is not.
+// An env variable for this loop alone, in one step: the variable and its
+// value, as the Secrets panel asked. It is created private to the loop,
+// which attaches it (#600). The value is write-only: sent, and never shown.
+function AddPrivateVariable({ loop, onAdded }: { loop: string; onAdded: () => Promise<unknown> }) {
+  const [env, setEnv] = useState('')
+  const [value, setValue] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const add = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      const variable = env.trim()
+      // Unnamed: the hub names a private one from the loop and the variable.
+      await api.createConnection({
+        kind: 'env-var',
+        config: { env: variable },
+        // Sent as typed: the value is what the tool reads.
+        secret: value,
+        owner_loop: loop,
+      })
+      await onAdded()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <form
+      className="loop-env-form"
+      onSubmit={(e) => {
+        e.preventDefault()
+        add()
+      }}
+    >
+      <div className="panel-note">Set in {loop}'s env alone. Its row can share it with the fleet later.</div>
+      <input
+        aria-label="Variable"
+        placeholder="NAME"
+        value={env}
+        onChange={(e) => setEnv(e.target.value)}
+        className="mono"
+      />
+      <input
+        aria-label="Value"
+        type="password"
+        autoComplete="off"
+        placeholder="value"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+      />
+      {error && (
+        <div className="form-error" role="alert">
+          {error}
+        </div>
+      )}
+      <button className="btn primary" disabled={busy || !env.trim() || !value}>
+        {busy ? 'Adding…' : 'Add private variable'}
+      </button>
+    </form>
+  )
+}
+
+// Three ways to give a loop a connection: pick one the fleet already has,
+// define a new one, which is then attached here too, or add an env variable
+// private to this loop, which only an env variable can be (#600). It opens
+// on the first when there is anything to pick, and on the second when there
+// is not.
 //
 // A native modal `<dialog>`: it brings the backdrop, the focus trap and
 // Escape with it, and the control room has no dependency to spend on them.
@@ -117,7 +250,7 @@ function AddConnectionDialog({
   onClose: () => void
 }) {
   const ref = useRef<HTMLDialogElement>(null)
-  const [tab, setTab] = useState<'attach' | 'create'>(attachable.length > 0 ? 'attach' : 'create')
+  const [tab, setTab] = useState<'attach' | 'create' | 'private'>(attachable.length > 0 ? 'attach' : 'create')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState('')
 
@@ -192,11 +325,19 @@ function AddConnectionDialog({
         >
           create new
         </button>
+        <button
+          role="tab"
+          aria-selected={tab === 'private'}
+          className={`dest${tab === 'private' ? ' on' : ''}`}
+          onClick={() => setTab('private')}
+        >
+          private variable
+        </button>
       </div>
       {tab === 'attach' ? (
         attachable.length === 0 ? (
           <div className="panel-empty">
-            Every connection the fleet has is already attached here.{' '}
+            Every shared connection is already attached here.{' '}
             <button className="text-button" onClick={() => setTab('create')}>
               Create a new one
             </button>
@@ -218,8 +359,16 @@ function AddConnectionDialog({
             ))}
           </div>
         )
-      ) : (
+      ) : tab === 'create' ? (
         <ConnectionForm onCreated={createAndAttach} submitLabel="Create and attach" />
+      ) : (
+        <AddPrivateVariable
+          loop={loop}
+          onAdded={async () => {
+            await onChanged()
+            onClose()
+          }}
+        />
       )}
       {error && (
         <div className="form-error" role="alert">

@@ -10,11 +10,11 @@ import { ConnectionForm } from '../components/ConnectionForm'
 // sent, and never rendered back; the list knows only whether there is one.
 //
 // Attaching is done from the loop's page (`LoopConnections`). An attached
-// env variable is set in its loop's env from the next wake; handing an MCP
-// server to its loop is #505's, so the page says which kind reaches a loop
-// today (the copy is true at merge, not at the epic's end).
+// env variable is set in its loop's env from the next wake, and an MCP
+// server is in its MCP config from then. A connection private to one loop
+// (#600) is listed with its owner, and Share makes it the fleet's, one way.
 
-function ConnectionRow({ c, onDeleted }: { c: Connection; onDeleted: () => void }) {
+function ConnectionRow({ c, onChanged }: { c: Connection; onChanged: () => void }) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const detail = connectionDetail(c)
@@ -34,9 +34,29 @@ function ConnectionRow({ c, onDeleted }: { c: Connection; onDeleted: () => void 
     setError('')
     try {
       await api.deleteConnection(c.name)
-      onDeleted()
+      onChanged()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
+      setBusy(false)
+    }
+  }
+
+  const share = async () => {
+    if (
+      !confirm(
+        `Share "${c.name}" with the fleet? Any loop can then be given it from its page. This cannot be undone: once another loop holds the value, it may already be in that loop's env.`,
+      )
+    ) {
+      return
+    }
+    setBusy(true)
+    setError('')
+    try {
+      await api.shareConnection(c.name)
+      onChanged()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
       setBusy(false)
     }
   }
@@ -51,7 +71,11 @@ function ConnectionRow({ c, onDeleted }: { c: Connection; onDeleted: () => void 
       </span>
       {/* Each loop a link to its page, where it is detached. */}
       <span className="connection-loops">
-        {attached ? (
+        {c.owner_loop ? (
+          <>
+            private to <Link to={`/loops/${c.owner_loop}`}>{c.owner_loop}</Link>
+          </>
+        ) : attached ? (
           <>
             on{' '}
             {loops.map((loop, i) => (
@@ -69,16 +93,24 @@ function ConnectionRow({ c, onDeleted }: { c: Connection; onDeleted: () => void 
       <span className={`connection-secret${c.has_secret ? '' : ' none'}`}>
         {c.has_secret ? 'secret set' : 'no secret'}
       </span>
-      {/* Shut while attached: the hub refuses it (`connection_attached`),
-          and saying why on the button beats a refusal after the confirm. */}
-      <button
-        className="btn sm danger"
-        onClick={remove}
-        disabled={busy || attached}
-        title={attached ? `Attached to ${loops.join(', ')}: detach it first` : undefined}
-      >
-        {busy ? 'Deleting…' : 'Delete'}
-      </button>
+      {/* A private one is removed from its loop's page, where it is the
+          loop's own; here it can only be shared. A shared one is shut while
+          attached: the hub refuses it (`connection_attached`), and saying
+          why on the button beats a refusal after the confirm. */}
+      {c.owner_loop ? (
+        <button className="btn sm" onClick={share} disabled={busy}>
+          Share
+        </button>
+      ) : (
+        <button
+          className="btn sm danger"
+          onClick={remove}
+          disabled={busy || attached}
+          title={attached ? `Attached to ${loops.join(', ')}: detach it first` : undefined}
+        >
+          {busy ? 'Deleting…' : 'Delete'}
+        </button>
+      )}
       {error && (
         <div className="form-error connection-error" role="alert">
           {error}
@@ -100,8 +132,9 @@ export default function Connections() {
       <h1>Connections</h1>
       <p className="page-lede">
         A connection is an env variable or an MCP server, defined once for the whole fleet and attached to
-        loops on their pages. An attached env variable is set from the loop's next wake; an MCP server doesn't
-        reach it yet. A connection's secret is redacted from everything the hub records.
+        loops on their pages. A loop's secrets live here too: an env variable added on a loop's page is a
+        connection private to that loop, until you share it with the fleet. An attached connection applies
+        from the loop's next wake. A connection's secret is redacted from everything the hub records.
       </p>
       {!data ? (
         <div className="form-error" role="alert">
@@ -117,7 +150,7 @@ export default function Connections() {
           ) : (
             <div className="connection-list">
               {data.map((c) => (
-                <ConnectionRow key={c.name} c={c} onDeleted={refresh} />
+                <ConnectionRow key={c.name} c={c} onChanged={refresh} />
               ))}
             </div>
           )}

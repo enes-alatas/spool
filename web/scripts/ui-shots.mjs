@@ -84,19 +84,10 @@ for (const shot of shots) {
   taken.push(file)
 }
 
-// Secrets is a section of a loop's page rather than a page of its own, so it
-// is shot as the card: a full-page shot of the loop would bury it.
 await page.goto(base + '/loops/gardener', { waitUntil: 'networkidle' })
-const secrets = page.locator('.side-panel', { has: page.locator('h3', { hasText: /^Secrets$/ }) }).first()
-// Fail the way the other shots do: a set silently one image short is worse
-// than no set, because the missing one is the one nobody counts.
-await secrets.waitFor({ timeout: 15000 })
-const secretsFile = `${outDir}/secrets.png`
-await secrets.screenshot({ path: secretsFile })
-taken.push(secretsFile)
 
 // The gardener's attached connections and the pick-list for the one left
-// (#506), shot as the card for the same reason as Secrets.
+// (#506), shot as the card: a full-page shot of the loop would bury it.
 const connections = page
   .locator('.side-panel', { has: page.locator('h3', { hasText: /^Connections$/ }) })
   .first()

@@ -465,11 +465,6 @@ export interface VersionInfo {
   go: string
 }
 
-export interface LoopSecret {
-  name: string
-  updated_at: number
-}
-
 // Onboarding readiness (#580): one live fact per pillar, and whether the
 // fleet has ever had all three at once. `completed` is the hub's memory: set
 // the first time every pillar is done, cleared when the last loop is
@@ -521,6 +516,11 @@ export interface Connection {
   // refused deletion (`connection_attached`) until it is detached. Absent
   // from a hub too old to attach.
   loops?: string[]
+  // The loop it is private to (#600), absent when the fleet shares it. A
+  // private connection is attached to its owner alone: attaching it anywhere
+  // else is refused (`connection_private`) until it is shared, one way, and
+  // deleting it detaches it from its owner in the same step.
+  owner_loop?: string
 }
 
 // A connection as a loop's view lists it: what it is, never what it holds.
@@ -530,10 +530,13 @@ export interface LoopConnection {
 }
 
 export interface CreateConnectionReq {
-  name: string
+  // Optional with `owner_loop`: the hub names a private one itself (#600).
+  name?: string
   kind: ConnectionKind
   config: ConnectionConfig
   secret?: string
+  // Makes it private to this loop, attached to it on creation (#600).
+  owner_loop?: string
 }
 
 // What a PATCH did about the loop's running session, mirrored from
@@ -803,6 +806,8 @@ export const api = {
     req<void>(`/api/loops/${loop}/connections/${connection}`, { method: 'PUT' }),
   detachConnection: (loop: string, connection: string) =>
     req<void>(`/api/loops/${loop}/connections/${connection}`, { method: 'DELETE' }),
+  // One way: a shared value may already be in another loop's env (#600).
+  shareConnection: (name: string) => req<Connection>(`/api/connections/${name}/share`, { method: 'POST' }),
   rules: () => req<RulesView>('/api/rules'),
   createRule: (body: { title: string; body: string; enabled: boolean }) =>
     req<FleetRule>('/api/rules', { method: 'POST', body: JSON.stringify(body) }),
@@ -842,13 +847,4 @@ export const api = {
   relabelCustomModel: (id: string, label: string) =>
     req<CustomModel>(`/api/models/custom/${id}`, { method: 'PATCH', body: JSON.stringify({ label }) }),
   deleteCustomModel: (id: string) => req<void>(`/api/models/custom/${id}`, { method: 'DELETE' }),
-  // Secret values are write-only: the list returns names only.
-  loopSecrets: (name: string) => req<LoopSecret[]>(`/api/loops/${name}/secrets`),
-  setLoopSecret: (name: string, key: string, value: string) =>
-    req<LoopSecret[]>(`/api/loops/${name}/secrets/${key}`, {
-      method: 'PUT',
-      body: JSON.stringify({ value }),
-    }),
-  deleteLoopSecret: (name: string, key: string) =>
-    req<{ deleted: boolean }>(`/api/loops/${name}/secrets/${key}`, { method: 'DELETE' }),
 }

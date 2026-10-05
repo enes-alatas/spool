@@ -2348,6 +2348,8 @@ textarea {
 }
 .connection-row .btn {
   grid-area: delete;
+  /* Share and Delete one width, so every row's columns line up. */
+  min-width: 5.5rem;
 }
 .connection-error {
   grid-area: error;
@@ -2394,6 +2396,31 @@ textarea {
 .loop-connection-kind {
   font-size: 0.75rem;
   color: var(--text-muted);
+}
+/* A connection private to one loop (#600): a quiet word beside its kind,
+   outlined rather than filled, since private is a scope and not a state. */
+.connection-private {
+  margin-left: 8px;
+  padding: 0 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--text);
+}
+.loop-connection-share {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+/* The add dialog's private variable tab: the variable, its value, the button. */
+.loop-env-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+.loop-env-form input.mono {
+  font-family: var(--mono);
 }
 /* The loop's Add connection dialog: a raised card over a dimmed page, as
    wide as the create form it can hold. */
