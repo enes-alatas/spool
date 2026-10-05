@@ -12,12 +12,13 @@ type sourceStore struct {
 	store.Store
 	loops       []*store.Loop
 	connections []*store.Connection
+	retired     []store.RetiredSecret
 }
 
 func (fake sourceStore) Settings() store.SettingsStore { return noSettings{} }
 func (fake sourceStore) Loops() store.LoopStore        { return listedLoops{loops: fake.loops} }
 func (fake sourceStore) Connections() store.ConnectionStore {
-	return listedConnections{connections: fake.connections}
+	return listedConnections{connections: fake.connections, retired: fake.retired}
 }
 
 type noSettings struct{ store.SettingsStore }
@@ -34,10 +35,15 @@ func (listed listedLoops) List(context.Context) ([]*store.Loop, error) { return 
 type listedConnections struct {
 	store.ConnectionStore
 	connections []*store.Connection
+	retired     []store.RetiredSecret
 }
 
 func (listed listedConnections) List(context.Context) ([]*store.Connection, error) {
 	return listed.connections, nil
+}
+
+func (listed listedConnections) Retired(context.Context) ([]store.RetiredSecret, error) {
+	return listed.retired, nil
 }
 
 // Every surface credential a loop holds is a secret the redactor knows by
@@ -87,6 +93,34 @@ func TestStoreSourceNamesEveryConnectionSecret(t *testing.T) {
 	want := []Secret{
 		{Name: "GH_TOKEN", Value: "ghp-synthetic-connection"},
 		{Name: "connection:search", Value: "mcp-synthetic-connection"},
+	}
+	if !reflect.DeepEqual(secrets, want) {
+		t.Fatalf("secrets = %+v, want %+v", secrets, want)
+	}
+}
+
+// A value a connection let go of, replaced or deleted, stays redacted under
+// the name it had while live: a credential the hub no longer holds may
+// still open something upstream (#609).
+func TestStoreSourceKeepsRetiredValues(t *testing.T) {
+	source := StoreSource{Store: sourceStore{
+		connections: []*store.Connection{
+			{Name: "github", Kind: store.ConnectionEnvVar, Config: store.ConnectionConfig{Env: "GH_TOKEN"}, Secret: "ghp-synthetic-new"},
+		},
+		retired: []store.RetiredSecret{
+			{Connection: "github", RedactName: "GH_TOKEN", Value: "ghp-synthetic-old"},
+			{Connection: "search", RedactName: "connection:search", Value: "mcp-synthetic-deleted"},
+		},
+	}}
+
+	secrets, err := source.Secrets(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Secret{
+		{Name: "GH_TOKEN", Value: "ghp-synthetic-new"},
+		{Name: "GH_TOKEN", Value: "ghp-synthetic-old"},
+		{Name: "connection:search", Value: "mcp-synthetic-deleted"},
 	}
 	if !reflect.DeepEqual(secrets, want) {
 		t.Fatalf("secrets = %+v, want %+v", secrets, want)

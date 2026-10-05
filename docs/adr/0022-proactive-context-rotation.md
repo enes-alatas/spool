@@ -1,6 +1,6 @@
 # ADR-0022: Context is rotated proactively, before the degradation zone
 
-Date: 2026-08-21 · Status: accepted · Amended: 2026-09-26 (§1, the handoff request names its cause)
+Date: 2026-08-21 · Status: accepted · Amended: 2026-09-26 (§1, the handoff request names its cause); 2026-10-05 (§1, a replaced credential is a cause, #609)
 
 ## Context
 
@@ -51,6 +51,15 @@ path above — is fully observable, and fakeclaude can test it end to end.
    When causes overlap, a mission change outranks an operator's ask, which
    outranks the fill. The reason is stored with the note (§5), so a restart
    keeps it. The operator approved the wording on #272.
+
+   **Amendment (2026-10-05, #609):** a value replaced on a connection the
+   loop holds is a fourth cause (ADR-0043). The handoff request says the
+   operator replaced a credential the loop holds, and tells it to leave
+   every credential value out of its note. It outranks the operator's
+   plain ask, so overlapping asks keep that instruction, and a mission
+   change still outranks it. Enes chose a rotation with a handoff over a
+   hard fresh session on 2026-10-05 (#507): the loop keeps its continuity,
+   and its handoff turn is the one turn left on the old session.
 2. **Armed at a soft threshold, fired at a quiet boundary.** Crossing the
    soft threshold arms the loop; rotation runs at the end of the next wake
    that leaves no queued work. A mid-task context is never summarized out

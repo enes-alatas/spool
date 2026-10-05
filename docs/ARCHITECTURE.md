@@ -207,7 +207,10 @@ opportunistically, not big-bang.
   secrets routes are a shortcut onto them, creating private ones (#576).
   Every change to a connection is on an append-only record, listed per
   connection (`GET /api/connections/{name}/events`) and per loop
-  (`GET /api/loops/{name}/connection-events`) (#606).
+  (`GET /api/loops/{name}/connection-events`) (#606). Replacing a value
+  (`PUT /api/connections/{name}/secret`) retires the old one, which stays
+  redacted, and ends each holding loop's session with a `connection` context
+  rotation (#609).
 - **Runner extraction**: the hosted service will run runners near customer sandboxes.
   Anything crossing the Runner seam must stay serializable (no passing live channels
   or callbacks across it as its API matures).

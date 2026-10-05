@@ -350,6 +350,8 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			"Attach": false, "Detach": false, "ListByLoop": false, "Share": false,
 			// The record: actions, names and timestamps, never a value.
 			"Events": false,
+			// Retired values, read for the redactor alone, as List is.
+			"Retired": false,
 		},
 		"FleetRuleStore": {
 			// Operator-written rule text, rendered into every prompt.

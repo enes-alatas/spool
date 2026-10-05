@@ -51,6 +51,9 @@ const (
 	RotationReasonFill     = "fill"     // the context window crossed a rotation threshold
 	RotationReasonOperator = "operator" // the operator asked for one outright
 	RotationReasonMission  = "mission"  // the operator rewrote the loop's mission
+	// RotationReasonConnection is a value replaced on a connection the loop
+	// holds: the session that ran with the old one ends (#609).
+	RotationReasonConnection = "connection"
 
 	OriginWeb           = "web"
 	OriginTelegramGroup = "telegram-group"
@@ -1380,6 +1383,8 @@ type Connection struct {
 	// UpdatedAt is when the secret was last set: CreatedAt until it is
 	// replaced.
 	UpdatedAt int64
+	// RotatedAt is when the secret was last replaced, 0 for never.
+	RotatedAt int64
 	// LoopIDs are the loops the connection is attached to, in no promised
 	// order.
 	LoopIDs []string
@@ -1457,14 +1462,15 @@ type ConnectionStore interface {
 	Create(ctx context.Context, connection *Connection) error
 	// Delete is ErrNotFound for an unknown name, and ErrConnectionAttached
 	// while any loop but a private one's owner holds it. A private one is
-	// detached from its owner in the same step.
+	// detached from its owner in the same step. Its value is retired.
 	Delete(ctx context.Context, name string, at int64) error
 	// Share makes a private connection the fleet's, for good: its value may
 	// be in another loop's env from then on. Sharing a shared one changes
 	// nothing. ErrNotFound for an unknown name.
 	Share(ctx context.Context, name string, at int64) error
-	// SetSecret replaces the secret and stamps UpdatedAt; setting the value
-	// it holds changes nothing. ErrNotFound for an unknown name.
+	// SetSecret replaces the secret, stamps UpdatedAt and RotatedAt, and
+	// retires the value it replaced; setting the value it holds changes
+	// nothing. ErrNotFound for an unknown name.
 	SetSecret(ctx context.Context, name, secret string, at int64) error
 	// Attach gives a loop the connection; attaching it again changes
 	// nothing. ErrNotFound for an unknown connection or loop, and
@@ -1481,6 +1487,30 @@ type ConnectionStore interface {
 	// Every write above records its change in the same step, and one that
 	// changes nothing records nothing.
 	Events(ctx context.Context, filter ConnectionEventFilter) ([]*ConnectionEvent, error)
+	// Retired returns every value a connection has let go of, replaced or
+	// deleted, for the redactor alone: no route reads it, and nothing
+	// injects it.
+	Retired(ctx context.Context) ([]RetiredSecret, error)
+}
+
+// RetiredSecret is a connection's value it no longer holds. RedactName is
+// the name the redactor showed it under while it was live: an env-var's
+// variable, or "connection:" and the connection's name.
+type RetiredSecret struct {
+	Connection string
+	RedactName string
+	Value      string
+	RetiredAt  int64
+}
+
+// RedactName is the name the redactor shows a connection's value under:
+// an env-var's variable, as the per-loop secret it replaced was, or
+// "connection:" and the connection's name.
+func (connection *Connection) RedactName() string {
+	if connection.Kind == ConnectionEnvVar {
+		return connection.Config.Env
+	}
+	return "connection:" + connection.Name
 }
 
 // ConnectionEvent is one change to a connection, on its append-only

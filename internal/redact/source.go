@@ -9,8 +9,9 @@ import (
 
 // StoreSource reads every secret Spool holds out of the store: the
 // operator's Claude token, and per loop its surface credentials (a Telegram
-// bot token, or a Slack app's two tokens) and its hub MCP token; and every
-// connection's secret, the loops' tool secrets among them.
+// bot token, or a Slack app's two tokens) and its hub MCP token; every
+// connection's secret, the loops' tool secrets among them; and every value
+// a connection has retired.
 //
 // It reads through the *undecorated* store. Nothing here is persisted, so
 // there is nothing to redact, and a redactor asking a redacted store for the
@@ -60,14 +61,20 @@ func (source StoreSource) Secrets(ctx context.Context) ([]Secret, error) {
 		return nil, err
 	}
 	for _, connection := range connections {
-		if connection.Secret == "" {
-			continue
+		if connection.Secret != "" {
+			out = append(out, Secret{Name: connection.RedactName(), Value: connection.Secret})
 		}
-		name := "connection:" + connection.Name
-		if connection.Kind == store.ConnectionEnvVar {
-			name = connection.Config.Env
-		}
-		out = append(out, Secret{Name: name, Value: connection.Secret})
+	}
+
+	// Every value a connection let go of, replaced or deleted, under the
+	// name it had: one the hub no longer holds may still open something
+	// upstream, so it stays masked (Enes, 2026-10-05, #507).
+	retired, err := source.Store.Connections().Retired(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, secret := range retired {
+		out = append(out, Secret{Name: secret.RedactName, Value: secret.Value})
 	}
 	return out, nil
 }
