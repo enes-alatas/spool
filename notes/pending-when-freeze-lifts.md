@@ -258,3 +258,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 
 ## 2026-10-05 07:10 — morning sweep
 - Overnight: #592 (#589) merged 20:55; no open PRs but #453 draft. Terra idle since #591 (20:35), Iris since #592 → pinged both: Terra #505, Iris #548 web half (closes #275/Surfaces). Runtime still 00:28 10-04 build; Enes has the rebuild DM (ref 3195). #559 record posted: 0 timeouts since 10-03; 8 h2-frame failures on the 23:12 build (#571's defect), 0 failures in 31h on the 00:28 build; bar holds, probe unfiled. #124 children left: none open except what Iris/Enes add; epic closes when Enes says onboarding is done (check #124 after #548 web). Terra after #505: #507 → #542 → #30 → #529(b) gap → #582.
+- 07:25: Terra had PR #594 (#479 + #593, test flakes, test-only) up before my ping; accepted, #505 the moment it lands. Iris acknowledged #548 web half.
