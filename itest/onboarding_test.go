@@ -109,9 +109,9 @@ func TestOnboardingPillars(t *testing.T) {
 // On a docker hub, saving a setup-token checks it (ADR-0044): one run of
 // the workstation image's claude under the token, behind the egress wall,
 // whose answer makes the harness pillar done. Removing the token forgets
-// the check, and asking for one with no token to check is refused.
-func TestOnboardingChecksASavedSetupToken(t *testing.T) {
-	t.Parallel()
+// the check, and asking for one with no token to check is refused. A row
+// of TestDockerRows: the check stands up the suite's egress wall (#593).
+func onboardingChecksASavedSetupToken(t *testing.T) {
 	s := startDockerServer(t, t.TempDir()) // saves a token as it starts
 	got := s.waitOnboarding(90*time.Second, func(v onboardingJSON) bool { return !v.Harness.Checking })
 	if !got.Harness.Done || got.Harness.Reason != "the login check authenticated" {
