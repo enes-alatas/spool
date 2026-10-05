@@ -21,8 +21,9 @@ type Opts struct {
 	PartialMessages    bool
 	// MCPConfigPath points --mcp-config at a file (with --strict-mcp-config,
 	// so nothing else registers servers). A path, never inline JSON: the
-	// config carries the loop's hub token, which must stay out of argv where
-	// ps could see it — runtimes materialize the file (ADR-0026).
+	// config carries the loop's hub token and its attached servers' secrets,
+	// which must stay out of argv where ps could see them — runtimes
+	// materialize the file (ADR-0026, ADR-0043).
 	MCPConfigPath string
 	// PreToolUseHook is the command claude runs before each Bash call, pinned
 	// on through --settings so no settings file of the loop's can turn it
@@ -105,17 +106,51 @@ func shellQuote(path string) string {
 // and so in the servers the CLI reports at init.
 const SpoolMCPServer = "spool"
 
+// MCPServerConfig is one more MCP server a loop's claude is given besides
+// the hub's: an attached mcp-server connection (ADR-0043). Transport is
+// "http", with URL and Headers, or "stdio", with Command, Args and Env.
+type MCPServerConfig struct {
+	Name      string
+	Transport string
+	URL       string
+	Headers   map[string]string
+	Command   string
+	Args      []string
+	Env       map[string]string
+}
+
 // MCPConfigJSON renders the --mcp-config contents pointing claude at the
-// hub's MCP endpoint as the loop it runs (ADR-0026).
-func MCPConfigJSON(url, token string) string {
-	config, _ := json.Marshal(map[string]any{
-		"mcpServers": map[string]any{
-			SpoolMCPServer: map[string]any{
-				"type":    "http",
-				"url":     url,
-				"headers": map[string]string{"Authorization": "Bearer " + token},
-			},
-		},
-	})
+// hub's MCP endpoint as the loop it runs (ADR-0026), and at every other
+// server Spool configured for it. A server named like the hub's is dropped:
+// the hub's endpoint is the one a loop sends through.
+func MCPConfigJSON(url, token string, servers []MCPServerConfig) string {
+	all := map[string]any{}
+	for _, server := range servers {
+		if server.Name == SpoolMCPServer {
+			continue
+		}
+		entry := map[string]any{"type": server.Transport}
+		if server.Transport == "stdio" {
+			entry["command"] = server.Command
+			if len(server.Args) > 0 {
+				entry["args"] = server.Args
+			}
+			if len(server.Env) > 0 {
+				entry["env"] = server.Env
+			}
+		} else {
+			entry["url"] = server.URL
+			if len(server.Headers) > 0 {
+				entry["headers"] = server.Headers
+			}
+		}
+		all[server.Name] = entry
+	}
+	all[SpoolMCPServer] = map[string]any{
+		"type":    "http",
+		"url":     url,
+		"headers": map[string]string{"Authorization": "Bearer " + token},
+	}
+	config, _ := json.Marshal(map[string]any{"mcpServers": all})
 	return string(config)
 }

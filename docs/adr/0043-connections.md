@@ -1,6 +1,6 @@
 # ADR-0043: Connections are org-level credentials and configs, defined once and attachable to loops
 
-Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572); 2026-10-04 (item 2: the env-var kind, #574); 2026-10-04 (item 5: per-loop secrets are connections, #576)
+Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572); 2026-10-04 (item 2: the env-var kind, #574); 2026-10-04 (item 5: per-loop secrets are connections, #576); 2026-10-05 (item 2: an mcp-server reaches its loop, #597)
 
 ## Context
 
@@ -53,6 +53,38 @@ follow in their own slice and amend this ADR.
    wire value is `env-var` in the backend and the UI alike. Stored rows
    are rewritten by migration, and `env-credential` is refused as an
    unknown kind. Item 4's GitHub token is an `env-var` on `GH_TOKEN`.
+
+   **Amendment (2026-10-05, #597): an mcp-server reaches its loop.** Each
+   `mcp-server` attached to a loop is one more server in the loop's
+   `--mcp-config`, beside the hub's own. `--strict-mcp-config` stays, so
+   its guarantee now reads "only what Spool configured": the hub's server
+   and the loop's attached ones. The servers and connectors on the
+   operator's Claude account still never reach a loop. The config is
+   written at every wake, as the env is, and claude reads it at every
+   spawn, so an attach or detach reaches the loop the next time its claude
+   starts.
+   - **The name `spool` is refused** for an `mcp-server`: it is the hub's
+     own server in that config. A server stored under it is left out.
+   - **An `http` server's secret** is sent as `Authorization: Bearer
+     <secret>`, and never in the clear: a secret on a plain `http://`
+     URL is refused unless the host is loopback (`localhost`,
+     `127.0.0.0/8`, `::1`), where the token never leaves the machine. A
+     server stored before this amendment with such a URL and a secret is
+     given no secret. This rule came from review on #598.
+   - **A `stdio` server's secret** goes into the env var its `config.env`
+     names, in that server's process alone. `config.env` and the secret
+     come together or not at all. A `stdio` server stored before this
+     amendment with a secret and no `config.env` is given no secret.
+   - **The secret is written into the config file itself, never into
+     claude's env.** That file is 0600 on a bare loop's host, or inside the
+     docker workstation. Every Bash call a loop makes inherits claude's env,
+     so a `${VAR}` reference filled from it would put the secret in the
+     loop's shell. The file hands the secret to its server alone, which is
+     also where `claude mcp add` keeps one. The hub's database already holds
+     the secret in plain text beside that file, so keeping the value out of
+     it would protect little. As with an `env-var`, a loop that goes looking
+     can still read it.
+   Enes decided where the secret goes on 2026-10-05.
 
 3. **The secret is write-only.** No response carries it: the API reports
    only `has_secret`. The config is read back in full, so nothing secret

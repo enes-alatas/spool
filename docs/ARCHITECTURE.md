@@ -229,7 +229,8 @@ opportunistically, not big-bang.
   retried on the new one. The loop view reports the configured `model` and the
   `resolved_model` its latest turn ran on.
 - **The loop view shows what MCP reaches** (#489): each session's init
-  lists the MCP servers the CLI connected and the tools they gave, and the
+  lists the MCP servers the CLI connected (the hub's, and each attached
+  `mcp-server` connection, ADR-0043) and the tools they gave, and the
   loop view reports the latest one's as `mcp_servers` and `tool_count`, with
   the `mcp_session_id` they belong to. It is the evidence for
   `--strict-mcp-config`, read rather than assumed; held in memory, so absent
