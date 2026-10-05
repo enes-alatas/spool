@@ -119,7 +119,7 @@ func TestChannelIsOptIn(t *testing.T) {
 		t.Errorf("describing an unknown channel = %v, want ErrNotFound", err)
 	}
 
-	if err := db.Loops().Delete(ctx, "l3"); err != nil {
+	if err := db.Loops().Delete(ctx, "l3", 1); err != nil {
 		t.Fatal(err)
 	}
 	if got := members(t, db, "backend"); !reflect.DeepEqual(got, []string{"l1"}) {

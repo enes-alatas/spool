@@ -264,3 +264,81 @@ func TestPrivateConnections(t *testing.T) {
 		}
 	}
 }
+
+type connectionEventJSON struct {
+	Action     string `json:"action"`
+	Connection string `json:"connection"`
+	Loop       string `json:"loop"`
+	At         int64  `json:"at"`
+}
+
+// connectionRecord reads a record oldest first, as "action connection loop".
+func (s *server) connectionRecord(path string) []string {
+	s.t.Helper()
+	var events []connectionEventJSON
+	s.mustJSON("GET", path, nil, &events)
+	var out []string
+	for i := len(events) - 1; i >= 0; i-- {
+		if events[i].At == 0 {
+			s.t.Errorf("event %+v has no time", events[i])
+		}
+		out = append(out, strings.TrimSpace(events[i].Action+" "+events[i].Connection+" "+events[i].Loop))
+	}
+	return out
+}
+
+// Every change the operator makes to a connection is on its record, and on
+// the record of the loop it touched, through the connection routes and the
+// secrets shortcut alike; a change that changes nothing is not. Both
+// records outlive what they name (#606).
+func TestConnectionRecord(t *testing.T) {
+	t.Parallel()
+	s := startServer(t, t.TempDir())
+	for _, name := range []string{"aster", "briar"} {
+		s.createLoop(name, nil)
+	}
+
+	s.mustJSON("POST", "/api/connections", map[string]any{
+		"name": "github", "kind": "env-var", "config": map[string]any{"env": "GH_TOKEN"}, "secret": "fixture-record-0000",
+	}, nil)
+	for range 2 {
+		s.mustJSON("PUT", "/api/loops/aster/connections/github", nil, nil)
+	}
+	s.mustJSON("PUT", "/api/loops/aster/secrets/GH_TOKEN", map[string]any{"value": "fixture-record-0001"}, nil)
+	s.mustJSON("PUT", "/api/loops/briar/connections/github", nil, nil)
+	s.mustJSON("DELETE", "/api/loops/briar/connections/github", nil, nil)
+	s.mustJSON("DELETE", "/api/loops/briar/connections/github", nil, nil)
+
+	var private connectionJSON
+	s.mustJSON("POST", "/api/connections", map[string]any{
+		"kind": "env-var", "config": map[string]any{"env": "NPM_TOKEN"}, "secret": "fixture-record-0002", "owner_loop": "briar",
+	}, &private)
+	s.mustJSON("POST", "/api/connections/"+private.Name+"/share", nil, nil)
+	s.mustJSON("DELETE", "/api/loops/briar/connections/"+private.Name, nil, nil)
+	s.mustJSON("DELETE", "/api/connections/"+private.Name, nil, nil)
+
+	if got, want := s.connectionRecord("/api/connections/github/events"), []string{
+		"create github", "attach github aster", "rotate github", "attach github briar", "detach github briar",
+	}; !reflect.DeepEqual(got, want) {
+		t.Errorf("github's record = %q, want %q", got, want)
+	}
+	if got, want := s.connectionRecord("/api/loops/briar/connection-events"), []string{
+		"attach github briar", "detach github briar",
+		"attach " + private.Name + " briar", "share " + private.Name + " briar", "detach " + private.Name + " briar",
+	}; !reflect.DeepEqual(got, want) {
+		t.Errorf("briar's record = %q, want %q", got, want)
+	}
+	if got, want := s.connectionRecord("/api/connections/"+private.Name+"/events"), []string{
+		"create " + private.Name, "attach " + private.Name + " briar", "share " + private.Name + " briar",
+		"detach " + private.Name + " briar", "delete " + private.Name,
+	}; !reflect.DeepEqual(got, want) {
+		t.Errorf("the deleted connection's record = %q, want %q", got, want)
+	}
+
+	s.mustJSON("DELETE", "/api/loops/aster", nil, nil)
+	if got, want := s.connectionRecord("/api/loops/aster/connection-events"), []string{
+		"attach github aster", "detach github aster", "delete github aster",
+	}; !reflect.DeepEqual(got, want) {
+		t.Errorf("the deleted loop's record = %q, want %q", got, want)
+	}
+}

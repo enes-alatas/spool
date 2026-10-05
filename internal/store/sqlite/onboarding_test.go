@@ -77,7 +77,7 @@ func TestTraffic(t *testing.T) {
 		t.Fatalf("both ways on both: %v, want %v", got, want)
 	}
 
-	if err := db.Loops().Delete(ctx, "l1"); err != nil {
+	if err := db.Loops().Delete(ctx, "l1", 1); err != nil {
 		t.Fatal(err)
 	}
 	want = map[string][2]bool{store.SurfaceTelegram: {}, store.SurfaceSlack: {}}
@@ -139,13 +139,13 @@ func TestOnboardingFacts(t *testing.T) {
 	if err := db.Settings().Set(ctx, store.SettingOnboardingCompleted, "1"); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Loops().Delete(ctx, "l1"); err != nil {
+	if err := db.Loops().Delete(ctx, "l1", 1); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Settings().Get(ctx, store.SettingOnboardingCompleted); err != nil {
 		t.Fatalf("completed after deleting one of two loops: %v, want it kept", err)
 	}
-	if err := db.Loops().Delete(ctx, "l2"); err != nil {
+	if err := db.Loops().Delete(ctx, "l2", 1); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Settings().Get(ctx, store.SettingOnboardingCompleted); !errors.Is(err, store.ErrNotFound) {
