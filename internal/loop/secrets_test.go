@@ -83,3 +83,25 @@ func TestMCPServersCarryTheirSecrets(t *testing.T) {
 		t.Errorf("mcpServers =\n%+v\nwant\n%+v", got, want)
 	}
 }
+
+// A loop's own egress entries are the hosts its attached http MCP servers
+// live on, with the port when it isn't a web one. A loopback server and a
+// stdio one open nothing (#599).
+func TestEgressAllowFollowsHTTPServers(t *testing.T) {
+	server := func(transport, url string) *store.Connection {
+		return &store.Connection{Kind: store.ConnectionMCPServer, Config: store.ConnectionConfig{Transport: transport, URL: url, Command: "c"}}
+	}
+	got := egressAllow([]*store.Connection{
+		{Kind: store.ConnectionEnvVar, Config: store.ConnectionConfig{Env: "GH_TOKEN"}, Secret: "g"},
+		server(store.MCPTransportHTTP, "https://mcp.tracker.example/mcp"),
+		server(store.MCPTransportHTTP, "https://mcp.handbook.example:8443/mcp"),
+		server(store.MCPTransportHTTP, "http://plain.example:80/mcp"),
+		server(store.MCPTransportHTTP, "http://localhost:8931/mcp"),
+		server(store.MCPTransportHTTP, "http://127.0.0.1:8931/mcp"),
+		server(store.MCPTransportStdio, ""),
+	})
+	want := []string{"mcp.tracker.example", "mcp.handbook.example:8443", "plain.example"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("egressAllow = %v, want %v", got, want)
+	}
+}

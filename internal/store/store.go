@@ -1415,15 +1415,22 @@ type ConnectionConfig struct {
 // local server on http is fine; the bearer token never leaves the host.
 func (config ConnectionConfig) Cleartext() bool {
 	parsed, err := url.Parse(config.URL)
-	if err != nil || parsed.Scheme != "http" {
+	return err == nil && parsed.Scheme == "http" && !config.Loopback()
+}
+
+// Loopback reports whether an http mcp-server's URL names this machine:
+// localhost or a loopback address.
+func (config ConnectionConfig) Loopback() bool {
+	parsed, err := url.Parse(config.URL)
+	if err != nil {
 		return false
 	}
 	host := parsed.Hostname()
 	if host == "localhost" {
-		return false
+		return true
 	}
 	ip := net.ParseIP(host)
-	return ip == nil || !ip.IsLoopback()
+	return ip != nil && ip.IsLoopback()
 }
 
 // ValidConnectionName reports whether a name may name a connection: the

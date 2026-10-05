@@ -67,6 +67,7 @@ workspace is a working directory; it stops nothing.
 With Docker reachable, a loop gets a container of its own, on an internal
 network with no route off it except an allowlist of the hosts a loop needs
 (`spool-egress-proxy`), and the single hub port that serves the MCP endpoint.
+An MCP server you attach to a loop opens its host to that loop alone.
 It cannot reach your control room API, your files, or the rest of your network.
 
 **Without a reachable Docker daemon, `--runtime auto` refuses to start** and

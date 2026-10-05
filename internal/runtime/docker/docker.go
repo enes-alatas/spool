@@ -66,6 +66,14 @@ type Runtime struct {
 	// both find a stale proxy, and two removals of it collide.
 	egressMu sync.Mutex
 
+	// loopEgress is each loop's own egress entries this hub run (#599),
+	// under loopEgressMu: two wakes rewrite the proxy's file one at a time.
+	loopEgressMu sync.Mutex
+	loopEgress   map[string]loopEgressEntry
+	// loopEgressWritten is whether this run has written the proxy's file
+	// yet: until it has, the file may hold a previous run's entries.
+	loopEgressWritten bool
+
 	sweepOnce      sync.Once // resolution containers a stopped hub left behind
 	loginSweepOnce sync.Once // login-check containers, the same way
 }
@@ -112,6 +120,7 @@ func New(opts Options) *Runtime {
 		egressAllow:  opts.EgressAllow,
 		hook:         opts.Hook,
 		healthTTL:    opts.HealthTTL,
+		loopEgress:   map[string]loopEgressEntry{},
 	}
 }
 
@@ -225,7 +234,18 @@ func (rt *Runtime) Start(ctx context.Context, spec runtime.Spec) (runtime.Proc, 
 			return nil, err
 		}
 	}
-	argv, err := execArgv(spec, rt.egressEnv(), rt.hook)
+	tokened, err := rt.openLoopEgress(ctx, spec)
+	if err != nil {
+		return nil, err
+	}
+	egressEnv := rt.egressEnv()
+	if tokened {
+		// The proxy URL now carries a credential, so it crosses the way
+		// the loop's own variables do: value-less in argv.
+		egressEnv = rt.noProxyEnv()
+		spec.Env = withProxy(spec.Env, rt.loopProxyURL(spec.LoopName, spec.EgressToken))
+	}
+	argv, err := execArgv(spec, egressEnv, rt.hook)
 	if err != nil {
 		return nil, err
 	}
@@ -287,6 +307,9 @@ func (rt *Runtime) Halt(ctx context.Context, loopID string) error {
 // and the operator's recreate control get here — never sleep or pause
 // (ADR-0017).
 func (rt *Runtime) Destroy(ctx context.Context, loopID string) error {
+	if err := rt.closeLoopEgress(ctx, loopID); err != nil {
+		return err
+	}
 	name := containerName(loopID)
 	if _, err := rt.command(ctx, startTimeout, "rm", "--force", name); err != nil && !notFound(err) {
 		return err

@@ -158,6 +158,8 @@ forwards to the hosts in `internal/egress` and refuses the rest (ADR-0028). The
 one entry naming the operator's own machine is the hub's loop listener, on its
 port alone: the operator listener is on no allowlist, so the API a workstation
 would otherwise reach unauthenticated is not a destination it has (#238). A
+loop's attached http MCP servers open their hosts to that loop alone, matched
+on its hub MCP token in its proxy URL rather than its address (#599). A
 bare loop has the host's own network and no wall — one more thing the
 *uncontained* badge means.
 The hub's trust model is two credentials on two listeners (ADR-0030). On the

@@ -74,6 +74,15 @@ type Spec struct {
 	// Env carries per-loop credentials into the workstation — the claude
 	// OAuth token (#11) and secret env vars (#12). Never logged.
 	Env map[string]string
+
+	// EgressAllow are the hosts this loop may reach beyond the fleet's
+	// allowlist, as allowlist entries (host, or host:port): its attached
+	// http MCP servers' (#599). Only a runtime with an egress wall reads it.
+	EgressAllow []string
+	// EgressToken is what the loop shows the egress proxy to be given
+	// EgressAllow: its hub MCP token, a credential it already holds and the
+	// redactor already knows. Never logged.
+	EgressToken string
 }
 
 // Health is a workstation's liveness as the control room reports it.

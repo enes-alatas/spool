@@ -1,6 +1,6 @@
 # ADR-0028: Workstation egress runs through an allowlist proxy
 
-Date: 2026-09-20 · Status: accepted · Amends: ADR-0017 (decision 9, "open egress") · Amended 2026-09-20 (decision 3: the hub entry is the MCP listener, #238); 2026-10-01 (consequences: a docker loop behind a loopback listener is refused, #474); 2026-10-01 (decision 3: the loop listener does not refuse a host.docker.internal Host, #508)
+Date: 2026-09-20 · Status: accepted · Amends: ADR-0017 (decision 9, "open egress") · Amended 2026-09-20 (decision 3: the hub entry is the MCP listener, #238); 2026-10-01 (consequences: a docker loop behind a loopback listener is refused, #474); 2026-10-01 (decision 3: the loop listener does not refuse a host.docker.internal Host, #508); 2026-10-05 (decision 4: a loop's own entries, keyed by its proxy token, #599)
 
 ## Context
 
@@ -90,6 +90,44 @@ by asking the agent nicely (#193).
    a loop that must read the web is granted it explicitly — is the same
    decision keyed on the requesting workstation's address, and lands separately
    (#193 follow-up); nothing here needs to change shape for it.
+
+   **Amendment (2026-10-05, #599): a loop's own entries are keyed by a proxy
+   token, not its address.** A loop's attached http MCP servers (ADR-0043)
+   are the first per-loop entries: each server's host, with its port when
+   that isn't 80 or 443. Loopback servers are inside the wall already, and a
+   stdio server's hosts can't be read from its config.
+   - **Keyed on a token, not the address.** The token is the loop's hub
+     MCP token (ADR-0026). A wake of a loop with entries of its own carries
+     it in its proxy URL (`http://<loop>:<token>@…`). That URL crosses
+     value-less like the loop's other variables, and the proxy matches the
+     `Proxy-Authorization` the token arrives in. The address keying planned
+     above would have been weaker twice over. Workstations keep docker's
+     default `NET_RAW`, so one can spoof a neighbour's address on the
+     shared network. And a restarted workstation can be handed another
+     loop's address, with that loop's hosts, until the map is rewritten.
+   - **The token exposes nothing new.** The loop already holds it in its
+     mcp-config, and the redactor already knows it, so an echoed proxy URL
+     shows a placeholder. The proxy already carries it in the loop's hub
+     traffic. Anyone who has it can already act as the loop at the hub,
+     which is more than reaching the loop's hosts.
+   - **A request without the token gets the fleet's list,** as every request
+     did before, so a client that ignores proxy credentials loses only its
+     loop's extra hosts. The proxy never relays the token upstream.
+   - **The proxy is not recreated to change them.** The hub keeps every
+     loop's entries for its run, filed under the token's SHA-256, and copies
+     the whole file into the proxy (`docker cp`; the image has no shell)
+     whenever one loop's entries change. The proxy re-reads the file when its
+     bytes change, so no other loop's open tunnel is cut. It doesn't rely on
+     the file's timestamp, because `docker cp` keeps only whole seconds. It
+     keeps the last good read if a copy lands half-written. A recreated
+     proxy gets the file back from the hub. A hub that restarts rewrites the
+     file at its first wake: a token outlives the run, so an entry the hub
+     no longer knows of must not. A copy that fails leaves the hub's
+     record as the proxy last read it, so the next wake retries it rather
+     than finding it made, and a detached host can't stay open.
+   - **A change lands at the loop's next wake,** as its mcp-config does.
+
+   The operator approved keying on the token on 2026-10-05.
 
 5. **Lifecycle matches the workstation's.** The network and the proxy are
    ensured idempotently before a workstation is provisioned, and the proxy runs
