@@ -422,11 +422,17 @@ func TestHaltStopsWithoutDestroying(t *testing.T) {
 // its init has been read (ADR-0033).
 func TestResolveModelRunsInAThrowawayContainerWithNoNetwork(t *testing.T) {
 	rt := requireDocker(t)
+	// The run is made from a tag of this test's own, so a container another
+	// hub's resolution made meanwhile, from the shared image, is not counted
+	// as this run's (#479).
+	image := testImage + "-resolve-" + randomHex(6)
+	if out, err := exec.Command("docker", "tag", testImage, image).CombinedOutput(); err != nil {
+		t.Fatalf("docker tag: %v: %s", err, out)
+	}
+	t.Cleanup(func() { _ = exec.Command("docker", "rmi", image).Run() })
+	rt.defaultImage = image
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	// Hubs the itest suite stopped mid-resolution may have left containers
-	// of their own; this run must add none.
-	before := resolveContainers(t)
 
 	resolved, err := rt.ResolveModel(ctx, "opus")
 	if err != nil {
@@ -435,22 +441,24 @@ func TestResolveModelRunsInAThrowawayContainerWithNoNetwork(t *testing.T) {
 	if resolved != "claude-opus-5-5" {
 		t.Fatalf("resolved = %q, want what the image's claude reported at init", resolved)
 	}
-	for name := range resolveContainers(t) {
-		if !before[name] {
-			t.Fatalf("resolution container %s left behind", name)
-		}
+	if left := resolveContainersFrom(t, image); len(left) != 0 {
+		t.Fatalf("resolution containers left behind: %v", left)
 	}
 }
 
-func resolveContainers(t *testing.T) map[string]bool {
+// resolveContainersFrom names the resolution containers made from image.
+func resolveContainersFrom(t *testing.T, image string) []string {
 	t.Helper()
-	out, err := exec.Command("docker", "ps", "-a", "--filter", "label=spool.resolve=1", "--format", "{{.Names}}").Output()
+	out, err := exec.Command("docker", "ps", "-a", "--filter", "label="+resolveLabel,
+		"--format", "{{.Names}}\t{{.Image}}").Output()
 	if err != nil {
 		t.Fatal(err)
 	}
-	names := map[string]bool{}
-	for _, name := range strings.Fields(string(out)) {
-		names[name] = true
+	var names []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if name, from, ok := strings.Cut(line, "\t"); ok && from == image {
+			names = append(names, name)
+		}
 	}
 	return names
 }
