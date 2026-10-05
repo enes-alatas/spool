@@ -257,3 +257,166 @@ func TestLoopSecretDisplacesAnAttachedEnvVar(t *testing.T) {
 		t.Fatalf("github after migrating = %+v, %v; want it kept, unattached", github, err)
 	}
 }
+
+// TestPrivateConnections pins a connection's scope (#600): a private one is
+// attached to its owner as it is created, refused to any other loop, shared
+// for good by Share, deleted with its owner's attachment, and gone with its
+// owner loop even once detached from it.
+func TestPrivateConnections(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	for _, id := range []string{"l1", "l2"} {
+		if err := db.Loops().Create(ctx, &store.Loop{
+			ID: id, Name: "loop-" + id, Status: store.StatusActive,
+			WorkspaceMode: store.WorkspaceNone, Pacing: store.PacingFixed, Runtime: store.RuntimeBare,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	connections := db.Connections()
+	private := func(name string) *store.Connection {
+		return &store.Connection{Name: name, Kind: store.ConnectionEnvVar, Config: store.ConnectionConfig{Env: "TOKEN"},
+			Secret: "s-" + name, OwnerLoopID: "l1"}
+	}
+
+	if err := connections.Create(ctx, &store.Connection{Name: "orphan", Kind: store.ConnectionEnvVar, Secret: "s",
+		OwnerLoopID: "nope"}); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("Create owned by an unknown loop: %v, want ErrNotFound", err)
+	}
+	if _, err := connections.Get(ctx, "orphan"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("Get(orphan) after its refused create: %v, want ErrNotFound", err)
+	}
+
+	if err := connections.Create(ctx, private("mine")); err != nil {
+		t.Fatal(err)
+	}
+	mine, err := connections.Get(ctx, "mine")
+	if err != nil || mine.OwnerLoopID != "l1" || !reflect.DeepEqual(mine.LoopIDs, []string{"l1"}) {
+		t.Fatalf("Get(mine) = %+v, %v; want owned by and attached to l1", mine, err)
+	}
+	if err := connections.Attach(ctx, "mine", "l2", 1); !errors.Is(err, store.ErrConnectionPrivate) {
+		t.Fatalf("Attach(mine, l2): %v, want ErrConnectionPrivate", err)
+	}
+	if err := connections.Attach(ctx, "mine", "l1", 1); err != nil {
+		t.Fatalf("Attach(mine, l1) again: %v", err)
+	}
+
+	if err := connections.Delete(ctx, "mine"); err != nil {
+		t.Fatalf("Delete(mine) while its owner holds it: %v", err)
+	}
+	if _, err := connections.Get(ctx, "mine"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("Get(mine) after Delete: %v, want ErrNotFound", err)
+	}
+
+	if err := connections.Create(ctx, private("given")); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := connections.Share(ctx, "given"); err != nil {
+			t.Fatalf("Share(given): %v", err)
+		}
+	}
+	if err := connections.Attach(ctx, "given", "l2", 1); err != nil {
+		t.Fatalf("Attach(given, l2) once shared: %v", err)
+	}
+	if err := connections.Delete(ctx, "given"); !errors.Is(err, store.ErrConnectionAttached) {
+		t.Fatalf("Delete(given) while shared and held: %v, want ErrConnectionAttached", err)
+	}
+	if err := connections.Share(ctx, "nope"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("Share(nope): %v, want ErrNotFound", err)
+	}
+
+	if err := connections.Create(ctx, private("left")); err != nil {
+		t.Fatal(err)
+	}
+	if err := connections.Detach(ctx, "left", "l1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Loops().Delete(ctx, "l1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := connections.Get(ctx, "left"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("Get(left) after its owner's delete: %v, want ErrNotFound", err)
+	}
+	if given, err := connections.Get(ctx, "given"); err != nil || given.OwnerLoopID != "" {
+		t.Fatalf("Get(given) after l1's delete = %+v, %v; want it kept, shared", given, err)
+	}
+}
+
+// TestLoopSecretsBecomePrivate: the connections a loop's secrets became
+// are private to that loop once the scope lands, and every other stays
+// shared: one the operator named, one on a renamed variable, and one
+// attached to a second loop since (#600).
+func TestLoopSecretsBecomePrivate(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.db")
+	db, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	for id, name := range map[string]string{"l1": "aster_two", "l2": "briar"} {
+		if err := db.Loops().Create(ctx, &store.Loop{
+			ID: id, Name: name, Status: store.StatusActive,
+			WorkspaceMode: store.WorkspaceNone, Pacing: store.PacingFixed, Runtime: store.RuntimeBare,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, connection := range []struct {
+		name, env string
+		loops     []string
+	}{
+		{"aster-two-gh-token-0a1b2c", "GH_TOKEN", []string{"l1"}},
+		{"aster-two-a-very-long-var-9f8e7d", "A_VERY_LONG_VARIABLE", []string{"l1"}},
+		{"briar-gh-token-abcdef", "GH_TOKEN", []string{"l2", "l1"}},
+		{"github", "GH_TOKEN", []string{"l2"}},
+		{"aster-two-other-012345", "GH_TOKEN", []string{"l1"}},
+	} {
+		if err := db.Connections().Create(ctx, &store.Connection{Name: connection.name, Kind: store.ConnectionEnvVar,
+			Config: store.ConnectionConfig{Env: connection.env}, Secret: "s"}); err != nil {
+			t.Fatal(err)
+		}
+		for _, id := range connection.loops {
+			if err := db.Connections().Attach(ctx, connection.name, id, 1); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	for _, stmt := range []string{
+		`ALTER TABLE connections DROP COLUMN owner_loop`,
+		`DELETE FROM schema_migrations WHERE version = '0044_connection_owner.sql'`,
+	} {
+		if _, err := db.db.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+	db.Close()
+
+	db, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	list, err := db.Connections().List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owners := map[string]string{}
+	for _, connection := range list {
+		owners[connection.Name] = connection.OwnerLoopID
+	}
+	want := map[string]string{
+		"aster-two-gh-token-0a1b2c":        "l1",
+		"aster-two-a-very-long-var-9f8e7d": "l1",
+		"briar-gh-token-abcdef":            "",
+		"github":                           "",
+		"aster-two-other-012345":           "",
+	}
+	if !reflect.DeepEqual(owners, want) {
+		t.Fatalf("owners after migrating = %v, want %v", owners, want)
+	}
+}

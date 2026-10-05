@@ -347,7 +347,7 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			// read back in full.
 			"Create": false, "SetSecret": false, "Delete": false, "Get": false, "List": false,
 			// Names, loop ids and a timestamp.
-			"Attach": false, "Detach": false, "ListByLoop": false,
+			"Attach": false, "Detach": false, "ListByLoop": false, "Share": false,
 		},
 		"FleetRuleStore": {
 			// Operator-written rule text, rendered into every prompt.

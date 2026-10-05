@@ -203,8 +203,9 @@ func TestLoopSecretWritesDoNotRace(t *testing.T) {
 }
 
 // A hub upgraded from per-loop secrets keeps every loop's env as it was:
-// each secret becomes an env-var connection attached to its loop alone,
-// and the loop still reads the value from the same variable (#576).
+// each secret becomes an env-var connection attached to its loop alone and
+// private to it (#600), and the loop still reads the value from the same
+// variable (#576).
 func TestLoopSecretsUpgradeIntoConnections(t *testing.T) {
 	t.Parallel()
 	dataDir := t.TempDir()
@@ -225,8 +226,9 @@ func TestLoopSecretsUpgradeIntoConnections(t *testing.T) {
 	s.mustJSON("GET", "/api/connections", nil, &list)
 	held := map[string]string{}
 	for _, connection := range list {
-		if connection.Kind != "env-var" || len(connection.Loops) != 1 || connection.HasSecret != true {
-			t.Errorf("upgraded connection %+v, want an env-var with a secret, attached to one loop", connection)
+		if connection.Kind != "env-var" || len(connection.Loops) != 1 || connection.HasSecret != true ||
+			connection.OwnerLoop != connection.Loops[0] {
+			t.Errorf("upgraded connection %+v, want an env-var with a secret, attached to and private to one loop", connection)
 			continue
 		}
 		held[connection.Loops[0]+" "+connection.Config.Env] = connection.Name
@@ -261,11 +263,12 @@ func unmigrateLoopSecrets(t *testing.T, dataDir string, secrets map[string]map[s
 	defer db.Close()
 	for _, stmt := range []string{
 		`ALTER TABLE connections DROP COLUMN updated_at`,
+		`ALTER TABLE connections DROP COLUMN owner_loop`,
 		`CREATE TABLE loop_secrets (
 			loop_id TEXT NOT NULL REFERENCES loops(id) ON DELETE CASCADE,
 			name TEXT NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL,
 			PRIMARY KEY (loop_id, name))`,
-		`DELETE FROM schema_migrations WHERE version='0042_loop_secrets_are_connections.sql'`,
+		`DELETE FROM schema_migrations WHERE version IN ('0042_loop_secrets_are_connections.sql', '0044_connection_owner.sql')`,
 	} {
 		if _, err := db.Exec(stmt); err != nil {
 			t.Fatalf("%s: %v", stmt, err)

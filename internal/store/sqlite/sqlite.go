@@ -313,9 +313,10 @@ func (table loops) Delete(ctx context.Context, id string) error {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, `DELETE FROM connections WHERE name IN (
+	// its private connections, and any other only it held, go with it
+	if _, err := tx.ExecContext(ctx, `DELETE FROM connections WHERE owner_loop = ? OR name IN (
 		SELECT connection FROM connection_loops GROUP BY connection
-		HAVING COUNT(*) = 1 AND MAX(loop_id) = ?)`, id); err != nil {
+		HAVING COUNT(*) = 1 AND MAX(loop_id) = ?)`, id, id); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM loops WHERE id=?`, id); err != nil {

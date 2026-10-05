@@ -25,11 +25,13 @@ const (
 	codeConnectionNotFound      = "connection_not_found"
 	codeConnectionAttached      = "connection_attached"
 	codeConnectionEnvTaken      = "connection_env_taken"
+	codeConnectionPrivate       = "connection_private"
 )
 
 // connectionView is a connection as the control room reads it: everything
 // but the secret, which it knows only to be there or not, and its loops by
-// name, sorted.
+// name, sorted. OwnerLoop names the loop a private one belongs to, and is
+// absent for one the fleet shares.
 type connectionView struct {
 	Name      string                 `json:"name"`
 	Kind      string                 `json:"kind"`
@@ -37,6 +39,7 @@ type connectionView struct {
 	HasSecret bool                   `json:"has_secret"`
 	CreatedAt int64                  `json:"created_at"`
 	Loops     []string               `json:"loops"`
+	OwnerLoop string                 `json:"owner_loop,omitempty"`
 }
 
 func (server *Server) connectionViews(r *http.Request, connections ...*store.Connection) ([]connectionView, error) {
@@ -57,6 +60,7 @@ func (server *Server) connectionViews(r *http.Request, connections ...*store.Con
 			HasSecret: connection.Secret != "",
 			CreatedAt: connection.CreatedAt,
 			Loops:     []string{},
+			OwnerLoop: names[connection.OwnerLoopID],
 		}
 		for _, id := range connection.LoopIDs {
 			if name, ok := names[id]; ok {
@@ -101,41 +105,103 @@ func (server *Server) handleGetConnection(w http.ResponseWriter, r *http.Request
 	server.writeConnection(w, r, 200, connection)
 }
 
+// handleCreateConnection creates a connection, shared, or private to the
+// loop owner_loop names and attached to it. A private env-var may leave its
+// name to the hub, which names it as a loop secret's is named.
 func (server *Server) handleCreateConnection(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name   string                 `json:"name"`
-		Kind   string                 `json:"kind"`
-		Config store.ConnectionConfig `json:"config"`
-		Secret string                 `json:"secret"`
+		Name      string                 `json:"name"`
+		Kind      string                 `json:"kind"`
+		Config    store.ConnectionConfig `json:"config"`
+		Secret    string                 `json:"secret"`
+		OwnerLoop string                 `json:"owner_loop"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		server.jsonErr(w, 400, "bad json: %v", err)
 		return
 	}
 	connection := &store.Connection{Name: req.Name, Kind: req.Kind, Config: req.Config, Secret: req.Secret, CreatedAt: time.Now().UnixMilli()}
+	var owner *store.Loop
+	if req.OwnerLoop != "" {
+		var err error
+		if owner, err = server.Store.Loops().GetByName(r.Context(), req.OwnerLoop); err != nil {
+			server.storeErr(w, err, "loop")
+			return
+		}
+		connection.OwnerLoopID = owner.ID
+	}
+	named := connection.Name != "" || owner == nil || connection.Kind != store.ConnectionEnvVar
+	if !named {
+		// a valid stand-in to check the rest by; createLoopEnvVar names it
+		connection.Name = "unnamed"
+	}
 	if code, problem := connectionProblem(connection); problem != "" {
 		server.jsonErrCode(w, 400, code, "%s", problem)
 		return
 	}
-	if err := server.Store.Connections().Create(r.Context(), connection); err != nil {
-		if errors.Is(err, store.ErrDuplicate) {
-			server.jsonErrCode(w, 409, codeConnectionExists, "a connection named %q already exists", connection.Name)
+	if owner != nil {
+		server.envMu.Lock()
+		defer server.envMu.Unlock()
+		if !server.envFreeFor(w, r, connection, owner) {
 			return
 		}
-		server.jsonErr(w, 500, "%v", err)
+	}
+	var err error
+	if named {
+		err = server.Store.Connections().Create(r.Context(), connection)
+	} else {
+		err = server.createLoopEnvVar(r.Context(), connection, owner)
+	}
+	switch {
+	case errors.Is(err, store.ErrDuplicate):
+		server.jsonErrCode(w, 409, codeConnectionExists, "a connection named %q already exists", connection.Name)
+		return
+	case err != nil:
+		// the owner was found a moment ago, so a missing row is the loop deleted since
+		server.storeErr(w, err, "loop")
 		return
 	}
 	server.secretsChanged(r.Context())
+	if owner != nil {
+		server.loopChanged(r.Context(), owner.ID)
+	}
 	server.writeConnection(w, r, 201, connection)
 }
 
+// handleDeleteConnection deletes a connection no loop holds, or a private
+// one its owner alone holds, detaching it in the same step.
 func (server *Server) handleDeleteConnection(w http.ResponseWriter, r *http.Request) {
-	if err := server.Store.Connections().Delete(r.Context(), r.PathValue("name")); err != nil {
+	connection, err := server.Store.Connections().Get(r.Context(), r.PathValue("name"))
+	if err != nil {
+		server.connectionErr(w, r, err)
+		return
+	}
+	if err := server.Store.Connections().Delete(r.Context(), connection.Name); err != nil {
 		server.connectionErr(w, r, err)
 		return
 	}
 	server.secretsChanged(r.Context())
+	for _, id := range connection.LoopIDs {
+		server.loopChanged(r.Context(), id)
+	}
 	writeJSON(w, 200, map[string]bool{"deleted": true})
+}
+
+// handleShareConnection makes a private connection the fleet's, one way:
+// its value may be in another loop's env from then on. Sharing a shared one
+// answers as if it had just been shared.
+func (server *Server) handleShareConnection(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if err := server.Store.Connections().Share(r.Context(), name); err != nil {
+		server.connectionErr(w, r, err)
+		return
+	}
+	connection, err := server.Store.Connections().Get(r.Context(), name)
+	if err != nil {
+		server.connectionErr(w, r, err)
+		return
+	}
+	server.writeConnection(w, r, 200, connection)
 }
 
 // handleLoopConnection attaches the connection to the loop (attach) or
@@ -180,6 +246,13 @@ func (server *Server) envFree(w http.ResponseWriter, r *http.Request, name strin
 		server.connectionErr(w, r, err)
 		return false
 	}
+	return server.envFreeFor(w, r, connection, loopRecord)
+}
+
+// envFreeFor is envFree for a connection in hand, which may not be stored
+// yet. The caller holds envMu.
+func (server *Server) envFreeFor(w http.ResponseWriter, r *http.Request, connection *store.Connection, loopRecord *store.Loop) bool {
+	name := connection.Name
 	if connection.Kind != store.ConnectionEnvVar {
 		return true
 	}
@@ -205,6 +278,8 @@ func (server *Server) connectionErr(w http.ResponseWriter, r *http.Request, err 
 		server.jsonErrCode(w, 404, codeConnectionNotFound, "connection %q not found", name)
 	case errors.Is(err, store.ErrConnectionAttached):
 		server.jsonErrCode(w, 409, codeConnectionAttached, "connection %q is attached to a loop; detach it first", name)
+	case errors.Is(err, store.ErrConnectionPrivate):
+		server.jsonErrCode(w, 409, codeConnectionPrivate, "connection %q is private to another loop; share it first", name)
 	default:
 		server.jsonErr(w, 500, "%v", err)
 	}

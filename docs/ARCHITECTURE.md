@@ -197,12 +197,14 @@ opportunistically, not big-bang.
 - **Connections are org-level from the start** (ADR-0043, #504): a connection is
   defined once under a name (`GET`/`POST /api/connections`,
   `GET`/`DELETE /api/connections/{name}`), its secret write-only and redacted
-  from the moment it is stored; no loop owns one, so explicit orgs at L5 scope
-  it without a reshape. It is attached to loops one at a time
+  from the moment it is stored; it belongs to the org, so explicit orgs at L5
+  scope it without a reshape. It is attached to loops one at a time
   (`PUT`/`DELETE /api/loops/{name}/connections/{connection}`) and can't be
   deleted while attached; a deleted loop takes the ones only it held. A
-  loop's env is its attached env-vars; the per-loop secrets routes are a
-  shortcut onto them (#576).
+  connection is shared by the fleet, or private to one owner loop, the only
+  one it can be attached to, until `POST /api/connections/{name}/share` shares
+  it for good (#600). A loop's env is its attached env-vars; the per-loop
+  secrets routes are a shortcut onto them, creating private ones (#576).
 - **Runner extraction**: the hosted service will run runners near customer sandboxes.
   Anything crossing the Runner seam must stay serializable (no passing live channels
   or callbacks across it as its API matures).

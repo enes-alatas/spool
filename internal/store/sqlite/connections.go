@@ -15,7 +15,7 @@ import (
 // connection_loops rows (ADR-0043).
 type connections struct{ db *sql.DB }
 
-const connectionColumns = `name, kind, config, secret, created_at, updated_at`
+const connectionColumns = `name, kind, config, secret, created_at, updated_at, owner_loop`
 
 func (table connections) List(ctx context.Context) ([]*store.Connection, error) {
 	return table.list(ctx, `SELECT `+connectionColumns+` FROM connections ORDER BY name`)
@@ -91,13 +91,33 @@ func (table connections) Create(ctx context.Context, connection *store.Connectio
 	if connection.UpdatedAt == 0 {
 		connection.UpdatedAt = connection.CreatedAt
 	}
-	_, err = table.db.ExecContext(ctx, `INSERT INTO connections (`+connectionColumns+`) VALUES (?,?,?,?,?,?)`,
-		connection.Name, connection.Kind, string(config), connection.Secret, connection.CreatedAt, connection.UpdatedAt)
+	tx, err := table.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	_, err = tx.ExecContext(ctx, `INSERT INTO connections (`+connectionColumns+`) VALUES (?,?,?,?,?,?,?)`,
+		connection.Name, connection.Kind, string(config), connection.Secret, connection.CreatedAt, connection.UpdatedAt,
+		nullable(connection.OwnerLoopID))
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return store.ErrDuplicate
 	}
+	if err != nil {
+		return err
+	}
 	connection.LoopIDs = []string{}
-	return err
+	if connection.OwnerLoopID != "" {
+		_, err = tx.ExecContext(ctx, `INSERT INTO connection_loops (connection, loop_id, attached_at) VALUES (?,?,?)`,
+			connection.Name, connection.OwnerLoopID, connection.CreatedAt)
+		if err != nil && strings.Contains(err.Error(), "FOREIGN KEY") {
+			return store.ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		connection.LoopIDs = []string{connection.OwnerLoopID}
+	}
+	return tx.Commit()
 }
 
 func (table connections) Delete(ctx context.Context, name string) error {
@@ -106,21 +126,47 @@ func (table connections) Delete(ctx context.Context, name string) error {
 		return err
 	}
 	defer tx.Rollback()
+	owner, err := connectionOwner(ctx, tx, name)
+	if err != nil {
+		return err
+	}
 	var attached bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM connection_loops WHERE connection=?)`, name).Scan(&attached); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM connection_loops WHERE connection=? AND loop_id<>?)`,
+		name, owner).Scan(&attached); err != nil {
 		return err
 	}
 	if attached {
 		return store.ErrConnectionAttached
 	}
-	res, err := tx.ExecContext(ctx, `DELETE FROM connections WHERE name=?`, name)
+	if _, err := tx.ExecContext(ctx, `DELETE FROM connection_loops WHERE connection=?`, name); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM connections WHERE name=?`, name); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (table connections) Share(ctx context.Context, name string) error {
+	res, err := table.db.ExecContext(ctx, `UPDATE connections SET owner_loop=NULL WHERE name=?`, name)
 	if err != nil {
 		return err
 	}
 	if affected, _ := res.RowsAffected(); affected == 0 {
 		return store.ErrNotFound
 	}
-	return tx.Commit()
+	return nil
+}
+
+// connectionOwner is a connection's owner loop, "" for a shared one.
+// ErrNotFound for an unknown name.
+func connectionOwner(ctx context.Context, tx *sql.Tx, name string) (string, error) {
+	var owner sql.NullString
+	err := tx.QueryRowContext(ctx, `SELECT owner_loop FROM connections WHERE name=?`, name).Scan(&owner)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", store.ErrNotFound
+	}
+	return owner.String, err
 }
 
 func (table connections) SetSecret(ctx context.Context, name, secret string, at int64) error {
@@ -135,12 +181,27 @@ func (table connections) SetSecret(ctx context.Context, name, secret string, at 
 }
 
 func (table connections) Attach(ctx context.Context, name, loopID string, at int64) error {
-	_, err := table.db.ExecContext(ctx, `INSERT INTO connection_loops (connection, loop_id, attached_at) VALUES (?,?,?)
+	tx, err := table.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	owner, err := connectionOwner(ctx, tx, name)
+	if err != nil {
+		return err
+	}
+	if owner != "" && owner != loopID {
+		return store.ErrConnectionPrivate
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO connection_loops (connection, loop_id, attached_at) VALUES (?,?,?)
 		ON CONFLICT (connection, loop_id) DO NOTHING`, name, loopID, at)
 	if err != nil && strings.Contains(err.Error(), "FOREIGN KEY") {
 		return store.ErrNotFound
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (table connections) Detach(ctx context.Context, name, loopID string) error {
@@ -154,11 +215,22 @@ func (table connections) Detach(ctx context.Context, name, loopID string) error 
 func scanConnection(row interface{ Scan(...any) error }) (*store.Connection, error) {
 	var connection store.Connection
 	var config string
-	if err := row.Scan(&connection.Name, &connection.Kind, &config, &connection.Secret, &connection.CreatedAt, &connection.UpdatedAt); err != nil {
+	var owner sql.NullString
+	if err := row.Scan(&connection.Name, &connection.Kind, &config, &connection.Secret, &connection.CreatedAt, &connection.UpdatedAt,
+		&owner); err != nil {
 		return nil, err
 	}
+	connection.OwnerLoopID = owner.String
 	if err := json.Unmarshal([]byte(config), &connection.Config); err != nil {
 		return nil, err
 	}
 	return &connection, nil
+}
+
+// nullable stores "" as NULL, which owner_loop reads as shared.
+func nullable(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
 }
