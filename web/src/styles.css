@@ -2298,6 +2298,8 @@ textarea {
   grid-template-areas:
     'name kind secret delete'
     'detail detail loops delete'
+    'tools tools tools tools'
+    'panel panel panel panel'
     'error error error error';
   column-gap: 12px;
   row-gap: 2px;
@@ -2346,7 +2348,7 @@ textarea {
 .connection-secret.none {
   color: var(--text-muted);
 }
-.connection-row .btn {
+.connection-row > .btn {
   grid-area: delete;
   /* Share and Delete one width, so every row's columns line up. */
   min-width: 5.5rem;
@@ -2354,6 +2356,62 @@ textarea {
 .connection-error {
   grid-area: error;
   margin-top: 6px;
+}
+/* The row's quieter actions, under what it points at (#507): its record,
+   a new value, and revoke. Text buttons, so the one bordered button per row
+   stays the row's main action. */
+.connection-tools {
+  grid-area: tools;
+  display: flex;
+  gap: 16px;
+  margin-top: 4px;
+}
+.text-button.danger {
+  color: var(--danger);
+}
+.connection-revoked {
+  color: var(--danger);
+}
+/* What a tool opens, the row's width under it: the record or the new value. */
+.connection-panel {
+  grid-area: panel;
+  margin-top: 8px;
+}
+.connection-events {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.connection-event {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 3px 0;
+}
+/* A variable name is one long word: it breaks rather than push the time out. */
+.connection-event span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.connection-event time {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  white-space: nowrap;
+}
+.rotate-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.rotate-form input {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+.rotate-form .form-error {
+  flex-basis: 100%;
 }
 /* Narrow, the kind takes the name's line's width under it instead of a
    squeezed column beside it, where "MCP server · stdio" broke a word a line. */
@@ -2365,6 +2423,8 @@ textarea {
       'kind kind delete'
       'detail detail detail'
       'loops loops loops'
+      'tools tools tools'
+      'panel panel panel'
       'error error error';
   }
   .connection-loops {
@@ -2408,9 +2468,18 @@ textarea {
   font-size: 0.6875rem;
   color: var(--text);
 }
-.loop-connection-share {
-  align-self: flex-start;
+.loop-connection-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
   margin-top: 4px;
+}
+.loop-connection .rotate-form {
+  margin-top: 8px;
+}
+.loop-connection-history {
+  align-self: flex-start;
+  margin: 10px 0 6px;
 }
 /* The add dialog's private variable tab: the variable, its value, the button. */
 .loop-env-form {

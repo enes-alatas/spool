@@ -1,4 +1,4 @@
-import type { Connection, CreateConnectionReq } from './api'
+import type { Connection, ConnectionEvent, CreateConnectionReq } from './api'
 
 // What the Connections page's create form holds, and what it reads back
 // (#506). The API has two kinds and an mcp-server two transports; the form
@@ -129,5 +129,31 @@ export function connectionDetail(c: Connection): string {
       ]
         .filter(Boolean)
         .join(' ')
+  }
+}
+
+// One line of a connection's record, read from where it is listed: on the
+// connection's own history it names the loop, on a loop's it names the
+// connection. The loop is plain text, since it may be gone or renamed since.
+export function connectionEventLabel(e: ConnectionEvent, from: 'connection' | 'loop'): string {
+  const subject = from === 'loop' ? `${e.connection} ` : ''
+  switch (e.action) {
+    case 'attach':
+      return from === 'loop' ? `${subject}attached` : `attached to ${e.loop}`
+    case 'detach':
+      return from === 'loop' ? `${subject}detached` : `detached from ${e.loop}`
+    case 'create':
+      return `${subject}created`
+    case 'delete':
+      return `${subject}deleted`
+    case 'share':
+      // Only a private one is shared, and the row names its owner.
+      return from === 'loop' || !e.loop
+        ? `${subject}shared with the fleet`
+        : `shared with the fleet by ${e.loop}`
+    case 'rotate':
+      return `${subject}value rotated`
+    case 'revoke':
+      return `${subject}revoked`
   }
 }

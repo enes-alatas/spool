@@ -521,6 +521,29 @@ export interface Connection {
   // else is refused (`connection_private`) until it is shared, one way, and
   // deleting it detaches it from its owner in the same step.
   owner_loop?: string
+  // When its value was last replaced (#609), absent if never. The old value
+  // is never readable again, and stays redacted.
+  rotated_at?: number
+  // When it was revoked (#610), absent unless it was. A revoked connection
+  // is on no loop and can't be attached, shared or given a new value; it can
+  // only be deleted, and its value stays redacted.
+  revoked_at?: number
+}
+
+// One change to a connection, on its append-only record (#606). Names, not
+// references: a row outlives the connection and the loop it names, and the
+// loop is named as it was then. `loop` is the loop the change was to: on
+// attach and detach, and on share, delete and revoke of a private one, its
+// owner. Absent on create, which a private one's owner follows as an
+// attach, on rotate, and on delete and revoke of a shared one. A loop's
+// listing holds the rows that name it.
+export type ConnectionAction = 'create' | 'delete' | 'attach' | 'detach' | 'share' | 'rotate' | 'revoke'
+
+export interface ConnectionEvent {
+  action: ConnectionAction
+  connection: string
+  loop?: string
+  at: number
 }
 
 // A connection as a loop's view lists it: what it is, never what it holds.
@@ -808,6 +831,16 @@ export const api = {
     req<void>(`/api/loops/${loop}/connections/${connection}`, { method: 'DELETE' }),
   // One way: a shared value may already be in another loop's env (#600).
   shareConnection: (name: string) => req<Connection>(`/api/connections/${name}/share`, { method: 'POST' }),
+  // Replaces the value (#609): every loop holding the connection ends its
+  // session with a handoff and wakes with the new one.
+  rotateConnection: (name: string, value: string) =>
+    req<Connection>(`/api/connections/${name}/secret`, { method: 'PUT', body: JSON.stringify({ value }) }),
+  // Takes it from every loop, for good (#610). Attaching it after is refused
+  // (`connection_revoked`).
+  revokeConnection: (name: string) => req<Connection>(`/api/connections/${name}/revoke`, { method: 'POST' }),
+  // The record, newest first, readable by name after what it names is gone.
+  connectionEvents: (name: string) => req<ConnectionEvent[]>(`/api/connections/${name}/events`),
+  loopConnectionEvents: (loop: string) => req<ConnectionEvent[]>(`/api/loops/${loop}/connection-events`),
   rules: () => req<RulesView>('/api/rules'),
   createRule: (body: { title: string; body: string; enabled: boolean }) =>
     req<FleetRule>('/api/rules', { method: 'POST', body: JSON.stringify(body) }),

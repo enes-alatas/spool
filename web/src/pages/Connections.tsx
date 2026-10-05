@@ -4,6 +4,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ApiError, Connection } from '../api'
 import { connectionDetail, connectionKindLabel } from '../connections'
 import { ConnectionForm } from '../components/ConnectionForm'
+import { ConnectionEvents, RotateForm } from '../components/ConnectionRecord'
+import { messageTime } from '../components/MessageKnot'
 
 // The org's connections (ADR-0043, #506): env variables and MCP servers,
 // each defined once under a name. A secret is typed into the create form,
@@ -41,6 +43,36 @@ function ConnectionRow({ c, onChanged }: { c: Connection; onChanged: () => void 
     }
   }
 
+  const [panel, setPanel] = useState<'' | 'history' | 'rotate'>('')
+  const toggle = (p: 'history' | 'rotate') => setPanel(panel === p ? '' : p)
+  const revoked = c.revoked_at !== undefined
+
+  const revoke = async () => {
+    const holders =
+      loops.length === 0
+        ? ''
+        : loops.length === 1
+          ? ` Takes it from ${loops[0]} now and ends its session.`
+          : ` Takes it from ${loops.join(', ')} now and ends their sessions.`
+    if (
+      !confirm(
+        `Revoke "${c.name}"?${holders} It can never be attached, shared or given a new value again, and its value stays redacted. To replace it, create a new connection.`,
+      )
+    ) {
+      return
+    }
+    setBusy(true)
+    setError('')
+    try {
+      await api.revokeConnection(c.name)
+      onChanged()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const share = async () => {
     if (
       !confirm(
@@ -71,7 +103,9 @@ function ConnectionRow({ c, onChanged }: { c: Connection; onChanged: () => void 
       </span>
       {/* Each loop a link to its page, where it is detached. */}
       <span className="connection-loops">
-        {c.owner_loop ? (
+        {revoked ? (
+          <span className="connection-revoked">revoked {messageTime(c.revoked_at ?? 0)}</span>
+        ) : c.owner_loop ? (
           <>
             private to <Link to={`/loops/${c.owner_loop}`}>{c.owner_loop}</Link>
           </>
@@ -90,14 +124,34 @@ function ConnectionRow({ c, onChanged }: { c: Connection; onChanged: () => void 
         )}
       </span>
       {/* Presence, never the value: the API does not have it to give. */}
+      {/* A revoked one holds no value, its old one retired (#610): "no
+          secret" would read as though it never had one, so it says nothing. */}
       <span className={`connection-secret${c.has_secret ? '' : ' none'}`}>
-        {c.has_secret ? 'secret set' : 'no secret'}
+        {revoked ? '' : c.has_secret ? 'secret set' : 'no secret'}
+        {!revoked && c.rotated_at !== undefined && ` · rotated ${messageTime(c.rotated_at)}`}
+      </span>
+      {/* A revoked one has nothing left to change, only its record. */}
+      <span className="connection-tools">
+        <button className="text-button" onClick={() => toggle('history')} aria-expanded={panel === 'history'}>
+          History
+        </button>
+        {!revoked && c.has_secret && (
+          <button className="text-button" onClick={() => toggle('rotate')} aria-expanded={panel === 'rotate'}>
+            Rotate value
+          </button>
+        )}
+        {!revoked && (
+          <button className="text-button danger" onClick={revoke} disabled={busy}>
+            Revoke
+          </button>
+        )}
       </span>
       {/* A private one is removed from its loop's page, where it is the
-          loop's own; here it can only be shared. A shared one is shut while
+          loop's own; here it can only be shared. A revoked one, private or
+          not, is on no loop and can only be deleted. A shared one is shut while
           attached: the hub refuses it (`connection_attached`), and saying
           why on the button beats a refusal after the confirm. */}
-      {c.owner_loop ? (
+      {c.owner_loop && !revoked ? (
         <button className="btn sm" onClick={share} disabled={busy}>
           Share
         </button>
@@ -111,6 +165,22 @@ function ConnectionRow({ c, onChanged }: { c: Connection; onChanged: () => void 
           {busy ? 'Deleting…' : 'Delete'}
         </button>
       )}
+      {panel !== '' && (
+        <div className="connection-panel">
+          {panel === 'history' ? (
+            <ConnectionEvents connection={c.name} />
+          ) : (
+            <RotateForm
+              connection={c}
+              onDone={() => {
+                setPanel('')
+                onChanged()
+              }}
+              onCancel={() => setPanel('')}
+            />
+          )}
+        </div>
+      )}
       {error && (
         <div className="form-error connection-error" role="alert">
           {error}
@@ -123,7 +193,13 @@ function ConnectionRow({ c, onChanged }: { c: Connection; onChanged: () => void 
 export default function Connections() {
   const qc = useQueryClient()
   const { data, isPending, error } = useQuery({ queryKey: ['connections'], queryFn: api.connections })
-  const refresh = () => qc.invalidateQueries({ queryKey: ['connections'] })
+  // Every change lands on the record too (#606).
+  const refresh = () =>
+    Promise.all([
+      qc.invalidateQueries({ queryKey: ['connections'] }),
+      qc.invalidateQueries({ queryKey: ['connection-events'] }),
+      qc.invalidateQueries({ queryKey: ['loop-connection-events'] }),
+    ])
 
   if (isPending) return <div className="page measure placeholder">Loading…</div>
 

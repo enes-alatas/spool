@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Connection } from './api'
 import {
+  connectionEventLabel,
   EMPTY_DRAFT,
   connectionArgs,
   connectionDetail,
@@ -136,5 +137,43 @@ describe('kindLabel', () => {
       'MCP server',
       'github-app',
     ])
+  })
+})
+
+describe('connectionEventLabel', () => {
+  const at = 0
+  // Rows as the hub writes them (#606): create carries no loop, a private
+  // one's owner arrives as the attach after it, and share, delete and
+  // revoke of a private one name the owner.
+  const priv = [
+    { action: 'share', connection: 'gardener-key-0f1a7e', loop: 'gardener', at },
+    { action: 'attach', connection: 'gardener-key-0f1a7e', loop: 'gardener', at },
+    { action: 'create', connection: 'gardener-key-0f1a7e', at },
+  ] as const
+  it("names the loop on a connection's history", () => {
+    expect(priv.map((e) => connectionEventLabel(e, 'connection'))).toEqual([
+      'shared with the fleet by gardener',
+      'attached to gardener',
+      'created',
+    ])
+    expect(
+      connectionEventLabel({ action: 'detach', connection: 'github', loop: 'archivist', at }, 'connection'),
+    ).toBe('detached from archivist')
+    expect(connectionEventLabel({ action: 'rotate', connection: 'github', at }, 'connection')).toBe(
+      'value rotated',
+    )
+  })
+  it("names the connection on a loop's history", () => {
+    expect(priv.slice(0, 2).map((e) => connectionEventLabel(e, 'loop'))).toEqual([
+      'gardener-key-0f1a7e shared with the fleet',
+      'gardener-key-0f1a7e attached',
+    ])
+    // A private one revoked names its owner, so it is on the owner's list.
+    expect(
+      connectionEventLabel(
+        { action: 'revoke', connection: 'gardener-old-0f1a7e', loop: 'gardener', at },
+        'loop',
+      ),
+    ).toBe('gardener-old-0f1a7e revoked')
   })
 })
