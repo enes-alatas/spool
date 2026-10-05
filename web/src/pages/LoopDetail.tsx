@@ -667,8 +667,8 @@ function WorkstationPanel({ loop, runningVerb }: { loop: LoopView; runningVerb: 
                 Recreating destroys this workstation and builds a fresh one from its image.
                 <strong> Gone:</strong> the loop's session memory (it starts its next turn fresh, with no
                 recollection of this conversation), plus anything uncommitted in the workspace and anything it
-                installed. <strong>Kept:</strong> its mission, schedule, secrets, Spool's own record of every
-                message and turn, and anything it pushed to a remote.
+                installed. <strong>Kept:</strong> its mission, schedule, connections, Spool's own record of
+                every message and turn, and anything it pushed to a remote.
               </div>
               <div style={{ marginTop: 8 }}>
                 Type <code>{loop.name}</code> to confirm:
@@ -712,99 +712,6 @@ function WorkstationPanel({ loop, runningVerb }: { loop: LoopView; runningVerb: 
           </div>
         </>
       )}
-    </div>
-  )
-}
-
-// SecretsPanel manages a loop's secret env vars: names are listed, values are
-// write-only — entered once, stored, never shown again.
-function SecretsPanel({ loop }: { loop: LoopView }) {
-  const qc = useQueryClient()
-  const { data: secrets } = useQuery({
-    queryKey: ['secrets', loop.name],
-    queryFn: () => api.loopSecrets(loop.name),
-  })
-  const [name, setName] = useState('')
-  const [value, setValue] = useState('')
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['secrets', loop.name] })
-
-  const add = async () => {
-    setBusy(true)
-    setError('')
-    try {
-      await api.setLoopSecret(loop.name, name.trim(), value)
-      setName('')
-      setValue('')
-      invalidate()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const remove = async (key: string) => {
-    setError('')
-    try {
-      await api.deleteLoopSecret(loop.name, key)
-      invalidate()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    }
-  }
-
-  return (
-    <div className="side-panel">
-      <h3>Secrets</h3>
-      <div className="panel-note leading">
-        Env vars injected into every workstation exec (a gh token, API keys). Values are write-only: stored,
-        never shown again. Applied from the next wake.
-      </div>
-      {(secrets ?? []).length === 0 ? (
-        <div className="panel-empty">No secrets set.</div>
-      ) : (
-        (secrets ?? []).map((s) => (
-          <div className="row" key={s.name} style={{ alignItems: 'center' }}>
-            <span className="k" style={{ fontFamily: 'var(--mono)' }}>
-              {s.name}
-            </span>
-            <button
-              className="btn danger"
-              onClick={() => remove(s.name)}
-              style={{ padding: '2px 8px' }}
-              title="Remove secret"
-            >
-              ✕
-            </button>
-          </div>
-        ))
-      )}
-      <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <input
-          placeholder="NAME"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          style={{ fontFamily: 'var(--mono)' }}
-        />
-        <input
-          type="password"
-          autoComplete="off"
-          placeholder="value"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-        />
-        {error && (
-          <div className="form-error" role="alert">
-            {error}
-          </div>
-        )}
-        <button className="btn primary" onClick={add} disabled={busy || !name.trim() || !value}>
-          {busy ? 'Saving…' : 'Add secret'}
-        </button>
-      </div>
     </div>
   )
 }
@@ -1835,8 +1742,6 @@ export default function LoopDetail() {
           <SurfacesPanel loop={loop} />
 
           <LoopRooms loop={loop} />
-
-          <SecretsPanel loop={loop} />
 
           <LoopConnections loop={loop} />
 
