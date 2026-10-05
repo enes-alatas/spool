@@ -242,5 +242,47 @@ taken.push(surfacePairFile)
 await page.unroute('**/api/telegram/senders')
 await page.unroute('**/api/onboarding')
 
+// A Slack loop's rooms panel (#548). The fixture's loops are all on
+// Telegram, so the gardener is shot as a Slack loop, with an unbound Slack
+// channel waiting above its fleet room.
+const slackLoop = (loop) => ({
+  ...loop,
+  surface: 'slack',
+  has_tg_token: false,
+  tg_bot_username: '',
+  has_slack_tokens: true,
+})
+await page.route('**/api/loops/gardener', async (route) => {
+  if (route.request().method() !== 'GET') return route.continue()
+  await route.fulfill({ json: slackLoop(await (await route.fetch()).json()) })
+})
+await page.route('**/api/loops/gardener/rooms', (route) =>
+  route.fulfill({
+    json: [
+      {
+        surface: 'slack',
+        room_id: 'C07RELEASE1',
+        title: 'release-notes',
+        channel: '',
+        first_seen_at: Date.now(),
+      },
+      {
+        surface: 'slack',
+        room_id: 'C07GENERAL0',
+        title: 'general',
+        channel: 'group',
+        first_seen_at: Date.now(),
+      },
+    ],
+  }),
+)
+await page.goto(base + '/loops/gardener', { waitUntil: 'networkidle' })
+await page.locator('#rooms').waitFor({ timeout: 15000 })
+const slackRoomsFile = `${outDir}/slack-rooms.png`
+await page.locator('#rooms').screenshot({ path: slackRoomsFile })
+taken.push(slackRoomsFile)
+await page.unroute('**/api/loops/gardener/rooms')
+await page.unroute('**/api/loops/gardener')
+
 await browser.close()
 for (const file of taken) console.log(file)

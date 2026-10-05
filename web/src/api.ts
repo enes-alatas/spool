@@ -333,11 +333,12 @@ export interface SlackSender {
   updated_at: number
 }
 
-// A Slack loop's live state (#230). The channel binds on the first message
-// an allowed sender writes in a channel the bot is in; an invite alone, or a
+// A Slack loop's live state (#230). channel_id is the Slack channel the
+// loop's fleet room is: the fleet channel binds to the first Slack channel
+// an allowed sender writes in with the app invited; an invite alone, or a
 // pending sender's message, binds nothing (#438). channel_id is '' until
-// then. ignored_events counts events from channels it does not listen in:
-// the hint that the bot was invited somewhere else.
+// then. ignored_events counts messages from Slack channels the app has no
+// bound room in (#548): the hint that one is waiting on the loop page.
 export interface SlackStatus {
   configured: boolean
   bot_user_id: string
@@ -397,7 +398,8 @@ export interface Channel {
 // binds it. Mirrors roomView in internal/httpapi/rooms.go.
 export interface Room {
   surface: string
-  // The surface's id for the chat, as text: a Telegram group's is negative.
+  // The surface's id for the chat, as text: a Telegram group's is negative,
+  // a Slack channel's starts with C (or G for an older private one).
   room_id: string
   // The chat's name as the surface last reported it; "" for a room bound by
   // id before the bot ever heard from it.
