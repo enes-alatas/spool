@@ -122,18 +122,19 @@ export function slackReadiness(
   return `Not ready to message ${owner} yet.`
 }
 
-// The channel a Slack loop hears, or that it has none yet.
+// The Slack channel the loop's fleet room is, or that it has none yet; the
+// loop hears every room it has bound (#548), which the rooms panel lists.
 export function slackChannel(status: Pick<SlackStatus, 'channel_id' | 'channel_name'>): string {
   if (!status.channel_id) return 'not bound yet'
   return status.channel_name ? `#${status.channel_name}` : status.channel_id
 }
 
-// What binds it. An invite alone does not: the app binds the first channel an
-// allowed sender writes in, and a pending sender's message is dropped before
-// that (#230), so an operator told to invite the bot would re-invite one that
-// is already there (#438).
+// What binds it. An invite alone does not: the fleet channel binds to the
+// first Slack channel an allowed sender writes in, and a pending sender's
+// message is dropped before that (#230), so an operator told to invite the
+// app would re-invite one that is already there (#438).
 export const SLACK_UNBOUND_HINT =
-  'The channel binds on the first message an allowed sender writes in a channel the bot is in. A pending sender does not count: allow them on Access.'
+  'The fleet channel binds to the first Slack channel an allowed sender writes in with the app invited. A pending sender does not count: allow them on Access.'
 
 // An app created from a manifest older than ADR-0040 lacks the reaction
 // scopes and events. Slack keeps the app as created, so nothing here can add

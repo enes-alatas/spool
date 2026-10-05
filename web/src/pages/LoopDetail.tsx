@@ -39,7 +39,7 @@ import { AttachButton, AttachedFile, attachmentErrorText, pickRefusal } from '..
 import { MessageKnot } from '../components/MessageKnot'
 import { UndeliveredPane } from '../components/UndeliveredPane'
 import { Timeline } from '../components/Timeline'
-import { ChannelHead, TelegramGroups } from '../components/LoopChannels'
+import { ChannelHead, LoopRooms, ROOMS_ANCHOR } from '../components/LoopChannels'
 import { ChannelChat } from '../components/ChannelChat'
 import { channelLabel } from '../channels'
 import { MCPReach } from '../components/MCPReach'
@@ -952,7 +952,7 @@ function SlackSurface({
         <span className="v">{status ? status.team_name : '…'}</span>
       </div>
       <div className="row">
-        <span className="k">channel</span>
+        <span className="k">fleet room</span>
         <span className="v">{status ? slackChannel(status) : '…'}</span>
       </div>
       <div className="row">
@@ -972,9 +972,8 @@ function SlackSurface({
       {!!status?.bridge.ignored_events && (
         <div className="hint surface-hint">
           Ignored {status.bridge.ignored_events} {status.bridge.ignored_events === 1 ? 'event' : 'events'}{' '}
-          from channels it does not listen in. It hears{' '}
-          {status.channel_name ? `#${status.channel_name}` : 'its first channel'} only, so it was invited
-          somewhere else too.
+          from Slack channels that carry none of @{loop.name}'s channels yet. Bind them under{' '}
+          <a href={`#${ROOMS_ANCHOR}`}>Slack channels</a>.
         </div>
       )}
       {isError && (
@@ -1835,12 +1834,7 @@ export default function LoopDetail() {
 
           <SurfacesPanel loop={loop} />
 
-          {loopSurface(loop) === 'telegram' && (
-            <div className="side-panel" id="telegram-groups">
-              <h3>Telegram groups</h3>
-              <TelegramGroups loop={loop} />
-            </div>
-          )}
+          <LoopRooms loop={loop} />
 
           <SecretsPanel loop={loop} />
 
