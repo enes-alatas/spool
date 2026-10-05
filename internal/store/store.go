@@ -1361,6 +1361,9 @@ const (
 	// holds: detaching first is the operator saying the loop can do
 	// without it (ADR-0043).
 	ErrConnectionAttached = sentinelError("store: connection attached")
+	// ErrConnectionPrivate refuses attaching a loop's private connection
+	// to another loop (ADR-0043): sharing it is a step of its own.
+	ErrConnectionPrivate = sentinelError("store: connection private")
 	// ErrPollClosed refuses a vote in a poll that has closed (ADR-0041).
 	ErrPollClosed = sentinelError("store: poll closed")
 )
@@ -1380,6 +1383,10 @@ type Connection struct {
 	// LoopIDs are the loops the connection is attached to, in no promised
 	// order.
 	LoopIDs []string
+	// OwnerLoopID is the loop a private connection belongs to, and "" for
+	// one the fleet shares. A private one is attached to its owner when it
+	// is created, and to no other loop until it is shared.
+	OwnerLoopID string
 }
 
 // The kinds a connection can be (ADR-0043).
@@ -1444,16 +1451,24 @@ type ConnectionStore interface {
 	List(ctx context.Context) ([]*Connection, error)
 	// Get is ErrNotFound for an unknown name.
 	Get(ctx context.Context, name string) (*Connection, error)
-	// Create is ErrDuplicate when the name is taken.
+	// Create is ErrDuplicate when the name is taken. A private one is
+	// attached to its owner in the same step, and is ErrNotFound for an
+	// unknown owner.
 	Create(ctx context.Context, connection *Connection) error
 	// Delete is ErrNotFound for an unknown name, and ErrConnectionAttached
-	// while any loop holds it.
+	// while any loop but a private one's owner holds it. A private one is
+	// detached from its owner in the same step.
 	Delete(ctx context.Context, name string) error
+	// Share makes a private connection the fleet's, for good: its value may
+	// be in another loop's env from then on. Sharing a shared one changes
+	// nothing. ErrNotFound for an unknown name.
+	Share(ctx context.Context, name string) error
 	// SetSecret replaces the secret and stamps UpdatedAt. ErrNotFound for
 	// an unknown name.
 	SetSecret(ctx context.Context, name, secret string, at int64) error
 	// Attach gives a loop the connection; attaching it again changes
-	// nothing. ErrNotFound for an unknown connection or loop.
+	// nothing. ErrNotFound for an unknown connection or loop, and
+	// ErrConnectionPrivate for another loop's private one.
 	Attach(ctx context.Context, name, loopID string, at int64) error
 	// Detach takes it away again; detaching what is not attached changes
 	// nothing. ErrNotFound for an unknown connection.

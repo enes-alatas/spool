@@ -1,6 +1,6 @@
 # ADR-0043: Connections are org-level credentials and configs, defined once and attachable to loops
 
-Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572); 2026-10-04 (item 2: the env-var kind, #574); 2026-10-04 (item 5: per-loop secrets are connections, #576); 2026-10-05 (item 2: an mcp-server reaches its loop, #597)
+Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572); 2026-10-04 (item 2: the env-var kind, #574); 2026-10-04 (item 5: per-loop secrets are connections, #576); 2026-10-05 (item 2: an mcp-server reaches its loop, #597); 2026-10-05 (item 1: private connections, #600)
 
 ## Context
 
@@ -26,6 +26,36 @@ follow in their own slice and amend this ADR.
    *org*), not to a loop. It is defined once and can be attached to any
    loop. When orgs become explicit at L5, a connection is scoped to its
    org like everything else, and no loop ever owned one.
+
+   **Amendment (2026-10-05, #600): a connection can be private to one
+   loop.** It still belongs to the org, but its owner loop is the only one
+   it can be attached to (`owner_loop` on create). A shared connection has
+   no owner, and the fleet's loops take it as before.
+   - **Created for its owner.** A private connection is attached to its
+     owner as it is created, in the same step. A private `env-var` may
+     leave its name to the hub, which names it as a moved per-loop secret
+     is named (item 5).
+   - **Refused to any other loop.** Attaching it to another loop is
+     refused (409 `connection_private`), so the control room doesn't offer
+     it there.
+   - **Shared one way.** `POST /api/connections/{name}/share` clears the
+     owner. There is no way back, because the value may already be in
+     another loop's env. Sharing a shared one changes nothing.
+   - **Deleted with its owner's attachment.** Deleting a private one
+     detaches it from its owner in the same step, so no unattached value
+     is left behind. A deleted loop takes its private connections with it,
+     even one detached from it.
+   - **Per-loop secrets are private.** What item 5's move made of a
+     per-loop secret, and what the secrets routes have made since, is
+     private to its loop: an `env-var` held by that loop alone, under a
+     name made from the loop's and the variable's. One the operator has
+     since attached to a second loop is shared in fact and stays shared.
+     So does every other connection. The secrets routes now create private
+     connections.
+   Injection is unchanged: an attached connection reaches its loop
+   whatever its scope. Enes decided that a connection can be private, and
+   that sharing one is the one-way step above rather than a list of loops
+   it is granted to, on 2026-10-05 (#600).
 
 2. **A connection has a name, a kind, a config and a secret.**
    - **The name** is 1 to 32 of `a-z`, `0-9` and `-`, not starting with

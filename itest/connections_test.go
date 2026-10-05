@@ -22,6 +22,7 @@ type connectionJSON struct {
 	HasSecret bool     `json:"has_secret"`
 	CreatedAt int64    `json:"created_at"`
 	Loops     []string `json:"loops"`
+	OwnerLoop string   `json:"owner_loop"`
 }
 
 type loopConnectionJSON struct {
@@ -193,5 +194,73 @@ func TestConnectionAttachments(t *testing.T) {
 	s.wantRefusal("GET", "/api/connections/github", nil, 404, "connection_not_found")
 	if got := s.loopConnections("aster"); !reflect.DeepEqual(got, want[:1]) {
 		t.Errorf("aster's connections after briar was deleted = %+v, want only docs", got)
+	}
+}
+
+// A connection can be private to one loop (#600): created for it, it is
+// attached to it, named by the hub when it has no name, and refused to any
+// other loop until the operator shares it, which can't be undone. Deleting
+// a private one detaches it from its owner in the same step, and a value
+// set through the loop's secrets is private to that loop.
+func TestPrivateConnections(t *testing.T) {
+	t.Parallel()
+	s := startServer(t, t.TempDir())
+	for _, name := range []string{"aster", "briar"} {
+		s.createLoop(name, nil)
+	}
+
+	var created connectionJSON
+	s.mustJSON("POST", "/api/connections", map[string]any{
+		"kind": "env-var", "config": map[string]any{"env": "GH_TOKEN"}, "secret": "fixture-private-0000", "owner_loop": "aster",
+	}, &created)
+	if !strings.HasPrefix(created.Name, "aster-gh-token-") || created.OwnerLoop != "aster" ||
+		!reflect.DeepEqual(created.Loops, []string{"aster"}) {
+		t.Fatalf("created = %+v, want aster's, named for it and attached to it", created)
+	}
+	if got := s.loopConnections("aster"); len(got) != 1 || got[0].Name != created.Name {
+		t.Errorf("aster's connections = %+v, want %s", got, created.Name)
+	}
+	s.wantRefusal("PUT", "/api/loops/briar/connections/"+created.Name, nil, 409, "connection_private")
+	s.wantRefusal("POST", "/api/connections", map[string]any{
+		"kind": "env-var", "config": map[string]any{"env": "GH_TOKEN"}, "secret": "fixture-second-0000", "owner_loop": "aster",
+	}, 409, "connection_env_taken")
+	s.wantRefusal("POST", "/api/connections", map[string]any{
+		"kind": "env-var", "config": map[string]any{"env": "GH_TOKEN"}, "secret": "fixture-nobody-0000", "owner_loop": "nobody",
+	}, 404, "")
+	s.wantRefusal("POST", "/api/connections", map[string]any{
+		"kind": "env-var", "config": map[string]any{"env": "GH-TOKEN"}, "secret": "fixture-badenv-0000", "owner_loop": "aster",
+	}, 400, "connection_config_invalid")
+
+	for range 2 {
+		var shared connectionJSON
+		s.mustJSON("POST", "/api/connections/"+created.Name+"/share", nil, &shared)
+		if shared.OwnerLoop != "" || shared.Name != created.Name {
+			t.Fatalf("shared = %+v, want %s with no owner", shared, created.Name)
+		}
+	}
+	s.mustJSON("PUT", "/api/loops/briar/connections/"+created.Name, nil, nil)
+	s.wantRefusal("POST", "/api/connections/nowhere/share", nil, 404, "connection_not_found")
+
+	var named connectionJSON
+	s.mustJSON("POST", "/api/connections", map[string]any{
+		"name": "briar-npm", "kind": "env-var", "config": map[string]any{"env": "NPM_TOKEN"}, "secret": "fixture-npm-0000",
+		"owner_loop": "briar",
+	}, &named)
+	if named.Name != "briar-npm" || named.OwnerLoop != "briar" {
+		t.Fatalf("named = %+v, want briar-npm, briar's", named)
+	}
+	s.mustJSON("DELETE", "/api/connections/briar-npm", nil, nil)
+	if got := s.loopConnections("briar"); len(got) != 1 || got[0].Name != created.Name {
+		t.Errorf("briar's connections after deleting its private one = %+v, want only %s", got, created.Name)
+	}
+	s.wantRefusal("DELETE", "/api/connections/"+created.Name, nil, 409, "connection_attached")
+
+	s.mustJSON("PUT", "/api/loops/briar/secrets/API_KEY", map[string]any{"value": "fixture-secret-0000"}, nil)
+	var list []connectionJSON
+	s.mustJSON("GET", "/api/connections", nil, &list)
+	for _, connection := range list {
+		if connection.Config.Env == "API_KEY" && connection.OwnerLoop != "briar" {
+			t.Errorf("a value set through briar's secrets = %+v, want it private to briar", connection)
+		}
 	}
 }

@@ -155,6 +155,7 @@ func (server *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/connections", server.handleCreateConnection)
 	mux.HandleFunc("GET /api/connections/{name}", server.handleGetConnection)
 	mux.HandleFunc("DELETE /api/connections/{name}", server.handleDeleteConnection)
+	mux.HandleFunc("POST /api/connections/{name}/share", server.handleShareConnection)
 	mux.HandleFunc("PUT /api/loops/{name}/connections/{connection}", server.handleLoopConnection(true))
 	mux.HandleFunc("DELETE /api/loops/{name}/connections/{connection}", server.handleLoopConnection(false))
 	mux.HandleFunc("GET /api/channels", server.handleListChannels)
@@ -1716,7 +1717,9 @@ func (server *Server) handlePutSecret(w http.ResponseWriter, r *http.Request) {
 			server.jsonErr(w, 400, "too many secrets on this loop (max %d)", maxSecretsPerLoop)
 			return
 		}
-		if err := server.createLoopEnvVar(r.Context(), loopRecord, name, req.Value, now); err != nil {
+		connection := &store.Connection{Kind: store.ConnectionEnvVar, Config: store.ConnectionConfig{Env: name},
+			Secret: req.Value, CreatedAt: now, OwnerLoopID: loopRecord.ID}
+		if err := server.createLoopEnvVar(r.Context(), connection, loopRecord); err != nil {
 			server.storeErr(w, err, "loop")
 			return
 		}
@@ -1731,27 +1734,18 @@ func (server *Server) handlePutSecret(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, views)
 }
 
-// createLoopEnvVar creates the env-var connection a loop secret is, named
-// as migration 0042 names a moved one, and attaches it to the loop alone.
-func (server *Server) createLoopEnvVar(ctx context.Context, loopRecord *store.Loop, env, value string, now int64) error {
-	connection := &store.Connection{Kind: store.ConnectionEnvVar, Config: store.ConnectionConfig{Env: env},
-		Secret: value, CreatedAt: now}
+// createLoopEnvVar creates a private env-var connection, which the store
+// attaches to its owner, named as migration 0042 names a moved loop
+// secret: the hub's name for a variable the operator set on one loop.
+func (server *Server) createLoopEnvVar(ctx context.Context, connection *store.Connection, owner *store.Loop) error {
 	var err error
 	for range 3 { // six random hex characters meet another name rarely, and three times never
-		connection.Name = loopSecretConnectionName(loopRecord.Name, env)
+		connection.Name = loopSecretConnectionName(owner.Name, connection.Config.Env)
 		if err = server.Store.Connections().Create(ctx, connection); !errors.Is(err, store.ErrDuplicate) {
 			break
 		}
 	}
-	if err != nil {
-		return err
-	}
-	if err := server.Store.Connections().Attach(ctx, connection.Name, loopRecord.ID, now); err != nil {
-		// the loop went away in between: the connection has no one to serve
-		_ = server.Store.Connections().Delete(ctx, connection.Name)
-		return err
-	}
-	return nil
+	return err
 }
 
 // loopSecretConnectionName joins a loop's name and a variable's in the
