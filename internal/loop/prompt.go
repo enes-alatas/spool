@@ -1202,6 +1202,10 @@ fresh session continues your work.`
 session continues your work under the new mission, which you have not seen.
 Say in your note where each piece of work stands, so your successor can
 judge it against the new mission.`
+	case store.RotationReasonConnection:
+		cause = `The operator replaced a credential you hold, so this session ends here and a
+fresh session continues your work with the new one. Leave every credential
+value out of your note.`
 	default:
 		cause = `Your context window is filling up, so this session ends here and a fresh
 session continues your work.`

@@ -1,6 +1,6 @@
 # ADR-0043: Connections are org-level credentials and configs, defined once and attachable to loops
 
-Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572); 2026-10-04 (item 2: the env-var kind, #574); 2026-10-04 (item 5: per-loop secrets are connections, #576); 2026-10-05 (item 2: an mcp-server reaches its loop, #597); 2026-10-05 (item 1: private connections, #600); 2026-10-05 (item 5: the record of changes, #606)
+Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572); 2026-10-04 (item 2: the env-var kind, #574); 2026-10-04 (item 5: per-loop secrets are connections, #576); 2026-10-05 (item 2: an mcp-server reaches its loop, #597); 2026-10-05 (item 1: private connections, #600); 2026-10-05 (item 5: the record of changes, #606); 2026-10-05 (item 3: rotation, #609)
 
 ## Context
 
@@ -121,6 +121,28 @@ follow in their own slice and amend this ADR.
    belongs in it. The redactor learns a connection's secret the moment it
    is stored, attached or not, because a value the hub holds is one a later
    attachment can hand a loop (`internal/redact`, ADR-0017).
+
+   **Amendment (2026-10-05, #609): a value is rotated, and the old one is
+   retired.** `PUT /api/connections/{name}/secret` replaces a connection's
+   value, and the per-loop secrets route does the same for a loop's own.
+   - **The old value is retired.** It stays known to the redactor, under
+     the name it was redacted by, because a credential the hub has let go
+     of may still open something upstream. No route reads it and nothing
+     injects it. A deleted connection's value is retired the same way, and
+     so is one that goes with a deleted loop.
+   - **The session that ran with it ends.** Every loop that holds the
+     connection takes an ADR-0022 context rotation, giving `connection` as
+     the reason. Its handoff turn is the session's last, at the loop's
+     next quiet boundary, and the fresh session's wake reads the new value.
+     A loop with no session has nothing to end. Its next wake reads the
+     new value anyway.
+   - **The connection says when.** Its view carries `rotated_at`, and the
+     record a `rotate` row (#606).
+   - **The same value changes nothing.** Setting the value a connection
+     already holds retires nothing, rotates no session and records nothing.
+   Enes decided on 2026-10-05 (#507) that retired values stay redacted and
+   that a rotation with a handoff ends the session. The cost is that the
+   hub's database keeps dead credentials as long as it keeps live ones.
 
 4. **GitHub stays an env credential until L5.** A GitHub token is an
    `env-credential` on `GH_TOKEN`. A GitHub App with its own kind waits for

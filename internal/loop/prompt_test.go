@@ -194,6 +194,7 @@ func TestRotationEnvelope(t *testing.T) {
 		{store.RotationReasonFill, "Your context window is filling up"},
 		{store.RotationReasonOperator, "The operator asked for a fresh context"},
 		{store.RotationReasonMission, "The operator rewrote your mission"},
+		{store.RotationReasonConnection, "The operator replaced a credential you hold"},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.reason, func(t *testing.T) {
@@ -207,9 +208,16 @@ func TestRotationEnvelope(t *testing.T) {
 				}
 			}
 			// Only a mission change asks the note to be judged against the
-			// new instructions; the other two keep the work as it was.
+			// new instructions; the others keep the work as it was.
 			if asks := strings.Contains(env.Text, "judge it against"); asks != (testCase.reason == store.RotationReasonMission) {
 				t.Errorf("envelope asks for the work against a new mission = %v:\n%s", asks, env.Text)
+			}
+			// A credential rotation exists to keep the old value out of
+			// the note, so that sentence is pinned with its cause. The
+			// envelope wraps, so match it on single spaces.
+			flat := strings.Join(strings.Fields(env.Text), " ")
+			if asks := strings.Contains(flat, "Leave every credential value out of your note"); asks != (testCase.reason == store.RotationReasonConnection) {
+				t.Errorf("envelope asks to leave credential values out = %v:\n%s", asks, env.Text)
 			}
 			// The cause is told once: the fill sentence must not ride along
 			// on a rotation the operator asked for.

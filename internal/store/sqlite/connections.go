@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/enes-alatas/spool/internal/store"
@@ -15,7 +16,7 @@ import (
 // connection_loops rows (ADR-0043).
 type connections struct{ db *sql.DB }
 
-const connectionColumns = `name, kind, config, secret, created_at, updated_at, owner_loop`
+const connectionColumns = `name, kind, config, secret, created_at, updated_at, owner_loop, rotated_at`
 
 func (table connections) List(ctx context.Context) ([]*store.Connection, error) {
 	return table.list(ctx, `SELECT `+connectionColumns+` FROM connections ORDER BY name`)
@@ -96,9 +97,9 @@ func (table connections) Create(ctx context.Context, connection *store.Connectio
 		return err
 	}
 	defer tx.Rollback()
-	_, err = tx.ExecContext(ctx, `INSERT INTO connections (`+connectionColumns+`) VALUES (?,?,?,?,?,?,?)`,
+	_, err = tx.ExecContext(ctx, `INSERT INTO connections (`+connectionColumns+`) VALUES (?,?,?,?,?,?,?,?)`,
 		connection.Name, connection.Kind, string(config), connection.Secret, connection.CreatedAt, connection.UpdatedAt,
-		nullable(connection.OwnerLoopID))
+		nullable(connection.OwnerLoopID), connection.RotatedAt)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return store.ErrDuplicate
 	}
@@ -148,6 +149,9 @@ func (table connections) Delete(ctx context.Context, name string, at int64) erro
 		if err := detachRecorded(ctx, tx, name, owner, at); err != nil {
 			return err
 		}
+	}
+	if err := retireSecrets(ctx, tx, `name = ?1`, at, name); err != nil {
+		return err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM connections WHERE name=?`, name); err != nil {
 		return err
@@ -199,7 +203,12 @@ func (table connections) SetSecret(ctx context.Context, name, secret string, at 
 	if _, err := connectionOwner(ctx, tx, name); err != nil {
 		return err
 	}
-	res, err := tx.ExecContext(ctx, `UPDATE connections SET secret=?, updated_at=? WHERE name=? AND secret<>?`, secret, at, name, secret)
+	// before the update, which is what it reads the old value from
+	if err := retireSecrets(ctx, tx, `name = ?1 AND secret <> ?2`, at, name, secret); err != nil {
+		return err
+	}
+	res, err := tx.ExecContext(ctx, `UPDATE connections SET secret=?, updated_at=?, rotated_at=? WHERE name=? AND secret<>?`,
+		secret, at, at, name, secret)
 	if err != nil {
 		return err
 	}
@@ -308,7 +317,7 @@ func scanConnection(row interface{ Scan(...any) error }) (*store.Connection, err
 	var config string
 	var owner sql.NullString
 	if err := row.Scan(&connection.Name, &connection.Kind, &config, &connection.Secret, &connection.CreatedAt, &connection.UpdatedAt,
-		&owner); err != nil {
+		&owner, &connection.RotatedAt); err != nil {
 		return nil, err
 	}
 	connection.OwnerLoopID = owner.String
@@ -316,6 +325,35 @@ func scanConnection(row interface{ Scan(...any) error }) (*store.Connection, err
 		return nil, err
 	}
 	return &connection, nil
+}
+
+// retireSecrets keeps the values of the connections where matches, about
+// to be replaced or deleted, as retired secrets for the redactor. where is
+// a condition on connections, its own parameters numbered from ?1 among
+// args; at takes the next number. An empty value has nothing to mask. The
+// name is store.Connection.RedactName's, spelled in SQL.
+func retireSecrets(ctx context.Context, tx *sql.Tx, where string, at int64, args ...any) error {
+	_, err := tx.ExecContext(ctx, fmt.Sprintf(`INSERT INTO retired_secrets (connection, redact_name, value, retired_at)
+		SELECT name, CASE WHEN kind = 'env-var' THEN COALESCE(json_extract(config, '$.env'), '') ELSE 'connection:' || name END, secret, ?%d
+		FROM connections WHERE secret <> '' AND (%s) ORDER BY name`, len(args)+1, where), append(args, at)...)
+	return err
+}
+
+func (table connections) Retired(ctx context.Context) ([]store.RetiredSecret, error) {
+	rows, err := table.db.QueryContext(ctx, `SELECT connection, redact_name, value, retired_at FROM retired_secrets ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var retired []store.RetiredSecret
+	for rows.Next() {
+		var secret store.RetiredSecret
+		if err := rows.Scan(&secret.Connection, &secret.RedactName, &secret.Value, &secret.RetiredAt); err != nil {
+			return nil, err
+		}
+		retired = append(retired, secret)
+	}
+	return retired, rows.Err()
 }
 
 // nullable stores "" as NULL, which owner_loop reads as shared.

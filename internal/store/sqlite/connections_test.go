@@ -574,3 +574,63 @@ func TestConnectionEventsStartFromWhatIsStored(t *testing.T) {
 		t.Fatalf("the record after upgrading = %+v,\nwant %+v, newest first", got, want)
 	}
 }
+
+// TestRetiredSecrets pins what the redactor keeps once a connection lets a
+// value go (#609): a replaced value and a deleted one, under the name they
+// were redacted by; a loop's delete retires what goes with it; setting the
+// value held, or deleting a connection with no value, retires nothing.
+// RotatedAt is when the value was last replaced.
+func TestRetiredSecrets(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	if err := db.Loops().Create(ctx, &store.Loop{
+		ID: "l1", Name: "aster", Status: store.StatusActive,
+		WorkspaceMode: store.WorkspaceNone, Pacing: store.PacingFixed, Runtime: store.RuntimeBare,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	connections := db.Connections()
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(connections.Create(ctx, &store.Connection{Name: "github", Kind: store.ConnectionEnvVar,
+		Config: store.ConnectionConfig{Env: "GH_TOKEN"}, Secret: "s-1", CreatedAt: 1}))
+	must(connections.Create(ctx, &store.Connection{Name: "search", Kind: store.ConnectionMCPServer,
+		Config: store.ConnectionConfig{Transport: store.MCPTransportHTTP, URL: "https://search.example.test"}, Secret: "s-search", CreatedAt: 1}))
+	must(connections.Create(ctx, &store.Connection{Name: "docs", Kind: store.ConnectionMCPServer,
+		Config: store.ConnectionConfig{Transport: store.MCPTransportStdio, Command: "docs"}, CreatedAt: 1}))
+	must(connections.Create(ctx, &store.Connection{Name: "mine", Kind: store.ConnectionEnvVar,
+		Config: store.ConnectionConfig{Env: "API_KEY"}, Secret: "s-mine", CreatedAt: 1, OwnerLoopID: "l1"}))
+
+	if github, err := connections.Get(ctx, "github"); err != nil || github.RotatedAt != 0 {
+		t.Fatalf("Get(github) before a rotation = %+v, %v; want RotatedAt 0", github, err)
+	}
+	must(connections.SetSecret(ctx, "github", "s-2", 5))
+	must(connections.SetSecret(ctx, "github", "s-2", 6)) // the value held
+	if github, err := connections.Get(ctx, "github"); err != nil || github.Secret != "s-2" || github.RotatedAt != 5 {
+		t.Fatalf("Get(github) after its rotation = %+v, %v; want s-2, rotated at 5", github, err)
+	}
+	must(connections.Delete(ctx, "search", 7))
+	must(connections.Delete(ctx, "docs", 8))
+	must(db.Loops().Delete(ctx, "l1", 9))
+
+	retired, err := connections.Retired(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []store.RetiredSecret{
+		{Connection: "github", RedactName: "GH_TOKEN", Value: "s-1", RetiredAt: 5},
+		{Connection: "search", RedactName: "connection:search", Value: "s-search", RetiredAt: 7},
+		{Connection: "mine", RedactName: "API_KEY", Value: "s-mine", RetiredAt: 9},
+	}
+	if !reflect.DeepEqual(retired, want) {
+		t.Fatalf("Retired = %+v,\nwant %+v", retired, want)
+	}
+}

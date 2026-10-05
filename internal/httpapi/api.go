@@ -156,6 +156,7 @@ func (server *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/connections/{name}", server.handleGetConnection)
 	mux.HandleFunc("DELETE /api/connections/{name}", server.handleDeleteConnection)
 	mux.HandleFunc("POST /api/connections/{name}/share", server.handleShareConnection)
+	mux.HandleFunc("PUT /api/connections/{name}/secret", server.handleRotateConnection)
 	mux.HandleFunc("GET /api/connections/{name}/events", server.handleConnectionEvents)
 	mux.HandleFunc("GET /api/loops/{name}/connection-events", server.handleLoopConnectionEvents)
 	mux.HandleFunc("PUT /api/loops/{name}/connections/{connection}", server.handleLoopConnection(true))
@@ -1709,9 +1710,11 @@ func (server *Server) handlePutSecret(w http.ResponseWriter, r *http.Request) {
 				"%s comes from connection %q, which other loops hold too; set it on the connection", name, existing.Name)
 			return
 		}
-		if err := server.Store.Connections().SetSecret(r.Context(), existing.Name, req.Value, now); err != nil {
-			server.jsonErr(w, 500, "%v", err)
-			return
+		if existing.Secret != req.Value {
+			if err := server.rotateConnection(r.Context(), existing, req.Value); err != nil {
+				server.jsonErr(w, 500, "%v", err)
+				return
+			}
 		}
 	} else {
 		// The cap bounds distinct names; replacing an existing one never grows it.

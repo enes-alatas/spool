@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -40,6 +41,7 @@ type connectionView struct {
 	CreatedAt int64                  `json:"created_at"`
 	Loops     []string               `json:"loops"`
 	OwnerLoop string                 `json:"owner_loop,omitempty"`
+	RotatedAt int64                  `json:"rotated_at,omitempty"`
 }
 
 func (server *Server) connectionViews(r *http.Request, connections ...*store.Connection) ([]connectionView, error) {
@@ -61,6 +63,7 @@ func (server *Server) connectionViews(r *http.Request, connections ...*store.Con
 			CreatedAt: connection.CreatedAt,
 			Loops:     []string{},
 			OwnerLoop: names[connection.OwnerLoopID],
+			RotatedAt: connection.RotatedAt,
 		}
 		for _, id := range connection.LoopIDs {
 			if name, ok := names[id]; ok {
@@ -202,6 +205,64 @@ func (server *Server) handleShareConnection(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	server.writeConnection(w, r, 200, connection)
+}
+
+// handleRotateConnection replaces a connection's value. The old one is
+// retired, still redacted and never read back, and every loop that held
+// the connection ends the session that ran with it. Setting the value it
+// holds changes nothing (ADR-0043).
+func (server *Server) handleRotateConnection(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Value string `json:"value"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		server.jsonErr(w, 400, "bad json: %v", err)
+		return
+	}
+	connection, err := server.Store.Connections().Get(r.Context(), r.PathValue("name"))
+	if err != nil {
+		server.connectionErr(w, r, err)
+		return
+	}
+	if req.Value == "" {
+		server.jsonErrCode(w, 400, codeConnectionSecretInvalid, "a new value can't be empty")
+		return
+	}
+	rotated := *connection
+	rotated.Secret = req.Value
+	if code, problem := connectionProblem(&rotated); problem != "" {
+		server.jsonErrCode(w, 400, code, "%s", problem)
+		return
+	}
+	if req.Value != connection.Secret {
+		if err := server.rotateConnection(r.Context(), connection, req.Value); err != nil {
+			server.connectionErr(w, r, err)
+			return
+		}
+	}
+	if connection, err = server.Store.Connections().Get(r.Context(), connection.Name); err != nil {
+		server.connectionErr(w, r, err)
+		return
+	}
+	server.writeConnection(w, r, 200, connection)
+}
+
+// rotateConnection replaces a connection's value, and asks each loop that
+// holds it for a context rotation: the session that ran with the old value
+// ends at the loop's next quiet boundary, and its successor's wake reads
+// the new one. A loop with no session needs none (Enes, 2026-10-05, #507).
+func (server *Server) rotateConnection(ctx context.Context, connection *store.Connection, value string) error {
+	if err := server.Store.Connections().SetSecret(ctx, connection.Name, value, time.Now().UnixMilli()); err != nil {
+		return err
+	}
+	server.secretsChanged(ctx)
+	for _, id := range connection.LoopIDs {
+		server.loopChanged(ctx, id)
+		if actor, ok := server.Manager.Get(id); ok {
+			_ = actor.Rotate(store.RotationReasonConnection) // an error is no session to end
+		}
+	}
+	return nil
 }
 
 // connectionEventView is one change on a connection's record. Loop is the

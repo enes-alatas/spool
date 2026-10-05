@@ -330,6 +330,9 @@ func (table loops) Delete(ctx context.Context, id string, at int64) error {
 		id, store.ConnectionEventDelete, at); err != nil {
 		return err
 	}
+	if err := retireSecrets(ctx, tx, goesWithIt, at, id); err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM connections WHERE `+goesWithIt, id); err != nil {
 		return err
 	}
