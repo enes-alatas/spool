@@ -78,6 +78,7 @@ func TestDockerRows(t *testing.T) {
 		{"DockerPowerOnLeavesARunningTurnAlone", dockerPowerOnLeavesARunningTurnAlone},
 		{"DockerFailedPowerOnKeepsTheOffIntent", dockerFailedPowerOnKeepsTheOffIntent},
 		{"DockerDownReasonNamesTheFault", dockerDownReasonNamesTheFault},
+		{"OnboardingChecksASavedSetupToken", onboardingChecksASavedSetupToken},
 	} {
 		t.Run(row.name, row.run)
 	}
