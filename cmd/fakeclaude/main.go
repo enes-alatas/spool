@@ -100,6 +100,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -246,7 +247,13 @@ func main() {
 				if _, err := os.Stat(filepath.Join(stateDir, "mcp-failed")); err == nil {
 					status = "failed"
 				}
-				init["mcp_servers"] = []map[string]any{{"name": "spool", "status": status, "source": "dynamic"}}
+				servers := []map[string]any{{"name": "spool", "status": status, "source": "dynamic"}}
+				// every other configured server is reported connected: none
+				// is dialled, a test reads only which ones claude was given
+				for _, name := range otherMCPServers(mcpConfig) {
+					servers = append(servers, map[string]any{"name": name, "status": "connected", "source": "dynamic"})
+				}
+				init["mcp_servers"] = servers
 				if status == "connected" {
 					// a server that did not connect gave no tools
 					tools = append(tools, "mcp__spool__send_message")
@@ -578,10 +585,16 @@ func mcpSend(flagConfig string, args map[string]any) string {
 	return "sent " + text
 }
 
-func mcpConnect(flagConfig string) (*mcp.ClientSession, error) {
-	if mcpSess != nil {
-		return mcpSess, nil
-	}
+// mcpServerEntry is one server in an --mcp-config, as far as fakeclaude
+// reads it.
+type mcpServerEntry struct {
+	URL     string            `json:"url"`
+	Headers map[string]string `json:"headers"`
+}
+
+// readMCPConfig parses the --mcp-config flag's value, or
+// FAKECLAUDE_MCP_CONFIG when the flag is empty: inline JSON or a file path.
+func readMCPConfig(flagConfig string) (map[string]mcpServerEntry, error) {
 	raw := flagConfig
 	if raw == "" {
 		raw = os.Getenv("FAKECLAUDE_MCP_CONFIG")
@@ -597,32 +610,52 @@ func mcpConnect(flagConfig string) (*mcp.ClientSession, error) {
 		raw = string(data)
 	}
 	var cfg struct {
-		MCPServers map[string]struct {
-			URL     string            `json:"url"`
-			Headers map[string]string `json:"headers"`
-		} `json:"mcpServers"`
+		MCPServers map[string]mcpServerEntry `json:"mcpServers"`
 	}
 	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
 		return nil, fmt.Errorf("mcp config: %w", err)
 	}
-	for _, srv := range cfg.MCPServers {
-		if srv.URL == "" {
-			continue
+	return cfg.MCPServers, nil
+}
+
+// otherMCPServers names the configured servers besides the hub's, sorted.
+// An unreadable config names none.
+func otherMCPServers(flagConfig string) []string {
+	servers, _ := readMCPConfig(flagConfig)
+	var names []string
+	for name := range servers {
+		if name != "spool" {
+			names = append(names, name)
 		}
-		client := mcp.NewClient(&mcp.Implementation{Name: "fakeclaude", Version: "0"}, nil)
-		sess, err := client.Connect(context.Background(), &mcp.StreamableClientTransport{
-			Endpoint:             srv.URL,
-			HTTPClient:           &http.Client{Transport: headerTransport{srv.Headers}},
-			DisableStandaloneSSE: true,
-			MaxRetries:           -1,
-		}, nil)
-		if err != nil {
-			return nil, err
-		}
-		mcpSess = sess
-		return sess, nil
 	}
-	return nil, errors.New("mcp config names no server with a url")
+	sort.Strings(names)
+	return names
+}
+
+func mcpConnect(flagConfig string) (*mcp.ClientSession, error) {
+	if mcpSess != nil {
+		return mcpSess, nil
+	}
+	servers, err := readMCPConfig(flagConfig)
+	if err != nil {
+		return nil, err
+	}
+	srv, ok := servers["spool"]
+	if !ok || srv.URL == "" {
+		return nil, errors.New("mcp config names no spool server with a url")
+	}
+	client := mcp.NewClient(&mcp.Implementation{Name: "fakeclaude", Version: "0"}, nil)
+	sess, err := client.Connect(context.Background(), &mcp.StreamableClientTransport{
+		Endpoint:             srv.URL,
+		HTTPClient:           &http.Client{Transport: headerTransport{srv.Headers}},
+		DisableStandaloneSSE: true,
+		MaxRetries:           -1,
+	}, nil)
+	if err != nil {
+		return nil, err
+	}
+	mcpSess = sess
+	return sess, nil
 }
 
 // fetch reports an outbound request's outcome as one line: a status when the
