@@ -22,16 +22,30 @@ const dialTimeout = 30 * time.Second
 // dialed, so a blocked call never opens a connection at all.
 type Proxy struct {
 	allow *Allowlist
+	loops *LoopAllowlists // each loop's own entries on top of allow; nil for none
 	log   *slog.Logger
 	dial  func(network, addr string) (net.Conn, error) // nil = net.Dial with a timeout
 }
 
-// NewProxy returns a proxy enforcing allow. A nil logger discards.
-func NewProxy(allow *Allowlist, log *slog.Logger) *Proxy {
+// NewProxy returns a proxy enforcing allow for every loop, and each loop's
+// entries in loops for the loop whose proxy token a request carries. A nil
+// loops gives every loop allow alone; a nil logger discards.
+func NewProxy(allow *Allowlist, loops *LoopAllowlists, log *slog.Logger) *Proxy {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	return &Proxy{allow: allow, log: log}
+	return &Proxy{allow: allow, loops: loops, log: log}
+}
+
+// allows reports whether the request may reach host:port: on the fleet's
+// list, or on its own loop's. A request with no token, or one no loop has,
+// gets the fleet's list alone, as every request did before loops had lists.
+func (proxy *Proxy) allows(r *http.Request, host, port string) bool {
+	if proxy.allow.Allows(host, port) {
+		return true
+	}
+	own := proxy.loops.For(proxyToken(r))
+	return own != nil && own.Allows(host, port)
 }
 
 func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -51,7 +65,7 @@ func (proxy *Proxy) connect(w http.ResponseWriter, r *http.Request) {
 		target = r.Host
 	}
 	host, port, err := splitHostPort(target, "443")
-	if err != nil || !proxy.allow.Allows(host, port) {
+	if err != nil || !proxy.allows(r, host, port) {
 		proxy.refuse(w, r, host, port, err)
 		return
 	}
@@ -107,7 +121,7 @@ func (proxy *Proxy) forward(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	host, port, err := splitHostPort(r.URL.Host, "80")
-	if err != nil || !proxy.allow.Allows(host, port) {
+	if err != nil || !proxy.allows(r, host, port) {
 		proxy.refuse(w, r, host, port, err)
 		return
 	}
