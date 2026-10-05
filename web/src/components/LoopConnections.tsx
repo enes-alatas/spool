@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, Connection, LoopView } from '../api'
 import { connectionDetail, connectionKindLabel, kindLabel } from '../connections'
 import { ConnectionForm } from './ConnectionForm'
+import { ConnectionEvents, RotateForm } from './ConnectionRecord'
 import { PlusIcon } from './Icons'
 
 // The connections attached to one loop (#506): the list, and a + that opens
@@ -28,10 +29,15 @@ export function LoopConnections({ loop }: { loop: LoopView }) {
   const byName = new Map((all ?? []).map((c) => [c.name, c]))
   // Another loop's private connection is never on offer (#600). This
   // loop's own is, should it ever be detached here: nothing else could
-  // attach or delete it again.
+  // attach or delete it again. A revoked one is on offer nowhere (#610).
   const attachable = (all ?? []).filter(
-    (c) => (!c.owner_loop || c.owner_loop === loop.name) && !attached.some((a) => a.name === c.name),
+    (c) =>
+      (!c.owner_loop || c.owner_loop === loop.name) &&
+      c.revoked_at === undefined &&
+      !attached.some((a) => a.name === c.name),
   )
+  const [rotating, setRotating] = useState('')
+  const [history, setHistory] = useState(false)
 
   // The loop's view lists what is attached, and the Connections page lists
   // the loops each one is on: both change together.
@@ -39,6 +45,9 @@ export function LoopConnections({ loop }: { loop: LoopView }) {
     Promise.all([
       qc.invalidateQueries({ queryKey: ['loop', loop.name] }),
       qc.invalidateQueries({ queryKey: ['connections'] }),
+      // Every change lands on the record too (#606).
+      qc.invalidateQueries({ queryKey: ['connection-events'] }),
+      qc.invalidateQueries({ queryKey: ['loop-connection-events', loop.name] }),
     ])
 
   const act = async (run: () => Promise<unknown>) => {
@@ -111,13 +120,30 @@ export function LoopConnections({ loop }: { loop: LoopView }) {
                   {mine && <span className="connection-private">private</span>}
                 </span>
                 {mine && (
-                  <button
-                    className="text-button loop-connection-share"
-                    onClick={() => share(c)}
-                    disabled={busy}
-                  >
-                    Share with the fleet
-                  </button>
+                  <span className="loop-connection-tools">
+                    <button className="text-button" onClick={() => share(c)} disabled={busy}>
+                      Share with the fleet
+                    </button>
+                    {/* What overwriting a secret on the old Secrets panel
+                        did, now a rotation (#609). */}
+                    <button
+                      className="text-button"
+                      onClick={() => setRotating(rotating === a.name ? '' : a.name)}
+                      aria-expanded={rotating === a.name}
+                    >
+                      Rotate value
+                    </button>
+                  </span>
+                )}
+                {mine && rotating === a.name && (
+                  <RotateForm
+                    connection={c}
+                    onDone={() => {
+                      setRotating('')
+                      refresh()
+                    }}
+                    onCancel={() => setRotating('')}
+                  />
                 )}
               </span>
               {mine ? (
@@ -151,6 +177,24 @@ export function LoopConnections({ loop }: { loop: LoopView }) {
         <div className="form-error" role="alert">
           {error}
         </div>
+      )}
+      {/* What this loop has held and when (#606), connections since gone
+          included: what its sessions ran with reads off it. */}
+      <button
+        className="text-button loop-connection-history"
+        onClick={() => setHistory(!history)}
+        aria-expanded={history}
+      >
+        {history ? 'Hide history' : 'History'}
+      </button>
+      {history && (
+        <ConnectionEvents
+          loop={loop.name}
+          shown={(name) => {
+            const c = byName.get(name)
+            return c?.owner_loop === loop.name && c.config.env ? c.config.env : name
+          }}
+        />
       )}
       {adding && (
         <AddConnectionDialog
