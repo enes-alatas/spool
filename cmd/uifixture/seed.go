@@ -487,9 +487,9 @@ func seedSenders(ctx context.Context, db store.Store) error {
 	return nil
 }
 
-// Per-loop secrets, for the panel that shows names and never values: each
-// an env-var connection private to the one loop, as the secrets shortcut
-// makes them (ADR-0043). The values here are obviously fake and are never
+// A loop's own variables, for the Connections panel that shows names and
+// never values: each an env-var connection private to the one loop, as
+// the loop page's Connections panel adds them (ADR-0043). The values here are obviously fake and are never
 // rendered anywhere — the API answers presence only — but they are written
 // as fixtures all the same (CONVENTIONS.md "Fixtures are synthetic").
 func seedSecrets(ctx context.Context, db store.Store, loopID string) error {

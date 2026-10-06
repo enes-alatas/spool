@@ -21,7 +21,7 @@ func TestSecretsNeverReachTheRecord(t *testing.T) {
 	s.createLoop("leaky", nil)
 
 	const value = "ghp_itestREDACTIONvalue987654"
-	s.mustJSON("PUT", "/api/loops/leaky/secrets/LEAK_TOKEN", map[string]any{"value": value}, nil)
+	s.setLoopEnv("leaky", "LEAK_TOKEN", value)
 
 	// Every turn from here replies with the secret's value, read out of the
 	// environment the engine injected it into.
@@ -81,7 +81,7 @@ func TestASecretIsRedactedAsSoonAsItIsWritten(t *testing.T) {
 	s.scriptLoop("fresh", "!env LATE_TOKEN")
 
 	const value = "ghp_itestWRITTENlate1234567"
-	s.mustJSON("PUT", "/api/loops/fresh/secrets/LATE_TOKEN", map[string]any{"value": value}, nil)
+	s.setLoopEnv("fresh", "LATE_TOKEN", value)
 
 	s.message("fresh", "say it")
 	turn := s.waitTurn("fresh", 30*time.Second, func(tn turn) bool {

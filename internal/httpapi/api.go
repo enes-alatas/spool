@@ -14,7 +14,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -136,9 +135,6 @@ func (server *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/loops/{name}/telegram/status", server.handleTelegramStatus)
 	mux.HandleFunc("GET /api/loops/{name}/slack/status", server.handleSlackStatus)
 	mux.HandleFunc("PUT /api/loops/{name}/owner", server.handlePutOwner)
-	mux.HandleFunc("GET /api/loops/{name}/secrets", server.handleListSecrets)
-	mux.HandleFunc("PUT /api/loops/{name}/secrets/{key}", server.handlePutSecret)
-	mux.HandleFunc("DELETE /api/loops/{name}/secrets/{key}", server.handleDeleteSecret)
 	mux.HandleFunc("GET /api/loops/{name}/rooms", server.handleListRooms)
 	mux.HandleFunc("PUT /api/loops/{name}/rooms", server.handlePutRoom)
 	mux.HandleFunc("DELETE /api/loops/{name}/rooms/{surface}/{room}", server.handleDeleteRoom)
@@ -1592,38 +1588,20 @@ func (server *Server) handleListSenders(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, 200, senders)
 }
 
-// --- per-loop secrets ---
+// --- env-var connections ---
 
-// secretNameRe constrains a secret's name to a POSIX env identifier — what
-// both `docker --env KEY` and the shell require.
+// secretNameRe constrains an env-var connection's variable to a POSIX env
+// identifier — what both `docker --env KEY` and the shell require.
 var secretNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 const (
 	maxSecretNameLen  = 128
 	maxSecretValueLen = 16 * 1024
-	maxSecretsPerLoop = 64
 )
-
-// A loop's secrets are the env-var connections attached to it (ADR-0043).
-// These routes are the shortcut the per-loop secrets panel has always
-// used: a loop secret is set, read and removed by its variable's name, and
-// the connection behind it is the hub's business.
-
-// codeSecretShared refuses setting a variable through one loop when the
-// connection that carries it is attached to others too: their value would
-// change with it.
-const codeSecretShared = "secret_shared"
 
 // codeNoSetupToken refuses a login check on a docker hub with no setup-token
 // to check.
 const codeNoSetupToken = "no_setup_token"
-
-// secretView reports a loop secret as name + timestamp only. The value is
-// write-only, the same rule the operator's setup-token and a bot token follow.
-type secretView struct {
-	Name      string `json:"name"`
-	UpdatedAt int64  `json:"updated_at"`
-}
 
 // loopEnvVars returns the env-var connections attached to a loop, by the
 // variable each sets.
@@ -1639,105 +1617,6 @@ func (server *Server) loopEnvVars(ctx context.Context, loopID string) (map[strin
 		}
 	}
 	return byEnv, nil
-}
-
-func (server *Server) secretViews(ctx context.Context, loopID string) ([]secretView, error) {
-	byEnv, err := server.loopEnvVars(ctx, loopID)
-	if err != nil {
-		return nil, err
-	}
-	views := make([]secretView, 0, len(byEnv))
-	for env, connection := range byEnv {
-		views = append(views, secretView{Name: env, UpdatedAt: connection.UpdatedAt})
-	}
-	sort.Slice(views, func(i, j int) bool { return views[i].Name < views[j].Name })
-	return views, nil
-}
-
-func (server *Server) handleListSecrets(w http.ResponseWriter, r *http.Request) {
-	loopRecord := server.loopByName(w, r)
-	if loopRecord == nil {
-		return
-	}
-	views, err := server.secretViews(r.Context(), loopRecord.ID)
-	if err != nil {
-		server.jsonErr(w, 500, "%v", err)
-		return
-	}
-	writeJSON(w, 200, views)
-}
-
-type putSecretReq struct {
-	Value string `json:"value"`
-}
-
-// handlePutSecret sets a loop's variable: it replaces the value of the
-// env-var that sets it when that connection is this loop's alone, and
-// creates and attaches one when nothing sets it yet.
-func (server *Server) handlePutSecret(w http.ResponseWriter, r *http.Request) {
-	loopRecord := server.loopByName(w, r)
-	if loopRecord == nil {
-		return
-	}
-	name := r.PathValue("key")
-	if err := validateSecretName(name); err != nil {
-		server.jsonErr(w, 400, "%v", err)
-		return
-	}
-	var req putSecretReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		server.jsonErr(w, 400, "bad json: %v", err)
-		return
-	}
-	switch {
-	case req.Value == "":
-		server.jsonErr(w, 400, "secret value is empty (use DELETE to remove a secret)")
-		return
-	case len(req.Value) > maxSecretValueLen:
-		server.jsonErr(w, 400, "secret value too large (max %d bytes)", maxSecretValueLen)
-		return
-	}
-	server.envMu.Lock()
-	defer server.envMu.Unlock()
-	byEnv, err := server.loopEnvVars(r.Context(), loopRecord.ID)
-	if err != nil {
-		server.jsonErr(w, 500, "%v", err)
-		return
-	}
-	now := time.Now().UnixMilli()
-	if existing, ok := byEnv[name]; ok {
-		if len(existing.LoopIDs) > 1 {
-			server.jsonErrCode(w, 409, codeSecretShared,
-				"%s comes from connection %q, which other loops hold too; set it on the connection", name, existing.Name)
-			return
-		}
-		if existing.Secret != req.Value {
-			if err := server.rotateConnection(r.Context(), existing, req.Value); err != nil {
-				server.jsonErr(w, 500, "%v", err)
-				return
-			}
-		}
-	} else {
-		// The cap bounds distinct names; replacing an existing one never grows it.
-		if len(byEnv) >= maxSecretsPerLoop {
-			server.jsonErr(w, 400, "too many secrets on this loop (max %d)", maxSecretsPerLoop)
-			return
-		}
-		connection := &store.Connection{Kind: store.ConnectionEnvVar, Config: store.ConnectionConfig{Env: name},
-			Secret: req.Value, CreatedAt: now, OwnerLoopID: loopRecord.ID}
-		if err := server.createLoopEnvVar(r.Context(), connection, loopRecord); err != nil {
-			server.storeErr(w, err, "loop")
-			return
-		}
-		server.loopChanged(r.Context(), loopRecord.ID)
-	}
-	server.secretsChanged(r.Context())
-	views, err := server.secretViews(r.Context(), loopRecord.ID)
-	if err != nil {
-		server.jsonErr(w, 500, "%v", err)
-		return
-	}
-	writeJSON(w, 200, views)
 }
 
 // createLoopEnvVar creates a private env-var connection, which the store
@@ -1766,40 +1645,6 @@ func loopSecretConnectionName(loop, env string) string {
 	suffix := make([]byte, 3)
 	_, _ = rand.Read(suffix)
 	return prefix + "-" + hex.EncodeToString(suffix)
-}
-
-// handleDeleteSecret removes a variable from a loop: it detaches the
-// env-var that sets it, and deletes that connection once no loop holds it,
-// so a removed value does not linger in the hub. Removing an absent name
-// still reports success.
-func (server *Server) handleDeleteSecret(w http.ResponseWriter, r *http.Request) {
-	loopRecord := server.loopByName(w, r)
-	if loopRecord == nil {
-		return
-	}
-	server.envMu.Lock()
-	defer server.envMu.Unlock()
-	byEnv, err := server.loopEnvVars(r.Context(), loopRecord.ID)
-	if err != nil {
-		server.jsonErr(w, 500, "%v", err)
-		return
-	}
-	if existing, ok := byEnv[r.PathValue("key")]; ok {
-		now := time.Now().UnixMilli()
-		if err := server.Store.Connections().Detach(r.Context(), existing.Name, loopRecord.ID, now); err != nil {
-			server.jsonErr(w, 500, "%v", err)
-			return
-		}
-		// held elsewhere, Delete refuses, and the connection stays theirs
-		err := server.Store.Connections().Delete(r.Context(), existing.Name, now)
-		if err != nil && !errors.Is(err, store.ErrConnectionAttached) && !errors.Is(err, store.ErrNotFound) {
-			server.jsonErr(w, 500, "%v", err)
-			return
-		}
-		server.loopChanged(r.Context(), loopRecord.ID)
-		server.secretsChanged(r.Context())
-	}
-	writeJSON(w, 200, map[string]bool{"deleted": true})
 }
 
 // secretsChanged tells the redactor to reload. A delete counts: the

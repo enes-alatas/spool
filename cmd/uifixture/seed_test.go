@@ -250,14 +250,14 @@ func TestSeedWritesAFleetTheRoomCanRender(t *testing.T) {
 		}
 	}
 
-	// Presence only, like every reader of a loop's secrets: the panel shows
+	// Presence only, like every reader of a loop's env-vars: the panel shows
 	// names, so the fixture needs names.
 	secrets, err := db.Connections().ListByLoop(ctx, gardener.ID)
 	if err != nil {
 		t.Fatalf("list secrets: %v", err)
 	}
 	if len(secrets) == 0 {
-		t.Error("no secrets seeded: the secrets panel would shoot its empty state")
+		t.Error("no private env-vars seeded: the Connections panel would shoot its empty state")
 	}
 
 	// The page draws each shape differently, so each must be there: an env

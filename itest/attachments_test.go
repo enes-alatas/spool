@@ -139,7 +139,7 @@ func TestASecretInAFileNameIsRedactedBeforeItIsKept(t *testing.T) {
 	operator := user{ID: 5454, First: "Operator", Username: "operator"}
 	srv, tg := startTelegramFleet(t, operator)
 	const value = "itest:SYNTHETICnameSecret42" // ":" is what SafeName rewrites
-	srv.mustJSON("PUT", "/api/loops/alpha/secrets/NAME_TOKEN", map[string]any{"value": value}, nil)
+	srv.setLoopEnv("alpha", "NAME_TOKEN", value)
 
 	tg.withMedia([]string{"alpha"}, operator.ID, "private", "the leaky name", operator,
 		media{name: "dump-" + value + ".txt", bytes: []byte("contents")})

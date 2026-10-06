@@ -560,22 +560,40 @@ func workspaceWithScript(t *testing.T, lines string) string {
 	return dir
 }
 
-// scriptLoop gives a loop its turn script through the secret the engine
+// scriptLoop gives a loop its turn script through the env-var the engine
 // injects into every exec, which is the only route into a contained loop: its
 // working directory is inside its workstation, where the test cannot write a
 // .fakeclaude file (#117).
 //
-// A process carries the env it was born with, so setting the secret is not
-// enough: the creation tick's wake may already be in flight, and it would
+// A process carries the env it was born with, so setting the variable is
+// not enough: the creation tick's wake may already be in flight, and it would
 // answer — and keep answering, for as long as it stays awake — from before
 // the script existed. So this waits for that first wake to finish and its
 // process to exit, after which the next spawn reads the script.
 func (s *server) scriptLoop(name, script string) {
 	s.t.Helper()
-	s.mustJSON("PUT", "/api/loops/"+name+"/secrets/FAKECLAUDE_SCRIPT",
-		map[string]any{"value": script}, nil)
+	s.setLoopEnv(name, "FAKECLAUDE_SCRIPT", script)
 	s.waitTurn(name, 90*time.Second, func(turn) bool { return true })
 	s.waitState(name, "asleep", 90*time.Second)
+}
+
+// setLoopEnv sets a variable in one loop's env: an env-var connection
+// private to the loop, which the hub names and attaches to it (ADR-0043).
+// Setting it again gives that connection the new value, which ends the
+// session that held the old one (#609).
+func (s *server) setLoopEnv(loop, env, value string) {
+	s.t.Helper()
+	var list []connectionJSON
+	s.mustJSON("GET", "/api/connections", nil, &list)
+	for _, connection := range list {
+		if connection.OwnerLoop == loop && connection.Config.Env == env {
+			s.mustJSON("PUT", "/api/connections/"+connection.Name+"/secret", map[string]any{"value": value}, nil)
+			return
+		}
+	}
+	s.mustJSON("POST", "/api/connections", map[string]any{
+		"kind": "env-var", "config": map[string]any{"env": env}, "secret": value, "owner_loop": loop,
+	}, nil)
 }
 
 // wipeDir empties a directory without removing it (simulates lost claude

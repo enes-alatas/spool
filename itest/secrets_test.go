@@ -12,151 +12,16 @@ import (
 	"time"
 )
 
-type secretView struct {
-	Name      string `json:"name"`
-	UpdatedAt int64  `json:"updated_at"`
-}
-
-func (s *server) secrets(loop string) []secretView {
-	s.t.Helper()
-	var v []secretView
-	s.mustJSON("GET", "/api/loops/"+loop+"/secrets", nil, &v)
-	return v
-}
-
-// TestLoopSecrets drives the per-loop secrets sub-resource end to end: names
-// are visible but values never echo, PUT upserts in place, malformed names and
-// empty values are rejected server-side, and DELETE removes one.
-func TestLoopSecrets(t *testing.T) {
-	t.Parallel()
-	s := startServer(t, t.TempDir())
-	s.createLoop("vault", nil)
-
-	if got := s.secrets("vault"); len(got) != 0 {
-		t.Fatalf("fresh loop has %d secrets, want none", len(got))
-	}
-
-	const value = "ghp_itestSECRETvalue0123456789"
-
-	// a well-formed secret stores; the value never appears in the response
-	resp, body := s.do("PUT", "/api/loops/vault/secrets/GH_TOKEN", map[string]any{"value": value})
-	if resp.StatusCode != 200 {
-		t.Fatalf("PUT secret: status %d (%s)", resp.StatusCode, body)
-	}
-	if strings.Contains(string(body), value) {
-		t.Fatalf("PUT response echoed the secret value: %s", body)
-	}
-	got := s.secrets("vault")
-	if len(got) != 1 || got[0].Name != "GH_TOKEN" {
-		t.Fatalf("after PUT: got %+v, want [GH_TOKEN]", got)
-	}
-	if _, listBody := s.do("GET", "/api/loops/vault/secrets", nil); strings.Contains(string(listBody), value) {
-		t.Fatalf("GET secrets leaked the value: %s", listBody)
-	}
-
-	// malformed names are rejected without storing (all URL-path-safe here)
-	for _, bad := range []string{"1leading", "has-dash", "has.dot"} {
-		resp, body := s.do("PUT", "/api/loops/vault/secrets/"+bad, map[string]any{"value": "x"})
-		if resp.StatusCode != 400 {
-			t.Fatalf("name %q: status %d, want 400 (%s)", bad, resp.StatusCode, body)
-		}
-	}
-	// an empty value is rejected too (DELETE is the way to remove)
-	if resp, body := s.do("PUT", "/api/loops/vault/secrets/EMPTY", map[string]any{"value": ""}); resp.StatusCode != 400 {
-		t.Fatalf("empty value: status %d, want 400 (%s)", resp.StatusCode, body)
-	}
-	if got := s.secrets("vault"); len(got) != 1 {
-		t.Fatalf("a rejected request was stored: %+v", got)
-	}
-
-	// a second PUT on the same name upserts rather than duplicating
-	s.mustJSON("PUT", "/api/loops/vault/secrets/GH_TOKEN", map[string]any{"value": "ghp_replacement"}, nil)
-	if got := s.secrets("vault"); len(got) != 1 {
-		t.Fatalf("re-PUT duplicated the secret: %+v", got)
-	}
-
-	// a distinct secret adds a row; DELETE removes exactly one
-	s.mustJSON("PUT", "/api/loops/vault/secrets/API_KEY", map[string]any{"value": "k"}, nil)
-	if got := s.secrets("vault"); len(got) != 2 {
-		t.Fatalf("want 2 secrets, got %+v", got)
-	}
-	s.mustJSON("DELETE", "/api/loops/vault/secrets/GH_TOKEN", nil, nil)
-	got = s.secrets("vault")
-	if len(got) != 1 || got[0].Name != "API_KEY" {
-		t.Fatalf("after delete: got %+v, want only API_KEY", got)
-	}
-}
-
-// A loop's secrets are its attached env-var connections (ADR-0043): one set
-// through the shortcut is a connection attached to that loop alone, no two
-// attached env-vars set one variable, one shared with another loop is
-// changed on the connection and not through either loop, and removing one
-// deletes the connection once nothing holds it, so the value does not
-// linger.
-func TestLoopSecretsAreConnections(t *testing.T) {
-	t.Parallel()
-	s := startServer(t, t.TempDir())
-	for _, name := range []string{"aster", "briar"} {
-		s.createLoop(name, nil)
-	}
-
-	s.mustJSON("PUT", "/api/loops/aster/secrets/API_KEY", map[string]any{"value": "fixture-api-key-0000"}, nil)
-	var list []connectionJSON
-	s.mustJSON("GET", "/api/connections", nil, &list)
-	if len(list) != 1 || list[0].Kind != "env-var" || list[0].Config.Env != "API_KEY" ||
-		!reflect.DeepEqual(list[0].Loops, []string{"aster"}) || !strings.HasPrefix(list[0].Name, "aster-api-key-") {
-		t.Fatalf("connections after the shortcut = %+v, want one aster-api-key-… env-var on API_KEY, attached to aster", list)
-	}
-	own := list[0].Name
-
-	// One variable, one connection: another env-var on API_KEY can't join
-	// aster while its own sets it.
-	s.mustJSON("POST", "/api/connections", map[string]any{
-		"name": "api", "kind": "env-var", "config": map[string]any{"env": "API_KEY"}, "secret": "fixture-other-key-0000",
-	}, nil)
-	s.wantRefusal("PUT", "/api/loops/aster/connections/api", nil, 409, "connection_env_taken")
-	if resp, body := s.do("PUT", "/api/loops/aster/connections/"+own, nil); resp.StatusCode != 204 {
-		t.Errorf("re-attaching aster's own API_KEY = %d %s, want 204", resp.StatusCode, body)
-	}
-
-	// A shared connection sets the variable for both loops; neither loop's
-	// shortcut may change it under the other.
-	s.mustJSON("POST", "/api/connections", map[string]any{
-		"name": "github", "kind": "env-var", "config": map[string]any{"env": "GH_TOKEN"}, "secret": "ghp_fixtureSHAREDvalue0000",
-	}, nil)
-	for _, loop := range []string{"aster", "briar"} {
-		s.mustJSON("PUT", "/api/loops/"+loop+"/connections/github", nil, nil)
-	}
-	if got := s.secrets("briar"); len(got) != 1 || got[0].Name != "GH_TOKEN" {
-		t.Errorf("briar's secrets = %+v, want GH_TOKEN from the shared connection", got)
-	}
-	s.wantRefusal("PUT", "/api/loops/aster/secrets/GH_TOKEN", map[string]any{"value": "other"}, 409, "secret_shared")
-
-	// Removing a shared variable from one loop detaches it there only.
-	s.mustJSON("DELETE", "/api/loops/aster/secrets/GH_TOKEN", nil, nil)
-	var github connectionJSON
-	s.mustJSON("GET", "/api/connections/github", nil, &github)
-	if !reflect.DeepEqual(github.Loops, []string{"briar"}) {
-		t.Errorf("github's loops after aster removed GH_TOKEN = %v, want [briar]", github.Loops)
-	}
-
-	// Removing the loop's own deletes it: nothing else holds it.
-	s.mustJSON("DELETE", "/api/loops/aster/secrets/API_KEY", nil, nil)
-	s.wantRefusal("GET", "/api/connections/"+own, nil, 404, "connection_not_found")
-	if got := s.secrets("aster"); len(got) != 0 {
-		t.Errorf("aster's secrets after both were removed = %+v, want none", got)
-	}
-}
-
-// A deleted loop takes its own secrets with it, as the per-loop secrets
-// table did, and leaves a connection another loop still holds (#576).
+// A deleted loop takes its private env-vars with it, as the per-loop
+// secrets table did, and leaves a connection another loop still holds
+// (#576).
 func TestDeletedLoopTakesItsSecrets(t *testing.T) {
 	t.Parallel()
 	s := startServer(t, t.TempDir())
 	for _, name := range []string{"aster", "briar"} {
 		s.createLoop(name, nil)
 	}
-	s.mustJSON("PUT", "/api/loops/aster/secrets/API_KEY", map[string]any{"value": "fixture-api-key-0000"}, nil)
+	s.setLoopEnv("aster", "API_KEY", "fixture-api-key-0000")
 	s.mustJSON("POST", "/api/connections", map[string]any{
 		"name": "github", "kind": "env-var", "config": map[string]any{"env": "GH_TOKEN"}, "secret": "ghp_fixtureSHAREDvalue0000",
 	}, nil)
@@ -172,8 +37,8 @@ func TestDeletedLoopTakesItsSecrets(t *testing.T) {
 	}
 }
 
-// Concurrent writes to one loop's variable, a double-submitted secret and
-// an attach racing it, still leave one env-var setting it.
+// Concurrent writes to one loop's variable, a double-submitted private
+// env-var and an attach racing it, still leave one env-var setting it.
 func TestLoopSecretWritesDoNotRace(t *testing.T) {
 	t.Parallel()
 	s := startServer(t, t.TempDir())
@@ -184,7 +49,11 @@ func TestLoopSecretWritesDoNotRace(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for range 8 {
-		wg.Go(func() { s.do("PUT", "/api/loops/aster/secrets/GH_TOKEN", map[string]any{"value": "fixture-own-0000"}) })
+		wg.Go(func() {
+			s.do("POST", "/api/connections", map[string]any{
+				"kind": "env-var", "config": map[string]any{"env": "GH_TOKEN"}, "secret": "fixture-own-0000", "owner_loop": "aster",
+			})
+		})
 	}
 	wg.Go(func() { s.do("PUT", "/api/loops/aster/connections/github", nil) })
 	wg.Wait()
@@ -235,9 +104,6 @@ func TestLoopSecretsUpgradeIntoConnections(t *testing.T) {
 	}
 	if len(held) != 3 || held["aster UPGRADED_TOKEN"] == "" || held["aster FAKECLAUDE_SCRIPT"] == "" || held["briar UPGRADED_TOKEN"] == "" {
 		t.Fatalf("upgraded connections = %+v, want aster's two and briar's one", list)
-	}
-	if got := s.secrets("aster"); len(got) != 2 || got[0].Name != "FAKECLAUDE_SCRIPT" || got[1].Name != "UPGRADED_TOKEN" || got[1].UpdatedAt != 1 {
-		t.Errorf("aster's secrets after the upgrade = %+v, want both, with their timestamps", got)
 	}
 
 	// The value reaches the loop's env under the same name: the turn

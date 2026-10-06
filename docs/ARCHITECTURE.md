@@ -203,8 +203,8 @@ opportunistically, not big-bang.
   deleted while attached; a deleted loop takes the ones only it held. A
   connection is shared by the fleet, or private to one owner loop, the only
   one it can be attached to, until `POST /api/connections/{name}/share` shares
-  it for good (#600). A loop's env is its attached env-vars; the per-loop
-  secrets routes are a shortcut onto them, creating private ones (#576).
+  it for good (#600). A loop's env is its attached env-vars (#576); a
+  variable for one loop is a private env-var (#617).
   Every change to a connection is on an append-only record, listed per
   connection (`GET /api/connections/{name}/events`) and per loop
   (`GET /api/loops/{name}/connection-events`) (#606). Replacing a value
