@@ -178,10 +178,14 @@ function TelegramNotes({ loop, bot }: { loop: LoopView; bot: string }) {
         A group shows up here once someone @mentions {bot} in it: by default, Telegram passes a bot only the
         messages that mention it or reply to it.
       </div>
-      {/* ADR-0040: the platform's limits on reactions, said where they bite */}
+      {/* ADR-0040: the platform's limits on reactions, said where they bite.
+          In a basic group each bot numbers its own copy of a message and never
+          sees another bot's, so it has no id to react on (#614). */}
       <div className="chans-note">
         Reactions: in a group, {bot} hears them only as an administrator. It sets one reaction per message, so
-        a loop's second reaction on a message replaces its first.
+        a loop's second reaction on a message replaces its first. A reaction to another loop's message shows
+        on Telegram only in a supergroup; in a basic group it still reaches that loop, but Telegram never
+        draws it.
       </div>
       {/* ADR-0041: Telegram draws its own count, which cannot hold a loop's vote */}
       <div className="chans-note">
