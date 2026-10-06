@@ -185,6 +185,32 @@ func TestALoopReactsThroughItsOwnBot(t *testing.T) {
 	}
 }
 
+// A loop reacts to a teammate's post: its own bot never received the post,
+// since Telegram delivers no bot's messages to another bot, so it sets the
+// reaction by the posting bot's id for it. In a supergroup that id is the
+// chat's, the same for every member (#607).
+func TestALoopReactsToATeammatesPost(t *testing.T) {
+	t.Parallel()
+	operator := user{ID: 9494, First: "Operator", Username: "operator"}
+	srv, tg := startTelegramFleet(t, operator)
+	alpha := mcpSession(t, srv, hubMCPToken(t, srv, "alpha"))
+	beta := mcpSession(t, srv, hubMCPToken(t, srv, "beta"))
+	const post = "@beta the build is green"
+	if res := callSend(t, alpha, map[string]any{"destination": "group", "text": post}); res.IsError {
+		t.Fatalf("send refused: %s", resultText(res))
+	}
+	sent := tg.waitSentFrom(t, groupChatID, "alpha", post)
+	srv.waitForMessage(post)
+	messageID := srv.activityWith(post)[0].ID
+
+	res := callSend(t, beta, map[string]any{"destination": "group", "reply_to": fmt.Sprintf("ref:%d", messageID), "react": "👍"})
+	if res.IsError {
+		t.Fatalf("react refused: %s", resultText(res))
+	}
+	srv.waitReactions(messageID, "loop:"+srv.loop("beta").ID+" 👍")
+	tg.waitReactionSet(t, setReaction{Token: "beta", ChatID: groupChatID, MessageID: sent.MessageID, Emoji: "👍"})
+}
+
 // A reaction to a loop's message wakes nobody, its owner's in the group
 // included. It rides with the loop's next turn as a line ahead of that
 // turn's envelopes, and is told once (ADR-0040).

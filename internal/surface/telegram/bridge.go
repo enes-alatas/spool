@@ -869,9 +869,9 @@ func emojisOf(reactions []ReactionType) []string {
 // target by (ADR-0040). A bot sets one reaction per message, so what it sets
 // is the loop's newest reaction still on the message, and a removal of the
 // last clears it. A person's reaction is already where they made it. A
-// target the loop's bot never sent or saw has no message here to react on,
-// and the reaction stays on the hub, as a send to a channel with no room
-// does.
+// target with no id the loop's bot can use has no message here to react
+// on, and the reaction stays on the hub, as a send to a channel with no
+// room does.
 func (br *Bridge) mirrorReaction(ctx context.Context, reaction *route.ReactionPayload) {
 	loopID, ok := store.ReactorLoop(reaction.ReactorKey)
 	if !ok {
@@ -881,8 +881,8 @@ func (br *Bridge) mirrorReaction(ctx context.Context, reaction *route.ReactionPa
 	if bot == nil {
 		return // not a Telegram loop, or its bot is not running
 	}
-	ref, err := br.store.Messages().Ref(ctx, reaction.MessageID, loopID)
-	if err != nil {
+	ref := br.reactionRef(ctx, bot, reaction.MessageID, loopID)
+	if ref == nil {
 		return
 	}
 	onMessage, err := br.store.Reactions().ListByMessages(ctx, []int64{reaction.MessageID})
@@ -900,6 +900,38 @@ func (br *Bridge) mirrorReaction(ctx context.Context, reaction *route.ReactionPa
 		br.log.Warn("telegram: reaction not sent", "loop", bot.name, "reason", unsent)
 	}
 }
+
+// reactionRef is the id the loop's bot sets a reaction on the message by,
+// or nil when it has none. Its own comes first. A bot never receives
+// another bot's post, so a teammate's message has an id only under the
+// bot that posted it (#607). In a supergroup that id is the chat's, the
+// same for every member, so the loop's bot can use it. In a basic group
+// and a private chat each member numbers its own copy, so another bot's id
+// would name a different message, and the reaction stays on the hub.
+func (br *Bridge) reactionRef(ctx context.Context, bot *poller, messageID int64, loopID string) *store.SurfaceRef {
+	if ref, err := br.store.Messages().Ref(ctx, messageID, loopID); err == nil {
+		return ref
+	}
+	refs, err := br.store.Messages().Refs(ctx, messageID)
+	if err != nil {
+		br.log.Error("telegram: read a reaction's target", "loop", bot.name, "err", err)
+		return nil
+	}
+	for _, ref := range refs {
+		if supergroup(ref.TGChatID) {
+			return ref
+		}
+	}
+	if len(refs) > 0 {
+		br.log.Info("telegram: reaction stays on the hub", "loop", bot.name, "chat", refs[0].TGChatID,
+			"reason", "another bot's message outside a supergroup has no id this bot can use")
+	}
+	return nil
+}
+
+// supergroup reports whether a chat id is a supergroup's or a channel's:
+// -100 and the channel's own id, where message ids are the chat's.
+func supergroup(chatID int64) bool { return chatID <= -1000000000000 }
 
 // handlePollAnswer hands the router a person's whole choice in a poll the
 // loop's bot sent (ADR-0041). Telegram tells only the bot that sent a poll

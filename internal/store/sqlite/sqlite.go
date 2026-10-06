@@ -855,6 +855,24 @@ func (table messages) Ref(ctx context.Context, messageID int64, botLoopID string
 	return &ref, err
 }
 
+func (table messages) Refs(ctx context.Context, messageID int64) ([]*store.SurfaceRef, error) {
+	rows, err := table.db.QueryContext(ctx, `SELECT bot_loop_id, tg_chat_id, tg_message_id FROM message_refs
+		WHERE message_id=? ORDER BY rowid`, messageID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	refs := []*store.SurfaceRef{}
+	for rows.Next() {
+		ref := store.SurfaceRef{MessageID: messageID}
+		if err := rows.Scan(&ref.BotLoopID, &ref.TGChatID, &ref.TGMessageID); err != nil {
+			return nil, err
+		}
+		refs = append(refs, &ref)
+	}
+	return refs, rows.Err()
+}
+
 // sightingRetention bounds tg_sightings: a reply to a message older than
 // this renders without a native anchor rather than keeping every id forever.
 const sightingRetention = 30 * 24 * 60 * 60 * 1000 // ms
