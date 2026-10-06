@@ -68,7 +68,11 @@ export function LoopConnections({ loop }: { loop: LoopView }) {
   // goes, as a secret removed from the Secrets panel did.
   const remove = (c: Connection) => {
     const what = c.config.env ?? c.name
-    if (!confirm(`Remove ${what} from ${loop.name}? Its value is deleted, and the hub stops redacting it.`))
+    if (
+      !confirm(
+        `Remove ${what} from ${loop.name}? Its value is deleted for good, though the hub keeps redacting it.`,
+      )
+    )
       return
     // The hub detaches a private one from its owner as it deletes it.
     return act(() => api.deleteConnection(c.name))

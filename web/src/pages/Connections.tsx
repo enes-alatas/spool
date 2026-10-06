@@ -27,7 +27,7 @@ function ConnectionRow({ c, onChanged }: { c: Connection; onChanged: () => void 
   const remove = async () => {
     if (
       !confirm(
-        `Delete the connection "${c.name}"? Its secret goes with it, and the hub stops redacting that value.`,
+        `Delete the connection "${c.name}"? Its secret goes with it, though the hub keeps redacting that value.`,
       )
     ) {
       return
