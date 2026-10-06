@@ -314,7 +314,7 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			// never text.
 			"ResolveSend": false, "ResolveResends": false,
 			"MarkSendFailuresTold": false,
-			"PutRef":               false, "Ref": false, "RecordSighting": false, "ByRef": false,
+			"PutRef":               false, "Ref": false, "Refs": false, "RecordSighting": false, "ByRef": false,
 			"ByTGKey": false, "LatestGroupPostBy": false, "BySlackTS": false,
 			// a channel id and a ts, both Slack's
 			"SetSlackRef": false,

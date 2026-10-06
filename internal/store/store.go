@@ -863,6 +863,9 @@ type MessageStore interface {
 	// bot never saw or sent it — the case where no native reply can be
 	// rendered. A sighting recorded by a non-ingesting poller counts.
 	Ref(ctx context.Context, messageID int64, botLoopID string) (*SurfaceRef, error)
+	// Refs returns every bot's id for a message that bot sent or ingested,
+	// oldest first: empty when no bot did.
+	Refs(ctx context.Context, messageID int64) ([]*SurfaceRef, error)
 	// RecordSighting stores a poller's own id for a telegram message it
 	// observed, whether or not it was the bot that ingested it, and what
 	// that poller resolved the message to be a reply to (0 = nothing).

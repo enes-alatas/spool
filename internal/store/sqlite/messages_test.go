@@ -200,6 +200,15 @@ func TestMessageReferencesAreOwnedPerBot(t *testing.T) {
 	if _, err := db.Messages().Ref(ctx, reply.ID, "l2"); err != store.ErrNotFound {
 		t.Fatalf("a bot that never saw the post must hold no reference, got %v", err)
 	}
+	// Every bot's id for it is there to read, for the caller that knows
+	// when another bot's id is usable (#607).
+	if refs, err := db.Messages().Refs(ctx, reply.ID); err != nil || len(refs) != 1 ||
+		*refs[0] != (store.SurfaceRef{MessageID: reply.ID, BotLoopID: "l1", TGChatID: -100, TGMessageID: 12}) {
+		t.Fatalf("Refs(reply) = %+v, %v; want l1's 12", refs, err)
+	}
+	if refs, err := db.Messages().Refs(ctx, reply.ID+100); err != nil || len(refs) != 0 {
+		t.Fatalf("Refs(unknown) = %+v, %v; want none", refs, err)
+	}
 
 	// The reverse direction: a surface id resolves back to the message, per bot.
 	got, err := db.Messages().ByRef(ctx, "l2", -100, 512)
