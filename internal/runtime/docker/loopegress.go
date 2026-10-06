@@ -125,7 +125,7 @@ func (rt *Runtime) rewriteLoopEgress(ctx context.Context) error {
 // stdin: the image has no shell to write it with. The caller holds
 // loopEgressMu.
 func (rt *Runtime) writeLoopEgress(ctx context.Context) error {
-	file := egress.LoopFile{Loops: make(map[string][]string, len(rt.loopEgress))}
+	file := egress.ProxyFile{Loops: make(map[string][]string, len(rt.loopEgress))}
 	for entry := range maps.Values(rt.loopEgress) {
 		file.Loops[entry.key] = entry.allow
 	}

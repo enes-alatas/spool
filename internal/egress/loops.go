@@ -14,11 +14,13 @@ import (
 	"sync"
 )
 
-// LoopFile is what the hub copies into the proxy (#599): each loop's own
-// entries on top of the fleet's, keyed by LoopKey of the loop's proxy
+// ProxyFile is what the hub copies into the proxy. Fleet is the operator's
+// extra hosts, which every loop may reach (#542). Loops is each loop's own
+// entries on top of those (#599), keyed by LoopKey of the loop's proxy
 // credential, so the file names no credential and no loop can claim
 // another's entries without that loop's token.
-type LoopFile struct {
+type ProxyFile struct {
+	Fleet []string            `json:"fleet,omitempty"`
 	Loops map[string][]string `json:"loops"`
 }
 
@@ -29,70 +31,80 @@ func LoopKey(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// LoopAllowlists reads a LoopFile and re-reads it whenever it changes, so
-// the hub can give one loop a host without recreating the proxy, which would
-// cut every other loop's open tunnels.
-type LoopAllowlists struct {
+// FileAllowlists reads a ProxyFile and re-reads it whenever it changes, so
+// the hub can give the fleet or one loop a host without recreating the
+// proxy, which would cut every loop's open tunnels.
+type FileAllowlists struct {
 	path string
 	log  *slog.Logger
 
 	mu    sync.Mutex
 	sum   [sha256.Size]byte // of the last bytes parsed
+	fleet *Allowlist
 	byKey map[string]*Allowlist
 }
 
-// NewLoopAllowlists reads path lazily, at the first request. A missing file
-// gives every loop the fleet's entries alone.
-func NewLoopAllowlists(path string, log *slog.Logger) *LoopAllowlists {
+// NewFileAllowlists reads path lazily, at the first request. A missing file
+// gives every loop the proxy's own entries alone.
+func NewFileAllowlists(path string, log *slog.Logger) *FileAllowlists {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	return &LoopAllowlists{path: path, log: log}
+	return &FileAllowlists{path: path, log: log}
 }
 
-// For is the allowlist of the loop whose proxy token is token, or nil when
-// it has none of its own.
-func (loops *LoopAllowlists) For(token string) *Allowlist {
-	if loops == nil || token == "" {
-		return nil
+// For is the file's fleet allowlist and the allowlist of the loop whose
+// proxy token is token. Either is nil when the file holds none: no fleet
+// entries, or no token or none of that loop's own.
+func (lists *FileAllowlists) For(token string) (fleet, own *Allowlist) {
+	if lists == nil {
+		return nil, nil
 	}
-	loops.mu.Lock()
-	defer loops.mu.Unlock()
-	loops.reload()
-	return loops.byKey[LoopKey(token)]
+	lists.mu.Lock()
+	defer lists.mu.Unlock()
+	lists.reload()
+	if token != "" {
+		own = lists.byKey[LoopKey(token)]
+	}
+	return lists.fleet, own
 }
 
-// reload re-reads the file at every request that carries a token, and
-// re-parses it when its bytes moved. A stamp would not do: docker cp keeps a
+// reload re-reads the file at every request, since the fleet's entries
+// apply to requests without a token too, and re-parses it when its bytes
+// moved. A stamp would not do: docker cp keeps a
 // tar header's whole-second mtime, so two rewrites of one size in a second
 // look alike. The file is a few lines per loop. One that can't be read or
 // parsed keeps what was read last: a half-written copy must not take every
 // loop's hosts away.
-func (loops *LoopAllowlists) reload() {
-	data, err := os.ReadFile(loops.path)
+func (lists *FileAllowlists) reload() {
+	data, err := os.ReadFile(lists.path)
 	if errors.Is(err, fs.ErrNotExist) {
-		loops.byKey, loops.sum = nil, [sha256.Size]byte{}
+		lists.fleet, lists.byKey, lists.sum = nil, nil, [sha256.Size]byte{}
 		return
 	}
 	if err != nil {
-		loops.log.Warn("loop allowlists unreadable; keeping the last ones read", "err", err)
+		lists.log.Warn("allowlists file unreadable; keeping the last one read", "err", err)
 		return
 	}
 	sum := sha256.Sum256(data)
-	if sum == loops.sum {
+	if sum == lists.sum {
 		return
 	}
-	var file LoopFile
+	var file ProxyFile
 	if err := json.Unmarshal(data, &file); err != nil {
-		loops.log.Warn("loop allowlists unreadable; keeping the last ones read", "err", err)
+		lists.log.Warn("allowlists file unreadable; keeping the last one read", "err", err)
 		return
 	}
 	byKey := make(map[string]*Allowlist, len(file.Loops))
 	for key, entries := range file.Loops {
 		byKey[key] = New(entries)
 	}
-	loops.byKey, loops.sum = byKey, sum
-	loops.log.Info("loop allowlists read", "loops", len(byKey))
+	var fleet *Allowlist
+	if len(file.Fleet) > 0 {
+		fleet = New(file.Fleet)
+	}
+	lists.fleet, lists.byKey, lists.sum = fleet, byKey, sum
+	lists.log.Info("allowlists read", "fleet", len(file.Fleet), "loops", len(byKey))
 }
 
 // proxyToken is the password of a request's Basic Proxy-Authorization, or ""

@@ -11,38 +11,79 @@ import (
 	"strings"
 )
 
-// DefaultHosts is what a loop needs to do its job, and nothing else. Every
-// entry earns its place; adding one is a PR with a reason.
+// HostGroup is a run of built-in hosts and the one reason they are there,
+// which the settings API serves beside them.
+type HostGroup struct {
+	Reason string   `json:"reason"`
+	Hosts  []string `json:"hosts"`
+}
+
+// BuiltIn is what a loop needs to do its job, and nothing else. Every entry
+// earns its place; adding one is a PR with a reason, and the reason is data
+// because the operator is shown it beside the hosts (#542).
 //
 // A leading dot means "this domain and anything under it"; everything else is
 // an exact host. Names only — matching happens before the name is resolved
 // (ADR-0028), so an address is never what is compared.
-var DefaultHosts = []string{
-	// Claude: the API the loop's own turns run against, plus the hosts the
-	// CLI itself needs to authenticate and to check its version.
-	"api.anthropic.com",
-	"statsig.anthropic.com",
-	"console.anthropic.com",
-	"downloads.claude.ai",
+var BuiltIn = []HostGroup{
+	{
+		Reason: "Claude: the API the loop's own turns run against, plus the hosts the CLI needs to authenticate and check its version.",
+		Hosts:  []string{"api.anthropic.com", "statsig.anthropic.com", "console.anthropic.com", "downloads.claude.ai"},
+	},
+	{
+		Reason: "GitHub: the work itself, through gh, git over HTTPS, and release and archive downloads.",
+		Hosts:  []string{"github.com", "api.github.com", "codeload.github.com", ".githubusercontent.com", "cli.github.com"},
+	},
+	{
+		Reason: "Go: the module proxy and checksum database a loop installs Go modules through.",
+		Hosts:  []string{"proxy.golang.org", "sum.golang.org"},
+	},
+	{
+		Reason: "npm: the registry a loop installs JavaScript packages from.",
+		Hosts:  []string{"registry.npmjs.org"},
+	},
+	{
+		Reason: "Python: pip resolves a package on pypi.org's index and downloads it from files.pythonhosted.org; either alone fails the install.",
+		Hosts:  []string{"pypi.org", "files.pythonhosted.org"},
+	},
+	{
+		Reason: "Debian: the archives the workstation image's own package manager installs from.",
+		Hosts:  []string{"deb.debian.org", "security.debian.org"},
+	},
+}
 
-	// GitHub: the work itself — gh, git over HTTPS, release and archive
-	// downloads.
-	"github.com",
-	"api.github.com",
-	"codeload.github.com",
-	".githubusercontent.com",
+// DefaultHosts is every built-in host, in BuiltIn's order, on a fresh slice
+// the caller may append to.
+func DefaultHosts() []string {
+	var hosts []string
+	for _, group := range BuiltIn {
+		hosts = append(hosts, group.Hosts...)
+	}
+	return hosts
+}
 
-	// Toolchains a loop installs into its persistent home.
-	"proxy.golang.org",
-	"sum.golang.org",
-	"registry.npmjs.org",
-	// pip resolves a package on pypi.org's index and downloads it from
-	// files.pythonhosted.org; either alone fails the install.
-	"pypi.org",
-	"files.pythonhosted.org",
-	"deb.debian.org",
-	"security.debian.org",
-	"cli.github.com",
+// Canonical is entry as the allowlist reads it: trimmed, lowercased, the
+// trailing dot dropped and the port in decimal. Two entries with one
+// canonical form permit the same thing, so a stored list keys on it.
+func Canonical(entry string) (string, error) {
+	host, ports, err := parseEntry(entry)
+	if err != nil {
+		return "", err
+	}
+	if !HasPort(entry) {
+		return host, nil
+	}
+	for port := range ports { // a port of its own is the only one it permits
+		host += ":" + port
+	}
+	return host, nil
+}
+
+// HasPort reports whether entry names a port of its own rather than taking
+// DefaultPorts.
+func HasPort(entry string) bool {
+	_, port := cutPort(strings.TrimSpace(entry))
+	return port != ""
 }
 
 // DefaultPorts are the ports an entry without one of its own permits: the two
