@@ -360,12 +360,16 @@ func (router *Router) Send(ctx context.Context, req SendRequest) (*store.Message
 		Attachments:    sentRows,
 	}})
 
+	// A teammate gets the text as it was stored, not as the sender wrote
+	// it: the store's redaction has replaced every secret Spool holds, in
+	// msg itself, so a loop cannot hand another loop a credential it was
+	// never given (#30).
 	for _, target := range delivering {
 		shown, copies := router.present(target, sentRows)
 		env := loop.MessageEnvelope(now, loop.Inbound{
 			Origin:       store.OriginLoop,
 			Author:       req.From.Name,
-			Text:         text,
+			Text:         msg.Text,
 			Conversation: store.ConversationGroup,
 			Channel:      msg.Channel,
 			FromLoop:     true,
