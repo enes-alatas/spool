@@ -118,7 +118,7 @@ func TestPortSpellingIsCanonical(t *testing.T) {
 }
 
 func TestDefaultHostsCoverTheWorkAndNothingElse(t *testing.T) {
-	allow := New(DefaultHosts)
+	allow := New(DefaultHosts())
 	for _, host := range []string{"api.anthropic.com", "github.com", "api.github.com", "proxy.golang.org",
 		"pypi.org", "files.pythonhosted.org"} {
 		if !allow.Allows(host, "443") {
@@ -304,7 +304,7 @@ func TestProxyGivesALoopItsOwnEntries(t *testing.T) {
 	const asterToken, briarToken = "fixture-aster-proxy-token", "fixture-briar-proxy-token"
 	write(`{"loops":{"` + LoopKey(asterToken) + `":["tracker.example"]}}`)
 
-	proxy := NewProxy(New([]string{"fleet.example"}), NewLoopAllowlists(path, nil), nil)
+	proxy := NewProxy(New([]string{"fleet.example"}), NewFileAllowlists(path, nil), nil)
 	proxy.dial = dialTo(upstream.Listener.Addr().String())
 	front := httptest.NewServer(proxy)
 	defer front.Close()
@@ -368,5 +368,71 @@ func TestProxyGivesALoopItsOwnEntries(t *testing.T) {
 	write(`{"loops":`)
 	if got := status(as(asterToken), "http://tracker.example/"); got != http.StatusOK {
 		t.Errorf("aster after an unparseable rewrite = %d, want 200 from the last good read", got)
+	}
+}
+
+// The operator's extra hosts reach every loop, with a token or without,
+// and move when the file does: the hub adds and removes one without
+// recreating the proxy (#542).
+func TestProxyGivesEveryLoopTheFleetEntries(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "ok")
+	}))
+	defer upstream.Close()
+
+	path := filepath.Join(t.TempDir(), "loops.json")
+	write := func(content string) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const asterToken = "fixture-aster-proxy-token"
+	proxy := NewProxy(New(nil), NewFileAllowlists(path, nil), nil)
+	proxy.dial = dialTo(upstream.Listener.Addr().String())
+	front := httptest.NewServer(proxy)
+	defer front.Close()
+	withToken, _ := url.Parse(front.URL)
+	withToken.User = url.UserPassword("loop", asterToken)
+	status := func(proxyBase string) int {
+		t.Helper()
+		resp, _ := viaProxy(t, proxyBase, "http://pkg.example/")
+		return resp.StatusCode
+	}
+
+	if got := status(front.URL); got != http.StatusForbidden {
+		t.Fatalf("before the host is added = %d, want 403", got)
+	}
+	write(`{"fleet":["pkg.example"],"loops":{}}`)
+	for _, base := range []string{front.URL, withToken.String()} {
+		if got := status(base); got != http.StatusOK {
+			t.Errorf("via %s after the host is added = %d, want 200", base, got)
+		}
+	}
+	write(`{"loops":{}}`)
+	if got := status(front.URL); got != http.StatusForbidden {
+		t.Errorf("after the host is removed = %d, want 403", got)
+	}
+}
+
+// Canonical keys a stored list: two spellings of one entry are one entry,
+// and a port of its own survives in decimal.
+func TestCanonical(t *testing.T) {
+	for entry, want := range map[string]string{
+		"PKG.Example.dev.":     "pkg.example.dev",
+		" .internal.example ":  ".internal.example",
+		"pkg.example.dev:0443": "pkg.example.dev:443",
+		"tracker.example:8080": "tracker.example:8080",
+	} {
+		got, err := Canonical(entry)
+		if err != nil || got != want {
+			t.Errorf("Canonical(%q) = %q, %v; want %q", entry, got, err, want)
+		}
+		if HasPort(entry) != strings.Contains(want, ":") {
+			t.Errorf("HasPort(%q) = %v", entry, HasPort(entry))
+		}
+	}
+	if _, err := Canonical("https://pkg.example.dev/"); err == nil {
+		t.Error("Canonical accepted a URL")
 	}
 }
