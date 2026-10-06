@@ -61,7 +61,14 @@ they *should* be true, only that they are known and recorded.
   working.
 - **Secrets you give a loop are readable by that loop**, and a prompt injection
   can therefore exfiltrate them. Injecting a secret is a decision to trust the
-  loop with it ([#30](https://github.com/enes-alatas/spool/issues/30)).
+  loop with it. Spool keeps a known value, plain or in its usual encodings,
+  out of everything it records and sends, out of a teammate's input, and, for
+  a docker loop behind the egress wall, away from hosts off the allowlist. A
+  bare loop, or any loop on a hub started with `--egress-image ""`, reaches
+  every host. Even behind the wall, Spool does not stop a steered loop from
+  sending a credential it holds to an allowlisted host that accepts data, such
+  as a GitHub gist. [ADR-0045](docs/adr/0045-what-spool-defends-for-secrets.md)
+  lists what is and isn't defended, and the levers you hold.
 - **The operator token is a file** at `<data-dir>/operator-token`, mode 0600.
   It keeps out other accounts on the machine, not processes already running as
   you.
