@@ -202,8 +202,7 @@ func TestConnectionAttachments(t *testing.T) {
 // A connection can be private to one loop (#600): created for it, it is
 // attached to it, named by the hub when it has no name, and refused to any
 // other loop until the operator shares it, which can't be undone. Deleting
-// a private one detaches it from its owner in the same step, and a value
-// set through the loop's secrets is private to that loop.
+// a private one detaches it from its owner in the same step.
 func TestPrivateConnections(t *testing.T) {
 	t.Parallel()
 	s := startServer(t, t.TempDir())
@@ -256,15 +255,6 @@ func TestPrivateConnections(t *testing.T) {
 		t.Errorf("briar's connections after deleting its private one = %+v, want only %s", got, created.Name)
 	}
 	s.wantRefusal("DELETE", "/api/connections/"+created.Name, nil, 409, "connection_attached")
-
-	s.mustJSON("PUT", "/api/loops/briar/secrets/API_KEY", map[string]any{"value": "fixture-secret-0000"}, nil)
-	var list []connectionJSON
-	s.mustJSON("GET", "/api/connections", nil, &list)
-	for _, connection := range list {
-		if connection.Config.Env == "API_KEY" && connection.OwnerLoop != "briar" {
-			t.Errorf("a value set through briar's secrets = %+v, want it private to briar", connection)
-		}
-	}
 }
 
 type connectionEventJSON struct {
@@ -290,9 +280,8 @@ func (s *server) connectionRecord(path string) []string {
 }
 
 // Every change the operator makes to a connection is on its record, and on
-// the record of the loop it touched, through the connection routes and the
-// secrets shortcut alike; a change that changes nothing is not. Both
-// records outlive what they name (#606).
+// the record of the loop it touched; a change that changes nothing is not.
+// Both records outlive what they name (#606).
 func TestConnectionRecord(t *testing.T) {
 	t.Parallel()
 	s := startServer(t, t.TempDir())
@@ -306,7 +295,7 @@ func TestConnectionRecord(t *testing.T) {
 	for range 2 {
 		s.mustJSON("PUT", "/api/loops/aster/connections/github", nil, nil)
 	}
-	s.mustJSON("PUT", "/api/loops/aster/secrets/GH_TOKEN", map[string]any{"value": "fixture-record-0001"}, nil)
+	s.mustJSON("PUT", "/api/connections/github/secret", map[string]any{"value": "fixture-record-0001"}, nil)
 	s.mustJSON("PUT", "/api/loops/briar/connections/github", nil, nil)
 	s.mustJSON("DELETE", "/api/loops/briar/connections/github", nil, nil)
 	s.mustJSON("DELETE", "/api/loops/briar/connections/github", nil, nil)

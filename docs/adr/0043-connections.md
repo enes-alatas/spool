@@ -1,6 +1,6 @@
 # ADR-0043: Connections are org-level credentials and configs, defined once and attachable to loops
 
-Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572); 2026-10-04 (item 2: the env-var kind, #574); 2026-10-04 (item 5: per-loop secrets are connections, #576); 2026-10-05 (item 2: an mcp-server reaches its loop, #597); 2026-10-05 (item 1: private connections, #600); 2026-10-05 (item 5: the record of changes, #606); 2026-10-05 (item 3: rotation, #609); 2026-10-06 (item 3: revoke, #610)
+Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572); 2026-10-04 (item 2: the env-var kind, #574); 2026-10-04 (item 5: per-loop secrets are connections, #576); 2026-10-05 (item 2: an mcp-server reaches its loop, #597); 2026-10-05 (item 1: private connections, #600); 2026-10-05 (item 5: the record of changes, #606); 2026-10-05 (item 3: rotation, #609); 2026-10-06 (item 3: revoke, #610); 2026-10-06 (item 5: the per-loop secrets routes are gone, #617)
 
 ## Context
 
@@ -235,6 +235,18 @@ follow in their own slice and amend this ADR.
      happened before left nothing to read back.
    It has no "who": one operator acts in the local edition, and attribution
    comes with users (L5).
+
+   **Amendment (2026-10-06, #617): the per-loop secrets routes are gone.**
+   `GET`, `PUT` and `DELETE /api/loops/{name}/secrets…` are removed. The
+   control room stopped calling them when its Secrets panel folded into
+   Connections (#601). Each thing they did has a connection route:
+   - **Set a variable:** `POST /api/connections` with `owner_loop` creates
+     a private `env-var`, named by the hub when it has no name.
+   - **Replace one:** `PUT /api/connections/{name}/secret`.
+   - **Remove one:** `DELETE /api/connections/{name}`.
+   A second write path had to repeat every connection rule (rotation,
+   revoke, the record), so there is now one. The `secret_shared` refusal
+   and the 64-variable cap per loop went with them.
 
 ## Consequences
 

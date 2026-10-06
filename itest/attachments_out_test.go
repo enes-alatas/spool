@@ -146,7 +146,7 @@ func TestALoopCannotSendAFileItDoesNotOwn(t *testing.T) {
 
 	s.createLoop("aster", map[string]any{"workspace_path": ws, "workspace_mode": "dir"})
 	const secret = "itest-SYNTHETIC-attach-secret-77"
-	s.mustJSON("PUT", "/api/loops/aster/secrets/ATTACH_TOKEN", map[string]any{"value": secret}, nil)
+	s.setLoopEnv("aster", "ATTACH_TOKEN", secret)
 	writeFile(t, filepath.Join(ws, "notes.txt"), []byte("token: "+secret+"\n"))
 	sess := mcpSession(t, s, hubMCPToken(t, s, "aster"))
 
