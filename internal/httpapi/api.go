@@ -116,9 +116,10 @@ type Server struct {
 	// stored list before writing it, and the proxy must take them in the
 	// order they were stored.
 	egressMu sync.Mutex
-	// envMu serializes changes to which env-vars a loop holds: a secret
-	// PUT or DELETE and an attach each read the loop's variables before
-	// writing, and two interleaving could leave two env-vars setting one.
+	// envMu serializes changes to which env-vars a loop holds: creating a
+	// private env-var and attaching one each read the loop's variables
+	// before writing, and two interleaving could leave two env-vars setting
+	// one.
 	envMu sync.Mutex
 }
 
