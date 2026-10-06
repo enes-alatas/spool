@@ -106,8 +106,9 @@ Two credentials on two listeners (ADR-0030, `docs/ARCHITECTURE.md`):
   The cross-site `Origin` / `Sec-Fetch-Site` and `application/json` checks
   apply to the routes that are not open: health and version carry nothing
   worth a cross-origin request.
-- the **loop listener** (`--mcp-listen`) serves `/mcp`, and each request needs
-  the requesting loop's own token. It is the one port a workstation can reach.
+- the **loop listener** (`--mcp-listen`) serves `/mcp` and the loop's brokered
+  MCP servers under `/mcp/connections/`, and each request needs the
+  requesting loop's own token. It is the one port a workstation can reach.
 
 Neither credential is ever handed to the other's audience, and each check holds
 independently of the other. A report that one of these gates can be passed

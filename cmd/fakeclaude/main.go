@@ -61,6 +61,19 @@
 // the turn received text: how a test sees that a secret reached a loop's
 // input, which an echo cannot show once redaction rewrites the stored
 // reply (#30).
+// "!mcp <server> <tool>" connects to the named server of --mcp-config the
+// way claude would, with the URL and headers given there, calls the tool
+// with no arguments, and replies "mcp <server>: <the tool's text>" or
+// "mcp <server>: error: …": how a test sees a loop reach a server the hub
+// brokers (#622).
+// "!mcp-save <server>" copies that server's URL and headers out of
+// --mcp-config into $FAKECLAUDE_STATE, and "!mcp-saved <server> <tool>"
+// calls the tool with the copy instead: a loop that kept what it was once
+// given, after the hub stopped giving it (#622).
+// "!mcp-config-contains <text>" replies "mcp-config contains: yes" or
+// "mcp-config contains: no" for whether the mcp-config claude was started
+// with holds text: how a test sees that a secret is absent from a file the
+// loop can read, which a reply cannot show once redaction rewrites it.
 //
 // A "!send {json}" prefix calls the hub's send_message MCP tool with the
 // given arguments, exactly as the real CLI would mid-turn. It repeats for
@@ -414,6 +427,40 @@ func main() {
 				// secret value without knowing it.
 				name := strings.TrimSpace(strings.TrimPrefix(line, "!env "))
 				reply = name + "=" + os.Getenv(name)
+			case strings.HasPrefix(line, "!mcp-config-contains "):
+				needle := strings.TrimSpace(strings.TrimPrefix(line, "!mcp-config-contains "))
+				raw, _ := rawMCPConfig(mcpConfig)
+				reply = "mcp-config contains: no"
+				if strings.Contains(raw, needle) {
+					reply = "mcp-config contains: yes"
+				}
+			case strings.HasPrefix(line, "!mcp-save "):
+				server := strings.TrimSpace(strings.TrimPrefix(line, "!mcp-save "))
+				reply = "mcp-save " + server + ": " + mcpSave(mcpConfig, stateDir, server)
+			case strings.HasPrefix(line, "!mcp-saved "):
+				server, tool, _ := strings.Cut(strings.TrimSpace(strings.TrimPrefix(line, "!mcp-saved ")), " ")
+				var entry mcpServerEntry
+				data, err := os.ReadFile(filepath.Join(stateDir, "mcp-saved-"+server+".json"))
+				if err == nil {
+					err = json.Unmarshal(data, &entry)
+				}
+				if err != nil {
+					reply = "mcp " + server + ": error: " + err.Error()
+				} else {
+					reply = "mcp " + server + ": " + mcpCall(entry, tool)
+				}
+			case strings.HasPrefix(line, "!mcp "):
+				server, tool, _ := strings.Cut(strings.TrimSpace(strings.TrimPrefix(line, "!mcp ")), " ")
+				servers, err := readMCPConfig(mcpConfig)
+				entry, ok := servers[server]
+				switch {
+				case err != nil:
+					reply = "mcp " + server + ": error: " + err.Error()
+				case !ok:
+					reply = "mcp " + server + ": error: mcp config names no " + server + " server"
+				default:
+					reply = "mcp " + server + ": " + mcpCall(entry, tool)
+				}
 			case strings.HasPrefix(line, "!get "):
 				// A loop making an outbound request — the move an exfiltration
 				// would use, and the only way a tier-2 test can see the egress
@@ -608,22 +655,32 @@ type mcpServerEntry struct {
 	Headers map[string]string `json:"headers"`
 }
 
-// readMCPConfig parses the --mcp-config flag's value, or
-// FAKECLAUDE_MCP_CONFIG when the flag is empty: inline JSON or a file path.
-func readMCPConfig(flagConfig string) (map[string]mcpServerEntry, error) {
+// rawMCPConfig is the --mcp-config flag's value, or FAKECLAUDE_MCP_CONFIG
+// when the flag is empty, as JSON text: given inline or read from the file
+// it names.
+func rawMCPConfig(flagConfig string) (string, error) {
 	raw := flagConfig
 	if raw == "" {
 		raw = os.Getenv("FAKECLAUDE_MCP_CONFIG")
 	}
 	if raw == "" {
-		return nil, errors.New("no mcp config (--mcp-config or FAKECLAUDE_MCP_CONFIG)")
+		return "", errors.New("no mcp config (--mcp-config or FAKECLAUDE_MCP_CONFIG)")
 	}
 	if !strings.HasPrefix(strings.TrimSpace(raw), "{") {
 		data, err := os.ReadFile(raw)
 		if err != nil {
-			return nil, err
+			return "", err
 		}
 		raw = string(data)
+	}
+	return raw, nil
+}
+
+// readMCPConfig parses the mcp config rawMCPConfig reads.
+func readMCPConfig(flagConfig string) (map[string]mcpServerEntry, error) {
+	raw, err := rawMCPConfig(flagConfig)
+	if err != nil {
+		return nil, err
 	}
 	var cfg struct {
 		MCPServers map[string]mcpServerEntry `json:"mcpServers"`
@@ -672,6 +729,51 @@ func mcpConnect(flagConfig string) (*mcp.ClientSession, error) {
 	}
 	mcpSess = sess
 	return sess, nil
+}
+
+// mcpSave writes one configured server's entry to the state dir, for
+// !mcp-saved to call later.
+func mcpSave(flagConfig, stateDir, name string) string {
+	servers, err := readMCPConfig(flagConfig)
+	if err != nil {
+		return "error: " + err.Error()
+	}
+	entry, ok := servers[name]
+	if !ok {
+		return "error: mcp config names no " + name + " server"
+	}
+	data, _ := json.Marshal(entry)
+	if err := os.WriteFile(filepath.Join(stateDir, "mcp-saved-"+name+".json"), data, 0o600); err != nil {
+		return "error: " + err.Error()
+	}
+	return "saved"
+}
+
+// mcpCall calls one tool of a server other than the hub's, on a session of
+// its own that ends with the call.
+func mcpCall(srv mcpServerEntry, tool string) string {
+	client := mcp.NewClient(&mcp.Implementation{Name: "fakeclaude", Version: "0"}, nil)
+	sess, err := client.Connect(context.Background(), &mcp.StreamableClientTransport{
+		Endpoint:             srv.URL,
+		HTTPClient:           &http.Client{Transport: headerTransport{srv.Headers}, Timeout: 20 * time.Second},
+		DisableStandaloneSSE: true,
+		MaxRetries:           -1,
+	}, nil)
+	if err != nil {
+		return "error: " + err.Error()
+	}
+	defer func() { _ = sess.Close() }()
+	res, err := sess.CallTool(context.Background(), &mcp.CallToolParams{Name: tool})
+	if err != nil {
+		return "error: " + err.Error()
+	}
+	var parts []string
+	for _, content := range res.Content {
+		if tc, ok := content.(*mcp.TextContent); ok {
+			parts = append(parts, tc.Text)
+		}
+	}
+	return strings.Join(parts, " ")
 }
 
 // fetch reports an outbound request's outcome as one line: a status when the
