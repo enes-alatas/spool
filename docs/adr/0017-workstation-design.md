@@ -1,6 +1,6 @@
 # ADR-0017: Workstation design — long-lived Docker containers behind the SandboxRuntime seam
 
-Date: 2026-08-17 · Status: accepted · Amended: 2026-09-20 (redaction), 2026-09-21 (bare is opt-in), 2026-09-30 (the perf smoke covers bare loops only), 2026-10-04 (item 8: per-loop secrets are connections, ADR-0043)
+Date: 2026-08-17 · Status: accepted · Amended: 2026-09-20 (redaction), 2026-09-21 (bare is opt-in), 2026-09-30 (the perf smoke covers bare loops only), 2026-10-04 (item 8: per-loop secrets are connections, ADR-0043), 2026-10-06 (consequences and parking lot: the credential broker is rejected for env-var secrets, ADR-0045)
 
 ## Context
 
