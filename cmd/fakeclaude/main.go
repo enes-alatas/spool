@@ -43,6 +43,8 @@
 // "!env NAME" replies with "NAME=<value>" read from the fake's own
 // environment: how a loop that echoes one of its injected credentials looks
 // from outside, which is what redaction has to catch (#150).
+// "!env64 NAME" is the same with the value base64-encoded: a loop disguising
+// a credential the first way it would think of (#30).
 // "!get URL" fetches the URL with an ordinary proxy-honouring HTTP client
 // and replies with "get <url>: <status>" or "get <url>: error: …": how a loop
 // reaching out to a host looks from outside, which is what the egress
@@ -96,6 +98,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -401,6 +404,9 @@ func main() {
 				if strings.Contains(text, needle) {
 					reply = "contains: yes"
 				}
+			case strings.HasPrefix(line, "!env64 "):
+				name := strings.TrimSpace(strings.TrimPrefix(line, "!env64 "))
+				reply = name + "=" + base64.StdEncoding.EncodeToString([]byte(os.Getenv(name)))
 			case strings.HasPrefix(line, "!env "):
 				// A loop reading a credential out of its environment and
 				// putting it in its reply — the thing #150's redaction has

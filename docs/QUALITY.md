@@ -87,8 +87,9 @@ window regardless of loop count (ADR-0018).
   secret value Spool knows and every log line, store write and JSON/SSE response
   passes through it (#150). Its reach is Spool's own secrets — the operator's Claude
   token, each loop's bot and hub-MCP tokens, every connection's secret — and it matches them
-  literally; a credential a loop invents, or one that survives only re-encoded, is
-  #30's problem, not this one's.
+  literally and in their base64, hex and percent-encoded forms. A credential a loop
+  invents, or one disguised past those, is outside it; ADR-0045 states the whole
+  posture.
 - Message bodies are logged at debug level only — loops carry private team chatter.
 - `govulncheck` gates CI.
 - **No telemetry, ever.** The binary never phones home. This is a product promise.

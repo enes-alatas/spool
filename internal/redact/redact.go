@@ -12,12 +12,16 @@
 // token, each loop's bot token, hub MCP token and per-loop secrets. It cannot
 // catch a credential a loop invents or reads from somewhere Spool has never
 // seen (#30 is that problem), and it matches values literally, so a value
-// that survives only in an escaped or re-encoded form goes through. Both
-// limits are the reason this is a floor, not a guarantee.
+// that survives only in an escaped or re-encoded form goes through, beyond
+// the few encodings it matches as well (base64, hex, percent-encoding).
+// Both limits are the reason this is a floor, not a guarantee.
 package redact
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/hex"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -113,14 +117,61 @@ func compile(secrets []Secret, at time.Time) *snapshot {
 	if len(usable) == 0 {
 		return &snapshot{empty: true, loadedAt: at}
 	}
-	sort.SliceStable(usable, func(i, j int) bool {
-		return len(usable[i].Value) > len(usable[j].Value)
-	})
-	pairs := make([]string, 0, 2*len(usable))
+	// Each secret stands for its encoded forms too, so they are matched
+	// alongside it: a value a loop base64s or hex-dumps is the same
+	// credential, and it is the first thing a steered loop tries (#30).
+	var forms []Secret
 	for _, secret := range usable {
-		pairs = append(pairs, secret.Value, "<redacted:"+secret.Name+">")
+		for _, form := range encodings(secret.Value) {
+			forms = append(forms, Secret{Name: secret.Name, Value: form})
+		}
+	}
+	sort.SliceStable(forms, func(i, j int) bool {
+		return len(forms[i].Value) > len(forms[j].Value)
+	})
+	pairs := make([]string, 0, 2*len(forms))
+	for _, form := range forms {
+		pairs = append(pairs, form.Value, "<redacted:"+form.Name+">")
 	}
 	return &snapshot{replacer: strings.NewReplacer(pairs...), loadedAt: at}
+}
+
+// encodings is value and the forms it takes when a loop encodes it the
+// usual ways: base64 (standard and URL alphabets), hex in either case, and
+// percent-encoding. Base64 is matched at each of its three alignments, by
+// the characters that depend on value's bytes alone, so the value is caught
+// inside a longer encoded text too, as in an HTTP Basic header. A form
+// shorter than MinLength is left out, as a short value is.
+func encodings(value string) []string {
+	hexed := hex.EncodeToString([]byte(value))
+	forms := []string{value, hexed, strings.ToUpper(hexed), url.QueryEscape(value), url.PathEscape(value)}
+	for offset := range 3 {
+		core := base64Core(value, offset)
+		forms = append(forms, core, strings.NewReplacer("+", "-", "/", "_").Replace(core))
+	}
+	seen := make(map[string]bool, len(forms))
+	unique := forms[:0]
+	for _, form := range forms {
+		if len(form) >= MinLength && !seen[form] {
+			seen[form] = true
+			unique = append(unique, form)
+		}
+	}
+	return unique
+}
+
+// base64Core is the run of base64 characters that encode value's bytes and
+// nothing else, when value starts offset bytes into the encoded text. A
+// character carries six bits, so those at the edges also carry a neighbour's
+// bits and are dropped.
+func base64Core(value string, offset int) string {
+	encoded := base64.StdEncoding.EncodeToString(append(make([]byte, offset), value...))
+	first := (8*offset + 5) / 6             // the first character whose six bits start inside value
+	last := (8 * (offset + len(value))) / 6 // one past the last whose six bits end inside it
+	if first >= last || last > len(encoded) {
+		return ""
+	}
+	return encoded[first:last]
 }
 
 // Text returns text with every known secret value replaced. It never blocks
