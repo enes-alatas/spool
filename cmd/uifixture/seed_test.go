@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/enes-alatas/spool/internal/attach"
+	"github.com/enes-alatas/spool/internal/httpapi"
 	"github.com/enes-alatas/spool/internal/loop"
 	"github.com/enes-alatas/spool/internal/operator"
 	"github.com/enes-alatas/spool/internal/store"
@@ -653,5 +654,32 @@ func TestSeedPutsAnOpenAndAClosedPoll(t *testing.T) {
 	}
 	if len(closed) != 1 || closed[0].ClosedAt == 0 || !closed[0].Multiple || !picksTwo {
 		t.Errorf("docs' polls are %v, want one closed multiple-choice poll with a two-option vote", closed)
+	}
+}
+
+// The Egress section's shot needs hosts in the list, read the way the hub
+// reads them at start: a stored list it serves, not one the absent flag
+// replaces.
+func TestSeedStoresTheExtraEgressHosts(t *testing.T) {
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "spool.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	files, err := attach.Open(filepath.Join(t.TempDir(), "files"))
+	if err != nil {
+		t.Fatalf("files: %v", err)
+	}
+	ctx := context.Background()
+	if err := seed(ctx, db, files); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	hosts, seeded, err := httpapi.SeedEgressHosts(ctx, db.Settings(), nil)
+	if err != nil {
+		t.Fatalf("seed egress hosts: %v", err)
+	}
+	if seeded || !slices.Equal(hosts, fixtureEgressHosts) {
+		t.Errorf("the hub starts with %v (seeded %v), want the stored %v", hosts, seeded, fixtureEgressHosts)
 	}
 }

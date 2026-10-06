@@ -759,6 +759,23 @@ func seedConnections(ctx context.Context, db store.Store, ids map[string]string)
 	return nil
 }
 
+// fixtureEgressHosts are the operator's extra egress hosts: more than one,
+// so Settings → Egress draws a list with a Remove on each, none built in,
+// and one a leading-dot domain. The fixture hub starts without
+// --egress-allow, so the stored list is what it serves.
+var fixtureEgressHosts = []string{"index.crates.io", "static.crates.io", ".huggingface.co"}
+
+func seedEgressHosts(ctx context.Context, db store.Store) error {
+	raw, err := json.Marshal(store.EgressHosts{Hosts: fixtureEgressHosts, ChangedAt: ms(-2 * time.Hour)})
+	if err != nil {
+		return fmt.Errorf("egress hosts: %w", err)
+	}
+	if err := db.Settings().Set(ctx, store.SettingEgressHosts, string(raw)); err != nil {
+		return fmt.Errorf("egress hosts: %w", err)
+	}
+	return nil
+}
+
 // Two fleet rules, because one rule does not show that they are a list.
 func seedRules(ctx context.Context, db store.Store) error {
 	rules := []struct {

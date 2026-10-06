@@ -111,6 +111,37 @@ const missionFile = `${outDir}/mission-edit.png`
 await mission.screenshot({ path: missionFile })
 taken.push(missionFile)
 
+// Settings' Egress section (#542), shot as the section: Settings scrolls in
+// its own container, so a page shot cuts it off, and the viewport grows to
+// hold all of it. The fixture hub runs no egress image, so as served it
+// draws the open state; the walled one is the same view with the proxy's
+// answer patched in, as a docker hub serves it.
+await page.setViewportSize({ width: 1180, height: 1900 })
+await page.goto(base + '/settings', { waitUntil: 'networkidle' })
+const egress = page.locator('section.egress')
+await egress.locator('.egress-status').waitFor({ timeout: 15000 })
+const egressOpenFile = `${outDir}/settings-egress-open.png`
+await egress.screenshot({ path: egressOpenFile })
+taken.push(egressOpenFile)
+await page.route('**/api/settings/egress', async (route) => {
+  const view = await (await route.fetch()).json()
+  const gateway = {
+    reason:
+      "The hub: the loop's MCP tools and hooks reach Spool on this one port of your machine, and on no other.",
+    hosts: ['host.docker.internal:8081'],
+  }
+  await route.fulfill({
+    json: { ...view, enforced: true, built_in: [...view.built_in, gateway], applied_at: Date.now() },
+  })
+})
+await page.goto(base + '/settings', { waitUntil: 'networkidle' })
+await egress.locator('.egress-status.ok').waitFor({ timeout: 15000 })
+const egressFile = `${outDir}/settings-egress.png`
+await egress.screenshot({ path: egressFile })
+taken.push(egressFile)
+await page.unroute('**/api/settings/egress')
+await page.setViewportSize({ width: 1180, height: 900 })
+
 // The first-run page (#581) in the states its cards draw. The fixture
 // hub has done all three pillars, so it opens on Fleet; these answers stand
 // in for a hub that has not, worded as #580's reasons are. Every other read
