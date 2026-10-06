@@ -276,3 +276,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 
 ## 2026-10-06 07:00 — morning sweep
 - Overnight: #608 (#606 audit record), #612 (#609 rotate) merged. Terra on #610 (revoke, 22:30); Iris on #611 (#507 web; mockups approved by Enes 20:19). #507 closes with #610 + #611. No open PRs but #453 draft. Runtime 10-05 09:23 build; DM'd Enes rebuild (ref 3312). Terra gaps pending: secrets-routes removal, #607 reaction mirror, #604 flake. Then #542 → #30 → #529(b) → #582. Enes still to walk onboarding (#124 open).
+- 10:00: Runtime v0.4.1-2 (rebuilt). #613 (#610 revoke) merged; Terra pinged: #607 → secrets-routes chore → #542 → #30 → #529(b) → #582. Iris on #611 (#507 closes with it). #604 flake unassigned, low.
