@@ -54,6 +54,10 @@ const (
 	// RotationReasonConnection is a value replaced on a connection the loop
 	// holds: the session that ran with the old one ends (#609).
 	RotationReasonConnection = "connection"
+	// RotationReasonRevoke is a connection the loop held revoked: the
+	// session that ran with its value ends, and the next runs without it
+	// (#610).
+	RotationReasonRevoke = "revoke"
 
 	OriginWeb           = "web"
 	OriginTelegramGroup = "telegram-group"
@@ -1367,6 +1371,10 @@ const (
 	// ErrConnectionPrivate refuses attaching a loop's private connection
 	// to another loop (ADR-0043): sharing it is a step of its own.
 	ErrConnectionPrivate = sentinelError("store: connection private")
+	// ErrConnectionRevoked refuses attaching, sharing, setting a value on,
+	// or revoking again a connection the operator revoked (ADR-0043): it
+	// is gone for good, and a new one takes its place.
+	ErrConnectionRevoked = sentinelError("store: connection revoked")
 	// ErrPollClosed refuses a vote in a poll that has closed (ADR-0041).
 	ErrPollClosed = sentinelError("store: poll closed")
 )
@@ -1385,6 +1393,9 @@ type Connection struct {
 	UpdatedAt int64
 	// RotatedAt is when the secret was last replaced, 0 for never.
 	RotatedAt int64
+	// RevokedAt is when the connection was revoked, 0 for never. A revoked
+	// one holds no value and no loop.
+	RevokedAt int64
 	// LoopIDs are the loops the connection is attached to, in no promised
 	// order.
 	LoopIDs []string
@@ -1466,19 +1477,27 @@ type ConnectionStore interface {
 	Delete(ctx context.Context, name string, at int64) error
 	// Share makes a private connection the fleet's, for good: its value may
 	// be in another loop's env from then on. Sharing a shared one changes
-	// nothing. ErrNotFound for an unknown name.
+	// nothing. ErrNotFound for an unknown name, ErrConnectionRevoked for a
+	// revoked one.
 	Share(ctx context.Context, name string, at int64) error
 	// SetSecret replaces the secret, stamps UpdatedAt and RotatedAt, and
 	// retires the value it replaced; setting the value it holds changes
-	// nothing. ErrNotFound for an unknown name.
+	// nothing. ErrNotFound for an unknown name, ErrConnectionRevoked for a
+	// revoked one.
 	SetSecret(ctx context.Context, name, secret string, at int64) error
 	// Attach gives a loop the connection; attaching it again changes
-	// nothing. ErrNotFound for an unknown connection or loop, and
-	// ErrConnectionPrivate for another loop's private one.
+	// nothing. ErrNotFound for an unknown connection or loop,
+	// ErrConnectionPrivate for another loop's private one, and
+	// ErrConnectionRevoked for a revoked one.
 	Attach(ctx context.Context, name, loopID string, at int64) error
 	// Detach takes it away again; detaching what is not attached changes
 	// nothing. ErrNotFound for an unknown connection.
 	Detach(ctx context.Context, name, loopID string, at int64) error
+	// Revoke detaches the connection from every loop, retires its value,
+	// and stamps RevokedAt, in one step. It returns the loops it was
+	// detached from. ErrNotFound for an unknown name, and
+	// ErrConnectionRevoked for one revoked already.
+	Revoke(ctx context.Context, name string, at int64) ([]string, error)
 	// ListByLoop returns the connections attached to one loop, name-sorted,
 	// secrets included for the injector.
 	ListByLoop(ctx context.Context, loopID string) ([]*Connection, error)
@@ -1535,6 +1554,9 @@ const (
 	ConnectionEventShare  = "share"
 	// ConnectionEventRotate is a connection's value replaced.
 	ConnectionEventRotate = "rotate"
+	// ConnectionEventRevoke is a connection revoked, after a detach for
+	// each loop that held it.
+	ConnectionEventRevoke = "revoke"
 )
 
 // ConnectionEventFilter picks a connection's record, or a loop's: by the

@@ -1,6 +1,6 @@
 # ADR-0043: Connections are org-level credentials and configs, defined once and attachable to loops
 
-Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572); 2026-10-04 (item 2: the env-var kind, #574); 2026-10-04 (item 5: per-loop secrets are connections, #576); 2026-10-05 (item 2: an mcp-server reaches its loop, #597); 2026-10-05 (item 1: private connections, #600); 2026-10-05 (item 5: the record of changes, #606); 2026-10-05 (item 3: rotation, #609)
+Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572); 2026-10-04 (item 2: the env-var kind, #574); 2026-10-04 (item 5: per-loop secrets are connections, #576); 2026-10-05 (item 2: an mcp-server reaches its loop, #597); 2026-10-05 (item 1: private connections, #600); 2026-10-05 (item 5: the record of changes, #606); 2026-10-05 (item 3: rotation, #609); 2026-10-06 (item 3: revoke, #610)
 
 ## Context
 
@@ -143,6 +143,25 @@ follow in their own slice and amend this ADR.
    Enes decided on 2026-10-05 (#507) that retired values stay redacted and
    that a rotation with a handoff ends the session. The cost is that the
    hub's database keeps dead credentials as long as it keeps live ones.
+
+   **Amendment (2026-10-06, #610): a connection is revoked.**
+   `POST /api/connections/{name}/revoke` is the one step for "this
+   credential is compromised".
+   - **It is taken from every loop at once.** In one transaction the
+     connection is detached from each loop that holds it, its value is
+     retired as a replaced one is, and it is marked revoked. The record
+     gets a `detach` row for each loop, then a `revoke` row, which names
+     the owner of a private one.
+   - **The sessions that ran with it end.** Each loop that held it takes
+     an ADR-0022 context rotation with `revoke` as the reason. Its
+     handoff turn is told the credential is gone, and the fresh session's
+     wake runs without it.
+   - **It is refused from then on.** Attaching it, sharing it, giving it a
+     new value, and revoking it again answer 409 `connection_revoked`. It
+     can still be deleted, and nothing revives it: the operator creates a
+     new connection with a new value.
+   - **The connection says when.** Its view carries `revoked_at`, and
+     `has_secret` is false: the row holds no value once it is retired.
 
 4. **GitHub stays an env credential until L5.** A GitHub token is an
    `env-credential` on `GH_TOKEN`. A GitHub App with its own kind waits for

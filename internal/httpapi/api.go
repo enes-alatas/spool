@@ -157,6 +157,7 @@ func (server *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/connections/{name}", server.handleDeleteConnection)
 	mux.HandleFunc("POST /api/connections/{name}/share", server.handleShareConnection)
 	mux.HandleFunc("PUT /api/connections/{name}/secret", server.handleRotateConnection)
+	mux.HandleFunc("POST /api/connections/{name}/revoke", server.handleRevokeConnection)
 	mux.HandleFunc("GET /api/connections/{name}/events", server.handleConnectionEvents)
 	mux.HandleFunc("GET /api/loops/{name}/connection-events", server.handleLoopConnectionEvents)
 	mux.HandleFunc("PUT /api/loops/{name}/connections/{connection}", server.handleLoopConnection(true))
