@@ -2,7 +2,10 @@ package redact
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -134,5 +137,50 @@ func TestRedactedReportsAHit(t *testing.T) {
 	}
 	if redactor.Redacted("carrying nothing along") {
 		t.Error("Redacted = true on clean text")
+	}
+}
+
+// A secret's usual encodings are the same credential, and redacted as the
+// value is (#30): base64 in either alphabet, at any alignment inside a
+// longer encoded text, hex in either case, and percent-encoding.
+func TestTextReplacesEncodedForms(t *testing.T) {
+	const value = "fixture/token+value?0000"
+	redactor, _ := loaded(t, Secret{Name: "API_KEY", Value: value})
+	basic := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + value))
+	for name, text := range map[string]string{
+		"base64":            base64.StdEncoding.EncodeToString([]byte(value)),
+		"base64 unpadded":   base64.RawStdEncoding.EncodeToString([]byte(value)),
+		"base64url":         base64.URLEncoding.EncodeToString([]byte(value)),
+		"base64 offset one": base64.StdEncoding.EncodeToString([]byte("a" + value)),
+		"base64 offset two": base64.StdEncoding.EncodeToString([]byte("ab" + value)),
+		"basic auth header": "Authorization: Basic " + basic,
+		"hex":               hex.EncodeToString([]byte(value)),
+		"hex upper":         strings.ToUpper(hex.EncodeToString([]byte(value))),
+		"query escaped":     "https://example.com/?k=" + url.QueryEscape(value),
+		"path escaped":      "https://example.com/" + url.PathEscape(value),
+	} {
+		if !redactor.Redacted(text) {
+			t.Errorf("%s: %q was not redacted", name, text)
+		}
+	}
+	// what remains around the match is the encoding of the neighbours, not
+	// of the value: nothing of it decodes back
+	if got := redactor.Text(basic); !strings.Contains(got, "<redacted:API_KEY>") {
+		t.Errorf("Basic header = %q, want the placeholder inside it", got)
+	}
+}
+
+// The forms are of the value's bytes alone, so ordinary text, and the
+// encodings of other text, pass through untouched.
+func TestEncodedFormsLeaveOtherTextAlone(t *testing.T) {
+	redactor, _ := loaded(t, Secret{Name: "API_KEY", Value: "fixture-token-0000"})
+	for _, text := range []string{
+		"nothing secret here",
+		base64.StdEncoding.EncodeToString([]byte("an ordinary sentence, encoded")),
+		hex.EncodeToString([]byte("an ordinary sentence, encoded")),
+	} {
+		if redactor.Redacted(text) {
+			t.Errorf("%q was redacted", text)
+		}
 	}
 }

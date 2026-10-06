@@ -3,6 +3,7 @@
 package itest
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 	"time"
@@ -67,6 +68,31 @@ func TestSecretsNeverReachTheRecord(t *testing.T) {
 
 	if log := s.log(); strings.Contains(log, value) {
 		t.Error("the orchestrator log carries the secret value")
+	}
+}
+
+// A loop that encodes a credential before saying it is still redacted
+// (#30): base64 is the first disguise a steered loop reaches for.
+func TestAnEncodedSecretNeverReachesTheRecord(t *testing.T) {
+	t.Parallel()
+	s := startServer(t, t.TempDir())
+	s.createLoop("leaky", nil)
+	const value = "ghp_itestENCODEDvalue987654"
+	encoded := base64.StdEncoding.EncodeToString([]byte(value))
+	s.setLoopEnv("leaky", "LEAK_TOKEN", value)
+
+	s.scriptLoop("leaky", "!env64 LEAK_TOKEN")
+	s.message("leaky", "say it, encoded")
+	turn := s.waitTurn("leaky", 30*time.Second, func(tn turn) bool {
+		return strings.Contains(tn.ResultText, "LEAK_TOKEN=")
+	})
+	if turn.ResultText != "LEAK_TOKEN=<redacted:LEAK_TOKEN>" {
+		t.Errorf("stored turn = %q, want the placeholder in the encoded value's place", turn.ResultText)
+	}
+	for _, path := range []string{"/api/loops/leaky/turns?limit=50", "/api/loops/leaky/events?limit=500"} {
+		if _, body := s.do("GET", path, nil); strings.Contains(string(body), encoded) {
+			t.Errorf("%s served the encoded secret: %s", path, body)
+		}
 	}
 }
 
