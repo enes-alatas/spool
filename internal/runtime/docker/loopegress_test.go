@@ -96,3 +96,60 @@ func TestLoopEgressRetriesAFailedWrite(t *testing.T) {
 		t.Fatalf("close: %d writes, want the retry to write again (7)", got)
 	}
 }
+
+// The operator's extra hosts reach the proxy through its file, without
+// recreating it: applied once a copy lands, not before. A hub copies
+// nothing before its own first wake has written the file, since the proxy
+// may be another hub's (#542).
+func TestFleetEgressAppliesThroughTheFile(t *testing.T) {
+	bin, calls, failing := fakeDocker(t)
+	rt := New(Options{Bin: bin, EgressImage: "spool-egress"})
+	ctx := context.Background()
+	if err := rt.SetFleetEgress(ctx, []string{"pkg.example"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := countCalls(t, calls); got != 0 || !rt.FleetEgressApplied().IsZero() {
+		t.Fatalf("before the first wake: %d copies, applied %v; want none", got, rt.FleetEgressApplied())
+	}
+	if err := rt.catchUpEgressFile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if rt.FleetEgressApplied().IsZero() {
+		t.Fatal("not applied after the first wake's copy")
+	}
+
+	setFailing(t, failing, true)
+	if err := rt.SetFleetEgress(ctx, []string{"pkg.example", "tracker.example"}); err == nil {
+		t.Fatal("want the failed copy's error")
+	}
+	if !rt.FleetEgressApplied().IsZero() {
+		t.Error("applied after a failed copy")
+	}
+	setFailing(t, failing, false)
+	if err := rt.catchUpEgressFile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if rt.FleetEgressApplied().IsZero() {
+		t.Fatal("not applied after the next wake's copy")
+	}
+
+	before := countCalls(t, calls)
+	if err := rt.SetFleetEgress(ctx, []string{"pkg.example", "tracker.example"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := countCalls(t, calls); got != before {
+		t.Errorf("setting the list it holds copied %d more times, want none", got-before)
+	}
+	if err := rt.catchUpEgressFile(ctx); err != nil || countCalls(t, calls) != before {
+		t.Errorf("catching up a proxy that holds the list copied again (%v)", err)
+	}
+	if err := rt.SetFleetEgress(ctx, []string{"pkg.example"}); err != nil {
+		t.Fatal(err)
+	}
+	if rt.FleetEgressApplied().IsZero() {
+		t.Error("not applied after a change that copied")
+	}
+	if got := countCalls(t, calls); got != before+1 {
+		t.Errorf("a change copied %d times, want 1", got-before)
+	}
+}

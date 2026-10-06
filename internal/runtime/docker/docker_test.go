@@ -113,7 +113,7 @@ func TestEgressShapesTheWorkstation(t *testing.T) {
 }
 
 func TestEgressProxyRunArgv(t *testing.T) {
-	rt := &Runtime{egressImage: "spool-egress", mcpPort: "8081", egressAllow: []string{"internal.example"}}
+	rt := &Runtime{egressImage: "spool-egress", mcpPort: "8081", fleetEgress: []string{"internal.example"}}
 	got := strings.Join(rt.egressRunArgv(), " ")
 	if rt.egressSpecHash() == (&Runtime{egressImage: "spool-egress", mcpPort: "9091"}).egressSpecHash() {
 		// a proxy's run arguments are fixed at creation, so a moved hub has
@@ -134,11 +134,16 @@ func TestEgressProxyRunArgv(t *testing.T) {
 		// the hub's MCP port is allowlisted and no other, so an allowlisted
 		// gateway is not a tunnel to the operator's machine — its API port
 		// included (#238)
-		"--allow host.docker.internal:8081,internal.example",
+		"--allow host.docker.internal:8081",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("proxy run argv missing %q: %q", want, got)
 		}
+	}
+	// the operator's extra hosts go in the proxy's file, so changing them
+	// recreates nothing (#542)
+	if strings.Contains(got, "internal.example") {
+		t.Errorf("proxy run argv carries a fleet host: %q", got)
 	}
 }
 

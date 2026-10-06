@@ -49,12 +49,11 @@ const (
 
 // Runtime is the docker implementation of runtime.Runtime.
 type Runtime struct {
-	bin          string   // the docker CLI
-	defaultImage string   // provisioned when a loop doesn't override it
-	egressImage  string   // the allowlist proxy's image ("" leaves egress open)
-	mcpPort      string   // the hub's loop-facing MCP port, allowlisted on the gateway
-	egressAllow  []string // fleet-wide allowlist entries on top of the defaults
-	hook         string   // the PreToolUse hook inside the workstation, "" for none
+	bin          string // the docker CLI
+	defaultImage string // provisioned when a loop doesn't override it
+	egressImage  string // the allowlist proxy's image ("" leaves egress open)
+	mcpPort      string // the hub's loop-facing MCP port, allowlisted on the gateway
+	hook         string // the PreToolUse hook inside the workstation, "" for none
 
 	healthMu  sync.Mutex
 	healthTTL time.Duration
@@ -67,12 +66,19 @@ type Runtime struct {
 	egressMu sync.Mutex
 
 	// loopEgress is each loop's own egress entries this hub run (#599),
-	// under loopEgressMu: two wakes rewrite the proxy's file one at a time.
-	loopEgressMu sync.Mutex
+	// and fleetEgress the operator's extra hosts (#542), both under
+	// egressFileMu: the proxy's file holds them together and is rewritten
+	// one change at a time.
+	egressFileMu sync.Mutex
 	loopEgress   map[string]loopEgressEntry
-	// loopEgressWritten is whether this run has written the proxy's file
+	fleetEgress  []string
+	// fleetApplied is the fleet list the proxy's file last took, and
+	// fleetAppliedAt when; zero until this run has written it.
+	fleetApplied   []string
+	fleetAppliedAt time.Time
+	// egressFileWritten is whether this run has written the proxy's file
 	// yet: until it has, the file may hold a previous run's entries.
-	loopEgressWritten bool
+	egressFileWritten bool
 
 	sweepOnce      sync.Once // resolution containers a stopped hub left behind
 	loginSweepOnce sync.Once // login-check containers, the same way
@@ -91,10 +97,6 @@ type Options struct {
 	// operator's machine a workstation may reach (#238). The API and control
 	// room listen elsewhere and are allowlisted nowhere.
 	MCPPort string
-	// EgressAllow are fleet-wide allowlist entries on top of the built-in
-	// defaults, each "host" or "host:port".
-	EgressAllow []string
-
 	// Hook is the PreToolUse hook every claude runs, a path inside the
 	// workstation (ADR-0042); "" runs none. The default image carries it at
 	// WorkstationHook, and an image without it runs its loop unguarded.
@@ -117,7 +119,6 @@ func New(opts Options) *Runtime {
 		defaultImage: opts.DefaultImage,
 		egressImage:  opts.EgressImage,
 		mcpPort:      opts.MCPPort,
-		egressAllow:  opts.EgressAllow,
 		hook:         opts.Hook,
 		healthTTL:    opts.HealthTTL,
 		loopEgress:   map[string]loopEgressEntry{},

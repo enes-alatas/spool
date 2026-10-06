@@ -94,8 +94,16 @@ type Server struct {
 	// one the hub cannot guess and must not accept blindly. Each entry is a
 	// host, optionally with a port.
 	TrustedHosts []string
-	Log          *slog.Logger
-	WebFS        fs.FS // embedded UI dist; may be nil in dev
+	// Egress is the docker runtime's egress wall, which the operator's
+	// extra hosts are applied to (#542). Nil on a hub that wires none: the
+	// list is still stored and served, and applies to nothing.
+	Egress EgressWall
+	// EgressFlag is --egress-allow as this hub was started with it, which
+	// seeded the stored list on the first start (#542); nil when the hub
+	// was started without the flag.
+	EgressFlag []string
+	Log        *slog.Logger
+	WebFS      fs.FS // embedded UI dist; may be nil in dev
 
 	// settingsMu serializes the read-validate-write of paired settings, so
 	// two concurrent PUTs cannot interleave into an inverted stored pair.
@@ -104,6 +112,10 @@ type Server struct {
 	// against the whole enabled set, so two writes must not interleave
 	// between the check and the store.
 	rulesMu sync.Mutex
+	// egressMu serializes changes to the extra egress hosts: each reads the
+	// stored list before writing it, and the proxy must take them in the
+	// order they were stored.
+	egressMu sync.Mutex
 	// envMu serializes changes to which env-vars a loop holds: a secret
 	// PUT or DELETE and an attach each read the loop's variables before
 	// writing, and two interleaving could leave two env-vars setting one.
@@ -171,6 +183,9 @@ func (server *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/onboarding", server.handleOnboarding)
 	mux.HandleFunc("POST /api/onboarding/harness-check", server.handleLoginCheck)
 	mux.HandleFunc("PUT /api/settings", server.handlePutSettings)
+	mux.HandleFunc("GET /api/settings/egress", server.handleGetEgress)
+	mux.HandleFunc("POST /api/settings/egress/hosts", server.handleAddEgressHost)
+	mux.HandleFunc("DELETE /api/settings/egress/hosts/{entry}", server.handleRemoveEgressHost)
 	mux.HandleFunc("GET /api/rules", server.handleListRules)
 	mux.HandleFunc("POST /api/rules", server.handleCreateRule)
 	mux.HandleFunc("PATCH /api/rules/{id}", server.handlePatchRule)

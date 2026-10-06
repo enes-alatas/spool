@@ -53,9 +53,11 @@ they *should* be true, only that they are known and recorded.
   default whenever a daemon is reachable, and a docker workstation has neither
   the data directory nor any route off its network but the egress allowlist —
   Anthropic's hosts, GitHub, the package registries a workstation installs
-  from, and the hub, extendable per fleet with `--egress-allow`. The list
-  itself is `internal/egress/allowlist.go`, and adding to it is a PR with a
-  reason (ADR-0028). A workstation reaching one of those is the design
+  from, and the hub, extendable per fleet through a stored list of extra
+  hosts, which `--egress-allow` seeds on the first start and
+  `/api/settings/egress` edits while the hub runs. The built-in list itself is
+  `internal/egress/allowlist.go`, and adding to it is a PR with a reason
+  (ADR-0028). A workstation reaching one of those is the design
   working.
 - **Secrets you give a loop are readable by that loop**, and a prompt injection
   can therefore exfiltrate them. Injecting a secret is a decision to trust the

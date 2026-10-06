@@ -1,6 +1,6 @@
 # ADR-0028: Workstation egress runs through an allowlist proxy
 
-Date: 2026-09-20 · Status: accepted · Amends: ADR-0017 (decision 9, "open egress") · Amended 2026-09-20 (decision 3: the hub entry is the MCP listener, #238); 2026-10-01 (consequences: a docker loop behind a loopback listener is refused, #474); 2026-10-01 (decision 3: the loop listener does not refuse a host.docker.internal Host, #508); 2026-10-05 (decision 4: a loop's own entries, keyed by its proxy token, #599)
+Date: 2026-09-20 · Status: accepted · Amends: ADR-0017 (decision 9, "open egress") · Amended 2026-09-20 (decision 3: the hub entry is the MCP listener, #238); 2026-10-01 (consequences: a docker loop behind a loopback listener is refused, #474); 2026-10-01 (decision 3: the loop listener does not refuse a host.docker.internal Host, #508); 2026-10-05 (decision 4: a loop's own entries, keyed by its proxy token, #599); 2026-10-06 (decision 4: the operator's extra hosts are stored and change while the hub runs, #542)
 
 ## Context
 
@@ -128,6 +128,41 @@ by asking the agent nicely (#193).
    - **A change lands at the loop's next wake,** as its mcp-config does.
 
    The operator approved keying on the token on 2026-10-05.
+
+   **Amendment (2026-10-06, #542): the operator's extra hosts are stored
+   and change while the hub runs.** The allowlist is the built-in list plus
+   a list the operator holds, edited on the Settings page. The proxy still
+   matches names before resolution, and per-loop reach is still a
+   connection's (#505).
+   - **Stored, seeded once by the flag.** The hub stores the list.
+     `--egress-allow` seeds it on the first start, and from then on the
+     stored list wins. Before this, the flag was the whole list, so an
+     operator narrowing it expects that to cut a host. A hub started with
+     a flag that differs from the stored list therefore warns at the
+     terminal, naming the list in force, and the page shows the flag
+     beside it.
+   - **The page names hosts; ports stay at the terminal.** An entry added
+     there takes 80 and 443. One with a port of its own still comes from
+     `--egress-allow`, and the page can remove it.
+   - **The list goes in the proxy's file, beside each loop's entries.** It
+     is copied in the same way and re-read the same way, so changing it
+     recreates nothing and cuts no tunnel. The proxy's start arguments now
+     carry the hub's gateway entry alone. Requests with and without a
+     token both get the list.
+   - **Only a hub's own docker wakes open the file to it.** A hub copies
+     the list in only once a wake of its own has written the file this
+     run. Until then, the list waits for that wake. A hub that runs no
+     docker loop therefore never writes into a proxy that another hub on
+     the daemon may share.
+   - **The built-in reasons are data.** Each built-in group carries the
+     sentence that explains it, which the page shows. Adding a host is
+     still a PR with a reason.
+   - **An older proxy is replaced.** The proxy's spec names the file
+     format, so a proxy from an image without the fleet field is recreated
+     once rather than kept refusing the list.
+
+   The operator approved the control room widening the wall while the hub
+   runs, with the stored list winning over the flag, on 2026-10-06.
 
 5. **Lifecycle matches the workstation's.** The network and the proxy are
    ensured idempotently before a workstation is provisioned, and the proxy runs

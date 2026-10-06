@@ -120,6 +120,20 @@ const (
 // deleting the fleet's last loop clears it, in the same transaction.
 const SettingOnboardingCompleted = "onboarding_completed"
 
+// SettingEgressHosts holds the operator's extra egress hosts (#542), an
+// EgressHosts as JSON. Unset until the hub first starts with it, which
+// seeds it from --egress-allow; the stored list wins from then on.
+const SettingEgressHosts = "egress_hosts"
+
+// EgressHosts is the hosts every docker loop may reach on top of the
+// built-in allowlist (ADR-0028), each canonical "host" or "host:port", in
+// the order they were added. ChangedAt is when the list last changed, in
+// Unix milliseconds.
+type EgressHosts struct {
+	Hosts     []string `json:"hosts"`
+	ChangedAt int64    `json:"changed_at"`
+}
+
 // Context-rotation thresholds (ADR-0022), stored as integer percentages of
 // the model's context window. A loop arms rotation at the first and stops
 // waiting for a quiet boundary at the second.
