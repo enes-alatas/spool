@@ -1,6 +1,6 @@
 # ADR-0022: Context is rotated proactively, before the degradation zone
 
-Date: 2026-08-21 · Status: accepted · Amended: 2026-09-26 (§1, the handoff request names its cause); 2026-10-05 (§1, a replaced credential is a cause, #609)
+Date: 2026-08-21 · Status: accepted · Amended: 2026-09-26 (§1, the handoff request names its cause); 2026-10-05 (§1, a replaced credential is a cause, #609); 2026-10-06 (§1, a revoked credential is a cause, #610)
 
 ## Context
 
@@ -60,6 +60,15 @@ path above — is fully observable, and fakeclaude can test it end to end.
    change still outranks it. Enes chose a rotation with a handoff over a
    hard fresh session on 2026-10-05 (#507): the loop keeps its continuity,
    and its handoff turn is the one turn left on the old session.
+
+   **Amendment (2026-10-06, #610):** a connection the loop held, revoked,
+   is a fifth cause (ADR-0043). The handoff request says the operator
+   revoked a credential the loop held and that the fresh session runs
+   without it, and tells it to leave every credential value out of its
+   note. It is not the `connection` cause, whose request says the fresh
+   session has the new value, because a revoke leaves none. It outranks a
+   replaced credential, so the successor learns the credential is gone,
+   and a mission change still outranks it.
 2. **Armed at a soft threshold, fired at a quiet boundary.** Crossing the
    soft threshold arms the loop; rotation runs at the end of the next wake
    that leaves no queued work. A mid-task context is never summarized out

@@ -27,6 +27,7 @@ const (
 	codeConnectionAttached      = "connection_attached"
 	codeConnectionEnvTaken      = "connection_env_taken"
 	codeConnectionPrivate       = "connection_private"
+	codeConnectionRevoked       = "connection_revoked"
 )
 
 // connectionView is a connection as the control room reads it: everything
@@ -42,6 +43,7 @@ type connectionView struct {
 	Loops     []string               `json:"loops"`
 	OwnerLoop string                 `json:"owner_loop,omitempty"`
 	RotatedAt int64                  `json:"rotated_at,omitempty"`
+	RevokedAt int64                  `json:"revoked_at,omitempty"`
 }
 
 func (server *Server) connectionViews(r *http.Request, connections ...*store.Connection) ([]connectionView, error) {
@@ -64,6 +66,7 @@ func (server *Server) connectionViews(r *http.Request, connections ...*store.Con
 			Loops:     []string{},
 			OwnerLoop: names[connection.OwnerLoopID],
 			RotatedAt: connection.RotatedAt,
+			RevokedAt: connection.RevokedAt,
 		}
 		for _, id := range connection.LoopIDs {
 			if name, ok := names[id]; ok {
@@ -220,6 +223,9 @@ func (server *Server) handleRotateConnection(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	connection, err := server.Store.Connections().Get(r.Context(), r.PathValue("name"))
+	if err == nil && connection.RevokedAt != 0 {
+		err = store.ErrConnectionRevoked // ahead of the checks a new value would need
+	}
 	if err != nil {
 		server.connectionErr(w, r, err)
 		return
@@ -263,6 +269,33 @@ func (server *Server) rotateConnection(ctx context.Context, connection *store.Co
 		}
 	}
 	return nil
+}
+
+// handleRevokeConnection takes a connection from every loop that holds it
+// and refuses it from then on: attaching, sharing, a new value, and
+// revoking it again. Its value is retired, still redacted, and each loop
+// that held it ends the session that ran with it (ADR-0043). The operator
+// may delete it after; nothing revives it.
+func (server *Server) handleRevokeConnection(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	loopIDs, err := server.Store.Connections().Revoke(r.Context(), name, time.Now().UnixMilli())
+	if err != nil {
+		server.connectionErr(w, r, err)
+		return
+	}
+	server.secretsChanged(r.Context())
+	for _, id := range loopIDs {
+		server.loopChanged(r.Context(), id)
+		if actor, ok := server.Manager.Get(id); ok {
+			_ = actor.Rotate(store.RotationReasonRevoke) // an error is no session to end
+		}
+	}
+	connection, err := server.Store.Connections().Get(r.Context(), name)
+	if err != nil {
+		server.connectionErr(w, r, err)
+		return
+	}
+	server.writeConnection(w, r, 200, connection)
 }
 
 // connectionEventView is one change on a connection's record. Loop is the
@@ -349,6 +382,9 @@ func (server *Server) handleLoopConnection(attach bool) http.HandlerFunc {
 // it can't.
 func (server *Server) envFree(w http.ResponseWriter, r *http.Request, name string, loopRecord *store.Loop) bool {
 	connection, err := server.Store.Connections().Get(r.Context(), name)
+	if err == nil && connection.RevokedAt != 0 {
+		err = store.ErrConnectionRevoked // no variable to free for one that can't be attached
+	}
 	if err != nil {
 		server.connectionErr(w, r, err)
 		return false
@@ -387,6 +423,8 @@ func (server *Server) connectionErr(w http.ResponseWriter, r *http.Request, err 
 		server.jsonErrCode(w, 409, codeConnectionAttached, "connection %q is attached to a loop; detach it first", name)
 	case errors.Is(err, store.ErrConnectionPrivate):
 		server.jsonErrCode(w, 409, codeConnectionPrivate, "connection %q is private to another loop; share it first", name)
+	case errors.Is(err, store.ErrConnectionRevoked):
+		server.jsonErrCode(w, 409, codeConnectionRevoked, "connection %q is revoked; create a new one", name)
 	default:
 		server.jsonErr(w, 500, "%v", err)
 	}

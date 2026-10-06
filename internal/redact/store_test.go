@@ -347,7 +347,7 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			// read back in full.
 			"Create": false, "SetSecret": false, "Delete": false, "Get": false, "List": false,
 			// Names, loop ids and a timestamp.
-			"Attach": false, "Detach": false, "ListByLoop": false, "Share": false,
+			"Attach": false, "Detach": false, "ListByLoop": false, "Share": false, "Revoke": false,
 			// The record: actions, names and timestamps, never a value.
 			"Events": false,
 			// Retired values, read for the redactor alone, as List is.

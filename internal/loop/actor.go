@@ -961,7 +961,8 @@ func (actor *Actor) requestRotation(reason string) error {
 // rotationPrecedence ranks the reasons a rotation is taken for, so a
 // rotation with more than one is told the one that matters most to the note.
 // A rewritten mission outranks everything else: the successor starts under
-// instructions the note has to be judged against. A replaced credential
+// instructions the note has to be judged against. A revoked credential
+// outranks a replaced one, because the successor runs without it. Either
 // outranks the operator's plain ask, because its note is told to leave
 // credentials out. Each outranks the fill threshold, which a rotation that
 // was asked for sheds anyway.
@@ -969,7 +970,8 @@ var rotationPrecedence = map[string]int{
 	store.RotationReasonFill:       1,
 	store.RotationReasonOperator:   2,
 	store.RotationReasonConnection: 3,
-	store.RotationReasonMission:    4,
+	store.RotationReasonRevoke:     4,
+	store.RotationReasonMission:    5,
 }
 
 // startHandoffTurn asks the loop, as this session's last turn, to write the

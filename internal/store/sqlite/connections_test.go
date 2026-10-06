@@ -634,3 +634,104 @@ func TestRetiredSecrets(t *testing.T) {
 		t.Fatalf("Retired = %+v,\nwant %+v", retired, want)
 	}
 }
+
+func TestRevokedConnections(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	for _, id := range []string{"l1", "l2"} {
+		if err := db.Loops().Create(ctx, &store.Loop{
+			ID: id, Name: "loop-" + id, Status: store.StatusActive,
+			WorkspaceMode: store.WorkspaceNone, Pacing: store.PacingFixed, Runtime: store.RuntimeBare,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	connections := db.Connections()
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(connections.Create(ctx, &store.Connection{Name: "github", Kind: store.ConnectionEnvVar,
+		Config: store.ConnectionConfig{Env: "GH_TOKEN"}, Secret: "s-1", CreatedAt: 1}))
+	must(connections.Attach(ctx, "github", "l2", 2))
+	must(connections.Attach(ctx, "github", "l1", 3))
+	must(connections.Create(ctx, &store.Connection{Name: "mine", Kind: store.ConnectionEnvVar,
+		Config: store.ConnectionConfig{Env: "API_KEY"}, Secret: "s-mine", CreatedAt: 4, OwnerLoopID: "l1"}))
+
+	held, err := connections.Revoke(ctx, "github", 5)
+	if err != nil || !reflect.DeepEqual(held, []string{"l1", "l2"}) {
+		t.Fatalf("Revoke(github) = %v, %v; want the loops it was taken from, [l1 l2]", held, err)
+	}
+	github, err := connections.Get(ctx, "github")
+	if err != nil || github.RevokedAt != 5 || github.Secret != "" || len(github.LoopIDs) != 0 {
+		t.Fatalf("Get(github) after its revoke = %+v, %v; want revoked at 5, no value, no loops", github, err)
+	}
+	if held, err := connections.Revoke(ctx, "mine", 6); err != nil || !reflect.DeepEqual(held, []string{"l1"}) {
+		t.Fatalf("Revoke(mine) = %v, %v; want its owner, [l1]", held, err)
+	}
+
+	// Refused from then on; detaching what isn't attached changes nothing.
+	for what, err := range map[string]error{
+		"Attach":    connections.Attach(ctx, "github", "l1", 7),
+		"Share":     connections.Share(ctx, "mine", 7),
+		"SetSecret": connections.SetSecret(ctx, "github", "s-2", 7),
+		"Revoke":    func() error { _, err := connections.Revoke(ctx, "github", 7); return err }(),
+	} {
+		if !errors.Is(err, store.ErrConnectionRevoked) {
+			t.Errorf("%s on a revoked connection = %v, want ErrConnectionRevoked", what, err)
+		}
+	}
+	must(connections.Detach(ctx, "github", "l1", 7))
+	if _, err := connections.Revoke(ctx, "nowhere", 7); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("Revoke(nowhere) = %v, want ErrNotFound", err)
+	}
+	// Deleting one after needs no detach, and retires nothing twice.
+	must(connections.Delete(ctx, "github", 8))
+
+	events, err := connections.Events(ctx, store.ConnectionEventFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	type row struct {
+		action, connection, loop string
+		at                       int64
+	}
+	var got []row
+	for _, event := range events {
+		got = append(got, row{event.Action, event.Connection, event.LoopName, event.At})
+	}
+	want := []row{
+		{store.ConnectionEventDelete, "github", "", 8},
+		{store.ConnectionEventRevoke, "mine", "loop-l1", 6},
+		{store.ConnectionEventDetach, "mine", "loop-l1", 6},
+		{store.ConnectionEventRevoke, "github", "", 5},
+		{store.ConnectionEventDetach, "github", "loop-l2", 5},
+		{store.ConnectionEventDetach, "github", "loop-l1", 5},
+		{store.ConnectionEventAttach, "mine", "loop-l1", 4},
+		{store.ConnectionEventCreate, "mine", "", 4},
+		{store.ConnectionEventAttach, "github", "loop-l1", 3},
+		{store.ConnectionEventAttach, "github", "loop-l2", 2},
+		{store.ConnectionEventCreate, "github", "", 1},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("the record =\n%v\nwant\n%v", got, want)
+	}
+
+	retired, err := connections.Retired(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantRetired := []store.RetiredSecret{
+		{Connection: "github", RedactName: "GH_TOKEN", Value: "s-1", RetiredAt: 5},
+		{Connection: "mine", RedactName: "API_KEY", Value: "s-mine", RetiredAt: 6},
+	}
+	if !reflect.DeepEqual(retired, wantRetired) {
+		t.Fatalf("Retired = %+v,\nwant %+v", retired, wantRetired)
+	}
+}

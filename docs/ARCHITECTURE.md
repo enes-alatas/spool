@@ -210,7 +210,9 @@ opportunistically, not big-bang.
   (`GET /api/loops/{name}/connection-events`) (#606). Replacing a value
   (`PUT /api/connections/{name}/secret`) retires the old one, which stays
   redacted, and ends each holding loop's session with a `connection` context
-  rotation (#609).
+  rotation (#609). Revoking one (`POST /api/connections/{name}/revoke`)
+  detaches it everywhere, retires its value, refuses it from then on, and
+  ends each holding loop's session with a `revoke` rotation (#610).
 - **Runner extraction**: the hosted service will run runners near customer sandboxes.
   Anything crossing the Runner seam must stay serializable (no passing live channels
   or callbacks across it as its API matures).

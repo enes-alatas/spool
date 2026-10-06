@@ -1206,6 +1206,10 @@ judge it against the new mission.`
 		cause = `The operator replaced a credential you hold, so this session ends here and a
 fresh session continues your work with the new one. Leave every credential
 value out of your note.`
+	case store.RotationReasonRevoke:
+		cause = `The operator revoked a credential you held, so this session ends here and a
+fresh session continues your work without it. Leave every credential value out
+of your note.`
 	default:
 		cause = `Your context window is filling up, so this session ends here and a fresh
 session continues your work.`

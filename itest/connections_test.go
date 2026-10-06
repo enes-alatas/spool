@@ -24,6 +24,7 @@ type connectionJSON struct {
 	Loops     []string `json:"loops"`
 	OwnerLoop string   `json:"owner_loop"`
 	RotatedAt int64    `json:"rotated_at"`
+	RevokedAt int64    `json:"revoked_at"`
 }
 
 type loopConnectionJSON struct {

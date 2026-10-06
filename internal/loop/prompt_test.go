@@ -195,6 +195,7 @@ func TestRotationEnvelope(t *testing.T) {
 		{store.RotationReasonOperator, "The operator asked for a fresh context"},
 		{store.RotationReasonMission, "The operator rewrote your mission"},
 		{store.RotationReasonConnection, "The operator replaced a credential you hold"},
+		{store.RotationReasonRevoke, "The operator revoked a credential you held"},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.reason, func(t *testing.T) {
@@ -216,7 +217,8 @@ func TestRotationEnvelope(t *testing.T) {
 			// the note, so that sentence is pinned with its cause. The
 			// envelope wraps, so match it on single spaces.
 			flat := strings.Join(strings.Fields(env.Text), " ")
-			if asks := strings.Contains(flat, "Leave every credential value out of your note"); asks != (testCase.reason == store.RotationReasonConnection) {
+			credential := testCase.reason == store.RotationReasonConnection || testCase.reason == store.RotationReasonRevoke
+			if asks := strings.Contains(flat, "Leave every credential value out of your note"); asks != credential {
 				t.Errorf("envelope asks to leave credential values out = %v:\n%s", asks, env.Text)
 			}
 			// The cause is told once: the fill sentence must not ride along

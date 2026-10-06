@@ -16,7 +16,7 @@ import (
 // connection_loops rows (ADR-0043).
 type connections struct{ db *sql.DB }
 
-const connectionColumns = `name, kind, config, secret, created_at, updated_at, owner_loop, rotated_at`
+const connectionColumns = `name, kind, config, secret, created_at, updated_at, owner_loop, rotated_at, revoked_at`
 
 func (table connections) List(ctx context.Context) ([]*store.Connection, error) {
 	return table.list(ctx, `SELECT `+connectionColumns+` FROM connections ORDER BY name`)
@@ -97,9 +97,9 @@ func (table connections) Create(ctx context.Context, connection *store.Connectio
 		return err
 	}
 	defer tx.Rollback()
-	_, err = tx.ExecContext(ctx, `INSERT INTO connections (`+connectionColumns+`) VALUES (?,?,?,?,?,?,?,?)`,
+	_, err = tx.ExecContext(ctx, `INSERT INTO connections (`+connectionColumns+`) VALUES (?,?,?,?,?,?,?,?,?)`,
 		connection.Name, connection.Kind, string(config), connection.Secret, connection.CreatedAt, connection.UpdatedAt,
-		nullable(connection.OwnerLoopID), connection.RotatedAt)
+		nullable(connection.OwnerLoopID), connection.RotatedAt, connection.RevokedAt)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return store.ErrDuplicate
 	}
@@ -169,7 +169,7 @@ func (table connections) Share(ctx context.Context, name string, at int64) error
 		return err
 	}
 	defer tx.Rollback()
-	owner, err := connectionOwner(ctx, tx, name)
+	owner, err := liveConnectionOwner(ctx, tx, name)
 	if err != nil || owner == "" {
 		return err
 	}
@@ -194,13 +194,30 @@ func connectionOwner(ctx context.Context, tx *sql.Tx, name string) (string, erro
 	return owner.String, err
 }
 
+// liveConnectionOwner is connectionOwner for a write a revoked connection
+// refuses: ErrConnectionRevoked once it is.
+func liveConnectionOwner(ctx context.Context, tx *sql.Tx, name string) (string, error) {
+	var owner sql.NullString
+	var revokedAt int64
+	err := tx.QueryRowContext(ctx, `SELECT owner_loop, revoked_at FROM connections WHERE name=?`, name).Scan(&owner, &revokedAt)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return "", store.ErrNotFound
+	case err != nil:
+		return "", err
+	case revokedAt != 0:
+		return "", store.ErrConnectionRevoked
+	}
+	return owner.String, nil
+}
+
 func (table connections) SetSecret(ctx context.Context, name, secret string, at int64) error {
 	tx, err := table.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := connectionOwner(ctx, tx, name); err != nil {
+	if _, err := liveConnectionOwner(ctx, tx, name); err != nil {
 		return err
 	}
 	// before the update, which is what it reads the old value from
@@ -227,7 +244,7 @@ func (table connections) Attach(ctx context.Context, name, loopID string, at int
 		return err
 	}
 	defer tx.Rollback()
-	owner, err := connectionOwner(ctx, tx, name)
+	owner, err := liveConnectionOwner(ctx, tx, name)
 	if err != nil {
 		return err
 	}
@@ -264,6 +281,58 @@ func (table connections) Detach(ctx context.Context, name, loopID string, at int
 		return err
 	}
 	return tx.Commit()
+}
+
+func (table connections) Revoke(ctx context.Context, name string, at int64) ([]string, error) {
+	tx, err := table.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	owner, err := liveConnectionOwner(ctx, tx, name)
+	if err != nil {
+		return nil, err
+	}
+	loopIDs, err := attachedLoops(ctx, tx, name)
+	if err != nil {
+		return nil, err
+	}
+	for _, loopID := range loopIDs {
+		if err := detachRecorded(ctx, tx, name, loopID, at); err != nil {
+			return nil, err
+		}
+	}
+	// before the update, which is what it reads the value from
+	if err := retireSecrets(ctx, tx, `name = ?1`, at, name); err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE connections SET secret='', revoked_at=? WHERE name=?`, at, name); err != nil {
+		return nil, err
+	}
+	// a private one's owner, so the loop's record shows it gone
+	if err := recordEvent(ctx, tx, store.ConnectionEventRevoke, name, owner, at); err != nil {
+		return nil, err
+	}
+	return loopIDs, tx.Commit()
+}
+
+// attachedLoops is the ids of the loops holding a connection, read inside
+// tx: the store has one connection, so a read outside it would wait on it.
+func attachedLoops(ctx context.Context, tx *sql.Tx, name string) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT loop_id FROM connection_loops WHERE connection=? ORDER BY loop_id`, name)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 // detachRecorded detaches a connection from a loop and records it, or does
@@ -317,7 +386,7 @@ func scanConnection(row interface{ Scan(...any) error }) (*store.Connection, err
 	var config string
 	var owner sql.NullString
 	if err := row.Scan(&connection.Name, &connection.Kind, &config, &connection.Secret, &connection.CreatedAt, &connection.UpdatedAt,
-		&owner, &connection.RotatedAt); err != nil {
+		&owner, &connection.RotatedAt, &connection.RevokedAt); err != nil {
 		return nil, err
 	}
 	connection.OwnerLoopID = owner.String
