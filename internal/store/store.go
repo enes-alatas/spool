@@ -1459,7 +1459,8 @@ func (config ConnectionConfig) Cleartext() bool {
 }
 
 // Loopback reports whether an http mcp-server's URL names this machine:
-// localhost or a loopback address.
+// localhost, a loopback address, or an unspecified one (0.0.0.0, ::), which
+// a connect reaches this machine by too.
 func (config ConnectionConfig) Loopback() bool {
 	parsed, err := url.Parse(config.URL)
 	if err != nil {
@@ -1470,7 +1471,18 @@ func (config ConnectionConfig) Loopback() bool {
 		return true
 	}
 	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
+	return ip != nil && (ip.IsLoopback() || ip.IsUnspecified())
+}
+
+// Brokered reports whether the hub stands between a loop on the given
+// runtime and an mcp-server connection's server (#622): every http server
+// the hub can reach as the loop would. A loopback server is one only for a
+// bare loop, which shares the hub's machine; for a workstation it names a
+// place inside it.
+func (connection *Connection) Brokered(runtime string) bool {
+	return connection.Kind == ConnectionMCPServer &&
+		connection.Config.Transport == MCPTransportHTTP &&
+		(!connection.Config.Loopback() || runtime == RuntimeBare)
 }
 
 // ValidConnectionName reports whether a name may name a connection: the

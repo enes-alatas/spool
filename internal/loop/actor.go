@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
-	"net/url"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -560,7 +559,6 @@ func (actor *Actor) wake() {
 		system["CLAUDE_CODE_OAUTH_TOKEN"] = token
 	}
 	spec.Env = buildExecEnv(system, connections)
-	spec.EgressAllow = egressAllow(connections)
 	spec.EgressToken = actor.loop.HubMCPToken
 	if err := loopRuntime.Ensure(ctx, spec); err != nil {
 		actor.log().Error("workstation not ready", "err", err)
@@ -888,7 +886,7 @@ func (actor *Actor) wakeSpec(fresh bool, prompt string, connections []*store.Con
 	}
 	if actor.deps.MCPEndpoint != nil && actor.loop.HubMCPToken != "" {
 		if url := actor.deps.MCPEndpoint(&actor.loop); url != "" {
-			spec.MCPConfig = claude.MCPConfigJSON(url, actor.loop.HubMCPToken, mcpServers(connections))
+			spec.MCPConfig = claude.MCPConfigJSON(url, actor.loop.HubMCPToken, mcpServers(connections, actor.loop.Runtime, url, actor.loop.HubMCPToken))
 		}
 	}
 	if fresh {
@@ -1842,11 +1840,17 @@ func buildExecEnv(system map[string]string, connections []*store.Connection) map
 // which no mcp-server connection may take.
 const SpoolMCPServer = claude.SpoolMCPServer
 
+// BrokerPath is where the loop listener serves a loop's brokered MCP
+// servers, each at BrokerPath + its connection's name (#622).
+const BrokerPath = "/mcp/connections/"
+
 // mcpServers are the attached mcp-server connections as the servers a
-// wake's --mcp-config gives claude besides the hub's, each with its secret:
-// an http server's as a bearer token, a stdio server's in the env var its
-// config names (ADR-0043).
-func mcpServers(connections []*store.Connection) []claude.MCPServerConfig {
+// wake's --mcp-config gives claude besides the hub's (ADR-0043). A brokered
+// one is named at the hub, under the loop's own hub MCP token, so the loop
+// never holds its secret (#622); the hub adds it. Any other gets its secret
+// itself: a workstation's loopback http server as a bearer token, a stdio
+// server in the env var its config names.
+func mcpServers(connections []*store.Connection, runtime, hubURL, hubToken string) []claude.MCPServerConfig {
 	var servers []claude.MCPServerConfig
 	for _, connection := range connections {
 		if connection.Kind != store.ConnectionMCPServer {
@@ -1859,50 +1863,25 @@ func mcpServers(connections []*store.Connection) []claude.MCPServerConfig {
 			Command:   connection.Config.Command,
 			Args:      connection.Config.Args,
 		}
+		switch {
+		case connection.Brokered(runtime):
+			server.URL = strings.TrimSuffix(hubURL, "/mcp") + BrokerPath + connection.Name
+			server.Headers = map[string]string{"Authorization": "Bearer " + hubToken}
 		// The secret goes to the server alone, never into claude's env,
 		// which every Bash call of the loop inherits.
-		if connection.Secret != "" {
-			switch connection.Config.Transport {
-			case store.MCPTransportHTTP:
-				// a server stored before plain http off the host was refused
-				// is never sent its secret in the clear
-				if !connection.Config.Cleartext() {
-					server.Headers = map[string]string{"Authorization": "Bearer " + connection.Secret}
-				}
-			case store.MCPTransportStdio:
-				// a stdio server stored before it could name its env var
-				// has nowhere to be handed its secret
-				if connection.Config.Env != "" {
-					server.Env = map[string]string{connection.Config.Env: connection.Secret}
-				}
+		case connection.Secret == "":
+		case connection.Config.Transport == store.MCPTransportHTTP:
+			server.Headers = map[string]string{"Authorization": "Bearer " + connection.Secret}
+		case connection.Config.Transport == store.MCPTransportStdio:
+			// a stdio server stored before it could name its env var
+			// has nowhere to be handed its secret
+			if connection.Config.Env != "" {
+				server.Env = map[string]string{connection.Config.Env: connection.Secret}
 			}
 		}
 		servers = append(servers, server)
 	}
 	return servers
-}
-
-// egressAllow are the hosts a loop's attached http MCP servers live on, as
-// the egress entries its workstation's wall opens for it alone (#599). A
-// loopback server is inside the wall already, and a stdio server's hosts
-// can't be read from its config.
-func egressAllow(connections []*store.Connection) []string {
-	var entries []string
-	for _, connection := range connections {
-		if connection.Kind != store.ConnectionMCPServer || connection.Config.Transport != store.MCPTransportHTTP {
-			continue
-		}
-		parsed, err := url.Parse(connection.Config.URL)
-		if err != nil || connection.Config.Loopback() {
-			continue
-		}
-		entry := parsed.Hostname()
-		if port := parsed.Port(); port != "" && port != "80" && port != "443" {
-			entry += ":" + port
-		}
-		entries = append(entries, entry)
-	}
-	return entries
 }
 
 // claudeToken reads the operator's stored setup-token, treating a missing

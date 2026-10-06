@@ -83,20 +83,31 @@ func (server *Server) mcpHandler() http.Handler {
 	})
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		// Refused before the lookup, so no row with an empty token can ever
-		// answer for it: this check is all that keeps a rebinding page out.
-		if token == "" {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		caller, err := server.Store.Loops().GetByHubMCPToken(r.Context(), token)
-		if err != nil {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		caller, ok := server.mcpCaller(w, r)
+		if !ok {
 			return
 		}
 		inner.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), mcpLoopKey{}, caller)))
 	})
+}
+
+// mcpCaller is the loop a request on the loop listener comes from, by its
+// hub MCP bearer token. A request without one, or with one no loop holds,
+// is answered 401 here and reports false.
+func (server *Server) mcpCaller(w http.ResponseWriter, r *http.Request) (*store.Loop, bool) {
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	// Refused before the lookup, so no row with an empty token can ever
+	// answer for it: this check is all that keeps a rebinding page out.
+	if token == "" {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return nil, false
+	}
+	caller, err := server.Store.Loops().GetByHubMCPToken(r.Context(), token)
+	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return nil, false
+	}
+	return caller, true
 }
 
 type mcpLoopKey struct{}

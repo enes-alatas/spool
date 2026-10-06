@@ -29,6 +29,7 @@ func TestConnectionProblem(t *testing.T) {
 		{"plain http to localhost with a secret", store.Connection{Name: "docs-5", Kind: store.ConnectionMCPServer, Config: http("http://localhost:8931/mcp"), Secret: "s"}, ""},
 		{"plain http to 127.0.0.1 with a secret", store.Connection{Name: "docs-6", Kind: store.ConnectionMCPServer, Config: http("http://127.0.0.1:8931/mcp"), Secret: "s"}, ""},
 		{"plain http to ::1 with a secret", store.Connection{Name: "docs-7", Kind: store.ConnectionMCPServer, Config: http("http://[::1]:8931/mcp"), Secret: "s"}, ""},
+		{"plain http to 0.0.0.0 with a secret", store.Connection{Name: "docs-9", Kind: store.ConnectionMCPServer, Config: http("http://0.0.0.0:8931/mcp"), Secret: "s"}, ""},
 		{"plain http, no secret", store.Connection{Name: "docs-8", Kind: store.ConnectionMCPServer, Config: http("http://mcp.example.test/")}, ""},
 		{"stdio mcp-server, no secret", store.Connection{Name: "docs-2", Kind: store.ConnectionMCPServer, Config: stdio}, ""},
 		{"stdio mcp-server with a secret in an env var", store.Connection{Name: "docs-3", Kind: store.ConnectionMCPServer, Config: stdioWithEnv("DOCS_TOKEN"), Secret: "s"}, ""},

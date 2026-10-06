@@ -211,14 +211,13 @@ func (server *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/login", server.handleLogin)
 	mux.HandleFunc("POST /api/logout", server.handleLogout)
 
-	// /mcp lives on the loop listener alone (#238). Saying so explicitly
-	// matters because of what is registered next: the UI's catch-all would
-	// otherwise answer this path with index.html in a build that embeds the
-	// control room, so the endpoint would look moved in tests and alive in
-	// production.
-	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
-		http.NotFound(w, r)
-	})
+	// /mcp and the brokered servers under it live on the loop listener
+	// alone (#238, #622). Saying so explicitly matters because of what is
+	// registered next: the UI's catch-all would otherwise answer these paths
+	// with index.html in a build that embeds the control room, so the
+	// endpoints would look moved in tests and alive in production.
+	mux.HandleFunc("/mcp", http.NotFound)
+	mux.HandleFunc("/mcp/", http.NotFound)
 
 	// Registered in every build, not just one that embeds the control
 	// room, so tier 2 sees what the shipped binary answers (#245).
@@ -241,6 +240,7 @@ func (server *Server) Handler() http.Handler {
 func (server *Server) MCPHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", server.mcpHandler())
+	mux.Handle(loop.BrokerPath, server.brokerHandler())
 	return mux
 }
 

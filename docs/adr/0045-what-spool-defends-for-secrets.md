@@ -1,6 +1,6 @@
 # ADR-0045: What Spool does and does not defend against for the secrets a loop holds
 
-Date: 2026-10-06 · Status: accepted (operator decision of 2026-10-06 19:09 UTC, recorded on #30) · Amends: ADR-0017 (consequences and parking lot: the credential broker) · Relates to: ADR-0019, ADR-0028, ADR-0043
+Date: 2026-10-06 · Status: accepted (operator decision of 2026-10-06 19:09 UTC, recorded on #30) · Amended: 2026-10-06 (item 4: slice 2 landed, and what it leaves, #622) · Amends: ADR-0017 (consequences and parking lot: the credential broker) · Relates to: ADR-0019, ADR-0028, ADR-0043
 
 ## Context
 
@@ -79,6 +79,21 @@ hand a teammate a credential the teammate was never given.
      to have it.
    - **Credentials Spool never saw.** One a loop creates or reads from a
      file is not known to the redactor.
+
+   **Amendment (2026-10-06, #622): slice 2 landed, and what it leaves.**
+   The hub brokers every http MCP server it can reach as the loop would
+   (ADR-0043), so item 3's last case now holds, and item 2's http case is
+   out of the loop's reach. Two cases remain:
+   - **A docker loop's loopback http server's credential.** Such a server
+     runs inside the workstation, where the hub can't reach it, so like a
+     stdio server it is handed its secret in the mcp-config. A bare loop's
+     loopback server shares the hub's machine and is brokered.
+   - **A brokered server's credential, used in place.** The loop can't
+     take it away, but it can use it on any request under the server's
+     stored URL, through the server's tools or around them: the broker
+     forwards whatever path, method and body the loop's client sends
+     after the connection's name. Least scope, and a stored URL as
+     specific as the server allows, still apply.
 
 5. **The operator's levers for what isn't defended** stay as ADR-0017 put
    them:

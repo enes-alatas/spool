@@ -1,6 +1,6 @@
 # ADR-0043: Connections are org-level credentials and configs, defined once and attachable to loops
 
-Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572); 2026-10-04 (item 2: the env-var kind, #574); 2026-10-04 (item 5: per-loop secrets are connections, #576); 2026-10-05 (item 2: an mcp-server reaches its loop, #597); 2026-10-05 (item 1: private connections, #600); 2026-10-05 (item 5: the record of changes, #606); 2026-10-05 (item 3: rotation, #609); 2026-10-06 (item 3: revoke, #610); 2026-10-06 (item 5: the per-loop secrets routes are gone, #617)
+Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572); 2026-10-04 (item 2: the env-var kind, #574); 2026-10-04 (item 5: per-loop secrets are connections, #576); 2026-10-05 (item 2: an mcp-server reaches its loop, #597); 2026-10-05 (item 1: private connections, #600); 2026-10-05 (item 5: the record of changes, #606); 2026-10-05 (item 3: rotation, #609); 2026-10-06 (item 3: revoke, #610); 2026-10-06 (item 5: the per-loop secrets routes are gone, #617); 2026-10-06 (item 2: the hub brokers an http server, #622)
 
 ## Context
 
@@ -115,6 +115,32 @@ follow in their own slice and amend this ADR.
      it would protect little. As with an `env-var`, a loop that goes looking
      can still read it.
    Enes decided where the secret goes on 2026-10-05.
+
+   **Amendment (2026-10-06, #622): the hub brokers an http server.** The
+   loop's config names an http server at the hub instead, under
+   `/mcp/connections/<name>` on the loop listener, with the loop's own hub
+   MCP token as its credential. The hub adds `Authorization: Bearer
+   <secret>` and forwards, so the secret stays in the hub's database and
+   leaves only for the server. The rules above on cleartext and on what a
+   server stored before them is given still hold, now at the hub.
+   - **Which servers.** Every http server the hub can reach as the loop
+     would: any off loopback, and a loopback one for a bare loop, which
+     shares the hub's machine. An unspecified address (`0.0.0.0`, `::`)
+     counts as loopback, since a connect to it reaches this machine. A docker loop's loopback server names a
+     place inside its workstation, so it is still given its secret in the
+     file.
+   - **Checked on every request.** The hub reads the connection each time.
+     A detach or revoke refuses the next call, not the next wake, and a
+     loop that kept its brokered URL and token gets the same 404 as for a
+     name that was never attached.
+   - **The loop's token stops at the hub.** The hub drops the loop's
+     `Authorization` before it forwards, so a server never sees a
+     credential that could act as the loop.
+   - **Anything under the stored URL.** The hub forwards whatever path the
+     loop's client adds after the name, with its method, query and body,
+     so the loop can use the secret on any request under the stored URL,
+     not only through the server's tools (ADR-0045 item 4).
+   The operator approved brokering on 2026-10-06 (ADR-0045, #30).
 
 3. **The secret is write-only.** No response carries it: the API reports
    only `has_secret`. The config is read back in full, so nothing secret

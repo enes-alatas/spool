@@ -31,6 +31,9 @@ import (
 // starts from none: its first wake rewrites the file whatever it holds, since
 // a token outlives the run and an entry the hub no longer knows of must not
 // outlive it, and each loop's entries come back at its next wake.
+//
+// Since the hub brokers http MCP servers (#622) no wake carries entries of
+// its own, until #626 removes the mechanism or names a new source for it.
 
 // loopEgressFile is where the proxy reads the file, and --loops-file says so.
 const loopEgressFile = "/spool-egress-loops.json"

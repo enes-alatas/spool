@@ -63,7 +63,7 @@ func TestDockerRows(t *testing.T) {
 		{"ControlRoomCannotCreateABareLoopOnADockerHub", controlRoomCannotCreateABareLoopOnADockerHub},
 		{"SettingsReportsWhetherBareIsAllowed", settingsReportsWhetherBareIsAllowed},
 		{"DockerEgressAllowlist", dockerEgressAllowlist},
-		{"DockerLoopEgressFollowsAttachments", dockerLoopEgressFollowsAttachments},
+		{"DockerLoopReachesItsMCPServerThroughTheHub", dockerLoopReachesItsMCPServerThroughTheHub},
 		{"DockerEgressHostsApplyLive", dockerEgressHostsApplyLive},
 		{"DockerWorkstationCannotReachTheAPI", dockerWorkstationCannotReachTheAPI},
 		{"DockerEchoTurn", dockerEchoTurn},

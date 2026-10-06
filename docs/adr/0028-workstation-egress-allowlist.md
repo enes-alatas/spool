@@ -1,6 +1,6 @@
 # ADR-0028: Workstation egress runs through an allowlist proxy
 
-Date: 2026-09-20 · Status: accepted · Amends: ADR-0017 (decision 9, "open egress") · Amended 2026-09-20 (decision 3: the hub entry is the MCP listener, #238); 2026-10-01 (consequences: a docker loop behind a loopback listener is refused, #474); 2026-10-01 (decision 3: the loop listener does not refuse a host.docker.internal Host, #508); 2026-10-05 (decision 4: a loop's own entries, keyed by its proxy token, #599); 2026-10-06 (decision 4: the operator's extra hosts are stored and change while the hub runs, #542)
+Date: 2026-09-20 · Status: accepted · Amends: ADR-0017 (decision 9, "open egress") · Amended 2026-09-20 (decision 3: the hub entry is the MCP listener, #238); 2026-10-01 (consequences: a docker loop behind a loopback listener is refused, #474); 2026-10-01 (decision 3: the loop listener does not refuse a host.docker.internal Host, #508); 2026-10-05 (decision 4: a loop's own entries, keyed by its proxy token, #599); 2026-10-06 (decision 4: the operator's extra hosts are stored and change while the hub runs, #542); 2026-10-06 (decision 4: brokered MCP servers open no host, #622)
 
 ## Context
 
@@ -163,6 +163,14 @@ by asking the agent nicely (#193).
 
    The operator approved the control room widening the wall while the hub
    runs, with the stored list winning over the flag, on 2026-10-06.
+
+   **Amendment (2026-10-06, #622): brokered MCP servers open no host.** The
+   hub now brokers every http MCP server a workstation's hub can reach
+   (ADR-0045), so the workstation never dials the server, and the server's
+   host is no longer one of the loop's own entries. That leaves the #599
+   entries with nothing to carry: a wake opens none, and the proxy matches
+   none. The mechanism stays in place until #626 removes it or names a new
+   source for it.
 
 5. **Lifecycle matches the workstation's.** The network and the proxy are
    ensured idempotently before a workstation is provisioned, and the proxy runs

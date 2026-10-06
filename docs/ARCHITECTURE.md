@@ -61,7 +61,7 @@ Use these words exactly — in code, UI, docs, and prompts. Don't introduce syno
 | **workstation** | A loop's persistent sandbox: its home dir, tools, clones. Long-lived — survives sleeps, restarts, and pauses; dies with the loop, or when the operator switches it off or rebuilds it (ADR-0017, ADR-0021). |
 | **power controls** | The operator's switches on a workstation: restart, power off, power on, recreate. They act on the loop's *machine*, not the loop — pause is the switch for the loop itself, and the two compose (ADR-0021). |
 | **runner** | The subsystem that executes loops (actors + claude processes + sandboxes). |
-| **hub** | Everything that isn't the runner or a surface: routing, scheduling, store, API. It serves two listeners: the *operator listener* (`--listen`) carries the API and control room, the *loop listener* (`--mcp-listen`, or where the hub chooses: ADR-0039) carries the MCP endpoint and nothing else. Workstations may reach the loop listener and no other port of the operator's machine (ADR-0028, #238). |
+| **hub** | Everything that isn't the runner or a surface: routing, scheduling, store, API. It serves two listeners: the *operator listener* (`--listen`) carries the API and control room, the *loop listener* (`--mcp-listen`, or where the hub chooses: ADR-0039) carries the MCP endpoint and the loops' brokered MCP servers, and nothing else. Workstations may reach the loop listener and no other port of the operator's machine (ADR-0028, #238). |
 | **operator token** | The credential the human running Spool presents to the API: minted at first start into `<data-dir>/operator-token`, traded for a `SameSite=Strict` session cookie by the control room. Distinct from a loop's hub MCP token in every way — different file, different check, different listener — and never given to a loop (ADR-0030). |
 | **connection** | An org-level tool credential/config (GitHub app, MCP server) attachable to loops. |
 | **control room** | The web UI. |
@@ -159,8 +159,9 @@ hosts (`/api/settings/egress`), and refuses the rest (ADR-0028, #542). The
 one entry naming the operator's own machine is the hub's loop listener, on its
 port alone: the operator listener is on no allowlist, so the API a workstation
 would otherwise reach unauthenticated is not a destination it has (#238). A
-loop's attached http MCP servers open their hosts to that loop alone, matched
-on its hub MCP token in its proxy URL rather than its address (#599). A
+loop's attached http MCP servers open no host: the hub brokers them on the
+loop listener, under `/mcp/connections/<name>`, and adds each server's
+secret itself, so the loop never holds it (ADR-0043, #622). A
 bare loop has the host's own network and no wall — one more thing the
 *uncontained* badge means.
 The hub's trust model is two credentials on two listeners (ADR-0030). On the
@@ -173,7 +174,8 @@ body rather than a header, since obtaining the cookie is what it is for. The
 same middleware refuses a `Host` this hub does not answer to for every `/api`
 path including the open ones, and a cross-site `Origin` or `Sec-Fetch-Site`
 or a body that is not `application/json` for the rest. On the loop listener
-`/mcp` requires the requesting loop's own token. Those three aside nothing is
+`/mcp` and every brokered server under `/mcp/connections/` require the
+requesting loop's own token. Those three aside nothing is
 unauthenticated, and neither credential is ever handed to the other's
 audience.
 

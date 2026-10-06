@@ -76,8 +76,10 @@ type Spec struct {
 	Env map[string]string
 
 	// EgressAllow are the hosts this loop may reach beyond the fleet's
-	// allowlist, as allowlist entries (host, or host:port): its attached
-	// http MCP servers' (#599). Only a runtime with an egress wall reads it.
+	// allowlist, as allowlist entries (host, or host:port). Its attached
+	// http MCP servers were the source (#599) until the hub brokered them
+	// (#622), and nothing sets it now: #626 removes it or names a new
+	// source. Only a runtime with an egress wall reads it.
 	EgressAllow []string
 	// EgressToken is what the loop shows the egress proxy to be given
 	// EgressAllow: its hub MCP token, a credential it already holds and the

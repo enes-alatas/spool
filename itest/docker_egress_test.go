@@ -156,54 +156,46 @@ func dockerWorkstationCannotReachTheAPI(t *testing.T) {
 	}
 }
 
-// dockerLoopEgressFollowsAttachments is #599's evidence: an http MCP server
-// attached to one loop opens its host to that loop alone, behind the proxy
-// every loop shares, by a token the redactor hides, and detaching it closes
-// the host again at the loop's next wake.
-func dockerLoopEgressFollowsAttachments(t *testing.T) {
-	server := startHostReachableServer(t)
+// dockerLoopReachesItsMCPServerThroughTheHub is #622's evidence behind the
+// wall: a docker loop calls an attached http MCP server through the hub's
+// loop listener, the server never sees the loop's hub token, and the
+// server's host is never opened to the workstation, which reaching it
+// directly shows. The hub dials the server at the docker bridge's gateway,
+// an address off loopback, as it would a server on the network; the
+// connection carries no secret, because plain http off the host may not.
+func dockerLoopReachesItsMCPServerThroughTheHub(t *testing.T) {
+	tracker := startBrokeredServer(t, "0.0.0.0:0")
+	out, err := exec.Command("docker", "network", "inspect", "bridge", "--format", "{{(index .IPAM.Config 0).Gateway}}").CombinedOutput()
+	gateway := strings.TrimSpace(string(out))
+	if err != nil || net.ParseIP(gateway) == nil {
+		t.Fatalf("docker bridge gateway = %q (%v)", gateway, err)
+	}
 	s := startDockerServer(t, t.TempDir())
-	probe := fmt.Sprintf("!get http://host.docker.internal:%d/mcp\n", server)
 	s.mustJSON("POST", "/api/connections", map[string]any{
 		"name": "tracker", "kind": "mcp-server",
-		"config": map[string]any{"transport": "http", "url": fmt.Sprintf("http://host.docker.internal:%d/mcp", server)},
+		"config": map[string]any{"transport": "http", "url": fmt.Sprintf("http://%s/mcp", net.JoinHostPort(gateway, fmt.Sprint(tracker.port)))},
 	}, nil)
-	for _, name := range []string{"wsholder", "wsneighbour"} {
-		s.createLoop(name, nil)
-		cleanupWorkstation(t, s.loop(name).ID)
-	}
+	s.createLoop("wsholder", nil)
+	cleanupWorkstation(t, s.loop("wsholder").ID)
 	s.mustJSON("PUT", "/api/loops/wsholder/connections/tracker", nil, nil)
 
-	reach := func(name, after string) turn {
-		t.Helper()
-		s.scriptLoop(name, probe)
-		s.message(name, "reach out")
-		return s.waitTurn(name, 90*time.Second, func(tr turn) bool {
-			return tr.ID != after && strings.Contains(tr.ResultText, "get http://host.docker.internal")
-		})
+	s.scriptLoop("wsholder", "!mcp tracker ping\n")
+	s.message("wsholder", "call it")
+	called := s.waitTurn("wsholder", 90*time.Second, func(tr turn) bool { return strings.HasPrefix(tr.ResultText, "mcp tracker:") })
+	if called.ResultText != "mcp tracker: pong" {
+		t.Fatalf("a docker loop must reach its server through the hub, got:\n%s", called.ResultText)
 	}
-	held := reach("wsholder", "")
-	if !strings.Contains(held.ResultText, "200 OK") {
-		t.Fatalf("the loop holding the server must reach its host, got:\n%s", held.ResultText)
-	}
-	if neighbour := reach("wsneighbour", ""); !strings.Contains(neighbour.ResultText, "403 Forbidden") {
-		t.Fatalf("a loop without the server must be refused its host, got:\n%s", neighbour.ResultText)
+	for _, auth := range tracker.seen() {
+		if auth != "" {
+			t.Fatalf("the server was sent Authorization %q, want none: the loop's hub token is the hub's alone", auth)
+		}
 	}
 
-	// The token in the holder's proxy URL is its hub MCP token, which the
-	// redactor knows: a loop echoing its env shows a placeholder, never a
-	// credential another loop could present.
-	s.scriptLoop("wsholder", "!env HTTPS_PROXY")
-	s.message("wsholder", "show your proxy")
-	echoed := s.waitTurn("wsholder", 90*time.Second, func(tr turn) bool { return strings.Contains(tr.ResultText, "HTTPS_PROXY=") })
-	if !strings.Contains(echoed.ResultText, "HTTPS_PROXY=http://wsholder:<redacted:hub_mcp_token>@") {
-		t.Fatalf("the holder's proxy URL must carry its token, redacted, got:\n%s", echoed.ResultText)
-	}
-
-	s.mustJSON("DELETE", "/api/loops/wsholder/connections/tracker", nil, nil)
-	s.waitState("wsholder", "asleep", 90*time.Second)
-	if detached := reach("wsholder", held.ID); !strings.Contains(detached.ResultText, "403 Forbidden") {
-		t.Fatalf("after a detach the loop's next wake must be refused the host, got:\n%s", detached.ResultText)
+	s.scriptLoop("wsholder", fmt.Sprintf("!get http://host.docker.internal:%d/mcp\n", tracker.port))
+	s.message("wsholder", "reach out")
+	direct := s.waitTurn("wsholder", 90*time.Second, func(tr turn) bool { return strings.Contains(tr.ResultText, "get http://host.docker.internal") })
+	if !strings.Contains(direct.ResultText, "403 Forbidden") {
+		t.Fatalf("the server's host must stay closed to the workstation, got:\n%s", direct.ResultText)
 	}
 }
 
