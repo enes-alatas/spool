@@ -437,6 +437,35 @@ export interface ModelList {
   custom: CustomModel[]
 }
 
+// The fleet's workstation egress allowlist (#542, ADR-0028): the built-in
+// hosts in groups, each with why it is there, and the operator's own, which
+// the hub's one egress proxy takes while the hub runs. An entry is `host` or
+// `host:port`, stored trimmed and lowercased; the page adds names only, and
+// a port comes from --egress-allow.
+export interface EgressGroup {
+  reason: string
+  hosts: string[]
+}
+
+export interface EgressView {
+  // False only when the hub has no egress image: no loop's egress is
+  // filtered, so the list binds nothing.
+  enforced: boolean
+  built_in: EgressGroup[]
+  // The operator's hosts, in the order they were added.
+  extra: string[]
+  // The --egress-allow value, present only when it differs from `extra`
+  // ([] for an empty flag, absent when the flag wasn't passed):
+  // the flag seeds the list on first start, and the store wins after.
+  flag?: string[]
+  // When `extra` last changed, and when the proxy last loaded the current
+  // list (unix ms). `applied_at` is absent while the proxy doesn't hold the
+  // current list: before this hub's first docker wake, or after a copy
+  // failed or the proxy went away; the next wake copies it.
+  changed_at?: number
+  applied_at?: number
+}
+
 export interface Settings {
   claude_token_set: boolean
   // Whether this hub was started to allow an uncontained loop (--runtime bare
@@ -880,4 +909,12 @@ export const api = {
   relabelCustomModel: (id: string, label: string) =>
     req<CustomModel>(`/api/models/custom/${id}`, { method: 'PATCH', body: JSON.stringify({ label }) }),
   deleteCustomModel: (id: string) => req<void>(`/api/models/custom/${id}`, { method: 'DELETE' }),
+  egress: () => req<EgressView>('/api/settings/egress'),
+  // Refused with 400 `egress_host_invalid` and egress.Validate's reason, a
+  // port included; a host already on the list, once normalized, changes
+  // nothing. Removal takes the entry exactly as listed.
+  addEgressHost: (host: string) =>
+    req<EgressView>('/api/settings/egress/hosts', { method: 'POST', body: JSON.stringify({ host }) }),
+  removeEgressHost: (host: string) =>
+    req<EgressView>(`/api/settings/egress/hosts/${encodeURIComponent(host)}`, { method: 'DELETE' }),
 }
