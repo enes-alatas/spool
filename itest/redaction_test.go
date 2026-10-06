@@ -91,3 +91,28 @@ func TestASecretIsRedactedAsSoonAsItIsWritten(t *testing.T) {
 		t.Errorf("a secret written mid-run reached the transcript: %s", dump(turn))
 	}
 }
+
+// A secret one loop holds does not reach a teammate through a message
+// (#30). The sender is made to put its value in a group message, and the
+// recipient's turn, which exists only because the message reached it, must
+// not have received the value it was never given. The stored row and the
+// surfaces were already redacted; the recipient's input was not.
+func TestALoopCannotRelayASecretToATeammate(t *testing.T) {
+	t.Parallel()
+	const secret = "fixture-relay-secret-0000"
+	// alpha's first turn is its startup tick, before it holds the secret,
+	// so it echoes; the turn the test asks for sends
+	wsAlpha := workspaceWithScript(t, "!ctx 0\n"+`!send {"destination":"group","text":"@bravo the key is `+secret+`"}`+"\n")
+	wsBravo := workspaceWithScript(t, "!contains "+secret+"\n")
+	s := startServer(t, t.TempDir())
+	s.createLoop("alpha", map[string]any{"workspace_path": wsAlpha})
+	s.createLoop("bravo", map[string]any{"workspace_path": wsBravo})
+	s.waitTurn("alpha", 30*time.Second, func(turn) bool { return true })
+	s.setLoopEnv("alpha", "API_KEY", secret)
+
+	s.message("alpha", "go")
+	relayed := s.waitTurn("bravo", 30*time.Second, func(tn turn) bool { return tn.Trigger == "message" })
+	if relayed.ResultText != "contains: no" {
+		t.Fatalf("bravo's turn received alpha's secret: %s", relayed.ResultText)
+	}
+}

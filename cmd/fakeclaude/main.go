@@ -55,6 +55,10 @@
 // "!echo" is the unscripted default as a directive: it replies with the text
 // the turn received, which is how a test reads what Spool prepended to the
 // turn's envelopes. Without a script, every turn echoes.
+// "!contains <text>" replies "contains: yes" or "contains: no" for whether
+// the turn received text: how a test sees that a secret reached a loop's
+// input, which an echo cannot show once redaction rewrites the stored
+// reply (#30).
 //
 // A "!send {json}" prefix calls the hub's send_message MCP tool with the
 // given arguments, exactly as the real CLI would mid-turn. It repeats for
@@ -391,6 +395,12 @@ func main() {
 				// a test needs to see anything Spool prepends to a turn's
 				// envelopes rather than puts in the system prompt
 				reply = "echo: " + text
+			case strings.HasPrefix(line, "!contains "):
+				needle := strings.TrimSpace(strings.TrimPrefix(line, "!contains "))
+				reply = "contains: no"
+				if strings.Contains(text, needle) {
+					reply = "contains: yes"
+				}
 			case strings.HasPrefix(line, "!env "):
 				// A loop reading a credential out of its environment and
 				// putting it in its reply — the thing #150's redaction has
