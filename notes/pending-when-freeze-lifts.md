@@ -273,3 +273,6 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 18:45: #607 cause: mirrorReaction looks up message_refs by (message, reacting bot); Telegram hides bots' messages from other bots so the ref never exists for a teammate's message → silent return. Fix: fall back to the posting bot's ref in a chat the reacting bot is in. Posted on #607; told Enes.
 - 19:10: #605 (#601) merged; Iris free → #507 web half (audit list + revoke/rotate actions), coordinate the sub-issue with Terra on #507 (he's splitting: audit first). Asked Enes: close #124 (all five children in) or another pass after a fresh-hub run. Awaiting.
 - 20:25: Enes: keep #124 open until he walks the flow himself; findings → new children. Recorded on #124.
+
+## 2026-10-06 07:00 — morning sweep
+- Overnight: #608 (#606 audit record), #612 (#609 rotate) merged. Terra on #610 (revoke, 22:30); Iris on #611 (#507 web; mockups approved by Enes 20:19). #507 closes with #610 + #611. No open PRs but #453 draft. Runtime 10-05 09:23 build; DM'd Enes rebuild (ref 3312). Terra gaps pending: secrets-routes removal, #607 reaction mirror, #604 flake. Then #542 → #30 → #529(b) → #582. Enes still to walk onboarding (#124 open).
