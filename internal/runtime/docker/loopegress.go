@@ -16,8 +16,9 @@ import (
 	"github.com/enes-alatas/spool/internal/runtime"
 )
 
-// A loop's own egress entries (#599): the hosts it may reach beyond the
-// fleet's, because of what is attached to it. The proxy files them under the
+// The proxy's file: the operator's extra hosts, which every loop may reach
+// (#542), and each loop's own entries (#599), the hosts it may reach beyond
+// the fleet's because of what is attached to it. The proxy files them under the
 // hash of the loop's hub MCP token, which its wake carries in its proxy URL,
 // so one loop can't reach another's hosts by knowing its address, or by
 // being handed that address after a restart. The token is one the loop
@@ -58,21 +59,21 @@ func (rt *Runtime) openLoopEgress(ctx context.Context, spec runtime.Spec) (bool,
 		valid = append(valid, entry)
 	}
 
-	rt.loopEgressMu.Lock()
-	defer rt.loopEgressMu.Unlock()
+	rt.egressFileMu.Lock()
+	defer rt.egressFileMu.Unlock()
 	had, ok := rt.loopEgress[spec.LoopID]
 	want := loopEgressEntry{key: egress.LoopKey(spec.EgressToken), allow: valid}
 	switch {
-	case len(valid) == 0 && !ok && rt.loopEgressWritten:
+	case len(valid) == 0 && !ok && rt.egressFileWritten:
 		return false, nil
 	case len(valid) == 0:
 		delete(rt.loopEgress, spec.LoopID)
-	case ok && had.key == want.key && slices.Equal(had.allow, want.allow) && rt.loopEgressWritten:
+	case ok && had.key == want.key && slices.Equal(had.allow, want.allow) && rt.egressFileWritten:
 		return true, nil
 	default:
 		rt.loopEgress[spec.LoopID] = want
 	}
-	if err := rt.writeLoopEgress(ctx); err != nil {
+	if err := rt.writeEgressFile(ctx); err != nil {
 		rt.restoreLoopEgress(spec.LoopID, had, ok)
 		return false, err
 	}
@@ -84,14 +85,14 @@ func (rt *Runtime) closeLoopEgress(ctx context.Context, loopID string) error {
 	if !rt.egressEnabled() {
 		return nil
 	}
-	rt.loopEgressMu.Lock()
-	defer rt.loopEgressMu.Unlock()
+	rt.egressFileMu.Lock()
+	defer rt.egressFileMu.Unlock()
 	if _, had := rt.loopEgress[loopID]; !had {
 		return nil
 	}
 	had := rt.loopEgress[loopID]
 	delete(rt.loopEgress, loopID)
-	if err := rt.writeLoopEgress(ctx); err != nil {
+	if err := rt.writeEgressFile(ctx); err != nil {
 		rt.restoreLoopEgress(loopID, had, true)
 		return err
 	}
@@ -101,7 +102,7 @@ func (rt *Runtime) closeLoopEgress(ctx context.Context, loopID string) error {
 // restoreLoopEgress puts back a loop's entries after a failed write, so the
 // map stays what the proxy last read and the next wake retries the change.
 // Kept, a detached host would pass the up-to-date check and stay open to the
-// loop, which still holds its token. The caller holds loopEgressMu.
+// loop, which still holds its token. The caller holds egressFileMu.
 func (rt *Runtime) restoreLoopEgress(loopID string, had loopEgressEntry, ok bool) {
 	if ok {
 		rt.loopEgress[loopID] = had
@@ -110,22 +111,73 @@ func (rt *Runtime) restoreLoopEgress(loopID string, had loopEgressEntry, ok bool
 	}
 }
 
-// rewriteLoopEgress puts the file back into a proxy that was just created,
-// and so has none. The caller holds egressMu, never loopEgressMu.
-func (rt *Runtime) rewriteLoopEgress(ctx context.Context) error {
-	rt.loopEgressMu.Lock()
-	defer rt.loopEgressMu.Unlock()
-	if len(rt.loopEgress) == 0 {
+// rewriteEgressFile puts the file back into a proxy that was just created,
+// and so has none. The caller holds egressMu, never egressFileMu.
+func (rt *Runtime) rewriteEgressFile(ctx context.Context) error {
+	rt.egressFileMu.Lock()
+	defer rt.egressFileMu.Unlock()
+	if len(rt.loopEgress) == 0 && len(rt.fleetEgress) == 0 {
 		return nil
 	}
-	return rt.writeLoopEgress(ctx)
+	return rt.writeEgressFile(ctx)
 }
 
-// writeLoopEgress copies the file into the proxy as a one-file tar on
+// catchUpEgressFile writes the file into a running proxy that may not hold
+// what the hub does: one a previous hub run wrote, or one a change of the
+// fleet's hosts could not reach when it was made. The caller holds
+// egressMu, never egressFileMu.
+func (rt *Runtime) catchUpEgressFile(ctx context.Context) error {
+	rt.egressFileMu.Lock()
+	defer rt.egressFileMu.Unlock()
+	if rt.egressFileWritten && rt.fleetIsApplied() {
+		return nil
+	}
+	return rt.writeEgressFile(ctx)
+}
+
+// SetFleetEgress makes entries the operator's extra hosts and copies them
+// into the proxy, which every loop then reaches within its next request
+// (#542). A hub copies only into a proxy it has written this run, one its
+// own docker wakes ensured: until then the list waits for the first of
+// them, so a hub with no docker loop never writes into a proxy another hub
+// on the daemon may be running. A proxy gone since is no error either, and
+// a copy that fails is retried at the next wake; FleetEgressApplied says
+// neither has landed.
+func (rt *Runtime) SetFleetEgress(ctx context.Context, entries []string) error {
+	rt.egressFileMu.Lock()
+	defer rt.egressFileMu.Unlock()
+	rt.fleetEgress = slices.Clone(entries)
+	if !rt.egressEnabled() || !rt.egressFileWritten || rt.fleetIsApplied() {
+		return nil
+	}
+	if err := rt.writeEgressFile(ctx); err != nil && !notFound(err) {
+		return err
+	}
+	return nil
+}
+
+// FleetEgressApplied is when the proxy's file took the current fleet list,
+// or zero when it hasn't this hub run: no proxy yet, or a copy that failed.
+func (rt *Runtime) FleetEgressApplied() time.Time {
+	rt.egressFileMu.Lock()
+	defer rt.egressFileMu.Unlock()
+	if !rt.fleetIsApplied() {
+		return time.Time{}
+	}
+	return rt.fleetAppliedAt
+}
+
+// fleetIsApplied reports whether the proxy's file holds the current fleet
+// list. The caller holds egressFileMu.
+func (rt *Runtime) fleetIsApplied() bool {
+	return !rt.fleetAppliedAt.IsZero() && slices.Equal(rt.fleetApplied, rt.fleetEgress)
+}
+
+// writeEgressFile copies the file into the proxy as a one-file tar on
 // stdin: the image has no shell to write it with. The caller holds
-// loopEgressMu.
-func (rt *Runtime) writeLoopEgress(ctx context.Context) error {
-	file := egress.ProxyFile{Loops: make(map[string][]string, len(rt.loopEgress))}
+// egressFileMu.
+func (rt *Runtime) writeEgressFile(ctx context.Context) error {
+	file := egress.ProxyFile{Fleet: rt.fleetEgress, Loops: make(map[string][]string, len(rt.loopEgress))}
 	for entry := range maps.Values(rt.loopEgress) {
 		file.Loops[entry.key] = entry.allow
 	}
@@ -149,7 +201,10 @@ func (rt *Runtime) writeLoopEgress(ctx context.Context) error {
 	if _, err := rt.commandStream(ctx, queryTimeout, &archive, "cp", "-", rt.egressContainer()+":"+path.Dir(loopEgressFile)); err != nil {
 		return err
 	}
-	rt.loopEgressWritten = true
+	rt.egressFileWritten = true
+	if !rt.fleetIsApplied() {
+		rt.fleetApplied, rt.fleetAppliedAt = slices.Clone(rt.fleetEgress), time.Now()
+	}
 	return nil
 }
 

@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -79,7 +80,7 @@ func main() {
 	allowBare := flag.Bool("allow-bare", false, "let the control room create uncontained bare loops on a hub whose default is docker; implied by --runtime bare (ADR-0017)")
 	workstationImage := flag.String("workstation-image", "spool-workstation", "default image for docker workstations")
 	egressImage := flag.String("egress-image", "spool-egress", "image for the workstation egress proxy; empty leaves workstation egress open (ADR-0028)")
-	egressAllow := flag.String("egress-allow", "", "comma-separated hosts (each \"host\" or \"host:port\") workstations may reach on top of the built-in allowlist")
+	egressAllow := flag.String("egress-allow", "", "comma-separated hosts (each \"host\" or \"host:port\") workstations may reach on top of the built-in allowlist; seeds the stored extra hosts on the first start, and the stored list wins after")
 	healthSec := flag.Int("workstation-health-sec", 45, "seconds between workstation liveness polls")
 	partials := flag.Bool("partial-messages", true, "stream token deltas to the UI (--include-partial-messages)")
 	telegramAPI := flag.String("telegram-api-base", telegram.APIBase, "Telegram Bot API base URL (tests point this at a stand-in server)")
@@ -124,12 +125,17 @@ func main() {
 	healthInterval := time.Duration(*healthSec) * time.Second
 	// An unusable --egress-allow entry would permit nothing and say nothing,
 	// leaving a host mysteriously unreachable from inside the wall; the
-	// operator hears about it here instead (ADR-0028).
-	allowEntries := splitList(*egressAllow)
-	for _, entry := range allowEntries {
-		if err := egress.Validate(entry); err != nil {
+	// operator hears about it here instead (ADR-0028). The entries are kept
+	// canonical, as the stored list they seed is (#542).
+	var allowEntries []string
+	for _, entry := range splitList(*egressAllow) {
+		canonical, err := egress.Canonical(entry)
+		if err != nil {
 			log.Error("--egress-allow", "err", err)
 			os.Exit(1)
+		}
+		if !slices.Contains(allowEntries, canonical) {
+			allowEntries = append(allowEntries, canonical)
 		}
 	}
 
@@ -165,7 +171,6 @@ func main() {
 		DefaultImage: *workstationImage,
 		EgressImage:  *egressImage,
 		MCPPort:      mcpPort,
-		EgressAllow:  allowEntries,
 		Hook:         docker.WorkstationHook,
 		HealthTTL:    healthCacheTTL(healthInterval),
 	})
@@ -240,6 +245,30 @@ func main() {
 	// removes permission bits, so running it twice costs a stat apiece.
 	if err := datadir.Secure(*dataDir, log); err != nil {
 		log.Error("data dir", "err", err)
+		os.Exit(1)
+	}
+
+	// The operator's extra egress hosts (#542): --egress-allow seeds the
+	// stored list on the first start, and the list /api/settings/egress
+	// edits wins from then on. The proxy takes it at the first docker wake,
+	// which writes the proxy's file whatever a previous run left in it.
+	egressHosts, seeded, err := httpapi.SeedEgressHosts(context.Background(), db.Settings(), allowEntries)
+	if err != nil {
+		log.Error("egress hosts", "err", err)
+		os.Exit(1)
+	}
+	// Before #542 the flag was the whole list, so an operator narrowing it
+	// at the terminal expects that to cut a host. It no longer does, and
+	// the terminal is where they need to hear it.
+	if !seeded && flagPassed("egress-allow") && !slices.Equal(allowEntries, egressHosts) {
+		log.Warn("--egress-allow differs from the stored extra egress hosts; the stored list is in force, edit it through /api/settings/egress",
+			"flag", allowEntries, "in_force", egressHosts)
+	}
+	if len(egressHosts) > 0 {
+		log.Info("extra egress hosts", "hosts", egressHosts)
+	}
+	if err := dockerRuntime.SetFleetEgress(context.Background(), egressHosts); err != nil {
+		log.Error("egress hosts", "err", err)
 		os.Exit(1)
 	}
 
@@ -390,6 +419,8 @@ func main() {
 		OperatorToken: operatorToken,
 		ListenAddr:    apiAddr,
 		TrustedHosts:  splitList(*trustedHosts),
+		Egress:        dockerRuntime,
+		EgressFlag:    egressFlag(allowEntries),
 		Log:           log,
 		WebFS:         web.Dist(),
 	}
@@ -880,6 +911,18 @@ func logEgressPosture(log *slog.Logger, rt *docker.Runtime) {
 	default:
 		log.Info("workstation egress allowlisted", "proxy_image", image)
 	}
+}
+
+// egressFlag is --egress-allow for the settings view: nil when the hub was
+// started without it, so the view shows no flag rather than an empty one.
+func egressFlag(entries []string) []string {
+	if !flagPassed("egress-allow") {
+		return nil
+	}
+	if entries == nil {
+		return []string{}
+	}
+	return entries
 }
 
 // splitList reads a comma-separated flag, dropping empties so a trailing

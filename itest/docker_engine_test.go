@@ -64,6 +64,7 @@ func TestDockerRows(t *testing.T) {
 		{"SettingsReportsWhetherBareIsAllowed", settingsReportsWhetherBareIsAllowed},
 		{"DockerEgressAllowlist", dockerEgressAllowlist},
 		{"DockerLoopEgressFollowsAttachments", dockerLoopEgressFollowsAttachments},
+		{"DockerEgressHostsApplyLive", dockerEgressHostsApplyLive},
 		{"DockerWorkstationCannotReachTheAPI", dockerWorkstationCannotReachTheAPI},
 		{"DockerEchoTurn", dockerEchoTurn},
 		{"DockerScriptedTurn", dockerScriptedTurn},

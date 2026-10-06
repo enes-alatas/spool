@@ -206,3 +206,76 @@ func dockerLoopEgressFollowsAttachments(t *testing.T) {
 		t.Fatalf("after a detach the loop's next wake must be refused the host, got:\n%s", detached.ResultText)
 	}
 }
+
+// dockerEgressHostsApplyLive is #542's evidence: an extra host added
+// through the settings API lets a loop's next request through the running
+// proxy, and removing it refuses the one after, with no hub restart and the same proxy
+// container throughout. The host is under .invalid, so a request the
+// allowlist lets through fails at the proxy's resolver (502) and one it
+// refuses never gets that far (403): the status code is the allowlist's
+// answer, without the test needing the internet.
+func dockerEgressHostsApplyLive(t *testing.T) {
+	s := startDockerServer(t, t.TempDir())
+	s.createLoop("wslive", nil)
+	cleanupWorkstation(t, s.loop("wslive").ID)
+	reach := func(after string) turn {
+		t.Helper()
+		s.scriptLoop("wslive", "!get http://pkg.spool-itest.invalid/\n")
+		s.message("wslive", "reach out")
+		return s.waitTurn("wslive", 90*time.Second, func(tr turn) bool {
+			return tr.ID != after && strings.Contains(tr.ResultText, "pkg.spool-itest.invalid")
+		})
+	}
+	before := reach("")
+	if !strings.Contains(before.ResultText, "403 Forbidden") {
+		t.Fatalf("a host on no list must be refused, got:\n%s", before.ResultText)
+	}
+	proxyID, err := dockerInspect("{{.Id}}", egressTestImage+"-proxy")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	type egressView struct {
+		Enforced bool `json:"enforced"`
+		BuiltIn  []struct {
+			Hosts []string `json:"hosts"`
+		} `json:"built_in"`
+		Extra     []string `json:"extra"`
+		ChangedAt int64    `json:"changed_at"`
+		AppliedAt int64    `json:"applied_at"`
+	}
+	// A port is the terminal's decision, not the API's.
+	if resp, body := s.do("POST", "/api/settings/egress/hosts", map[string]string{"host": "pkg.spool-itest.invalid:8443"}); resp.StatusCode != http.StatusBadRequest ||
+		!strings.Contains(string(body), `"egress_host_invalid"`) {
+		t.Fatalf("adding a host with a port = %d %s, want 400 egress_host_invalid", resp.StatusCode, body)
+	}
+	var added egressView
+	s.mustJSON("POST", "/api/settings/egress/hosts", map[string]string{"host": "PKG.spool-itest.invalid"}, &added)
+	if !added.Enforced || len(added.Extra) != 1 || added.Extra[0] != "pkg.spool-itest.invalid" {
+		t.Fatalf("view after the add = %+v, want the canonical host, enforced", added)
+	}
+	if added.AppliedAt < added.ChangedAt {
+		t.Fatalf("applied_at %d before changed_at %d: a running proxy must take the list in the request", added.AppliedAt, added.ChangedAt)
+	}
+	gateway := added.BuiltIn[len(added.BuiltIn)-1].Hosts
+	if len(gateway) != 1 || gateway[0] != "host.docker.internal:"+s.port(s.mcpURL) {
+		t.Fatalf("the last built-in group = %q, want the hub's gateway entry", gateway)
+	}
+
+	through := reach(before.ID)
+	if !strings.Contains(through.ResultText, "502 Bad Gateway") {
+		t.Fatalf("an added host must pass the allowlist with no restart, got:\n%s", through.ResultText)
+	}
+
+	var removed egressView
+	s.mustJSON("DELETE", "/api/settings/egress/hosts/pkg.spool-itest.invalid", nil, &removed)
+	if len(removed.Extra) != 0 {
+		t.Fatalf("view after the remove = %+v, want no extra hosts", removed)
+	}
+	if after := reach(through.ID); !strings.Contains(after.ResultText, "403 Forbidden") {
+		t.Fatalf("a removed host must be refused again, got:\n%s", after.ResultText)
+	}
+	if id, err := dockerInspect("{{.Id}}", egressTestImage+"-proxy"); err != nil || id != proxyID {
+		t.Fatalf("proxy container %q (%v), want %q: changing the hosts must not recreate it", id, err, proxyID)
+	}
+}

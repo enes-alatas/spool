@@ -154,7 +154,8 @@ the interface, `internal/runtime/bare` runs host subprocesses, and
 `internal/runtime/docker` runs workstations through the docker CLI (ADR-0018).
 Docker workstations sit on an internal network with no route off it; their only
 way out is `spool-egress-proxy`, a container running `cmd/spool-egress` that
-forwards to the hosts in `internal/egress` and refuses the rest (ADR-0028). The
+forwards to the hosts in `internal/egress`, plus the operator's stored extra
+hosts (`/api/settings/egress`), and refuses the rest (ADR-0028, #542). The
 one entry naming the operator's own machine is the hub's loop listener, on its
 port alone: the operator listener is on no allowlist, so the API a workstation
 would otherwise reach unauthenticated is not a destination it has (#238). A

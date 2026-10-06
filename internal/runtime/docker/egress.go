@@ -23,6 +23,12 @@ const (
 	// egressSpecLabel records which configuration a proxy container was
 	// created with.
 	egressSpecLabel = "spool.egress.spec"
+
+	// egressFileFormat names what the proxy reads from its file. It is in
+	// the spec so a proxy from an image that predates a field is replaced
+	// rather than kept ignoring it: the fleet's entries moved into the file
+	// with #542, and an older proxy would refuse every one of them.
+	egressFileFormat = "file:fleet+loops"
 )
 
 // The wall is named after the image that enforces it: one daemon can carry a
@@ -63,7 +69,10 @@ func (rt *Runtime) ensureEgress(ctx context.Context) error {
 	if err := rt.ensureEgressNetwork(ctx); err != nil {
 		return err
 	}
-	return rt.ensureEgressProxy(ctx)
+	if err := rt.ensureEgressProxy(ctx); err != nil {
+		return err
+	}
+	return rt.catchUpEgressFile(ctx)
 }
 
 func (rt *Runtime) ensureEgressNetwork(ctx context.Context) error {
@@ -119,7 +128,7 @@ func (rt *Runtime) provisionEgressProxyWithLoops(ctx context.Context) error {
 	if err := rt.provisionEgressProxy(ctx); err != nil {
 		return err
 	}
-	return rt.rewriteLoopEgress(ctx)
+	return rt.rewriteEgressFile(ctx)
 }
 
 func (rt *Runtime) provisionEgressProxy(ctx context.Context) error {
@@ -166,21 +175,30 @@ func (rt *Runtime) egressRunArgv() []string {
 	return argv
 }
 
-// egressEntries are the allowlist entries this fleet adds to the proxy's
-// built-in defaults: the hub's MCP port, plus whatever the operator
-// configured. The hub's API port is deliberately not among them.
+// egressEntries are the allowlist entries the proxy is started with on top
+// of its built-in defaults: the hub's MCP port alone. The hub's API port is
+// deliberately not among them, and the operator's extra hosts go in the
+// proxy's file instead, so changing them recreates nothing (#542).
 func (rt *Runtime) egressEntries() []string {
-	var entries []string
-	if rt.mcpPort != "" {
-		entries = append(entries, egressGatewayHost+":"+rt.mcpPort)
+	if gateway := rt.EgressGateway(); gateway != "" {
+		return []string{gateway}
 	}
-	return append(entries, rt.egressAllow...)
+	return nil
+}
+
+// EgressGateway is the allowlist entry the hub is reached by, the gateway
+// on the MCP port, or "" when the wall is down.
+func (rt *Runtime) EgressGateway() string {
+	if !rt.egressEnabled() || rt.mcpPort == "" {
+		return ""
+	}
+	return egressGatewayHost + ":" + rt.mcpPort
 }
 
 // egressSpecHash identifies the configuration a running proxy was created
 // with, so a changed one is noticed and replaced rather than silently kept.
 func (rt *Runtime) egressSpecHash() string {
-	spec := append([]string{rt.egressImage, egressPort}, rt.egressEntries()...)
+	spec := append([]string{rt.egressImage, egressPort, egressFileFormat}, rt.egressEntries()...)
 	sum := sha256.Sum256([]byte(strings.Join(spec, "\x00")))
 	return hex.EncodeToString(sum[:6])
 }
@@ -202,6 +220,11 @@ func (rt *Runtime) egressSpec(ctx context.Context) (string, error) {
 }
 
 func (rt *Runtime) egressEnabled() bool { return rt.egressImage != "" }
+
+// EgressEnabled reports whether workstation egress runs through the
+// allowlist proxy at all (ADR-0028): false when the hub was started without
+// an egress image, and every docker loop reaches any host.
+func (rt *Runtime) EgressEnabled() bool { return rt.egressEnabled() }
 
 // egressEnv points every client inside the workstation at the proxy. These
 // are not credentials, so unlike the loop's own variables they cross in argv
