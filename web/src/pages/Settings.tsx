@@ -6,6 +6,7 @@ import { customModelNote } from '../options'
 import { buildFacts, useVersion } from '../version'
 import { loginError } from '../session'
 import { HarnessCheck } from '../components/HarnessCheck'
+import { EgressSection } from '../components/EgressSection'
 import { loginCheckTone } from '../onboarding'
 
 export default function Settings() {
@@ -17,6 +18,7 @@ export default function Settings() {
       <ClaudeToken settings={settings} loadError={loadError} />
       <CustomModels />
       <RotationThresholds settings={settings} loadError={loadError} />
+      <EgressSection />
       <SessionSection />
       <Build />
     </div>

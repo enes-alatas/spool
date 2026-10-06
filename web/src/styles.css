@@ -2010,6 +2010,76 @@ textarea {
   font-size: 0.75rem;
 }
 
+/* ---- Settings → Egress (#542) ---- */
+.egress-head {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  margin: 18px 0 8px;
+}
+.egress-status {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  padding: 8px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+}
+.egress-status.ok {
+  color: var(--ready);
+}
+.egress-status.pending {
+  color: var(--active);
+}
+.egress-status.open {
+  color: var(--danger);
+  border-color: var(--danger-line);
+}
+.egress-extra {
+  border-top: 1px solid var(--hairline);
+}
+.egress-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.egress-row code,
+.egress-hosts code {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+.egress-add {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.egress-add input {
+  flex: 1;
+  min-width: 0;
+}
+.egress-note {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 6px;
+}
+.egress-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.egress-reason {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.egress-hosts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+
 /* ---- custom models (Settings) ----
    A row per id: the id in mono, since it is what --model receives; the label
    beside it in the body face; the edits at the end. The same card as a fleet
