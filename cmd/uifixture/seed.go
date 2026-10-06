@@ -707,6 +707,10 @@ func seedLoopRooms(ctx context.Context, db store.Store, loopID string, rooms []f
 // of loops and the gardener's panel shows a list of connections; the
 // handbook search is on none, so the page shows that too, and the panel has
 // something left to attach.
+//
+// GitHub's value was rotated this morning and an old deploy key revoked
+// (#507), so the page draws both states and the record has more than
+// attaches on it.
 func seedConnections(ctx context.Context, db store.Store, ids map[string]string) error {
 	connections := []*store.Connection{
 		{
@@ -727,6 +731,11 @@ func seedConnections(ctx context.Context, db store.Store, ids map[string]string)
 			},
 			CreatedAt: ms(-2 * 24 * time.Hour),
 		},
+		{
+			Name: "old-deploy-key", Kind: store.ConnectionEnvVar,
+			Config: store.ConnectionConfig{Env: "DEPLOY_KEY"},
+			Secret: "not-a-real-deploy-key-0000", CreatedAt: ms(-20 * 24 * time.Hour),
+		},
 	}
 	for _, connection := range connections {
 		if err := db.Connections().Create(ctx, connection); err != nil {
@@ -734,12 +743,18 @@ func seedConnections(ctx context.Context, db store.Store, ids map[string]string)
 		}
 	}
 	attachments := []struct{ connection, loop string }{
-		{"github", "gardener"}, {"github", "archivist"}, {"tracker", "gardener"},
+		{"github", "gardener"}, {"github", "archivist"}, {"tracker", "gardener"}, {"old-deploy-key", "gardener"},
 	}
 	for _, attachment := range attachments {
 		if err := db.Connections().Attach(ctx, attachment.connection, ids[attachment.loop], ms(-24*time.Hour)); err != nil {
 			return fmt.Errorf("attach %s to %s: %w", attachment.connection, attachment.loop, err)
 		}
+	}
+	if err := db.Connections().SetSecret(ctx, "github", "ghp_000000000001_not_a_real_token", ms(-3*time.Hour)); err != nil {
+		return fmt.Errorf("rotate github: %w", err)
+	}
+	if _, err := db.Connections().Revoke(ctx, "old-deploy-key", ms(-6*time.Hour)); err != nil {
+		return fmt.Errorf("revoke old-deploy-key: %w", err)
 	}
 	return nil
 }

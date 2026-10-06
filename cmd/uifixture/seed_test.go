@@ -284,6 +284,15 @@ func TestSeedWritesAFleetTheRoomCanRender(t *testing.T) {
 	if attached == 0 || unattached == 0 {
 		t.Errorf("%d attached and %d unattached connections: the page shows both, and the loop panel needs one left to attach", attached, unattached)
 	}
+	// The page marks a rotated value and a revoked connection (#507).
+	rotated, revoked := false, false
+	for _, connection := range connections {
+		rotated = rotated || connection.RotatedAt != 0
+		revoked = revoked || connection.RevokedAt != 0
+	}
+	if !rotated || !revoked {
+		t.Errorf("rotated %v, revoked %v: the page would not shoot both states", rotated, revoked)
+	}
 }
 
 // The token only helps if the hub takes it instead of minting its own.
