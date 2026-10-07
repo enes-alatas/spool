@@ -311,7 +311,11 @@ agents — Claude sessions today, Spool's own loops from L2.*
   shared state: a `git stash` with no named entry (push without `-m`, `pop`,
   `apply` or `drop` with none named, `clear`), `pkill` and `killall` (kill by
   PID), a force push to or deletion of `main`, and `git add -A`/`--all`/`.`
-  (stage by path). The hook catches slips. A rule it enforces still binds a
+  (stage by path). It also refuses a `gh` issue, PR, review or `gh api`
+  body that `@`-mentions a fleet loop, its bot or a person the fleet knows
+  (#628); the plain name is how to refer to them. The operator can turn the
+  mention refusal off for the fleet (`mention_guard` in `PUT /api/settings`).
+  The hook catches slips. A rule it enforces still binds a
   human, and a rule it does not know binds everyone as before.
 - **Scoped delegation**: the interview may end with the human delegating the
   decision back ("you decide"). That delegation is per-decision: it covers

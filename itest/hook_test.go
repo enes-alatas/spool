@@ -43,8 +43,44 @@ func TestTheHookRefusesASharedStateCommand(t *testing.T) {
 	}
 }
 
+// The hook refuses a gh body that @-mentions a fleet loop, with the names
+// the hub hands it at each wake (#628), and the operator's switch turns the
+// refusal off for the next wake.
+func TestTheHookRefusesAMentionOfAFleetName(t *testing.T) {
+	t.Parallel()
+	s := startServer(t, t.TempDir())
+	const comment = `!bash gh pr comment 12 --body "ready for review, @bravo"` + "\n"
+	s.createLoop("alpha", map[string]any{"workspace_path": workspaceWithScript(t, comment), "workspace_mode": "dir"})
+	s.createLoop("bravo", nil)
+	var settings struct {
+		MentionGuard bool `json:"mention_guard"`
+	}
+	s.mustJSON("GET", "/api/settings", nil, &settings)
+	if !settings.MentionGuard {
+		t.Fatal("the mention guard is off by default, want on")
+	}
+
+	s.message("alpha", "tell bravo")
+	blocked := s.waitTurn("alpha", 30*time.Second, func(tr turn) bool { return tr.Trigger == "message" })
+	if !strings.HasPrefix(blocked.ResultText, "blocked: Refused by Spool: ") || !strings.Contains(blocked.ResultText, "@-mentions bravo") {
+		t.Fatalf("a gh body mentioning a fleet loop was not refused with a reason: %q", blocked.ResultText)
+	}
+
+	s.mustJSON("PUT", "/api/settings", map[string]any{"mention_guard": false}, &settings)
+	if settings.MentionGuard {
+		t.Fatal("PUT mention_guard false left it on")
+	}
+	s.waitState("alpha", "asleep", 30*time.Second)
+	s.message("alpha", "tell bravo again")
+	ran := s.waitTurn("alpha", 30*time.Second, func(tr turn) bool { return tr.Trigger == "message" && tr.ID != blocked.ID })
+	if !strings.HasPrefix(ran.ResultText, "ran: gh pr comment") {
+		t.Fatalf("with the guard off, the call did not run: %q", ran.ResultText)
+	}
+}
+
 // dockerHookRefusesASharedStateCommand: a contained loop runs the hook its
-// image carries, through the same pinned --settings.
+// image carries, through the same pinned --settings, with the names the hub
+// hands it (#628).
 func dockerHookRefusesASharedStateCommand(t *testing.T) {
 	s := startDockerServer(t, t.TempDir())
 	s.createLoop("wsstash", nil)
@@ -57,5 +93,14 @@ func dockerHookRefusesASharedStateCommand(t *testing.T) {
 	})
 	if !strings.Contains(blocked.ResultText, "Refused by Spool: pkill") {
 		t.Fatalf("pkill -f was not refused with a reason: %q", blocked.ResultText)
+	}
+
+	s.scriptLoop("wsstash", `!bash gh issue comment 12 --body "taking this, @wsstash"`+"\n")
+	s.message("wsstash", "claim it")
+	mention := s.waitTurn("wsstash", 90*time.Second, func(tr turn) bool {
+		return tr.Trigger == "message" && tr.ID != blocked.ID && strings.HasPrefix(tr.ResultText, "blocked: ")
+	})
+	if !strings.Contains(mention.ResultText, "@-mentions wsstash") {
+		t.Fatalf("a gh body mentioning a fleet loop was not refused: %q", mention.ResultText)
 	}
 }

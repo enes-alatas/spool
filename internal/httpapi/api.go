@@ -1221,6 +1221,9 @@ type settingsView struct {
 	ClaudeTokenSet      bool `json:"claude_token_set"`
 	ContextArmPercent   int  `json:"context_arm_percent"`
 	ContextForcePercent int  `json:"context_force_percent"`
+	// MentionGuard is whether every loop's hook refuses a gh body that
+	// @-mentions a fleet name (#628); on unless the operator turned it off.
+	MentionGuard bool `json:"mention_guard"`
 	// BareAllowed is how the control room knows whether to offer an
 	// uncontained loop at all (#255): the choice is the operator's, taken
 	// at the terminal when the hub was started, and a form that offered it
@@ -1246,6 +1249,7 @@ func (server *Server) settingsView(ctx context.Context) (settingsView, error) {
 		ClaudeTokenSet:      token != "",
 		ContextArmPercent:   arm,
 		ContextForcePercent: force,
+		MentionGuard:        loop.MentionGuard(ctx, server.Store.Settings(), server.Log),
 		BareAllowed:         server.BareAllowed,
 		DefaultRuntime:      server.defaultRuntime(),
 		ClaudeVersion:       server.ClaudeVer,
@@ -1269,6 +1273,9 @@ type putSettingsReq struct {
 	// (percent of the model's window, 1–99, arm below force).
 	ContextArmPercent   *int `json:"context_arm_percent"`
 	ContextForcePercent *int `json:"context_force_percent"`
+	// nil leaves the mention guard as it is (#628). It reaches each loop at
+	// its next wake.
+	MentionGuard *bool `json:"mention_guard"`
 }
 
 func (server *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
@@ -1316,6 +1323,16 @@ func (server *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		if err := server.Store.Settings().Set(r.Context(), store.SettingContextForcePercent, strconv.Itoa(force)); err != nil {
+			server.jsonErr(w, 500, "%v", err)
+			return
+		}
+	}
+	if req.MentionGuard != nil {
+		value := "on"
+		if !*req.MentionGuard {
+			value = "off"
+		}
+		if err := server.Store.Settings().Set(r.Context(), store.SettingMentionGuard, value); err != nil {
 			server.jsonErr(w, 500, "%v", err)
 			return
 		}

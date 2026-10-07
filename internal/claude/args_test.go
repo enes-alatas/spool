@@ -193,6 +193,28 @@ func TestTheHookIsPinnedOn(t *testing.T) {
 	}
 }
 
+// The hook's arguments follow its command, each one word for the shell
+// Claude Code runs it with (#628).
+func TestHookSettingsCarryTheHooksArguments(t *testing.T) {
+	var settings struct {
+		Hooks struct {
+			PreToolUse []struct {
+				Hooks []struct {
+					Command string `json:"command"`
+				} `json:"hooks"`
+			} `json:"PreToolUse"`
+		} `json:"hooks"`
+	}
+	raw := HookSettingsJSON("/usr/local/bin/spool-hook", "--refuse-mentions", "alpha,bravo", "it's")
+	if err := json.Unmarshal([]byte(raw), &settings); err != nil {
+		t.Fatal(err)
+	}
+	want := `/usr/local/bin/spool-hook --refuse-mentions 'alpha,bravo' 'it'\''s'`
+	if got := settings.Hooks.PreToolUse[0].Hooks[0].Command; got != want {
+		t.Fatalf("hook command = %s, want %s", got, want)
+	}
+}
+
 // The mcp-config gives claude the hub's server and every server Spool
 // configured besides, each in the CLI's own shape for its transport. A
 // configured server named like the hub's is dropped, never let in to stand

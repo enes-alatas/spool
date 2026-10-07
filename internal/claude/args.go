@@ -29,7 +29,10 @@ type Opts struct {
 	// on through --settings so no settings file of the loop's can turn it
 	// off (ADR-0042). Empty runs no hook of Spool's.
 	PreToolUseHook string
-	ExtraArgs      []string
+	// PreToolUseHookArgs follow the hook's command, each one word: what
+	// the hub tells the hook about the fleet (#628).
+	PreToolUseHookArgs []string
+	ExtraArgs          []string
 }
 
 // Args builds the argument list for a stream-json claude run. Every runtime
@@ -69,32 +72,36 @@ func Args(opts Opts) ([]string, error) {
 		args = append(args, "--mcp-config", opts.MCPConfigPath, "--strict-mcp-config")
 	}
 	if opts.PreToolUseHook != "" {
-		args = append(args, "--settings", HookSettingsJSON(opts.PreToolUseHook))
+		args = append(args, "--settings", HookSettingsJSON(opts.PreToolUseHook, opts.PreToolUseHookArgs...))
 	}
 	return append(args, opts.ExtraArgs...), nil
 }
 
-// HookSettingsJSON renders the --settings that run command before each
-// Bash call. It is inline JSON, unlike the MCP config, because it holds no
+// HookSettingsJSON renders the --settings that run command, with args,
+// before each Bash call. It is inline JSON, unlike the MCP config, because it holds no
 // secret. disableAllHooks is set false outright: --settings outranks the
 // user, project and local settings files, so a disableAllHooks of true in
 // any of them, which would otherwise turn off every hook, this one
 // included, is overridden (probed on Claude Code 2.1.288, #529).
-func HookSettingsJSON(command string) string {
+func HookSettingsJSON(command string, args ...string) string {
+	words := []string{shellQuote(command)}
+	for _, arg := range args {
+		words = append(words, shellQuote(arg))
+	}
 	settings, _ := json.Marshal(map[string]any{
 		"disableAllHooks": false,
 		"hooks": map[string]any{
 			"PreToolUse": []any{map[string]any{
 				"matcher": "Bash",
-				"hooks":   []any{map[string]any{"type": "command", "command": shellQuote(command)}},
+				"hooks":   []any{map[string]any{"type": "command", "command": strings.Join(words, " ")}},
 			}},
 		},
 	})
 	return string(settings)
 }
 
-// shellQuote makes a path one word for the shell Claude Code runs a hook
-// command with.
+// shellQuote makes a path or an argument one word for the shell Claude
+// Code runs a hook command with.
 func shellQuote(path string) string {
 	if path != "" && strings.Trim(path, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/._-") == "" {
 		return path

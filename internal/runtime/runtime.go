@@ -13,6 +13,7 @@ package runtime
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/enes-alatas/spool/internal/claude"
 )
@@ -75,6 +76,11 @@ type Spec struct {
 	// OAuth token (#11) and secret env vars (#12). Never logged.
 	Env map[string]string
 
+	// RefuseMentions are the names the PreToolUse hook refuses an
+	// @-mention of in a gh body: the fleet's loops and bots and the people
+	// it knows (#628). None refuses none.
+	RefuseMentions []string
+
 	// EgressAllow are the hosts this loop may reach beyond the fleet's
 	// allowlist, as allowlist entries (host, or host:port). Its attached
 	// http MCP servers were the source (#599) until the hub brokered them
@@ -85,6 +91,15 @@ type Spec struct {
 	// EgressAllow: its hub MCP token, a credential it already holds and the
 	// redactor already knows. Never logged.
 	EgressToken string
+}
+
+// HookArgs are the arguments the PreToolUse hook is run with for this
+// wake, after its command.
+func (spec Spec) HookArgs() []string {
+	if len(spec.RefuseMentions) == 0 {
+		return nil
+	}
+	return []string{"--refuse-mentions", strings.Join(spec.RefuseMentions, ",")}
 }
 
 // Health is a workstation's liveness as the control room reports it.

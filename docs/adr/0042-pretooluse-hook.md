@@ -1,6 +1,6 @@
 # ADR-0042: The hub pins a PreToolUse hook that refuses the mechanical fleet rules
 
-Date: 2026-10-03 · Status: accepted (operator decision of 2026-10-02, recorded on #529)
+Date: 2026-10-03 · Status: accepted (operator decision of 2026-10-02, recorded on #529) · Amended: 2026-10-07 (items 1 and 4: the hook is handed the fleet's names, and refuses mentions, #628)
 
 ## Context
 
@@ -54,6 +54,38 @@ either: hooks from every source run together.
    to or deletion of `main` or `master`, and `git add -A`, `--all`, `.` or
    `:/`. Mentions and signatures in `gh` bodies, credential shapes, and
    writes outside the loop's own workspace follow.
+
+   **Amendment (2026-10-07, #628): the hook refuses mentions in `gh`
+   bodies.** These are the operator decisions of 2026-10-03, recorded on
+   #529.
+   - **What is refused.** A `gh issue create|comment|edit`, a `gh pr
+     create|comment|edit|review`, or a `gh api` field or input whose body
+     `@`-mentions a fleet loop's name, its bot's username, or an allowed
+     person's username. On GitHub such a mention pings whoever holds that
+     login there. A name is matched as GitHub would read it: its case is
+     ignored, and a name with an underscore stops there. A mention in a
+     code span or a fenced block is let through, since GitHub renders it
+     as text, and so is an email address.
+   - **Bodies from a file, stdin, a shell variable or a substitution.**
+     Such a body is read from the file, when it is there yet, and from the
+     whole script besides. The script may write the file first, feed stdin
+     from a here-document or a pipe, or set the variable a `--body "$body"`
+     expands, so the check looks at the script as a whole. A command
+     substitution, as in `--body "$(cat notes.md)"`, may read a file
+     already there, so every file a word of the script names is read too.
+   - **The hub hands the hook the names.** It passes them at each wake as
+     `spool-hook --refuse-mentions <names>`, so the pinned `--settings` is
+     built per wake rather than a constant. The pin itself is unchanged.
+     The names are the loops', their bots' and the allowed people's: the
+     same catalog the prompt teaches, which holds no secret.
+   - **On by default, and the fleet can turn it off.** Any fleet whose
+     loops share one GitHub identity has the same stray-ping problem. A
+     fleet whose loops are their own GitHub users turns it off with
+     `mention_guard` in `PUT /api/settings`. The change reaches each loop
+     at its next wake.
+   - **No signature check.** A signature line is a convention a fleet
+     writes in its own rules, not something Spool enforces, so rule 1
+     drops its signature clause.
 
 ## Consequences
 

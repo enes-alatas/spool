@@ -127,6 +127,11 @@ type Deps struct {
 	// runtime ("" = don't connect the tool). Wired in cmd, which knows the
 	// listen address and each runtime's network path to it (ADR-0026).
 	MCPEndpoint func(loopRecord *store.Loop) string
+	// MentionNames are the names this loop's PreToolUse hook refuses an
+	// @-mention of in a gh body, read at each wake so it sees the current
+	// fleet (#628); none when the operator turned the refusal off. Wired in
+	// cmd, which reads the fleet the way the prompt's catalog does.
+	MentionNames func(loopRecord *store.Loop) []string
 	// OnTurnStart opens the loop's per-turn send budget (ADR-0026).
 	OnTurnStart func(loopRecord *store.Loop)
 	// SendsThisTurn summarizes the messages the loop has sent since its
@@ -888,6 +893,9 @@ func (actor *Actor) wakeSpec(fresh bool, prompt string, connections []*store.Con
 		if url := actor.deps.MCPEndpoint(&actor.loop); url != "" {
 			spec.MCPConfig = claude.MCPConfigJSON(url, actor.loop.HubMCPToken, mcpServers(connections, actor.loop.Runtime, url, actor.loop.HubMCPToken))
 		}
+	}
+	if actor.deps.MentionNames != nil {
+		spec.RefuseMentions = actor.deps.MentionNames(&actor.loop)
 	}
 	if fresh {
 		spec.SessionID = actor.loop.CurrentSessionID

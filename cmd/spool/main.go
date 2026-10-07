@@ -325,6 +325,12 @@ func main() {
 			}
 			return "http://" + net.JoinHostPort(host, port) + "/mcp"
 		},
+		MentionNames: func(*store.Loop) []string {
+			if !loop.MentionGuard(context.Background(), rdb.Settings(), log) {
+				return nil
+			}
+			return mentionNamesOf(rdb)
+		},
 		OnTurnStart: func(loopRecord *store.Loop) {
 			router.StartTurn(loopRecord.ID)
 		},
@@ -835,6 +841,38 @@ func catalogOf(db store.Store, self *store.Loop) loop.Catalog {
 		}
 	}
 	return cat
+}
+
+// mentionNamesOf are the names a loop's hook refuses an @-mention of in a
+// gh body (#628): every loop's name and bot, whatever its state, since a
+// paused loop's name pings GitHub all the same, and every person allowed to
+// talk to the fleet. On GitHub none of them is the loop or person here.
+func mentionNamesOf(db store.Store) []string {
+	ctx := context.Background()
+	var names []string
+	if loops, err := db.Loops().List(ctx); err == nil {
+		for _, loopRecord := range loops {
+			names = append(names, loopRecord.Name)
+			if bot, _ := botOf(loopRecord); bot != "" {
+				names = append(names, bot)
+			}
+		}
+	}
+	if senders, err := db.TGSenders().List(ctx); err == nil {
+		for _, sender := range senders {
+			if sender.Status == store.SenderAllowed && sender.Username != "" {
+				names = append(names, sender.Username)
+			}
+		}
+	}
+	if senders, err := db.SlackSenders().List(ctx); err == nil {
+		for _, sender := range senders {
+			if sender.Status == store.SenderAllowed && sender.Username != "" {
+				names = append(names, sender.Username)
+			}
+		}
+	}
+	return names
 }
 
 // botOf names the bot a loop posts as and the surface it posts on, or two

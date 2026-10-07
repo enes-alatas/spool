@@ -229,6 +229,7 @@ func (host *Runtime) Start(ctx context.Context, spec runtime.Spec) (runtime.Proc
 		AppendSystemPrompt: spec.AppendSystemPrompt,
 		PartialMessages:    spec.PartialMessages,
 		PreToolUseHook:     host.hook,
+		PreToolUseHookArgs: spec.HookArgs(),
 	}
 	if spec.MCPConfig != "" {
 		// The config carries the loop's hub token: a 0600 file keeps it out

@@ -397,6 +397,7 @@ func execArgv(spec runtime.Spec, egressEnv []string, hook string) ([]string, err
 		AppendSystemPrompt: spec.AppendSystemPrompt,
 		PartialMessages:    spec.PartialMessages,
 		PreToolUseHook:     hook,
+		PreToolUseHookArgs: spec.HookArgs(),
 	}
 	if spec.MCPConfig != "" {
 		opts.MCPConfigPath = mcpConfigPath

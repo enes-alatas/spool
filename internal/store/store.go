@@ -134,6 +134,10 @@ type EgressHosts struct {
 	ChangedAt int64    `json:"changed_at"`
 }
 
+// SettingMentionGuard is "off" when the operator turned off the hook's
+// refusal of @-mentions in gh bodies (#628); unset, or anything else, is on.
+const SettingMentionGuard = "mention_guard"
+
 // Context-rotation thresholds (ADR-0022), stored as integer percentages of
 // the model's context window. A loop arms rotation at the first and stops
 // waiting for a quiet boundary at the second.
