@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -14,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/enes-alatas/spool/internal/datadir"
 	"github.com/enes-alatas/spool/internal/store"
@@ -47,6 +49,7 @@ const (
 )
 
 // ErrKeyLost is a database holding sealed secrets with no key beside it.
+// OpenForgettingSecrets recovers from it and from ErrKeyMismatch.
 var ErrKeyLost = errors.New("this database holds secrets sealed under a hub key, and " + KeyFile + " is missing")
 
 // ErrKeyMismatch is a key that is not the one the database was sealed with.
@@ -133,29 +136,153 @@ var sealedSettings = map[string]bool{store.SettingClaudeOAuthToken: true}
 // unseal opens the key beside the database and proves it is the one the
 // database was sealed with, minting one for a database that has none yet.
 // It then seals every value written before sealing, fills the hub MCP
-// token's hash, and indexes it.
-func (database *DB) unseal(dir string) error {
+// token's hash, and indexes it. With forget, a key that is missing or
+// wrong has the sealed secrets forgotten rather than the start refused;
+// it reports whether that happened.
+func (database *DB) unseal(dir string, forget bool) (bool, error) {
 	var check string
 	err := database.db.QueryRow(`SELECT value FROM settings WHERE key = ?`, keyCheckSetting).Scan(&check)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return err
+		return false, err
 	}
 	sealedBefore := err == nil
-	key, err := loadKey(filepath.Join(dir, KeyFile), sealedBefore)
+	keyPath := filepath.Join(dir, KeyFile)
+	key, err := loadKey(keyPath, sealedBefore)
+	switch {
+	case errors.Is(err, ErrKeyLost) && forget:
+		key, err = mintKey(keyPath)
+	case errors.Is(err, ErrKeyMismatch) && forget:
+		// a file that holds no key at all: nothing opens with it, so it
+		// gives way to a new one
+		key, err = replaceKey(keyPath)
+	}
 	if err != nil {
-		return err
+		return false, err
 	}
 	sealer, err := newBox(key)
 	if err != nil {
-		return err
-	}
-	if sealedBefore {
-		if opened, err := sealer.open(check); err != nil || opened != keyCheck {
-			return ErrKeyMismatch
-		}
+		return false, err
 	}
 	database.sealer = sealer
-	return database.sealPlainValues(!sealedBefore)
+	if sealedBefore {
+		if opened, err := sealer.open(check); err != nil || opened != keyCheck {
+			if !forget {
+				return false, ErrKeyMismatch
+			}
+			if err := database.forgetSecrets(time.Now().UnixMilli()); err != nil {
+				return false, fmt.Errorf("forgetting the sealed secrets: %w", err)
+			}
+			return true, database.sealPlainValues(false)
+		}
+	}
+	return false, database.sealPlainValues(!sealedBefore)
+}
+
+// forgetSecrets is the recovery from a lost key (ADR-0046): the sealed
+// values can't be opened, so they are dropped and the database is sealed
+// afresh under the new key, in one transaction. Every connection holding
+// a secret is revoked, as Revoke does but with no value to retire, and
+// the retired values go, which nothing can read. Each loop's chat bots
+// are unbound, and its hub MCP token is minted again, since a loop must
+// have one. The setup-token is cleared. The operator re-enters what they
+// still need.
+func (database *DB) forgetSecrets(at int64) error {
+	ctx := context.Background()
+	tx, err := database.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	type held struct{ name, owner string }
+	var revoked []held
+	rows, err := tx.QueryContext(ctx, `SELECT name, COALESCE(owner_loop, '') FROM connections WHERE secret <> '' AND revoked_at = 0`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var connection held
+		if err := rows.Scan(&connection.name, &connection.owner); err != nil {
+			rows.Close()
+			return err
+		}
+		revoked = append(revoked, connection)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, connection := range revoked {
+		loopIDs, err := attachedLoops(ctx, tx, connection.name)
+		if err != nil {
+			return err
+		}
+		for _, loopID := range loopIDs {
+			if err := detachRecorded(ctx, tx, connection.name, loopID, at); err != nil {
+				return err
+			}
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE connections SET revoked_at=? WHERE name=?`, at, connection.name); err != nil {
+			return err
+		}
+		if err := recordEvent(ctx, tx, store.ConnectionEventRevoke, connection.name, connection.owner, at); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE connections SET secret=''`); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM retired_secrets`); err != nil {
+		return err
+	}
+
+	// a DM channel is the bot's, so it goes with it; the owner's user ids
+	// are the person's and stay
+	if _, err := tx.ExecContext(ctx, `UPDATE loops SET tg_bot_token='', tg_bot_username='',
+		slack_app_token='', slack_bot_token='', slack_bot_user_id='', slack_bot_name='',
+		slack_team_id='', slack_team_name='', owner_slack_dm_channel='', updated_at=?`, at); err != nil {
+		return err
+	}
+	ids, err := loopIDs(ctx, tx)
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		token := store.NewHubMCPToken()
+		if _, err := tx.ExecContext(ctx, `UPDATE loops SET hub_mcp_token=?, hub_mcp_token_hash=? WHERE id=?`,
+			database.sealer.seal(token), tokenHash(token), id); err != nil {
+			return err
+		}
+	}
+
+	for key := range sealedSettings {
+		if _, err := tx.ExecContext(ctx, `UPDATE settings SET value='' WHERE key=?`, key); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE settings SET value=? WHERE key=?`,
+		database.sealer.seal(keyCheck), keyCheckSetting); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// loopIDs is every loop's id, read inside tx.
+func loopIDs(ctx context.Context, tx *sql.Tx) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM loops ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 // sealPlainValues seals every secret written before sealing, in one

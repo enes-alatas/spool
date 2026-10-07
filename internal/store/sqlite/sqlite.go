@@ -31,6 +31,20 @@ type DB struct {
 // under the hub key in the same directory (ADR-0046). A database with no
 // key yet gets one; one whose key is missing or wrong is refused.
 func Open(path string) (*DB, error) {
+	database, _, err := open(path, false)
+	return database, err
+}
+
+// OpenForgettingSecrets is Open for a database whose key is missing or
+// wrong: rather than refuse it, it forgets every sealed secret and seals
+// the database afresh under the key beside it, minting one if there is
+// none (see forgetSecrets). It reports whether it forgot anything; with
+// the right key it forgets nothing and is Open.
+func OpenForgettingSecrets(path string) (*DB, bool, error) {
+	return open(path, true)
+}
+
+func open(path string, forget bool) (*DB, bool, error) {
 	// synchronous(NORMAL): a commit reaches the WAL, in the OS's hands,
 	// without waiting on an fsync, which comes at the checkpoint. A killed
 	// hub loses nothing; a machine that loses power can lose the commits
@@ -40,7 +54,7 @@ func Open(path string) (*DB, error) {
 	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)", path)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	// modernc/sqlite serializes writes; a single connection avoids
 	// SQLITE_BUSY churn under concurrent goroutines.
@@ -48,13 +62,14 @@ func Open(path string) (*DB, error) {
 	database := &DB{db: db}
 	if err := database.migrate(); err != nil {
 		db.Close()
-		return nil, err
+		return nil, false, err
 	}
-	if err := database.unseal(filepath.Dir(path)); err != nil {
+	forgot, err := database.unseal(filepath.Dir(path), forget)
+	if err != nil {
 		db.Close()
-		return nil, err
+		return nil, false, err
 	}
-	return database, nil
+	return database, forgot, nil
 }
 
 func (database *DB) migrate() error {
