@@ -1,6 +1,6 @@
 # ADR-0017: Workstation design — long-lived Docker containers behind the SandboxRuntime seam
 
-Date: 2026-08-17 · Status: accepted · Amended: 2026-09-20 (redaction), 2026-09-21 (bare is opt-in), 2026-09-30 (the perf smoke covers bare loops only), 2026-10-04 (item 8: per-loop secrets are connections, ADR-0043), 2026-10-06 (consequences and parking lot: the credential broker is rejected for env-var secrets, ADR-0045)
+Date: 2026-08-17 · Status: accepted · Amended: 2026-09-20 (redaction), 2026-09-21 (bare is opt-in), 2026-09-30 (the perf smoke covers bare loops only), 2026-10-04 (item 8: per-loop secrets are connections, ADR-0043), 2026-10-06 (consequences and parking lot: the credential broker is rejected for env-var secrets, ADR-0045), 2026-10-07 (item 5: the token is sealed at rest, ADR-0046)
 
 ## Context
 
@@ -43,6 +43,10 @@ and later on the hosted service.
    security surface — its custody model (encryption at rest, per-org
    isolation, storage near the runner, revocation UX) is deferred to the
    service era and gets its own ADR.
+
+   **Amendment (2026-10-07, #623): the local token is sealed at rest.** The
+   token is now sealed in the DB under a hub key (ADR-0046), so a copy of
+   the database alone doesn't carry it.
 6. **Posture is per-edition.** Local edition: `docker` is the default whenever
    the daemon is reachable; `bare` (today's host subprocess) remains an
    explicit per-loop fallback, badged *uncontained* in the UI. Hosted service:
