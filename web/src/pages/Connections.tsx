@@ -12,8 +12,8 @@ import { messageTime } from '../components/MessageKnot'
 // sent, and never rendered back; the list knows only whether there is one.
 //
 // Attaching is done from the loop's page (`LoopConnections`). An attached
-// env variable is set in its loop's env from the next wake, and an MCP
-// server is in its MCP config from then. A connection private to one loop
+// env variable is set in its loop's env from its next turn (#640), and an
+// MCP server is in its MCP config from its next wake. A connection private to one loop
 // (#600) is listed with its owner, and Share makes it the fleet's, one way.
 
 function ConnectionRow({ c, onChanged }: { c: Connection; onChanged: () => void }) {
@@ -209,8 +209,9 @@ export default function Connections() {
       <p className="page-lede">
         A connection is an env variable or an MCP server, defined once for the whole fleet and attached to
         loops on their pages. A loop's secrets live here too: an env variable added on a loop's page is a
-        connection private to that loop, until you share it with the fleet. An attached connection applies
-        from the loop's next wake. A connection's secret is redacted from everything the hub records.
+        connection private to that loop, until you share it with the fleet. An attached env variable applies
+        from the loop's next turn, an MCP server from its next wake. A connection's secret is redacted from
+        everything the hub records.
       </p>
       {!data ? (
         <div className="form-error" role="alert">
