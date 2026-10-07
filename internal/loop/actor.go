@@ -198,6 +198,7 @@ type Actor struct {
 	wsEverUp     bool   // seen up once, so built: missing after that is lost, not unbuilt
 	proc         runtime.Proc
 	procEvents   <-chan claude.Event
+	envStale     bool // an env-var changed under the live process, which closes at the next quiet boundary (#640)
 	inbox        []Envelope
 	currentBatch []Envelope // in-flight batch, kept for redelivery on session loss
 	turn         *store.Turn
@@ -329,6 +330,15 @@ func (actor *Actor) Rotate(reason string) error {
 	return <-reply
 }
 
+// RefreshEnv tells the loop that an env-var connection it holds was
+// attached or detached (#640). A process is spawned with its env, so the
+// live one closes at its next quiet boundary, now if it is idle and after
+// its turn if not, and the next turn spawns with the new env on the same
+// session. A loop with no process reads the env at its next wake anyway.
+func (actor *Actor) RefreshEnv() {
+	actor.cmds <- cmd{kind: "env"}
+}
+
 // Rehome asks a bare loop to move into a docker workstation (#624), and
 // blocks for the immediate verdict: ErrNotBare, or no docker runtime to move
 // onto. A loop with a session moves at the rotation this asks for, after its
@@ -430,6 +440,8 @@ func (actor *Actor) handleCmd(command cmd) {
 		command.reply <- actor.power(command.verb)
 	case "rotate":
 		command.reply <- actor.requestRotation(command.reason)
+	case "env":
+		actor.refreshEnv()
 	case "rehome":
 		command.reply <- actor.requestRehome()
 		actor.publishState()
@@ -557,6 +569,7 @@ func (actor *Actor) wake() {
 	// the next wake. A read failure fails closed: a loop running without its
 	// expected credentials or servers could act on the wrong ones.
 	connections, err := actor.deps.Store.Connections().ListByLoop(ctx, actor.loop.ID)
+	actor.envStale = false
 	if err != nil {
 		actor.log().Error("workstation not ready", "err", err)
 		actor.setWorkstationDown(DownReasonUnreachable, err.Error())
@@ -1391,11 +1404,20 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 	}
 	actor.measureContext()
 
+	rotationDue := (actor.armed || actor.rotateAsked != "") && !actor.paused && !actor.hasWork()
+	if actor.envStale && !rotationDue {
+		// the env changed during the turn: the queued work, if any, waits
+		// for the process its next turn spawns with the new env (#640). A
+		// rotation due here goes ahead instead: it spawns a fresh process
+		// anyway, and that wake reads the new env.
+		actor.closeIdleProcess()
+		return
+	}
 	if !actor.paused && actor.hasWork() {
 		actor.startTurn()
 		return
 	}
-	if (actor.armed || actor.rotateAsked != "") && !actor.paused {
+	if rotationDue {
 		// quiet boundary: the wake left no queued work, so this is the
 		// cheapest moment to shed the context (ADR-0022) — whether the
 		// fill armed it or the operator asked for it
@@ -1482,17 +1504,36 @@ func (actor *Actor) handleIdleTimeout() {
 	}
 	switch actor.state {
 	case StateIdle:
-		actor.state = StateDraining
-		actor.publishState()
-		_ = actor.proc.CloseStdin()
-		// exit arrives via procEvents close; the timer re-arms as the
-		// drain's deadline
-		actor.idleTimer.Reset(drainGrace)
+		actor.closeIdleProcess()
 	case StateDraining:
 		// the process ignored EOF past the grace: kill it — the exit path
 		// still carries out whatever the drain was for (sleep or rotation)
 		actor.log().Warn("drain timed out; killing process")
 		_ = actor.proc.Kill()
+	}
+}
+
+// closeIdleProcess drains a process that is between turns. Its exit puts
+// the loop to sleep, and wakes it again at once if work is queued.
+func (actor *Actor) closeIdleProcess() {
+	actor.envStale = false
+	actor.state = StateDraining
+	actor.publishState()
+	_ = actor.proc.CloseStdin()
+	// exit arrives via procEvents close; the timer re-arms as the drain's
+	// deadline
+	actor.idleTimer.Reset(drainGrace)
+}
+
+// refreshEnv is RefreshEnv on the actor's goroutine.
+func (actor *Actor) refreshEnv() {
+	switch {
+	case actor.proc == nil || actor.state == StateDraining:
+		// the next spawn reads the env
+	case actor.state == StateIdle:
+		actor.closeIdleProcess()
+	default:
+		actor.envStale = true
 	}
 }
 
