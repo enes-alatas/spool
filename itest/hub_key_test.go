@@ -23,7 +23,7 @@ const (
 // secrets a hub stores are not in its database's files, a restarted hub
 // opens them with its key, a loop is found by its hub MCP token after the
 // restart, and a hub whose key is gone refuses to start rather than mint
-// another.
+// another, until it is told to forget its secrets.
 func TestTheHubSealsItsSecretsUnderItsKey(t *testing.T) {
 	t.Parallel()
 	dataDir := t.TempDir()
@@ -76,7 +76,7 @@ func TestTheHubSealsItsSecretsUnderItsKey(t *testing.T) {
 	if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 1 {
 		t.Fatalf("a hub without its key did not exit 1: err=%v, output:\n%s", err, out)
 	}
-	for _, want := range []string{sqlite.KeyFile, "restore"} {
+	for _, want := range []string{sqlite.KeyFile, "restore", "--forget-secrets"} {
 		if !strings.Contains(string(out), want) {
 			t.Errorf("the refusal never mentions %q:\n%s", want, out)
 		}
@@ -84,4 +84,29 @@ func TestTheHubSealsItsSecretsUnderItsKey(t *testing.T) {
 	if _, err := os.Stat(keyPath); !os.IsNotExist(err) {
 		t.Errorf("a key was minted in place of the lost one: %v", err)
 	}
+
+	// --forget-secrets starts it anyway, with a new key: the connections
+	// are revoked and the loop answers to a new hub MCP token
+	s = startServerArgs(t, dataDir, "--runtime", "bare", "--forget-secrets")
+	if _, err := os.Stat(keyPath); err != nil {
+		t.Fatalf("no key was minted for the forgotten database: %v", err)
+	}
+	var list []struct {
+		Name      string `json:"name"`
+		RevokedAt int64  `json:"revoked_at"`
+	}
+	s.mustJSON("GET", "/api/connections", nil, &list)
+	if len(list) != 2 {
+		t.Fatalf("the forgetting hub lists %d connections, want the 2 stored", len(list))
+	}
+	for _, connection := range list {
+		if connection.RevokedAt == 0 {
+			t.Errorf("connection %s survived the forgotten key", connection.Name)
+		}
+	}
+	renewed := hubMCPToken(t, s, "keeper")
+	if renewed == token {
+		t.Error("the loop kept its hub MCP token through the forgotten key")
+	}
+	mcpSession(t, s, renewed)
 }

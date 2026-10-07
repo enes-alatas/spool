@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -275,6 +276,123 @@ func TestAMissingOrWrongKeyIsRefused(t *testing.T) {
 	}
 	defer db.Close()
 	assertSecretsRead(t, db)
+}
+
+// TestALostKeyIsForgottenOnRequest: OpenForgettingSecrets starts a
+// database whose key is gone or wrong by dropping what was sealed under
+// it. Connections are revoked and detached, bots unbound, the setup-token
+// cleared, and every loop gets a new hub MCP token, all sealed under the
+// key now beside it. With the right key it forgets nothing.
+func TestALostKeyIsForgottenOnRequest(t *testing.T) {
+	ctx := context.Background()
+	for _, lost := range []string{"missing", "wrong", "damaged"} {
+		t.Run(lost, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "spool.db")
+			db, err := Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			seedSecrets(t, db)
+			if err := db.Connections().Attach(ctx, "github", "l1", 4); err != nil {
+				t.Fatal(err)
+			}
+			db.Close()
+			keyPath := filepath.Join(dir, KeyFile)
+			if err := os.Remove(keyPath); err != nil {
+				t.Fatal(err)
+			}
+			switch lost {
+			case "wrong":
+				if err := os.WriteFile(keyPath, []byte(strings.Repeat("ab", keyBytes)+"\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			case "damaged":
+				if err := os.WriteFile(keyPath, []byte("abc\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			db, forgot, err := OpenForgettingSecrets(path)
+			if err != nil || !forgot {
+				t.Fatalf("forgetting: forgot = %v, err = %v", forgot, err)
+			}
+			db.Close()
+			if lost == "wrong" {
+				if key, _ := os.ReadFile(keyPath); string(key) != strings.Repeat("ab", keyBytes)+"\n" {
+					t.Fatal("the key beside the database was replaced; it should be the one sealed under")
+				}
+			}
+			// opens under the key now beside it, with nothing left to forget
+			db, err = Open(path)
+			if err != nil {
+				t.Fatalf("opening after forgetting: %v", err)
+			}
+			defer db.Close()
+
+			loop, err := db.Loops().Get(ctx, "l1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if loop.TGBotToken != "" || loop.SlackAppToken != "" || loop.SlackBotToken != "" {
+				t.Errorf("the loop's bot tokens survive: %q %q %q", loop.TGBotToken, loop.SlackAppToken, loop.SlackBotToken)
+			}
+			if loop.HubMCPToken == "" || loop.HubMCPToken == fixtureHubToken {
+				t.Errorf("the loop's hub MCP token was not minted again: %q", loop.HubMCPToken)
+			}
+			if found, err := db.Loops().GetByHubMCPToken(ctx, loop.HubMCPToken); err != nil || found.ID != "l1" {
+				t.Errorf("the new hub MCP token doesn't find its loop (%v)", err)
+			}
+			for _, name := range []string{"github", "cert"} {
+				connection, err := db.Connections().Get(ctx, name)
+				if err != nil || connection.Secret != "" || connection.RevokedAt == 0 {
+					t.Errorf("connection %s: %+v (%v), want revoked with no secret", name, connection, err)
+				}
+			}
+			if attached, err := db.Connections().ListByLoop(ctx, "l1"); err != nil || len(attached) != 0 {
+				t.Errorf("the loop still holds %d connections (%v)", len(attached), err)
+			}
+			if retired, err := db.Connections().Retired(ctx); err != nil || len(retired) != 0 {
+				t.Errorf("retired secrets survive: %d (%v)", len(retired), err)
+			}
+			if setupToken, err := db.Settings().Get(ctx, store.SettingClaudeOAuthToken); err != nil || setupToken != "" {
+				t.Errorf("the setup-token survives (%v)", err)
+			}
+			// every sealed column, so one added later is forgotten too
+			for _, col := range sealedColumns {
+				rows, err := db.db.Query(fmt.Sprintf(`SELECT %s FROM %s WHERE %s`, col.column, col.table, col.where))
+				if err != nil {
+					t.Fatal(err)
+				}
+				for rows.Next() {
+					var value string
+					if err := rows.Scan(&value); err != nil {
+						t.Fatal(err)
+					}
+					if _, err := db.sealer.open(value); err != nil {
+						t.Errorf("%s.%s holds a value the new key doesn't open: %v", col.table, col.column, err)
+					}
+				}
+				rows.Close()
+			}
+		})
+	}
+
+	t.Run("right key", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "spool.db")
+		db, err := Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		seedSecrets(t, db)
+		db.Close()
+		db, forgot, err := OpenForgettingSecrets(path)
+		if err != nil || forgot {
+			t.Fatalf("with the right key: forgot = %v, err = %v", forgot, err)
+		}
+		defer db.Close()
+		assertSecretsRead(t, db)
+	})
 }
 
 // TestADamagedKeyWithNothingSealedIsReplaced: a key file that holds no

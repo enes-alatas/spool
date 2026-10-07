@@ -88,6 +88,7 @@ func main() {
 	answerTimeoutSec := flag.Int("telegram-answer-timeout-sec", 0, "seconds a Telegram call waits for the Bot API's answer before it is retried on a fresh connection (0 = the production 20s; tests against a stand-in API shorten it)")
 	bindSettleSec := flag.Int("telegram-bind-settle-sec", 0, "seconds a newly bound bot waits before it may ingest a group (0 = the production margin; tests against a stand-in API shorten it)")
 	retentionDays := flag.Int("events-retention-days", 30, "prune raw claude events older than this many days (0 disables; messages and turns are never pruned)")
+	forgetSecrets := flag.Bool("forget-secrets", false, "start even though "+sqlite.KeyFile+" is missing or wrong, forgetting every stored secret: connections are revoked, chat bots unbound and the setup-token cleared, to be entered again (ADR-0046). With the right key it changes nothing")
 	showVersion := flag.Bool("version", false, "print the build's version and exit")
 	flag.Parse()
 
@@ -233,17 +234,21 @@ func main() {
 			operatorToken, *dataDir)
 	}
 
-	db, err := sqlite.Open(filepath.Join(*dataDir, "spool.db"))
+	db, forgot, err := openDB(filepath.Join(*dataDir, "spool.db"), *forgetSecrets)
 	if errors.Is(err, sqlite.ErrKeyLost) || errors.Is(err, sqlite.ErrKeyMismatch) {
 		// The secrets are sealed under a key this start doesn't have
-		// (ADR-0046): only the operator can bring it back.
+		// (ADR-0046): only the operator can bring it back, or give them up.
 		log.Error("open db", "err", err,
-			"fix", "restore "+sqlite.KeyFile+" into "+*dataDir+" from wherever you keep it; without it the stored secrets can't be read")
+			"fix", "restore "+sqlite.KeyFile+" into "+*dataDir+" from wherever you keep it, or start once with --forget-secrets to give up every stored secret and enter them again")
 		os.Exit(1)
 	}
 	if err != nil {
 		log.Error("open db", "err", err)
 		os.Exit(1)
+	}
+	if forgot {
+		log.Warn("the stored secrets were sealed under a lost key and are forgotten: connections are revoked, chat bots unbound and the setup-token cleared; enter again the ones still needed",
+			"key", filepath.Join(*dataDir, sqlite.KeyFile))
 	}
 	defer db.Close()
 	// Again, now that the database and its WAL sidecars exist: the first call
@@ -969,6 +974,16 @@ func usageError(format string, args ...any) {
 		"  or:  spool token [--data-dir dir]\n\n"+
 		"`spool --help` lists the flags.\n")
 	os.Exit(2)
+}
+
+// openDB opens the hub's database, forgetting its sealed secrets when
+// asked to and its key is missing or wrong.
+func openDB(path string, forgetSecrets bool) (*sqlite.DB, bool, error) {
+	if forgetSecrets {
+		return sqlite.OpenForgettingSecrets(path)
+	}
+	db, err := sqlite.Open(path)
+	return db, false, err
 }
 
 func defaultDataDir() string {
