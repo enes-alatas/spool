@@ -205,11 +205,15 @@ func TestContextUsageOnTheLoopView(t *testing.T) {
 	t.Parallel()
 	s := startServer(t, t.TempDir())
 	s.createLoop("ctxknown", map[string]any{"model": "claude-haiku-4-5"})
-	s.createLoop("ctxunknown", nil) // no model: fakeclaude reports its own name
-
-	if view := s.loop("ctxknown"); view.ContextTokens != 0 || view.ContextLimitTokens != 0 {
+	// A new loop ticks at once, so its first turn can finish before the
+	// view is read (#303). The check holds whenever the turns list is still
+	// empty after the read: turns are only ever added, so none existed when
+	// the view was taken.
+	view := s.loop("ctxknown")
+	if len(s.turns("ctxknown")) == 0 && (view.ContextTokens != 0 || view.ContextLimitTokens != 0) {
 		t.Fatalf("a loop with no turns yet should report nothing: %+v", view)
 	}
+	s.createLoop("ctxunknown", nil) // no model: fakeclaude reports its own name
 
 	for _, name := range []string{"ctxknown", "ctxunknown"} {
 		s.message(name, "fill some context")
