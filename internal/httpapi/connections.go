@@ -170,6 +170,7 @@ func (server *Server) handleCreateConnection(w http.ResponseWriter, r *http.Requ
 	server.secretsChanged(r.Context())
 	if owner != nil {
 		server.loopChanged(r.Context(), owner.ID)
+		server.envChanged(connection, owner.ID)
 	}
 	server.writeConnection(w, r, 201, connection)
 }
@@ -189,6 +190,7 @@ func (server *Server) handleDeleteConnection(w http.ResponseWriter, r *http.Requ
 	server.secretsChanged(r.Context())
 	for _, id := range connection.LoopIDs {
 		server.loopChanged(r.Context(), id)
+		server.envChanged(connection, id)
 	}
 	writeJSON(w, 200, map[string]bool{"deleted": true})
 }
@@ -345,8 +347,8 @@ func (server *Server) handleLoopConnectionEvents(w http.ResponseWriter, r *http.
 }
 
 // handleLoopConnection attaches the connection to the loop (attach) or
-// detaches it. Either is idempotent, and an attached env-var is in the
-// loop's env from its next wake (ADR-0043).
+// detaches it. Either is idempotent, and an env-var's change reaches the
+// loop's env from its next turn (ADR-0043, #640).
 func (server *Server) handleLoopConnection(attach bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		loopRecord := server.loopByName(w, r)
@@ -372,7 +374,24 @@ func (server *Server) handleLoopConnection(attach bool) http.HandlerFunc {
 			return
 		}
 		server.loopChanged(r.Context(), loopRecord.ID)
+		if connection, err := server.Store.Connections().Get(r.Context(), name); err == nil {
+			server.envChanged(connection, loopRecord.ID)
+		}
 		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// envChanged tells a loop that an env-var connection was attached to it or
+// taken from it, so its live process closes at its next quiet boundary and
+// its next turn runs with the new env (#640). A rotation needs no call: it
+// ends the session, which spawns afresh. An mcp-server's config is read at
+// spawn too, and is left to its next wake.
+func (server *Server) envChanged(connection *store.Connection, loopID string) {
+	if connection.Kind != store.ConnectionEnvVar {
+		return
+	}
+	if actor, ok := server.Manager.Get(loopID); ok {
+		actor.RefreshEnv()
 	}
 }
 
