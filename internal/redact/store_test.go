@@ -290,6 +290,8 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			"GetByName": false, "List": false,
 			"SetOwner": false, "SetOwnerDMChat": false, "SetPromptHash": false,
 			"SetRuntime": false, "SetStatus": false, "SetWorkstationOff": false,
+			// a fixed path and the workstation's size
+			"Rehome": false,
 			// Slack ids and a timestamp, the counterparts of the two
 			// Telegram setters above and the fleet channel's room.
 			"SetSlackOwner": false, "SetSlackOwnerDM": false,

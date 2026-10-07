@@ -58,6 +58,10 @@ const (
 	// session that ran with its value ends, and the next runs without it
 	// (#610).
 	RotationReasonRevoke = "revoke"
+	// RotationReasonRehome is the operator moving a bare loop into a docker
+	// workstation: the session that ran on the host ends, and the next runs
+	// in the workstation (#624).
+	RotationReasonRehome = "rehome"
 
 	OriginWeb           = "web"
 	OriginTelegramGroup = "telegram-group"
@@ -725,6 +729,12 @@ type LoopStore interface {
 	// workstation. Written from the actor goroutine, which runs alongside the
 	// Telegram poller — the same reason the columns above are narrow.
 	SetWorkstationOff(ctx context.Context, id string, off bool, updatedAt int64) error
+	// Rehome makes a bare loop a docker one whose workspace is workspacePath,
+	// the workstation's home, sized memMB and cpus. The host workspace it
+	// leaves is no longer the loop's: repo, worktree and branch are cleared.
+	// Written from the actor goroutine, like the power intent (#624).
+	// ErrNotFound if the loop is gone.
+	Rehome(ctx context.Context, id, workspacePath string, memMB int, cpus float64, updatedAt int64) error
 	// SetModelRefusal records that the API refused model, with the CLI's
 	// sentence, if model is still the loop's: a refusal of a model the
 	// operator has already replaced is not written. Written from the actor

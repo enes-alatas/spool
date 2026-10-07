@@ -448,6 +448,20 @@ func (table loops) SetWorkstationOff(ctx context.Context, id string, off bool, u
 	return err
 }
 
+func (table loops) Rehome(ctx context.Context, id, workspacePath string, memMB int, cpus float64, updatedAt int64) error {
+	res, err := table.db.ExecContext(ctx,
+		`UPDATE loops SET runtime=?, workspace_mode=?, workspace_path=?, repo_path='', worktree_path='', branch='',
+		 mem_mb=?, cpus=?, updated_at=? WHERE id=?`,
+		store.RuntimeDocker, store.WorkspaceNone, workspacePath, memMB, cpus, updatedAt, id)
+	if err != nil {
+		return err
+	}
+	if affected, _ := res.RowsAffected(); affected == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
 func (table loops) SetModelRefusal(ctx context.Context, id, model, refusal string, updatedAt int64) error {
 	_, err := table.db.ExecContext(ctx,
 		`UPDATE loops SET model_refusal=?, updated_at=? WHERE id=? AND model=?`, refusal, updatedAt, id, model)
