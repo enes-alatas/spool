@@ -111,6 +111,21 @@ const missionFile = `${outDir}/mission-edit.png`
 await mission.screenshot({ path: missionFile })
 taken.push(missionFile)
 
+// A bare loop's way into a docker container (#632), shot as its confirm:
+// what the move keeps and what it leaves on the host. The panel is the
+// courier's, the fixture's bare loop, and the viewport grows to hold it.
+await page.setViewportSize({ width: 1180, height: 1400 })
+await page.goto(base + '/loops/courier', { waitUntil: 'networkidle' })
+const courierWorkstation = page
+  .locator('.side-panel', { has: page.locator('h3', { hasText: /^Workstation$/ }) })
+  .first()
+await courierWorkstation.getByRole('button', { name: 'Move into a docker container' }).click()
+await courierWorkstation.locator('.rehome-confirm').waitFor({ timeout: 15000 })
+const rehomeFile = `${outDir}/rehome-confirm.png`
+await courierWorkstation.screenshot({ path: rehomeFile })
+taken.push(rehomeFile)
+await page.setViewportSize({ width: 1180, height: 900 })
+
 // Settings' Egress section (#542), shot as the section: Settings scrolls in
 // its own container, so a page shot cuts it off, and the viewport grows to
 // hold all of it. The fixture hub runs no egress image, so as served it
