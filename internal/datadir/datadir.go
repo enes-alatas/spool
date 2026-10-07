@@ -33,6 +33,7 @@ const (
 // it is where the tokens surfaced in the incident, and covering it costs one
 // line here.
 var ownedFiles = []string{
+	"hub.key",
 	"spool.db",
 	"spool.db-wal",
 	"spool.db-shm",

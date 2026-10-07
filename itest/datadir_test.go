@@ -36,6 +36,7 @@ func TestServerTightensItsDataDir(t *testing.T) {
 		{log, 0o600},
 		{filepath.Join(dataDir, "spool.db"), 0o600},
 		{filepath.Join(dataDir, "spool.db-wal"), 0o600},
+		{filepath.Join(dataDir, "hub.key"), 0o600},
 	} {
 		info, err := os.Stat(tc.path)
 		if err != nil {

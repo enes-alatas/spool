@@ -14,7 +14,11 @@ import (
 // connections keeps each connection's config as its kind's JSON, so a kind
 // that needs another field does not need another column, and its loops as
 // connection_loops rows (ADR-0043).
-type connections struct{ db *sql.DB }
+// Each value is sealed under the hub key (ADR-0046).
+type connections struct {
+	db     *sql.DB
+	sealer *box
+}
 
 const connectionColumns = `name, kind, config, secret, created_at, updated_at, owner_loop, rotated_at, revoked_at`
 
@@ -34,7 +38,7 @@ func (table connections) list(ctx context.Context, query string, args ...any) ([
 	}
 	var out []*store.Connection
 	for rows.Next() {
-		connection, err := scanConnection(rows)
+		connection, err := table.scanConnection(rows)
 		if err != nil {
 			rows.Close()
 			return nil, err
@@ -54,7 +58,7 @@ func (table connections) list(ctx context.Context, query string, args ...any) ([
 }
 
 func (table connections) Get(ctx context.Context, name string) (*store.Connection, error) {
-	connection, err := scanConnection(table.db.QueryRowContext(ctx, `SELECT `+connectionColumns+` FROM connections WHERE name=?`, name))
+	connection, err := table.scanConnection(table.db.QueryRowContext(ctx, `SELECT `+connectionColumns+` FROM connections WHERE name=?`, name))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, store.ErrNotFound
 	}
@@ -98,7 +102,7 @@ func (table connections) Create(ctx context.Context, connection *store.Connectio
 	}
 	defer tx.Rollback()
 	_, err = tx.ExecContext(ctx, `INSERT INTO connections (`+connectionColumns+`) VALUES (?,?,?,?,?,?,?,?,?)`,
-		connection.Name, connection.Kind, string(config), connection.Secret, connection.CreatedAt, connection.UpdatedAt,
+		connection.Name, connection.Kind, string(config), table.sealer.seal(connection.Secret), connection.CreatedAt, connection.UpdatedAt,
 		nullable(connection.OwnerLoopID), connection.RotatedAt, connection.RevokedAt)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return store.ErrDuplicate
@@ -220,17 +224,25 @@ func (table connections) SetSecret(ctx context.Context, name, secret string, at 
 	if _, err := liveConnectionOwner(ctx, tx, name); err != nil {
 		return err
 	}
-	// before the update, which is what it reads the old value from
-	if err := retireSecrets(ctx, tx, `name = ?1 AND secret <> ?2`, at, name, secret); err != nil {
+	// Compared opened, in Go: two seals of one value never match.
+	var sealed string
+	if err := tx.QueryRowContext(ctx, `SELECT secret FROM connections WHERE name=?`, name).Scan(&sealed); err != nil {
 		return err
 	}
-	res, err := tx.ExecContext(ctx, `UPDATE connections SET secret=?, updated_at=?, rotated_at=? WHERE name=? AND secret<>?`,
-		secret, at, at, name, secret)
+	current, err := table.sealer.open(sealed)
 	if err != nil {
 		return err
 	}
-	if affected, _ := res.RowsAffected(); affected == 0 {
+	if current == secret {
 		return nil // it holds this value already
+	}
+	// before the update, which is what it reads the old value from
+	if err := retireSecrets(ctx, tx, `name = ?1`, at, name); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE connections SET secret=?, updated_at=?, rotated_at=? WHERE name=?`,
+		table.sealer.seal(secret), at, at, name); err != nil {
+		return err
 	}
 	if err := recordEvent(ctx, tx, store.ConnectionEventRotate, name, "", at); err != nil {
 		return err
@@ -381,7 +393,8 @@ func (table connections) Events(ctx context.Context, filter store.ConnectionEven
 	return events, rows.Err()
 }
 
-func scanConnection(row interface{ Scan(...any) error }) (*store.Connection, error) {
+// scanConnection reads a connections row, opening its sealed value.
+func (table connections) scanConnection(row interface{ Scan(...any) error }) (*store.Connection, error) {
 	var connection store.Connection
 	var config string
 	var owner sql.NullString
@@ -390,6 +403,10 @@ func scanConnection(row interface{ Scan(...any) error }) (*store.Connection, err
 		return nil, err
 	}
 	connection.OwnerLoopID = owner.String
+	var err error
+	if connection.Secret, err = table.sealer.open(connection.Secret); err != nil {
+		return nil, err
+	}
 	if err := json.Unmarshal([]byte(config), &connection.Config); err != nil {
 		return nil, err
 	}
@@ -397,7 +414,8 @@ func scanConnection(row interface{ Scan(...any) error }) (*store.Connection, err
 }
 
 // retireSecrets keeps the values of the connections where matches, about
-// to be replaced or deleted, as retired secrets for the redactor. where is
+// to be replaced or deleted, as retired secrets for the redactor. Each value
+// is copied as it is stored, sealed. where is
 // a condition on connections, its own parameters numbered from ?1 among
 // args; at takes the next number. An empty value has nothing to mask. The
 // name is store.Connection.RedactName's, spelled in SQL.
@@ -418,6 +436,10 @@ func (table connections) Retired(ctx context.Context) ([]store.RetiredSecret, er
 	for rows.Next() {
 		var secret store.RetiredSecret
 		if err := rows.Scan(&secret.Connection, &secret.RedactName, &secret.Value, &secret.RetiredAt); err != nil {
+			return nil, err
+		}
+		var err error
+		if secret.Value, err = table.sealer.open(secret.Value); err != nil {
 			return nil, err
 		}
 		retired = append(retired, secret)

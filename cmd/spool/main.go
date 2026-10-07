@@ -234,6 +234,13 @@ func main() {
 	}
 
 	db, err := sqlite.Open(filepath.Join(*dataDir, "spool.db"))
+	if errors.Is(err, sqlite.ErrKeyLost) || errors.Is(err, sqlite.ErrKeyMismatch) {
+		// The secrets are sealed under a key this start doesn't have
+		// (ADR-0046): only the operator can bring it back.
+		log.Error("open db", "err", err,
+			"fix", "restore "+sqlite.KeyFile+" into "+*dataDir+" from wherever you keep it; without it the stored secrets can't be read")
+		os.Exit(1)
+	}
 	if err != nil {
 		log.Error("open db", "err", err)
 		os.Exit(1)
