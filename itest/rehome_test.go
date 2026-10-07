@@ -134,6 +134,41 @@ func aRestartFinishesARehome(t *testing.T) {
 	assertRehomed(t, s, "interrupted", loopID, "written on that machine:\nfixture handoff: PR 7 is pushed")
 }
 
+// aPendingRehomeShowsOnTheLoop: the loop view says a rehome is pending from
+// its 202 until the move lands, so a page read again in between shows it
+// (#632). A paused loop holds the request until it is resumed. A restart
+// before the handoff turn begins loses the request, and the view says so.
+func aPendingRehomeShowsOnTheLoop(t *testing.T) {
+	dataDir := t.TempDir()
+	s, loopID := startRehomable(t, dataDir, "waiting")
+	if s.loop("waiting").Rehoming {
+		t.Fatal("rehoming before any rehome was asked for")
+	}
+	s.mustJSON("POST", "/api/loops/waiting/pause", nil, nil)
+	s.mustJSON("POST", "/api/loops/waiting/rehome", nil, nil)
+	if view := s.loop("waiting"); !view.Rehoming || view.Runtime != "bare" {
+		t.Fatalf("a paused loop asked to rehome reads rehoming=%v runtime=%q, want pending on the host", view.Rehoming, view.Runtime)
+	}
+
+	s.stop()
+	s = startDockerServer(t, dataDir, "--allow-bare")
+	if view := s.loop("waiting"); view.Rehoming || view.Runtime != "bare" {
+		t.Fatalf("after a restart lost the request: rehoming=%v runtime=%q, want neither", view.Rehoming, view.Runtime)
+	}
+
+	s.mustJSON("POST", "/api/loops/waiting/rehome", nil, nil)
+	if !s.loop("waiting").Rehoming {
+		t.Fatal("asked again after the restart, the rehome is not pending")
+	}
+	s.mustJSON("POST", "/api/loops/waiting/resume", nil, nil)
+	s.message("waiting", "resumed on the host")
+	within(t, 60*time.Second, "the move lands and the pending state clears", func() bool {
+		view := s.loop("waiting")
+		return view.Runtime == "docker" && !view.Rehoming
+	})
+	assertRehomed(t, s, "waiting", loopID, "you were moved into your own docker workstation")
+}
+
 // setLoopColumns writes columns of a stopped hub's loop row directly.
 func setLoopColumns(t *testing.T, dataDir, loopID, assignments string) {
 	t.Helper()

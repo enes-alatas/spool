@@ -84,6 +84,7 @@ func TestDockerRows(t *testing.T) {
 		{"BareLoopRehomesIntoAWorkstation", bareLoopRehomesIntoAWorkstation},
 		{"BareLoopWithNoSessionRehomesAtOnce", bareLoopWithNoSessionRehomesAtOnce},
 		{"ARestartFinishesARehome", aRestartFinishesARehome},
+		{"APendingRehomeShowsOnTheLoop", aPendingRehomeShowsOnTheLoop},
 	} {
 		t.Run(row.name, row.run)
 	}

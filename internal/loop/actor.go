@@ -186,6 +186,7 @@ type Actor struct {
 	healthSnap atomic.Value // workstationSnap; last workstation poll, for REST reads
 	offSnap    atomic.Bool  // the operator's power-off intent, for REST reads
 	mcpSnap    atomic.Value // MCPReach; the latest init's, for REST reads
+	rehomeSnap atomic.Bool  // a rehome is asked for and not yet landed, for REST reads
 
 	// goroutine-owned state below
 	loop         store.Loop
@@ -430,6 +431,7 @@ func (actor *Actor) handleCmd(command cmd) {
 		command.reply <- actor.requestRotation(command.reason)
 	case "rehome":
 		command.reply <- actor.requestRehome()
+		actor.publishState()
 	case "kill":
 		if actor.proc != nil {
 			_ = actor.proc.Kill()
@@ -2412,12 +2414,30 @@ func (actor *Actor) publishState() {
 		state = StateWorkstationDown
 	}
 	actor.stateSnap.Store(state)
+	rehoming := actor.rehomePending()
+	actor.rehomeSnap.Store(rehoming)
 	actor.deps.Bus.Publish(bus.Item{Kind: bus.KindLoopStatus, LoopID: actor.loop.ID, Payload: map[string]any{
-		"loop_id": actor.loop.ID,
-		"name":    actor.loop.Name,
-		"state":   state,
+		"loop_id":  actor.loop.ID,
+		"name":     actor.loop.Name,
+		"state":    state,
+		"rehoming": rehoming,
 	}})
 }
+
+// rehomePending reports whether a rehome was asked for and has not landed
+// yet: latched until the next quiet boundary, or its handoff turn running
+// or draining. The row's rotate reason can't say so alone: it is written
+// only when the handoff turn starts, and a move that fails leaves it set
+// on a loop still on the host (#632).
+func (actor *Actor) rehomePending() bool {
+	return actor.rotateAsked == store.RotationReasonRehome ||
+		actor.loop.RotatePending && actor.handoffReason == store.RotationReasonRehome
+}
+
+// Rehoming reports whether a rehome is pending, as last published (safe
+// from any goroutine). It turns false when the move lands or fails, and
+// after a restart that lost a rehome whose handoff turn never began.
+func (actor *Actor) Rehoming() bool { return actor.rehomeSnap.Load() }
 
 func (actor *Actor) log() *slog.Logger {
 	if actor.deps.Logger == nil {

@@ -327,8 +327,12 @@ type loopView struct {
 	HasSlackTokens bool `json:"has_slack_tokens"`
 	// Surface is the platform the loop has an identity on: "telegram",
 	// "slack", or "" for none (ADR-0029).
-	Surface           string `json:"surface"`
-	WorkstationUp     bool   `json:"workstation_up"`
+	Surface       string `json:"surface"`
+	WorkstationUp bool   `json:"workstation_up"`
+	// Rehoming is true from a rehome's 202 until the move lands or fails
+	// (#632). It is the actor's, not the row's, so it is false for a loop
+	// with no running actor, and after a restart that lost the request.
+	Rehoming          bool   `json:"rehoming"`
 	WorkstationDetail string `json:"workstation_detail,omitempty"`
 	// ContextTokens is the context occupancy the last finished turn of the
 	// loop's current session measured at its final API call — what the next
@@ -429,6 +433,7 @@ func (server *Server) view(ctx context.Context, loopRecord *store.Loop) *loopVie
 	}
 	if actor, ok := server.Manager.Get(loopRecord.ID); ok {
 		out.State = actor.State()
+		out.Rehoming = actor.Rehoming()
 		health := actor.WorkstationHealth()
 		out.WorkstationUp = health.Up
 		out.WorkstationDetail = health.Detail
