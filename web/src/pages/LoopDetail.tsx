@@ -9,6 +9,7 @@ import {
   LoopEvent,
   LoopView,
   MessageDestination,
+  Rehome,
   Settings,
   SlackStatus,
   TGSender,
@@ -43,6 +44,7 @@ import { ChannelHead, LoopRooms, ROOMS_ANCHOR } from '../components/LoopChannels
 import { ChannelChat } from '../components/ChannelChat'
 import { channelLabel } from '../channels'
 import { MCPReach } from '../components/MCPReach'
+import { LeftBehind, RehomeControl } from '../components/Rehome'
 import { SpoolGlyph } from '../components/Spool'
 import { EditIcon } from '../components/Icons'
 import { BotTokenForm, SlackStep, SlackTokenForm } from '../components/SurfaceAttach'
@@ -573,6 +575,10 @@ function WorkstationPanel({ loop, runningVerb }: { loop: LoopView; runningVerb: 
   const [confirming, setConfirming] = useState(false)
   const [typed, setTyped] = useState('')
   const [error, setError] = useState('')
+  // The hub's answer to a rehome, kept with the loop it was for, since this
+  // panel outlives a move to another loop's page.
+  const [rehomed, setRehomed] = useState<{ name: string; answer: Rehome } | null>(null)
+  const rehomeAnswer = rehomed?.name === loop.name ? rehomed.answer : null
   const contained = loop.runtime === 'docker'
 
   // The response carries the loop as it is after the verb, so it seeds the
@@ -633,6 +639,7 @@ function WorkstationPanel({ loop, runningVerb }: { loop: LoopView; runningVerb: 
             </span>
           </div>
           <MCPReach loop={loop} />
+          {rehomeAnswer && <LeftBehind answer={rehomeAnswer} />}
           <div className="controls" style={{ marginTop: 12 }}>
             <button className="btn sm" onClick={() => power.mutate('restart')} disabled={busy}>
               Restart
@@ -710,6 +717,11 @@ function WorkstationPanel({ loop, runningVerb }: { loop: LoopView; runningVerb: 
             Uncontained: claude runs directly on the host, with the operator's own files in reach. There is no
             workstation to power.
           </div>
+          <RehomeControl
+            loop={loop}
+            answer={rehomeAnswer}
+            onAnswer={(answer) => setRehomed({ name: loop.name, answer })}
+          />
         </>
       )}
     </div>

@@ -16,6 +16,9 @@ export interface LoopView {
   worktree_path: string
   branch: string
   runtime: 'bare' | 'docker'
+  // A bare loop asked to move into a docker workstation (#632): true from
+  // the ask until the move lands or fails, or a hub restart drops it.
+  rehoming: boolean
   image: string
   mem_mb: number
   cpus: number
@@ -640,6 +643,14 @@ export interface CreateLoopReq {
   in_fleet_channel?: boolean
 }
 
+// The answer to a rehome: the host workspace the move leaves behind ('' for
+// a loop with none), and what the workstation won't have.
+export interface Rehome {
+  rehoming: boolean
+  left_behind: string
+  not_carried: string[]
+}
+
 // ApiError carries the API's machine-readable reason alongside its prose, so
 // a caller can branch on the cause without parsing the message.
 export class ApiError extends Error {
@@ -697,6 +708,12 @@ export const api = {
   wake: (name: string) => req<{ woken: boolean }>(`/api/loops/${name}/wake`, { method: 'POST' }),
   kill: (name: string) => req<{ killed: boolean }>(`/api/loops/${name}/kill`, { method: 'POST' }),
   rotate: (name: string) => req<{ rotating: boolean }>(`/api/loops/${name}/rotate`, { method: 'POST' }),
+  // Moves a bare loop into a docker workstation at its next rotation
+  // (#624); asking again while it waits answers 202 again. 409 when the
+  // loop is not bare or has no running actor; 400 when
+  // docker is unavailable, or `loop_listener_unreachable` (ApiError.code)
+  // when a workstation could not reach the hub.
+  rehome: (name: string) => req<Rehome>(`/api/loops/${name}/rehome`, { method: 'POST' }),
   setOwner: (name: string, tgUserID: number) =>
     req<LoopView>(`/api/loops/${name}/owner`, {
       method: 'PUT',
