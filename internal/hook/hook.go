@@ -16,6 +16,18 @@ import (
 type Call struct {
 	ToolName  string          `json:"tool_name"`
 	ToolInput json.RawMessage `json:"tool_input"`
+	// Cwd is where the call runs, which a relative path in it names a file
+	// from.
+	Cwd string `json:"cwd"`
+}
+
+// Rules are what the hub tells the hook about the fleet it guards, on its
+// command line. The shared-state rules need nothing, and apply whatever
+// these say.
+type Rules struct {
+	// Mentions are the names a gh body may not @-mention (#628): the
+	// fleet's loops and bots and the people it knows. None refuses none.
+	Mentions []string
 }
 
 // Refused is the exit status that makes Claude Code block the call and hand
@@ -26,13 +38,13 @@ const Refused = 2
 // the reason for a refusal to stderr. Input it cannot read is let through:
 // a hook that blocked every call it misread would stop the loop over a
 // format change, and the rules are a guard, not the gate.
-func Run(stdin io.Reader, stderr io.Writer) int {
+func Run(rules Rules, stdin io.Reader, stderr io.Writer) int {
 	var call Call
 	if err := json.NewDecoder(stdin).Decode(&call); err != nil {
 		fmt.Fprintf(stderr, "spool-hook: unreadable call, let through: %v\n", err)
 		return 0
 	}
-	reason := Check(call)
+	reason := Check(call, rules)
 	if reason == "" {
 		return 0
 	}
@@ -41,7 +53,7 @@ func Run(stdin io.Reader, stderr io.Writer) int {
 }
 
 // Check returns why a call is refused, or "" when it may run.
-func Check(call Call) string {
+func Check(call Call, rules Rules) string {
 	if call.ToolName != "Bash" {
 		return ""
 	}
@@ -53,6 +65,9 @@ func Check(call Call) string {
 	}
 	for _, words := range commands(input.Command) {
 		if reason := checkCommand(words); reason != "" {
+			return reason
+		}
+		if reason := checkMentions(words, input.Command, call.Cwd, rules.Mentions); reason != "" {
 			return reason
 		}
 	}

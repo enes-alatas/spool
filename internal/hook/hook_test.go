@@ -91,7 +91,7 @@ func TestSharedStateCommandsAreRefused(t *testing.T) {
 		"git add -A && git commit -m wip",
 		"cd sub && git add .",
 	} {
-		if Check(bash(command)) == "" {
+		if Check(bash(command), Rules{}) == "" {
 			t.Errorf("let through: %s", command)
 		}
 	}
@@ -147,7 +147,7 @@ func TestOrdinaryCommandsRunUnrefused(t *testing.T) {
 		"git commit -m \"$(cat <<'EOF'\nfix: it's refused\n\ngit stash pop\nEOF\n)\"",
 		"",
 	} {
-		if reason := Check(bash(command)); reason != "" {
+		if reason := Check(bash(command), Rules{}); reason != "" {
 			t.Errorf("refused %q: %s", command, reason)
 		}
 	}
@@ -157,7 +157,7 @@ func TestOrdinaryCommandsRunUnrefused(t *testing.T) {
 // input that happens to hold the same words is not one.
 func TestOnlyBashIsRead(t *testing.T) {
 	input, _ := json.Marshal(map[string]string{"file_path": "notes.md", "content": "git stash pop"})
-	if reason := Check(Call{ToolName: "Write", ToolInput: input}); reason != "" {
+	if reason := Check(Call{ToolName: "Write", ToolInput: input}, Rules{}); reason != "" {
 		t.Fatalf("a Write was refused: %s", reason)
 	}
 }
@@ -170,7 +170,7 @@ func TestRunExitsTwoWithTheReason(t *testing.T) {
 		"tool_name": "Bash", "tool_input": map[string]string{"command": "git stash pop"},
 	})
 	var stderr bytes.Buffer
-	if code := Run(bytes.NewReader(payload), &stderr); code != Refused {
+	if code := Run(Rules{}, bytes.NewReader(payload), &stderr); code != Refused {
 		t.Fatalf("exit %d, want %d", code, Refused)
 	}
 	reason := stderr.String()
@@ -180,7 +180,7 @@ func TestRunExitsTwoWithTheReason(t *testing.T) {
 
 	stderr.Reset()
 	allowed, _ := json.Marshal(map[string]any{"tool_name": "Bash", "tool_input": map[string]string{"command": "git status"}})
-	if code := Run(bytes.NewReader(allowed), &stderr); code != 0 || stderr.Len() != 0 {
+	if code := Run(Rules{}, bytes.NewReader(allowed), &stderr); code != 0 || stderr.Len() != 0 {
 		t.Fatalf("an allowed call: exit %d, stderr %q", code, stderr.String())
 	}
 }
@@ -189,7 +189,7 @@ func TestRunExitsTwoWithTheReason(t *testing.T) {
 // tool call a loop makes.
 func TestUnreadableInputIsLetThrough(t *testing.T) {
 	var stderr bytes.Buffer
-	if code := Run(strings.NewReader("not json"), &stderr); code != 0 {
+	if code := Run(Rules{}, strings.NewReader("not json"), &stderr); code != 0 {
 		t.Fatalf("exit %d for unreadable input, want 0", code)
 	}
 }
