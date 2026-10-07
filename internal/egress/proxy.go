@@ -22,32 +22,29 @@ const dialTimeout = 30 * time.Second
 // dialed, so a blocked call never opens a connection at all.
 type Proxy struct {
 	allow *Allowlist
-	file  *FileAllowlists // the fleet's and each loop's entries on top of allow; nil for none
+	fleet *FleetFile // the operator's extra hosts on top of allow; nil for none
 	log   *slog.Logger
 	dial  func(network, addr string) (net.Conn, error) // nil = net.Dial with a timeout
 }
 
-// NewProxy returns a proxy enforcing allow and the fleet's entries in file
-// for every loop, and each loop's entries in file for the loop whose proxy
-// token a request carries. A nil file gives every loop allow alone; a nil
-// logger discards.
-func NewProxy(allow *Allowlist, file *FileAllowlists, log *slog.Logger) *Proxy {
+// NewProxy returns a proxy enforcing allow and the operator's extra hosts
+// in fleet, for every loop alike. A nil fleet gives every loop allow alone;
+// a nil logger discards.
+func NewProxy(allow *Allowlist, fleet *FleetFile, log *slog.Logger) *Proxy {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	return &Proxy{allow: allow, file: file, log: log}
+	return &Proxy{allow: allow, fleet: fleet, log: log}
 }
 
-// allows reports whether the request may reach host:port: on the proxy's
-// own list, the operator's extra hosts, or its own loop's. A request with no
-// token, or one no loop has, gets the first two alone, as every request did
-// before loops had lists.
-func (proxy *Proxy) allows(r *http.Request, host, port string) bool {
+// allows reports whether a request may reach host:port: on the proxy's own
+// list or the operator's extra hosts.
+func (proxy *Proxy) allows(host, port string) bool {
 	if proxy.allow.Allows(host, port) {
 		return true
 	}
-	fleet, own := proxy.file.For(proxyToken(r))
-	return fleet != nil && fleet.Allows(host, port) || own != nil && own.Allows(host, port)
+	fleet := proxy.fleet.Allowlist()
+	return fleet != nil && fleet.Allows(host, port)
 }
 
 func (proxy *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -67,7 +64,7 @@ func (proxy *Proxy) connect(w http.ResponseWriter, r *http.Request) {
 		target = r.Host
 	}
 	host, port, err := splitHostPort(target, "443")
-	if err != nil || !proxy.allows(r, host, port) {
+	if err != nil || !proxy.allows(host, port) {
 		proxy.refuse(w, r, host, port, err)
 		return
 	}
@@ -123,7 +120,7 @@ func (proxy *Proxy) forward(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	host, port, err := splitHostPort(r.URL.Host, "80")
-	if err != nil || !proxy.allows(r, host, port) {
+	if err != nil || !proxy.allows(host, port) {
 		proxy.refuse(w, r, host, port, err)
 		return
 	}

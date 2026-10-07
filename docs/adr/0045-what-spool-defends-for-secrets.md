@@ -1,6 +1,6 @@
 # ADR-0045: What Spool does and does not defend against for the secrets a loop holds
 
-Date: 2026-10-06 · Status: accepted (operator decision of 2026-10-06 19:09 UTC, recorded on #30) · Amended: 2026-10-06 (item 4: slice 2 landed, and what it leaves, #622) · Amends: ADR-0017 (consequences and parking lot: the credential broker) · Relates to: ADR-0019, ADR-0028, ADR-0043
+Date: 2026-10-06 · Status: accepted (operator decision of 2026-10-06 19:09 UTC, recorded on #30) · Amended: 2026-10-06 (item 4: slice 2 landed, and what it leaves, #622); 2026-10-07 (items 2 and 3: the egress proxy takes no loop credential, #626) · Amends: ADR-0017 (consequences and parking lot: the credential broker) · Relates to: ADR-0019, ADR-0028, ADR-0043
 
 ## Context
 
@@ -94,6 +94,13 @@ hand a teammate a credential the teammate was never given.
      forwards whatever path, method and body the loop's client sends
      after the connection's name. Least scope, and a stored URL as
      specific as the server allows, still apply.
+
+   **Amendment (2026-10-07, #626): the egress proxy takes no loop
+   credential.** A loop's own egress entries are removed (ADR-0028), so
+   the hub MCP token is no longer also the loop's egress proxy credential
+   (item 2), and the proxy refuses any host the built-in list and the
+   operator's extra hosts don't name (item 3). The token is still in the
+   loop's mcp-config.
 
 5. **The operator's levers for what isn't defended** stay as ADR-0017 put
    them:

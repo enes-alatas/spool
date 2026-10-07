@@ -25,10 +25,11 @@ const (
 	egressSpecLabel = "spool.egress.spec"
 
 	// egressFileFormat names what the proxy reads from its file. It is in
-	// the spec so a proxy from an image that predates a field is replaced
-	// rather than kept ignoring it: the fleet's entries moved into the file
-	// with #542, and an older proxy would refuse every one of them.
-	egressFileFormat = "file:fleet+loops"
+	// the spec so a proxy from an image that reads another file is replaced
+	// rather than kept: the fleet's entries moved into the file with #542,
+	// and an older proxy would refuse every one of them, and the file lost
+	// its loops' entries with #626, along with the flag that names it.
+	egressFileFormat = "file:fleet"
 )
 
 // The wall is named after the image that enforces it: one daemon can carry a
@@ -93,8 +94,8 @@ func (rt *Runtime) ensureEgressProxy(ctx context.Context) error {
 		// A proxy running an older configuration — a different image, or a
 		// hub that has moved to another port — is the wrong wall, and its run
 		// arguments are fixed at creation. Replacing it is cheap: its one
-		// state, the loops' own entries, is the hub's to copy back in, and a
-		// workstation reconnects to the name.
+		// state, the operator's extra hosts, is the hub's to copy back in, and
+		// a workstation reconnects to the name.
 		current, readErr := rt.egressSpec(ctx)
 		if readErr != nil {
 			return readErr
@@ -103,12 +104,12 @@ func (rt *Runtime) ensureEgressProxy(ctx context.Context) error {
 			if _, rmErr := rt.command(ctx, startTimeout, "rm", "--force", rt.egressContainer()); rmErr != nil && !notFound(rmErr) {
 				return rmErr
 			}
-			return rt.provisionEgressProxyWithLoops(ctx)
+			return rt.provisionEgressProxyWithFleet(ctx)
 		}
 	}
 	switch {
 	case errors.Is(err, errNotFound):
-		return rt.provisionEgressProxyWithLoops(ctx)
+		return rt.provisionEgressProxyWithFleet(ctx)
 	case err != nil:
 		return err
 	case state.Paused:
@@ -122,9 +123,9 @@ func (rt *Runtime) ensureEgressProxy(ctx context.Context) error {
 	}
 }
 
-// provisionEgressProxyWithLoops provisions a proxy and gives it back the
-// loops' own entries, which a new container doesn't have.
-func (rt *Runtime) provisionEgressProxyWithLoops(ctx context.Context) error {
+// provisionEgressProxyWithFleet provisions a proxy and gives it back the
+// operator's extra hosts, which a new container doesn't have.
+func (rt *Runtime) provisionEgressProxyWithFleet(ctx context.Context) error {
 	if err := rt.provisionEgressProxy(ctx); err != nil {
 		return err
 	}
@@ -167,7 +168,7 @@ func (rt *Runtime) egressRunArgv() []string {
 		"--label", egressSpecLabel + "=" + rt.egressSpecHash(),
 		rt.egressImage,
 		"--listen", ":" + egressPort,
-		"--loops-file", loopEgressFile,
+		"--fleet-file", fleetEgressFile,
 	}
 	if allow := rt.egressEntries(); len(allow) > 0 {
 		argv = append(argv, "--allow", strings.Join(allow, ","))
@@ -229,9 +230,7 @@ func (rt *Runtime) EgressEnabled() bool { return rt.egressEnabled() }
 // egressEnv points every client inside the workstation at the proxy. These
 // are not credentials, so unlike the loop's own variables they cross in argv
 // as KEY=VALUE — nothing here is worth hiding from host `ps`, and a value in
-// argv is one fewer thing the exec client's environment has to carry. A wake
-// with egress entries of its own is the exception: its proxy URL carries a
-// token, and goes with the loop's variables instead (loopegress.go).
+// argv is one fewer thing the exec client's environment has to carry.
 //
 // NO_PROXY keeps a loop's own local servers direct: a dev server it starts on
 // localhost is inside the wall already and has no business going out and back.
@@ -241,33 +240,10 @@ func (rt *Runtime) egressEnv() []string {
 	}
 	url := rt.egressProxyURL()
 	var argv []string
-	for _, name := range proxyVars {
+	for _, name := range []string{"HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"} {
 		argv = append(argv, "--env", name+"="+url)
 	}
-	return append(argv, rt.noProxyEnv()...)
-}
-
-// proxyVars are the variables every client finds the proxy by.
-var proxyVars = []string{"HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"}
-
-// noProxyEnv is egressEnv without the proxy's URL, for a wake whose URL
-// carries its loop's token and so goes with the loop's own variables.
-func (rt *Runtime) noProxyEnv() []string {
-	return []string{"--env", "NO_PROXY=localhost,127.0.0.1,::1", "--env", "no_proxy=localhost,127.0.0.1,::1"}
-}
-
-// withProxy is env with every proxy variable set to proxyURL, on a copy. A
-// variable the loop's own env already sets keeps its value, as an attached
-// env-var wins every clash with what the hub sets (ADR-0043).
-func withProxy(env map[string]string, proxyURL string) map[string]string {
-	out := make(map[string]string, len(env)+len(proxyVars))
-	for _, name := range proxyVars {
-		out[name] = proxyURL
-	}
-	for name, value := range env {
-		out[name] = value
-	}
-	return out
+	return append(argv, "--env", "NO_PROXY=localhost,127.0.0.1,::1", "--env", "no_proxy=localhost,127.0.0.1,::1")
 }
 
 // networkArgs puts a workstation behind the wall. A runtime with no egress

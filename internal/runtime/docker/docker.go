@@ -65,12 +65,9 @@ type Runtime struct {
 	// both find a stale proxy, and two removals of it collide.
 	egressMu sync.Mutex
 
-	// loopEgress is each loop's own egress entries this hub run (#599),
-	// and fleetEgress the operator's extra hosts (#542), both under
-	// egressFileMu: the proxy's file holds them together and is rewritten
-	// one change at a time.
+	// fleetEgress is the operator's extra hosts (#542), under egressFileMu:
+	// the proxy's file holds them and is rewritten one change at a time.
 	egressFileMu sync.Mutex
-	loopEgress   map[string]loopEgressEntry
 	fleetEgress  []string
 	// fleetApplied is the fleet list the proxy's file last took, and
 	// fleetAppliedAt when; zero until this run has written it.
@@ -121,7 +118,6 @@ func New(opts Options) *Runtime {
 		mcpPort:      opts.MCPPort,
 		hook:         opts.Hook,
 		healthTTL:    opts.HealthTTL,
-		loopEgress:   map[string]loopEgressEntry{},
 	}
 }
 
@@ -235,18 +231,7 @@ func (rt *Runtime) Start(ctx context.Context, spec runtime.Spec) (runtime.Proc, 
 			return nil, err
 		}
 	}
-	tokened, err := rt.openLoopEgress(ctx, spec)
-	if err != nil {
-		return nil, err
-	}
-	egressEnv := rt.egressEnv()
-	if tokened {
-		// The proxy URL now carries a credential, so it crosses the way
-		// the loop's own variables do: value-less in argv.
-		egressEnv = rt.noProxyEnv()
-		spec.Env = withProxy(spec.Env, rt.loopProxyURL(spec.LoopName, spec.EgressToken))
-	}
-	argv, err := execArgv(spec, egressEnv, rt.hook)
+	argv, err := execArgv(spec, rt.egressEnv(), rt.hook)
 	if err != nil {
 		return nil, err
 	}
@@ -308,9 +293,6 @@ func (rt *Runtime) Halt(ctx context.Context, loopID string) error {
 // and the operator's recreate control get here — never sleep or pause
 // (ADR-0017).
 func (rt *Runtime) Destroy(ctx context.Context, loopID string) error {
-	if err := rt.closeLoopEgress(ctx, loopID); err != nil {
-		return err
-	}
 	name := containerName(loopID)
 	if _, err := rt.command(ctx, startTimeout, "rm", "--force", name); err != nil && !notFound(err) {
 		return err
