@@ -80,6 +80,14 @@ func rehomeDue(loopRecord *store.Loop) bool {
 		(loopRecord.Runtime == store.RuntimeBare || loopRecord.Runtime == "")
 }
 
+// rehomedNotRun reports whether loopRecord has moved into a workstation
+// and finished no turn there yet: the rehome's reason is kept until the
+// successor session's first completed turn, which is the first to run in
+// the workstation.
+func rehomedNotRun(loopRecord *store.Loop) bool {
+	return loopRecord.RotateReason == store.RotationReasonRehome && loopRecord.Runtime == store.RuntimeDocker
+}
+
 // claudeMemoryDir is where claude keeps the auto-memory of a session run in
 // workDir on this host, "" when there is no workspace to key one by. Claude
 // keys it by the project: the root of the git repo the workspace is in,
