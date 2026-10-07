@@ -14,8 +14,8 @@ import { PlusIcon } from './Icons'
 // one way, and Remove, since a private connection serves nobody else; a
 // shared row offers Detach.
 //
-// An attached env variable is set in the loop's env from its next wake, and
-// an MCP server is in its MCP config from then.
+// An env variable attached or detached reaches the loop's env from its next
+// turn (#640), and an MCP server its MCP config from its next wake.
 export function LoopConnections({ loop }: { loop: LoopView }) {
   const qc = useQueryClient()
   const { data: all } = useQuery({ queryKey: ['connections'], queryFn: api.connections })
@@ -102,8 +102,9 @@ export function LoopConnections({ loop }: { loop: LoopView }) {
         </button>
       </div>
       <div className="panel-note leading">
-        Env variables and MCP servers, applied from the next wake. A private one is this loop's alone; a
-        shared one is defined once for the fleet on the <Link to="/connections">Connections</Link> page.
+        Env variables apply from the loop's next turn, MCP servers from its next wake. A private one is this
+        loop's alone; a shared one is defined once for the fleet on the{' '}
+        <Link to="/connections">Connections</Link> page.
       </div>
       {attached.length === 0 ? (
         <div className="panel-empty">None attached.</div>
