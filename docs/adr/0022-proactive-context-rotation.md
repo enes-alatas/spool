@@ -1,6 +1,6 @@
 # ADR-0022: Context is rotated proactively, before the degradation zone
 
-Date: 2026-08-21 · Status: accepted · Amended: 2026-09-26 (§1, the handoff request names its cause); 2026-10-05 (§1, a replaced credential is a cause, #609); 2026-10-06 (§1, a revoked credential is a cause, #610)
+Date: 2026-08-21 · Status: accepted · Amended: 2026-09-26 (§1, the handoff request names its cause); 2026-10-05 (§1, a replaced credential is a cause, #609); 2026-10-06 (§1, a revoked credential is a cause, #610); 2026-10-07 (§1, a rehome is a cause, #624)
 
 ## Context
 
@@ -69,6 +69,23 @@ path above — is fully observable, and fakeclaude can test it end to end.
    session has the new value, because a revoke leaves none. It outranks a
    replaced credential, so the successor learns the credential is gone,
    and a mission change still outranks it.
+
+   **Amendment (2026-10-07, #624):** the operator moving a bare loop into
+   a docker workstation is a sixth cause, `rehome` (ADR-0018). The handoff
+   request says the loop is moving off the machine, that its bots,
+   channels, history and auto-memory go with it and the machine's files,
+   tools and logins do not, and asks it to commit and push its work and
+   name the repositories and branches it works in. The loop becomes a
+   docker loop at the rotation, between the two sessions, so the fresh
+   session starts in the workstation and is told it moved. A rehome
+   outranks every other cause, a mission change included: whatever else
+   the note says, its successor wakes on another machine. A rotation that
+   overtakes it, such as a session that cannot be resumed, still moves the
+   loop. A restart after the handoff turn has begun finishes the move; one
+   before it loses the request, which is the operator's to make again. Enes chose this over
+   carrying the session across on 2026-10-07 (#624): whether a transcript
+   resumes under a different working directory is untested, and the
+   handoff is the path Spool already trusts.
 2. **Armed at a soft threshold, fired at a quiet boundary.** Crossing the
    soft threshold arms the loop; rotation runs at the end of the next wake
    that leaves no queued work. A mid-task context is never summarized out

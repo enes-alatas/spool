@@ -1,6 +1,6 @@
 # ADR-0018: The docker workstation runtime drives Docker through the CLI
 
-Date: 2026-08-18 · Status: accepted · Amended: 2026-09-21 (§5, bare is opt-in)
+Date: 2026-08-18 · Status: accepted · Amended: 2026-09-21 (§5, bare is opt-in); 2026-10-07 (§5, a bare loop can be rehomed, #624)
 
 ## Context
 
@@ -43,6 +43,24 @@ context resolution, and Docker Desktop socket quirks (WSL2) for free.
    still takes `bare`, and the hub must have been started with `--runtime
    bare` or `--allow-bare` for a loop to be created with it (ADR-0017 §6,
    as amended).
+
+   **Amendment (2026-10-07, #624):** a bare loop can be moved into a
+   docker workstation without being recreated: `POST
+   /api/loops/{name}/rehome`. It keeps its identity, bots, channels and
+   history, and the move lands at a context rotation (ADR-0022). The hub
+   copies one thing of the host's into the workstation: the auto-memory
+   claude keeps for the workspace's project. Claude keys that by the
+   repo's main checkout, so it is the repo's memory rather than the
+   loop's: shared with every loop that has a worktree of the repo and
+   with the operator's own sessions in it. The copy and the host's
+   diverge from the move on, since what the loop writes in the
+   workstation stays there. Nothing else of the host's goes with it: its
+   files and workspace, its SSH keys, git, gh and Claude logins, and the
+   host user's Claude settings, skills, plugins and MCP servers stay
+   where they are, and the answer lists them for the operator to supply
+   another way. The other direction stays closed: a docker loop never
+   becomes bare. Enes chose a route over an offline command on
+   2026-10-07, so any operator can move a loop from the control room.
 6. **Tier-2 runs against real Docker.** A minimal test image carries
    fakeclaude installed as `claude`; the docker suites provision real
    containers, skip with a notice when no daemon is reachable, and always run

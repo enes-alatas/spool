@@ -81,6 +81,9 @@ func TestDockerRows(t *testing.T) {
 		{"DockerFailedPowerOnKeepsTheOffIntent", dockerFailedPowerOnKeepsTheOffIntent},
 		{"DockerDownReasonNamesTheFault", dockerDownReasonNamesTheFault},
 		{"OnboardingChecksASavedSetupToken", onboardingChecksASavedSetupToken},
+		{"BareLoopRehomesIntoAWorkstation", bareLoopRehomesIntoAWorkstation},
+		{"BareLoopWithNoSessionRehomesAtOnce", bareLoopWithNoSessionRehomesAtOnce},
+		{"ARestartFinishesARehome", aRestartFinishesARehome},
 	} {
 		t.Run(row.name, row.run)
 	}

@@ -138,6 +138,7 @@ func (server *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/loops/{name}/wake", server.handleWake)
 	mux.HandleFunc("POST /api/loops/{name}/kill", server.handleKill)
 	mux.HandleFunc("POST /api/loops/{name}/rotate", server.handleRotate)
+	mux.HandleFunc("POST /api/loops/{name}/rehome", server.handleRehome)
 	mux.HandleFunc("POST /api/loops/{name}/workstation/restart", server.handlePower(loop.PowerRestart))
 	mux.HandleFunc("POST /api/loops/{name}/workstation/poweroff", server.handlePower(loop.PowerOff))
 	mux.HandleFunc("POST /api/loops/{name}/workstation/poweron", server.handlePower(loop.PowerOn))
@@ -520,7 +521,7 @@ type createLoopReq struct {
 	Model           string  `json:"model"`
 	Effort          string  `json:"effort"`         // ""|low|medium|high|xhigh|max
 	Pacing          string  `json:"pacing"`         // ""(=fixed)|fixed|self
-	Runtime         string  `json:"runtime"`        // ""(=server default)|bare|docker; immutable after creation (ADR-0018)
+	Runtime         string  `json:"runtime"`        // ""(=server default)|bare|docker; set at creation; a bare loop moves to docker only through POST .../rehome (ADR-0018)
 	Image           string  `json:"image"`          // docker only; "" = the server's default image
 	MemMB           int     `json:"mem_mb"`         // docker only; 0 = 4096 (ADR-0017)
 	CPUs            float64 `json:"cpus"`           // docker only; 0 = 2
@@ -1096,6 +1097,57 @@ func (server *Server) handleRotate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 202, map[string]bool{"rotating": true})
+}
+
+// notCarried is what a rehome leaves on the host, for the operator to give
+// the workstation another way if the loop needs it: through the loop's
+// secrets and connections, or the workstation's image (#624).
+var notCarried = []string{
+	"files on the host outside the auto-memory, the workspace among them",
+	"SSH keys, git and gh credentials, and every other login on the host",
+	"the host user's Claude settings, CLAUDE.md, skills, agents, plugins and MCP servers",
+	"tools installed on the host",
+}
+
+// handleRehome moves a bare loop into a docker workstation (#624). The move
+// lands at the rotation it asks for, after the loop's handoff turn, so the
+// answer is the promise; a loop with no session moves before it is given.
+func (server *Server) handleRehome(w http.ResponseWriter, r *http.Request) {
+	loopRecord := server.loopByName(w, r)
+	if loopRecord == nil {
+		return
+	}
+	if loopRecord.Runtime != store.RuntimeBare && loopRecord.Runtime != "" {
+		server.jsonErr(w, 409, "%v", loop.ErrNotBare)
+		return
+	}
+	if server.RuntimeAvailable != nil {
+		if err := server.RuntimeAvailable(r.Context(), store.RuntimeDocker); err != nil {
+			server.jsonErr(w, 400, "docker runtime unavailable: %v", err)
+			return
+		}
+	}
+	if server.LoopListenerReachable != nil {
+		if err := server.LoopListenerReachable(r.Context()); err != nil {
+			server.jsonErrCode(w, 400, codeLoopListenerUnreachable, "%v", err)
+			return
+		}
+	}
+	actor, ok := server.Manager.Get(loopRecord.ID)
+	if !ok {
+		server.jsonErr(w, 409, "loop has no running actor")
+		return
+	}
+	if err := actor.Rehome(); err != nil {
+		server.jsonErr(w, 409, "%v", err)
+		return
+	}
+	server.loopChanged(r.Context(), loopRecord.ID)
+	writeJSON(w, 202, map[string]any{
+		"rehoming":    true,
+		"left_behind": loopRecord.WorkspacePath,
+		"not_carried": notCarried,
+	})
 }
 
 type postMessageReq struct {

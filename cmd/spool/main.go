@@ -301,6 +301,7 @@ func main() {
 		WorkstationHealthInterval: healthInterval,
 		PartialMessages:           *partials,
 		Logger:                    log,
+		DataDir:                   *dataDir,
 		RenderPrompt: func(loopRecord *store.Loop) loop.Prompt {
 			cat, rules := catalogOf(rdb, loopRecord), rulesOf(rdb)
 			return loop.Prompt{
