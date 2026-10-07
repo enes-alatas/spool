@@ -289,3 +289,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 ## 2026-10-07 07:00 — morning sweep
 - Overnight: #627 (#622, hub brokers http MCP servers) merged; #30 left with #626 (refactor). Terra pinged: #626 → #623 → #529(b) → #582. #624 (Terra, from Enes's Hetzner-move assessment: rehome bare loop → docker) has no milestone; asked Enes placement (after #623 under a "Hosted move" milestone, or behind #582). Rebuild DM sent (ref 3414; fleet on 10-06 09:42 build). Iris idle. L4 closes with #626 + #623.
 - 07:15: Terra had taken #529(b) (PR #629, with Quinn) before my ping; confirmed: #629 → #626 → #623 → #582; #624 placement pending Enes.
+- 07:35: Enes filed #624 himself, wants the move asap. Created milestone "Hosted move" (#9), put #624 on it; Terra reordered: #629 → #624 → #623 → #626 → #582 (suggested #623 before copying spool.db to the server). Asked Terra to file other move needs on the milestone.
