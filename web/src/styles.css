@@ -754,6 +754,11 @@ textarea {
   padding: 10px;
   margin-top: 10px;
 }
+/* what a rehome leaves on the host, one item a line */
+.rehome-confirm ul {
+  margin: 4px 0 6px;
+  padding-left: 18px;
+}
 .sender-allowed {
   background: var(--ready);
 }
