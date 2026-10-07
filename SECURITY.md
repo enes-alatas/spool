@@ -72,6 +72,12 @@ they *should* be true, only that they are known and recorded.
 - **The operator token is a file** at `<data-dir>/operator-token`, mode 0600.
   It keeps out other accounts on the machine, not processes already running as
   you.
+- **The hub key is a file too.** Every secret in `spool.db` is sealed under
+  `<data-dir>/hub.key`, mode 0600, so a copy of the database alone holds no
+  credential. A copy of the whole data directory holds the key as well, and
+  anything running as you can read both. Losing the key loses the secrets:
+  the hub won't start until you restore it, or start it once with
+  `--forget-secrets` and enter them again (ADR-0046).
 - **Spool does not terminate TLS.** A hub on a non-loopback `--listen` is a
   supported posture and the operator token is what protects it, but
   confidentiality across an untrusted network is a terminating proxy's job

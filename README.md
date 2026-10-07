@@ -96,6 +96,8 @@ Without `--mcp-listen`, the hub chooses where the loop listener goes, on `--mcp-
 
 On first start, Spool prints an **operator token** and stores it in the data directory. The control room asks for it once and then holds a session cookie. Every `/api` route except health and version requires it. Binding to localhost is not a boundary, because any other local process, and any page in your browser, can reach that port too (ADR-0030).
 
+Spool also mints a **hub key**, `hub.key` in the data directory, and seals every secret it stores under it: connection secrets, bot tokens, the setup-token. A copy of `spool.db` alone holds none of them. Back up `hub.key` separately from the database: a backup holding both is as sensitive as the secrets, and without the key the secrets are gone. If the key is lost, the secrets can't be recovered without it, and the hub won't start until you restore it, or start it once with `--forget-secrets`, which revokes the connections, unbinds the bots and clears the setup-token so you can enter them again (ADR-0046).
+
 ## Telegram
 
 Telegram is optional. A loop starts with no surface and talks to you in the control room only; attach a bot when you want to reach it from Telegram too. Each loop gets its **own** bot identity (Telegram bots can't see other bots' messages, so loop-to-loop delivery always happens inside Spool — Telegram is the human surface and the mirror):

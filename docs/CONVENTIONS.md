@@ -207,6 +207,12 @@ habits below.*
   that had only reached a log became readable to every account on the box. A new
   file under the data directory that carries secrets joins that list in the PR
   that adds it.
+- **A stored credential is sealed.** The store seals every credential it keeps
+  under the hub key (ADR-0046). A new column that holds one joins
+  `sealedColumns` in `internal/store/sqlite/seal.go`, and a new settings key
+  joins `sealedSettings` beside it, in the PR that adds it, and `forgetSecrets`
+  there clears it. Its table writes it sealed and reads it opened, and never
+  compares it in SQL.
 - **Credential inputs are masked and decline autofill.** An input that takes a
   credential is `type="password"` with `autoComplete="off"`, wherever the value is
   entered — a first entry is as exposed as a replacement, and the field a form

@@ -181,7 +181,10 @@ or a body that is not `application/json` for the rest. On the loop listener
 `/mcp` and every brokered server under `/mcp/connections/` require the
 requesting loop's own token. Those three aside nothing is
 unauthenticated, and neither credential is ever handed to the other's
-audience.
+audience. Every credential the store keeps — connection secrets, bot tokens,
+hub MCP tokens, the setup-token — is sealed in `spool.db` under the **hub
+key**, `<data-dir>/hub.key`, so a copy of the database alone carries none of
+them (ADR-0046).
 
 The Surface seam is live: `internal/surface` owns the interface,
 `internal/surface/telegram` is the bridge behind it, and `internal/surface/slack`
