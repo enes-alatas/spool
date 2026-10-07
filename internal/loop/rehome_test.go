@@ -5,6 +5,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/enes-alatas/spool/internal/store"
 )
 
 // TestProjectSlugIsClaudes: claude names a project's directory after its
@@ -88,5 +90,35 @@ func TestStageMemoryCopiesTheNotes(t *testing.T) {
 	}
 	if _, err := os.Stat(empty); !os.IsNotExist(err) {
 		t.Errorf("no memory staged a directory anyway: %v", err)
+	}
+}
+
+// TestRehomePendingSpansTheRequestNotTheRow: a rehome is pending from its
+// latch through its handoff, and not once the move has failed, though the
+// row still names it as the last rotation's cause on a bare loop (#632).
+func TestRehomePendingSpansTheRequestNotTheRow(t *testing.T) {
+	rehome := store.RotationReasonRehome
+	bare := store.Loop{Runtime: store.RuntimeBare}
+	handingOff := bare
+	handingOff.RotatePending, handingOff.RotateReason = true, rehome
+	failed := bare
+	failed.RotateReason = rehome
+	for _, testCase := range []struct {
+		name          string
+		loop          store.Loop
+		rotateAsked   string
+		handoffReason string
+		want          bool
+	}{
+		{"nothing asked", bare, "", "", false},
+		{"latched", bare, rehome, "", true},
+		{"a context rotation latched", bare, store.RotationReasonFill, "", false},
+		{"handing off", handingOff, rehome, rehome, true},
+		{"the move failed", failed, "", rehome, false},
+	} {
+		actor := &Actor{loop: testCase.loop, rotateAsked: testCase.rotateAsked, handoffReason: testCase.handoffReason}
+		if got := actor.rehomePending(); got != testCase.want {
+			t.Errorf("%s: rehomePending = %v, want %v", testCase.name, got, testCase.want)
+		}
 	}
 }

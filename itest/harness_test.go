@@ -355,6 +355,7 @@ type loopView struct {
 	Runtime            string  `json:"runtime"`
 	WorkspacePath      string  `json:"workspace_path"`
 	WorkstationUp      bool    `json:"workstation_up"`
+	Rehoming           bool    `json:"rehoming"`
 	DownReason         string  `json:"down_reason"`
 	ContextTokens      int     `json:"context_tokens"`
 	ContextLimitTokens int     `json:"context_limit_tokens"`
