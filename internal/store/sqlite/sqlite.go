@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/fs"
 	"math"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -22,9 +23,13 @@ import (
 var migrationsFS embed.FS
 
 type DB struct {
-	db *sql.DB
+	db     *sql.DB
+	sealer *box // the hub key's, which every secret is sealed under
 }
 
+// Open opens the database at path, migrating it, with its secrets sealed
+// under the hub key in the same directory (ADR-0046). A database with no
+// key yet gets one; one whose key is missing or wrong is refused.
 func Open(path string) (*DB, error) {
 	// synchronous(NORMAL): a commit reaches the WAL, in the OS's hands,
 	// without waiting on an fsync, which comes at the checkpoint. A killed
@@ -42,6 +47,10 @@ func Open(path string) (*DB, error) {
 	db.SetMaxOpenConns(1)
 	database := &DB{db: db}
 	if err := database.migrate(); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := database.unseal(filepath.Dir(path)); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -94,12 +103,14 @@ func (database *DB) migrate() error {
 
 func (database *DB) Close() error { return database.db.Close() }
 
-func (database *DB) Loops() store.LoopStore               { return loops{database.db} }
-func (database *DB) Channels() store.ChannelStore         { return channels{database.db} }
-func (database *DB) Rooms() store.RoomStore               { return rooms{database.db} }
-func (database *DB) Reactions() store.ReactionStore       { return reactions{database.db} }
-func (database *DB) Polls() store.PollStore               { return polls{database.db} }
-func (database *DB) Connections() store.ConnectionStore   { return connections{database.db} }
+func (database *DB) Loops() store.LoopStore         { return loops{database.db, database.sealer} }
+func (database *DB) Channels() store.ChannelStore   { return channels{database.db} }
+func (database *DB) Rooms() store.RoomStore         { return rooms{database.db} }
+func (database *DB) Reactions() store.ReactionStore { return reactions{database.db} }
+func (database *DB) Polls() store.PollStore         { return polls{database.db} }
+func (database *DB) Connections() store.ConnectionStore {
+	return connections{database.db, database.sealer}
+}
 func (database *DB) FleetRules() store.FleetRuleStore     { return fleetRules{database.db} }
 func (database *DB) Sessions() store.SessionStore         { return sessions{database.db} }
 func (database *DB) Messages() store.MessageStore         { return messages{database.db} }
@@ -108,7 +119,7 @@ func (database *DB) Turns() store.TurnStore               { return turns{databas
 func (database *DB) Events() store.EventStore             { return events{database.db} }
 func (database *DB) Schedule() store.ScheduleStore        { return schedule{database.db} }
 func (database *DB) Inbox() store.InboxStore              { return inbox{database.db} }
-func (database *DB) Settings() store.SettingsStore        { return settings{database.db} }
+func (database *DB) Settings() store.SettingsStore        { return settings{database.db, database.sealer} }
 func (database *DB) TGSenders() store.TGSenderStore       { return tgSenders{database.db} }
 func (database *DB) SlackSenders() store.SlackSenderStore { return slackSenders{database.db} }
 func (database *DB) Models() store.ModelStore             { return models{database.db} }
@@ -129,7 +140,10 @@ func fromJSON(encoded string) []string {
 
 // --- loops ---
 
-type loops struct{ db *sql.DB }
+type loops struct {
+	db     *sql.DB
+	sealer *box
+}
 
 // loopCols are the columns of a loops row, in the order Create writes them.
 // loopReadCols reads them back with the fleet channel's Telegram room, which
@@ -153,7 +167,8 @@ const loopReadCols = loopCols + `,
 	COALESCE((SELECT bound_at FROM rooms WHERE rooms.loop_id=loops.id
 		AND surface='` + store.SurfaceSlack + `' AND channel='` + store.FleetChannel + `'), 0)`
 
-func scanLoop(row interface{ Scan(...any) error }) (*store.Loop, error) {
+// scanLoop reads a loops row, opening its sealed tokens.
+func (table loops) scanLoop(row interface{ Scan(...any) error }) (*store.Loop, error) {
 	var loopRecord store.Loop
 	err := row.Scan(&loopRecord.ID, &loopRecord.Name, &loopRecord.Mission, &loopRecord.Model, &loopRecord.WorkspaceMode, &loopRecord.WorkspacePath,
 		&loopRecord.RepoPath, &loopRecord.WorktreePath, &loopRecord.Branch, &loopRecord.TickIntervalSec, &loopRecord.MinWakeSec,
@@ -174,6 +189,11 @@ func scanLoop(row interface{ Scan(...any) error }) (*store.Loop, error) {
 	if err != nil {
 		return nil, err
 	}
+	for _, token := range []*string{&loopRecord.TGBotToken, &loopRecord.SlackAppToken, &loopRecord.SlackBotToken, &loopRecord.HubMCPToken} {
+		if *token, err = table.sealer.open(*token); err != nil {
+			return nil, err
+		}
+	}
 	return &loopRecord, nil
 }
 
@@ -185,19 +205,20 @@ func (table loops) Create(ctx context.Context, loopRecord *store.Loop) error {
 	if loopRecord.HubMCPToken == "" {
 		loopRecord.HubMCPToken = store.NewHubMCPToken()
 	}
-	_, err := table.db.ExecContext(ctx, `INSERT INTO loops (`+loopCols+`) VALUES
-		(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+	sealer := table.sealer
+	_, err := table.db.ExecContext(ctx, `INSERT INTO loops (`+loopCols+`, hub_mcp_token_hash) VALUES
+		(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		loopRecord.ID, loopRecord.Name, loopRecord.Mission, loopRecord.Model, loopRecord.WorkspaceMode, loopRecord.WorkspacePath, loopRecord.RepoPath,
 		loopRecord.WorktreePath, loopRecord.Branch, loopRecord.TickIntervalSec, loopRecord.MinWakeSec, loopRecord.MaxWakeSec,
-		loopRecord.IdleTimeoutSec, loopRecord.Pacing, loopRecord.Effort, loopRecord.TGBotToken, loopRecord.TGBotUsername,
+		loopRecord.IdleTimeoutSec, loopRecord.Pacing, loopRecord.Effort, sealer.seal(loopRecord.TGBotToken), loopRecord.TGBotUsername,
 		loopRecord.OwnerTGUserID, loopRecord.OwnerDMChatID,
 		loopRecord.WorkstationOff, loopRecord.OutsideFleetChannel, loopRecord.Status, loopRecord.CurrentSessionID, loopRecord.CurrentPID,
 		loopRecord.CreatedAt, loopRecord.UpdatedAt,
-		loopRecord.Runtime, loopRecord.Image, loopRecord.MemMB, loopRecord.CPUs, loopRecord.HubMCPToken, loopRecord.RotatePending, loopRecord.RotateReason,
+		loopRecord.Runtime, loopRecord.Image, loopRecord.MemMB, loopRecord.CPUs, sealer.seal(loopRecord.HubMCPToken), loopRecord.RotatePending, loopRecord.RotateReason,
 		loopRecord.HandoffNote, loopRecord.PromptHash, loopRecord.ModelRefusal,
-		loopRecord.SlackAppToken, loopRecord.SlackBotToken, loopRecord.SlackBotUserID, loopRecord.SlackBotName,
+		sealer.seal(loopRecord.SlackAppToken), sealer.seal(loopRecord.SlackBotToken), loopRecord.SlackBotUserID, loopRecord.SlackBotName,
 		loopRecord.SlackTeamID, loopRecord.SlackTeamName,
-		loopRecord.OwnerSlackUserID, loopRecord.OwnerSlackDMChannel)
+		loopRecord.OwnerSlackUserID, loopRecord.OwnerSlackDMChannel, tokenHash(loopRecord.HubMCPToken))
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return store.ErrDuplicate
 	}
@@ -207,13 +228,13 @@ func (table loops) Create(ctx context.Context, loopRecord *store.Loop) error {
 	// A loop created already bound, as a fixture's are: its group or its
 	// Slack channel is a room.
 	if loopRecord.TGGroupChatID != 0 {
-		if _, err := rooms(table).Bind(ctx, loopRecord.ID, store.SurfaceTelegram,
+		if _, err := (rooms{table.db}).Bind(ctx, loopRecord.ID, store.SurfaceTelegram,
 			strconv.FormatInt(loopRecord.TGGroupChatID, 10), store.FleetChannel, loopRecord.TGGroupBoundAt); err != nil {
 			return err
 		}
 	}
 	if loopRecord.SlackChannelID != "" {
-		if _, err := rooms(table).Bind(ctx, loopRecord.ID, store.SurfaceSlack,
+		if _, err := (rooms{table.db}).Bind(ctx, loopRecord.ID, store.SurfaceSlack,
 			loopRecord.SlackChannelID, store.FleetChannel, loopRecord.SlackChannelBoundAt); err != nil {
 			return err
 		}
@@ -259,7 +280,7 @@ func (table loops) Edit(ctx context.Context, id string, edit store.LoopEdit) (*s
 		set("idle_timeout_sec", *edit.IdleTimeoutSec)
 	}
 	if edit.TGBotToken != nil {
-		set("tg_bot_token", *edit.TGBotToken)
+		set("tg_bot_token", table.sealer.seal(*edit.TGBotToken))
 	}
 	if edit.TGBotUsername != nil {
 		set("tg_bot_username", *edit.TGBotUsername)
@@ -268,8 +289,8 @@ func (table loops) Edit(ctx context.Context, id string, edit store.LoopEdit) (*s
 		set("outside_fleet_channel", *edit.OutsideFleetChannel)
 	}
 	if slack := edit.Slack; slack != nil {
-		set("slack_app_token", slack.AppToken)
-		set("slack_bot_token", slack.BotToken)
+		set("slack_app_token", table.sealer.seal(slack.AppToken))
+		set("slack_bot_token", table.sealer.seal(slack.BotToken))
 		set("slack_bot_user_id", slack.BotUserID)
 		set("slack_bot_name", slack.BotName)
 		set("slack_team_id", slack.TeamID)
@@ -348,11 +369,11 @@ func (table loops) Delete(ctx context.Context, id string, at int64) error {
 }
 
 func (table loops) Get(ctx context.Context, id string) (*store.Loop, error) {
-	return scanLoop(table.db.QueryRowContext(ctx, `SELECT `+loopReadCols+` FROM loops WHERE id=?`, id))
+	return table.scanLoop(table.db.QueryRowContext(ctx, `SELECT `+loopReadCols+` FROM loops WHERE id=?`, id))
 }
 
 func (table loops) GetByName(ctx context.Context, name string) (*store.Loop, error) {
-	return scanLoop(table.db.QueryRowContext(ctx, `SELECT `+loopReadCols+` FROM loops WHERE name=?`, name))
+	return table.scanLoop(table.db.QueryRowContext(ctx, `SELECT `+loopReadCols+` FROM loops WHERE name=?`, name))
 }
 
 func (table loops) GetByHubMCPToken(ctx context.Context, token string) (*store.Loop, error) {
@@ -360,7 +381,7 @@ func (table loops) GetByHubMCPToken(ctx context.Context, token string) (*store.L
 		// Every pre-backfill row would match ''; an empty bearer is never valid.
 		return nil, store.ErrNotFound
 	}
-	return scanLoop(table.db.QueryRowContext(ctx, `SELECT `+loopReadCols+` FROM loops WHERE hub_mcp_token=?`, token))
+	return table.scanLoop(table.db.QueryRowContext(ctx, `SELECT `+loopReadCols+` FROM loops WHERE hub_mcp_token_hash=?`, tokenHash(token)))
 }
 
 func (table loops) List(ctx context.Context) ([]*store.Loop, error) {
@@ -371,7 +392,7 @@ func (table loops) List(ctx context.Context) ([]*store.Loop, error) {
 	defer rows.Close()
 	var out []*store.Loop
 	for rows.Next() {
-		loopRecord, err := scanLoop(rows)
+		loopRecord, err := table.scanLoop(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -1395,7 +1416,10 @@ func (table inbox) Drain(ctx context.Context, loopID string) ([]string, error) {
 
 // --- settings ---
 
-type settings struct{ db *sql.DB }
+type settings struct {
+	db     *sql.DB
+	sealer *box
+}
 
 func (table settings) Get(ctx context.Context, key string) (string, error) {
 	var value string
@@ -1403,13 +1427,24 @@ func (table settings) Get(ctx context.Context, key string) (string, error) {
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", store.ErrNotFound
 	}
-	return value, err
+	if err != nil || !sealedSettings[key] {
+		return value, err
+	}
+	return table.sealer.open(value)
 }
 
 func (table settings) Set(ctx context.Context, key, value string) error {
 	_, err := table.db.ExecContext(ctx, `INSERT INTO settings (key, value) VALUES (?,?)
-		ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, value)
+		ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, table.sealIfSecret(key, value))
 	return err
+}
+
+// sealIfSecret seals the value of a settings key that holds a secret.
+func (table settings) sealIfSecret(key, value string) string {
+	if sealedSettings[key] {
+		return table.sealer.seal(value)
+	}
+	return value
 }
 
 // --- fleet rules ---

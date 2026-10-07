@@ -4,7 +4,6 @@ package itest
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"net/http"
 	"path/filepath"
@@ -12,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/enes-alatas/spool/internal/store/sqlite"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	_ "modernc.org/sqlite"
 )
@@ -20,20 +20,21 @@ import (
 // client — the runner doesn't hand loops the endpoint yet, so the tool's
 // contract (ADR-0026) is exercised directly.
 
-// hubMCPToken reads a loop's bearer token straight from spool.db: it is
-// deliberately absent from every API response.
+// hubMCPToken reads a loop's bearer token from spool.db through the store,
+// which opens it under the hub key (ADR-0046): it is deliberately absent
+// from every API response.
 func hubMCPToken(t *testing.T, s *server, name string) string {
 	t.Helper()
-	db, err := sql.Open("sqlite", "file:"+filepath.Join(s.dataDir, "spool.db")+"?mode=ro")
+	db, err := sqlite.Open(filepath.Join(s.dataDir, "spool.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	var token string
-	if err := db.QueryRow(`SELECT hub_mcp_token FROM loops WHERE name=?`, name).Scan(&token); err != nil {
+	loopRecord, err := db.Loops().GetByName(context.Background(), name)
+	if err != nil {
 		t.Fatalf("token for %s: %v", name, err)
 	}
-	return token
+	return loopRecord.HubMCPToken
 }
 
 type bearerTransport struct{ token string }
