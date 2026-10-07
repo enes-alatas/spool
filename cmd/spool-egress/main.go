@@ -20,7 +20,7 @@ import (
 func main() {
 	listen := flag.String("listen", ":3128", "address to serve the proxy on")
 	extra := flag.String("allow", "", "comma-separated entries to permit on top of the built-in defaults, each host or host:port")
-	loopsFile := flag.String("loops-file", "", "file of the operator's extra entries and each loop's own, keyed by its proxy token's hash; re-read when it changes")
+	fleetFile := flag.String("fleet-file", "", "file of the operator's extra entries, re-read when it changes")
 	verbose := flag.Bool("verbose", false, "log every allowed request, not just refusals")
 	flag.Parse()
 
@@ -51,11 +51,11 @@ func main() {
 
 	// No read or write timeout: a CONNECT tunnel is long-lived by nature and
 	// a loop's turn can hold one open for the length of a model response.
-	var fromFile *egress.FileAllowlists
-	if *loopsFile != "" {
-		fromFile = egress.NewFileAllowlists(*loopsFile, log)
+	var fleet *egress.FleetFile
+	if *fleetFile != "" {
+		fleet = egress.NewFleetFile(*fleetFile, log)
 	}
-	srv := &http.Server{Addr: *listen, Handler: egress.NewProxy(allow, fromFile, log)}
+	srv := &http.Server{Addr: *listen, Handler: egress.NewProxy(allow, fleet, log)}
 	if err := srv.ListenAndServe(); err != nil {
 		log.Error("egress proxy stopped", "err", err)
 		os.Exit(1)

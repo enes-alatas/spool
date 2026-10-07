@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestAllowlistMatching(t *testing.T) {
@@ -180,8 +179,12 @@ func TestProxyRefusesAllowedHostOnAnotherPort(t *testing.T) {
 	}
 }
 
+// A client's proxy credentials are the proxy's to read, never the upstream's:
+// Proxy-Authorization is hop-by-hop and is dropped before forwarding.
 func TestProxyForwardsAllowedPlainHTTP(t *testing.T) {
+	var relayed string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		relayed = r.Header.Get("Proxy-Authorization")
 		w.Header().Set("X-Upstream", "yes")
 		_, _ = io.WriteString(w, "hello from "+r.Host+r.URL.Path)
 	}))
@@ -194,9 +197,14 @@ func TestProxyForwardsAllowedPlainHTTP(t *testing.T) {
 	front := httptest.NewServer(proxy)
 	defer front.Close()
 
-	resp, body := viaProxy(t, front.URL, "http://allowed.example/work")
+	withCredentials, _ := url.Parse(front.URL)
+	withCredentials.User = url.UserPassword("loop", "fixture-proxy-password")
+	resp, body := viaProxy(t, withCredentials.String(), "http://allowed.example/work")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if relayed != "" {
+		t.Errorf("Proxy-Authorization was relayed upstream: %q", relayed)
 	}
 	if resp.Header.Get("X-Upstream") != "yes" {
 		t.Errorf("upstream headers must reach the client: %v", resp.Header)
@@ -275,75 +283,39 @@ func dialTo(addr string) func(string, string) (net.Conn, error) {
 	}
 }
 
-// A loop's own entries reach that loop alone: the one whose proxy token a
-// request carries. A request with another loop's token, or none, gets the
-// fleet's list, and the token is never relayed upstream. The file is re-read
-// when its bytes change, whatever its stamp says, and one that can't be
-// parsed keeps the last good read (#599).
-func TestProxyGivesALoopItsOwnEntries(t *testing.T) {
-	var relayed []string
+// The operator's extra hosts reach every loop and move when the file does:
+// the hub adds and removes one without recreating the proxy (#542). The
+// file is re-read when its bytes change, whatever its stamp says, and one
+// that can't be parsed keeps the last good read.
+func TestProxyGivesEveryLoopTheFleetEntries(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		relayed = append(relayed, r.Header.Get("Proxy-Authorization"))
 		_, _ = io.WriteString(w, "ok")
 	}))
 	defer upstream.Close()
 
-	path := filepath.Join(t.TempDir(), "loops.json")
+	path := filepath.Join(t.TempDir(), "fleet.json")
 	write := func(content string) {
 		t.Helper()
 		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		// a rewrite inside the filesystem's timestamp granularity still
-		// has to be noticed when its size is the same
-		future := time.Now().Add(time.Duration(len(relayed)+1) * time.Second)
-		if err := os.Chtimes(path, future, future); err != nil {
-			t.Fatal(err)
-		}
 	}
-	const asterToken, briarToken = "fixture-aster-proxy-token", "fixture-briar-proxy-token"
-	write(`{"loops":{"` + LoopKey(asterToken) + `":["tracker.example"]}}`)
-
-	proxy := NewProxy(New([]string{"fleet.example"}), NewFileAllowlists(path, nil), nil)
+	proxy := NewProxy(New(nil), NewFleetFile(path, nil), nil)
 	proxy.dial = dialTo(upstream.Listener.Addr().String())
 	front := httptest.NewServer(proxy)
 	defer front.Close()
-	as := func(token string) string {
-		base, _ := url.Parse(front.URL)
-		if token != "" {
-			base.User = url.UserPassword("loop", token)
-		}
-		return base.String()
-	}
-	status := func(proxyBase, target string) int {
+	status := func(target string) int {
 		t.Helper()
-		resp, _ := viaProxy(t, proxyBase, target)
+		resp, _ := viaProxy(t, front.URL, target)
 		return resp.StatusCode
 	}
 
-	if got := status(as(asterToken), "http://tracker.example/"); got != http.StatusOK {
-		t.Fatalf("aster to its own host = %d, want 200", got)
+	if got := status("http://pkg.example/"); got != http.StatusForbidden {
+		t.Fatalf("before the host is added = %d, want 403", got)
 	}
-	for _, other := range []string{briarToken, ""} {
-		if got := status(as(other), "http://tracker.example/"); got != http.StatusForbidden {
-			t.Errorf("token %q to aster's host = %d, want 403", other, got)
-		}
-	}
-	if got := status(as(""), "http://fleet.example/"); got != http.StatusOK {
-		t.Errorf("no token to a fleet host = %d, want 200", got)
-	}
-	for _, header := range relayed {
-		if header != "" {
-			t.Errorf("the proxy token was relayed upstream: %q", header)
-		}
-	}
-
-	write(`{"loops":{"` + LoopKey(briarToken) + `":["tracker.example"]}}`)
-	if got := status(as(asterToken), "http://tracker.example/"); got != http.StatusForbidden {
-		t.Errorf("aster after its entry moved to briar = %d, want 403", got)
-	}
-	if got := status(as(briarToken), "http://tracker.example/"); got != http.StatusOK {
-		t.Errorf("briar after it was given the host = %d, want 200", got)
+	write(`{"fleet":["pkg.example"]}`)
+	if got := status("http://pkg.example/"); got != http.StatusOK {
+		t.Errorf("after the host is added = %d, want 200", got)
 	}
 
 	// a same-size rewrite in the same second, as docker cp leaves one,
@@ -352,65 +324,26 @@ func TestProxyGivesALoopItsOwnEntries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(`{"loops":{"`+LoopKey(asterToken)+`":["tracker.example"]}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	write(`{"fleet":["pkg.exampla"]}`)
 	if err := os.Chtimes(path, before.ModTime(), before.ModTime()); err != nil {
 		t.Fatal(err)
 	}
 	if after, _ := os.Stat(path); after.Size() != before.Size() {
 		t.Fatalf("the rewrite must keep the size to test this: %d, was %d", after.Size(), before.Size())
 	}
-	if got := status(as(asterToken), "http://tracker.example/"); got != http.StatusOK {
-		t.Errorf("aster after a same-size, same-stamp rewrite gave it the host = %d, want 200", got)
+	if got := status("http://pkg.example/"); got != http.StatusForbidden {
+		t.Errorf("after a same-size, same-stamp rewrite took the host away = %d, want 403", got)
+	}
+	if got := status("http://pkg.exampla/"); got != http.StatusOK {
+		t.Errorf("after a same-size, same-stamp rewrite gave a host = %d, want 200", got)
 	}
 
-	write(`{"loops":`)
-	if got := status(as(asterToken), "http://tracker.example/"); got != http.StatusOK {
-		t.Errorf("aster after an unparseable rewrite = %d, want 200 from the last good read", got)
+	write(`{"fleet":`)
+	if got := status("http://pkg.exampla/"); got != http.StatusOK {
+		t.Errorf("after an unparseable rewrite = %d, want 200 from the last good read", got)
 	}
-}
-
-// The operator's extra hosts reach every loop, with a token or without,
-// and move when the file does: the hub adds and removes one without
-// recreating the proxy (#542).
-func TestProxyGivesEveryLoopTheFleetEntries(t *testing.T) {
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, "ok")
-	}))
-	defer upstream.Close()
-
-	path := filepath.Join(t.TempDir(), "loops.json")
-	write := func(content string) {
-		t.Helper()
-		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	const asterToken = "fixture-aster-proxy-token"
-	proxy := NewProxy(New(nil), NewFileAllowlists(path, nil), nil)
-	proxy.dial = dialTo(upstream.Listener.Addr().String())
-	front := httptest.NewServer(proxy)
-	defer front.Close()
-	withToken, _ := url.Parse(front.URL)
-	withToken.User = url.UserPassword("loop", asterToken)
-	status := func(proxyBase string) int {
-		t.Helper()
-		resp, _ := viaProxy(t, proxyBase, "http://pkg.example/")
-		return resp.StatusCode
-	}
-
-	if got := status(front.URL); got != http.StatusForbidden {
-		t.Fatalf("before the host is added = %d, want 403", got)
-	}
-	write(`{"fleet":["pkg.example"],"loops":{}}`)
-	for _, base := range []string{front.URL, withToken.String()} {
-		if got := status(base); got != http.StatusOK {
-			t.Errorf("via %s after the host is added = %d, want 200", base, got)
-		}
-	}
-	write(`{"loops":{}}`)
-	if got := status(front.URL); got != http.StatusForbidden {
+	write(`{}`)
+	if got := status("http://pkg.exampla/"); got != http.StatusForbidden {
 		t.Errorf("after the host is removed = %d, want 403", got)
 	}
 }

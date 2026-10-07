@@ -130,7 +130,7 @@ func TestEgressProxyRunArgv(t *testing.T) {
 		"--network spool-egress",
 		"--restart unless-stopped",
 		"--add-host host.docker.internal:host-gateway",
-		"spool-egress --listen :3128 --loops-file /spool-egress-loops.json",
+		"spool-egress --listen :3128 --fleet-file /spool-egress-fleet.json",
 		// the hub's MCP port is allowlisted and no other, so an allowlisted
 		// gateway is not a tunnel to the operator's machine — its API port
 		// included (#238)
@@ -144,33 +144,6 @@ func TestEgressProxyRunArgv(t *testing.T) {
 	// recreates nothing (#542)
 	if strings.Contains(got, "internal.example") {
 		t.Errorf("proxy run argv carries a fleet host: %q", got)
-	}
-}
-
-// A wake with egress entries of its own carries its token in the proxy URL,
-// which then crosses value-less like the loop's own variables. An attached
-// env-var that sets a proxy variable keeps its value (#599).
-func TestALoopProxyURLCrossesValueless(t *testing.T) {
-	rt := &Runtime{egressImage: "spool-egress"}
-	proxyURL := rt.loopProxyURL("aster", "fixture-proxy-token")
-	if proxyURL != "http://aster:fixture-proxy-token@spool-egress-proxy:3128" {
-		t.Fatalf("loopProxyURL = %q", proxyURL)
-	}
-	env := withProxy(map[string]string{"GH_TOKEN": "g", "https_proxy": "http://operator.example:3128"}, proxyURL)
-	want := map[string]string{
-		"GH_TOKEN": "g", "HTTP_PROXY": proxyURL, "HTTPS_PROXY": proxyURL, "http_proxy": proxyURL,
-		"https_proxy": "http://operator.example:3128",
-	}
-	if !reflect.DeepEqual(env, want) {
-		t.Errorf("withProxy = %v, want %v", env, want)
-	}
-	argv, err := execArgv(runtime.Spec{LoopID: "abc", WorkDir: runtime.WorkstationHome, SessionID: "s", Env: env}, rt.noProxyEnv(), "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if joined := strings.Join(argv, " "); strings.Contains(joined, "fixture-proxy-token") || !strings.Contains(joined, "--env HTTPS_PROXY ") ||
-		!strings.Contains(joined, "--env NO_PROXY=localhost,127.0.0.1,::1") {
-		t.Errorf("argv = %q, want the proxy variables value-less and NO_PROXY set", joined)
 	}
 }
 

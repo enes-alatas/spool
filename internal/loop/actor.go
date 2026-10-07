@@ -587,7 +587,6 @@ func (actor *Actor) wake() {
 		system["CLAUDE_CODE_OAUTH_TOKEN"] = token
 	}
 	spec.Env = buildExecEnv(system, connections)
-	spec.EgressToken = actor.loop.HubMCPToken
 	if err := loopRuntime.Ensure(ctx, spec); err != nil {
 		actor.log().Error("workstation not ready", "err", err)
 		actor.setWorkstationDown(DownReasonUnreachable, err.Error())
