@@ -180,7 +180,8 @@ habits below.*
   **`make ui-shots` is how** (#248): it seeds a throwaway store with an invented
   fleet (`cmd/uifixture`), starts a hub on it, and writes the standard set —
   Fleet, the fleet channel, a loop timeline, New loop, Access, Rules, Settings and its Egress section, a loop's Undelivered pane, a
-  loop's Connections panel, the Connections page, the mission editor —
+  loop's Connections panel, the Connections page, the mission editor, a bare loop's
+  move into a docker container —
   to the gitignored `web/shots/`. The hub and its store are gone the moment the
   command returns, so a page the set does not cover is covered by adding it to
   the `shots` list in `web/scripts/ui-shots.mjs` — there is no hub left to
