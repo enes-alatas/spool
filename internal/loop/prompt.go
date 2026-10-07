@@ -1210,6 +1210,13 @@ value out of your note.`
 		cause = `The operator revoked a credential you held, so this session ends here and a
 fresh session continues your work without it. Leave every credential value out
 of your note.`
+	case store.RotationReasonRehome:
+		cause = `The operator is moving you off this machine into your own docker
+workstation, so this session ends here and a fresh session continues your work
+there. Your bots, channels, history and auto-memory go with you; this machine's
+files, tools and logins do not, and your workspace here is left behind. Before
+you write the note, commit and push any work you want to keep. Say in your note
+which repositories and branches you work in, so your successor can clone them.`
 	default:
 		cause = `Your context window is filling up, so this session ends here and a fresh
 session continues your work.`
@@ -1241,13 +1248,19 @@ func SessionLostPreamble(loopRecord *store.Loop, recentTurns []string) string {
 // rotation, carrying the note the previous session wrote on its way out.
 // After a mission change it says so: the successor starts under a mission
 // its predecessor never ran, and the note was written against the old one.
+// After a rehome it says so too: the paths and tools the note names were the
+// old machine's.
 func RotationPreamble(loopRecord *store.Loop, reason, note string, recentTurns []string) string {
 	var text strings.Builder
 	noteFrom := "Handoff note from your previous session:"
-	if reason == store.RotationReasonMission {
+	switch reason {
+	case store.RotationReasonMission:
 		text.WriteString("[system note · your mission was changed and your context rotated; this fresh session continues your work under the new mission]\n\n")
 		noteFrom = "Handoff note from your previous session, written under your previous mission:"
-	} else {
+	case store.RotationReasonRehome:
+		text.WriteString("[system note · you were moved into your own docker workstation; this fresh session continues your work there, and the machine your previous session ran on is out of reach]\n\n")
+		noteFrom = "Handoff note from your previous session, written on that machine:"
+	default:
 		text.WriteString("[system note · your context was rotated; this fresh session continues your work]\n\n")
 	}
 	fmt.Fprintf(&text, "Your mission (restated): %s\n", strings.TrimSpace(loopRecord.Mission))

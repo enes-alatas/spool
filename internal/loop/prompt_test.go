@@ -196,6 +196,7 @@ func TestRotationEnvelope(t *testing.T) {
 		{store.RotationReasonMission, "The operator rewrote your mission"},
 		{store.RotationReasonConnection, "The operator replaced a credential you hold"},
 		{store.RotationReasonRevoke, "The operator revoked a credential you held"},
+		{store.RotationReasonRehome, "The operator is moving you off this machine"},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.reason, func(t *testing.T) {
@@ -220,6 +221,11 @@ func TestRotationEnvelope(t *testing.T) {
 			credential := testCase.reason == store.RotationReasonConnection || testCase.reason == store.RotationReasonRevoke
 			if asks := strings.Contains(flat, "Leave every credential value out of your note"); asks != credential {
 				t.Errorf("envelope asks to leave credential values out = %v:\n%s", asks, env.Text)
+			}
+			// Only a rehome asks for the work to be pushed first: the
+			// workspace it was done in stays on the machine left behind.
+			if asks := strings.Contains(flat, "commit and push any work you want to keep"); asks != (testCase.reason == store.RotationReasonRehome) {
+				t.Errorf("envelope asks for the work to be pushed = %v:\n%s", asks, env.Text)
 			}
 			// The cause is told once: the fill sentence must not ride along
 			// on a rotation the operator asked for.
@@ -270,6 +276,22 @@ func TestRotationPreamble(t *testing.T) {
 	}
 	if strings.Contains(preamble, "mission was changed") || strings.Contains(preamble, "previous mission") {
 		t.Errorf("a fill rotation's preamble speaks of a mission change:\n%s", preamble)
+	}
+
+	// After a rehome the successor is told it moved, and that the note
+	// names the machine it left.
+	moved := RotationPreamble(loopRecord, store.RotationReasonRehome, "PR 7 is pushed", nil)
+	for _, want := range []string{
+		"you were moved into your own docker workstation",
+		"keep the tests green",
+		"written on that machine:\nPR 7 is pushed",
+	} {
+		if !strings.Contains(moved, want) {
+			t.Errorf("rehome preamble missing %q:\n%s", want, moved)
+		}
+	}
+	if strings.Contains(preamble, "workstation") {
+		t.Errorf("a fill rotation's preamble speaks of a move:\n%s", preamble)
 	}
 }
 

@@ -125,7 +125,9 @@ func startServerOn(t *testing.T, dataDir, mcpHost string, extraArgs ...string) *
 	logPath := logFile.Name()
 	t.Cleanup(func() { logFile.Close() })
 
-	cmd.Env = append(os.Environ(), "FAKECLAUDE_STATE="+fkState)
+	// Claude's config dir is the hub's own: a bare loop's auto-memory is
+	// read from there (#624), and a test must never read the real one.
+	cmd.Env = append(os.Environ(), "FAKECLAUDE_STATE="+fkState, "CLAUDE_CONFIG_DIR="+claudeConfigDir(dataDir))
 	output, listening, copied := watchListening(logFile)
 	cmd.Stdout = output
 	cmd.Stderr = cmd.Stdout
@@ -271,6 +273,9 @@ func (s *server) stop() {
 		s.t.Logf("spool log (%s):\n%s", s.logPath, s.log())
 	}
 }
+
+// claudeConfigDir is the Claude config dir the hub over dataDir runs with.
+func claudeConfigDir(dataDir string) string { return filepath.Join(dataDir, "claude-config") }
 
 func (s *server) do(method, path string, body any) (*http.Response, []byte) {
 	s.t.Helper()

@@ -59,6 +59,16 @@ func (manager *Manager) Boot(ctx context.Context) error {
 			loopRecord.CurrentSessionID = ""
 			loopRecord.RotatePending = false
 		}
+		if rehomeDue(loopRecord) && loopRecord.CurrentSessionID == "" {
+			// The rotation a rehome asked for landed, here or before the
+			// restart, and the orchestrator went down before the move did.
+			// The session that ran on the host is over, so the move is too.
+			if left, err := rehome(ctx, &manager.deps, loopRecord); err != nil {
+				manager.log().Error("rehome after restart", "loop", loopRecord.Name, "err", err)
+			} else {
+				manager.log().Info("rehomed after restart", "loop", loopRecord.Name, "left", left)
+			}
+		}
 		if loopRecord.Status != store.StatusArchived {
 			manager.add(loopRecord)
 		}

@@ -163,7 +163,10 @@ loop's attached http MCP servers open no host: the hub brokers them on the
 loop listener, under `/mcp/connections/<name>`, and adds each server's
 secret itself, so the loop never holds it (ADR-0043, #622). A
 bare loop has the host's own network and no wall — one more thing the
-*uncontained* badge means.
+*uncontained* badge means. A bare loop can be moved into a workstation with
+`POST /api/loops/{name}/rehome`: the move lands at a `rehome` context rotation,
+carries the loop's auto-memory and nothing else of the host's, and goes one way
+only (ADR-0018, ADR-0022, #624).
 The hub's trust model is two credentials on two listeners (ADR-0030). On the
 operator listener every `/api` route requires the operator token — presented
 as a bearer header or as the session cookie `POST /api/login` sets — except

@@ -145,6 +145,16 @@ type Deps struct {
 	// default runtime's aliases run as (ADR-0033). Nil in tests that do not
 	// care.
 	ObserveModel func(loopRecord *store.Loop, spawned, resolved string)
+	// DataDir is the hub's data directory, where a rehomed loop's
+	// auto-memory waits for its workstation (#624). "" carries none.
+	DataDir string
+}
+
+func (deps *Deps) log() *slog.Logger {
+	if deps.Logger == nil {
+		return slog.Default()
+	}
+	return deps.Logger
 }
 
 // runtimeFor picks the runtime a loop runs on. Unknown kinds return nil —
@@ -158,7 +168,7 @@ func (deps *Deps) runtimeFor(kind string) runtime.Runtime {
 }
 
 type cmd struct {
-	kind   string // deliver|tick|pause|resume|kill|update|power|shutdown
+	kind   string // deliver|tick|pause|resume|kill|update|power|rotate|rehome|shutdown
 	env    Envelope
 	loop   *store.Loop
 	verb   string        // for power
@@ -317,6 +327,17 @@ func (actor *Actor) Rotate(reason string) error {
 	return <-reply
 }
 
+// Rehome asks a bare loop to move into a docker workstation (#624), and
+// blocks for the immediate verdict: ErrNotBare, or no docker runtime to move
+// onto. A loop with a session moves at the rotation this asks for, after its
+// handoff turn; one without moves now, and its next wake is in the
+// workstation.
+func (actor *Actor) Rehome() error {
+	reply := make(chan error, 1)
+	actor.cmds <- cmd{kind: "rehome", reply: reply}
+	return <-reply
+}
+
 // Power runs one of the operator's power controls against the loop's
 // workstation and blocks until it is done, so the caller can answer with the
 // state it produced rather than a promise (ADR-0021). Serialized onto the
@@ -407,6 +428,8 @@ func (actor *Actor) handleCmd(command cmd) {
 		command.reply <- actor.power(command.verb)
 	case "rotate":
 		command.reply <- actor.requestRotation(command.reason)
+	case "rehome":
+		command.reply <- actor.requestRehome()
 	case "kill":
 		if actor.proc != nil {
 			_ = actor.proc.Kill()
@@ -425,6 +448,11 @@ func (actor *Actor) handleCmd(command cmd) {
 		// edit's own row is what the next wake must be compared against,
 		// but only the actor knows what it last spawned with (#162)
 		actor.loop.PromptHash = token.PromptHash
+		// and where the loop runs: no edit changes it, and a rehome the
+		// actor made after the edit read its row must not be undone (#624)
+		actor.loop.Runtime, actor.loop.WorkspaceMode, actor.loop.WorkspacePath = token.Runtime, token.WorkspaceMode, token.WorkspacePath
+		actor.loop.RepoPath, actor.loop.WorktreePath, actor.loop.Branch = token.RepoPath, token.WorktreePath, token.Branch
+		actor.loop.MemMB, actor.loop.CPUs = token.MemMB, token.CPUs
 		actor.paused = actor.loop.Status == store.StatusPaused
 		if token.ModelRefusal != "" && actor.loop.ModelRefusal == "" {
 			// An edit of the model cleared the refusal in the same statement:
@@ -566,6 +594,7 @@ func (actor *Actor) wake() {
 		actor.crashBackoff()
 		return
 	}
+	actor.carryMemory(ctx, loopRuntime)
 	proc, err := loopRuntime.Start(ctx, spec)
 	if err != nil {
 		actor.log().Error("spawn failed", "err", err)
@@ -956,6 +985,45 @@ func (actor *Actor) requestRotation(reason string) error {
 	return nil
 }
 
+// requestRehome is Rehome in the actor's goroutine.
+func (actor *Actor) requestRehome() error {
+	if actor.loop.Runtime != store.RuntimeBare && actor.loop.Runtime != "" {
+		return ErrNotBare
+	}
+	if actor.deps.runtimeFor(store.RuntimeDocker) == nil {
+		return fmt.Errorf("no %q runtime available", store.RuntimeDocker)
+	}
+	if actor.loop.CurrentSessionID != "" {
+		return actor.requestRotation(store.RotationReasonRehome)
+	}
+	// no session to hand off from: the move is all there is to do
+	actor.loop.RotateReason = store.RotationReasonRehome
+	actor.moveIntoWorkstation()
+	if actor.loop.Runtime != store.RuntimeDocker {
+		return fmt.Errorf("the loop could not be moved; see the hub log")
+	}
+	return nil
+}
+
+// moveIntoWorkstation makes the loop a docker one, at the boundary between
+// the session it ran on the host and the one it will run in the workstation.
+// A move the store refuses leaves the loop on the host, where the rotation
+// still lands; the operator can ask again.
+func (actor *Actor) moveIntoWorkstation() {
+	if !rehomeDue(&actor.loop) {
+		return
+	}
+	left, err := rehome(context.Background(), &actor.deps, &actor.loop)
+	if err != nil {
+		actor.log().Error("rehome", "err", err)
+		actor.storeSpoolEvent("rehome_failed", fmt.Sprintf(`{"error":%q}`, err.Error()))
+		return
+	}
+	actor.log().Info("rehomed into a docker workstation", "left", left)
+	actor.storeSpoolEvent("rehomed", fmt.Sprintf(`{"runtime":%q,"left":%q}`, store.RuntimeDocker, left))
+	actor.publishState()
+}
+
 // rotationPrecedence ranks the reasons a rotation is taken for, so a
 // rotation with more than one is told the one that matters most to the note.
 // A rewritten mission outranks everything else: the successor starts under
@@ -963,13 +1031,16 @@ func (actor *Actor) requestRotation(reason string) error {
 // outranks a replaced one, because the successor runs without it. Either
 // outranks the operator's plain ask, because its note is told to leave
 // credentials out. Each outranks the fill threshold, which a rotation that
-// was asked for sheds anyway.
+// was asked for sheds anyway. A rehome outranks them all: whatever else the
+// note says, the successor wakes on another machine, and its note has to be
+// written knowing that.
 var rotationPrecedence = map[string]int{
 	store.RotationReasonFill:       1,
 	store.RotationReasonOperator:   2,
 	store.RotationReasonConnection: 3,
 	store.RotationReasonRevoke:     4,
 	store.RotationReasonMission:    5,
+	store.RotationReasonRehome:     6,
 }
 
 // startHandoffTurn asks the loop, as this session's last turn, to write the
@@ -1738,6 +1809,15 @@ func (actor *Actor) rotateContext(detail string) {
 // few seconds forever (#89). The paths that know better clear it: a turn
 // that completed, and a rotation taken by choice.
 func (actor *Actor) retireSession() {
+	if actor.rotateAsked == store.RotationReasonRehome {
+		// a rehome asked for but overtaken before its handoff turn ran: the
+		// move is still owed, and this is the boundary it was waiting for
+		actor.handoffReason = store.RotationReasonRehome
+	}
+	if actor.handoffReason == store.RotationReasonRehome {
+		actor.loop.RotateReason = store.RotationReasonRehome
+		actor.moveIntoWorkstation()
+	}
 	actor.loop.CurrentSessionID = ""
 	_ = actor.deps.Store.Loops().SetRuntime(context.Background(), actor.loop.ID, "", 0)
 	actor.deadResumes = 0
