@@ -55,6 +55,41 @@ func TestLoopWorkstationColumns(t *testing.T) {
 	}
 }
 
+// TestLoopRehome: a rehome makes a bare worktree loop a docker one whose
+// workspace is the workstation's home, and leaves the host workspace behind
+// (#624). It is the one write that changes a loop's runtime.
+func TestLoopRehome(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	now := time.Now().UnixMilli()
+	if err := db.Loops().Create(ctx, &store.Loop{
+		ID: "l1", Name: "mover", Mission: "m", Status: store.StatusActive, Pacing: store.PacingFixed,
+		Runtime: store.RuntimeBare, WorkspaceMode: store.WorkspaceWorktree, WorkspacePath: "/srv/fixture/wt/mover",
+		RepoPath: "/srv/fixture/repo", WorktreePath: "/srv/fixture/wt/mover", Branch: "loop/mover",
+		CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Loops().Rehome(ctx, "l1", "/home/loop", 4096, 2, now+1); err != nil {
+		t.Fatal(err)
+	}
+	got, err := db.Loops().Get(ctx, "l1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Runtime != store.RuntimeDocker || got.WorkspaceMode != store.WorkspaceNone || got.WorkspacePath != "/home/loop" ||
+		got.RepoPath != "" || got.WorktreePath != "" || got.Branch != "" || got.MemMB != 4096 || got.CPUs != 2 {
+		t.Fatalf("rehomed loop = %+v", got)
+	}
+	if err := db.Loops().Rehome(ctx, "loop_gone", "/home/loop", 4096, 2, now); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("rehoming a gone loop: err = %v, want ErrNotFound", err)
+	}
+}
+
 // TestLoopRuntimeChecked pins the CHECK constraint: only bare|docker are
 // storable runtimes, so a caller bug cannot persist an unknown kind.
 func TestLoopRuntimeChecked(t *testing.T) {
