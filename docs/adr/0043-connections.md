@@ -1,6 +1,6 @@
 # ADR-0043: Connections are org-level credentials and configs, defined once and attachable to loops
 
-Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572); 2026-10-04 (item 2: the env-var kind, #574); 2026-10-04 (item 5: per-loop secrets are connections, #576); 2026-10-05 (item 2: an mcp-server reaches its loop, #597); 2026-10-05 (item 1: private connections, #600); 2026-10-05 (item 5: the record of changes, #606); 2026-10-05 (item 3: rotation, #609); 2026-10-06 (item 3: revoke, #610); 2026-10-06 (item 5: the per-loop secrets routes are gone, #617); 2026-10-06 (item 2: the hub brokers an http server, #622); 2026-10-07 (item 2: the database seals its secrets, ADR-0046)
+Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572); 2026-10-04 (item 2: the env-var kind, #574); 2026-10-04 (item 5: per-loop secrets are connections, #576); 2026-10-05 (item 2: an mcp-server reaches its loop, #597); 2026-10-05 (item 1: private connections, #600); 2026-10-05 (item 5: the record of changes, #606); 2026-10-05 (item 3: rotation, #609); 2026-10-06 (item 3: revoke, #610); 2026-10-06 (item 5: the per-loop secrets routes are gone, #617); 2026-10-06 (item 2: the hub brokers an http server, #622); 2026-10-07 (item 5: an env-var change reaches the next turn, #640); 2026-10-07 (item 2: the database seals its secrets, ADR-0046)
 
 ## Context
 
@@ -278,6 +278,19 @@ follow in their own slice and amend this ADR.
    A second write path had to repeat every connection rule (rotation,
    revoke, the record), so there is now one. The `secret_shared` refusal
    and the 64-variable cap per loop went with them.
+
+   **Amendment (2026-10-07, #640): an env-var change reaches the next
+   turn.** A process keeps the env it was spawned with, and a loop whose
+   turns keep coming never sleeps, so "from its next wake" could mean
+   hours. Attaching an `env-var` to a loop, or detaching it (a delete of a
+   private one detaches it too), now closes the loop's live process at its
+   next quiet boundary: at once if it is idle, and when its turn ends if
+   it is in one. Work queued behind that turn waits for the next process.
+   The session resumes on it with the new env: nothing is handed off and
+   no rotation is recorded. A rotation already due at that boundary runs
+   there as it would have, and the fresh session after it gets the new
+   env. A loop with no process reads the env at its next wake, as before. An `mcp-server` still reaches the loop at its
+   next spawn. Enes chose this over a copy-only fix on 2026-10-07.
 
 ## Consequences
 
