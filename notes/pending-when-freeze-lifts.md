@@ -285,3 +285,6 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 19:35: Enes yes → filed #623 (security medium, L4: at-rest encryption under a hub key; db modes 0600). Proposed Terra does it right after #30 (both touch ADR-0043); asked if he wants it first. Terra: #30 → #623 → #529(b) → #582. L4 closes with #542 web + #30 + #623.
 - 20:30: #621 (#542 web) merged → #542 closed. L4 left: #30, #623 (Terra). Iris idle, told to stand down; ping her on #30/#623 web halves, #582 slice 2, or #124 findings.
 - 21:00: #30: Enes approved Terra's three mitigations by DM (19:09, recorded on #30). #625 merged (ADR-0045 + slice 1: loop-held secrets redacted from loop-to-loop envelopes incl. encodings). Slice 2 #622 = PR #627 (hub brokers http MCP servers) with Quinn. #626 (refactor child: remove per-loop egress entries brokering leaves unused) filed by Terra. Then #623 → #529(b) → #582. L4 closes with #30 (+#623).
+
+## 2026-10-07 07:00 — morning sweep
+- Overnight: #627 (#622, hub brokers http MCP servers) merged; #30 left with #626 (refactor). Terra pinged: #626 → #623 → #529(b) → #582. #624 (Terra, from Enes's Hetzner-move assessment: rehome bare loop → docker) has no milestone; asked Enes placement (after #623 under a "Hosted move" milestone, or behind #582). Rebuild DM sent (ref 3414; fleet on 10-06 09:42 build). Iris idle. L4 closes with #626 + #623.
