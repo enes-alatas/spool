@@ -292,8 +292,9 @@ func NewActor(deps Deps, loopRecord *store.Loop) *Actor {
 	actor.offSnap.Store(loopRecord.WorkstationOff)
 	actor.healthSnap.Store(workstationSnap{Health: runtime.Health{Up: true}}) // optimistic until the first poll
 	// a loop that has finished a turn had a workstation once, so one missing
-	// after a restart was lost rather than never built
-	if _, err := deps.Store.Turns().Latest(context.Background(), loopRecord.ID); err == nil {
+	// after a restart was lost rather than never built, unless its turns
+	// all ran on the host before a rehome (#639)
+	if _, err := deps.Store.Turns().Latest(context.Background(), loopRecord.ID); err == nil && !rehomedNotRun(loopRecord) {
 		actor.wsEverUp = true
 	}
 	if loopRecord.WorkstationOff {
@@ -1003,6 +1004,11 @@ func (actor *Actor) requestRehome() error {
 	if actor.loop.Runtime != store.RuntimeDocker {
 		return fmt.Errorf("the loop could not be moved; see the hub log")
 	}
+	// recorded as a handoff's reason is, and spent the same way by the first
+	// turn that completes, which runs in the workstation: a restart before
+	// then must know the machine was never built (#639)
+	actor.handoffReason = store.RotationReasonRehome
+	actor.setRotationState(false, actor.handoffNote)
 	return nil
 }
 
@@ -1020,6 +1026,9 @@ func (actor *Actor) moveIntoWorkstation() {
 		actor.storeSpoolEvent("rehome_failed", fmt.Sprintf(`{"error":%q}`, err.Error()))
 		return
 	}
+	// the host was up; the workstation has never been built, and its first
+	// wake builds it, so until then it is unprovisioned, not lost (#639)
+	actor.wsEverUp = false
 	actor.log().Info("rehomed into a docker workstation", "left", left)
 	actor.storeSpoolEvent("rehomed", fmt.Sprintf(`{"runtime":%q,"left":%q}`, store.RuntimeDocker, left))
 	actor.publishState()

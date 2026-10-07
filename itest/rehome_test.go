@@ -134,6 +134,45 @@ func aRestartFinishesARehome(t *testing.T) {
 	assertRehomed(t, s, "interrupted", loopID, "written on that machine:\nfixture handoff: PR 7 is pushed")
 }
 
+// aRehomedLoopIsNotProvisionedUntilItWakes (#639): a bare loop that has
+// run turns, rehomed, has no workstation until its next wake builds one.
+// Until then its health reads not_provisioned with no alert, across a
+// restart too, where its host turns must not count as the workstation
+// having been up. The next wake builds it and runs a turn there.
+func aRehomedLoopIsNotProvisionedUntilItWakes(t *testing.T) {
+	dataDir := t.TempDir()
+	s, loopID := startRehomable(t, dataDir, "unbuilt")
+	// no session, so the move lands at once and nothing wakes the loop
+	s.stop()
+	setLoopColumns(t, dataDir, loopID, `current_session_id=''`)
+	s = startDockerServer(t, dataDir, "--allow-bare")
+	s.mustJSON("POST", "/api/loops/unbuilt/rehome", nil, nil)
+
+	quiet := func(when string) {
+		t.Helper()
+		within(t, 20*time.Second, "the moved loop reads not_provisioned "+when, func() bool {
+			return s.loop("unbuilt").DownReason == "not_provisioned"
+		})
+		// a few more polls, at --workstation-health-sec 2, to catch a
+		// later one reading the unbuilt machine as lost
+		time.Sleep(5 * time.Second)
+		if view := s.loop("unbuilt"); view.DownReason != "not_provisioned" || view.State == "workstation_down" {
+			t.Fatalf("%s: down_reason=%q state=%q, want not_provisioned and no alert", when, view.DownReason, view.State)
+		}
+		for _, e := range s.eventsQuery("unbuilt", "limit=500") {
+			if e.Type == "spool" && e.Subtype == "workstation_down" {
+				t.Fatalf("%s: a workstation_down alert was raised: %s", when, e.Payload)
+			}
+		}
+	}
+	quiet("after the move")
+	s.stop()
+	s = startDockerServer(t, dataDir, "--allow-bare")
+	quiet("after a restart")
+
+	assertRehomed(t, s, "unbuilt", loopID, "after the move")
+}
+
 // aPendingRehomeShowsOnTheLoop: the loop view says a rehome is pending from
 // its 202 until the move lands, so a page read again in between shows it
 // (#632). A paused loop holds the request until it is resumed. A restart
