@@ -453,3 +453,25 @@ func TestASealedValueIsBoundToItsKey(t *testing.T) {
 		t.Error("an empty value was sealed")
 	}
 }
+
+// HubKey is the key in the file beside the database, the one a loop could
+// read and the redactor masks (#643), on the start that mints it and on
+// every one after.
+func TestHubKeyIsTheKeyFileHolds(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "spool.db")
+	for _, start := range []string{"minting", "reopening"} {
+		db, err := Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := os.ReadFile(filepath.Join(dir, KeyFile))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := hex.EncodeToString(db.HubKey()), strings.TrimSpace(string(data)); got != want {
+			t.Fatalf("%s: HubKey = %s…, want the file's %s…", start, got[:8], want[:8])
+		}
+		db.Close()
+	}
+}

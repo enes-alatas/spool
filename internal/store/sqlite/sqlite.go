@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"math"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -24,8 +25,14 @@ var migrationsFS embed.FS
 
 type DB struct {
 	db     *sql.DB
+	key    []byte
 	sealer *box // the hub key's, which every secret is sealed under
 }
+
+// HubKey returns the key this database's secrets are sealed under, which is
+// hub.key's content decoded. The redactor masks it (#643): it opens every
+// secret the database holds, and a bare loop can read the file.
+func (database *DB) HubKey() []byte { return slices.Clone(database.key) }
 
 // Open opens the database at path, migrating it, with its secrets sealed
 // under the hub key in the same directory (ADR-0046). A database with no

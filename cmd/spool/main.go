@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -290,7 +291,18 @@ func main() {
 	// here down gets the decorated store instead, so no writer has to
 	// remember the rule. Load once now: until the first load it redacts
 	// nothing, and the wiring below starts writing immediately.
-	redactor := redact.New(redact.StoreSource{Store: db}, redactTTL)
+	// The operator token and the hub key are files rather than rows, and
+	// a bare loop can read both (#643). The key is matched as its bytes and
+	// as the hex the file holds, so the encodings of either are caught.
+	hubKey := db.HubKey()
+	redactor := redact.New(redact.Sources{
+		redact.StoreSource{Store: db},
+		redact.Fixed{
+			{Name: "operator_token", Value: operatorToken},
+			{Name: "hub_key", Value: string(hubKey)},
+			{Name: "hub_key", Value: hex.EncodeToString(hubKey)},
+		},
+	}, redactTTL)
 	if err := redactor.Refresh(context.Background()); err != nil {
 		log.Error("load secrets for redaction", "err", err)
 		os.Exit(1)

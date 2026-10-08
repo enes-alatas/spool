@@ -78,3 +78,27 @@ func (source StoreSource) Secrets(ctx context.Context) ([]Secret, error) {
 	}
 	return out, nil
 }
+
+// Fixed is secrets that hold for the life of the process, which the hub
+// keeps outside the store: the operator token and the hub key are files in
+// the data directory (#643). Neither changes while the hub runs, so there
+// is nothing to reread.
+type Fixed []Secret
+
+func (fixed Fixed) Secrets(context.Context) ([]Secret, error) { return fixed, nil }
+
+// Sources is the secrets of each source together. One that fails fails the
+// load, and the redactor keeps its previous snapshot, as it does for one.
+type Sources []Source
+
+func (sources Sources) Secrets(ctx context.Context) ([]Secret, error) {
+	var out []Secret
+	for _, source := range sources {
+		secrets, err := source.Secrets(ctx)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, secrets...)
+	}
+	return out, nil
+}

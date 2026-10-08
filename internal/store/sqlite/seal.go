@@ -163,7 +163,7 @@ func (database *DB) unseal(dir string, forget bool) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	database.sealer = sealer
+	database.key, database.sealer = key, sealer
 	if sealedBefore {
 		if opened, err := sealer.open(check); err != nil || opened != keyCheck {
 			if !forget {

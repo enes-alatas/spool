@@ -4,7 +4,10 @@ package itest
 
 import (
 	"encoding/base64"
+	"encoding/hex"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -148,5 +151,67 @@ func TestALoopCannotRelayASecretToATeammate(t *testing.T) {
 	relayed := s.waitTurn("bravo", 30*time.Second, func(tn turn) bool { return tn.Trigger == "message" })
 	if relayed.ResultText != "contains: no" {
 		t.Fatalf("bravo's turn received alpha's secret: %s", relayed.ResultText)
+	}
+}
+
+// The two credentials the hub keeps as files in its data directory, the
+// operator token and the hub key, are redacted as the stored ones are
+// (#643). A bare loop can read both, so it is made to say them: in its
+// reply, and in a message it sends. The key goes out as the hex the file
+// holds and as its bytes base64'd.
+func TestTheHubsOwnCredentialsNeverReachTheRecord(t *testing.T) {
+	t.Parallel()
+	s := startServer(t, t.TempDir())
+	file, err := os.ReadFile(filepath.Join(s.dataDir, "hub.key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	hubKey := strings.TrimSpace(string(file))
+	raw, err := hex.DecodeString(hubKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyBase64 := base64.StdEncoding.EncodeToString(raw)
+	said := "token " + s.operatorToken + " key " + hubKey + " bytes " + keyBase64
+
+	s.createLoop("leaky", nil)
+	s.scriptLoop("leaky", `!send {"destination":"control_room","text":"`+said+`"} `+said)
+	s.message("leaky", "say them")
+	turn := s.waitTurn("leaky", 30*time.Second, func(tn turn) bool { return strings.HasPrefix(tn.ResultText, "token ") })
+	if !strings.HasPrefix(turn.ResultText, "token <redacted:operator_token> key <redacted:hub_key> bytes ") {
+		t.Errorf("stored turn = %q, want each credential's placeholder", turn.ResultText)
+	}
+
+	values := map[string]string{"operator token": s.operatorToken, "hub key": hubKey, "hub key in base64": keyBase64}
+	for _, path := range []string{
+		"/api/loops/leaky/turns?limit=50",
+		"/api/loops/leaky/events?limit=500",
+		"/api/loops/leaky/conversation",
+		"/api/activity",
+	} {
+		resp, body := s.do("GET", path, nil)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s: %d %s", path, resp.StatusCode, body)
+		}
+		for name, value := range values {
+			if strings.Contains(string(body), value) {
+				t.Errorf("%s served the %s", path, name)
+			}
+		}
+	}
+	// without the placeholders the message may never have been sent, and
+	// the absence above proves nothing
+	var conversation []struct{ Text string }
+	s.mustJSON("GET", "/api/loops/leaky/conversation", nil, &conversation)
+	var sent bool
+	for _, message := range conversation {
+		sent = sent || strings.HasPrefix(message.Text, "token <redacted:operator_token> key <redacted:hub_key> bytes ")
+	}
+	if !sent {
+		t.Errorf("the conversation holds no sent message with the placeholders: %+v", conversation)
+	}
+	// the operator token is printed once at start, to stdout, by design
+	if log := s.log(); strings.Contains(log, hubKey) || strings.Contains(log, keyBase64) {
+		t.Error("the orchestrator log carries the hub key")
 	}
 }

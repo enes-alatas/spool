@@ -9,7 +9,8 @@
 // same Redactor, and a new call site inherits it by construction.
 //
 // What it catches is the secrets Spool itself holds — the operator's Claude
-// token, each loop's bot token, hub MCP token and per-loop secrets. It cannot
+// token, each loop's bot token, hub MCP token and per-loop secrets, and the
+// operator token and hub key in the data directory. It cannot
 // catch a credential a loop invents or reads from somewhere Spool has never
 // seen (#30 is that problem), and it matches values literally, so a value
 // that survives only in an escaped or re-encoded form goes through, beyond
