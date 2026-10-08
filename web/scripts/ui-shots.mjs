@@ -157,6 +157,31 @@ taken.push(egressFile)
 await page.unroute('**/api/settings/egress')
 await page.setViewportSize({ width: 1180, height: 900 })
 
+// The Fleet page's plan strip (#648) in the states the fixture cannot hold
+// at once: near both limits, and a hub no loop has reported the plan's usage
+// to yet. The fixture's own reading is in the fleet shot. Clipped to the
+// header, the strip and the column heads, which is all that changes.
+const planStates = {
+  hot: (view) => ({
+    ...view,
+    five_hour: { used_percent: 93, resets_at: Date.now() + 41 * 60000 },
+    seven_day: { used_percent: 72, resets_at: view.seven_day.resets_at },
+  }),
+  unknown: () => ({ five_hour: null, seven_day: null, unknown: "no loop has reported the plan's usage yet" }),
+}
+for (const [state, render] of Object.entries(planStates)) {
+  await page.route('**/api/plan-usage', async (route) => {
+    route.fulfill({ json: render(await (await route.fetch()).json()) })
+  })
+  await page.goto(base + '/', { waitUntil: 'networkidle' })
+  await page.locator('.plan-strip .plan-title').waitFor({ timeout: 15000 })
+  const head = await page.locator('.fleet-cols').boundingBox()
+  const file = `${outDir}/fleet-plan-${state}.png`
+  await page.screenshot({ path: file, clip: { x: 0, y: 0, width: 1180, height: head.y + head.height + 8 } })
+  taken.push(file)
+  await page.unroute('**/api/plan-usage')
+}
+
 // The first-run page (#581) in the states its cards draw. The fixture
 // hub has done all three pillars, so it opens on Fleet; these answers stand
 // in for a hub that has not, worded as #580's reasons are. Every other read

@@ -14,6 +14,7 @@ import {
 } from '../format'
 import { StateDot } from '../components/Spool'
 import { ChannelChat } from '../components/ChannelChat'
+import { PlanUsageStrip } from '../components/PlanUsage'
 import { undeliveredNote } from '../messages'
 import { workstationNote } from '../workstation'
 import { useEffect, useState } from 'react'
@@ -202,9 +203,10 @@ export default function Dashboard() {
   const busy = (loops ?? []).filter((fleetLoop) => fleetLoop.state === 'busy').length
   // Summed from the rows already on screen: the list endpoint carries each
   // loop's daily cost, so the fleet's bill for the day costs no request of its
-  // own. It sits with the counts because it answers the same question they do
-  // — what is this fleet doing right now — and it is the one number in the
-  // room the operator was previously running SQL for.
+  // own. It stands on the plan strip, over the TODAY column it totals, because
+  // it answers the question the plan's usage does — what is this fleet costing
+  // — and it is the one number in the room the operator was previously running
+  // SQL for.
   const spentToday = sumCostToday(loops ?? [])
   // The fleet channel is the fleet's own conversation, so it is a tab here
   // rather than a destination in the nav (#286). In the URL, so a link or a
@@ -228,10 +230,12 @@ export default function Dashboard() {
                 <span className="undelivered-total">{undelivered} undelivered</span>
               </>
             )}
-            <span title={costDayTitle(loops)}>{` · ${formatUsd(spentToday)} today`}</span>
           </span>
         )}
       </div>
+      {loops && loops.length > 0 && (
+        <PlanUsageStrip spentToday={spentToday} costDayTitle={costDayTitle(loops)} />
+      )}
 
       <nav className="fleet-tabs" aria-label="Fleet views">
         <Link to="/" aria-current={onChannel ? undefined : 'page'}>

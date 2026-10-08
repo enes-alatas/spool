@@ -803,6 +803,73 @@ textarea {
   font-size: 0.75rem;
   color: var(--text-muted);
 }
+/* The plan strip (#648): what the fleet is costing, between the header and
+   the tabs. Its windows share the line's width, their bars stretching to take
+   what the words leave, and the day's spend keeps the right edge, which is
+   the edge the TODAY figures below align on. The frame is the container its
+   narrow composition asks. */
+.plan-strip-frame {
+  container: plan / inline-size;
+  margin: 6px 0 10px;
+}
+.plan-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 28px;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.plan-title {
+  font-size: 0.65625rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.plan-window {
+  flex: 1 1 16rem;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.plan-bar {
+  flex: 1 1 auto;
+  min-width: 3rem;
+  align-self: center;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--hairline);
+  overflow: hidden;
+}
+.plan-bar > span {
+  display: block;
+  height: 100%;
+  background: currentColor;
+}
+.plan-strip .dim {
+  opacity: 0.75;
+}
+.plan-as-of {
+  opacity: 0.75;
+  white-space: nowrap;
+}
+.plan-spend {
+  margin-left: auto;
+  white-space: nowrap;
+  color: var(--text);
+}
+.plan-spend .lbl-inline {
+  color: var(--text-muted);
+}
+/* Narrow, the title takes a line of its own: beside the first window it
+   squeezed that bar to its floor while the second had the line to itself. */
+@container plan (max-width: 40rem) {
+  .plan-title {
+    flex-basis: 100%;
+  }
+}
 .fleet-note {
   color: var(--text-muted);
   font-size: 0.8125rem;
