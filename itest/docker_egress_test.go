@@ -271,3 +271,49 @@ func dockerEgressHostsApplyLive(t *testing.T) {
 		t.Fatalf("proxy container %q (%v), want %q: changing the hosts must not recreate it", id, err, proxyID)
 	}
 }
+
+// dockerEgressHostReachesASurvivingProxy is #657's evidence: a hub run
+// whose workstation and proxy both survived from the last run, as every
+// restart of a working fleet leaves them, still gets a host added on
+// Settings into the proxy by the next docker wake. The run's first wake
+// finds the workstation running, provisions nothing, and is the hub's first
+// chance to write the proxy's file this run.
+func dockerEgressHostReachesASurvivingProxy(t *testing.T) {
+	dataDir := t.TempDir()
+	s := startDockerServer(t, dataDir)
+	s.createLoop("wssurvivor", nil)
+	cleanupWorkstation(t, s.loop("wssurvivor").ID)
+	s.scriptLoop("wssurvivor", "!get http://uploads.spool-itest.invalid/\n")
+	s.stop()
+
+	s = startDockerServer(t, dataDir)
+	t.Cleanup(func() {
+		// the proxy is shared by every row on the image: leave it as found
+		s.do("DELETE", "/api/settings/egress/hosts/uploads.spool-itest.invalid", nil)
+	})
+	type egressView struct {
+		ChangedAt int64 `json:"changed_at"`
+		AppliedAt int64 `json:"applied_at"`
+	}
+	var added egressView
+	s.mustJSON("POST", "/api/settings/egress/hosts", map[string]string{"host": "uploads.spool-itest.invalid"}, &added)
+
+	// the first run's wake already ran the script and got 403, and its turn
+	// is in the shared data dir: only a turn begun after the add counts
+	earlier := map[string]bool{}
+	for _, tr := range s.turns("wssurvivor") {
+		earlier[tr.ID] = true
+	}
+	s.message("wssurvivor", "reach out")
+	reached := s.waitTurn("wssurvivor", 90*time.Second, func(tr turn) bool {
+		return !earlier[tr.ID] && strings.Contains(tr.ResultText, "uploads.spool-itest.invalid")
+	})
+	if !strings.Contains(reached.ResultText, "502 Bad Gateway") {
+		t.Fatalf("a host added on Settings must pass the surviving proxy by the next wake, got:\n%s", reached.ResultText)
+	}
+	var after egressView
+	s.mustJSON("GET", "/api/settings/egress", nil, &after)
+	if after.AppliedAt < added.ChangedAt {
+		t.Fatalf("applied_at %d before changed_at %d after the wake that copied the list", after.AppliedAt, added.ChangedAt)
+	}
+}

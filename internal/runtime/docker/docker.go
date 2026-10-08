@@ -61,8 +61,8 @@ type Runtime struct {
 	fleet     map[string]runtime.Health
 	fleetErr  error
 
-	// egressMu serializes ensureEgress: a provision and a login check can
-	// both find a stale proxy, and two removals of it collide.
+	// egressMu serializes ensureEgress: two wakes, or a wake and a login
+	// check, can both find a stale proxy, and two removals of it collide.
 	egressMu sync.Mutex
 
 	// fleetEgress is the operator's extra hosts (#542), under egressFileMu:
@@ -174,7 +174,16 @@ func (rt *Runtime) Preflight(ctx context.Context) (string, error) {
 // stopped (daemon restart before the restart policy existed, an operator's
 // docker stop) or paused comes back here; one that is gone entirely is
 // provisioned from scratch — its volume, if it survived, is reused.
+//
+// The wall comes first, on every wake and not only at a provision: a
+// workstation that already exists still needs the proxy up, and the proxy
+// still needs the fleet's extra hosts copied in, which a hub run whose
+// workstations all survived from an earlier run would otherwise never do
+// (#657).
 func (rt *Runtime) Ensure(ctx context.Context, spec runtime.Spec) error {
+	if err := rt.ensureEgress(ctx); err != nil {
+		return err
+	}
 	name := containerName(spec.LoopID)
 	state, err := rt.inspectState(ctx, name)
 	switch {
@@ -193,13 +202,10 @@ func (rt *Runtime) Ensure(ctx context.Context, spec runtime.Spec) error {
 	}
 }
 
+// provision creates a workstation. Ensure has put the wall up first: a
+// workstation provisioned onto a network that does not exist yet would fail,
+// and one provisioned while the proxy is down would simply have no way out.
 func (rt *Runtime) provision(ctx context.Context, spec runtime.Spec) error {
-	// The wall before the thing it contains: a workstation provisioned onto
-	// a network that does not exist yet would fail, and one provisioned
-	// while the proxy is down would simply have no way out.
-	if err := rt.ensureEgress(ctx); err != nil {
-		return err
-	}
 	volumeArgv := append([]string{"volume", "create"}, labelArgs(spec)...)
 	volumeArgv = append(volumeArgv, containerName(spec.LoopID))
 	if _, err := rt.command(ctx, queryTimeout, volumeArgv...); err != nil {

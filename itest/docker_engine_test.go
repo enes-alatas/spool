@@ -65,6 +65,7 @@ func TestDockerRows(t *testing.T) {
 		{"DockerEgressAllowlist", dockerEgressAllowlist},
 		{"DockerLoopReachesItsMCPServerThroughTheHub", dockerLoopReachesItsMCPServerThroughTheHub},
 		{"DockerEgressHostsApplyLive", dockerEgressHostsApplyLive},
+		{"DockerEgressHostReachesASurvivingProxy", dockerEgressHostReachesASurvivingProxy},
 		{"DockerWorkstationCannotReachTheAPI", dockerWorkstationCannotReachTheAPI},
 		{"DockerEchoTurn", dockerEchoTurn},
 		{"DockerScriptedTurn", dockerScriptedTurn},
