@@ -34,6 +34,7 @@ The rules, in `docs/QUALITY.md` "Review (human)":
 | `--version` prints a version line | deliberate difference | The real CLI prints `X (Claude Code)`; the fake prints `2.1.281 (fakeclaude)`, so a log line tells them apart. |
 | `--effort`, `--add-dir`, `--permission-mode` are consumed and ignored | assumed | Not measured on the real CLI (ADR-0001). Ignoring them is permissive in exactly the direction that would hide a pin. |
 | Any other flag it does not parse is ignored, value and all | assumed | Production relies on this for `-p`, `--verbose`, `--strict-mcp-config` (`internal/claude/args.go`) and whatever a model's extra args add. Nothing records how the real CLI answers a flag it does not know, or what `--strict-mcp-config` does. So a misspelled or retired flag in `args.go` stays green in tier 2 whatever the real CLI would do. |
+| A `rate_limit_event` whose `rate_limit_info.unifiedWindows` carries `five_hour` and `seven_day`, each a `utilization` fraction and a `resetsAt` in unix seconds, emitted before the turn's `assistant` events (`!usage`) | assumed | The shape is read from the 2.1.292 binary's own stream schema, 2026-10-08 (#647): emitted "when rate limit info changes", `unifiedWindows` marked internal and documented as tracking both windows on every observation. No run was watched emitting one, so neither its presence on stdout nor its place in the turn is recorded. |
 
 ## Sessions and resume
 
@@ -77,6 +78,7 @@ the row they rest on.
 | `!echo`, the unscripted default | A model repeating its input, so a test can read what Spool put in the turn. |
 | `!huge <bytes>` | A very long stdout line, to test Spool's reader. The real CLI's largest line is not measured. |
 | `!ctx <tokens>` | A filling context: the input tokens each API step reports. The real CLI compacts on its own near a full window (2.1.238, 2026-08-21, `make e2e-context`), which the fake does not model. |
+| `!usage <five-hour> <seven-day>` | The plan's usage changing during a turn, as a rate-limit event (its row under Process and stream-json framing is assumed). |
 | `!hang <seconds>`, `nosuch-slow` | A slow turn. |
 | `!env NAME` | A loop echoing an injected credential, which is what redaction has to catch (#150). |
 | `!get URL` | A loop's outbound request, through Go's proxy-honouring client (#193). That the real CLI honours `HTTP_PROXY`/`HTTPS_PROXY` is **assumed**: ADR-0028 states it, and nothing records a measurement. |

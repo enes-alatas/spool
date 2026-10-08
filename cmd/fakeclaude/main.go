@@ -36,7 +36,11 @@
 // turn span k API steps, the way a tool-using turn does: one assistant event
 // per step, each with that step's own usage, while the result event reports
 // the turn's summed usage — so a runner that reads the result's sum as
-// context occupancy sees k times the real fill. "!sysprompt" replies with the
+// context occupancy sees k times the real fill. A "!usage <five-hour>
+// <seven-day>" prefix makes the turn emit a rate_limit_event first, with
+// those fractions of the plan's two windows used, resetting five hours and
+// seven days from now: what the real CLI says when the plan's rate-limit
+// headers change (#647). "!sysprompt" replies with the
 // system prompt the session is actually running with: the text passed as
 // --append-system-prompt when the session was created, not what this spawn
 // passed, because a resumed session keeps the prompt it started with (#162).
@@ -339,12 +343,24 @@ func main() {
 		reply := "echo: " + text
 		ctxTokens := 0
 		steps := 1
+		var planUsage []float64 // the turn's five-hour and seven-day utilization, when scripted
 		if script != nil {
 			line := script[min(state.Turns, len(script))-1]
 			for {
 				if strings.HasPrefix(line, "!ctx ") {
 					numStr, rest, _ := strings.Cut(strings.TrimPrefix(line, "!ctx "), " ")
 					ctxTokens, _ = strconv.Atoi(numStr)
+					line = strings.TrimSpace(rest)
+					continue
+				}
+				if strings.HasPrefix(line, "!usage ") {
+					fiveHour, rest, _ := strings.Cut(strings.TrimPrefix(line, "!usage "), " ")
+					sevenDay, rest, _ := strings.Cut(rest, " ")
+					planUsage = nil
+					for _, field := range []string{fiveHour, sevenDay} {
+						value, _ := strconv.ParseFloat(field, 64)
+						planUsage = append(planUsage, value)
+					}
 					line = strings.TrimSpace(rest)
 					continue
 				}
@@ -492,6 +508,24 @@ func main() {
 					"type":  "content_block_delta",
 					"delta": map[string]any{"type": "text_delta", "text": reply},
 				},
+				"session_id": id,
+			})
+		}
+		if planUsage != nil {
+			// what the real CLI says when the plan's rate-limit headers
+			// change: the windows ride in unifiedWindows, as fractions used
+			// with their resets in unix seconds (2.1.292, FIDELITY.md)
+			nowSeconds := time.Now().Unix()
+			emit(map[string]any{
+				"type": "rate_limit_event",
+				"rate_limit_info": map[string]any{
+					"status": "allowed",
+					"unifiedWindows": map[string]any{
+						"five_hour": map[string]any{"utilization": planUsage[0], "resetsAt": nowSeconds + 5*3600},
+						"seven_day": map[string]any{"utilization": planUsage[1], "resetsAt": nowSeconds + 7*24*3600},
+					},
+				},
+				"uuid":       fmt.Sprintf("rate-limit-%d", state.Turns),
 				"session_id": id,
 			})
 		}
