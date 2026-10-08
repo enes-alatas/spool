@@ -29,13 +29,13 @@ export function spendShare(cost: number, total: number): number {
   return Math.round((cost / total) * 100)
 }
 
-// The colour a share is drawn in, graded along the share itself rather than
-// stepped: the muted ink of the row's other figures at nothing, the active
-// orange at half the fleet's day, the danger red at all of it. Two loops at
-// 40% and 45% are told apart by length, and a loop at 90% does not wear the
-// same colour as one at 55%. Mixed from the tokens, so a palette change
+// The colour a bar of the room's money is drawn in, graded along its percent
+// rather than stepped: the muted ink of the figures around it at nothing, the
+// active orange at half, the danger red at all of it. Two loops at 40% and 45%
+// of the fleet's day are told apart by length, and a loop at 90% does not wear
+// the same colour as one at 55%. Mixed from the tokens, so a palette change
 // carries through.
-export function shareColor(pct: number): string {
+export function gradedColor(pct: number): string {
   const p = Math.min(Math.max(pct, 0), 100)
   if (p <= 50) return `color-mix(in oklab, var(--active) ${p * 2}%, var(--text-muted))`
   return `color-mix(in oklab, var(--danger) ${(p - 50) * 2}%, var(--active))`

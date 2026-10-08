@@ -929,7 +929,7 @@ textarea {
 }
 /* The share's bar is the row's part of the fleet's day, drawn to the width of
    a fixed track so the bars compare down the column. It takes the share's
-   colour, which the page grades along the share (`shareColor`). */
+   colour, which the page grades along the share (`gradedColor`). */
 .fleet-row .share-bar {
   /* inline, not a flex row: a flex container's baseline is its first item's,
      and the bar has none, so the figure sat lower than the row's others */
