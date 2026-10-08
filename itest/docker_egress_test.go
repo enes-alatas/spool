@@ -210,15 +210,23 @@ func dockerEgressHostsApplyLive(t *testing.T) {
 	s := startDockerServer(t, t.TempDir())
 	s.createLoop("wslive", nil)
 	cleanupWorkstation(t, s.loop("wslive").ID)
-	reach := func(after string) turn {
+	// Scripted once: setting the script again would end the session (#609),
+	// and its handoff turn would run the same request a second time.
+	s.scriptLoop("wslive", "!get http://pkg.spool-itest.invalid/\n")
+	// reach counts only a turn begun after it is called, so an earlier turn
+	// that ran the same request cannot answer for this one (#655).
+	reach := func() turn {
 		t.Helper()
-		s.scriptLoop("wslive", "!get http://pkg.spool-itest.invalid/\n")
+		earlier := map[string]bool{}
+		for _, tr := range s.turns("wslive") {
+			earlier[tr.ID] = true
+		}
 		s.message("wslive", "reach out")
 		return s.waitTurn("wslive", 90*time.Second, func(tr turn) bool {
-			return tr.ID != after && strings.Contains(tr.ResultText, "pkg.spool-itest.invalid")
+			return !earlier[tr.ID] && strings.Contains(tr.ResultText, "pkg.spool-itest.invalid")
 		})
 	}
-	before := reach("")
+	before := reach()
 	if !strings.Contains(before.ResultText, "403 Forbidden") {
 		t.Fatalf("a host on no list must be refused, got:\n%s", before.ResultText)
 	}
@@ -254,7 +262,7 @@ func dockerEgressHostsApplyLive(t *testing.T) {
 		t.Fatalf("the last built-in group = %q, want the hub's gateway entry", gateway)
 	}
 
-	through := reach(before.ID)
+	through := reach()
 	if !strings.Contains(through.ResultText, "502 Bad Gateway") {
 		t.Fatalf("an added host must pass the allowlist with no restart, got:\n%s", through.ResultText)
 	}
@@ -264,7 +272,10 @@ func dockerEgressHostsApplyLive(t *testing.T) {
 	if len(removed.Extra) != 0 {
 		t.Fatalf("view after the remove = %+v, want no extra hosts", removed)
 	}
-	if after := reach(through.ID); !strings.Contains(after.ResultText, "403 Forbidden") {
+	if removed.AppliedAt < removed.ChangedAt {
+		t.Fatalf("applied_at %d before changed_at %d: a running proxy must drop the host in the request", removed.AppliedAt, removed.ChangedAt)
+	}
+	if after := reach(); !strings.Contains(after.ResultText, "403 Forbidden") {
 		t.Fatalf("a removed host must be refused again, got:\n%s", after.ResultText)
 	}
 	if id, err := dockerInspect("{{.Id}}", egressTestImage+"-proxy"); err != nil || id != proxyID {
