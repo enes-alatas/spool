@@ -3,6 +3,8 @@ import {
   fillTone,
   hasFillPct,
   formatTokens,
+  formatAgo,
+  formatResets,
   formatUsd,
   inTurn,
   nextWake,
@@ -126,5 +128,34 @@ describe('inTurn', () => {
     for (const state of ['idle', 'draining', 'asleep', 'paused', 'workstation_off', 'workstation_down']) {
       expect(inTurn(state)).toBe(false)
     }
+  })
+})
+
+describe('formatResets', () => {
+  const now = new Date(2026, 9, 8, 12, 0).getTime()
+
+  it('counts down inside a day', () => {
+    expect(formatResets(now + 41 * 60000, now)).toBe('resets in 41m')
+    expect(formatResets(now + (2 * 60 + 14) * 60000, now)).toBe('resets in 2h 14m')
+  })
+
+  // A weekly window is planned around by its day, not by a 97-hour countdown.
+  it('names the day and the clock past a day', () => {
+    expect(formatResets(new Date(2026, 9, 12, 9, 0).getTime(), now)).toBe('resets Mon 09:00')
+  })
+
+  it('does not count below zero', () => {
+    expect(formatResets(now - 60000, now)).toBe('resets in 0m')
+  })
+})
+
+describe('formatAgo', () => {
+  const now = new Date(2026, 9, 8, 12, 0).getTime()
+
+  it('reads in the largest whole unit', () => {
+    expect(formatAgo(now - 20000, now)).toBe('just now')
+    expect(formatAgo(now - 3 * 60000, now)).toBe('3m ago')
+    expect(formatAgo(now - 6 * 3600000, now)).toBe('6h ago')
+    expect(formatAgo(now - 2 * 86400000, now)).toBe('2d ago')
   })
 })

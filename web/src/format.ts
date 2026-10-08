@@ -92,3 +92,28 @@ export function nextWake(loop: { next_tick_at: number; model_refusal: string }):
 export function inTurn(state: string): boolean {
   return state === 'waking' || state === 'busy'
 }
+
+// When a plan window starts over, in the words that read fastest at its
+// distance: a countdown inside a day ("resets in 2h 14m"), past that the day
+// and the clock ("resets Mon 09:00"), which is how an operator plans around a
+// weekly limit. Local time, as every clock in the room is.
+export function formatResets(resetsAt: number, now: number): string {
+  const minutes = Math.max(0, Math.round((resetsAt - now) / 60000))
+  if (minutes < 60) return `resets in ${minutes}m`
+  if (minutes < 24 * 60) return `resets in ${Math.floor(minutes / 60)}h ${minutes % 60}m`
+  const at = new Date(resetsAt)
+  const day = at.toLocaleDateString('en-US', { weekday: 'short' })
+  const time = at.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+  return `resets ${day} ${time}`
+}
+
+// How old an observation is: the plan's usage is what a loop last reported,
+// so a figure from six hours ago says so rather than passing for now.
+export function formatAgo(at: number, now: number): string {
+  const minutes = Math.floor(Math.max(0, now - at) / 60000)
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  return `${Math.floor(hours / 24)}d ago`
+}

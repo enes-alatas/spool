@@ -776,6 +776,27 @@ func seedEgressHosts(ctx context.Context, db store.Store) error {
 	return nil
 }
 
+// The plan's usage as a loop last reported it: the five-hour window past
+// half, so its bar shows a tone, and the seven-day one well under it, with
+// resets far enough off that the shot reads the same for hours after the
+// fixture is written.
+func seedPlanUsage(ctx context.Context, db store.Store) error {
+	record := store.PlanUsageRecord{
+		FiveHour: &store.PlanUsageWindow{Utilization: 0.62, ResetsAt: ms(2*time.Hour + 14*time.Minute)},
+		SevenDay: &store.PlanUsageWindow{Utilization: 0.34, ResetsAt: ms(4*24*time.Hour + 3*time.Hour)},
+		At:       ms(-3 * time.Minute),
+		Source:   store.PlanUsageSourceStream,
+	}
+	raw, err := json.Marshal(record)
+	if err != nil {
+		return fmt.Errorf("plan usage: %w", err)
+	}
+	if err := db.Settings().Set(ctx, store.SettingPlanUsage, string(raw)); err != nil {
+		return fmt.Errorf("plan usage: %w", err)
+	}
+	return nil
+}
+
 // Two fleet rules, because one rule does not show that they are a list.
 func seedRules(ctx context.Context, db store.Store) error {
 	rules := []struct {

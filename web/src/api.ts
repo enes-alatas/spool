@@ -469,6 +469,27 @@ export interface EgressView {
   applied_at?: number
 }
 
+// The Claude plan's usage as the hub last observed it (#647), mirrored from
+// planUsageView in internal/httpapi/planusage.go. One per hub: every loop runs
+// on the operator's one login. With nothing observed both windows are null
+// and `unknown` says why.
+export interface PlanUsage {
+  five_hour: PlanWindow | null
+  seven_day: PlanWindow | null
+  as_of?: number
+  source?: string
+  unknown?: string
+}
+
+// One limit window. used_percent can run past 100. A window whose reset has
+// passed since the observation reads `reset`, with nothing used and no next
+// reset time, which only the next observation can tell.
+export interface PlanWindow {
+  used_percent: number
+  resets_at?: number
+  reset?: boolean
+}
+
 export interface Settings {
   claude_token_set: boolean
   // Whether this hub was started to allow an uncontained loop (--runtime bare
@@ -839,6 +860,7 @@ export const api = {
   login: (token: string) => req<void>('/api/login', { method: 'POST', body: JSON.stringify({ token }) }),
   logout: () => req<void>('/api/logout', { method: 'POST' }),
   settings: () => req<Settings>('/api/settings'),
+  planUsage: () => req<PlanUsage>('/api/plan-usage'),
   // The token is write-only: send '' to clear it. Presence comes back in Settings.
   setClaudeToken: (token: string) =>
     req<Settings>('/api/settings', {
