@@ -1,6 +1,6 @@
 # ADR-0045: What Spool does and does not defend against for the secrets a loop holds
 
-Date: 2026-10-06 · Status: accepted (operator decision of 2026-10-06 19:09 UTC, recorded on #30) · Amended: 2026-10-06 (item 4: slice 2 landed, and what it leaves, #622); 2026-10-07 (items 2 and 3: the egress proxy takes no loop credential, #626) · Amends: ADR-0017 (consequences and parking lot: the credential broker) · Relates to: ADR-0019, ADR-0028, ADR-0043
+Date: 2026-10-06 · Status: accepted (operator decision of 2026-10-06 19:09 UTC, recorded on #30) · Amended: 2026-10-06 (item 4: slice 2 landed, and what it leaves, #622); 2026-10-07 (items 2 and 3: the egress proxy takes no loop credential, #626); 2026-10-08 (items 2 and 3: the hub's own credentials, #643) · Amends: ADR-0017 (consequences and parking lot: the credential broker) · Relates to: ADR-0019, ADR-0028, ADR-0043
 
 ## Context
 
@@ -101,6 +101,15 @@ hand a teammate a credential the teammate was never given.
    (item 2), and the proxy refuses any host the built-in list and the
    operator's extra hosts don't name (item 3). The token is still in the
    loop's mcp-config.
+
+   **Amendment (2026-10-08, #643): the hub's own credentials.** A bare loop
+   runs as the operator's user, so beyond item 2's list it can read the two
+   credentials the hub keeps as files in its data directory: the operator
+   token (ADR-0030), which opens every `/api` route, and the hub key
+   (ADR-0046), which opens every secret sealed in the database. The
+   redactor now holds both, the key as its bytes and as the hex the file
+   holds, so item 3's first two cases cover them. Keeping a bare loop from
+   reading them is ADR-0017's uncontained badge, not this ADR.
 
 5. **The operator's levers for what isn't defended** stay as ADR-0017 put
    them:
