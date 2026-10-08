@@ -3463,6 +3463,59 @@ textarea {
     stroke-dashoffset: 0;
   }
 }
+/* A step the hub is working on (#661): an orange outline, what to expect,
+   and its phases, ticked behind, spinning now, hollow ahead. */
+.pillar.working {
+  border-color: color-mix(in srgb, var(--active) 55%, transparent);
+}
+.pillar-phases {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.pillar-phases li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pillar-phases .done {
+  color: var(--ready);
+}
+.pillar-phases .now {
+  color: var(--active);
+}
+.pillar-phase-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+}
+.pillar-phase-mark .spinner {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--active) 25%, transparent);
+  border-top-color: var(--active);
+  animation: wind 0.9s linear infinite;
+}
+.pillar-phase-mark .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+}
+/* Still, the spinner's bright arc still marks the phase happening now. */
+@media (prefers-reduced-motion: reduce) {
+  .pillar-phase-mark .spinner {
+    animation: none;
+  }
+}
 /* The card's way on, and on the harness card "Check now" beside it; an
    error from the check takes the row under them. */
 .pillar-actions {

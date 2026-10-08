@@ -1,4 +1,4 @@
-import { ApiError, type Onboarding, type OnboardingPillar } from './api'
+import { ApiError, type Onboarding, type OnboardingPillar, type PillarProgress } from './api'
 
 // The first-run page's three pillars (#581), in the order an operator does
 // them: the harness a loop runs on, the first loop, and the surface they talk
@@ -45,6 +45,91 @@ export const PILLARS: PillarSpec[] = [
     action: 'Attach a bot',
   },
 ]
+
+// A pillar in progress (#661) lists its phases in order: those behind the
+// hub's progress code are done, its own is happening now, and the rest are
+// still to come. Each phase says what it is while it happens and once it
+// has; a phase still to come reads as what it will be.
+export type PhaseState = 'done' | 'now' | 'todo'
+
+export interface Phase {
+  state: PhaseState
+  label: string
+}
+
+// What a card shows while its pillar is in progress: what to expect, then
+// the phases.
+export interface PillarWork {
+  expect: string
+  phases: Phase[]
+}
+
+interface PhaseSpec {
+  // The progress code that names this phase; a phase without one is never
+  // the hub's current work: it is behind every code or ahead of them.
+  code?: PillarProgress
+  now: (loop: string) => string
+  done: string
+  // What the card expects while this phase is the current one.
+  expect?: string
+}
+
+const PHASES: Partial<Record<PillarKey, PhaseSpec[]>> = {
+  loops: [
+    {
+      code: 'building_workstation',
+      now: (loop) => `${loop} is building its workstation`,
+      done: 'workstation built',
+      expect:
+        'The first wake builds the loop its workstation. That takes a minute or two the first time; this card turns done by itself.',
+    },
+    {
+      code: 'waking',
+      now: (loop) => `${loop} is waking`,
+      done: 'woken',
+      expect: 'Claude Code is starting in its workstation. Its first turn follows within seconds.',
+    },
+    {
+      code: 'first_turn',
+      now: (loop) => `${loop} is on its first turn`,
+      done: 'first turn finished',
+      expect: 'It is reading its mission. The step is done when this turn ends, usually within a minute.',
+    },
+  ],
+  surface: [
+    { now: () => 'your message received', done: 'your message received' },
+    {
+      code: 'answering',
+      now: (loop) => `${loop} is answering`,
+      done: 'answered',
+      expect: 'Your message reached it. Its reply lands in your chat shortly.',
+    },
+    { now: () => 'reply delivered', done: 'reply delivered' },
+  ],
+}
+
+// The card's in-progress state, or nothing when the pillar is done, idle,
+// or in a phase this build has no words for. A bare hub builds no
+// workstation, so its loops list starts at the wake.
+export function pillarWork(
+  key: PillarKey,
+  pillar: OnboardingPillar,
+  runtime: 'bare' | 'docker' | undefined,
+): PillarWork | undefined {
+  if (pillar.done || !pillar.progress) return undefined
+  const specs = (PHASES[key] ?? []).filter((p) => runtime !== 'bare' || p.code !== 'building_workstation')
+  const at = specs.findIndex((p) => p.code === pillar.progress)
+  if (at < 0) return undefined
+  const loop = pillar.progress_loop ? `@${pillar.progress_loop}` : 'your loop'
+  return {
+    expect: specs[at].expect ?? '',
+    phases: specs.map((p, i) => {
+      if (i < at) return { state: 'done', label: p.done }
+      if (i === at) return { state: 'now', label: p.now(loop) }
+      return { state: 'todo', label: p.done }
+    }),
+  }
+}
 
 // What a pillar asks for on this hub, by the runtime its new loops get.
 // Until the settings answer, the general text stands.

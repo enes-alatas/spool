@@ -6,6 +6,7 @@ import {
   loginCheckTone,
   nextPillar,
   pillarHow,
+  pillarWork,
   PILLARS,
   showFirstRun,
   surfaceTarget,
@@ -114,5 +115,53 @@ describe('loginCheckTone', () => {
       'muted',
     )
     expect(loginCheckTone({ done: false })).toBe('muted')
+  })
+})
+
+describe('pillarWork', () => {
+  const phases = (w: ReturnType<typeof pillarWork>) => w?.phases.map((p) => `${p.state} ${p.label}`)
+
+  it('ticks the phases behind the progress code and spins its own', () => {
+    const work = pillarWork(
+      'loops',
+      { done: false, progress: 'first_turn', progress_loop: 'scout' },
+      'docker',
+    )
+    expect(phases(work)).toEqual(['done workstation built', 'done woken', 'now @scout is on its first turn'])
+    expect(work?.expect).toMatch(/first turn|this turn/)
+  })
+
+  it('lists what is still to come under the phase happening now', () => {
+    expect(phases(pillarWork('loops', { done: false, progress: 'building_workstation' }, 'docker'))).toEqual([
+      'now your loop is building its workstation',
+      'todo woken',
+      'todo first turn finished',
+    ])
+  })
+
+  it('leaves the workstation out on a bare hub, which builds none', () => {
+    expect(phases(pillarWork('loops', { done: false, progress: 'waking' }, 'bare'))).toEqual([
+      'now your loop is waking',
+      'todo first turn finished',
+    ])
+  })
+
+  it('names the loop answering, or says your loop when the hub does not', () => {
+    expect(
+      phases(pillarWork('surface', { done: false, progress: 'answering', progress_loop: 'scout' }, 'docker')),
+    ).toEqual(['done your message received', 'now @scout is answering', 'todo reply delivered'])
+    expect(pillarWork('surface', { done: false, progress: 'answering' }, 'docker')?.phases[1].label).toBe(
+      'your loop is answering',
+    )
+  })
+
+  it('shows nothing in progress for a done, idle, or unknown phase', () => {
+    expect(pillarWork('loops', { done: true, progress: 'first_turn' }, 'docker')).toBeUndefined()
+    expect(pillarWork('loops', { done: false }, 'docker')).toBeUndefined()
+    expect(pillarWork('loops', { done: false, progress: 'compiling' }, 'docker')).toBeUndefined()
+    // the harness's check keeps its own card state (ADR-0044)
+    expect(pillarWork('harness', { done: false, progress: 'checking' }, 'docker')).toBeUndefined()
+    // a code from another pillar is not this one's
+    expect(pillarWork('surface', { done: false, progress: 'waking' }, 'docker')).toBeUndefined()
   })
 })

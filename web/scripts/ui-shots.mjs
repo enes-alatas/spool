@@ -207,6 +207,25 @@ const firstRun = {
     surface: { done: false, reason: 'no message received from the operator on telegram yet' },
     loops: { done: true },
   },
+  // A step the hub is working on (#661): the first loop on its first turn,
+  // and then answering the operator's first message.
+  'first-turn': {
+    completed: false,
+    harness: { done: true, reason: 'a turn authenticated' },
+    surface: { done: false, reason: 'no chat surface has carried a message yet' },
+    loops: { done: false, reason: 'no loop has woken', progress: 'first_turn', progress_loop: 'scout' },
+  },
+  answering: {
+    completed: false,
+    harness: { done: true, reason: 'a turn authenticated' },
+    surface: {
+      done: false,
+      reason: "no loop's message has reached telegram yet",
+      progress: 'answering',
+      progress_loop: 'scout',
+    },
+    loops: { done: true },
+  },
   all: {
     completed: false,
     harness: { done: true, reason: 'a turn authenticated' },
