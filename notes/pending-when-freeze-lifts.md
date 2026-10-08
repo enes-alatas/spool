@@ -314,3 +314,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 07:55: Rehomed into a docker workstation (Enes moving the fleet, #624 flow). Successor: clone enes-alatas/spool, branch loop/milo; this file is the ledger.
 - 08:10 (docker workstation, fresh clone): #644 (#640) merged 07:41 → #640 closed; halves sweep clean (web + internal in one PR). Terra took #643 at 08:04 (no ping needed). L4 = #643 only; v0.5.0 when it lands. Runtime still v0.4.2-5 (#641, #642, #644 unbuilt). Workstation has no gh auth and no git identity: GitHub writes and ledger pushes blocked until Enes provisions a token; asked by DM.
 - 09:10: #645 (#643) up with Quinn; last L4 PR. Token not yet provisioned; still unpushed.
+- 09:15: Token arrived as GH_TOKEN_SPOOL; gh logged in, git identity set, ledger pushed (dbd1807).
