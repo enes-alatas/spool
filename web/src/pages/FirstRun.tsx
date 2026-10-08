@@ -6,8 +6,17 @@ import { HarnessCheck } from '../components/HarnessCheck'
 import { TokenDialog } from '../components/TokenDialog'
 import { LoopDialog } from '../components/LoopDialog'
 import { SurfaceDialog } from '../components/SurfaceDialog'
-import { HarnessIcon, LoopsIcon, SurfaceIcon } from '../components/Icons'
-import { doneCount, nextPillar, pillarHow, PILLARS, surfaceTarget, type PillarKey } from '../onboarding'
+import { CheckIcon, HarnessIcon, LoopsIcon, SurfaceIcon } from '../components/Icons'
+import {
+  doneCount,
+  nextPillar,
+  pillarHow,
+  pillarWork,
+  PILLARS,
+  surfaceTarget,
+  type Phase,
+  type PillarKey,
+} from '../onboarding'
 
 // The first-run page (#581): three cards, one per pillar, each with its live
 // state and a way to the place that does it. It opens the room until the
@@ -71,8 +80,12 @@ export default function FirstRun({
           const state = open === p.key ? { ...onboarding[p.key], done: false } : onboarding[p.key]
           const Icon = ICONS[p.key]
           const primary = `btn${p.key === next ? ' primary' : ''}`
+          // While the hub works on the step there is nothing for the
+          // operator to do: the card says what is happening instead (#661).
+          const work = pillarWork(p.key, state, settings?.default_runtime)
+          const status = state.done ? ' done' : work ? ' working' : ''
           return (
-            <li key={p.key} className={`pillar${state.done ? ' done' : ''}${p.key === next ? ' next' : ''}`}>
+            <li key={p.key} className={`pillar${status}${p.key === next ? ' next' : ''}`}>
               <div className="pillar-head">
                 <span className="pillar-icon">
                   <Icon size={28} />
@@ -82,6 +95,11 @@ export default function FirstRun({
               <h2 className="pillar-title">{p.title}</h2>
               {state.done ? (
                 <DoneTick label={p.doneText} animate={!doneAtOpen.has(p.key)} />
+              ) : work ? (
+                <>
+                  <p className="pillar-how">{work.expect}</p>
+                  <PhaseList phases={work.phases} />
+                </>
               ) : (
                 <>
                   <p className="pillar-how">{pillarHow(p, settings?.default_runtime)}</p>
@@ -90,7 +108,7 @@ export default function FirstRun({
               )}
               {/* The harness's actions depend on the runtime: none until the
                   settings say which, or a bare hub would offer a token. */}
-              {!state.done && (p.key !== 'harness' || settings) && (
+              {!state.done && !work && (p.key !== 'harness' || settings) && (
                 <div className="pillar-actions">
                   {p.key === 'harness' ? (
                     // A bare hub's loops use the host's login: there is no
@@ -131,6 +149,32 @@ export default function FirstRun({
       {open === 'loops' && <LoopDialog onClose={closeStep} />}
       {open === 'surface' && loops && <SurfaceDialog loops={loops} onClose={closeStep} />}
     </div>
+  )
+}
+
+// What the marks say to assistive tech, since a phase still to come is
+// worded as what it will be.
+const PHASE_SPOKEN: Record<Phase['state'], string> = { done: 'done: ', now: 'now: ', todo: 'next: ' }
+
+// A step in progress: its phases in order, with a tick on those behind, a
+// spinner on the one happening now, and a hollow dot on those to come.
+function PhaseList({ phases }: { phases: Phase[] }) {
+  return (
+    <ul className="pillar-phases" aria-live="polite">
+      {phases.map((ph) => (
+        <li key={ph.label} className={ph.state}>
+          <span className="pillar-phase-mark" aria-hidden>
+            {ph.state === 'done' ? (
+              <CheckIcon size={14} />
+            ) : (
+              <span className={ph.state === 'now' ? 'spinner' : 'dot'} />
+            )}
+          </span>
+          <span className="sr-only">{PHASE_SPOKEN[ph.state]}</span>
+          {ph.label}
+        </li>
+      ))}
+    </ul>
   )
 }
 

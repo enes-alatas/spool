@@ -531,7 +531,17 @@ export interface OnboardingPillar {
   // The harness's login check (ADR-0044) is running: set from the moment a
   // check starts until it answers, so a "Check now" stays busy that long.
   checking?: boolean
+  // What the hub is doing for the pillar now, while it is not done (#662):
+  // a loop's first wake building its workstation, spawning, or on its first
+  // turn; a loop answering the operator's first message; a login check.
+  // Absent while nothing is in flight. A code this build does not know
+  // reads as absent.
+  progress?: PillarProgress | (string & {})
+  // The loop that progress is about, when it is about one.
+  progress_loop?: string
 }
+
+export type PillarProgress = 'building_workstation' | 'waking' | 'first_turn' | 'answering' | 'checking'
 
 export interface Onboarding {
   completed: boolean
