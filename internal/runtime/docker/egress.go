@@ -12,7 +12,8 @@ import (
 // The egress wall (ADR-0028). Workstations sit on an internal network the
 // daemon gives no route off; one proxy container bridges it to the outside
 // and forwards only allowlisted hosts. Both are fleet infrastructure: ensured
-// before the first workstation is provisioned, never removed with a loop.
+// at every wake, before a workstation is provisioned or started, and never
+// removed with a loop.
 const (
 	egressPort = "3128"
 
@@ -59,7 +60,7 @@ func (rt *Runtime) egressProxyURL() string {
 }
 
 // ensureEgress makes the internal network and the proxy container exist and
-// run. Idempotent — it is called before every provision, so a proxy an
+// run. Idempotent — it is called on every wake, so a proxy an
 // operator removed comes back with the next wake.
 func (rt *Runtime) ensureEgress(ctx context.Context) error {
 	if !rt.egressEnabled() {

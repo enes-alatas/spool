@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/enes-alatas/spool/internal/runtime"
 )
 
 // fakeDocker is a docker CLI that counts its calls in a file and fails while
@@ -100,5 +102,39 @@ func TestFleetEgressAppliesThroughTheFile(t *testing.T) {
 	}
 	if got := countCalls(t, calls); got != before+1 {
 		t.Errorf("a change copied %d times, want 1", got-before)
+	}
+}
+
+// A wake of a workstation that already runs copies the fleet's hosts into
+// a proxy that already runs, as the first docker wake of a hub run whose
+// workstations all survived from the last one is (#657). Before, only a
+// provision ensured the wall, so such a hub never wrote the file, and a
+// host added on Settings never reached the proxy.
+func TestAWakeOfARunningWorkstationCatchesUpTheProxy(t *testing.T) {
+	dir := t.TempDir()
+	bin, calls := filepath.Join(dir, "docker"), filepath.Join(dir, "calls")
+	rt := New(Options{Bin: bin, EgressImage: "spool-egress"})
+	// a docker whose every container runs, the proxy on this hub's spec
+	script := "#!/bin/sh\ncat >/dev/null\necho \"$*\" >>" + calls + "\n" +
+		"case \"$*\" in\n" +
+		"*'.Config.Labels'*) echo '{\"" + egressSpecLabel + "\":\"" + rt.egressSpecHash() + "\"}' ;;\n" +
+		"*'.State'*) echo '{\"Running\":true}' ;;\n" +
+		"esac\n"
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := rt.SetFleetEgress(ctx, []string{"uploads.example"}); err != nil {
+		t.Fatal(err)
+	}
+	if !rt.FleetEgressApplied().IsZero() {
+		t.Fatal("applied before any wake of this hub run")
+	}
+	if err := rt.Ensure(ctx, runtime.Spec{LoopID: "survivor"}); err != nil {
+		t.Fatal(err)
+	}
+	if rt.FleetEgressApplied().IsZero() {
+		data, _ := os.ReadFile(calls)
+		t.Fatalf("a wake of a running workstation left the fleet's hosts unapplied; docker was called with:\n%s", data)
 	}
 }
