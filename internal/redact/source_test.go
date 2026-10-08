@@ -2,6 +2,7 @@ package redact
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"testing"
 
@@ -124,5 +125,36 @@ func TestStoreSourceKeepsRetiredValues(t *testing.T) {
 	}
 	if !reflect.DeepEqual(secrets, want) {
 		t.Fatalf("secrets = %+v, want %+v", secrets, want)
+	}
+}
+
+type failingSource struct{}
+
+func (failingSource) Secrets(context.Context) ([]Secret, error) {
+	return nil, errors.New("store unavailable")
+}
+
+// Sources is each source's secrets together, and one failing source fails
+// the load, so the redactor keeps its last snapshot rather than dropping the
+// secrets that source held.
+func TestSourcesJoinsEachSource(t *testing.T) {
+	sources := Sources{
+		Fixed{{Name: "operator_token", Value: "op-synthetic-token"}},
+		Fixed{{Name: "hub_key", Value: "hub-synthetic-key"}},
+	}
+	secrets, err := sources.Secrets(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Secret{
+		{Name: "operator_token", Value: "op-synthetic-token"},
+		{Name: "hub_key", Value: "hub-synthetic-key"},
+	}
+	if !reflect.DeepEqual(secrets, want) {
+		t.Fatalf("secrets = %+v, want %+v", secrets, want)
+	}
+
+	if _, err := append(sources, failingSource{}).Secrets(context.Background()); err == nil {
+		t.Fatal("a failing source did not fail the load")
 	}
 }
