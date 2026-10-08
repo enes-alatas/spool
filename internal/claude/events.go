@@ -99,10 +99,30 @@ type ResultInfo struct {
 	APIErrorStatus int `json:"api_error_status"`
 }
 
+// RateLimitInfo is a rate_limit_event's payload, which the CLI emits when
+// the plan's rate-limit headers change. UnifiedWindows carries both limit
+// windows on every observation, where Status and ResetsAt describe only the
+// one limiting now; the CLI marks it internal, so it may be absent.
 type RateLimitInfo struct {
-	Status        string `json:"status"`
-	ResetsAt      int64  `json:"resetsAt"`
-	RateLimitType string `json:"rateLimitType"`
+	Status         string          `json:"status"`
+	ResetsAt       int64           `json:"resetsAt"`
+	RateLimitType  string          `json:"rateLimitType"`
+	UnifiedWindows *UnifiedWindows `json:"unifiedWindows"`
+}
+
+// UnifiedWindows is the plan's five-hour and seven-day windows as the CLI
+// read them from the API's headers; a window the response did not carry is
+// nil.
+type UnifiedWindows struct {
+	FiveHour *UnifiedWindow `json:"five_hour"`
+	SevenDay *UnifiedWindow `json:"seven_day"`
+}
+
+// UnifiedWindow is one window: the fraction used, which can run past 1, and
+// when it resets, in unix seconds.
+type UnifiedWindow struct {
+	Utilization float64 `json:"utilization"`
+	ResetsAt    int64   `json:"resetsAt"`
 }
 
 // DecodeEvent parses one stdout line. It never fails hard: undecodable input

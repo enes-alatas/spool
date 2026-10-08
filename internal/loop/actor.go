@@ -145,6 +145,10 @@ type Deps struct {
 	// default runtime's aliases run as (ADR-0033). Nil in tests that do not
 	// care.
 	ObserveModel func(loopRecord *store.Loop, spawned, resolved string)
+	// PlanUsage keeps the plan usage a loop's process reports, the newest
+	// across the fleet, since every loop runs on the one login. Nil in tests
+	// that do not care.
+	PlanUsage *PlanUsage
 	// DataDir is the hub's data directory, where a rehomed loop's
 	// auto-memory waits for its workstation (#624). "" carries none.
 	DataDir string
@@ -1258,6 +1262,13 @@ func (actor *Actor) handleEvent(ev claude.Event) {
 			actor.turnRefusal = ev.Assistant.Text
 		}
 		actor.storeClaudeEvent(ev)
+	case ev.Type == "rate_limit_event":
+		actor.storeClaudeEvent(ev)
+		if observed, ok := planUsageFrom(ev.RateLimit, now()); ok && actor.deps.PlanUsage != nil {
+			if err := actor.deps.PlanUsage.Observe(context.Background(), observed); err != nil {
+				actor.log().Error("plan usage", "err", err)
+			}
+		}
 	case ev.Type == "stream_event":
 		// live deltas: publish only, never persist
 		actor.deps.Bus.Publish(bus.Item{Kind: bus.KindAgentEvent, LoopID: actor.loop.ID, Payload: json.RawMessage(ev.Raw)})

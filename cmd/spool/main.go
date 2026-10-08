@@ -369,6 +369,7 @@ func main() {
 	}
 	models := loop.NewModels(rdb, pubsub, runtimes[defaultRuntime], defaultRuntime, ver, log)
 	deps.ObserveModel = models.Observe
+	deps.PlanUsage = loop.NewPlanUsage(rdb.Settings())
 	manager := loop.NewManager(deps)
 	router = route.New(rdb, pubsub, manager, log)
 	files, err := attach.Open(filepath.Join(*dataDir, "files"))
