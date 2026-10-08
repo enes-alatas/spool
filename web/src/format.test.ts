@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest'
-import { fillTone, hasFillPct, formatTokens, formatUsd, inTurn, nextWake, sumCostToday } from './format'
+import {
+  fillTone,
+  hasFillPct,
+  formatTokens,
+  formatUsd,
+  inTurn,
+  nextWake,
+  shareColor,
+  spendShare,
+  sumCostToday,
+} from './format'
 
 describe('hasFillPct', () => {
   // #122: a server older than `context_fill_pct` sends nothing, the field
@@ -54,6 +64,35 @@ describe('sumCostToday', () => {
 
   it('is zero for an empty fleet', () => {
     expect(formatUsd(sumCostToday([]))).toBe('$0.00')
+  })
+})
+
+describe('spendShare', () => {
+  // Four loops at a third of a cent each read $0.00 on every row, and each is
+  // still a quarter of the day the fleet spent.
+  it('divides the real values, not the rounded ones', () => {
+    expect(spendShare(0.003, 0.012)).toBe(25)
+  })
+
+  it('rounds to a whole percent', () => {
+    expect(spendShare(0.1382, 0.5464)).toBe(25)
+    expect(spendShare(0.3025, 0.5464)).toBe(55)
+  })
+
+  // A blank column on a quiet day read as a missing one; 0% says the loops
+  // have spent nothing of nothing.
+  it('is zero on a day the fleet spent nothing', () => {
+    expect(spendShare(0, 0)).toBe(0)
+  })
+})
+
+describe('shareColor', () => {
+  it('runs from the muted ink through the active orange to the danger red', () => {
+    expect(shareColor(0)).toBe('color-mix(in oklab, var(--active) 0%, var(--text-muted))')
+    expect(shareColor(25)).toBe('color-mix(in oklab, var(--active) 50%, var(--text-muted))')
+    expect(shareColor(50)).toBe('color-mix(in oklab, var(--active) 100%, var(--text-muted))')
+    expect(shareColor(75)).toBe('color-mix(in oklab, var(--danger) 50%, var(--active))')
+    expect(shareColor(100)).toBe('color-mix(in oklab, var(--danger) 100%, var(--active))')
   })
 })
 
