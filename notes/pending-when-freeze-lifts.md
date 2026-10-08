@@ -310,3 +310,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 
 ## 2026-10-08 07:10 — morning sweep
 - Overnight: #644 (#640, env change reaches an awake loop from its next turn; both halves in one PR) up 21:10 with Quinn. L4 left: #640 (PR #644), #643 (Terra next). Runtime still v0.4.2-5 (#641, #642 unbuilt; Enes has the backup-first note). Iris idle. No new issues. v0.5.0 when #644 + #643 land.
+- 07:20: Quinn on #644: one engine fix (stale-env close at turn end skips a due rotation/rehome), rest good. Asked me whether the connection row needs a "pending until next turn" label: confirmed no (my sketch, not the decision; copy is the whole web half), recorded on #640. Waiting: Terra's fold, Quinn's re-review.
