@@ -8,7 +8,7 @@ import {
   formatUsd,
   inTurn,
   nextWake,
-  shareColor,
+  gradedColor,
   spendShare,
   sumCostToday,
 } from '../format'
@@ -73,7 +73,7 @@ function ShareStat({ cost, total }: { cost: number; total: number }) {
     <>
       <span
         className="share"
-        style={{ color: shareColor(pct) }}
+        style={{ color: gradedColor(pct) }}
         title={`${formatUsd(cost)} of the fleet's ${formatUsd(total)} today`}
       >
         <span className="share-bar" aria-hidden>

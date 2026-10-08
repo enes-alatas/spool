@@ -6,7 +6,7 @@ import {
   formatUsd,
   inTurn,
   nextWake,
-  shareColor,
+  gradedColor,
   spendShare,
   sumCostToday,
 } from './format'
@@ -86,13 +86,13 @@ describe('spendShare', () => {
   })
 })
 
-describe('shareColor', () => {
+describe('gradedColor', () => {
   it('runs from the muted ink through the active orange to the danger red', () => {
-    expect(shareColor(0)).toBe('color-mix(in oklab, var(--active) 0%, var(--text-muted))')
-    expect(shareColor(25)).toBe('color-mix(in oklab, var(--active) 50%, var(--text-muted))')
-    expect(shareColor(50)).toBe('color-mix(in oklab, var(--active) 100%, var(--text-muted))')
-    expect(shareColor(75)).toBe('color-mix(in oklab, var(--danger) 50%, var(--active))')
-    expect(shareColor(100)).toBe('color-mix(in oklab, var(--danger) 100%, var(--active))')
+    expect(gradedColor(0)).toBe('color-mix(in oklab, var(--active) 0%, var(--text-muted))')
+    expect(gradedColor(25)).toBe('color-mix(in oklab, var(--active) 50%, var(--text-muted))')
+    expect(gradedColor(50)).toBe('color-mix(in oklab, var(--active) 100%, var(--text-muted))')
+    expect(gradedColor(75)).toBe('color-mix(in oklab, var(--danger) 50%, var(--active))')
+    expect(gradedColor(100)).toBe('color-mix(in oklab, var(--danger) 100%, var(--active))')
   })
 })
 
