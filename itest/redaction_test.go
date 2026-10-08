@@ -4,6 +4,7 @@ package itest
 
 import (
 	"encoding/base64"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -45,9 +46,16 @@ func TestSecretsNeverReachTheRecord(t *testing.T) {
 	for _, path := range []string{
 		"/api/loops/leaky/turns?limit=50",
 		"/api/loops/leaky/events?limit=500",
-		"/api/messages?limit=100",
+		"/api/loops/leaky/conversation",
+		"/api/activity",
 	} {
-		if _, body := s.do("GET", path, nil); strings.Contains(string(body), value) {
+		// a route that is gone answers 404 without the value, so the
+		// check would pass on nothing
+		resp, body := s.do("GET", path, nil)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s: %d %s", path, resp.StatusCode, body)
+		}
+		if strings.Contains(string(body), value) {
 			t.Errorf("%s served the secret: %s", path, body)
 		}
 	}
