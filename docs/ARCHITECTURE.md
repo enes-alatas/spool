@@ -40,6 +40,7 @@ Use these words exactly — in code, UI, docs, and prompts. Don't introduce syno
 | **owner / admin / member** | Org roles: each loop has one responsible human owner; admins manage everything; members talk to loops. |
 | **turn** | One request→result cycle of a claude session. |
 | **turn cost** | What one turn spent: `cost_usd`, and the only cost column that may be summed. The CLI reports the session's running total instead, which is kept beside it as `session_cost_usd` (#191). |
+| **plan usage** | How much of the Claude plan's five-hour and seven-day limit windows is used, and when each resets. One number per hub, since every loop runs on the operator's one login: the newest a loop's claude process reported in its stream's rate-limit event, kept by the hub and read at `GET /api/plan-usage`, which says unknown, with why, until a loop has reported one (#647). Not *turn cost*, which is what Spool's own turns spent. |
 | **wake / sleep** | A loop's process lifecycle: asleep (no process) → awake (spawned, `--resume`). |
 | **tick** | A scheduled wake with no inbound message. |
 | **trailer** | The `[next-wake: 45m]` suffix a loop uses to schedule itself. |

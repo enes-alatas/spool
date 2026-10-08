@@ -183,6 +183,7 @@ func (server *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/channels/{name}/loops/{loop}", server.handleChannelLoop(false))
 	mux.HandleFunc("GET /api/settings", server.handleGetSettings)
 	mux.HandleFunc("GET /api/onboarding", server.handleOnboarding)
+	mux.HandleFunc("GET /api/plan-usage", server.handlePlanUsage)
 	mux.HandleFunc("POST /api/onboarding/harness-check", server.handleLoginCheck)
 	mux.HandleFunc("PUT /api/settings", server.handlePutSettings)
 	mux.HandleFunc("GET /api/settings/egress", server.handleGetEgress)
