@@ -118,6 +118,32 @@ const (
 	LoginCheckInconclusive = "inconclusive"
 )
 
+// SettingPlanUsage holds the newest plan usage the hub has observed, a
+// PlanUsageRecord as JSON. Unset until a first observation.
+const SettingPlanUsage = "plan_usage"
+
+// PlanUsageRecord is the Claude plan's usage as last observed: how much of
+// each limit window is used and when that window resets. Every loop runs on
+// the one login, so the plan has one record per hub, not one per loop. A
+// window the observation did not carry is nil.
+type PlanUsageRecord struct {
+	FiveHour *PlanUsageWindow `json:"five_hour,omitempty"`
+	SevenDay *PlanUsageWindow `json:"seven_day,omitempty"`
+	At       int64            `json:"at"`     // when it was observed
+	Source   string           `json:"source"` // where it was read from
+}
+
+// PlanUsageSourceStream is plan usage read from a loop's own stream: the
+// rate-limit event its claude process emits after an API response.
+const PlanUsageSourceStream = "stream"
+
+// PlanUsageWindow is one limit window: Utilization is the fraction used,
+// which can run past 1, and ResetsAt when the window starts over.
+type PlanUsageWindow struct {
+	Utilization float64 `json:"utilization"`
+	ResetsAt    int64   `json:"resets_at"`
+}
+
 // SettingOnboardingCompleted is set the first time the hub finds
 // every onboarding pillar done (#580). It is what keeps the first-run page
 // aside once the operator is through it, whatever a pillar reads later, and
