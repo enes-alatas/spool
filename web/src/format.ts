@@ -19,6 +19,28 @@ export function sumCostToday(loops: { cost_today_usd: number }[]): number {
   return loops.reduce((total, loop) => total + loop.cost_today_usd, 0)
 }
 
+// A loop's part of what the fleet spent today, as a whole percent: the row's
+// answer to "which loop is eating the plan". Taken from the real values, like
+// the total, so four rows that each read $0.00 still divide a day that cost
+// something. Zero on a day the fleet has spent nothing: every loop's part of
+// nothing is none of it, and an empty column read as a missing one.
+export function spendShare(cost: number, total: number): number {
+  if (!(total > 0)) return 0
+  return Math.round((cost / total) * 100)
+}
+
+// The colour a share is drawn in, graded along the share itself rather than
+// stepped: the muted ink of the row's other figures at nothing, the active
+// orange at half the fleet's day, the danger red at all of it. Two loops at
+// 40% and 45% are told apart by length, and a loop at 90% does not wear the
+// same colour as one at 55%. Mixed from the tokens, so a palette change
+// carries through.
+export function shareColor(pct: number): string {
+  const p = Math.min(Math.max(pct, 0), 100)
+  if (p <= 50) return `color-mix(in oklab, var(--active) ${p * 2}%, var(--text-muted))`
+  return `color-mix(in oklab, var(--danger) ${(p - 50) * 2}%, var(--active))`
+}
+
 // How full a context window is, and how loudly to say so — in the operator's
 // own terms. Warm is "rotation is armed, it will happen at the next quiet
 // boundary", hot is "past the ceiling, the next turn rotates first". Fixed

@@ -1,7 +1,17 @@
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
 import { api, LoopView, Settings } from '../api'
-import { formatTokens, fillTone, hasFillPct, formatUsd, inTurn, nextWake, sumCostToday } from '../format'
+import {
+  formatTokens,
+  fillTone,
+  hasFillPct,
+  formatUsd,
+  inTurn,
+  nextWake,
+  shareColor,
+  spendShare,
+  sumCostToday,
+} from '../format'
 import { StateDot } from '../components/Spool'
 import { ChannelChat } from '../components/ChannelChat'
 import { undeliveredNote } from '../messages'
@@ -51,11 +61,44 @@ function ContextStat({ loop, thresholds }: { loop: LoopView; thresholds?: Settin
   )
 }
 
-// One row per loop: identity on the left, the four operational numbers to the
+// The row's part of the fleet's day, as a percent and a bar that draws it, so
+// the loop eating the plan stands out down the column without reading every
+// figure. On a day the fleet has spent nothing every row reads 0% over an
+// empty bar.
+function ShareStat({ cost, total }: { cost: number; total: number }) {
+  const pct = spendShare(cost, total)
+  // The label outside the coloured span, as the context gauge keeps "ctx": the
+  // colour is the figure's, not the words'.
+  return (
+    <>
+      <span
+        className="share"
+        style={{ color: shareColor(pct) }}
+        title={`${formatUsd(cost)} of the fleet's ${formatUsd(total)} today`}
+      >
+        <span className="share-bar" aria-hidden>
+          <span style={{ width: `${pct}%` }} />
+        </span>
+        {pct}%
+      </span>{' '}
+      <span className="lbl after">of fleet</span>
+    </>
+  )
+}
+
+// One row per loop: identity on the left, the operational numbers to the
 // right of it. The metadata is wrapped in an element that is `display:
 // contents` on a wide screen — its children join the row's grid as columns —
 // and a wrapping line of its own once the columns no longer fit.
-function FleetRow({ loop, thresholds }: { loop: LoopView; thresholds?: Settings }) {
+function FleetRow({
+  loop,
+  thresholds,
+  spentToday,
+}: {
+  loop: LoopView
+  thresholds?: Settings
+  spentToday: number
+}) {
   const nav = useNavigate()
   const station = workstationNote(loop)
   const undelivered = undeliveredNote(loop.undelivered)
@@ -123,6 +166,9 @@ function FleetRow({ loop, thresholds }: { loop: LoopView; thresholds?: Settings 
         </span>
         <span className="f-ctx">
           <ContextStat loop={loop} thresholds={thresholds} /> <span className="lbl after">ctx</span>
+        </span>
+        <span className="f-share">
+          <ShareStat cost={loop.cost_today_usd} total={spentToday} />
         </span>
         <span className="f-today">
           {formatUsd(loop.cost_today_usd)} <span className="lbl after">today</span>
@@ -226,11 +272,17 @@ export default function Dashboard() {
                 <div className="f-meta">
                   <span className="f-next">next wake</span>
                   <span className="f-ctx">context</span>
+                  <span className="f-share">share</span>
                   <span className="f-today">today</span>
                 </div>
               </div>
               {loops.map((fleetLoop) => (
-                <FleetRow key={fleetLoop.id} loop={fleetLoop} thresholds={thresholds} />
+                <FleetRow
+                  key={fleetLoop.id}
+                  loop={fleetLoop}
+                  thresholds={thresholds}
+                  spentToday={spentToday}
+                />
               ))}
             </div>
           )}
