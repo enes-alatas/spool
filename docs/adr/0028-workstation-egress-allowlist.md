@@ -1,6 +1,6 @@
 # ADR-0028: Workstation egress runs through an allowlist proxy
 
-Date: 2026-09-20 · Status: accepted · Amends: ADR-0017 (decision 9, "open egress") · Amended 2026-09-20 (decision 3: the hub entry is the MCP listener, #238); 2026-10-01 (consequences: a docker loop behind a loopback listener is refused, #474); 2026-10-01 (decision 3: the loop listener does not refuse a host.docker.internal Host, #508); 2026-10-05 (decision 4: a loop's own entries, keyed by its proxy token, #599); 2026-10-06 (decision 4: the operator's extra hosts are stored and change while the hub runs, #542); 2026-10-06 (decision 4: brokered MCP servers open no host, #622); 2026-10-07 (decision 4: a loop's own entries are removed, #626)
+Date: 2026-09-20 · Status: accepted · Amends: ADR-0017 (decision 9, "open egress") · Amended 2026-09-20 (decision 3: the hub entry is the MCP listener, #238); 2026-10-01 (consequences: a docker loop behind a loopback listener is refused, #474); 2026-10-01 (decision 3: the loop listener does not refuse a host.docker.internal Host, #508); 2026-10-05 (decision 4: a loop's own entries, keyed by its proxy token, #599); 2026-10-06 (decision 4: the operator's extra hosts are stored and change while the hub runs, #542); 2026-10-06 (decision 4: brokered MCP servers open no host, #622); 2026-10-07 (decision 4: a loop's own entries are removed, #626); 2026-10-08 (decision 5: the wall is ensured at every docker wake, #657)
 
 ## Context
 
@@ -192,6 +192,14 @@ by asking the agent nicely (#193).
    `--restart unless-stopped`, so both survive daemon and orchestrator
    restarts. Neither is torn down with a loop: they are fleet infrastructure,
    and `docker network rm` on a network with members would fail anyway.
+
+   **Amendment (2026-10-08, #657): the wall is ensured at every docker wake.**
+   Not only before a provision: a wake of a workstation that already exists
+   ensures the network and the proxy too, and catches the proxy's file up
+   with the operator's extra hosts. A hub run whose workstations all
+   survived from the last run provisions nothing, so until this it never
+   wrote the file, and a host added on Settings never reached the proxy.
+   The cost is a few docker CLI queries per wake.
 
 6. **The bare runtime is explicitly outside this.** A bare loop is a host
    process with the host's network; there is no wall to put a door in. The docs
