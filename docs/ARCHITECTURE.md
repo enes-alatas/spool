@@ -37,7 +37,7 @@ Use these words exactly — in code, UI, docs, and prompts. Don't introduce syno
 | **fleet rule** | An operator-defined rule every loop follows. Enabled rules render into every system prompt as the `FLEET RULES` section ahead of the mission, and win where the two conflict (ADR-0024). |
 | **workspace** | The loop's working directory (`none` \| plain dir \| git worktree). A loop-level concept only. |
 | **org** | The tenant: a team sharing loops, humans, and connections. Implicit and single in the local edition; explicit from L5 on. (When Slack's own "workspace" term must appear, say "your Slack workspace" — our tenant is always *org*.) |
-| **owner / admin / member** | Org roles: each loop has one responsible human owner; admins manage everything; members talk to loops. |
+| **owner / admin / member** | Org roles: each loop has one responsible human owner; admins manage everything; members talk to loops and read the fleet, less its owner DMs (ADR-0048). |
 | **turn** | One request→result cycle of a claude session. |
 | **turn cost** | What one turn spent: `cost_usd`, and the only cost column that may be summed. The CLI reports the session's running total instead, which is kept beside it as `session_cost_usd` (#191). |
 | **plan usage** | How much of the Claude plan's five-hour and seven-day limit windows is used, and when each resets. One number per hub, since every loop runs on the operator's one login: the newest a loop's claude process reported in its stream's rate-limit event, kept by the hub and read at `GET /api/plan-usage`, which says unknown, with why, until a loop has reported one (#647). Not *turn cost*, which is what Spool's own turns spent. |
@@ -182,7 +182,10 @@ because refusing to end an unproven session protects no one. `/api/login`
 needs a user's username and password in the request body, or for one more
 release the token, since obtaining the cookie is what it is for. While a
 user's one-time password is still to be changed, only `/api/me`,
-`/api/me/password` and the routes above answer. The
+`/api/me/password` and the routes above answer. Past that, a user's role
+bounds what they may call: a member reads the fleet, less its owner DMs and
+loops' raw transcripts, and talks to its loops, while admins and owners do
+everything (ADR-0048). The
 same middleware refuses a `Host` this hub does not answer to for every `/api`
 path including the open ones, and a cross-site `Origin` or `Sec-Fetch-Site`
 or a body that is not `application/json` for the rest. On the loop listener
