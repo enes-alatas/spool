@@ -373,6 +373,7 @@ type loopView struct {
 	Model              string  `json:"model"`
 	ModelRefusal       string  `json:"model_refusal"`
 	ResolvedModel      string  `json:"resolved_model"`
+	CappedUntil        int64   `json:"capped_until"`
 }
 
 type turn struct {

@@ -431,6 +431,7 @@ func main() {
 		Sched:        scheduler,
 		Models:       models,
 		LoginChecker: loop.NewLoginChecker(rdb, runtimes[defaultRuntime], log),
+		PlanCap:      planCap,
 		Surfaces: map[string]surface.Surface{
 			store.SurfaceTelegram: bridge,
 			store.SurfaceSlack:    slackSurface,
