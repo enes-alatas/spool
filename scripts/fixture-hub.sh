@@ -5,8 +5,10 @@
 #   bash scripts/fixture-hub.sh <command> [args…]
 #
 # The command sees SPOOL_URL, the hub's address, and SPOOL_DATA_DIR, the
-# directory cmd/uifixture wrote seconds earlier. It reads the operator token
-# from $SPOOL_DATA_DIR/operator-token, never from the environment or argv.
+# directory cmd/uifixture wrote seconds earlier. It reads a credential from
+# that directory, never from the environment or argv: the operator token
+# from operator-token, or the fixture users' password from
+# fixture-user-password.
 #
 # A screenshot in a PR is driven against fixture data, never the live fleet
 # (CONVENTIONS.md "Screenshots come from fixtures"): the timeline renders raw
