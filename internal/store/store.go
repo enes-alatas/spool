@@ -172,6 +172,16 @@ const (
 	SettingContextForcePercent = "context_force_percent"
 )
 
+// Plan-cap settings (ADR-0047). The thresholds are integer percentages of
+// each plan window, 0 for off, and the default while unset. The resume
+// setting holds when the operator's last Resume now stops holding the cap
+// off, in Unix milliseconds.
+const (
+	SettingPlanCapFiveHourPercent = "plan_cap_five_hour_percent"
+	SettingPlanCapSevenDayPercent = "plan_cap_seven_day_percent"
+	SettingPlanCapResumedUntil    = "plan_cap_resumed_until"
+)
+
 type Loop struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`

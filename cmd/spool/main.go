@@ -370,7 +370,16 @@ func main() {
 	models := loop.NewModels(rdb, pubsub, runtimes[defaultRuntime], defaultRuntime, ver, log)
 	deps.ObserveModel = models.Observe
 	deps.PlanUsage = loop.NewPlanUsage(rdb.Settings())
+	planCap := loop.NewPlanCap(rdb.Settings(), log)
+	// read before the actors start, so a hub restarted while capped
+	// starts its loops capped
+	if err := planCap.Refresh(context.Background()); err != nil {
+		log.Error("plan cap", "err", err)
+		os.Exit(1)
+	}
+	deps.PlanCap = planCap
 	manager := loop.NewManager(deps)
+	planCap.OnChange(manager.CapChanged)
 	router = route.New(rdb, pubsub, manager, log)
 	files, err := attach.Open(filepath.Join(*dataDir, "files"))
 	if err != nil {
@@ -392,6 +401,7 @@ func main() {
 	_ = rdb.Sessions().EndDangling(ctx, store.EndReasonCrash, time.Now().UnixMilli())
 
 	go scheduler.Run(ctx)
+	go planCap.Run(ctx)
 	models.Start(ctx)
 	go pruneEvents(ctx, rdb, *retentionDays, log)
 	go expireAttachments(ctx, router, log)
