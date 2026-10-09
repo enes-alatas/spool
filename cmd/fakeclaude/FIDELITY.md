@@ -78,7 +78,7 @@ the row they rest on.
 | `!echo`, the unscripted default | A model repeating its input, so a test can read what Spool put in the turn. |
 | `!huge <bytes>` | A very long stdout line, to test Spool's reader. The real CLI's largest line is not measured. |
 | `!ctx <tokens>` | A filling context: the input tokens each API step reports. The real CLI compacts on its own near a full window (2.1.238, 2026-08-21, `make e2e-context`), which the fake does not model. |
-| `!usage <five-hour> <seven-day>` | The plan's usage changing during a turn, as a rate-limit event (its row under Process and stream-json framing is assumed). |
+| `!usage <five-hour> <seven-day> [resets=<seconds>]` | The plan's usage changing during a turn, as a rate-limit event (its row under Process and stream-json framing is assumed). `resets=` brings the five-hour reset within seconds, so a test can watch a window reset (#650). |
 | `!hang <seconds>`, `nosuch-slow` | A slow turn. |
 | `!env NAME` | A loop echoing an injected credential, which is what redaction has to catch (#150). |
 | `!get URL` | A loop's outbound request, through Go's proxy-honouring client (#193). That the real CLI honours `HTTP_PROXY`/`HTTPS_PROXY` is **assumed**: ADR-0028 states it, and nothing records a measurement. |
