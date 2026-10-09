@@ -342,3 +342,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 11:00: #663 (#661 web) merged; Iris free → #651 now (mockups + fixture against #650's recorded decisions; PR waits on #650's API shape; field names agreed with Terra on the issue), #634 as a standalone gap (ref 3734). #661 closes when #664 lands? No: #663 closed #661 presumably; check #661 state next tick.
 - 11:10: Dependabot: 2 high alerts on main = source-map-js 1.2.1 (npm, build-time, GHSA-68fv-2mgg-jv7q); no existing issue. Filed #668 (security, severity:low for us); Iris takes it before #651 (ref 3735). Not related to #665.
 - 11:15: #666 (#665) merged 10:43 → main checks green again; #665 closed? verify. #664 (#662) approved, merge ask to Enes by Quinn; close #661 myself once #664 lands (neither PR closes it). Rebuild warranted after #664 (internal/ + new toolchain).
+- 11:20: #669 (#668, source-map-js 1.2.2, both lockfiles) up with Quinn. Iris then → #651.
