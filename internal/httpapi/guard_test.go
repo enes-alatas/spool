@@ -526,7 +526,7 @@ func testUsers(t *testing.T) *users.Users {
 // same cookie is refused afterwards (ADR-0048).
 func TestAUserSessionIsHeldToTheChange(t *testing.T) {
 	userStore := testUsers(t)
-	oneTime, err := userStore.Add(t.Context(), "dana", "member")
+	oneTime, err := userStore.Add(t.Context(), "dana", "admin")
 	if err != nil {
 		t.Fatal(err)
 	}
