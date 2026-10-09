@@ -165,12 +165,14 @@ func dockerWorkstationCannotReachTheAPI(t *testing.T) {
 // connection carries no secret, because plain http off the host may not.
 func dockerLoopReachesItsMCPServerThroughTheHub(t *testing.T) {
 	tracker := startBrokeredServer(t, "0.0.0.0:0")
+	// started first, since it skips the row on a host without docker,
+	// where looking the gateway up would fail it instead
+	s := startDockerServer(t, t.TempDir())
 	out, err := exec.Command("docker", "network", "inspect", "bridge", "--format", "{{(index .IPAM.Config 0).Gateway}}").CombinedOutput()
 	gateway := strings.TrimSpace(string(out))
 	if err != nil || net.ParseIP(gateway) == nil {
 		t.Fatalf("docker bridge gateway = %q (%v)", gateway, err)
 	}
-	s := startDockerServer(t, t.TempDir())
 	s.mustJSON("POST", "/api/connections", map[string]any{
 		"name": "tracker", "kind": "mcp-server",
 		"config": map[string]any{"transport": "http", "url": fmt.Sprintf("http://%s/mcp", net.JoinHostPort(gateway, fmt.Sprint(tracker.port)))},
