@@ -40,8 +40,10 @@
 // <seven-day>" prefix makes the turn emit a rate_limit_event first, with
 // those fractions of the plan's two windows used, resetting five hours and
 // seven days from now: what the real CLI says when the plan's rate-limit
-// headers change (#647). "!sysprompt" replies with the
-// system prompt the session is actually running with: the text passed as
+// headers change (#647). A "resets=<seconds>" field after the two fractions
+// moves the five-hour reset that close, so a test can watch a window reset.
+// "!sysprompt" replies with the system prompt the session is actually
+// running with: the text passed as
 // --append-system-prompt when the session was created, not what this spawn
 // passed, because a resumed session keeps the prompt it started with (#162).
 // "!env NAME" replies with "NAME=<value>" read from the fake's own
@@ -343,7 +345,8 @@ func main() {
 		reply := "echo: " + text
 		ctxTokens := 0
 		steps := 1
-		var planUsage []float64 // the turn's five-hour and seven-day utilization, when scripted
+		var planUsage []float64    // the turn's five-hour and seven-day utilization, when scripted
+		var fiveHourResetSec int64 // how far off the five-hour window's reset is, when scripted
 		if script != nil {
 			line := script[min(state.Turns, len(script))-1]
 			for {
@@ -360,6 +363,11 @@ func main() {
 					for _, field := range []string{fiveHour, sevenDay} {
 						value, _ := strconv.ParseFloat(field, 64)
 						planUsage = append(planUsage, value)
+					}
+					fiveHourResetSec = 5 * 3600
+					if field, after, _ := strings.Cut(rest, " "); strings.HasPrefix(field, "resets=") {
+						fiveHourResetSec, _ = strconv.ParseInt(strings.TrimPrefix(field, "resets="), 10, 64)
+						rest = after
 					}
 					line = strings.TrimSpace(rest)
 					continue
@@ -521,7 +529,7 @@ func main() {
 				"rate_limit_info": map[string]any{
 					"status": "allowed",
 					"unifiedWindows": map[string]any{
-						"five_hour": map[string]any{"utilization": planUsage[0], "resetsAt": nowSeconds + 5*3600},
+						"five_hour": map[string]any{"utilization": planUsage[0], "resetsAt": nowSeconds + fiveHourResetSec},
 						"seven_day": map[string]any{"utilization": planUsage[1], "resetsAt": nowSeconds + 7*24*3600},
 					},
 				},
