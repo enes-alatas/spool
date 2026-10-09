@@ -66,6 +66,9 @@ func main() {
 	if err := writeOperatorToken(*dir); err != nil {
 		log.Fatalf("uifixture: %v", err)
 	}
+	if err := writeUserPassword(*dir); err != nil {
+		log.Fatalf("uifixture: %v", err)
+	}
 	fmt.Println(*dir)
 }
 
@@ -89,6 +92,29 @@ func writeOperatorToken(dir string) error {
 	if _, err := file.WriteString(fixtureOperatorToken + "\n"); err != nil {
 		file.Close()
 		return fmt.Errorf("operator token: %w", err)
+	}
+	return file.Close()
+}
+
+// fixtureUserPassword is the password of every user the fixture seeds
+// (#674), for the same reason the token is fixed: a sign-in a smoke trace
+// records should say what it is.
+const fixtureUserPassword = "uifixture-password-not-a-secret"
+
+// userPasswordFile is where the fixture leaves that password for the
+// scripts that sign in, beside the operator token they read the same way.
+const userPasswordFile = "fixture-user-password"
+
+// writeUserPassword leaves the fixture's user password in dir, refusing to
+// replace a file already there as writeOperatorToken does.
+func writeUserPassword(dir string) error {
+	file, err := os.OpenFile(filepath.Join(dir, userPasswordFile), os.O_WRONLY|os.O_CREATE|os.O_EXCL, datadir.FileMode)
+	if err != nil {
+		return fmt.Errorf("user password: %w", err)
+	}
+	if _, err := file.WriteString(fixtureUserPassword + "\n"); err != nil {
+		file.Close()
+		return fmt.Errorf("user password: %w", err)
 	}
 	return file.Close()
 }
@@ -266,6 +292,9 @@ func seed(ctx context.Context, db store.Store, files *attach.Files) error {
 		return err
 	}
 	if err := seedPlanUsage(ctx, db); err != nil {
+		return err
+	}
+	if err := seedUsers(ctx, db); err != nil {
 		return err
 	}
 	return seedRules(ctx, db)

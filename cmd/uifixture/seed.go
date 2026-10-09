@@ -9,6 +9,7 @@ import (
 
 	"github.com/enes-alatas/spool/internal/attach"
 	"github.com/enes-alatas/spool/internal/store"
+	"github.com/enes-alatas/spool/internal/users"
 )
 
 // One loop's timeline: the turn a screenshot of a loop page is of.
@@ -793,6 +794,27 @@ func seedPlanUsage(ctx context.Context, db store.Store) error {
 	}
 	if err := db.Settings().Set(ctx, store.SettingPlanUsage, string(raw)); err != nil {
 		return fmt.Errorf("plan usage: %w", err)
+	}
+	return nil
+}
+
+// The hub's users (#674): owner admin, signed in by the scripts that walk
+// the room, and a member still on a one-time password, who gets the change
+// page and nothing else. Seeding admin also keeps the hub from creating one
+// with a random one-time password at its first start.
+func seedUsers(ctx context.Context, db store.Store) error {
+	hash, err := users.HashPassword(fixtureUserPassword)
+	if err != nil {
+		return fmt.Errorf("users: %w", err)
+	}
+	for _, user := range []*store.User{
+		{ID: "user-admin", Name: users.AdminName, Role: store.RoleOwner, CreatedAt: ms(-30 * 24 * time.Hour)},
+		{ID: "user-robin", Name: "robin", Role: store.RoleMember, MustChangePassword: true, CreatedAt: ms(-time.Hour)},
+	} {
+		user.PasswordHash = hash
+		if err := db.Users().Create(ctx, user); err != nil {
+			return fmt.Errorf("user %s: %w", user.Name, err)
+		}
 	}
 	return nil
 }

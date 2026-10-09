@@ -15,6 +15,7 @@ import (
 	"github.com/enes-alatas/spool/internal/operator"
 	"github.com/enes-alatas/spool/internal/store"
 	"github.com/enes-alatas/spool/internal/store/sqlite"
+	"github.com/enes-alatas/spool/internal/users"
 )
 
 // The fixture is written through the store interfaces, so a schema change
@@ -681,5 +682,64 @@ func TestSeedStoresTheExtraEgressHosts(t *testing.T) {
 	}
 	if seeded || !slices.Equal(hosts, fixtureEgressHosts) {
 		t.Errorf("the hub starts with %v (seeded %v), want the stored %v", hosts, seeded, fixtureEgressHosts)
+	}
+}
+
+// The scripts sign in as admin with the fixture's password, and shoot the
+// change page as robin, who is still on a one-time password (#674). A
+// fixture whose admin could not sign in would leave every shot on the
+// sign-in page; and with no user at all, the hub would create admin itself
+// with a random password no script can read.
+func TestSeedSignsInAdminAndHoldsRobinAtTheChange(t *testing.T) {
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "spool.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	files, err := attach.Open(filepath.Join(t.TempDir(), "files"))
+	if err != nil {
+		t.Fatalf("files: %v", err)
+	}
+	ctx := context.Background()
+	if err := seed(ctx, db, files); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	hub := &users.Users{Store: db}
+	admin, err := hub.SignIn(ctx, users.AdminName, fixtureUserPassword)
+	if err != nil {
+		t.Fatalf("admin signs in: %v", err)
+	}
+	if admin.Role != store.RoleOwner || admin.MustChangePassword {
+		t.Fatalf("admin = role %q, must change %v; want an owner with no change due", admin.Role, admin.MustChangePassword)
+	}
+	robin, err := hub.SignIn(ctx, "robin", fixtureUserPassword)
+	if err != nil {
+		t.Fatalf("robin signs in: %v", err)
+	}
+	if !robin.MustChangePassword {
+		t.Fatal("robin has no change due, so the change page has no one to shoot")
+	}
+	if created, err := hub.Bootstrap(ctx); err != nil || created != "" {
+		t.Fatalf("Bootstrap on the fixture = %q, %v; want no admin created", created, err)
+	}
+}
+
+// The scripts read the password from the file the fixture leaves, and a file
+// already there is refused rather than replaced.
+func TestTheFixtureLeavesItsUserPassword(t *testing.T) {
+	dir := t.TempDir()
+	if err := writeUserPassword(dir); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, userPasswordFile))
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(got) != fixtureUserPassword+"\n" {
+		t.Fatalf("password file = %q, want the fixture's", got)
+	}
+	if err := writeUserPassword(dir); err == nil {
+		t.Fatal("writeUserPassword over an existing file: no error, want a refusal")
 	}
 }
