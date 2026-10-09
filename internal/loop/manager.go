@@ -176,6 +176,20 @@ func (manager *Manager) Tick(id string) bool {
 	return true
 }
 
+// CapChanged tells every loop that the plan cap started or stopped holding
+// (ADR-0047).
+func (manager *Manager) CapChanged() {
+	manager.mu.RLock()
+	actors := make([]*Actor, 0, len(manager.byID))
+	for _, actor := range manager.byID {
+		actors = append(actors, actor)
+	}
+	manager.mu.RUnlock()
+	for _, actor := range actors {
+		actor.CapChanged()
+	}
+}
+
 // Shutdown stops every actor; blocks until all claude processes are gone.
 func (manager *Manager) Shutdown() {
 	manager.mu.Lock()
