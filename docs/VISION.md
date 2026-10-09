@@ -88,7 +88,7 @@ plain Docker containers under our own management, with microVMs as a later harde
 
 ## Out of scope (parking lot)
 
-Postgres store, delivering un-followed chatter, per-loop budgets, non-Slack/Telegram
-surfaces, marketplace of loop templates, capacity resale, workstation port
+Postgres store, delivering un-followed chatter, non-Slack/Telegram surfaces,
+marketplace of loop templates, capacity resale, workstation port
 publishing (viewing an in-workstation dev server), inside-out wake channel (a
 process inside a workstation waking its own loop).
