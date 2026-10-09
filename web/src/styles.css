@@ -532,6 +532,12 @@ textarea {
   background: var(--danger);
   border-radius: 2px;
 }
+/* the plan cap put this loop to sleep (#651): asleep's ring, in the colour
+   of what stopped it */
+.state-capped {
+  background: transparent;
+  border: 1.5px solid var(--danger);
+}
 /* a message the surface never took: the fault belongs to the message, so it
    reads as an annotation on it rather than as another message in the thread */
 .undelivered {
@@ -842,11 +848,53 @@ textarea {
   border-radius: 2px;
   background: var(--hairline);
   overflow: hidden;
+  /* The cap threshold's notch is placed against the track. */
+  position: relative;
 }
 .plan-bar > span {
   display: block;
   height: 100%;
   background: currentColor;
+}
+/* A window's cap threshold (#651), a notch across the bar. The bar clips
+   its fill to the rounded track, so the notch is drawn over the track and
+   ends at its threshold: at 100 it still sits inside the clip. */
+.plan-cap-mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1.5px;
+  transform: translateX(-100%);
+  background: var(--text);
+  opacity: 0.55;
+}
+/* The fleet is capped (#651): the reason and Resume now, under the strip on
+   Fleet and over the thresholds on Settings. */
+.cap-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 4px 0 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--danger-line);
+  background: var(--danger-wash);
+  border-radius: 7px;
+  font-size: 0.8125rem;
+  color: var(--text);
+}
+.cap-banner .cap-reason {
+  color: var(--text-muted);
+}
+.cap-banner .btn {
+  margin-left: auto;
+  flex: none;
+}
+.cap-idle {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+.fleet-row .f-state.capped {
+  color: var(--danger);
 }
 .plan-strip .dim {
   opacity: 0.75;
@@ -1829,6 +1877,12 @@ textarea {
 .countdown.due,
 .countdown.awake {
   color: var(--active);
+}
+/* Why the wake above is what it is: the plan cap holds it (#651). */
+.side-panel .wake-note {
+  margin: 6px 0 10px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
 }
 
 /* ---- forms ---- */

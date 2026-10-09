@@ -81,8 +81,15 @@ export interface RotationThresholds {
 // its model is refused. The schedule still holds a tick then, but the actor
 // skips it until the model is changed (#289), so a countdown would promise a
 // wake that does not come.
-export function nextWake(loop: { next_tick_at: number; model_refusal: string }): number {
-  return loop.model_refusal ? 0 : loop.next_tick_at
+export function nextWake(loop: {
+  next_tick_at: number
+  model_refusal: string
+  capped_until?: number
+}): number {
+  if (loop.model_refusal) return 0
+  // A capped loop wakes when the plan cap lifts (#650), whatever its own
+  // schedule said.
+  return loop.capped_until || loop.next_tick_at
 }
 
 // Whether the loop is in a turn, waking into one or running it (#524). Its
