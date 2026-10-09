@@ -6,6 +6,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -86,8 +88,8 @@ func TestOperatorCookieLogin(t *testing.T) {
 	resp, body = s.raw("POST", "/api/login",
 		strings.NewReader(`{"token":"`+s.operatorToken+`"}`),
 		map[string]string{"Content-Type": "application/json"})
-	if resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("login = %d, want 204 (%s)", resp.StatusCode, body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("login = %d, want 200 (%s)", resp.StatusCode, body)
 	}
 	var session *http.Cookie
 	for _, c := range resp.Cookies() {
@@ -114,11 +116,13 @@ func TestOperatorCookieLogin(t *testing.T) {
 		t.Fatalf("cookie request returned %s (%v)", body, err)
 	}
 
-	// Logging out ends it: the same cookie value stops working once the
-	// operator has dropped it... which it does not, because the cookie *is*
-	// the token. Assert what is true rather than what would be nicer: logout
-	// clears the browser's copy, and the token behind it is unchanged.
-	resp, _ = s.raw("POST", "/api/logout", nil, nil)
+	// Logging out ends it: the cookie names a session, not the token, and
+	// signing out ends the session as well as clearing the browser's copy
+	// (ADR-0048), so the same value is refused afterwards.
+	if session.Value == s.operatorToken {
+		t.Fatal("the session cookie holds the token itself; want a session ID")
+	}
+	resp, _ = s.raw("POST", "/api/logout", nil, map[string]string{"Cookie": session.Name + "=" + session.Value})
 	if resp.StatusCode != http.StatusNoContent {
 		t.Errorf("logout = %d, want 204", resp.StatusCode)
 	}
@@ -130,6 +134,45 @@ func TestOperatorCookieLogin(t *testing.T) {
 	}
 	if !cleared {
 		t.Error("logout must expire the session cookie")
+	}
+	if resp, _ = s.raw("GET", "/api/loops", nil, map[string]string{"Cookie": session.Name + "=" + session.Value}); resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("the cookie after logout = %d, want 401: the session ended", resp.StatusCode)
+	}
+}
+
+// A session the operator token opened ends when the token does: replacing
+// the token, by removing its file and restarting (ADR-0030), refuses the
+// cookie as it refused the token-valued cookie before sessions had rows
+// (ADR-0048).
+func TestATokenSessionEndsWithTheToken(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+	s := startServer(t, dataDir)
+	resp, body := s.raw("POST", "/api/login", strings.NewReader(`{"token":"`+s.operatorToken+`"}`),
+		map[string]string{"Content-Type": "application/json"})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("login = %d, want 200 (%s)", resp.StatusCode, body)
+	}
+	var cookie string
+	for _, c := range resp.Cookies() {
+		if c.Name == "spool_operator" {
+			cookie = c.Name + "=" + c.Value
+		}
+	}
+	if resp, body := s.raw("GET", "/api/loops", nil, map[string]string{"Cookie": cookie}); resp.StatusCode != http.StatusOK {
+		t.Fatalf("the token session before the token changed = %d, want 200 (%s)", resp.StatusCode, body)
+	}
+	s.stop()
+
+	if err := os.Remove(filepath.Join(dataDir, "operator-token")); err != nil {
+		t.Fatal(err)
+	}
+	s2 := startServer(t, dataDir)
+	if s2.operatorToken == s.operatorToken {
+		t.Fatal("the restart kept the old token; want a new one")
+	}
+	if resp, body := s2.raw("GET", "/api/loops", nil, map[string]string{"Cookie": cookie}); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("the token session after the token changed = %d, want 401 (%s)", resp.StatusCode, body)
 	}
 }
 

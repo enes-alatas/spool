@@ -1,40 +1,46 @@
 package httpapi
 
 import (
-	"encoding/json"
+	"context"
+	"errors"
 	"mime"
 	"net"
 	"net/http"
 	"strings"
 
 	"github.com/enes-alatas/spool/internal/operator"
+	"github.com/enes-alatas/spool/internal/store"
+	"github.com/enes-alatas/spool/internal/users"
 )
 
 // The API's trust model (#239). Reaching the port is not evidence of
 // anything: another local account has the same reach, and so does a page in
 // the operator's own browser, which can issue a cross-origin request at
 // 127.0.0.1 without a preflight if it keeps the request "simple". A request
-// is the operator's when it carries the operator token and did not arrive
-// from somewhere else's page. Three checks, each of which alone is enough to
+// is the operator's when it carries a credential and did not arrive from
+// somewhere else's page. Three checks, each of which alone is enough to
 // refuse:
 //
 //   - the Host it was addressed to is one this hub answers to, which is what
 //     a DNS rebinding attack cannot arrange;
 //   - it is not cross-site, by Origin or by Sec-Fetch-Site;
-//   - it carries the token, in an Authorization header or the cookie the
-//     login route sets for the control room.
+//   - it carries a credential: the operator token in an Authorization
+//     header, or the cookie the login route sets for the control room,
+//     which names a user's session (ADR-0048).
 //
 // A body is additionally required to be JSON, so the content types a
 // cross-origin form can send without a preflight never reach a decoder.
 const (
-	// SessionCookie carries the token for the control room, which cannot set
-	// a header on an EventSource stream and should not hold a credential in
-	// reachable storage. HttpOnly keeps it out of script, SameSite=Strict
-	// keeps it off any request another site originates.
+	// SessionCookie carries the control room's session ID: the control room
+	// cannot set a header on an EventSource stream and should not hold a
+	// credential in reachable storage. HttpOnly keeps it out of script,
+	// SameSite=Strict keeps it off any request another site originates.
 	SessionCookie = "spool_operator"
 
-	loginPath  = "/api/login"
-	logoutPath = "/api/logout"
+	loginPath      = "/api/login"
+	logoutPath     = "/api/logout"
+	mePath         = "/api/me"
+	mePasswordPath = "/api/me/password"
 )
 
 // sessionPath names the two routes that establish and end a session rather
@@ -89,28 +95,77 @@ func (server *Server) guard(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if !operator.Matches(server.OperatorToken, presentedToken(r)) {
-			server.jsonErrCode(w, http.StatusUnauthorized, "no_operator_token",
-				"this route needs the operator token — run `spool token` to print it")
+		caller, err := server.identify(r)
+		if err != nil {
+			server.jsonErr(w, http.StatusInternalServerError, "%v", err)
 			return
 		}
-		next.ServeHTTP(w, r)
+		if caller == nil {
+			server.jsonErrCode(w, http.StatusUnauthorized, "no_operator_token",
+				"this route needs a signed-in session or the operator token — run `spool token` to print it")
+			return
+		}
+		// The hub holds a user to their one-time password's change itself,
+		// rather than trusting the control room to show nothing else.
+		if caller.user != nil && caller.user.MustChangePassword && !changeExempt(r.URL.Path) {
+			server.jsonErrCode(w, http.StatusForbidden, codePasswordChangeRequired,
+				"change the one-time password first")
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), callerKey{}, caller)))
 	})
 }
 
-// presentedToken reads the credential from wherever the caller put it: a
-// script or a curl sends the header, the control room has the cookie.
-func presentedToken(r *http.Request) string {
+// changeExempt names the routes a user whose password change is due may
+// still use: who they are, the change itself, and signing out.
+func changeExempt(path string) bool {
+	return path == mePath || path == mePasswordPath || path == logoutPath
+}
+
+// caller is who a request comes from (ADR-0048): a user, by the session
+// their cookie names, or the operator token, which acts as the owner and
+// has no user. session is the cookie's session ID, "" for a bearer.
+type caller struct {
+	user    *store.User
+	session string
+}
+
+type callerKey struct{}
+
+// callerOf is the caller the guard admitted the request as.
+func callerOf(r *http.Request) *caller {
+	who, _ := r.Context().Value(callerKey{}).(*caller)
+	return who
+}
+
+// identify reads the credential from wherever the caller put it, nil when
+// there is none or it is no good. A script or a curl sends the token as a
+// bearer. The control room has the cookie, which names a session or, from
+// before sessions had rows, holds the token itself: that cookie keeps
+// working for as long as the token signs in (ADR-0048).
+func (server *Server) identify(r *http.Request) (*caller, error) {
 	if auth := r.Header.Get("Authorization"); auth != "" {
-		if token, ok := strings.CutPrefix(auth, "Bearer "); ok {
-			return strings.TrimSpace(token)
+		token, ok := strings.CutPrefix(auth, "Bearer ")
+		if ok && operator.Matches(server.OperatorToken, strings.TrimSpace(token)) {
+			return &caller{}, nil
 		}
-		return ""
+		return nil, nil
 	}
-	if cookie, err := r.Cookie(SessionCookie); err == nil {
-		return cookie.Value
+	cookie, err := r.Cookie(SessionCookie)
+	if err != nil || cookie.Value == "" {
+		return nil, nil
 	}
-	return ""
+	if operator.Matches(server.OperatorToken, cookie.Value) {
+		return &caller{}, nil
+	}
+	_, user, err := server.Users.Session(r.Context(), cookie.Value, server.OperatorToken)
+	if errors.Is(err, users.ErrSessionNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &caller{user: user, session: cookie.Value}, nil
 }
 
 // hostAllowed answers whether a request was addressed to this hub by a name
@@ -215,59 +270,15 @@ func isOctetStream(ct string) bool {
 	return err == nil && mt == "application/octet-stream"
 }
 
-// handleLogin takes the token once and hands back a cookie, so the control
-// room holds a session rather than a credential and its EventSource streams
-// authenticate like every other request. It is the one route that may be
-// called without the cookie — it is how the cookie is obtained — and it is
-// still behind the Host, origin and content-type checks above.
-func (server *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		Token string `json:"token"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		server.jsonErr(w, http.StatusBadRequest, "bad json: %v", err)
-		return
-	}
-	if !operator.Matches(server.OperatorToken, strings.TrimSpace(in.Token)) {
-		server.jsonErrCode(w, http.StatusUnauthorized, "bad_operator_token", "that is not this hub's token")
-		return
-	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     SessionCookie,
-		Value:    server.OperatorToken,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   overTLS(r),
-		SameSite: http.SameSiteStrictMode,
-	})
-	w.WriteHeader(http.StatusNoContent)
-}
-
 // overTLS reports whether the request reached us encrypted, directly or
-// through a proxy that says so. The cookie is the token, and SameSite=Strict
-// does nothing about a same-site request that is merely unencrypted — so a
-// session established over TLS is marked Secure and will not be sent back in
-// the clear (ADR-0030). It cannot be unconditional: a hub on a plain-http LAN
-// address is a supported posture and would never receive the cookie again.
+// through a proxy that says so. SameSite=Strict does nothing about a
+// same-site request that is merely unencrypted, so a session established
+// over TLS is marked Secure and will not be sent back in the clear
+// (ADR-0030). It cannot be unconditional: a hub on a plain-http LAN address
+// is a supported posture and would never receive the cookie again.
 //
 // Believing X-Forwarded-Proto can only make the cookie stricter, never
 // laxer, so a caller who sets it is only tightening their own session.
 func overTLS(r *http.Request) bool {
 	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
-}
-
-// handleLogout drops the cookie. It asks for no credential: a caller who can
-// only reach this route can only end a session, and refusing to let someone
-// log out because they are not logged in helps nobody.
-func (server *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     SessionCookie,
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-		Secure:   overTLS(r),
-		SameSite: http.SameSiteStrictMode,
-	})
-	w.WriteHeader(http.StatusNoContent)
 }

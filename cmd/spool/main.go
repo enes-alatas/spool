@@ -41,6 +41,7 @@ import (
 	"github.com/enes-alatas/spool/internal/surface/outbound"
 	"github.com/enes-alatas/spool/internal/surface/slack"
 	"github.com/enes-alatas/spool/internal/surface/telegram"
+	"github.com/enes-alatas/spool/internal/users"
 	"github.com/enes-alatas/spool/internal/version"
 	"github.com/enes-alatas/spool/web"
 )
@@ -261,6 +262,8 @@ func main() {
 		os.Exit(1)
 	}
 
+	hubUsers := &users.Users{Store: db}
+
 	// The operator's extra egress hosts (#542): --egress-allow seeds the
 	// stored list on the first start, and the list /api/settings/egress
 	// edits wins from then on. The proxy takes it at the first docker wake,
@@ -432,6 +435,7 @@ func main() {
 		Models:       models,
 		LoginChecker: loop.NewLoginChecker(rdb, runtimes[defaultRuntime], log),
 		PlanCap:      planCap,
+		Users:        hubUsers,
 		Surfaces: map[string]surface.Surface{
 			store.SurfaceTelegram: bridge,
 			store.SurfaceSlack:    slackSurface,

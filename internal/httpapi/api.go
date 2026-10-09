@@ -28,6 +28,7 @@ import (
 	"github.com/enes-alatas/spool/internal/sched"
 	"github.com/enes-alatas/spool/internal/store"
 	"github.com/enes-alatas/spool/internal/surface"
+	"github.com/enes-alatas/spool/internal/users"
 	"github.com/enes-alatas/spool/internal/version"
 )
 
@@ -51,6 +52,9 @@ type Server struct {
 	// Required: a serving hub always has one, and the handlers that read
 	// it do not check.
 	PlanCap *loop.PlanCap
+	// Users signs users in and keeps their sessions (ADR-0048). Required:
+	// the guard reads every session cookie through it.
+	Users *users.Users
 	// Surfaces are the chat platforms loops can be reachable on (ADR-0029),
 	// by kind (store.SurfaceTelegram, store.SurfaceSlack). A kind the hub
 	// runs without is absent, and an empty map is a hub with none.
@@ -218,6 +222,8 @@ func (server *Server) Handler() http.Handler {
 	// the guard lets them past the credential check and nothing else.
 	mux.HandleFunc("POST /api/login", server.handleLogin)
 	mux.HandleFunc("POST /api/logout", server.handleLogout)
+	mux.HandleFunc("GET "+mePath, server.handleMe)
+	mux.HandleFunc("POST "+mePasswordPath, server.handleMePassword)
 
 	// /mcp and the brokered servers under it live on the loop listener
 	// alone (#238, #622). Saying so explicitly matters because of what is
