@@ -13,7 +13,7 @@ import { join } from 'node:path'
 
 const require = createRequire(import.meta.url)
 const base = process.env.SPOOL_URL
-const token = readFileSync(process.env.SPOOL_DATA_DIR + '/operator-token', 'utf8').trim()
+const password = readFileSync(process.env.SPOOL_DATA_DIR + '/fixture-user-password', 'utf8').trim()
 const out = new URL('./public/', import.meta.url).pathname
 mkdirSync(out, { recursive: true })
 const size = { width: 1280, height: 720 }
@@ -139,8 +139,9 @@ const browser = await chromium.launch()
 const login = await browser.newContext({ viewport: size })
 const lp = await login.newPage()
 await lp.goto(base + '/', { waitUntil: 'networkidle' })
-if (await lp.isVisible('#operator-token')) {
-  await lp.fill('#operator-token', token)
+if (await lp.isVisible('#username')) {
+  await lp.fill('#username', 'admin')
+  await lp.fill('#password', password)
   await lp.click('button[type=submit]')
   await lp.waitForSelector('.topbar')
 }
