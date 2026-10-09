@@ -64,7 +64,8 @@ Use these words exactly — in code, UI, docs, and prompts. Don't introduce syno
 | **power controls** | The operator's switches on a workstation: restart, power off, power on, recreate. They act on the loop's *machine*, not the loop — pause is the switch for the loop itself, and the two compose (ADR-0021). |
 | **runner** | The subsystem that executes loops (actors + claude processes + sandboxes). |
 | **hub** | Everything that isn't the runner or a surface: routing, scheduling, store, API. It serves two listeners: the *operator listener* (`--listen`) carries the API and control room, the *loop listener* (`--mcp-listen`, or where the hub chooses: ADR-0039) carries the MCP endpoint and the loops' brokered MCP servers, and nothing else. Workstations may reach the loop listener and no other port of the operator's machine (ADR-0028, #238). |
-| **operator token** | The credential the human running Spool presents to the API: minted at first start into `<data-dir>/operator-token`, traded for a `SameSite=Strict` session cookie by the control room. Distinct from a loop's hub MCP token in every way — different file, different check, different listener — and never given to a loop (ADR-0030). |
+| **user** | A person who signs in to the control room with a username and password, and holds one of the org roles. The hub's first start creates owner `admin` with a one-time password, printed once and changed at first sign-in, and `spool user` adds, resets, lists and removes the rest (ADR-0048). |
+| **operator token** | The credential the human running Spool presents to the API: minted at first start into `<data-dir>/operator-token`, and the owner's credential for the CLI and automation. For one more release the control room can also trade it for a `SameSite=Strict` session cookie, which belongs to no user (ADR-0048). Distinct from a loop's hub MCP token in every way — different file, different check, different listener — and never given to a loop (ADR-0030). |
 | **connection** | An org-level tool credential/config (GitHub app, MCP server) attachable to loops. |
 | **control room** | The web UI. |
 | **storm guard** | The rate limit on loop→loop delivery. A recipient it refuses is not listed in the message's `delivered_to` — that field names the loops a message reached, not the ones it addressed — and the refusal is recorded as a `storm_drop` event on the sender. |
@@ -171,12 +172,17 @@ carries the loop's auto-memory and nothing else of the host's, and goes one way
 only (ADR-0018, ADR-0022, #624). The loop view's `rehoming` is true from the
 request until the move lands or fails (#632).
 The hub's trust model is two credentials on two listeners (ADR-0030). On the
-operator listener every `/api` route requires the operator token — presented
-as a bearer header or as the session cookie `POST /api/login` sets — except
-`/api/health` and `/api/version`, which answer before a caller can have one,
-and `/api/logout`, which asks for nothing because refusing to end an unproven
-session protects no one. `/api/login` needs the token too, from the request
-body rather than a header, since obtaining the cookie is what it is for. The
+operator listener every `/api` route requires a credential: the operator
+token as a bearer header, which acts as the owner, or the session cookie
+`POST /api/login` sets. Sessions are rows in the store that sign-out, a
+password change and a removal revoke, and one the token opened ends when the
+token is replaced. The cookie holds only the session's ID (ADR-0048). There are three exceptions. `/api/health` and `/api/version`
+answer before a caller can have a credential. `/api/logout` asks for nothing,
+because refusing to end an unproven session protects no one. `/api/login`
+needs a user's username and password in the request body, or for one more
+release the token, since obtaining the cookie is what it is for. While a
+user's one-time password is still to be changed, only `/api/me`,
+`/api/me/password` and the routes above answer. The
 same middleware refuses a `Host` this hub does not answer to for every `/api`
 path including the open ones, and a cross-site `Origin` or `Sec-Fetch-Site`
 or a body that is not `application/json` for the rest. On the loop listener
