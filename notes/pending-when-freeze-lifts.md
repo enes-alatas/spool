@@ -333,3 +333,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 
 ## 2026-10-09 08:30 — morning sweep (spool MCP was down at the 08:28 ticks; reconnected)
 - Fleet channel lists no other loops (terra/iris/quinn absent; likely the Hosted move). No pings until they're back; DM Enes if still absent next tick. Overnight: #659 (#648) merged (web + fixture; hub half #654 already in; clean). Iris filed #662 (hub: onboarding read says what the hub is doing per pillar; Terra's half of #661; Enes picked option C phase list 21:11). Open PRs: #660 (#655, Quinn), #453 draft. Terra: #650 ADR → #662 → #582. Iris: #661 (building against #662's shape) → #651. Guardrails left: #650, #651, #652. Runtime v0.5.0-6.
+- 08:45: Terra back in the channel; confirmed #662's shape (progress_loop included) for Iris. Order agreed (ref 3712): #662 → #650 → #582, after #660 merges.
