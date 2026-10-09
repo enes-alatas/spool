@@ -5,9 +5,13 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
+
+	"github.com/enes-alatas/spool/internal/store/sqlite"
+	"github.com/enes-alatas/spool/internal/users"
 )
 
 // guarded returns the guard wrapped around the session routes plus a stand-in
@@ -25,7 +29,7 @@ func guarded(t *testing.T, token string) (http.Handler, *bool) {
 func guardedOn(t *testing.T, token, listenAddr string) (http.Handler, *bool) {
 	t.Helper()
 	reached := false
-	server := &Server{OperatorToken: token, ListenAddr: listenAddr}
+	server := &Server{OperatorToken: token, ListenAddr: listenAddr, Users: testUsers(t)}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/login", server.handleLogin)
 	mux.HandleFunc("POST /api/logout", server.handleLogout)
@@ -227,8 +231,8 @@ func TestLoginIssuesAnHTTPOnlyCookie(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
-	if recorder.Code != http.StatusNoContent {
-		t.Fatalf("login = %d, want 204 (%s)", recorder.Code, recorder.Body.String())
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("login = %d, want 200 (%s)", recorder.Code, recorder.Body.String())
 	}
 	cookies := recorder.Result().Cookies()
 	if len(cookies) != 1 {
@@ -332,6 +336,7 @@ func TestTrustedHostAdmitsTheProxysName(t *testing.T) {
 			OperatorToken: testToken,
 			ListenAddr:    "127.0.0.1:8080",
 			TrustedHosts:  []string{"spool.example.com"},
+			Users:         testUsers(t),
 		}
 		mux := http.NewServeMux()
 		mux.HandleFunc("POST /api/login", server.handleLogin)
@@ -436,7 +441,7 @@ func TestSessionRoutesRefuseTheWrongMethod(t *testing.T) {
 // tier 2 (make itest builds without vite) cannot see what this sees (#245).
 func shipped(t *testing.T) http.Handler {
 	t.Helper()
-	server := &Server{OperatorToken: testToken, ListenAddr: "127.0.0.1:8080",
+	server := &Server{OperatorToken: testToken, ListenAddr: "127.0.0.1:8080", Users: testUsers(t),
 		WebFS: fstest.MapFS{"index.html": {Data: []byte("<!doctype html>")}}}
 	return server.Handler()
 }
@@ -499,5 +504,88 @@ func TestTrustedIPv6LiteralIsNotMistakenForAPort(t *testing.T) {
 				t.Errorf("hostAllowed(%q) = false, want true", host)
 			}
 		})
+	}
+}
+
+// testUsers is a Users over a fresh store, for the guard to look sessions
+// up in.
+func testUsers(t *testing.T) *users.Users {
+	t.Helper()
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	return &users.Users{Store: db}
+}
+
+// TestAUserSessionIsHeldToTheChange: a username and password sign in to a
+// cookie that names a session, not the token; while the one-time password
+// is unchanged only /api/me, the change and sign-out answer; after the
+// change the rest does; and signing out ends the session itself, so the
+// same cookie is refused afterwards (ADR-0048).
+func TestAUserSessionIsHeldToTheChange(t *testing.T) {
+	userStore := testUsers(t)
+	oneTime, err := userStore.Add(t.Context(), "dana", "member")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &Server{OperatorToken: testToken, ListenAddr: "127.0.0.1:8080", Users: userStore}
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST "+loginPath, server.handleLogin)
+	mux.HandleFunc("POST "+logoutPath, server.handleLogout)
+	mux.HandleFunc("GET "+mePath, server.handleMe)
+	mux.HandleFunc("POST "+mePasswordPath, server.handleMePassword)
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	handler := server.guard(mux)
+	call := func(method, path, cookie, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Host = "127.0.0.1:8080"
+		if body != "" {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		if cookie != "" {
+			req.Header.Set("Cookie", SessionCookie+"="+cookie)
+		}
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, req)
+		return recorder
+	}
+
+	login := call("POST", loginPath, "", `{"username":"dana","password":"`+oneTime+`"}`)
+	if login.Code != http.StatusOK || !strings.Contains(login.Body.String(), `"must_change_password":true`) {
+		t.Fatalf("sign-in = %d %s; want 200 with a change due", login.Code, login.Body)
+	}
+	session := login.Result().Cookies()[0].Value
+	if session == "" || session == testToken {
+		t.Fatalf("the cookie holds %q; want a session ID", session)
+	}
+	if got := call("GET", "/api/loops", session, ""); got.Code != http.StatusForbidden ||
+		!strings.Contains(got.Body.String(), codePasswordChangeRequired) {
+		t.Fatalf("a route while the change is due = %d %s; want 403 %s", got.Code, got.Body, codePasswordChangeRequired)
+	}
+	if got := call("GET", mePath, session, ""); got.Code != http.StatusOK || !strings.Contains(got.Body.String(), `"name":"dana"`) {
+		t.Fatalf("/api/me while the change is due = %d %s", got.Code, got.Body)
+	}
+	if got := call("POST", mePasswordPath, session, `{"new_password":"`+oneTime+`"}`); got.Code != http.StatusBadRequest ||
+		!strings.Contains(got.Body.String(), codePasswordReused) {
+		t.Fatalf("reusing the one-time password = %d %s", got.Code, got.Body)
+	}
+	if got := call("POST", mePasswordPath, session, `{"new_password":"dana's own password"}`); got.Code != http.StatusOK {
+		t.Fatalf("the change = %d %s", got.Code, got.Body)
+	}
+	if got := call("GET", "/api/loops", session, ""); got.Code != http.StatusOK {
+		t.Fatalf("a route after the change = %d %s; want it reached", got.Code, got.Body)
+	}
+	if got := call("POST", logoutPath, session, ""); got.Code != http.StatusNoContent {
+		t.Fatalf("sign-out = %d", got.Code)
+	}
+	if got := call("GET", "/api/loops", session, ""); got.Code != http.StatusUnauthorized {
+		t.Fatalf("the cookie after sign-out = %d; want 401, the session ended", got.Code)
+	}
+	if got := call("POST", loginPath, "", `{"username":"dana","password":"wrong password"}`); got.Code != http.StatusUnauthorized ||
+		!strings.Contains(got.Body.String(), codeBadCredentials) {
+		t.Fatalf("a wrong password = %d %s", got.Code, got.Body)
 	}
 }
