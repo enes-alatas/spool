@@ -338,3 +338,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 08:55: Quinn on #663: changes (Loops card never uses progress_loop; rebase). Folded progress_loop into #662's body at Quinn's ask; told her (3719). Iris folds, Quinn re-reviews.
 - 10:10: main checks red since 08:45: govulncheck flags stdlib net/http CVEs fixed in Go 1.26.9/1.27.2; go1.25.13 pin (GO-2026-6218) is EOL. Quinn filed #665 (security high). Terra: #665 first (own PR, toolchain bump only), then #664 (#662) rebases (ref 3727). All PRs blocked until it lands.
 - 10:12: Terra's crossed question (take #665 now as a second PR, bump to go1.26.9) was answered by ref 3727; reacted to confirm. Waiting: #665 PR → Quinn → Enes merge; then #664, #663 rebase.
+- 10:20: #666 (#665, go.mod only, go1.26.9) up, checks green incl. govulncheck, itest running; with Quinn. #664 rebases after merge. Rebuild to the new toolchain warranted once merged (fold into next Enes contact).
