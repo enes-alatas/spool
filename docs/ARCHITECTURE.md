@@ -41,6 +41,7 @@ Use these words exactly — in code, UI, docs, and prompts. Don't introduce syno
 | **turn** | One request→result cycle of a claude session. |
 | **turn cost** | What one turn spent: `cost_usd`, and the only cost column that may be summed. The CLI reports the session's running total instead, which is kept beside it as `session_cost_usd` (#191). |
 | **plan usage** | How much of the Claude plan's five-hour and seven-day limit windows is used, and when each resets. One number per hub, since every loop runs on the operator's one login: the newest a loop's claude process reported in its stream's rate-limit event, kept by the hub and read at `GET /api/plan-usage`, which says unknown, with why, until a loop has reported one (#647). Not *turn cost*, which is what Spool's own turns spent. |
+| **plan cap** | The fleet's guardrail on *plan usage*: a threshold per window, 90% by default and 0 for off. While any window is at or over its threshold, every loop is **capped**: it sleeps at its next quiet boundary, keeps its workstation, and holds its inbox. It wakes once every window over its threshold has reset, or when the operator raises a threshold or presses Resume now. Unknown usage never caps (ADR-0047). |
 | **wake / sleep** | A loop's process lifecycle: asleep (no process) → awake (spawned, `--resume`). |
 | **tick** | A scheduled wake with no inbound message. |
 | **trailer** | The `[next-wake: 45m]` suffix a loop uses to schedule itself. |
@@ -240,7 +241,7 @@ opportunistically, not big-bang.
   died is `workstation_down`, the alert that outranks every other state. The
   difference is intent, which a health poll cannot observe, so it is recorded
   in the DB and survives a restart. Precedence: `workstation_down` >
-  `model_unrecognized` > `paused` > `workstation_off`.
+  `model_unrecognized` > `paused` > `workstation_off` > `capped` (ADR-0047).
 - **A refused model holds the loop** (#289): the CLI resolves a model and
   sends it straight to the API, whose 404 is the only check there is, so an
   unknown model is found by the loop's first turn — free, and within seconds
