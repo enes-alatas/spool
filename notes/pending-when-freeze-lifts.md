@@ -344,3 +344,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 - 11:15: #666 (#665) merged 10:43 → main checks green again; #665 closed? verify. #664 (#662) approved, merge ask to Enes by Quinn; close #661 myself once #664 lands (neither PR closes it). Rebuild warranted after #664 (internal/ + new toolchain).
 - 11:20: #669 (#668, source-map-js 1.2.2, both lockfiles) up with Quinn. Iris then → #651.
 - 12:05: #669 (#668) merged, #668 closed; Dependabot clear. #664 approved 11:01, still unmerged (Enes); nudge by DM if still open at 14:00. #651: Enes picked Fleet option A (banner with Resume now under the usage strip) 11:25; Iris building, PR waits on #650's API. Terra on #650 ADR.
+- 14:10: #664 (#662) merged 13:56 → closed #661 (both halves in). DM'd Enes: rebuild warranted (#664, #666 toolchain); #124 has no open children (ref 3758). Open PRs: #453 draft only. Terra on #650 ADR; Iris on #651 (PR waits on #650's API).
