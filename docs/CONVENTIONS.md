@@ -126,6 +126,15 @@ ADR instead.*
   closes the issue.
 - **PRs** follow `.github/pull_request_template.md`: link the issue (`Closes #n` /
   `Part of #n` — if none, say why), and cite ADRs for seam changes and new deps.
+- **A feat names its other half** (#634). A `feat` PR that changes
+  `internal/` but not `web/`, or `web/` but not `internal/`, carries an
+  `Other half:` line under the template's Issue section: the sibling issue
+  (`#n`), `none — <reason>`, `API-only` or `UI-only`. The `pr-guards`
+  workflow fails the PR without one, or when `#n` names no issue (a pull
+  request's number included). v0.4.2 was tagged with #631's hub route and no
+  room to use it, because the pairing lived in one reviewer's head. The
+  check proves only that the line is there: the reviewer approves a one-half
+  feat only when its other half is filed, or argued away on the PR.
 - **Decisions**: any choice that constrains future work gets an ADR in `docs/adr/`
   (sequential number, `proposed → accepted → superseded by ADR-XXXX`). Living docs
   (VISION / ARCHITECTURE / CONVENTIONS) state current truth and link the ADRs.

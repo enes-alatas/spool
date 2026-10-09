@@ -1,0 +1,43 @@
+# Checks on a pull request's own text, which `ci` does not re-run for (#634).
+#
+# `ci` triggers on pushes, so a PR body fixed after a red check would stay red
+# until the next push; and adding `edited` there would cancel a running itest
+# every time a body was touched. This runs on body edits too, in seconds.
+name: pr-guards
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+concurrency:
+  group: pr-guards-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+# Reads only: the PR's changed files, and whether an issue it names exists.
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  # A feat PR that changes only internal/ or only web/ names its other half
+  # (#634): v0.4.2 shipped #631's hub route with no room to use it.
+  other-half:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: the other half is named
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        # The title and body come from the event file, never through `${{ }}`
+        # (workflow-lint rule 3): text interpolated into a step is echoed
+        # into the log.
+        run: |
+          work=$(mktemp -d)
+          jq -r '.pull_request.title' "$GITHUB_EVENT_PATH" > "$work/title"
+          jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH" > "$work/body"
+          gh api "repos/$GH_REPO/pulls/$PR/files" --paginate -q '.[].filename' > "$work/files"
+          bash scripts/other-half.sh "$(cat "$work/title")" "$work/body" "$work/files"

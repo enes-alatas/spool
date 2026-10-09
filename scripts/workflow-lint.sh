@@ -34,9 +34,10 @@ fi
 #
 # `workflow_run` takes an explicit `workflows:` list, so a workflow added to
 # the repo and not added there fails on main into a tab nobody reads — the
-# #203 outcome, reached through the thing built to report it. `ci` is excluded
-# because a PR failure is already a red check its author is looking at, and
-# `ci-health` because a sentinel watching itself writes a loop.
+# #203 outcome, reached through the thing built to report it. `ci` and
+# `pr-guards` are excluded because they fire on pull requests only, so a
+# failure is already a red check its author is looking at, and `ci-health`
+# because a sentinel watching itself writes a loop.
 #
 # It lives here rather than in the awk because it is the one rule about the
 # set of files rather than about a file, and it is skipped when linting an
@@ -47,7 +48,7 @@ if [ "$#" -eq 0 ] && [ -f "$sentinel" ]; then
   watched=$(awk '/^    workflows:/ { gsub(/[][,]/, " "); for (i = 2; i <= NF; i++) print $i }' "$sentinel")
   for file in "${files[@]}"; do
     name=$(awk '/^name:/ { print $2; exit }' "$file")
-    case "$name" in ci | ci-health | "") continue;; esac
+    case "$name" in ci | pr-guards | ci-health | "") continue;; esac
     if ! grep -qxF "$name" <<<"$watched"; then
       printf '%s:1: workflow `%s` is missing from the `workflows:` list here, so its failures on main are reported to nobody (#210). Add it, or say in this file why it is exempt.\n' "$sentinel" "$name"
       unwatched=$((${unwatched:-0} + 1))

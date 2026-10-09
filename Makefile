@@ -168,6 +168,7 @@ workflow-lint:
 	bash scripts/ci-health-test.sh
 	bash scripts/diff-coverage-test.sh
 	bash scripts/comment-refs-test.sh
+	bash scripts/other-half-test.sh
 
 e2e-m1: server
 	bash scripts/e2e/m1.sh

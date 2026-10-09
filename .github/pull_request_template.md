@@ -7,6 +7,14 @@ sub-issue of #n (`gh issue edit <child> --parent n`). -->
 
 Closes #
 
+<!-- A `feat` that changes internal/ but not web/, or web/ but not internal/,
+names its other half; pr-guards fails the PR without it (#634). One of:
+  Other half: #<n>               the sibling issue
+  Other half: none — <reason>
+  Other half: API-only           (or UI-only)
+Delete the line below on any other PR. -->
+Other half:
+
 ## Summary
 
 -
