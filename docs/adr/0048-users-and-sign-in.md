@@ -33,6 +33,31 @@ gathered here. This ADR is the hub half of slice 1. The sign-in pages are
      and the role is stored and served but not checked.
    - The last owner can't be removed.
 
+   **Amendment (2026-10-09, #677):** the roles are enforced. Enes decided
+   the permission table on 2026-10-09 and control_room's reach on
+   2026-10-10; both are recorded on #677.
+   - **A member** reads the fleet and talks to its loops: every reading
+     route except those below, plus messaging and waking a loop, posting to
+     a channel or the group, and uploading an attachment to send.
+   - **A member reads no owner DM** until #100 maps hub users to the loops
+     they own. Owner DMs are left out of every message list and stream, and
+     a file one carried answers 404. A loop's events, its turns and its
+     live agent stream can hold an owner DM's text anywhere in them, so
+     they're for admins and owners only.
+   - **`control_room` is every user's thread with a loop** until #100, not
+     the operator's alone: members read it and post into it, because that's
+     how they talk to a loop. A signed-in user's message carries their own
+     name as its author, whatever the request says. Only the operator token
+     posts as `operator`. #682 changes the loop prompt's wording, which
+     still calls the thread private.
+   - **An admin** can call every route. **An owner** can too, and differs
+     from an admin only in managing users, which comes with the Users
+     section on Settings. The operator token acts as the owner.
+   - A refusal is 403 `forbidden_role`. Every route is listed in one table
+     in `internal/httpapi`. A route the table doesn't name needs an admin,
+     so a route added later stays closed to members until someone decides
+     otherwise.
+
 2. **Passwords are hashed with PBKDF2-SHA256 from the Go standard
    library.** That means 600,000 iterations and a random 16-byte salt per
    user, so no new dependency. A password is 12 to 128 characters, with no
