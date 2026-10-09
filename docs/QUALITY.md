@@ -120,11 +120,18 @@ window regardless of loop count (ADR-0018).
   workflow with a trigger other than `pull_request`/`push` declares a
   `workflow_dispatch`; no job runs `actions/checkout` under an effective
   grant missing `contents: read`; no workflow interpolates an event body,
-  `env:` included; every workflow but `ci` and `ci-health` appears in the
-  sentinel's `workflows:` list; a job whose `run:` calls `gh` against the
-  actions, issues or pulls API names that scope in its effective grant; and
-  a file the parser cannot read is a finding, never a pass. One rule per
-  incident (#203, #207, #209, #210, #220), stdlib shell.
+  `env:` included; every workflow but `ci`, `pr-guards` and `ci-health`
+  appears in the sentinel's `workflows:` list; a job whose `run:` calls
+  `gh` against the actions, issues or pulls API names that scope in its
+  effective grant; and a file the parser cannot read is a finding, never a
+  pass. One rule per incident (#203, #207, #209, #210, #220), stdlib shell.
+- **A one-half feat names its other half** (`pr-guards`, #634): a `feat` PR
+  that changes `internal/` but not `web/`, or the reverse, fails its
+  `other-half` check without an `Other half:` line in its body
+  (CONVENTIONS.md). Its own workflow, because `ci` does not re-run on a body
+  edit, and adding `edited` there would cancel a running itest each time.
+  `scripts/other-half-test.sh` keeps the refusals honest under the workflow
+  rules step.
 - **A fork PR runs with less** (ADR-0031): a pull request from a fork gets a
   read-only `GITHUB_TOKEN` and no secrets, so `issue-guards` and `ci-health`
   cannot do their work on one — both answer by writing to the board, which a
@@ -157,6 +164,10 @@ protection (#1) requires all three:
 - `checks` — tier 1 + lint + govulncheck, web, the secret scans, the
   workflow rules.
 - `itest` — tier 2.
+
+`other-half` (the `pr-guards` workflow, #634) reports on every PR as well. It
+blocks a merge only once branch protection lists it, which is the operator's
+setting.
 
 They are three rather than six because GitHub bills a started job a whole
 minute however little it does (#181, #232). While the repo was private that

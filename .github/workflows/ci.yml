@@ -353,6 +353,11 @@ jobs:
       - name: the comment check still catches what it claims to
         if: needs.changes.outputs.workflows == 'true'
         run: bash scripts/comment-refs-test.sh
+      # pr-guards runs the script on the PR in front of it, which says only
+      # that this PR passes; the fixtures are what say it still refuses (#634).
+      - name: the other-half check still refuses what it claims to
+        if: needs.changes.outputs.workflows == 'true'
+        run: bash scripts/other-half-test.sh
 
   # The one job still filtered at job level, because it is the one worth
   # skipping outright: ~8 of the ~10 minutes a full run used to bill. A job
