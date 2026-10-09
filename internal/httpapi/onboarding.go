@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 
 	"github.com/enes-alatas/spool/internal/loop"
 	"github.com/enes-alatas/spool/internal/store"
@@ -28,6 +29,61 @@ type pillarView struct {
 	// Checking says a login check is running, so the page can wait on it
 	// without keying on the reason's wording. Harness only.
 	Checking bool `json:"checking,omitempty"`
+	// Progress says what the hub is doing for a pillar, as one of the
+	// progress codes; empty when nothing is under way (#662). Only the
+	// harness carries one when done, while a re-check runs. The page owns
+	// the words for each code, so they do not hang on the reason's.
+	// ProgressLoop names the loop a loops or surface code is about.
+	Progress     string `json:"progress,omitempty"`
+	ProgressLoop string `json:"progress_loop,omitempty"`
+}
+
+// The progress codes (#662).
+const (
+	progressBuildingWorkstation = "building_workstation"
+	progressWaking              = "waking"
+	progressFirstTurn           = "first_turn"
+	progressAnswering           = "answering"
+	progressChecking            = "checking"
+)
+
+// firstWakePhases are the loops codes in the order a first wake passes
+// through them: when more than one loop is under way, the furthest on wins.
+var firstWakePhases = []string{progressBuildingWorkstation, progressWaking, progressFirstTurn}
+
+// firstWakePhase reads where one loop's wake has got to, or "" when it is
+// not under way. A wake ensuring the workstation still reads its pre-wake
+// state, so that comes first.
+func firstWakePhase(ensuringWorkstation bool, state string) string {
+	switch {
+	case ensuringWorkstation:
+		return progressBuildingWorkstation
+	case state == loop.StateWaking:
+		return progressWaking
+	case state == loop.StateBusy:
+		return progressFirstTurn
+	}
+	return ""
+}
+
+// furtherPhase reports whether phase is further on than than.
+func furtherPhase(phase, than string) bool {
+	return slices.Index(firstWakePhases, phase) > slices.Index(firstWakePhases, than)
+}
+
+// furthestWake finds the loop whose wake has got furthest, and its phase;
+// both are "" when no loop's wake is under way.
+func (server *Server) furthestWake(loops []*store.Loop) (phase, name string) {
+	for _, loopRecord := range loops {
+		actor, ok := server.Manager.Get(loopRecord.ID)
+		if !ok {
+			continue
+		}
+		if this := firstWakePhase(actor.EnsuringWorkstation(), actor.State()); furtherPhase(this, phase) {
+			phase, name = this, loopRecord.Name
+		}
+	}
+	return phase, name
 }
 
 // handleOnboarding reads the three pillars. Cheap enough to poll: a handful
@@ -43,7 +99,7 @@ func (server *Server) handleOnboarding(w http.ResponseWriter, r *http.Request) {
 	}
 	var view onboardingView
 	if view.Harness, err = server.harnessPillar(ctx, loops); err == nil {
-		if view.Surface, err = server.surfacePillar(ctx); err == nil {
+		if view.Surface, err = server.surfacePillar(ctx, loops); err == nil {
 			view.Loops, err = server.loopsPillar(ctx, loops)
 		}
 	}
@@ -97,6 +153,9 @@ func (server *Server) harnessPillar(ctx context.Context, loops []*store.Loop) (p
 	}
 	view := harnessEvidence(bare, check, lastTurn)
 	view.Checking = check.Status == store.LoginCheckPending
+	if view.Checking {
+		view.Progress = progressChecking
+	}
 	return view, nil
 }
 
@@ -148,34 +207,47 @@ func (server *Server) handleLoginCheck(w http.ResponseWriter, r *http.Request) {
 }
 
 // surfacePillar reads whether one chat surface has carried a message each
-// way. When none has, the reason names the half the closest one is missing.
-func (server *Server) surfacePillar(ctx context.Context) (pillarView, error) {
+// way. When none has, the reason names the half the closest one is missing,
+// and a surface the operator has written in to while a loop's wake is under
+// way reads answering, naming the loop whose wake is furthest on: the reply
+// is on its way.
+func (server *Server) surfacePillar(ctx context.Context, loops []*store.Loop) (pillarView, error) {
 	traffic, err := server.Store.Messages().Traffic(ctx)
 	if err != nil {
 		return pillarView{}, err
 	}
-	reason := "no chat surface has carried a message yet"
+	view := pillarView{Reason: "no chat surface has carried a message yet"}
+	awaitingReply := false
 	for _, surface := range traffic {
 		switch {
 		case surface.Sent && surface.Received:
 			return pillarView{Done: true}, nil
 		case surface.Sent:
-			reason = "no message received from the operator on " + surface.Surface + " yet"
+			view.Reason = "no message received from the operator on " + surface.Surface + " yet"
 		case surface.Received:
-			reason = "no loop's message has reached " + surface.Surface + " yet"
+			view.Reason = "no loop's message has reached " + surface.Surface + " yet"
+			awaitingReply = true
 		}
 	}
-	return pillarView{Reason: reason}, nil
+	if awaitingReply {
+		if phase, name := server.furthestWake(loops); phase != "" {
+			view.Progress, view.ProgressLoop = progressAnswering, name
+		}
+	}
+	return view, nil
 }
 
-// loopsPillar reads whether a loop has woken and finished a turn.
+// loopsPillar reads whether a loop has woken and finished a turn, and until
+// one has, how far the furthest wake has got.
 func (server *Server) loopsPillar(ctx context.Context, loops []*store.Loop) (pillarView, error) {
 	if len(loops) == 0 {
 		return pillarView{Reason: "no loops"}, nil
 	}
 	lastTurn, err := server.Store.Turns().LastCompleted(ctx)
 	if err != nil || lastTurn == 0 {
-		return pillarView{Reason: "no loop has woken"}, err
+		view := pillarView{Reason: "no loop has woken"}
+		view.Progress, view.ProgressLoop = server.furthestWake(loops)
+		return view, err
 	}
 	return pillarView{Done: true}, nil
 }

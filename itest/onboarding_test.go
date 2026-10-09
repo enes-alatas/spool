@@ -5,15 +5,18 @@ package itest
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 )
 
 type pillarJSON struct {
-	Done     bool   `json:"done"`
-	Reason   string `json:"reason"`
-	Checking bool   `json:"checking"`
+	Done         bool   `json:"done"`
+	Reason       string `json:"reason"`
+	Checking     bool   `json:"checking"`
+	Progress     string `json:"progress"`
+	ProgressLoop string `json:"progress_loop"`
 }
 
 type onboardingJSON struct {
@@ -106,6 +109,77 @@ func TestOnboardingPillars(t *testing.T) {
 	}
 }
 
+// The first-run page's progress codes (#662): while a pillar waits on work
+// the hub is doing, the read says what that work is, so the page can show it
+// moving. A first turn held open reads first_turn on the loops pillar, naming
+// its loop; an operator message being answered reads answering on the
+// surface pillar, naming a loop too. Both clear when the pillar is done. Building the
+// workstation is a docker wake's, and a bare Ensure has nothing to build.
+func TestOnboardingProgress(t *testing.T) {
+	t.Parallel()
+	operator := user{ID: 6869, First: "Operator", Username: "operator"}
+	// line 1 holds the creation tick's turn open; line 2 the operator's DM's
+	ws := workspaceWithScript(t, "!hang 6\n!hang 4\n")
+	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws}, map[string]any{"workspace_path": ws})
+
+	view := srv.waitOnboarding(10*time.Second, func(v onboardingJSON) bool { return v.Loops.Progress != "" })
+	if view.Loops.Done || view.Loops.Progress != "first_turn" ||
+		(view.Loops.ProgressLoop != "alpha" && view.Loops.ProgressLoop != "beta") {
+		t.Fatalf("loops during the first turn = %+v, want first_turn naming alpha or beta", view.Loops)
+	}
+	if view.Surface.Progress != "" {
+		t.Errorf("surface with nothing received = %+v, want no progress", view.Surface)
+	}
+	view = srv.waitOnboarding(30*time.Second, func(v onboardingJSON) bool { return v.Loops.Done })
+	if view.Loops.Progress != "" || view.Loops.ProgressLoop != "" {
+		t.Errorf("loops once done = %+v, want no progress", view.Loops)
+	}
+
+	tg.dm("alpha", operator, "hi alpha")
+	view = srv.waitOnboarding(10*time.Second, func(v onboardingJSON) bool { return v.Surface.Progress != "" })
+	// beta may still be on its creation turn, so either loop may be named
+	if view.Surface.Done || view.Surface.Progress != "answering" || view.Surface.ProgressLoop == "" {
+		t.Fatalf("surface while alpha answers = %+v, want answering, naming a loop", view.Surface)
+	}
+	// the hung turn sends nothing back, so once it ends nothing is under way
+	srv.waitOnboarding(30*time.Second, func(v onboardingJSON) bool { return v.Surface.Progress == "" && !v.Surface.Done })
+}
+
+// onboardingShowsTheWorkstationBuilding is the docker half of #662: a first
+// wake's Ensure, which provisions the workstation before the loop reads
+// waking, shows as building_workstation on the loops pillar, naming the
+// loop, and the codes a wake passes through never go backwards. A row of
+// TestDockerRows.
+func onboardingShowsTheWorkstationBuilding(t *testing.T) {
+	s := startDockerServer(t, t.TempDir())
+	phases := []string{"building_workstation", "waking", "first_turn"}
+	var seen []pillarJSON
+	s.createLoop("wsbuild", nil)
+	cleanupWorkstation(t, s.loop("wsbuild").ID)
+	// polled far faster than the page does, so a build of any length shows
+	for deadline := time.Now().Add(90 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("the loops pillar never went done; progress seen: %+v", seen)
+		}
+		view := s.onboarding()
+		if view.Loops.Done {
+			break
+		}
+		if view.Loops.Progress != "" && (len(seen) == 0 || seen[len(seen)-1] != view.Loops) {
+			seen = append(seen, view.Loops)
+		}
+	}
+
+	if len(seen) == 0 || seen[0].Progress != "building_workstation" || seen[0].ProgressLoop != "wsbuild" {
+		t.Fatalf("progress seen = %+v, want it to open on building_workstation naming wsbuild", seen)
+	}
+	for i := 1; i < len(seen); i++ {
+		if slices.Index(phases, seen[i].Progress) <= slices.Index(phases, seen[i-1].Progress) {
+			t.Fatalf("progress seen = %+v, want each code further on than the last", seen)
+		}
+	}
+}
+
 // On a docker hub, saving a setup-token checks it (ADR-0044): one run of
 // the workstation image's claude under the token, behind the egress wall,
 // whose answer makes the harness pillar done. Removing the token forgets
@@ -150,11 +224,11 @@ func TestOnboardingChecksTheHostLogin(t *testing.T) {
 	}
 	var started onboardingJSON
 	s.mustJSON("POST", "/api/onboarding/harness-check", nil, &started)
-	if got := started.Harness; got.Done || !got.Checking || got.Reason != "the host's claude login is being checked" {
+	if got := started.Harness; got.Done || !got.Checking || got.Progress != "checking" || got.Reason != "the host's claude login is being checked" {
 		t.Fatalf("harness as the check starts = %+v, want checking", got)
 	}
 	got := s.waitOnboarding(30*time.Second, func(v onboardingJSON) bool { return !v.Harness.Checking })
-	if !got.Harness.Done || got.Harness.Reason != "the login check authenticated" {
+	if !got.Harness.Done || got.Harness.Progress != "" || got.Harness.Reason != "the login check authenticated" {
 		t.Fatalf("harness after an accepted check = %+v", got.Harness)
 	}
 	if err := os.Remove(slow); err != nil {

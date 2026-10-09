@@ -191,6 +191,7 @@ type Actor struct {
 	offSnap    atomic.Bool  // the operator's power-off intent, for REST reads
 	mcpSnap    atomic.Value // MCPReach; the latest init's, for REST reads
 	rehomeSnap atomic.Bool  // a rehome is asked for and not yet landed, for REST reads
+	ensureSnap atomic.Bool  // a wake is ensuring the workstation, for REST reads
 
 	// goroutine-owned state below
 	loop         store.Loop
@@ -607,7 +608,12 @@ func (actor *Actor) wake() {
 		system["CLAUDE_CODE_OAUTH_TOKEN"] = token
 	}
 	spec.Env = buildExecEnv(system, connections)
-	if err := loopRuntime.Ensure(ctx, spec); err != nil {
+	// The loop still reads its pre-wake state while Ensure builds or pulls
+	// the workstation, so this is the only sign that a wake is under way.
+	actor.ensureSnap.Store(true)
+	err = loopRuntime.Ensure(ctx, spec)
+	actor.ensureSnap.Store(false)
+	if err != nil {
 		actor.log().Error("workstation not ready", "err", err)
 		actor.setWorkstationDown(DownReasonUnreachable, err.Error())
 		actor.crashBackoff()
@@ -2499,6 +2505,11 @@ func (actor *Actor) rehomePending() bool {
 // from any goroutine). It turns false when the move lands or fails, and
 // after a restart that lost a rehome whose handoff turn never began.
 func (actor *Actor) Rehoming() bool { return actor.rehomeSnap.Load() }
+
+// EnsuringWorkstation reports whether a wake is ensuring the loop's
+// workstation right now (safe from any goroutine): the build or pull that
+// comes before the loop's state turns waking (#662).
+func (actor *Actor) EnsuringWorkstation() bool { return actor.ensureSnap.Load() }
 
 func (actor *Actor) log() *slog.Logger {
 	if actor.deps.Logger == nil {
