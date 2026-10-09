@@ -98,6 +98,16 @@ export function EditIcon() {
   )
 }
 
+// Sign out: a door left open, with the way out (#674).
+export function SignOutIcon() {
+  return (
+    <Icon>
+      <path d="M8 3.25H4.75a1.5 1.5 0 0 0-1.5 1.5v10.5a1.5 1.5 0 0 0 1.5 1.5H8" />
+      <path d="M13 6.5L16.5 10 13 13.5M16.25 10H8" />
+    </Icon>
+  )
+}
+
 // Add: a plus, for a panel that adds to its list (a loop's connections).
 export function PlusIcon() {
   return (

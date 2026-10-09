@@ -39,20 +39,41 @@ if (!dataDir) {
   console.error('ui-shots: SPOOL_DATA_DIR is required (the fixture hub’s data directory)')
   process.exit(2)
 }
-// Read, never printed: the operator token the hub minted for the fixture hub.
-const token = readFileSync(`${dataDir}/operator-token`, 'utf8').trim()
+// Read, never printed: the password the fixture gave its users (#674).
+const password = readFileSync(`${dataDir}/fixture-user-password`, 'utf8').trim()
 
 mkdirSync(outDir, { recursive: true })
 const browser = await chromium.launch()
 const ctx = await browser.newContext({ viewport: { width: 1180, height: 900 }, deviceScaleFactor: 2 })
 const page = await ctx.newPage()
 
+// The sign-in page and the change a one-time password gets (#674), each
+// in a context of its own: robin's session must not be the one the rest
+// of the shots run in.
+const signedOut = await browser.newContext({ viewport: { width: 1180, height: 760 }, deviceScaleFactor: 2 })
+const door = await signedOut.newPage()
+await door.goto(base + '/', { waitUntil: 'networkidle' })
+await door.locator('#username').waitFor({ timeout: 15000 })
+const signinFile = `${outDir}/signin.png`
+await door.locator('.login-card').screenshot({ path: signinFile })
+await door.fill('#username', 'robin')
+await door.fill('#password', password)
+await door.click('button[type=submit]')
+await door.locator('#new-password').waitFor({ timeout: 15000 })
+const changeFile = `${outDir}/change-password.png`
+await door.locator('.login-card').screenshot({ path: changeFile })
+await signedOut.close()
+
 await page.goto(base + '/', { waitUntil: 'networkidle' })
-if (await page.isVisible('#operator-token')) {
-  await page.fill('#operator-token', token)
-  await page.click('button[type=submit]')
-  await page.waitForSelector('.topbar', { timeout: 15000 })
-}
+await page.fill('#username', 'admin')
+await page.fill('#password', password)
+await page.click('button[type=submit]')
+await page.waitForSelector('.topbar', { timeout: 15000 })
+// Settings' Account section, signed in as admin (#674).
+await page.goto(base + '/settings', { waitUntil: 'networkidle' })
+await page.locator('.account-name').waitFor({ timeout: 15000 })
+const accountFile = `${outDir}/settings-account.png`
+await page.locator('.account').screenshot({ path: accountFile })
 
 const shots = [
   { name: 'fleet', path: '/', wait: '.fleet-row' },
@@ -76,7 +97,7 @@ const shots = [
   { name: 'undelivered', path: '/loops/archivist?pane=undelivered', wait: '.undelivered-row' },
 ]
 
-const taken = []
+const taken = [signinFile, changeFile, accountFile]
 for (const shot of shots) {
   await page.goto(base + shot.path, { waitUntil: 'networkidle' })
   await page.waitForSelector(shot.wait, { timeout: 15000 })

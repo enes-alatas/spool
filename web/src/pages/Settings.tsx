@@ -4,8 +4,9 @@ import { api, ApiError, type CustomModel, type Settings as SettingsView } from '
 import { customModelError, MODEL_LABEL_MAX, rotationGate, tokenSubmittable } from '../forms'
 import { customModelNote } from '../options'
 import { buildFacts, useVersion } from '../version'
-import { loginError } from '../session'
 import { HarnessCheck } from '../components/HarnessCheck'
+import { useSignOut } from '../components/Session'
+import { SignOutIcon } from '../components/Icons'
 import { EgressSection } from '../components/EgressSection'
 import { loginCheckTone } from '../onboarding'
 import { CapBanner, useMinuteClock } from '../components/PlanUsage'
@@ -17,57 +18,56 @@ export default function Settings() {
   return (
     <div className="page measure">
       <h1>Settings</h1>
+      <AccountSection />
       <ClaudeToken settings={settings} loadError={loadError} />
       <CustomModels />
       <PlanGuardrails settings={settings} loadError={loadError} />
       <RotationThresholds settings={settings} loadError={loadError} />
       <EgressSection />
-      <SessionSection />
       <Build />
     </div>
   )
 }
 
-// Ending the session (#239). The cookie is the credential, so a room left
-// open on a shared screen stays open until something clears it — and the hub
-// serves the route, so the only thing missing was somewhere to press.
-function SessionSection() {
-  const qc = useQueryClient()
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-
-  const signOut = async () => {
-    setBusy(true)
-    setError('')
-    try {
-      await api.logout()
-      // Resetting is what puts the login page back up: the next probe has no
-      // cookie to send, and nothing cached outlives the session that fetched
-      // it.
-      qc.resetQueries()
-    } catch (e) {
-      setError(loginError(e))
-      setBusy(false)
-    }
-  }
+// Who this session is (#674), and the way out. It lives here rather than in
+// the top bar, which stays the destinations and New loop. A session the
+// operator token opened belongs to no user and acts as the owner.
+function AccountSection() {
+  const { data: me } = useQuery({ queryKey: ['me'], queryFn: api.me })
+  const { signOut, busy, error } = useSignOut()
 
   return (
     <>
-      <h2 className="section-head">Session</h2>
-      <p className="page-lede">
-        This browser holds a session cookie, not the token. Signing out clears the cookie here; it revokes
-        nothing, so the token still opens a new session.
-      </p>
+      <h2 className="section-head first">Account</h2>
+      <div className="account">
+        {me && (
+          <>
+            {/* The name's first letter. A token session has no name, so it has
+                no letter either. */}
+            {me.via === 'password' && (
+              <span className="account-initial" aria-hidden>
+                {me.name.charAt(0)}
+              </span>
+            )}
+            <span className="account-who">
+              <span className="account-name">{me.via === 'token' ? 'operator token' : me.name}</span>
+              <span className="account-role">{me.role}</span>
+            </span>
+          </>
+        )}
+        {/* Signing out ends this browser's session only; the user's other
+            sessions stay signed in. */}
+        <button className="btn account-sign-out" onClick={signOut} disabled={busy}>
+          <SignOutIcon />
+          {busy ? 'Signing out…' : 'Sign out'}
+        </button>
+      </div>
 
       {error && (
         <div className="form-error" role="alert">
           {error}
         </div>
       )}
-
-      <button className="btn" onClick={signOut} disabled={busy}>
-        {busy ? 'Signing out…' : 'Sign out'}
-      </button>
     </>
   )
 }
@@ -134,7 +134,7 @@ function ClaudeToken({ settings, loadError }: { settings?: SettingsView; loadErr
 
   return (
     <>
-      <h2 className="section-head first">Claude token</h2>
+      <h2 className="section-head">Claude token</h2>
       <p className="page-lede">
         Workstation (contained) loops run <code>claude</code> inside a Docker container that has no login of
         its own. Paste a long-lived token from <code>claude setup-token</code> and every workstation runs

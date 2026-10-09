@@ -13,9 +13,9 @@
 // SPOOL_SMOKE_TRACE (default smoke-trace.zip), so the reason is readable
 // without a rerun: `npx playwright show-trace <file>`.
 //
-// The trace records the fixture hub's operator token, as the login form and
-// the session cookie carry it. cmd/uifixture seeds that token, and it is
-// synthetic, so a public trace holds no credential.
+// The trace records the fixture user's password, as the login form carries
+// it, and the session cookie. cmd/uifixture seeds that password, and the
+// hub that issued the cookie is gone, so a public trace holds no credential.
 import { chromium } from 'playwright'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -27,8 +27,8 @@ if (!base || !dataDir) {
   process.exit(2)
 }
 const tracePath = resolve(process.env.SPOOL_SMOKE_TRACE ?? 'smoke-trace.zip')
-// Read, never printed.
-const token = readFileSync(`${dataDir}/operator-token`, 'utf8').trim()
+// Read, never printed: the password the fixture gave its users (#674).
+const password = readFileSync(`${dataDir}/fixture-user-password`, 'utf8').trim()
 
 // Long enough for a cold CI runner, short enough that a hang fails the step
 // well inside its budget.
@@ -66,11 +66,12 @@ async function heading(name) {
 try {
   step = 'login'
   await page.goto(base + '/')
-  await see(page.locator('#operator-token'), 'the operator-token field')
+  await see(page.locator('#username'), 'the username field')
   // The room opens its global stream once the session is in, so listen before
   // signing in.
   const stream = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/stream', { timeout: WAIT })
-  await page.fill('#operator-token', token)
+  await page.fill('#username', 'admin')
+  await page.fill('#password', password)
   await page.click('button[type=submit]')
   await see(page.getByRole('navigation').getByRole('link', { name: 'Fleet' }), 'the Fleet destination')
 

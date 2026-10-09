@@ -425,6 +425,44 @@ textarea {
   margin-bottom: 0;
   text-align: center;
 }
+/* The change page's heading (#582): the one screen on this card that asks
+   for something other than a sign-in, so it says what. */
+.login-title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  text-align: center;
+}
+/* The token form, for one release (#582): there, but under the sign-in a
+   user is meant to use. */
+.login-or {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.login-or::before,
+.login-or::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--hairline);
+}
+.login-alt {
+  align-self: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.login-alt:hover {
+  color: var(--text);
+}
 
 /* ---- build identity (#224) ---- */
 /* The Build section of Settings: machine facts, in a label/value list. Each
@@ -451,6 +489,55 @@ textarea {
   font-family: var(--mono);
   font-size: 0.8125rem;
   overflow-wrap: anywhere;
+}
+/* Settings' Account section (#674): who this session is, in a panel, with
+   the way out on the same line. */
+.account {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.account-initial {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--hairline);
+  border-radius: 50%;
+  background: var(--canvas);
+  font-family: var(--mono);
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.account-who {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.account-name {
+  font-size: 0.9375rem;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.account-role {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.account-sign-out {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 /* Narrow enough that a label column would leave the values a few characters
    wide: the label goes above its value instead of beside it. */

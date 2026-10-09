@@ -533,6 +533,18 @@ export interface Settings {
   plan_cap_seven_day_percent: number
 }
 
+// The session's user (#582, #675). A session made with the operator token
+// has no user: it acts as the owner, with an empty name and `via: 'token'`.
+// While must_change_password holds, the hub answers every other route with
+// 403 `password_change_required`, so the room shows only the change page.
+export type Role = 'owner' | 'admin' | 'member'
+export interface Me {
+  name: string
+  role: Role
+  must_change_password: boolean
+  via: 'password' | 'token'
+}
+
 // Which build this Spool is, mirrored from internal/version.Info. Served
 // unauthenticated, because an operator filing a bug should not need a token
 // to say which Spool it was.
@@ -712,12 +724,16 @@ export interface Rehome {
 export class ApiError extends Error {
   readonly status: number
   readonly code: string
+  // Seconds until a throttled request may be tried again (429 `throttled`,
+  // #675); 0 when the refusal names no wait.
+  readonly retryAfter: number
 
-  constructor(status: number, message: string, code = '') {
+  constructor(status: number, message: string, code = '', retryAfter = 0) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.code = code
+    this.retryAfter = retryAfter
   }
 }
 
@@ -729,14 +745,16 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   if (!res.ok) {
     let msg = `${res.status}`
     let code = ''
+    let retryAfter = 0
     try {
       const body = await res.json()
       if (body.error) msg = body.error
       if (body.code) code = body.code
+      if (typeof body.retry_after === 'number') retryAfter = body.retry_after
     } catch {
       /* keep status */
     }
-    throw new ApiError(res.status, msg, code)
+    throw new ApiError(res.status, msg, code, retryAfter)
   }
   if (res.status === 204) return undefined as T
   return res.json()
@@ -892,8 +910,16 @@ export const api = {
   // cookie, so the room holds a session and never a credential: nothing here
   // can read the cookie back, and an EventSource — which cannot carry a
   // header — authenticates like every other request.
-  login: (token: string) => req<void>('/api/login', { method: 'POST', body: JSON.stringify({ token }) }),
+  // A user signs in with a username and password (#582); the token form is
+  // kept for one release. Either way the answer is the session's user.
+  login: (credentials: { username: string; password: string } | { token: string }) =>
+    req<Me>('/api/login', { method: 'POST', body: JSON.stringify(credentials) }),
   logout: () => req<void>('/api/logout', { method: 'POST' }),
+  me: () => req<Me>('/api/me'),
+  // The answer is the session's user with the flag cleared; the session that
+  // changed it stays signed in, and the user's others are revoked.
+  changePassword: (body: { new_password: string; current_password?: string }) =>
+    req<Me>('/api/me/password', { method: 'POST', body: JSON.stringify(body) }),
   settings: () => req<Settings>('/api/settings'),
   planUsage: () => req<PlanUsage>('/api/plan-usage'),
   // Both thresholds go in one write, as the rotation pair does; 0 is off.
