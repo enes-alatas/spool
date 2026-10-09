@@ -1,6 +1,6 @@
 # ADR-0030: The API's trust model is a credential, not a port
 
-Date: 2026-09-21 · Status: accepted · Amends: ADR-0028 (consequence: "the operator listener") · Amended: 2026-09-26 (§2, health answers liveness only); 2026-09-30 (§4, one raw upload route)
+Date: 2026-09-21 · Status: accepted; decision 5's cookie holding the token superseded by ADR-0048 · Amends: ADR-0028 (consequence: "the operator listener") · Amended: 2026-09-26 (§2, health answers liveness only); 2026-09-30 (§4, one raw upload route)
 
 ## Context
 
@@ -109,6 +109,10 @@ callers the network cannot distinguish.
    control room holding the credential in storage script can reach. `POST
    /api/logout` clears it and asks for nothing — a caller who can only log out
    can only log out.
+
+   *Superseded in part by ADR-0048 (#675):* the cookie now holds a session
+   ID, which a user's username and password, or for one more release the
+   token, establishes. The cookie's attributes stand.
 
 ## Consequences
 
