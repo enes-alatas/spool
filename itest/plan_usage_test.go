@@ -12,6 +12,7 @@ type planWindowJSON struct {
 	UsedPercent float64 `json:"used_percent"`
 	ResetsAt    int64   `json:"resets_at"`
 	Reset       bool    `json:"reset"`
+	CapPercent  int     `json:"cap_percent"`
 }
 
 type planUsageJSON struct {
@@ -20,6 +21,11 @@ type planUsageJSON struct {
 	AsOf     int64           `json:"as_of"`
 	Source   string          `json:"source"`
 	Unknown  string          `json:"unknown"`
+	Cap      *struct {
+		Windows []string `json:"windows"`
+		Until   int64    `json:"until"`
+	} `json:"cap"`
+	ResumedUntil int64 `json:"resumed_until"`
 }
 
 func (s *server) planUsage() planUsageJSON {

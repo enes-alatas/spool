@@ -46,6 +46,11 @@ type Server struct {
 	// login, when a setup-token is saved and when the operator asks
 	// (ADR-0044). Nil runs no check.
 	LoginChecker *loop.LoginChecker
+	// PlanCap judges the fleet's plan cap (ADR-0047): the plan-usage read
+	// reports it, and a threshold change or a Resume now re-judges it.
+	// Required: a serving hub always has one, and the handlers that read
+	// it do not check.
+	PlanCap *loop.PlanCap
 	// Surfaces are the chat platforms loops can be reachable on (ADR-0029),
 	// by kind (store.SurfaceTelegram, store.SurfaceSlack). A kind the hub
 	// runs without is absent, and an empty map is a hub with none.
@@ -184,6 +189,7 @@ func (server *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/settings", server.handleGetSettings)
 	mux.HandleFunc("GET /api/onboarding", server.handleOnboarding)
 	mux.HandleFunc("GET /api/plan-usage", server.handlePlanUsage)
+	mux.HandleFunc("POST /api/plan-cap/resume", server.handleResumePlanCap)
 	mux.HandleFunc("POST /api/onboarding/harness-check", server.handleLoginCheck)
 	mux.HandleFunc("PUT /api/settings", server.handlePutSettings)
 	mux.HandleFunc("GET /api/settings/egress", server.handleGetEgress)
@@ -360,6 +366,11 @@ type loopView struct {
 	// powered_off, not_provisioned, unauthenticated, unreachable or
 	// hub_unreachable (ADR-0021).
 	DownReason string `json:"down_reason"`
+	// CappedUntil is when a capped loop wakes: the latest reset among the
+	// plan windows over their thresholds (ADR-0047). 0 for a loop whose
+	// state is not capped, even while a cap holds, since a loop in its turn
+	// is still busy.
+	CappedUntil int64 `json:"capped_until"`
 	// OwnerDMReady reports that the loop can message its owner privately:
 	// an owner is configured and, on Telegram, has opened a chat with this
 	// loop's own bot. A bot cannot open one, so until the owner writes
@@ -439,6 +450,9 @@ func (server *Server) view(ctx context.Context, loopRecord *store.Loop) *loopVie
 		out.WorkstationUp = health.Up
 		out.WorkstationDetail = health.Detail
 		out.DownReason = actor.DownReason()
+		if out.State == loop.StateCapped {
+			out.CappedUntil = server.PlanCap.At(time.Now().UnixMilli()).Until
+		}
 		if reach, ok := actor.MCPReach(); ok {
 			out.MCPSessionID, out.ToolCount = reach.SessionID, &reach.ToolCount
 			servers := []mcpServerView{}
@@ -1279,6 +1293,10 @@ type settingsView struct {
 	ClaudeTokenSet      bool `json:"claude_token_set"`
 	ContextArmPercent   int  `json:"context_arm_percent"`
 	ContextForcePercent int  `json:"context_force_percent"`
+	// The plan cap's thresholds, percentages of each plan window with 0 for
+	// off, the defaults included (ADR-0047).
+	PlanCapFiveHourPercent int `json:"plan_cap_five_hour_percent"`
+	PlanCapSevenDayPercent int `json:"plan_cap_seven_day_percent"`
 	// BareAllowed is how the control room knows whether to offer an
 	// uncontained loop at all (#255): the choice is the operator's, taken
 	// at the terminal when the hub was started, and a form that offered it
@@ -1300,13 +1318,16 @@ func (server *Server) settingsView(ctx context.Context) (settingsView, error) {
 		return settingsView{}, err
 	}
 	arm, force := loop.RotationThresholds(ctx, server.Store.Settings(), server.Log)
+	fiveHour, sevenDay := loop.PlanCapThresholds(ctx, server.Store.Settings(), server.Log)
 	return settingsView{
-		ClaudeTokenSet:      token != "",
-		ContextArmPercent:   arm,
-		ContextForcePercent: force,
-		BareAllowed:         server.BareAllowed,
-		DefaultRuntime:      server.defaultRuntime(),
-		ClaudeVersion:       server.ClaudeVer,
+		ClaudeTokenSet:         token != "",
+		ContextArmPercent:      arm,
+		ContextForcePercent:    force,
+		PlanCapFiveHourPercent: fiveHour,
+		PlanCapSevenDayPercent: sevenDay,
+		BareAllowed:            server.BareAllowed,
+		DefaultRuntime:         server.defaultRuntime(),
+		ClaudeVersion:          server.ClaudeVer,
 	}, nil
 }
 
@@ -1327,6 +1348,10 @@ type putSettingsReq struct {
 	// (percent of the model's window, 1–99, arm below force).
 	ContextArmPercent   *int `json:"context_arm_percent"`
 	ContextForcePercent *int `json:"context_force_percent"`
+	// nil leaves a plan cap threshold unchanged; each is validated alone
+	// (0-100, 0 for off), and a change re-judges the cap (ADR-0047).
+	PlanCapFiveHourPercent *int `json:"plan_cap_five_hour_percent"`
+	PlanCapSevenDayPercent *int `json:"plan_cap_seven_day_percent"`
 }
 
 func (server *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
@@ -1334,6 +1359,14 @@ func (server *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		server.jsonErr(w, 400, "bad json: %v", err)
 		return
+	}
+	// checked before anything is written, so a refused threshold leaves
+	// the rest of the request unapplied too
+	for _, percent := range []*int{req.PlanCapFiveHourPercent, req.PlanCapSevenDayPercent} {
+		if percent != nil && !loop.ValidPlanCapPercent(*percent) {
+			server.jsonErr(w, 400, "plan cap thresholds must be percentages 0-100, 0 for off (got %d)", *percent)
+			return
+		}
 	}
 	if req.ClaudeOAuthToken != nil {
 		token := ""
@@ -1374,6 +1407,29 @@ func (server *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		if err := server.Store.Settings().Set(r.Context(), store.SettingContextForcePercent, strconv.Itoa(force)); err != nil {
+			server.jsonErr(w, 500, "%v", err)
+			return
+		}
+	}
+	if req.PlanCapFiveHourPercent != nil || req.PlanCapSevenDayPercent != nil {
+		for _, threshold := range []struct {
+			key     string
+			percent *int
+		}{
+			{store.SettingPlanCapFiveHourPercent, req.PlanCapFiveHourPercent},
+			{store.SettingPlanCapSevenDayPercent, req.PlanCapSevenDayPercent},
+		} {
+			if threshold.percent == nil {
+				continue
+			}
+			if err := server.Store.Settings().Set(r.Context(), threshold.key, strconv.Itoa(*threshold.percent)); err != nil {
+				server.jsonErr(w, 500, "%v", err)
+				return
+			}
+		}
+		// a raised or cleared threshold lifts the cap and wakes the loops;
+		// a lowered one caps them at their next quiet boundary
+		if err := server.PlanCap.Refresh(r.Context()); err != nil {
 			server.jsonErr(w, 500, "%v", err)
 			return
 		}
