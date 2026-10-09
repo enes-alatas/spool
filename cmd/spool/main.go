@@ -70,6 +70,11 @@ func main() {
 		printToken(os.Args[2:])
 		return
 	}
+	// `spool user` manages the hub's users against its data directory, so
+	// it works whether or not the hub is running (ADR-0048).
+	if len(os.Args) > 1 && os.Args[1] == "user" {
+		os.Exit(userCommand(os.Args[2:], os.Stdout, os.Stderr))
+	}
 
 	listen := flag.String("listen", "127.0.0.1:8080", "address to serve the operator's API/UI on; never reachable from a workstation")
 	mcpListen := flag.String("mcp-listen", "", "address to serve the loop-facing /mcp endpoint on; the one port of this machine a workstation may reach (#238). Unset: the docker bridge's gateway when it is an address of this machine, else loopback, on --mcp-port (#475)")
@@ -262,7 +267,19 @@ func main() {
 		os.Exit(1)
 	}
 
+	// A hub with no users yet, a fresh one or the first start of one from
+	// before users existed, gets owner admin (ADR-0048). Its one-time
+	// password goes to stdout once, beside the operator token, for the same
+	// reason: the log is redacted and shared, and this is read by a person.
 	hubUsers := &users.Users{Store: db}
+	if password, err := hubUsers.Bootstrap(context.Background()); err != nil {
+		log.Error("users", "err", err)
+		os.Exit(1)
+	} else if password != "" {
+		fmt.Printf("\nUser %q, one-time password (this is the only time it is shown):\n\n    %s\n\n"+
+			"It must be changed at first sign-in. `spool user reset %s --data-dir %s` prints a new one.\n\n",
+			users.AdminName, password, users.AdminName, *dataDir)
+	}
 
 	// The operator's extra egress hosts (#542): --egress-allow seeds the
 	// stored list on the first start, and the list /api/settings/egress
@@ -407,6 +424,7 @@ func main() {
 	go planCap.Run(ctx)
 	models.Start(ctx)
 	go pruneEvents(ctx, rdb, *retentionDays, log)
+	go sweepUsers(ctx, hubUsers, log)
 	go expireAttachments(ctx, router, log)
 
 	// Every pending send is the last process's: nothing in this one can
@@ -810,6 +828,24 @@ func pruneEvents(ctx context.Context, db store.Store, days int, log *slog.Logger
 	}
 }
 
+// sweepUsers forgets, hourly, the sign-in rows nothing else removes:
+// sessions past their limits whose cookie never came back, and stale
+// throttle counts (ADR-0048).
+func sweepUsers(ctx context.Context, hubUsers *users.Users, log *slog.Logger) {
+	tick := time.NewTicker(time.Hour)
+	defer tick.Stop()
+	for {
+		if err := hubUsers.Sweep(ctx); err != nil {
+			log.Warn("users sweep", "err", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+		}
+	}
+}
+
 // catalogOf resolves who a loop can address, fresh for each prompt build:
 // its conversations and the channels among them, its peers in the fleet
 // channel, the people allowed to talk to the fleet, and its own owner with
@@ -993,13 +1029,14 @@ func healthCacheTTL(interval time.Duration) time.Duration {
 
 // usageError refuses an invocation Spool cannot honour, on stderr and with
 // exit 2: the conventional code for "your command line is wrong", said
-// before anything starts. It names the only subcommand there is and where
+// before anything starts. It names the subcommands there are and where
 // the flag list lives, because someone who typed a subcommand is exactly who
 // does not know either.
 func usageError(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "spool: "+format+"\n\n", args...)
 	fmt.Fprint(os.Stderr, "usage: spool [flags]\n"+
-		"  or:  spool token [--data-dir dir]\n\n"+
+		"  or:  spool token [--data-dir dir]\n"+
+		"  or:  spool user add|reset|list|remove [name] [--role role] [--data-dir dir]\n\n"+
 		"`spool --help` lists the flags.\n")
 	os.Exit(2)
 }
