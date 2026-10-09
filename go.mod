@@ -2,7 +2,7 @@ module github.com/enes-alatas/spool
 
 go 1.25.0
 
-toolchain go1.25.13
+toolchain go1.26.9
 
 require (
 	github.com/coder/websocket v1.8.15
