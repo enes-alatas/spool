@@ -817,6 +817,96 @@ type SessionStore interface {
 	EndDangling(ctx context.Context, reason string, endedAt int64) error
 }
 
+// User roles (ADR-0048). Stored and served; a later slice enforces what
+// each may do.
+const (
+	RoleOwner  = "owner"
+	RoleAdmin  = "admin"
+	RoleMember = "member"
+)
+
+// User is a person who signs in to the control room (ADR-0048).
+// PasswordHash is self-describing (algorithm, iterations, salt, key), and
+// never leaves the hub.
+type User struct {
+	ID                 string
+	Name               string
+	Role               string
+	PasswordHash       string
+	MustChangePassword bool
+	CreatedAt          int64
+}
+
+type UserStore interface {
+	// Create inserts a user; ErrDuplicate if the name is taken.
+	Create(ctx context.Context, user *User) error
+	Get(ctx context.Context, id string) (*User, error)
+	GetByName(ctx context.Context, name string) (*User, error)
+	// List is every user, by name.
+	List(ctx context.Context) ([]*User, error)
+	// SetPassword stores a new hash and whether a change is due.
+	// ErrNotFound for an unknown user.
+	SetPassword(ctx context.Context, id, hash string, mustChange bool) error
+	// Delete removes a user and every session they hold; ErrNotFound for
+	// an unknown user.
+	Delete(ctx context.Context, id string) error
+}
+
+// UserSession is one sign-in to the control room (ADR-0048), kept by the
+// SHA-256 of the ID its cookie holds. UserID is "" for a session the
+// operator token opened, which belongs to no user; TokenHash is then the
+// SHA-256 of that token, so the session ends when the token changes.
+type UserSession struct {
+	IDHash     string
+	UserID     string
+	TokenHash  string
+	CreatedAt  int64
+	LastSeenAt int64
+}
+
+type UserSessionStore interface {
+	Create(ctx context.Context, session *UserSession) error
+	// Get is ErrNotFound for a session that does not exist or has ended.
+	Get(ctx context.Context, idHash string) (*UserSession, error)
+	// Touch records the session's use at the time at.
+	Touch(ctx context.Context, idHash string, at int64) error
+	// Delete ends one session; ending one that is gone is no error.
+	Delete(ctx context.Context, idHash string) error
+	// DeleteForUser ends every session userID holds but the one keepIDHash
+	// names, or all of them when it is "".
+	DeleteForUser(ctx context.Context, userID, keepIDHash string) error
+	// DeleteExpired ends every session last used before lastSeenBefore or
+	// created before createdBefore, and returns how many.
+	DeleteExpired(ctx context.Context, lastSeenBefore, createdBefore int64) (int64, error)
+}
+
+// SignInThrottle is the failures counted against one name tried at sign-in
+// (ADR-0048). It is kept by the name tried, whether or not a user has it,
+// so a lock does not say which names exist. Times are Unix milliseconds;
+// LockedUntil is 0 for a name never locked.
+type SignInThrottle struct {
+	Name          string
+	Failures      int
+	LockedUntil   int64
+	LastFailureAt int64
+}
+
+type SignInThrottleStore interface {
+	// Get is ErrNotFound for a name with no failures counted.
+	Get(ctx context.Context, name string) (*SignInThrottle, error)
+	// Fail counts one failure against name at the time at, and returns the
+	// count. It adds in one statement, so failures that arrive together
+	// each count.
+	Fail(ctx context.Context, name string, at int64) (int, error)
+	// Lock holds name until until, unless it is held longer already.
+	Lock(ctx context.Context, name string, until int64) error
+	// Clear forgets the failures counted against name.
+	Clear(ctx context.Context, name string) error
+	// DeleteBefore forgets every name whose last failure was before cutoff,
+	// and returns how many.
+	DeleteBefore(ctx context.Context, cutoff int64) (int64, error)
+}
+
 type MessageStore interface {
 	// Insert persists a message. For telegram-sourced messages, (tgChatID,
 	// tgMessageID, tgBotLoopID) is unique, and for slack-sourced ones
@@ -1134,6 +1224,9 @@ type Store interface {
 	TGSenders() TGSenderStore
 	SlackSenders() SlackSenderStore
 	Models() ModelStore
+	Users() UserStore
+	UserSessions() UserSessionStore
+	SignInThrottles() SignInThrottleStore
 	Close() error
 }
 

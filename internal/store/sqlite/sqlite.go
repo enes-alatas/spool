@@ -133,18 +133,21 @@ func (database *DB) Polls() store.PollStore         { return polls{database.db} 
 func (database *DB) Connections() store.ConnectionStore {
 	return connections{database.db, database.sealer}
 }
-func (database *DB) FleetRules() store.FleetRuleStore     { return fleetRules{database.db} }
-func (database *DB) Sessions() store.SessionStore         { return sessions{database.db} }
-func (database *DB) Messages() store.MessageStore         { return messages{database.db} }
-func (database *DB) Attachments() store.AttachmentStore   { return attachments{database.db} }
-func (database *DB) Turns() store.TurnStore               { return turns{database.db} }
-func (database *DB) Events() store.EventStore             { return events{database.db} }
-func (database *DB) Schedule() store.ScheduleStore        { return schedule{database.db} }
-func (database *DB) Inbox() store.InboxStore              { return inbox{database.db} }
-func (database *DB) Settings() store.SettingsStore        { return settings{database.db, database.sealer} }
-func (database *DB) TGSenders() store.TGSenderStore       { return tgSenders{database.db} }
-func (database *DB) SlackSenders() store.SlackSenderStore { return slackSenders{database.db} }
-func (database *DB) Models() store.ModelStore             { return models{database.db} }
+func (database *DB) FleetRules() store.FleetRuleStore           { return fleetRules{database.db} }
+func (database *DB) Sessions() store.SessionStore               { return sessions{database.db} }
+func (database *DB) Messages() store.MessageStore               { return messages{database.db} }
+func (database *DB) Attachments() store.AttachmentStore         { return attachments{database.db} }
+func (database *DB) Turns() store.TurnStore                     { return turns{database.db} }
+func (database *DB) Events() store.EventStore                   { return events{database.db} }
+func (database *DB) Schedule() store.ScheduleStore              { return schedule{database.db} }
+func (database *DB) Inbox() store.InboxStore                    { return inbox{database.db} }
+func (database *DB) Settings() store.SettingsStore              { return settings{database.db, database.sealer} }
+func (database *DB) TGSenders() store.TGSenderStore             { return tgSenders{database.db} }
+func (database *DB) SlackSenders() store.SlackSenderStore       { return slackSenders{database.db} }
+func (database *DB) Models() store.ModelStore                   { return models{database.db} }
+func (database *DB) Users() store.UserStore                     { return users{database.db} }
+func (database *DB) UserSessions() store.UserSessionStore       { return userSessions{database.db} }
+func (database *DB) SignInThrottles() store.SignInThrottleStore { return signInThrottles{database.db} }
 
 func toJSON(values []string) string {
 	if values == nil {

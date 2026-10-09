@@ -409,6 +409,25 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			"SetResolution": false, "AddCustom": false, "SetCustomLabel": false,
 			"DeleteCustom": false, "Resolutions": false, "ListCustom": false,
 		},
+		"UserStore": {
+			// A user's name and role, and a password kept as a one-way
+			// hash, which redacting would make unverifiable; no loop's
+			// output reaches any of it (ADR-0048).
+			"Create": false, "SetPassword": false,
+			"Delete": false, "Get": false, "GetByName": false, "List": false,
+		},
+		"UserSessionStore": {
+			// The SHA-256 of a session ID and of the token a token session
+			// was opened with, a user id and times.
+			"Create": false, "Get": false, "Touch": false,
+			"Delete": false, "DeleteForUser": false, "DeleteExpired": false,
+		},
+		"SignInThrottleStore": {
+			// A name tried at sign-in, a count and times; the API takes
+			// the name, and no loop's output reaches it.
+			"Fail": false, "Lock": false, "Clear": false,
+			"Get": false, "DeleteBefore": false,
+		},
 	}
 
 	seam := reflect.TypeOf((*store.Store)(nil)).Elem()
