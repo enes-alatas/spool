@@ -182,6 +182,63 @@ for (const [state, render] of Object.entries(planStates)) {
   await page.unroute('**/api/plan-usage')
 }
 
+// The plan cap (#651) on a hub whose 5-hour window has passed its
+// threshold: the Fleet banner with Resume now, capped rows waking at the
+// reset and a loop finishing its turn first, then the Settings section over
+// the same read. The fixture hub has no cap to fire, so the reads are
+// patched as a capped hub serves them.
+const capUntil = Date.now() + 41 * 60000
+await page.route('**/api/plan-usage', async (route) => {
+  const view = await (await route.fetch()).json()
+  route.fulfill({
+    json: {
+      ...view,
+      five_hour: { used_percent: 93, resets_at: capUntil, cap_percent: 90 },
+      seven_day: { ...view.seven_day, cap_percent: 90 },
+      cap: { windows: ['five_hour'], until: capUntil },
+    },
+  })
+})
+await page.route('**/api/loops', async (route) => {
+  const loops = await (await route.fetch()).json()
+  route.fulfill({
+    json: loops.map((loop, i) =>
+      i === 1 ? { ...loop, state: 'busy' } : { ...loop, state: 'capped', capped_until: capUntil },
+    ),
+  })
+})
+await page.route('**/api/settings', async (route) => {
+  const settings = await (await route.fetch()).json()
+  route.fulfill({ json: { ...settings, plan_cap_five_hour_percent: 90, plan_cap_seven_day_percent: 90 } })
+})
+await page.goto(base + '/', { waitUntil: 'networkidle' })
+await page.locator('.cap-banner').waitFor({ timeout: 15000 })
+const fleetCappedFile = `${outDir}/fleet-capped.png`
+await page.screenshot({ path: fleetCappedFile, clip: { x: 0, y: 0, width: 1180, height: 560 } })
+taken.push(fleetCappedFile)
+await page.goto(base + '/settings', { waitUntil: 'networkidle' })
+const guardrails = page.locator('section.plan-guardrails')
+await guardrails.locator('.cap-banner').waitFor({ timeout: 15000 })
+const guardrailsFile = `${outDir}/settings-plan-guardrails.png`
+await guardrails.screenshot({ path: guardrailsFile })
+taken.push(guardrailsFile)
+// A capped loop's own pane says why its wake is the window's reset.
+const cappedLoop = /\/api\/loops\/gardener$/
+await page.route(cappedLoop, async (route) => {
+  const loop = await (await route.fetch()).json()
+  route.fulfill({ json: { ...loop, state: 'capped', capped_until: capUntil } })
+})
+await page.goto(base + '/loops/gardener', { waitUntil: 'networkidle' })
+const wakePanel = page.locator('aside .side-panel').first()
+await wakePanel.locator('.wake-note').waitFor({ timeout: 15000 })
+const loopCappedFile = `${outDir}/loop-capped.png`
+await wakePanel.screenshot({ path: loopCappedFile })
+taken.push(loopCappedFile)
+await page.unroute(cappedLoop)
+await page.unroute('**/api/settings')
+await page.unroute('**/api/loops')
+await page.unroute('**/api/plan-usage')
+
 // The first-run page (#581) in the states its cards draw. The fixture
 // hub has done all three pillars, so it opens on Fleet; these answers stand
 // in for a hub that has not, worded as #580's reasons are. Every other read

@@ -1139,6 +1139,10 @@ export default function LoopDetail() {
     // backoff before saying there is no such loop (#349).
     retry: (failureCount, error) => !needsLogin(error) && !isMissing(error) && failureCount < 3,
   })
+  // The plan cap (#651): a loop in its turn when the cap has fired sleeps at
+  // the end of it, so the pane says so where a wake would be expected.
+  const { data: planUsage } = useQuery({ queryKey: ['plan-usage'], queryFn: api.planUsage })
+  const fleetCapped = !!planUsage?.cap
   const { data: events, error: eventsError } = useQuery({
     queryKey: ['events', name],
     queryFn: () => api.events(name),
@@ -1645,6 +1649,14 @@ export default function LoopDetail() {
               <div className="countdown awake">awake</div>
             ) : (
               <Countdown at={nextWake(loop)} />
+            )}
+            {loop.state === 'capped' ? (
+              <div className="wake-note">
+                Capped: the plan cap holds it until the window resets. Messages wait in its inbox.
+              </div>
+            ) : (
+              inTurn(loop.state) &&
+              fleetCapped && <div className="wake-note">Then capped: it sleeps when this turn ends.</div>
             )}
             <div className="row">
               <span className="k">today</span>

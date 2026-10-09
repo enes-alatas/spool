@@ -36,9 +36,12 @@ export interface LoopView {
   created_at: number
   updated_at: number
   // busy, idle, waking, draining, asleep, paused, workstation_off,
-  // workstation_down or model_unrecognized (#289).
+  // workstation_down, model_unrecognized (#289) or capped (#650).
   state: string
   next_tick_at: number
+  // When a capped loop wakes: the reset that lifts the fleet's plan cap
+  // (#650). 0 while the loop is not capped.
+  capped_until: number
   cost_today_usd: number
   // The calendar day cost_today_usd sums, YYYY-MM-DD in the server's zone.
   // The boundary is the operator's midnight, not UTC's, so the client shows
@@ -479,6 +482,21 @@ export interface PlanUsage {
   as_of?: number
   source?: string
   unknown?: string
+  // The fleet's plan cap (#650): set while a window is over its threshold
+  // and every loop sleeps at its next quiet boundary; null or absent while
+  // nothing is capped.
+  cap?: PlanCap | null
+  // While a Resume now holds (#650): the cap stays off until this reset.
+  resumed_until?: number
+}
+
+export type PlanWindowKey = 'five_hour' | 'seven_day'
+
+export interface PlanCap {
+  // The windows over their thresholds.
+  windows: PlanWindowKey[]
+  // When the loops wake: the latest reset among those windows.
+  until: number
 }
 
 // One limit window. used_percent can run past 100. A window whose reset has
@@ -488,6 +506,9 @@ export interface PlanWindow {
   used_percent: number
   resets_at?: number
   reset?: boolean
+  // The window's cap threshold as a percentage; 0 or absent when its cap
+  // is off (#650).
+  cap_percent?: number
 }
 
 export interface Settings {
@@ -506,6 +527,10 @@ export interface Settings {
   // model's window, defaults included.
   context_arm_percent: number
   context_force_percent: number
+  // The plan cap's thresholds (#650): a percentage of each window, 90 by
+  // default; 0 turns that window's cap off.
+  plan_cap_five_hour_percent: number
+  plan_cap_seven_day_percent: number
 }
 
 // Which build this Spool is, mirrored from internal/version.Info. Served
@@ -871,6 +896,15 @@ export const api = {
   logout: () => req<void>('/api/logout', { method: 'POST' }),
   settings: () => req<Settings>('/api/settings'),
   planUsage: () => req<PlanUsage>('/api/plan-usage'),
+  // Both thresholds go in one write, as the rotation pair does; 0 is off.
+  setPlanCaps: (fiveHour: number, sevenDay: number) =>
+    req<Settings>('/api/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ plan_cap_five_hour_percent: fiveHour, plan_cap_seven_day_percent: sevenDay }),
+    }),
+  // Lifts the cap until the next reset of the windows that set it, without
+  // touching the thresholds (#650). Answers with the plan read.
+  resumePlanCap: () => req<PlanUsage>('/api/plan-cap/resume', { method: 'POST' }),
   // The token is write-only: send '' to clear it. Presence comes back in Settings.
   setClaudeToken: (token: string) =>
     req<Settings>('/api/settings', {

@@ -8,6 +8,8 @@ import { loginError } from '../session'
 import { HarnessCheck } from '../components/HarnessCheck'
 import { EgressSection } from '../components/EgressSection'
 import { loginCheckTone } from '../onboarding'
+import { CapBanner, useMinuteClock } from '../components/PlanUsage'
+import { capFields, capGate, capIdleStatus, capReason, capValue, type CapDraft } from '../planCap'
 
 export default function Settings() {
   const { data: settings, error: loadError } = useQuery({ queryKey: ['settings'], queryFn: api.settings })
@@ -17,6 +19,7 @@ export default function Settings() {
       <h1>Settings</h1>
       <ClaudeToken settings={settings} loadError={loadError} />
       <CustomModels />
+      <PlanGuardrails settings={settings} loadError={loadError} />
       <RotationThresholds settings={settings} loadError={loadError} />
       <EgressSection />
       <SessionSection />
@@ -212,6 +215,119 @@ function LoginCheck() {
       </span>
       <HarnessCheck pillar={harness} />
     </div>
+  )
+}
+
+// The plan cap's two thresholds (#650, #651): past either window's, every
+// loop sleeps at the end of its turn and wakes when that window resets. The
+// status line over them says whether the cap has fired, and while it has,
+// Resume now lifts it until the reset without touching the numbers.
+function PlanGuardrails({ settings, loadError }: { settings?: SettingsView; loadError: Error | null }) {
+  const qc = useQueryClient()
+  const { data: usage } = useQuery({ queryKey: ['plan-usage'], queryFn: api.planUsage })
+  // As the rotation pair: the stored values are the truth, a draft overlays.
+  const [draft, setDraft] = useState<CapDraft | null>(null)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const stored = settings
+    ? capFields(settings.plan_cap_five_hour_percent, settings.plan_cap_seven_day_percent)
+    : null
+  const { shown, changed, sendable } = capGate(stored, draft)
+  const now = useMinuteClock()
+  const capped = capReason(usage, now)
+  const idle = capIdleStatus(usage, now)
+
+  const edit = (patch: Partial<CapDraft>) => {
+    if (!shown) return
+    setDraft({ ...shown, ...patch })
+  }
+
+  const save = async () => {
+    if (!draft) return
+    setBusy(true)
+    setError('')
+    try {
+      // Raising or clearing a threshold re-checks the cap and may wake the
+      // fleet, so the plan read and the loops are read again with it.
+      const saved = await api.setPlanCaps(capValue(draft.fiveHour) ?? 0, capValue(draft.sevenDay) ?? 0)
+      setDraft(null)
+      qc.setQueryData(['settings'], saved)
+      void qc.invalidateQueries({ queryKey: ['plan-usage'] })
+      void qc.invalidateQueries({ queryKey: ['loops'] })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="plan-guardrails">
+      <h2 className="section-head">Plan guardrails</h2>
+      <p className="page-lede">
+        When the Claude plan's usage reaches a threshold, every loop sleeps at the end of its turn and wakes
+        when that window resets. Nothing is lost: workstations stay up and messages wait in the inbox. Until a
+        loop has reported the plan's usage, the cap does not fire.
+      </p>
+
+      <div className="form">
+        {capped ? <CapBanner reason={capped} /> : idle && <div className="cap-idle">{idle}</div>}
+
+        <div className="field-row">
+          <div className="field">
+            <label htmlFor="cap-five-hour">5-hour window (%)</label>
+            <input
+              id="cap-five-hour"
+              inputMode="numeric"
+              placeholder="off"
+              value={shown?.fiveHour ?? ''}
+              disabled={!shown || busy}
+              onChange={(e) => edit({ fiveHour: e.target.value })}
+            />
+            <div className="hint">
+              At this, loops sleep until the 5-hour window resets. Empty turns it off.
+            </div>
+          </div>
+          <div className="field">
+            <label htmlFor="cap-seven-day">7-day window (%)</label>
+            <input
+              id="cap-seven-day"
+              inputMode="numeric"
+              placeholder="off"
+              value={shown?.sevenDay ?? ''}
+              disabled={!shown || busy}
+              onChange={(e) => edit({ sevenDay: e.target.value })}
+            />
+            <div className="hint">
+              At this, loops sleep until the weekly window resets. Empty turns it off.
+            </div>
+          </div>
+        </div>
+
+        {!settings && loadError && (
+          <div className="form-error" role="alert">
+            {loadFailure(loadError)}
+          </div>
+        )}
+        {error && (
+          <div className="form-error" role="alert">
+            {error}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn primary" onClick={save} disabled={busy || !sendable}>
+            {busy ? 'Saving…' : 'Save thresholds'}
+          </button>
+          {changed && (
+            <button className="btn" onClick={() => setDraft(null)} disabled={busy}>
+              Cancel
+            </button>
+          )}
+        </div>
+      </div>
+    </section>
   )
 }
 

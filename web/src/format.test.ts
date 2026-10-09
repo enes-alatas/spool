@@ -113,6 +113,12 @@ describe('nextWake', () => {
     expect(nextWake({ next_tick_at: 1000, model_refusal: 'refused' })).toBe(0)
     expect(nextWake({ next_tick_at: 1000, model_refusal: '' })).toBe(1000)
   })
+
+  // #651: the cap's reset is the wake, whatever the loop's own schedule says.
+  it("shows the cap lifting as a capped loop's wake", () => {
+    expect(nextWake({ next_tick_at: 1000, model_refusal: '', capped_until: 5000 })).toBe(5000)
+    expect(nextWake({ next_tick_at: 1000, model_refusal: '', capped_until: 0 })).toBe(1000)
+  })
 })
 
 describe('inTurn', () => {
