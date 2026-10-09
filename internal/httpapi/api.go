@@ -133,7 +133,15 @@ type Server struct {
 }
 
 func (server *Server) Handler() http.Handler {
-	mux := http.NewServeMux()
+	// Every /api route is behind the guard: a route that is added later and
+	// forgets to authenticate is the failure this shape makes impossible
+	// (#239).
+	return server.guard(server.routes().ServeMux)
+}
+
+// routes registers every route the operator listener serves.
+func (server *Server) routes() *routeMux {
+	mux := &routeMux{ServeMux: http.NewServeMux()}
 
 	mux.HandleFunc("GET /api/health", server.handleHealth)
 	mux.HandleFunc("GET /api/version", server.handleVersion)
@@ -235,14 +243,11 @@ func (server *Server) Handler() http.Handler {
 
 	// Registered in every build, not just one that embeds the control
 	// room, so tier 2 sees what the shipped binary answers (#245).
-	mux.HandleFunc("/api/", server.apiFallback(mux))
+	mux.HandleFunc("/api/", server.apiFallback(mux.ServeMux))
 	if server.WebFS != nil {
 		mux.HandleFunc("/", server.handleUI)
 	}
-	// Every /api route is behind the guard, including the ones registered
-	// above: a route that is added later and forgets to authenticate is the
-	// failure this shape makes impossible (#239).
-	return server.guard(mux)
+	return mux
 }
 
 // MCPHandler is the loop-facing half of the hub, served on its own listener
@@ -1211,7 +1216,7 @@ func (server *Server) handleLoopMessage(w http.ResponseWriter, r *http.Request) 
 	}
 	err := server.Router.Ingest(r.Context(), route.InboundMessage{
 		Origin:       store.OriginWeb,
-		Author:       defaultStr(req.Author, "operator"),
+		Author:       authorOf(r, req.Author),
 		Text:         req.Text,
 		ImplicitTo:   loopRecord.ID,
 		Conversation: dest,
@@ -1552,7 +1557,7 @@ func (server *Server) handleGroupPost(w http.ResponseWriter, r *http.Request) {
 	}
 	err := server.Router.Ingest(r.Context(), route.InboundMessage{
 		Origin:       store.OriginWeb,
-		Author:       defaultStr(req.Author, "operator"),
+		Author:       authorOf(r, req.Author),
 		Text:         req.Text,
 		Conversation: store.ConversationGroup,
 		ReplyToID:    req.ReplyToID,
@@ -1992,8 +1997,9 @@ func (server *Server) handleWorkspaceInspect(w http.ResponseWriter, r *http.Requ
 }
 
 func (server *Server) handleGlobalStream(w http.ResponseWriter, r *http.Request) {
+	who := callerOf(r)
 	serveSSE(w, r, server.Bus, func(item bus.Item) bool {
-		return item.Kind != bus.KindAgentEvent
+		return item.Kind != bus.KindAgentEvent && streamable(who, item)
 	})
 }
 
@@ -2002,8 +2008,11 @@ func (server *Server) handleLoopStream(w http.ResponseWriter, r *http.Request) {
 	if loopRecord == nil {
 		return
 	}
-	id := loopRecord.ID
+	id, who := loopRecord.ID, callerOf(r)
 	serveSSE(w, r, server.Bus, func(item bus.Item) bool {
+		if !streamable(who, item) {
+			return false
+		}
 		if item.Kind == bus.KindMessage {
 			if mp, ok := item.Payload.(*route.MessagePayload); ok {
 				if mp.FromLoopID == id {

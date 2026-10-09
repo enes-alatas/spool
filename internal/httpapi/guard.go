@@ -60,7 +60,7 @@ func openPath(path string) bool {
 // guard is the middleware every /api route is served behind. Paths outside
 // /api — the control room's own assets — are left alone: the login page has
 // to load before there is anything to authenticate with.
-func (server *Server) guard(next http.Handler) http.Handler {
+func (server *Server) guard(next *http.ServeMux) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.URL.Path, "/api/") {
 			next.ServeHTTP(w, r)
@@ -110,6 +110,11 @@ func (server *Server) guard(next http.Handler) http.Handler {
 		if caller.user != nil && caller.user.MustChangePassword && !changeExempt(r.URL.Path) {
 			server.jsonErrCode(w, http.StatusForbidden, codePasswordChangeRequired,
 				"change the one-time password first")
+			return
+		}
+		if !allows(next, r, caller) {
+			server.jsonErrCode(w, http.StatusForbidden, codeForbiddenRole,
+				"a %s may not do this", roleOf(caller))
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), callerKey{}, caller)))

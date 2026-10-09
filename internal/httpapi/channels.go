@@ -143,7 +143,7 @@ func (server *Server) handleChannelPost(w http.ResponseWriter, r *http.Request) 
 	}
 	err := server.Router.Ingest(r.Context(), route.InboundMessage{
 		Origin:       store.OriginWeb,
-		Author:       defaultStr(req.Author, "operator"),
+		Author:       authorOf(r, req.Author),
 		Text:         req.Text,
 		Conversation: store.ConversationGroup,
 		Channel:      name,
