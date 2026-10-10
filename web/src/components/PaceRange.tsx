@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { movePace, paceLabel, paceStops, typeTick, type Pace } from '../pace'
 
 // One track, three handles: min wake, the tick interval and max wake (#523).
@@ -62,18 +62,34 @@ export function PaceRange({
         <span>{paceLabel(stops[0])}</span>
         <span>{paceLabel(stops[last])}</span>
       </div>
-      <div className="pace-legend">
-        <span>
-          <span className="pace-key pace-key-range" /> min wake <b>{paceLabel(pace.min)}</b>
-        </span>
-        <span>
-          <span className="pace-key pace-key-tick" /> tick{' '}
-          <TickBox pace={pace} onChange={onChange} disabled={disabled} />
-        </span>
-        <span>
-          <span className="pace-key pace-key-range" /> max wake <b>{paceLabel(pace.max)}</b>
-        </span>
-      </div>
+      <PaceLegend pace={pace} tick={<TickBox pace={pace} onChange={onChange} disabled={disabled} />} />
+    </div>
+  )
+}
+
+// The pace as it stands, for a session that may not change it (#679): the
+// legend alone, with the tick as text. A track whose handles do not move
+// would read as broken rather than as read-only.
+export function PaceFacts({ pace }: { pace: Pace }) {
+  return (
+    <div className="pace-range">
+      <PaceLegend pace={pace} tick={<b>{paceLabel(pace.tick)}</b>} />
+    </div>
+  )
+}
+
+function PaceLegend({ pace, tick }: { pace: Pace; tick: ReactNode }) {
+  return (
+    <div className="pace-legend">
+      <span>
+        <span className="pace-key pace-key-range" /> min wake <b>{paceLabel(pace.min)}</b>
+      </span>
+      <span>
+        <span className="pace-key pace-key-tick" /> tick {tick}
+      </span>
+      <span>
+        <span className="pace-key pace-key-range" /> max wake <b>{paceLabel(pace.max)}</b>
+      </span>
     </div>
   )
 }

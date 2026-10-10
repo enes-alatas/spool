@@ -64,6 +64,31 @@ const changeFile = `${outDir}/change-password.png`
 await door.locator('.login-card').screenshot({ path: changeFile })
 await signedOut.close()
 
+// The member view (#679), as sam: Fleet with no New loop, a loop's page
+// with Wake now and the composer as its only actions, and a Settings that
+// is the account and the build.
+const memberCtx = await browser.newContext({ viewport: { width: 1180, height: 900 }, deviceScaleFactor: 2 })
+const member = await memberCtx.newPage()
+await member.goto(base + '/', { waitUntil: 'networkidle' })
+await member.fill('#username', 'sam')
+await member.fill('#password', password)
+await member.click('button[type=submit]')
+await member.waitForSelector('.topbar', { timeout: 15000 })
+const memberShots = [
+  { name: 'member-fleet', path: '/', wait: '.fleet-row' },
+  { name: 'member-loop', path: '/loops/gardener', wait: '.side-panel' },
+  { name: 'member-settings', path: '/settings', wait: '.account-name' },
+]
+const memberFiles = []
+for (const shot of memberShots) {
+  await member.goto(base + shot.path, { waitUntil: 'networkidle' })
+  await member.waitForSelector(shot.wait, { timeout: 15000 })
+  const file = `${outDir}/${shot.name}.png`
+  await member.screenshot({ path: file, fullPage: true })
+  memberFiles.push(file)
+}
+await memberCtx.close()
+
 await page.goto(base + '/', { waitUntil: 'networkidle' })
 await page.fill('#username', 'admin')
 await page.fill('#password', password)
@@ -97,7 +122,7 @@ const shots = [
   { name: 'undelivered', path: '/loops/archivist?pane=undelivered', wait: '.undelivered-row' },
 ]
 
-const taken = [signinFile, changeFile, accountFile]
+const taken = [signinFile, changeFile, accountFile, ...memberFiles]
 for (const shot of shots) {
   await page.goto(base + shot.path, { waitUntil: 'networkidle' })
   await page.waitForSelector(shot.wait, { timeout: 15000 })

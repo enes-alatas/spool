@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from './api'
 import { useGlobalStream } from './stream'
 import { SpoolGlyph } from './components/Spool'
+import { useMay } from './components/Session'
 import { loopsNeedingClaudeToken, missingTokenNotice } from './claudeToken'
 import {
   AccessIcon,
@@ -44,6 +45,7 @@ function Destinations({ variant }: { variant: 'top' | 'bottom' }) {
 
 export default function App() {
   useGlobalStream()
+  const may = useMay()
   const { data: loops } = useQuery({ queryKey: ['loops'], queryFn: api.loops })
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings })
   const loc = useLocation()
@@ -66,16 +68,25 @@ export default function App() {
         <Destinations variant="top" />
 
         <div className="meta">
-          <Link to="/new" className="new-loop">
-            <span aria-hidden>+ </span>New loop
-          </Link>
+          {may('manage') && (
+            <Link to="/new" className="new-loop">
+              <span aria-hidden>+ </span>New loop
+            </Link>
+          )}
         </div>
       </header>
 
       <main className="main" key={loc.pathname}>
         {tokenMissing && (
           <div className="fleet-alert">
-            {missingTokenNotice(needToken)} <Link to="/settings">Add one in Settings</Link>.
+            {missingTokenNotice(needToken)}
+            {/* Only an admin can add one, so only an admin is sent to. */}
+            {may('manage') && (
+              <>
+                {' '}
+                <Link to="/settings">Add one in Settings</Link>.
+              </>
+            )}
           </div>
         )}
         <Outlet />

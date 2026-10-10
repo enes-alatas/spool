@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ApiError } from '../api'
 import { SenderRow, slackEntry, telegramEntry, type SenderEntry } from '../components/SenderRow'
+import { useMay } from '../components/Session'
 
 // One surface's allowlist: who is waiting, then everyone else.
 function SenderList({
@@ -43,6 +44,7 @@ function SenderList({
 }
 
 export default function Access() {
+  const may = useMay()
   const qc = useQueryClient()
   const telegram = useQuery({ queryKey: ['senders'], queryFn: api.senders })
   // A hub from before the Slack surface has no such route. That is not a
@@ -60,8 +62,11 @@ export default function Access() {
       <p className="page-lede">
         Only people on these lists can talk to your loops from Telegram or Slack. Being in a group or a
         workspace is not enough. Anyone else who messages a bot is silently ignored and appears here as
-        pending. To allow one, ask them for the pairing code a bot sent them when they messaged it directly,
-        and type it in. Blocked senders are dropped without any reply.
+        pending.{' '}
+        {may('manage')
+          ? 'To allow one, ask them for the pairing code a bot sent them when they messaged it directly, and type it in. '
+          : 'An admin allows them. '}
+        Blocked senders are dropped without any reply.
       </p>
 
       <h2 className="section-head">Telegram</h2>

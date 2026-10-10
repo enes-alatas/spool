@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, PlanWindow } from '../api'
 import { formatAgo, formatResets, formatUsd, gradedColor } from '../format'
 import { capReason } from '../planCap'
+import { useMay } from './Session'
 
 // The relative times on the strip are minutes, so a render a minute keeps
 // them honest without a timer per second.
@@ -93,6 +94,8 @@ export function PlanUsageStrip({ spentToday, costDayTitle }: { spentToday: numbe
 // here, where the operator notices, rather than a detour to Settings.
 export function CapBanner({ reason }: { reason: string }) {
   const resume = useResume()
+  // Lifting the cap is an admin's (#679); a member is told why it holds.
+  const manage = useMay()('manage')
   return (
     <div className="cap-banner" role="status">
       <span>
@@ -104,9 +107,11 @@ export function CapBanner({ reason }: { reason: string }) {
           </span>
         )}
       </span>
-      <button className="btn" onClick={() => resume.mutate()} disabled={resume.isPending}>
-        {resume.isPending ? 'Resuming…' : 'Resume now'}
-      </button>
+      {manage && (
+        <button className="btn" onClick={() => resume.mutate()} disabled={resume.isPending}>
+          {resume.isPending ? 'Resuming…' : 'Resume now'}
+        </button>
+      )}
     </div>
   )
 }

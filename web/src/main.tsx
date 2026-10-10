@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { createBrowserRouter, Navigate, RouterProvider } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import App from './App'
-import { Session } from './components/Session'
+import { AdminOnly, Session } from './components/Session'
 import { needsLogin } from './session'
 import Home from './pages/Home'
 import LoopDetail from './pages/LoopDetail'
@@ -36,7 +36,14 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <Home /> },
       { path: 'loops/:name', element: <LoopDetail /> },
-      { path: 'new', element: <NewLoop /> },
+      {
+        path: 'new',
+        element: (
+          <AdminOnly>
+            <NewLoop />
+          </AdminOnly>
+        ),
+      },
       { path: 'activity', element: <Activity /> },
       // Undelivered was a page of its own until it became a pane of each loop
       // (#281). A saved link lands on Fleet, where every loop with a failure

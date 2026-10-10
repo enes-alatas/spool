@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useMay } from '../components/Session'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ApiError, FleetRule, RulesBudget } from '../api'
 import { CharCount } from '../components/CharCount'
@@ -115,6 +116,9 @@ function RuleEditor({
 
 export default function Rules() {
   const qc = useQueryClient()
+  // Writing the rules is an admin's (#679); a member reads what every loop
+  // carries.
+  const manage = useMay()('manage')
   const { data, isPending, error: loadError } = useQuery({ queryKey: ['rules'], queryFn: api.rules })
   const [editing, setEditing] = useState('')
   const [error, setError] = useState('')
@@ -184,27 +188,29 @@ export default function Rules() {
           <div className="rule-head">
             <span className="rule-title">{rule.title}</span>
             {!rule.enabled && <span className="rule-badge">disabled</span>}
-            <span className="rule-actions">
-              <button
-                className="btn sm"
-                onClick={() => actOnRule(rule.id, () => api.patchRule(rule.id, { enabled: !rule.enabled }))}
-              >
-                {rule.enabled ? 'Disable' : 'Enable'}
-              </button>
-              <button className="btn sm" onClick={() => setEditing(editing === rule.id ? '' : rule.id)}>
-                {editing === rule.id ? 'Close' : 'Edit'}
-              </button>
-              <button
-                className="btn sm danger"
-                onClick={() => {
-                  if (confirm(`Delete the rule "${rule.title}"? Every loop drops it on its next wake.`)) {
-                    act(() => api.deleteRule(rule.id))
-                  }
-                }}
-              >
-                Delete
-              </button>
-            </span>
+            {manage && (
+              <span className="rule-actions">
+                <button
+                  className="btn sm"
+                  onClick={() => actOnRule(rule.id, () => api.patchRule(rule.id, { enabled: !rule.enabled }))}
+                >
+                  {rule.enabled ? 'Disable' : 'Enable'}
+                </button>
+                <button className="btn sm" onClick={() => setEditing(editing === rule.id ? '' : rule.id)}>
+                  {editing === rule.id ? 'Close' : 'Edit'}
+                </button>
+                <button
+                  className="btn sm danger"
+                  onClick={() => {
+                    if (confirm(`Delete the rule "${rule.title}"? Every loop drops it on its next wake.`)) {
+                      act(() => api.deleteRule(rule.id))
+                    }
+                  }}
+                >
+                  Delete
+                </button>
+              </span>
+            )}
           </div>
           {ruleErrors[rule.id] && (
             <div className="form-error" role="alert">
@@ -227,8 +233,12 @@ export default function Rules() {
         </div>
       ))}
 
-      <h3 style={{ marginTop: 24 }}>New rule</h3>
-      <RuleEditor budget={data.budget} onDone={refresh} />
+      {manage && (
+        <>
+          <h3 style={{ marginTop: 24 }}>New rule</h3>
+          <RuleEditor budget={data.budget} onDone={refresh} />
+        </>
+      )}
     </div>
   )
 }

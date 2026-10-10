@@ -37,7 +37,7 @@ export function loopsOutside(members: string[], loops: string[]): string[] {
 
 // Where a message was said, as a loop names it to send there (store
 // Message.Destination): a channel besides the fleet channel as
-// channel:<name>, and the fleet channel and the private conversations by
+// channel:<name>, and the fleet channel, the control room and owner DMs by
 // their kind.
 export function whereSaid(m: Pick<ChatMessage, 'conversation' | 'channel' | 'origin'>): string {
   if (m.conversation === 'group' && m.channel && m.channel !== FLEET_CHANNEL) return `channel:${m.channel}`

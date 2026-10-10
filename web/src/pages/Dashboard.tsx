@@ -15,6 +15,7 @@ import {
 import { StateDot } from '../components/Spool'
 import { ChannelChat } from '../components/ChannelChat'
 import { PlanUsageStrip } from '../components/PlanUsage'
+import { useMay } from '../components/Session'
 import { undeliveredNote } from '../messages'
 import { workstationNote } from '../workstation'
 import { useEffect, useState } from 'react'
@@ -194,6 +195,7 @@ function costDayTitle(loops: LoopView[]): string | undefined {
 }
 
 export default function Dashboard() {
+  const may = useMay()
   const { data: loops, isLoading, isError, error } = useQuery({ queryKey: ['loops'], queryFn: api.loops })
   // the rotation thresholds the gauge colours mean something against
   const { data: thresholds } = useQuery({ queryKey: ['settings'], queryFn: api.settings })
@@ -266,12 +268,18 @@ export default function Dashboard() {
 
           {loops && loops.length === 0 && (
             <div className="empty">
-              No loops yet. Create one and give it a mission.
-              <div style={{ marginTop: 14 }}>
-                <Link to="/new" className="btn primary">
-                  New loop
-                </Link>
-              </div>
+              {may('manage') ? (
+                <>
+                  No loops yet. Create one and give it a mission.
+                  <div style={{ marginTop: 14 }}>
+                    <Link to="/new" className="btn primary">
+                      New loop
+                    </Link>
+                  </div>
+                </>
+              ) : (
+                'No loops yet. An admin creates them.'
+              )}
             </div>
           )}
 

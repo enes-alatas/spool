@@ -1,6 +1,7 @@
 import { useId, useState } from 'react'
 import { api, type SlackSender, type TGSender } from '../api'
 import { checkPairCode, pairInput } from '../pairing'
+import { useMay } from './Session'
 
 // One sender as Access draws it, whichever surface they came from, and as
 // the first-run Chat surface dialog draws whoever is waiting (#589). The
@@ -25,6 +26,8 @@ export function SenderRow({ s, refresh }: { s: SenderEntry; refresh: () => void 
   const check = checkPairCode(typed, s.pair_code)
   const hintId = useId()
   const allow = () => s.allow().then(refresh)
+  // Allowing, blocking and removing are an admin's (#679).
+  const manage = useMay()('manage')
   return (
     <div className="feed-item" style={{ alignItems: 'center' }}>
       {/* Here the dot is the only thing carrying the status — the text beside
@@ -39,40 +42,42 @@ export function SenderRow({ s, refresh }: { s: SenderEntry; refresh: () => void 
       <span className="text sender-meta">
         first seen via {s.first_seen_via || 'unknown'} · {new Date(s.created_at).toLocaleDateString()}
       </span>
-      <span style={{ marginLeft: 'auto', display: 'flex', gap: 8, flex: 'none', alignItems: 'center' }}>
-        {pending && (
-          <input
-            className="pair-input"
-            value={typed}
-            onChange={(e) => setTyped(pairInput(e.target.value, s.pair_code))}
-            onKeyDown={(e) => e.key === 'Enter' && check === 'match' && allow()}
-            placeholder="code"
-            aria-label={`The pairing code ${s.name} was sent`}
-            aria-invalid={check === 'wrong'}
-            aria-describedby={check === 'partial' || check === 'wrong' ? hintId : undefined}
-            autoComplete="off"
-            autoCapitalize="characters"
-            spellCheck={false}
-          />
-        )}
-        {s.status !== 'allowed' && (
-          <button
-            className={pending ? 'btn sm primary' : 'btn sm'}
-            disabled={pending && check !== 'match'}
-            onClick={allow}
-          >
-            Allow
+      {manage && (
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 8, flex: 'none', alignItems: 'center' }}>
+          {pending && (
+            <input
+              className="pair-input"
+              value={typed}
+              onChange={(e) => setTyped(pairInput(e.target.value, s.pair_code))}
+              onKeyDown={(e) => e.key === 'Enter' && check === 'match' && allow()}
+              placeholder="code"
+              aria-label={`The pairing code ${s.name} was sent`}
+              aria-invalid={check === 'wrong'}
+              aria-describedby={check === 'partial' || check === 'wrong' ? hintId : undefined}
+              autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+            />
+          )}
+          {s.status !== 'allowed' && (
+            <button
+              className={pending ? 'btn sm primary' : 'btn sm'}
+              disabled={pending && check !== 'match'}
+              onClick={allow}
+            >
+              Allow
+            </button>
+          )}
+          {s.status !== 'blocked' && (
+            <button className="btn sm danger" onClick={() => s.block().then(refresh)}>
+              Block
+            </button>
+          )}
+          <button className="btn sm" onClick={() => s.remove().then(refresh)}>
+            Remove
           </button>
-        )}
-        {s.status !== 'blocked' && (
-          <button className="btn sm danger" onClick={() => s.block().then(refresh)}>
-            Block
-          </button>
-        )}
-        <button className="btn sm" onClick={() => s.remove().then(refresh)}>
-          Remove
-        </button>
-      </span>
+        </span>
+      )}
       {/* Says where the code comes from once the operator starts typing one,
           and that it is wrong once a full-length one is not the code. Hidden
           before that, so a row nobody is allowing stays one line. */}
