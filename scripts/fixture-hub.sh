@@ -56,9 +56,15 @@ go build -o "$dir/fakeclaude" ./cmd/fakeclaude
 # The fixture's bots carry a synthetic token, so the hub starts a poller for
 # each. Port 9 on loopback is closed: every call fails at once and nothing
 # leaves the machine, where the default base would send them to Telegram.
+#
+# The fixture's docker loops have no container, so the first workstation
+# poll, 45 seconds in, marks them down whatever docker the host runs. A day
+# between polls keeps a long walk, the demo recording say, on the fixture's
+# state rather than on the host's.
 ./bin/spool --data-dir "$dir" \
 	--listen "127.0.0.1:$port" --mcp-listen "127.0.0.1:$((port + 1))" \
 	--runtime bare --egress-image "" --claude-bin "$dir/fakeclaude" \
+	--workstation-health-sec 86400 \
 	--telegram-api-base "http://127.0.0.1:9" >"$dir/hub.log" 2>&1 &
 hub=$!
 
