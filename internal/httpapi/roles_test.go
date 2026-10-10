@@ -21,11 +21,11 @@ func TestEveryRouteHasARole(t *testing.T) {
 		}
 		registered[pattern] = true
 		if _, ok := routeRoles[pattern]; !ok {
-			t.Errorf("route %q is in neither memberRoutes nor adminRoutes", pattern)
+			t.Errorf("route %q is in none of memberRoutes, adminRoutes and ownerRoutes", pattern)
 		}
 	}
 	listed := map[string]bool{}
-	for _, pattern := range append(append([]string{}, memberRoutes...), adminRoutes...) {
+	for _, pattern := range append(append(append([]string{}, memberRoutes...), adminRoutes...), ownerRoutes...) {
 		if listed[pattern] {
 			t.Errorf("route %q is listed twice", pattern)
 		}
@@ -37,7 +37,8 @@ func TestEveryRouteHasARole(t *testing.T) {
 }
 
 // TestRolesRankOverTheTable: a member reaches member routes only, an admin
-// and the operator token reach both, and a route the table does not name,
+// member and admin routes, an owner and the operator token all three, and
+// a route the table does not name,
 // or a role the hub does not know, opens nothing.
 func TestRolesRankOverTheTable(t *testing.T) {
 	mux := (&Server{}).routes().ServeMux
@@ -59,6 +60,10 @@ func TestRolesRankOverTheTable(t *testing.T) {
 		{"POST", "/api/loops", admin, true},
 		{"PUT", "/api/settings", owner, true},
 		{"DELETE", "/api/loops/scout", token, true},
+		{"GET", "/api/users", admin, false},
+		{"PATCH", "/api/users/dana", admin, false},
+		{"POST", "/api/users", owner, true},
+		{"DELETE", "/api/users/dana", token, true},
 		{"GET", "/api/loops", stranger, false},
 	} {
 		r := httptest.NewRequest(test.method, test.path, nil)
