@@ -174,10 +174,11 @@ func (server *Server) handleMePassword(w http.ResponseWriter, r *http.Request) {
 // authorOf is the author a message posted through r is stored with. A
 // signed-in user's message carries their name, whatever the body claims,
 // so a loop never takes a member's word for the operator's. The operator
-// token has no user, and keeps the author it names, "operator" by default.
+// token has no user, and keeps the author it names, users.OperatorName by
+// default.
 func authorOf(r *http.Request, claimed string) string {
 	if who := callerOf(r); who != nil && who.user != nil {
 		return who.user.Name
 	}
-	return defaultStr(claimed, "operator")
+	return defaultStr(claimed, users.OperatorName)
 }

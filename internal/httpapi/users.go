@@ -202,7 +202,7 @@ func (server *Server) confirmed(w http.ResponseWriter, r *http.Request, password
 // userErr answers a refused change to the hub's users.
 func (server *Server) userErr(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, users.ErrBadName):
+	case errors.Is(err, users.ErrBadName), errors.Is(err, users.ErrReservedName):
 		server.jsonErrCode(w, http.StatusBadRequest, codeBadName, "%v", err)
 	case errors.Is(err, users.ErrBadRole):
 		server.jsonErrCode(w, http.StatusBadRequest, codeBadRole, "%v", err)

@@ -1,6 +1,6 @@
 # ADR-0048: The hub has users, who sign in with a username and password
 
-Date: 2026-10-09 · Status: accepted (operator decisions of 2026-10-04, 2026-10-07 and 2026-10-09, recorded on #582) · Amended: 2026-10-09 (item 1: the roles are enforced, #677); 2026-10-10 (item 1: a member reads no pairing code, #689); 2026-10-10 (item 7: owners manage users on the API, #690) · Supersedes: ADR-0030 decision 5 in part (the cookie is a session, not the token) · Relates to: ADR-0046
+Date: 2026-10-09 · Status: accepted (operator decisions of 2026-10-04, 2026-10-07 and 2026-10-09, recorded on #582) · Amended: 2026-10-09 (item 1: the roles are enforced, #677); 2026-10-10 (item 1: a member reads no pairing code, #689); 2026-10-10 (item 7: owners manage users on the API, #690); 2026-10-10 (item 1: the hub records who acted, #695) · Supersedes: ADR-0030 decision 5 in part (the cookie is a session, not the token) · Relates to: ADR-0046
 
 ## Context
 
@@ -64,6 +64,12 @@ gathered here. This ADR is the hub half of slice 1. The sign-in pages are
    read every code could vouch for any sender, and only an admin or an
    owner can allow one. Admins, owners and the operator token still read
    every code.
+
+   **Amendment (2026-10-10, #695):** the hub names who did something, and the
+   operator token is named `operator`, as its messages already were.
+   - No user may be named `operator`, so no one passes for the token.
+     `spool user add` and `POST /api/users` refuse the name (400
+     `bad_name`). A hub that already has a user by that name keeps them.
 
 2. **Passwords are hashed with PBKDF2-SHA256 from the Go standard
    library.** That means 600,000 iterations and a random 16-byte salt per

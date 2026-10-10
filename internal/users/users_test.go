@@ -383,6 +383,9 @@ func TestBootstrapResetAndRemove(t *testing.T) {
 	if _, err := users.Add(ctx, "Bad Name", store.RoleMember); !errors.Is(err, ErrBadName) {
 		t.Fatalf("a bad name = %v", err)
 	}
+	if _, err := users.Add(ctx, OperatorName, store.RoleMember); !errors.Is(err, ErrReservedName) {
+		t.Fatalf("the operator token's name = %v; want ErrReservedName", err)
+	}
 	if _, err := users.Add(ctx, "second", store.RoleMember); !errors.Is(err, store.ErrDuplicate) {
 		t.Fatalf("a taken name = %v", err)
 	}
