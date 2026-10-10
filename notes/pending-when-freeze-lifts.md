@@ -355,3 +355,4 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 
 ## 2026-10-10 03:25 — night sweep
 - #681 (#677 roles; members read no owner DM, no raw transcript per Enes 23:24) up with Quinn. #679 Iris tracking the table decisions (events/turns hidden from members). No new issues. Runtime still v0.5.0-6; rebuild due (#676, and #681 when in). Slice 4 (Users on Settings, both halves) files when #681 merges.
+- 07:25: #681 unreviewed since 23:26 → nudged Quinn (ref 3840). No merges, no new issues overnight. Iris on #679 (PR waits on #681), Terra free after #681 → slice 4 backend (Users API) to file when #681 merges; gaps #634, #630, #529 rules 2/3.
