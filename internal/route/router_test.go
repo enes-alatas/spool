@@ -73,7 +73,7 @@ func TestSendBudget(t *testing.T) {
 }
 
 // TestSameConversation: a reply target must belong to the conversation being
-// sent to. Only the group has no loop key; on a private kind an empty key is
+// sent to. Only the group has no loop key; on a per-loop kind an empty key is
 // a backfilled row (migration 0009), not a wildcard — reading it as one
 // would quote another loop's DM into this one (ADR-0025).
 func TestSameConversation(t *testing.T) {

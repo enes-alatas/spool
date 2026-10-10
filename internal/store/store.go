@@ -71,10 +71,10 @@ const (
 	OriginLoop          = "loop"
 
 	// A message's conversation: the unit of privacy and addressing
-	// (ADR-0026). The private kinds are keyed to a loop; group is shared.
+	// (ADR-0026). The per-loop kinds are keyed to a loop; group is shared.
 	ConversationOwnerDM     = "owner_dm"     // a loop's Telegram DM with its owner
 	ConversationGroup       = "group"        // a channel: the fleet channel, or another by Message.Channel
-	ConversationControlRoom = "control_room" // a loop's private web thread
+	ConversationControlRoom = "control_room" // a loop's web thread, read by every hub user
 
 	PacingFixed = "fixed" // orchestrator interval; trailer optional
 	PacingSelf  = "self"  // the loop schedules itself via trailers; interval is a fallback
@@ -404,11 +404,11 @@ type Message struct {
 	// Conversation is the unit of privacy and addressing this message
 	// belongs to: one of the Conversation* constants.
 	Conversation string `json:"conversation"`
-	// ConversationLoopID keys the private conversation kinds (owner_dm,
+	// ConversationLoopID keys the per-loop conversation kinds (owner_dm,
 	// control_room) to their loop; empty for the shared group.
 	ConversationLoopID string `json:"conversation_loop_id,omitempty"`
 	// Channel names the channel a group message was said in, FleetChannel
-	// for the fleet channel; empty for the private kinds, which are in none
+	// for the fleet channel; empty for the per-loop kinds, which are in none
 	// (ADR-0038).
 	Channel string `json:"channel,omitempty"`
 	// ReplyToID is the message this one explicitly replies to (0 = none).
@@ -920,7 +920,7 @@ type MessageStore interface {
 	Traffic(ctx context.Context) ([]SurfaceTraffic, error)
 	List(ctx context.Context, limit int) ([]*Message, error)
 	// ListConversation returns one conversation's messages, newest first.
-	// A private kind — ConversationOwnerDM or ConversationControlRoom — is
+	// A per-loop kind — ConversationOwnerDM or ConversationControlRoom — is
 	// keyed to its loop. ConversationGroup is every channel's, the hub's
 	// rather than any loop's (ADR-0032), so its rows carry no loop key and
 	// it is asked for with loopID ""; ListChannel reads one channel.

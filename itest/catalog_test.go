@@ -82,6 +82,8 @@ func TestCatalogNamesTheOwnerAndDMReadiness(t *testing.T) {
 		"@beta —",
 		"The people who can talk to this fleet",
 		"@mentioning a person in the group is public",
+		"Only owner_dm is kept from the hub's members; every user of this hub\n  reads control_room.",
+		"- Keep what your owner tells you in owner_dm out of control_room as well,",
 	} {
 		if !strings.Contains(before, want) {
 			t.Fatalf("catalog lacks %q before the owner writes:\n%s", want, before)
@@ -120,7 +122,7 @@ func TestPromptDescribesTheLoopsConversations(t *testing.T) {
 		s.message("aster", "who is there")
 		prompt := waitPrompt(t, s, "aster", at).ResultText
 		for _, want := range []string{
-			"    control_room  your private thread",
+			"    control_room  your thread in the Spool web UI, which every user of",
 			"You have no group, so nothing you send fans out",
 			"You have no surface attached, so there is no owner_dm",
 			"You are not in the fleet channel",
