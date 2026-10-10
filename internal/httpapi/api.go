@@ -232,6 +232,12 @@ func (server *Server) routes() *routeMux {
 	mux.HandleFunc("POST /api/logout", server.handleLogout)
 	mux.HandleFunc("GET "+mePath, server.handleMe)
 	mux.HandleFunc("POST "+mePasswordPath, server.handleMePassword)
+	// The hub's users, which only an owner manages (ADR-0048).
+	mux.HandleFunc("GET /api/users", server.handleListUsers)
+	mux.HandleFunc("POST /api/users", server.handleAddUser)
+	mux.HandleFunc("POST /api/users/{name}/reset", server.handleResetUser)
+	mux.HandleFunc("PATCH /api/users/{name}", server.handleSetUserRole)
+	mux.HandleFunc("DELETE /api/users/{name}", server.handleRemoveUser)
 
 	// /mcp and the brokered servers under it live on the loop listener
 	// alone (#238, #622). Saying so explicitly matters because of what is

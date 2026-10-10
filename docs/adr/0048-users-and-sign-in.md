@@ -1,6 +1,6 @@
 # ADR-0048: The hub has users, who sign in with a username and password
 
-Date: 2026-10-09 · Status: accepted (operator decisions of 2026-10-04, 2026-10-07 and 2026-10-09, recorded on #582) · Amended: 2026-10-09 (item 1: the roles are enforced, #677); 2026-10-10 (item 1: a member reads no pairing code, #689) · Supersedes: ADR-0030 decision 5 in part (the cookie is a session, not the token) · Relates to: ADR-0046
+Date: 2026-10-09 · Status: accepted (operator decisions of 2026-10-04, 2026-10-07 and 2026-10-09, recorded on #582) · Amended: 2026-10-09 (item 1: the roles are enforced, #677); 2026-10-10 (item 1: a member reads no pairing code, #689); 2026-10-10 (item 7: owners manage users on the API, #690) · Supersedes: ADR-0030 decision 5 in part (the cookie is a session, not the token) · Relates to: ADR-0046
 
 ## Context
 
@@ -150,6 +150,32 @@ gathered here. This ADR is the hub half of slice 1. The sign-in pages are
      - 401 `bad_credentials` for a wrong current password;
      - 429 `throttled` while the user's name is locked;
      - 400 `no_user` on a token session.
+
+   **Amendment (2026-10-10, #690):** an owner manages users on the API, and
+   no one else may: an admin who could raise anyone, themselves included,
+   would be an owner in all but name. The routes run the rules `spool user`
+   runs, from the same code.
+   - `GET /api/users` is `[{name, role, must_change_password, created_at}]`,
+     never a hash.
+   - `POST /api/users` takes `{name, role}`, `role` defaulting to `member`,
+     and answers 201 with the user and their `one_time_password`.
+     `POST /api/users/{name}/reset` answers the same way and ends the user's
+     sessions. A one-time password is in that response alone, which is
+     `Cache-Control: no-store`, and in no log.
+   - `PATCH /api/users/{name}` takes `{role}`. `DELETE /api/users/{name}`
+     removes a user and ends their sessions.
+   - Granting admin or owner, by adding a user with that role or by raising
+     one to it, takes `current_password` too: the acting owner's password,
+     or the operator token for a caller acting with the token. A stolen
+     session alone can't make its thief an admin. A wrong one counts toward
+     the owner's sign-in lock. Lowering a role, a reset and a removal ask
+     for no password.
+   - They refuse with 400 `bad_name` or `bad_role`, 409 `user_exists`,
+     403 `confirm_password` for a missing or wrong password, 429 `throttled`,
+     404 for an unknown user, and 409 `last_owner` for removing or
+     demoting the hub's only owner. The store checks that last rule in the
+     statement that makes the change, so two owners demoting each other at
+     once can't both get through.
 
 8. **The CLI manages users against the data directory, as `spool token`
    does.**
