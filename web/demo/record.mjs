@@ -130,6 +130,16 @@ const injectCursor = () => {
   else addEventListener('DOMContentLoaded', add)
 }
 
+// The newest shown message in view, and the composer under it: the thread
+// scrolls itself on Fleet, and the whole page scrolls on a loop's.
+const showNewest = () => {
+  window.__showNewest = (behavior) => {
+    const shown = [...document.querySelectorAll('.knot')].filter((k) => k.style.display !== 'none')
+    shown.at(-1)?.scrollIntoView({ block: 'nearest', behavior })
+    document.querySelector('.composer')?.scrollIntoView({ block: 'end', behavior })
+  }
+}
+
 // Move the pointer to an element at a human pace, settle, then click it.
 async function pointAt(page, locator) {
   const box = await locator.boundingBox()
@@ -164,9 +174,12 @@ await login.close()
 // take records one clip. The clock starts when fn is called; mark(label)
 // notes the clip-relative second of a moment, and every mark lands in
 // public/marks.json, which SpoolDemo.tsx cuts and pans on.
+// times holds the clock a message shows in the room, by clip and mark, so
+// the chat pane beside it stamps its bubble with the same minute.
 const marks = {}
-async function take(name, fn) {
-  const ctx = await browser.newContext({ viewport: size, deviceScaleFactor: DPR, storageState })
+const times = {}
+async function take(name, fn, viewport = size) {
+  const ctx = await browser.newContext({ viewport, deviceScaleFactor: DPR, storageState })
   await ctx.addInitScript(injectFonts, fontCSS)
   await ctx.route(`**${EMOJI_PATH}*`, (route) =>
     route.fulfill({
@@ -175,6 +188,7 @@ async function take(name, fn) {
     }),
   )
   await ctx.addInitScript(injectCursor)
+  await ctx.addInitScript(showNewest)
   const page = await ctx.newPage()
   await page.goto('about:blank')
   // A CDP screencast (or a raw CDP screenshot from a fresh session) comes
@@ -193,7 +207,9 @@ async function take(name, fn) {
   })()
   const t0 = Date.now() / 1000
   marks[name] = {}
+  times[name] = {}
   const mark = (label) => (marks[name][label] = +(Date.now() / 1000 - t0).toFixed(2))
+  mark.time = async (label, snippet) => (times[name][label] = await timeOf(page, snippet))
   await fn(page, mark)
   const tEnd = Date.now() / 1000
   recording = false
@@ -287,10 +303,12 @@ await take('create', async (page, mark) => {
   await pointAt(page, create)
   await page.waitForURL('**/loops/scout')
   mark('loop-page')
-  await page.waitForTimeout(1000)
+  await page.waitForTimeout(600)
   const surfaces = page.locator('.side-panel').filter({ has: page.locator('h3', { hasText: /^Surfaces?$/ }) })
   mark('scroll-surfaces')
   await glideTo(page, surfaces)
+  // The composition cuts the glide out: the loop's page now has panels
+  // enough above Surfaces that following the scroll was dead time.
   mark('attach-click')
   await pointAt(page, page.getByRole('button', { name: 'Attach Telegram' }))
   await page.waitForTimeout(300)
@@ -305,20 +323,250 @@ await take('create', async (page, mark) => {
   mark('end')
 })
 
-await take('talk', async (page, mark) => {
-  await page.goto(base + '/loops/gardener', { waitUntil: 'networkidle' })
-  await page.waitForSelector('.timeline')
+// A thread staged to run live: the messages a chat pane will show arriving
+// are hidden when the clip starts, and each comes back on cue, so the room
+// and the drawn chat beside it move together. The fixture holds the
+// messages already; this only decides when they appear.
+const hide = (page, snippets) =>
+  page.evaluate((snippets) => {
+    for (const knot of document.querySelectorAll('.knot')) {
+      if (snippets.some((t) => knot.textContent.includes(t))) knot.style.display = 'none'
+    }
+    window.__showNewest('instant')
+  }, snippets)
+// Show or hide the reactions under the message holding snippet.
+const setReactions = (page, snippet, display) =>
+  page.evaluate(
+    ([snippet, display]) => {
+      for (const knot of document.querySelectorAll('.knot')) {
+        if (!knot.textContent.includes(snippet)) continue
+        for (const r of knot.querySelectorAll('.reactions')) r.style.display = display
+      }
+    },
+    [snippet, display],
+  )
+// The clock on the message holding snippet, as its header shows it.
+const timeOf = (page, snippet) =>
+  page.evaluate((snippet) => {
+    const knot = [...document.querySelectorAll('.knot')].find((k) => k.textContent.includes(snippet))
+    return knot?.querySelector('.who')?.textContent.match(/\d\d:\d\d\s?[AP]M/)?.[0] ?? ''
+  }, snippet)
+const reveal = (page, snippet) =>
+  page.evaluate((snippet) => {
+    for (const knot of document.querySelectorAll('.knot')) {
+      if (knot.textContent.includes(snippet)) knot.style.display = ''
+    }
+    window.__showNewest('smooth')
+  }, snippet)
+// The fleet channel, beside the Telegram group that carries it: rana asks
+// with a screenshot, gardener answers, and the group reacts. The clip is
+// recorded at the size of the window it plays in, so the composition shows
+// all of it at 1:1 rather than cropping a 16:9 page.
+const ASK = 'the install page still tells people'
+const ANSWER = 'Three pages, all fixed'
+await take(
+  'talk',
+  async (page, mark) => {
+    await page.goto(base + '/?view=channel', { waitUntil: 'networkidle' })
+    await page.waitForSelector('.knot')
+    // The photo rana sends in Telegram is the one the room shows her post
+    // carrying.
+    const shot = page.locator('.knot', { hasText: ASK }).locator('img').first()
+    await shot.scrollIntoViewIfNeeded()
+    await shot.screenshot({ path: out + 'install-page.png' })
+    await mark.time('ask', ASK)
+    await mark.time('answer', ANSWER)
+    await hide(page, [ASK, ANSWER, 'the handbook freeze'])
+    await setReactions(page, ANSWER, 'none')
+    await page.waitForTimeout(400)
+    mark('ready')
+    await page.waitForTimeout(1000)
+    await reveal(page, ASK)
+    mark('ask')
+    await page.waitForTimeout(3600)
+    await reveal(page, ANSWER)
+    mark('answer')
+    await page.waitForTimeout(1800)
+    await setReactions(page, ANSWER, '')
+    mark('reactions')
+    await page.waitForTimeout(3000)
+  },
+  { width: 1098, height: 750 },
+)
+
+// A channel of two loops and the operator, docs, on one of the loops'
+// pages, beside the Telegram group that carries it.
+const DOCS = [
+  'the incident write-up template links the old runbook',
+  'Mine, it moved with the handbook',
+  'once that lands, close the stale-runbook issue',
+]
+await take('docs', async (page, mark) => {
+  // The fixture's archivist has no surface, and the operator's post in docs
+  // came from the room. The scene is two bots and their owner in a Telegram
+  // group carrying docs, so the archivist gets a bot and a room, as scout
+  // gets one in the create clip, and the operator's post comes in through
+  // Telegram.
+  const withBot = (l) =>
+    l.name === 'archivist'
+      ? { ...l, surface: 'telegram', has_tg_token: true, tg_bot_username: 'archivist_example_bot' }
+      : l
+  await page.route('**/api/loops', async (route) => {
+    const res = await route.fetch()
+    return route.fulfill({ response: res, json: (await res.json()).map(withBot) })
+  })
+  await page.route('**/api/loops/archivist', async (route) => {
+    const res = await route.fetch()
+    return route.fulfill({ response: res, json: withBot(await res.json()) })
+  })
+  await page.route('**/api/loops/archivist/rooms', (route) =>
+    route.fulfill({
+      json: [
+        {
+          surface: 'telegram',
+          room_id: '-1002000000002',
+          title: 'Docs reviewers',
+          channel: 'docs',
+          first_seen_at: Date.now() - 864e5,
+          bound_at: Date.now() - 864e5,
+        },
+      ],
+    }),
+  )
+  await page.route('**/api/channels/docs/messages*', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue()
+    const res = await route.fetch()
+    // The exchange runs as one conversation, a minute apart, as the
+    // Telegram group beside it shows it.
+    const fromTelegram = (m) =>
+      m.origin === 'web' ? { ...m, origin: 'telegram-group', mirror: 'mirrored' } : m
+    const minute = (m) => {
+      const i = DOCS.findIndex((t) => m.text.includes(t))
+      return i === -1 ? m : { ...m, ts: Date.now() - (DOCS.length - i) * 60_000 }
+    }
+    return route.fulfill({ response: res, json: (await res.json()).map((m) => minute(fromTelegram(m))) })
+  })
+  await page.goto(base + '/loops/gardener?channel=docs', { waitUntil: 'networkidle' })
+  await page.waitForSelector('.knot')
+  for (const [i, snippet] of DOCS.entries()) await mark.time(`line${i}`, snippet)
+  await hide(page, [...DOCS, 'which write-ups should move'])
+  await page.waitForTimeout(400)
   mark('ready')
-  await page.waitForTimeout(8000)
+  for (const [i, snippet] of DOCS.entries()) {
+    await page.waitForTimeout(i === 0 ? 800 : 2400)
+    await reveal(page, snippet)
+    mark(`line${i}`)
+  }
+  await page.waitForTimeout(3000)
 })
 
-await take('channel', async (page, mark) => {
-  await page.goto(base + '/?view=channel', { waitUntil: 'networkidle' })
-  await page.waitForSelector('.knot')
-  mark('ready')
-  await page.waitForTimeout(16000)
-})
+// The report beat: watcher's own timeline, beside the Telegram DM it opens
+// with its owner. The room does not draw an owner DM's text, so what shows
+// here is the loop's side of it: the tick, its reasoning and the
+// send_message call that asks, the owner's answer arriving, and the call
+// that reacts to it. The fixture's watcher has no transcript, so the turn is
+// served in place of its events.
+const REPORT = {
+  reason: 'Reverting is the owner',
+  reply: 'Yes, revert at 09:00',
+}
+await take(
+  'report',
+  async (page, mark) => {
+    const now = Date.now()
+    const at = (sec) => now - 90_000 + sec * 1000
+    const utc = new Date(now).toISOString().slice(0, 16).replace('T', ' ')
+    const event = (id, sec, type, payload, turn) => ({
+      id,
+      loop_id: 'watcher',
+      session_id: 'demo-session',
+      turn_id: turn,
+      ts: at(sec),
+      type,
+      subtype: '',
+      payload: JSON.stringify(payload),
+    })
+    const assistant = (content) => ({ message: { content } })
+    const send = (id, input) => ({ type: 'tool_use', name: 'mcp__spool__send_message', id, input })
+    const result = (ms, cost, inTok, outTok) => ({
+      total_cost_usd: cost,
+      duration_ms: ms,
+      is_error: false,
+      usage: { input_tokens: inTok, output_tokens: outTok },
+    })
+    const events = [
+      event(
+        990001,
+        0,
+        'envelope',
+        { trigger: 'tick', text: `[tick · ${utc} UTC · fixed]\n\nContinue working toward your mission.` },
+        't1',
+      ),
+      event(
+        990002,
+        6,
+        'assistant',
+        assistant([
+          {
+            type: 'text',
+            text: "Nightly broke again at the same fixture. The change it belongs to is still open and the operator is chasing its author. Reverting is the owner's call, so I am asking rather than reverting.",
+          },
+          send('toolu_demo_1', { destination: 'owner_dm', text: 'Nightly broke again at the same fixture…' }),
+        ]),
+        't1',
+      ),
+      event(990003, 7, 'result', result(7400, 0.0131, 5120, 214), 't1'),
+      event(
+        990004,
+        40,
+        'envelope',
+        {
+          trigger: 'message',
+          text: `[message from @operator via telegram · owner_dm · ref:212 · ${utc} UTC]\n\nYes, revert at 09:00 if it is still red.`,
+        },
+        't2',
+      ),
+      event(
+        990005,
+        43,
+        'assistant',
+        assistant([send('toolu_demo_2', { destination: 'owner_dm', react: '👍', reply_to: 'ref:212' })]),
+        't2',
+      ),
+      event(990006, 44, 'result', result(3100, 0.0174, 5390, 41), 't2'),
+    ]
+    await page.route('**/api/loops/watcher/events*', (route) => route.fulfill({ json: events }))
+    await page.goto(base + '/loops/watcher', { waitUntil: 'networkidle' })
+    await page.waitForSelector('.knot')
+    const show = (ids, display) =>
+      page.evaluate(
+        ([ids, display]) => {
+          for (const id of ids) {
+            const knot = document.querySelector(`.knot[data-entry-id="${id}"]`)
+            if (knot) knot.style.display = display
+          }
+        },
+        [ids, display],
+      )
+    await mark.time('ask', REPORT.reason)
+    await mark.time('reply', REPORT.reply)
+    await show([990002, 990003, 990004, 990005, 990006], 'none')
+    await page.waitForTimeout(400)
+    mark('ready')
+    await page.waitForTimeout(1600)
+    await show([990002, 990003], '')
+    mark('ask')
+    await page.waitForTimeout(2800)
+    await show([990004], '')
+    mark('reply')
+    await page.waitForTimeout(1200)
+    await show([990005, 990006], '')
+    mark('react')
+    await page.waitForTimeout(3000)
+  },
+  { width: 1098, height: 750 },
+)
 
 await browser.close()
-writeFileSync(out + 'marks.json', JSON.stringify(marks, null, 2) + '\n')
+writeFileSync(out + 'marks.json', JSON.stringify({ ...marks, times }, null, 2) + '\n')
 console.log(marks)

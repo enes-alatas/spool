@@ -2,6 +2,7 @@ import { Fragment, type CSSProperties, type ReactNode } from 'react'
 import {
   AbsoluteFill,
   Easing,
+  Img,
   interpolate,
   OffthreadVideo,
   Sequence,
@@ -13,6 +14,8 @@ import {
 import { SpoolGlyph } from '../../src/components/Spool'
 // Clip-relative seconds of each recorded moment, written by record.mjs.
 import marks from '../public/marks.json'
+
+const { times } = marks
 
 // The control room's own tokens (web/src/styles.css), so the frame around
 // the footage reads as Spool rather than as a template. The faces are the
@@ -35,12 +38,12 @@ const s = (sec: number) => Math.round(sec * FPS)
 
 // Beat boundaries, in seconds.
 const B1 = [0, 5]
-const B2 = [5, 22]
-const B3 = [22, 31]
-const B4 = [31, 39]
-const B5 = [39, 47]
-const B6 = [47, 52]
-export const DURATION = s(52)
+const B2 = [5, 20]
+const B3 = [20, 29]
+const B4 = [29, 37]
+const B5 = [37, 45]
+const B6 = [45, 50]
+export const DURATION = s(50)
 
 // The footage's CSS size; record.mjs captures it at 2x device pixels.
 const PAGE = { w: 1280, h: 720 }
@@ -72,19 +75,22 @@ function Footage({
   rate = 1,
   camera,
   box,
+  page = PAGE,
 }: {
   src: string
   from?: number
   rate?: number
   camera: Camera
   box: { w: number; h: number }
+  // The clip's CSS size, when record.mjs took it at another viewport.
+  page?: { w: number; h: number }
 }) {
   const frame = useCurrentFrame()
   const f = aim(camera, from + (frame / FPS) * rate)
-  const k = (box.w / PAGE.w) * f.zoom
+  const k = (box.w / page.w) * f.zoom
   // Keep the page edge-to-edge: never pan past it.
-  const tx = Math.min(0, Math.max(box.w - PAGE.w * k, box.w / 2 - f.x * k))
-  const ty = Math.min(0, Math.max(box.h - PAGE.h * k, box.h / 2 - f.y * k))
+  const tx = Math.min(0, Math.max(box.w - page.w * k, box.w / 2 - f.x * k))
+  const ty = Math.min(0, Math.max(box.h - page.h * k, box.h / 2 - f.y * k))
   return (
     <div
       style={{ position: 'relative', overflow: 'hidden', background: T.canvas, width: box.w, height: box.h }}
@@ -96,8 +102,8 @@ function Footage({
         muted
         style={{
           position: 'absolute',
-          width: PAGE.w,
-          height: PAGE.h,
+          width: page.w,
+          height: page.h,
           transformOrigin: '0 0',
           transform: `translate(${tx}px, ${ty}px) scale(${k})`,
         }}
@@ -340,19 +346,23 @@ function Pitch() {
 const mainScreen: CSSProperties = { position: 'absolute', top: MAIN.top, left: (W - MAIN.width) / 2 }
 
 // Beat 2: create a loop, give it a bot. The form fill plays fast, the rest at
-// about real pace, and the camera follows the pointer: the form, then the
-// Surfaces panel once the loop's page opens (its fresh timeline is noise).
+// about real pace, and the camera follows the pointer: down the form to
+// Create loop, then a cut to the Surfaces panel on the loop's page. The
+// page loading and the glide down to Surfaces are cut: neither shows
+// anything but the page moving.
 const C = marks.create
 const FILL_RATE = 1.6
-const REST_RATE = 1.1
+const SCROLL_RATE = 1.1
 const FILL_LEN = (C['scroll-create'] - C.ready) / FILL_RATE
-const SCROLL_LEN = (C['loop-page'] - C['scroll-create']) / REST_RATE
+// Through the press on Create loop, ending before the page navigates.
+const SCROLL_LEN = (C['create-click'] + 0.5 - C['scroll-create']) / SCROLL_RATE
 const form: Focus = { x: 615, y: 330, zoom: 1.25 }
+// Low enough on the form to hold Create loop, which the form ends on.
+const formEnd: Focus = { x: 615, y: 470, zoom: 1.25 }
 const side: Focus = { x: 1022, y: 380, zoom: 2 }
 const camera: Camera = [
-  [C['create-click'], form],
-  [C['loop-page'] - 0.3, form],
-  [C['loop-page'] + 0.6, side],
+  [C['scroll-create'], form],
+  [C['scroll-create'] + 1.2, formEnd],
 ]
 function Create() {
   return (
@@ -378,7 +388,7 @@ function Create() {
           style={mainScreen}
           src="create.mp4"
           from={C['scroll-create']}
-          rate={REST_RATE}
+          rate={SCROLL_RATE}
           camera={camera}
         />
       </Sequence>
@@ -388,9 +398,8 @@ function Create() {
           url="localhost:8080/loops/scout"
           style={mainScreen}
           src="create.mp4"
-          from={C['loop-page']}
-          rate={REST_RATE}
-          camera={camera}
+          from={C['attach-click'] - 0.1}
+          camera={side}
         />
       </Sequence>
       <Caption step="02 · Create">Start a loop, then give it a Telegram bot.</Caption>
@@ -398,9 +407,19 @@ function Create() {
   )
 }
 
-// A chat pane, drawn rather than recorded: a Telegram-like thread, labelled.
-type Line = { at: number; who: string; text: string; me?: boolean }
-function Bubble({ at, who, text, me }: Line) {
+// A chat line: who sent it, and when it lands in clip frames. time is the
+// clock the room stamps the same message with; image is a photo the text
+// rides under as its caption, as Telegram draws one.
+type Line = {
+  at: number
+  who: string
+  text: string
+  me?: boolean
+  time?: string
+  image?: string
+  reactions?: { at: number; chips: { emoji: string; count: number }[] }
+}
+function Bubble({ at, who, text, me, time, image, reactions }: Line) {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
   const p = spring({ frame: frame - at, fps, config: { damping: 18, stiffness: 140 } })
@@ -420,7 +439,7 @@ function Bubble({ at, who, text, me }: Line) {
           background: me ? '#2b5278' : '#182533',
           color: '#f5f7fa',
           borderRadius: 16,
-          padding: '11px 15px 12px',
+          overflow: 'hidden',
           fontFamily: T.sans,
           fontSize: 19,
           lineHeight: 1.4,
@@ -428,10 +447,61 @@ function Bubble({ at, who, text, me }: Line) {
         }}
       >
         {!me && who && (
-          <div style={{ color: '#6ab3f3', fontSize: 15, fontWeight: 600, marginBottom: 4 }}>{who}</div>
+          <div style={{ color: '#6ab3f3', fontSize: 15, fontWeight: 600, padding: '11px 15px 0' }}>{who}</div>
         )}
-        {text}
+        {image && (
+          <Img
+            src={staticFile(image)}
+            style={{ display: 'block', width: '100%', marginTop: who && !me ? 8 : 0 }}
+          />
+        )}
+        <div style={{ padding: `${who && !me && !image ? 4 : 11}px 15px 9px` }}>
+          {text}
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, marginTop: 4 }}>
+            <div style={{ flex: 1 }}>{reactions && <Reactions {...reactions} />}</div>
+            {time && (
+              <div
+                style={{ fontSize: 13, color: me ? 'rgba(220, 235, 255, 0.6)' : 'rgba(220, 230, 240, 0.45)' }}
+              >
+                {time}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
+    </div>
+  )
+}
+
+// The reactions under a bubble's text, popping in as Telegram draws them.
+function Reactions({ at, chips }: { at: number; chips: { emoji: string; count: number }[] }) {
+  const frame = useCurrentFrame()
+  const { fps } = useVideoConfig()
+  if (frame < at) return null
+  return (
+    <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+      {chips.map((c, i) => {
+        const p = spring({ frame: frame - at - i * 4, fps, config: { damping: 11, stiffness: 180 } })
+        return (
+          <div
+            key={c.emoji}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '3px 10px',
+              borderRadius: 14,
+              background: 'rgba(255, 255, 255, 0.16)',
+              fontSize: 17,
+              transform: `scale(${Math.max(p, 0)})`,
+              transformOrigin: 'left center',
+            }}
+          >
+            <span style={{ fontFamily: "'Noto Color Emoji'" }}>{c.emoji}</span>
+            <span style={{ fontSize: 15 }}>{c.count}</span>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -447,6 +517,7 @@ function Typing({ who, from, to }: { who: string; from: number; to: number }) {
   )
 }
 
+// A chat pane, drawn rather than recorded: a Telegram-like thread, labelled.
 const CHAT = { w: 420, h: 792 }
 function ChatPane({
   title,
@@ -530,7 +601,7 @@ function ChatPane({
   )
 }
 
-// Beats 3 and 5 pair a window with a chat pane, side by side as one centred
+// Beats 3 to 5 pair a window with a chat pane, side by side as one centred
 // group.
 const PAIR = { width: 1100, height: 750, gap: 56 }
 const PAIR_LEFT = (W - PAIR.width - PAIR.gap - CHAT.w) / 2
@@ -572,34 +643,49 @@ function Pair({
   )
 }
 
-// Beat 3: a person asks in a Telegram group; the loop's own timeline shows
-// the same message arriving and the answer going out. The window is cropped
-// to the timeline column, leaving the side panel out.
+// Beat 3: a person asks in the Telegram group that carries the fleet
+// channel, and the loop answers there. The fleet channel, beside it, shows
+// each message as it lands: record.mjs reveals them on the same cues.
+const TK = marks.talk
+// record.mjs takes the talk and report clips at the window's own size
+// (PAIR's content box), so they play at 1:1 with nothing cropped.
+const TALK_PAGE = { w: 1098, h: 750 }
 function Talk() {
   return (
     <Pair
       step="03 · Talk"
-      caption="Message it in a Telegram group. It answers as itself."
-      url="localhost:8080/loops/gardener"
+      caption="Talk to loops in Telegram. The room shows it as it happens."
+      url="localhost:8080/?view=channel"
       src="talk.mp4"
-      from={marks.talk.ready}
-      camera={{ x: 445, y: 370, zoom: 1.5 }}
+      from={TK.ready}
+      page={TALK_PAGE}
+      camera={{ x: TALK_PAGE.w / 2, y: TALK_PAGE.h / 2, zoom: 1 }}
       chat={{
-        title: 'Docs team',
-        subtitle: 'Telegram group · rana, @gardener_bot',
-        avatar: 'D',
+        title: 'Handbook crew',
+        subtitle: 'Telegram group · the fleet channel',
+        avatar: 'T',
         tint: '#3a6e5a',
-        typing: { who: 'gardener', from: s(2.2), to: s(5.4), before: 1 },
+        typing: { who: 'gardener', from: s(TK.ask - TK.ready + 1), to: s(TK.answer - TK.ready), before: 1 },
         lines: [
           {
-            at: s(0.6),
+            at: s(TK.ask - TK.ready),
             who: 'rana',
+            image: 'install-page.png',
+            time: times.talk.ask,
             text: '@gardener the install page still tells people to run `make setup`, which we removed last week. Can you take a pass?',
           },
           {
-            at: s(5.4),
+            at: s(TK.answer - TK.ready),
             who: 'gardener',
+            time: times.talk.answer,
             text: 'Three pages, all fixed — PR #48. The quickstart also showed the old output, so that block went too.',
+            reactions: {
+              at: s(TK.reactions - TK.ready),
+              chips: [
+                { emoji: '👍', count: 2 },
+                { emoji: '🎉', count: 1 },
+              ],
+            },
           },
         ],
       }}
@@ -607,50 +693,91 @@ function Talk() {
   )
 }
 
-// Beat 4: the fleet channel, where loops and people meet.
-function Coordinate() {
+// Beat 4: a channel of its own for two loops and their owner, carried by a
+// Telegram group of its own, beside its pane on one loop's page.
+const DK = marks.docs
+function Channels() {
   return (
-    <Stage>
-      <Screen
-        width={MAIN.width}
-        url="localhost:8080/?view=channel"
-        style={mainScreen}
-        src="channel.mp4"
-        from={marks.channel.ready}
-        camera={[
-          [marks.channel.ready, { x: 640, y: 360, zoom: 1 }],
-          [marks.channel.ready + 8, { x: 660, y: 430, zoom: 1.15 }],
-        ]}
-      />
-      <Caption step="04 · Coordinate">Loops and people share one channel. You follow along.</Caption>
-    </Stage>
+    <Pair
+      step="04 · Channels"
+      caption="Give a few loops a channel of their own."
+      url="localhost:8080/loops/gardener?channel=docs"
+      src="docs.mp4"
+      from={DK.ready}
+      camera={{ x: 445, y: 380, zoom: 1.45 }}
+      chat={{
+        title: 'Docs reviewers',
+        subtitle: 'Telegram group · 3 members',
+        avatar: 'D',
+        tint: '#4f6e9e',
+        typing: {
+          who: 'gardener',
+          from: s(DK.line0 - DK.ready + 0.8),
+          to: s(DK.line1 - DK.ready),
+          before: 1,
+        },
+        lines: [
+          {
+            at: s(DK.line0 - DK.ready),
+            who: 'archivist',
+            time: times.docs.line0,
+            text: '@gardener the incident write-up template links the old runbook. Yours or mine?',
+          },
+          {
+            at: s(DK.line1 - DK.ready),
+            who: 'gardener',
+            time: times.docs.line1,
+            text: 'Mine, it moved with the handbook. Fixed in the same PR as the install page.',
+          },
+          {
+            at: s(DK.line2 - DK.ready),
+            who: 'you',
+            me: true,
+            time: times.docs.line2,
+            text: '@archivist once that lands, close the stale-runbook issue too.',
+          },
+        ],
+      }}
+    />
   )
 }
 
-// Beat 5: what the channel settled reaches its owner privately, with the one
-// question that is theirs to answer. The channel stays in view beside it.
+// Beat 5: a call that is the owner's reaches them privately, and the loop
+// acknowledges the answer. Beside the DM, watcher's own timeline: the room
+// does not draw a DM's text, so it shows the loop's side of the exchange,
+// each step on the cue record.mjs revealed it.
+const RK = marks.report
 function Report() {
   return (
     <Pair
       step="05 · Report"
       caption="When a call is yours, the loop brings it to you."
-      url="localhost:8080/?view=channel"
-      src="channel.mp4"
-      from={marks.channel.ready + 8}
-      camera={{ x: 640, y: 360, zoom: 1 }}
+      url="localhost:8080/loops/watcher"
+      src="report.mp4"
+      from={RK.ready}
+      page={TALK_PAGE}
+      camera={{ x: TALK_PAGE.w / 2, y: TALK_PAGE.h / 2, zoom: 1 }}
       chat={{
         title: 'watcher',
         subtitle: 'Telegram · private chat · bot',
         avatar: 'W',
         tint: '#6b4f9e',
-        typing: { who: 'watcher', from: s(0.4), to: s(1.6), before: 0 },
+        typing: { who: 'watcher', from: s(0.3), to: s(RK.ask - RK.ready), before: 0 },
         lines: [
           {
-            at: s(1.6),
+            at: s(RK.ask - RK.ready),
             who: '',
+            time: times.report.ask,
             text: 'Nightly broke again at the same fixture. The operator is chasing the author of the open change, so I have not reverted it. If it is still red at 09:00 tomorrow, should I revert?',
           },
-          { at: s(4.6), who: 'you', me: true, text: 'Yes, revert at 09:00 if it is still red.' },
+          {
+            at: s(RK.reply - RK.ready),
+            who: 'you',
+            me: true,
+            time: times.report.reply,
+            text: 'Yes, revert at 09:00 if it is still red.',
+            reactions: { at: s(RK.react - RK.ready), chips: [{ emoji: '👍', count: 1 }] },
+          },
         ],
       }}
     />
@@ -723,7 +850,7 @@ export const SpoolDemo = () => (
       <Talk />
     </Beat>
     <Beat span={B4}>
-      <Coordinate />
+      <Channels />
     </Beat>
     <Beat span={B5}>
       <Report />
