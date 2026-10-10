@@ -77,12 +77,6 @@ type Bridge struct {
 
 	pairMu       sync.Mutex
 	pairNotified map[int64]bool // senders already told their pairing code this run
-	// notOwnerNotified tracks which (loop, private chat) pairs have been
-	// told that the loop answers only its owner, so each bot says it once
-	// per run. Keyed by loop as well as chat: a private chat's id is the
-	// human's user id in every bot's numbering, so a fleet-wide key would
-	// let the first bot's notice silence all the others.
-	notOwnerNotified map[string]bool
 
 	// loginTold holds, for each owner told that a Claude login was refused,
 	// the loop whose bot told them, so the owner hears once per outage and
@@ -116,8 +110,8 @@ func NewBridge(st store.Store, publisher *bus.Bus, router *route.Router, log *sl
 		ledger:     &outbound.Ledger{Store: st, Bus: publisher, Log: log, Surface: "telegram"},
 		bindSettle: defaultBindSettle, answerTimeout: DefaultAnswerTimeout,
 		pollers: map[string]*poller{}, dedup: newDedupLRU(dedupSize),
-		pairNotified: map[int64]bool{}, notOwnerNotified: map[string]bool{},
-		loginTold: map[loginOutage]loginTeller{}}
+		pairNotified: map[int64]bool{},
+		loginTold:    map[loginOutage]loginTeller{}}
 }
 
 // SetBindSettle overrides the ingest-election margin, and must be called
@@ -444,30 +438,31 @@ func (br *Bridge) handleMessage(ctx context.Context, bot *poller, message *tgMsg
 
 	if message.Chat.Type == "private" {
 		br.maybeCaptureOwnerDM(ctx, bot, message)
+		// An allowed sender who is not the owner holds a conversation of
+		// their own, dm:<name>, which the loop answers there and nowhere
+		// else (ADR-0049).
+		var conversation, person string
 		if !br.ownerOf(ctx, bot, message.From.ID) {
-			br.logTurnedAway(bot, message, author, "sender is not this loop's owner")
-			// Not the loop's owner. Delivering this would leave the loop
-			// unable to answer — owner_dm addresses the owner, so the reply
-			// would land in someone else's chat. Until non-owner private
-			// conversations are designed, say so instead of going silent
-			// (ADR-0026 amendment).
-			br.notifyNotOwner(ctx, bot, message.Chat.ID)
-			return
+			person = store.TGPerson(message.From.ID)
+			conversation = store.DMDestinationPrefix + store.DMName(message.From.Username, strconv.FormatInt(message.From.ID, 10))
+			br.capturePrivateChat(ctx, bot, person, message.Chat.ID)
 		}
 		if !br.dedup.Add(dedupKey(bot.loopID, message.Chat.ID, message.MessageID)) {
 			return
 		}
 		err := br.router.Ingest(ctx, route.InboundMessage{
-			Origin:      store.OriginTelegramDM,
-			Author:      author,
-			Text:        text,
-			TGChatID:    message.Chat.ID,
-			TGMessageID: message.MessageID,
-			TGBotLoopID: bot.loopID,
-			TGKey:       tgKey(message),
-			ReplyToID:   br.inboundReplyTarget(ctx, bot, message),
-			ImplicitTo:  bot.loopID,
-			Attachments: attachments,
+			Origin:       store.OriginTelegramDM,
+			Author:       author,
+			Text:         text,
+			TGChatID:     message.Chat.ID,
+			TGMessageID:  message.MessageID,
+			TGBotLoopID:  bot.loopID,
+			TGKey:        tgKey(message),
+			ReplyToID:    br.inboundReplyTarget(ctx, bot, message),
+			ImplicitTo:   bot.loopID,
+			Attachments:  attachments,
+			Conversation: conversation,
+			DMPerson:     person,
 		})
 		if err != nil && !errors.Is(err, store.ErrDuplicate) {
 			br.log.Error("telegram dm ingest", "err", err)
@@ -1216,28 +1211,17 @@ func (br *Bridge) ownerOf(ctx context.Context, bot *poller, tgUserID int64) bool
 	return err == nil && loopRecord.OwnerTGUserID != 0 && loopRecord.OwnerTGUserID == tgUserID
 }
 
-// notifyNotOwner tells a non-owner, once per loop per run, why their DM
-// goes unanswered. The same pacing as the pairing code — a turned away
-// sender should learn the reason, not be answered on every message — but
-// per loop, because each one answers a different owner.
-func (br *Bridge) notifyNotOwner(ctx context.Context, bot *poller, chatID int64) {
-	key := fmt.Sprintf("%s:%d", bot.loopID, chatID)
-	br.pairMu.Lock()
-	notified := br.notOwnerNotified[key]
-	br.notOwnerNotified[key] = true
-	br.pairMu.Unlock()
-	if notified {
-		return
+// capturePrivateChat records where a person other than the owner messaged
+// this loop's bot, which is what lets the loop write to them first later
+// (ADR-0049). A bot cannot open a private chat, so this is the only way the
+// address comes to exist.
+func (br *Bridge) capturePrivateChat(ctx context.Context, bot *poller, person string, chatID int64) {
+	err := br.store.PrivateChats().Capture(ctx, &store.PrivateChat{
+		LoopID: bot.loopID, Person: person, Chat: strconv.FormatInt(chatID, 10), CapturedAt: time.Now().UnixMilli(),
+	})
+	if err != nil {
+		br.log.Error("private chat capture", "loop", bot.name, "err", err)
 	}
-	owner := "its owner"
-	if loopRecord, err := br.store.Loops().Get(ctx, bot.loopID); err == nil && loopRecord.OwnerTGUserID != 0 {
-		if sender, err := br.store.TGSenders().Get(ctx, loopRecord.OwnerTGUserID); err == nil && sender.Username != "" {
-			owner = "@" + sender.Username
-		}
-	}
-	bot.enqueueSend(chatID, fmt.Sprintf(
-		"Spool: %s reads direct messages only from %s for now. Reach it in the group instead.",
-		bot.name, owner))
 }
 
 func (br *Bridge) replyStatus(ctx context.Context, bot *poller, chatID int64) {
@@ -1640,8 +1624,8 @@ func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 		return
 	}
 	bot := br.poller(mp.FromLoopID)
-	switch mp.Conversation {
-	case store.ConversationGroup:
+	switch {
+	case mp.Conversation == store.ConversationGroup:
 		// a loop's send to a channel: post to the room its bot has bound
 		// to that channel, as its own bot, judged from the loop as it is
 		// now rather than as route.Send saw it — a room bound since the
@@ -1675,20 +1659,24 @@ func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 			poll: poll}); unsent != "" {
 			br.ledger.Unsendable(ctx, mp, unsent)
 		}
-	case store.ConversationOwnerDM:
-		// a loop's owner_dm send: deliver to the chat route.Send pinned
-		// at send time — never re-resolved here, so a DM arriving
-		// between send and delivery cannot redirect it. route.Send
+	case mp.Conversation == store.ConversationOwnerDM, store.IsDM(mp.Conversation):
+		// a loop's owner_dm or dm:<name> send: deliver to the chat
+		// route.Send pinned at send time — never re-resolved here, so a
+		// DM arriving between send and delivery cannot redirect it. route.Send
 		// refuses when no chat resolves, and a captured chat implies
 		// the loop had a bot — so a miss on either here is an internal
 		// fault, not a model error, and must not drop the private
 		// message silently.
 		if bot == nil {
-			br.ledger.Unsendable(ctx, mp, "owner dm delivery: loop has no bot")
+			br.ledger.Unsendable(ctx, mp, "private delivery: loop has no bot")
 			return
 		}
-		if mp.OwnerDMChat == 0 {
-			br.ledger.Unsendable(ctx, mp, "owner dm delivery: send carried no pinned chat")
+		chat := mp.OwnerDMChat
+		if store.IsDM(mp.Conversation) {
+			chat, _ = strconv.ParseInt(mp.DMChat, 10, 64)
+		}
+		if chat == 0 {
+			br.ledger.Unsendable(ctx, mp, "private delivery: send carried no pinned chat")
 			return
 		}
 		media, ok := br.sentMedia(ctx, mp)
@@ -1699,11 +1687,11 @@ func (br *Bridge) mirrorMessage(ctx context.Context, mp *route.MessagePayload) {
 		if !ok {
 			return
 		}
-		anchor, text := br.render(ctx, mp, mp.OwnerDMChat)
+		anchor, text := br.render(ctx, mp, chat)
 		if poll != nil {
 			text = mp.Text // a question carries no quoted line
 		}
-		if unsent := bot.enqueue(sendReq{chatID: mp.OwnerDMChat, text: text, replyTo: anchor, recordFor: mp.ID,
+		if unsent := bot.enqueue(sendReq{chatID: chat, text: text, replyTo: anchor, recordFor: mp.ID,
 			media: media, poll: poll}); unsent != "" {
 			br.ledger.Unsendable(ctx, mp, unsent)
 		}

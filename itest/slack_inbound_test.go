@@ -136,9 +136,9 @@ func TestSlackChannelMessageIngestedOnceAndDeliveredToMentions(t *testing.T) {
 	}
 }
 
-// The owner's DM with a loop's app is the loop's owner_dm, and only the
-// owner reaches the loop there: someone else who is allowed is still not
-// the person owner_dm answers (#230).
+// The owner's DM with a loop's app is the loop's owner_dm (#230). Someone
+// else who is allowed reaches the loop in a conversation of their own,
+// dm:<name>, never the owner's (ADR-0049).
 func TestSlackOwnerDMReachesItsLoop(t *testing.T) {
 	t.Parallel()
 	srv, slack := startSlackFleet(t)
@@ -154,14 +154,14 @@ func TestSlackOwnerDMReachesItsLoop(t *testing.T) {
 		t.Fatalf("stored %s", dump(stored))
 	}
 
-	// Another allowed sender's DM to the same app reaches nobody.
+	// Another allowed sender's DM to the same app is their own conversation.
 	slack.pushMessage(t, slackAppToken, "channel", slackChannel, "U0ALICE", "hi all", "1727600000.000300")
 	srv.allowSlackSender("U0ALICE")
 	slack.pushMessage(t, slackAppToken, "im", "D0ALICE", "U0ALICE", "psst terra", "1727600000.000400")
-	slack.waitAck(t, slackAppToken, slackAppToken+":D0ALICE:1727600000.000400")
-	time.Sleep(time.Second)
-	if got := srv.activityWith("psst terra"); len(got) != 0 {
-		t.Fatalf("a DM from someone other than the owner was stored: %s", dump(got))
+	srv.waitInput("terra", "message from @u0alice via slack dm · dm:u0alice", "psst terra")
+	if got := srv.activityWith("psst terra"); len(got) != 1 || got[0].Conversation != "dm:u0alice" ||
+		got[0].ConversationLoopID != stored[0].ConversationLoopID {
+		t.Fatalf("a DM from someone other than the owner was stored as %s", dump(got))
 	}
 }
 
@@ -187,4 +187,31 @@ func TestSlackLinkNamesItsChannel(t *testing.T) {
 	srv.stop()
 	srv = startServerArgs(t, dataDir, "--runtime", "bare", "--slack-api-base", slack.srv.URL)
 	srv.waitSlackLink("terra", named)
+}
+
+// Two people's DMs with a loop's app never share a turn (ADR-0049). Slack
+// DMs carry no chat id to batch by, so the conversation is what keeps the
+// owner's and another sender's apart.
+func TestSlackTwoPeoplesDMsAreTwoTurns(t *testing.T) {
+	t.Parallel()
+	// the first line answers the wake every loop takes as the hub starts
+	srv, slack := startSlackFleetWith(t, map[string]any{"workspace_path": workspaceWithScript(t, "!ctx 0\n!hang 3\n!echo\n")})
+	if resp, body := srv.do("PUT", "/api/loops/terra/owner", map[string]any{"slack_user_id": slackOperator}); resp.StatusCode != http.StatusOK {
+		t.Fatalf("set owner: %d %s", resp.StatusCode, body)
+	}
+	slack.pushMessage(t, slackAppToken, "channel", slackChannel, "U0ALICE", "hi all", "1727600000.000300")
+	srv.allowSlackSender("U0ALICE")
+
+	slack.pushMessage(t, slackAppToken, "im", "D"+slackOperator, slackOperator, "start hanging", "1727600000.000400")
+	srv.waitState("terra", "busy", 10*time.Second)
+	slack.pushMessage(t, slackAppToken, "im", "D0ALICE", "U0ALICE", "from alice", "1727600000.000401")
+	slack.pushMessage(t, slackAppToken, "im", "D"+slackOperator, slackOperator, "from op", "1727600000.000402")
+	srv.waitTurn("terra", 30*time.Second, func(tn turn) bool { return strings.Contains(tn.ResultText, "from op") })
+	srv.waitTurn("terra", 30*time.Second, func(tn turn) bool { return strings.Contains(tn.ResultText, "from alice") })
+	for id, envelopes := range srv.turnInputs("terra") {
+		input := strings.Join(envelopes, "\n")
+		if strings.Contains(input, "from alice") && strings.Contains(input, "from op") {
+			t.Fatalf("turn %s was given two people's DMs: %q", id, input)
+		}
+	}
 }

@@ -151,9 +151,11 @@ func seesPairCodes(who *caller) bool {
 }
 
 // privateMessage reports whether msg is part of a loop's private
-// conversation with its owner.
+// conversation: with its owner, or with another allowed sender (ADR-0049),
+// which a member does not read either until #703 links users to the
+// people they are.
 func privateMessage(msg *store.Message) bool {
-	return msg.Conversation == store.ConversationOwnerDM
+	return msg.Conversation == store.ConversationOwnerDM || store.IsDM(msg.Conversation)
 }
 
 // withoutPrivate is msgs without the ones who may not read.

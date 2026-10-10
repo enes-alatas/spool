@@ -1683,10 +1683,12 @@ func (server *Server) handleRetrySend(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 202, map[string]bool{"retrying": true})
 	case errors.Is(err, store.ErrNotFound), errors.Is(err, route.ErrNoUnresolvedFailure):
 		server.jsonErr(w, 404, "no unresolved send failure for message %d", id)
-	case errors.Is(err, route.ErrNoOwnerDMChat):
-		// The retry would have nowhere to land. Said as its own refusal
-		// because it is the one case the operator can fix: the owner has to
-		// write to the bot once before a loop can DM them (#73).
+	case errors.Is(err, route.ErrNoOwnerDMChat), errors.Is(err, route.ErrNoPrivateChat), errors.Is(err, route.ErrDMNotAllowed):
+		// The retry would have nowhere to land, or nobody it may still
+		// reach. Said as its own refusal because these are the cases the
+		// operator can fix: the owner, or the person a dm:<name> message is
+		// for, has to write to the bot once before a loop can DM them (#73,
+		// ADR-0049), and a person blocked since has to be allowed again.
 		server.jsonErr(w, 409, "%v", err)
 	default:
 		server.jsonErr(w, 500, "%v", err)

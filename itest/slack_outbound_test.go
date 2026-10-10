@@ -254,3 +254,51 @@ func TestSlackSendInterruptedByAShutdownIsAFailure(t *testing.T) {
 			failedAt, sendErr, events)
 	}
 }
+
+// dm:<name> on Slack is the DM an allowed sender other than the owner
+// opened with the loop's app (ADR-0049). The app could open one itself, but
+// a loop writes first only to someone who has written to it, on Slack as
+// on Telegram; the owner is reached on owner_dm, and a name nobody allowed
+// answers to reaches nobody.
+func TestSlackDMAnswersAnotherAllowedSender(t *testing.T) {
+	t.Parallel()
+	srv, slack := startSlackFleet(t)
+	if resp, body := srv.do("PUT", "/api/loops/terra/owner", map[string]any{"slack_user_id": slackOperator}); resp.StatusCode != http.StatusOK {
+		t.Fatalf("set owner: %d %s", resp.StatusCode, body)
+	}
+	slack.pushMessage(t, slackAppToken, "channel", slackChannel, "U0ALICE", "hi all", "1727600000.000300")
+	srv.allowSlackSender("U0ALICE")
+	terra := mcpSession(t, srv, hubMCPToken(t, srv, "terra"))
+
+	if res := callSend(t, terra, map[string]any{"destination": "dm:u0alice", "text": "cold open"}); !res.IsError ||
+		!strings.Contains(resultText(res), "dm_unavailable") {
+		t.Fatalf("a first message to someone who never wrote: %s", resultText(res))
+	}
+
+	slack.pushMessage(t, slackAppToken, "im", "D0ALICE", "U0ALICE", "psst terra", "1727600000.000400")
+	srv.waitInput("terra", "via slack dm · dm:u0alice", "psst terra")
+	if res := callSend(t, terra, map[string]any{"destination": "dm:U0ALICE", "text": "hi alice"}); res.IsError {
+		t.Fatalf("terra's dm:u0alice refused: %s", resultText(res))
+	}
+	post := slack.waitPost(t, "hi alice")
+	if post.Token != slackBotToken || post.Channel != "D0ALICE" {
+		t.Fatalf("dm:u0alice was posted as %+v, want terra's app in the DM alice opened", post)
+	}
+	var sent activityMessage
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
+		if got := srv.activityWith("hi alice"); len(got) == 1 && got[0].Mirror == "mirrored" {
+			sent = got[0]
+			break
+		}
+	}
+	if sent.Mirror != "mirrored" || sent.SendFailedAt != 0 || sent.Conversation != "dm:u0alice" {
+		t.Fatalf("the dm:u0alice row reads %s", dump(srv.activityWith("hi alice")))
+	}
+
+	for destination, code := range map[string]string{"dm:u0oper": "invalid_destination", "dm:nobody": "no_such_destination"} {
+		if res := callSend(t, terra, map[string]any{"destination": destination, "text": "x"}); !res.IsError ||
+			!strings.Contains(resultText(res), code) {
+			t.Errorf("%s: %s, want %s", destination, resultText(res), code)
+		}
+	}
+}

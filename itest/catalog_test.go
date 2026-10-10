@@ -82,8 +82,10 @@ func TestCatalogNamesTheOwnerAndDMReadiness(t *testing.T) {
 		"@beta —",
 		"The people who can talk to this fleet",
 		"@mentioning a person in the group is public",
-		"Only owner_dm is kept from the hub's members; every user of this hub\n  reads control_room.",
-		"- Keep what your owner tells you in owner_dm out of control_room as well,",
+		"Only owner_dm and dm:<name> are kept from the hub's members; every user\n  of this hub reads control_room.",
+		"- Keep what your owner tells you in owner_dm, and what anyone tells you in",
+		"    dm:<name>     a private Telegram chat with anyone else allowed",
+		"messaged you\n  privately: nobody yet.",
 	} {
 		if !strings.Contains(before, want) {
 			t.Fatalf("catalog lacks %q before the owner writes:\n%s", want, before)
@@ -103,6 +105,24 @@ func TestCatalogNamesTheOwnerAndDMReadiness(t *testing.T) {
 	}
 	if strings.Contains(after, "no private chat with") {
 		t.Fatalf("the stale unreachable line survived the capture:\n%s", after)
+	}
+
+	// Someone else who messages the loop privately is someone it can write
+	// to first from then on (ADR-0049).
+	friend := user{ID: 7272, First: "Friend", Username: "friend"}
+	tg.dm("beta", friend, "knock")
+	srv.allowSender(friend.ID)
+	srv.waitState("alpha", "asleep", 30*time.Second)
+	tg.dm("alpha", friend, "hello alpha")
+	srv.waitForMessage("hello alpha")
+	srv.waitState("alpha", "asleep", 30*time.Second)
+
+	at = time.Now().UnixMilli()
+	srv.message("alpha", "and after the friend")
+	onFriend := waitPrompt(t, srv, "alpha", at)
+	withFriend := waitPromptAfterRotation(t, srv, "alpha", onFriend.SessionID)
+	if !strings.Contains(withFriend, "messaged you\n  privately: dm:friend.") {
+		t.Fatalf("catalog does not list the friend as someone to write to first:\n%s", withFriend)
 	}
 }
 
@@ -131,14 +151,14 @@ func TestPromptDescribesTheLoopsConversations(t *testing.T) {
 				t.Errorf("prompt lacks %q:\n%s", want, prompt)
 			}
 		}
-		for _, notWant := range []string{"    owner_dm ", "    group ", "@briar", "Telegram"} {
+		for _, notWant := range []string{"    owner_dm ", "    dm:<name> ", "    group ", "@briar", "Telegram"} {
 			if strings.Contains(prompt, notWant) {
 				t.Errorf("prompt teaches %q, which this loop does not have:\n%s", notWant, prompt)
 			}
 		}
 
 		sess := mcpSession(t, s, hubMCPToken(t, s, "aster"))
-		for _, dest := range []string{"owner_dm", "group"} {
+		for _, dest := range []string{"owner_dm", "dm:briar", "group"} {
 			res := callSend(t, sess, map[string]any{"destination": dest, "text": "@briar hello"})
 			wantSendError(t, res, "no_such_destination")
 			if text := resultText(res); !strings.HasSuffix(strings.TrimSpace(text), "you can send to control_room") {
@@ -173,7 +193,7 @@ func TestPromptDescribesTheLoopsConversations(t *testing.T) {
 		sess := mcpSession(t, srv, hubMCPToken(t, srv, "alpha"))
 		res := callSend(t, sess, map[string]any{"destination": "group", "text": "@beta hello"})
 		wantSendError(t, res, "no_such_destination")
-		if text := resultText(res); !strings.Contains(text, "you can send to owner_dm, control_room") {
+		if text := resultText(res); !strings.Contains(text, "you can send to owner_dm, dm:<name>, control_room") {
 			t.Errorf("the group refusal does not name alpha's destinations: %s", text)
 		}
 	})

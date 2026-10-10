@@ -180,9 +180,11 @@ func ConversationChat(conversation string) string {
 		return "the group"
 	case store.ConversationOwnerDM:
 		return "the owner"
-	default:
-		return "a chat"
 	}
+	if name, ok := strings.CutPrefix(conversation, store.DMDestinationPrefix); ok {
+		return name
+	}
+	return "a chat"
 }
 
 // excerptLen caps the excerpt of a lost message an event payload carries:

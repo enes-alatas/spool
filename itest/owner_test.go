@@ -50,7 +50,8 @@ func TestProactiveOwnerDMWithoutAnInboundDM(t *testing.T) {
 }
 
 // Messaging a bot does not make you its owner: a second allowlisted sender's
-// DM neither reassigns the owner nor reaches the loop, and they are told why.
+// DM leaves the owner as it was, and reaches the loop as the sender's own
+// conversation, never as owner_dm (ADR-0049).
 func TestAnotherSenderCannotBecomeTheOwner(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 6262, First: "Operator", Username: "operator"}
@@ -61,18 +62,12 @@ func TestAnotherSenderCannotBecomeTheOwner(t *testing.T) {
 	srv.allowSender(stranger.ID)
 	tg.dm("alpha", stranger, "can you do this for me?")
 
-	notice := tg.waitSent(t, stranger.ID, "direct messages only from")
-	if !strings.Contains(notice.Text, "@operator") {
-		t.Errorf("the notice should name the owner: %q", notice.Text)
-	}
-	time.Sleep(2 * time.Second)
+	srv.waitForMessage("can you do this for me?")
 	if got := srv.loop("alpha").OwnerTGUserID; got != operator.ID {
 		t.Fatalf("owner = %d after a stranger's DM, want %d", got, operator.ID)
 	}
-	for _, m := range srv.activity() {
-		if strings.Contains(m.Text, "can you do this for me?") {
-			t.Fatalf("a non-owner's DM was delivered: %s", dump(m))
-		}
+	if got := srv.activityWith("can you do this for me?"); len(got) != 1 || got[0].Conversation != "dm:stranger" {
+		t.Fatalf("a non-owner's DM was stored as %s", dump(got))
 	}
 }
 
@@ -124,11 +119,11 @@ func TestRevokingAccessDisownsTheLoop(t *testing.T) {
 	}
 }
 
-// Each bot tells a non-owner why it stays quiet. A private chat's id is the
-// human's user id in every bot's numbering, so a fleet-wide "told them
-// already" would leave every loop after the first silent — the outcome the
-// notice exists to avoid.
-func TestEveryLoopTellsANonOwnerWhyItIsQuiet(t *testing.T) {
+// A person other than the owner holds a conversation of their own with
+// each loop they write to (ADR-0049). A private chat's id is the human's
+// user id in every bot's numbering, so the conversation is keyed to the
+// loop as well: what they tell alpha is alpha's, and beta's is beta's.
+func TestEachLoopHoldsItsOwnConversationWithAPerson(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 6666, First: "Operator", Username: "operator"}
 	srv, tg := startTelegramFleet(t, operator)
@@ -138,9 +133,21 @@ func TestEveryLoopTellsANonOwnerWhyItIsQuiet(t *testing.T) {
 	srv.allowSender(stranger.ID)
 
 	tg.dm("alpha", stranger, "hello alpha")
-	tg.waitSentFrom(t, stranger.ID, "alpha", "direct messages only from")
 	tg.dm("beta", stranger, "hello beta")
-	tg.waitSentFrom(t, stranger.ID, "beta", "direct messages only from")
+	srv.waitForMessage("hello alpha")
+	srv.waitForMessage("hello beta")
+	for loop, text := range map[string]string{"alpha": "hello alpha", "beta": "hello beta"} {
+		messages := srv.activityWith(text)
+		if len(messages) != 1 || messages[0].Conversation != "dm:stranger" || messages[0].ConversationLoopID != srv.loop(loop).ID {
+			t.Fatalf("%q was not %s's conversation with the stranger: %+v", text, loop, messages)
+		}
+		srv.waitTurn(loop, 30*time.Second, func(tn turn) bool { return strings.Contains(tn.ResultText, text) })
+	}
+	for _, m := range tg.sentTo(stranger.ID) {
+		if strings.Contains(m.Text, "direct messages only from") {
+			t.Fatalf("a loop still turned the stranger away: %q", m.Text)
+		}
+	}
 }
 
 // The operator can reassign a loop's owner, and doing so drops the captured

@@ -1,6 +1,6 @@
 # ADR-0029: The Surface contract
 
-Date: 2026-09-20 · Status: accepted · Amends: ADR-0020, ADR-0025 (item 4), ADR-0026 (item 1) · Amended: 2026-09-22 (item 2: the bus kinds a surface mirrors); 2026-09-23 (items 5 and 7: a surface is attached later and mirrors the fleet channel); 2026-09-27 (item 2: a credential and an identity are structs); 2026-09-28 (item 8: hub notices); 2026-09-29 (item 8: Slack's notices and login notice); 2026-09-29 (item 2: the mirror subscription is lossless); 2026-09-30 (item 2: `Stop`, ADR-0036); 2026-10-01 (item 5: a mirror per room, ADR-0038); 2026-10-02 (items 2 and 5: reactions, ADR-0040); 2026-10-02 (items 2 and 5: polls, ADR-0041)
+Date: 2026-09-20 · Status: accepted · Amends: ADR-0020, ADR-0025 (item 4), ADR-0026 (item 1) · Amended: 2026-09-22 (item 2: the bus kinds a surface mirrors); 2026-09-23 (items 5 and 7: a surface is attached later and mirrors the fleet channel); 2026-09-27 (item 2: a credential and an identity are structs); 2026-09-28 (item 8: hub notices); 2026-09-29 (item 8: Slack's notices and login notice); 2026-09-29 (item 2: the mirror subscription is lossless); 2026-09-30 (item 2: `Stop`, ADR-0036); 2026-10-01 (item 5: a mirror per room, ADR-0038); 2026-10-02 (items 2 and 5: reactions, ADR-0040); 2026-10-02 (items 2 and 5: polls, ADR-0041); 2026-10-10 (item 8: the owner-only DM notice is gone, ADR-0049)
 
 ## Context
 
@@ -221,6 +221,12 @@ contract.
    (#230). A Slack owner hears the login notice in the app's DM with
    them, which the app opens itself, so any of their Slack loops can tell
    them (ADR-0026's 2026-09-29 amendment).
+
+   **Amendment (2026-10-10, #702, ADR-0049):** the notice that a bot
+   "reads direct messages only from its owner" is gone on both adapters.
+   An allowed sender's DM is now delivered as their own `dm:<name>`
+   conversation, so the only notice either adapter tells a person in a DM
+   is the pairing code.
 
 ## Consequences
 

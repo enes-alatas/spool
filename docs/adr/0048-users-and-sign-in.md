@@ -1,6 +1,6 @@
 # ADR-0048: The hub has users, who sign in with a username and password
 
-Date: 2026-10-09 · Status: accepted (operator decisions of 2026-10-04, 2026-10-07 and 2026-10-09, recorded on #582) · Amended: 2026-10-09 (item 1: the roles are enforced, #677); 2026-10-10 (item 1: a member reads no pairing code, #689); 2026-10-10 (item 7: owners manage users on the API, #690); 2026-10-10 (item 1: the hub records who acted, #695) · Supersedes: ADR-0030 decision 5 in part (the cookie is a session, not the token) · Relates to: ADR-0046
+Date: 2026-10-09 · Status: accepted (operator decisions of 2026-10-04, 2026-10-07 and 2026-10-09, recorded on #582) · Amended: 2026-10-09 (item 1: the roles are enforced, #677); 2026-10-10 (item 1: a member reads no pairing code, #689); 2026-10-10 (item 7: owners manage users on the API, #690); 2026-10-10 (item 1: the hub records who acted, #695); 2026-10-10 (item 1: a member reads no dm:<name>, #702) · Supersedes: ADR-0030 decision 5 in part (the cookie is a session, not the token) · Relates to: ADR-0046
 
 ## Context
 
@@ -87,6 +87,12 @@ gathered here. This ADR is the hub half of slice 1. The sign-in pages are
    - Activity stays the message list. A message already names its author.
      A scheduled wake, a loop's own actions and a turn's events record no
      user.
+
+   **Amendment (2026-10-10, #702):** a loop's private conversation with an
+   allowed sender other than its owner, `dm:<name>` (ADR-0049), is kept
+   from a member as an owner DM is: left out of every message list and
+   stream, with any file it carried answering 404. #703 links users to the
+   people they are, and decides what a member reads then.
 
 2. **Passwords are hashed with PBKDF2-SHA256 from the Go standard
    library.** That means 600,000 iterations and a random 16-byte salt per
