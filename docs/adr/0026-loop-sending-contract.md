@@ -1,6 +1,6 @@
 # ADR-0026: Loops send through a hub-served MCP tool
 
-Date: 2026-09-15 · Status: accepted (operator interview; implementation pending) · Amended: 2026-09-16 (`owner_dm` routing, twice); 2026-09-18 (undelivered sends); 2026-09-20 (item 1 is a Surface rule); 2026-09-22 (a resend names the failure it replaces); 2026-09-23 (item 1: `group` is a hub conversation); 2026-09-29 (`owner_dm` on Slack is opened, not captured); 2026-09-30 (item 2: `attach` sends a file); 2026-09-30 (item 2: Slack carries files); 2026-10-01 (item 1: `group` holds named channels); 2026-10-03 (a loop dismisses a lost send, and is reminded until it does)
+Date: 2026-09-15 · Status: accepted (operator interview; implementation pending); the 2026-09-16 refusal of a non-owner's DM superseded by ADR-0049 · Amended: 2026-09-16 (`owner_dm` routing, twice); 2026-09-18 (undelivered sends); 2026-09-20 (item 1 is a Surface rule); 2026-09-22 (a resend names the failure it replaces); 2026-09-23 (item 1: `group` is a hub conversation); 2026-09-29 (`owner_dm` on Slack is opened, not captured); 2026-09-30 (item 2: `attach` sends a file); 2026-09-30 (item 2: Slack carries files); 2026-10-01 (item 1: `group` holds named channels); 2026-10-03 (a loop dismisses a lost send, and is reminded until it does)
 
 ## Context
 
@@ -219,6 +219,9 @@ another's chat. Until non-owner private conversations are designed, such a
 DM is not delivered; the bot answers once, in that chat, saying that only
 the loop's owner can DM it for now. Silence would be worse than a refusal a
 human can read.
+
+*Superseded by ADR-0049 (2026-10-10, #702): such a DM is now delivered as
+that person's own conversation, `dm:<name>`, and the refusal is gone.*
 
 **Amendment (2026-09-29, #230): on Slack the address is opened, not
 captured.** "A bot cannot open a private chat" is Telegram's rule, not

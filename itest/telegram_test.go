@@ -1049,70 +1049,74 @@ func TestMixedDMAndGroupArrivalsAnswerSeparately(t *testing.T) {
 	}
 }
 
-// Only the loop's owner holds a private conversation with it (#73): a
-// non-owner's DM is turned away with a readable reason and never becomes a
-// turn, and the owner's own DM is answered in the owner's chat while a
-// stranger's arrives alongside it. Isolating *two* humans' private
-// conversations returns with the non-owner DM design.
-func TestOnlyTheOwnerHoldsAPrivateConversation(t *testing.T) {
+// Every allowed sender holds a private conversation with a loop
+// (ADR-0049): a person other than the owner is delivered as their own
+// dm:<name>, the loop's answer reaches their chat and nobody else's, a
+// loop cannot write first to someone who never messaged it, and two
+// people's DMs never share a turn.
+func TestEveryAllowedSenderHoldsAPrivateConversation(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 5252, First: "Operator", Username: "operator"}
-	friend := user{ID: 5353, First: "Friend", Username: "friend"}
-	ws := workspaceWithScript(t, "!ctx 0\n!hang 4\n"+
-		`!send {"destination":"owner_dm","text":"answer for op"} handled from op`+"\n"+
-		`!send {"destination":"owner_dm","text":"proactive note"} handled wake`+"\n")
+	friend := user{ID: 5353, First: "Friend", Username: "Friend"}
+	stranger := user{ID: 5454, First: "Stranger", Username: "stranger"}
+	// the first line answers the wake every loop takes as the hub starts
+	ws := workspaceWithScript(t, "!ctx 0\n"+
+		`!send {"destination":"dm:friend","text":"answer for friend","reply_to":"$ref"}`+"\n"+
+		`!send {"destination":"dm:stranger","text":"cold open"}`+"\n"+
+		"!hang 3\n"+
+		"!echo\n")
 	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws})
+	for _, person := range []user{friend, stranger} {
+		tg.dm("beta", person, "knock") // registers them as pending
+		srv.allowSender(person.ID)
+	}
 
-	// the friend's first DM only registers them as pending; allowlisting
-	// them lets them reach a bot, but not this loop's private conversation
-	tg.dm("alpha", friend, "knock")
-	srv.allowSender(friend.ID)
-
-	tg.dm("alpha", operator, "start hanging")
-	srv.waitState("alpha", "busy", 10*time.Second) // alpha is inside the hang
-	tg.dm("alpha", operator, "from op")
-	srv.waitForMessage("from op")
-	tg.dm("alpha", friend, "from friend")
-
-	opTurn := srv.waitTurn("alpha", 30*time.Second, func(tn turn) bool {
-		return strings.Contains(tn.ResultText, "handled from op")
-	})
-	tg.waitSent(t, operator.ID, "answer for op")
-	tg.waitSent(t, friend.ID, "direct messages only from")
-
-	// nothing of the friend's reached the loop: not as a turn input, not as
-	// a stored message, not as an answer
-	inputs := srv.turnInputs("alpha")
-	for id, envelopes := range inputs {
-		if strings.Contains(strings.Join(envelopes, "\n"), "from friend") {
-			t.Fatalf("turn %s was given a non-owner's DM", id)
+	// turn 1: the friend's DM is theirs, and so is the answer
+	tg.dm("alpha", friend, "hello alpha")
+	tg.waitSent(t, friend.ID, "answer for friend")
+	first := srv.waitTurn("alpha", 30*time.Second, func(tn turn) bool { return strings.Contains(tn.ResultText, "sent") })
+	if input := strings.Join(srv.turnInputs("alpha")[first.ID], "\n"); !strings.Contains(input, "via telegram dm · dm:friend · ref:") {
+		t.Fatalf("the friend's DM was not headed as their conversation: %q", input)
+	}
+	for _, m := range tg.sentTo(operator.ID) {
+		if strings.Contains(m.Text, "answer for friend") {
+			t.Fatalf("the friend's answer reached the owner: %q", m.Text)
 		}
 	}
-	if len(srv.activityWith("from friend")) != 0 {
-		t.Fatal("a non-owner's DM was stored as a message")
+
+	// turn 2: someone who never messaged the loop cannot be written to first
+	srv.mustJSON("POST", "/api/loops/alpha/wake", nil, nil)
+	refused := srv.waitTurn("alpha", 30*time.Second, func(tn turn) bool {
+		return tn.Trigger != "message" && strings.HasPrefix(tn.ResultText, "send")
+	})
+	if !strings.Contains(refused.ResultText, "send error: dm_unavailable") {
+		t.Fatalf("a first message to someone who never wrote was not refused: %q", refused.ResultText)
 	}
-	if !strings.Contains(strings.Join(inputs[opTurn.ID], "\n"), "from op") {
-		t.Fatalf("the owner's DM never reached its turn: %q", inputs[opTurn.ID])
+	for _, m := range tg.sentTo(stranger.ID) {
+		if strings.Contains(m.Text, "cold open") {
+			t.Fatalf("the stranger was written to first: %q", m.Text)
+		}
 	}
-	for _, m := range tg.sentTo(friend.ID) {
-		if strings.Contains(m.Text, "answer for op") {
-			t.Fatalf("the owner's answer reached a non-owner: %q", m.Text)
+
+	// turn 3 holds the loop while the owner and the friend both write: each
+	// DM is its own turn, never a batch of the two
+	tg.dm("alpha", operator, "start hanging")
+	srv.waitState("alpha", "busy", 10*time.Second)
+	tg.dm("alpha", friend, "from friend")
+	tg.dm("alpha", operator, "from op")
+	srv.waitForMessage("from friend")
+	srv.waitForMessage("from op")
+	srv.waitTurn("alpha", 30*time.Second, func(tn turn) bool { return strings.Contains(tn.ResultText, "from op") })
+	srv.waitTurn("alpha", 30*time.Second, func(tn turn) bool { return strings.Contains(tn.ResultText, "from friend") })
+	for id, envelopes := range srv.turnInputs("alpha") {
+		input := strings.Join(envelopes, "\n")
+		if strings.Contains(input, "from friend") && strings.Contains(input, "from op") {
+			t.Fatalf("turn %s was given two people's DMs: %q", id, input)
 		}
 	}
 	for _, m := range tg.sentTo(groupChatID) {
 		if strings.Contains(m.Text, "answer for") {
 			t.Fatalf("a private answer surfaced in the group: %q", m.Text)
-		}
-	}
-
-	// A turn with no DM of its own still reaches the owner: the address is
-	// the configured owner's, not the latest chat to have written
-	// (ADR-0026, amended for #73).
-	srv.mustJSON("POST", "/api/loops/alpha/wake", nil, nil)
-	tg.waitSent(t, operator.ID, "proactive note")
-	for _, m := range tg.sentTo(friend.ID) {
-		if strings.Contains(m.Text, "proactive note") {
-			t.Fatalf("a proactive owner DM went to a non-owner: %q", m.Text)
 		}
 	}
 }

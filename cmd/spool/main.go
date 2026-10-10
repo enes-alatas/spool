@@ -881,6 +881,9 @@ func catalogOf(db store.Store, self *store.Loop) loop.Catalog {
 	}
 	// oldest first, so the catalog reads in the order people joined and
 	// does not reshuffle between wakes
+	// the allowed people by their stable key, to name the ones who have
+	// messaged this loop privately
+	allowed := map[string]loop.Person{}
 	if senders, err := db.TGSenders().List(ctx); err == nil {
 		for i := len(senders) - 1; i >= 0; i-- {
 			sender := senders[i]
@@ -889,6 +892,7 @@ func catalogOf(db store.Store, self *store.Loop) loop.Catalog {
 			}
 			person := loop.Person{Username: sender.Username, Display: sender.Display, TGUserID: sender.TGUserID}
 			cat.People = append(cat.People, person)
+			allowed[store.TGPerson(sender.TGUserID)] = person
 			// every loop carries the hub's default Telegram owner, so a
 			// Slack loop's owner is only ever read from its Slack senders
 			if sender.TGUserID == self.OwnerTGUserID && self.Surface() != store.SurfaceSlack {
@@ -905,9 +909,24 @@ func catalogOf(db store.Store, self *store.Loop) loop.Catalog {
 			}
 			person := loop.Person{Username: sender.Username, Display: sender.Display, SlackUserID: sender.SlackUserID}
 			cat.People = append(cat.People, person)
+			allowed[store.SlackPerson(sender.SlackUserID)] = person
 			if sender.SlackUserID == self.OwnerSlackUserID && self.Surface() == store.SurfaceSlack {
 				owner := person
 				cat.Owner = &owner
+			}
+		}
+	}
+	// the people other than the owner who have messaged this loop privately
+	// on the surface it is on now: the ones it can write to first (ADR-0049)
+	if chats, err := db.PrivateChats().List(ctx, self.ID); err == nil {
+		owner := store.SlackPerson(self.OwnerSlackUserID)
+		if self.Surface() == store.SurfaceTelegram {
+			owner = store.TGPerson(self.OwnerTGUserID)
+		}
+		for _, chat := range chats {
+			person, ok := allowed[chat.Person]
+			if ok && store.PersonSurface(chat.Person) == self.Surface() && chat.Person != owner {
+				cat.Private = append(cat.Private, person)
 			}
 		}
 	}

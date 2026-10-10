@@ -90,26 +90,6 @@ func (adapter *Adapter) tellPairCode(loopRecord *store.Loop, sender *store.Slack
 		escape(sender.PairCode))})
 }
 
-// tellNotOwner answers an allowed sender's DM to a loop that is not theirs,
-// once per loop and DM: the loop reads only its owner's DM, and would
-// otherwise leave them talking to nobody.
-func (adapter *Adapter) tellNotOwner(loopRecord *store.Loop, event messageEvent) {
-	if !adapter.once(adapter.notOwnerTold, loopRecord.ID+":"+event.Channel) {
-		return
-	}
-	owner := "its owner"
-	if loopRecord.OwnerSlackUserID != "" {
-		owner = "<@" + loopRecord.OwnerSlackUserID + ">"
-	}
-	where := "in its channel"
-	if loopRecord.SlackChannelID != "" {
-		where = "in <#" + loopRecord.SlackChannelID + ">"
-	}
-	adapter.notify(loopRecord.ID, notice{channel: event.Channel, text: fmt.Sprintf(
-		"Spool: %s reads direct messages only from %s for now. Reach it %s instead.",
-		escape(loopRecord.Name), owner, where)})
-}
-
 // escape makes text literal in Slack mrkdwn, where &, < and > are markup.
 func escape(text string) string {
 	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(text)

@@ -97,8 +97,34 @@ func TestSameConversation(t *testing.T) {
 			store.Message{Conversation: store.ConversationGroup}, store.ConversationOwnerDM, false},
 	}
 	for _, testCase := range cases {
-		if got := sameConversation(&testCase.target, testCase.destination, "l1"); got != testCase.want {
+		if got := sameConversation(&testCase.target, testCase.destination, "l1", ""); got != testCase.want {
 			t.Errorf("%s: sameConversation = %v, want %v", testCase.name, got, testCase.want)
 		}
+	}
+}
+
+// TestADMIsThePersonNotTheName: a reply or a resend stays in a dm:<name>
+// conversation by who it is with, so a renamed person is still the same
+// conversation and a name someone else has since taken is not (ADR-0049).
+func TestADMIsThePersonNotTheName(t *testing.T) {
+	alice := store.TGPerson(2)
+	target := store.Message{Conversation: "dm:alice", ConversationLoopID: "l1", DMPerson: alice}
+	cases := []struct {
+		name, destination, person string
+		want                      bool
+	}{
+		{"the same person by the same name", "dm:alice", alice, true},
+		{"the same person renamed", "dm:alicia", alice, true},
+		{"someone else who took the name", "dm:alice", store.TGPerson(3), false},
+		{"a name nobody answers to", "dm:alice", "", false},
+		{"owner_dm", store.ConversationOwnerDM, "", false},
+	}
+	for _, testCase := range cases {
+		if got := sameConversation(&target, testCase.destination, "l1", testCase.person); got != testCase.want {
+			t.Errorf("%s: sameConversation = %v, want %v", testCase.name, got, testCase.want)
+		}
+	}
+	if sameConversation(&target, "dm:alice", "l2", alice) {
+		t.Error("another loop's conversation with the same person counted as this one's")
 	}
 }

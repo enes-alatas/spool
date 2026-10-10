@@ -207,6 +207,7 @@ func (router *Router) Send(ctx context.Context, req SendRequest) (*store.Message
 	var targets map[string]*store.Loop
 	var ownerChat int64
 	var ownerSlackUser string
+	var dmChat string
 	switch req.Destination {
 	case store.ConversationGroup:
 		if !conv.Group {
@@ -244,12 +245,24 @@ func (router *Router) Send(ctx context.Context, req SendRequest) (*store.Message
 	case store.ConversationControlRoom:
 		msg.ConversationLoopID = req.From.ID
 	default:
+		if store.IsDM(req.Destination) {
+			// A person other than the owner, in the chat they opened with
+			// this loop: pinned now, as the owner's is (ADR-0049).
+			var person, name string
+			if person, name, dmChat, serr, err = router.dmTarget(ctx, req.From, conv, req.Destination); serr != nil || err != nil {
+				return nil, serr, err
+			}
+			msg.Conversation, msg.DMPerson = store.DMDestinationPrefix+name, person
+			msg.ConversationLoopID = req.From.ID
+			msg.Mirror = store.MirrorPending
+			break
+		}
 		name, ok := strings.CutPrefix(req.Destination, store.ChannelDestinationPrefix)
 		switch {
 		case !ok:
 			return nil, &SendError{ErrInvalidDestination,
-				fmt.Sprintf("destination must be %s, %s, %s or %s<name>", store.ConversationOwnerDM, store.ConversationGroup,
-					store.ConversationControlRoom, store.ChannelDestinationPrefix)}, nil
+				fmt.Sprintf("destination must be %s, %s<name>, %s, %s or %s<name>", store.ConversationOwnerDM, store.DMDestinationPrefix,
+					store.ConversationGroup, store.ConversationControlRoom, store.ChannelDestinationPrefix)}, nil
 		case name == store.FleetChannel:
 			return nil, &SendError{ErrInvalidDestination,
 				"the fleet channel is sent to as " + store.ConversationGroup + ", not " + req.Destination}, nil
@@ -351,12 +364,13 @@ func (router *Router) Send(ctx context.Context, req SendRequest) (*store.Message
 	for _, target := range dropped {
 		router.recordStormDrop(ctx, req.From.ID, req.From.Name, target)
 	}
-	router.recordSend(req.From.ID, req.Destination, text)
+	router.recordSend(req.From.ID, msg.Destination(), text)
 	router.bus.Publish(bus.Item{Kind: bus.KindMessage, LoopID: req.From.ID, Payload: &MessagePayload{
 		Message:        *msg,
 		FromLoopName:   req.From.Name,
 		OwnerDMChat:    ownerChat,
 		OwnerSlackUser: ownerSlackUser,
+		DMChat:         dmChat,
 		Attachments:    sentRows,
 	}})
 
@@ -444,7 +458,11 @@ func (router *Router) lostSend(ctx context.Context, req SendRequest, ref string,
 		return nil, &SendError{refuse.notFailed,
 			"that message has no unresolved send failure; it arrived, or somebody has already dealt with it"}, nil
 	}
-	if target.Destination() != req.Destination {
+	person, err := router.dmPersonOf(ctx, req.From, req.Destination)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !sameDestination(target, req.Destination, person) {
 		return nil, &SendError{refuse.wrongDestination,
 			fmt.Sprintf("that message was going to %s, not %s; %s", target.Destination(), req.Destination, refuse.elsewhere)}, nil
 	}
@@ -471,20 +489,36 @@ func (router *Router) replyTarget(ctx context.Context, req SendRequest) (*store.
 	} else if err != nil {
 		return nil, nil, err
 	}
-	if !sameConversation(target, req.Destination, req.From.ID) {
+	person, err := router.dmPersonOf(ctx, req.From, req.Destination)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !sameConversation(target, req.Destination, req.From.ID, person) {
 		return nil, &SendError{ErrCrossConversation,
 			fmt.Sprintf("that message is in %s, not %s; a reply stays in its own conversation", target.Destination(), req.Destination)}, nil
 	}
 	return target, nil, nil
 }
 
+// sameDestination reports whether target was said where destination sends.
+// A dm:<name> conversation is the person, not the name: a renamed person is
+// still the same conversation, and a name someone else has taken since is
+// not (ADR-0049).
+func sameDestination(target *store.Message, destination, person string) bool {
+	if store.IsDM(target.Conversation) {
+		return store.IsDM(destination) && person != "" && target.DMPerson == person
+	}
+	return target.Destination() == destination
+}
+
 // sameConversation reports whether target is a message of the very
 // conversation being sent to: the same channel, for a shared one. Only a
 // channel leaves ConversationLoopID empty; reading that sentinel as "matches
 // anyone" would let a loop quote a private message keyed to no loop — which
-// migration 0009 can leave behind — into its own DM.
-func sameConversation(target *store.Message, destination, fromLoopID string) bool {
-	if target.Destination() != destination {
+// migration 0009 can leave behind — into its own DM. person is who a
+// dm:<name> destination resolved to, "" for any other.
+func sameConversation(target *store.Message, destination, fromLoopID, person string) bool {
+	if !sameDestination(target, destination, person) {
 		return false
 	}
 	if target.Conversation == store.ConversationGroup {
@@ -650,12 +684,16 @@ func (router *Router) recordSend(loopID, destination, text string) {
 	router.turnSends[loopID] = append(router.turnSends[loopID], fmt.Sprintf("to %s: %q", destination, text))
 }
 
-// Errors RetrySend answers with, both meaning "not this message" rather than
-// "the send failed": one for a message with nothing to retry, one for a loop
-// whose owner has no private chat for the retry to land in.
+// Errors RetrySend answers with, all meaning "not this message" rather than
+// "the send failed": one for a message with nothing to retry, two for a
+// private message with no chat for the retry to land in, and one for a
+// dm:<name> message whose person is no longer an allowed sender on the
+// loop's surface.
 var (
 	ErrNoUnresolvedFailure = errors.New("message has no unresolved send failure")
 	ErrNoOwnerDMChat       = errors.New("loop has no private chat with its owner")
+	ErrNoPrivateChat       = errors.New("loop has no private chat with that person")
+	ErrDMNotAllowed        = errors.New("that person is no longer an allowed sender on the loop's surface")
 )
 
 // RetrySend asks the surfaces to send a stored message again, after the
@@ -667,12 +705,14 @@ var (
 // row as stored, so a retry cannot quietly become a different message than
 // the one that failed.
 //
-// The owner's DM chat, or on Slack the owner, is the one thing re-resolved
-// rather than replayed. The original send pinned it so that a DM arriving
-// mid-flight could not redirect the message; a retry minutes or hours later
-// has no such window to protect, and the chat it pinned may since have been
-// replaced. The loop's current one is the only chat a message can be
-// delivered to now.
+// The private chat, the owner's or on Slack the owner, or a dm:<name>
+// person's, is the one thing re-resolved rather than replayed. The original
+// send pinned it so that a DM arriving mid-flight could not redirect the
+// message; a retry minutes or hours later has no such window to protect,
+// and the chat it pinned may since have been replaced. The loop's current
+// one is the only chat a message can be delivered to now. For the same
+// reason a dm:<name> person is asked again whether they are still an
+// allowed sender on the loop's current surface.
 //
 // Errors are about whether the retry can be asked for at all, never about
 // whether it lands: the send is the surface's, and its outcome reaches the
@@ -701,6 +741,22 @@ func (router *Router) RetrySend(ctx context.Context, messageID int64) error {
 			return ErrNoOwnerDMChat
 		}
 		payload.OwnerDMChat, payload.OwnerSlackUser = from.OwnerDMChatID, from.OwnerSlackUserID
+	}
+	if store.IsDM(msg.Conversation) {
+		allowed, err := router.allowedOn(ctx, from, msg.DMPerson)
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return ErrDMNotAllowed
+		}
+		private, err := router.store.PrivateChats().Get(ctx, from.ID, msg.DMPerson)
+		if errors.Is(err, store.ErrNotFound) {
+			return ErrNoPrivateChat
+		} else if err != nil {
+			return err
+		}
+		payload.DMChat = private.Chat
 	}
 	router.bus.Publish(bus.Item{Kind: bus.KindSendRetry, LoopID: msg.FromLoopID, Payload: payload})
 	return nil

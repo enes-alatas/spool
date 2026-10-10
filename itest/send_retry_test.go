@@ -246,3 +246,52 @@ func TestRetryingAPrivateMessageWithNoChatIsRefused(t *testing.T) {
 		t.Errorf("the badge counts %d after a refused retry, want 1", n)
 	}
 }
+
+// A retry asks again whether a dm:<name> person may be reached
+// (ADR-0049): someone blocked after a send to them failed is refused with
+// a 409, nothing is sent to them, and the failure stays the operator's.
+func TestRetryingADMToABlockedPersonIsRefused(t *testing.T) {
+	t.Parallel()
+	operator := user{ID: 7780, First: "Operator", Username: "operator"}
+	friend := user{ID: 7781, First: "Friend", Username: "friend"}
+	ws := workspaceWithScript(t, "!ctx 0\n"+
+		`!send {"destination":"dm:friend","text":"the answer you asked for"}`+"\n"+
+		"!echo\n")
+	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws})
+	tg.dm("beta", friend, "knock") // registers them as pending
+	srv.allowSender(friend.ID)
+
+	// The friend's DM records their chat, so the send has one to fail
+	// against; Telegram is refusing everything by the time it runs.
+	tg.failNextSends(-1)
+	tg.dm("alpha", friend, "a question")
+	if !srv.hasEvent("alpha", "send_failed", 60*time.Second) {
+		t.Fatal("the private send was expected to be given up on")
+	}
+	lost := srv.waitUndelivered(1, 30*time.Second)[0]
+
+	srv.mustJSON("POST", "/api/telegram/senders/"+strconv.FormatInt(friend.ID, 10)+"/block", nil, nil)
+	tg.failNextSends(0) // a send now would succeed, so a send is visible if one happens
+	before := tg.sendAttempts()
+	resp, body := srv.do("POST", "/api/messages/"+strconv.FormatInt(lost.ID, 10)+"/retry", nil)
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("retry to a blocked person: status = %d, want 409 (%s)", resp.StatusCode, body)
+	}
+	if !strings.Contains(string(body), "no longer an allowed sender") {
+		t.Errorf("the refusal does not say why: %s", body)
+	}
+	if tg.sendAttempts() != before {
+		t.Error("a refused retry still attempted a send")
+	}
+	if got := srv.undelivered(); len(got) != 1 || got[0].ID != lost.ID {
+		t.Fatalf("the refused retry changed the list: %s", dump(got))
+	}
+
+	// Allowed again, the same retry goes through.
+	srv.mustJSON("POST", "/api/telegram/senders/"+strconv.FormatInt(friend.ID, 10)+"/allow", nil, nil)
+	resp, body = srv.do("POST", "/api/messages/"+strconv.FormatInt(lost.ID, 10)+"/retry", nil)
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("retry to a person allowed again: status = %d, want 202 (%s)", resp.StatusCode, body)
+	}
+	tg.waitSent(t, friend.ID, "the answer you asked for")
+}

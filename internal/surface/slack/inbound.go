@@ -254,20 +254,21 @@ func (adapter *Adapter) titleRoom(ctx context.Context, loopRecord *store.Loop, c
 	}
 }
 
-// ingestDM takes a message in the app's DM, which reaches the loop only
-// from its owner: owner_dm addresses the owner, so a loop that answered
-// anyone else would answer into someone else's DM.
+// ingestDM takes a message in the app's DM. The owner's is the loop's
+// owner_dm; any other allowed sender's is a conversation of their own,
+// dm:<name>, which the loop answers there and nowhere else (ADR-0049).
 func (adapter *Adapter) ingestDM(ctx context.Context, loopRecord *store.Loop, teamID string, event messageEvent) {
 	sender := adapter.allowedSender(ctx, loopRecord, teamID, event, "dm:"+loopRecord.Name)
 	if sender == nil {
 		return
 	}
-	if loopRecord.OwnerSlackUserID == "" || loopRecord.OwnerSlackUserID != event.User {
-		adapter.turnedAway(loopRecord, event, "sender is not this loop's owner")
-		adapter.tellNotOwner(loopRecord, event)
-		return
-	}
-	if loopRecord.OwnerSlackDMChannel != event.Channel {
+	var conversation, person string
+	switch {
+	case loopRecord.OwnerSlackUserID == "" || loopRecord.OwnerSlackUserID != event.User:
+		person = store.SlackPerson(event.User)
+		conversation = store.DMDestinationPrefix + store.DMName(sender.Username, event.User)
+		adapter.capturePrivateChat(ctx, loopRecord, person, event.Channel)
+	case loopRecord.OwnerSlackDMChannel != event.Channel:
 		adapter.captureOwnerDM(ctx, loopRecord, event.Channel)
 	}
 	err := adapter.router.Ingest(ctx, route.InboundMessage{
@@ -279,6 +280,8 @@ func (adapter *Adapter) ingestDM(ctx context.Context, loopRecord *store.Loop, te
 		ReplyToID:      adapter.threadRoot(ctx, event),
 		ImplicitTo:     loopRecord.ID,
 		Attachments:    adapter.attachmentsOf(ctx, loopRecord, event),
+		Conversation:   conversation,
+		DMPerson:       person,
 	})
 	if err != nil && !errors.Is(err, store.ErrDuplicate) {
 		adapter.log.Error("slack dm ingest", "loop", loopRecord.Name, "err", err)
@@ -374,6 +377,18 @@ func (adapter *Adapter) captureOwnerDM(ctx context.Context, loopRecord *store.Lo
 	adapter.bus.Publish(bus.Item{Kind: bus.KindLoopStatus, LoopID: loopRecord.ID, Payload: map[string]any{
 		"loop_id": loopRecord.ID, "name": loopRecord.Name, "owner_dm_ready": true,
 	}})
+}
+
+// capturePrivateChat records the DM a person other than the owner wrote to
+// the app in, which is the one the app answers them in, and what lets the
+// loop write to them first later (ADR-0049).
+func (adapter *Adapter) capturePrivateChat(ctx context.Context, loopRecord *store.Loop, person, channelID string) {
+	err := adapter.store.PrivateChats().Capture(ctx, &store.PrivateChat{
+		LoopID: loopRecord.ID, Person: person, Chat: channelID, CapturedAt: time.Now().UnixMilli(),
+	})
+	if err != nil {
+		adapter.log.Error("slack: private chat capture", "loop", loopRecord.Name, "err", err)
+	}
 }
 
 // threadRoot is the message a thread reply answers: the thread's first

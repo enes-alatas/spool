@@ -51,6 +51,16 @@ type Person struct {
 	SlackUserID string
 }
 
+// DM is the destination of a private conversation with the person when
+// they are not the loop's owner: dm:<name> (ADR-0049).
+func (person Person) DM() string {
+	id := person.SlackUserID
+	if id == "" {
+		id = strconv.FormatInt(person.TGUserID, 10)
+	}
+	return store.DMDestinationPrefix + store.DMName(person.Username, id)
+}
+
 // Label renders a person the way a loop should address them. A handle is
 // what a mention needs; the display name is added only when it says
 // something the handle does not. Someone with neither is named by id — not
@@ -89,6 +99,10 @@ type Catalog struct {
 	// writes first an owner_dm send is refused — the loop should ask in the
 	// group instead of retrying. A Slack app opens it itself.
 	OwnerDMReady bool
+	// Private are the people other than the owner who have messaged this
+	// loop privately, oldest first: the ones it can write to first on their
+	// dm:<name> (ADR-0049).
+	Private []Person
 	// Conversations are the destinations this loop has; the prompt teaches
 	// those and no others.
 	Conversations Conversations
@@ -195,7 +209,7 @@ func (conversations Conversations) shared() bool {
 func (conversations Conversations) Destinations() []string {
 	var destinations []string
 	if conversations.Surface != "" {
-		destinations = append(destinations, store.ConversationOwnerDM)
+		destinations = append(destinations, store.ConversationOwnerDM, store.DMDestinationPrefix+"<name>")
 	}
 	if conversations.Group {
 		destinations = append(destinations, store.ConversationGroup)
@@ -207,11 +221,12 @@ func (conversations Conversations) Destinations() []string {
 }
 
 // direct lists the loop's direct conversations, the ones no other loop
-// is in. The hub's members never read owner_dm, though its admins and
-// owners do; every user of the hub reads control_room (ADR-0048).
+// is in. The hub's members never read owner_dm or a dm:<name>, though its
+// admins and owners do; every user of the hub reads control_room
+// (ADR-0048, ADR-0049).
 func (conversations Conversations) direct() []string {
 	if conversations.Surface != "" {
-		return []string{store.ConversationOwnerDM, store.ConversationControlRoom}
+		return []string{store.ConversationOwnerDM, store.DMDestinationPrefix + "<name>", store.ConversationControlRoom}
 	}
 	return []string{store.ConversationControlRoom}
 }
@@ -288,6 +303,27 @@ func (cat Catalog) section(loopRecord *store.Loop) string {
   them yet: a bot cannot open one, so owner_dm is refused until they
   message your bot once. Ask %s rather than retrying.
 `, cat.Owner.Label(), askIn)
+	}
+	// Everyone else allowed holds a private conversation of their own
+	// (ADR-0049); the loop writes first only to those who have opened one.
+	if conv.Surface != "" {
+		reachable := "nobody yet"
+		if len(cat.Private) > 0 {
+			var names []string
+			for _, person := range cat.Private {
+				name := person.DM()
+				if person.Username == "" {
+					name += " (" + person.Label() + ")" // named by id, so say who
+				}
+				names = append(names, name)
+			}
+			reachable = strings.Join(names, ", ")
+		}
+		fmt.Fprintf(&text, `- Anyone else allowed can message you privately too. Each person is a
+  conversation of their own, dm:<name> as its header names it, and you
+  answer them there. You write first only to someone who has messaged you
+  privately: %s.
+`, reachable)
 	}
 
 	switch {
@@ -370,7 +406,7 @@ func (cat Catalog) section(loopRecord *store.Loop) string {
 			text.WriteString("  No person is in a channel without a room yet: reach people in a room or\n  directly.\n")
 		}
 		if conv.Surface != "" {
-			text.WriteString("  Only owner_dm is kept from the hub's members; every user of this hub\n  reads control_room.\n")
+			text.WriteString("  Only owner_dm and dm:<name> are kept from the hub's members; every user\n  of this hub reads control_room.\n")
 		} else {
 			text.WriteString("  Nothing is private to one person: every user of this hub reads\n  control_room.\n")
 		}
@@ -449,10 +485,12 @@ func SystemPrompt(loopRecord *store.Loop, cat Catalog, rules []*store.FleetRule,
 `, strings.Join(conv.direct(), ", "))
 	}
 	// control_room is read by every user of the hub, members too, so what
-	// the owner says in owner_dm stays out of it (ADR-0048).
+	// the owner says in owner_dm, or anyone in their dm:<name>, stays out of
+	// it, and out of anyone else's private conversation (ADR-0048, ADR-0049).
 	if conv.Surface != "" {
-		text.WriteString(`- Keep what your owner tells you in owner_dm out of control_room as well,
-  unless they ask you to.
+		text.WriteString(`- Keep what your owner tells you in owner_dm, and what anyone tells you in
+  their dm:<name>, out of control_room and out of every other person's
+  private conversation as well, unless they ask you to.
 `)
 	}
 	text.WriteString(`- Between wakes you do not exist: leave notes in your status note or commit
@@ -505,7 +543,10 @@ func howThisWorks(conv Conversations) string {
 		fmt.Fprintf(&text, `    owner_dm      your owner's private %s chat — the same person
                   whatever the turn is about, so you can raise something
                   privately on a tick, not only in reply
-`, conv.Surface)
+    dm:<name>     a private %s chat with anyone else allowed, as
+                  WHO YOU CAN ADDRESS names them; only with someone who
+                  has messaged you privately
+`, conv.Surface, conv.Surface)
 	}
 	if conv.Group {
 		text.WriteString(`    group         the fleet channel, shared by this fleet and visible to
@@ -860,6 +901,12 @@ func MessageEnvelope(now time.Time, in Inbound) Envelope {
 	if in.Channel != "" {
 		channel = store.ChannelDestination(in.Channel)
 	}
+	// A private message is the owner's owner_dm unless it came from anyone
+	// else, whose conversation is their own dm:<name> (ADR-0049).
+	private := store.ConversationOwnerDM
+	if store.IsDM(in.Conversation) {
+		private = in.Conversation
+	}
 	var from string
 	switch {
 	case in.FromLoop:
@@ -867,11 +914,11 @@ func MessageEnvelope(now time.Time, in Inbound) Envelope {
 	case in.Origin == store.OriginTelegramGroup:
 		from = fmt.Sprintf("message from @%s via telegram · %s", in.Author, channel)
 	case in.Origin == store.OriginTelegramDM:
-		from = fmt.Sprintf("message from @%s via telegram dm · owner_dm", in.Author)
+		from = fmt.Sprintf("message from @%s via telegram dm · %s", in.Author, private)
 	case in.Origin == store.OriginSlackChannel:
 		from = fmt.Sprintf("message from @%s via slack · %s", in.Author, channel)
 	case in.Origin == store.OriginSlackDM:
-		from = fmt.Sprintf("message from @%s via slack dm · owner_dm", in.Author)
+		from = fmt.Sprintf("message from @%s via slack dm · %s", in.Author, private)
 	case in.Conversation == store.ConversationControlRoom:
 		from = fmt.Sprintf("message from %s via web · control_room", in.Author)
 	default:

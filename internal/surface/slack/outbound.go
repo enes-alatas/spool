@@ -94,8 +94,8 @@ func (adapter *Adapter) mirrorMessage(ctx context.Context, mp *route.MessagePayl
 	if loopRecord.Surface() != store.SurfaceSlack {
 		return
 	}
-	switch mp.Conversation {
-	case store.ConversationGroup:
+	switch {
+	case mp.Conversation == store.ConversationGroup:
 		// a send to a channel goes to the room the app has bound to it
 		// (ADR-0038), judged from the loop as it is now: a room bound
 		// since the send still gets the post, and with none there is
@@ -104,9 +104,16 @@ func (adapter *Adapter) mirrorMessage(ctx context.Context, mp *route.MessagePayl
 			adapter.ledger.StayOnHub(ctx, mp)
 			return
 		}
-	case store.ConversationOwnerDM:
+	case mp.Conversation == store.ConversationOwnerDM:
 		if mp.OwnerSlackUser == "" {
 			adapter.ledger.Unsendable(ctx, mp, "owner dm delivery: send carried no pinned owner")
+			return
+		}
+	case store.IsDM(mp.Conversation):
+		// the DM the person opened with the app, pinned at send time
+		// (ADR-0049)
+		if mp.DMChat == "" {
+			adapter.ledger.Unsendable(ctx, mp, "private delivery: send carried no pinned chat")
 			return
 		}
 	default:
@@ -312,6 +319,9 @@ func (adapter *Adapter) send(ctx context.Context, mp *route.MessagePayload) {
 			adapter.fail(ctx, mp, err, 1)
 			return
 		}
+	}
+	if store.IsDM(mp.Conversation) {
+		channel = mp.DMChat
 	}
 	poll, err := adapter.pollOf(ctx, mp.ID)
 	if err != nil {

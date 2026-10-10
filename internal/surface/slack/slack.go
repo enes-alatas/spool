@@ -41,11 +41,10 @@ type Adapter struct {
 	// loop cannot both find it unlinked and connect its app twice.
 	changing sync.Mutex
 
-	// toldMu guards pairTold and notOwnerTold, which every link's ingest
-	// writes: the notices already given this run (notice.go).
-	toldMu       sync.Mutex
-	pairTold     map[string]bool // Slack user ID
-	notOwnerTold map[string]bool // loop ID + ":" + DM channel
+	// toldMu guards pairTold, which every link's ingest writes: the
+	// pairing codes already given this run (notice.go).
+	toldMu   sync.Mutex
+	pairTold map[string]bool // Slack user ID
 	// loginTold holds, for each owner told that a Claude login was
 	// refused, the loop whose app told them.
 	loginTold map[loginOutage]string
@@ -57,7 +56,7 @@ func New(st store.Store, publisher *bus.Bus, router *route.Router, log *slog.Log
 	return &Adapter{store: st, bus: publisher, router: router, client: NewClientAt(apiBase), log: log,
 		ledger: &outbound.Ledger{Store: st, Bus: publisher, Log: log, Surface: "slack"},
 		timing: defaultLinkTiming, links: map[string]*link{},
-		pairTold: map[string]bool{}, notOwnerTold: map[string]bool{}, loginTold: map[loginOutage]string{}}
+		pairTold: map[string]bool{}, loginTold: map[loginOutage]string{}}
 }
 
 var _ surface.Surface = (*Adapter)(nil)

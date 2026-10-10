@@ -112,6 +112,9 @@ type InboundMessage struct {
 	// Channel is the channel a group message was said in, as the room it
 	// came through carries it; "" is the fleet channel.
 	Channel string
+	// DMPerson is who a dm:<name> conversation is with (ADR-0049), set with
+	// Conversation by the surface that heard the person; "" otherwise.
+	DMPerson string
 	// Conversation optionally names the destination outright — the web
 	// composer's declared destination (ADR-0026). Empty means derive it
 	// from the origin. Callers pass a validated store.Conversation* value.
@@ -140,6 +143,10 @@ type MessagePayload struct {
 	// pinned the same way: an owner changed after the send does not receive
 	// what was written to the one before.
 	OwnerSlackUser string `json:"-"`
+	// DMChat is the chat a dm:<name> send was resolved to at send time, the
+	// Telegram chat id in decimal or the Slack DM channel, pinned the same
+	// way (ADR-0049).
+	DMChat string `json:"-"`
 }
 
 type Deliverer interface {
@@ -191,10 +198,11 @@ func Mentions(text string) []string {
 }
 
 // conversationFor resolves the conversation a message belongs to (ADR-0026).
-// An explicit destination — the web composer's picker — wins; otherwise it
-// derives from the origin: a DM to a loop's bot or app is that loop's owner_dm, the
-// per-loop web composer is its control_room, and everything else — group
-// traffic and loop replies — is the shared group.
+// An explicit destination wins: the web composer's picker, or the dm:<name>
+// a surface names for a sender other than the owner (ADR-0049). Otherwise
+// it derives from the origin: a DM to a loop's bot or app is that loop's
+// owner_dm, the per-loop web composer is its control_room, and everything
+// else — group traffic and loop replies — is the shared group.
 func conversationFor(in InboundMessage) (kind, loopID string) {
 	switch {
 	case in.Conversation == store.ConversationGroup:
@@ -234,6 +242,7 @@ func (router *Router) Ingest(ctx context.Context, in InboundMessage) error {
 
 		Conversation:       conv,
 		ConversationLoopID: convLoopID,
+		DMPerson:           in.DMPerson,
 		Mirror:             inboundMirror(in.Origin),
 	}
 	if conv == store.ConversationGroup {

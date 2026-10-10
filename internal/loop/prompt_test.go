@@ -139,6 +139,12 @@ func TestMessageEnvelopeNamesConversation(t *testing.T) {
 		{"slack dm", MessageEnvelope(now, Inbound{Origin: store.OriginSlackDM, Author: "enes", Text: "x",
 			Conversation: store.ConversationOwnerDM}),
 			"message from @enes via slack dm · owner_dm"},
+		{"telegram dm from someone else", MessageEnvelope(now, Inbound{Origin: store.OriginTelegramDM, Author: "alice", Text: "x",
+			Conversation: "dm:alice", TGChatID: 43}),
+			"message from @alice via telegram dm · dm:alice"},
+		{"slack dm from someone else", MessageEnvelope(now, Inbound{Origin: store.OriginSlackDM, Author: "alice", Text: "x",
+			Conversation: "dm:alice"}),
+			"message from @alice via slack dm · dm:alice"},
 		{"slack channel", MessageEnvelope(now, Inbound{Origin: store.OriginSlackChannel, Author: "enes", Text: "x",
 			Conversation: store.ConversationGroup}),
 			"message from @enes via slack · group"},
@@ -360,6 +366,26 @@ func TestCatalogSection(t *testing.T) {
 			notWant: []string{"telegram"},
 		},
 		{
+			name: "people who have messaged the loop privately",
+			cat: Catalog{
+				People: []Person{enes, {Username: "Alice", TGUserID: 2}, {Display: "Bob", TGUserID: 3}}, Owner: &enes, OwnerDMReady: true,
+				Private:       []Person{{Username: "Alice", TGUserID: 2}, {Display: "Bob", TGUserID: 3}},
+				Conversations: telegramInGroup,
+			},
+			want: []string{
+				"Each person is a\n  conversation of their own, dm:<name> as its header names it",
+				"messaged you\n  privately: dm:alice, dm:3 (Bob).",
+				"dm:<name>     a private Telegram chat with anyone else allowed",
+				"Only owner_dm and dm:<name> are kept from the hub's members",
+			},
+		},
+		{
+			name:    "nobody has messaged the loop privately",
+			cat:     Catalog{People: []Person{enes}, Owner: &enes, OwnerDMReady: true, Conversations: telegramInGroup},
+			want:    []string{"messaged you\n  privately: nobody yet."},
+			notWant: []string{"dm:enesalatas"},
+		},
+		{
 			name: "an owner who has never written",
 			cat:  Catalog{People: []Person{enes}, Owner: &enes, Conversations: telegramInGroup},
 			want: []string{
@@ -391,7 +417,7 @@ func TestCatalogSection(t *testing.T) {
 				"Nothing is private to one person: every user of this hub reads\n  control_room.",
 			},
 			notWant: []string{"owner_dm reaches them", "Only owner_dm is private", "posting in telegram", "control_room is private",
-				"owner_dm is private to your owner"},
+				"owner_dm is private to your owner", "dm:<name>"},
 		},
 		{
 			name: "outside the fleet channel: no peers, no people, ask in control_room",
@@ -734,8 +760,8 @@ func TestPromptTeachesOnlyTheLoopsConversations(t *testing.T) {
 				"\"[message from @enes via telegram · group · ref:42 · ...]\" or",
 				"    owner_dm      your owner's private Telegram chat",
 				"    group         the fleet channel",
-				"direct conversation (owner_dm, control_room) stays out",
-				"- Keep what your owner tells you in owner_dm out of control_room as well,",
+				"direct conversation (owner_dm, dm:<name>, control_room)",
+				"- Keep what your owner tells you in owner_dm, and what anyone tells you in",
 			},
 		},
 	}
@@ -849,8 +875,8 @@ func TestConversationsOf(t *testing.T) {
 	}{
 		{store.Loop{OutsideFleetChannel: true}, "control_room"},
 		{store.Loop{}, "group control_room"},
-		{store.Loop{TGBotToken: "synthetic", OutsideFleetChannel: true}, "owner_dm control_room"},
-		{store.Loop{TGBotToken: "synthetic"}, "owner_dm group control_room"},
+		{store.Loop{TGBotToken: "synthetic", OutsideFleetChannel: true}, "owner_dm dm:<name> control_room"},
+		{store.Loop{TGBotToken: "synthetic"}, "owner_dm dm:<name> group control_room"},
 	}
 	for _, testCase := range cases {
 		if got := strings.Join(ConversationsOf(&testCase.loop, nil, nil, nil).Destinations(), " "); got != testCase.want {

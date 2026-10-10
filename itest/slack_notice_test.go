@@ -11,10 +11,10 @@ import (
 )
 
 // A person the app turns away is told why, once, in the DM they wrote in
-// (#230): a sender Spool has not allowed gets their pairing code, and an
-// allowed sender who DMs a loop that is not theirs learns whose it is. A
-// pending sender in the channel gets no answer there, since the code is
-// theirs to hand the operator.
+// (#230): a sender Spool has not allowed gets their pairing code. A pending
+// sender in the channel gets no answer there, since the code is theirs to
+// hand the operator. An allowed sender is turned away from no loop's DM
+// (ADR-0049), so nothing tells them a loop is not theirs.
 func TestSlackTurnedAwaySenderIsToldWhy(t *testing.T) {
 	t.Parallel()
 	srv, slack := startSlackFleet(t)
@@ -29,22 +29,18 @@ func TestSlackTurnedAwaySenderIsToldWhy(t *testing.T) {
 		t.Fatalf("the stranger was told %+v, want their code from terra's app in their DM", told)
 	}
 
-	const notOwnerText = "reads direct messages only from"
 	operatorDM := "D" + slackOperator
 	slack.pushMessage(t, slackAppToken, "im", operatorDM, slackOperator, "hi terra", "1727600000.000110")
-	slack.pushMessage(t, slackAppToken, "im", operatorDM, slackOperator, "hello?", "1727600000.000111")
-	if told := slack.waitPost(t, notOwnerText); told.Channel != operatorDM ||
-		told.Text != "Spool: terra reads direct messages only from its owner for now. Reach it in its channel instead." {
-		t.Fatalf("a non-owner was told %+v", told)
-	}
+	srv.waitForMessage("hi terra")
 
 	// each notice is said once; the second message of each pair, if it
 	// were told again, is paced a second behind the first
 	time.Sleep(2500 * time.Millisecond)
-	for _, text := range []string{pairText, notOwnerText} {
-		if n := countPosts(slack, text); n != 1 {
-			t.Errorf("%q was posted %d times, want once: %s", text, n, dump(slack.postsTaken()))
-		}
+	if n := countPosts(slack, pairText); n != 1 {
+		t.Errorf("%q was posted %d times, want once: %s", pairText, n, dump(slack.postsTaken()))
+	}
+	if n := countPosts(slack, "direct messages only from"); n != 0 {
+		t.Errorf("an allowed sender was turned away from a loop's DM: %s", dump(slack.postsTaken()))
 	}
 }
 
