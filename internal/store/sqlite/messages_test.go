@@ -13,7 +13,7 @@ import (
 
 // TestMessageConversationRoundTrip pins the conversation contract (ADR-0026):
 // a message's conversation kind and loop key survive Insert → List unchanged,
-// for both a private kind and the group.
+// for both a per-loop kind and the group.
 func TestMessageConversationRoundTrip(t *testing.T) {
 	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {

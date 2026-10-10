@@ -1185,8 +1185,8 @@ type postMessageReq struct {
 	Author string `json:"author"`
 	Text   string `json:"text"`
 	// Destination is the composer's declared destination (ADR-0026):
-	// control_room (the default) keeps the message in the loop's private
-	// web thread; group posts it to the shared group conversation.
+	// control_room (the default) keeps the message in the loop's web
+	// thread; group posts it to the shared group conversation.
 	Destination string `json:"destination"`
 	// AttachmentID is a file uploaded to POST /api/attachments to send
 	// with the message (#460), 0 for none.

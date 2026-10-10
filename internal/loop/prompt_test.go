@@ -98,7 +98,7 @@ func TestSystemPromptFleetRules(t *testing.T) {
 // (ADR-0022): it asks for a handoff note, carries the rotation trigger, and
 // forbids the trailer a normal reply may end with.
 // TestSystemPromptPrivacyRule pins the behavioral half of ADR-0026's
-// privacy decision: the prompt must carry the rule against quoting private
+// privacy decision: the prompt must carry the rule against quoting direct
 // conversation content into the group, since sessions are shared and only
 // conduct guards it.
 func TestSystemPromptPrivacyRule(t *testing.T) {
@@ -109,7 +109,7 @@ func TestSystemPromptPrivacyRule(t *testing.T) {
 }
 
 // TestMessageEnvelopeNamesConversation pins that every inbound header names
-// the conversation it belongs to — a private web message and one posted to
+// the conversation it belongs to — a control_room message and one posted to
 // the group must never look alike to the model (ADR-0026).
 func TestMessageEnvelopeNamesConversation(t *testing.T) {
 	now := time.Now()
@@ -381,16 +381,17 @@ func TestCatalogSection(t *testing.T) {
 			notWant: []string{"The people who can talk to this fleet"},
 		},
 		{
-			name: "no surface: no owner_dm, and control_room is the private line",
+			name: "no surface: no owner_dm, and control_room is every user's line",
 			cat: Catalog{People: []Person{enes}, Owner: &enes, Peers: []Peer{{Name: "milo", Mission: "PO"}},
 				Conversations: Conversations{Group: true}},
 			want: []string{
 				"Your owner is @enesalatas (Enes).\n",
 				"You have no surface attached, so there is no owner_dm",
 				"@milo — PO",
-				"Only control_room is private.",
+				"Nothing is private to one person: every user of this hub reads\n  control_room.",
 			},
-			notWant: []string{"owner_dm reaches them", "Only owner_dm and control_room", "posting in telegram"},
+			notWant: []string{"owner_dm reaches them", "Only owner_dm is private", "posting in telegram", "control_room is private",
+				"owner_dm is private to your owner"},
 		},
 		{
 			name: "outside the fleet channel: no peers, no people, ask in control_room",
@@ -664,9 +665,9 @@ func TestPromptTeachesOnlyTheLoopsConversations(t *testing.T) {
 			conv: Conversations{},
 			want: []string{
 				"e.g.\n  \"[message from enes via web · control_room · ref:43 · ...]\". Answer",
-				"    control_room  your private thread",
+				"    control_room  your thread in the Spool web UI, which every user of",
 				"You have no group, so nothing you send fans out",
-				"you need, via control_room.",
+				"you need: in control_room.",
 			},
 			notWant: []string{"owner_dm ", "    group ", "Telegram", "telegram", "@all in a group message",
 				"never quote or relay it in a group message"},
@@ -678,8 +679,8 @@ func TestPromptTeachesOnlyTheLoopsConversations(t *testing.T) {
 				"\"[message from enes via web · group · ref:42 · ...]\" or",
 				"    group         the fleet channel",
 				"@all in a group message reaches every other loop in the fleet channel",
-				"private conversation (control_room) stays",
-				"privately via control_room, or @mention them",
+				"direct conversation (control_room) stays out\n  of the group",
+				"you need: in control_room, or @mention them",
 			},
 			notWant: []string{"    owner_dm ", "Telegram", "telegram"},
 		},
@@ -689,7 +690,7 @@ func TestPromptTeachesOnlyTheLoopsConversations(t *testing.T) {
 			want: []string{
 				"\"[message from @enes via telegram dm · owner_dm · ref:42 · ...]\" or",
 				"    owner_dm      your owner's private Telegram chat",
-				"you need, via owner_dm or control_room.",
+				"you need: privately via owner_dm, or in control_room.",
 			},
 			notWant: []string{"    group ", "@all in a group message", "via telegram · group"},
 		},
@@ -702,8 +703,8 @@ func TestPromptTeachesOnlyTheLoopsConversations(t *testing.T) {
 				"@all in a group message reaches every other loop in the fleet channel",
 				"- Each of your channels keeps those rules on its own",
 				"    channel:backend — Go core\n      loops: @milo, @quinn\n",
-				"never quote or relay it in the group or a channel unless",
-				"@mention them in the\n  group when others should see it.",
+				"stays out\n  of the group and your channels",
+				"@mention them in\n  the group when others should see it.",
 				"only the loops you @mention in it receive it; no person\n                  is in a channel yet",
 				"must @mention a loop in it",
 			},
@@ -719,9 +720,9 @@ func TestPromptTeachesOnlyTheLoopsConversations(t *testing.T) {
 				"in a channel it reaches the\n  author",
 				"only the loops in your channels below\n  can reach you",
 				"    channel:backend\n      no other loop is in it yet, so nothing said there reaches anyone\n",
-				"never quote or relay it in a channel unless",
+				"stays out\n  of your channels",
 				"- A new message in a channel must @mention at least one loop in it; no\n  person is in a channel yet.",
-				"you need, via control_room.",
+				"you need: in control_room.",
 			},
 			notWant: []string{"    group ", "You have no group", "@all in a group message", "no other loop can reach you",
 				"The people who can talk to this fleet", "@mention them in"},
@@ -733,7 +734,8 @@ func TestPromptTeachesOnlyTheLoopsConversations(t *testing.T) {
 				"\"[message from @enes via telegram · group · ref:42 · ...]\" or",
 				"    owner_dm      your owner's private Telegram chat",
 				"    group         the fleet channel",
-				"private conversation (owner_dm, control_room) stays",
+				"direct conversation (owner_dm, control_room) stays out",
+				"- Keep what your owner tells you in owner_dm out of control_room as well,",
 			},
 		},
 	}
@@ -774,10 +776,10 @@ func TestPromptTeachesPeopleWhereRoomsAre(t *testing.T) {
 				"    channel:backend\n      loops: @milo\n      its Telegram room carries it, so the people there read it\n",
 				"    channel:release\n      loops: @quinn\n- The people",
 				"@mentioning a person in the group or a channel's room is public: everyone\n  there sees it.",
-				"No person is in a channel without a room yet: reach people in the group,\n  in a room, or privately.",
+				"No person is in a channel without a room yet: reach people in the group,\n  in a room, or directly.",
 				"only those you @mention in it receive it; a person is in\n                  a channel only where its room is listed",
 				"must @mention a loop in it (or a person, where its room is listed), @all",
-				"@mention them in the\n  group when others should see it.",
+				"@mention them in\n  the group when others should see it.",
 			},
 			notWant: []string{"No person is in your other channels yet", "with loops alone", "no person\n                  is in a channel yet"},
 		},
@@ -794,7 +796,7 @@ func TestPromptTeachesPeopleWhereRoomsAre(t *testing.T) {
 				"- The people who can talk to this fleet:\n    @enesalatas\n",
 				"@mentioning a person in a channel's room is public: everyone there sees it.",
 				"- A new message in a channel must @mention at least one loop in it, or a\n  person where its room is listed.",
-				"or @mention them in a\n  channel's room when others should see it.",
+				"or @mention them in\n  a channel's room when others should see it.",
 				"only those in your channels below can\n  reach you",
 			},
 			notWant: []string{"nothing said there reaches anyone", "No person is in", "no\n  person is in a channel yet"},

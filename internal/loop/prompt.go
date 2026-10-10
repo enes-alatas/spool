@@ -206,12 +206,23 @@ func (conversations Conversations) Destinations() []string {
 	return append(destinations, store.ConversationControlRoom)
 }
 
-// private lists the loop's private destinations.
-func (conversations Conversations) private() []string {
+// direct lists the loop's direct conversations, the ones no other loop
+// is in. The hub's members never read owner_dm, though its admins and
+// owners do; every user of the hub reads control_room (ADR-0048).
+func (conversations Conversations) direct() []string {
 	if conversations.Surface != "" {
 		return []string{store.ConversationOwnerDM, store.ConversationControlRoom}
 	}
 	return []string{store.ConversationControlRoom}
+}
+
+// askDirectly is how a loop reaches a human outside the shared
+// conversations.
+func (conversations Conversations) askDirectly() string {
+	if conversations.Surface != "" {
+		return "privately via owner_dm, or in control_room"
+	}
+	return "in control_room"
 }
 
 // FleetRulesSection renders the enabled fleet rules as the FLEET RULES
@@ -265,8 +276,8 @@ func (cat Catalog) section(loopRecord *store.Loop) string {
 		if cat.Owner != nil {
 			fmt.Fprintf(&text, "- Your owner is %s.\n", cat.Owner.Label())
 		}
-		text.WriteString("- You have no surface attached, so there is no owner_dm: control_room\n" +
-			"  is your private line to the operator.\n")
+		text.WriteString("- You have no surface attached, so there is no owner_dm: control_room,\n" +
+			"  which every user of this hub reads, is your line to the operator.\n")
 	case cat.Owner == nil:
 		fmt.Fprintf(&text, "- You have no owner configured, so owner_dm has nobody to reach.\n"+
 			"  Ask %s for the operator to set one.\n", askIn)
@@ -352,16 +363,16 @@ func (cat Catalog) section(loopRecord *store.Loop) string {
 		switch {
 		case !withoutRoom:
 		case !withRoom:
-			text.WriteString("  No person is in your other channels yet: reach people in the group or\n  privately.\n")
+			text.WriteString("  No person is in your other channels yet: reach people in the group or\n  directly.\n")
 		case conv.Group:
-			text.WriteString("  No person is in a channel without a room yet: reach people in the group,\n  in a room, or privately.\n")
+			text.WriteString("  No person is in a channel without a room yet: reach people in the group,\n  in a room, or directly.\n")
 		default:
-			text.WriteString("  No person is in a channel without a room yet: reach people in a room or\n  privately.\n")
+			text.WriteString("  No person is in a channel without a room yet: reach people in a room or\n  directly.\n")
 		}
 		if conv.Surface != "" {
-			text.WriteString("  Only owner_dm and control_room are private, and only the owner has a DM.\n")
+			text.WriteString("  Only owner_dm is kept from the hub's members; every user of this hub\n  reads control_room.\n")
 		} else {
-			text.WriteString("  Only control_room is private.\n")
+			text.WriteString("  Nothing is private to one person: every user of this hub reads\n  control_room.\n")
 		}
 	}
 	return text.String()
@@ -422,20 +433,27 @@ func SystemPrompt(loopRecord *store.Loop, cat Catalog, rules []*store.FleetRule,
 	text.WriteString("CONDUCT\n- Keep messages concise; they are chat, not reports.\n")
 	switch {
 	case conv.Group && len(conv.Channels) == 0:
-		fmt.Fprintf(&text, `- What you learn in a private conversation (%s) stays
-  private: never quote or relay it in a group message unless the person it
-  came from asks you to.
-`, strings.Join(conv.private(), ", "))
-	case conv.Group:
-		fmt.Fprintf(&text, `- What you learn in a private conversation (%s) stays
-  private: never quote or relay it in the group or a channel unless the
+		fmt.Fprintf(&text, `- What you learn in a direct conversation (%s) stays out
+  of the group: never quote or relay it in a group message unless the
   person it came from asks you to.
-`, strings.Join(conv.private(), ", "))
+`, strings.Join(conv.direct(), ", "))
+	case conv.Group:
+		fmt.Fprintf(&text, `- What you learn in a direct conversation (%s) stays out
+  of the group and your channels: never quote or relay it there unless the
+  person it came from asks you to.
+`, strings.Join(conv.direct(), ", "))
 	case conv.shared():
-		fmt.Fprintf(&text, `- What you learn in a private conversation (%s) stays
-  private: never quote or relay it in a channel unless the person it
+		fmt.Fprintf(&text, `- What you learn in a direct conversation (%s) stays out
+  of your channels: never quote or relay it there unless the person it
   came from asks you to.
-`, strings.Join(conv.private(), ", "))
+`, strings.Join(conv.direct(), ", "))
+	}
+	// control_room is read by every user of the hub, members too, so what
+	// the owner says in owner_dm stays out of it (ADR-0048).
+	if conv.Surface != "" {
+		text.WriteString(`- Keep what your owner tells you in owner_dm out of control_room as well,
+  unless they ask you to.
+`)
 	}
 	text.WriteString(`- Between wakes you do not exist: leave notes in your status note or commit
   work so future turns have context.
@@ -445,11 +463,11 @@ func SystemPrompt(loopRecord *store.Loop, cat Catalog, rules []*store.FleetRule,
 	// room; a channel no room carries has no person in it.
 	switch {
 	case conv.Group:
-		fmt.Fprintf(&text, "  you need: privately via %s, or @mention them in the\n  group when others should see it.", strings.Join(conv.private(), " or "))
+		fmt.Fprintf(&text, "  you need: %s, or @mention them in\n  the group when others should see it.", conv.askDirectly())
 	case conv.roomed():
-		fmt.Fprintf(&text, "  you need: privately via %s, or @mention them in a\n  channel's room when others should see it.", strings.Join(conv.private(), " or "))
+		fmt.Fprintf(&text, "  you need: %s, or @mention them in\n  a channel's room when others should see it.", conv.askDirectly())
 	default:
-		fmt.Fprintf(&text, "  you need, via %s.", strings.Join(conv.private(), " or "))
+		fmt.Fprintf(&text, "  you need: %s.", conv.askDirectly())
 	}
 	return text.String()
 }
@@ -511,11 +529,11 @@ func howThisWorks(conv Conversations) string {
                   is in a channel yet
 `)
 	}
-	text.WriteString("    control_room  your private thread with the operator in the Spool web UI\n")
+	text.WriteString("    control_room  your thread in the Spool web UI, which every user of\n                  this hub reads\n")
 
 	if conv.Group {
 		text.WriteString(`- A new group message must @mention at least one known loop or person. Do
-  not @mention yourself. Private text never fans out: names mentioned in
+  not @mention yourself. Direct text never fans out: names mentioned in
   it receive nothing, @all included.
 - @all in a group message reaches every other loop in the fleet channel at
   once. It is for something the whole fleet must act on — a rule change, an
@@ -547,12 +565,12 @@ func howThisWorks(conv Conversations) string {
 	} else if len(conv.Channels) > 0 {
 		if conv.roomed() {
 			text.WriteString(`- A new message in a channel must @mention at least one loop in it, or a
-  person where its room is listed. Do not @mention yourself. Private text
+  person where its room is listed. Do not @mention yourself. Direct text
   never fans out: names mentioned in it receive nothing, @all included.
 `)
 		} else {
 			text.WriteString(`- A new message in a channel must @mention at least one loop in it; no
-  person is in a channel yet. Do not @mention yourself. Private text never
+  person is in a channel yet. Do not @mention yourself. Direct text never
   fans out: names mentioned in it receive nothing, @all included.
 `)
 		}
@@ -690,7 +708,7 @@ type Envelope struct {
 	// The actor batches one turn per conversation from it (ADR-0026).
 	Conversation string `json:"conversation,omitempty"`
 	// Channel names the channel a group message was said in ("" for the
-	// fleet channel and the private kinds), so two channels never share a
+	// fleet channel and the per-loop kinds), so two channels never share a
 	// turn.
 	Channel  string `json:"channel,omitempty"`
 	TGChatID int64  `json:"tg_chat_id,omitempty"` // source DM chat (0 = none)
