@@ -148,6 +148,11 @@ func (server *Server) handleListSlackSenders(w http.ResponseWriter, r *http.Requ
 	if senders == nil {
 		senders = []*store.SlackSender{}
 	}
+	if !seesPairCodes(callerOf(r)) {
+		for _, sender := range senders {
+			sender.PairCode = ""
+		}
+	}
 	writeJSON(w, http.StatusOK, senders)
 }
 

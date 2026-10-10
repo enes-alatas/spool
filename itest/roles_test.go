@@ -3,6 +3,8 @@
 package itest
 
 import (
+	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"path/filepath"
@@ -143,6 +145,63 @@ func TestAMemberReadsNoOwnerDM(t *testing.T) {
 	for _, path := range []string{"/api/loops/alpha/events", "/api/loops/alpha/turns"} {
 		if resp, _ := srv.asCookie("GET", path, member, nil); resp.StatusCode != http.StatusForbidden {
 			t.Errorf("a member's GET %s = %d; want 403", path, resp.StatusCode)
+		}
+	}
+}
+
+// A member reads who is waiting on the Access page, but no pending
+// sender's pairing code: the code is how an admin knows the person
+// vouching for a sender got the bot's DM. An admin and the operator token
+// read every code (#689).
+func TestAMemberReadsNoPairingCode(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+	srv := startServer(t, dataDir)
+	srv.stop()
+	seedSlackSender(t, dataDir, "U0ALICE", "T0ACME", "Alice", "pending")
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(dataDir, "spool.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO tg_senders
+		(tg_user_id, username, display, status, pair_code, first_seen_via, created_at, updated_at)
+		VALUES (4242,'bob','Bob','pending','654321','dm:alpha',1,1)`); err != nil {
+		t.Fatalf("seed bob: %v", err)
+	}
+	db.Close()
+	srv = startServer(t, dataDir)
+	member := srv.signedInAs("mia", "member")
+	admin := srv.signedInAs("ada", "admin")
+
+	code := func(path, cookie string) string {
+		t.Helper()
+		var resp *http.Response
+		var body []byte
+		if cookie == "" {
+			resp, body = srv.do("GET", path, nil)
+		} else {
+			resp, body = srv.asCookie("GET", path, cookie, nil)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET %s = %d %s", path, resp.StatusCode, body)
+		}
+		var senders []struct {
+			PairCode string `json:"pair_code"`
+		}
+		if err := json.Unmarshal(body, &senders); err != nil || len(senders) != 1 {
+			t.Fatalf("GET %s = %s; want the one seeded sender", path, body)
+		}
+		return senders[0].PairCode
+	}
+	for path, want := range map[string]string{"/api/telegram/senders": "654321", "/api/slack/senders": "123456"} {
+		if got := code(path, member); got != "" {
+			t.Errorf("a member's %s carries pairing code %q; want none", path, got)
+		}
+		if got := code(path, admin); got != want {
+			t.Errorf("an admin's %s carries pairing code %q; want %s", path, got, want)
+		}
+		if got := code(path, ""); got != want {
+			t.Errorf("the token's %s carries pairing code %q; want %s", path, got, want)
 		}
 	}
 }

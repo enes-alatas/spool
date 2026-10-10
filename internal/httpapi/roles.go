@@ -126,6 +126,14 @@ func seesPrivate(who *caller) bool {
 	return who != nil && roleRank[roleOf(who)] >= roleRank[store.RoleAdmin]
 }
 
+// seesPairCodes reports whether who may read pending senders' pairing
+// codes: an admin or an owner, who can allow a sender. The code is what
+// tells them the person vouching for a sender got the bot's DM, so a
+// member who read every code could vouch for any of them (#689).
+func seesPairCodes(who *caller) bool {
+	return who != nil && roleRank[roleOf(who)] >= roleRank[store.RoleAdmin]
+}
+
 // privateMessage reports whether msg is part of a loop's private
 // conversation with its owner.
 func privateMessage(msg *store.Message) bool {
