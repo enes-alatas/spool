@@ -847,8 +847,11 @@ type UserStore interface {
 	// SetPassword stores a new hash and whether a change is due.
 	// ErrNotFound for an unknown user.
 	SetPassword(ctx context.Context, id, hash string, mustChange bool) error
-	// Delete removes a user and every session they hold; ErrNotFound for
-	// an unknown user.
+	// SetRole changes a user's role. ErrNotFound for an unknown user, and
+	// ErrLastOwner when it would demote the hub's only owner.
+	SetRole(ctx context.Context, id, role string) error
+	// Delete removes a user and every session they hold. ErrNotFound for
+	// an unknown user, and ErrLastOwner for the hub's only owner.
 	Delete(ctx context.Context, id string) error
 }
 
@@ -1533,6 +1536,9 @@ const (
 	ErrConnectionRevoked = sentinelError("store: connection revoked")
 	// ErrPollClosed refuses a vote in a poll that has closed (ADR-0041).
 	ErrPollClosed = sentinelError("store: poll closed")
+	// ErrLastOwner refuses removing or demoting the hub's only owner: a
+	// hub with no owner has nobody who may make one (ADR-0048).
+	ErrLastOwner = sentinelError("store: last owner")
 )
 
 // Connection is an org-level tool credential or config, defined once under

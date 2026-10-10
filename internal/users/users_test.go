@@ -387,3 +387,76 @@ func TestBootstrapResetAndRemove(t *testing.T) {
 		t.Fatalf("a taken name = %v", err)
 	}
 }
+
+// TestSetRoleKeepsAnOwner: a role changes to any of the three, but the
+// hub's only owner stays one, and a role or a name the hub does not know
+// is refused.
+func TestSetRoleKeepsAnOwner(t *testing.T) {
+	ctx := context.Background()
+	users, _ := newUsers(t)
+	if _, err := users.Bootstrap(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := users.SetRole(ctx, AdminName, store.RoleAdmin); !errors.Is(err, ErrLastOwner) {
+		t.Fatalf("demoting the last owner = %v; want ErrLastOwner", err)
+	}
+	if err := users.SetRole(ctx, AdminName, store.RoleOwner); err != nil {
+		t.Fatalf("keeping the last owner an owner = %v", err)
+	}
+	if _, err := users.Add(ctx, "dana", store.RoleMember); err != nil {
+		t.Fatal(err)
+	}
+	if err := users.SetRole(ctx, "dana", store.RoleOwner); err != nil {
+		t.Fatal(err)
+	}
+	if err := users.SetRole(ctx, AdminName, store.RoleMember); err != nil {
+		t.Fatalf("demoting one of two owners = %v", err)
+	}
+	if err := users.SetRole(ctx, "dana", store.RoleAdmin); !errors.Is(err, ErrLastOwner) {
+		t.Fatalf("demoting the owner left = %v; want ErrLastOwner", err)
+	}
+	if err := users.Remove(ctx, "dana"); !errors.Is(err, ErrLastOwner) {
+		t.Fatalf("removing the owner left = %v; want ErrLastOwner", err)
+	}
+	if dana, err := users.Store.Users().GetByName(ctx, "dana"); err != nil || dana.Role != store.RoleOwner {
+		t.Fatalf("dana = %+v, %v; want the owner still", dana, err)
+	}
+	if err := users.SetRole(ctx, "dana", "superuser"); !errors.Is(err, ErrBadRole) {
+		t.Fatalf("an unknown role = %v; want ErrBadRole", err)
+	}
+	if err := users.SetRole(ctx, "nobody", store.RoleAdmin); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("an unknown name = %v; want ErrNotFound", err)
+	}
+}
+
+// TestConfirmCountsAsASignIn: a wrong password confirmed in a session
+// counts toward the name's lock, and a right one clears the count.
+func TestConfirmCountsAsASignIn(t *testing.T) {
+	ctx := context.Background()
+	users, _ := newUsers(t)
+	oneTime, err := users.Add(ctx, "dana", store.RoleOwner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dana, err := users.SignIn(ctx, "dana", oneTime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 4 {
+		if err := users.Confirm(ctx, dana, "not it"); !errors.Is(err, ErrBadCredentials) {
+			t.Fatalf("a wrong password = %v; want ErrBadCredentials", err)
+		}
+	}
+	if err := users.Confirm(ctx, dana, oneTime); err != nil {
+		t.Fatalf("the right password = %v", err)
+	}
+	for range 5 {
+		if err := users.Confirm(ctx, dana, "not it"); !errors.Is(err, ErrBadCredentials) {
+			t.Fatalf("a wrong password after a right one = %v; want ErrBadCredentials", err)
+		}
+	}
+	var throttled ThrottledError
+	if err := users.Confirm(ctx, dana, oneTime); !errors.As(err, &throttled) {
+		t.Fatalf("the right password on a locked name = %v; want a ThrottledError", err)
+	}
+}
