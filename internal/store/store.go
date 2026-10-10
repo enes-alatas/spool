@@ -294,6 +294,13 @@ type Loop struct {
 
 	CreatedAt int64 `json:"created_at"`
 	UpdatedAt int64 `json:"updated_at"`
+	// CreatedBy and UpdatedBy name who made the loop and who last changed
+	// it through the API (ADR-0048): a user, or "operator" for the
+	// operator token. Only the loop's change record writes them, so Create
+	// and Update leave them alone, and a loop older than the record has
+	// neither.
+	CreatedBy string `json:"created_by"`
+	UpdatedBy string `json:"updated_by"`
 }
 
 // Surface names the platform the loop has an identity on, or "" when it has
@@ -1215,6 +1222,7 @@ type Store interface {
 	Reactions() ReactionStore
 	Polls() PollStore
 	Connections() ConnectionStore
+	LoopChanges() LoopChangeStore
 	FleetRules() FleetRuleStore
 	Sessions() SessionStore
 	Messages() MessageStore
@@ -1740,4 +1748,60 @@ type ConnectionEventFilter struct {
 	Connection string
 	LoopID     string
 	LoopName   string
+}
+
+// LoopChange is one change a user or the operator token made to a loop
+// through the API, on the hub's append-only record of them (ADR-0048). By
+// is the user's name, or "operator" for the token. It names the loop, with
+// its name as it was, so it outlives the loop.
+type LoopChange struct {
+	ID       int64
+	At       int64
+	By       string
+	Action   string
+	LoopID   string
+	LoopName string
+}
+
+// The changes a loop's record holds: one per API route that changes a
+// loop or acts on it.
+const (
+	LoopChangeCreate   = "create"
+	LoopChangeEdit     = "edit"
+	LoopChangeDelete   = "delete"
+	LoopChangePause    = "pause"
+	LoopChangeResume   = "resume"
+	LoopChangeWake     = "wake"
+	LoopChangeKill     = "kill"
+	LoopChangeRotate   = "rotate"
+	LoopChangeRehome   = "rehome"
+	LoopChangeRestart  = "workstation_restart"
+	LoopChangePowerOff = "workstation_poweroff"
+	LoopChangePowerOn  = "workstation_poweron"
+	LoopChangeRecreate = "workstation_recreate"
+	LoopChangeOwner    = "owner"
+	LoopChangeRoom     = "room"
+	LoopChangeUnroom   = "unroom"
+	LoopChangeAttach   = "attach"
+	LoopChangeDetach   = "detach"
+	LoopChangeJoin     = "join"
+	LoopChangeLeave    = "leave"
+)
+
+// LoopChangeFilter narrows the record to one loop, by its id while it
+// exists or by its name once it is gone; empty is every loop's. Limit 0 is
+// no limit.
+type LoopChangeFilter struct {
+	LoopID   string
+	LoopName string
+	Limit    int
+}
+
+type LoopChangeStore interface {
+	// Record appends a change, and names its actor on the loop: as who last
+	// changed it, and for a create as who made it too. A wake changes
+	// nothing about the loop, so it is recorded without touching either.
+	Record(ctx context.Context, change *LoopChange) error
+	// List is the record, newest first.
+	List(ctx context.Context, filter LoopChangeFilter) ([]*LoopChange, error)
 }
