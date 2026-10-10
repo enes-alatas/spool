@@ -76,7 +76,7 @@ var (
 	ErrPasswordTooLong   = fmt.Errorf("a password is at most %d characters", MaxPasswordLength)
 	ErrPasswordReused    = errors.New("the new password is the one-time password it replaces")
 	ErrBadCredentials    = errors.New("wrong username or password")
-	ErrLastOwner         = errors.New("the last owner cannot be removed")
+	ErrLastOwner         = errors.New("the last owner cannot be removed or made anything but an owner")
 	ErrSessionNotFound   = errors.New("no such session")
 	errMalformedPassword = errors.New("stored password hash is malformed")
 )
@@ -266,22 +266,44 @@ func (users *Users) Remove(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	if user.Role == store.RoleOwner {
-		all, err := users.Store.Users().List(ctx)
-		if err != nil {
-			return err
-		}
-		owners := 0
-		for _, other := range all {
-			if other.Role == store.RoleOwner {
-				owners++
-			}
-		}
-		if owners <= 1 {
-			return ErrLastOwner
-		}
+	return lastOwnerAsOurs(users.Store.Users().Delete(ctx, user.ID))
+}
+
+// SetRole changes a user's role. The last owner stays an owner, as they
+// stay a user. A session reads its user's role on every request, so the
+// change holds from the user's next one, and no session needs ending.
+func (users *Users) SetRole(ctx context.Context, name, role string) error {
+	if !ValidRole(role) {
+		return ErrBadRole
 	}
-	return users.Store.Users().Delete(ctx, user.ID)
+	user, err := users.Store.Users().GetByName(ctx, name)
+	if err != nil {
+		return err
+	}
+	return lastOwnerAsOurs(users.Store.Users().SetRole(ctx, user.ID, role))
+}
+
+// lastOwnerAsOurs words the store's refusal as this package's rule.
+func lastOwnerAsOurs(err error) error {
+	if errors.Is(err, store.ErrLastOwner) {
+		return ErrLastOwner
+	}
+	return err
+}
+
+// Confirm checks that user, already signed in, knows their password, before
+// a change that asks for it again. It counts as a sign-in does: a wrong one
+// against the user's name, so a session is no way round the throttle, and
+// a right one clears it.
+func (users *Users) Confirm(ctx context.Context, user *store.User, password string) error {
+	now := users.now()
+	if err := users.locked(ctx, user.Name, now); err != nil {
+		return err
+	}
+	if !CheckPassword(user.PasswordHash, password) {
+		return users.fail(ctx, user.Name, now)
+	}
+	return users.Store.SignInThrottles().Clear(ctx, user.Name)
 }
 
 func oneTimeCredential() (password, hash string, err error) {
@@ -368,12 +390,8 @@ func (users *Users) fail(ctx context.Context, name string, now time.Time) error 
 // but keepSession ends.
 func (users *Users) ChangePassword(ctx context.Context, user *store.User, current, next, keepSession string) error {
 	if !user.MustChangePassword {
-		now := users.now()
-		if err := users.locked(ctx, user.Name, now); err != nil {
+		if err := users.Confirm(ctx, user, current); err != nil {
 			return err
-		}
-		if !CheckPassword(user.PasswordHash, current) {
-			return users.fail(ctx, user.Name, now)
 		}
 	}
 	if err := ValidPassword(next); err != nil {

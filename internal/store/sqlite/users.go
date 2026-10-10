@@ -67,8 +67,31 @@ func (table users) SetPassword(ctx context.Context, id, hash string, mustChange 
 		WHERE id=?`, hash, mustChange, id))
 }
 
+func (table users) SetRole(ctx context.Context, id, role string) error {
+	return table.keepingAnOwner(ctx, id, `UPDATE users SET role=? WHERE id=?
+		AND (role<>'owner' OR ?='owner' OR (SELECT COUNT(*) FROM users WHERE role='owner')>1)`, role, id, role)
+}
+
 func (table users) Delete(ctx context.Context, id string) error {
-	return affectedOne(table.db.ExecContext(ctx, `DELETE FROM users WHERE id=?`, id))
+	return table.keepingAnOwner(ctx, id, `DELETE FROM users WHERE id=?
+		AND (role<>'owner' OR (SELECT COUNT(*) FROM users WHERE role='owner')>1)`, id)
+}
+
+// keepingAnOwner runs a change to user id that is guarded in its own
+// statement against taking the hub's last owner. One statement is atomic,
+// so two owners demoting each other at once, from the API or from `spool
+// user` in another process, cannot both get through. A change that
+// matched no row is ErrNotFound when the user is gone and ErrLastOwner
+// when the guard held.
+func (table users) keepingAnOwner(ctx context.Context, id, statement string, args ...any) error {
+	err := affectedOne(table.db.ExecContext(ctx, statement, args...))
+	if !errors.Is(err, store.ErrNotFound) {
+		return err
+	}
+	if _, err := table.Get(ctx, id); err != nil {
+		return err
+	}
+	return store.ErrLastOwner
 }
 
 // affectedOne maps an update or delete that matched no row to ErrNotFound.

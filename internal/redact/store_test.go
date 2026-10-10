@@ -413,7 +413,7 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			// A user's name and role, and a password kept as a one-way
 			// hash, which redacting would make unverifiable; no loop's
 			// output reaches any of it (ADR-0048).
-			"Create": false, "SetPassword": false,
+			"Create": false, "SetPassword": false, "SetRole": false,
 			"Delete": false, "Get": false, "GetByName": false, "List": false,
 		},
 		"UserSessionStore": {
