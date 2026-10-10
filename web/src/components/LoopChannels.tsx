@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type Channel, type LoopView, type Room } from '../api'
 import { channelLabel, FLEET_CHANNEL } from '../channels'
 import { loopSurface } from '../slack'
+import { useMay } from './Session'
 
 // A channel as a pane of a loop's page shows it (#549): what the channel is
 // for, then each loop in it, this one first, with the room — a Telegram
@@ -256,6 +257,7 @@ function UnboundRoom({
 }) {
   const [channel, setChannel] = useState('')
   const { bind, forget, error, busy } = useRoomChange(loop, () => setChannel(''))
+  const manage = useMay()('manage')
   const surface = roomSurface(room)
   const name = roomName(surface, room)
   return (
@@ -271,31 +273,33 @@ function UnboundRoom({
         />
       </div>
       <span className="room-id">{room.room_id}</span>
-      <div className="chan-actions">
-        <select
-          className="panel-select"
-          aria-label={`Channel for ${name}`}
-          value={channel}
-          disabled={busy}
-          onChange={(e) => setChannel(e.target.value)}
-        >
-          <option value="">
-            {channels.length ? 'Choose a channel…' : `Every channel has a ${ROOM_WORDS[surface].one}`}
-          </option>
-          {channels.map((c) => (
-            <option key={c} value={c}>
-              {channelLabel(c)}
+      {manage && (
+        <div className="chan-actions">
+          <select
+            className="panel-select"
+            aria-label={`Channel for ${name}`}
+            value={channel}
+            disabled={busy}
+            onChange={(e) => setChannel(e.target.value)}
+          >
+            <option value="">
+              {channels.length ? 'Choose a channel…' : `Every channel has a ${ROOM_WORDS[surface].one}`}
             </option>
-          ))}
-        </select>
-        <button
-          className="btn sm"
-          disabled={busy || !channel}
-          onClick={() => bind.mutate({ room_id: room.room_id, channel })}
-        >
-          Bind
-        </button>
-      </div>
+            {channels.map((c) => (
+              <option key={c} value={c}>
+                {channelLabel(c)}
+              </option>
+            ))}
+          </select>
+          <button
+            className="btn sm"
+            disabled={busy || !channel}
+            onClick={() => bind.mutate({ room_id: room.room_id, channel })}
+          >
+            Bind
+          </button>
+        </div>
+      )}
       <ErrorLine error={error} />
     </div>
   )
@@ -335,6 +339,7 @@ function ForgetButton({
   busy: boolean
   onForget: () => void
 }) {
+  const manage = useMay()('manage')
   const surface = roomSurface(room)
   const name = roomName(surface, room)
   const one = ROOM_WORDS[surface].one
@@ -360,6 +365,7 @@ function ForgetButton({
           : "The next group to message the bot, this one included, becomes the fleet channel's room by itself."
     if (confirm(`Forget ${name}? ${what} ${after}`)) onForget()
   }
+  if (!manage) return null
   return (
     <button className="btn sm room-forget" disabled={busy} onClick={confirmForget}>
       Forget

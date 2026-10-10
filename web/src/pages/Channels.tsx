@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useMay } from '../components/Session'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ApiError, Channel } from '../api'
 import { CharCount } from '../components/CharCount'
@@ -82,6 +83,8 @@ function ChannelCard({
   refresh: () => void
 }) {
   const [editing, setEditing] = useState(false)
+  // Editing a channel and who is in it are an admin's (#679).
+  const manage = useMay()('manage')
   // A refusal is anchored to the card it came from, not the page top, where
   // with several channels on screen it would scroll out of sight.
   const [error, setError] = useState('')
@@ -108,7 +111,7 @@ function ChannelCard({
         </span>
         {/* The fleet channel always exists, and what it is for is fixed:
             there is nothing to edit or delete, only who is in it. */}
-        {!fleet && (
+        {!fleet && manage && (
           <span className="rule-actions">
             <button className="btn sm" onClick={() => setEditing(!editing)}>
               {editing ? 'Close' : 'Edit'}
@@ -138,7 +141,10 @@ function ChannelCard({
           onCancel={() => setEditing(false)}
         />
       ) : fleet ? (
-        <div className="rule-body">The fleet channel. Every loop is in it unless you take it out.</div>
+        <div className="rule-body">
+          The fleet channel. Every loop is in it unless {manage ? 'you take it out' : 'an admin takes it out'}
+          .
+        </div>
       ) : channel.description ? (
         <div className="rule-body">{channel.description}</div>
       ) : (
@@ -148,18 +154,20 @@ function ChannelCard({
         {channel.loops.map((loop) => (
           <span key={loop} className="channel-loop">
             @{loop}
-            <button
-              aria-label={`Take @${loop} out of #${channel.name}`}
-              title={`Take @${loop} out of #${channel.name}`}
-              onClick={() => act(() => api.removeChannelLoop(channel.name, loop))}
-            >
-              ×
-            </button>
+            {manage && (
+              <button
+                aria-label={`Take @${loop} out of #${channel.name}`}
+                title={`Take @${loop} out of #${channel.name}`}
+                onClick={() => act(() => api.removeChannelLoop(channel.name, loop))}
+              >
+                ×
+              </button>
+            )}
           </span>
         ))}
         {/* A pick-list whose first option is its label: choosing a loop puts
             it in at once, and the list snaps back to the label. */}
-        {addable.length > 0 && (
+        {manage && addable.length > 0 && (
           <select
             className="channel-add"
             value=""
@@ -256,6 +264,7 @@ function NewChannel({ onCreated }: { onCreated: () => void }) {
 
 export default function Channels() {
   const qc = useQueryClient()
+  const may = useMay()
   const channels = useQuery({ queryKey: ['channels'], queryFn: api.channels })
   const loops = useQuery({ queryKey: ['loops'], queryFn: api.loops })
 
@@ -289,15 +298,16 @@ export default function Channels() {
     <div className="page measure">
       <h1>Channels</h1>
       <p className="page-lede">
-        Set up channels here: create one, say what it is for, and choose which loops are in it. The loops in a
-        channel read and post to it, and each is told the channels it is in. For now a channel other than the
-        fleet channel stays in Spool: its messages show in Activity, and no Telegram or Slack room carries
-        them yet.
+        {may('manage') &&
+          'Set up channels here: create one, say what it is for, and choose which loops are in it. '}
+        The loops in a channel read and post to it, and each is told the channels it is in. For now a channel
+        other than the fleet channel stays in Spool: its messages show in Activity, and no Telegram or Slack
+        room carries them yet.
       </p>
       {channels.data.map((channel) => (
         <ChannelCard key={channel.name} channel={channel} loops={loopNames} refresh={refresh} />
       ))}
-      <NewChannel onCreated={refresh} />
+      {may('manage') && <NewChannel onCreated={refresh} />}
     </div>
   )
 }

@@ -6,6 +6,7 @@ import { connectionDetail, connectionKindLabel, kindLabel } from '../connections
 import { ConnectionForm } from './ConnectionForm'
 import { ConnectionEvents, RotateForm } from './ConnectionRecord'
 import { PlusIcon } from './Icons'
+import { useMay } from './Session'
 
 // The connections attached to one loop (#506): the list, and a + that opens
 // a dialog to attach a shared connection, create one and attach it, or add
@@ -18,6 +19,7 @@ import { PlusIcon } from './Icons'
 // turn (#640), and an MCP server its MCP config from its next wake.
 export function LoopConnections({ loop }: { loop: LoopView }) {
   const qc = useQueryClient()
+  const manage = useMay()('manage')
   const { data: all } = useQuery({ queryKey: ['connections'], queryFn: api.connections })
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState('')
@@ -92,14 +94,16 @@ export function LoopConnections({ loop }: { loop: LoopView }) {
     <div className="side-panel">
       <div className="panel-head">
         <h3>Connections</h3>
-        <button
-          className="panel-action"
-          onClick={() => setAdding(true)}
-          aria-label="Add a connection"
-          title="Add a connection"
-        >
-          <PlusIcon />
-        </button>
+        {manage && (
+          <button
+            className="panel-action"
+            onClick={() => setAdding(true)}
+            aria-label="Add a connection"
+            title="Add a connection"
+          >
+            <PlusIcon />
+          </button>
+        )}
       </div>
       <div className="panel-note leading">
         Env variables apply from the loop's next turn, MCP servers from its next wake. A private one is this
@@ -124,7 +128,7 @@ export function LoopConnections({ loop }: { loop: LoopView }) {
                   {kindLabel(a.kind)}
                   {mine && <span className="connection-private">private</span>}
                 </span>
-                {mine && (
+                {mine && manage && (
                   <span className="loop-connection-tools">
                     <button className="text-button" onClick={() => share(c)} disabled={busy}>
                       Share with the fleet
@@ -151,7 +155,7 @@ export function LoopConnections({ loop }: { loop: LoopView }) {
                   />
                 )}
               </span>
-              {mine ? (
+              {!manage ? null : mine ? (
                 <button
                   className="btn sm danger"
                   onClick={() => remove(c)}

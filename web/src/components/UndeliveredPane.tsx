@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ChatMessage } from '../api'
 import type { Undelivered } from '../messages'
 import { destinationLabel, undelivered, undeliveredTitle } from '../messages'
+import { useMay } from './Session'
 
 // One loop's failed sends, as a pane of its page beside the timeline and the
 // control room (#281).
@@ -56,6 +57,7 @@ function failureDate(at: number): string {
 // on the next refetch with nothing left to wait for.
 function RowActions({ msg, name }: { msg: ChatMessage; name: string }) {
   const qc = useQueryClient()
+  const manage = useMay()('manage')
   const [busy, setBusy] = useState<'' | 'retry' | 'dismiss'>('')
   const [error, setError] = useState('')
   // Kept after the request returns: a 202 means the send is still out there,
@@ -107,6 +109,8 @@ function RowActions({ msg, name }: { msg: ChatMessage; name: string }) {
     }
   }
 
+  // Retrying and dismissing are an admin's (#679); a member reads the list.
+  if (!manage) return null
   return (
     <span className="undelivered-actions">
       <button

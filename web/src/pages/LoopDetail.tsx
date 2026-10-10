@@ -18,7 +18,8 @@ import {
 import { formatTokens, fillTone, hasFillPct, formatUsd, inTurn, nextWake } from '../format'
 import { customModelError } from '../forms'
 import { PACE_HINT, type Pace } from '../pace'
-import { PaceRange } from '../components/PaceRange'
+import { PaceFacts, PaceRange } from '../components/PaceRange'
+import { useMay } from '../components/Session'
 import { LoopConnections } from '../components/LoopConnections'
 import { needsLogin } from '../session'
 import {
@@ -111,6 +112,42 @@ function ScheduleEditor({
 // ModelPanel edits model / effort / pacing in place; changes apply from the
 // loop's next wake.
 function ModelPanel({ loop }: { loop: LoopView }) {
+  const may = useMay()
+  if (!may('manage')) return <ModelFacts loop={loop} />
+  return <ModelEditor loop={loop} />
+}
+
+// The same three choices as words, for a session that may not change them
+// (#679).
+function ModelFacts({ loop }: { loop: LoopView }) {
+  const modelOptions = useModelOptions()
+  const label = (options: { value: string; label: string }[], value: string) =>
+    options.find((o) => o.value === value)?.label ?? value
+  return (
+    <div className="side-panel">
+      <h3>Model & pacing</h3>
+      <div className="row">
+        <span className="k">model</span>
+        <span className="v">{label(modelOptions, loop.model)}</span>
+      </div>
+      {loop.resolved_model && loop.resolved_model !== loop.model && !loop.model_refusal && (
+        <div className="panel-note">
+          runs as <code>{loop.resolved_model}</code>
+        </div>
+      )}
+      <div className="row">
+        <span className="k">effort</span>
+        <span className="v">{label(EFFORT_OPTIONS, loop.effort)}</span>
+      </div>
+      <div className="row">
+        <span className="k">pacing</span>
+        <span className="v">{label(PACING_OPTIONS, loop.pacing)}</span>
+      </div>
+    </div>
+  )
+}
+
+function ModelEditor({ loop }: { loop: LoopView }) {
   const qc = useQueryClient()
   const modelOptions = useModelOptions()
   // Null while the select shows a model; a string while the operator types a
@@ -282,6 +319,7 @@ function MissionPanel({
   hasSession: boolean
 }) {
   const qc = useQueryClient()
+  const may = useMay()
   const body = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(() => readMissionChoice(name))
   const [clamped, setClamped] = useState(false)
@@ -395,21 +433,23 @@ function MissionPanel({
           be mistaken for the toggle it no longer sits next to. */}
       <div className="panel-head">
         <h3>Mission</h3>
-        <button
-          className="panel-action"
-          onClick={() => {
-            setDraft(mission)
-            setError('')
-            // Last save's outcome, not this one's.
-            setResult('')
-          }}
-          // Icon-only, so the name is the label: a button whose accessible
-          // name is empty is one a screen reader announces as "button".
-          aria-label="Edit the mission"
-          title="Edit the mission"
-        >
-          <EditIcon />
-        </button>
+        {may('manage') && (
+          <button
+            className="panel-action"
+            onClick={() => {
+              setDraft(mission)
+              setError('')
+              // Last save's outcome, not this one's.
+              setResult('')
+            }}
+            // Icon-only, so the name is the label: a button whose accessible
+            // name is empty is one a screen reader announces as "button".
+            aria-label="Edit the mission"
+            title="Edit the mission"
+          >
+            <EditIcon />
+          </button>
+        )}
       </div>
       <div ref={body} className={`panel-body${open ? '' : ' clamped'}`}>
         {mission}
@@ -572,6 +612,7 @@ function WorkstationNote({ loop }: { loop: LoopView }) {
 // container or the bare host — and whether that machine is reachable right now.
 function WorkstationPanel({ loop, runningVerb }: { loop: LoopView; runningVerb: string }) {
   const qc = useQueryClient()
+  const manage = useMay()('manage')
   const [confirming, setConfirming] = useState(false)
   const [typed, setTyped] = useState('')
   const [error, setError] = useState('')
@@ -640,34 +681,36 @@ function WorkstationPanel({ loop, runningVerb }: { loop: LoopView; runningVerb: 
           </div>
           <MCPReach loop={loop} />
           {rehomeAnswer && <LeftBehind answer={rehomeAnswer} />}
-          <div className="controls" style={{ marginTop: 12 }}>
-            <button className="btn sm" onClick={() => power.mutate('restart')} disabled={busy}>
-              Restart
-            </button>
-            {loop.workstation_up ? (
-              <button className="btn sm" onClick={() => power.mutate('poweroff')} disabled={busy}>
-                Power off
+          {manage && (
+            <div className="controls" style={{ marginTop: 12 }}>
+              <button className="btn sm" onClick={() => power.mutate('restart')} disabled={busy}>
+                Restart
               </button>
-            ) : condition.powerOnHelps ? (
-              <button className="btn sm" onClick={() => power.mutate('poweron')} disabled={busy}>
-                Power on
+              {loop.workstation_up ? (
+                <button className="btn sm" onClick={() => power.mutate('poweroff')} disabled={busy}>
+                  Power off
+                </button>
+              ) : condition.powerOnHelps ? (
+                <button className="btn sm" onClick={() => power.mutate('poweron')} disabled={busy}>
+                  Power on
+                </button>
+              ) : loop.down_reason === 'unauthenticated' ? (
+                // a missing or refused token is fixed in Settings, and a
+                // button that cannot fix it would point the operator away
+                // from the fix
+                <Link className="btn sm" to="/settings">
+                  Set the Claude token
+                </Link>
+              ) : null}
+              <button
+                className="btn sm danger"
+                onClick={() => setConfirming(true)}
+                disabled={busy || confirming}
+              >
+                Recreate
               </button>
-            ) : loop.down_reason === 'unauthenticated' ? (
-              // a missing or refused token is fixed in Settings, and a
-              // button that cannot fix it would point the operator away
-              // from the fix
-              <Link className="btn sm" to="/settings">
-                Set the Claude token
-              </Link>
-            ) : null}
-            <button
-              className="btn sm danger"
-              onClick={() => setConfirming(true)}
-              disabled={busy || confirming}
-            >
-              Recreate
-            </button>
-          </div>
+            </div>
+          )}
           {confirming && (
             <div className="ws-confirm">
               <div>
@@ -717,11 +760,13 @@ function WorkstationPanel({ loop, runningVerb }: { loop: LoopView; runningVerb: 
             Uncontained: claude runs directly on the host, with the operator's own files in reach. There is no
             workstation to power.
           </div>
-          <RehomeControl
-            loop={loop}
-            answer={rehomeAnswer}
-            onAnswer={(answer) => setRehomed({ name: loop.name, answer })}
-          />
+          {manage && (
+            <RehomeControl
+              loop={loop}
+              answer={rehomeAnswer}
+              onAnswer={(answer) => setRehomed({ name: loop.name, answer })}
+            />
+          )}
         </>
       )}
     </div>
@@ -735,6 +780,7 @@ function WorkstationPanel({ loop, runningVerb }: { loop: LoopView; runningVerb: 
 // state says what it means instead of warning.
 function SurfacesPanel({ loop }: { loop: LoopView }) {
   const qc = useQueryClient()
+  const manage = useMay()('manage')
   const [error, setError] = useState('')
   // Which surface's step is open on a loop with none. One at a time: the
   // choice is a row of buttons until it is made, then that surface's step
@@ -776,25 +822,32 @@ function SurfacesPanel({ loop }: { loop: LoopView }) {
     <div className="side-panel">
       <h3>Surfaces</h3>
       {surface === 'slack' ? (
-        <SlackSurface loop={loop} onDetach={detach} detaching={patch.isPending} />
+        <SlackSurface loop={loop} manage={manage} onDetach={detach} detaching={patch.isPending} />
       ) : surface === 'telegram' ? (
         <>
           <div className="row">
             <span className="k">telegram</span>
             <span className="v">@{loop.tg_bot_username || '?'}</span>
           </div>
-          <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
-            <BotTokenForm loop={loop} />
-            <button className="btn sm" style={{ marginTop: 10 }} onClick={detach} disabled={patch.isPending}>
-              Detach
-            </button>
-          </div>
-          <OwnerPanel loop={loop} />
+          {manage && (
+            <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+              <BotTokenForm loop={loop} />
+              <button
+                className="btn sm"
+                style={{ marginTop: 10 }}
+                onClick={detach}
+                disabled={patch.isPending}
+              >
+                Detach
+              </button>
+            </div>
+          )}
+          {manage ? <OwnerPanel loop={loop} /> : <OwnerFact loop={loop} readiness={readiness(loop)} />}
         </>
       ) : (
         <>
           <div className="panel-empty">No surface: this loop talks to you here only.</div>
-          {attaching === '' && (
+          {manage && attaching === '' && (
             <div style={{ display: 'flex', gap: 6 }}>
               <button className="btn sm" style={{ marginTop: 10 }} onClick={() => setAttaching('telegram')}>
                 Attach Telegram
@@ -810,28 +863,52 @@ function SurfacesPanel({ loop }: { loop: LoopView }) {
           {attaching === 'slack' && <SlackStep loop={loop} onClose={() => setAttaching('')} />}
         </>
       )}
-      <label className="switch-row">
-        <input
-          type="checkbox"
-          role="switch"
-          checked={loop.in_fleet_channel}
-          disabled={patch.isPending}
-          onChange={(e) => patch.mutate({ in_fleet_channel: e.target.checked })}
-        />
-        <span>
-          In the fleet channel
-          <span className="hint">
-            {loop.in_fleet_channel
-              ? 'Hears what is addressed to it in the fleet channel, and can post there.'
-              : 'Nothing posted in the fleet channel reaches it, and it has no group to post to.'}
+      {manage ? (
+        <label className="switch-row">
+          <input
+            type="checkbox"
+            role="switch"
+            checked={loop.in_fleet_channel}
+            disabled={patch.isPending}
+            onChange={(e) => patch.mutate({ in_fleet_channel: e.target.checked })}
+          />
+          <span>
+            In the fleet channel
+            <span className="hint">{fleetChannelHint(loop)}</span>
           </span>
-        </span>
-      </label>
+        </label>
+      ) : (
+        <>
+          <div className="row" style={{ marginTop: 12 }}>
+            <span className="k">fleet channel</span>
+            <span className="v">{loop.in_fleet_channel ? 'in it' : 'not in it'}</span>
+          </div>
+          <div className="hint">{fleetChannelHint(loop)}</div>
+        </>
+      )}
       {error && (
         <div className="form-error" role="alert">
           {error}
         </div>
       )}
+    </div>
+  )
+}
+
+function fleetChannelHint(loop: LoopView): string {
+  return loop.in_fleet_channel
+    ? 'Hears what is addressed to it in the fleet channel, and can post there.'
+    : 'Nothing posted in the fleet channel reaches it, and it has no group to post to.'
+}
+
+// The owner as a fact, for a session that may not choose one (#679). The
+// readiness line already names them and says whether the loop can reach
+// them, so it stands alone under the label.
+function OwnerFact({ loop, readiness }: { loop: LoopView; readiness: string }) {
+  return (
+    <div className="field" style={{ marginTop: 12 }}>
+      <span className="k">owner</span>
+      <div className={`hint ${loop.owner_dm_ready ? 'ok' : ''}`}>{readiness}</div>
     </div>
   )
 }
@@ -842,10 +919,12 @@ function SurfacesPanel({ loop }: { loop: LoopView }) {
 // while the page is open, as the context gauge is.
 function SlackSurface({
   loop,
+  manage,
   onDetach,
   detaching,
 }: {
   loop: LoopView
+  manage: boolean
   onDetach: () => void
   detaching: boolean
 }) {
@@ -900,7 +979,7 @@ function SlackSurface({
           Could not load the Slack status: {error instanceof Error ? error.message : String(error)}
         </div>
       )}
-      {replacing ? (
+      {!manage ? null : replacing ? (
         <SlackTokenForm loop={loop} onDone={() => setReplacing(false)} />
       ) : (
         <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
@@ -912,7 +991,11 @@ function SlackSurface({
           </button>
         </div>
       )}
-      <SlackOwnerPanel loop={loop} status={status} />
+      {manage ? (
+        <SlackOwnerPanel loop={loop} status={status} />
+      ) : (
+        <OwnerFact loop={loop} readiness={slackReadiness(loop, status)} />
+      )}
     </>
   )
 }
@@ -1046,12 +1129,16 @@ function readiness(loop: LoopView): string {
   return `Waiting for ${owner} to message ${bot}. A bot cannot open a private chat, so there is nowhere to send until they write there first.`
 }
 
-// ControlRoomThread renders the loop's private control_room conversation:
-// the operator's composer messages and the loop's control_room sends,
-// oldest first. Status notes stay on the timeline pane with their turns.
+// ControlRoomThread renders the loop's control_room conversation: what the
+// room's users sent from the composer and the loop's control_room sends,
+// oldest first. Status notes stay on the timeline pane with their turns. It
+// is every signed-in user's thread with the loop, not the operator's alone,
+// until #100 (ADR-0048), so it never calls itself private.
 function ControlRoomThread({ msgs }: { msgs: ChatMessage[] }) {
   if (msgs.length === 0) {
-    return <div className="empty">A private thread between you and this loop. Nothing yet.</div>
+    return (
+      <div className="empty">This loop's thread with everyone who signs in to this hub. Nothing yet.</div>
+    )
   }
   return (
     <div className="timeline">
@@ -1073,6 +1160,13 @@ export default function LoopDetail() {
   const { name = '' } = useParams()
   const nav = useNavigate()
   const qc = useQueryClient()
+  const may = useMay()
+  // A loop's raw transcript, its events and turns, is an admin's to read
+  // (#677): an owner DM's text can sit anywhere in it, and members see no
+  // owner DM. A member's page is the loop's conversations and its facts, and
+  // opens on the control room where an admin's opens on the timeline.
+  const transcript = may('manage')
+  const home: Pane = transcript ? 'timeline' : 'control_room'
   const [liveText, setLiveText] = useState('')
   // A power control the server reports as under way, from the workstation
   // frames — the only progress signal a long verb has.
@@ -1093,7 +1187,7 @@ export default function LoopDetail() {
       ? 'channel'
       : searchParams.get('pane') === 'undelivered'
         ? 'undelivered'
-        : 'timeline',
+        : home,
   )
   const [paneChannel, setPaneChannel] = useState(() => searchParams.get('channel') ?? '')
   const paneRef = useRef<HTMLDivElement>(null)
@@ -1127,8 +1221,8 @@ export default function LoopDetail() {
   const openChannel = chosenPane === 'channel' ? loopChannels.find((c) => c.name === paneChannel) : undefined
   // A `?channel=` naming no channel of the loop's, once the list is in to
   // say so (a typo, a channel it has left, a hub from before channels),
-  // shows the timeline rather than a pane with nothing to show.
-  const pane = chosenPane === 'channel' && !channelsPending && !openChannel ? 'timeline' : chosenPane
+  // shows the page's first pane rather than one with nothing to show.
+  const pane = chosenPane === 'channel' && !channelsPending && !openChannel ? home : chosenPane
 
   const { data: loop, error: loopError } = useQuery({
     queryKey: ['loop', name],
@@ -1146,6 +1240,7 @@ export default function LoopDetail() {
   const { data: events, error: eventsError } = useQuery({
     queryKey: ['events', name],
     queryFn: () => api.events(name),
+    enabled: transcript,
   })
   const { data: thread, error: threadError } = useQuery({
     queryKey: ['conversation', name],
@@ -1153,7 +1248,11 @@ export default function LoopDetail() {
     enabled: pane === 'control_room',
     refetchInterval: 5000,
   })
-  const { data: turns } = useQuery({ queryKey: ['turns', name], queryFn: () => api.turns(name, 10) })
+  const { data: turns } = useQuery({
+    queryKey: ['turns', name],
+    queryFn: () => api.turns(name, 10),
+    enabled: transcript,
+  })
   // the rotation thresholds the context gauge's colours mean something against
   const { data: thresholds } = useQuery({ queryKey: ['settings'], queryFn: api.settings })
 
@@ -1500,12 +1599,14 @@ export default function LoopDetail() {
             </div>
           )}
           <div className="dest-picker" style={{ marginTop: 0, marginBottom: 12 }}>
-            <button
-              className={`dest${pane === 'timeline' ? ' on' : ''}`}
-              onClick={() => showPane('timeline')}
-            >
-              timeline
-            </button>
+            {transcript && (
+              <button
+                className={`dest${pane === 'timeline' ? ' on' : ''}`}
+                onClick={() => showPane('timeline')}
+              >
+                timeline
+              </button>
+            )}
             <button
               className={`dest${pane === 'control_room' ? ' on' : ''}`}
               onClick={() => showPane('control_room')}
@@ -1589,7 +1690,7 @@ export default function LoopDetail() {
                   className={`dest${dest === 'control_room' ? ' on' : ''}`}
                   onClick={() => pickDest('control_room')}
                 >
-                  control room · private
+                  control room
                 </button>
                 <button
                   className={`dest${dest === 'group' ? ' on' : ''}`}
@@ -1601,7 +1702,7 @@ export default function LoopDetail() {
                       : undefined
                   }
                 >
-                  {outside ? 'fleet channel · not in it' : 'fleet channel · the loops, not Telegram'}
+                  {outside ? 'fleet channel · not in it' : 'fleet channel'}
                 </button>
               </div>
               {file && <AttachedFile file={file} onRemove={() => setFile(null)} />}
@@ -1610,8 +1711,8 @@ export default function LoopDetail() {
                 <textarea
                   placeholder={
                     dest === 'group'
-                      ? `Post to the fleet channel: the loops see it, nothing goes to Telegram, and @${loop.name} is delivered either way`
-                      : `Message @${loop.name} privately…`
+                      ? `Post to the fleet channel: the loops see it, nothing goes to Telegram or Slack, and @${loop.name} is delivered either way`
+                      : `Message @${loop.name} in the control room…`
                   }
                   value={draft}
                   onChange={(e) => {
@@ -1664,21 +1765,30 @@ export default function LoopDetail() {
                 {formatUsd(loop.cost_today_usd)}
               </span>
             </div>
-            <ScheduleEditor
-              name={name}
-              current={{
-                tick: loop.tick_interval_sec,
-                min: loop.min_wake_sec,
-                max: loop.max_wake_sec,
-                idle: loop.idle_timeout_sec,
-              }}
-            />
+            {may('manage') ? (
+              <ScheduleEditor
+                name={name}
+                current={{
+                  tick: loop.tick_interval_sec,
+                  min: loop.min_wake_sec,
+                  max: loop.max_wake_sec,
+                  idle: loop.idle_timeout_sec,
+                }}
+              />
+            ) : (
+              <div className="schedule-editor">
+                <PaceFacts
+                  pace={{ min: loop.min_wake_sec, tick: loop.tick_interval_sec, max: loop.max_wake_sec }}
+                />
+                <div className="hint">{PACE_HINT}</div>
+              </div>
+            )}
           </div>
 
           <div className="side-panel">
             <h3>Controls</h3>
             <div className="controls">
-              {paused ? (
+              {!may('manage') ? null : paused ? (
                 <button
                   className="btn sm"
                   onClick={() =>
@@ -1697,43 +1807,49 @@ export default function LoopDetail() {
                   Pause
                 </button>
               )}
-              <button className="btn sm" onClick={() => api.wake(name)}>
-                Wake now
-              </button>
-              <button
-                className="btn sm"
-                onClick={() => {
-                  if (
-                    confirm(
-                      `Rotate @${name}'s session? It writes a handoff note and continues fresh; conversational context is shed by design.`,
-                    )
-                  ) {
-                    api.rotate(name)
-                  }
-                }}
-              >
-                Rotate session
-              </button>
-              <button className="btn sm danger" onClick={() => api.kill(name)}>
-                Kill process
-              </button>
-              <button
-                className="btn sm danger"
-                onClick={() => {
-                  if (confirm(`Delete loop @${name}? Its worktree is removed; the branch is kept.`)) {
-                    api.deleteLoop(name, true).then(() => {
-                      qc.invalidateQueries({ queryKey: ['loops'] })
-                      nav('/')
-                    })
-                  }
-                }}
-              >
-                Delete loop
-              </button>
+              {may('talk') && (
+                <button className="btn sm" onClick={() => api.wake(name)}>
+                  Wake now
+                </button>
+              )}
+              {may('manage') && (
+                <>
+                  <button
+                    className="btn sm"
+                    onClick={() => {
+                      if (
+                        confirm(
+                          `Rotate @${name}'s session? It writes a handoff note and continues fresh; conversational context is shed by design.`,
+                        )
+                      ) {
+                        api.rotate(name)
+                      }
+                    }}
+                  >
+                    Rotate session
+                  </button>
+                  <button className="btn sm danger" onClick={() => api.kill(name)}>
+                    Kill process
+                  </button>
+                  <button
+                    className="btn sm danger"
+                    onClick={() => {
+                      if (confirm(`Delete loop @${name}? Its worktree is removed; the branch is kept.`)) {
+                        api.deleteLoop(name, true).then(() => {
+                          qc.invalidateQueries({ queryKey: ['loops'] })
+                          nav('/')
+                        })
+                      }
+                    }}
+                  >
+                    Delete loop
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
-          <ContextPanel loop={loop} turns={turns ?? []} thresholds={thresholds} />
+          {transcript && <ContextPanel loop={loop} turns={turns ?? []} thresholds={thresholds} />}
 
           <WorkstationPanel loop={loop} runningVerb={runningVerb} />
 
@@ -1769,18 +1885,20 @@ export default function LoopDetail() {
 
           <LoopConnections loop={loop} />
 
-          <div className="side-panel">
-            <h3>Recent turns</h3>
-            {(turns ?? []).map((t) => (
-              <div className="row" key={t.id}>
-                <span className="k">
-                  {new Date(t.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}{' '}
-                  {t.trigger}
-                </span>
-                <span className="v">{t.ended_at ? `$${t.cost_usd.toFixed(3)}` : '…'}</span>
-              </div>
-            ))}
-          </div>
+          {transcript && (
+            <div className="side-panel">
+              <h3>Recent turns</h3>
+              {(turns ?? []).map((t) => (
+                <div className="row" key={t.id}>
+                  <span className="k">
+                    {new Date(t.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}{' '}
+                    {t.trigger}
+                  </span>
+                  <span className="v">{t.ended_at ? `$${t.cost_usd.toFixed(3)}` : '…'}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </aside>
       </div>
     </div>

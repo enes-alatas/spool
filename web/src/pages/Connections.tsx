@@ -1,4 +1,5 @@
 import { Fragment, useState } from 'react'
+import { useMay } from '../components/Session'
 import { Link } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ApiError, Connection } from '../api'
@@ -17,6 +18,9 @@ import { messageTime } from '../components/MessageKnot'
 // (#600) is listed with its owner, and Share makes it the fleet's, one way.
 
 function ConnectionRow({ c, onChanged }: { c: Connection; onChanged: () => void }) {
+  // Rotating, revoking, sharing and deleting are an admin's (#679); the
+  // record is anyone's to read.
+  const manage = useMay()('manage')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const detail = connectionDetail(c)
@@ -135,12 +139,12 @@ function ConnectionRow({ c, onChanged }: { c: Connection; onChanged: () => void 
         <button className="text-button" onClick={() => toggle('history')} aria-expanded={panel === 'history'}>
           History
         </button>
-        {!revoked && c.has_secret && (
+        {manage && !revoked && c.has_secret && (
           <button className="text-button" onClick={() => toggle('rotate')} aria-expanded={panel === 'rotate'}>
             Rotate value
           </button>
         )}
-        {!revoked && (
+        {manage && !revoked && (
           <button className="text-button danger" onClick={revoke} disabled={busy}>
             Revoke
           </button>
@@ -151,7 +155,7 @@ function ConnectionRow({ c, onChanged }: { c: Connection; onChanged: () => void 
           not, is on no loop and can only be deleted. A shared one is shut while
           attached: the hub refuses it (`connection_attached`), and saying
           why on the button beats a refusal after the confirm. */}
-      {c.owner_loop && !revoked ? (
+      {!manage ? null : c.owner_loop && !revoked ? (
         <button className="btn sm" onClick={share} disabled={busy}>
           Share
         </button>
@@ -192,6 +196,7 @@ function ConnectionRow({ c, onChanged }: { c: Connection; onChanged: () => void 
 
 export default function Connections() {
   const qc = useQueryClient()
+  const may = useMay()
   const { data, isPending, error } = useQuery({ queryKey: ['connections'], queryFn: api.connections })
   // Every change lands on the record too (#606).
   const refresh = () =>
@@ -231,8 +236,12 @@ export default function Connections() {
               ))}
             </div>
           )}
-          <h3 className="connection-new">New connection</h3>
-          <ConnectionForm onCreated={refresh} />
+          {may('manage') && (
+            <>
+              <h3 className="connection-new">New connection</h3>
+              <ConnectionForm onCreated={refresh} />
+            </>
+          )}
         </>
       )}
     </div>

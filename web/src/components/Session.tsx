@@ -1,7 +1,9 @@
 import { useState, type ReactNode } from 'react'
+import { Navigate } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api'
 import { loginError, needsLogin } from '../session'
+import { may, type Action } from '../roles'
 import Login from '../pages/Login'
 import ChangePassword from '../pages/ChangePassword'
 
@@ -75,5 +77,21 @@ export function Session({ children }: { children: ReactNode }) {
   if (me?.must_change_password) {
     return <ChangePassword name={me.name} onChanged={() => qc.resetQueries()} />
   }
+  return <>{children}</>
+}
+
+// Whether this session may take an action (#679). It reads the gate's own
+// query, which is settled before any page renders, so it costs no request.
+export function useMay(): (action: Action) => boolean {
+  const { data: me } = useQuery({ queryKey: ['session'], queryFn: api.me, retry: false })
+  return (action) => may(me?.role, action)
+}
+
+// A page only an admin can use, such as New loop (#679). A member who
+// follows a link to it lands on Fleet: the page would be a form whose every
+// submit is refused.
+export function AdminOnly({ children }: { children: ReactNode }) {
+  const may = useMay()
+  if (!may('manage')) return <Navigate to="/" replace />
   return <>{children}</>
 }

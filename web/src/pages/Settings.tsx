@@ -5,7 +5,7 @@ import { customModelError, MODEL_LABEL_MAX, rotationGate, tokenSubmittable } fro
 import { customModelNote } from '../options'
 import { buildFacts, useVersion } from '../version'
 import { HarnessCheck } from '../components/HarnessCheck'
-import { useSignOut } from '../components/Session'
+import { useMay, useSignOut } from '../components/Session'
 import { SignOutIcon } from '../components/Icons'
 import { EgressSection } from '../components/EgressSection'
 import { loginCheckTone } from '../onboarding'
@@ -14,16 +14,24 @@ import { capFields, capGate, capIdleStatus, capReason, capValue, type CapDraft }
 
 export default function Settings() {
   const { data: settings, error: loadError } = useQuery({ queryKey: ['settings'], queryFn: api.settings })
+  const may = useMay()
 
   return (
     <div className="page measure">
       <h1>Settings</h1>
       <AccountSection />
-      <ClaudeToken settings={settings} loadError={loadError} />
-      <CustomModels />
-      <PlanGuardrails settings={settings} loadError={loadError} />
-      <RotationThresholds settings={settings} loadError={loadError} />
-      <EgressSection />
+      {/* The rest is the hub's own configuration, which only an admin
+          changes (#679): a member's Settings is who they are and which
+          Spool this is. */}
+      {may('manage') && (
+        <>
+          <ClaudeToken settings={settings} loadError={loadError} />
+          <CustomModels />
+          <PlanGuardrails settings={settings} loadError={loadError} />
+          <RotationThresholds settings={settings} loadError={loadError} />
+          <EgressSection />
+        </>
+      )}
       <Build />
     </div>
   )
