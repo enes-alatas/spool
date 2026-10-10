@@ -15,6 +15,7 @@
   "devDependencies": {
     "@fontsource/inter": "^5.3.0",
     "@fontsource/jetbrains-mono": "^5.3.0",
+    "@fontsource/noto-emoji": "^5.3.2",
     "@fontsource/nunito": "^5.3.0"
   }
 }
