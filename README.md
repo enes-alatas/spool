@@ -22,7 +22,7 @@ https://github.com/user-attachments/assets/d537df9f-0305-43eb-bcb0-6c528adaefa8
 ## What does Spool make easier?
 
 - **Keep work going.** Create and manage persistent loops in one place, with scheduled wakes and resumable sessions.
-- **Stay involved.** Talk to your loops in the web control room or through Telegram, without sitting in their terminal sessions.
+- **Stay involved.** Talk to your loops in the web control room, on Telegram or in Slack, without sitting in their terminal sessions.
 - **Coordinate work.** Let loops communicate directly in the fleet channel, so you don't have to relay every question, result, or handoff.
 
 Less switching between sessions and carrying messages between loops. More time deciding what they should work on and reviewing what they produce.
@@ -35,7 +35,7 @@ From a clone to a loop that answers you on Telegram. Each step is one command or
 2. **Build the binary:** `make build`, which builds the web UI and the single `bin/spool` binary.
 3. **Build the images:** `make image`, which builds the workstation a loop runs in and its egress proxy. Spool runs them from your local Docker; it never pulls them.
 4. **Start the hub:** `./bin/spool`. The control room is on 127.0.0.1:8080, and data goes in `~/.spool`. The loop listener goes where your workstations can reach it, and the hub logs where that is; see [What contains a loop](#what-contains-a-loop).
-5. **Log in to the control room:** open http://127.0.0.1:8080 and paste the operator token the hub printed. `./bin/spool token` prints it again.
+5. **Sign in to the control room:** open http://127.0.0.1:8080 and sign in as `admin` with the one-time password the hub printed at its first start, then choose your own password. Missed it? `./bin/spool user reset admin` prints a new one.
 6. **Give the workstations your Claude login:** run `claude setup-token`, then paste the token under **Settings → Claude token**. A workstation cannot use your machine's `~/.claude`, so this is how a loop runs on your plan.
 7. **Create a loop:** **New loop**, then a name, a mission and a tick interval. Leave the workspace empty; it is for bare loops only.
 8. **Attach Telegram:** in Telegram, send **@BotFather** `/newbot`. On the loop's page, under **Surfaces**, choose **Attach Telegram** and paste the token.
@@ -54,6 +54,7 @@ To bring loops into a Telegram group, and for who can reach them there, see [Tel
 - **Contained by default.** Each loop runs in its own container with an egress allowlist and no route to your machine but one hub port. Without Docker, Spool refuses to start rather than quietly running loops on your host — uncontained is something you ask for, and it says so when you do. See [What contains a loop](#what-contains-a-loop).
 - **Worktree isolation.** Point several loops at one repo and each gets its own git worktree on `loop/<name>` — they can't clobber each other.
 - **Control room.** Live conversation timelines (token streaming included), schedules, costs per turn/day, pause/wake/kill.
+- **Plan guardrails.** The Fleet page shows how much of your plan's 5-hour and 7-day windows is used, read from the loops' own streams, and each loop's share of the day's spend. Past a cap, 90% of either window by default, every loop sleeps until that window resets: messages wait, and nothing is lost. **Resume now** lifts it early, and **Settings → Plan guardrails** sets the thresholds or turns them off (ADR-0047).
 
 Spool is pre-1.0 and developed in the open by a fleet of Claude Code loops and their operator — the four loops in this repo's issues and PRs are running on Spool, building Spool. Commits are co-authored by the model that wrote them; every change lands through a pull request that CI gates and a reviewer reads, and the operator is the one who merges it. Found a problem? [CONTRIBUTING.md](CONTRIBUTING.md) says how to report it and who answers.
 
@@ -67,6 +68,8 @@ workspace is a working directory; it stops nothing.
 With Docker reachable, a loop gets a container of its own, on an internal
 network with no route off it except an allowlist of the hosts a loop needs
 (`spool-egress-proxy`), and the single hub port that serves the MCP endpoint.
+You add hosts to that allowlist under **Settings → Egress**. A change reaches
+every docker loop within seconds, with nothing restarted.
 An http MCP server you attach to a loop is reached through the hub, which adds
 its credential, so the loop calls the server without ever holding its secret.
 It cannot reach your control room API, your files, or the rest of your network.
@@ -81,7 +84,11 @@ chooses it for you — a daemon being down is not consent.
 
 To keep Docker as the default and still allow a deliberately bare loop
 alongside contained ones, start with `--allow-bare`; without it the control
-room refuses to create one.
+room refuses to create one. A bare loop can later move into a container of
+its own: **Move into a docker container**, on its page under **Workstation**,
+keeps its name, bots, channels, mission, schedule, connections and history,
+and starts a fresh session there from a handoff note. There is no moving it
+back.
 
 Two things containment does not do. It does not stop a loop misusing a
 credential you gave it — a token in a loop's environment is a token that loop
@@ -94,7 +101,7 @@ Spool serves two listeners. `--listen` is yours: the control room and its API. `
 
 Without `--mcp-listen`, the hub chooses where the loop listener goes, on `--mcp-port` (8081). With Docker workstations on Linux, it binds the Docker bridge's address (usually 172.17.0.1). Your workstations can reach that address. Your network is not routed to it by default: a host on the same link reaches it only by routing the bridge subnet through your machine, and a host firewall can drop that. With Docker Desktop, whose engine runs in a VM and forwards workstations to your machine's loopback, or with bare loops only, it binds 127.0.0.1. The hub logs which it chose and why (ADR-0039). An explicit `--mcp-listen` always wins. `--listen` stays on localhost.
 
-On first start, Spool prints an **operator token** and stores it in the data directory. The control room asks for it once and then holds a session cookie. Every `/api` route except health and version requires it. The first start also creates the user `admin` and prints its one-time password once. `spool user` adds, resets, lists and removes users, and the control room's sign-in with them follows in #674 (ADR-0048). Binding to localhost is not a boundary, because any other local process, and any page in your browser, can reach that port too (ADR-0030).
+On first start, Spool creates the user `admin` and prints its one-time password once. The control room signs in with a username and password, asks for a new password in place of a one-time one, and then holds a session cookie. `spool user` adds, resets, lists and removes users (ADR-0048). The first start also prints an **operator token** and stores it in the data directory: it is for the CLI and scripts, sent as a bearer header, and `spool token` prints it again. Every `/api` route except health and version requires a session or the token. Binding to localhost is not a boundary, because any other local process, and any page in your browser, can reach that port too (ADR-0030).
 
 Spool also mints a **hub key**, `hub.key` in the data directory, and seals every secret it stores under it: connection secrets, bot tokens, the setup-token. A copy of `spool.db` alone holds none of them. Back up `hub.key` separately from the database: a backup holding both is as sensitive as the secrets, and without the key the secrets are gone. If the key is lost, the secrets can't be recovered without it, and the hub won't start until you restore it, or start it once with `--forget-secrets`, which revokes the connections, unbinds the bots and clears the setup-token so you can enter them again (ADR-0046).
 
@@ -117,14 +124,14 @@ Telegram bots are publicly reachable, so Spool keeps a **sender allowlist**. Any
 
 ## Slack
 
-The Slack surface is being built (#230). What works today is creating the app a loop will run as, so it is ready when the surface lands. Each loop is its own Slack app, connected over Socket Mode, so the hub needs no public URL:
+Slack is a surface like Telegram: a loop holds its owner DM and its channels in Slack. Each loop is its own Slack app, connected over Socket Mode, so the hub needs no public URL:
 
 1. On the loop's page in the control room, under **Surfaces**, choose **Attach Slack**.
 2. Follow **Create app from manifest**: Slack's create page opens with the loop's manifest filled in. Pick the workspace and create it. (Or copy the manifest and paste it into *Create New App → From a manifest*.)
 3. Install the app to the workspace. The bot token, `xoxb-…`, is under **OAuth & Permissions**.
 4. Under **Basic Information → App-Level Tokens**, generate an app-level token, `xapp-…`, with the `connections:write` scope. A manifest cannot create this one.
 
-Keep both tokens; pasting them into the loop arrives with the surface.
+5. Paste both tokens into the loop's **Attach Slack** step. The app connects, and the loop's **Surfaces** panel says whether its socket is up.
 
 Reactions travel on Slack as they do on Telegram, and a loop's app keeps every reaction it adds. An app created from an older manifest has no reaction scopes. Add `reactions:read` and `reactions:write` under **OAuth & Permissions** and the `reaction_added` and `reaction_removed` bot events under **Event Subscriptions**, then reinstall the app. Until then, reactions stay on the hub.
 
