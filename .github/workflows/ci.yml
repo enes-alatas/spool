@@ -358,6 +358,12 @@ jobs:
       - name: the other-half check still refuses what it claims to
         if: needs.changes.outputs.workflows == 'true'
         run: bash scripts/other-half-test.sh
+      # Restore is run once in anger, after the data is already gone, so a
+      # backup that silently stopped copying volumes or started copying
+      # hub.key into the data file would surface then and no sooner (#708).
+      - name: the backup and restore still round-trip what they claim to
+        if: needs.changes.outputs.workflows == 'true'
+        run: bash scripts/spool-backup-test.sh
 
   # The one job still filtered at job level, because it is the one worth
   # skipping outright: ~8 of the ~10 minutes a full run used to bill. A job
