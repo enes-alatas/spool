@@ -59,6 +59,10 @@ func TestOwnersManageUsersOnTheAPI(t *testing.T) {
 		}
 		return resp, added, out
 	}
+	if resp, _, out := add(map[string]string{"name": "operator", "role": "member"}); resp.StatusCode != http.StatusBadRequest ||
+		!strings.Contains(string(out), `"bad_name"`) {
+		t.Errorf("adding a user named operator = %d %s; want 400 bad_name: the name is the token's", resp.StatusCode, out)
+	}
 	resp, dana, out := add(map[string]string{"name": "dana", "role": "member"})
 	if resp.StatusCode != http.StatusCreated || dana.OneTimePassword == "" || dana.Role != "member" || !dana.MustChangePassword {
 		t.Fatalf("adding a member = %d %s; want 201 with a one-time password", resp.StatusCode, out)

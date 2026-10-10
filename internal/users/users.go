@@ -33,6 +33,11 @@ const (
 // AdminName is the owner the hub's first start creates.
 const AdminName = "admin"
 
+// OperatorName is who the operator token acts as wherever the hub names
+// who did something: a message's author, a change's actor. It has no
+// user, so no user may take the name and pass for the token.
+const OperatorName = "operator"
+
 // PBKDF2-SHA256 as decided: 600,000 iterations over a random 16-byte salt,
 // for a 32-byte key.
 const (
@@ -71,6 +76,7 @@ var nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{1,31}$`)
 
 var (
 	ErrBadName           = errors.New("a user name is 2 to 32 lowercase letters, digits, - or _, starting with a letter or digit")
+	ErrReservedName      = fmt.Errorf("the name %q stands for the operator token", OperatorName)
 	ErrBadRole           = errors.New("a role is owner, admin or member")
 	ErrPasswordTooShort  = fmt.Errorf("a password is at least %d characters", MinPasswordLength)
 	ErrPasswordTooLong   = fmt.Errorf("a password is at most %d characters", MaxPasswordLength)
@@ -223,6 +229,9 @@ func (users *Users) Bootstrap(ctx context.Context) (string, error) {
 func (users *Users) Add(ctx context.Context, name, role string) (string, error) {
 	if !nameRe.MatchString(name) {
 		return "", ErrBadName
+	}
+	if name == OperatorName {
+		return "", ErrReservedName
 	}
 	if !ValidRole(role) {
 		return "", ErrBadRole
