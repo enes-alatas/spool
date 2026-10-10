@@ -6,11 +6,14 @@ import inter700 from '@fontsource/inter/files/inter-latin-700-normal.woff2'
 import mono400 from '@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2'
 import mono500 from '@fontsource/jetbrains-mono/files/jetbrains-mono-latin-500-normal.woff2'
 import nunito400 from '@fontsource/nunito/files/nunito-latin-400-normal.woff2'
+// The subset of the COLRv1 Noto Color Emoji that holds 👍 and 🎉, the emoji
+// the drawn chat panes use (record.mjs says why this build).
+import emoji9 from '@infolektuell/noto-color-emoji/files/9.woff2'
 
 // The same faces record.mjs pins in the recorded control room, so the
 // captions and the footage share one typeface, plus the wordmark's Nunito
 // (ADR-0027). The render waits for them.
-const faces: [string, string, string][] = [
+const faces: [string, string, string, string?][] = [
   ['Inter', inter400, '400'],
   ['Inter', inter500, '500'],
   ['Inter', inter600, '600'],
@@ -18,12 +21,13 @@ const faces: [string, string, string][] = [
   ['JetBrains Mono', mono400, '400'],
   ['JetBrains Mono', mono500, '500'],
   ['Nunito', nunito400, '400'],
+  ['Noto Color Emoji', emoji9, '400', 'U+1F389, U+1F440-1F450'],
 ]
 
 const handle = delayRender('fonts')
 Promise.all(
-  faces.map(([family, url, weight]) => {
-    const face = new FontFace(family, `url(${url}) format('woff2')`, { weight })
+  faces.map(([family, url, weight, unicodeRange]) => {
+    const face = new FontFace(family, `url(${url}) format('woff2')`, { weight, unicodeRange })
     document.fonts.add(face)
     return face.load()
   }),

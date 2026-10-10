@@ -17,7 +17,7 @@ export default tseslint.config(
   {
     // The README demo's recorder (#447) is a node tool too, and the
     // functions it hands to `page.evaluate` run in the page, so it also
-    // names the three browser globals they use.
+    // names the four browser globals they use.
     files: ['demo/record.mjs'],
     languageOptions: {
       globals: {
@@ -27,6 +27,7 @@ export default tseslint.config(
         document: 'readonly',
         addEventListener: 'readonly',
         requestAnimationFrame: 'readonly',
+        window: 'readonly',
       },
     },
   },
