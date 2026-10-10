@@ -29,7 +29,7 @@ var memberRoutes = []string{
 	"GET /api/loops", "GET /api/loops/{name}", "GET /api/loops/{name}/telegram/status",
 	"GET /api/loops/{name}/slack/status", "GET /api/loops/{name}/rooms",
 	"GET /api/loops/{name}/conversation", "GET /api/loops/{name}/connection-events",
-	"GET /api/loops/{name}/stream", "GET /api/stream", "GET /api/activity",
+	"GET /api/loops/{name}/stream", "GET /api/stream", "GET /api/activity", "GET /api/changes",
 	"GET /api/attachments/{id}", "GET /api/undelivered", "GET /api/group",
 	"GET /api/connections", "GET /api/connections/{name}", "GET /api/connections/{name}/events",
 	"GET /api/channels", "GET /api/channels/{name}", "GET /api/channels/{name}/messages",
@@ -116,14 +116,19 @@ func allows(mux *http.ServeMux, r *http.Request, who *caller) bool {
 }
 
 // routeMux is the API's mux, which remembers each pattern registered on it
-// so a test can hold every route to the table above.
+// so a test can hold every route to the table above. wrap, when set, sees
+// every handler as it is registered, with its pattern.
 type routeMux struct {
 	*http.ServeMux
 	patterns []string
+	wrap     func(pattern string, handler http.HandlerFunc) http.HandlerFunc
 }
 
 func (mux *routeMux) HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request)) {
 	mux.patterns = append(mux.patterns, pattern)
+	if mux.wrap != nil {
+		handler = mux.wrap(pattern, handler)
+	}
 	mux.ServeMux.HandleFunc(pattern, handler)
 }
 

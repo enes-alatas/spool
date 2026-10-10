@@ -148,6 +148,7 @@ func (database *DB) Models() store.ModelStore                   { return models{
 func (database *DB) Users() store.UserStore                     { return users{database.db} }
 func (database *DB) UserSessions() store.UserSessionStore       { return userSessions{database.db} }
 func (database *DB) SignInThrottles() store.SignInThrottleStore { return signInThrottles{database.db} }
+func (database *DB) LoopChanges() store.LoopChangeStore         { return loopChanges{database.db} }
 
 func toJSON(values []string) string {
 	if values == nil {
@@ -172,7 +173,9 @@ type loops struct {
 
 // loopCols are the columns of a loops row, in the order Create writes them.
 // loopReadCols reads them back with the fleet channel's Telegram room, which
-// is kept in rooms (ADR-0038) and read as the loop's own two fields.
+// is kept in rooms (ADR-0038) and read as the loop's own two fields, and
+// with who made and last changed the loop, which only its change record
+// writes (ADR-0048).
 const loopCols = `id, name, mission, model, workspace_mode, workspace_path, repo_path,
 	worktree_path, branch, tick_interval_sec, min_wake_sec, max_wake_sec, idle_timeout_sec,
 	pacing, effort, tg_bot_token, tg_bot_username,
@@ -190,7 +193,8 @@ const loopReadCols = loopCols + `,
 	COALESCE((SELECT room_id FROM rooms WHERE rooms.loop_id=loops.id
 		AND surface='` + store.SurfaceSlack + `' AND channel='` + store.FleetChannel + `'), ''),
 	COALESCE((SELECT bound_at FROM rooms WHERE rooms.loop_id=loops.id
-		AND surface='` + store.SurfaceSlack + `' AND channel='` + store.FleetChannel + `'), 0)`
+		AND surface='` + store.SurfaceSlack + `' AND channel='` + store.FleetChannel + `'), 0),
+	created_by, updated_by`
 
 // scanLoop reads a loops row, opening its sealed tokens.
 func (table loops) scanLoop(row interface{ Scan(...any) error }) (*store.Loop, error) {
@@ -207,7 +211,8 @@ func (table loops) scanLoop(row interface{ Scan(...any) error }) (*store.Loop, e
 		&loopRecord.SlackTeamID, &loopRecord.SlackTeamName,
 		&loopRecord.OwnerSlackUserID, &loopRecord.OwnerSlackDMChannel,
 		&loopRecord.TGGroupChatID, &loopRecord.TGGroupBoundAt,
-		&loopRecord.SlackChannelID, &loopRecord.SlackChannelBoundAt)
+		&loopRecord.SlackChannelID, &loopRecord.SlackChannelBoundAt,
+		&loopRecord.CreatedBy, &loopRecord.UpdatedBy)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, store.ErrNotFound
 	}

@@ -70,6 +70,23 @@ gathered here. This ADR is the hub half of slice 1. The sign-in pages are
    - No user may be named `operator`, so no one passes for the token.
      `spool user add` and `POST /api/users` refuse the name (400
      `bad_name`). A hub that already has a user by that name keeps them.
+   - Every API call that changes a loop or acts on it, once it succeeds,
+     adds a row to an append-only change record: `{id, at, by, action,
+     loop}`, where `loop` is the loop's name as it was, so a row outlives
+     the loop. The calls are create, edit, delete, pause, resume, wake,
+     kill, rotate, rehome, the four workstation actions, the owner, a room
+     bound or unbound, a connection attached or detached, and a channel
+     joined or left. A refused call records nothing.
+   - The loop carries `created_by` and `updated_by`. A wake is recorded but
+     changes neither, since it changes nothing about the loop. A loop made
+     before the record existed has neither.
+   - `GET /api/changes`, newest first, takes `loop` and `limit` (default
+     100). Members read it, since a user's name and a loop's name are
+     nothing they're kept from. A name is not a secret, and the redactor
+     leaves the record alone.
+   - Activity stays the message list. A message already names its author.
+     A scheduled wake, a loop's own actions and a turn's events record no
+     user.
 
 2. **Passwords are hashed with PBKDF2-SHA256 from the Go standard
    library.** That means 600,000 iterations and a random 16-byte salt per

@@ -141,7 +141,7 @@ func (server *Server) Handler() http.Handler {
 
 // routes registers every route the operator listener serves.
 func (server *Server) routes() *routeMux {
-	mux := &routeMux{ServeMux: http.NewServeMux()}
+	mux := &routeMux{ServeMux: http.NewServeMux(), wrap: server.recordingChange}
 
 	mux.HandleFunc("GET /api/health", server.handleHealth)
 	mux.HandleFunc("GET /api/version", server.handleVersion)
@@ -170,6 +170,7 @@ func (server *Server) routes() *routeMux {
 	mux.HandleFunc("PUT /api/loops/{name}/rooms", server.handlePutRoom)
 	mux.HandleFunc("DELETE /api/loops/{name}/rooms/{surface}/{room}", server.handleDeleteRoom)
 	mux.HandleFunc("GET /api/activity", server.handleActivity)
+	mux.HandleFunc("GET /api/changes", server.handleChanges)
 	mux.HandleFunc("GET /api/attachments/{id}", server.handleAttachment)
 	mux.HandleFunc("POST "+uploadPath, server.handleUpload)
 	mux.HandleFunc("GET /api/undelivered", server.handleUndelivered)
@@ -758,6 +759,7 @@ func (server *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 	// first tick shortly after creation so the mission starts without waiting
 	// a full interval
 	server.Sched.ScheduleNow(loopRecord.ID)
+	server.recordChange(r, store.LoopChangeCreate, loopRecord)
 	writeJSON(w, 201, server.view(r.Context(), loopRecord))
 }
 

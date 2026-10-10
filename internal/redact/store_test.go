@@ -416,6 +416,12 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			"Create": false, "SetPassword": false, "SetRole": false,
 			"Delete": false, "Get": false, "GetByName": false, "List": false,
 		},
+		"LoopChangeStore": {
+			// A user's name, a route's action, a loop's id and name, and a
+			// time; the API takes all of it, and no loop's output reaches
+			// it (ADR-0048).
+			"Record": false, "List": false,
+		},
 		"UserSessionStore": {
 			// The SHA-256 of a session ID and of the token a token session
 			// was opened with, a user id and times.
