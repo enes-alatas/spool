@@ -1,6 +1,6 @@
 # ADR-0048: The hub has users, who sign in with a username and password
 
-Date: 2026-10-09 · Status: accepted (operator decisions of 2026-10-04, 2026-10-07 and 2026-10-09, recorded on #582) · Supersedes: ADR-0030 decision 5 in part (the cookie is a session, not the token) · Relates to: ADR-0046
+Date: 2026-10-09 · Status: accepted (operator decisions of 2026-10-04, 2026-10-07 and 2026-10-09, recorded on #582) · Amended: 2026-10-09 (item 1: the roles are enforced, #677); 2026-10-10 (item 1: a member reads no pairing code, #689) · Supersedes: ADR-0030 decision 5 in part (the cookie is a session, not the token) · Relates to: ADR-0046
 
 ## Context
 
@@ -57,6 +57,13 @@ gathered here. This ADR is the hub half of slice 1. The sign-in pages are
      in `internal/httpapi`. A route the table doesn't name needs an admin,
      so a route added later stays closed to members until someone decides
      otherwise.
+
+   **Amendment (2026-10-10, #689):** a member reads the Telegram and Slack
+   senders lists without their pairing codes. The code tells an admin that
+   the person vouching for a pending sender got the bot's DM. A member who
+   read every code could vouch for any sender, and only an admin or an
+   owner can allow one. Admins, owners and the operator token still read
+   every code.
 
 2. **Passwords are hashed with PBKDF2-SHA256 from the Go standard
    library.** That means 600,000 iterations and a random 16-byte salt per

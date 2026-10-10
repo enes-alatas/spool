@@ -1726,6 +1726,11 @@ func (server *Server) handleListSenders(w http.ResponseWriter, r *http.Request) 
 	if senders == nil {
 		senders = []*store.TGSender{}
 	}
+	if !seesPairCodes(callerOf(r)) {
+		for _, sender := range senders {
+			sender.PairCode = ""
+		}
+	}
 	writeJSON(w, 200, senders)
 }
 
