@@ -685,8 +685,9 @@ func TestSeedStoresTheExtraEgressHosts(t *testing.T) {
 	}
 }
 
-// The scripts sign in as admin with the fixture's password, and shoot the
-// change page as robin, who is still on a one-time password (#674). A
+// The scripts sign in as admin with the fixture's password, shoot the
+// change page as robin, who is still on a one-time password (#674), and the
+// member view as sam, who is not (#679). A
 // fixture whose admin could not sign in would leave every shot on the
 // sign-in page; and with no user at all, the hub would create admin itself
 // with a random password no script can read.
@@ -719,6 +720,13 @@ func TestSeedSignsInAdminAndHoldsRobinAtTheChange(t *testing.T) {
 	}
 	if !robin.MustChangePassword {
 		t.Fatal("robin has no change due, so the change page has no one to shoot")
+	}
+	sam, err := hub.SignIn(ctx, "sam", fixtureUserPassword)
+	if err != nil {
+		t.Fatalf("sam signs in: %v", err)
+	}
+	if sam.Role != store.RoleMember || sam.MustChangePassword {
+		t.Fatalf("sam = role %q, must change %v; want a member with no change due", sam.Role, sam.MustChangePassword)
 	}
 	if created, err := hub.Bootstrap(ctx); err != nil || created != "" {
 		t.Fatalf("Bootstrap on the fixture = %q, %v; want no admin created", created, err)
