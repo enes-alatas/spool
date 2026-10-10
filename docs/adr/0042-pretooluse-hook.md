@@ -1,6 +1,6 @@
 # ADR-0042: The hub pins a PreToolUse hook that refuses the mechanical fleet rules
 
-Date: 2026-10-03 · Status: accepted (operator decision of 2026-10-02, recorded on #529) · Amended: 2026-10-10 (item 4: credentials handed to gh or git, #698)
+Date: 2026-10-03 · Status: accepted (operator decision of 2026-10-02, recorded on #529) · Amended: 2026-10-10 (item 4: credentials handed to gh or git, #698); 2026-10-10 (item 4: kill -1 and kills by name, #700)
 
 ## Context
 
@@ -74,6 +74,19 @@ either: hooks from every source run together.
    substitution, not the file. Nor are release assets (`gh release
    create` arguments, `gh release upload`), or the files a commit or a
    push carries, which the CI secret scan reads in a pull request.
+
+   **Amendment (2026-10-10, #700):** a kill that reaches past the loop's own
+   processes is refused like `pkill`. That covers `kill -1` in any form, since PID
+   -1 is every process of the uid, `killall5`, and `fuser -k`, which kills
+   whatever holds a port or a file. It also covers a call that kills and
+   looks a PID up with `pgrep`, `pidof` or `lsof -t`, as in
+   `kill $(pgrep -f x)`, `pgrep x | xargs kill` or
+   `kill $(lsof -t -i :8080)`: a name or a port matches another loop's
+   process as readily as the loop's own. A `pgrep -P` by a parent the
+   loop started, such as `$$`, walks the loop's own tree and is let
+   through. `-P 1` is refused, because every detached run on the host is
+   re-parented to PID 1. The refusal says to kill by the PID recorded at
+   start, `$!`.
 
 ## Consequences
 
