@@ -416,9 +416,12 @@ type Message struct {
 	// ConversationLoopID keys the per-loop conversation kinds (owner_dm,
 	// control_room, dm:<name>) to their loop; empty for the shared group.
 	ConversationLoopID string `json:"conversation_loop_id,omitempty"`
-	// DMPerson is who a dm:<name> conversation is with, as TGPerson or
-	// SlackPerson key them: the name can change, the person cannot. Empty
-	// for every other conversation. Storage detail, not surfaced.
+	// DMPerson is who a private conversation is with, as TGPerson or
+	// SlackPerson key them: on dm:<name> the name can change, the person
+	// cannot, and on owner_dm it is the owner the message was with, so a
+	// later owner is not them (ADR-0050). Empty for every other
+	// conversation, and on an owner_dm older than #703. Storage detail,
+	// not surfaced.
 	DMPerson string `json:"-"`
 	// Channel names the channel a group message was said in, FleetChannel
 	// for the fleet channel; empty for the per-loop kinds, which are in none
@@ -1230,6 +1233,7 @@ type Store interface {
 	Connections() ConnectionStore
 	LoopChanges() LoopChangeStore
 	PrivateChats() PrivateChatStore
+	UserLinks() UserLinkStore
 	FleetRules() FleetRuleStore
 	Sessions() SessionStore
 	Messages() MessageStore
@@ -1871,4 +1875,49 @@ type PrivateChatStore interface {
 	Get(ctx context.Context, loopID, person string) (*PrivateChat, error)
 	// List is every private chat the loop has, oldest first.
 	List(ctx context.Context, loopID string) ([]*PrivateChat, error)
+}
+
+// UserLink is a hub user's link to the person they are on a surface
+// (#703): proved by the user sending a code from the control room to a
+// loop's bot or app in a DM. A user has at most one per surface, and a
+// person is linked to at most one user. What a member reads of loops'
+// private conversations follows from their links.
+type UserLink struct {
+	UserID string
+	// Surface is the surface Person belongs to.
+	Surface string
+	// Person is the sender, as TGPerson or SlackPerson key them.
+	Person    string
+	CreatedAt int64
+}
+
+type UserLinkStore interface {
+	// SetCode records the SHA-256 of a link code a user asked for, good
+	// until expiresAt, in place of any code they asked for before. Times
+	// here are Unix milliseconds.
+	SetCode(ctx context.Context, userID, codeHash string, expiresAt int64) error
+	// Redeem spends the code codeHash names and links its user to person,
+	// in place of the user's link on person's surface, if any. It is
+	// ErrNotFound for a code that does not exist or expired before now,
+	// and ErrDuplicate when person is linked to another user; the code is
+	// spent either way.
+	Redeem(ctx context.Context, codeHash, person string, now int64) (*UserLink, error)
+	// List is the user's links, by surface.
+	List(ctx context.Context, userID string) ([]*UserLink, error)
+	// Delete removes the user's link on surface; ErrNotFound if they have
+	// none there.
+	Delete(ctx context.Context, userID, surface string) error
+}
+
+// OwnerPerson is the loop's owner on its own surface, as TGPerson or
+// SlackPerson key them, or "" when it has none.
+func (loopRecord *Loop) OwnerPerson() string {
+	switch {
+	case !loopRecord.OwnerConfigured():
+		return ""
+	case loopRecord.Surface() == SurfaceTelegram:
+		return TGPerson(loopRecord.OwnerTGUserID)
+	default:
+		return SlackPerson(loopRecord.OwnerSlackUserID)
+	}
 }

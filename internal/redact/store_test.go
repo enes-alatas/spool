@@ -427,6 +427,11 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			// all read off the surface's own message (ADR-0049).
 			"Capture": false, "Get": false, "List": false,
 		},
+		"UserLinkStore": {
+			// A user id, a sender's surface id, times, and a link code's
+			// SHA-256; the code itself is never kept (#703).
+			"SetCode": false, "Redeem": false, "List": false, "Delete": false,
+		},
 		"UserSessionStore": {
 			// The SHA-256 of a session ID and of the token a token session
 			// was opened with, a user id and times.

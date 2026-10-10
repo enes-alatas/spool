@@ -150,6 +150,7 @@ func (database *DB) UserSessions() store.UserSessionStore       { return userSes
 func (database *DB) SignInThrottles() store.SignInThrottleStore { return signInThrottles{database.db} }
 func (database *DB) LoopChanges() store.LoopChangeStore         { return loopChanges{database.db} }
 func (database *DB) PrivateChats() store.PrivateChatStore       { return privateChats{database.db} }
+func (database *DB) UserLinks() store.UserLinkStore             { return userLinks{database.db} }
 
 func toJSON(values []string) string {
 	if values == nil {
