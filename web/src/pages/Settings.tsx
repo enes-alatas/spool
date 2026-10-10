@@ -8,6 +8,7 @@ import { HarnessCheck } from '../components/HarnessCheck'
 import { useMay, useSignOut } from '../components/Session'
 import { SignOutIcon } from '../components/Icons'
 import { EgressSection } from '../components/EgressSection'
+import { UsersSection } from '../components/UsersSection'
 import { loginCheckTone } from '../onboarding'
 import { CapBanner, useMinuteClock } from '../components/PlanUsage'
 import { capFields, capGate, capIdleStatus, capReason, capValue, type CapDraft } from '../planCap'
@@ -20,6 +21,7 @@ export default function Settings() {
     <div className="page measure">
       <h1>Settings</h1>
       <AccountSection />
+      {may('manage-users') && <UsersSection />}
       {/* The rest is the hub's own configuration, which only an admin
           changes (#679): a member's Settings is who they are and which
           Spool this is. */}

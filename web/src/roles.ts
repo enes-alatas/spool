@@ -10,11 +10,11 @@
 
 import type { Role } from './api'
 
-export type Action = 'talk' | 'manage'
+export type Action = 'talk' | 'manage' | 'manage-users'
 
 // The lowest role each action is open to. Owners differ from admins only in
-// managing users, which comes with the users section (#582 slice 4).
-const LOWEST: Record<Action, Role> = { talk: 'member', manage: 'admin' }
+// managing users (#690).
+const LOWEST: Record<Action, Role> = { talk: 'member', manage: 'admin', 'manage-users': 'owner' }
 
 const RANK: Record<Role, number> = { member: 0, admin: 1, owner: 2 }
 
@@ -24,4 +24,11 @@ const RANK: Record<Role, number> = { member: 0, admin: 1, owner: 2 }
 export function may(role: Role | undefined, action: Action): boolean {
   if (!role || !(role in RANK)) return false
   return RANK[role] >= RANK[LOWEST[action]]
+}
+
+// Whether giving a user a role hands them more than a member has: adding
+// one as admin or owner, or raising one to either. The hub asks the acting
+// owner's password again for it (#690).
+export function grants(from: Role | undefined, to: Role): boolean {
+  return RANK[to] > RANK.member && (from === undefined || RANK[to] > RANK[from])
 }
