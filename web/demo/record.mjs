@@ -41,12 +41,25 @@ const face = (family, pkg, file, weight) => {
   const b64 = readFileSync(require.resolve(`${pkg}/files/${file}`)).toString('base64')
   return `@font-face{font-family:'${family}';font-weight:${weight};font-style:normal;src:url(data:font/woff2;base64,${b64}) format('woff2')}`
 }
+// Nor does it have an emoji face, and a reaction chip draws an empty box
+// without one. This build of Noto Color Emoji is COLRv1, which Chromium
+// paints; fontsource's build carries the colour only as an SVG table,
+// which Chromium does not, and its glyphs came out blank. The subsets go
+// by unicode-range and are served from disk on the hub's own origin (see
+// take) rather than inlined into every page.
+const EMOJI_PATH = '/__demo-emoji/'
+const emojiDir = join(require.resolve('@infolektuell/noto-color-emoji/package.json'), '../files/')
+function emojiCSS() {
+  const css = readFileSync(join(emojiDir, '../index.css'), 'utf8')
+  return css.replace(/url\(\.\/files\/([^)]+\.woff2)\)/g, (_, file) => `url(${EMOJI_PATH}${file})`)
+}
 const fontCSS = [
   ...[400, 500, 600, 700].map((w) => face('Inter', '@fontsource/inter', `inter-latin-${w}-normal.woff2`, w)),
   ...[400, 500, 700].map((w) =>
     face('JetBrains Mono', '@fontsource/jetbrains-mono', `jetbrains-mono-latin-${w}-normal.woff2`, w),
   ),
-  ":root{--sans:'Inter',sans-serif !important;--mono:'JetBrains Mono',monospace !important;font-feature-settings:'cv11','ss01'}",
+  emojiCSS(),
+  ":root{--sans:'Inter','Noto Color Emoji',sans-serif !important;--mono:'JetBrains Mono','Noto Color Emoji',monospace !important;font-feature-settings:'cv11','ss01'}",
 ].join('\n')
 const injectFonts = (css) => {
   const add = () => {
@@ -155,6 +168,12 @@ const marks = {}
 async function take(name, fn) {
   const ctx = await browser.newContext({ viewport: size, deviceScaleFactor: DPR, storageState })
   await ctx.addInitScript(injectFonts, fontCSS)
+  await ctx.route(`**${EMOJI_PATH}*`, (route) =>
+    route.fulfill({
+      contentType: 'font/woff2',
+      body: readFileSync(join(emojiDir, new URL(route.request().url()).pathname.slice(EMOJI_PATH.length))),
+    }),
+  )
   await ctx.addInitScript(injectCursor)
   const page = await ctx.newPage()
   await page.goto('about:blank')
