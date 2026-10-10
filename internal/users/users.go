@@ -179,9 +179,13 @@ var decoyHash = sync.OnceValue(func() string {
 })
 
 // NewOneTimePassword draws a password a person can read off a terminal.
-func NewOneTimePassword() (string, error) {
-	out := make([]byte, oneTimeLength)
-	random := make([]byte, oneTimeLength)
+func NewOneTimePassword() (string, error) { return readableRandom(oneTimeLength) }
+
+// readableRandom draws length characters of the one-time alphabet from
+// crypto/rand: what a person can read off a screen and type again.
+func readableRandom(length int) (string, error) {
+	out := make([]byte, length)
+	random := make([]byte, length)
 	if _, err := rand.Read(random); err != nil {
 		return "", err
 	}

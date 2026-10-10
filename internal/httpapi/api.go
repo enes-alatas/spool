@@ -233,6 +233,9 @@ func (server *Server) routes() *routeMux {
 	mux.HandleFunc("POST /api/logout", server.handleLogout)
 	mux.HandleFunc("GET "+mePath, server.handleMe)
 	mux.HandleFunc("POST "+mePasswordPath, server.handleMePassword)
+	mux.HandleFunc("GET "+meLinksPath, server.handleListLinks)
+	mux.HandleFunc("POST "+meLinkCodePath, server.handleLinkCode)
+	mux.HandleFunc("DELETE "+meLinksPath+"/{surface}", server.handleRemoveLink)
 	// The hub's users, which only an owner manages (ADR-0048).
 	mux.HandleFunc("GET /api/users", server.handleListUsers)
 	mux.HandleFunc("POST /api/users", server.handleAddUser)
@@ -2013,8 +2016,9 @@ func (server *Server) handleWorkspaceInspect(w http.ResponseWriter, r *http.Requ
 
 func (server *Server) handleGlobalStream(w http.ResponseWriter, r *http.Request) {
 	who := callerOf(r)
+	reads := server.readsNow(r.Context(), who)
 	serveSSE(w, r, server.Bus, func(item bus.Item) bool {
-		return item.Kind != bus.KindAgentEvent && streamable(who, item)
+		return item.Kind != bus.KindAgentEvent && streamable(who, item, reads)
 	})
 }
 
@@ -2024,8 +2028,9 @@ func (server *Server) handleLoopStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id, who := loopRecord.ID, callerOf(r)
+	reads := server.readsNow(r.Context(), who)
 	serveSSE(w, r, server.Bus, func(item bus.Item) bool {
-		if !streamable(who, item) {
+		if !streamable(who, item, reads) {
 			return false
 		}
 		if item.Kind == bus.KindMessage {

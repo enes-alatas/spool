@@ -1,6 +1,6 @@
 # ADR-0048: The hub has users, who sign in with a username and password
 
-Date: 2026-10-09 · Status: accepted (operator decisions of 2026-10-04, 2026-10-07 and 2026-10-09, recorded on #582) · Amended: 2026-10-09 (item 1: the roles are enforced, #677); 2026-10-10 (item 1: a member reads no pairing code, #689); 2026-10-10 (item 7: owners manage users on the API, #690); 2026-10-10 (item 1: the hub records who acted, #695); 2026-10-10 (item 1: a member reads no dm:<name>, #702) · Supersedes: ADR-0030 decision 5 in part (the cookie is a session, not the token) · Relates to: ADR-0046
+Date: 2026-10-09 · Status: accepted (operator decisions of 2026-10-04, 2026-10-07 and 2026-10-09, recorded on #582) · Amended: 2026-10-09 (item 1: the roles are enforced, #677); 2026-10-10 (item 1: a member reads no pairing code, #689); 2026-10-10 (item 7: owners manage users on the API, #690); 2026-10-10 (item 1: the hub records who acted, #695); 2026-10-10 (item 1: a member reads no dm:<name>, #702); 2026-10-10 (item 1: a member reads their own private conversations, #703) · Supersedes: ADR-0030 decision 5 in part (the cookie is a session, not the token) · Relates to: ADR-0046
 
 ## Context
 
@@ -93,6 +93,15 @@ gathered here. This ADR is the hub half of slice 1. The sign-in pages are
    from a member as an owner DM is: left out of every message list and
    stream, with any file it carried answering 404. #703 links users to the
    people they are, and decides what a member reads then.
+
+   **Amendment (2026-10-10, #703, ADR-0050):** a member reads the private
+   conversations that are theirs. A user links their own identity on a
+   surface by sending a code from the control room to a loop's bot or app
+   in a DM. A member then reads the `dm:<name>` conversations of the
+   people they are linked as, and what a loop they own said with them on
+   `owner_dm`, never with an owner before them. Every other private
+   message is kept from them as above, and a loop's events, turns and live
+   agent stream stay for admins and owners only.
 
 2. **Passwords are hashed with PBKDF2-SHA256 from the Go standard
    library.** That means 600,000 iterations and a random 16-byte salt per

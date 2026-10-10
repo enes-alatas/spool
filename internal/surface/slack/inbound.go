@@ -262,14 +262,22 @@ func (adapter *Adapter) ingestDM(ctx context.Context, loopRecord *store.Loop, te
 	if sender == nil {
 		return
 	}
-	var conversation, person string
+	// The message records who it is with, owner or not, which is who
+	// reads it (ADR-0050).
+	var conversation string
+	person := store.SlackPerson(event.User)
 	switch {
 	case loopRecord.OwnerSlackUserID == "" || loopRecord.OwnerSlackUserID != event.User:
-		person = store.SlackPerson(event.User)
 		conversation = store.DMDestinationPrefix + store.DMName(sender.Username, event.User)
 		adapter.capturePrivateChat(ctx, loopRecord, person, event.Channel)
 	case loopRecord.OwnerSlackDMChannel != event.Channel:
 		adapter.captureOwnerDM(ctx, loopRecord, event.Channel)
+	}
+	// A DM that is a link code links its sender to a control room user,
+	// and goes no further (#703).
+	if text, ok := adapter.router.LinkCode(ctx, event.Text, store.SlackPerson(event.User)); ok {
+		adapter.notify(loopRecord.ID, notice{channel: event.Channel, text: escape(text)})
+		return
 	}
 	err := adapter.router.Ingest(ctx, route.InboundMessage{
 		Origin:         store.OriginSlackDM,

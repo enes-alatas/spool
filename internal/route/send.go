@@ -240,6 +240,8 @@ func (router *Router) Send(ctx context.Context, req SendRequest) (*store.Message
 				"no private chat with the owner yet; a bot cannot open one, so the owner must message this loop's bot once"}, nil
 		}
 		ownerChat, ownerSlackUser = req.From.OwnerDMChatID, req.From.OwnerSlackUserID
+		// The owner it is to, as of now, which is who reads it (ADR-0050).
+		msg.DMPerson = req.From.OwnerPerson()
 		msg.ConversationLoopID = req.From.ID
 		msg.Mirror = store.MirrorPending
 	case store.ConversationControlRoom:
