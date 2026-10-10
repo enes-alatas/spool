@@ -799,8 +799,9 @@ func seedPlanUsage(ctx context.Context, db store.Store) error {
 }
 
 // The hub's users (#674): owner admin, signed in by the scripts that walk
-// the room, and a member still on a one-time password, who gets the change
-// page and nothing else. Seeding admin also keeps the hub from creating one
+// the room; robin, a member still on a one-time password, who gets the
+// change page and nothing else; and sam, a member past it, whose room is the
+// member view (#679). Seeding admin also keeps the hub from creating one
 // with a random one-time password at its first start.
 func seedUsers(ctx context.Context, db store.Store) error {
 	hash, err := users.HashPassword(fixtureUserPassword)
@@ -810,6 +811,7 @@ func seedUsers(ctx context.Context, db store.Store) error {
 	for _, user := range []*store.User{
 		{ID: "user-admin", Name: users.AdminName, Role: store.RoleOwner, CreatedAt: ms(-30 * 24 * time.Hour)},
 		{ID: "user-robin", Name: "robin", Role: store.RoleMember, MustChangePassword: true, CreatedAt: ms(-time.Hour)},
+		{ID: "user-sam", Name: "sam", Role: store.RoleMember, CreatedAt: ms(-7 * 24 * time.Hour)},
 	} {
 		user.PasswordHash = hash
 		if err := db.Users().Create(ctx, user); err != nil {
