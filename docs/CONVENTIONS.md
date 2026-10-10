@@ -330,8 +330,12 @@ agents — Claude sessions today, Spool's own loops from L2.*
   shared state: a `git stash` with no named entry (push without `-m`, `pop`,
   `apply` or `drop` with none named, `clear`), `pkill` and `killall` (kill by
   PID), a force push to or deletion of `main`, and `git add -A`/`--all`/`.`
-  (stage by path). The hook catches slips. A rule it enforces still binds a
-  human, and a rule it does not know binds everyone as before.
+  (stage by path). A `gh` or `git` call that carries a credential
+  shape is refused too, in its arguments, its standard input, or a body,
+  notes or gist file it names: quote a credential as at most eight
+  characters and an ellipsis. The hook catches slips. A rule it enforces
+  still binds a human, and a rule it does not know binds everyone as
+  before.
 - **Scoped delegation**: the interview may end with the human delegating the
   decision back ("you decide"). That delegation is per-decision: it covers
   exactly the questions put to the human, and the ADR or issue recording the
