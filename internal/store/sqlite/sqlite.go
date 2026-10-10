@@ -149,6 +149,7 @@ func (database *DB) Users() store.UserStore                     { return users{d
 func (database *DB) UserSessions() store.UserSessionStore       { return userSessions{database.db} }
 func (database *DB) SignInThrottles() store.SignInThrottleStore { return signInThrottles{database.db} }
 func (database *DB) LoopChanges() store.LoopChangeStore         { return loopChanges{database.db} }
+func (database *DB) PrivateChats() store.PrivateChatStore       { return privateChats{database.db} }
 
 func toJSON(values []string) string {
 	if values == nil {
@@ -583,11 +584,11 @@ func (table messages) Insert(ctx context.Context, message *store.Message) error 
 	res, err := table.db.ExecContext(ctx, `INSERT INTO messages
 		(ts, origin, author, from_loop_id, text, mentions, tg_chat_id, tg_message_id,
 		 tg_bot_loop_id, delivered_to, conversation, conversation_loop_id, reply_to_id,
-		 resends_id, tg_key, mirror, slack_channel_id, slack_ts, channel)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		 resends_id, tg_key, mirror, slack_channel_id, slack_ts, channel, dm_person)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		message.TS, message.Origin, message.Author, message.FromLoopID, message.Text, toJSON(message.Mentions), tgChat, tgMsg,
 		message.TGBotLoopID, toJSON(message.DeliveredTo), message.Conversation, message.ConversationLoopID,
-		message.ReplyToID, message.ResendsID, message.TGKey, message.Mirror, message.SlackChannelID, message.SlackTS, message.Channel)
+		message.ReplyToID, message.ResendsID, message.TGKey, message.Mirror, message.SlackChannelID, message.SlackTS, message.Channel, message.DMPerson)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			return store.ErrDuplicate
@@ -833,7 +834,7 @@ const messageCols = `id, ts, origin, author, from_loop_id, text,
 	mentions, COALESCE(tg_chat_id,0), COALESCE(tg_message_id,0), tg_bot_loop_id, delivered_to,
 	conversation, conversation_loop_id, reply_to_id, send_failed_at, send_error,
 	send_failure_told_at, send_failure_tellings, send_resolved_at, send_resolution, send_resent_as,
-	resends_id, tg_key, mirror, slack_channel_id, slack_ts, channel`
+	resends_id, tg_key, mirror, slack_channel_id, slack_ts, channel, dm_person`
 
 func (table messages) List(ctx context.Context, limit int) ([]*store.Message, error) {
 	return table.query(ctx, `SELECT `+messageCols+` FROM messages ORDER BY id DESC LIMIT ?`, limit)
@@ -1060,7 +1061,7 @@ func (table messages) query(ctx context.Context, statement string, args ...any) 
 			&message.Conversation, &message.ConversationLoopID, &message.ReplyToID,
 			&message.SendFailedAt, &message.SendError, &message.SendFailureToldAt, &message.SendFailureTellings, &message.SendResolvedAt,
 			&message.SendResolution, &message.SendResentAs, &message.ResendsID, &message.TGKey, &message.Mirror,
-			&message.SlackChannelID, &message.SlackTS, &message.Channel); err != nil {
+			&message.SlackChannelID, &message.SlackTS, &message.Channel, &message.DMPerson); err != nil {
 			return nil, err
 		}
 		message.Mentions = fromJSON(mentions)
