@@ -96,7 +96,7 @@ await page.click('button[type=submit]')
 await page.waitForSelector('.topbar', { timeout: 15000 })
 // Settings' Account section, signed in as admin (#674).
 await page.goto(base + '/settings', { waitUntil: 'networkidle' })
-await page.locator('.account-name').waitFor({ timeout: 15000 })
+await page.locator('.account .account-name').waitFor({ timeout: 15000 })
 const accountFile = `${outDir}/settings-account.png`
 await page.locator('.account').screenshot({ path: accountFile })
 
@@ -201,6 +201,22 @@ const egressFile = `${outDir}/settings-egress.png`
 await egress.screenshot({ path: egressFile })
 taken.push(egressFile)
 await page.unroute('**/api/settings/egress')
+
+// Settings' Users section (#691), as the owner admin sees the fixture's
+// three users: robin still on a one-time password, and admin the last owner,
+// whose own role and Remove are disabled with the reason.
+const usersSection = page.locator('section.users')
+await page.goto(base + '/settings', { waitUntil: 'networkidle' })
+await usersSection.locator('.user-row').first().waitFor({ timeout: 15000 })
+const usersFile = `${outDir}/settings-users.png`
+await usersSection.screenshot({ path: usersFile })
+taken.push(usersFile)
+// On a phone, where each row's actions take a line under the name.
+await page.setViewportSize({ width: 375, height: 1900 })
+await usersSection.locator('.user-row').first().waitFor({ timeout: 15000 })
+const usersNarrowFile = `${outDir}/settings-users-narrow.png`
+await usersSection.screenshot({ path: usersNarrowFile })
+taken.push(usersNarrowFile)
 await page.setViewportSize({ width: 1180, height: 900 })
 
 // The Fleet page's plan strip (#648) in the states the fixture cannot hold

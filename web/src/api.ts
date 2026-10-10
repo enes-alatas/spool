@@ -545,6 +545,23 @@ export interface Me {
   via: 'password' | 'token'
 }
 
+// A user of this hub, as an owner's Users section lists them (#691), mirrored
+// from the hub half's user view (#690). must_change_password is a user still
+// on the one-time password they were given: they have not signed in yet.
+export interface HubUser {
+  name: string
+  role: Role
+  must_change_password: boolean
+  created_at: number
+}
+
+// A user with their one-time password, in the one answer that carries it:
+// adding a user or resetting one. The hub keeps only its hash, so the room
+// never sees it again.
+export interface IssuedUser extends HubUser {
+  one_time_password: string
+}
+
 // Which build this Spool is, mirrored from internal/version.Info. Served
 // unauthenticated, because an operator filing a bug should not need a token
 // to say which Spool it was.
@@ -920,6 +937,26 @@ export const api = {
   // changed it stays signed in, and the user's others are revoked.
   changePassword: (body: { new_password: string; current_password?: string }) =>
     req<Me>('/api/me/password', { method: 'POST', body: JSON.stringify(body) }),
+  // Managing users is an owner's alone (#690). Granting admin or owner, by
+  // adding a user with that role or raising one to it, and resetting anyone's
+  // password take the acting owner's password again, or the operator token
+  // for a token session: 403
+  // `confirm_password` when it is missing or wrong. The last owner can't be
+  // lowered or removed: 409 `last_owner`.
+  users: () => req<HubUser[]>('/api/users'),
+  addUser: (body: { name: string; role: Role; current_password?: string }) =>
+    req<IssuedUser>('/api/users', { method: 'POST', body: JSON.stringify(body) }),
+  // Resetting ends the user's sessions, as removing does, and always takes
+  // the acting owner's password again: a reset hands the owner a way into
+  // that account.
+  resetUser: (name: string, currentPassword: string) =>
+    req<IssuedUser>(`/api/users/${encodeURIComponent(name)}/reset`, {
+      method: 'POST',
+      body: JSON.stringify({ current_password: currentPassword }),
+    }),
+  setUserRole: (name: string, body: { role: Role; current_password?: string }) =>
+    req<HubUser>(`/api/users/${encodeURIComponent(name)}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  removeUser: (name: string) => req<void>(`/api/users/${encodeURIComponent(name)}`, { method: 'DELETE' }),
   settings: () => req<Settings>('/api/settings'),
   planUsage: () => req<PlanUsage>('/api/plan-usage'),
   // Both thresholds go in one write, as the rotation pair does; 0 is off.
