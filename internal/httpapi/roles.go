@@ -16,9 +16,9 @@ var roleRank = map[string]int{store.RoleMember: 1, store.RoleAdmin: 2, store.Rol
 
 // memberRoutes are the routes a member may call (ADR-0048): reading the
 // fleet, less its owner DMs and loops' raw transcripts (see seesPrivate),
-// and talking to it. Every other route the table lists is an
-// admin's, and so is any route it does not, so a route added later is
-// closed to members until someone decides otherwise.
+// and talking to it. Every other route the table lists is an admin's or
+// an owner's, and any route it does not is an admin's, so a route added
+// later is closed to members until someone decides otherwise.
 var memberRoutes = []string{
 	// Answered before the role is asked, or not at all: listed so the
 	// table names every route.
@@ -71,6 +71,14 @@ var adminRoutes = []string{
 	"DELETE /api/slack/senders/{id}",
 }
 
+// ownerRoutes manage the hub's users, which is where an owner differs
+// from an admin (ADR-0048): an admin who could raise anyone, themselves
+// included, would be an owner in all but name.
+var ownerRoutes = []string{
+	"GET /api/users", "POST /api/users", "POST /api/users/{name}/reset",
+	"PATCH /api/users/{name}", "DELETE /api/users/{name}",
+}
+
 // routeRoles is the lowest role each route pattern admits.
 var routeRoles = func() map[string]string {
 	roles := map[string]string{}
@@ -79,6 +87,9 @@ var routeRoles = func() map[string]string {
 	}
 	for _, pattern := range adminRoutes {
 		roles[pattern] = store.RoleAdmin
+	}
+	for _, pattern := range ownerRoutes {
+		roles[pattern] = store.RoleOwner
 	}
 	return roles
 }()

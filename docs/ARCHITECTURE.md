@@ -37,7 +37,7 @@ Use these words exactly — in code, UI, docs, and prompts. Don't introduce syno
 | **fleet rule** | An operator-defined rule every loop follows. Enabled rules render into every system prompt as the `FLEET RULES` section ahead of the mission, and win where the two conflict (ADR-0024). |
 | **workspace** | The loop's working directory (`none` \| plain dir \| git worktree). A loop-level concept only. |
 | **org** | The tenant: a team sharing loops, humans, and connections. Implicit and single in the local edition; explicit from L5 on. (When Slack's own "workspace" term must appear, say "your Slack workspace" — our tenant is always *org*.) |
-| **owner / admin / member** | Org roles: each loop has one responsible human owner; admins manage everything; members talk to loops and read the fleet, less its owner DMs (ADR-0048). |
+| **owner / admin / member** | Org roles: each loop has one responsible human owner; admins manage everything but users, which only owners manage; members talk to loops and read the fleet, less its owner DMs (ADR-0048). |
 | **turn** | One request→result cycle of a claude session. |
 | **turn cost** | What one turn spent: `cost_usd`, and the only cost column that may be summed. The CLI reports the session's running total instead, which is kept beside it as `session_cost_usd` (#191). |
 | **plan usage** | How much of the Claude plan's five-hour and seven-day limit windows is used, and when each resets. One number per hub, since every loop runs on the operator's one login: the newest a loop's claude process reported in its stream's rate-limit event, kept by the hub and read at `GET /api/plan-usage`, which says unknown, with why, until a loop has reported one (#647). Not *turn cost*, which is what Spool's own turns spent. |
@@ -64,7 +64,7 @@ Use these words exactly — in code, UI, docs, and prompts. Don't introduce syno
 | **power controls** | The operator's switches on a workstation: restart, power off, power on, recreate. They act on the loop's *machine*, not the loop — pause is the switch for the loop itself, and the two compose (ADR-0021). |
 | **runner** | The subsystem that executes loops (actors + claude processes + sandboxes). |
 | **hub** | Everything that isn't the runner or a surface: routing, scheduling, store, API. It serves two listeners: the *operator listener* (`--listen`) carries the API and control room, the *loop listener* (`--mcp-listen`, or where the hub chooses: ADR-0039) carries the MCP endpoint and the loops' brokered MCP servers, and nothing else. Workstations may reach the loop listener and no other port of the operator's machine (ADR-0028, #238). |
-| **user** | A person who signs in to the control room with a username and password, and holds one of the org roles. The hub's first start creates owner `admin` with a one-time password, printed once and changed at first sign-in, and `spool user` adds, resets, lists and removes the rest (ADR-0048). |
+| **user** | A person who signs in to the control room with a username and password, and holds one of the org roles. The hub's first start creates owner `admin` with a one-time password, printed once and changed at first sign-in, and `spool user` adds, resets, lists and removes the rest, as an owner does on the API (ADR-0048). |
 | **operator token** | The credential the human running Spool presents to the API: minted at first start into `<data-dir>/operator-token`, and the owner's credential for the CLI and automation. For one more release the control room can also trade it for a `SameSite=Strict` session cookie, which belongs to no user (ADR-0048). Distinct from a loop's hub MCP token in every way — different file, different check, different listener — and never given to a loop (ADR-0030). |
 | **connection** | An org-level tool credential/config (GitHub app, MCP server) attachable to loops. |
 | **control room** | The web UI. |
@@ -184,8 +184,8 @@ release the token, since obtaining the cookie is what it is for. While a
 user's one-time password is still to be changed, only `/api/me`,
 `/api/me/password` and the routes above answer. Past that, a user's role
 bounds what they may call: a member reads the fleet, less its owner DMs and
-loops' raw transcripts, and talks to its loops, while admins and owners do
-everything (ADR-0048). The
+loops' raw transcripts, and talks to its loops; an admin does everything
+else, and an owner also manages the hub's users (ADR-0048). The
 same middleware refuses a `Host` this hub does not answer to for every `/api`
 path including the open ones, and a cross-site `Origin` or `Sec-Fetch-Site`
 or a body that is not `application/json` for the rest. On the loop listener
