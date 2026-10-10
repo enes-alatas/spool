@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 )
 
@@ -60,6 +61,9 @@ func Check(call Call) string {
 			return reason
 		}
 	}
+	if reason := checkKillByName(calls); reason != "" {
+		return reason
+	}
 	for _, words := range calls {
 		if carriesToGitHub(words) {
 			return checkCredentials(input.Command, call.Cwd, calls)
@@ -71,8 +75,16 @@ func Check(call Call) string {
 // checkCommand applies the shared-state rules to one simple command.
 func checkCommand(words []string) string {
 	switch program(words[0]) {
+	case "killall5":
+		return "killall5 signals every process outside your session, every loop's on this host included; " + killByPID
 	case "pkill", "killall":
 		return program(words[0]) + " matches every loop's processes on this host, not only yours; kill your own process by its PID."
+	case "kill":
+		return checkKill(words[1:])
+	case "fuser":
+		if hasShortOption(words[1:], 'k') || slices.Contains(words[1:], "--kill") {
+			return "fuser -k kills whatever holds the port or file, which can be another loop's process on this host; " + killByPID
+		}
 	case "git":
 		subcommand, args := gitSubcommand(words[1:])
 		switch subcommand {

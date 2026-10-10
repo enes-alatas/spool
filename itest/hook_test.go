@@ -88,3 +88,25 @@ func TestTheHookRefusesACredentialHandedToGh(t *testing.T) {
 		t.Fatalf("a body quoting the token short did not run: %q", ran.ResultText)
 	}
 }
+
+// A kill whose PID was looked up by name is refused like pkill -f, since
+// the name matches every loop's processes on the host (#700); a kill aimed
+// at a PID the loop recorded runs.
+func TestTheHookRefusesAKillByName(t *testing.T) {
+	t.Parallel()
+	s := startServer(t, t.TempDir())
+	s.createLoop("byname", map[string]any{"workspace_path": workspaceWithScript(t, "!bash kill $(pgrep -f 'go test')\n"), "workspace_mode": "dir"})
+	s.createLoop("bypid", map[string]any{"workspace_path": workspaceWithScript(t, "!bash kill $(cat run.pid)\n"), "workspace_mode": "dir"})
+
+	s.message("byname", "stop the tests")
+	blocked := s.waitTurn("byname", 30*time.Second, func(tr turn) bool { return tr.Trigger == "message" })
+	if !strings.HasPrefix(blocked.ResultText, "blocked: Refused by Spool: ") || !strings.Contains(blocked.ResultText, "pgrep") {
+		t.Fatalf("a kill by name was not refused with a reason: %q", blocked.ResultText)
+	}
+
+	s.message("bypid", "stop the tests")
+	ran := s.waitTurn("bypid", 30*time.Second, func(tr turn) bool { return tr.Trigger == "message" })
+	if ran.ResultText != "ran: kill $(cat run.pid)" {
+		t.Fatalf("a kill by recorded PID did not run: %q", ran.ResultText)
+	}
+}
