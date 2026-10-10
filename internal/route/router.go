@@ -112,8 +112,9 @@ type InboundMessage struct {
 	// Channel is the channel a group message was said in, as the room it
 	// came through carries it; "" is the fleet channel.
 	Channel string
-	// DMPerson is who a dm:<name> conversation is with (ADR-0049), set with
-	// Conversation by the surface that heard the person; "" otherwise.
+	// DMPerson is who a private conversation is with, owner_dm or
+	// dm:<name> (ADR-0049, ADR-0050), set by the surface that heard the
+	// person; "" otherwise.
 	DMPerson string
 	// Conversation optionally names the destination outright — the web
 	// composer's declared destination (ADR-0026). Empty means derive it

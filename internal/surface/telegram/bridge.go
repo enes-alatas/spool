@@ -440,14 +440,21 @@ func (br *Bridge) handleMessage(ctx context.Context, bot *poller, message *tgMsg
 		br.maybeCaptureOwnerDM(ctx, bot, message)
 		// An allowed sender who is not the owner holds a conversation of
 		// their own, dm:<name>, which the loop answers there and nowhere
-		// else (ADR-0049).
-		var conversation, person string
+		// else (ADR-0049). Either way the message records who it is with,
+		// which is who reads it (ADR-0050).
+		var conversation string
+		person := store.TGPerson(message.From.ID)
 		if !br.ownerOf(ctx, bot, message.From.ID) {
-			person = store.TGPerson(message.From.ID)
 			conversation = store.DMDestinationPrefix + store.DMName(message.From.Username, strconv.FormatInt(message.From.ID, 10))
 			br.capturePrivateChat(ctx, bot, person, message.Chat.ID)
 		}
 		if !br.dedup.Add(dedupKey(bot.loopID, message.Chat.ID, message.MessageID)) {
+			return
+		}
+		// A DM that is a link code links its sender to a control room user,
+		// and goes no further (#703).
+		if notice, ok := br.router.LinkCode(ctx, text, store.TGPerson(message.From.ID)); ok {
+			bot.enqueueSend(message.Chat.ID, notice)
 			return
 		}
 		err := br.router.Ingest(ctx, route.InboundMessage{

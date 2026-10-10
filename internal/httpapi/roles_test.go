@@ -77,10 +77,11 @@ func TestRolesRankOverTheTable(t *testing.T) {
 	}
 }
 
-// TestAMemberStreamCarriesNoOwnerDM: on a stream a member gets every
-// message but an owner DM, resent or not, and no turn result or agent
-// event; an admin gets them all.
+// TestAMemberStreamCarriesNoOwnerDM: on a stream a member with no link
+// gets every message but an owner DM, resent or not, and no turn result or
+// agent event; an admin gets them all.
 func TestAMemberStreamCarriesNoOwnerDM(t *testing.T) {
+	unlinked := (&privateReader{persons: map[string]bool{}}).reads
 	member := &caller{user: &store.User{Role: store.RoleMember}}
 	admin := &caller{user: &store.User{Role: store.RoleAdmin}}
 	message := func(kind, conversation string) bus.Item {
@@ -98,14 +99,51 @@ func TestAMemberStreamCarriesNoOwnerDM(t *testing.T) {
 		{bus.Item{Kind: bus.KindAgentEvent}, false},
 		{bus.Item{Kind: bus.KindLoopStatus}, true},
 	} {
-		if got := streamable(member, test.item); got != test.want {
+		if got := streamable(member, test.item, unlinked); got != test.want {
 			t.Errorf("a member's stream with %s %+v = %v; want %v", test.item.Kind, test.item.Payload, got, test.want)
 		}
-		if !streamable(admin, test.item) {
+		if !streamable(admin, test.item, unlinked) {
 			t.Errorf("an admin's stream refused %s", test.item.Kind)
 		}
 	}
-	if streamable(nil, message(bus.KindMessage, store.ConversationOwnerDM)) {
+	if streamable(nil, message(bus.KindMessage, store.ConversationOwnerDM), unlinked) {
 		t.Error("a request the guard never admitted streamed an owner DM")
+	}
+}
+
+// TestAPrivateConversationIsReadByItsPerson: a member linked as a person
+// reads that person's dm:<name> conversations with any loop, and the
+// owner_dm messages with them, and nothing else private; with no link
+// they read nothing private (ADR-0050).
+func TestAPrivateConversationIsReadByItsPerson(t *testing.T) {
+	alice, bob := store.TGPerson(1), store.SlackPerson("U0BOB")
+	linked := &privateReader{persons: map[string]bool{alice: true}}
+	unlinked := &privateReader{persons: map[string]bool{}}
+	for _, test := range []struct {
+		name string
+		msg  store.Message
+		want bool
+	}{
+		{"the group", store.Message{Conversation: store.ConversationGroup}, true},
+		{"control_room", store.Message{Conversation: store.ConversationControlRoom, ConversationLoopID: "l2"}, true},
+		{"their dm with a loop", store.Message{Conversation: "dm:alice", ConversationLoopID: "l2", DMPerson: alice}, true},
+		{"their dm under another name", store.Message{Conversation: "dm:alicia", ConversationLoopID: "l1", DMPerson: alice}, true},
+		{"someone else's dm", store.Message{Conversation: "dm:bob", ConversationLoopID: "l1", DMPerson: bob}, false},
+		{"a dm with no person", store.Message{Conversation: "dm:alice", ConversationLoopID: "l1"}, false},
+		{"an owner_dm with them", store.Message{Conversation: store.ConversationOwnerDM, ConversationLoopID: "l1", DMPerson: alice}, true},
+		{"an owner_dm with an earlier owner", store.Message{Conversation: store.ConversationOwnerDM, ConversationLoopID: "l1", DMPerson: bob}, false},
+		{"an owner_dm that records nobody", store.Message{Conversation: store.ConversationOwnerDM, ConversationLoopID: "l1"}, false},
+	} {
+		if got := linked.reads(&test.msg); got != test.want {
+			t.Errorf("linked, %s: reads = %v; want %v", test.name, got, test.want)
+		}
+		if got, want := unlinked.reads(&test.msg), !privateMessage(&test.msg); got != want {
+			t.Errorf("unlinked, %s: reads = %v; want %v", test.name, got, want)
+		}
+	}
+	if got := linked.readable([]*store.Message{
+		{ID: 1, Conversation: "dm:bob", DMPerson: bob}, {ID: 2, Conversation: "dm:alice", DMPerson: alice},
+	}); len(got) != 1 || got[0].ID != 2 {
+		t.Errorf("readable kept %+v; want only alice's", got)
 	}
 }

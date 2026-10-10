@@ -1,6 +1,6 @@
 # ADR-0049: Every allowed sender holds a private conversation with a loop
 
-Date: 2026-10-10 · Status: accepted (operator decisions of 2026-10-10, recorded on #100) · Supersedes: ADR-0026's 2026-09-16 refusal of a DM from anyone but the owner · Relates to: ADR-0025, ADR-0048
+Date: 2026-10-10 · Status: accepted (operator decisions of 2026-10-10, recorded on #100) · Supersedes: ADR-0026's 2026-09-16 refusal of a DM from anyone but the owner · Amended: 2026-10-10 (decision 7: a linked member reads their own, ADR-0050) · Relates to: ADR-0025, ADR-0048
 
 ## Context
 
@@ -56,6 +56,11 @@ control room's side is #704's.
    Private talk happens on the chat surfaces. Until #703 links users to
    people, a member reads no `dm:<name>` conversation, just as a member
    reads no `owner_dm`. Admins and owners read both.
+
+   **Amendment (2026-10-10, #703, ADR-0050):** users are linked to people
+   now. A member reads the `dm:<name>` conversations of the people they
+   are linked as, and what a loop they own said with them on `owner_dm`,
+   and no other.
 
 ## Consequences
 

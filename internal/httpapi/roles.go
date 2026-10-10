@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/enes-alatas/spool/internal/bus"
@@ -15,16 +16,19 @@ const codeForbiddenRole = "forbidden_role"
 var roleRank = map[string]int{store.RoleMember: 1, store.RoleAdmin: 2, store.RoleOwner: 3}
 
 // memberRoutes are the routes a member may call (ADR-0048): reading the
-// fleet, less its owner DMs and loops' raw transcripts (see seesPrivate),
-// and talking to it. Every other route the table lists is an admin's or
-// an owner's, and any route it does not is an admin's, so a route added
-// later is closed to members until someone decides otherwise.
+// fleet, less the private conversations that are not theirs and loops'
+// raw transcripts (see privateReader and seesPrivate), linking their own
+// surface identities, and talking to it. Every other route the table
+// lists is an admin's or an owner's, and any route it does not is an
+// admin's, so a route added later is closed to members until someone
+// decides otherwise.
 var memberRoutes = []string{
 	// Answered before the role is asked, or not at all: listed so the
 	// table names every route.
 	"GET /api/health", "GET /api/version", "POST /api/login", "POST /api/logout", "/api/",
 
 	"GET " + mePath, "POST " + mePasswordPath,
+	"GET " + meLinksPath, "POST " + meLinkCodePath, "DELETE " + meLinksPath + "/{surface}",
 
 	"GET /api/loops", "GET /api/loops/{name}", "GET /api/loops/{name}/telegram/status",
 	"GET /api/loops/{name}/slack/status", "GET /api/loops/{name}/rooms",
@@ -42,7 +46,7 @@ var memberRoutes = []string{
 
 // adminRoutes are the routes that create, change, remove or operate
 // something in the fleet, and the two that read a loop's raw transcript,
-// which can hold its owner DMs anywhere in it (see seesPrivate). Listed
+// which can hold its private messages anywhere in it (see seesPrivate). Listed
 // although admin is the default, so a test can hold every route to having
 // been decided.
 var adminRoutes = []string{
@@ -132,12 +136,11 @@ func (mux *routeMux) HandleFunc(pattern string, handler func(http.ResponseWriter
 	mux.ServeMux.HandleFunc(pattern, handler)
 }
 
-// seesPrivate reports whether who may read loops' owner DMs and raw
-// transcripts: an admin or an owner. A member may not until hub users are
-// mapped to the loops they own (#100). A loop's events, turns and live
-// agent stream can carry an owner DM's text anywhere in them, so a member
-// is kept from those whole, and from owner-DM messages wherever messages
-// are listed or streamed (ADR-0048).
+// seesPrivate reports whether who reads every private conversation and
+// loops' raw transcripts: an admin or an owner. A loop's events, turns and
+// live agent stream can carry a private message's text anywhere in them,
+// so a member is kept from those whole (ADR-0048). Of the private
+// messages themselves, a member reads the ones privateReader allows.
 func seesPrivate(who *caller) bool {
 	return who != nil && roleRank[roleOf(who)] >= roleRank[store.RoleAdmin]
 }
@@ -151,36 +154,92 @@ func seesPairCodes(who *caller) bool {
 }
 
 // privateMessage reports whether msg is part of a loop's private
-// conversation: with its owner, or with another allowed sender (ADR-0049),
-// which a member does not read either until #703 links users to the
-// people they are.
+// conversation: with its owner, or with another allowed sender (ADR-0049).
 func privateMessage(msg *store.Message) bool {
 	return msg.Conversation == store.ConversationOwnerDM || store.IsDM(msg.Conversation)
 }
 
-// withoutPrivate is msgs without the ones who may not read.
-func withoutPrivate(who *caller, msgs []*store.Message) []*store.Message {
+// privateReader is which private messages one caller reads (ADR-0050). A
+// private conversation is read by its person, through the user's link to
+// who they are on the surface, and by admins and owners. A private message
+// records who it is with: the person of a dm:<name>, or the owner an
+// owner_dm was with at the time. So a member reads their own dm:<name>
+// conversations with any loop, and what a loop and they said privately
+// while they owned it, and no other; an owner_dm older than #703 records
+// nobody, and stays an admin's.
+type privateReader struct {
+	all bool
+	// persons are the people the caller is linked as.
+	persons map[string]bool
+}
+
+// privateReaderOf reads who's links as they are now, so a link removed
+// reads nothing from the next request on.
+func (server *Server) privateReaderOf(ctx context.Context, who *caller) (*privateReader, error) {
 	if seesPrivate(who) {
+		return &privateReader{all: true}, nil
+	}
+	reader := &privateReader{persons: map[string]bool{}}
+	if who == nil || who.user == nil {
+		return reader, nil
+	}
+	links, err := server.Store.UserLinks().List(ctx, who.user.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, link := range links {
+		reader.persons[link.Person] = true
+	}
+	return reader, nil
+}
+
+// reads reports whether the caller reads msg.
+func (reader *privateReader) reads(msg *store.Message) bool {
+	if reader.all || !privateMessage(msg) {
+		return true
+	}
+	return msg.DMPerson != "" && reader.persons[msg.DMPerson]
+}
+
+// readable is msgs without the ones reader does not read.
+func (reader *privateReader) readable(msgs []*store.Message) []*store.Message {
+	if reader.all {
 		return msgs
 	}
 	kept := make([]*store.Message, 0, len(msgs))
 	for _, msg := range msgs {
-		if !privateMessage(msg) {
+		if reader.reads(msg) {
 			kept = append(kept, msg)
 		}
 	}
 	return kept
 }
 
+// readsNow is a stream's test of whether who reads a message, asked anew
+// for each private one, so a link made or removed while the stream is open
+// counts from its next message. A store error reads as no.
+func (server *Server) readsNow(ctx context.Context, who *caller) func(*store.Message) bool {
+	return func(msg *store.Message) bool {
+		if seesPrivate(who) || !privateMessage(msg) {
+			return true
+		}
+		reader, err := server.privateReaderOf(ctx, who)
+		if err != nil {
+			server.Log.Warn("stream: read a caller's links", "err", err)
+			return false
+		}
+		return reader.reads(msg)
+	}
+}
+
 // streamable reports whether item may reach who on a stream. A turn's
 // result carries its text, and an agent event the loop's raw output, so a
-// member gets neither; a message reaches them unless it is an owner DM.
+// member gets neither; a message reaches them if reads says they read it.
 // A reaction or a vote still does whatever its target: it carries only
 // ids, an emoji or a choice, no text, and telling which conversation its
 // message is in would take a store read per item. So a member can learn
-// that an owner-DM message with some id exists and what it got; #100 is
-// where that closes.
-func streamable(who *caller, item bus.Item) bool {
+// that a private message with some id exists and what it got.
+func streamable(who *caller, item bus.Item, reads func(*store.Message) bool) bool {
 	if seesPrivate(who) {
 		return true
 	}
@@ -189,7 +248,7 @@ func streamable(who *caller, item bus.Item) bool {
 		return false
 	case bus.KindMessage, bus.KindSendRetry:
 		payload, ok := item.Payload.(*route.MessagePayload)
-		return ok && !privateMessage(&payload.Message)
+		return ok && reads(&payload.Message)
 	}
 	return true
 }

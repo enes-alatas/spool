@@ -111,9 +111,14 @@ func (server *Server) pollViews(ctx context.Context, messageIDs []int64) (map[in
 }
 
 // writeMessages answers with msgs as the control room reads them, less
-// the owner DMs the caller may not read.
+// the private messages the caller does not read.
 func (server *Server) writeMessages(w http.ResponseWriter, r *http.Request, msgs []*store.Message) {
-	views, err := server.messageViews(r.Context(), withoutPrivate(callerOf(r), msgs))
+	reader, err := server.privateReaderOf(r.Context(), callerOf(r))
+	if err != nil {
+		server.jsonErr(w, 500, "%v", err)
+		return
+	}
+	views, err := server.messageViews(r.Context(), reader.readable(msgs))
 	if err != nil {
 		server.jsonErr(w, 500, "%v", err)
 		return
@@ -143,15 +148,16 @@ func (server *Server) handleAttachment(w http.ResponseWriter, r *http.Request) {
 		server.jsonErr(w, 500, "%v", err)
 		return
 	}
-	// A file sent in an owner DM is as private as the DM, and answers as
-	// one that never existed to a caller who may not read it, kept or not.
+	// A file sent in a private conversation is as private as the
+	// conversation, and answers as one that never existed to a caller who
+	// does not read it, kept or not.
 	if row.MessageID != 0 && !seesPrivate(callerOf(r)) {
 		msg, msgErr := server.Store.Messages().Get(r.Context(), row.MessageID)
 		if msgErr != nil && !errors.Is(msgErr, store.ErrNotFound) {
 			server.jsonErr(w, 500, "%v", msgErr)
 			return
 		}
-		if msg != nil && privateMessage(msg) {
+		if msg != nil && !server.readsNow(r.Context(), callerOf(r))(msg) {
 			server.jsonErrCode(w, 404, codeAttachmentNotFound, "no attachment %d", id)
 			return
 		}
