@@ -144,7 +144,10 @@ ADR instead.*
   the file's `Amended:` header; a reversal is a new ADR. The three exceptions, supersession of one clause, and the reviewer
   bar: `/amend-adr` (`.claude/skills/amend-adr/`).
 - **Releases**: semver, `v0.<rung>.x` — completing ladder rung Ln tags `v0.n+1.0`
-  (the MVP is retroactively v0.1.0). `v1.0.0` is OSS launch (L6).
+  (the MVP is retroactively v0.1.0). `v1.0.0` is OSS launch (L6). The
+  README names what the release ships: a docs issue lists the release's
+  additions, says whether the demo video still shows what ships
+  (re-recorded if not), and lands before the tag ask (#684).
 - **The operator tags, never a loop** (#223). Release notes are generated
   from the commit titles; there is no CHANGELOG file. Procedure, and how a
   build names itself: `/release` (`.claude/skills/release/`).
