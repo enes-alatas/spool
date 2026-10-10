@@ -16,6 +16,9 @@ import (
 type Call struct {
 	ToolName  string          `json:"tool_name"`
 	ToolInput json.RawMessage `json:"tool_input"`
+	// Cwd is the directory the call runs in, which a relative body file
+	// names a file in.
+	Cwd string `json:"cwd"`
 }
 
 // Refused is the exit status that makes Claude Code block the call and hand
@@ -51,9 +54,15 @@ func Check(call Call) string {
 	if err := json.Unmarshal(call.ToolInput, &input); err != nil {
 		return ""
 	}
-	for _, words := range commands(input.Command) {
+	calls := commands(input.Command)
+	for _, words := range calls {
 		if reason := checkCommand(words); reason != "" {
 			return reason
+		}
+	}
+	for _, words := range calls {
+		if carriesToGitHub(words) {
+			return checkCredentials(input.Command, call.Cwd, calls)
 		}
 	}
 	return ""

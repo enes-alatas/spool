@@ -1,6 +1,6 @@
 # ADR-0042: The hub pins a PreToolUse hook that refuses the mechanical fleet rules
 
-Date: 2026-10-03 · Status: accepted (operator decision of 2026-10-02, recorded on #529)
+Date: 2026-10-03 · Status: accepted (operator decision of 2026-10-02, recorded on #529) · Amended: 2026-10-10 (item 4: credentials handed to gh or git, #698)
 
 ## Context
 
@@ -54,6 +54,26 @@ either: hooks from every source run together.
    to or deletion of `main` or `master`, and `git add -A`, `--all`, `.` or
    `:/`. Mentions and signatures in `gh` bodies, credential shapes, and
    writes outside the loop's own workspace follow.
+
+   **Amendment (2026-10-10, #698):** a `gh` or `git` call that carries a
+   credential is refused. The shapes are the credential shapes of
+   `scripts/secret-rules.awk`, the ones the secret scan and the body
+   redaction already use, with the same allowance for an obviously
+   synthetic value. A test keeps the two lists equal. A Bash call that
+   runs `gh` or `git` is read whole, here-documents included, because a
+   value can reach the call as an argument, through standard input, or in
+   a body written earlier in the same call. The text files the call names
+   are read too: `--body-file`, `-F` and `--notes-file` for `gh`, a
+   `gh api` field whose value is `@<file>` and its `--input`, the files
+   `gh gist` creates or edits from, and `-F` or `--file` for `git`. The
+   refusal names the shape and never the value. Other programs are not
+   read: `gh` and `git` are how a loop publishes, and a rule that read
+   every command would refuse a loop that only uses a credential. So a
+   file another program hands over is not checked, as in
+   `--body "$(cat body.md)"`: the script holds the command
+   substitution, not the file. Nor are release assets (`gh release
+   create` arguments, `gh release upload`), or the files a commit or a
+   push carries, which the CI secret scan reads in a pull request.
 
 ## Consequences
 
