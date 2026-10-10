@@ -422,6 +422,11 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			// it (ADR-0048).
 			"Record": false, "List": false,
 		},
+		"PrivateChatStore": {
+			// A loop id, a sender's surface id and a chat id or DM channel,
+			// all read off the surface's own message (ADR-0049).
+			"Capture": false, "Get": false, "List": false,
+		},
 		"UserSessionStore": {
 			// The SHA-256 of a session ID and of the token a token session
 			// was opened with, a user id and times.

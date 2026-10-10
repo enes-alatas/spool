@@ -75,6 +75,8 @@ const (
 	ConversationOwnerDM     = "owner_dm"     // a loop's Telegram DM with its owner
 	ConversationGroup       = "group"        // a channel: the fleet channel, or another by Message.Channel
 	ConversationControlRoom = "control_room" // a loop's web thread, read by every hub user
+	// A loop's private conversation with an allowed sender who is not its
+	// owner is dm:<name> (ADR-0049): see DMDestinationPrefix.
 
 	PacingFixed = "fixed" // orchestrator interval; trailer optional
 	PacingSelf  = "self"  // the loop schedules itself via trailers; interval is a fallback
@@ -412,8 +414,12 @@ type Message struct {
 	// belongs to: one of the Conversation* constants.
 	Conversation string `json:"conversation"`
 	// ConversationLoopID keys the per-loop conversation kinds (owner_dm,
-	// control_room) to their loop; empty for the shared group.
+	// control_room, dm:<name>) to their loop; empty for the shared group.
 	ConversationLoopID string `json:"conversation_loop_id,omitempty"`
+	// DMPerson is who a dm:<name> conversation is with, as TGPerson or
+	// SlackPerson key them: the name can change, the person cannot. Empty
+	// for every other conversation. Storage detail, not surfaced.
+	DMPerson string `json:"-"`
 	// Channel names the channel a group message was said in, FleetChannel
 	// for the fleet channel; empty for the per-loop kinds, which are in none
 	// (ADR-0038).
@@ -1223,6 +1229,7 @@ type Store interface {
 	Polls() PollStore
 	Connections() ConnectionStore
 	LoopChanges() LoopChangeStore
+	PrivateChats() PrivateChatStore
 	FleetRules() FleetRuleStore
 	Sessions() SessionStore
 	Messages() MessageStore
@@ -1280,6 +1287,43 @@ func validHandle(name string) bool {
 // the fleet channel: channel:<name>. The fleet channel keeps its plain name,
 // group, so no prompt or row written before channels changes (ADR-0038).
 const ChannelDestinationPrefix = "channel:"
+
+// DMDestinationPrefix is how a loop's private conversation with an allowed
+// sender other than its owner is named: dm:<name>, the name being how the
+// identity catalog lists the person (ADR-0049). It is the message's
+// conversation as stored, keyed to the loop by ConversationLoopID and to the
+// person by DMPerson.
+const DMDestinationPrefix = "dm:"
+
+// IsDM reports whether a conversation or destination is a private one with
+// a person other than the owner.
+func IsDM(conversation string) bool { return strings.HasPrefix(conversation, DMDestinationPrefix) }
+
+// DMName is how a person is named in dm:<name>: their handle on the surface,
+// or, for one with none, their user id there. Telegram handles ignore case,
+// and Slack names are lowercase, so the name is folded.
+func DMName(username, userID string) string {
+	if username != "" {
+		return strings.ToLower(username)
+	}
+	return strings.ToLower(userID)
+}
+
+// TGPerson and SlackPerson are a sender's stable key across surfaces, as
+// private_chats and a dm message carry it.
+func TGPerson(tgUserID int64) string        { return "tg:" + strconv.FormatInt(tgUserID, 10) }
+func SlackPerson(slackUserID string) string { return "slack:" + slackUserID }
+
+// PersonSurface is the surface a TGPerson or SlackPerson key belongs to.
+func PersonSurface(person string) string {
+	switch {
+	case strings.HasPrefix(person, "tg:"):
+		return SurfaceTelegram
+	case strings.HasPrefix(person, "slack:"):
+		return SurfaceSlack
+	}
+	return ""
+}
 
 // ChannelDestination names a channel as a send destination.
 func ChannelDestination(name string) string {
@@ -1804,4 +1848,27 @@ type LoopChangeStore interface {
 	Record(ctx context.Context, change *LoopChange) error
 	// List is the record, newest first.
 	List(ctx context.Context, filter LoopChangeFilter) ([]*LoopChange, error)
+}
+
+// PrivateChat is where a person other than a loop's owner messaged the
+// loop privately: their chat with its Telegram bot, or their DM with its
+// Slack app (ADR-0049). A loop writes first only to someone who has one.
+type PrivateChat struct {
+	LoopID string
+	// Person is the sender, as TGPerson or SlackPerson key them.
+	Person string
+	// Chat is the Telegram chat id in decimal, or the Slack DM channel.
+	Chat       string
+	CapturedAt int64
+}
+
+type PrivateChatStore interface {
+	// Capture records the chat, or moves it if the person's chat with the
+	// loop changed.
+	Capture(ctx context.Context, chat *PrivateChat) error
+	// Get is the person's chat with the loop; ErrNotFound if they have
+	// never messaged it privately.
+	Get(ctx context.Context, loopID, person string) (*PrivateChat, error)
+	// List is every private chat the loop has, oldest first.
+	List(ctx context.Context, loopID string) ([]*PrivateChat, error)
 }
