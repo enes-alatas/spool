@@ -389,3 +389,6 @@ New: PR 716 (Elliot, #707 CI pins), PR 717 (Iris, #696 web; #691 merged as #706)
 
 ## 2026-10-11 10:20 UTC
 Terra asked for an issue for the per-loop private conversation routes (Iris proposal, Terra refinements on #704). Filed #720 (new feature, child of #100, slice d). Order for Terra after #709 merges: #718, #720, #715, #719 (Elliot security low: cross-conversation reply error leaks destination), #630. Linked on #704. Enes still owes Iris the placement answer on #704 mockups.
+
+## 2026-10-11 10:30 UTC
+Iris proposed splitting #704; taken. #704 narrowed to the link flow (Settings → Account + SurfaceDialog wording), ships after #709 merges. Filed #723 (slice e, loop-page tabs per person, child of #100) after #720. Enes owes Iris the placement answer on #704 mockups.
