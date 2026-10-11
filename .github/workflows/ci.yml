@@ -239,10 +239,11 @@ jobs:
         if: needs.changes.outputs.unit == 'true'
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          # 'latest' because pinned minors go stale against our Go toolchain
-          # (v2.1 was built with go1.24 and refused go1.25). Revisit if a
-          # release ever breaks us.
-          version: latest
+          # Pinned, so a golangci-lint release can't turn main red on its own
+          # (#738). Bump it when go.mod's toolchain moves: a binary built
+          # with an older Go refuses a newer toolchain (v2.1 was built with
+          # go1.24 and refused go1.25). Dependabot doesn't move this input.
+          version: v2.14.0
       # Go and the room's TS and CSS share the comment rule, so either area
       # runs it (CONVENTIONS.md "Comments").
       - name: comments cite no ADR sections
