@@ -118,9 +118,8 @@ function Pair({ loop }: { loop: LoopView }) {
         {slack ? (
           <>
             Send the {loop.name} app a direct message in Slack from your own account. It answers with a
-            pairing code: type it below to allow yourself, then make yourself its owner, since the app takes
-            direct messages only from its owner. Then message it again; the step is done when the loop
-            answers.
+            pairing code: type it below to allow yourself, then make yourself its owner, the one person it can
+            message before being messaged. Then message it again; the step is done when the loop answers.
           </>
         ) : (
           <>
@@ -141,10 +140,10 @@ function Pair({ loop }: { loop: LoopView }) {
 }
 
 // A Slack loop with no owner. Unlike Telegram, allowing a sender makes
-// nobody owner, and the app's DM reaches the loop only from its owner, so
-// the allowed senders are offered as owner here. Only one in the loop's
-// workspace can be owner, so only they are offered, as the loop page's
-// owner picker does.
+// nobody owner, and only the owner is someone the loop can message before
+// they message it (ADR-0049), so the allowed senders are offered as owner
+// here. Only one in the loop's workspace can be owner, so only they are
+// offered, as the loop page's owner picker does.
 function SlackOwner({ loop, senders }: { loop: LoopView; senders: SlackSender[] }) {
   const qc = useQueryClient()
   const { data: status } = useQuery({

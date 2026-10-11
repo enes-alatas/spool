@@ -87,6 +87,27 @@ for (const shot of memberShots) {
   await member.screenshot({ path: file, fullPage: true })
   memberFiles.push(file)
 }
+// sam's chat accounts (#704): linked on Telegram by the fixture, then with
+// a link code open. The hub's own code is random, so the shot shows the
+// fixture's in its place.
+const accountSection = async (file) => {
+  const head = await member.locator('h2', { hasText: 'Account' }).boundingBox()
+  const end = await member.locator('.links').boundingBox()
+  await member.screenshot({
+    path: file,
+    clip: { x: 0, y: head.y - 16, width: 1180, height: end.y + end.height - head.y + 32 },
+  })
+  memberFiles.push(file)
+}
+await member.goto(base + '/settings', { waitUntil: 'networkidle' })
+await member.locator('.link-row .btn', { hasText: 'Remove' }).waitFor({ timeout: 15000 })
+await accountSection(`${outDir}/settings-links.png`)
+await member.route('**/api/me/links/code', (route) =>
+  route.fulfill({ status: 201, json: { code: 'link-fixture0002', expires_at: Date.now() + 15 * 60000 } }),
+)
+await member.getByRole('button', { name: 'Get a link code' }).click()
+await member.locator('.link-code').waitFor({ timeout: 15000 })
+await accountSection(`${outDir}/settings-link-code.png`)
 await memberCtx.close()
 
 await page.goto(base + '/', { waitUntil: 'networkidle' })

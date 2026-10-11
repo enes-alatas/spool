@@ -9,6 +9,7 @@ import { useMay, useSignOut } from '../components/Session'
 import { SignOutIcon } from '../components/Icons'
 import { EgressSection } from '../components/EgressSection'
 import { UsersSection } from '../components/UsersSection'
+import { LinksSection } from '../components/LinksSection'
 import { loginCheckTone } from '../onboarding'
 import { CapBanner, useMinuteClock } from '../components/PlanUsage'
 import { capFields, capGate, capIdleStatus, capReason, capValue, type CapDraft } from '../planCap'
@@ -78,6 +79,9 @@ function AccountSection() {
           {error}
         </div>
       )}
+
+      {/* A token session is no user, and has no chat account to link. */}
+      {me?.via === 'password' && <LinksSection />}
     </>
   )
 }
