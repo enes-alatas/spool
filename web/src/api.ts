@@ -550,6 +550,24 @@ export interface Me {
   via: 'password' | 'token'
 }
 
+// Who the signed-in user is on a chat surface (ADR-0050), mirrored from the
+// hub's link view (#703). id is the user's id on the surface; username and
+// display are what the surface last said of them, '' when it never did.
+export interface UserLink {
+  surface: 'telegram' | 'slack'
+  id: string
+  username: string
+  display: string
+  created_at: number
+}
+
+// A link code, answered once (#703). It links whoever sends it to a loop's
+// bot or app in a DM, once, until expires_at.
+export interface LinkCode {
+  code: string
+  expires_at: number
+}
+
 // A user of this hub, as an owner's Users section lists them (#691), mirrored
 // from the hub half's user view (#690). must_change_password is a user still
 // on the one-time password they were given: they have not signed in yet.
@@ -956,6 +974,12 @@ export const api = {
     req<Me>('/api/login', { method: 'POST', body: JSON.stringify(credentials) }),
   logout: () => req<void>('/api/logout', { method: 'POST' }),
   me: () => req<Me>('/api/me'),
+  // The signed-in user's links, at most one per surface (#703). Asking for a
+  // code replaces any open one; the operator token is no user, and gets 400
+  // no_user for a code or a removal.
+  myLinks: () => req<UserLink[]>('/api/me/links'),
+  linkCode: () => req<LinkCode>('/api/me/links/code', { method: 'POST' }),
+  removeLink: (surface: UserLink['surface']) => req<void>(`/api/me/links/${surface}`, { method: 'DELETE' }),
   // The answer is the session's user with the flag cleared; the session that
   // changed it stays signed in, and the user's others are revoked.
   changePassword: (body: { new_password: string; current_password?: string }) =>

@@ -3823,3 +3823,52 @@ textarea {
   /* a step that did not take is what is wrong (ADR-0027) */
   color: var(--danger);
 }
+
+/* Settings → Account's chat accounts (#704): a row per surface, then the
+   open link code, in the one-time password's box. */
+.links {
+  margin-top: 16px;
+}
+.link-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--surface);
+  margin-bottom: 12px;
+}
+.link-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 44px;
+  padding: 8px 14px;
+}
+.link-row + .link-row {
+  border-top: 1px solid var(--hairline);
+}
+.link-surface {
+  flex: none;
+  width: 76px;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.link-who {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.875rem;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.link-who.link-none,
+.link-since {
+  color: var(--text-muted);
+}
+.link-code-note {
+  margin: 8px 0 0;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}

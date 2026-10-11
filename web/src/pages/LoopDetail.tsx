@@ -1163,9 +1163,10 @@ export default function LoopDetail() {
   const qc = useQueryClient()
   const may = useMay()
   // A loop's raw transcript, its events and turns, is an admin's to read
-  // (#677): an owner DM's text can sit anywhere in it, and members see no
-  // owner DM. A member's page is the loop's conversations and its facts, and
-  // opens on the control room where an admin's opens on the timeline.
+  // (#677): any private message's text can sit anywhere in it, and a member
+  // reads only the private conversations that are theirs (ADR-0050). A
+  // member's page is the loop's conversations and its facts, and opens on
+  // the control room where an admin's opens on the timeline.
   const transcript = may('manage')
   const home: Pane = transcript ? 'timeline' : 'control_room'
   const [liveText, setLiveText] = useState('')
