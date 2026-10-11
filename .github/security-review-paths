@@ -1,0 +1,49 @@
+# Paths whose change gets a security review before the merge request (#742).
+#
+# One bash pattern per line, matched against each changed path in full; `*`
+# matches across `/`, so `internal/egress/*` covers the whole tree. Blank
+# lines and `#` comments are ignored. The `pr-guards` workflow labels a PR
+# that matches any line `needs-security-review`. A PR that makes the hub
+# trust something a loop controls without touching these is labelled by
+# hand (CONVENTIONS.md).
+
+# Where a loop, a person or the network reaches the hub.
+# cmd/spool binds the listeners, checks --trusted-host, prints the operator
+# token and admin password on first start, and runs `spool user` and
+# `spool token`.
+cmd/spool/*
+internal/httpapi/*
+internal/route/*
+internal/surface/*
+internal/users/*
+internal/operator/*
+
+# The wall between a loop and the rest: its workstation, its way out, its hook.
+internal/runtime/*
+internal/egress/*
+internal/hook/*
+internal/attach/*
+internal/loop/actor.go
+cmd/spool-egress/*
+cmd/spool-hook/*
+docker/*
+
+# Where a credential rests, and what keeps one out of the record.
+internal/store/*
+internal/datadir/*
+internal/redact/*
+scripts/secret-*
+scripts/spool-backup*
+scripts/spool-restore*
+scripts/security-paths*
+
+# What runs with the repo's token, and what the shipped code pulls in.
+.github/workflows/*
+# Scripts a workflow runs with a write token (secret-* is listed above).
+scripts/advisories.sh
+scripts/community-welcome.sh
+.github/security-review-paths
+go.mod
+go.sum
+web/package.json
+web/package-lock.json

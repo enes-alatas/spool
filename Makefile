@@ -169,6 +169,7 @@ workflow-lint:
 	bash scripts/diff-coverage-test.sh
 	bash scripts/comment-refs-test.sh
 	bash scripts/other-half-test.sh
+	bash scripts/security-paths-test.sh
 	bash scripts/spool-backup-test.sh
 
 e2e-m1: server

@@ -153,6 +153,14 @@ window regardless of loop count (ADR-0018).
   edit, and adding `edited` there would cancel a running itest each time.
   `scripts/other-half-test.sh` keeps the refusals honest under the workflow
   rules step.
+- **A security-sensitive PR is labelled** (`pr-guards`, #742): a PR that
+  changes a path in `.github/security-review-paths` gets
+  `needs-security-review`, and its merge request waits for the security
+  review (CONVENTIONS.md). The job never fails a PR for matching; it is red
+  only when it cannot decide. The list and matcher come from the base branch,
+  so a PR cannot drop itself from the list, and
+  `scripts/security-paths-test.sh` checks the list against the PRs that
+  needed it (#741 first) under the workflow rules step.
 - **A fork PR runs with less** (ADR-0031): a pull request from a fork gets a
   read-only `GITHUB_TOKEN` and no secrets, so `issue-guards` and `ci-health`
   cannot do their work on one — both answer by writing to the board, which a

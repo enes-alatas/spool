@@ -123,7 +123,7 @@ jobs:
           if echo "$files" | grep -qxF web/package-lock.json; then
             lockfile=true
           fi
-          if echo "$files" | grep -qE '^(\.github/workflows/|scripts/)'; then
+          if echo "$files" | grep -qE '^(\.github/workflows/|\.github/security-review-paths$|scripts/)'; then
             workflows=true
           fi
           printf 'unit=%s\nitest=%s\nweb=%s\nsmoke=%s\nlockfile=%s\nworkflows=%s\n' "$go" "$go" "$web" "$smoke" "$lockfile" "$workflows" >> "$GITHUB_OUTPUT"
@@ -379,6 +379,12 @@ jobs:
       - name: the advisory scan still files what it claims to
         if: needs.changes.outputs.workflows == 'true'
         run: bash scripts/advisories-test.sh
+      # The list decides which PRs get a security review; a pattern that
+      # stopped matching would drop a path from review with every PR green
+      # (#742).
+      - name: the security-review paths still match what they claim to
+        if: needs.changes.outputs.workflows == 'true'
+        run: bash scripts/security-paths-test.sh
       # Restore is run once in anger, after the data is already gone, so a
       # backup that silently stopped copying volumes or started copying
       # hub.key into the data file would surface then and no sooner (#708).
