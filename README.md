@@ -148,7 +148,8 @@ spool --listen 127.0.0.1:8080 --mcp-port 8081 --data-dir ~/.spool --claude-bin c
 spool --mcp-listen 172.17.0.1:8081  # name the loop listener's address yourself
 spool token --data-dir ~/.spool     # print the operator token again
 
-# behind a proxy, name the host it is reached as — otherwise the Host and
+# behind a TLS proxy (docs/OPERATIONS.md has a systemd unit and a Caddy
+# recipe), name the host it is reached as — otherwise the Host and
 # Origin checks refuse every request that posture produces
 spool --listen 127.0.0.1:8080 --trusted-host spool.example.com
 ```

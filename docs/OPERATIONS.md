@@ -1,8 +1,163 @@
 # Operating a hub
 
-*How to keep a hub running once it is up: back it up, restore it, upgrade
-it, and (once #711 lands) run it as a service. The README gets
-a hub started; this page is for after that.*
+*How to keep a hub running once it is up: run it as a service behind TLS,
+back it up, restore it, and upgrade it. The README gets a hub started; this
+page is for after that.*
+
+## Run it as a service
+
+These steps take a fresh Debian or Ubuntu server to a hub that starts at
+boot, restarts on failure, and serves the control room over HTTPS at a name
+you own. The rest of this page assumes this layout:
+
+| What | Where |
+|---|---|
+| The checkout and `bin/spool` | `/opt/spool`, built by you (README steps 1–3) |
+| The hub's user | `spool`, a system user in the `docker` group |
+| The data directory | `/home/spool/.spool` |
+| The control room | `127.0.0.1:8080`, reached only through the proxy |
+| The proxy | Caddy on 443, with a certificate for `spool.example.com` |
+
+Spool does not terminate TLS (ADR-0030). The proxy does that, and the hub
+stays on loopback behind it. Who may call the API does not change: a session
+or the operator token, as on localhost.
+
+### The hub's user
+
+```bash
+sudo useradd --system --create-home --home-dir /home/spool --shell /usr/sbin/nologin spool
+sudo usermod -aG docker spool
+```
+
+Membership of `docker` is what lets the hub run workstations. It is also
+root on this host to anyone who can act as `spool`, which is why nothing
+but the hub runs as that user.
+
+### The unit
+
+`/etc/systemd/system/spool.service`:
+
+```ini
+[Unit]
+Description=Spool hub
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+
+[Service]
+User=spool
+Group=spool
+SupplementaryGroups=docker
+WorkingDirectory=/home/spool
+ExecStart=/opt/spool/bin/spool --data-dir /home/spool/.spool \
+    --listen 127.0.0.1:8080 --trusted-host spool.example.com
+Restart=on-failure
+RestartSec=5
+# The hub drains HTTP for up to 10s, then stops each loop's claude.
+TimeoutStopSec=30
+# On `spool serve`, stdout carries only the operator token and the admin's
+# one-time password, printed once at the first start. The log is on stderr.
+# Under systemd, stdout is the journal, which members of `adm` and
+# `systemd-journal` can read, so it goes nowhere instead.
+StandardOutput=null
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target
+```
+
+- `--trusted-host` names the proxy's host. Without it, the hub's Host and
+  Origin checks refuse every request the proxy forwards, with
+  `unexpected Host` and a 403. That is the guard working, not a bug.
+- `Restart=on-failure` covers a hub that cannot bind or open its database:
+  each exits non-zero (#253), so systemd sees the failure and retries.
+- The hardening lines take nothing the hub uses. It writes only under its
+  data directory and the loops' workspaces, and it shares no host path with
+  a container: workstations get named volumes, and the egress proxy's
+  allowlist is streamed in.
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now spool
+journalctl -u spool -n 50        # `runtime ready`, and where the loop listener bound
+```
+
+The first start mints the operator token and the `admin` user's one-time
+password. It prints them to stdout, which this unit discards, so neither
+reaches the journal. Print each at your own terminal instead:
+
+```bash
+sudo -u spool /opt/spool/bin/spool token --data-dir /home/spool/.spool              # the operator token
+sudo -u spool /opt/spool/bin/spool user reset admin --data-dir /home/spool/.spool  # a fresh one-time password
+```
+
+Sign in as `admin` with that password and set your own. The operator
+token is a full API credential that doesn't expire, so keep it with the
+keys file (see Back up and restore), not in shell history or a ticket.
+
+### TLS with Caddy
+
+Point `spool.example.com`'s DNS at the server, install Caddy from its
+[Debian/Ubuntu packages](https://caddyserver.com/docs/install#debian-ubuntu-raspbian),
+and replace `/etc/caddy/Caddyfile` with:
+
+```caddyfile
+spool.example.com {
+	reverse_proxy 127.0.0.1:8080
+}
+```
+
+Then run `sudo systemctl reload caddy`. Caddy obtains and renews the
+certificate on its own, redirects http to https, and passes everything the
+hub needs:
+- It keeps the `Host` the browser sent, which `--trusted-host` matches.
+- It sets `X-Forwarded-Proto: https`, so the hub marks its session cookie
+  `Secure`.
+- It flushes the control room's event streams as they arrive.
+
+**nginx instead:** the same three things have to be said explicitly.
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_http_version 1.1;
+    proxy_buffering off;          # the event streams
+    proxy_read_timeout 1h;        # a quiet stream is not a dead one
+}
+```
+
+### The firewall
+
+Open 80 and 443 for Caddy, and SSH. Open nothing for the hub.
+
+```bash
+sudo ufw allow OpenSSH && sudo ufw allow 80,443/tcp && sudo ufw enable
+```
+
+The control room port is on loopback, so the network cannot reach it at all.
+The loop listener (`--mcp-listen`) binds the docker bridge (README, "What
+contains a loop"), which the network is not routed to. A default-deny inbound
+policy can still drop the workstations' own traffic to it, since that
+traffic arrives from the bridge. The symptom is a docker loop that never
+answers while its wake times out in the hub log. The fix is to allow that one
+port from the bridge only:
+
+```bash
+sudo ufw allow in on docker0 to any port 8081 proto tcp
+```
+
+### Checking it worked
+
+- `curl -s https://spool.example.com/api/version` names your build, and
+  `curl http://<server address>:8080` from another machine does not connect.
+- Sign in at `https://spool.example.com`. The browser's cookie for it is
+  `HttpOnly; Secure; SameSite=Strict`.
+- `sudo systemctl restart spool` brings the control room back within
+  seconds, and `sudo reboot` brings it back without you.
 
 ## Back up and restore
 
@@ -117,7 +272,8 @@ Check it worked:
 until `hub.key` is back. Starting it once with `--forget-secrets` gives up
 every sealed secret instead: connections are revoked, bots unbound and the
 setup-token cleared, so you enter them again (ADR-0046). A new
-`operator-token` is minted and printed at that start.
+`operator-token` is minted at that start. Under the systemd unit its
+stdout goes nowhere, so read the token with `spool token`.
 
 A restored `worktrees/` points at each loop's source repository by path. If
 that repository moved, run `git worktree repair` in it.
