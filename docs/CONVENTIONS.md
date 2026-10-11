@@ -34,6 +34,19 @@ ADR instead.*
   reviewer marked fixes optional, the author either declines them on the PR or
   folds them and waits for re-approval. Either way the reviewer pings last
   (#170).
+- **A PR labelled `needs-security-review` waits for the security review** (#742).
+  `pr-guards` adds the label when a PR changes a path in
+  `.github/security-review-paths`; anyone adds it by hand to a PR that makes
+  the hub trust something a loop controls without touching the list (an
+  answer read from inside a workstation, say). The security reviewer (the
+  DevSecOps role) reviews it as a peer and says so in a PR comment, which may
+  be "nothing from me". The reviewer who sends merge requests sends none on a
+  labelled PR until that comment exists at the current head, or at a head
+  whose later pushes are a bare rebase. A fork PR is not labelled
+  mechanically (its token is read-only), so its reviewer labels it by hand.
+  On a PR the security reviewer authored, its Notes / Risks section stands as
+  that comment: it says what the change opens and why that holds, and the
+  reviewer who sends the merge request checks it is there.
 - **The board sweep reads the pinned "CI health" issue** (#216, mechanism #210).
   A workflow that fires on issues, comments or a schedule reports its failures
   nowhere a PR can show them, so `ci-health` posts each one there as a comment.

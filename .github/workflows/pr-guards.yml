@@ -14,6 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 # Reads only: the PR's changed files, and whether an issue it names exists.
+# The one write, a label, is granted to the job that adds it (#742).
 permissions:
   contents: read
   issues: read
@@ -41,3 +42,56 @@ jobs:
           jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH" > "$work/body"
           gh api "repos/$GH_REPO/pulls/$PR/files" --paginate -q '.[].filename' > "$work/files"
           bash scripts/other-half.sh "$(cat "$work/title")" "$work/body" "$work/files"
+
+  # A PR touching a path in .github/security-review-paths is labelled for a
+  # security review, and its merge request waits for that review (#742).
+  # #741 changed only internal/runtime/docker, which the reviewer's own list
+  # did not name; it was read only because it closed an issue the reviewer
+  # had filed. The label is the whole output: no comment, no mention.
+  security-label:
+    # A fork PR's token is read-only, so the reviewer labels it by hand
+    # (ADR-0031). A body edit runs it too, though it changes no file: the
+    # workflow's concurrency group cancels the run in flight, so an edit
+    # landing during a push's run would otherwise leave that push unlabelled
+    # with nothing red. Adding a label already there is a no-op.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # The label is added through the issues endpoint, but on a PR the token
+    # needs pull-requests: write for it: issues: write alone is refused with
+    # 403 (proved on this PR's first run, #743). issues: read is only what
+    # workflow-lint rule 5 asks of an issues-endpoint call.
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: label a PR that needs a security review
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        # The list and the matcher are read from the base branch, not the
+        # PR's: a PR that trims either must not thereby escape it. Its own edit
+        # to them still matches, since the list names both. The fallback is
+        # for the PR that adds them (#742), whose base has neither.
+        run: |
+          work=$(mktemp -d)
+          git fetch --depth=1 origin "$GITHUB_BASE_REF"
+          for f in .github/security-review-paths scripts/security-paths.sh; do
+            git show "FETCH_HEAD:$f" > "$work/$(basename "$f")" 2>/dev/null || cp "$f" "$work/$(basename "$f")"
+          done
+          # A rename lists its new path as filename and its old one only as
+          # previous_filename; moving code out from under the list is a change
+          # to that code.
+          gh api "repos/$GH_REPO/pulls/$PR/files" --paginate -q '.[] | .filename, (.previous_filename // empty)' > "$work/files"
+          set +e
+          bash "$work/security-paths.sh" "$work/security-review-paths" "$work/files"
+          status=$?
+          set -e
+          case $status in
+          0) gh api -X POST "repos/$GH_REPO/issues/$PR/labels" -f 'labels[]=needs-security-review' --silent ;;
+          1) echo "security-label: no path in the list; nothing to label." ;;
+          *) exit "$status" ;;
+          esac
