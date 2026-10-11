@@ -434,3 +434,6 @@ Terra took #730 and posted its shape (ADR-0051: surface-bound codes, check befor
 
 ## 2026-10-11 19:15 UTC
 Iris: #730 breaks main's Account button (400, surface required) until the web sends it. Filed #745 (slice 3a: Account per-surface code + waiting state), ships right after #730. #732 narrowed to Access + owner picker, after #731 and #744. Iris: #735 → #745 → #732.
+
+## 2026-10-11 22:10 UTC
+Batch merged by Enes: #735 (#723), #736 (#711), #739 (#738), #740 (#737), #741 (#715), #743 (#742). Closed epics #100, #582, #710 (all children merged). Terra on PR #746 (#730). Iris idle until #730 merges then #745. Elliot had nothing queued: filing L6 packaging epic. Rebuild caveats both resolved (#713 backup, #715 images): remind Enes.
