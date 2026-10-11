@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"strings"
 )
 
@@ -90,27 +91,33 @@ func (rt *Runtime) ensureEgressNetwork(ctx context.Context) error {
 }
 
 func (rt *Runtime) ensureEgressProxy(ctx context.Context) error {
+	imageID, err := rt.imageID(ctx, rt.egressImage)
+	if err != nil && !errors.Is(err, errNotFound) {
+		return err
+	}
 	state, err := rt.inspectState(ctx, rt.egressContainer())
-	if err == nil {
-		// A proxy running an older configuration — a different image, or a
-		// hub that has moved to another port — is the wrong wall, and its run
-		// arguments are fixed at creation. Replacing it is cheap: its one
-		// state, the operator's extra hosts, is the hub's to copy back in, and
-		// a workstation reconnects to the name.
+	if err == nil && imageID != "" {
+		// A proxy running an older configuration — a rebuilt image (#715),
+		// or a hub that has moved to another port — is the wrong wall, and
+		// its run arguments are fixed at creation. Replacing it is cheap: its
+		// one state, the operator's extra hosts, is the hub's to copy back
+		// in, and a workstation reconnects to the name. With its image gone
+		// there is nothing to replace it from, so it is kept.
 		current, readErr := rt.egressSpec(ctx)
 		if readErr != nil {
 			return readErr
 		}
-		if current != rt.egressSpecHash() {
+		if current != rt.egressSpecHash(imageID) {
+			slog.Default().Info("egress proxy configuration changed", "image", rt.egressImage, "id", shortID(imageID))
 			if _, rmErr := rt.command(ctx, startTimeout, "rm", "--force", rt.egressContainer()); rmErr != nil && !notFound(rmErr) {
 				return rmErr
 			}
-			return rt.provisionEgressProxyWithFleet(ctx)
+			return rt.provisionEgressProxyWithFleet(ctx, imageID)
 		}
 	}
 	switch {
 	case errors.Is(err, errNotFound):
-		return rt.provisionEgressProxyWithFleet(ctx)
+		return rt.provisionEgressProxyWithFleet(ctx, imageID)
 	case err != nil:
 		return err
 	case state.Paused:
@@ -126,15 +133,15 @@ func (rt *Runtime) ensureEgressProxy(ctx context.Context) error {
 
 // provisionEgressProxyWithFleet provisions a proxy and gives it back the
 // operator's extra hosts, which a new container doesn't have.
-func (rt *Runtime) provisionEgressProxyWithFleet(ctx context.Context) error {
-	if err := rt.provisionEgressProxy(ctx); err != nil {
+func (rt *Runtime) provisionEgressProxyWithFleet(ctx context.Context, imageID string) error {
+	if err := rt.provisionEgressProxy(ctx, imageID); err != nil {
 		return err
 	}
 	return rt.rewriteEgressFile(ctx)
 }
 
-func (rt *Runtime) provisionEgressProxy(ctx context.Context) error {
-	if _, err := rt.command(ctx, runTimeout, rt.egressRunArgv()...); err != nil && !nameInUse(err) {
+func (rt *Runtime) provisionEgressProxy(ctx context.Context, imageID string) error {
+	if _, err := rt.command(ctx, runTimeout, rt.egressRunArgv(imageID)...); err != nil && !nameInUse(err) {
 		return err
 	}
 	// The run above put the proxy on the internal network only; a second
@@ -151,14 +158,15 @@ func (rt *Runtime) provisionEgressProxy(ctx context.Context) error {
 
 // egressRunArgv provisions the proxy: on the internal network, restarting
 // like a workstation does, with the host gateway alias it needs to reach the
-// hub's MCP endpoint on the operator's machine (ADR-0026).
+// hub's MCP endpoint on the operator's machine (ADR-0026). The spec label
+// records imageID, the ID the image has as it is run.
 //
 // The hub is the one allowlist entry the proxy cannot carry compiled in: it
 // lives on the gateway on whatever port the operator gave --mcp-listen, and
 // it is permitted on that port alone — otherwise an allowlisted gateway would
 // be a tunnel to every port of the operator's own machine, the API port it
 // serves the control room on included (ADR-0028, #238).
-func (rt *Runtime) egressRunArgv() []string {
+func (rt *Runtime) egressRunArgv(imageID string) []string {
 	argv := []string{
 		"run", "--detach", "--init",
 		"--name", rt.egressContainer(),
@@ -166,7 +174,7 @@ func (rt *Runtime) egressRunArgv() []string {
 		"--network", rt.egressNetwork(),
 		"--add-host", egressGatewayHost + ":host-gateway",
 		"--label", "spool.egress=proxy",
-		"--label", egressSpecLabel + "=" + rt.egressSpecHash(),
+		"--label", egressSpecLabel + "=" + rt.egressSpecHash(imageID),
 		rt.egressImage,
 		"--listen", ":" + egressPort,
 		"--fleet-file", fleetEgressFile,
@@ -199,8 +207,10 @@ func (rt *Runtime) EgressGateway() string {
 
 // egressSpecHash identifies the configuration a running proxy was created
 // with, so a changed one is noticed and replaced rather than silently kept.
-func (rt *Runtime) egressSpecHash() string {
-	spec := append([]string{rt.egressImage, egressPort, egressFileFormat}, rt.egressEntries()...)
+// imageID is the ID the proxy image has now: a rebuild under the same tag
+// is a changed configuration too (#715).
+func (rt *Runtime) egressSpecHash(imageID string) string {
+	spec := append([]string{rt.egressImage, imageID, egressPort, egressFileFormat}, rt.egressEntries()...)
 	sum := sha256.Sum256([]byte(strings.Join(spec, "\x00")))
 	return hex.EncodeToString(sum[:6])
 }

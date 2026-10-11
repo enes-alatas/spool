@@ -111,10 +111,15 @@ func dockerWorkstationPowerCycle(t *testing.T) {
 
 // poweron is documented idempotent, so it must not end a turn running on a
 // workstation that is already up — the UI hides the button, but the endpoint
-// is the enforcement.
+// is the enforcement. Not even when the workstation's image was rebuilt
+// under it: a wake replaces the container then, a power-on during a turn
+// does not (#715). The loop names a tag of its own, so no other row's image
+// changes.
 func dockerPowerOnLeavesARunningTurnAlone(t *testing.T) {
 	s := startDockerServer(t, t.TempDir())
-	s.createLoop("wsidem", map[string]any{"idle_timeout_sec": 30})
+	image := workstationTestImage + "-poweron"
+	tagImage(t, workstationTestImage, image)
+	s.createLoop("wsidem", map[string]any{"idle_timeout_sec": 30, "image": image})
 	loopID := s.loop("wsidem").ID
 	cleanupWorkstation(t, loopID)
 
@@ -129,6 +134,13 @@ func dockerPowerOnLeavesARunningTurnAlone(t *testing.T) {
 		t.Fatalf("scripting fakeclaude: %v (%s)", err, out)
 	}
 
+	container, err := dockerInspect("{{.Id}}", "spool-ws-"+loopID)
+	if err != nil {
+		t.Fatalf("inspect: %v", err)
+	}
+	// the loop is still awake, so its next message is no wake and replaces
+	// nothing: only the power-on below could
+	rebuildImage(t, image)
 	s.message("wsidem", "slow one")
 	time.Sleep(2 * time.Second) // the turn is now in flight inside the workstation
 
@@ -140,6 +152,9 @@ func dockerPowerOnLeavesARunningTurnAlone(t *testing.T) {
 	})
 	if done.IsError {
 		t.Fatal("poweron ate the turn it was running against")
+	}
+	if after, err := dockerInspect("{{.Id}}", "spool-ws-"+loopID); err != nil || after != container {
+		t.Fatalf("poweron during a turn replaced the workstation (%q → %q, %v)", container, after, err)
 	}
 }
 

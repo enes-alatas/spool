@@ -114,11 +114,13 @@ func TestAWakeOfARunningWorkstationCatchesUpTheProxy(t *testing.T) {
 	dir := t.TempDir()
 	bin, calls := filepath.Join(dir, "docker"), filepath.Join(dir, "calls")
 	rt := New(Options{Bin: bin, EgressImage: "spool-egress"})
-	// a docker whose every container runs, the proxy on this hub's spec
+	// a docker whose every container runs from its image as built now, the
+	// proxy on this hub's spec
 	script := "#!/bin/sh\ncat >/dev/null\necho \"$*\" >>" + calls + "\n" +
 		"case \"$*\" in\n" +
-		"*'.Config.Labels'*) echo '{\"" + egressSpecLabel + "\":\"" + rt.egressSpecHash() + "\"}' ;;\n" +
-		"*'.State'*) echo '{\"Running\":true}' ;;\n" +
+		"*'.Config.Labels'*) echo '{\"" + egressSpecLabel + "\":\"" + rt.egressSpecHash("sha256:1") + "\"}' ;;\n" +
+		"*'{{.Id}}'*) echo sha256:1 ;;\n" +
+		"*'.State'*) echo '{\"State\":{\"Running\":true},\"Image\":\"sha256:1\"}' ;;\n" +
 		"esac\n"
 	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
 		t.Fatal(err)

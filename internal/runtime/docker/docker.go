@@ -16,6 +16,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"os/exec"
@@ -180,12 +181,25 @@ func (rt *Runtime) Preflight(ctx context.Context) (string, error) {
 // still needs the fleet's extra hosts copied in, which a hub run whose
 // workstations all survived from an earlier run would otherwise never do
 // (#657).
+//
+// A workstation created from an older build of its image is replaced,
+// keeping its volume: a rebuilt image (a new hook, a security fix) would
+// otherwise reach only the loops provisioned after it (#715). The engine
+// decides that no turn is in flight, never the container: what runs in it
+// is the loop's to name, and a process it left behind must not keep it on
+// an old build.
 func (rt *Runtime) Ensure(ctx context.Context, spec runtime.Spec) error {
 	if err := rt.ensureEgress(ctx); err != nil {
 		return err
 	}
 	name := containerName(spec.LoopID)
 	state, err := rt.inspectState(ctx, name)
+	if err == nil {
+		var stale bool
+		if stale, err = rt.replaceStale(ctx, spec, state); err != nil || stale {
+			return err
+		}
+	}
 	switch {
 	case errors.Is(err, errNotFound):
 		return rt.provision(ctx, spec)
@@ -200,6 +214,38 @@ func (rt *Runtime) Ensure(ctx context.Context, spec runtime.Spec) error {
 		_, err := rt.command(ctx, startTimeout, "start", name)
 		return err
 	}
+}
+
+// replaceStale replaces the workstation, keeping its volume, when the image
+// it names has been rebuilt since the container was created from it, and
+// reports whether it did. An image that is not here any more replaces
+// nothing: there would be nothing to provision from.
+func (rt *Runtime) replaceStale(ctx context.Context, spec runtime.Spec, state *containerState) (bool, error) {
+	image := workstationImage(spec, rt.defaultImage)
+	current, err := rt.imageID(ctx, image)
+	switch {
+	case errors.Is(err, errNotFound):
+		return false, nil
+	case err != nil:
+		return false, err
+	case current == state.Image:
+		return false, nil
+	}
+	slog.Default().Info("workstation image changed", "loop", spec.LoopName, "image", image,
+		"old", shortID(state.Image), "new", shortID(current))
+	if _, err := rt.command(ctx, startTimeout, "rm", "--force", containerName(spec.LoopID)); err != nil && !notFound(err) {
+		return true, err
+	}
+	return true, rt.provision(ctx, spec)
+}
+
+// shortID is an image ID as docker lists it: 12 hex digits, no algorithm.
+func shortID(id string) string {
+	id = strings.TrimPrefix(id, "sha256:")
+	if len(id) > 12 {
+		return id[:12]
+	}
+	return id
 }
 
 // provision creates a workstation. Ensure has put the wall up first: a
@@ -364,11 +410,16 @@ func runArgv(spec runtime.Spec, defaultImage string, network []string) []string 
 	if spec.CPUs > 0 {
 		argv = append(argv, "--cpus", strconv.FormatFloat(spec.CPUs, 'f', -1, 64))
 	}
-	image := spec.Image
-	if image == "" {
-		image = defaultImage
+	return append(argv, workstationImage(spec, defaultImage), "sleep", "infinity")
+}
+
+// workstationImage is the image a loop's workstation is provisioned from:
+// its own, or the fleet's default.
+func workstationImage(spec runtime.Spec, defaultImage string) string {
+	if spec.Image != "" {
+		return spec.Image
 	}
-	return append(argv, image, "sleep", "infinity")
+	return defaultImage
 }
 
 // execArgv builds the docker exec for one wake. Env vars cross as

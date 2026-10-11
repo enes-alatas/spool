@@ -75,33 +75,53 @@ func (rt *Runtime) commandStream(ctx context.Context, timeout time.Duration, std
 	return stdout.Bytes(), nil
 }
 
-// containerState is the slice of docker inspect's .State we act on.
+// containerState is the slice of docker inspect's .State we act on, and
+// the ID of the image the container was created from.
 type containerState struct {
 	Status  string `json:"Status"`
 	Running bool   `json:"Running"`
 	Paused  bool   `json:"Paused"`
+	Image   string `json:"-"`
 }
 
 func (rt *Runtime) inspectState(ctx context.Context, name string) (*containerState, error) {
 	// --type container matters: the loop's volume shares the name, and an
 	// unscoped inspect would resolve to it once the container is gone.
-	out, err := rt.command(ctx, queryTimeout, "inspect", "--type", "container", "--format", "{{json .State}}", name)
+	out, err := rt.command(ctx, queryTimeout, "inspect", "--type", "container",
+		"--format", `{"State":{{json .State}},"Image":{{json .Image}}}`, name)
 	if err != nil {
 		if notFound(err) {
 			return nil, errNotFound
 		}
 		return nil, err
 	}
-	var state containerState
-	if err := json.Unmarshal(bytes.TrimSpace(out), &state); err != nil {
+	var inspected struct {
+		State containerState
+		Image string
+	}
+	if err := json.Unmarshal(bytes.TrimSpace(out), &inspected); err != nil {
 		return nil, fmt.Errorf("docker inspect %s: %w", name, err)
 	}
-	return &state, nil
+	inspected.State.Image = inspected.Image
+	return &inspected.State, nil
 }
 
-// notFound recognizes the CLI's ways of saying a container or volume does
-// not exist ("No such object" from inspect, "No such container/volume" from
-// the daemon).
+// imageID is the ID image names now, or errNotFound when there is no such
+// image here. A rebuild under the same tag gives the tag a new ID.
+func (rt *Runtime) imageID(ctx context.Context, image string) (string, error) {
+	out, err := rt.command(ctx, queryTimeout, "image", "inspect", "--format", "{{.Id}}", image)
+	if err != nil {
+		if notFound(err) {
+			return "", errNotFound
+		}
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// notFound recognizes the CLI's ways of saying a container, volume or
+// image does not exist ("No such object" from inspect, "No such
+// container/volume/image" from the daemon).
 func notFound(err error) bool {
 	var failure *cliError
 	if !errors.As(err, &failure) {
@@ -110,7 +130,8 @@ func notFound(err error) bool {
 	msg := strings.ToLower(failure.stderr)
 	return strings.Contains(msg, "no such object") ||
 		strings.Contains(msg, "no such container") ||
-		strings.Contains(msg, "no such volume")
+		strings.Contains(msg, "no such volume") ||
+		strings.Contains(msg, "no such image")
 }
 
 // nameInUse recognizes a docker run losing the container name to an

@@ -1,6 +1,6 @@
 # ADR-0028: Workstation egress runs through an allowlist proxy
 
-Date: 2026-09-20 · Status: accepted · Amends: ADR-0017 (decision 9, "open egress") · Amended 2026-09-20 (decision 3: the hub entry is the MCP listener, #238); 2026-10-01 (consequences: a docker loop behind a loopback listener is refused, #474); 2026-10-01 (decision 3: the loop listener does not refuse a host.docker.internal Host, #508); 2026-10-05 (decision 4: a loop's own entries, keyed by its proxy token, #599); 2026-10-06 (decision 4: the operator's extra hosts are stored and change while the hub runs, #542); 2026-10-06 (decision 4: brokered MCP servers open no host, #622); 2026-10-07 (decision 4: a loop's own entries are removed, #626); 2026-10-08 (decision 5: the wall is ensured at every docker wake, #657)
+Date: 2026-09-20 · Status: accepted · Amends: ADR-0017 (decision 9, "open egress") · Amended 2026-09-20 (decision 3: the hub entry is the MCP listener, #238); 2026-10-01 (consequences: a docker loop behind a loopback listener is refused, #474); 2026-10-01 (decision 3: the loop listener does not refuse a host.docker.internal Host, #508); 2026-10-05 (decision 4: a loop's own entries, keyed by its proxy token, #599); 2026-10-06 (decision 4: the operator's extra hosts are stored and change while the hub runs, #542); 2026-10-06 (decision 4: brokered MCP servers open no host, #622); 2026-10-07 (decision 4: a loop's own entries are removed, #626); 2026-10-08 (decision 5: the wall is ensured at every docker wake, #657); 2026-10-11 (decision 5: a rebuilt proxy image replaces the proxy, #715)
 
 ## Context
 
@@ -200,6 +200,14 @@ by asking the agent nicely (#193).
    survived from the last run provisions nothing, so until this it never
    wrote the file, and a host added on Settings never reached the proxy.
    The cost is a few docker CLI queries per wake.
+
+   **Amendment (2026-10-11, #715): a rebuilt proxy image replaces the
+   proxy.** The proxy's spec now carries the ID of its image as well as its
+   name, so a `make image` that rebuilds the proxy under the same tag
+   replaces it at the next docker wake, as any changed spec does. Every
+   hub's proxy is therefore replaced once, at the first docker wake after
+   this lands. With its image gone, a running proxy is kept rather than
+   removed with nothing to replace it from.
 
 6. **The bare runtime is explicitly outside this.** A bare loop is a host
    process with the host's network; there is no wall to put a door in. The docs

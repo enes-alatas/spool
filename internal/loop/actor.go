@@ -2134,7 +2134,13 @@ func (actor *Actor) power(verb string) error {
 			actor.setWorkstationOff(true)
 		}
 	case PowerOn:
-		if err = loopRuntime.Ensure(ctx, spec); err == nil {
+		// A turn in flight is running in the workstation, so it is up. Ensure
+		// is not asked: it may replace a workstation whose image was rebuilt
+		// (#715), which only a wake, with no turn in flight, may do.
+		if actor.proc == nil {
+			err = loopRuntime.Ensure(ctx, spec)
+		}
+		if err == nil {
 			actor.setWorkstationOff(false)
 		}
 	case PowerRestart:
