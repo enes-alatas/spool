@@ -75,6 +75,7 @@ jobs:
       itest_key: ${{ steps.covered.outputs.key }}
       web: ${{ steps.filter.outputs.web }}
       smoke: ${{ steps.filter.outputs.smoke }}
+      lockfile: ${{ steps.filter.outputs.lockfile }}
       workflows: ${{ steps.filter.outputs.workflows }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -86,7 +87,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "${{ github.event_name }}" != "pull_request" ]; then
-            printf 'unit=true\nitest=false\nweb=false\nsmoke=false\nworkflows=false\n' >> "$GITHUB_OUTPUT"
+            printf 'unit=true\nitest=false\nweb=false\nsmoke=false\nlockfile=false\nworkflows=false\n' >> "$GITHUB_OUTPUT"
             echo 'Push to main: unit tests only — this content was green on its PR (ADR-0016).' >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
@@ -101,6 +102,7 @@ jobs:
           go=false
           web=false
           smoke=false
+          lockfile=false
           workflows=false
           if echo "$files" | grep -qE '^(cmd/|internal/|itest/|go\.(mod|sum)$|Makefile$|\.golangci\.ya?ml$|\.github/workflows/)'; then
             go=true
@@ -114,10 +116,17 @@ jobs:
           if echo "$files" | grep -qE '^(web/|cmd/uifixture/|scripts/fixture-hub\.sh$|\.github/workflows/)'; then
             smoke=true
           fi
+          # A lockfile change is the one place a PR brings in a dependency, so it
+          # is where npm audit gates (#737). On every web PR, an advisory against
+          # a dependency the PR never touched would block it; the daily
+          # `advisories` scan files those instead.
+          if echo "$files" | grep -qxF web/package-lock.json; then
+            lockfile=true
+          fi
           if echo "$files" | grep -qE '^(\.github/workflows/|scripts/)'; then
             workflows=true
           fi
-          printf 'unit=%s\nitest=%s\nweb=%s\nsmoke=%s\nworkflows=%s\n' "$go" "$go" "$web" "$smoke" "$workflows" >> "$GITHUB_OUTPUT"
+          printf 'unit=%s\nitest=%s\nweb=%s\nsmoke=%s\nlockfile=%s\nworkflows=%s\n' "$go" "$go" "$web" "$smoke" "$lockfile" "$workflows" >> "$GITHUB_OUTPUT"
 
       # Lever 5. The content `itest` covers, as git already names it: the
       # tree id of each covered directory and the blob id of each covered
@@ -288,6 +297,12 @@ jobs:
       - run: npm ci
         if: needs.changes.outputs.web == 'true' || needs.changes.outputs.smoke == 'true'
         working-directory: web
+      # The runtime dependencies only, from high up: what the shipped room
+      # carries. Dev tooling is listed by the daily `advisories` scan.
+      - name: npm audit, when the lockfile changes
+        if: needs.changes.outputs.lockfile == 'true'
+        working-directory: web
+        run: npm audit --omit=dev --audit-level=high
       - run: npm run lint
         if: needs.changes.outputs.web == 'true'
         working-directory: web
