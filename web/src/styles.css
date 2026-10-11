@@ -867,6 +867,24 @@ textarea {
   font-size: 0.71875rem;
   color: var(--text-muted);
 }
+/* who made the loop, under its name (#696): a fact about the record, set
+   quieter than the state beside the name */
+.loop-provenance {
+  margin: -6px 0 12px;
+  font-family: var(--mono);
+  font-size: 0.71875rem;
+  color: var(--text-muted);
+}
+/* the Changes panel names who in the body colour, so a row reads by its
+   actor as much as by its action */
+.side-panel .row .k .change-by {
+  color: var(--text);
+}
+/* "3d ago" is one fact: it never breaks, and the action takes the wrap */
+.side-panel .row .v.change-when {
+  flex: none;
+  white-space: nowrap;
+}
 /* bare loops run on the host with no wall around them (ADR-0017): a standing
    unsafe condition, not a state, so it takes the danger tokens (ADR-0027) */
 .containment-badge {
@@ -2508,6 +2526,13 @@ textarea {
 }
 .feed-item .author.loop-author {
   color: var(--ready);
+}
+/* a change to a loop, among the messages (#696): the record speaking, not
+   anyone saying something, so it is set as a note */
+.feed-item.change-item .text {
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 0.75rem;
 }
 .feed-item .text {
   color: var(--text);
