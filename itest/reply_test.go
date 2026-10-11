@@ -268,8 +268,7 @@ func TestReplyReferencesSurviveRestart(t *testing.T) {
 	for _, name := range []string{"alpha", "beta"} {
 		srv.createLoop(name, map[string]any{"tg_bot_token": name})
 	}
-	tg.post(groupChatID, "supergroup", "hello", operator)
-	srv.allowSender(operator.ID)
+	srv.allowOwner(tg, "alpha", operator)
 	tg.post(groupChatID, "supergroup", "binding", operator)
 	settleBindings()
 

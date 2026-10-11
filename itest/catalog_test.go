@@ -110,8 +110,7 @@ func TestCatalogNamesTheOwnerAndDMReadiness(t *testing.T) {
 	// Someone else who messages the loop privately is someone it can write
 	// to first from then on (ADR-0049).
 	friend := user{ID: 7272, First: "Friend", Username: "friend"}
-	tg.dm("beta", friend, "knock")
-	srv.allowSender(friend.ID)
+	srv.allowSender(tg, "beta", friend)
 	srv.waitState("alpha", "asleep", 30*time.Second)
 	tg.dm("alpha", friend, "hello alpha")
 	srv.waitForMessage("hello alpha")

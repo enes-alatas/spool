@@ -60,10 +60,9 @@ func TestALoopsPrivateConversationsAreServedPerPerson(t *testing.T) {
 	friend := user{ID: 8191, First: "Friend", Username: "friend"}
 	other := user{ID: 8192, First: "Other", Username: "other"}
 	srv, tg := startTelegramFleet(t, operator, nil)
-	for _, person := range []user{friend, other} {
-		tg.dm("beta", person, "knock") // registers them as pending
-		srv.allowSender(person.ID)
-	}
+	mia := srv.signedInAs("mia", "member")
+	srv.confirmLink(tg, "beta", friend, mia, "mia")
+	srv.allowSender(tg, "beta", other)
 	for _, said := range []struct {
 		from user
 		text string
@@ -109,9 +108,6 @@ func TestALoopsPrivateConversationsAreServedPerPerson(t *testing.T) {
 	}
 
 	// A member linked as friend lists and reads only their own.
-	mia := srv.signedInAs("mia", "member")
-	tg.dm("alpha", friend, srv.linkCode(mia))
-	tg.waitSent(t, friend.ID, "now linked to mia")
 	if got := srv.privateConversations(mia); len(got) != 1 || got[0].Conversation != "dm:friend" || got[0].PersonID != id(friend) {
 		t.Errorf("a member linked as friend lists %+v; want only dm:friend", got)
 	}

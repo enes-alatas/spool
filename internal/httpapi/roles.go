@@ -28,7 +28,7 @@ var memberRoutes = []string{
 	"GET /api/health", "GET /api/version", "POST /api/login", "POST /api/logout", "/api/",
 
 	"GET " + mePath, "POST " + mePasswordPath,
-	"GET " + meLinksPath, "POST " + meLinkCodePath, "DELETE " + meLinksPath + "/{surface}",
+	"GET " + meLinksPath, "POST " + meLinkCodePath, "GET " + meLinksWaitingPath, "DELETE " + meLinksPath + "/{surface}",
 
 	"GET /api/loops", "GET /api/loops/{name}", "GET /api/loops/{name}/telegram/status",
 	"GET /api/loops/{name}/slack/status", "GET /api/loops/{name}/rooms",
@@ -74,6 +74,7 @@ var adminRoutes = []string{
 	"DELETE /api/telegram/senders/{id}",
 	"POST /api/slack/senders/{id}/allow", "POST /api/slack/senders/{id}/block",
 	"DELETE /api/slack/senders/{id}",
+	"GET " + linkChangesPath,
 }
 
 // ownerRoutes manage the hub's users, which is where an owner differs
@@ -239,7 +240,8 @@ func (server *Server) readsNow(ctx context.Context, who *caller) func(*store.Mes
 // A reaction or a vote still does whatever its target: it carries only
 // ids, an emoji or a choice, no text, and telling which conversation its
 // message is in would take a store read per item. So a member can learn
-// that a private message with some id exists and what it got.
+// that a private message with some id exists and what it got. A link's
+// change reaches the user it names, so their Account page follows it.
 func streamable(who *caller, item bus.Item, reads func(*store.Message) bool) bool {
 	if seesPrivate(who) {
 		return true
@@ -250,6 +252,9 @@ func streamable(who *caller, item bus.Item, reads func(*store.Message) bool) boo
 	case bus.KindMessage, bus.KindSendRetry:
 		payload, ok := item.Payload.(*route.MessagePayload)
 		return ok && reads(&payload.Message)
+	case bus.KindLink:
+		payload, ok := item.Payload.(*route.LinkPayload)
+		return ok && who.user != nil && payload.UserID == who.user.ID
 	}
 	return true
 }

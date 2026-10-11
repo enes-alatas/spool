@@ -656,28 +656,39 @@ func (s *server) waitForMessage(text string) {
 	s.t.Fatalf("message %q never ingested", text)
 }
 
-type tgSender struct {
-	TGUserID int64  `json:"tg_user_id"`
-	Status   string `json:"status"`
+// allowSender makes person an allowed sender the one way there is
+// (ADR-0051): a hub user of their own, named for them, asks for a Telegram
+// link code, and person sends it to bot in a DM and confirms it. It
+// answers with that user's session. The user is a member, so the link
+// makes person the owner of nothing.
+func (s *server) allowSender(tg *fakeTelegram, bot string, person user) string {
+	s.t.Helper()
+	return s.allowSenderAs(tg, bot, person, "member")
 }
 
-// allowSender waits for the pending record the first message creates, then
-// approves it: loops only hear allowlisted humans.
-func (s *server) allowSender(id int64) {
+// allowOwner is allowSender for the operator: their user is an owner, so
+// the link also makes person the owner of every loop with none (ADR-0051).
+func (s *server) allowOwner(tg *fakeTelegram, bot string, person user) string {
 	s.t.Helper()
-	deadline := time.Now().Add(15 * time.Second)
-	for time.Now().Before(deadline) {
-		var senders []tgSender
-		s.mustJSON("GET", "/api/telegram/senders", nil, &senders)
-		for _, sender := range senders {
-			if sender.TGUserID == id {
-				s.mustJSON("POST", fmt.Sprintf("/api/telegram/senders/%d/allow", id), nil, nil)
-				return
-			}
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
-	s.t.Fatalf("sender %d never registered", id)
+	return s.allowSenderAs(tg, bot, person, "owner")
+}
+
+func (s *server) allowSenderAs(tg *fakeTelegram, bot string, person user, role string) string {
+	s.t.Helper()
+	name := fmt.Sprintf("tg%d", person.ID)
+	session := s.signedInAs(name, role)
+	s.confirmLink(tg, bot, person, session, name)
+	return session
+}
+
+// confirmLink sends person's code from session to bot in a DM, and their
+// YES, and waits for the link to name.
+func (s *server) confirmLink(tg *fakeTelegram, bot string, person user, session, name string) {
+	s.t.Helper()
+	tg.dm(bot, person, s.linkCode(session, "telegram"))
+	tg.waitSent(s.t, person.ID, "Telegram account to "+name)
+	tg.dm(bot, person, "YES")
+	tg.waitSent(s.t, person.ID, "now linked to "+name)
 }
 
 // startTelegramFleet brings up two bot-backed loops against a fake Bot API,
@@ -704,11 +715,9 @@ func startTelegramFleetIn(t *testing.T, dataDir string, operator user, overrides
 		srv.createLoop(name, req)
 	}
 
-	// The first group message only registers the operator as pending — an
-	// unknown sender is turned away before the bind. The second one binds
-	// every bot to the group; neither reaches a loop.
-	tg.post(groupChatID, "supergroup", "hello", operator)
-	srv.allowSender(operator.ID)
+	// The operator links on alpha, which makes them an allowed sender; their
+	// group message then binds every bot to the group, and reaches no loop.
+	srv.allowOwner(tg, "alpha", operator)
 	tg.post(groupChatID, "supergroup", "binding", operator)
 	settleBindings()
 	return srv, tg
@@ -1067,8 +1076,7 @@ func TestEveryAllowedSenderHoldsAPrivateConversation(t *testing.T) {
 		"!echo\n")
 	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws})
 	for _, person := range []user{friend, stranger} {
-		tg.dm("beta", person, "knock") // registers them as pending
-		srv.allowSender(person.ID)
+		srv.allowSender(tg, "beta", person)
 	}
 
 	// turn 1: the friend's DM is theirs, and so is the answer

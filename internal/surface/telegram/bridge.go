@@ -75,9 +75,6 @@ type Bridge struct {
 	pollers map[string]*poller // loop ID → poller
 	dedup   *dedupLRU
 
-	pairMu       sync.Mutex
-	pairNotified map[int64]bool // senders already told their pairing code this run
-
 	// loginTold holds, for each owner told that a Claude login was refused,
 	// the loop whose bot told them, so the owner hears once per outage and
 	// the all-clear arrives in the same chat. Only the mirror goroutine
@@ -110,8 +107,7 @@ func NewBridge(st store.Store, publisher *bus.Bus, router *route.Router, log *sl
 		ledger:     &outbound.Ledger{Store: st, Bus: publisher, Log: log, Surface: "telegram"},
 		bindSettle: defaultBindSettle, answerTimeout: DefaultAnswerTimeout,
 		pollers: map[string]*poller{}, dedup: newDedupLRU(dedupSize),
-		pairNotified: map[int64]bool{},
-		loginTold:    map[loginOutage]loginTeller{}}
+		loginTold: map[loginOutage]loginTeller{}}
 }
 
 // SetBindSettle overrides the ingest-election margin, and must be called
@@ -397,9 +393,9 @@ func (br *Bridge) handleMessage(ctx context.Context, bot *poller, message *tgMsg
 	isGroup := message.Chat.Type == "group" || message.Chat.Type == "supergroup"
 
 	// Access gate: only allowlisted senders reach loops or affect state.
-	// Unknown senders get a pending record + pairing code; strangers can't
-	// bind groups, trigger /spool_status, or message loops.
-	if !br.senderAllowed(ctx, bot, message, author, isGroup) {
+	// A stranger may link by code and is answered with nothing else; they
+	// can't bind groups, trigger /spool_status, or message loops.
+	if !br.senderAllowed(ctx, bot, message, author, text) {
 		return
 	}
 
@@ -451,10 +447,12 @@ func (br *Bridge) handleMessage(ctx context.Context, bot *poller, message *tgMsg
 		if !br.dedup.Add(dedupKey(bot.loopID, message.Chat.ID, message.MessageID)) {
 			return
 		}
-		// A DM that is a link code links its sender to a control room user,
-		// and goes no further (#703).
-		if notice, ok := br.router.LinkCode(ctx, text, store.TGPerson(message.From.ID)); ok {
-			bot.enqueueSend(message.Chat.ID, notice)
+		// A DM that is a link code, or the YES confirming one, links its
+		// sender to a control room user, and goes no further (ADR-0051).
+		if notice, ok := br.router.LinkCode(ctx, br.linkAttempt(bot, message, text, true)); ok {
+			if notice != "" {
+				bot.enqueueSend(message.Chat.ID, notice)
+			}
 			return
 		}
 		err := br.router.Ingest(ctx, route.InboundMessage{
@@ -815,7 +813,7 @@ func (br *Bridge) render(ctx context.Context, mp *route.MessagePayload, chatID i
 // a hub message (ADR-0040). Every bot in the chat may hear the same change,
 // and each reports it: the hub keeps one row per reactor, emoji and message,
 // so no bot is elected. A reaction passes the sender gate a message does,
-// but registers nobody: a stranger is given a pairing code when they write.
+// and a stranger's is dropped, as their message is (ADR-0051).
 // A message the hub never held, from a room the loop has no binding for or
 // from before its bot was there, carries nothing.
 func (br *Bridge) handleReaction(ctx context.Context, bot *poller, update *MessageReactionUpdated) {
@@ -1032,70 +1030,45 @@ func (br *Bridge) recordSentPoll(ctx context.Context, bot *poller, req sendReq, 
 // tgMsgAlias keeps handleMessage readable without exporting internals.
 type tgMsgAlias = Message
 
-// senderAllowed enforces the allowlist. Unknown senders are registered as
-// pending with a pairing code; on DM they are told the code once per run.
-func (br *Bridge) senderAllowed(ctx context.Context, bot *poller, message *tgMsgAlias, author string, isGroup bool) bool {
+// senderAllowed enforces the allowlist (ADR-0051). An allowed sender
+// passes. A blocked one is turned away. Anyone else is a stranger, whose
+// DM may be a link code, or the YES that confirms one, and is otherwise
+// answered with nothing: no pending record, no reply, and the text kept
+// nowhere.
+func (br *Bridge) senderAllowed(ctx context.Context, bot *poller, message *tgMsgAlias, author, text string) bool {
 	sender, err := br.store.TGSenders().Get(ctx, message.From.ID)
-	if err != nil && !errors.Is(err, store.ErrNotFound) {
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+	case err != nil:
 		br.log.Error("sender lookup", "err", err)
 		br.logTurnedAway(bot, message, author, "sender lookup failed")
 		return false // fail closed
-	}
-
-	if errors.Is(err, store.ErrNotFound) {
-		via := "dm:" + bot.name
-		if isGroup {
-			via = "group:" + bot.name
-		}
-		now := time.Now().UnixMilli()
-		sender = &store.TGSender{
-			TGUserID:     message.From.ID,
-			Username:     message.From.Username,
-			Display:      strings.TrimSpace(message.From.FirstName),
-			Status:       store.SenderPending,
-			PairCode:     surface.PairCode(),
-			FirstSeenVia: via,
-			CreatedAt:    now,
-			UpdatedAt:    now,
-		}
-		if cerr := br.store.TGSenders().Create(ctx, sender); cerr != nil {
-			if !errors.Is(cerr, store.ErrDuplicate) {
-				br.log.Error("sender create", "err", cerr)
-				br.logTurnedAway(bot, message, author, "sender could not be registered")
-				return false
-			}
-			// another poller registered them first; re-read
-			if sender, err = br.store.TGSenders().Get(ctx, message.From.ID); err != nil {
-				br.logTurnedAway(bot, message, author, "sender registered by another poller but unreadable")
-				return false
-			}
-		} else {
-			br.log.Info("new telegram sender pending approval", "user", author, "id", message.From.ID)
-			br.bus.Publish(bus.Item{Kind: bus.KindAccess, Payload: sender.Frame()})
-		}
-	}
-
-	switch sender.Status {
-	case store.SenderAllowed:
+	case sender.Status == store.SenderAllowed:
 		return true
-	case store.SenderBlocked:
+	case sender.Status == store.SenderBlocked:
 		br.logTurnedAway(bot, message, author, "sender is blocked")
 		return false
-	default: // pending
-		if !isGroup {
-			br.pairMu.Lock()
-			notified := br.pairNotified[message.From.ID]
-			br.pairNotified[message.From.ID] = true
-			br.pairMu.Unlock()
-			if !notified {
-				bot.enqueueSend(message.Chat.ID, fmt.Sprintf(
-					"Spool: you're not authorized yet. Your pairing code is %s — ask the operator to approve you in the Spool control room (Access page).",
-					sender.PairCode))
-			}
-		}
-		br.logTurnedAway(bot, message, author, "sender is pending approval")
-		return false
 	}
+	person := store.TGPerson(message.From.ID)
+	if message.Chat.Type == "private" {
+		if !br.dedup.Add(dedupKey(bot.loopID, message.Chat.ID, message.MessageID)) {
+			return false
+		}
+		if notice, ok := br.router.LinkCode(ctx, br.linkAttempt(bot, message, text, false)); ok {
+			if notice != "" {
+				bot.enqueueSend(message.Chat.ID, notice)
+			}
+			return false
+		}
+	}
+	br.router.Stranger(person)
+	return false
+}
+
+// linkAttempt is a DM to bot as the router's link check takes it.
+func (br *Bridge) linkAttempt(bot *poller, message *tgMsgAlias, text string, allowed bool) route.LinkAttempt {
+	return route.LinkAttempt{Text: text, Person: store.TGPerson(message.From.ID), LoopID: bot.loopID,
+		Username: message.From.Username, Display: strings.TrimSpace(message.From.FirstName), Allowed: allowed}
 }
 
 // logTurnedAway records an inbound message that reached a loop's bot and was

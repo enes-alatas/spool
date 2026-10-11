@@ -4,17 +4,18 @@ package itest
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"testing"
 )
 
-// linkCode asks the control room for a link code as the user session
-// belongs to.
-func (s *server) linkCode(session string) string {
+// linkCode asks the control room for a link code on surface as the user
+// session belongs to.
+func (s *server) linkCode(session, surface string) string {
 	s.t.Helper()
-	resp, body := s.asCookie("POST", "/api/me/links/code", session, nil)
+	resp, body := s.asCookie("POST", "/api/me/links/code", session, map[string]string{"surface": surface})
 	if resp.StatusCode != http.StatusCreated {
 		s.t.Fatalf("link code = %d %s", resp.StatusCode, body)
 	}
@@ -39,22 +40,20 @@ func (s *server) memberActivity(session string) string {
 }
 
 // A user links their own Telegram identity by sending a code from the
-// control room to any loop's bot in a DM, and then reads the private
-// conversations that are theirs (#703, ADR-0050): their own dm:<name>,
-// and what a loop they own said with them on owner_dm, never anyone
-// else's. The code is not a message to the loop, links once, and a
-// removed link reads nothing.
+// control room to any loop's bot in a DM and confirming it there, and then
+// reads the private conversations that are theirs (#703, ADR-0050,
+// ADR-0051): their own dm:<name>, and what a loop they own said with them
+// on owner_dm, never anyone else's. Neither DM is a message to the loop,
+// a code links once, and a removed link reads nothing.
 func TestALinkedMemberReadsTheirOwnPrivateConversations(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 8180, First: "Operator", Username: "operator"}
 	friend := user{ID: 8181, First: "Friend", Username: "friend"}
 	other := user{ID: 8182, First: "Other", Username: "other"}
 	srv, tg := startTelegramFleet(t, operator, nil)
-	for _, person := range []user{friend, other} {
-		tg.dm("beta", person, "knock") // registers them as pending
-		srv.allowSender(person.ID)
-	}
-	for person, text := range map[user]string{friend: "friend's secret", other: "other's secret", operator: "owner's secret"} {
+	noa := srv.signedInAs("noa", "member")
+	srv.confirmLink(tg, "beta", other, noa, "noa")
+	for person, text := range map[user]string{other: "other's secret", operator: "owner's secret"} {
 		tg.dm("alpha", person, text)
 		srv.waitForMessage(text)
 	}
@@ -63,8 +62,10 @@ func TestALinkedMemberReadsTheirOwnPrivateConversations(t *testing.T) {
 		t.Fatalf("an unlinked member reads private conversations: %s", got)
 	}
 
-	code := srv.linkCode(mia)
+	code := srv.linkCode(mia, "telegram")
 	tg.dm("alpha", friend, strings.ToUpper(code))
+	tg.waitSent(t, friend.ID, "Telegram account to mia")
+	tg.dm("alpha", friend, "yes")
 	tg.waitSent(t, friend.ID, "now linked to mia")
 	var links []struct {
 		Surface  string `json:"surface"`
@@ -76,6 +77,8 @@ func TestALinkedMemberReadsTheirOwnPrivateConversations(t *testing.T) {
 		links[0].ID != strconv.FormatInt(friend.ID, 10) || links[0].Username != "friend" {
 		t.Fatalf("mia's links = %d %s; want friend on telegram", resp.StatusCode, body)
 	}
+	tg.dm("alpha", friend, "friend's secret")
+	srv.waitForMessage("friend's secret")
 	got := srv.memberActivity(mia)
 	if !strings.Contains(got, "friend's secret") {
 		t.Errorf("a member linked as friend does not read friend's DM: %s", got)
@@ -85,18 +88,24 @@ func TestALinkedMemberReadsTheirOwnPrivateConversations(t *testing.T) {
 			t.Errorf("a member linked as friend reads %q: %s", other, got)
 		}
 	}
-	if _, body := srv.do("GET", "/api/activity", nil); strings.Contains(strings.ToLower(string(body)), code) {
-		t.Errorf("the link code was stored as a message: %s", body)
+	if _, body := srv.do("GET", "/api/activity", nil); strings.Contains(strings.ToLower(string(body)), code) ||
+		strings.Contains(string(body), `"yes"`) {
+		t.Errorf("the link code or its YES was stored as a message: %s", body)
 	}
 
 	// A code links once, and nobody else.
 	tg.dm("alpha", other, code)
 	tg.waitSent(t, other.ID, "unknown, already used or expired")
 
-	// A new code sent from the owner's account replaces mia's Telegram
-	// link: she owns alpha now, and is no longer friend.
-	tg.dm("alpha", operator, srv.linkCode(mia))
-	tg.waitSent(t, operator.ID, "now linked to mia")
+	// The owner's account, unlinked from its own user and so a stranger
+	// again, confirms a code from mia: her Telegram link moves to it. She
+	// owns alpha now, as the first person a link allows does, and is no
+	// longer friend.
+	ownerSession, _ := srv.signIn(fmt.Sprintf("tg%d", operator.ID), fmt.Sprintf("tg%d's own password", operator.ID))
+	if resp, body := srv.asCookie("DELETE", "/api/me/links/telegram", ownerSession, nil); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("the owner's user removing its link = %d %s", resp.StatusCode, body)
+	}
+	srv.confirmLink(tg, "alpha", operator, mia, "mia")
 	got = srv.memberActivity(mia)
 	if !strings.Contains(got, "owner's secret") {
 		t.Errorf("a member linked as alpha's owner does not read its owner_dm: %s", got)
@@ -106,9 +115,6 @@ func TestALinkedMemberReadsTheirOwnPrivateConversations(t *testing.T) {
 	}
 	// A loop's next owner reads what it and they say privately from then
 	// on, never what it said with the owner before them.
-	noa := srv.signedInAs("noa", "member")
-	tg.dm("alpha", other, srv.linkCode(noa))
-	tg.waitSent(t, other.ID, "now linked to noa")
 	srv.mustJSON("PUT", "/api/loops/alpha/owner", map[string]any{"tg_user_id": other.ID}, nil)
 	tg.dm("alpha", other, "the new owner's secret")
 	srv.waitForMessage("the new owner's secret")
@@ -123,7 +129,7 @@ func TestALinkedMemberReadsTheirOwnPrivateConversations(t *testing.T) {
 		t.Errorf("the previous owner lost their own owner_dm, or reads the new one's: %s", got)
 	}
 
-	if resp, _ := srv.asCookie("POST", "/api/me/links/code", "", nil); resp.StatusCode != http.StatusUnauthorized {
+	if resp, _ := srv.asCookie("POST", "/api/me/links/code", "", map[string]string{"surface": "telegram"}); resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("a link code with no session = %d; want 401", resp.StatusCode)
 	}
 
@@ -138,21 +144,23 @@ func TestALinkedMemberReadsTheirOwnPrivateConversations(t *testing.T) {
 	}
 }
 
-// The same link works on Slack: a code sent to a loop's app in a DM links
-// the sender, who then reads their own DMs (#703).
+// The same link works on Slack: a code sent to a loop's app in a DM, and
+// the YES after it, link the sender, who then reads their own DMs (#703,
+// ADR-0051). Both answers come in the DM the code came in.
 func TestASlackLinkReadsItsOwnDMs(t *testing.T) {
 	t.Parallel()
 	srv, slack := startSlackFleet(t)
-	slack.pushMessage(t, slackAppToken, "channel", slackChannel, "U0ALICE", "hi all", "1727600000.000500")
-	srv.allowSlackSender("U0ALICE")
-	slack.pushMessage(t, slackAppToken, "im", "D0ALICE", "U0ALICE", "alice's secret", "1727600000.000501")
-	srv.waitForMessage("alice's secret")
-
 	mia := srv.signedInAs("mia", "member")
-	slack.pushMessage(t, slackAppToken, "im", "D0ALICE", "U0ALICE", srv.linkCode(mia), "1727600000.000502")
+	slack.pushMessage(t, slackAppToken, "im", "D0ALICE", "U0ALICE", srv.linkCode(mia, "slack"), "1727600000.000500")
+	if post := slack.waitPost(t, "Slack account to mia"); post.Channel != "D0ALICE" {
+		t.Fatalf("the question was asked in %q; want the DM the code came in", post.Channel)
+	}
+	slack.pushMessage(t, slackAppToken, "im", "D0ALICE", "U0ALICE", "YES", "1727600000.000501")
 	if post := slack.waitPost(t, "now linked to mia"); post.Channel != "D0ALICE" {
 		t.Fatalf("the link was answered in %q; want the DM it came in", post.Channel)
 	}
+	slack.pushMessage(t, slackAppToken, "im", "D0ALICE", "U0ALICE", "alice's secret", "1727600000.000502")
+	srv.waitForMessage("alice's secret")
 	if got := srv.memberActivity(mia); !strings.Contains(got, "alice's secret") {
 		t.Errorf("a member linked as alice does not read her DM: %s", got)
 	}

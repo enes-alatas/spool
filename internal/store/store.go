@@ -766,6 +766,11 @@ type LoopStore interface {
 	// interleave and the later one silently reverts the earlier one's
 	// column (#161). ErrNotFound if the loop is gone.
 	SetOwner(ctx context.Context, id string, tgUserID, dmChatID, updatedAt int64) error
+	// AdoptOwner makes tgUserID the owner of every loop that has none and is
+	// not archived: the first person allowed, by an admin or by an owner's
+	// link, owns the fleet by default (#73, ADR-0051), and can be replaced
+	// per loop.
+	AdoptOwner(ctx context.Context, tgUserID, updatedAt int64) error
 	// SetOwnerDMChat records the private chat the owner has written from,
 	// which is the only way a bot learns an address it cannot open itself.
 	SetOwnerDMChat(ctx context.Context, id string, chatID, updatedAt int64) error
@@ -866,8 +871,9 @@ type UserStore interface {
 	// SetRole changes a user's role. ErrNotFound for an unknown user, and
 	// ErrLastOwner when it would demote the hub's only owner.
 	SetRole(ctx context.Context, id, role string) error
-	// Delete removes a user and every session they hold. ErrNotFound for
-	// an unknown user, and ErrLastOwner for the hub's only owner.
+	// Delete removes a user, every session they hold, and their links with
+	// the senders those links allowed (ADR-0051). ErrNotFound for an unknown
+	// user, and ErrLastOwner for the hub's only owner.
 	Delete(ctx context.Context, id string) error
 }
 
@@ -1165,7 +1171,8 @@ type SettingsStore interface {
 }
 
 // TGSender is a Telegram account known to Spool. Only 'allowed' senders can
-// reach loops; everyone else is dropped (with a pairing code offered on DM).
+// reach loops; everyone else is dropped. A link makes a person one
+// (ADR-0051); PairCode is a pending sender's, from before it.
 type TGSender struct {
 	TGUserID     int64  `json:"tg_user_id"`
 	Username     string `json:"username"`
@@ -1186,8 +1193,8 @@ type TGSenderStore interface {
 	Delete(ctx context.Context, tgUserID int64) error
 }
 
-// SlackSender is a Slack user known to Spool: the pairing allowlist that
-// TGSender is for Telegram (operator, 2026-09-22 on #230). Only 'allowed'
+// SlackSender is a Slack user known to Spool: the allowlist that TGSender
+// is for Telegram (operator, 2026-09-22 on #230). Only 'allowed'
 // senders reach loops; workspace membership alone admits nobody.
 type SlackSender struct {
 	SlackUserID  string `json:"slack_user_id"`
@@ -1897,9 +1904,10 @@ type PrivateChatStore interface {
 
 // UserLink is a hub user's link to the person they are on a surface
 // (#703): proved by the user sending a code from the control room to a
-// loop's bot or app in a DM. A user has at most one per surface, and a
-// person is linked to at most one user. What a member reads of loops'
-// private conversations follows from their links.
+// loop's bot or app in a DM, and confirmed by the person (ADR-0051). A
+// user has at most one per surface, and a person is linked to at most one
+// user. What a member reads of loops' private conversations follows from
+// their links, and a link is what makes its person an allowed sender.
 type UserLink struct {
 	UserID string
 	// Surface is the surface Person belongs to.
@@ -1909,22 +1917,70 @@ type UserLink struct {
 	CreatedAt int64
 }
 
+// LinkConfirmation is a link a person is asked to confirm: a code its user
+// minted reached them, and nothing is linked until they reply YES
+// (ADR-0051). A person holds at most one.
+type LinkConfirmation struct {
+	Person string
+	UserID string
+	// LoopID is the loop whose bot or app the code reached.
+	LoopID string
+	// Username and Display are how the surface named the person, and
+	// TeamID is their Slack workspace, kept for the sender a link allows.
+	Username  string
+	Display   string
+	TeamID    string
+	ExpiresAt int64
+}
+
+// LinkChange is one link made or removed, on the hub's append-only record
+// of them for admins (ADR-0051). It names the user, and the loop whose bot
+// or app a link's code reached, as they were, so a row outlives both.
+type LinkChange struct {
+	ID       int64  `json:"id"`
+	At       int64  `json:"at"`
+	Action   string `json:"action"`
+	User     string `json:"user"`
+	Surface  string `json:"surface"`
+	Person   string `json:"person"`
+	LoopName string `json:"loop,omitempty"`
+}
+
+// The changes the record of links holds.
+const (
+	LinkChangeLink   = "link"
+	LinkChangeUnlink = "unlink"
+)
+
 type UserLinkStore interface {
-	// SetCode records the SHA-256 of a link code a user asked for, good
-	// until expiresAt, in place of any code they asked for before. Times
-	// here are Unix milliseconds.
-	SetCode(ctx context.Context, userID, codeHash string, expiresAt int64) error
-	// Redeem spends the code codeHash names and links its user to person,
-	// in place of the user's link on person's surface, if any. It is
-	// ErrNotFound for a code that does not exist or expired before now,
-	// and ErrDuplicate when person is linked to another user; the code is
-	// spent either way.
-	Redeem(ctx context.Context, codeHash, person string, now int64) (*UserLink, error)
+	// SetCode records the SHA-256 of a link code a user asked for, to link
+	// a person on surface, good until expiresAt, in place of any code they
+	// asked for before. Times here are Unix milliseconds.
+	SetCode(ctx context.Context, userID, surface, codeHash string, expiresAt int64) error
+	// Claim spends the code codeHash names and asks confirmation.Person to
+	// confirm a link to the code's user, in place of anything they were
+	// asked before, and fills in confirmation.UserID. It is ErrNotFound for
+	// a code that does not exist, expired before now or was minted for
+	// another surface, and ErrDuplicate when the person is linked to
+	// another user; the code is spent either way.
+	Claim(ctx context.Context, codeHash string, confirmation *LinkConfirmation, now int64) error
+	// Confirm links person to the user they were asked to confirm, in
+	// place of that user's link on the person's surface, and makes them an
+	// allowed sender there. It is ErrNotFound when the person holds no
+	// confirmation open at now, and ErrDuplicate when they were linked to
+	// another user meanwhile; the confirmation is spent either way.
+	Confirm(ctx context.Context, person string, now int64) (*UserLink, error)
+	// Waiting is the user's confirmations open at now.
+	Waiting(ctx context.Context, userID string, now int64) ([]*LinkConfirmation, error)
 	// List is the user's links, by surface.
 	List(ctx context.Context, userID string) ([]*UserLink, error)
-	// Delete removes the user's link on surface; ErrNotFound if they have
-	// none there.
-	Delete(ctx context.Context, userID, surface string) error
+	// Delete removes the user's link on surface, and the person's sender
+	// with it, so they are a stranger again, and answers with the link it
+	// removed; ErrNotFound if the user has none there.
+	Delete(ctx context.Context, userID, surface string, now int64) (*UserLink, error)
+	// Changes is the record of links made and removed, newest first: at
+	// most limit of them when limit is above 0.
+	Changes(ctx context.Context, limit int) ([]*LinkChange, error)
 }
 
 // OwnerPerson is the loop's owner on its own surface, as TGPerson or

@@ -10,55 +10,43 @@ import (
 	"time"
 )
 
-// A person the app turns away is told why, once, in the DM they wrote in
-// (#230): a sender Spool has not allowed gets their pairing code. A pending
-// sender in the channel gets no answer there, since the code is theirs to
-// hand the operator. An allowed sender is turned away from no loop's DM
-// (ADR-0049), so nothing tells them a loop is not theirs.
-func TestSlackTurnedAwaySenderIsToldWhy(t *testing.T) {
+// A sender Spool does not allow is told nothing, in a DM or the channel,
+// and registered nowhere (ADR-0051): a reply to a stranger is spam, and
+// tells them the app is there. An allowed sender is turned away from no
+// loop's DM (ADR-0049), so nothing tells them a loop is not theirs.
+func TestSlackStrangerIsToldNothing(t *testing.T) {
 	t.Parallel()
 	srv, slack := startSlackFleet(t)
 	const stranger, strangerDM = "U0STRANGER", "D0STRANGER"
 	slack.pushMessage(t, slackAppToken, "channel", slackChannel, stranger, "anyone?", "1727600000.000100")
 	slack.pushMessage(t, slackAppToken, "im", strangerDM, stranger, "let me in", "1727600000.000101")
-	slack.pushMessage(t, slackAppToken, "im", strangerDM, stranger, "please", "1727600000.000102")
-
-	const pairText = "Your pairing code is"
-	told := slack.waitPost(t, pairText)
-	if told.Token != slackBotToken || told.Channel != strangerDM || !strings.Contains(told.Text, slackPairCode(srv, stranger)) {
-		t.Fatalf("the stranger was told %+v, want their code from terra's app in their DM", told)
-	}
+	slack.pushMessage(t, slackAppToken, "im", strangerDM, stranger, "link-aaaaaaaaaa", "1727600000.000102")
 
 	operatorDM := "D" + slackOperator
 	slack.pushMessage(t, slackAppToken, "im", operatorDM, slackOperator, "hi terra", "1727600000.000110")
 	srv.waitForMessage("hi terra")
 
-	// each notice is said once; the second message of each pair, if it
-	// were told again, is paced a second behind the first
+	// a notice is paced a second behind the message before it
 	time.Sleep(2500 * time.Millisecond)
-	if n := countPosts(slack, pairText); n != 1 {
-		t.Errorf("%q was posted %d times, want once: %s", pairText, n, dump(slack.postsTaken()))
+	for _, post := range slack.postsTaken() {
+		if post.Channel == strangerDM || strings.Contains(post.Text, "direct messages only from") {
+			t.Errorf("a post went to a stranger, or turned an allowed sender away: %+v", post)
+		}
 	}
-	if n := countPosts(slack, "direct messages only from"); n != 0 {
-		t.Errorf("an allowed sender was turned away from a loop's DM: %s", dump(slack.postsTaken()))
-	}
-}
-
-// slackPairCode is the pairing code the hub gave a Slack sender.
-func slackPairCode(srv *server, userID string) string {
-	srv.t.Helper()
 	var senders []struct {
 		SlackUserID string `json:"slack_user_id"`
-		PairCode    string `json:"pair_code"`
 	}
 	srv.mustJSON("GET", "/api/slack/senders", nil, &senders)
 	for _, sender := range senders {
-		if sender.SlackUserID == userID && sender.PairCode != "" {
-			return sender.PairCode
+		if sender.SlackUserID == stranger {
+			t.Errorf("the stranger was registered: %s", dump(senders))
 		}
 	}
-	srv.t.Fatalf("no pairing code for %s: %s", userID, dump(senders))
-	return ""
+	for _, text := range []string{"anyone?", "let me in", "link-aaaaaaaaaa"} {
+		if got := srv.activityWith(text); len(got) != 0 {
+			t.Errorf("a stranger's %q was stored: %s", text, dump(got))
+		}
+	}
 }
 
 // countPosts is how many posts any app has made containing text.

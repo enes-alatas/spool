@@ -3,6 +3,7 @@ package slack
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 	"github.com/enes-alatas/spool/internal/route"
 	"github.com/enes-alatas/spool/internal/store"
 	"github.com/enes-alatas/spool/internal/store/sqlite"
+	"github.com/enes-alatas/spool/internal/users"
 )
 
 // deliveries records what the router hands each loop.
@@ -185,24 +187,45 @@ func TestAppHearsTheChannelItBound(t *testing.T) {
 	}
 }
 
-// A sender Spool has not seen reaches nobody, and is registered as pending
-// under the name Slack gives, for the operator to allow.
-func TestUnknownSenderIsRegisteredPending(t *testing.T) {
+// A sender Spool does not allow reaches nobody and is registered nowhere,
+// in a channel or a DM (ADR-0051). A link code they send the app in a DM,
+// and their YES, make them an allowed sender, under the name Slack gives.
+func TestAStrangerIsRegisteredOnlyByALink(t *testing.T) {
 	adapter, db, got := inboundFixture(t)
 	ctx := context.Background()
+	imEvent := func(text, ts string) json.RawMessage {
+		payload, _ := json.Marshal(map[string]any{"team_id": "T0ACME", "event": map[string]any{
+			"type": "message", "channel_type": "im", "channel": "D0BOB", "user": "U0BOB", "text": text, "ts": ts}})
+		return payload
+	}
 	adapter.ingest(ctx, &link{loopID: "loop_terra"}, channelEvent("U0BOB", "<@U0terra> hi", "1.1"))
-	sender, err := db.SlackSenders().Get(ctx, "U0BOB")
+	adapter.ingest(ctx, &link{loopID: "loop_terra"}, imEvent("hello?", "1.2"))
+	if _, err := db.SlackSenders().Get(ctx, "U0BOB"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("a stranger was registered: %v", err)
+	}
+	if msgs, _ := db.Messages().List(ctx, 10); len(msgs) != 0 || got.count("loop_terra") != 0 {
+		t.Errorf("a stranger's message was stored or delivered")
+	}
+	if loopRecord, _ := db.Loops().Get(ctx, "loop_terra"); loopRecord.SlackChannelID != "" {
+		t.Errorf("a stranger bound the app to %q", loopRecord.SlackChannelID)
+	}
+
+	if err := db.Users().Create(ctx, &store.User{ID: "u-bea", Name: "bea", Role: store.RoleMember,
+		PasswordHash: "x", CreatedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	code, _, err := (&users.Users{Store: db}).NewLinkCode(ctx, "u-bea", store.SurfaceSlack)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sender.Status != store.SenderPending || sender.Username != "bob" || sender.Display != "Bob" ||
-		sender.TeamID != "T0ACME" || sender.PairCode == "" || sender.FirstSeenVia != "group:terra" {
-		t.Errorf("registered %+v", sender)
+	adapter.ingest(ctx, &link{loopID: "loop_terra"}, imEvent(code, "1.3"))
+	adapter.ingest(ctx, &link{loopID: "loop_terra"}, imEvent("YES", "1.4"))
+	sender, err := db.SlackSenders().Get(ctx, "U0BOB")
+	if err != nil || sender.Status != store.SenderAllowed || sender.Username != "bob" || sender.Display != "Bob" ||
+		sender.TeamID != "T0ACME" {
+		t.Fatalf("after the code and YES, the sender is %+v, %v", sender, err)
 	}
-	if msgs, _ := db.Messages().List(ctx, 10); len(msgs) != 0 || got.count("loop_terra") != 0 {
-		t.Errorf("a pending sender's message was stored or delivered")
-	}
-	if loopRecord, _ := db.Loops().Get(ctx, "loop_terra"); loopRecord.SlackChannelID != "" {
-		t.Errorf("a pending sender bound the app to %q", loopRecord.SlackChannelID)
+	if msgs, _ := db.Messages().List(ctx, 10); len(msgs) != 0 {
+		t.Errorf("the code or the YES was stored as a message: %d", len(msgs))
 	}
 }
