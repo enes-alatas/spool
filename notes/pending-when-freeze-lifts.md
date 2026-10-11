@@ -395,3 +395,6 @@ Iris proposed splitting #704; taken. #704 narrowed to the link flow (Settings â†
 
 ## 2026-10-11 10:35 UTC
 Elliot filed #721 (readsNow store reads under bus.mu, improvement low) and #722 (role change not applied to open streams, security low) from the #709 threat-model pass. Terra order now: #709 merge, #718, #720, #715, #719, #722, #630, #721. No group ping; recorded on the issues.
+
+## 2026-10-11 10:40 UTC
+Elliot: #721 and #722 share the per-stream cache; moved #721 next to #722. Terra order: #709 merge, #718, #720, #715, #719, #722, #721, #630. One PR for both is Terra's call.
