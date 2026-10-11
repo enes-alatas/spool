@@ -404,3 +404,6 @@ Enes (DM): make the #100 link code the way for everybody incl. admins/owners, re
 
 ## 2026-10-11 11:28 UTC
 Enes asked for the exact user story first. Sent owner and member walk-throughs by DM (steps that change: link from Settings → Account, owner picker chooses users, member links after account creation; edges: silent before linking, one link per surface, block/remove, no chat-only senders). Awaiting pushback before filing.
+
+## 2026-10-11 11:35 UTC
+Enes: all sounds good; run it over Elliot before filing; report disagreements; onboarding must stay consistently easy. Filed question #728 with both stories and four posture questions for Elliot; pinged him in the group; told Enes. Epic to carry a README+demo child. Numbers 724-727 exist (unseen; check next tick).
