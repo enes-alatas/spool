@@ -359,6 +359,11 @@ jobs:
       - name: the other-half check still refuses what it claims to
         if: needs.changes.outputs.workflows == 'true'
         run: bash scripts/other-half-test.sh
+      # The advisory scan runs on a schedule, so this is what a PR can see
+      # of its filing step: the tools' real output, a stubbed `gh` (#737).
+      - name: the advisory scan still files what it claims to
+        if: needs.changes.outputs.workflows == 'true'
+        run: bash scripts/advisories-test.sh
       # Restore is run once in anger, after the data is already gone, so a
       # backup that silently stopped copying volumes or started copying
       # hub.key into the data file would surface then and no sooner (#708).

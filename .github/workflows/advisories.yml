@@ -1,0 +1,83 @@
+# The daily advisory scan (#737). CI runs govulncheck only on a PR that
+# touches Go, and nothing ran npm audit, so an advisory published against
+# code nobody is changing went unseen until an unrelated PR turned red on it
+# (#665). This scans main every day and files each new advisory as a chore
+# issue (scripts/advisories.sh), and the routine in docs/QUALITY.md turns
+# the issue into a PR the same day.
+#
+# What it files: an advisory govulncheck finds Spool's code calling (the
+# Go standard library included, which Dependabot does not watch), and every
+# advisory against a runtime dependency of the control room. Dev tooling is
+# listed in the run's summary and left to Dependabot alerts.
+name: advisories
+
+on:
+  schedule:
+    - cron: '17 5 * * *'
+  # Runnable from a branch, which is how the scan and the filing are proved
+  # (CONVENTIONS.md, "Proving an event-driven workflow"). A dispatch is a dry
+  # run unless told otherwise: it prints the issues it would file.
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: print the issues it would file, and file nothing
+        type: boolean
+        default: true
+
+# One job, so one grant. `issues: write` is for the filing step; the steps
+# before it run pinned tools that read the tree and execute none of it
+# (govulncheck analyses source, npm audit sends the lockfile's names and
+# versions), on main or on a branch someone with write access dispatched.
+permissions:
+  contents: read
+  issues: write
+
+# Two runs filing at once could each miss the other's issue.
+concurrency:
+  group: advisories
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      # JSON exits 0 whatever it finds; a scan that could not run leaves a
+      # file the filing step refuses, and the run goes red.
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+          govulncheck -format json ./... > "$RUNNER_TEMP/govulncheck.json"
+
+      # npm audit exits 1 on findings and on a failed audit alike, so the
+      # exit code is ignored here and the report is judged by the filing step.
+      - name: npm audit
+        working-directory: web
+        run: |
+          npm audit --omit=dev --json > "$RUNNER_TEMP/npm-audit.json" || true
+          {
+            echo '### npm audit, dev tooling included (listed, not filed)'
+            echo '```'
+            npm audit || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: file each new advisory as a chore issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          args=(--go "$RUNNER_TEMP/govulncheck.json" --npm "$RUNNER_TEMP/npm-audit.json")
+          if [ "$DRY_RUN" = true ]; then
+            args+=(--dry-run)
+          fi
+          bash scripts/advisories.sh "${args[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
