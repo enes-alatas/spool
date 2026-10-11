@@ -881,6 +881,47 @@ func seedLinks(ctx context.Context, db store.Store) error {
 	return nil
 }
 
+// The gardener's private conversations (#723): with rana, its owner, on
+// owner_dm, and with sam on dm:sam_example. An admin's page shows both
+// tabs, and sam's, through the link seedLinks makes, only their own.
+func seedPrivate(ctx context.Context, db store.Store, ids map[string]string) error {
+	gardener := ids["gardener"]
+	messages := []struct {
+		conversation string
+		person       int64
+		author       string
+		fromLoop     bool
+		text         string
+		at           time.Duration
+	}{
+		{store.ConversationOwnerDM, 700000001, "rana_example", false, "Is the handbook freeze still Friday?", -3*time.Hour - 10*time.Minute},
+		{store.ConversationOwnerDM, 700000001, "gardener", true, "Friday, unless the release slips. I'll say here first if it does.", -3 * time.Hour},
+		{"dm:sam_example", 700000004, "sam_example", false, "Hey, the install page still says make setup. Can you fix it?", -50 * time.Minute},
+		{"dm:sam_example", 700000004, "sam_example", false, "Could you also check the quickstart? I think it has the same line.", -36 * time.Minute},
+		{"dm:sam_example", 700000004, "gardener", true, "Done: both say `make build` now, live after the next deploy.", -22 * time.Minute},
+	}
+	for i, message := range messages {
+		msg := &store.Message{
+			TS:                 ms(message.at),
+			Origin:             store.OriginTelegramDM,
+			Author:             message.author,
+			Text:               message.text,
+			TGChatID:           message.person,
+			TGMessageID:        int64(5100 + i),
+			Conversation:       message.conversation,
+			ConversationLoopID: gardener,
+			DMPerson:           store.TGPerson(message.person),
+		}
+		if message.fromLoop {
+			msg.Origin, msg.FromLoopID = store.OriginLoop, gardener
+		}
+		if err := db.Messages().Insert(ctx, msg); err != nil {
+			return fmt.Errorf("private message: %w", err)
+		}
+	}
+	return nil
+}
+
 // Two fleet rules, because one rule does not show that they are a list.
 func seedRules(ctx context.Context, db store.Store) error {
 	rules := []struct {
