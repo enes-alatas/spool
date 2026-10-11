@@ -419,3 +419,6 @@ Enes: keep grandfathered senders (only owners exist); #715 first; asked whose #7
 
 ## 2026-10-11 12:50 UTC
 Elliot filed #737 (daily govulncheck + npm audit scan filing chore issues; npm audit in PR CI on lockfile change; QUALITY.md routine). Asked to split the golangci-lint pin out as its own chore. Open PRs: #736 (Elliot, #711), #735 (Iris, #723, waits #734), #734 (Terra, #720), #726 (Dependabot), #453 parked. #727 merged? check next tick.
+
+## 2026-10-11 15:00 UTC
+Quiet sweep. Merged since noon: #725 (#712), #727 (#704), #734 (#720). Open PRs: #741 (Terra, #715), #735 (Iris, #723), #736/#739/#740 (Elliot: #711, #738, #737; three at once, Quinn holds five). #100 left: #723 only. Next for Terra: #730. No pings.
