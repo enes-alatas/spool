@@ -847,6 +847,43 @@ func (table messages) ListConversation(ctx context.Context, kind, loopID string,
 		ORDER BY id DESC LIMIT ?`, kind, loopID, limit)
 }
 
+// ListDM reads by person, not by conversation, so the rows written under a
+// person's older name come back with the newer ones.
+func (table messages) ListDM(ctx context.Context, loopID, person string, limit int) ([]*store.Message, error) {
+	return table.query(ctx, `SELECT `+messageCols+` FROM messages
+		WHERE conversation_loop_id=? AND dm_person=? AND substr(conversation, 1, 3)=?
+		ORDER BY id DESC LIMIT ?`, loopID, person, store.DMDestinationPrefix, limit)
+}
+
+// ListPrivateThreads groups the loop's rows that record a person, then adds
+// the owner_dm rows older than #703, which record nobody.
+func (table messages) ListPrivateThreads(ctx context.Context, loopID string) ([]store.PrivateThread, error) {
+	rows, err := table.db.QueryContext(ctx, `
+		SELECT CASE WHEN conversation=? THEN ? ELSE ? END AS kind, dm_person, MAX(ts) AS last_at
+		FROM messages WHERE conversation_loop_id=? AND dm_person > ''
+		GROUP BY kind, dm_person
+		UNION ALL
+		SELECT ?, '', MAX(ts) FROM messages
+		WHERE conversation=? AND conversation_loop_id=? AND dm_person=''
+		HAVING COUNT(*) > 0
+		ORDER BY last_at DESC`,
+		store.ConversationOwnerDM, store.ConversationOwnerDM, store.DMDestinationPrefix, loopID,
+		store.ConversationOwnerDM, store.ConversationOwnerDM, loopID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var threads []store.PrivateThread
+	for rows.Next() {
+		var thread store.PrivateThread
+		if err := rows.Scan(&thread.Conversation, &thread.DMPerson, &thread.LastAt); err != nil {
+			return nil, err
+		}
+		threads = append(threads, thread)
+	}
+	return threads, rows.Err()
+}
+
 // ListChannel walks the fleet-wide conversation index newest first and keeps
 // the channel's rows: a channel's rows carry no loop key, as the fleet
 // channel's never did.

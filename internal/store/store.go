@@ -944,6 +944,15 @@ type MessageStore interface {
 	// rather than any loop's (ADR-0032), so its rows carry no loop key and
 	// it is asked for with loopID ""; ListChannel reads one channel.
 	ListConversation(ctx context.Context, kind, loopID string, limit int) ([]*Message, error)
+	// ListDM returns a loop's dm:<name> messages with person, newest first,
+	// under every name the person had: the name is what changes, the
+	// person is not (ADR-0049).
+	ListDM(ctx context.Context, loopID, person string, limit int) ([]*Message, error)
+	// ListPrivateThreads returns who a loop's private messages are with,
+	// newest first: one thread per person for owner_dm, and one for their
+	// dm:<name> messages under any name. An owner_dm older than #703
+	// records nobody, and those make one thread with DMPerson "".
+	ListPrivateThreads(ctx context.Context, loopID string) ([]PrivateThread, error)
 	// ListChannel returns the messages said in one channel, newest first:
 	// the fleet channel's under FleetChannel, and no other's (ADR-0038).
 	ListChannel(ctx context.Context, name string, limit int) ([]*Message, error)
@@ -1298,6 +1307,15 @@ const ChannelDestinationPrefix = "channel:"
 // conversation as stored, keyed to the loop by ConversationLoopID and to the
 // person by DMPerson.
 const DMDestinationPrefix = "dm:"
+
+// PrivateThread is one person's share of a loop's private messages:
+// Conversation is ConversationOwnerDM, or DMDestinationPrefix standing for
+// their dm:<name> under every name, and LastAt is the newest message's TS.
+type PrivateThread struct {
+	Conversation string
+	DMPerson     string
+	LastAt       int64
+}
 
 // IsDM reports whether a conversation or destination is a private one with
 // a person other than the owner.
