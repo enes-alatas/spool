@@ -103,7 +103,7 @@ jobs:
   j:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - run: true
 YML
 
@@ -121,7 +121,7 @@ jobs:
   j:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 YML
 
 check checkout-with-contents clean <<'YML'
@@ -135,7 +135,7 @@ jobs:
   j:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 YML
 
 # No block at all is the default grant, which includes contents: read. A lint
@@ -148,7 +148,7 @@ jobs:
   j:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 YML
 
 # A job-level block overrides the workflow-level one, in both directions:
@@ -165,7 +165,7 @@ jobs:
     permissions:
       issues: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 YML
 
 # ...and a job that grants it is fine under a workflow block that does not.
@@ -182,7 +182,7 @@ jobs:
       contents: read
       issues: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 YML
 
 # The grant is per job: a job that never checks out is not affected by its
@@ -270,7 +270,7 @@ jobs:
     j:
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 YML
 
 printf 'name: x\non:\n\tissues:\n\t\ttypes: [opened]\njobs:\n\tj:\n\t\truns-on: ubuntu-latest\n' \
@@ -435,6 +435,20 @@ fi
 # ...and the exemptions are real: `ci` reports itself on the PR, and a
 # sentinel watching itself writes a loop into its own noticeboard. Neither
 # appears in the list, and the clean run below proves neither is demanded.
+
+# Rule 6 (#707) — an action that a moved tag could swap out from under a job.
+pinned() {
+  printf 'name: x\non:\n  push:\njobs:\n  j:\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n    steps:\n      - uses: %s\n' "$1"
+}
+pinned 'actions/checkout@v4' | check action-by-tag '#707'
+pinned 'actions/checkout@main' | check action-by-branch '#707'
+pinned 'actions/checkout@11d5960a' | check action-by-short-sha '#707'
+pinned 'actions/checkout' | check action-with-no-ref '#707'
+pinned 'docker://alpine:3.20' | check docker-by-tag '#707'
+pinned 'actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0' | check action-by-sha clean
+pinned '"actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830"' | check subpath-action-by-quoted-sha clean
+pinned './.github/actions/local' | check local-action clean
+pinned "docker://alpine@sha256:$(printf '%064d' 0 | tr 0 a)" | check docker-by-digest clean
 
 # The repo's own workflows are the fixture that matters most: this is the
 # check that runs in CI, so the rules and the files have to agree today.

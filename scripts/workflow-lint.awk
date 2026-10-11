@@ -82,6 +82,32 @@ line ~ /\$\{\{[^}]*(\.body|toJSON\([[:space:]]*github\.event)/ {
   finding(FNR, "an event body is interpolated into the workflow — the runner echoes expressions and env maps into the log, so this publishes it (#207). Read the body from $GITHUB_EVENT_PATH, or fetch it by number.")
 }
 
+# Rule 6 (#707): an action referenced by anything but a full commit SHA.
+#
+# A tag or branch is a pointer its owner can move, and whatever it points to
+# next runs with this job's token — `issues: write` and `pull-requests:
+# write` in secret-redact, for one. A SHA cannot move. Dependabot bumps the
+# SHA and the `# vX.Y.Z` comment after it together, so pinning costs no
+# freshness. A local action (`./…`) is this repo's own code and needs no pin;
+# a `docker://` image is pinned by `@sha256:` digest instead.
+line ~ /^[[:space:]]*(-[[:space:]]+)?uses:/ {
+  ref = line
+  sub(/^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]*/, "", ref)
+  sub(/[[:space:]]+#.*$/, "", ref)
+  gsub(/["']/, "", ref)
+  # Lengths by hand: mawk, the awk on Debian and Ubuntu, has no {n}.
+  at = index(ref, "@")
+  pin = at ? substr(ref, at + 1) : ""
+  if (ref ~ /^docker:\/\//) {
+    at = index(ref, "@sha256:")
+    pin = at ? substr(ref, at + 8) : ""
+    pinned = length(pin) == 64 && pin ~ /^[0-9a-f]+$/
+  } else
+    pinned = ref ~ /^\.\// || (length(pin) == 40 && pin ~ /^[0-9a-f]+$/)
+  if (!pinned)
+    finding(FNR, "`" ref "` is not pinned by commit SHA — a tag can be moved to code that then runs with this job's token (#707). Write `owner/repo@<40-hex sha> # vX.Y.Z`.")
+}
+
 # Top-level key. `"on":` is the same key as `on:` — YAML 1.1 reads a bare `on`
 # as a boolean, which is why yamllint's `truthy` rule tells people to quote it,
 # so the quoted form is the one a linted repo is most likely to be written in.
