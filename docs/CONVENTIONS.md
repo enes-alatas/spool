@@ -126,6 +126,14 @@ ADR instead.*
   closes the issue.
 - **PRs** follow `.github/pull_request_template.md`: link the issue (`Closes #n` /
   `Part of #n` — if none, say why), and cite ADRs for seam changes and new deps.
+  The exception is Dependabot's weekly `ci:` PR bumping action pins (#707).
+  It carries no issue link, template or signature. Its reviewer checks
+  three things: each new SHA is the commit of the release tag in the pin's
+  comment and the PR's release notes,
+  nothing in those notes widens what the action does with the job's token,
+  and CI is green. Then the reviewer sends the merge request as for any PR.
+  A bump the reviewer won't take is closed with the reason, never left
+  open.
 - **A feat names its other half** (#634). A `feat` PR that changes
   `internal/` but not `web/`, or `web/` but not `internal/`, carries an
   `Other half:` line under the template's Issue section: the sibling issue
