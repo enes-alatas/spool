@@ -45,6 +45,11 @@ const (
 	// never published as one. Every surface adapter that mirrors outward
 	// updates or stops the platform's poll from it (ADR-0029).
 	KindPoll = "poll"
+	// KindLink says a user's link changed: a code reached a person who is
+	// asked to confirm, or a link was made or removed (ADR-0051). Its
+	// payload is a route.LinkPayload, and it streams to admins and to the
+	// user it names.
+	KindLink = "link"
 )
 
 type Item struct {

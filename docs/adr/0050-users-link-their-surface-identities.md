@@ -1,6 +1,6 @@
 # ADR-0050: A user links their own surface identity, and reads the private conversations that are theirs
 
-Date: 2026-10-10 · Status: accepted (operator decisions of 2026-10-10, recorded on #100) · Amends: ADR-0029 (item 8), ADR-0048 (item 1), ADR-0049 (decision 7)
+Date: 2026-10-10 · Status: accepted (operator decisions of 2026-10-10, recorded on #100); decision 1 in part (who may link, and that a code links at once) superseded by ADR-0051 · Amends: ADR-0029 (item 8), ADR-0048 (item 1), ADR-0049 (decision 7)
 
 ## Context
 
@@ -32,6 +32,10 @@ once; nobody objected. The control room's side is #704's.
      around it are forgiven; a code inside other words is just words.
    - Only an allowed sender links. A pending sender's DM gets the pairing
      code as before, and a blocked sender's reaches nothing.
+
+     *Superseded by ADR-0051 (2026-10-11, #730): a code is taken up from
+     anyone but a blocked sender, ahead of the sender gate, and links only
+     once the sender replies YES. Pairing codes are no longer issued.*
 2. **A user has at most one link per surface, and a person is linked to at
    most one user.** A new code sent from another account on the same
    surface replaces the user's link there. A code sent from an account

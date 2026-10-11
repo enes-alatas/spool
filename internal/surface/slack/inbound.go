@@ -13,7 +13,6 @@ import (
 	"github.com/enes-alatas/spool/internal/bus"
 	"github.com/enes-alatas/spool/internal/route"
 	"github.com/enes-alatas/spool/internal/store"
-	"github.com/enes-alatas/spool/internal/surface"
 )
 
 // Inbound: what a loop's app hears over Socket Mode becomes a hub message,
@@ -129,8 +128,8 @@ func (adapter *Adapter) ingest(ctx context.Context, link *link, payload json.Raw
 // from a hub message (ADR-0040). Every loop's app in the channel hears it,
 // and each reports it: the hub keeps one row per reactor, emoji and
 // message, so no app is elected. A reaction passes the sender gate a
-// message does, but registers nobody: a stranger is given a pairing code
-// when they write. A loop's own reaction, which its app made, is already
+// message does, and a stranger's is dropped, as their message is
+// (ADR-0051). A loop's own reaction, which its app made, is already
 // the hub's.
 func (adapter *Adapter) ingestReaction(ctx context.Context, link *link, event messageEvent) {
 	if event.Item.Type != "message" || event.User == "" || event.Reaction == "" {
@@ -167,7 +166,7 @@ func (adapter *Adapter) ingestReaction(ctx context.Context, link *link, event me
 // channel for every loop that binds it, so whichever link wins, the
 // message lands in the same channel.
 func (adapter *Adapter) ingestChannel(ctx context.Context, link *link, loopRecord *store.Loop, teamID string, event messageEvent) {
-	sender := adapter.allowedSender(ctx, loopRecord, teamID, event, "group:"+loopRecord.Name)
+	sender := adapter.allowedSender(ctx, loopRecord, teamID, event)
 	if sender == nil {
 		return
 	}
@@ -258,7 +257,7 @@ func (adapter *Adapter) titleRoom(ctx context.Context, loopRecord *store.Loop, c
 // owner_dm; any other allowed sender's is a conversation of their own,
 // dm:<name>, which the loop answers there and nowhere else (ADR-0049).
 func (adapter *Adapter) ingestDM(ctx context.Context, loopRecord *store.Loop, teamID string, event messageEvent) {
-	sender := adapter.allowedSender(ctx, loopRecord, teamID, event, "dm:"+loopRecord.Name)
+	sender := adapter.allowedSender(ctx, loopRecord, teamID, event)
 	if sender == nil {
 		return
 	}
@@ -273,10 +272,12 @@ func (adapter *Adapter) ingestDM(ctx context.Context, loopRecord *store.Loop, te
 	case loopRecord.OwnerSlackDMChannel != event.Channel:
 		adapter.captureOwnerDM(ctx, loopRecord, event.Channel)
 	}
-	// A DM that is a link code links its sender to a control room user,
-	// and goes no further (#703).
-	if text, ok := adapter.router.LinkCode(ctx, event.Text, store.SlackPerson(event.User)); ok {
-		adapter.notify(loopRecord.ID, notice{channel: event.Channel, text: escape(text)})
+	// A DM that is a link code, or the YES confirming one, links its sender
+	// to a control room user, and goes no further (ADR-0051).
+	if text, ok := adapter.router.LinkCode(ctx, adapter.linkAttempt(loopRecord, teamID, event, true)); ok {
+		if text != "" {
+			adapter.notify(loopRecord.ID, notice{channel: event.Channel, text: escape(text)})
+		}
 		return
 	}
 	err := adapter.router.Ingest(ctx, route.InboundMessage{
@@ -297,58 +298,54 @@ func (adapter *Adapter) ingestDM(ctx context.Context, loopRecord *store.Loop, te
 }
 
 // allowedSender is the event's sender if Spool allows them, and nil
-// otherwise. Workspace membership admits nobody: a sender Spool has not
-// seen is registered as pending, with a pairing code, for the operator to
-// allow in the control room.
-func (adapter *Adapter) allowedSender(ctx context.Context, loopRecord *store.Loop, teamID string, event messageEvent, via string) *store.SlackSender {
-	senders := adapter.store.SlackSenders()
-	sender, err := senders.Get(ctx, event.User)
-	if errors.Is(err, store.ErrNotFound) {
-		sender, err = adapter.registerSender(ctx, loopRecord, teamID, event.User, via)
-	}
-	if err != nil {
+// otherwise. Workspace membership admits nobody: a sender Spool does not
+// allow is a stranger, whose DM may be a link code, or the YES that
+// confirms one, and is otherwise answered with nothing: no pending
+// record, no reply, and the text kept nowhere (ADR-0051).
+func (adapter *Adapter) allowedSender(ctx context.Context, loopRecord *store.Loop, teamID string, event messageEvent) *store.SlackSender {
+	sender, err := adapter.store.SlackSenders().Get(ctx, event.User)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+	case err != nil:
 		adapter.log.Error("slack: sender lookup", "loop", loopRecord.Name, "err", err)
 		adapter.turnedAway(loopRecord, event, "sender lookup failed")
 		return nil
-	}
-	switch sender.Status {
-	case store.SenderAllowed:
+	case sender.Status == store.SenderAllowed:
 		return sender
-	case store.SenderBlocked:
+	case sender.Status == store.SenderBlocked:
 		adapter.turnedAway(loopRecord, event, "sender is blocked")
-	default:
-		adapter.turnedAway(loopRecord, event, "sender is pending approval")
-		adapter.tellPairCode(loopRecord, sender, event)
+		return nil
 	}
+	if event.ChannelType == "im" {
+		if text, ok := adapter.router.LinkCode(ctx, adapter.linkAttempt(loopRecord, teamID, event, false)); ok {
+			if text != "" {
+				adapter.notify(loopRecord.ID, notice{channel: event.Channel, text: escape(text)})
+			}
+			return nil
+		}
+	}
+	adapter.router.Stranger(store.SlackPerson(event.User))
 	return nil
 }
 
-// registerSender records a sender Spool has not seen as pending. Who they
-// are is asked of Slack, so the control room can show a name; a sender
-// Slack will not describe is registered by id alone rather than lost.
-func (adapter *Adapter) registerSender(ctx context.Context, loopRecord *store.Loop, teamID, userID, via string) (*store.SlackSender, error) {
+// linkAttempt is a DM to the loop's app as the router's link check takes
+// it. Who the sender is is asked of Slack only for a code the check takes
+// up, so a stranger's every DM costs no call; a sender Slack will not
+// describe is linked by id alone.
+func (adapter *Adapter) linkAttempt(loopRecord *store.Loop, teamID string, event messageEvent, allowed bool) route.LinkAttempt {
 	if teamID == "" {
 		teamID = loopRecord.SlackTeamID
 	}
-	now := time.Now().UnixMilli()
-	sender := &store.SlackSender{SlackUserID: userID, TeamID: teamID, Status: store.SenderPending,
-		PairCode: surface.PairCode(), FirstSeenVia: via, CreatedAt: now, UpdatedAt: now}
-	if who, err := adapter.client.UserInfo(ctx, loopRecord.SlackBotToken, userID); err == nil {
-		sender.Username, sender.Display = who.Name, who.DisplayName
-	} else {
-		adapter.log.Warn("slack: describe a new sender", "loop", loopRecord.Name, "user", userID, "err", err)
-	}
-	err := adapter.store.SlackSenders().Create(ctx, sender)
-	if errors.Is(err, store.ErrDuplicate) {
-		// another loop's link registered them first
-		return adapter.store.SlackSenders().Get(ctx, userID)
-	}
-	if err != nil {
-		return nil, err
-	}
-	adapter.log.Info("new slack sender pending approval", "user", authorName(sender), "id", userID)
-	adapter.bus.Publish(bus.Item{Kind: bus.KindAccess, Payload: sender.Frame()})
-	return sender, nil
+	return route.LinkAttempt{Text: event.Text, Person: store.SlackPerson(event.User), LoopID: loopRecord.ID,
+		TeamID: teamID, Allowed: allowed,
+		Describe: func(ctx context.Context) (string, string) {
+			who, err := adapter.client.UserInfo(ctx, loopRecord.SlackBotToken, event.User)
+			if err != nil {
+				adapter.log.Warn("slack: describe a sender", "loop", loopRecord.Name, "user", event.User, "err", err)
+				return "", ""
+			}
+			return who.Name, who.DisplayName
+		}}
 }
 
 // turnedAway records a message that reached a loop's app and goes no

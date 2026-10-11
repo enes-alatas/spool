@@ -1,6 +1,6 @@
 # ADR-0029: The Surface contract
 
-Date: 2026-09-20 · Status: accepted · Amends: ADR-0020, ADR-0025 (item 4), ADR-0026 (item 1) · Amended: 2026-09-22 (item 2: the bus kinds a surface mirrors); 2026-09-23 (items 5 and 7: a surface is attached later and mirrors the fleet channel); 2026-09-27 (item 2: a credential and an identity are structs); 2026-09-28 (item 8: hub notices); 2026-09-29 (item 8: Slack's notices and login notice); 2026-09-29 (item 2: the mirror subscription is lossless); 2026-09-30 (item 2: `Stop`, ADR-0036); 2026-10-01 (item 5: a mirror per room, ADR-0038); 2026-10-02 (items 2 and 5: reactions, ADR-0040); 2026-10-02 (items 2 and 5: polls, ADR-0041); 2026-10-10 (item 8: the owner-only DM notice is gone, ADR-0049); 2026-10-10 (item 8: the link notice, ADR-0050)
+Date: 2026-09-20 · Status: accepted; item 6's pairing-code allowlist and item 8's pairing notice superseded by ADR-0051 · Amends: ADR-0020, ADR-0025 (item 4), ADR-0026 (item 1) · Amended: 2026-09-22 (item 2: the bus kinds a surface mirrors); 2026-09-23 (items 5 and 7: a surface is attached later and mirrors the fleet channel); 2026-09-27 (item 2: a credential and an identity are structs); 2026-09-28 (item 8: hub notices); 2026-09-29 (item 8: Slack's notices and login notice); 2026-09-29 (item 2: the mirror subscription is lossless); 2026-09-30 (item 2: `Stop`, ADR-0036); 2026-10-01 (item 5: a mirror per room, ADR-0038); 2026-10-02 (items 2 and 5: reactions, ADR-0040); 2026-10-02 (items 2 and 5: polls, ADR-0041); 2026-10-10 (item 8: the owner-only DM notice is gone, ADR-0049); 2026-10-10 (item 8: the link notice, ADR-0050)
 
 ## Context
 
@@ -173,6 +173,12 @@ contract.
    registration, and `message_id` being numbered per bot conversation — which
    is the *pathology* §5's identity rule defends against, not the rule.
 
+   *Superseded in part by ADR-0051 (2026-10-11, #730): the pairing-code
+   allowlist is gone on both surfaces. A person is allowed by a link code
+   and their YES, which the router answers, the same on every surface;
+   each adapter keeps its own sender table, `tg_senders` or
+   `slack_senders`.*
+
 7. **One surface per loop** for now (operator, 2026-09-19). Conversation ids
    and mirrors may assume it.
 
@@ -232,6 +238,11 @@ contract.
    that is a link code is answered in that DM, on both adapters, with
    the user the account is now linked to, or why the code linked nobody.
    The words are the router's, the same on every surface.
+
+   *Superseded in part by ADR-0051 (2026-10-11, #730): the pairing code is
+   no longer told, so a stranger hears nothing. The link notice now asks
+   the sender to reply YES, and their YES is answered with the link; a
+   stranger's wrong code is not answered.*
 
 ## Consequences
 

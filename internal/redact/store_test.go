@@ -288,7 +288,7 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			"Create": false, "Edit": false,
 			"Delete": false, "Get": false, "GetByHubMCPToken": false,
 			"GetByName": false, "List": false,
-			"SetOwner": false, "SetOwnerDMChat": false, "SetPromptHash": false,
+			"SetOwner": false, "AdoptOwner": false, "SetOwnerDMChat": false, "SetPromptHash": false,
 			"SetRuntime": false, "SetStatus": false, "SetWorkstationOff": false,
 			// a fixed path and the workstation's size
 			"Rehome": false,
@@ -431,7 +431,11 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 		"UserLinkStore": {
 			// A user id, a sender's surface id, times, and a link code's
 			// SHA-256; the code itself is never kept (#703).
-			"SetCode": false, "Redeem": false, "List": false, "Delete": false,
+			"SetCode": false, "List": false, "Delete": false, "Waiting": false, "Changes": false,
+			// A person's surface id and the name their surface gives them, as a
+			// sender row keeps them, a user and loop id or name, and times
+			// (ADR-0051); a stranger's text is never kept.
+			"Claim": false, "Confirm": false,
 		},
 		"UserSessionStore": {
 			// The SHA-256 of a session ID and of the token a token session

@@ -58,8 +58,7 @@ func TestAnotherSenderCannotBecomeTheOwner(t *testing.T) {
 	srv, tg := startTelegramFleet(t, operator)
 	stranger := user{ID: 6263, First: "Stranger", Username: "stranger"}
 
-	tg.dm("alpha", stranger, "hello, I'm new")
-	srv.allowSender(stranger.ID)
+	srv.allowSender(tg, "alpha", stranger)
 	tg.dm("alpha", stranger, "can you do this for me?")
 
 	srv.waitForMessage("can you do this for me?")
@@ -129,8 +128,7 @@ func TestEachLoopHoldsItsOwnConversationWithAPerson(t *testing.T) {
 	srv, tg := startTelegramFleet(t, operator)
 	stranger := user{ID: 6667, First: "Stranger", Username: "stranger"}
 
-	tg.dm("alpha", stranger, "knock")
-	srv.allowSender(stranger.ID)
+	srv.allowSender(tg, "alpha", stranger)
 
 	tg.dm("alpha", stranger, "hello alpha")
 	tg.dm("beta", stranger, "hello beta")
@@ -161,8 +159,7 @@ func TestOwnerIsReassignableAndCaptureFollows(t *testing.T) {
 	tg.dm("alpha", operator, "hi")
 	waitOwnerDMReady(t, srv, "alpha")
 
-	tg.dm("beta", colleague, "hello")
-	srv.allowSender(colleague.ID)
+	srv.allowSender(tg, "beta", colleague)
 
 	var v loopView
 	srv.mustJSON("PUT", "/api/loops/alpha/owner", map[string]any{"tg_user_id": colleague.ID}, &v)
@@ -193,8 +190,7 @@ func TestOwnerDMSurvivesRestart(t *testing.T) {
 	for _, name := range []string{"alpha", "beta"} {
 		srv.createLoop(name, map[string]any{"tg_bot_token": name, "workspace_path": ws})
 	}
-	tg.dm("alpha", operator, "hello")
-	srv.allowSender(operator.ID)
+	srv.allowOwner(tg, "alpha", operator)
 	tg.dm("alpha", operator, "you own this one")
 	waitOwnerDMReady(t, srv, "alpha")
 	srv.stop()
@@ -220,4 +216,31 @@ func waitOwnerDMReady(t *testing.T, s *server, name string) {
 		time.Sleep(200 * time.Millisecond)
 	}
 	t.Fatalf("loop %s never became ready to DM its owner", name)
+}
+
+// A link is self-service, so only an owner's makes them the fleet's owner:
+// a member who links first owns no loop, old or new, and the owner who
+// links after them takes every loop with none (ADR-0051).
+func TestAMembersLinkOwnsNoLoop(t *testing.T) {
+	t.Parallel()
+	tg := startFakeTelegram(t, "alpha", "beta")
+	srv := startTelegramServer(t, t.TempDir(), tg)
+	srv.createLoop("alpha", map[string]any{"tg_bot_token": "alpha"})
+
+	member := user{ID: 6565, First: "Member", Username: "member"}
+	srv.allowSender(tg, "alpha", member)
+	srv.createLoop("beta", map[string]any{"tg_bot_token": "beta"})
+	for _, name := range []string{"alpha", "beta"} {
+		if got := srv.loop(name).OwnerTGUserID; got != 0 {
+			t.Fatalf("%s's owner = %d after a member linked, want none", name, got)
+		}
+	}
+
+	operator := user{ID: 6566, First: "Operator", Username: "operator"}
+	srv.allowOwner(tg, "alpha", operator)
+	for _, name := range []string{"alpha", "beta"} {
+		if got := srv.loop(name).OwnerTGUserID; got != operator.ID {
+			t.Fatalf("%s's owner = %d after the owner linked, want %d", name, got, operator.ID)
+		}
+	}
 }

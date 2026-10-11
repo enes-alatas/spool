@@ -206,6 +206,8 @@ func TestRetryingAPrivateMessageWithNoChatIsRefused(t *testing.T) {
 		`!send {"destination":"owner_dm","text":"the deploy is wedged"}`+"\n"+
 		"!echo\n")
 	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws})
+	// The colleague links while Telegram still carries the question.
+	srv.allowSender(tg, "beta", colleague)
 
 	// The owner's DM is captured from their message, so the send has a chat
 	// to fail against; Telegram is refusing everything by the time it runs.
@@ -220,8 +222,6 @@ func TestRetryingAPrivateMessageWithNoChatIsRefused(t *testing.T) {
 	// The loop changes hands. The captured chat belonged to the previous
 	// owner, so it is dropped, and the new owner has not written to this bot
 	// yet — there is nowhere for the retry to land.
-	tg.dm("alpha", colleague, "knock")
-	srv.allowSender(colleague.ID)
 	srv.mustJSON("PUT", "/api/loops/alpha/owner", map[string]any{"tg_user_id": colleague.ID}, nil)
 
 	tg.failNextSends(0) // a send now would succeed, so a send is visible if one happens
@@ -258,8 +258,7 @@ func TestRetryingADMToABlockedPersonIsRefused(t *testing.T) {
 		`!send {"destination":"dm:friend","text":"the answer you asked for"}`+"\n"+
 		"!echo\n")
 	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws})
-	tg.dm("beta", friend, "knock") // registers them as pending
-	srv.allowSender(friend.ID)
+	srv.allowSender(tg, "beta", friend)
 
 	// The friend's DM records their chat, so the send has one to fail
 	// against; Telegram is refusing everything by the time it runs.

@@ -236,7 +236,9 @@ func (server *Server) routes() *routeMux {
 	mux.HandleFunc("POST "+mePasswordPath, server.handleMePassword)
 	mux.HandleFunc("GET "+meLinksPath, server.handleListLinks)
 	mux.HandleFunc("POST "+meLinkCodePath, server.handleLinkCode)
+	mux.HandleFunc("GET "+meLinksWaitingPath, server.handleListWaitingLinks)
 	mux.HandleFunc("DELETE "+meLinksPath+"/{surface}", server.handleRemoveLink)
+	mux.HandleFunc("GET "+linkChangesPath, server.handleLinkChanges)
 	// The hub's users, which only an owner manages (ADR-0048).
 	mux.HandleFunc("GET /api/users", server.handleListUsers)
 	mux.HandleFunc("POST /api/users", server.handleAddUser)
@@ -729,7 +731,8 @@ func (server *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// A new loop starts owned by the same person as the rest of the fleet:
-	// the first allowlisted sender, reassignable per loop (#73).
+	// the first allowlisted sender no member's or admin's link allowed,
+	// reassignable per loop (#73, ADR-0051).
 	loopRecord.OwnerTGUserID = server.defaultOwnerID(r.Context())
 
 	// Membership is settled before the loop exists, never patched in after:
@@ -1856,15 +1859,20 @@ func (server *Server) handleSenderStatus(status string) http.HandlerFunc {
 }
 
 // defaultOwnerID is the first person the operator allowlisted, or 0 when
-// nobody is.
+// nobody is. A person linked to a user who is not an owner is passed
+// over: their link allowed them, not the operator (ADR-0051).
 func (server *Server) defaultOwnerID(ctx context.Context) int64 {
 	senders, err := server.Store.TGSenders().List(ctx)
 	if err != nil {
 		return 0
 	}
+	notOwners, err := server.linkedToNonOwners(ctx)
+	if err != nil {
+		return 0
+	}
 	var owner *store.TGSender
 	for _, sender := range senders {
-		if sender.Status != store.SenderAllowed {
+		if sender.Status != store.SenderAllowed || notOwners[store.TGPerson(sender.TGUserID)] {
 			continue
 		}
 		if owner == nil || sender.CreatedAt < owner.CreatedAt {
@@ -1875,6 +1883,29 @@ func (server *Server) defaultOwnerID(ctx context.Context) int64 {
 		return 0
 	}
 	return owner.TGUserID
+}
+
+// linkedToNonOwners is the set of persons linked to a user who is not an
+// owner.
+func (server *Server) linkedToNonOwners(ctx context.Context) (map[string]bool, error) {
+	all, err := server.Store.Users().List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	persons := map[string]bool{}
+	for _, user := range all {
+		if user.Role == store.RoleOwner {
+			continue
+		}
+		links, err := server.Store.UserLinks().List(ctx, user.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, link := range links {
+			persons[link.Person] = true
+		}
+	}
+	return persons, nil
 }
 
 // defaultInFleetChannel is where a new loop starts when its creator did not
@@ -1895,17 +1926,8 @@ func (server *Server) defaultInFleetChannel(ctx context.Context) (bool, error) {
 // The first person the operator allowlists is the owner by default — the
 // fleet is built for one operator — and they can reassign per loop.
 func (server *Server) adoptDefaultOwner(ctx context.Context, tgUserID int64) {
-	loops, err := server.Store.Loops().List(ctx)
-	if err != nil {
-		return
-	}
-	for _, loopRecord := range loops {
-		if loopRecord.OwnerTGUserID != 0 || loopRecord.Status == store.StatusArchived {
-			continue
-		}
-		if err := server.Store.Loops().SetOwner(ctx, loopRecord.ID, tgUserID, 0, time.Now().UnixMilli()); err != nil {
-			server.Log.Error("default owner", "loop", loopRecord.Name, "err", err)
-		}
+	if err := server.Store.Loops().AdoptOwner(ctx, tgUserID, time.Now().UnixMilli()); err != nil {
+		server.Log.Error("default owner", "err", err)
 	}
 }
 

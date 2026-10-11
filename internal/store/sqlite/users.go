@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/enes-alatas/spool/internal/store"
 )
@@ -73,8 +74,52 @@ func (table users) SetRole(ctx context.Context, id, role string) error {
 }
 
 func (table users) Delete(ctx context.Context, id string) error {
-	return table.keepingAnOwner(ctx, id, `DELETE FROM users WHERE id=?
-		AND (role<>'owner' OR (SELECT COUNT(*) FROM users WHERE role='owner')>1)`, id)
+	tx, err := table.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	// Each link goes as a link removed by hand does, taking the sender it
+	// allowed with it and leaving a record; the user's row is still there
+	// for the record to name.
+	var surfaces []string
+	rows, err := tx.QueryContext(ctx, `SELECT surface FROM user_links WHERE user_id=?`, id)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var surface string
+		if err := rows.Scan(&surface); err != nil {
+			rows.Close()
+			return err
+		}
+		surfaces = append(surfaces, surface)
+	}
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		return err
+	}
+	now := time.Now().UnixMilli()
+	for _, surface := range surfaces {
+		if _, err := unlink(ctx, tx, id, surface, now); err != nil {
+			return err
+		}
+	}
+	err = affectedOne(tx.ExecContext(ctx, `DELETE FROM users WHERE id=?
+		AND (role<>'owner' OR (SELECT COUNT(*) FROM users WHERE role='owner')>1)`, id))
+	if err == nil {
+		return tx.Commit()
+	}
+	if !errors.Is(err, store.ErrNotFound) {
+		return err
+	}
+	// The store has one connection, which the transaction holds.
+	if err := tx.Rollback(); err != nil {
+		return err
+	}
+	if _, err := table.Get(ctx, id); err != nil {
+		return err
+	}
+	return store.ErrLastOwner
 }
 
 // keepingAnOwner runs a change to user id that is guarded in its own

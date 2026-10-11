@@ -2,7 +2,6 @@ package slack
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/enes-alatas/spool/internal/store"
@@ -11,11 +10,11 @@ import (
 )
 
 // Notices: what the hub itself says through a loop's app, in its own voice
-// ("Spool: …") rather than the loop's. A turned-away sender is told why,
-// once, instead of being ignored in silence (ADR-0029).
+// ("Spool: …") rather than the loop's (ADR-0029): the answer to a link
+// code, and the login notice. A stranger is told nothing (ADR-0051).
 
 // notices is how many notices a link queues. They are rare and paced by
-// the once-each rules below, so a full queue means something is wrong and
+// the rules that send them, so a full queue means something is wrong and
 // the notice is dropped rather than held.
 const notices = 16
 
@@ -63,31 +62,6 @@ func (adapter *Adapter) postNotice(ctx context.Context, loopID string, queued no
 	if _, err := adapter.client.PostMessage(ctx, loopRecord.SlackBotToken, channel, queued.text, ""); err != nil {
 		adapter.log.Warn("slack: notice not posted", "loop", loopRecord.Name, "err", err)
 	}
-}
-
-// once reports whether key is new to told, and marks it: each notice below
-// is said once per hub run, as the Telegram bridge's are, so a turned-away
-// sender learns the reason without hearing it on every message.
-func (adapter *Adapter) once(told map[string]bool, key string) bool {
-	adapter.toldMu.Lock()
-	defer adapter.toldMu.Unlock()
-	if told[key] {
-		return false
-	}
-	told[key] = true
-	return true
-}
-
-// tellPairCode answers a pending sender's DM with their pairing code, once
-// per sender. A pending sender's channel messages get no answer: the
-// channel is shared, and the code is theirs to give the operator.
-func (adapter *Adapter) tellPairCode(loopRecord *store.Loop, sender *store.SlackSender, event messageEvent) {
-	if event.ChannelType != "im" || !adapter.once(adapter.pairTold, sender.SlackUserID) {
-		return
-	}
-	adapter.notify(loopRecord.ID, notice{channel: event.Channel, text: fmt.Sprintf(
-		"Spool: you're not authorized yet. Your pairing code is %s — ask the operator to approve you in the Spool control room (Access page).",
-		escape(sender.PairCode))})
 }
 
 // escape makes text literal in Slack mrkdwn, where &, < and > are markup.

@@ -3,9 +3,11 @@
 package itest
 
 import (
+	"fmt"
 	"maps"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -23,8 +25,8 @@ var miloBot = slackBot{UserID: "U0MILO", Name: "milo", TeamID: "T0ACME", TeamNam
 
 // startSlackFleet brings up terra and milo, each with its own Slack app in
 // one workspace, both connected, and the operator allowed. The operator's
-// first message registers them as pending, as any stranger is, and reaches
-// nobody.
+// first message, before they link, reaches nobody and registers nothing,
+// as any stranger's does.
 func startSlackFleet(t *testing.T) (*server, *fakeSlack) {
 	t.Helper()
 	return startSlackFleetWith(t, nil)
@@ -46,35 +48,47 @@ func startSlackFleetWith(t *testing.T, terraOverrides map[string]any) (*server, 
 	}
 
 	slack.pushMessage(t, slackAppToken, "channel", slackChannel, slackOperator, "hello", "1727600000.000001")
-	srv.allowSlackSender(slackOperator)
+	srv.allowSlackSender(slack, slackAppToken, slackOperator)
 	if got := srv.activityWith("hello"); len(got) != 0 {
-		t.Fatalf("a pending sender's message was stored: %s", dump(got))
+		t.Fatalf("a stranger's message was stored: %s", dump(got))
 	}
 	return srv, slack
 }
 
-// allowSlackSender waits for the pending record a first message creates,
-// then approves it.
-func (s *server) allowSlackSender(userID string) {
+// slackLinkTS numbers the DMs allowSlackSender sends, so no two share a ts.
+var slackLinkTS atomic.Int64
+
+// allowSlackSender makes userID an allowed Slack sender the one way there
+// is (ADR-0051): a hub user of their own, named for them, asks for a Slack
+// link code, and userID sends it to app in a DM and confirms it. The
+// sender is registered under the name users.info gives. It answers with
+// that user's session.
+func (s *server) allowSlackSender(slack *fakeSlack, app, userID string) string {
 	s.t.Helper()
-	for deadline := time.Now().Add(15 * time.Second); time.Now().Before(deadline); {
-		var senders []struct {
-			SlackUserID string `json:"slack_user_id"`
-			Username    string `json:"username"`
-		}
-		s.mustJSON("GET", "/api/slack/senders", nil, &senders)
-		for _, sender := range senders {
-			if sender.SlackUserID == userID {
-				if sender.Username != strings.ToLower(userID) {
-					s.t.Errorf("sender registered as %q, want the name users.info gave", sender.Username)
-				}
-				s.mustJSON("POST", "/api/slack/senders/"+userID+"/allow", nil, nil)
-				return
-			}
-		}
-		time.Sleep(100 * time.Millisecond)
+	name := "slack-" + strings.ToLower(userID)
+	session := s.signedInAs(name, "member")
+	dm := "D" + userID
+	slack.pushMessage(s.t, app, "im", dm, userID, s.linkCode(session, "slack"),
+		fmt.Sprintf("1727690000.%06d", slackLinkTS.Add(1)))
+	slack.waitPost(s.t, "Slack account to "+name)
+	slack.pushMessage(s.t, app, "im", dm, userID, "YES", fmt.Sprintf("1727690000.%06d", slackLinkTS.Add(1)))
+	slack.waitPost(s.t, "now linked to "+name)
+	var senders []struct {
+		SlackUserID string `json:"slack_user_id"`
+		Username    string `json:"username"`
+		Status      string `json:"status"`
 	}
-	s.t.Fatalf("slack sender %s never registered", userID)
+	s.mustJSON("GET", "/api/slack/senders", nil, &senders)
+	for _, sender := range senders {
+		if sender.SlackUserID == userID {
+			if sender.Status != "allowed" || sender.Username != strings.ToLower(userID) {
+				s.t.Errorf("sender registered as %+v, want allowed under the name users.info gave", sender)
+			}
+			return session
+		}
+	}
+	s.t.Fatalf("slack sender %s was never registered", userID)
+	return ""
 }
 
 // waitInput waits for one of a loop's turns to be handed an envelope
@@ -155,8 +169,7 @@ func TestSlackOwnerDMReachesItsLoop(t *testing.T) {
 	}
 
 	// Another allowed sender's DM to the same app is their own conversation.
-	slack.pushMessage(t, slackAppToken, "channel", slackChannel, "U0ALICE", "hi all", "1727600000.000300")
-	srv.allowSlackSender("U0ALICE")
+	srv.allowSlackSender(slack, slackAppToken, "U0ALICE")
 	slack.pushMessage(t, slackAppToken, "im", "D0ALICE", "U0ALICE", "psst terra", "1727600000.000400")
 	srv.waitInput("terra", "message from @u0alice via slack dm · dm:u0alice", "psst terra")
 	if got := srv.activityWith("psst terra"); len(got) != 1 || got[0].Conversation != "dm:u0alice" ||
@@ -176,8 +189,7 @@ func TestSlackLinkNamesItsChannel(t *testing.T) {
 	srv := startServerArgs(t, dataDir, "--runtime", "bare", "--slack-api-base", slack.srv.URL)
 	srv.createLoop("terra", slackPair(slackAppToken, slackBotToken))
 	srv.waitSlackLink("terra", func(link slackStatus) bool { return link.Bridge.Connected })
-	slack.pushMessage(t, slackAppToken, "channel", slackChannel, slackOperator, "hello", "1727600000.000001")
-	srv.allowSlackSender(slackOperator)
+	srv.allowSlackSender(slack, slackAppToken, slackOperator)
 	slack.pushMessage(t, slackAppToken, "channel", slackChannel, slackOperator, "binding", "1727600000.000002")
 	named := func(link slackStatus) bool {
 		return link.ChannelID == slackChannel && link.ChannelName == strings.ToLower(slackChannel)
@@ -199,8 +211,7 @@ func TestSlackTwoPeoplesDMsAreTwoTurns(t *testing.T) {
 	if resp, body := srv.do("PUT", "/api/loops/terra/owner", map[string]any{"slack_user_id": slackOperator}); resp.StatusCode != http.StatusOK {
 		t.Fatalf("set owner: %d %s", resp.StatusCode, body)
 	}
-	slack.pushMessage(t, slackAppToken, "channel", slackChannel, "U0ALICE", "hi all", "1727600000.000300")
-	srv.allowSlackSender("U0ALICE")
+	srv.allowSlackSender(slack, slackAppToken, "U0ALICE")
 
 	slack.pushMessage(t, slackAppToken, "im", "D"+slackOperator, slackOperator, "start hanging", "1727600000.000400")
 	srv.waitState("terra", "busy", 10*time.Second)

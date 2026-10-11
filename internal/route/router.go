@@ -175,6 +175,9 @@ type Router struct {
 	// redelivered turn can be told what was already sent; cleared with the
 	// budget.
 	turnSends map[string][]string
+
+	// gate limits wrong link codes and logs strangers (ADR-0051).
+	gate linkGate
 }
 
 func New(st store.Store, publisher *bus.Bus, deliverer Deliverer, log *slog.Logger) *Router {

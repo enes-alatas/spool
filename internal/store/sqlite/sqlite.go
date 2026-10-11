@@ -464,6 +464,12 @@ func (table loops) SetOwner(ctx context.Context, id string, tgUserID, dmChatID, 
 	return nil
 }
 
+func (table loops) AdoptOwner(ctx context.Context, tgUserID, updatedAt int64) error {
+	_, err := table.db.ExecContext(ctx, `UPDATE loops SET owner_tg_user_id=?, owner_dm_chat_id=0, updated_at=?
+		WHERE owner_tg_user_id=0 AND status<>?`, tgUserID, updatedAt, store.StatusArchived)
+	return err
+}
+
 func (table loops) SetOwnerDMChat(ctx context.Context, id string, chatID, updatedAt int64) error {
 	_, err := table.db.ExecContext(ctx,
 		`UPDATE loops SET owner_dm_chat_id=?, updated_at=? WHERE id=?`, chatID, updatedAt, id)

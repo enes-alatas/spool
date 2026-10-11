@@ -137,7 +137,7 @@ func (server *Server) handleSlackStatus(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, status)
 }
 
-// --- Slack senders: the pairing allowlist (#230) ---
+// --- Slack senders: the allowlist (#230), which a link joins (ADR-0051) ---
 
 func (server *Server) handleListSlackSenders(w http.ResponseWriter, r *http.Request) {
 	senders, err := server.Store.SlackSenders().List(r.Context())

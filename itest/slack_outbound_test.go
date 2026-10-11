@@ -125,8 +125,7 @@ func TestSlackCatalog(t *testing.T) {
 	srv.createLoop("terra", terraReq)
 	srv.createLoop("milo", slackPair(slackMiloAppToken, slackMiloBotToken))
 	srv.waitSlackLink("terra", func(link slackStatus) bool { return link.Bridge.Connected })
-	slack.pushMessage(t, slackAppToken, "channel", slackChannel, slackOperator, "hello", "1727600000.000001")
-	srv.allowSlackSender(slackOperator)
+	srv.allowSlackSender(slack, slackAppToken, slackOperator)
 	srv.mustJSON("PUT", "/api/loops/terra/owner", map[string]any{"slack_user_id": slackOperator}, nil)
 
 	first := waitPrompt(t, srv, "terra", 0)
@@ -165,8 +164,7 @@ func TestSlackLoopIgnoresTheTelegramOwner(t *testing.T) {
 	srv.createLoop("on-telegram", map[string]any{"tg_bot_token": "tgbot"})
 
 	operator := user{ID: 5454, First: "Operator", Username: "operator"}
-	tg.post(groupChatID, "supergroup", "hello", operator)
-	srv.allowSender(operator.ID)
+	srv.allowOwner(tg, "tgbot", operator)
 	if got := srv.loop("terra").OwnerTGUserID; got != operator.ID {
 		t.Fatalf("the Slack loop's Telegram owner is %d, want the adopted %d: the row proves nothing", got, operator.ID)
 	}
@@ -266,8 +264,7 @@ func TestSlackDMAnswersAnotherAllowedSender(t *testing.T) {
 	if resp, body := srv.do("PUT", "/api/loops/terra/owner", map[string]any{"slack_user_id": slackOperator}); resp.StatusCode != http.StatusOK {
 		t.Fatalf("set owner: %d %s", resp.StatusCode, body)
 	}
-	slack.pushMessage(t, slackAppToken, "channel", slackChannel, "U0ALICE", "hi all", "1727600000.000300")
-	srv.allowSlackSender("U0ALICE")
+	srv.allowSlackSender(slack, slackAppToken, "U0ALICE")
 	terra := mcpSession(t, srv, hubMCPToken(t, srv, "terra"))
 
 	if res := callSend(t, terra, map[string]any{"destination": "dm:u0alice", "text": "cold open"}); !res.IsError ||

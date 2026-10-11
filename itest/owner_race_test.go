@@ -3,7 +3,6 @@
 package itest
 
 import (
-	"fmt"
 	"testing"
 	"time"
 )
@@ -14,8 +13,9 @@ type ownedLoop struct {
 	TGGroupChat int64  `json:"tg_group_chat_id"`
 }
 
-// Allowlisting the operator adopts every ownerless loop, and it happens while
-// the bots are handling the same group message that binds them. Both wrote the
+// Allowing the operator adopts every ownerless loop, and it happens while
+// the bots are handling the same group message that binds them. A link
+// allows them now (ADR-0051), so the allow is their YES. Both wrote the
 // whole loops row, so whichever landed second put the other's column back —
 // and a loop whose owner went to 0 refuses the operator's DMs from then on,
 // silently, while its group traffic keeps working (#161).
@@ -38,17 +38,19 @@ func TestAllowlistingTheOperatorKeepsEveryLoopOwned(t *testing.T) {
 		srv.createLoop(name, map[string]any{"tg_bot_token": name})
 	}
 
-	// Registers the operator as a pending sender, without allowing them: the
-	// loops are still ownerless when the allow lands.
-	tg.post(groupChatID, "supergroup", "hello", operator)
-	srv.waitForPendingSender(operator.ID)
+	// The operator's code reaches alpha, without allowing them: the loops
+	// are still ownerless when their YES lands.
+	session := srv.signedInAs("oper", "owner")
+	tg.dm("alpha", operator, srv.linkCode(session, "telegram"))
+	tg.waitSent(t, operator.ID, "Reply YES")
 
-	// The two writers, together: the allow adopts every ownerless loop while
-	// the bots bind themselves to the group. The POST returns once adoption
-	// has run, so anything that reverts an owner after this point is the
-	// poller's write landing second.
+	// The two writers, together: the YES adopts every ownerless loop while
+	// the bots bind themselves to the group. The link is answered once
+	// adoption has run, so anything that reverts an owner after this point
+	// is the poller's write landing second.
 	go tg.post(groupChatID, "supergroup", "binding", operator)
-	srv.mustJSON("POST", fmt.Sprintf("/api/telegram/senders/%d/allow", operator.ID), nil, nil)
+	tg.dm("alpha", operator, "YES")
+	tg.waitSent(t, operator.ID, "now linked to oper")
 
 	// One more message, now certainly from an allowed sender, so every bot
 	// binds whether or not the racing one arrived before the allowlist
@@ -83,22 +85,4 @@ func TestAllowlistingTheOperatorKeepsEveryLoopOwned(t *testing.T) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-}
-
-// waitForPendingSender blocks until a bot has registered the sender, which is
-// what makes them allowable — without allowing them.
-func (s *server) waitForPendingSender(id int64) {
-	s.t.Helper()
-	deadline := time.Now().Add(15 * time.Second)
-	for time.Now().Before(deadline) {
-		var senders []tgSender
-		s.mustJSON("GET", "/api/telegram/senders", nil, &senders)
-		for _, sender := range senders {
-			if sender.TGUserID == id {
-				return
-			}
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	s.t.Fatalf("sender %d never registered", id)
 }

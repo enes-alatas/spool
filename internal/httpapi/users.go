@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/enes-alatas/spool/internal/bus"
+	"github.com/enes-alatas/spool/internal/route"
 	"github.com/enes-alatas/spool/internal/store"
 	"github.com/enes-alatas/spool/internal/users"
 )
@@ -150,10 +152,21 @@ func (server *Server) handleSetUserRole(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, viewOfUser(user))
 }
 
+// handleRemoveUser deletes a user, and with them their links: each person
+// they linked is unlinked, and the Access page hears what became of them.
 func (server *Server) handleRemoveUser(w http.ResponseWriter, r *http.Request) {
+	var links []*store.UserLink
+	if user, err := server.Store.Users().GetByName(r.Context(), r.PathValue("name")); err == nil {
+		links, _ = server.Store.UserLinks().List(r.Context(), user.ID)
+	}
 	if err := server.Users.Remove(r.Context(), r.PathValue("name")); err != nil {
 		server.userErr(w, err)
 		return
+	}
+	for _, link := range links {
+		server.Bus.Publish(bus.Item{Kind: bus.KindLink, Payload: &route.LinkPayload{
+			UserID: link.UserID, Surface: link.Surface, State: route.LinkUnlinked}})
+		route.PublishSender(r.Context(), server.Store, server.Bus, link.Person)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
