@@ -431,3 +431,6 @@ Elliot opened PR #743 (#742) with #736/#739/#740 still open: four PRs in Quinn's
 
 ## 2026-10-11 19:10 UTC
 Terra took #730 and posted its shape (ADR-0051: surface-bound codes, check before sender gate in DMs, YES consent, link allows, limits 5/sender-hour and 50/hub-hour in memory, waiting state on /api/me/links, link_changes log). Accepted. Filed #744 (slice 2b: owner Access routes incl. 24h tally) after #731. Terra: #730, #731, #744, #719, #722, #721, #630. Enes picked A on #732 mockups.
+
+## 2026-10-11 19:15 UTC
+Iris: #730 breaks main's Account button (400, surface required) until the web sends it. Filed #745 (slice 3a: Account per-surface code + waiting state), ships right after #730. #732 narrowed to Access + owner picker, after #731 and #744. Iris: #735 → #745 → #732.
