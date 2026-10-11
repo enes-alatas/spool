@@ -413,3 +413,6 @@ Enes merged #709 (#703), #713 (#708), #716 (#707), #717 (#696), #724 (#718). Ope
 
 ## 2026-10-11 11:50 UTC
 Elliot agreed on #728 with two must-haves (A1 consent YES before link; B wrong-code limits + stranger silence). I agree, no disagreement to escalate. Filed epic #729 (link replaces pairing for every role, Access under Settings) with children #730 (hub gate, consent, limits), #731 (owner is a user; grandfathered senders), #732 (web Settings → Access, owner picker, waiting state), #733 (docs: README step 9, demo, OPERATIONS row; before v0.6.0 tag). Open for Enes: grandfather deadline; queue position vs #720/#715.
+
+## 2026-10-11 11:55 UTC
+Enes: keep grandfathered senders (only owners exist); #715 first; asked whose #715 is: answered Terra (internal/), Elliot documents. Recorded on #729. Terra: #720, #715, #730, #731, #719, #722, #721, #630. Iris: #727 → #723 → #732. #733 unassigned until #732 in review. Pinged Terra.
