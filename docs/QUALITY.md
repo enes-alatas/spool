@@ -123,8 +123,11 @@ window regardless of loop count (ADR-0018).
   `env:` included; every workflow but `ci`, `pr-guards` and `ci-health`
   appears in the sentinel's `workflows:` list; a job whose `run:` calls
   `gh` against the actions, issues or pulls API names that scope in its
-  effective grant; and a file the parser cannot read is a finding, never a
-  pass. One rule per incident (#203, #207, #209, #210, #220), stdlib shell.
+  effective grant; every `uses:` names an action by full commit SHA (a
+  local `./` action excepted, a `docker://` image by digest), since a tag
+  can be moved to new code that runs with the job's token; and a file the
+  parser cannot read is a finding, never a pass. One rule per incident
+  (#203, #207, #209, #210, #220, #707), stdlib shell.
 - **A one-half feat names its other half** (`pr-guards`, #634): a `feat` PR
   that changes `internal/` but not `web/`, or the reverse, fails its
   `other-half` check without an `Other half:` line in its body
