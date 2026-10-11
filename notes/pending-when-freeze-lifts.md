@@ -377,3 +377,6 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 ## 2026-10-11 00:05
 - Elliot filed #715 (make image never reaches existing workstations or the egress proxy; Recreate drops the volume). Triaged: L6, child of #710, Terra after #709 (#703 slice b) ahead of #630 (ref 4010); runbook #712 carries the manual step. Open PRs: #713 (#708 backup, Elliot), #709 (#703, Terra), #453 draft. Note for the pending rebuild: workstations keep old images until #715 lands → tell Enes to docker rm -f containers (keep volumes) after the rebuild, or wait for #715.
 - 00:10: DM'd Enes the rebuild caveat from #715 (rm containers, keep volumes; or wait for the fix; back up first) (ref 4011). #529 still open after #701 (rule 3 PID-less kills); rule 2 (credential strings) presumably remains → check Terra's note next tick.
+
+## 2026-10-11 03:05 UTC
+Quiet tick. Typed Quinn's untyped #714 (itest creation-tick flake) as bug/severity:low, same family as #604/#595, not queued. PRs open: #713 (Elliot, Quinn), #709 (Terra; Elliot threat-model pass 02:04, Quinn approval stands), #453 (parked). No pings.
