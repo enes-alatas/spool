@@ -386,3 +386,6 @@ Quiet tick, nothing moved overnight. Closed #529: slice (a), rule 2 (#698/PR 699
 
 ## 2026-10-11 09:08 UTC
 New: PR 716 (Elliot, #707 CI pins), PR 717 (Iris, #696 web; #691 merged as #706), issue #718 (Quinn: secret-scan matches nothing on mawk). Triaged #718 to Terra ahead of #715, fail-closed only. Pinged Terra. #709 still awaits Enes merge, #713 with Quinn.
+
+## 2026-10-11 10:20 UTC
+Terra asked for an issue for the per-loop private conversation routes (Iris proposal, Terra refinements on #704). Filed #720 (new feature, child of #100, slice d). Order for Terra after #709 merges: #718, #720, #715, #719 (Elliot security low: cross-conversation reply error leaks destination), #630. Linked on #704. Enes still owes Iris the placement answer on #704 mockups.
