@@ -798,6 +798,45 @@ func seedPlanUsage(ctx context.Context, db store.Store) error {
 	return nil
 }
 
+// The loops' change record (#695), by the two who change loops here: the
+// operator token, which made the fleet, and admin, who has run it since.
+// Courier has no record, as a loop older than the record has none, so its
+// page shows that case; scribe was made and deleted, so the record names a
+// loop that is gone.
+func seedChanges(ctx context.Context, db store.Store, ids map[string]string) error {
+	day := 24 * time.Hour
+	changes := []struct {
+		loop, by, action string
+		at               time.Duration
+	}{
+		{"gardener", "operator", store.LoopChangeCreate, -21 * day},
+		{"watcher", "operator", store.LoopChangeCreate, -21 * day},
+		{"archivist", "admin", store.LoopChangeCreate, -21 * day},
+		{"scribe", "admin", store.LoopChangeCreate, -9 * day},
+		{"watcher", "admin", store.LoopChangeOwner, -6 * day},
+		{"gardener", "admin", store.LoopChangeAttach, -3 * day},
+		{"gardener", "admin", store.LoopChangeEdit, -3*day + time.Hour},
+		{"watcher", "admin", store.LoopChangeJoin, -2 * day},
+		{"archivist", "admin", store.LoopChangePause, -30 * time.Hour},
+		{"scribe", "admin", store.LoopChangeDelete, -26 * time.Hour},
+		{"gardener", "operator", store.LoopChangeRotate, -5 * time.Hour},
+		{"gardener", "admin", store.LoopChangeWake, -25 * time.Minute},
+		{"watcher", "admin", store.LoopChangeRestart, -12 * time.Minute},
+	}
+	for _, change := range changes {
+		loopID := ids[change.loop]
+		if loopID == "" {
+			loopID = "loop_fixture_deleted"
+		}
+		if err := db.LoopChanges().Record(ctx, &store.LoopChange{
+			At: ms(change.at), By: change.by, Action: change.action, LoopID: loopID, LoopName: change.loop,
+		}); err != nil {
+			return fmt.Errorf("change %s %s: %w", change.action, change.loop, err)
+		}
+	}
+	return nil
+}
+
 // The hub's users (#674): owner admin, signed in by the scripts that walk
 // the room; robin, a member still on a one-time password, who gets the
 // change page and nothing else; and sam, a member past it, whose room is the
