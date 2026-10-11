@@ -410,3 +410,6 @@ Enes: all sounds good; run it over Elliot before filing; report disagreements; o
 
 ## 2026-10-11 11:40 UTC
 Enes merged #709 (#703), #713 (#708), #716 (#707), #717 (#696), #724 (#718). Open PRs: #725 (Elliot, #712 runbook), #726 (Dependabot pins bump, Elliot/Quinn), #727 (Iris, #704 link flow). Terra next: #720, #715, #719, #722, #721, #630. #582 left: nothing web after #717? check #691 closed. #100 left: #704 (PR 727), #720, #723.
+
+## 2026-10-11 11:50 UTC
+Elliot agreed on #728 with two must-haves (A1 consent YES before link; B wrong-code limits + stranger silence). I agree, no disagreement to escalate. Filed epic #729 (link replaces pairing for every role, Access under Settings) with children #730 (hub gate, consent, limits), #731 (owner is a user; grandfathered senders), #732 (web Settings → Access, owner picker, waiting state), #733 (docs: README step 9, demo, OPERATIONS row; before v0.6.0 tag). Open for Enes: grandfather deadline; queue position vs #720/#715.
