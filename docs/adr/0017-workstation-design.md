@@ -1,6 +1,6 @@
 # ADR-0017: Workstation design — long-lived Docker containers behind the SandboxRuntime seam
 
-Date: 2026-08-17 · Status: accepted · Amended: 2026-09-20 (redaction), 2026-09-21 (bare is opt-in), 2026-09-30 (the perf smoke covers bare loops only), 2026-10-04 (item 8: per-loop secrets are connections, ADR-0043), 2026-10-06 (consequences and parking lot: the credential broker is rejected for env-var secrets, ADR-0045), 2026-10-07 (item 5: the token is sealed at rest, ADR-0046)
+Date: 2026-08-17 · Status: accepted · Amended: 2026-09-20 (redaction), 2026-09-21 (bare is opt-in), 2026-09-30 (the perf smoke covers bare loops only), 2026-10-04 (item 8: per-loop secrets are connections, ADR-0043), 2026-10-06 (consequences and parking lot: the credential broker is rejected for env-var secrets, ADR-0045), 2026-10-07 (item 5: the token is sealed at rest, ADR-0046), 2026-10-11 (item 1: a rebuilt image replaces the container, #715)
 
 ## Context
 
@@ -20,6 +20,17 @@ and later on the hosted service.
    survives sleeps, orchestrator restarts (boot reconnects by name), and
    pauses; it is removed only with the loop or by an explicit power-off.
    Background processes a loop starts persist between wakes.
+
+   **Amendment (2026-10-11, #715): a rebuilt image replaces the container,
+   never the volume.** A wake also replaces the container when the image it
+   names has a new ID: `make image` on an upgrade rebuilds under the same
+   tag, and a container is fixed to the build it was created from. Without
+   this, a new hook or a security fix in the image reached only loops
+   provisioned after it. The volume is kept, so the loop's home, memory and
+   session carry over. Background processes it left running do not: the
+   replacement happens before the wake's claude starts, as a power cycle's
+   would. A power-on that finds a turn running leaves the container for the
+   next wake, and an image that is no longer there replaces nothing.
 2. **Session continuity and self-pacing.** The home directory lives on the
    loop's volume and the cwd is stable across execs, so `--resume` behaves
    exactly as today's reap-and-respawn. Self-pacing is untouched: pacing was

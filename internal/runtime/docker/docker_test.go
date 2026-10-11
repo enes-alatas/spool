@@ -114,11 +114,15 @@ func TestEgressShapesTheWorkstation(t *testing.T) {
 
 func TestEgressProxyRunArgv(t *testing.T) {
 	rt := &Runtime{egressImage: "spool-egress", mcpPort: "8081", fleetEgress: []string{"internal.example"}}
-	got := strings.Join(rt.egressRunArgv(), " ")
-	if rt.egressSpecHash() == (&Runtime{egressImage: "spool-egress", mcpPort: "9091"}).egressSpecHash() {
+	got := strings.Join(rt.egressRunArgv("sha256:1"), " ")
+	if rt.egressSpecHash("sha256:1") == (&Runtime{egressImage: "spool-egress", mcpPort: "9091"}).egressSpecHash("sha256:1") {
 		// a proxy's run arguments are fixed at creation, so a moved hub has
 		// to be visible as a different spec or the old wall would be kept
 		t.Error("the spec hash must change when the hub moves")
+	}
+	if rt.egressSpecHash("sha256:1") == rt.egressSpecHash("sha256:2") {
+		// a rebuilt image keeps its tag, so only its ID tells it apart (#715)
+		t.Error("the spec hash must change when the proxy image is rebuilt")
 	}
 	if suite := (&Runtime{egressImage: "spool-egress-itest"}); suite.egressNetwork() != "spool-egress-itest" ||
 		suite.egressContainer() != "spool-egress-itest-proxy" {

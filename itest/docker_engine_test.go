@@ -75,6 +75,8 @@ func TestDockerRows(t *testing.T) {
 		{"DockerOrchestratorRestartReconnects", dockerOrchestratorRestartReconnects},
 		{"DockerWorkstationDownSurfacesAndHeals", dockerWorkstationDownSurfacesAndHeals},
 		{"DockerLoopDeleteRemovesWorkstation", dockerLoopDeleteRemovesWorkstation},
+		{"DockerRebuiltWorkstationImageReachesTheLoop", dockerRebuiltWorkstationImageReachesTheLoop},
+		{"DockerRebuiltEgressImageReplacesTheProxy", dockerRebuiltEgressImageReplacesTheProxy},
 		{"MixedRuntimeFleet", mixedRuntimeFleet},
 		{"DockerWorkstationNeedsClaudeToken", dockerWorkstationNeedsClaudeToken},
 		{"DockerWorkstationPowerCycle", dockerWorkstationPowerCycle},

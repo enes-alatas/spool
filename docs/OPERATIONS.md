@@ -323,9 +323,10 @@ make image                                  # spool-workstation and spool-egress
 systemctl stop spool
 /usr/local/sbin/spool-backup.sh --data-dir /home/spool/.spool --out /var/backups/spool
 
-# Rebuilt images reach no existing container on their own (#715): remove the
-# containers, never the volumes, and the hub provisions each from the new
-# image at its loop's next wake, on the same volume.
+# Only for a target of v0.5.1 or earlier, whose hub doesn't notice a rebuilt
+# image (#715): remove the containers, never the volumes, and the hub
+# provisions each from the new image at its loop's next wake, on the same
+# volume. A later hub replaces them itself at that wake.
 docker rm -f $(docker ps -aq --filter label=spool.loop.id) spool-egress-proxy
 
 systemctl start spool

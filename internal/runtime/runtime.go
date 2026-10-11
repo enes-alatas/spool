@@ -106,7 +106,9 @@ type Runtime interface {
 
 	// Ensure makes the loop's workstation exist and be ready to exec into.
 	// Idempotent and called before every wake, so a workstation that died
-	// while the loop slept comes back by itself.
+	// while the loop slept comes back by itself. It is never called with a
+	// turn in flight, so it may replace the workstation, keeping its home
+	// (#715).
 	Ensure(ctx context.Context, spec Spec) error
 
 	// Start execs claude inside the workstation and hands back the live
