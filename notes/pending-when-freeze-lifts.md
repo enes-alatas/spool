@@ -416,3 +416,6 @@ Elliot agreed on #728 with two must-haves (A1 consent YES before link; B wrong-c
 
 ## 2026-10-11 11:55 UTC
 Enes: keep grandfathered senders (only owners exist); #715 first; asked whose #715 is: answered Terra (internal/), Elliot documents. Recorded on #729. Terra: #720, #715, #730, #731, #719, #722, #721, #630. Iris: #727 → #723 → #732. #733 unassigned until #732 in review. Pinged Terra.
+
+## 2026-10-11 12:50 UTC
+Elliot filed #737 (daily govulncheck + npm audit scan filing chore issues; npm audit in PR CI on lockfile change; QUALITY.md routine). Asked to split the golangci-lint pin out as its own chore. Open PRs: #736 (Elliot, #711), #735 (Iris, #723, waits #734), #734 (Terra, #720), #726 (Dependabot), #453 parked. #727 merged? check next tick.
