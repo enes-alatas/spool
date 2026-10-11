@@ -3,8 +3,6 @@ package httpapi
 import (
 	"errors"
 	"net/http"
-	"strconv"
-	"strings"
 
 	"github.com/enes-alatas/spool/internal/store"
 )
@@ -60,20 +58,7 @@ func (server *Server) handleListLinks(w http.ResponseWriter, r *http.Request) {
 	views := make([]linkView, 0, len(links))
 	for _, link := range links {
 		view := linkView{Surface: link.Surface, CreatedAt: link.CreatedAt}
-		switch link.Surface {
-		case store.SurfaceTelegram:
-			view.ID = strings.TrimPrefix(link.Person, "tg:")
-			if id, err := strconv.ParseInt(view.ID, 10, 64); err == nil {
-				if sender, err := server.Store.TGSenders().Get(r.Context(), id); err == nil {
-					view.Username, view.Display = sender.Username, sender.Display
-				}
-			}
-		case store.SurfaceSlack:
-			view.ID = strings.TrimPrefix(link.Person, "slack:")
-			if sender, err := server.Store.SlackSenders().Get(r.Context(), view.ID); err == nil {
-				view.Username, view.Display = sender.Username, sender.Display
-			}
-		}
+		view.ID, view.Username, view.Display = server.senderOf(r.Context(), link.Person)
 		views = append(views, view)
 	}
 	writeJSON(w, http.StatusOK, views)

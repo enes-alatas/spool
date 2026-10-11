@@ -177,6 +177,7 @@ func (server *Server) routes() *routeMux {
 	mux.HandleFunc("POST /api/messages/{id}/retry", server.handleRetrySend)
 	mux.HandleFunc("POST /api/messages/{id}/dismiss", server.handleDismissSend)
 	mux.HandleFunc("GET /api/loops/{name}/conversation", server.handleLoopConversation)
+	mux.HandleFunc("GET /api/loops/{name}/conversations", server.handleLoopConversations)
 	mux.HandleFunc("GET /api/group", server.handleGroupTimeline)
 	mux.HandleFunc("POST /api/group", server.handleGroupPost)
 	mux.HandleFunc("GET /api/connections", server.handleListConnections)
@@ -1500,16 +1501,21 @@ func validateClaudeToken(raw string) (string, error) {
 }
 
 // handleLoopConversation serves one of the loop's private conversation
-// threads: control_room (the default) or owner_dm. The shared group has no
-// per-loop thread — it lives on /api/activity.
+// threads: control_room (the default), owner_dm, or a dm:<name> (see
+// handleLoopDM). The shared group has no per-loop thread — it lives on
+// /api/activity.
 func (server *Server) handleLoopConversation(w http.ResponseWriter, r *http.Request) {
 	loopRecord := server.loopByName(w, r)
 	if loopRecord == nil {
 		return
 	}
 	kind := defaultStr(r.URL.Query().Get("conversation"), store.ConversationControlRoom)
+	if store.IsDM(kind) {
+		server.handleLoopDM(w, r, loopRecord, kind)
+		return
+	}
 	if kind != store.ConversationControlRoom && kind != store.ConversationOwnerDM {
-		server.jsonErr(w, 400, "conversation must be %s or %s", store.ConversationControlRoom, store.ConversationOwnerDM)
+		server.jsonErr(w, 400, "conversation must be %s, %s or %s<name>", store.ConversationControlRoom, store.ConversationOwnerDM, store.DMDestinationPrefix)
 		return
 	}
 	msgs, err := server.Store.Messages().ListConversation(r.Context(), kind, loopRecord.ID, queryInt(r, "limit", 100))
