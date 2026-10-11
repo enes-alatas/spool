@@ -887,6 +887,25 @@ func seedLinks(ctx context.Context, db store.Store) error {
 	return nil
 }
 
+// sam's code for Slack reached the gardener's app, which asked them there
+// to reply YES (#745, ADR-0051): Account shows a waiting row beside the
+// Telegram link, and its dialog the step that waits. The question lasts its
+// five minutes from the seed, which a shot run is well inside.
+func seedWaitingLink(ctx context.Context, db store.Store, ids map[string]string) error {
+	const code = "link-fixture0002"
+	sum := sha256.Sum256([]byte(code))
+	hash := hex.EncodeToString(sum[:])
+	asked := ms(0)
+	if err := db.UserLinks().SetCode(ctx, "user-sam", store.SurfaceSlack, hash, asked+15*60*1000); err != nil {
+		return fmt.Errorf("slack link code: %w", err)
+	}
+	if err := db.UserLinks().Claim(ctx, hash, &store.LinkConfirmation{Person: store.SlackPerson("U0FIXTURE4"),
+		LoopID: ids["gardener"], Username: "sam_example", TeamID: "T0FIXTURE1", ExpiresAt: asked + 5*60*1000}, asked); err != nil {
+		return fmt.Errorf("slack link code sent: %w", err)
+	}
+	return nil
+}
+
 // The gardener's private conversations (#723): with rana, its owner, on
 // owner_dm, and with sam on dm:sam_example. An admin's page shows both
 // tabs, and sam's, through the link seedLinks makes, only their own.
