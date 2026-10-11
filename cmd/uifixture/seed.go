@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -465,6 +467,8 @@ func seedSenders(ctx context.Context, db store.Store) error {
 		{id: 700000001, user: "rana_example", display: "Rana", status: store.SenderAllowed, via: "group:gardener", code: "K7QM3X"},
 		{id: 700000002, user: "devrim_example", display: "Devrim", status: store.SenderPending, via: "dm:watcher", code: "R4TZ8P"},
 		{id: 700000003, user: "passerby_example", display: "Passer-by", status: store.SenderBlocked, via: "group:watcher", code: "H2WN6C"},
+		// The member sam on Telegram, whom seedUsers links to the user (#704).
+		{id: 700000004, user: "sam_example", display: "Sam", status: store.SenderAllowed, via: "dm:gardener", code: "M9VB5D"},
 	}
 	for _, sender := range senders {
 		if err := db.TGSenders().Create(ctx, &store.TGSender{
@@ -856,6 +860,23 @@ func seedUsers(ctx context.Context, db store.Store) error {
 		if err := db.Users().Create(ctx, user); err != nil {
 			return fmt.Errorf("user %s: %w", user.Name, err)
 		}
+	}
+	return seedLinks(ctx, db)
+}
+
+// sam linked to their Telegram account two days ago, as sending a link
+// code does (#704); admin and robin are linked nowhere. The code is the
+// fixture's own and long spent, kept the way the hub keeps one.
+func seedLinks(ctx context.Context, db store.Store) error {
+	const code = "link-fixture0001"
+	sum := sha256.Sum256([]byte(code))
+	hash := hex.EncodeToString(sum[:])
+	linkedAt := ms(-2 * 24 * time.Hour)
+	if err := db.UserLinks().SetCode(ctx, "user-sam", hash, linkedAt+15*60*1000); err != nil {
+		return fmt.Errorf("link code: %w", err)
+	}
+	if _, err := db.UserLinks().Redeem(ctx, hash, store.TGPerson(700000004), linkedAt); err != nil {
+		return fmt.Errorf("link: %w", err)
 	}
 	return nil
 }
