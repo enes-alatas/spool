@@ -92,7 +92,24 @@ window regardless of loop count (ADR-0018).
   invents, or one disguised past those, is outside it; ADR-0045 states the whole
   posture.
 - Message bodies are logged at debug level only — loops carry private team chatter.
-- `govulncheck` gates CI.
+- `govulncheck` gates CI on a change to Go, and `npm audit --omit=dev
+  --audit-level=high` on a change to `web/package-lock.json` (#737).
+- **Advisories, the same day** (#737). The `advisories` workflow scans `main`
+  daily: govulncheck (the standard library and toolchain included, which
+  Dependabot does not watch) and npm audit of the control room's runtime
+  dependencies. Each new advisory Spool's code calls, or the room ships,
+  becomes one `chore` issue, filed once (`scripts/advisories.sh`). Dependabot
+  alerts are read alongside it. The routine, each the day it appears:
+  1. The chore issue is triaged and placed like any other.
+  2. A PR the same day: the Dependabot PR where one exists, adopted and
+     reviewed like any PR; otherwise the bump by hand, `go get
+     <module>@<fixed>` or the `toolchain` line, or `npm update` / an
+     `overrides` entry in `web/`.
+  3. Whether the advisory makes Spool exploitable is assessed in private and
+     goes to the operator directly. The issue and the PR say what is bumped,
+     never how it would be reached.
+  A scan that cannot run (the database unreachable, a report that isn't
+  one) fails the workflow, and `ci-health` posts it to the pinned issue.
 - **No telemetry, ever.** The binary never phones home. This is a product promise.
 - `bypassPermissions` containment story is documented per SandboxRuntime.
 
