@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"testing"
 	"time"
@@ -925,5 +926,70 @@ func TestSlackMessageIsKeyedByChannelAndTS(t *testing.T) {
 	}
 	if _, err := db.Messages().BySlackTS(ctx, "", ""); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("BySlackTS with no identity = %v, want ErrNotFound", err)
+	}
+}
+
+// TestListPrivateThreads pins the per-person private queries (#720): a
+// person's dm rows come back under every name they had and no one else's,
+// and the threads list each person once per kind, newest first, with the
+// owner_dm rows older than #703 as one thread that records nobody.
+func TestListPrivateThreads(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	now := time.Now().UnixMilli()
+
+	for i, message := range []*store.Message{
+		{TS: now, Origin: store.OriginTelegramDM, Author: "owner", Text: "before #703",
+			Conversation: store.ConversationOwnerDM, ConversationLoopID: "l1"},
+		{TS: now + 1, Origin: store.OriginTelegramDM, Author: "ada", Text: "as ada",
+			Conversation: "dm:ada", ConversationLoopID: "l1", DMPerson: "tg:1"},
+		{TS: now + 2, Origin: store.OriginTelegramDM, Author: "owner", Text: "stamped",
+			Conversation: store.ConversationOwnerDM, ConversationLoopID: "l1", DMPerson: "tg:9"},
+		{TS: now + 3, Origin: store.OriginTelegramDM, Author: "bob", Text: "bob",
+			Conversation: "dm:bob", ConversationLoopID: "l1", DMPerson: "tg:2"},
+		{TS: now + 4, Origin: store.OriginTelegramDM, Author: "ada", Text: "as lovelace",
+			Conversation: "dm:lovelace", ConversationLoopID: "l1", DMPerson: "tg:1"},
+		{TS: now + 5, Origin: store.OriginTelegramDM, Author: "ada", Text: "other loop",
+			Conversation: "dm:lovelace", ConversationLoopID: "l2", DMPerson: "tg:1"},
+		{TS: now + 6, Origin: store.OriginWeb, Author: "operator", Text: "control room",
+			Conversation: store.ConversationControlRoom, ConversationLoopID: "l1"},
+	} {
+		if err := db.Messages().Insert(ctx, message); err != nil {
+			t.Fatalf("insert %d: %v", i, err)
+		}
+	}
+
+	got, err := db.Messages().ListDM(ctx, "l1", "tg:1", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].Text != "as lovelace" || got[1].Text != "as ada" {
+		t.Fatalf("ListDM(l1, tg:1) = %d messages (%+v), want both names' 2 newest-first", len(got), got)
+	}
+
+	threads, err := db.Messages().ListPrivateThreads(ctx, "l1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []store.PrivateThread{
+		{Conversation: store.DMDestinationPrefix, DMPerson: "tg:1", LastAt: now + 4},
+		{Conversation: store.DMDestinationPrefix, DMPerson: "tg:2", LastAt: now + 3},
+		{Conversation: store.ConversationOwnerDM, DMPerson: "tg:9", LastAt: now + 2},
+		{Conversation: store.ConversationOwnerDM, DMPerson: "", LastAt: now},
+	}
+	if !reflect.DeepEqual(threads, want) {
+		t.Fatalf("ListPrivateThreads(l1) = %+v, want %+v", threads, want)
+	}
+
+	threads, err = db.Messages().ListPrivateThreads(ctx, "l3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(threads) != 0 {
+		t.Fatalf("ListPrivateThreads(l3) = %+v, want none for a loop with no private messages", threads)
 	}
 }
