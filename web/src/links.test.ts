@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { UserLink } from './api'
-import { linkName, spent } from './links'
+import type { UserLink, WaitingLink } from './api'
+import { linkName, linkSnapshot } from './links'
 
 const link = (over: Partial<UserLink>): UserLink => ({
   surface: 'telegram',
@@ -23,18 +23,39 @@ describe('linkName', () => {
   })
 })
 
-describe('spent', () => {
-  const minute = 60 * 1000
-  // Asked for at 100 minutes, so it expires at 115.
-  const code = { code: 'link-fixture0001', expires_at: 115 * minute }
+describe('linkSnapshot', () => {
+  const asked: WaitingLink = {
+    surface: 'slack',
+    id: 'U0FIXTURE4',
+    username: 'sam_example',
+    display: '',
+    loop: 'gardener',
+    expires_at: 0,
+  }
+  // A hub where the YES lands after the nth read of the snapshot: the
+  // question leaves the waiting list and the link joins the links together.
+  const hub = (yesAfter: number) => {
+    let reads = 0
+    const said = () => reads >= yesAfter
+    const read =
+      <T>(answer: () => T) =>
+      async () => {
+        const value = answer()
+        reads++
+        return value
+      }
+    return {
+      waiting: read(() => (said() ? [] : [asked])),
+      links: read(() => (said() ? [link({ surface: 'slack' })] : [])),
+    }
+  }
 
-  it('is spent by a link made since it was asked for', () => {
-    expect(spent(code, [link({ created_at: 101 * minute })])).toBe(true)
-  })
-
-  it('is not spent by a link from before it, or by none', () => {
-    expect(spent(code, [link({ created_at: 99 * minute })])).toBe(false)
-    expect(spent(code, [])).toBe(false)
-    expect(spent(code, undefined)).toBe(false)
+  it('never loses a surface to a YES that lands between its two reads', async () => {
+    for (const yesAfter of [0, 1, 2]) {
+      const { waiting, links } = hub(yesAfter)
+      const snapshot = await linkSnapshot(waiting, links)
+      const listed = [...snapshot.waiting, ...snapshot.links].filter((l) => l.surface === 'slack')
+      expect(listed.length, `YES after read ${yesAfter}`).toBeGreaterThan(0)
+    }
   })
 })

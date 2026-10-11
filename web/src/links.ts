@@ -1,20 +1,27 @@
 // A user's links to who they are on a chat surface (ADR-0050, #704).
 
-import type { LinkCode, UserLink } from './api'
+import type { LinkCode, UserLink, WaitingLink } from './api'
 
-// A code lives 15 minutes (ADR-0050), so it was asked for that long before
-// it expires, by the hub's clock rather than the browser's.
-const LINK_CODE_TTL_MS = 15 * 60 * 1000
-
-// Whether a code has made its link: a link made since the code was asked
-// for is the one it made.
-export function spent(code: LinkCode, links: UserLink[] | undefined): boolean {
-  return !!links?.some((link) => link.created_at >= code.expires_at - LINK_CODE_TTL_MS)
-}
+// A code asked for one surface, as the page holds it while it is open.
+export type OpenLinkCode = LinkCode & { surface: UserLink['surface'] }
 
 // "@robin_tg (Robin)", or the surface's id when it never said a name.
-export function linkName(link: UserLink): string {
+export function linkName(link: Pick<UserLink, 'id' | 'username' | 'display'>): string {
   const handle = link.username ? `@${link.username}` : ''
   if (handle && link.display) return `${handle} (${link.display})`
   return handle || link.display || link.id
+}
+
+// The user's links and the ones waiting for YES, read as one snapshot. A YES
+// moves a surface from the second list to the first in one transaction, so
+// the waiting list is read first: had the YES landed by then, it had landed
+// before the links are read, too. Read the other way round, a YES between
+// the two reads finds the surface in neither list, which reads as a question
+// that lapsed and a row that is not linked.
+export async function linkSnapshot(
+  waiting: () => Promise<WaitingLink[]>,
+  links: () => Promise<UserLink[]>,
+): Promise<{ links: UserLink[]; waiting: WaitingLink[] }> {
+  const asked = await waiting()
+  return { waiting: asked, links: await links() }
 }

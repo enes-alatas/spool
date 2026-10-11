@@ -561,6 +561,18 @@ export interface UserLink {
   created_at: number
 }
 
+// A link the signed-in user waits for (ADR-0051): a code of theirs reached
+// a loop's bot or app, which asked its sender there to reply YES. loop is the
+// loop it reached, and expires_at when the question lapses.
+export interface WaitingLink {
+  surface: UserLink['surface']
+  id: string
+  username: string
+  display: string
+  loop: string
+  expires_at: number
+}
+
 // One of a loop's private conversations (#720): with its owner on
 // owner_dm, or with another allowed person on dm:<name> (ADR-0049). name is
 // the person as the identity catalog names them, and person_id their id on
@@ -573,7 +585,8 @@ export interface PrivateConversation {
 }
 
 // A link code, answered once (#703). It links whoever sends it to a loop's
-// bot or app in a DM, once, until expires_at.
+// bot or app in a DM on the surface it was asked for (ADR-0051), once, until
+// expires_at.
 export interface LinkCode {
   code: string
   expires_at: number
@@ -999,7 +1012,9 @@ export const api = {
   // code replaces any open one; the operator token is no user, and gets 400
   // no_user for a code or a removal.
   myLinks: () => req<UserLink[]>('/api/me/links'),
-  linkCode: () => req<LinkCode>('/api/me/links/code', { method: 'POST' }),
+  myWaitingLinks: () => req<WaitingLink[]>('/api/me/links/waiting'),
+  linkCode: (surface: UserLink['surface']) =>
+    req<LinkCode>('/api/me/links/code', { method: 'POST', body: JSON.stringify({ surface }) }),
   removeLink: (surface: UserLink['surface']) => req<void>(`/api/me/links/${surface}`, { method: 'DELETE' }),
   // The answer is the session's user with the flag cleared; the session that
   // changed it stays signed in, and the user's others are revoked.

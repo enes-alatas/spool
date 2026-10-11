@@ -87,9 +87,9 @@ for (const shot of memberShots) {
   await member.screenshot({ path: file, fullPage: true })
   memberFiles.push(file)
 }
-// sam's chat accounts (#704): linked on Telegram by the fixture, then with
-// a link code open. The hub's own code is random, so the shot shows the
-// fixture's in its place.
+// sam's chat accounts (#704, #745): linked on Telegram by the fixture, and
+// waiting for YES on Slack, a code of theirs having reached the gardener's
+// app.
 const accountSection = async (file) => {
   const head = await member.locator('h2', { hasText: 'Account' }).boundingBox()
   const end = await member.locator('.links').boundingBox()
@@ -100,14 +100,28 @@ const accountSection = async (file) => {
   memberFiles.push(file)
 }
 await member.goto(base + '/settings', { waitUntil: 'networkidle' })
-await member.locator('.link-row .btn', { hasText: 'Remove' }).waitFor({ timeout: 15000 })
+await member.locator('.link-waiting').waitFor({ timeout: 15000 })
 await accountSection(`${outDir}/settings-links.png`)
+// The link dialog, from a fresh code to the step that waits for YES. The
+// hub's own code is random, so the shot shows the fixture's in its place;
+// the question is held back until the code is open, then let through as the
+// fixture seeded it.
+await member.route('**/api/me/links/waiting', (route) => route.fulfill({ json: [] }))
 await member.route('**/api/me/links/code', (route) =>
   route.fulfill({ status: 201, json: { code: 'link-fixture0002', expires_at: Date.now() + 15 * 60000 } }),
 )
-await member.getByRole('button', { name: 'Get a link code' }).click()
-await member.locator('.link-code').waitFor({ timeout: 15000 })
-await accountSection(`${outDir}/settings-link-code.png`)
+await member.reload({ waitUntil: 'networkidle' })
+await member.getByRole('button', { name: 'Link Slack' }).click()
+const linkDialog = member.locator('dialog.link-dialog')
+await linkDialog.locator('.otp-value').waitFor({ timeout: 15000 })
+const linkCodeFile = `${outDir}/settings-link-code.png`
+await member.screenshot({ path: linkCodeFile })
+memberFiles.push(linkCodeFile)
+await member.unroute('**/api/me/links/waiting')
+await linkDialog.locator('li.now', { hasText: 'Reply YES there' }).waitFor({ timeout: 15000 })
+const linkWaitingFile = `${outDir}/settings-link-waiting.png`
+await member.screenshot({ path: linkWaitingFile })
+memberFiles.push(linkWaitingFile)
 // The gardener's page as sam (#723): their own private conversation is a
 // tab, and the owner DM with rana is not.
 await member.goto(base + '/loops/gardener?private=dm:sam_example', { waitUntil: 'networkidle' })
