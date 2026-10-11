@@ -428,3 +428,6 @@ Elliot filed #742 at Enes's ask (needs-security-review label by path list; merge
 
 ## 2026-10-11 17:25 UTC
 Elliot opened PR #743 (#742) with #736/#739/#740 still open: four PRs in Quinn's queue from one author. Reacted only; if Quinn flags load or his PRs conflict on docs, remind him of one-PR-in-flight.
+
+## 2026-10-11 19:10 UTC
+Terra took #730 and posted its shape (ADR-0051: surface-bound codes, check before sender gate in DMs, YES consent, link allows, limits 5/sender-hour and 50/hub-hour in memory, waiting state on /api/me/links, link_changes log). Accepted. Filed #744 (slice 2b: owner Access routes incl. 24h tally) after #731. Terra: #730, #731, #744, #719, #722, #721, #630. Enes picked A on #732 mockups.
