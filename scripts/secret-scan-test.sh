@@ -13,6 +13,15 @@ cd "$(dirname "$0")/.."
 SCAN=scripts/secret-scan.sh
 failures=0
 
+# The checks below mean nothing under an awk that cannot run the rules:
+# every "is caught" case would fail for a reason none of them names, so say
+# the reason once and stop (#718).
+. scripts/secret-awk.sh
+if ! secret_awk_pick; then
+  printf 'FAIL this awk cannot run the rules, so no check below could pass\n'
+  exit 1
+fi
+
 # A unified diff adding one line to PATH, as git -U0 writes it.
 diff_adding() { # path line content
   printf 'diff --git a/%s b/%s\n--- a/%s\n+++ b/%s\n@@ -0,0 +%s @@\n+%s\n' \
@@ -162,6 +171,36 @@ check 'a group chat id in the tree is not a scan hit' 0 '' \
 # Line numbers come from the hunk header, not from a running count.
 check 'the reported line is the added line' 1 'internal/store/sqlite/store.go:412:' \
   "$(diff_adding internal/store/sqlite/store.go 412 "dsn := \"$ANT\"")"
+
+# An awk without regex intervals matches none of the rules, so under one the
+# scan must refuse, never pass (#718). The stand-in reads its input and
+# prints nothing, which is what such an awk does with every rule here.
+noawk=$(mktemp)
+printf '#!/bin/sh\ncat >/dev/null\n' > "$noawk"
+chmod +x "$noawk"
+refused() { # name awk reason diff
+  local err status
+  err=$(printf '%s\n' "$4" | SECRET_AWK="$2" bash "$SCAN" --stdin 2>&1 >/dev/null)
+  status=$?
+  if [ "$status" -ne 2 ] || [[ "$err" != *"$2 "*"$3"* ]]; then
+    printf 'FAIL %s: exit %s, want 2 saying %s %s\n  stderr: %s\n' "$1" "$status" "$2" "$3" "$err"
+    failures=$((failures + 1))
+  else
+    printf 'ok   %s\n' "$1"
+  fi
+}
+refused 'a token under an awk without intervals is refused, not passed' \
+  "$noawk" 'does not support regex' \
+  "$(diff_adding internal/telegram/bot.go 12 "	token := \"$TG\"")"
+refused 'a clean diff under an awk without intervals is refused, not passed' \
+  "$noawk" 'does not support regex' \
+  "$(diff_adding internal/loop/prompt.go 3 '	return "the loop is awake"')"
+# An awk SECRET_AWK names that is not on PATH is reported missing, not as
+# lacking intervals: each needs a different fix.
+rm -f "$noawk"
+refused 'an awk that is not installed is refused as missing' \
+  "$noawk" 'is not installed' \
+  "$(diff_adding internal/loop/prompt.go 3 '	return "the loop is awake"')"
 
 if [ "$failures" -gt 0 ]; then
   printf '\n%s check(s) failed\n' "$failures"

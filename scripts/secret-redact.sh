@@ -29,5 +29,7 @@
 set -uo pipefail
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+. "$here/secret-awk.sh"
+secret_awk_pick || exit
 
-awk -f "$here/secret-rules.awk" -f "$here/secret-body.awk" -v marker='`<redacted by secret-redact>`'
+"$secret_awk" -f "$here/secret-rules.awk" -f "$here/secret-body.awk" -v marker='`<redacted by secret-redact>`'
