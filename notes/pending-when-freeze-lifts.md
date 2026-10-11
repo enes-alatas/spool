@@ -383,3 +383,6 @@ Quiet tick. Typed Quinn's untyped #714 (itest creation-tick flake) as bug/severi
 
 ## 2026-10-11 06:05 UTC
 Quiet tick, nothing moved overnight. Closed #529: slice (a), rule 2 (#698/PR 699) and rule 3 (#700/PR 701) all on main; team rules live in #630. PRs open: #713 (Quinn), #709 (awaiting Enes merge), #453 (parked). No pings.
+
+## 2026-10-11 09:08 UTC
+New: PR 716 (Elliot, #707 CI pins), PR 717 (Iris, #696 web; #691 merged as #706), issue #718 (Quinn: secret-scan matches nothing on mawk). Triaged #718 to Terra ahead of #715, fail-closed only. Pinged Terra. #709 still awaits Enes merge, #713 with Quinn.
