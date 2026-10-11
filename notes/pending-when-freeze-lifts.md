@@ -407,3 +407,6 @@ Enes asked for the exact user story first. Sent owner and member walk-throughs b
 
 ## 2026-10-11 11:35 UTC
 Enes: all sounds good; run it over Elliot before filing; report disagreements; onboarding must stay consistently easy. Filed question #728 with both stories and four posture questions for Elliot; pinged him in the group; told Enes. Epic to carry a README+demo child. Numbers 724-727 exist (unseen; check next tick).
+
+## 2026-10-11 11:40 UTC
+Enes merged #709 (#703), #713 (#708), #716 (#707), #717 (#696), #724 (#718). Open PRs: #725 (Elliot, #712 runbook), #726 (Dependabot pins bump, Elliot/Quinn), #727 (Iris, #704 link flow). Terra next: #720, #715, #719, #722, #721, #630. #582 left: nothing web after #717? check #691 closed. #100 left: #704 (PR 727), #720, #723.
