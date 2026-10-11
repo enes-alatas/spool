@@ -401,3 +401,6 @@ Elliot: #721 and #722 share the per-stream cache; moved #721 next to #722. Terra
 
 ## 2026-10-11 11:15 UTC
 Enes (DM): make the #100 link code the way for everybody incl. admins/owners, replacing pairing; move Access into Settings. Answered yes with four consequences to confirm: every sender is a user (unknown DM silent), Settings → Access over users+links, legacy allowed senders kept as "not linked", README step 9 + demo change (release rule). Awaiting his picks on 1 and 3 and the queue position before filing an L5 epic superseding ADR-0050 in part.
+
+## 2026-10-11 11:28 UTC
+Enes asked for the exact user story first. Sent owner and member walk-throughs by DM (steps that change: link from Settings → Account, owner picker chooses users, member links after account creation; edges: silent before linking, one link per surface, block/remove, no chat-only senders). Awaiting pushback before filing.
