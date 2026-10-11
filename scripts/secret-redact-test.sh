@@ -15,6 +15,14 @@ REDACT=scripts/secret-redact.sh
 MARKER='`<redacted by secret-redact>`'
 failures=0
 
+# Under an awk that cannot run the rules, every case below would fail for a
+# reason none of them names, so say the reason once and stop (#718).
+. scripts/secret-awk.sh
+if ! secret_awk_pick; then
+  printf 'FAIL this awk cannot run the rules, so no check below could pass\n'
+  exit 1
+fi
+
 # Invented values. The digits and letters are arbitrary and deliberately not
 # in any repeated or sequential run, so they do not trip the allowance.
 TG='7196384205:BQFgtZmKcrudPwvbxNhelisoqWTLGDMYjx'
@@ -159,7 +167,7 @@ fi
 # wanting less than everything has to say so.
 bare=$(mktemp)
 printf '{ if (findSecret($0)) hits++ }\nEND { exit hits > 0 ? 1 : 0 }\n' > "$bare"
-printf 'the chat is %s\n' "$CHAT" | awk -f scripts/secret-rules.awk -f "$bare" >/dev/null 2>&1
+printf 'the chat is %s\n' "$CHAT" | "$secret_awk" -f scripts/secret-rules.awk -f "$bare" >/dev/null 2>&1
 if [ $? -ne 1 ]; then
   printf 'FAIL a front end with no scan_scope skipped the body-scoped shapes\n'
   failures=$((failures + 1))
@@ -167,6 +175,33 @@ else
   printf 'ok   an undeclared front end gets every shape\n'
 fi
 rm -f "$bare"
+
+# Under an awk without regex intervals no rule matches, so the redactor
+# would hand every body back as it was and report nothing replaced. It must
+# refuse instead, with a status that is not 1, so the workflow leaves the
+# body alone and fails loudly (#718). The stand-in prints nothing, as such
+# an awk prints no body the rules replaced.
+noawk=$(mktemp)
+printf '#!/bin/sh\ncat >/dev/null\n' > "$noawk"
+chmod +x "$noawk"
+err=$(printf 'the token is %s\n' "$TG" | SECRET_AWK="$noawk" bash "$REDACT" 2>&1 >/dev/null)
+status=$?
+if [ "$status" -ne 2 ] || [[ "$err" != *"$noawk "*"does not support regex"* ]]; then
+  printf 'FAIL an awk without intervals: exit %s, want 2 naming the awk\n  stderr: %s\n' "$status" "$err"
+  failures=$((failures + 1))
+else
+  printf 'ok   an awk without intervals is refused, not passed\n'
+fi
+# One SECRET_AWK names that is not on PATH is reported missing instead.
+rm -f "$noawk"
+err=$(printf 'the token is %s\n' "$TG" | SECRET_AWK="$noawk" bash "$REDACT" 2>&1 >/dev/null)
+status=$?
+if [ "$status" -ne 2 ] || [[ "$err" != *"$noawk is not installed"* ]]; then
+  printf 'FAIL a missing awk: exit %s, want 2 saying it is not installed\n  stderr: %s\n' "$status" "$err"
+  failures=$((failures + 1))
+else
+  printf 'ok   an awk that is not installed is refused as missing\n'
+fi
 
 if [ "$failures" -gt 0 ]; then
   printf '\n%s check(s) failed\n' "$failures"

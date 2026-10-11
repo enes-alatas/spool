@@ -17,9 +17,11 @@
 set -uo pipefail
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+. "$here/secret-awk.sh"
+secret_awk_pick || exit
 
 scan() {
-  awk -f "$here/secret-rules.awk" -f "$here/secret-diff.awk"
+  "$secret_awk" -f "$here/secret-rules.awk" -f "$here/secret-diff.awk"
 }
 
 if [ "${1:---range}" = '--stdin' ]; then

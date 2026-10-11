@@ -273,7 +273,11 @@ agents — Claude sessions today, Spool's own loops from L2.*
   check CI runs on every PR — the lines a change *adds*, against the known
   credential shapes. Test files and fixtures may hold a token-shaped string only
   when the value reads as obviously synthetic; production code never may. A hit
-  prints at most eight characters, because a CI log is an artefact too.
+  prints at most eight characters, because a CI log is an artefact too. The
+  rules need an awk with regex intervals: gawk, or a mawk newer than the
+  1.3.4 20200120 that Ubuntu 22.04 and Debian 12 ship. Under an awk without
+  them the scan refuses rather than passes; install gawk, or point
+  `SECRET_AWK` at one that works (#718).
 - **An issue or comment body is redacted, not rejected** (#206): the
   `issue-guards` workflow edits the value out, but the revision history still
   holds it, so rotation is not optional, and a loop reports it privately for
