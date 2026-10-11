@@ -155,7 +155,11 @@ ADR instead.*
   (the MVP is retroactively v0.1.0). `v1.0.0` is OSS launch (L6). The
   README names what the release ships: a docs issue lists the release's
   additions, says whether the demo video still shows what ships
-  (re-recorded if not), and lands before the tag ask (#684).
+  (re-recorded if not), and lands before the tag ask (#684). A change that
+  alters stored data at its first start (a re-seal, or a rewrite the
+  previous release cannot read) adds its row to OPERATIONS.md's
+  release-specific steps in the same PR, because generated notes cannot say
+  what an operator must do about it (#712).
 - **The operator tags, never a loop** (#223). Release notes are generated
   from the commit titles; there is no CHANGELOG file. Procedure, and how a
   build names itself: `/release` (`.claude/skills/release/`).
