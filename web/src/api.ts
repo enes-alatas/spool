@@ -561,6 +561,17 @@ export interface UserLink {
   created_at: number
 }
 
+// One of a loop's private conversations (#720): with its owner on
+// owner_dm, or with another allowed person on dm:<name> (ADR-0049). name is
+// the person as the identity catalog names them, and person_id their id on
+// the surface, which outlives a rename; last_at is the newest message in it.
+export interface PrivateConversation {
+  conversation: 'owner_dm' | `dm:${string}`
+  name: string
+  person_id: string
+  last_at: number
+}
+
 // A link code, answered once (#703). It links whoever sends it to a loop's
 // bot or app in a DM, once, until expires_at.
 export interface LinkCode {
@@ -933,8 +944,18 @@ export const api = {
         attachment_id: attachmentID || undefined,
       }),
     }),
-  conversation: (name: string, kind: 'control_room' | 'owner_dm' = 'control_room', limit = 100) =>
-    req<ChatMessage[]>(`/api/loops/${name}/conversation?conversation=${kind}&limit=${limit}`),
+  conversation: (
+    name: string,
+    kind: 'control_room' | PrivateConversation['conversation'] = 'control_room',
+    limit = 100,
+  ) =>
+    req<ChatMessage[]>(
+      `/api/loops/${name}/conversation?conversation=${encodeURIComponent(kind)}&limit=${limit}`,
+    ),
+  // The loop's private conversations the caller may read (#720), newest
+  // first: an admin's are all of them, a member's the ones that are theirs.
+  // A reader gets an empty thread, not an error, for one that is not theirs.
+  privateConversations: (name: string) => req<PrivateConversation[]>(`/api/loops/${name}/conversations`),
   telegramStatus: (name: string) =>
     req<{ configured: boolean; bot_username: string; group_bound: boolean; bridge?: unknown }>(
       `/api/loops/${name}/telegram/status`,

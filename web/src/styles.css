@@ -1587,6 +1587,21 @@ textarea {
   border-color: var(--text);
   color: var(--text);
 }
+/* The pane tabs over the thread are a list, not one choice between two:
+   with the loop's channels and private conversations (#723) they run past
+   one line, so the row wraps and each label stays whole. */
+.dest-picker.pane-tabs {
+  flex-wrap: wrap;
+}
+.dest-picker.pane-tabs .dest {
+  white-space: nowrap;
+}
+/* Where the composer would be, on a private conversation's pane (#723). */
+.private-note {
+  margin-top: 16px;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
 /* the Undelivered pane's tab: it only exists while something failed, and it
    says so in the colour the Fleet badge that led here uses */
 .dest-picker .dest.bad {

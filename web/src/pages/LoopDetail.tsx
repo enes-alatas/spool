@@ -9,6 +9,7 @@ import {
   LoopEvent,
   LoopView,
   MessageDestination,
+  PrivateConversation,
   Rehome,
   Settings,
   SlackStatus,
@@ -45,6 +46,7 @@ import { Timeline } from '../components/Timeline'
 import { ChannelHead, LoopRooms, ROOMS_ANCHOR } from '../components/LoopChannels'
 import { ChannelChat } from '../components/ChannelChat'
 import { channelLabel } from '../channels'
+import { privateLabel, privatePerson } from '../privates'
 import { MCPReach } from '../components/MCPReach'
 import { LeftBehind, RehomeControl } from '../components/Rehome'
 import { SpoolGlyph } from '../components/Spool'
@@ -1150,7 +1152,35 @@ function ControlRoomThread({ msgs }: { msgs: ChatMessage[] }) {
   )
 }
 
-type Pane = 'timeline' | 'control_room' | 'undelivered' | 'channel'
+// What the loop and one person said privately (#723), on the surface they
+// talk on, for those who may read it: the person through their link, and
+// admins and owners (ADR-0050).
+function PrivateThread({
+  loop,
+  conversation,
+  msgs,
+}: {
+  loop: string
+  conversation: PrivateConversation
+  msgs: ChatMessage[]
+}) {
+  if (msgs.length === 0) {
+    return (
+      <div className="empty">
+        @{loop}'s private conversation with {privatePerson(conversation)}. Nothing in it yet.
+      </div>
+    )
+  }
+  return (
+    <div className="timeline">
+      {[...msgs].reverse().map((m) => (
+        <MessageKnot key={m.id} msg={m} />
+      ))}
+    </div>
+  )
+}
+
+type Pane = 'timeline' | 'control_room' | 'undelivered' | 'channel' | 'private'
 
 // Whether the hub answered that there is no such loop.
 function isMissing(error: unknown): boolean {
@@ -1187,11 +1217,15 @@ export default function LoopDetail() {
   const [chosenPane, setPane] = useState<Pane>(() =>
     searchParams.get('channel')
       ? 'channel'
-      : searchParams.get('pane') === 'undelivered'
-        ? 'undelivered'
-        : home,
+      : searchParams.get('private')
+        ? 'private'
+        : searchParams.get('pane') === 'undelivered'
+          ? 'undelivered'
+          : home,
   )
   const [paneChannel, setPaneChannel] = useState(() => searchParams.get('channel') ?? '')
+  // A private conversation's pane is in the URL as `?private=` (#723).
+  const [panePrivate, setPanePrivate] = useState(() => searchParams.get('private') ?? '')
   const paneRef = useRef<HTMLDivElement>(null)
   // Whether the pane should follow new entries. A reader who has scrolled up
   // is reading; yanking them back to the tail because a turn arrived loses
@@ -1205,12 +1239,15 @@ export default function LoopDetail() {
   // in one means nothing in another: the ids come from different tables and
   // would collide by coincidence. Switching panes starts at the tail, which is
   // where a reader opening a conversation wants to be anyway.
-  const showPane = (next: Pane, channel = '') => {
+  const showPane = (next: Pane, which = '') => {
     following.current = true
     anchor.current = null
     setPane(next)
-    setPaneChannel(channel)
-    setSearchParams(channel ? { channel } : {}, { replace: true })
+    setPaneChannel(next === 'channel' ? which : '')
+    setPanePrivate(next === 'private' ? which : '')
+    setSearchParams(next === 'channel' ? { channel: which } : next === 'private' ? { private: which } : {}, {
+      replace: true,
+    })
   }
   // The channels the loop is in, each a pane of its own (#549). Absent on a
   // hub from before channels, which has no list to read.
@@ -1224,7 +1261,25 @@ export default function LoopDetail() {
   // A `?channel=` naming no channel of the loop's, once the list is in to
   // say so (a typo, a channel it has left, a hub from before channels),
   // shows the page's first pane rather than one with nothing to show.
-  const pane = chosenPane === 'channel' && !channelsPending && !openChannel ? home : chosenPane
+  // The loop's private conversations the caller may read (#723), each a
+  // pane of its own. A hub from before them has no list, and shows none.
+  const { data: privateList, isPending: privatePending } = useQuery({
+    queryKey: ['loop', name, 'private'],
+    queryFn: () => api.privateConversations(name),
+    retry: false,
+  })
+  const privates = privateList ?? []
+  const openPrivate =
+    chosenPane === 'private' ? privates.find((c) => c.conversation === panePrivate) : undefined
+  // A `?channel=` or `?private=` naming nothing the loop has, once the list
+  // is in to say so (a typo, a channel it has left, a conversation the
+  // reader may not read, a hub from before either), shows the page's first
+  // pane rather than one with nothing to show.
+  const pane =
+    (chosenPane === 'channel' && !channelsPending && !openChannel) ||
+    (chosenPane === 'private' && !privatePending && !openPrivate)
+      ? home
+      : chosenPane
 
   const { data: loop, error: loopError } = useQuery({
     queryKey: ['loop', name],
@@ -1248,6 +1303,12 @@ export default function LoopDetail() {
     queryKey: ['conversation', name],
     queryFn: () => api.conversation(name),
     enabled: pane === 'control_room',
+    refetchInterval: 5000,
+  })
+  const { data: privateThread, error: privateError } = useQuery({
+    queryKey: ['conversation', name, panePrivate],
+    queryFn: () => api.conversation(name, openPrivate!.conversation),
+    enabled: pane === 'private' && !!openPrivate,
     refetchInterval: 5000,
   })
   const { data: turns } = useQuery({
@@ -1601,7 +1662,7 @@ export default function LoopDetail() {
               it is told, until its model is changed under Model &amp; pacing.
             </div>
           )}
-          <div className="dest-picker" style={{ marginTop: 0, marginBottom: 12 }}>
+          <div className="dest-picker pane-tabs" style={{ marginTop: 0, marginBottom: 12 }}>
             {transcript && (
               <button
                 className={`dest${pane === 'timeline' ? ' on' : ''}`}
@@ -1623,6 +1684,18 @@ export default function LoopDetail() {
                 onClick={() => showPane('channel', channel.name)}
               >
                 {channelLabel(channel.name)}
+              </button>
+            ))}
+            {/* Keyed by both: someone who owned the loop and also holds a
+                dm:<name> with it is two entries under one person_id. */}
+            {privates.map((c) => (
+              <button
+                key={`${c.conversation} ${c.person_id}`}
+                className={`dest private${openPrivate?.conversation === c.conversation ? ' on' : ''}`}
+                onClick={() => showPane('private', c.conversation)}
+                title={`What @${loop.name} and ${privatePerson(c)} said privately`}
+              >
+                {privateLabel(c)}
               </button>
             ))}
             {/* Only while there is something in it, like the nav entry it
@@ -1683,64 +1756,88 @@ export default function LoopDetail() {
                   ) : (
                     <ControlRoomThread msgs={thread ?? []} />
                   )
+                ) : pane === 'private' ? (
+                  // Until the list answers, a ?private= link has no
+                  // conversation to show yet: wait, as a channel does.
+                  !openPrivate ? (
+                    <div className="placeholder">Loading…</div>
+                  ) : privateError && !privateThread ? (
+                    <div className="form-error" role="alert">
+                      Could not load the conversation: {privateError.message}
+                    </div>
+                  ) : (
+                    <PrivateThread loop={loop.name} conversation={openPrivate} msgs={privateThread ?? []} />
+                  )
                 ) : (
                   <UndeliveredPane name={loop.name} />
                 )}
               </div>
-              <div className="dest-picker">
-                <span className="dest-label">to</span>
-                <button
-                  className={`dest${dest === 'control_room' ? ' on' : ''}`}
-                  onClick={() => pickDest('control_room')}
-                >
-                  control room
-                </button>
-                <button
-                  className={`dest${dest === 'group' ? ' on' : ''}`}
-                  onClick={() => pickDest('group')}
-                  disabled={outside && dest !== 'group'}
-                  title={
-                    outside
-                      ? `@${loop.name} is not in the fleet channel; the Surfaces panel adds it`
-                      : undefined
-                  }
-                >
-                  {outside ? 'fleet channel · not in it' : 'fleet channel'}
-                </button>
-              </div>
-              {file && <AttachedFile file={file} onRemove={() => setFile(null)} />}
-              <div className="composer" style={{ marginTop: 8 }}>
-                <AttachButton onPick={pickFile} disabled={sending} />
-                <textarea
-                  placeholder={
-                    dest === 'group'
-                      ? `Post to the fleet channel: the loops see it, nothing goes to Telegram or Slack, and @${loop.name} is delivered either way`
-                      : `Message @${loop.name} in the control room…`
-                  }
-                  value={draft}
-                  onChange={(e) => {
-                    setDraft(e.target.value)
-                    setSendError('')
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault()
-                      send(dest)
-                    }
-                  }}
-                />
-                <button
-                  className="btn primary"
-                  onClick={() => send(dest)}
-                  disabled={!draft.trim() || sending}
-                >
-                  Send
-                </button>
-              </div>
-              {sendError && (
-                <div className="form-error" role="alert">
-                  {sendError}
-                </div>
+              {/* A private conversation is the loop's with its person: the
+                  room reads it and writes nothing into it (#723). */}
+              {pane === 'private' ? (
+                openPrivate && (
+                  <div className="private-note">
+                    Read only: @{loop.name} answers {privatePerson(openPrivate)} there itself.
+                  </div>
+                )
+              ) : (
+                <>
+                  <div className="dest-picker">
+                    <span className="dest-label">to</span>
+                    <button
+                      className={`dest${dest === 'control_room' ? ' on' : ''}`}
+                      onClick={() => pickDest('control_room')}
+                    >
+                      control room
+                    </button>
+                    <button
+                      className={`dest${dest === 'group' ? ' on' : ''}`}
+                      onClick={() => pickDest('group')}
+                      disabled={outside && dest !== 'group'}
+                      title={
+                        outside
+                          ? `@${loop.name} is not in the fleet channel; the Surfaces panel adds it`
+                          : undefined
+                      }
+                    >
+                      {outside ? 'fleet channel · not in it' : 'fleet channel'}
+                    </button>
+                  </div>
+                  {file && <AttachedFile file={file} onRemove={() => setFile(null)} />}
+                  <div className="composer" style={{ marginTop: 8 }}>
+                    <AttachButton onPick={pickFile} disabled={sending} />
+                    <textarea
+                      placeholder={
+                        dest === 'group'
+                          ? `Post to the fleet channel: the loops see it, nothing goes to Telegram or Slack, and @${loop.name} is delivered either way`
+                          : `Message @${loop.name} in the control room…`
+                      }
+                      value={draft}
+                      onChange={(e) => {
+                        setDraft(e.target.value)
+                        setSendError('')
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault()
+                          send(dest)
+                        }
+                      }}
+                    />
+                    <button
+                      className="btn primary"
+                      onClick={() => send(dest)}
+                      disabled={!draft.trim() || sending}
+                    >
+                      Send
+                    </button>
+                  </div>
+                  {sendError && (
+                    <div className="form-error" role="alert">
+                      {sendError}
+                    </div>
+                  )}
+                </>
               )}
             </>
           )}

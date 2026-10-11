@@ -108,6 +108,13 @@ await member.route('**/api/me/links/code', (route) =>
 await member.getByRole('button', { name: 'Get a link code' }).click()
 await member.locator('.link-code').waitFor({ timeout: 15000 })
 await accountSection(`${outDir}/settings-link-code.png`)
+// The gardener's page as sam (#723): their own private conversation is a
+// tab, and the owner DM with rana is not.
+await member.goto(base + '/loops/gardener?private=dm:sam_example', { waitUntil: 'networkidle' })
+await member.locator('.private-note').waitFor({ timeout: 15000 })
+const memberPrivateFile = `${outDir}/member-loop-private.png`
+await member.screenshot({ path: memberPrivateFile })
+memberFiles.push(memberPrivateFile)
 await memberCtx.close()
 
 await page.goto(base + '/', { waitUntil: 'networkidle' })
@@ -144,6 +151,14 @@ const shots = [
 ]
 
 const taken = [signinFile, changeFile, accountFile, ...memberFiles]
+
+// The gardener's page as admin (#723): a tab for each private
+// conversation, sam's open, read only.
+await page.goto(base + '/loops/gardener?private=dm:sam_example', { waitUntil: 'networkidle' })
+await page.locator('.private-note').waitFor({ timeout: 15000 })
+const loopPrivateFile = `${outDir}/loop-private.png`
+await page.screenshot({ path: loopPrivateFile })
+taken.push(loopPrivateFile)
 for (const shot of shots) {
   await page.goto(base + shot.path, { waitUntil: 'networkidle' })
   await page.waitForSelector(shot.wait, { timeout: 15000 })
