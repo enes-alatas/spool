@@ -35,6 +35,11 @@ export interface LoopView {
   current_pid: number
   created_at: number
   updated_at: number
+  // Who made the loop and who last changed it through the API (#695): a
+  // user's name, or "operator" for the operator token. Empty on a loop
+  // older than the change record.
+  created_by: string
+  updated_by: string
   // busy, idle, waking, draining, asleep, paused, workstation_off,
   // workstation_down, model_unrecognized (#289) or capped (#650).
   state: string
@@ -562,6 +567,19 @@ export interface IssuedUser extends HubUser {
   one_time_password: string
 }
 
+// One change a user or the operator token made to a loop through the API,
+// mirrored from httpapi's changeView (#695). by is the user's name, or
+// "operator" for the token; loop is the loop's name as it was then, so a
+// change outlives a deleted or renamed loop. action is one of store's
+// LoopChange* names.
+export interface LoopChange {
+  id: number
+  at: number
+  by: string
+  action: string
+  loop: string
+}
+
 // Which build this Spool is, mirrored from internal/version.Info. Served
 // unauthenticated, because an operator filing a bug should not need a token
 // to say which Spool it was.
@@ -873,6 +891,11 @@ export const api = {
   // and is done. Takes the row off their list; it does not rewrite history.
   dismissSend: (id: number) => req<{ dismissed: boolean }>(`/api/messages/${id}/dismiss`, { method: 'POST' }),
   activity: (limit = 100) => req<ChatMessage[]>(`/api/activity?limit=${limit}`),
+  // The loops' change record, newest first (#695); loop narrows it to one.
+  changes: (loop?: string, limit = 100) =>
+    req<LoopChange[]>(
+      `/api/changes?${new URLSearchParams({ ...(loop ? { loop } : {}), limit: String(limit) })}`,
+    ),
   // The fleet channel's timeline, newest first like a loop's conversation.
   // It is the hub's rather than any loop's (ADR-0032), so it is not
   // reached through one.

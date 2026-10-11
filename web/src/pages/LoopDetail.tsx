@@ -21,6 +21,7 @@ import { PACE_HINT, type Pace } from '../pace'
 import { PaceFacts, PaceRange } from '../components/PaceRange'
 import { useMay } from '../components/Session'
 import { LoopConnections } from '../components/LoopConnections'
+import { LoopChangesPanel, LoopProvenance } from '../components/LoopChanges'
 import { needsLogin } from '../session'
 import {
   loopSurface,
@@ -1589,6 +1590,7 @@ export default function LoopDetail() {
             <span className="state-name">{loop.state}</span>
             {loop.runtime === 'bare' && <span className="containment-badge">uncontained</span>}
           </h1>
+          <LoopProvenance loop={loop} />
           <WorkstationNote loop={loop} />
           {/* On the refusal rather than the state: a dead workstation outranks
               model_unrecognized, and the model still needs changing (#289). */}
@@ -1899,6 +1901,8 @@ export default function LoopDetail() {
               ))}
             </div>
           )}
+
+          <LoopChangesPanel name={name} />
         </aside>
       </div>
     </div>
