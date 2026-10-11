@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/enes-alatas/spool/internal/attach"
 	"github.com/enes-alatas/spool/internal/httpapi"
@@ -749,5 +750,39 @@ func TestTheFixtureLeavesItsUserPassword(t *testing.T) {
 	}
 	if err := writeUserPassword(dir); err == nil {
 		t.Fatal("writeUserPassword over an existing file: no error, want a refusal")
+	}
+}
+
+// Account's waiting row and the dialog's waiting step need a code that
+// reached a bot with no YES yet (#745): sam's for Slack, to the gardener's
+// app, still open when the shots run.
+func TestSeedLeavesSamWaitingForYESOnSlack(t *testing.T) {
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "spool.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	files, err := attach.Open(filepath.Join(t.TempDir(), "files"))
+	if err != nil {
+		t.Fatalf("files: %v", err)
+	}
+	ctx := context.Background()
+	if err := seed(ctx, db, files); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	waiting, err := db.UserLinks().Waiting(ctx, "user-sam", time.Now().UnixMilli())
+	if err != nil {
+		t.Fatalf("waiting: %v", err)
+	}
+	if len(waiting) != 1 || waiting[0].Person != store.SlackPerson("U0FIXTURE4") {
+		t.Fatalf("sam waits on %+v, want one Slack question", waiting)
+	}
+	gardener, err := db.Loops().GetByName(ctx, "gardener")
+	if err != nil {
+		t.Fatalf("gardener: %v", err)
+	}
+	if waiting[0].LoopID != gardener.ID {
+		t.Errorf("the question came from loop %q, want the gardener's app", waiting[0].LoopID)
 	}
 }
