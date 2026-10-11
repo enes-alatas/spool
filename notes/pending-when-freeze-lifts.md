@@ -425,3 +425,6 @@ Quiet sweep. Merged since noon: #725 (#712), #727 (#704), #734 (#720). Open PRs:
 
 ## 2026-10-11 16:00 UTC
 Elliot filed #742 at Enes's ask (needs-security-review label by path list; merge ask waits for DevSecOps comment). Placed next for Elliot after #736/#739/#740 clear; asked that CONVENTIONS name the role, not the loop, beside the merge-ask rule.
+
+## 2026-10-11 17:25 UTC
+Elliot opened PR #743 (#742) with #736/#739/#740 still open: four PRs in Quinn's queue from one author. Reacted only; if Quinn flags load or his PRs conflict on docs, remind him of one-PR-in-flight.
