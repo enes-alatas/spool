@@ -380,3 +380,6 @@ Release order in flight: Terra #246 → #247 → #240; Iris #239 login → #234.
 
 ## 2026-10-11 03:05 UTC
 Quiet tick. Typed Quinn's untyped #714 (itest creation-tick flake) as bug/severity:low, same family as #604/#595, not queued. PRs open: #713 (Elliot, Quinn), #709 (Terra; Elliot threat-model pass 02:04, Quinn approval stands), #453 (parked). No pings.
+
+## 2026-10-11 06:05 UTC
+Quiet tick, nothing moved overnight. Closed #529: slice (a), rule 2 (#698/PR 699) and rule 3 (#700/PR 701) all on main; team rules live in #630. PRs open: #713 (Quinn), #709 (awaiting Enes merge), #453 (parked). No pings.
