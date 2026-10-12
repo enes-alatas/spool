@@ -452,3 +452,6 @@ Enes picked the trailer; placement next to the bot handle under a one-row missio
 ## 2026-10-12 11:00 UTC
 Enes asked for Spool vs gastownhall/gastown and desplega-ai/agent-swarm (pitch question). Read both READMEs; answered by DM: they dispatch work (Mayor/beads; lead/workers), Spool runs persistent chat-native coworkers; plan guardrails, containment, local-first no telemetry, roles+read rule; conceded maturity/packaging/harness breadth. No fleet action.
 Follow-up: sent one-by-one sentence comparisons vs each (8 points each).
+
+## 2026-10-12 11:30 UTC
+#746 merged (#730 done). #749 merged, ADR-0052 accepted A+S2; Elliot filed #756 and PR #757 (release binaries). Iris PR #755 (#745). First community issues from k-sok: #753 pipeline board, #754 loop health watchdog (community,triage). Acknowledged both; DMed Enes with recommendation: accept #754 as an epic, #753 partly covered by #750, board is his call.
