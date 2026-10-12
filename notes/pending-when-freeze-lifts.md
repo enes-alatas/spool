@@ -464,3 +464,6 @@ MISTAKE: the repo description I set overwrote one Enes had already written; 👍
 Enes: can loops run over Claude cloud sessions (claude --cloud)? Researched via search (proxy blocks code.claude.com). Answered: exists (--cloud, -p <session> queues, --teleport, repo .mcp.json, VM pause/reclaim); loops over it = new runtime; 5 unknowns (output read-back, hub reachability for MCP, resume vs reclaim, plan usage, one repo). Proposed a 2-day Terra spike then ADR for --runtime cloud; asked "spike now" vs "after #729". Awaiting.
 
 Enes asked about releases: answered none since v0.5.1; L5 still open (#729, #452, #124); recommend one v0.6.0 tag at #729 done. Put #729 tree and #750 tree on L5 Team milestone, #747/#748/#756 on L6.
+
+## 2026-10-12 12:20 UTC
+Proxy opened for code.claude.com; read cloud sessions, routines, self-hosted envs. Told Enes: hub can send into a cloud session (-p --cloud <id>, /fire API) but cannot read turns back (no stream-json, no transcript API); loop would need public hub MCP; Anthropic builds Routines/Projects/Claude Tag adjacent. Recommended a 2-day Terra spike (4 questions) then ADR or park. Awaiting "spike" or "park".
