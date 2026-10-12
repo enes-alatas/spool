@@ -425,7 +425,12 @@ func TestReplyToUnusableReferenceIsRefused(t *testing.T) {
 			"destination": "group", "text": "@briar hi", "reply_to": private}, "cross_conversation_reply_to"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			wantSendError(t, callSend(t, aster, c.args), c.code)
+			res := callSend(t, aster, c.args)
+			wantSendError(t, res, c.code)
+			// Nor does a loop learn which conversation another message is in (#719).
+			if strings.Contains(resultText(res), "control_room") {
+				t.Fatalf("the refusal names where the message is: %s", resultText(res))
+			}
 		})
 	}
 	for _, m := range s.activity() {

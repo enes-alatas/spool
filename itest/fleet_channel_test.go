@@ -350,6 +350,11 @@ func TestOperatorReplyInTheFleetChannelAddressesItsAuthor(t *testing.T) {
 		if resp.StatusCode != 400 || !strings.Contains(string(body), c.code) {
 			t.Fatalf("replying to %s = %d %s, want 400 %s", c.name, resp.StatusCode, body, c.code)
 		}
+		// The target's conversation is not the replier's to learn: a member
+		// walking message ids would map the private ones (#719).
+		if strings.Contains(string(body), "control_room") {
+			t.Fatalf("the refusal of a reply to %s names where it is: %s", c.name, body)
+		}
 		if got := s.activityWith(c.text); len(got) != 0 {
 			t.Fatalf("a refused reply to %s was stored: %s", c.name, dump(got))
 		}
