@@ -370,6 +370,14 @@ An image's attestation is checked the same way:
 `gh attestation verify oci://<image>@sha256:… --owner enes-alatas`, with the
 references `spool images` prints.
 
+To try a release before upgrading to it, run `scripts/release-smoke.sh
+vX.Y.Z` from the clone on a throwaway VM with Docker. It installs the
+release the README's way, checks the checksum and attestations, and starts a
+hub on its images with a data directory of its own. Never run it on the
+fleet's host: it retags `spool-workstation` and `spool-egress`, and it
+refuses a daemon that already runs a hub's containers. The release
+workflow runs the same check after every tag (#770).
+
 ### Checking it worked
 
 - `curl -s http://127.0.0.1:8080/api/version` names the target tag, and

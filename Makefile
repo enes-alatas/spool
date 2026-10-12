@@ -171,6 +171,7 @@ workflow-lint:
 	bash scripts/other-half-test.sh
 	bash scripts/security-paths-test.sh
 	bash scripts/spool-backup-test.sh
+	bash scripts/release-smoke-test.sh
 
 e2e-m1: server
 	bash scripts/e2e/m1.sh
