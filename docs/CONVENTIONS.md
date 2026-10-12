@@ -168,7 +168,9 @@ ADR instead.*
   (the MVP is retroactively v0.1.0). `v1.0.0` is OSS launch (L6). The
   README names what the release ships: a docs issue lists the release's
   additions, says whether the demo video still shows what ships
-  (re-recorded if not), and lands before the tag ask (#684). A change that
+  (re-recorded if not), and lands before the tag ask (#684). The tag ask links a
+  green dispatched `release` dry run on the commit to be tagged, whose smoke
+  job installed its artifacts on a fresh runner (#770). A change that
   alters stored data at its first start (a re-seal, or a rewrite the
   previous release cannot read) adds its row to OPERATIONS.md's
   release-specific steps in the same PR, because generated notes cannot say
@@ -178,7 +180,9 @@ ADR instead.*
   build names itself: `/release` (`.claude/skills/release/`).
   The tag fires `release.yml`, which publishes the images by digest and
   attaches the binaries and `SHA256SUMS`, all attested (ADR-0052, #756,
-  #763). A tag whose commit is not on `main` is refused.
+  #763). A tag whose commit is not on `main` is refused. After publishing, it
+  installs the release on a fresh runner the README's way; red there means
+  the release is out and broken (`/release` says what then).
 
 ## Secrets and evidence
 

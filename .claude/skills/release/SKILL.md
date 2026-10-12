@@ -35,7 +35,44 @@ the release, with generated notes, when a bare `git push` of the tag left
 none. Check the run in the Actions tab after tagging: a red one also lands
 on the ci-health issue. To see what a tag would build first, dispatch
 `release` on `main`. That is a dry run: it builds the images and keeps the
-archives as a workflow artifact, and pushes and publishes nothing.
+archives as a workflow artifact, and pushes and publishes nothing. Its
+`smoke-dry-run` job installs those archives and images on a fresh runner
+and starts a hub on them (`scripts/release-smoke.sh`, #770).
+
+**That green dry run is the gate.** A tag is pushed only on a commit whose
+dispatched `release` run, `smoke-dry-run` included, is green. The tag ask
+links that run, and the operator checks that the commit it ran on is the
+commit being tagged. The tag's own smoke then confirms what was published;
+it is not the first time the binary has been run.
+
+**After a tag publishes**, its `smoke` job installs the published release
+on a fresh runner (`scripts/release-smoke.sh <tag>`). Not every step is
+the anonymous one a stranger makes:
+- **Anonymous:** downloading the archive and `SHA256SUMS` from the release
+  URL, `sha256sum -c`, the unpack, and the hub's start.
+- **With the job's token:** `gh attestation verify` on the archive and both
+  images, which needs a token whatever the visibility, and the
+  `docker pull`s from `spool images`, through a `packages: read` login,
+  while the ghcr packages are private.
+
+**A red tag smoke** means the release is public and broken. Nothing is
+deleted, and the tag never moves: the attested files and the digests in
+the notes must keep naming what they named. The steps, in order:
+1. **The operator** puts a banner at the top of the release notes linking
+   the red run: `gh release view vX.Y.Z --json body --jq .body >notes.md`,
+   add `> **Broken: do not install.** <one line on what failed>, see <run
+   URL>. Use vX.Y.(Z-1) until vX.Y.(Z+1).` as its first line, then
+   `gh release edit vX.Y.Z --notes-file notes.md`.
+2. **The operator** sets it as a pre-release, so `releases/latest`, which
+   the README's quick start links, moves back to the last good release:
+   `gh release edit vX.Y.Z --prerelease`. `gh release view --json tagName`
+   then names the last good release.
+3. **The loop that owns the cause** fixes it on `main` through a normal PR.
+   Elliot (DevSecOps) opens the issue from the red run, and reports it on
+   the ci-health issue and in the fleet channel.
+4. **The operator** tags vX.Y.(Z+1) through the gate above. Its green
+   `smoke` job ends the incident, and the broken release's banner then
+   names the patch.
 
 **A build says which Spool it is** (#223): `git describe --tags --always
 --dirty` is baked in by the Makefile, so a tagged build reports the tag, a
