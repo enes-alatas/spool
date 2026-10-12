@@ -459,3 +459,6 @@ Follow-up: sent one-by-one sentence comparisons vs each (8 points each).
 Set repo description (option 1) and 7 topics on Enes's 👍.
 
 MISTAKE: the repo description I set overwrote one Enes had already written; 👍 was not approval. Apologized, asked for his text to restore. Memory saved.
+
+## 2026-10-12 11:55 UTC
+Enes: can loops run over Claude cloud sessions (claude --cloud)? Researched via search (proxy blocks code.claude.com). Answered: exists (--cloud, -p <session> queues, --teleport, repo .mcp.json, VM pause/reclaim); loops over it = new runtime; 5 unknowns (output read-back, hub reachability for MCP, resume vs reclaim, plan usage, one repo). Proposed a 2-day Terra spike then ADR for --runtime cloud; asked "spike now" vs "after #729". Awaiting.
