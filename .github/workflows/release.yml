@@ -1,20 +1,24 @@
-# Builds what a release carries (ADR-0052): the spool binaries for Linux
-# and macOS with the control room embedded, SHA256SUMS over them, and a
-# GitHub attestation of each, so an operator installs without Go or Node
-# and can check that this workflow built what they downloaded.
+# Builds what a release carries (ADR-0052): the workstation and egress
+# images on GitHub's container registry, by digest; the spool binaries for
+# Linux and macOS with the control room and those digests embedded;
+# SHA256SUMS over the binaries; and a GitHub attestation of each binary and
+# image. An operator installs without Go or Node, and can check that this
+# workflow built what they fetched.
 #
 # The operator tags (CONVENTIONS.md, #223), with `git push origin <tag>`
 # or `gh release create <tag> --generate-notes`. Either fires this. The
-# build is scripts/release-build.sh, which anyone can run to get the same
-# bytes from the same commit.
+# binaries are scripts/release-build.sh, which anyone can run to get the
+# same bytes from the same commit; the images are
+# scripts/release-images.sh.
 name: release
 
 on:
   push:
     tags: ['v*']
-  # A dry run from a branch or main: it builds and keeps the archives as a
-  # workflow artifact, and attests and publishes nothing. Its only grant is
-  # contents: read (CONVENTIONS.md, "Proving an event-driven workflow").
+  # A dry run from a branch or main: it builds the images and keeps the
+  # binaries as a workflow artifact, and pushes, attests and publishes
+  # nothing. Every job it runs holds contents: read and nothing else
+  # (CONVENTIONS.md, "Proving an event-driven workflow").
   workflow_dispatch:
 
 # Every job names its own grant.
@@ -26,7 +30,133 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # A release is cut from main (ADR-0052): a tag on a commit
+  # main never had would publish code no review passed. Everything that
+  # pushes or publishes waits on this.
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: the tag is on main
+        if: github.event_name == 'push'
+        run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$GITHUB_REF_NAME is not on main; a release is cut from main"
+            exit 1
+          fi
+
+  # Both images, once per architecture, each on a runner of that
+  # architecture so nothing is emulated. A tag pushes them as
+  # <tag>-<arch>; `index` joins the two.
+  images:
+    needs: guard
+    if: github.event_name == 'push'
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write # push to ghcr.io/<owner>/spool-*
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      # The build runs with no registry credential on the host: the token
+      # reaches only the step that pushes, and leaves with it (#765).
+      - name: build
+        run: scripts/release-images.sh build
+      - name: push
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          registry="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          trap 'docker logout ghcr.io' EXIT
+          scripts/release-images.sh push "$registry" "$GITHUB_REF_NAME"
+
+  # The dry run's images: the same build, pushed nowhere.
+  images-check:
+    needs: guard
+    if: github.event_name == 'workflow_dispatch'
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - run: scripts/release-images.sh build
+
+  # One multi-arch image per name, tagged with the release, attested, and
+  # its digest handed to the binaries. The digest is what an operator pulls
+  # (`spool images`), so the per-arch tags are only a way here.
+  index:
+    needs: images
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      packages: write # the index, and the attestations beside it
+      id-token: write # the attestations' signing identity
+      attestations: write
+    outputs:
+      workstation: ${{ steps.join.outputs.workstation }}
+      egress: ${{ steps.join.outputs.egress }}
+    steps:
+      - name: join the architectures
+        id: join
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          registry="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          for name in workstation egress; do
+            repo="$registry/spool-$name"
+            docker buildx imagetools create -t "$repo:$GITHUB_REF_NAME" \
+              "$repo:$GITHUB_REF_NAME-amd64" "$repo:$GITHUB_REF_NAME-arm64"
+            digest=$(docker buildx imagetools inspect "$repo:$GITHUB_REF_NAME" --format '{{json .Manifest}}' | jq -r .digest)
+            case $digest in sha256:*) ;; *) echo "::error::no digest for $repo:$GITHUB_REF_NAME"; exit 1 ;; esac
+            echo "$name=$repo@$digest" >> "$GITHUB_OUTPUT"
+            echo "${name}_repo=$repo" >> "$GITHUB_OUTPUT"
+            echo "${name}_digest=$digest" >> "$GITHUB_OUTPUT"
+          done
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.join.outputs.workstation_repo }}
+          subject-digest: ${{ steps.join.outputs.workstation_digest }}
+          push-to-registry: true
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.join.outputs.egress_repo }}
+          subject-digest: ${{ steps.join.outputs.egress_digest }}
+          push-to-registry: true
+      - run: docker logout ghcr.io
+
+  # The binaries. On a tag they wait for the images, whose digests they
+  # embed; on a dry run, for the image check, and they embed none.
   build:
+    needs: [guard, index, images-check]
+    if: ${{ !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -37,17 +167,6 @@ jobs:
           # The version is git describe's, which needs the tags (#229).
           fetch-depth: 0
           persist-credentials: false
-
-      # A release is cut from main (ADR-0052 decision 2): a tag on a
-      # commit main never had would publish code no review passed.
-      - name: the tag is on main
-        if: github.event_name == 'push'
-        run: |
-          git fetch --no-tags origin main
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
-            echo "::error::$GITHUB_REF_NAME is not on main; a release is cut from main"
-            exit 1
-          fi
 
       # No cache, Go's or npm's: a release is built from the lockfiles
       # alone, never from a cache another workflow wrote.
@@ -60,7 +179,15 @@ jobs:
           node-version: 22
 
       - name: build
-        run: scripts/release-build.sh dist
+        env:
+          SPOOL_RELEASE_WORKSTATION_IMAGE: ${{ needs.index.outputs.workstation }}
+          SPOOL_RELEASE_EGRESS_IMAGE: ${{ needs.index.outputs.egress }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ -z "$SPOOL_RELEASE_WORKSTATION_IMAGE" ]; then
+            echo "::error::a release's binaries embed its images, and none were published"
+            exit 1
+          fi
+          scripts/release-build.sh dist
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -71,8 +198,8 @@ jobs:
 
   # Only a tag reaches this job, so only a tag holds its grants.
   publish:
-    needs: build
-    if: github.event_name == 'push'
+    needs: [build, index]
+    if: ${{ !cancelled() && !failure() && github.event_name == 'push' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -92,12 +219,21 @@ jobs:
       # A release created with `gh release create` already exists, and a
       # bare tag push gets one here, titled with its tag (#485) and its
       # notes generated. --clobber lets a re-run replace its own assets.
+      # The notes say which images the release runs, by digest.
       - name: publish
         env:
           GH_TOKEN: ${{ github.token }}
+          WORKSTATION: ${{ needs.index.outputs.workstation }}
+          EGRESS: ${{ needs.index.outputs.egress }}
           GH_REPO: ${{ github.repository }}
         run: |
           if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --title "$GITHUB_REF_NAME"
           fi
           gh release upload "$GITHUB_REF_NAME" dist/*.tar.gz dist/SHA256SUMS --clobber
+          notes=$(gh release view "$GITHUB_REF_NAME" --json body --jq .body)
+          case $notes in
+          *"## Images"*) ;;
+          *) printf '%s\n\n## Images\n\n`spool images` prints how to fetch them. By digest:\n\n- `%s`\n- `%s`\n' \
+               "$notes" "$WORKSTATION" "$EGRESS" | gh release edit "$GITHUB_REF_NAME" --notes-file - ;;
+          esac

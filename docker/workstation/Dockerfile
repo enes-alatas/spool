@@ -10,6 +10,8 @@
 # Architecture-neutral: the base image and every apt repo below resolve the
 # matching amd64 or arm64 build automatically, so one Dockerfile serves both.
 FROM debian:bookworm-slim
+# Links the published image to this repository on GitHub's registry (ADR-0052).
+LABEL org.opencontainers.image.source="https://github.com/enes-alatas/spool"
 
 # Packages loops rely on (git, make, curl) plus what the container itself needs:
 # procps provides the pkill used to stop claude between wakes; the container's

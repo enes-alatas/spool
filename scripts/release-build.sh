@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds what a release carries (ADR-0052 decision 1): one archive per
+# Builds what a release carries (ADR-0052): one archive per
 # platform holding spool, with the web UI embedded, and spool-hook beside
 # it, where the hub looks for it. SHA256SUMS covers them all. The release
 # workflow runs this, and so can anyone on Linux (it takes GNU date, tar
@@ -11,6 +11,8 @@
 # Refuses a checkout with uncommitted changes, since its version would say
 # -dirty and its archives would not be the commit's. NPM and GO name the
 # tools when they are not on PATH as npm and go.
+# SPOOL_RELEASE_WORKSTATION_IMAGE and SPOOL_RELEASE_EGRESS_IMAGE, both or
+# neither, embed the images the release was built with.
 set -euo pipefail
 
 out=${1:-dist}
@@ -31,6 +33,20 @@ commit=$(git rev-parse --short HEAD)
 epoch=$(git log -1 --format=%ct)
 built_at=$(date -u -d "@$epoch" +%Y-%m-%dT%H:%M:%SZ)
 ldflags="-X main.buildVersion=$version -X main.buildCommit=$commit -X main.buildTime=$built_at"
+# The images a release was built with, by digest (ADR-0052): the workflow
+# sets them on a tag, and `spool images` prints how to fetch them.
+if [ -n "${SPOOL_RELEASE_WORKSTATION_IMAGE:-}" ] || [ -n "${SPOOL_RELEASE_EGRESS_IMAGE:-}" ]; then
+	for ref in "${SPOOL_RELEASE_WORKSTATION_IMAGE:-}" "${SPOOL_RELEASE_EGRESS_IMAGE:-}"; do
+		case $ref in
+		*@sha256:*) ;;
+		*)
+			echo "release-build: a release image must be a reference by digest, got \"$ref\"" >&2
+			exit 1
+			;;
+		esac
+	done
+	ldflags="$ldflags -X main.releaseWorkstationImage=$SPOOL_RELEASE_WORKSTATION_IMAGE -X main.releaseEgressImage=$SPOOL_RELEASE_EGRESS_IMAGE"
+fi
 
 # The control room is embedded from web/dist; without a build there the
 # binary would serve the placeholder, so a missing index.html stops here.
