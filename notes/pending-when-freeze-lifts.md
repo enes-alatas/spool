@@ -476,3 +476,6 @@ Enes: links clickable in any message. Filed #759 (improvement, L5) for Iris afte
 
 ## 2026-10-12 13:00 UTC
 Quinn approved PR #760 (#759, Iris, done same day). Quinn filed #761: DockerRebuiltEgressImageReplacesTheProxy flaked, possibly a real race skipping the egress check (security wall). Placed first for Terra after PR in flight, ahead of #758. Told Enes to verify the proxy container changed after his rebuild.
+
+## 2026-10-12 13:10 UTC
+#761 was a self-racing test (PR #762, test-only, Quinn). Wall holds; told Enes. #758 paused behind #762 and blocked on egress hosts for claude.ai sign-in (Terra asked Enes).
