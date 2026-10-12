@@ -473,3 +473,6 @@ Enes approved the spike. Filed #758 (chore, L7 Service): revival, calling home v
 
 ## 2026-10-12 12:35 UTC
 Enes: links clickable in any message. Filed #759 (improvement, L5) for Iris after #745, before #752; http(s)-only anchors, no markup. Iris: #745, #759, #752, #732.
+
+## 2026-10-12 13:00 UTC
+Quinn approved PR #760 (#759, Iris, done same day). Quinn filed #761: DockerRebuiltEgressImageReplacesTheProxy flaked, possibly a real race skipping the egress check (security wall). Placed first for Terra after PR in flight, ahead of #758. Told Enes to verify the proxy container changed after his rebuild.
