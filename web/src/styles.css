@@ -1442,6 +1442,19 @@ textarea {
   word-break: break-word;
   max-width: 720px;
 }
+/* A web address in a message (#759): the room's own text, underlined so it
+   reads as something to click — colour is kept for state (ADR-0027). The
+   underline is quiet until hovered, and a long URL breaks anywhere rather
+   than pushing the line past its column. */
+.text-link {
+  text-decoration: underline;
+  text-decoration-color: var(--text-muted);
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+}
+.text-link:hover {
+  text-decoration-color: currentColor;
+}
 
 /* A message's files, under its words (#460): one line each, quieter than
    the text, and an image as a thumbnail above its line. The thumbnail is

@@ -475,6 +475,12 @@ agents — Claude sessions today, Spool's own loops from L2.*
   instead. An option label separates its value from the description with a middle
   dot (`opus · deep agentic work`), and an empty cell shows a dim middle dot. Code
   comments are not UI text.
+- Message and timeline text is untrusted (a loop's words, or a stranger's) and is
+  rendered as text: no HTML, no markdown. `<Linked>` (`src/components/Linked.tsx`,
+  splitting with `src/linkify.ts`) is the only thing that reads it, and it makes only
+  `http://` and `https://` URLs into anchors.
+  An anchor shows the URL itself, never a label, and opens in a new tab with
+  `rel="noopener noreferrer"` (#759).
 
 ## API
 

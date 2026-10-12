@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { Entry, ContentBlock } from '../timeline'
+import { Linked } from './Linked'
 
 function fmtTime(ts: number) {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -41,7 +42,7 @@ function AssistantEntry({ entry }: { entry: Entry & { kind: 'assistant' } }) {
         if (b.type === 'text' && b.text?.trim()) {
           return (
             <div key={i} className="plain">
-              {b.text}
+              <Linked text={b.text} />
             </div>
           )
         }
@@ -93,7 +94,9 @@ export function Timeline({
                 <div className="who">
                   <span className="author">{e.who || e.trigger}</span> · {fmtTime(e.ts)}
                 </div>
-                <div className="bubble">{e.body}</div>
+                <div className="bubble">
+                  <Linked text={e.body} />
+                </div>
               </div>
             )
           case 'assistant':

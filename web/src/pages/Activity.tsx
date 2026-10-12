@@ -5,6 +5,7 @@ import { api } from '../api'
 import { channelLabel, whereSaid } from '../channels'
 import { changeSentence, interleave } from '../changes'
 import { AttachmentList } from '../components/Attachments'
+import { Linked } from '../components/Linked'
 import { messageTime } from '../components/MessageKnot'
 import { PollBallot } from '../components/Poll'
 import { ReactionList } from '../components/Reactions'
@@ -70,7 +71,9 @@ export default function Activity() {
           <div key={m.id} className="feed-item">
             <span className="when">{messageTime(m.ts)}</span>
             <span className={`author${m.origin === 'loop' ? ' loop-author' : ''}`}>@{m.author}</span>
-            <span className="text">{m.text}</span>
+            <span className="text">
+              <Linked text={m.text} />
+            </span>
             {/* Said on the feed too: this is the page an operator scans when
               they are not reading any one loop, which is exactly when an
               undelivered message would otherwise go unnoticed. */}
