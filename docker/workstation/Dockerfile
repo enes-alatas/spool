@@ -9,7 +9,10 @@
 #
 # Architecture-neutral: the base image and every apt repo below resolve the
 # matching amd64 or arm64 build automatically, so one Dockerfile serves both.
-FROM debian:bookworm-slim
+# The base is pinned by its multi-arch index digest, so a release's image is
+# built from a known base rather than whatever the tag points to that day.
+# Dependabot moves the pin (.github/dependabot.yml).
+FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587
 # Links the published image to this repository on GitHub's registry (ADR-0052).
 LABEL org.opencontainers.image.source="https://github.com/enes-alatas/spool"
 
