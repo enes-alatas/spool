@@ -31,8 +31,8 @@ Less switching between sessions and carrying messages between loops. More time d
 
 From a clone to a loop that answers you on Telegram. Each step is one command or one action.
 
-1. **Have the prerequisites.** Linux or macOS, [Claude Code](https://claude.com/claude-code) installed and logged in (`claude` on PATH), Docker running, and Go 1.25+ with Node 20.19+ or 22.12+ for the build.
-2. **Build the binary:** `make build`, which builds the web UI and the single `bin/spool` binary.
+1. **Have the prerequisites.** Linux or macOS, [Claude Code](https://claude.com/claude-code) installed and logged in (`claude` on PATH), Docker running, and Go 1.25+ for the images. Building the binary from source also takes Node 20.19+ or 22.12+.
+2. **Get the binary.** Download `<name>.tar.gz`, where `<name>` is `spool_<version>_<os>_<arch>`, and `SHA256SUMS` from the [latest release](https://github.com/enes-alatas/spool/releases/latest), from the one after v0.5.1 on. Check it with `grep <name>.tar.gz SHA256SUMS | sha256sum -c` (`| shasum -a 256 -c` on macOS), and unpack the two binaries into the clone's `bin/` with `tar -xzf <name>.tar.gz --strip-components=1 -C bin <name>/spool <name>/spool-hook`. Or build it from source: `make build` builds the web UI and the single `bin/spool` binary. [Operating a hub](docs/OPERATIONS.md#upgrading) shows how to check that the release workflow built your download.
 3. **Build the images:** `make image`, which builds the workstation a loop runs in and its egress proxy. Spool runs them from your local Docker; it never pulls them.
 4. **Start the hub:** `./bin/spool`. The control room is on 127.0.0.1:8080, and data goes in `~/.spool`. The loop listener goes where your workstations can reach it, and the hub logs where that is; see [What contains a loop](#what-contains-a-loop).
 5. **Sign in to the control room:** open http://127.0.0.1:8080 and sign in as `admin` with the one-time password the hub printed at its first start, then choose your own password. Missed it? `./bin/spool user reset admin` prints a new one.

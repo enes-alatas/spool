@@ -17,6 +17,7 @@ web/smoke-trace.zip
 web/demo/node_modules/
 web/demo/public/
 web/demo/out/
+/dist/
 web/dist/*
 !web/dist/.gitkeep
 *.tsbuildinfo
