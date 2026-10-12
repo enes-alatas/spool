@@ -176,9 +176,9 @@ ADR instead.*
 - **The operator tags, never a loop** (#223). Release notes are generated
   from the commit titles; there is no CHANGELOG file. Procedure, and how a
   build names itself: `/release` (`.claude/skills/release/`).
-  The tag fires `release.yml`, which builds the binaries, `SHA256SUMS` and
-  their attestations from the tag and attaches them (ADR-0052, #756). A tag
-  whose commit is not on `main` is refused.
+  The tag fires `release.yml`, which publishes the images by digest and
+  attaches the binaries and `SHA256SUMS`, all attested (ADR-0052, #756,
+  #763). A tag whose commit is not on `main` is refused.
 
 ## Secrets and evidence
 

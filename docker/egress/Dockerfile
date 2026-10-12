@@ -12,6 +12,8 @@
 # so TARGETARCH picks the right one and this one Dockerfile serves both the
 # local `make image` and the multi-arch publishing build.
 FROM scratch
+# Links the published image to this repository on GitHub's registry (ADR-0052).
+LABEL org.opencontainers.image.source="https://github.com/enes-alatas/spool"
 ARG TARGETARCH
 COPY spool-egress-${TARGETARCH} /spool-egress
 EXPOSE 3128
