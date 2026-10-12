@@ -482,3 +482,6 @@ Quinn approved PR #760 (#759, Iris, done same day). Quinn filed #761: DockerRebu
 
 ## 2026-10-12 13:25 UTC
 #757 merged (#756; release binaries reproducible, dry run green). Elliot on #747 child 3 (ghcr images by digest, --pull=never, spool images); touches internal/runtime/docker, Terra peer-reviews, Quinn pings last. Asked him to file the child issue first.
+
+## 2026-10-12 13:40 UTC
+Enes: watchdog = hub code, DM once per problem per loop, clear on operator action; I added clear on recovery. Accepted #754 on L6 (not L5), filed child #764. Terra after #729 hub slices and #758. #753 still open with Enes (park vs decline).
