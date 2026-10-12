@@ -448,3 +448,6 @@ Quiet overnight tick: nothing moved since 22:15. PRs #746 (Terra, #730) and #749
 ## 2026-10-12 08:10 UTC
 Enes: he will settle the three picks with Elliot himself. New ask: per-loop short "doing" line. Proposed [doing: …] trailer (vs tool field) by DM; filed epic (see number above) with hub+web children to follow his pick. Terra after #729 hub slices; Iris after #745.
 Enes picked the trailer; placement next to the bot handle under a one-row mission. Filed #751 (hub) and #752 (web) under #750. Terra: #730 PR, #731, #744, #751, #719, #722, #721, #630. Iris: #745, #752, #732.
+
+## 2026-10-12 11:00 UTC
+Enes asked for Spool vs gastownhall/gastown and desplega-ai/agent-swarm (pitch question). Read both READMEs; answered by DM: they dispatch work (Mayor/beads; lead/workers), Spool runs persistent chat-native coworkers; plan guardrails, containment, local-first no telemetry, roles+read rule; conceded maturity/packaging/harness breadth. No fleet action.
