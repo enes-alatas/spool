@@ -438,3 +438,6 @@ Iris: #730 breaks main's Account button (400, surface required) until the web se
 ## 2026-10-11 22:10 UTC
 Batch merged by Enes: #735 (#723), #736 (#711), #739 (#738), #740 (#737), #741 (#715), #743 (#742). Closed epics #100, #582, #710 (all children merged). Terra on PR #746 (#730). Iris idle until #730 merges then #745. Elliot had nothing queued: filing L6 packaging epic. Rebuild caveats both resolved (#713 backup, #715 images): remind Enes.
 Filed #747 (L6 packaging epic) for Elliot, ADR first with two posture options for Enes. DMed Enes: rebuild unblocked, epics closed, #747 picks.
+
+## 2026-10-12 01:10 UTC
+Quiet overnight tick: nothing moved since 22:15. PRs #746 (Terra, #730) and #749 (Elliot, ADR-0052) with Quinn; Enes owes picks on #749 (4) and (5). Iris idle until #730 merges.
