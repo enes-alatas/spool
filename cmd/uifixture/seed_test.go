@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -784,5 +785,38 @@ func TestSeedLeavesSamWaitingForYESOnSlack(t *testing.T) {
 	}
 	if waiting[0].LoopID != gardener.ID {
 		t.Errorf("the question came from loop %q, want the gardener's app", waiting[0].LoopID)
+	}
+}
+
+// The fleet channel links web addresses (#759). A fixture without them shoots
+// a channel that looks the same with linking broken, and one without a bare
+// domain cannot show that only http(s) becomes a link.
+func TestSeedPutsAddressesInTheChannel(t *testing.T) {
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "spool.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	files, err := attach.Open(filepath.Join(t.TempDir(), "files"))
+	if err != nil {
+		t.Fatalf("files: %v", err)
+	}
+	ctx := context.Background()
+	if err := seed(ctx, db, files); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	channel, err := db.Messages().ListConversation(ctx, store.ConversationGroup, "", 100)
+	if err != nil {
+		t.Fatalf("fleet channel: %v", err)
+	}
+	var text strings.Builder
+	for _, message := range channel {
+		text.WriteString(message.Text + "\n")
+	}
+	for _, want := range []string{"http://", "https://", "/files).", "install, ", " handbook.example.com,"} {
+		if !strings.Contains(text.String(), want) {
+			t.Errorf("no fleet channel message carries %q, so no shot can show how it is linked", want)
+		}
 	}
 }
