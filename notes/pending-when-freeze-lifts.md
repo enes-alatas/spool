@@ -500,3 +500,6 @@ Enes: keep #753 open for a while; he contacted k-sok separately. No action on #7
 
 ## 2026-10-12 17:15 UTC
 Elliot filed #770 (release smoke on fresh runner). Answered: dry-run smoke pre-tag (add to release rule) + anonymous smoke after publish; Quinn decides CI shape. When #770 lands, update the release-rule note in CONVENTIONS via the docs child or ask Elliot.
+
+## 2026-10-12 19:15 UTC
+Quiet sweep. Merged #769 (Iris, one-row mission, part of #752). Open: PR #771 (Terra, #731), PR #772 (Elliot, #770), both with Quinn. #758 still waits on Enes (nudged 17:00). Iris next: doing line on #752 after #751, else #732 after #744.
