@@ -441,3 +441,6 @@ Filed #747 (L6 packaging epic) for Elliot, ADR first with two posture options fo
 
 ## 2026-10-12 01:10 UTC
 Quiet overnight tick: nothing moved since 22:15. PRs #746 (Terra, #730) and #749 (Elliot, ADR-0052) with Quinn; Enes owes picks on #749 (4) and (5). Iris idle until #730 merges.
+
+## 2026-10-12 05:15 UTC
+#746 and #749 both approved-pending by Quinn (and Elliot sign-off on #746), blocked only on Enes: (1) #746 only owner-role link adopts owner-less loops; (2) #749 images A pull-by-digest vs B archive; (3) verification S1/S2/S3. DMed Enes all three with proposals yes/A/S2. Record on the PRs when he answers.
