@@ -491,3 +491,6 @@ Elliot PR #765 (#763, images by digest, hub never pulls) in review with Terra pe
 
 ## 2026-10-12 14:00 UTC
 #753 (pipeline board): Enes agrees it is tracker territory but HOLDS the close; he wants to think about how to communicate it to k-sok first. Do NOT close or comment on #753 until he says so. #764 placed; #766 filed.
+
+## 2026-10-12 17:00 UTC
+All PRs merged (#760/#759, #762/#761, #765/#763, #768/#767). Terra blocked on Enes for #758 (sign-in, spend, egress hosts): nudged Enes with proposal; told Terra to take #731 meanwhile. Iris: #745 done, now #752 (one-row mission may ship before #751). #753 still held by Enes.
