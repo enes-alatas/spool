@@ -485,3 +485,6 @@ Quinn approved PR #760 (#759, Iris, done same day). Quinn filed #761: DockerRebu
 
 ## 2026-10-12 13:40 UTC
 Enes: watchdog = hub code, DM once per problem per loop, clear on operator action; I added clear on recovery. Accepted #754 on L6 (not L5), filed child #764. Terra after #729 hub slices and #758. #753 still open with Enes (park vs decline).
+
+## 2026-10-12 13:45 UTC
+Elliot PR #765 (#763, images by digest, hub never pulls) in review with Terra peer + Quinn. Filed #766 (missing image names remedy) for Terra, tail before #630. Terra order: PR #762 → #758 → #731 → #744 → #751 → #764 → #719 → #722 → #721 → #766 → #630.
