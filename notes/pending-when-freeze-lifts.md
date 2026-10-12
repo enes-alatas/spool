@@ -451,3 +451,4 @@ Enes picked the trailer; placement next to the bot handle under a one-row missio
 
 ## 2026-10-12 11:00 UTC
 Enes asked for Spool vs gastownhall/gastown and desplega-ai/agent-swarm (pitch question). Read both READMEs; answered by DM: they dispatch work (Mayor/beads; lead/workers), Spool runs persistent chat-native coworkers; plan guardrails, containment, local-first no telemetry, roles+read rule; conceded maturity/packaging/harness breadth. No fleet action.
+Follow-up: sent one-by-one sentence comparisons vs each (8 points each).
