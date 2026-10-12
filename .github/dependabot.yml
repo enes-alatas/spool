@@ -1,8 +1,10 @@
 # Keeps the commit-SHA pins in .github/workflows current (#707): a pin that
 # never moves misses the action's own security fixes. Dependabot bumps the SHA
-# and its `# vX.Y.Z` comment together, one grouped PR a week. Go modules and
-# npm are not here: their version updates are a separate decision, and their
-# security alerts reach the board without this file.
+# and its `# vX.Y.Z` comment together, one grouped PR a week. The workstation
+# image's base digest is kept current the same way (#767): a release builds
+# from the pin, so the pin has to move for Debian's fixes to reach it. Go
+# modules and npm are not here: their version updates are a separate
+# decision, and their security alerts reach the board without this file.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -14,3 +16,9 @@ updates:
         patterns: ["*"]
     commit-message:
       prefix: ci
+  - package-ecosystem: docker
+    directory: /docker/workstation
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
