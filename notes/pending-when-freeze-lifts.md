@@ -506,3 +506,6 @@ Quiet sweep. Merged #769 (Iris, one-row mission, part of #752). Open: PR #771 (T
 
 ## 2026-10-12 20:20 UTC
 #771 merged (#731 done). Iris PR #774: owner picker, Part of #732 (Access waits #744). #773 new itest flake (keeper first tick across restart), triaged low. Terra next: #758 (blocked on Enes) else #744.
+
+## 2026-10-12 23:20 UTC
+#772 merged (#770): release smoke on fresh runner; post-merge dry run green. RELEASE RULE now: tag ask links a green dry run on the exact commit; tag smoke + ghcr packages public happen on the next tag. #747 left: #766 (Terra). Filed #777 (L6 security review epic) for Elliot; asked Enes about a supported-versions policy. #758 still waits on Enes.
