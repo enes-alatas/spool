@@ -503,3 +503,6 @@ Elliot filed #770 (release smoke on fresh runner). Answered: dry-run smoke pre-t
 
 ## 2026-10-12 19:15 UTC
 Quiet sweep. Merged #769 (Iris, one-row mission, part of #752). Open: PR #771 (Terra, #731), PR #772 (Elliot, #770), both with Quinn. #758 still waits on Enes (nudged 17:00). Iris next: doing line on #752 after #751, else #732 after #744.
+
+## 2026-10-12 20:20 UTC
+#771 merged (#731 done). Iris PR #774: owner picker, Part of #732 (Access waits #744). #773 new itest flake (keeper first tick across restart), triaged low. Terra next: #758 (blocked on Enes) else #744.
