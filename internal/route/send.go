@@ -475,7 +475,9 @@ func (router *Router) lostSend(ctx context.Context, req SendRequest, ref string,
 // Only a message of the very conversation being sent to qualifies: a
 // reference the loop invented, one that has been swept away, or one from
 // another conversation is refused in-turn rather than silently dropped or
-// redirected (ADR-0025). Returns nil when the send is not a reply.
+// redirected (ADR-0025). The refusal never names the conversation the
+// message is in, which is not the loop's to learn (#719). Returns nil when
+// the send is not a reply.
 func (router *Router) replyTarget(ctx context.Context, req SendRequest) (*store.Message, *SendError, error) {
 	if strings.TrimSpace(req.ReplyTo) == "" {
 		return nil, nil, nil
@@ -497,7 +499,7 @@ func (router *Router) replyTarget(ctx context.Context, req SendRequest) (*store.
 	}
 	if !sameConversation(target, req.Destination, req.From.ID, person) {
 		return nil, &SendError{ErrCrossConversation,
-			fmt.Sprintf("that message is in %s, not %s; a reply stays in its own conversation", target.Destination(), req.Destination)}, nil
+			fmt.Sprintf("that message is not in %s; a reply stays in its own conversation", req.Destination)}, nil
 	}
 	return target, nil, nil
 }

@@ -1617,6 +1617,8 @@ func (server *Server) handleGroupPost(w http.ResponseWriter, r *http.Request) {
 // another conversation would add its author to the channel's recipients:
 // a private message's, or a loop's that is not in this channel. Both are
 // refused with the codes a loop's own send gets for the same mistakes.
+// Neither refusal says where the message is: walking ids, a member would
+// map the private conversations they may not read (#719).
 func (server *Server) channelReplyTarget(ctx context.Context, w http.ResponseWriter, id int64, channel string) bool {
 	target, err := server.Store.Messages().Get(ctx, id)
 	if errors.Is(err, store.ErrNotFound) {
@@ -1628,7 +1630,7 @@ func (server *Server) channelReplyTarget(ctx context.Context, w http.ResponseWri
 	}
 	if want := store.ChannelDestination(channel); target.Destination() != want {
 		server.jsonErrCode(w, 400, route.ErrCrossConversation,
-			"message %d is in %s, not %s; a reply stays in its own conversation", id, target.Destination(), want)
+			"message %d is not in %s; a reply stays in its own conversation", id, want)
 		return false
 	}
 	return true
