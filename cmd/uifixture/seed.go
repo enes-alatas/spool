@@ -86,6 +86,12 @@ func seedTimeline(ctx context.Context, db store.Store, loopID string) error {
 				},
 			}}},
 		}},
+		{typ: "assistant", at: -8*time.Minute - 10*time.Second, payload: map[string]any{
+			"message": map[string]any{"content": []map[string]any{{
+				"type": "text",
+				"text": "Opened https://github.com/example/handbook/pull/48 for the three pages.",
+			}}},
+		}},
 		{typ: "result", at: -8 * time.Minute, payload: map[string]any{
 			"total_cost_usd": turn.SessionCostUSD,
 			"duration_ms":    turn.DurationMS,
@@ -309,6 +315,10 @@ func seedConversations(ctx context.Context, db store.Store, files *attach.Files,
 			{name: "install-page.png", body: fixtureScreenshot()},
 		}},
 		{author: "gardener", from: ids["gardener"], text: "Three pages, all fixed — PR #48. The quickstart also showed the old output, so that block went too.", at: -8 * time.Minute},
+		// Every shape of address the room links, or must not (#759): http
+		// and https, one ended by a comma, one by a parenthesis it sits in
+		// and a full stop, and a bare domain, which stays text.
+		{author: "gardener", from: ids["gardener"], text: "Preview at http://preview.internal:8080/install, review at https://github.com/example/handbook/pull/48 (diff: https://github.com/example/handbook/pull/48/files). The live site, handbook.example.com, updates on merge.", at: -7 * time.Minute},
 	}
 	groupIDs := make([]int64, len(group))
 	for i, message := range group {
