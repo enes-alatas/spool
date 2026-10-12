@@ -470,3 +470,6 @@ Proxy opened for code.claude.com; read cloud sessions, routines, self-hosted env
 
 ## 2026-10-12 12:30 UTC
 Enes approved the spike. Filed #758 (chore, L7 Service): revival, calling home via public MCP, read-back endpoint, usage. Terra: after PR in flight, before #744. Told Enes and Terra; Terra must DM Enes before spending plan.
+
+## 2026-10-12 12:35 UTC
+Enes: links clickable in any message. Filed #759 (improvement, L5) for Iris after #745, before #752; http(s)-only anchors, no markup. Iris: #745, #759, #752, #732.
