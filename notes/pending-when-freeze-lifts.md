@@ -479,3 +479,6 @@ Quinn approved PR #760 (#759, Iris, done same day). Quinn filed #761: DockerRebu
 
 ## 2026-10-12 13:10 UTC
 #761 was a self-racing test (PR #762, test-only, Quinn). Wall holds; told Enes. #758 paused behind #762 and blocked on egress hosts for claude.ai sign-in (Terra asked Enes).
+
+## 2026-10-12 13:25 UTC
+#757 merged (#756; release binaries reproducible, dry run green). Elliot on #747 child 3 (ghcr images by digest, --pull=never, spool images); touches internal/runtime/docker, Terra peer-reviews, Quinn pings last. Asked him to file the child issue first.
