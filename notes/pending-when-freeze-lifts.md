@@ -497,3 +497,6 @@ All PRs merged (#760/#759, #762/#761, #765/#763, #768/#767). Terra blocked on En
 
 ## 2026-10-12 17:05 UTC
 Enes: keep #753 open for a while; he contacted k-sok separately. No action on #753; keep triage label.
+
+## 2026-10-12 17:15 UTC
+Elliot filed #770 (release smoke on fresh runner). Answered: dry-run smoke pre-tag (add to release rule) + anonymous smoke after publish; Quinn decides CI shape. When #770 lands, update the release-rule note in CONVENTIONS via the docs child or ask Elliot.
