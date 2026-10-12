@@ -467,3 +467,6 @@ Enes asked about releases: answered none since v0.5.1; L5 still open (#729, #452
 
 ## 2026-10-12 12:20 UTC
 Proxy opened for code.claude.com; read cloud sessions, routines, self-hosted envs. Told Enes: hub can send into a cloud session (-p --cloud <id>, /fire API) but cannot read turns back (no stream-json, no transcript API); loop would need public hub MCP; Anthropic builds Routines/Projects/Claude Tag adjacent. Recommended a 2-day Terra spike (4 questions) then ADR or park. Awaiting "spike" or "park".
+
+## 2026-10-12 12:30 UTC
+Enes approved the spike. Filed #758 (chore, L7 Service): revival, calling home via public MCP, read-back endpoint, usage. Terra: after PR in flight, before #744. Told Enes and Terra; Terra must DM Enes before spending plan.
