@@ -1079,13 +1079,12 @@ textarea {
 }
 .fleet-row .mission {
   color: var(--text-muted);
-  overflow-wrap: anywhere;
   font-size: 0.8125rem;
-  /* two lines is enough to tell two loops apart; the detail page has the rest */
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  /* one line is enough to tell two loops apart; the hover and the detail
+     page have the rest (#752) */
+  white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
 }
 /* the conditions worth seeing without opening the loop: containment, a
    workstation that is off or unreachable, and where it is working */

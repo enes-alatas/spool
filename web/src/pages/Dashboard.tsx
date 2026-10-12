@@ -112,7 +112,12 @@ function FleetRow({
     <Link to={`/loops/${loop.name}`} className="fleet-row">
       <div className="identity">
         <span className="loop-name">{loop.name}</span>
-        <span className="mission">{loop.mission}</span>
+        {/* One row, so every loop's row is the same height whatever its
+            mission says; the hover and the loop's page have the whole of it
+            (#752). */}
+        <span className="mission" title={loop.mission}>
+          {loop.mission}
+        </span>
         {(loop.runtime === 'bare' || station || undelivered || loop.branch || loop.tg_bot_username) && (
           <span className="notes">
             {loop.runtime === 'bare' && <span className="containment-badge">uncontained</span>}
