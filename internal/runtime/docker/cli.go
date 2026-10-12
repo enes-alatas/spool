@@ -149,3 +149,18 @@ func stderrTail(text string) string {
 	}
 	return text
 }
+
+// RepoDigests lists the registry references by digest that image was pulled
+// as, empty for a local build: how the hub tells a release's image from
+// one built here (ADR-0052).
+func (rt *Runtime) RepoDigests(ctx context.Context, image string) ([]string, error) {
+	out, err := rt.command(ctx, queryTimeout, "image", "inspect", "--format", "{{json .RepoDigests}}", image)
+	if err != nil {
+		return nil, err
+	}
+	var digests []string
+	if err := json.Unmarshal(bytes.TrimSpace(out), &digests); err != nil {
+		return nil, fmt.Errorf("docker image inspect %s: %w", image, err)
+	}
+	return digests, nil
+}

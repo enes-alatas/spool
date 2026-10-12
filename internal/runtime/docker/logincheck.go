@@ -42,7 +42,7 @@ func (rt *Runtime) CheckLogin(ctx context.Context, token string) (claude.LoginCh
 	}
 	rt.loginSweepOnce.Do(func() { rt.sweepLoginCheckLeftovers(ctx) })
 	name := "spool-login-check-" + hex.EncodeToString(suffix)
-	argv := []string{"run", "--rm", "-i", "--name", name, "--label", loginCheckLabel}
+	argv := []string{"run", "--pull=never", "--rm", "-i", "--name", name, "--label", loginCheckLabel}
 	argv = append(argv, rt.networkArgs()...)
 	argv = append(argv, rt.egressEnv()...)
 	argv = append(argv,

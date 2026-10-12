@@ -168,7 +168,7 @@ func (rt *Runtime) provisionEgressProxy(ctx context.Context, imageID string) err
 // serves the control room on included (ADR-0028, #238).
 func (rt *Runtime) egressRunArgv(imageID string) []string {
 	argv := []string{
-		"run", "--detach", "--init",
+		"run", "--pull=never", "--detach", "--init",
 		"--name", rt.egressContainer(),
 		"--restart", "unless-stopped",
 		"--network", rt.egressNetwork(),

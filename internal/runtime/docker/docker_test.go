@@ -2,8 +2,11 @@ package docker
 
 import (
 	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -55,7 +58,7 @@ func TestRunArgv(t *testing.T) {
 	spec := runtime.Spec{LoopID: "abc", LoopName: "greeter", MemMB: 4096, CPUs: 2}
 	got := runArgv(spec, "spool-workstation", []string{"--network", "spool-egress"})
 	want := []string{
-		"run", "--detach", "--init",
+		"run", "--pull=never", "--detach", "--init",
 		"--name", "spool-ws-abc",
 		"--restart", "unless-stopped",
 		"--volume", "spool-ws-abc:/home/loop",
@@ -210,5 +213,39 @@ func TestExecPinsTheHook(t *testing.T) {
 	at := slices.Index(argv, "--settings")
 	if at < 0 || !strings.Contains(argv[at+1], WorkstationHook) || !strings.Contains(argv[at+1], `"disableAllHooks":false`) {
 		t.Fatalf("the hook is not pinned: %q", argv)
+	}
+}
+
+// TestEveryRunRefusesToPull pins ADR-0052: the hub runs only
+// images the operator put on the host, so every `docker run` it issues says
+// --pull=never. Docker's default would fetch a missing image by name, and
+// whether that ever reached a registry would then rest on the name. The
+// check reads the package's source, so a run added later is held to it too:
+// every "run" literal counts, and the argument after it must be
+// --pull=never, so a run whose flags are appended later fails too.
+func TestEveryRunRefusesToPull(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := regexp.MustCompile(`"run"\s*[,}]?\s*("[^"]*")?`)
+	runs := 0
+	for _, file := range files {
+		if strings.HasSuffix(file, "_test.go") {
+			continue
+		}
+		source, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, match := range run.FindAllSubmatch(source, -1) {
+			runs++
+			if string(match[1]) != `"--pull=never"` {
+				t.Errorf("%s: docker run without --pull=never first: %s", file, match[0])
+			}
+		}
+	}
+	if runs < 5 {
+		t.Fatalf("found %d docker runs, want at least the 5 the runtime issues; has the argv's shape changed?", runs)
 	}
 }

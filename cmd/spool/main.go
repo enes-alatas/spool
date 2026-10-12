@@ -75,6 +75,11 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "user" {
 		os.Exit(userCommand(os.Args[2:], os.Stdout, os.Stderr))
 	}
+	// `spool images` prints how to fetch the images a release was built with;
+	// the hub itself never pulls (ADR-0052).
+	if len(os.Args) > 1 && os.Args[1] == "images" {
+		os.Exit(imagesCommand(os.Args[2:], os.Stdout, os.Stderr))
+	}
 
 	listen := flag.String("listen", "127.0.0.1:8080", "address to serve the operator's API/UI on; never reachable from a workstation")
 	mcpListen := flag.String("mcp-listen", "", "address to serve the loop-facing /mcp endpoint on; the one port of this machine a workstation may reach (#238). Unset: the docker bridge's gateway when it is an address of this machine, else loopback, on --mcp-port (#475)")
@@ -85,8 +90,8 @@ func main() {
 	hookBin := flag.String("hook-bin", "", "path to spool-hook, the PreToolUse hook bare loops run (ADR-0042); unset: spool-hook next to this binary")
 	runtimeChoice := flag.String("runtime", "auto", "default runtime for new loops: auto (docker when the daemon is reachable), docker, or bare")
 	allowBare := flag.Bool("allow-bare", false, "let the control room create uncontained bare loops on a hub whose default is docker; implied by --runtime bare (ADR-0017)")
-	workstationImage := flag.String("workstation-image", "spool-workstation", "default image for docker workstations")
-	egressImage := flag.String("egress-image", "spool-egress", "image for the workstation egress proxy; empty leaves workstation egress open (ADR-0028)")
+	workstationImage := flag.String("workstation-image", localWorkstationImage, "default image for docker workstations")
+	egressImage := flag.String("egress-image", localEgressImage, "image for the workstation egress proxy; empty leaves workstation egress open (ADR-0028)")
 	egressAllow := flag.String("egress-allow", "", "comma-separated hosts (each \"host\" or \"host:port\") workstations may reach on top of the built-in allowlist; seeds the stored extra hosts on the first start, and the stored list wins after")
 	healthSec := flag.Int("workstation-health-sec", 45, "seconds between workstation liveness polls")
 	partials := flag.Bool("partial-messages", true, "stream token deltas to the UI (--include-partial-messages)")
@@ -197,12 +202,13 @@ func main() {
 	defaultRuntime, ver := selectDefaultRuntime(log, *runtimeChoice, runtimes)
 	switch {
 	case ver == "":
-		log.Warn("claude version unknown until the workstation image exists — run `make image` (#14)",
+		log.Warn("claude version unknown until the workstation image exists — run `make image`, or what `spool images` prints (#14)",
 			"image", *workstationImage)
 	case !containsVersion(ver, claude.TestedVersion):
 		log.Warn("claude version differs from the one Spool was verified against",
 			"found", ver, "tested", claude.TestedVersion)
 	}
+	logImageSource(context.Background(), log, *workstationImage, dockerRuntime.RepoDigests)
 	// A containerized loop reaches the hub at the docker bridge gateway, so a
 	// loop listener bound to loopback or to any other one address is the one
 	// destination it is allowed and cannot use, and the fleet comes up
@@ -1055,6 +1061,7 @@ func usageError(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "spool: "+format+"\n\n", args...)
 	fmt.Fprint(os.Stderr, "usage: spool [flags]\n"+
 		"  or:  spool token [--data-dir dir]\n"+
+		"  or:  spool images\n"+
 		"  or:  spool user add|reset|list|remove [name] [--role role] [--data-dir dir]\n\n"+
 		"`spool --help` lists the flags.\n")
 	os.Exit(2)
