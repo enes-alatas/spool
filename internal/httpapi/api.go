@@ -403,6 +403,9 @@ type loopView struct {
 	// OwnerUsername is the configured owner's telegram handle, when known —
 	// the name the UI shows instead of a numeric id.
 	OwnerUsername string `json:"owner_username,omitempty"`
+	// OwnerUser is the name of the user linked as the owner, and "" when
+	// the owner is a sender no user is linked as: not linked (#731).
+	OwnerUser string `json:"owner_user"`
 	// InFleetChannel reports that the loop has a group: it receives what
 	// addresses it there and may post to it (ADR-0032).
 	InFleetChannel bool `json:"in_fleet_channel"`
@@ -467,6 +470,11 @@ func (server *Server) view(ctx context.Context, loopRecord *store.Loop) *loopVie
 			out.OwnerUsername = defaultStr(sender.Display, sender.Username)
 		}
 	}
+	if owner := shownOwner(loopRecord); owner != "" {
+		if linked, err := server.Store.UserLinks().LinkedUsers(ctx); err == nil {
+			out.OwnerUser = linked[owner]
+		}
+	}
 	if actor, ok := server.Manager.Get(loopRecord.ID); ok {
 		out.State = actor.State()
 		out.Rehoming = actor.Rehoming()
@@ -512,6 +520,19 @@ func (server *Server) view(ctx context.Context, loopRecord *store.Loop) *loopVie
 		server.Log.Error("undelivered count", "loop", loopRecord.Name, "err", err)
 	}
 	return out
+}
+
+// shownOwner is the owner the loop view names, as TGPerson or SlackPerson
+// key them: the Slack owner on a Slack loop, and otherwise the Telegram
+// one, which a loop not yet on a surface carries by default.
+func shownOwner(loopRecord *store.Loop) string {
+	switch {
+	case loopRecord.Surface() == store.SurfaceSlack:
+		return loopRecord.OwnerPerson()
+	case loopRecord.OwnerTGUserID != 0:
+		return store.TGPerson(loopRecord.OwnerTGUserID)
+	}
+	return ""
 }
 
 // --- handlers ---
@@ -1739,6 +1760,20 @@ func (server *Server) messageID(w http.ResponseWriter, r *http.Request) (int64, 
 	return id, true
 }
 
+// tgSenderView is a Telegram sender as the Access page lists them, with
+// the name of the user they are linked to: "" for a sender allowed before
+// ADR-0051, who keeps working, not linked (#731).
+type tgSenderView struct {
+	*store.TGSender
+	User string `json:"user"`
+}
+
+// slackSenderView is tgSenderView's Slack sender.
+type slackSenderView struct {
+	*store.SlackSender
+	User string `json:"user"`
+}
+
 func (server *Server) handleListSenders(w http.ResponseWriter, r *http.Request) {
 	senders, err := server.Store.TGSenders().List(r.Context())
 	if err != nil {
@@ -1753,7 +1788,16 @@ func (server *Server) handleListSenders(w http.ResponseWriter, r *http.Request) 
 			sender.PairCode = ""
 		}
 	}
-	writeJSON(w, 200, senders)
+	linked, err := server.Store.UserLinks().LinkedUsers(r.Context())
+	if err != nil {
+		server.jsonErr(w, 500, "%v", err)
+		return
+	}
+	views := make([]tgSenderView, 0, len(senders))
+	for _, sender := range senders {
+		views = append(views, tgSenderView{sender, linked[store.TGPerson(sender.TGUserID)]})
+	}
+	writeJSON(w, 200, views)
 }
 
 // --- env-var connections ---
@@ -1952,14 +1996,62 @@ func (server *Server) disownLoopsOf(ctx context.Context, tgUserID int64) {
 }
 
 type putOwnerReq struct {
-	TGUserID int64 `json:"tg_user_id"`
-	// SlackUserID names a Slack owner instead (#230); one or the other.
+	// User names the owner as a hub user, resolved to their link on the
+	// loop's surface (#731). The sender ids below name one directly, as the
+	// picker does until it chooses users (#732); one of the three.
+	User     string `json:"user"`
+	TGUserID int64  `json:"tg_user_id"`
+	// SlackUserID names a Slack owner instead (#230).
 	SlackUserID string `json:"slack_user_id"`
+}
+
+// Refusal codes for an owner named as a user.
+const (
+	codeUnknownUser = "unknown_user"
+	codeNoLink      = "no_link"
+)
+
+// ownerByUser fills in req's sender id from the link the user it names
+// has on the loop's surface: Slack for a Slack loop, and Telegram for any
+// other, as the default owner is. A user with no link there cannot own the
+// loop, since the owner is someone the loop can write to.
+func (server *Server) ownerByUser(ctx context.Context, loopRecord *store.Loop, req *putOwnerReq) *requestError {
+	user, err := server.Store.Users().GetByName(ctx, req.User)
+	if errors.Is(err, store.ErrNotFound) {
+		return &requestError{status: http.StatusBadRequest, code: codeUnknownUser, msg: "no user is named " + req.User}
+	} else if err != nil {
+		return &requestError{status: http.StatusInternalServerError, msg: err.Error()}
+	}
+	surface := store.SurfaceTelegram
+	if loopRecord.Surface() == store.SurfaceSlack {
+		surface = store.SurfaceSlack
+	}
+	links, err := server.Store.UserLinks().List(ctx, user.ID)
+	if err != nil {
+		return &requestError{status: http.StatusInternalServerError, msg: err.Error()}
+	}
+	for _, link := range links {
+		if link.Surface != surface {
+			continue
+		}
+		_, id, _ := strings.Cut(link.Person, ":")
+		if surface == store.SurfaceSlack {
+			req.SlackUserID = id
+			return nil
+		}
+		if req.TGUserID, err = strconv.ParseInt(id, 10, 64); err != nil {
+			return &requestError{status: http.StatusInternalServerError, msg: "bad link " + link.Person}
+		}
+		return nil
+	}
+	return &requestError{status: http.StatusBadRequest, code: codeNoLink,
+		msg: user.Name + " has no " + surface + " link: they link it in Settings → Account"}
 }
 
 // handlePutOwner sets which person a loop may message privately. Only an
 // allowlisted sender qualifies: being able to reach a bot is not the same as
-// owning the loop it belongs to (#73). Changing the owner drops the captured
+// owning the loop it belongs to (#73). Named as a user, the owner is the
+// person their link is (#731). Changing the owner drops the captured
 // chat — it belonged to the previous one — and the new owner's first DM to
 // this bot captures theirs.
 func (server *Server) handlePutOwner(w http.ResponseWriter, r *http.Request) {
@@ -1971,6 +2063,13 @@ func (server *Server) handlePutOwner(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		server.jsonErr(w, 400, "bad json")
 		return
+	}
+	if req.User != "" {
+		req.TGUserID, req.SlackUserID = 0, ""
+		if refusal := server.ownerByUser(r.Context(), loopRecord, &req); refusal != nil {
+			server.refuse(w, refusal)
+			return
+		}
 	}
 	if req.SlackUserID != "" {
 		if refusal := server.putSlackOwner(r.Context(), loopRecord, req.SlackUserID); refusal != nil {

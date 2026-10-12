@@ -1974,6 +1974,10 @@ type UserLinkStore interface {
 	Waiting(ctx context.Context, userID string, now int64) ([]*LinkConfirmation, error)
 	// List is the user's links, by surface.
 	List(ctx context.Context, userID string) ([]*UserLink, error)
+	// LinkedUsers is every linked person, as TGPerson or SlackPerson key
+	// them, with the name of the user they are linked to. A sender missing
+	// from it is not linked: allowed before ADR-0051, and kept (#731).
+	LinkedUsers(ctx context.Context) (map[string]string, error)
 	// Delete removes the user's link on surface, and the person's sender
 	// with it, so they are a stranger again, and answers with the link it
 	// removed; ErrNotFound if the user has none there.

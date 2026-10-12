@@ -105,6 +105,19 @@ grants, and wrong codes must be limited. Milo took both into the epic.
    by loop would be a product feature, not a security one (#728 question
    3).
 
+**Amendment (2026-10-12, #731):** a loop's owner is chosen as a user.
+`PUT /api/loops/{name}/owner` takes `{"user": "<name>"}`, and the hub
+stores that user's link on the loop's surface: Slack for a Slack loop, and
+Telegram for any other, as the default owner is. A user with no link there
+is refused 400 `no_link`, and a name that is no user 400 `unknown_user`.
+The store keeps the owner as the person it always held, so nothing is
+migrated, and owner_dm, the read rule and losing a link work as above. The
+loop view adds `owner_user`, the user linked as the owner, and each row of
+`GET /api/telegram/senders` and `GET /api/slack/senders` adds `user`; both
+are `""` for a sender allowed before this ADR, who is not linked. The
+owner named by `tg_user_id` or `slack_user_id` stays accepted until the
+owner picker chooses users (#732).
+
 ## Alternatives considered
 
 - **The bot gives a stranger a code, and the user types it into the room**
