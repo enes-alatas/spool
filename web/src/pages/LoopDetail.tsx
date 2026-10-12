@@ -31,8 +31,8 @@ import {
   SLACK_UNBOUND_HINT,
   slackChannel,
   slackReadiness,
-  slackSenderLabel,
 } from '../slack'
+import { ownerChoices, type OwnerPerson } from '../owner'
 import { missionDraft, missionSaveResult, missionSaveWarning } from '../mission'
 import { EFFORT_OPTIONS, PACING_OPTIONS } from '../options'
 import { useModelOptions } from '../models'
@@ -1003,56 +1003,31 @@ function SlackSurface({
   )
 }
 
-// Who a Slack loop may message privately. Only an allowed sender in the
-// loop's workspace can be owner, so only they are offered; the current owner
-// stays in the list even if since blocked, as on Telegram.
+// Who a Slack loop may message privately: a user linked on Slack, in the
+// loop's workspace (#732).
 function SlackOwnerPanel({ loop, status }: { loop: LoopView; status?: SlackStatus }) {
-  const qc = useQueryClient()
   const { data: senders } = useQuery({ queryKey: ['slack-senders'], queryFn: api.slackSenders })
-  const [error, setError] = useState('')
-
   const teamID = status?.team_id
-  const options = useMemo(() => {
-    const allowed = (senders ?? []).filter((s) => s.status === 'allowed' && (!teamID || s.team_id === teamID))
-    const id = loop.owner_slack_user_id
-    if (id && !allowed.some((s) => s.slack_user_id === id)) {
-      return [...allowed, { slack_user_id: id, username: '', display: loop.owner_username ?? '' }]
-    }
-    return allowed
-  }, [senders, teamID, loop.owner_slack_user_id, loop.owner_username])
-
-  const setOwner = useMutation({
-    mutationFn: (id: string) => api.setSlackOwner(loop.name, id),
-    onSuccess: (updated) => {
-      qc.setQueryData(['loop', loop.name], updated)
-      setError('')
-    },
-    onError: (e) => setError(e instanceof Error ? e.message : String(e)),
-  })
-
+  const people = useMemo(
+    () =>
+      (senders ?? [])
+        .filter((s) => !teamID || s.team_id === teamID)
+        .map((s) => ({
+          user: s.user,
+          status: s.status,
+          handle: s.username ? `@${s.username}` : s.display || s.slack_user_id,
+        })),
+    [senders, teamID],
+  )
   return (
-    <div className="field" style={{ marginTop: 12 }}>
-      <label htmlFor="owner-select">owner</label>
-      <select
-        id="owner-select"
-        value={loop.owner_slack_user_id ?? ''}
-        disabled={setOwner.isPending}
-        onChange={(e) => setOwner.mutate(e.target.value)}
-      >
-        {!loop.owner_slack_user_id && <option value="">No owner set</option>}
-        {options.map((s) => (
-          <option key={s.slack_user_id} value={s.slack_user_id}>
-            {slackSenderLabel(s)}
-          </option>
-        ))}
-      </select>
-      {error && (
-        <div className="form-error" role="alert" style={{ marginTop: 6 }}>
-          {error}
-        </div>
-      )}
-      <div className={`hint ${loop.owner_dm_ready ? 'ok' : ''}`}>{slackReadiness(loop, status)}</div>
-    </div>
+    <OwnerPicker
+      loop={loop}
+      people={people}
+      ownerSet={!!loop.owner_slack_user_id}
+      ownerHandle={loop.owner_username || loop.owner_slack_user_id || ''}
+      surface="Slack"
+      readiness={slackReadiness(loop, status)}
+    />
   )
 }
 
@@ -1061,25 +1036,52 @@ function SlackOwnerPanel({ loop, status }: { loop: LoopView; status?: SlackStatu
 // reads "not ready" has no way to guess that the fix is for a person to send
 // the bot a message, and the refusal itself only ever happens inside a turn.
 function OwnerPanel({ loop }: { loop: LoopView }) {
-  const qc = useQueryClient()
   const { data: senders } = useQuery({ queryKey: ['senders'], queryFn: api.senders })
-  const [error, setError] = useState('')
+  const people = useMemo(
+    () => (senders ?? []).map((s) => ({ user: s.user, status: s.status, handle: senderLabel(s) })),
+    [senders],
+  )
+  return (
+    <OwnerPicker
+      loop={loop}
+      people={people}
+      ownerSet={!!loop.owner_tg_user_id}
+      ownerHandle={loop.owner_username ? `@${loop.owner_username}` : String(loop.owner_tg_user_id ?? '')}
+      surface="Telegram"
+      readiness={readiness(loop)}
+    />
+  )
+}
 
-  // Only an allowed sender can be made owner, so only they are offered. The
-  // current owner joins the list even if they have since been blocked or
-  // removed — a picker that silently drops the value it is showing would
-  // read as "no owner".
-  const options = useMemo(() => {
-    const allowed = (senders ?? []).filter((s) => s.status === 'allowed')
-    const id = loop.owner_tg_user_id
-    if (id && !allowed.some((s) => s.tg_user_id === id)) {
-      return [...allowed, { tg_user_id: id, username: loop.owner_username ?? '', display: '' }]
-    }
-    return allowed
-  }, [senders, loop.owner_tg_user_id, loop.owner_username])
+// The owner picker both surfaces share (#732). An owner is a user, picked by
+// the link they hold on the loop's surface (ADR-0051); a sender allowed
+// before links keeps owning the loop and shows as not linked until changed.
+function OwnerPicker({
+  loop,
+  people,
+  ownerSet,
+  ownerHandle,
+  surface,
+  readiness,
+}: {
+  loop: LoopView
+  people: OwnerPerson[]
+  ownerSet: boolean
+  // Who the owner is on the surface, for one linked as nobody.
+  ownerHandle: string
+  surface: 'Telegram' | 'Slack'
+  readiness: string
+}) {
+  const qc = useQueryClient()
+  const [error, setError] = useState('')
+  const { value, choices, offered } = ownerChoices(people, {
+    set: ownerSet,
+    user: loop.owner_user,
+    handle: ownerHandle,
+  })
 
   const setOwner = useMutation({
-    mutationFn: (tgUserID: number) => api.setOwner(loop.name, tgUserID),
+    mutationFn: (user: string) => api.setOwner(loop.name, user),
     onSuccess: (updated) => {
       // The handler returns the updated view, and changing the owner drops
       // the captured chat: seeding the cache shows that fall back to waiting
@@ -1095,14 +1097,13 @@ function OwnerPanel({ loop }: { loop: LoopView }) {
       <label htmlFor="owner-select">owner</label>
       <select
         id="owner-select"
-        value={loop.owner_tg_user_id ?? ''}
+        value={value}
         disabled={setOwner.isPending}
-        onChange={(e) => setOwner.mutate(Number(e.target.value))}
+        onChange={(e) => e.target.value && setOwner.mutate(e.target.value)}
       >
-        {!loop.owner_tg_user_id && <option value="">No owner set</option>}
-        {options.map((s) => (
-          <option key={s.tg_user_id} value={s.tg_user_id}>
-            {senderLabel(s)}
+        {choices.map((c) => (
+          <option key={c.value} value={c.value} disabled={c.disabled}>
+            {c.label}
           </option>
         ))}
       </select>
@@ -1111,16 +1112,20 @@ function OwnerPanel({ loop }: { loop: LoopView }) {
           {error}
         </div>
       )}
-      <div className={`hint ${loop.owner_dm_ready ? 'ok' : ''}`}>{readiness(loop)}</div>
+      {offered === 0 && (
+        <div className="hint">
+          Nobody has linked {surface} yet. A user links it in Settings → Account, and can then own this loop.
+        </div>
+      )}
+      <div className={`hint ${loop.owner_dm_ready ? 'ok' : ''}`}>{readiness}</div>
     </div>
   )
 }
 
-// An owner is picked by a person, so lead with the handle and keep the display
-// name behind it. The bare id is the last resort for a sender with neither.
+// A sender as the loop writes to them: the handle, or the display name or
+// bare id for a sender with no handle.
 function senderLabel(s: Pick<TGSender, 'tg_user_id' | 'username' | 'display'>): string {
-  if (!s.username) return s.display || String(s.tg_user_id)
-  return s.display ? `@${s.username} · ${s.display}` : `@${s.username}`
+  return s.username ? `@${s.username}` : s.display || String(s.tg_user_id)
 }
 
 // What the operator can do about it, in words. Never "ready: false".
