@@ -21,6 +21,16 @@ the generated one is the honest half. A release is titled with its tag
 alone (`v0.4.0`, #485): the rung a tag completes is on its milestone, not
 in the name.
 
+**What a tag builds** (ADR-0052, #756): the tag fires `release.yml`. It
+refuses a tag whose commit is not on `main`, then runs
+`scripts/release-build.sh`, attests each archive and attaches the archives
+and `SHA256SUMS` to the release. It creates the release, with generated
+notes, when a bare `git push` of the tag left none. Check the run in the
+Actions tab after tagging: a red one also lands on the ci-health issue.
+To see what a tag would build first, dispatch `release` on `main`. That is
+a dry run, which keeps the archives as a workflow artifact and publishes
+nothing.
+
 **A build says which Spool it is** (#223): `git describe --tags --always
 --dirty` is baked in by the Makefile, so a tagged build reports the tag, a
 build between tags reports its distance from one, and a build from a

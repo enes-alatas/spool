@@ -338,6 +338,26 @@ the volume too, and with it the loop's memory and workspace.
 Building happens while the old hub still runs, so the outage is only the
 backup and the start.
 
+**From a release's binary.** A release from the one after v0.5.1 on carries
+the built binary (#756, ADR-0052), so `make build` above can be replaced
+with a download. The rest of the block stays the same, `make image` too,
+until releases carry the images as well (#747).
+
+```bash
+v=vX.Y.Z; p=linux_amd64                      # the target tag; linux_arm64 on ARM
+base=https://github.com/enes-alatas/spool/releases/download/$v
+dl=$(mktemp -d) && cd "$dl"                  # private to you: nothing swaps the file after the check
+curl -fsSLO "$base/spool_${v}_${p}.tar.gz" -O "$base/SHA256SUMS"
+sha256sum -c --ignore-missing SHA256SUMS     # the file is the release's
+gh attestation verify "spool_${v}_${p}.tar.gz" --repo enes-alatas/spool   # optional: the release workflow built it
+tar -xzf "spool_${v}_${p}.tar.gz"
+install -m 755 "spool_${v}_${p}/spool" "spool_${v}_${p}/spool-hook" /opt/spool/bin/
+cd /opt/spool && rm -rf "$dl"                # back for the rest of the block, make image included
+```
+
+The checksum catches a broken download. The attestation also catches a
+file and checksums that were swapped together, so run it if you have `gh`.
+
 ### Checking it worked
 
 - `curl -s http://127.0.0.1:8080/api/version` names the target tag, and
