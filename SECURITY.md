@@ -88,6 +88,11 @@ they *should* be true, only that they are known and recorded.
   keep a loop from misusing its own GitHub token, its own chat surface, or its
   own workspace. Containment is about the blast radius of the machine, not
   about supervising an agent's judgement.
+- **A member sees names.** The names of users and loops, which sender is
+  which user, and who changed what on `/api/changes` are visible to a
+  member, by decision: a name is not a secret (ADR-0048). What a member is
+  kept from is listed under the trust model below. A member reading one of
+  *those* is a vulnerability.
 - **Spool collects no telemetry** — no analytics, no crash reporting, no
   phone-home of its own. The `claude` process a loop runs is a separate
   matter: it talks to Anthropic's own hosts, `statsig.anthropic.com` among
@@ -98,25 +103,90 @@ they *should* be true, only that they are known and recorded.
 
 ## What the hub's trust model is
 
-Two credentials on two listeners (ADR-0030, `docs/ARCHITECTURE.md`):
+Two listeners, each with its own credential (ADR-0030, `docs/ARCHITECTURE.md`).
+Neither credential is ever handed to the other listener's audience, and each
+check holds independently of the other.
 
-- the **operator listener** (`--listen`) serves the API and the control room.
-  Every `/api` route needs the operator token except three. `/api/health` and
-  `/api/version` answer before there is a token to present. `/api/logout`
-  needs no credential either: refusing to end a session someone cannot prove
-  they hold protects nobody. `/api/login` does need the token — it takes it
-  from the request body rather than a header, because trading it for the
-  session cookie is what that route is for. The same middleware refuses an
-  unrecognised `Host` on every `/api` path, the open ones included — that is
-  the DNS-rebinding check, and it holds before anything else is considered.
-  The cross-site `Origin` / `Sec-Fetch-Site` and `application/json` checks
-  apply to the routes that are not open: health and version carry nothing
-  worth a cross-origin request.
-- the **loop listener** (`--mcp-listen`) serves `/mcp` and the loop's brokered
-  MCP servers under `/mcp/connections/`, and each request needs the
-  requesting loop's own token. It is the one port a workstation can reach.
+**The operator listener** (`--listen`) serves the API and the control room.
 
-Neither credential is ever handed to the other's audience, and each check holds
-independently of the other. A report that one of these gates can be passed
-without the credential it names is exactly the kind of report this policy is
-for.
+- **Who gets in.** Every `/api` route needs a credential, with three
+  exceptions:
+  - `/api/health` and `/api/version` answer before a caller can have one.
+  - `/api/logout` asks for nothing: refusing to end a session someone
+    cannot prove they hold protects nobody.
+  - `/api/login` takes the credential it trades for a session in its body.
+
+  The credential is one of two:
+  - **A user's session**, from signing in with a username and password
+    (ADR-0048). The cookie holds only a random session ID, and the store
+    keeps only that ID's SHA-256, so a copy of `spool.db` holds no live
+    session. Sign-out, a password change, a reset and a removal end
+    sessions. So do 14 days without use, or 30 days after sign-in.
+  - **The operator token**, as a bearer header, which acts as the owner. It
+    can still be traded for a session at `/api/login` for one more release.
+- **Guessing passwords.** Sign-in is throttled per username tried, whether
+  or not a user has it: after 5 failures the name locks, and the lock
+  doubles up to 15 minutes. An unknown name gets the same answer and takes
+  the same time as a wrong password.
+- **What each role may call.** A user with a one-time password still to
+  change reaches only `/api/me`, `/api/me/password` and the open routes.
+  Past that, the role decides (ADR-0048):
+  - a **member** reads the fleet and talks to its loops;
+  - an **admin** also creates, changes and operates loops, surfaces and
+    senders;
+  - an **owner** also manages the hub's users.
+
+  A route nobody has classified is an admin's, so a new route is closed to
+  members until someone decides otherwise.
+- **What a member does not read** (ADR-0048, ADR-0050): another person's
+  private conversations, a loop's events, turns and live agent stream, which
+  can carry any private message, and pairing codes. A member does read their
+  own private conversations: those of the people they are linked as, and
+  what a loop they own said with them on `owner_dm`.
+- **Before anything else** is considered, the same middleware refuses an
+  unrecognised `Host` on every `/api` path, the open ones included. That is
+  the DNS-rebinding check. The cross-site `Origin` / `Sec-Fetch-Site` and
+  `application/json` checks apply to every route that isn't open.
+
+**The loop listener** (`--mcp-listen`) serves `/mcp` and each loop's brokered
+MCP servers under `/mcp/connections/`. Every request needs the requesting
+loop's own token. It is the one port of the machine a workstation can reach.
+
+**Who a loop answers on a surface** (ADR-0051). A Telegram or Slack sender
+reaches a loop only once they are *allowed*. A user becomes an allowed sender
+by linking their own account:
+- the control room gives them a one-surface link code, `link-` and ten random
+  characters. It works once, expires after 15 minutes, and the store keeps
+  only its SHA-256;
+- they send it in a DM to any loop's bot or app;
+- the hub asks that account to confirm, and links it only when it replies
+  YES.
+
+Nobody links someone else's account, an admin included. A blocked sender
+reaches nothing, a code included. A stranger's message gets no reply, is never
+stored, and has its text never logged.
+
+**Secrets at rest.** Every credential the store keeps (connection secrets, bot
+tokens, the loops' MCP tokens, the setup-token) is sealed in `spool.db` under
+`<data-dir>/hub.key` (ADR-0046). Passwords are kept only as salted
+PBKDF2-SHA256 hashes (ADR-0048).
+
+A report that any gate above can be passed without the credential it names,
+or that a role reads or does what its line says it doesn't, is exactly the
+kind of report this policy is for.
+
+## Verifying what you run
+
+A release carries its binaries for Linux and macOS, `SHA256SUMS`, and the
+digests of the workstation and egress images (ADR-0052). Each archive and each
+image has a GitHub attestation of the workflow run that built it.
+[OPERATIONS.md](docs/OPERATIONS.md#upgrading) has the commands:
+- `sha256sum -c` against `SHA256SUMS` catches a broken download;
+- `gh attestation verify` catches an archive and checksums swapped together;
+- `./bin/spool images` prints each image as a pull by its digest, which is
+  that image's own check.
+
+The hub never pulls an image itself: every `docker run` it issues refuses to
+pull, so it runs only what you put on the machine. A release whose files don't
+verify, or a published image whose digest differs from the one in its
+release's notes, is a vulnerability report.
