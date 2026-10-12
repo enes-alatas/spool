@@ -391,6 +391,12 @@ jobs:
       - name: the backup and restore still round-trip what they claim to
         if: needs.changes.outputs.workflows == 'true'
         run: bash scripts/spool-backup-test.sh
+      # The smoke is what tells a broken release from a good one, and it runs
+      # on a dispatch or a tag only; these say it still stops on each thing
+      # it checks (#770).
+      - name: the release smoke still stops on what it claims to
+        if: needs.changes.outputs.workflows == 'true'
+        run: bash scripts/release-smoke-test.sh
 
   # The one job still filtered at job level, because it is the one worth
   # skipping outright: ~8 of the ~10 minutes a full run used to bill. A job
