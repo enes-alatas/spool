@@ -488,3 +488,6 @@ Enes: watchdog = hub code, DM once per problem per loop, clear on operator actio
 
 ## 2026-10-12 13:45 UTC
 Elliot PR #765 (#763, images by digest, hub never pulls) in review with Terra peer + Quinn. Filed #766 (missing image names remedy) for Terra, tail before #630. Terra order: PR #762 → #758 → #731 → #744 → #751 → #764 → #719 → #722 → #721 → #766 → #630.
+
+## 2026-10-12 14:00 UTC
+#753 (pipeline board): Enes agrees it is tracker territory but HOLDS the close; he wants to think about how to communicate it to k-sok first. Do NOT close or comment on #753 until he says so. #764 placed; #766 filed.
