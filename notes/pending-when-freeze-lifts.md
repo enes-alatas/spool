@@ -509,3 +509,6 @@ Quiet sweep. Merged #769 (Iris, one-row mission, part of #752). Open: PR #771 (T
 
 ## 2026-10-12 23:20 UTC
 #772 merged (#770): release smoke on fresh runner; post-merge dry run green. RELEASE RULE now: tag ask links a green dry run on the exact commit; tag smoke + ghcr packages public happen on the next tag. #747 left: #766 (Terra). Filed #777 (L6 security review epic) for Elliot; asked Enes about a supported-versions policy. #758 still waits on Enes.
+
+## 2026-10-12 23:25 UTC
+Elliot corrected me: SECURITY.md exists (private reporting on); #778 updates its trust model, PR #779 with Quinn. Fixed #777 body. Lesson: read the tree before claiming a file is missing. Enes asked about supported versions by both of us.
