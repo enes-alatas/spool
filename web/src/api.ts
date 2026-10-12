@@ -95,6 +95,9 @@ export interface LoopView {
   // then carries their display name.
   owner_slack_user_id?: string
   owner_username?: string
+  // The user linked as the owner, and "" when the owner is a sender allowed
+  // before links, who keeps working but is not linked (#731).
+  owner_user: string
   // Whether the loop can actually DM its owner: a bot cannot open a private
   // chat, so it can only reach an owner who has written to this loop's own
   // bot first (#73).
@@ -323,6 +326,8 @@ export interface TGSender {
   username: string
   display: string
   status: 'pending' | 'allowed' | 'blocked'
+  // The user this sender is linked as, "" for one allowed before links (#731).
+  user: string
   pair_code: string
   first_seen_via: string
   created_at: number
@@ -338,6 +343,8 @@ export interface SlackSender {
   username: string
   display: string
   status: 'pending' | 'allowed' | 'blocked'
+  // The user this sender is linked as, "" for one allowed before links (#731).
+  user: string
   pair_code: string
   first_seen_via: string
   created_at: number
@@ -865,10 +872,13 @@ export const api = {
   // docker is unavailable, or `loop_listener_unreachable` (ApiError.code)
   // when a workstation could not reach the hub.
   rehome: (name: string) => req<Rehome>(`/api/loops/${name}/rehome`, { method: 'POST' }),
-  setOwner: (name: string, tgUserID: number) =>
+  // An owner is a user, by their link on the loop's surface (#731): 400
+  // `no_link` (ApiError.code) for a user with none, `unknown_user` for a
+  // name that is no user.
+  setOwner: (name: string, user: string) =>
     req<LoopView>(`/api/loops/${name}/owner`, {
       method: 'PUT',
-      body: JSON.stringify({ tg_user_id: tgUserID }),
+      body: JSON.stringify({ user }),
     }),
   // The id must be an allowed Slack sender in the loop's workspace (#230).
   setSlackOwner: (name: string, slackUserID: string) =>

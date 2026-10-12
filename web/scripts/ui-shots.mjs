@@ -581,5 +581,39 @@ taken.push(slackRoomsFile)
 await page.unroute('**/api/loops/gardener/rooms')
 await page.unroute('**/api/loops/gardener')
 
+// The owner picker (#732): an owner is a user, by their link on the loop's
+// surface. The fixture's gardener is owned by rana, allowed before links and
+// linked as nobody, so the picker shows them greyed as not linked and offers
+// sam, linked on Telegram. A native select draws its list outside the page,
+// so the shot opens it as a list box to show what is offered.
+const ownerField = page.locator('.field:has(#owner-select)')
+const shootOwner = async (name) => {
+  await page.goto(base + '/loops/gardener', { waitUntil: 'networkidle' })
+  await ownerField.locator('option').first().waitFor({ state: 'attached', timeout: 15000 })
+  await page.locator('#owner-select').evaluate((select) => {
+    select.size = select.options.length
+  })
+  const file = `${outDir}/${name}.png`
+  await ownerField.screenshot({ path: file })
+  taken.push(file)
+}
+await shootOwner('owner-not-linked')
+// And once sam owns it, as the view says after the picker sets them.
+await page.route('**/api/loops/gardener', async (route) => {
+  if (route.request().method() !== 'GET') return route.continue()
+  const loop = await (await route.fetch()).json()
+  await route.fulfill({
+    json: {
+      ...loop,
+      owner_tg_user_id: 700000004,
+      owner_username: 'sam_example',
+      owner_user: 'sam',
+      owner_dm_ready: true,
+    },
+  })
+})
+await shootOwner('owner-linked')
+await page.unroute('**/api/loops/gardener')
+
 await browser.close()
 for (const file of taken) console.log(file)
