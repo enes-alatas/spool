@@ -66,6 +66,9 @@ func TestUserLinksRoundTrip(t *testing.T) {
 	if sender, err := db.TGSenders().Get(ctx, 11); err != nil || sender.Status != store.SenderAllowed || sender.Username != "u"+tgAlice {
 		t.Fatalf("a link did not allow its person: %+v, %v", sender, err)
 	}
+	if linked, err := links.LinkedUsers(ctx); err != nil || len(linked) != 1 || linked[tgAlice] != "alice" {
+		t.Fatalf("linked users: %v, %v; want only alice's", linked, err)
+	}
 
 	if err := links.SetCode(ctx, "u-bob", store.SurfaceSlack, "elsewhere", 100); err != nil {
 		t.Fatal(err)

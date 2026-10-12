@@ -432,6 +432,8 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			// A user id, a sender's surface id, times, and a link code's
 			// SHA-256; the code itself is never kept (#703).
 			"SetCode": false, "List": false, "Delete": false, "Waiting": false, "Changes": false,
+			// Reads only: persons and the names of the users they are linked to.
+			"LinkedUsers": false,
 			// A person's surface id and the name their surface gives them, as a
 			// sender row keeps them, a user and loop id or name, and times
 			// (ADR-0051); a stranger's text is never kept.

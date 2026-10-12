@@ -244,6 +244,24 @@ func (table userLinks) List(ctx context.Context, userID string) ([]*store.UserLi
 	return out, rows.Err()
 }
 
+func (table userLinks) LinkedUsers(ctx context.Context) (map[string]string, error) {
+	rows, err := table.db.QueryContext(ctx,
+		`SELECT user_links.person, users.name FROM user_links JOIN users ON users.id = user_links.user_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var person, name string
+		if err := rows.Scan(&person, &name); err != nil {
+			return nil, err
+		}
+		out[person] = name
+	}
+	return out, rows.Err()
+}
+
 func (table userLinks) Delete(ctx context.Context, userID, surface string, now int64) (*store.UserLink, error) {
 	tx, err := table.db.BeginTx(ctx, nil)
 	if err != nil {

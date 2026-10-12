@@ -366,6 +366,7 @@ type loopView struct {
 	OwnerTGUserID      int64   `json:"owner_tg_user_id"`
 	OwnerDMReady       bool    `json:"owner_dm_ready"`
 	OwnerUsername      string  `json:"owner_username"`
+	OwnerUser          string  `json:"owner_user"`
 	Mission            string  `json:"mission"`
 	TGBotUsername      string  `json:"tg_bot_username"`
 	TGGroupChatID      int64   `json:"tg_group_chat_id"`

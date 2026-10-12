@@ -153,7 +153,16 @@ func (server *Server) handleListSlackSenders(w http.ResponseWriter, r *http.Requ
 			sender.PairCode = ""
 		}
 	}
-	writeJSON(w, http.StatusOK, senders)
+	linked, err := server.Store.UserLinks().LinkedUsers(r.Context())
+	if err != nil {
+		server.jsonErr(w, http.StatusInternalServerError, "%v", err)
+		return
+	}
+	views := make([]slackSenderView, 0, len(senders))
+	for _, sender := range senders {
+		views = append(views, slackSenderView{sender, linked[store.SlackPerson(sender.SlackUserID)]})
+	}
+	writeJSON(w, http.StatusOK, views)
 }
 
 func (server *Server) handleSlackSenderStatus(status string) http.HandlerFunc {
