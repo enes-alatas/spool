@@ -45,7 +45,7 @@ func (rt *Runtime) ResolveModel(ctx context.Context, model string) (string, erro
 	}
 	rt.sweepOnce.Do(func() { rt.sweepResolveLeftovers(ctx) })
 	name := "spool-resolve-" + hex.EncodeToString(suffix)
-	argv := []string{"run", "--rm", "-i", "--name", name, "--network", "none", "--label", resolveLabel}
+	argv := []string{"run", "--pull=never", "--rm", "-i", "--name", name, "--network", "none", "--label", resolveLabel}
 	for _, kv := range claude.AuxEnv("", auxHome, resolveBaseURL) {
 		argv = append(argv, "-e", kv) // synthetic values only: nothing here is a secret
 	}

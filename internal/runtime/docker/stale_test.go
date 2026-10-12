@@ -63,7 +63,7 @@ func TestEnsureReplacesAWorkstationOnARebuiltImage(t *testing.T) {
 			}
 			log := string(data)
 			removed := strings.Contains(log, "rm --force spool-ws-l1")
-			if removed != tc.replaced || strings.Contains(log, "run --detach") != tc.replaced {
+			if removed != tc.replaced || strings.Contains(log, "run --pull=never --detach") != tc.replaced {
 				t.Errorf("replaced = %v, want %v; docker was called with:\n%s", removed, tc.replaced, log)
 			}
 			if strings.Contains(log, "volume rm") {

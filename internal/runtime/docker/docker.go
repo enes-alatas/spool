@@ -164,7 +164,7 @@ func (rt *Runtime) Preflight(ctx context.Context) (string, error) {
 	if _, err := rt.command(ctx, queryTimeout, "image", "inspect", rt.defaultImage); err != nil {
 		return "", nil
 	}
-	version, err := rt.command(ctx, startTimeout, "run", "--rm", rt.defaultImage, "claude", "--version")
+	version, err := rt.command(ctx, startTimeout, "run", "--pull=never", "--rm", rt.defaultImage, "claude", "--version")
 	if err != nil {
 		return "", fmt.Errorf("claude inside %s: %w", rt.defaultImage, err)
 	}
@@ -397,7 +397,7 @@ func labelArgs(spec runtime.Spec) []string {
 func runArgv(spec runtime.Spec, defaultImage string, network []string) []string {
 	name := containerName(spec.LoopID)
 	argv := []string{
-		"run", "--detach", "--init",
+		"run", "--pull=never", "--detach", "--init",
 		"--name", name,
 		"--restart", "unless-stopped",
 		"--volume", name + ":" + runtime.WorkstationHome,
