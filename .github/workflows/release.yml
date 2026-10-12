@@ -3,7 +3,9 @@
 # Linux and macOS with the control room and those digests embedded;
 # SHA256SUMS over the binaries; and a GitHub attestation of each binary and
 # image. An operator installs without Go or Node, and can check that this
-# workflow built what they fetched.
+# workflow built what they fetched. A smoke job then takes that install path
+# on a fresh runner (scripts/release-smoke.sh): a dry run on its own
+# artifacts, a tag on the published release.
 #
 # The operator tags (CONVENTIONS.md, #223), with `git push origin <tag>`
 # or `gh release create <tag> --generate-notes`. Either fires this. The
@@ -107,6 +109,19 @@ jobs:
           go-version-file: go.mod
           cache: false
       - run: scripts/release-images.sh build
+      # The smoke job installs the amd64 images the way a release's pull
+      # would leave them: under their local names, from this build.
+      - name: hand the images to the smoke
+        if: matrix.arch == 'amd64'
+        run: docker save spool-workstation spool-egress | gzip -1 > images.tar.gz
+      - if: matrix.arch == 'amd64'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: images-amd64
+          path: images.tar.gz
+          compression-level: 0 # gzipped already
+          if-no-files-found: error
+          retention-days: 1
 
   # One multi-arch image per name, tagged with the release, attested, and
   # its digest handed to the binaries. The digest is what an operator pulls
@@ -237,3 +252,63 @@ jobs:
           *) printf '%s\n\n## Images\n\n`spool images` prints how to fetch them. By digest:\n\n- `%s`\n- `%s`\n' \
                "$notes" "$WORKSTATION" "$EGRESS" | gh release edit "$GITHUB_REF_NAME" --notes-file - ;;
           esac
+
+  # The README's release path on a fresh runner (#770): no Go, no Node, no
+  # build, only scripts/release-smoke.sh from the checkout. A dry run
+  # smokes its own artifacts, so a tag is cut from a commit whose install
+  # already worked.
+  smoke-dry-run:
+    needs: [build, images-check]
+    # index is skipped on a dispatch, and a skip anywhere upstream would
+    # skip this job too unless its condition says otherwise.
+    if: ${{ !cancelled() && !failure() && github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: scripts/release-smoke.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+          path: dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: images-amd64
+          path: images
+      - run: gunzip -c images/images.tar.gz | docker load
+      - run: scripts/release-smoke.sh --dir dist
+
+  # A tag smokes what a stranger downloads: the published release, fetched
+  # from its public URL with no token. Two steps do use one: gh attestation
+  # verify always needs a token, and the images are pulled with this job's
+  # read grant while the packages are private (#765). It runs after
+  # publish, so red means the release is out and broken; the release skill
+  # lists the steps. The gate is the dry run before the tag.
+  smoke:
+    needs: publish
+    if: ${{ !cancelled() && !failure() && github.event_name == 'push' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: read # the images, while their packages are private
+      attestations: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: scripts/release-smoke.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: smoke the published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SPOOL_REPO: ${{ github.repository }}
+        run: |
+          trap 'docker logout ghcr.io' EXIT
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          scripts/release-smoke.sh "$GITHUB_REF_NAME"
