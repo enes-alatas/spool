@@ -255,3 +255,63 @@ func TestOnboardingChecksTheHostLogin(t *testing.T) {
 		t.Fatalf("harness after a turn authenticated = %+v", got.Harness)
 	}
 }
+
+// An operator who runs the fleet from the control room alone skips the
+// chat surface (#798). The hub refuses until the harness and a loop are
+// done, since without them there is no fleet to step aside to, and the
+// surface pillar keeps reading live after the skip.
+func TestOnboardingSkipsTheSurface(t *testing.T) {
+	t.Parallel()
+	s := startServer(t, t.TempDir())
+	s.wantRefusal("POST", "/api/onboarding/skip-surface", nil, 409, "surface_not_skippable")
+
+	s.mustJSON("POST", "/api/onboarding/harness-check", nil, nil)
+	s.waitOnboarding(30*time.Second, func(v onboardingJSON) bool { return v.Harness.Done })
+	s.wantRefusal("POST", "/api/onboarding/skip-surface", nil, 409, "surface_not_skippable")
+	if view := s.onboarding(); view.Completed {
+		t.Fatalf("after two refused skips: %+v, want not completed", view)
+	}
+
+	// A loop has woken, but beta's login is refused: the harness reads not
+	// done again, and the skip is refused.
+	for _, name := range []string{"alpha", "beta"} {
+		s.createLoop(name, nil)
+	}
+	// Both creation ticks finish before the login goes bad, so only beta's
+	// next turn meets it.
+	for _, name := range []string{"alpha", "beta"} {
+		s.waitTurn(name, 30*time.Second, func(turn) bool { return true })
+	}
+	if err := os.MkdirAll(s.fkState, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(s.fkState, "login-expired"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s.message("beta", "are you there")
+	s.waitState("beta", "workstation_down", 30*time.Second)
+	s.wantRefusal("POST", "/api/onboarding/skip-surface", nil, 409, "surface_not_skippable")
+
+	// Without beta, alpha's turn is the harness's evidence again.
+	s.mustJSON("DELETE", "/api/loops/beta", nil, nil)
+	var skipped onboardingJSON
+	s.mustJSON("POST", "/api/onboarding/skip-surface", nil, &skipped)
+	if !skipped.Completed || skipped.Surface.Done || skipped.Surface.Reason != "no chat surface has carried a message yet" {
+		t.Fatalf("the skip answered %+v, want completed with the surface still reading not done", skipped)
+	}
+	if view := s.onboarding(); !view.Completed {
+		t.Fatalf("after the skip: %+v, want completed", view)
+	}
+	// Skipping again changes nothing.
+	s.mustJSON("POST", "/api/onboarding/skip-surface", nil, &skipped)
+	if !skipped.Completed {
+		t.Fatalf("a second skip answered %+v, want completed", skipped)
+	}
+
+	// Deleting the last loop brings the page back, as it does after a
+	// completion with a surface.
+	s.mustJSON("DELETE", "/api/loops/alpha", nil, nil)
+	if view := s.onboarding(); view.Completed {
+		t.Fatalf("after deleting the last loop: %+v, want not completed", view)
+	}
+}

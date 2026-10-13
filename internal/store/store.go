@@ -147,9 +147,10 @@ type PlanUsageWindow struct {
 }
 
 // SettingOnboardingCompleted is set the first time the hub finds
-// every onboarding pillar done (#580). It is what keeps the first-run page
-// aside once the operator is through it, whatever a pillar reads later, and
-// deleting the fleet's last loop clears it, in the same transaction.
+// every onboarding pillar done (#580), or when the operator skips the chat
+// surface (#798). It is what keeps the first-run page aside once the
+// operator is through it, whatever a pillar reads later, and deleting the
+// fleet's last loop clears it, in the same transaction.
 const SettingOnboardingCompleted = "onboarding_completed"
 
 // SettingEgressHosts holds the operator's extra egress hosts (#542), an

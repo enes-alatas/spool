@@ -86,36 +86,41 @@ func (server *Server) furthestWake(loops []*store.Loop) (phase, name string) {
 	return phase, name
 }
 
+// codeSurfaceNotSkippable refuses to skip the surface while the harness or
+// the loops pillar reads not done (#798).
+const codeSurfaceNotSkippable = "surface_not_skippable"
+
 // handleOnboarding reads the three pillars. Cheap enough to poll: a handful
 // of EXISTS queries and the loops' in-memory state. The first read that
 // finds all three done stores Completed, so it is a write on a GET, but an
 // idempotent one row that only ever happens once per empty fleet.
 func (server *Server) handleOnboarding(w http.ResponseWriter, r *http.Request) {
+	view, err := server.onboarding(r.Context())
+	if err != nil {
+		server.jsonErr(w, 500, "%v", err)
+		return
+	}
+	writeJSON(w, 200, view)
+}
+
+// handleSkipSurface stores Completed without a chat surface, for an
+// operator who runs the fleet from the control room alone (#798). Only the
+// surface may be skipped: without a harness or a loop there is nothing to
+// step aside to. The surface pillar keeps reading live, so a surface
+// attached later reads done on its own.
+func (server *Server) handleSkipSurface(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	loops, err := server.Store.Loops().List(ctx)
+	view, err := server.onboarding(ctx)
 	if err != nil {
 		server.jsonErr(w, 500, "%v", err)
 		return
 	}
-	var view onboardingView
-	if view.Harness, err = server.harnessPillar(ctx, loops); err == nil {
-		if view.Surface, err = server.surfacePillar(ctx, loops); err == nil {
-			view.Loops, err = server.loopsPillar(ctx, loops)
-		}
-	}
-	if err != nil {
-		server.jsonErr(w, 500, "%v", err)
+	if !view.Harness.Done || !view.Loops.Done {
+		server.jsonErrCode(w, 409, codeSurfaceNotSkippable,
+			"the chat surface can be skipped once Claude is logged in and a loop has woken")
 		return
 	}
-	_, err = server.Store.Settings().Get(ctx, store.SettingOnboardingCompleted)
-	switch {
-	case err == nil:
-		view.Completed = true
-	case !errors.Is(err, store.ErrNotFound):
-		server.jsonErr(w, 500, "%v", err)
-		return
-	}
-	if !view.Completed && view.Harness.Done && view.Surface.Done && view.Loops.Done {
+	if !view.Completed {
 		if err := server.Store.Settings().Set(ctx, store.SettingOnboardingCompleted, "1"); err != nil {
 			server.jsonErr(w, 500, "%v", err)
 			return
@@ -123,6 +128,39 @@ func (server *Server) handleOnboarding(w http.ResponseWriter, r *http.Request) {
 		view.Completed = true
 	}
 	writeJSON(w, 200, view)
+}
+
+// onboarding reads the three pillars and Completed, storing Completed the
+// first time all three read done.
+func (server *Server) onboarding(ctx context.Context) (onboardingView, error) {
+	var view onboardingView
+	loops, err := server.Store.Loops().List(ctx)
+	if err != nil {
+		return view, err
+	}
+	if view.Harness, err = server.harnessPillar(ctx, loops); err != nil {
+		return view, err
+	}
+	if view.Surface, err = server.surfacePillar(ctx, loops); err != nil {
+		return view, err
+	}
+	if view.Loops, err = server.loopsPillar(ctx, loops); err != nil {
+		return view, err
+	}
+	_, err = server.Store.Settings().Get(ctx, store.SettingOnboardingCompleted)
+	switch {
+	case err == nil:
+		view.Completed = true
+	case !errors.Is(err, store.ErrNotFound):
+		return view, err
+	}
+	if !view.Completed && view.Harness.Done && view.Surface.Done && view.Loops.Done {
+		if err := server.Store.Settings().Set(ctx, store.SettingOnboardingCompleted, "1"); err != nil {
+			return view, err
+		}
+		view.Completed = true
+	}
+	return view, nil
 }
 
 // harnessPillar reads whether claude can log in (ADR-0044). A loop whose
