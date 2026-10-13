@@ -10,6 +10,7 @@ humans and each other. This file orients you; it links, it doesn't duplicate.
    language** (use those words exactly; don't invent synonyms)
 3. `docs/CONVENTIONS.md` — workflow, code style, test tiers
 4. `docs/QUALITY.md` — baselines and CI gates
+   (`docs/THREAT-MODEL.md` beside it: what each boundary holds and does not)
 5. `docs/adr/` — why things are the way they are; never contradict an accepted
    ADR silently. A narrowing or clarification is a dated in-place
    `**Amendment (YYYY-MM-DD, #n):**` block that adds lines; a reversal is a
