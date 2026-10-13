@@ -521,3 +521,6 @@ Quinn idle since ~20:30: #774 fold-checked no approval, #776 and #779 unreviewed
 
 ## 2026-10-13 06:25 UTC
 Wrong nudge: #774/#776/#779 were all approved (reviews, not comments); waiting on Enes, whom Quinn DMed. Memory updated.
+
+## 2026-10-13 08:00 UTC
+#774 merged. Iris idle: assigned #775 (attach dialog first owner as user), then prep #752 fixture. Terra: #776 approved waiting Enes; #744 next (or #758 if Enes answers).
