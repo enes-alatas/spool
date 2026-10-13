@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { ApiError, type Onboarding } from './api'
 import {
+  canSkipSurface,
   checkError,
   doneCount,
   loginCheckTone,
@@ -54,6 +55,20 @@ describe('order', () => {
   it("leads the surface card to a loop's page, or nowhere without one", () => {
     expect(surfaceTarget(['aster', 'birch'])).toBe('/loops/aster')
     expect(surfaceTarget([])).toBeUndefined()
+  })
+})
+
+// #797: only the surface is skipped, and only with a fleet to step aside to.
+describe('canSkipSurface', () => {
+  it('offers the skip once the harness and a loop are done', () => {
+    expect(canSkipSurface(state(true, false, true))).toBe(true)
+  })
+  it('holds it back while the harness or loops is not done', () => {
+    expect(canSkipSurface(state(false, false, true))).toBe(false)
+    expect(canSkipSurface(state(true, false, false))).toBe(false)
+  })
+  it('has nothing to skip once the surface is done', () => {
+    expect(canSkipSurface(state(true, true, true))).toBe(false)
   })
 })
 

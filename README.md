@@ -54,7 +54,7 @@ You need Linux, macOS or Windows with [WSL2](https://learn.microsoft.com/windows
 
    Then choose **Get a link code**, send the code to your bot in a direct message, and reply **YES** when it asks. That links your account and makes you the loop's owner. Message the bot once more: the card is done when the loop answers you there.
 
-   No chat app? You can talk to a loop on its page in the control room instead. The setup page stays until all three cards are done.
+   No chat app? You can talk to a loop on its page in the control room instead. Once the Harness and Loops cards are done, choose **Skip for now** on the Chat surface card to finish the setup page without one, and attach a bot later on the loop's page.
 
 ### Other ways to run it
 

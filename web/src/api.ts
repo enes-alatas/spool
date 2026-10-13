@@ -640,10 +640,11 @@ export interface VersionInfo {
 }
 
 // Onboarding readiness (#580): one live fact per pillar, and whether the
-// fleet has ever had all three at once. `completed` is the hub's memory: set
-// the first time every pillar is done, cleared when the last loop is
-// deleted. The pillars stay live, so a revoked token reads not done without
-// bringing the first-run page back. Mirrors httpapi's onboarding view.
+// first-run page is finished. `completed` is the hub's memory: set the
+// first time every pillar is done, or when the surface is skipped with the
+// other two done (#797, #798), and cleared when the last loop is deleted.
+// The pillars stay live, so a revoked token reads not done without bringing
+// the first-run page back. Mirrors httpapi's onboarding view.
 export interface OnboardingPillar {
   done: boolean
   // Why, in a few words: what is missing, or for some done pillars what made
@@ -1084,6 +1085,9 @@ export const api = {
   // Starts a login check and answers with the readiness it leaves; 409
   // `no_setup_token` on a docker hub with no token to check.
   checkHarness: () => req<Onboarding>('/api/onboarding/harness-check', { method: 'POST' }),
+  // Finishes the first-run page with no chat surface (#797, #798): refused
+  // 409 while the harness or loops pillar is not done.
+  skipSurface: () => req<Onboarding>('/api/onboarding/skip-surface', { method: 'POST' }),
   // Connections, by name as the server lists them. Refusals carry a
   // `connection_*` code (ApiError.code).
   connections: () => req<Connection[]>('/api/connections'),
