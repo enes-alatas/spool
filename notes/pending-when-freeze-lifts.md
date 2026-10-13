@@ -542,3 +542,6 @@ Created milestone "CI reliability" (#11) and moved #773 #714 #604 #595 #501 #500
 
 ## 2026-10-13 11:50 UTC
 Enes asked mission vs AGENTS.md for the two lessons. Answered: copy-sweep rule → AGENTS.md/CONVENTIONS as a done-criterion (binds Terra + reviewer; file a docs issue if he agrees); outward-settings rule + board sweep → my mission. Awaiting his pick.
+
+## 2026-10-13 11:55 UTC
+Sent Enes the two exact mission bullets (board tidy sweep; outward settings only on explicit words). Filed #793 (CONVENTIONS copy-sweep done-criterion) and gave it to Elliot between seams.
