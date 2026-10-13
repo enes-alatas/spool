@@ -161,6 +161,13 @@ sudo ufw allow in on docker0 to any port 8081 proto tcp
 
 ## Back up and restore
 
+The commands here assume the layout of [Run it as a service](#run-it-as-a-service):
+the hub runs as a system unit named `spool` with its data directory at
+`/home/spool/.spool`, and you run them as the checkout's owner, with `sudo`
+on the lines that need root. A hub you start by hand (`./bin/spool`, data in
+`~/.spool`) is stopped and started however you run it, and gets its own
+`--data-dir`.
+
 ### What a backup holds
 
 A hub's state is in two places: its data directory (`--data-dir`, default
@@ -189,13 +196,15 @@ Run the scripts from a copy installed outside the checkout, never from
 and tags from before the scripts (v0.5.1 and earlier) don't have them: a
 restore run from there would stop with the data directory already moved
 aside. Install them from `main`, whatever tag the checkout is on, and do it
-again at every upgrade. As root:
+again at every upgrade. Run git as the checkout's owner and let `sudo` do
+the writes outside it. A `sudo` in front of a `>` redirect doesn't help, because
+your own shell opens the file:
 
 ```bash
 cd /opt/spool && git fetch origin
-install -d -m 700 /var/backups/spool         # where the backups below are written
+sudo install -d -m 700 /var/backups/spool    # where the backups below are written
 for s in spool-backup.sh spool-restore.sh; do
-  git show "origin/main:scripts/$s" > "/usr/local/sbin/$s" && chmod 755 "/usr/local/sbin/$s"
+  git show "origin/main:scripts/$s" | sudo install -m 755 /dev/stdin "/usr/local/sbin/$s"
 done
 ```
 
@@ -216,9 +225,9 @@ caller's processes, so run as anyone else it would pass against a running
 hub.
 
 ```bash
-systemctl stop spool                       # or stop the hub however you run it
-/usr/local/sbin/spool-backup.sh --data-dir ~/.spool --out /var/backups/spool
-systemctl start spool
+sudo systemctl stop spool                  # or stop the hub however you run it
+sudo /usr/local/sbin/spool-backup.sh --data-dir /home/spool/.spool --out /var/backups/spool
+sudo systemctl start spool
 ```
 
 Loops are paused while the copy runs: seconds for a small fleet, longer once
@@ -240,17 +249,19 @@ this script does not copy.
 ### Restoring
 
 ```bash
-/usr/local/sbin/spool-restore.sh --data spool-data-<ts>.tar.gz \
-  --keys spool-keys-<ts>.tar --data-dir ~/.spool
-./bin/spool --data-dir ~/.spool              # or systemctl start spool
+sudo /usr/local/sbin/spool-restore.sh --data spool-data-<ts>.tar.gz \
+  --keys spool-keys-<ts>.tar --data-dir /home/spool/.spool
+sudo systemctl start spool                 # or start the hub however you run it
 ```
 
-Restore never overwrites anything. The data directory must be missing or
-empty, and no volume the backup names may exist yet. All checks run before
-anything is written. To restore over a broken hub, move its data directory
-aside, and remove each volume the refusal names along with the workstation
-container of the same name. Docker refuses to remove a volume a container
-still uses, even a stopped one:
+Run as root, restore gives every file it writes to the owner the backup
+recorded, the hub's user, keys included (#783). Restore never overwrites
+anything. The data directory must be missing or empty, and no volume the
+backup names may exist yet. All checks run before anything is written. To
+restore over a broken hub, move its data directory aside, and remove
+each volume the refusal names along with the workstation container of
+the same name. Docker refuses to remove a volume a container still uses,
+even a stopped one:
 
 ```bash
 docker rm -f spool-ws-<id> && docker volume rm spool-ws-<id>
@@ -291,7 +302,11 @@ backup taken just before that start is the way back. Take it every time.
 
 The commands assume the checkout is at `/opt/spool`, the hub runs as a
 system unit named `spool`, and the data directory is `/home/spool/.spool`.
-Substitute your own paths.
+Substitute your own paths. Run them as the user who owns the checkout, who
+can also run `docker`, as `make image` needs. `sudo` marks the lines that
+need root: the unit, the scripts, and anything under `/usr/local/sbin` or
+`/home/spool`. Running the whole block as root instead leaves root's files
+in your checkout, and git refuses a checkout root doesn't own.
 
 ### Before you start
 
@@ -307,6 +322,17 @@ Substitute your own paths.
    git describe --tags --always > bin/previous-version
    cp bin/spool bin/spool.previous
    ```
+3. **Check the build tools** if you build from source rather than
+   downloading a release. The running hub needs neither Go nor Node; only
+   `make build` does. Make sure your own shell has them, at the versions the
+   README names:
+
+   ```bash
+   go version && node --version && npm --version
+   ```
+
+   Don't fall back to `make server`. It skips the web UI and embeds whatever
+   older build is left in `web/dist`.
 
 ### Upgrading
 
@@ -314,14 +340,14 @@ Substitute your own paths.
 cd /opt/spool
 git fetch --tags origin
 for s in spool-backup.sh spool-restore.sh; do   # refresh the installed scripts first
-  git show "origin/main:scripts/$s" > "/usr/local/sbin/$s" && chmod 755 "/usr/local/sbin/$s"
+  git show "origin/main:scripts/$s" | sudo install -m 755 /dev/stdin "/usr/local/sbin/$s"
 done
 git checkout vX.Y.Z                         # the target tag
 make build                                  # web UI + bin/spool; the running hub is unaffected
 make image                                  # spool-workstation and spool-egress, rebuilt locally
 
-systemctl stop spool
-/usr/local/sbin/spool-backup.sh --data-dir /home/spool/.spool --out /var/backups/spool
+sudo systemctl stop spool
+sudo /usr/local/sbin/spool-backup.sh --data-dir /home/spool/.spool --out /var/backups/spool
 
 # Only for a target of v0.5.1 or earlier, whose hub doesn't notice a rebuilt
 # image (#715): remove the containers, never the volumes, and the hub
@@ -329,7 +355,7 @@ systemctl stop spool
 # volume. A later hub replaces them itself at that wake.
 docker rm -f $(docker ps -aq --filter label=spool.loop.id) spool-egress-proxy
 
-systemctl start spool
+sudo systemctl start spool
 ```
 
 Do not use the control room's **Recreate workstation** for this. It removes
@@ -401,19 +427,19 @@ binary skips migrations it doesn't know, then reads tables in a shape it was
 never written for.
 
 ```bash
-systemctl stop spool
+sudo systemctl stop spool
 cd /opt/spool
 git checkout "$(cat bin/previous-version)"
 cp bin/spool.previous bin/spool
 make image                                  # the previous release's images
 
-mv /home/spool/.spool /home/spool/.spool.failed-upgrade
+sudo mv /home/spool/.spool /home/spool/.spool.failed-upgrade
 docker rm -f $(docker ps -aq --filter label=spool.loop.id) spool-egress-proxy
 docker volume rm $(docker volume ls -q --filter label=spool.loop.id)
-/usr/local/sbin/spool-restore.sh --data /var/backups/spool/spool-data-<ts>.tar.gz \
+sudo /usr/local/sbin/spool-restore.sh --data /var/backups/spool/spool-data-<ts>.tar.gz \
   --keys /var/backups/spool/spool-keys-<ts>.tar --data-dir /home/spool/.spool
 
-systemctl start spool
+sudo systemctl start spool
 ```
 
 `docker volume rm` destroys the volumes as they stood after the upgrade. Run
