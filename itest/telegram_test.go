@@ -43,6 +43,10 @@ type fakeTelegram struct {
 	// request was written, as the hub sees one. A held call records nothing
 	// in sent.
 	stallSends int
+	// lateSends posts the next n sendMessage calls and then holds each
+	// answer until the bridge hangs up: a Telegram slow to answer a send it
+	// has made, which the hub cannot tell from a dead connection (#800).
+	lateSends int
 	// holdGetMe stands in for a slow api.telegram.org: getMe blocks on it
 	// until the test lets go. Real getMe calls take a round-trip, and the
 	// hub holds a copy of the loop row across one (#164) — a window a test
@@ -101,6 +105,14 @@ func (tg *fakeTelegram) failNextSends(n int) {
 	tg.mu.Lock()
 	defer tg.mu.Unlock()
 	tg.failSends, tg.failForever = n, n < 0
+}
+
+// lateNextSends makes the stand-in post the next n sends and leave them
+// unanswered.
+func (tg *fakeTelegram) lateNextSends(n int) {
+	tg.mu.Lock()
+	defer tg.mu.Unlock()
+	tg.lateSends = n
 }
 
 // stallNextSends makes the stand-in leave the next n sends unanswered.
@@ -266,6 +278,12 @@ func (tg *fakeTelegram) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		tg.sent = append(tg.sent, sentMessage{Token: token, ChatID: req.ChatID,
 			Text: req.Text, MessageID: id, ReplyTo: replyTo})
+		if tg.lateSends > 0 {
+			tg.lateSends--
+			tg.mu.Unlock()
+			<-r.Context().Done()
+			return
+		}
 		tg.mu.Unlock()
 		writeOK(w, map[string]any{"message_id": id})
 	case "sendPhoto", "sendDocument":

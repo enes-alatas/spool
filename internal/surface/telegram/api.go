@@ -10,9 +10,11 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/http/httptrace"
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -36,12 +38,13 @@ type Client struct {
 const (
 	// DefaultAnswerTimeout is how long a call other than the long poll waits
 	// for Telegram's answer once its request is written. Telegram answers
-	// in about a second; a call left waiting longer is on a connection that
-	// died under it, and a retry gets through on a fresh one (#559). Before
-	// this the wait was the long poll's 70s, so one dead connection held a
-	// bot's sends for minutes and gave up messages a new connection would
-	// have carried.
-	DefaultAnswerTimeout = 20 * time.Second
+	// in about a second. A call left waiting longer is on a connection that
+	// died under it, or with a Telegram slow to answer a send it has made,
+	// and the hub cannot tell which. A timed-out call closes its
+	// connection, so a dead one costs this wait once and the retry dials
+	// fresh (#559). 60s rather than #559's 20s lets a slow answer arrive
+	// instead of becoming a retried duplicate (#800).
+	DefaultAnswerTimeout = 60 * time.Second
 	// callTimeout bounds a call whole, upload included: the 20 MB file
 	// Telegram takes outlasts any answer timeout on a slow link.
 	callTimeout = 70 * time.Second
@@ -132,14 +135,22 @@ func (client *Client) post(ctx context.Context, method, contentType string, body
 	if method == "getUpdates" {
 		caller = client.longPoll
 	}
+	var wrote atomic.Bool
+	req = req.WithContext(httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
+		WroteRequest: func(info httptrace.WroteRequestInfo) { wrote.Store(info.Err == nil) },
+	}))
 	resp, err := caller.Do(req)
 	if err != nil {
-		return redactToken(err, client.token)
+		err = redactToken(err, client.token)
+		if wrote.Load() {
+			return &unansweredError{err: err}
+		}
+		return err
 	}
 	defer resp.Body.Close()
 	var ar apiResponse
 	if err := json.NewDecoder(resp.Body).Decode(&ar); err != nil {
-		return fmt.Errorf("telegram %s: decode: %w", method, err)
+		return &unansweredError{err: fmt.Errorf("telegram %s: decode: %w", method, err)}
 	}
 	if !ar.OK {
 		apiErr := &APIError{Code: ar.ErrorCode, Desc: ar.Description}
@@ -153,6 +164,15 @@ func (client *Client) post(ctx context.Context, method, contentType string, body
 	}
 	return nil
 }
+
+// unansweredError is a call whose request reached Telegram whole and whose
+// answer never came back whole: Telegram may have acted on it, and the Bot
+// API has no way to ask whether it did (#800). A call that failed before
+// its request was written, a dial say, is not one.
+type unansweredError struct{ err error }
+
+func (unanswered *unansweredError) Error() string { return unanswered.err.Error() }
+func (unanswered *unansweredError) Unwrap() error { return unanswered.err }
 
 // redactToken keeps a bot token out of an error's text. net/http puts the
 // request URL in every transport error, and the token is in the URL — so a

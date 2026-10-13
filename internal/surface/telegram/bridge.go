@@ -38,8 +38,9 @@ const (
 	// timeout against api.telegram.org is ordinary, and one attempt made it
 	// cost the message (#147). Four attempts over ~7s of backoff outlast a
 	// blip. A failure answers at once, so they hold the bot's paced queue
-	// for seconds; four calls left unanswered hold it for the answer
-	// timeout four times over, ~87s at DefaultAnswerTimeout.
+	// for seconds. A call left unanswered holds it for the answer timeout,
+	// and closes its connection, so the retry dials fresh; four in a row
+	// would hold it ~4m at DefaultAnswerTimeout.
 	sendAttempts = 4
 	sendBackoff  = time.Second
 	// defaultBindSettle is how long after binding a bot waits before it may win a
@@ -1326,7 +1327,14 @@ func (br *Bridge) deliver(ctx context.Context, bot *poller, req sendReq) {
 			br.unsent(ctx, bot, req, partOf(errors.New(br.stopReason()), i, len(parts)))
 			return
 		}
-		sent, attempts, err := br.sendWithRetries(ctx, bot, send)
+		sent, attempts, unanswered, err := br.sendWithRetries(ctx, bot, send)
+		if err == nil && unanswered {
+			// Telegram had an earlier attempt whole and never answered it:
+			// it may have posted that one too, and the Bot API cannot be
+			// asked (#800).
+			br.log.Warn("telegram send landed on a retry after an unanswered attempt; it may have arrived twice",
+				"loop", bot.name, "chat", req.chatID, "attempts", attempts)
+		}
 		if err != nil {
 			if ctx.Err() != nil {
 				// The bot stopped under the attempt: that, not Telegram's
@@ -1350,7 +1358,7 @@ func (br *Bridge) deliver(ctx context.Context, bot *poller, req sendReq) {
 // is no row to fail and no send for the loop to repeat. Telegram refuses an
 // emoji outside its reaction set, which is the likely cause.
 func (br *Bridge) deliverReaction(ctx context.Context, bot *poller, req sendReq) {
-	_, attempts, err := br.sendWithRetries(ctx, bot, func(ctx context.Context) (*Message, error) {
+	_, attempts, _, err := br.sendWithRetries(ctx, bot, func(ctx context.Context) (*Message, error) {
 		return nil, bot.client.SetMessageReaction(ctx, req.chatID, req.reactTo, req.emoji)
 	})
 	if err != nil && ctx.Err() == nil {
@@ -1364,7 +1372,7 @@ func (br *Bridge) deliverReaction(ctx context.Context, bot *poller, req sendReq)
 // the hub has closed the poll, and a vote still made on Telegram stops it
 // again (handlePollAnswer).
 func (br *Bridge) deliverStopPoll(ctx context.Context, bot *poller, req sendReq) {
-	_, attempts, err := br.sendWithRetries(ctx, bot, func(ctx context.Context) (*Message, error) {
+	_, attempts, _, err := br.sendWithRetries(ctx, bot, func(ctx context.Context) (*Message, error) {
 		return nil, bot.client.StopPoll(ctx, req.chatID, req.stopPollAt)
 	})
 	if err != nil && ctx.Err() == nil && !strings.Contains(err.Error(), "already been closed") {
@@ -1440,20 +1448,24 @@ func partOf(err error, i, n int) error {
 // 5xx against api.telegram.org — instead of costing the message. A rejection
 // Telegram means (a 4xx that is not 429) is not retried: sending it again
 // would fail the same way, slower. It returns the error the last attempt
-// ended on, and how many attempts it made; a cancelled context ends it
-// early.
-func (br *Bridge) sendWithRetries(ctx context.Context, bot *poller, send sendPart) (*Message, int, error) {
+// ended on, how many attempts it made, and whether an attempt before the one
+// that landed went unanswered after Telegram had it whole, which can leave
+// the send made twice (#800); a cancelled context ends it early.
+func (br *Bridge) sendWithRetries(ctx context.Context, bot *poller, send sendPart) (*Message, int, bool, error) {
 	var lastErr error
+	unanswered := false
 	for attempt := 0; attempt < sendAttempts; attempt++ {
 		sent, err := send(ctx)
 		if err == nil {
-			return sent, attempt + 1, nil
+			return sent, attempt + 1, unanswered, nil
 		}
 		if ctx.Err() != nil {
-			return nil, attempt + 1, ctx.Err()
+			return nil, attempt + 1, unanswered, ctx.Err()
 		}
 		lastErr = err
 		var apiErr *APIError
+		var unansweredErr *unansweredError
+		unanswered = unanswered || errors.As(err, &unansweredErr)
 		switch {
 		case errors.As(err, &apiErr) && apiErr.Code == 429:
 			// Telegram says how long to wait, and means it — but only when
@@ -1462,22 +1474,22 @@ func (br *Bridge) sendWithRetries(ctx context.Context, bot *poller, send sendPar
 			// after the last attempt holds the whole queue for nothing.
 			if attempt < sendAttempts-1 {
 				if !sleepCtx(ctx, time.Duration(max(apiErr.RetryAfter, 1))*time.Second) {
-					return nil, attempt + 1, ctx.Err()
+					return nil, attempt + 1, unanswered, ctx.Err()
 				}
 			}
 		case errors.As(err, &apiErr) && apiErr.Code >= 400 && apiErr.Code < 500:
-			return nil, attempt + 1, err
+			return nil, attempt + 1, unanswered, err
 		default:
 			if attempt < sendAttempts-1 {
 				br.log.Warn("telegram send failed; retrying",
 					"loop", bot.name, "attempt", attempt+1, "err", err)
 				if !sleepCtx(ctx, sendBackoff<<attempt) {
-					return nil, attempt + 1, ctx.Err()
+					return nil, attempt + 1, unanswered, ctx.Err()
 				}
 			}
 		}
 	}
-	return nil, sendAttempts, lastErr
+	return nil, sendAttempts, unanswered, lastErr
 }
 
 // failSend gives up on a send and leaves the evidence in the two places
