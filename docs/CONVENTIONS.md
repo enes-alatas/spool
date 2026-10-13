@@ -328,6 +328,11 @@ agents — Claude sessions today, Spool's own loops from L2.*
   `npm run format:check` and `npm test` in `web/` when the change touches it;
   engine behavior carries a tier-2 test; docs of record updated in the same PR
   when behavior or rules changed; an ADR when a constraining decision was made.
+  A change that removes, renames or re-routes a flow updates every piece of
+  copy that describes it in the same PR: control-room strings and dialogs,
+  the first-run checklist, README steps, OPERATIONS. Where the copy lives in
+  another owner's seam, the web or docs issue is filed and linked in the PR
+  body before the merge ask, and the reviewer checks for it (#793).
 - **Ask vs proceed**: implementation details — reversible choices inside
   existing rules — proceed autonomously. Anything that constrains the future
   stops for a human interview and gets an ADR: a new dependency (a dev-only one

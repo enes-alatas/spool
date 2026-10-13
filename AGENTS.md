@@ -52,7 +52,9 @@ humans and each other. This file orients you; it links, it doesn't duplicate.
 - Issue-first for anything non-trivial (behavior, seams, deps, prompts, docs of
   record). Trivial mechanical fixes may skip it — the PR's Issue section says why.
 - Done means: `make lint && make test && make itest` green locally, docs of
-  record updated in the same PR, template filled.
+  record updated in the same PR, template filled. A change that removes,
+  renames or re-routes a flow updates its copy, or files and links the
+  other seam's issue before the merge ask (#793).
 - Commits are atomic and land verbatim (rebase-merge, ADR-0016): one logical
   change each, self-standing, Conventional. Review fixes fold into their origin
   commit — use `/review-fix`; never add "address review" commits.

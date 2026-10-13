@@ -288,6 +288,9 @@ workflow and not in its `paths:`.
   real CLI does not have.
 - Loop-authored PRs stay under ~400 changed lines; bigger work is split.
 - Behavior changes update the relevant living doc in the same PR.
+- A PR that removes, renames or re-routes a flow updates the copy describing
+  it, or links the other seam's issue in its body (CONVENTIONS.md "Definition
+  of done", #793).
 
 ## Observability baseline
 
