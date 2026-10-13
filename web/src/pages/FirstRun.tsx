@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import { api, type Onboarding } from '../api'
 import { HarnessCheck } from '../components/HarnessCheck'
@@ -8,6 +8,7 @@ import { LoopDialog } from '../components/LoopDialog'
 import { SurfaceDialog } from '../components/SurfaceDialog'
 import { CheckIcon, HarnessIcon, LoopsIcon, SurfaceIcon } from '../components/Icons'
 import {
+  canSkipSurface,
   doneCount,
   nextPillar,
   pillarHow,
@@ -20,8 +21,9 @@ import {
 
 // The first-run page (#581): three cards, one per pillar, each with its live
 // state and a way to the place that does it. It opens the room until the
-// hub has seen all three done (`Home` decides), and the nav stays live, so
-// an operator who knows the way is not held here.
+// hub has seen all three done, or the surface skipped (#797; `Home`
+// decides), and the nav stays live, so an operator who knows the way is not
+// held here.
 const ICONS: Record<PillarKey, (p: { size?: number }) => React.JSX.Element> = {
   harness: HarnessIcon,
   surface: SurfaceIcon,
@@ -68,7 +70,7 @@ export default function FirstRun({
       <h1>Set up your fleet</h1>
       <p className="page-lede">
         Three steps get a fleet talking. Each card checks itself, and this page steps aside once all three are
-        done.
+        done, or once you skip the chat surface.
       </p>
       <div className="first-run-count" aria-live="polite">
         {done} of {PILLARS.length} done
@@ -134,6 +136,7 @@ export default function FirstRun({
                       Open your loop
                     </Link>
                   )}
+                  {p.key === 'surface' && canSkipSurface(onboarding) && <SkipSurface />}
                   {p.key === 'harness' && (bare || settings?.claude_token_set) && (
                     <HarnessCheck pillar={state} primary={bare && p.key === next} />
                   )}
@@ -148,6 +151,31 @@ export default function FirstRun({
       )}
       {open === 'loops' && <LoopDialog onClose={closeStep} />}
       {open === 'surface' && loops && <SurfaceDialog loops={loops} onClose={closeStep} />}
+    </div>
+  )
+}
+
+// "Skip for now" on the Chat surface card (#797): the hub records the page
+// as finished with no surface (#798), and its answer is the onboarding view,
+// so the page steps aside on it. A bot can be attached later on the loop's
+// page.
+function SkipSurface() {
+  const qc = useQueryClient()
+  const skip = useMutation({
+    mutationFn: api.skipSurface,
+    onSuccess: (onboarding) => qc.setQueryData(['onboarding'], onboarding),
+  })
+  return (
+    <div className="pillar-skip">
+      <p>No chat app yet? Talk to your loops here, and attach a bot later on a loop's page.</p>
+      <button className="text-button" onClick={() => skip.mutate()} disabled={skip.isPending}>
+        {skip.isPending ? 'Skipping…' : 'Skip for now'}
+      </button>
+      {skip.error && (
+        <div className="form-error" role="alert">
+          {skip.error instanceof Error ? skip.error.message : String(skip.error)}
+        </div>
+      )}
     </div>
   )
 }

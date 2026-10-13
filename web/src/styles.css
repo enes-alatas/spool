@@ -3695,6 +3695,21 @@ textarea {
 .pillar .btn {
   text-decoration: none;
 }
+/* The Chat surface card's way past it (#797): a line under its buttons,
+   quieter than either, since a surface is still what the page asks for. */
+.pillar-skip {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.pillar-skip p {
+  margin: 0;
+}
 /* A done step keeps its head and title, and the rest of the card is a tick.
    Drawn in (ring, then mark) only when it turns done on screen. */
 .pillar-tick {

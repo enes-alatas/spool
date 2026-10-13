@@ -7,10 +7,11 @@ import FirstRun from './FirstRun'
 import { useMay } from '../components/Session'
 
 // The room's front door: the first-run page until the hub has seen all three
-// pillars done, Fleet after (#581). Polled while it shows, so a card turns
-// done without a reload; a hub with no onboarding read opens on Fleet. The
-// page holds while a step's dialog is open, and a beat after, so the last
-// step's done state and tick are seen before Fleet takes over.
+// pillars done, or the surface skipped (#797), Fleet after (#581). Polled
+// while it shows, so a card turns done without a reload; a hub with no
+// onboarding read opens on Fleet. The page holds while a step's dialog is
+// open, and a beat after, so the last step's done state and tick are seen
+// before Fleet takes over.
 export default function Home() {
   const [held, setHeld] = useState(false)
   const may = useMay()

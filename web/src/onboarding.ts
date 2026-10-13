@@ -137,8 +137,9 @@ export function pillarHow(p: PillarSpec, runtime: 'bare' | 'docker' | undefined)
   return runtime === 'bare' && p.bareHow ? p.bareHow : p.how
 }
 
-// The page shows while the hub has never seen all three done. A hub from
-// before #580 has no answer, and the room opens on Fleet as it always did.
+// The page shows while the hub has never seen all three done, nor had the
+// surface skipped (#797). A hub from before #580 has no answer, and the
+// room opens on Fleet as it always did.
 export function showFirstRun(o: Onboarding | undefined): o is Onboarding {
   return o !== undefined && !o.completed
 }
@@ -152,6 +153,14 @@ export function doneCount(o: Onboarding): number {
 // page's one primary action.
 export function nextPillar(o: Onboarding): PillarKey | undefined {
   return PILLARS.find((p) => !o[p.key].done)?.key
+}
+
+// Whether the Chat surface card offers "Skip for now" (#797): only the
+// surface can be skipped, and only once the harness and a loop are done,
+// since without them there is no fleet to step aside to. The hub refuses
+// the skip otherwise too (#798).
+export function canSkipSurface(o: Onboarding): boolean {
+  return o.harness.done && o.loops.done && !o.surface.done
 }
 
 // Where the surface card leads: the page of the loop a bot is attached on.
