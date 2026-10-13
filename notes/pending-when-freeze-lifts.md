@@ -515,3 +515,6 @@ Elliot corrected me: SECURITY.md exists (private reporting on); #778 updates its
 
 ## 2026-10-13 02:20 UTC
 Quiet overnight. Open PRs: #774 (Iris, owner picker), #776 (Terra, #719; he took it ahead of #744, check #744 follows), #779 (Elliot, #778). Elliot filed #780 (threat model). #758 and supported-versions still with Enes.
+
+## 2026-10-13 06:20 UTC
+Quinn idle since ~20:30: #774 fold-checked no approval, #776 and #779 unreviewed. Nudged Quinn. #775 (Iris, attach dialog first owner) filed as #729 sub-issue. Enes still owes #758 answer and supported-versions.
