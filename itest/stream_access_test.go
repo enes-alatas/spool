@@ -147,3 +147,43 @@ func TestAnOpenStreamFollowsItsUsersRole(t *testing.T) {
 		t.Fatal("a removed user's stream carried a message after the removal")
 	}
 }
+
+// A stream ends with the session it opened under (#787): a password change
+// ends the stream of every other session from its next item, the stream of
+// the session the change keeps carries on, and signing out of that one ends
+// its stream too.
+func TestAnOpenStreamEndsWithItsSession(t *testing.T) {
+	t.Parallel()
+	operator := user{ID: 8300, First: "Operator", Username: "operator"}
+	srv, _ := startTelegramFleet(t, operator)
+	kept := srv.signedInAs("ada", "admin")
+	other, _ := srv.signIn("ada", "ada's own password")
+	keptStream, otherStream := srv.openStream(kept), srv.openStream(other)
+	srv.message("alpha", "both of ada's streams are open")
+	keptStream.waitFor(t, "both of ada's streams are open")
+	otherStream.waitFor(t, "both of ada's streams are open")
+
+	if resp, body := srv.asCookie("POST", "/api/me/password", kept, map[string]string{
+		"current_password": "ada's own password", "new_password": "ada's newer password"}); resp.StatusCode != http.StatusOK {
+		t.Fatalf("ada's change = %d %s", resp.StatusCode, body)
+	}
+	srv.message("alpha", "ada changed the password")
+	keptStream.waitFor(t, "ada changed the password")
+	ended(t, otherStream, "a session the password change ended")
+
+	if resp, body := srv.asCookie("POST", "/api/logout", kept, nil); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("ada's sign-out = %d %s", resp.StatusCode, body)
+	}
+	srv.message("alpha", "ada signed out")
+	ended(t, keptStream, "a session signed out of")
+}
+
+// ended waits for stream to end, and fails if it ends late.
+func ended(t *testing.T, stream *sseStream, whose string) {
+	t.Helper()
+	select {
+	case <-stream.done:
+	case <-time.After(20 * time.Second):
+		t.Fatalf("the stream of %s stayed open", whose)
+	}
+}

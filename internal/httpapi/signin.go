@@ -106,9 +106,13 @@ func writeThrottled(w http.ResponseWriter, throttled users.ThrottledError) {
 // in helps nobody.
 func (server *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(SessionCookie); err == nil {
-		if err := server.Users.EndSession(r.Context(), cookie.Value); err != nil {
+		userID, err := server.Users.EndSession(r.Context(), cookie.Value)
+		if err != nil {
 			server.jsonErr(w, http.StatusInternalServerError, "%v", err)
 			return
+		}
+		if userID != "" {
+			server.userChanged(userID)
 		}
 	}
 	setSessionCookie(w, r, "", -1)
@@ -167,6 +171,7 @@ func (server *Server) handleMePassword(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		server.jsonErr(w, http.StatusInternalServerError, "%v", err)
 	default:
+		server.userChanged(who.user.ID)
 		writeJSON(w, http.StatusOK, meOf(who))
 	}
 }

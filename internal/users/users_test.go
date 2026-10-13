@@ -463,3 +463,39 @@ func TestConfirmCountsAsASignIn(t *testing.T) {
 		t.Fatalf("the right password on a locked name = %v; want a ThrottledError", err)
 	}
 }
+
+// TestSessionLiveTouchesNothing: asking whether a session is live, as an
+// open stream does every minute, never counts as its use, so a session
+// asked about but unused still ends at the idle limit; a session signed
+// out of is not live (#787).
+func TestSessionLiveTouchesNothing(t *testing.T) {
+	ctx := context.Background()
+	users, fake := newUsers(t)
+	if _, err := users.Add(ctx, "dana", store.RoleMember); err != nil {
+		t.Fatal(err)
+	}
+	dana, _ := users.Store.Users().GetByName(ctx, "dana")
+	idle, _ := users.StartSession(ctx, dana.ID)
+	ended, _ := users.StartSession(ctx, dana.ID)
+
+	for range 13 {
+		fake.at = fake.at.Add(24 * time.Hour)
+		if live, err := users.SessionLive(ctx, idle); !live || err != nil {
+			t.Fatalf("a session %s old = %v, %v; want it live", fake.at, live, err)
+		}
+	}
+	fake.at = fake.at.Add(2 * 24 * time.Hour)
+	if live, err := users.SessionLive(ctx, idle); live || err != nil {
+		t.Fatalf("a session only asked about for 15 days = %v, %v; want it ended", live, err)
+	}
+
+	if whose, err := users.EndSession(ctx, ended); whose != dana.ID || err != nil {
+		t.Fatalf("EndSession = %q, %v; want dana's", whose, err)
+	}
+	if live, err := users.SessionLive(ctx, ended); live || err != nil {
+		t.Fatalf("a session signed out of = %v, %v; want it ended", live, err)
+	}
+	if whose, err := users.EndSession(ctx, ended); whose != "" || err != nil {
+		t.Fatalf("EndSession again = %q, %v; want nobody's and no error", whose, err)
+	}
+}

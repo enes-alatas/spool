@@ -10,6 +10,7 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/enes-alatas/spool/internal/bus"
 	"github.com/enes-alatas/spool/internal/store/sqlite"
 	"github.com/enes-alatas/spool/internal/users"
 )
@@ -530,7 +531,7 @@ func TestAUserSessionIsHeldToTheChange(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := &Server{OperatorToken: testToken, ListenAddr: "127.0.0.1:8080", Users: userStore}
+	server := &Server{OperatorToken: testToken, ListenAddr: "127.0.0.1:8080", Users: userStore, Bus: bus.New()}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST "+loginPath, server.handleLogin)
 	mux.HandleFunc("POST "+logoutPath, server.handleLogout)

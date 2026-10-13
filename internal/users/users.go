@@ -469,8 +469,7 @@ func (users *Users) Session(ctx context.Context, id, operatorToken string) (*sto
 	now := users.now()
 	tokenChanged := session.UserID == "" && (session.TokenHash == "" ||
 		subtle.ConstantTimeCompare([]byte(session.TokenHash), []byte(sha256Hex(operatorToken))) != 1)
-	if tokenChanged || now.Sub(time.UnixMilli(session.LastSeenAt)) > SessionIdle ||
-		now.Sub(time.UnixMilli(session.CreatedAt)) > SessionAbsolute {
+	if tokenChanged || expired(session, now) {
 		_ = users.Store.UserSessions().Delete(ctx, session.IDHash)
 		return nil, nil, ErrSessionNotFound
 	}
@@ -489,12 +488,45 @@ func (users *Users) Session(ctx context.Context, id, operatorToken string) (*sto
 	return session, user, err
 }
 
-// EndSession ends the session a cookie names; one already gone is no error.
-func (users *Users) EndSession(ctx context.Context, id string) error {
+// SessionLive reports whether the session a cookie names is still open:
+// not ended, not unused past the idle limit, not older than the absolute
+// limit. Unlike Session it writes nothing, so an open stream asking every
+// minute keeps no idle session alive (#787).
+func (users *Users) SessionLive(ctx context.Context, id string) (bool, error) {
 	if id == "" {
-		return nil
+		return false, nil
 	}
-	return users.Store.UserSessions().Delete(ctx, sha256Hex(id))
+	session, err := users.Store.UserSessions().Get(ctx, sha256Hex(id))
+	if errors.Is(err, store.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return !expired(session, users.now()), nil
+}
+
+// expired reports whether session has gone unused past the idle limit or
+// is older than the absolute limit at now.
+func expired(session *store.UserSession, now time.Time) bool {
+	return now.Sub(time.UnixMilli(session.LastSeenAt)) > SessionIdle ||
+		now.Sub(time.UnixMilli(session.CreatedAt)) > SessionAbsolute
+}
+
+// EndSession ends the session a cookie names and returns whose it was: ""
+// for a token session, or one already gone, which is no error.
+func (users *Users) EndSession(ctx context.Context, id string) (string, error) {
+	if id == "" {
+		return "", nil
+	}
+	session, err := users.Store.UserSessions().Get(ctx, sha256Hex(id))
+	if errors.Is(err, store.ErrNotFound) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return session.UserID, users.Store.UserSessions().Delete(ctx, session.IDHash)
 }
 
 // sha256Hex is how a session ID, and the token a token session was opened
