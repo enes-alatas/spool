@@ -15,7 +15,7 @@ const SURFACES: { surface: UserLink['surface']; label: string; app: string }[] =
 
 // How often an open code asks whether it has been used. The bot answers the
 // person in their DM at once; the page only has to notice soon after.
-const POLL_MS = 3000
+export const POLL_MS = 3000
 
 // Settings → Account's chat accounts (#704): who the signed-in user is on
 // Telegram and Slack, which is how the room knows which private
@@ -132,7 +132,7 @@ export function LinksSection() {
 
 // A code that reached a loop's bot, which asked its sender there whether to
 // link (ADR-0051). Only that YES links; the page waits for it.
-function Waiting({ link, app }: { link: WaitingLink; app: string }) {
+export function Waiting({ link, app }: { link: WaitingLink; app: string }) {
   const until = new Date(link.expires_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   return (
     <span className="link-who">
@@ -177,26 +177,30 @@ function LinkDialog({
 
 // A surface as the link steps name it: its label, and the app a loop
 // answers on there.
-type LinkSurface = (typeof SURFACES)[number]
+export type LinkSurface = (typeof SURFACES)[number]
 
-function linkSurface(surface: UserLink['surface']): LinkSurface {
+export function linkSurface(surface: UserLink['surface']): LinkSurface {
   return SURFACES.find((s) => s.surface === surface) ?? SURFACES[0]
 }
 
 // A code's steps (ADR-0051): copy it, send it to a bot, say YES when the bot
-// asks. Each step ticks as the hub reports it.
-function LinkSteps({
+// asks. Each step ticks as the hub reports it. Shared by the Account
+// page's dialog and the first-run Chat surface step (#775), which names the
+// one bot or app to send it to as `to`.
+export function LinkSteps({
   code,
   surface: { app },
   link,
   wait,
   onAgain,
+  to,
 }: {
   code: OpenLinkCode
   surface: LinkSurface
   link?: UserLink
   wait?: WaitingLink
   onAgain: () => void
+  to?: string
 }) {
   const [copied, setCopied] = useState<'' | 'ok' | 'failed'>('')
   // The question the code raised, kept once its waiting row goes: with the
@@ -221,7 +225,7 @@ function LinkSteps({
   const step = link ? 3 : asked ? 2 : copied === 'ok' ? 1 : 0
   const steps = [
     'Copy the code.',
-    `Send it, on its own, to any loop's ${app} in a direct message, by ${at(code.expires_at)}.`,
+    `Send it, on its own, to ${to ?? `any loop's ${app}`} in a direct message, by ${at(code.expires_at)}.`,
     asked
       ? `Reply YES there: @${asked.loop}'s ${app} asked ${linkName(asked)} whether to link, until ${at(asked.expires_at)}.`
       : 'Reply YES when it asks whether to link the account you sent it from.',

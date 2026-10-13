@@ -486,8 +486,7 @@ await page.unroute('**/api/onboarding')
 
 // The Loops and Chat surface cards' dialogs (#589), opened over the
 // first-run page. The fixture's loops all carry Telegram bots; the attach
-// shot strips them so the dialog offers the surface choice, and the pair
-// shot stands in a pending sender for the operator's first message.
+// shot strips them so the dialog offers the surface choice.
 await page.route('**/api/onboarding', (route) => route.fulfill({ json: firstRun.refused }))
 await page.goto(base + '/', { waitUntil: 'networkidle' })
 await page.getByRole('button', { name: 'New loop', exact: true }).first().click()
@@ -513,30 +512,119 @@ await page.screenshot({ path: surfaceAttachFile })
 taken.push(surfaceAttachFile)
 await page.unroute('**/api/loops')
 
+// The pair step is a link (#775): the operator links their own account
+// through the loop's bot, since pairing codes are gone (ADR-0051). Shot
+// in a token session first, which is no user and can link nothing; then,
+// as admin, the owner signed in with a password: before a code, with one
+// open, and on a Slack loop once linked, where a user whose role is owner
+// is made its owner at once (#792). The code is answered here so the shot
+// shows a fixed, synthetic one.
 const now = Date.now()
-await page.route('**/api/telegram/senders', (route) =>
+const surfaceStep = page.locator('.surface-dialog')
+const openPairStep = async () => {
+  await page.goto(base + '/', { waitUntil: 'networkidle' })
+  await page.getByRole('button', { name: 'Attach a bot' }).click()
+  await surfaceStep.waitFor({ timeout: 15000 })
+}
+await page.route('**/api/me', (route) =>
+  route.fulfill({ json: { name: '', role: 'owner', must_change_password: false, via: 'token' } }),
+)
+await openPairStep()
+await surfaceStep.getByText('A link belongs to a user').waitFor({ timeout: 15000 })
+const surfaceTokenFile = `${outDir}/first-run-surface-token.png`
+await page.screenshot({ path: surfaceTokenFile })
+taken.push(surfaceTokenFile)
+await page.unroute('**/api/me')
+
+await openPairStep()
+await surfaceStep.getByRole('button', { name: 'Get a link code' }).waitFor({ timeout: 15000 })
+const surfaceLinkFile = `${outDir}/first-run-surface-link.png`
+await page.screenshot({ path: surfaceLinkFile })
+taken.push(surfaceLinkFile)
+
+await page.route('**/api/me/links/code', (route) =>
+  route.fulfill({ json: { code: 'link-fixture0002', expires_at: now + 15 * 60 * 1000 } }),
+)
+await surfaceStep.getByRole('button', { name: 'Get a link code' }).click()
+await surfaceStep.locator('.otp-value').waitFor({ timeout: 15000 })
+const surfaceCodeFile = `${outDir}/first-run-surface-code.png`
+await page.screenshot({ path: surfaceCodeFile })
+taken.push(surfaceCodeFile)
+await page.unroute('**/api/me/links/code')
+
+// Signed in as the owner admin, the dialog makes them the Slack loop's
+// owner itself.
+let slackOwned = false
+const firstSlackLoop = (l) => ({
+  ...l,
+  surface: 'slack',
+  has_tg_token: false,
+  tg_bot_username: '',
+  has_slack_tokens: true,
+  owner_tg_user_id: undefined,
+  owner_slack_user_id: slackOwned ? 'U0FIXTURE1' : undefined,
+  owner_user: slackOwned ? 'admin' : '',
+})
+await page.route('**/api/loops', async (route) => {
+  const loops = await (await route.fetch()).json()
+  await route.fulfill({ json: loops.map(firstSlackLoop) })
+})
+await page.route('**/api/loops/*/owner', async (route) => {
+  slackOwned = true
+  const loop = await (
+    await route.fetch({
+      method: 'GET',
+      url: route
+        .request()
+        .url()
+        .replace(/\/owner$/, ''),
+    })
+  ).json()
+  await route.fulfill({ json: firstSlackLoop(loop) })
+})
+await page.unroute('**/api/onboarding')
+await page.route('**/api/onboarding', (route) =>
+  route.fulfill({
+    json: {
+      ...firstRun.two,
+      surface: { done: false, reason: 'no message received from the operator on slack yet' },
+    },
+  }),
+)
+await page.route('**/api/me/links', (route) =>
+  route.fulfill({
+    json: [
+      { surface: 'slack', id: 'U0FIXTURE1', username: 'operator', display: 'Operator', created_at: now },
+    ],
+  }),
+)
+await page.route('**/api/slack/senders', (route) =>
   route.fulfill({
     json: [
       {
-        tg_user_id: 4242,
-        username: 'operator_fixture',
+        slack_user_id: 'U0FIXTURE1',
+        team_id: 'T0FIXTURE',
+        username: 'operator',
         display: 'Operator',
-        status: 'pending',
-        pair_code: 'K7Q2PX',
-        first_seen_via: 'aster',
+        status: 'allowed',
+        user: 'admin',
+        pair_code: '',
+        first_seen_via: 'gardener',
         created_at: now,
         updated_at: now,
       },
     ],
   }),
 )
-await page.goto(base + '/', { waitUntil: 'networkidle' })
-await page.getByRole('button', { name: 'Attach a bot' }).click()
-await page.locator('.surface-dialog .feed-item').waitFor({ timeout: 15000 })
-const surfacePairFile = `${outDir}/first-run-surface-pair.png`
-await page.screenshot({ path: surfacePairFile })
-taken.push(surfacePairFile)
-await page.unroute('**/api/telegram/senders')
+await openPairStep()
+await surfaceStep.getByText('You are its owner.').waitFor({ timeout: 15000 })
+const surfaceOwnerFile = `${outDir}/first-run-surface-owner.png`
+await page.screenshot({ path: surfaceOwnerFile })
+taken.push(surfaceOwnerFile)
+await page.unroute('**/api/slack/senders')
+await page.unroute('**/api/me/links')
+await page.unroute('**/api/loops/*/owner')
+await page.unroute('**/api/loops')
 await page.unroute('**/api/onboarding')
 
 // A Slack loop's rooms panel (#548). The fixture's loops are all on

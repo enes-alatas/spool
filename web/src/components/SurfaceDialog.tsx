@@ -1,22 +1,23 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type LoopView, type SlackSender } from '../api'
-import { loopSurface, slackSenderLabel } from '../slack'
+import { api, type LoopView, type Me } from '../api'
+import { linkName, linkSnapshot, type OpenLinkCode } from '../links'
+import { ownerChoices, selfOwner } from '../owner'
+import { loopSurface } from '../slack'
 import { CheckIcon } from './Icons'
-import { SenderRow, slackEntry, telegramEntry } from './SenderRow'
+import { LinkSteps, POLL_MS, Waiting, linkSurface } from './LinksSection'
 import { StepDialog } from './StepDialog'
 import { BotTokenForm, SlackStep } from './SurfaceAttach'
 
 // The Chat surface card's dialog (#589): the whole step without leaving the
 // first-run page. A loop with no surface gets one through the loop page's
-// own attach forms; one with a surface asks the operator to message it, and
-// lists whoever is waiting for approval with the pairing-code field Access
-// has, so the operator allows themselves here. The step is done once a
+// own attach forms; one with a surface has the operator link their own
+// account through it (#775), as Settings → Account does. The step is done once a
 // surface has carried a message each way, which the onboarding read says.
 export function SurfaceDialog({ loops, onClose }: { loops: LoopView[]; onClose: () => void }) {
   const [picked, setPicked] = useState(loops[0]?.name ?? '')
   // The loop as the fleet list has it now: attaching refreshes that list,
-  // and its surface is what moves the dialog on to pairing.
+  // and its surface is what moves the dialog on to linking.
   const { data: fleet } = useQuery({ queryKey: ['loops'], queryFn: api.loops })
   const loop = (fleet ?? loops).find((l) => l.name === picked)
   const { data: onboarding } = useQuery({ queryKey: ['onboarding'], queryFn: api.onboarding, retry: false })
@@ -88,88 +89,153 @@ function Attach({ loop }: { loop: LoopView }) {
   )
 }
 
-// A loop with a surface: message it, and allow yourself with the code it
-// answers with. Whoever is waiting on that surface is listed, polled while
-// the dialog is open, since a first message lands at any moment.
+// A loop with a surface: link your own account through its bot or app, and
+// message it (#775). Pairing codes are gone (ADR-0051), so a stranger's DM
+// is answered with nothing: a link is how the operator reaches the loop.
+// The code and its steps sit inline, the Account page's own, and the link
+// query is polled while the dialog is open.
 function Pair({ loop }: { loop: LoopView }) {
-  const qc = useQueryClient()
   const slack = loopSurface(loop) === 'slack'
-  // The same caches Access reads, raw, so either page's approval shows in
-  // the other.
-  const telegram = useQuery({
-    queryKey: ['senders'],
-    queryFn: api.senders,
-    enabled: !slack,
-    refetchInterval: 3000,
+  const surface = linkSurface(slack ? 'slack' : 'telegram')
+  const to = slack ? `the ${loop.name} app` : `@${loop.tg_bot_username || loop.name}`
+  const [code, setCode] = useState<OpenLinkCode | null>(null)
+  const [error, setError] = useState('')
+  const { data: me } = useQuery({ queryKey: ['me'], queryFn: api.me })
+  // An owner-role link owns a Telegram loop with no owner on its own
+  // (ADR-0051); on Slack this dialog does the same once they are linked.
+  const unowned = slack ? !loop.owner_slack_user_id : loop.owner_tg_user_id === undefined
+  const owns = !!me?.name && me.role === 'owner' && unowned
+  // A token session is no user, so the hub refuses it a code (no_user).
+  const tokenSession = me !== undefined && me.via !== 'password'
+  const { data } = useQuery({
+    queryKey: ['me', 'links'],
+    queryFn: () => linkSnapshot(api.myWaitingLinks, api.myLinks),
+    refetchInterval: POLL_MS,
+    enabled: !tokenSession,
   })
-  const slackSenders = useQuery({
-    queryKey: ['slack-senders'],
-    queryFn: api.slackSenders,
-    enabled: slack,
-    refetchInterval: 3000,
+  const link = data?.links.find((l) => l.surface === surface.surface)
+  const wait = data?.waiting.find((l) => l.surface === surface.surface)
+  const askCode = useMutation({
+    mutationFn: () => api.linkCode(surface.surface),
+    onSuccess: (minted) => {
+      setCode({ ...minted, surface: surface.surface })
+      setError('')
+    },
+    onError: (e) => setError(e instanceof Error ? e.message : String(e)),
   })
-  const entries = slack ? (slackSenders.data ?? []).map(slackEntry) : (telegram.data ?? []).map(telegramEntry)
-  const waiting = entries.filter((s) => s.status === 'pending')
-  const refresh = () => qc.invalidateQueries({ queryKey: [slack ? 'slack-senders' : 'senders'] })
 
   return (
     <>
       <p className="step-dialog-lede">
-        {slack ? (
-          <>
-            Send the {loop.name} app a direct message in Slack from your own account. It answers with a
-            pairing code: type it below to allow yourself, then make yourself its owner, the one person it can
-            message before being messaged. Then message it again; the step is done when the loop answers.
-          </>
-        ) : (
-          <>
-            Message <strong>@{loop.tg_bot_username || loop.name}</strong> on Telegram from your own account.
-            It answers with a pairing code: type it below to allow yourself. Once you are allowed, message it
-            again; the step is done when the loop answers.
-          </>
-        )}
+        Link your own {surface.label} account, so {to} knows it is you: get a code, send it to {to} in a
+        direct message, and reply YES when it asks.{' '}
+        {owns
+          ? 'Linking makes you its owner, the one person it can message before being messaged. Then message it again.'
+          : slack && unowned
+            ? 'Then make yourself its owner, the one person it can message before being messaged, and message it again.'
+            : 'Then message it again.'}{' '}
+        The step is done when the loop answers.
       </p>
-      {waiting.length > 0 ? (
-        waiting.map((s) => <SenderRow key={s.key} s={s} refresh={refresh} />)
+      {code ? (
+        <LinkSteps
+          key={code.code}
+          code={code}
+          surface={surface}
+          link={link}
+          wait={wait}
+          to={to}
+          onAgain={() => askCode.mutate()}
+        />
+      ) : link ? (
+        <p className="step-dialog-state">
+          <span className="ok">
+            <CheckIcon size={14} /> Linked: {linkName(link)}.
+          </span>
+        </p>
+      ) : wait ? (
+        <Waiting link={wait} app={surface.app} />
+      ) : tokenSession ? (
+        <div className="hint">
+          A link belongs to a user, and this session signed in with the operator token. Sign out and sign in
+          as your user, the first start's admin, to link your account.
+        </div>
       ) : (
-        <div className="hint">Waiting for a message…</div>
+        <div className="pillar-actions">
+          <button className="btn primary" onClick={() => askCode.mutate()} disabled={askCode.isPending}>
+            Get a link code
+          </button>
+        </div>
       )}
-      {slack && !loop.owner_slack_user_id && <SlackOwner loop={loop} senders={slackSenders.data ?? []} />}
+      {error && (
+        <div className="form-error" role="alert">
+          {error}
+        </div>
+      )}
+      {link && me?.name && loop.owner_user === me.name ? (
+        <p className="step-dialog-state">
+          <span className="ok">
+            <CheckIcon size={14} /> You are its owner.
+          </span>
+        </p>
+      ) : (
+        slack && link && !loop.owner_slack_user_id && <SlackOwner loop={loop} me={me} />
+      )}
     </>
   )
 }
 
-// A Slack loop with no owner. Unlike Telegram, allowing a sender makes
-// nobody owner, and only the owner is someone the loop can message before
-// they message it (ADR-0049), so the allowed senders are offered as owner
-// here. Only one in the loop's workspace can be owner, so only they are
-// offered, as the loop page's owner picker does.
-function SlackOwner({ loop, senders }: { loop: LoopView; senders: SlackSender[] }) {
+// A Slack loop with no owner, once the operator is linked. Unlike Telegram,
+// a link makes nobody owner of a Slack loop, and only the owner is someone
+// the loop can message before they message it (ADR-0049). A user whose role
+// is owner is made its owner here at once, as Telegram does for them (Enes,
+// 2026-10-13 on #792). Anyone else is offered the users linked on Slack in
+// the loop's workspace, as the loop page's owner picker offers them (#732),
+// and so is an owner whose own attempt was refused.
+function SlackOwner({ loop, me }: { loop: LoopView; me?: Me }) {
   const qc = useQueryClient()
+  const { data: senders } = useQuery({
+    queryKey: ['slack-senders'],
+    queryFn: api.slackSenders,
+    refetchInterval: POLL_MS,
+  })
   const { data: status } = useQuery({
     queryKey: ['slack-status', loop.name],
     queryFn: () => api.slackStatus(loop.name),
   })
   const teamID = status?.team_id
-  const allowed = senders.filter((s) => s.status === 'allowed' && (!teamID || s.team_id === teamID))
+  const { choices } = ownerChoices(
+    (senders ?? [])
+      .filter((s) => !teamID || s.team_id === teamID)
+      .map((s) => ({ user: s.user, status: s.status, handle: s.username ? `@${s.username}` : s.display })),
+    { set: false, user: '', handle: '' },
+  )
+  const offered = choices.filter((c) => c.value)
   const setOwner = useMutation({
-    mutationFn: (id: string) => api.setSlackOwner(loop.name, id),
+    mutationFn: (user: string) => api.setOwner(loop.name, user),
     onSuccess: (updated) => {
       qc.setQueryData(['loop', loop.name], updated)
       return qc.invalidateQueries({ queryKey: ['loops'] })
     },
   })
-  if (allowed.length === 0) return null
+  const auto = selfOwner(me, offered)
+  const tried = useRef(false)
+  useEffect(() => {
+    if (!auto || tried.current) return
+    tried.current = true
+    setOwner.mutate(auto)
+  }, [auto, setOwner])
+  if (offered.length === 0) return null
+  if (auto && !setOwner.error) return <div className="hint">Making you its owner…</div>
   return (
     <div className="field">
       <label>Owner</label>
-      {allowed.map((s) => (
-        <div key={s.slack_user_id} className="feed-item">
-          <span>{slackSenderLabel(s)}</span>
+      {offered.map((c) => (
+        <div key={c.value} className="feed-item">
+          <span>{c.label}</span>
           <button
             className="btn sm primary"
             disabled={setOwner.isPending}
-            onClick={() => setOwner.mutate(s.slack_user_id)}
+            onClick={() => setOwner.mutate(c.value)}
           >
             Make owner
           </button>
