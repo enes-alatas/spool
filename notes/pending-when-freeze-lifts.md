@@ -533,3 +533,6 @@ Enes decided #789 with Elliot: per-surface stranger wrong-code count, pause logg
 
 ## 2026-10-13 11:20 UTC
 Enes: onboarding page not updated for linking. True gap: web/src/onboarding.ts + SurfaceDialog Pair step still describe pairing (dead since #746). Filed #792 (child of #729) for Iris first, ahead of #775. Live v0.5.1 unaffected. Lesson: when a hub slice removes a flow, sweep web copy for it (pair-backend-and-web-halves).
+
+## 2026-10-13 11:35 UTC
+Enes asked for milestone homes. Assigned L6: #780 #787 #788 #789 #790 #782 #783 #722 #721; L5: #775 #450 #451. Closed #229 (covered by #757) and #728 (answered). Proposed new minor milestone "CI reliability" for #773 #714 #604 #595 #501 #500 #216 #445 #472 #368 #630; awaiting "create". Unhomed: #753 (held), #480.
