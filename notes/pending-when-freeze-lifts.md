@@ -566,3 +566,6 @@ Elliot: #794 (closes #793, CONVENTIONS done-criterion + AGENTS.md pointer) up wi
 
 ## 2026-10-13 13:05 UTC
 Iris: #796 (#792) ready at 9ec7088, with Quinn. Iris filed #797 (first-run finish without a chat surface, Enes's ask). Shaped it: L5 Team, Part of #124; hub half filed as #798 (POST /api/onboarding/skip-surface, 409 unless harness+loops done; Terra, after #744 before #789). Iris: #797 after #796, before #752, mockup to Enes first. Enes notified of the shape (hub-recorded, surface only). Iris queue now: #796 → #797 → #752 → #732 (#775's web half shipped in #796; hub half Terra's).
+
+## 2026-10-13 13:15 UTC
+Enes: mobile session lost on every browser reopen. Cause on origin/main: handleSignin → setSessionCookie(..., 0) writes no Max-Age (browser-session cookie), while users.SessionIdle is 14d. Filed #799 (bug, medium, L5 Team) for Terra right after #744, ahead of #798. Enes told. Terra order now: #776 merge → #744 → #799 → #798 → #789 → #751 → #764 → #722, #721 → #788, #790 → #766 → #630 (#758 jumps in when Enes answers).
