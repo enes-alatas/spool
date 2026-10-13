@@ -55,7 +55,9 @@ over Socket Mode, so no port is opened for either (ADR-0034).
 **Holds:**
 - **Only an allowed sender reaches a loop.** A stranger's message gets no
   reply, creates no row, and its text is never logged. A blocked sender
-  reaches nothing (ADR-0051).
+  reaches nothing (ADR-0051). The hub keeps the ids of the strangers whose
+  DMs it ignored for a day, in memory and at most 1000 a surface, for an
+  admin to see who knocked (#744).
 - **A sender is allowed by linking their own account.** The control room
   mints a link code for one surface: about 49 random bits, one use,
   15 minutes, kept only as a hash. It is honoured only in a DM, and the

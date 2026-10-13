@@ -3,6 +3,7 @@ package route
 import (
 	"context"
 	"errors"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -200,9 +201,11 @@ func (router *Router) PublishUnlink(userID, surface string) {
 // which goes nowhere and is answered with nothing. Its text is untrusted
 // and may hold anything, credentials included, so it is never kept or
 // logged: the log has one line a sender an hour, with how many of their
-// messages were dropped.
-func (router *Router) Stranger(person string) {
-	if count, ok := router.gate.stranger(person); ok {
+// messages were dropped. A DM, dm, is a knock: the tally of strangers
+// ignored notes who sent it. A group message is someone talking in a room
+// the bot sits in, and is only logged.
+func (router *Router) Stranger(person string, dm bool) {
+	if count, ok := router.gate.stranger(person, dm); ok {
 		router.log.Info("messages from a stranger ignored", "surface", store.PersonSurface(person),
 			"sender", person, "count", count)
 	}
@@ -241,6 +244,12 @@ const (
 	// linkGateKept is how many senders the gate holds before it forgets
 	// the ones whose hour is out.
 	linkGateKept = 1024
+	// IgnoredWindow is how far back the tally of ignored strangers
+	// reaches, and ignoredKept how many of them it names on a surface: past
+	// that, a new one there is not kept, and the tally says there were
+	// more. Per surface, so a spray on one hides no knock on the other.
+	IgnoredWindow = 24 * time.Hour
+	ignoredKept   = 1000
 )
 
 // linkGate counts wrong link codes and strangers' dropped messages. The
@@ -258,6 +267,17 @@ type linkGate struct {
 	// strangers counts each stranger's dropped messages since the last line
 	// about them, logged at loggedAt.
 	strangers map[string]*strangerTally
+	// ignored is when each stranger of the last IgnoredWindow last sent a
+	// DM that was dropped, for the owner to see who is knocking (#744), and
+	// ignoredOn how many of them each surface holds. ignoredMore is when a
+	// surface last left one out, being full.
+	ignored     map[string]time.Time
+	ignoredOn   map[string]int
+	ignoredMore map[string]time.Time
+	// ignoredSwept is when a full tally last forgot the strangers out of
+	// the window: at most once a minute, so a spray of new strangers does
+	// not scan it on every message (#788).
+	ignoredSwept time.Time
 }
 
 type linkStrikes struct {
@@ -324,10 +344,13 @@ func (gate *linkGate) wrong(person string, allowed bool) {
 
 // stranger counts a dropped message from person, and says whether to log
 // it, with the count since the last line.
-func (gate *linkGate) stranger(person string) (int, bool) {
+func (gate *linkGate) stranger(person string, dm bool) (int, bool) {
 	gate.mu.Lock()
 	defer gate.mu.Unlock()
 	now := gate.clock()
+	if dm {
+		gate.ignore(person, now)
+	}
 	if gate.strangers == nil {
 		gate.strangers = map[string]*strangerTally{}
 	}
@@ -350,4 +373,82 @@ func (gate *linkGate) stranger(person string) (int, bool) {
 		return count, true
 	}
 	return 0, false
+}
+
+// ignore notes that person's DM was dropped at now. Once their surface's
+// tally is full, it forgets the strangers out of the window, at most once a
+// minute, and while it is still full it keeps no new one: it only notes
+// that it left one out. gate.mu is held.
+func (gate *linkGate) ignore(person string, now time.Time) {
+	if gate.ignored == nil {
+		gate.ignored, gate.ignoredOn, gate.ignoredMore = map[string]time.Time{}, map[string]int{}, map[string]time.Time{}
+	}
+	surface := store.PersonSurface(person)
+	if _, kept := gate.ignored[person]; !kept {
+		if gate.ignoredOn[surface] >= ignoredKept && now.Sub(gate.ignoredSwept) >= time.Minute {
+			gate.forgetIgnored(now)
+			gate.ignoredSwept = now
+		}
+		if gate.ignoredOn[surface] >= ignoredKept {
+			gate.ignoredMore[surface] = now
+			return
+		}
+		gate.ignoredOn[surface]++
+	}
+	gate.ignored[person] = now
+}
+
+// forgetIgnored drops the strangers last ignored before the window.
+// gate.mu is held.
+func (gate *linkGate) forgetIgnored(now time.Time) {
+	for person, at := range gate.ignored {
+		if now.Sub(at) > IgnoredWindow {
+			delete(gate.ignored, person)
+			gate.ignoredOn[store.PersonSurface(person)]--
+		}
+	}
+}
+
+// IgnoredStrangers are the strangers one surface ignored in the last
+// IgnoredWindow: their ids, the most recently ignored first, and whether
+// there were more than the tally keeps.
+type IgnoredStrangers struct {
+	Surface string
+	IDs     []string
+	More    bool
+}
+
+// IgnoredStrangers is who each surface ignored in the last day, by
+// surface: senders neither allowed nor blocked, whose DMs went nowhere
+// (ADR-0051). Only their ids are kept, never what they said, and
+// in memory, so a restart forgets them.
+func (router *Router) IgnoredStrangers() []IgnoredStrangers {
+	gate := &router.gate
+	gate.mu.Lock()
+	defer gate.mu.Unlock()
+	now := gate.clock()
+	gate.forgetIgnored(now)
+	type seen struct {
+		id string
+		at time.Time
+	}
+	bySurface := map[string][]seen{}
+	for person, at := range gate.ignored {
+		surface := store.PersonSurface(person)
+		_, id, _ := strings.Cut(person, ":")
+		bySurface[surface] = append(bySurface[surface], seen{id, at})
+	}
+	all := make([]IgnoredStrangers, 0, 2)
+	for _, surface := range []string{store.SurfaceTelegram, store.SurfaceSlack} {
+		strangers := bySurface[surface]
+		sort.Slice(strangers, func(i, j int) bool { return strangers[i].at.After(strangers[j].at) })
+		leftOut, ok := gate.ignoredMore[surface]
+		ignored := IgnoredStrangers{Surface: surface, IDs: make([]string, 0, len(strangers)),
+			More: ok && now.Sub(leftOut) <= IgnoredWindow}
+		for _, stranger := range strangers {
+			ignored.IDs = append(ignored.IDs, stranger.id)
+		}
+		all = append(all, ignored)
+	}
+	return all
 }

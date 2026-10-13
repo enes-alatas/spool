@@ -4,6 +4,7 @@ package itest
 
 import (
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -124,5 +125,51 @@ func TestAnOwnerBlocksAUser(t *testing.T) {
 	if resp, body := srv.do("POST", "/api/users/mia/unblock", nil); resp.StatusCode != http.StatusBadRequest ||
 		!strings.Contains(string(body), `"no_link"`) {
 		t.Fatalf("unblocking a user with no link = %d %s; want 400 no_link", resp.StatusCode, body)
+	}
+}
+
+// The hub tallies the strangers whose DMs it ignored, by surface, with
+// only their ids; someone only talking in a group is no knock, an allowed
+// sender is not among them, and a member cannot read it (#744).
+func TestIgnoredStrangersAreTallied(t *testing.T) {
+	t.Parallel()
+	operator := user{ID: 8330, First: "Operator", Username: "operator"}
+	first := user{ID: 8331, First: "First", Username: "first"}
+	second := user{ID: 8332, First: "Second", Username: "second"}
+	bystander := user{ID: 8333, First: "Bystander", Username: "bystander"}
+	srv, tg := startTelegramFleet(t, operator)
+	mia := srv.signedInAs("mia", "member")
+
+	tg.dm("alpha", first, "hello?")
+	tg.dm("beta", second, "anyone?")
+	tg.dm("alpha", first, "hello again")
+	tg.post(groupChatID, "supergroup", "just chatting", bystander)
+	settled(t, srv, tg, "alpha", operator, "after the strangers")
+	settled(t, srv, tg, "beta", operator, "after the strangers on beta")
+
+	var tally struct {
+		WindowHours int `json:"window_hours"`
+		Surfaces    []struct {
+			Surface string   `json:"surface"`
+			Count   int      `json:"count"`
+			IDs     []string `json:"ids"`
+			More    bool     `json:"more"`
+		} `json:"surfaces"`
+	}
+	srv.mustJSON("GET", "/api/strangers", nil, &tally)
+	// Two bots poll on their own, so which stranger came last is theirs.
+	if len(tally.Surfaces) > 0 {
+		slices.Sort(tally.Surfaces[0].IDs)
+	}
+	if tally.WindowHours != 24 || len(tally.Surfaces) != 2 || tally.Surfaces[0].Surface != "telegram" ||
+		tally.Surfaces[0].Count != 2 || strings.Join(tally.Surfaces[0].IDs, ",") != "8331,8332" ||
+		tally.Surfaces[0].More || tally.Surfaces[1].Count != 0 {
+		t.Fatalf("the tally = %s; want telegram 8331 and 8332, not the operator, not the group's bystander", dump(tally))
+	}
+	if strings.Contains(dump(tally), "hello") {
+		t.Fatalf("the tally holds what a stranger said: %s", dump(tally))
+	}
+	if resp, _ := srv.asCookie("GET", "/api/strangers", mia, nil); resp.StatusCode != http.StatusForbidden {
+		t.Errorf("a member read the strangers = %d; want 403", resp.StatusCode)
 	}
 }

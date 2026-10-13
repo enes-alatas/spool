@@ -7,12 +7,13 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/enes-alatas/spool/internal/route"
 	"github.com/enes-alatas/spool/internal/store"
 )
 
 // Settings → Access, as an owner manages it (#744): each user with the
-// links they hold, another user's link removed, and a user blocked on
-// every surface they are linked on.
+// links they hold, another user's link removed, a user blocked on every
+// surface they are linked on, and the strangers the hub ignored.
 
 // accessUserView is a user as GET /api/users lists them for Settings →
 // Access: with their links, and whether a sender one of them holds is
@@ -135,4 +136,27 @@ func (server *Server) setPersonStatus(ctx context.Context, person, status string
 		}
 	}
 	return nil
+}
+
+// ignoredView is the strangers one surface ignored in the last day: how
+// many the hub kept, their ids with the most recent first, and whether
+// there were more than it keeps.
+type ignoredView struct {
+	Surface string   `json:"surface"`
+	Count   int      `json:"count"`
+	IDs     []string `json:"ids"`
+	More    bool     `json:"more"`
+}
+
+// handleIgnoredStrangers answers who knocked and was ignored in the last
+// day, by surface, so "my friend can't reach the bot" has an answer
+// without a pending state (ADR-0051, #744). Only ids: a stranger's text is
+// never kept.
+func (server *Server) handleIgnoredStrangers(w http.ResponseWriter, _ *http.Request) {
+	surfaces := []ignoredView{}
+	for _, ignored := range server.Router.IgnoredStrangers() {
+		surfaces = append(surfaces, ignoredView{Surface: ignored.Surface, Count: len(ignored.IDs),
+			IDs: ignored.IDs, More: ignored.More})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"window_hours": int(route.IgnoredWindow.Hours()), "surfaces": surfaces})
 }

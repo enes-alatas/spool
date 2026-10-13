@@ -1061,7 +1061,7 @@ func (br *Bridge) senderAllowed(ctx context.Context, bot *poller, message *tgMsg
 			return false
 		}
 	}
-	br.router.Stranger(person)
+	br.router.Stranger(person, message.Chat.Type == "private")
 	return false
 }
 

@@ -78,6 +78,7 @@ var adminRoutes = []string{
 	"POST /api/slack/senders/{id}/allow", "POST /api/slack/senders/{id}/block",
 	"DELETE /api/slack/senders/{id}",
 	"GET " + linkChangesPath,
+	"GET /api/strangers",
 }
 
 // ownerRoutes manage the hub's users, which is where an owner differs
