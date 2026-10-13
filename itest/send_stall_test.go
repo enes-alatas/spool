@@ -7,8 +7,8 @@ import (
 	"time"
 )
 
-// A send Telegram never answers is the hub's dead connection, not a lost
-// message. The bridge gives up waiting within seconds, not the long poll's
+// A send held on a dead connection, which Telegram never received, is not a
+// lost message. The bridge gives up waiting within seconds, not the long poll's
 // 70, and retries on a fresh connection; the message lands once and nothing
 // is reported undelivered. Before #559 every attempt waited out the 70s on
 // the same dead connection, and the send was given up on.

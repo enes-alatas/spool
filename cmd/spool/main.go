@@ -97,7 +97,7 @@ func main() {
 	partials := flag.Bool("partial-messages", true, "stream token deltas to the UI (--include-partial-messages)")
 	telegramAPI := flag.String("telegram-api-base", telegram.APIBase, "Telegram Bot API base URL (tests point this at a stand-in server)")
 	slackAPI := flag.String("slack-api-base", slack.APIBase, "Slack Web API base URL (tests point this at a stand-in server)")
-	answerTimeoutSec := flag.Int("telegram-answer-timeout-sec", 0, "seconds a Telegram call waits for the Bot API's answer before it is retried on a fresh connection (0 = the production 20s; tests against a stand-in API shorten it)")
+	answerTimeoutSec := flag.Int("telegram-answer-timeout-sec", 0, "seconds a Telegram call waits for the Bot API's answer before it is retried on a fresh connection (0 = the production 60s; tests against a stand-in API shorten it)")
 	bindSettleSec := flag.Int("telegram-bind-settle-sec", 0, "seconds a newly bound bot waits before it may ingest a group (0 = the production margin; tests against a stand-in API shorten it)")
 	retentionDays := flag.Int("events-retention-days", 30, "prune raw claude events older than this many days (0 disables; messages and turns are never pruned)")
 	forgetSecrets := flag.Bool("forget-secrets", false, "start even though "+sqlite.KeyFile+" is missing or wrong, forgetting every stored secret: connections are revoked, chat bots unbound and the setup-token cleared, to be entered again (ADR-0046). With the right key it changes nothing")

@@ -3,6 +3,7 @@ package telegram
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -148,6 +149,24 @@ func TestAnUnansweredCallIsRetriedOnAFreshConnection(t *testing.T) {
 	conns, _ := api.calls()
 	if len(conns) != 2 || conns[0] == conns[1] {
 		t.Fatalf("the retry went out on the stalled call's connection: %v", conns)
+	}
+}
+
+// TestOnlyACallTelegramHadWholeIsUnanswered: a call whose request was
+// written and whose answer never came may have been acted on, so the bridge
+// can say a retry of it may have posted twice (#800). A call that never
+// reached Telegram, a refused dial, cannot have been.
+func TestOnlyACallTelegramHadWholeIsUnanswered(t *testing.T) {
+	srv := httptest.NewServer(&stallingBotAPI{})
+	defer srv.Close()
+	var unanswered *unansweredError
+	_, err := newClient(srv.URL, "synthetic-token", 200*time.Millisecond).SendMessage(context.Background(), 42, "hello", 0)
+	if !errors.As(err, &unanswered) {
+		t.Errorf("a call left unanswered failed with %T %v, want it unanswered", err, err)
+	}
+	_, err = newClient("http://127.0.0.1:1", "synthetic-token", 200*time.Millisecond).SendMessage(context.Background(), 42, "hello", 0)
+	if err == nil || errors.As(err, &unanswered) {
+		t.Errorf("a refused dial failed with %T %v, want a failure that is not unanswered", err, err)
 	}
 }
 
