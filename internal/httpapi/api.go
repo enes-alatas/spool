@@ -205,6 +205,7 @@ func (server *Server) routes() *routeMux {
 	mux.HandleFunc("GET /api/plan-usage", server.handlePlanUsage)
 	mux.HandleFunc("POST /api/plan-cap/resume", server.handleResumePlanCap)
 	mux.HandleFunc("POST /api/onboarding/harness-check", server.handleLoginCheck)
+	mux.HandleFunc("POST /api/onboarding/skip-surface", server.handleSkipSurface)
 	mux.HandleFunc("PUT /api/settings", server.handlePutSettings)
 	mux.HandleFunc("GET /api/settings/egress", server.handleGetEgress)
 	mux.HandleFunc("POST /api/settings/egress/hosts", server.handleAddEgressHost)
