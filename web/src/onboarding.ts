@@ -40,7 +40,7 @@ export const PILLARS: PillarSpec[] = [
   {
     key: 'surface',
     title: 'Chat surface',
-    how: 'Attach a Telegram or Slack bot to a loop, message it, and allow yourself with the code it sends.',
+    how: 'Attach a Telegram or Slack bot to a loop, link your own account through it, and message it.',
     doneText: 'A bot has carried messages both ways.',
     action: 'Attach a bot',
   },

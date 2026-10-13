@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { NOT_LINKED, ownerChoices, type OwnerPerson } from './owner'
+import { NOT_LINKED, ownerChoices, selfOwner, type OwnerPerson } from './owner'
 
 const rana: OwnerPerson = { user: 'rana', status: 'allowed', handle: '@rana_example' }
 const sam: OwnerPerson = { user: 'sam', status: 'allowed', handle: '@sam_example' }
@@ -62,5 +62,27 @@ describe('ownerChoices', () => {
   it('keeps an owner whose sender row is gone', () => {
     const { choices } = ownerChoices([rana], { set: true, user: 'noa', handle: '@noa_example' })
     expect(choices).toContainEqual({ value: 'noa', label: 'noa · @noa_example' })
+  })
+})
+
+describe('selfOwner', () => {
+  const choices = ownerChoices([rana, sam], { set: false, user: '', handle: '' }).choices
+
+  it('names an owner-role user who is among the choices', () => {
+    expect(selfOwner({ name: 'rana', role: 'owner' }, choices)).toBe('rana')
+  })
+
+  it('names nobody for an admin or a member, who pick instead', () => {
+    expect(selfOwner({ name: 'rana', role: 'admin' }, choices)).toBe('')
+    expect(selfOwner({ name: 'sam', role: 'member' }, choices)).toBe('')
+  })
+
+  it('names nobody when the owner is not linked in the workspace', () => {
+    expect(selfOwner({ name: 'kim', role: 'owner' }, choices)).toBe('')
+  })
+
+  it('names nobody for a token session, which is no user', () => {
+    expect(selfOwner({ name: '', role: 'owner' }, choices)).toBe('')
+    expect(selfOwner(undefined, choices)).toBe('')
   })
 })

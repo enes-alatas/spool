@@ -59,3 +59,12 @@ export function ownerChoices(
   }
   return { value: owner.user, choices, offered }
 }
+
+// Who the first-run Chat surface step makes a Slack loop's owner without
+// asking (#792): the signed-in user, when their role is owner and they are
+// among the choices, as an owner-role link owns a Telegram loop with none
+// (ADR-0051). Anyone else picks; a token session is no user and picks too.
+export function selfOwner(me: { name: string; role: string } | undefined, choices: OwnerChoice[]): string {
+  if (!me?.name || me.role !== 'owner') return ''
+  return choices.some((c) => c.value === me.name && !c.disabled) ? me.name : ''
+}
