@@ -1,6 +1,6 @@
 # ADR-0051: A link code is the one way a person becomes an allowed sender
 
-Date: 2026-10-11 · Status: accepted (operator decisions of 2026-10-11 on #728, posture reviewed by Elliot there; epic #729, slice #730) · Supersedes: the pairing code, ADR-0029 items 6 and 8 in part, and ADR-0050 decision 1's "only an allowed sender links" · Relates to: ADR-0026, ADR-0048, ADR-0049, ADR-0050
+Date: 2026-10-11 · Status: accepted (operator decisions of 2026-10-11 on #728, posture reviewed by Elliot there; epic #729, slice #730) · Supersedes: the pairing code, ADR-0029 items 6 and 8 in part, and ADR-0050 decision 1's "only an allowed sender links" · Relates to: ADR-0026, ADR-0048, ADR-0049, ADR-0050 · Amended: 2026-10-12 (a loop's owner is chosen as a user), 2026-10-13 (strangers' wrong codes are counted per surface, and a pause shows)
 
 ## Context
 
@@ -88,6 +88,19 @@ grants, and wrong codes must be limited. Milo took both into the epic.
    - The counts are in memory, so a restart forgets them. Against 49 bits
      that live 15 minutes, that is accepted.
    - The numbers are Terra's, within Elliot's shape on #728.
+
+   **Amendment (2026-10-13, #789):** the strangers' count is kept per
+   surface. Past 50 wrong codes from strangers on one surface in an hour,
+   no stranger's code on that surface is checked until the hour is out;
+   the other surface's still are, so a spray on one surface does not pause
+   linking on both. A pause is shown, not silent: the hub logs a warning
+   when one starts, and the Access page tells admins and owners which
+   surface is paused and until when. An admin or owner can lift a pause
+   there, which zeroes that surface's count. The per-sender limit is
+   unchanged, and a pause lives in memory like the counts, so a restart
+   still lifts it. The route and the page are Terra's and Iris's.
+   (Operator's decision of 2026-10-13 on #789, from the 1.0 surfaces
+   review, #786.)
 7. **Links made and removed are recorded for admins.** An append-only
    record, `GET /api/links/changes` (admin and owner, newest first, `limit`
    as `/api/changes` takes it), holds `{id, at, action, user, surface,
