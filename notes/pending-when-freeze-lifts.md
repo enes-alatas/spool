@@ -590,3 +590,6 @@ Terra: PR #809 for #800, option 3 (longer answer wait) + a log record when a lan
 
 ## 2026-10-13 21:00 UTC
 Enes: "yes please file" (edited messages). Filed #810 (slice 1: edit → correction "edited ref:N", original marked edited, Slack deletions "deleted ref:N", Telegram deletions invisible; ADR) and #811 (slice 2: in-place replace while unread), both L5 Team. Terra: #810 after #751, before #764; #811 after. Enes told. Still with Enes: #758 prerequisites, supported-versions.
+
+## 2026-10-13 21:05 UTC
+Enes: #810/#811 not urgent. Terra reordered: #809 → #789 → #751 → #764 → #722, #721 → #788, #790 → #810, #811 → #766 → #630.
