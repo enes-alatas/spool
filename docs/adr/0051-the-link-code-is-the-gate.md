@@ -138,6 +138,12 @@ lists one's own, and `blocked`, true when a sender one of those links
 holds is blocked. `DELETE /api/users/{name}/links/{surface}` removes
 another user's link as decision 4 removes one's own, and answers 404 when
 there is no such user or no link there.
+`POST /api/users/{name}/block` and `/unblock` set every sender the
+user's links hold to `blocked` or `allowed`, as the per-sender routes do,
+and answer with the user as `GET /api/users` lists them; a user with no
+link is refused 400 `no_link`. The block is the sender row's, so it
+outlives the link. A user unblocked whose role is `owner` may become the
+default owner again, as decision 4 makes one.
 
 ## Alternatives considered
 
