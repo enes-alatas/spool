@@ -569,3 +569,6 @@ Iris: #796 (#792) ready at 9ec7088, with Quinn. Iris filed #797 (first-run finis
 
 ## 2026-10-13 13:15 UTC
 Enes: mobile session lost on every browser reopen. Cause on origin/main: handleSignin → setSessionCookie(..., 0) writes no Max-Age (browser-session cookie), while users.SessionIdle is 14d. Filed #799 (bug, medium, L5 Team) for Terra right after #744, ahead of #798. Enes told. Terra order now: #776 merge → #744 → #799 → #798 → #789 → #751 → #764 → #722, #721 → #788, #790 → #766 → #630 (#758 jumps in when Enes answers).
+
+## 2026-10-13 13:25 UTC
+Enes: my DM ref:4504 arrived twice. One send, one ref → Spool bug. Mechanism on origin/main: telegram sendWithRetries retries non-4xx errors; answer timeout 20s (#559) makes a landed-but-slow sendMessage look failed → resent. Filed #800 (bug, medium, L5 Team) for Terra after #799. Terra order: #776 merge → #744 → #799 → #800 → #798 → #789 → #751 → #764 → #722, #721 → #788, #790 → #766 → #630.
