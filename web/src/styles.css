@@ -1104,6 +1104,35 @@ textarea {
 .fleet-row .note.bad {
   color: var(--danger);
 }
+/* what the loop says it is on: the one note in the row's own voice, so it
+   reads in the body face; dimmed once it is a day old and may no longer be
+   true. It takes a line of its own under the other notes and wraps rather
+   than being cut short, so its age always shows (Enes's pick on #752). */
+.fleet-row .note.doing {
+  flex-basis: 100%;
+  font-family: var(--sans);
+  font-size: 0.8125rem;
+  color: var(--text);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.doing .doing-age {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.fleet-row .note.doing.stale {
+  color: var(--text-muted);
+}
+/* the loop page's doing line, under its name (#752) */
+.loop-doing {
+  display: block;
+  margin: -4px 0 12px;
+  font-size: 0.9375rem;
+  color: var(--text);
+}
+.loop-doing.stale {
+  color: var(--text-muted);
+}
 /* the column is sized for the longest state name (model_unrecognized): these
    are single identifiers, and breaking one across lines invents a word. The
    heading shares the layout and nothing else — its type is the heading row's,

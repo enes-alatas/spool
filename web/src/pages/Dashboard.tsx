@@ -15,6 +15,7 @@ import {
 import { StateDot } from '../components/Spool'
 import { ChannelChat } from '../components/ChannelChat'
 import { PlanUsageStrip } from '../components/PlanUsage'
+import { Doing } from '../components/Doing'
 import { useMay } from '../components/Session'
 import { undeliveredNote } from '../messages'
 import { workstationNote } from '../workstation'
@@ -118,7 +119,12 @@ function FleetRow({
         <span className="mission" title={loop.mission}>
           {loop.mission}
         </span>
-        {(loop.runtime === 'bare' || station || undelivered || loop.branch || loop.tg_bot_username) && (
+        {(loop.runtime === 'bare' ||
+          station ||
+          undelivered ||
+          loop.branch ||
+          loop.tg_bot_username ||
+          loop.doing) && (
           <span className="notes">
             {loop.runtime === 'bare' && <span className="containment-badge">uncontained</span>}
             {station && <span className={station.bad ? 'note bad' : 'note'}>{station.text}</span>}
@@ -147,6 +153,7 @@ function FleetRow({
             )}
             {loop.workspace_mode === 'worktree' && loop.branch && <span className="note">{loop.branch}</span>}
             {loop.tg_bot_username && <span className="note">@{loop.tg_bot_username}</span>}
+            <Doing loop={loop} className="note" />
           </span>
         )}
       </div>

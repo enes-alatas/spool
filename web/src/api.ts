@@ -4,6 +4,11 @@ export interface LoopView {
   id: string
   name: string
   mission: string
+  // What the loop says it is doing (#750), from its last [doing: …]
+  // trailer, and when it said so in Unix ms; '' and 0 until it says, or
+  // after it clears it. Always present (#751).
+  doing: string
+  doing_at: number
   model: string
   // The CLI's sentence refusing \`model\`, recorded when a turn failed on the
   // API's 404 (#289); '' when the model is not refused. While it is set the

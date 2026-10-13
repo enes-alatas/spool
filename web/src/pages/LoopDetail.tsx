@@ -21,6 +21,7 @@ import { customModelError } from '../forms'
 import { PACE_HINT, type Pace } from '../pace'
 import { PaceFacts, PaceRange } from '../components/PaceRange'
 import { useMay } from '../components/Session'
+import { Doing } from '../components/Doing'
 import { LoopConnections } from '../components/LoopConnections'
 import { LoopChangesPanel, LoopProvenance } from '../components/LoopChanges'
 import { needsLogin } from '../session'
@@ -1657,6 +1658,7 @@ export default function LoopDetail() {
             <span className="state-name">{loop.state}</span>
             {loop.runtime === 'bare' && <span className="containment-badge">uncontained</span>}
           </h1>
+          <Doing loop={loop} className="loop-doing" />
           <LoopProvenance loop={loop} />
           <WorkstationNote loop={loop} />
           {/* On the refusal rather than the state: a dead workstation outranks
