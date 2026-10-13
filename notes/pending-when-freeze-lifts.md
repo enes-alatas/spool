@@ -536,3 +536,6 @@ Enes: onboarding page not updated for linking. True gap: web/src/onboarding.ts +
 
 ## 2026-10-13 11:35 UTC
 Enes asked for milestone homes. Assigned L6: #780 #787 #788 #789 #790 #782 #783 #722 #721; L5: #775 #450 #451. Closed #229 (covered by #757) and #728 (answered). Proposed new minor milestone "CI reliability" for #773 #714 #604 #595 #501 #500 #216 #445 #472 #368 #630; awaiting "create". Unhomed: #753 (held), #480.
+
+## 2026-10-13 11:45 UTC
+Created milestone "CI reliability" (#11) and moved #773 #714 #604 #595 #501 #500 #216 #445 #472 #368 #630. Enes wants the milestone/label sweep in my mission: proposed wording (one label + one milestone per open issue, sub-issues, close landed/answered, report in status note) plus two lessons (copy sweep after flow removals; outward settings only on explicit words).
