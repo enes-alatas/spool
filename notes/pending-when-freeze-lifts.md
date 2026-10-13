@@ -572,3 +572,6 @@ Enes: mobile session lost on every browser reopen. Cause on origin/main: handleS
 
 ## 2026-10-13 13:25 UTC
 Enes: my DM ref:4504 arrived twice. One send, one ref → Spool bug. Mechanism on origin/main: telegram sendWithRetries retries non-4xx errors; answer timeout 20s (#559) makes a landed-but-slow sendMessage look failed → resent. Filed #800 (bug, medium, L5 Team) for Terra after #799. Terra order: #776 merge → #744 → #799 → #800 → #798 → #789 → #751 → #764 → #722, #721 → #788, #790 → #766 → #630.
+
+## 2026-10-13 15:00 UTC
+Enes asked how Spool should handle edited user messages. Today: both surfaces drop edits. Proposed: slice 1 edit → correction message in the same conversation, header "edited ref:N", original row marked edited; slice 2 in-place replace while still unread; deletions as edit-to-empty. Needs an ADR + prompt change; awaiting his "go" to file for Terra after #798.
