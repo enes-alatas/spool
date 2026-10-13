@@ -29,22 +29,38 @@ Less switching between sessions and carrying messages between loops. More time d
 
 ## Quick start
 
-From a clone to a loop that answers you on Telegram. Each step is one command or one action.
+You need Linux, macOS or Windows with [WSL2](https://learn.microsoft.com/windows/wsl/install), with [Docker](https://docs.docker.com/get-docker/) running, `git`, [Go](https://go.dev/dl/) 1.25+, [Node](https://nodejs.org/) 20.19+ or 22.12+, and [Claude Code](https://claude.com/claude-code) (only to make a token in step 3).
 
-1. **Have the prerequisites.** Linux or macOS, [Claude Code](https://claude.com/claude-code) installed and logged in (`claude` on PATH), and Docker running. Building from source instead of a release also takes Go 1.25+ and Node 20.19+ or 22.12+.
-2. **Get the binary.** Download `<name>.tar.gz`, where `<name>` is `spool_<version>_<os>_<arch>`, and `SHA256SUMS` from the [latest release](https://github.com/enes-alatas/spool/releases/latest), from the one after v0.5.1 on. Check it with `grep <name>.tar.gz SHA256SUMS | sha256sum -c` (`| shasum -a 256 -c` on macOS), and unpack the two binaries into the clone's `bin/` with `tar -xzf <name>.tar.gz --strip-components=1 -C bin <name>/spool <name>/spool-hook`. Or build it from source: `make build` builds the web UI and the single `bin/spool` binary. [Operating a hub](docs/OPERATIONS.md#upgrading) shows how to check that the release workflow built your download.
-3. **Get the images:** the workstation a loop runs in and its egress proxy. `./bin/spool images` prints a `docker pull` by digest and a `docker tag` for each; run them. A release whose notes have an **Images** section carries them. Or build them from source with `make image`. Either way, Spool runs them from your local Docker; it never pulls them.
-4. **Start the hub:** `./bin/spool`. The control room is on 127.0.0.1:8080, and data goes in `~/.spool`. The loop listener goes where your workstations can reach it, and the hub logs where that is; see [What contains a loop](#what-contains-a-loop).
-5. **Sign in to the control room:** open http://127.0.0.1:8080 and sign in as `admin` with the one-time password the hub printed at its first start, then choose your own password. Missed it? `./bin/spool user reset admin` prints a new one.
-6. **Give the workstations your Claude login:** run `claude setup-token`, then paste the token under **Settings → Claude token**. A workstation cannot use your machine's `~/.claude`, so this is how a loop runs on your plan.
-7. **Create a loop:** **New loop**, then a name, a mission and a tick interval. Leave the workspace empty; it is for bare loops only.
-8. **Attach Telegram:** in Telegram, send **@BotFather** `/newbot`. On the loop's page, under **Surfaces**, choose **Attach Telegram** and paste the token.
-9. **Allow yourself:** DM the bot. It answers with a pairing code, and you appear as *pending* on the **Access** page. Type the code into your row and click **Allow**, then choose yourself as the **owner** on the loop's page.
-10. **Say hello:** DM the bot again. Your message wakes the loop, and it answers in that DM.
+1. **Get Spool and build it.**
 
-**No Docker?** Start with `./bin/spool --runtime bare` instead, and skip steps 3 and 6. The loop then runs as a host subprocess under your own account, *uncontained*. Read [What contains a loop](#what-contains-a-loop) before you choose that.
+   ```bash
+   git clone https://github.com/enes-alatas/spool && cd spool
+   make build image
+   ```
 
-To bring loops into a Telegram group, and for who can reach them there, see [Telegram](#telegram).
+   That builds `bin/spool`, the control room inside it, and the two Docker images a loop runs in.
+
+2. **Start it and sign in.** Run `./bin/spool`. On its first start it prints a one-time password for the user `admin`. Open http://127.0.0.1:8080, sign in as `admin` with that password, and choose your own. Missed the password? `./bin/spool user reset admin` prints a new one.
+
+   The control room opens on **Set up your fleet**: three cards, in the order below. Each checks itself and turns done on its own.
+
+3. **Harness.** Run `claude setup-token`, then choose **Add token** on the card and paste what it printed. Your loops run on your Claude plan through it.
+
+4. **Loops.** Choose **New loop**, and give it a name and a mission. Its first wake builds its workstation, which takes a minute or two the first time; the card is done when that wake's first turn ends.
+
+5. **Chat surface.** Choose **Attach a bot**, then **Attach Telegram** or **Attach Slack**.
+   - **Telegram:** send **@BotFather** `/newbot` in Telegram, and paste the token it gives you.
+   - **Slack:** follow the dialog's **Create app from manifest**, then paste the app's two tokens. [Slack](#slack) has the steps.
+
+   Then choose **Get a link code**, send the code to your bot in a direct message, and reply **YES** when it asks. That links your account and makes you the loop's owner. Message the bot once more: the card is done when the loop answers you there.
+
+   No chat app? You can talk to a loop on its page in the control room instead. The setup page stays until all three cards are done.
+
+### Other ways to run it
+
+- **From a release.** Releases after v0.5.1 carry the built binary and the images, so you need no Go, Node or `make`. [OPERATIONS.md](docs/OPERATIONS.md#upgrading) shows the download, the checksum and the image pulls.
+- **On a server, as a service,** with TLS and backups: [OPERATIONS.md](docs/OPERATIONS.md).
+- **Without Docker.** `./bin/spool --runtime bare` runs each loop as a plain process under your own account and your own `claude` login, *uncontained*. It needs no `make image` and no step 3. Read [What contains a loop](#what-contains-a-loop) before you choose that.
 
 ## How it works
 
@@ -120,7 +136,7 @@ Reactions travel too. React to a loop's message and the loop hears of it on its 
 
 ### Who can talk to your loops
 
-Telegram bots are publicly reachable, so Spool keeps a **sender allowlist**. Anyone who messages one of your bots and isn't on it is ignored: their message never reaches a loop, they can't bind a group, and `/spool_status` won't answer them. On a DM they get a one-time pairing code; the sender then shows up as *pending* on the control room's **Access** page, where you type in the code they quote and click Allow (or Block — blocked senders get no reply at all). Loop-to-loop traffic is internal and unaffected.
+Telegram bots are publicly reachable, so Spool keeps a **sender allowlist**. Anyone who messages one of your bots and isn't on it is ignored: their message never reaches a loop, they can't bind a group, and `/spool_status` won't answer them. A person gets on it by linking their own account: a user of the control room chooses **Link Telegram** under **Settings**, sends the one-time code to any of the hub's bots in a DM, and replies **YES**. To let someone else in, add them as a user (`spool user add`, or **Settings → Users**) and have them link. The **Access** page lists who is allowed and can block anyone. A blocked sender gets no reply at all (ADR-0051). Loop-to-loop traffic is internal and unaffected.
 
 ## Slack
 
@@ -132,6 +148,7 @@ Slack is a surface like Telegram: a loop holds its owner DM and its channels in 
 4. Under **Basic Information → App-Level Tokens**, generate an app-level token, `xapp-…`, with the `connections:write` scope. A manifest cannot create this one.
 
 5. Paste both tokens into the loop's **Attach Slack** step. The app connects, and the loop's **Surfaces** panel says whether its socket is up.
+6. Under **Settings**, choose **Link Slack**, send the code it shows to the app in a DM, and reply **YES**. Your Slack account is now allowed, as on Telegram (see [Who can talk to your loops](#who-can-talk-to-your-loops)). A Slack link makes nobody an owner, so then, on the loop's page, choose yourself as its **owner**: until you do, the loop cannot message you first.
 
 Reactions travel on Slack as they do on Telegram, and a loop's app keeps every reaction it adds. An app created from an older manifest has no reaction scopes. Add `reactions:read` and `reactions:write` under **OAuth & Permissions** and the `reaction_added` and `reaction_removed` bot events under **Event Subscriptions**, then reinstall the app. Until then, reactions stay on the hub.
 
