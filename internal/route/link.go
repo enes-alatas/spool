@@ -80,7 +80,7 @@ func (router *Router) LinkCode(ctx context.Context, attempt LinkAttempt) (notice
 		case errors.Is(err, users.ErrNothingToConfirm) && attempt.Allowed:
 			return "", false // a yes to the loop
 		case errors.Is(err, users.ErrNothingToConfirm):
-			router.gate.wrong(attempt.Person, attempt.Allowed)
+			router.wrongCode(attempt)
 			return "", true
 		case errors.Is(err, users.ErrPersonLinked):
 			return router.toAllowed(attempt, personLinkedNotice), true
@@ -103,7 +103,7 @@ func (router *Router) LinkCode(ctx context.Context, attempt LinkAttempt) (notice
 		Username: attempt.Username, Display: attempt.Display, TeamID: attempt.TeamID})
 	switch {
 	case errors.Is(err, users.ErrLinkCodeUnknown):
-		router.gate.wrong(attempt.Person, attempt.Allowed)
+		router.wrongCode(attempt)
 		return router.toAllowed(attempt,
 			"Spool: that link code is unknown, already used or expired. Ask the control room for a new one."), true
 	case errors.Is(err, users.ErrPersonLinked):
@@ -124,6 +124,40 @@ const (
 		"who has to remove that link first."
 	linkFailedNotice = "Spool: the link failed. Try again, or ask the control room for a new code."
 )
+
+// wrongCode counts a wrong code, and logs a warning when it is the one that
+// pauses strangers' codes on its surface, so the pause is not silent
+// (ADR-0051, #789).
+func (router *Router) wrongCode(attempt LinkAttempt) {
+	if until, paused := router.gate.wrong(attempt.Person, attempt.Allowed); paused {
+		router.log.Warn("link codes from strangers paused: too many wrong codes",
+			"surface", store.PersonSurface(attempt.Person), "until", until.UTC().Format(time.RFC3339))
+	}
+}
+
+// LinkPauseUntil is when strangers' link codes on surface are checked
+// again, and the zero time when they are not paused.
+func (router *Router) LinkPauseUntil(surface string) time.Time {
+	gate := &router.gate
+	gate.mu.Lock()
+	defer gate.mu.Unlock()
+	return gate.pausedUntil(surface, gate.clock())
+}
+
+// LiftLinkPause undoes a pause on surface: it zeroes the surface's count of
+// strangers' wrong codes, so their codes there are checked again at once
+// (ADR-0051, #789). A surface not paused keeps its count, so a lift hands
+// no spray under the cap fresh guesses. Each sender's own count stays.
+func (router *Router) LiftLinkPause(surface string) {
+	gate := &router.gate
+	gate.mu.Lock()
+	defer gate.mu.Unlock()
+	if gate.pausedUntil(surface, gate.clock()).IsZero() {
+		return
+	}
+	delete(gate.strangersWrong, surface)
+	router.log.Info("link codes from strangers resumed: pause lifted", "surface", surface)
+}
 
 // toAllowed is notice for an allowed sender, and nothing for a stranger:
 // a reply to a stranger's wrong code tells them the bot is there and that
@@ -231,13 +265,14 @@ func minutes(d time.Duration) string {
 // guesses is a store read each, and the answer to each tells a code that
 // works from one that does not. A sender with linkWrongPerSender wrong
 // codes in an hour is not listened to for an hour after the last; past
-// linkWrongPerHub wrong codes from strangers in an hour, no stranger's
-// code is checked until the hour is out. A YES with nothing to confirm is
-// a wrong code. The counts live in memory, so a restart forgets them.
+// linkWrongPerSurface wrong codes from strangers on one surface in an
+// hour, no stranger's code there is checked until the hour is out or an
+// admin lifts the pause (#789). A YES with nothing to confirm is a wrong
+// code. The counts live in memory, so a restart forgets them.
 const (
-	linkWrongPerSender = 5
-	linkWrongPerHub    = 50
-	linkWrongWindow    = time.Hour
+	linkWrongPerSender  = 5
+	linkWrongPerSurface = 50
+	linkWrongWindow     = time.Hour
 	// strangerLogEvery is how often a stranger's dropped messages are
 	// logged, with a count.
 	strangerLogEvery = time.Hour
@@ -261,9 +296,9 @@ type linkGate struct {
 	// senders counts each sender's wrong codes since since, and until is
 	// when one silenced stops being so.
 	senders map[string]*linkStrikes
-	// hub counts strangers' wrong codes since hubSince.
-	hub      int
-	hubSince time.Time
+	// strangersWrong counts strangers' wrong codes on each surface, since
+	// the first of the hour.
+	strangersWrong map[string]*linkStrikes
 	// strangers counts each stranger's dropped messages since the last line
 	// about them, logged at loggedAt.
 	strangers map[string]*strangerTally
@@ -306,11 +341,25 @@ func (gate *linkGate) silenced(person string, allowed bool) bool {
 	if strikes := gate.senders[person]; strikes != nil && now.Before(strikes.until) {
 		return true
 	}
-	return !allowed && gate.hub >= linkWrongPerHub && now.Before(gate.hubSince.Add(linkWrongWindow))
+	return !allowed && !gate.pausedUntil(store.PersonSurface(person), now).IsZero()
 }
 
-// wrong counts a wrong code from person.
-func (gate *linkGate) wrong(person string, allowed bool) {
+// pausedUntil is when strangers' codes on surface are checked again, and
+// the zero time when they are not paused.
+func (gate *linkGate) pausedUntil(surface string, now time.Time) time.Time {
+	strikes := gate.strangersWrong[surface]
+	if strikes == nil || strikes.count < linkWrongPerSurface {
+		return time.Time{}
+	}
+	if until := strikes.since.Add(linkWrongWindow); now.Before(until) {
+		return until
+	}
+	return time.Time{}
+}
+
+// wrong counts a wrong code from person, and when it is the stranger's code
+// that pauses its surface, says until when.
+func (gate *linkGate) wrong(person string, allowed bool) (until time.Time, paused bool) {
 	gate.mu.Lock()
 	defer gate.mu.Unlock()
 	now := gate.clock()
@@ -334,12 +383,22 @@ func (gate *linkGate) wrong(person string, allowed bool) {
 		strikes.until = now.Add(linkWrongWindow)
 	}
 	if allowed {
-		return
+		return time.Time{}, false
 	}
-	if !now.Before(gate.hubSince.Add(linkWrongWindow)) {
-		gate.hub, gate.hubSince = 0, now
+	if gate.strangersWrong == nil {
+		gate.strangersWrong = map[string]*linkStrikes{}
 	}
-	gate.hub++
+	surface := store.PersonSurface(person)
+	onSurface := gate.strangersWrong[surface]
+	if onSurface == nil || !now.Before(onSurface.since.Add(linkWrongWindow)) {
+		onSurface = &linkStrikes{since: now}
+		gate.strangersWrong[surface] = onSurface
+	}
+	onSurface.count++
+	if onSurface.count == linkWrongPerSurface {
+		return gate.pausedUntil(surface, now), true
+	}
+	return time.Time{}, false
 }
 
 // stranger counts a dropped message from person, and says whether to log

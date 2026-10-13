@@ -140,23 +140,43 @@ func (server *Server) setPersonStatus(ctx context.Context, person, status string
 
 // ignoredView is the strangers one surface ignored in the last day: how
 // many the hub kept, their ids with the most recent first, and whether
-// there were more than it keeps.
+// there were more than it keeps. PausedUntil is when strangers' link codes
+// there are checked again, in Unix milliseconds, and 0 when they are not
+// paused (#789).
 type ignoredView struct {
-	Surface string   `json:"surface"`
-	Count   int      `json:"count"`
-	IDs     []string `json:"ids"`
-	More    bool     `json:"more"`
+	Surface     string   `json:"surface"`
+	Count       int      `json:"count"`
+	IDs         []string `json:"ids"`
+	More        bool     `json:"more"`
+	PausedUntil int64    `json:"paused_until"`
 }
 
 // handleIgnoredStrangers answers who knocked and was ignored in the last
 // day, by surface, so "my friend can't reach the bot" has an answer
-// without a pending state (ADR-0051, #744). Only ids: a stranger's text is
-// never kept.
+// without a pending state (ADR-0051, #744), and whether strangers' codes
+// are paused there. Only ids: a stranger's text is never kept.
 func (server *Server) handleIgnoredStrangers(w http.ResponseWriter, _ *http.Request) {
 	surfaces := []ignoredView{}
 	for _, ignored := range server.Router.IgnoredStrangers() {
-		surfaces = append(surfaces, ignoredView{Surface: ignored.Surface, Count: len(ignored.IDs),
-			IDs: ignored.IDs, More: ignored.More})
+		view := ignoredView{Surface: ignored.Surface, Count: len(ignored.IDs), IDs: ignored.IDs, More: ignored.More}
+		if until := server.Router.LinkPauseUntil(ignored.Surface); !until.IsZero() {
+			view.PausedUntil = until.UnixMilli()
+		}
+		surfaces = append(surfaces, view)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"window_hours": int(route.IgnoredWindow.Hours()), "surfaces": surfaces})
+}
+
+// handleLiftLinkPause lifts the pause strangers' wrong codes put on a
+// surface, so their codes there are checked again at once, and answers as
+// GET /api/strangers does (ADR-0051, #789). Lifting a surface that is not
+// paused changes nothing, its count included.
+func (server *Server) handleLiftLinkPause(w http.ResponseWriter, r *http.Request) {
+	surface := r.PathValue("surface")
+	if surface != store.SurfaceTelegram && surface != store.SurfaceSlack {
+		server.jsonErrCode(w, http.StatusBadRequest, codeBadSurface, `the surface is "telegram" or "slack"`)
+		return
+	}
+	server.Router.LiftLinkPause(surface)
+	server.handleIgnoredStrangers(w, r)
 }

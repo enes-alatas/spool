@@ -185,10 +185,12 @@ func TestAWrongCodeIsAnsweredOnlyToAnAllowedSender(t *testing.T) {
 }
 
 // Five wrong codes silence a sender for an hour, and fifty from strangers
-// silence every stranger for the rest of the hour: their codes are not
-// even looked up. An allowed sender is still heard past the hub's cap.
-func TestWrongCodesSilenceTheSenderAndThenTheHub(t *testing.T) {
-	router, links, now, _, _ := linkRouter(t)
+// on one surface silence every stranger there for the rest of the hour:
+// their codes are not even looked up. An allowed sender is still heard, and
+// so is a stranger on the other surface (#789). The pause is logged, shown,
+// and lifted by an admin.
+func TestWrongCodesSilenceTheSenderAndThenTheSurface(t *testing.T) {
+	router, links, now, logged, _ := linkRouter(t)
 	ctx := context.Background()
 	guesser := LinkAttempt{Text: "link-aaaaaaaaaa", Person: store.TGPerson(5)}
 	for range linkWrongPerSender {
@@ -204,17 +206,44 @@ func TestWrongCodesSilenceTheSenderAndThenTheHub(t *testing.T) {
 		t.Fatalf("an hour on, the sender's good code = %q; want the question", notice)
 	}
 
-	for i := range linkWrongPerHub {
+	for i := range linkWrongPerSurface {
+		if i == linkWrongPerSurface-1 {
+			// A lift before the pause keeps the count: the next code pauses.
+			router.LiftLinkPause(store.SurfaceTelegram)
+		}
 		router.LinkCode(ctx, LinkAttempt{Text: "link-aaaaaaaaaa", Person: store.TGPerson(int64(100 + i))})
+	}
+	until := router.LinkPauseUntil(store.SurfaceTelegram)
+	if !until.Equal(now.Add(linkWrongWindow)) {
+		t.Fatalf("Telegram's pause runs until %v; want the hour from the first wrong code, %v", until, now.Add(linkWrongWindow))
+	}
+	if !strings.Contains(logged.String(), "link codes from strangers paused") || !strings.Contains(logged.String(), "surface=telegram") {
+		t.Fatalf("the pause was not logged with its surface:\n%s", logged.String())
 	}
 	before = links.claims
 	late := LinkAttempt{Text: mint(t, links, "u-bob", store.SurfaceTelegram), Person: store.TGPerson(7)}
 	if notice, _ := router.LinkCode(ctx, late); notice != "" || links.claims != before {
-		t.Fatalf("past the hub's cap, a stranger's good code = %q; want nothing looked up", notice)
+		t.Fatalf("past Telegram's cap, a stranger's good code = %q; want nothing looked up", notice)
 	}
 	late.Allowed = true
 	if notice, _ := router.LinkCode(ctx, late); !strings.Contains(notice, "Reply YES") {
-		t.Fatalf("past the hub's cap, an allowed sender's good code = %q; want the question", notice)
+		t.Fatalf("past Telegram's cap, an allowed sender's good code = %q; want the question", notice)
+	}
+	if paused := router.LinkPauseUntil(store.SurfaceSlack); !paused.IsZero() {
+		t.Fatalf("Slack paused until %v by Telegram's wrong codes; want it unpaused", paused)
+	}
+	slack := LinkAttempt{Text: mint(t, links, "u-carol", store.SurfaceSlack), Person: store.SlackPerson("U0CAROL")}
+	if notice, _ := router.LinkCode(ctx, slack); !strings.Contains(notice, "Reply YES") {
+		t.Fatalf("past Telegram's cap, a Slack stranger's good code = %q; want the question", notice)
+	}
+
+	router.LiftLinkPause(store.SurfaceTelegram)
+	if paused := router.LinkPauseUntil(store.SurfaceTelegram); !paused.IsZero() {
+		t.Fatalf("after the lift Telegram is paused until %v", paused)
+	}
+	lifted := LinkAttempt{Text: mint(t, links, "u-dave", store.SurfaceTelegram), Person: store.TGPerson(8)}
+	if notice, _ := router.LinkCode(ctx, lifted); !strings.Contains(notice, "Reply YES") {
+		t.Fatalf("after the lift, a stranger's good code = %q; want the question", notice)
 	}
 }
 
