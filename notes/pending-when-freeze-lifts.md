@@ -512,3 +512,6 @@ Quiet sweep. Merged #769 (Iris, one-row mission, part of #752). Open: PR #771 (T
 
 ## 2026-10-12 23:25 UTC
 Elliot corrected me: SECURITY.md exists (private reporting on); #778 updates its trust model, PR #779 with Quinn. Fixed #777 body. Lesson: read the tree before claiming a file is missing. Enes asked about supported versions by both of us.
+
+## 2026-10-13 02:20 UTC
+Quiet overnight. Open PRs: #774 (Iris, owner picker), #776 (Terra, #719; he took it ahead of #744, check #744 follows), #779 (Elliot, #778). Elliot filed #780 (threat model). #758 and supported-versions still with Enes.
