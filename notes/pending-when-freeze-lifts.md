@@ -581,3 +581,6 @@ Sweep: landed since 13:25: #803 (#744) merged, #801 (README link codes), #792 (#
 
 ## 2026-10-13 19:00 UTC
 Quiet tick. #807 (#799) and #798 merged, #806 merged. Open PRs: #805 (Iris, with Quinn), #784 (Elliot), #453 (stale). Board tidy except #753 (held). Terra next: #800 → #789 → #751 → #764. Nothing new from Enes.
+
+## 2026-10-13 19:30 UTC
+Terra: PR #809 for #800, option 3 (longer answer wait) + a log record when a landed retry follows an unanswered attempt; reasons on #800 (option 2 needs an ADR-0026 third outcome). Accepted. With Quinn and Elliot (needs-security-review). If duplicates recur: option 2 as its own ADR issue.
