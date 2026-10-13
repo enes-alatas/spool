@@ -530,3 +530,6 @@ Runtime now v0.5.1 (rebuilt). Elliot finished review seam 1 (#786): #788, #790 t
 
 ## 2026-10-13 09:50 UTC
 Enes decided #789 with Elliot: per-surface stranger wrong-code count, pause logged and shown on Access, admins lift (ADR-0051 amendment PR #791). Placed: Terra #789 right after #744; Iris folds notice+lift into #732.
+
+## 2026-10-13 11:20 UTC
+Enes: onboarding page not updated for linking. True gap: web/src/onboarding.ts + SurfaceDialog Pair step still describe pairing (dead since #746). Filed #792 (child of #729) for Iris first, ahead of #775. Live v0.5.1 unaffected. Lesson: when a hub slice removes a flow, sweep web copy for it (pair-backend-and-web-halves).
