@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"net/http"
+	"sync/atomic"
 
 	"github.com/enes-alatas/spool/internal/bus"
 	"github.com/enes-alatas/spool/internal/route"
@@ -217,21 +218,57 @@ func (reader *privateReader) readable(msgs []*store.Message) []*store.Message {
 	return kept
 }
 
-// readsNow is a stream's test of whether who reads a message, asked anew
-// for each private one, so a link made or removed while the stream is open
-// counts from its next message. A store error reads as no.
-func (server *Server) readsNow(ctx context.Context, who *caller) func(*store.Message) bool {
-	return func(msg *store.Message) bool {
-		if seesPrivate(who) || !privateMessage(msg) {
-			return true
-		}
-		reader, err := server.privateReaderOf(ctx, who)
-		if err != nil {
-			server.Log.Warn("stream: read a caller's links", "err", err)
+// streamAccess is what one open stream's caller reads: their links, read
+// when the stream opens and again after a link of theirs is made or
+// removed, so the change counts from the stream's next item. The bus only
+// marks it stale, which costs no store read; the stream reloads it in its
+// own goroutine before it writes the next item, so no store read happens
+// in Bus.Publish with bus.mu held (#721).
+type streamAccess struct {
+	server *Server
+	who    *caller
+	reader *privateReader
+	stale  atomic.Bool
+}
+
+// openStreamAccess reads who's access for a stream they open.
+func (server *Server) openStreamAccess(ctx context.Context, who *caller) (*streamAccess, error) {
+	access := &streamAccess{server: server, who: who}
+	return access, access.load(ctx)
+}
+
+func (access *streamAccess) load(ctx context.Context) error {
+	reader, err := access.server.privateReaderOf(ctx, access.who)
+	if err != nil {
+		return err
+	}
+	access.reader = reader
+	return nil
+}
+
+// notice marks the access stale when item changes it. It runs in
+// Bus.Publish, so it reads nothing but the item.
+func (access *streamAccess) notice(item bus.Item) {
+	if item.Kind != bus.KindLink || access.who == nil || access.who.user == nil {
+		return
+	}
+	if payload, ok := item.Payload.(*route.LinkPayload); ok && payload.UserID == access.who.user.ID {
+		access.stale.Store(true)
+	}
+}
+
+// admits reports whether item may reach the caller, reloading their access
+// first if anything changed it. A store error withholds the item and tries
+// again on the next one.
+func (access *streamAccess) admits(ctx context.Context, item bus.Item) bool {
+	if access.stale.Swap(false) {
+		if err := access.load(ctx); err != nil {
+			access.stale.Store(true)
+			access.server.Log.Warn("stream: read a caller's access", "err", err)
 			return false
 		}
-		return reader.reads(msg)
 	}
+	return streamable(access.who, item, access.reader.reads)
 }
 
 // streamable reports whether item may reach who on a stream. A turn's

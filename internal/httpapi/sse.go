@@ -9,8 +9,11 @@ import (
 	"github.com/enes-alatas/spool/internal/bus"
 )
 
-// serveSSE streams bus items matching filter to one client until it leaves.
-func serveSSE(w http.ResponseWriter, r *http.Request, events *bus.Bus, filter func(bus.Item) bool) {
+// serveSSE streams bus items to one client until it leaves: those filter
+// matches, which runs in Bus.Publish and so must read nothing but the item,
+// and of those the ones admit lets through, which runs in this goroutine
+// and may read the store.
+func serveSSE(w http.ResponseWriter, r *http.Request, events *bus.Bus, filter, admit func(bus.Item) bool) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
@@ -38,6 +41,9 @@ func serveSSE(w http.ResponseWriter, r *http.Request, events *bus.Bus, filter fu
 		case item, ok := <-items:
 			if !ok {
 				return
+			}
+			if !admit(item) {
+				continue
 			}
 			data, err := json.Marshal(item)
 			if err != nil {

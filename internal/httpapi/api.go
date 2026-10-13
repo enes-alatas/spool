@@ -2144,11 +2144,15 @@ func (server *Server) handleWorkspaceInspect(w http.ResponseWriter, r *http.Requ
 }
 
 func (server *Server) handleGlobalStream(w http.ResponseWriter, r *http.Request) {
-	who := callerOf(r)
-	reads := server.readsNow(r.Context(), who)
+	access, err := server.openStreamAccess(r.Context(), callerOf(r))
+	if err != nil {
+		server.jsonErr(w, 500, "%v", err)
+		return
+	}
 	serveSSE(w, r, server.Bus, func(item bus.Item) bool {
-		return item.Kind != bus.KindAgentEvent && streamable(who, item, reads)
-	})
+		access.notice(item)
+		return item.Kind != bus.KindAgentEvent
+	}, func(item bus.Item) bool { return access.admits(r.Context(), item) })
 }
 
 func (server *Server) handleLoopStream(w http.ResponseWriter, r *http.Request) {
@@ -2156,12 +2160,14 @@ func (server *Server) handleLoopStream(w http.ResponseWriter, r *http.Request) {
 	if loopRecord == nil {
 		return
 	}
-	id, who := loopRecord.ID, callerOf(r)
-	reads := server.readsNow(r.Context(), who)
+	access, err := server.openStreamAccess(r.Context(), callerOf(r))
+	if err != nil {
+		server.jsonErr(w, 500, "%v", err)
+		return
+	}
+	id := loopRecord.ID
 	serveSSE(w, r, server.Bus, func(item bus.Item) bool {
-		if !streamable(who, item, reads) {
-			return false
-		}
+		access.notice(item)
 		if item.Kind == bus.KindMessage {
 			if mp, ok := item.Payload.(*route.MessagePayload); ok {
 				if mp.FromLoopID == id {
@@ -2176,7 +2182,7 @@ func (server *Server) handleLoopStream(w http.ResponseWriter, r *http.Request) {
 			return false
 		}
 		return item.LoopID == id
-	})
+	}, func(item bus.Item) bool { return access.admits(r.Context(), item) })
 }
 
 // routeMethods are the methods apiFallback asks the mux about.

@@ -1,8 +1,12 @@
 package httpapi
 
 import (
+	"context"
+	"io"
+	"log/slog"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/enes-alatas/spool/internal/bus"
@@ -145,5 +149,73 @@ func TestAPrivateConversationIsReadByItsPerson(t *testing.T) {
 		{ID: 1, Conversation: "dm:bob", DMPerson: bob}, {ID: 2, Conversation: "dm:alice", DMPerson: alice},
 	}); len(got) != 1 || got[0].ID != 2 {
 		t.Errorf("readable kept %+v; want only alice's", got)
+	}
+}
+
+// countedLinks is a link store that counts its reads.
+type countedLinks struct {
+	store.UserLinkStore
+	links map[string][]*store.UserLink
+	reads atomic.Int32
+}
+
+func (links *countedLinks) List(_ context.Context, userID string) ([]*store.UserLink, error) {
+	links.reads.Add(1)
+	return links.links[userID], nil
+}
+
+type linksStore struct {
+	store.Store
+	links *countedLinks
+}
+
+func (fake linksStore) UserLinks() store.UserLinkStore { return fake.links }
+
+// TestAStreamReadsLinksOutsideThePublish: a member's stream reads their
+// links when it opens and again only after a link of theirs changes, and
+// never while the bus publishes, so no store read holds bus.mu (#721).
+// A link removed counts from the stream's next item.
+func TestAStreamReadsLinksOutsideThePublish(t *testing.T) {
+	alice := store.TGPerson(1)
+	links := &countedLinks{links: map[string][]*store.UserLink{"u-mia": {{UserID: "u-mia", Person: alice}}}}
+	server := &Server{Store: linksStore{links: links}, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	ctx := context.Background()
+	access, err := server.openStreamAccess(ctx, &caller{user: &store.User{ID: "u-mia", Role: store.RoleMember}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hers := bus.Item{Kind: bus.KindMessage, Payload: &route.MessagePayload{
+		Message: store.Message{Conversation: "dm:alice", DMPerson: alice}}}
+	for range 3 {
+		if !access.admits(ctx, hers) {
+			t.Fatal("mia's stream withheld her own DM")
+		}
+	}
+	if got := links.reads.Load(); got != 1 {
+		t.Fatalf("links read %d times for one stream with no change; want once, at open", got)
+	}
+
+	events := bus.New()
+	items, cancel := events.Subscribe(func(item bus.Item) bool {
+		access.notice(item)
+		return true
+	})
+	defer cancel()
+	events.Publish(bus.Item{Kind: bus.KindLink, Payload: &route.LinkPayload{UserID: "u-bea", State: route.LinkUnlinked}})
+	<-items
+	if !access.admits(ctx, hers) || links.reads.Load() != 1 {
+		t.Fatalf("another user's link change reloaded mia's access (%d reads)", links.reads.Load())
+	}
+	links.links["u-mia"] = nil
+	events.Publish(bus.Item{Kind: bus.KindLink, Payload: &route.LinkPayload{UserID: "u-mia", State: route.LinkUnlinked}})
+	<-items
+	if got := links.reads.Load(); got != 1 {
+		t.Fatalf("the publish read the store (%d reads); want the stream to read it", got)
+	}
+	if access.admits(ctx, hers) {
+		t.Fatal("mia's stream still carries a DM after her link was removed")
+	}
+	if got := links.reads.Load(); got != 2 {
+		t.Fatalf("links read %d times after mia's link changed; want twice", got)
 	}
 }
