@@ -245,6 +245,7 @@ func (server *Server) routes() *routeMux {
 	mux.HandleFunc("POST /api/users/{name}/reset", server.handleResetUser)
 	mux.HandleFunc("PATCH /api/users/{name}", server.handleSetUserRole)
 	mux.HandleFunc("DELETE /api/users/{name}", server.handleRemoveUser)
+	mux.HandleFunc("DELETE /api/users/{name}/links/{surface}", server.handleRemoveUserLink)
 
 	// /mcp and the brokered servers under it live on the loop listener
 	// alone (#238, #622). Saying so explicitly matters because of what is

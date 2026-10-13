@@ -1,6 +1,6 @@
 # ADR-0051: A link code is the one way a person becomes an allowed sender
 
-Date: 2026-10-11 · Status: accepted (operator decisions of 2026-10-11 on #728, posture reviewed by Elliot there; epic #729, slice #730) · Supersedes: the pairing code, ADR-0029 items 6 and 8 in part, and ADR-0050 decision 1's "only an allowed sender links" · Relates to: ADR-0026, ADR-0048, ADR-0049, ADR-0050 · Amended: 2026-10-12 (a loop's owner is chosen as a user), 2026-10-13 (strangers' wrong codes are counted per surface, and a pause shows)
+Date: 2026-10-11 · Status: accepted (operator decisions of 2026-10-11 on #728, posture reviewed by Elliot there; epic #729, slice #730) · Supersedes: the pairing code, ADR-0029 items 6 and 8 in part, and ADR-0050 decision 1's "only an allowed sender links" · Relates to: ADR-0026, ADR-0048, ADR-0049, ADR-0050 · Amended: 2026-10-12 (a loop's owner is chosen as a user), 2026-10-13 (strangers' wrong codes are counted per surface, and a pause shows), 2026-10-13 (an owner manages access from Settings → Access)
 
 ## Context
 
@@ -130,6 +130,14 @@ loop view adds `owner_user`, the user linked as the owner, and each row of
 are `""` for a sender allowed before this ADR, who is not linked. The
 owner named by `tg_user_id` or `slack_user_id` stays accepted until the
 owner picker chooses users (#732).
+
+**Amendment (2026-10-13, #744):** an owner manages access from Settings →
+Access, with routes that are an owner's, as the users are (ADR-0048).
+`GET /api/users` adds to each user `links`, listed as `GET /api/me/links`
+lists one's own, and `blocked`, true when a sender one of those links
+holds is blocked. `DELETE /api/users/{name}/links/{surface}` removes
+another user's link as decision 4 removes one's own, and answers 404 when
+there is no such user or no link there.
 
 ## Alternatives considered
 
