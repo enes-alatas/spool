@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -222,14 +223,55 @@ func TestWrongCodesSilenceTheSenderAndThenTheHub(t *testing.T) {
 func TestAStrangerIsLoggedOnceAnHour(t *testing.T) {
 	router, _, now, logged, _ := linkRouter(t)
 	for range 3 {
-		router.Stranger(store.TGPerson(5))
+		router.Stranger(store.TGPerson(5), false)
 	}
 	*now = now.Add(strangerLogEvery)
-	router.Stranger(store.TGPerson(5))
+	router.Stranger(store.TGPerson(5), true)
 	lines := strings.Split(strings.TrimSpace(logged.String()), "\n")
 	if len(lines) != 2 || !strings.Contains(lines[0], "count=1") || !strings.Contains(lines[1], "count=3") ||
 		!strings.Contains(lines[1], "sender=tg:5") {
 		t.Fatalf("the log = %q; want the first message, then the next three an hour on", lines)
+	}
+}
+
+// The hub tallies the strangers whose DMs it ignored in the last day, by
+// surface, the most recent first; a group message is not a knock and is
+// not tallied. A stranger out of the day is forgotten, and past
+// ignoredKept on a surface a new one there is not kept but said to be
+// there, while the other surface keeps counting (#744).
+func TestIgnoredStrangersAreTalliedForADay(t *testing.T) {
+	router, _, now, _, _ := linkRouter(t)
+	router.Stranger(store.TGPerson(1), true)
+	router.Stranger(store.TGPerson(7), false)
+	*now = now.Add(time.Hour)
+	router.Stranger(store.SlackPerson("U2"), true)
+	router.Stranger(store.TGPerson(3), true)
+	router.Stranger(store.TGPerson(3), true)
+	if got := router.IgnoredStrangers(); len(got) != 2 ||
+		strings.Join(got[0].IDs, ",") != "3,1" || got[0].Surface != store.SurfaceTelegram ||
+		strings.Join(got[1].IDs, ",") != "U2" || got[0].More || got[1].More {
+		t.Fatalf("the tally = %+v; want telegram 3 then 1, slack U2, and not 7's group message", got)
+	}
+
+	*now = now.Add(IgnoredWindow - time.Hour + time.Second)
+	if got := router.IgnoredStrangers(); strings.Join(got[0].IDs, ",") != "3" {
+		t.Fatalf("the tally a day after stranger 1 = %+v; want only 3", got[0])
+	}
+
+	for id := range int64(ignoredKept) {
+		router.Stranger(store.TGPerson(1000+id), true)
+	}
+	router.Stranger(store.SlackPerson("U9"), true)
+	got := router.IgnoredStrangers()
+	if len(got[0].IDs) != ignoredKept || !got[0].More || slices.Contains(got[0].IDs, "1999") ||
+		strings.Join(got[1].IDs, ",") != "U9,U2" || got[1].More {
+		t.Fatalf("a full telegram tally = %d (more %v), slack %v (more %v); want %d kept, the last left out, and slack untouched",
+			len(got[0].IDs), got[0].More, got[1].IDs, got[1].More, ignoredKept)
+	}
+	*now = now.Add(IgnoredWindow + time.Minute)
+	router.Stranger(store.TGPerson(5), true)
+	if got := router.IgnoredStrangers(); strings.Join(got[0].IDs, ",") != "5" || got[0].More || len(got[1].IDs) != 0 {
+		t.Fatalf("the tally a day on = %+v; want only 5, and no more", got)
 	}
 }
 

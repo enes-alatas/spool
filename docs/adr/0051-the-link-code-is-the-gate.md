@@ -144,6 +144,12 @@ and answer with the user as `GET /api/users` lists them; a user with no
 link is refused 400 `no_link`. The block is the sender row's, so it
 outlives the link. A user unblocked whose role is `owner` may become the
 default owner again, as decision 4 makes one.
+`GET /api/strangers`, an admin's, answers which strangers' DMs decision 5
+ignored in the last 24 hours, by surface: `{window_hours, surfaces:
+[{surface, count, ids, more}]}`, `ids` the most recent first. A group or
+channel message is not counted: it is no knock on the bot. Only their ids
+are kept, never their text, in memory as the limits are, and at most 1000
+a surface: past that a new one is left out, and `more` says so.
 
 ## Alternatives considered
 

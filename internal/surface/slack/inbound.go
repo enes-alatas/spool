@@ -324,7 +324,7 @@ func (adapter *Adapter) allowedSender(ctx context.Context, loopRecord *store.Loo
 			return nil
 		}
 	}
-	adapter.router.Stranger(store.SlackPerson(event.User))
+	adapter.router.Stranger(store.SlackPerson(event.User), event.ChannelType == "im")
 	return nil
 }
 
