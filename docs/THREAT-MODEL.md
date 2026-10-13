@@ -102,6 +102,9 @@ over Socket Mode, so no port is opened for either (ADR-0034).
   or within a minute when the hub hears of no change: a session that runs
   out, a reset made with `spool user`, a session traded for the token.
   Asking whether a session is live is not a use of it.
+- The browser keeps the session cookie for 14 days from sign-in, past a
+  restart, and logout clears it. Someone else using that browser profile
+  in that time is signed in as its user (#799).
 - Sign-in is throttled per name tried, and an unknown name answers like a
   wrong password.
 - Granting admin or owner, and resetting a password, take the acting

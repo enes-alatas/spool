@@ -247,6 +247,8 @@ func TestLoginIssuesAnHTTPOnlyCookie(t *testing.T) {
 		t.Error("the session cookie must be HttpOnly — script must not be able to read it")
 	case cookie.SameSite != http.SameSiteStrictMode:
 		t.Error("the session cookie must be SameSite=Strict — it must not ride a cross-site request")
+	case cookie.MaxAge != int(users.SessionIdle.Seconds()):
+		t.Errorf("cookie Max-Age = %d, want %d — without one a phone's browser drops it when closed", cookie.MaxAge, int(users.SessionIdle.Seconds()))
 	}
 
 	// And the wrong token buys nothing.
