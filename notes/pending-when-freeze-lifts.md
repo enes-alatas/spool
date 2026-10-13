@@ -563,3 +563,6 @@ Enes: cap works on latest main. Plan cap thread closed for good; no issue, no am
 
 ## 2026-10-13 12:20 UTC
 Elliot: #794 (closes #793, CONVENTIONS done-criterion + AGENTS.md pointer) up with Quinn. Elliot continues #777 seam 2 (hub API/sessions), no new assignment needed.
+
+## 2026-10-13 13:05 UTC
+Iris: #796 (#792) ready at 9ec7088, with Quinn. Iris filed #797 (first-run finish without a chat surface, Enes's ask). Shaped it: L5 Team, Part of #124; hub half filed as #798 (POST /api/onboarding/skip-surface, 409 unless harness+loops done; Terra, after #744 before #789). Iris: #797 after #796, before #752, mockup to Enes first. Enes notified of the shape (hub-recorded, surface only). Iris queue now: #796 → #797 → #752 → #732 (#775's web half shipped in #796; hub half Terra's).
