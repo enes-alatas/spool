@@ -113,7 +113,7 @@ export function LinksSection() {
           // A new code starts its steps over.
           key={code.code}
           code={code}
-          surface={SURFACES.find((s) => s.surface === code.surface) ?? SURFACES[0]}
+          surface={linkSurface(code.surface)}
           link={links?.find((l) => l.surface === code.surface)}
           wait={waitingLinks.find((l) => l.surface === code.surface)}
           onAgain={() => askCode(code.surface)}
@@ -146,23 +146,57 @@ function Waiting({ link, app }: { link: WaitingLink; app: string }) {
 }
 
 // A code from asked for to linked (ADR-0051), in a dialog that stays open
-// until the YES lands: copy it, send it to a bot, say YES when the bot asks.
-// Each step ticks as the hub reports it. Closed early, the code still works,
-// and the surface's row says when it is waiting for YES.
+// until the YES lands. Closed early, the code still works, and the
+// surface's row says when it is waiting for YES.
 function LinkDialog({
   code,
-  surface: { label, app },
+  surface,
   link,
   wait,
   onAgain,
   onClose,
 }: {
   code: OpenLinkCode
-  surface: (typeof SURFACES)[number]
+  surface: LinkSurface
   link?: UserLink
   wait?: WaitingLink
   onAgain: () => void
   onClose: () => void
+}) {
+  return (
+    <StepDialog title={`Link ${surface.label}`} className="link-dialog" onClose={onClose}>
+      <LinkSteps code={code} surface={surface} link={link} wait={wait} onAgain={onAgain} />
+      {link && (
+        <form method="dialog">
+          <button className="btn primary">Done</button>
+        </form>
+      )}
+    </StepDialog>
+  )
+}
+
+// A surface as the link steps name it: its label, and the app a loop
+// answers on there.
+type LinkSurface = (typeof SURFACES)[number]
+
+function linkSurface(surface: UserLink['surface']): LinkSurface {
+  return SURFACES.find((s) => s.surface === surface) ?? SURFACES[0]
+}
+
+// A code's steps (ADR-0051): copy it, send it to a bot, say YES when the bot
+// asks. Each step ticks as the hub reports it.
+function LinkSteps({
+  code,
+  surface: { app },
+  link,
+  wait,
+  onAgain,
+}: {
+  code: OpenLinkCode
+  surface: LinkSurface
+  link?: UserLink
+  wait?: WaitingLink
+  onAgain: () => void
 }) {
   const [copied, setCopied] = useState<'' | 'ok' | 'failed'>('')
   // The question the code raised, kept once its waiting row goes: with the
@@ -194,7 +228,7 @@ function LinkDialog({
   ]
 
   return (
-    <StepDialog title={`Link ${label}`} className="link-dialog" onClose={onClose}>
+    <>
       <div className="otp">
         <code className="otp-value">{code.code}</code>
         <button className="btn sm" onClick={copy} disabled={!!link}>
@@ -229,18 +263,12 @@ function LinkDialog({
             : 'The code expired before it reached a bot.'}
         </p>
       ) : null}
-      {link ? (
-        <form method="dialog">
-          <button className="btn primary">Done</button>
-        </form>
-      ) : (
-        failed && (
-          <button className="btn" onClick={onAgain}>
-            Get a new code
-          </button>
-        )
+      {failed && (
+        <button className="btn" onClick={onAgain}>
+          Get a new code
+        </button>
       )}
-    </StepDialog>
+    </>
   )
 }
 
