@@ -551,3 +551,6 @@ Mission updated by Enes (board tidy sweep + outward settings rules now in missio
 
 ## 2026-10-13 12:10 UTC
 Enes: Fleet shows usage, 7-day over 90%, no Resume now, loops running. Re-read origin/main: plan usage IS persisted (SettingPlanUsage) and main.go calls PlanCap.Refresh at startup, so my "observation in memory, restart lifts the cap" explanation was wrong; corrected it to Enes. Fleet bar and capOf compare the same Utilization*100, so either the 7-day threshold is 0 or the judgment has a bug. Asked Enes for the Settings 7-day field and whether the bar has a cap mark; file for Terra only if 90 + mark. Lesson: read the store path before claiming state is in memory.
+
+## 2026-10-13 12:12 UTC
+Enes: his hub version is old, so the uncapped 7-day over 90% is explained; no bug. Cap question closed unless it recurs on current main. ADR-0047 amendment proposal withdrawn (observation is persisted already).
