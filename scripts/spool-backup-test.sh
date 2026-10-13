@@ -139,6 +139,16 @@ TMPDIR=$work/no-tmp bash scripts/spool-restore.sh --data "$data" --data-dir "$wo
 check "restore stages beside the target, not in TMPDIR" '[ $? -eq 0 ] && [ -f "$work/notmp/spool.db" ]'
 check "restore leaves no staging directory behind" '! ls -A "$work" | grep -q "^\.spool-restore\."'
 
+# The runbook runs restore with sudo while the hub runs as its own user, so
+# what root restores must stay readable by the data directory's owner.
+if sudo -n true 2>/dev/null; then
+	sudo -n bash scripts/spool-restore.sh --data "$data" --keys "$keys" --data-dir "$work/asroot" --no-volumes >/dev/null 2>&1
+	check "restore run as root leaves every file to the data directory's owner" \
+		'[ $? -eq 0 ] && [ -z "$(find "$work/asroot" ! -user "$(id -un)")" ]'
+else
+	echo "skip restore run as root: no passwordless sudo"
+fi
+
 if [ "$failures" -gt 0 ]; then
 	printf '%d failed\n' "$failures"
 	exit 1

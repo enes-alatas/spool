@@ -87,6 +87,9 @@ if [ -n "$keys" ]; then
 	for f in "$stage"/keys/*; do
 		cp "$f" "$data_dir/"
 		chmod 600 "$data_dir/${f##*/}"
+		# Run as root, the copy would be root's and the hub, which runs as
+		# the data directory's owner, could not read it (#783).
+		[ "$(id -u)" != 0 ] || chown --reference="$data_dir" "$data_dir/${f##*/}"
 	done
 fi
 printf 'data directory %s\n' "$data_dir"
