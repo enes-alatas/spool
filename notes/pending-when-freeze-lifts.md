@@ -545,3 +545,6 @@ Enes asked mission vs AGENTS.md for the two lessons. Answered: copy-sweep rule â
 
 ## 2026-10-13 11:55 UTC
 Sent Enes the two exact mission bullets (board tidy sweep; outward settings only on explicit words). Filed #793 (CONVENTIONS copy-sweep done-criterion) and gave it to Elliot between seams.
+
+## 2026-10-13 12:05 UTC
+Mission updated by Enes (board tidy sweep + outward settings rules now in mission). Enes: fleet was capped, runtime restart on main lifted all caps. Per ADR-0047 d.3/d.4 the observation is in memory, so restart = unknown = fails open; one free turn per loop. Proposed storing the last observation (ADR amendment); asked Enes two checks and whether to file for Terra.
