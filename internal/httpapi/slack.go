@@ -167,24 +167,31 @@ func (server *Server) handleListSlackSenders(w http.ResponseWriter, r *http.Requ
 
 func (server *Server) handleSlackSenderStatus(status string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		id := r.PathValue("id")
-		if err := server.Store.SlackSenders().SetStatus(r.Context(), id, status, time.Now().UnixMilli()); err != nil {
-			server.storeErr(w, err, "sender")
-			return
-		}
-		sender, err := server.Store.SlackSenders().Get(r.Context(), id)
+		sender, err := server.setSlackSenderStatus(r.Context(), r.PathValue("id"), status)
 		if err != nil {
 			server.storeErr(w, err, "sender")
 			return
 		}
-		// Only an allowed sender may own a loop, so one who is not allowed
-		// any more owns none.
-		if status != store.SenderAllowed {
-			server.disownLoopsOfSlackUser(r.Context(), id)
-		}
-		server.Bus.Publish(bus.Item{Kind: bus.KindAccess, Payload: sender.Frame()})
 		writeJSON(w, http.StatusOK, sender)
 	}
+}
+
+// setSlackSenderStatus sets a Slack sender's status and tells the control
+// room. Only an allowed sender may own a loop, so one who is not allowed
+// any more owns none.
+func (server *Server) setSlackSenderStatus(ctx context.Context, id, status string) (*store.SlackSender, error) {
+	if err := server.Store.SlackSenders().SetStatus(ctx, id, status, time.Now().UnixMilli()); err != nil {
+		return nil, err
+	}
+	sender, err := server.Store.SlackSenders().Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if status != store.SenderAllowed {
+		server.disownLoopsOfSlackUser(ctx, id)
+	}
+	server.Bus.Publish(bus.Item{Kind: bus.KindAccess, Payload: sender.Frame()})
+	return sender, nil
 }
 
 func (server *Server) handleDeleteSlackSender(w http.ResponseWriter, r *http.Request) {

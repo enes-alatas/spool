@@ -4,6 +4,7 @@ package itest
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -69,5 +70,59 @@ func TestAnOwnerRemovesAnotherUsersLink(t *testing.T) {
 		if resp, body := srv.do("DELETE", path, nil); resp.StatusCode != want {
 			t.Errorf("DELETE %s = %d %s; want %d", path, resp.StatusCode, body, want)
 		}
+	}
+}
+
+// An owner blocks a user on every surface they are linked on: their
+// person's DMs reach nothing, a link code from them is not taken up, and
+// the block outlives the link. Unblocked, they reach the loops again. A
+// member cannot block, and a user with no link has nothing to block
+// (#744).
+func TestAnOwnerBlocksAUser(t *testing.T) {
+	t.Parallel()
+	operator := user{ID: 8320, First: "Operator", Username: "operator"}
+	alex := user{ID: 8321, First: "Alex", Username: "alex"}
+	srv, tg := startTelegramFleet(t, operator)
+	mia := srv.signedInAs("mia", "member")
+	srv.confirmLink(tg, "alpha", alex, mia, "mia")
+
+	if resp, _ := srv.asCookie("POST", "/api/users/mia/block", mia, nil); resp.StatusCode != http.StatusForbidden {
+		t.Errorf("a member's block = %d; want 403", resp.StatusCode)
+	}
+	var blocked accessUserJSON
+	srv.mustJSON("POST", "/api/users/mia/block", nil, &blocked)
+	if !blocked.Blocked || len(blocked.Links) != 1 {
+		t.Fatalf("mia blocked = %s; want blocked, still linked", dump(blocked))
+	}
+	if status := telegramSenderStatus(srv, alex.ID); status != "blocked" {
+		t.Fatalf("a blocked user's person is %q; want blocked", status)
+	}
+	answered := len(tg.sentTo(alex.ID))
+	tg.dm("alpha", alex, "can you hear me?")
+	tg.dm("alpha", alex, srv.linkCode(mia, "telegram"))
+	settled(t, srv, tg, "alpha", operator, "after the block")
+	if got := srv.activityWith("can you hear me?"); len(got) != 0 {
+		t.Fatalf("a blocked user's person reached the loop: %s", dump(got))
+	}
+	if sent := tg.sentTo(alex.ID); len(sent) != answered {
+		t.Fatalf("a blocked person was answered, a link code included: %s", dump(sent))
+	}
+
+	var unblocked accessUserJSON
+	srv.mustJSON("POST", "/api/users/mia/unblock", nil, &unblocked)
+	if unblocked.Blocked || telegramSenderStatus(srv, alex.ID) != "allowed" {
+		t.Fatalf("mia unblocked = %s, person %q; want allowed", dump(unblocked), telegramSenderStatus(srv, alex.ID))
+	}
+	tg.dm("alpha", alex, "back again")
+	srv.waitForMessage("back again")
+
+	srv.mustJSON("POST", "/api/users/mia/block", nil, nil)
+	srv.mustJSON("DELETE", "/api/users/mia/links/telegram", nil, nil)
+	if status := telegramSenderStatus(srv, alex.ID); status != "blocked" {
+		t.Fatalf("a removed link left a blocked person %q; want the block kept", status)
+	}
+	if resp, body := srv.do("POST", "/api/users/mia/unblock", nil); resp.StatusCode != http.StatusBadRequest ||
+		!strings.Contains(string(body), `"no_link"`) {
+		t.Fatalf("unblocking a user with no link = %d %s; want 400 no_link", resp.StatusCode, body)
 	}
 }

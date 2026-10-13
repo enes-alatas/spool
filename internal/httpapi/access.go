@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -10,7 +11,8 @@ import (
 )
 
 // Settings → Access, as an owner manages it (#744): each user with the
-// links they hold, and another user's link removed.
+// links they hold, another user's link removed, and a user blocked on
+// every surface they are linked on.
 
 // accessUserView is a user as GET /api/users lists them for Settings →
 // Access: with their links, and whether a sender one of them holds is
@@ -69,4 +71,68 @@ func (server *Server) handleRemoveUserLink(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	server.unlink(w, r, user.ID, r.PathValue("surface"))
+}
+
+// handleUserSenders blocks a user, or allows them again, on every surface
+// they are linked on: each sender a link of theirs holds takes status, as
+// the per-sender routes set it, and answers with the user as GET
+// /api/users lists them. The block is the sender row's, so it outlives the
+// link (ADR-0051). A user allowed again whose role is owner may become the
+// default owner again, as a link of theirs made them.
+func (server *Server) handleUserSenders(status string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user, err := server.Store.Users().GetByName(r.Context(), r.PathValue("name"))
+		if err != nil {
+			server.userErr(w, err)
+			return
+		}
+		links, err := server.Store.UserLinks().List(r.Context(), user.ID)
+		if err != nil {
+			server.jsonErr(w, http.StatusInternalServerError, "%v", err)
+			return
+		}
+		if len(links) == 0 {
+			server.jsonErrCode(w, http.StatusBadRequest, codeNoLink, "%s has no link, so no sender to block or unblock", user.Name)
+			return
+		}
+		for _, link := range links {
+			// A link whose sender row an admin deleted has none to set.
+			err := server.setPersonStatus(r.Context(), link.Person, status, user.Role == store.RoleOwner)
+			if err != nil && !errors.Is(err, store.ErrNotFound) {
+				server.storeErr(w, err, "sender")
+				return
+			}
+		}
+		view, err := server.accessViewOf(r.Context(), user)
+		if err != nil {
+			server.jsonErr(w, http.StatusInternalServerError, "%v", err)
+			return
+		}
+		writeJSON(w, http.StatusOK, view)
+	}
+}
+
+// setPersonStatus sets the status of person's sender row, on whichever
+// surface they are; adopt lets a Telegram sender allowed again become the
+// default owner.
+func (server *Server) setPersonStatus(ctx context.Context, person, status string, adopt bool) error {
+	_, id, _ := strings.Cut(person, ":")
+	switch store.PersonSurface(person) {
+	case store.SurfaceTelegram:
+		tgUserID, err := strconv.ParseInt(id, 10, 64)
+		if err != nil {
+			return err
+		}
+		if _, err := server.setTGSenderStatus(ctx, tgUserID, status); err != nil {
+			return err
+		}
+		if adopt && status == store.SenderAllowed {
+			server.adoptDefaultOwner(ctx, tgUserID)
+		}
+	case store.SurfaceSlack:
+		if _, err := server.setSlackSenderStatus(ctx, id, status); err != nil {
+			return err
+		}
+	}
+	return nil
 }

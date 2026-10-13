@@ -246,6 +246,8 @@ func (server *Server) routes() *routeMux {
 	mux.HandleFunc("PATCH /api/users/{name}", server.handleSetUserRole)
 	mux.HandleFunc("DELETE /api/users/{name}", server.handleRemoveUser)
 	mux.HandleFunc("DELETE /api/users/{name}/links/{surface}", server.handleRemoveUserLink)
+	mux.HandleFunc("POST /api/users/{name}/block", server.handleUserSenders(store.SenderBlocked))
+	mux.HandleFunc("POST /api/users/{name}/unblock", server.handleUserSenders(store.SenderAllowed))
 
 	// /mcp and the brokered servers under it live on the loop listener
 	// alone (#238, #622). Saying so explicitly matters because of what is
@@ -1890,19 +1892,33 @@ func (server *Server) handleSenderStatus(status string) http.HandlerFunc {
 			server.jsonErr(w, 400, "bad sender id")
 			return
 		}
-		if err := server.Store.TGSenders().SetStatus(r.Context(), id, status, time.Now().UnixMilli()); err != nil {
+		sender, err := server.setTGSenderStatus(r.Context(), id, status)
+		if err != nil {
 			server.storeErr(w, err, "sender")
 			return
 		}
-		sender, _ := server.Store.TGSenders().Get(r.Context(), id)
 		if status == store.SenderAllowed {
 			server.adoptDefaultOwner(r.Context(), id)
-		} else {
-			server.disownLoopsOf(r.Context(), id)
 		}
-		server.Bus.Publish(bus.Item{Kind: bus.KindAccess, Payload: sender.Frame()})
 		writeJSON(w, 200, sender)
 	}
+}
+
+// setTGSenderStatus sets a Telegram sender's status and tells the control
+// room. One no longer allowed owns no loop any more.
+func (server *Server) setTGSenderStatus(ctx context.Context, id int64, status string) (*store.TGSender, error) {
+	if err := server.Store.TGSenders().SetStatus(ctx, id, status, time.Now().UnixMilli()); err != nil {
+		return nil, err
+	}
+	sender, err := server.Store.TGSenders().Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if status != store.SenderAllowed {
+		server.disownLoopsOf(ctx, id)
+	}
+	server.Bus.Publish(bus.Item{Kind: bus.KindAccess, Payload: sender.Frame()})
+	return sender, nil
 }
 
 // defaultOwnerID is the first person the operator allowlisted, or 0 when
