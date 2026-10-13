@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // accessUserJSON is a user as GET /api/users lists them for Settings →
@@ -172,4 +173,56 @@ func TestIgnoredStrangersAreTallied(t *testing.T) {
 	if resp, _ := srv.asCookie("GET", "/api/strangers", mia, nil); resp.StatusCode != http.StatusForbidden {
 		t.Errorf("a member read the strangers = %d; want 403", resp.StatusCode)
 	}
+}
+
+// Fifty wrong codes from strangers on Telegram pause strangers' codes
+// there, and only there: the hub logs it, the strangers' tally says until
+// when, a stranger's good code is unanswered, and an admin's lift makes it
+// work again. A member cannot lift it (ADR-0051, #789).
+func TestAnAdminLiftsTheStrangersLinkPause(t *testing.T) {
+	t.Parallel()
+	operator := user{ID: 8340, First: "Operator", Username: "operator"}
+	friend := user{ID: 8341, First: "Friend", Username: "friend"}
+	srv, tg := startTelegramFleet(t, operator)
+	bea := srv.signedInAs("bea", "member")
+
+	for i := range 50 {
+		tg.dm("alpha", user{ID: int64(8400 + i), First: "Guesser"}, "link-aaaaaaaaaa")
+	}
+	settled(t, srv, tg, "alpha", operator, "after the guesses")
+	if !strings.Contains(srv.log(), "link codes from strangers paused") {
+		t.Fatalf("the pause was not logged; log:\n%s", srv.log())
+	}
+
+	type pauseJSON struct {
+		Surfaces []struct {
+			Surface     string `json:"surface"`
+			PausedUntil int64  `json:"paused_until"`
+		} `json:"surfaces"`
+	}
+	var tally pauseJSON
+	srv.mustJSON("GET", "/api/strangers", nil, &tally)
+	inAnHour := time.Now().Add(time.Hour).UnixMilli()
+	if len(tally.Surfaces) != 2 || tally.Surfaces[0].Surface != "telegram" ||
+		tally.Surfaces[0].PausedUntil < inAnHour-60_000 || tally.Surfaces[0].PausedUntil > inAnHour ||
+		tally.Surfaces[1].PausedUntil != 0 {
+		t.Fatalf("the tally = %s; want telegram paused for about the hour, slack not", dump(tally))
+	}
+
+	tg.dm("alpha", friend, srv.linkCode(bea, "telegram"))
+	settled(t, srv, tg, "alpha", operator, "after the paused code")
+	if sent := tg.sentTo(friend.ID); len(sent) != 0 {
+		t.Fatalf("a stranger's good code was answered while paused: %+v", sent)
+	}
+
+	if resp, _ := srv.asCookie("DELETE", "/api/strangers/telegram/pause", bea, nil); resp.StatusCode != http.StatusForbidden {
+		t.Errorf("a member lifted the pause = %d; want 403", resp.StatusCode)
+	}
+	srv.wantRefusal("DELETE", "/api/strangers/discord/pause", nil, http.StatusBadRequest, "bad_surface")
+	srv.mustJSON("DELETE", "/api/strangers/telegram/pause", nil, &tally)
+	if tally.Surfaces[0].PausedUntil != 0 {
+		t.Fatalf("after the lift the tally = %s; want telegram unpaused", dump(tally))
+	}
+	tg.dm("alpha", friend, srv.linkCode(bea, "telegram"))
+	tg.waitSent(t, friend.ID, "Telegram account to bea")
 }

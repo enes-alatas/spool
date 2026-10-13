@@ -62,7 +62,7 @@ over Socket Mode, so no port is opened for either (ADR-0034).
   mints a link code for one surface: about 49 random bits, one use,
   15 minutes, kept only as a hash. It is honoured only in a DM, and the
   account must reply YES before anything is linked. Wrong codes are limited
-  per sender and across the hub (ADR-0050, ADR-0051).
+  per sender and, for strangers, per surface (ADR-0050, ADR-0051).
 - **Only a loop's own messages are mirrored out.** Spool holds no means of
   posting as a person (ADR-0032).
 - **A bot credential is validated** before it is stored (ADR-0029).
@@ -72,6 +72,10 @@ over Socket Mode, so no port is opened for either (ADR-0034).
   spend the operator's plan (ADR-0051).
 - **The wrong-code limits live in memory**, so a restart resets them
   (ADR-0051).
+- **Strangers can pause new linking on a surface** by spending its count
+  of 50 wrong codes an hour. Allowed and linked people are unaffected, the
+  other surface still links, the hub logs the pause, and an admin reads it
+  in `GET /api/strangers` and can lift it (ADR-0051, #789).
 - **The first group in which a loop's bot hears an allowed sender becomes
   its fleet channel** while it has none (ADR-0038). A stranger cannot bind
   one.
