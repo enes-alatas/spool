@@ -2,12 +2,14 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/enes-alatas/spool/internal/bus"
 	"github.com/enes-alatas/spool/internal/route"
@@ -152,70 +154,151 @@ func TestAPrivateConversationIsReadByItsPerson(t *testing.T) {
 	}
 }
 
-// countedLinks is a link store that counts its reads.
-type countedLinks struct {
-	store.UserLinkStore
+// accessStore is a store of users and their links that counts its reads.
+type accessStore struct {
+	store.Store
+	*accessTables
+}
+
+type accessTables struct {
+	users map[string]*store.User
 	links map[string][]*store.UserLink
 	reads atomic.Int32
 }
 
-func (links *countedLinks) List(_ context.Context, userID string) ([]*store.UserLink, error) {
-	links.reads.Add(1)
-	return links.links[userID], nil
+type accessUsers struct {
+	store.UserStore
+	*accessTables
 }
 
-type linksStore struct {
-	store.Store
-	links *countedLinks
+type accessLinks struct {
+	store.UserLinkStore
+	*accessTables
 }
 
-func (fake linksStore) UserLinks() store.UserLinkStore { return fake.links }
+func (fake accessStore) Users() store.UserStore { return accessUsers{accessTables: fake.accessTables} }
+func (fake accessStore) UserLinks() store.UserLinkStore {
+	return accessLinks{accessTables: fake.accessTables}
+}
 
-// TestAStreamReadsLinksOutsideThePublish: a member's stream reads their
-// links when it opens and again only after a link of theirs changes, and
-// never while the bus publishes, so no store read holds bus.mu (#721).
-// A link removed counts from the stream's next item.
-func TestAStreamReadsLinksOutsideThePublish(t *testing.T) {
-	alice := store.TGPerson(1)
-	links := &countedLinks{links: map[string][]*store.UserLink{"u-mia": {{UserID: "u-mia", Person: alice}}}}
-	server := &Server{Store: linksStore{links: links}, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
-	ctx := context.Background()
-	access, err := server.openStreamAccess(ctx, &caller{user: &store.User{ID: "u-mia", Role: store.RoleMember}})
+func (users accessUsers) Get(_ context.Context, id string) (*store.User, error) {
+	tables := users.accessTables
+	tables.reads.Add(1)
+	user, ok := tables.users[id]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	copied := *user
+	return &copied, nil
+}
+
+func (links accessLinks) List(_ context.Context, userID string) ([]*store.UserLink, error) {
+	tables := links.accessTables
+	tables.reads.Add(1)
+	return tables.links[userID], nil
+}
+
+// openAccess opens a stream's access as the user id names, over tables.
+func openAccess(t *testing.T, tables *accessTables, id string) *streamAccess {
+	t.Helper()
+	server := &Server{Store: accessStore{accessTables: tables}, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	access, err := server.openStreamAccess(context.Background(), &caller{user: tables.users[id]})
 	if err != nil {
 		t.Fatal(err)
 	}
-	hers := bus.Item{Kind: bus.KindMessage, Payload: &route.MessagePayload{
-		Message: store.Message{Conversation: "dm:alice", DMPerson: alice}}}
-	for range 3 {
-		if !access.admits(ctx, hers) {
-			t.Fatal("mia's stream withheld her own DM")
-		}
-	}
-	if got := links.reads.Load(); got != 1 {
-		t.Fatalf("links read %d times for one stream with no change; want once, at open", got)
-	}
+	return access
+}
 
+// published runs item through a real bus with access noticing it, as an
+// open stream's filter does.
+func published(access *streamAccess, item bus.Item) {
 	events := bus.New()
 	items, cancel := events.Subscribe(func(item bus.Item) bool {
 		access.notice(item)
 		return true
 	})
 	defer cancel()
-	events.Publish(bus.Item{Kind: bus.KindLink, Payload: &route.LinkPayload{UserID: "u-bea", State: route.LinkUnlinked}})
+	events.Publish(item)
 	<-items
-	if !access.admits(ctx, hers) || links.reads.Load() != 1 {
-		t.Fatalf("another user's link change reloaded mia's access (%d reads)", links.reads.Load())
+}
+
+func admitted(t *testing.T, access *streamAccess, item bus.Item) bool {
+	t.Helper()
+	send, err := access.admits(context.Background(), item)
+	if err != nil {
+		t.Fatalf("admits: %v", err)
 	}
-	links.links["u-mia"] = nil
-	events.Publish(bus.Item{Kind: bus.KindLink, Payload: &route.LinkPayload{UserID: "u-mia", State: route.LinkUnlinked}})
-	<-items
-	if got := links.reads.Load(); got != 1 {
+	return send
+}
+
+// TestAStreamReadsAccessOutsideThePublish: a member's stream reads their
+// role and links when it opens and again only after a link of theirs
+// changes, and never while the bus publishes, so no store read holds bus.mu
+// (#721). A link removed counts from the stream's next item.
+func TestAStreamReadsAccessOutsideThePublish(t *testing.T) {
+	alice := store.TGPerson(1)
+	tables := &accessTables{users: map[string]*store.User{"u-mia": {ID: "u-mia", Role: store.RoleMember}},
+		links: map[string][]*store.UserLink{"u-mia": {{UserID: "u-mia", Person: alice}}}}
+	access := openAccess(t, tables, "u-mia")
+	opened := tables.reads.Load()
+	hers := bus.Item{Kind: bus.KindMessage, Payload: &route.MessagePayload{
+		Message: store.Message{Conversation: "dm:alice", DMPerson: alice}}}
+	for range 3 {
+		if !admitted(t, access, hers) {
+			t.Fatal("mia's stream withheld her own DM")
+		}
+	}
+	if got := tables.reads.Load(); got != opened {
+		t.Fatalf("%d store reads for a stream with no change; want only the %d at open", got, opened)
+	}
+
+	published(access, bus.Item{Kind: bus.KindLink, Payload: &route.LinkPayload{UserID: "u-bea", State: route.LinkUnlinked}})
+	if !admitted(t, access, hers) || tables.reads.Load() != opened {
+		t.Fatalf("another user's link change reloaded mia's access (%d reads)", tables.reads.Load())
+	}
+	tables.links["u-mia"] = nil
+	published(access, bus.Item{Kind: bus.KindLink, Payload: &route.LinkPayload{UserID: "u-mia", State: route.LinkUnlinked}})
+	if got := tables.reads.Load(); got != opened {
 		t.Fatalf("the publish read the store (%d reads); want the stream to read it", got)
 	}
-	if access.admits(ctx, hers) {
+	if admitted(t, access, hers) {
 		t.Fatal("mia's stream still carries a DM after her link was removed")
 	}
-	if got := links.reads.Load(); got != 2 {
-		t.Fatalf("links read %d times after mia's link changed; want twice", got)
+	if got := tables.reads.Load(); got <= opened {
+		t.Fatal("mia's stream did not reread her access after her link changed")
+	}
+}
+
+// TestAStreamFollowsItsUsersRole: an admin's open stream stops carrying
+// private messages and transcripts from the next item once they are made a
+// member, and the stream of a removed user ends (#722). A change the bus
+// never hears, as `spool user` makes, counts once streamAccessTTL passes.
+func TestAStreamFollowsItsUsersRole(t *testing.T) {
+	tables := &accessTables{users: map[string]*store.User{"u-ada": {ID: "u-ada", Role: store.RoleAdmin}},
+		links: map[string][]*store.UserLink{}}
+	access := openAccess(t, tables, "u-ada")
+	private := bus.Item{Kind: bus.KindMessage, Payload: &route.MessagePayload{
+		Message: store.Message{Conversation: store.ConversationOwnerDM}}}
+	transcript := bus.Item{Kind: bus.KindAgentEvent}
+	if !admitted(t, access, private) || !admitted(t, access, transcript) {
+		t.Fatal("an admin's stream withheld a private item")
+	}
+
+	tables.users["u-ada"].Role = store.RoleMember
+	published(access, bus.Item{Kind: bus.KindUser, Payload: &userChange{UserID: "u-ada"}})
+	if admitted(t, access, private) || admitted(t, access, transcript) {
+		t.Fatal("a demoted admin's open stream still carries private items")
+	}
+
+	tables.users["u-ada"].Role = store.RoleAdmin
+	access.loadedAt = time.Now().Add(-streamAccessTTL - time.Second)
+	if !admitted(t, access, private) {
+		t.Fatal("a role changed without the bus never reached an open stream")
+	}
+
+	delete(tables.users, "u-ada")
+	published(access, bus.Item{Kind: bus.KindUser, Payload: &userChange{UserID: "u-ada"}})
+	if send, err := access.admits(context.Background(), private); send || !errors.Is(err, errUserGone) {
+		t.Fatalf("a removed user's stream = %v, %v; want it ended", send, err)
 	}
 }

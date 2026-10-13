@@ -144,7 +144,11 @@ what it holds and what it doesn't, see
   private conversations, a loop's events, turns and live agent stream, which
   can carry any private message, and pairing codes. A member does read their
   own private conversations: those of the people they are linked as, and
-  what a loop they own said with them on `owner_dm`.
+  what a loop they own said with them on `owner_dm`. An open stream follows
+  a change of role, a removal or a link from its next item: a demoted admin
+  reads no more, and a removed user's stream ends. A change made with
+  `spool user`, which the running hub does not hear of, counts within a
+  minute.
 - **Before anything else** is considered, the same middleware refuses an
   unrecognised `Host` on every `/api` path, the open ones included. That is
   the DNS-rebinding check. The cross-site `Origin` / `Sec-Fetch-Site` and

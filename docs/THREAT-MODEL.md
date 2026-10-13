@@ -102,7 +102,8 @@ over Socket Mode, so no port is opened for either (ADR-0034).
 
 **What a member doesn't read:** other people's private conversations, a
 loop's events, turns and live agent stream, and pairing codes (ADR-0048,
-ADR-0050).
+ADR-0050). An open stream follows a role change, a removal or a link from
+its next item; a change made with `spool user` counts within a minute.
 
 **Doesn't hold:**
 - **No TLS.** Spool doesn't terminate it; beyond loopback, that is a
