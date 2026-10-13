@@ -135,8 +135,14 @@ func (server *Server) handleRemoveLink(w http.ResponseWriter, r *http.Request) {
 		server.jsonErrCode(w, http.StatusBadRequest, codeNoUser, "the operator token is no user, so it has no links")
 		return
 	}
-	surface := r.PathValue("surface")
-	link, err := server.Store.UserLinks().Delete(r.Context(), who.user.ID, surface, time.Now().UnixMilli())
+	server.unlink(w, r, who.user.ID, r.PathValue("surface"))
+}
+
+// unlink removes userID's link on surface and answers 204, or 404 when
+// they have none there. The person's sender row goes with it, unless it
+// is blocked, and the control room hears of both.
+func (server *Server) unlink(w http.ResponseWriter, r *http.Request, userID, surface string) {
+	link, err := server.Store.UserLinks().Delete(r.Context(), userID, surface, time.Now().UnixMilli())
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		server.jsonErr(w, http.StatusNotFound, "no link on %q", surface)
@@ -146,7 +152,7 @@ func (server *Server) handleRemoveLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	server.Bus.Publish(bus.Item{Kind: bus.KindLink, Payload: &route.LinkPayload{
-		UserID: who.user.ID, Surface: surface, State: route.LinkUnlinked}})
+		UserID: userID, Surface: surface, State: route.LinkUnlinked}})
 	route.PublishSender(r.Context(), server.Store, server.Bus, link.Person)
 	w.WriteHeader(http.StatusNoContent)
 }

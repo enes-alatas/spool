@@ -54,9 +54,14 @@ func (server *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 		server.jsonErr(w, http.StatusInternalServerError, "%v", err)
 		return
 	}
-	views := make([]userView, 0, len(all))
+	views := make([]accessUserView, 0, len(all))
 	for _, user := range all {
-		views = append(views, viewOfUser(user))
+		view, err := server.accessViewOf(r.Context(), user)
+		if err != nil {
+			server.jsonErr(w, http.StatusInternalServerError, "%v", err)
+			return
+		}
+		views = append(views, view)
 	}
 	writeJSON(w, http.StatusOK, views)
 }

@@ -86,6 +86,7 @@ var adminRoutes = []string{
 var ownerRoutes = []string{
 	"GET /api/users", "POST /api/users", "POST /api/users/{name}/reset",
 	"PATCH /api/users/{name}", "DELETE /api/users/{name}",
+	"DELETE /api/users/{name}/links/{surface}",
 }
 
 // routeRoles is the lowest role each route pattern admits.
