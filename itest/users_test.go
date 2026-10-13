@@ -61,6 +61,11 @@ func (s *server) signIn(name, password string) (string, meJSON) {
 	}
 	for _, cookie := range resp.Cookies() {
 		if cookie.Name == "spool_operator" {
+			// The browser keeps the cookie as long as an unused session
+			// lives, past a phone closing it (#799).
+			if cookie.MaxAge != 14*24*60*60 {
+				s.t.Fatalf("sign-in as %s set Max-Age %d, want 14 days", name, cookie.MaxAge)
+			}
 			return cookie.Value, me
 		}
 	}

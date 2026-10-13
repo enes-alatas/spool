@@ -86,7 +86,7 @@ func (server *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		server.jsonErr(w, http.StatusInternalServerError, "%v", err)
 		return
 	}
-	setSessionCookie(w, r, session, 0)
+	setSessionCookie(w, r, session, int(users.SessionIdle.Seconds()))
 	writeJSON(w, http.StatusOK, meOf(who))
 }
 
@@ -119,9 +119,11 @@ func (server *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// setSessionCookie sets the cookie to value, or clears it with a negative
-// maxAge. HttpOnly, SameSite=Strict, and Secure when the request arrived
-// over TLS (ADR-0030).
+// setSessionCookie sets the cookie to value for maxAge seconds, or clears
+// it with a negative maxAge. A sign-in keeps it as long as an unused
+// session lives: a cookie with no Max-Age dies with the browser, which a
+// phone closes whenever it likes (#799). HttpOnly, SameSite=Strict, and
+// Secure when the request arrived over TLS (ADR-0030).
 func setSessionCookie(w http.ResponseWriter, r *http.Request, value string, maxAge int) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     SessionCookie,
