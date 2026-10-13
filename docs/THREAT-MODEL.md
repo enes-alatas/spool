@@ -72,8 +72,9 @@ over Socket Mode, so no port is opened for either (ADR-0034).
   spend the operator's plan (ADR-0051).
 - **The wrong-code limits live in memory**, so a restart resets them
   (ADR-0051).
-- **The first group a loop's bot hears from becomes its fleet channel**
-  while it has none (ADR-0038).
+- **The first group in which a loop's bot hears an allowed sender becomes
+  its fleet channel** while it has none (ADR-0038). A stranger cannot bind
+  one.
 - **Restoring an older backup restores the links it held** (ADR-0051).
 
 ### Operator listener: the API and the control room
