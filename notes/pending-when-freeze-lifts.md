@@ -557,3 +557,6 @@ Enes: his hub version is old, so the uncapped 7-day over 90% is explained; no bu
 
 ## 2026-10-13 12:15 UTC
 Tick. Runtime now v0.5.1-75-g5f3683c (Enes updated after the cap confusion). Enes will re-check the cap on the new build and report. Nothing else moved.
+
+## 2026-10-13 12:18 UTC
+Enes: cap works on latest main. Plan cap thread closed for good; no issue, no amendment.
