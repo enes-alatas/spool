@@ -50,6 +50,10 @@ const (
 	// payload is a route.LinkPayload, and it streams to admins and to the
 	// user it names.
 	KindLink = "link"
+	// KindUser says a user's role changed or they were removed. Its payload
+	// names the user, and it never streams: each open stream rereads its
+	// caller's access from it (#722).
+	KindUser = "user"
 )
 
 type Item struct {

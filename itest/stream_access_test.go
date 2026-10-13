@@ -111,3 +111,39 @@ func TestMembersStreamsCarryOnlyTheirOwnPrivateMessages(t *testing.T) {
 		}
 	}
 }
+
+// An admin's open stream follows their role (#722): made a member, it
+// stops carrying the private messages they no longer read from the next
+// one, and once they are removed it ends.
+func TestAnOpenStreamFollowsItsUsersRole(t *testing.T) {
+	t.Parallel()
+	operator := user{ID: 8290, First: "Operator", Username: "operator"}
+	srv, tg := startTelegramFleet(t, operator)
+	ada := srv.signedInAs("ada", "admin")
+	stream := srv.openStream(ada)
+	srv.message("alpha", "ada's stream is open")
+	stream.waitFor(t, "ada's stream is open")
+
+	tg.dm("alpha", operator, "said before the demotion")
+	stream.waitFor(t, "said before the demotion")
+
+	srv.mustJSON("PATCH", "/api/users/ada", map[string]any{"role": "member"}, nil)
+	tg.dm("alpha", operator, "said after the demotion")
+	srv.waitForMessage("said after the demotion")
+	srv.message("alpha", "the demotion has settled")
+	stream.waitFor(t, "the demotion has settled")
+	if stream.has("said after the demotion") {
+		t.Fatal("a demoted admin's open stream carried the owner's DM")
+	}
+
+	srv.mustJSON("DELETE", "/api/users/ada", nil, nil)
+	srv.message("alpha", "ada is gone")
+	select {
+	case <-stream.done:
+	case <-time.After(20 * time.Second):
+		t.Fatal("a removed user's stream stayed open")
+	}
+	if stream.has("ada is gone") {
+		t.Fatal("a removed user's stream carried a message after the removal")
+	}
+}

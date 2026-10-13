@@ -2,8 +2,10 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"sync/atomic"
+	"time"
 
 	"github.com/enes-alatas/spool/internal/bus"
 	"github.com/enes-alatas/spool/internal/route"
@@ -218,57 +220,99 @@ func (reader *privateReader) readable(msgs []*store.Message) []*store.Message {
 	return kept
 }
 
-// streamAccess is what one open stream's caller reads: their links, read
-// when the stream opens and again after a link of theirs is made or
-// removed, so the change counts from the stream's next item. The bus only
-// marks it stale, which costs no store read; the stream reloads it in its
-// own goroutine before it writes the next item, so no store read happens
-// in Bus.Publish with bus.mu held (#721).
+// streamAccess is what one open stream's caller reads: their role and their
+// links, read when the stream opens and again after anything that may
+// change them, so a demotion (#722), a removal or a link made or removed
+// counts from the stream's next item. The bus only marks it stale, which
+// costs no store read; the stream reloads it in its own goroutine before it
+// writes the next item, so no store read happens in Bus.Publish with bus.mu
+// held (#721). `spool user` changes users with no bus to tell, so the
+// stream also reloads once streamAccessTTL has passed.
 type streamAccess struct {
 	server *Server
-	who    *caller
-	reader *privateReader
-	stale  atomic.Bool
+	// userID is whose stream this is, "" for the operator token. It never
+	// changes, so the bus may read it while the stream reloads.
+	userID   string
+	who      *caller
+	reader   *privateReader
+	loadedAt time.Time
+	stale    atomic.Bool
 }
+
+// streamAccessTTL bounds how long a stream trusts a role and links it read.
+const streamAccessTTL = time.Minute
+
+// errUserGone ends the stream of a user who was removed.
+var errUserGone = errors.New("the stream's user was removed")
 
 // openStreamAccess reads who's access for a stream they open.
 func (server *Server) openStreamAccess(ctx context.Context, who *caller) (*streamAccess, error) {
 	access := &streamAccess{server: server, who: who}
+	if who != nil && who.user != nil {
+		access.userID = who.user.ID
+	}
 	return access, access.load(ctx)
 }
 
 func (access *streamAccess) load(ctx context.Context) error {
-	reader, err := access.server.privateReaderOf(ctx, access.who)
+	who := access.who
+	if access.userID != "" {
+		user, err := access.server.Store.Users().Get(ctx, access.userID)
+		if errors.Is(err, store.ErrNotFound) {
+			return errUserGone
+		} else if err != nil {
+			return err
+		}
+		who = &caller{user: user, session: access.who.session}
+	}
+	reader, err := access.server.privateReaderOf(ctx, who)
 	if err != nil {
 		return err
 	}
-	access.reader = reader
+	access.who, access.reader, access.loadedAt = who, reader, time.Now()
 	return nil
 }
 
-// notice marks the access stale when item changes it. It runs in
-// Bus.Publish, so it reads nothing but the item.
+// notice marks the access stale when item changes it: a link of the
+// stream's user, or a change to the user. It runs in Bus.Publish, so it
+// reads nothing but the item.
 func (access *streamAccess) notice(item bus.Item) {
-	if item.Kind != bus.KindLink || access.who == nil || access.who.user == nil {
+	if access.userID == "" {
 		return
 	}
-	if payload, ok := item.Payload.(*route.LinkPayload); ok && payload.UserID == access.who.user.ID {
-		access.stale.Store(true)
+	switch payload := item.Payload.(type) {
+	case *route.LinkPayload:
+		if item.Kind == bus.KindLink && payload.UserID == access.userID {
+			access.stale.Store(true)
+		}
+	case *userChange:
+		if item.Kind == bus.KindUser && payload.UserID == access.userID {
+			access.stale.Store(true)
+		}
 	}
 }
 
 // admits reports whether item may reach the caller, reloading their access
-// first if anything changed it. A store error withholds the item and tries
-// again on the next one.
-func (access *streamAccess) admits(ctx context.Context, item bus.Item) bool {
-	if access.stale.Swap(false) {
-		if err := access.load(ctx); err != nil {
+// first if anything changed it or it is older than streamAccessTTL. A
+// store error withholds the item and tries again on the next one, and a
+// removed user's stream ends with errUserGone.
+func (access *streamAccess) admits(ctx context.Context, item bus.Item) (bool, error) {
+	if access.stale.Swap(false) || time.Since(access.loadedAt) > streamAccessTTL {
+		if err := access.load(ctx); errors.Is(err, errUserGone) {
+			return false, err
+		} else if err != nil {
 			access.stale.Store(true)
 			access.server.Log.Warn("stream: read a caller's access", "err", err)
-			return false
+			return false, nil
 		}
 	}
-	return streamable(access.who, item, access.reader.reads)
+	return streamable(access.who, item, access.reader.reads), nil
+}
+
+// userChange is a KindUser item's payload: the user whose role changed or
+// who was removed.
+type userChange struct {
+	UserID string `json:"user_id"`
 }
 
 // streamable reports whether item may reach who on a stream. A turn's

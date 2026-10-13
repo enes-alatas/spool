@@ -2151,8 +2151,8 @@ func (server *Server) handleGlobalStream(w http.ResponseWriter, r *http.Request)
 	}
 	serveSSE(w, r, server.Bus, func(item bus.Item) bool {
 		access.notice(item)
-		return item.Kind != bus.KindAgentEvent
-	}, func(item bus.Item) bool { return access.admits(r.Context(), item) })
+		return item.Kind != bus.KindAgentEvent && item.Kind != bus.KindUser
+	}, func(item bus.Item) (bool, error) { return access.admits(r.Context(), item) })
 }
 
 func (server *Server) handleLoopStream(w http.ResponseWriter, r *http.Request) {
@@ -2182,7 +2182,7 @@ func (server *Server) handleLoopStream(w http.ResponseWriter, r *http.Request) {
 			return false
 		}
 		return item.LoopID == id
-	}, func(item bus.Item) bool { return access.admits(r.Context(), item) })
+	}, func(item bus.Item) (bool, error) { return access.admits(r.Context(), item) })
 }
 
 // routeMethods are the methods apiFallback asks the mux about.

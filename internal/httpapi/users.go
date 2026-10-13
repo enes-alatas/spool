@@ -148,20 +148,27 @@ func (server *Server) handleSetUserRole(w http.ResponseWriter, r *http.Request) 
 		server.userErr(w, err)
 		return
 	}
+	server.Bus.Publish(bus.Item{Kind: bus.KindUser, Payload: &userChange{UserID: user.ID}})
 	user.Role = in.Role
 	writeJSON(w, http.StatusOK, viewOfUser(user))
 }
 
 // handleRemoveUser deletes a user, and with them their links: each person
 // they linked is unlinked, and the Access page hears what became of them.
+// Their open streams end (#722).
 func (server *Server) handleRemoveUser(w http.ResponseWriter, r *http.Request) {
 	var links []*store.UserLink
+	var userID string
 	if user, err := server.Store.Users().GetByName(r.Context(), r.PathValue("name")); err == nil {
+		userID = user.ID
 		links, _ = server.Store.UserLinks().List(r.Context(), user.ID)
 	}
 	if err := server.Users.Remove(r.Context(), r.PathValue("name")); err != nil {
 		server.userErr(w, err)
 		return
+	}
+	if userID != "" {
+		server.Bus.Publish(bus.Item{Kind: bus.KindUser, Payload: &userChange{UserID: userID}})
 	}
 	for _, link := range links {
 		server.Bus.Publish(bus.Item{Kind: bus.KindLink, Payload: &route.LinkPayload{
