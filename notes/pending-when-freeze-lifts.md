@@ -560,3 +560,6 @@ Tick. Runtime now v0.5.1-75-g5f3683c (Enes updated after the cap confusion). Ene
 
 ## 2026-10-13 12:18 UTC
 Enes: cap works on latest main. Plan cap thread closed for good; no issue, no amendment.
+
+## 2026-10-13 12:20 UTC
+Elliot: #794 (closes #793, CONVENTIONS done-criterion + AGENTS.md pointer) up with Quinn. Elliot continues #777 seam 2 (hub API/sessions), no new assignment needed.
