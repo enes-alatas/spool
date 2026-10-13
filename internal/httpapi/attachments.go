@@ -157,7 +157,12 @@ func (server *Server) handleAttachment(w http.ResponseWriter, r *http.Request) {
 			server.jsonErr(w, 500, "%v", msgErr)
 			return
 		}
-		if msg != nil && !server.readsNow(r.Context(), callerOf(r))(msg) {
+		reader, readerErr := server.privateReaderOf(r.Context(), callerOf(r))
+		if readerErr != nil {
+			server.jsonErr(w, 500, "%v", readerErr)
+			return
+		}
+		if msg != nil && !reader.reads(msg) {
 			server.jsonErrCode(w, 404, codeAttachmentNotFound, "no attachment %d", id)
 			return
 		}
