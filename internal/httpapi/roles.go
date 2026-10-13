@@ -222,12 +222,13 @@ func (reader *privateReader) readable(msgs []*store.Message) []*store.Message {
 
 // streamAccess is what one open stream's caller reads: their role and their
 // links, read when the stream opens and again after anything that may
-// change them, so a demotion (#722), a removal or a link made or removed
-// counts from the stream's next item. The bus only marks it stale, which
-// costs no store read; the stream reloads it in its own goroutine before it
-// writes the next item, so no store read happens in Bus.Publish with bus.mu
-// held (#721). `spool user` changes users with no bus to tell, so the
-// stream also reloads once streamAccessTTL has passed.
+// change them, so a demotion (#722), a removal, a link made or removed, or
+// the end of the session the stream opened under (#787) counts from the
+// stream's next item. The bus only marks it stale, which costs no store
+// read; the stream reloads it in its own goroutine before it writes the next
+// item, so no store read happens in Bus.Publish with bus.mu held (#721).
+// `spool user` changes users, and a session runs out, with no bus to tell,
+// so the stream also reloads once streamAccessTTL has passed.
 type streamAccess struct {
 	server *Server
 	// userID is whose stream this is, "" for the operator token. It never
@@ -242,8 +243,10 @@ type streamAccess struct {
 // streamAccessTTL bounds how long a stream trusts a role and links it read.
 const streamAccessTTL = time.Minute
 
-// errUserGone ends the stream of a user who was removed.
-var errUserGone = errors.New("the stream's user was removed")
+// errAccessEnded ends the stream of a user who was removed, or whose
+// session ended: signed out, expired, or ended by a password change or a
+// reset (#787).
+var errAccessEnded = errors.New("the stream's user was removed or their session ended")
 
 // openStreamAccess reads who's access for a stream they open.
 func (server *Server) openStreamAccess(ctx context.Context, who *caller) (*streamAccess, error) {
@@ -256,10 +259,20 @@ func (server *Server) openStreamAccess(ctx context.Context, who *caller) (*strea
 
 func (access *streamAccess) load(ctx context.Context) error {
 	who := access.who
+	// A session traded for the operator token has no user to reread, but
+	// it ends as a user's does: its stream within streamAccessTTL.
+	if who != nil && who.session != "" {
+		live, err := access.server.Users.SessionLive(ctx, who.session)
+		if err != nil {
+			return err
+		} else if !live {
+			return errAccessEnded
+		}
+	}
 	if access.userID != "" {
 		user, err := access.server.Store.Users().Get(ctx, access.userID)
 		if errors.Is(err, store.ErrNotFound) {
-			return errUserGone
+			return errAccessEnded
 		} else if err != nil {
 			return err
 		}
@@ -295,10 +308,11 @@ func (access *streamAccess) notice(item bus.Item) {
 // admits reports whether item may reach the caller, reloading their access
 // first if anything changed it or it is older than streamAccessTTL. A
 // store error withholds the item and tries again on the next one, and a
-// removed user's stream ends with errUserGone.
+// removed user's stream, or one whose session ended, ends with
+// errAccessEnded.
 func (access *streamAccess) admits(ctx context.Context, item bus.Item) (bool, error) {
 	if access.stale.Swap(false) || time.Since(access.loadedAt) > streamAccessTTL {
-		if err := access.load(ctx); errors.Is(err, errUserGone) {
+		if err := access.load(ctx); errors.Is(err, errAccessEnded) {
 			return false, err
 		} else if err != nil {
 			access.stale.Store(true)
@@ -307,6 +321,13 @@ func (access *streamAccess) admits(ctx context.Context, item bus.Item) (bool, er
 		}
 	}
 	return streamable(access.who, item, access.reader.reads), nil
+}
+
+// userChanged tells every open stream of userID to read their access
+// again: their role changed, they were removed, or a session of theirs
+// ended, which ends the stream it opened.
+func (server *Server) userChanged(userID string) {
+	server.Bus.Publish(bus.Item{Kind: bus.KindUser, Payload: &userChange{UserID: userID}})
 }
 
 // userChange is a KindUser item's payload: the user whose role changed or

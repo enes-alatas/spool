@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
@@ -298,7 +299,96 @@ func TestAStreamFollowsItsUsersRole(t *testing.T) {
 
 	delete(tables.users, "u-ada")
 	published(access, bus.Item{Kind: bus.KindUser, Payload: &userChange{UserID: "u-ada"}})
-	if send, err := access.admits(context.Background(), private); send || !errors.Is(err, errUserGone) {
+	if send, err := access.admits(context.Background(), private); send || !errors.Is(err, errAccessEnded) {
 		t.Fatalf("a removed user's stream = %v, %v; want it ended", send, err)
 	}
+}
+
+// TestAStreamEndsWithItsSession: a stream opened under a session ends at
+// its next item once that session is signed out of or ended by a password
+// change, while one under the session the change keeps carries on; a reset
+// with no bus to tell, as `spool user` makes, ends it once streamAccessTTL
+// passes, and so does signing out of a session traded for the operator
+// token, which has no user to publish for (#787).
+func TestAStreamEndsWithItsSession(t *testing.T) {
+	ctx := context.Background()
+	hubUsers := testUsers(t)
+	oneTime, err := hubUsers.Add(ctx, "ada", store.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ada, _ := hubUsers.Store.Users().GetByName(ctx, "ada")
+	server := &Server{Store: hubUsers.Store, Users: hubUsers, Bus: bus.New(),
+		Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	private := bus.Item{Kind: bus.KindMessage, Payload: &route.MessagePayload{
+		Message: store.Message{Conversation: store.ConversationOwnerDM}}}
+	open := func() *streamAccess {
+		t.Helper()
+		session, err := hubUsers.StartSession(ctx, ada.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		access, err := server.openStreamAccess(ctx, &caller{user: ada, session: session})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, cancel := server.Bus.Subscribe(func(item bus.Item) bool {
+			access.notice(item)
+			return true
+		})
+		t.Cleanup(cancel)
+		return access
+	}
+	ends := func(access *streamAccess, after string) {
+		t.Helper()
+		if send, err := access.admits(ctx, private); send || !errors.Is(err, errAccessEnded) {
+			t.Fatalf("a stream %s = %v, %v; want it ended", after, send, err)
+		}
+	}
+
+	signedOut, kept := open(), open()
+	logout := httptest.NewRequest("POST", logoutPath, nil)
+	logout.AddCookie(&http.Cookie{Name: SessionCookie, Value: signedOut.who.session})
+	server.handleLogout(httptest.NewRecorder(), logout)
+	ends(signedOut, "after a sign-out")
+	if !admitted(t, kept, private) {
+		t.Fatal("signing out of one session ended a stream under another")
+	}
+
+	other := open()
+	change := httptest.NewRequest("POST", mePasswordPath, strings.NewReader(
+		`{"current_password":"`+oneTime+`","new_password":"a synthetic new password"}`))
+	change = change.WithContext(context.WithValue(change.Context(), callerKey{}, &caller{user: ada, session: kept.who.session}))
+	recorder := httptest.NewRecorder()
+	server.handleMePassword(recorder, change)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("password change = %d %s", recorder.Code, recorder.Body)
+	}
+	ends(other, "after a password change")
+	if !admitted(t, kept, private) {
+		t.Fatal("a password change ended the stream under the session it keeps")
+	}
+
+	if _, err := hubUsers.Reset(ctx, "ada"); err != nil {
+		t.Fatal(err)
+	}
+	if !admitted(t, kept, private) {
+		t.Fatal("a reset with no bus to tell counted before streamAccessTTL passed")
+	}
+	kept.loadedAt = time.Now().Add(-streamAccessTTL - time.Second)
+	ends(kept, "streamAccessTTL after a reset")
+
+	tokenSession, err := hubUsers.StartTokenSession(ctx, testToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	traded, err := server.openStreamAccess(ctx, &caller{session: tokenSession})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := hubUsers.EndSession(ctx, tokenSession); err != nil {
+		t.Fatal(err)
+	}
+	traded.loadedAt = time.Now().Add(-streamAccessTTL - time.Second)
+	ends(traded, "streamAccessTTL after signing out of a token-traded session")
 }

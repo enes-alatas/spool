@@ -119,6 +119,7 @@ func (server *Server) handleResetUser(w http.ResponseWriter, r *http.Request) {
 		server.userErr(w, err)
 		return
 	}
+	server.userChanged(user.ID)
 	user.MustChangePassword = true
 	writeOneTime(w, http.StatusOK, user, password)
 }
@@ -148,7 +149,7 @@ func (server *Server) handleSetUserRole(w http.ResponseWriter, r *http.Request) 
 		server.userErr(w, err)
 		return
 	}
-	server.Bus.Publish(bus.Item{Kind: bus.KindUser, Payload: &userChange{UserID: user.ID}})
+	server.userChanged(user.ID)
 	user.Role = in.Role
 	writeJSON(w, http.StatusOK, viewOfUser(user))
 }
@@ -168,7 +169,7 @@ func (server *Server) handleRemoveUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if userID != "" {
-		server.Bus.Publish(bus.Item{Kind: bus.KindUser, Payload: &userChange{UserID: userID}})
+		server.userChanged(userID)
 	}
 	for _, link := range links {
 		server.Bus.Publish(bus.Item{Kind: bus.KindLink, Payload: &route.LinkPayload{

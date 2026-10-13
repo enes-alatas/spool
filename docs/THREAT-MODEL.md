@@ -95,6 +95,10 @@ over Socket Mode, so no port is opened for either (ADR-0034).
 
 **Sessions and passwords:**
 - Sessions are revocable, and expire after 14 days idle or 30 days.
+  Ending a session ends the streams opened under it from their next item,
+  or within a minute when the hub hears of no change: a session that runs
+  out, a reset made with `spool user`, a session traded for the token.
+  Asking whether a session is live is not a use of it.
 - Sign-in is throttled per name tried, and an unknown name answers like a
   wrong password.
 - Granting admin or owner, and resetting a password, take the acting
