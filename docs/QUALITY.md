@@ -112,6 +112,12 @@ window regardless of loop count (ADR-0018).
   one) fails the workflow, and `ci-health` posts it to the pinned issue.
 - **No telemetry, ever.** The binary never phones home. This is a product promise.
 - `bypassPermissions` containment story is documented per SandboxRuntime.
+- **The threat model stays current** (#780). A PR that changes what a
+  boundary holds, or doesn't, updates that boundary's section of
+  `docs/THREAT-MODEL.md` in the same PR. When a gate's credential
+  changes, it updates SECURITY.md's trust model too. A reviewer holds the
+  PR to it as to a doc of record: SECURITY.md went stale once by being
+  left out (#778).
 
 ## Maintainability & extensibility gates
 

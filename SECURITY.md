@@ -105,7 +105,9 @@ they *should* be true, only that they are known and recorded.
 
 Two listeners, each with its own credential (ADR-0030, `docs/ARCHITECTURE.md`).
 Neither credential is ever handed to the other listener's audience, and each
-check holds independently of the other.
+check holds independently of the other. For every boundary, what crosses it,
+what it holds and what it doesn't, see
+[`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md).
 
 **The operator listener** (`--listen`) serves the API and the control room.
 

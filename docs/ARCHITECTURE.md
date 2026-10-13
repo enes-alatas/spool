@@ -198,6 +198,9 @@ audience. Every credential the store keeps — connection secrets, bot tokens,
 hub MCP tokens, the setup-token — is sealed in `spool.db` under the **hub
 key**, `<data-dir>/hub.key`, so a copy of the database alone carries none of
 them (ADR-0046).
+`docs/THREAT-MODEL.md` puts this together with the workstation and egress
+walls, the surfaces and the release: what each boundary holds, and what it
+does not.
 
 The Surface seam is live: `internal/surface` owns the interface,
 `internal/surface/telegram` is the bridge behind it, and `internal/surface/slack`
