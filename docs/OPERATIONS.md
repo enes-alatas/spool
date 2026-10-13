@@ -139,8 +139,8 @@ sudo ufw allow OpenSSH && sudo ufw allow 80,443/tcp && sudo ufw enable
 ```
 
 The control room port is on loopback, so the network cannot reach it at all.
-The loop listener (`--mcp-listen`) binds the docker bridge (README, "What
-contains a loop"), which the network is not routed to. A default-deny inbound
+The loop listener (`--mcp-listen`) binds the docker bridge
+([CONTAINMENT.md](CONTAINMENT.md)), which the network is not routed to. A default-deny inbound
 policy can still drop the workstations' own traffic to it, since that
 traffic arrives from the bridge. The symptom is a docker loop that never
 answers while its wake times out in the hub log. The fix is to allow that one
