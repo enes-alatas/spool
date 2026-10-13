@@ -578,3 +578,6 @@ Enes asked how Spool should handle edited user messages. Today: both surfaces dr
 
 ## 2026-10-13 17:05 UTC
 Sweep: landed since 13:25: #803 (#744) merged, #801 (README link codes), #792 (#796 merged), #793 (#794), #787, #780 closed. Open PRs: #805 (Iris, #797; Enes approved mockup; Quinn one inline fix), #807 (Terra, #799, unreviewed), #806 (Elliot, threat model fleet-channel sentence), #784 (Elliot runbook), #453 (stale eval chore). Tidy: #804 (README restructure, Enes agreed) #795 #480 → L5 Team; #754 + "new feature". #753 held, untouched. Reordered Terra: #807 → #798 → #800 (web half #805 needs the route) → #789 → #751 → #764 → … Enes still owes: edited-messages go, #758 prerequisites, supported-versions.
+
+## 2026-10-13 19:00 UTC
+Quiet tick. #807 (#799) and #798 merged, #806 merged. Open PRs: #805 (Iris, with Quinn), #784 (Elliot), #453 (stale). Board tidy except #753 (held). Terra next: #800 → #789 → #751 → #764. Nothing new from Enes.
