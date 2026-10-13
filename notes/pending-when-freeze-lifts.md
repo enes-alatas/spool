@@ -587,3 +587,6 @@ Terra: PR #809 for #800, option 3 (longer answer wait) + a log record when a lan
 
 ## 2026-10-13 19:35 UTC
 #805 (#797) merged. Iris blocked on #751/#789: assigned #795 (contrast) then #733's demo re-record (README half done in #801). Then #752, #732. #804 (README restructure) unowned; Elliot after #777 seam 2, or Iris if still idle.
+
+## 2026-10-13 21:00 UTC
+Enes: "yes please file" (edited messages). Filed #810 (slice 1: edit → correction "edited ref:N", original marked edited, Slack deletions "deleted ref:N", Telegram deletions invisible; ADR) and #811 (slice 2: in-place replace while unread), both L5 Team. Terra: #810 after #751, before #764; #811 after. Enes told. Still with Enes: #758 prerequisites, supported-versions.
