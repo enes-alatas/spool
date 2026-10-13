@@ -584,3 +584,6 @@ Quiet tick. #807 (#799) and #798 merged, #806 merged. Open PRs: #805 (Iris, with
 
 ## 2026-10-13 19:30 UTC
 Terra: PR #809 for #800, option 3 (longer answer wait) + a log record when a landed retry follows an unanswered attempt; reasons on #800 (option 2 needs an ADR-0026 third outcome). Accepted. With Quinn and Elliot (needs-security-review). If duplicates recur: option 2 as its own ADR issue.
+
+## 2026-10-13 19:35 UTC
+#805 (#797) merged. Iris blocked on #751/#789: assigned #795 (contrast) then #733's demo re-record (README half done in #801). Then #752, #732. #804 (README restructure) unowned; Elliot after #777 seam 2, or Iris if still idle.
