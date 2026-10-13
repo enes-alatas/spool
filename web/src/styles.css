@@ -3822,6 +3822,19 @@ textarea {
   flex-wrap: wrap;
   gap: 8px;
 }
+/* A card's second action sits on a card as black as its own fill, beside a
+   white primary, so the plain button's hairline sank into it (#795). An
+   outline in the text colour keeps it second to the primary yet readable;
+   hover lifts the fill, since the border is already at full strength. The
+   step dialogs share .pillar-actions on a --surface fill, where that hover
+   would not show, so the rule stays on the cards. */
+.pillar .pillar-actions .btn:not(.primary) {
+  background: transparent;
+  border-color: var(--text);
+}
+.pillar .pillar-actions .btn:not(.primary):not(:disabled):hover {
+  background: var(--surface);
+}
 .pillar-actions .form-error {
   flex-basis: 100%;
 }
