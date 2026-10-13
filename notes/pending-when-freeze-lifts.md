@@ -524,3 +524,6 @@ Wrong nudge: #774/#776/#779 were all approved (reviews, not comments); waiting o
 
 ## 2026-10-13 08:00 UTC
 #774 merged. Iris idle: assigned #775 (attach dialog first owner as user), then prep #752 fixture. Terra: #776 approved waiting Enes; #744 next (or #758 if Enes answers).
+
+## 2026-10-13 09:40 UTC
+Runtime now v0.5.1 (rebuilt). Elliot finished review seam 1 (#786): #788, #790 to Terra (low, after #722/#721, before #766/#630); #789 shared wrong-code count is an ADR-0051 call, asked Enes. Terra order: #776 merge, #758 (Enes), #744, #751, #764, #722, #721, #788, #790, #766, #630.
