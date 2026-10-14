@@ -648,6 +648,9 @@ func howThisWorks(conv Conversations) string {
 	text.WriteString(`- To react to a message instead of answering it, call send_message with
   react (one emoji), reply_to and no text. It wakes nobody. Reactions to
   your own messages reach you as a line ahead of your next turn.
+- A person may change a message after sending it. A header with "edited
+  ref:N" carries their new words for ref:N: act on those, not on what
+  ref:N said. "deleted ref:N" means they took ref:N back.
 - To poll, add poll {options, multiple, closes_in} to a send whose text is
   the question; to vote, send vote (option numbers, [] to take yours back)
   with reply_to and no text; to close your own poll, send close_poll with
@@ -816,11 +819,16 @@ type Inbound struct {
 	Conversation string // store.Conversation* kind
 	// Channel names the channel a group message was said in; "" or
 	// store.FleetChannel is the fleet channel.
-	Channel     string
-	FromLoop    bool
-	TGChatID    int64  // source DM chat (0 = none)
-	Ref         string // this message's reply reference (MessageRef)
-	ReplyTo     string // the reference this message itself replies to
+	Channel  string
+	FromLoop bool
+	TGChatID int64  // source DM chat (0 = none)
+	Ref      string // this message's reply reference (MessageRef)
+	ReplyTo  string // the reference this message itself replies to
+	// EditOf is the reference of the message this one corrects, "" for
+	// none, and EditKind whether the person edited or deleted it
+	// (ADR-0055). A deletion carries no text.
+	EditOf      string
+	EditKind    string
 	Attachments []Attachment
 	// Poll is the ballot the message carries, nil for none (ADR-0041).
 	Poll *store.Poll
@@ -932,6 +940,9 @@ func MessageEnvelope(now time.Time, in Inbound) Envelope {
 	}
 	if in.Ref != "" {
 		from += " · " + in.Ref
+	}
+	if in.EditOf != "" {
+		from += " · " + in.EditKind + " " + in.EditOf
 	}
 	if in.ReplyTo != "" {
 		from += " · in reply to " + in.ReplyTo

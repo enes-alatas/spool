@@ -163,11 +163,22 @@ func TestMessageEnvelopeNamesConversation(t *testing.T) {
 		{"reply", MessageEnvelope(now, Inbound{Origin: store.OriginLoop, Author: "milo", Text: "x",
 			Conversation: store.ConversationGroup, FromLoop: true, Ref: MessageRef(43), ReplyTo: MessageRef(42)}),
 			"· ref:43 · in reply to ref:42 ·"},
+		{"edit", MessageEnvelope(now, Inbound{Origin: store.OriginTelegramGroup, Author: "enes", Text: "ship monday",
+			Conversation: store.ConversationGroup, Ref: MessageRef(44), EditOf: MessageRef(42), EditKind: store.EditEdited}),
+			"· group · ref:44 · edited ref:42 ·"},
+		{"deletion", MessageEnvelope(now, Inbound{Origin: store.OriginSlackChannel, Author: "enes",
+			Conversation: store.ConversationGroup, Ref: MessageRef(45), EditOf: MessageRef(42), EditKind: store.EditDeleted}),
+			"· group · ref:45 · deleted ref:42 ·"},
 	}
 	for _, testCase := range cases {
 		if !strings.Contains(testCase.env.Text, testCase.want) {
 			t.Errorf("%s: header %q missing %q", testCase.name, testCase.env.Text, testCase.want)
 		}
+	}
+	deletion := MessageEnvelope(now, Inbound{Origin: store.OriginSlackChannel, Author: "enes",
+		Conversation: store.ConversationGroup, Ref: MessageRef(45), EditOf: MessageRef(42), EditKind: store.EditDeleted})
+	if !strings.HasSuffix(deletion.Text, "]") || strings.Contains(deletion.Text, "\n") {
+		t.Errorf("a deletion's envelope = %q, want its header alone", deletion.Text)
 	}
 }
 
@@ -1011,5 +1022,16 @@ func TestSendFailureEnvelopeQuotesShort(t *testing.T) {
 	}).Text
 	if !strings.Contains(text, strings.Repeat("a", 59)) || strings.Contains(text, "bcdef") {
 		t.Errorf("the excerpt is not the first %d characters:\n%s", maxLostExcerpt, text)
+	}
+}
+
+// The system prompt says what a correction's header means, whatever
+// conversations the loop has (ADR-0055).
+func TestTheSystemPromptExplainsACorrection(t *testing.T) {
+	for _, conversations := range []Conversations{{Group: true}, {}} {
+		prompt := SystemPrompt(&store.Loop{Name: "terra", Mission: "m"}, Catalog{Conversations: conversations}, nil, testVersion)
+		if !strings.Contains(prompt, `carries their new words for ref:N`) || !strings.Contains(prompt, `"deleted ref:N" means they took ref:N back`) {
+			t.Errorf("group=%v: the prompt does not explain a correction", conversations.Group)
+		}
 	}
 }
