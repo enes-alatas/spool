@@ -263,29 +263,58 @@ await take('fleet', async (page, mark) => {
   await page.waitForTimeout(6000)
 })
 
+// The first-run Loops card (#733): its New loop dialog creates scout, and
+// the dialog stays to tick its first wake. The fixture hub has done its
+// first run, so the onboarding answers stand in for one that has not, and
+// the wake ticks on cue. The loop itself is created for real: the link
+// clip gives it a bot.
 await take('create', async (page, mark) => {
-  await page.goto(base + '/new', { waitUntil: 'networkidle' })
-  await page.waitForSelector('#nl-runtime')
+  let woken = false
+  await page.route('**/api/onboarding', (route) =>
+    route.fulfill({
+      json: {
+        completed: false,
+        harness: { done: true, reason: 'a turn authenticated' },
+        surface: { done: false, reason: 'no chat surface has carried a message yet' },
+        loops: woken ? { done: true } : { done: false, reason: 'no loops' },
+      },
+    }),
+  )
+  await page.goto(base + '/', { waitUntil: 'networkidle' })
+  await page.waitForSelector('.pillars')
   await page.mouse.move(size.width / 2, size.height - 80)
   mark('ready')
-  await page.waitForTimeout(700)
-  await pointAt(page, page.locator('#nl-name'))
+  await page.waitForTimeout(900)
+  await pointAt(page, page.locator('.pillar').getByRole('button', { name: 'New loop', exact: true }))
+  const dialog = page.locator('.loop-dialog')
+  await dialog.locator('#nl-name').waitFor()
+  mark('dialog')
+  await page.waitForTimeout(500)
+  await pointAt(page, dialog.locator('#nl-name'))
   await page.keyboard.type('scout', { delay: 110 })
   await page.waitForTimeout(300)
-  await pointAt(page, page.locator('#nl-mission'))
+  await pointAt(page, dialog.locator('#nl-mission'))
   mark('mission')
   await page.keyboard.type('Keep main green: watch CI, find what broke, and tell me in plain words.', {
     delay: 32,
   })
   await page.waitForTimeout(600)
-  const create = page.getByRole('button', { name: 'Create loop' })
+  const create = dialog.getByRole('button', { name: 'Create loop' })
   mark('scroll-create')
   await glideTo(page, create)
   mark('create-click')
   await pointAt(page, create)
-  // The clip ends on the press. Its bot comes in the link clip, from the
-  // first-run page, which needs scout to exist: wait for its page.
-  await page.waitForURL('**/loops/scout')
+  await dialog.getByText('Created @scout').waitFor()
+  mark('created')
+  await page.waitForTimeout(1800)
+  woken = true
+  await dialog.getByText('@scout has woken.').waitFor()
+  mark('woken')
+  await page.waitForTimeout(1200)
+  // Done closes the dialog, and the Loops card's tick draws in.
+  await pointAt(page, dialog.getByRole('button', { name: 'Done' }))
+  mark('done')
+  await page.waitForTimeout(2000)
   mark('end')
 })
 
