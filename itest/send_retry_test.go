@@ -3,6 +3,7 @@
 package itest
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -222,7 +223,7 @@ func TestRetryingAPrivateMessageWithNoChatIsRefused(t *testing.T) {
 	// The loop changes hands. The captured chat belonged to the previous
 	// owner, so it is dropped, and the new owner has not written to this bot
 	// yet — there is nowhere for the retry to land.
-	srv.mustJSON("PUT", "/api/loops/alpha/owner", map[string]any{"tg_user_id": colleague.ID}, nil)
+	srv.mustJSON("PUT", "/api/loops/alpha/owner", map[string]any{"user": fmt.Sprintf("tg%d", colleague.ID)}, nil)
 
 	tg.failNextSends(0) // a send now would succeed, so a send is visible if one happens
 	before := tg.sendAttempts()

@@ -2070,12 +2070,9 @@ func (server *Server) disownLoopsOf(ctx context.Context, tgUserID int64) {
 
 type putOwnerReq struct {
 	// User names the owner as a hub user, resolved to their link on the
-	// loop's surface (#731). The sender ids below name one directly, as the
-	// picker does until it chooses users (#732); one of the three.
-	User     string `json:"user"`
-	TGUserID int64  `json:"tg_user_id"`
-	// SlackUserID names a Slack owner instead (#230).
-	SlackUserID string `json:"slack_user_id"`
+	// loop's surface (#731). It is the only way to name one: the sender
+	// ids the route took before are retired (#775).
+	User string `json:"user"`
 }
 
 // Refusal codes for an owner named as a user.
@@ -2084,16 +2081,17 @@ const (
 	codeNoLink      = "no_link"
 )
 
-// ownerByUser fills in req's sender id from the link the user it names
-// has on the loop's surface: Slack for a Slack loop, and Telegram for any
-// other, as the default owner is. A user with no link there cannot own the
-// loop, since the owner is someone the loop can write to.
-func (server *Server) ownerByUser(ctx context.Context, loopRecord *store.Loop, req *putOwnerReq) *requestError {
-	user, err := server.Store.Users().GetByName(ctx, req.User)
+// ownerByUser is the person the user named owns the loop as: their link on
+// the loop's surface, Slack for a Slack loop and Telegram for any other, as
+// the default owner is. Exactly one of the two ids is set. A user with no
+// link there cannot own the loop, since the owner is someone the loop can
+// write to.
+func (server *Server) ownerByUser(ctx context.Context, loopRecord *store.Loop, name string) (int64, string, *requestError) {
+	user, err := server.Store.Users().GetByName(ctx, name)
 	if errors.Is(err, store.ErrNotFound) {
-		return &requestError{status: http.StatusBadRequest, code: codeUnknownUser, msg: "no user is named " + req.User}
+		return 0, "", &requestError{status: http.StatusBadRequest, code: codeUnknownUser, msg: "no user is named " + name}
 	} else if err != nil {
-		return &requestError{status: http.StatusInternalServerError, msg: err.Error()}
+		return 0, "", &requestError{status: http.StatusInternalServerError, msg: err.Error()}
 	}
 	surface := store.SurfaceTelegram
 	if loopRecord.Surface() == store.SurfaceSlack {
@@ -2101,7 +2099,7 @@ func (server *Server) ownerByUser(ctx context.Context, loopRecord *store.Loop, r
 	}
 	links, err := server.Store.UserLinks().List(ctx, user.ID)
 	if err != nil {
-		return &requestError{status: http.StatusInternalServerError, msg: err.Error()}
+		return 0, "", &requestError{status: http.StatusInternalServerError, msg: err.Error()}
 	}
 	for _, link := range links {
 		if link.Surface != surface {
@@ -2109,24 +2107,24 @@ func (server *Server) ownerByUser(ctx context.Context, loopRecord *store.Loop, r
 		}
 		_, id, _ := strings.Cut(link.Person, ":")
 		if surface == store.SurfaceSlack {
-			req.SlackUserID = id
-			return nil
+			return 0, id, nil
 		}
-		if req.TGUserID, err = strconv.ParseInt(id, 10, 64); err != nil {
-			return &requestError{status: http.StatusInternalServerError, msg: "bad link " + link.Person}
+		tgUserID, err := strconv.ParseInt(id, 10, 64)
+		if err != nil {
+			return 0, "", &requestError{status: http.StatusInternalServerError, msg: "bad link " + link.Person}
 		}
-		return nil
+		return tgUserID, "", nil
 	}
-	return &requestError{status: http.StatusBadRequest, code: codeNoLink,
+	return 0, "", &requestError{status: http.StatusBadRequest, code: codeNoLink,
 		msg: user.Name + " has no " + surface + " link: they link it in Settings → Account"}
 }
 
-// handlePutOwner sets which person a loop may message privately. Only an
-// allowlisted sender qualifies: being able to reach a bot is not the same as
-// owning the loop it belongs to (#73). Named as a user, the owner is the
-// person their link is (#731). Changing the owner drops the captured
-// chat — it belonged to the previous one — and the new owner's first DM to
-// this bot captures theirs.
+// handlePutOwner sets which person a loop may message privately, named as
+// a hub user and stored as the person their link is (#731, #775). The
+// link must hold an allowed sender: being able to reach a bot is not the
+// same as owning the loop it belongs to (#73). Changing the owner drops the
+// captured chat — it belonged to the previous one — and the new owner's
+// first DM to this bot captures theirs.
 func (server *Server) handlePutOwner(w http.ResponseWriter, r *http.Request) {
 	loopRecord := server.loopByName(w, r)
 	if loopRecord == nil {
@@ -2137,26 +2135,23 @@ func (server *Server) handlePutOwner(w http.ResponseWriter, r *http.Request) {
 		server.jsonErr(w, 400, "bad json")
 		return
 	}
-	if req.User != "" {
-		req.TGUserID, req.SlackUserID = 0, ""
-		if refusal := server.ownerByUser(r.Context(), loopRecord, &req); refusal != nil {
-			server.refuse(w, refusal)
-			return
-		}
+	if req.User == "" {
+		server.jsonErr(w, 400, `name the owner as a user: {"user": "<name>"}`)
+		return
 	}
-	if req.SlackUserID != "" {
-		if refusal := server.putSlackOwner(r.Context(), loopRecord, req.SlackUserID); refusal != nil {
-			server.refuse(w, refusal)
-			return
-		}
+	tgUserID, slackUserID, refusal := server.ownerByUser(r.Context(), loopRecord, req.User)
+	if refusal == nil && slackUserID != "" {
+		refusal = server.putSlackOwner(r.Context(), loopRecord, slackUserID)
+	}
+	if refusal != nil {
+		server.refuse(w, refusal)
+		return
+	}
+	if slackUserID != "" {
 		writeJSON(w, 200, server.view(r.Context(), loopRecord))
 		return
 	}
-	if loopRecord.Surface() == store.SurfaceSlack {
-		server.jsonErr(w, 400, "this loop is on slack: its owner is a slack sender (slack_user_id)")
-		return
-	}
-	sender, err := server.Store.TGSenders().Get(r.Context(), req.TGUserID)
+	sender, err := server.Store.TGSenders().Get(r.Context(), tgUserID)
 	if errors.Is(err, store.ErrNotFound) || (err == nil && sender.Status != store.SenderAllowed) {
 		server.jsonErr(w, 400, "owner must be an allowed telegram sender")
 		return
@@ -2164,8 +2159,8 @@ func (server *Server) handlePutOwner(w http.ResponseWriter, r *http.Request) {
 		server.jsonErr(w, 500, "%v", err)
 		return
 	}
-	if loopRecord.OwnerTGUserID != req.TGUserID {
-		loopRecord.OwnerTGUserID, loopRecord.OwnerDMChatID = req.TGUserID, 0
+	if loopRecord.OwnerTGUserID != tgUserID {
+		loopRecord.OwnerTGUserID, loopRecord.OwnerDMChatID = tgUserID, 0
 		loopRecord.UpdatedAt = time.Now().UnixMilli()
 		if err := server.Store.Loops().SetOwner(r.Context(), loopRecord.ID, loopRecord.OwnerTGUserID, 0, loopRecord.UpdatedAt); err != nil {
 			server.storeErr(w, err, "loop")

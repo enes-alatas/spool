@@ -3,6 +3,7 @@
 package itest
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -162,7 +163,7 @@ func TestOwnerIsReassignableAndCaptureFollows(t *testing.T) {
 	srv.allowSender(tg, "beta", colleague)
 
 	var v loopView
-	srv.mustJSON("PUT", "/api/loops/alpha/owner", map[string]any{"tg_user_id": colleague.ID}, &v)
+	srv.mustJSON("PUT", "/api/loops/alpha/owner", map[string]any{"user": fmt.Sprintf("tg%d", colleague.ID)}, &v)
 	if v.OwnerTGUserID != colleague.ID || v.OwnerDMReady {
 		t.Fatalf("after reassignment: owner %d, ready %v; want %d and not ready",
 			v.OwnerTGUserID, v.OwnerDMReady, colleague.ID)
@@ -170,10 +171,10 @@ func TestOwnerIsReassignableAndCaptureFollows(t *testing.T) {
 	tg.dm("alpha", colleague, "hi from your new owner")
 	waitOwnerDMReady(t, srv, "alpha")
 
-	// An unknown or merely pending sender is not an owner.
-	resp, _ := srv.do("PUT", "/api/loops/alpha/owner", map[string]any{"tg_user_id": 999999})
+	// A sender named by id is refused: an owner is named as a user (#775).
+	resp, _ := srv.do("PUT", "/api/loops/alpha/owner", map[string]any{"tg_user_id": colleague.ID})
 	if resp.StatusCode != 400 {
-		t.Fatalf("setting an unknown owner = %d, want 400", resp.StatusCode)
+		t.Fatalf("naming an allowed sender as owner by id = %d, want 400", resp.StatusCode)
 	}
 }
 

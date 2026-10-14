@@ -58,6 +58,9 @@ func startSlackFleetWith(t *testing.T, terraOverrides map[string]any) (*server, 
 // slackLinkTS numbers the DMs allowSlackSender sends, so no two share a ts.
 var slackLinkTS atomic.Int64
 
+// slackUser is the hub user allowSlackSender links userID to.
+func slackUser(userID string) string { return "slack-" + strings.ToLower(userID) }
+
 // allowSlackSender makes userID an allowed Slack sender the one way there
 // is (ADR-0051): a hub user of their own, named for them, asks for a Slack
 // link code, and userID sends it to app in a DM and confirms it. The
@@ -65,7 +68,7 @@ var slackLinkTS atomic.Int64
 // that user's session.
 func (s *server) allowSlackSender(slack *fakeSlack, app, userID string) string {
 	s.t.Helper()
-	name := "slack-" + strings.ToLower(userID)
+	name := slackUser(userID)
 	session := s.signedInAs(name, "member")
 	dm := "D" + userID
 	slack.pushMessage(s.t, app, "im", dm, userID, s.linkCode(session, "slack"),
@@ -156,7 +159,7 @@ func TestSlackChannelMessageIngestedOnceAndDeliveredToMentions(t *testing.T) {
 func TestSlackOwnerDMReachesItsLoop(t *testing.T) {
 	t.Parallel()
 	srv, slack := startSlackFleet(t)
-	if resp, body := srv.do("PUT", "/api/loops/terra/owner", map[string]any{"slack_user_id": slackOperator}); resp.StatusCode != http.StatusOK {
+	if resp, body := srv.do("PUT", "/api/loops/terra/owner", map[string]any{"user": slackUser(slackOperator)}); resp.StatusCode != http.StatusOK {
 		t.Fatalf("set owner: %d %s", resp.StatusCode, body)
 	}
 
@@ -208,7 +211,7 @@ func TestSlackTwoPeoplesDMsAreTwoTurns(t *testing.T) {
 	t.Parallel()
 	// the first line answers the wake every loop takes as the hub starts
 	srv, slack := startSlackFleetWith(t, map[string]any{"workspace_path": workspaceWithScript(t, "!ctx 0\n!hang 3\n!echo\n")})
-	if resp, body := srv.do("PUT", "/api/loops/terra/owner", map[string]any{"slack_user_id": slackOperator}); resp.StatusCode != http.StatusOK {
+	if resp, body := srv.do("PUT", "/api/loops/terra/owner", map[string]any{"user": slackUser(slackOperator)}); resp.StatusCode != http.StatusOK {
 		t.Fatalf("set owner: %d %s", resp.StatusCode, body)
 	}
 	srv.allowSlackSender(slack, slackAppToken, "U0ALICE")

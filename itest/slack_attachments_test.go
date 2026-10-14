@@ -24,7 +24,7 @@ import (
 func TestSlackSharedFilesReachTheLoops(t *testing.T) {
 	t.Parallel()
 	srv, slack := startSlackFleet(t)
-	if resp, body := srv.do("PUT", "/api/loops/terra/owner", map[string]any{"slack_user_id": slackOperator}); resp.StatusCode != http.StatusOK {
+	if resp, body := srv.do("PUT", "/api/loops/terra/owner", map[string]any{"user": slackUser(slackOperator)}); resp.StatusCode != http.StatusOK {
 		t.Fatalf("set owner: %d %s", resp.StatusCode, body)
 	}
 	shot := pngOf(t, 64, 32)
@@ -101,7 +101,7 @@ func TestSlackALoopSendsAFileAfterItsWords(t *testing.T) {
 	shot := pngOf(t, 16, 16)
 	writeFile(t, filepath.Join(ws, "shots", "home.png"), shot)
 	srv, slack := startSlackFleetWith(t, map[string]any{"workspace_path": ws, "workspace_mode": "dir"})
-	if resp, body := srv.do("PUT", "/api/loops/terra/owner", map[string]any{"slack_user_id": slackOperator}); resp.StatusCode != http.StatusOK {
+	if resp, body := srv.do("PUT", "/api/loops/terra/owner", map[string]any{"user": slackUser(slackOperator)}); resp.StatusCode != http.StatusOK {
 		t.Fatalf("set owner: %d %s", resp.StatusCode, body)
 	}
 	terra := mcpSession(t, srv, hubMCPToken(t, srv, "terra"))

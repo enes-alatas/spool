@@ -932,12 +932,6 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ user }),
     }),
-  // The id must be an allowed Slack sender in the loop's workspace (#230).
-  setSlackOwner: (name: string, slackUserID: string) =>
-    req<LoopView>(`/api/loops/${name}/owner`, {
-      method: 'PUT',
-      body: JSON.stringify({ slack_user_id: slackUserID }),
-    }),
   message: (
     name: string,
     text: string,
