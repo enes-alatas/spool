@@ -1,15 +1,22 @@
 import { useId, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type HubUser, type IssuedUser, type Me, type Role } from '../api'
+import { api, type AccessUser, type IssuedUser, type Me, type Role, type UserLink } from '../api'
+import { formatAgo } from '../format'
+import { linkName } from '../links'
+import { ChatAccess } from './ChatAccess'
+import { linkSurface } from './LinksSection'
+import { useMinuteClock } from './PlanUsage'
 import { grants } from '../roles'
 import { confirmText, refreshAfterUserChange, type Pending } from '../users'
 import { StepDialog } from './StepDialog'
 
 const ROLES: Role[] = ['owner', 'admin', 'member']
 
-// Settings → Users (#691): who signs in to this hub and with which role, and
-// the four things an owner does about it without a shell on the hub. Only an
-// owner sees it; the hub refuses anyone else (#690).
+// Settings → Users and access (#691, #732): who signs in to this hub and
+// with which role, who each user is on Telegram and Slack, and what an owner
+// does about either without a shell on the hub. A link is what lets a person
+// reach the loops (ADR-0051), so it is drawn on its user. Only an owner sees
+// it; the hub refuses anyone else (#690).
 export function UsersSection() {
   const qc = useQueryClient()
   const { data: me } = useQuery({ queryKey: ['me'], queryFn: api.me })
@@ -21,10 +28,11 @@ export function UsersSection() {
 
   return (
     <section className="users">
-      <h2 className="section-head">Users</h2>
+      <h2 className="section-head">Users and access</h2>
       <p className="page-lede">
-        Who signs in to this hub, and with which role. Members talk to loops; admins also run them; owners
-        also manage users.
+        Who signs in to this hub, with which role, and who they are on Telegram and Slack. Members talk to
+        loops; admins also run them; owners also manage users. A link is what lets a person talk to the loops;
+        Block stops them on every bot until Unblock.
       </p>
 
       {loadError ? (
@@ -49,6 +57,8 @@ export function UsersSection() {
         )
       )}
 
+      <ChatAccess />
+
       <AddUser
         me={me}
         onAdded={(otp) => {
@@ -70,7 +80,7 @@ function UserRow({
   onIssued,
   onChange,
 }: {
-  user: HubUser
+  user: AccessUser
   you: boolean
   lastOwner: boolean
   me?: Me
@@ -140,9 +150,13 @@ function UserRow({
             {user.name}
             {you && <span className="user-you"> · you</span>}
           </span>
-          <span className="user-meta">
-            {lastOwner ? lastOwnerReason : user.must_change_password ? 'has not signed in yet' : ''}
-          </span>
+          {user.blocked ? (
+            <span className="user-meta bad">blocked: no bot answers them</span>
+          ) : (
+            <span className="user-meta">
+              {lastOwner ? lastOwnerReason : user.must_change_password ? 'has not signed in yet' : ''}
+            </span>
+          )}
         </span>
         <span className="user-row-actions">
           <select
@@ -166,6 +180,17 @@ function UserRow({
               Reset password
             </button>
           )}
+          {/* The block is on the senders the user's links hold, so a user
+              with no link has nothing to block or unblock (400 no_link). */}
+          {!you && user.links.length > 0 && (
+            <button
+              className="btn sm"
+              disabled={busy}
+              onClick={() => run(() => (user.blocked ? api.unblockUser : api.blockUser)(user.name))}
+            >
+              {user.blocked ? 'Unblock' : 'Block'}
+            </button>
+          )}
           <button
             className="btn sm danger"
             disabled={busy || lastOwner}
@@ -176,6 +201,12 @@ function UserRow({
           </button>
         </span>
       </div>
+
+      <UserLinks
+        links={user.links}
+        busy={busy}
+        onRemove={(surface) => run(() => api.removeUserLink(user.name, surface))}
+      />
 
       {pending && (
         <div className="ws-confirm user-confirm">
@@ -205,6 +236,48 @@ function UserRow({
           {error}
         </div>
       )}
+    </div>
+  )
+}
+
+const SURFACES: UserLink['surface'][] = ['telegram', 'slack']
+
+// Who the user is on each surface, as their own Account draws it. Removing
+// a link makes the person a stranger to the bots until they link again,
+// which they can do themselves, so it is not asked twice.
+function UserLinks({
+  links,
+  busy,
+  onRemove,
+}: {
+  links: UserLink[]
+  busy: boolean
+  onRemove: (surface: UserLink['surface']) => void
+}) {
+  const now = useMinuteClock()
+  return (
+    <div className="link-list user-links">
+      {SURFACES.map((surface) => {
+        const link = links.find((l) => l.surface === surface)
+        return (
+          <div className="link-row" key={surface}>
+            <span className="link-surface">{linkSurface(surface).label}</span>
+            {link ? (
+              <>
+                <span className="link-who">
+                  {linkName(link)}
+                  <span className="link-since"> · linked {formatAgo(link.created_at, now)}</span>
+                </span>
+                <button className="btn sm" disabled={busy} onClick={() => onRemove(surface)}>
+                  Remove link
+                </button>
+              </>
+            ) : (
+              <span className="link-who link-none">not linked</span>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }

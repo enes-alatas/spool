@@ -158,8 +158,9 @@ export function LoopRooms({ loop }: { loop: LoopView }) {
         ))}
         {surface === 'slack' ? (
           <div className="chans-note">
-            A Slack channel shows up here once an allowed sender writes in it with the app invited. A pending
-            sender's message records nothing: allow them on Access.
+            A Slack channel shows up here once someone allowed to reach the loops writes in it with the app
+            invited: a linked user, or someone allowed by an old pairing code. A stranger's message records
+            nothing: they link from Settings → Account first.
           </div>
         ) : (
           <TelegramNotes loop={loop} bot={bot} />

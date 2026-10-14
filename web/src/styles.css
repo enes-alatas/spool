@@ -913,15 +913,6 @@ textarea {
   margin: 4px 0 6px;
   padding-left: 18px;
 }
-.sender-allowed {
-  background: var(--ready);
-}
-.sender-pending {
-  background: var(--active);
-}
-.sender-blocked {
-  background: var(--danger);
-}
 
 .state-name {
   font-family: var(--mono);
@@ -2447,8 +2438,9 @@ textarea {
   gap: 4px 14px;
 }
 
-/* Settings → Users (#691): a row is the Account card's initial and name,
-   with the role, reset and remove at the end. */
+/* Settings → Users and access (#691, #732): a row is the Account card's
+   initial and name, with the role, reset, block and remove at the end and
+   the user's links under it. */
 .user-list {
   display: flex;
   flex-direction: column;
@@ -2497,6 +2489,56 @@ textarea {
     margin-left: 0;
     width: 100%;
   }
+}
+/* a user blocked on the bots, or a sender not linked to a user who is */
+.user-meta.bad {
+  color: var(--danger);
+}
+/* a user's links on Access, under their name: indented past the initial
+   so the row still reads as one person */
+.link-list.user-links {
+  margin: 10px 0 2px 42px;
+}
+/* On a phone, a blocked user's four actions wrap rather than run off the
+   row, and a link's Remove takes a line under the name rather than
+   squeezing it a few letters wide. */
+@media (max-width: 520px) {
+  .link-list.user-links {
+    margin-left: 0;
+  }
+  .user-row-actions {
+    flex-wrap: wrap;
+  }
+  .user-links .link-row {
+    flex-wrap: wrap;
+  }
+  .user-links .link-who {
+    min-width: 150px;
+  }
+}
+/* strangers' wrong codes have paused linking on a surface (#789): the
+   alarm, since nobody new can link there until it ends or is lifted */
+.link-pause {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  font-size: 0.8125rem;
+  color: var(--danger);
+  background: var(--danger-wash);
+  border: 1px solid var(--danger-line);
+  border-radius: 7px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}
+.link-pause > span {
+  flex: 1 1 280px;
+}
+.link-pause .form-error {
+  flex-basis: 100%;
+}
+.strangers-note {
+  padding: 12px 0 18px;
 }
 .user-role {
   width: auto;
@@ -2625,16 +2667,12 @@ textarea {
   width: 76px;
   padding-top: 2px;
 }
-/* the heading over a group of senders; `waiting` is the group that needs the
-   operator to do something, so it takes the attention colour */
+/* the heading over a group of senders: on Access, the senders from before
+   links */
 .sender-group {
   font-size: 0.875rem;
   color: var(--text-muted);
   margin: 18px 0 4px;
-}
-.sender-group.waiting {
-  color: var(--active);
-  margin-top: 14px;
 }
 .feed-item .author {
   font-family: var(--mono);
@@ -2655,37 +2693,6 @@ textarea {
   color: var(--text);
   white-space: pre-wrap;
   word-break: break-word;
-}
-/* a sender's detail line: where they were first seen. Quieter than a
-   message's text, which is what `.text` above dresses it as, so it follows
-   that rule rather than preceding it */
-.feed-item .sender-meta {
-  font-size: 0.78125rem;
-  color: var(--text-muted);
-}
-/* the field a pending sender's code is typed into, beside the Allow it
-   unlocks. Monospace and spaced so a misread character stands out, and wide
-   enough for six spaced characters: narrower clipped the last one */
-.pair-input {
-  width: calc(7.4ch + 1.2em + 20px);
-  padding: 5px 8px;
-  font-family: var(--mono);
-  letter-spacing: 0.2em;
-  text-align: center;
-}
-.pair-input[aria-invalid='true'] {
-  border-color: var(--danger-line);
-}
-/* the line under a pending row while its code is being typed. A whole line
-   of the wrapping row, indented to the name past the dot and its gap */
-.feed-item .pair-hint {
-  flex-basis: 100%;
-  padding-left: 20px;
-  font-size: 0.78125rem;
-  color: var(--text-muted);
-}
-.feed-item .pair-hint.wrong {
-  color: var(--danger);
 }
 .feed-item .origin {
   margin-left: auto;

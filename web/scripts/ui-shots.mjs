@@ -155,7 +155,6 @@ const shots = [
   // (#506), a rotated one and a revoked one (#507); the create form is under
   // them.
   { name: 'connections', path: '/connections', wait: '.connection-row' },
-  { name: 'access', path: '/access', wait: '.feed-item' },
   { name: 'rules', path: '/rules', wait: '.page' },
   { name: 'settings', path: '/settings', wait: '.page' },
   // The archivist, because the fixture gives it two failed sends to two
@@ -252,9 +251,30 @@ await egress.screenshot({ path: egressFile })
 taken.push(egressFile)
 await page.unroute('**/api/settings/egress')
 
-// Settings' Users section (#691), as the owner admin sees the fixture's
-// three users: robin still on a one-time password, and admin the last owner,
-// whose own role and Remove are disabled with the reason.
+// Settings' Users and access section (#691, #732), as the owner admin sees
+// the fixture's users: robin still on a one-time password, admin the last
+// owner, whose own role and Remove are disabled with the reason, sam linked,
+// and mia linked and blocked. Under them, the senders not linked to a user.
+// The ignored strangers and a pause live in the hub's memory, which the
+// fixture cannot seed (#744), so the route answers with invented ones: two
+// Telegram strangers and one Slack one, and Telegram's linking paused.
+await page.route('**/api/strangers', (route) =>
+  route.fulfill({
+    json: {
+      window_hours: 24,
+      surfaces: [
+        {
+          surface: 'telegram',
+          count: 2,
+          ids: ['700000011', '700000012'],
+          more: false,
+          paused_until: Date.now() + 42 * 60000,
+        },
+        { surface: 'slack', count: 1, ids: ['U0FIXTURE9'], more: false, paused_until: 0 },
+      ],
+    },
+  }),
+)
 const usersSection = page.locator('section.users')
 await page.goto(base + '/settings', { waitUntil: 'networkidle' })
 await usersSection.locator('.user-row').first().waitFor({ timeout: 15000 })
@@ -268,6 +288,7 @@ const usersNarrowFile = `${outDir}/settings-users-narrow.png`
 await usersSection.screenshot({ path: usersNarrowFile })
 taken.push(usersNarrowFile)
 await page.setViewportSize({ width: 1180, height: 900 })
+await page.unroute('**/api/strangers')
 
 // Who changed a loop (#696): who made it, under its name, and the Changes
 // panel with the fixture's operator and admin changes to the gardener.

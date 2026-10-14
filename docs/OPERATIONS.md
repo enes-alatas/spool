@@ -281,7 +281,7 @@ Check it worked:
 - Access is what the backup held, not what you last set. Any user, link,
   allowed sender or block changed after the backup was taken is back to its
   old state, so a person removed since then can reach the loops again. Check
-  Settings → Users and the Access page before you let the fleet run.
+  Settings → Users and access before you let the fleet run.
 
 **Lost the keys file?** Restore without `--keys`. The hub refuses to start
 until `hub.key` is back. Starting it once with `--forget-secrets` gives up

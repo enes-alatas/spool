@@ -134,7 +134,8 @@ window regardless of loop count (ADR-0018).
   gate that opens the room as it ships. `make build` is served by `bin/spool` on
   a hub `cmd/uifixture` seeded (`scripts/fixture-hub.sh`), and headless Chromium
   walks it: login, Fleet and its channel tab, a loop page with no "Loading…"
-  left, Rules, Settings, Access, the Activity route, and the global stream's
+  left, Rules, Settings, the old Access address landing on Settings → Users
+  and access, the Activity route, and the global stream's
   connection. Each check is a text or role query, never pixels. A failure keeps
   the Playwright trace as the `smoke-trace` artifact. It runs on a change to
   `web/`, `cmd/uifixture/` or `scripts/fixture-hub.sh`. On its first CI run it

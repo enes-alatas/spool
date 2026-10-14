@@ -372,7 +372,7 @@ export interface SlackSender {
 // A Slack loop's live state (#230). channel_id is the Slack channel the
 // loop's fleet room is: the fleet channel binds to the first Slack channel
 // an allowed sender writes in with the app invited; an invite alone, or a
-// pending sender's message, binds nothing (#438). channel_id is '' until
+// stranger's message, binds nothing (#438). channel_id is '' until
 // then. ignored_events counts messages from Slack channels the app has no
 // bound room in (#548): the hint that one is waiting on the loop page.
 export interface SlackStatus {
@@ -628,6 +628,32 @@ export interface HubUser {
   role: Role
   must_change_password: boolean
   created_at: number
+}
+
+// A user as an owner's Settings → Access lists them (#732), mirrored from
+// the hub's accessUserView (#744): with the links they hold, and whether a
+// sender one of those links holds is blocked, which no bot answers.
+export interface AccessUser extends HubUser {
+  links: UserLink[]
+  blocked: boolean
+}
+
+// The strangers one surface ignored in the window, mirrored from the hub's
+// ignoredView (#744): their ids, the most recent first, and whether there
+// were more than the hub keeps. paused_until is when strangers' link codes
+// there are checked again, in Unix ms, and 0 when they are not paused
+// (#789).
+export interface IgnoredSurface {
+  surface: UserLink['surface']
+  count: number
+  ids: string[]
+  more: boolean
+  paused_until: number
+}
+
+export interface IgnoredStrangers {
+  window_hours: number
+  surfaces: IgnoredSurface[]
 }
 
 // A user with their one-time password, in the one answer that carries it:
@@ -1062,7 +1088,21 @@ export const api = {
   // for a token session: 403
   // `confirm_password` when it is missing or wrong. The last owner can't be
   // lowered or removed: 409 `last_owner`.
-  users: () => req<HubUser[]>('/api/users'),
+  users: () => req<AccessUser[]>('/api/users'),
+  // Another user's link, removed as removing your own removes it: the
+  // person is a stranger again (#744).
+  removeUserLink: (name: string, surface: UserLink['surface']) =>
+    req<void>(`/api/users/${encodeURIComponent(name)}/links/${surface}`, { method: 'DELETE' }),
+  // Every sender the user's links hold, blocked or allowed again; a user
+  // with no link gets 400 no_link.
+  blockUser: (name: string) =>
+    req<AccessUser>(`/api/users/${encodeURIComponent(name)}/block`, { method: 'POST' }),
+  unblockUser: (name: string) =>
+    req<AccessUser>(`/api/users/${encodeURIComponent(name)}/unblock`, { method: 'POST' }),
+  strangers: () => req<IgnoredStrangers>('/api/strangers'),
+  // Strangers' link codes on the surface are checked again at once (#789).
+  liftLinkPause: (surface: UserLink['surface']) =>
+    req<IgnoredStrangers>(`/api/strangers/${surface}/pause`, { method: 'DELETE' }),
   addUser: (body: { name: string; role: Role; current_password?: string }) =>
     req<IssuedUser>('/api/users', { method: 'POST', body: JSON.stringify(body) }),
   // Resetting ends the user's sessions, as removing does, and always takes
