@@ -226,3 +226,32 @@ func TestSlackTwoPeoplesDMsAreTwoTurns(t *testing.T) {
 		}
 	}
 }
+
+// A link code said in a channel is just words, as in a Telegram group:
+// nothing claims it, the stranger who said it stays one, and the code
+// still works in a DM (ADR-0051, #790).
+func TestASlackLinkCodeInAChannelLinksNobody(t *testing.T) {
+	t.Parallel()
+	srv, slack := startSlackFleet(t)
+	bea := srv.signedInAs("bea", "member")
+	const stranger = "U0EVE"
+
+	code := srv.linkCode(bea, "slack")
+	slack.pushMessage(t, slackAppToken, "channel", slackChannel, stranger, code, "1727600000.000500")
+	slack.pushMessage(t, slackAppToken, "channel", slackChannel, slackOperator, "after the code in the channel", "1727600000.000501")
+	srv.waitForMessage("after the code in the channel")
+	for _, post := range slack.postsTaken() {
+		if strings.Contains(post.Text, "Slack account to bea") {
+			t.Fatalf("a code in a channel was answered: %+v", post)
+		}
+	}
+	if waiting := srv.myLinks(bea, "/api/me/links/waiting"); len(waiting) != 0 {
+		t.Fatalf("a code in a channel left bea waiting on %+v", waiting)
+	}
+	if got := srv.activityWith(code); len(got) != 0 {
+		t.Fatalf("a stranger's code in a channel was stored: %s", dump(got))
+	}
+
+	slack.pushMessage(t, slackAppToken, "im", "D0EVE", stranger, code, "1727600000.000502")
+	slack.waitPost(t, "Slack account to bea")
+}
