@@ -111,11 +111,12 @@ try {
   await heading('Settings')
   await see(page.getByText(/Configured|Not configured/), 'the Claude token state')
 
+  // Access is a part of Settings since #732; the old address lands there.
   step = 'Access'
   await page.goto(base + '/access')
-  await heading('Access')
-  await see(page.getByText('Rana', { exact: false }), 'the fixture sender')
-  await gone(page.getByText('Loading senders…'), '"Loading senders…"')
+  await heading('Settings')
+  await see(page.getByRole('heading', { name: 'Users and access' }), 'the Users and access section')
+  await see(page.getByText('@rana_example', { exact: false }), 'the sender not linked to a user')
 
   // Reachable, and nothing more: the page is the operator's own conversations,
   // so the walk asserts its heading and reads none of it.

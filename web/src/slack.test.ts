@@ -178,11 +178,11 @@ describe('slackChannel', () => {
   })
 
   // #438: an invite does not bind the channel; an allowed sender's message
-  // does, and a pending sender's is dropped first.
+  // does, and a stranger's is dropped first (ADR-0051).
   it('says what binds an unbound channel, not that an invite does', () => {
     expect(slackChannel({ channel_id: '', channel_name: '' })).toBe('not bound yet')
-    expect(SLACK_UNBOUND_HINT).toMatch(/allowed sender/)
-    expect(SLACK_UNBOUND_HINT).toMatch(/pending sender does not count/)
+    expect(SLACK_UNBOUND_HINT).toMatch(/allowed to reach the loops/)
+    expect(SLACK_UNBOUND_HINT).toMatch(/stranger does not count/)
     expect(SLACK_UNBOUND_HINT).not.toMatch(/invite the bot/)
   })
 })

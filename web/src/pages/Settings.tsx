@@ -9,6 +9,7 @@ import { useMay, useSignOut } from '../components/Session'
 import { SignOutIcon } from '../components/Icons'
 import { EgressSection } from '../components/EgressSection'
 import { UsersSection } from '../components/UsersSection'
+import { ChatAccess } from '../components/ChatAccess'
 import { LinksSection } from '../components/LinksSection'
 import { loginCheckTone } from '../onboarding'
 import { CapBanner, useMinuteClock } from '../components/PlanUsage'
@@ -23,7 +24,9 @@ export default function Settings() {
     <div className="page measure">
       <h1>Settings</h1>
       <AccountSection />
-      {may('manage-users') && <UsersSection />}
+      {/* An owner's Users section carries the rest of Access under its
+          list; an admin, who manages no users, gets that part alone. */}
+      {may('manage-users') ? <UsersSection /> : may('manage') && <ChatAccess />}
       {/* The rest is the hub's own configuration, which only an admin
           changes (#679): a member's Settings is who they are and which
           Spool this is. */}

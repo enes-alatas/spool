@@ -11,7 +11,6 @@ import NewLoop from './pages/NewLoop'
 import Activity from './pages/Activity'
 import Channels from './pages/Channels'
 import Connections from './pages/Connections'
-import Access from './pages/Access'
 import Settings from './pages/Settings'
 import Rules from './pages/Rules'
 import './styles.css'
@@ -49,7 +48,9 @@ const router = createBrowserRouter([
       // (#281). A saved link lands on Fleet, where every loop with a failure
       // carries the badge that opens its pane, rather than on a router error.
       { path: 'undelivered', element: <Navigate to="/" replace /> },
-      { path: 'access', element: <Access /> },
+      // Access was a page of its own until a link became the gate (#732): who
+      // reaches the loops is now Settings → Users and access.
+      { path: 'access', element: <Navigate to="/settings" replace /> },
       { path: 'channels', element: <Channels /> },
       { path: 'connections', element: <Connections /> },
       { path: 'settings', element: <Settings /> },

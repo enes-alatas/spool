@@ -87,7 +87,7 @@ A loop starts with the control room only. Attach a bot to reach it from Telegram
 
 ### Who can talk to your loops
 
-Spool keeps a **sender allowlist**, and only people on it reach your loops. Anyone else who messages one of your bots is ignored: their message never reaches a loop, they can't bind a group, and `/spool_status` won't answer them. Linking your account in step 5 put you on it. To let someone else in, add them as a user (`spool user add`, or **Settings → Users**) and have them link theirs under **Settings → Link Telegram** or **Link Slack**. The **Access** page lists who is allowed and can block anyone, and a blocked sender gets no reply at all. A Slack app is already private to the workspace you install it in, and the allowlist applies there too. Loop-to-loop traffic is internal and unaffected.
+Spool keeps a **sender allowlist**, and only people on it reach your loops. Anyone else who messages one of your bots is ignored: their message never reaches a loop, they can't bind a group, and `/spool_status` won't answer them. Linking your account in step 5 put you on it. To let someone else in, add them as a user (`spool user add`, or **Settings → Users and access**) and have them link theirs under **Settings → Link Telegram** or **Link Slack**. **Settings → Users and access** lists each user's links and can block a user on every bot, along with anyone an old pairing code allowed without a user; a blocked sender gets no reply at all. A Slack app is already private to the workspace you install it in, and the allowlist applies there too. Loop-to-loop traffic is internal and unaffected.
 
 ## Flags
 

@@ -130,11 +130,12 @@ export function slackChannel(status: Pick<SlackStatus, 'channel_id' | 'channel_n
 }
 
 // What binds it. An invite alone does not: the fleet channel binds to the
-// first Slack channel an allowed sender writes in, and a pending sender's
-// message is dropped before that (#230), so an operator told to invite the
-// app would re-invite one that is already there (#438).
+// first Slack channel an allowed sender writes in, a linked user or one
+// allowed before links, and a stranger's message is dropped before that
+// (#230), so an operator told to invite the app would re-invite one that is
+// already there (#438).
 export const SLACK_UNBOUND_HINT =
-  'The fleet channel binds to the first Slack channel an allowed sender writes in with the app invited. A pending sender does not count: allow them on Access.'
+  'The fleet channel binds to the first Slack channel someone allowed to reach the loops writes in with the app invited: a linked user, or someone allowed by an old pairing code. A stranger does not count: they link from Settings → Account first.'
 
 // An app created from a manifest older than ADR-0040 lacks the reaction
 // scopes and events. Slack keeps the app as created, so nothing here can add

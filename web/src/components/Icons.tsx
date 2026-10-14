@@ -55,16 +55,6 @@ export function ConnectionsIcon() {
   )
 }
 
-// Access: a key — who may reach the room.
-export function AccessIcon() {
-  return (
-    <Icon>
-      <circle cx="7" cy="7" r="3.75" />
-      <path d="M9.65 9.65 16.5 16.5M14.25 14.25l-1.75 1.75M16.5 12l-1.75 1.75" />
-    </Icon>
-  )
-}
-
 // Rules: the standing text every loop is handed.
 export function RulesIcon() {
   return (

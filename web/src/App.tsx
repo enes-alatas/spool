@@ -6,7 +6,6 @@ import { SpoolGlyph } from './components/Spool'
 import { useMay } from './components/Session'
 import { loopsNeedingClaudeToken, missingTokenNotice } from './claudeToken'
 import {
-  AccessIcon,
   ActivityIcon,
   ChannelsIcon,
   ConnectionsIcon,
@@ -23,7 +22,6 @@ const DESTINATIONS = [
   { to: '/activity', label: 'Activity', Icon: ActivityIcon },
   { to: '/channels', label: 'Channels', Icon: ChannelsIcon },
   { to: '/connections', label: 'Connections', Icon: ConnectionsIcon },
-  { to: '/access', label: 'Access', Icon: AccessIcon },
   { to: '/rules', label: 'Rules', Icon: RulesIcon },
   { to: '/settings', label: 'Settings', Icon: SettingsIcon },
 ]
