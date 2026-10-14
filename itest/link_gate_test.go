@@ -57,11 +57,11 @@ func (s *server) myLinks(session, path string) []linkJSON {
 
 // A link code is the one way a person becomes an allowed sender (#730,
 // ADR-0051). A stranger is answered with nothing and registered nowhere;
-// a code minted for another surface links nobody; a good code asks the
-// sender to confirm, naming the user who will read their private
-// conversations, and the room shows it waiting; only the YES links and
-// allows them. Admins read the record of links made and removed, and a
-// removed link makes its person a stranger again.
+// a code minted for another surface, or said in a group, links nobody; a
+// good code in a DM asks the sender to confirm, naming the user who will
+// read their private conversations, and the room shows it waiting; only
+// the YES links and allows them. Admins read the record of links made and
+// removed, and a removed link makes its person a stranger again.
 func TestTheLinkCodeIsTheGate(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 9190, First: "Operator", Username: "operator"}
@@ -85,7 +85,22 @@ func TestTheLinkCodeIsTheGate(t *testing.T) {
 		}
 	}
 
-	tg.dm("alpha", stranger, srv.linkCode(bea, "telegram"))
+	// a code said in a group is just words: nothing claims it, and it
+	// still works in a DM (#790)
+	code := srv.linkCode(bea, "telegram")
+	tg.post(groupChatID, "supergroup", code, stranger)
+	settled(t, srv, tg, "alpha", operator, "after the code in the group")
+	if sent := tg.sentTo(stranger.ID); len(sent) != 0 {
+		t.Fatalf("a code in a group was answered: %+v", sent)
+	}
+	if waiting := srv.myLinks(bea, "/api/me/links/waiting"); len(waiting) != 0 {
+		t.Fatalf("a code in a group left bea waiting on %+v", waiting)
+	}
+	if got := srv.activityWith(code); len(got) != 0 {
+		t.Fatalf("a stranger's code in a group was stored: %s", dump(got))
+	}
+
+	tg.dm("alpha", stranger, code)
 	asked := tg.waitSent(t, stranger.ID, "Telegram account to bea")
 	if !strings.Contains(asked.Text, "bea will read your private conversations") || asked.Token != "alpha" {
 		t.Fatalf("the question = %+v; want alpha's bot naming who reads what", asked)
