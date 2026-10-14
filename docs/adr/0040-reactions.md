@@ -1,6 +1,6 @@
 # ADR-0040: A reaction is an emoji on a message, and it rides with the next turn
 
-Date: 2026-10-02 · Status: accepted (operator decisions of 2026-10-01, recorded on #491) · Amends: ADR-0029 (items 2 and 5) · Amended: 2026-10-06 (item 6: a teammate's message on Telegram, #607)
+Date: 2026-10-02 · Status: accepted (operator decisions of 2026-10-01, recorded on #491) · Amends: ADR-0029 (items 2 and 5) · Amended: 2026-10-06 (item 6: a teammate's message on Telegram, #607); 2026-10-14 (item 6: no group carries a reaction between bots, #817)
 
 ## Context
 
@@ -112,6 +112,19 @@ This ADR records those decisions, and the reaction model the five slices
    different message. There the reaction stays on the hub, and the bridge
    logs why at INFO. A basic group that Telegram upgrades to a supergroup
    gets a new chat id, which the bridge already follows.
+
+   **Amendment (2026-10-14, #817): no group carries a reaction between bots.**
+   The supergroup case above does not hold. In Spool's own supergroup,
+   Telegram answered every loop's reaction to another loop's message with
+   "message to react not found": a bot can react only to a message it
+   received, and it receives no other bot's, whatever the group type. So
+   Telegram shows a loop's reaction to a teammate's message in no group,
+   and the reaction reaches only the hub and the other loop. In a
+   supergroup the bridge still tries, and logs Telegram's refusal at WARN,
+   until it keeps the reaction on the hub there too (#824). A loop's
+   reaction to a person's message that its bot received does show (checked
+   in that supergroup, 2026-10-14). The loop page and docs/TELEGRAM.md say
+   so.
 
 ## Amendments
 
