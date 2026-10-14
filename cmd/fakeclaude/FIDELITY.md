@@ -1,3 +1,4 @@
+| An API failure mid-turn (`!error`): errored result with `subtype` `success`, the text `API Error: 500 Internal server error`, zero usage, session kept | assumed | Not recorded against a real CLI. The health check (#764) asserts only that the turn is errored and that the next scripted line answers the next turn; nothing rests on the text or the `subtype`. |
 # fakeclaude fidelity ledger
 
 Tier 2 is only as strict as this fake. A fake more permissive than the real
