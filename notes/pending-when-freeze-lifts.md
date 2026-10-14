@@ -626,3 +626,6 @@ Iris took #817 at once: PR #823 with Quinn. Her follow-up filed as #824 (improve
 
 ## 2026-10-14 13:40 UTC
 Enes proposed closing #124 (onboarding epic); all 11 children closed, open questions answered by shipped work. Closed with note. L5 open epics: #729 (#732 #733 #775), #750 (#752), #452.
+
+## 2026-10-14 14:20 UTC
+Fast afternoon: merged #820 (#764 watchdog slice 1), #821 (#752 doing line), #825 (#788), #823 (#817), #822 (#819 merge queue in CI, Elliot), #784. Open PRs: #826 (Iris, #818 web half of #764, with Quinn), #827 (Terra, #790), #453 stale. Tidy: #818 → L6 OSS 1.0, parent #754. Iris after #826: #732. Terra after #827: #824 → #810, #811 → #766 → #630. Elliot: #777 seam 2.
