@@ -1,0 +1,110 @@
+# The merge queue (#819, ADR-0054). GitHub's own queue is only for repos an
+# organization owns, so this one is ours: a same-repo PR carrying the `queue`
+# label and set to auto-merge waits its turn, the oldest number first, and
+# only the head of the queue is tested, rebased onto the main it would land on. Its `queue`
+# status is a required check, and auto-merge takes the PR the moment it is
+# green. The ruleset no longer asks for branches up to date: this is what
+# replaced that, without the rebase round trip.
+#
+# What the three jobs hold is the security of it. `pick` and `report` write
+# statuses and run none of a PR's code: they check out main, whichever event
+# started them. `test` runs the PR's code with a read-only token, and it is
+# the only job that does. A fork's PR is never queued, because a run started
+# from main would carry its code.
+name: queue
+
+on:
+  # Main moved: every queued PR's test is stale, so the head is tested again.
+  push:
+    branches: [main]
+  # A PR entered or left the queue. A push to a queued PR is taken out by
+  # unqueue.yml, which dispatches a run here, since what a job's own token
+  # does starts no workflow.
+  pull_request:
+    types: [labeled, unlabeled, auto_merge_enabled, auto_merge_disabled, reopened]
+  # Takes no inputs because the queue's state is read from the API, not the
+  # event: a dispatch from a branch runs exactly what a real trigger runs
+  # (CONVENTIONS.md, /prove-event-workflow).
+  workflow_dispatch:
+
+permissions: {}
+
+# One at a time, so two runs never write statuses over each other. Not
+# cancelled: a run that is mid-test finishes, its report finds main or the
+# PR moved and leaves the status to the run waiting behind it.
+concurrency:
+  group: queue
+  cancel-in-progress: false
+
+jobs:
+  pick:
+    # A fork's PR events carry a read-only token and no place in the queue.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      statuses: write
+      pull-requests: read
+      actions: write
+    outputs:
+      pr: ${{ steps.pick.outputs.pr }}
+      head: ${{ steps.pick.outputs.head }}
+      base: ${{ steps.pick.outputs.base }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          sparse-checkout: scripts/queue.sh
+          sparse-checkout-cone-mode: false
+      - id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        # pipefail: under the runner's `bash -e` alone, tee's success would
+        # hide the script's failure, as the first run of this step did.
+        run: |
+          set -o pipefail
+          bash scripts/queue.sh pick | tee -a "$GITHUB_OUTPUT"
+      # A PR event runs the workflow as that PR has it, so it only marks the
+      # queue. The test runs from main's workflow and main's gates, which a
+      # PR cannot edit on its way in: a dispatch on main starts it.
+      - if: github.event_name == 'pull_request' && steps.pick.outputs.pr != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run queue.yml --ref main --repo "$GITHUB_REPOSITORY"
+
+  # ci.yml's gates, on the head of the queue rebased onto main. A read-only
+  # token, and nothing it could write a status with.
+  test:
+    needs: pick
+    if: github.event_name != 'pull_request' && needs.pick.outputs.pr != ''
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      pr: ${{ fromJSON(needs.pick.outputs.pr) }}
+      head: ${{ needs.pick.outputs.head }}
+      base: ${{ needs.pick.outputs.base }}
+
+  report:
+    needs: [pick, test]
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && needs.pick.outputs.pr != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      statuses: write
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          sparse-checkout: scripts/queue.sh
+          sparse-checkout-cone-mode: false
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          PR: ${{ needs.pick.outputs.pr }}
+          HEAD: ${{ needs.pick.outputs.head }}
+          BASE: ${{ needs.pick.outputs.base }}
+          RESULT: ${{ needs.test.result }}
+        run: bash scripts/queue.sh report

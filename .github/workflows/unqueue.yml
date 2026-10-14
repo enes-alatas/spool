@@ -1,0 +1,54 @@
+# A push to a queued PR takes it out of the merge queue (ADR-0054, review
+# of #822). The new head is not the one the reviewer approved or the
+# operator set to auto-merge, and GitHub keeps auto-merge on after a push
+# by anyone who can write, which every loop can. So this removes the
+# `queue` label and turns auto-merge off, and the PR re-enters only through
+# both of them again. A push to a PR that was not queued gets its `queue`
+# status marked "not queued", so every head carries one.
+#
+# Its own workflow rather than a job in queue.yml: that one runs one at a
+# time and drops a run waiting behind another, and this must run on every
+# push. A run of queue.yml racing it cannot land the new head: `report`
+# posts green only while the label and auto-merge are still on.
+name: unqueue
+
+on:
+  pull_request:
+    types: [synchronize]
+
+permissions: {}
+
+jobs:
+  unqueue:
+    # A fork's PR is never queued, and its token could not write anyway.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      # `contents: write` is what GitHub asks of a token that turns
+      # auto-merge off; the job checks out main's script and runs none of
+      # the PR's code.
+      contents: write
+      pull-requests: write
+      statuses: write
+      # To dispatch queue.yml when the PR it took out was holding a place.
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          sparse-checkout: scripts/queue.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - id: unqueue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -o pipefail
+          bash scripts/queue.sh unqueue | tee -a "$GITHUB_OUTPUT"
+      # What this job's token does starts no workflow, so the queue behind
+      # the PR it took out would wait for the next push to main.
+      - if: steps.unqueue.outputs.unqueued == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run queue.yml --ref main --repo "$GITHUB_REPOSITORY"

@@ -13,6 +13,13 @@ ADR instead.*
   verbatim — linear history, no merge or squash commits (repo settings enforce
   this). The PR title is still a valid Conventional Commit; the template's
   Commit Structure section lists what will land.
+- **The merge queue** (ADR-0054, #819): an approved PR gets the `queue` label
+  from its reviewer, and the merge ask asks the operator to turn on
+  auto-merge. The queue tests it rebased onto the `main` it lands on, and its
+  `queue` status says where it stands, so nobody rebases a PR only because
+  `main` moved. A PR that conflicts or fails there is red, and its author
+  rebases or fixes it. Any push to a queued PR takes it out (label and
+  auto-merge off), so a new head goes back through review and the merge ask.
 - **Atomic commits** (ADR-0016): one logical change per commit — a subject that
   needs "and" means split. Each commit builds and passes tiers 1–2 on its own
   (history stays bisectable; review-enforced — CI tests the head). Mechanical

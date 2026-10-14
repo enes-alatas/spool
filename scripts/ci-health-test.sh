@@ -48,7 +48,8 @@ for arg in "$@"; do
   case "$arg" in body=@*) cp "${arg#body=@}" "$SENT";; esac
 done
 # A read — the dispatch path fetching the run it was pointed at.
-if [[ "$*" != *--method* ]]; then cat "${FETCH:-/dev/null}"; fi
+if [[ "$*" == */jobs* ]]; then cat "${JOBS:-/dev/null}"
+elif [[ "$*" != *--method* ]]; then cat "${FETCH:-/dev/null}"; fi
 STUB
 chmod +x "$stub/gh"
 
@@ -60,7 +61,7 @@ run_json() { # name conclusion branch
   jq -nc --arg name "$1" --arg conclusion "$2" --arg branch "$3" '{
     name: $name, conclusion: $conclusion, head_branch: $branch,
     html_url: "https://github.com/o/r/actions/runs/42", event: "issues",
-    head_sha: "0123456789abcdef", updated_at: "2026-09-20T12:00:00Z"
+    head_sha: "0123456789abcdef", updated_at: "2026-09-20T12:00:00Z", id: 42
   }'
 }
 
@@ -74,7 +75,7 @@ run() { # event_name payload_file
   # and a harness that leaves those in the repo is one `git add -A` away
   # from committing them.
   ( cd "$dir" &&
-    PATH="$stub:$PATH" CALLS="$dir/calls" SENT="$dir/sent" FETCH="${FETCH:-}" \
+    PATH="$stub:$PATH" CALLS="$dir/calls" SENT="$dir/sent" FETCH="${FETCH:-}" JOBS="${JOBS:-}" \
       GITHUB_REPOSITORY=o/r GITHUB_EVENT_NAME="$1" \
       GITHUB_EVENT_PATH="$dir/event.json" GITHUB_STEP_SUMMARY="$dir/summary" \
       bash -e "$work/step.sh" >"$dir/out" 2>"$dir/err" )
@@ -199,6 +200,35 @@ else
   pass 'a run that has not concluded reports nothing and fails loudly'
 fi
 unset FETCH
+
+# The queue (ADR-0054): a run red in `test` only is a PR failing on the
+# newer main, which its own `queue` status reports; red in `pick` or
+# `report`, or with no jobs at all, is the queue itself broken.
+queue_case() { # want jobs-json description
+  JOBS="$work/jobs.json"
+  printf '%s' "$2" > "$JOBS"
+  export JOBS
+  printf '{"workflow_run":%s}' "$(run_json queue failure main)" > "$work/e.json"
+  run workflow_run "$work/e.json"
+  if [ "$STATUS" -ne 0 ]; then
+    fail "$3: exits $STATUS ($(cat "$ERR_FILE"))"
+  elif [ "$1" = silent ] && grep -q POST "$CALLS_FILE"; then
+    fail "$3: reported"
+  elif [ "$1" = report ] && ! grep -q 'POST repos/o/r/issues/216/comments' "$CALLS_FILE"; then
+    fail "$3: not reported: $(cat "$CALLS_FILE")"
+  else
+    pass "$3"
+  fi
+  unset JOBS
+}
+queue_case silent '{"jobs":[{"name":"pick","conclusion":"success"},{"name":"test / checks","conclusion":"failure"},{"name":"test / changes","conclusion":"success"},{"name":"report","conclusion":"success"}]}' 'a queue run red in test only says nothing'
+queue_case report '{"jobs":[{"name":"pick","conclusion":"failure"},{"name":"test / checks","conclusion":"skipped"},{"name":"report","conclusion":"skipped"}]}' 'a queue run red in pick is reported'
+queue_case report '{"jobs":[{"name":"pick","conclusion":"success"},{"name":"test / checks","conclusion":"failure"},{"name":"report","conclusion":"failure"}]}' 'a queue run red in report is reported, even beside a red test'
+queue_case report '{"jobs":[]}' 'a queue run with no jobs is reported'
+if ! grep -q 'actions/runs/42/jobs' "$CALLS_FILE"; then fail 'the queue case does not read the run'"'"'s jobs'; else pass 'the queue case reads the run'"'"'s jobs'; fi
+printf '{"workflow_run":%s}' "$(run_json unqueue failure main)" > "$work/e.json"
+run workflow_run "$work/e.json"
+if grep -q 'POST repos/o/r/issues/216/comments' "$CALLS_FILE"; then pass 'an unqueue failure is reported'; else fail 'an unqueue failure is reported'; fi
 
 # A branch name is attacker-writable text — anyone who can open a PR picks
 # one. It reaches the comment through jq, never through the shell, so a name

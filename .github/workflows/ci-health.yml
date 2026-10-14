@@ -2,8 +2,9 @@
 #
 # `ci` reports itself: a PR failure is a red check on the PR its author is
 # already looking at. The rest fire on issues and comments (`issue-guards`)
-# or a schedule (`advisories`, #737) or a tag (`release`, #756), so a
-# failure is a red run in a tab nobody opens and a mail in the operator's
+# or a schedule (`advisories`, #737) or a tag (`release`, #756) or main's
+# pushes (`queue`, #819), or work behind a PR author's back (`unqueue`), so
+# a failure is a red run in a tab nobody opens and a mail in the operator's
 # inbox. #203 left the redaction guard inert that way for a day, red the
 # whole time. The fleet reads issues, so failures go to a pinned issue as
 # comments.
@@ -14,7 +15,7 @@ on:
   # sentinel silently unless it is added here. scripts/workflow-lint.awk has
   # a rule that fails CI when one is missing — same failure class as #209.
   workflow_run:
-    workflows: [issue-guards, advisories, release]
+    workflows: [issue-guards, advisories, release, queue, unqueue]
     types: [completed]
   # Runnable from a branch against a known-failed run, which is the only way
   # to prove the posting path: a healthy repo never fires the real trigger
@@ -138,6 +139,22 @@ jobs:
           if [ "$name" = ci-health ]; then
             echo 'Refusing to report on ci-health itself.' >> "$GITHUB_STEP_SUMMARY"
             exit 0
+          fi
+
+          # A queue run whose `test` failed is the queue working: the PR it
+          # tested conflicts with, or fails on, the newer main, and its red
+          # `queue` status already tells its author (ADR-0054). This board
+          # is for the queue's own machinery, `pick` and `report`. A run
+          # with no jobs at all never started, and that is reported.
+          if [ "$name" = queue ]; then
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$(jq -r '.id' run.json)/jobs?per_page=100" > jobs.json
+            if jq -e '
+              (.jobs | map(select(.name | startswith("test / "))) | any(.conclusion == "failure"))
+              and (.jobs | map(select(.name | startswith("test / ") | not)) | all(.conclusion == "success" or .conclusion == "skipped"))
+            ' jobs.json > /dev/null; then
+              echo 'queue run failed in `test` only: the PR'"'"'s own red `queue` status reports it.' >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
           fi
 
           # Built with jq from the run's own fields rather than interpolated,

@@ -24,9 +24,10 @@
 #      A no-op step would have billed a minute to say it had nothing to do.
 #   4. A push to main runs tier 1 only. Rebase-merge (ADR-0016) lands the
 #      commits a PR already proved green, so the full matrix is a re-run.
-#      The gap this leaves is a merge from a stale base; branch protection's
-#      "require branches to be up to date" closes it, and until that is on,
-#      the tier-1 steps are the smoke that would catch a mechanical mismerge.
+#      The gap this leaves is a merge from a stale base. The merge queue
+#      closes it (ADR-0054): its required `queue` check runs these gates on
+#      the PR rebased onto the main it lands on, by calling this workflow.
+#      The tier-1 steps here stay the smoke for a mechanical mismerge.
 #   5. `itest` is skipped when the content it covers already passed it on
 #      this PR (#314). Rebase-merge makes two to five force-pushes per PR
 #      the norm — a reworded commit, a docs-only fold, a rebase onto a main
@@ -43,6 +44,20 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The merge queue calls these gates on the head of the queue, rebased onto
+  # main (#819, ADR-0054). Each job puts that tree in place after its
+  # checkout; everything after reads it as a PR's.
+  workflow_call:
+    inputs:
+      pr:
+        type: number
+        required: true
+      head:
+        type: string
+        required: true
+      base:
+        type: string
+        required: true
 
 # One run per PR. `head_ref` is empty on a push, so pushes to main fall back
 # to their own run id and are never cancelled by each other.
@@ -81,12 +96,23 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+      # The merge queue's run (#819): the tree under test is the queued PR
+      # rebased onto main, not what the caller's event checked out.
+      - name: the queued PR, rebased onto main
+        if: inputs.pr
+        env:
+          PR: ${{ inputs.pr }}
+          HEAD_SHA: ${{ inputs.head }}
+          BASE_SHA: ${{ inputs.base }}
+        run: bash scripts/queue-tree.sh "$PR" "$HEAD_SHA" "$BASE_SHA"
       - id: filter
         env:
-          BASE: ${{ github.event.pull_request.base.sha }}
+          BASE: ${{ inputs.base || github.event.pull_request.base.sha }}
+          EVENT: ${{ github.event_name }}
+          QUEUE_PR: ${{ inputs.pr }}
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
+          if [ "$EVENT" != pull_request ] && [ -z "$QUEUE_PR" ]; then
             printf 'unit=true\nitest=false\nweb=false\nsmoke=false\nlockfile=false\nworkflows=false\n' >> "$GITHUB_OUTPUT"
             echo 'Push to main: unit tests only — this content was green on its PR (ADR-0016).' >> "$GITHUB_STEP_SUMMARY"
             exit 0
@@ -184,36 +210,44 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+      # As in `changes`: the queued PR rebased onto main (#819).
+      - name: the queued PR, rebased onto main
+        if: inputs.pr
+        env:
+          PR: ${{ inputs.pr }}
+          HEAD_SHA: ${{ inputs.head }}
+          BASE_SHA: ${{ inputs.base }}
+        run: bash scripts/queue-tree.sh "$PR" "$HEAD_SHA" "$BASE_SHA"
 
       # The secret steps are not path-filtered, and deliberately: a credential
       # can be added to any file, so "this change did not touch the Go tree"
       # says nothing about whether it added a token. It is seconds of runner
       # time (#151).
       - name: the scanner still catches what it claims to
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || inputs.pr
         run: bash scripts/secret-scan-test.sh
       # The redaction guard (secret-redact.yml, the `issue-guards` workflow) fires on issue and comment
       # events, where nothing gates it — this is the only place its rules are
       # checked before they ship, and it shares its pattern list with the scan
       # above, so a change to either arrives here.
       - name: the redactor still takes out what it claims to
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || inputs.pr
         run: bash scripts/secret-redact-test.sh
       # The step that guard runs, under the runner's own `bash -e` — the flag
       # is the difference that let #207 ship: every check passed under plain
       # bash and the guard did nothing on the runner.
       - name: the redaction step still acts on a hit
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || inputs.pr
         run: bash scripts/secret-redact-body-test.sh
       # The welcome step posts on an event no PR fires, so this is the only
       # run it gets before it ships: under `bash -e`, with a stub gh (#503).
       - name: the welcome step still replies once, and only with its note
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || inputs.pr
         run: bash scripts/community-welcome-test.sh
       - name: scan the lines this PR adds
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || inputs.pr
         env:
-          BASE: ${{ github.event.pull_request.base.sha }}
+          BASE: ${{ inputs.base || github.event.pull_request.base.sha }}
         run: |
           git diff -U0 "$BASE" HEAD | bash scripts/secret-scan.sh --stdin
 
@@ -269,10 +303,10 @@ jobs:
         if: needs.changes.outputs.unit == 'true'
         continue-on-error: true
         env:
-          EVENT: ${{ github.event_name }}
-          BASE: ${{ github.event.pull_request.base.sha }}
+          EVENT: ${{ inputs.pr && 'queue' || github.event_name }}
+          BASE: ${{ inputs.base || github.event.pull_request.base.sha }}
         run: |
-          if [ "$EVENT" = pull_request ]; then
+          if [ "$EVENT" = pull_request ] || [ "$EVENT" = queue ]; then
             # To a file first: in a pipe, a failed diff (under `bash -e`, no
             # pipefail) would reach the script as an empty change and the
             # summary would say the PR touched no Go.
@@ -397,6 +431,12 @@ jobs:
       - name: the release smoke still stops on what it claims to
         if: needs.changes.outputs.workflows == 'true'
         run: bash scripts/release-smoke-test.sh
+      # The queue runs on main's pushes and on label events, so this is what
+      # a PR can see of it: its writing steps against a stub `gh`, and its
+      # rebase against a real repository (#819).
+      - name: the merge queue still marks and tests what it claims to
+        if: needs.changes.outputs.workflows == 'true'
+        run: bash scripts/queue-test.sh
 
   # The one job still filtered at job level, because it is the one worth
   # skipping outright: ~8 of the ~10 minutes a full run used to bill. A job
@@ -409,6 +449,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # As in `changes`: the queued PR rebased onto main (#819).
+      - name: the queued PR, rebased onto main
+        if: inputs.pr
+        env:
+          PR: ${{ inputs.pr }}
+          HEAD_SHA: ${{ inputs.head }}
+          BASE_SHA: ${{ inputs.base }}
+        run: bash scripts/queue-tree.sh "$PR" "$HEAD_SHA" "$BASE_SHA"
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
