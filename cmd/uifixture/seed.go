@@ -283,6 +283,14 @@ func seedConversations(ctx context.Context, db store.Store, files *attach.Files,
 		replyTo *int
 		// files came with it, one per state the room draws (#460).
 		files []fixtureFile
+		// corrects is the position in this list of the message a person's
+		// edit or deletion corrects, and kind which of the two (ADR-0055):
+		// the room draws the pair (#831), so the fixture holds one of each.
+		corrects *int
+		kind     string
+		// slack marks a post from the channel's Slack side. Telegram never
+		// reports a deletion (ADR-0055), so the deleted post is Slack's.
+		slack bool
 	}{
 		// Oldest first, as the store's ids would be: the channel shows them
 		// in id order, so an entry out of time order here shoots a thread that
@@ -319,6 +327,13 @@ func seedConversations(ctx context.Context, db store.Store, files *attach.Files,
 		// and https, one ended by a comma, one by a parenthesis it sits in
 		// and a full stop, and a bare domain, which stays text.
 		{author: "gardener", from: ids["gardener"], text: "Preview at http://preview.internal:8080/install, review at https://github.com/example/handbook/pull/48 (diff: https://github.com/example/handbook/pull/48/files). The live site, handbook.example.com, updates on merge.", at: -7 * time.Minute},
+		// Rana posts to the wrong thread and deletes it, then fixes the
+		// install-page request the gardener already answered. The deleted
+		// post comes back with no words (ADR-0055), and the edit sits where
+		// it arrived, below the gardener's reply to the words it replaced.
+		{author: "rana", text: "@gardener ignore the quickstart, that page is generated from the CLI help.", at: -6 * time.Minute, to: []string{ids["gardener"]}, slack: true},
+		{author: "rana", at: -5 * time.Minute, to: []string{ids["gardener"]}, corrects: position(8), kind: store.EditDeleted, slack: true},
+		{author: "rana", text: "@gardener the install page still tells people to run `make setup`, which went away in 0.5. It should say `make build`.", at: -4 * time.Minute, to: []string{ids["gardener"]}, corrects: position(5), kind: store.EditEdited},
 	}
 	groupIDs := make([]int64, len(group))
 	for i, message := range group {
@@ -352,13 +367,30 @@ func seedConversations(ctx context.Context, db store.Store, files *attach.Files,
 			// The operator's post never leaves the hub (ADR-0032).
 			msg.Mirror = store.MirrorNotMirrored
 		}
+		if message.slack {
+			msg.Origin, msg.TGChatID, msg.TGMessageID = store.OriginSlackChannel, 0, 0
+			// A correction has no ts of its own: Slack sent the event, not a
+			// message.
+			if message.corrects == nil {
+				msg.SlackChannelID, msg.SlackTS = "C0FIXTURE", fmt.Sprintf("%d.%06d", ms(message.at)/1000, i)
+			}
+		}
 		if message.replyTo != nil {
 			msg.ReplyToID = groupIDs[*message.replyTo]
+		}
+		if message.corrects != nil {
+			msg.EditOf, msg.EditKind = groupIDs[*message.corrects], message.kind
+			msg.EditKey = fmt.Sprintf("fixture:%d:%s", msg.EditOf, message.kind)
 		}
 		if err := db.Messages().Insert(ctx, msg); err != nil {
 			return fmt.Errorf("group message: %w", err)
 		}
 		groupIDs[i] = msg.ID
+		if message.corrects != nil {
+			if err := db.Messages().MarkEdited(ctx, msg.EditOf, message.kind, msg.TS); err != nil {
+				return fmt.Errorf("group correction: %w", err)
+			}
+		}
 		if err := keepFixtureFiles(ctx, db, files, msg.ID, message.at, message.files); err != nil {
 			return err
 		}
