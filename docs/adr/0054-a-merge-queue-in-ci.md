@@ -1,6 +1,6 @@
 # ADR-0054: A merge queue in CI, in place of "branches up to date"
 
-Date: 2026-10-14 · Status: accepted (operator's decision of 2026-10-14 on #819) · Supersedes: ADR-0031 (the "require branches to be up to date" clause only) · Relates to: ADR-0016, #819
+Date: 2026-10-14 · Status: accepted (operator's decision of 2026-10-14 on #819) · Supersedes: ADR-0031 (the "require branches to be up to date" clause only) · Relates to: ADR-0016, #819 · Amended: 2026-10-14 (#834)
 
 ## Context
 
@@ -78,6 +78,18 @@ on 2026-10-14 to build it.
      write. It runs `main`'s script, none of the PR's code, and removes the
      label first, so a refused auto-merge call leaves the PR out of the
      queue anyway, with the run red.
+
+   **Amendment (2026-10-14, #834):** a fourth job in `queue`, `board`,
+   rewrites the pinned noticeboard issue (#833) with the queue's order on
+   every run, at the operator's request. It holds `issues: write`, with
+   `statuses` and `pull-requests` read, and runs `main`'s script, none of
+   the PR's code. It reads the order from the `queue` statuses alone and
+   writes PR numbers only, never a title. Of a status it copies only what
+   the queue itself writes, a short sha and a run link of this repository,
+   since anyone who can push here can write a status. So no author's text
+   reaches the issue. It edits the body in place, only when the order
+   changed, and posts no comments. A failure there turns the run red for
+   `ci-health` without holding a test or a report.
 7. **A fork's PR is never queued.** A run started from `main` holds `main`'s
    cache scope and would carry the fork's code. A maintainer who wants a
    fork's change pushes its branch here first and queues that PR.
