@@ -38,13 +38,13 @@ const s = (sec: number) => Math.round(sec * FPS)
 
 // Beat boundaries, in seconds.
 const B1 = [0, 5]
-const B2 = [5, 12]
-const B3 = [12, 29]
-const B4 = [29, 38]
-const B5 = [38, 46]
-const B6 = [46, 54]
-const B7 = [54, 59]
-export const DURATION = s(59)
+const B2 = [5, 18]
+const B3 = [18, 35]
+const B4 = [35, 44]
+const B5 = [44, 52]
+const B6 = [52, 60]
+const B7 = [60, 65]
+export const DURATION = s(65)
 
 // The footage's CSS size; record.mjs captures it at 2x device pixels.
 const PAGE = { w: 1280, h: 720 }
@@ -346,50 +346,37 @@ function Pitch() {
 
 const mainScreen: CSSProperties = { position: 'absolute', top: MAIN.top, left: (W - MAIN.width) / 2 }
 
-// Beat 2: create a loop. The form fill plays fast, the rest at about real
-// pace, and the camera follows the pointer down the form to Create loop,
-// ending on the press. Its bot comes in the next beat, from the first-run
-// page (#733).
+// Beat 2: create a loop from the first-run Loops card (#733). The form
+// fill plays fast, then the press at real pace; the wait for the first
+// wake is cut, and the beat ends on the wake's tick and Done, which draws
+// the card's own tick. Its bot comes in the next beat, on the same page.
 const C = marks.create
-const FILL_RATE = 1.6
-const SCROLL_RATE = 1.1
-const FILL_LEN = (C['scroll-create'] - C.ready) / FILL_RATE
-// Through the press on Create loop, ending before the page navigates.
-const SCROLL_LEN = (C['create-click'] + 0.5 - C['scroll-create']) / SCROLL_RATE
-const form: Focus = { x: 615, y: 330, zoom: 1.25 }
-// Low enough on the form to hold Create loop, which the form ends on.
-const formEnd: Focus = { x: 615, y: 470, zoom: 1.25 }
-const camera: Camera = [
-  [C['scroll-create'], form],
-  [C['scroll-create'] + 1.2, formEnd],
-]
+const FILL_RATE = 2
+const FILL_LEN = (C['create-click'] + 0.3 - C.ready) / FILL_RATE
+const PRESS_FROM = C['create-click'] + 0.3
+const PRESS_LEN = C.created + 0.9 - PRESS_FROM
+const WOKEN_FROM = C.woken - 0.5
+// The whole page: the dialog sits in its middle, and any zoom would cut
+// the top bar to a sliver.
+const firstRun: Focus = { x: PAGE.w / 2, y: PAGE.h / 2, zoom: 1 }
 function Create() {
+  const shot = {
+    width: MAIN.width,
+    url: 'localhost:8080/',
+    style: mainScreen,
+    src: 'create.mp4',
+    camera: firstRun,
+  }
   return (
     <Stage>
       <Sequence durationInFrames={s(FILL_LEN)}>
-        <Screen
-          width={MAIN.width}
-          url="localhost:8080/new"
-          style={mainScreen}
-          src="create.mp4"
-          from={C.ready}
-          rate={FILL_RATE}
-          camera={[
-            [C.ready, { x: 640, y: 360, zoom: 1 }],
-            [C.ready + 1.2, form],
-          ]}
-        />
+        <Screen {...shot} from={C.ready} rate={FILL_RATE} />
       </Sequence>
-      <Sequence from={s(FILL_LEN)} durationInFrames={s(SCROLL_LEN)}>
-        <Screen
-          width={MAIN.width}
-          url="localhost:8080/new"
-          style={mainScreen}
-          src="create.mp4"
-          from={C['scroll-create']}
-          rate={SCROLL_RATE}
-          camera={camera}
-        />
+      <Sequence from={s(FILL_LEN)} durationInFrames={s(PRESS_LEN)}>
+        <Screen {...shot} from={PRESS_FROM} />
+      </Sequence>
+      <Sequence from={s(FILL_LEN + PRESS_LEN)}>
+        <Screen {...shot} from={WOKEN_FROM} />
       </Sequence>
       <Caption step="02 · Create">Start a loop: a name and a mission.</Caption>
     </Stage>
