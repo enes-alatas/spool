@@ -1,0 +1,261 @@
+#!/usr/bin/env bash
+# Exercises scripts/queue.sh and scripts/queue-tree.sh (#819).
+#
+# The queue's workflow fires on main's pushes and on label events, which no
+# PR's CI runs, so these are what a PR can see of it: the two writing steps
+# against a stub `gh` and fixture API answers, and the tree step against a
+# real git repository standing in for origin.
+set -uo pipefail
+
+cd "$(dirname "$0")/.."
+root=$(pwd)
+failures=0
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+
+fail() { printf 'FAIL %s\n' "$1"; failures=$((failures + 1)); }
+pass() { printf 'ok   %s\n' "$1"; }
+
+# The stub answers from files under $FIX and logs every write to $CALLS:
+#   main            main's sha
+#   pulls.json      the open PRs
+#   pull-N.json     one PR
+#   status-SHA.json a commit's combined status
+# A `--jq` filter is applied with the real jq, as gh would.
+mkdir -p "$work/bin"
+cat > "$work/bin/gh" <<'STUB'
+#!/usr/bin/env bash
+shift # api
+filter=. method=GET path="" fields=()
+while [ $# -gt 0 ]; do
+  case $1 in
+    --jq) filter=$2; shift ;;
+    --method) method=$2; shift ;;
+    -f) fields+=("$2"); shift ;;
+    *) path=$1 ;;
+  esac
+  shift
+done
+if [ "$method" != GET ]; then
+  printf '%s %s %s\n' "$method" "${path##*/}" "${fields[*]}" >> "$CALLS"
+  exit 0
+fi
+case $path in
+  */commits/main) printf '{"sha":"%s"}' "$(cat "$FIX/main")" ;;
+  */commits/*/status) cat "$FIX/status-$(basename "$(dirname "$path")").json" 2>/dev/null || echo '{"statuses":[]}' ;;
+  */pulls\?*) cat "$FIX/pulls.json" ;;
+  */pulls/*) cat "$FIX/pull-${path##*/}.json" ;;
+  *) echo "stub gh: no fixture for $path" >&2; exit 1 ;;
+esac | jq -r "$filter"
+STUB
+chmod +x "$work/bin/gh"
+export PATH="$work/bin:$PATH" GITHUB_REPOSITORY=owner/spool
+
+# pr NUMBER SHA LABELS REPO AUTO: one open PR, as the API lists it, set to
+# auto-merge unless AUTO is "off".
+pr() {
+  jq -nc --argjson n "$1" --arg sha "$2" --arg labels "$3" --arg repo "${4:-owner/spool}" --arg auto "${5:-on}" \
+    '{number: $n, state: "open", node_id: "PR_\($n)", head: {sha: $sha, repo: {full_name: $repo}},
+      auto_merge: (if $auto == "on" then {merge_method: "rebase"} else null end),
+      labels: ($labels | split(",") | map(select(. != "")) | map({name: .}))}'
+}
+# has SHA STATE DESCRIPTION: SHA already carries that queue status.
+has() {
+  jq -nc --arg s "$2" --arg d "$3" '{statuses: [{context: "queue", state: $s, description: $d}]}' > "$FIX/status-$1.json"
+}
+fresh() {
+  export FIX="$work/fix-$1" CALLS="$work/calls-$1"
+  mkdir -p "$FIX"
+  : > "$CALLS"
+  echo m0000000000aaaa > "$FIX/main"
+}
+expect() { # name file pattern: the file holds a line matching pattern
+  if grep -qE "$3" "$2"; then pass "$1"; else fail "$1"; printf '  in %s:\n' "$2"; sed 's/^/    /' "$2"; fi
+}
+refuse() { # name file pattern: no line matches
+  if grep -qE "$3" "$2"; then fail "$1"; sed 's/^/    /' "$2"; else pass "$1"; fi
+}
+
+# 1. The oldest queued PR is the head and is tested; the next waits behind
+# it; an unqueued PR is marked pending; a fork's PR is left alone.
+fresh order
+jq -s . <(pr 7 s7 queue) <(pr 5 s5 queue,docs) <(pr 6 s6 "") <(pr 4 s4 queue other/fork) > "$FIX/pulls.json"
+bash scripts/queue.sh pick > "$work/out-order"
+expect 'the oldest queued PR is the one tested' "$work/out-order" '^pr=5$'
+expect 'its head is the sha tested' "$work/out-order" '^head=s5$'
+expect 'on the main read at the start' "$work/out-order" '^base=m0000000000aaaa$'
+expect 'the head is marked testing' "$CALLS" '^POST s5 state=pending context=queue description=testing on main@m000000$'
+expect 'the next waits behind it' "$CALLS" '^POST s7 state=pending context=queue description=queued at 2, behind #5$'
+expect 'an unqueued PR is marked not queued' "$CALLS" '^POST s6 state=pending .*not queued'
+refuse 'a fork PR is never touched' "$CALLS" '^POST s4 '
+
+# 2. A head already green on this main is left green and not tested again.
+fresh green
+jq -s . <(pr 5 s5 queue) <(pr 7 s7 queue) > "$FIX/pulls.json"
+has s5 success 'tested on main@m000000'
+bash scripts/queue.sh pick > "$work/out-green"
+if [ -s "$work/out-green" ]; then fail 'a head green on this main is not tested again'; else pass 'a head green on this main is not tested again'; fi
+refuse 'and its green stays' "$CALLS" '^POST s5 '
+expect 'the next still waits behind it' "$CALLS" '^POST s7 .*behind #5$'
+
+# 3. A head green on an older main is tested again.
+fresh stale
+jq -s . <(pr 5 s5 queue) > "$FIX/pulls.json"
+has s5 success 'tested on main@0ld0000'
+bash scripts/queue.sh pick > "$work/out-stale"
+expect 'a head green on an older main is tested again' "$work/out-stale" '^pr=5$'
+expect 'and goes back to pending' "$CALLS" '^POST s5 state=pending .*testing on main@m000000$'
+
+# 4. A red head stays red, and the queue moves past it.
+fresh red
+jq -s . <(pr 5 s5 queue) <(pr 7 s7 queue) > "$FIX/pulls.json"
+has s5 failure 'failed on main@m000000: see the run'
+bash scripts/queue.sh pick > "$work/out-red"
+expect 'the next PR becomes the head' "$work/out-red" '^pr=7$'
+refuse 'the red one is left red' "$CALLS" '^POST s5 '
+
+# 5. A green PR taken out of the queue does not keep its green.
+fresh out
+jq -s . <(pr 5 s5 "") > "$FIX/pulls.json"
+has s5 success 'tested on main@m000000'
+bash scripts/queue.sh pick > /dev/null
+expect 'a PR out of the queue goes back to pending' "$CALLS" '^POST s5 state=pending .*not queued'
+
+# 6. A status already reading the same is not posted again.
+fresh same
+jq -s . <(pr 5 s5 queue) <(pr 7 s7 queue) > "$FIX/pulls.json"
+has s7 pending 'queued at 2, behind #5'
+bash scripts/queue.sh pick > /dev/null
+refuse 'an unchanged status is not posted again' "$CALLS" '^POST s7 '
+
+# 7. An empty queue tests nothing.
+fresh empty
+echo '[]' > "$FIX/pulls.json"
+bash scripts/queue.sh pick > "$work/out-empty"
+if [ -s "$work/out-empty" ] || [ -s "$CALLS" ]; then fail 'an empty queue tests and posts nothing'; else pass 'an empty queue tests and posts nothing'; fi
+
+# 8. A labelled PR the operator has not set to auto-merge is not queued: the
+# head is always a PR that merges on green (review of #822).
+fresh noauto
+jq -s . <(pr 5 s5 queue owner/spool off) <(pr 7 s7 queue) > "$FIX/pulls.json"
+bash scripts/queue.sh pick > "$work/out-noauto"
+expect 'a PR without auto-merge is not the head' "$work/out-noauto" '^pr=7$'
+expect 'and says what it waits for' "$CALLS" '^POST s5 state=pending .*waiting for auto-merge$'
+refuse 'nothing waits behind it' "$CALLS" 'behind #5'
+
+# 9. A lower number queued later does not take the head from a PR that is
+# green, or under test, on this main.
+for held in 'success tested on main@m000000' 'pending testing on main@m000000'; do
+  fresh "held-${held%% *}"
+  jq -s . <(pr 3 s3 queue) <(pr 5 s5 queue) > "$FIX/pulls.json"
+  has s5 "${held%% *}" "${held#* }"
+  bash scripts/queue.sh pick > "$work/out-held"
+  refuse "a head ${held%% *} on this main keeps the head" "$work/out-held" '^pr=3$'
+  expect "and the newcomer waits behind it (${held%% *})" "$CALLS" '^POST s3 state=pending .*queued at 2, behind #5$'
+done
+
+# The report: green or red only when nothing moved under the test.
+report() { # name result: runs the report for #5 at s5 on m0000000000aaaa
+  PR=5 HEAD=s5 BASE=m0000000000aaaa RESULT=$2 bash scripts/queue.sh report > "$work/report-$1" 2>&1
+}
+fresh pass
+pr 5 s5 queue > "$FIX/pull-5.json"
+report pass success
+expect 'a passing test turns the PR green' "$CALLS" '^POST s5 state=success context=queue description=tested on main@m000000$'
+fresh failed
+pr 5 s5 queue > "$FIX/pull-5.json"
+report failed failure
+expect 'a failing test turns it red' "$CALLS" '^POST s5 state=failure '
+fresh moved
+pr 5 s5 queue > "$FIX/pull-5.json"
+echo m1111111111bbbb > "$FIX/main"
+report moved success
+refuse 'a pass on a main that has since moved is not posted' "$CALLS" 'POST'
+fresh pushed
+pr 5 s5b queue > "$FIX/pull-5.json"
+report pushed success
+refuse 'a pass on a head that has since moved is not posted' "$CALLS" 'POST'
+fresh unqueued
+pr 5 s5 "" > "$FIX/pull-5.json"
+report unqueued success
+refuse 'a pass on a PR taken out of the queue is not posted' "$CALLS" 'POST'
+fresh cancelled
+pr 5 s5 queue > "$FIX/pull-5.json"
+report cancelled cancelled
+refuse 'a cancelled test posts nothing' "$CALLS" 'POST'
+fresh noauto-report
+pr 5 s5 queue owner/spool off > "$FIX/pull-5.json"
+report noauto-report success
+refuse 'a pass on a PR whose auto-merge was turned off is not posted' "$CALLS" 'POST'
+
+# The unqueue: a push to a queued PR takes it out, label and auto-merge.
+unqueue() { PR=5 bash scripts/queue.sh unqueue > "$work/unqueue-$1" 2>&1; }
+fresh pushed-queued
+pr 5 s5b queue > "$FIX/pull-5.json"
+unqueue pushed-queued
+expect 'a push takes the label off' "$CALLS" '^DELETE queue $'
+expect 'and turns auto-merge off' "$CALLS" '^POST graphql id=PR_5 query=mutation.*disablePullRequestAutoMerge'
+expect 'and marks the new head not queued' "$CALLS" '^POST s5b state=pending .*pushed after queueing'
+expect 'and asks for a queue run' "$work/unqueue-pushed-queued" '^unqueued=true$'
+if [ "$(sed -n 1p "$CALLS" | cut -d' ' -f1)" = DELETE ]; then pass 'the label goes before auto-merge'; else fail 'the label goes before auto-merge'; fi
+fresh pushed-plain
+pr 5 s5b "" owner/spool off > "$FIX/pull-5.json"
+unqueue pushed-plain
+refuse 'a push to an unqueued PR removes nothing' "$CALLS" '^(DELETE|POST graphql)'
+refuse 'and asks for no queue run' "$work/unqueue-pushed-plain" unqueued
+expect 'and marks it not queued' "$CALLS" '^POST s5b state=pending .*add the queue label'
+fresh pushed-auto
+pr 5 s5b "" > "$FIX/pull-5.json"
+unqueue pushed-auto
+refuse 'no label, no label removal' "$CALLS" '^DELETE'
+expect 'auto-merge alone is still turned off' "$CALLS" '^POST graphql '
+
+# The tree: a real origin with main and a PR ref, cloned the way
+# actions/checkout leaves a job.
+git_() { git -c user.name=t -c user.email=t@localhost -c init.defaultBranch=main "$@"; }
+origin="$work/origin"
+git_ init -q "$origin"
+(
+  cd "$origin"
+  printf 'a\nb\nc\n' > f
+  git_ add f && git_ commit -qm base
+  git_ checkout -qb pr
+  printf 'a\nb\nC\n' > f && git_ commit -qam 'the pr'
+  git update-ref refs/pull/1/head HEAD
+  git_ checkout -qb clash main
+  printf 'A\nb\nc\n' > f && git_ commit -qam 'main moves, apart'
+  git_ checkout -q main
+  git_ merge -q --ff-only clash
+  git_ checkout -qb clash2 main~1
+  printf 'a\nb\nX\n' > f && git_ commit -qam 'main moves, onto the same line'
+  git update-ref refs/heads/conflict HEAD
+)
+head=$(git -C "$origin" rev-parse refs/pull/1/head)
+base=$(git -C "$origin" rev-parse main)
+conflict=$(git -C "$origin" rev-parse conflict)
+clone="$work/clone"
+git clone -q --depth 1 "file://$origin" "$clone"
+
+if (cd "$clone" && bash "$root/scripts/queue-tree.sh" 1 "$head" "$base") > "$work/tree" 2>&1 &&
+  [ "$(cat "$clone/f")" = $'A\nb\nC' ]; then
+  pass 'the queued PR is tested rebased onto main'
+else
+  fail 'the queued PR is tested rebased onto main'; sed 's/^/    /' "$work/tree"
+fi
+if (cd "$clone" && bash "$root/scripts/queue-tree.sh" 1 "$base" "$base") > "$work/tree-moved" 2>&1; then
+  fail 'a PR whose head moved since the pick is refused'
+else
+  pass 'a PR whose head moved since the pick is refused'
+fi
+git -C "$origin" update-ref refs/heads/main "$conflict"
+if (cd "$clone" && bash "$root/scripts/queue-tree.sh" 1 "$head" "$conflict") > "$work/tree-conflict" 2>&1; then
+  fail 'a PR that does not rebase cleanly fails'
+else
+  expect 'a PR that does not rebase cleanly fails, saying so' "$work/tree-conflict" 'does not rebase cleanly'
+fi
+
+if [ "$failures" -gt 0 ]; then
+  printf '\n%s check(s) failed\n' "$failures"
+  exit 1
+fi
+printf '\nall checks passed\n'

@@ -246,10 +246,11 @@ costs a re-run.
 
 A push to `main` runs tier 1 only — `itest` is skipped there, not just
 filtered. Rebase-merge (ADR-0016) lands commits a PR already proved green,
-so re-running tier 2 re-proves nothing unless the base moved; that case is
-closed by branch protection's "require branches to be up to date" (#1),
-which the operator enables. Until it is on, the tier-1 steps are the smoke
-that would catch a mechanical mismerge.
+so re-running tier 2 re-proves nothing unless the base moved. That case is
+closed by the merge queue (ADR-0054, #819): its required `queue` check runs
+these gates on the PR rebased onto the `main` it lands on, in place of
+branch protection's "require branches to be up to date". The tier-1 steps
+on `main` stay the smoke that would catch a mechanical mismerge.
 
 **"CI green" therefore means**: every check reported success or `skipped`,
 and every check whose paths the change touched actually executed. A
