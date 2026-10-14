@@ -294,7 +294,15 @@ jobs:
         run: bash scripts/comment-refs.sh
       - name: unit tests (tier 1 + arch)
         if: needs.changes.outputs.unit == 'true'
-        run: go test -coverprofile=cover.out ./...
+        run: |
+          set -o pipefail
+          go test -coverprofile=cover.out ./... 2>&1 | tee go-test.log
+      # A red test step says only "exit code 1" on the job page, and a
+      # loop's box cannot fetch job logs, so its failures are annotated
+      # there (#839).
+      - name: name the failed tests
+        if: failure() && needs.changes.outputs.unit == 'true'
+        run: bash scripts/test-failures.sh go-test.log "tier 1"
       # Informational, never a gate (ADR-0013), so a failure here cannot turn
       # the job red. On a PR the report is the changed lines' (#2): which
       # statements the PR adds or edits ran under tier 1, and where the rest
@@ -400,6 +408,9 @@ jobs:
       - name: the diff coverage still counts what it claims to
         if: needs.changes.outputs.workflows == 'true'
         run: bash scripts/diff-coverage-test.sh
+      - name: the test-failure annotations still name what they claim to
+        if: needs.changes.outputs.workflows == 'true'
+        run: bash scripts/test-failures-test.sh
       - name: the comment check still catches what it claims to
         if: needs.changes.outputs.workflows == 'true'
         run: bash scripts/comment-refs-test.sh
@@ -461,7 +472,13 @@ jobs:
         with:
           go-version-file: go.mod
       - name: integration tests (tier 2, vs fakeclaude)
-        run: make itest
+        run: |
+          set -o pipefail
+          make itest 2>&1 | tee go-test.log
+      # As in `checks` (#839).
+      - name: name the failed tests
+        if: failure()
+        run: bash scripts/test-failures.sh go-test.log "tier 2"
       # Lever 5: only reached when the tests passed. The marker's content is
       # nothing; its key is the claim.
       - name: remember that this content passed
