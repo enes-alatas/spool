@@ -367,9 +367,11 @@ await take('link', async (page, mark) => {
       },
     }),
   )
+  // A first run has the one loop it just created, so the dialog opens on
+  // scout rather than on a fixture loop that already has its bot.
   await page.route('**/api/loops', async (route) => {
     const loops = await (await route.fetch()).json()
-    await route.fulfill({ json: loops.map(view) })
+    await route.fulfill({ json: loops.filter((l) => l.name === 'scout').map(view) })
   })
   await page.route('**/api/loops/scout', async (route) => {
     if (route.request().method() === 'PATCH') attached = true
@@ -397,9 +399,7 @@ await take('link', async (page, mark) => {
   await pointAt(page, page.getByRole('button', { name: 'Attach a bot' }))
   const dialog = page.locator('.surface-dialog')
   await dialog.waitFor()
-  await page.waitForTimeout(500)
-  await dialog.locator('#surface-dialog-loop').selectOption('scout')
-  await page.waitForTimeout(500)
+  await page.waitForTimeout(700)
   mark('attach-click')
   await pointAt(page, dialog.getByRole('button', { name: 'Attach Telegram' }))
   await page.waitForTimeout(300)
