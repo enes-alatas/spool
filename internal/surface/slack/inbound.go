@@ -135,10 +135,8 @@ func (adapter *Adapter) ingestReaction(ctx context.Context, link *link, event me
 	if event.Item.Type != "message" || event.User == "" || event.Reaction == "" {
 		return
 	}
-	sender, err := adapter.store.SlackSenders().Get(ctx, event.User)
-	if err != nil || sender.Status != store.SenderAllowed {
-		adapter.log.Info("slack reaction discarded", "loop", link.loopID, "reason", "sender is not allowed",
-			"user", event.User, "channel", event.Item.Channel, "ts", event.Item.TS)
+	sender := adapter.eventSender(ctx, link, event.User)
+	if sender == nil {
 		return
 	}
 	target, err := adapter.store.Messages().BySlackTS(ctx, event.Item.Channel, event.Item.TS)
@@ -313,7 +311,7 @@ func (adapter *Adapter) allowedSender(ctx context.Context, loopRecord *store.Loo
 	case sender.Status == store.SenderAllowed:
 		return sender
 	case sender.Status == store.SenderBlocked:
-		adapter.turnedAway(loopRecord, event, "sender is blocked")
+		adapter.router.Blocked(store.SlackPerson(event.User))
 		return nil
 	}
 	if event.ChannelType == "im" {
@@ -325,6 +323,27 @@ func (adapter *Adapter) allowedSender(ctx context.Context, loopRecord *store.Loo
 		}
 	}
 	adapter.router.Stranger(store.SlackPerson(event.User), event.ChannelType == "im")
+	return nil
+}
+
+// eventSender is the sender gate for a reaction or a click on a poll: the
+// sender if Spool allows them, and nil otherwise. Anyone else's is dropped
+// and counted, as their message is, and logged once an hour a sender
+// (#788).
+func (adapter *Adapter) eventSender(ctx context.Context, link *link, userID string) *store.SlackSender {
+	sender, err := adapter.store.SlackSenders().Get(ctx, userID)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+	case err != nil:
+		adapter.log.Error("slack: sender lookup", "loop", link.loopID, "err", err)
+		return nil // fail closed
+	case sender.Status == store.SenderAllowed:
+		return sender
+	case sender.Status == store.SenderBlocked:
+		adapter.router.Blocked(store.SlackPerson(userID))
+		return nil
+	}
+	adapter.router.Stranger(store.SlackPerson(userID), false)
 	return nil
 }
 
