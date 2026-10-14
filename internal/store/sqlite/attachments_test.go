@@ -101,3 +101,33 @@ func TestAnUploadWaitsForOneMessage(t *testing.T) {
 		t.Errorf("by message %+v", byMessage)
 	}
 }
+
+// A deleted message's kept files go whatever their age, and only its own;
+// one retention already removed, or that never arrived, is not returned
+// again (ADR-0055).
+func TestRemoveByMessageTakesOneMessagesFiles(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	table := db.Attachments()
+
+	kept := &store.Attachment{MessageID: 7, Name: "a.png", Kind: store.AttachmentImage, Size: 1, Path: "aa-a.png", CreatedAt: 1_000}
+	expired := &store.Attachment{MessageID: 7, Name: "b.txt", Kind: store.AttachmentFile, Size: 1, Path: "bb-b.txt", CreatedAt: 1_000, RemovedAt: 2_000}
+	notKept := &store.Attachment{MessageID: 7, Name: "c.txt", Kind: store.AttachmentFile, Size: 1, NotKept: store.NotKeptTooLarge, CreatedAt: 1_000}
+	other := &store.Attachment{MessageID: 8, Name: "d.txt", Kind: store.AttachmentFile, Size: 1, Path: "dd-d.txt", CreatedAt: 1_000}
+	for _, attachment := range []*store.Attachment{kept, expired, notKept, other} {
+		if err := table.Insert(ctx, attachment); err != nil {
+			t.Fatal(err)
+		}
+	}
+	removed, err := table.RemoveByMessage(ctx, 7, 3_000)
+	if err != nil || len(removed) != 1 || removed[0].ID != kept.ID || removed[0].RemovedAt != 3_000 {
+		t.Fatalf("removed %+v, %v; want message 7's kept file alone", removed, err)
+	}
+	if got, _ := table.Get(ctx, other.ID); got.RemovedAt != 0 {
+		t.Errorf("another message's file was removed: %+v", got)
+	}
+}

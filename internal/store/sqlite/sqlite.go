@@ -607,11 +607,13 @@ func (table messages) Insert(ctx context.Context, message *store.Message) error 
 	res, err := table.db.ExecContext(ctx, `INSERT INTO messages
 		(ts, origin, author, from_loop_id, text, mentions, tg_chat_id, tg_message_id,
 		 tg_bot_loop_id, delivered_to, conversation, conversation_loop_id, reply_to_id,
-		 resends_id, tg_key, mirror, slack_channel_id, slack_ts, channel, dm_person)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		 resends_id, tg_key, mirror, slack_channel_id, slack_ts, channel, dm_person,
+		 edit_of, edit_kind, edit_key)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		message.TS, message.Origin, message.Author, message.FromLoopID, message.Text, toJSON(message.Mentions), tgChat, tgMsg,
 		message.TGBotLoopID, toJSON(message.DeliveredTo), message.Conversation, message.ConversationLoopID,
-		message.ReplyToID, message.ResendsID, message.TGKey, message.Mirror, message.SlackChannelID, message.SlackTS, message.Channel, message.DMPerson)
+		message.ReplyToID, message.ResendsID, message.TGKey, message.Mirror, message.SlackChannelID, message.SlackTS, message.Channel, message.DMPerson,
+		message.EditOf, message.EditKind, message.EditKey)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			return store.ErrDuplicate
@@ -857,7 +859,8 @@ const messageCols = `id, ts, origin, author, from_loop_id, text,
 	mentions, COALESCE(tg_chat_id,0), COALESCE(tg_message_id,0), tg_bot_loop_id, delivered_to,
 	conversation, conversation_loop_id, reply_to_id, send_failed_at, send_error,
 	send_failure_told_at, send_failure_tellings, send_resolved_at, send_resolution, send_resent_as,
-	resends_id, tg_key, mirror, slack_channel_id, slack_ts, channel, dm_person`
+	resends_id, tg_key, mirror, slack_channel_id, slack_ts, channel, dm_person,
+	edit_of, edit_kind, edit_key, edited_at, deleted_at`
 
 func (table messages) List(ctx context.Context, limit int) ([]*store.Message, error) {
 	return table.query(ctx, `SELECT `+messageCols+` FROM messages ORDER BY id DESC LIMIT ?`, limit)
@@ -926,6 +929,36 @@ func (table messages) Get(ctx context.Context, id int64) (*store.Message, error)
 		return nil, store.ErrNotFound
 	}
 	return out[0], nil
+}
+
+func (table messages) MarkEdited(ctx context.Context, id int64, kind string, at int64) error {
+	if kind != store.EditDeleted {
+		res, err := table.db.ExecContext(ctx, `UPDATE messages SET edited_at=? WHERE id=?`, at, id)
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return store.ErrNotFound
+		}
+		return nil
+	}
+	tx, err := table.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	res, err := tx.ExecContext(ctx, `UPDATE messages SET deleted_at=?, text='' WHERE id=?`, at, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return store.ErrNotFound
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE messages SET text='' WHERE edit_of=? AND edit_kind=?`,
+		id, store.EditEdited); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (table messages) BySlackTS(ctx context.Context, channelID, ts string) (*store.Message, error) {
@@ -1121,7 +1154,8 @@ func (table messages) query(ctx context.Context, statement string, args ...any) 
 			&message.Conversation, &message.ConversationLoopID, &message.ReplyToID,
 			&message.SendFailedAt, &message.SendError, &message.SendFailureToldAt, &message.SendFailureTellings, &message.SendResolvedAt,
 			&message.SendResolution, &message.SendResentAs, &message.ResendsID, &message.TGKey, &message.Mirror,
-			&message.SlackChannelID, &message.SlackTS, &message.Channel, &message.DMPerson); err != nil {
+			&message.SlackChannelID, &message.SlackTS, &message.Channel, &message.DMPerson,
+			&message.EditOf, &message.EditKind, &message.EditKey, &message.EditedAt, &message.DeletedAt); err != nil {
 			return nil, err
 		}
 		message.Mentions = fromJSON(mentions)
@@ -1201,6 +1235,12 @@ func (table attachments) Claim(ctx context.Context, id, messageID int64) error {
 		return store.ErrNotFound
 	}
 	return nil
+}
+
+func (table attachments) RemoveByMessage(ctx context.Context, messageID, removedAt int64) ([]*store.Attachment, error) {
+	return table.query(ctx, `UPDATE attachments SET removed_at=?
+		WHERE message_id=? AND removed_at=0 AND path!=''
+		RETURNING `+attachmentCols, removedAt, messageID)
 }
 
 func (table attachments) ExpireUnsent(ctx context.Context, cutoff, removedAt int64) ([]*store.Attachment, error) {
