@@ -256,13 +256,6 @@ async function take(name, fn, viewport = size) {
   console.log('recorded', name, `${shown.length} frames, ${(tEnd - t0).toFixed(1)}s`)
 }
 
-await take('fleet', async (page, mark) => {
-  await page.goto(base + '/', { waitUntil: 'networkidle' })
-  await page.waitForSelector('.fleet-row')
-  mark('ready')
-  await page.waitForTimeout(6000)
-})
-
 // The first-run Loops card (#733): its New loop dialog creates scout, and
 // the dialog stays to tick its first wake. The fixture hub has done its
 // first run, so the onboarding answers stand in for one that has not, and
@@ -413,6 +406,14 @@ await take('link', async (page, mark) => {
   mark('owner')
   await page.waitForTimeout(3000)
   mark('end')
+})
+
+// The fleet, after the link, so scout is in it.
+await take('fleet', async (page, mark) => {
+  await page.goto(base + '/', { waitUntil: 'networkidle' })
+  await page.waitForSelector('.fleet-row')
+  mark('ready')
+  await page.waitForTimeout(6000)
 })
 
 // A thread staged to run live: the messages a chat pane will show arriving
