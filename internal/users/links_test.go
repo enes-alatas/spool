@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/enes-alatas/spool/internal/store"
@@ -72,6 +73,58 @@ func TestALinkCodeLinksOnceWithinItsTime(t *testing.T) {
 	clock.at = clock.at.Add(LinkCodeTTL + 1e9)
 	if _, err := users.ClaimLink(ctx, code, sent(store.TGPerson(2))); !errors.Is(err, ErrLinkCodeUnknown) {
 		t.Fatalf("an expired code: %v, want ErrLinkCodeUnknown", err)
+	}
+}
+
+// TestOneOfConcurrentClaimsOfACodeWins: people who send the same code at
+// once, on bots that each take it in their own goroutine, race for it;
+// exactly one is asked to confirm, and only that one's YES links (#790).
+func TestOneOfConcurrentClaimsOfACodeWins(t *testing.T) {
+	users, _ := newUsers(t)
+	ctx := context.Background()
+	if _, err := users.Add(ctx, "alice", store.RoleMember); err != nil {
+		t.Fatal(err)
+	}
+	alice, err := users.Store.Users().GetByName(ctx, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, _, err := users.NewLinkCode(ctx, alice.ID, store.SurfaceTelegram)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const claimants = 8
+	start := make(chan struct{})
+	errs := make([]error, claimants)
+	var wg sync.WaitGroup
+	for i := range claimants {
+		wg.Go(func() {
+			<-start
+			_, errs[i] = users.ClaimLink(ctx, code, store.LinkConfirmation{Person: store.TGPerson(int64(100 + i))})
+		})
+	}
+	close(start)
+	wg.Wait()
+
+	winner := -1
+	for i, err := range errs {
+		switch {
+		case err == nil && winner < 0:
+			winner = i
+		case err == nil:
+			t.Fatalf("claimants %d and %d both won the code", winner, i)
+		case !errors.Is(err, ErrLinkCodeUnknown):
+			t.Fatalf("claimant %d: %v, want ErrLinkCodeUnknown", i, err)
+		}
+	}
+	if winner < 0 {
+		t.Fatal("no claimant won the code")
+	}
+	for i := range claimants {
+		_, err := users.ConfirmLink(ctx, store.TGPerson(int64(100+i)))
+		if wantLinked := i == winner; (err == nil) != wantLinked {
+			t.Errorf("claimant %d's YES: %v; the winner was %d", i, err, winner)
+		}
 	}
 }
 
