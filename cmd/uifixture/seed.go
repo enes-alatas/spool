@@ -461,10 +461,10 @@ func seedConversations(ctx context.Context, db store.Store, files *attach.Files,
 	return nil
 }
 
-// The sender catalogue the Access page lists: one allowed, one pending, one
-// blocked, so the page shows all three states. Invented people, with codes
-// in the shape pairing codes had: a hub from before ADR-0051 still holds
-// pending senders, though it makes no more.
+// The senders from before links that Settings → Access lists (#732): one
+// allowed, one left pending, one blocked, so the list shows all three.
+// Invented people, with codes in the shape pairing codes had: a hub from
+// before ADR-0051 still holds pending senders, though it makes no more.
 func seedSenders(ctx context.Context, db store.Store) error {
 	senders := []struct {
 		id      int64
@@ -853,9 +853,10 @@ func seedChanges(ctx context.Context, db store.Store, ids map[string]string) err
 
 // The hub's users (#674): owner admin, signed in by the scripts that walk
 // the room; robin, a member still on a one-time password, who gets the
-// change page and nothing else; and sam, a member past it, whose room is the
-// member view (#679). Seeding admin also keeps the hub from creating one
-// with a random one-time password at its first start.
+// change page and nothing else; sam, a member past it, whose room is the
+// member view (#679); and mia, a member an owner blocked on the bots, for
+// Settings → Access's Unblock (#732). Seeding admin also keeps the hub from
+// creating one with a random one-time password at its first start.
 func seedUsers(ctx context.Context, db store.Store) error {
 	hash, err := users.HashPassword(fixtureUserPassword)
 	if err != nil {
@@ -865,6 +866,7 @@ func seedUsers(ctx context.Context, db store.Store) error {
 		{ID: "user-admin", Name: users.AdminName, Role: store.RoleOwner, CreatedAt: ms(-30 * 24 * time.Hour)},
 		{ID: "user-robin", Name: "robin", Role: store.RoleMember, MustChangePassword: true, CreatedAt: ms(-time.Hour)},
 		{ID: "user-sam", Name: "sam", Role: store.RoleMember, CreatedAt: ms(-7 * 24 * time.Hour)},
+		{ID: "user-mia", Name: "mia", Role: store.RoleMember, CreatedAt: ms(-6 * 24 * time.Hour)},
 	} {
 		user.PasswordHash = hash
 		if err := db.Users().Create(ctx, user); err != nil {
@@ -874,25 +876,37 @@ func seedUsers(ctx context.Context, db store.Store) error {
 	return seedLinks(ctx, db)
 }
 
-// sam linked to their Telegram account two days ago, as sending a link
-// code and confirming it does (#704, ADR-0051); admin and robin are linked
-// nowhere. The code is the fixture's own and long spent, kept the way the
-// hub keeps one.
+// sam linked to their Telegram account two days ago, and mia to theirs
+// five days ago, as sending a link code and confirming it does (#704,
+// ADR-0051); admin and robin are linked nowhere. Then an owner blocked mia,
+// which sets the sender their link holds (#744). The codes are the fixture's
+// own and long spent, kept the way the hub keeps one.
 func seedLinks(ctx context.Context, db store.Store) error {
-	const code = "link-fixture0001"
-	sum := sha256.Sum256([]byte(code))
-	hash := hex.EncodeToString(sum[:])
-	linkedAt := ms(-2 * 24 * time.Hour)
-	if err := db.UserLinks().SetCode(ctx, "user-sam", store.SurfaceTelegram, hash, linkedAt+15*60*1000); err != nil {
-		return fmt.Errorf("link code: %w", err)
+	for _, link := range []struct {
+		user, code, username, display string
+		tgUserID                      int64
+		ago                           time.Duration
+	}{
+		{"user-sam", "link-fixture0001", "sam_example", "Sam", 700000004, 2 * 24 * time.Hour},
+		{"user-mia", "link-fixture0003", "mia_example", "Mia", 700000005, 5 * 24 * time.Hour},
+	} {
+		sum := sha256.Sum256([]byte(link.code))
+		hash := hex.EncodeToString(sum[:])
+		linkedAt := ms(-link.ago)
+		if err := db.UserLinks().SetCode(ctx, link.user, store.SurfaceTelegram, hash, linkedAt+15*60*1000); err != nil {
+			return fmt.Errorf("link code %s: %w", link.user, err)
+		}
+		person := store.TGPerson(link.tgUserID)
+		if err := db.UserLinks().Claim(ctx, hash, &store.LinkConfirmation{Person: person, Username: link.username,
+			Display: link.display, ExpiresAt: linkedAt + 5*60*1000}, linkedAt); err != nil {
+			return fmt.Errorf("link code sent %s: %w", link.user, err)
+		}
+		if _, err := db.UserLinks().Confirm(ctx, person, linkedAt); err != nil {
+			return fmt.Errorf("link %s: %w", link.user, err)
+		}
 	}
-	person := store.TGPerson(700000004)
-	if err := db.UserLinks().Claim(ctx, hash, &store.LinkConfirmation{Person: person, Username: "sam_example",
-		Display: "Sam", ExpiresAt: linkedAt + 5*60*1000}, linkedAt); err != nil {
-		return fmt.Errorf("link code sent: %w", err)
-	}
-	if _, err := db.UserLinks().Confirm(ctx, person, linkedAt); err != nil {
-		return fmt.Errorf("link: %w", err)
+	if err := db.TGSenders().SetStatus(ctx, 700000005, store.SenderBlocked, ms(-24*time.Hour)); err != nil {
+		return fmt.Errorf("block mia: %w", err)
 	}
 	return nil
 }
