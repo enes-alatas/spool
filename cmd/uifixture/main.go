@@ -141,6 +141,14 @@ type fixtureLoop struct {
 	// doingAgo how long ago it set it (#751).
 	doing    string
 	doingAgo time.Duration
+	// problems are the health check's open problems with the loop, each
+	// opened that long ago (ADR-0053).
+	problems []fixtureProblem
+}
+
+type fixtureProblem struct {
+	symptom string
+	ago     time.Duration
 }
 
 // The fleet: one loop per shape the room draws differently — contained and
@@ -170,6 +178,7 @@ var loops = []fixtureLoop{
 		botUser:  "watcher_example_bot",
 		doing:    "bisecting nightly build 1287",
 		doingAgo: 3 * time.Hour,
+		problems: []fixtureProblem{{store.SymptomTurnErrors, 40 * time.Minute}},
 	},
 	{
 		name:     "courier",
@@ -190,6 +199,10 @@ var loops = []fixtureLoop{
 		pacing:   store.PacingFixed,
 		doing:    "summarising the Q3 incident reports",
 		doingAgo: 50 * time.Hour,
+		problems: []fixtureProblem{
+			{store.SymptomWorkstationDown, 2 * time.Hour},
+			{store.SymptomTurnErrors, 90 * time.Minute},
+		},
 	},
 }
 
@@ -248,6 +261,11 @@ func seed(ctx context.Context, db store.Store, files *attach.Files) error {
 		if fl.doing != "" {
 			if _, err := db.Loops().SetDoing(ctx, loopRecord.ID, fl.doing, ms(-fl.doingAgo)); err != nil {
 				return fmt.Errorf("doing %s: %w", fl.name, err)
+			}
+		}
+		for _, problem := range fl.problems {
+			if _, err := db.Problems().Open(ctx, loopRecord.ID, problem.symptom, ms(-problem.ago)); err != nil {
+				return fmt.Errorf("problem %s: %w", fl.name, err)
 			}
 		}
 		ids[fl.name] = loopRecord.ID
