@@ -641,3 +641,6 @@ Sweep: #827 (#790) and #824 merged. Open PRs: #832 (Terra, #810 edits as correct
 
 ## 2026-10-14 20:50 UTC
 #832 (#810) merged presumably; Terra on #811 with a deviation I accepted: "unread" is per loop, replace in each loop's queue, keep the stored correction row (no rewrite). Bar unchanged.
+
+## 2026-10-14 22:50 UTC
+#837 (#811) merged. Terra queue given: #775 hub half → #766 → #480 → #830 → #630; #758 when Enes answers. Iris on #831. Elliot on #777 seam 2.
