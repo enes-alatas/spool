@@ -614,3 +614,6 @@ Enes: bot reactions don't show in the fleet Telegram group. Answered: basic grou
 
 ## 2026-10-14 09:40 UTC
 Enes: the fleet group has history visible → supergroup, so bot reactions not showing is a bug. Filed #817 (bug, medium, L5 Team) for Terra after #764, before #788. Asked Enes for the hub's "telegram reaction failed; giving up" err line. Terra order: #764 → #817 → #788, #790 → #810, #811 → #766 → #630.
+
+## 2026-10-14 12:35 UTC
+Enes's journalctl: 8× "telegram reaction failed; giving up … 400 message to react not found", all bot-on-bot reactions in the supergroup, chat id right. Posted on #817 (chat id redacted). Hypothesis: Telegram never delivers bots' messages to other bots, so bot-to-bot reactions can't show anywhere; #607/#614 README claim wrong → docs fix. Control case asked of Enes: a loop reacting to HIS group message. If that fails too, it's ids (code bug).
