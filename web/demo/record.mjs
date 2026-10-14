@@ -323,6 +323,103 @@ await take('create', async (page, mark) => {
   mark('end')
 })
 
+// The first-run Chat surface card (#733): attach scout's bot, get a link
+// code, and see the link and the ownership land. The fixture hub has done
+// its first run and has no Telegram, so its answers stand in for one that
+// has not: the composition's chat pane plays the operator's side, and the
+// phases below follow its clock. Only the message at the end is real: the
+// operator writes to scout again, and its event refreshes the fleet list,
+// which is how the dialog learns that the link made them scout's owner.
+await take('link', async (page, mark) => {
+  const now = Date.now()
+  let attached = false
+  let phase = 'none' // waiting → linked → owned
+  const tgID = 4242001
+  const view = (l) => {
+    if (l.name !== 'scout') return l
+    const bot = attached
+      ? { surface: 'telegram', has_tg_token: true, tg_bot_username: 'scout_example_bot' }
+      : {}
+    const owner = phase === 'owned' ? { owner_tg_user_id: tgID, owner_user: 'admin' } : {}
+    return { ...l, surface: '', has_tg_token: false, tg_bot_username: '', ...bot, ...owner }
+  }
+  await page.route('**/api/onboarding', (route) =>
+    route.fulfill({
+      json: {
+        completed: false,
+        harness: { done: true, reason: 'a turn authenticated' },
+        surface: { done: false, reason: 'no message received from the operator on telegram yet' },
+        loops: { done: true },
+      },
+    }),
+  )
+  await page.route('**/api/loops', async (route) => {
+    const loops = await (await route.fetch()).json()
+    await route.fulfill({ json: loops.map(view) })
+  })
+  await page.route('**/api/loops/scout', async (route) => {
+    if (route.request().method() === 'PATCH') attached = true
+    const res = await route.fetch({ method: 'GET' })
+    return route.fulfill({ json: view(await res.json()) })
+  })
+  await page.route('**/api/me/links/code', (route) =>
+    route.fulfill({ json: { code: 'link-demo4821', expires_at: now + 15 * 60 * 1000 } }),
+  )
+  const person = { surface: 'telegram', id: String(tgID), username: 'operator', display: 'Operator' }
+  await page.route('**/api/me/links/waiting', (route) =>
+    route.fulfill({
+      json: phase === 'waiting' ? [{ ...person, loop: 'scout', expires_at: now + 15 * 60 * 1000 }] : [],
+    }),
+  )
+  await page.route('**/api/me/links', (route) =>
+    route.fulfill({ json: phase === 'linked' || phase === 'owned' ? [{ ...person, created_at: now }] : [] }),
+  )
+
+  await page.goto(base + '/', { waitUntil: 'networkidle' })
+  await page.waitForSelector('.pillars')
+  await page.mouse.move(size.width / 2, size.height - 80)
+  mark('ready')
+  await page.waitForTimeout(900)
+  await pointAt(page, page.getByRole('button', { name: 'Attach a bot' }))
+  const dialog = page.locator('.surface-dialog')
+  await dialog.waitFor()
+  await page.waitForTimeout(500)
+  await dialog.locator('#surface-dialog-loop').selectOption('scout')
+  await page.waitForTimeout(500)
+  mark('attach-click')
+  await pointAt(page, dialog.getByRole('button', { name: 'Attach Telegram' }))
+  await page.waitForTimeout(300)
+  await pointAt(page, dialog.locator('input[type=password]'))
+  await page.keyboard.type('123456789:synthetic-demo-token', { delay: 30 })
+  await page.waitForTimeout(400)
+  await pointAt(page, dialog.getByRole('button', { name: 'Save' }))
+  await dialog.getByRole('button', { name: 'Get a link code' }).waitFor()
+  mark('attached')
+  await page.waitForTimeout(1200)
+  await pointAt(page, dialog.getByRole('button', { name: 'Get a link code' }))
+  await dialog.locator('.otp-value').waitFor()
+  mark('code')
+  await page.waitForTimeout(2500)
+  phase = 'waiting'
+  mark('sent')
+  await dialog.getByText('Reply YES there').waitFor()
+  await page.waitForTimeout(2500)
+  phase = 'linked'
+  mark('yes')
+  await dialog.getByText('Linked:').waitFor()
+  await page.waitForTimeout(2000)
+  phase = 'owned'
+  mark('again')
+  const said = await page.request.post(base + '/api/loops/scout/message', {
+    data: { author: 'operator', text: 'hi scout' },
+  })
+  if (!said.ok()) throw new Error(`link: the message to scout was refused: ${said.status()}`)
+  await dialog.getByText('You are its owner.').waitFor()
+  mark('owner')
+  await page.waitForTimeout(3000)
+  mark('end')
+})
+
 // A thread staged to run live: the messages a chat pane will show arriving
 // are hidden when the clip starts, and each comes back on cue, so the room
 // and the drawn chat beside it move together. The fixture holds the
