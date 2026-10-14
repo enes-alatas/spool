@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import type { ChatMessage } from '../api'
+import { correctionTag, editedTag, isDeletion, replacedWords, wordsTaken } from '../edits'
 import { AttachmentList } from './Attachments'
 import { Linked } from './Linked'
 import { PollBallot } from './Poll'
@@ -33,28 +34,46 @@ export function messageTime(ts: number, now = new Date()): string {
 // and the operator would learn the same message twice. What differs between
 // the places goes in the slots: `meta` after the time on the who line,
 // `before` above the text (a reply's quote), `after` below the mark.
+//
+// A person's edit or deletion is drawn here too, so each place shows it
+// alike (#831): the message they changed says when, and the correction says
+// what it corrects and, for an edit, the words it replaced. `byID` is the
+// window the thread holds, where the pair finds each other.
 export function MessageKnot({
   msg,
+  byID,
   meta,
   before,
   after,
 }: {
   msg: ChatMessage
+  byID?: Map<number, ChatMessage>
   meta?: ReactNode
   before?: ReactNode
   after?: ReactNode
 }) {
   const fromLoop = msg.origin === 'loop'
+  const held = byID ?? new Map<number, ChatMessage>()
+  const tag = editedTag(msg) ?? correctionTag(msg, held)
+  const replaced = replacedWords(msg, held)
   return (
     <div className={`knot${fromLoop ? '' : ' inbound'}`} data-entry-id={msg.id}>
       <div className="who">
         <span className="author">@{msg.author}</span> · {messageTime(msg.ts)}
+        {tag && <span className="edit-tag"> · {tag}</span>}
         {meta}
       </div>
       {before}
-      <div className={fromLoop ? 'plain' : 'bubble'}>
-        <Linked text={msg.text} />
-      </div>
+      {replaced && !wordsTaken(msg) && (
+        <div className="correction-quote" title={replaced}>
+          was: {replaced}
+        </div>
+      )}
+      {!isDeletion(msg) && (
+        <div className={`${fromLoop ? 'plain' : 'bubble'}${wordsTaken(msg) ? ' gone' : ''}`}>
+          {wordsTaken(msg) ? 'deleted' : <Linked text={msg.text} />}
+        </div>
+      )}
       <PollBallot poll={msg.poll} />
       <AttachmentList items={msg.attachments} />
       <ReactionList items={msg.reactions} />

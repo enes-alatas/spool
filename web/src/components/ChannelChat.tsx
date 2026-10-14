@@ -11,6 +11,7 @@ import {
   type InChannel,
 } from '../channel'
 import { FLEET_CHANNEL } from '../channels'
+import { wordsTaken } from '../edits'
 import { AttachButton, AttachedFile, attachmentErrorText, pickRefusal } from './Attachments'
 import { MessageKnot } from './MessageKnot'
 import { surfaceNote } from '../messages'
@@ -64,6 +65,13 @@ function ReplyQuote({ msg, byID }: { msg: ChatMessage; byID: Map<number, ChatMes
   if (!msg.reply_to_id) return null
   const target = byID.get(msg.reply_to_id)
   if (!target) return <div className="reply-quote">replying to an earlier message</div>
+  if (wordsTaken(target)) {
+    return (
+      <div className="reply-quote">
+        <span className="author">@{target.author}</span> deleted
+      </div>
+    )
+  }
   return (
     <div className="reply-quote" title={target.text}>
       <span className="author">@{target.author}</span> {target.text}
@@ -340,6 +348,7 @@ export function ChannelChat({ channel = FLEET_CHANNEL, members }: { channel?: st
               <MessageKnot
                 key={m.id}
                 msg={m}
+                byID={byID}
                 meta={
                   <>
                     {surfaceNote(m)}

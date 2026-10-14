@@ -1150,10 +1150,11 @@ function ControlRoomThread({ msgs }: { msgs: ChatMessage[] }) {
       <div className="empty">This loop's thread with everyone who signs in to this hub. Nothing yet.</div>
     )
   }
+  const byID = new Map(msgs.map((m) => [m.id, m]))
   return (
     <div className="timeline">
       {[...msgs].reverse().map((m) => (
-        <MessageKnot key={m.id} msg={m} />
+        <MessageKnot key={m.id} msg={m} byID={byID} />
       ))}
     </div>
   )
@@ -1178,10 +1179,11 @@ function PrivateThread({
       </div>
     )
   }
+  const byID = new Map(msgs.map((m) => [m.id, m]))
   return (
     <div className="timeline">
       {[...msgs].reverse().map((m) => (
-        <MessageKnot key={m.id} msg={m} />
+        <MessageKnot key={m.id} msg={m} byID={byID} />
       ))}
     </div>
   )
