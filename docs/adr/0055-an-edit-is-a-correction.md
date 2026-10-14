@@ -1,6 +1,6 @@
 # ADR-0055: An edit is a correction, a message of its own that names the one it corrects
 
-Date: 2026-10-14 · Status: accepted (operator direction of 2026-10-13, recorded on #810; item 7 operator decision of 2026-10-14, on #832) · Amends: ADR-0029 (item 5)
+Date: 2026-10-14 · Status: accepted (operator direction of 2026-10-13, recorded on #810; item 7 operator decision of 2026-10-14, on #832) · Amends: ADR-0029 (item 5) · Amended: 2026-10-14 (item 2: a loop that has not read the original is corrected in place, #811)
 
 ## Context
 
@@ -34,6 +34,22 @@ words in place while the original is still unread is #811's, and follows.
    archived. In a group, any loop the new words @mention in that channel is
    added too, as a message's mentions are. It wakes them as any message
    does.
+
+   **Amendment (2026-10-14, #811): a loop that has not read the original
+   is corrected in place.** A message is unread by a loop while its
+   envelope still waits in that loop's queue, or in its stored inbox, and
+   no turn has taken it. That is per loop: one loop may have read a
+   message another is still waiting to. For a loop that has not read it,
+   an edit puts the new words into the waiting envelope, and a deletion
+   takes the envelope out. The correction's own envelope is then dropped
+   for that loop, so the loop reads the message once, as it now stands,
+   and spends no turn on the correction. The loop's actor applies the
+   correction in the order it handles everything else, so a turn takes the
+   envelope either before the correction, and the correction is queued as
+   above, or after it, corrected. An edit is never lost either way. The
+   store is unchanged: the correction is still stored as the record, and
+   the original keeps its words through an edit, since one row cannot be
+   read by one loop and unread by another.
 
 3. **The header names what it corrects.** After the correction's own
    reference comes the one it corrects:
