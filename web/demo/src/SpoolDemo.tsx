@@ -325,14 +325,20 @@ const mainScreen: CSSProperties = { position: 'absolute', top: MAIN.top, left: (
 
 // Beat 2: create a loop from the first-run Loops card (#733). The form
 // fill plays fast, then the press at real pace; the wait for the first
-// wake is cut, and the beat ends on the wake's tick and Done, which draws
-// the card's own tick. Its bot comes in the next beat, on the same page.
+// wake is cut, the wake's tick and the reach for Done play fast, and the
+// beat ends a moment after Done, on the card's own tick. Its bot comes in
+// the next beat, on the same page.
 const C = marks.create
 const FILL_RATE = 2
 const FILL_LEN = (C['create-click'] + 0.3 - C.ready) / FILL_RATE
 const PRESS_FROM = C['create-click'] + 0.3
 const PRESS_LEN = C.created + 0.9 - PRESS_FROM
 const WOKEN_FROM = C.woken - 0.5
+const WOKEN_RATE = 1.5
+const WOKEN_LEN = (C.done - WOKEN_FROM) / WOKEN_RATE
+// The hold after Done: long enough for the card's tick to draw in.
+const DONE_HOLD = 1
+const CREATE_LEN = FILL_LEN + PRESS_LEN + WOKEN_LEN + DONE_HOLD
 // The whole page: the dialog sits in its middle, and any zoom would cut
 // the top bar to a sliver.
 const firstRun: Focus = { x: PAGE.w / 2, y: PAGE.h / 2, zoom: 1 }
@@ -352,8 +358,11 @@ function Create() {
       <Sequence from={s(FILL_LEN)} durationInFrames={s(PRESS_LEN)}>
         <Screen {...shot} from={PRESS_FROM} />
       </Sequence>
-      <Sequence from={s(FILL_LEN + PRESS_LEN)}>
-        <Screen {...shot} from={WOKEN_FROM} />
+      <Sequence from={s(FILL_LEN + PRESS_LEN)} durationInFrames={s(WOKEN_LEN)}>
+        <Screen {...shot} from={WOKEN_FROM} rate={WOKEN_RATE} />
+      </Sequence>
+      <Sequence from={s(FILL_LEN + PRESS_LEN + WOKEN_LEN)}>
+        <Screen {...shot} from={C.done} />
       </Sequence>
       <Caption step="01 · Create">Start a loop: a name and a mission.</Caption>
     </Stage>
@@ -866,7 +875,7 @@ function EndCard() {
 }
 
 // Beat boundaries, in seconds: each beat's length, laid end to end.
-const LENGTHS = [3, 13, 17, 5, 9, 8, 8, 5]
+const LENGTHS = [3, CREATE_LEN, 17, 5, 9, 8, 8, 5]
 const SPANS = LENGTHS.map((len, i) => {
   const from = LENGTHS.slice(0, i).reduce((a, b) => a + b, 0)
   return [from, from + len]
