@@ -264,13 +264,8 @@ func (router *Router) Ingest(ctx context.Context, in InboundMessage) error {
 	if err != nil {
 		return err
 	}
-	byKey := map[string]*store.Loop{} // name and bot-username → loop
 	var fromLoop *store.Loop
 	for _, loopRecord := range loops {
-		byKey[strings.ToLower(loopRecord.Name)] = loopRecord
-		if loopRecord.TGBotUsername != "" {
-			byKey[strings.ToLower(loopRecord.TGBotUsername)] = loopRecord
-		}
 		if loopRecord.ID == in.FromLoopID {
 			fromLoop = loopRecord
 		}
@@ -296,20 +291,7 @@ func (router *Router) Ingest(ctx context.Context, in InboundMessage) error {
 
 	targets := map[string]*store.Loop{}
 	if conv == store.ConversationGroup {
-		for _, mention := range mentions {
-			if mention == BroadcastToken {
-				// deliberate broadcast: the union with the mentions and the
-				// reply author is deduplicated by loop id, so a loop named
-				// twice over is still delivered to once
-				for id, loopRecord := range router.broadcastTargets(loops, in.FromLoopID, member) {
-					targets[id] = loopRecord
-				}
-				continue
-			}
-			if loopRecord, ok := byKey[mention]; ok && loopRecord.ID != in.FromLoopID && member(loopRecord) {
-				targets[loopRecord.ID] = loopRecord
-			}
-		}
+		targets = router.mentionTargets(loops, mentions, in.FromLoopID, member)
 		if replyTo != nil && replyTo.FromLoopID != "" && replyTo.FromLoopID != in.FromLoopID {
 			for _, loopRecord := range loops {
 				if loopRecord.ID == replyTo.FromLoopID && member(loopRecord) {
@@ -391,6 +373,36 @@ func (router *Router) Ingest(ctx context.Context, in InboundMessage) error {
 		}
 	}
 	return nil
+}
+
+// mentionTargets is the loops a group message's mentions address among the
+// members of its channel: each loop it names, by its name or its bot's
+// username, and every active member for @all. A loop never addresses
+// itself.
+func (router *Router) mentionTargets(loops []*store.Loop, mentions []string, fromLoopID string, member func(*store.Loop) bool) map[string]*store.Loop {
+	byKey := map[string]*store.Loop{} // name and bot-username → loop
+	for _, loopRecord := range loops {
+		byKey[strings.ToLower(loopRecord.Name)] = loopRecord
+		if loopRecord.TGBotUsername != "" {
+			byKey[strings.ToLower(loopRecord.TGBotUsername)] = loopRecord
+		}
+	}
+	targets := map[string]*store.Loop{}
+	for _, mention := range mentions {
+		if mention == BroadcastToken {
+			// deliberate broadcast: the union with the mentions and the
+			// reply author is deduplicated by loop id, so a loop named
+			// twice over is still delivered to once
+			for id, loopRecord := range router.broadcastTargets(loops, fromLoopID, member) {
+				targets[id] = loopRecord
+			}
+			continue
+		}
+		if loopRecord, ok := byKey[mention]; ok && loopRecord.ID != fromLoopID && member(loopRecord) {
+			targets[loopRecord.ID] = loopRecord
+		}
+	}
+	return targets
 }
 
 // DeliverAdoptedReply delivers a group message to the author of the message
