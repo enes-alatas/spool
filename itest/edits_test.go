@@ -88,3 +88,82 @@ func TestATelegramEditReachesItsLoopsAsACorrection(t *testing.T) {
 		t.Fatalf("the DM's correction: %s", dump(got))
 	}
 }
+
+// A person who edits or deletes a message on Slack sends a correction, as
+// on Telegram; every loop's app in the channel hears it, and the hub
+// stores it once. A link unfurling under a message is not an edit, and
+// reaches no loop. A deletion carries no words, and takes the original's,
+// its edits' and its kept file from the hub (ADR-0055, #810).
+func TestASlackEditAndDeletionReachTheirLoopsAsCorrections(t *testing.T) {
+	t.Parallel()
+	srv, slack := startSlackFleet(t)
+	const ts = "1727600000.000700"
+	const said, edited = "<@U0TERRA> ship it friday", "<@U0TERRA> <@U0MILO> ship it monday"
+	file := slack.addFile("F0PLAN", "plan.txt", "text/plain", []byte("ship it friday\n"))
+	for _, app := range []string{slackAppToken, slackMiloAppToken} {
+		slack.pushEvent(t, app, map[string]any{"type": "message", "subtype": "file_share", "channel_type": "channel",
+			"channel": slackChannel, "user": slackOperator, "text": said, "ts": ts, "files": []any{file}})
+	}
+	srv.waitInput("terra", "@terra ship it friday", "[file: plan.txt")
+	original := srv.activityWith("@terra ship it friday")[0]
+	if kept := keptFiles(t, srv); len(kept) != 1 {
+		t.Fatalf("the hub keeps %v; want the shared file", kept)
+	}
+
+	changed := func(eventTS string, message map[string]any) map[string]any {
+		return map[string]any{"type": "message", "subtype": "message_changed", "channel_type": "channel",
+			"channel": slackChannel, "ts": eventTS, "hidden": true, "message": message,
+			"previous_message": map[string]any{"type": "message", "user": slackOperator, "text": said, "ts": ts}}
+	}
+	// a link unfurled: the same words, and no edited mark
+	for _, app := range []string{slackAppToken, slackMiloAppToken} {
+		slack.pushEvent(t, app, changed("1727600000.000701", map[string]any{"type": "message", "user": slackOperator,
+			"text": said, "ts": ts}))
+	}
+	for _, app := range []string{slackAppToken, slackMiloAppToken} {
+		slack.pushEvent(t, app, changed("1727600000.000702", map[string]any{"type": "message", "user": slackOperator,
+			"text": edited, "ts": ts, "edited": map[string]any{"user": slackOperator, "ts": "1727600000.000702"}}))
+	}
+	const readable = "@terra @milo ship it monday"
+	srv.waitForMessage(readable)
+	time.Sleep(time.Second)
+	corrections := srv.activityWith(readable)
+	if len(corrections) != 1 || corrections[0].EditOf != original.ID || corrections[0].EditKind != "edited" ||
+		len(corrections[0].DeliveredTo) != 2 {
+		t.Fatalf("the corrections stored: %s; want one, of %d, to both loops", dump(corrections), original.ID)
+	}
+	header := fmt.Sprintf("message from @u0oper via slack · group · ref:%d · edited ref:%d", corrections[0].ID, original.ID)
+	srv.waitInput("terra", header, readable)
+	srv.waitInput("milo", header, readable)
+	for _, message := range srv.activity() {
+		if message.EditOf == original.ID && message.ID != corrections[0].ID {
+			t.Fatalf("the unfurl was taken for an edit: %s", dump(message))
+		}
+	}
+
+	for _, app := range []string{slackAppToken, slackMiloAppToken} {
+		slack.pushEvent(t, app, map[string]any{"type": "message", "subtype": "message_deleted", "channel_type": "channel",
+			"channel": slackChannel, "ts": "1727600000.000703", "hidden": true, "deleted_ts": ts,
+			"previous_message": map[string]any{"type": "message", "user": slackOperator, "text": edited, "ts": ts}})
+	}
+	srv.waitInput("terra", fmt.Sprintf("deleted ref:%d", original.ID))
+	time.Sleep(time.Second)
+	var deletions []activityMessage
+	for _, message := range srv.activity() {
+		if message.EditOf == original.ID && message.EditKind == "deleted" {
+			deletions = append(deletions, message)
+		}
+	}
+	if len(deletions) != 1 || deletions[0].Text != "" {
+		t.Fatalf("the deletions stored: %s; want one, with no words", dump(deletions))
+	}
+	if got := srv.activityByID(original.ID); got.Text != "" || got.EditedAt == 0 || got.DeletedAt == 0 {
+		t.Fatalf("the original reads %s; want it edited, deleted and its words gone", dump(got))
+	}
+	if got := srv.activityByID(corrections[0].ID); got.Text != "" {
+		t.Fatalf("the edit reads %s; want its words gone with the message", dump(got))
+	}
+	if kept := keptFiles(t, srv); len(kept) != 0 {
+		t.Fatalf("the hub still keeps %v; want the deleted message's file gone", kept)
+	}
+}
