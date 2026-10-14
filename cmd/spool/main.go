@@ -94,6 +94,7 @@ func main() {
 	egressImage := flag.String("egress-image", localEgressImage, "image for the workstation egress proxy; empty leaves workstation egress open (ADR-0028)")
 	egressAllow := flag.String("egress-allow", "", "comma-separated hosts (each \"host\" or \"host:port\") workstations may reach on top of the built-in allowlist; seeds the stored extra hosts on the first start, and the stored list wins after")
 	healthSec := flag.Int("workstation-health-sec", 45, "seconds between workstation liveness polls")
+	downGraceSec := flag.Int("problem-down-grace-sec", 300, "seconds a workstation stays down before the health check tells the loop's owner (ADR-0053)")
 	partials := flag.Bool("partial-messages", true, "stream token deltas to the UI (--include-partial-messages)")
 	telegramAPI := flag.String("telegram-api-base", telegram.APIBase, "Telegram Bot API base URL (tests point this at a stand-in server)")
 	slackAPI := flag.String("slack-api-base", slack.APIBase, "Slack Web API base URL (tests point this at a stand-in server)")
@@ -349,6 +350,7 @@ func main() {
 		Bus:                       pubsub,
 		Runtimes:                  runtimes,
 		WorkstationHealthInterval: healthInterval,
+		ProblemDownGrace:          time.Duration(*downGraceSec) * time.Second,
 		PartialMessages:           *partials,
 		Logger:                    log,
 		DataDir:                   *dataDir,

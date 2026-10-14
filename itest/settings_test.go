@@ -113,3 +113,34 @@ func TestSettingsRotationThresholds(t *testing.T) {
 		t.Fatalf("rejected writes changed stored thresholds to %d/%d", v.Arm, v.Force)
 	}
 }
+
+// The health check's error-turn threshold (ADR-0053) comes back as its
+// default, stores a count, turns off at 0, and refuses one out of range
+// without touching the stored one.
+func TestSettingsHealthErrorTurns(t *testing.T) {
+	t.Parallel()
+	s := startServer(t, t.TempDir())
+
+	var v struct {
+		Turns int `json:"health_error_turns"`
+	}
+	s.mustJSON("GET", "/api/settings", nil, &v)
+	if v.Turns != 3 {
+		t.Fatalf("default = %d, want 3", v.Turns)
+	}
+	for _, turns := range []int{5, 0} {
+		s.mustJSON("PUT", "/api/settings", map[string]any{"health_error_turns": turns}, &v)
+		if v.Turns != turns {
+			t.Fatalf("after PUT %d = %d", turns, v.Turns)
+		}
+	}
+	for _, bad := range []int{-1, 101} {
+		if resp, body := s.do("PUT", "/api/settings", map[string]any{"health_error_turns": bad}); resp.StatusCode != 400 {
+			t.Fatalf("PUT %d: status %d, want 400 (%s)", bad, resp.StatusCode, body)
+		}
+	}
+	s.mustJSON("GET", "/api/settings", nil, &v)
+	if v.Turns != 0 {
+		t.Fatalf("rejected writes changed the stored threshold to %d", v.Turns)
+	}
+}

@@ -160,6 +160,7 @@ func (server *Server) routes() *routeMux {
 	mux.HandleFunc("POST /api/loops/{name}/workstation/poweroff", server.handlePower(loop.PowerOff))
 	mux.HandleFunc("POST /api/loops/{name}/workstation/poweron", server.handlePower(loop.PowerOn))
 	mux.HandleFunc("POST /api/loops/{name}/workstation/recreate", server.handlePower(loop.PowerRecreate))
+	mux.HandleFunc("POST /api/loops/{name}/problems/{symptom}/acknowledge", server.handleAcknowledge)
 	mux.HandleFunc("POST /api/loops/{name}/message", server.handleLoopMessage)
 	mux.HandleFunc("GET /api/loops/{name}/events", server.handleLoopEvents)
 	mux.HandleFunc("GET /api/loops/{name}/turns", server.handleLoopTurns)
@@ -401,6 +402,12 @@ type loopView struct {
 	// state is not capped, even while a cap holds, since a loop in its turn
 	// is still busy.
 	CappedUntil int64 `json:"capped_until"`
+	// Problems are the open problems the health check found with the loop,
+	// oldest first, and Health sums them up for the Fleet row: ok with
+	// none, failing while the workstation is down, and otherwise warning
+	// (ADR-0053).
+	Problems []store.Problem `json:"problems"`
+	Health   string          `json:"health"`
 	// OwnerDMReady reports that the loop can message its owner privately:
 	// an owner is configured and, on Telegram, has opened a chat with this
 	// loop's own bot. A bot cannot open one, so until the owner writes
@@ -460,7 +467,7 @@ func (server *Server) view(ctx context.Context, loopRecord *store.Loop) *loopVie
 	out := &loopView{Loop: loopRecord, State: loop.StateAsleep, HasTGToken: loopRecord.TGBotToken != "",
 		HasSlackTokens: loopRecord.SlackBotToken != "", Surface: loopRecord.Surface(), WorkstationUp: true,
 		OwnerDMReady: loopRecord.OwnerDMReady(), InFleetChannel: !loopRecord.OutsideFleetChannel,
-		Connections: []loopConnectionView{}}
+		Connections: []loopConnectionView{}, Problems: []store.Problem{}, Health: loop.HealthOK}
 	if connections, err := server.Store.Connections().ListByLoop(ctx, loopRecord.ID); err == nil {
 		for _, connection := range connections {
 			out.Connections = append(out.Connections, loopConnectionView{Name: connection.Name, Kind: connection.Kind})
@@ -488,6 +495,9 @@ func (server *Server) view(ctx context.Context, loopRecord *store.Loop) *loopVie
 		out.WorkstationUp = health.Up
 		out.WorkstationDetail = health.Detail
 		out.DownReason = actor.DownReason()
+		if problems := actor.Problems(); len(problems) > 0 {
+			out.Problems, out.Health = problems, loop.Health(problems)
+		}
 		if out.State == loop.StateCapped {
 			out.CappedUntil = server.PlanCap.At(time.Now().UnixMilli()).Until
 		}
@@ -1117,6 +1127,31 @@ func (server *Server) handlePower(verb string) http.HandlerFunc {
 	}
 }
 
+// handleAcknowledge clears the loop's open problem for a symptom as the
+// operator's doing (ADR-0053): the owner hears that it was, and the
+// symptom's watch starts over. Acknowledging a symptom with nothing open
+// changes nothing.
+func (server *Server) handleAcknowledge(w http.ResponseWriter, r *http.Request) {
+	loopRecord := server.loopByName(w, r)
+	if loopRecord == nil {
+		return
+	}
+	symptom := r.PathValue("symptom")
+	if symptom != store.SymptomWorkstationDown && symptom != store.SymptomTurnErrors {
+		server.jsonErr(w, http.StatusBadRequest, "unknown symptom %q: want %s or %s",
+			symptom, store.SymptomWorkstationDown, store.SymptomTurnErrors)
+		return
+	}
+	actor, ok := server.Manager.Get(loopRecord.ID)
+	if !ok {
+		server.jsonErrCode(w, http.StatusConflict, codeLoopNotRunning,
+			"loop %s is not running", loopRecord.Name)
+		return
+	}
+	actor.Acknowledge(symptom)
+	writeJSON(w, 200, server.view(r.Context(), loopRecord))
+}
+
 func (server *Server) handleResume(w http.ResponseWriter, r *http.Request) {
 	loopRecord := server.loopByName(w, r)
 	if loopRecord == nil {
@@ -1350,6 +1385,9 @@ type settingsView struct {
 	// off, the defaults included (ADR-0047).
 	PlanCapFiveHourPercent int `json:"plan_cap_five_hour_percent"`
 	PlanCapSevenDayPercent int `json:"plan_cap_seven_day_percent"`
+	// HealthErrorTurns is how many errored turns in a row tell a loop's
+	// owner, 0 for never, the default included (ADR-0053).
+	HealthErrorTurns int `json:"health_error_turns"`
 	// BareAllowed is how the control room knows whether to offer an
 	// uncontained loop at all (#255): the choice is the operator's, taken
 	// at the terminal when the hub was started, and a form that offered it
@@ -1378,6 +1416,7 @@ func (server *Server) settingsView(ctx context.Context) (settingsView, error) {
 		ContextForcePercent:    force,
 		PlanCapFiveHourPercent: fiveHour,
 		PlanCapSevenDayPercent: sevenDay,
+		HealthErrorTurns:       loop.HealthErrorTurns(ctx, server.Store.Settings(), server.Log),
 		BareAllowed:            server.BareAllowed,
 		DefaultRuntime:         server.defaultRuntime(),
 		ClaudeVersion:          server.ClaudeVer,
@@ -1405,6 +1444,8 @@ type putSettingsReq struct {
 	// (0-100, 0 for off), and a change re-judges the cap (ADR-0047).
 	PlanCapFiveHourPercent *int `json:"plan_cap_five_hour_percent"`
 	PlanCapSevenDayPercent *int `json:"plan_cap_seven_day_percent"`
+	// nil leaves the error-turn threshold unchanged (0-100, 0 for off).
+	HealthErrorTurns *int `json:"health_error_turns"`
 }
 
 func (server *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
@@ -1420,6 +1461,10 @@ func (server *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) 
 			server.jsonErr(w, 400, "plan cap thresholds must be percentages 0-100, 0 for off (got %d)", *percent)
 			return
 		}
+	}
+	if req.HealthErrorTurns != nil && !loop.ValidHealthErrorTurns(*req.HealthErrorTurns) {
+		server.jsonErr(w, 400, "health_error_turns must be a count of turns 0-100, 0 for off (got %d)", *req.HealthErrorTurns)
+		return
 	}
 	if req.ClaudeOAuthToken != nil {
 		token := ""
@@ -1483,6 +1528,12 @@ func (server *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) 
 		// a raised or cleared threshold lifts the cap and wakes the loops;
 		// a lowered one caps them at their next quiet boundary
 		if err := server.PlanCap.Refresh(r.Context()); err != nil {
+			server.jsonErr(w, 500, "%v", err)
+			return
+		}
+	}
+	if req.HealthErrorTurns != nil {
+		if err := server.Store.Settings().Set(r.Context(), store.SettingHealthErrorTurns, strconv.Itoa(*req.HealthErrorTurns)); err != nil {
 			server.jsonErr(w, 500, "%v", err)
 			return
 		}

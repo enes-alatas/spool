@@ -1,0 +1,196 @@
+//go:build integration
+
+package itest
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+)
+
+// waitCompleted blocks until the loop has finished n turns, errored or not.
+func (s *server) waitCompleted(name string, n int) {
+	s.t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(s.completed(name)) >= n {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	s.t.Fatalf("%s finished %d turns, want %d", name, len(s.completed(name)), n)
+}
+
+// waitHealth polls the loop record until its health reads want, and
+// returns the record.
+func (s *server) waitHealth(name, want string) loopView {
+	s.t.Helper()
+	var view loopView
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
+		if view = s.loop(name); view.Health == want {
+			return view
+		}
+	}
+	s.t.Fatalf("%s's health = %q with problems %+v, want %q", name, view.Health, view.Problems, want)
+	return view
+}
+
+// A loop whose turns keep failing tells nobody by itself, so the hub tells
+// its owner (ADR-0053, #764): once on the third errored turn in a row, not
+// again while it stays open, once more when a turn succeeds, again when it
+// recurs, and once when the operator acknowledges it, after which the
+// count starts over.
+func TestAFailingLoopIsToldToTheOwnerOnce(t *testing.T) {
+	t.Parallel()
+	operator := user{ID: 7474, First: "Operator", Username: "operator"}
+	ws := workspaceWithScript(t, "ok\nok\n!error\n!error\n!error\n!error\nback to work\n!error\n!error\n!error\n!error\nfine\n")
+	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": ws})
+	// the tick at its creation, then the owner's first DM, each its own turn
+	srv.waitCompleted("alpha", 1)
+	tg.dm("alpha", operator, "hi alpha")
+	waitOwnerDMReady(t, srv, "alpha")
+	srv.waitCompleted("alpha", 2)
+
+	take := func(n int) {
+		t.Helper()
+		srv.message("alpha", fmt.Sprintf("turn %d", n))
+		srv.waitCompleted("alpha", n)
+	}
+	const openedText, recoveredText, ackedText = "turns all ended in an error", "without an error again", "cleared in the control room"
+
+	take(3)
+	take(4)
+	if view := srv.loop("alpha"); view.Health != "ok" || countSent(tg, operator.ID, openedText) != 0 {
+		t.Fatalf("after two errored turns: health %q, problems %+v; want ok, untold", view.Health, view.Problems)
+	}
+	take(5)
+	tg.waitSentFrom(t, operator.ID, "alpha", "alpha's last 3 turns all ended in an error")
+	view := srv.waitHealth("alpha", "warning")
+	if len(view.Problems) != 1 || view.Problems[0].Symptom != "turn_errors" || view.Problems[0].Since == 0 {
+		t.Fatalf("problems = %+v, want one turn_errors with a since", view.Problems)
+	}
+	if !srv.hasEvent("alpha", "owner_notice", 5*time.Second) {
+		t.Fatal("the owner was told without an owner_notice on alpha's timeline")
+	}
+	take(6)
+	time.Sleep(time.Second)
+	if n := countSent(tg, operator.ID, openedText); n != 1 {
+		t.Fatalf("a fourth errored turn: the owner was told %d times, want once", n)
+	}
+
+	take(7)
+	tg.waitSentFrom(t, operator.ID, "alpha", "alpha finished a turn "+recoveredText)
+	srv.waitHealth("alpha", "ok")
+
+	take(8)
+	take(9)
+	take(10)
+	srv.waitHealth("alpha", "warning")
+	for deadline := time.Now().Add(10 * time.Second); countSent(tg, operator.ID, openedText) < 2; time.Sleep(100 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the owner was not told when the errors came back")
+		}
+	}
+
+	srv.mustJSON("POST", "/api/loops/alpha/problems/turn_errors/acknowledge", nil, &view)
+	if view.Health != "ok" || len(view.Problems) != 0 {
+		t.Fatalf("after acknowledging: health %q, problems %+v; want ok and none", view.Health, view.Problems)
+	}
+	tg.waitSentFrom(t, operator.ID, "alpha", "errored turns was "+ackedText)
+	// the count started over: one more errored turn opens nothing
+	take(11)
+	time.Sleep(time.Second)
+	if view := srv.loop("alpha"); view.Health != "ok" || countSent(tg, operator.ID, openedText) != 2 {
+		t.Fatalf("one errored turn after acknowledging: health %q, told %d times; want ok and twice",
+			view.Health, countSent(tg, operator.ID, openedText))
+	}
+	if n := countSent(tg, operator.ID, recoveredText); n != 1 {
+		t.Fatalf("the owner was told of a recovery %d times, want once", n)
+	}
+}
+
+// A workstation that stays down past the grace period is a problem the
+// owner hears of once, and once more when it is back up (ADR-0053, #764).
+// The problem is stored, so one still open when the hub restarts is
+// neither told again nor left open once the workstation is up.
+func TestADownWorkstationIsToldToTheOwnerOnce(t *testing.T) {
+	t.Parallel()
+	operator := user{ID: 7575, First: "Operator", Username: "operator"}
+	tg := startFakeTelegram(t, "alpha")
+	dataDir := t.TempDir()
+	start := func() *server {
+		return startServerArgs(t, dataDir, "--runtime", "bare",
+			"--telegram-api-base", tg.srv.URL,
+			"--telegram-bind-settle-sec", "1",
+			"--telegram-answer-timeout-sec", "5",
+			"--problem-down-grace-sec", "1")
+	}
+	srv := start()
+	srv.createLoop("alpha", map[string]any{"tg_bot_token": "alpha"})
+	srv.allowOwner(tg, "alpha", operator)
+	tg.dm("alpha", operator, "hi alpha")
+	waitOwnerDMReady(t, srv, "alpha")
+
+	const downText, upText = "alpha's workstation has been down since", "alpha's workstation is up again"
+	failed := filepath.Join(srv.fkState, "mcp-failed")
+	if err := os.MkdirAll(srv.fkState, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// goDown makes the next spawn unable to reach the hub, ends the live
+	// one so that the next message spawns another, and waits for the
+	// owner to have been told that many times.
+	goDown := func(told int) {
+		t.Helper()
+		if err := os.WriteFile(failed, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		srv.mustJSON("POST", "/api/loops/alpha/kill", nil, nil)
+		// the kill returns before the process is gone; a message reaching
+		// it while it dies is a crash, and the next spawn waits the ladder
+		srv.waitState("alpha", "asleep", 30*time.Second)
+		srv.message("alpha", "wake up")
+		srv.waitState("alpha", "workstation_down", 30*time.Second)
+		for deadline := time.Now().Add(20 * time.Second); countSent(tg, operator.ID, downText) < told; time.Sleep(100 * time.Millisecond) {
+			if time.Now().After(deadline) {
+				t.Fatalf("the owner was told of a down workstation %d times, want %d", countSent(tg, operator.ID, downText), told)
+			}
+		}
+	}
+
+	goDown(1)
+	view := srv.waitHealth("alpha", "failing")
+	if len(view.Problems) != 1 || view.Problems[0].Symptom != "workstation_down" {
+		t.Fatalf("problems = %+v, want one workstation_down", view.Problems)
+	}
+	time.Sleep(2 * time.Second)
+	if n := countSent(tg, operator.ID, downText); n != 1 {
+		t.Fatalf("the owner was told of a down workstation %d times, want once", n)
+	}
+	if err := os.Remove(failed); err != nil {
+		t.Fatal(err)
+	}
+	srv.message("alpha", "are you back")
+	tg.waitSentFrom(t, operator.ID, "alpha", upText)
+	srv.waitHealth("alpha", "ok")
+
+	// down again, and the hub restarts with the problem open and the
+	// workstation fixed meanwhile
+	goDown(2)
+	srv.stop()
+	if err := os.Remove(failed); err != nil {
+		t.Fatal(err)
+	}
+	srv = start()
+	srv.message("alpha", "after the restart")
+	srv.waitHealth("alpha", "ok")
+	for deadline := time.Now().Add(20 * time.Second); countSent(tg, operator.ID, upText) < 2; time.Sleep(100 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the owner was not told the workstation is up after the restart")
+		}
+	}
+	if n := countSent(tg, operator.ID, downText); n != 2 {
+		t.Fatalf("the owner was told of a down workstation %d times across the restart, want twice", n)
+	}
+}

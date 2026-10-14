@@ -61,6 +61,7 @@ var adminRoutes = []string{
 	"POST /api/loops/{name}/kill", "POST /api/loops/{name}/rotate", "POST /api/loops/{name}/rehome",
 	"POST /api/loops/{name}/workstation/restart", "POST /api/loops/{name}/workstation/poweroff",
 	"POST /api/loops/{name}/workstation/poweron", "POST /api/loops/{name}/workstation/recreate",
+	"POST /api/loops/{name}/problems/{symptom}/acknowledge",
 	"PUT /api/loops/{name}/owner", "PUT /api/loops/{name}/rooms",
 	"DELETE /api/loops/{name}/rooms/{surface}/{room}",
 	"PUT /api/loops/{name}/connections/{connection}", "DELETE /api/loops/{name}/connections/{connection}",

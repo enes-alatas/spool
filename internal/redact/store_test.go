@@ -405,6 +405,10 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			"Create": false, "SetDescription": false, "Delete": false,
 			"AddLoop": false, "RemoveLoop": false, "Get": false, "List": false,
 		},
+		"ProblemStore": {
+			// A symptom from a fixed set, ids, timestamps and who cleared it.
+			"Open": false, "Clear": false, "ListOpen": false,
+		},
 		"ReactionStore": {
 			// Ids, timestamps, a reactor's display name as the surface
 			// reports it, and an emoji. A loop's emoji is one the hub
