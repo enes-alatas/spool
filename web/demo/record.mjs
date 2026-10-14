@@ -99,7 +99,33 @@ const injectCursor = () => {
       pointerEvents: 'none',
       transition: 'opacity 0.5s, transform 0.5s',
     })
+    // A modal dialog sits in the top layer, above any z-index, so the
+    // pointer is a popover too, raised again over each dialog that opens.
+    for (const el of [ring, c]) {
+      el.popover = 'manual'
+      Object.assign(el.style, {
+        right: 'auto',
+        bottom: 'auto',
+        padding: 0,
+        overflow: 'visible',
+        background: 'transparent',
+      })
+    }
+    // The ring keeps its own border and the margin that centres it.
+    Object.assign(c.style, { margin: 0, border: 'none' })
     document.documentElement.append(ring, c)
+    const raise = () => {
+      for (const el of [ring, c]) {
+        if (el.matches(':popover-open')) el.hidePopover()
+        el.showPopover()
+      }
+    }
+    raise()
+    const showModal = window.HTMLDialogElement.prototype.showModal
+    window.HTMLDialogElement.prototype.showModal = function () {
+      showModal.call(this)
+      raise()
+    }
     addEventListener(
       'mousemove',
       (e) => Object.assign(c.style, { left: e.clientX - 2 + 'px', top: e.clientY - 2 + 'px' }),
