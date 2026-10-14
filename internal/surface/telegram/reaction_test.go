@@ -50,9 +50,9 @@ func (rows reactionRows) ListByMessages(context.Context, []int64) ([]*store.Reac
 
 // A bot sets one reaction per message, so the mirror sets the loop's newest
 // one still on it, and clears its own when the loop's last is removed. A
-// person's reaction sets nothing. A teammate's post the loop's bot never
-// saw takes the posting bot's id in a supergroup, where ids are the chat's,
-// and nothing in a basic group, where that id names another message (#607).
+// person's reaction sets nothing. A teammate's post the loop's bot
+// never received has no id it can react by, in a supergroup or a basic
+// group: the reaction stays on the hub (#607, #817).
 func TestMirrorReactionSetsTheLoopsNewest(t *testing.T) {
 	bot := &poller{loopID: "l1", sendCh: make(chan sendReq, 4)}
 	fake := &reactionStore{}
@@ -80,7 +80,7 @@ func TestMirrorReactionSetsTheLoopsNewest(t *testing.T) {
 		{"a person's reaction", []*store.Reaction{{ReactorKey: person, Emoji: "👀"}}, frame(7, person, "👀", false), "", false, 0, 0},
 		{"a target no bot knew", nil, frame(8, loop, "👍", false), "", false, 0, 0},
 		{"a teammate's post in a supergroup", []*store.Reaction{{ReactorKey: loop, Emoji: "👍"}}, frame(9, loop, "👍", false),
-			"👍", true, -1001234567890, 90},
+			"", false, 0, 0},
 		{"a teammate's post in a basic group", []*store.Reaction{{ReactorKey: loop, Emoji: "👍"}}, frame(10, loop, "👍", false),
 			"", false, 0, 0},
 	} {

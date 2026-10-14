@@ -186,10 +186,13 @@ func TestALoopReactsThroughItsOwnBot(t *testing.T) {
 }
 
 // A loop reacts to a teammate's post: its own bot never received the post,
-// since Telegram delivers no bot's messages to another bot, so it sets the
-// reaction by the posting bot's id for it. In a supergroup that id is the
-// chat's, the same for every member (#607).
-func TestALoopReactsToATeammatesPost(t *testing.T) {
+// since Telegram delivers no bot's messages to another bot, and Telegram
+// refuses a reaction on a message the bot did not receive, a supergroup's
+// included. So the reaction stays on the hub, where the teammate reads it,
+// with no call to Telegram and nothing worse than an INFO line (ADR-0040,
+// #817, #824). A reaction to a person's message still goes out:
+// TestALoopReactsThroughItsOwnBot.
+func TestALoopsReactionToATeammatesPostStaysOnTheHub(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 9494, First: "Operator", Username: "operator"}
 	srv, tg := startTelegramFleet(t, operator)
@@ -199,7 +202,7 @@ func TestALoopReactsToATeammatesPost(t *testing.T) {
 	if res := callSend(t, alpha, map[string]any{"destination": "group", "text": post}); res.IsError {
 		t.Fatalf("send refused: %s", resultText(res))
 	}
-	sent := tg.waitSentFrom(t, groupChatID, "alpha", post)
+	tg.waitSentFrom(t, groupChatID, "alpha", post)
 	srv.waitForMessage(post)
 	messageID := srv.activityWith(post)[0].ID
 
@@ -208,7 +211,22 @@ func TestALoopReactsToATeammatesPost(t *testing.T) {
 		t.Fatalf("react refused: %s", resultText(res))
 	}
 	srv.waitReactions(messageID, "loop:"+srv.loop("beta").ID+" 👍")
-	tg.waitReactionSet(t, setReaction{Token: "beta", ChatID: groupChatID, MessageID: sent.MessageID, Emoji: "👍"})
+	for deadline := time.Now().Add(20 * time.Second); !strings.Contains(srv.log(), "reaction stays on the hub"); time.Sleep(100 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the bridge never said the reaction stays on the hub")
+		}
+	}
+	tg.mu.Lock()
+	set := slices.Clone(tg.reactionsSet)
+	tg.mu.Unlock()
+	if len(set) != 0 {
+		t.Fatalf("a reaction to a teammate's post was set on Telegram: %+v", set)
+	}
+	for line := range strings.SplitSeq(srv.log(), "\n") {
+		if strings.Contains(line, "reaction") && strings.Contains(line, "level=WARN") {
+			t.Fatalf("a reaction to a teammate's post logged a warning: %s", line)
+		}
+	}
 }
 
 // A reaction to a loop's message wakes nobody, its owner's in the group
