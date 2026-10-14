@@ -451,6 +451,12 @@ func SystemPrompt(loopRecord *store.Loop, cat Catalog, rules []*store.FleetRule,
 
 `, dur(loopRecord.MinWakeSec), dur(loopRecord.MaxWakeSec), dur(loopRecord.TickIntervalSec))
 	}
+	fmt.Fprintf(&text, `- Say what you are working on with a second trailer line beside it:
+  [doing: reviewing PR #456]  (at most %d characters). It shows on your row
+  in the control room until you set another; [doing: ] clears it, and
+  leaving it out keeps the last one.
+
+`, store.MaxDoing)
 
 	text.WriteString(cat.section(loopRecord) + "\n")
 

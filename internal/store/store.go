@@ -185,6 +185,10 @@ const (
 	SettingPlanCapResumedUntil    = "plan_cap_resumed_until"
 )
 
+// MaxDoing is the most a loop's doing holds, in characters; the store cuts
+// a longer one, after the redactor has seen it whole (#751).
+const MaxDoing = 60
+
 type Loop struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
@@ -294,6 +298,12 @@ type Loop struct {
 	// edited, which clears it. Always present in the API, so a client can
 	// tell "not refused" from a server too old to say.
 	ModelRefusal string `json:"model_refusal"`
+	// Doing is the one line the loop last set with a [doing: …] trailer to
+	// say what it is working on, "" when it has set none or cleared it, and
+	// DoingAt when it set it, in Unix ms (#751). Always present in the API,
+	// like ModelRefusal.
+	Doing   string `json:"doing"`
+	DoingAt int64  `json:"doing_at"`
 
 	CreatedAt int64 `json:"created_at"`
 	UpdatedAt int64 `json:"updated_at"`
@@ -798,6 +808,12 @@ type LoopStore interface {
 	// operator has already replaced is not written. Written from the actor
 	// goroutine; an edit of the model clears it in the same statement (#289).
 	SetModelRefusal(ctx context.Context, id, model, refusal string, updatedAt int64) error
+	// SetDoing records the loop's doing, cut to MaxDoing characters, and
+	// when it was set; "" clears it. A doing the loop already holds keeps the
+	// time it was first set, and changed is false. Written from the actor
+	// goroutine at a turn's end, narrow like the setters above (#751). It
+	// is not an edit, so updated_at is untouched.
+	SetDoing(ctx context.Context, id, doing string, at int64) (changed bool, err error)
 }
 
 // FleetRuleStore holds the fleet's rules. List returns them in creation

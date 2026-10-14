@@ -1,6 +1,6 @@
 # ADR-0026: Loops send through a hub-served MCP tool
 
-Date: 2026-09-15 · Status: accepted (operator interview; implementation pending); the 2026-09-16 refusal of a non-owner's DM superseded by ADR-0049 · Amended: 2026-09-16 (`owner_dm` routing, twice); 2026-09-18 (undelivered sends); 2026-09-20 (item 1 is a Surface rule); 2026-09-22 (a resend names the failure it replaces); 2026-09-23 (item 1: `group` is a hub conversation); 2026-09-29 (`owner_dm` on Slack is opened, not captured); 2026-09-30 (item 2: `attach` sends a file); 2026-09-30 (item 2: Slack carries files); 2026-10-01 (item 1: `group` holds named channels); 2026-10-03 (a loop dismisses a lost send, and is reminded until it does)
+Date: 2026-09-15 · Status: accepted (operator interview; implementation pending); the 2026-09-16 refusal of a non-owner's DM superseded by ADR-0049 · Amended: 2026-09-16 (`owner_dm` routing, twice); 2026-09-18 (undelivered sends); 2026-09-20 (item 1 is a Surface rule); 2026-09-22 (a resend names the failure it replaces); 2026-09-23 (item 1: `group` is a hub conversation); 2026-09-29 (`owner_dm` on Slack is opened, not captured); 2026-09-30 (item 2: `attach` sends a file); 2026-09-30 (item 2: Slack carries files); 2026-10-01 (item 1: `group` holds named channels); 2026-10-03 (a loop dismisses a lost send, and is reminded until it does); 2026-10-14 (item 3: a `[doing]` trailer says what the loop is working on)
 
 ## Context
 
@@ -108,6 +108,19 @@ non-delivery guarantees ADR-0025's scenario matrix demands.
    `[next-wake]` trailer — but it is delivered to no conversation. There is
    exactly one send path. A loop that wants to say something must address it;
    a loop with nothing to say sends nothing (ADR-0025).
+
+   **Amendment (2026-10-14, #751):** the status note may carry a second
+   trailer, `[doing: implementing #123]`: one line saying what the loop is
+   working on, at most 60 characters, a longer one cut. The hub keeps it on
+   the loop, with when it was set, until the loop sets another; `[doing: ]`
+   clears it, and a note without one leaves it as it was, the same line
+   again included, so its age stays the age of the work. It is read where
+   next-wake is, from the note's last five lines, and not from a handoff
+   turn's note. The loop record serves it as `doing` and `doing_at` (Unix
+   ms), and a change reaches the control room as a loop change. Like the
+   note it comes from, it is redacted before it is stored, and cut only
+   after, so a long secret is never split before it can match. Enes chose a
+   trailer over a field on a tool on 2026-10-12 (#750).
 
 4. **One session per loop; one turn per conversation.** The loop keeps its
    single persistent session (a loop is one coworker brain; ADR-0022 rotation

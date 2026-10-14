@@ -63,6 +63,12 @@ type recordingLoops struct {
 	store.LoopStore
 	note    string
 	refusal string
+	doing   string
+}
+
+func (recorder *recordingLoops) SetDoing(_ context.Context, _, doing string, _ int64) (bool, error) {
+	recorder.doing = doing
+	return true, nil
 }
 
 func (recorder *recordingLoops) SetModelRefusal(_ context.Context, _, _, refusal string, _ int64) error {
@@ -99,7 +105,12 @@ type doubles struct {
 
 func decorated(t *testing.T) (store.Store, doubles) {
 	t.Helper()
-	redactor, _ := loaded(t, Secret{Name: "GH_TOKEN", Value: secretValue})
+	return decoratedWith(t, Secret{Name: "GH_TOKEN", Value: secretValue})
+}
+
+func decoratedWith(t *testing.T, secrets ...Secret) (store.Store, doubles) {
+	t.Helper()
+	redactor, _ := loaded(t, secrets...)
 	recorders := doubles{&recordingLoops{}, &recordingTurns{}, &recordingEvents{}, &recordingMessages{}}
 	inner := fakeStore{loops: recorders.loops, turns: recorders.turns, events: recorders.events, messages: recorders.messages}
 	return Store(inner, redactor), recorders
@@ -133,6 +144,31 @@ func TestModelRefusalIsRedacted(t *testing.T) {
 	}
 	if want := "no model named <redacted:GH_TOKEN>"; recorders.loops.refusal != want {
 		t.Errorf("stored refusal %q", recorders.loops.refusal)
+	}
+}
+
+// A doing is the loop's own words from its status note, stored on the loop
+// (#751). The store cuts it to MaxDoing characters, so the decorator must see
+// it uncut: a secret the cut would split no longer matches whole, and its
+// first part would be stored in the clear.
+func TestDoingIsRedacted(t *testing.T) {
+	redacting, recorders := decorated(t)
+
+	if _, err := redacting.Loops().SetDoing(context.Background(), "loop", "testing with "+secretValue, 1); err != nil {
+		t.Fatalf("SetDoing: %v", err)
+	}
+	if want := "testing with <redacted:GH_TOKEN>"; recorders.loops.doing != want {
+		t.Errorf("stored doing %q", recorders.loops.doing)
+	}
+
+	longSecret := "ghp_" + strings.Repeat("s", store.MaxDoing+20)
+	redacting, recorders = decoratedWith(t, Secret{Name: "LONG_TOKEN", Value: longSecret})
+	prefix := strings.Repeat("p", store.MaxDoing-20)
+	if _, err := redacting.Loops().SetDoing(context.Background(), "loop", prefix+longSecret, 1); err != nil {
+		t.Fatalf("SetDoing: %v", err)
+	}
+	if want := prefix + "<redacted:LONG_TOKEN>"; recorders.loops.doing != want {
+		t.Errorf("stored doing %q, want %q", recorders.loops.doing, want)
 	}
 }
 
@@ -281,6 +317,7 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 		"LoopStore": {
 			"SetRotation":     true, // the loop's own handoff note
 			"SetModelRefusal": true, // the refused turn's result text
+			"SetDoing":        true, // the loop's own words, from its status note
 			// Create and Edit carry the surface and hub-MCP tokens themselves.
 			// Redacting those would write a placeholder where the
 			// credential belongs; the mission is operator-written text, and

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -344,6 +345,69 @@ func TestLoopModelRefusal(t *testing.T) {
 	}
 	if got.ModelRefusal != "" {
 		t.Fatalf("refusal = %q written onto the replacing model, want none", got.ModelRefusal)
+	}
+}
+
+// A doing is cut to MaxDoing characters here, after the redact decorator has
+// seen it whole, and the same doing again keeps the time it was first set
+// (#751).
+func TestLoopDoing(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+
+	loop := &store.Loop{
+		ID: "l1", Name: "doer", Mission: "m", Model: "haiku", Status: store.StatusActive,
+		WorkspaceMode: store.WorkspaceNone, Pacing: store.PacingFixed,
+		Runtime: store.RuntimeBare, CreatedAt: 1, UpdatedAt: 1,
+	}
+	if err := db.Loops().Create(ctx, loop); err != nil {
+		t.Fatal(err)
+	}
+	set := func(doing string, at int64) bool {
+		t.Helper()
+		changed, err := db.Loops().SetDoing(ctx, "l1", doing, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return changed
+	}
+	read := func() *store.Loop {
+		t.Helper()
+		got, err := db.Loops().Get(ctx, "l1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+
+	if !set("implementing #123", 10) {
+		t.Fatal("a new doing reported unchanged")
+	}
+	if set("implementing #123", 20) {
+		t.Fatal("the same doing again reported changed")
+	}
+	if got := read(); got.Doing != "implementing #123" || got.DoingAt != 10 {
+		t.Fatalf("after the same doing again: %q at %d, want it kept at 10", got.Doing, got.DoingAt)
+	}
+
+	long := strings.Repeat("é", store.MaxDoing-1) + " tail"
+	if !set(long, 30) {
+		t.Fatal("a long doing reported unchanged")
+	}
+	cut := strings.Repeat("é", store.MaxDoing-1)
+	if got := read(); got.Doing != cut || got.DoingAt != 30 {
+		t.Fatalf("a long doing stored as %q at %d, want %q at 30", got.Doing, got.DoingAt, cut)
+	}
+	if set(long, 40) {
+		t.Fatal("the same long doing again reported changed")
+	}
+
+	if !set("", 50) || read().Doing != "" {
+		t.Fatal("an empty doing did not clear it")
 	}
 }
 

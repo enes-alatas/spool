@@ -196,7 +196,7 @@ const loopReadCols = loopCols + `,
 		AND surface='` + store.SurfaceSlack + `' AND channel='` + store.FleetChannel + `'), ''),
 	COALESCE((SELECT bound_at FROM rooms WHERE rooms.loop_id=loops.id
 		AND surface='` + store.SurfaceSlack + `' AND channel='` + store.FleetChannel + `'), 0),
-	created_by, updated_by`
+	created_by, updated_by, doing, doing_at`
 
 // scanLoop reads a loops row, opening its sealed tokens.
 func (table loops) scanLoop(row interface{ Scan(...any) error }) (*store.Loop, error) {
@@ -214,7 +214,7 @@ func (table loops) scanLoop(row interface{ Scan(...any) error }) (*store.Loop, e
 		&loopRecord.OwnerSlackUserID, &loopRecord.OwnerSlackDMChannel,
 		&loopRecord.TGGroupChatID, &loopRecord.TGGroupBoundAt,
 		&loopRecord.SlackChannelID, &loopRecord.SlackChannelBoundAt,
-		&loopRecord.CreatedBy, &loopRecord.UpdatedBy)
+		&loopRecord.CreatedBy, &loopRecord.UpdatedBy, &loopRecord.Doing, &loopRecord.DoingAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, store.ErrNotFound
 	}
@@ -525,6 +525,21 @@ func (table loops) SetModelRefusal(ctx context.Context, id, model, refusal strin
 	_, err := table.db.ExecContext(ctx,
 		`UPDATE loops SET model_refusal=?, updated_at=? WHERE id=? AND model=?`, refusal, updatedAt, id, model)
 	return err
+}
+
+func (table loops) SetDoing(ctx context.Context, id, doing string, at int64) (bool, error) {
+	if runes := []rune(doing); len(runes) > store.MaxDoing {
+		doing = strings.TrimSpace(string(runes[:store.MaxDoing]))
+	}
+	// The same doing again writes nothing, so doing_at stays when it was
+	// first set.
+	result, err := table.db.ExecContext(ctx,
+		`UPDATE loops SET doing=?, doing_at=? WHERE id=? AND doing<>?`, doing, at, id, doing)
+	if err != nil {
+		return false, err
+	}
+	changed, err := result.RowsAffected()
+	return changed > 0, err
 }
 
 // --- sessions ---

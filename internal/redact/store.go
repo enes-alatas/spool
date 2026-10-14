@@ -114,6 +114,14 @@ func (loopStore loops) SetModelRefusal(ctx context.Context, id, model, refusal s
 	return loopStore.LoopStore.SetModelRefusal(ctx, id, model, loopStore.redactor.Text(refusal), updatedAt)
 }
 
+func (loopStore loops) SetDoing(ctx context.Context, id, doing string, at int64) (bool, error) {
+	// The loop's own words, from its status note, which the turn row stores
+	// redacted, so the loop row stores the same (#751). It arrives uncut: the
+	// store cuts it after this, so a secret longer than store.MaxDoing still
+	// matches whole.
+	return loopStore.LoopStore.SetDoing(ctx, id, loopStore.redactor.Text(doing), at)
+}
+
 // Each decorator embeds the interface it wraps, so a method added to the
 // store seam keeps compiling here and passes straight through. That is the
 // right default for reads; a new *write* of free text has to be added below,
