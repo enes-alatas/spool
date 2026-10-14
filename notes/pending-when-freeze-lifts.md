@@ -638,3 +638,6 @@ Sweep: #827 (#790) and #824 merged. Open PRs: #832 (Terra, #810 edits as correct
 
 ## 2026-10-14 19:05 UTC
 #829 merged (#732 done). #733 closed (README #802, demo #815, OPERATIONS row 8b3d95e). Iris on #831 (options to Enes, build after #832). #729 left: #775 hub half (Terra). L5 open now: #775, #811, #831, #830, #452 cluster, #450/#451, bugs #480. v0.6.0 ask once #775 and #831 land: needs green dry run on the exact commit.
+
+## 2026-10-14 20:50 UTC
+#832 (#810) merged presumably; Terra on #811 with a deviation I accepted: "unread" is per loop, replace in each loop's queue, keep the stored correction row (no rewrite). Bar unchanged.
