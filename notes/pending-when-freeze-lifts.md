@@ -629,3 +629,6 @@ Enes proposed closing #124 (onboarding epic); all 11 children closed, open quest
 
 ## 2026-10-14 14:20 UTC
 Fast afternoon: merged #820 (#764 watchdog slice 1), #821 (#752 doing line), #825 (#788), #823 (#817), #822 (#819 merge queue in CI, Elliot), #784. Open PRs: #826 (Iris, #818 web half of #764, with Quinn), #827 (Terra, #790), #453 stale. Tidy: #818 → L6 OSS 1.0, parent #754. Iris after #826: #732. Terra after #827: #824 → #810, #811 → #766 → #630. Elliot: #777 seam 2.
+
+## 2026-10-14 15:05 UTC
+#826 merged (#818 closed). Iris assigned #732 (Settings → Access, mockup to Enes first), then #733's OPERATIONS row. #729 left: #732, #733, #775 (hub half, Terra, after #630?). After #732 and #733, v0.6.0 ask gating: #733 docs issue + green dry run.
