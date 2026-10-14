@@ -593,3 +593,6 @@ Enes: "yes please file" (edited messages). Filed #810 (slice 1: edit → correct
 
 ## 2026-10-13 21:05 UTC
 Enes: #810/#811 not urgent. Terra reordered: #809 → #789 → #751 → #764 → #722, #721 → #788, #790 → #810, #811 → #766 → #630.
+
+## 2026-10-14 00:05 UTC
+Quiet night sweep. #809 merged (#800 closed). Open PRs: #814 (Terra, #789), #813 (Iris, #795), #812 (README restructure, #804; author to confirm), #784 (Elliot), #453 (stale). Board tidy except #753 (held). Enes owes: #758 prerequisites, supported-versions.
