@@ -26,6 +26,7 @@ const SAID: Record<string, [(loop: string) => string, string]> = {
   detach: [(loop) => `detached a connection from ${loop}`, 'connection detached'],
   join: [(loop) => `added ${loop} to a channel`, 'added to a channel'],
   leave: [(loop) => `took ${loop} out of a channel`, 'taken out of a channel'],
+  acknowledge: [(loop) => `acknowledged a problem with ${loop}`, 'problem acknowledged'],
 }
 
 // "admin paused @gardener". An action this build does not know is still a

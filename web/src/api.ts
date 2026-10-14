@@ -1,5 +1,13 @@
 // Typed client for the Spool REST API.
 
+// A problem the hub's health check found with a loop (ADR-0053), open
+// since since (Unix ms) until the signal clears or an admin acknowledges it.
+export interface Problem {
+  symptom: 'workstation_down' | 'turn_errors' | string
+  since: number
+}
+export type Health = 'ok' | 'warning' | 'failing'
+
 export interface LoopView {
   id: string
   name: string
@@ -9,6 +17,11 @@ export interface LoopView {
   // after it clears it. Always present (#751).
   doing: string
   doing_at: number
+  // The open problems the hub's health check found with the loop, oldest
+  // first, and health summing them up: 'failing' while workstation_down is
+  // open, 'warning' while only turn_errors is, 'ok' with none (ADR-0053).
+  problems: Problem[]
+  health: Health
   model: string
   // The CLI's sentence refusing \`model\`, recorded when a turn failed on the
   // API's 404 (#289); '' when the model is not refused. While it is set the
@@ -548,6 +561,9 @@ export interface Settings {
   // default; 0 turns that window's cap off.
   plan_cap_five_hour_percent: number
   plan_cap_seven_day_percent: number
+  // Errored turns in a row that open a turn_errors problem (ADR-0053), 0 to
+  // 100; 0 turns that symptom off, and 3 is the default.
+  health_error_turns: number
 }
 
 // The session's user (#582, #675). A session made with the operator token
@@ -871,6 +887,10 @@ export const api = {
   resume: (name: string) => req<LoopView>(`/api/loops/${name}/resume`, { method: 'POST' }),
   wake: (name: string) => req<{ woken: boolean }>(`/api/loops/${name}/wake`, { method: 'POST' }),
   kill: (name: string) => req<{ killed: boolean }>(`/api/loops/${name}/kill`, { method: 'POST' }),
+  // Clears the loop's open problem for symptom as the operator's doing
+  // (ADR-0053); nothing open changes nothing. Answers with the loop view.
+  acknowledge: (name: string, symptom: string) =>
+    req<LoopView>(`/api/loops/${name}/problems/${symptom}/acknowledge`, { method: 'POST' }),
   rotate: (name: string) => req<{ rotating: boolean }>(`/api/loops/${name}/rotate`, { method: 'POST' }),
   // Moves a bare loop into a docker workstation at its next rotation
   // (#624); asking again while it waits answers 202 again. 409 when the
@@ -1058,6 +1078,9 @@ export const api = {
   removeUser: (name: string) => req<void>(`/api/users/${encodeURIComponent(name)}`, { method: 'DELETE' }),
   settings: () => req<Settings>('/api/settings'),
   planUsage: () => req<PlanUsage>('/api/plan-usage'),
+  // One count; 0 is off (ADR-0053).
+  setHealthErrorTurns: (turns: number) =>
+    req<Settings>('/api/settings', { method: 'PUT', body: JSON.stringify({ health_error_turns: turns }) }),
   // Both thresholds go in one write, as the rotation pair does; 0 is off.
   setPlanCaps: (fiveHour: number, sevenDay: number) =>
     req<Settings>('/api/settings', {
