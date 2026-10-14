@@ -605,3 +605,6 @@ Quiet. #812 (#804) and #813 (#795) merged. Open PRs: #814 (Terra, #789, with Qui
 
 ## 2026-10-14 08:15 UTC
 Elliot: #784 rebased (0049654), CI running; held by Enes's own "Operator decision pending" line until the docs review (#812, now merged). Elliot asks Enes to release it; Quinn pings last. My nudge was half-wrong: the hold was Enes's, not idleness. Lesson: read the PR body for a pending-decision line before nudging (pending-decision-blocks-merge-ask already says so).
+
+## 2026-10-14 08:50 UTC
+#816 merged (#751 doing trailer). Terra on #764 (watchdog slice 1); #722/#721 were closed by #785; after #764: #788, #790, #810, #811, #766, #630. Iris: #815 in review, then #752 (now unblocked) → #732.
