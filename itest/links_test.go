@@ -115,7 +115,7 @@ func TestALinkedMemberReadsTheirOwnPrivateConversations(t *testing.T) {
 	}
 	// A loop's next owner reads what it and they say privately from then
 	// on, never what it said with the owner before them.
-	srv.mustJSON("PUT", "/api/loops/alpha/owner", map[string]any{"tg_user_id": other.ID}, nil)
+	srv.mustJSON("PUT", "/api/loops/alpha/owner", map[string]any{"user": "noa"}, nil)
 	tg.dm("alpha", other, "the new owner's secret")
 	srv.waitForMessage("the new owner's secret")
 	got = srv.memberActivity(noa)

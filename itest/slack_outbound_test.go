@@ -78,7 +78,7 @@ func TestSlackGroupSendIsTheAppsPost(t *testing.T) {
 func TestSlackOwnerDMOpensTheDM(t *testing.T) {
 	t.Parallel()
 	srv, slack := startSlackFleet(t)
-	if resp, body := srv.do("PUT", "/api/loops/terra/owner", map[string]any{"slack_user_id": slackOperator}); resp.StatusCode != http.StatusOK {
+	if resp, body := srv.do("PUT", "/api/loops/terra/owner", map[string]any{"user": slackUser(slackOperator)}); resp.StatusCode != http.StatusOK {
 		t.Fatalf("set owner: %d %s", resp.StatusCode, body)
 	}
 	if !srv.loop("terra").OwnerDMReady {
@@ -126,7 +126,7 @@ func TestSlackCatalog(t *testing.T) {
 	srv.createLoop("milo", slackPair(slackMiloAppToken, slackMiloBotToken))
 	srv.waitSlackLink("terra", func(link slackStatus) bool { return link.Bridge.Connected })
 	srv.allowSlackSender(slack, slackAppToken, slackOperator)
-	srv.mustJSON("PUT", "/api/loops/terra/owner", map[string]any{"slack_user_id": slackOperator}, nil)
+	srv.mustJSON("PUT", "/api/loops/terra/owner", map[string]any{"user": slackUser(slackOperator)}, nil)
 
 	first := waitPrompt(t, srv, "terra", 0)
 	prompt := waitPromptAfterRotation(t, srv, "terra", first.SessionID)
@@ -261,7 +261,7 @@ func TestSlackSendInterruptedByAShutdownIsAFailure(t *testing.T) {
 func TestSlackDMAnswersAnotherAllowedSender(t *testing.T) {
 	t.Parallel()
 	srv, slack := startSlackFleet(t)
-	if resp, body := srv.do("PUT", "/api/loops/terra/owner", map[string]any{"slack_user_id": slackOperator}); resp.StatusCode != http.StatusOK {
+	if resp, body := srv.do("PUT", "/api/loops/terra/owner", map[string]any{"user": slackUser(slackOperator)}); resp.StatusCode != http.StatusOK {
 		t.Fatalf("set owner: %d %s", resp.StatusCode, body)
 	}
 	srv.allowSlackSender(slack, slackAppToken, "U0ALICE")

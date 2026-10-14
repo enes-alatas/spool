@@ -230,13 +230,10 @@ func (server *Server) ownerInTeam(ctx context.Context, ownerSlackUserID, team st
 	return err == nil && sender.TeamID == team
 }
 
-// putSlackOwner sets a loop's Slack owner: an allowed Slack sender in the
-// loop's workspace, on a loop that is not on Telegram. It answers the
-// refusal, or nil once the owner is stored.
+// putSlackOwner sets a Slack loop's owner: an allowed Slack sender in the
+// loop's workspace. It answers the refusal, or nil once the owner is
+// stored.
 func (server *Server) putSlackOwner(ctx context.Context, loopRecord *store.Loop, slackUserID string) *requestError {
-	if loopRecord.Surface() == store.SurfaceTelegram {
-		return &requestError{status: http.StatusBadRequest, msg: "this loop is on telegram: its owner is a telegram sender"}
-	}
 	sender, err := server.Store.SlackSenders().Get(ctx, slackUserID)
 	if errors.Is(err, store.ErrNotFound) || (err == nil && sender.Status != store.SenderAllowed) {
 		return &requestError{status: http.StatusBadRequest, msg: "owner must be an allowed slack sender"}

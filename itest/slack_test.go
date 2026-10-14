@@ -624,14 +624,31 @@ func seedSlackSender(t *testing.T, dataDir, userID, teamID, display, status stri
 	}
 }
 
+// seedSlackLink adds a user named name and links them to userID, a seeded
+// Slack sender, straight in spool.db, as a confirmed link code would. The
+// server must be stopped.
+func seedSlackLink(t *testing.T, srv *server, name, userID string) {
+	t.Helper()
+	srv.spoolUser("add", name, "--role", "member")
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(srv.dataDir, "spool.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`INSERT INTO user_links (user_id, surface, person, created_at)
+		SELECT id, 'slack', ?, 1 FROM users WHERE name=?`, "slack:"+userID, name); err != nil {
+		t.Fatalf("link %s to %s: %v", name, userID, err)
+	}
+}
+
 type slackOwnerView struct {
 	OwnerSlackUserID string `json:"owner_slack_user_id"`
 	OwnerUsername    string `json:"owner_username"`
 }
 
-// A Slack loop's owner is an allowed Slack sender in its workspace, chosen in
-// the control room, and a sender who stops being allowed stops owning it
-// (#230).
+// A Slack loop's owner is an allowed Slack sender in its workspace, named
+// as the user linked to them, and a sender who stops being allowed stops
+// owning it (#230, #775).
 func TestSlackSendersAndOwner(t *testing.T) {
 	t.Parallel()
 	slack := startFakeSlack(t)
@@ -642,6 +659,8 @@ func TestSlackSendersAndOwner(t *testing.T) {
 	srv.stop()
 	seedSlackSender(t, dataDir, "U0ALICE", "T0ACME", "Alice", "pending")
 	seedSlackSender(t, dataDir, "U0MALLORY", "T0OTHER", "Mallory", "allowed")
+	seedSlackLink(t, srv, "alice", "U0ALICE")
+	seedSlackLink(t, srv, "mallory", "U0MALLORY")
 	srv = startServerArgs(t, dataDir, "--runtime", "bare", "--slack-api-base", slack.srv.URL)
 
 	var senders []struct {
@@ -654,19 +673,23 @@ func TestSlackSendersAndOwner(t *testing.T) {
 		t.Fatalf("senders = %+v, want the two seeded", senders)
 	}
 
-	owner := func(userID string) (int, []byte) {
-		resp, body := srv.do("PUT", "/api/loops/terra/owner", map[string]any{"slack_user_id": userID})
+	owner := func(name string) (int, []byte) {
+		resp, body := srv.do("PUT", "/api/loops/terra/owner", map[string]any{"user": name})
 		return resp.StatusCode, body
 	}
-	if status, body := owner("U0ALICE"); status != http.StatusBadRequest {
+	if status, body := owner("alice"); status != http.StatusBadRequest {
 		t.Errorf("a pending sender became owner: %d %s", status, body)
 	}
-	if status, body := owner("U0MALLORY"); status != http.StatusBadRequest {
+	if status, body := owner("mallory"); status != http.StatusBadRequest {
 		t.Errorf("a sender from another workspace became owner: %d %s", status, body)
 	}
 
 	srv.mustJSON("POST", "/api/slack/senders/U0ALICE/allow", nil, nil)
-	if status, body := owner("U0ALICE"); status != http.StatusOK {
+	// named by sender id, as before #775, even an allowed one is refused
+	if resp, body := srv.do("PUT", "/api/loops/terra/owner", map[string]any{"slack_user_id": "U0ALICE"}); resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("an owner named by sender id = %d %s, want 400", resp.StatusCode, body)
+	}
+	if status, body := owner("alice"); status != http.StatusOK {
 		t.Fatalf("an allowed sender in the workspace could not own the loop: %d %s", status, body)
 	}
 	var owned slackOwnerView
@@ -687,9 +710,9 @@ func TestSlackSendersAndOwner(t *testing.T) {
 		t.Errorf("allowing a deleted sender = %d %s, want 404", resp.StatusCode, body)
 	}
 
-	// A Telegram owner for a Slack loop is refused, not stored.
-	if resp, body := srv.do("PUT", "/api/loops/terra/owner", map[string]any{"tg_user_id": 42}); resp.StatusCode != http.StatusBadRequest {
-		t.Errorf("a telegram owner on a slack loop = %d %s, want 400", resp.StatusCode, body)
+	// A user with no Slack link cannot own a Slack loop.
+	if resp, body := srv.do("PUT", "/api/loops/terra/owner", map[string]any{"user": "admin"}); resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("a user with no slack link owning a slack loop = %d %s, want 400", resp.StatusCode, body)
 	}
 }
 
@@ -707,8 +730,9 @@ func TestSlackOwnerFollowsTheWorkspace(t *testing.T) {
 	srv.createLoop("terra", slackPair(slackAppToken, slackBotToken))
 	srv.stop()
 	seedSlackSender(t, dataDir, "U0ALICE", "T0ACME", "Alice", "allowed")
+	seedSlackLink(t, srv, "alice", "U0ALICE")
 	srv = startServerArgs(t, dataDir, "--runtime", "bare", "--slack-api-base", slack.srv.URL)
-	srv.mustJSON("PUT", "/api/loops/terra/owner", map[string]any{"slack_user_id": "U0ALICE"}, nil)
+	srv.mustJSON("PUT", "/api/loops/terra/owner", map[string]any{"user": "alice"}, nil)
 
 	ownerAfter := func(pair map[string]any) string {
 		t.Helper()

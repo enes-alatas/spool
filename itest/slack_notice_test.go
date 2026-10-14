@@ -69,7 +69,7 @@ func TestSlackOwnerIsToldOfARefusedLoginOnce(t *testing.T) {
 	srv, slack := startSlackFleet(t)
 	appOf := map[string]string{slackBotToken: "terra", slackMiloBotToken: "milo"}
 	for _, name := range []string{"terra", "milo"} {
-		srv.mustJSON("PUT", "/api/loops/"+name+"/owner", map[string]any{"slack_user_id": slackOperator}, nil)
+		srv.mustJSON("PUT", "/api/loops/"+name+"/owner", map[string]any{"user": slackUser(slackOperator)}, nil)
 		srv.message(name, "hi "+name)
 		srv.waitTurn(name, 30*time.Second, func(tn turn) bool {
 			return !tn.IsError && strings.Contains(tn.ResultText, "hi "+name)
