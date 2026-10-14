@@ -74,6 +74,17 @@ grants, and wrong codes must be limited. Milo took both into the epic.
    wrong code, an unknown one or one from the other surface, is
    unanswered. An allowed sender's wrong code is still told why, as
    before.
+
+   **Amendment (2026-10-14, #788):** the once-an-hour line covers every
+   event dropped at the sender gate, and a blocked sender's as well as a
+   stranger's: messages, reactions and votes, counted together for each
+   sender. A reaction or a vote is gated first, before anything it would
+   cause, so a stranger's vote on a closed poll costs no call to the
+   platform. The hub keeps that count for at most 1024 senders. When it
+   is full, it forgets the senders whose hour is out, at most once a
+   minute. While it is still full, a new sender's events are counted
+   together with the other senders it had no room for, and logged as one
+   sender, `others`. (From the 1.0 surfaces review, #786.)
 6. **Wrong codes are limited.** A code is about 49 random bits and lives
    15 minutes, so guessing one is not the danger. A spray of guesses is a
    store read each, and the answers tell a code that works from one that
