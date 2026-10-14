@@ -632,3 +632,6 @@ Fast afternoon: merged #820 (#764 watchdog slice 1), #821 (#752 doing line), #82
 
 ## 2026-10-14 15:05 UTC
 #826 merged (#818 closed). Iris assigned #732 (Settings → Access, mockup to Enes first), then #733's OPERATIONS row. #729 left: #732, #733, #775 (hub half, Terra, after #630?). After #732 and #733, v0.6.0 ask gating: #733 docs issue + green dry run.
+
+## 2026-10-14 18:05 UTC
+Sweep: #827 (#790) and #824 merged. Open PRs: #832 (Terra, #810 edits as corrections), #829 (Iris, #732 Access), #453. New: #831 (timeline shows edits, web half of #810; Iris after #732) and #830 (comment naming after Access move) → L5 Team. Terra after #832: #811 → #766 → #630 → #775 hub half.
