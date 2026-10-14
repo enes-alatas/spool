@@ -253,6 +253,18 @@ export interface ChatMessage {
   // from before channels (#483). Mirrored for the api.ts/Go sync rule;
   // nothing in the room reads it yet.
   channel?: string
+  // The message this one corrects, when a person edited or deleted what they
+  // said on a surface (ADR-0055): this is what they now stand behind, and
+  // `edit_kind` says which — 'edited' or 'deleted', a plain string for the
+  // reason `send_resolution` is one. A deletion carries no text. Both absent
+  // on every other message. `edits.ts` reads them.
+  edit_of?: number
+  edit_kind?: string
+  // When the person last edited this message, and when they deleted it;
+  // absent for never. Unix milliseconds. A deletion took the words, so a
+  // message with `deleted_at` has an empty `text` (ADR-0055).
+  edited_at?: number
+  deleted_at?: number
 }
 
 // A poll's ballot, as store.Poll has it, with each voter's current choice

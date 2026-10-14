@@ -1794,7 +1794,8 @@ textarea {
    more lines per message: the quote a reply answers, above, and the loops
    the hub delivered it to, below. Both muted and in the who-line's face, so
    the message text stays the thing the eye lands on. */
-.reply-quote {
+.reply-quote,
+.correction-quote {
   font-size: 0.8125rem;
   color: var(--text-muted);
   border-left: 2px solid var(--hairline);
@@ -4062,4 +4063,17 @@ textarea {
 .link-steps li.done .link-step-mark {
   border-color: var(--ready);
   color: var(--ready);
+}
+
+/* A person's edit or deletion (#831). The tag rides the who line, or the
+   feed row's text, muted like the rest of it; the words an edit replaced are
+   quoted above the new ones as a reply's target is (the rule is shared with
+   `.reply-quote`), and a deleted message keeps its place with nothing in it
+   but that. */
+.edit-tag {
+  color: var(--text-muted);
+}
+.gone {
+  font-style: italic;
+  color: var(--text-muted);
 }

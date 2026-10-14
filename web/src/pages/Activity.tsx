@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../api'
 import { channelLabel, whereSaid } from '../channels'
 import { changeSentence, interleave } from '../changes'
+import { correctionTag, editedTag, isDeletion, wordsTaken } from '../edits'
 import { AttachmentList } from '../components/Attachments'
 import { Linked } from '../components/Linked'
 import { messageTime } from '../components/MessageKnot'
@@ -37,6 +38,7 @@ export default function Activity() {
     queryFn: () => api.changes(undefined, FEED),
     enabled: !channel,
   })
+  const byID = new Map((msgs ?? []).map((m) => [m.id, m]))
   const items = interleave(msgs ?? [], channel ? [] : (changes ?? []), (msgs?.length ?? 0) >= FEED)
 
   return (
@@ -67,12 +69,30 @@ export default function Activity() {
           )
         }
         const m = item.msg
+        const tag = editedTag(m) ?? correctionTag(m, byID)
+        // A deleted message's tag says it all; an edit whose words its
+        // message's deletion took says so where the words would be.
+        const words =
+          isDeletion(m) || m.deleted_at ? null : wordsTaken(m) ? (
+            <span className="gone">deleted</span>
+          ) : (
+            <Linked text={m.text} />
+          )
         return (
           <div key={m.id} className="feed-item">
             <span className="when">{messageTime(m.ts)}</span>
             <span className={`author${m.origin === 'loop' ? ' loop-author' : ''}`}>@{m.author}</span>
+            {/* A person's edit or deletion (#831): the feed says what became
+              of a message and what a correction corrects, as a thread does,
+              and leaves the replaced words to the thread. */}
             <span className="text">
-              <Linked text={m.text} />
+              {words}
+              {tag && (
+                <span className="edit-tag">
+                  {words && ' · '}
+                  {tag}
+                </span>
+              )}
             </span>
             {/* Said on the feed too: this is the page an operator scans when
               they are not reading any one loop, which is exactly when an
