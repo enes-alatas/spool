@@ -16,6 +16,7 @@ import { StateDot } from '../components/Spool'
 import { ChannelChat } from '../components/ChannelChat'
 import { PlanUsageStrip } from '../components/PlanUsage'
 import { Doing } from '../components/Doing'
+import { HealthNote } from '../components/Health'
 import { useMay } from '../components/Session'
 import { undeliveredNote } from '../messages'
 import { workstationNote } from '../workstation'
@@ -124,8 +125,12 @@ function FleetRow({
           undelivered ||
           loop.branch ||
           loop.tg_bot_username ||
-          loop.doing) && (
+          loop.doing ||
+          loop.problems.length > 0) && (
           <span className="notes">
+            {/* First: a loop the health check has a problem with is the
+                row's news (ADR-0053). */}
+            <HealthNote loop={loop} />
             {loop.runtime === 'bare' && <span className="containment-badge">uncontained</span>}
             {station && <span className={station.bad ? 'note bad' : 'note'}>{station.text}</span>}
             {/* With the faults rather than with the metadata: a loop whose

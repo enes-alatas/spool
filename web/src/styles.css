@@ -27,6 +27,9 @@
      alert still reads as one without a card shell */
   --danger-line: rgba(255, 69, 103, 0.38);
   --danger-wash: rgba(255, 69, 103, 0.07);
+  /* the same pair for a warning: a problem wanting attention soon */
+  --active-line: rgba(255, 138, 31, 0.38);
+  --active-wash: rgba(255, 138, 31, 0.07);
   /* meters and fills: data, drawn in the text colour. The token is a plain
      colour; each rule sets its own weight with opacity, so the dimming lives
      in one layer and an emphasised bar can still reach full strength */
@@ -829,6 +832,64 @@ textarea {
   border-radius: 7px;
   padding: 7px 11px;
   margin-bottom: 12px;
+}
+/* the loop's open problems (ADR-0053): a line each, in the alarm's
+   colours for a workstation down and the warning's for failing turns, with
+   Acknowledge at the line's end for an admin */
+.problems {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.problem-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.78125rem;
+  border-radius: 7px;
+  padding: 5px 6px 5px 11px;
+}
+.problem-line.health-failing {
+  color: var(--danger);
+  background: var(--danger-wash);
+  border: 1px solid var(--danger-line);
+}
+.problem-line.health-warning {
+  color: var(--active);
+  background: var(--active-wash);
+  border: 1px solid var(--active-line);
+}
+.problem-line .btn {
+  padding: 3px 10px;
+  font-size: 0.75rem;
+}
+/* the Fleet row's health note: a dot and the open problems, in the colour of
+   the loop's health */
+.health-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.health-note.health-warning {
+  color: var(--active);
+}
+.health-note.health-failing {
+  color: var(--danger);
+}
+.health-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+.health-dot.health-warning {
+  background: var(--active);
+}
+.health-dot.health-failing {
+  background: var(--danger);
 }
 /* a power control the server says is still running */
 .ws-progress {

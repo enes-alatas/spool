@@ -13,6 +13,7 @@ import { LinksSection } from '../components/LinksSection'
 import { loginCheckTone } from '../onboarding'
 import { CapBanner, useMinuteClock } from '../components/PlanUsage'
 import { capFields, capGate, capIdleStatus, capReason, capValue, type CapDraft } from '../planCap'
+import { errorTurnsField, errorTurnsValue } from '../health'
 
 export default function Settings() {
   const { data: settings, error: loadError } = useQuery({ queryKey: ['settings'], queryFn: api.settings })
@@ -31,6 +32,7 @@ export default function Settings() {
           <ClaudeToken settings={settings} loadError={loadError} />
           <CustomModels />
           <PlanGuardrails settings={settings} loadError={loadError} />
+          <HealthCheck settings={settings} loadError={loadError} />
           <RotationThresholds settings={settings} loadError={loadError} />
           <EgressSection />
         </>
@@ -335,6 +337,85 @@ function PlanGuardrails({ settings, loadError }: { settings?: SettingsView; load
             {busy ? 'Saving…' : 'Save thresholds'}
           </button>
           {changed && (
+            <button className="btn" onClick={() => setDraft(null)} disabled={busy}>
+              Cancel
+            </button>
+          )}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+// The health check's one setting (ADR-0053): how many errored turns in a
+// row open a problem with a loop. A workstation down past its grace period
+// opens one whatever this says.
+function HealthCheck({ settings, loadError }: { settings?: SettingsView; loadError: Error | null }) {
+  const qc = useQueryClient()
+  // As the other sections: the stored value is the truth, a draft overlays.
+  const [draft, setDraft] = useState<string | null>(null)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const shown = draft ?? (settings ? errorTurnsField(settings.health_error_turns) : null)
+  const value = draft === null ? undefined : errorTurnsValue(draft)
+  const sendable = value !== undefined && value !== settings?.health_error_turns
+
+  const save = async () => {
+    if (value === undefined) return
+    setBusy(true)
+    setError('')
+    try {
+      const saved = await api.setHealthErrorTurns(value)
+      setDraft(null)
+      qc.setQueryData(['settings'], saved)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section>
+      <h2 className="section-head">Health check</h2>
+      <p className="page-lede">
+        The hub tells a loop's owner once when a problem opens with it, and once when it clears: when its
+        turns keep ending in errors, or its workstation stays down. Fleet marks the loop, and its page says
+        what is wrong.
+      </p>
+      <div className="form">
+        <div className="field">
+          <label htmlFor="health-error-turns">Errored turns in a row</label>
+          <input
+            id="health-error-turns"
+            inputMode="numeric"
+            placeholder="off"
+            value={shown ?? ''}
+            disabled={shown === null || busy}
+            onChange={(e) => setDraft(e.target.value)}
+          />
+          <div className="hint">
+            This many turns ending in an error, one after another, open a problem. Empty turns it off.
+          </div>
+        </div>
+
+        {!settings && loadError && (
+          <div className="form-error" role="alert">
+            {loadFailure(loadError)}
+          </div>
+        )}
+        {error && (
+          <div className="form-error" role="alert">
+            {error}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn primary" onClick={save} disabled={busy || !sendable}>
+            {busy ? 'Saving…' : 'Save'}
+          </button>
+          {draft !== null && (
             <button className="btn" onClick={() => setDraft(null)} disabled={busy}>
               Cancel
             </button>
