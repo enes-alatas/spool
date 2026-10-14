@@ -607,16 +607,17 @@ function Pair({
 
 // Beat 3: the first-run Chat surface card gives scout its Telegram bot,
 // and the operator links their own account through it (#733). The attach
-// plays fast and the link at about real pace, in Pair's layout; the chat
+// and the link play a little above real pace, in Pair's layout; the chat
 // pane is the operator's DM with the bot, on record.mjs's cues, in the
 // hub's own words.
 const LK = marks.link
-const ATTACH_RATE = 1.6
+const ATTACH_RATE = 1.25
 const LINK_RATE = 1.25
 const ATTACH_LEN = (LK.attached - LK.ready) / ATTACH_RATE
 const LINK_FROM = LK.attached - 0.2
 // The beat's frame for a moment in the clip's second half.
 const atLink = (t: number) => s(ATTACH_LEN + (t - LINK_FROM) / LINK_RATE)
+const LINK_LEN = ATTACH_LEN + (LK.end - LINK_FROM) / LINK_RATE
 // Zoomed enough that the page fills the window's height, which is taller
 // than the clip's 16:9, centred on the dialog.
 const linkCamera: Focus = { x: PAGE.w / 2, y: PAGE.h / 2, zoom: 1.22 }
@@ -875,7 +876,7 @@ function EndCard() {
 }
 
 // Beat boundaries, in seconds: each beat's length, laid end to end.
-const LENGTHS = [3, CREATE_LEN, 17, 5, 9, 8, 8, 5]
+const LENGTHS = [3, CREATE_LEN, LINK_LEN, 5, 9, 8, 8, 5]
 const SPANS = LENGTHS.map((len, i) => {
   const from = LENGTHS.slice(0, i).reduce((a, b) => a + b, 0)
   return [from, from + len]
