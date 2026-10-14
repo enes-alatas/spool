@@ -900,12 +900,12 @@ func (br *Bridge) mirrorReaction(ctx context.Context, reaction *route.ReactionPa
 }
 
 // reactionRef is the id the loop's bot sets a reaction on the message by,
-// or nil when it has none. Its own comes first. A bot never receives
-// another bot's post, so a teammate's message has an id only under the
-// bot that posted it (#607). In a supergroup that id is the chat's, the
-// same for every member, so the loop's bot can use it. In a basic group
-// and a private chat each member numbers its own copy, so another bot's id
-// would name a different message, and the reaction stays on the hub.
+// or nil when it has none: its own id for a message it posted or received.
+// A bot never receives another bot's post, so a teammate's message has an
+// id only under the bot that posted it (#607), and Telegram refuses a
+// reaction by that id in every chat type, a supergroup included: a bot
+// reacts only to a message it received (ADR-0040, #817). Such a reaction
+// stays on the hub, where the teammate it was for reads it.
 func (br *Bridge) reactionRef(ctx context.Context, bot *poller, messageID int64, loopID string) *store.SurfaceRef {
 	if ref, err := br.store.Messages().Ref(ctx, messageID, loopID); err == nil {
 		return ref
@@ -915,21 +915,12 @@ func (br *Bridge) reactionRef(ctx context.Context, bot *poller, messageID int64,
 		br.log.Error("telegram: read a reaction's target", "loop", bot.name, "err", err)
 		return nil
 	}
-	for _, ref := range refs {
-		if supergroup(ref.TGChatID) {
-			return ref
-		}
-	}
 	if len(refs) > 0 {
 		br.log.Info("telegram: reaction stays on the hub", "loop", bot.name, "chat", refs[0].TGChatID,
-			"reason", "another bot's message outside a supergroup has no id this bot can use")
+			"reason", "another bot's message, which this bot never received")
 	}
 	return nil
 }
-
-// supergroup reports whether a chat id is a supergroup's or a channel's:
-// -100 and the channel's own id, where message ids are the chat's.
-func supergroup(chatID int64) bool { return chatID <= -1000000000000 }
 
 // handlePollAnswer hands the router a person's whole choice in a poll the
 // loop's bot sent (ADR-0041). Telegram tells only the bot that sent a poll

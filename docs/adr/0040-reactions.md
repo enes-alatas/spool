@@ -1,6 +1,6 @@
 # ADR-0040: A reaction is an emoji on a message, and it rides with the next turn
 
-Date: 2026-10-02 · Status: accepted (operator decisions of 2026-10-01, recorded on #491) · Amends: ADR-0029 (items 2 and 5) · Amended: 2026-10-06 (item 6: a teammate's message on Telegram, #607); 2026-10-14 (item 6: no group carries a reaction between bots, #817)
+Date: 2026-10-02 · Status: accepted (operator decisions of 2026-10-01, recorded on #491) · Amends: ADR-0029 (items 2 and 5) · Amended: 2026-10-06 (item 6: a teammate's message on Telegram, #607); 2026-10-14 (item 6: no group carries a reaction between bots, #817); 2026-10-14 (item 6: the bridge keeps a reaction between bots on the hub, #824)
 
 ## Context
 
@@ -125,6 +125,11 @@ This ADR records those decisions, and the reaction model the five slices
    reaction to a person's message that its bot received does show (checked
    in that supergroup, 2026-10-14). The loop page and docs/TELEGRAM.md say
    so.
+
+   **Amendment (2026-10-14, #824): the bridge keeps it on the hub.** In a
+   supergroup too, a loop's reaction to a teammate's message makes no call
+   to Telegram. The bridge logs at INFO that the reaction stays on the
+   hub, as it does in a basic group.
 
 ## Amendments
 
