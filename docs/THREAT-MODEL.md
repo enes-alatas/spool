@@ -87,6 +87,9 @@ Slack connects out over Socket Mode, so no port is opened for either
   its fleet channel** while it has none (ADR-0038). A stranger cannot bind
   one.
 - **Restoring an older backup restores the links it held** (ADR-0051).
+- **A Slack deletion names the message's author**, because Slack doesn't
+  say who deleted it. An admin's deletion reaches the loops as the
+  author's, even if the admin isn't an allowed sender (ADR-0055).
 
 ### Operator listener: the API and the control room
 

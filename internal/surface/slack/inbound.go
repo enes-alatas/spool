@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"regexp"
 	"slices"
@@ -16,11 +17,12 @@ import (
 )
 
 // Inbound: what a loop's app hears over Socket Mode becomes a hub message,
-// or a reaction on one. The app subscribes to message.im, message.channels
-// and message.groups, and to reaction_added and reaction_removed (the
-// manifest the control room hands out), so every event that matters is a
-// message, in the owner's DM or in a channel, or a reaction to one. A
-// click on a poll's button is an interactive envelope instead (poll.go).
+// a correction of one, or a reaction on one. The app subscribes to
+// message.im, message.channels and message.groups, and to reaction_added
+// and reaction_removed (the manifest the control room hands out), so every
+// event that matters is a message, in the owner's DM or in a channel, an
+// edit or deletion of one, or a reaction to one. A click on a poll's
+// button is an interactive envelope instead (poll.go).
 
 // eventCallback is an events_api envelope's payload, reduced to what
 // ingest reads.
@@ -53,6 +55,26 @@ type messageEvent struct {
 		Channel string `json:"channel"`
 		TS      string `json:"ts"`
 	} `json:"item"`
+	// Message is the message as it now reads, on a message_changed event,
+	// and PreviousMessage how it read before, on that and on a
+	// message_deleted, whose DeletedTS is the ts of the message deleted
+	// (ADR-0055).
+	Message         *changedMessage `json:"message"`
+	PreviousMessage *changedMessage `json:"previous_message"`
+	DeletedTS       string          `json:"deleted_ts"`
+}
+
+// changedMessage is a message as a message_changed or message_deleted
+// event carries it. Edited is set only when a person changed its words:
+// Slack sends message_changed when a link in it unfurls, too.
+type changedMessage struct {
+	User   string `json:"user"`
+	BotID  string `json:"bot_id"`
+	Text   string `json:"text"`
+	TS     string `json:"ts"`
+	Edited *struct {
+		TS string `json:"ts"`
+	} `json:"edited"`
 }
 
 // events is how many envelopes a link holds for ingest while it keeps
@@ -78,10 +100,10 @@ func (adapter *Adapter) ingestLoop(ctx context.Context, link *link, envelopes <-
 }
 
 // ingest takes one event: a human's message, from someone Spool allows,
-// in the loop's owner DM or its channel, with the files it shares. Everything
-// else is dropped here: edits, joins and other subtypes, and every bot's
-// post, the loops' own mirrored ones included, which would otherwise come
-// back in as new.
+// in the loop's owner DM or its channel, with the files it shares, and a
+// person's edit or deletion of one the hub holds. Everything else is
+// dropped here: joins and other subtypes, and every bot's post, the loops'
+// own mirrored ones included, which would otherwise come back in as new.
 func (adapter *Adapter) ingest(ctx context.Context, link *link, payload json.RawMessage) {
 	var callback eventCallback
 	if err := json.Unmarshal(payload, &callback); err != nil {
@@ -91,6 +113,10 @@ func (adapter *Adapter) ingest(ctx context.Context, link *link, payload json.Raw
 	event := callback.Event
 	if event.Type == "reaction_added" || event.Type == "reaction_removed" {
 		adapter.ingestReaction(ctx, link, event)
+		return
+	}
+	if event.Type == "message" && (event.Subtype == "message_changed" || event.Subtype == "message_deleted") {
+		adapter.ingestEdit(ctx, link, event)
 		return
 	}
 	if event.Type != "message" || (event.Subtype != "" && event.Subtype != "file_share") ||
@@ -148,6 +174,49 @@ func (adapter *Adapter) ingestReaction(ctx context.Context, link *link, event me
 		Removed: event.Type == "reaction_removed"})
 	if err != nil {
 		adapter.log.Error("slack: record reaction", "loop", link.loopID, "message", target.ID, "err", err)
+	}
+}
+
+// ingestEdit hands the router a person's edit or deletion of a message the
+// hub holds, found by its channel and ts as a reaction's target is
+// (ADR-0055). Every loop's app in the channel hears it, and each reports
+// it: the key is the hub's id for the original and Slack's ts for the
+// edit, or the deletion, the same whichever app reports it, so the
+// correction is stored once. Only an edit of a message's words counts, not
+// a link unfurling under it. An edit passes the sender gate a reaction
+// does. One of a message the hub never held, or of a bot's, is dropped.
+func (adapter *Adapter) ingestEdit(ctx context.Context, link *link, event messageEvent) {
+	var user, ts, text, kind, key string
+	switch {
+	case event.Subtype == "message_changed" && event.Message != nil && event.Message.Edited != nil:
+		changed := event.Message
+		if changed.BotID != "" || (event.PreviousMessage != nil && event.PreviousMessage.Text == changed.Text) {
+			return
+		}
+		user, ts, text, kind, key = changed.User, changed.TS, changed.Text, store.EditEdited, changed.Edited.TS
+	case event.Subtype == "message_deleted" && event.PreviousMessage != nil:
+		if event.PreviousMessage.BotID != "" {
+			return
+		}
+		user, ts, kind, key = event.PreviousMessage.User, event.DeletedTS, store.EditDeleted, store.EditDeleted
+	default:
+		return
+	}
+	if user == "" || ts == "" {
+		return
+	}
+	sender := adapter.eventSender(ctx, link, user)
+	if sender == nil {
+		return
+	}
+	original, err := adapter.store.Messages().BySlackTS(ctx, event.Channel, ts)
+	if err != nil || original.FromLoopID != "" {
+		return
+	}
+	err = adapter.router.Correct(ctx, route.InboundEdit{Original: original, Author: authorName(sender),
+		Text: adapter.readable(ctx, text), Kind: kind, Key: fmt.Sprintf("slack:%d:%s", original.ID, key)})
+	if err != nil && !errors.Is(err, store.ErrDuplicate) {
+		adapter.log.Error("slack: record an edit", "loop", link.loopID, "message", original.ID, "err", err)
 	}
 }
 
