@@ -1,6 +1,6 @@
 # ADR-0051: A link code is the one way a person becomes an allowed sender
 
-Date: 2026-10-11 · Status: accepted (operator decisions of 2026-10-11 on #728, posture reviewed by Elliot there; epic #729, slice #730) · Supersedes: the pairing code, ADR-0029 items 6 and 8 in part, and ADR-0050 decision 1's "only an allowed sender links" · Relates to: ADR-0026, ADR-0048, ADR-0049, ADR-0050 · Amended: 2026-10-12 (a loop's owner is chosen as a user), 2026-10-13 (strangers' wrong codes are counted per surface, and a pause shows), 2026-10-13 (an owner manages access from Settings → Access)
+Date: 2026-10-11 · Status: accepted (operator decisions of 2026-10-11 on #728, posture reviewed by Elliot there; epic #729, slice #730) · Supersedes: the pairing code, ADR-0029 items 6 and 8 in part, and ADR-0050 decision 1's "only an allowed sender links" · Relates to: ADR-0026, ADR-0048, ADR-0049, ADR-0050 · Amended: 2026-10-12 (a loop's owner is chosen as a user), 2026-10-13 (strangers' wrong codes are counted per surface, and a pause shows), 2026-10-13 (an owner manages access from Settings → Access), 2026-10-14 (a loop's owner is named only as a user)
 
 ## Context
 
@@ -161,6 +161,17 @@ ignored in the last 24 hours, by surface: `{window_hours, surfaces:
 channel message is not counted: it is no knock on the bot. Only their ids
 are kept, never their text, in memory as the limits are, and at most 1000
 a surface: past that a new one is left out, and `more` says so.
+
+**Amendment (2026-10-14, #775):** a loop's owner is named only as a user.
+Both owner pickers now choose users: the loop page's (#731) and the
+first-run attach dialog's (#796). So `PUT /api/loops/{name}/owner` takes
+`{"user": "<name>"}` alone. The `tg_user_id` and `slack_user_id` it kept
+accepting until then are retired, and a body that names no user is
+refused 400. An allowed sender from before this ADR, whom no user is
+linked as, keeps owning the loops they own, but can be named as an owner
+again only once they link. The default owner a new Telegram loop gets is
+unchanged: the first allowed sender who is not linked to a user below the
+owner role, as decision 4 says.
 
 ## Alternatives considered
 
