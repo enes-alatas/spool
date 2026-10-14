@@ -1,6 +1,6 @@
 # ADR-0029: The Surface contract
 
-Date: 2026-09-20 · Status: accepted; item 6's pairing-code allowlist and item 8's pairing notice superseded by ADR-0051 · Amends: ADR-0020, ADR-0025 (item 4), ADR-0026 (item 1) · Amended: 2026-09-22 (item 2: the bus kinds a surface mirrors); 2026-09-23 (items 5 and 7: a surface is attached later and mirrors the fleet channel); 2026-09-27 (item 2: a credential and an identity are structs); 2026-09-28 (item 8: hub notices); 2026-09-29 (item 8: Slack's notices and login notice); 2026-09-29 (item 2: the mirror subscription is lossless); 2026-09-30 (item 2: `Stop`, ADR-0036); 2026-10-01 (item 5: a mirror per room, ADR-0038); 2026-10-02 (items 2 and 5: reactions, ADR-0040); 2026-10-02 (items 2 and 5: polls, ADR-0041); 2026-10-10 (item 8: the owner-only DM notice is gone, ADR-0049); 2026-10-10 (item 8: the link notice, ADR-0050); 2026-10-14 (items 2 and 8: the problem notice, ADR-0053)
+Date: 2026-09-20 · Status: accepted; item 6's pairing-code allowlist and item 8's pairing notice superseded by ADR-0051 · Amends: ADR-0020, ADR-0025 (item 4), ADR-0026 (item 1) · Amended: 2026-09-22 (item 2: the bus kinds a surface mirrors); 2026-09-23 (items 5 and 7: a surface is attached later and mirrors the fleet channel); 2026-09-27 (item 2: a credential and an identity are structs); 2026-09-28 (item 8: hub notices); 2026-09-29 (item 8: Slack's notices and login notice); 2026-09-29 (item 2: the mirror subscription is lossless); 2026-09-30 (item 2: `Stop`, ADR-0036); 2026-10-01 (item 5: a mirror per room, ADR-0038); 2026-10-02 (items 2 and 5: reactions, ADR-0040); 2026-10-02 (items 2 and 5: polls, ADR-0041); 2026-10-10 (item 8: the owner-only DM notice is gone, ADR-0049); 2026-10-10 (item 8: the link notice, ADR-0050); 2026-10-14 (items 2 and 8: the problem notice, ADR-0053); 2026-10-14 (item 5: edits, ADR-0055)
 
 ## Context
 
@@ -166,6 +166,15 @@ contract.
    the identity that sent a poll hears its votes, so no election is needed.
    A poll a person starts on the platform reaches the hub as its text, and
    is not tallied.
+
+   **Amendment (2026-10-14, #810, ADR-0055):** a person's edit or deletion
+   of a message crosses the seam inward as a reaction does. The adapter
+   resolves the platform message into the hub's, hands the edit to the
+   router past the sender gate, and drops one of a message the hub never
+   held. A shared room needs no election: every identity may report the
+   edit, and the hub stores it once, by a key built from the hub's id for
+   the original and the platform's mark of the edit. An adapter whose
+   platform reports no deletions reports none.
 
 6. **These stay Telegram's own**, and an adapter is free to have nothing like
    them: long-polling `getUpdates` for transport, the 4096-character split,
