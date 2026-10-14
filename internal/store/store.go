@@ -158,6 +158,11 @@ const SettingOnboardingCompleted = "onboarding_completed"
 // seeds it from --egress-allow; the stored list wins from then on.
 const SettingEgressHosts = "egress_hosts"
 
+// SettingHealthErrorTurns is how many errored turns in a row open a
+// turn_errors problem with a loop (ADR-0053), an integer; 0 turns that
+// symptom off. Unset means loop.DefaultHealthErrorTurns.
+const SettingHealthErrorTurns = "health_error_turns"
+
 // EgressHosts is the hosts every docker loop may reach on top of the
 // built-in allowlist (ADR-0028), each canonical "host" or "host:port", in
 // the order they were added. ChangedAt is when the list last changed, in
@@ -1266,6 +1271,7 @@ type Store interface {
 	Connections() ConnectionStore
 	LoopChanges() LoopChangeStore
 	PrivateChats() PrivateChatStore
+	Problems() ProblemStore
 	UserLinks() UserLinkStore
 	FleetRules() FleetRuleStore
 	Sessions() SessionStore
@@ -1856,26 +1862,27 @@ type LoopChange struct {
 // The changes a loop's record holds: one per API route that changes a
 // loop or acts on it.
 const (
-	LoopChangeCreate   = "create"
-	LoopChangeEdit     = "edit"
-	LoopChangeDelete   = "delete"
-	LoopChangePause    = "pause"
-	LoopChangeResume   = "resume"
-	LoopChangeWake     = "wake"
-	LoopChangeKill     = "kill"
-	LoopChangeRotate   = "rotate"
-	LoopChangeRehome   = "rehome"
-	LoopChangeRestart  = "workstation_restart"
-	LoopChangePowerOff = "workstation_poweroff"
-	LoopChangePowerOn  = "workstation_poweron"
-	LoopChangeRecreate = "workstation_recreate"
-	LoopChangeOwner    = "owner"
-	LoopChangeRoom     = "room"
-	LoopChangeUnroom   = "unroom"
-	LoopChangeAttach   = "attach"
-	LoopChangeDetach   = "detach"
-	LoopChangeJoin     = "join"
-	LoopChangeLeave    = "leave"
+	LoopChangeCreate      = "create"
+	LoopChangeEdit        = "edit"
+	LoopChangeDelete      = "delete"
+	LoopChangePause       = "pause"
+	LoopChangeResume      = "resume"
+	LoopChangeWake        = "wake"
+	LoopChangeKill        = "kill"
+	LoopChangeRotate      = "rotate"
+	LoopChangeRehome      = "rehome"
+	LoopChangeRestart     = "workstation_restart"
+	LoopChangePowerOff    = "workstation_poweroff"
+	LoopChangePowerOn     = "workstation_poweron"
+	LoopChangeRecreate    = "workstation_recreate"
+	LoopChangeAcknowledge = "acknowledge"
+	LoopChangeOwner       = "owner"
+	LoopChangeRoom        = "room"
+	LoopChangeUnroom      = "unroom"
+	LoopChangeAttach      = "attach"
+	LoopChangeDetach      = "detach"
+	LoopChangeJoin        = "join"
+	LoopChangeLeave       = "leave"
 )
 
 // LoopChangeFilter narrows the record to one loop, by its id while it
@@ -1917,6 +1924,40 @@ type PrivateChatStore interface {
 	Get(ctx context.Context, loopID, person string) (*PrivateChat, error)
 	// List is every private chat the loop has, oldest first.
 	List(ctx context.Context, loopID string) ([]*PrivateChat, error)
+}
+
+// Problem is a problem the hub's health check found with a loop, open from
+// Since until the operator acts on the loop or the signal clears (ADR-0053,
+// #764). A loop has at most one open per symptom.
+type Problem struct {
+	// Symptom is SymptomWorkstationDown or SymptomTurnErrors.
+	Symptom string `json:"symptom"`
+	// Since is when the problem opened, in Unix ms.
+	Since int64 `json:"since"`
+}
+
+// The symptoms the health check opens a problem for, and who clears one.
+const (
+	// SymptomWorkstationDown: the workstation has stayed down past a grace
+	// period, for a reason nobody else tells the owner about.
+	SymptomWorkstationDown = "workstation_down"
+	// SymptomTurnErrors: the loop's last turns all ended in an error.
+	SymptomTurnErrors = "turn_errors"
+
+	ClearedByOperator = "operator"
+	ClearedByRecovery = "recovery"
+)
+
+type ProblemStore interface {
+	// Open records an open problem since since, unless the loop already has
+	// one open for symptom; opened says whether it did.
+	Open(ctx context.Context, loopID, symptom string, since int64) (opened bool, err error)
+	// Clear closes the loop's open problem for symptom at at, by
+	// ClearedByOperator or ClearedByRecovery; cleared says whether there
+	// was one.
+	Clear(ctx context.Context, loopID, symptom string, at int64, by string) (cleared bool, err error)
+	// ListOpen is the loop's open problems, oldest first.
+	ListOpen(ctx context.Context, loopID string) ([]Problem, error)
 }
 
 // UserLink is a hub user's link to the person they are on a surface

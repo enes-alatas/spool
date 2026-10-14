@@ -43,14 +43,14 @@ const (
 
 // mirror carries loop sends, and operator retries of failed ones, to Slack,
 // sets loops' reactions, redraws their polls, and tells owners of their
-// loops' login notices. A retry (#269) is the same send of the same row,
+// loops' login and problem notices. A retry (#269) is the same send of the same row,
 // and is decided the same way.
 func (adapter *Adapter) mirror(ctx context.Context) {
 	// lossless: an item dropped here is a loop's send lost without a
 	// record (#302)
 	items, cancel := adapter.bus.SubscribeLossless(func(item bus.Item) bool {
 		return item.Kind == bus.KindMessage || item.Kind == bus.KindSendRetry || item.Kind == bus.KindClaudeLogin ||
-			item.Kind == bus.KindReaction || item.Kind == bus.KindPoll
+			item.Kind == bus.KindLoopProblem || item.Kind == bus.KindReaction || item.Kind == bus.KindPoll
 	})
 	defer cancel()
 	for {
@@ -66,6 +66,8 @@ func (adapter *Adapter) mirror(ctx context.Context) {
 				adapter.mirrorMessage(ctx, payload)
 			case *surface.LoginNotice:
 				adapter.noticeLogin(ctx, payload)
+			case *surface.ProblemNotice:
+				adapter.noticeProblem(ctx, payload)
 			case *route.ReactionPayload:
 				adapter.mirrorReaction(payload)
 			case *route.PollPayload:

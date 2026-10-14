@@ -33,6 +33,12 @@ const (
 	// The refusal is published once per outage of each loop, not once per
 	// refused retry.
 	KindClaudeLogin = "claude_login"
+	// KindLoopProblem says the hub's health check opened a problem with a
+	// loop, or that it cleared (ADR-0053, #764). Its payload is a
+	// surface.ProblemNotice, and every surface adapter must deliver it to the
+	// loop's owner (ADR-0029). It is published once per opening and once per
+	// clearing, never while a problem stays open.
+	KindLoopProblem = "loop_problem"
 	// KindReaction says a reaction on a message was added or removed
 	// (ADR-0040). Its payload is a route.ReactionPayload. A reaction is not
 	// a message, so it is never published as KindMessage: the control room

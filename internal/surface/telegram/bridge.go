@@ -1554,7 +1554,7 @@ func (br *Bridge) roomOf(ctx context.Context, loopRecord *store.Loop, channel st
 }
 
 // mirror consumes message bus items and applies the mirror rules, and
-// delivers the hub's login notices to owners.
+// delivers the hub's login and problem notices to owners.
 func (br *Bridge) mirror(ctx context.Context) {
 	// Both kinds, one path: a retry (#269) is the same send of the same row,
 	// asked for by the operator instead of by the loop, and anything the
@@ -1563,7 +1563,7 @@ func (br *Bridge) mirror(ctx context.Context) {
 	// record (#302).
 	items, cancel := br.bus.SubscribeLossless(func(item bus.Item) bool {
 		return item.Kind == bus.KindMessage || item.Kind == bus.KindSendRetry || item.Kind == bus.KindClaudeLogin ||
-			item.Kind == bus.KindReaction || item.Kind == bus.KindPoll
+			item.Kind == bus.KindLoopProblem || item.Kind == bus.KindReaction || item.Kind == bus.KindPoll
 	})
 	defer cancel()
 	for {
@@ -1579,6 +1579,8 @@ func (br *Bridge) mirror(ctx context.Context) {
 				br.mirrorMessage(ctx, payload)
 			case *surface.LoginNotice:
 				br.noticeLogin(ctx, payload)
+			case *surface.ProblemNotice:
+				br.noticeProblem(ctx, payload)
 			case *route.ReactionPayload:
 				br.mirrorReaction(ctx, payload)
 			case *route.PollPayload:
@@ -1778,6 +1780,32 @@ func (br *Bridge) sendLoginNotice(ctx context.Context, loopID string, chatID int
 	}
 	br.ledger.LoginNoticeEvent(ctx, loopID, notice, "")
 	return true
+}
+
+// noticeProblem tells a loop's owner, in its bot's private chat with them,
+// that the health check opened a problem with the loop, or that it cleared
+// (ADR-0053). Each is told once: the actor publishes a problem only when
+// the store opened or cleared it.
+func (br *Bridge) noticeProblem(ctx context.Context, notice *surface.ProblemNotice) {
+	loopRecord, err := br.store.Loops().Get(ctx, notice.LoopID)
+	if err != nil {
+		br.log.Warn("telegram: read loop for problem notice", "loop", notice.LoopID, "err", err)
+		return
+	}
+	if loopRecord.TGBotToken == "" || loopRecord.OwnerTGUserID == 0 {
+		// not a telegram loop, or one with nobody to tell
+		return
+	}
+	if loopRecord.OwnerDMChatID == 0 {
+		br.ledger.ProblemNoticeEvent(ctx, notice, "the owner has not written to this loop's bot privately yet")
+		return
+	}
+	bot := br.poller(notice.LoopID)
+	if bot == nil {
+		br.ledger.ProblemNoticeEvent(ctx, notice, "the loop's bot is not running")
+		return
+	}
+	br.ledger.ProblemNoticeEvent(ctx, notice, bot.enqueue(sendReq{chatID: loopRecord.OwnerDMChatID, text: notice.Text()}))
 }
 
 func (br *Bridge) poller(loopID string) *poller {

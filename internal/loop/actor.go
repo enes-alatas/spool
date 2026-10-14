@@ -124,6 +124,9 @@ type Deps struct {
 	// the default. The docker runtime answers from one batched sweep behind
 	// a short TTL, so the interval is about UI freshness, not cost.
 	WorkstationHealthInterval time.Duration
+	// ProblemDownGrace is how long a workstation stays down before the
+	// health check opens a problem for it (ADR-0053); 0 means the default.
+	ProblemDownGrace time.Duration
 
 	// RenderPrompt builds a loop's prompt text for one wake (peers and rules
 	// are resolved at call time so every wake sees the current fleet).
@@ -180,26 +183,29 @@ func (deps *Deps) runtimeFor(kind string) runtime.Runtime {
 }
 
 type cmd struct {
-	kind   string // deliver|tick|pause|resume|kill|update|power|rotate|rehome|shutdown
-	env    Envelope
-	loop   *store.Loop
-	verb   string        // for power
-	reason string        // for rotate: a store.RotationReason* value
-	reply  chan error    // for power: the caller waits on the result
-	done   chan struct{} // for shutdown
+	kind    string // deliver|tick|pause|resume|kill|update|power|rotate|rehome|acknowledge|shutdown
+	env     Envelope
+	loop    *store.Loop
+	verb    string        // for power
+	reason  string        // for rotate: a store.RotationReason* value
+	reply   chan error    // for power: the caller waits on the result
+	done    chan struct{} // for shutdown
+	symptom string        // for acknowledge
+	cleared chan bool     // for acknowledge: whether a problem was open
 }
 
 // Actor owns one loop: a single goroutine serializing every command,
 // event and timer for that loop, and the claude process it drives.
 type Actor struct {
-	deps       Deps
-	cmds       chan cmd
-	stateSnap  atomic.Value // string; last published state, for REST reads
-	healthSnap atomic.Value // workstationSnap; last workstation poll, for REST reads
-	offSnap    atomic.Bool  // the operator's power-off intent, for REST reads
-	mcpSnap    atomic.Value // MCPReach; the latest init's, for REST reads
-	rehomeSnap atomic.Bool  // a rehome is asked for and not yet landed, for REST reads
-	ensureSnap atomic.Bool  // a wake is ensuring the workstation, for REST reads
+	deps         Deps
+	cmds         chan cmd
+	stateSnap    atomic.Value // string; last published state, for REST reads
+	healthSnap   atomic.Value // workstationSnap; last workstation poll, for REST reads
+	offSnap      atomic.Bool  // the operator's power-off intent, for REST reads
+	mcpSnap      atomic.Value // MCPReach; the latest init's, for REST reads
+	rehomeSnap   atomic.Bool  // a rehome is asked for and not yet landed, for REST reads
+	ensureSnap   atomic.Bool  // a wake is ensuring the workstation, for REST reads
+	problemsSnap atomic.Value // []store.Problem; the open problems, for REST reads
 
 	// goroutine-owned state below
 	loop         store.Loop
@@ -224,6 +230,13 @@ type Actor struct {
 	spawnModel   string       // model the running process was started on, which an edit does not change
 	lastCall     claude.Usage // usage of the in-flight turn's latest API call (assistant event)
 	backoff      time.Duration
+
+	// The health check's watch (ADR-0053): errored turns in a row and when
+	// the first of them ended, and since when the workstation has been down
+	// for a reason that becomes a problem once downTimer fires.
+	errorTurns   int
+	firstErrorAt int64
+	downSince    int64
 
 	// loginRejected holds the unauthenticated alert through the spawns and
 	// health polls that would otherwise clear it: the machine is up, the
@@ -287,6 +300,7 @@ type Actor struct {
 	idleTimer   *time.Timer
 	retryTimer  *time.Timer
 	healthTimer *time.Timer
+	downTimer   *time.Timer
 }
 
 func NewActor(deps Deps, loopRecord *store.Loop) *Actor {
@@ -325,6 +339,9 @@ func NewActor(deps Deps, loopRecord *store.Loop) *Actor {
 	actor.retryTimer = time.NewTimer(time.Hour)
 	actor.retryTimer.Stop()
 	actor.healthTimer = time.NewTimer(actor.healthInterval())
+	actor.downTimer = time.NewTimer(time.Hour)
+	actor.downTimer.Stop()
+	actor.loadProblems()
 	go actor.run()
 	return actor
 }
@@ -421,6 +438,8 @@ func (actor *Actor) run() {
 		case <-actor.healthTimer.C:
 			actor.checkWorkstation()
 			actor.healthTimer.Reset(actor.healthInterval())
+		case <-actor.downTimer.C:
+			actor.downLasted()
 		}
 	}
 }
@@ -459,6 +478,8 @@ func (actor *Actor) handleCmd(command cmd) {
 		actor.pump()
 	case "cap":
 		actor.capChanged()
+	case "acknowledge":
+		command.cleared <- actor.acknowledge(command.symptom)
 	case "power":
 		command.reply <- actor.power(command.verb)
 	case "rotate":
@@ -1384,6 +1405,7 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 			actor.log().Error("turn finish", "err", err)
 		}
 		actor.deps.Bus.Publish(bus.Item{Kind: bus.KindTurnResult, LoopID: actor.loop.ID, Payload: turn})
+		actor.noteTurnEnd(turn.IsError && !loginRejected, turn.EndedAt)
 
 		// The final reply is the turn's status note (ADR-0026): stored and
 		// published above, delivered to no conversation — a loop that wants
@@ -1642,6 +1664,7 @@ func (actor *Actor) handleProcExit() {
 		turn.IsError = true
 		_ = actor.deps.Store.Turns().Finish(context.Background(), turn)
 		actor.turn = nil
+		actor.noteTurnEnd(true, turn.EndedAt)
 	}
 
 	switch {
@@ -2166,6 +2189,13 @@ func (actor *Actor) power(verb string) error {
 	}
 
 	actor.storeSpoolEvent("workstation_power", fmt.Sprintf(`{"verb":%q,"ok":%v}`, verb, err == nil))
+	if err == nil {
+		// the operator acted on the workstation: whatever it still is, the
+		// verdict that follows starts the watch over
+		actor.clearProblem(store.SymptomWorkstationDown, store.ClearedByOperator)
+		actor.downSince = 0
+		actor.watchDown()
+	}
 	if err != nil {
 		if actor.loop.WorkstationOff {
 			// still switched off, and still calmly so: the failed verb
@@ -2258,6 +2288,7 @@ func (actor *Actor) checkWorkstation() {
 		actor.wsReason = ""
 		actor.wsDetail = ""
 		actor.healthSnap.Store(workstationSnap{Health: runtime.Health{Up: false, Detail: poweredOffDetail}})
+		actor.watchDown()
 		actor.publishState()
 		actor.publishWorkstation()
 		return
@@ -2324,6 +2355,7 @@ func (actor *Actor) setWorkstationDown(reason, detail string) {
 		actor.storeSpoolEvent("workstation_down", fmt.Sprintf(`{"reason":%q,"detail":%q}`, reason, detail))
 		actor.log().Warn("workstation down", "reason", reason, "detail", detail)
 	}
+	actor.watchDown()
 	actor.publishState()
 	actor.publishWorkstation()
 }
@@ -2337,6 +2369,9 @@ func (actor *Actor) setWorkstationUp() {
 	}
 	actor.healthSnap.Store(workstationSnap{Health: runtime.Health{Up: true}})
 	if actor.wsReason == "" {
+		// nothing changed, but a problem may still be open from before a
+		// hub restart, when no verdict of this run saw the workstation down
+		actor.watchDown()
 		return
 	}
 	wasAlert := actor.wsDown
@@ -2347,6 +2382,7 @@ func (actor *Actor) setWorkstationUp() {
 		actor.storeSpoolEvent("workstation_up", "{}")
 		actor.log().Info("workstation up")
 	}
+	actor.watchDown()
 	actor.publishState()
 	actor.publishWorkstation()
 }

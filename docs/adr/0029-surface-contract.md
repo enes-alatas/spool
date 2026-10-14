@@ -1,6 +1,6 @@
 # ADR-0029: The Surface contract
 
-Date: 2026-09-20 · Status: accepted; item 6's pairing-code allowlist and item 8's pairing notice superseded by ADR-0051 · Amends: ADR-0020, ADR-0025 (item 4), ADR-0026 (item 1) · Amended: 2026-09-22 (item 2: the bus kinds a surface mirrors); 2026-09-23 (items 5 and 7: a surface is attached later and mirrors the fleet channel); 2026-09-27 (item 2: a credential and an identity are structs); 2026-09-28 (item 8: hub notices); 2026-09-29 (item 8: Slack's notices and login notice); 2026-09-29 (item 2: the mirror subscription is lossless); 2026-09-30 (item 2: `Stop`, ADR-0036); 2026-10-01 (item 5: a mirror per room, ADR-0038); 2026-10-02 (items 2 and 5: reactions, ADR-0040); 2026-10-02 (items 2 and 5: polls, ADR-0041); 2026-10-10 (item 8: the owner-only DM notice is gone, ADR-0049); 2026-10-10 (item 8: the link notice, ADR-0050)
+Date: 2026-09-20 · Status: accepted; item 6's pairing-code allowlist and item 8's pairing notice superseded by ADR-0051 · Amends: ADR-0020, ADR-0025 (item 4), ADR-0026 (item 1) · Amended: 2026-09-22 (item 2: the bus kinds a surface mirrors); 2026-09-23 (items 5 and 7: a surface is attached later and mirrors the fleet channel); 2026-09-27 (item 2: a credential and an identity are structs); 2026-09-28 (item 8: hub notices); 2026-09-29 (item 8: Slack's notices and login notice); 2026-09-29 (item 2: the mirror subscription is lossless); 2026-09-30 (item 2: `Stop`, ADR-0036); 2026-10-01 (item 5: a mirror per room, ADR-0038); 2026-10-02 (items 2 and 5: reactions, ADR-0040); 2026-10-02 (items 2 and 5: polls, ADR-0041); 2026-10-10 (item 8: the owner-only DM notice is gone, ADR-0049); 2026-10-10 (item 8: the link notice, ADR-0050); 2026-10-14 (items 2 and 8: the problem notice, ADR-0053)
 
 ## Context
 
@@ -243,6 +243,16 @@ contract.
    no longer told, so a stranger hears nothing. The link notice now asks
    the sender to reply YES, and their YES is answered with the link; a
    stranger's wrong code is not answered.*
+
+   **Amendment (2026-10-14, #764, ADR-0053):** a third joins them, the
+   **problem notice**. The hub's health check tells a loop's owner once
+   when a problem with the loop opens and once when it clears. The loop
+   publishes `bus.KindLoopProblem` with a `surface.ProblemNotice`, every
+   adapter delivers it on that loop's identity to its owner's DM, and the
+   text is the seam's (`ProblemNotice.Text`). The once is the store's, not
+   the adapter's: the notice is published only when a problem row opened
+   or cleared. So item 2's list of kinds a surface subscribes to gains
+   `KindLoopProblem`.
 
 ## Consequences
 

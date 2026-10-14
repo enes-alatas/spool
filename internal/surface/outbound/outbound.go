@@ -149,20 +149,36 @@ func (ledger *Ledger) FailInterruptedSends(ctx context.Context, when string) {
 	}
 }
 
-// LoginNoticeEvent puts an owner notice on the loop's timeline: sent when
-// unsent is "", and otherwise why it was not. The notice is the hub's words,
-// not the loop's, so no message row records it.
+// LoginNoticeEvent puts a login notice on the loop's timeline: sent when
+// unsent is "", and otherwise why it was not.
 func (ledger *Ledger) LoginNoticeEvent(ctx context.Context, loopID string, notice *surface.LoginNotice, unsent string) {
 	kind := "login_works"
 	if notice.Refused {
 		kind = "login_refused"
 	}
+	ledger.noticeEvent(ctx, loopID, fmt.Sprintf(`{"notice":%q,"sent":%t,"error":%q}`, kind, unsent == "", unsent))
+}
+
+// ProblemNoticeEvent puts a problem notice on the loop's timeline, as
+// LoginNoticeEvent does a login notice (ADR-0053).
+func (ledger *Ledger) ProblemNoticeEvent(ctx context.Context, notice *surface.ProblemNotice, unsent string) {
+	kind := "problem_cleared"
+	if notice.Opened {
+		kind = "problem_opened"
+	}
+	ledger.noticeEvent(ctx, notice.LoopID, fmt.Sprintf(`{"notice":%q,"symptom":%q,"sent":%t,"error":%q}`,
+		kind, notice.Symptom, unsent == "", unsent))
+}
+
+// noticeEvent puts an owner notice on the loop's timeline. The notice is
+// the hub's words, not the loop's, so no message row records it.
+func (ledger *Ledger) noticeEvent(ctx context.Context, loopID, payload string) {
 	event := &store.Event{
 		LoopID:  loopID,
 		TS:      time.Now().UnixMilli(),
 		Type:    "spool",
 		Subtype: "owner_notice",
-		Payload: fmt.Sprintf(`{"notice":%q,"sent":%t,"error":%q}`, kind, unsent == "", unsent),
+		Payload: payload,
 	}
 	if _, err := ledger.Store.Events().Insert(ctx, event); err != nil {
 		ledger.Log.Error(ledger.Surface+": record owner notice", "loop", loopID, "err", err)

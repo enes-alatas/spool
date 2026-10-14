@@ -119,3 +119,21 @@ func (adapter *Adapter) sendLoginNotice(ctx context.Context, loopID, owner strin
 	adapter.ledger.LoginNoticeEvent(ctx, loopID, loginNotice, unsent)
 	return unsent == ""
 }
+
+// noticeProblem tells a Slack loop's owner, in its app's DM with them, that
+// the health check opened a problem with the loop, or that it cleared
+// (ADR-0053). Each is told once: the actor publishes a problem only when
+// the store opened or cleared it.
+func (adapter *Adapter) noticeProblem(ctx context.Context, problemNotice *surface.ProblemNotice) {
+	loopRecord, err := adapter.store.Loops().Get(ctx, problemNotice.LoopID)
+	if err != nil {
+		adapter.log.Warn("slack: read loop for problem notice", "loop", problemNotice.LoopID, "err", err)
+		return
+	}
+	if loopRecord.Surface() != store.SurfaceSlack || loopRecord.OwnerSlackUserID == "" {
+		// not a Slack loop, or one with nobody to tell
+		return
+	}
+	unsent := adapter.notify(loopRecord.ID, notice{user: loopRecord.OwnerSlackUserID, text: escape(problemNotice.Text())})
+	adapter.ledger.ProblemNoticeEvent(ctx, problemNotice, unsent)
+}

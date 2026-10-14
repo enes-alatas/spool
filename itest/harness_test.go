@@ -377,6 +377,11 @@ type loopView struct {
 	CappedUntil        int64   `json:"capped_until"`
 	Doing              string  `json:"doing"`
 	DoingAt            int64   `json:"doing_at"`
+	Problems           []struct {
+		Symptom string `json:"symptom"`
+		Since   int64  `json:"since"`
+	} `json:"problems"`
+	Health string `json:"health"`
 }
 
 type turn struct {
