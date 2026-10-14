@@ -512,7 +512,28 @@ type Message struct {
 	// every loop's app alike, and is unique. Storage detail, not surfaced.
 	SlackChannelID string `json:"-"`
 	SlackTS        string `json:"-"`
+	// EditOf is the message this one corrects, 0 for none: a person
+	// changed or deleted what they said on a surface, and this is what
+	// they now stand behind (ADR-0055). EditKind says which, one of the
+	// Edit* constants, and a deletion carries no text.
+	EditOf   int64  `json:"edit_of,omitempty"`
+	EditKind string `json:"edit_kind,omitempty"`
+	// EditedAt and DeletedAt are when the person last edited this message,
+	// and when they deleted it, 0 for never. The text stays as it was
+	// said; the correction carries what changed.
+	EditedAt  int64 `json:"edited_at,omitempty"`
+	DeletedAt int64 `json:"deleted_at,omitempty"`
+	// EditKey names one edit as every identity that heard it sees it
+	// alike, so a shared room's edit is stored once whichever loop's bot
+	// or app reports it first. Storage detail, not surfaced.
+	EditKey string `json:"-"`
 }
+
+// What a correction does to the message it corrects (ADR-0055).
+const (
+	EditEdited  = "edited"
+	EditDeleted = "deleted"
+)
 
 // Attachment is a file that crossed a chat surface with a message (#123):
 // kept once by the hub, referenced from the message, and presented to a
@@ -987,6 +1008,12 @@ type MessageStore interface {
 	// Get returns one message by id, or ErrNotFound. Reply targets are
 	// resolved through it.
 	Get(ctx context.Context, id int64) (*Message, error)
+	// MarkEdited records that the person who said message id edited it at
+	// at, or deleted it when kind is EditDeleted (ADR-0055). An edit leaves
+	// its text as it was. A deletion blanks it, and the text of every
+	// correction that edited it, in the same write. ErrNotFound when there
+	// is no such message.
+	MarkEdited(ctx context.Context, id int64, kind string, at int64) error
 	// BySlackTS returns the message Slack knows as ts in channelID, or
 	// ErrNotFound.
 	BySlackTS(ctx context.Context, channelID, ts string) (*Message, error)
@@ -1129,6 +1156,9 @@ type AttachmentStore interface {
 	// upload that is not waiting, because it is already sent, removed or
 	// unknown, is ErrNotFound.
 	Claim(ctx context.Context, id, messageID int64) error
+	// RemoveByMessage is Expire for the attachments of one message, kept
+	// whatever their age, for a message its author deleted (ADR-0055).
+	RemoveByMessage(ctx context.Context, messageID, removedAt int64) ([]*Attachment, error)
 	// ExpireUnsent is Expire for uploads no message has claimed.
 	ExpireUnsent(ctx context.Context, cutoff, removedAt int64) ([]*Attachment, error)
 }

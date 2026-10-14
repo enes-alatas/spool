@@ -929,6 +929,63 @@ func TestSlackMessageIsKeyedByChannelAndTS(t *testing.T) {
 	}
 }
 
+// A correction is stored once whichever loop's bot or app reports the edit
+// first, by its edit key, and reads back pointing at what it corrects. The
+// original records when it was edited and deleted, keeps its text through
+// an edit, and loses it on a deletion, as do the corrections that edited
+// it (ADR-0055).
+func TestACorrectionIsKeyedByItsEdit(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	original := &store.Message{TS: 1, Origin: store.OriginSlackChannel, Author: "alice", Text: "ship friday",
+		Conversation: store.ConversationGroup}
+	if err := db.Messages().Insert(ctx, original); err != nil {
+		t.Fatal(err)
+	}
+	correction := func(key string) *store.Message {
+		return &store.Message{TS: 2, Origin: store.OriginSlackChannel, Author: "alice", Text: "ship monday",
+			Conversation: store.ConversationGroup, EditOf: original.ID, EditKind: store.EditEdited, EditKey: key}
+	}
+	first := correction("slack:1:1727600000.000200")
+	if err := db.Messages().Insert(ctx, first); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Messages().Insert(ctx, correction("slack:1:1727600000.000200")); !errors.Is(err, store.ErrDuplicate) {
+		t.Fatalf("a second app storing the same edit = %v, want ErrDuplicate", err)
+	}
+	if err := db.Messages().Insert(ctx, correction("slack:1:1727600000.000300")); err != nil {
+		t.Fatalf("a later edit of the same message is another correction: %v", err)
+	}
+	if got, err := db.Messages().Get(ctx, first.ID); err != nil || got.EditOf != original.ID || got.EditKind != store.EditEdited {
+		t.Fatalf("the correction reads back %+v, %v", got, err)
+	}
+
+	if err := db.Messages().MarkEdited(ctx, original.ID, store.EditEdited, 10); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := db.Messages().Get(ctx, original.ID); got.Text != "ship friday" || got.EditedAt != 10 {
+		t.Fatalf("the edited original reads %+v; want its text kept, edited at 10", got)
+	}
+	if err := db.Messages().MarkEdited(ctx, original.ID, store.EditDeleted, 20); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := db.Messages().Get(ctx, original.ID); got.Text != "" || got.EditedAt != 10 || got.DeletedAt != 20 {
+		t.Fatalf("the deleted original reads %+v; want no text, edited at 10 and deleted at 20", got)
+	}
+	if got, _ := db.Messages().Get(ctx, first.ID); got.Text != "" || got.EditOf != original.ID {
+		t.Fatalf("an edit of the deleted original reads %+v; want its words gone too", got)
+	}
+	for _, kind := range []string{store.EditEdited, store.EditDeleted} {
+		if err := db.Messages().MarkEdited(ctx, 999, kind, 30); !errors.Is(err, store.ErrNotFound) {
+			t.Fatalf("marking no message %s = %v, want ErrNotFound", kind, err)
+		}
+	}
+}
+
 // TestListPrivateThreads pins the per-person private queries (#720): a
 // person's dm rows come back under every name they had and no one else's,
 // and the threads list each person once per kind, newest first, with the

@@ -358,6 +358,10 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			"ByTGKey": false, "LatestGroupPostBy": false, "BySlackTS": false,
 			// a channel id and a ts, both Slack's
 			"SetSlackRef": false,
+			// an edit's time on the message it edits, and on a deletion
+			// a blank where its words were; the correction's words are
+			// an Insert
+			"MarkEdited": false,
 			// A reply target is a message id, read or written; never text.
 			"SightedReplyTarget": false, "AdoptReplyTarget": false,
 		},
@@ -365,6 +369,8 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			"Insert": true,
 			// Expire writes a timestamp; the reads return rows as stored.
 			"Expire": false, "Get": false, "ByMessage": false,
+			// RemoveByMessage is Expire for one deleted message.
+			"RemoveByMessage": false,
 			// Claim writes a message id and ExpireUnsent a timestamp; the
 			// name was redacted when the upload was inserted.
 			"ByMessages": false, "Claim": false, "ExpireUnsent": false,
