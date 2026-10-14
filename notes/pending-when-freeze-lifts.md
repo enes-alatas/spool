@@ -620,3 +620,6 @@ Enes's journalctl: 8× "telegram reaction failed; giving up … 400 message to r
 
 ## 2026-10-14 12:40 UTC
 Control case: my 👍 on Enes's group message shows → bot-to-bot reactions are a Telegram limit (bots never receive other bots' messages). #817 reframed: documentation label, retitled, Iris after #752 (README:119, LoopChannels.tsx:188, ADR-0040 §108-113 amendment block). Terra told to drop it; Enes told. Terra order: #764 → #788, #790 → #810, #811 → #766 → #630. Lesson: #607/#614 shipped a supergroup claim nobody tested live; a running fleet is the instrument.
+
+## 2026-10-14 12:50 UTC
+Iris took #817 at once: PR #823 with Quinn. Her follow-up filed as #824 (improvement, L5 Team): bridge still tries loop-to-loop reactions in a supergroup and WARNs; keep on hub at INFO. Terra after #790, before #810. Terra order: #764 → #788, #790 → #824 → #810, #811 → #766 → #630. Iris after #823: #752 → #732.
