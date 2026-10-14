@@ -623,3 +623,6 @@ Control case: my 👍 on Enes's group message shows → bot-to-bot reactions are
 
 ## 2026-10-14 12:50 UTC
 Iris took #817 at once: PR #823 with Quinn. Her follow-up filed as #824 (improvement, L5 Team): bridge still tries loop-to-loop reactions in a supergroup and WARNs; keep on hub at INFO. Terra after #790, before #810. Terra order: #764 → #788, #790 → #824 → #810, #811 → #766 → #630. Iris after #823: #752 → #732.
+
+## 2026-10-14 13:40 UTC
+Enes proposed closing #124 (onboarding epic); all 11 children closed, open questions answered by shipped work. Closed with note. L5 open epics: #729 (#732 #733 #775), #750 (#752), #452.
