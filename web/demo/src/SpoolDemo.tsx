@@ -38,12 +38,13 @@ const s = (sec: number) => Math.round(sec * FPS)
 
 // Beat boundaries, in seconds.
 const B1 = [0, 5]
-const B2 = [5, 20]
-const B3 = [20, 29]
-const B4 = [29, 37]
-const B5 = [37, 45]
-const B6 = [45, 50]
-export const DURATION = s(50)
+const B2 = [5, 12]
+const B3 = [12, 29]
+const B4 = [29, 38]
+const B5 = [38, 46]
+const B6 = [46, 54]
+const B7 = [54, 59]
+export const DURATION = s(59)
 
 // The footage's CSS size; record.mjs captures it at 2x device pixels.
 const PAGE = { w: 1280, h: 720 }
@@ -345,11 +346,10 @@ function Pitch() {
 
 const mainScreen: CSSProperties = { position: 'absolute', top: MAIN.top, left: (W - MAIN.width) / 2 }
 
-// Beat 2: create a loop, give it a bot. The form fill plays fast, the rest at
-// about real pace, and the camera follows the pointer: down the form to
-// Create loop, then a cut to the Surfaces panel on the loop's page. The
-// page loading and the glide down to Surfaces are cut: neither shows
-// anything but the page moving.
+// Beat 2: create a loop. The form fill plays fast, the rest at about real
+// pace, and the camera follows the pointer down the form to Create loop,
+// ending on the press. Its bot comes in the next beat, from the first-run
+// page (#733).
 const C = marks.create
 const FILL_RATE = 1.6
 const SCROLL_RATE = 1.1
@@ -359,7 +359,6 @@ const SCROLL_LEN = (C['create-click'] + 0.5 - C['scroll-create']) / SCROLL_RATE
 const form: Focus = { x: 615, y: 330, zoom: 1.25 }
 // Low enough on the form to hold Create loop, which the form ends on.
 const formEnd: Focus = { x: 615, y: 470, zoom: 1.25 }
-const side: Focus = { x: 1022, y: 380, zoom: 2 }
 const camera: Camera = [
   [C['scroll-create'], form],
   [C['scroll-create'] + 1.2, formEnd],
@@ -392,17 +391,7 @@ function Create() {
           camera={camera}
         />
       </Sequence>
-      <Sequence from={s(FILL_LEN + SCROLL_LEN)}>
-        <Screen
-          width={MAIN.width}
-          url="localhost:8080/loops/scout"
-          style={mainScreen}
-          src="create.mp4"
-          from={C['attach-click'] - 0.1}
-          camera={side}
-        />
-      </Sequence>
-      <Caption step="02 · Create">Start a loop, then give it a Telegram bot.</Caption>
+      <Caption step="02 · Create">Start a loop: a name and a mission.</Caption>
     </Stage>
   )
 }
@@ -601,7 +590,7 @@ function ChatPane({
   )
 }
 
-// Beats 3 to 5 pair a window with a chat pane, side by side as one centred
+// Beats 3 to 6 pair a window with a chat pane, side by side as one centred
 // group.
 const PAIR = { width: 1100, height: 750, gap: 56 }
 const PAIR_LEFT = (W - PAIR.width - PAIR.gap - CHAT.w) / 2
@@ -643,7 +632,77 @@ function Pair({
   )
 }
 
-// Beat 3: a person asks in the Telegram group that carries the fleet
+// Beat 3: the first-run Chat surface card gives scout its Telegram bot,
+// and the operator links their own account through it (#733). The attach
+// plays fast and the link at about real pace, in Pair's layout; the chat
+// pane is the operator's DM with the bot, on record.mjs's cues, in the
+// hub's own words.
+const LK = marks.link
+const ATTACH_RATE = 1.6
+const LINK_RATE = 1.25
+const ATTACH_LEN = (LK.attached - LK.ready) / ATTACH_RATE
+const LINK_FROM = LK.attached - 0.2
+// The beat's frame for a moment in the clip's second half.
+const atLink = (t: number) => s(ATTACH_LEN + (t - LINK_FROM) / LINK_RATE)
+// Zoomed enough that the page fills the window's height, which is taller
+// than the clip's 16:9, centred on the dialog.
+const linkCamera: Focus = { x: PAGE.w / 2, y: PAGE.h / 2, zoom: 1.22 }
+function Link() {
+  const frame = useCurrentFrame()
+  const slide = interpolate(frame, [0, 18], [40, 0], { ...clamp, easing: Easing.out(Easing.cubic) })
+  const chatO = interpolate(frame, [0, 14], [0, 1], clamp)
+  const screen = {
+    width: PAIR.width,
+    height: PAIR.height,
+    url: 'localhost:8080/',
+    src: 'link.mp4',
+    camera: linkCamera,
+    style: { position: 'absolute', left: PAIR_LEFT, top: MAIN.top + (MAIN_H - PAIR_H) / 2 } as CSSProperties,
+  }
+  return (
+    <Stage>
+      <Sequence durationInFrames={s(ATTACH_LEN)}>
+        <Screen {...screen} from={LK.ready} rate={ATTACH_RATE} />
+      </Sequence>
+      <Sequence from={s(ATTACH_LEN)}>
+        <Screen {...screen} from={LINK_FROM} rate={LINK_RATE} />
+      </Sequence>
+      <ChatPane
+        title="scout"
+        subtitle="Telegram · private chat · bot"
+        avatar="S"
+        tint="#9e6b4f"
+        lines={[
+          { at: atLink(LK.sent), who: 'you', me: true, text: 'link-demo4821' },
+          {
+            at: atLink(LK.sent + 0.8),
+            who: '',
+            text: "Spool: this links your Telegram account to admin in the control room. admin will read your private conversations with this hub's loops, and you can message every one of them. Reply YES within 5 minutes to link, or ignore this to leave it unlinked.",
+          },
+          { at: atLink(LK.yes - 0.6), who: 'you', me: true, text: 'YES' },
+          {
+            at: atLink(LK.yes + 0.2),
+            who: '',
+            text: 'Spool: this account is now linked to admin in the control room, and can message every loop here.',
+          },
+          { at: atLink(LK.again), who: 'you', me: true, text: 'hi scout' },
+        ]}
+        style={{
+          position: 'absolute',
+          left: PAIR_LEFT + PAIR.width + PAIR.gap,
+          top: MAIN.top + (MAIN_H - CHAT.h) / 2,
+          opacity: chatO,
+          transform: `translateX(${slide}px)`,
+        }}
+      />
+      <Caption step="03 · Link" left={PAIR_LEFT}>
+        Give it a bot, then link yourself. You become its owner.
+      </Caption>
+    </Stage>
+  )
+}
+
+// Beat 4: a person asks in the Telegram group that carries the fleet
 // channel, and the loop answers there. The fleet channel, beside it, shows
 // each message as it lands: record.mjs reveals them on the same cues.
 const TK = marks.talk
@@ -653,7 +712,7 @@ const TALK_PAGE = { w: 1098, h: 750 }
 function Talk() {
   return (
     <Pair
-      step="03 · Talk"
+      step="04 · Talk"
       caption="Talk to loops in Telegram. The room shows it as it happens."
       url="localhost:8080/?view=channel"
       src="talk.mp4"
@@ -693,13 +752,13 @@ function Talk() {
   )
 }
 
-// Beat 4: a channel of its own for two loops and their owner, carried by a
+// Beat 5: a channel of its own for two loops and their owner, carried by a
 // Telegram group of its own, beside its pane on one loop's page.
 const DK = marks.docs
 function Channels() {
   return (
     <Pair
-      step="04 · Channels"
+      step="05 · Channels"
       caption="Give a few loops a channel of their own."
       url="localhost:8080/loops/gardener?channel=docs"
       src="docs.mp4"
@@ -742,7 +801,7 @@ function Channels() {
   )
 }
 
-// Beat 5: a call that is the owner's reaches them privately, and the loop
+// Beat 6: a call that is the owner's reaches them privately, and the loop
 // acknowledges the answer. Beside the DM, watcher's own timeline: the room
 // does not draw a DM's text, so it shows the loop's side of the exchange,
 // each step on the cue record.mjs revealed it.
@@ -750,7 +809,7 @@ const RK = marks.report
 function Report() {
   return (
     <Pair
-      step="05 · Report"
+      step="06 · Report"
       caption="When a call is yours, the loop brings it to you."
       url="localhost:8080/loops/watcher"
       src="report.mp4"
@@ -784,7 +843,7 @@ function Report() {
   )
 }
 
-// Beat 6: the end card, on a clean canvas.
+// Beat 7: the end card, on a clean canvas.
 function EndCard() {
   const frame = useCurrentFrame()
   const lines = ['Keep work going.', 'Stay involved.', 'Coordinate the fleet.']
@@ -847,15 +906,18 @@ export const SpoolDemo = () => (
       <Create />
     </Beat>
     <Beat span={B3}>
-      <Talk />
+      <Link />
     </Beat>
     <Beat span={B4}>
-      <Channels />
+      <Talk />
     </Beat>
     <Beat span={B5}>
-      <Report />
+      <Channels />
     </Beat>
     <Beat span={B6}>
+      <Report />
+    </Beat>
+    <Beat span={B7}>
       <EndCard />
     </Beat>
   </AbsoluteFill>

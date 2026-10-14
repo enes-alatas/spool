@@ -264,24 +264,6 @@ await take('fleet', async (page, mark) => {
 })
 
 await take('create', async (page, mark) => {
-  let attached = false
-  const bound = (l) => ({
-    ...l,
-    surface: 'telegram',
-    has_tg_token: true,
-    tg_bot_username: 'scout_example_bot',
-  })
-  await page.route('**/api/loops/scout', async (route) => {
-    const req = route.request()
-    if (req.method() === 'PATCH') {
-      attached = true
-      const res = await route.fetch({ method: 'GET' })
-      return route.fulfill({ json: bound(await res.json()) })
-    }
-    if (!attached) return route.continue()
-    const res = await route.fetch()
-    return route.fulfill({ response: res, json: bound(await res.json()) })
-  })
   await page.goto(base + '/new', { waitUntil: 'networkidle' })
   await page.waitForSelector('#nl-runtime')
   await page.mouse.move(size.width / 2, size.height - 80)
@@ -301,25 +283,9 @@ await take('create', async (page, mark) => {
   await glideTo(page, create)
   mark('create-click')
   await pointAt(page, create)
+  // The clip ends on the press. Its bot comes in the link clip, from the
+  // first-run page, which needs scout to exist: wait for its page.
   await page.waitForURL('**/loops/scout')
-  mark('loop-page')
-  await page.waitForTimeout(600)
-  const surfaces = page.locator('.side-panel').filter({ has: page.locator('h3', { hasText: /^Surfaces?$/ }) })
-  mark('scroll-surfaces')
-  await glideTo(page, surfaces)
-  // The composition cuts the glide out: the loop's page now has panels
-  // enough above Surfaces that following the scroll was dead time.
-  mark('attach-click')
-  await pointAt(page, page.getByRole('button', { name: 'Attach Telegram' }))
-  await page.waitForTimeout(300)
-  const tokenInput = surfaces.locator('input').first()
-  await pointAt(page, tokenInput)
-  await page.keyboard.type('123456789:synthetic-demo-token', { delay: 30 })
-  await page.waitForTimeout(400)
-  mark('save-click')
-  await pointAt(page, surfaces.getByRole('button', { name: /^(Attach|Save)/ }).first())
-  mark('attached')
-  await page.waitForTimeout(3000)
   mark('end')
 })
 
@@ -502,7 +468,7 @@ await take('docs', async (page, mark) => {
   // The fixture's archivist has no surface, and the operator's post in docs
   // came from the room. The scene is two bots and their owner in a Telegram
   // group carrying docs, so the archivist gets a bot and a room, as scout
-  // gets one in the create clip, and the operator's post comes in through
+  // gets one in the link clip, and the operator's post comes in through
   // Telegram.
   const withBot = (l) =>
     l.name === 'archivist'
