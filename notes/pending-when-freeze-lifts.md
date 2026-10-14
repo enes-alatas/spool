@@ -599,3 +599,6 @@ Quiet night sweep. #809 merged (#800 closed). Open PRs: #814 (Terra, #789), #813
 
 ## 2026-10-14 04:05 UTC
 Quiet. #812 (#804) and #813 (#795) merged. Open PRs: #814 (Terra, #789, with Quinn), #784, #453. Iris on #733 demo re-record. Board tidy except #753.
+
+## 2026-10-14 08:10 UTC
+#814 merged (#789 closed). Open PRs: #816 (Terra, #751 doing trailer), #815 (Iris, #733 demo), both in review; #784 (Elliot) behind main, check cancelled, no approval, nudged Elliot; #453 stale. Board tidy except #753. Iris after #815: #752 (needs #751/#816) → #732 (now unblocked, #789 landed). Terra after #816: #764.
