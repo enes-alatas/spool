@@ -821,10 +821,7 @@ func (br *Bridge) handleReaction(ctx context.Context, bot *poller, update *Messa
 	if update.User == nil || update.User.IsBot || br.router == nil {
 		return // an anonymous admin, a chat, or a bot: no person to record
 	}
-	sender, err := br.store.TGSenders().Get(ctx, update.User.ID)
-	if err != nil || sender.Status != store.SenderAllowed {
-		br.log.Info("telegram reaction discarded", "loop", bot.name, "reason", "sender is not allowed",
-			"chat_id", update.Chat.ID, "message_id", update.MessageID)
+	if !br.eventAllowed(ctx, bot, update.User.ID) {
 		return
 	}
 	target, err := br.store.Messages().ByRef(ctx, bot.loopID, update.Chat.ID, update.MessageID)
@@ -937,12 +934,16 @@ func supergroup(chatID int64) bool { return chatID <= -1000000000000 }
 // handlePollAnswer hands the router a person's whole choice in a poll the
 // loop's bot sent (ADR-0041). Telegram tells only the bot that sent a poll
 // of its votes, so no bot is elected. A vote passes the sender gate a
-// message does, but registers nobody. A vote in a poll the hub has closed
-// means the bot never stopped it, at startup or across a crash, so it is
-// stopped now and the vote dropped.
+// message does, first, so a stranger's vote costs nothing it causes, and
+// registers nobody (#788). A vote in a poll the hub has closed means the
+// bot never stopped it, at startup or across a crash, so it is stopped now
+// and the vote dropped.
 func (br *Bridge) handlePollAnswer(ctx context.Context, bot *poller, answer *PollAnswer) {
 	if answer.User == nil || answer.User.IsBot || br.router == nil {
 		return // a chat voted, or a bot: no person to record
+	}
+	if !br.eventAllowed(ctx, bot, answer.User.ID) {
+		return
 	}
 	poll, err := br.store.Polls().ByTGPollID(ctx, answer.PollID)
 	if err != nil {
@@ -950,12 +951,6 @@ func (br *Bridge) handlePollAnswer(ctx context.Context, bot *poller, answer *Pol
 	}
 	if poll.ClosedAt != 0 {
 		br.stopPoll(ctx, bot, poll.MessageID)
-		return
-	}
-	sender, err := br.store.TGSenders().Get(ctx, answer.User.ID)
-	if err != nil || sender.Status != store.SenderAllowed {
-		br.log.Info("telegram vote discarded", "loop", bot.name, "reason", "sender is not allowed",
-			"poll", poll.MessageID)
 		return
 	}
 	voter := answer.User.Username
@@ -1047,7 +1042,7 @@ func (br *Bridge) senderAllowed(ctx context.Context, bot *poller, message *tgMsg
 	case sender.Status == store.SenderAllowed:
 		return true
 	case sender.Status == store.SenderBlocked:
-		br.logTurnedAway(bot, message, author, "sender is blocked")
+		br.router.Blocked(store.TGPerson(message.From.ID))
 		return false
 	}
 	person := store.TGPerson(message.From.ID)
@@ -1063,6 +1058,26 @@ func (br *Bridge) senderAllowed(ctx context.Context, bot *poller, message *tgMsg
 		}
 	}
 	br.router.Stranger(person, message.Chat.Type == "private")
+	return false
+}
+
+// eventAllowed is the sender gate for a reaction or a vote: only an
+// allowed sender passes. Anyone else's is dropped and counted, as their
+// message is, and logged once an hour a sender (#788).
+func (br *Bridge) eventAllowed(ctx context.Context, bot *poller, userID int64) bool {
+	sender, err := br.store.TGSenders().Get(ctx, userID)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+	case err != nil:
+		br.log.Error("sender lookup", "loop", bot.name, "err", err)
+		return false // fail closed
+	case sender.Status == store.SenderAllowed:
+		return true
+	case sender.Status == store.SenderBlocked:
+		br.router.Blocked(store.TGPerson(userID))
+		return false
+	}
+	br.router.Stranger(store.TGPerson(userID), false)
 	return false
 }
 

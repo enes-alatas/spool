@@ -1,8 +1,10 @@
 package telegram
 
 import (
+	"bytes"
 	"context"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/enes-alatas/spool/internal/route"
@@ -16,9 +18,23 @@ type pollStore struct {
 	poll *store.Poll
 }
 
-func (fake *pollStore) Polls() store.PollStore       { return pollRows{fake: fake} }
-func (fake *pollStore) Messages() store.MessageStore { return pollMessages{} }
-func (fake *pollStore) Loops() store.LoopStore       { return telegramLoops{} }
+func (fake *pollStore) Polls() store.PollStore         { return pollRows{fake: fake} }
+func (fake *pollStore) Messages() store.MessageStore   { return pollMessages{} }
+func (fake *pollStore) Loops() store.LoopStore         { return telegramLoops{} }
+func (fake *pollStore) TGSenders() store.TGSenderStore { return pollSenders{} }
+
+// pollSenders allows 42 and blocks 66; anyone else is a stranger.
+type pollSenders struct{ store.TGSenderStore }
+
+func (pollSenders) Get(_ context.Context, id int64) (*store.TGSender, error) {
+	switch id {
+	case 42:
+		return &store.TGSender{TGUserID: id, Status: store.SenderAllowed}, nil
+	case 66:
+		return &store.TGSender{TGUserID: id, Status: store.SenderBlocked}, nil
+	}
+	return nil, store.ErrNotFound
+}
 
 type pollRows struct {
 	store.PollStore
@@ -126,5 +142,30 @@ func TestAVoteAfterTheCloseStopsThePoll(t *testing.T) {
 	br.handlePollAnswer(context.Background(), bot, &PollAnswer{PollID: "p7", User: voter, OptionIDs: []int{0}})
 	if req := queued(t, bot, "a vote after the close"); req.stopPollAt != 70 || req.chatID != -100 {
 		t.Fatalf("a vote after the close queued %+v, want a stop of 70 in -100", req)
+	}
+}
+
+// A vote or a reaction from a sender who is not allowed is dropped before
+// anything it would cause: on a closed poll it stops nothing, and a
+// reaction looks up no message. Each sender is logged once with a count,
+// not once an event (#788).
+func TestANotAllowedSendersVoteAndReactionAreDroppedFirst(t *testing.T) {
+	br, bot, fake := pollBridge()
+	var logged bytes.Buffer
+	br.router = route.New(fake, nil, nil, slog.New(slog.NewTextHandler(&logged, nil)))
+	fake.poll.ClosedAt = 100
+	ctx := context.Background()
+	stranger, blocked := &User{ID: 7, FirstName: "Mallory"}, &User{ID: 66, FirstName: "Trudy"}
+	for _, voter := range []*User{stranger, blocked, blocked} {
+		br.handlePollAnswer(ctx, bot, &PollAnswer{PollID: "p7", User: voter, OptionIDs: []int{0}})
+		nothingQueued(t, bot, "a vote from a sender who is not allowed, after the close")
+		// pollMessages has no ByRef: a reaction that passed the gate would panic
+		br.handleReaction(ctx, bot, &MessageReactionUpdated{Chat: Chat{ID: -100}, MessageID: 70, User: voter,
+			NewReaction: []ReactionType{{Type: "emoji", Emoji: "👍"}}})
+	}
+	lines := strings.Split(strings.TrimSpace(logged.String()), "\n")
+	if len(lines) != 2 || !strings.Contains(lines[0], "events from a stranger ignored") || !strings.Contains(lines[0], "sender=tg:7") ||
+		!strings.Contains(lines[1], "events from a blocked sender ignored") || !strings.Contains(lines[1], "sender=tg:66") {
+		t.Fatalf("the log = %q; want one line for the stranger and one for the blocked sender", lines)
 	}
 }

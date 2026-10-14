@@ -58,6 +58,12 @@ over Socket Mode, so no port is opened for either (ADR-0034).
   reaches nothing (ADR-0051). The hub keeps the ids of the strangers whose
   DMs it ignored for a day, in memory and at most 1000 a surface, for an
   admin to see who knocked (#744).
+- **A sender who isn't allowed costs the hub little.** Their message,
+  reaction or vote is gated before anything it would cause, so a vote on
+  a closed poll makes no call to the platform. Whether they are a stranger
+  or blocked, they get at most one log line an hour, with a count. The
+  count is in memory and holds 1024 senders; past that, new senders are
+  counted together as `others` (ADR-0051, #788).
 - **A sender is allowed by linking their own account.** The control room
   mints a link code for one surface: about 49 random bits, one use,
   15 minutes, kept only as a hash. It is honoured only in a DM, and the

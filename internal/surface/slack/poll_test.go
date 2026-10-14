@@ -1,6 +1,7 @@
 package slack
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"slices"
@@ -114,5 +115,51 @@ func TestAClickOnAPollIsAVote(t *testing.T) {
 	}
 	if pollID, ok := heard.nextPollDue(); !ok || pollID != msg.ID {
 		t.Fatalf("a click after the close left no redraw due (%d, %v)", pollID, ok)
+	}
+}
+
+// A click or a reaction from a sender who is not allowed is dropped before
+// anything it would cause: a click on a closed poll redraws nothing, and a
+// reaction looks up no message. Each sender is logged once with a count,
+// not once an event (#788).
+func TestANotAllowedSendersClickAndReactionAreDroppedFirst(t *testing.T) {
+	var logged bytes.Buffer
+	adapter, db, _ := inboundFixtureLogging(t, &logged)
+	ctx := context.Background()
+	if err := db.SlackSenders().Create(ctx, &store.SlackSender{SlackUserID: "U0TRUDY", TeamID: "T0ACME",
+		Username: "trudy", Status: store.SenderBlocked, CreatedAt: 1, UpdatedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	msg := &store.Message{Origin: store.OriginLoop, FromLoopID: "loop_terra", Conversation: store.ConversationGroup,
+		Text: "ship friday?", SlackChannelID: "C0FLEET", SlackTS: "1.7"}
+	if err := db.Messages().Insert(ctx, msg); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Polls().Create(ctx, &store.Poll{MessageID: msg.ID, Options: []string{"yes", "no"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Polls().Close(ctx, msg.ID, 100); err != nil {
+		t.Fatal(err)
+	}
+	heard := &link{loopID: "loop_terra", pollEdits: make(chan struct{}, 1)}
+	for _, user := range []string{"U0MALLORY", "U0TRUDY", "U0TRUDY"} {
+		payload, _ := json.Marshal(map[string]any{"type": "block_actions", "user": map[string]any{"id": user},
+			"container": map[string]any{"type": "message", "channel_id": "C0FLEET", "message_ts": "1.7"},
+			"actions":   []map[string]any{{"action_id": voteAction + "0", "value": "0"}}})
+		adapter.ingestInteraction(ctx, heard, payload)
+		reaction := messageEvent{Type: "reaction_added", User: user, Reaction: "thumbsup"}
+		reaction.Item.Type, reaction.Item.Channel, reaction.Item.TS = "message", "C0FLEET", "1.7"
+		adapter.ingestReaction(ctx, heard, reaction)
+	}
+	if pollID, ok := heard.nextPollDue(); ok {
+		t.Fatalf("a click on a closed poll from a sender who is not allowed left a redraw of %d due", pollID)
+	}
+	if reactions, err := db.Reactions().ListByMessages(ctx, []int64{msg.ID}); err != nil || len(reactions) != 0 {
+		t.Fatalf("reactions %+v (%v), want none", reactions, err)
+	}
+	lines := strings.Split(strings.TrimSpace(logged.String()), "\n")
+	if len(lines) != 2 || !strings.Contains(lines[0], "events from a stranger ignored") || !strings.Contains(lines[0], "sender=slack:U0MALLORY") ||
+		!strings.Contains(lines[1], "events from a blocked sender ignored") || !strings.Contains(lines[1], "sender=slack:U0TRUDY") {
+		t.Fatalf("the log = %q; want one line for the stranger and one for the blocked sender", lines)
 	}
 }

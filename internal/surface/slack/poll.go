@@ -191,9 +191,10 @@ type interaction struct {
 // ingestInteraction takes a click on a poll's button as the voter's whole
 // choice (ADR-0041). In a single-choice poll a click picks its option, or
 // takes it back when it was the one picked; in a multiple-choice poll it
-// toggles its option. A click passes the sender gate a reaction does, and
-// registers nobody. A click on a poll the hub has closed means the app
-// missed the close, so the post is redrawn closed and the click dropped.
+// toggles its option. A click passes the sender gate a reaction does,
+// first, so a stranger's click costs nothing it causes, and registers
+// nobody (#788). A click on a poll the hub has closed means the app missed
+// the close, so the post is redrawn closed and the click dropped.
 func (adapter *Adapter) ingestInteraction(ctx context.Context, link *link, payload json.RawMessage) {
 	var clicked interaction
 	if err := json.Unmarshal(payload, &clicked); err != nil {
@@ -201,6 +202,10 @@ func (adapter *Adapter) ingestInteraction(ctx context.Context, link *link, paylo
 		return
 	}
 	if clicked.Type != "block_actions" || clicked.User.ID == "" {
+		return
+	}
+	sender := adapter.eventSender(ctx, link, clicked.User.ID)
+	if sender == nil {
 		return
 	}
 	for _, action := range clicked.Actions {
@@ -211,13 +216,13 @@ func (adapter *Adapter) ingestInteraction(ctx context.Context, link *link, paylo
 		if err != nil {
 			continue
 		}
-		adapter.vote(ctx, link, clicked.User.ID, clicked.Container.ChannelID, clicked.Container.MessageTS, option)
+		adapter.vote(ctx, link, sender, clicked.Container.ChannelID, clicked.Container.MessageTS, option)
 	}
 }
 
-// vote hands in a person's click on option in the poll Slack knows as ts
-// in channel.
-func (adapter *Adapter) vote(ctx context.Context, link *link, userID, channel, ts string, option int) {
+// vote hands in an allowed sender's click on option in the poll Slack
+// knows as ts in channel.
+func (adapter *Adapter) vote(ctx context.Context, link *link, sender *store.SlackSender, channel, ts string, option int) {
 	target, err := adapter.store.Messages().BySlackTS(ctx, channel, ts)
 	if err != nil {
 		return // a post the hub never held
@@ -230,13 +235,7 @@ func (adapter *Adapter) vote(ctx context.Context, link *link, userID, channel, t
 		link.pollChanged(poll.MessageID)
 		return
 	}
-	sender, err := adapter.store.SlackSenders().Get(ctx, userID)
-	if err != nil || sender.Status != store.SenderAllowed {
-		adapter.log.Info("slack vote discarded", "loop", link.loopID, "reason", "sender is not allowed",
-			"user", userID, "channel", channel, "ts", ts)
-		return
-	}
-	voterKey := store.PersonReactor(store.SurfaceSlack, userID)
+	voterKey := store.PersonReactor(store.SurfaceSlack, sender.SlackUserID)
 	votes, err := adapter.store.Polls().Votes(ctx, []int64{poll.MessageID})
 	if err != nil {
 		adapter.log.Error("slack: read votes for a click", "loop", link.loopID, "poll", poll.MessageID, "err", err)

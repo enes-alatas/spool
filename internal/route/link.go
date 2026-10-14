@@ -231,17 +231,37 @@ func (router *Router) PublishUnlink(userID, surface string) {
 	router.bus.Publish(bus.Item{Kind: bus.KindLink, Payload: &LinkPayload{UserID: userID, Surface: surface, State: LinkUnlinked}})
 }
 
-// Stranger notes a DM or group message from a sender who is not allowed,
-// which goes nowhere and is answered with nothing. Its text is untrusted
-// and may hold anything, credentials included, so it is never kept or
-// logged: the log has one line a sender an hour, with how many of their
-// messages were dropped. A DM, dm, is a knock: the tally of strangers
-// ignored notes who sent it. A group message is someone talking in a room
-// the bot sits in, and is only logged.
+// Stranger notes an event from a sender who is neither allowed nor
+// blocked: a DM, a group message, a reaction or a vote, which goes nowhere
+// and is answered with nothing. A message's text is untrusted and may hold
+// anything, credentials included, so it is never kept or logged: the log
+// has one line a sender an hour, with how many of their events were
+// dropped (#788). A DM, dm, is a knock: the tally of strangers ignored
+// notes who sent it. Anything else is someone in a room the bot sits in,
+// and is only logged.
 func (router *Router) Stranger(person string, dm bool) {
-	if count, ok := router.gate.stranger(person, dm); ok {
-		router.log.Info("messages from a stranger ignored", "surface", store.PersonSurface(person),
-			"sender", person, "count", count)
+	router.dropped(person, dm, "events from a stranger ignored")
+}
+
+// Blocked notes an event from a blocked sender, which reaches nothing
+// (ADR-0051). It is logged as a stranger's is, one line a sender an hour
+// with a count, so a blocked sender cannot make the hub log once an event
+// (#788). A blocked sender's DM is no knock: they are known already.
+func (router *Router) Blocked(person string) {
+	router.dropped(person, false, "events from a blocked sender ignored")
+}
+
+// dropped counts an event from person and logs it as line when its hour
+// has come. The senders a full tally has no room for are logged together,
+// with no surface, since they may be on either.
+func (router *Router) dropped(person string, dm bool, line string) {
+	sender, count, ok := router.gate.drop(person, dm)
+	switch {
+	case !ok:
+	case sender == droppedOthers:
+		router.log.Info("events from other senders who are not allowed ignored", "sender", sender, "count", count)
+	default:
+		router.log.Info(line, "surface", store.PersonSurface(person), "sender", sender, "count", count)
 	}
 }
 
@@ -273,12 +293,16 @@ const (
 	linkWrongPerSender  = 5
 	linkWrongPerSurface = 50
 	linkWrongWindow     = time.Hour
-	// strangerLogEvery is how often a stranger's dropped messages are
-	// logged, with a count.
-	strangerLogEvery = time.Hour
+	// droppedLogEvery is how often the events dropped from a sender who is
+	// not allowed are logged, with a count.
+	droppedLogEvery = time.Hour
 	// linkGateKept is how many senders the gate holds before it forgets
-	// the ones whose hour is out.
+	// the ones whose hour is out, and the most it holds of dropped events'
+	// senders.
 	linkGateKept = 1024
+	// droppedOthers is who the log names for the events of the senders a
+	// full tally did not keep.
+	droppedOthers = "others"
 	// IgnoredWindow is how far back the tally of ignored strangers
 	// reaches, and ignoredKept how many of them it names on a surface: past
 	// that, a new one there is not kept, and the tally says there were
@@ -287,8 +311,8 @@ const (
 	ignoredKept   = 1000
 )
 
-// linkGate counts wrong link codes and strangers' dropped messages. The
-// zero value is ready.
+// linkGate counts wrong link codes and the events dropped from senders who
+// are not allowed. The zero value is ready.
 type linkGate struct {
 	mu sync.Mutex
 	// now is the clock; nil is time.Now.
@@ -299,9 +323,14 @@ type linkGate struct {
 	// strangersWrong counts strangers' wrong codes on each surface, since
 	// the first of the hour.
 	strangersWrong map[string]*linkStrikes
-	// strangers counts each stranger's dropped messages since the last line
-	// about them, logged at loggedAt.
-	strangers map[string]*strangerTally
+	// dropped counts each not-allowed sender's dropped events since the
+	// last line about them, logged at loggedAt; droppedLeftOut counts those
+	// of the senders it had no room for. droppedSwept is when a full tally
+	// last forgot the senders whose hour was out: at most once a minute,
+	// so a spray of new senders does not scan it on every event (#788).
+	dropped        map[string]*droppedTally
+	droppedLeftOut droppedTally
+	droppedSwept   time.Time
 	// ignored is when each stranger of the last IgnoredWindow last sent a
 	// DM that was dropped, for the owner to see who is knocking (#744), and
 	// ignoredOn how many of them each surface holds. ignoredMore is when a
@@ -321,7 +350,7 @@ type linkStrikes struct {
 	until time.Time
 }
 
-type strangerTally struct {
+type droppedTally struct {
 	count    int
 	loggedAt time.Time
 }
@@ -401,37 +430,47 @@ func (gate *linkGate) wrong(person string, allowed bool) (until time.Time, pause
 	return time.Time{}, false
 }
 
-// stranger counts a dropped message from person, and says whether to log
-// it, with the count since the last line.
-func (gate *linkGate) stranger(person string, dm bool) (int, bool) {
+// drop counts a dropped event from person, and says whether to log it:
+// as which sender, with the count since the last line. The tally holds
+// linkGateKept senders. Once full, it forgets the ones whose hour is out,
+// at most once a minute, and while it is still full it keeps no new
+// sender: their events are counted with the others left out, logged as
+// one sender, droppedOthers (#788).
+func (gate *linkGate) drop(person string, dm bool) (string, int, bool) {
 	gate.mu.Lock()
 	defer gate.mu.Unlock()
 	now := gate.clock()
 	if dm {
 		gate.ignore(person, now)
 	}
-	if gate.strangers == nil {
-		gate.strangers = map[string]*strangerTally{}
+	if gate.dropped == nil {
+		gate.dropped = map[string]*droppedTally{}
 	}
-	if len(gate.strangers) >= linkGateKept {
-		for kept, tally := range gate.strangers {
-			if !now.Before(tally.loggedAt.Add(strangerLogEvery)) {
-				delete(gate.strangers, kept)
+	tally := gate.dropped[person]
+	if tally == nil && len(gate.dropped) >= linkGateKept && now.Sub(gate.droppedSwept) >= time.Minute {
+		for kept, held := range gate.dropped {
+			if !now.Before(held.loggedAt.Add(droppedLogEvery)) {
+				delete(gate.dropped, kept)
 			}
 		}
+		gate.droppedSwept = now
 	}
-	tally := gate.strangers[person]
-	if tally == nil {
-		tally = &strangerTally{}
-		gate.strangers[person] = tally
+	sender := person
+	switch {
+	case tally != nil:
+	case len(gate.dropped) < linkGateKept:
+		tally = &droppedTally{}
+		gate.dropped[person] = tally
+	default:
+		tally, sender = &gate.droppedLeftOut, droppedOthers
 	}
 	tally.count++
-	if tally.loggedAt.IsZero() || !now.Before(tally.loggedAt.Add(strangerLogEvery)) {
+	if tally.loggedAt.IsZero() || !now.Before(tally.loggedAt.Add(droppedLogEvery)) {
 		count := tally.count
 		tally.count, tally.loggedAt = 0, now
-		return count, true
+		return sender, count, true
 	}
-	return 0, false
+	return "", 0, false
 }
 
 // ignore notes that person's DM was dropped at now. Once their surface's

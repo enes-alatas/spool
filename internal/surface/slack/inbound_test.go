@@ -44,6 +44,12 @@ func (d *deliveries) count(loopID string) int {
 // Web API.
 func inboundFixture(t *testing.T) (*Adapter, store.Store, *deliveries) {
 	t.Helper()
+	return inboundFixtureLogging(t, io.Discard)
+}
+
+// inboundFixtureLogging is inboundFixture, logging to out.
+func inboundFixtureLogging(t *testing.T, out io.Writer) (*Adapter, store.Store, *deliveries) {
+	t.Helper()
 	ctx := context.Background()
 	db, err := sqlite.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -73,7 +79,7 @@ func inboundFixture(t *testing.T) (*Adapter, store.Store, *deliveries) {
 			"profile": map[string]any{"display_name": "Bob"}}})
 	}))
 	t.Cleanup(web.Close)
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	log := slog.New(slog.NewTextHandler(out, nil))
 	got := &deliveries{got: map[string][]loop.Envelope{}}
 	publisher := bus.New()
 	adapter := New(db, publisher, route.New(db, publisher, got, log), log, web.URL)

@@ -254,12 +254,65 @@ func TestAStrangerIsLoggedOnceAnHour(t *testing.T) {
 	for range 3 {
 		router.Stranger(store.TGPerson(5), false)
 	}
-	*now = now.Add(strangerLogEvery)
+	*now = now.Add(droppedLogEvery)
 	router.Stranger(store.TGPerson(5), true)
 	lines := strings.Split(strings.TrimSpace(logged.String()), "\n")
 	if len(lines) != 2 || !strings.Contains(lines[0], "count=1") || !strings.Contains(lines[1], "count=3") ||
 		!strings.Contains(lines[1], "sender=tg:5") {
 		t.Fatalf("the log = %q; want the first message, then the next three an hour on", lines)
+	}
+}
+
+// A blocked sender's events are logged as a stranger's are, once an hour
+// with a count, and are no knock (#788).
+func TestABlockedSenderIsLoggedOnceAnHour(t *testing.T) {
+	router, _, now, logged, _ := linkRouter(t)
+	for range 3 {
+		router.Blocked(store.SlackPerson("U6"))
+	}
+	*now = now.Add(droppedLogEvery)
+	router.Blocked(store.SlackPerson("U6"))
+	lines := strings.Split(strings.TrimSpace(logged.String()), "\n")
+	if len(lines) != 2 || !strings.Contains(lines[0], "blocked sender") || !strings.Contains(lines[0], "count=1") ||
+		!strings.Contains(lines[1], "count=3") || !strings.Contains(lines[1], "sender=slack:U6") {
+		t.Fatalf("the log = %q; want the first event, then the next three an hour on", lines)
+	}
+	if got := router.IgnoredStrangers(); len(got[1].IDs) != 0 {
+		t.Fatalf("the tally = %+v; want no knock from a blocked sender", got)
+	}
+}
+
+// The tally of senders whose events were dropped holds linkGateKept of
+// them. While it is full, a new sender's events are counted and logged
+// with the others left out, as one sender, so a spray of new senders
+// neither grows it nor logs once each. Once the kept senders' hour is out,
+// a new one is kept again (#788).
+func TestAFullDroppedTallyCountsTheRestAsOthers(t *testing.T) {
+	router, _, now, logged, _ := linkRouter(t)
+	for id := range int64(linkGateKept) {
+		router.Stranger(store.TGPerson(1000+id), false)
+	}
+	logged.Reset()
+	for id := range int64(3) {
+		router.Stranger(store.TGPerson(5000+id), false)
+	}
+	router.Blocked(store.TGPerson(6000))
+	lines := strings.Split(strings.TrimSpace(logged.String()), "\n")
+	if len(lines) != 1 || !strings.Contains(lines[0], "sender="+droppedOthers) || !strings.Contains(lines[0], "count=1") ||
+		strings.Contains(lines[0], "surface=") {
+		t.Fatalf("the log past a full tally = %q; want one line for the others", lines)
+	}
+	if n := len(router.gate.dropped); n != linkGateKept {
+		t.Fatalf("the tally holds %d senders, want %d", n, linkGateKept)
+	}
+
+	*now = now.Add(droppedLogEvery)
+	logged.Reset()
+	router.Stranger(store.TGPerson(5000), false)
+	router.Stranger(store.TGPerson(7000), false)
+	lines = strings.Split(strings.TrimSpace(logged.String()), "\n")
+	if len(lines) != 2 || !strings.Contains(lines[0], "sender=tg:5000") || !strings.Contains(lines[1], "sender=tg:7000") {
+		t.Fatalf("the log an hour on = %q; want 5000 and 7000 kept and logged as themselves", lines)
 	}
 }
 
