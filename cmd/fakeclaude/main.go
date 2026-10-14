@@ -26,9 +26,10 @@
 // mid-turn the way a lost session does (exit 1, canonical stderr);
 // "!huge <bytes>" replies with that many bytes; "!hang <seconds>" sleeps
 // first; "!toolong" returns an errored result saying the prompt did not fit
-// the window, with no usage, and keeps the session. A "!send" directive may
-// write "$ref" where the reference of the message being answered belongs;
-// the fake substitutes it from the envelope header.
+// the window, with no usage, and keeps the session; "!error" returns the
+// errored result an API failure ends a turn with, and keeps the session. A
+// "!send" directive may write "$ref" where the reference of the message
+// being answered belongs; the fake substitutes it from the envelope header.
 //
 // "!ctx <tokens>" prefix makes the turn report that many input tokens per API
 // step — how a filling context looks from outside — and composes with the
@@ -412,6 +413,21 @@ func main() {
 				out.Flush()
 				fmt.Fprintf(os.Stderr, "No conversation found with session ID: %s\n", id)
 				os.Exit(1)
+			case line == "!error":
+				// a turn the API failed part-way, after the CLI's own
+				// retries: an errored result naming the error, and the
+				// session kept (assumed: FIDELITY.md)
+				emit(map[string]any{
+					"type": "result", "subtype": "success", "is_error": true,
+					"total_cost_usd": state.CostUSD, "duration_ms": 5, "num_turns": state.Turns,
+					"result": "API Error: 500 Internal server error", "session_id": id,
+					"usage": map[string]any{
+						"input_tokens": 0, "output_tokens": 0,
+						"cache_creation_input_tokens": 0, "cache_read_input_tokens": 0,
+					},
+				})
+				persist(stateDir, id, state)
+				continue
 			case line == "!toolong":
 				// what an over-window payload looks like: an errored result
 				// with no usage at all, then a clean exit (verified by
