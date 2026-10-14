@@ -608,3 +608,6 @@ Elliot: #784 rebased (0049654), CI running; held by Enes's own "Operator decisio
 
 ## 2026-10-14 08:50 UTC
 #816 merged (#751 doing trailer). Terra on #764 (watchdog slice 1); #722/#721 were closed by #785; after #764: #788, #790, #810, #811, #766, #630. Iris: #815 in review, then #752 (now unblocked) → #732.
+
+## 2026-10-14 09:15 UTC
+Enes: bot reactions don't show in the fleet Telegram group. Answered: basic group vs supergroup (#607/#614, README); asked him to check the group type; if supergroup, hub log "telegram reaction failed; giving up" and I file a bug.
