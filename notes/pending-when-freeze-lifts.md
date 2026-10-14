@@ -596,3 +596,6 @@ Enes: #810/#811 not urgent. Terra reordered: #809 → #789 → #751 → #764 →
 
 ## 2026-10-14 00:05 UTC
 Quiet night sweep. #809 merged (#800 closed). Open PRs: #814 (Terra, #789), #813 (Iris, #795), #812 (README restructure, #804; author to confirm), #784 (Elliot), #453 (stale). Board tidy except #753 (held). Enes owes: #758 prerequisites, supported-versions.
+
+## 2026-10-14 04:05 UTC
+Quiet. #812 (#804) and #813 (#795) merged. Open PRs: #814 (Terra, #789, with Quinn), #784, #453. Iris on #733 demo re-record. Board tidy except #753.
