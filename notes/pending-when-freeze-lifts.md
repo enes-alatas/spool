@@ -635,3 +635,6 @@ Fast afternoon: merged #820 (#764 watchdog slice 1), #821 (#752 doing line), #82
 
 ## 2026-10-14 18:05 UTC
 Sweep: #827 (#790) and #824 merged. Open PRs: #832 (Terra, #810 edits as corrections), #829 (Iris, #732 Access), #453. New: #831 (timeline shows edits, web half of #810; Iris after #732) and #830 (comment naming after Access move) → L5 Team. Terra after #832: #811 → #766 → #630 → #775 hub half.
+
+## 2026-10-14 19:05 UTC
+#829 merged (#732 done). #733 closed (README #802, demo #815, OPERATIONS row 8b3d95e). Iris on #831 (options to Enes, build after #832). #729 left: #775 hub half (Terra). L5 open now: #775, #811, #831, #830, #452 cluster, #450/#451, bugs #480. v0.6.0 ask once #775 and #831 land: needs green dry run on the exact commit.
