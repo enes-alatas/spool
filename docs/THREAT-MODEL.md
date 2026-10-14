@@ -231,8 +231,15 @@ the CLI (ADR-0018).
 - **Backups keep the key apart:** `scripts/spool-backup.sh` writes
   `hub.key` and the operator token to a separate keys file, both files
   0600 (OPERATIONS.md).
+- **A message its author deletes on Slack leaves the store**: its words,
+  the words of its edits and the files kept for it go, and `deleted_at`
+  stays as the record (ADR-0055).
 
 **Doesn't hold:**
+- **A deleted message's words outlive it where the loops read them:**
+  their sessions and workstations, the hub's events of those turns until
+  they are pruned, and any backup taken before (ADR-0055). Telegram
+  reports no deletions, so a Telegram message keeps its words.
 - **A copy of the whole data directory**, or a data file together with its
   keys file, yields every secret and the operator token (ADR-0046).
 - **Conversations and loop volumes are not encrypted.** A volume holds the

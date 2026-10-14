@@ -146,6 +146,24 @@ func (router *Router) ExpireAttachments(ctx context.Context) (int, error) {
 	return len(expired), nil
 }
 
+// removeAttachments removes the files kept for a message its author
+// deleted, whatever their age, keeping the rows as expiry does (ADR-0055).
+func (router *Router) removeAttachments(ctx context.Context, messageID int64) {
+	removed, err := router.store.Attachments().RemoveByMessage(ctx, messageID, time.Now().UnixMilli())
+	if err != nil {
+		router.log.Error("remove a deleted message's attachments", "message", messageID, "err", err)
+		return
+	}
+	if router.files == nil {
+		return
+	}
+	for _, row := range removed {
+		if err := router.files.Remove(row.Path); err != nil {
+			router.log.Error("deleted message's attachment not removed", "id", row.ID, "err", err)
+		}
+	}
+}
+
 // AttachmentFile is an attachment and the hub's copy of it, for the control
 // room to serve (#460). An unknown id is store.ErrNotFound; a file that is
 // not kept, because it never arrived or retention removed it, is
