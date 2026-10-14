@@ -180,13 +180,12 @@ function TelegramNotes({ loop, bot }: { loop: LoopView; bot: string }) {
         messages that mention it or reply to it.
       </div>
       {/* ADR-0040: the platform's limits on reactions, said where they bite.
-          In a basic group each bot numbers its own copy of a message and never
-          sees another bot's, so it has no id to react on (#614). */}
+          Telegram passes no bot another bot's messages, in any kind of group,
+          and refuses a reaction on a message the bot never received (#817). */}
       <div className="chans-note">
         Reactions: in a group, {bot} hears them only as an administrator. It sets one reaction per message, so
-        a loop's second reaction on a message replaces its first. A reaction to another loop's message shows
-        on Telegram only in a supergroup; in a basic group it still reaches that loop, but Telegram never
-        draws it.
+        a loop's second reaction on a message replaces its first. A reaction to another loop's message never
+        shows on Telegram, in any kind of group; it still reaches that loop.
       </div>
       {/* ADR-0041: Telegram draws its own count, which cannot hold a loop's vote */}
       <div className="chans-note">
