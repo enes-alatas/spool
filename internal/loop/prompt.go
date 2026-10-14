@@ -767,6 +767,22 @@ type Envelope struct {
 	// starts (#123). Empty when every path is already readable, as on a
 	// bare loop, which is shown the hub's own copy.
 	Files []FileCopy `json:"files,omitempty"`
+	// Ref is the reference of the message the envelope carries, "" for
+	// none, so a correction can find it while it waits (#811).
+	Ref string `json:"ref,omitempty"`
+	// Corrects is set on a correction's envelope, nil on any other.
+	Corrects *Correction `json:"corrects,omitempty"`
+}
+
+// Correction is what a correction's envelope corrects, so the actor can
+// apply it to the message's envelope while that one still waits for a turn
+// rather than queue a second one (ADR-0055, #811).
+type Correction struct {
+	Ref  string `json:"ref"`  // the corrected message's reference
+	Kind string `json:"kind"` // store.EditEdited or store.EditDeleted
+	// Text is, for an edit, the corrected message's envelope text with the
+	// new words in place of the old.
+	Text string `json:"text,omitempty"`
 }
 
 // FileCopy is one kept file to put in a workstation: From is the hub's copy
@@ -959,13 +975,18 @@ func MessageEnvelope(now time.Time, in Inbound) Envelope {
 	if in.Poll != nil {
 		text += "\n\n" + pollBallot(in.Poll)
 	}
-	return Envelope{
+	env := Envelope{
 		Trigger:      store.TriggerMessage,
 		Text:         text,
 		Conversation: in.Conversation,
 		Channel:      envelopeChannel(in.Channel),
 		TGChatID:     in.TGChatID,
+		Ref:          in.Ref,
 	}
+	if in.EditOf != "" {
+		env.Corrects = &Correction{Ref: in.EditOf, Kind: in.EditKind}
+	}
+	return env
 }
 
 // pollBallot is how a loop is shown a poll's ballot under its question:

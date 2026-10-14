@@ -592,11 +592,34 @@ func (actor *Actor) drainStoredInbox() {
 	}
 }
 
+// correctWaiting applies a correction to the envelope of the message it
+// corrects while that one still waits for a turn, and reports whether it
+// did. An edit puts the new words in place of the old, and a deletion takes
+// the message out, so the loop reads the message once, as it now stands,
+// and no turn is spent on the correction. Once a turn has taken the
+// message, the correction is queued as a message of its own (ADR-0055,
+// #811).
+func (actor *Actor) correctWaiting(correction Correction) bool {
+	i := slices.IndexFunc(actor.inbox, func(env Envelope) bool { return env.Ref == correction.Ref })
+	if i < 0 || (correction.Kind != store.EditDeleted && correction.Text == "") {
+		return false
+	}
+	if correction.Kind == store.EditDeleted {
+		actor.inbox = slices.Delete(actor.inbox, i, i+1)
+	} else {
+		actor.inbox[i].Text = correction.Text
+	}
+	return true
+}
+
 func (actor *Actor) enqueue(env Envelope) {
 	if (actor.loginRejected || actor.hubUnreachable) && env.Trigger == store.TriggerTick {
 		// every tick of an outage would otherwise reach the first turn
 		// that authenticates, as a burst of stale wakes (#420)
 		actor.inbox = latestTickOnly(append(actor.inbox, env))
+		return
+	}
+	if env.Corrects != nil && actor.correctWaiting(*env.Corrects) {
 		return
 	}
 	if len(actor.inbox) >= maxInbox {
