@@ -137,6 +137,10 @@ type fixtureLoop struct {
 	branch   string
 	repoPath string
 	botUser  string
+	// doing is the line the loop last set with a [doing: …] trailer, and
+	// doingAgo how long ago it set it (#751).
+	doing    string
+	doingAgo time.Duration
 }
 
 // The fleet: one loop per shape the room draws differently — contained and
@@ -153,15 +157,19 @@ var loops = []fixtureLoop{
 		branch:   "loop/gardener",
 		repoPath: "/srv/example/handbook",
 		botUser:  "gardener_example_bot",
+		doing:    "reviewing PR #456",
+		doingAgo: 25 * time.Minute,
 	},
 	{
-		name:    "watcher",
-		mission: "Watch the nightly build. When it breaks, say which commit broke it and what the first failing line was — no speculation.",
-		model:   "sonnet",
-		runtime: store.RuntimeDocker,
-		status:  store.StatusActive,
-		pacing:  store.PacingFixed,
-		botUser: "watcher_example_bot",
+		name:     "watcher",
+		mission:  "Watch the nightly build. When it breaks, say which commit broke it and what the first failing line was — no speculation.",
+		model:    "sonnet",
+		runtime:  store.RuntimeDocker,
+		status:   store.StatusActive,
+		pacing:   store.PacingFixed,
+		botUser:  "watcher_example_bot",
+		doing:    "bisecting nightly build 1287",
+		doingAgo: 3 * time.Hour,
 	},
 	{
 		name:     "courier",
@@ -174,12 +182,14 @@ var loops = []fixtureLoop{
 		branch:   "loop/courier",
 	},
 	{
-		name:    "archivist",
-		mission: "Summarise last quarter's incident reports into one page a new joiner can read in ten minutes.",
-		model:   "sonnet",
-		runtime: store.RuntimeDocker,
-		status:  store.StatusPaused,
-		pacing:  store.PacingFixed,
+		name:     "archivist",
+		mission:  "Summarise last quarter's incident reports into one page a new joiner can read in ten minutes.",
+		model:    "sonnet",
+		runtime:  store.RuntimeDocker,
+		status:   store.StatusPaused,
+		pacing:   store.PacingFixed,
+		doing:    "summarising the Q3 incident reports",
+		doingAgo: 50 * time.Hour,
 	},
 }
 
@@ -234,6 +244,11 @@ func seed(ctx context.Context, db store.Store, files *attach.Files) error {
 		}
 		if err := db.Loops().Create(ctx, loopRecord); err != nil {
 			return fmt.Errorf("create %s: %w", fl.name, err)
+		}
+		if fl.doing != "" {
+			if _, err := db.Loops().SetDoing(ctx, loopRecord.ID, fl.doing, ms(-fl.doingAgo)); err != nil {
+				return fmt.Errorf("doing %s: %w", fl.name, err)
+			}
 		}
 		ids[fl.name] = loopRecord.ID
 		next := ms(12 * time.Minute)
