@@ -1387,13 +1387,16 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 
 		// The final reply is the turn's status note (ADR-0026): stored and
 		// published above, delivered to no conversation — a loop that wants
-		// to say something sends it explicitly. Only the trailer is read
+		// to say something sends it explicitly. Only the trailers are read
 		// (the handoff turn's reply is a note to the loop's successor and
 		// is not even that).
 		var trailer time.Duration
 		var hasTrailer bool
 		if !res.IsError && !actor.handoffTurn {
 			trailer, hasTrailer = ParseTrailer(res.ResultText)
+			if doing, set := ParseDoing(res.ResultText); set {
+				actor.setDoing(doing)
+			}
 		}
 		if actor.deps.OnTurnDone != nil && !actor.handoffTurn {
 			actor.deps.OnTurnDone(&actor.loop, trailer, hasTrailer)
@@ -2443,6 +2446,24 @@ func (actor *Actor) recordMCPReach(init *claude.InitInfo) {
 	actor.mcpSnap.Store(reach)
 	actor.deps.Bus.Publish(bus.Item{Kind: bus.KindLoopStatus, LoopID: actor.loop.ID, Payload: map[string]any{
 		"loop_id": actor.loop.ID, "name": actor.loop.Name, "mcp_changed": true,
+	}})
+}
+
+// setDoing keeps the doing a turn's [doing: …] trailer set, "" clearing it,
+// and tells the control room so the Fleet row updates (#751). The same
+// doing again changes nothing, so its age stays the age of the work; the
+// store decides that, since only it holds the doing redacted and cut.
+func (actor *Actor) setDoing(doing string) {
+	changed, err := actor.deps.Store.Loops().SetDoing(context.Background(), actor.loop.ID, doing, now())
+	if err != nil {
+		actor.log().Error("record doing", "err", err)
+		return
+	}
+	if !changed {
+		return
+	}
+	actor.deps.Bus.Publish(bus.Item{Kind: bus.KindLoopStatus, LoopID: actor.loop.ID, Payload: map[string]any{
+		"loop_id": actor.loop.ID, "name": actor.loop.Name, "doing_changed": true,
 	}})
 }
 
