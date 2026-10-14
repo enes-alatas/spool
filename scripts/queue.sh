@@ -17,9 +17,12 @@
 #                             newer run owns it
 #   scripts/queue.sh unqueue  with PR set: takes a PR that was pushed to out
 #                             of the queue (unqueue.yml)
+#   scripts/queue.sh render   with BOARD set: rewrites that noticeboard issue
+#                             with the queue's order (#834)
 #
-# None of them runs a PR's code: each reads the API and writes statuses. The
-# job that runs the code holds a read-only token (ADR-0054).
+# None of them runs a PR's code: each reads the API and writes statuses,
+# or the noticeboard. The job that runs the code holds a read-only token
+# (ADR-0054).
 #
 # Needs GITHUB_REPOSITORY and an authenticated `gh`. RUN_URL, when set, is
 # where each status links.
@@ -172,12 +175,81 @@ report() {
   esac
 }
 
+# at DESCRIPTION is the short sha after "main@" in it, or "?".
+at() {
+  local sha=${1##*main@}
+  sha=${sha:0:7}
+  if [[ $sha =~ ^[0-9a-f]{7}$ ]]; then printf '%s' "$sha"; else printf '?'; fi
+}
+
+# render rewrites the noticeboard issue BOARD with the queue's order, read
+# from the `queue` statuses alone, so it cannot disagree with what the PRs
+# show (#834). PR numbers only, never a title: GitHub links `#N` itself,
+# and no author's text is copied into the issue. The body is edited only
+# when its order changed, not for the time it was read, and the edit posts
+# nothing, so it notifies nobody.
+render() {
+  : "${BOARD:?}"
+  local prs number sha now url testing="" green="" queued="" waiting="" red="" body old
+  # Anyone who can write here can write a status, so of its text only what
+  # this script would have written is copied: a short sha, and a run link
+  # of this repository's own.
+  prs=$(gh api "repos/$repo/pulls?state=open&base=main&per_page=100" |
+    jq -r --arg repo "$repo" '[.[] | select(.head.repo.full_name == $repo)] | sort_by(.number)[] | "\(.number) \(.head.sha)"')
+  while read -r number sha; do
+    [ -n "$number" ] || continue
+    read -r url now < <(gh api "repos/$repo/commits/$sha/status" \
+      --jq '[.statuses[] | select(.context == "queue")][0] | "\(.target_url // "-") \(.state) \(.description)"')
+    case "$now" in
+      "pending testing on main@"*)
+        testing+="- #$number on main@$(at "$now")"
+        if [[ $url =~ ^https://github\.com/$repo/actions/runs/[0-9]+$ ]]; then
+          testing+=" ([run]($url))"
+        fi
+        testing+=$'\n'
+        ;;
+      "success tested on main@"*) green+="- #$number, green on main@$(at "$now")"$'\n' ;;
+      "pending queued at "*)
+        # "queued at N, behind #M": sorted on N below
+        now=${now#pending queued at }
+        if [[ ${now%%,*} =~ ^[0-9]+$ ]]; then
+          queued+="${now%%,*} #$number"$'\n'
+        fi
+        ;;
+      "pending not queued: waiting for auto-merge") waiting+="- #$number"$'\n' ;;
+      failure\ *) red+="- #$number: failed on main@$(at "$now")"$'\n' ;;
+    esac
+  done <<< "$prs"
+
+  body="**The merge queue** (ADR-0054). The \`queue\` workflow rewrites this on every run; it posts no comments. A PR is queued with the \`queue\` label and auto-merge on."$'\n'
+  if [ -z "$testing$green$queued$waiting$red" ]; then
+    body+=$'\n'"Nothing is queued."$'\n'
+  fi
+  [ -z "$testing" ] || body+=$'\n'"**Under test**"$'\n'"$testing"
+  [ -z "$green" ] || body+=$'\n'"**Green, waiting for auto-merge to land it**"$'\n'"$green"
+  if [ -n "$queued" ]; then
+    body+=$'\n'"**Queued, in order**"$'\n'
+    body+=$(sort -n <<< "${queued%$'\n'}" | awk '{ printf "%s. %s\n", $1, $2 }')$'\n'
+  fi
+  [ -z "$waiting" ] || body+=$'\n'"**Labelled, waiting for auto-merge**"$'\n'"$waiting"
+  [ -z "$red" ] || body+=$'\n'"**Red on main**, out of the queue until its author pushes or it is queued again"$'\n'"$red"
+
+  old=$(gh api "repos/$repo/issues/$BOARD" --jq .body | tr -d '\r')
+  # The last line is when it was read: the order alone decides an edit.
+  if [ "${old%$'\n'*}" = "$body" ]; then
+    return 0
+  fi
+  body+=$'\n'"Updated $(date -u '+%Y-%m-%d %H:%M UTC')${RUN_URL:+ by [this run]($RUN_URL)}."
+  gh api --method PATCH "repos/$repo/issues/$BOARD" -f body="$body" > /dev/null
+}
+
 case "${1:-}" in
   pick) pick ;;
   report) report ;;
   unqueue) unqueue ;;
+  render) render ;;
   *)
-    echo "usage: $0 pick|report|unqueue" >&2
+    echo "usage: $0 pick|report|unqueue|render" >&2
     exit 2
     ;;
 esac

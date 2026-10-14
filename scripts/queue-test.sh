@@ -21,6 +21,7 @@ pass() { printf 'ok   %s\n' "$1"; }
 #   pulls.json      the open PRs
 #   pull-N.json     one PR
 #   status-SHA.json a commit's combined status
+#   issue.json      the noticeboard issue (a PATCH of it lands in patched)
 # A `--jq` filter is applied with the real jq, as gh would.
 mkdir -p "$work/bin"
 cat > "$work/bin/gh" <<'STUB'
@@ -36,6 +37,12 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+if [ "$method" = PATCH ]; then
+  # an issue body is many lines: kept whole, and logged as one
+  printf '%s' "${fields[0]#body=}" > "$FIX/patched"
+  printf 'PATCH %s\n' "${path##*/}" >> "$CALLS"
+  exit 0
+fi
 if [ "$method" != GET ]; then
   printf '%s %s %s\n' "$method" "${path##*/}" "${fields[*]}" >> "$CALLS"
   exit 0
@@ -44,6 +51,7 @@ case $path in
   */commits/main) printf '{"sha":"%s"}' "$(cat "$FIX/main")" ;;
   */commits/*/status) cat "$FIX/status-$(basename "$(dirname "$path")").json" 2>/dev/null || echo '{"statuses":[]}' ;;
   */pulls\?*) cat "$FIX/pulls.json" ;;
+  */issues/*) cat "$FIX/issue.json" ;;
   */pulls/*) cat "$FIX/pull-${path##*/}.json" ;;
   *) echo "stub gh: no fixture for $path" >&2; exit 1 ;;
 esac | jq -r "$filter"
@@ -59,9 +67,9 @@ pr() {
       auto_merge: (if $auto == "on" then {merge_method: "rebase"} else null end),
       labels: ($labels | split(",") | map(select(. != "")) | map({name: .}))}'
 }
-# has SHA STATE DESCRIPTION: SHA already carries that queue status.
+# has SHA STATE DESCRIPTION [URL]: SHA already carries that queue status.
 has() {
-  jq -nc --arg s "$2" --arg d "$3" '{statuses: [{context: "queue", state: $s, description: $d}]}' > "$FIX/status-$1.json"
+  jq -nc --arg s "$2" --arg d "$3" --arg u "${4:-}" '{statuses: [{context: "queue", state: $s, description: $d, target_url: (if $u == "" then null else $u end)}]}' > "$FIX/status-$1.json"
 }
 fresh() {
   export FIX="$work/fix-$1" CALLS="$work/calls-$1"
@@ -187,6 +195,61 @@ fresh noauto-report
 pr 5 s5 queue owner/spool off > "$FIX/pull-5.json"
 report noauto-report success
 refuse 'a pass on a PR whose auto-merge was turned off is not posted' "$CALLS" 'POST'
+
+# The noticeboard (#834): the order, read from the statuses, numbers only.
+board() { BOARD=833 RUN_URL=https://run/9 bash scripts/queue.sh render > "$work/board-$1" 2>&1; }
+fresh board
+jq -s . <(pr 5 s5 queue) <(pr 6 s6 queue) <(pr 7 s7 queue) <(pr 8 s8 queue owner/spool off) <(pr 9 s9 queue) <(pr 10 s10 "") <(pr 11 s11 queue other/fork) > "$FIX/pulls.json"
+has s5 pending 'testing on main@abc1234' https://github.com/owner/spool/actions/runs/1
+has s6 pending 'queued at 3, behind #5'
+has s7 pending 'queued at 2, behind #5'
+has s8 pending 'not queued: waiting for auto-merge'
+has s9 failure 'failed on main@abc1234: see [this](https://evil) @someone'
+has s10 pending 'not queued: add the queue label to merge'
+has s11 pending 'testing on main@m000000'
+jq -n '{body: "placeholder"}' > "$FIX/issue.json"
+board order
+expect 'the board is rewritten' "$CALLS" '^PATCH 833$'
+expect 'it names the PR under test, with its run' "$FIX/patched" '^- #5 on main@abc1234 \(\[run\]\(https://github.com/owner/spool/actions/runs/1\)\)$'
+expect 'the queue in order' "$FIX/patched" '^2\. #7$'
+expect 'the queue in order, the next' "$FIX/patched" '^3\. #6$'
+if [ "$(grep -n '^2\. #7$' "$FIX/patched" | cut -d: -f1)" -lt "$(grep -n '^3\. #6$' "$FIX/patched" | cut -d: -f1)" ]; then pass 'second before third'; else fail 'second before third'; fi
+expect 'a PR waiting for auto-merge' "$FIX/patched" '^- #8$'
+expect 'a red PR, with where it failed' "$FIX/patched" '^- #9: failed on main@abc1234$'
+refuse 'no text of a status beyond what the queue writes' "$FIX/patched" 'evil|@someone'
+refuse 'an unqueued PR is not listed' "$FIX/patched" '#10'
+refuse 'a fork PR is not listed' "$FIX/patched" '#11'
+expect 'it says when and by which run' "$FIX/patched" '^Updated .* UTC by \[this run\]\(https://run/9\)\.$'
+cp "$FIX/patched" "$work/board-body"
+: > "$CALLS"
+jq -n --rawfile b "$work/board-body" '{body: ($b | sub("Updated [^\n]*$"; "Updated 2000-01-01 00:00 UTC."))}' > "$FIX/issue.json"
+board same
+refuse 'the same order, read later, is not written again' "$CALLS" PATCH
+jq -n --rawfile b "$work/board-body" '{body: ($b | gsub("\n"; "\r\n"))}' > "$FIX/issue.json"
+board crlf
+refuse 'nor when GitHub stored it with CRLF' "$CALLS" PATCH
+fresh board-empty
+echo '[]' > "$FIX/pulls.json"
+jq -n '{body: "old"}' > "$FIX/issue.json"
+board empty
+expect 'an empty queue says so' "$FIX/patched" '^Nothing is queued\.$'
+fresh board-green
+jq -s . <(pr 5 s5 queue) > "$FIX/pulls.json"
+has s5 success 'tested on main@abc1234'
+jq -n '{body: "old"}' > "$FIX/issue.json"
+board green
+expect 'a green PR is shown landing' "$FIX/patched" '^- #5, green on main@abc1234$'
+refuse 'and not as nothing queued' "$FIX/patched" 'Nothing is queued'
+
+fresh board-hostile
+jq -s . <(pr 5 s5 queue) <(pr 6 s6 queue) > "$FIX/pulls.json"
+has s5 pending 'testing on main@zzzzzzz' 'https://evil.example/actions/runs/1'
+has s6 pending 'queued at 2) [x](https://evil), behind #5'
+jq -n '{body: "old"}' > "$FIX/issue.json"
+board hostile
+expect 'a sha that is not one shows as ?' "$FIX/patched" '^- #5 on main@\?$'
+refuse 'a run link off this repository is dropped' "$FIX/patched" 'evil'
+refuse 'a place that is not a number is dropped' "$FIX/patched" '#6'
 
 # The unqueue: a push to a queued PR takes it out, label and auto-merge.
 unqueue() { PR=5 bash scripts/queue.sh unqueue > "$work/unqueue-$1" 2>&1; }

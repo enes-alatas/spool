@@ -6,11 +6,12 @@
 # green. The ruleset no longer asks for branches up to date: this is what
 # replaced that, without the rebase round trip.
 #
-# What the three jobs hold is the security of it. `pick` and `report` write
-# statuses and run none of a PR's code: they check out main, whichever event
-# started them. `test` runs the PR's code with a read-only token, and it is
-# the only job that does. A fork's PR is never queued, because a run started
-# from main would carry its code.
+# What the jobs hold is the security of it. `pick` and `report` write
+# statuses, `board` rewrites the noticeboard issue, and none of them runs a
+# PR's code: they check out main, whichever event started them. `test`
+# runs the PR's code with a read-only token, and it is the only job that
+# does. A fork's PR is never queued, because a run started from main
+# would carry its code.
 name: queue
 
 on:
@@ -108,3 +109,30 @@ jobs:
           BASE: ${{ needs.pick.outputs.base }}
           RESULT: ${{ needs.test.result }}
         run: bash scripts/queue.sh report
+
+  # The queue's order, rewritten on the pinned noticeboard (#833, #834)
+  # after the statuses it reads are final for this run. A job of its own so
+  # a failure here never holds a test or a report, and still turns the run
+  # red for ci-health.
+  board:
+    needs: [pick, report]
+    if: ${{ !cancelled() && needs.pick.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      statuses: read
+      pull-requests: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          sparse-checkout: scripts/queue.sh
+          sparse-checkout-cone-mode: false
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          # The pinned noticeboard. Hard-coded, as ci-health's is: a board
+          # found by title at run time is one a renamed issue loses.
+          BOARD: 833
+        run: bash scripts/queue.sh render
