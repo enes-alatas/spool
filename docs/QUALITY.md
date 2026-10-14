@@ -130,6 +130,13 @@ window regardless of loop count (ADR-0018).
   with a notice when none is reachable. They run in series with each other and
   beside the rest of tier 2, which runs `ITEST_PARALLEL` (4) tests at a time
   (#182).
+- **A red Go test step names its failures on the job page** (#839): a step
+  of tier 1 or tier 2 that fails is followed by `scripts/test-failures.sh`,
+  which annotates each failed test with its first message, each panic (a
+  timeout with the tests it caught running) and each build error, at most
+  10 per step. That is how anyone without the job log, a loop included,
+  finds a flaky test. `scripts/test-failures-test.sh` keeps it honest under
+  the workflow rules step.
 - **The browser smoke** (`make ui-smoke`, a step of `checks`, #356): a tier-1 web
   gate that opens the room as it ships. `make build` is served by `bin/spool` on
   a hub `cmd/uifixture` seeded (`scripts/fixture-hub.sh`), and headless Chromium
