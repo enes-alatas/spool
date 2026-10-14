@@ -3,11 +3,14 @@ package telegram
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -220,5 +223,69 @@ func TestCallsSpeakHTTP1(t *testing.T) {
 	}
 	if _, protos := api.calls(); len(protos) != 1 || protos[0] != 1 {
 		t.Fatalf("the call spoke HTTP/%v, want HTTP/1.1", protos)
+	}
+}
+
+// Every send is plain text: no parse_mode of any kind on a message, a
+// poll's question or options, or a file's caption, so neither a loop's
+// words nor a person's quoted in them are ever read as markup. The words
+// go as they were given (#790).
+func TestSendsCarryNoParseMode(t *testing.T) {
+	const words = "*bold* _it_ <b>tag</b> [link](https://example.com) `code`"
+	var mu sync.Mutex
+	bodies := map[string]map[string]any{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
+		fields := map[string]any{}
+		if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/") {
+			if err := r.ParseMultipartForm(1 << 20); err != nil {
+				t.Errorf("%s: %v", method, err)
+			} else {
+				for key, values := range r.MultipartForm.Value {
+					fields[key] = values[0]
+				}
+			}
+		} else if err := json.NewDecoder(r.Body).Decode(&fields); err != nil {
+			t.Errorf("%s: %v", method, err)
+		}
+		mu.Lock()
+		bodies[method] = fields
+		mu.Unlock()
+		_, _ = io.WriteString(w, `{"ok":true,"result":{"message_id":1}}`)
+	}))
+	defer srv.Close()
+	client := NewClientAt(srv.URL, "0000000000:AA-not-a-real-bot-token-0000000000000")
+	ctx := context.Background()
+	file := filepath.Join(t.TempDir(), "shot.png")
+	if err := os.WriteFile(file, []byte("not really a png"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.SendMessage(ctx, 1, words, 5); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.SendPoll(ctx, 1, words, []string{words, "no"}, false, 5); err != nil {
+		t.Fatal(err)
+	}
+	for _, photo := range []bool{true, false} {
+		if _, err := client.SendMedia(ctx, 1, Media{Path: file, Name: "shot.png", Photo: photo}, words, 5); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	for method, field := range map[string]string{"sendMessage": "text", "sendPoll": "question",
+		"sendPhoto": "caption", "sendDocument": "caption"} {
+		fields, sent := bodies[method]
+		if !sent {
+			t.Errorf("%s was never called", method)
+			continue
+		}
+		if encoded, _ := json.Marshal(fields); strings.Contains(string(encoded), "parse_mode") {
+			t.Errorf("%s carries a parse mode: %s", method, encoded)
+		}
+		if fields[field] != words {
+			t.Errorf("%s's %s = %q, want the words as given", method, field, fields[field])
+		}
 	}
 }
