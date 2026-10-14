@@ -1,6 +1,6 @@
 # ADR-0031: The repo goes public when the go-public checklist is done, not at L3
 
-Date: 2026-09-21 · Status: accepted · Supersedes: ADR-0007 (timing clause only)
+Date: 2026-09-21 · Status: accepted (the "require branches to be up to date" clause superseded by ADR-0054: the merge queue) · Supersedes: ADR-0007 (timing clause only)
 
 ## Context
 
@@ -65,6 +65,9 @@ from the repository being readable.
   account, so any higher number would make every PR unmergeable. Review stays
   a rule the fleet keeps and the operator enforces by being the one who merges
   — protection makes the door narrow, not guarded.
+  *Its "up to date" part is superseded by ADR-0054 (2026-10-14): that is
+  off, and the required `queue` check tests a PR against the `main` it lands
+  on.*
 - **`SECURITY.md` is the disclosure route** from the moment the repo is
   readable: a stranger who finds something needs somewhere to send it that is
   not a public issue.
