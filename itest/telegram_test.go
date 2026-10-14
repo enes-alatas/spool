@@ -53,6 +53,9 @@ type fakeTelegram struct {
 	// cannot hit reliably by timing alone.
 	holdGetMe  chan struct{}
 	getMeEntry chan struct{}
+	// refused are the tokens getMe answers 401 Unauthorized, as Telegram
+	// does a token it does not know.
+	refused map[string]bool
 	// files are the bytes behind each file_id a media message names, and
 	// downloads counts every fetch of one — how a test sees that a file
 	// several bots saw was downloaded once (#123).
@@ -76,6 +79,16 @@ type setReaction struct {
 	ChatID    int64
 	MessageID int64
 	Emoji     string
+}
+
+// refuse makes getMe answer 401 for token from here on.
+func (tg *fakeTelegram) refuse(token string) {
+	tg.mu.Lock()
+	defer tg.mu.Unlock()
+	if tg.refused == nil {
+		tg.refused = map[string]bool{}
+	}
+	tg.refused[token] = true
 }
 
 // blockGetMe makes every getMe from here on hang until the returned release
@@ -217,8 +230,12 @@ func (tg *fakeTelegram) handle(w http.ResponseWriter, r *http.Request) {
 	switch method {
 	case "getMe":
 		tg.mu.Lock()
-		hold, entry := tg.holdGetMe, tg.getMeEntry
+		refused, hold, entry := tg.refused[token], tg.holdGetMe, tg.getMeEntry
 		tg.mu.Unlock()
+		if refused {
+			http.Error(w, `{"ok":false,"error_code":401,"description":"Unauthorized"}`, 401)
+			return
+		}
 		if hold != nil {
 			select {
 			case entry <- struct{}{}:
@@ -1144,5 +1161,44 @@ func TestEveryAllowedSenderHoldsAPrivateConversation(t *testing.T) {
 		if strings.Contains(m.Text, "answer for") {
 			t.Fatalf("a private answer surfaced in the group: %q", m.Text)
 		}
+	}
+}
+
+// A bot token getMe refuses is not stored, neither on a new loop nor by an
+// edit, and the refusal does not echo the token back (#790). Slack's row
+// is TestSlackAttachRefusals.
+func TestARefusedTelegramTokenIsNotStored(t *testing.T) {
+	t.Parallel()
+	// shaped like a bot token, and deliberately not one
+	const refused = "0000000000:AA-synthetic-refused-0000000000000000"
+	tg := startFakeTelegram(t, "alpha")
+	tg.refuse(refused)
+	srv := startServerArgs(t, t.TempDir(), "--runtime", "bare", "--telegram-api-base", tg.srv.URL)
+	srv.createLoop("alpha", map[string]any{"tg_bot_token": "alpha"})
+
+	for _, attempt := range []struct {
+		name, method, path string
+		body               map[string]any
+	}{
+		{"a new loop", "POST", "/api/loops", map[string]any{"name": "beta", "mission": "m", "tg_bot_token": refused}},
+		{"an edit", "PATCH", "/api/loops/alpha", map[string]any{"tg_bot_token": refused}},
+	} {
+		resp, body := srv.do(attempt.method, attempt.path, attempt.body)
+		if resp.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), "telegram token rejected") {
+			t.Errorf("%s with a refused token: %d %s, want 400 telegram token rejected", attempt.name, resp.StatusCode, body)
+		}
+		if strings.Contains(string(body), refused) {
+			t.Errorf("%s: the refusal echoes the token: %s", attempt.name, body)
+		}
+	}
+	if resp, _ := srv.do("GET", "/api/loops/beta", nil); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("the loop a refused token was given to: %d, want 404", resp.StatusCode)
+	}
+	var alpha struct {
+		TGBotUsername string `json:"tg_bot_username"`
+	}
+	srv.mustJSON("GET", "/api/loops/alpha", nil, &alpha)
+	if alpha.TGBotUsername != botUsername("alpha") {
+		t.Errorf("alpha's bot after a refused edit = %q, want %q kept", alpha.TGBotUsername, botUsername("alpha"))
 	}
 }
