@@ -611,3 +611,6 @@ Elliot: #784 rebased (0049654), CI running; held by Enes's own "Operator decisio
 
 ## 2026-10-14 09:15 UTC
 Enes: bot reactions don't show in the fleet Telegram group. Answered: basic group vs supergroup (#607/#614, README); asked him to check the group type; if supergroup, hub log "telegram reaction failed; giving up" and I file a bug.
+
+## 2026-10-14 09:40 UTC
+Enes: the fleet group has history visible → supergroup, so bot reactions not showing is a bug. Filed #817 (bug, medium, L5 Team) for Terra after #764, before #788. Asked Enes for the hub's "telegram reaction failed; giving up" err line. Terra order: #764 → #817 → #788, #790 → #810, #811 → #766 → #630.
