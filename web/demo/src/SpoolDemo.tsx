@@ -36,16 +36,6 @@ export const H = 1080
 export const FPS = 30
 const s = (sec: number) => Math.round(sec * FPS)
 
-// Beat boundaries, in seconds.
-const B1 = [0, 5]
-const B2 = [5, 18]
-const B3 = [18, 35]
-const B4 = [35, 44]
-const B5 = [44, 52]
-const B6 = [52, 60]
-const B7 = [60, 65]
-export const DURATION = s(65)
-
 // The footage's CSS size; record.mjs captures it at 2x device pixels.
 const PAGE = { w: 1280, h: 720 }
 
@@ -294,27 +284,14 @@ function Wordmark({ size = 23 }: { size?: number }) {
   )
 }
 
-// Beat 1: the pitch, then the fleet.
+// Beat 1: the pitch.
 function Pitch() {
   const frame = useCurrentFrame()
-  const titleO = interpolate(frame, [0, 14, 58, 72], [0, 1, 1, 0], clamp)
+  const { durationInFrames } = useVideoConfig()
+  const titleO = interpolate(frame, [0, 14, durationInFrames - 14, durationInFrames], [0, 1, 1, 0], clamp)
   const titleY = interpolate(frame, [0, 20], [12, 0], { ...clamp, easing: Easing.out(Easing.cubic) })
-  const fleetO = interpolate(frame, [62, 82], [0, 1], clamp)
-  const rise = interpolate(frame, [62, 90], [24, 0], { ...clamp, easing: Easing.out(Easing.cubic) })
   return (
     <Stage>
-      <AbsoluteFill style={{ opacity: fleetO }}>
-        <Screen
-          width={MAIN.width}
-          style={{ position: 'absolute', top: MAIN.top + rise, left: (W - MAIN.width) / 2 }}
-          src="fleet.mp4"
-          from={marks.fleet.ready}
-          camera={{ x: 640, y: 360, zoom: 1 }}
-        />
-        <Caption step="01 · Fleet" delay={86}>
-          Every loop, its state and its spend, in one place.
-        </Caption>
-      </AbsoluteFill>
       <AbsoluteFill
         style={{
           opacity: titleO,
@@ -378,7 +355,7 @@ function Create() {
       <Sequence from={s(FILL_LEN + PRESS_LEN)}>
         <Screen {...shot} from={WOKEN_FROM} />
       </Sequence>
-      <Caption step="02 · Create">Start a loop: a name and a mission.</Caption>
+      <Caption step="01 · Create">Start a loop: a name and a mission.</Caption>
     </Stage>
   )
 }
@@ -577,8 +554,8 @@ function ChatPane({
   )
 }
 
-// Beats 3 to 6 pair a window with a chat pane, side by side as one centred
-// group.
+// Beats 3 and 5 to 7 pair a window with a chat pane, side by side as one
+// centred group.
 const PAIR = { width: 1100, height: 750, gap: 56 }
 const PAIR_LEFT = (W - PAIR.width - PAIR.gap - CHAT.w) / 2
 const PAIR_H = BAR + PAIR.height + 2
@@ -682,14 +659,32 @@ function Link() {
           transform: `translateX(${slide}px)`,
         }}
       />
-      <Caption step="03 · Link" left={PAIR_LEFT}>
+      <Caption step="02 · Link" left={PAIR_LEFT}>
         Give it a bot, then link yourself. You become its owner.
       </Caption>
     </Stage>
   )
 }
 
-// Beat 4: a person asks in the Telegram group that carries the fleet
+// Beat 4: the fleet, scout among it.
+function Fleet() {
+  const frame = useCurrentFrame()
+  const rise = interpolate(frame, [0, 28], [24, 0], { ...clamp, easing: Easing.out(Easing.cubic) })
+  return (
+    <Stage>
+      <Screen
+        width={MAIN.width}
+        style={{ ...mainScreen, top: MAIN.top + rise }}
+        src="fleet.mp4"
+        from={marks.fleet.ready}
+        camera={{ x: PAGE.w / 2, y: PAGE.h / 2, zoom: 1 }}
+      />
+      <Caption step="03 · Fleet">Every loop, its state and its spend, in one place.</Caption>
+    </Stage>
+  )
+}
+
+// Beat 5: a person asks in the Telegram group that carries the fleet
 // channel, and the loop answers there. The fleet channel, beside it, shows
 // each message as it lands: record.mjs reveals them on the same cues.
 const TK = marks.talk
@@ -739,7 +734,7 @@ function Talk() {
   )
 }
 
-// Beat 5: a channel of its own for two loops and their owner, carried by a
+// Beat 6: a channel of its own for two loops and their owner, carried by a
 // Telegram group of its own, beside its pane on one loop's page.
 const DK = marks.docs
 function Channels() {
@@ -788,7 +783,7 @@ function Channels() {
   )
 }
 
-// Beat 6: a call that is the owner's reaches them privately, and the loop
+// Beat 7: a call that is the owner's reaches them privately, and the loop
 // acknowledges the answer. Beside the DM, watcher's own timeline: the room
 // does not draw a DM's text, so it shows the loop's side of the exchange,
 // each step on the cue record.mjs revealed it.
@@ -830,7 +825,7 @@ function Report() {
   )
 }
 
-// Beat 7: the end card, on a clean canvas.
+// Beat 8: the end card, on a clean canvas.
 function EndCard() {
   const frame = useCurrentFrame()
   const lines = ['Keep work going.', 'Stay involved.', 'Coordinate the fleet.']
@@ -870,6 +865,14 @@ function EndCard() {
   )
 }
 
+// Beat boundaries, in seconds: each beat's length, laid end to end.
+const LENGTHS = [3, 13, 17, 5, 9, 8, 8, 5]
+const SPANS = LENGTHS.map((len, i) => {
+  const from = LENGTHS.slice(0, i).reduce((a, b) => a + b, 0)
+  return [from, from + len]
+})
+export const DURATION = s(SPANS[SPANS.length - 1][1])
+
 function Beat({ span, children }: { span: number[]; children: ReactNode }) {
   const len = s(span[1] - span[0])
   return (
@@ -884,28 +887,14 @@ function FadeWrap({ len, children }: { len: number; children: ReactNode }) {
   return <AbsoluteFill style={{ opacity: fade(frame, len, 8, 8) }}>{children}</AbsoluteFill>
 }
 
+const BEATS = [Pitch, Create, Link, Fleet, Talk, Channels, Report, EndCard]
+
 export const SpoolDemo = () => (
   <AbsoluteFill style={{ background: T.canvas }}>
-    <Beat span={B1}>
-      <Pitch />
-    </Beat>
-    <Beat span={B2}>
-      <Create />
-    </Beat>
-    <Beat span={B3}>
-      <Link />
-    </Beat>
-    <Beat span={B4}>
-      <Talk />
-    </Beat>
-    <Beat span={B5}>
-      <Channels />
-    </Beat>
-    <Beat span={B6}>
-      <Report />
-    </Beat>
-    <Beat span={B7}>
-      <EndCard />
-    </Beat>
+    {BEATS.map((B, i) => (
+      <Beat key={i} span={SPANS[i]}>
+        <B />
+      </Beat>
+    ))}
   </AbsoluteFill>
 )
