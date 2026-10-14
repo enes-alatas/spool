@@ -175,6 +175,8 @@ type fakePost struct {
 	isBot bool
 	text  string
 	date  int64
+	// edits counts the edits made of it, which edit_date steps by
+	edits int64
 }
 
 func startFakeTelegram(t *testing.T, tokens ...string) *fakeTelegram {
@@ -507,17 +509,19 @@ func (tg *fakeTelegram) sentPostFrom(t *testing.T, chatID int64, token, text str
 
 // dm delivers a private message to a single bot. Telegram uses the human's
 // user id as the chat id in every one of their private chats, and numbers
-// message_id per bot — so two bots' DMs collide on both fields.
-func (tg *fakeTelegram) dm(token string, from user, text string) {
+// message_id per bot — so two bots' DMs collide on both fields. It answers
+// with the message as the chat holds it, for a test that edits it.
+func (tg *fakeTelegram) dm(token string, from user, text string) *fakePost {
 	tg.mu.Lock()
 	defer tg.mu.Unlock()
 	tg.nextID[token]++
 	tg.updates++
+	post := &fakePost{ids: map[string]int64{token: tg.nextID[token]}, from: from, text: text, date: time.Now().Unix()}
 	tg.queued[token] = append(tg.queued[token], map[string]any{
 		"update_id": tg.updates,
 		"message": map[string]any{
 			"message_id": tg.nextID[token],
-			"date":       time.Now().Unix(),
+			"date":       post.date,
 			"text":       text,
 			"from": map[string]any{
 				"id": from.ID, "is_bot": false,
@@ -526,6 +530,7 @@ func (tg *fakeTelegram) dm(token string, from user, text string) {
 			"chat": map[string]any{"id": from.ID, "type": "private"},
 		},
 	})
+	return post
 }
 
 // media is a photo or a document to attach to a posted message, as
@@ -658,6 +663,10 @@ type activityMessage struct {
 	SendResolution     string   `json:"send_resolution"`
 	SendResentAs       int64    `json:"send_resent_as"`
 	Mirror             string   `json:"mirror"`
+	EditOf             int64    `json:"edit_of"`
+	EditKind           string   `json:"edit_kind"`
+	EditedAt           int64    `json:"edited_at"`
+	DeletedAt          int64    `json:"deleted_at"`
 }
 
 func (s *server) activity() []activityMessage {
