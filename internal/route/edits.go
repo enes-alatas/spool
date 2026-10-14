@@ -30,11 +30,12 @@ type InboundEdit struct {
 // a message of its own, from them, in the original's conversation, that
 // says which message it corrects. The original is marked edited or
 // deleted. An edit leaves it its words; a deletion takes them, the words
-// of its edits and its kept files. The correction reaches every loop the original
-// reached, so none acts on words taken back, and in a group any loop the
-// new words @mention there too. It wakes them as a message does
-// (ADR-0055). store.ErrDuplicate when another identity already stored this
-// edit.
+// of its edits and its kept files. The correction reaches every loop the
+// original reached, so none acts on words taken back, and in a group any
+// loop the new words @mention there too. It wakes them as a message does
+// (ADR-0055), except a loop that has not read the original yet: that
+// loop's waiting envelope is corrected in place instead (#811).
+// store.ErrDuplicate when another identity already stored this edit.
 func (router *Router) Correct(ctx context.Context, in InboundEdit) error {
 	original := in.Original
 	switch {
@@ -106,6 +107,18 @@ func (router *Router) Correct(ctx context.Context, in InboundEdit) error {
 	if original.Origin == store.OriginTelegramDM {
 		tgChatID = original.TGChatID
 	}
+	// A loop that has not read the original yet reads it as it now stands
+	// instead: the envelope it waits in, rendered again with the new words.
+	var kept []*store.Attachment
+	if in.Kind == store.EditEdited {
+		if kept, err = router.store.Attachments().ByMessage(ctx, original.ID); err != nil {
+			router.log.Warn("a corrected message's attachments", "message", original.ID, "err", err)
+		}
+	}
+	replyTo := ""
+	if original.ReplyToID != 0 {
+		replyTo = loop.MessageRef(original.ReplyToID)
+	}
 	now := time.Now()
 	for _, target := range targets {
 		env := loop.MessageEnvelope(now, loop.Inbound{
@@ -119,6 +132,20 @@ func (router *Router) Correct(ctx context.Context, in InboundEdit) error {
 			EditOf:       loop.MessageRef(original.ID),
 			EditKind:     in.Kind,
 		})
+		if in.Kind == store.EditEdited {
+			shown, _ := router.present(target, kept)
+			env.Corrects.Text = loop.MessageEnvelope(time.UnixMilli(original.TS), loop.Inbound{
+				Origin:       original.Origin,
+				Author:       original.Author,
+				Text:         msg.Text,
+				Conversation: original.Conversation,
+				Channel:      original.Channel,
+				TGChatID:     tgChatID,
+				Ref:          loop.MessageRef(original.ID),
+				ReplyTo:      replyTo,
+				Attachments:  shown,
+			}).Text
+		}
 		if !router.deliver.Deliver(target.ID, env) {
 			router.log.Warn("deliver to unknown runtime", "loop", target.Name)
 		}

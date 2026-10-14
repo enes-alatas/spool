@@ -4,6 +4,7 @@ package itest
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -165,5 +166,39 @@ func TestASlackEditAndDeletionReachTheirLoopsAsCorrections(t *testing.T) {
 	}
 	if kept := keptFiles(t, srv); len(kept) != 0 {
 		t.Fatalf("the hub still keeps %v; want the deleted message's file gone", kept)
+	}
+}
+
+// An edit of a message no turn has read yet corrects it in place: the loop
+// reads the message once, with the new words, and spends no turn on the
+// correction. Here alpha is busy with another turn when the message
+// arrives and is edited (ADR-0055, #811).
+func TestAnEditOfAnUnreadMessageReplacesItInPlace(t *testing.T) {
+	t.Parallel()
+	operator := user{ID: 9595, First: "Operator", Username: "operator"}
+	// every turn of alpha's takes three seconds
+	srv, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": workspaceWithScript(t, "!hang 3\n")})
+
+	tg.post(groupChatID, "supergroup", "@alpha first", operator)
+	srv.waitInput("alpha", "@alpha first")
+
+	const said, edited = "@alpha ship it friday", "@alpha ship it monday"
+	post := tg.post(groupChatID, "supergroup", said, operator)
+	srv.waitForMessage(said)
+	original := srv.activityWith(said)[0]
+	tg.editPost(groupChatID, "supergroup", post, edited)
+	srv.waitForMessage(edited)
+
+	srv.waitInput("alpha", fmt.Sprintf("ref:%d", original.ID), edited)
+	time.Sleep(time.Second)
+	for _, inputs := range srv.turnInputs("alpha") {
+		for _, envelope := range inputs {
+			if strings.Contains(envelope, "friday") || strings.Contains(envelope, "edited ref:") {
+				t.Fatalf("alpha read the old words or a correction: %s", dump(srv.turnInputs("alpha")))
+			}
+		}
+	}
+	if got := srv.activityWith(edited); len(got) != 1 || got[0].EditOf != original.ID {
+		t.Fatalf("the correction stored: %s; want it kept as the record", dump(got))
 	}
 }
