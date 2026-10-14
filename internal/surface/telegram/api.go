@@ -210,6 +210,9 @@ type Message struct {
 	Chat      Chat   `json:"chat"`
 	Text      string `json:"text"`
 	Date      int64  `json:"date"`
+	// EditDate is when an edited message was last changed, 0 for one
+	// never edited.
+	EditDate int64 `json:"edit_date,omitempty"`
 	// ReplyToMessage is the message this one natively replies to, as
 	// Telegram embeds it. Its message_id is in the receiving bot's own
 	// numbering, but the embedded sender, date and text are what every bot
@@ -260,6 +263,10 @@ type File struct {
 type Update struct {
 	UpdateID int64    `json:"update_id"`
 	Message  *Message `json:"message"`
+	// EditedMessage is a message a person changed, as it now reads: the
+	// same chat and message_id as the original, with EditDate set
+	// (ADR-0055). Telegram sends nothing when one is deleted.
+	EditedMessage *Message `json:"edited_message"`
 	// MessageReaction is a person's reactions on a message changing. In a
 	// group a bot hears it only as an administrator (ADR-0040).
 	MessageReaction *MessageReactionUpdated `json:"message_reaction"`
@@ -335,7 +342,7 @@ func (client *Client) GetUpdates(ctx context.Context, offset int64, timeoutSec i
 	params := map[string]any{
 		"offset":          offset,
 		"timeout":         timeoutSec,
-		"allowed_updates": []string{"message", "message_reaction", "poll_answer"},
+		"allowed_updates": []string{"message", "edited_message", "message_reaction", "poll_answer"},
 	}
 	var updates []Update
 	if err := client.call(ctx, "getUpdates", params, &updates); err != nil {

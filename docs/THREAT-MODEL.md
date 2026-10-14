@@ -48,9 +48,10 @@ From the outside in:
 
 ### Surface: Telegram and Slack into the hub
 
-**What crosses:** messages, reactions, votes and link codes, from the
-platform to the router (ADR-0029). Telegram is polled. Slack connects out
-over Socket Mode, so no port is opened for either (ADR-0034).
+**What crosses:** messages, edits of them, reactions, votes and link codes,
+from the platform to the router (ADR-0029, ADR-0055). Telegram is polled.
+Slack connects out over Socket Mode, so no port is opened for either
+(ADR-0034).
 
 **Holds:**
 - **Only an allowed sender reaches a loop.** A stranger's message gets no
@@ -59,11 +60,11 @@ over Socket Mode, so no port is opened for either (ADR-0034).
   DMs it ignored for a day, in memory and at most 1000 a surface, for an
   admin to see who knocked (#744).
 - **A sender who isn't allowed costs the hub little.** Their message,
-  reaction or vote is gated before anything it would cause, so a vote on
-  a closed poll makes no call to the platform. Whether they are a stranger
-  or blocked, they get at most one log line an hour, with a count. The
-  count is in memory and holds 1024 senders; past that, new senders are
-  counted together as `others` (ADR-0051, #788).
+  edit, reaction or vote is gated before anything it would cause, so a
+  vote on a closed poll makes no call to the platform. Whether they are a
+  stranger or blocked, they get at most one log line an hour, with a
+  count. The count is in memory and holds 1024 senders; past that, new
+  senders are counted together as `others` (ADR-0051, #788, ADR-0055).
 - **A sender is allowed by linking their own account.** The control room
   mints a link code for one surface: about 49 random bits, one use,
   15 minutes, kept only as a hash. It is honoured only in a DM, and the

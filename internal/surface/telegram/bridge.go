@@ -352,6 +352,9 @@ func (br *Bridge) pollLoop(ctx context.Context, bot *poller) {
 			if update.Message != nil {
 				br.handleMessage(ctx, bot, update.Message)
 			}
+			if update.EditedMessage != nil {
+				br.handleEdit(ctx, bot, update.EditedMessage)
+			}
 			if update.MessageReaction != nil {
 				br.handleReaction(ctx, bot, update.MessageReaction)
 			}
@@ -384,12 +387,7 @@ func (br *Bridge) handleMessage(ctx context.Context, bot *poller, message *tgMsg
 	if text == "" && len(attachments) == 0 {
 		return
 	}
-	author := "someone"
-	if message.From.Username != "" {
-		author = message.From.Username
-	} else if message.From.FirstName != "" {
-		author = message.From.FirstName
-	}
+	author := authorOf(message.From)
 
 	isGroup := message.Chat.Type == "group" || message.Chat.Type == "supergroup"
 
@@ -848,6 +846,37 @@ func (br *Bridge) handleReaction(ctx context.Context, bot *poller, update *Messa
 				br.log.Error("telegram: record reaction", "loop", bot.name, "message", target.ID, "err", err)
 			}
 		}
+	}
+}
+
+// handleEdit hands the router a person's edit of a message the hub holds,
+// found by this bot's id for it as a reaction's target is (ADR-0055).
+// Every bot that saw the message hears the edit, and each reports it: the
+// key is the hub's id for the original, Telegram's time of the edit and
+// its words, which tell apart two edits in one second. It is the same
+// whichever bot reports it, so the correction is stored once. An edit
+// passes the sender gate a reaction does. One of a message the hub never
+// held, a stranger's or one from before the bot was there, is dropped.
+func (br *Bridge) handleEdit(ctx context.Context, bot *poller, message *tgMsgAlias) {
+	if message.From == nil || message.From.IsBot || br.router == nil || message.EditDate == 0 {
+		return
+	}
+	if !br.eventAllowed(ctx, bot, message.From.ID) {
+		return
+	}
+	original, err := br.store.Messages().ByRef(ctx, bot.loopID, message.Chat.ID, message.MessageID)
+	if err != nil || original.FromLoopID != "" {
+		return
+	}
+	text := strings.TrimSpace(message.Text)
+	if text == "" {
+		text = strings.TrimSpace(message.Caption)
+	}
+	words := sha256.Sum256([]byte(text))
+	err = br.router.Correct(ctx, route.InboundEdit{Original: original, Author: authorOf(message.From), Text: text,
+		Kind: store.EditEdited, Key: fmt.Sprintf("tg:%d:%d:%x", original.ID, message.EditDate, words[:8])})
+	if err != nil && !errors.Is(err, store.ErrDuplicate) {
+		br.log.Error("telegram: record an edit", "loop", bot.name, "message", original.ID, "err", err)
 	}
 }
 
@@ -1892,4 +1921,16 @@ func max(left, right int) int {
 		return left
 	}
 	return right
+}
+
+// authorOf is how the hub names a person on Telegram: their username, or
+// their first name when they have none.
+func authorOf(from *User) string {
+	switch {
+	case from.Username != "":
+		return from.Username
+	case from.FirstName != "":
+		return from.FirstName
+	}
+	return "someone"
 }
