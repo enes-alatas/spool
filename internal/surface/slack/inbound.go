@@ -144,7 +144,7 @@ func (adapter *Adapter) ingest(ctx context.Context, link *link, payload json.Raw
 	}
 	switch event.ChannelType {
 	case "im":
-		adapter.ingestDM(ctx, loopRecord, callback.TeamID, event)
+		adapter.ingestDM(ctx, link, loopRecord, callback.TeamID, event)
 	case "channel", "group":
 		adapter.ingestChannel(ctx, link, loopRecord, callback.TeamID, event)
 	}
@@ -250,7 +250,7 @@ func (adapter *Adapter) ingestChannel(ctx context.Context, link *link, loopRecor
 		SlackChannelID: event.Channel,
 		SlackTS:        event.TS,
 		ReplyToID:      adapter.threadRoot(ctx, event),
-		Attachments:    adapter.attachmentsOf(ctx, loopRecord, event),
+		Attachments:    adapter.attachmentsOf(ctx, link, loopRecord, event),
 	})
 	if err != nil && !errors.Is(err, store.ErrDuplicate) {
 		adapter.log.Error("slack channel ingest", "loop", loopRecord.Name, "err", err)
@@ -323,7 +323,7 @@ func (adapter *Adapter) titleRoom(ctx context.Context, loopRecord *store.Loop, c
 // ingestDM takes a message in the app's DM. The owner's is the loop's
 // owner_dm; any other allowed sender's is a conversation of their own,
 // dm:<name>, which the loop answers there and nowhere else (ADR-0049).
-func (adapter *Adapter) ingestDM(ctx context.Context, loopRecord *store.Loop, teamID string, event messageEvent) {
+func (adapter *Adapter) ingestDM(ctx context.Context, link *link, loopRecord *store.Loop, teamID string, event messageEvent) {
 	sender := adapter.allowedSender(ctx, loopRecord, teamID, event)
 	if sender == nil {
 		return
@@ -355,7 +355,7 @@ func (adapter *Adapter) ingestDM(ctx context.Context, loopRecord *store.Loop, te
 		SlackTS:        event.TS,
 		ReplyToID:      adapter.threadRoot(ctx, event),
 		ImplicitTo:     loopRecord.ID,
-		Attachments:    adapter.attachmentsOf(ctx, loopRecord, event),
+		Attachments:    adapter.attachmentsOf(ctx, link, loopRecord, event),
 		Conversation:   conversation,
 		DMPerson:       person,
 	})
@@ -520,13 +520,15 @@ func (adapter *Adapter) isLoopApp(ctx context.Context, userID string) bool {
 // recorded as not kept. A file the event gives by its id alone, as Slack
 // does for one shared from another organization, is asked about first, so
 // it is named as its sender named it.
-func (adapter *Adapter) attachmentsOf(ctx context.Context, loopRecord *store.Loop, event messageEvent) []route.InboundAttachment {
+func (adapter *Adapter) attachmentsOf(ctx context.Context, link *link, loopRecord *store.Loop, event messageEvent) []route.InboundAttachment {
 	var out []route.InboundAttachment
 	for _, file := range event.Files {
+		var undescribed error
 		if file.FileAccess == "check_file_info" {
 			if described, err := adapter.client.FileInfo(ctx, loopRecord.SlackBotToken, file.ID); err == nil {
 				file = *described
 			} else {
+				undescribed = err
 				adapter.log.Warn("slack: describe a shared file", "loop", loopRecord.Name, "file", file.ID, "err", err)
 			}
 		}
@@ -540,11 +542,17 @@ func (adapter *Adapter) attachmentsOf(ctx context.Context, loopRecord *store.Loo
 		if strings.HasPrefix(file.Mimetype, "image/") {
 			item.Kind = store.AttachmentImage
 		}
-		if file.Mode != "hidden_by_limit" && file.DownloadURL != "" {
+		var apiErr *APIError
+		switch {
+		case errors.As(undescribed, &apiErr) && apiErr.Code == "missing_scope":
+			// files.info needs files:read too, and says so outright.
+			refusal := fmt.Errorf("%w: %w", undescribed, route.ErrNoFileAccess)
+			item.Fetch = link.watchFetch(func(context.Context) (io.ReadCloser, error) { return nil, refusal })
+		case file.Mode != "hidden_by_limit" && file.DownloadURL != "":
 			botToken, fileURL := loopRecord.SlackBotToken, file.DownloadURL
-			item.Fetch = func(ctx context.Context) (io.ReadCloser, error) {
+			item.Fetch = link.watchFetch(func(ctx context.Context) (io.ReadCloser, error) {
 				return adapter.client.Download(ctx, botToken, fileURL)
-			}
+			})
 		}
 		out = append(out, item)
 	}

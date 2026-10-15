@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"sync"
 	"time"
@@ -98,7 +99,10 @@ type link struct {
 	connected   bool
 	lastEventAt int64 // unix ms of the last envelope, 0 = none yet
 	lastError   string
-	ignored     int // messages from channels it has no bound room in
+	// lastFileError is why Slack would not hand over the last file shared
+	// to the app, "" once it hands one over, kept or not (#480).
+	lastFileError string
+	ignored       int // messages from channels it has no bound room in
 	// channelName is the bound channel's name, asked of Slack when the
 	// link starts and when the app binds, so a rename shows after the
 	// next reconnect. "" until Slack has answered.
@@ -110,11 +114,12 @@ func (link *link) status() map[string]any {
 	link.mu.Lock()
 	defer link.mu.Unlock()
 	return map[string]any{
-		"connected":      link.connected,
-		"last_event_at":  link.lastEventAt,
-		"last_error":     link.lastError,
-		"ignored_events": link.ignored,
-		"channel_name":   link.channelName,
+		"connected":       link.connected,
+		"last_event_at":   link.lastEventAt,
+		"last_error":      link.lastError,
+		"last_file_error": link.lastFileError,
+		"ignored_events":  link.ignored,
+		"channel_name":    link.channelName,
 	}
 }
 
@@ -324,4 +329,34 @@ func withoutURL(err error) error {
 		return fmt.Errorf("dial: %w", urlErr.Err)
 	}
 	return err
+}
+
+// noFileAccess is last_file_error for an app without files:read. It names
+// what brings files back, as linkDisabled does for the link.
+const noFileAccess = "Slack would not hand over a shared file: the app lacks the files:read scope. " +
+	"Add files:read and files:write under OAuth & Permissions in the app's settings, then reinstall it"
+
+// fileWithheld is last_file_error for any other failed download. The error
+// itself stays in the hub log: it can carry the file's URL, which carries
+// its name.
+const fileWithheld = "Slack would not hand over a shared file; the hub log says why"
+
+// watchFetch wraps a file's fetch so the link's status shows why the last
+// file was not handed over, until Slack hands one over. A file it hands
+// over clears it even if keeping it then fails: the hub log has that.
+func (link *link) watchFetch(fetch func(context.Context) (io.ReadCloser, error)) func(context.Context) (io.ReadCloser, error) {
+	return func(ctx context.Context) (io.ReadCloser, error) {
+		body, err := fetch(ctx)
+		link.mu.Lock()
+		defer link.mu.Unlock()
+		switch {
+		case err == nil:
+			link.lastFileError = ""
+		case errors.Is(err, route.ErrNoFileAccess):
+			link.lastFileError = noFileAccess
+		default:
+			link.lastFileError = fileWithheld
+		}
+		return body, err
+	}
 }

@@ -490,6 +490,7 @@ type slackStatus struct {
 		Connected     bool   `json:"connected"`
 		LastEventAt   int64  `json:"last_event_at"`
 		LastError     string `json:"last_error"`
+		LastFileError string `json:"last_file_error"`
 		IgnoredEvents int    `json:"ignored_events"`
 	} `json:"bridge"`
 }

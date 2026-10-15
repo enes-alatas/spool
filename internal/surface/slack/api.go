@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/enes-alatas/spool/internal/route"
 )
 
 // A minimal Slack Web API client: the handful of JSON-over-HTTP methods a
@@ -332,10 +334,15 @@ func (client *Client) Download(ctx context.Context, botToken, fileURL string) (i
 		return nil, fmt.Errorf("slack file download: HTTP %d", resp.StatusCode)
 	case strings.HasPrefix(resp.Header.Get("Content-Type"), "text/html"):
 		resp.Body.Close()
-		return nil, errors.New("slack file download: answered with a sign-in page; the app needs files:read, so reinstall it")
+		return nil, errNoFilesRead
 	}
 	return resp.Body, nil
 }
+
+// errNoFilesRead is a download Slack answered with its sign-in page: the
+// app was installed without files:read. It wraps route.ErrNoFileAccess, so
+// the attachment is recorded with that reason (#480).
+var errNoFilesRead = fmt.Errorf("slack file download: answered with a sign-in page, so the app needs files:read: %w", route.ErrNoFileAccess)
 
 // fileURLAllowed refuses a download URL the bot token must not be sent to:
 // one not on https at Slack's file host, and not on the Web API's own host.

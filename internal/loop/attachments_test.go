@@ -43,12 +43,14 @@ func TestAttachmentsComeBetweenTheHeaderAndTheWords(t *testing.T) {
 			{Kind: store.AttachmentImage, Name: "shot.png", Size: 245_760, Width: 1280, Height: 720, Path: "/w/shot.png"},
 			{Kind: store.AttachmentFile, Name: "dump.bin", Size: 35_756_032, NotKept: store.NotKeptTooLarge},
 			{Kind: store.AttachmentFile, Name: "old.log", Size: 12, NotKept: NotKeptRemoved},
+			{Kind: store.AttachmentImage, Name: "locked.png", Size: 2048, NotKept: store.NotKeptMissingScope},
 		},
 	})
 	want := "[message from @enes via telegram dm · owner_dm · ref:5 · 2026-09-30 10:00 UTC]\n" +
 		"[image: shot.png · 1280×720 · 240 KB · /w/shot.png]\n" +
 		"[file not kept: dump.bin · 34.1 MB · over the 20 MB limit]\n" +
 		"[file not kept: old.log · 12 B · no longer kept]\n" +
+		"[image not kept: locked.png · 2 KB · the app may not read files; the operator has to add files:read and reinstall it]\n" +
 		"\nsee this"
 	if env.Text != want {
 		t.Errorf("envelope:\n%s\nwant:\n%s", env.Text, want)

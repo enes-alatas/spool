@@ -26,9 +26,17 @@ type InboundAttachment struct {
 	Kind string
 	// Size is what the surface declared, 0 when it did not say. A declared
 	// size over the limit is refused without a download.
-	Size  int64
+	Size int64
+	// Fetch returns an error wrapping ErrNoFileAccess when the surface's
+	// app is not allowed to read files, so the row says so rather than
+	// only that the fetch failed.
 	Fetch func(ctx context.Context) (io.ReadCloser, error)
 }
+
+// ErrNoFileAccess is a fetch refused because the surface's app lacks the
+// permission to read files: a Slack app installed without files:read. Only
+// the operator can fix it, by reinstalling the app (#480).
+var ErrNoFileAccess = errors.New("the app is not allowed to read files")
 
 // fetchTimeout bounds one attachment's download. 20 MB over a slow link is
 // well inside it; a surface that stalls longer is not handing it over.
@@ -83,6 +91,9 @@ func (router *Router) keep(ctx context.Context, item InboundAttachment) *store.A
 	body, err := item.Fetch(ctx)
 	if err != nil {
 		router.log.Warn("attachment not fetched", "name", item.Name, "err", err)
+		if errors.Is(err, ErrNoFileAccess) {
+			return notKept(store.NotKeptMissingScope, item.Size)
+		}
 		return notKept(store.NotKeptFailed, item.Size)
 	}
 	defer body.Close()
