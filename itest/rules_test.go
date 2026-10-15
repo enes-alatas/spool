@@ -292,10 +292,11 @@ func TestStandingInstructionsAreNotSpentOnAHandoffTurn(t *testing.T) {
 	s.waitState("rotator", "asleep", 30*time.Second)
 
 	// A rule the loop now owes itself a note about, and a rotation before
-	// the wake that would deliver it.
+	// the wake that would deliver it. The handoff turn can end before the
+	// rotate request returns, so the clock is read first (#842).
 	s.createRule("no telemetry", "Never phone home.", true)
-	s.mustJSON("POST", "/api/loops/rotator/rotate", nil, nil)
 	at := time.Now().UnixMilli()
+	s.mustJSON("POST", "/api/loops/rotator/rotate", nil, nil)
 	s.message("rotator", "after the rotation")
 
 	const note = "standing instructions changed"
