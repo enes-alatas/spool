@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useLayoutEffect, useMemo, type UIEvent } from 'react'
+import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo, type UIEvent } from 'react'
 import { Link, useParams, useNavigate, useSearchParams } from 'react-router'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import {
@@ -1235,7 +1235,17 @@ export default function LoopDetail() {
   const [paneChannel, setPaneChannel] = useState(() => searchParams.get('channel') ?? '')
   // A private conversation's pane is in the URL as `?private=` (#723).
   const [panePrivate, setPanePrivate] = useState(() => searchParams.get('private') ?? '')
-  const paneRef = useRef<HTMLDivElement>(null)
+  const paneRef = useRef<HTMLDivElement | null>(null)
+  // Whether the pane is mounted, so that its mounting is something the follow
+  // effect below runs on. The pane mounts only once the loop record has
+  // loaded, and the events often load first: the effect ran on them with no
+  // pane to scroll, and nothing it watched changed when the pane appeared, so
+  // the page opened at the top of the timeline (#846).
+  const [paneMounted, setPaneMounted] = useState(false)
+  const attachPane = useCallback((el: HTMLDivElement | null) => {
+    paneRef.current = el
+    setPaneMounted(!!el)
+  }, [])
   // Whether the pane should follow new entries. A reader who has scrolled up
   // is reading; yanking them back to the tail because a turn arrived loses
   // their place. Near the bottom counts as at the bottom — a couple of lines
@@ -1569,7 +1579,7 @@ export default function LoopDetail() {
     // `entries`, not its length: the window is a fixed size, so a new event
     // slides it rather than growing it, and a length dependency would miss
     // exactly the update this effect exists for.
-  }, [entries, liveText, pane, thread])
+  }, [paneMounted, entries, liveText, pane, thread])
 
   // Where the reader is, recorded as they move: whether they are at the tail,
   // and if not, the first entry still on screen and how far down the pane it
@@ -1737,7 +1747,7 @@ export default function LoopDetail() {
               {/* The history scrolls inside the page rather than growing it, so the
               composer below stays where the operator left it however long the
               loop has been running. */}
-              <div className="pane-scroll" ref={paneRef} onScroll={readingPosition}>
+              <div className="pane-scroll" ref={attachPane} onScroll={readingPosition}>
                 {/* A failed load is said in the pane. An empty timeline or thread
                 is also what a new loop shows, so without this a failure read
                 as "nothing has happened" (#350). The stream adds no entries
