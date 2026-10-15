@@ -19,6 +19,7 @@
 import { chromium } from 'playwright'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { setTimeout as sleep } from 'node:timers/promises'
 
 const base = process.env.SPOOL_URL
 const dataDir = process.env.SPOOL_DATA_DIR
@@ -101,6 +102,38 @@ try {
   await see(page.getByText('Three pages referred to', { exact: false }), "the timeline's assistant text")
   await see(page.getByRole('combobox', { name: 'model' }), 'the model control')
   await gone(page.getByText('Loading…', { exact: true }), '"Loading…"')
+
+  // The page opens at the tail of the timeline, also when the loop record
+  // arrives after its events: the pane mounts only then, and the page used to
+  // open at the top (#846). The record is held back to force that order, and
+  // the window is short enough that the timeline scrolls at all, or the check
+  // would pass on a pane with nothing to scroll.
+  step = 'timeline tail'
+  await page.setViewportSize({ width: 1180, height: 520 })
+  await page.route('**/api/loops/gardener', async (route) => {
+    await sleep(1500)
+    await route.continue()
+  })
+  await page.goto(base + '/loops/gardener')
+  await see(page.locator('.pane-scroll [data-entry-id]'), 'a timeline entry')
+  // How far the pane sits above its tail, given a moment to get there: a
+  // page that never scrolls stays put, and one that does is there at once.
+  const pane = page.locator('.pane-scroll')
+  const position = () =>
+    pane.evaluate((el) => ({
+      scrolls: el.scrollHeight > el.clientHeight,
+      below: el.scrollHeight - el.scrollTop - el.clientHeight,
+    }))
+  let tail = await position()
+  for (let tries = 0; tail.below >= 32 && tries < 20; tries++) {
+    await sleep(250)
+    tail = await position()
+  }
+  if (!tail.scrolls) throw new Error(`${step}: the timeline fits its pane, so the check proves nothing`)
+  if (tail.below >= 32)
+    throw new Error(`${step}: the timeline opened ${Math.round(tail.below)}px above its tail`)
+  await page.unroute('**/api/loops/gardener')
+  await page.setViewportSize({ width: 1180, height: 900 })
 
   step = 'Rules'
   await page.goto(base + '/rules')
