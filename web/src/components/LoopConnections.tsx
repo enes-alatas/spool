@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, Connection, LoopView } from '../api'
 import { connectionDetail, connectionKindLabel, kindLabel } from '../connections'
@@ -104,11 +103,6 @@ export function LoopConnections({ loop }: { loop: LoopView }) {
             <PlusIcon />
           </button>
         )}
-      </div>
-      <div className="panel-note leading">
-        Env variables apply from the loop's next turn, MCP servers from its next wake. A private one is this
-        loop's alone; a shared one is defined once for the fleet on the{' '}
-        <Link to="/connections">Connections</Link> page.
       </div>
       {attached.length === 0 ? (
         <div className="panel-empty">None attached.</div>
