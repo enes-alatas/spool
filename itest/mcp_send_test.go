@@ -46,18 +46,7 @@ func (b bearerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 
 func mcpSession(t *testing.T, s *server, token string) *mcp.ClientSession {
 	t.Helper()
-	client := mcp.NewClient(&mcp.Implementation{Name: "itest", Version: "0"}, nil)
-	sess, err := client.Connect(context.Background(), &mcp.StreamableClientTransport{
-		Endpoint:             s.mcpURL + "/mcp",
-		HTTPClient:           &http.Client{Transport: bearerTransport{token}},
-		DisableStandaloneSSE: true,
-		MaxRetries:           -1,
-	}, nil)
-	if err != nil {
-		t.Fatalf("mcp connect: %v", err)
-	}
-	t.Cleanup(func() { sess.Close() })
-	return sess
+	return mcpSessionAt(t, s.mcpURL, token)
 }
 
 func callSend(t *testing.T, sess *mcp.ClientSession, args map[string]any) *mcp.CallToolResult {
@@ -368,4 +357,21 @@ func TestMCPListenerServesOnlyMCP(t *testing.T) {
 		// be a parse error, and this test would still have passed.
 		t.Errorf("connect on the API listener: err = %v, want the 404 the API mux serves", err)
 	}
+}
+
+// mcpSessionAt is mcpSession on any of the hub's listeners.
+func mcpSessionAt(t *testing.T, baseURL, token string) *mcp.ClientSession {
+	t.Helper()
+	client := mcp.NewClient(&mcp.Implementation{Name: "itest", Version: "0"}, nil)
+	sess, err := client.Connect(context.Background(), &mcp.StreamableClientTransport{
+		Endpoint:             baseURL + "/mcp",
+		HTTPClient:           &http.Client{Transport: bearerTransport{token}},
+		DisableStandaloneSSE: true,
+		MaxRetries:           -1,
+	}, nil)
+	if err != nil {
+		t.Fatalf("mcp connect to %s: %v", baseURL, err)
+	}
+	t.Cleanup(func() { sess.Close() })
+	return sess
 }

@@ -150,6 +150,12 @@ port from the bridge only:
 sudo ufw allow in on docker0 to any port 8081 proto tcp
 ```
 
+The cloud listener (`--cloud-listen`, for loops in Claude Code cloud sessions,
+ADR-0056) is off unless you set it. Given a port alone it binds loopback, and
+the tunnel or TLS proxy that makes it public reaches it there, so it needs no
+firewall rule either. Name a wider address only for a proxy on another
+machine.
+
 ### Checking it worked
 
 - `curl -s https://spool.example.com/api/version` names your build, and

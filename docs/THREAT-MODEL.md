@@ -174,6 +174,39 @@ ADR-0043).
 - **Keeping private content out of a group** is a prompt rule, not a check
   (ADR-0026).
 
+### Cloud listener: `/mcp` for cloud loops, from the internet
+
+**What crosses:** a cloud loop's MCP calls, from its Claude Code cloud
+session over the internet, through the tunnel or TLS proxy the operator
+puts in front of the listener; and the hub's own address check
+(ADR-0056).
+
+**Holds:**
+- **It is off** unless the hub is started with `--cloud-listen`, and a
+  port alone binds loopback.
+- **Only a cloud loop's token is admitted.** A contained or bare loop's
+  token is refused as an unknown one is, so a token that leaks out of a
+  workstation is useless from the internet.
+- **Nothing else is served.** The brokered servers, which carry
+  organisation credentials, and the API are 404 there. The one route
+  without a token is the address check, `GET /mcp/check/<value>`: it
+  answers 204 only for a value the hub issued in the last 60 seconds,
+  once, and 404 for anything else. Values are 130 bits from
+  `crypto/rand`, the hub keeps only their SHA-256, and the set is capped,
+  so nothing an outsider sends grows it.
+- **Bounds come before authentication:** headers at 16 KiB, a body at
+  1 MiB, 10 seconds for the headers and 30 for the request, two minutes
+  for the answer.
+
+**Doesn't hold:**
+- **The token is the only gate**, as on the loop listener, and here any
+  host on the internet can try one.
+- **No rate limit.** A guess at a token or a check value is bounded by
+  their size, not by a count of attempts.
+- **TLS is the tunnel's or proxy's,** not the hub's: the listener speaks
+  plain HTTP, and what keeps a token off the wire is the HTTPS address in
+  front of it (ADR-0056 item 6).
+
 ### Workstation: the docker runtime
 
 **What crosses:** the hub drives `docker run` and `docker exec` through

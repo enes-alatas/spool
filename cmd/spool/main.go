@@ -84,6 +84,7 @@ func main() {
 	listen := flag.String("listen", "127.0.0.1:8080", "address to serve the operator's API/UI on; never reachable from a workstation")
 	mcpListen := flag.String("mcp-listen", "", "address to serve the loop-facing /mcp endpoint on; the one port of this machine a workstation may reach (#238). Unset: the docker bridge's gateway when it is an address of this machine, else loopback, on --mcp-port (#475)")
 	mcpPortFlag := flag.String("mcp-port", "8081", "port of the loop listener when --mcp-listen is unset")
+	cloudListen := flag.String("cloud-listen", "", "address to serve the cloud listener on, which loops in Claude Code cloud sessions reach over the internet through a tunnel or TLS proxy in front of it (ADR-0056). Unset: off. A port alone binds loopback")
 	trustedHosts := flag.String("trusted-host", "", "comma-separated Host/Origin names this hub also answers to, each \"host\" or \"host:port\" — for a hub reached through a proxy under that proxy's name (ADR-0030)")
 	dataDir := flag.String("data-dir", defaultDataDir(), "directory for spool.db, loop homes and worktrees")
 	claudeBin := flag.String("claude-bin", "claude", "path to the claude binary (bare runtime)")
@@ -157,7 +158,7 @@ func main() {
 		log.Error("--mcp-port", "err", "it names the port when --mcp-listen is unset; --mcp-listen already names one")
 		os.Exit(1)
 	}
-	// Both listeners are bound here, before anything reads the MCP port, and
+	// Every listener is bound here, before anything reads the MCP port, and
 	// served later on these very sockets. A port of 0 is then the kernel's
 	// choice, made once, and the address the hub reports is the one it holds:
 	// nothing is released and bound again, so nothing else on the machine can
@@ -177,6 +178,22 @@ func main() {
 	if err != nil {
 		log.Error("--mcp-listen", "err", err)
 		os.Exit(1)
+	}
+	// The cloud listener is off unless the operator turns it on: it is the
+	// one listener meant to face the internet (ADR-0056).
+	var cloudListener net.Listener
+	cloudAddr := ""
+	if *cloudListen != "" {
+		cloudFlagAddr, err := cloudListenAddr(*cloudListen)
+		if err != nil {
+			log.Error("--cloud-listen", "err", err)
+			os.Exit(1)
+		}
+		if cloudListener, err = net.Listen("tcp", cloudFlagAddr); err != nil {
+			log.Error("--cloud-listen", "err", err)
+			os.Exit(1)
+		}
+		cloudAddr = boundAddr(cloudFlagAddr, cloudListener)
 	}
 	apiAddr, mcpAddr := boundAddr(*listen, apiListener), boundAddr(mcpFlagAddr, mcpListener)
 	_, mcpPort, _ := net.SplitHostPort(mcpAddr)
@@ -495,15 +512,21 @@ func main() {
 	srv := &http.Server{Handler: redact.HTTP(api.Handler(), redactor)}
 	mcpSrv := &http.Server{Handler: redact.HTTP(api.MCPHandler(), redactor)}
 
-	// The bound addresses, not the flags: with a port of 0 this line is the
-	// only place the ports are said, and the itest harness reads them here.
-	log.Info("spool listening", "addr", apiAddr, "mcp_addr", mcpAddr, "data", *dataDir, "ui", api.WebFS != nil)
-	serveErr := serve(ctx, log,
-		served{name: "api", srv: srv, listener: apiListener, addr: apiAddr},
+	listeners := []served{
+		{name: "api", srv: srv, listener: apiListener, addr: apiAddr},
 		// Failing the loop-facing listener takes the whole hub down: a
 		// workstation with no hub to reach cannot take a turn, and a fleet
 		// that looks healthy and never wakes is the worse failure.
-		served{name: "mcp", srv: mcpSrv, listener: mcpListener, addr: mcpAddr})
+		{name: "mcp", srv: mcpSrv, listener: mcpListener, addr: mcpAddr},
+	}
+	if cloudListener != nil {
+		listeners = append(listeners, served{name: "cloud", listener: cloudListener, addr: cloudAddr,
+			srv: httpapi.CloudHTTPServer(redact.HTTP(api.CloudHandler(), redactor))})
+	}
+	// The bound addresses, not the flags: with a port of 0 this line is the
+	// only place the ports are said, and the itest harness reads them here.
+	log.Info("spool listening", "addr", apiAddr, "mcp_addr", mcpAddr, "cloud_addr", cloudAddr, "data", *dataDir, "ui", api.WebFS != nil)
+	serveErr := serve(ctx, log, listeners...)
 	stop() // a listener that failed takes the rest of the hub down with it
 	if serveErr != nil {
 		log.Error("serve", "err", serveErr)
@@ -702,6 +725,28 @@ func splitMCPListen(apiAddr, mcpAddr string) (host, port string, err error) {
 func boundAddr(flagAddr string, listener net.Listener) string {
 	host, _, _ := net.SplitHostPort(flagAddr)
 	return net.JoinHostPort(host, strconv.Itoa(listener.Addr().(*net.TCPAddr).Port))
+}
+
+// cloudListenAddr is the address --cloud-listen binds. A port alone, written
+// `8090` or `:8090`, is a port on loopback: the listener is meant to face the
+// internet only through the tunnel or TLS proxy the operator puts in front of
+// it (ADR-0056), so binding wider takes naming the host.
+func cloudListenAddr(flagValue string) (string, error) {
+	if !strings.Contains(flagValue, ":") {
+		flagValue = ":" + flagValue
+	}
+	host, port, err := net.SplitHostPort(flagValue)
+	if err != nil {
+		return "", err
+	}
+	if _, err := strconv.ParseUint(port, 10, 16); err != nil {
+		return "", fmt.Errorf("port %q is not a port number", port)
+	}
+	// Go binds an empty host on every interface; here it is the port alone.
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	return net.JoinHostPort(host, port), nil
 }
 
 // sameInterface reports whether two host halves on one port could be the same

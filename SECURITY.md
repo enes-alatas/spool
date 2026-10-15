@@ -103,10 +103,12 @@ they *should* be true, only that they are known and recorded.
 
 ## What the hub's trust model is
 
-Two listeners, each with its own credential (ADR-0030, `docs/ARCHITECTURE.md`).
-Neither credential is ever handed to the other listener's audience, and each
-check holds independently of the other. For every boundary, what crosses it,
-what it holds and what it doesn't, see
+Three listeners and two credentials (ADR-0030, ADR-0056,
+`docs/ARCHITECTURE.md`): the operator's, and each loop's own, which the cloud
+listener takes too. The third listener is off unless set. Neither credential
+is ever handed to the other's audience, and each check holds independently of
+the other. For every boundary, what crosses it, what it holds and what it
+doesn't, see
 [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md).
 
 **The operator listener** (`--listen`) serves the API and the control room.
@@ -160,6 +162,13 @@ what it holds and what it doesn't, see
 **The loop listener** (`--mcp-listen`) serves `/mcp` and each loop's brokered
 MCP servers under `/mcp/connections/`. Every request needs the requesting
 loop's own token. It is the one port of the machine a workstation can reach.
+
+**The cloud listener** (`--cloud-listen`, off unless set) serves `/mcp` to
+cloud loops, which reach it over the internet through the operator's tunnel
+or TLS proxy (ADR-0056). It admits a cloud loop's own token and refuses
+every other loop's. Its one route without a token, `GET /mcp/check/<value>`,
+answers only for a value the hub issued in the last minute, once. Request
+size and time are bounded before the token is read.
 
 **Who a loop answers on a surface** (ADR-0051). A Telegram or Slack sender
 reaches a loop only once they are *allowed*. A user becomes an allowed sender

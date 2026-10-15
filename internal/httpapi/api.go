@@ -130,6 +130,9 @@ type Server struct {
 	// before writing, and two interleaving could leave two env-vars setting
 	// one.
 	envMu sync.Mutex
+	// cloudChecks are the address-check values issued and not yet seen
+	// back on the cloud listener (ADR-0056).
+	cloudChecks cloudChecks
 }
 
 func (server *Server) Handler() http.Handler {
@@ -278,7 +281,7 @@ func (server *Server) routes() *routeMux {
 // the API mux.
 func (server *Server) MCPHandler() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("/mcp", server.mcpHandler())
+	mux.Handle("/mcp", server.mcpHandler(everyLoop))
 	mux.Handle(loop.BrokerPath, server.brokerHandler())
 	return mux
 }

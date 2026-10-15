@@ -56,6 +56,32 @@ func TestSplitMCPListen(t *testing.T) {
 	}
 }
 
+// The cloud listener faces the internet through a tunnel or proxy, so a
+// port alone binds loopback: binding wider takes naming the host (ADR-0056).
+func TestCloudListenAddr(t *testing.T) {
+	cases := []struct {
+		flag, want string
+	}{
+		{flag: "8090", want: "127.0.0.1:8090"},
+		{flag: "0", want: "127.0.0.1:0"},
+		{flag: ":8090", want: "127.0.0.1:8090"},
+		{flag: ":0", want: "127.0.0.1:0"},
+		{flag: "127.0.0.1:8090", want: "127.0.0.1:8090"},
+		{flag: "0.0.0.0:8090", want: "0.0.0.0:8090"},
+		{flag: "[::1]:8090", want: "[::1]:8090"},
+	}
+	for _, tc := range cases {
+		if got, err := cloudListenAddr(tc.flag); err != nil || got != tc.want {
+			t.Errorf("cloudListenAddr(%q) = %q, %v; want %q", tc.flag, got, err, tc.want)
+		}
+	}
+	for _, bad := range []string{"port", "127.0.0.1:", "127.0.0.1:http", "127.0.0.1:70000", "::1", ":", ""} {
+		if got, err := cloudListenAddr(bad); err == nil {
+			t.Errorf("cloudListenAddr(%q) = %q, want an error", bad, got)
+		}
+	}
+}
+
 // A workstation's view of the hub turns on whether the bridge gateway is
 // an address of this machine (#474): loopback always is, a documentation
 // address never is, and a name is not an address.
