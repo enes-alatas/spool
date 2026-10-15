@@ -1,6 +1,6 @@
 # ADR-0056: A loop can run in a Claude Code cloud session, beside contained loops
 
-Date: 2026-10-15 · Status: accepted (operator decision of 2026-10-15 on #859, accepting it as written; operator direction of 2026-10-15 on #758: build it, in a mixed hub, on the undocumented read-back if that is noted, without OpenTelemetry; and of 2026-10-15 on #859: the egress allowlist is the hub's own) · Relates to: ADR-0017, ADR-0018, ADR-0022, ADR-0026, ADR-0028, ADR-0030, ADR-0037, ADR-0039, ADR-0044, ADR-0046, ADR-0047, ADR-0053
+Date: 2026-10-15 · Status: accepted (operator decision of 2026-10-15 on #859, accepting it as written; operator direction of 2026-10-15 on #758: build it, in a mixed hub, on the undocumented read-back if that is noted, without OpenTelemetry; and of 2026-10-15 on #859: the egress allowlist is the hub's own) · Amended: 2026-10-15 (items 2, 3, 5, 6, 7 and 9: the API check, #861; operator decision of 2026-10-15 on #872: cloud turns report their cost) · Relates to: ADR-0017, ADR-0018, ADR-0022, ADR-0026, ADR-0028, ADR-0030, ADR-0037, ADR-0039, ADR-0044, ADR-0046, ADR-0047, ADR-0053
 
 ## Context
 
@@ -78,6 +78,28 @@ the bar for setup: it has to be really simple.
      cloud loop is recorded as not kept, with the reason, and the loop's
      `send_message` with `attach` is refused with a sentence that says so.
 
+   **Amendment (2026-10-15, #861): the session's own event stream, and
+   the cost.** The API check found a better read-back than
+   `teleport-events`. `GET /v1/sessions/<id>/events`, paged with
+   `after_id`, returns the stream-json events the session's `claude`
+   emits: `system` `init`, `assistant`, `user`, `result` with `usage` and
+   `total_cost_usd`, and `rate_limit_event`. So:
+   - `Proc.Events` polls that endpoint and passes its events through, and
+     the runner reads them as it reads a contained loop's stdout. A turn
+     ends on its own `result`; nothing is synthesized;
+   - the cost of a cloud turn is reported, from that `result`, as a
+     contained turn's is. The bullet above, and the Consequences line
+     "no cost per turn", rested on events that carried no cost; these
+     do;
+   - a session is created with `POST /v1/sessions`. The first events
+     set the permission mode to `bypassPermissions` and carry the first
+     message. Without the mode, the first tool call parks the session in
+     `requires_action`;
+   - the system prompt is `session_context.append_system_prompt`, set at
+     creation; it survives a machine restore;
+   - the kill is an `interrupt` control request sent as an event, which
+     ends the turn within seconds.
+
 3. **The undocumented read-back is named as such and watched.**
    `teleport-events` is what the CLI's own `--teleport` uses, and
    Anthropic may change it without notice. The hub's client for it lives
@@ -106,6 +128,16 @@ the bar for setup: it has to be really simple.
    Contained loops are untouched by any of this. When Anthropic
    documents a read-back (`stream-json` with `--cloud`, or a transcript
    API), the client moves to it.
+
+   **Amendment (2026-10-15, #861): which endpoint is watched.** The
+   read-back is `GET /v1/sessions/<id>/events` (item 2's amendment), not
+   `teleport-events`. It is no more documented, and everything above
+   applies to it. Where the bound speaks of the `stop_hook_summary`, read
+   the turn's `result`. The status the bound reads is the session's
+   `session_status`: `pending`, `running`, `idle` or `requires_action`.
+   An archived session refuses events with `session_inactive`. Item 10's
+   slice 3 reads turns from this endpoint too, where it names
+   `teleport-events`.
 
 4. **Cloud loops reach the hub through a third listener, the *cloud
    listener*, which serves `/mcp` and one check route, and nothing
@@ -179,6 +211,81 @@ the bar for setup: it has to be really simple.
    Where Anthropic's API can't do one of these, the step falls back as
    item 9 lists, recorded as item 9 says.
 
+   **Amendment (2026-10-15, #861): the token is the session's, and the
+   environment holds no secret.** The API can create an environment,
+   replace its allowlist and archive it. It can't set a network secret:
+   those are managed only in the claude.ai pages. So the token takes item
+   9's fallback, in a narrower form than item 9 names:
+   - the hub passes the loop's MCP token to each session it starts, as a
+     per-session environment variable
+     (`session_context.environment_variables`), not as an environment
+     variable of the environment. The session's
+     API record doesn't serve it back, and it survives a machine restore;
+   - the environment's setup script registers the hub's MCP server at
+     user scope, with an `Authorization: Bearer ${…}` header that names
+     that variable; `claude` expands it from the process environment;
+   - the loop can read its own token, as a contained loop can read its
+     MCP config. Nothing else in the environment carries it;
+   - a token that is replaced reaches the loop with its next session:
+     the hub rotates the loop (ADR-0022) rather than writing a secret;
+   - "removes" above means archives: an environment can't be deleted.
+     Archiving stops new sessions in it, and running ones carry on, so
+     the hub archives the loop's session too.
+
+   The isolation question above is closed by two facts. With no token in
+   any environment, a session started in loop A's environment carries
+   nothing of A's. And a session created with an explicit `mcp_config`,
+   even an empty one, gets neither the built-in session tools
+   (`claude-code-remote`) nor the `github` server; the hub creates every
+   cloud session that way. The hub's MCP server is not passed in
+   `mcp_config` itself: a server there is treated as a claude.ai
+   connector and asks for OAuth.
+
+   An environment per loop is no longer what isolates loops: no
+   environment holds a token, and every one has the hub's allowlist and
+   the same setup script. Isolation is the per-session token, the hub's
+   own record of it, and the probe below. The environment per loop stays
+   for two reasons, at the cost of one allowlist push, one archive and
+   one sync state per cloud loop:
+   - if Anthropic offers network secrets through the API, item 5's
+     first design comes back, where the token never enters the session,
+     and it needs an environment per loop. With one already per loop,
+     that is a change of where the token is written, not a migration;
+   - each session's record carries its `environment_id`, so which loop
+     a session belongs to reads from Anthropic's side as well as the
+     hub's, and archiving a deleted loop's environment means nothing
+     starts in it again.
+
+   The Alternatives entry *One environment for every cloud loop* rested
+   on the token being in the environment. It isn't, so that entry's
+   reason no longer holds, and the two above are why it stays rejected.
+
+   One question stays open, and it gates slice 5: the machine holds the
+   session's own ingress credentials, and whether a loop can call the
+   sessions API with them was not tested. A probe from inside a session
+   settles it before a cloud loop can be created: list the account's
+   sessions, read another session's events, and post an event into it.
+   - If the credentials reach no session but their own, the outcome is
+     recorded here and slice 5 goes on.
+   - If they reach other sessions, a cloud loop could read another
+     cloud loop's transcript and write words it reads as its input. Item
+     9's outcome for the session tools applies: all cloud loops are one
+     trust domain, never reaching a contained loop, and the control room
+     says so when a cloud loop is created; or cloud loops don't ship
+     until Anthropic scopes the credentials. The operator chooses.
+
+   THREAT-MODEL.md's *Cloud session* boundary records the outcome.
+
+   The setup script is cached into the environment's snapshot, so a
+   changed public address reaches a running session only when its
+   machine is rebuilt, and until then it sends to the old host. A lapsed
+   hostname can be reissued to someone else (item 6), so the old
+   session's token must not outlive the old address. When the address
+   changes, the hub rewrites the script and, for each cloud loop,
+   replaces its token, revoking the old one at the hub, archives the old
+   session and starts the next one with the new token. A request that
+   still reaches the old host carries nothing that works.
+
 6. **The operator sets up the hub once, as a checklist of two steps that
    the hub verifies. Then a cloud loop is one choice at creation.**
 
@@ -250,12 +357,42 @@ the bar for setup: it has to be really simple.
    On the hosted service (L7) the public address is the service's own,
    so step 1 disappears.
 
+   **Amendment (2026-10-15, #861): step 2 is always a sign-in, and the
+   repo is optional.**
+   - A setup-token can only make model requests (the authentication
+     docs, and the CLI's own source), and the sessions API needs the
+     `user:sessions:claude_code` scope. So step 2 is a sign-in on every
+     hub. The CLI's login asks for `user:profile user:inference
+     user:sessions:claude_code user:mcp_servers user:file_upload`.
+     Whether a narrower request is accepted is checked at the first
+     sign-in, in slice 4, and the narrowest that works is what the hub
+     asks for.
+   - *Remove* revokes at the source as well as forgetting: the hub posts
+     the refresh token to the OAuth token endpoint's `/revoke`, as the
+     CLI's logout does. The page still says where claude.ai lists the
+     account's sign-ins.
+   - A session needs no repo: one created with no source starts in an
+     empty home directory and works. So the repo is an optional field at
+     creation, and the GitHub App note applies only when one is given.
+   - The token reaches the hub in a header the session's own `claude`
+     sends (item 5's amendment), not one the environment's proxy adds.
+     Where the address paragraph above says the proxy hands the token
+     to whoever answers for the host, the session does; the risk and
+     the HTTPS and named-tunnel rules are the same. The account token
+     sets environments' allowlists and setup scripts, not secrets.
+
 7. **The plan cap counts cloud loops, but can't see them.** Cloud turns
    spend the same plan as contained ones, and they report no rate-limit
    event. So the cap (ADR-0047) is driven by what contained loops
    observe, and it caps the cloud loops too, as a sleep. A hub with only
    cloud loops has unknown usage, and unknown usage never caps (ADR-0047
    item 4). The Fleet page says so.
+
+   **Amendment (2026-10-15, #861): the cap can see them.** A cloud
+   session's event stream carries the CLI's `rate_limit_event`, with the
+   five-hour and seven-day windows (item 2's amendment). So a cloud turn
+   is an observation like a contained one, and a hub with only cloud
+   loops has known usage.
 
 8. **A cloud loop is not contained by our egress wall.** Its allowlist
    is the hub's, copied into the environment (item 5), but Anthropic's
@@ -310,6 +447,22 @@ the bar for setup: it has to be really simple.
 
    A fallback the check settles on is recorded as a dated amendment to
    this ADR before the slice that depends on it is built.
+
+   **Amendment (2026-10-15, #861): the check is done.** Its finding is on
+   #861, one line per point. Starting a session, the system prompt,
+   environments, the MCP configuration and interrupting a turn work as
+   item 2's and item 5's amendments describe. The network secret and the
+   setup-token took fallbacks (items 5 and 6). The session tools are left
+   out (item 5). For the allowlist:
+   - a session needs nothing on the list to run: the Anthropic API and
+     GitHub take their own paths, and a session ran with one host listed;
+   - an ADR-0028 entry `.example.com` translates to `*.example.com` and
+     `example.com`. An entry with a port doesn't translate, as item 5
+     already says;
+   - the cloud image is Ubuntu 24.04, where the built-in list's Debian
+     archives are no use. A loop that runs `apt` there needs
+     `archive.ubuntu.com` and `security.ubuntu.com`, which join the
+     built-in list by PR if cloud loops need them.
 
 10. **The build ships in five slices, in this order.** Each slice
     updates the docs of record it changes: ARCHITECTURE.md's runtime row
