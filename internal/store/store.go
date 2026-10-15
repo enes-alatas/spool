@@ -83,6 +83,7 @@ const (
 
 	RuntimeBare   = "bare"   // host subprocess, uncontained (ADR-0017)
 	RuntimeDocker = "docker" // long-lived container + volume workstation
+	RuntimeCloud  = "cloud"  // a Claude Code cloud session (ADR-0056)
 
 	// A loop's surface: the chat platform it has an identity on, if any
 	// (ADR-0029: at most one, attached after the loop exists).
@@ -207,7 +208,7 @@ type Loop struct {
 	Branch        string `json:"branch"`
 
 	// Workstation config (ADR-0017): set at creation, immutable after.
-	Runtime string  `json:"runtime"` // bare|docker
+	Runtime string  `json:"runtime"` // bare|docker|cloud
 	Image   string  `json:"image"`   // workstation image; "" = the server default
 	MemMB   int     `json:"mem_mb"`  // workstation memory limit
 	CPUs    float64 `json:"cpus"`    // workstation CPU limit

@@ -584,3 +584,39 @@ func TestWritesToAGoneLoopAreNotFound(t *testing.T) {
 		t.Errorf("Connections.Attach: err = %v, want ErrNotFound", err)
 	}
 }
+
+// A cloud loop is stored as any other (ADR-0056), and the runtime column
+// still refuses a kind no Spool runs: migration 0058 widened its CHECK in
+// place rather than dropping it.
+func TestLoopRuntimeCloud(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+
+	now := time.Now().UnixMilli()
+	loop := &store.Loop{
+		ID: "l1", Name: "cirrus", Mission: "m", Status: store.StatusActive,
+		WorkspaceMode: store.WorkspaceNone, Pacing: store.PacingFixed,
+		Runtime: store.RuntimeCloud, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.Loops().Create(ctx, loop); err != nil {
+		t.Fatalf("store a cloud loop: %v", err)
+	}
+	got, err := db.Loops().Get(ctx, "l1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Runtime != store.RuntimeCloud {
+		t.Fatalf("runtime = %q, want %q", got.Runtime, store.RuntimeCloud)
+	}
+	if _, err := db.db.ExecContext(ctx, `UPDATE loops SET runtime = 'vm' WHERE id = 'l1'`); err == nil {
+		t.Fatal("the runtime column took a kind no Spool runs")
+	}
+	var check string
+	if err := db.db.QueryRowContext(ctx, `PRAGMA integrity_check`).Scan(&check); err != nil || check != "ok" {
+		t.Fatalf("integrity_check = %q, %v", check, err)
+	}
+}
