@@ -692,3 +692,6 @@ Enes: cloud work deserves its own milestone (users ask). Created "Cloud runtime"
 
 ## 2026-10-15 13:55 UTC
 Terra: ADR PR #859 (cloud runtime) at f461b17 covers both bars; item 3 = fail loud on endpoint change; item 10 = five slices in order. Quinn + Elliot reviewing. On merge: file epic + 5 children on "Cloud runtime" from item 10, Part of the epic with --parent; #758 closes with the ADR.
+
+## 2026-10-15 14:15 UTC
+ADR-0056 accepted by Enes (PR #859 at ce8a9ae, still open, Quinn pings last). Filed epic #860 (Cloud runtime milestone) + children, all --parent 860: #861 API check (chore), #862 cloud listener, #863 cloud runtime, #864 Settings → Cloud hub, #865 Settings → Cloud web, #866 create cloud loop hub, #867 create cloud loop web. Terra order: #861 → #862 ∥ #863 → #864 → #866; then #855, #766, #830, #630. Iris: #865 after #864, #867 after #866. Close #758 when #859 merges.
