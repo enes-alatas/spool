@@ -686,3 +686,6 @@ Iris: #848 closed; #857 (#849 card simplification, option B picked by Enes, 12�
 
 ## 2026-10-15 13:45 UTC
 #758 spike done (Terra): revival yes, calling home yes on a Custom environment, read-back only via undocumented teleport-events, usage tokens not dollars; Terra recommended not now. Enes chose to build: `cloud` runtime in a mixed hub, public MCP-only listener, token per loop, Custom env allowlist, simple setup; OTEL dropped. Terra writing the ADR (Part of #758). Asked: ADR names the read-back fallback; Elliot reviews (posture). I file the epic + children from the accepted ADR, under L7 Service unless Enes says otherwise. Terra queue after ADR: cloud slices, then #855, #766, #830, #630.
+
+## 2026-10-15 13:50 UTC
+Enes: cloud work deserves its own milestone (users ask). Created "Cloud runtime" (#13), moved #758. Milestones: L5 Team, L6 OSS 1.0, L7 Service, CI reliability (#11), Loop page polish (#12), Cloud runtime (#13). Release order: v0.6.0 (fleet dogfood pending) → Loop page polish → Cloud runtime, each a minor.
