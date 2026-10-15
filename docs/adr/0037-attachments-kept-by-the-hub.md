@@ -1,6 +1,6 @@
 # ADR-0037: Attachments are kept by the hub and read from the workstation
 
-Date: 2026-09-30 · Status: accepted. The shape follows the operator's decisions of 2026-09-30 on #123, including item 4's change to the SandboxRuntime seam. · Amends: ADR-0004 (the SandboxRuntime seam gains `PutFile`) · Amended: 2026-09-30 (the outbound half, ADR-0026); 2026-09-30 (item 3: control-room uploads)
+Date: 2026-09-30 · Status: accepted. The shape follows the operator's decisions of 2026-09-30 on #123, including item 4's change to the SandboxRuntime seam. · Amends: ADR-0004 (the SandboxRuntime seam gains `PutFile`) · Amended: 2026-09-30 (the outbound half, ADR-0026); 2026-09-30 (item 3: control-room uploads); 2026-10-15 (item 2: an app that may not read files)
 
 ## Context
 
@@ -32,6 +32,13 @@ loop there cannot read a host file the hub holds.
    not hand over is recorded as `fetch_failed` in the same way. A file is
    downloaded only after its message is stored, so of several surfaces that
    hear one message, only the one that ingests it fetches the file.
+
+   **Amendment (2026-10-15, #480):** a file refused because the surface's
+   app may not read files, as Slack refuses an app installed without
+   `files:read`, is recorded as `missing_scope` rather than `fetch_failed`.
+   Only the operator can fix it, so the loop is told to have them add
+   `files:read` and reinstall the app, and the loop's Slack status carries a
+   `last_file_error` that says what to do until Slack hands a file over again.
 3. **Retention.** An hourly job removes files older than 30 days and sets
    `removed_at`. The row stays, so a message still says what it carried.
    Unlike events, this is not a flag: 30 days is the operator's decision.
