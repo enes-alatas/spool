@@ -55,7 +55,10 @@ type sendMessageOut struct {
 	Dismissed string `json:"dismissed,omitempty"`
 }
 
-func (server *Server) mcpHandler() http.Handler {
+// mcpHandler serves /mcp to a caller whose loop admits lets onto this
+// listener. One it refuses is answered as an unknown token is, so a
+// refusal says nothing about whose token it was.
+func (server *Server) mcpHandler(admits func(*store.Loop) bool) http.Handler {
 	inner := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
 		caller, ok := r.Context().Value(mcpLoopKey{}).(*store.Loop)
 		if !ok {
@@ -85,6 +88,10 @@ func (server *Server) mcpHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		caller, ok := server.mcpCaller(w, r)
 		if !ok {
+			return
+		}
+		if !admits(caller) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		inner.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), mcpLoopKey{}, caller)))
@@ -170,3 +177,6 @@ func (server *Server) sendMessageTool(caller *store.Loop) func(context.Context, 
 		return nil, sendMessageOut{MessageID: msg.ID, Ref: loop.MessageRef(msg.ID)}, nil
 	}
 }
+
+// everyLoop admits any loop's token: the loop listener's rule.
+func everyLoop(*store.Loop) bool { return true }

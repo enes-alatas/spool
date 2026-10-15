@@ -28,7 +28,10 @@ type server struct {
 	// which serves /mcp and nothing else (#238).
 	baseURL string
 	mcpURL  string
-	cmd     *exec.Cmd
+	// cloudURL is the cloud listener, empty unless the hub was started
+	// with --cloud-listen (ADR-0056).
+	cloudURL string
+	cmd      *exec.Cmd
 	// exited closes when the orchestrator process has been reaped and its
 	// output fully copied, and exitErr then says how it ended.
 	exited  chan struct{}
@@ -163,6 +166,9 @@ func startServerOn(t *testing.T, dataDir, mcpHost string, extraArgs ...string) *
 		}
 		s.baseURL = "http://" + bound.addr
 		s.mcpURL = "http://" + net.JoinHostPort(mcpHost, mcpPort)
+		if bound.cloudAddr != "" {
+			s.cloudURL = "http://" + bound.cloudAddr
+		}
 	case <-s.exited:
 		// A hub that refused its flags looks, at the deadline, just like
 		// one that was slow to start; only this says which it was (#280).
@@ -219,7 +225,7 @@ func (s *server) port(rawURL string) string {
 }
 
 // boundAddrs is where a hub says it listens, from its "spool listening" line.
-type boundAddrs struct{ addr, mcpAddr string }
+type boundAddrs struct{ addr, mcpAddr, cloudAddr string }
 
 // watchListening passes a hub's output through to out and reports the
 // addresses on its "spool listening" line, the one place a port of 0 is
@@ -246,6 +252,8 @@ func watchListening(out io.Writer) (io.WriteCloser, <-chan boundAddrs, <-chan st
 					bound.addr = value
 				} else if value, ok := strings.CutPrefix(field, "mcp_addr="); ok {
 					bound.mcpAddr = value
+				} else if value, ok := strings.CutPrefix(field, "cloud_addr="); ok && value != `""` {
+					bound.cloudAddr = value
 				}
 			}
 			listening <- bound
