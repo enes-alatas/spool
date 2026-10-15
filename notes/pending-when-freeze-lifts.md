@@ -683,3 +683,6 @@ Enes: no share cap; wants the HN answer with the subagent knob issue + the per-l
 
 ## 2026-10-15 13:35 UTC
 Iris: #848 closed; #857 (#849 card simplification, option B picked by Enes, 12→8 cards) with Quinn. #858 (round icon buttons on Controls, Enes's ask) homed on Loop page polish; Iris takes it after #857, then #853 (web half of #480).
+
+## 2026-10-15 13:45 UTC
+#758 spike done (Terra): revival yes, calling home yes on a Custom environment, read-back only via undocumented teleport-events, usage tokens not dollars; Terra recommended not now. Enes chose to build: `cloud` runtime in a mixed hub, public MCP-only listener, token per loop, Custom env allowlist, simple setup; OTEL dropped. Terra writing the ADR (Part of #758). Asked: ADR names the read-back fallback; Elliot reviews (posture). I file the epic + children from the accepted ADR, under L7 Service unless Enes says otherwise. Terra queue after ADR: cloud slices, then #855, #766, #830, #630.
