@@ -174,3 +174,57 @@ export function ToTopIcon({ size }: { size?: number }) {
     </Icon>
   )
 }
+
+// The loop page's controls (#858), drawn round: what each does to the loop.
+export function PauseIcon() {
+  return (
+    <Icon>
+      <path d="M7.5 5v10M12.5 5v10" />
+    </Icon>
+  )
+}
+
+export function ResumeIcon() {
+  return (
+    <Icon>
+      <path d="M6.75 4.75v10.5L15 10z" />
+    </Icon>
+  )
+}
+
+// Wake now: a bolt, the turn starting at once.
+export function WakeIcon() {
+  return (
+    <Icon>
+      <path d="M11 2.75 5.25 11h4.25L9 17.25 14.75 9H10.5z" />
+    </Icon>
+  )
+}
+
+// Rotate session: a turn back round to a fresh start.
+export function RotateIcon() {
+  return (
+    <Icon>
+      <path d="M15.75 10a5.75 5.75 0 1 1-1.7-4.1" />
+      <path d="M15.25 3.25v3.25H12" />
+    </Icon>
+  )
+}
+
+// Kill process: the power mark, the process stopped.
+export function KillIcon() {
+  return (
+    <Icon>
+      <path d="M10 3v6.5" />
+      <path d="M6.1 5.6a6 6 0 1 0 7.8 0" />
+    </Icon>
+  )
+}
+
+export function DeleteIcon() {
+  return (
+    <Icon>
+      <path d="M3.75 5.5h12.5M8 5.5V3.75h4V5.5M5.5 5.5l.75 10.75h7.5l.75-10.75M8.5 8.5v5M11.5 8.5v5" />
+    </Icon>
+  )
+}

@@ -4146,3 +4146,67 @@ button.panel-link {
 .mission-dialog-actions {
   margin-top: 12px;
 }
+
+/* ---- the loop page's controls (#858) ---- */
+/* the row is the labels' anchor: each spans it above the buttons, so one
+   near the column's edge is never clipped by the column's own scroll */
+.round-ctls {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+.round-ctl-group {
+  display: flex;
+  gap: 8px;
+}
+.round-ctl {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--hairline);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.round-ctl:hover,
+.round-ctl:focus-visible {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+.round-ctl.danger {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+}
+.round-ctl.danger:hover,
+.round-ctl.danger:focus-visible {
+  border-color: var(--danger);
+}
+.ctl-tip {
+  display: none;
+}
+.round-ctl:hover .ctl-tip,
+.round-ctl:focus-visible .ctl-tip {
+  display: block;
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--hairline);
+  background: var(--surface);
+  font-size: 0.75rem;
+  line-height: 1.35;
+  text-align: left;
+  color: var(--text-muted);
+  z-index: 3;
+  pointer-events: none;
+}
+.ctl-tip strong {
+  display: block;
+  color: var(--text);
+  font-weight: 500;
+}

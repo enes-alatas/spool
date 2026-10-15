@@ -8,7 +8,7 @@ import {
   type ReactNode,
   type UIEvent,
 } from 'react'
-import { Link, useParams, useNavigate, useSearchParams } from 'react-router'
+import { Link, useParams, useSearchParams } from 'react-router'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import {
   api,
@@ -64,6 +64,7 @@ import { SpoolGlyph } from '../components/Spool'
 import { EditIcon } from '../components/Icons'
 import { StepDialog } from '../components/StepDialog'
 import { SideColumn } from '../components/SideColumn'
+import { LoopControls } from '../components/LoopControls'
 import { BotTokenForm, SlackStep, SlackTokenForm } from '../components/SurfaceAttach'
 
 function Countdown({ at }: { at: number }) {
@@ -1251,7 +1252,6 @@ function isMissing(error: unknown): boolean {
 
 export default function LoopDetail() {
   const { name = '' } = useParams()
-  const nav = useNavigate()
   const qc = useQueryClient()
   const may = useMay()
   // A loop's raw transcript, its events and turns, is an admin's to read
@@ -1959,69 +1959,7 @@ export default function LoopDetail() {
             )}
           </div>
 
-          <div className="side-panel">
-            <h3>Controls</h3>
-            <div className="controls">
-              {!may('manage') ? null : paused ? (
-                <button
-                  className="btn sm"
-                  onClick={() =>
-                    api.resume(name).then(() => qc.invalidateQueries({ queryKey: ['loop', name] }))
-                  }
-                >
-                  Resume
-                </button>
-              ) : (
-                <button
-                  className="btn sm"
-                  onClick={() =>
-                    api.pause(name).then(() => qc.invalidateQueries({ queryKey: ['loop', name] }))
-                  }
-                >
-                  Pause
-                </button>
-              )}
-              {may('talk') && (
-                <button className="btn sm" onClick={() => api.wake(name)}>
-                  Wake now
-                </button>
-              )}
-              {may('manage') && (
-                <>
-                  <button
-                    className="btn sm"
-                    onClick={() => {
-                      if (
-                        confirm(
-                          `Rotate @${name}'s session? It writes a handoff note and continues fresh; conversational context is shed by design.`,
-                        )
-                      ) {
-                        api.rotate(name)
-                      }
-                    }}
-                  >
-                    Rotate session
-                  </button>
-                  <button className="btn sm danger" onClick={() => api.kill(name)}>
-                    Kill process
-                  </button>
-                  <button
-                    className="btn sm danger"
-                    onClick={() => {
-                      if (confirm(`Delete loop @${name}? Its worktree is removed; the branch is kept.`)) {
-                        api.deleteLoop(name, true).then(() => {
-                          qc.invalidateQueries({ queryKey: ['loops'] })
-                          nav('/')
-                        })
-                      }
-                    }}
-                  >
-                    Delete loop
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
+          <LoopControls name={name} paused={paused} />
 
           <MissionPanel name={name} mission={loop.mission} hasSession={loop.current_session_id !== ''} />
 
