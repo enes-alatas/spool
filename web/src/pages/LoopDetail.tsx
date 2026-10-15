@@ -53,6 +53,7 @@ import { MCPReach } from '../components/MCPReach'
 import { LeftBehind, RehomeControl } from '../components/Rehome'
 import { SpoolGlyph } from '../components/Spool'
 import { EditIcon } from '../components/Icons'
+import { StepDialog } from '../components/StepDialog'
 import { BotTokenForm, SlackStep, SlackTokenForm } from '../components/SurfaceAttach'
 
 function Countdown({ at }: { at: number }) {
@@ -379,55 +380,6 @@ function MissionPanel({
     }
   }
 
-  if (draft !== null) {
-    return (
-      <div className="side-panel">
-        {/* The same head row as the read view, minus its action: the pen
-            opened this, and a panel whose heading jumps when it does is one
-            the operator has to re-find. */}
-        <div className="panel-head">
-          <h3>Mission</h3>
-        </div>
-        <textarea
-          className="mission-edit"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          rows={10}
-          autoFocus
-        />
-        {/* Before Save, not after: a rotation costs the loop its context,
-            and an operator who learns that from the result has already
-            paid it. */}
-        <div className="mission-warning">{missionSaveWarning(name, hasSession)}</div>
-        {state.reason && (
-          <div className="form-error" role="alert">
-            {state.reason}
-          </div>
-        )}
-        {error && (
-          <div className="form-error" role="alert">
-            {error}
-          </div>
-        )}
-        <div className="controls" style={{ marginTop: 8 }}>
-          <button className="btn primary sm" onClick={save} disabled={busy || !state.canSave}>
-            {busy ? 'Saving…' : 'Save'}
-          </button>
-          <button
-            className="btn sm"
-            onClick={() => {
-              setDraft(null)
-              setError('')
-            }}
-            disabled={busy}
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="side-panel">
       {/* The action sits on the heading rather than under the text, where it
@@ -466,6 +418,54 @@ function MissionPanel({
             {open ? 'show less' : 'show the whole mission'}
           </button>
         </div>
+      )}
+      {/* A dialog rather than the card (#847): a mission runs to paragraphs,
+          and a textarea the width of the side column showed a few words a
+          line of them. Only the ✕ and Cancel close it, never a stray click
+          on the backdrop or Escape, which would throw away an edit, and
+          nothing does during a save, whose failure is said in here. */}
+      {draft !== null && (
+        <StepDialog
+          title={`@${name}'s mission`}
+          className="mission-dialog"
+          dismissible={false}
+          busy={busy}
+          onClose={() => {
+            setDraft(null)
+            setError('')
+          }}
+        >
+          <textarea
+            className="mission-edit"
+            aria-label="Mission"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            rows={18}
+            autoFocus
+          />
+          {/* Before Save, not after: a rotation costs the loop its context,
+              and an operator who learns that from the result has already
+              paid it. */}
+          <div className="mission-warning">{missionSaveWarning(name, hasSession)}</div>
+          {state.reason && (
+            <div className="form-error" role="alert">
+              {state.reason}
+            </div>
+          )}
+          {error && (
+            <div className="form-error" role="alert">
+              {error}
+            </div>
+          )}
+          <form method="dialog" className="controls mission-dialog-actions">
+            <button type="button" className="btn primary sm" onClick={save} disabled={busy || !state.canSave}>
+              {busy ? 'Saving…' : 'Save'}
+            </button>
+            <button className="btn sm" value="cancel" disabled={busy}>
+              Cancel
+            </button>
+          </form>
+        </StepDialog>
       )}
     </div>
   )

@@ -4077,3 +4077,16 @@ textarea {
   font-style: italic;
   color: var(--text-muted);
 }
+
+/* The mission's editor (#847): wider than a step dialog, since a mission
+   is paragraphs and reads best at a full line. */
+.mission-dialog {
+  width: min(48rem, calc(100vw - 32px));
+}
+.mission-dialog .mission-edit {
+  min-height: 18rem;
+  max-height: calc(100dvh - 18rem);
+}
+.mission-dialog-actions {
+  margin-top: 12px;
+}
