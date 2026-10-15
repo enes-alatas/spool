@@ -2096,31 +2096,6 @@ textarea {
   font-size: 0.65625rem;
   color: var(--text);
 }
-/* per-turn context occupancy, oldest turn on the left. A bar keeps one width
-   however many turns there are: grown to share the row, a loop's first turn
-   was a single full-width block and read as a meter, not a trend (#457). 22px
-   is what ten bars, the most the page fetches, get in the two-column layout's
-   side column, so there a full trend spans it. Anywhere the row is wider,
-   such as the stacked layout (.detail at 1fr), where the side panel is the
-   page's width, the bars stay 22px from the left and leave the rest empty, as
-   fewer turns do. */
-.ctx-trend {
-  display: flex;
-  align-items: flex-end;
-  gap: 3px;
-  height: 46px;
-  margin-top: 10px;
-}
-.ctx-bar {
-  flex: 0 1 22px;
-  min-height: 2px;
-  background: var(--fill);
-  border-radius: 2px 2px 0 0;
-  opacity: 0.75;
-}
-.ctx-bar:last-child {
-  opacity: 1;
-}
 .side-panel .controls {
   display: flex;
   flex-wrap: wrap;
@@ -2214,11 +2189,39 @@ textarea {
   color: var(--text-muted);
   margin-top: 8px;
 }
-/* the same note introducing what follows rather than explaining what precedes:
-   the margin moves to the other side, which is the whole difference */
-.panel-note.leading {
-  margin-top: 0;
-  margin-bottom: 8px;
+/* a section inside a side panel, under the panel's own heading: the
+   surface's groups or channels in Surfaces (#849), titled as a field's
+   label is so it reads as part of the card rather than a card of its own */
+.panel-sub {
+  margin-top: 16px;
+  margin-bottom: 6px;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  font-weight: normal;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+/* where a panel points away for the rest: the docs, the whole record */
+.panel-link {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+}
+.panel-link:hover {
+  color: var(--text);
+}
+button.panel-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
 }
 /* A setting that is on or off, with what each state means under its name:
    the switch, then the label and the consequence it controls. The whole row
@@ -3505,8 +3508,7 @@ textarea {
 .side-panel .mcp-servers .bad {
   color: var(--danger);
 }
-.side-panel .mcp-session,
-.side-panel .row .v.mcp-pending {
+.side-panel .mcp-session {
   color: var(--text-muted);
 }
 /* The loop page's schedule editor (#523): the three numbers, each with what

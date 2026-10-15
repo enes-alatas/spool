@@ -102,10 +102,10 @@ function roomName(surface: RoomSurface, room: Room): string {
 
 type RoomSurface = keyof typeof ROOM_WORDS
 
-// The loop's rooms, a side panel of its page: its Telegram groups or its Slack
-// channels. While the loop has no fleet channel room, the first room an
-// allowed sender writes in binds to the fleet channel by itself; after that
-// a new one shows up here unbound, and its messages are not read until it is
+// The loop's rooms, a section of its page's Surfaces card (#849): its
+// Telegram groups or its Slack channels. While the loop has no fleet channel
+// room, the first room an allowed sender writes in binds to the fleet
+// channel by itself; after that a new one shows up here unbound, and its messages are not read until it is
 // bound to one of the loop's channels, so the unbound ones come first: they
 // are what asks for the operator. The bound ones follow with the channel each
 // carries, to be forgotten. Absent on a hub from before rooms, which has no
@@ -127,8 +127,8 @@ export function LoopRooms({ loop }: { loop: LoopView }) {
     .filter((name) => !rooms.some((room) => room.channel === name))
   const bot = loop.tg_bot_username ? `@${loop.tg_bot_username}` : 'the bot'
   return (
-    <div className="side-panel" id={ROOMS_ANCHOR}>
-      <h3>{words.title}</h3>
+    <section className="surface-rooms" id={ROOMS_ANCHOR}>
+      <h4 className="panel-sub">{words.title}</h4>
       <div className="loop-chans">
         {unbound.map((room) => (
           <UnboundRoom key={room.room_id} loop={loop} room={room} rooms={rooms} channels={free} />
@@ -163,39 +163,19 @@ export function LoopRooms({ loop }: { loop: LoopView }) {
             nothing: they link from Settings → Account first.
           </div>
         ) : (
-          <TelegramNotes loop={loop} bot={bot} />
+          <a className="panel-link" href={TELEGRAM_DOCS} target="_blank" rel="noreferrer">
+            How groups, reactions and polls work
+          </a>
         )}
       </div>
-    </div>
+    </section>
   )
 }
 
-// What Telegram's platform limits mean for a group, said where they bite.
-// Slack's are on the loop's Slack status, beside the reaction and poll
-// hints that need its app.
-function TelegramNotes({ loop, bot }: { loop: LoopView; bot: string }) {
-  return (
-    <>
-      <div className="chans-note">
-        A group shows up here once someone @mentions {bot} in it: by default, Telegram passes a bot only the
-        messages that mention it or reply to it.
-      </div>
-      {/* ADR-0040: the platform's limits on reactions, said where they bite.
-          Telegram passes no bot another bot's messages, in any kind of group,
-          and refuses a reaction on a message the bot never received (#817). */}
-      <div className="chans-note">
-        Reactions: in a group, {bot} hears them only as an administrator. It sets one reaction per message, so
-        a loop's second reaction on a message replaces its first. A reaction to another loop's message never
-        shows on Telegram, in any kind of group; it still reaches that loop.
-      </div>
-      {/* ADR-0041: Telegram draws its own count, which cannot hold a loop's vote */}
-      <div className="chans-note">
-        Polls: Telegram's count shows only people's votes. Loops' votes are in the tally here, which is the
-        result @{loop.name} is told.
-      </div>
-    </>
-  )
-}
+// How Telegram groups, reactions and polls behave, said once in the docs
+// rather than under every loop's groups (#849): how a group shows up, and
+// the platform's limits on reactions (ADR-0040) and polls (ADR-0041).
+const TELEGRAM_DOCS = 'https://github.com/enes-alatas/spool/blob/main/docs/TELEGRAM.md'
 
 // A loop's rooms, for a loop with a surface; undefined for one without, and
 // on a hub from before rooms.

@@ -1,4 +1,13 @@
-import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo, type UIEvent } from 'react'
+import {
+  useState,
+  useRef,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  type ReactNode,
+  type UIEvent,
+} from 'react'
 import { Link, useParams, useNavigate, useSearchParams } from 'react-router'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import {
@@ -18,7 +27,7 @@ import {
 } from '../api'
 import { formatTokens, fillTone, hasFillPct, formatUsd, inTurn, nextWake } from '../format'
 import { customModelError } from '../forms'
-import { PACE_HINT, type Pace } from '../pace'
+import { type Pace } from '../pace'
 import { PaceFacts, PaceRange } from '../components/PaceRange'
 import { useMay } from '../components/Session'
 import { Doing } from '../components/Doing'
@@ -99,7 +108,6 @@ function ScheduleEditor({
   return (
     <div className="schedule-editor">
       <PaceRange pace={pace} onChange={setPace} disabled={mut.isPending} />
-      <div className="hint">{PACE_HINT}</div>
       {error && (
         <div className="form-error" role="alert">
           {error}
@@ -116,23 +124,23 @@ function ScheduleEditor({
   )
 }
 
-// ModelPanel edits model / effort / pacing in place; changes apply from the
-// loop's next wake.
-function ModelPanel({ loop }: { loop: LoopView }) {
+// ModelPanel edits model and effort in place, which apply from the loop's
+// next wake, and shows how full the model's window is (#849).
+function ModelPanel({ loop, context }: { loop: LoopView; context: ReactNode }) {
   const may = useMay()
-  if (!may('manage')) return <ModelFacts loop={loop} />
-  return <ModelEditor loop={loop} />
+  if (!may('manage')) return <ModelFacts loop={loop} context={context} />
+  return <ModelEditor loop={loop} context={context} />
 }
 
-// The same three choices as words, for a session that may not change them
+// The same two choices as words, for a session that may not change them
 // (#679).
-function ModelFacts({ loop }: { loop: LoopView }) {
+function ModelFacts({ loop, context }: { loop: LoopView; context: ReactNode }) {
   const modelOptions = useModelOptions()
   const label = (options: { value: string; label: string }[], value: string) =>
     options.find((o) => o.value === value)?.label ?? value
   return (
     <div className="side-panel">
-      <h3>Model & pacing</h3>
+      <h3>Model</h3>
       <div className="row">
         <span className="k">model</span>
         <span className="v">{label(modelOptions, loop.model)}</span>
@@ -146,15 +154,12 @@ function ModelFacts({ loop }: { loop: LoopView }) {
         <span className="k">effort</span>
         <span className="v">{label(EFFORT_OPTIONS, loop.effort)}</span>
       </div>
-      <div className="row">
-        <span className="k">pacing</span>
-        <span className="v">{label(PACING_OPTIONS, loop.pacing)}</span>
-      </div>
+      {context}
     </div>
   )
 }
 
-function ModelEditor({ loop }: { loop: LoopView }) {
+function ModelEditor({ loop, context }: { loop: LoopView; context: ReactNode }) {
   const qc = useQueryClient()
   const modelOptions = useModelOptions()
   // Null while the select shows a model; a string while the operator types a
@@ -200,7 +205,7 @@ function ModelEditor({ loop }: { loop: LoopView }) {
 
   return (
     <div className="side-panel">
-      <h3>Model & pacing</h3>
+      <h3>Model</h3>
       <div className="row" style={{ alignItems: 'center' }}>
         <label className="k" htmlFor="model-select">
           model
@@ -273,6 +278,37 @@ function ModelEditor({ loop }: { loop: LoopView }) {
           </option>
         ))}
       </select>
+      {context}
+    </div>
+  )
+}
+
+// PacingChoice is whether the loop picks its next wake or keeps a fixed
+// interval, in the Next wake card because it decides that card's range
+// (#849). A select for a session that may change it, words otherwise.
+function PacingChoice({ loop }: { loop: LoopView }) {
+  const qc = useQueryClient()
+  const manage = useMay()('manage')
+  const [error, setError] = useState('')
+  const pacing = useMutation({
+    mutationFn: (value: LoopView['pacing']) => api.patchLoop(loop.name, { pacing: value }),
+    onSuccess: () => {
+      setError('')
+      qc.invalidateQueries({ queryKey: ['loop', loop.name] })
+      qc.invalidateQueries({ queryKey: ['loops'] })
+    },
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
+  })
+  if (!manage) {
+    return (
+      <div className="row">
+        <span className="k">pacing</span>
+        <span className="v">{PACING_OPTIONS.find((o) => o.value === loop.pacing)?.label ?? loop.pacing}</span>
+      </div>
+    )
+  }
+  return (
+    <>
       <div className="row" style={{ marginTop: 8 }}>
         <label className="k" htmlFor="pacing-select">
           pacing
@@ -282,7 +318,8 @@ function ModelEditor({ loop }: { loop: LoopView }) {
         id="pacing-select"
         className="panel-select"
         value={loop.pacing}
-        onChange={(e) => patch({ pacing: e.target.value })}
+        disabled={pacing.isPending}
+        onChange={(e) => pacing.mutate(e.target.value as LoopView['pacing'])}
       >
         {PACING_OPTIONS.map((o) => (
           <option key={o.value} value={o.value}>
@@ -290,8 +327,12 @@ function ModelEditor({ loop }: { loop: LoopView }) {
           </option>
         ))}
       </select>
-      <div className="panel-note">Changes apply from the next wake.</div>
-    </div>
+      {error && (
+        <div className="form-error" role="alert">
+          {error}
+        </div>
+      )}
+    </>
   )
 }
 
@@ -520,24 +561,18 @@ function ContextFill({
   )
 }
 
-// ContextPanel plots context occupancy across recent turns so a loop climbing
-// toward its window is visible before it overflows. Bars are relative to the
-// largest turn in view; the fill against the model's own window is the row
-// above them, and only when Spool knows that window.
-function ContextPanel({ loop, turns, thresholds }: { loop: LoopView; turns: Turn[]; thresholds?: Settings }) {
-  const finished = turns.filter((turn) => turn.ended_at > 0).reverse()
-  if (finished.length === 0) return null
-
-  const peak = Math.max(...finished.map(contextTokens))
-  const latest = contextTokens(finished[finished.length - 1])
-
+// ContextRows is how full the model's window is, under the model it belongs
+// to (#849): the tokens the last turn carried and, when Spool knows the
+// window, the fill against it. Nothing before a turn has finished.
+function ContextRows({ loop, turns, thresholds }: { loop: LoopView; turns: Turn[]; thresholds?: Settings }) {
+  const latest = turns.find((turn) => turn.ended_at > 0)
+  if (!latest) return null
   return (
-    <div className="side-panel">
-      <h3>Context</h3>
-      <div className="row">
-        <span className="k">last turn</span>
+    <>
+      <div className="row" style={{ marginTop: 8 }}>
+        <span className="k">context</span>
         <span className="v">
-          {formatTokens(loop.context_tokens || latest)}
+          {formatTokens(loop.context_tokens || contextTokens(latest))}
           {loop.context_limit_tokens > 0 && ` / ${formatTokens(loop.context_limit_tokens)}`} tokens
         </span>
       </div>
@@ -549,23 +584,7 @@ function ContextPanel({ loop, turns, thresholds }: { loop: LoopView; turns: Turn
           thresholds={thresholds}
         />
       )}
-      <div className="ctx-trend">
-        {finished.map((turn) => (
-          <div
-            key={turn.id}
-            className="ctx-bar"
-            style={{ height: `${peak > 0 ? (contextTokens(turn) / peak) * 100 : 0}%` }}
-            title={`${new Date(turn.started_at).toLocaleTimeString()} · ${formatTokens(
-              contextTokens(turn),
-            )} tokens in context`}
-          />
-        ))}
-      </div>
-      <div className="panel-note">
-        Context occupancy at each turn's last API call, oldest first. Bars are relative to the tallest turn
-        shown.
-      </div>
-    </div>
+    </>
   )
 }
 
@@ -673,12 +692,16 @@ function WorkstationPanel({ loop, runningVerb }: { loop: LoopView; runningVerb: 
         <span className="k">runtime</span>
         <span className="v">{loop.runtime}</span>
       </div>
+      <WorkspaceRows loop={loop} />
       {contained ? (
         <>
-          <div className="row">
-            <span className="k">image</span>
-            <span className="v">{loop.image || 'server default'}</span>
-          </div>
+          {/* the server's default image says nothing a reader can act on */}
+          {loop.image && (
+            <div className="row">
+              <span className="k">image</span>
+              <span className="v">{loop.image}</span>
+            </div>
+          )}
           <div className="row">
             <span className="k">resources</span>
             <span className="v">
@@ -779,8 +802,36 @@ function WorkstationPanel({ loop, runningVerb }: { loop: LoopView; runningVerb: 
   )
 }
 
+// Where the loop works, on the workstation it works on (#849): the path of
+// its workspace and the branch, or that it has none.
+function WorkspaceRows({ loop }: { loop: LoopView }) {
+  if (loop.workspace_mode === 'none') {
+    return (
+      <div className="row">
+        <span className="k">workspace</span>
+        <span className="v">none (conversational)</span>
+      </div>
+    )
+  }
+  return (
+    <>
+      <div className="row">
+        <span className="k">path</span>
+        <span className="v">{loop.workspace_path}</span>
+      </div>
+      {loop.branch && (
+        <div className="row">
+          <span className="k">branch</span>
+          <span className="v">{loop.branch}</span>
+        </div>
+      )}
+    </>
+  )
+}
+
 // Where the loop is reachable besides this control room: at most one surface,
-// Telegram or Slack (#230), and whether it is in the fleet channel.
+// Telegram or Slack (#230), whether it is in the fleet channel, and the
+// surface's groups or channels (#849).
 // A loop starts with no surface and gets one here (#287); a loop without one
 // is a private loop, which is a choice rather than a fault, so the empty
 // state says what it means instead of warning.
@@ -897,6 +948,7 @@ function SurfacesPanel({ loop }: { loop: LoopView }) {
           {error}
         </div>
       )}
+      <LoopRooms loop={loop} />
     </div>
   )
 }
@@ -1681,7 +1733,7 @@ export default function LoopDetail() {
           {loop.model_refusal && (
             <div className="ws-down-note">
               Model refused. Claude Code said: “{loop.model_refusal}” The loop takes no turns, and keeps what
-              it is told, until its model is changed under Model &amp; pacing.
+              it is told, until its model is changed under Model.
             </div>
           )}
           <div className="dest-picker pane-tabs" style={{ marginTop: 0, marginBottom: 12 }}>
@@ -1887,6 +1939,7 @@ export default function LoopDetail() {
                 {formatUsd(loop.cost_today_usd)}
               </span>
             </div>
+            <PacingChoice loop={loop} />
             {may('manage') ? (
               <ScheduleEditor
                 name={name}
@@ -1902,7 +1955,6 @@ export default function LoopDetail() {
                 <PaceFacts
                   pace={{ min: loop.min_wake_sec, tick: loop.tick_interval_sec, max: loop.max_wake_sec }}
                 />
-                <div className="hint">{PACE_HINT}</div>
               </div>
             )}
           </div>
@@ -1971,56 +2023,18 @@ export default function LoopDetail() {
             </div>
           </div>
 
-          {transcript && <ContextPanel loop={loop} turns={turns ?? []} thresholds={thresholds} />}
+          <MissionPanel name={name} mission={loop.mission} hasSession={loop.current_session_id !== ''} />
+
+          <ModelPanel
+            loop={loop}
+            context={transcript && <ContextRows loop={loop} turns={turns ?? []} thresholds={thresholds} />}
+          />
 
           <WorkstationPanel loop={loop} runningVerb={runningVerb} />
 
-          <ModelPanel loop={loop} />
-
-          <MissionPanel name={name} mission={loop.mission} hasSession={loop.current_session_id !== ''} />
-
-          <div className="side-panel">
-            <h3>Workspace</h3>
-            {loop.workspace_mode === 'none' ? (
-              <div className="row">
-                <span className="k">none (conversational)</span>
-              </div>
-            ) : (
-              <>
-                <div className="row">
-                  <span className="k">path</span>
-                  <span className="v">{loop.workspace_path}</span>
-                </div>
-                {loop.branch && (
-                  <div className="row">
-                    <span className="k">branch</span>
-                    <span className="v">{loop.branch}</span>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-
           <SurfacesPanel loop={loop} />
 
-          <LoopRooms loop={loop} />
-
           <LoopConnections loop={loop} />
-
-          {transcript && (
-            <div className="side-panel">
-              <h3>Recent turns</h3>
-              {(turns ?? []).map((t) => (
-                <div className="row" key={t.id}>
-                  <span className="k">
-                    {new Date(t.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}{' '}
-                    {t.trigger}
-                  </span>
-                  <span className="v">{t.ended_at ? `$${t.cost_usd.toFixed(3)}` : '…'}</span>
-                </div>
-              ))}
-            </div>
-          )}
 
           <LoopChangesPanel name={name} />
         </SideColumn>
