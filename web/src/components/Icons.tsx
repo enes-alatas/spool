@@ -165,3 +165,12 @@ export function CheckIcon({ size }: { size?: number }) {
     </Icon>
   )
 }
+
+// Back to the top: a single chevron pointing up.
+export function ToTopIcon({ size }: { size?: number }) {
+  return (
+    <Icon size={size}>
+      <path d="M5.5 12.25L10 7.75l4.5 4.5" />
+    </Icon>
+  )
+}

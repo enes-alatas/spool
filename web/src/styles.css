@@ -348,6 +348,10 @@ textarea {
      sides keeps the axes shared, and costs nothing where scrollbars overlay.
      Moving `overflow-y` or the bar changes this; re-check the centring. */
   scrollbar-gutter: stable both-edges;
+  /* So a column inside can be as tall as this box shows, in `cqh`: the loop
+     page's side column (#848). The box's size comes from the app's grid,
+     never from its content, so containing it changes nothing else. */
+  container-type: size;
 }
 /* The destinations in the bar above are centred on the viewport, so the
    column under them is too: left-anchored content reads as misaligned with
@@ -1643,6 +1647,46 @@ textarea {
 .detail > * {
   min-width: 0;
 }
+/* The side column scrolls on its own (#848): taller than the screen, it
+   took the page with it, and the timeline left the screen while the reader
+   looked at a lower card. It sticks below the top of the scrolling `.main`
+   and is at most the height `.main` shows, less the page's padding above
+   and below. `cqh` is `.main`'s height, which is the room below the top bar
+   whatever height that bar grows to. */
+.detail > aside {
+  position: sticky;
+  top: 24px;
+  max-height: calc(100cqh - 48px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+/* Back to the column's top (#848): fixed in the window's bottom-right
+   corner once the column has scrolled down, portalled out of it by
+   SideColumn. Quiet until hovered or focused: a muted chevron on a
+   translucent disc, with no shadow. */
+.to-top {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--hairline);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  color: var(--text-muted);
+  opacity: 0.75;
+  cursor: pointer;
+  transition: opacity 120ms;
+}
+.to-top:hover,
+.to-top:focus-visible {
+  opacity: 1;
+  color: var(--text);
+}
 .composer {
   display: flex;
   gap: 10px;
@@ -2782,6 +2826,16 @@ textarea {
   }
   .detail {
     grid-template-columns: 1fr;
+  }
+  /* Stacked under the timeline, the column is part of the page again, and
+     the page's one scroll is the right one. */
+  .detail > aside {
+    position: static;
+    max-height: none;
+    overflow-y: visible;
+  }
+  .to-top {
+    display: none;
   }
 }
 
