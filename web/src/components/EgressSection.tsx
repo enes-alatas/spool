@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ApiError, type EgressView } from '../api'
 import { messageTime } from './MessageKnot'
 import { applying } from '../egress'
+import { Copyable } from './Copyable'
 
 // The fleet's workstation egress allowlist (#542, ADR-0028): what a docker
 // loop's workstation may reach. The built-in hosts are read-only, each group
@@ -51,8 +52,8 @@ export function EgressSection() {
       </p>
       {missing ? (
         <div className="form-error" role="alert">
-          This hub reads its extra hosts from <code>--egress-allow</code> at start. Update Spool to edit them
-          here.
+          This hub reads its extra hosts from <Copyable text="--egress-allow" /> at start. Update Spool to
+          edit them here.
         </div>
       ) : loadError ? (
         <div className="form-error" role="alert">
@@ -86,9 +87,9 @@ export function EgressSection() {
           )}
           {data.flag && (
             <div className="egress-note">
-              From the command line (<code>--egress-allow</code>):{' '}
-              {data.flag.length > 0 ? data.flag.join(', ') : 'empty'}. It seeded this list on first start; the
-              list above is what applies.
+              From the command line (<Copyable text="--egress-allow" />
+              ): {data.flag.length > 0 ? data.flag.join(', ') : 'empty'}. It seeded this list on first start;
+              the list above is what applies.
             </div>
           )}
           <form
@@ -112,7 +113,7 @@ export function EgressSection() {
           </form>
           <div className="egress-note">
             A name, not an address or a URL. A leading dot allows a domain and everything under it. Ports
-            other than 80 and 443 are set with <code>--egress-allow</code>.
+            other than 80 and 443 are set with <Copyable text="--egress-allow" />.
           </div>
           {error && (
             <div className="form-error" role="alert">

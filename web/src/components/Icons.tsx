@@ -228,3 +228,13 @@ export function DeleteIcon() {
     </Icon>
   )
 }
+
+// Copy: one sheet over another.
+export function CopyIcon({ size }: { size?: number }) {
+  return (
+    <Icon size={size}>
+      <rect x="7" y="7" width="9.5" height="9.5" rx="1.5" />
+      <path d="M13 7V4.75A1.25 1.25 0 0 0 11.75 3.5h-7A1.25 1.25 0 0 0 3.5 4.75v7A1.25 1.25 0 0 0 4.75 13H7" />
+    </Icon>
+  )
+}

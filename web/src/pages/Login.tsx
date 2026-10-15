@@ -3,6 +3,7 @@ import { api } from '../api'
 import { tokenSubmittable } from '../forms'
 import { loginError } from '../session'
 import { SpoolGlyph } from '../components/Spool'
+import { Copyable } from '../components/Copyable'
 
 // The one screen shown without a session (#239). A user signs in with a
 // username and password (#582). The operator token signs in too for one
@@ -82,7 +83,7 @@ export default function Login({ onSignedIn }: { onSignedIn: () => void }) {
               />
               <div className="hint">
                 The hub's first start printed <code>admin</code>'s one-time password. Run{' '}
-                <code>spool user reset admin</code> where the hub runs to print a new one.
+                <Copyable text="spool user reset admin" /> where the hub runs to print a new one.
               </div>
             </div>
           </>
@@ -104,7 +105,7 @@ export default function Login({ onSignedIn }: { onSignedIn: () => void }) {
                 onChange={(e) => setToken(e.target.value)}
               />
               <div className="hint">
-                Run <code>spool token</code> where the hub runs to print it.
+                Run <Copyable text="spool token" /> where the hub runs to print it.
               </div>
             </div>
           </>

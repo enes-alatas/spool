@@ -37,6 +37,8 @@ const WAIT = 15000
 
 const browser = await chromium.launch()
 const ctx = await browser.newContext({ viewport: { width: 1180, height: 900 } })
+// the copy chips write the clipboard, and the walk reads it back
+await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base })
 await ctx.tracing.start({ screenshots: true, snapshots: true })
 const page = await ctx.newPage()
 
@@ -233,6 +235,50 @@ try {
   await page.goto(base + '/settings')
   await heading('Settings')
   await see(page.getByText(/Configured|Not configured/), 'the Claude token state')
+
+  // A literal to type copies on a click (#870): the clipboard holds the
+  // command afterwards, and the chip says so.
+  step = 'copy chip'
+  const chip = page.getByRole('button', { name: 'Copy claude setup-token' }).first()
+  await chip.click()
+  await see(page.locator('.copyable.copied'), 'the copied chip')
+  const copied = await page.evaluate(() => globalThis.navigator.clipboard.readText())
+  if (copied !== 'claude setup-token')
+    throw new Error(`${step}: the clipboard holds ${JSON.stringify(copied)}`)
+  // Over plain http on a LAN address there is no clipboard API, so the copy
+  // goes through execCommand (#870): with writeText refused, the clipboard
+  // still holds the command. Where execCommand refuses too, the click
+  // selects the command and says to press Ctrl+C.
+  await sleep(1600)
+  await page.evaluate(async () => {
+    const clipboard = globalThis.navigator.clipboard
+    await clipboard.writeText('')
+    clipboard.writeText = () => Promise.reject(new Error('no clipboard here'))
+  })
+  // Copied from the keyboard, so a lost focus would show: the textarea the
+  // copy selects must hand focus back to the chip.
+  await chip.focus()
+  await page.keyboard.press('Enter')
+  await see(page.locator('.copyable.copied'), 'the chip copied without the clipboard API')
+  if (!(await chip.evaluate((el) => el === globalThis.document.activeElement))) {
+    throw new Error(`${step}: copying without the clipboard API took focus off the chip`)
+  }
+  const byCommand = await page.evaluate(() => globalThis.navigator.clipboard.readText())
+  if (byCommand !== 'claude setup-token') {
+    throw new Error(`${step}: without the clipboard API the clipboard holds ${JSON.stringify(byCommand)}`)
+  }
+  await sleep(1600)
+  await page.evaluate(() => {
+    globalThis.document.execCommand = () => false
+  })
+  await chip.click()
+  const title = await chip.getAttribute('title')
+  const selected = await page.evaluate(() => String(globalThis.getSelection()))
+  if (title !== 'Selected: press Ctrl+C' || selected !== 'claude setup-token') {
+    throw new Error(
+      `${step}: with no way to copy, the chip said ${JSON.stringify(title)} and selected ${JSON.stringify(selected)}`,
+    )
+  }
 
   // Access is a part of Settings since #732; the old address lands there.
   step = 'Access'

@@ -8,6 +8,7 @@ import { CheckIcon } from './Icons'
 import { LinkSteps, POLL_MS, Waiting, linkSurface } from './LinksSection'
 import { StepDialog } from './StepDialog'
 import { BotTokenForm, SlackStep } from './SurfaceAttach'
+import { Copyable } from './Copyable'
 
 // The Chat surface card's dialog (#589): the whole step without leaving the
 // first-run page. A loop with no surface gets one through the loop page's
@@ -67,8 +68,8 @@ function Attach({ loop }: { loop: LoopView }) {
     return (
       <>
         <p className="step-dialog-lede">
-          Create a bot with <strong>@BotFather</strong> on Telegram (<code>/newbot</code>), then paste the
-          token it gives you.
+          Create a bot with <strong>@BotFather</strong> on Telegram (<Copyable text="/newbot" />
+          ), then paste the token it gives you.
         </p>
         <BotTokenForm loop={loop} startOpen onClose={() => setSurface('')} />
       </>

@@ -15,6 +15,7 @@ import { loginCheckTone } from '../onboarding'
 import { CapBanner, useMinuteClock } from '../components/PlanUsage'
 import { capFields, capGate, capIdleStatus, capReason, capValue, type CapDraft } from '../planCap'
 import { errorTurnsField, errorTurnsValue } from '../health'
+import { Copyable } from '../components/Copyable'
 
 export default function Settings() {
   const { data: settings, error: loadError } = useQuery({ queryKey: ['settings'], queryFn: api.settings })
@@ -156,8 +157,9 @@ function ClaudeToken({ settings, loadError }: { settings?: SettingsView; loadErr
       <h2 className="section-head">Claude token</h2>
       <p className="page-lede">
         Workstation (contained) loops run <code>claude</code> inside a Docker container that has no login of
-        its own. Paste a long-lived token from <code>claude setup-token</code> and every workstation runs
-        under your own Claude plan and limits. Bare loops keep using this machine's login and don't need it.
+        its own. Paste a long-lived token from <Copyable text="claude setup-token" /> and every workstation
+        runs under your own Claude plan and limits. Bare loops keep using this machine's login and don't need
+        it.
       </p>
 
       <div className="form">
@@ -184,8 +186,8 @@ function ClaudeToken({ settings, loadError }: { settings?: SettingsView; loadErr
             onChange={(e) => setToken(e.target.value)}
           />
           <div className="hint">
-            Run <code>claude setup-token</code> where you're logged in, then paste the result here. It's
-            stored write-only: the value never leaves this server or appears in a response.
+            Run <Copyable text="claude setup-token" /> where you're logged in, then paste the result here.
+            It's stored write-only: the value never leaves this server or appears in a response.
           </div>
         </div>
 
