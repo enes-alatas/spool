@@ -668,3 +668,6 @@ Enes's UI round (loop page): filed #846 (bug, timeline opens at top; LoopDetail.
 
 ## 2026-10-15 10:10 UTC
 Enes: the UI round deserves its own milestone that turns into a minor version. Created "Loop page polish" (#12), moved #846-#849. Milestones now: L5 Team (3), L6 OSS 1.0, L7 Service, CI reliability (#11), Loop page polish (#12). Release order: v0.6.0 (after fleet dogfood) → v0.7.0 = Loop page polish.
+
+## 2026-10-15 11:55 UTC
+Sweep: #846 and #847 closed (Iris, fast); #840 (#839) merged; #842 flake and #844 backup fix closed. Terra on #480: PR #854 with Quinn; its web half #853 → L5 Team, for Iris after #849 (tell her when she asks). Iris on #848 → #849. Open PRs: #854, #453.
