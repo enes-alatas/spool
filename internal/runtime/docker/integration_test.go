@@ -165,6 +165,22 @@ func TestEnsureCreatesWorkstation(t *testing.T) {
 	}
 }
 
+// A real daemon's refusal of an image that is not on the host is the one
+// the hub turns into a remedy (#766), here for a loop's own image: the
+// stub in the unit test only imitates it.
+func TestEnsureNamesTheRemedyForAMissingImageOnARealDaemon(t *testing.T) {
+	rt := requireDocker(t)
+	spec := testSpec(t, rt)
+	spec.Image = "spool-itest-missing-" + randomHex(6)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	err := rt.Ensure(ctx, spec)
+	if err == nil {
+		t.Fatal("Ensure succeeded without the image")
+	}
+	assertRemedy(t, err, spec.Image, loopsOwnImage, []string{"spool images", "make image"})
+}
+
 func TestEnsureIdempotentAndRestartsStopped(t *testing.T) {
 	rt := requireDocker(t)
 	spec := testSpec(t, rt)

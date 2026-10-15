@@ -142,7 +142,7 @@ func (rt *Runtime) provisionEgressProxyWithFleet(ctx context.Context, imageID st
 
 func (rt *Runtime) provisionEgressProxy(ctx context.Context, imageID string) error {
 	if _, err := rt.command(ctx, runTimeout, rt.egressRunArgv(imageID)...); err != nil && !nameInUse(err) {
-		return err
+		return withImageRemedy(err, rt.egressImage, false)
 	}
 	// The run above put the proxy on the internal network only; a second
 	// network is a separate call, and it is the one that gives the proxy —
