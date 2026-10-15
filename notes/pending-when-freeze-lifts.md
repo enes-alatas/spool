@@ -701,3 +701,6 @@ Iris: #858 closed; #869 (#853 room side) with Quinn; filed #870 (copyable comman
 
 ## 2026-10-15 18:00 UTC
 Sweep: #859 merged (ADR-0056), #758 closed; Terra's #861 findings → amendment PR #872 in review. #869 merged (#853). Loop page polish milestone complete (5/5). Asked Enes: one release (v0.6.0 with the polish) or two; and fleet upgrade status (prompt still v0.5.1-75). Open PRs: #872, #453. Terra next: #862 ∥ #863. Iris on #870.
+
+## 2026-10-15 19:05 UTC
+Enes: release both (L5 close-out + Loop page polish) as v0.6.0, after he upgrades the runtime and tests. Gate: his "dry run" word → Elliot dispatches release dry run on the exact commit → tag ask with run link. Milestone "Loop page polish" stays closed-complete; no separate version.
