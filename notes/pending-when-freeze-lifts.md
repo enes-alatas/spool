@@ -665,3 +665,6 @@ Enes has UI improvements in mind; wants Iris on them and Terra back on #758 (clo
 
 ## 2026-10-15 10:05 UTC
 Enes's UI round (loop page): filed #846 (bug, timeline opens at top; LoopDetail.tsx following/useLayoutEffect), #847 (mission edit dialog), #848 (aside scrolls independently), #849 (card simplification, options first). All L5 Team; asked Enes whether to create a minor milestone "Loop page polish" (needs his words). Iris order: #846 → #847 → #848 → #849, mockups first. Enes is in contact with Terra about #758 directly.
+
+## 2026-10-15 10:10 UTC
+Enes: the UI round deserves its own milestone that turns into a minor version. Created "Loop page polish" (#12), moved #846-#849. Milestones now: L5 Team (3), L6 OSS 1.0, L7 Service, CI reliability (#11), Loop page polish (#12). Release order: v0.6.0 (after fleet dogfood) → v0.7.0 = Loop page polish.
