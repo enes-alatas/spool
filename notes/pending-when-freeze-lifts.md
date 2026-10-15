@@ -674,3 +674,6 @@ Sweep: #846 and #847 closed (Iris, fast); #840 (#839) merged; #842 flake and #84
 
 ## 2026-10-15 12:05 UTC
 Enes relayed an HN comment (subagent limit, usage across loops). Answered: #648/#649 usage, #650/#652 caps already ship; gap = subagent control. Proposed per-loop "Subagents: allowed/off" (Agent tool deny-list), Terra hub flag + Iris toggle, after #758; awaiting "file". Gave him an HN reply draft.
+
+## 2026-10-15 12:10 UTC
+Enes asked for a per-loop USD or usage-share cap. Answered: per-loop daily USD cap already shipped (#652); a per-loop plan-share cap isn't measurable (plan windows are per account), the closest is a share-of-fleet-spend cap, which I advised against; file as low child of #646 only on his word.
