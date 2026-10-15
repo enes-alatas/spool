@@ -680,3 +680,6 @@ Enes asked for a per-loop USD or usage-share cap. Answered: per-loop daily USD c
 
 ## 2026-10-15 12:20 UTC
 Enes: no share cap; wants the HN answer with the subagent knob issue + the per-loop USD cap. Filed #855 (per-loop "subagents: allowed/off", Agent tool deny-list; L6). Sent him the HN draft with #652 and #855 links. #855 → Terra after #758 (web half to file when the hub flag lands). Terra queue: #480 (PR #854) → #758 (when prerequisites) → #855 → #766 → #830 → #630.
+
+## 2026-10-15 13:35 UTC
+Iris: #848 closed; #857 (#849 card simplification, option B picked by Enes, 12→8 cards) with Quinn. #858 (round icon buttons on Controls, Enes's ask) homed on Loop page polish; Iris takes it after #857, then #853 (web half of #480).
