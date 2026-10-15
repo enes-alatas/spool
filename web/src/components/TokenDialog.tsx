@@ -4,6 +4,7 @@ import { api } from '../api'
 import { tokenSubmittable } from '../forms'
 import { CheckIcon } from './Icons'
 import { StepDialog } from './StepDialog'
+import { Copyable } from './Copyable'
 
 // The Harness card's setup-token dialog (#588): the token field Settings has,
 // over the first-run page, so setting up the harness doesn't leave it.
@@ -99,8 +100,8 @@ export function TokenDialog({ replacing, onClose }: { replacing: boolean; onClos
               onChange={(e) => setToken(e.target.value)}
             />
             <div className="hint">
-              Run <code>claude setup-token</code> where you're logged in, then paste the result here. It's
-              stored write-only, and saving it checks the login once with one small call on your plan.
+              Run <Copyable text="claude setup-token" /> where you're logged in, then paste the result here.
+              It's stored write-only, and saving it checks the login once with one small call on your plan.
             </div>
           </div>
           {error && (

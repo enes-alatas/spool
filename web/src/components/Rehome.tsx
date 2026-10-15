@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, ApiError, type LoopView, type Rehome } from '../api'
+import { Copyable } from './Copyable'
 
 // What a rehome doesn't carry into the workstation, as the hub lists it in
 // its answer (internal/httpapi notCarried); shown before the ask, when there
@@ -141,7 +142,7 @@ export function LeftBehind({ answer }: { answer: Rehome }) {
     <div className="panel-note">
       {answer.left_behind ? (
         <>
-          Left on the host for you to clean up: <code>{answer.left_behind}</code>.
+          Left on the host for you to clean up: <Copyable text={answer.left_behind} />.
         </>
       ) : (
         'It had no workspace on the host, so nothing is left there but your own logins and tools.'

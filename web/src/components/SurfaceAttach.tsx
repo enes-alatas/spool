@@ -4,6 +4,7 @@ import { api, type LoopView } from '../api'
 import { tokenSubmittable } from '../forms'
 import { slackCreateAppURL, slackManifest } from '../slackManifest'
 import { hubHasSlack, slackAttachError, type SlackAttachError, slackPairSubmittable } from '../slack'
+import { Copyable } from './Copyable'
 
 // Binding a loop to a Telegram bot, and rebinding it to another. The token is
 // write-only in the same sense as a secret: it is typed, sent, and never
@@ -135,7 +136,7 @@ export function SlackStep({ loop, onClose }: { loop: LoopView; onClose: () => vo
         </li>
         <li>
           Under Basic Information, generate an app-level token, <code>xapp-…</code>, with the{' '}
-          <code>connections:write</code> scope. A manifest cannot create this one.
+          <Copyable text="connections:write" /> scope. A manifest cannot create this one.
         </li>
       </ol>
       <pre className="slack-manifest">{text}</pre>
