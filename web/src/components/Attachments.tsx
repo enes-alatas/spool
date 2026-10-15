@@ -21,6 +21,8 @@ export function formatBytes(n: number): string {
 export function attachmentGone(a: Attachment): string {
   if (a.removed_at) return 'no longer kept'
   if (a.not_kept === 'too_large') return 'too large to keep'
+  // not a fault of the file's: the app was never let read it (#480)
+  if (a.not_kept === 'missing_scope') return 'the Slack app may not read files'
   if (a.not_kept) return 'could not be fetched'
   return ''
 }

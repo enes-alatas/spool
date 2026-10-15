@@ -329,8 +329,9 @@ export interface Attachment {
   // Images only, when the hub could read them.
   width?: number
   height?: number
-  // Why the file never arrived: 'too_large' or 'fetch_failed'. A plain
-  // string for the reason `send_resolution` is one: the hub writes it.
+  // Why the file never arrived: 'too_large', 'fetch_failed', or
+  // 'missing_scope' when the surface's app may not read files (#480). A
+  // plain string for the reason `send_resolution` is one: the hub writes it.
   not_kept?: string
   created_at: number
   // When retention removed the bytes.
@@ -387,6 +388,8 @@ export interface SlackSender {
 // stranger's message, binds nothing (#438). channel_id is '' until
 // then. ignored_events counts messages from Slack channels the app has no
 // bound room in (#548): the hint that one is waiting on the loop page.
+// last_file_error says why Slack last withheld a shared file and what brings
+// files back, '' once Slack hands one over again (#480).
 export interface SlackStatus {
   configured: boolean
   bot_user_id: string
@@ -399,6 +402,7 @@ export interface SlackStatus {
     connected: boolean
     last_event_at: number
     last_error: string
+    last_file_error: string
     ignored_events: number
   }
 }
