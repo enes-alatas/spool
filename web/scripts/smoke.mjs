@@ -135,6 +135,55 @@ try {
   await page.unroute('**/api/loops/gardener')
   await page.setViewportSize({ width: 1180, height: 900 })
 
+  // The mission's editor holds an edit, so a stray dismissal must not throw
+  // it away (#847): Escape, twice, as a reflex does. Chromium lets a page
+  // refuse only the first Escape after the reader's last input, so the
+  // second is the one that tests the dialog.
+  step = 'mission dialog'
+  await page.locator('.side-panel').getByRole('button', { name: 'Edit the mission' }).click()
+  const missionDialog = page.locator('dialog.mission-dialog')
+  const missionText = missionDialog.getByRole('textbox', { name: 'Mission' })
+  await see(missionText, 'the mission editor')
+  // Typed, not filled: the keys are the reader's input that lets the page
+  // refuse the first Escape, and the second is then the browser's to take.
+  await missionText.click()
+  await page.keyboard.press('ControlOrMeta+End')
+  await page.keyboard.type(' Draft.')
+  if (!(await missionText.inputValue()).endsWith(' Draft.')) {
+    throw new Error(`${step}: typing never reached the mission editor`)
+  }
+  await page.keyboard.press('Escape')
+  await page.keyboard.press('Escape')
+  await sleep(200)
+  if (!(await missionDialog.evaluate((el) => el.open).catch(() => false))) {
+    throw new Error(`${step}: Escape closed the dialog and lost the edit`)
+  }
+  if (!(await missionText.inputValue()).endsWith(' Draft.')) {
+    throw new Error(
+      `${step}: the edit did not survive Escape: ${JSON.stringify((await missionText.inputValue()).slice(-40))}`,
+    )
+  }
+  // A save in flight holds the dialog, the ✕ included, so a save that fails
+  // says so in it: closed, it would say so nowhere. The hub is made to take
+  // its time and then refuse.
+  await page.route('**/api/loops/gardener', async (route) => {
+    if (route.request().method() !== 'PATCH') return route.continue()
+    await sleep(1000)
+    await route.fulfill({
+      status: 500,
+      contentType: 'application/json',
+      body: '{"error":"refused for the smoke"}',
+    })
+  })
+  await missionDialog.getByRole('button', { name: 'Save' }).click()
+  if (!(await missionDialog.getByRole('button', { name: 'Close' }).isDisabled())) {
+    throw new Error(`${step}: the ✕ could close the dialog during a save`)
+  }
+  await see(missionDialog.getByRole('alert'), "the failed save's error")
+  await page.unroute('**/api/loops/gardener')
+  await missionDialog.getByRole('button', { name: 'Cancel' }).click()
+  await gone(missionDialog, 'the mission dialog')
+
   step = 'Rules'
   await page.goto(base + '/rules')
   await heading('Fleet rules')

@@ -196,15 +196,19 @@ const connectionsFile = `${outDir}/loop-connections.png`
 await connections.screenshot({ path: connectionsFile })
 taken.push(connectionsFile)
 
-// The mission editor is a state of a panel rather than a page, and it is the
-// state worth shooting: the read-only mission is already in the loop shot.
+// The mission editor is the state worth shooting: the read-only mission is
+// already in the loop shot. A dialog over the page since #847, so the shot is
+// the page, and Cancel closes it: a modal left open takes every click after.
 const mission = page.locator('.side-panel', { has: page.locator('h3', { hasText: /^Mission$/ }) }).first()
 await mission.waitFor({ timeout: 15000 })
 await mission.getByRole('button', { name: 'Edit the mission' }).click()
-await mission.locator('textarea').waitFor({ timeout: 15000 })
+const missionDialog = page.locator('dialog.mission-dialog')
+await missionDialog.locator('textarea').waitFor({ timeout: 15000 })
 const missionFile = `${outDir}/mission-edit.png`
-await mission.screenshot({ path: missionFile })
+await page.screenshot({ path: missionFile })
 taken.push(missionFile)
+await missionDialog.getByRole('button', { name: 'Cancel' }).click()
+await missionDialog.waitFor({ state: 'detached', timeout: 15000 })
 
 // A bare loop's way into a docker container (#632), shot as its confirm:
 // what the move keeps and what it leaves on the host. The panel is the
