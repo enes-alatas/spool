@@ -14,6 +14,7 @@ cd "$(dirname "$0")/.."
 root=$(pwd)
 failures=0
 work=$(mktemp -d)
+tab=$'\t'
 trap 'rm -rf "$work"' EXIT
 
 fail() { printf 'FAIL %s\n' "$1"; failures=$((failures + 1)); }
@@ -31,9 +32,17 @@ info) [ -z "${STUB_DOWN:-}" ] ;;
 image) [ "$3" = spool-workstation ] ;;
 volume)
 	case $2 in
-	ls) ls "$STUB/volumes" ;;
+	ls)
+		# -q, then --filter label=KEY or name=PART, as docker filters.
+		for v in $(ls "$STUB/volumes"); do
+			case ${5-} in
+			label=*) [ -f "$STUB/volumes/$v/${5#label=}" ] || continue ;;
+			name=*) [[ $v == *"${5#name=}"* ]] || continue ;;
+			esac
+			echo "$v"
+		done ;;
 	inspect)
-		if [ "$3" = -f ]; then cat "$STUB/volumes/$5/$(label "$4")"; else [ -d "$STUB/volumes/$3" ]; fi ;;
+		if [ "$3" = -f ]; then cat "$STUB/volumes/$5/$(label "$4")" 2>/dev/null || echo "<no value>"; else [ -d "$STUB/volumes/$3" ]; fi ;;
 	create)
 		shift 2; labels=()
 		while [ "$1" = --label ]; do labels+=("$2"); shift 2; done
@@ -63,8 +72,9 @@ STUB
 chmod +x "$work/bin/docker"
 export PATH=$work/bin:$PATH
 
-# A hub's data directory, a stray hub.key.* from a cut-short start, and two
-# volumes: one whose container is running, one whose container is gone.
+# A hub's data directory, a stray hub.key.* from a cut-short start, and three
+# volumes: one whose container is running, one whose container is gone, and
+# one made by hand with no labels at all (#844).
 src=$work/src
 mkdir -p "$src/files" "$src/homes/bare1"
 printf 'db' >"$src/spool.db"
@@ -78,6 +88,8 @@ for v in a b; do
 	printf "name-$v" >"$STUB/volumes/spool-ws-$v/spool.loop.name"
 	printf "memory-$v" >"$STUB/volumes/spool-ws-$v/data/.claude/notes.md"
 done
+mkdir -p "$STUB/volumes/spool-ws-c/data/.claude"
+printf "memory-c" >"$STUB/volumes/spool-ws-c/data/.claude/notes.md"
 echo true >"$STUB/containers/spool-ws-a"
 
 out=$work/out
@@ -105,9 +117,10 @@ keys=$(ls "$out"/spool-keys-*.tar)
 check "both files are 0600" '[ "$(stat -c %a "$data" "$keys" | sort -u)" = 600 ]'
 check "the data file holds no credential" '! tar -tzf "$data" | grep -qE "hub\.key|operator-token"'
 check "the keys file holds only the two credentials" '[ "$(tar -tf "$keys" | sort | tr "\n" " ")" = "hub.key operator-token " ]'
-check "the volumes are read read-only" '[ "$(grep -c "^run .*:/v:ro" "$STUB/log")" = 2 ] && ! grep "^run" "$STUB/log" | grep -qv ":/v:ro"'
+check "the volumes are read read-only" '[ "$(grep -c "^run .*:/v:ro" "$STUB/log")" = 3 ] && ! grep "^run" "$STUB/log" | grep -qv ":/v:ro"'
 check "a running workstation is stopped and started again" 'grep -qx "stop spool-ws-a" "$STUB/log" && grep -qx "start spool-ws-a" "$STUB/log" && ! grep -q "stop spool-ws-b" "$STUB/log"'
 check "no staging directory is left behind" '[ "$(ls -A "$out" | wc -l)" = 2 ]'
+check "a volume with no labels is backed up, its id read off its name" 'grep -qx "volume spool-ws-c (loop id c, no loop labels: a restore adds them)" "$work/stdout" && tar -xzOf "$data" manifest.tsv | grep -qx "spool-ws-c${tab}c${tab}"'
 
 # Restore onto a fresh host: the volumes are gone.
 mv "$STUB/volumes" "$work/old-volumes"
@@ -117,7 +130,12 @@ bash scripts/spool-restore.sh --data "$data" --keys "$keys" --data-dir "$dst" >/
 check "restore succeeds onto a fresh host" '[ $? -eq 0 ]'
 check "the data directory round-trips" 'diff -r "$src" "$dst" >"$work/diff"; [ "$(cat "$work/diff")" = "Only in $src: hub.key.123" ]'
 check "the restored directory is 0700 and its keys 0600" '[ "$(stat -c %a "$dst")" = 700 ] && [ "$(stat -c %a "$dst/hub.key" "$dst/operator-token" | sort -u)" = 600 ]'
-check "the volumes round-trip with their labels" 'diff -r "$work/old-volumes" "$STUB/volumes"'
+check "the volumes round-trip with their labels" 'diff -r "$work/old-volumes/spool-ws-a" "$STUB/volumes/spool-ws-a" && diff -r "$work/old-volumes/spool-ws-b" "$STUB/volumes/spool-ws-b"'
+check "a volume backed up with no labels is restored with them" 'diff -r "$work/old-volumes/spool-ws-c/data" "$STUB/volumes/spool-ws-c/data" && [ "$(cat "$STUB/volumes/spool-ws-c/spool.loop.id")" = c ]'
+
+mkdir "$work/out2"
+bash scripts/spool-backup.sh --data-dir "$dst" --out "$work/out2" >"$work/stdout2" 2>&1
+check "a backup after the restore finds the volume labelled" '[ $? -eq 0 ] && grep -qx "volume spool-ws-c (loop id c)" "$work/stdout2" && ! grep -q "no loop labels" "$work/stdout2"'
 
 bash scripts/spool-restore.sh --data "$data" --keys "$keys" --data-dir "$work/dst2" >/dev/null 2>"$work/err"
 check "restore refuses volumes that exist, before writing anything" '[ $? -ne 0 ] && grep -q "spool-ws-a spool-ws-b" "$work/err" && [ ! -e "$work/dst2" ]'

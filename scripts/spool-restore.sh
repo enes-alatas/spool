@@ -100,7 +100,7 @@ if [ "$volumes" = 1 ]; then
 		docker volume create --label "spool.loop.id=$id" --label "spool.loop.name=$name" "$vol" >/dev/null
 		docker run --rm -i --network none --user 0 --entrypoint tar \
 			-v "$vol:/v" "$image" -C /v --numeric-owner -xpf - <"$stage/volumes/$vol.tar"
-		printf 'volume %s (loop %s)\n' "$vol" "$name"
+		printf 'volume %s (loop %s)\n' "$vol" "${name:-id $id}"
 	done <"$stage/manifest.tsv"
 fi
 

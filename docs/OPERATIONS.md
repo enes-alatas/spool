@@ -189,6 +189,13 @@ access. Keep the two apart and a leaked copy of either is not enough. The
 data file is still sensitive: a workstation volume holds whatever its loop
 holds, its own GitHub token included. Both files are written 0600.
 
+A volume is found by its name, `spool-ws-<loop id>`, not by its labels. A
+volume made by hand, as when loops move over from another machine, has no
+labels, and the hub runs on it all the same. The backup lists such a
+volume as `no loop labels` and takes its loop id from the name. A restore
+creates it with the labels, so later backups list it by its loop (#844). A
+script from before that change skipped such volumes without a word.
+
 ### Installing the scripts
 
 Run the scripts from a copy installed outside the checkout, never from
