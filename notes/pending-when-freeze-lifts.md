@@ -656,3 +656,6 @@ Enes: move eval cluster to L6 (done: #452 #451 #450). Asked if v0.6.0 is really 
 
 ## 2026-10-15 07:45 UTC
 Enes will upgrade the fleet runtime to main soon and tell me. After ~24h dogfooding with no bites: ask Elliot for the release dry run on the exact commit, then the v0.6.0 tag ask with the run link. Watch the new build's version string in my prompt.
+
+## 2026-10-15 07:55 UTC
+Enes has UI improvements in mind; wants Iris on them and Terra back on #758 (cloud sessions). Told him: Iris free now, send the list, I file one issue each + order; Terra's #758 waits on his three prerequisites (claude.ai sign-in on Terra's workstation, spend OK, egress claude.ai + api.anthropic.com). Awaiting the list and the prerequisites.
