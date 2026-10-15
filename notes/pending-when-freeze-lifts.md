@@ -650,3 +650,6 @@ Night sweep. Open PRs: #838 (Terra, #775 hub half), #836 (Iris, #831), #840 (Ell
 
 ## 2026-10-15 06:55 UTC
 #838 (#775) merged 06:26; #836 (#831) merged. Closed epics #729 and #750 with notes. L5 left: #830, #480, #158, eval #452/#451/#450 (proposed moving to L6+). DM'd Enes: v0.6.0 go? (dry run by Elliot on exact commit, then tag ask with run link), plus #758 and supported-versions reminders. Open PRs: #840 (#839), #453. Terra on #766 → #480 → #830 → #630. Iris free after #831? Nothing web on L5 left; next web: none queued — candidates: #158 web half? none. Watch for Iris's "what next".
+
+## 2026-10-15 07:35 UTC
+Enes: move eval cluster to L6 (done: #452 #451 #450). Asked if v0.6.0 is really ready; answered no, not today: fleet on v0.5.1-75, main 65 commits ahead, edits/watchdog/#838/#809 undogfooded. Proposed: rebuild fleet on main now, run a day, then dry run + tag (Thursday 16th). Awaiting his call (rebuild now / tag now).
