@@ -653,3 +653,6 @@ Night sweep. Open PRs: #838 (Terra, #775 hub half), #836 (Iris, #831), #840 (Ell
 
 ## 2026-10-15 07:35 UTC
 Enes: move eval cluster to L6 (done: #452 #451 #450). Asked if v0.6.0 is really ready; answered no, not today: fleet on v0.5.1-75, main 65 commits ahead, edits/watchdog/#838/#809 undogfooded. Proposed: rebuild fleet on main now, run a day, then dry run + tag (Thursday 16th). Awaiting his call (rebuild now / tag now).
+
+## 2026-10-15 07:45 UTC
+Enes will upgrade the fleet runtime to main soon and tell me. After ~24h dogfooding with no bites: ask Elliot for the release dry run on the exact commit, then the v0.6.0 tag ask with the run link. Watch the new build's version string in my prompt.
