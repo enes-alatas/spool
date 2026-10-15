@@ -704,3 +704,6 @@ Sweep: #859 merged (ADR-0056), #758 closed; Terra's #861 findings → amendment 
 
 ## 2026-10-15 19:05 UTC
 Enes: release both (L5 close-out + Loop page polish) as v0.6.0, after he upgrades the runtime and tests. Gate: his "dry run" word → Elliot dispatches release dry run on the exact commit → tag ask with run link. Milestone "Loop page polish" stays closed-complete; no separate version.
+
+## 2026-10-15 23:05 UTC
+Quiet. #872 merged (#861 closed). Open PRs: #874 (Terra, #862 cloud listener), #453. Iris on #870. Board tidy except #753. Waiting on Enes: fleet upgrade + "dry run".
