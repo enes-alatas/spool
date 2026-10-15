@@ -698,3 +698,6 @@ ADR-0056 accepted by Enes (PR #859 at ce8a9ae, still open, Quinn pings last). Fi
 
 ## 2026-10-15 15:00 UTC
 Iris: #858 closed; #869 (#853 room side) with Quinn; filed #870 (copyable command chips, Enes's ask) → L5 Team, Iris after #869; hub sibling #871 filed for Terra (low, after #863). Iris after #870: #865/#867 when their hub halves land.
+
+## 2026-10-15 18:00 UTC
+Sweep: #859 merged (ADR-0056), #758 closed; Terra's #861 findings → amendment PR #872 in review. #869 merged (#853). Loop page polish milestone complete (5/5). Asked Enes: one release (v0.6.0 with the polish) or two; and fleet upgrade status (prompt still v0.5.1-75). Open PRs: #872, #453. Terra next: #862 ∥ #863. Iris on #870.
