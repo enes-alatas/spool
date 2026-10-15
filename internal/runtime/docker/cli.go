@@ -134,6 +134,33 @@ func notFound(err error) bool {
 		strings.Contains(msg, "no such image")
 }
 
+// noSuchImage recognizes a docker run refused for an image that is not on
+// this host: with --pull=never, the daemon says "No such image".
+func noSuchImage(err error) bool {
+	var failure *cliError
+	return errors.As(err, &failure) && strings.Contains(strings.ToLower(failure.stderr), "no such image")
+}
+
+// withImageRemedy rewrites a run refused for a missing image into what the
+// operator does about it. The hub never pulls (ADR-0052), so Docker's bare
+// "No such image" leaves them to guess that the image is theirs to put
+// there, and how (#766). A loop's own image (ADR-0017) is one neither
+// `spool images` nor `make image` produces, so its remedy is building or
+// pulling it by name. Any other error passes through unchanged.
+func withImageRemedy(err error, image string, loopsOwn bool) error {
+	if !noSuchImage(err) {
+		return err
+	}
+	if loopsOwn {
+		return fmt.Errorf("image %q is not in the local Docker, and the hub never pulls one: "+
+			"it is this loop's own image, so build or pull it under that name, "+
+			"or clear the loop's image field to use the default", image)
+	}
+	return fmt.Errorf("image %q is not in the local Docker, and the hub never pulls one: "+
+		"run `spool images` for the commands that fetch a release's images, "+
+		"or `make image` in a source checkout to build them", image)
+}
+
 // nameInUse recognizes a docker run losing the container name to an
 // existing container.
 func nameInUse(err error) bool {

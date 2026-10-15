@@ -262,7 +262,8 @@ func (rt *Runtime) provision(ctx context.Context, spec runtime.Spec) error {
 		// created but not running; then the name is taken and starting the
 		// existing one is the right move.
 		if !nameInUse(err) {
-			return err
+			image := workstationImage(spec, rt.defaultImage)
+			return withImageRemedy(err, image, image != rt.defaultImage)
 		}
 		_, err := rt.command(ctx, startTimeout, "start", containerName(spec.LoopID))
 		return err
