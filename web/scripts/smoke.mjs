@@ -135,6 +135,29 @@ try {
   await page.unroute('**/api/loops/gardener')
   await page.setViewportSize({ width: 1180, height: 900 })
 
+  // The side column scrolls on its own (#848): its last card brought into
+  // view moves the column, not the page, so the timeline stays on screen.
+  // A column that fits the window would pass without proving anything.
+  step = 'side column'
+  const aside = page.locator('.detail > aside')
+  await see(aside.locator('.side-panel'), 'a side card')
+  const column = await aside.evaluate((el) => {
+    const main = el.ownerDocument.querySelector('.main')
+    const taller = el.scrollHeight > main.clientHeight
+    el.querySelector('.side-panel:last-of-type').scrollIntoView({ block: 'end' })
+    return { taller, column: el.scrollTop, page: main.scrollTop }
+  })
+  if (!column.taller) throw new Error(`${step}: the column fits the window, so the check proves nothing`)
+  if (column.column === 0 || column.page !== 0) {
+    throw new Error(
+      `${step}: the last card scrolled the page ${column.page}px and the column ${column.column}px`,
+    )
+  }
+  // And the way back up: the button the scroll brought, which takes the
+  // column to its top and goes away there.
+  await page.getByRole('button', { name: 'Back to the top' }).click()
+  await gone(page.getByRole('button', { name: 'Back to the top' }), 'the back-to-top button')
+
   // The mission's editor holds an edit, so a stray dismissal must not throw
   // it away (#847): Escape, twice, as a reflex does. Chromium lets a page
   // refuse only the first Escape after the reader's last input, so the

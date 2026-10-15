@@ -54,6 +54,7 @@ import { LeftBehind, RehomeControl } from '../components/Rehome'
 import { SpoolGlyph } from '../components/Spool'
 import { EditIcon } from '../components/Icons'
 import { StepDialog } from '../components/StepDialog'
+import { SideColumn } from '../components/SideColumn'
 import { BotTokenForm, SlackStep, SlackTokenForm } from '../components/SurfaceAttach'
 
 function Countdown({ at }: { at: number }) {
@@ -1864,7 +1865,7 @@ export default function LoopDetail() {
           )}
         </section>
 
-        <aside>
+        <SideColumn>
           <div className="side-panel">
             <h3>Next wake</h3>
             {inTurn(loop.state) ? (
@@ -2022,7 +2023,7 @@ export default function LoopDetail() {
           )}
 
           <LoopChangesPanel name={name} />
-        </aside>
+        </SideColumn>
       </div>
     </div>
   )
