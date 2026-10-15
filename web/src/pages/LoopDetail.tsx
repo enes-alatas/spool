@@ -1026,6 +1026,13 @@ function SlackSurface({
           Slack: {status.bridge.last_error}
         </div>
       )}
+      {/* the hub's own sentence, which names the fix; cleared by the hub
+          once Slack hands a file over again (#480) */}
+      {status?.bridge.last_file_error && (
+        <div className="form-error" role="alert">
+          {status.bridge.last_file_error}.
+        </div>
+      )}
       {!!status?.bridge.ignored_events && (
         <div className="hint surface-hint">
           Ignored {status.bridge.ignored_events} {status.bridge.ignored_events === 1 ? 'event' : 'events'}{' '}

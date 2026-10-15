@@ -148,7 +148,9 @@ describe('slackSenderLabel', () => {
 })
 
 describe('slackReadiness', () => {
-  const connected = { bridge: { connected: true, last_event_at: 0, last_error: '', ignored_events: 0 } }
+  const connected = {
+    bridge: { connected: true, last_event_at: 0, last_error: '', last_file_error: '', ignored_events: 0 },
+  }
   const down = { bridge: { ...connected.bridge, connected: false } }
 
   it('says there is no owner', () => {
