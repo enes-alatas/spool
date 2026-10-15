@@ -662,3 +662,6 @@ Enes has UI improvements in mind; wants Iris on them and Terra back on #758 (clo
 
 ## 2026-10-15 08:35 UTC
 #836 (#831) merged; Iris free, no web issue ready (checked: "old pairing code" copy is legit legacy wording; #830 is Go). Told Iris to stand down until Enes's UI list lands; first filed item goes to her. Open PRs: #840, #453.
+
+## 2026-10-15 10:05 UTC
+Enes's UI round (loop page): filed #846 (bug, timeline opens at top; LoopDetail.tsx following/useLayoutEffect), #847 (mission edit dialog), #848 (aside scrolls independently), #849 (card simplification, options first). All L5 Team; asked Enes whether to create a minor milestone "Loop page polish" (needs his words). Iris order: #846 → #847 → #848 → #849, mockups first. Enes is in contact with Terra about #758 directly.
