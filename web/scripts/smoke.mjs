@@ -158,6 +158,24 @@ try {
   await page.getByRole('button', { name: 'Back to the top' }).click()
   await gone(page.getByRole('button', { name: 'Back to the top' }), 'the back-to-top button')
 
+  // The controls are round icons (#858), each named on hover: the label for
+  // the rightmost must show whole inside the column, which clips whatever
+  // overflows it, and a screen reader gets the same line as a description.
+  step = 'controls'
+  const del = aside.getByRole('button', { name: 'Delete loop' })
+  await del.hover()
+  const tip = del.locator('.ctl-tip')
+  await see(tip, 'the Delete loop label')
+  const [tipBox, asideBox] = [await tip.boundingBox(), await aside.boundingBox()]
+  if (tipBox.x < asideBox.x || tipBox.x + tipBox.width > asideBox.x + asideBox.width) {
+    throw new Error(`${step}: the Delete loop label runs past the column, where it is clipped`)
+  }
+  const described = await del.evaluate((el) =>
+    el.ownerDocument.getElementById(el.getAttribute('aria-describedby') ?? '')?.textContent.trim(),
+  )
+  if (!described) throw new Error(`${step}: Delete loop has no description for a screen reader`)
+  await page.mouse.move(0, 0)
+
   // The mission's editor holds an edit, so a stray dismissal must not throw
   // it away (#847): Escape, twice, as a reflex does. Chromium lets a page
   // refuse only the first Escape after the reader's last input, so the
