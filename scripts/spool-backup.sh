@@ -33,6 +33,15 @@ volumes=1
 usage() { sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 die() { printf 'spool-backup: %s\n' "$1" >&2; exit 1; }
 
+# volume_label VOLUME KEY is the label's value, or nothing when the volume
+# has no such label.
+volume_label() {
+	local v
+	v=$(docker volume inspect -f "{{index .Labels \"$2\"}}" "$1")
+	[ "$v" != "<no value>" ] || v=
+	printf '%s' "$v"
+}
+
 while [ $# -gt 0 ]; do
 	case $1 in
 	--data-dir) data_dir=${2:?}; shift 2 ;;
@@ -97,10 +106,16 @@ if [ "$volumes" = 1 ]; then
 		die "docker is not reachable; back up the volumes with it running, or pass --no-volumes for a bare-only hub"
 	docker image inspect "$image" >/dev/null 2>&1 ||
 		die "image $image is not built here (make image), and this script never pulls one"
-	for vol in $(docker volume ls -q --filter label=spool.loop.id); do
+	# Every spool-ws-* volume, labelled or not. The hub names a loop's volume
+	# spool-ws-<loop id> and labels it at creation, but a volume made by
+	# hand, as when loops move from another machine, has no labels, and the
+	# hub runs on it all the same (#844). Its id is then read off its name.
+	for vol in $(docker volume ls -q --filter name=spool-ws-); do
 		case $vol in spool-ws-*) ;; *) continue ;; esac
-		id=$(docker volume inspect -f '{{index .Labels "spool.loop.id"}}' "$vol")
-		name=$(docker volume inspect -f '{{index .Labels "spool.loop.name"}}' "$vol")
+		id=$(volume_label "$vol" spool.loop.id)
+		name=$(volume_label "$vol" spool.loop.name)
+		labelled=$id
+		[ -n "$id" ] || id=${vol#spool-ws-}
 		if [ "$(docker inspect -f '{{.State.Running}}' "$vol" 2>/dev/null)" = true ]; then
 			docker stop "$vol" >/dev/null
 			restart+=("$vol")
@@ -108,7 +123,11 @@ if [ "$volumes" = 1 ]; then
 		docker run --rm --network none --user 0 --entrypoint tar \
 			-v "$vol:/v:ro" "$image" -C /v --numeric-owner -cf - . >"$stage/volumes/$vol.tar"
 		printf '%s\t%s\t%s\n' "$vol" "$id" "$name" >>"$stage/manifest.tsv"
-		printf 'volume %s (loop %s)\n' "$vol" "$name"
+		if [ -z "$labelled" ]; then
+			printf 'volume %s (loop id %s, no loop labels: a restore adds them)\n' "$vol" "$id"
+		else
+			printf 'volume %s (loop %s)\n' "$vol" "${name:-id $id}"
+		fi
 	done
 fi
 
