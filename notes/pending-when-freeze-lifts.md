@@ -659,3 +659,6 @@ Enes will upgrade the fleet runtime to main soon and tell me. After ~24h dogfood
 
 ## 2026-10-15 07:55 UTC
 Enes has UI improvements in mind; wants Iris on them and Terra back on #758 (cloud sessions). Told him: Iris free now, send the list, I file one issue each + order; Terra's #758 waits on his three prerequisites (claude.ai sign-in on Terra's workstation, spend OK, egress claude.ai + api.anthropic.com). Awaiting the list and the prerequisites.
+
+## 2026-10-15 08:35 UTC
+#836 (#831) merged; Iris free, no web issue ready (checked: "old pairing code" copy is legit legacy wording; #830 is Go). Told Iris to stand down until Enes's UI list lands; first filed item goes to her. Open PRs: #840, #453.
