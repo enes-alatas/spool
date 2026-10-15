@@ -644,3 +644,6 @@ Sweep: #827 (#790) and #824 merged. Open PRs: #832 (Terra, #810 edits as correct
 
 ## 2026-10-14 22:50 UTC
 #837 (#811) merged. Terra queue given: #775 hub half → #766 → #480 → #830 → #630; #758 when Enes answers. Iris on #831. Elliot on #777 seam 2.
+
+## 2026-10-15 02:50 UTC
+Night sweep. Open PRs: #838 (Terra, #775 hub half), #836 (Iris, #831), #840 (Elliot?, #839 test annotations), #453. Tidy: #839 and #833 (merge-queue chore parent; #834 closed) → CI reliability. Board tidy except #753.
