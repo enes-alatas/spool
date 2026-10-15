@@ -671,3 +671,6 @@ Enes: the UI round deserves its own milestone that turns into a minor version. C
 
 ## 2026-10-15 11:55 UTC
 Sweep: #846 and #847 closed (Iris, fast); #840 (#839) merged; #842 flake and #844 backup fix closed. Terra on #480: PR #854 with Quinn; its web half #853 → L5 Team, for Iris after #849 (tell her when she asks). Iris on #848 → #849. Open PRs: #854, #453.
+
+## 2026-10-15 12:05 UTC
+Enes relayed an HN comment (subagent limit, usage across loops). Answered: #648/#649 usage, #650/#652 caps already ship; gap = subagent control. Proposed per-loop "Subagents: allowed/off" (Agent tool deny-list), Terra hub flag + Iris toggle, after #758; awaiting "file". Gave him an HN reply draft.
