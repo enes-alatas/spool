@@ -677,3 +677,6 @@ Enes relayed an HN comment (subagent limit, usage across loops). Answered: #648/
 
 ## 2026-10-15 12:10 UTC
 Enes asked for a per-loop USD or usage-share cap. Answered: per-loop daily USD cap already shipped (#652); a per-loop plan-share cap isn't measurable (plan windows are per account), the closest is a share-of-fleet-spend cap, which I advised against; file as low child of #646 only on his word.
+
+## 2026-10-15 12:20 UTC
+Enes: no share cap; wants the HN answer with the subagent knob issue + the per-loop USD cap. Filed #855 (per-loop "subagents: allowed/off", Agent tool deny-list; L6). Sent him the HN draft with #652 and #855 links. #855 → Terra after #758 (web half to file when the hub flag lands). Terra queue: #480 (PR #854) → #758 (when prerequisites) → #855 → #766 → #830 → #630.
