@@ -689,3 +689,6 @@ Iris: #848 closed; #857 (#849 card simplification, option B picked by Enes, 12�
 
 ## 2026-10-15 13:50 UTC
 Enes: cloud work deserves its own milestone (users ask). Created "Cloud runtime" (#13), moved #758. Milestones: L5 Team, L6 OSS 1.0, L7 Service, CI reliability (#11), Loop page polish (#12), Cloud runtime (#13). Release order: v0.6.0 (fleet dogfood pending) → Loop page polish → Cloud runtime, each a minor.
+
+## 2026-10-15 13:55 UTC
+Terra: ADR PR #859 (cloud runtime) at f461b17 covers both bars; item 3 = fail loud on endpoint change; item 10 = five slices in order. Quinn + Elliot reviewing. On merge: file epic + 5 children on "Cloud runtime" from item 10, Part of the epic with --parent; #758 closes with the ADR.
