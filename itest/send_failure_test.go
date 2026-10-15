@@ -173,9 +173,11 @@ func TestALostSendIsNotSpentOnAHandoffTurn(t *testing.T) {
 	}
 	srv.waitState("alpha", "asleep", 60*time.Second)
 
-	// The loop now owes itself news, and rotates before it can be told.
-	srv.mustJSON("POST", "/api/loops/alpha/rotate", nil, nil)
+	// The loop now owes itself news, and rotates before it can be told. The
+	// handoff turn can end before the rotate request returns, so the clock
+	// is read first (#842).
 	at := time.Now().UnixMilli()
+	srv.mustJSON("POST", "/api/loops/alpha/rotate", nil, nil)
 	srv.message("alpha", "after the rotation")
 
 	handoff := srv.waitTurn("alpha", 60*time.Second, func(tn turn) bool {
