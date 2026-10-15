@@ -2,11 +2,14 @@ package slack
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/enes-alatas/spool/internal/route"
 )
 
 // A download goes only to Slack's file host, since its URL is the event's.
@@ -30,8 +33,8 @@ func TestADownloadAnsweredWithASignInPageFails(t *testing.T) {
 	client := NewClientAt(srv.URL)
 
 	if _, err := client.Download(context.Background(), botToken, srv.URL+"/unscoped"); err == nil ||
-		!strings.Contains(err.Error(), "files:read") {
-		t.Errorf("a sign-in page downloaded as %v, want an error naming files:read", err)
+		!strings.Contains(err.Error(), "files:read") || !errors.Is(err, route.ErrNoFileAccess) {
+		t.Errorf("a sign-in page downloaded as %v, want a no-file-access error naming files:read", err)
 	}
 	// a URL the event names on any other host never sees the token
 	foreign := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

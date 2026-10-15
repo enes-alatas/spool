@@ -567,8 +567,9 @@ const (
 
 // Why an attachment has no file (Attachment.NotKept).
 const (
-	NotKeptTooLarge = "too_large"    // over the size limit; never downloaded
-	NotKeptFailed   = "fetch_failed" // the surface would not hand it over
+	NotKeptTooLarge     = "too_large"     // over the size limit; never downloaded
+	NotKeptFailed       = "fetch_failed"  // the surface would not hand it over
+	NotKeptMissingScope = "missing_scope" // the surface's app may not read files (#480)
 )
 
 // How a send failure resolved (Message.SendResolution).

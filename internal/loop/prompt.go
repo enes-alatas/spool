@@ -866,9 +866,10 @@ type Attachment struct {
 
 // notKeptReasons is how an envelope says why an attachment has no file.
 var notKeptReasons = map[string]string{
-	store.NotKeptTooLarge: "over the 20 MB limit",
-	store.NotKeptFailed:   "the surface would not hand it over",
-	NotKeptRemoved:        "no longer kept",
+	store.NotKeptTooLarge:     "over the 20 MB limit",
+	store.NotKeptFailed:       "the surface would not hand it over",
+	store.NotKeptMissingScope: "the app may not read files; the operator has to add files:read and reinstall it",
+	NotKeptRemoved:            "no longer kept",
 }
 
 // attachmentLine is how an envelope shows one attachment: kind, name, what

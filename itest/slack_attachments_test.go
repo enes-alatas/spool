@@ -146,3 +146,37 @@ func postIndex(slack *fakeSlack, post slackPost) int {
 	}
 	return -1
 }
+
+// An app installed without files:read is answered with Slack's sign-in page
+// for every file. The loop is told the app may not read files, rather than
+// only that the file did not arrive, and the loop's Slack status says what
+// the operator has to do, until a file does arrive (#480).
+func TestSlackAFileTheAppMayNotReadSaysToReinstall(t *testing.T) {
+	t.Parallel()
+	srv, slack := startSlackFleet(t)
+	if resp, body := srv.do("PUT", "/api/loops/terra/owner", map[string]any{"user": slackUser(slackOperator)}); resp.StatusCode != http.StatusOK {
+		t.Fatalf("set owner: %d %s", resp.StatusCode, body)
+	}
+
+	// Never added, so the fake serves its sign-in page for it.
+	locked := map[string]any{"id": "F0LOCKED", "name": "locked.png", "mimetype": "image/png", "size": 2048,
+		"url_private_download": slack.srv.URL + "/download/F0LOCKED"}
+	slack.pushEvent(t, slackAppToken, map[string]any{"type": "message", "subtype": "file_share", "channel_type": "im",
+		"channel": "D0OPER", "user": slackOperator, "text": "the locked one", "ts": "1727600000.000700",
+		"files": []any{locked}})
+	envelope := envelopeWith(t, srv, "terra", "the locked one")
+	if !strings.Contains(envelope, "[image not kept: locked.png · 2 KB · the app may not read files; the operator has to add files:read and reinstall it]") {
+		t.Fatalf("terra was not told the app may not read files:\n%s", envelope)
+	}
+	status := srv.waitSlackLink("terra", func(link slackStatus) bool { return link.Bridge.LastFileError != "" })
+	if !strings.Contains(status.Bridge.LastFileError, "files:read") || !strings.Contains(status.Bridge.LastFileError, "reinstall") {
+		t.Errorf("the Slack status does not say what to do: %q", status.Bridge.LastFileError)
+	}
+
+	slack.addFile("F0OPEN", "open.txt", "text/plain", []byte("readable"))
+	slack.pushEvent(t, slackAppToken, map[string]any{"type": "message", "subtype": "file_share", "channel_type": "im",
+		"channel": "D0OPER", "user": slackOperator, "text": "the open one", "ts": "1727600000.000800",
+		"files": []any{map[string]any{"id": "F0OPEN", "file_access": "check_file_info"}}})
+	envelopeWith(t, srv, "terra", "the open one")
+	srv.waitSlackLink("terra", func(link slackStatus) bool { return link.Bridge.LastFileError == "" })
+}

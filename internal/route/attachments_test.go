@@ -3,6 +3,7 @@ package route
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -80,9 +81,12 @@ func TestEveryAttachmentIsRecordedKeptOrNot(t *testing.T) {
 			return nil, errors.New("unreachable")
 		}},
 		{Name: "gone.pdf", Fetch: func(context.Context) (io.ReadCloser, error) { return nil, errors.New("404") }},
+		{Name: "locked.png", Fetch: func(context.Context) (io.ReadCloser, error) {
+			return nil, fmt.Errorf("sign-in page: %w", ErrNoFileAccess)
+		}},
 	})
-	if len(rows) != 3 {
-		t.Fatalf("recorded %d, want all 3", len(rows))
+	if len(rows) != 4 {
+		t.Fatalf("recorded %d, want all 4", len(rows))
 	}
 	if rows[0].Path == "" || rows[0].MessageID != 7 || rows[0].CreatedAt == 0 {
 		t.Errorf("kept file row: %+v", rows[0])
@@ -95,6 +99,10 @@ func TestEveryAttachmentIsRecordedKeptOrNot(t *testing.T) {
 	}
 	if rows[2].NotKept != store.NotKeptFailed || rows[2].Path != "" {
 		t.Errorf("failed-fetch row: %+v", rows[2])
+	}
+	// an app that may not read files says so, since only the operator can fix it (#480)
+	if rows[3].NotKept != store.NotKeptMissingScope || rows[3].Path != "" {
+		t.Errorf("no-file-access row: %+v", rows[3])
 	}
 }
 
