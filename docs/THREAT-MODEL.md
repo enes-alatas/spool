@@ -140,6 +140,22 @@ role change, a removal or a link from its next item; a change made with
   (ADR-0048).
 - **A member sees names by decision:** users, loops, who is linked as
   which sender, and the change record (SECURITY.md).
+- **A loop can repeat what it was told privately.** A member can ask a
+  loop in its control-room thread about a private conversation it took
+  part in, and only the prompt rule (ADR-0026) keeps it from answering.
+- **Reactions and votes on a private message reach members' streams:**
+  the message's id and the emoji or the choice, never its text
+  (`internal/httpapi/roles.go`).
+- **An owner can demote or remove another owner** without re-entering
+  their password. Only granting admin or owner, and resetting a password,
+  ask for it.
+- **A member reads each connection's config** as stored: its URL, command
+  and arguments, not passed through the redactor. Only the secret is kept
+  back, so a credential belongs there; one put in a URL or an argument
+  shows.
+- **A stream whose session ended** gets no more items. It stays open on
+  pings until the next item would reach it, and the hub closes it then.
+  On a quiet hub, that can be a long time.
 
 ### Loop listener: `/mcp` and the brokered servers
 
