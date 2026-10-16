@@ -165,7 +165,8 @@ the interface, `internal/runtime/bare` runs host subprocesses,
 turns in and reading their events back over Anthropic's undocumented sessions API,
 and failing loudly when that changes (ADR-0056). A cloud loop is created by no
 route yet: Settings → Cloud and the runtime picker come with the next slices.
-Docker workstations sit on an internal network with no route off it; their only
+Each docker workstation sits on an internal network of its own, shared with
+the proxy alone and with no route off it; its only
 way out is `spool-egress-proxy`, a container running `cmd/spool-egress` that
 forwards to the hosts in `internal/egress`, plus the operator's stored extra
 hosts (`/api/settings/egress`), and refuses the rest (ADR-0028, #542). The

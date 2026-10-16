@@ -107,14 +107,24 @@ func requireWorkstationImage(t *testing.T) {
 	}
 }
 
-// cleanupWorkstation removes a loop's container and volume directly — the
-// server may already be gone when cleanups run, so this never goes through
-// the API.
+// cleanupWorkstation removes a loop's container, volume and loop network
+// directly — the server may already be gone when cleanups run, so this
+// never goes through the API. A network left behind would hold one of the
+// daemon's few address pools.
 func cleanupWorkstation(t *testing.T, loopID string) {
 	t.Helper()
 	t.Cleanup(func() {
 		_ = exec.Command("docker", "rm", "--force", "spool-ws-"+loopID).Run()
 		_ = exec.Command("docker", "volume", "rm", "--force", "spool-ws-"+loopID).Run()
+		networks, _ := exec.Command("docker", "network", "ls", "--quiet", "--filter", "label=spool.loop.id="+loopID).Output()
+		for _, network := range strings.Fields(string(networks)) {
+			members, _ := exec.Command("docker", "network", "inspect", "--format",
+				"{{range $_, $member := .Containers}}{{$member.Name}} {{end}}", network).Output()
+			for _, member := range strings.Fields(string(members)) {
+				_ = exec.Command("docker", "network", "disconnect", "--force", network, member).Run()
+			}
+			_ = exec.Command("docker", "network", "rm", network).Run()
+		}
 	})
 }
 

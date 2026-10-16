@@ -8,7 +8,7 @@ the runtime it runs in, and not the workspace directory you point it at. A
 workspace is a working directory; it stops nothing.
 
 With Docker reachable, a loop gets a container of its own, on an internal
-network with no route off it except an allowlist of the hosts a loop needs
+network of its own that no other loop is on, with no route off it except an allowlist of the hosts a loop needs
 (`spool-egress-proxy`), and the single hub port that serves the MCP endpoint.
 You add hosts to that allowlist under **Settings → Egress**. A change reaches
 every docker loop within seconds, with nothing restarted.

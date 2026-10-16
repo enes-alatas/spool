@@ -62,9 +62,11 @@ func TestRunArgv(t *testing.T) {
 		"--name", "spool-ws-abc",
 		"--restart", "unless-stopped",
 		"--volume", "spool-ws-abc:/home/loop",
+		"--cap-drop", "NET_RAW",
 		"--network", "spool-egress",
 		"--label", "spool.loop.id=abc",
 		"--label", "spool.loop.name=greeter",
+		"--label", "spool.ws.posture=--cap-drop NET_RAW --network spool-egress",
 		"--memory", "4096m",
 		"--cpus", "2",
 		"spool-workstation", "sleep", "infinity",
@@ -85,8 +87,8 @@ func TestRunArgvImageOverrideAndNoLimits(t *testing.T) {
 	}
 }
 
-// A workstation behind the wall gets the proxy in its exec env and nothing
-// else changes; one in front of it (no proxy image configured) keeps the
+// A workstation behind the wall gets the proxy in its exec env and sits on
+// its loop network, with no other workstation; one in front of it (no proxy image configured) keeps the
 // host-gateway alias it used to reach the hub directly.
 func TestEgressShapesTheWorkstation(t *testing.T) {
 	walledRT := &Runtime{egressImage: "spool-egress", mcpPort: "8081"}
@@ -105,12 +107,12 @@ func TestEgressShapesTheWorkstation(t *testing.T) {
 		}
 	}
 
-	open := (&Runtime{}).networkArgs()
+	open := (&Runtime{}).workstationNetworkArgs(runtime.Spec{LoopID: "abc"})
 	if !reflect.DeepEqual(open, []string{"--add-host", "host.docker.internal:host-gateway"}) {
 		t.Errorf("without a proxy image the workstation must keep its own way to the hub, got %q", open)
 	}
-	walled := walledRT.networkArgs()
-	if !reflect.DeepEqual(walled, []string{"--network", "spool-egress"}) {
+	walled := walledRT.workstationNetworkArgs(runtime.Spec{LoopID: "abc"})
+	if !reflect.DeepEqual(walled, []string{"--network", "spool-egress-loop-abc"}) {
 		t.Errorf("walled workstation networkArgs = %q", walled)
 	}
 }

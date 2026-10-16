@@ -11,12 +11,12 @@ import (
 )
 
 // staleDocker is a docker whose loop workstation runs, created from image
-// ID created, while the image's tag now names current ("" for an image
-// that is not there any more). Asked, it says a claude runs inside, as a
+// ID created under posture, while the image's tag now names current (""
+// for an image that is not there any more). Asked, it says a claude runs inside, as a
 // process the loop left behind under that name would. It answers nothing
 // else, so egress is left open. It returns the CLI and the file it logs
 // each call's argv to.
-func staleDocker(t *testing.T, created, current string) (bin, calls string) {
+func staleDocker(t *testing.T, created, posture, current string) (bin, calls string) {
 	t.Helper()
 	dir := t.TempDir()
 	bin, calls = filepath.Join(dir, "docker"), filepath.Join(dir, "calls")
@@ -27,7 +27,7 @@ func staleDocker(t *testing.T, created, current string) (bin, calls string) {
 	script := "#!/bin/sh\ncat >/dev/null\necho \"$*\" >>" + calls + "\n" +
 		"case \"$*\" in\n" +
 		"*'{{.Id}}'*) " + image + " ;;\n" +
-		"*'.State'*) echo '{\"State\":{\"Running\":true},\"Image\":\"" + created + "\"}' ;;\n" +
+		"*'.State'*) echo '{\"State\":{\"Running\":true},\"Image\":\"" + created + "\",\"Labels\":{\"" + postureLabel + "\":\"" + posture + "\"}}' ;;\n" +
 		"*pgrep*|*pidof*) echo 42 ;;\n" +
 		"esac\n"
 	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
@@ -36,23 +36,28 @@ func staleDocker(t *testing.T, created, current string) (bin, calls string) {
 	return bin, calls
 }
 
-// A workstation created from an older build of its image is replaced at
-// the next Ensure, its volume kept, whatever runs inside it: the engine
-// calls Ensure with no turn in flight, and a process the loop left behind
-// must not keep it on an old build. One on the current build, or whose
-// image is gone, is left as it runs (#715).
-func TestEnsureReplacesAWorkstationOnARebuiltImage(t *testing.T) {
+// A workstation created from an older build of its image, or under another
+// posture, is replaced at the next Ensure, its volume kept, whatever runs
+// inside it: the engine calls Ensure with no turn in flight, and a process
+// the loop left behind must not keep it on an old build (#715) or keep it
+// able to forge packets. One on the current build and posture, or whose
+// image is gone, is left as it runs.
+func TestEnsureReplacesAStaleWorkstation(t *testing.T) {
+	// the posture a workstation is provisioned under with the wall down
+	posture := workstationPosture([]string{"--add-host", "host.docker.internal:host-gateway"})
 	for _, tc := range []struct {
-		name             string
-		created, current string
-		replaced         bool
+		name                      string
+		created, posture, current string
+		replaced                  bool
 	}{
-		{"rebuilt", "sha256:old", "sha256:new", true},
-		{"current", "sha256:same", "sha256:same", false},
-		{"image gone", "sha256:old", "", false},
+		{"rebuilt", "sha256:old", posture, "sha256:new", true},
+		{"current", "sha256:same", posture, "sha256:same", false},
+		{"image gone", "sha256:old", posture, "", false},
+		{"from before the posture label", "sha256:same", "", "sha256:same", true},
+		{"under another posture, image gone", "sha256:old", "", "", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			bin, calls := staleDocker(t, tc.created, tc.current)
+			bin, calls := staleDocker(t, tc.created, tc.posture, tc.current)
 			rt := New(Options{Bin: bin, DefaultImage: "spool-workstation"})
 			if err := rt.Ensure(context.Background(), runtime.Spec{LoopID: "l1", LoopName: "terra"}); err != nil {
 				t.Fatal(err)
