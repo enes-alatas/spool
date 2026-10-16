@@ -788,3 +788,6 @@ Iris: Enes picked the cloud UX (recorded on #865): listener switch from the page
 
 ## 2026-10-16 21:20 UTC
 Elliot: seam 4 review #907 closed; findings #909 (merged) and #912 (low, secret in wrapped base64/archive passes attachment check; scope is Enes's pick, Elliot's ask). Sweep: #912 → L6, parent #777. Four seams reviewed: #875 (2), #898 (3), #907 (4); seam 1 presumably earlier under #777. No reply.
+
+## 2026-10-16 21:25 UTC
+#911 merged 20:38 (#864 hub half: listener switch, address check, quick-tunnel warning). Iris takes #865 part 1 on it (Settings → Cloud status page layout B + guided setup listener/address steps); account step waits for its hub part (CLI login); New loop entry follows #867. #914 = Terra's follow-up (refused stage). No reply.
