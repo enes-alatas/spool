@@ -32,6 +32,7 @@ var adapters = map[string][]string{
 	// protocol is their job — but they serve the seam, not the loop actors.
 	module + "/internal/runtime/bare":   {module + "/internal/loop"},
 	module + "/internal/runtime/docker": {module + "/internal/loop"},
+	module + "/internal/runtime/cloud":  {module + "/internal/loop"},
 }
 
 var runnerPkgs = []string{
@@ -57,6 +58,7 @@ var runnerInternals = map[string][]string{
 		module + "/internal/runtime",        // the seam speaks the claude protocol
 		module + "/internal/runtime/bare",   // …and so does every implementation
 		module + "/internal/runtime/docker", //
+		module + "/internal/runtime/cloud",  //
 	},
 }
 
