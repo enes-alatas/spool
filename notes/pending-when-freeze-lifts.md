@@ -752,3 +752,6 @@ Elliot: #889 (ADR-0057 accepted, Enes decided on #888/#889), #890 (closes #878 t
 
 ## 2026-10-16 12:30 UTC
 Enes asked if the advisories are critical. Read from the API: q5hr medium ✓ #879, ggw3 low ✓ #883, 4c3c low ✓ #891, m995 medium (loop listener idle connections, exhaustion from a contained loop) open. Told him none critical; proposed Terra: m995 fix → #863 rest, #877 later. Awaiting his word before reordering.
+
+## 2026-10-16 12:35 UTC
+Enes OK'd the reorder → group ping to Terra: m995 fix → #863 rest → #864 → #866; #877 after; then #855 → #652 → #887 → #766 → #871 → #830 → #630. Enes asked about cloud UX planning: answered that #865/#867 carry the content (ADR-0056) with "mockup to Enes before the PR"; proposed Iris does both mockups now as images while Terra is on #863. Awaiting his "go" before pinging Iris.
