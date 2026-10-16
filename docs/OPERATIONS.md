@@ -18,6 +18,11 @@ you own. The rest of this page assumes this layout:
 | The control room | `127.0.0.1:8080`, reached only through the proxy |
 | The proxy | Caddy on 443, with a certificate for `spool.example.com` |
 
+Use Docker Engine 26.0.0 or later. Of the older lines, only a 25.x from
+25.0.5 and a 23.x from 23.0.11 are fixed; no 24.x is. Any other engine lets a workstation resolve outside
+names, which can carry data past the egress allowlist (CVE-2024-29018).
+`docker version --format '{{.Server.Version}}'` prints yours.
+
 Spool does not terminate TLS (ADR-0030). The proxy does that, and the hub
 stays on loopback behind it. Who may call the API does not change: a session
 or the operator token, as on localhost.
