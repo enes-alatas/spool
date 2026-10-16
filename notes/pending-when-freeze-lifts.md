@@ -773,3 +773,6 @@ Elliot: #905 merged (scripts/pr-watch.sh, opt-in UserPromptSubmit hook per CONVE
 
 ## 2026-10-16 18:40 UTC
 Sweep: #906 merged (fifth advisory GHSA-vh6p medium, per-workstation networks, no NET_RAW); all five advisories fixed on main. #908 (Terra, #863 part 3 allowlist sync) with Quinn/Elliot. Iris: #865 mockup approved by Enes 16:09. Elliot: #898 seam 3 closed; #899, #901 open on L6; #907 (seam 4 review, mcp contract) filed → L6. Board tidy. Re-nudged Enes: runtime update + #877 in/out.
+
+## 2026-10-16 19:05 UTC
+Enes asked (1) what "say so in the group" meant, (2) are we ready for v0.6. Answered: (1) the update is his (sudo spool upgrade main / runbook), the group word was only a restart warning, optional. (2) No: fleet has run none of the 17 commits since its build (5 advisory fixes, cloud runtime, upgrade, #906 workstation recreate); #908 in review; cloud not operable until slices 4/5; first tag through the new release pipeline. Ready = #908 merged → fleet upgraded → 2 days dogfood → "dry run" → tag. Recommended v0.6.0 without cloud (hold to v0.7, unmentioned). Awaiting his call.
