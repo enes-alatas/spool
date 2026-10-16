@@ -755,3 +755,6 @@ Enes asked if the advisories are critical. Read from the API: q5hr medium ✓ #8
 
 ## 2026-10-16 12:35 UTC
 Enes OK'd the reorder → group ping to Terra: m995 fix → #863 rest → #864 → #866; #877 after; then #855 → #652 → #887 → #766 → #871 → #830 → #630. Enes asked about cloud UX planning: answered that #865/#867 carry the content (ADR-0056) with "mockup to Enes before the PR"; proposed Iris does both mockups now as images while Terra is on #863. Awaiting his "go" before pinging Iris.
+
+## 2026-10-16 12:45 UTC
+Terra: PR #892 = m995 fix alone (one commit, self-check green), with Quinn/Elliot; #877's part parked until after #866. Once #892 merges, v0.6.0 gate = all four advisories fixed; #877 no longer blocks (low, parked by the reorder) — confirm with Enes at "dry run" time whether #877 stays out of v0.6.0.
