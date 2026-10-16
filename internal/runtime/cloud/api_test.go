@@ -111,7 +111,7 @@ func TestSessionEventsAndControl(t *testing.T) {
 		`{"data":[{"type":"system","subtype":"init"},{"type":"result","total_cost_usd":0.01}],"first_id":"a","last_id":"b","has_more":true}`)
 	ctx := context.Background()
 
-	page, err := client.Events(ctx, "session_01synthetic", "evt-9")
+	page, err := client.Events(ctx, "session_01synthetic", "evt-9", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,12 +223,12 @@ func TestUnexpectedAnswersFailLoudly(t *testing.T) {
 	}
 
 	client, _ = fakeAPI(t, 200, `{"data": [`)
-	if _, err := client.Events(ctx, "session_01synthetic", ""); !errors.As(err, &apiErr) || apiErr.Status != 0 {
+	if _, err := client.Events(ctx, "session_01synthetic", "", 0); !errors.As(err, &apiErr) || apiErr.Status != 0 {
 		t.Errorf("an unreadable page = %v, want an APIError", err)
 	}
 
 	client, _ = fakeAPI(t, 200, `{"data":["`+strings.Repeat("a", maxResponse)+`"]}`)
-	if _, err := client.Events(ctx, "session_01synthetic", ""); !errors.As(err, &apiErr) || !strings.Contains(apiErr.Reason, "over") {
+	if _, err := client.Events(ctx, "session_01synthetic", "", 0); !errors.As(err, &apiErr) || !strings.Contains(apiErr.Reason, "over") {
 		t.Errorf("an oversized page = %v, want it refused", err)
 	}
 	if len(err.Error()) > 2*errorSnippet {
