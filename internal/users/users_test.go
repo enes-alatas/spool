@@ -149,31 +149,112 @@ func TestAnUnknownNameLocksAsARealOneDoes(t *testing.T) {
 	}
 }
 
-// TestFailuresArrivingTogetherEachCount: wrong guesses sent at once each
-// count, rather than all reading the same count and writing it back plus
-// one, so guessing in parallel does not slip under the lock.
-func TestFailuresArrivingTogetherEachCount(t *testing.T) {
+// TestGuessesArrivingTogetherGetOnlyTheBudget: wrong guesses sent at once,
+// at a sign-in or at a confirm, are checked no more often than the lock
+// allows, rather than all passing the check before any of them fails.
+// Each is counted, and the rest are throttled.
+func TestGuessesArrivingTogetherGetOnlyTheBudget(t *testing.T) {
 	ctx := context.Background()
-	users, _ := newUsers(t)
-	if _, err := users.Add(ctx, "dana", store.RoleMember); err != nil {
-		t.Fatal(err)
-	}
-	const guesses = 8
-	var wg sync.WaitGroup
-	for range guesses {
-		wg.Go(func() {
-			if _, err := users.SignIn(ctx, "dana", "wrong password!"); !errors.Is(err, ErrBadCredentials) {
-				t.Errorf("a wrong guess = %v; want ErrBadCredentials", err)
+	for _, via := range []string{"sign-in", "confirm"} {
+		t.Run(via, func(t *testing.T) {
+			users, _ := newUsers(t)
+			if _, err := users.Add(ctx, "dana", store.RoleMember); err != nil {
+				t.Fatal(err)
+			}
+			dana, err := users.Store.Users().GetByName(ctx, "dana")
+			if err != nil {
+				t.Fatal(err)
+			}
+			const guesses = 12
+			var wg sync.WaitGroup
+			var mu sync.Mutex
+			checked := 0
+			for range guesses {
+				wg.Go(func() {
+					var err error
+					if via == "sign-in" {
+						_, err = users.SignIn(ctx, "dana", "wrong password!")
+					} else {
+						err = users.Confirm(ctx, dana, "wrong password!")
+					}
+					var throttled ThrottledError
+					switch {
+					case errors.Is(err, ErrBadCredentials):
+						mu.Lock()
+						checked++
+						mu.Unlock()
+					case errors.As(err, &throttled):
+					default:
+						t.Errorf("a wrong guess = %v; want ErrBadCredentials or a ThrottledError", err)
+					}
+				})
+			}
+			wg.Wait()
+			if checked != failuresBeforeLock {
+				t.Errorf("%d of %d guesses at once were checked; want %d", checked, guesses, failuresBeforeLock)
+			}
+			throttle, err := users.Store.SignInThrottles().Get(ctx, "dana")
+			if err != nil || throttle.Failures != failuresBeforeLock {
+				t.Fatalf("after %d guesses at once the throttle is %+v, %v; want %d counted", guesses, throttle, err, failuresBeforeLock)
+			}
+			if want := lockFor(failuresBeforeLock); time.UnixMilli(throttle.LockedUntil).Sub(users.now()) != want {
+				t.Fatalf("the lock holds until %d; want %s from now", throttle.LockedUntil, want)
 			}
 		})
 	}
-	wg.Wait()
-	throttle, err := users.Store.SignInThrottles().Get(ctx, "dana")
-	if err != nil || throttle.Failures != guesses {
-		t.Fatalf("after %d guesses at once the throttle is %+v, %v; want each counted", guesses, throttle, err)
+}
+
+// TestAttemptsInFlightCountTowardTheLock: an attempt holds its place from
+// before its password is checked until its failure is recorded. A name
+// takes as many at once as it has failures left before the lock, and once
+// those are spent, one at a time.
+func TestAttemptsInFlightCountTowardTheLock(t *testing.T) {
+	ctx := context.Background()
+	users, fake := newUsers(t)
+	var releases []func()
+	for range failuresBeforeLock {
+		release, err := users.reserve(ctx, "dana", fake.now())
+		if err != nil {
+			t.Fatalf("attempt %d at a fresh name = %v", len(releases)+1, err)
+		}
+		releases = append(releases, release)
 	}
-	if want := lockFor(guesses); time.UnixMilli(throttle.LockedUntil).Sub(users.now()) != want {
-		t.Fatalf("the lock holds until %d; want %s from now", throttle.LockedUntil, want)
+	var throttled ThrottledError
+	if _, err := users.reserve(ctx, "dana", fake.now()); !errors.As(err, &throttled) || throttled.RetryAfter != inFlightRetry {
+		t.Fatalf("one attempt past the budget = %v; want a %s ThrottledError", err, inFlightRetry)
+	}
+	if release, err := users.reserve(ctx, "erin", fake.now()); err != nil {
+		t.Fatalf("another name = %v; the budget is per name", err)
+	} else {
+		release()
+	}
+	releases[0]()
+	release, err := users.reserve(ctx, "dana", fake.now())
+	if err != nil {
+		t.Fatalf("an attempt after one finished = %v", err)
+	}
+	release()
+	for _, release := range releases[1:] {
+		release()
+	}
+
+	// Past the lock, once it has run out: one attempt at a time.
+	for range failuresBeforeLock {
+		if err := users.fail(ctx, "dana", fake.now()); !errors.Is(err, ErrBadCredentials) {
+			t.Fatal(err)
+		}
+	}
+	fake.at = fake.at.Add(lockFor(failuresBeforeLock))
+	release, err = users.reserve(ctx, "dana", fake.now())
+	if err != nil {
+		t.Fatalf("the first attempt after the lock ran out = %v", err)
+	}
+	if _, err := users.reserve(ctx, "dana", fake.now()); !errors.As(err, &throttled) {
+		t.Fatalf("a second at once = %v; want a ThrottledError", err)
+	}
+	release()
+	if len(users.inFlight) != 0 {
+		t.Errorf("attempts left in flight after all were released: %v", users.inFlight)
 	}
 }
 
