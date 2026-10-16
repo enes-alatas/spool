@@ -1246,6 +1246,8 @@ type TGSenderStore interface {
 	Get(ctx context.Context, tgUserID int64) (*TGSender, error)
 	// Create inserts a new (pending) sender; ErrDuplicate if already known.
 	Create(ctx context.Context, sender *TGSender) error
+	// SetStatus clears the sender's pairing code: a sender no longer
+	// pending has nothing left to pair.
 	SetStatus(ctx context.Context, tgUserID int64, status string, updatedAt int64) error
 	List(ctx context.Context) ([]*TGSender, error)
 	Delete(ctx context.Context, tgUserID int64) error
@@ -1276,8 +1278,13 @@ type TGSenderFrame struct {
 	Surface string `json:"surface"`
 }
 
-// Frame marks the sender for the access stream.
-func (sender *TGSender) Frame() TGSenderFrame { return TGSenderFrame{sender, SurfaceTelegram} }
+// Frame marks the sender for the access stream. It carries no pairing
+// code: the stream reaches members, who read none (#689).
+func (sender *TGSender) Frame() TGSenderFrame {
+	framed := *sender
+	framed.PairCode = ""
+	return TGSenderFrame{&framed, SurfaceTelegram}
+}
 
 // SlackSenderFrame is a Slack sender on the access stream.
 type SlackSenderFrame struct {
@@ -1285,14 +1292,20 @@ type SlackSenderFrame struct {
 	Surface string `json:"surface"`
 }
 
-// Frame marks the sender for the access stream.
-func (sender *SlackSender) Frame() SlackSenderFrame { return SlackSenderFrame{sender, SurfaceSlack} }
+// Frame marks the sender for the access stream, with no pairing code, as
+// a Telegram sender's frame has none.
+func (sender *SlackSender) Frame() SlackSenderFrame {
+	framed := *sender
+	framed.PairCode = ""
+	return SlackSenderFrame{&framed, SurfaceSlack}
+}
 
 type SlackSenderStore interface {
 	Get(ctx context.Context, slackUserID string) (*SlackSender, error)
 	// Create inserts a new (pending) sender; ErrDuplicate if already known.
 	Create(ctx context.Context, sender *SlackSender) error
-	// SetStatus is ErrNotFound for an unknown sender.
+	// SetStatus is ErrNotFound for an unknown sender, and clears a known
+	// one's pairing code, as TGSenderStore's does.
 	SetStatus(ctx context.Context, slackUserID, status string, updatedAt int64) error
 	List(ctx context.Context) ([]*SlackSender, error)
 	Delete(ctx context.Context, slackUserID string) error
