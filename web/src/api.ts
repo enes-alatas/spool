@@ -490,6 +490,42 @@ export interface ModelList {
   custom: CustomModel[]
 }
 
+// Settings → Cloud (ADR-0056, #864): the hub's setup for cloud loops, as
+// steps the hub checks. Mirrors httpapi's cloudSettingsView.
+export interface CloudListenerView {
+  on: boolean
+  // Where it serves, such as 127.0.0.1:8090; absent while it is off.
+  addr?: string
+  // Opened by --cloud-listen, so only a restart without the flag closes it.
+  from_flag: boolean
+}
+
+// Where a failed check stopped. `listener_off` and `refused` made no request:
+// the listener is off, or the stored address is one the hub won't accept.
+export type CloudCheckStage =
+  'listener_off' | 'refused' | 'dns' | 'tls' | 'timeout' | 'unreachable' | 'other_server'
+
+export interface CloudCheck {
+  state: 'ok' | 'failed'
+  stage?: CloudCheckStage
+  // What answered, or how it failed; an admin's alone.
+  detail?: string
+  checked_at: number
+}
+
+export interface CloudSettings {
+  listener: CloudListenerView
+  // The public address as an HTTPS origin, '' while none is set.
+  address: string
+  // `quick_tunnel`: a *.trycloudflare.com address, accepted, whose name goes
+  // to someone else once the tunnel stops.
+  warning?: 'quick_tunnel'
+  // The last check of `address`, absent until one has run.
+  check?: CloudCheck
+  // Whether the account is set, never what it is.
+  account: { set: boolean }
+}
+
 // The fleet's workstation egress allowlist (#542, ADR-0028): the built-in
 // hosts in groups, each with why it is there, and the operator's own, which
 // the hub's one egress proxy takes while the hub runs. An entry is `host` or
@@ -1231,6 +1267,21 @@ export const api = {
   relabelCustomModel: (id: string, label: string) =>
     req<CustomModel>(`/api/models/custom/${id}`, { method: 'PATCH', body: JSON.stringify({ label }) }),
   deleteCustomModel: (id: string) => req<void>(`/api/models/custom/${id}`, { method: 'DELETE' }),
+  cloudSettings: () => req<CloudSettings>('/api/settings/cloud'),
+  // Opens the listener where `listen` names, the hub's default when empty,
+  // or closes it. Refused with 409 `cloud_listener`: a bind failure, another
+  // address while it is open, or closing the flag's listener.
+  switchCloudListener: (on: boolean, listen = '') =>
+    req<CloudSettings>('/api/settings/cloud/listener', {
+      method: 'PUT',
+      body: JSON.stringify({ on, listen }),
+    }),
+  // Stores the address and checks it at once. Refused with 400
+  // `cloud_address_invalid` unless it is an HTTPS origin.
+  setCloudAddress: (address: string) =>
+    req<CloudSettings>('/api/settings/cloud/address', { method: 'PUT', body: JSON.stringify({ address }) }),
+  clearCloudAddress: () => req<CloudSettings>('/api/settings/cloud/address', { method: 'DELETE' }),
+  checkCloudAddress: () => req<CloudSettings>('/api/settings/cloud/check', { method: 'POST' }),
   egress: () => req<EgressView>('/api/settings/egress'),
   // Refused with 400 `egress_host_invalid` and egress.Validate's reason, a
   // port included; a host already on the list, once normalized, changes

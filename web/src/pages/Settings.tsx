@@ -8,6 +8,7 @@ import { HarnessCheck } from '../components/HarnessCheck'
 import { useMay, useSignOut } from '../components/Session'
 import { SignOutIcon } from '../components/Icons'
 import { EgressSection } from '../components/EgressSection'
+import { CloudSection } from '../components/CloudSection'
 import { UsersSection } from '../components/UsersSection'
 import { ChatAccess } from '../components/ChatAccess'
 import { LinksSection } from '../components/LinksSection'
@@ -39,6 +40,7 @@ export default function Settings() {
           <HealthCheck settings={settings} loadError={loadError} />
           <RotationThresholds settings={settings} loadError={loadError} />
           <EgressSection />
+          <CloudSection />
         </>
       )}
       <Build />

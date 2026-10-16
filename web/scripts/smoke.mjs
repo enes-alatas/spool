@@ -280,6 +280,29 @@ try {
     )
   }
 
+  // Settings → Cloud (#865): the guided setup turns the cloud listener on,
+  // for real, on a port beside the fixture hub's own, and checks an address
+  // that can't resolve, so the check names the stage it stopped at. The
+  // address goes in as Tailscale prints one, with a trailing slash and an
+  // upper-case letter, which the hub stores normalized.
+  step = 'Cloud'
+  await page.goto(base + '/settings')
+  await see(page.getByRole('heading', { name: 'Cloud', exact: true }), 'the Cloud section')
+  await page.getByRole('button', { name: 'Set up cloud loops' }).click()
+  const setup = page.getByRole('dialog', { name: 'Set up cloud loops' })
+  const cloudListen = `127.0.0.1:${Number(new URL(base).port) + 2}`
+  await setup.getByLabel('Listen on').fill(cloudListen)
+  await setup.getByRole('button', { name: 'Turn on' }).click()
+  await see(setup.getByText(`The cloud listener is on, at ${cloudListen}.`), 'the listener on')
+  await setup.getByRole('button', { name: 'Next' }).click()
+  await setup.getByLabel('Public address').fill('https://Spool.invalid/')
+  await setup.getByRole('button', { name: 'Check', exact: true }).click()
+  await see(setup.locator('.cloud-check .bad'), 'the stage the check stopped at')
+  await see(setup.getByRole('button', { name: 'Check again' }), 'the address as the hub stored it')
+  await setup.getByRole('button', { name: 'Close' }).click()
+  await gone(setup, 'the setup dialog')
+  await see(page.locator('.cloud-step.bad'), "the address's failing line")
+
   // Access is a part of Settings since #732; the old address lands there.
   step = 'Access'
   await page.goto(base + '/access')
