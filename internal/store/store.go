@@ -557,6 +557,10 @@ type Attachment struct {
 	NotKept   string `json:"not_kept,omitempty"`
 	CreatedAt int64  `json:"created_at"`
 	RemovedAt int64  `json:"removed_at,omitempty"` // 0 = the file is kept
+	// UploadedBy is the user who uploaded the file from the control room,
+	// "" for the operator token, a surface's file and a loop's. Until a
+	// message claims it, only they or an admin may read or send it.
+	UploadedBy string `json:"-"`
 }
 
 // Attachment kinds: an image is presented with its dimensions and sent as

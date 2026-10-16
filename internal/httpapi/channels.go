@@ -149,6 +149,7 @@ func (server *Server) handleChannelPost(w http.ResponseWriter, r *http.Request) 
 		Channel:      name,
 		ReplyToID:    req.ReplyToID,
 		UploadID:     req.AttachmentID,
+		UploadSender: uploadSenderOf(callerOf(r)),
 	})
 	if err != nil {
 		server.ingestErr(w, err)

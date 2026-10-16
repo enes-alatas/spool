@@ -206,11 +206,11 @@ func TestASentFileIsRefusedForEachReasonTheLoopCanCorrect(t *testing.T) {
 // message took stays for the whole retention.
 func TestAnUnsentUploadExpiresAndASentOneStays(t *testing.T) {
 	router, table, files := testRouter(t)
-	unsent, err := router.KeepUpload(context.Background(), strings.NewReader("draft"), "draft.txt")
+	unsent, err := router.KeepUpload(context.Background(), strings.NewReader("draft"), "draft.txt", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	sent, err := router.KeepUpload(context.Background(), strings.NewReader("final"), "final.txt")
+	sent, err := router.KeepUpload(context.Background(), strings.NewReader("final"), "final.txt", "")
 	if err != nil {
 		t.Fatal(err)
 	}

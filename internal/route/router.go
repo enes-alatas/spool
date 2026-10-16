@@ -127,6 +127,8 @@ type InboundMessage struct {
 	// send with this message (#460), 0 for none. One that is not waiting
 	// to be sent refuses the message with ErrUploadNotFound.
 	UploadID int64
+	// UploadSender is who sends UploadID, which must be theirs to send.
+	UploadSender UploadSender
 }
 
 // MessagePayload is what KindMessage bus items carry (UI + telegram mirror).
@@ -318,7 +320,7 @@ func (router *Router) Ingest(ctx context.Context, in InboundMessage) error {
 	msg.DeliveredTo = delivered
 
 	if in.UploadID != 0 {
-		if err := router.uploadWaiting(ctx, in.UploadID); err != nil {
+		if err := router.uploadWaiting(ctx, in.UploadID, in.UploadSender); err != nil {
 			return err
 		}
 	}

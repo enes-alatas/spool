@@ -1170,14 +1170,14 @@ func (table messages) query(ctx context.Context, statement string, args ...any) 
 
 type attachments struct{ db *sql.DB }
 
-const attachmentCols = `id, message_id, name, mime, kind, size, sha256, width, height, path, not_kept, created_at, removed_at`
+const attachmentCols = `id, message_id, name, mime, kind, size, sha256, width, height, path, not_kept, created_at, removed_at, uploaded_by`
 
 func (table attachments) Insert(ctx context.Context, attachment *store.Attachment) error {
 	res, err := table.db.ExecContext(ctx, `INSERT INTO attachments
-		(message_id, name, mime, kind, size, sha256, width, height, path, not_kept, created_at, removed_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+		(message_id, name, mime, kind, size, sha256, width, height, path, not_kept, created_at, removed_at, uploaded_by)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		attachment.MessageID, attachment.Name, attachment.MIME, attachment.Kind, attachment.Size, attachment.SHA256,
-		attachment.Width, attachment.Height, attachment.Path, attachment.NotKept, attachment.CreatedAt, attachment.RemovedAt)
+		attachment.Width, attachment.Height, attachment.Path, attachment.NotKept, attachment.CreatedAt, attachment.RemovedAt, attachment.UploadedBy)
 	if err != nil {
 		return err
 	}
@@ -1260,7 +1260,7 @@ func (table attachments) query(ctx context.Context, statement string, args ...an
 		var attachment store.Attachment
 		if err := rows.Scan(&attachment.ID, &attachment.MessageID, &attachment.Name, &attachment.MIME, &attachment.Kind,
 			&attachment.Size, &attachment.SHA256, &attachment.Width, &attachment.Height, &attachment.Path,
-			&attachment.NotKept, &attachment.CreatedAt, &attachment.RemovedAt); err != nil {
+			&attachment.NotKept, &attachment.CreatedAt, &attachment.RemovedAt, &attachment.UploadedBy); err != nil {
 			return nil, err
 		}
 		out = append(out, &attachment)

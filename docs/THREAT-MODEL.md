@@ -125,9 +125,11 @@ Slack connects out over Socket Mode, so no port is opened for either
   owner's password (ADR-0048).
 
 **What a member doesn't read:** other people's private conversations, a
-loop's events, turns and live agent stream, and pairing codes (ADR-0048,
-ADR-0050). An open stream follows a role change, a removal or a link from
-its next item; a change made with `spool user` counts within a minute.
+loop's events, turns and live agent stream, pairing codes (ADR-0048,
+ADR-0050), a file another user uploaded and hasn't sent, and can't send
+it either, and the file of a deleted message. An open stream follows a
+role change, a removal or a link from its next item; a change made with
+`spool user` counts within a minute.
 
 **Doesn't hold:**
 - **No TLS.** Spool doesn't terminate it; beyond loopback, that is a

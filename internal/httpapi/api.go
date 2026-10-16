@@ -1301,6 +1301,7 @@ func (server *Server) handleLoopMessage(w http.ResponseWriter, r *http.Request) 
 		ImplicitTo:   loopRecord.ID,
 		Conversation: dest,
 		UploadID:     req.AttachmentID,
+		UploadSender: uploadSenderOf(callerOf(r)),
 	})
 	if err != nil {
 		server.ingestErr(w, err)
@@ -1663,6 +1664,7 @@ func (server *Server) handleGroupPost(w http.ResponseWriter, r *http.Request) {
 		Conversation: store.ConversationGroup,
 		ReplyToID:    req.ReplyToID,
 		UploadID:     req.AttachmentID,
+		UploadSender: uploadSenderOf(callerOf(r)),
 	})
 	if err != nil {
 		server.ingestErr(w, err)

@@ -208,3 +208,67 @@ func TestTheUploadRouteRefusals(t *testing.T) {
 		t.Errorf("an octet-stream body to another route = %d, want 415", resp.StatusCode)
 	}
 }
+
+// uploadAs uploads body as the user whose session cookie is session.
+func (s *server) uploadAs(session, name string, body []byte) attachmentView {
+	s.t.Helper()
+	resp, raw := s.raw("POST", "/api/attachments?name="+name, bytes.NewReader(body), map[string]string{
+		"Content-Type": "application/octet-stream", "Cookie": "spool_operator=" + session})
+	var kept attachmentView
+	if resp.StatusCode != http.StatusCreated || json.Unmarshal(raw, &kept) != nil || kept.ID == 0 {
+		s.t.Fatalf("upload %s: %d %s", name, resp.StatusCode, raw)
+	}
+	return kept
+}
+
+// A file uploaded and not yet sent is its uploader's: another member can
+// neither read it nor send it, and answers as if it never existed. An
+// admin and the operator token read every one. Once sent, it is as
+// readable as the message it went with.
+func TestAWaitingUploadIsItsUploaders(t *testing.T) {
+	t.Parallel()
+	s := startServer(t, t.TempDir())
+	s.createLoop("aster", nil)
+	mia := s.signedInAs("mia", "member")
+	noah := s.signedInAs("noah", "member")
+	ada := s.signedInAs("ada", "admin")
+
+	kept := s.uploadAs(mia, "draft.txt", []byte("mia's draft\n"))
+	path := fmt.Sprintf("/api/attachments/%d", kept.ID)
+	for _, reader := range []struct {
+		who, session string
+		want         int
+	}{{"mia", mia, http.StatusOK}, {"noah", noah, http.StatusNotFound}, {"ada", ada, http.StatusOK}} {
+		if resp, _ := s.asCookie("GET", path, reader.session, nil); resp.StatusCode != reader.want {
+			t.Errorf("%s's GET of mia's waiting upload = %d; want %d", reader.who, resp.StatusCode, reader.want)
+		}
+	}
+	if resp, _ := s.do("GET", path, nil); resp.StatusCode != http.StatusOK {
+		t.Errorf("the token's GET of mia's waiting upload = %d; want 200", resp.StatusCode)
+	}
+
+	resp, body := s.asCookie("POST", "/api/loops/aster/message", noah, map[string]any{"text": "noah sends mia's file", "attachment_id": kept.ID})
+	if resp.StatusCode != http.StatusNotFound || errorCode(body) != "attachment_not_found" {
+		t.Errorf("noah's send of mia's upload = %d %s; want 404 attachment_not_found", resp.StatusCode, body)
+	}
+	if got := s.activityWith("noah sends mia's file"); len(got) != 0 {
+		t.Errorf("a refused send was stored: %s", dump(got))
+	}
+	resp, body = s.asCookie("POST", "/api/group", noah, map[string]any{"text": "@aster noah again", "attachment_id": kept.ID})
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("noah's group send of mia's upload = %d %s; want 404", resp.StatusCode, body)
+	}
+
+	// An admin may send anyone's, as the operator token always could.
+	other := s.uploadAs(noah, "notes.txt", []byte("noah's notes\n"))
+	if resp, body := s.asCookie("POST", "/api/loops/aster/message", ada, map[string]any{"text": "ada sends noah's file", "attachment_id": other.ID}); resp.StatusCode != http.StatusAccepted {
+		t.Errorf("an admin's send of noah's upload = %d %s; want 202", resp.StatusCode, body)
+	}
+
+	if resp, body := s.asCookie("POST", "/api/loops/aster/message", mia, map[string]any{"text": "mia sends her file", "attachment_id": kept.ID}); resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("mia's send of her own upload = %d %s; want 202", resp.StatusCode, body)
+	}
+	if resp, _ := s.asCookie("GET", path, noah, nil); resp.StatusCode != http.StatusOK {
+		t.Errorf("noah's GET of mia's file once sent to aster's control room = %d; want 200", resp.StatusCode)
+	}
+}

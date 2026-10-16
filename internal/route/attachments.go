@@ -206,8 +206,10 @@ var ErrNoFiles = errors.New("this hub keeps no files")
 // (#460). It waits, claimed by no message, until a message sends it or
 // UploadWait passes. Its name is redacted before anything is derived from
 // it, as a surface's file's is; its bytes are the operator's own and go
-// only to loops, so they are not checked for secrets.
-func (router *Router) KeepUpload(ctx context.Context, body io.Reader, name string) (*store.Attachment, error) {
+// only to loops, so they are not checked for secrets. uploadedBy is the
+// user uploading it, "" for the operator token: until a message claims
+// it, only they or an admin may read or send it.
+func (router *Router) KeepUpload(ctx context.Context, body io.Reader, name, uploadedBy string) (*store.Attachment, error) {
 	if router.files == nil {
 		return nil, ErrNoFiles
 	}
@@ -219,6 +221,7 @@ func (router *Router) KeepUpload(ctx context.Context, body io.Reader, name strin
 		return nil, err
 	}
 	kept.CreatedAt = time.Now().UnixMilli()
+	kept.UploadedBy = uploadedBy
 	if err := router.store.Attachments().Insert(ctx, kept); err != nil {
 		router.dropKept(kept)
 		return nil, err
@@ -227,8 +230,9 @@ func (router *Router) KeepUpload(ctx context.Context, body io.Reader, name strin
 }
 
 // uploadWaiting checks, before a message is stored, that the upload it
-// sends is waiting to be sent.
-func (router *Router) uploadWaiting(ctx context.Context, id int64) error {
+// sends is waiting to be sent, and is the sender's to send. Another
+// user's upload answers as one that isn't waiting, so its id says nothing.
+func (router *Router) uploadWaiting(ctx context.Context, id int64, sender UploadSender) error {
 	row, err := router.store.Attachments().Get(ctx, id)
 	if errors.Is(err, store.ErrNotFound) {
 		return ErrUploadNotFound
@@ -236,10 +240,23 @@ func (router *Router) uploadWaiting(ctx context.Context, id int64) error {
 	if err != nil {
 		return err
 	}
-	if row.MessageID != 0 || row.RemovedAt != 0 || row.Path == "" {
+	if row.MessageID != 0 || row.RemovedAt != 0 || row.Path == "" || !sender.Sends(row) {
 		return ErrUploadNotFound
 	}
 	return nil
+}
+
+// UploadSender is who sends a message's upload: a user, or anyone who may
+// send every upload, an admin or the operator token.
+type UploadSender struct {
+	UserID string
+	Any    bool
+}
+
+// Sends reports whether the sender may send upload, which no message has
+// claimed yet.
+func (sender UploadSender) Sends(upload *store.Attachment) bool {
+	return sender.Any || (sender.UserID != "" && upload.UploadedBy == sender.UserID)
 }
 
 // claimUpload gives a stored message the upload it sends. uploadWaiting
