@@ -14,17 +14,26 @@ type sourceStore struct {
 	loops       []*store.Loop
 	connections []*store.Connection
 	retired     []store.RetiredSecret
+	settings    map[string]string
 }
 
-func (fake sourceStore) Settings() store.SettingsStore { return noSettings{} }
+func (fake sourceStore) Settings() store.SettingsStore { return noSettings{values: fake.settings} }
 func (fake sourceStore) Loops() store.LoopStore        { return listedLoops{loops: fake.loops} }
 func (fake sourceStore) Connections() store.ConnectionStore {
 	return listedConnections{connections: fake.connections, retired: fake.retired}
 }
 
-type noSettings struct{ store.SettingsStore }
+type noSettings struct {
+	store.SettingsStore
+	values map[string]string
+}
 
-func (noSettings) Get(context.Context, string) (string, error) { return "", store.ErrNotFound }
+func (settings noSettings) Get(_ context.Context, key string) (string, error) {
+	if value, ok := settings.values[key]; ok {
+		return value, nil
+	}
+	return "", store.ErrNotFound
+}
 
 type listedLoops struct {
 	store.LoopStore
@@ -156,5 +165,23 @@ func TestSourcesJoinsEachSource(t *testing.T) {
 
 	if _, err := append(sources, failingSource{}).Secrets(context.Background()); err == nil {
 		t.Fatal("a failing source did not fail the load")
+	}
+}
+
+// The cloud account's token is redacted by its value, not the JSON it is
+// kept in; a value that doesn't read as an account is redacted whole.
+func TestStoreSourceNamesTheCloudAccount(t *testing.T) {
+	for stored, want := range map[string]string{
+		`{"token":"sk-ant-oat01-synthetic-cloud","org_uuid":"o"}`: "sk-ant-oat01-synthetic-cloud",
+		"not-json-synthetic-cloud":                                "not-json-synthetic-cloud",
+	} {
+		source := StoreSource{Store: sourceStore{settings: map[string]string{store.SettingCloudAccount: stored}}}
+		secrets, err := source.Secrets(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(secrets) != 1 || secrets[0].Name != store.SettingCloudAccount || secrets[0].Value != want {
+			t.Errorf("stored %s: secrets = %+v, want %s", stored, secrets, want)
+		}
 	}
 }

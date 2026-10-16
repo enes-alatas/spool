@@ -2,6 +2,7 @@ package redact
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
 	"github.com/enes-alatas/spool/internal/store"
@@ -27,6 +28,20 @@ func (source StoreSource) Secrets(ctx context.Context) ([]Secret, error) {
 	}
 	if token != "" {
 		out = append(out, Secret{Name: store.SettingClaudeOAuthToken, Value: token})
+	}
+
+	// The account cloud loops spend drives it whole, not only its turns.
+	raw, err := source.Store.Settings().Get(ctx, store.SettingCloudAccount)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return nil, err
+	}
+	if raw != "" {
+		// a value that doesn't read as an account is redacted whole
+		var account store.CloudAccount
+		if json.Unmarshal([]byte(raw), &account) == nil && account.Token != "" {
+			raw = account.Token
+		}
+		out = append(out, Secret{Name: store.SettingCloudAccount, Value: raw})
 	}
 
 	// Every loop, archived included: an archived loop's token still opens

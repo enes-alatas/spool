@@ -101,6 +101,23 @@ const (
 // Claude login. Write-only through the API; never logged.
 const SettingClaudeOAuthToken = "claude_oauth_token"
 
+// SettingCloudAccount holds the claude.ai account cloud loops spend
+// (ADR-0056), a CloudAccount as JSON. Sealed, write-only through the API,
+// and never logged; unset until the operator signs in.
+const SettingCloudAccount = "cloud_account"
+
+// CloudAccount is the account's sign-in: the OAuth access token and the
+// organization it acts in.
+type CloudAccount struct {
+	Token   string `json:"token"`
+	OrgUUID string `json:"org_uuid"`
+}
+
+// SettingCloudAddress holds the public HTTPS address in front of the cloud
+// listener, the one cloud sessions reach the hub at (ADR-0056). Unset, no
+// cloud loop wakes.
+const SettingCloudAddress = "cloud_address"
+
 // SettingLoginCheck holds the last login check's outcome (ADR-0044), a
 // LoginCheckRecord as JSON. Saving a setup-token resets it to pending.
 const SettingLoginCheck = "login_check"

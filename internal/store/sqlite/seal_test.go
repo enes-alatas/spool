@@ -22,6 +22,7 @@ const (
 	fixtureConnection = "ghp-synthetic-secret"
 	fixtureRotated    = "ghp-synthetic-rotated"
 	fixtureSetupToken = "sk-ant-oat01-synthetic"
+	fixtureCloud      = `{"token":"sk-ant-oat01-synthetic-cloud","org_uuid":"00000000-0000-4000-8000-000000000001"}`
 )
 
 // fixtureLong is a synthetic secret longer than a database page.
@@ -49,6 +50,9 @@ func seedSecrets(t *testing.T, db *DB) {
 		t.Fatal(err)
 	}
 	if err := db.Settings().Set(ctx, store.SettingClaudeOAuthToken, fixtureSetupToken); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Settings().Set(ctx, store.SettingCloudAccount, fixtureCloud); err != nil {
 		t.Fatal(err)
 	}
 	// one longer than a page, which SQLite keeps in overflow pages and
@@ -87,6 +91,9 @@ func assertSecretsRead(t *testing.T, db *DB) {
 	if setupToken, err := db.Settings().Get(ctx, store.SettingClaudeOAuthToken); err != nil || setupToken != fixtureSetupToken {
 		t.Fatalf("the setup-token reads back as %q (%v)", setupToken, err)
 	}
+	if account, err := db.Settings().Get(ctx, store.SettingCloudAccount); err != nil || account != fixtureCloud {
+		t.Fatalf("the cloud account doesn't read back (%v)", err)
+	}
 }
 
 // assertNoPlainSecret checks no seeded value is anywhere in the database's
@@ -122,7 +129,7 @@ func assertNoPlainSecret(t *testing.T, db *DB, path string) {
 		if err != nil && !os.IsNotExist(err) {
 			t.Fatal(err)
 		}
-		for _, secret := range []string{fixtureTGToken, fixtureSlackApp, fixtureSlackBot, fixtureHubToken, fixtureConnection, fixtureRotated, fixtureSetupToken, fixtureLong} {
+		for _, secret := range []string{fixtureTGToken, fixtureSlackApp, fixtureSlackBot, fixtureHubToken, fixtureConnection, fixtureRotated, fixtureSetupToken, fixtureCloud, fixtureLong} {
 			// a value longer than a page is split across overflow
 			// pages, so its leading run is what is searched for
 			if strings.Contains(string(data), secret[:min(len(secret), 64)]) {
