@@ -1,6 +1,6 @@
 # ADR-0028: Workstation egress runs through an allowlist proxy
 
-Date: 2026-09-20 · Status: accepted · Amends: ADR-0017 (decision 9, "open egress") · Amended 2026-09-20 (decision 3: the hub entry is the MCP listener, #238); 2026-10-01 (consequences: a docker loop behind a loopback listener is refused, #474); 2026-10-01 (decision 3: the loop listener does not refuse a host.docker.internal Host, #508); 2026-10-05 (decision 4: a loop's own entries, keyed by its proxy token, #599); 2026-10-06 (decision 4: the operator's extra hosts are stored and change while the hub runs, #542); 2026-10-06 (decision 4: brokered MCP servers open no host, #622); 2026-10-07 (decision 4: a loop's own entries are removed, #626); 2026-10-08 (decision 5: the wall is ensured at every docker wake, #657); 2026-10-11 (decision 5: a rebuilt proxy image replaces the proxy, #715)
+Date: 2026-09-20 · Status: accepted · Amends: ADR-0017 (decision 9, "open egress") · Amended 2026-09-20 (decision 3: the hub entry is the MCP listener, #238); 2026-10-01 (consequences: a docker loop behind a loopback listener is refused, #474); 2026-10-01 (decision 3: the loop listener does not refuse a host.docker.internal Host, #508); 2026-10-05 (decision 4: a loop's own entries, keyed by its proxy token, #599); 2026-10-06 (decision 4: the operator's extra hosts are stored and change while the hub runs, #542); 2026-10-06 (decision 4: brokered MCP servers open no host, #622); 2026-10-07 (decision 4: a loop's own entries are removed, #626); 2026-10-08 (decision 5: the wall is ensured at every docker wake, #657); 2026-10-11 (decision 5: a rebuilt proxy image replaces the proxy, #715); 2026-10-16 (decision 1: each workstation has a network of its own, and no NET_RAW, #906)
 
 ## Context
 
@@ -29,6 +29,47 @@ by asking the agent nicely (#193).
    `--internal` is the enforcement: it is the daemon's own rule, not a
    convention a loop can opt out of, and a process inside the workstation
    cannot reach an address the network has no route to no matter what it runs.
+
+   **Amendment (2026-10-16, #906): each workstation has a network of its
+   own, and no NET_RAW.** A loop's hub MCP calls cross its network to the
+   proxy as plain HTTP, carrying its bearer token. So no other workstation
+   shares that network, and no workstation can forge packets on any.
+   - **A loop network per workstation.** Each docker loop's workstation
+     sits on `<wall>-loop-<loop id>`, an `--internal` network with the
+     proxy and nothing else. The proxy joins it before the workstation is
+     provisioned, and a proxy provisioned anew rejoins every loop network
+     of its wall. The proxy's name resolves on each, so `HTTP_PROXY` is
+     unchanged. Workstations can no longer reach each other at all. A
+     network already there under a loop network's name, or the wall's, is
+     refused unless it is internal.
+   - **`--cap-drop NET_RAW` on every container the hub runs from the
+     workstation image:** each workstation, login check and model
+     resolution. Even on a network it shares, none can forge a packet.
+     ping, traceroute and packet capture no longer work inside one;
+     nothing that makes ordinary connections needs it. The #599
+     amendment's note that workstations keep docker's default `NET_RAW`
+     no longer holds.
+   - **The wall's own network stays,** and is not removed once its
+     workstations have moved off. The proxy is created on it, and the
+     throwaway login check runs on it. A login check holds no hub token,
+     and its one call, to Anthropic's API, is TLS end to end through the
+     proxy.
+   - **Old workstations move at their next wake.** A workstation's label
+     records its posture (the dropped capability and its network), and
+     one under another posture is replaced, its volume kept, as a rebuilt
+     image's is (#715). This replaces the recreate control as the
+     migration path the consequences name for the network.
+   - **A loop network goes with its loop.** Destroy detaches the proxy and
+     removes the network. The wall's network and the proxy still outlive
+     every loop, as decision 5 says.
+   - **About 30 docker loops per daemon by default.** Each loop network
+     takes an address pool, and docker's default pools hold about 30
+     networks. Past that, provisioning fails with a message naming
+     `default-address-pools` in the daemon's `daemon.json`, which the
+     operator widens.
+
+   The operator approved both changes on 2026-10-16, after confirming that
+   neither touches the proxy's job or the cloud runtime.
 
 2. **The proxy is ours, in Go, stdlib-only.** `cmd/spool-egress` is an ordinary
    forward proxy: `CONNECT host:port` for TLS, absolute-form requests for plain

@@ -299,6 +299,73 @@ func TestHomePersistsAcrossContainerRecreate(t *testing.T) {
 	awaitClose(t, proc, 30*time.Second)
 }
 
+// A workstation from before loop networks, on the wall's shared network
+// with docker's default NET_RAW, is replaced at its next Ensure: onto its
+// own network with the proxy, NET_RAW dropped, its home kept.
+func TestAWorkstationFromBeforeLoopNetworksMovesOntoItsOwn(t *testing.T) {
+	rt := requireDocker(t)
+	spec := testSpec(t, rt)
+	mustEnsure(t, rt, spec)
+	name := containerName(spec.LoopID)
+	if out, err := dockerOut(t, "rm", "--force", name); err != nil {
+		t.Fatalf("rm: %v (%s)", err, out)
+	}
+	if out, err := dockerOut(t, "run", "--pull=never", "--detach", "--init", "--name", name,
+		"--volume", name+":"+runtime.WorkstationHome, "--network", rt.egressNetwork(),
+		testImage, "sleep", "infinity"); err != nil {
+		t.Fatalf("run the old workstation: %v (%s)", err, out)
+	}
+	if out, err := dockerOut(t, "exec", name, "sh", "-c", "echo kept > "+runtime.WorkstationHome+"/marker"); err != nil {
+		t.Fatalf("write the marker: %v (%s)", err, out)
+	}
+
+	mustEnsure(t, rt, spec)
+	networks, err := dockerOut(t, "inspect", "--format", "{{range $net, $_ := .NetworkSettings.Networks}}{{$net}} {{end}}", name)
+	if err != nil || networks != rt.loopNetwork(spec.LoopID) {
+		t.Fatalf("networks after Ensure = %q (%v), want only %q", networks, err, rt.loopNetwork(spec.LoopID))
+	}
+	if capDrop, err := dockerOut(t, "inspect", "--format", "{{.HostConfig.CapDrop}}", name); err != nil || !strings.Contains(capDrop, "NET_RAW") {
+		t.Fatalf("CapDrop after Ensure = %q (%v), want NET_RAW", capDrop, err)
+	}
+	if marker, err := dockerOut(t, "exec", name, "cat", runtime.WorkstationHome+"/marker"); err != nil || marker != "kept" {
+		t.Fatalf("home after the move = %q (%v), want the marker kept", marker, err)
+	}
+	members, err := dockerOut(t, "network", "inspect", "--format", "{{range $_, $member := .Containers}}{{$member.Name}} {{end}}", rt.loopNetwork(spec.LoopID))
+	if err != nil || !strings.Contains(members, rt.egressContainer()) {
+		t.Fatalf("loop network members = %q (%v), want the proxy among them", members, err)
+	}
+}
+
+// One loop's workstation cannot reach another's at all: a TCP connect from
+// A to B's address finds no route, where on one shared network B's kernel
+// would answer it, if only to refuse. A connect from A to the proxy, on
+// A's own network, shows the probe itself works.
+func TestAWorkstationCannotReachAnother(t *testing.T) {
+	rt := requireDocker(t)
+	a, b := testSpec(t, rt), testSpec(t, rt)
+	mustEnsure(t, rt, a)
+	mustEnsure(t, rt, b)
+	address := func(container, network string) string {
+		t.Helper()
+		ip, err := dockerOut(t, "inspect", "--format", `{{(index .NetworkSettings.Networks "`+network+`").IPAddress}}`, container)
+		if err != nil || ip == "" {
+			t.Fatalf("%s's address on %s = %q (%v)", container, network, ip, err)
+		}
+		return ip
+	}
+	connect := func(ip, port string) (string, error) {
+		return dockerOut(t, "exec", containerName(a.LoopID), "timeout", "5", "bash", "-c", "exec 3<>/dev/tcp/"+ip+"/"+port)
+	}
+
+	if out, err := connect(address(rt.egressContainer(), rt.loopNetwork(a.LoopID)), egressPort); err != nil {
+		t.Fatalf("A could not connect to the proxy on its own network: %v (%s)", err, out)
+	}
+	out, err := connect(address(containerName(b.LoopID), rt.loopNetwork(b.LoopID)), "9")
+	if err == nil || strings.Contains(strings.ToLower(out), "connection refused") {
+		t.Fatalf("A reached B's address (%v): %s", err, out)
+	}
+}
+
 func TestKillTerminatesInnerClaude(t *testing.T) {
 	rt := requireDocker(t)
 	spec := testSpec(t, rt)
@@ -365,6 +432,9 @@ func TestDestroyRemovesContainerAndVolume(t *testing.T) {
 	}
 	if _, err := dockerOut(t, "volume", "inspect", name); err == nil {
 		t.Fatal("volume survived Destroy")
+	}
+	if _, err := dockerOut(t, "network", "inspect", rt.loopNetwork(spec.LoopID)); err == nil {
+		t.Fatal("loop network survived Destroy")
 	}
 	if err := rt.Destroy(context.Background(), spec.LoopID); err != nil {
 		t.Fatalf("second Destroy must be a no-op: %v", err)

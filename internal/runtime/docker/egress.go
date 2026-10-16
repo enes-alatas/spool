@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 )
@@ -54,6 +55,20 @@ func egressPrefix(image string) string {
 func (rt *Runtime) egressNetwork() string   { return egressPrefix(rt.egressImage) }
 func (rt *Runtime) egressContainer() string { return egressPrefix(rt.egressImage) + "-proxy" }
 
+// loopNetwork is the internal network a loop's workstation sits on alone
+// with the proxy. A workstation keeps the hub's MCP token, which crosses
+// its network to the proxy as plain HTTP, so no other workstation may be
+// on that network to read it.
+//
+//	spool-egress, loop abc   -> network spool-egress-loop-abc
+func (rt *Runtime) loopNetwork(loopID string) string {
+	return rt.egressNetwork() + "-loop-" + loopID
+}
+
+// loopNetworkWallLabel marks a loop network with the wall it belongs to,
+// so a recreated proxy finds every network it must rejoin.
+const loopNetworkWallLabel = "spool.egress.wall"
+
 // egressProxyURL is what the exec env points every client at. The name
 // resolves on the internal network through docker's own DNS.
 func (rt *Runtime) egressProxyURL() string {
@@ -78,13 +93,95 @@ func (rt *Runtime) ensureEgress(ctx context.Context) error {
 	return rt.catchUpEgressFile(ctx)
 }
 
-func (rt *Runtime) ensureEgressNetwork(ctx context.Context) error {
-	if _, err := rt.command(ctx, queryTimeout, "network", "inspect", rt.egressNetwork()); err == nil {
+// ensureLoopEgress puts the wall up and the loop's own network beside it,
+// with the proxy on that network.
+func (rt *Runtime) ensureLoopEgress(ctx context.Context, loopID string) error {
+	if !rt.egressEnabled() {
 		return nil
 	}
-	_, err := rt.command(ctx, startTimeout,
-		"network", "create", "--internal", "--label", "spool.egress=network", rt.egressNetwork())
-	if err != nil && !alreadyExists(err) {
+	if err := rt.ensureEgress(ctx); err != nil {
+		return err
+	}
+	rt.egressMu.Lock()
+	defer rt.egressMu.Unlock()
+	network := rt.loopNetwork(loopID)
+	err := rt.ensureInternalNetwork(ctx, network,
+		"spool.egress=loop-network",
+		loopNetworkWallLabel+"="+rt.egressNetwork(),
+		"spool.loop.id="+loopID)
+	if err != nil {
+		return withPoolRemedy(err)
+	}
+	return rt.connectProxy(ctx, network)
+}
+
+// connectProxy attaches the proxy to network, which is all a workstation
+// there has to reach it by: the proxy's name resolves on every network it
+// is on.
+func (rt *Runtime) connectProxy(ctx context.Context, network string) error {
+	if _, err := rt.command(ctx, startTimeout, "network", "connect", network, rt.egressContainer()); err != nil && !alreadyConnected(err) {
+		return err
+	}
+	return nil
+}
+
+// reconnectLoopNetworks attaches a newly provisioned proxy to every loop
+// network of its wall. A running workstation would otherwise lose its way
+// out until its own next wake.
+func (rt *Runtime) reconnectLoopNetworks(ctx context.Context) error {
+	out, err := rt.command(ctx, queryTimeout, "network", "ls", "--format", "{{.Name}}",
+		"--filter", "label="+loopNetworkWallLabel+"="+rt.egressNetwork())
+	if err != nil {
+		return err
+	}
+	for _, network := range strings.Fields(string(out)) {
+		if err := rt.connectProxy(ctx, network); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// removeLoopNetwork takes a destroyed loop's network down. The proxy is
+// detached first, since docker refuses to remove a network with members.
+func (rt *Runtime) removeLoopNetwork(ctx context.Context, loopID string) error {
+	if !rt.egressEnabled() {
+		return nil
+	}
+	rt.egressMu.Lock()
+	defer rt.egressMu.Unlock()
+	network := rt.loopNetwork(loopID)
+	if _, err := rt.command(ctx, startTimeout, "network", "disconnect", "--force", network, rt.egressContainer()); err != nil && !networkGone(err) && !notFound(err) && !notConnected(err) {
+		return err
+	}
+	if _, err := rt.command(ctx, startTimeout, "network", "rm", network); err != nil && !networkGone(err) {
+		return err
+	}
+	return nil
+}
+
+func (rt *Runtime) ensureEgressNetwork(ctx context.Context) error {
+	return rt.ensureInternalNetwork(ctx, rt.egressNetwork(), "spool.egress=network")
+}
+
+// ensureInternalNetwork makes network exist, --internal and with labels.
+// A network already there under the name is refused unless it is
+// internal: one made without --internal, by hand or by another tool,
+// would give everything on it a route out that skips the proxy.
+func (rt *Runtime) ensureInternalNetwork(ctx context.Context, network string, labels ...string) error {
+	out, err := rt.command(ctx, queryTimeout, "network", "inspect", "--format", "{{.Internal}}", network)
+	if err == nil {
+		if strings.TrimSpace(string(out)) != "true" {
+			return fmt.Errorf("docker network %s is not internal, so it would give a workstation a way out past the egress proxy: "+
+				"remove it (docker network rm %s) and the hub recreates it", network, network)
+		}
+		return nil
+	}
+	argv := []string{"network", "create", "--internal"}
+	for _, label := range labels {
+		argv = append(argv, "--label", label)
+	}
+	if _, err := rt.command(ctx, startTimeout, append(argv, network)...); err != nil && !alreadyExists(err) {
 		return err
 	}
 	return nil
@@ -151,6 +248,9 @@ func (rt *Runtime) provisionEgressProxy(ctx context.Context, imageID string) err
 		if !alreadyConnected(err) {
 			return err
 		}
+	}
+	if err := rt.reconnectLoopNetworks(ctx); err != nil {
+		return err
 	}
 	_, err := rt.command(ctx, startTimeout, "start", rt.egressContainer())
 	return err
@@ -257,16 +357,18 @@ func (rt *Runtime) egressEnv() []string {
 	return append(argv, "--env", "NO_PROXY=localhost,127.0.0.1,::1", "--env", "no_proxy=localhost,127.0.0.1,::1")
 }
 
-// networkArgs puts a workstation behind the wall. A runtime with no egress
-// image configured provisions on the default bridge — the pre-ADR-0028
-// posture, which is what the bare-adjacent "no image built yet" case gets.
-func (rt *Runtime) networkArgs() []string {
+// networkArgs puts a container behind the wall, on network: a workstation
+// on its loop network, a login check on the wall's own. A runtime with no
+// egress image configured provisions on the default bridge — the
+// pre-ADR-0028 posture, which is what the bare-adjacent "no image built
+// yet" case gets.
+func (rt *Runtime) networkArgs(network string) []string {
 	if !rt.egressEnabled() {
 		// the loop reaches the hub's MCP endpoint through the host gateway
 		// (ADR-0026); with the wall up, the proxy holds that alias instead
 		return []string{"--add-host", "host.docker.internal:host-gateway"}
 	}
-	return []string{"--network", rt.egressNetwork()}
+	return []string{"--network", network}
 }
 
 // EgressWall reports the fleet's egress posture for the wirer to log at boot:

@@ -189,7 +189,7 @@ func (rt *Runtime) Preflight(ctx context.Context) (string, error) {
 // is the loop's to name, and a process it left behind must not keep it on
 // an old build.
 func (rt *Runtime) Ensure(ctx context.Context, spec runtime.Spec) error {
-	if err := rt.ensureEgress(ctx); err != nil {
+	if err := rt.ensureLoopEgress(ctx, spec.LoopID); err != nil {
 		return err
 	}
 	name := containerName(spec.LoopID)
@@ -217,9 +217,10 @@ func (rt *Runtime) Ensure(ctx context.Context, spec runtime.Spec) error {
 }
 
 // replaceStale replaces the workstation, keeping its volume, when the image
-// it names has been rebuilt since the container was created from it, and
-// reports whether it did. An image that is not here any more replaces
-// nothing: there would be nothing to provision from.
+// it names has been rebuilt since the container was created from it, or
+// when it was provisioned under another posture, and reports whether it
+// did. An image that is not here any more replaces nothing: there would be
+// nothing to provision from.
 func (rt *Runtime) replaceStale(ctx context.Context, spec runtime.Spec, state *containerState) (bool, error) {
 	image := workstationImage(spec, rt.defaultImage)
 	current, err := rt.imageID(ctx, image)
@@ -228,11 +229,15 @@ func (rt *Runtime) replaceStale(ctx context.Context, spec runtime.Spec, state *c
 		return false, nil
 	case err != nil:
 		return false, err
-	case current == state.Image:
+	case current == state.Image && state.Posture == rt.posture(spec):
 		return false, nil
+	case current != state.Image:
+		slog.Default().Info("workstation image changed", "loop", spec.LoopName, "image", image,
+			"old", shortID(state.Image), "new", shortID(current))
+	default:
+		slog.Default().Info("workstation posture changed", "loop", spec.LoopName,
+			"old", state.Posture, "new", rt.posture(spec))
 	}
-	slog.Default().Info("workstation image changed", "loop", spec.LoopName, "image", image,
-		"old", shortID(state.Image), "new", shortID(current))
 	if _, err := rt.command(ctx, startTimeout, "rm", "--force", containerName(spec.LoopID)); err != nil && !notFound(err) {
 		return true, err
 	}
@@ -257,7 +262,7 @@ func (rt *Runtime) provision(ctx context.Context, spec runtime.Spec) error {
 	if _, err := rt.command(ctx, queryTimeout, volumeArgv...); err != nil {
 		return err
 	}
-	if _, err := rt.command(ctx, runTimeout, runArgv(spec, rt.defaultImage, rt.networkArgs())...); err != nil {
+	if _, err := rt.command(ctx, runTimeout, runArgv(spec, rt.defaultImage, rt.workstationNetworkArgs(spec))...); err != nil {
 		// A half-finished earlier provision can have left the container
 		// created but not running; then the name is taken and starting the
 		// existing one is the right move.
@@ -342,9 +347,9 @@ func (rt *Runtime) Halt(ctx context.Context, loopID string) error {
 	return nil
 }
 
-// Destroy removes the workstation and everything on its volume. Loop deletion
-// and the operator's recreate control get here — never sleep or pause
-// (ADR-0017).
+// Destroy removes the workstation, everything on its volume, and its loop
+// network. Loop deletion and the operator's recreate control get here —
+// never sleep or pause (ADR-0017).
 func (rt *Runtime) Destroy(ctx context.Context, loopID string) error {
 	name := containerName(loopID)
 	if _, err := rt.command(ctx, startTimeout, "rm", "--force", name); err != nil && !notFound(err) {
@@ -353,7 +358,7 @@ func (rt *Runtime) Destroy(ctx context.Context, loopID string) error {
 	if _, err := rt.command(ctx, queryTimeout, "volume", "rm", "--force", name); err != nil && !notFound(err) {
 		return err
 	}
-	return nil
+	return rt.removeLoopNetwork(ctx, loopID)
 }
 
 // stopClaude terminates claude inside a workstation: TERM now, KILL after a
@@ -393,8 +398,8 @@ func labelArgs(spec runtime.Spec) []string {
 // runArgv builds the docker run that provisions a workstation: a keepalive
 // as PID 1 under tini (--init reaps orphans that exec'd claudes leave
 // behind), restart unless-stopped so the workstation outlives daemon
-// restarts, and the loop's volume as its home. Open egress, no published
-// ports (ADR-0017).
+// restarts, the loop's volume as its home, and no published ports
+// (ADR-0017). It sits on network, and is denied NET_RAW (ADR-0028).
 func runArgv(spec runtime.Spec, defaultImage string, network []string) []string {
 	name := containerName(spec.LoopID)
 	argv := []string{
@@ -402,9 +407,13 @@ func runArgv(spec runtime.Spec, defaultImage string, network []string) []string 
 		"--name", name,
 		"--restart", "unless-stopped",
 		"--volume", name + ":" + runtime.WorkstationHome,
+		// NET_RAW would let a workstation forge packets, and so pose as
+		// another container on its network.
+		"--cap-drop", "NET_RAW",
 	}
 	argv = append(argv, network...)
 	argv = append(argv, labelArgs(spec)...)
+	argv = append(argv, "--label", postureLabel+"="+workstationPosture(network))
 	if spec.MemMB > 0 {
 		argv = append(argv, "--memory", strconv.Itoa(spec.MemMB)+"m")
 	}
@@ -412,6 +421,28 @@ func runArgv(spec runtime.Spec, defaultImage string, network []string) []string 
 		argv = append(argv, "--cpus", strconv.FormatFloat(spec.CPUs, 'f', -1, 64))
 	}
 	return append(argv, workstationImage(spec, defaultImage), "sleep", "infinity")
+}
+
+// postureLabel records the posture a workstation was provisioned under:
+// the capability it is denied and the network it sits on. Both are fixed
+// at docker run, so a workstation under another posture, such as one from
+// before loop networks, is replaced as a rebuilt image's is.
+const postureLabel = "spool.ws.posture"
+
+// workstationPosture is the posture label's value for a workstation
+// provisioned with network.
+func workstationPosture(network []string) string {
+	return strings.Join(append([]string{"--cap-drop", "NET_RAW"}, network...), " ")
+}
+
+// workstationNetworkArgs puts a loop's workstation on its loop network.
+func (rt *Runtime) workstationNetworkArgs(spec runtime.Spec) []string {
+	return rt.networkArgs(rt.loopNetwork(spec.LoopID))
+}
+
+// posture is the posture a workstation for spec is provisioned under now.
+func (rt *Runtime) posture(spec runtime.Spec) string {
+	return workstationPosture(rt.workstationNetworkArgs(spec))
 }
 
 // workstationImage is the image a loop's workstation is provisioned from:

@@ -305,11 +305,14 @@ the CLI (ADR-0018).
 - **`spool-hook`, a PreToolUse hook,** refuses a recorded list of
   destructive or credential-leaking commands. Claude's settings pin hooks
   on (ADR-0042).
+- **A workstation can't forge packets.** It runs without `NET_RAW`, so it
+  can't pose as another container on a network it is on (ADR-0028).
 
 **Doesn't hold:**
 - **Inside, the loop is root in all but name.** sudo is passwordless, and
   the hook guards against slips, not an adversary (ADR-0042).
-- **Docker's default capabilities are kept**, `NET_RAW` included (ADR-0028).
+- **Docker's other default capabilities are kept.** Only `NET_RAW` is
+  dropped (ADR-0028).
 - **A bare loop is uncontained.** It is a host process that can read
   everything the operator can, the data directory included (ADR-0017,
   SECURITY.md).
@@ -322,6 +325,9 @@ the CLI (ADR-0018).
 **Holds:**
 - **One way out.** Workstations sit on an internal network, and the proxy
   is their only way off it.
+- **No workstation sees another.** Each sits on a network of its own,
+  shared with the proxy alone, so none sees or reaches another
+  (ADR-0028).
 - **An allowlist, checked before any dial.** The proxy matches host and
   port against a built-in list (`internal/egress/allowlist.go`: Anthropic,
   GitHub, the Go, npm, PyPI and Debian archives) plus the fleet's stored
@@ -337,9 +343,15 @@ the CLI (ADR-0018).
 **Doesn't hold:**
 - **The proxy matches names, not content.** It can't tell a fetch from an
   upload to an allowed host, a gist for example (ADR-0028, ADR-0045).
+- **The proxy can reach every workstation.** It sits on every loop
+  network, so docker's DNS resolves each `spool-ws-<id>` name from it. An
+  extra host naming a workstation would open a way from one workstation
+  to another. The built-in list names none, so only an admin's entry can
+  (ADR-0028).
 - **Sometimes there is no wall at all:** a hub started with
   `--egress-image ""`, a bare loop, and a workstation made before the wall
-  until it is recreated (ADR-0028).
+  until its next wake replaces it, or for as long as its image is gone
+  (ADR-0028).
 
 ### Store and data at rest
 

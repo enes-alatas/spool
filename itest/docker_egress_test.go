@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -71,16 +72,30 @@ func dockerEgressAllowlist(t *testing.T) {
 	}
 
 	// The refusal has to be the network's doing, not the proxy's goodwill:
-	// the workstation is on the internal network, which has no route out at
-	// all, so a client that ignores HTTP_PROXY gets nowhere either.
-	network, err := dockerInspect(
-		"{{range $net, $_ := .NetworkSettings.Networks}}{{$net}} {{end}}", "spool-ws-"+view.ID)
-	if err != nil || strings.TrimSpace(network) != egressTestImage {
-		t.Fatalf("workstation networks = %q (%v), want only %q", network, err, egressTestImage)
-	}
-	out, err := exec.Command("docker", "network", "inspect", "--format", "{{.Internal}}", egressTestImage).CombinedOutput()
-	if internal := strings.TrimSpace(string(out)); err != nil || internal != "true" {
-		t.Fatalf("egress network internal = %q (%v), want true", internal, err)
+	// the workstation is on an internal network, which has no route out at
+	// all, so a client that ignores HTTP_PROXY gets nowhere either. The
+	// network is the loop's own, shared with the proxy alone, so no other
+	// workstation sees its traffic to the proxy; and with NET_RAW dropped
+	// it cannot forge packets to pose as the proxy either.
+	for _, name := range []string{"wsegress", "wsblocked"} {
+		id := s.loop(name).ID
+		want := egressTestImage + "-loop-" + id
+		network, err := dockerInspect(
+			"{{range $net, $_ := .NetworkSettings.Networks}}{{$net}} {{end}}", "spool-ws-"+id)
+		if err != nil || strings.TrimSpace(network) != want {
+			t.Fatalf("%s's workstation networks = %q (%v), want only %q", name, network, err, want)
+		}
+		out, err := exec.Command("docker", "network", "inspect", "--format",
+			"{{.Internal}} {{range $_, $member := .Containers}}{{$member.Name}} {{end}}", want).CombinedOutput()
+		fields := strings.Fields(string(out))
+		if err != nil || len(fields) != 3 || fields[0] != "true" ||
+			!slices.Contains(fields, "spool-ws-"+id) || !slices.Contains(fields, egressTestImage+"-proxy") {
+			t.Fatalf("%s's network = %q (%v), want internal, with its workstation and the proxy alone", name, out, err)
+		}
+		capDrop, err := dockerInspect("{{.HostConfig.CapDrop}}", "spool-ws-"+id)
+		if err != nil || !strings.Contains(capDrop, "NET_RAW") {
+			t.Fatalf("%s's workstation drops %q (%v), want NET_RAW among them", name, capDrop, err)
+		}
 	}
 }
 

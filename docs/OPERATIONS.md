@@ -23,6 +23,19 @@ Use Docker Engine 26.0.0 or later. Of the older lines, only a 25.x from
 names, which can carry data past the egress allowlist (CVE-2024-29018).
 `docker version --format '{{.Server.Version}}'` prints yours.
 
+Each docker loop gets a network of its own (ADR-0028), and Docker's default
+address pools hold about 30 networks on one engine, other containers'
+included. A loop past that fails to wake with an error naming
+`default-address-pools`. To run more, widen the pools in
+`/etc/docker/daemon.json` and restart Docker:
+
+```json
+{ "default-address-pools": [{ "base": "10.201.0.0/16", "size": 24 }] }
+```
+
+Pick a base no network around your machine uses. A /16 split into /24s holds
+256 networks.
+
 Spool does not terminate TLS (ADR-0030). The proxy does that, and the hub
 stays on loopback behind it. Who may call the API does not change: a session
 or the operator token, as on localhost.
