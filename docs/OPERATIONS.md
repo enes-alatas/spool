@@ -313,9 +313,11 @@ images, and starts the hub on the same data directory. The hub migrates
 `spool.db` forward at its first start. No release migrates it back, so the
 backup taken just before that start is the way back. Take it every time.
 
-The commands assume the checkout is at `/opt/spool`, the hub runs as a
-system unit named `spool`, and the data directory is `/home/spool/.spool`.
-Substitute your own paths. Run them as the user who owns the checkout, who
+The commands assume the checkout is at `/opt/spool` and the hub runs as a
+system unit named `spool`. Substitute your own checkout. The binary the unit
+runs and the data directory are read from the unit itself (step 1 below), so
+a hub set up some other way than [Run it as a service](#run-it-as-a-service)
+upgrades the same. Run them as the user who owns the checkout, who
 can also run `docker`, as `make image` needs. `sudo` marks the lines that
 need root: the unit, the scripts, and anything under `/usr/local/sbin` or
 `/home/spool`. Running the whole block as root instead leaves root's files
@@ -323,19 +325,34 @@ in your checkout, and git refuses a checkout root doesn't own.
 
 ### Before you start
 
-1. **Read what changed.** Note the running build with `./bin/spool --version`.
+1. **Find what the unit runs.** The upgrade replaces that binary and backs
+   up that data directory, wherever they are. Run this in the shell you
+   upgrade from:
+
+   ```bash
+   unit=$(systemctl show spool -p ExecStart)
+   BIN=$(printf '%s' "$unit" | sed -n 's/.*path=\([^ ;]*\).*/\1/p')
+   DATA=$(printf '%s' "$unit" | sed -n 's/.*--data-dir[= ]\([^ ;]*\).*/\1/p')
+   echo "binary: ${BIN:?no unit named spool}  data: ${DATA:?no --data-dir in the unit; set DATA by hand}"
+   ```
+
+   With the unit above, these are `/opt/spool/bin/spool` and
+   `/home/spool/.spool`. A unit that runs a copy elsewhere, such as
+   `/usr/local/bin/spool`, is why the block below installs the new build: a
+   rebuilt `bin/spool` alone changes nothing the unit starts.
+2. **Read what changed.** Note the running build with `"$BIN" --version`.
    Read every release's notes between that build and the target on the
    [releases page](https://github.com/enes-alatas/spool/releases). Then check
    [Release-specific steps](#release-specific-steps) below for anything
    between your version and the target.
-2. **Keep the build you are leaving**, so a rollback needs no rebuild:
+3. **Keep the build you are leaving**, so a rollback needs no rebuild:
 
    ```bash
    cd /opt/spool
    git describe --tags --always > bin/previous-version
-   cp bin/spool bin/spool.previous
+   cp "$BIN" bin/spool.previous
    ```
-3. **Check the build tools** if you build from source rather than
+4. **Check the build tools** if you build from source rather than
    downloading a release. The running hub needs neither Go nor Node; only
    `make build` does. Make sure your own shell has them, at the versions the
    README names:
@@ -360,7 +377,9 @@ make build                                  # web UI + bin/spool; the running hu
 make image                                  # spool-workstation and spool-egress, rebuilt locally
 
 sudo systemctl stop spool
-sudo /usr/local/sbin/spool-backup.sh --data-dir /home/spool/.spool --out /var/backups/spool
+sudo /usr/local/sbin/spool-backup.sh --data-dir "$DATA" --out /var/backups/spool
+# Install the build where the unit runs it; a unit that runs bin/spool in place needs nothing.
+[ "$BIN" -ef bin/spool ] || sudo install -m 755 bin/spool bin/spool-hook "$(dirname "$BIN")/"
 
 # Only for a target of v0.5.1 or earlier, whose hub doesn't notice a rebuilt
 # image (#715): remove the containers, never the volumes, and the hub
@@ -370,6 +389,12 @@ docker rm -f $(docker ps -aq --filter label=spool.loop.id) spool-egress-proxy
 
 sudo systemctl start spool
 ```
+
+**To main, between releases.** Replace the tag line with
+`git checkout main && git pull --ff-only origin main`. `git fetch` alone
+moves `origin/main`, not your `main`, so checking out `main` after it
+builds the commit you already run. `git describe --tags` then names the
+build, such as `v0.5.1-159-g8691220`.
 
 Do not use the control room's **Recreate workstation** for this. It removes
 the volume too, and with it the loop's memory and workspace.
@@ -420,7 +445,9 @@ workflow runs the same check after every tag (#770).
 ### Checking it worked
 
 - `curl -s http://127.0.0.1:8080/api/version` names the target tag, and
-  `curl -s http://127.0.0.1:8080/api/health` answers `{"ok":true}`.
+  `curl -s http://127.0.0.1:8080/api/health` answers `{"ok":true}`. That
+  is the hub's answer. A loop names the build its session started on until
+  its next rotation, so a loop still quoting the old build proves nothing.
 - `journalctl -u spool -n 100` shows `runtime ready`, and no `level=ERROR` since the
   start.
 - Sign in to the control room. Every loop is listed, and the Fleet page shows
@@ -439,25 +466,29 @@ Starting the old binary on the migrated `spool.db` is not supported. The old
 binary skips migrations it doesn't know, then reads tables in a shape it was
 never written for.
 
+`$BIN` and `$DATA` are the ones step 1 of [Before you start](#before-you-start)
+read; read them again in a new shell.
+
 ```bash
 sudo systemctl stop spool
 cd /opt/spool
 git checkout "$(cat bin/previous-version)"
 cp bin/spool.previous bin/spool
+[ "$BIN" -ef bin/spool ] || sudo install -m 755 bin/spool.previous "$BIN"
 make image                                  # the previous release's images
 
-sudo mv /home/spool/.spool /home/spool/.spool.failed-upgrade
+sudo mv "$DATA" "$DATA.failed-upgrade"
 docker rm -f $(docker ps -aq --filter label=spool.loop.id) spool-egress-proxy
-docker volume rm $(docker volume ls -q --filter label=spool.loop.id)
+docker volume rm $(docker volume ls -q --filter name=spool-ws-)   # by name: a volume may carry no labels (#844)
 sudo /usr/local/sbin/spool-restore.sh --data /var/backups/spool/spool-data-<ts>.tar.gz \
-  --keys /var/backups/spool/spool-keys-<ts>.tar --data-dir /home/spool/.spool
+  --keys /var/backups/spool/spool-keys-<ts>.tar --data-dir "$DATA"
 
 sudo systemctl start spool
 ```
 
 `docker volume rm` destroys the volumes as they stood after the upgrade. Run
 it only once you have the backup's data file in hand. Keep
-`.spool.failed-upgrade` until the rolled-back hub is checked, then delete it:
+`$DATA.failed-upgrade` until the rolled-back hub is checked, then delete it:
 it holds the same credentials as the live directory.
 
 The restore runs from `/usr/local/sbin`, so it works whatever the previous
@@ -465,8 +496,8 @@ build is, including one from before the scripts existed. Don't refresh the
 installed copy during a rollback.
 
 If the new hub never started (a failed build, or a stop before `systemctl
-start`), the database was not migrated. Restoring `bin/spool.previous` and
-starting is then enough.
+start`), the database was not migrated. Putting `bin/spool.previous` back
+where the unit runs it (`$BIN`) and starting is then enough.
 
 ### Release-specific steps
 
