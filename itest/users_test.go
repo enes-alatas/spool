@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -192,5 +193,29 @@ func TestSignInThrottlesAndSpoolUserManagesUsers(t *testing.T) {
 	srv.spoolUser("remove", "dana")
 	if resp, _ := srv.asCookie("GET", "/api/me", session, nil); resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("a removed user's session = %d; want 401", resp.StatusCode)
+	}
+}
+
+// Wrong passwords sent all at once get no more checks than five sent one
+// after another: five are answered 401, and the rest are refused with how
+// long to wait, rather than each being checked before any has failed.
+func TestSignInsArrivingTogetherGetOnlyTheBudget(t *testing.T) {
+	t.Parallel()
+	srv := startServer(t, t.TempDir())
+	const tries = 12
+	var mu sync.Mutex
+	statuses := map[int]int{}
+	var wg sync.WaitGroup
+	for range tries {
+		wg.Go(func() {
+			resp, _ := srv.asCookie("POST", "/api/login", "", map[string]string{"username": "admin", "password": "not the password"})
+			mu.Lock()
+			statuses[resp.StatusCode]++
+			mu.Unlock()
+		})
+	}
+	wg.Wait()
+	if statuses[http.StatusUnauthorized] != 5 || statuses[http.StatusTooManyRequests] != tries-5 {
+		t.Fatalf("%d wrong passwords at once were answered %v; want 5 401s and the rest 429", tries, statuses)
 	}
 }

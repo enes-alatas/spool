@@ -100,6 +100,11 @@ type Users struct {
 	Store store.Store
 	// Now is the clock; nil is the wall clock.
 	Now func() time.Time
+
+	// The sign-in attempts in flight, by name. They are counted here, not
+	// in the store, so a hub signs people in through one Users.
+	mu       sync.Mutex
+	inFlight map[string]int
 }
 
 func (users *Users) now() time.Time {
@@ -310,9 +315,11 @@ func lastOwnerAsOurs(err error) error {
 // a right one clears it.
 func (users *Users) Confirm(ctx context.Context, user *store.User, password string) error {
 	now := users.now()
-	if err := users.locked(ctx, user.Name, now); err != nil {
+	release, err := users.reserve(ctx, user.Name, now)
+	if err != nil {
 		return err
 	}
+	defer release()
 	if !CheckPassword(user.PasswordHash, password) {
 		return users.fail(ctx, user.Name, now)
 	}
@@ -334,10 +341,12 @@ func oneTimeCredential() (password, hash string, err error) {
 // work, so neither it nor its timing shows which names exist.
 func (users *Users) SignIn(ctx context.Context, name, password string) (*store.User, error) {
 	now := users.now()
-	if err := users.locked(ctx, name, now); err != nil {
+	release, err := users.reserve(ctx, name, now)
+	if err != nil {
 		CheckPassword(decoyHash(), password)
 		return nil, err
 	}
+	defer release()
 	user, err := users.Store.Users().GetByName(ctx, name)
 	if errors.Is(err, store.ErrNotFound) {
 		CheckPassword(decoyHash(), password)
@@ -359,19 +368,48 @@ func (users *Users) SignIn(ctx context.Context, name, password string) (*store.U
 	return user, nil
 }
 
-// locked is a ThrottledError while name is locked at now, else nil.
-func (users *Users) locked(ctx context.Context, name string, now time.Time) error {
+// inFlightRetry is what a sign-in refused for the attempts already in
+// flight is told: they finish within a password hash, and then the lock,
+// if they earned one, answers.
+const inFlightRetry = time.Second
+
+// reserve admits one attempt at name, or refuses it with a ThrottledError.
+// An attempt is counted from here, before its password is hashed, so
+// attempts arriving together can't all pass the check before any of them
+// fails: while the failures counted plus the attempts in flight have
+// reached the lock, a name takes one attempt at a time, which locks it
+// again if it fails. The returned release ends the attempt; call it after
+// the attempt's failure, if any, is recorded.
+func (users *Users) reserve(ctx context.Context, name string, now time.Time) (release func(), err error) {
+	users.mu.Lock()
+	defer users.mu.Unlock()
+	failures := 0
 	throttle, err := users.Store.SignInThrottles().Get(ctx, name)
-	if errors.Is(err, store.ErrNotFound) {
-		return nil
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+	case err != nil:
+		return nil, err
+	default:
+		if left := time.UnixMilli(throttle.LockedUntil).Sub(now); left > 0 {
+			return nil, ThrottledError{RetryAfter: left}
+		}
+		failures = throttle.Failures
 	}
-	if err != nil {
-		return err
+	inFlight := users.inFlight[name]
+	if inFlight > 0 && failures+inFlight >= failuresBeforeLock {
+		return nil, ThrottledError{RetryAfter: inFlightRetry}
 	}
-	if left := time.UnixMilli(throttle.LockedUntil).Sub(now); left > 0 {
-		return ThrottledError{RetryAfter: left}
+	if users.inFlight == nil {
+		users.inFlight = map[string]int{}
 	}
-	return nil
+	users.inFlight[name]++
+	return func() {
+		users.mu.Lock()
+		defer users.mu.Unlock()
+		if users.inFlight[name]--; users.inFlight[name] == 0 {
+			delete(users.inFlight, name)
+		}
+	}, nil
 }
 
 // fail counts a failed attempt against name, locks it once the count
