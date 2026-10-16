@@ -785,3 +785,6 @@ Iris: Enes picked the cloud UX (recorded on #865): listener switch from the page
 
 ## 2026-10-16 20:25 UTC
 #908 merged 19:28 (main b720ca7), #863 closed. DM'd Enes the candidate SHA b720ca7 for the fleet upgrade; then CORRECTED myself: release.yml fires on any v* tag, so an rc tag would publish — proposed branch release/0.6.0 or a non-v tag instead. Lesson: verify a workflow claim before sending (I had read `tags: ['v*']` minutes earlier). Open PRs: #911 (Terra, #864 hub half, already up), #909 (Elliot, threat-model seam 4), #453. #910 (docker itest flake) → CI reliability.
+
+## 2026-10-16 21:20 UTC
+Elliot: seam 4 review #907 closed; findings #909 (merged) and #912 (low, secret in wrapped base64/archive passes attachment check; scope is Enes's pick, Elliot's ask). Sweep: #912 → L6, parent #777. Four seams reviewed: #875 (2), #898 (3), #907 (4); seam 1 presumably earlier under #777. No reply.
