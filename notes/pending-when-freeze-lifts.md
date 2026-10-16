@@ -731,3 +731,6 @@ Enes caught my error: I told him #652 (per-loop daily USD cap) shipped; it was c
 
 ## 2026-10-16 10:20 UTC
 Enes: reopen #652 (publicly claimed) and asked what rule to add. Reopened #652 → L6, after #855 (Terra; tell him with his next ping). Proposed a mission bullet "claims about what exists are verified, never recalled" (close reason + code/merged PR; outward text checked item by item); nothing for AGENTS.md. Awaiting "add".
+
+## 2026-10-16 10:50 UTC
+New mission (verification bullet added by Enes); re-read AGENTS/VISION/ARCHITECTURE terms/ADR list. #883 merged (second advisory fix, private; one advisory + #877 remain before v0.6.0). New community report #884 (k-sok): github-app connection kind, hub mints installation tokens, loop fetches on demand. Set `new feature`; ADR-0043 item 4 makes the kind Enes's call → DM'd him a recommendation (taken, L6, after cloud runtime/#855/#652; amend item 4). Triage clock: one working day from 10:39. k-sok also left watchdog field notes on #754 (community text; not acted on). Open PRs: #453 only. #652 still to be folded into Terra's next ping.
