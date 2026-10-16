@@ -21,6 +21,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -40,6 +42,14 @@ const (
 // events is the largest: a turn's text runs to tens of KiB, but a page of
 // large tool results can run far past that.
 const maxResponse = 4 << 20
+
+// An answer over maxResponse is read on, without being kept, as far as
+// maxSkipped, for its last tailBytes: a page's last_id is at its end, and
+// it is how a poll gets past an event too large to read.
+const (
+	maxSkipped = 64 << 20
+	tailBytes  = 1 << 10
+)
 
 // errorSnippet is how much of an unexpected response an error quotes.
 const errorSnippet = 300
@@ -82,6 +92,27 @@ type APIError struct {
 	// decoded from the whole body rather than the quoted start of it.
 	ErrorType    string
 	ErrorMessage string
+	// Oversized says the answer ran past maxResponse. Tail is then its
+	// last tailBytes, read without keeping the rest, or "" when the answer
+	// ran past maxSkipped as well.
+	Oversized bool
+	Tail      string
+	// RetryAfter is how long the answer's Retry-After asked a client to
+	// wait, 0 when it named no number of seconds.
+	RetryAfter time.Duration
+}
+
+// lastIDPattern finds a page's last_id, which follows its data.
+var lastIDPattern = regexp.MustCompile(`"last_id"\s*:\s*"([^"\\]+)"\s*[,}]`)
+
+// LastID is the last_id an oversized page of events ends with, "" when its
+// tail names none. It is how a poll gets past an event too large to read.
+func (err *APIError) LastID() string {
+	match := lastIDPattern.FindAllStringSubmatch(err.Tail, -1)
+	if len(match) == 0 {
+		return ""
+	}
+	return match[len(match)-1][1]
 }
 
 func (err *APIError) Error() string {
@@ -89,6 +120,12 @@ func (err *APIError) Error() string {
 		return fmt.Sprintf("cloud API %s %s answered %d: %s", err.Method, err.Endpoint, err.Status, err.Body)
 	}
 	return fmt.Sprintf("cloud API %s %s: %s: %s", err.Method, err.Endpoint, err.Reason, err.Body)
+}
+
+// Transient reports whether the API refused for now rather than for good:
+// too many requests, or a fault or an overload of its own.
+func (err *APIError) Transient() bool {
+	return err.Status == http.StatusTooManyRequests || err.Status >= 500
 }
 
 // Inactive reports whether the API refused because the session is
@@ -212,12 +249,16 @@ type EventPage struct {
 	HasMore bool              `json:"has_more"`
 }
 
-// Events reads the session's events after the one afterID names, or from
-// the start when it is empty.
-func (client *Client) Events(ctx context.Context, id, afterID string) (EventPage, error) {
+// Events reads at most limit of the session's events after the one afterID
+// names, or from the start when afterID is empty. A limit of 0 leaves the
+// page size to the API.
+func (client *Client) Events(ctx context.Context, id, afterID string, limit int) (EventPage, error) {
 	query := url.Values{}
 	if afterID != "" {
 		query.Set("after_id", afterID)
+	}
+	if limit > 0 {
+		query.Set("limit", strconv.Itoa(limit))
 	}
 	var page EventPage
 	err := client.call(ctx, http.MethodGet, "/v1/sessions/"+url.PathEscape(id)+"/events", query, sessionsBeta, nil, &page)
@@ -368,7 +409,8 @@ func (client *Client) call(ctx context.Context, method, endpoint string, query u
 		return fmt.Errorf("cloud API %s %s: reading the answer: %w", method, endpoint, err)
 	}
 	if len(raw) > maxResponse {
-		return &APIError{Method: method, Endpoint: endpoint, Reason: fmt.Sprintf("answer over %d bytes", maxResponse), Body: snippet(raw)}
+		return &APIError{Method: method, Endpoint: endpoint, Reason: fmt.Sprintf("answer over %d bytes", maxResponse), Body: snippet(raw),
+			Oversized: true, Tail: readTail(resp.Body, raw)}
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		var refusal struct {
@@ -379,7 +421,7 @@ func (client *Client) call(ctx context.Context, method, endpoint string, query u
 		}
 		_ = json.Unmarshal(raw, &refusal) // a body that isn't one leaves both empty
 		return &APIError{Method: method, Endpoint: endpoint, Status: resp.StatusCode, Body: snippet(raw),
-			ErrorType: refusal.Error.Type, ErrorMessage: refusal.Error.Message}
+			ErrorType: refusal.Error.Type, ErrorMessage: refusal.Error.Message, RetryAfter: retryAfter(resp.Header.Get("Retry-After"))}
 	}
 	if out == nil {
 		return nil
@@ -403,9 +445,42 @@ func newUUID() string {
 	return fmt.Sprintf("%s-%s-%s-%s-%s", dst[0:8], dst[8:12], dst[12:16], dst[16:20], dst[20:32])
 }
 
+// readTail reads the rest of an answer that ran past maxResponse, keeping
+// only its last tailBytes; read is what was read of it already. An answer
+// past maxSkipped is given up on, with no tail.
+func readTail(body io.Reader, read []byte) string {
+	tail := append([]byte(nil), read[max(0, len(read)-tailBytes):]...)
+	total := int64(len(read))
+	chunk := make([]byte, 64<<10)
+	for {
+		n, err := body.Read(chunk)
+		total += int64(n)
+		if total > maxSkipped {
+			return ""
+		}
+		tail = append(tail, chunk[:n]...)
+		if len(tail) > tailBytes {
+			tail = append(tail[:0], tail[len(tail)-tailBytes:]...)
+		}
+		if err != nil {
+			return string(tail)
+		}
+	}
+}
+
 func snippet(raw []byte) string {
 	if len(raw) > errorSnippet {
 		return string(raw[:errorSnippet]) + "…"
 	}
 	return string(raw)
+}
+
+// retryAfter reads a Retry-After header given in seconds. The HTTP-date
+// form, and anything else, is 0: the caller's own backoff stands.
+func retryAfter(header string) time.Duration {
+	seconds, err := strconv.Atoi(strings.TrimSpace(header))
+	if err != nil || seconds <= 0 {
+		return 0
+	}
+	return time.Duration(seconds) * time.Second
 }
