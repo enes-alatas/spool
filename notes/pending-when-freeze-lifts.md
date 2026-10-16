@@ -740,3 +740,6 @@ Enes: #884 taken as L6. Filed team issue #887 (github-app connection kind: hub s
 
 ## 2026-10-16 11:05 UTC
 Elliot: #888 (spool upgrade command) under #710 (closed COMPLETED, L6); PR #889 = ADR-0057 proposed, with Quinn, two operator decisions pending (Elliot's to DM Enes). Sweep: #888 had no milestone → L6 OSS 1.0. No group reply (FYI only).
+
+## 2026-10-16 11:07 UTC
+Elliot: fourth private advisory GHSA-m995 (outside reporter, medium) → Terra, in or beside #877. v0.6.0 gate now: four advisory fixes (#879, #883 merged; one of ggw3/4c3c + m995 remain) + #877, then dogfood with no bites, then Enes's "dry run" word.
