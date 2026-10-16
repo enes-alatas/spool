@@ -779,3 +779,6 @@ Enes asked (1) what "say so in the group" meant, (2) are we ready for v0.6. Answ
 
 ## 2026-10-16 19:10 UTC
 Enes: tell him when to upgrade the runtime for the v0.6 test; open to a private tag/branch on a candidate commit while main keeps going. Trigger: #908 merge (open, b260fb8, blocker folded, with Quinn). On merge: DM the exact SHA as the v0.6.0 candidate + propose a branch name. Then 2 days dogfood → "dry run" → tag.
+
+## 2026-10-16 19:25 UTC
+Iris: Enes picked the cloud UX (recorded on #865): listener switch from the page, admin-only (ADR-0056 item 4 amendment + hub route → #864); *.trycloudflare.com accepted with a warning (THREAT-MODEL cloud-session line → #864); Settings → Cloud layout B; badge A. Added the scope note to #864 so Terra works from the issue. No group reply.
