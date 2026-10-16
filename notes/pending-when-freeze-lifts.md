@@ -725,3 +725,6 @@ Enes asked why every loop saw his group reply to Quinn. Cause: the pasted log (T
 
 ## 2026-10-16 10:00 UTC
 Fleet upgraded: runtime v0.5.1-159-g8691220 = origin/main tip (#879 advisory fix merged). Dogfood clock starts ~09:50; v0.6.0 also waits on the two remaining advisory fixes + #877. #881/#882 (Terra/Quinn) folded into #880; Quinn found POST /rotate returns before the rotation lands — noted on #880 (doc or wait, Terra's call). #878 (threat-model doc, seam 2) → L6, parent #777. Open PRs: #453 only.
+
+## 2026-10-16 10:15 UTC
+Enes caught my error: I told him #652 (per-loop daily USD cap) shipped; it was closed NOT_PLANNED by his poll on 10-09, by me. Apologised, gave the true list (#648 #649 #650, no per-loop cap), a corrected HN text, and asked whether to reopen #652 (user demand) behind #855. Memory: closed-is-not-shipped.
