@@ -81,6 +81,10 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "images" {
 		os.Exit(imagesCommand(os.Args[2:], os.Stdout, os.Stderr))
 	}
+	// `spool migrations`, hidden, answers `spool upgrade` (ADR-0057).
+	if len(os.Args) > 1 && os.Args[1] == "migrations" {
+		os.Exit(migrationsCommand(os.Args[2:], os.Stdout, os.Stderr))
+	}
 
 	listen := flag.String("listen", "127.0.0.1:8080", "address to serve the operator's API/UI on; never reachable from a workstation")
 	mcpListen := flag.String("mcp-listen", "", "address to serve the loop-facing /mcp endpoint on; the one port of this machine a workstation may reach (#238). Unset: the docker bridge's gateway when it is an address of this machine, else loopback, on --mcp-port (#475)")
