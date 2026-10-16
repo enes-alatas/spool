@@ -110,6 +110,7 @@ func main() {
 	telegramAPI := flag.String("telegram-api-base", telegram.APIBase, "Telegram Bot API base URL (tests point this at a stand-in server)")
 	slackAPI := flag.String("slack-api-base", slack.APIBase, "Slack Web API base URL (tests point this at a stand-in server)")
 	cloudAPIFlag := flag.String("cloud-api-base", cloud.DefaultBaseURL, "Anthropic's sessions API base URL, which cloud loops are driven through (tests point this at a stand-in server); https, or http on loopback")
+	cloudLoopbackAddress := flag.Bool("cloud-loopback-address", false, "accept a plain-HTTP loopback address as the cloud listener's public address (tests only: no cloud session can reach one, though the hub checks it green from itself)")
 	answerTimeoutSec := flag.Int("telegram-answer-timeout-sec", 0, "seconds a Telegram call waits for the Bot API's answer before it is retried on a fresh connection (0 = the production 60s; tests against a stand-in API shorten it)")
 	bindSettleSec := flag.Int("telegram-bind-settle-sec", 0, "seconds a newly bound bot waits before it may ingest a group (0 = the production margin; tests against a stand-in API shorten it)")
 	retentionDays := flag.Int("events-retention-days", 30, "prune raw claude events older than this many days (0 disables; messages and turns are never pruned)")
@@ -371,7 +372,7 @@ func main() {
 	rdb := redact.Store(db, redactor)
 	// The cloud runtime reads its account and the hub's public address from
 	// the store, so it joins the others once there is one (ADR-0056).
-	cloudRuntime := newCloudRuntime(rdb.Settings(), *dataDir, cloudAPI)
+	cloudRuntime := newCloudRuntime(rdb.Settings(), *dataDir, cloudAPI, *cloudLoopbackAddress)
 	runtimes[store.RuntimeCloud] = cloudRuntime
 
 	pubsub := bus.New()
@@ -401,7 +402,7 @@ func main() {
 			if loopRecord.Runtime == store.RuntimeCloud {
 				// a cloud session reaches the hub over the internet, through
 				// the public address in front of the cloud listener
-				address, err := cloudAddress(context.Background(), rdb.Settings())
+				address, err := cloudAddress(context.Background(), rdb.Settings(), *cloudLoopbackAddress)
 				if err != nil {
 					log.Warn("cloud loop not woken", "loop", loopRecord.Name, "err", err)
 				}
@@ -500,6 +501,12 @@ func main() {
 	// platform poll that is voted in after its close (ADR-0041).
 	go closePolls(ctx, router, log)
 
+	// Settings → Cloud can open the cloud listener too (ADR-0056);
+	// one --cloud-listen opened is only reported there.
+	cloudSwitch := &cloudListenerSwitch{settings: rdb.Settings(), log: log}
+	if cloudListener != nil {
+		cloudSwitch.flagOpened(cloudAddr)
+	}
 	api := &httpapi.Server{
 		Store:        rdb,
 		Bus:          pubsub,
@@ -531,14 +538,16 @@ func main() {
 				log.Error("reload secrets for redaction", "err", err)
 			}
 		},
-		OperatorToken: operatorToken,
-		ListenAddr:    apiAddr,
-		TrustedHosts:  splitList(*trustedHosts),
-		Egress:        dockerRuntime,
-		Cloud:         cloudEnvironments{cloudRuntime},
-		EgressFlag:    egressFlag(allowEntries),
-		Log:           log,
-		WebFS:         web.Dist(),
+		OperatorToken:        operatorToken,
+		ListenAddr:           apiAddr,
+		TrustedHosts:         splitList(*trustedHosts),
+		Egress:               dockerRuntime,
+		Cloud:                cloudEnvironments{cloudRuntime},
+		CloudListener:        cloudSwitch,
+		CloudLoopbackAddress: *cloudLoopbackAddress,
+		EgressFlag:           egressFlag(allowEntries),
+		Log:                  log,
+		WebFS:                web.Dist(),
 	}
 
 	srv := &http.Server{Handler: redact.HTTP(api.Handler(), redactor)}
@@ -551,15 +560,22 @@ func main() {
 		// that looks healthy and never wakes is the worse failure.
 		{name: "mcp", srv: mcpSrv, listener: mcpListener, addr: mcpAddr},
 	}
+	cloudSwitch.handler = redact.HTTP(api.CloudHandler(), redactor)
 	if cloudListener != nil {
 		listeners = append(listeners, served{name: "cloud", listener: cloudListener, addr: cloudAddr,
 			srv: httpapi.CloudHTTPServer(redact.HTTP(api.CloudHandler(), redactor))})
 	}
+	cloudSwitch.reopen(ctx)
+	if cloudAddr == "" {
+		cloudAddr, _ = cloudSwitch.Listening()
+	}
+	go api.RunCloudChecks(ctx, httpapi.CloudCheckEvery)
 	// The bound addresses, not the flags: with a port of 0 this line is the
 	// only place the ports are said, and the itest harness reads them here.
 	log.Info("spool listening", "addr", apiAddr, "mcp_addr", mcpAddr, "cloud_addr", cloudAddr, "data", *dataDir, "ui", api.WebFS != nil)
 	serveErr := serve(ctx, log, listeners...)
 	stop() // a listener that failed takes the rest of the hub down with it
+	cloudSwitch.stop()
 	if serveErr != nil {
 		log.Error("serve", "err", serveErr)
 	}

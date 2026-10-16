@@ -1,6 +1,6 @@
 # ADR-0056: A loop can run in a Claude Code cloud session, beside contained loops
 
-Date: 2026-10-15 · Status: accepted (operator decision of 2026-10-15 on #859, accepting it as written; operator direction of 2026-10-15 on #758: build it, in a mixed hub, on the undocumented read-back if that is noted, without OpenTelemetry; and of 2026-10-15 on #859: the egress allowlist is the hub's own) · Amended: 2026-10-15 (items 2, 3, 5, 6, 7 and 9: the API check, #861; operator decision of 2026-10-15 on #872: cloud turns report their cost) · Relates to: ADR-0017, ADR-0018, ADR-0022, ADR-0026, ADR-0028, ADR-0030, ADR-0037, ADR-0039, ADR-0044, ADR-0046, ADR-0047, ADR-0053
+Date: 2026-10-15 · Status: accepted (operator decision of 2026-10-15 on #859, accepting it as written; operator direction of 2026-10-15 on #758: build it, in a mixed hub, on the undocumented read-back if that is noted, without OpenTelemetry; and of 2026-10-15 on #859: the egress allowlist is the hub's own) · Amended: 2026-10-15 (items 2, 3, 5, 6, 7 and 9: the API check, #861; operator decision of 2026-10-15 on #872: cloud turns report their cost); 2026-10-16 (item 4: the page switches the listener on, #864) · Relates to: ADR-0017, ADR-0018, ADR-0022, ADR-0026, ADR-0028, ADR-0030, ADR-0037, ADR-0039, ADR-0044, ADR-0046, ADR-0047, ADR-0053
 
 ## Context
 
@@ -171,6 +171,23 @@ the bar for setup: it has to be really simple.
      loopback and the docker bridge.
    - The public address in front of it is HTTPS. A plain-HTTP address is
      refused (item 6).
+
+   **Amendment (2026-10-16, #864): Settings → Cloud can switch the
+   listener on.** By operator decision of 2026-10-16, recorded on #865,
+   the setup may turn the cloud listener on from the page, so it needs no
+   restart. "Off unless the operator turns it on, with `--cloud-listen`"
+   above now reads "off unless the operator turns it on", with the flag or
+   with the page:
+   - only an admin switches it. A member reads whether it is on, and
+     where;
+   - the page opens it where the operator names, a port alone being one
+     on loopback as with the flag, and on `127.0.0.1:8090` when they name
+     nothing. The hub opens it there again at its next start, until the
+     page switches it off;
+   - one the flag opened is shown as the flag's, and the page can't close
+     it: only a restart without the flag does;
+   - switching it changes nothing it serves or admits. Every bullet above
+     holds for a listener the page opened.
 
 5. **Each cloud loop gets its own environment, which the hub creates and
    keeps.** A Custom environment is where the allowlist and the secrets

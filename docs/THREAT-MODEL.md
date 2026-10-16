@@ -204,8 +204,12 @@ puts in front of the listener; and the hub's own address check
 (ADR-0056).
 
 **Holds:**
-- **It is off** unless the hub is started with `--cloud-listen`, and a
-  port alone binds loopback.
+- **It is off** unless the hub is started with `--cloud-listen` or an
+  admin switches it on in Settings → Cloud, and a port alone binds
+  loopback either way. The page's default is `127.0.0.1:8090`; an admin
+  who names a host can open it on any interface, as with the flag. A
+  member reads whether it is on, and can't switch it. One the flag opened
+  only a restart without the flag closes.
 - **Only a cloud loop's token is admitted.** A contained or bare loop's
   token is refused as an unknown one is, so a token that leaks out of a
   workstation is useless from the internet.
@@ -250,8 +254,17 @@ in, and reads the turn's events back (ADR-0056).
   tools that start or message other sessions, and no `github` server.
 - **The token goes only to an HTTPS address.** The public address is
   checked at every use, whatever wrote it: one that isn't `https://`
-  (or plain HTTP on loopback) wakes no cloud loop and seeds no
-  allowlist.
+  wakes no cloud loop and seeds no allowlist. Settings → Cloud refuses
+  one too, stores it only as an origin, with no path, query or user, and
+  only an admin sets it. Plain HTTP on loopback passes only on a hub
+  started with `--cloud-loopback-address`, which only tests set: no cloud
+  session reaches it, though the hub would check it green from itself.
+- **The hub checks that the address reaches it**, when it is set, when
+  the listener is switched, every five minutes, and on the page's ask:
+  it requests a value it just issued through the address, follows no
+  redirect, and passes only on its own listener's 204. A failure names
+  its stage: the listener off, DNS, TLS, a timeout, the connection, or
+  another server answering.
 - **The allowlist is the hub's own,** never Anthropic's Trusted
   defaults: the egress allowlist plus the hub's public host. A domain
   rule, `.example.com`, is written as `*.example.com` and `example.com`,
@@ -281,6 +294,28 @@ in, and reads the turn's events back (ADR-0056).
   disk for a cloud loop.
 
 **Doesn't hold:**
+- **The check proves reach, not ownership.** A relay that forwards to
+  the hub passes it, and it proves reach from this machine, not from the
+  internet: an HTTPS name that resolves to an address on the hub's own
+  network, such as a local proxy's, checks green too. What keeps the
+  token this hub's is TLS on a hostname the operator controls (ADR-0056
+  item 6).
+- **The check is a request the hub makes for an admin.** Every five
+  minutes, and on the page's ask, the hub GETs one fixed path on an
+  HTTPS origin an admin chose, one naming the hub's own host included,
+  and records how it failed. That tells an admin whether something
+  answers on a port of the hub's host. Nothing the answer says is shown,
+  only its status. A member sees the stage alone, not the detail, though
+  the stage still says whether something answered.
+- **A quick tunnel's hostname is accepted, with a warning.** A
+  `*.trycloudflare.com` address is reissued once its tunnel stops, and a
+  session still running sends its token to whoever holds the name then.
+  The address check can hold new turns, but not a turn already in
+  flight. A named tunnel on the operator's own domain, or a Tailscale
+  `*.ts.net` address, which stays the tailnet's, doesn't carry this risk.
+- **A failed check doesn't hold cloud loops yet.** Slice 4's next part
+  holds their wakes while it fails (ADR-0056 item 6). No cloud loop can
+  be created until slice 5.
 - **The read-back is undocumented.** Anthropic may change the events
   endpoint without notice; the hub fails loudly when it does, and can't
   do more.
