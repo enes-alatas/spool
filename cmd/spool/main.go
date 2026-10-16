@@ -510,7 +510,7 @@ func main() {
 	}
 
 	srv := &http.Server{Handler: redact.HTTP(api.Handler(), redactor)}
-	mcpSrv := &http.Server{Handler: redact.HTTP(api.MCPHandler(), redactor)}
+	mcpSrv := httpapi.LoopHTTPServer(redact.HTTP(api.MCPHandler(), redactor))
 
 	listeners := []served{
 		{name: "api", srv: srv, listener: apiListener, addr: apiAddr},

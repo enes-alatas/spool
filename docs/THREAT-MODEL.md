@@ -167,6 +167,10 @@ ADR-0043).
 - **Every request carries the loop's own token**, looked up by hash. The
   listener serves nothing else, and the operator listener doesn't serve
   `/mcp` (ADR-0028).
+- **Bounds:** headers at 64 KiB and 10 seconds, 30 seconds to read a
+  request, and an idle connection closed after 60 seconds, so a loop
+  can't hold idle connections to the hub open. There is no write
+  timeout, which would cut a long call.
 - **A loop sends only where its contract allows** (ADR-0026, ADR-0049):
   - its owner;
   - a person who has already written to it privately;
