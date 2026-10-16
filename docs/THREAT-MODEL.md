@@ -185,14 +185,20 @@ ADR-0043).
   holding no known secret.
 - **The broker** checks the connection on every request, replaces the
   loop's `Authorization` with the server's secret, and never sends a secret
-  over cleartext off loopback. The secret never reaches the loop
-  (ADR-0043, ADR-0045).
+  over cleartext off loopback. The loop is never given the secret, and
+  the broker never sends it back, though a server's own answer can
+  (below) (ADR-0043, ADR-0045).
 
 **Doesn't hold:**
 - **The token is the only gate.** Any container on the default bridge can
   reach the listener's HTTP handling before authentication (ADR-0039).
 - **The broker forwards** any path, method and body under the server's
-  stored URL (ADR-0045).
+  stored URL (ADR-0045). It relays the server's answer as sent, without
+  redacting it, so a server that echoes its request's headers back hands
+  the loop the secret.
+- **A refused `reply_to` says whether the message exists.** "No such
+  message" and "not in this conversation" are different refusals, so a
+  loop can learn which references exist, though never where they are.
 - **Keeping private content out of a group** is a prompt rule, not a check
   (ADR-0026).
 
