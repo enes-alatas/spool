@@ -80,6 +80,11 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "images" {
 		os.Exit(imagesCommand(os.Args[2:], os.Stdout, os.Stderr))
 	}
+	// `sudo spool upgrade` upgrades the hub a systemd unit runs, backed up
+	// and rolled back on a failed check (ADR-0057).
+	if len(os.Args) > 1 && os.Args[1] == "upgrade" {
+		os.Exit(upgradeCommand(os.Args[2:], os.Stdout, os.Stderr))
+	}
 	// `spool migrations`, hidden, answers `spool upgrade` (ADR-0057).
 	if len(os.Args) > 1 && os.Args[1] == "migrations" {
 		os.Exit(migrationsCommand(os.Args[2:], os.Stdout, os.Stderr))
@@ -1113,7 +1118,8 @@ func usageError(format string, args ...any) {
 	fmt.Fprint(os.Stderr, "usage: spool [flags]\n"+
 		"  or:  spool token [--data-dir dir]\n"+
 		"  or:  spool images\n"+
-		"  or:  spool user add|reset|list|remove [name] [--role role] [--data-dir dir]\n\n"+
+		"  or:  spool user add|reset|list|remove [name] [--role role] [--data-dir dir]\n"+
+		"  or:  sudo spool upgrade [vX.Y.Z | main] [--dry-run] [--from-source checkout]\n\n"+
 		"`spool --help` lists the flags.\n")
 	os.Exit(2)
 }
