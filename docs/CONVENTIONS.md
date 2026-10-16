@@ -385,6 +385,24 @@ agents — Claude sessions today, Spool's own loops from L2.*
   it names: quote a credential as at most eight characters and an ellipsis.
   The hook catches slips. A rule it enforces still binds a human, and a
   rule it does not know binds everyone as before.
+- **Seeing your PRs' CI** (#904): a loop is asleep when its CI finishes, so
+  `scripts/pr-watch.sh` puts what is red in front of its next turn. It
+  covers the open PRs whose branch is in the loop's clone, never a fork's:
+  each failed check or status, the queue's included, and the first failing
+  tests. It
+  prints nothing when everything is green. A loop hooks it up in its own
+  `~/.claude/settings.json`, naming its clone and the variable its GitHub
+  token is in. The hook runs the script as `origin/main` has it, never the
+  checked-out branch's copy, so a PR under review can't change what runs
+  at every turn:
+
+  ```json
+  {"hooks": {"UserPromptSubmit": [{"hooks": [{"type": "command", "timeout": 30,
+    "command": "GH_TOKEN=\"$GH_TOKEN_SPOOL\" bash -c \"$(git -C \"$HOME/spool\" show origin/main:scripts/pr-watch.sh)\" pr-watch \"$HOME/spool\""}]}]}}
+  ```
+
+  A red PR is its author's to fix, or to queue again when the failure
+  isn't its own (the merge queue, above).
 - **Scoped delegation**: the interview may end with the human delegating the
   decision back ("you decide"). That delegation is per-decision: it covers
   exactly the questions put to the human, and the ADR or issue recording the

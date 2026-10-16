@@ -1,0 +1,23 @@
+[
+  {"number": 909, "headRefName": "main", "isCrossRepository": true, "statusCheckRollup": [
+    {"__typename": "CheckRun", "name": "a fork names its own checks", "workflowName": "ci", "conclusion": "FAILURE", "detailsUrl": "https://github.com/o/r/actions/runs/9/job/91"}
+  ]},
+  {"number": 912, "headRefName": "feat/green", "isCrossRepository": false, "statusCheckRollup": [
+    {"__typename": "CheckRun", "name": "checks", "workflowName": "ci", "conclusion": "SUCCESS", "detailsUrl": "https://github.com/o/r/actions/runs/1/job/11"},
+    {"__typename": "StatusContext", "context": "queue", "state": "PENDING", "description": "queued at 2, behind #907", "targetUrl": "https://github.com/o/r/actions/runs/2"}
+  ]},
+  {"number": 910, "headRefName": "fix/queued", "isCrossRepository": false, "statusCheckRollup": [
+    {"__typename": "CheckRun", "name": "checks", "workflowName": "ci", "conclusion": "SUCCESS", "detailsUrl": "https://github.com/o/r/actions/runs/3/job/31"},
+    {"__typename": "StatusContext", "context": "queue", "state": "FAILURE", "description": "failed on main@c4af91e: see the run", "targetUrl": "https://github.com/o/r/actions/runs/4"}
+  ]},
+  {"number": 907, "headRefName": "feat/red", "isCrossRepository": false, "statusCheckRollup": [
+    {"__typename": "CheckRun", "name": "itest", "workflowName": "ci", "conclusion": "FAILURE", "detailsUrl": "https://github.com/o/r/actions/runs/5/job/51"},
+    {"__typename": "CheckRun", "name": "lint", "workflowName": "ci", "conclusion": "TIMED_OUT", "detailsUrl": "https://github.com/o/r/actions/runs/5/job/52"},
+    {"__typename": "CheckRun", "name": "docs", "workflowName": "ci", "conclusion": "SKIPPED", "detailsUrl": "https://github.com/o/r/actions/runs/5/job/53"},
+    {"__typename": "CheckRun", "name": "e2e", "workflowName": "ci", "conclusion": "CANCELLED", "detailsUrl": "https://github.com/o/r/actions/runs/5/job/54"}
+  ]},
+  {"number": 905, "headRefName": "feat/someone-elses", "isCrossRepository": false, "statusCheckRollup": [
+    {"__typename": "CheckRun", "name": "itest", "workflowName": "ci", "conclusion": "FAILURE", "detailsUrl": "https://github.com/o/r/actions/runs/6/job/61"}
+  ]},
+  {"number": 903, "headRefName": "chore/no-checks", "isCrossRepository": false, "statusCheckRollup": null}
+]
