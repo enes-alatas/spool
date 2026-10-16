@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -20,7 +19,7 @@ import (
 // account and the public address are read from the store at each call, so
 // a sign-in or a new address takes effect at once, and its state lives in
 // the data directory.
-func newCloudRuntime(settings store.SettingsStore, dataDir, apiBase string) *cloud.Runtime {
+func newCloudRuntime(settings store.SettingsStore, dataDir, apiBase string, loopbackAddress bool) *cloud.Runtime {
 	return &cloud.Runtime{
 		Client: &cloud.Client{
 			BaseURL: apiBase,
@@ -41,7 +40,7 @@ func newCloudRuntime(settings store.SettingsStore, dataDir, apiBase string) *clo
 		},
 		Dir: filepath.Join(dataDir, "cloud"),
 		EgressEntries: func(ctx context.Context) ([]string, error) {
-			return cloudEgressEntries(ctx, settings)
+			return cloudEgressEntries(ctx, settings, loopbackAddress)
 		},
 	}
 }
@@ -50,40 +49,24 @@ func newCloudRuntime(settings store.SettingsStore, dataDir, apiBase string) *clo
 // token, so the API is reached over HTTPS, or over plain HTTP to a stand-in
 // on this machine's loopback, which is what tests point it at.
 func cloudAPIBase(raw string) (string, error) {
-	return raw, httpsOrLoopback(raw)
-}
-
-// httpsOrLoopback refuses a URL a credential would cross in the clear: one
-// that is neither HTTPS nor plain HTTP to this machine's loopback.
-func httpsOrLoopback(raw string) error {
-	parsed, err := url.Parse(raw)
-	if err != nil || parsed.Host == "" {
-		return fmt.Errorf("%q is not a URL", raw)
-	}
-	switch parsed.Scheme {
-	case "https":
-		return nil
-	case "http":
-		if ip := net.ParseIP(parsed.Hostname()); ip != nil && ip.IsLoopback() {
-			return nil
-		}
-	}
-	return fmt.Errorf("%q must be https, or http on a loopback address", raw)
+	return raw, httpapi.HTTPSOrLoopback(raw)
 }
 
 // cloudAddress is the public address cloud sessions reach the hub at, ""
 // while the operator has set none. It is checked at every use, whatever
 // wrote it: the loop's token is sent to it, so an address it would cross
-// in the clear is refused, and no cloud loop wakes on it.
-func cloudAddress(ctx context.Context, settings store.SettingsStore) (string, error) {
+// in the clear, or that no cloud session could reach, is refused, and no
+// cloud loop wakes on it. loopback is --cloud-loopback-address, which
+// only tests set (httpapi.CloudAddressAllowed).
+func cloudAddress(ctx context.Context, settings store.SettingsStore, loopback bool) (string, error) {
 	address, err := settings.Get(ctx, store.SettingCloudAddress)
 	switch {
-	case errors.Is(err, store.ErrNotFound):
+	case errors.Is(err, store.ErrNotFound), err == nil && address == "":
 		return "", nil
 	case err != nil:
 		return "", err
 	}
-	if err := httpsOrLoopback(address); err != nil {
+	if err := httpapi.CloudAddressAllowed(address, loopback); err != nil {
 		return "", fmt.Errorf("the cloud address: %w", err)
 	}
 	return strings.TrimSuffix(address, "/"), nil
@@ -93,7 +76,7 @@ func cloudAddress(ctx context.Context, settings store.SettingsStore) (string, er
 // environment is held to: the hub's egress allowlist, built-in and the
 // operator's, and the public address's host. The runtime translates them,
 // leaving off what has no form in a cloud environment (cloud.Allowlist).
-func cloudEgressEntries(ctx context.Context, settings store.SettingsStore) ([]string, error) {
+func cloudEgressEntries(ctx context.Context, settings store.SettingsStore, loopbackAddress bool) ([]string, error) {
 	entries := egress.DefaultHosts()
 	raw, err := settings.Get(ctx, store.SettingEgressHosts)
 	switch {
@@ -107,7 +90,7 @@ func cloudEgressEntries(ctx context.Context, settings store.SettingsStore) ([]st
 		}
 		entries = append(entries, stored.Hosts...)
 	}
-	address, err := cloudAddress(ctx, settings)
+	address, err := cloudAddress(ctx, settings, loopbackAddress)
 	if err != nil {
 		return nil, err
 	}

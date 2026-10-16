@@ -41,7 +41,7 @@ var memberRoutes = []string{
 	"GET /api/attachments/{id}", "GET /api/undelivered", "GET /api/group",
 	"GET /api/connections", "GET /api/connections/{name}", "GET /api/connections/{name}/events",
 	"GET /api/channels", "GET /api/channels/{name}", "GET /api/channels/{name}/messages",
-	"GET /api/settings", "GET /api/settings/egress", "GET /api/onboarding", "GET /api/plan-usage",
+	"GET /api/settings", "GET /api/settings/egress", "GET /api/settings/cloud", "GET /api/onboarding", "GET /api/plan-usage",
 	"GET /api/rules", "GET /api/models", "GET /api/telegram/senders", "GET /api/slack/senders",
 
 	"POST /api/loops/{name}/message", "POST /api/loops/{name}/wake",
@@ -71,6 +71,8 @@ var adminRoutes = []string{
 	"POST /api/channels", "PATCH /api/channels/{name}", "DELETE /api/channels/{name}",
 	"PUT /api/channels/{name}/loops/{loop}", "DELETE /api/channels/{name}/loops/{loop}",
 	"PUT /api/settings", "POST /api/settings/egress/hosts", "DELETE /api/settings/egress/hosts/{entry}",
+	"PUT /api/settings/cloud/address", "DELETE /api/settings/cloud/address", "POST /api/settings/cloud/check",
+	"PUT /api/settings/cloud/listener",
 	"POST /api/plan-cap/resume", "POST /api/onboarding/harness-check", "POST /api/onboarding/skip-surface",
 	"POST /api/workspace/inspect",
 	"POST /api/rules", "PATCH /api/rules/{id}", "DELETE /api/rules/{id}",
@@ -166,6 +168,14 @@ func seesPairCodes(who *caller) bool {
 // allowlist write failed: an admin or an owner. The reason quotes the
 // cloud's answer, which reaches the view without passing the redactor.
 func seesSyncErrors(who *caller) bool {
+	return who != nil && roleRank[roleOf(who)] >= roleRank[store.RoleAdmin]
+}
+
+// seesCloudCheckDetail reports whether who reads how a check of the public
+// address failed, beyond the stage: an admin or an owner, who chose the
+// address. The detail says what answered there, or how nothing did, and
+// for a loopback address that is news about the hub's own host.
+func seesCloudCheckDetail(who *caller) bool {
 	return who != nil && roleRank[roleOf(who)] >= roleRank[store.RoleAdmin]
 }
 

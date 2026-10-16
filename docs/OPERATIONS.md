@@ -169,9 +169,12 @@ sudo ufw allow in on docker0 to any port 8081 proto tcp
 ```
 
 The cloud listener (`--cloud-listen`, for loops in Claude Code cloud sessions,
-ADR-0056) is off unless you set it. Given a port alone it binds loopback, and
-the tunnel or TLS proxy that makes it public reaches it there, so it needs no
-firewall rule either. Name a wider address only for a proxy on another
+ADR-0056) is off unless you set it, or an admin switches it on in
+Settings → Cloud. The page opens it on `127.0.0.1:8090` unless told
+otherwise, and the hub opens it there again at each start until it is
+switched off. Given a port alone it binds loopback, and the tunnel or TLS
+proxy that makes it public reaches it there, so it needs no firewall rule
+either. Name a wider address only for a proxy on another
 machine.
 
 ### Checking it worked

@@ -47,7 +47,7 @@ func TestCloudEgressEntries(t *testing.T) {
 		store.SettingEgressHosts:  `{"hosts":["pypi.org","registry.example.test:8443",".example.test","github.com"]}`,
 		store.SettingCloudAddress: "https://hub.example.test/",
 	}}
-	entries, err := cloudEgressEntries(context.Background(), settings)
+	entries, err := cloudEgressEntries(context.Background(), settings, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,25 +59,31 @@ func TestCloudEgressEntries(t *testing.T) {
 }
 
 // The loop's token is sent to the cloud address, so one it would cross in
-// the clear is refused at use, whatever wrote it, and so is every allowlist
-// built from it.
+// the clear, or that no cloud session could reach, is refused at use,
+// whatever wrote it, and so is every allowlist built from it. Plain HTTP on
+// loopback passes only under the tests' opt-in.
 func TestCloudAddressFailsClosed(t *testing.T) {
-	for stored, ok := range map[string]bool{
-		"https://hub.example.test/": true,
-		"http://127.0.0.1:9000":     true,
-		"http://hub.example.test":   false,
-		"hub.example.test":          false,
+	for _, tc := range []struct {
+		stored   string
+		loopback bool
+		ok       bool
+	}{
+		{"https://hub.example.test/", false, true},
+		{"http://127.0.0.1:9000", false, false},
+		{"http://127.0.0.1:9000", true, true},
+		{"http://hub.example.test", true, false},
+		{"hub.example.test", false, false},
 	} {
-		settings := mapSettings{values: map[string]string{store.SettingCloudAddress: stored}}
-		address, err := cloudAddress(context.Background(), settings)
-		if (err == nil) != ok || (!ok && address != "") {
-			t.Errorf("cloudAddress(%q) = %q, %v; want ok %v", stored, address, err, ok)
+		settings := mapSettings{values: map[string]string{store.SettingCloudAddress: tc.stored}}
+		address, err := cloudAddress(context.Background(), settings, tc.loopback)
+		if (err == nil) != tc.ok || (!tc.ok && address != "") {
+			t.Errorf("cloudAddress(%q, loopback %v) = %q, %v; want ok %v", tc.stored, tc.loopback, address, err, tc.ok)
 		}
-		if _, err := cloudEgressEntries(context.Background(), settings); (err == nil) != ok {
-			t.Errorf("cloudEgressEntries with %q: %v, want ok %v", stored, err, ok)
+		if _, err := cloudEgressEntries(context.Background(), settings, tc.loopback); (err == nil) != tc.ok {
+			t.Errorf("cloudEgressEntries with %q, loopback %v: %v, want ok %v", tc.stored, tc.loopback, err, tc.ok)
 		}
 	}
-	if address, err := cloudAddress(context.Background(), mapSettings{}); address != "" || err != nil {
+	if address, err := cloudAddress(context.Background(), mapSettings{}, false); address != "" || err != nil {
 		t.Errorf("no address set: %q, %v", address, err)
 	}
 }

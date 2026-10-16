@@ -118,6 +118,11 @@ type CloudAccount struct {
 // cloud loop wakes.
 const SettingCloudAddress = "cloud_address"
 
+// SettingCloudListen holds where Settings → Cloud opened the cloud
+// listener (ADR-0056), so the hub opens it there again at its next
+// start. Unset or "", the listener is off unless --cloud-listen opens it.
+const SettingCloudListen = "cloud_listen"
+
 // SettingLoginCheck holds the last login check's outcome (ADR-0044), a
 // LoginCheckRecord as JSON. Saving a setup-token resets it to pending.
 const SettingLoginCheck = "login_check"

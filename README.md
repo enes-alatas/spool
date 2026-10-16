@@ -98,7 +98,7 @@ Spool keeps a **sender allowlist**, and only people on it reach your loops. Anyo
 | `--runtime` | `auto` | docker when the daemon is reachable, else refuse to start; `bare` runs loops uncontained |
 | `--trusted-host` | none | the name a hub behind a TLS proxy is reached as; [OPERATIONS.md](docs/OPERATIONS.md) has a systemd unit and a Caddy recipe |
 | `--mcp-listen` | chosen by the hub | the loops' one port; [docs/CONTAINMENT.md](docs/CONTAINMENT.md) says how it is chosen |
-| `--cloud-listen` | off | the port loops in Claude Code cloud sessions reach, through a tunnel or TLS proxy you put in front of it; a port alone binds loopback (ADR-0056) |
+| `--cloud-listen` | off | the port loops in Claude Code cloud sessions reach, through a tunnel or TLS proxy you put in front of it; a port alone binds loopback; an admin can switch it on in Settings → Cloud instead (ADR-0056) |
 
 `spool --help` lists every flag. `spool token` prints the operator token again.
 

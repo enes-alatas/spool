@@ -111,6 +111,13 @@ type Server struct {
 	// extra hosts is pushed to as well (ADR-0056). Nil on a hub that wires
 	// none.
 	Cloud CloudEnvironments
+	// CloudListener is the cloud listener's switch (ADR-0056). Nil
+	// on a hub that wires none: the page reads it as off and can't open it.
+	CloudListener CloudListener
+	// CloudLoopbackAddress accepts a plain-HTTP loopback public address,
+	// which no cloud session can reach. Only tests set it
+	// (--cloud-loopback-address).
+	CloudLoopbackAddress bool
 	// EgressFlag is --egress-allow as this hub was started with it, which
 	// seeded the stored list on the first start (#542); nil when the hub
 	// was started without the flag.
@@ -137,6 +144,8 @@ type Server struct {
 	// cloudChecks are the address-check values issued and not yet seen
 	// back on the cloud listener (ADR-0056).
 	cloudChecks cloudChecks
+	// cloudCheck is the last check of the public address.
+	cloudCheck cloudCheckState
 }
 
 func (server *Server) Handler() http.Handler {
@@ -218,6 +227,11 @@ func (server *Server) routes() *routeMux {
 	mux.HandleFunc("GET /api/settings/egress", server.handleGetEgress)
 	mux.HandleFunc("POST /api/settings/egress/hosts", server.handleAddEgressHost)
 	mux.HandleFunc("DELETE /api/settings/egress/hosts/{entry}", server.handleRemoveEgressHost)
+	mux.HandleFunc("GET /api/settings/cloud", server.handleGetCloudSettings)
+	mux.HandleFunc("PUT /api/settings/cloud/address", server.handleSetCloudAddress)
+	mux.HandleFunc("DELETE /api/settings/cloud/address", server.handleClearCloudAddress)
+	mux.HandleFunc("POST /api/settings/cloud/check", server.handleCheckCloudAddress)
+	mux.HandleFunc("PUT /api/settings/cloud/listener", server.handleSwitchCloudListener)
 	mux.HandleFunc("GET /api/rules", server.handleListRules)
 	mux.HandleFunc("POST /api/rules", server.handleCreateRule)
 	mux.HandleFunc("PATCH /api/rules/{id}", server.handlePatchRule)
