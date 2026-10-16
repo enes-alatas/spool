@@ -749,3 +749,6 @@ Enes asked about cloud loops. Answered (verified): #861 ✓ #872, #862 ✓ #874,
 
 ## 2026-10-16 12:25 UTC
 Elliot: #889 (ADR-0057 accepted, Enes decided on #888/#889), #890 (closes #878 threat-model limits), #891 (fix(store), neutral title, closes nothing — likely an advisory fix) merged; Elliot on #888 (feat/spool-upgrade). No group reply.
+
+## 2026-10-16 12:30 UTC
+Enes asked if the advisories are critical. Read from the API: q5hr medium ✓ #879, ggw3 low ✓ #883, 4c3c low ✓ #891, m995 medium (loop listener idle connections, exhaustion from a contained loop) open. Told him none critical; proposed Terra: m995 fix → #863 rest, #877 later. Awaiting his word before reordering.
