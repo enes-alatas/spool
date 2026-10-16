@@ -722,3 +722,6 @@ Enes posted a merge-queue failure (run 38871884271, main e424663, carrying Terra
 
 ## 2026-10-16 08:40 UTC
 Enes asked why every loop saw his group reply to Quinn. Cause: the pasted log (Terra's rendered itest prompt) contains literal "@all", "@terra", "@mention"; the mention parser fanned each chunk out. Per ADR-0026 recipients = mentions + reply author, so not a routing bug. Offered a narrow fix (ignore mentions inside Telegram code/pre entities) on his "file"; otherwise lesson: paste logs as code blocks or files.
+
+## 2026-10-16 10:00 UTC
+Fleet upgraded: runtime v0.5.1-159-g8691220 = origin/main tip (#879 advisory fix merged). Dogfood clock starts ~09:50; v0.6.0 also waits on the two remaining advisory fixes + #877. #881/#882 (Terra/Quinn) folded into #880; Quinn found POST /rotate returns before the rotation lands — noted on #880 (doc or wait, Terra's call). #878 (threat-model doc, seam 2) → L6, parent #777. Open PRs: #453 only.
