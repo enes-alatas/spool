@@ -86,6 +86,15 @@ func (server *Server) guard(next *http.ServeMux) http.Handler {
 			server.jsonErr(w, http.StatusUnsupportedMediaType, "this route takes application/json")
 			return
 		}
+		// Bounded before any credential is read, the sign-in's included; an
+		// upload keeps its own, larger cap.
+		if !isUpload(r) {
+			if r.ContentLength > maxAPIBody {
+				server.jsonErr(w, http.StatusRequestEntityTooLarge, "a request body is at most %d bytes", maxAPIBody)
+				return
+			}
+			r.Body = http.MaxBytesReader(w, r.Body, maxAPIBody)
+		}
 		// The session routes are registered on the mux like everything else,
 		// so the route list stays the route list; what they skip is the
 		// token check, because obtaining the token is what one of them is

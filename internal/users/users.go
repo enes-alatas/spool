@@ -130,13 +130,34 @@ func ValidRole(role string) bool {
 	return role == store.RoleOwner || role == store.RoleAdmin || role == store.RoleMember
 }
 
+// maxHashing is how many password hashes the hub works at once. Each
+// takes a core for a good fraction of a second, and sign-in needs no
+// credential, so without a cap a flood of sign-ins takes every core.
+// One past it waits its turn, or leaves the queue unhashed once its
+// request is gone, so a flood of dropped sign-ins leaves no backlog.
+const maxHashing = 4
+
+var hashing = make(chan struct{}, maxHashing)
+
+// deriveKey is PBKDF2-SHA256, one of maxHashing at a time. It gives up
+// its wait with ctx.
+func deriveKey(ctx context.Context, password string, salt []byte, iterations, length int) ([]byte, error) {
+	select {
+	case hashing <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	defer func() { <-hashing }()
+	return pbkdf2.Key(sha256.New, password, salt, iterations, length)
+}
+
 // HashPassword keeps password as a self-describing PBKDF2 hash.
-func HashPassword(password string) (string, error) {
+func HashPassword(ctx context.Context, password string) (string, error) {
 	salt := make([]byte, saltBytes)
 	if _, err := rand.Read(salt); err != nil {
 		return "", err
 	}
-	key, err := pbkdf2.Key(sha256.New, password, salt, hashIterations, keyBytes)
+	key, err := deriveKey(ctx, password, salt, hashIterations, keyBytes)
 	if err != nil {
 		return "", err
 	}
@@ -145,12 +166,12 @@ func HashPassword(password string) (string, error) {
 }
 
 // CheckPassword reports whether password is the one encoded was made from.
-func CheckPassword(encoded, password string) bool {
-	ok, err := checkPassword(encoded, password)
+func CheckPassword(ctx context.Context, encoded, password string) bool {
+	ok, err := checkPassword(ctx, encoded, password)
 	return err == nil && ok
 }
 
-func checkPassword(encoded, password string) (bool, error) {
+func checkPassword(ctx context.Context, encoded, password string) (bool, error) {
 	fields := strings.Split(encoded, "$")
 	if len(fields) != 4 || fields[0] != hashScheme {
 		return false, errMalformedPassword
@@ -167,7 +188,7 @@ func checkPassword(encoded, password string) (bool, error) {
 	if err != nil {
 		return false, errMalformedPassword
 	}
-	got, err := pbkdf2.Key(sha256.New, password, salt, iterations, len(want))
+	got, err := deriveKey(ctx, password, salt, iterations, len(want))
 	if err != nil {
 		return false, err
 	}
@@ -179,7 +200,7 @@ func checkPassword(encoded, password string) (bool, error) {
 // say which names exist. Made on first use rather than at start, since it
 // costs a full hashing.
 var decoyHash = sync.OnceValue(func() string {
-	hash, _ := HashPassword("decoy password, never anyone's")
+	hash, _ := HashPassword(context.Background(), "decoy password, never anyone's")
 	return hash
 })
 
@@ -245,7 +266,7 @@ func (users *Users) Add(ctx context.Context, name, role string) (string, error) 
 	if !ValidRole(role) {
 		return "", ErrBadRole
 	}
-	password, hash, err := oneTimeCredential()
+	password, hash, err := oneTimeCredential(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -264,7 +285,7 @@ func (users *Users) Reset(ctx context.Context, name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	password, hash, err := oneTimeCredential()
+	password, hash, err := oneTimeCredential(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -320,17 +341,17 @@ func (users *Users) Confirm(ctx context.Context, user *store.User, password stri
 		return err
 	}
 	defer release()
-	if !CheckPassword(user.PasswordHash, password) {
+	if !CheckPassword(ctx, user.PasswordHash, password) {
 		return users.fail(ctx, user.Name, now)
 	}
 	return users.Store.SignInThrottles().Clear(ctx, user.Name)
 }
 
-func oneTimeCredential() (password, hash string, err error) {
+func oneTimeCredential(ctx context.Context) (password, hash string, err error) {
 	if password, err = NewOneTimePassword(); err != nil {
 		return "", "", err
 	}
-	hash, err = HashPassword(password)
+	hash, err = HashPassword(ctx, password)
 	return password, hash, err
 }
 
@@ -343,19 +364,19 @@ func (users *Users) SignIn(ctx context.Context, name, password string) (*store.U
 	now := users.now()
 	release, err := users.reserve(ctx, name, now)
 	if err != nil {
-		CheckPassword(decoyHash(), password)
+		CheckPassword(ctx, decoyHash(), password)
 		return nil, err
 	}
 	defer release()
 	user, err := users.Store.Users().GetByName(ctx, name)
 	if errors.Is(err, store.ErrNotFound) {
-		CheckPassword(decoyHash(), password)
+		CheckPassword(ctx, decoyHash(), password)
 		return nil, users.fail(ctx, name, now)
 	}
 	if err != nil {
 		return nil, err
 	}
-	ok, err := checkPassword(user.PasswordHash, password)
+	ok, err := checkPassword(ctx, user.PasswordHash, password)
 	if err != nil {
 		return nil, err
 	}
@@ -448,10 +469,10 @@ func (users *Users) ChangePassword(ctx context.Context, user *store.User, curren
 	if err := ValidPassword(next); err != nil {
 		return err
 	}
-	if user.MustChangePassword && CheckPassword(user.PasswordHash, next) {
+	if user.MustChangePassword && CheckPassword(ctx, user.PasswordHash, next) {
 		return ErrPasswordReused
 	}
-	hash, err := HashPassword(next)
+	hash, err := HashPassword(ctx, next)
 	if err != nil {
 		return err
 	}

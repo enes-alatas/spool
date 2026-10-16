@@ -600,7 +600,7 @@ func main() {
 		WebFS:                web.Dist(),
 	}
 
-	srv := &http.Server{Handler: redact.HTTP(api.Handler(), redactor)}
+	srv := httpapi.OperatorHTTPServer(redact.HTTP(api.Handler(), redactor))
 	// the Claude proxy streams the model's answer to the loop as it comes,
 	// outside the redactor: the hub redacts it from the loop's own stream
 	// (ADR-0058)
