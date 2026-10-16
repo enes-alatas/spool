@@ -229,6 +229,66 @@ puts in front of the listener; and the hub's own address check
   plain HTTP, and what keeps a token off the wire is the HTTPS address in
   front of it (ADR-0056 item 6).
 
+### Cloud session: the cloud runtime
+
+**What crosses:** the hub drives a cloud loop's Claude Code cloud session
+over Anthropic's sessions API, with the claude.ai account's OAuth token:
+it creates the loop's environment and session, sends each turn's message
+in, and reads the turn's events back (ADR-0056).
+
+**Holds:**
+- **The account token is sealed** under `hub.key`, known to the redactor,
+  and never served back. The calls go to Anthropic's API over HTTPS and
+  follow no redirect (`--cloud-api-base` takes plain HTTP only on
+  loopback, for tests).
+- **No setup-token leaves the machine.** A cloud session runs on the
+  account, and the hub gives it no `CLAUDE_CODE_OAUTH_TOKEN`.
+- **The session carries one credential, the loop's MCP token,** as a
+  session variable the session's record doesn't serve back. The
+  environment's setup script names the variable, never the value. A
+  session is created with an empty MCP config, so it gets no built-in
+  tools that start or message other sessions, and no `github` server.
+- **The token goes only to an HTTPS address.** The public address is
+  checked at every use, whatever wrote it: one that isn't `https://`
+  (or plain HTTP on loopback) wakes no cloud loop and seeds no
+  allowlist.
+- **The allowlist is the hub's own,** never Anthropic's Trusted
+  defaults: the egress allowlist plus the hub's public host. An entry
+  that doesn't translate, one with a port of its own or a leading dot, is
+  left off, never widened.
+- **What comes back is untrusted** and read under bounds: 4 MiB a page,
+  with one event over it skipped and named, and per turn 20 000 events
+  and 64 MiB. An answer or event the hub can't read, a refusal other than
+  a rate limit or the API's own fault, a session that parks, goes idle
+  with no result or never takes the message, and two hours with no event
+  each end the turn as an error that says which. A rate limit or fault is
+  retried with a backoff, six polls in a row at most. The events go
+  through the same redaction as a contained turn's.
+- **Attachments don't cross.** A file sent to a cloud loop is shown as
+  not kept, and the loop can't attach one: the hub never reads its own
+  disk for a cloud loop.
+
+**Doesn't hold:**
+- **The read-back is undocumented.** Anthropic may change the events
+  endpoint without notice; the hub fails loudly when it does, and can't
+  do more.
+- **The loop can read its own token**, as a contained loop can read its
+  MCP config, and the environment's allowlist is enforced by Anthropic's
+  proxy, not the egress wall (ADR-0056 item 8).
+- **Whether a session's own ingress credentials reach other sessions**
+  on the account is untested. It gates creating a cloud loop (ADR-0056
+  item 5).
+- **An oversized event is skipped only up to 64 MiB.** Past that the hub
+  reads no further, so it can't find the page's end to move past the
+  event. Every turn of that session then fails the same way, and the
+  error says to rotate the loop's session.
+- **Deleting a cloud loop archives first and revokes after.** The hub
+  deletes the loop's token only once the archive calls return, so the
+  token outlives them by up to a minute. #866 reverses the order before
+  a cloud loop can be created.
+- **A copy of the data directory with its keys** yields the account
+  token, which drives the account, not only its turns.
+
 ### Workstation: the docker runtime
 
 **What crosses:** the hub drives `docker run` and `docker exec` through
