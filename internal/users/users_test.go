@@ -33,17 +33,17 @@ func newUsers(t *testing.T) (*Users, *clock) {
 }
 
 func TestPasswordHashRoundTrips(t *testing.T) {
-	hash, err := HashPassword("correct horse battery")
+	hash, err := HashPassword(context.Background(), "correct horse battery")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.HasPrefix(hash, "pbkdf2-sha256$600000$") {
 		t.Fatalf("hash = %q; want the self-describing PBKDF2 form", hash)
 	}
-	if !CheckPassword(hash, "correct horse battery") || CheckPassword(hash, "correct horse batterY") {
+	if !CheckPassword(context.Background(), hash, "correct horse battery") || CheckPassword(context.Background(), hash, "correct horse batterY") {
 		t.Fatal("CheckPassword does not tell the password from a near miss")
 	}
-	if CheckPassword("plain", "plain") {
+	if CheckPassword(context.Background(), "plain", "plain") {
 		t.Fatal("a malformed hash checked as a match")
 	}
 }
@@ -578,5 +578,45 @@ func TestSessionLiveTouchesNothing(t *testing.T) {
 	}
 	if whose, err := users.EndSession(ctx, ended); whose != "" || err != nil {
 		t.Fatalf("EndSession again = %q, %v; want nobody's and no error", whose, err)
+	}
+}
+
+// TestPasswordHashesTakeTurns: no more than maxHashing hashes run at once,
+// hub-wide, so a flood of sign-ins can't take every core. One past the cap
+// waits for a turn rather than failing, unless its request is gone.
+func TestPasswordHashesTakeTurns(t *testing.T) {
+	hash, err := HashPassword(context.Background(), "correct horse battery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range maxHashing {
+		hashing <- struct{}{}
+	}
+	done := make(chan bool)
+	go func() { done <- CheckPassword(context.Background(), hash, "correct horse battery") }()
+	select {
+	case <-done:
+		t.Fatal("a hash ran while every turn was taken")
+	case <-time.After(300 * time.Millisecond):
+	}
+	// a caller whose request is gone leaves the queue without hashing
+	gone, cancel := context.WithCancel(context.Background())
+	abandoned := make(chan bool)
+	go func() { abandoned <- CheckPassword(gone, hash, "correct horse battery") }()
+	cancel()
+	select {
+	case ok := <-abandoned:
+		if ok {
+			t.Error("an abandoned check said the password matched")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("an abandoned check still waits for a turn")
+	}
+	<-hashing
+	if ok := <-done; !ok {
+		t.Error("the hash that waited its turn did not check the password")
+	}
+	for range maxHashing - 1 {
+		<-hashing
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -100,4 +101,65 @@ func TestTheReadBoundLeavesAHandlerRunning(t *testing.T) {
 		}
 		_ = srv.Close()
 	}
+}
+
+// The operator listener bounds what a caller can make the hub hold, a
+// header's read and an idle connection above all, and has no write
+// timeout, which would cut the control room's stream (#877).
+func TestTheOperatorListenerBoundsWhatACallerHolds(t *testing.T) {
+	srv := OperatorHTTPServer(http.NotFoundHandler())
+	if srv.ReadHeaderTimeout <= 0 || srv.ReadTimeout <= 0 || srv.IdleTimeout <= 0 || srv.MaxHeaderBytes <= 0 {
+		t.Errorf("the operator listener leaves a bound unset: header %s, read %s, idle %s, header bytes %d",
+			srv.ReadHeaderTimeout, srv.ReadTimeout, srv.IdleTimeout, srv.MaxHeaderBytes)
+	}
+	if srv.WriteTimeout != 0 {
+		t.Errorf("the operator listener has a write timeout of %s; a stream would be cut", srv.WriteTimeout)
+	}
+}
+
+// Every /api body but an upload's is bounded before any credential is
+// read, the sign-in's included: one declared too large is refused unread,
+// and one that runs past the bound undeclared stops being read there.
+func TestAPIBodiesAreBounded(t *testing.T) {
+	server := &Server{OperatorToken: testToken, ListenAddr: "127.0.0.1:8080", Users: testUsers(t)}
+	var read int64
+	var readErr error
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/login", server.handleLogin)
+	mux.HandleFunc("POST /api/loops", func(w http.ResponseWriter, r *http.Request) {
+		read, readErr = io.Copy(io.Discard, r.Body)
+	})
+	handler := server.guard(mux)
+
+	big := `{"username":"admin","password":"` + strings.Repeat("a", maxAPIBody) + `"}`
+	req := httptest.NewRequest("POST", "/api/login", strings.NewReader(big))
+	req.Host = "127.0.0.1:8080"
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("a sign-in body over the bound = %d %s; want 413", rec.Code, rec.Body)
+	}
+
+	req = httptest.NewRequest("POST", "/api/loops", io.LimitReader(endless{}, 4*maxAPIBody))
+	req.Host = "127.0.0.1:8080"
+	req.ContentLength = -1
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+	var tooLarge *http.MaxBytesError
+	if read > maxAPIBody || !errors.As(readErr, &tooLarge) {
+		t.Errorf("an undeclared body four times the bound read %d bytes, %v; want it stopped at %d", read, readErr, maxAPIBody)
+	}
+}
+
+// endless is a body that never ends; the test caps it, so a lost bound
+// fails rather than hangs.
+type endless struct{}
+
+func (endless) Read(buffer []byte) (int, error) {
+	for at := range buffer {
+		buffer[at] = 'a'
+	}
+	return len(buffer), nil
 }

@@ -110,6 +110,14 @@ Slack connects out over Socket Mode, so no port is opened for either
 5. **The role table** decides each route, and a route it doesn't list is
    an admin's (`internal/httpapi/roles.go`).
 
+Bounds apply before a credential is read (`internal/httpapi/listeners.go`,
+#877): headers at 64 KiB and 10 seconds, five minutes to read a request,
+a body at 1 MiB apart from an upload's own cap, and an idle connection
+closed after two minutes. There is no write timeout, which would cut the
+control room's stream. At most four password hashes run at once,
+hub-wide, so sign-ins can't take every core, and one whose request is
+gone leaves the queue without hashing.
+
 **Sessions and passwords:**
 - Sessions are revocable, and expire after 14 days idle or 30 days.
   Ending a session ends the streams opened under it from their next item,

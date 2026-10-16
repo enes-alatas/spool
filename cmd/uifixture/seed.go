@@ -890,7 +890,7 @@ func seedChanges(ctx context.Context, db store.Store, ids map[string]string) err
 // Settings → Access's Unblock (#732). Seeding admin also keeps the hub from
 // creating one with a random one-time password at its first start.
 func seedUsers(ctx context.Context, db store.Store) error {
-	hash, err := users.HashPassword(fixtureUserPassword)
+	hash, err := users.HashPassword(ctx, fixtureUserPassword)
 	if err != nil {
 		return fmt.Errorf("users: %w", err)
 	}
