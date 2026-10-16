@@ -262,6 +262,7 @@ func (session *proc) create(text, messageID string) error {
 	session.sessionID, session.afterID = created.ID, ""
 	if err := session.cloud.update(session.loopID, func(s *state) {
 		s.SessionID, s.ClaudeSession, s.AfterID = created.ID, session.claudeSession, ""
+		s.SessionToken = tokenHash(session.hubToken)
 	}); err != nil {
 		return fmt.Errorf("cloud: keeping the session's id: %w", err)
 	}

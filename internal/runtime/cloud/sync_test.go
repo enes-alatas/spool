@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/enes-alatas/spool/internal/claude"
 	"github.com/enes-alatas/spool/internal/runtime"
 )
 
@@ -180,5 +181,32 @@ func TestAWakeCantUndoANarrowingSync(t *testing.T) {
 	}
 	if syncs, _, err := cloud.Syncs(ctx); err != nil || len(syncs) != 1 || !syncs[0].InSync {
 		t.Errorf("syncs = %+v, %v; want in sync with the narrowed list", syncs, err)
+	}
+}
+
+// A resume under a hub token other than the one its cloud session was
+// created with is lost, as an unknown one is, so the runner starts a fresh
+// session that carries the new token. The session holds its token for its
+// life, and the hub would refuse the old one.
+func TestAResumeUnderAReplacedTokenIsLost(t *testing.T) {
+	cloud, _ := newCloud(t)
+	first := start(t, cloud, testSpec())
+	turn(t, first, "one")
+	_ = first.CloseStdin()
+	first.Wait()
+
+	spec := testSpec()
+	spec.SessionID, spec.ResumeID = "", "hub-session-1"
+	spec.MCPConfig = claude.MCPConfigJSON("https://hub.example.test/mcp", "spool-hub-synthetic-replaced", nil)
+	proc := start(t, cloud, spec)
+	lost := make(chan bool, 1)
+	go func() { lost <- claude.IsSessionNotFound(proc.Wait()) }()
+	select {
+	case ok := <-lost:
+		if !ok {
+			t.Fatal("the resume ended, but not as the CLI's session-not-found")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the resume carried on in the session created with the old token")
 	}
 }

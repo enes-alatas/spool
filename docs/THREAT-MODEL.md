@@ -265,6 +265,9 @@ in, and reads the turn's events back (ADR-0056).
   loop's next wake or the next edit retries it. The reason quotes the
   cloud's answer, unredacted, so only an admin reads it; a member sees
   in sync or not.
+- **A session holds the token it was created with.** A loop whose token
+  is replaced, as a key reset replaces every one, starts a fresh session
+  at its next wake rather than resume one the hub would refuse.
 - **What comes back is untrusted** and read under bounds: 4 MiB a page,
   with one event over it skipped and named, and per turn 20 000 events
   and 64 MiB. An answer or event the hub can't read, a refusal other than
