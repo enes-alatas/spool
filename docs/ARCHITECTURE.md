@@ -121,7 +121,7 @@ Dependencies point inward: adapters → hub interfaces, never hub → adapter in
 | Seam | Interface (owner) | Implementations |
 |---|---|---|
 | **Surface** | `surface.Surface` — start, stop, validate a loop credential, follow loop config changes; the adapter delivers inbound to the router and mirrors outbound off the bus (ADR-0029) | `telegram` (today), `slack` (L3) |
-| **SandboxRuntime** | `runtime.Runtime` — provision/start/exec/stop a loop's workstation, own claude's stdio inside it, watch workstation liveness, copy a file into it or read one out (`PutFile`, `GetFile`, ADR-0037, ADR-0026) | `bare` (direct subprocess; local edition only, opt-in with `--runtime bare`, badged *uncontained*), `docker` (long-lived named container + volume per loop, driven through the docker CLI; the default whenever the daemon is reachable — ADR-0017, ADR-0018), `sbx` (possible later hardening, ADR-0010) |
+| **SandboxRuntime** | `runtime.Runtime` — provision/start/exec/stop a loop's workstation, own claude's stdio inside it, watch workstation liveness, copy a file into it or read one out (`PutFile`, `GetFile`, ADR-0037, ADR-0026) | `bare` (direct subprocess; local edition only, opt-in with `--runtime bare`, badged *uncontained*), `docker` (long-lived named container + volume per loop, driven through the docker CLI; the default whenever the daemon is reachable — ADR-0017, ADR-0018), `cloud` (a Claude Code cloud session per loop on Anthropic's machines, driven over the sessions API; no workstation of the hub's, no files — ADR-0056), `sbx` (possible later hardening, ADR-0010) |
 | **Store** | `store.*` interfaces | `sqlite` (today), `postgres` (service era) |
 | **Runner** | the narrow command surface the hub uses: deliver, tick, pause, resume, kill, state | in-process (`internal/loop`) today; extractable to a per-host runner process for the hosted service — the seam exists so this is transport substitution, not redesign |
 
@@ -134,7 +134,7 @@ cmd/spool-egress/     the workstation egress proxy (ADR-0028)
 cmd/spool-hook/       the PreToolUse hook pinned on every loop's claude (ADR-0042)
 internal/claude/      claude's stream-json protocol: args, stdio, events (runner-internal)
 internal/loop/        loop actors, prompts, trailers (runner)
-internal/runtime/     SandboxRuntime seam + bare/, docker/
+internal/runtime/     SandboxRuntime seam + bare/, docker/, cloud/
 internal/surface/     Surface seam + telegram/, slack/; outbound/ records how a send ended
 internal/route/       hub: routing, mentions, storm guard
 internal/sched/       hub: tick scheduling
@@ -158,9 +158,13 @@ already depends on, the log handler and the HTTP handler, so the secret values
 Spool holds cannot reach a log line, a stored transcript or a response. It has one
 implementation and nothing substitutes for it — the seams are the four above.
 
-The SandboxRuntime seam is live with both implementations: `internal/runtime` owns
-the interface, `internal/runtime/bare` runs host subprocesses, and
-`internal/runtime/docker` runs workstations through the docker CLI (ADR-0018).
+The SandboxRuntime seam is live with three implementations: `internal/runtime` owns
+the interface, `internal/runtime/bare` runs host subprocesses,
+`internal/runtime/docker` runs workstations through the docker CLI (ADR-0018), and
+`internal/runtime/cloud` runs each loop in a Claude Code cloud session, sending its
+turns in and reading their events back over Anthropic's undocumented sessions API,
+and failing loudly when that changes (ADR-0056). A cloud loop is created by no
+route yet: Settings → Cloud and the runtime picker come with the next slices.
 Docker workstations sit on an internal network with no route off it; their only
 way out is `spool-egress-proxy`, a container running `cmd/spool-egress` that
 forwards to the hosts in `internal/egress`, plus the operator's stored extra

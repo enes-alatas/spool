@@ -33,6 +33,7 @@ import (
 	"github.com/enes-alatas/spool/internal/route"
 	"github.com/enes-alatas/spool/internal/runtime"
 	"github.com/enes-alatas/spool/internal/runtime/bare"
+	"github.com/enes-alatas/spool/internal/runtime/cloud"
 	"github.com/enes-alatas/spool/internal/runtime/docker"
 	"github.com/enes-alatas/spool/internal/sched"
 	"github.com/enes-alatas/spool/internal/store"
@@ -99,6 +100,7 @@ func main() {
 	partials := flag.Bool("partial-messages", true, "stream token deltas to the UI (--include-partial-messages)")
 	telegramAPI := flag.String("telegram-api-base", telegram.APIBase, "Telegram Bot API base URL (tests point this at a stand-in server)")
 	slackAPI := flag.String("slack-api-base", slack.APIBase, "Slack Web API base URL (tests point this at a stand-in server)")
+	cloudAPIFlag := flag.String("cloud-api-base", cloud.DefaultBaseURL, "Anthropic's sessions API base URL, which cloud loops are driven through (tests point this at a stand-in server); https, or http on loopback")
 	answerTimeoutSec := flag.Int("telegram-answer-timeout-sec", 0, "seconds a Telegram call waits for the Bot API's answer before it is retried on a fresh connection (0 = the production 60s; tests against a stand-in API shorten it)")
 	bindSettleSec := flag.Int("telegram-bind-settle-sec", 0, "seconds a newly bound bot waits before it may ingest a group (0 = the production margin; tests against a stand-in API shorten it)")
 	retentionDays := flag.Int("events-retention-days", 30, "prune raw claude events older than this many days (0 disables; messages and turns are never pruned)")
@@ -116,6 +118,10 @@ func main() {
 	// opens a directory, binds a port or mints a credential.
 	if flag.NArg() > 0 {
 		usageError("unknown argument %q — spool takes flags, not subcommands", flag.Arg(0))
+	}
+	cloudAPI, err := cloudAPIBase(*cloudAPIFlag)
+	if err != nil {
+		usageError("--cloud-api-base: %v", err)
 	}
 
 	build := version.Resolve(buildVersion, buildCommit, buildTime)
@@ -354,6 +360,9 @@ func main() {
 	log = slog.New(redact.Handler(logTo, redactor))
 	slog.SetDefault(log)
 	rdb := redact.Store(db, redactor)
+	// The cloud runtime reads its account and the hub's public address from
+	// the store, so it joins the others once there is one (ADR-0056).
+	runtimes[store.RuntimeCloud] = newCloudRuntime(rdb.Settings(), *dataDir, cloudAPI)
 
 	pubsub := bus.New()
 
@@ -379,6 +388,18 @@ func main() {
 			}
 		},
 		MCPEndpoint: func(loopRecord *store.Loop) string {
+			if loopRecord.Runtime == store.RuntimeCloud {
+				// a cloud session reaches the hub over the internet, through
+				// the public address in front of the cloud listener
+				address, err := cloudAddress(context.Background(), rdb.Settings())
+				if err != nil {
+					log.Warn("cloud loop not woken", "loop", loopRecord.Name, "err", err)
+				}
+				if address == "" {
+					return ""
+				}
+				return address + "/mcp"
+			}
 			host, port, err := net.SplitHostPort(mcpAddr)
 			if err != nil {
 				return ""
