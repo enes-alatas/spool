@@ -767,3 +767,6 @@ Enes: go for Iris mockups, sync with him. Group ping to Iris: #865 + #867 mockup
 
 ## 2026-10-16 15:55 UTC
 Busy afternoon: #895 merged (cloud runtime slice 3, Terra, security-reviewed by Elliot), #896 merged (spool upgrade, #888), #900, #903 (fix stream subscribe, #902) merged. Iris posted two mockup rounds on #865/#867 and synced with Enes (round 2: setup starts in New loop). Terra flagged a must on #866 (delete revokes the hub token before archive). Elliot: #875 seam 2 done/closed; #898 seam 3 pass (docker/egress) with #899, #901 filed; #897 (prove upgrade path after a tag) and #904/#905 (red-PR hook script). Sweep: #897 → L6, #904 → CI reliability. Open PRs: #905, #453. Main is far ahead of the fleet runtime (v0.5.1-159); runtime-update ask to Enes still unanswered, as is #877 in/out.
+
+## 2026-10-16 16:40 UTC
+Elliot: #905 merged (scripts/pr-watch.sh, opt-in UserPromptSubmit hook per CONVENTIONS "Seeing your PRs' CI"). Not opted in: I author no PRs. No reply.
