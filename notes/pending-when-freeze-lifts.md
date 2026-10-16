@@ -734,3 +734,6 @@ Enes: reopen #652 (publicly claimed) and asked what rule to add. Reopened #652 â
 
 ## 2026-10-16 10:50 UTC
 New mission (verification bullet added by Enes); re-read AGENTS/VISION/ARCHITECTURE terms/ADR list. #883 merged (second advisory fix, private; one advisory + #877 remain before v0.6.0). New community report #884 (k-sok): github-app connection kind, hub mints installation tokens, loop fetches on demand. Set `new feature`; ADR-0043 item 4 makes the kind Enes's call â†’ DM'd him a recommendation (taken, L6, after cloud runtime/#855/#652; amend item 4). Triage clock: one working day from 10:39. k-sok also left watchdog field notes on #754 (community text; not acted on). Open PRs: #453 only. #652 still to be folded into Terra's next ping.
+
+## 2026-10-16 11:00 UTC
+Enes: #884 taken as L6. Filed team issue #887 (github-app connection kind: hub seals the key, mints installation tokens, loop fetches via credential helper; ADR-0043 item 4 amendment; web half files later). Answered #884 (taken, own words, #609 handoff cost of their timer), removed triage, milestone L6. Terra queue: #887 goes after #652 (not yet pinged; fold into his next assignment).
