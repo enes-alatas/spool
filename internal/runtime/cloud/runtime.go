@@ -67,6 +67,10 @@ type state struct {
 	ClaudeSession string `json:"claude_session,omitempty"`
 	// AfterID is the newest event read of the session.
 	AfterID string `json:"after_id,omitempty"`
+	// SessionToken is the SHA-256 of the hub token SessionID was created
+	// with, which the session holds for its life: a replaced token needs a
+	// session of its own. A hash, so the file still carries no credential.
+	SessionToken string `json:"session_token,omitempty"`
 	// LoopName and HubURL are what the environment is written from, kept
 	// so Sync can write it again with no wake of the loop.
 	LoopName string `json:"loop_name,omitempty"`
@@ -372,7 +376,9 @@ func (cloud *Runtime) loopIDs() ([]string, error) {
 // a cloud session of its own, created with its first message; a resumed one
 // carries on in the cloud session it ran in. A resume of a session this
 // runtime holds no cloud session for ends at once as the CLI's own does,
-// so the runner starts a fresh one.
+// so the runner starts a fresh one. So does a resume under a hub
+// token other than the one its cloud session was created with: the session
+// holds that token for its life, and the hub would refuse it.
 func (cloud *Runtime) Start(ctx context.Context, spec runtime.Spec) (runtime.Proc, error) {
 	hub, err := hubFrom(spec)
 	if err != nil {
@@ -399,7 +405,7 @@ func (cloud *Runtime) Start(ctx context.Context, spec runtime.Spec) (runtime.Pro
 	case spec.SessionID != "":
 		session.claudeSession = spec.SessionID
 		session.retired = current.SessionID
-	case spec.ResumeID == current.ClaudeSession && current.SessionID != "":
+	case spec.ResumeID == current.ClaudeSession && current.SessionID != "" && current.SessionToken == tokenHash(hub.token):
 		session.claudeSession = spec.ResumeID
 		session.sessionID = current.SessionID
 		session.afterID, session.keptID = current.AfterID, current.AfterID
@@ -500,4 +506,11 @@ func (cloud *Runtime) CheckLogin(context.Context, string) (claude.LoginCheck, er
 func isInactive(err error) bool {
 	var apiErr *APIError
 	return errors.As(err, &apiErr) && apiErr.Inactive()
+}
+
+// tokenHash is what a state file keeps of a hub token: enough to tell a
+// replaced one, and no credential.
+func tokenHash(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
 }
