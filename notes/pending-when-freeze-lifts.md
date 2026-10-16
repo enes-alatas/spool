@@ -761,3 +761,6 @@ Terra: PR #892 = m995 fix alone (one commit, self-check green), with Quinn/Ellio
 
 ## 2026-10-16 13:45 UTC
 Sweep: #892 merged 13:17 → all four advisories fixed. Board tidy (#753 exempt). DM'd Enes: runtime update to main tip warranted before dogfood counts; asked whether v0.6.0 ships without #877 (suggest yes); reminded "go" for Iris's cloud mockups. Open PRs: #453 only. Terra now on #863 rest.
+
+## 2026-10-16 13:50 UTC
+Enes: go for Iris mockups, sync with him. Group ping to Iris: #865 + #867 mockups now, fixture images on each issue, DM Enes, build nothing until he picks. Still open with Enes: runtime update to main tip; #877 in/out of v0.6.0.
