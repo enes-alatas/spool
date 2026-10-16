@@ -310,6 +310,9 @@ func (router *Router) keepSent(ctx context.Context, req SendRequest) (*store.Att
 		return nil, &SendError{ErrAttachmentNotFound, fmt.Sprintf("%s is not a regular file; attach one file", path)}, nil
 	case errors.Is(err, runtime.ErrFileTooLarge):
 		return nil, &SendError{ErrAttachmentTooLarge, fmt.Sprintf("%s is over the %d MB limit", path, attach.MaxSize>>20)}, nil
+	case errors.Is(err, runtime.ErrUnsupported):
+		// a cloud loop's files are on Anthropic's machine (ADR-0056)
+		return nil, &SendError{ErrAttachmentUnavailable, "a cloud loop can't attach a file yet; send the words alone"}, nil
 	case err != nil:
 		return nil, nil, fmt.Errorf("read attachment: %w", err)
 	}

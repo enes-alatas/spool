@@ -17,6 +17,10 @@ const WorkstationFilesDir = runtime.WorkstationHome + "/.spool/files"
 // beside the store's NotKept reasons, which are why a file never arrived.
 const NotKeptRemoved = "removed"
 
+// NotKeptCloud is why a cloud loop is shown no file: its session runs on
+// Anthropic's machine, which a file can't be handed to yet (ADR-0056).
+const NotKeptCloud = "cloud"
+
 // PresentAttachments is what loopRecord is shown of a message's attachments,
 // and the copies its workstation needs first. hostPath maps a kept file to
 // the hub's copy.
@@ -41,6 +45,9 @@ func PresentAttachments(loopRecord *store.Loop, attachments []*store.Attachment,
 			item.NotKept = attachment.NotKept
 		case attachment.RemovedAt != 0:
 			item.NotKept = NotKeptRemoved
+		case loopRecord.Runtime == store.RuntimeCloud:
+			// a cloud session has no way in for a file yet (ADR-0056)
+			item.NotKept = NotKeptCloud
 		case loopRecord.Runtime == store.RuntimeBare || loopRecord.Runtime == "":
 			item.Path = hostPath(attachment.Path)
 		default:

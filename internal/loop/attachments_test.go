@@ -32,6 +32,12 @@ func TestPresentAttachmentsByRuntime(t *testing.T) {
 	if shown[2].Path != "" || shown[2].NotKept != NotKeptRemoved {
 		t.Errorf("expired: %+v", shown[2])
 	}
+
+	// a cloud session has no way in for a file: shown as not kept, never copied
+	shown, copies = PresentAttachments(&store.Loop{Runtime: store.RuntimeCloud}, rows, hostPath)
+	if len(copies) != 0 || shown[0].Path != "" || shown[0].NotKept != NotKeptCloud {
+		t.Errorf("cloud: shown %+v, copies %+v — want not kept and nothing to copy", shown[0], copies)
+	}
 }
 
 func TestAttachmentsComeBetweenTheHeaderAndTheWords(t *testing.T) {
