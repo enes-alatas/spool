@@ -41,6 +41,11 @@ describe('healthNote', () => {
 describe('problemHealth', () => {
   it('makes a workstation down the alarm and failing turns a warning', () => {
     expect(problemHealth({ symptom: 'workstation_down', since: 0 })).toBe('failing')
+    // a cloud loop held by its public address does no turns either (#864)
+    expect(problemHealth({ symptom: 'cloud_address', since: 0 })).toBe('failing')
+    expect(problemLine({ symptom: 'cloud_address', since: now - 40 * minute }, now)).toBe(
+      'Public address failing for 40m',
+    )
     expect(problemHealth({ symptom: 'turn_errors', since: 0 })).toBe('warning')
   })
 })

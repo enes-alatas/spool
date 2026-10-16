@@ -18,6 +18,8 @@ export function openFor(since: number, now: number): string {
 const SAID: Record<string, string> = {
   workstation_down: 'Workstation down',
   turn_errors: 'Turns failing',
+  // a cloud loop held while the public address fails its check (#864)
+  cloud_address: 'Public address failing',
 }
 
 // "Workstation down for 2h".
@@ -31,10 +33,11 @@ export function healthNote(problems: Problem[], now: number): string {
   return problems.map((problem) => problemLine(problem, now).toLowerCase()).join(' · ')
 }
 
-// A problem's line takes its loop's colour: a workstation down stops the
-// loop, so it is the alarm; failing turns are a warning.
+// A problem's line takes its loop's colour: a workstation down, or a cloud
+// loop held by its public address, stops the loop, so it is the alarm;
+// failing turns are a warning.
 export function problemHealth(problem: Problem): Health {
-  return problem.symptom === 'workstation_down' ? 'failing' : 'warning'
+  return problem.symptom === 'workstation_down' || problem.symptom === 'cloud_address' ? 'failing' : 'warning'
 }
 
 // The error-turn threshold as Settings edits it: '' for off.
