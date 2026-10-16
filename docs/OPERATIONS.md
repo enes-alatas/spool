@@ -313,6 +313,36 @@ images, and starts the hub on the same data directory. The hub migrates
 `spool.db` forward at its first start. No release migrates it back, so the
 backup taken just before that start is the way back. Take it every time.
 
+### With `spool upgrade`
+
+```bash
+sudo spool upgrade --dry-run       # the plan, with the unit's paths; changes nothing
+sudo spool upgrade                 # the latest release; or vX.Y.Z, or main
+```
+
+It does the steps below in their order (ADR-0057). It reads the binary,
+the data directory and the images from the unit (`--unit`, default
+`spool`), and checks the new build before anything stops. A release is
+checked by its checksum, and by `gh attestation verify` run as you if you
+have `gh` and are logged in; without that it warns, and
+`--require-attestation` makes it refuse. A target that doesn't know a
+migration the database has applied is refused. It then stops the hub,
+backs it up with the installed `spool-backup.sh` into `/var/backups/spool`
+(`--backup-dir`), installs, starts, and waits two minutes for the hub to
+answer at the target version. If it doesn't, the command rolls the
+binary, the images and the data directory back, leaves the volumes, and
+prints where the backup and the failed data directory are.
+
+`main`, or a tag with `--from-source <checkout>`, is built in the
+checkout as its owner. Until a release ships binaries (#747), only those
+work. The installed backup and restore scripts are needed either way:
+[Installing the scripts](#installing-the-scripts).
+
+The steps [by hand](#by-hand) are the fallback, and the reference for
+what the command does.
+
+### By hand
+
 The commands assume the checkout is at `/opt/spool` and the hub runs as a
 system unit named `spool`. Substitute your own checkout. The binary the unit
 runs and the data directory are read from the unit itself (step 1 below), so
