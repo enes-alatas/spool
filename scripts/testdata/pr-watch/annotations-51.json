@@ -1,0 +1,7 @@
+[
+  {"annotation_level": "warning", "message": "a warning is not a failure"},
+  {"annotation_level": "failure", "message": "--- FAIL: TestOne (0.10s)\none_test.go:9: a message\nover two lines"},
+  {"annotation_level": "failure", "message": "--- FAIL: TestTwo (0.10s)"},
+  {"annotation_level": "failure", "message": "--- FAIL: TestThree (0.10s)"},
+  {"annotation_level": "failure", "message": "--- FAIL: TestFour (0.10s)"}
+]

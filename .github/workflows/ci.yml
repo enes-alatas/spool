@@ -424,6 +424,11 @@ jobs:
       - name: the advisory scan still files what it claims to
         if: needs.changes.outputs.workflows == 'true'
         run: bash scripts/advisories-test.sh
+      # Loops run it as a hook, where a wrong filter would read as all
+      # green; the stub applies the script's own filters (#904).
+      - name: the PR watch still reports what it claims to
+        if: needs.changes.outputs.workflows == 'true'
+        run: bash scripts/pr-watch-test.sh
       # The list decides which PRs get a security review; a pattern that
       # stopped matching would drop a path from review with every PR green
       # (#742).
