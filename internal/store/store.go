@@ -2001,7 +2001,8 @@ type PrivateChatStore interface {
 // Since until the operator acts on the loop or the signal clears (ADR-0053,
 // #764). A loop has at most one open per symptom.
 type Problem struct {
-	// Symptom is SymptomWorkstationDown or SymptomTurnErrors.
+	// Symptom is SymptomWorkstationDown, SymptomTurnErrors or
+	// SymptomCloudAddress.
 	Symptom string `json:"symptom"`
 	// Since is when the problem opened, in Unix ms.
 	Since int64 `json:"since"`
@@ -2014,6 +2015,9 @@ const (
 	SymptomWorkstationDown = "workstation_down"
 	// SymptomTurnErrors: the loop's last turns all ended in an error.
 	SymptomTurnErrors = "turn_errors"
+	// SymptomCloudAddress: a cloud loop is held because the hub's public
+	// address fails its check (ADR-0056).
+	SymptomCloudAddress = "cloud_address"
 
 	ClearedByOperator = "operator"
 	ClearedByRecovery = "recovery"

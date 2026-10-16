@@ -18,37 +18,45 @@ import (
 	"github.com/enes-alatas/spool/internal/store/sqlite"
 )
 
-// The address cloud sessions reach the hub at, in these tests: the fake
-// API never connects to it, so it only has to be written in the right
-// places.
-const testCloudAddress = "https://hub.example.test"
-
 // The account token the fake API admits: synthetic, never a real one.
 const cloudFixtureToken = "sk-ant-oat01-fixture-cloud-account"
 
-// startCloudHub starts a hub with one cloud loop, its account signed in and
-// its public address set, driven through a fake of Anthropic's sessions API.
-func startCloudHub(t *testing.T, name string) (*server, *cloudfake.Server) {
+// startCloudHub starts a hub with one cloud loop and its account signed in,
+// driven through a fake of Anthropic's sessions API. Its public address is
+// its own cloud listener on loopback, set through Settings → Cloud, so the
+// address check passes and cloud loops wake: the harness's stand-in for a
+// tunnel is the listener itself. The fake API never connects to it. args
+// are the hub's besides.
+func startCloudHub(t *testing.T, name string, args ...string) (*server, *cloudfake.Server) {
 	t.Helper()
-	return startCloudHubAt(t, name, testCloudAddress)
+	s, fake := startCloudHubAt(t, name, "", append([]string{"--cloud-listen", "127.0.0.1:0", "--cloud-loopback-address"}, args...)...)
+	var view cloudSettings
+	s.mustJSON("PUT", "/api/settings/cloud/address", map[string]string{"address": s.cloudURL}, &view)
+	if view.Check == nil || view.Check.State != "ok" {
+		t.Fatalf("the harness's public address %s checks as %+v, want ok", s.cloudURL, view.Check)
+	}
+	return s, fake
 }
 
-// startCloudHubAt is startCloudHub with the public address given.
-func startCloudHubAt(t *testing.T, name, address string) (*server, *cloudfake.Server) {
+// startCloudHubAt starts a hub with one cloud loop and its account signed
+// in, with address stored as the public address, "" for none, and the hub
+// started with args besides: the first start too, which seeds the stored
+// egress allowlist from --egress-allow.
+func startCloudHubAt(t *testing.T, name, address string, args ...string) (*server, *cloudfake.Server) {
 	t.Helper()
 	fake := cloudfake.New(cloudFixtureToken)
 	t.Cleanup(fake.Close)
 	dataDir := t.TempDir()
-	s := startServerArgs(t, dataDir, "--runtime", "bare")
+	s := startServerArgs(t, dataDir, append([]string{"--runtime", "bare"}, args...)...)
 	s.createLoop(name, nil)
 	s.stop()
 	makeCloudLoop(t, dataDir, name)
 	signInCloud(t, dataDir, address)
-	return startServerArgs(t, dataDir, "--runtime", "bare", "--cloud-api-base", fake.URL), fake
+	return startServerArgs(t, dataDir, append([]string{"--runtime", "bare", "--cloud-api-base", fake.URL}, args...)...), fake
 }
 
-// signInCloud stores the synthetic account and the public address, as
-// Settings → Cloud will.
+// signInCloud stores the synthetic account and the public address, "" for
+// none, as Settings → Cloud will.
 func signInCloud(t *testing.T, dataDir, address string) {
 	t.Helper()
 	db, err := sqlite.Open(filepath.Join(dataDir, "spool.db"))
@@ -106,7 +114,7 @@ func TestCloudLoopTurnsRunInASessionOfItsOwn(t *testing.T) {
 		sessionContext = session.Context
 	}
 	fake.Mu.Unlock()
-	if !strings.Contains(script, "'"+testCloudAddress+"/mcp'") || !strings.Contains(script, "${SPOOL_HUB_TOKEN}") {
+	if !strings.Contains(script, "'"+s.cloudURL+"/mcp'") || !strings.Contains(script, "${SPOOL_HUB_TOKEN}") {
 		t.Errorf("the setup script doesn't register the hub at its public address by the token's variable:\n%s", script)
 	}
 	env := sessionContext["environment_variables"].(map[string]any)
@@ -229,21 +237,13 @@ func allowedHosts(t *testing.T, fake *cloudfake.Server) []string {
 // that it is out of sync (ADR-0056).
 func TestAnEgressEditReachesTheCloudEnvironmentsAtOnce(t *testing.T) {
 	t.Parallel()
-	fake := cloudfake.New(cloudFixtureToken)
-	t.Cleanup(fake.Close)
-	dataDir := t.TempDir()
-	s := startServerArgs(t, dataDir, "--runtime", "bare", "--egress-allow", "registry.example.test:8443")
-	s.createLoop("cirrus", nil)
-	s.stop()
-	makeCloudLoop(t, dataDir, "cirrus")
-	signInCloud(t, dataDir, testCloudAddress)
-	s = startServerArgs(t, dataDir, "--runtime", "bare", "--cloud-api-base", fake.URL)
+	s, fake := startCloudHub(t, "cirrus", "--egress-allow", "registry.example.test:8443")
 
 	s.message("cirrus", "make the environment")
 	s.waitTurn("cirrus", 20*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "make the environment") })
 	s.waitState("cirrus", "asleep", 20*time.Second)
 	turns := len(s.turns("cirrus"))
-	if hosts := allowedHosts(t, fake); slices.Contains(hosts, "registry.example.test:8443") || !slices.Contains(hosts, "hub.example.test") {
+	if hosts := allowedHosts(t, fake); slices.Contains(hosts, "registry.example.test:8443") || !slices.Contains(hosts, "127.0.0.1") {
 		t.Fatalf("the environment was made allowing %q", hosts)
 	}
 
@@ -292,5 +292,48 @@ func TestAnEgressEditReachesTheCloudEnvironmentsAtOnce(t *testing.T) {
 	}
 	if after := len(s.turns("cirrus")); after != turns {
 		t.Errorf("the edits ran %d turns, want none", after-turns)
+	}
+}
+
+// While the public address fails its check, cloud loops don't wake: a
+// message waits in the stored inbox, nothing reaches the sessions API, and
+// the loop carries a cloud_address problem that reads as failing. The
+// check that passes again clears the problem and wakes the loop with what
+// waited (ADR-0056).
+func TestCloudLoopsWaitWhileTheAddressFailsItsCheck(t *testing.T) {
+	t.Parallel()
+	s, fake := startCloudHub(t, "cirrus")
+
+	// The API answers the check's path too, with no value of its own.
+	var view cloudSettings
+	s.mustJSON("PUT", "/api/settings/cloud/address", map[string]string{"address": s.baseURL}, &view)
+	if view.Check == nil || view.Check.Stage != "other_server" {
+		t.Fatalf("the address reaching another server checks as %+v, want other_server", view.Check)
+	}
+	held := s.waitHealth("cirrus", "failing")
+	if len(held.Problems) != 1 || held.Problems[0].Symptom != "cloud_address" || held.Problems[0].Since == 0 {
+		t.Fatalf("problems = %+v, want one cloud_address with a since", held.Problems)
+	}
+
+	before := len(s.turns("cirrus"))
+	s.message("cirrus", "held words")
+	time.Sleep(2 * time.Second)
+	if after := len(s.turns("cirrus")); after != before {
+		t.Fatalf("a held cloud loop ran %d turns, want none", after-before)
+	}
+	fake.Mu.Lock()
+	sessions := len(fake.Sessions)
+	fake.Mu.Unlock()
+	if sessions != 0 {
+		t.Fatalf("a held cloud loop made %d sessions, want none", sessions)
+	}
+
+	s.mustJSON("PUT", "/api/settings/cloud/address", map[string]string{"address": s.cloudURL}, &view)
+	if view.Check == nil || view.Check.State != "ok" {
+		t.Fatalf("the address set back checks as %+v, want ok", view.Check)
+	}
+	s.waitTurn("cirrus", 20*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "held words") })
+	if after := s.waitHealth("cirrus", "ok"); len(after.Problems) != 0 {
+		t.Fatalf("after the check passed: problems %+v, want none", after.Problems)
 	}
 }

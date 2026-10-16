@@ -57,6 +57,10 @@ const (
 	CloudCheckOK     = "ok"
 	CloudCheckFailed = "failed"
 
+	// CloudStageRefused: the stored address is one the hub refuses
+	// (CloudAddressAllowed), such as one stored before the rule narrowed.
+	// No request is made.
+	CloudStageRefused = "refused"
 	// CloudStageListenerOff: the cloud listener is off, so nothing on this
 	// hub could answer. No request is made.
 	CloudStageListenerOff = "listener_off"
@@ -269,9 +273,11 @@ func (server *Server) storedCloudAddress(ctx context.Context) (string, error) {
 }
 
 // CheckCloudAddress checks that a request to the public address reaches
-// this hub's cloud listener, and records what it found. It is a no-op
-// while no address is set. The hub runs it when the address or the
-// listener changes, on the page's ask, and every CloudCheckEvery.
+// this hub's cloud listener, and records what it found. While no address
+// is set it checks nothing, and cloud loops are held. The hub runs it when
+// the address or the listener changes, on the page's ask, every
+// CloudCheckEvery, and when CloudGate asks for one before a cloud loop
+// wakes.
 func (server *Server) CheckCloudAddress(ctx context.Context) {
 	server.cloudCheck.running.Lock()
 	defer server.cloudCheck.running.Unlock()
@@ -282,6 +288,9 @@ func (server *Server) CheckCloudAddress(ctx context.Context) {
 	}
 	if address == "" {
 		server.cloudCheck.record(nil)
+		if server.CloudGate != nil {
+			server.CloudGate.Clear()
+		}
 		return
 	}
 	result := server.checkCloudAddress(ctx, address)
@@ -289,19 +298,27 @@ func (server *Server) CheckCloudAddress(ctx context.Context) {
 		server.Log.Warn("cloud address check failed", "address", address, "stage", result.Stage, "detail", result.Detail)
 	}
 	server.cloudCheck.record(&result)
+	if server.CloudGate != nil {
+		server.CloudGate.Record(address, result.State == CloudCheckOK, result.CheckedAt)
+	}
 }
 
 // RunCloudChecks checks the public address now and every interval after,
-// until ctx ends.
+// and whenever CloudGate asks before a cloud loop wakes, until ctx ends.
 func (server *Server) RunCloudChecks(ctx context.Context, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
+	var rechecks <-chan struct{}
+	if server.CloudGate != nil {
+		rechecks = server.CloudGate.Rechecks()
+	}
 	for {
 		server.CheckCloudAddress(ctx)
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+		case <-rechecks:
 		}
 	}
 }
@@ -310,6 +327,10 @@ func (server *Server) RunCloudChecks(ctx context.Context, interval time.Duration
 // this hub's cloud listener answers 204 to it, and only once.
 func (server *Server) checkCloudAddress(ctx context.Context, address string) CloudCheckResult {
 	result := CloudCheckResult{State: CloudCheckFailed, CheckedAt: time.Now().UnixMilli(), address: address}
+	if err := CloudAddressAllowed(address, server.CloudLoopbackAddress); err != nil {
+		result.Stage, result.Detail = CloudStageRefused, err.Error()
+		return result
+	}
 	if server.CloudListener == nil {
 		result.Stage, result.Detail = CloudStageListenerOff, "this hub has no cloud listener"
 		return result
