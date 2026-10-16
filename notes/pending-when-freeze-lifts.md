@@ -743,3 +743,6 @@ Elliot: #888 (spool upgrade command) under #710 (closed COMPLETED, L6); PR #889 
 
 ## 2026-10-16 11:07 UTC
 Elliot: fourth private advisory GHSA-m995 (outside reporter, medium) → Terra, in or beside #877. v0.6.0 gate now: four advisory fixes (#879, #883 merged; one of ggw3/4c3c + m995 remain) + #877, then dogfood with no bites, then Enes's "dry run" word.
+
+## 2026-10-16 12:20 UTC
+Enes asked about cloud loops. Answered (verified): #861 ✓ #872, #862 ✓ #874, #863 in progress (#876 merged, rest after advisories + #877), #864–#867 not started; first usable point is slice 5. Offered to reorder Terra ahead of advisories if he wants.
