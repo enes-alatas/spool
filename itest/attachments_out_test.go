@@ -4,6 +4,7 @@ package itest
 
 import (
 	"bytes"
+	"encoding/base64"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -148,6 +149,10 @@ func TestALoopCannotSendAFileItDoesNotOwn(t *testing.T) {
 	const secret = "itest-SYNTHETIC-attach-secret-77"
 	s.setLoopEnv("aster", "ATTACH_TOKEN", secret)
 	writeFile(t, filepath.Join(ws, "notes.txt"), []byte("token: "+secret+"\n"))
+	// wrapped at 76 columns, as `base64` writes it, with the break inside the
+	// secret's encoding (#912)
+	encoded := base64.StdEncoding.EncodeToString([]byte("# " + strings.Repeat("x", 40) + "\nATTACH_TOKEN=" + secret + "\n"))
+	writeFile(t, filepath.Join(ws, "env.b64"), []byte(encoded[:76]+"\n"+encoded[76:]+"\n"))
 	sess := mcpSession(t, s, hubMCPToken(t, s, "aster"))
 
 	for path, code := range map[string]string{
@@ -164,6 +169,7 @@ func TestALoopCannotSendAFileItDoesNotOwn(t *testing.T) {
 		"folder":                       "attachment_not_found",
 		"big.bin":                      "attachment_too_large",
 		"notes.txt":                    "attachment_contains_secret",
+		"env.b64":                      "attachment_contains_secret",
 	} {
 		res := callSend(t, sess, map[string]any{"destination": "control_room", "text": "refused " + path, "attach": path})
 		if !res.IsError || !strings.Contains(resultText(res), code) {

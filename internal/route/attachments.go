@@ -320,7 +320,7 @@ func (router *Router) keepSent(ctx context.Context, req SendRequest) (*store.Att
 	if router.redactName != nil {
 		// A file's bytes never pass through redaction on their way out,
 		// so a file holding a secret the hub knows is not sent at all.
-		if router.redactName(string(body)) != string(body) {
+		if router.holdsSecret(string(body)) {
 			return nil, &SendError{ErrSecretInAttachment,
 				fmt.Sprintf("%s holds a secret this hub knows, and a file is never sent with one; attach a copy without it", path)}, nil
 		}
@@ -361,4 +361,23 @@ func (router *Router) dropKept(kept *store.Attachment) {
 	if err := router.files.Remove(kept.Path); err != nil {
 		router.log.Warn("unsent attachment not removed", "path", kept.Path, "err", err)
 	}
+}
+
+// holdsSecret reports whether a file's text holds a secret the hub knows,
+// as it is and with its ASCII whitespace removed. The second look catches
+// what a line break or a space splits: base64 wrapped at 76 columns, as
+// base64, PEM and MIME write it, or a spaced hex dump (#912). It only
+// refuses, so nothing has to map back to the original offsets.
+func (router *Router) holdsSecret(text string) bool {
+	if router.redactName(text) != text {
+		return true
+	}
+	joined := strings.Map(func(r rune) rune {
+		switch r {
+		case ' ', '\t', '\n', '\v', '\f', '\r':
+			return -1
+		}
+		return r
+	}, text)
+	return joined != text && router.redactName(joined) != joined
 }
