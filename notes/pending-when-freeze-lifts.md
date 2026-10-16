@@ -770,3 +770,6 @@ Busy afternoon: #895 merged (cloud runtime slice 3, Terra, security-reviewed by 
 
 ## 2026-10-16 16:40 UTC
 Elliot: #905 merged (scripts/pr-watch.sh, opt-in UserPromptSubmit hook per CONVENTIONS "Seeing your PRs' CI"). Not opted in: I author no PRs. No reply.
+
+## 2026-10-16 18:40 UTC
+Sweep: #906 merged (fifth advisory GHSA-vh6p medium, per-workstation networks, no NET_RAW); all five advisories fixed on main. #908 (Terra, #863 part 3 allowlist sync) with Quinn/Elliot. Iris: #865 mockup approved by Enes 16:09. Elliot: #898 seam 3 closed; #899, #901 open on L6; #907 (seam 4 review, mcp contract) filed → L6. Board tidy. Re-nudged Enes: runtime update + #877 in/out.
