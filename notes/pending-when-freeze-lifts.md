@@ -746,3 +746,6 @@ Elliot: fourth private advisory GHSA-m995 (outside reporter, medium) → Terra, 
 
 ## 2026-10-16 12:20 UTC
 Enes asked about cloud loops. Answered (verified): #861 ✓ #872, #862 ✓ #874, #863 in progress (#876 merged, rest after advisories + #877), #864–#867 not started; first usable point is slice 5. Offered to reorder Terra ahead of advisories if he wants.
+
+## 2026-10-16 12:25 UTC
+Elliot: #889 (ADR-0057 accepted, Enes decided on #888/#889), #890 (closes #878 threat-model limits), #891 (fix(store), neutral title, closes nothing — likely an advisory fix) merged; Elliot on #888 (feat/spool-upgrade). No group reply.
