@@ -371,7 +371,8 @@ func main() {
 	rdb := redact.Store(db, redactor)
 	// The cloud runtime reads its account and the hub's public address from
 	// the store, so it joins the others once there is one (ADR-0056).
-	runtimes[store.RuntimeCloud] = newCloudRuntime(rdb.Settings(), *dataDir, cloudAPI)
+	cloudRuntime := newCloudRuntime(rdb.Settings(), *dataDir, cloudAPI)
+	runtimes[store.RuntimeCloud] = cloudRuntime
 
 	pubsub := bus.New()
 
@@ -534,6 +535,7 @@ func main() {
 		ListenAddr:    apiAddr,
 		TrustedHosts:  splitList(*trustedHosts),
 		Egress:        dockerRuntime,
+		Cloud:         cloudEnvironments{cloudRuntime},
 		EgressFlag:    egressFlag(allowEntries),
 		Log:           log,
 		WebFS:         web.Dist(),

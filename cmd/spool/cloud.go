@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/enes-alatas/spool/internal/egress"
+	"github.com/enes-alatas/spool/internal/httpapi"
 	"github.com/enes-alatas/spool/internal/runtime/cloud"
 	"github.com/enes-alatas/spool/internal/store"
 )
@@ -39,8 +40,8 @@ func newCloudRuntime(settings store.SettingsStore, dataDir, apiBase string) *clo
 			},
 		},
 		Dir: filepath.Join(dataDir, "cloud"),
-		AllowedHosts: func(ctx context.Context) ([]string, error) {
-			return cloudAllowedHosts(ctx, settings)
+		EgressEntries: func(ctx context.Context) ([]string, error) {
+			return cloudEgressEntries(ctx, settings)
 		},
 	}
 }
@@ -88,12 +89,11 @@ func cloudAddress(ctx context.Context, settings store.SettingsStore) (string, er
 	return strings.TrimSuffix(address, "/"), nil
 }
 
-// cloudAllowedHosts is the network allowlist of every cloud environment:
-// the hub's egress allowlist, built-in and the operator's, and the public
-// address's host. An entry that doesn't translate to a cloud environment's
-// list as it stands is left off, never widened: one with a port of its
-// own, or a leading dot, until a domain rule's form there is pinned.
-func cloudAllowedHosts(ctx context.Context, settings store.SettingsStore) ([]string, error) {
+// cloudEgressEntries are the egress allowlist entries every cloud
+// environment is held to: the hub's egress allowlist, built-in and the
+// operator's, and the public address's host. The runtime translates them,
+// leaving off what has no form in a cloud environment (cloud.Allowlist).
+func cloudEgressEntries(ctx context.Context, settings store.SettingsStore) ([]string, error) {
 	entries := egress.DefaultHosts()
 	raw, err := settings.Get(ctx, store.SettingEgressHosts)
 	switch {
@@ -114,14 +114,26 @@ func cloudAllowedHosts(ctx context.Context, settings store.SettingsStore) ([]str
 	if parsed, err := url.Parse(address); err == nil && parsed.Hostname() != "" {
 		entries = append(entries, parsed.Hostname())
 	}
-	var hosts []string
-	seen := map[string]bool{}
-	for _, entry := range entries {
-		if egress.HasPort(entry) || strings.HasPrefix(entry, ".") || seen[entry] {
-			continue
-		}
-		seen[entry] = true
-		hosts = append(hosts, entry)
+	return entries, nil
+}
+
+// cloudEnvironments is the cloud runtime as the egress routes drive it.
+// httpapi may not import a runtime adapter (archtest), so it names an
+// interface of its own, and this fits the runtime to it.
+type cloudEnvironments struct{ runtime *cloud.Runtime }
+
+func (environments cloudEnvironments) SyncEnvironments(ctx context.Context) error {
+	return environments.runtime.Sync(ctx)
+}
+
+func (environments cloudEnvironments) EnvironmentSyncs(ctx context.Context) ([]httpapi.CloudEnvironmentSync, []string, error) {
+	syncs, notApplied, err := environments.runtime.Syncs(ctx)
+	if err != nil {
+		return nil, nil, err
 	}
-	return hosts, nil
+	var converted []httpapi.CloudEnvironmentSync
+	for _, sync := range syncs {
+		converted = append(converted, httpapi.CloudEnvironmentSync(sync))
+	}
+	return converted, notApplied, nil
 }

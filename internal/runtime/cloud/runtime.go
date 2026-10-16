@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/enes-alatas/spool/internal/claude"
 	"github.com/enes-alatas/spool/internal/runtime"
@@ -34,15 +35,21 @@ type Runtime struct {
 	// Dir holds one state file per cloud loop. Its files carry no
 	// credential.
 	Dir string
-	// AllowedHosts is the network allowlist each environment's sessions
-	// are held to: the hub's own egress allowlist, as far as it translates,
-	// and the host the loop reaches the hub at. Read at every wake, so an
-	// edit reaches each environment by the loop's next one.
-	AllowedHosts func(ctx context.Context) ([]string, error)
+	// EgressEntries are the hub's egress allowlist entries every
+	// environment's sessions are held to: the built-in list, the
+	// operator's extra hosts and the host the loop reaches the hub at, as
+	// Allowlist translates them. Read at every wake and every Sync, so an
+	// edit reaches each environment at once, or by the loop's next wake.
+	EgressEntries func(ctx context.Context) ([]string, error)
 	// Bounds are a turn's read-back bounds; zero fields are the defaults.
 	Bounds Bounds
 
 	mu sync.Mutex // guards every state file
+	// writing is held from reading the allowlist through an environment's
+	// write and its record, in Ensure and Sync: a wake that read the list
+	// before an edit would otherwise write it back over what the edit's Sync
+	// just wrote, and record it as written.
+	writing sync.Mutex
 }
 
 var _ runtime.Runtime = (*Runtime)(nil)
@@ -60,6 +67,14 @@ type state struct {
 	ClaudeSession string `json:"claude_session,omitempty"`
 	// AfterID is the newest event read of the session.
 	AfterID string `json:"after_id,omitempty"`
+	// LoopName and HubURL are what the environment is written from, kept
+	// so Sync can write it again with no wake of the loop.
+	LoopName string `json:"loop_name,omitempty"`
+	HubURL   string `json:"hub_url,omitempty"`
+	// SyncError is why the environment's last write failed, "" once one
+	// lands, and SyncedAt when one last did, in Unix milliseconds.
+	SyncError string `json:"sync_error,omitempty"`
+	SyncedAt  int64  `json:"synced_at,omitempty"`
 }
 
 func (cloud *Runtime) path(loopID string) string {
@@ -172,20 +187,27 @@ func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
 }
 
-func (cloud *Runtime) environmentFor(ctx context.Context, spec runtime.Spec, hub hubEndpoint) (EnvironmentSpec, error) {
-	var hosts []string
-	if cloud.AllowedHosts != nil {
-		var err error
-		if hosts, err = cloud.AllowedHosts(ctx); err != nil {
-			return EnvironmentSpec{}, fmt.Errorf("cloud: reading the egress allowlist: %w", err)
-		}
+// allowedHosts reads the hub's egress allowlist and translates it for a
+// cloud environment, with the entries it leaves off.
+func (cloud *Runtime) allowedHosts(ctx context.Context) (hosts, notApplied []string, err error) {
+	if cloud.EgressEntries == nil {
+		return nil, nil, nil
 	}
+	entries, err := cloud.EgressEntries(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cloud: reading the egress allowlist: %w", err)
+	}
+	hosts, notApplied = Allowlist(entries)
+	return hosts, notApplied, nil
+}
+
+func environmentFor(loopName, hubURL string, hosts []string) EnvironmentSpec {
 	return EnvironmentSpec{
-		Name:         "spool: " + spec.LoopName,
-		Description:  "The Spool loop " + spec.LoopName + "; kept by its hub.",
-		InitScript:   setupScript(hub.url),
+		Name:         "spool: " + loopName,
+		Description:  "The Spool loop " + loopName + "; kept by its hub.",
+		InitScript:   setupScript(hubURL),
 		AllowedHosts: hosts,
-	}, nil
+	}
 }
 
 func environmentHash(spec EnvironmentSpec) string {
@@ -202,29 +224,148 @@ func (cloud *Runtime) Ensure(ctx context.Context, spec runtime.Spec) error {
 	if err != nil {
 		return err
 	}
-	environment, err := cloud.environmentFor(ctx, spec, hub)
+	cloud.writing.Lock()
+	defer cloud.writing.Unlock()
+	hosts, _, err := cloud.allowedHosts(ctx)
 	if err != nil {
 		return err
 	}
+	environment := environmentFor(spec.LoopName, hub.url, hosts)
 	current, err := cloud.load(spec.LoopID)
 	if err != nil {
 		return err
 	}
-	hash := environmentHash(environment)
-	switch {
-	case current.EnvironmentID == "":
+	if current.EnvironmentID == "" {
 		id, err := cloud.Client.CreateEnvironment(ctx, environment)
 		if err != nil {
 			return err
 		}
-		return cloud.update(spec.LoopID, func(s *state) { s.EnvironmentID, s.EnvironmentHash = id, hash })
-	case current.EnvironmentHash != hash:
-		if err := cloud.Client.UpdateEnvironment(ctx, current.EnvironmentID, environment); err != nil {
-			return err
-		}
-		return cloud.update(spec.LoopID, func(s *state) { s.EnvironmentHash = hash })
+		return cloud.update(spec.LoopID, func(s *state) {
+			s.EnvironmentID, s.EnvironmentHash = id, environmentHash(environment)
+			s.LoopName, s.HubURL = spec.LoopName, hub.url
+			s.SyncError, s.SyncedAt = "", time.Now().UnixMilli()
+		})
 	}
-	return nil
+	return cloud.write(ctx, spec.LoopID, current, spec.LoopName, hub.url, environment)
+}
+
+// write writes the loop's existing environment again when what it would be
+// written with differs from what it last was, and records how that went.
+// It also records what the environment is written from, so a state from
+// before Sync existed gains it at the loop's next wake.
+func (cloud *Runtime) write(ctx context.Context, loopID string, current state, loopName, hubURL string, environment EnvironmentSpec) error {
+	hash := environmentHash(environment)
+	if current.EnvironmentHash == hash {
+		if current.LoopName == loopName && current.HubURL == hubURL {
+			return nil
+		}
+		return cloud.update(loopID, func(s *state) { s.LoopName, s.HubURL = loopName, hubURL })
+	}
+	written := cloud.Client.UpdateEnvironment(ctx, current.EnvironmentID, environment)
+	recorded := cloud.update(loopID, func(s *state) {
+		s.LoopName, s.HubURL = loopName, hubURL
+		if written != nil {
+			s.SyncError = written.Error()
+			return
+		}
+		s.EnvironmentHash, s.SyncError, s.SyncedAt = hash, "", time.Now().UnixMilli()
+	})
+	return errors.Join(written, recorded)
+}
+
+// Sync writes every cloud environment again whose allowlist has changed,
+// with no wake of its loop: the hub calls it when the operator edits the
+// egress allowlist (ADR-0056). Each environment's outcome is recorded for
+// Syncs, and the error names each loop whose write failed. An environment
+// whose state predates Sync, with no hub address recorded, is written at
+// its loop's next wake instead.
+func (cloud *Runtime) Sync(ctx context.Context) error {
+	cloud.writing.Lock()
+	defer cloud.writing.Unlock()
+	hosts, _, err := cloud.allowedHosts(ctx)
+	if err != nil {
+		return err
+	}
+	ids, err := cloud.loopIDs()
+	if err != nil {
+		return err
+	}
+	var failed []error
+	for _, id := range ids {
+		current, err := cloud.load(id)
+		if err != nil {
+			failed = append(failed, err)
+			continue
+		}
+		if current.EnvironmentID == "" || current.HubURL == "" {
+			continue
+		}
+		environment := environmentFor(current.LoopName, current.HubURL, hosts)
+		if err := cloud.write(ctx, id, current, current.LoopName, current.HubURL, environment); err != nil {
+			failed = append(failed, fmt.Errorf("cloud: the environment of loop %s: %w", id, err))
+		}
+	}
+	return errors.Join(failed...)
+}
+
+// EnvironmentSync is one cloud environment's allowlist, as Syncs reports it.
+type EnvironmentSync struct {
+	LoopID string
+	// InSync is whether the environment was last written with the
+	// allowlist as it stands.
+	InSync bool
+	// Error is why its last write failed, while it isn't in sync.
+	Error string
+	// SyncedAt is when a write last landed, in Unix milliseconds.
+	SyncedAt int64
+}
+
+// Syncs reports every cloud environment's sync state, in loop id order,
+// and the allowlist entries no cloud environment carries.
+func (cloud *Runtime) Syncs(ctx context.Context) (syncs []EnvironmentSync, notApplied []string, err error) {
+	hosts, notApplied, err := cloud.allowedHosts(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	ids, err := cloud.loopIDs()
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, id := range ids {
+		current, err := cloud.load(id)
+		if err != nil {
+			return nil, nil, err
+		}
+		if current.EnvironmentID == "" {
+			continue
+		}
+		sync := EnvironmentSync{LoopID: id, SyncedAt: current.SyncedAt}
+		sync.InSync = current.HubURL != "" &&
+			current.EnvironmentHash == environmentHash(environmentFor(current.LoopName, current.HubURL, hosts))
+		if !sync.InSync {
+			sync.Error = current.SyncError
+		}
+		syncs = append(syncs, sync)
+	}
+	return syncs, notApplied, nil
+}
+
+// loopIDs lists the loops the runtime keeps a state file for, in order.
+func (cloud *Runtime) loopIDs() ([]string, error) {
+	entries, err := os.ReadDir(cloud.Dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for _, entry := range entries {
+		if id, ok := strings.CutSuffix(entry.Name(), ".json"); ok && !entry.IsDir() {
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
 }
 
 // Start hands back the loop's session as a Proc. A fresh hub session gets

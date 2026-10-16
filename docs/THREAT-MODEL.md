@@ -253,9 +253,18 @@ in, and reads the turn's events back (ADR-0056).
   (or plain HTTP on loopback) wakes no cloud loop and seeds no
   allowlist.
 - **The allowlist is the hub's own,** never Anthropic's Trusted
-  defaults: the egress allowlist plus the hub's public host. An entry
-  that doesn't translate, one with a port of its own or a leading dot, is
-  left off, never widened.
+  defaults: the egress allowlist plus the hub's public host. A domain
+  rule, `.example.com`, is written as `*.example.com` and `example.com`,
+  which is what it allows at the wall. An entry with a port of its own
+  has no form there, so it is left off, never widened, and Settings marks
+  it not applied to cloud loops. A `*` would be a wildcard there and a
+  name nothing has at the wall, so the hub refuses it in a host, and one
+  stored before is left off the same way.
+- **An allowlist edit reaches every cloud environment at once,** with no
+  wake. Settings names any environment whose write failed, and the
+  loop's next wake or the next edit retries it. The reason quotes the
+  cloud's answer, unredacted, so only an admin reads it; a member sees
+  in sync or not.
 - **What comes back is untrusted** and read under bounds: 4 MiB a page,
   with one event over it skipped and named, and per turn 20 000 events
   and 64 MiB. An answer or event the hub can't read, a refusal other than

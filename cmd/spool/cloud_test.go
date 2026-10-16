@@ -39,33 +39,22 @@ func TestCloudAPIBase(t *testing.T) {
 	}
 }
 
-// A cloud environment's allowlist is the hub's egress allowlist and the
-// public host, less every entry that would not translate: never wider.
-func TestCloudAllowedHosts(t *testing.T) {
+// A cloud environment is held to the hub's egress allowlist, built-in and
+// stored, and the public host. The runtime translates them (cloud.Allowlist's
+// tests say how), so every entry is handed on as the hub reads it.
+func TestCloudEgressEntries(t *testing.T) {
 	settings := mapSettings{values: map[string]string{
 		store.SettingEgressHosts:  `{"hosts":["pypi.org","registry.example.test:8443",".example.test","github.com"]}`,
 		store.SettingCloudAddress: "https://hub.example.test/",
 	}}
-	hosts, err := cloudAllowedHosts(context.Background(), settings)
+	entries, err := cloudEgressEntries(context.Background(), settings)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"api.anthropic.com", "pypi.org", "hub.example.test"} {
-		if !slices.Contains(hosts, want) {
-			t.Errorf("%s is missing from %v", want, hosts)
+	for _, want := range []string{"api.anthropic.com", ".githubusercontent.com", "pypi.org", "registry.example.test:8443", ".example.test", "hub.example.test"} {
+		if !slices.Contains(entries, want) {
+			t.Errorf("%s is missing from %v", want, entries)
 		}
-	}
-	for _, refused := range []string{"registry.example.test:8443", ".example.test", ".githubusercontent.com"} {
-		if slices.Contains(hosts, refused) {
-			t.Errorf("%s doesn't translate and was kept", refused)
-		}
-	}
-	seen := map[string]bool{}
-	for _, host := range hosts {
-		if seen[host] {
-			t.Errorf("%s is listed twice", host)
-		}
-		seen[host] = true
 	}
 }
 
@@ -84,8 +73,8 @@ func TestCloudAddressFailsClosed(t *testing.T) {
 		if (err == nil) != ok || (!ok && address != "") {
 			t.Errorf("cloudAddress(%q) = %q, %v; want ok %v", stored, address, err, ok)
 		}
-		if _, err := cloudAllowedHosts(context.Background(), settings); (err == nil) != ok {
-			t.Errorf("cloudAllowedHosts with %q: %v, want ok %v", stored, err, ok)
+		if _, err := cloudEgressEntries(context.Background(), settings); (err == nil) != ok {
+			t.Errorf("cloudEgressEntries with %q: %v, want ok %v", stored, err, ok)
 		}
 	}
 	if address, err := cloudAddress(context.Background(), mapSettings{}); address != "" || err != nil {
