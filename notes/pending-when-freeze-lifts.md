@@ -719,3 +719,6 @@ Elliot: three private advisories (GHSA-q5hr medium first, GHSA-ggw3, GHSA-4c3c) 
 
 ## 2026-10-16 08:35 UTC
 Enes posted a merge-queue failure (run 38871884271, main e424663, carrying Terra's #879 advisory fix): slack_outbound_test.go:179 TestSlackLoopIgnoresTheTelegramOwner, 30s wait, only the rotation turn completed. Unrelated flake → filed #880 (CI reliability). Told Enes/Terra in the group; Terra re-runs. Fleet runtime in the log reads "Spool 8a60531" for the itest loop, not the live fleet.
+
+## 2026-10-16 08:40 UTC
+Enes asked why every loop saw his group reply to Quinn. Cause: the pasted log (Terra's rendered itest prompt) contains literal "@all", "@terra", "@mention"; the mention parser fanned each chunk out. Per ADR-0026 recipients = mentions + reply author, so not a routing bug. Offered a narrow fix (ignore mentions inside Telegram code/pre entities) on his "file"; otherwise lesson: paste logs as code blocks or files.
