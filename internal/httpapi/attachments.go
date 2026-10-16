@@ -148,21 +148,31 @@ func (server *Server) handleAttachment(w http.ResponseWriter, r *http.Request) {
 		server.jsonErr(w, 500, "%v", err)
 		return
 	}
+	who := callerOf(r)
+	// A file no message has claimed yet is its uploader's, and may be
+	// meant for a private conversation: anyone else but an admin is
+	// answered as if it never existed.
+	if row.MessageID == 0 && !seesEveryUpload(who) && (row.UploadedBy == "" || row.UploadedBy != uploaderOf(who)) {
+		server.jsonErrCode(w, 404, codeAttachmentNotFound, "no attachment %d", id)
+		return
+	}
 	// A file sent in a private conversation is as private as the
 	// conversation, and answers as one that never existed to a caller who
-	// does not read it, kept or not.
-	if row.MessageID != 0 && !seesPrivate(callerOf(r)) {
+	// does not read it, kept or not. One whose message is gone, deleted or
+	// no longer kept, has no conversation left to say who reads it, so
+	// only an admin does.
+	if row.MessageID != 0 && !seesPrivate(who) {
 		msg, msgErr := server.Store.Messages().Get(r.Context(), row.MessageID)
 		if msgErr != nil && !errors.Is(msgErr, store.ErrNotFound) {
 			server.jsonErr(w, 500, "%v", msgErr)
 			return
 		}
-		reader, readerErr := server.privateReaderOf(r.Context(), callerOf(r))
+		reader, readerErr := server.privateReaderOf(r.Context(), who)
 		if readerErr != nil {
 			server.jsonErr(w, 500, "%v", readerErr)
 			return
 		}
-		if msg != nil && !reader.reads(msg) {
+		if msg == nil || msg.DeletedAt != 0 || !reader.reads(msg) {
 			server.jsonErrCode(w, 404, codeAttachmentNotFound, "no attachment %d", id)
 			return
 		}
@@ -218,7 +228,7 @@ func (server *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		server.jsonErrCode(w, 400, codeAttachmentEmpty, "the file is empty")
 		return
 	}
-	kept, err := server.Router.KeepUpload(r.Context(), body, name)
+	kept, err := server.Router.KeepUpload(r.Context(), body, name, uploaderOf(callerOf(r)))
 	var tooLarge *http.MaxBytesError
 	switch {
 	case errors.Is(err, attach.ErrTooLarge), errors.As(err, &tooLarge):

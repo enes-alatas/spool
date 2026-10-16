@@ -364,3 +364,31 @@ func streamable(who *caller, item bus.Item, reads func(*store.Message) bool) boo
 	}
 	return true
 }
+
+// seesEveryUpload reports whether who may read and send a file another
+// user uploaded and has not sent yet: whoever reads every private
+// conversation, since an upload may be meant for one. Anyone else reads
+// only their own.
+func seesEveryUpload(who *caller) bool {
+	return seesPrivate(who)
+}
+
+// uploadSenderOf is who sends a message's upload when who posts it.
+func uploadSenderOf(who *caller) route.UploadSender {
+	if seesEveryUpload(who) {
+		return route.UploadSender{Any: true}
+	}
+	if who == nil || who.user == nil {
+		return route.UploadSender{}
+	}
+	return route.UploadSender{UserID: who.user.ID}
+}
+
+// uploaderOf is the user id an upload by who records, "" for the operator
+// token.
+func uploaderOf(who *caller) string {
+	if who == nil || who.user == nil {
+		return ""
+	}
+	return who.user.ID
+}

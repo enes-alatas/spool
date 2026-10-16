@@ -4,6 +4,7 @@ package itest
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -111,6 +112,22 @@ func TestASlackEditAndDeletionReachTheirLoopsAsCorrections(t *testing.T) {
 		t.Fatalf("the hub keeps %v; want the shared file", kept)
 	}
 
+	var group []struct {
+		ID          int64            `json:"id"`
+		Attachments []attachmentView `json:"attachments"`
+	}
+	srv.mustJSON("GET", "/api/group", nil, &group)
+	var sharedFile int64
+	for _, message := range group {
+		if message.ID == original.ID && len(message.Attachments) == 1 {
+			sharedFile = message.Attachments[0].ID
+		}
+	}
+	if sharedFile == 0 {
+		t.Fatalf("the group reads %s; want the original with its file", dump(group))
+	}
+	member := srv.signedInAs("mia", "member")
+
 	changed := func(eventTS string, message map[string]any) map[string]any {
 		return map[string]any{"type": "message", "subtype": "message_changed", "channel_type": "channel",
 			"channel": slackChannel, "ts": eventTS, "hidden": true, "message": message,
@@ -166,6 +183,15 @@ func TestASlackEditAndDeletionReachTheirLoopsAsCorrections(t *testing.T) {
 	}
 	if kept := keptFiles(t, srv); len(kept) != 0 {
 		t.Fatalf("the hub still keeps %v; want the deleted message's file gone", kept)
+	}
+	// A deleted message has no conversation left to say who reads its file,
+	// so only an admin learns it was there.
+	path := fmt.Sprintf("/api/attachments/%d", sharedFile)
+	if resp, _ := srv.asCookie("GET", path, member, nil); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("a member's GET of the deleted message's file = %d; want 404", resp.StatusCode)
+	}
+	if resp, _ := srv.do("GET", path, nil); resp.StatusCode != http.StatusGone {
+		t.Errorf("the token's GET of the deleted message's file = %d; want 410", resp.StatusCode)
 	}
 }
 
