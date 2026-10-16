@@ -268,8 +268,11 @@ the CLI (ADR-0018).
   extra hosts, which an admin edits. Entries without a port allow 80 and
   443 only, and IP literals are refused.
 - **The hub is reachable** on the loop listener's port and no other.
-- **Outside names don't resolve** on the internal network. Denials are
-  logged by host, never by URL.
+- **Outside names don't resolve** on the internal network, on Docker
+  Engine 26.0.0 or later, or a 25.x from 25.0.5, or a 23.x from 23.0.11.
+  Other engines forward them to the host's resolvers, and no 24.x is
+  fixed (CVE-2024-29018, #899). Denials are logged by
+  host, never by URL.
 
 **Doesn't hold:**
 - **The proxy matches names, not content.** It can't tell a fetch from an
