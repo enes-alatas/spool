@@ -201,8 +201,7 @@ ADR-0043).
   loop can learn which references exist, though never where they are.
 - **The attachment check reads a file's bytes as they are.** It doesn't
   open a compressed file or an archive, and it doesn't read UTF-16 text,
-  so a known secret inside one goes out. Base64 wrapped across lines, the
-  default output of `base64`, isn't caught yet either (#912).
+  so a known secret inside one goes out.
 - **Keeping private content out of a group** is a prompt rule, not a check
   (ADR-0026).
 

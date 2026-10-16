@@ -2,6 +2,7 @@ package route
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -9,8 +10,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/enes-alatas/spool/internal/attach"
+	"github.com/enes-alatas/spool/internal/redact"
 	"github.com/enes-alatas/spool/internal/runtime"
 	"github.com/enes-alatas/spool/internal/store"
 )
@@ -228,5 +231,46 @@ func TestAnUnsentUploadExpiresAndASentOneStays(t *testing.T) {
 	}
 	if _, err := os.Stat(files.Path(sent.Path)); err != nil || len(table.rows) != 2 || sent.RemovedAt != 0 {
 		t.Errorf("the sent upload went too: %v, %+v", err, sent)
+	}
+}
+
+// A known secret a line break splits is still found: base64 wrapped at 76
+// columns, as base64 writes it, or a hex dump spaced by byte. The real
+// redactor matches the encodings; this checks what the router gives it
+// (#912).
+func TestASentFileWithASecretSplitAcrossLinesIsRefused(t *testing.T) {
+	router, _, _ := testRouter(t)
+	// synthetic, long enough that its base64 crosses a 76-column break
+	secret := "sk-ant-oat01-" + strings.Repeat("fixture", 13)
+	redactor := redact.New(redact.Fixed{{Name: "claude_token", Value: secret}}, time.Hour)
+	if err := redactor.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	router.redactName = redactor.Text
+	encoded := base64.StdEncoding.EncodeToString([]byte("CLAUDE_CODE_OAUTH_TOKEN=" + secret + "\n"))
+	var wrapped strings.Builder
+	for len(encoded) > 76 {
+		wrapped.WriteString(encoded[:76] + "\n")
+		encoded = encoded[76:]
+	}
+	wrapped.WriteString(encoded + "\n")
+	var spaced strings.Builder
+	for _, b := range []byte(secret) {
+		fmt.Fprintf(&spaced, "%02x ", b)
+	}
+	router.SetWorkstations(workstation{
+		"env.b64":   wrapped.String(),
+		"dump.hex":  spaced.String(),
+		"notes.txt": "a line\nand another, with no secret in either\n",
+	})
+	bare := &store.Loop{ID: "l1", WorkspacePath: "/w"}
+	for _, path := range []string{"env.b64", "dump.hex"} {
+		kept, serr, err := router.keepSent(context.Background(), SendRequest{From: bare, Destination: store.ConversationOwnerDM, Attach: path})
+		if err != nil || serr == nil || serr.Code != ErrSecretInAttachment || kept != nil {
+			t.Errorf("%s: kept %v, refusal %v, err %v; want it refused for its secret", path, kept, serr, err)
+		}
+	}
+	if kept, serr, err := router.keepSent(context.Background(), SendRequest{From: bare, Destination: store.ConversationOwnerDM, Attach: "notes.txt"}); err != nil || serr != nil || kept == nil {
+		t.Errorf("a file with no secret across its lines: kept %v, refusal %v, err %v", kept, serr, err)
 	}
 }
