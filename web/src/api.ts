@@ -3,7 +3,7 @@
 // A problem the hub's health check found with a loop (ADR-0053), open
 // since since (Unix ms) until the signal clears or an admin acknowledges it.
 export interface Problem {
-  symptom: 'workstation_down' | 'turn_errors' | string
+  symptom: 'workstation_down' | 'turn_errors' | 'cloud_address' | string
   since: number
 }
 export type Health = 'ok' | 'warning' | 'failing'
@@ -18,8 +18,9 @@ export interface LoopView {
   doing: string
   doing_at: number
   // The open problems the hub's health check found with the loop, oldest
-  // first, and health summing them up: 'failing' while workstation_down is
-  // open, 'warning' while only turn_errors is, 'ok' with none (ADR-0053).
+  // first, and health summing them up: 'failing' while workstation_down or
+  // cloud_address is open, 'warning' while only turn_errors is, 'ok' with
+  // none (ADR-0053).
   problems: Problem[]
   health: Health
   model: string
