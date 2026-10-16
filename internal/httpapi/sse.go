@@ -19,14 +19,17 @@ func serveSSE(w http.ResponseWriter, r *http.Request, events *bus.Bus, filter fu
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
 		return
 	}
+	// Subscribe before the headers go out: a client that sees the stream
+	// open may act at once, and the item its action publishes must reach
+	// it (#902).
+	items, cancel := events.Subscribe(filter)
+	defer cancel()
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
-
-	items, cancel := events.Subscribe(filter)
-	defer cancel()
 
 	ping := time.NewTicker(25 * time.Second)
 	defer ping.Stop()
