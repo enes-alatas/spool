@@ -2060,9 +2060,11 @@ func (actor *Actor) handleShutdown() {
 const noClaudeTokenDetail = "Claude token not configured. Please add a setup-token in Settings"
 
 // needsClaudeToken reports whether a runtime is a contained workstation that
-// must carry the operator's setup-token. Bare loops use the host login.
+// must carry the operator's setup-token. Bare loops use the host login, and
+// a cloud session the account's sign-in: the setup-token never leaves the
+// hub's machine for Anthropic's (ADR-0056).
 func needsClaudeToken(loopRuntime runtime.Runtime) bool {
-	return loopRuntime.Kind() != store.RuntimeBare
+	return loopRuntime.Kind() == store.RuntimeDocker
 }
 
 // buildExecEnv assembles a wake's env: the system-injected vars first, then

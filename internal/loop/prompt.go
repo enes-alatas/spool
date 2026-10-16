@@ -464,6 +464,8 @@ func SystemPrompt(loopRecord *store.Loop, cat Catalog, rules []*store.FleetRule,
 	switch {
 	case loopRecord.Runtime == store.RuntimeDocker:
 		fmt.Fprintf(&text, "You work in %s inside your own persistent workstation: your home directory,\nanything you install, and processes you leave running survive across wakes.\n\n", loopRecord.WorkspacePath)
+	case loopRecord.Runtime == store.RuntimeCloud:
+		text.WriteString("You work in a Claude Code cloud session on Anthropic's machines: your home\ndirectory and its files survive across wakes, but a process you leave running\ndoes not outlive the machine, which idles between your turns.\n\n")
 	case loopRecord.WorkspaceMode == store.WorkspaceWorktree:
 		fmt.Fprintf(&text, "You work in %s, an isolated git worktree on branch %s.\nCommit your work to this branch; never switch branches.\n\n", loopRecord.WorkspacePath, loopRecord.Branch)
 	case loopRecord.WorkspaceMode == store.WorkspaceDir:
@@ -870,6 +872,7 @@ var notKeptReasons = map[string]string{
 	store.NotKeptFailed:       "the surface would not hand it over",
 	store.NotKeptMissingScope: "the app may not read files; the operator has to add files:read and reinstall it",
 	NotKeptRemoved:            "no longer kept",
+	NotKeptCloud:              "a cloud loop can't be handed files yet",
 }
 
 // attachmentLine is how an envelope shows one attachment: kind, name, what

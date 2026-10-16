@@ -45,6 +45,13 @@ func TestSystemPromptWorkspaceSection(t *testing.T) {
 			want:     "isolated git worktree on branch loop/g",
 			dontWant: "workstation",
 		},
+		{
+			name: "cloud session",
+			loop: store.Loop{Name: "c", Mission: "m", Runtime: store.RuntimeCloud,
+				WorkspaceMode: store.WorkspaceNone},
+			want:     "Claude Code cloud session on Anthropic's machines",
+			dontWant: "workstation",
+		},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {

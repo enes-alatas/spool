@@ -167,6 +167,7 @@ func TestASentFileIsRefusedForEachReasonTheLoopCanCorrect(t *testing.T) {
 		"../x":       runtime.ErrNotOwned,
 		"dir":        runtime.ErrNotAFile,
 		"huge.bin":   runtime.ErrFileTooLarge,
+		"cloud.txt":  runtime.ErrUnsupported,
 		"broken.txt": errors.New("docker exec: container is not running"),
 	})
 	bare := &store.Loop{ID: "l1", WorkspacePath: "/w"}
@@ -179,6 +180,7 @@ func TestASentFileIsRefusedForEachReasonTheLoopCanCorrect(t *testing.T) {
 		"nope.txt":  ErrAttachmentNotFound,
 		"dir":       ErrAttachmentNotFound,
 		"huge.bin":  ErrAttachmentTooLarge,
+		"cloud.txt": ErrAttachmentUnavailable,
 		"creds.txt": ErrSecretInAttachment,
 	} {
 		kept, serr, err := send(bare, store.ConversationOwnerDM, path)
