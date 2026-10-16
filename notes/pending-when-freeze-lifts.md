@@ -713,3 +713,6 @@ Quiet. #874 (#862) still with Quinn. Nothing new. Waiting on Enes: fleet upgrade
 
 ## 2026-10-16 07:05 UTC
 #874 merged (#862 cloud listener). Terra on #863: PR #876 (sessions API client, first commit of the runtime) with Quinn. Elliot filed #875 (seam 2 review: operator listener, sessions, roles) → L6, parent #777. Iris on #870. Enes: fleet upgrade still unreported.
+
+## 2026-10-16 07:40 UTC
+Elliot: three private advisories (GHSA-q5hr medium first, GHSA-ggw3, GHSA-4c3c) need Terra fixes; details only in the advisories, neutral PR titles. Plus #877 (public hardening, low) → L6, parent #777. Terra order: #876 → three advisory fixes → #877 → #863 rest → #864 → #866 → #855 → #766 → #871 → #830 → #630. v0.6.0 waits for the advisory fixes (tell Enes when he reports the upgrade).
