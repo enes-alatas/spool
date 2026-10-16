@@ -15,9 +15,10 @@ import (
 )
 
 // The hub's health check (ADR-0053, #764). Each actor watches its own loop
-// for two symptoms and keeps at most one open problem per symptom in the
-// store. Opening and clearing one is told to the owner once each, as a hub
-// notice, and shows on the loop record; nothing is said while it stays open.
+// for two symptoms, a cloud loop for a third (ADR-0056), and keeps at most
+// one open problem per symptom in the store. Opening and clearing one is
+// told to the owner once each, as a hub notice, and shows on the loop
+// record; nothing is said while it stays open.
 
 // DefaultHealthErrorTurns is how many errored turns in a row open a
 // turn_errors problem while the setting is unset.
@@ -213,13 +214,13 @@ const (
 	HealthFailing = "failing"
 )
 
-// Health sums up open problems: failing while the workstation is down,
-// since the loop is not running at all, warning for errored turns, and ok
-// with none.
+// Health sums up open problems: failing while the workstation is down or a
+// cloud loop's address fails its check, since the loop is not running at
+// all, warning for errored turns, and ok with none.
 func Health(problems []store.Problem) string {
 	health := HealthOK
 	for _, problem := range problems {
-		if problem.Symptom == store.SymptomWorkstationDown {
+		if problem.Symptom == store.SymptomWorkstationDown || problem.Symptom == store.SymptomCloudAddress {
 			return HealthFailing
 		}
 		health = HealthWarning

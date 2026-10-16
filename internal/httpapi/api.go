@@ -118,6 +118,10 @@ type Server struct {
 	// which no cloud session can reach. Only tests set it
 	// (--cloud-loopback-address).
 	CloudLoopbackAddress bool
+	// CloudGate is told each check of the public address, which wakes or
+	// holds the cloud loops, and asks for one before a cloud loop wakes
+	// (ADR-0056). Nil records nowhere.
+	CloudGate *loop.CloudGate
 	// EgressFlag is --egress-allow as this hub was started with it, which
 	// seeded the stored list on the first start (#542); nil when the hub
 	// was started without the flag.
@@ -1158,9 +1162,9 @@ func (server *Server) handleAcknowledge(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	symptom := r.PathValue("symptom")
-	if symptom != store.SymptomWorkstationDown && symptom != store.SymptomTurnErrors {
-		server.jsonErr(w, http.StatusBadRequest, "unknown symptom %q: want %s or %s",
-			symptom, store.SymptomWorkstationDown, store.SymptomTurnErrors)
+	if symptom != store.SymptomWorkstationDown && symptom != store.SymptomTurnErrors && symptom != store.SymptomCloudAddress {
+		server.jsonErr(w, http.StatusBadRequest, "unknown symptom %q: want %s, %s or %s",
+			symptom, store.SymptomWorkstationDown, store.SymptomTurnErrors, store.SymptomCloudAddress)
 		return
 	}
 	actor, ok := server.Manager.Get(loopRecord.ID)

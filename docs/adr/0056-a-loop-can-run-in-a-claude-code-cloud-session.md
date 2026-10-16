@@ -1,6 +1,6 @@
 # ADR-0056: A loop can run in a Claude Code cloud session, beside contained loops
 
-Date: 2026-10-15 · Status: accepted (operator decision of 2026-10-15 on #859, accepting it as written; operator direction of 2026-10-15 on #758: build it, in a mixed hub, on the undocumented read-back if that is noted, without OpenTelemetry; and of 2026-10-15 on #859: the egress allowlist is the hub's own) · Amended: 2026-10-15 (items 2, 3, 5, 6, 7 and 9: the API check, #861; operator decision of 2026-10-15 on #872: cloud turns report their cost); 2026-10-16 (item 4: the page switches the listener on, #864) · Relates to: ADR-0017, ADR-0018, ADR-0022, ADR-0026, ADR-0028, ADR-0030, ADR-0037, ADR-0039, ADR-0044, ADR-0046, ADR-0047, ADR-0053
+Date: 2026-10-15 · Status: accepted (operator decision of 2026-10-15 on #859, accepting it as written; operator direction of 2026-10-15 on #758: build it, in a mixed hub, on the undocumented read-back if that is noted, without OpenTelemetry; and of 2026-10-15 on #859: the egress allowlist is the hub's own) · Amended: 2026-10-15 (items 2, 3, 5, 6, 7 and 9: the API check, #861; operator decision of 2026-10-15 on #872: cloud turns report their cost); 2026-10-16 (item 4: the page switches the listener on, #864; item 6: what holds a cloud loop, and the cloud_address symptom, #864) · Relates to: ADR-0017, ADR-0018, ADR-0022, ADR-0026, ADR-0028, ADR-0030, ADR-0037, ADR-0039, ADR-0044, ADR-0046, ADR-0047, ADR-0053
 
 ## Context
 
@@ -338,6 +338,29 @@ the bar for setup: it has to be really simple.
         do (ADR-0047), until the check passes. The owner hears of it
         through the health check (ADR-0053), as a new symptom for cloud
         loops. Cloud loops fail closed.
+
+      **Amendment (2026-10-16, #864): what holds a cloud loop, and the
+      symptom's name.** "Before it wakes a cloud loop" reads as "before
+      any turn of a cloud loop", with one check serving the fleet's
+      cloud loops for a minute:
+      - a check that passed lets cloud loops take turns for one minute.
+        A turn after that waits for the address to be checked again, and
+        the hub checks it then rather than at the next scheduled check;
+      - a pass is for the address it checked. A cloud loop wakes only on
+        that address, so one changed since, from the page or past it,
+        holds cloud loops until a check passes on it;
+      - cloud loops are also held until the hub's first check passes
+        after it starts, and while no address is set;
+      - a failed check is not repeated on each held turn; the scheduled
+        check, or the page's, tries again;
+      - the symptom is `cloud_address`, opened on each cloud loop and
+        dated from the first failed check. It reads as `failing`, as
+        `workstation_down` does, since the loop is not running. A check
+        that passes clears it. Removing the address holds the loops but
+        opens and clears nothing, since no check failed;
+      - an address stored before the rule above narrowed, or written
+        past the page, that the hub now refuses fails the check without
+        a request, at a stage of its own, `refused`.
    2. **The Claude account.** The account whose plan the cloud loops
       spend. If the setup-token the hub already holds (ADR-0044) is
       accepted by the sessions API, this step is already done. Otherwise

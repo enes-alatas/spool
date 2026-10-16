@@ -382,6 +382,15 @@ func main() {
 	var router *route.Router
 	var scheduler *sched.Scheduler
 
+	// cloud loops are held until the first check of the public address
+	// passes, which RunCloudChecks makes as the hub starts
+	cloudGate := loop.NewCloudGate(func() (string, error) {
+		address, err := rdb.Settings().Get(context.Background(), store.SettingCloudAddress)
+		if errors.Is(err, store.ErrNotFound) {
+			return "", nil
+		}
+		return address, err
+	})
 	deps := loop.Deps{
 		Store:                     rdb,
 		Bus:                       pubsub,
@@ -391,6 +400,7 @@ func main() {
 		PartialMessages:           *partials,
 		Logger:                    log,
 		DataDir:                   *dataDir,
+		CloudGate:                 cloudGate,
 		RenderPrompt: func(loopRecord *store.Loop) loop.Prompt {
 			cat, rules := catalogOf(rdb, loopRecord), rulesOf(rdb)
 			return loop.Prompt{
@@ -407,6 +417,12 @@ func main() {
 					log.Warn("cloud loop not woken", "loop", loopRecord.Name, "err", err)
 				}
 				if address == "" {
+					return ""
+				}
+				// the gate held the wake until a check passed; this is the
+				// address the session gets, so it must be the one that did
+				if !cloudGate.PassedFor(address, time.Now().UnixMilli()) {
+					log.Warn("cloud loop not woken: the public address has not just passed its check", "loop", loopRecord.Name)
 					return ""
 				}
 				return address + "/mcp"
@@ -457,6 +473,7 @@ func main() {
 	deps.PlanCap = planCap
 	manager := loop.NewManager(deps)
 	planCap.OnChange(manager.CapChanged)
+	cloudGate.OnChange(manager.CloudGateChanged)
 	router = route.New(rdb, pubsub, manager, log)
 	files, err := attach.Open(filepath.Join(*dataDir, "files"))
 	if err != nil {
@@ -545,6 +562,7 @@ func main() {
 		Cloud:                cloudEnvironments{cloudRuntime},
 		CloudListener:        cloudSwitch,
 		CloudLoopbackAddress: *cloudLoopbackAddress,
+		CloudGate:            cloudGate,
 		EgressFlag:           egressFlag(allowEntries),
 		Log:                  log,
 		WebFS:                web.Dist(),

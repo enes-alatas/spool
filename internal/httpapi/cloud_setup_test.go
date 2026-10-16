@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/enes-alatas/spool/internal/loop"
 	"github.com/enes-alatas/spool/internal/store"
 	"github.com/enes-alatas/spool/internal/store/sqlite"
 )
@@ -24,7 +25,9 @@ func (fixedListener) Open(string) (string, error)        { return "", nil }
 func (fixedListener) Close() error                       { return nil }
 
 // cloudCheckServer is a hub over a fresh store whose public address is
-// address, with its cloud listener open.
+// address, with its cloud listener open. It takes a plain-HTTP loopback
+// address, as the hub does under --cloud-loopback-address: httptest serves
+// on one.
 func cloudCheckServer(t *testing.T, address string) *Server {
 	t.Helper()
 	db, err := sqlite.Open(filepath.Join(t.TempDir(), "test.db"))
@@ -35,7 +38,7 @@ func cloudCheckServer(t *testing.T, address string) *Server {
 	if err := db.Settings().Set(context.Background(), store.SettingCloudAddress, address); err != nil {
 		t.Fatal(err)
 	}
-	return &Server{Store: db, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), CloudListener: fixedListener{"127.0.0.1:8090"}}
+	return &Server{Store: db, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), CloudListener: fixedListener{"127.0.0.1:8090"}, CloudLoopbackAddress: true}
 }
 
 // checked runs the check and returns what it recorded.
@@ -110,6 +113,37 @@ func TestTheCloudCheckNamesWhereItStopped(t *testing.T) {
 			t.Fatalf("result = %+v, want the listener off, with no request made", result)
 		}
 	})
+	t.Run("an address the hub refuses", func(t *testing.T) {
+		server := cloudCheckServer(t, "http://127.0.0.1:8090")
+		server.CloudLoopbackAddress = false
+		if result := checked(t, server, "http://127.0.0.1:8090"); result.Stage != CloudStageRefused || !strings.Contains(result.Detail, "must be https") {
+			t.Fatalf("result = %+v, want it refused, with no request made", result)
+		}
+	})
+}
+
+// Each check reaches the cloud gate: a pass opens it, a failure holds it as
+// failed, and no address holds it with no failure (ADR-0056).
+func TestTheCloudGateHearsEachCheck(t *testing.T) {
+	server := cloudCheckServer(t, "")
+	public := httptest.NewServer(server.CloudHandler())
+	t.Cleanup(public.Close)
+	server.CloudGate = loop.NewCloudGate(func() (string, error) { return server.storedCloudAddress(context.Background()) })
+	server = withAddress(t, server, public.URL)
+	checked(t, server, public.URL)
+	if !server.CloudGate.Passed() {
+		t.Fatal("a check that passed left the gate unpassed")
+	}
+	server.CloudListener = fixedListener{}
+	checked(t, server, public.URL)
+	if server.CloudGate.Passed() || server.CloudGate.FailedSince() == 0 {
+		t.Fatal("a check that failed left the gate open")
+	}
+	server = withAddress(t, server, "")
+	server.CheckCloudAddress(context.Background())
+	if server.CloudGate.Passed() || server.CloudGate.FailedSince() != 0 {
+		t.Fatal("with no address the gate must hold, with no failure")
+	}
 }
 
 // withAddress stores address as server's public address.

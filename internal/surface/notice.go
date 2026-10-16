@@ -47,7 +47,8 @@ func (notice LoginNotice) Text() string {
 type ProblemNotice struct {
 	LoopID   string `json:"loop_id"`
 	LoopName string `json:"loop_name"`
-	// Symptom is the store's: "workstation_down" or "turn_errors".
+	// Symptom is the store's: "workstation_down", "turn_errors" or
+	// "cloud_address".
 	Symptom string `json:"symptom"`
 	// Opened is true when the problem opened, false when it cleared.
 	Opened bool `json:"opened"`
@@ -67,25 +68,36 @@ type ProblemNotice struct {
 func (notice ProblemNotice) Text() string {
 	since := time.UnixMilli(notice.Since).UTC().Format("15:04 UTC")
 	if notice.Opened {
-		if notice.Symptom == "workstation_down" {
+		switch notice.Symptom {
+		case "workstation_down":
 			return fmt.Sprintf("Spool: %s's workstation has been down since %s, so the loop is not running. "+
 				"The hub keeps retrying, and the loop's page in the control room says why it is down. "+
 				"You will hear once more when this clears.", notice.LoopName, since)
+		case "cloud_address":
+			return fmt.Sprintf("Spool: the hub's public address has failed its check since %s, so the cloud loop %s is not running. "+
+				"Its messages wait until the address passes. Settings → Cloud in the control room says what failed. "+
+				"You will hear once more when this clears.", since, notice.LoopName)
 		}
 		return fmt.Sprintf("Spool: %s's last %d turns all ended in an error, the first at %s. "+
 			"Its timeline in the control room shows what failed. You will hear once more when this clears.",
 			notice.LoopName, notice.Turns, since)
 	}
-	problem := "errored turns"
-	if notice.Symptom == "workstation_down" {
-		problem = "workstation being down"
-	}
 	if notice.ByOperator {
-		return fmt.Sprintf("Spool: the alert about %s's %s was cleared in the control room. "+
-			"You will hear again if it comes back.", notice.LoopName, problem)
+		problem := notice.LoopName + "'s errored turns"
+		switch notice.Symptom {
+		case "workstation_down":
+			problem = notice.LoopName + "'s workstation being down"
+		case "cloud_address":
+			problem = "the public address holding " + notice.LoopName
+		}
+		return fmt.Sprintf("Spool: the alert about %s was cleared in the control room. "+
+			"You will hear again if it comes back.", problem)
 	}
-	if notice.Symptom == "workstation_down" {
+	switch notice.Symptom {
+	case "workstation_down":
 		return fmt.Sprintf("Spool: %s's workstation is up again.", notice.LoopName)
+	case "cloud_address":
+		return fmt.Sprintf("Spool: the hub's public address passes its check again, so the cloud loop %s is running.", notice.LoopName)
 	}
 	return fmt.Sprintf("Spool: %s finished a turn without an error again.", notice.LoopName)
 }

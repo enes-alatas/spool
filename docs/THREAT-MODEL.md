@@ -323,9 +323,15 @@ in, and reads the turn's events back (ADR-0056).
   The address check can hold new turns, but not a turn already in
   flight. A named tunnel on the operator's own domain, or a Tailscale
   `*.ts.net` address, which stays the tailnet's, doesn't carry this risk.
-- **A failed check doesn't hold cloud loops yet.** Slice 4's next part
-  holds their wakes while it fails (ADR-0056 item 6). No cloud loop can
-  be created until slice 5.
+- **A cloud loop takes a turn only within a minute of a check that
+  passed on the address it uses.** A failed check, no address, an
+  address changed since its pass, and a hub that hasn't checked since it
+  started all hold cloud loops, and their messages wait in the stored
+  inbox (ADR-0056). So a hostname that changes hands gets no turn that
+  starts more than a minute after the last pass. The minute is the gap:
+  a turn that starts in it, like one already in flight, still sends its
+  token to whoever answers the name. No cloud loop can be created until
+  slice 5.
 - **The read-back is undocumented.** Anthropic may change the events
   endpoint without notice; the hub fails loudly when it does, and can't
   do more.

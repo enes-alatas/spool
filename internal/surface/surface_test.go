@@ -45,6 +45,12 @@ func TestProblemNoticeText(t *testing.T) {
 			"Spool: gardener's workstation is up again."},
 		{ProblemNotice{LoopName: "gardener", Symptom: "workstation_down", ByOperator: true},
 			"Spool: the alert about gardener's workstation being down was cleared in the control room."},
+		{ProblemNotice{LoopName: "cirrus", Symptom: "cloud_address", Opened: true, Since: since},
+			"Spool: the hub's public address has failed its check since 09:12 UTC, so the cloud loop cirrus is not running."},
+		{ProblemNotice{LoopName: "cirrus", Symptom: "cloud_address"},
+			"Spool: the hub's public address passes its check again, so the cloud loop cirrus is running."},
+		{ProblemNotice{LoopName: "cirrus", Symptom: "cloud_address", ByOperator: true},
+			"Spool: the alert about the public address holding cirrus was cleared in the control room."},
 	}
 	for _, testCase := range cases {
 		if got := testCase.notice.Text(); !strings.HasPrefix(got, testCase.want) {

@@ -179,15 +179,29 @@ func (manager *Manager) Tick(id string) bool {
 // CapChanged tells every loop that the plan cap started or stopped holding
 // (ADR-0047).
 func (manager *Manager) CapChanged() {
+	for _, actor := range manager.actors() {
+		actor.CapChanged()
+	}
+}
+
+// CloudGateChanged tells every loop that the public address was checked
+// (ADR-0056). Only cloud loops act on it.
+func (manager *Manager) CloudGateChanged() {
+	for _, actor := range manager.actors() {
+		actor.CloudGateChanged()
+	}
+}
+
+// actors is every running actor, read under the lock and told outside it,
+// since telling one blocks while its command queue is full.
+func (manager *Manager) actors() []*Actor {
 	manager.mu.RLock()
+	defer manager.mu.RUnlock()
 	actors := make([]*Actor, 0, len(manager.byID))
 	for _, actor := range manager.byID {
 		actors = append(actors, actor)
 	}
-	manager.mu.RUnlock()
-	for _, actor := range actors {
-		actor.CapChanged()
-	}
+	return actors
 }
 
 // Shutdown stops every actor; blocks until all claude processes are gone.

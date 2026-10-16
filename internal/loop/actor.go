@@ -160,6 +160,10 @@ type Deps struct {
 	// PlanCap judges the fleet's plan cap: while it holds, the loop takes
 	// no turns (ADR-0047). Nil in tests that do not care, which never cap.
 	PlanCap *PlanCap
+	// CloudGate is what the checks of the public address say about waking
+	// a cloud loop: while it holds, a cloud loop takes no turns (ADR-0056).
+	// Nil in tests that do not care, which never hold one.
+	CloudGate *CloudGate
 	// DataDir is the hub's data directory, where a rehomed loop's
 	// auto-memory waits for its workstation (#624). "" carries none.
 	DataDir string
@@ -183,7 +187,7 @@ func (deps *Deps) runtimeFor(kind string) runtime.Runtime {
 }
 
 type cmd struct {
-	kind    string // deliver|tick|pause|resume|kill|update|power|rotate|rehome|acknowledge|shutdown
+	kind    string // deliver|tick|pause|resume|kill|update|power|rotate|rehome|acknowledge|cap|cloud|shutdown
 	env     Envelope
 	loop    *store.Loop
 	verb    string        // for power
@@ -296,6 +300,9 @@ type Actor struct {
 	// wasCapped is whether the plan cap held when the actor last looked, so
 	// a "cap" command can tell a lift, which wakes the loop, from a cap.
 	wasCapped bool
+	// cloudTickDropped is whether the public address held a tick of the
+	// cloud loop, so the check that lets it go wakes it with one.
+	cloudTickDropped bool
 
 	idleTimer   *time.Timer
 	retryTimer  *time.Timer
@@ -357,6 +364,11 @@ func (actor *Actor) Kill()                { actor.cmds <- cmd{kind: "kill"} }
 // CapChanged tells the loop the plan cap started or stopped holding: it
 // says so in its state, and wakes if the cap lifted (ADR-0047).
 func (actor *Actor) CapChanged() { actor.cmds <- cmd{kind: "cap"} }
+
+// CloudGateChanged tells the loop the public address was checked: a cloud
+// loop says so in its problems, and wakes if the check let it go
+// (ADR-0056). Any other loop ignores it.
+func (actor *Actor) CloudGateChanged() { actor.cmds <- cmd{kind: "cloud"} }
 
 // Rotate asks the loop to shed its context through the ADR-0022 handoff flow
 // at the next quiet boundary, and blocks for the immediate verdict: an error
@@ -457,6 +469,7 @@ func (actor *Actor) handleCmd(command cmd) {
 		actor.pump()
 	case "tick":
 		if actor.holdsWork() {
+			actor.cloudTickDropped = actor.cloudTickDropped || actor.cloudHeld()
 			// a switched-off workstation stays off: ticks are skipped, not
 			// queued, so power-on isn't met by a backlog of stale wakes —
 			// and the same goes for a refused model and a paused loop
@@ -478,6 +491,8 @@ func (actor *Actor) handleCmd(command cmd) {
 		actor.pump()
 	case "cap":
 		actor.capChanged()
+	case "cloud":
+		actor.cloudGateChanged()
 	case "acknowledge":
 		command.cleared <- actor.acknowledge(command.symptom)
 	case "power":
@@ -542,10 +557,11 @@ func (actor *Actor) handleCmd(command cmd) {
 }
 
 // holdsWork reports that the loop is not taking turns — paused, its
-// workstation switched off, its model refused, or the fleet capped — so a
-// message is stored until it can be heard and a tick is skipped.
+// workstation switched off, its model refused, the fleet capped, or a cloud
+// loop's public address not lately passing its check — so a message is
+// stored until it can be heard and a tick is skipped.
 func (actor *Actor) holdsWork() bool {
-	return actor.paused || actor.loop.WorkstationOff || actor.loop.ModelRefusal != "" || actor.capped()
+	return actor.paused || actor.loop.WorkstationOff || actor.loop.ModelRefusal != "" || actor.held()
 }
 
 // capped reports whether the fleet's plan cap holds now. It is asked at
@@ -554,6 +570,11 @@ func (actor *Actor) holdsWork() bool {
 func (actor *Actor) capped() bool {
 	return actor.deps.PlanCap != nil && actor.deps.PlanCap.Holds(now())
 }
+
+// held reports whether something the whole fleet shares stops the loop's
+// next turn: the plan cap, or for a cloud loop its public address
+// (cloudHeld).
+func (actor *Actor) held() bool { return actor.capped() || actor.cloudHeld() }
 
 // capChanged follows the plan cap starting or stopping to hold. A lift
 // wakes the loop with whatever waited meanwhile, or with a tick when
@@ -576,8 +597,8 @@ func (actor *Actor) capChanged() {
 
 // drainStoredInbox re-queues the messages that arrived while the loop was
 // not accepting work — paused, its workstation switched off, its model
-// refused, or the fleet capped. Whatever was said to the loop meanwhile is said again the moment
-// it can hear it.
+// refused, the fleet capped, or a cloud loop's address held. Whatever was
+// said to the loop meanwhile is said again the moment it can hear it.
 func (actor *Actor) drainStoredInbox() {
 	envs, err := actor.deps.Store.Inbox().Drain(context.Background(), actor.loop.ID)
 	if err != nil {
@@ -631,7 +652,7 @@ func (actor *Actor) enqueue(env Envelope) {
 
 // pump advances the state machine when there is queued work.
 func (actor *Actor) pump() {
-	if len(actor.inbox) == 0 || actor.loop.WorkstationOff || actor.loop.ModelRefusal != "" || actor.capped() {
+	if len(actor.inbox) == 0 || actor.loop.WorkstationOff || actor.loop.ModelRefusal != "" || actor.held() {
 		return
 	}
 	switch actor.state {
@@ -1086,7 +1107,7 @@ func (actor *Actor) requestRotation(reason string) error {
 	if rotationPrecedence[reason] > rotationPrecedence[actor.rotateAsked] {
 		actor.rotateAsked = reason
 	}
-	if actor.paused || actor.loop.WorkstationOff || actor.capped() || len(actor.inbox) > 0 {
+	if actor.paused || actor.loop.WorkstationOff || actor.held() || len(actor.inbox) > 0 {
 		return nil // latched; the next quiet boundary takes it
 	}
 	switch actor.state {
@@ -1521,9 +1542,10 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 
 	// A capped fleet starts no turn here, the handoff included, which
 	// spends the plan like any other: this is the quiet boundary the cap
-	// takes hold at (ADR-0047).
-	capped := actor.capped()
-	rotationDue := (actor.armed || actor.rotateAsked != "") && !actor.paused && !capped && !actor.hasWork()
+	// takes hold at (ADR-0047). So is it for a cloud loop its public
+	// address holds (ADR-0056).
+	held := actor.held()
+	rotationDue := (actor.armed || actor.rotateAsked != "") && !actor.paused && !held && !actor.hasWork()
 	if actor.envStale && !rotationDue {
 		// the env changed during the turn: the queued work, if any, waits
 		// for the process its next turn spawns with the new env (#640). A
@@ -1532,7 +1554,7 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 		actor.closeIdleProcess()
 		return
 	}
-	if !actor.paused && !capped && actor.hasWork() {
+	if !actor.paused && !held && actor.hasWork() {
 		actor.startTurn()
 		return
 	}
@@ -1712,7 +1734,7 @@ func (actor *Actor) handleProcExit() {
 		}
 		actor.state = StateAsleep
 		actor.publishState()
-		if len(actor.inbox) > 0 && !actor.paused && !actor.loop.WorkstationOff && !actor.capped() && !actor.powering {
+		if len(actor.inbox) > 0 && !actor.paused && !actor.loop.WorkstationOff && !actor.held() && !actor.powering {
 			actor.wake() // message raced the idle close
 		}
 	case sessionLost:
@@ -2019,7 +2041,7 @@ func (actor *Actor) startFreshSession() {
 	// mid-verb via a draining rotation, and a process spawned now would run
 	// on the workstation the verb is about to halt or destroy. The queued
 	// work stays put; the verb's end delivers it.
-	if len(actor.inbox) > 0 && !actor.paused && !actor.loop.WorkstationOff && !actor.capped() && !actor.powering {
+	if len(actor.inbox) > 0 && !actor.paused && !actor.loop.WorkstationOff && !actor.held() && !actor.powering {
 		actor.wake()
 	}
 }
