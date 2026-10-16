@@ -93,7 +93,8 @@ func TestLoopSlackIdentity(t *testing.T) {
 }
 
 // The Slack allowlist behaves as tg_senders does: pending on first sight,
-// one row per user, status changes by id, and an unknown id is not found.
+// one row per user, status changes by id, which clear a pairing code, and
+// an unknown id is not found.
 func TestSlackSenders(t *testing.T) {
 	database, ctx := openSlackTestDB(t)
 	senders := database.SlackSenders()
@@ -115,8 +116,8 @@ func TestSlackSenders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Status != store.SenderAllowed || got.TeamID != "T0TEAM" || got.PairCode != "123456" || got.UpdatedAt != 2 {
-		t.Fatalf("sender = %+v", got)
+	if got.Status != store.SenderAllowed || got.TeamID != "T0TEAM" || got.PairCode != "" || got.UpdatedAt != 2 {
+		t.Fatalf("sender = %+v; want it allowed, its pairing code cleared", got)
 	}
 	if err := senders.SetStatus(ctx, "U0NOBODY", store.SenderAllowed, 3); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("SetStatus on an unknown sender = %v, want ErrNotFound", err)

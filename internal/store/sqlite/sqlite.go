@@ -1674,7 +1674,7 @@ func (table tgSenders) Create(ctx context.Context, sender *store.TGSender) error
 }
 
 func (table tgSenders) SetStatus(ctx context.Context, id int64, status string, updatedAt int64) error {
-	res, err := table.db.ExecContext(ctx, `UPDATE tg_senders SET status=?, updated_at=? WHERE tg_user_id=?`,
+	res, err := table.db.ExecContext(ctx, `UPDATE tg_senders SET status=?, pair_code='', updated_at=? WHERE tg_user_id=?`,
 		status, updatedAt, id)
 	if err != nil {
 		return err
@@ -1743,7 +1743,7 @@ func (table slackSenders) Create(ctx context.Context, sender *store.SlackSender)
 }
 
 func (table slackSenders) SetStatus(ctx context.Context, slackUserID, status string, updatedAt int64) error {
-	res, err := table.db.ExecContext(ctx, `UPDATE slack_senders SET status=?, updated_at=? WHERE slack_user_id=?`,
+	res, err := table.db.ExecContext(ctx, `UPDATE slack_senders SET status=?, pair_code='', updated_at=? WHERE slack_user_id=?`,
 		status, updatedAt, slackUserID)
 	if err != nil {
 		return err

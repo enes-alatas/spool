@@ -204,4 +204,23 @@ func TestAMemberReadsNoPairingCode(t *testing.T) {
 			t.Errorf("the token's %s carries pairing code %q; want %s", path, got, want)
 		}
 	}
+
+	// A member's open stream hears each sender's change of status, and
+	// carries no code with it. The change clears the code, so no list
+	// carries one after it either.
+	stream := srv.openStream(member)
+	srv.mustJSON("POST", "/api/telegram/senders/4242/allow", nil, nil)
+	srv.mustJSON("POST", "/api/slack/senders/U0ALICE/block", nil, nil)
+	stream.waitFor(t, `"tg_user_id":4242`)
+	stream.waitFor(t, `"slack_user_id":"U0ALICE"`)
+	for _, secret := range []string{`"pair_code":"654321"`, `"pair_code":"123456"`} {
+		if stream.has(secret) {
+			t.Errorf("a member's stream carried pairing code %s", secret)
+		}
+	}
+	for _, path := range []string{"/api/telegram/senders", "/api/slack/senders"} {
+		if got := code(path, ""); got != "" {
+			t.Errorf("after a change of status the token's %s carries pairing code %q; want it cleared", path, got)
+		}
+	}
 }
