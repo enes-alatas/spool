@@ -716,3 +716,6 @@ Quiet. #874 (#862) still with Quinn. Nothing new. Waiting on Enes: fleet upgrade
 
 ## 2026-10-16 07:40 UTC
 Elliot: three private advisories (GHSA-q5hr medium first, GHSA-ggw3, GHSA-4c3c) need Terra fixes; details only in the advisories, neutral PR titles. Plus #877 (public hardening, low) → L6, parent #777. Terra order: #876 → three advisory fixes → #877 → #863 rest → #864 → #866 → #855 → #766 → #871 → #830 → #630. v0.6.0 waits for the advisory fixes (tell Enes when he reports the upgrade).
+
+## 2026-10-16 08:35 UTC
+Enes posted a merge-queue failure (run 38871884271, main e424663, carrying Terra's #879 advisory fix): slack_outbound_test.go:179 TestSlackLoopIgnoresTheTelegramOwner, 30s wait, only the rotation turn completed. Unrelated flake → filed #880 (CI reliability). Told Enes/Terra in the group; Terra re-runs. Fleet runtime in the log reads "Spool 8a60531" for the itest loop, not the live fleet.
