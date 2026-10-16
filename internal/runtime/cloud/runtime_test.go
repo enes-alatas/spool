@@ -27,9 +27,9 @@ func newCloud(t *testing.T) (*Runtime, *cloudfake.Server) {
 				return testAccount, nil
 			},
 		},
-		Dir:          t.TempDir(),
-		AllowedHosts: func(context.Context) ([]string, error) { return []string{"api.anthropic.com", "hub.example.test"}, nil },
-		Bounds:       Bounds{Poll: 5 * time.Millisecond, Status: 10 * time.Millisecond},
+		Dir:           t.TempDir(),
+		EgressEntries: func(context.Context) ([]string, error) { return []string{"api.anthropic.com", "hub.example.test"}, nil },
+		Bounds:        Bounds{Poll: 5 * time.Millisecond, Status: 10 * time.Millisecond},
 	}
 	return cloud, fake
 }
@@ -105,7 +105,7 @@ func TestEnsureKeepsTheLoopsEnvironment(t *testing.T) {
 		t.Errorf("network config = %v, want the hub's two hosts and no defaults", network)
 	}
 
-	cloud.AllowedHosts = func(context.Context) ([]string, error) { return []string{"hub.example.test"}, nil }
+	cloud.EgressEntries = func(context.Context) ([]string, error) { return []string{"hub.example.test"}, nil }
 	if err := cloud.Ensure(ctx, spec); err != nil {
 		t.Fatal(err)
 	}

@@ -61,7 +61,10 @@ type Server struct {
 	// Drop, while set, loses every user message sent into a session: no
 	// echo, no turn, the session left as it was.
 	Drop bool
-	held []heldReply
+	// RefuseUpdates, while set, refuses every environment update with a 500
+	// and leaves the environment as it was.
+	RefuseUpdates bool
+	held          []heldReply
 
 	ids   atomic.Int64
 	token string
@@ -135,6 +138,10 @@ func (fake *Server) serve(w http.ResponseWriter, r *http.Request) {
 		environment := fake.Environments[path[2]]
 		if environment == nil {
 			refuse(w, http.StatusNotFound, "not_found_error", "no such environment")
+			return
+		}
+		if fake.RefuseUpdates {
+			refuse(w, http.StatusInternalServerError, "api_error", "the environment could not be updated")
 			return
 		}
 		environment.Body = body

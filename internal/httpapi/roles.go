@@ -162,6 +162,13 @@ func seesPairCodes(who *caller) bool {
 	return who != nil && roleRank[roleOf(who)] >= roleRank[store.RoleAdmin]
 }
 
+// seesSyncErrors reports whether who reads why a cloud environment's
+// allowlist write failed: an admin or an owner. The reason quotes the
+// cloud's answer, which reaches the view without passing the redactor.
+func seesSyncErrors(who *caller) bool {
+	return who != nil && roleRank[roleOf(who)] >= roleRank[store.RoleAdmin]
+}
+
 // privateMessage reports whether msg is part of a loop's private
 // conversation: with its owner, or with another allowed sender (ADR-0049).
 func privateMessage(msg *store.Message) bool {

@@ -237,6 +237,10 @@ func validHost(entry, host string) error {
 		// IPv6 literal. The allowlist is names only: matching happens before
 		// resolution, so an address has nothing to match (ADR-0028).
 		return fmt.Errorf("%q: host names only — an IP literal cannot be allowlisted", entry)
+	case strings.Contains(host, "*"):
+		// A wildcard would match nothing at the wall but everything a cloud
+		// environment reads it as (ADR-0056); the domain form says it here.
+		return fmt.Errorf("%q: no wildcards — write .example.com for a domain and everything under it", entry)
 	case strings.ContainsAny(host, " \t\r\n@?#"):
 		return fmt.Errorf("%q: %q is not a host name", entry, host)
 	}

@@ -78,6 +78,9 @@ func TestValidateRejectsWhatWouldPermitNothing(t *testing.T) {
 		".",                   // punctuation, not a host
 		"",                    // nothing at all
 		":443",                // a port with no host
+		"*",                   // a wildcard, which a cloud environment would widen
+		"*.example.com",       // ditto, where the domain form is meant
+		"a*b.example.com",     // ditto, inside a label
 	} {
 		if err := Validate(entry); err == nil {
 			t.Errorf("Validate(%q) = nil, want a complaint", entry)

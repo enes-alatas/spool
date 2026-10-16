@@ -5,7 +5,10 @@ package itest
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/url"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -185,5 +188,109 @@ func TestCloudLoopDoesNotWakeOnAPlainHTTPAddress(t *testing.T) {
 	defer fake.Mu.Unlock()
 	if len(fake.Environments) != 0 || len(fake.Sessions) != 0 {
 		t.Fatalf("a plain-HTTP address made %d environments and %d sessions", len(fake.Environments), len(fake.Sessions))
+	}
+}
+
+// cloudEgressSettings is GET /api/settings/egress's cloud part.
+type cloudEgressSettings struct {
+	Cloud *struct {
+		Environments []struct {
+			Loop   string `json:"loop"`
+			InSync bool   `json:"in_sync"`
+			Error  string `json:"error"`
+		} `json:"environments"`
+		NotApplied []string `json:"not_applied"`
+	} `json:"cloud"`
+}
+
+// allowedHosts reads the one environment's allowed hosts from the fake.
+func allowedHosts(t *testing.T, fake *cloudfake.Server) []string {
+	t.Helper()
+	fake.Mu.Lock()
+	defer fake.Mu.Unlock()
+	if len(fake.Environments) != 1 {
+		t.Fatalf("%d environments, want one", len(fake.Environments))
+	}
+	var hosts []string
+	for _, environment := range fake.Environments {
+		network := environment.Body["config"].(map[string]any)["network_config"].(map[string]any)
+		for _, host := range network["allowed_hosts"].([]any) {
+			hosts = append(hosts, host.(string))
+		}
+	}
+	return hosts
+}
+
+// An edit to the egress allowlist reaches a cloud loop's environment at
+// once, with no wake of the loop, a domain rule as the domain and every
+// name under it. Settings reads the environment as in sync, marks the
+// entry with a port of its own as not applied to cloud loops, and names a
+// write that failed until one lands, to an admin: a member reads only
+// that it is out of sync (ADR-0056).
+func TestAnEgressEditReachesTheCloudEnvironmentsAtOnce(t *testing.T) {
+	t.Parallel()
+	fake := cloudfake.New(cloudFixtureToken)
+	t.Cleanup(fake.Close)
+	dataDir := t.TempDir()
+	s := startServerArgs(t, dataDir, "--runtime", "bare", "--egress-allow", "registry.example.test:8443")
+	s.createLoop("cirrus", nil)
+	s.stop()
+	makeCloudLoop(t, dataDir, "cirrus")
+	signInCloud(t, dataDir, testCloudAddress)
+	s = startServerArgs(t, dataDir, "--runtime", "bare", "--cloud-api-base", fake.URL)
+
+	s.message("cirrus", "make the environment")
+	s.waitTurn("cirrus", 20*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "make the environment") })
+	s.waitState("cirrus", "asleep", 20*time.Second)
+	turns := len(s.turns("cirrus"))
+	if hosts := allowedHosts(t, fake); slices.Contains(hosts, "registry.example.test:8443") || !slices.Contains(hosts, "hub.example.test") {
+		t.Fatalf("the environment was made allowing %q", hosts)
+	}
+
+	var view cloudEgressSettings
+	s.mustJSON("POST", "/api/settings/egress/hosts", map[string]string{"host": ".pkg.example.test"}, &view)
+	hosts := allowedHosts(t, fake)
+	if !slices.Contains(hosts, "*.pkg.example.test") || !slices.Contains(hosts, "pkg.example.test") {
+		t.Errorf("after the edit the environment allows %q, want the domain and every name under it", hosts)
+	}
+	if view.Cloud == nil || len(view.Cloud.Environments) != 1 || view.Cloud.Environments[0].Loop != "cirrus" ||
+		!view.Cloud.Environments[0].InSync || !slices.Equal(view.Cloud.NotApplied, []string{"registry.example.test:8443"}) {
+		t.Fatalf("the view's cloud part = %+v, want cirrus in sync and the port entry not applied", view.Cloud)
+	}
+
+	fake.Mu.Lock()
+	fake.RefuseUpdates = true
+	fake.Mu.Unlock()
+	view = cloudEgressSettings{}
+	s.mustJSON("POST", "/api/settings/egress/hosts", map[string]string{"host": "mirror.example.test"}, &view)
+	if environment := view.Cloud.Environments[0]; environment.InSync || environment.Error == "" {
+		t.Errorf("after a refused write: %+v, want out of sync with the reason", environment)
+	}
+	if slices.Contains(allowedHosts(t, fake), "mirror.example.test") {
+		t.Error("the refused write changed the environment")
+	}
+	var seen cloudEgressSettings
+	if resp, body := s.asCookie("GET", "/api/settings/egress", s.signedInAs("mia", "member"), nil); resp.StatusCode != http.StatusOK {
+		t.Fatalf("a member's read = %d %s", resp.StatusCode, body)
+	} else if err := json.Unmarshal(body, &seen); err != nil {
+		t.Fatal(err)
+	}
+	if environment := seen.Cloud.Environments[0]; environment.InSync || environment.Error != "" {
+		t.Errorf("a member reads %+v, want out of sync with no reason: it quotes the cloud's answer, unredacted", environment)
+	}
+
+	fake.Mu.Lock()
+	fake.RefuseUpdates = false
+	fake.Mu.Unlock()
+	view = cloudEgressSettings{}
+	s.mustJSON("DELETE", "/api/settings/egress/hosts/"+url.PathEscape(".pkg.example.test"), nil, &view)
+	if environment := view.Cloud.Environments[0]; !environment.InSync || environment.Error != "" {
+		t.Errorf("after the next edit: %+v, want in sync", environment)
+	}
+	if hosts := allowedHosts(t, fake); slices.Contains(hosts, "pkg.example.test") || !slices.Contains(hosts, "mirror.example.test") {
+		t.Errorf("after the next edit the environment allows %q", hosts)
+	}
+	if after := len(s.turns("cirrus")); after != turns {
+		t.Errorf("the edits ran %d turns, want none", after-turns)
 	}
 }
