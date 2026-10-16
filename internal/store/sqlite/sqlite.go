@@ -12,7 +12,6 @@ import (
 	"math"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -83,15 +82,10 @@ func (database *DB) migrate() error {
 	if _, err := database.db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY)`); err != nil {
 		return err
 	}
-	entries, err := fs.ReadDir(migrationsFS, "migrations")
+	names, err := Migrations()
 	if err != nil {
 		return err
 	}
-	names := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		names = append(names, entry.Name())
-	}
-	sort.Strings(names)
 	for _, name := range names {
 		var applied int
 		if err := database.db.QueryRow(`SELECT COUNT(*) FROM schema_migrations WHERE version=?`, name).Scan(&applied); err != nil {
