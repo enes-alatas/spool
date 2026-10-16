@@ -776,3 +776,6 @@ Sweep: #906 merged (fifth advisory GHSA-vh6p medium, per-workstation networks, n
 
 ## 2026-10-16 19:05 UTC
 Enes asked (1) what "say so in the group" meant, (2) are we ready for v0.6. Answered: (1) the update is his (sudo spool upgrade main / runbook), the group word was only a restart warning, optional. (2) No: fleet has run none of the 17 commits since its build (5 advisory fixes, cloud runtime, upgrade, #906 workstation recreate); #908 in review; cloud not operable until slices 4/5; first tag through the new release pipeline. Ready = #908 merged → fleet upgraded → 2 days dogfood → "dry run" → tag. Recommended v0.6.0 without cloud (hold to v0.7, unmentioned). Awaiting his call.
+
+## 2026-10-16 19:10 UTC
+Enes: tell him when to upgrade the runtime for the v0.6 test; open to a private tag/branch on a candidate commit while main keeps going. Trigger: #908 merge (open, b260fb8, blocker folded, with Quinn). On merge: DM the exact SHA as the v0.6.0 candidate + propose a branch name. Then 2 days dogfood → "dry run" → tag.
