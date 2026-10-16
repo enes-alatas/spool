@@ -182,7 +182,7 @@ ADR-0043).
   conversation being sent to, never the other one (#719). Sends per turn
   are capped, and loop pairs have a storm guard.
 - **An attachment** must be a file the loop owns, within the size cap, and
-  holding no known secret.
+  holding no known secret in the forms the check reads (below).
 - **The broker** checks the connection on every request, replaces the
   loop's `Authorization` with the server's secret, and never sends a secret
   over cleartext off loopback. The loop is never given the secret, and
@@ -199,6 +199,10 @@ ADR-0043).
 - **A refused `reply_to` says whether the message exists.** "No such
   message" and "not in this conversation" are different refusals, so a
   loop can learn which references exist, though never where they are.
+- **The attachment check reads a file's bytes as they are.** It doesn't
+  open a compressed file or an archive, and it doesn't read UTF-16 text,
+  so a known secret inside one goes out. Base64 wrapped across lines, the
+  default output of `base64`, isn't caught yet either (#912).
 - **Keeping private content out of a group** is a prompt rule, not a check
   (ADR-0026).
 
