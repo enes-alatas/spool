@@ -328,6 +328,23 @@ try {
   await cloud.getByRole('button', { name: 'Remove' }).click()
   await see(cloud.getByText('not signed in'), 'the account removed')
 
+  // New loop offers Cloud on every hub (#867). This one isn't set up for
+  // cloud loops, so picking it opens the guided setup, and the form won't
+  // create one until the setup is done.
+  step = 'New loop, cloud'
+  await page.goto(base + '/new')
+  await heading('New loop')
+  await page.getByLabel('Name').fill('gardener')
+  await page.getByLabel('Mission').fill('Tend the handbook.')
+  await page.getByLabel('Runtime').selectOption('cloud')
+  await see(setup, 'the guided setup')
+  await setup.getByRole('button', { name: 'Close' }).click()
+  await gone(setup, 'the setup dialog')
+  await see(page.getByText('This hub is not set up for cloud loops yet.'), 'the cloud runtime not ready')
+  await see(page.getByLabel('GitHub repo (optional)'), 'the repo field in place of the workspace')
+  if (await page.getByRole('button', { name: 'Create loop' }).isEnabled())
+    throw new Error('Create loop is enabled for a cloud loop on a hub not set up for one')
+
   // Access is a part of Settings since #732; the old address lands there.
   step = 'Access'
   await page.goto(base + '/access')

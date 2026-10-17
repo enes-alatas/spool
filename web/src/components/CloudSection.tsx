@@ -271,7 +271,16 @@ const STEPS: { key: SetupStep; label: string }[] = [
   { key: 'account', label: 'Claude account' },
 ]
 
-export function CloudSetup({ start, onClose }: { start: SetupStep; onClose: () => void }) {
+export function CloudSetup({
+  start,
+  doneLabel = 'Done',
+  onClose,
+}: {
+  start: SetupStep
+  // what the last step's button says: where closing the setup returns to
+  doneLabel?: string
+  onClose: () => void
+}) {
   const { data: view } = useQuery({ queryKey: ['cloud'], queryFn: api.cloudSettings })
   const [step, setStep] = useState<SetupStep>(start)
   const [busy, setBusy] = useState(false)
@@ -328,7 +337,7 @@ export function CloudSetup({ start, onClose }: { start: SetupStep; onClose: () =
               → Cloud shows where each step stands.
             </p>
             <form method="dialog" className="pillar-actions">
-              <button className="btn primary">Done</button>
+              <button className="btn primary">{doneLabel}</button>
             </form>
           </>
         )}
