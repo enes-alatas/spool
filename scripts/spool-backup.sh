@@ -97,9 +97,11 @@ mkdir "$stage/data" "$stage/volumes"
 : >"$stage/manifest.tsv"
 
 # The data directory, less what goes in the keys file: hub.key, any
-# hub.key.* a cut-short start left behind, and operator-token.
+# hub.key.* a cut-short start left behind, and operator-token. A cloud
+# sign-in the hub was stopped in holds the account's tokens unsealed;
+# the hub removes it as it starts, and it is never copied.
 tar -C "$data_dir" --exclude ./hub.key --exclude './hub.key.*' \
-	--exclude ./operator-token -cf - . | tar -C "$stage/data" -xpf -
+	--exclude ./operator-token --exclude ./cloud-sign-in -cf - . | tar -C "$stage/data" -xpf -
 
 if [ "$volumes" = 1 ]; then
 	docker info >/dev/null 2>&1 ||

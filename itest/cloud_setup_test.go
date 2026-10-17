@@ -24,7 +24,11 @@ type cloudSettings struct {
 		Detail string `json:"detail"`
 	} `json:"check"`
 	Account struct {
-		Set bool `json:"set"`
+		Set   bool `json:"set"`
+		Check *struct {
+			State string `json:"state"`
+			Stage string `json:"stage"`
+		} `json:"check"`
 	} `json:"account"`
 }
 

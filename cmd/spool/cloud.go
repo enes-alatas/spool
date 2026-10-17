@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -24,12 +25,12 @@ func newCloudRuntime(settings store.SettingsStore, dataDir, apiBase string, loop
 		Client: &cloud.Client{
 			BaseURL: apiBase,
 			Account: func(ctx context.Context) (cloud.Account, error) {
-				raw, err := settings.Get(ctx, store.SettingCloudAccount)
-				if errors.Is(err, store.ErrNotFound) {
-					return cloud.Account{}, cloud.ErrNoAccount
-				}
+				raw, err := storedSetting(settings, store.SettingCloudAccount)
 				if err != nil {
 					return cloud.Account{}, err
+				}
+				if raw == "" {
+					return cloud.Account{}, cloud.ErrNoAccount
 				}
 				var account store.CloudAccount
 				if err := json.Unmarshal([]byte(raw), &account); err != nil || account.Token == "" {
@@ -119,4 +120,31 @@ func (environments cloudEnvironments) EnvironmentSyncs(ctx context.Context) ([]h
 		converted = append(converted, httpapi.CloudEnvironmentSync(sync))
 	}
 	return converted, notApplied, nil
+}
+
+// CheckAccount makes the account check (ADR-0056), and names where a
+// failed one stopped as Settings → Cloud does.
+func (environments cloudEnvironments) CheckAccount(ctx context.Context) (stage, detail string) {
+	err := environments.runtime.Client.CheckAccount(ctx)
+	var apiErr *cloud.APIError
+	switch {
+	case err == nil:
+		return "", ""
+	case errors.Is(err, cloud.ErrNoAccount):
+		return httpapi.CloudAccountStageNone, err.Error()
+	case errors.As(err, &apiErr) && (apiErr.Status == http.StatusUnauthorized || apiErr.Status == http.StatusForbidden):
+		return httpapi.CloudAccountStageRefused, err.Error()
+	case errors.As(err, &apiErr):
+		return httpapi.CloudAccountStageOther, err.Error()
+	}
+	return httpapi.CloudAccountStageUnreachable, err.Error()
+}
+
+// storedSetting reads the setting key, "" while it is unset.
+func storedSetting(settings store.SettingsStore, key string) (string, error) {
+	value, err := settings.Get(context.Background(), key)
+	if errors.Is(err, store.ErrNotFound) {
+		return "", nil
+	}
+	return value, err
 }

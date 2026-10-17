@@ -60,6 +60,14 @@ The rules, in `docs/QUALITY.md` "Review (human)":
 | Crash mid-turn (`!crash`): exit 2, no result | assumed | The real CLI's exit code on a crash is not recorded. The engine classifies any non-zero exit without a result, so the code itself carries nothing. |
 | An unresumable session (`.fakeclaude-resume-broken`): exit 1 before init, a diagnostic on stderr, no stream-json | assumed | The stderr line is invented. #47 set out to find a stderr signature and found none, which is why the engine classifies "exited non-zero before init" and never reads the text (#59). `make e2e-context` then showed an over-full context is not what causes this failure. A marker whose contents are `all` fails fresh spawns the same way. That is a test instrument, a loop that cannot run at all, and not a CLI claim. |
 
+## Sign-in
+
+| Behaviour | Status | Evidence |
+|---|---|---|
+| `auth login --claudeai` with no TTY prints the link to open after `visit:`, then `Paste code here if prompted > `, and reads the code from stdin | verified | 2.1.301, 2026-10-17: a probe in a fresh `CLAUDE_CONFIG_DIR`, stdin a pipe (#864). The fake's link has the same shape on a host of its own. |
+| A code it refuses prints `Invalid code. Please make sure the full code was copied.` | partly | The same probe, with an empty line. Recorded: the sentence. The real CLI was still running three seconds after it; the fake exits 1. The hub ends the sign-in either way: on the exit, or after its wait. |
+| A code it takes writes `.credentials.json`, whose `claudeAiOauth` has `accessToken`, `refreshToken`, `expiresAt` and `scopes`, and `.claude.json`, whose `oauthAccount` has `organizationUuid`, into `CLAUDE_CONFIG_DIR`, and exits 0 | assumed | The file and field names are read from the 2.1.301 binary, not from a sign-in: one needs the operator's browser, so the first real sign-in from Settings → Cloud checks it. The fake's `Login successful.` is invented. |
+
 ## Hooks
 
 | Behaviour | Status | Evidence |

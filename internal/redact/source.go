@@ -30,7 +30,8 @@ func (source StoreSource) Secrets(ctx context.Context) ([]Secret, error) {
 		out = append(out, Secret{Name: store.SettingClaudeOAuthToken, Value: token})
 	}
 
-	// The account cloud loops spend drives it whole, not only its turns.
+	// The account cloud loops spend drives it whole, not only its turns, and
+	// its refresh token mints more of the same.
 	raw, err := source.Store.Settings().Get(ctx, store.SettingCloudAccount)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return nil, err
@@ -40,6 +41,9 @@ func (source StoreSource) Secrets(ctx context.Context) ([]Secret, error) {
 		var account store.CloudAccount
 		if json.Unmarshal([]byte(raw), &account) == nil && account.Token != "" {
 			raw = account.Token
+			if account.RefreshToken != "" {
+				out = append(out, Secret{Name: store.SettingCloudAccount, Value: account.RefreshToken})
+			}
 		}
 		out = append(out, Secret{Name: store.SettingCloudAccount, Value: raw})
 	}

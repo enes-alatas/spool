@@ -64,6 +64,9 @@ type Server struct {
 	// RefuseUpdates, while set, refuses every environment update with a 500
 	// and leaves the environment as it was.
 	RefuseUpdates bool
+	// AccountChecks counts the account checks, the read-only listing of
+	// environments.
+	AccountChecks int
 	held          []heldReply
 
 	ids   atomic.Int64
@@ -130,6 +133,9 @@ func (fake *Server) serve(w http.ResponseWriter, r *http.Request) {
 	defer fake.Mu.Unlock()
 	path := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	switch {
+	case r.Method == http.MethodGet && r.URL.Path == "/v1/environment_providers":
+		fake.AccountChecks++
+		answer(w, map[string]any{"data": []any{}, "has_more": false})
 	case r.Method == http.MethodPost && r.URL.Path == "/v1/environment_providers/cloud/create":
 		environment := &Environment{ID: fake.id("env"), Body: body}
 		fake.Environments[environment.ID] = environment

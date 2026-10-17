@@ -251,9 +251,14 @@ in, and reads the turn's events back (ADR-0056).
 
 **Holds:**
 - **The account token is sealed** under `hub.key`, known to the redactor,
-  and never served back. The calls go to Anthropic's API over HTTPS and
-  follow no redirect (`--cloud-api-base` takes plain HTTP only on
-  loopback, for tests).
+  and never served back, and so is its refresh token. The sign-in runs
+  the CLI's own login in a config directory of the hub's, never the
+  operator's own, and the hub deletes that directory once it has read
+  the tokens out. It removes any a stopped hub left as it next starts,
+  before it serves, and the backup script never copies one. Only an
+  admin signs in, checks the account or removes it. The calls go to
+  Anthropic's API over HTTPS and follow no redirect
+  (`--cloud-api-base` takes plain HTTP only on loopback, for tests).
 - **No setup-token leaves the machine.** A cloud session runs on the
   account, and the hub gives it no `CLAUDE_CODE_OAUTH_TOKEN`.
 - **The session carries one credential, the loop's MCP token,** as a
@@ -349,7 +354,18 @@ in, and reads the turn's events back (ADR-0056).
   token outlives them by up to a minute. #866 reverses the order before
   a cloud loop can be created.
 - **A copy of the data directory with its keys** yields the account
-  token, which drives the account, not only its turns.
+  token and its refresh token, which drive the account, not only its
+  turns, and the refresh token for as long as Anthropic keeps it
+  valid.
+- **Remove forgets the account but doesn't revoke it yet.** Until the
+  hub revokes at the source (ADR-0056), a token copied before Remove
+  works until it expires, and the refresh token longer. The operator
+  revokes it where claude.ai lists the account's sign-ins.
+- **A sign-in in progress holds its tokens unsealed for a moment.** The
+  CLI writes them into its config directory, mode 0700 under the data
+  directory, and the hub reads and deletes them as the CLI exits. A hub
+  killed in that moment leaves them until it next starts, when it
+  removes the directory first; the backup script never copies it.
 
 ### Workstation: the docker runtime
 

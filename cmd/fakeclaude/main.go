@@ -162,6 +162,9 @@ func main() {
 	partials := false
 
 	args := os.Args[1:]
+	if len(args) >= 2 && args[0] == "auth" && args[1] == "login" {
+		os.Exit(authLogin())
+	}
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--version":
@@ -942,4 +945,40 @@ func bashCall(settings, sessionID, cwd, command string) string {
 		}
 	}
 	return "ran: " + command
+}
+
+// The sign-in fakeclaude's auth login takes: synthetic values, never real
+// ones. A pasted code that starts with signInCode is accepted.
+const (
+	signInCode    = "fixture-code"
+	signInToken   = "sk-ant-oat01-fixture-cloud-account"
+	signInRefresh = "sk-ant-ort01-fixture-cloud-refresh"
+	signInOrg     = "00000000-0000-4000-8000-000000000001"
+)
+
+// authLogin is claude auth login, as 2.1.301 runs it with no TTY: it prints
+// the link, reads the pasted code from stdin, and on a good one writes the
+// sign-in into $CLAUDE_CONFIG_DIR (FIDELITY.md).
+func authLogin() int {
+	fmt.Println("Opening browser to sign in…")
+	fmt.Println("If the browser didn't open, visit: https://claude.example.test/cai/oauth/authorize?code=true&client_id=fixture&response_type=code&state=fixture")
+	fmt.Print("Paste code here if prompted > ")
+	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+	if !strings.HasPrefix(strings.TrimSpace(line), signInCode) {
+		fmt.Println("Invalid code. Please make sure the full code was copied.")
+		return 1
+	}
+	dir := os.Getenv("CLAUDE_CONFIG_DIR")
+	credentials, _ := json.Marshal(map[string]any{"claudeAiOauth": map[string]any{
+		"accessToken": signInToken, "refreshToken": signInRefresh,
+		"expiresAt": time.Now().Add(8 * time.Hour).UnixMilli(), "scopes": []string{"user:inference", "user:sessions:claude_code"},
+	}})
+	config, _ := json.Marshal(map[string]any{"oauthAccount": map[string]any{"organizationUuid": signInOrg}})
+	if os.WriteFile(filepath.Join(dir, ".credentials.json"), credentials, 0o600) != nil ||
+		os.WriteFile(filepath.Join(dir, ".claude.json"), config, 0o600) != nil {
+		fmt.Println("Login failed: the config directory can't be written.")
+		return 1
+	}
+	fmt.Println("Login successful.")
+	return 0
 }

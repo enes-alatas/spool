@@ -125,9 +125,12 @@ type cloudListenerView struct {
 	FromFlag bool   `json:"from_flag"`
 }
 
-// cloudAccountView says whether the account is set, never what it is.
+// cloudAccountView says whether the account is set, never what it is,
+// and how its last check went.
 type cloudAccountView struct {
 	Set bool `json:"set"`
+	// Check is the last account check, absent until one has run.
+	Check *CloudAccountCheckResult `json:"check,omitempty"`
 }
 
 type cloudAddressReq struct {
@@ -254,11 +257,14 @@ func (server *Server) cloudSettings(ctx context.Context, who *caller) (cloudSett
 			view.Check.Detail = ""
 		}
 	}
-	switch _, err := server.Store.Settings().Get(ctx, store.SettingCloudAccount); {
-	case err == nil:
-		view.Account.Set = true
-	case !errors.Is(err, store.ErrNotFound):
+	set, err := server.cloudAccountSet(ctx)
+	if err != nil {
 		return view, err
+	}
+	view.Account.Set = set
+	view.Account.Check = server.cloudAccountCheck.result()
+	if view.Account.Check != nil && !seesCloudCheckDetail(who) {
+		view.Account.Check.Detail = ""
 	}
 	return view, nil
 }

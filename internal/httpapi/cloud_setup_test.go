@@ -128,7 +128,8 @@ func TestTheCloudGateHearsEachCheck(t *testing.T) {
 	server := cloudCheckServer(t, "")
 	public := httptest.NewServer(server.CloudHandler())
 	t.Cleanup(public.Close)
-	server.CloudGate = loop.NewCloudGate(func() (string, error) { return server.storedCloudAddress(context.Background()) })
+	server.CloudGate = loop.NewCloudGate(func() (string, error) { return server.storedCloudAddress(context.Background()) },
+		func() (bool, error) { return true, nil })
 	server = withAddress(t, server, public.URL)
 	checked(t, server, public.URL)
 	if !server.CloudGate.Passed() {

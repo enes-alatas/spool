@@ -1,6 +1,6 @@
 # ADR-0056: A loop can run in a Claude Code cloud session, beside contained loops
 
-Date: 2026-10-15 · Status: accepted (operator decision of 2026-10-15 on #859, accepting it as written; operator direction of 2026-10-15 on #758: build it, in a mixed hub, on the undocumented read-back if that is noted, without OpenTelemetry; and of 2026-10-15 on #859: the egress allowlist is the hub's own) · Amended: 2026-10-15 (items 2, 3, 5, 6, 7 and 9: the API check, #861; operator decision of 2026-10-15 on #872: cloud turns report their cost); 2026-10-16 (item 4: the page switches the listener on, #864; item 6: what holds a cloud loop, and the cloud_address symptom, #864) · Relates to: ADR-0017, ADR-0018, ADR-0022, ADR-0026, ADR-0028, ADR-0030, ADR-0037, ADR-0039, ADR-0044, ADR-0046, ADR-0047, ADR-0053
+Date: 2026-10-15 · Status: accepted (operator decision of 2026-10-15 on #859, accepting it as written; operator direction of 2026-10-15 on #758: build it, in a mixed hub, on the undocumented read-back if that is noted, without OpenTelemetry; and of 2026-10-15 on #859: the egress allowlist is the hub's own) · Amended: 2026-10-15 (items 2, 3, 5, 6, 7 and 9: the API check, #861; operator decision of 2026-10-15 on #872: cloud turns report their cost); 2026-10-16 (item 4: the page switches the listener on, #864; item 6: what holds a cloud loop, and the cloud_address symptom, #864; item 6: the sign-in is the CLI's own login, #864) · Relates to: ADR-0017, ADR-0018, ADR-0022, ADR-0026, ADR-0028, ADR-0030, ADR-0037, ADR-0039, ADR-0044, ADR-0046, ADR-0047, ADR-0053
 
 ## Context
 
@@ -420,6 +420,35 @@ the bar for setup: it has to be really simple.
      to whoever answers for the host, the session does; the risk and
      the HTTPS and named-tunnel rules are the same. The account token
      sets environments' allowlists and setup scripts, not secrets.
+
+   **Amendment (2026-10-16, #864): the sign-in is the CLI's own login.**
+   By operator decision of 2026-10-16, recorded on #864, the hub holds
+   no OAuth client of its own:
+   - the hub runs `claude auth login --claudeai` in a config directory
+     of its own under the data directory, never the operator's own
+     login, and hands it the code the page shows. It reads the access
+     token, the refresh token, their expiry and the organization from
+     the files the CLI writes there, stores them sealed as above, and
+     deletes the directory. A hub stopped mid-sign-in leaves the
+     directory, and the next one removes it as it starts, before it
+     serves;
+   - one sign-in runs at a time, and one left waiting for its code ends
+     after ten minutes;
+   - for now the hub runs its host's `claude` (`--claude-bin`) on every
+     hub. Running it in the workstation image on a docker hub, as
+     decided, comes with the next part: its container needs the
+     sign-in's hosts, which no workstation's egress allows;
+   - while no account is signed in, cloud loops are held, as a failed
+     address check holds them (item 6), and a sign-in lets them go;
+   - the account check lists environments (`GET
+     /v1/environment_providers`). It runs as the hub starts, after a
+     sign-in and on the page's ask, and a failed one names its stage:
+     `no_account`, `refused` (a 401 or 403), `unreachable` or `other`;
+   - *Remove* forgets the account. Revoking it at the source, as the
+     amendment above has it, comes with refreshing the access token:
+     both are calls the hub makes to the OAuth endpoint, and how it
+     refreshes is still the operator's to decide. Until then the page
+     says where claude.ai lists the account's sign-ins.
 
 7. **The plan cap counts cloud loops, but can't see them.** Cloud turns
    spend the same plan as contained ones, and they report no rate-limit
