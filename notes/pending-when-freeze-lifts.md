@@ -803,3 +803,6 @@ Morning sweep: no new issues, #916 still open, board tidy. Main is 6 commits pas
 
 ## 2026-10-17 09:30 UTC
 Sweep: #916 merged 07:52. Terra on #864 part 3 (account sign-in via the CLI's own login, Enes's decision on the issue). Open PRs: #453 only. Board tidy. Enes silent on the fleet upgrade since 07:30.
+
+## 2026-10-17 11:05 UTC
+Terra: #918 merged (#864 part 3: account sign-in via CLI login, sealed tokens, ADR-0056 amendment). #864 leftovers: docker-hub sign-in (needs Elliot's egress shape), refresh (needs a real-login probe after the rebuild; Enes agreed the CLI may refresh, DM 2026-10-17). Told Terra: #866 now, with the delete-revokes-before-archive must. #864 stays open for its two parts.
