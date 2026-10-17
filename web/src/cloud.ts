@@ -1,7 +1,7 @@
 // Settings → Cloud (ADR-0056, #865): what the hub's cloud setup says, step
 // by step. The hub checks each step; these read its answer.
 
-import type { CloudCheck, CloudCheckStage, CloudSettings } from './api'
+import type { CloudAccountStage, CloudCheck, CloudCheckStage, CloudSettings } from './api'
 
 // The port the cloud listener serves on, from its address: what a tunnel
 // forwards to. '' while the listener is off.
@@ -107,12 +107,47 @@ export function addressState(view: CloudSettings): { text: string; tone: Tone } 
   return { text: `fails: ${failing?.failed ?? 'unknown'}`, tone: 'bad' }
 }
 
+// What a failed account check says, short, and what it asks of the
+// operator.
+const ACCOUNT_FAILED: Record<CloudAccountStage, { failed: string; hint: string }> = {
+  no_account: { failed: 'not signed in', hint: 'Sign in to the Claude account cloud loops spend.' },
+  refused: {
+    failed: 'the sign-in was refused',
+    hint: 'Anthropic no longer accepts this sign-in, so it may have been revoked. Sign in again.',
+  },
+  unreachable: {
+    failed: "Anthropic's API did not answer",
+    hint: "Anthropic's API did not answer. Check again in a minute.",
+  },
+  other: {
+    failed: "Anthropic's API answered unexpectedly",
+    hint: "Anthropic's API answered, but not as expected. Check again, or sign in again if it keeps failing.",
+  },
+}
+
+// The account step's state on the status page, short, with what to try when
+// its check failed. A signed-in account whose check fails doesn't hold cloud
+// loops, but its sessions won't start.
+export function accountState(view: CloudSettings): { text: string; tone: Tone; hint?: string } {
+  const { set, check } = view.account
+  if (!set) return { text: 'not signed in', tone: 'todo' }
+  if (!check) return { text: 'signed in, not checked yet', tone: 'todo' }
+  if (check.state === 'ok') return { text: 'signed in', tone: 'ok' }
+  const failed = check.stage ? ACCOUNT_FAILED[check.stage] : undefined
+  return {
+    text: `fails: ${failed?.failed ?? check.stage ?? 'unknown'}`,
+    tone: 'bad',
+    hint: failed?.hint,
+  }
+}
+
 // The step the guided setup opens on: the first one not done.
-export type SetupStep = 'listener' | 'address' | 'done'
+export type SetupStep = 'listener' | 'address' | 'account' | 'done'
 
 export function firstOpenStep(view: CloudSettings): SetupStep {
   if (!view.listener.on) return 'listener'
   if (view.check?.state !== 'ok') return 'address'
+  if (view.account.check?.state !== 'ok') return 'account'
   return 'done'
 }
 
@@ -129,4 +164,14 @@ export function isQuickTunnel(address: string): boolean {
 
 export function isQuickTunnelHost(host: string): boolean {
   return host === 'trycloudflare.com' || host.endsWith('.trycloudflare.com')
+}
+
+// Whether a pasted code, its edges trimmed, has the shape the hub takes: one
+// word of at most 1 KiB with no control characters (#864). The hub refuses
+// any other with the same `cloud_sign_in` 400 a refused code gets, but
+// before the sign-in, which goes on waiting; the page asks first, so a 400
+// it does get always means the sign-in has ended.
+export function signInCodeShaped(code: string): boolean {
+  const trimmed = code.trim()
+  return trimmed !== '' && new TextEncoder().encode(trimmed).length <= 1024 && !/[\s\p{Cc}]/u.test(trimmed)
 }

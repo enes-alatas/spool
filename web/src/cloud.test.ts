@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import type { CloudSettings } from './api'
+import type { CloudAccountCheck, CloudSettings } from './api'
 import {
+  accountState,
   addressState,
   checkRows,
   firstOpenStep,
   isQuickTunnel,
   isQuickTunnelHost,
   listenerPort,
+  signInCodeShaped,
 } from './cloud'
 
 const view = (over: Partial<CloudSettings> = {}): CloudSettings => ({
@@ -81,7 +83,48 @@ describe('firstOpenStep', () => {
     expect(firstOpenStep(view({ listener: { on: false, from_flag: false } }))).toBe('listener')
     expect(firstOpenStep(view())).toBe('address')
     expect(firstOpenStep(view({ check: { state: 'failed', stage: 'dns', checked_at: 0 } }))).toBe('address')
-    expect(firstOpenStep(view({ check: { state: 'ok', checked_at: 0 } }))).toBe('done')
+    const reaches = { state: 'ok', checked_at: 0 } as const
+    expect(firstOpenStep(view({ check: reaches }))).toBe('account')
+    expect(
+      firstOpenStep(
+        view({
+          check: reaches,
+          account: { set: true, check: { state: 'failed', stage: 'refused', checked_at: 0 } },
+        }),
+      ),
+    ).toBe('account')
+    expect(firstOpenStep(view({ check: reaches, account: { set: true, check: reaches } }))).toBe('done')
+  })
+})
+
+describe('accountState', () => {
+  it('reads a signed-in account as done only once its check passes', () => {
+    expect(accountState(view())).toEqual({ text: 'not signed in', tone: 'todo' })
+    expect(accountState(view({ account: { set: true } }))).toEqual({
+      text: 'signed in, not checked yet',
+      tone: 'todo',
+    })
+    expect(accountState(view({ account: { set: true, check: { state: 'ok', checked_at: 0 } } }))).toEqual({
+      text: 'signed in',
+      tone: 'ok',
+    })
+  })
+
+  it('names the stage a failed check stopped at, and what to try', () => {
+    const state = accountState(
+      view({ account: { set: true, check: { state: 'failed', stage: 'refused', checked_at: 0 } } }),
+    )
+    expect(state.tone).toBe('bad')
+    expect(state.text).toBe('fails: the sign-in was refused')
+    expect(state.hint).toMatch(/Sign in again/)
+  })
+
+  it('says a stage this build does not know by its name', () => {
+    const check = { state: 'failed', stage: 'quota', checked_at: 0 } as unknown as CloudAccountCheck
+    expect(accountState(view({ account: { set: true, check } }))).toEqual({
+      text: 'fails: quota',
+      tone: 'bad',
+    })
   })
 })
 
@@ -96,5 +139,15 @@ describe('isQuickTunnel', () => {
   it('takes a bare host as well', () => {
     expect(isQuickTunnelHost('bright-owl.trycloudflare.com')).toBe(true)
     expect(isQuickTunnelHost('nottrycloudflare.com')).toBe(false)
+  })
+})
+
+describe('signInCodeShaped', () => {
+  it('takes one word, as the hub does', () => {
+    expect(signInCodeShaped('  ab12cd34#state-56 ')).toBe(true)
+    expect(signInCodeShaped('ab12 cd34')).toBe(false)
+    expect(signInCodeShaped('ab12\u0007cd34')).toBe(false)
+    expect(signInCodeShaped('a'.repeat(1025))).toBe(false)
+    expect(signInCodeShaped('')).toBe(false)
   })
 })

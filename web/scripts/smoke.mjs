@@ -303,6 +303,31 @@ try {
   await gone(setup, 'the setup dialog')
   await see(page.locator('.cloud-step.bad'), "the address's failing line")
 
+  // The account step runs the CLI's own login (#864), which the fixture
+  // hub's fakeclaude stands in for: a code it doesn't take ends the
+  // sign-in, and one it does signs the account in. Remove forgets it.
+  const cloud = page.locator('section.cloud')
+  await cloud.getByRole('button', { name: 'Set up', exact: true }).click()
+  await see(setup.getByRole('button', { name: 'Sign in with Claude ↗' }), 'the account step')
+  const claudeTab = page.context().waitForEvent('page')
+  await setup.getByRole('button', { name: 'Sign in with Claude ↗' }).click()
+  await (await claudeTab).close()
+  await setup.getByLabel('Code').fill('not-the-code')
+  await setup.getByRole('button', { name: 'Sign in', exact: true }).click()
+  await see(
+    setup.getByText("wasn't accepted, and that sign-in has ended", { exact: false }),
+    'a refused code',
+  )
+  await setup.getByRole('button', { name: 'Sign in with Claude ↗' }).click()
+  await setup.getByLabel('Code').fill('fixture-code')
+  await setup.getByRole('button', { name: 'Sign in', exact: true }).click()
+  await see(setup.getByText('Signed in', { exact: false }), 'the account signed in')
+  await setup.getByRole('button', { name: 'Close' }).click()
+  await gone(setup, 'the setup dialog')
+  page.once('dialog', (dialog) => dialog.accept())
+  await cloud.getByRole('button', { name: 'Remove' }).click()
+  await see(cloud.getByText('not signed in'), 'the account removed')
+
   // Access is a part of Settings since #732; the old address lands there.
   step = 'Access'
   await page.goto(base + '/access')
