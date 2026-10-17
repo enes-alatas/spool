@@ -143,6 +143,7 @@ role change, a removal or a link from its next item; a change made with
 - **A loop can repeat what it was told privately.** A member can ask a
   loop in its control-room thread about a private conversation it took
   part in, and only the prompt rule (ADR-0026) keeps it from answering.
+  Accepted (below).
 - **Reactions and votes on a private message reach members' streams:**
   the message's id and the emoji or the choice, never its text
   (`internal/httpapi/roles.go`).
@@ -195,13 +196,14 @@ ADR-0043).
 - **The broker forwards** any path, method and body under the server's
   stored URL (ADR-0045). It relays the server's answer as sent, without
   redacting it, so a server that echoes its request's headers back hands
-  the loop the secret.
+  the loop the secret. Accepted (below).
 - **A refused `reply_to` says whether the message exists.** "No such
   message" and "not in this conversation" are different refusals, so a
   loop can learn which references exist, though never where they are.
+  Accepted (below).
 - **The attachment check reads a file's bytes as they are.** It doesn't
   open a compressed file or an archive, and it doesn't read UTF-16 text,
-  so a known secret inside one goes out.
+  so a known secret inside one goes out. Accepted (below).
 - **Keeping private content out of a group** is a prompt rule, not a check
   (ADR-0026).
 
@@ -496,4 +498,28 @@ runner for the hosted edition will need its own model.
 ## Accepted risks
 
 Findings from the 1.0 review (#777) that were accepted rather than fixed,
-each with its decision and date. None yet.
+each with its decision and date (#917). Each one's line above says what
+it is; this is why it stays.
+
+- **A loop can repeat what it was told privately** (Operator listener).
+  Accepted 2026-10-17: keeping a private conversation private is
+  ADR-0026's prompt rule by design, and who is made a member is the
+  operator's lever.
+- **The broker relays a server's answer unredacted** (Loop listener).
+  Accepted 2026-10-17: a loop the Claude Code CLI connects to a server
+  directly holds the server's secret outright, so the broker is already
+  better than that baseline; an echo needs a server that misbehaves, and
+  the operator chooses the servers.
+- **A refused `reply_to` says whether the message exists** (Loop
+  listener). Accepted 2026-10-17: references are sequential, and the
+  refusal names no conversation and no words.
+- **The attachment check doesn't open archives, compressed files or
+  UTF-16 text** (Loop listener). Accepted 2026-10-16 (#912, ADR-0045):
+  opening them costs CPU on the send path and a decompression-bomb
+  surface, against a disguise ADR-0045 already leaves to deliberate
+  obfuscation.
+
+Three more findings were decided as fixes, and their lines above go when
+the fixes land: reactions and votes on private messages (#922), demoting
+or removing an owner (#923), and members reading connection configs
+(#924).
