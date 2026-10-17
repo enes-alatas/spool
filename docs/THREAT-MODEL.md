@@ -296,6 +296,12 @@ in, and reads the turn's events back (ADR-0056).
   loop and deletes its record, token and all, before the calls that
   archive its session and environment. Those take up to a minute, or
   fail, and the token works at no point in between.
+- **A cloud loop is created only once Settings → Cloud is green:** the
+  public address's last check passed, and a signed-in account's did. A
+  cloud loop never moves runtime, and takes no docker settings.
+- **The session link is claude.ai's or none.** The API's `session_url`
+  is untrusted, so the view carries it only as a `https://claude.ai/code/`
+  page.
 - **A session holds the token it was created with.** A loop whose token
   is replaced, as a key reset replaces every one, starts a fresh session
   at its next wake rather than resume one the hub would refuse.
@@ -338,17 +344,24 @@ in, and reads the turn's events back (ADR-0056).
   inbox (ADR-0056). So a hostname that changes hands gets no turn that
   starts more than a minute after the last pass. The minute is the gap:
   a turn that starts in it, like one already in flight, still sends its
-  token to whoever answers the name. No cloud loop can be created until
-  slice 5.
+  token to whoever answers the name.
 - **The read-back is undocumented.** Anthropic may change the events
   endpoint without notice; the hub fails loudly when it does, and can't
   do more.
+- **A session's GitHub reach is the Claude GitHub App's**, on the
+  account. A repo given at creation is only where the session starts:
+  the installation can cover every repo of the organisation, where a
+  contained loop holds only the token the operator gave it (ADR-0056).
 - **The loop can read its own token**, as a contained loop can read its
   MCP config, and the environment's allowlist is enforced by Anthropic's
   proxy, not the egress wall (ADR-0056 item 8).
-- **Whether a session's own ingress credentials reach other sessions**
-  on the account is untested. It gates creating a cloud loop (ADR-0056
-  item 5).
+- **Whether a session reaches another session's ingress is untested.**
+  The probe (ADR-0056 item 5, #866) showed only that an unauthenticated
+  request from a session's shell is refused and the session's `claude`
+  declined to look for a credential. Whether a credential on the machine,
+  or one a proxy adds for `api.anthropic.com`, authenticates to the
+  sessions API and reaches another session is not settled. It gates
+  creating a cloud loop under ADR-0056 item 5.
 - **An oversized event is skipped only up to 64 MiB.** Past that the hub
   reads no further, so it can't find the page's end to move past the
   event. Every turn of that session then fails the same way, and the

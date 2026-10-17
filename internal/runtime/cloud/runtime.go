@@ -65,6 +65,9 @@ type state struct {
 	// gets a cloud session of its own.
 	SessionID     string `json:"session_id,omitempty"`
 	ClaudeSession string `json:"claude_session,omitempty"`
+	// SessionURL is where SessionID is read on claude.ai, as the API
+	// answered when it was created.
+	SessionURL string `json:"session_url,omitempty"`
 	// AfterID is the newest event read of the session.
 	AfterID string `json:"after_id,omitempty"`
 	// SessionToken is the SHA-256 of the hub token SessionID was created
@@ -396,6 +399,7 @@ func (cloud *Runtime) Start(ctx context.Context, spec runtime.Spec) (runtime.Pro
 		loopID:        spec.LoopID,
 		title:         "spool: " + spec.LoopName,
 		model:         spec.Model,
+		repo:          spec.Repo,
 		prompt:        spec.AppendSystemPrompt,
 		hubToken:      hub.token,
 		environmentID: current.EnvironmentID,
@@ -449,6 +453,21 @@ func (cloud *Runtime) Destroy(ctx context.Context, loopID string) error {
 		return err
 	}
 	return nil
+}
+
+// sessionPages is where claude.ai shows a cloud session. The API's
+// session_url is untrusted, as everything it answers is, so a link
+// anywhere else is never served.
+const sessionPages = "https://claude.ai/code/"
+
+// SessionURL is the claude.ai page of the loop's current cloud session,
+// "" while it has none.
+func (cloud *Runtime) SessionURL(loopID string) string {
+	current, err := cloud.load(loopID)
+	if err != nil || !strings.HasPrefix(current.SessionURL, sessionPages) {
+		return ""
+	}
+	return current.SessionURL
 }
 
 // HasWorkstation is false: there is nothing of the loop's own to halt or

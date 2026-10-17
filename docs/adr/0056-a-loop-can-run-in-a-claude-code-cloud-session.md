@@ -1,6 +1,6 @@
 # ADR-0056: A loop can run in a Claude Code cloud session, beside contained loops
 
-Date: 2026-10-15 · Status: accepted (operator decision of 2026-10-15 on #859, accepting it as written; operator direction of 2026-10-15 on #758: build it, in a mixed hub, on the undocumented read-back if that is noted, without OpenTelemetry; and of 2026-10-15 on #859: the egress allowlist is the hub's own) · Amended: 2026-10-15 (items 2, 3, 5, 6, 7 and 9: the API check, #861; operator decision of 2026-10-15 on #872: cloud turns report their cost); 2026-10-16 (item 4: the page switches the listener on, #864; item 6: what holds a cloud loop, and the cloud_address symptom, #864; item 6: the sign-in is the CLI's own login, #864) · Relates to: ADR-0017, ADR-0018, ADR-0022, ADR-0026, ADR-0028, ADR-0030, ADR-0037, ADR-0039, ADR-0044, ADR-0046, ADR-0047, ADR-0053
+Date: 2026-10-15 · Status: accepted (operator decision of 2026-10-15 on #859, accepting it as written; operator direction of 2026-10-15 on #758: build it, in a mixed hub, on the undocumented read-back if that is noted, without OpenTelemetry; and of 2026-10-15 on #859: the egress allowlist is the hub's own) · Amended: 2026-10-15 (items 2, 3, 5, 6, 7 and 9: the API check, #861; operator decision of 2026-10-15 on #872: cloud turns report their cost); 2026-10-16 (item 4: the page switches the listener on, #864; item 6: what holds a cloud loop, and the cloud_address symptom, #864; item 6: the sign-in is the CLI's own login, #864); 2026-10-17 (item 5: the ingress-credentials probe is started, the core question stays open, #866) · Relates to: ADR-0017, ADR-0018, ADR-0022, ADR-0026, ADR-0028, ADR-0030, ADR-0037, ADR-0039, ADR-0044, ADR-0046, ADR-0047, ADR-0053
 
 ## Context
 
@@ -292,6 +292,25 @@ the bar for setup: it has to be really simple.
      until Anthropic scopes the credentials. The operator chooses.
 
    THREAT-MODEL.md's *Cloud session* boundary records the outcome.
+
+   **Amendment (2026-10-17, #866): the probe was started; the core
+   question is still open.** Run against the real API before this slice,
+   on the #861 sign-in, haiku only, in a throwaway environment with the
+   hub's own allowlist; four sessions, all archived after. It showed:
+   egress is the environment's allowlist, as a host off it (`example.com`)
+   got no HTTP response; and an unauthenticated request from a session's
+   shell is refused (`GET /v1/organizations/me` 401; `GET /v1/sessions`
+   400, which on that API also follows from a missing `anthropic-beta`
+   header, so it is not read as an auth result). It did not show what
+   item 5 asks: whether a credential on the machine, or one an egress
+   proxy adds for `api.anthropic.com`, authenticates to the sessions API
+   and reaches another session. The session's own `claude`, with an empty
+   `mcp_config` and so no `claude-code-remote` tools, refused every
+   injected turn that asked it to enumerate credentials or reach another
+   session, so no credential was located or tried; that refusal is the
+   model's, not a control. The question therefore returns to the operator
+   under the two branches above, once a completed probe runs the
+   enumeration as the session's own shell with the CLI's headers.
 
    The setup script is cached into the environment's snapshot, so a
    changed public address reaches a running session only when its

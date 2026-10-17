@@ -93,6 +93,7 @@ type proc struct {
 	title         string
 	model         string
 	prompt        string
+	repo          string
 	hubToken      string
 	environmentID string
 	bounds        Bounds
@@ -251,6 +252,7 @@ func (session *proc) create(text, messageID string) error {
 		EnvironmentID:      session.environmentID,
 		Title:              session.title,
 		Model:              session.model,
+		Repo:               session.repo,
 		AppendSystemPrompt: session.prompt,
 		Env:                map[string]string{HubTokenVar: session.hubToken},
 		FirstMessage:       text,
@@ -262,6 +264,7 @@ func (session *proc) create(text, messageID string) error {
 	session.sessionID, session.afterID = created.ID, ""
 	if err := session.cloud.update(session.loopID, func(s *state) {
 		s.SessionID, s.ClaudeSession, s.AfterID = created.ID, session.claudeSession, ""
+		s.SessionURL = created.URL
 		s.SessionToken = tokenHash(session.hubToken)
 	}); err != nil {
 		return fmt.Errorf("cloud: keeping the session's id: %w", err)

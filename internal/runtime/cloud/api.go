@@ -164,6 +164,9 @@ type SessionSpec struct {
 	// MCP token among them (ADR-0056). The session's record never serves
 	// them back. Never logged.
 	Env map[string]string
+	// Repo is the GitHub repo the session starts from, "" for none: an
+	// empty home directory.
+	Repo string
 	// FirstMessage is the turn the session starts with.
 	FirstMessage string
 	// MessageID is FirstMessage's uuid, which its echo in the event
@@ -190,7 +193,7 @@ func (client *Client) CreateSession(ctx context.Context, spec SessionSpec) (Sess
 			map[string]any{"type": "event", "data": userEvent(spec.FirstMessage, spec.MessageID)},
 		},
 		"session_context": map[string]any{
-			"sources":               []any{},
+			"sources":               sources(spec.Repo),
 			"outcomes":              []any{},
 			"model":                 spec.Model,
 			"append_system_prompt":  spec.AppendSystemPrompt,
@@ -334,6 +337,15 @@ func (client *Client) UpdateEnvironment(ctx context.Context, id string, spec Env
 func (client *Client) ArchiveEnvironment(ctx context.Context, id string) error {
 	return client.call(ctx, http.MethodPost, "/v1/environments/"+url.PathEscape(id)+"/archive",
 		url.Values{"beta": {"true"}}, environmentsBeta, map[string]any{}, nil)
+}
+
+// sources is a session's sources: the repo it starts from, if any. A
+// session with none starts in an empty home directory (ADR-0056).
+func sources(repo string) []any {
+	if repo == "" {
+		return []any{}
+	}
+	return []any{map[string]any{"type": "git_repository", "url": repo}}
 }
 
 // permissionModeEvent opens a session's permissions: without it, the first
