@@ -794,3 +794,6 @@ Elliot: seam 4 review #907 closed; findings #909 (merged) and #912 (low, secret 
 
 ## 2026-10-16 23:25 UTC
 Sweep: merged #913 (threat-model, archives), #914 (Terra, cloud loops wait for a passing address check), #915 (Iris, #865 part 1). Open PRs: #916 (fix(route), the #912 fix, so Enes picked its scope), #453. Board tidy. Fleet upgrade to b720ca7 still unreported; main is now 6+ commits past it. Tomorrow: if Enes has not upgraded, ask whether the candidate moves to the newer tip (it carries the cloud UI half now) or stays at b720ca7.
+
+## 2026-10-17 03:30 UTC
+Night sweep: #917 (Elliot, accepted-risks section of THREAT-MODEL, #777's closing child) → L6. #916 still open. No merges overnight. Fleet upgrade unreported.
