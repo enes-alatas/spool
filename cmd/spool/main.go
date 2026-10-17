@@ -569,6 +569,7 @@ func main() {
 		CloudGate:            cloudGate,
 		CloudSignIn:          cloudSignIn,
 		CloudAccounts:        cloudEnvironments{cloudRuntime},
+		CloudSessions:        cloudRuntime,
 		EgressFlag:           egressFlag(allowEntries),
 		Log:                  log,
 		WebFS:                web.Dist(),

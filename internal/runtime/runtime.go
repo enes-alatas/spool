@@ -53,6 +53,10 @@ type Spec struct {
 	MemMB int     // workstation memory limit
 	CPUs  float64 // workstation CPU limit
 
+	// Repo is the GitHub repo a cloud session starts from, "" for none.
+	// Only the cloud runtime reads it (ADR-0056).
+	Repo string
+
 	Model  string
 	Effort string // ""|low|medium|high|xhigh|max
 

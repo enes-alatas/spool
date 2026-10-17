@@ -163,13 +163,14 @@ the interface, `internal/runtime/bare` runs host subprocesses,
 `internal/runtime/docker` runs workstations through the docker CLI (ADR-0018), and
 `internal/runtime/cloud` runs each loop in a Claude Code cloud session, sending its
 turns in and reading their events back over Anthropic's undocumented sessions API,
-and failing loudly when that changes (ADR-0056). A cloud loop is created by no
-route yet. Settings → Cloud switches the cloud listener and sets and checks
+and failing loudly when that changes (ADR-0056). Settings → Cloud switches the cloud listener and sets and checks
 the public address (`/api/settings/cloud`), and a cloud loop takes a turn
 only within a minute of a check that passed. It also signs in to the
 account by running the Claude Code CLI's own login, `claude auth login`, in a
-config directory of the hub's, and keeps the tokens sealed. The runtime picker
-comes with the next slice.
+config directory of the hub's, and keeps the tokens sealed. Once both steps
+are green, `POST /api/loops` takes `runtime: cloud`, with an optional
+`cloud_repo` its sessions start from; the loop's view carries the repo and
+its current session's page on claude.ai. A cloud loop never moves runtime.
 Each docker workstation sits on an internal network of its own, shared with
 the proxy alone and with no route off it; its only
 way out is `spool-egress-proxy`, a container running `cmd/spool-egress` that

@@ -127,6 +127,9 @@ type Server struct {
 	// none: the page can't sign in.
 	CloudSignIn   CloudSignIn
 	CloudAccounts CloudAccountChecker
+	// CloudSessions reads each cloud loop's session link. Nil on a hub
+	// that wires none: the view carries no link.
+	CloudSessions CloudSessions
 	// EgressFlag is --egress-allow as this hub was started with it, which
 	// seeded the stored list on the first start (#542); nil when the hub
 	// was started without the flag.
@@ -356,6 +359,8 @@ const (
 	// A docker loop on a hub whose loop listener its workstation cannot
 	// reach (#474).
 	codeLoopListenerUnreachable = "loop_listener_unreachable"
+	// A cloud loop on a hub whose Settings → Cloud is not green (ADR-0056).
+	codeCloudNotReady = "cloud_not_ready"
 )
 
 func writeJSON(w http.ResponseWriter, code int, body any) {
@@ -467,6 +472,9 @@ type loopView struct {
 	MCPSessionID string           `json:"mcp_session_id,omitempty"`
 	MCPServers   *[]mcpServerView `json:"mcp_servers,omitempty"` // [] for an init with none
 	ToolCount    *int             `json:"tool_count,omitempty"`
+	// CloudSessionURL is a cloud loop's current session on claude.ai,
+	// absent before its first session (ADR-0056).
+	CloudSessionURL string `json:"cloud_session_url,omitempty"`
 }
 
 // loopConnectionView is one connection a loop holds.
@@ -564,6 +572,9 @@ func (server *Server) view(ctx context.Context, loopRecord *store.Loop) *loopVie
 	if cost, err := server.Store.Turns().CostSince(ctx, loopRecord.ID, dayStart); err == nil {
 		out.CostToday = cost
 	}
+	if loopRecord.Runtime == store.RuntimeCloud && server.CloudSessions != nil {
+		out.CloudSessionURL = server.CloudSessions.SessionURL(loopRecord.ID)
+	}
 	if failures, err := server.Store.Messages().UnresolvedSendFailures(ctx, loopRecord.ID); err == nil {
 		out.Undelivered = failures
 	} else {
@@ -638,12 +649,13 @@ type createLoopReq struct {
 	Model           string  `json:"model"`
 	Effort          string  `json:"effort"`         // ""|low|medium|high|xhigh|max
 	Pacing          string  `json:"pacing"`         // ""(=fixed)|fixed|self
-	Runtime         string  `json:"runtime"`        // ""(=server default)|bare|docker; set at creation; a bare loop moves to docker only through POST .../rehome (ADR-0018)
+	Runtime         string  `json:"runtime"`        // ""(=server default)|bare|docker|cloud; set at creation; a bare loop moves to docker only through POST .../rehome (ADR-0018)
 	Image           string  `json:"image"`          // docker only; "" = the server's default image
 	MemMB           int     `json:"mem_mb"`         // docker only; 0 = 4096 (ADR-0017)
 	CPUs            float64 `json:"cpus"`           // docker only; 0 = 2
 	WorkspacePath   string  `json:"workspace_path"` // bare only; empty = no workspace
 	WorkspaceMode   string  `json:"workspace_mode"` // "auto" (default) | "dir" | "none"
+	CloudRepo       string  `json:"cloud_repo"`     // cloud only; the GitHub repo its sessions start from, "" = none (ADR-0056)
 	TickIntervalSec int     `json:"tick_interval_sec"`
 	MinWakeSec      int     `json:"min_wake_sec"`
 	MaxWakeSec      int     `json:"max_wake_sec"`
@@ -738,8 +750,26 @@ func (server *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+	case store.RuntimeCloud:
+		if req.Image != "" || req.MemMB != 0 || req.CPUs != 0 || req.WorkspacePath != "" {
+			server.jsonErr(w, 400, "a cloud loop runs on Anthropic's machine; image, mem_mb, cpus and workspace_path don't apply")
+			return
+		}
+		if err := server.cloudReady(r.Context()); err != nil {
+			server.jsonErrCode(w, 409, codeCloudNotReady, "%v", err)
+			return
+		}
 	default:
-		server.jsonErr(w, 400, "runtime must be 'bare' or 'docker' (or empty for the server default)")
+		server.jsonErr(w, 400, "runtime must be 'bare', 'docker' or 'cloud' (or empty for the server default)")
+		return
+	}
+	repo, err := cloudRepo(req.CloudRepo)
+	if err != nil {
+		server.jsonErr(w, 400, "%v", err)
+		return
+	}
+	if repo != "" && loopRuntime != store.RuntimeCloud {
+		server.jsonErr(w, 400, "cloud_repo applies to cloud loops only")
 		return
 	}
 
@@ -757,6 +787,7 @@ func (server *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 		IdleTimeoutSec:  defaultInt(req.IdleTimeoutSec, 90),
 		TGBotToken:      strings.TrimSpace(req.TGBotToken),
 		Runtime:         loopRuntime,
+		CloudRepo:       repo,
 		Status:          store.StatusActive,
 		CreatedAt:       nowMS,
 		UpdatedAt:       nowMS,
@@ -1098,7 +1129,7 @@ func (server *Server) handleDeleteLoop(w http.ResponseWriter, r *http.Request) {
 	if loopRecord == nil {
 		return
 	}
-	server.Manager.Remove(loopRecord.ID, loopRecord.Runtime)
+	server.Manager.Remove(loopRecord.ID)
 	for _, loopSurface := range server.Surfaces {
 		loopSurface.LoopRemoved(loopRecord.ID)
 	}
@@ -1113,6 +1144,10 @@ func (server *Server) handleDeleteLoop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	server.secretsChanged(r.Context()) // the connections only it held went with it
+	// The workstation goes last: the loop's hub token went with its
+	// record, so a cloud loop's archive calls, up to a minute, or a
+	// failed one, leave no token that works (ADR-0056).
+	server.Manager.DestroyWorkstation(loopRecord.ID, loopRecord.Runtime)
 	writeJSON(w, 200, map[string]bool{"deleted": true})
 }
 
