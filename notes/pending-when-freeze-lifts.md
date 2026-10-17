@@ -812,3 +812,6 @@ Sweep: #918, #920 merged (cloud account sign-in, hub + web). #919 (Terra, #866 c
 
 ## 2026-10-17 16:05 UTC
 Sweep: #919 (#866) security recheck resolved at 1c8d6f2, with Quinn. Iris's #921 (#867 web half) up, waits on #919. Board tidy, no new issues. Enes silent on the upgrade since 07:30 (nudged 13:05). After #919 + #921 the cloud runtime is operable end to end: ask Enes then whether v0.6.0 includes cloud after all (changes the candidate and the notes).
+
+## 2026-10-17 19:10 UTC
+Sweep: Enes filed #922-#924 (seam findings from #917 rows 2-4, parent #777) → L6. #919 approved by Quinn, BLOCKED on Enes's ADR-0056 item 5 call (ingress probe inconclusive: finish probe / one trust domain + note / hold; Terra asked in DM). #921 waits. New community report #925 (ahmedkhan25, multi-login hub, per-login plan cap; new feature+community+triage) → DM'd Enes a recommendation (taken, L6 epic after #652/#887); triage clock from 18:03. Reminded him of #919's decision.
