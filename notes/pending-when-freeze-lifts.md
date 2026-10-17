@@ -827,3 +827,6 @@ Enes: #926 stays on L6, thank the reporter. Added a thank-you comment on #925 (i
 
 ## 2026-10-17 21:15 UTC
 Fleet upgraded: runtime v0.5.1-188-g547e920 = main tip (#927 merged, accepted risks). v0.6.0 candidate = 547e920. Dogfood clock: 2026-10-17 21:00 → 2026-10-19 21:00. Told Enes. Open PRs: #919 (blocked on Enes's item 5 call), #921 (waits on #919), #453. Watch for bites: any loop misbehaviour → file on CI reliability or the right rung and tell the group tersely.
+
+## 2026-10-17 21:50 UTC
+Terra: Enes decided (DM) one Claude sign-in for both runtimes, claude.ai login replaces the setup-token; Terra filed #928 (improvement). Homed: Cloud runtime milestone, parent #860. Filed web half #929 (Iris, after #928, mockup first). Terra order: #919 (blocked on item 5) → #928 → #922 → #924 → #923 → #877 → #855 → #652 → #887 → #766 → #871 → #830 → #630. Iris: #921 (waits #919) → #929 (after #928).
