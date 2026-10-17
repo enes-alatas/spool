@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -157,15 +158,56 @@ func TestCloudTurnIdleWithNoResultEndsAsAnError(t *testing.T) {
 	}
 }
 
-// Deleting a cloud loop archives its session and its environment, so
-// nothing starts in either again.
-func TestDeletingACloudLoopArchivesItsSessionAndEnvironment(t *testing.T) {
+// Deleting a cloud loop revokes its hub token first, then archives its
+// session and its environment, so nothing starts in either again. The
+// archive calls can take up to a minute, or fail, and the token works at
+// no point in between (ADR-0056).
+func TestDeletingACloudLoopRevokesItsTokenThenArchives(t *testing.T) {
 	t.Parallel()
 	s, fake := startCloudHub(t, "stratus")
 	s.message("stratus", "hello")
 	s.waitTurn("stratus", 20*time.Second, func(turn turn) bool { return turn.Trigger != store.TriggerTick })
+	token := hubMCPToken(t, s, "stratus")
+	initialize := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"itest","version":"0"}}}`
+	if got := postTo(t, s.cloudURL, token, initialize); got != http.StatusOK {
+		t.Fatalf("the loop's token before the delete: %d, want 200", got)
+	}
 
-	s.mustJSON("DELETE", "/api/loops/stratus", nil, nil)
+	gate := make(chan struct{})
+	release := sync.OnceFunc(func() { close(gate) })
+	// a held call keeps the fake from closing
+	t.Cleanup(release)
+	fake.Mu.Lock()
+	fake.ArchiveGate = gate
+	fake.Mu.Unlock()
+	deleted := make(chan int, 1)
+	go func() {
+		req, _ := http.NewRequest(http.MethodDelete, s.baseURL+"/api/loops/stratus", nil)
+		req.Header.Set("Authorization", "Bearer "+s.operatorToken)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			deleted <- 0
+			return
+		}
+		resp.Body.Close()
+		deleted <- resp.StatusCode
+	}()
+	within(t, 10*time.Second, "the delete's first archive call", func() bool {
+		fake.Mu.Lock()
+		defer fake.Mu.Unlock()
+		return fake.ArchivesHeld > 0
+	})
+	if got := postTo(t, s.cloudURL, token, initialize); got != http.StatusUnauthorized {
+		t.Errorf("the loop's token while its archive is held: %d, want 401", got)
+	}
+	fake.Mu.Lock()
+	fake.ArchiveGate = nil
+	fake.Mu.Unlock()
+	release()
+	if status := <-deleted; status != http.StatusOK {
+		t.Fatalf("the delete answered %d, want 200", status)
+	}
+
 	fake.Mu.Lock()
 	defer fake.Mu.Unlock()
 	for _, environment := range fake.Environments {

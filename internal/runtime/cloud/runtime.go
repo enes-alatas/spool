@@ -427,7 +427,7 @@ func (cloud *Runtime) Halt(context.Context, string) error { return runtime.ErrUn
 // Destroy archives the loop's session and its environment, and forgets
 // both. Neither can be deleted; archived, nothing starts in either again.
 // The loop's hub token is not this runtime's to revoke: the hub deletes it
-// with the loop, after Destroy returns, until #866 has it revoked first.
+// with the loop before Destroy runs.
 func (cloud *Runtime) Destroy(ctx context.Context, loopID string) error {
 	current, err := cloud.load(loopID)
 	if err != nil {
