@@ -800,3 +800,6 @@ Night sweep: #917 (Elliot, accepted-risks section of THREAT-MODEL, #777's closin
 
 ## 2026-10-17 07:30 UTC
 Morning sweep: no new issues, #916 still open, board tidy. Main is 6 commits past b720ca7 (all cloud UI/address check/docs). DM'd Enes: upgrade the fleet to f6e25f1 (current tip) rather than b720ca7; two-day clock starts when the fleet is back. Awaiting his word/upgrade.
+
+## 2026-10-17 09:30 UTC
+Sweep: #916 merged 07:52. Terra on #864 part 3 (account sign-in via the CLI's own login, Enes's decision on the issue). Open PRs: #453 only. Board tidy. Enes silent on the fleet upgrade since 07:30.
