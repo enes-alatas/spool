@@ -8,7 +8,7 @@ import {
   workstationNote,
 } from './workstation'
 
-const down = (down_reason: string, workstation_detail = '', runtime: 'bare' | 'docker' = 'docker') =>
+const down = (down_reason: string, workstation_detail = '', runtime: LoopView['runtime'] = 'docker') =>
   ({ workstation_up: false, down_reason, workstation_detail, runtime }) as Pick<
     LoopView,
     'workstation_up' | 'down_reason' | 'workstation_detail' | 'runtime'
@@ -103,6 +103,14 @@ describe('workstationNote', () => {
     })
     expect(workstationNote(down('hub_unreachable'))).toEqual({
       text: `can't reach the hub: ${hubUnreachable(undefined)}`,
+      bad: true,
+    })
+  })
+
+  it('says a cloud loop has a session, and says nothing before its first one', () => {
+    expect(workstationNote(down('not_provisioned', '', 'cloud'))).toBeUndefined()
+    expect(workstationNote(down('unreachable', 'session archived', 'cloud'))).toEqual({
+      text: 'cloud session down: session archived',
       bad: true,
     })
   })

@@ -1,3 +1,4 @@
+import { RuntimeBadge } from '../components/RuntimeBadge'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
 import { api, LoopView, Settings } from '../api'
@@ -20,6 +21,7 @@ import { HealthNote } from '../components/Health'
 import { useMay } from '../components/Session'
 import { undeliveredNote } from '../messages'
 import { workstationNote } from '../workstation'
+import { unnamedCloudHold, useCloudSettings } from '../cloudLoop'
 import { useEffect, useState } from 'react'
 
 function Countdown({ at }: { at: number }) {
@@ -108,7 +110,8 @@ function FleetRow({
   fleetCapped: boolean
 }) {
   const nav = useNavigate()
-  const station = workstationNote(loop)
+  const hold = unnamedCloudHold(loop, useCloudSettings(loop))
+  const station = hold ? { text: `held: ${hold}`, bad: true } : workstationNote(loop)
   const undelivered = undeliveredNote(loop.undelivered)
   return (
     <Link to={`/loops/${loop.name}`} className="fleet-row">
@@ -121,6 +124,7 @@ function FleetRow({
           {loop.mission}
         </span>
         {(loop.runtime === 'bare' ||
+          loop.runtime === 'cloud' ||
           station ||
           undelivered ||
           loop.branch ||
@@ -131,7 +135,7 @@ function FleetRow({
             {/* First: a loop the health check has a problem with is the
                 row's news (ADR-0053). */}
             <HealthNote loop={loop} />
-            {loop.runtime === 'bare' && <span className="containment-badge">uncontained</span>}
+            <RuntimeBadge runtime={loop.runtime} />
             {station && <span className={station.bad ? 'note bad' : 'note'}>{station.text}</span>}
             {/* With the faults rather than with the metadata: a loop whose
                 messages are not arriving is something to act on, and the
