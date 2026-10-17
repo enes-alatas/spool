@@ -72,7 +72,23 @@ export const PACING_OPTIONS = [
 export const RUNTIME_OPTIONS = [
   { value: 'docker', label: 'Container, isolated from this machine' },
   { value: 'bare', label: 'Uncontained, runs on this machine' },
+  { value: 'cloud', label: "Cloud, on Anthropic's machines" },
 ]
+
+// The cloud badge's tooltip (ADR-0056): where a cloud loop runs, and whose
+// wall its network allowlist is held by.
+export const CLOUD_BADGE_TITLE =
+  "Runs in a Claude Code cloud session on Anthropic's machines. Its network allowlist is this hub's, " +
+  "but Anthropic's proxy enforces it, not this hub's egress wall."
+
+// The warning New loop shows beside the cloud runtime's note. Cloud loops are
+// one trust domain (ADR-0056, operator decision of 2026-10-18 on #919), and
+// the control room says so when one is created. It is a line of its own, so
+// the warning isn't lost in the note's explanation; the sentence echoes
+// THREAT-MODEL's *Cloud session* boundary.
+export const CLOUD_TRUST_WARNING =
+  'Cloud loops are not isolated from each other: a cloud loop can act as any other cloud loop on the ' +
+  'account, though never as a contained loop. Give a cloud loop only work you would trust every cloud loop with.'
 
 export interface RuntimeNote {
   text: string
@@ -83,10 +99,11 @@ export interface RuntimeNote {
 
 // What the form says beneath the runtime choice.
 //
-// Uncontained is the only kind that needs a warning, and it needs it before
+// Uncontained is the only kind whose note is a warning, and it needs it before
 // the loop exists: afterwards the *uncontained* badge is the record of a
 // decision the operator was never told they were taking (#255). The sentence
-// is the README's, because the README is where they met the word.
+// is the README's, because the README is where they met the word. (Cloud's
+// warning is CLOUD_TRUST_WARNING, a line of its own.)
 //
 // Only kinds the form offers reach here, and it offers `bare` only on a hub
 // that allows one (#254) — so there is no "this hub would refuse that" case
@@ -98,6 +115,14 @@ export function runtimeNote(kind: string): RuntimeNote {
         'Uncontained: the loop runs as a subprocess under your own account, with your network and ' +
         'your files, and with permission prompts bypassed.',
       warn: true,
+    }
+  }
+  if (kind === 'cloud') {
+    return {
+      text:
+        "The loop runs in a Claude Code cloud session on Anthropic's machines, so it keeps running while " +
+        "this machine sleeps. Its network allowlist is this hub's, enforced by Anthropic's proxy.",
+      warn: false,
     }
   }
   return { text: 'The loop runs in its own container: its own filesystem, its own network.', warn: false }
@@ -124,6 +149,9 @@ export function runtimeFieldNote(
         }
       : { text: 'Asking this hub what it runs loops as…', warn: false }
   }
+  // Cloud is offered on every hub (ADR-0056), so it is described whatever
+  // the hub allows besides.
+  if (chosen === 'cloud') return runtimeNote('cloud')
   if (!hub.bare_allowed) {
     return {
       text: 'This hub runs loops in Docker. To offer uncontained bare loops, start spool with --allow-bare.',
@@ -138,9 +166,12 @@ export function runtimeFieldNote(
 // nothing to it, and the API refuses one (#427), so the field is locked and
 // says where the workspace is instead.
 export function workspaceFieldNote(chosenRuntime: string): string {
-  return chosenRuntime === 'docker'
-    ? 'A Docker loop works inside its workstation; the workspace lives there.'
-    : ''
+  if (chosenRuntime === 'docker')
+    return 'A Docker loop works inside its workstation; the workspace lives there.'
+  // the form shows the repo field in its place
+  if (chosenRuntime === 'cloud')
+    return 'A cloud loop works in its session, from a GitHub repo if you name one.'
+  return ''
 }
 
 // What the Settings list says about a custom model's resolution, or '' when

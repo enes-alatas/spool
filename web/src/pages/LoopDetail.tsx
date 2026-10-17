@@ -1,3 +1,4 @@
+import { RuntimeBadge } from '../components/RuntimeBadge'
 import {
   useState,
   useRef,
@@ -59,6 +60,8 @@ import { ChannelChat } from '../components/ChannelChat'
 import { channelLabel } from '../channels'
 import { privateLabel, privatePerson } from '../privates'
 import { MCPReach } from '../components/MCPReach'
+import { CloudWorkstation } from '../components/CloudWorkstation'
+import { unnamedCloudHold, useCloudSettings } from '../cloudLoop'
 import { LeftBehind, RehomeControl } from '../components/Rehome'
 import { SpoolGlyph } from '../components/Spool'
 import { EditIcon } from '../components/Icons'
@@ -605,6 +608,7 @@ const VERB_PROGRESS: Record<string, string> = {
 // refused login happens with a token set, where the missing-token banner
 // above the page says nothing, and on a bare loop, which it never covers.
 function WorkstationNote({ loop }: { loop: LoopView }) {
+  if (loop.runtime === 'cloud') return <CloudSessionNote loop={loop} />
   if (loop.workstation_up) return null
   switch (loop.down_reason) {
     case 'powered_off':
@@ -632,6 +636,29 @@ function WorkstationNote({ loop }: { loop: LoopView }) {
         </div>
       )
   }
+}
+
+// A cloud loop's line under its name (ADR-0056): a hold the
+// `cloud_address` problem doesn't already name, and a session that is down.
+// One its first wake hasn't made yet is nothing to remark on.
+function CloudSessionNote({ loop }: { loop: LoopView }) {
+  const hold = unnamedCloudHold(loop, useCloudSettings(loop))
+  if (hold)
+    return (
+      <div className="ws-down-note">
+        Held: {hold}, so no turn starts. Fix it in{' '}
+        <Link className="text-link" to="/settings">
+          Settings → Cloud
+        </Link>
+        .
+      </div>
+    )
+  if (loop.workstation_up || loop.down_reason === 'not_provisioned') return null
+  return (
+    <div className="ws-down-note">
+      Cloud session down{loop.workstation_detail ? `: ${loop.workstation_detail}` : ''}
+    </div>
+  )
 }
 
 // WorkstationPanel shows where a loop's claude actually runs (ADR-0017) — the
@@ -1729,7 +1756,7 @@ export default function LoopDetail() {
             <SpoolGlyph spinning={loop.state === 'busy'} size={28} />
             <span style={{ fontFamily: 'var(--mono)' }}>@{loop.name}</span>
             <span className="state-name">{loop.state}</span>
-            {loop.runtime === 'bare' && <span className="containment-badge">uncontained</span>}
+            <RuntimeBadge runtime={loop.runtime} />
           </h1>
           <Doing loop={loop} className="loop-doing" />
           <LoopProvenance loop={loop} />
@@ -1975,7 +2002,11 @@ export default function LoopDetail() {
             context={transcript && <ContextRows loop={loop} turns={turns ?? []} thresholds={thresholds} />}
           />
 
-          <WorkstationPanel loop={loop} runningVerb={runningVerb} />
+          {loop.runtime === 'cloud' ? (
+            <CloudWorkstation loop={loop} />
+          ) : (
+            <WorkstationPanel loop={loop} runningVerb={runningVerb} />
+          )}
 
           <SurfacesPanel loop={loop} />
 

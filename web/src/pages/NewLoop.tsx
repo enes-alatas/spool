@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type LoopView } from '../api'
 import {
+  CLOUD_TRUST_WARNING,
   EFFORT_OPTIONS,
   PACING_OPTIONS,
   RUNTIME_OPTIONS,
@@ -13,6 +14,9 @@ import { useModelOptions } from '../models'
 import { customModelError, startsInFleetChannel } from '../forms'
 import { PACE_HINT, type Pace } from '../pace'
 import { PaceRange } from '../components/PaceRange'
+import { CloudSetup } from '../components/CloudSection'
+import { firstOpenStep, type SetupStep } from '../cloud'
+import { cloudRepoError } from '../cloudLoop'
 
 export default function NewLoop() {
   const nav = useNavigate()
@@ -38,6 +42,8 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
   const [runtime, setRuntime] = useState('')
   const [wsPath, setWsPath] = useState('')
   const [wsInfo, setWsInfo] = useState<{ exists: boolean; is_git: boolean } | null>(null)
+  const [repo, setRepo] = useState('')
+  const [setup, setSetup] = useState<SetupStep | null>(null)
   // The hub's own min and max wake defaults, 5 min and 4 h, shown so the
   // range is chosen with the tick rather than discovered after it.
   const [pace, setPace] = useState<Pace>({ min: 300, tick: 1800, max: 14400 })
@@ -75,11 +81,31 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
   const wsNote = workspaceFieldNote(chosenRuntime)
   const wsLocked = !hubKnown || wsNote !== ''
 
-  const chooseRuntime = (kind: string) => {
+  // Cloud is offered on every hub (ADR-0056); a hub whose Settings → Cloud
+  // isn't green refuses one, so picking it opens the guided setup at the
+  // step it needs, and the form waits for the setup to finish.
+  const cloud = chosenRuntime === 'cloud'
+  const { data: cloudSettings, error: cloudError } = useQuery({
+    queryKey: ['cloud'],
+    queryFn: api.cloudSettings,
+    enabled: cloud,
+  })
+  const cloudStep = cloudSettings ? firstOpenStep(cloudSettings) : undefined
+  const cloudReady = cloudStep === 'done'
+  const repoError = cloud ? cloudRepoError(repo) : ''
+
+  const chooseRuntime = async (kind: string) => {
     setRuntime(kind)
     if (workspaceFieldNote(kind)) {
       setWsPath('')
       setWsInfo(null)
+    }
+    if (kind !== 'cloud') return
+    try {
+      const step = firstOpenStep(await qc.fetchQuery({ queryKey: ['cloud'], queryFn: api.cloudSettings }))
+      if (step !== 'done') setSetup(step)
+    } catch {
+      /* the field says the hub didn't answer */
     }
   }
 
@@ -117,8 +143,9 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
         // is. Omitted otherwise, which is what the form did before this
         // choice existed: the hub resolves its own default, and that cannot
         // be wrong.
-        runtime: (chosenRuntime as 'bare' | 'docker') || undefined,
+        runtime: (chosenRuntime as 'bare' | 'docker' | 'cloud') || undefined,
         workspace_path: (!wsLocked && wsPath.trim()) || undefined,
+        cloud_repo: (cloud && repo.trim()) || undefined,
         tick_interval_sec: pace.tick,
         min_wake_sec: pace.min,
         max_wake_sec: pace.max,
@@ -243,6 +270,21 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
           ))}
         </select>
         <div className={`hint ${note.warn ? 'warn' : ''}`}>{note.text}</div>
+        {cloud && <div className="hint warn">{CLOUD_TRUST_WARNING}</div>}
+        {cloud && !cloudReady && (
+          <div className="hint warn">
+            {cloudError
+              ? `This hub didn't say whether it is set up for cloud loops: ${cloudError instanceof Error ? cloudError.message : String(cloudError)}`
+              : cloudSettings
+                ? 'This hub is not set up for cloud loops yet. '
+                : 'Asking this hub whether it is set up for cloud loops…'}
+            {cloudStep && (
+              <button type="button" className="btn sm" onClick={() => setSetup(cloudStep)}>
+                Set up cloud loops
+              </button>
+            )}
+          </div>
+        )}
         <div className="hint">
           A loop reaches only Spool's own MCP server, which carries the one tool it needs to send messages.
           MCP servers and connectors on your Claude account are never passed to a loop (
@@ -250,26 +292,43 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
         </div>
       </div>
 
-      <div className="field">
-        <label htmlFor="nl-ws">Workspace (optional)</label>
-        <input
-          id="nl-ws"
-          placeholder={wsNote ? '' : '/path/to/repo, or leave empty for a conversational loop'}
-          value={wsLocked ? '' : wsPath}
-          onChange={(e) => inspect(e.target.value)}
-          disabled={wsLocked}
-        />
-        {wsNote && <div className="hint">{wsNote}</div>}
-        {!wsLocked && wsInfo && wsPath.trim() && (
-          <div className={`hint ${wsInfo.exists ? (wsInfo.is_git ? 'ok' : '') : 'warn'}`}>
-            {!wsInfo.exists
-              ? 'Directory not found.'
-              : wsInfo.is_git
-                ? `Git repo: an isolated worktree will be created on branch loop/${name || '<name>'}.`
-                : 'Plain directory: the loop works here directly.'}
+      {cloud ? (
+        <div className="field">
+          <label htmlFor="nl-repo">GitHub repo (optional)</label>
+          <input
+            id="nl-repo"
+            className="mono"
+            placeholder="https://github.com/owner/repo, or leave empty for a conversational loop"
+            value={repo}
+            onChange={(e) => setRepo(e.target.value)}
+          />
+          <div className={`hint ${repoError ? 'warn' : ''}`}>
+            {repoError ||
+              'Each of its sessions starts from a clone of the repo. The Claude GitHub App has to be installed on it: a session reaches GitHub as the app does, so give the app only the repos your loops need.'}
           </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className="field">
+          <label htmlFor="nl-ws">Workspace (optional)</label>
+          <input
+            id="nl-ws"
+            placeholder={wsNote ? '' : '/path/to/repo, or leave empty for a conversational loop'}
+            value={wsLocked ? '' : wsPath}
+            onChange={(e) => inspect(e.target.value)}
+            disabled={wsLocked}
+          />
+          {wsNote && <div className="hint">{wsNote}</div>}
+          {!wsLocked && wsInfo && wsPath.trim() && (
+            <div className={`hint ${wsInfo.exists ? (wsInfo.is_git ? 'ok' : '') : 'warn'}`}>
+              {!wsInfo.exists
+                ? 'Directory not found.'
+                : wsInfo.is_git
+                  ? `Git repo: an isolated worktree will be created on branch loop/${name || '<name>'}.`
+                  : 'Plain directory: the loop works here directly.'}
+            </div>
+          )}
+        </div>
+      )}
 
       <label className="switch-row">
         <input
@@ -293,10 +352,15 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
       </label>
 
       <div>
-        <button className="btn primary" onClick={create} disabled={busy || !slugOk || !mission.trim()}>
+        <button
+          className="btn primary"
+          onClick={create}
+          disabled={busy || !slugOk || !mission.trim() || (cloud && (!cloudReady || repoError !== ''))}
+        >
           {busy ? 'Creating…' : 'Create loop'}
         </button>
       </div>
+      {setup && <CloudSetup start={setup} doneLabel="Back to the new loop" onClose={() => setSetup(null)} />}
     </div>
   )
 }

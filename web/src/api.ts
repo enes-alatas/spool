@@ -34,7 +34,13 @@ export interface LoopView {
   repo_path: string
   worktree_path: string
   branch: string
-  runtime: 'bare' | 'docker'
+  runtime: 'bare' | 'docker' | 'cloud'
+  // A cloud loop's GitHub repo, as https://github.com/<owner>/<repo>, that
+  // its sessions start from; '' for none, and on every other loop.
+  cloud_repo: string
+  // A cloud loop's current session on claude.ai, absent before its first
+  // session; the hub serves only a https://claude.ai/code/ page (ADR-0056).
+  cloud_session_url?: string
   // A bare loop asked to move into a docker workstation (#632): true from
   // the ask until the move lands or fails, or a hub restart drops it.
   rehoming: boolean
@@ -571,6 +577,25 @@ export interface EgressView {
   // failed or the proxy went away; the next wake copies it.
   changed_at?: number
   applied_at?: number
+  // The cloud loops' environments (ADR-0056), absent on a hub with none.
+  cloud?: CloudEgress
+}
+
+// How far the allowlist reaches the cloud loops: each loop's environment,
+// written with the list as it stands or not, and the entries a cloud
+// environment doesn't carry.
+export interface CloudEgress {
+  environments: CloudEnvironmentSync[]
+  not_applied: string[]
+}
+
+export interface CloudEnvironmentSync {
+  loop: string
+  in_sync: boolean
+  // Why its last write failed, while it isn't in sync; an admin's alone.
+  error?: string
+  // When a write last landed, Unix ms.
+  synced_at?: number
 }
 
 // The Claude plan's usage as the hub last observed it (#647), mirrored from
@@ -892,7 +917,10 @@ export interface CreateLoopReq {
   model?: string
   effort?: string
   pacing?: 'fixed' | 'self'
-  runtime?: 'bare' | 'docker' // create-only; empty = server default
+  // Create-only; empty = server default. `cloud` is refused with 409
+  // `cloud_not_ready` until Settings → Cloud is green.
+  runtime?: 'bare' | 'docker' | 'cloud'
+  cloud_repo?: string // cloud only
   image?: string // docker only
   mem_mb?: number // docker only
   cpus?: number // docker only

@@ -952,6 +952,13 @@ textarea {
   padding: 1px 5px;
   flex: none;
 }
+/* a cloud loop is not unsafe, only elsewhere: neutral, with its caveat in
+   the tooltip (ADR-0056, the operator's pick on #867) */
+.containment-badge.cloud {
+  color: var(--text-muted);
+  border-color: var(--hairline);
+  cursor: help;
+}
 
 /* ---- fleet list ---- */
 /* Fleet is the one authoritative list of loops (#71): full-width rows
@@ -2188,6 +2195,10 @@ textarea {
   font-size: 0.71875rem;
   color: var(--text-muted);
   margin-top: 8px;
+}
+/* a cloud loop the hub holds: the loop is not running (ADR-0053) */
+.panel-note.bad {
+  color: var(--danger);
 }
 /* a section inside a side panel, under the panel's own heading: the
    surface's groups or channels in Surfaces (#849), titled as a field's
