@@ -237,6 +237,10 @@ type Loop struct {
 	Image   string  `json:"image"`   // workstation image; "" = the server default
 	MemMB   int     `json:"mem_mb"`  // workstation memory limit
 	CPUs    float64 `json:"cpus"`    // workstation CPU limit
+	// CloudRepo is the GitHub repo a cloud loop's sessions start from, as
+	// https://github.com/<owner>/<repo>; "" starts them in an empty home
+	// directory, and every other runtime's loop has none (ADR-0056).
+	CloudRepo string `json:"cloud_repo"`
 
 	TickIntervalSec int    `json:"tick_interval_sec"`
 	MinWakeSec      int    `json:"min_wake_sec"`

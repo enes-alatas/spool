@@ -124,8 +124,9 @@ func postTo(t *testing.T, baseURL, token, body string) int {
 	return resp.StatusCode
 }
 
-// makeCloudLoop turns a stopped hub's loop into a cloud loop. No API
-// creates one until slice 5 of ADR-0056, so the store is told directly.
+// makeCloudLoop turns a stopped hub's loop into a cloud loop, which
+// the API creates only once Settings → Cloud is green: the store is told
+// directly, so a test needn't set the hub up first.
 func makeCloudLoop(t *testing.T, dataDir, name string) {
 	t.Helper()
 	db, err := sql.Open("sqlite", "file:"+filepath.Join(dataDir, "spool.db"))
