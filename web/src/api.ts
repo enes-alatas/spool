@@ -522,8 +522,26 @@ export interface CloudSettings {
   warning?: 'quick_tunnel'
   // The last check of `address`, absent until one has run.
   check?: CloudCheck
-  // Whether the account is set, never what it is.
-  account: { set: boolean }
+  // Whether the account is set, never what it is, and its last check.
+  account: CloudAccountView
+}
+
+// Where a failed account check stopped: `no_account` made no call, and
+// `refused` is a 401 or 403 from the API, so a sign-in again.
+export type CloudAccountStage = 'no_account' | 'refused' | 'unreachable' | 'other'
+
+export interface CloudAccountCheck {
+  state: 'ok' | 'failed'
+  stage?: CloudAccountStage
+  // How it failed; an admin's alone.
+  detail?: string
+  checked_at: number
+}
+
+export interface CloudAccountView {
+  set: boolean
+  // The last account check, absent until one has run.
+  check?: CloudAccountCheck
 }
 
 // The fleet's workstation egress allowlist (#542, ADR-0028): the built-in
@@ -1282,6 +1300,20 @@ export const api = {
     req<CloudSettings>('/api/settings/cloud/address', { method: 'PUT', body: JSON.stringify({ address }) }),
   clearCloudAddress: () => req<CloudSettings>('/api/settings/cloud/address', { method: 'DELETE' }),
   checkCloudAddress: () => req<CloudSettings>('/api/settings/cloud/check', { method: 'POST' }),
+  // The CLI's own login, run by the hub (#864): sign-in answers the claude.ai
+  // link to open, and the code claude.ai then shows finishes it. A code is
+  // refused with `cloud_sign_in`: 400 when the CLI didn't take it, which ends
+  // that sign-in, and 409 when none is waiting, one ended after ten minutes
+  // included.
+  startCloudSignIn: () => req<{ link: string }>('/api/settings/cloud/account/sign-in', { method: 'POST' }),
+  finishCloudSignIn: (code: string) =>
+    req<CloudSettings>('/api/settings/cloud/account/code', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    }),
+  // Forgets the account; it doesn't revoke it yet.
+  removeCloudAccount: () => req<CloudSettings>('/api/settings/cloud/account', { method: 'DELETE' }),
+  checkCloudAccount: () => req<CloudSettings>('/api/settings/cloud/account/check', { method: 'POST' }),
   egress: () => req<EgressView>('/api/settings/egress'),
   // Refused with 400 `egress_host_invalid` and egress.Validate's reason, a
   // port included; a host already on the list, once normalized, changes

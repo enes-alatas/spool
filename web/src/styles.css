@@ -2915,6 +2915,13 @@ button.panel-link {
 .cloud-address {
   margin-top: 14px;
 }
+.cloud-code {
+  margin-top: 6px;
+}
+.cloud-small a {
+  color: var(--text);
+  text-decoration: underline;
+}
 /* a phone stacks the route and the tunnel choice */
 @media (max-width: 640px) {
   .cloud-route {

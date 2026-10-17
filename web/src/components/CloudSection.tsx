@@ -2,12 +2,14 @@ import { useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ApiError, type CloudSettings } from '../api'
 import {
+  accountState,
   addressState,
   checkRows,
   firstOpenStep,
   isQuickTunnel,
   isQuickTunnelHost,
   listenerPort,
+  signInCodeShaped,
   type CheckRow,
   type SetupStep,
   type Tone,
@@ -35,7 +37,7 @@ export function CloudSection() {
       <p className="page-lede">
         A cloud loop runs in a Claude Code cloud session on Anthropic's machines, so it keeps running while
         this machine sleeps. It reaches this hub over the internet, so the hub needs a listener for it and a
-        public address. The hub checks each step.
+        public address, and it spends the Claude account the hub signs in to. The hub checks each step.
       </p>
       {missing ? (
         <div className="form-error" role="alert">
@@ -50,13 +52,8 @@ export function CloudSection() {
           <div className="cloud-steps">
             <ListenerLine view={view} onOpen={() => setOpen('listener')} />
             <AddressLine view={view} onOpen={() => setOpen('address')} />
-            <StepLine title="Claude account" tone={view.account.set ? 'ok' : 'todo'}>
-              <span className="cloud-step-state">{view.account.set ? 'signed in' : 'not signed in'}</span>
-            </StepLine>
+            <AccountLine view={view} onOpen={() => setOpen('account')} />
           </div>
-          {!view.account.set && (
-            <div className="egress-note">The Claude account step comes in a later update of Spool.</div>
-          )}
           {firstOpenStep(view) !== 'done' && (
             <div className="cloud-actions">
               <button className="btn primary" onClick={() => setOpen(firstOpenStep(view))}>
@@ -148,6 +145,84 @@ function AddressLine({ view, onOpen }: { view: CloudSettings; onOpen: () => void
   )
 }
 
+function AccountLine({ view, onOpen }: { view: CloudSettings; onOpen: () => void }) {
+  const state = accountState(view)
+  const now = useMinuteClock()
+  const { run, error } = useCloudChange(() => {})
+  const [working, setWorking] = useState(false)
+  const { set, check } = view.account
+  const change = async (request: () => Promise<CloudSettings>) => {
+    setWorking(true)
+    await run(request)
+    setWorking(false)
+  }
+  const remove = () => {
+    if (confirm(REMOVE_ACCOUNT)) change(api.removeCloudAccount)
+  }
+  return (
+    <>
+      <StepLine
+        title="Claude account"
+        tone={state.tone}
+        action={
+          set ? (
+            <>
+              {check?.stage === 'refused' ? (
+                <button className="btn sm" onClick={onOpen} disabled={working}>
+                  Sign in again
+                </button>
+              ) : (
+                <button className="btn sm" onClick={() => change(api.checkCloudAccount)} disabled={working}>
+                  {working ? 'Checking…' : 'Check again'}
+                </button>
+              )}
+              <button className="btn sm" onClick={remove} disabled={working}>
+                Remove
+              </button>
+            </>
+          ) : (
+            <button className="btn sm" onClick={onOpen}>
+              Set up
+            </button>
+          )
+        }
+      >
+        <span className="cloud-step-state">
+          {state.text}
+          {check && set && ` · ${formatAgo(check.checked_at, now)}`}
+        </span>
+      </StepLine>
+      {(error || (set && state.hint)) && (
+        <div className="cloud-step-open">
+          {error && (
+            <div className="form-error" role="alert">
+              {error}
+            </div>
+          )}
+          {set && <AccountHint view={view} />}
+        </div>
+      )}
+    </>
+  )
+}
+
+// Remove forgets the account on this hub; until the hub can revoke it,
+// claude.ai keeps it listed, and that's where it is ended for good.
+const REMOVE_ACCOUNT =
+  'Remove the Claude account? Cloud loops are held until one is signed in again. ' +
+  "This hub forgets the sign-in but doesn't revoke it: to end it for good, revoke it in claude.ai's settings too."
+
+function AccountHint({ view }: { view: CloudSettings }) {
+  const { hint } = accountState(view)
+  const detail = view.account.check?.detail
+  return (
+    <>
+      {hint && <div className="cloud-check-hint">{hint}</div>}
+      {detail && <div className="cloud-check-detail">{detail}</div>}
+    </>
+  )
+}
+
 function CheckRows({ view }: { view: CloudSettings }) {
   const rows = checkRows(view.check)
   const failing = rows.find((row) => row.tone === 'bad')
@@ -193,6 +268,7 @@ function QuickTunnelWarning() {
 const STEPS: { key: SetupStep; label: string }[] = [
   { key: 'listener', label: 'Cloud listener' },
   { key: 'address', label: 'Public address' },
+  { key: 'account', label: 'Claude account' },
 ]
 
 export function CloudSetup({ start, onClose }: { start: SetupStep; onClose: () => void }) {
@@ -228,6 +304,14 @@ export function CloudSetup({ start, onClose }: { start: SetupStep; onClose: () =
             view={view}
             setBusy={setBusy}
             onBack={() => setStep('listener')}
+            onNext={() => setStep('account')}
+          />
+        )}
+        {step === 'account' && (
+          <AccountStep
+            view={view}
+            setBusy={setBusy}
+            onBack={() => setStep('address')}
             onNext={() => setStep('done')}
           />
         )}
@@ -235,12 +319,13 @@ export function CloudSetup({ start, onClose }: { start: SetupStep; onClose: () =
           <>
             <p className="step-dialog-state" aria-live="polite">
               <span className="ok">
-                <CheckIcon size={14} /> The listener is on and the address reaches this hub.
+                <CheckIcon size={14} /> The listener is on, the address reaches this hub, and the Claude
+                account is signed in.
               </span>
             </p>
             <p className="step-dialog-lede">
-              The hub checks the address every five minutes, and Settings → Cloud shows where each step
-              stands.
+              The hub checks the address every five minutes and the account each time it starts, and Settings
+              → Cloud shows where each step stands.
             </p>
             <form method="dialog" className="pillar-actions">
               <button className="btn primary">Done</button>
@@ -463,6 +548,178 @@ function AddressStep({
           onClick={onNext}
           disabled={working || !unchanged || view.check?.state !== 'ok'}
         >
+          Next
+        </button>
+      </div>
+    </>
+  )
+}
+
+// The Claude account cloud loops spend (#864): the hub runs the CLI's own
+// login, which prints a claude.ai link; claude.ai then shows a code, and the
+// hub hands it back to the login. A refused code ends that sign-in, as ten
+// minutes without one does, so either starts again from the link.
+function AccountStep({
+  view,
+  setBusy,
+  onBack,
+  onNext,
+}: {
+  view: CloudSettings
+  setBusy: (busy: boolean) => void
+  onBack: () => void
+  onNext: () => void
+}) {
+  const qc = useQueryClient()
+  const [link, setLink] = useState('')
+  const [code, setCode] = useState('')
+  const [error, setError] = useState('')
+  const [working, setWorking] = useState<'' | 'start' | 'code' | 'check'>('')
+  const { set, check } = view.account
+  const signedIn = set && check?.state === 'ok'
+
+  const act = async (what: 'start' | 'code' | 'check', request: () => Promise<void>) => {
+    setWorking(what)
+    setError('')
+    setBusy(true)
+    try {
+      await request()
+    } catch (e) {
+      // A refused code, or none waiting, has ended the sign-in.
+      if (e instanceof ApiError && e.code === 'cloud_sign_in' && what === 'code') {
+        setLink('')
+        setCode('')
+        setError(
+          e.status === 400
+            ? "claude.ai's code wasn't accepted, and that sign-in has ended. Sign in again."
+            : 'That sign-in has ended: it waits ten minutes for its code, and a new one ends it. Sign in again.',
+        )
+      } else {
+        setError(e instanceof Error ? e.message : String(e))
+      }
+    } finally {
+      setBusy(false)
+      setWorking('')
+    }
+  }
+  const start = () => {
+    // The tab opens on the click, before the link is known, so no popup
+    // blocker takes it; it is pointed at the link once the hub answers.
+    const tab = window.open('', '_blank')
+    if (tab) tab.opener = null
+    return act('start', async () => {
+      try {
+        const { link } = await api.startCloudSignIn()
+        setLink(link)
+        setCode('')
+        if (tab) tab.location.href = link
+      } catch (e) {
+        tab?.close()
+        throw e
+      }
+    })
+  }
+  const finish = () => {
+    if (!signInCodeShaped(code)) {
+      setError("That isn't a sign-in code: paste it as claude.ai shows it, one word with no spaces.")
+      return
+    }
+    return act('code', async () => {
+      qc.setQueryData(['cloud'], await api.finishCloudSignIn(code.trim()))
+      setLink('')
+      setCode('')
+    })
+  }
+  const recheck = () =>
+    act('check', async () => {
+      qc.setQueryData(['cloud'], await api.checkCloudAccount())
+    })
+
+  return (
+    <>
+      <p className="step-dialog-lede">
+        Cloud loops spend a Claude plan, so the hub signs in to the account once. It keeps the sign-in sealed,
+        never shows it, and you can remove it in Settings → Cloud.
+      </p>
+      {set && (
+        <div aria-live="polite">
+          {signedIn ? (
+            <p className="step-dialog-state">
+              <span className="ok">
+                <CheckIcon size={14} /> Signed in, and Anthropic's API accepts the account.
+              </span>
+            </p>
+          ) : (
+            <>
+              <p className="step-dialog-state">
+                {check ? 'Signed in, but the last check failed.' : 'Signed in, not checked yet.'}
+              </p>
+              <AccountHint view={view} />
+            </>
+          )}
+        </div>
+      )}
+      {!signedIn && (
+        <ol className="cloud-recipe">
+          <li>
+            <button className="btn primary" onClick={start} disabled={working !== ''}>
+              {working === 'start' ? 'Starting…' : link ? 'Start again' : 'Sign in with Claude ↗'}
+            </button>
+            <div className="cloud-small">
+              {link ? (
+                <>
+                  claude.ai opened in a new tab. If it didn't,{' '}
+                  <a href={link} target="_blank" rel="noopener noreferrer">
+                    open the sign-in
+                  </a>
+                  .
+                </>
+              ) : (
+                'claude.ai opens in a new tab and asks you to allow the sign-in.'
+              )}
+            </div>
+          </li>
+          <li>
+            Paste the code claude.ai shows you:
+            <form
+              className="egress-add cloud-code"
+              onSubmit={(e) => {
+                e.preventDefault()
+                finish()
+              }}
+            >
+              <input
+                className="mono"
+                aria-label="Code"
+                placeholder="code"
+                autoComplete="off"
+                spellCheck={false}
+                value={code}
+                disabled={!link || working !== ''}
+                onChange={(e) => setCode(e.target.value)}
+              />
+              <button className="btn primary" disabled={!link || !code.trim() || working !== ''}>
+                {working === 'code' ? 'Signing in…' : 'Sign in'}
+              </button>
+            </form>
+          </li>
+        </ol>
+      )}
+      {error && (
+        <div className="form-error" role="alert">
+          {error}
+        </div>
+      )}
+      <div className="pillar-actions">
+        <button className="btn" onClick={onBack} disabled={working !== ''}>
+          Back
+        </button>
+        {set && !signedIn && (
+          <button className="btn" onClick={recheck} disabled={working !== ''}>
+            {working === 'check' ? 'Checking…' : 'Check again'}
+          </button>
+        )}
+        <button className="btn primary" onClick={onNext} disabled={working !== '' || !signedIn}>
           Next
         </button>
       </div>
