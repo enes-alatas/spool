@@ -824,3 +824,6 @@ Elliot: #927 (docs, Accepted risks, closes #917) with Quinn. Enes decided #922, 
 
 ## 2026-10-17 20:25 UTC
 Enes: #926 stays on L6, thank the reporter. Added a thank-you comment on #925 (invited notes on how logins map to people, for #926's first decision).
+
+## 2026-10-17 21:15 UTC
+Fleet upgraded: runtime v0.5.1-188-g547e920 = main tip (#927 merged, accepted risks). v0.6.0 candidate = 547e920. Dogfood clock: 2026-10-17 21:00 → 2026-10-19 21:00. Told Enes. Open PRs: #919 (blocked on Enes's item 5 call), #921 (waits on #919), #453. Watch for bites: any loop misbehaviour → file on CI reliability or the right rung and tell the group tersely.
