@@ -815,3 +815,6 @@ Sweep: #919 (#866) security recheck resolved at 1c8d6f2, with Quinn. Iris's #921
 
 ## 2026-10-17 19:10 UTC
 Sweep: Enes filed #922-#924 (seam findings from #917 rows 2-4, parent #777) → L6. #919 approved by Quinn, BLOCKED on Enes's ADR-0056 item 5 call (ingress probe inconclusive: finish probe / one trust domain + note / hold; Terra asked in DM). #921 waits. New community report #925 (ahmedkhan25, multi-login hub, per-login plan cap; new feature+community+triage) → DM'd Enes a recommendation (taken, L6 epic after #652/#887); triage clock from 18:03. Reminded him of #919's decision.
+
+## 2026-10-17 20:15 UTC
+Enes: #925 taken as an L6 epic; asked whether it should get its own milestone; he will answer Terra on #919. Filed epic #926 (L6; slices after an ADR; first decision: login belongs to a user?). Answered #925 (taken), triage off, milestone L6. Milestone answer to him: keep on L6, no new milestone (rungs own milestones; minor ones only for clusters no rung owns).
