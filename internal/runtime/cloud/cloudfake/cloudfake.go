@@ -67,7 +67,12 @@ type Server struct {
 	// AccountChecks counts the account checks, the read-only listing of
 	// environments.
 	AccountChecks int
-	held          []heldReply
+	// ArchiveGate, while set, holds each archive call, of a session or an
+	// environment, until it is closed. ArchivesHeld counts the calls it
+	// has held.
+	ArchiveGate  chan struct{}
+	ArchivesHeld int
+	held         []heldReply
 
 	ids   atomic.Int64
 	token string
@@ -129,9 +134,20 @@ func (fake *Server) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	path := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if r.Method == http.MethodPost && path[len(path)-1] == "archive" {
+		fake.Mu.Lock()
+		gate := fake.ArchiveGate
+		if gate != nil {
+			fake.ArchivesHeld++
+		}
+		fake.Mu.Unlock()
+		if gate != nil {
+			<-gate
+		}
+	}
 	fake.Mu.Lock()
 	defer fake.Mu.Unlock()
-	path := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	switch {
 	case r.Method == http.MethodGet && r.URL.Path == "/v1/environment_providers":
 		fake.AccountChecks++

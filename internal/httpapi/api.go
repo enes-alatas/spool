@@ -1098,7 +1098,7 @@ func (server *Server) handleDeleteLoop(w http.ResponseWriter, r *http.Request) {
 	if loopRecord == nil {
 		return
 	}
-	server.Manager.Remove(loopRecord.ID, loopRecord.Runtime)
+	server.Manager.Remove(loopRecord.ID)
 	for _, loopSurface := range server.Surfaces {
 		loopSurface.LoopRemoved(loopRecord.ID)
 	}
@@ -1113,6 +1113,10 @@ func (server *Server) handleDeleteLoop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	server.secretsChanged(r.Context()) // the connections only it held went with it
+	// The workstation goes last: the loop's hub token went with its
+	// record, so a cloud loop's archive calls, up to a minute, or a
+	// failed one, leave no token that works (ADR-0056).
+	server.Manager.DestroyWorkstation(loopRecord.ID, loopRecord.Runtime)
 	writeJSON(w, 200, map[string]bool{"deleted": true})
 }
 

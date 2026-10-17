@@ -88,11 +88,11 @@ func (manager *Manager) add(loopRecord *store.Loop) *Actor {
 // Add registers and starts an actor for a newly created loop.
 func (manager *Manager) Add(loopRecord *store.Loop) *Actor { return manager.add(loopRecord) }
 
-// Remove shuts a loop's actor down and powers its workstation off (used on
-// delete: a workstation outlives sleeps and pauses, never its loop). The
-// caller names the loop's runtime kind — the loop record may already be
-// deleted by the time this runs.
-func (manager *Manager) Remove(id, runtimeKind string) {
+// Remove shuts a loop's actor down and forgets it, ahead of the loop's
+// delete: nothing of the loop runs once it returns. Its workstation is
+// DestroyWorkstation's, after the loop's record, and the hub token with
+// it, is gone.
+func (manager *Manager) Remove(id string) {
 	manager.mu.Lock()
 	actor := manager.byID[id]
 	delete(manager.byID, id)
@@ -105,6 +105,12 @@ func (manager *Manager) Remove(id, runtimeKind string) {
 	if actor != nil {
 		actor.Shutdown()
 	}
+}
+
+// DestroyWorkstation powers a deleted loop's workstation off: a
+// workstation outlives sleeps and pauses, never its loop. The caller
+// names the loop's runtime kind, since the loop's record is gone.
+func (manager *Manager) DestroyWorkstation(id, runtimeKind string) {
 	if loopRuntime := manager.deps.runtimeFor(runtimeKind); loopRuntime == nil {
 		manager.log().Warn("workstation power off", "loop", id, "err", fmt.Errorf("no %q runtime available", runtimeKind))
 	} else if err := loopRuntime.Destroy(context.Background(), id); err != nil {
