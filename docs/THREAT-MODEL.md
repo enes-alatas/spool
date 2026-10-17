@@ -298,6 +298,12 @@ in, and reads the turn's events back (ADR-0056).
   loop and deletes its record, token and all, before the calls that
   archive its session and environment. Those take up to a minute, or
   fail, and the token works at no point in between.
+- **A cloud loop is created only once Settings → Cloud is green:** the
+  public address's last check passed, and a signed-in account's did. A
+  cloud loop never moves runtime, and takes no docker settings.
+- **The session link is claude.ai's or none.** The API's `session_url`
+  is untrusted, so the view carries it only as a `https://claude.ai/code/`
+  page.
 - **A session holds the token it was created with.** A loop whose token
   is replaced, as a key reset replaces every one, starts a fresh session
   at its next wake rather than resume one the hub would refuse.
@@ -312,8 +318,48 @@ in, and reads the turn's events back (ADR-0056).
 - **Attachments don't cross.** A file sent to a cloud loop is shown as
   not kept, and the loop can't attach one: the hub never reads its own
   disk for a cloud loop.
+- **A cloud session's shell found no path to another session by a
+  copyable token.** A probe (ADR-0056 item 5, #866) ran as the session's
+  own shell, as root. The session's `claude` reaches `api.anthropic.com`
+  through a host-managed transparent egress gateway
+  (`CCR_EGRESS_GATEWAY_ENABLED`, a MITM CA in the trust store, no proxy
+  variable) that injects the credential. The gateway injects for nothing
+  but the host-started `claude`: the real `/opt/claude-code/bin/claude -p`
+  launched from the shell gets an authentication error, and a curl
+  replaying its headers is 401 on every route, inference (`/v1/messages`)
+  included, so these are real refusals. It isn't a namespace boundary:
+  `claude` and the shell share net, user, pid and mount namespaces and
+  cgroup. No replayable token is to be had: none in the environment or on
+  disk (`CCR_*` token variables absent), and a scan of the session
+  `claude`'s readable memory (about 400 MB, 60 regions) found no `sk-ant`,
+  `oat01`, JWT, `Authorization: Bearer` or `x-api-key` value, while
+  `claude` itself authenticated.
 
 **Doesn't hold:**
+- **Cloud loops are one trust domain: a cloud loop is not isolated from
+  the account's other cloud loops.** The shell is root and can read
+  `/proc/<pid>/mem` of the session `claude` (no Yama `ptrace_scope`,
+  `Seccomp: 0`, `CAP_SYS_PTRACE` held), and that memory holds four private
+  keys (`PRIVATE KEY` ×3, `RSA PRIVATE KEY` ×1) and 16 certificates
+  (ADR-0056 item 5, #866). A private key is the likeliest way the gateway
+  tells `claude`'s TLS connections apart from the shell's in the same
+  namespace, so one may be the client identity that unlocks injection, and
+  whether presenting it reaches another session was not tested — testing it
+  probes Anthropic's gateway, not Spool. So the operator ships cloud loops
+  as one trust domain (operator decision of 2026-10-18, #919): a cloud loop
+  may act as any other cloud loop, never as a contained one — the cloud
+  listener refuses a contained loop's token — and the control room says so
+  when a cloud loop is created.
+- **The token scan is one point in time.** A bearer resident in `claude`
+  only during a request in flight, or in the two memory regions that
+  didn't read, would be missed; the scan ran at one moment with `claude`
+  authenticating (ADR-0056 item 5, #866).
+- **The probe didn't enumerate the sandbox exhaustively.** `ss`, `iptables`
+  and `nft` weren't installed, so sockets and NAT rules weren't read
+  directly (the descriptor listing, which ran, showed only the
+  environment-manager pipes and the log file). The in-session model refused
+  every injected turn, so the checks ran from the setup-script shell, which
+  shares `claude`'s namespaces and sits behind the same egress wall.
 - **The check proves reach, not ownership.** A relay that forwards to
   the hub passes it, and it proves reach from this machine, not from the
   internet: an HTTPS name that resolves to an address on the hub's own
@@ -340,17 +386,17 @@ in, and reads the turn's events back (ADR-0056).
   inbox (ADR-0056). So a hostname that changes hands gets no turn that
   starts more than a minute after the last pass. The minute is the gap:
   a turn that starts in it, like one already in flight, still sends its
-  token to whoever answers the name. No cloud loop can be created until
-  slice 5.
+  token to whoever answers the name.
 - **The read-back is undocumented.** Anthropic may change the events
   endpoint without notice; the hub fails loudly when it does, and can't
   do more.
+- **A session's GitHub reach is the Claude GitHub App's**, on the
+  account. A repo given at creation is only where the session starts:
+  the installation can cover every repo of the organisation, where a
+  contained loop holds only the token the operator gave it (ADR-0056).
 - **The loop can read its own token**, as a contained loop can read its
   MCP config, and the environment's allowlist is enforced by Anthropic's
   proxy, not the egress wall (ADR-0056 item 8).
-- **Whether a session's own ingress credentials reach other sessions**
-  on the account is untested. It gates creating a cloud loop (ADR-0056
-  item 5).
 - **An oversized event is skipped only up to 64 MiB.** Past that the hub
   reads no further, so it can't find the page's end to move past the
   event. Every turn of that session then fails the same way, and the

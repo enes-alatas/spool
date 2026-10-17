@@ -1044,6 +1044,7 @@ func (actor *Actor) wakeSpec(fresh bool, prompt string, connections []*store.Con
 		Image:              actor.loop.Image,
 		MemMB:              actor.loop.MemMB,
 		CPUs:               actor.loop.CPUs,
+		Repo:               actor.loop.CloudRepo,
 		AppendSystemPrompt: prompt,
 		PartialMessages:    actor.deps.PartialMessages,
 	}

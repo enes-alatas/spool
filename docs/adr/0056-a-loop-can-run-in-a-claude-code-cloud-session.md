@@ -1,6 +1,6 @@
 # ADR-0056: A loop can run in a Claude Code cloud session, beside contained loops
 
-Date: 2026-10-15 · Status: accepted (operator decision of 2026-10-15 on #859, accepting it as written; operator direction of 2026-10-15 on #758: build it, in a mixed hub, on the undocumented read-back if that is noted, without OpenTelemetry; and of 2026-10-15 on #859: the egress allowlist is the hub's own) · Amended: 2026-10-15 (items 2, 3, 5, 6, 7 and 9: the API check, #861; operator decision of 2026-10-15 on #872: cloud turns report their cost); 2026-10-16 (item 4: the page switches the listener on, #864; item 6: what holds a cloud loop, and the cloud_address symptom, #864; item 6: the sign-in is the CLI's own login, #864) · Relates to: ADR-0017, ADR-0018, ADR-0022, ADR-0026, ADR-0028, ADR-0030, ADR-0037, ADR-0039, ADR-0044, ADR-0046, ADR-0047, ADR-0053
+Date: 2026-10-15 · Status: accepted (operator decision of 2026-10-15 on #859, accepting it as written; operator direction of 2026-10-15 on #758: build it, in a mixed hub, on the undocumented read-back if that is noted, without OpenTelemetry; and of 2026-10-15 on #859: the egress allowlist is the hub's own) · Amended: 2026-10-15 (items 2, 3, 5, 6, 7 and 9: the API check, #861; operator decision of 2026-10-15 on #872: cloud turns report their cost); 2026-10-16 (item 4: the page switches the listener on, #864; item 6: what holds a cloud loop, and the cloud_address symptom, #864; item 6: the sign-in is the CLI's own login, #864); 2026-10-17 (item 5: the ingress-credentials probe — no copyable token found, but private-key material is shell-reachable and its scope untested; operator decision of 2026-10-18 on #919: ship as one trust domain, #866) · Relates to: ADR-0017, ADR-0018, ADR-0022, ADR-0026, ADR-0028, ADR-0030, ADR-0037, ADR-0039, ADR-0044, ADR-0046, ADR-0047, ADR-0053
 
 ## Context
 
@@ -292,6 +292,106 @@ the bar for setup: it has to be really simple.
      until Anthropic scopes the credentials. The operator chooses.
 
    THREAT-MODEL.md's *Cloud session* boundary records the outcome.
+
+   **Amendment (2026-10-17, #866): the probe finds no shell path by a
+   copyable token, but private-key material is in the shell's reach and
+   its scope is untested, so the operator took item 9's "one trust domain"
+   outcome (2026-10-18, #919).** Run against the real API before this
+   slice, on fresh #861 sign-ins (six runs, 2026-10-17 and 2026-10-18),
+   haiku only, in throwaway environments
+   with the hub's own allowlist; every session and environment archived
+   and each sign-in torn down after. The checks ran as the session's own
+   shell — from the environment's setup script, after `claude` was up, as
+   root — not through the model, which refused every injected turn (that
+   refusal is the model's, not a control). Names, paths, status codes,
+   pattern counts and byte totals only: no credential value was ever
+   written down, and none was lifted.
+
+   **The ingress mechanism.** The session's `claude` reaches
+   `api.anthropic.com` (`ANTHROPIC_BASE_URL` is the real host) through a
+   host-managed transparent egress gateway: `CCR_EGRESS_GATEWAY_ENABLED`,
+   `CCR_AGENT_PROXY_ENABLED` and a MITM CA installed in the sandbox's trust
+   store (`CCR_AGENT_PROXY_CA_WATCH_ENABLED`). There is no proxy variable
+   (`HTTPS_PROXY` and friends unset), so the interception is at the network
+   layer. The sandbox holds no credential in its environment or on disk: no
+   `ANTHROPIC_API_KEY`,
+   `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_AUTH_TOKEN` in the shell or the
+   `claude` process environment, no `.credentials.json` or `.claude.json`
+   on disk, and the `CCR_*_TOKEN`/`_SECRET` variables are absent. Nor, as
+   below, in the `claude` process's memory.
+
+   **Nothing outside the session `claude` process authenticates.** The
+   sandbox's egress
+   is the allowlist — a host off it (`example.com`) gets no HTTP response —
+   so traffic to `api.anthropic.com` transits that gateway, and a shell
+   request completes TLS against the gateway's trusted CA and gets an HTTP
+   status back. A network-layer gateway can't tell processes apart, only
+   request content, so the question is whether a shell request carrying
+   `claude`'s own markers gets injected. It does not:
+   - **The real binary from the shell.** `/opt/claude-code/bin/claude -p`
+     launched from the setup-script shell — carrying `claude`'s full,
+     genuine headers — returns an authentication error, not an answer.
+   - **Replayed headers.** The headers were captured from that
+     shell-launched `claude`, at a local sink, so this repeats the check
+     above rather than adding to it. A curl replaying them is 401 on
+     `POST /v1/messages` (inference itself), listing the
+     account's sessions, reading another session's events, posting into it,
+     and `GET /v1/organizations/me`. Inference included, so these are real
+     refusals, not a missing header (the earlier `GET /v1/sessions` 400 was
+     the missing `anthropic-beta` header).
+   - **Not a namespace or cgroup boundary.** The session's `claude` and the
+     setup-script shell share the same network, user, pid and mount
+     namespaces and the same cgroup, yet `claude` authenticates and a
+     shell-launched `claude` does not. So injection isn't scoped by a
+     boundary the shell sits outside; it's bound to the session `claude`
+     process the host started.
+   - **Where it lives.** The session `claude`'s open descriptors are pipes
+     to the host-side environment manager and a log file — no credential
+     file, no socket to a local auth agent. The probe found no source of
+     the credential outside that process; that the host hands it in at
+     launch is inferred, not observed. It is in no environment variable,
+     file, descriptor, shared namespace or request header a peer process
+     can use.
+
+   **That process's memory is open to the shell, and holds private-key
+   material though no replayable token.** The shell and the session
+   `claude` both run as uid 0 with every capability, `CAP_SYS_PTRACE`
+   included. There is no Yama `ptrace_scope` file, no seccomp filter
+   (`Seccomp: 0`) and no LSM label but `kernel`, so `/proc/<pid>/mem` of
+   the session `claude` opens for read. A root peer is the strongest reach
+   a steered loop has, so the last question is what credential is there to
+   lift. A scan of the `claude` process's readable memory — 60 regions,
+   about 400 MB, two regions unreadable — found no replayable bearer token:
+   no `sk-ant`, `oat01` or JWT string, and no `Authorization: Bearer` or
+   `x-api-key` header value, only the bare header-name literal that any
+   HTTP client's code carries. So the token the gateway adds is not
+   resident as a string to copy. But the memory does hold PEM key material
+   — 16 certificates, and four private keys (`PRIVATE KEY` ×3, `RSA PRIVATE
+   KEY` ×1) in writable regions — and a private key is the likeliest way a
+   transparent gateway tells the session `claude`'s TLS connections apart
+   from a shell's in the same network namespace. Whether one of those keys
+   is the gateway client identity, and whether presenting it reaches
+   another session, was not tested: that needs a private key extracted and
+   used, a step beyond the token replay this probe ran.
+
+   So the probe shows no shell path by a copyable token, but it does not
+   establish isolation: credential-shaped material (private keys) is in the
+   root shell's reach, and the scope of what it authenticates is untested.
+   Testing that scope would mean lifting a private key and using it, which
+   probes Anthropic's gateway rather than Spool. So the operator took item
+   9's "one trust domain" outcome (operator decision of 2026-10-18, #919):
+   **cloud loops ship, and all cloud loops are one trust domain — each may
+   act as any other cloud loop, never as a contained one, whose tokens the
+   cloud listener refuses, and the control room says so when a cloud loop
+   is created** (the web half is #867). The scan ran against the
+   `anthropic_cloud` environment the hub creates, with an empty `mcp_config`
+   and `allow_mcp_servers` off. Two limits held honestly: the string scan
+   is one point in time, so a token resident only during a request in
+   flight, or in the two unreadable regions, would be missed; and `ss`,
+   `iptables` and `nft` were not
+   installed in the sandbox, so sockets and NAT rules weren't enumerated
+   directly — the descriptor listing, which did run, showed only the
+   environment-manager pipes and the log file.
 
    The setup script is cached into the environment's snapshot, so a
    changed public address reaches a running session only when its

@@ -505,3 +505,25 @@ func collect(t *testing.T, proc runtime.Proc) []claude.Event {
 		}
 	}
 }
+
+// A cloud loop's session link is served only when the API's session_url
+// is a claude.ai session page: the answer is untrusted.
+func TestSessionURLIsOnlyAClaudeAISessionPage(t *testing.T) {
+	cloud := &Runtime{Dir: t.TempDir()}
+	if got := cloud.SessionURL("loop_a"); got != "" {
+		t.Errorf("with no session: %q, want none", got)
+	}
+	for url, want := range map[string]string{
+		"https://claude.ai/code/session_01": "https://claude.ai/code/session_01",
+		"https://claude.ai.example/code/x":  "",
+		"javascript:alert(1)":               "",
+		"http://claude.ai/code/session_01":  "",
+	} {
+		if err := cloud.update("loop_a", func(s *state) { s.SessionURL = url }); err != nil {
+			t.Fatal(err)
+		}
+		if got := cloud.SessionURL("loop_a"); got != want {
+			t.Errorf("session_url %q is served as %q, want %q", url, got, want)
+		}
+	}
+}
