@@ -821,3 +821,6 @@ Enes: #925 taken as an L6 epic; asked whether it should get its own milestone; h
 
 ## 2026-10-17 20:20 UTC
 Elliot: #927 (docs, Accepted risks, closes #917) with Quinn. Enes decided #922, #923 (not urgent), #924 are fixes → Terra, #923/#924 with a small web change each (Terra carries it or files the sibling, #793 rule). Terra order now: #866 (#919 blocked on Enes) → #922 → #924 → #923 → #877 → #855 → #652 → #887 → #766 → #871 → #830 → #630. No ping; Elliot's message assigned them.
+
+## 2026-10-17 20:25 UTC
+Enes: #926 stays on L6, thank the reporter. Added a thank-you comment on #925 (invited notes on how logins map to people, for #926's first decision).
