@@ -797,3 +797,6 @@ Sweep: merged #913 (threat-model, archives), #914 (Terra, cloud loops wait for a
 
 ## 2026-10-17 03:30 UTC
 Night sweep: #917 (Elliot, accepted-risks section of THREAT-MODEL, #777's closing child) → L6. #916 still open. No merges overnight. Fleet upgrade unreported.
+
+## 2026-10-17 07:30 UTC
+Morning sweep: no new issues, #916 still open, board tidy. Main is 6 commits past b720ca7 (all cloud UI/address check/docs). DM'd Enes: upgrade the fleet to f6e25f1 (current tip) rather than b720ca7; two-day clock starts when the fleet is back. Awaiting his word/upgrade.
