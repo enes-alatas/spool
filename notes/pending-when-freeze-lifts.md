@@ -818,3 +818,6 @@ Sweep: Enes filed #922-#924 (seam findings from #917 rows 2-4, parent #777) → 
 
 ## 2026-10-17 20:15 UTC
 Enes: #925 taken as an L6 epic; asked whether it should get its own milestone; he will answer Terra on #919. Filed epic #926 (L6; slices after an ADR; first decision: login belongs to a user?). Answered #925 (taken), triage off, milestone L6. Milestone answer to him: keep on L6, no new milestone (rungs own milestones; minor ones only for clusters no rung owns).
+
+## 2026-10-17 20:20 UTC
+Elliot: #927 (docs, Accepted risks, closes #917) with Quinn. Enes decided #922, #923 (not urgent), #924 are fixes → Terra, #923/#924 with a small web change each (Terra carries it or files the sibling, #793 rule). Terra order now: #866 (#919 blocked on Enes) → #922 → #924 → #923 → #877 → #855 → #652 → #887 → #766 → #871 → #830 → #630. No ping; Elliot's message assigned them.
