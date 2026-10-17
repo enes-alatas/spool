@@ -806,3 +806,6 @@ Sweep: #916 merged 07:52. Terra on #864 part 3 (account sign-in via the CLI's ow
 
 ## 2026-10-17 11:05 UTC
 Terra: #918 merged (#864 part 3: account sign-in via CLI login, sealed tokens, ADR-0056 amendment). #864 leftovers: docker-hub sign-in (needs Elliot's egress shape), refresh (needs a real-login probe after the rebuild; Enes agreed the CLI may refresh, DM 2026-10-17). Told Terra: #866 now, with the delete-revokes-before-archive must. #864 stays open for its two parts.
+
+## 2026-10-17 13:05 UTC
+Sweep: #918, #920 merged (cloud account sign-in, hub + web). #919 (Terra, #866 create a cloud loop) in review. Board tidy. Re-nudged Enes on the fleet upgrade (any commit from f6e25f1 on).
