@@ -809,3 +809,6 @@ Terra: #918 merged (#864 part 3: account sign-in via CLI login, sealed tokens, A
 
 ## 2026-10-17 13:05 UTC
 Sweep: #918, #920 merged (cloud account sign-in, hub + web). #919 (Terra, #866 create a cloud loop) in review. Board tidy. Re-nudged Enes on the fleet upgrade (any commit from f6e25f1 on).
+
+## 2026-10-17 16:05 UTC
+Sweep: #919 (#866) security recheck resolved at 1c8d6f2, with Quinn. Iris's #921 (#867 web half) up, waits on #919. Board tidy, no new issues. Enes silent on the upgrade since 07:30 (nudged 13:05). After #919 + #921 the cloud runtime is operable end to end: ask Enes then whether v0.6.0 includes cloud after all (changes the candidate and the notes).
