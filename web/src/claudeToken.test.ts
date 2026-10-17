@@ -13,8 +13,8 @@ describe('loopsNeedingClaudeToken', () => {
     expect(loopsNeedingClaudeToken([loop('terra', 'bare'), loop('scout', 'docker')])).toEqual(['scout'])
   })
 
-  it('counts a kind it does not know, as the server does', () => {
-    expect(loopsNeedingClaudeToken([loop('pod', 'firecracker')])).toEqual(['pod'])
+  it('leaves out a cloud loop, which spends the account Settings → Cloud signs in', () => {
+    expect(loopsNeedingClaudeToken([loop('gardener', 'cloud'), loop('scout', 'docker')])).toEqual(['scout'])
   })
 
   it('leaves archived loops out and keeps paused ones in', () => {

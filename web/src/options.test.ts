@@ -32,8 +32,15 @@ describe('runtimeNote', () => {
     expect(runtimeNote('podman').warn).toBe(false)
   })
 
-  it('offers both kinds the API accepts', () => {
-    expect(RUNTIME_OPTIONS.map((o) => o.value)).toEqual(['docker', 'bare'])
+  it('offers every kind the API accepts', () => {
+    expect(RUNTIME_OPTIONS.map((o) => o.value)).toEqual(['docker', 'bare', 'cloud'])
+  })
+
+  it('says where a cloud loop runs, and whose proxy holds its allowlist', () => {
+    const note = runtimeNote('cloud')
+    expect(note.warn).toBe(false)
+    expect(note.text).toMatch(/Anthropic's machines/)
+    expect(note.text).toMatch(/Anthropic's proxy/)
   })
 })
 
@@ -61,6 +68,10 @@ describe('runtimeFieldNote', () => {
       'This hub runs loops in Docker. To offer uncontained bare loops, start spool with --allow-bare.',
     )
     expect(note.warn).toBe(false)
+  })
+
+  it('describes cloud on a hub that allows no bare loop, since cloud is offered on every hub', () => {
+    expect(runtimeFieldNote(dockerOnly, false, 'cloud')).toEqual(runtimeNote('cloud'))
   })
 
   it('describes the chosen kind where there is a choice, defaulting to the hub’s own', () => {

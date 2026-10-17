@@ -67,6 +67,12 @@ export function hubUnreachable(detail: string | undefined): string {
 // warning nobody can see on a touch screen is not a warning.
 export function workstationNote(loop: Station): { text: string; bad: boolean } | undefined {
   if (loop.workstation_up) return undefined
+  // A cloud loop has a session, not a workstation, and one its first wake
+  // hasn't made yet is nothing to remark on (ADR-0056).
+  if (loop.runtime === 'cloud') {
+    if (loop.down_reason === 'not_provisioned') return undefined
+    return { text: `cloud session down: ${loop.workstation_detail || 'unreachable'}`, bad: true }
+  }
   switch (loop.down_reason) {
     case 'powered_off':
       return { text: 'workstation off', bad: false }
