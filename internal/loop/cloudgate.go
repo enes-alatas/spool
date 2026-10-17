@@ -17,12 +17,14 @@ const CloudCheckFresh = time.Minute
 // waking a cloud loop. Every cloud loop shares the one address, so the
 // gate is the fleet's: it holds them all while the last check failed,
 // while none has run, once the last pass is older than CloudCheckFresh,
-// and while the address stored is not the one that passed. Cloud loops
-// fail closed (ADR-0056).
+// while the address stored is not the one that passed, and while no
+// account is signed in. Cloud loops fail closed (ADR-0056).
 type CloudGate struct {
-	// address reads the public address as stored now, "" for none.
-	address func() (string, error)
-	recheck chan struct{} // asks the checker for a check; holds at most one
+	// address reads the public address as stored now, "" for none, and
+	// signedIn whether an account is.
+	address  func() (string, error)
+	signedIn func() (bool, error)
+	recheck  chan struct{} // asks the checker for a check; holds at most one
 
 	mu sync.Mutex
 	// passedAt is when the last check passed, in Unix ms, 0 when it failed
@@ -36,10 +38,11 @@ type CloudGate struct {
 	onChange    func()
 }
 
-// NewCloudGate returns a gate that holds until a check first passes, and
-// reads the address it guards with address.
-func NewCloudGate(address func() (string, error)) *CloudGate {
-	return &CloudGate{address: address, recheck: make(chan struct{}, 1)}
+// NewCloudGate returns a gate that holds until a check first passes. It
+// reads the address it guards with address, and whether an account is
+// signed in with signedIn.
+func NewCloudGate(address func() (string, error), signedIn func() (bool, error)) *CloudGate {
+	return &CloudGate{address: address, signedIn: signedIn, recheck: make(chan struct{}, 1)}
 }
 
 // OnChange sets what Record calls after each check.
@@ -70,6 +73,17 @@ func (gate *CloudGate) Record(address string, passed bool, at int64) {
 	}
 }
 
+// AccountChanged tells OnChange that an account was signed in or removed,
+// which holds or lets go every cloud loop as a check does.
+func (gate *CloudGate) AccountChanged() {
+	gate.mu.Lock()
+	notify := gate.onChange
+	gate.mu.Unlock()
+	if notify != nil {
+		notify()
+	}
+}
+
 // Clear records that there is no address to check: cloud loops are held,
 // and no check has failed.
 func (gate *CloudGate) Clear() {
@@ -88,8 +102,12 @@ func (gate *CloudGate) Clear() {
 // goes ahead once one passes. One held by a failed check, or by no
 // address, waits for the next scheduled check or the page's: asking again
 // on every held wake would only repeat the failure, and each check's
-// OnChange asks the loops again. An address that can't be read holds.
+// OnChange asks the loops again. No account, or an address or account that
+// can't be read, holds without asking.
 func (gate *CloudGate) Holds(now int64) bool {
+	if signedIn, err := gate.signedIn(); err != nil || !signedIn {
+		return true
+	}
 	address, err := gate.address()
 	if err != nil {
 		return true

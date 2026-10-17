@@ -106,11 +106,14 @@ const SettingClaudeOAuthToken = "claude_oauth_token"
 // and never logged; unset until the operator signs in.
 const SettingCloudAccount = "cloud_account"
 
-// CloudAccount is the account's sign-in: the OAuth access token and the
-// organization it acts in.
+// CloudAccount is the account's sign-in: the OAuth access token, the
+// refresh token the sign-in gave with it, and the organization it acts in.
 type CloudAccount struct {
-	Token   string `json:"token"`
-	OrgUUID string `json:"org_uuid"`
+	Token        string `json:"token"`
+	RefreshToken string `json:"refresh_token,omitempty"`
+	// ExpiresAt is when Token expires, in Unix ms, 0 when unknown.
+	ExpiresAt int64  `json:"expires_at,omitempty"`
+	OrgUUID   string `json:"org_uuid"`
 }
 
 // SettingCloudAddress holds the public HTTPS address in front of the cloud

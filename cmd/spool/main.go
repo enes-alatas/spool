@@ -385,11 +385,10 @@ func main() {
 	// cloud loops are held until the first check of the public address
 	// passes, which RunCloudChecks makes as the hub starts
 	cloudGate := loop.NewCloudGate(func() (string, error) {
-		address, err := rdb.Settings().Get(context.Background(), store.SettingCloudAddress)
-		if errors.Is(err, store.ErrNotFound) {
-			return "", nil
-		}
-		return address, err
+		return storedSetting(rdb.Settings(), store.SettingCloudAddress)
+	}, func() (bool, error) {
+		account, err := storedSetting(rdb.Settings(), store.SettingCloudAccount)
+		return account != "", err
 	})
 	deps := loop.Deps{
 		Store:                     rdb,
@@ -524,6 +523,11 @@ func main() {
 	if cloudListener != nil {
 		cloudSwitch.flagOpened(cloudAddr)
 	}
+	cloudSignIn, err := newHostSignIn(*claudeBin, filepath.Join(*dataDir, "cloud-sign-in"))
+	if err != nil {
+		log.Error("remove an unfinished cloud sign-in", "err", err)
+		os.Exit(1)
+	}
 	api := &httpapi.Server{
 		Store:        rdb,
 		Bus:          pubsub,
@@ -563,6 +567,8 @@ func main() {
 		CloudListener:        cloudSwitch,
 		CloudLoopbackAddress: *cloudLoopbackAddress,
 		CloudGate:            cloudGate,
+		CloudSignIn:          cloudSignIn,
+		CloudAccounts:        cloudEnvironments{cloudRuntime},
 		EgressFlag:           egressFlag(allowEntries),
 		Log:                  log,
 		WebFS:                web.Dist(),
@@ -588,6 +594,9 @@ func main() {
 		cloudAddr, _ = cloudSwitch.Listening()
 	}
 	go api.RunCloudChecks(ctx, httpapi.CloudCheckEvery)
+	// the account is checked once as the hub starts, so the page has a state
+	// before anyone asks
+	go api.CheckCloudAccount(ctx)
 	// The bound addresses, not the flags: with a port of 0 this line is the
 	// only place the ports are said, and the itest harness reads them here.
 	log.Info("spool listening", "addr", apiAddr, "mcp_addr", mcpAddr, "cloud_addr", cloudAddr, "data", *dataDir, "ui", api.WebFS != nil)

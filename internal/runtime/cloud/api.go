@@ -484,3 +484,10 @@ func retryAfter(header string) time.Duration {
 	}
 	return time.Duration(seconds) * time.Second
 }
+
+// CheckAccount makes one read-only call, listing the account's
+// environments, that spends no turn (ADR-0056): it passes when the API
+// takes the account's token and organization.
+func (client *Client) CheckAccount(ctx context.Context) error {
+	return client.call(ctx, http.MethodGet, "/v1/environment_providers", url.Values{"limit": {"1"}}, sessionsBeta, nil, nil)
+}

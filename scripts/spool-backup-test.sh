@@ -72,7 +72,8 @@ STUB
 chmod +x "$work/bin/docker"
 export PATH=$work/bin:$PATH
 
-# A hub's data directory, a stray hub.key.* from a cut-short start, and three
+# A hub's data directory, a stray hub.key.* from a cut-short start, a cloud
+# sign-in a stopped hub left holding its tokens, and three
 # volumes: one whose container is running, one whose container is gone, and
 # one made by hand with no labels at all (#844).
 src=$work/src
@@ -81,6 +82,8 @@ printf 'db' >"$src/spool.db"
 printf 'synthetic-hub-key\n' >"$src/hub.key"
 printf 'synthetic-hub-key-tmp\n' >"$src/hub.key.123"
 printf 'synthetic-operator-token\n' >"$src/operator-token"
+mkdir -p "$src/cloud-sign-in/login-1"
+printf 'synthetic-refresh' >"$src/cloud-sign-in/login-1/.credentials.json"
 printf 'attachment' >"$src/files/0011223344556677-a.txt"
 for v in a b; do
 	mkdir -p "$STUB/volumes/spool-ws-$v/data/.claude"
@@ -115,7 +118,7 @@ check "backup succeeds on a stopped hub" '[ $? -eq 0 ]'
 data=$(ls "$out"/spool-data-*.tar.gz)
 keys=$(ls "$out"/spool-keys-*.tar)
 check "both files are 0600" '[ "$(stat -c %a "$data" "$keys" | sort -u)" = 600 ]'
-check "the data file holds no credential" '! tar -tzf "$data" | grep -qE "hub\.key|operator-token"'
+check "the data file holds no credential" '! tar -tzf "$data" | grep -qE "hub\.key|operator-token|cloud-sign-in"'
 check "the keys file holds only the two credentials" '[ "$(tar -tf "$keys" | sort | tr "\n" " ")" = "hub.key operator-token " ]'
 check "the volumes are read read-only" '[ "$(grep -c "^run .*:/v:ro" "$STUB/log")" = 3 ] && ! grep "^run" "$STUB/log" | grep -qv ":/v:ro"'
 check "a running workstation is stopped and started again" 'grep -qx "stop spool-ws-a" "$STUB/log" && grep -qx "start spool-ws-a" "$STUB/log" && ! grep -q "stop spool-ws-b" "$STUB/log"'
@@ -128,7 +131,7 @@ mkdir "$STUB/volumes"
 dst=$work/dst
 bash scripts/spool-restore.sh --data "$data" --keys "$keys" --data-dir "$dst" >/dev/null 2>"$work/err"
 check "restore succeeds onto a fresh host" '[ $? -eq 0 ]'
-check "the data directory round-trips" 'diff -r "$src" "$dst" >"$work/diff"; [ "$(cat "$work/diff")" = "Only in $src: hub.key.123" ]'
+check "the data directory round-trips" 'diff -r "$src" "$dst" >"$work/diff"; [ "$(sort "$work/diff" | tr "\n" " ")" = "Only in $src: cloud-sign-in Only in $src: hub.key.123 " ]'
 check "the restored directory is 0700 and its keys 0600" '[ "$(stat -c %a "$dst")" = 700 ] && [ "$(stat -c %a "$dst/hub.key" "$dst/operator-token" | sort -u)" = 600 ]'
 check "the volumes round-trip with their labels" 'diff -r "$work/old-volumes/spool-ws-a" "$STUB/volumes/spool-ws-a" && diff -r "$work/old-volumes/spool-ws-b" "$STUB/volumes/spool-ws-b"'
 check "a volume backed up with no labels is restored with them" 'diff -r "$work/old-volumes/spool-ws-c/data" "$STUB/volumes/spool-ws-c/data" && [ "$(cat "$STUB/volumes/spool-ws-c/spool.loop.id")" = c ]'

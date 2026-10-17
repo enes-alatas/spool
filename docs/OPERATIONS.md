@@ -207,7 +207,7 @@ no memory.
 
 | File | Holds | Keep it |
 |---|---|---|
-| `spool-data-<ts>.tar.gz` | the data directory without its two credentials (`spool.db`, `files/`, `homes/`, `worktrees/`), every `spool-ws-*` volume, and a manifest naming each volume's loop | with your backups |
+| `spool-data-<ts>.tar.gz` | the data directory without its two credentials or an unfinished cloud sign-in (`spool.db`, `files/`, `homes/`, `worktrees/`), every `spool-ws-*` volume, and a manifest naming each volume's loop | with your backups |
 | `spool-keys-<ts>.tar` | `hub.key` and `operator-token` | **apart** from the data file, e.g. in a password manager or on another host |
 
 Every secret in `spool.db` is sealed under `hub.key` (ADR-0046). The data

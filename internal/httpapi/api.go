@@ -122,6 +122,11 @@ type Server struct {
 	// holds the cloud loops, and asks for one before a cloud loop wakes
 	// (ADR-0056). Nil records nowhere.
 	CloudGate *loop.CloudGate
+	// CloudSignIn runs the CLI's login for the account cloud loops spend,
+	// and CloudAccounts checks it (ADR-0056). Nil on a hub that wires
+	// none: the page can't sign in.
+	CloudSignIn   CloudSignIn
+	CloudAccounts CloudAccountChecker
 	// EgressFlag is --egress-allow as this hub was started with it, which
 	// seeded the stored list on the first start (#542); nil when the hub
 	// was started without the flag.
@@ -150,6 +155,8 @@ type Server struct {
 	cloudChecks cloudChecks
 	// cloudCheck is the last check of the public address.
 	cloudCheck cloudCheckState
+	// cloudAccountCheck is the last account check.
+	cloudAccountCheck cloudAccountCheckState
 }
 
 func (server *Server) Handler() http.Handler {
@@ -236,6 +243,10 @@ func (server *Server) routes() *routeMux {
 	mux.HandleFunc("DELETE /api/settings/cloud/address", server.handleClearCloudAddress)
 	mux.HandleFunc("POST /api/settings/cloud/check", server.handleCheckCloudAddress)
 	mux.HandleFunc("PUT /api/settings/cloud/listener", server.handleSwitchCloudListener)
+	mux.HandleFunc("POST /api/settings/cloud/account/sign-in", server.handleStartCloudSignIn)
+	mux.HandleFunc("POST /api/settings/cloud/account/code", server.handleFinishCloudSignIn)
+	mux.HandleFunc("DELETE /api/settings/cloud/account", server.handleRemoveCloudAccount)
+	mux.HandleFunc("POST /api/settings/cloud/account/check", server.handleCheckCloudAccount)
 	mux.HandleFunc("GET /api/rules", server.handleListRules)
 	mux.HandleFunc("POST /api/rules", server.handleCreateRule)
 	mux.HandleFunc("PATCH /api/rules/{id}", server.handlePatchRule)

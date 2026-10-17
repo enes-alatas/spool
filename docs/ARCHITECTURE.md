@@ -166,8 +166,10 @@ turns in and reading their events back over Anthropic's undocumented sessions AP
 and failing loudly when that changes (ADR-0056). A cloud loop is created by no
 route yet. Settings → Cloud switches the cloud listener and sets and checks
 the public address (`/api/settings/cloud`), and a cloud loop takes a turn
-only within a minute of a check that passed; the account's sign-in and the
-runtime picker come with the next slices.
+only within a minute of a check that passed. It also signs in to the
+account by running the Claude Code CLI's own login, `claude auth login`, in a
+config directory of the hub's, and keeps the tokens sealed. The runtime picker
+comes with the next slice.
 Each docker workstation sits on an internal network of its own, shared with
 the proxy alone and with no route off it; its only
 way out is `spool-egress-proxy`, a container running `cmd/spool-egress` that
