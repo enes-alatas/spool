@@ -830,3 +830,6 @@ Fleet upgraded: runtime v0.5.1-188-g547e920 = main tip (#927 merged, accepted ri
 
 ## 2026-10-17 21:50 UTC
 Terra: Enes decided (DM) one Claude sign-in for both runtimes, claude.ai login replaces the setup-token; Terra filed #928 (improvement). Homed: Cloud runtime milestone, parent #860. Filed web half #929 (Iris, after #928, mockup first). Terra order: #919 (blocked on item 5) → #928 → #922 → #924 → #923 → #877 → #855 → #652 → #887 → #766 → #871 → #830 → #630. Iris: #921 (waits #919) → #929 (after #928).
+
+## 2026-10-18 01:45 UTC
+Night sweep: quiet. #919 updated 22:39 (item 5 call in progress), #921 waits, no new issues, no bites noticed. Dogfood day 1 of 2 on 547e920.
