@@ -166,6 +166,9 @@ func TestEnvironmentCalls(t *testing.T) {
 	if created.path != "/v1/environment_providers/cloud/create" || created.body["kind"] != "anthropic_cloud" {
 		t.Errorf("created with %s %v", created.path, created.body)
 	}
+	if languages, ok := created.body["config"].(map[string]any)["languages"].([]any); !ok || len(languages) != 0 {
+		t.Errorf("languages = %v: the API refuses a create without the field", created.body["config"].(map[string]any)["languages"])
+	}
 	network := created.body["config"].(map[string]any)["network_config"].(map[string]any)
 	if network["allow_default_hosts"] != false {
 		t.Errorf("allow_default_hosts = %v: a cloud environment never gets Anthropic's Trusted defaults", network["allow_default_hosts"])
