@@ -101,6 +101,14 @@ func New(token string) *Server {
 	return fake
 }
 
+// Admit makes token the one the fake admits, in the place of the one it
+// was made with: an account whose token was refreshed.
+func (fake *Server) Admit(token string) {
+	fake.Mu.Lock()
+	defer fake.Mu.Unlock()
+	fake.token = token
+}
+
 // Release answers every message Hold kept back.
 func (fake *Server) Release() {
 	fake.Mu.Lock()
@@ -134,7 +142,10 @@ func (fake *Server) uuid() string {
 }
 
 func (fake *Server) serve(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("Authorization") != "Bearer "+fake.token {
+	fake.Mu.Lock()
+	token := fake.token
+	fake.Mu.Unlock()
+	if r.Header.Get("Authorization") != "Bearer "+token {
 		refuse(w, http.StatusUnauthorized, "authentication_error", "invalid token")
 		return
 	}

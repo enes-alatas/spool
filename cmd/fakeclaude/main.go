@@ -171,6 +171,9 @@ func main() {
 	if len(args) >= 2 && args[0] == "auth" && args[1] == "login" {
 		os.Exit(authLogin())
 	}
+	if len(args) >= 2 && args[0] == "auth" && args[1] == "status" {
+		os.Exit(authStatus())
+	}
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--version":
@@ -988,6 +991,45 @@ func authLogin() int {
 		return 1
 	}
 	fmt.Println("Login successful.")
+	return 0
+}
+
+// signInRefused is in a refresh token the fake's auth status won't refresh:
+// a revoked sign-in, synthetic.
+const signInRefused = "fixture-revoked"
+
+// authStatus is claude auth status on a claude.ai sign-in, as 2.1.302 runs
+// it: an access token within five minutes of its expiry, or past it, is
+// refreshed in place first, the access token and the refresh token both
+// rotated and the expiry eight hours on (FIDELITY.md). Each rotation adds
+// a "-r" to both synthetic tokens.
+func authStatus() int {
+	path := filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), ".credentials.json")
+	var credentials struct {
+		ClaudeAiOauth map[string]any `json:"claudeAiOauth"`
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil || json.Unmarshal(raw, &credentials) != nil || credentials.ClaudeAiOauth == nil {
+		fmt.Println(`{"loggedIn": false}`)
+		return 1
+	}
+	oauth := credentials.ClaudeAiOauth
+	expiresAt, _ := oauth["expiresAt"].(float64)
+	refresh, _ := oauth["refreshToken"].(string)
+	if time.Until(time.UnixMilli(int64(expiresAt))) < 5*time.Minute {
+		if strings.Contains(refresh, signInRefused) {
+			fmt.Println(`{"loggedIn": false}`)
+			return 1
+		}
+		access, _ := oauth["accessToken"].(string)
+		oauth["accessToken"], oauth["refreshToken"] = access+"-r", refresh+"-r"
+		oauth["expiresAt"] = time.Now().Add(8 * time.Hour).UnixMilli()
+		rotated, _ := json.Marshal(credentials)
+		if os.WriteFile(path, rotated, 0o600) != nil {
+			return 1
+		}
+	}
+	fmt.Println(`{"loggedIn": true, "authMethod": "claude.ai"}`)
 	return 0
 }
 

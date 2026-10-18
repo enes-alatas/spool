@@ -130,6 +130,10 @@ type Server struct {
 	// ClaudeAPIBase is Anthropic's API, which the Claude proxy forwards a
 	// contained loop's model requests to (ADR-0058).
 	ClaudeAPIBase string
+	// CloudLogin is held while the Claude login is replaced or removed, so a
+	// refresh of its token never writes back over the change (ADR-0058).
+	// Nil holds nothing.
+	CloudLogin sync.Locker
 	// CloudSessions reads each cloud loop's session link. Nil on a hub
 	// that wires none: the view carries no link.
 	CloudSessions CloudSessions

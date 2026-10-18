@@ -466,6 +466,18 @@ func main() {
 		os.Exit(1)
 	}
 	deps.PlanCap = planCap
+	cloudSignIn, err := newHostSignIn(*claudeBin, filepath.Join(*dataDir, "cloud-sign-in"))
+	if err != nil {
+		log.Error("remove an unfinished cloud sign-in", "err", err)
+		os.Exit(1)
+	}
+	// the account's token is refreshed by the CLI that signed it in
+	// (ADR-0058)
+	loginRefresh := loop.NewLoginRefresh(rdb.Settings(), cloudSignIn.Refresh, func(ctx context.Context) {
+		if err := redactor.Refresh(ctx); err != nil {
+			log.Error("reload secrets for redaction", "err", err)
+		}
+	}, log)
 	manager := loop.NewManager(deps)
 	planCap.OnChange(manager.CapChanged)
 	cloudGate.OnChange(manager.CloudGateChanged)
@@ -491,6 +503,7 @@ func main() {
 
 	go scheduler.Run(ctx)
 	go planCap.Run(ctx)
+	go loginRefresh.Run(ctx)
 	models.Start(ctx)
 	go pruneEvents(ctx, rdb, *retentionDays, log)
 	go sweepUsers(ctx, hubUsers, log)
@@ -518,11 +531,6 @@ func main() {
 	cloudSwitch := &cloudListenerSwitch{settings: rdb.Settings(), log: log}
 	if cloudListener != nil {
 		cloudSwitch.flagOpened(cloudAddr)
-	}
-	cloudSignIn, err := newHostSignIn(*claudeBin, filepath.Join(*dataDir, "cloud-sign-in"))
-	if err != nil {
-		log.Error("remove an unfinished cloud sign-in", "err", err)
-		os.Exit(1)
 	}
 	api := &httpapi.Server{
 		Store:        rdb,
@@ -564,6 +572,7 @@ func main() {
 		CloudLoopbackAddress: *cloudLoopbackAddress,
 		CloudGate:            cloudGate,
 		CloudSignIn:          cloudSignIn,
+		CloudLogin:           loginRefresh,
 		ClaudeAPIBase:        cloudAPI,
 		CloudAccounts:        cloudEnvironments{cloudRuntime},
 		CloudSessions:        cloudRuntime,

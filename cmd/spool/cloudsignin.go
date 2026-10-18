@@ -183,7 +183,72 @@ func (signIn *hostSignIn) Finish(ctx context.Context, code string) (store.CloudA
 		RefreshToken: signedIn.RefreshToken,
 		ExpiresAt:    signedIn.ExpiresAt,
 		OrgUUID:      signedIn.OrgUUID,
+		Scopes:       signedIn.Scopes,
 	}, nil
+}
+
+// refreshWait bounds a refresh: the CLI's status read and the one call it
+// makes to the token endpoint.
+const refreshWait = time.Minute
+
+// Refresh hands account to the host's claude in a config directory of its
+// own, written as already expired so that the CLI refreshes it now, and
+// returns the rotated sign-in the CLI wrote back (ADR-0058). The directory
+// goes with the call, tokens and all. Refresh shares the sign-in's lock,
+// so it never runs beside a sign-in's start or finish, whose start empties
+// the directory both work in.
+func (signIn *hostSignIn) Refresh(ctx context.Context, account store.CloudAccount) (store.CloudAccount, error) {
+	signIn.mu.Lock()
+	defer signIn.mu.Unlock()
+	if err := os.MkdirAll(signIn.dir, 0o700); err != nil {
+		return store.CloudAccount{}, err
+	}
+	configDir, err := os.MkdirTemp(signIn.dir, "refresh-")
+	if err != nil {
+		return store.CloudAccount{}, err
+	}
+	defer func() { _ = os.RemoveAll(configDir) }()
+	if err := claude.WriteSignIn(configDir, claude.SignIn{
+		AccessToken:  account.Token,
+		RefreshToken: account.RefreshToken,
+		ExpiresAt:    account.ExpiresAt,
+		Scopes:       account.Scopes,
+		OrgUUID:      account.OrgUUID,
+	}, true); err != nil {
+		return store.CloudAccount{}, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, refreshWait)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, signIn.bin, claude.RefreshArgs()...)
+	cmd.Dir = configDir
+	cmd.Env = append(signInEnv(os.Environ()), "CLAUDE_CONFIG_DIR="+configDir)
+	cmd.SysProcAttr = runtime.ChildAttr()
+	output := &tail{}
+	cmd.Stdout, cmd.Stderr = output, output
+	runErr := cmd.Run()
+	refreshed, err := claude.ReadSignIn(configDir)
+	switch {
+	case err != nil:
+		return store.CloudAccount{}, err
+	case refreshed.AccessToken == account.Token:
+		// the CLI kept the token it was given, whatever it said
+		if runErr != nil {
+			return store.CloudAccount{}, fmt.Errorf("claude auth status didn't refresh the token (%v): %s", runErr, output.last())
+		}
+		return store.CloudAccount{}, fmt.Errorf("claude auth status didn't refresh the token: %s", output.last())
+	}
+	refreshedAccount := store.CloudAccount{
+		Token:        refreshed.AccessToken,
+		RefreshToken: refreshed.RefreshToken,
+		ExpiresAt:    refreshed.ExpiresAt,
+		OrgUUID:      refreshed.OrgUUID,
+		Scopes:       refreshed.Scopes,
+	}
+	if refreshedAccount.RefreshToken == "" {
+		// a refresh that hands back no new refresh token keeps the old one
+		refreshedAccount.RefreshToken = account.RefreshToken
+	}
+	return refreshedAccount, nil
 }
 
 // end ends run if it is still the sign-in waiting.

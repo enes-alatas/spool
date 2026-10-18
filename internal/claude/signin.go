@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // SignInArgs is the CLI's own login to a claude.ai account (ADR-0056). Run
@@ -97,4 +98,39 @@ func readJSON(path string, out any) error {
 		return fmt.Errorf("claude auth login: %s is not JSON", filepath.Base(path))
 	}
 	return nil
+}
+
+// RefreshArgs is the CLI's own status read, which also refreshes a
+// claude.ai sign-in whose access token is within minutes of its expiry,
+// spending no turn (ADR-0058). A refresh revokes the access token it
+// replaces.
+func RefreshArgs() []string { return []string{"auth", "status"} }
+
+// WriteSignIn writes signIn into configDir as the CLI's login left it, for
+// RefreshArgs to read. With expired set, the access token is written as
+// already expired, so the CLI refreshes it now rather than in its last
+// minutes.
+func WriteSignIn(configDir string, signIn SignIn, expired bool) error {
+	expiresAt := signIn.ExpiresAt
+	if expired {
+		// a minute past, as the refresh was probed (#928)
+		expiresAt = time.Now().Add(-time.Minute).UnixMilli()
+	}
+	credentials, err := json.Marshal(map[string]any{"claudeAiOauth": map[string]any{
+		"accessToken":  signIn.AccessToken,
+		"refreshToken": signIn.RefreshToken,
+		"expiresAt":    expiresAt,
+		"scopes":       signIn.Scopes,
+	}})
+	if err != nil {
+		return err
+	}
+	config, err := json.Marshal(map[string]any{"oauthAccount": map[string]any{"organizationUuid": signIn.OrgUUID}})
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(configDir, ".credentials.json"), credentials, 0o600); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(configDir, ".claude.json"), config, 0o600)
 }
