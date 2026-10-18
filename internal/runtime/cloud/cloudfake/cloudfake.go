@@ -24,6 +24,14 @@ type Environment struct {
 	Archived bool
 }
 
+// Message is one model request the fake took: the Claude proxy's, on a
+// contained loop's behalf (ADR-0058).
+type Message struct {
+	Query   string
+	Headers http.Header
+	Body    map[string]any
+}
+
 // Session is a session as the fake keeps it.
 type Session struct {
 	ID            string
@@ -67,6 +75,9 @@ type Server struct {
 	// AccountChecks counts the account checks, the read-only listing of
 	// environments.
 	AccountChecks int
+	// Messages are the model requests it took, POST /v1/messages, each
+	// with its query, headers and body.
+	Messages []Message
 	// ArchiveGate, while set, holds each archive call, of a session or an
 	// environment, until it is closed. ArchivesHeld counts the calls it
 	// has held.
@@ -149,6 +160,9 @@ func (fake *Server) serve(w http.ResponseWriter, r *http.Request) {
 	fake.Mu.Lock()
 	defer fake.Mu.Unlock()
 	switch {
+	case r.Method == http.MethodPost && r.URL.Path == "/v1/messages":
+		fake.Messages = append(fake.Messages, Message{Query: r.URL.RawQuery, Headers: r.Header.Clone(), Body: body})
+		answer(w, map[string]any{"type": "message", "role": "assistant", "content": []any{map[string]any{"type": "text", "text": "fixture model answer"}}})
 	case r.Method == http.MethodGet && r.URL.Path == "/v1/environment_providers":
 		fake.AccountChecks++
 		answer(w, map[string]any{"data": []any{}, "has_more": false})

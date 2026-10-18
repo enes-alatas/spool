@@ -56,6 +56,12 @@
 // and replies with "get <url>: <status>" or "get <url>: error: …": how a loop
 // reaching out to a host looks from outside, which is what the egress
 // allowlist has to refuse (#193).
+// "!model" is claude's own model request: it POSTs to
+// $ANTHROPIC_BASE_URL/v1/messages, logged in with $CLAUDE_CODE_OAUTH_TOKEN as
+// the real CLI is on a claude.ai login, and replies "model: <status>" or
+// "model: error: …": how a test sees a contained loop reach the model
+// through the Claude proxy (ADR-0058). The fake makes no model request
+// otherwise.
 // "!bash <command>" is the model calling the Bash tool: the PreToolUse
 // hooks from --settings run on it first, and the reply is "blocked: <the
 // hook's stderr>" or "ran: <command>"; the command itself never runs. A
@@ -511,6 +517,8 @@ func main() {
 				// default, so HTTP_PROXY applies exactly as it does for the
 				// real CLI.
 				reply = fetch(strings.TrimSpace(strings.TrimPrefix(line, "!get ")))
+			case line == "!model":
+				reply = modelRequest()
 			case strings.HasPrefix(line, "!bash "):
 				// The model calling the Bash tool: the PreToolUse hooks run
 				// first, and one that exits 2 blocks the call. The command
@@ -981,4 +989,23 @@ func authLogin() int {
 	}
 	fmt.Println("Login successful.")
 	return 0
+}
+
+// modelRequest is "!model": one model request as claude sends it, to the
+// base URL and with the token its environment gives it.
+func modelRequest() string {
+	body := strings.NewReader(`{"model":"claude-haiku-fixture","max_tokens":1,"messages":[{"role":"user","content":"ok"}]}`)
+	req, err := http.NewRequest(http.MethodPost, strings.TrimSuffix(os.Getenv("ANTHROPIC_BASE_URL"), "/")+"/v1/messages?beta=true", body)
+	if err != nil {
+		return "model: error: " + err.Error()
+	}
+	req.Header.Set("Authorization", "Bearer "+os.Getenv("CLAUDE_CODE_OAUTH_TOKEN"))
+	req.Header.Set("Anthropic-Beta", "oauth-2025-04-20")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "model: error: " + err.Error()
+	}
+	defer resp.Body.Close()
+	return fmt.Sprintf("model: %d", resp.StatusCode)
 }

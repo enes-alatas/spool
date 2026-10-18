@@ -96,14 +96,16 @@ const (
 )
 
 // SettingClaudeOAuthToken is the settings key holding the operator's
-// `claude setup-token` output. It is injected into every workstation exec as
-// CLAUDE_CODE_OAUTH_TOKEN so contained loops run under the operator's own
-// Claude login. Write-only through the API; never logged.
+// `claude setup-token` output. Until a Claude login is signed in, the Claude
+// proxy adds it to contained loops' model requests, so they run under the
+// operator's own Claude plan without holding it (ADR-0058). Write-only
+// through the API; never logged.
 const SettingClaudeOAuthToken = "claude_oauth_token"
 
-// SettingCloudAccount holds the claude.ai account cloud loops spend
-// (ADR-0056), a CloudAccount as JSON. Sealed, write-only through the API,
-// and never logged; unset until the operator signs in.
+// SettingCloudAccount holds the Claude login, the claude.ai account every
+// loop on the hub's token spends (ADR-0056, ADR-0058), a CloudAccount as
+// JSON. Sealed, write-only through the API, and never logged; unset until
+// the operator signs in.
 const SettingCloudAccount = "cloud_account"
 
 // CloudAccount is the account's sign-in: the OAuth access token, the

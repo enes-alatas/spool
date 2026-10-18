@@ -67,10 +67,12 @@ Use these words exactly — in code, UI, docs, and prompts. Don't introduce syno
 | **workstation** | A loop's persistent sandbox: its home dir, tools, clones. Long-lived — survives sleeps, restarts, and pauses; dies with the loop, or when the operator switches it off or rebuilds it (ADR-0017, ADR-0021). |
 | **power controls** | The operator's switches on a workstation: restart, power off, power on, recreate. They act on the loop's *machine*, not the loop — pause is the switch for the loop itself, and the two compose (ADR-0021). |
 | **runner** | The subsystem that executes loops (actors + claude processes + sandboxes). |
-| **hub** | Everything that isn't the runner or a surface: routing, scheduling, store, API. It serves three listeners: the *operator listener* (`--listen`) carries the API and control room, the *loop listener* (`--mcp-listen`, or where the hub chooses: ADR-0039) carries the MCP endpoint and the loops' brokered MCP servers, and nothing else. Workstations may reach the loop listener and no other port of the operator's machine (ADR-0028, #238). The third, the *cloud listener* (`--cloud-listen`, or an admin's switch in Settings → Cloud), is off unless set (ADR-0056). Loops in Claude Code cloud sessions reach the hub through it over the internet, and it carries `/mcp` for cloud loops alone and the address check, and nothing else. |
+| **hub** | Everything that isn't the runner or a surface: routing, scheduling, store, API. It serves three listeners: the *operator listener* (`--listen`) carries the API and control room, the *loop listener* (`--mcp-listen`, or where the hub chooses: ADR-0039) carries the MCP endpoint, the loops' brokered MCP servers and the *Claude proxy*, and nothing else. Workstations may reach the loop listener and no other port of the operator's machine (ADR-0028, #238). The third, the *cloud listener* (`--cloud-listen`, or an admin's switch in Settings → Cloud), is off unless set (ADR-0056). Loops in Claude Code cloud sessions reach the hub through it over the internet, and it carries `/mcp` for cloud loops alone and the address check, and nothing else. |
 | **user** | A person who signs in to the control room with a username and password, and holds one of the org roles. The hub's first start creates owner `admin` with a one-time password, printed once and changed at first sign-in, and `spool user` adds, resets, lists and removes the rest, as an owner does on the API (ADR-0048). A user links their own identity on each surface by sending a code from the control room to a loop's bot or app in a DM, and then reads the private conversations that are theirs (ADR-0050). A loop's owner is chosen as a user, and the loop reaches them at that user's link on its surface (ADR-0051, #731). |
 | **change record** | The hub's append-only list of who changed which loop or acted on it through the API: a user's name, or `operator` for the operator token, with the action and the loop's name as it was. The loop shows who made it and who changed it last. Activity stays the message list, whose rows already name their author (ADR-0048). |
 | **operator token** | The credential the human running Spool presents to the API: minted at first start into `<data-dir>/operator-token`, and the owner's credential for the CLI and automation. For one more release the control room can also trade it for a `SameSite=Strict` session cookie, which belongs to no user (ADR-0048). Distinct from a loop's hub MCP token in every way — different file, different check, different listener — and never given to a loop (ADR-0030). |
+| **Claude login** | The claude.ai account the hub signs in to with the CLI's own login, and the one Claude credential it runs loops on: cloud loops through the sessions API, contained loops through the *Claude proxy*. Sealed, refreshed by the hub before it expires, and never in a workstation. Until one is signed in, a stored setup-token stands in for it (ADR-0056, ADR-0058). |
+| **Claude proxy** | The loop listener's `/claude`: a contained loop's claude sends its model requests there, logged in with the loop's own hub token, and the hub forwards them to Anthropic's API on the hub's Claude token. It forwards model requests alone (ADR-0058). |
 | **connection** | An org-level tool credential/config (GitHub app, MCP server) attachable to loops. |
 | **control room** | The web UI. |
 | **storm guard** | The rate limit on loop→loop delivery. A recipient it refuses is not listed in the message's `delivered_to` — that field names the loops a message reached, not the ones it addressed — and the refusal is recorded as a `storm_drop` event on the sender. |
@@ -181,7 +183,12 @@ port alone: the operator listener is on no allowlist, so the API a workstation
 would otherwise reach unauthenticated is not a destination it has (#238). A
 loop's attached http MCP servers open no host: the hub brokers them on the
 loop listener, under `/mcp/connections/<name>`, and adds each server's
-secret itself, so the loop never holds it (ADR-0043, #622). A
+secret itself, so the loop never holds it (ADR-0043, #622). Nor does
+a contained loop hold a Claude credential: its claude sends its model
+requests to the *Claude proxy* on the loop listener, under `/claude`,
+logged in with the loop's own hub token, and the hub forwards them to
+Anthropic's API with the hub's Claude token, the *Claude login*'s or else
+the setup-token (ADR-0058). A
 bare loop has the host's own network and no wall — one more thing the
 *uncontained* badge means. A bare loop can be moved into a workstation with
 `POST /api/loops/{name}/rehome`: the move lands at a `rehome` context rotation,
@@ -206,15 +213,16 @@ else, and an owner also manages the hub's users (ADR-0048). The
 same middleware refuses a `Host` this hub does not answer to for every `/api`
 path including the open ones, and a cross-site `Origin` or `Sec-Fetch-Site`
 or a body that is not `application/json` for the rest. On the loop listener
-`/mcp` and every brokered server under `/mcp/connections/` require the
+`/mcp` and every brokered server under `/mcp/connections/` and the Claude proxy under
+`/claude` require the
 requesting loop's own token. On the cloud listener `/mcp` requires a cloud
 loop's own token and refuses every other loop's, and the address check
 `GET /mcp/check/<value>` asks for none: it answers 204 only for a value the
 hub issued in the last minute, once, and 404 otherwise (ADR-0056). Those
 three and the address check aside nothing is unauthenticated, and neither
 credential is ever handed to the other's audience. Every credential the
-store keeps — connection secrets, bot tokens, hub MCP tokens, the setup-token
-— is sealed in `spool.db` under the **hub key**, `<data-dir>/hub.key`, so a
+store keeps — connection secrets, bot tokens, hub MCP tokens, the Claude
+login's tokens, the setup-token — is sealed in `spool.db` under the **hub key**, `<data-dir>/hub.key`, so a
 copy of the database alone carries none of them (ADR-0046).
 `docs/THREAT-MODEL.md` puts this together with the workstation and egress
 walls, the surfaces and the release: what each boundary holds, and what it

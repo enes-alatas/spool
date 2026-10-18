@@ -144,9 +144,11 @@ type Deps struct {
 	SendsThisTurn func(loopID string) []string
 	// OnTurnDone reschedules the loop's next tick after any completed turn.
 	OnTurnDone func(loopRecord *store.Loop, trailer time.Duration, hasTrailer bool)
-	// ClaudeToken returns the operator's stored setup-token, or "" when none is
-	// configured. Workstation (contained) runtimes inject it as
-	// CLAUDE_CODE_OAUTH_TOKEN; bare loops use the host login and never call it.
+	// ClaudeToken returns the hub's Claude token: the Claude login's access
+	// token, else the stored setup-token, else "" (ADR-0058). A contained
+	// loop wakes only while there is one, and never holds it: the Claude
+	// proxy adds it to the loop's model requests. Bare loops use the host
+	// login and never call it.
 	ClaudeToken func(ctx context.Context) (string, error)
 	// ObserveModel is told, at each init, what the loop's process reported
 	// for the model it was spawned on: the model list keeps what the
@@ -714,7 +716,22 @@ func (actor *Actor) wake() {
 			actor.crashBackoff()
 			return
 		}
-		system["CLAUDE_CODE_OAUTH_TOKEN"] = token
+		proxy := actor.claudeProxyURL()
+		if proxy == "" {
+			actor.setWorkstationDown(DownReasonUnreachable, "the hub has no loop listener for the workstation to reach the Claude proxy on")
+			actor.crashBackoff()
+			return
+		}
+		// claude asks the hub for every model request, and logs in with
+		// the loop's own hub token, which the proxy swaps for the hub's
+		// Claude token; no Claude credential enters the workstation
+		system["ANTHROPIC_BASE_URL"] = proxy
+		system["CLAUDE_CODE_OAUTH_TOKEN"] = actor.loop.HubMCPToken
+		// claude also calls api.anthropic.com directly, past the base URL,
+		// with that token as its bearer (bootstrap, evals, event logging);
+		// it makes none of those calls with this set, so the hub token goes
+		// to the proxy alone (FIDELITY.md)
+		system["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
 	}
 	spec.Env = buildExecEnv(system, connections)
 	// The loop still reads its pre-wake state while Ensure builds or pulls
@@ -1476,7 +1493,7 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 	if actor.loginRejected && !actor.handoffTurn {
 		actor.loginRejected = false
 		actor.log().Info("claude login accepted again")
-		actor.publishLoginNotice(surface.LoginNotice{HostLogin: !actor.runsOnSetupToken()})
+		actor.publishLoginNotice(surface.LoginNotice{HostLogin: !actor.runsOnHubToken()})
 		actor.setWorkstationUp()
 	}
 	if claude.IsUnrecognizedModel(res) && !actor.handoffTurn {
@@ -1808,10 +1825,10 @@ func (actor *Actor) refuseModel(sentence string) {
 // turn owed stay owed. Its ticks do not pile up behind it: the queue keeps
 // one, the latest, until a turn authenticates (#420).
 func (actor *Actor) rejectLogin(sentence string) {
-	hostLogin := !actor.runsOnSetupToken()
+	hostLogin := !actor.runsOnHubToken()
 	fix := "log in again with claude on the host"
 	if !hostLogin {
-		fix = "replace the setup-token in Settings"
+		fix = "sign in to the Claude login again, or replace the setup-token, in Settings"
 	}
 	if !actor.loginRejected {
 		// the first refusal of this outage; the retries that follow it are
@@ -1884,9 +1901,10 @@ func latestTickOnly(envs []Envelope) []Envelope {
 	return kept
 }
 
-// runsOnSetupToken reports whether the loop's claude logs in with the
-// setup-token saved in Settings rather than the host's own login.
-func (actor *Actor) runsOnSetupToken() bool {
+// runsOnHubToken reports whether the loop's claude logs in with the hub's
+// Claude token, through the Claude proxy (ADR-0058), rather than the host's
+// own login.
+func (actor *Actor) runsOnHubToken() bool {
 	loopRuntime := actor.deps.runtimeFor(actor.loop.Runtime)
 	return loopRuntime != nil && needsClaudeToken(loopRuntime)
 }
@@ -2106,10 +2124,46 @@ func buildExecEnv(system map[string]string, connections []*store.Connection) map
 			env[connection.Config.Env] = connection.Secret
 		}
 	}
+	// a loop given a Claude login of its own uses it directly: the Claude
+	// proxy admits only the loop's hub token, so it would refuse that one
+	// (ADR-0058). Its claude's direct calls then carry its own login, not
+	// the hub token, so they are its operator's to allow.
+	if setsEnv(connections, "CLAUDE_CODE_OAUTH_TOKEN") {
+		for _, name := range []string{"ANTHROPIC_BASE_URL", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"} {
+			if !setsEnv(connections, name) {
+				delete(env, name)
+			}
+		}
+	}
 	if len(env) == 0 {
 		return nil
 	}
 	return env
+}
+
+// setsEnv reports whether an attached env-var connection sets name.
+func setsEnv(connections []*store.Connection, name string) bool {
+	return slices.ContainsFunc(connections, func(connection *store.Connection) bool {
+		return connection.Kind == store.ConnectionEnvVar && connection.Config.Env == name
+	})
+}
+
+// ClaudeProxyPath is where the loop listener serves the Claude proxy, the
+// base URL a contained loop's claude sends its model requests to
+// (ADR-0058).
+const ClaudeProxyPath = "/claude"
+
+// claudeProxyURL is the Claude proxy as the loop's workstation reaches it,
+// beside its hub MCP endpoint, "" when the loop has none.
+func (actor *Actor) claudeProxyURL() string {
+	if actor.deps.MCPEndpoint == nil || actor.loop.HubMCPToken == "" {
+		return ""
+	}
+	url := actor.deps.MCPEndpoint(&actor.loop)
+	if url == "" {
+		return ""
+	}
+	return strings.TrimSuffix(url, "/mcp") + ClaudeProxyPath
 }
 
 // SpoolMCPServer is the hub's own server's name in a loop's --mcp-config,

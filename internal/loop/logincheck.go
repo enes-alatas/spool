@@ -93,7 +93,7 @@ func (checker *LoginChecker) run(at int64) {
 	token := ""
 	if needsClaudeToken(checker.runtime) {
 		var err error
-		if token, err = claudeTokenFrom(ctx, checker.store.Settings()); err != nil || token == "" {
+		if token, err = HubClaudeToken(ctx, checker.store.Settings()); err != nil || token == "" {
 			checker.log.Warn("login check: no setup-token to check", "err", err)
 			checker.finish(at, store.LoginCheckRecord{Status: store.LoginCheckInconclusive, At: at})
 			return
@@ -135,8 +135,23 @@ func (checker *LoginChecker) keep(ctx context.Context, at int64, record store.Lo
 	return checker.store.Settings().Set(ctx, store.SettingLoginCheck, string(raw))
 }
 
-// claudeTokenFrom reads the stored setup-token, an unset key as empty.
-func claudeTokenFrom(ctx context.Context, settings store.SettingsStore) (string, error) {
+// HubClaudeToken reads the hub's Claude token, the one contained loops
+// run on: the signed-in account's access token, else the stored
+// setup-token, else "" (ADR-0058). An account that can't be read is an
+// error rather than a fall back to the setup-token, which the sign-in
+// superseded.
+func HubClaudeToken(ctx context.Context, settings store.SettingsStore) (string, error) {
+	raw, err := settings.Get(ctx, store.SettingCloudAccount)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return "", err
+	}
+	if raw != "" {
+		var account store.CloudAccount
+		if json.Unmarshal([]byte(raw), &account) != nil || account.Token == "" {
+			return "", errors.New("the stored Claude account can't be read; sign in again")
+		}
+		return account.Token, nil
+	}
 	token, err := settings.Get(ctx, store.SettingClaudeOAuthToken)
 	if errors.Is(err, store.ErrNotFound) {
 		return "", nil

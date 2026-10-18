@@ -1,6 +1,6 @@
 # ADR-0044: The hub checks the Claude login with one haiku answer, on save and on request
 
-Date: 2026-10-04 · Status: accepted (operator decision of 2026-10-04 15:34 UTC, recorded on #580; shape on #585) · Amends: ADR-0033 item 6 (a CLI run outside a loop's turns that uses the operator's login)
+Date: 2026-10-04 · Status: accepted (operator decision of 2026-10-04 15:34 UTC, recorded on #580; shape on #585) · Amends: ADR-0033 item 6 (a CLI run outside a loop's turns that uses the operator's login) · Amended: 2026-10-18 (item 2: the token is the hub's Claude token, ADR-0058, #928)
 
 ## Context
 
@@ -49,6 +49,15 @@ that ADR.
      bare loop runs, in a temporary directory removed afterwards.
 
    Each check is bounded at 90 seconds.
+
+   **Amendment (2026-10-18, #928): the token is the hub's Claude token.**
+   The check runs on what ADR-0058 makes the hub's Claude token: the
+   Claude login's access token, or the setup-token while no login is
+   signed in. On a docker hub it no longer runs the way a loop does,
+   since a loop's workstation holds no Claude token and reaches the model
+   through the hub's Claude proxy. The throwaway container, with no tools
+   and for at most 90 seconds, is the one place the token enters a
+   container.
 
 3. **It runs only on the operator's action:**
    - when a setup-token is saved on a docker hub;

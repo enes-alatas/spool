@@ -79,6 +79,7 @@ func TestDockerRows(t *testing.T) {
 		{"DockerRebuiltEgressImageReplacesTheProxy", dockerRebuiltEgressImageReplacesTheProxy},
 		{"MixedRuntimeFleet", mixedRuntimeFleet},
 		{"DockerWorkstationNeedsClaudeToken", dockerWorkstationNeedsClaudeToken},
+		{"DockerLoopReachesTheModelThroughTheClaudeProxy", dockerLoopReachesTheModelThroughTheClaudeProxy},
 		{"DockerWorkstationPowerCycle", dockerWorkstationPowerCycle},
 		{"DockerPowerOnLeavesARunningTurnAlone", dockerPowerOnLeavesARunningTurnAlone},
 		{"DockerFailedPowerOnKeepsTheOffIntent", dockerFailedPowerOnKeepsTheOffIntent},

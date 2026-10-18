@@ -1,6 +1,6 @@
 # ADR-0017: Workstation design — long-lived Docker containers behind the SandboxRuntime seam
 
-Date: 2026-08-17 · Status: accepted · Amended: 2026-09-20 (redaction), 2026-09-21 (bare is opt-in), 2026-09-30 (the perf smoke covers bare loops only), 2026-10-04 (item 8: per-loop secrets are connections, ADR-0043), 2026-10-06 (consequences and parking lot: the credential broker is rejected for env-var secrets, ADR-0045), 2026-10-07 (item 5: the token is sealed at rest, ADR-0046), 2026-10-11 (item 1: a rebuilt image replaces the container, #715)
+Date: 2026-08-17 · Status: accepted (item 5's injection of the token into every workstation exec superseded by ADR-0058: the Claude proxy) · Amended: 2026-09-20 (redaction), 2026-09-21 (bare is opt-in), 2026-09-30 (the perf smoke covers bare loops only), 2026-10-04 (item 8: per-loop secrets are connections, ADR-0043), 2026-10-06 (consequences and parking lot: the credential broker is rejected for env-var secrets, ADR-0045), 2026-10-07 (item 5: the token is sealed at rest, ADR-0046), 2026-10-11 (item 1: a rebuilt image replaces the container, #715)
 
 ## Context
 
@@ -58,6 +58,12 @@ and later on the hosted service.
    **Amendment (2026-10-07, #623): the local token is sealed at rest.** The
    token is now sealed in the DB under a hub key (ADR-0046), so a copy of
    the database alone doesn't carry it.
+
+   *Its injection into every workstation exec is superseded by ADR-0058
+   (2026-10-18): no Claude credential enters a workstation. A contained
+   loop's claude reaches the model through the hub's Claude proxy, logged
+   in with the loop's own hub token, and the hub adds its Claude token,
+   the Claude login's or, until one is signed in, this setup-token.*
 6. **Posture is per-edition.** Local edition: `docker` is the default whenever
    the daemon is reachable; `bare` (today's host subprocess) remains an
    explicit per-loop fallback, badged *uncontained* in the UI. Hosted service:
