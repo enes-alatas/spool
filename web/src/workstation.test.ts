@@ -15,7 +15,7 @@ const down = (down_reason: string, workstation_detail = '', runtime: LoopView['r
   >
 
 // The hub's two unauthenticated details, as internal/loop/actor.go writes them.
-const notConfigured = 'Claude token not configured. Please add a setup-token in Settings'
+const notConfigured = 'Claude login not signed in. Sign in with Claude in Settings'
 const refusedBare =
   'The Claude login was rejected (Failed to authenticate: OAuth session expired and could not be refreshed); log in again with claude on the host'
 // The hub_unreachable detail, as internal/loop/actor.go writes it.
@@ -146,7 +146,7 @@ describe('claudeLoginDown', () => {
 
   it('without one, names both causes and the fix for the loop’s runtime', () => {
     expect(claudeLoginDown(down('unauthenticated', '', 'docker'))).toBe(
-      'no Claude setup-token is set, or the one set was refused. Add or replace it in Settings',
+      'the hub has no Claude login, or Anthropic refused it. Sign in with Claude in Settings',
     )
     expect(claudeLoginDown(down('unauthenticated', '', 'bare'))).toBe(
       'the host has no Claude login, or its login was refused. Log in again with claude on the host',

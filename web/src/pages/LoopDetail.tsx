@@ -752,11 +752,11 @@ function WorkstationPanel({ loop, runningVerb }: { loop: LoopView; runningVerb: 
                   Power on
                 </button>
               ) : loop.down_reason === 'unauthenticated' ? (
-                // a missing or refused token is fixed in Settings, and a
+                // a missing or refused login is fixed in Settings, and a
                 // button that cannot fix it would point the operator away
                 // from the fix
                 <Link className="btn sm" to="/settings">
-                  Set the Claude token
+                  Sign in with Claude
                 </Link>
               ) : null}
               <button

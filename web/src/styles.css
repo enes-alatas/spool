@@ -2390,6 +2390,11 @@ button.panel-link {
 .login-check .form-error {
   flex-basis: 100%;
 }
+/* under Settings → Claude login's line (#929), whose hairline it shares */
+.claude-login .login-check {
+  margin-top: 0;
+  border-top: none;
+}
 /* The two controls a side panel carries. Both sit on the raised fill the panel
    already has, so the well inverts to the canvas to stay a well; both are
    compact because they are inside a panel of rows, not a form. */

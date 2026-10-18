@@ -27,7 +27,7 @@ describe('loopsNeedingClaudeToken', () => {
 describe('missingTokenNotice', () => {
   it('names one loop', () => {
     expect(missingTokenNotice(['scout'])).toBe(
-      'No Claude token is set, so @scout cannot start a turn: its workstation will report down until one is.',
+      'No Claude login is signed in, so @scout cannot start a turn: its workstation will report down until one is.',
     )
   })
 

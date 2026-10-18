@@ -14,7 +14,7 @@ const settings = (over: Partial<CloudSettings> = {}): CloudSettings => ({
   listener: { on: true, addr: '127.0.0.1:8090', from_flag: false },
   address: 'https://spool.example.com',
   check: ok,
-  account: { set: true, check: ok },
+  account: { set: true, cli: true, check: ok },
   ...over,
 })
 const failing = loop({ problems: [{ symptom: 'cloud_address', since: 0 }] })
@@ -30,18 +30,24 @@ describe('cloudHold', () => {
     expect(cloudHold(loop(), settings({ check: undefined }))).toBe(
       "the public address hasn't passed a check yet",
     )
-    expect(cloudHold(loop(), settings({ account: { set: false } }))).toBe('no Claude account is signed in')
+    expect(cloudHold(loop(), settings({ account: { set: false, cli: true } }))).toBe(
+      'no Claude account is signed in',
+    )
     expect(cloudHold(loop(), settings())).toBe('')
   })
 
   it("doesn't hold on a signed-in account whose check fails, as the hub doesn't", () => {
-    const account = { set: true, check: { state: 'failed', stage: 'unreachable', checked_at: 0 } } as const
+    const account = {
+      set: true,
+      cli: true,
+      check: { state: 'failed', stage: 'unreachable', checked_at: 0 },
+    } as const
     expect(cloudHold(loop(), settings({ account }))).toBe('')
   })
 
   it('leaves a hold the cloud_address problem names to the problem', () => {
     expect(unnamedCloudHold(failing, settings())).toBe('')
-    expect(unnamedCloudHold(loop(), settings({ account: { set: false } }))).toBe(
+    expect(unnamedCloudHold(loop(), settings({ account: { set: false, cli: true } }))).toBe(
       'no Claude account is signed in',
     )
   })

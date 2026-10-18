@@ -45,12 +45,13 @@ export function workstationCondition(loop: Station): WorkstationCondition {
 // The hub's detail names the cause it saw and the fix for the loop's runtime,
 // so it is the sentence to show. This is the fallback for a hub or an event
 // that carries none, and it names both causes: a contained loop runs on the
-// setup-token in Settings, a bare one on the host's own `claude` login.
+// hub's Claude login in Settings (ADR-0058), a bare one on the host's own
+// `claude` login.
 export function claudeLoginDown(loop: Pick<Station, 'workstation_detail' | 'runtime'>): string {
   if (loop.workstation_detail) return loop.workstation_detail
   return loop.runtime === 'bare'
     ? 'the host has no Claude login, or its login was refused. Log in again with claude on the host'
-    : 'no Claude setup-token is set, or the one set was refused. Add or replace it in Settings'
+    : 'the hub has no Claude login, or Anthropic refused it. Sign in with Claude in Settings'
 }
 
 // Why a loop's claude cannot reach the hub. The hub's detail is what claude

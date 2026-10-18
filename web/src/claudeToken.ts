@@ -1,13 +1,13 @@
 import type { LoopView } from './api'
 
 // Which loops the missing-Claude-token banner is about (#305). A contained
-// loop reads the operator's setup-token to start a turn; a bare one uses the
-// host's own login and never reads it (`needsClaudeToken` in
-// internal/loop/actor.go), and a cloud one spends the account signed in
-// in Settings → Cloud. So the banner is true of the docker loops, and only
-// of them, as the server asks "docker". Archived loops
-// never turn, so they are not in it; paused ones are, since resuming one
-// would meet the missing token.
+// loop runs on the hub's Claude token, its Claude login (ADR-0058) or a
+// setup-token saved before one; a bare one uses the host's own login and
+// never reads it (`needsClaudeToken` in internal/loop/actor.go), and a cloud
+// one is held by the cloud setup instead. So the banner is true of the
+// docker loops, and only of them, as the server asks "docker". Archived
+// loops never turn, so they are not in it; paused ones are, since resuming
+// one would meet the missing token.
 export function loopsNeedingClaudeToken(
   loops: readonly Pick<LoopView, 'name' | 'runtime' | 'status'>[],
 ): string[] {
@@ -24,7 +24,7 @@ export function missingTokenNotice(names: readonly string[]): string {
       : names.length <= 3
         ? `${listed(names.map((n) => `@${n}`))} cannot start a turn: their workstations`
         : `${names.length} contained loops cannot start a turn: their workstations`
-  return `No Claude token is set, so ${who} will report down until one is.`
+  return `No Claude login is signed in, so ${who} will report down until one is.`
 }
 
 function listed(items: string[]): string {

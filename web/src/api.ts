@@ -546,6 +546,10 @@ export interface CloudAccountCheck {
 
 export interface CloudAccountView {
   set: boolean
+  // Whether the hub finds the claude CLI it signs in and refreshes with
+  // (ADR-0058). It looks on every read, so after installing it a reload
+  // shows the sign-in.
+  cli: boolean
   // The last account check, absent until one has run.
   check?: CloudAccountCheck
 }
@@ -1223,12 +1227,6 @@ export const api = {
   // Lifts the cap until the next reset of the windows that set it, without
   // touching the thresholds (#650). Answers with the plan read.
   resumePlanCap: () => req<PlanUsage>('/api/plan-cap/resume', { method: 'POST' }),
-  // The token is write-only: send '' to clear it. Presence comes back in Settings.
-  setClaudeToken: (token: string) =>
-    req<Settings>('/api/settings', {
-      method: 'PUT',
-      body: JSON.stringify({ claude_oauth_token: token }),
-    }),
   // Both thresholds go in one write: the server validates them as a pair
   // (1-99, arm below force), so sending one alone would be judged against a
   // stored neighbour the operator may be in the middle of changing.

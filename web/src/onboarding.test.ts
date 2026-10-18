@@ -76,12 +76,12 @@ describe('pillarHow', () => {
   const harness = PILLARS.find((p) => p.key === 'harness')!
   const loops = PILLARS.find((p) => p.key === 'loops')!
 
-  it("asks a bare hub to check the host's login, not to paste a token", () => {
+  it("asks a bare hub to check the host's login, not to sign the hub in", () => {
     expect(pillarHow(harness, 'bare')).toBe(harness.bareHow)
-    expect(pillarHow(harness, 'bare')).not.toMatch(/setup-token/)
+    expect(pillarHow(harness, 'bare')).not.toMatch(/Sign in/)
   })
 
-  it('asks for a token on docker, and before the settings answer', () => {
+  it('asks for the sign-in on docker, and before the settings answer', () => {
     expect(pillarHow(harness, 'docker')).toBe(harness.how)
     expect(pillarHow(harness, undefined)).toBe(harness.how)
   })
@@ -92,9 +92,9 @@ describe('pillarHow', () => {
 })
 
 describe('checkError', () => {
-  it('asks for a token when the hub has none to check', () => {
-    expect(checkError(new ApiError(409, 'no setup-token saved in Settings to check', 'no_setup_token'))).toBe(
-      'Save a setup-token first.',
+  it('asks for the sign-in when the hub has no Claude token to check', () => {
+    expect(checkError(new ApiError(409, 'no Claude login signed in to check', 'no_setup_token'))).toBe(
+      'Sign in with Claude first.',
     )
   })
 
@@ -109,9 +109,9 @@ describe('checkError', () => {
 describe('loginCheckTone', () => {
   it('reads a working login as ready and a running check as active', () => {
     expect(loginCheckTone({ done: true, reason: 'the login check authenticated' })).toBe('ok')
-    expect(loginCheckTone({ done: false, reason: 'the setup-token is being checked', checking: true })).toBe(
-      'active',
-    )
+    expect(
+      loginCheckTone({ done: false, reason: "the hub's Claude token is being checked", checking: true }),
+    ).toBe('active')
   })
 
   it('reads a refused or unfinished check, or a missing token, as wrong', () => {
@@ -121,11 +121,11 @@ describe('loginCheckTone', () => {
     expect(loginCheckTone({ done: false, reason: 'the login check did not finish; run it again' })).toBe(
       'danger',
     )
-    expect(loginCheckTone({ done: false, reason: 'no setup-token saved in Settings' })).toBe('danger')
+    expect(loginCheckTone({ done: false, reason: 'no Claude login signed in' })).toBe('danger')
   })
 
   it('keeps a check that has not run neutral, on either runtime', () => {
-    expect(loginCheckTone({ done: false, reason: 'setup-token saved; not checked yet' })).toBe('muted')
+    expect(loginCheckTone({ done: false, reason: "the hub's Claude token is not checked yet" })).toBe('muted')
     expect(loginCheckTone({ done: false, reason: "the host's claude login is not checked yet" })).toBe(
       'muted',
     )

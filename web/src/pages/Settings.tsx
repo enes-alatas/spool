@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ApiError, type CustomModel, type Settings as SettingsView } from '../api'
-import { customModelError, MODEL_LABEL_MAX, rotationGate, tokenSubmittable } from '../forms'
+import { customModelError, MODEL_LABEL_MAX, rotationGate } from '../forms'
 import { customModelNote } from '../options'
 import { buildFacts, useVersion } from '../version'
 import { HarnessCheck } from '../components/HarnessCheck'
@@ -9,6 +9,7 @@ import { useMay, useSignOut } from '../components/Session'
 import { SignOutIcon } from '../components/Icons'
 import { EgressSection } from '../components/EgressSection'
 import { CloudSection } from '../components/CloudSection'
+import { ClaudeLoginSection } from '../components/ClaudeLogin'
 import { UsersSection } from '../components/UsersSection'
 import { ChatAccess } from '../components/ChatAccess'
 import { LinksSection } from '../components/LinksSection'
@@ -16,7 +17,6 @@ import { loginCheckTone } from '../onboarding'
 import { CapBanner, useMinuteClock } from '../components/PlanUsage'
 import { capFields, capGate, capIdleStatus, capReason, capValue, type CapDraft } from '../planCap'
 import { errorTurnsField, errorTurnsValue } from '../health'
-import { Copyable } from '../components/Copyable'
 
 export default function Settings() {
   const { data: settings, error: loadError } = useQuery({ queryKey: ['settings'], queryFn: api.settings })
@@ -34,7 +34,7 @@ export default function Settings() {
           Spool this is. */}
       {may('manage') && (
         <>
-          <ClaudeToken settings={settings} loadError={loadError} />
+          <ClaudeLogin settings={settings} />
           <CustomModels />
           <PlanGuardrails settings={settings} loadError={loadError} />
           <HealthCheck settings={settings} loadError={loadError} />
@@ -129,94 +129,15 @@ function loadFailure(loadError: Error): string {
   return `Could not load settings: ${loadError.message}`
 }
 
-function ClaudeToken({ settings, loadError }: { settings?: SettingsView; loadError: Error | null }) {
-  const qc = useQueryClient()
-  const [token, setToken] = useState('')
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-
-  // Unknown until the settings arrive. A failed load used to fall through to
-  // "Not configured", which asserts a state nobody read and invites pasting
-  // a token that is already set (#351).
-  const configured = settings?.claude_token_set
-
-  const submit = async (value: string) => {
-    setBusy(true)
-    setError('')
-    try {
-      await api.setClaudeToken(value)
-      setToken('')
-      qc.invalidateQueries({ queryKey: ['settings'] })
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setBusy(false)
-    }
-  }
-
+// The hub's Claude login (ADR-0058), and under it the harness's last login
+// check (ADR-0044), which a sign-in starts.
+function ClaudeLogin({ settings }: { settings?: SettingsView }) {
   return (
-    <>
-      <h2 className="section-head">Claude token</h2>
-      <p className="page-lede">
-        Workstation (contained) loops run <code>claude</code> inside a Docker container that has no login of
-        its own. Paste a long-lived token from <Copyable text="claude setup-token" /> and every workstation
-        runs under your own Claude plan and limits. Bare loops keep using this machine's login and don't need
-        it.
-      </p>
-
+    <ClaudeLoginSection settings={settings}>
       <div className="form">
-        <div className="field">
-          <label htmlFor="claude-token">Claude setup-token</label>
-          {settings ? (
-            <div className={`token-state${configured ? ' ok' : ''}`}>
-              {configured ? '● Configured' : '○ Not configured'}
-            </div>
-          ) : loadError ? (
-            // the gap .token-state keeps above the input
-            <div className="form-error" role="alert" style={{ marginBottom: 8 }}>
-              {loadFailure(loadError)}
-            </div>
-          ) : (
-            <div className="token-state">Checking…</div>
-          )}
-          <input
-            id="claude-token"
-            type="password"
-            autoComplete="off"
-            placeholder={configured ? 'Paste a new token to replace it' : 'sk-ant-oat01-…'}
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-          />
-          <div className="hint">
-            Run <Copyable text="claude setup-token" /> where you're logged in, then paste the result here.
-            It's stored write-only: the value never leaves this server or appears in a response.
-          </div>
-        </div>
-
-        {error && (
-          <div className="form-error" role="alert">
-            {error}
-          </div>
-        )}
-
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            className="btn primary"
-            onClick={() => submit(token.trim())}
-            disabled={busy || !tokenSubmittable(token)}
-          >
-            {busy ? 'Saving…' : configured ? 'Replace token' : 'Save token'}
-          </button>
-          {configured && (
-            <button className="btn danger" onClick={() => submit('')} disabled={busy}>
-              Clear
-            </button>
-          )}
-        </div>
-
         <LoginCheck />
       </div>
-    </>
+    </ClaudeLoginSection>
   )
 }
 

@@ -8,13 +8,14 @@ import {
   isQuickTunnel,
   isQuickTunnelHost,
   listenerPort,
+  loginState,
   signInCodeShaped,
 } from './cloud'
 
 const view = (over: Partial<CloudSettings> = {}): CloudSettings => ({
   listener: { on: true, addr: '127.0.0.1:8090', from_flag: false },
   address: 'https://spool.example.com',
-  account: { set: false },
+  account: { set: false, cli: true },
   ...over,
 })
 
@@ -89,22 +90,26 @@ describe('firstOpenStep', () => {
       firstOpenStep(
         view({
           check: reaches,
-          account: { set: true, check: { state: 'failed', stage: 'refused', checked_at: 0 } },
+          account: { set: true, cli: true, check: { state: 'failed', stage: 'refused', checked_at: 0 } },
         }),
       ),
     ).toBe('account')
-    expect(firstOpenStep(view({ check: reaches, account: { set: true, check: reaches } }))).toBe('done')
+    expect(firstOpenStep(view({ check: reaches, account: { set: true, cli: true, check: reaches } }))).toBe(
+      'done',
+    )
   })
 })
 
 describe('accountState', () => {
   it('reads a signed-in account as done only once its check passes', () => {
     expect(accountState(view())).toEqual({ text: 'not signed in', tone: 'todo' })
-    expect(accountState(view({ account: { set: true } }))).toEqual({
+    expect(accountState(view({ account: { set: true, cli: true } }))).toEqual({
       text: 'signed in, not checked yet',
       tone: 'todo',
     })
-    expect(accountState(view({ account: { set: true, check: { state: 'ok', checked_at: 0 } } }))).toEqual({
+    expect(
+      accountState(view({ account: { set: true, cli: true, check: { state: 'ok', checked_at: 0 } } })),
+    ).toEqual({
       text: 'signed in',
       tone: 'ok',
     })
@@ -112,16 +117,18 @@ describe('accountState', () => {
 
   it('names the stage a failed check stopped at, and what to try', () => {
     const state = accountState(
-      view({ account: { set: true, check: { state: 'failed', stage: 'refused', checked_at: 0 } } }),
+      view({
+        account: { set: true, cli: true, check: { state: 'failed', stage: 'refused', checked_at: 0 } },
+      }),
     )
     expect(state.tone).toBe('bad')
-    expect(state.text).toBe('fails: the sign-in was refused')
+    expect(state.text).toBe('fails: the login was refused')
     expect(state.hint).toMatch(/Sign in again/)
   })
 
   it('says a stage this build does not know by its name', () => {
     const check = { state: 'failed', stage: 'quota', checked_at: 0 } as unknown as CloudAccountCheck
-    expect(accountState(view({ account: { set: true, check } }))).toEqual({
+    expect(accountState(view({ account: { set: true, cli: true, check } }))).toEqual({
       text: 'fails: quota',
       tone: 'bad',
     })
@@ -149,5 +156,26 @@ describe('signInCodeShaped', () => {
     expect(signInCodeShaped('ab12\u0007cd34')).toBe(false)
     expect(signInCodeShaped('a'.repeat(1025))).toBe(false)
     expect(signInCodeShaped('')).toBe(false)
+  })
+})
+
+describe('loginState', () => {
+  it('says a hub with no claude CLI cannot sign in, rather than offering a sign-in it cannot run', () => {
+    expect(loginState(view({ account: { set: false, cli: false } }))).toEqual({
+      text: "can't sign in from this machine",
+      tone: 'todo',
+    })
+    expect(loginState(view({ account: { set: false, cli: true } }))).toEqual({
+      text: 'not signed in',
+      tone: 'todo',
+    })
+  })
+
+  it('reads a login signed in before the CLI went away as itself', () => {
+    const ok = { state: 'ok', checked_at: 0 } as const
+    expect(loginState(view({ account: { set: true, cli: false, check: ok } }))).toEqual({
+      text: 'signed in',
+      tone: 'ok',
+    })
   })
 })

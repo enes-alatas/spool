@@ -25,10 +25,10 @@ export const PILLARS: PillarSpec[] = [
   {
     key: 'harness',
     title: 'Harness',
-    how: 'Loops run on Claude Code, and it has to be signed in. Add a token from claude setup-token.',
+    how: 'Contained and cloud loops run on Claude Code on one Claude login for the whole hub. Sign in with your Claude account once.',
     bareHow: "Loops run on Claude Code with this machine's own claude login. Check that it works.",
     doneText: 'Loops have a Claude login to use.',
-    action: 'Add token',
+    action: 'Sign in with Claude',
   },
   {
     key: 'loops',
@@ -169,10 +169,11 @@ export function surfaceTarget(loopNames: string[]): string | undefined {
   return loopNames.length > 0 ? `/loops/${loopNames[0]}` : undefined
 }
 
-// What a refused "Check now" tells the operator. A docker hub with no token
-// has nothing to check: say what to do rather than what went wrong.
+// What a refused "Check now" tells the operator. A docker hub with no Claude
+// login (ADR-0058), nor a setup-token saved before one, has nothing to
+// check: say what to do rather than what went wrong.
 export function checkError(e: Error): string {
-  if (e instanceof ApiError && e.code === 'no_setup_token') return 'Save a setup-token first.'
+  if (e instanceof ApiError && e.code === 'no_setup_token') return 'Sign in with Claude first.'
   return e.message
 }
 
