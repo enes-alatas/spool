@@ -3,6 +3,7 @@
 package itest
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -92,5 +93,59 @@ func TestARefusedLoginRefreshKeepsTheToken(t *testing.T) {
 	}
 	if left, _ := filepath.Glob(filepath.Join(s.dataDir, "cloud-sign-in", "refresh-*")); len(left) != 0 {
 		t.Errorf("the refused refresh left %v behind", left)
+	}
+}
+
+// Sign out revokes the Claude login at the source with the CLI's own
+// logout, run in a config directory of the hub's that goes with it, and
+// forgets the login. A logout that fails still forgets it, and the log
+// says to revoke it at claude.ai (ADR-0058).
+func TestSignOutRevokesTheClaudeLoginAtTheSource(t *testing.T) {
+	t.Parallel()
+	const refresh = "sk-ant-ort01-fixture-cloud-refresh"
+	s, fake := startCloudHub(t, "nimbostratus")
+	s.stop()
+	login := store.CloudAccount{
+		Token:        cloudFixtureToken,
+		RefreshToken: refresh,
+		ExpiresAt:    time.Now().Add(8 * time.Hour).UnixMilli(),
+		OrgUUID:      "00000000-0000-4000-8000-000000000001",
+	}
+	storeCloudAccount(t, s.dataDir, login)
+	s = startServerArgs(t, s.dataDir, "--runtime", "bare", "--cloud-api-base", fake.URL)
+
+	var view cloudSettings
+	s.mustJSON("DELETE", "/api/settings/cloud/account", nil, &view)
+	if view.Account.Set {
+		t.Fatal("Sign out left the login signed in")
+	}
+	revoked, err := os.ReadFile(filepath.Join(s.fkState, "revoked"))
+	if err != nil || strings.TrimSpace(string(revoked)) != refresh {
+		t.Fatalf("the CLI revoked %q (%v), want the login's refresh token", revoked, err)
+	}
+	if !strings.Contains(s.log(), "Claude login signed out at the source") {
+		t.Errorf("the hub logged no sign-out\n%s", s.log())
+	}
+	left, err := filepath.Glob(filepath.Join(s.dataDir, "cloud-sign-in", "sign-out-*"))
+	if err != nil || len(left) != 0 {
+		t.Errorf("the sign-out left %v behind (%v)", left, err)
+	}
+
+	// a logout that fails still signs the hub out
+	s.stop()
+	storeCloudAccount(t, s.dataDir, login)
+	if err := os.WriteFile(filepath.Join(s.fkState, "logout-fails"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s = startServerArgs(t, s.dataDir, "--runtime", "bare", "--cloud-api-base", fake.URL)
+	s.mustJSON("DELETE", "/api/settings/cloud/account", nil, &view)
+	if view.Account.Set {
+		t.Fatal("a failed logout left the login signed in")
+	}
+	if !strings.Contains(s.log(), "Claude login not revoked at the source; revoke it at claude.ai") {
+		t.Errorf("the hub didn't say the revoke failed\n%s", s.log())
+	}
+	if strings.Contains(s.log(), refresh) {
+		t.Error("the log carries the refresh token")
 	}
 }

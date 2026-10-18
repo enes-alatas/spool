@@ -433,10 +433,13 @@ in, and reads the turn's events back (ADR-0056).
   token and its refresh token, which drive the account, not only its
   turns, and the refresh token for as long as Anthropic keeps it
   valid.
-- **Remove forgets the account but doesn't revoke it yet.** Until the
-  hub revokes at the source (ADR-0056), a token copied before Remove
-  works until it expires, and the refresh token longer. The operator
-  revokes it where claude.ai lists the account's sign-ins.
+- **Sign out can't confirm the revoke.** It runs the CLI's own logout,
+  which asks the source to revoke the refresh token, but the CLI reports
+  success whatever the source answered (ADR-0058). Whether an accepted
+  revoke also ends the access token is unknown. So a token copied before
+  Sign out may work until it expires, up to eight hours, and the refresh
+  token for as long as the source kept it. The operator revokes it where
+  claude.ai lists the account's sign-ins.
 - **A sign-in in progress holds its tokens unsealed for a moment.** The
   CLI writes them into its config directory, mode 0700 under the data
   directory, and the hub reads and deletes them as the CLI exits. A hub
