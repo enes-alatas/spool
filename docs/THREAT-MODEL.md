@@ -227,7 +227,7 @@ ADR-0043), and a contained loop's model requests under `/claude`
   Anthropic's side, on the hub's Claude token. The egress wall covers the
   workstation's own connections, not what a model request asks Anthropic
   to fetch. This is no wider than when the loop held the setup-token
-  (ADR-0058).
+  (ADR-0058). Accepted (below).
 - **Keeping claude's calls to the proxy rests on a CLI setting.** claude
   calls `api.anthropic.com` directly with its login as the bearer unless
   `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` is set, and the hub sets it.
@@ -576,9 +576,9 @@ runner for the hosted edition will need its own model.
 
 ## Accepted risks
 
-Findings from the 1.0 review (#777) that were accepted rather than fixed,
-each with its decision and date (#917). Each one's line above says what
-it is; this is why it stays.
+Findings from the 1.0 review (#777) and since that were accepted rather
+than fixed, each with its decision and date (#917). Each one's line
+above says what it is; this is why it stays.
 
 - **A loop can repeat what it was told privately** (Operator listener).
   Accepted 2026-10-17: keeping a private conversation private is
@@ -597,6 +597,9 @@ it is; this is why it stays.
   opening them costs CPU on the send path and a decompression-bomb
   surface, against a disguise ADR-0045 already leaves to deliberate
   obfuscation.
+- **Server-side tools reach hosts off the allowlist** (Loop listener).
+  Accepted 2026-10-18 (#932): they run on Anthropic's side, not the
+  hub's host, and are no wider than when a loop held the setup-token.
 
 Three more findings were decided as fixes, and their lines above go when
 the fixes land: reactions and votes on private messages (#922), demoting
