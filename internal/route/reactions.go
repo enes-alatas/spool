@@ -28,10 +28,13 @@ type InboundReaction struct {
 }
 
 // ReactionPayload is the KindReaction frame: the reaction, and whether it
-// was removed rather than added.
+// was removed rather than added. Target is the message reacted to, kept
+// out of the frame: a stream passes the item only to a user who reads
+// that message, as it passes the message (#922).
 type ReactionPayload struct {
 	*store.Reaction
-	Removed bool `json:"removed"`
+	Removed bool           `json:"removed"`
+	Target  *store.Message `json:"-"`
 }
 
 // React records a reaction a surface received and publishes it. Every bot
@@ -45,10 +48,13 @@ func (router *Router) React(ctx context.Context, in InboundReaction) error {
 	if in.MessageID == 0 || in.ReactorKey == "" || in.Emoji == "" {
 		return errors.New("route: a reaction needs its message, its reactor and its emoji")
 	}
+	target, err := router.store.Messages().Get(ctx, in.MessageID)
+	if err != nil {
+		return err
+	}
 	reaction := &store.Reaction{MessageID: in.MessageID, ReactorKey: in.ReactorKey, Reactor: in.Reactor,
 		Emoji: in.Emoji, TS: time.Now().UnixMilli()}
 	var changed bool
-	var err error
 	if in.Removed {
 		changed, err = router.store.Reactions().Remove(ctx, in.MessageID, in.ReactorKey, in.Emoji)
 	} else {
@@ -57,9 +63,10 @@ func (router *Router) React(ctx context.Context, in InboundReaction) error {
 	if err != nil || !changed {
 		return err
 	}
-	router.bus.Publish(bus.Item{Kind: bus.KindReaction, Payload: &ReactionPayload{Reaction: reaction, Removed: in.Removed}})
+	router.bus.Publish(bus.Item{Kind: bus.KindReaction,
+		Payload: &ReactionPayload{Reaction: reaction, Removed: in.Removed, Target: target}})
 	if !in.Removed {
-		router.wakeForOwner(ctx, reaction.MessageID, reaction.ReactorKey)
+		router.wakeForOwner(ctx, target, reaction.ReactorKey)
 	}
 	return nil
 }
@@ -70,12 +77,7 @@ func (router *Router) React(ctx context.Context, in InboundReaction) error {
 // told the way every other one is, ahead of the turn it starts. Best
 // effort, like a delivery: it is recorded either way, and rides with the
 // loop's next turn if this one does not happen.
-func (router *Router) wakeForOwner(ctx context.Context, messageID int64, reactorKey string) {
-	message, err := router.store.Messages().Get(ctx, messageID)
-	if err != nil {
-		router.log.Warn("wake target vanished", "message", messageID, "err", err)
-		return
-	}
+func (router *Router) wakeForOwner(ctx context.Context, message *store.Message, reactorKey string) {
 	if message.Conversation != store.ConversationOwnerDM || message.FromLoopID == "" ||
 		message.ConversationLoopID != message.FromLoopID {
 		return
@@ -138,7 +140,7 @@ func (router *Router) SendReaction(ctx context.Context, req SendRequest) (*store
 	router.recordSend(req.From.ID, req.Destination, "reacted "+emoji+" to "+loop.MessageRef(target.ID))
 	if added {
 		router.bus.Publish(bus.Item{Kind: bus.KindReaction, LoopID: req.From.ID,
-			Payload: &ReactionPayload{Reaction: reaction}})
+			Payload: &ReactionPayload{Reaction: reaction, Target: target}})
 	}
 	return target, nil, nil
 }

@@ -5,6 +5,7 @@ package itest
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -185,5 +186,90 @@ func ended(t *testing.T, stream *sseStream, whose string) {
 	case <-stream.done:
 	case <-time.After(20 * time.Second):
 		t.Fatalf("the stream of %s stayed open", whose)
+	}
+}
+
+// A member's stream carries a reaction, a vote or a poll's close only on a
+// message they read, as it carries the message (#922): none on the owner's
+// private chat with a loop, whether a person or the loop reacted or voted,
+// and each on a group message. An admin's stream carries them all.
+func TestAMembersStreamCarriesNoReactionOrVoteOnAPrivateMessage(t *testing.T) {
+	t.Parallel()
+	operator := user{ID: 8290, First: "Operator", Username: "operator"}
+	srv, tg := startTelegramFleet(t, operator)
+	member := srv.openStream(srv.signedInAs("mia", "member"))
+	admin := srv.openStream(srv.signedInAs("ada", "admin"))
+	alpha := mcpSession(t, srv, hubMCPToken(t, srv, "alpha"))
+	tg.dm("alpha", operator, "hi alpha")
+	waitOwnerDMReady(t, srv, "alpha")
+	send := func(args map[string]any) {
+		t.Helper()
+		if res := callSend(t, alpha, args); res.IsError {
+			t.Fatalf("send %v refused: %s", args, resultText(res))
+		}
+	}
+	idOf := func(text string) int64 {
+		t.Helper()
+		srv.waitForMessage(text)
+		return srv.activityWith(text)[0].ID
+	}
+	telegramPoll := func(question string) string {
+		t.Helper()
+		var id string
+		eventually(t, "the poll sent on Telegram", func() bool {
+			polls, _ := tg.polls()
+			for _, poll := range polls {
+				if poll.Question == question {
+					id = poll.PollID
+					return true
+				}
+			}
+			return false
+		})
+		return id
+	}
+	reaction := func(messageID int64) string { return fmt.Sprintf(`"message_id":%d,"reactor_key"`, messageID) }
+	ballot := func(pollID int64) string { return fmt.Sprintf(`"poll_id":%d,`, pollID) }
+
+	// on the owner's private chat: the owner's reaction and vote, the loop's
+	// own, and the poll's close
+	const ask = "a private ask"
+	send(map[string]any{"destination": "owner_dm", "text": ask})
+	sent := tg.waitSentFrom(t, operator.ID, "alpha", ask)
+	private := idOf(ask)
+	tg.react("alpha", operator.ID, sent.MessageID, operator, nil, []string{"👍"})
+	srv.waitReactions(private, "telegram:8290 👍")
+	send(map[string]any{"destination": "owner_dm", "reply_to": fmt.Sprintf("ref:%d", private), "react": "🎉"})
+	const privateQuestion = "a private poll?"
+	send(map[string]any{"destination": "owner_dm", "text": privateQuestion,
+		"poll": map[string]any{"options": []string{"yes", "no"}, "closes_in": "2h"}})
+	privatePoll := idOf(privateQuestion)
+	tg.answerPoll("alpha", telegramPoll(privateQuestion), operator, 0)
+	admin.waitFor(t, ballot(privatePoll))
+	send(map[string]any{"destination": "owner_dm", "reply_to": fmt.Sprintf("ref:%d", privatePoll), "vote": []int{2}})
+	send(map[string]any{"destination": "owner_dm", "close_poll": fmt.Sprintf("ref:%d", privatePoll)})
+	admin.waitFor(t, fmt.Sprintf(`"poll_id":%d,"closed":true`, privatePoll))
+
+	// in the group: a reaction and a vote
+	const groupAsk = "@alpha a group ask"
+	tg.post(groupChatID, "supergroup", groupAsk, operator)
+	group := idOf(groupAsk)
+	send(map[string]any{"destination": "group", "reply_to": fmt.Sprintf("ref:%d", group), "react": "👀"})
+	const groupQuestion = "@beta a group poll?"
+	send(map[string]any{"destination": "group", "text": groupQuestion, "poll": map[string]any{"options": []string{"yes", "no"}}})
+	groupPoll := idOf(groupQuestion)
+	send(map[string]any{"destination": "group", "reply_to": fmt.Sprintf("ref:%d", groupPoll), "vote": []int{1}})
+
+	for _, want := range []string{reaction(private), `"emoji":"🎉"`, reaction(group), ballot(groupPoll)} {
+		admin.waitFor(t, want)
+	}
+	member.waitFor(t, reaction(group))
+	member.waitFor(t, ballot(groupPoll))
+	srv.message("alpha", "every reaction and vote is in")
+	member.waitFor(t, "every reaction and vote is in")
+	for _, private := range []string{reaction(private), ballot(privatePoll), `"emoji":"👍"`, `"emoji":"🎉"`} {
+		if member.has(private) {
+			t.Errorf("a member's stream carried %s from the owner's private chat", private)
+		}
 	}
 }
