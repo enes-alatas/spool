@@ -123,6 +123,17 @@ the hub.
    and forgets the login. Contained loops go down `unauthenticated` until
    the next sign-in.
 
+   **Amendment (2026-10-18, #928): Sign out runs the CLI's own logout,
+   which can't confirm the revoke.** As with the refresh, the hub holds no
+   OAuth client. It writes the login into a fresh 0700 directory under
+   `<data>/cloud-sign-in/`, runs `claude auth logout` there, and deletes
+   the directory. The CLI posts the refresh token to its revoke endpoint
+   and deletes the credentials (probe E, in fakeclaude's FIDELITY.md).
+   It exits 0 whether or not the endpoint accepted the revoke, so the hub
+   can't tell a revoked token from one the source kept. A logout that
+   fails outright is logged. Either way the hub forgets the login, and
+   the page still says where claude.ai lists the account's sign-ins.
+
 7. **The login check runs on the hub's Claude token.** ADR-0044's check
    runs as before, in a throwaway container with no tools, no MCP server
    and a fixed one-word prompt. It is the one place the token enters a

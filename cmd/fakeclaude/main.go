@@ -174,6 +174,9 @@ func main() {
 	if len(args) >= 2 && args[0] == "auth" && args[1] == "status" {
 		os.Exit(authStatus())
 	}
+	if len(args) >= 2 && args[0] == "auth" && args[1] == "logout" {
+		os.Exit(authLogout())
+	}
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--version":
@@ -1030,6 +1033,42 @@ func authStatus() int {
 		}
 	}
 	fmt.Println(`{"loggedIn": true, "authMethod": "claude.ai"}`)
+	return 0
+}
+
+// authLogout is claude auth logout on a claude.ai sign-in, as 2.1.302 runs
+// it: it posts the refresh token to the revoke endpoint, deletes the
+// credentials, and says it signed out whatever the endpoint answered
+// (FIDELITY.md). The fake's revoke endpoint is a "revoked" file in
+// $FAKECLAUDE_STATE, a line per refresh token. A "logout-fails" file there
+// makes the logout fail before it touches anything.
+func authLogout() int {
+	state := os.Getenv("FAKECLAUDE_STATE")
+	if _, err := os.Stat(filepath.Join(state, "logout-fails")); err == nil {
+		fmt.Println("Failed to log out.")
+		return 1
+	}
+	path := filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), ".credentials.json")
+	var credentials struct {
+		ClaudeAiOauth struct {
+			RefreshToken string `json:"refreshToken"`
+		} `json:"claudeAiOauth"`
+	}
+	if raw, err := os.ReadFile(path); err == nil && json.Unmarshal(raw, &credentials) == nil && credentials.ClaudeAiOauth.RefreshToken != "" {
+		if err := os.MkdirAll(state, 0o755); err != nil {
+			return 1
+		}
+		revoked, err := os.OpenFile(filepath.Join(state, "revoked"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		if err != nil {
+			return 1
+		}
+		_, _ = fmt.Fprintln(revoked, credentials.ClaudeAiOauth.RefreshToken)
+		_ = revoked.Close()
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return 1
+	}
+	fmt.Println("Successfully logged out from your Anthropic account.")
 	return 0
 }
 

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -257,6 +258,53 @@ func (signIn *hostSignIn) Refresh(ctx context.Context, account store.CloudAccoun
 		refreshedAccount.RefreshToken = account.RefreshToken
 	}
 	return refreshedAccount, nil
+}
+
+// signOutWait bounds a sign-out: the CLI's logout and the one revoke it
+// posts.
+const signOutWait = time.Minute
+
+// SignOut runs the CLI's own logout on account in a config directory of
+// its own, which revokes the refresh token at the source (ADR-0058). The
+// directory goes with the call. The CLI exits 0 whether or not the revoke
+// was accepted, so a nil error says the logout ran, not that the token is
+// dead. SignOut shares the sign-in's lock, as Refresh does.
+func (signIn *hostSignIn) SignOut(ctx context.Context, account store.CloudAccount) error {
+	signIn.mu.Lock()
+	defer signIn.mu.Unlock()
+	if err := os.MkdirAll(signIn.dir, 0o700); err != nil {
+		return err
+	}
+	configDir, err := os.MkdirTemp(signIn.dir, "sign-out-")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.RemoveAll(configDir) }()
+	if err := claude.WriteSignIn(configDir, claude.SignIn{
+		AccessToken:  account.Token,
+		RefreshToken: account.RefreshToken,
+		ExpiresAt:    account.ExpiresAt,
+		Scopes:       account.Scopes,
+		OrgUUID:      account.OrgUUID,
+	}, false); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, signOutWait)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, signIn.bin, claude.SignOutArgs()...)
+	cmd.Dir = configDir
+	cmd.Env = append(signInEnv(os.Environ()), "CLAUDE_CONFIG_DIR="+configDir)
+	cmd.SysProcAttr = runtime.ChildAttr()
+	output := &tail{}
+	cmd.Stdout, cmd.Stderr = output, output
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("claude auth logout (%v): %s", err, output.last())
+	}
+	// the logout deletes the credentials once it has posted the revoke
+	if _, err := os.Stat(filepath.Join(configDir, ".credentials.json")); err == nil {
+		return fmt.Errorf("claude auth logout left the login in place: %s", output.last())
+	}
+	return nil
 }
 
 // end ends run if it is still the sign-in waiting.

@@ -106,6 +106,11 @@ func readJSON(path string, out any) error {
 // replaces.
 func RefreshArgs() []string { return []string{"auth", "status"} }
 
+// SignOutArgs is the CLI's own logout. On a claude.ai sign-in it revokes
+// the refresh token at the source and deletes the credentials, and exits
+// 0 whether or not the revoke was accepted (ADR-0058).
+func SignOutArgs() []string { return []string{"auth", "logout"} }
+
 // WriteSignIn writes signIn into configDir as the CLI's login left it, for
 // RefreshArgs to read. With expired set, the access token is written as
 // already expired, so the CLI refreshes it now rather than in its last
