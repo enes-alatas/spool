@@ -109,7 +109,7 @@ func main() {
 	partials := flag.Bool("partial-messages", true, "stream token deltas to the UI (--include-partial-messages)")
 	telegramAPI := flag.String("telegram-api-base", telegram.APIBase, "Telegram Bot API base URL (tests point this at a stand-in server)")
 	slackAPI := flag.String("slack-api-base", slack.APIBase, "Slack Web API base URL (tests point this at a stand-in server)")
-	cloudAPIFlag := flag.String("cloud-api-base", cloud.DefaultBaseURL, "Anthropic's sessions API base URL, which cloud loops are driven through (tests point this at a stand-in server); https, or http on loopback")
+	cloudAPIFlag := flag.String("cloud-api-base", cloud.DefaultBaseURL, "Anthropic's API base URL, which cloud loops are driven through and the Claude proxy forwards contained loops' model requests to (tests point this at a stand-in server); https, or http on loopback")
 	cloudLoopbackAddress := flag.Bool("cloud-loopback-address", false, "accept a plain-HTTP loopback address as the cloud listener's public address (tests only: no cloud session can reach one, though the hub checks it green from itself)")
 	answerTimeoutSec := flag.Int("telegram-answer-timeout-sec", 0, "seconds a Telegram call waits for the Bot API's answer before it is retried on a fresh connection (0 = the production 60s; tests against a stand-in API shorten it)")
 	bindSettleSec := flag.Int("telegram-bind-settle-sec", 0, "seconds a newly bound bot waits before it may ingest a group (0 = the production margin; tests against a stand-in API shorten it)")
@@ -452,11 +452,7 @@ func main() {
 			scheduler.ScheduleAfterTurn(loopRecord, trailer, has)
 		},
 		ClaudeToken: func(ctx context.Context) (string, error) {
-			token, err := rdb.Settings().Get(ctx, store.SettingClaudeOAuthToken)
-			if errors.Is(err, store.ErrNotFound) {
-				return "", nil
-			}
-			return token, err
+			return loop.HubClaudeToken(ctx, rdb.Settings())
 		},
 	}
 	models := loop.NewModels(rdb, pubsub, runtimes[defaultRuntime], defaultRuntime, ver, log)
@@ -568,6 +564,7 @@ func main() {
 		CloudLoopbackAddress: *cloudLoopbackAddress,
 		CloudGate:            cloudGate,
 		CloudSignIn:          cloudSignIn,
+		ClaudeAPIBase:        cloudAPI,
 		CloudAccounts:        cloudEnvironments{cloudRuntime},
 		CloudSessions:        cloudRuntime,
 		EgressFlag:           egressFlag(allowEntries),
@@ -576,7 +573,13 @@ func main() {
 	}
 
 	srv := &http.Server{Handler: redact.HTTP(api.Handler(), redactor)}
-	mcpSrv := httpapi.LoopHTTPServer(redact.HTTP(api.MCPHandler(), redactor))
+	// the Claude proxy streams the model's answer to the loop as it comes,
+	// outside the redactor: the hub redacts it from the loop's own stream
+	// (ADR-0058)
+	loopMux := http.NewServeMux()
+	loopMux.Handle(loop.ClaudeProxyPath+"/", api.ClaudeProxyHandler())
+	loopMux.Handle("/", redact.HTTP(api.MCPHandler(), redactor))
+	mcpSrv := httpapi.LoopHTTPServer(loopMux)
 
 	listeners := []served{
 		{name: "api", srv: srv, listener: apiListener, addr: apiAddr},

@@ -127,6 +127,9 @@ type Server struct {
 	// none: the page can't sign in.
 	CloudSignIn   CloudSignIn
 	CloudAccounts CloudAccountChecker
+	// ClaudeAPIBase is Anthropic's API, which the Claude proxy forwards a
+	// contained loop's model requests to (ADR-0058).
+	ClaudeAPIBase string
 	// CloudSessions reads each cloud loop's session link. Nil on a hub
 	// that wires none: the view carries no link.
 	CloudSessions CloudSessions

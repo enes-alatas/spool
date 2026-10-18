@@ -47,6 +47,28 @@ func TestBuildExecEnv(t *testing.T) {
 			t.Fatalf("got %q, want the env-var to win the collision", env["CLAUDE_CODE_OAUTH_TOKEN"])
 		}
 	})
+
+	// a loop's own Claude login bypasses the Claude proxy, which would
+	// refuse it, and keeps the direct calls only the hub token is kept from
+	// (ADR-0058)
+	t.Run("a loop's own Claude login drops the proxy env", func(t *testing.T) {
+		proxied := map[string]string{
+			"ANTHROPIC_BASE_URL":                       "http://host.docker.internal:7781/claude",
+			"CLAUDE_CODE_OAUTH_TOKEN":                  "fixture-hub-token",
+			"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+		}
+		env := buildExecEnv(proxied, []*store.Connection{envVar("CLAUDE_CODE_OAUTH_TOKEN", "loop-token")})
+		if len(env) != 1 || env["CLAUDE_CODE_OAUTH_TOKEN"] != "loop-token" {
+			t.Fatalf("got %v, want the loop's own login alone", env)
+		}
+		env = buildExecEnv(proxied, []*store.Connection{
+			envVar("CLAUDE_CODE_OAUTH_TOKEN", "loop-token"),
+			envVar("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1"),
+		})
+		if len(env) != 2 || env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] != "1" {
+			t.Fatalf("got %v, want the loop's own setting kept", env)
+		}
+	})
 }
 
 // An attached mcp-server's secret never reaches the loop when the hub can

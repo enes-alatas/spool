@@ -18,7 +18,7 @@ The local edition is in scope. The hosted edition (L7) gets its own model.
 |---|---|---|
 | Operator token | `<data-dir>/operator-token`, mode 0600 | The file mode; it acts as the owner and never expires (ADR-0030, ADR-0048) |
 | Hub key | `<data-dir>/hub.key`, mode 0600 | The file mode (ADR-0046) |
-| Claude setup-token, Telegram and Slack tokens, connection secrets and their retired values, each loop's hub MCP token | `spool.db` | Sealed with AES-256-GCM under the hub key (ADR-0046) |
+| The Claude login's tokens, the Claude setup-token, Telegram and Slack tokens, connection secrets and their retired values, each loop's hub MCP token | `spool.db` | Sealed with AES-256-GCM under the hub key (ADR-0046) |
 | User passwords | `spool.db` | PBKDF2-SHA256, 600,000 iterations, random salt (ADR-0048) |
 | Sessions, link codes | `spool.db` | Only their SHA-256 is kept (ADR-0048, ADR-0050) |
 | Conversations, turns, events, the change record | `spool.db` | Redacted of every known secret on write, not encrypted (ADR-0045) |
@@ -158,11 +158,12 @@ role change, a removal or a link from its next item; a change made with
   pings until the next item would reach it, and the hub closes it then.
   On a quiet hub, that can be a long time.
 
-### Loop listener: `/mcp` and the brokered servers
+### Loop listener: `/mcp`, the brokered servers and the Claude proxy
 
-**What crosses:** a loop's MCP calls (its single `send_message` tool), and
+**What crosses:** a loop's MCP calls (its single `send_message` tool),
 its calls to a brokered server under `/mcp/connections/` (ADR-0026,
-ADR-0043).
+ADR-0043), and a contained loop's model requests under `/claude`
+(ADR-0058).
 
 **Holds:**
 - **Every request carries the loop's own token**, looked up by hash. The
@@ -189,6 +190,15 @@ ADR-0043).
   over cleartext off loopback. The loop is never given the secret, and
   the broker never sends it back, though a server's own answer can
   (below) (ADR-0043, ADR-0045).
+- **The Claude proxy keeps the hub's Claude token in the hub.** A
+  contained loop logs in to it with its own hub token, and the proxy
+  forwards `POST /v1/messages` and its token count alone, with the hub's
+  Claude token in place of the loop's and `X-Api-Key` dropped. The
+  sessions API, which the same token drives, is refused, so a contained
+  loop reaches no cloud loop through it. No Claude credential is in a
+  workstation's environment, its config or its volume. The loop's claude
+  is told to make no call past the proxy, so it sends the hub token
+  nowhere else (ADR-0058).
 
 **Doesn't hold:**
 - **The token is the only gate.** Any container on the default bridge can
@@ -206,6 +216,24 @@ ADR-0043).
   so a known secret inside one goes out. Accepted (below).
 - **Keeping private content out of a group** is a prompt rule, not a check
   (ADR-0026).
+- **The proxy spends the plan for whoever holds a loop's token.** A
+  steered loop can make any model request through it, as it could with
+  the setup-token it used to hold, and the proxy relays the model's
+  answer as sent, unredacted. What the loop can't do is copy a Claude
+  credential out (ADR-0058).
+- **The proxy forwards a model request's body and its other headers as
+  sent.** So server-side tools (web fetch, web search, code execution,
+  the MCP connector) reach hosts off the egress allowlist from
+  Anthropic's side, on the hub's Claude token. The egress wall covers the
+  workstation's own connections, not what a model request asks Anthropic
+  to fetch. This is no wider than when the loop held the setup-token
+  (ADR-0058).
+- **Keeping claude's calls to the proxy rests on a CLI setting.** claude
+  calls `api.anthropic.com` directly with its login as the bearer unless
+  `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` is set, and the hub sets it.
+  A CLI that stopped honouring it would send a contained loop's hub token
+  there, where it opens nothing. fakeclaude's FIDELITY.md records the
+  behaviour as observed (ADR-0058).
 
 ### Cloud listener: `/mcp` for cloud loops, from the internet
 
@@ -502,6 +530,9 @@ the CLI (ADR-0018).
   reports no deletions, so a Telegram message keeps its words.
 - **A copy of the whole data directory**, or a data file together with its
   keys file, yields every secret and the operator token (ADR-0046).
+  That includes the Claude login, which renews itself until someone
+  signs out or revokes it at claude.ai, where a setup-token had a fixed
+  life (ADR-0058).
 - **Conversations and loop volumes are not encrypted.** A volume holds the
   credentials its loop was given (OPERATIONS.md).
 
@@ -509,7 +540,9 @@ the CLI (ADR-0018).
 
 ADR-0045 is the whole record. In short:
 - **A loop holds its credentials in the clear:** its environment
-  variables, the setup-token, its MCP token and its stdio MCP secrets.
+  variables, its MCP token and its stdio MCP secrets. A contained loop
+  holds no Claude credential: its MCP token is also its login to the
+  Claude proxy (ADR-0058).
   Whatever steers the loop can use them.
 - **Spool keeps them** out of everything it writes and relays, and, behind
   the wall, away from hosts off the allowlist.

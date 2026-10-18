@@ -125,3 +125,48 @@ func TestALoginCheckLeftPendingReadsInconclusive(t *testing.T) {
 		}
 	}
 }
+
+func openSettings(t *testing.T) store.SettingsStore {
+	t.Helper()
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	return db.Settings()
+}
+
+func setAccount(t *testing.T, settings store.SettingsStore, account store.CloudAccount) {
+	t.Helper()
+	raw, err := json.Marshal(account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := settings.Set(context.Background(), store.SettingCloudAccount, string(raw)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHubClaudeTokenPrefersTheLogin(t *testing.T) {
+	ctx := context.Background()
+	settings := openSettings(t)
+	if token, err := HubClaudeToken(ctx, settings); err != nil || token != "" {
+		t.Fatalf("with nothing stored: %q, %v", token, err)
+	}
+	if err := settings.Set(ctx, store.SettingClaudeOAuthToken, "sk-ant-oat01-fixture-setup"); err != nil {
+		t.Fatal(err)
+	}
+	if token, _ := HubClaudeToken(ctx, settings); token != "sk-ant-oat01-fixture-setup" {
+		t.Fatalf("with a setup-token only: %q", token)
+	}
+	setAccount(t, settings, store.CloudAccount{Token: "sk-ant-oat01-fixture-login", OrgUUID: "org"})
+	if token, _ := HubClaudeToken(ctx, settings); token != "sk-ant-oat01-fixture-login" {
+		t.Fatalf("with both: %q, want the login's", token)
+	}
+	if err := settings.Set(ctx, store.SettingCloudAccount, "not json"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := HubClaudeToken(ctx, settings); err == nil {
+		t.Fatal("an unreadable login fell back to the setup-token")
+	}
+}
