@@ -839,3 +839,6 @@ Sweep: quiet. #919 (03:12) and #921 (01:45) in review, no new issues, no merges,
 
 ## 2026-10-18 09:50 UTC
 #919 merged 09:35 (create a cloud loop; Enes decided 2026-10-18: cloud loops are one trust domain, recorded in ADR-0056 item 5 + THREAT-MODEL; probe found private-key material in the session process memory but no copyable token). #921 (Iris) folded the trust-domain warning, with Quinn. Next for Terra: #928. Board tidy, no bites. Dogfood day 1.
+
+## 2026-10-18 13:50 UTC
+Sweep: #921 (09:46) and #930 (10:32, Settings → Egress per-cloud-loop sync) merged; #867 closed. Cloud runtime slices 1-5 all on main; #860 stays open for #864 leftovers + #928/#929. Open PRs: #453 only. Board tidy, no bites. Asking Enes: v0.6.0 stays at 547e920 without cloud (recommended), or moves to tip with cloud (needs a real cloud loop run first).
