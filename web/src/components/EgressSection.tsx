@@ -1,15 +1,18 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, ApiError, type EgressView } from '../api'
+import { api, ApiError, type CloudEgress, type EgressView } from '../api'
 import { messageTime } from './MessageKnot'
-import { applying } from '../egress'
+import { allowlistSyncText, applying } from '../egress'
 import { Copyable } from './Copyable'
+import { useMinuteClock } from './PlanUsage'
 
 // The fleet's workstation egress allowlist (#542, ADR-0028): what a docker
 // loop's workstation may reach. The built-in hosts are read-only, each group
 // with why it is there; the operator's own are added and removed here, and
 // the hub's one egress proxy, shared by every docker loop, takes the list
-// while the hub runs, so the section says when it did.
+// while the hub runs, so the section says when it did. Each cloud loop's
+// environment carries the list too (ADR-0056): the section shows each one in
+// sync or what failed, and marks the entries an environment can't carry.
 export function EgressSection() {
   const qc = useQueryClient()
   const { data, error: loadError } = useQuery({
@@ -49,6 +52,8 @@ export function EgressSection() {
       <p className="page-lede">
         The hosts a docker loop's workstation can reach, on ports 80 and 443 unless an entry names its own. A
         change applies to every docker loop within a few seconds, with nothing restarted.
+        {data?.cloud &&
+          ` Each cloud loop's environment carries the list too, enforced by Anthropic's proxy${data.cloud.not_applied.length > 0 ? ', except the entries marked as not applied to cloud loops' : ''}.`}
       </p>
       {missing ? (
         <div className="form-error" role="alert">
@@ -70,7 +75,7 @@ export function EgressSection() {
             <div className="egress-extra">
               {data.extra.map((h) => (
                 <div className="egress-row" key={h}>
-                  <code>{h}</code>
+                  <Entry host={h} cloud={data.cloud} />
                   <button
                     className="btn sm danger"
                     disabled={busy !== ''}
@@ -121,6 +126,8 @@ export function EgressSection() {
             </div>
           )}
 
+          {data.cloud && <CloudSync cloud={data.cloud} />}
+
           <h3 className="egress-head">Built in</h3>
           <div className="egress-groups">
             {data.built_in.map((g) => (
@@ -128,7 +135,7 @@ export function EgressSection() {
                 <div className="egress-reason">{g.reason}</div>
                 <div className="egress-hosts">
                   {g.hosts.map((h) => (
-                    <code key={h}>{h}</code>
+                    <Entry key={h} host={h} cloud={data.cloud} />
                   ))}
                 </div>
               </div>
@@ -161,5 +168,51 @@ function EgressStatus({ view }: { view: EgressView }) {
     <div className="egress-status ok">
       Applied to every running docker loop at {messageTime(view.applied_at)}.
     </div>
+  )
+}
+
+// Why an entry is left off the cloud environments (ADR-0056): a cloud
+// environment has no form for a port of its own, and a stored * would be a
+// wildcard there where the wall matches it as a name nothing has.
+const NOT_APPLIED_TITLE =
+  "A cloud loop's environment can't carry this entry, so cloud loops can't reach it: an entry with a " +
+  'port of its own has no form there, and neither does one holding a *.'
+
+// One entry of the list, marked when the cloud environments leave it off.
+function Entry({ host, cloud }: { host: string; cloud?: CloudEgress }) {
+  if (!cloud?.not_applied.includes(host)) return <code>{host}</code>
+  return (
+    <span className="egress-entry">
+      <code>{host}</code>
+      <span className="egress-tag" title={NOT_APPLIED_TITLE}>
+        not applied to cloud loops
+      </span>
+    </span>
+  )
+}
+
+// Each cloud loop's environment, in sync with the list or with what failed.
+// A failed write is retried at the loop's next wake, and by the next change
+// to the list.
+function CloudSync({ cloud }: { cloud: CloudEgress }) {
+  const now = useMinuteClock()
+  return (
+    <>
+      <h3 className="egress-head">Cloud loops</h3>
+      <div className="egress-extra">
+        {cloud.environments.map((e) => (
+          <div className="egress-row" key={e.loop}>
+            <span>@{e.loop}</span>
+            <span className={`egress-sync ${e.in_sync ? 'ok' : 'bad'}`}>{allowlistSyncText(e, now)}</span>
+          </div>
+        ))}
+      </div>
+      {cloud.environments.some((e) => !e.in_sync) && (
+        <div className="egress-note">
+          A loop out of sync keeps the list it had. The hub writes it again at the loop's next wake, and at
+          the next change here.
+        </div>
+      )}
+    </>
   )
 }

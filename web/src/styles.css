@@ -2496,6 +2496,35 @@ button.panel-link {
   flex-wrap: wrap;
   gap: 4px 14px;
 }
+/* each cloud loop's environment beside the list, and the entries the
+   environments leave off (ADR-0056, #865) */
+.egress-entry {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  min-width: 0;
+}
+.egress-tag {
+  font-family: var(--mono);
+  font-size: 0.65625rem;
+  color: var(--active);
+  border: 1px solid var(--active-line);
+  border-radius: 4px;
+  padding: 1px 5px;
+  cursor: help;
+}
+.egress-sync {
+  font-size: 0.8125rem;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.egress-sync.ok {
+  color: var(--ready);
+}
+.egress-sync.bad {
+  color: var(--danger);
+}
 
 /* Settings → Users and access (#691, #732): a row is the Account card's
    initial and name, with the role, reset, block and remove at the end and
