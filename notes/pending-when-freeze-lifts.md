@@ -848,3 +848,6 @@ Enes: option b. v0.6.0 includes the cloud runtime; he tests a cloud loop once it
 
 ## 2026-10-18 18:40 UTC
 Sweep: #928 grew by Enes's DM decisions with Terra: no setup-token paste fallback; option 2, a hub-side inference proxy (ADR-0058), workstations hold no Claude token; drain OK if the pause is minutes. PR #931 (feat(httpapi): one Claude login through the Claude proxy) security-reviewed by Elliot, folded, with Quinn. Iris has Enes's #929 answers (name "Claude login"). Board tidy, no bites. v0.6.0 candidate waits for #931 + #929.
+
+## 2026-10-18 22:40 UTC
+Terra: #931 (one Claude login via the Claude proxy, ADR-0058) merged 19:35, #934 (login supersedes setup-token, Sign out) merged 22:10; #933 (accepted risk, closes #932) merged. #928 still open (asked Terra whether a part remains). Terra next: #935 (hub CLI runs send no nonessential traffic; homed Cloud runtime, parent #860) → #922 → #924 → #923. v0.6.0 candidate waits for #928 closed + #929 (Iris).
