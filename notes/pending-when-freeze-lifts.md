@@ -845,3 +845,6 @@ Sweep: #921 (09:46) and #930 (10:32, Settings → Egress per-cloud-loop sync) me
 
 ## 2026-10-18 14:40 UTC
 Enes: option b. v0.6.0 includes the cloud runtime; he tests a cloud loop once it is "shipped fully". My reading (sent for correction): candidate = main tip after #928 + #929 merge; then fleet upgrade → Enes runs a real cloud loop → two clean days → "dry run" → tag. The 547e920 clock no longer gates. Release notes must claim cloud only against merged PRs (#874 #876 #895 #908 #911 #914 #918 #919 #920 #921 #930, plus #928/#929).
+
+## 2026-10-18 18:40 UTC
+Sweep: #928 grew by Enes's DM decisions with Terra: no setup-token paste fallback; option 2, a hub-side inference proxy (ADR-0058), workstations hold no Claude token; drain OK if the pause is minutes. PR #931 (feat(httpapi): one Claude login through the Claude proxy) security-reviewed by Elliot, folded, with Quinn. Iris has Enes's #929 answers (name "Claude login"). Board tidy, no bites. v0.6.0 candidate waits for #931 + #929.
