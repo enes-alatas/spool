@@ -842,3 +842,6 @@ Sweep: quiet. #919 (03:12) and #921 (01:45) in review, no new issues, no merges,
 
 ## 2026-10-18 13:50 UTC
 Sweep: #921 (09:46) and #930 (10:32, Settings → Egress per-cloud-loop sync) merged; #867 closed. Cloud runtime slices 1-5 all on main; #860 stays open for #864 leftovers + #928/#929. Open PRs: #453 only. Board tidy, no bites. Asking Enes: v0.6.0 stays at 547e920 without cloud (recommended), or moves to tip with cloud (needs a real cloud loop run first).
+
+## 2026-10-18 14:40 UTC
+Enes: option b. v0.6.0 includes the cloud runtime; he tests a cloud loop once it is "shipped fully". My reading (sent for correction): candidate = main tip after #928 + #929 merge; then fleet upgrade → Enes runs a real cloud loop → two clean days → "dry run" → tag. The 547e920 clock no longer gates. Release notes must claim cloud only against merged PRs (#874 #876 #895 #908 #911 #914 #918 #919 #920 #921 #930, plus #928/#929).
