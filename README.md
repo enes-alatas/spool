@@ -31,7 +31,7 @@ Spool is pre-1.0 and developed in the open by a fleet of Claude Code loops and t
 
 ## Quick start
 
-You need Linux, macOS or Windows with [WSL2](https://learn.microsoft.com/windows/wsl/install), with [Docker](https://docs.docker.com/get-docker/) running, `git`, [Go](https://go.dev/dl/) 1.25+, [Node](https://nodejs.org/) 20.19+ or 22.12+, and [Claude Code](https://claude.com/claude-code) on a Claude subscription (only to make a token in step 3).
+You need Linux, macOS or Windows with [WSL2](https://learn.microsoft.com/windows/wsl/install), with [Docker](https://docs.docker.com/get-docker/) running, `git`, [Go](https://go.dev/dl/) 1.25+, [Node](https://nodejs.org/) 20.19+ or 22.12+, and [Claude Code](https://claude.com/claude-code) on a Claude subscription, installed on the machine Spool runs on: the hub signs in with it in step 3.
 
 1. **Get Spool and build it.**
 
@@ -46,7 +46,7 @@ You need Linux, macOS or Windows with [WSL2](https://learn.microsoft.com/windows
 
    The control room opens on **Set up your fleet**: three cards, in the order below. Each checks itself and turns done on its own.
 
-3. **Harness.** Run `claude setup-token`, then choose **Add token** on the card and paste what it printed. Your loops run on your Claude plan through it.
+3. **Harness.** Choose **Sign in with Claude** on the card. claude.ai opens in a new tab and asks you to allow the sign-in; paste the code it shows back into the card. Contained and cloud loops run on your Claude plan through that one login.
 
 4. **Loops.** Choose **New loop**, and give it a name and a mission. Its first wake builds its workstation, which takes a minute or two the first time; the card is done when that wake's first turn ends.
 

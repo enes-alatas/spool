@@ -425,12 +425,12 @@ await page.unroute('**/api/plan-usage')
 const firstRun = {
   none: {
     completed: false,
-    harness: { done: false, reason: 'no setup-token saved in Settings' },
+    harness: { done: false, reason: 'no Claude login or setup-token in Settings' },
     surface: { done: false, reason: 'no chat surface has carried a message yet' },
     loops: { done: false, reason: 'no loops' },
   },
   // The harness's login check (#588): refused, and its Check now beside the
-  // token button.
+  // sign-in button.
   refused: {
     completed: false,
     harness: { done: false, reason: 'the login check was refused: OAuth token has expired' },
@@ -469,9 +469,9 @@ const firstRun = {
     loops: { done: true },
   },
 }
-// The fixture hub is bare, whose Harness card has no token to ask for; the
-// card and its dialog are shot as a docker hub's, with a token saved once
-// the harness says so.
+// The fixture hub is bare, whose Harness card has no sign-in to ask for;
+// the card and its dialog are shot as a docker hub's, with a Claude token
+// once the harness says so.
 const dockerSettings = (tokenSet) => async (route) => {
   const settings = await (await route.fetch()).json()
   await route.fulfill({ json: { ...settings, default_runtime: 'docker', claude_token_set: tokenSet } })
@@ -488,24 +488,25 @@ for (const [state, body] of Object.entries(firstRun)) {
   await page.unroute('**/api/settings')
 }
 
-// The Harness card's token dialog (#588), opened over the first-run page.
+// The Harness card's sign-in dialog (#929), opened over the first-run page.
 await page.route('**/api/settings', dockerSettings(false))
 await page.route('**/api/onboarding', (route) => route.fulfill({ json: firstRun.none }))
 await page.goto(base + '/', { waitUntil: 'networkidle' })
 await page.locator('.pillar').first().locator('.pillar-actions .btn').first().click()
 await page.locator('.step-dialog').waitFor({ timeout: 15000 })
-const tokenDialogFile = `${outDir}/first-run-token-dialog.png`
-await page.screenshot({ path: tokenDialogFile })
-taken.push(tokenDialogFile)
+const signInDialogFile = `${outDir}/first-run-sign-in-dialog.png`
+await page.screenshot({ path: signInDialogFile })
+taken.push(signInDialogFile)
 await page.unroute('**/api/settings')
 
-// Settings' login check row (#588), under the token controls, after a refusal.
+// Settings → Claude login (#929) with the login check's row (#588) under
+// it, after a refusal.
 await page.route('**/api/onboarding', (route) => route.fulfill({ json: firstRun.refused }))
 await page.goto(base + '/settings', { waitUntil: 'networkidle' })
-const tokenForm = page.locator('.form', { has: page.locator('#claude-token') })
-await tokenForm.locator('.login-check').waitFor({ timeout: 15000 })
+const claudeLogin = page.locator('section.claude-login')
+await claudeLogin.locator('.login-check').waitFor({ timeout: 15000 })
 const loginCheckFile = `${outDir}/settings-login-check.png`
-await tokenForm.screenshot({ path: loginCheckFile })
+await claudeLogin.screenshot({ path: loginCheckFile })
 taken.push(loginCheckFile)
 await page.unroute('**/api/onboarding')
 

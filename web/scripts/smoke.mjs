@@ -234,17 +234,16 @@ try {
   step = 'Settings'
   await page.goto(base + '/settings')
   await heading('Settings')
-  await see(page.getByText(/Configured|Not configured/), 'the Claude token state')
+  await see(page.getByRole('heading', { name: 'Claude login', exact: true }), 'the Claude login section')
 
   // A literal to type copies on a click (#870): the clipboard holds the
   // command afterwards, and the chip says so.
   step = 'copy chip'
-  const chip = page.getByRole('button', { name: 'Copy claude setup-token' }).first()
+  const chip = page.getByRole('button', { name: 'Copy --egress-allow' }).first()
   await chip.click()
   await see(page.locator('.copyable.copied'), 'the copied chip')
   const copied = await page.evaluate(() => globalThis.navigator.clipboard.readText())
-  if (copied !== 'claude setup-token')
-    throw new Error(`${step}: the clipboard holds ${JSON.stringify(copied)}`)
+  if (copied !== '--egress-allow') throw new Error(`${step}: the clipboard holds ${JSON.stringify(copied)}`)
   // Over plain http on a LAN address there is no clipboard API, so the copy
   // goes through execCommand (#870): with writeText refused, the clipboard
   // still holds the command. Where execCommand refuses too, the click
@@ -264,7 +263,7 @@ try {
     throw new Error(`${step}: copying without the clipboard API took focus off the chip`)
   }
   const byCommand = await page.evaluate(() => globalThis.navigator.clipboard.readText())
-  if (byCommand !== 'claude setup-token') {
+  if (byCommand !== '--egress-allow') {
     throw new Error(`${step}: without the clipboard API the clipboard holds ${JSON.stringify(byCommand)}`)
   }
   await sleep(1600)
@@ -274,7 +273,7 @@ try {
   await chip.click()
   const title = await chip.getAttribute('title')
   const selected = await page.evaluate(() => String(globalThis.getSelection()))
-  if (title !== 'Selected: press Ctrl+C' || selected !== 'claude setup-token') {
+  if (title !== 'Selected: press Ctrl+C' || selected !== '--egress-allow') {
     throw new Error(
       `${step}: with no way to copy, the chip said ${JSON.stringify(title)} and selected ${JSON.stringify(selected)}`,
     )
@@ -305,7 +304,8 @@ try {
 
   // The account step runs the CLI's own login (#864), which the fixture
   // hub's fakeclaude stands in for: a code it doesn't take ends the
-  // sign-in, and one it does signs the account in. Remove forgets it.
+  // sign-in, and one it does signs the hub's Claude login in. Settings →
+  // Claude login signs it out (ADR-0058).
   const cloud = page.locator('section.cloud')
   await cloud.getByRole('button', { name: 'Set up', exact: true }).click()
   await see(setup.getByRole('button', { name: 'Sign in with Claude ↗' }), 'the account step')
@@ -324,9 +324,10 @@ try {
   await see(setup.getByText('Signed in', { exact: false }), 'the account signed in')
   await setup.getByRole('button', { name: 'Close' }).click()
   await gone(setup, 'the setup dialog')
+  const login = page.locator('section.claude-login')
   page.once('dialog', (dialog) => dialog.accept())
-  await cloud.getByRole('button', { name: 'Remove' }).click()
-  await see(cloud.getByText('not signed in'), 'the account removed')
+  await login.getByRole('button', { name: 'Sign out of the Claude login' }).click()
+  await see(login.getByText('not signed in'), 'the Claude login signed out')
 
   // New loop offers Cloud on every hub (#867). This one isn't set up for
   // cloud loops, so picking it opens the guided setup, and the form won't

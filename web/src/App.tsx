@@ -82,7 +82,7 @@ export default function App() {
             {may('manage') && (
               <>
                 {' '}
-                <Link to="/settings">Add one in Settings</Link>.
+                <Link to="/settings">Sign in with Claude in Settings</Link>.
               </>
             )}
           </div>

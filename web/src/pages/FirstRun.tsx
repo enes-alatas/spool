@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import { api, type Onboarding } from '../api'
 import { HarnessCheck } from '../components/HarnessCheck'
-import { TokenDialog } from '../components/TokenDialog'
+import { SignInDialog } from '../components/ClaudeLogin'
 import { LoopDialog } from '../components/LoopDialog'
 import { SurfaceDialog } from '../components/SurfaceDialog'
 import { CheckIcon, HarnessIcon, LoopsIcon, SurfaceIcon } from '../components/Icons'
@@ -109,15 +109,15 @@ export default function FirstRun({
                 </>
               )}
               {/* The harness's actions depend on the runtime: none until the
-                  settings say which, or a bare hub would offer a token. */}
+                  settings say which, or a bare hub would offer the sign-in. */}
               {!state.done && !work && (p.key !== 'harness' || settings) && (
                 <div className="pillar-actions">
                   {p.key === 'harness' ? (
                     // A bare hub's loops use the host's login: there is no
-                    // token to give them, only the check.
+                    // sign-in to give them, only the check.
                     !bare && (
                       <button className={primary} onClick={() => openStep('harness')}>
-                        {settings?.claude_token_set ? 'Replace token' : p.action}
+                        {p.action}
                       </button>
                     )
                   ) : p.key === 'loops' || (loops ?? []).length > 0 ? (
@@ -146,9 +146,7 @@ export default function FirstRun({
           )
         })}
       </ol>
-      {open === 'harness' && (
-        <TokenDialog replacing={settings?.claude_token_set === true} onClose={closeStep} />
-      )}
+      {open === 'harness' && <SignInDialog onClose={closeStep} />}
       {open === 'loops' && <LoopDialog onClose={closeStep} />}
       {open === 'surface' && loops && <SurfaceDialog loops={loops} onClose={closeStep} />}
     </div>

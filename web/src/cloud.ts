@@ -110,10 +110,13 @@ export function addressState(view: CloudSettings): { text: string; tone: Tone } 
 // What a failed account check says, short, and what it asks of the
 // operator.
 const ACCOUNT_FAILED: Record<CloudAccountStage, { failed: string; hint: string }> = {
-  no_account: { failed: 'not signed in', hint: 'Sign in to the Claude account cloud loops spend.' },
+  no_account: {
+    failed: 'not signed in',
+    hint: "Sign in with Claude: every loop runs on the hub's Claude login.",
+  },
   refused: {
-    failed: 'the sign-in was refused',
-    hint: 'Anthropic no longer accepts this sign-in, so it may have been revoked. Sign in again.',
+    failed: 'the login was refused',
+    hint: 'Anthropic no longer accepts this login, so it may have been revoked. Sign in again.',
   },
   unreachable: {
     failed: "Anthropic's API did not answer",
@@ -126,8 +129,9 @@ const ACCOUNT_FAILED: Record<CloudAccountStage, { failed: string; hint: string }
 }
 
 // The account step's state on the status page, short, with what to try when
-// its check failed. A signed-in account whose check fails doesn't hold cloud
-// loops, but its sessions won't start.
+// its check failed (ADR-0058: the hub's one Claude login). A login whose
+// check fails doesn't hold cloud loops, but nothing runs on it while
+// Anthropic refuses it.
 export function accountState(view: CloudSettings): { text: string; tone: Tone; hint?: string } {
   const { set, check } = view.account
   if (!set) return { text: 'not signed in', tone: 'todo' }
@@ -139,6 +143,15 @@ export function accountState(view: CloudSettings): { text: string; tone: Tone; h
     tone: 'bad',
     hint: failed?.hint,
   }
+}
+
+// Settings → Claude login's line (ADR-0058): the account step's state, except on
+// a hub that can't sign in because its machine has no claude CLI, which
+// says that rather than "not signed in" with no way to sign in. A login
+// signed in before the CLI went away still reads as itself.
+export function loginState(view: CloudSettings): { text: string; tone: Tone; hint?: string } {
+  if (!view.account.set && !view.account.cli) return { text: "can't sign in from this machine", tone: 'todo' }
+  return accountState(view)
 }
 
 // The step the guided setup opens on: the first one not done.
