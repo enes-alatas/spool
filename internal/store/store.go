@@ -116,6 +116,9 @@ type CloudAccount struct {
 	// ExpiresAt is when Token expires, in Unix ms, 0 when unknown.
 	ExpiresAt int64  `json:"expires_at,omitempty"`
 	OrgUUID   string `json:"org_uuid"`
+	// Scopes are what the sign-in granted, handed back to the CLI when it
+	// refreshes the token (ADR-0058).
+	Scopes []string `json:"scopes,omitempty"`
 }
 
 // SettingCloudAddress holds the public HTTPS address in front of the cloud

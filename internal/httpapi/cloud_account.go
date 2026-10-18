@@ -161,7 +161,14 @@ func (server *Server) handleCheckCloudAccount(w http.ResponseWriter, r *http.Req
 // The redactor learns the new tokens before anything else can quote them,
 // and the cloud loops are told: with no account they are held.
 func (server *Server) changeCloudAccount(w http.ResponseWriter, r *http.Request, raw string) {
-	if err := server.Store.Settings().Set(r.Context(), store.SettingCloudAccount, raw); err != nil {
+	if server.CloudLogin != nil {
+		server.CloudLogin.Lock()
+	}
+	err := server.Store.Settings().Set(r.Context(), store.SettingCloudAccount, raw)
+	if server.CloudLogin != nil {
+		server.CloudLogin.Unlock()
+	}
+	if err != nil {
 		server.jsonErr(w, 500, "%v", err)
 		return
 	}
