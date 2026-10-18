@@ -836,3 +836,6 @@ Night sweep: quiet. #919 updated 22:39 (item 5 call in progress), #921 waits, no
 
 ## 2026-10-18 05:50 UTC
 Sweep: quiet. #919 (03:12) and #921 (01:45) in review, no new issues, no merges, no bites. Dogfood day 1.
+
+## 2026-10-18 09:50 UTC
+#919 merged 09:35 (create a cloud loop; Enes decided 2026-10-18: cloud loops are one trust domain, recorded in ADR-0056 item 5 + THREAT-MODEL; probe found private-key material in the session process memory but no copyable token). #921 (Iris) folded the trust-domain warning, with Quinn. Next for Terra: #928. Board tidy, no bites. Dogfood day 1.
