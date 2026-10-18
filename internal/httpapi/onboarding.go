@@ -163,11 +163,17 @@ func (server *Server) onboarding(ctx context.Context) (onboardingView, error) {
 	return view, nil
 }
 
+// noClaudeToken is a docker hub with neither a Claude login nor a
+// setup-token for its loops to run on (ADR-0058). It names only the
+// sign-in, which #929 leaves as Settings' one way in.
+const noClaudeToken = "no Claude login signed in"
+
 // harnessPillar reads whether claude can log in (ADR-0044). A loop whose
 // login is refused now says no, whatever else said yes. Otherwise the newer
 // of two pieces of evidence decides: the last login check, and the last turn
-// a loop finished, which authenticated too. Saving a setup-token starts a
-// check, so a turn from before the save says nothing about the new token.
+// a loop finished, which authenticated too. A change of the hub's Claude
+// token starts a check, so a turn from before it says nothing about the
+// new token.
 func (server *Server) harnessPillar(ctx context.Context, loops []*store.Loop) (pillarView, error) {
 	for _, loopRecord := range loops {
 		if actor, ok := server.Manager.Get(loopRecord.ID); ok && actor.DownReason() == loop.DownReasonUnauthenticated {
@@ -176,9 +182,9 @@ func (server *Server) harnessPillar(ctx context.Context, loops []*store.Loop) (p
 	}
 	bare := server.defaultRuntime() == store.RuntimeBare
 	if !bare {
-		token, err := server.claudeToken(ctx)
+		token, err := loop.HubClaudeToken(ctx, server.Store.Settings())
 		if err != nil || token == "" {
-			return pillarView{Reason: "no setup-token saved in Settings"}, err
+			return pillarView{Reason: noClaudeToken}, err
 		}
 	}
 	check, err := loop.LastLoginCheck(ctx, server.Store.Settings())
@@ -214,12 +220,12 @@ func harnessEvidence(bare bool, check store.LoginCheckRecord, lastTurn int64) pi
 		if bare {
 			return pillarView{Reason: "the host's claude login is being checked"}
 		}
-		return pillarView{Reason: "the setup-token is being checked"}
+		return pillarView{Reason: "the hub's Claude token is being checked"}
 	}
 	if bare {
 		return pillarView{Reason: "the host's claude login is not checked yet"}
 	}
-	return pillarView{Reason: "setup-token saved; not checked yet"}
+	return pillarView{Reason: "the hub's Claude token is not checked yet"}
 }
 
 // handleLoginCheck runs the login check on the operator's request and
@@ -232,8 +238,8 @@ func (server *Server) handleLoginCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if server.defaultRuntime() != store.RuntimeBare {
-		if token, err := server.claudeToken(r.Context()); err != nil || token == "" {
-			server.jsonErrCode(w, 409, codeNoSetupToken, "no setup-token saved in Settings to check")
+		if token, err := loop.HubClaudeToken(r.Context(), server.Store.Settings()); err != nil || token == "" {
+			server.jsonErrCode(w, 409, codeNoSetupToken, "%s to check", noClaudeToken)
 			return
 		}
 	}
@@ -290,9 +296,10 @@ func (server *Server) loopsPillar(ctx context.Context, loops []*store.Loop) (pil
 	return pillarView{Done: true}, nil
 }
 
-// loginTokenChanged checks a setup-token as it is saved, so a wrong one
-// shows before any loop wakes on it, and forgets the last check when the
-// token is removed (ADR-0044). A bare hub's loops do not run on the token,
+// loginTokenChanged checks the hub's Claude token when it changes, a
+// setup-token saved or a Claude login signed in, so a wrong one shows
+// before any loop wakes on it, and forgets the last check when none is
+// left (ADR-0044, ADR-0058). A bare hub's loops do not run on the token,
 // so saving one there checks nothing.
 func (server *Server) loginTokenChanged(ctx context.Context, token string) error {
 	if server.LoginChecker == nil || server.defaultRuntime() == store.RuntimeBare {

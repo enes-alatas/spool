@@ -346,7 +346,7 @@ func dockerWorkstationNeedsClaudeToken(t *testing.T) {
 	if view.WorkstationUp {
 		t.Fatalf("workstation reported up without a token: %+v", view)
 	}
-	if !strings.Contains(view.WorkstationDetail, "Claude token not configured") {
+	if !strings.Contains(view.WorkstationDetail, "Claude login not signed in") {
 		t.Fatalf("detail %q does not name the missing token", view.WorkstationDetail)
 	}
 	if err := exec.Command("docker", "inspect", "spool-ws-"+loopID).Run(); err == nil {

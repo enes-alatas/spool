@@ -31,7 +31,7 @@ const loginCheckLifetime = "120"
 // under /tmp and go with the container.
 func (rt *Runtime) CheckLogin(ctx context.Context, token string) (claude.LoginCheck, error) {
 	if token == "" {
-		return claude.LoginCheck{}, fmt.Errorf("docker: login check: no setup-token")
+		return claude.LoginCheck{}, fmt.Errorf("docker: login check: no Claude token")
 	}
 	if err := rt.ensureEgress(ctx); err != nil {
 		return claude.LoginCheck{}, err

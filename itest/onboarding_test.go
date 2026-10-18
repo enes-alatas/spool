@@ -193,7 +193,7 @@ func onboardingChecksASavedSetupToken(t *testing.T) {
 	}
 
 	s.mustJSON("PUT", "/api/settings", map[string]any{"claude_oauth_token": ""}, nil)
-	if got := s.onboarding().Harness; got.Done || got.Reason != "no setup-token saved in Settings" {
+	if got := s.onboarding().Harness; got.Done || got.Reason != "no Claude login signed in" {
 		t.Errorf("harness with no token = %+v", got)
 	}
 	s.wantRefusal("POST", "/api/onboarding/harness-check", nil, 409, "no_setup_token")

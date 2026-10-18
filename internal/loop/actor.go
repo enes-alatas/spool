@@ -1828,7 +1828,7 @@ func (actor *Actor) rejectLogin(sentence string) {
 	hostLogin := !actor.runsOnHubToken()
 	fix := "log in again with claude on the host"
 	if !hostLogin {
-		fix = "sign in to the Claude login again, or replace the setup-token, in Settings"
+		fix = "sign in with Claude again in Settings"
 	}
 	if !actor.loginRejected {
 		// the first refusal of this outage; the retries that follow it are
@@ -2097,8 +2097,9 @@ func (actor *Actor) handleShutdown() {
 // --- workstation liveness (ADR-0017: a seam duty, surfaced as a state) ---
 
 // noClaudeTokenDetail is the workstation-down reason shown when a contained
-// loop has no operator setup-token to run claude under.
-const noClaudeTokenDetail = "Claude token not configured. Please add a setup-token in Settings"
+// loop has neither a Claude login nor a stored setup-token to run claude
+// under. It names only the sign-in, which #929 leaves as Settings' one way in.
+const noClaudeTokenDetail = "Claude login not signed in. Sign in with Claude in Settings"
 
 // needsClaudeToken reports whether a runtime is a contained workstation that
 // must carry the operator's setup-token. Bare loops use the host login, and
