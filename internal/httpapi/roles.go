@@ -361,11 +361,10 @@ type userChange struct {
 // streamable reports whether item may reach who on a stream. A turn's
 // result carries its text, and an agent event the loop's raw output, so a
 // member gets neither; a message reaches them if reads says they read it.
-// A reaction or a vote still does whatever its target: it carries only
-// ids, an emoji or a choice, no text, and telling which conversation its
-// message is in would take a store read per item. So a member can learn
-// that a private message with some id exists and what it got. A link's
-// change reaches the user it names, so their Account page follows it.
+// A reaction, a vote or a poll's close reaches them if they read its
+// message, which the router reads once as it publishes, so a member learns
+// nothing of a private message they don't read (#922). A link's change
+// reaches the user it names, so their Account page follows it.
 func streamable(who *caller, item bus.Item, reads func(*store.Message) bool) bool {
 	if seesPrivate(who) {
 		return true
@@ -376,6 +375,12 @@ func streamable(who *caller, item bus.Item, reads func(*store.Message) bool) boo
 	case bus.KindMessage, bus.KindSendRetry:
 		payload, ok := item.Payload.(*route.MessagePayload)
 		return ok && reads(&payload.Message)
+	case bus.KindReaction:
+		payload, ok := item.Payload.(*route.ReactionPayload)
+		return ok && payload.Target != nil && reads(payload.Target)
+	case bus.KindPoll:
+		payload, ok := item.Payload.(*route.PollPayload)
+		return ok && payload.Target != nil && reads(payload.Target)
 	case bus.KindLink:
 		payload, ok := item.Payload.(*route.LinkPayload)
 		return ok && who.user != nil && payload.UserID == who.user.ID

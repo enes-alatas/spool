@@ -85,14 +85,23 @@ func TestRolesRankOverTheTable(t *testing.T) {
 }
 
 // TestAMemberStreamCarriesNoOwnerDM: on a stream a member with no link
-// gets every message but an owner DM, resent or not, and no turn result or
-// agent event; an admin gets them all.
+// gets every message but an owner DM, resent or not, a reaction or a vote
+// only on a message they read, and no turn result or agent event; an admin
+// gets them all (#922).
 func TestAMemberStreamCarriesNoOwnerDM(t *testing.T) {
 	unlinked := (&privateReader{persons: map[string]bool{}}).reads
 	member := &caller{user: &store.User{Role: store.RoleMember}}
 	admin := &caller{user: &store.User{Role: store.RoleAdmin}}
 	message := func(kind, conversation string) bus.Item {
 		return bus.Item{Kind: kind, Payload: &route.MessagePayload{Message: store.Message{Conversation: conversation}}}
+	}
+	reaction := func(conversation string) bus.Item {
+		return bus.Item{Kind: bus.KindReaction, Payload: &route.ReactionPayload{Reaction: &store.Reaction{Emoji: "👍"},
+			Target: &store.Message{Conversation: conversation}}}
+	}
+	poll := func(conversation string) bus.Item {
+		return bus.Item{Kind: bus.KindPoll, Payload: &route.PollPayload{Vote: &store.Vote{Choice: []int{0}},
+			Target: &store.Message{Conversation: conversation}}}
 	}
 	for _, test := range []struct {
 		item bus.Item
@@ -105,6 +114,14 @@ func TestAMemberStreamCarriesNoOwnerDM(t *testing.T) {
 		{bus.Item{Kind: bus.KindTurnResult, Payload: &store.Turn{ResultText: "said in a DM"}}, false},
 		{bus.Item{Kind: bus.KindAgentEvent}, false},
 		{bus.Item{Kind: bus.KindLoopStatus}, true},
+		{reaction(store.ConversationGroup), true},
+		{reaction(store.ConversationOwnerDM), false},
+		{reaction("dm:someone"), false},
+		{poll(store.ConversationGroup), true},
+		{poll(store.ConversationOwnerDM), false},
+		// a frame published with no target reaches no member
+		{bus.Item{Kind: bus.KindReaction, Payload: &route.ReactionPayload{Reaction: &store.Reaction{}}}, false},
+		{bus.Item{Kind: bus.KindPoll, Payload: &route.PollPayload{Closed: true}}, false},
 	} {
 		if got := streamable(member, test.item, unlinked); got != test.want {
 			t.Errorf("a member's stream with %s %+v = %v; want %v", test.item.Kind, test.item.Payload, got, test.want)

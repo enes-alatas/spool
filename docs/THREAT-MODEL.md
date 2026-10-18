@@ -124,8 +124,8 @@ Slack connects out over Socket Mode, so no port is opened for either
 - Granting admin or owner, and resetting a password, take the acting
   owner's password (ADR-0048).
 
-**What a member doesn't read:** other people's private conversations, a
-loop's events, turns and live agent stream, pairing codes (ADR-0048,
+**What a member doesn't read:** other people's private conversations
+and the reactions and votes on them (#922), a loop's events, turns and live agent stream, pairing codes (ADR-0048,
 ADR-0050), a file another user uploaded and hasn't sent, and can't send
 it either, and the file of a deleted message. An open stream follows a
 role change, a removal or a link from its next item; a change made with
@@ -144,9 +144,6 @@ role change, a removal or a link from its next item; a change made with
   loop in its control-room thread about a private conversation it took
   part in, and only the prompt rule (ADR-0026) keeps it from answering.
   Accepted (below).
-- **Reactions and votes on a private message reach members' streams:**
-  the message's id and the emoji or the choice, never its text
-  (`internal/httpapi/roles.go`).
 - **An owner can demote or remove another owner** without re-entering
   their password. Only granting admin or owner, and resetting a password,
   ask for it.
@@ -610,6 +607,6 @@ above says what it is; this is why it stays.
   hub's host, and are no wider than when a loop held the setup-token.
 
 Three more findings were decided as fixes, and their lines above go when
-the fixes land: reactions and votes on private messages (#922), demoting
-or removing an owner (#923), and members reading connection configs
-(#924).
+the fixes land: demoting or removing an owner (#923) and members reading
+connection configs (#924). Reactions and votes on private messages
+(#922) are fixed, and their line is gone.

@@ -24,11 +24,14 @@ type InboundVote struct {
 }
 
 // PollPayload is the KindPoll frame: the poll whose ballot changed, and
-// either the vote that changed it or the close.
+// either the vote that changed it or the close. Target is the poll's
+// message, kept out of the frame: a stream passes the item only to a user
+// who reads that message, as it passes the message (#922).
 type PollPayload struct {
-	PollID int64       `json:"poll_id"`
-	Vote   *store.Vote `json:"vote,omitempty"`
-	Closed bool        `json:"closed,omitempty"`
+	PollID int64          `json:"poll_id"`
+	Vote   *store.Vote    `json:"vote,omitempty"`
+	Closed bool           `json:"closed,omitempty"`
+	Target *store.Message `json:"-"`
 }
 
 // ErrInvalidVote is a choice the poll's ballot cannot hold: an option it
@@ -50,6 +53,10 @@ func (router *Router) Vote(ctx context.Context, in InboundVote) error {
 	if err != nil {
 		return err
 	}
+	message, err := router.store.Messages().Get(ctx, in.PollID)
+	if err != nil {
+		return err
+	}
 	choice, err := ballotChoice(poll, in.Choice)
 	if err != nil {
 		return err
@@ -64,9 +71,9 @@ func (router *Router) Vote(ctx context.Context, in InboundVote) error {
 	if err != nil || !changed {
 		return err
 	}
-	router.bus.Publish(bus.Item{Kind: bus.KindPoll, Payload: &PollPayload{PollID: in.PollID, Vote: vote}})
+	router.bus.Publish(bus.Item{Kind: bus.KindPoll, Payload: &PollPayload{PollID: in.PollID, Vote: vote, Target: message}})
 	if len(choice) > 0 {
-		router.wakeForOwner(ctx, in.PollID, in.VoterKey)
+		router.wakeForOwner(ctx, message, in.VoterKey)
 	}
 	return nil
 }
@@ -96,11 +103,15 @@ func ballotChoice(poll *store.Poll, choice []int) ([]int, error) {
 // was open. The author is told the result on its next turn; the close
 // wakes nobody (ADR-0041).
 func (router *Router) ClosePoll(ctx context.Context, pollID int64) (bool, error) {
+	message, err := router.store.Messages().Get(ctx, pollID)
+	if err != nil {
+		return false, err
+	}
 	closed, err := router.store.Polls().Close(ctx, pollID, time.Now().UnixMilli())
 	if err != nil || !closed {
 		return false, err
 	}
-	router.bus.Publish(bus.Item{Kind: bus.KindPoll, Payload: &PollPayload{PollID: pollID, Closed: true}})
+	router.bus.Publish(bus.Item{Kind: bus.KindPoll, Payload: &PollPayload{PollID: pollID, Closed: true, Target: message}})
 	return true, nil
 }
 

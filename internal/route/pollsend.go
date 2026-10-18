@@ -168,7 +168,8 @@ func (router *Router) SendVote(ctx context.Context, req SendRequest) (*store.Mes
 	}
 	router.recordSend(req.From.ID, req.Destination, fmt.Sprintf("voted %v in %s", req.Vote, loop.MessageRef(target.ID)))
 	if changed {
-		router.bus.Publish(bus.Item{Kind: bus.KindPoll, LoopID: req.From.ID, Payload: &PollPayload{PollID: poll.MessageID, Vote: vote}})
+		router.bus.Publish(bus.Item{Kind: bus.KindPoll, LoopID: req.From.ID,
+			Payload: &PollPayload{PollID: poll.MessageID, Vote: vote, Target: target}})
 	}
 	return target, nil, nil
 }
