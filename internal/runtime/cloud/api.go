@@ -289,6 +289,8 @@ func (spec EnvironmentSpec) body() map[string]any {
 			"cwd":              "/home/user",
 			"init_script":      spec.InitScript,
 			"environment":      map[string]string{},
+			// Required, even empty: the API answers 400 without it.
+			"languages": []map[string]string{},
 			"network_config": map[string]any{
 				"allowed_hosts":       hosts,
 				"allow_default_hosts": false,
