@@ -2,7 +2,7 @@ import { Link } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
 import { api, type LoopView } from '../api'
 import { cloudHold, cloudSessionCondition, useCloudSettings } from '../cloudLoop'
-import { formatAgo } from '../format'
+import { allowlistSyncText } from '../egress'
 import { MCPReach } from './MCPReach'
 import { useMinuteClock } from './PlanUsage'
 
@@ -76,11 +76,7 @@ function AllowlistRow({ loop }: { loop: LoopView }) {
   return (
     <div className="row">
       <span className="k">allowlist</span>
-      <span className={`v ${environment.in_sync ? '' : 'bad'}`}>
-        {environment.in_sync
-          ? `in sync${environment.synced_at ? ` · ${formatAgo(environment.synced_at, now)}` : ''}`
-          : `not in sync${environment.error ? `: ${environment.error}` : ''}`}
-      </span>
+      <span className={`v ${environment.in_sync ? '' : 'bad'}`}>{allowlistSyncText(environment, now)}</span>
     </div>
   )
 }

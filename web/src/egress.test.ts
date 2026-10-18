@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { EgressView } from './api'
-import { applying } from './egress'
+import { allowlistSyncText, applying } from './egress'
 
 const view = (patch: Partial<EgressView>): EgressView => ({
   enforced: true,
@@ -24,5 +24,23 @@ describe('applying', () => {
   })
   it('is false with no view yet', () => {
     expect(applying(undefined)).toBe(false)
+  })
+})
+
+describe('allowlistSyncText', () => {
+  const now = 10 * 60_000
+  it('says an environment is in sync, and since when', () => {
+    expect(allowlistSyncText({ loop: 'gardener', in_sync: true, synced_at: now - 5 * 60_000 }, now)).toBe(
+      'in sync · 5m ago',
+    )
+    expect(allowlistSyncText({ loop: 'gardener', in_sync: true }, now)).toBe('in sync')
+  })
+  it('names what failed, to the admin who is sent it', () => {
+    expect(
+      allowlistSyncText({ loop: 'gardener', in_sync: false, error: 'environment update: 503' }, now),
+    ).toBe('not in sync: environment update: 503')
+  })
+  it('says only that it is out of sync to a member, who is sent no error', () => {
+    expect(allowlistSyncText({ loop: 'gardener', in_sync: false, synced_at: now }, now)).toBe('not in sync')
   })
 })
