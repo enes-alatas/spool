@@ -129,6 +129,9 @@ type cloudListenerView struct {
 // and how its last check went.
 type cloudAccountView struct {
 	Set bool `json:"set"`
+	// CLI is whether the hub finds the claude CLI it signs in and refreshes
+	// with. A hub without it says to install it and reload (ADR-0058).
+	CLI bool `json:"cli"`
 	// Check is the last account check, absent until one has run.
 	Check *CloudAccountCheckResult `json:"check,omitempty"`
 }
@@ -262,6 +265,7 @@ func (server *Server) cloudSettings(ctx context.Context, who *caller) (cloudSett
 		return view, err
 	}
 	view.Account.Set = set
+	view.Account.CLI = server.CloudSignIn != nil && server.CloudSignIn.Available()
 	view.Account.Check = server.cloudAccountCheck.result()
 	if view.Account.Check != nil && !seesCloudCheckDetail(who) {
 		view.Account.Check.Detail = ""

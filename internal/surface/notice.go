@@ -20,7 +20,7 @@ type LoginNotice struct {
 	Sentence string `json:"sentence,omitempty"`
 	// HostLogin is true for a loop that runs on the host's own claude login
 	// (bare), which every bare loop on the host shares; false for one that
-	// runs on the setup-token saved in Settings.
+	// runs on the hub's Claude token: its Claude login, or a setup-token.
 	HostLogin bool `json:"host_login"`
 }
 
@@ -30,7 +30,7 @@ func (notice LoginNotice) Text() string {
 	if !notice.Refused {
 		return "Spool: the Claude login works again, and the loops it stopped are resuming."
 	}
-	fix := "Replace the setup-token in Spool's Settings."
+	fix := "Sign in with Claude again in Spool's Settings."
 	if notice.HostLogin {
 		fix = "Log in again by running claude on the host. Every bare loop on this host shares that login, so they have all stopped."
 	}

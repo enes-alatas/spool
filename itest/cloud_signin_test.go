@@ -106,3 +106,41 @@ func TestAStartingHubRemovesAnUnfinishedCloudSignIn(t *testing.T) {
 		t.Fatalf("the unfinished sign-in's directory after a start: %v, want it gone", err)
 	}
 }
+
+// A Claude login supersedes the setup-token (ADR-0058). A sign-in clears
+// a stored setup-token, and a setup-token is refused while a login is
+// signed in, so a Sign out never falls back to one. Throughout, Settings
+// reads the hub as having a Claude token while it has either, and says the
+// hub finds the CLI it signs in with.
+func TestAClaudeLoginSupersedesTheSetupToken(t *testing.T) {
+	t.Parallel()
+	s, _ := startCloudHub(t, "altostratus")
+	const setupToken = "sk-ant-oat01-itesttokenABCDEFGHIJKLMNOP0123456789"
+
+	var view cloudSettings
+	s.mustJSON("GET", "/api/settings/cloud", nil, &view)
+	if !view.Account.Set || !view.Account.CLI {
+		t.Fatalf("the account = %+v, want a login signed in with the CLI found", view.Account)
+	}
+	if !s.settings().ClaudeTokenSet {
+		t.Fatal("a hub with a Claude login reads as having no Claude token")
+	}
+	if resp, body := s.do("PUT", "/api/settings", map[string]any{"claude_oauth_token": setupToken}); resp.StatusCode != 409 {
+		t.Fatalf("a setup-token under a Claude login answered %d, want 409 (%s)", resp.StatusCode, body)
+	}
+
+	s.mustJSON("DELETE", "/api/settings/cloud/account", nil, nil)
+	if s.settings().ClaudeTokenSet {
+		t.Fatal("a hub signed out with no setup-token reads as having a Claude token")
+	}
+	s.mustJSON("PUT", "/api/settings", map[string]any{"claude_oauth_token": setupToken}, nil)
+	if !s.settings().ClaudeTokenSet {
+		t.Fatal("a setup-token with no login signed in was not stored")
+	}
+
+	signInCloudFromThePage(t, s)
+	s.mustJSON("DELETE", "/api/settings/cloud/account", nil, nil)
+	if s.settings().ClaudeTokenSet {
+		t.Fatal("the setup-token outlived the sign-in that superseded it")
+	}
+}

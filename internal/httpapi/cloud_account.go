@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/enes-alatas/spool/internal/loop"
 	"github.com/enes-alatas/spool/internal/store"
 )
 
@@ -24,6 +25,10 @@ type CloudSignIn interface {
 	// waiting, and wraps ErrCloudSignInRefused when the CLI didn't take
 	// the code.
 	Finish(ctx context.Context, code string) (store.CloudAccount, error)
+	// Available reports whether the CLI the sign-in runs is on this
+	// machine. It looks each time it is asked, so installing the CLI needs
+	// a reload of the page and no restart of the hub (ADR-0058).
+	Available() bool
 }
 
 // ErrNoCloudSignIn is a code handed in with no sign-in waiting for one.
@@ -157,14 +162,21 @@ func (server *Server) handleCheckCloudAccount(w http.ResponseWriter, r *http.Req
 	server.writeCloudSettings(w, r)
 }
 
-// changeCloudAccount stores the account, "" to forget it, and checks it.
-// The redactor learns the new tokens before anything else can quote them,
-// and the cloud loops are told: with no account they are held.
+// changeCloudAccount stores the Claude login, "" to forget it, and checks
+// it. A sign-in supersedes the setup-token, which the hub clears with it
+// (ADR-0058). The redactor learns the new tokens before anything else can
+// quote them, and the cloud loops are told: with no account they are held.
+// The login check then runs on the hub's Claude token, or is cleared with
+// none, as saving a setup-token did.
 func (server *Server) changeCloudAccount(w http.ResponseWriter, r *http.Request, raw string) {
+	ctx := r.Context()
 	if server.CloudLogin != nil {
 		server.CloudLogin.Lock()
 	}
-	err := server.Store.Settings().Set(r.Context(), store.SettingCloudAccount, raw)
+	err := server.Store.Settings().Set(ctx, store.SettingCloudAccount, raw)
+	if err == nil && raw != "" {
+		err = server.Store.Settings().Set(ctx, store.SettingClaudeOAuthToken, "")
+	}
 	if server.CloudLogin != nil {
 		server.CloudLogin.Unlock()
 	}
@@ -172,11 +184,19 @@ func (server *Server) changeCloudAccount(w http.ResponseWriter, r *http.Request,
 		server.jsonErr(w, 500, "%v", err)
 		return
 	}
-	server.secretsChanged(r.Context())
+	server.secretsChanged(ctx)
 	if server.CloudGate != nil {
 		server.CloudGate.AccountChanged()
 	}
-	server.CheckCloudAccount(r.Context())
+	server.CheckCloudAccount(ctx)
+	token, err := loop.HubClaudeToken(ctx, server.Store.Settings())
+	if err == nil {
+		err = server.loginTokenChanged(ctx, token)
+	}
+	if err != nil {
+		server.jsonErr(w, 500, "%v", err)
+		return
+	}
 	server.writeCloudSettings(w, r)
 }
 

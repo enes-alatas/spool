@@ -17,9 +17,9 @@ import (
 const loginCheckTimeout = 90 * time.Second
 
 // LoginChecker runs the hub's login check (ADR-0044) on the default
-// runtime, when a setup-token is saved and when the operator asks, and keeps
-// the last outcome in the store for the onboarding read. Never on a timer:
-// each check spends a haiku answer from the operator's plan.
+// runtime, when the hub's Claude token changes and when the operator asks,
+// and keeps the last outcome in the store for the onboarding read. Never
+// on a timer: each check spends a haiku answer from the operator's plan.
 type LoginChecker struct {
 	store   store.Store
 	runtime runtime.Runtime // the default runtime's, which new loops get
@@ -51,8 +51,8 @@ func (checker *LoginChecker) Start(ctx context.Context) error {
 	return nil
 }
 
-// Clear forgets the last check, for a hub whose setup-token was removed:
-// there is no login left for its outcome to be about.
+// Clear forgets the last check, for a hub left with no Claude token: there
+// is no login left for its outcome to be about.
 func (checker *LoginChecker) Clear(ctx context.Context) error {
 	checker.mu.Lock()
 	checker.started = max(time.Now().UnixMilli(), checker.started+1)
@@ -94,7 +94,7 @@ func (checker *LoginChecker) run(at int64) {
 	if needsClaudeToken(checker.runtime) {
 		var err error
 		if token, err = HubClaudeToken(ctx, checker.store.Settings()); err != nil || token == "" {
-			checker.log.Warn("login check: no setup-token to check", "err", err)
+			checker.log.Warn("login check: no Claude token to check", "err", err)
 			checker.finish(at, store.LoginCheckRecord{Status: store.LoginCheckInconclusive, At: at})
 			return
 		}

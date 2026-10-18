@@ -52,6 +52,14 @@ func newHostSignIn(bin, dir string) (*hostSignIn, error) {
 	return &hostSignIn{bin: bin, dir: dir}, nil
 }
 
+// Available reports whether the CLI is on this machine: the binary named,
+// or found on PATH. It looks again each time, so a CLI installed while the
+// hub runs is found without a restart.
+func (signIn *hostSignIn) Available() bool {
+	_, err := exec.LookPath(signIn.bin)
+	return err == nil
+}
+
 // signInRun is one claude auth login, waiting for its code.
 type signInRun struct {
 	cmd   *exec.Cmd

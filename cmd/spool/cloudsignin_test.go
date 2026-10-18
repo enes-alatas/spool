@@ -34,3 +34,23 @@ func TestACodeForAnEndedSignInAsksForANewOne(t *testing.T) {
 		t.Errorf("the ended sign-in left %v (%v), want nothing", entries, err)
 	}
 }
+
+// The sign-in finds its CLI each time it is asked, so a CLI installed
+// while the hub runs is found without a restart (ADR-0058).
+func TestTheSignInFindsACLIInstalledWhileTheHubRuns(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "claude")
+	signIn, err := newHostSignIn(bin, filepath.Join(dir, "cloud-sign-in"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if signIn.Available() {
+		t.Fatal("a sign-in with no CLI at its path reports it available")
+	}
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if !signIn.Available() {
+		t.Fatal("a CLI installed after the hub started was not found")
+	}
+}

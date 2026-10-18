@@ -1457,6 +1457,9 @@ func (server *Server) handleTelegramStatus(w http.ResponseWriter, r *http.Reques
 // as themselves. The rotation thresholds are always the effective values,
 // defaults included.
 type settingsView struct {
+	// ClaudeTokenSet is whether the hub has a Claude token for contained
+	// loops to run on: a Claude login, or a setup-token while none is
+	// signed in (ADR-0058).
 	ClaudeTokenSet      bool `json:"claude_token_set"`
 	ContextArmPercent   int  `json:"context_arm_percent"`
 	ContextForcePercent int  `json:"context_force_percent"`
@@ -1487,10 +1490,14 @@ func (server *Server) settingsView(ctx context.Context) (settingsView, error) {
 	if err != nil {
 		return settingsView{}, err
 	}
+	signedIn, err := server.cloudAccountSet(ctx)
+	if err != nil {
+		return settingsView{}, err
+	}
 	arm, force := loop.RotationThresholds(ctx, server.Store.Settings(), server.Log)
 	fiveHour, sevenDay := loop.PlanCapThresholds(ctx, server.Store.Settings(), server.Log)
 	return settingsView{
-		ClaudeTokenSet:         token != "",
+		ClaudeTokenSet:         signedIn || token != "",
 		ContextArmPercent:      arm,
 		ContextForcePercent:    force,
 		PlanCapFiveHourPercent: fiveHour,
@@ -1555,12 +1562,18 @@ func (server *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) 
 			}
 			token = validated
 		}
-		if err := server.Store.Settings().Set(r.Context(), store.SettingClaudeOAuthToken, token); err != nil {
-			server.jsonErr(w, 500, "%v", err)
+		if code, err := server.setSetupToken(r.Context(), token); err != nil {
+			server.jsonErr(w, code, "%v", err)
 			return
 		}
 		server.secretsChanged(r.Context())
-		if err := server.loginTokenChanged(r.Context(), token); err != nil {
+		// a setup-token cleared under a Claude login leaves the hub's
+		// Claude token as it was
+		hubToken, err := loop.HubClaudeToken(r.Context(), server.Store.Settings())
+		if err == nil && (token != "" || hubToken == "") {
+			err = server.loginTokenChanged(r.Context(), hubToken)
+		}
+		if err != nil {
 			server.jsonErr(w, 500, "%v", err)
 			return
 		}
@@ -1623,6 +1636,29 @@ func (server *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, 200, view)
+}
+
+// setSetupToken stores the setup-token, "" to clear it, and answers the
+// status a failure gets. A Claude login supersedes the setup-token, so one
+// is refused while a login is signed in (ADR-0058). The check and the
+// write hold the login's lock, so a sign-in can't land between them.
+func (server *Server) setSetupToken(ctx context.Context, token string) (int, error) {
+	if server.CloudLogin != nil {
+		server.CloudLogin.Lock()
+		defer server.CloudLogin.Unlock()
+	}
+	if token != "" {
+		switch signedIn, err := server.cloudAccountSet(ctx); {
+		case err != nil:
+			return 500, err
+		case signedIn:
+			return 409, errors.New("a Claude login is signed in, and it replaces the setup-token: sign out first")
+		}
+	}
+	if err := server.Store.Settings().Set(ctx, store.SettingClaudeOAuthToken, token); err != nil {
+		return 500, err
+	}
+	return 0, nil
 }
 
 // claudeToken reads the stored setup-token, mapping an unset key to empty so
@@ -1950,8 +1986,8 @@ const (
 	maxSecretValueLen = 16 * 1024
 )
 
-// codeNoSetupToken refuses a login check on a docker hub with no setup-token
-// to check.
+// codeNoSetupToken refuses a login check on a docker hub with no Claude
+// token to check: neither a Claude login nor a setup-token.
 const codeNoSetupToken = "no_setup_token"
 
 // loopEnvVars returns the env-var connections attached to a loop, by the

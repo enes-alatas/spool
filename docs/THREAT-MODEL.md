@@ -533,6 +533,11 @@ the CLI (ADR-0018).
   That includes the Claude login, which renews itself until someone
   signs out or revokes it at claude.ai, where a setup-token had a fixed
   life (ADR-0058).
+- **A setup-token a sign-in replaces stays valid at Anthropic.** The hub
+  clears it and stops redacting it, but can't revoke it: it lives out
+  its year unless the operator revokes it at claude.ai. A copy of it
+  made before the sign-in, in a backup or a loop's old output, still
+  works (ADR-0058).
 - **Conversations and loop volumes are not encrypted.** A volume holds the
   credentials its loop was given (OPERATIONS.md).
 

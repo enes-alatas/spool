@@ -258,8 +258,8 @@ func TestLoginNoticeOncePerOwnerPerOutage(t *testing.T) {
 	}
 
 	refused("boxed", false)
-	if got := sent(); len(got) != 1 || !strings.Contains(got["boxed"], "setup-token") {
-		t.Fatalf("a refused setup-token beside a refused host login: sent %v, want boxed's own notice", got)
+	if got := sent(); len(got) != 1 || !strings.Contains(got["boxed"], "Sign in with Claude") {
+		t.Fatalf("a refused hub token beside a refused host login: sent %v, want boxed's own notice", got)
 	}
 
 	works("beta", true)
