@@ -56,6 +56,7 @@ func TestTheHubRefreshesTheClaudeAccountInItsLastHour(t *testing.T) {
 	if err != nil || len(left) != 0 {
 		t.Errorf("the refresh left %v behind (%v)", left, err)
 	}
+	wantQuietCLIRuns(t, s)
 	// the rotated tokens are secrets like the first: never in the log
 	if strings.Contains(s.log(), cloudFixtureToken+"-r") || strings.Contains(s.log(), "sk-ant-ort01-fixture-cloud-refresh-r") {
 		t.Error("the log carries a rotated token")
@@ -123,6 +124,7 @@ func TestSignOutRevokesTheClaudeLoginAtTheSource(t *testing.T) {
 	if err != nil || strings.TrimSpace(string(revoked)) != refresh {
 		t.Fatalf("the CLI revoked %q (%v), want the login's refresh token", revoked, err)
 	}
+	wantQuietCLIRuns(t, s)
 	if !strings.Contains(s.log(), "Claude login signed out at the source") {
 		t.Errorf("the hub logged no sign-out\n%s", s.log())
 	}

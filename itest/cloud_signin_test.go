@@ -82,6 +82,7 @@ func TestSettingsCloudSignsInWithTheCLIsLogin(t *testing.T) {
 		t.Errorf("the sign-in left %v in its directory (%v), want nothing: the tokens are kept sealed alone", entries, err)
 	}
 	s.waitTurn("cirrus", 20*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "held words") })
+	wantQuietCLIRuns(t, s)
 
 	if strings.Contains(s.log(), "fixture-cloud-account") || strings.Contains(s.log(), "fixture-cloud-refresh") {
 		t.Error("the hub's log quotes the account's tokens")
@@ -142,5 +143,18 @@ func TestAClaudeLoginSupersedesTheSetupToken(t *testing.T) {
 	s.mustJSON("DELETE", "/api/settings/cloud/account", nil, nil)
 	if s.settings().ClaudeTokenSet {
 		t.Fatal("the setup-token outlived the sign-in that superseded it")
+	}
+}
+
+// wantQuietCLIRuns fails a test whose hub ran the claude CLI for its login
+// without CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: fakeclaude notes each
+// auth run that would have posted the CLI's event logging (#935).
+func wantQuietCLIRuns(t *testing.T, s *server) {
+	t.Helper()
+	logged, err := os.ReadFile(filepath.Join(s.fkState, "event-logging"))
+	if err == nil {
+		t.Errorf("the hub ran the claude CLI with its telemetry on: %q", strings.Split(strings.TrimSpace(string(logged)), "\n"))
+	} else if !os.IsNotExist(err) {
+		t.Error(err)
 	}
 }

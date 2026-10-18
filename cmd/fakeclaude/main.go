@@ -970,10 +970,31 @@ const (
 	signInOrg     = "00000000-0000-4000-8000-000000000001"
 )
 
+// eventLogging is the event-logging batch the real CLI posts on an auth
+// run unless CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC is 1 (FIDELITY.md):
+// the fake appends the subcommand to an "event-logging" file in
+// $FAKECLAUDE_STATE, so a test can tell the hub ran it unquieted.
+func eventLogging(subcommand string) {
+	state := os.Getenv("FAKECLAUDE_STATE")
+	if state == "" || os.Getenv("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC") == "1" {
+		return
+	}
+	if os.MkdirAll(state, 0o755) != nil {
+		return
+	}
+	logged, err := os.OpenFile(filepath.Join(state, "event-logging"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	_, _ = fmt.Fprintln(logged, subcommand)
+	_ = logged.Close()
+}
+
 // authLogin is claude auth login, as 2.1.301 runs it with no TTY: it prints
 // the link, reads the pasted code from stdin, and on a good one writes the
 // sign-in into $CLAUDE_CONFIG_DIR (FIDELITY.md).
 func authLogin() int {
+	eventLogging("auth login")
 	fmt.Println("Opening browser to sign in…")
 	fmt.Println("If the browser didn't open, visit: https://claude.example.test/cai/oauth/authorize?code=true&client_id=fixture&response_type=code&state=fixture")
 	fmt.Print("Paste code here if prompted > ")
@@ -1007,6 +1028,7 @@ const signInRefused = "fixture-revoked"
 // rotated and the expiry eight hours on (FIDELITY.md). Each rotation adds
 // a "-r" to both synthetic tokens.
 func authStatus() int {
+	eventLogging("auth status")
 	path := filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), ".credentials.json")
 	var credentials struct {
 		ClaudeAiOauth map[string]any `json:"claudeAiOauth"`
@@ -1043,6 +1065,7 @@ func authStatus() int {
 // $FAKECLAUDE_STATE, a line per refresh token. A "logout-fails" file there
 // makes the logout fail before it touches anything.
 func authLogout() int {
+	eventLogging("auth logout")
 	state := os.Getenv("FAKECLAUDE_STATE")
 	if _, err := os.Stat(filepath.Join(state, "logout-fails")); err == nil {
 		fmt.Println("Failed to log out.")
