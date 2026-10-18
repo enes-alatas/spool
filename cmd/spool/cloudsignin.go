@@ -334,18 +334,23 @@ func (signIn *hostSignIn) endLocked() {
 }
 
 // signInEnv is the hub's environment without what would sign the CLI in
-// as something else: a token in the environment outranks a login.
+// as something else: a token in the environment outranks a login. It sets
+// CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC, as a contained loop's claude
+// has it, so the CLI's runs send no telemetry from the hub's machine; the
+// sign-in, the refresh and the logout still make their calls with it set
+// (FIDELITY.md, #935).
 func signInEnv(environ []string) []string {
 	var env []string
 	for _, entry := range environ {
 		name, _, _ := strings.Cut(entry, "=")
 		switch name {
-		case "CLAUDE_CONFIG_DIR", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN":
+		case "CLAUDE_CONFIG_DIR", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
+			"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC":
 			continue
 		}
 		env = append(env, entry)
 	}
-	return env
+	return append(env, "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1")
 }
 
 // tail keeps the last few lines a process wrote, for an error to quote.

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/enes-alatas/spool/internal/httpapi"
@@ -52,5 +53,20 @@ func TestTheSignInFindsACLIInstalledWhileTheHubRuns(t *testing.T) {
 	}
 	if !signIn.Available() {
 		t.Fatal("a CLI installed after the hub started was not found")
+	}
+}
+
+// The CLI's runs leave out what would sign it in as something else, and
+// send no nonessential traffic whatever the hub's environment says (#935).
+func TestTheSignInEnvironmentIsQuietAndCarriesNoOtherCredential(t *testing.T) {
+	env := signInEnv([]string{
+		"HOME=/home/fixture",
+		"CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-fixture",
+		"ANTHROPIC_API_KEY=fixture",
+		"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=0",
+	})
+	want := []string{"HOME=/home/fixture", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1"}
+	if !slices.Equal(env, want) {
+		t.Fatalf("signInEnv = %q, want %q", env, want)
 	}
 }

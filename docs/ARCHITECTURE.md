@@ -170,7 +170,8 @@ and failing loudly when that changes (ADR-0056). Settings → Cloud switches the
 the public address (`/api/settings/cloud`), and a cloud loop takes a turn
 only within a minute of a check that passed. It also signs in to the
 account by running the Claude Code CLI's own login, `claude auth login`, in a
-config directory of the hub's, and keeps the tokens sealed. Once both steps
+config directory of the hub's with the CLI's nonessential traffic off, and
+keeps the tokens sealed. Once both steps
 are green, `POST /api/loops` takes `runtime: cloud`, with an optional
 `cloud_repo` its sessions start from; the loop's view carries the repo and
 its current session's page on claude.ai. A cloud loop never moves runtime.
