@@ -79,7 +79,7 @@ jobs:
   # passed. The step below guards the same hole from inside; requiring this
   # check is what closes it from outside.
   changes:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       # `unit` gates the tier-1 steps of `checks`, and it is the only flag a
       # push to main sets: see lever 4 above.
@@ -205,7 +205,7 @@ jobs:
     # `needs:` before this fold, so a broken filter could not silence them.
     # A cancelled run is still a cancelled run.
     if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -462,7 +462,7 @@ jobs:
   itest:
     needs: changes
     if: needs.changes.outputs.itest == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # As in `changes`: the queued PR rebased onto main (#819).
