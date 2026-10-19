@@ -203,18 +203,24 @@ which holds the loop's sessions, memory, workspace and the tools it installed.
 A backup that copies only the directory brings every docker loop back with
 no memory.
 
-`scripts/spool-backup.sh` writes two files:
+`scripts/spool-backup.sh` writes three files:
 
 | File | Holds | Keep it |
 |---|---|---|
-| `spool-data-<ts>.tar.gz` | the data directory without its two credentials or an unfinished cloud sign-in (`spool.db`, `files/`, `homes/`, `worktrees/`), every `spool-ws-*` volume, and a manifest naming each volume's loop | with your backups |
+| `spool-data-<ts>.tar.gz` | the data directory without its two credentials or an unfinished cloud sign-in (`spool.db`, `files/`, `homes/`, `worktrees/`) | with your backups |
+| `spool-volumes-<ts>.tar.gz` | every `spool-ws-*` volume, and a manifest naming each volume's loop; none with `--no-volumes` | with your backups |
 | `spool-keys-<ts>.tar` | `hub.key` and `operator-token` | **apart** from the data file, e.g. in a password manager or on another host |
 
 Every secret in `spool.db` is sealed under `hub.key` (ADR-0046). The data
 file without the keys file holds them only as ciphertext, and grants no API
 access. Keep the two apart and a leaked copy of either is not enough. The
-data file is still sensitive: a workstation volume holds whatever its loop
-holds, its own GitHub token included. Both files are written 0600.
+volumes file is still sensitive: a workstation volume holds whatever its
+loop holds, its own GitHub token included. All three files are written 0600.
+
+Install `pigz` (`sudo apt install pigz`) and the backup and the restore
+compress on every core; without it, `gzip` uses one (#948). A backup from
+before #948 holds its volumes inside the data file, and the restore still
+reads it that way.
 
 A volume is found by its name, `spool-ws-<loop id>`, not by its labels. A
 volume made by hand, as when loops move over from another machine, has no
@@ -273,8 +279,8 @@ line for root's crontab, with the hub as a system unit named `spool`:
 ```
 
 The `;` before `start` restarts the hub even when the backup fails. Move the
-keys file off the host. Prune old data files yourself. The script deletes
-nothing.
+keys file off the host. Prune old backups yourself, data and volumes files
+both. The script deletes nothing.
 
 A hub with only bare loops, or no docker on the host, passes `--no-volumes`.
 A bare loop's sessions live under the hub user's `~/.claude/projects/`, which
@@ -284,9 +290,13 @@ this script does not copy.
 
 ```bash
 sudo /usr/local/sbin/spool-restore.sh --data spool-data-<ts>.tar.gz \
+  --volumes spool-volumes-<ts>.tar.gz \
   --keys spool-keys-<ts>.tar --data-dir /home/spool/.spool
 sudo systemctl start spool                 # or start the hub however you run it
 ```
+
+A backup that wrote no volumes file (one taken with `--no-volumes`, or on a
+docker hub with no workstation volume yet) restores without `--volumes`.
 
 Run as root, restore gives every file it writes to the owner the backup
 recorded, the hub's user, keys included (#783). Restore never overwrites
@@ -552,13 +562,16 @@ sudo mv "$DATA" "$DATA.failed-upgrade"
 docker rm -f $(docker ps -aq --filter label=spool.loop.id) spool-egress-proxy
 docker volume rm $(docker volume ls -q --filter name=spool-ws-)   # by name: a volume may carry no labels (#844)
 sudo /usr/local/sbin/spool-restore.sh --data /var/backups/spool/spool-data-<ts>.tar.gz \
+  --volumes /var/backups/spool/spool-volumes-<ts>.tar.gz \
   --keys /var/backups/spool/spool-keys-<ts>.tar --data-dir "$DATA"
 
 sudo systemctl start spool
 ```
 
 `docker volume rm` destroys the volumes as they stood after the upgrade. Run
-it only once you have the backup's data file in hand. Keep
+it only once you have the backup's data and volumes files in hand. A backup
+taken before #948 has no volumes file: leave out `--volumes`, and the
+restore reads the volumes from the data file. Keep
 `$DATA.failed-upgrade` until the rolled-back hub is checked, then delete it:
 it holds the same credentials as the live directory.
 
