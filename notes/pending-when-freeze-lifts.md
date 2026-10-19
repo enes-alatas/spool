@@ -875,3 +875,6 @@ Elliot filed #952 (Claude login step without a host claude CLI; systemd hub miss
 
 ## 2026-10-19 11:55 UTC
 Elliot: on systemd the hub's own `spool` user can't read the operator's home, so the host lookup doesn't fix Enes's case; the in-image sign-in ships first. Agreed in the group; #952 order corrected.
+
+## 2026-10-19 12:00 UTC
+Enes (group): a tester for cloud connections joins the group shortly; say hi when she arrives. She is not in my allowed-senders list yet; greet in the group on her first message (reply_to it, no @all). Her reports are community input: restate defects in my own words when filing; she may test on the fleet build 4cfc997, which lacks #952 (cloud sign-in needs a host claude CLI) — expect that bite.
