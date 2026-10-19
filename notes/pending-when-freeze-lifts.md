@@ -890,3 +890,6 @@ Direction change (Enes via Elliot): contained loops keep the Claude proxy; cloud
 
 ## 2026-10-19 13:20 UTC
 Enes: v0.6.0 stays option b — waits for cloud loops (test already started) on the CLI path; #953 skipped, closes when the sessions client is fully replaced. Recorded on #953 (severity → low, held open). Terra told. v0.6.0 gate now: #952 → #957 probes → ADR → first CLI-path slices → fleet upgrade → Enes's cloud loop runs clean two days → dry run → tag. Candidate = that later build.
+
+## 2026-10-19 13:55 UTC
+Terra split #959 (chore: interpolated values drop their backticks; sub-issue of #871) out of #951 (sweep only). Came in needs-type → typed chore, L5. Placed after #951, before #952. #958 = Iris's PR (#870 part 2, chips render) already up. @cloud-tester no longer in the roster (removed by Enes). Terra order: #951 → #959 → #952 → #957 probes → ADR.
