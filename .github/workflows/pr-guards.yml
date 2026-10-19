@@ -24,7 +24,7 @@ jobs:
   # A feat PR that changes only internal/ or only web/ names its other half
   # (#634): v0.4.2 shipped #631's hub route with no room to use it.
   other-half:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -55,7 +55,7 @@ jobs:
     # landing during a push's run would otherwise leave that push unlabelled
     # with nothing red. Adding a label already there is a no-op.
     if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     # The label is added through the issues endpoint, but on a PR the token
     # needs pull-requests: write for it: issues: write alone is refused with

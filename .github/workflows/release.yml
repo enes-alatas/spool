@@ -36,7 +36,7 @@ jobs:
   # main never had would publish code no review passed. Everything that
   # pushes or publishes waits on this.
   guard:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -63,7 +63,7 @@ jobs:
     strategy:
       matrix:
         arch: [amd64, arm64]
-    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-26.04' }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -96,7 +96,7 @@ jobs:
     strategy:
       matrix:
         arch: [amd64, arm64]
-    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-26.04' }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -128,7 +128,7 @@ jobs:
   # (`spool images`), so the per-arch tags are only a way here.
   index:
     needs: images
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       packages: write # the index, and the attestations beside it
@@ -172,7 +172,7 @@ jobs:
   build:
     needs: [guard, index, images-check]
     if: ${{ !cancelled() && !failure() }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     permissions:
       contents: read
@@ -215,7 +215,7 @@ jobs:
   publish:
     needs: [build, index]
     if: ${{ !cancelled() && !failure() && github.event_name == 'push' }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: write # the release and its assets
@@ -262,7 +262,7 @@ jobs:
     # index is skipped on a dispatch, and a skip anywhere upstream would
     # skip this job too unless its condition says otherwise.
     if: ${{ !cancelled() && !failure() && github.event_name == 'workflow_dispatch' }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -292,7 +292,7 @@ jobs:
   smoke:
     needs: publish
     if: ${{ !cancelled() && !failure() && github.event_name == 'push' }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
