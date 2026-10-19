@@ -243,8 +243,18 @@ func (up *upgrader) run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// a source build needs its tools as the owner's login shell finds
+	// them, which is checked before the plan is shown or anything moves
+	if up.sourceBuild() && up.euid() == 0 {
+		if err := up.checkBuildTools(ctx, p); err != nil {
+			return err
+		}
+	}
 	if up.dryRun {
 		up.printPlan(p)
+		if up.sourceBuild() && up.euid() != 0 {
+			up.printf("  (the build tools are checked as %s only under sudo)", p.owner.Username)
+		}
 		return nil
 	}
 	return up.execute(ctx, p)
@@ -647,8 +657,64 @@ func (up *upgrader) obtain(ctx context.Context, p plan) (candidate, error) {
 	return up.download(ctx, p)
 }
 
+// buildPath puts the Node and Go a version manager installed on the
+// owner's PATH. The build runs in a login shell that isn't interactive,
+// which reads ~/.profile, and a stock ~/.bashrc returns before the lines
+// nvm and its kind add there, so an npm the owner's terminal finds is
+// missing from the build (#945). Each is loaded from its default place
+// when it is there, and asdf 0.16+, which has no asdf.sh, by its shims;
+// nothing is installed. It holds no "&&": the order tests read a script
+// from its first one.
+const buildPath = `export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"; ` +
+	`if [ -s "$NVM_DIR/nvm.sh" ]; then . "$NVM_DIR/nvm.sh" >/dev/null 2>&1; fi; ` +
+	`for d in "$HOME/.local/share/fnm" "$HOME/.fnm"; do if [ -x "$d/fnm" ]; then eval "$("$d/fnm" env)"; fi; done; ` +
+	`if [ -d "$HOME/.volta/bin" ]; then PATH="$HOME/.volta/bin:$PATH"; fi; ` +
+	`if [ -s "$HOME/.asdf/asdf.sh" ]; then . "$HOME/.asdf/asdf.sh"; fi; ` +
+	`if [ -d "${ASDF_DATA_DIR:-$HOME/.asdf}/shims" ]; then PATH="${ASDF_DATA_DIR:-$HOME/.asdf}/shims:$PATH"; fi; ` +
+	`for d in /usr/local/go/bin "$HOME/go/bin"; do if [ -d "$d" ]; then PATH="$PATH:$d"; fi; done; export PATH; `
+
 func (up *upgrader) asOwner(ctx context.Context, p plan, script string) (string, error) {
-	return up.host.Run(ctx, hostCmd{User: p.owner.Username, Login: true, Name: "cd " + shellWord(p.checkout) + " && " + script})
+	return up.host.Run(ctx, hostCmd{User: p.owner.Username, Login: true, Name: buildPath + "cd " + shellWord(p.checkout) + " && " + script})
+}
+
+// buildTools is what a source build runs as the owner: make build needs
+// git, make, go, node and npm, and make image a docker the owner reaches
+// without sudo.
+const buildTools = `for t in git make go node npm docker; do command -v "$t" >/dev/null || printf 'missing %s\n' "$t"; done; ` +
+	`if command -v docker >/dev/null; then docker info >/dev/null 2>&1 || echo 'no docker'; fi`
+
+// checkBuildTools refuses a source build whose tools the owner's login
+// shell doesn't find, before the plan is shown and before anything
+// stops, and says what to do about each (#945).
+func (up *upgrader) checkBuildTools(ctx context.Context, p plan) error {
+	out, err := up.asOwner(ctx, p, buildTools)
+	if err != nil {
+		return err
+	}
+	var missing []string
+	noDocker := false
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		switch {
+		case strings.HasPrefix(line, "missing "):
+			missing = append(missing, strings.TrimPrefix(line, "missing "))
+		case line == "no docker":
+			noDocker = true
+		}
+	}
+	who := p.owner.Username
+	var problems []string
+	if len(missing) > 0 {
+		problems = append(problems, fmt.Sprintf("the build runs as %s in a login shell, which finds no %s. "+
+			"nvm, fnm, volta and asdf are loaded from their default places; a tool installed anywhere else needs its PATH set in ~/.profile, not ~/.bashrc. "+
+			"Check with: sudo runuser -l %s -c 'command -v %s'", who, strings.Join(missing, ", "), who, strings.Join(missing, " ")))
+	}
+	if noDocker {
+		problems = append(problems, fmt.Sprintf("%s can't reach docker, which make image needs: sudo usermod -aG docker %s, then log in again", who, who))
+	}
+	if len(problems) > 0 {
+		return errors.New("nothing changed: " + strings.Join(problems, "; and "))
+	}
+	return nil
 }
 
 func (up *upgrader) build(ctx context.Context, p plan) (candidate, error) {

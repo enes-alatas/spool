@@ -666,6 +666,7 @@ func TestUpgradeBuildsMainAsTheCheckoutOwner(t *testing.T) {
 	owner := me.Username + "$ "
 	want := []string{
 		"systemctl show",
+		owner + buildTools,
 		"docker image inspect --format {{.Id}} spool-workstation",
 		"docker image inspect --format {{.Id}} spool-egress",
 		owner + "git fetch --tags origin && git checkout main && git pull --ff-only origin main",
@@ -830,5 +831,39 @@ func TestUpgradeBacksUpTheDataAloneAndSaysEachStep(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "spool upgrade [0s]: ") {
 		t.Errorf("the steps carry no elapsed time:\n%s", out)
+	}
+}
+
+// A source build whose tools the owner's login shell doesn't find is
+// refused before anything moves, dry run or not, naming each tool and
+// where its PATH belongs (#945). Every owner script loads the version
+// managers' Node first.
+func TestUpgradeRefusesASourceBuildMissingItsTools(t *testing.T) {
+	for _, dryRun := range []bool{true, false} {
+		env, up, host, out := newUpgradeEnv(t)
+		checkout := filepath.Join(env.root, "src/spool")
+		write(t, filepath.Join(checkout, ".git/HEAD"), "ref: refs/heads/main\n")
+		host.answer = func(cmd hostCmd) (string, error, bool) {
+			if !cmd.Login {
+				return "", nil, false
+			}
+			if !strings.HasPrefix(cmd.Name, buildPath) {
+				t.Errorf("%s runs without the version managers' PATH", cmd)
+			}
+			return "missing node\nmissing npm\nno docker\n", nil, true
+		}
+		up.target, up.fromSource, up.dryRun = "main", checkout, dryRun
+		err := up.run(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "finds no node, npm") ||
+			!strings.Contains(err.Error(), "~/.profile") || !strings.Contains(err.Error(), "usermod -aG docker") {
+			t.Fatalf("dry run %v: %v; want node, npm and docker named", dryRun, err)
+		}
+		me, _ := user.Current()
+		if got := host.commands(); !slices.Equal(got, []string{"systemctl show", me.Username + "$ " + buildTools}) {
+			t.Errorf("dry run %v ran %q; want only the unit read and the tool check", dryRun, got)
+		}
+		if strings.Contains(out.String(), "plan for unit") {
+			t.Errorf("dry run %v printed a plan it can't carry out:\n%s", dryRun, out)
+		}
 	}
 }
