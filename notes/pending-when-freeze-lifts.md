@@ -869,3 +869,6 @@ Iris idle again (#940/#941 done). No web item ready → told her idle until #871
 
 ## 2026-10-19 11:30 UTC
 Enes: trying to create his cloud loop ("been trying" — may be a bite; wait for his report, don't pre-empt); he will upgrade the fleet once more before cutting the release and get back to me. Candidate = the commit of that later upgrade.
+
+## 2026-10-19 11:50 UTC
+Elliot filed #952 (Claude login step without a host claude CLI; systemd hub misses ~/.local/bin; ADR-0056 amendment) — Enes's fresh-setup bite, Enes asked for it. Homed: Cloud runtime, parent #860. #944 merged (#923 done). Terra: #951 (#871) in review → #952 next → #877 → #855 → #652 → #887. #950 (#947) merged; Elliot on #948.
