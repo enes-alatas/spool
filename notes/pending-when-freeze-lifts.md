@@ -887,3 +887,6 @@ Elliot filed #953 (cloud loop stops on a permission prompt despite bypassPermiss
 
 ## 2026-10-19 13:15 UTC
 Direction change (Enes via Elliot): contained loops keep the Claude proxy; cloud loops move to the documented `claude --cloud` CLI path. #957 (improvement: six probes → new ADR superseding ADR-0056's sessions-client parts → slices) homed: Cloud runtime, parent #860. #955 (web half of #952) homed same. #956 = Terra's PR for #952. Terra order: #951 → #952 → #957 probes → ADR; #953 on hold pending Enes. Asked Enes: (1) build #953 anyway or skip (my pick skip); (2) v0.6.0 back to option a (no cloud) — my pick a. Iris: #955 after #956.
+
+## 2026-10-19 13:20 UTC
+Enes: v0.6.0 stays option b — waits for cloud loops (test already started) on the CLI path; #953 skipped, closes when the sessions client is fully replaced. Recorded on #953 (severity → low, held open). Terra told. v0.6.0 gate now: #952 → #957 probes → ADR → first CLI-path slices → fleet upgrade → Enes's cloud loop runs clean two days → dry run → tag. Candidate = that later build.
