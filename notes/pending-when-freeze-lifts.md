@@ -863,3 +863,6 @@ Sweep: #942 (#924) and #943 (#940, Iris) merged; #944 (#923) in review; #939 (#9
 
 ## 2026-10-19 11:05 UTC
 Fleet upgraded: runtime v0.5.1-204-g4cfc997 (= #942, past 343a35a; main one commit ahead: #946 web half of #923). Enes's first real `spool upgrade` hit an npm failure → Elliot #945 (medium, PR #949 with Quinn), follow-ups #947, #948 (Enes OK'd; Elliot's order). Homed all three: L6, parent #710. #946 (#941) merged; #944 (#923) still open, lands after it by design. Clock for v0.6.0: Enes still to create his cloud loop; ask him.
+
+## 2026-10-19 11:25 UTC
+Iris idle again (#940/#941 done). No web item ready → told her idle until #871; reordered Terra: #944 → #871 (unblocks #870 part 2) → #877 → #855 → #652 → #887 → #766 → #830 → #630. Web work ahead: #926's web halves after its ADR, #887's web half, #870 part 2.
