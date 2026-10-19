@@ -31,34 +31,70 @@ const (
 	signInFinishWait = 30 * time.Second
 )
 
-// hostSignIn runs the host's claude auth login for the account cloud loops
-// spend (ADR-0056), in a config directory of its own under dir, so it
-// never reads or touches the operator's own login. One runs at a time.
-type hostSignIn struct {
-	bin string
-	dir string
+// claudeSignIn runs claude auth login for the account cloud loops spend
+// (ADR-0056), in a config directory of its own under dir, so it never
+// reads or touches the operator's own login. The claude is the host's,
+// found on PATH or at --claude-bin, or else the workstation image's, on a
+// hub that has the image (#952). One runs at a time.
+type claudeSignIn struct {
+	bin   string
+	dir   string
+	image claudeImage
 
 	mu  sync.Mutex
 	run *signInRun
 }
 
-// newHostSignIn is the sign-in over dir, with whatever a hub stopped
+// claudeImage runs the hub's claude auth in the workstation image
+// (docker.Runtime).
+type claudeImage interface {
+	ImageReady(ctx context.Context) error
+	ClaudeAuth(ctx context.Context, configDir string, lifetime time.Duration, args []string) (*exec.Cmd, func(), error)
+}
+
+// newClaudeSignIn is the sign-in over dir, with whatever a hub stopped
 // mid-sign-in left there removed: the CLI writes both tokens unsealed
 // before the hub reads them, and a data directory is backed up without
-// its key (ADR-0046).
-func newHostSignIn(bin, dir string) (*hostSignIn, error) {
+// its key (ADR-0046). image is nil on a hub that runs only the host's.
+func newClaudeSignIn(bin, dir string, image claudeImage) (*claudeSignIn, error) {
 	if err := os.RemoveAll(dir); err != nil {
 		return nil, err
 	}
-	return &hostSignIn{bin: bin, dir: dir}, nil
+	return &claudeSignIn{bin: bin, dir: dir, image: image}, nil
 }
 
-// Available reports whether the CLI is on this machine: the binary named,
-// or found on PATH. It looks again each time, so a CLI installed while the
-// hub runs is found without a restart.
-func (signIn *hostSignIn) Available() bool {
-	_, err := exec.LookPath(signIn.bin)
-	return err == nil
+// imageReadyWait bounds Available's ask of the docker daemon.
+const imageReadyWait = 5 * time.Second
+
+// Available reports whether a claude can run the sign-in: the host's, the
+// binary named or found on PATH, or the image's. It looks again each time,
+// so a CLI installed or an image fetched while the hub runs is found
+// without a restart.
+func (signIn *claudeSignIn) Available() bool {
+	if _, err := exec.LookPath(signIn.bin); err == nil {
+		return true
+	}
+	if signIn.image == nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), imageReadyWait)
+	defer cancel()
+	return signIn.image.ImageReady(ctx) == nil
+}
+
+// command is claude with args in configDir, ended by ctx: the host's when
+// the hub finds it, or else the image's, which ends itself after lifetime.
+// The caller runs remove once the command has ended, for the container
+// the image's leaves.
+func (signIn *claudeSignIn) command(ctx context.Context, configDir string, lifetime time.Duration, args []string) (cmd *exec.Cmd, remove func(), err error) {
+	if _, lookErr := exec.LookPath(signIn.bin); lookErr == nil || signIn.image == nil {
+		cmd := exec.CommandContext(ctx, signIn.bin, args...)
+		cmd.Dir = configDir
+		cmd.Env = append(signInEnv(os.Environ()), "CLAUDE_CONFIG_DIR="+configDir)
+		cmd.SysProcAttr = runtime.ChildAttr()
+		return cmd, func() {}, nil
+	}
+	return signIn.image.ClaudeAuth(ctx, configDir, lifetime, args)
 }
 
 // signInRun is one claude auth login, waiting for its code.
@@ -67,6 +103,9 @@ type signInRun struct {
 	stdin io.WriteCloser
 	// configDir is the login's CLAUDE_CONFIG_DIR, removed when it ends.
 	configDir string
+	// remove removes what the run leaves once it has exited: the image's
+	// claude leaves its container.
+	remove func()
 	// exited is closed once the process has exited, and err is then why.
 	exited chan struct{}
 	err    error
@@ -76,7 +115,7 @@ type signInRun struct {
 
 // Start ends any sign-in left unfinished, begins a new one, and returns
 // the link it printed.
-func (signIn *hostSignIn) Start(ctx context.Context) (string, error) {
+func (signIn *claudeSignIn) Start(ctx context.Context) (string, error) {
 	signIn.mu.Lock()
 	defer signIn.mu.Unlock()
 	signIn.endLocked()
@@ -91,11 +130,14 @@ func (signIn *hostSignIn) Start(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	run := &signInRun{configDir: configDir, exited: make(chan struct{}), output: &tail{}}
-	cmd := exec.Command(signIn.bin, claude.SignInArgs()...)
-	cmd.Dir = configDir
-	cmd.Env = append(signInEnv(os.Environ()), "CLAUDE_CONFIG_DIR="+configDir)
-	cmd.SysProcAttr = runtime.ChildAttr()
+	// the image's claude outlives the wait for the code and the wait for it
+	// to finish; the run is ended well before either
+	cmd, remove, err := signIn.command(context.Background(), configDir, signInLifetime+signInFinishWait+time.Minute, claude.SignInArgs())
+	if err != nil {
+		_ = os.RemoveAll(configDir)
+		return "", err
+	}
+	run := &signInRun{configDir: configDir, remove: remove, exited: make(chan struct{}), output: &tail{}}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		_ = os.RemoveAll(configDir)
@@ -110,8 +152,9 @@ func (signIn *hostSignIn) Start(ctx context.Context) (string, error) {
 	if err := cmd.Start(); err != nil {
 		_ = read.Close()
 		_ = write.Close()
+		remove()
 		_ = os.RemoveAll(configDir)
-		return "", fmt.Errorf("claude auth login: start %s: %w", signIn.bin, err)
+		return "", fmt.Errorf("claude auth login: start %s: %w", cmd.Path, err)
 	}
 	_ = write.Close()
 	run.cmd, run.stdin = cmd, stdin
@@ -156,7 +199,7 @@ func (signIn *hostSignIn) Start(ctx context.Context) (string, error) {
 // Finish hands the waiting sign-in the code the page showed, and returns
 // what the CLI signed in as. The sign-in ends either way: one whose code
 // was refused starts again.
-func (signIn *hostSignIn) Finish(ctx context.Context, code string) (store.CloudAccount, error) {
+func (signIn *claudeSignIn) Finish(ctx context.Context, code string) (store.CloudAccount, error) {
 	signIn.mu.Lock()
 	defer signIn.mu.Unlock()
 	run := signIn.run
@@ -206,7 +249,7 @@ const refreshWait = time.Minute
 // goes with the call, tokens and all. Refresh shares the sign-in's lock,
 // so it never runs beside a sign-in's start or finish, whose start empties
 // the directory both work in.
-func (signIn *hostSignIn) Refresh(ctx context.Context, account store.CloudAccount) (store.CloudAccount, error) {
+func (signIn *claudeSignIn) Refresh(ctx context.Context, account store.CloudAccount) (store.CloudAccount, error) {
 	signIn.mu.Lock()
 	defer signIn.mu.Unlock()
 	if err := os.MkdirAll(signIn.dir, 0o700); err != nil {
@@ -228,10 +271,11 @@ func (signIn *hostSignIn) Refresh(ctx context.Context, account store.CloudAccoun
 	}
 	ctx, cancel := context.WithTimeout(ctx, refreshWait)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, signIn.bin, claude.RefreshArgs()...)
-	cmd.Dir = configDir
-	cmd.Env = append(signInEnv(os.Environ()), "CLAUDE_CONFIG_DIR="+configDir)
-	cmd.SysProcAttr = runtime.ChildAttr()
+	cmd, remove, err := signIn.command(ctx, configDir, refreshWait, claude.RefreshArgs())
+	if err != nil {
+		return store.CloudAccount{}, err
+	}
+	defer remove()
 	output := &tail{}
 	cmd.Stdout, cmd.Stderr = output, output
 	runErr := cmd.Run()
@@ -269,7 +313,7 @@ const signOutWait = time.Minute
 // directory goes with the call. The CLI exits 0 whether or not the revoke
 // was accepted, so a nil error says the logout ran, not that the token is
 // dead. SignOut shares the sign-in's lock, as Refresh does.
-func (signIn *hostSignIn) SignOut(ctx context.Context, account store.CloudAccount) error {
+func (signIn *claudeSignIn) SignOut(ctx context.Context, account store.CloudAccount) error {
 	signIn.mu.Lock()
 	defer signIn.mu.Unlock()
 	if err := os.MkdirAll(signIn.dir, 0o700); err != nil {
@@ -291,10 +335,11 @@ func (signIn *hostSignIn) SignOut(ctx context.Context, account store.CloudAccoun
 	}
 	ctx, cancel := context.WithTimeout(ctx, signOutWait)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, signIn.bin, claude.SignOutArgs()...)
-	cmd.Dir = configDir
-	cmd.Env = append(signInEnv(os.Environ()), "CLAUDE_CONFIG_DIR="+configDir)
-	cmd.SysProcAttr = runtime.ChildAttr()
+	cmd, remove, err := signIn.command(ctx, configDir, signOutWait, claude.SignOutArgs())
+	if err != nil {
+		return err
+	}
+	defer remove()
 	output := &tail{}
 	cmd.Stdout, cmd.Stderr = output, output
 	if err := cmd.Run(); err != nil {
@@ -308,7 +353,7 @@ func (signIn *hostSignIn) SignOut(ctx context.Context, account store.CloudAccoun
 }
 
 // end ends run if it is still the sign-in waiting.
-func (signIn *hostSignIn) end(run *signInRun) {
+func (signIn *claudeSignIn) end(run *signInRun) {
 	signIn.mu.Lock()
 	defer signIn.mu.Unlock()
 	if signIn.run == run {
@@ -318,7 +363,7 @@ func (signIn *hostSignIn) end(run *signInRun) {
 
 // endLocked stops the waiting sign-in, if any, and removes its config
 // directory, tokens and all. The caller holds mu.
-func (signIn *hostSignIn) endLocked() {
+func (signIn *claudeSignIn) endLocked() {
 	run := signIn.run
 	if run == nil {
 		return
@@ -330,6 +375,7 @@ func (signIn *hostSignIn) endLocked() {
 	_ = run.stdin.Close()
 	_ = run.cmd.Process.Kill()
 	<-run.exited
+	run.remove()
 	_ = os.RemoveAll(run.configDir)
 }
 

@@ -437,6 +437,15 @@ in, and reads the turn's events back (ADR-0056).
   directory, and the hub reads and deletes them as the CLI exits. A hub
   killed in that moment leaves them until it next starts, when it
   removes the directory first; the backup script never copies it.
+- **On a hub with no `claude` of its own, the sign-in runs in the
+  workstation image** (#952). The container runs as the hub's user and
+  mounts that one directory, nothing else, so it can't read the data
+  directory or a workstation. No token crosses its environment or argv:
+  a refresh or logout finds the tokens in the mounted files, as the host
+  CLI does. It drops every capability, gains no privilege, has a
+  read-only root, and sits behind the egress wall. Its command is the
+  hub's, and only the pasted code reaches its stdin. It ends itself, so
+  a hub stopped mid-sign-in leaves no container past its wait.
 
 ### Workstation: the docker runtime
 
@@ -497,6 +506,13 @@ the CLI (ADR-0018).
   extra host naming a workstation would open a way from one workstation
   to another. The built-in list names none, so only an admin's entry can
   (ADR-0028).
+- **Every workstation can reach the OAuth token endpoint,**
+  `platform.claude.com`, which the built-in Claude group allows for the
+  hub's own sign-in (operator decision of 2026-10-19, #952). So can every
+  cloud environment, which takes the built-in list too. It is
+  harmless only while no loop holds a refresh token: the hub keeps it,
+  and a contained loop reaches the model through the Claude proxy
+  (ADR-0058).
 - **Sometimes there is no wall at all:** a hub started with
   `--egress-image ""`, a bare loop, and a workstation made before the wall
   until its next wake replaces it, or for as long as its image is gone

@@ -466,7 +466,7 @@ func main() {
 		os.Exit(1)
 	}
 	deps.PlanCap = planCap
-	cloudSignIn, err := newHostSignIn(*claudeBin, filepath.Join(*dataDir, "cloud-sign-in"))
+	cloudSignIn, err := newClaudeSignIn(*claudeBin, filepath.Join(*dataDir, "cloud-sign-in"), dockerRuntime)
 	if err != nil {
 		log.Error("remove an unfinished cloud sign-in", "err", err)
 		os.Exit(1)

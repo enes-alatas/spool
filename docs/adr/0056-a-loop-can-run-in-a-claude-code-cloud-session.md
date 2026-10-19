@@ -1,6 +1,6 @@
 # ADR-0056: A loop can run in a Claude Code cloud session, beside contained loops
 
-Date: 2026-10-15 · Status: accepted (operator decision of 2026-10-15 on #859, accepting it as written; operator direction of 2026-10-15 on #758: build it, in a mixed hub, on the undocumented read-back if that is noted, without OpenTelemetry; and of 2026-10-15 on #859: the egress allowlist is the hub's own) · Amended: 2026-10-15 (items 2, 3, 5, 6, 7 and 9: the API check, #861; operator decision of 2026-10-15 on #872: cloud turns report their cost); 2026-10-16 (item 4: the page switches the listener on, #864; item 6: what holds a cloud loop, and the cloud_address symptom, #864; item 6: the sign-in is the CLI's own login, #864); 2026-10-17 (item 5: the ingress-credentials probe — no copyable token found, but private-key material is shell-reachable and its scope untested; operator decision of 2026-10-18 on #919: ship as one trust domain, #866); 2026-10-18 (item 6: the account is the hub's Claude login, and how it refreshes, ADR-0058, #928) · Relates to: ADR-0017, ADR-0018, ADR-0022, ADR-0026, ADR-0028, ADR-0030, ADR-0037, ADR-0039, ADR-0044, ADR-0046, ADR-0047, ADR-0053
+Date: 2026-10-15 · Status: accepted (operator decision of 2026-10-15 on #859, accepting it as written; operator direction of 2026-10-15 on #758: build it, in a mixed hub, on the undocumented read-back if that is noted, without OpenTelemetry; and of 2026-10-15 on #859: the egress allowlist is the hub's own) · Amended: 2026-10-15 (items 2, 3, 5, 6, 7 and 9: the API check, #861; operator decision of 2026-10-15 on #872: cloud turns report their cost); 2026-10-16 (item 4: the page switches the listener on, #864; item 6: what holds a cloud loop, and the cloud_address symptom, #864; item 6: the sign-in is the CLI's own login, #864); 2026-10-17 (item 5: the ingress-credentials probe — no copyable token found, but private-key material is shell-reachable and its scope untested; operator decision of 2026-10-18 on #919: ship as one trust domain, #866); 2026-10-18 (item 6: the account is the hub's Claude login, and how it refreshes, ADR-0058, #928); 2026-10-19 (item 6: a hub with no `claude` signs in with the workstation image's, #952) · Relates to: ADR-0017, ADR-0018, ADR-0022, ADR-0026, ADR-0028, ADR-0030, ADR-0037, ADR-0039, ADR-0044, ADR-0046, ADR-0047, ADR-0053
 
 ## Context
 
@@ -558,6 +558,33 @@ the bar for setup: it has to be really simple.
    `auth status` refreshes it in a config directory of the hub's, as the
    sign-in runs. Revoking at the source, which the amendment above ties
    to the refresh, comes with ADR-0058's Sign out.
+
+   **Amendment (2026-10-19, #952): a hub with no `claude` signs in with
+   the workstation image's.** The #864 amendment runs the host's
+   `claude` on every hub for now. A hub run as its own system user, as
+   OPERATIONS sets one up, finds none: the operator's install is in
+   their own home.
+   - when the hub finds no `claude` at `--claude-bin` or on PATH and the
+     workstation image is here, the sign-in, the refresh and the logout
+     run that image's `claude` in a throwaway container instead, with
+     `--pull=never` and `--rm`. It runs as the hub's own user, with the
+     sign-in's config directory mounted as its `CLAUDE_CONFIG_DIR` and no
+     other mount, no workstation volume and no token in its environment.
+     It drops every capability, gains no privilege, and has a read-only
+     root with a tmpfs `/tmp`. Its command is fixed by the hub, and only
+     the code the operator pasted reaches its stdin. It ends itself after
+     its wait, and the hub removes it by name. A host `claude`, when the
+     hub finds one, still runs instead;
+   - the container runs behind the egress wall, like every other. By
+     operator decision of 2026-10-19, recorded on #952, the CLI's token
+     endpoint, the exact host `platform.claude.com`, joins the built-in
+     Claude group, which the #864 amendment left open. The cost: every
+     contained loop, and every cloud environment, which takes the
+     built-in list too, can now reach the OAuth token endpoint. That
+     stays harmless only while no loop ever holds a refresh token, which
+     ADR-0058 keeps on the hub;
+   - the page's "can't find it" note shows only when neither runs: no
+     host `claude` and no image.
 
 7. **The plan cap counts cloud loops, but can't see them.** Cloud turns
    spend the same plan as contained ones, and they report no rate-limit
