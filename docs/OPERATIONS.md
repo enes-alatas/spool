@@ -348,11 +348,18 @@ checked by its checksum, and by `gh attestation verify` run as you if you
 have `gh` and are logged in; without that it warns, and
 `--require-attestation` makes it refuse. A target that doesn't know a
 migration the database has applied is refused. It then stops the hub,
-backs it up with the installed `spool-backup.sh` into `/var/backups/spool`
-(`--backup-dir`), installs, starts, and waits two minutes for the hub to
-answer at the target version. If it doesn't, the command rolls the
-binary, the images and the data directory back, leaves the volumes, and
-prints where the backup and the failed data directory are.
+backs up the data directory with the installed `spool-backup.sh
+--no-volumes` into `/var/backups/spool` (`--backup-dir`), installs,
+starts, and waits two minutes for the hub to answer at the target
+version. If it doesn't, the command rolls the binary, the images and
+the data directory back, leaves the volumes, and prints where the
+backup and the failed data directory are. Each step prints as it
+starts, with the time since the run began.
+
+The upgrade's backup leaves out the workstation volumes. The upgrade
+changes none, and a rollback restores none, so copying them would only
+keep the hub down longer. So it isn't a full backup: keep the
+[scheduled one](#back-up-and-restore) running for the volumes.
 
 `main`, or a tag with `--from-source <checkout>`, is built in the
 checkout as its owner. Until a release ships binaries (#747), only those

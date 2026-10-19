@@ -800,3 +800,35 @@ func TestUpgradeInstallsTheBuildItChecked(t *testing.T) {
 		t.Errorf("installed %q; want the build that was checked", got)
 	}
 }
+
+// The upgrade backs up the data directory alone, since it changes no
+// workstation volume, and says each step as it starts, with the time
+// since it began, so the stretch with the hub down never reads as a hang
+// (#947).
+func TestUpgradeBacksUpTheDataAloneAndSaysEachStep(t *testing.T) {
+	env, up, host, out := newUpgradeEnv(t)
+	if err := up.run(context.Background()); err != nil {
+		t.Fatalf("upgrade: %v\n%s", err, out)
+	}
+	var backup *hostCmd
+	for i, cmd := range host.ran {
+		if cmd.Name == env.backupPath {
+			backup = &host.ran[i]
+		}
+	}
+	if backup == nil || !slices.Contains(backup.Args, "--no-volumes") || slices.Contains(backup.Args, "--image") {
+		t.Errorf("the backup ran as %v; want --no-volumes and no image", backup)
+	}
+	last := -1
+	for _, want := range []string{"]: pulling ", "]: stopping spool", "]: backing up " + env.dataDir, "]: backup ",
+		"]: starting spool", "]: waiting up to ", "answers healthy"} {
+		at := strings.Index(out.String(), want)
+		if at <= last {
+			t.Fatalf("%q is missing or out of order:\n%s", want, out)
+		}
+		last = at
+	}
+	if !strings.Contains(out.String(), "spool upgrade [0s]: ") {
+		t.Errorf("the steps carry no elapsed time:\n%s", out)
+	}
+}

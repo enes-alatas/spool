@@ -117,6 +117,8 @@ type upgrader struct {
 	restorePath string
 	healthWait  time.Duration
 	healthEvery time.Duration
+	// began is when the run started, for the time each step reports
+	began time.Time
 
 	// set by the flags
 	unitName           string
@@ -221,7 +223,19 @@ func (up *upgrader) printf(format string, args ...any) {
 	fmt.Fprintf(up.out, format+"\n", args...)
 }
 
+// step says what the upgrade starts on now, with the time since it began,
+// so a long build or backup reads as work going on rather than a hang
+// (#947).
+func (up *upgrader) step(format string, args ...any) {
+	elapsed := time.Duration(0)
+	if !up.began.IsZero() {
+		elapsed = time.Since(up.began).Round(time.Second)
+	}
+	up.printf("spool upgrade [%s]: "+format, append([]any{elapsed}, args...)...)
+}
+
 func (up *upgrader) run(ctx context.Context) error {
+	up.began = time.Now()
 	if up.euid() != 0 && !up.dryRun {
 		return errors.New("run it as root (sudo spool upgrade): it stops the unit, installs the binary and runs the backup")
 	}
@@ -333,7 +347,7 @@ func (up *upgrader) printPlan(p plan) {
 		"ask the new build, as nobody, for its version, migrations and images; refuse a downgrade onto "+filepath.Join(u.DataDir, "spool.db"),
 		"check "+up.backupPath+" and "+up.restorePath+" are installed and "+up.backupDir+" has room",
 		"systemctl stop "+u.Name,
-		up.backupPath+" --data-dir "+u.DataDir+" --out "+up.backupDir,
+		up.backupPath+" --data-dir "+u.DataDir+" --out "+up.backupDir+" --no-volumes (the upgrade changes no workstation volume)",
 		"keep "+u.Bin+" and "+u.HookBin+" as *.previous",
 		"install the new pair there"+map[bool]string{true: " (the build is the install: the unit runs the checkout's bin/spool)", false: ""}[p.buildIsInstall],
 		"systemctl start "+u.Name,
@@ -406,12 +420,15 @@ func (up *upgrader) execute(ctx context.Context, p plan) error {
 	}
 
 	// 3. stop
-	up.printf("spool upgrade: stopping %s", u.Name)
+	up.step("stopping %s", u.Name)
 	if _, err := up.host.Run(ctx, hostCmd{Name: "systemctl", Args: []string{"stop", u.Name}}); err != nil {
 		return err
 	}
-	// 4. back up
-	backup, err := up.host.Run(ctx, hostCmd{Name: up.backupPath, Args: []string{"--data-dir", u.DataDir, "--out", up.backupDir, "--image", u.WorkstationImage}})
+	// 4. back up the data directory alone: the upgrade changes no
+	// workstation volume, and its rollback leaves them as they are, so
+	// copying them would only keep the hub down longer (#947)
+	up.step("backing up %s into %s (the workstation volumes stay as they are)", u.DataDir, up.backupDir)
+	backup, err := up.host.Run(ctx, hostCmd{Name: up.backupPath, Args: []string{"--data-dir", u.DataDir, "--out", up.backupDir, "--no-volumes"}})
 	dataFile, keysFile := backupFiles(backup)
 	if err == nil && dataFile == "" {
 		err = fmt.Errorf("%s named no data file:\n%s", up.backupPath, backup)
@@ -419,7 +436,7 @@ func (up *upgrader) execute(ctx context.Context, p plan) error {
 	if err != nil {
 		return up.unstarted(ctx, p, retag, false, fmt.Errorf("the backup failed, so nothing was installed: %w", err))
 	}
-	up.printf("spool upgrade: backup %s%s", dataFile, map[bool]string{true: ", keys " + keysFile, false: ""}[keysFile != ""])
+	up.step("backup %s%s", dataFile, map[bool]string{true: ", keys " + keysFile, false: ""}[keysFile != ""])
 	// 5, 6. keep the previous pair, install the new one, tag the images
 	if !p.buildIsInstall {
 		if err := up.keepPrevious(p); err != nil {
@@ -438,16 +455,17 @@ func (up *upgrader) execute(ctx context.Context, p plan) error {
 		}
 	}
 	// 7, 8. start, and check
-	up.printf("spool upgrade: starting %s on %s", u.Name, cand.version)
+	up.step("starting %s on %s", u.Name, cand.version)
 	_, err = up.host.Run(ctx, hostCmd{Name: "systemctl", Args: []string{"start", u.Name}})
 	if err == nil {
+		up.step("waiting up to %s for %s to answer at %s", up.healthWait, u.Name, cand.version)
 		err = up.healthy(ctx, u, cand.version)
 	}
 	if err == nil {
-		up.printf("spool upgrade: %s runs %s and answers healthy. The backup is %s; the previous build is %s.previous.", u.Name, cand.version, dataFile, u.Bin)
+		up.step("%s runs %s and answers healthy. The backup is %s; the previous build is %s.previous.", u.Name, cand.version, dataFile, u.Bin)
 		return nil
 	}
-	up.printf("spool upgrade: the new hub failed its check (%v); rolling back", err)
+	up.step("the new hub failed its check (%v); rolling back", err)
 	return up.rollback(ctx, p, dataFile, keysFile, retag, err)
 }
 
@@ -456,7 +474,7 @@ func (up *upgrader) execute(ctx context.Context, p plan) error {
 // installed says the new pair may be in place already; a build that is
 // the install always is.
 func (up *upgrader) unstarted(ctx context.Context, p plan, retag func() []error, installed bool, cause error) error {
-	up.printf("spool upgrade: %v; putting the previous build back", cause)
+	up.step("%v; putting the previous build back", cause)
 	var steps []rollbackStep
 	if installed || p.buildIsInstall {
 		steps = append(steps, rollbackStep{"put back " + p.unit.Bin + ".previous", func() error { return up.restorePrevious(p) }})
@@ -483,9 +501,9 @@ type rollbackStep struct {
 // steps left printed for the operator: it never retries blindly.
 func (up *upgrader) runSteps(steps []rollbackStep) error {
 	for i, step := range steps {
-		up.printf("spool upgrade: rollback: %s", step.what)
+		up.step("rollback: %s", step.what)
 		if err := step.do(); err != nil {
-			up.printf("spool upgrade: rollback stopped at %q: %v", step.what, err)
+			up.step("rollback stopped at %q: %v", step.what, err)
 			up.printf("spool upgrade: left to do by hand, in order (docs/OPERATIONS.md, Rolling back):")
 			for _, left := range steps[i:] {
 				up.printf("  - %s", left.what)
@@ -528,7 +546,7 @@ func (up *upgrader) rollback(ctx context.Context, p plan, dataFile, keysFile str
 	if err := up.runSteps(steps); err != nil {
 		return errors.Join(cause, err)
 	}
-	up.printf("spool upgrade: rolled back. The failed upgrade's data directory is %s (it holds the hub's credentials: delete it once the hub is checked); the backup is %s.", failed, dataFile)
+	up.step("rolled back. The failed upgrade's data directory is %s (it holds the hub's credentials: delete it once the hub is checked); the backup is %s.", failed, dataFile)
 	return fmt.Errorf("the upgrade failed and was rolled back: %w", cause)
 }
 
@@ -638,8 +656,11 @@ func (up *upgrader) build(ctx context.Context, p plan) (candidate, error) {
 	if p.tag == "" {
 		checkout = "git fetch --tags origin && git checkout main && git pull --ff-only origin main"
 	}
-	up.printf("spool upgrade: building in %s as %s", p.checkout, p.owner.Username)
+	up.step("building in %s as %s", p.checkout, p.owner.Username)
 	for _, script := range []string{checkout, "make build", "make image"} {
+		if script != checkout {
+			up.step("%s", script)
+		}
 		if _, err := up.asOwner(ctx, p, script); err != nil {
 			return candidate{}, err
 		}
@@ -717,7 +738,7 @@ func (up *upgrader) check(ctx context.Context, p plan, cand candidate) error {
 			return err
 		}
 		for _, ref := range refs {
-			up.printf("spool upgrade: pulling %s", ref)
+			up.step("pulling %s", ref)
 			if _, err := up.host.Run(ctx, hostCmd{Name: "docker", Args: []string{"pull", ref}}); err != nil {
 				return err
 			}
@@ -742,7 +763,7 @@ func (up *upgrader) check(ctx context.Context, p plan, cand candidate) error {
 		return err
 	}
 	if margin := uint64(1 << 30); free < uint64(need)+margin {
-		return fmt.Errorf("%s has %d MiB free; the data directory alone is %d MiB, and the backup also holds the workstation volumes", up.backupDir, free>>20, need>>20)
+		return fmt.Errorf("%s has %d MiB free; the data directory is %d MiB, and the backup needs room for it", up.backupDir, free>>20, need>>20)
 	}
 	return nil
 }
