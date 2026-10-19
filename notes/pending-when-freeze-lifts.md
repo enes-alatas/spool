@@ -902,3 +902,6 @@ Iris: #956 (#952) merged; #955 built, PR after Enes sees the shots (by 17:05); t
 
 ## 2026-10-19 17:55 UTC
 Merged since 13:00: #951 (#871), #956 (#952), #958, #960, #962 (#961), #965, #966 (#955), #968 (#963). Closed #870 as landed. #964 (ubuntu-26.04 move, Elliot) → CI reliability; PR #967 up. Iris idle: told her; asked Enes for room polish if any. Terra: #959 → #957 probes → ADR.
+
+## 2026-10-19 18:00 UTC
+Enes wants Settings → Egress improved, UI and UX. Asked him what bothers him and whether layout only or entry behaviour too (or "let Iris propose"). On his answer: file an improvement on L6 (or Cloud runtime if it's the sync rows), mockups to Enes first, ping Iris. Files: web/src/components/EgressSection.tsx, egress.ts.
