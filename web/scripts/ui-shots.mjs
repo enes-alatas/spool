@@ -65,8 +65,9 @@ await door.locator('.login-card').screenshot({ path: changeFile })
 await signedOut.close()
 
 // The member view (#679), as sam: Fleet with no New loop, a loop's page
-// with Wake now and the composer as its only actions, and a Settings that
-// is the account and the build.
+// with Wake now and the composer as its only actions, Connections by name
+// and kind with no config (#924), and a Settings that is the account and
+// the build.
 const memberCtx = await browser.newContext({ viewport: { width: 1180, height: 900 }, deviceScaleFactor: 2 })
 const member = await memberCtx.newPage()
 await member.goto(base + '/', { waitUntil: 'networkidle' })
@@ -77,6 +78,7 @@ await member.waitForSelector('.topbar', { timeout: 15000 })
 const memberShots = [
   { name: 'member-fleet', path: '/', wait: '.fleet-row' },
   { name: 'member-loop', path: '/loops/gardener', wait: '.side-panel' },
+  { name: 'member-connections', path: '/connections', wait: '.connection-row' },
   { name: 'member-settings', path: '/settings', wait: '.account-name' },
 ]
 const memberFiles = []

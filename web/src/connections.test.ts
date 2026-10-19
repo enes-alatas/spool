@@ -122,6 +122,13 @@ describe('reading a connection back', () => {
     const sse = stored({ kind: 'mcp-server', config: { transport: 'sse' as 'http' } })
     expect(connectionKindLabel(sse)).toBe('mcp-server · sse')
   })
+
+  it("gives a member's read, which has no config (#924), its kind and no detail", () => {
+    const env = stored({ config: undefined })
+    const mcp = stored({ kind: 'mcp-server', config: undefined })
+    expect([env, mcp].map(connectionKindLabel)).toEqual(['env variable', 'MCP server'])
+    expect([env, mcp].map(connectionDetail)).toEqual([null, null])
+  })
 })
 
 describe('connectionArgs', () => {

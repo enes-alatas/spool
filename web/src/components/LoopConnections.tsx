@@ -68,7 +68,7 @@ export function LoopConnections({ loop }: { loop: LoopView }) {
   // A private connection detached from its owner would serve nobody, so it
   // goes, as a secret removed from the Secrets panel did.
   const remove = (c: Connection) => {
-    const what = c.config.env ?? c.name
+    const what = c.config?.env ?? c.name
     if (
       !confirm(
         `Remove ${what} from ${loop.name}? Its value is deleted for good, though the hub keeps redacting it.`,
@@ -79,7 +79,7 @@ export function LoopConnections({ loop }: { loop: LoopView }) {
     return act(() => api.deleteConnection(c.name))
   }
   const share = (c: Connection) => {
-    const what = c.config.env ?? c.name
+    const what = c.config?.env ?? c.name
     if (
       !confirm(
         `Share ${what} with the fleet? Any loop can then be given it from its page. This cannot be undone: once another loop holds the value, it may already be in that loop's env.`,
@@ -116,7 +116,7 @@ export function LoopConnections({ loop }: { loop: LoopView }) {
                 <span className="loop-connection-name">
                   {/* A private env variable is its variable: its name is the
                       hub's, made up when it was added. */}
-                  {mine && c.config.env ? c.config.env : a.name}
+                  {(mine && c.config?.env) || a.name}
                 </span>
                 <span className="loop-connection-kind">
                   {kindLabel(a.kind)}
@@ -154,8 +154,8 @@ export function LoopConnections({ loop }: { loop: LoopView }) {
                   className="btn sm danger"
                   onClick={() => remove(c)}
                   disabled={busy}
-                  title={`Remove ${c.config.env ?? a.name}`}
-                  aria-label={`Remove ${c.config.env ?? a.name}`}
+                  title={`Remove ${c.config?.env ?? a.name}`}
+                  aria-label={`Remove ${c.config?.env ?? a.name}`}
                 >
                   ✕
                 </button>
@@ -195,7 +195,7 @@ export function LoopConnections({ loop }: { loop: LoopView }) {
           loop={loop.name}
           shown={(name) => {
             const c = byName.get(name)
-            return c?.owner_loop === loop.name && c.config.env ? c.config.env : name
+            return (c?.owner_loop === loop.name && c.config?.env) || name
           }}
         />
       )}
@@ -396,7 +396,7 @@ function AddConnectionDialog({
               <div className="connection-pick" key={c.name}>
                 <span className="connection-name">{c.name}</span>
                 <span className="connection-kind">{connectionKindLabel(c)}</span>
-                <span className="connection-detail" title={connectionDetail(c)}>
+                <span className="connection-detail" title={connectionDetail(c) ?? undefined}>
                   {connectionDetail(c)}
                 </span>
                 <button className="btn sm primary" onClick={() => attach(c.name)} disabled={busy !== ''}>
