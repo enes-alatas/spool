@@ -153,3 +153,12 @@ describe('claudeLoginDown', () => {
     )
   })
 })
+
+describe('a marked detail (#871)', () => {
+  const imageMissing = 'no workstation image: run `spool images` to fetch it, or `make image` in a checkout'
+  it('drops the marks where the line is plain text', () => {
+    const plain = 'no workstation image: run spool images to fetch it, or make image in a checkout'
+    expect(workstationNote(down('unreachable', imageMissing))?.text).toBe(`workstation down: ${plain}`)
+    expect(workstationDownEvent('unreachable', imageMissing)).toBe(`workstation unreachable: ${plain}`)
+  })
+})

@@ -69,6 +69,7 @@ import { StepDialog } from '../components/StepDialog'
 import { SideColumn } from '../components/SideColumn'
 import { LoopControls } from '../components/LoopControls'
 import { BotTokenForm, SlackStep, SlackTokenForm } from '../components/SurfaceAttach'
+import { Marked } from '../components/Marked'
 
 function Countdown({ at }: { at: number }) {
   const [s, setS] = useState<number | null>(null)
@@ -624,15 +625,26 @@ function WorkstationNote({ loop }: { loop: LoopView }) {
         </div>
       )
     case 'unauthenticated':
-      return <div className="ws-down-note">Workstation down: {claudeLoginDown(loop)}.</div>
+      return (
+        <div className="ws-down-note">
+          Workstation down: <Marked text={claudeLoginDown(loop)} />.
+        </div>
+      )
     case 'hub_unreachable':
       return (
-        <div className="ws-down-note">Can't reach the hub: {hubUnreachable(loop.workstation_detail)}.</div>
+        <div className="ws-down-note">
+          Can't reach the hub: <Marked text={hubUnreachable(loop.workstation_detail)} />.
+        </div>
       )
     default:
       return (
         <div className="ws-down-note">
-          Workstation down{loop.workstation_detail ? `: ${loop.workstation_detail}` : ''}
+          Workstation down
+          {loop.workstation_detail && (
+            <>
+              : <Marked text={loop.workstation_detail} />
+            </>
+          )}
         </div>
       )
   }
@@ -656,7 +668,12 @@ function CloudSessionNote({ loop }: { loop: LoopView }) {
   if (loop.workstation_up || loop.down_reason === 'not_provisioned') return null
   return (
     <div className="ws-down-note">
-      Cloud session down{loop.workstation_detail ? `: ${loop.workstation_detail}` : ''}
+      Cloud session down
+      {loop.workstation_detail && (
+        <>
+          : <Marked text={loop.workstation_detail} />
+        </>
+      )}
     </div>
   )
 }
@@ -1050,14 +1067,14 @@ function SlackSurface({
       <div className="hint surface-hint">{SLACK_POLLS_HINT}</div>
       {status?.bridge.last_error && (
         <div className="form-error" role="alert">
-          Slack: {status.bridge.last_error}
+          Slack: <Marked text={status.bridge.last_error} />
         </div>
       )}
       {/* the hub's own sentence, which names the fix; cleared by the hub
           once Slack hands a file over again (#480) */}
       {status?.bridge.last_file_error && (
         <div className="form-error" role="alert">
-          {status.bridge.last_file_error}.
+          <Marked text={status.bridge.last_file_error} />.
         </div>
       )}
       {!!status?.bridge.ignored_events && (

@@ -76,7 +76,7 @@ export function slackAttachError(e: unknown): SlackAttachError {
       return {
         field: 'app',
         message: /missing_scope/.test(reason)
-          ? `Slack rejected the app-level token: ${reason}. Generate one with the connections:write scope.`
+          ? `Slack rejected the app-level token: ${reason}. Generate one with the \`connections:write\` scope.`
           : `Slack rejected the app-level token: ${reason}. Check that it is the app-level token, xapp-…, and not the bot token.`,
       }
     case 'surface_in_use':

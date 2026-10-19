@@ -17,6 +17,7 @@ import { PaceRange } from '../components/PaceRange'
 import { CloudSetup } from '../components/CloudSection'
 import { firstOpenStep, type SetupStep } from '../cloud'
 import { cloudRepoError } from '../cloudLoop'
+import { Marked } from '../components/Marked'
 
 export default function NewLoop() {
   const nav = useNavigate()
@@ -168,7 +169,7 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
     <div className="form">
       {error && (
         <div className="form-error" role="alert">
-          {error}
+          <Marked text={error} />
         </div>
       )}
 

@@ -19,6 +19,7 @@ import { Copyable } from './Copyable'
 import { StepDialog } from './StepDialog'
 import { useMinuteClock } from './PlanUsage'
 import { SignedIn, SignInSteps } from './ClaudeLogin'
+import { Marked } from './Marked'
 
 // Settings → Cloud (ADR-0056, #865), an admin's: where the hub stands on
 // running cloud loops, one line a step. A step that is done folds to its line; one that
@@ -374,7 +375,7 @@ function ListenerStep({
       )}
       {error && (
         <div className="form-error" role="alert">
-          {error}
+          <Marked text={error} />
         </div>
       )}
       <div className="pillar-actions">

@@ -5,6 +5,7 @@ import { messageTime } from './MessageKnot'
 import { allowlistSyncText, applying } from '../egress'
 import { Copyable } from './Copyable'
 import { useMinuteClock } from './PlanUsage'
+import { Marked } from './Marked'
 
 // The fleet's workstation egress allowlist (#542, ADR-0028): what a docker
 // loop's workstation may reach. The built-in hosts are read-only, each group
@@ -122,7 +123,7 @@ export function EgressSection() {
           </div>
           {error && (
             <div className="form-error" role="alert">
-              {error}
+              <Marked text={error} />
             </div>
           )}
 
