@@ -905,3 +905,6 @@ Merged since 13:00: #951 (#871), #956 (#952), #958, #960, #962 (#961), #965, #96
 
 ## 2026-10-19 18:00 UTC
 Enes wants Settings → Egress improved, UI and UX. Asked him what bothers him and whether layout only or entry behaviour too (or "let Iris propose"). On his answer: file an improvement on L6 (or Cloud runtime if it's the sync rows), mockups to Enes first, ping Iris. Files: web/src/components/EgressSection.tsx, egress.ts.
+
+## 2026-10-19 21:00 UTC
+Sweep: #967 (#964) and #969 (#959) merged. #970 (itest flake, cloud sign-in) → CI reliability. Terra on #957 probes (run E: Stop hook as read-back, needs Enes on the hub machine). Open PRs: #453 only. Enes's egress scope still due.
