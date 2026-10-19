@@ -162,7 +162,7 @@ func (link *link) ignore() {
 
 // linkDisabled is a disabled link's last_error. It names what brings the
 // link back, and when.
-const linkDisabled = "Slack disabled Socket Mode for this app. Turn it back on in the app's settings; " +
+const linkDisabled = "Slack disabled `Socket Mode` for this app. Turn it back on in the app's settings; " +
 	"the link checks every few minutes and reconnects once it is on"
 
 // run keeps the link connected until ctx ends. What its connections hear
@@ -333,8 +333,8 @@ func withoutURL(err error) error {
 
 // noFileAccess is last_file_error for an app without files:read. It names
 // what brings files back, as linkDisabled does for the link.
-const noFileAccess = "Slack would not hand over a shared file: the app lacks the files:read scope. " +
-	"Add files:read and files:write under OAuth & Permissions in the app's settings, then reinstall it"
+const noFileAccess = "Slack would not hand over a shared file: the app lacks the `files:read` scope. " +
+	"Add `files:read` and `files:write` under `OAuth & Permissions` in the app's settings, then reinstall it"
 
 // fileWithheld is last_file_error for any other failed download. The error
 // itself stays in the hub log: it can carry the file's URL, which carries
