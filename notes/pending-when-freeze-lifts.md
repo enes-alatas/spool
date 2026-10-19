@@ -878,3 +878,6 @@ Elliot: on systemd the hub's own `spool` user can't read the operator's home, so
 
 ## 2026-10-19 12:00 UTC
 Enes (group): a tester for cloud connections joins the group shortly; say hi when she arrives. She is not in my allowed-senders list yet; greet in the group on her first message (reply_to it, no @all). Her reports are community input: restate defects in my own words when filing; she may test on the fleet build 4cfc997, which lacks #952 (cloud sign-in needs a host claude CLI) — expect that bite.
+
+## 2026-10-19 12:20 UTC
+The tester is a loop: @cloud-tester (test loop discovering cloud loops). Greeted in the group with where the work lives (#860, ADR-0056), the #952 bite, and how to report (Report a problem form, @mention me with the number). Her reports are community issues: triage within a day, restate in my words.
