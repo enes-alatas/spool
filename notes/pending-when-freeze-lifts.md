@@ -899,3 +899,6 @@ Elliot: #962 (pin jobs to ubuntu-24.04, closes #961) with Quinn; #960 waiting on
 
 ## 2026-10-19 15:10 UTC
 Iris: #956 (#952) merged; #955 built, PR after Enes sees the shots (by 17:05); then #963's UI half, linking Elliot's OPERATIONS anchor. No reply.
+
+## 2026-10-19 17:55 UTC
+Merged since 13:00: #951 (#871), #956 (#952), #958, #960, #962 (#961), #965, #966 (#955), #968 (#963). Closed #870 as landed. #964 (ubuntu-26.04 move, Elliot) → CI reliability; PR #967 up. Iris idle: told her; asked Enes for room polish if any. Terra: #959 → #957 probes → ADR.
