@@ -1,6 +1,6 @@
 # ADR-0057: `spool upgrade`, one root-run command that upgrades a hub
 
-Date: 2026-10-16 · Status: accepted (operator decisions of 2026-10-16 on #888 and #889) · Relates to: ADR-0030, ADR-0046, ADR-0052, #708, #747, #885
+Date: 2026-10-16 · Status: accepted (operator decisions of 2026-10-16 on #888 and #889) · Amended: 2026-10-19 (item 6: the backup takes the data directory alone, #947) · Relates to: ADR-0030, ADR-0046, ADR-0052, #708, #747, #885
 
 ## Context
 
@@ -129,6 +129,15 @@ replaces a binary. That needs its limits written down before it is built.
 
    `--dry-run` prints this plan with the paths filled in and changes
    nothing.
+
+   **Amendment (2026-10-19, #947): the backup in step 4 takes the data
+   directory alone.** The upgrade runs `spool-backup.sh --no-volumes`.
+   No step changes a workstation volume, and a rollback restores none
+   (item 7), so copying them only kept the hub down longer: minutes on
+   a hub with a few loops. The operator decided this on 2026-10-19.
+   The upgrade's backup is therefore not a full one. A scheduled backup
+   still covers the volumes (OPERATIONS). Each step also prints as it
+   starts, with the time since the run began.
 
 7. **A failed check rolls back the binary, the images and the data
    directory, never the volumes.** If the new hub doesn't come up
