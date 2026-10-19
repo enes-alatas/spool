@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 # Backs up a stopped hub: its data directory and every docker workstation
-# volume, as two files (#708).
+# volume, as three files (#708, #948).
 #
 #   bash scripts/spool-backup.sh [--data-dir DIR] [--out DIR]
 #                                [--image IMAGE] [--no-volumes]
 #
-# spool-data-<ts>.tar.gz   the data directory without its two credentials,
-#                          one tar per spool-ws-* volume, and a manifest
-#                          naming each volume's loop.
-# spool-keys-<ts>.tar      hub.key and operator-token.
+# spool-data-<ts>.tar.gz     the data directory without its two credentials.
+# spool-volumes-<ts>.tar.gz  every spool-ws-* volume, and a manifest naming
+#                            each volume's loop (none with --no-volumes).
+# spool-keys-<ts>.tar        hub.key and operator-token.
 #
 # Keep the keys file apart from the data file (README, ADR-0046): a copy of
 # spool.db holds its secrets sealed under hub.key, so the pair together is as
-# sensitive as the secrets themselves. The data file is sensitive on its own
-# too: a workstation volume holds what its loop holds (its hub MCP token, its
-# own GitHub token, its memory). Both are written 0600.
+# sensitive as the secrets themselves. The volumes file is sensitive on its
+# own too: a workstation volume holds what its loop holds (its hub MCP token,
+# its own GitHub token, its memory). All three are written 0600.
 #
 # The hub must be stopped. spool.db runs in WAL mode with
 # synchronous(NORMAL), so a copy of a running hub's file can miss commits,
@@ -30,7 +30,7 @@ out=.
 image=spool-workstation
 volumes=1
 
-usage() { sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 die() { printf 'spool-backup: %s\n' "$1" >&2; exit 1; }
 
 # volume_label VOLUME KEY is the label's value, or nothing when the volume
@@ -93,21 +93,33 @@ cleanup() {
 trap cleanup EXIT
 
 echo 1 >"$stage/FORMAT"
-mkdir "$stage/data" "$stage/volumes"
+mkdir "$stage/volumes"
 : >"$stage/manifest.tsv"
 
-# The data directory, less what goes in the keys file: hub.key, any
-# hub.key.* a cut-short start left behind, and operator-token. A cloud
-# sign-in the hub was stopped in holds the account's tokens unsealed;
-# the hub removes it as it starts, and it is never copied.
-tar -C "$data_dir" --exclude ./hub.key --exclude './hub.key.*' \
-	--exclude ./operator-token --exclude ./cloud-sign-in -cf - . | tar -C "$stage/data" -xpf -
+# pigz writes the same gzip on every core (#948); gzip is the fallback, on
+# one.
+compress=(gzip)
+if command -v pigz >/dev/null 2>&1; then
+	compress=(pigz)
+else
+	printf 'spool-backup: compressing on one core; install pigz to use them all\n' >&2
+fi
 
+volumes_out=
 if [ "$volumes" = 1 ]; then
 	docker info >/dev/null 2>&1 ||
 		die "docker is not reachable; back up the volumes with it running, or pass --no-volumes for a bare-only hub"
 	docker image inspect "$image" >/dev/null 2>&1 ||
 		die "image $image is not built here (make image), and this script never pulls one"
+	# The volumes go in a file of their own, written in one pass: one
+	# container mounts every volume read-only and tars them all, straight
+	# into the compressor, so no volume is staged on disk first (#948). It
+	# mounts the volumes and their manifest, never the data directory, so
+	# the image never sees hub.key.
+	mkdir "$stage/vmeta"
+	echo volumes-1 >"$stage/vmeta/FORMAT"
+	: >"$stage/vmeta/manifest.tsv"
+	mounts=()
 	# Every spool-ws-* volume, labelled or not. The hub names a loop's volume
 	# spool-ws-<loop id> and labels it at creation, but a volume made by
 	# hand, as when loops move from another machine, has no labels, and the
@@ -122,20 +134,37 @@ if [ "$volumes" = 1 ]; then
 			docker stop "$vol" >/dev/null
 			restart+=("$vol")
 		fi
-		docker run --rm --network none --user 0 --entrypoint tar \
-			-v "$vol:/v:ro" "$image" -C /v --numeric-owner -cf - . >"$stage/volumes/$vol.tar"
-		printf '%s\t%s\t%s\n' "$vol" "$id" "$name" >>"$stage/manifest.tsv"
+		mounts+=(-v "$vol:/b/volumes/$vol:ro")
+		printf '%s\t%s\t%s\n' "$vol" "$id" "$name" >>"$stage/vmeta/manifest.tsv"
 		if [ -z "$labelled" ]; then
 			printf 'volume %s (loop id %s, no loop labels: a restore adds them)\n' "$vol" "$id"
 		else
 			printf 'volume %s (loop %s)\n' "$vol" "${name:-id $id}"
 		fi
 	done
+	if [ ${#mounts[@]} -gt 0 ]; then
+		volumes_out=$out/spool-volumes-$ts.tar.gz
+		docker run --rm --network none --user 0 --entrypoint tar \
+			-v "$stage/vmeta:/b/meta:ro" "${mounts[@]}" "$image" \
+			--numeric-owner -C /b/meta -cf - FORMAT manifest.tsv -C /b volumes |
+			"${compress[@]}" >"$volumes_out.part"
+		mv "$volumes_out.part" "$volumes_out"
+	fi
 fi
 
 data_out=$out/spool-data-$ts.tar.gz
 keys_out=$out/spool-keys-$ts.tar
-tar -C "$stage" -czf "$data_out.part" FORMAT manifest.tsv data volumes
+# One pass writes the data file: its format marker and an empty manifest,
+# which a restore from before #948 reads as "no volumes here", then the
+# data directory read in place under data/, less what goes in the keys file
+# (hub.key, any hub.key.* a cut-short start left behind, and
+# operator-token). A cloud sign-in the hub was stopped in holds the
+# account's tokens unsealed; the hub removes it as it starts, and it is
+# never copied.
+tar -cf - -C "$stage" FORMAT manifest.tsv volumes \
+	-C "$data_dir" --exclude ./hub.key --exclude './hub.key.*' \
+	--exclude ./operator-token --exclude ./cloud-sign-in \
+	--transform 's,^\.,data,S' . | "${compress[@]}" >"$data_out.part"
 mv "$data_out.part" "$data_out"
 
 keys=()
@@ -150,4 +179,5 @@ fi
 	printf 'spool-backup: warning: %s has no hub.key; a sealed spool.db cannot be opened without the one it was sealed under\n' "$data_dir" >&2
 
 printf '%s\n' "$data_out"
+[ -z "$volumes_out" ] || printf '%s\n' "$volumes_out"
 [ ${#keys[@]} -eq 0 ] || printf '%s   <- store apart from the data file\n' "$keys_out"
