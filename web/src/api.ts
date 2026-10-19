@@ -546,9 +546,10 @@ export interface CloudAccountCheck {
 
 export interface CloudAccountView {
   set: boolean
-  // Whether the hub finds the claude CLI it signs in and refreshes with
-  // (ADR-0058). It looks on every read, so after installing it a reload
-  // shows the sign-in.
+  // Whether the hub has a claude CLI to sign in and refresh with (ADR-0058):
+  // the workstation image's, or this machine's when there is no image
+  // (#952). It looks on every read, so after fetching the image or
+  // installing Claude Code a reload shows the sign-in.
   cli: boolean
   // The last account check, absent until one has run.
   check?: CloudAccountCheck

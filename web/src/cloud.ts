@@ -145,10 +145,11 @@ export function accountState(view: CloudSettings): { text: string; tone: Tone; h
   }
 }
 
-// Settings → Claude login's line (ADR-0058): the account step's state, except on
-// a hub that can't sign in because its machine has no claude CLI, which
-// says that rather than "not signed in" with no way to sign in. A login
-// signed in before the CLI went away still reads as itself.
+// Settings → Claude login's line (ADR-0058): the account step's state,
+// except on a hub that can't sign in because it has no claude CLI to run,
+// neither the workstation image's nor this machine's (#952), which says that
+// rather than "not signed in" with no way to sign in. A login signed in
+// before the CLI went away still reads as itself.
 export function loginState(view: CloudSettings): { text: string; tone: Tone; hint?: string } {
   if (!view.account.set && !view.account.cli) return { text: "can't sign in from this machine", tone: 'todo' }
   return accountState(view)
