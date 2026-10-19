@@ -32,3 +32,11 @@ export function may(role: Role | undefined, action: Action): boolean {
 export function grants(from: Role | undefined, to: Role): boolean {
   return RANK[to] > RANK.member && (from === undefined || RANK[to] > RANK[from])
 }
+
+// Whether a change takes an owner's role away: lowering an owner, or
+// removing one (no to). The hub asks the acting owner's password again for
+// it, as for a grant (#923), so a browser left signed in can't lock the
+// other owners out.
+export function lowersAnOwner(from: Role, to?: Role): boolean {
+  return from === 'owner' && (to === undefined || RANK[to] < RANK.owner)
+}

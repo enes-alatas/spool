@@ -6,7 +6,7 @@ import { linkName } from '../links'
 import { ChatAccess } from './ChatAccess'
 import { linkSurface } from './LinksSection'
 import { useMinuteClock } from './PlanUsage'
-import { grants } from '../roles'
+import { grants, lowersAnOwner } from '../roles'
 import { confirmText, refreshAfterUserChange, type Pending } from '../users'
 import { StepDialog } from './StepDialog'
 
@@ -107,16 +107,20 @@ function UserRow({
     }
   }
 
-  // Every role change is confirmed; a reset, and a role change that grants
-  // admin or owner, also take the acting owner's password, which the hub
-  // checks.
+  // Every role change is confirmed; a reset, a role change that grants
+  // admin or owner, and lowering or removing an owner (#923) also take the
+  // acting owner's password, which the hub checks.
   const pickRole = (to: Role) => {
     if (to === user.role) setPending(null)
     else setPending({ kind: 'role', to })
     setConfirmation('')
     setError('')
   }
-  const reenter = pending?.kind === 'reset' || (pending?.kind === 'role' && grants(user.role, pending.to))
+  const lowers =
+    (pending?.kind === 'role' && lowersAnOwner(user.role, pending.to)) ||
+    (pending?.kind === 'remove' && lowersAnOwner(user.role))
+  const reenter =
+    pending?.kind === 'reset' || (pending?.kind === 'role' && grants(user.role, pending.to)) || lowers
 
   const cancel = () => {
     setPending(null)
@@ -126,7 +130,7 @@ function UserRow({
 
   const confirm = () => {
     if (!pending) return
-    if (pending.kind === 'remove') run(() => api.removeUser(user.name))
+    if (pending.kind === 'remove') run(() => api.removeUser(user.name, reenter ? confirmation : undefined))
     else if (pending.kind === 'reset') run(() => api.resetUser(user.name, confirmation).then(onIssued))
     else
       run(() =>
@@ -214,6 +218,11 @@ function UserRow({
           {reenter && (
             <Reenter
               me={me}
+              why={
+                lowers
+                  ? "An owner is lowered or removed only with this, so a browser left signed in can't lock the other owners out."
+                  : undefined
+              }
               value={confirmation}
               onChange={setConfirmation}
               onEnter={confirm}
@@ -293,16 +302,20 @@ function confirmLabel(pending: Pending): string {
   }
 }
 
-// The acting owner's password, asked again before a grant. A session the
-// operator token opened has no password, and confirms with the token.
+// The acting owner's password, asked again before a grant, a reset, or
+// taking an owner's role away. A session the operator token opened has no
+// password, and confirms with the token. why says what it guards, where
+// the confirmation above doesn't.
 function Reenter({
   me,
+  why,
   value,
   onChange,
   onEnter,
   disabled,
 }: {
   me?: Me
+  why?: string
   value: string
   onChange: (value: string) => void
   onEnter: () => void
@@ -322,6 +335,7 @@ function Reenter({
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => e.key === 'Enter' && value && onEnter()}
       />
+      {why && <div className="hint">{why}</div>}
     </div>
   )
 }

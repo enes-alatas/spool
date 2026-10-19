@@ -1183,9 +1183,9 @@ export const api = {
   changePassword: (body: { new_password: string; current_password?: string }) =>
     req<Me>('/api/me/password', { method: 'POST', body: JSON.stringify(body) }),
   // Managing users is an owner's alone (#690). Granting admin or owner, by
-  // adding a user with that role or raising one to it, and resetting anyone's
-  // password take the acting owner's password again, or the operator token
-  // for a token session: 403
+  // adding a user with that role or raising one to it, lowering or removing
+  // an owner (#923), and resetting anyone's password take the acting owner's
+  // password again, or the operator token for a token session: 403
   // `confirm_password` when it is missing or wrong. The last owner can't be
   // lowered or removed: 409 `last_owner`.
   users: () => req<AccessUser[]>('/api/users'),
@@ -1215,7 +1215,13 @@ export const api = {
     }),
   setUserRole: (name: string, body: { role: Role; current_password?: string }) =>
     req<HubUser>(`/api/users/${encodeURIComponent(name)}`, { method: 'PATCH', body: JSON.stringify(body) }),
-  removeUser: (name: string) => req<void>(`/api/users/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+  removeUser: (name: string, currentPassword?: string) =>
+    req<void>(`/api/users/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+      ...(currentPassword !== undefined
+        ? { body: JSON.stringify({ current_password: currentPassword }) }
+        : {}),
+    }),
   settings: () => req<Settings>('/api/settings'),
   planUsage: () => req<PlanUsage>('/api/plan-usage'),
   // One count; 0 is off (ADR-0053).
