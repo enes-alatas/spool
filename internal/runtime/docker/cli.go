@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/enes-alatas/spool/internal/roomtext"
 )
 
 // errNotFound marks state reads against a container or volume that does not
@@ -18,7 +20,8 @@ var errNotFound = errors.New("docker: no such object")
 
 // cliError is one docker CLI invocation failing: the exit code and a stderr
 // tail for diagnosis. Argv never carries secrets (ADR-0018), so the message
-// is safe to log.
+// is safe to log. The stderr is docker's words, so the message quotes it
+// without backticks: it reaches the room in a power refusal (#959).
 type cliError struct {
 	subcommand string
 	exitCode   int // -1 when the process didn't run or died on a signal
@@ -27,7 +30,7 @@ type cliError struct {
 }
 
 func (failure *cliError) Error() string {
-	return fmt.Sprintf("docker %s: %v (%s)", failure.subcommand, failure.err, failure.stderr)
+	return fmt.Sprintf("docker %s: %v (%s)", failure.subcommand, failure.err, roomtext.Plain(failure.stderr))
 }
 
 func (failure *cliError) Unwrap() error { return failure.err }

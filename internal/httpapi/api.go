@@ -23,6 +23,7 @@ import (
 	"github.com/enes-alatas/spool/internal/bus"
 	"github.com/enes-alatas/spool/internal/gitws"
 	"github.com/enes-alatas/spool/internal/loop"
+	"github.com/enes-alatas/spool/internal/roomtext"
 	"github.com/enes-alatas/spool/internal/route"
 	"github.com/enes-alatas/spool/internal/runtime"
 	"github.com/enes-alatas/spool/internal/sched"
@@ -331,10 +332,33 @@ func (server *Server) MCPHandler() http.Handler {
 
 // --- helpers ---
 
+// jsonErr answers code with msg, the hub's sentence, filled in with args.
 func (server *Server) jsonErr(w http.ResponseWriter, code int, msg string, args ...any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf(msg, args...)})
+	json.NewEncoder(w).Encode(map[string]string{"error": roomSentence(msg, args...)})
+}
+
+// roomSentence fills in a sentence the room shows. The format is the hub's
+// words, so its backticks mark what the operator types (#871); a string
+// argument is a value it interpolates, a name or a host, so its backticks
+// are taken out (#959). A bare "%v" or "%s" is the exception: its one
+// argument is the whole sentence. An error passes whole too, since it may be
+// the hub's own remedy with its marks; outside text in an error is plained
+// where it comes in, as the platform and docker errors do.
+func roomSentence(format string, args ...any) string {
+	if format == "%v" || format == "%s" {
+		return fmt.Sprintf(format, args...)
+	}
+	plain := make([]any, len(args))
+	for i, arg := range args {
+		if value, ok := arg.(string); ok {
+			plain[i] = roomtext.Plain(value)
+		} else {
+			plain[i] = arg
+		}
+	}
+	return fmt.Sprintf(format, plain...)
 }
 
 // storeErr answers a write the store refused. store.ErrNotFound is 404: the
@@ -355,7 +379,7 @@ func (server *Server) storeErr(w http.ResponseWriter, err error, subject string)
 func (server *Server) jsonErrCode(w http.ResponseWriter, status int, reason, msg string, args ...any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf(msg, args...), "code": reason})
+	json.NewEncoder(w).Encode(map[string]string{"error": roomSentence(msg, args...), "code": reason})
 }
 
 // Reasons behind an otherwise ambiguous status, sent as "code".

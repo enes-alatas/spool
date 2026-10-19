@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/enes-alatas/spool/internal/roomtext"
 	"github.com/enes-alatas/spool/internal/route"
 )
 
@@ -42,14 +43,15 @@ func NewClientAt(base string) *Client {
 }
 
 // APIError is Slack answering a call with "ok": false. Code is Slack's own
-// error string (invalid_auth, not_allowed_token_type, …).
+// error string (invalid_auth, not_allowed_token_type, …), which its text
+// quotes without backticks: the hub did not write it (#959).
 type APIError struct {
 	Method string
 	Code   string
 }
 
 func (apiErr *APIError) Error() string {
-	return fmt.Sprintf("slack %s: %s", apiErr.Method, apiErr.Code)
+	return fmt.Sprintf("slack %s: %s", apiErr.Method, roomtext.Plain(apiErr.Code))
 }
 
 // transient are the codes with which Slack declines to answer rather than

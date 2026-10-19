@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/enes-alatas/spool/internal/roomtext"
 	"github.com/enes-alatas/spool/internal/store"
 )
 
@@ -358,7 +359,9 @@ func (server *Server) checkCloudAddress(ctx context.Context, address string) Clo
 	}
 	resp, err := cloudCheckClient.Do(req)
 	if err != nil {
-		result.Stage, result.Detail = cloudCheckFailure(err)
+		stage, detail := cloudCheckFailure(err)
+		// a TLS or DNS error quotes what the far end answered (#959)
+		result.Stage, result.Detail = stage, roomtext.Plain(detail)
 		return result
 	}
 	defer resp.Body.Close()

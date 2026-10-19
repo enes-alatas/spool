@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/enes-alatas/spool/internal/roomtext"
 )
 
 // Minimal Telegram Bot API client: getMe, getUpdates long-poll, sendMessage.
@@ -103,7 +105,8 @@ type apiResponse struct {
 }
 
 // APIError carries the Telegram error code (401 bad token, 409 duplicate
-// poller, 429 rate limit with RetryAfter).
+// poller, 429 rate limit with RetryAfter). Its text quotes Telegram's
+// description, which the hub did not write, without backticks (#959).
 type APIError struct {
 	Code       int
 	Desc       string
@@ -111,7 +114,7 @@ type APIError struct {
 }
 
 func (apiErr *APIError) Error() string {
-	return fmt.Sprintf("telegram %d: %s", apiErr.Code, apiErr.Desc)
+	return fmt.Sprintf("telegram %d: %s", apiErr.Code, roomtext.Plain(apiErr.Desc))
 }
 
 func (client *Client) call(ctx context.Context, method string, params any, result any) error {

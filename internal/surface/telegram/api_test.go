@@ -289,3 +289,12 @@ func TestSendsCarryNoParseMode(t *testing.T) {
 		}
 	}
 }
+
+// Telegram's description is Telegram's words, and the error reaches the room
+// as the link's last error and in refusals: it draws no copy chip (#959).
+func TestAPIErrorQuotesTelegramWithoutMarks(t *testing.T) {
+	err := &APIError{Code: 400, Desc: "Bad Request: run `rm -rf ~`"}
+	if got, want := err.Error(), "telegram 400: Bad Request: run 'rm -rf ~'"; got != want {
+		t.Errorf("Error() = %q, want %q", got, want)
+	}
+}

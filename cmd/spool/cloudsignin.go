@@ -15,6 +15,7 @@ import (
 
 	"github.com/enes-alatas/spool/internal/claude"
 	"github.com/enes-alatas/spool/internal/httpapi"
+	"github.com/enes-alatas/spool/internal/roomtext"
 	"github.com/enes-alatas/spool/internal/runtime"
 	"github.com/enes-alatas/spool/internal/store"
 )
@@ -418,7 +419,8 @@ func (output *tail) Write(p []byte) (int, error) {
 }
 
 // last is the last line written that says something, or a note that
-// nothing did.
+// nothing did. The line is the CLI's words and reaches the room in a
+// sign-in refusal, so it comes back without backticks (#959).
 func (output *tail) last() string {
 	output.mu.Lock()
 	defer output.mu.Unlock()
@@ -427,7 +429,7 @@ func (output *tail) last() string {
 		// the prompt the CLI repeats is not the reason
 		line := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(lines[i]), "Paste code here if prompted >"))
 		if line != "" {
-			return line
+			return roomtext.Plain(line)
 		}
 	}
 	return "the CLI said nothing"

@@ -56,3 +56,12 @@ func TestADownloadAnsweredWithASignInPageFails(t *testing.T) {
 		t.Errorf("downloaded %q", got)
 	}
 }
+
+// Slack's error string is Slack's words, and it reaches the room in
+// refusals and the link's status: it draws no copy chip (#959).
+func TestAPIErrorQuotesSlackWithoutMarks(t *testing.T) {
+	err := &APIError{Method: "auth.test", Code: "`invalid_auth`"}
+	if got, want := err.Error(), "slack auth.test: 'invalid_auth'"; got != want {
+		t.Errorf("Error() = %q, want %q", got, want)
+	}
+}
