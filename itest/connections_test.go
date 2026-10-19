@@ -333,3 +333,61 @@ func TestConnectionRecord(t *testing.T) {
 		t.Errorf("the deleted loop's record = %q, want %q", got, want)
 	}
 }
+
+// A member reads connections by name, kind and the loops that hold them,
+// and never their config: a credential put in a URL or an argument
+// rather than the secret reaches no one below admin. An admin reads it
+// whole, and so does the operator token (#924).
+func TestAMemberReadsConnectionsWithoutTheirConfig(t *testing.T) {
+	t.Parallel()
+	s := startServer(t, t.TempDir())
+	s.createLoop("aster", nil)
+	const inURL = "fixturekeyINurl0000"
+	s.mustJSON("POST", "/api/connections", map[string]any{
+		"name": "search", "kind": "mcp-server",
+		"config": map[string]any{"transport": "http", "url": "https://mcp.example.test/?key=" + inURL},
+	}, nil)
+	s.mustJSON("POST", "/api/connections", map[string]any{
+		"name": "tool", "kind": "mcp-server",
+		"config": map[string]any{"transport": "stdio", "command": "tool-mcp", "args": []string{"--token=" + inURL}},
+	}, nil)
+	s.mustJSON("PUT", "/api/loops/aster/connections/search", nil, nil)
+	member := s.signedInAs("mia", "member")
+	admin := s.signedInAs("ada", "admin")
+
+	read := func(session, path string) []byte {
+		t.Helper()
+		resp, body := s.asCookie("GET", path, session, nil)
+		if resp.StatusCode != 200 {
+			t.Fatalf("GET %s = %d %s", path, resp.StatusCode, body)
+		}
+		return body
+	}
+	for _, path := range []string{"/api/connections", "/api/connections/search", "/api/connections/tool",
+		"/api/connections/search/events", "/api/loops/aster/connection-events"} {
+		body := read(member, path)
+		if strings.Contains(string(body), inURL) || strings.Contains(string(body), `"config"`) ||
+			strings.Contains(string(body), "tool-mcp") || strings.Contains(string(body), "mcp.example.test") {
+			t.Errorf("a member's %s carries a connection's config: %s", path, body)
+		}
+	}
+	var list []map[string]any
+	if err := json.Unmarshal(read(member, "/api/connections"), &list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 2 || list[0]["name"] != "search" || list[0]["kind"] != "mcp-server" ||
+		!reflect.DeepEqual(list[0]["loops"], []any{"aster"}) || list[1]["name"] != "tool" {
+		t.Errorf("a member's list = %v, want search held by aster, and tool", list)
+	}
+
+	var byAdmin, byToken []connectionJSON
+	if err := json.Unmarshal(read(admin, "/api/connections"), &byAdmin); err != nil {
+		t.Fatal(err)
+	}
+	s.mustJSON("GET", "/api/connections", nil, &byToken)
+	for who, got := range map[string][]connectionJSON{"an admin": byAdmin, "the token": byToken} {
+		if len(got) != 2 || !strings.Contains(got[0].Config.URL, inURL) || got[1].Config.Command != "tool-mcp" {
+			t.Errorf("%s's list = %+v, want each connection's config", who, got)
+		}
+	}
+}

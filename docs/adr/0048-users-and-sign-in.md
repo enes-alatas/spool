@@ -1,6 +1,6 @@
 # ADR-0048: The hub has users, who sign in with a username and password
 
-Date: 2026-10-09 · Status: accepted (operator decisions of 2026-10-04, 2026-10-07 and 2026-10-09, recorded on #582) · Amended: 2026-10-09 (item 1: the roles are enforced, #677); 2026-10-10 (item 1: a member reads no pairing code, #689); 2026-10-10 (item 7: owners manage users on the API, #690); 2026-10-10 (item 1: the hub records who acted, #695); 2026-10-10 (item 1: a member reads no dm:<name>, #702); 2026-10-10 (item 1: a member reads their own private conversations, #703) · Supersedes: ADR-0030 decision 5 in part (the cookie is a session, not the token) · Relates to: ADR-0046
+Date: 2026-10-09 · Status: accepted (operator decisions of 2026-10-04, 2026-10-07 and 2026-10-09, recorded on #582) · Amended: 2026-10-09 (item 1: the roles are enforced, #677); 2026-10-10 (item 1: a member reads no pairing code, #689); 2026-10-10 (item 7: owners manage users on the API, #690); 2026-10-10 (item 1: the hub records who acted, #695); 2026-10-10 (item 1: a member reads no dm:<name>, #702); 2026-10-10 (item 1: a member reads their own private conversations, #703); 2026-10-19 (item 1: a member reads no connection config, #924) · Supersedes: ADR-0030 decision 5 in part (the cookie is a session, not the token) · Relates to: ADR-0046
 
 ## Context
 
@@ -102,6 +102,13 @@ gathered here. This ADR is the hub half of slice 1. The sign-in pages are
    `owner_dm`, never with an owner before them. Every other private
    message is kept from them as above, and a loop's events, turns and live
    agent stream stay for admins and owners only.
+
+   **Amendment (2026-10-19, #924):** a member reads connections by name,
+   kind and the loops that hold them, and not by config. A connection's
+   config is stored as given, its URL, command and arguments, so a
+   credential put there rather than in the secret would reach every
+   member. Enes decided this on 2026-10-17 (#917). Admins, owners and the
+   operator token still read every config.
 
 2. **Passwords are hashed with PBKDF2-SHA256 from the Go standard
    library.** That means 600,000 iterations and a random 16-byte salt per

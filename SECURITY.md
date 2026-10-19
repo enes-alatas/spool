@@ -143,17 +143,19 @@ doesn't, see
   A route nobody has classified is an admin's, so a new route is closed to
   members until someone decides otherwise.
 - **What a member does not read** (ADR-0048, ADR-0050): another person's
-  private conversations, a loop's events, turns and live agent stream, which
-  can carry any private message, and pairing codes. A member does read their
-  own private conversations: those of the people they are linked as, and
-  what a loop they own said with them on `owner_dm`. An open stream follows
-  a change of role, a removal or a link from its next item: a demoted admin
+  private conversations and the reactions and votes on them, a loop's
+  events, turns and live agent stream, which can carry any private message,
+  pairing codes, and a connection's config, since they read connections
+  by name, kind and the loops that hold them. A member does read their own
+  private conversations: those of the people they are linked as, and what
+  a loop they own said with them on `owner_dm`. An open stream follows a
+  change of role, a removal or a link from its next item: a demoted admin
   reads no more, and a removed user's stream ends, as does a stream whose
   session was signed out of, expired, or ended by a password change or a
   reset. A change made with `spool user`, which the running hub does not
   hear of, counts within a minute, as does signing out of a session traded
-  for the operator token. Asking whether a session is still live
-  does not count as using it, so an open stream keeps no idle session alive.
+  for the operator token. Asking whether a session is still live does not
+  count as using it, so an open stream keeps no idle session alive.
 - **Before anything else** is considered, the same middleware refuses an
   unrecognised `Host` on every `/api` path, the open ones included. That is
   the DNS-rebinding check. The cross-site `Origin` / `Sec-Fetch-Site` and
