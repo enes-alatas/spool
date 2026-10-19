@@ -366,6 +366,19 @@ checkout as its owner. Until a release ships binaries (#747), only those
 work. The installed backup and restore scripts are needed either way:
 [Installing the scripts](#installing-the-scripts).
 
+The build runs in the owner's login shell, which isn't interactive, so it
+reads `~/.profile` and not `~/.bashrc`. It loads a Node or Go that nvm,
+fnm, volta or asdf installed in its default place, and finds Go in
+`/usr/local/go/bin`. Before anything stops, even on `--dry-run` under
+`sudo`, it checks that `git`, `make`, `go`, `node`, `npm` and `docker` are
+there and that the owner can use docker without sudo. It names whatever is
+missing. A tool installed anywhere else needs its `PATH` set in
+`~/.profile`. Check what the build sees with:
+
+```bash
+sudo runuser -l "$USER" -c 'command -v go; command -v node; command -v npm'
+```
+
 The steps [by hand](#by-hand) are the fallback, and the reference for
 what the command does.
 
