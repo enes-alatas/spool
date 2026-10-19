@@ -125,11 +125,13 @@ Slack connects out over Socket Mode, so no port is opened for either
   owner's password (ADR-0048).
 
 **What a member doesn't read:** other people's private conversations
-and the reactions and votes on them (#922), a loop's events, turns and live agent stream, pairing codes (ADR-0048,
-ADR-0050), a file another user uploaded and hasn't sent, and can't send
-it either, and the file of a deleted message. An open stream follows a
-role change, a removal or a link from its next item; a change made with
-`spool user` counts within a minute.
+and the reactions and votes on them (#922), a loop's events, turns and
+live agent stream, pairing codes (ADR-0048, ADR-0050), a connection's
+config, since they read connections by name, kind and the loops that
+hold them (#924), a file another user uploaded and hasn't sent, and
+can't send it either, and the file of a deleted message. An open stream
+follows a role change, a removal or a link from its next item; a change
+made with `spool user` counts within a minute.
 
 **Doesn't hold:**
 - **No TLS.** Spool doesn't terminate it; beyond loopback, that is a
@@ -147,10 +149,6 @@ role change, a removal or a link from its next item; a change made with
 - **An owner can demote or remove another owner** without re-entering
   their password. Only granting admin or owner, and resetting a password,
   ask for it.
-- **A member reads each connection's config** as stored: its URL, command
-  and arguments, not passed through the redactor. Only the secret is kept
-  back, so a credential belongs there; one put in a URL or an argument
-  shows.
 - **A stream whose session ended** gets no more items. It stays open on
   pings until the next item would reach it, and the hub closes it then.
   On a quiet hub, that can be a long time.
@@ -606,7 +604,7 @@ above says what it is; this is why it stays.
   Accepted 2026-10-18 (#932): they run on Anthropic's side, not the
   hub's host, and are no wider than when a loop held the setup-token.
 
-Three more findings were decided as fixes, and their lines above go when
-the fixes land: demoting or removing an owner (#923) and members reading
-connection configs (#924). Reactions and votes on private messages
-(#922) are fixed, and their line is gone.
+Three more findings were decided as fixes. Reactions and votes on
+private messages (#922) and members reading connection configs (#924)
+are fixed, and their lines are gone. Demoting or removing an owner
+(#923) keeps its line until its fix lands.

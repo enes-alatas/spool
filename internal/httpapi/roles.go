@@ -172,6 +172,15 @@ func seesSyncErrors(who *caller) bool {
 	return who != nil && roleRank[roleOf(who)] >= roleRank[store.RoleAdmin]
 }
 
+// seesConnectionConfig reports whether who reads a connection's config:
+// an admin or an owner, who set it up. It is stored as given, URL,
+// command and arguments, so a credential put there rather than in the
+// secret would reach every member (#924). A member reads connections by
+// name, kind and the loops that hold them.
+func seesConnectionConfig(who *caller) bool {
+	return who != nil && roleRank[roleOf(who)] >= roleRank[store.RoleAdmin]
+}
+
 // seesCloudCheckDetail reports whether who reads how a check of the public
 // address failed, beyond the stage: an admin or an owner, who chose the
 // address. The detail says what answered there, or how nothing did, and

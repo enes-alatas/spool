@@ -32,18 +32,19 @@ const (
 
 // connectionView is a connection as the control room reads it: everything
 // but the secret, which it knows only to be there or not, and its loops by
-// name, sorted. OwnerLoop names the loop a private one belongs to, and is
-// absent for one the fleet shares.
+// name, sorted. Config is absent for a reader who doesn't see it
+// (seesConnectionConfig). OwnerLoop names the loop a private one belongs
+// to, and is absent for one the fleet shares.
 type connectionView struct {
-	Name      string                 `json:"name"`
-	Kind      string                 `json:"kind"`
-	Config    store.ConnectionConfig `json:"config"`
-	HasSecret bool                   `json:"has_secret"`
-	CreatedAt int64                  `json:"created_at"`
-	Loops     []string               `json:"loops"`
-	OwnerLoop string                 `json:"owner_loop,omitempty"`
-	RotatedAt int64                  `json:"rotated_at,omitempty"`
-	RevokedAt int64                  `json:"revoked_at,omitempty"`
+	Name      string                  `json:"name"`
+	Kind      string                  `json:"kind"`
+	Config    *store.ConnectionConfig `json:"config,omitempty"`
+	HasSecret bool                    `json:"has_secret"`
+	CreatedAt int64                   `json:"created_at"`
+	Loops     []string                `json:"loops"`
+	OwnerLoop string                  `json:"owner_loop,omitempty"`
+	RotatedAt int64                   `json:"rotated_at,omitempty"`
+	RevokedAt int64                   `json:"revoked_at,omitempty"`
 }
 
 func (server *Server) connectionViews(r *http.Request, connections ...*store.Connection) ([]connectionView, error) {
@@ -55,18 +56,22 @@ func (server *Server) connectionViews(r *http.Request, connections ...*store.Con
 	for _, loopRecord := range loops {
 		names[loopRecord.ID] = loopRecord.Name
 	}
+	seesConfig := seesConnectionConfig(callerOf(r))
 	views := make([]connectionView, 0, len(connections))
 	for _, connection := range connections {
 		view := connectionView{
 			Name:      connection.Name,
 			Kind:      connection.Kind,
-			Config:    connection.Config,
 			HasSecret: connection.Secret != "",
 			CreatedAt: connection.CreatedAt,
 			Loops:     []string{},
 			OwnerLoop: names[connection.OwnerLoopID],
 			RotatedAt: connection.RotatedAt,
 			RevokedAt: connection.RevokedAt,
+		}
+		if seesConfig {
+			config := connection.Config
+			view.Config = &config
 		}
 		for _, id := range connection.LoopIDs {
 			if name, ok := names[id]; ok {
