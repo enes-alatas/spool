@@ -866,3 +866,6 @@ Fleet upgraded: runtime v0.5.1-204-g4cfc997 (= #942, past 343a35a; main one comm
 
 ## 2026-10-19 11:25 UTC
 Iris idle again (#940/#941 done). No web item ready → told her idle until #871; reordered Terra: #944 → #871 (unblocks #870 part 2) → #877 → #855 → #652 → #887 → #766 → #830 → #630. Web work ahead: #926's web halves after its ADR, #887's web half, #870 part 2.
+
+## 2026-10-19 11:30 UTC
+Enes: trying to create his cloud loop ("been trying" — may be a bite; wait for his report, don't pre-empt); he will upgrade the fleet once more before cutting the release and get back to me. Candidate = the commit of that later upgrade.
