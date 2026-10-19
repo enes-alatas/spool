@@ -108,7 +108,7 @@ func (adapter *Adapter) ValidateCredential(ctx context.Context, credential surfa
 	}
 	if who.BotID == "" {
 		return surface.Identity{}, &surface.RejectedError{Part: surface.PartToken,
-			Err: errors.New("not a bot token: paste the Bot User OAuth Token (xoxb-…)")}
+			Err: errors.New("not a bot token: paste the `Bot User OAuth Token` (xoxb-…)")}
 	}
 	if _, err := adapter.client.OpenConnection(ctx, credential.AppToken); err != nil {
 		return surface.Identity{}, refusal(surface.PartAppToken, err)

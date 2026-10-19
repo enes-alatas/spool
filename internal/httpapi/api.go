@@ -725,7 +725,7 @@ func (server *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 	case store.RuntimeBare:
 		if !server.BareAllowed {
 			server.jsonErrCode(w, 400, codeBareNotEnabled,
-				"a bare loop runs uncontained on this machine; start spool with --allow-bare (or --runtime bare) to allow one")
+				"a bare loop runs uncontained on this machine; start spool with `--allow-bare` (or `--runtime bare`) to allow one")
 			return
 		}
 		if req.Image != "" || req.MemMB != 0 || req.CPUs != 0 {

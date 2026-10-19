@@ -524,6 +524,10 @@ agents — Claude sessions today, Spool's own loops from L2.*
 - A write whose subject is gone answers 404, not 500: the store returns `ErrNotFound`
   and the handler maps it with `storeErr`. 500 means the server broke.
 - Secrets (bot tokens, connection creds) never appear in API responses (`json:"-"`).
+- A sentence the hub writes for the room (an error, a status reason) wraps each
+  literal the operator types or copies, such as a command, a flag, a scope or a
+  settings label, in single backticks, and the room renders it as a copy chip
+  (#870, #871). A backtick means nothing else there: no nesting, no escaping.
 
 ## Prompts
 

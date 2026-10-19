@@ -219,7 +219,7 @@ func (server *Server) handleSwitchCloudListener(w http.ResponseWriter, r *http.R
 		}
 	case !req.On && fromFlag:
 		server.jsonErrCode(w, 409, codeCloudListener,
-			"the cloud listener was opened with --cloud-listen; restart the hub without the flag to close it")
+			"the cloud listener was opened with `--cloud-listen`; restart the hub without the flag to close it")
 		return
 	case !req.On && addr != "":
 		if err := server.CloudListener.Close(); err != nil {

@@ -50,7 +50,7 @@ func TestCreateBareLoopNeedsTheHubStartedWithBare(t *testing.T) {
 			if errBody.Code != codeBareNotEnabled {
 				t.Errorf("code = %q, want %q", errBody.Code, codeBareNotEnabled)
 			}
-			if !strings.Contains(errBody.Error, "--runtime bare") {
+			if !strings.Contains(errBody.Error, "`--runtime bare`") {
 				t.Errorf("the refusal does not say how to allow one: %q", errBody.Error)
 			}
 		})

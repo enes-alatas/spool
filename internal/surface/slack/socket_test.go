@@ -133,10 +133,10 @@ func TestDisabledLinkComesBackWhenReenabled(t *testing.T) {
 		pingInterval: time.Minute, pingTimeout: time.Minute})
 
 	waitFor(t, "the link reports Socket Mode disabled", func() bool {
-		return strings.Contains(lastError(running), "disabled Socket Mode")
+		return strings.Contains(lastError(running), "disabled `Socket Mode`")
 	})
 	waitFor(t, "a disabled link checks again", func() bool { return peer.opened() >= 3 })
-	if connected(running) || !strings.Contains(lastError(running), "disabled Socket Mode") {
+	if connected(running) || !strings.Contains(lastError(running), "disabled `Socket Mode`") {
 		t.Fatalf("while disabled: connected %v, last_error %q", connected(running), lastError(running))
 	}
 
@@ -157,4 +157,30 @@ func TestUnansweredPingDropsTheLink(t *testing.T) {
 
 	waitFor(t, "the link connects", func() bool { return connected(running) })
 	waitFor(t, "a link whose pings go unanswered dials again", func() bool { return peer.opened() >= 2 })
+}
+
+// The status sentences name what the operator has to find or add in the
+// app's settings, and the room renders each backticked span as a copy chip
+// (#870, #871): every literal sits in a pair of its own.
+func TestStatusSentencesMarkWhatTheOperatorTypes(t *testing.T) {
+	cases := []struct {
+		name     string
+		sentence string
+		literals []string
+	}{
+		{"link disabled", linkDisabled, []string{"Socket Mode"}},
+		{"no file access", noFileAccess, []string{"files:read", "files:write", "OAuth & Permissions"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if strings.Count(tc.sentence, "`")%2 != 0 {
+				t.Errorf("an unpaired backtick: %q", tc.sentence)
+			}
+			for _, literal := range tc.literals {
+				if !strings.Contains(tc.sentence, "`"+literal+"`") {
+					t.Errorf("%s is not marked: %q", literal, tc.sentence)
+				}
+			}
+		})
+	}
 }

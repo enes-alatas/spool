@@ -832,7 +832,7 @@ func TestSlackDisabledLinkWaitsToBeReenabled(t *testing.T) {
 	socket := slack.push(t, slackAppToken, map[string]any{"type": "disconnect", "reason": "link_disabled"})
 	<-socket.closed
 	status := srv.waitSlackLink("terra", func(link slackStatus) bool { return !link.Bridge.Connected })
-	for _, want := range []string{"disabled Socket Mode", "Turn it back on"} {
+	for _, want := range []string{"disabled `Socket Mode`", "Turn it back on"} {
 		if !strings.Contains(status.Bridge.LastError, want) {
 			t.Errorf("last_error = %q, want it to carry %q", status.Bridge.LastError, want)
 		}

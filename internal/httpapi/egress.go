@@ -119,7 +119,7 @@ func (server *Server) handleAddEgressHost(w http.ResponseWriter, r *http.Request
 	}
 	if egress.HasPort(entry) {
 		server.jsonErrCode(w, 400, codeEgressHostInvalid,
-			"%q: a host without a port; ports are set with --egress-allow when the hub starts", req.Host)
+			"%q: a host without a port; ports are set with `--egress-allow` when the hub starts", req.Host)
 		return
 	}
 	server.changeEgressHosts(w, r, func(hosts []string) []string {
