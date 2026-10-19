@@ -4,9 +4,11 @@ import {
   accountState,
   addressState,
   checkRows,
+  FUNNEL_BESIDE_PROXY_DOCS,
   firstOpenStep,
   isQuickTunnel,
   isQuickTunnelHost,
+  isTailscaleAddress,
   listenerPort,
   loginState,
   signInCodeShaped,
@@ -38,6 +40,19 @@ describe('checkRows', () => {
       ['answer', 'todo'],
     ])
     expect(rows[3].hint).toMatch(/certificate/)
+  })
+
+  it('names a local :443 proxy when a ts.net certificate fails, and links how to fix it', () => {
+    const check = { state: 'failed', stage: 'tls', checked_at: 0 } as const
+    const funnel = checkRows(check, 'https://hub.tail1234.ts.net').find((row) => row.tone === 'bad')
+    expect(funnel?.hint).toMatch(/Caddy/)
+    expect(funnel?.docs).toBe(FUNNEL_BESIDE_PROXY_DOCS)
+    const other = checkRows(check, 'https://spool.example.com').find((row) => row.tone === 'bad')
+    expect(other?.hint).not.toMatch(/Caddy/)
+    expect(other?.docs).toBeUndefined()
+    // a name that only contains ts.net is not Tailscale's
+    expect(isTailscaleAddress('https://ts.net.example.com')).toBe(false)
+    expect(isTailscaleAddress('not a url')).toBe(false)
   })
 
   it('puts a timeout and a refused connection on the connection', () => {

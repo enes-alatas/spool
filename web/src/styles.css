@@ -2963,7 +2963,9 @@ button.panel-link {
 .cloud-code {
   margin-top: 6px;
 }
-.cloud-small a {
+.cloud-small a,
+.cloud-recipe-aside a,
+.cloud-check-hint a {
   color: var(--text);
   text-decoration: underline;
 }

@@ -24,6 +24,8 @@ export interface CheckRow {
   failed: string
   // Where the check stopped: what to try. Only on the failing row.
   hint?: string
+  // A page that says more about the hint, when there is one.
+  docs?: string
 }
 
 const ROWS: { key: string; text: string; failed: string; stages: CloudCheckStage[] }[] = [
@@ -61,10 +63,18 @@ const HINT: Record<CloudCheckStage, string> = {
     'Something answered, but not this hub. Point the tunnel or proxy at the cloud listener’s port.',
 }
 
+// A Tailscale Funnel's certificate fails the check only from this machine
+// when a proxy here holds :443 (#963): the machine reaches its own ts.net
+// name on its tailnet address, where the proxy answers instead.
+const TAILSCALE_TLS_HINT =
+  'The certificate is not valid for this name from this machine. If a proxy such as Caddy holds :443 here, it answers this machine’s requests for its ts.net name: give the proxy that name with Tailscale’s certificate.'
+export const FUNNEL_BESIDE_PROXY_DOCS =
+  'https://github.com/enes-alatas/spool/blob/main/docs/OPERATIONS.md#a-tailscale-funnel-beside-caddy'
+
 // The check as rows: every stage before the one it stopped at passed, that
 // one failed, and the rest were never reached. `refused` stops before any
 // stage, so it is a row of its own.
-export function checkRows(check: CloudCheck | undefined): CheckRow[] {
+export function checkRows(check: CloudCheck | undefined, address = ''): CheckRow[] {
   if (!check) return []
   if (check.state === 'ok') return ROWS.map(({ key, text, failed }) => ({ key, text, failed, tone: 'ok' }))
   const stage = check.stage
@@ -95,6 +105,9 @@ export function checkRows(check: CloudCheck | undefined): CheckRow[] {
     failed: row.failed,
     tone: i < at ? 'ok' : i === at ? 'bad' : 'todo',
     hint: i === at && stage ? HINT[stage] : undefined,
+    ...(i === at && stage === 'tls' && isTailscaleAddress(address)
+      ? { hint: TAILSCALE_TLS_HINT, docs: FUNNEL_BESIDE_PROXY_DOCS }
+      : {}),
   }))
 }
 
@@ -178,6 +191,16 @@ export function isQuickTunnel(address: string): boolean {
 
 export function isQuickTunnelHost(host: string): boolean {
   return host === 'trycloudflare.com' || host.endsWith('.trycloudflare.com')
+}
+
+// Whether an address is a Tailscale Funnel's, by its ts.net host.
+export function isTailscaleAddress(address: string): boolean {
+  try {
+    const host = new URL(address.trim()).hostname
+    return host.endsWith('.ts.net')
+  } catch {
+    return false
+  }
 }
 
 // Whether a pasted code, its edges trimmed, has the shape the hub takes: one
