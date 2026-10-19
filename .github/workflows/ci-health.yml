@@ -66,7 +66,7 @@ jobs:
       (github.event.workflow_run.name != 'release' ||
       github.event.workflow_run.event == 'push' ||
       github.event.workflow_run.head_branch == 'main')
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: post an unsuccessful run to the pinned CI-health issue
         env:
