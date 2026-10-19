@@ -58,7 +58,7 @@ export function RotateForm({
   const [value, setValue] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const what = connection.config.env ?? connection.name
+  const what = connection.config?.env ?? connection.name
   const holders = connection.loops ?? []
 
   const rotate = async () => {

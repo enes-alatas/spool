@@ -101,10 +101,13 @@ function ConnectionRow({ c, onChanged }: { c: Connection; onChanged: () => void 
     <div className="connection-row">
       <span className="connection-name">{c.name}</span>
       <span className="connection-kind">{connectionKindLabel(c)}</span>
-      {/* Clamped to one line; the whole of it lives in the hover. */}
-      <span className="connection-detail" title={detail}>
-        {detail}
-      </span>
+      {/* Clamped to one line; the whole of it lives in the hover. A
+          member's read has none (#924). */}
+      {detail !== null && (
+        <span className="connection-detail" title={detail}>
+          {detail}
+        </span>
+      )}
       {/* Each loop a link to its page, where it is detached. */}
       <span className="connection-loops">
         {revoked ? (
@@ -217,6 +220,7 @@ export default function Connections() {
         connection private to that loop, until you share it with the fleet. An attached env variable applies
         from the loop's next turn, an MCP server from its next wake. A connection's secret is redacted from
         everything the hub records.
+        {!may('manage') && ' Only an admin sees what each connection points at.'}
       </p>
       {!data ? (
         <div className="form-error" role="alert">

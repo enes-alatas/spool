@@ -93,8 +93,9 @@ export function connectionSubmittable(draft: ConnectionDraft): boolean {
 // does not know reads as its raw words rather than as a shape it is not.
 export function connectionShape(c: Connection): ConnectionShape | null {
   if (c.kind === 'env-var') return 'env'
-  if (c.kind === 'mcp-server' && (c.config.transport === 'http' || c.config.transport === 'stdio')) {
-    return c.config.transport
+  const transport = c.config?.transport
+  if (c.kind === 'mcp-server' && (transport === 'http' || transport === 'stdio')) {
+    return transport
   }
   return null
 }
@@ -107,7 +108,10 @@ export function kindLabel(kind: string): string {
   return kind
 }
 
+// A member's read has no config (#924), so an MCP server's transport isn't
+// known and it reads as its kind alone.
 export function connectionKindLabel(c: Connection): string {
+  if (!c.config) return kindLabel(c.kind)
   const shape = connectionShape(c)
   const known = CONNECTION_SHAPES.find((s) => s.value === shape)
   return known ? known.label : [c.kind, c.config.transport].filter(Boolean).join(' · ')
@@ -115,18 +119,18 @@ export function connectionKindLabel(c: Connection): string {
 
 // What the connection points at, in one line: the env var, the URL, or the
 // command line. An argument with a space in it is quoted, so the line says
-// where one argument ends.
-export function connectionDetail(c: Connection): string {
+// where one argument ends. Null for a reader the hub gives no config to
+// (#924), who is shown no line rather than an empty one.
+export function connectionDetail(c: Connection): string | null {
+  const { config } = c
+  if (!config) return null
   switch (connectionShape(c)) {
     case 'env':
-      return c.config.env ?? ''
+      return config.env ?? ''
     case 'http':
-      return c.config.url ?? ''
+      return config.url ?? ''
     default:
-      return [
-        c.config.command ?? '',
-        ...(c.config.args ?? []).map((a) => (/\s/.test(a) ? JSON.stringify(a) : a)),
-      ]
+      return [config.command ?? '', ...(config.args ?? []).map((a) => (/\s/.test(a) ? JSON.stringify(a) : a))]
         .filter(Boolean)
         .join(' ')
   }

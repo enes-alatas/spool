@@ -841,7 +841,10 @@ export interface ConnectionConfig {
 export interface Connection {
   name: string
   kind: ConnectionKind
-  config: ConnectionConfig
+  // What it points at, as stored. Absent from a member's read (#924): a
+  // credential put in a URL or an argument would otherwise reach every
+  // member, so only an admin or an owner reads it.
+  config?: ConnectionConfig
   has_secret: boolean
   created_at: number
   // The loops it is attached to, by name, sorted. A connection with any is
