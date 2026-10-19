@@ -896,3 +896,6 @@ Terra split #959 (chore: interpolated values drop their backticks; sub-issue of 
 
 ## 2026-10-19 15:05 UTC
 Elliot: #962 (pin jobs to ubuntu-24.04, closes #961) with Quinn; #960 waiting on Quinn's recheck; filed #963 (Tailscale Funnel + Caddy on :443 breaks the self-check; docs + UI hint). Homed #961 → CI reliability, #963 → Cloud runtime under #860. #958 (Iris, #870 part 2) merged → Iris: #963 then #955 (after #956).
+
+## 2026-10-19 15:10 UTC
+Iris: #956 (#952) merged; #955 built, PR after Enes sees the shots (by 17:05); then #963's UI half, linking Elliot's OPERATIONS anchor. No reply.
