@@ -872,3 +872,6 @@ Enes: trying to create his cloud loop ("been trying" — may be a bite; wait for
 
 ## 2026-10-19 11:50 UTC
 Elliot filed #952 (Claude login step without a host claude CLI; systemd hub misses ~/.local/bin; ADR-0056 amendment) — Enes's fresh-setup bite, Enes asked for it. Homed: Cloud runtime, parent #860. #944 merged (#923 done). Terra: #951 (#871) in review → #952 next → #877 → #855 → #652 → #887. #950 (#947) merged; Elliot on #948.
+
+## 2026-10-19 11:55 UTC
+Elliot: on systemd the hub's own `spool` user can't read the operator's home, so the host lookup doesn't fix Enes's case; the in-image sign-in ships first. Agreed in the group; #952 order corrected.
