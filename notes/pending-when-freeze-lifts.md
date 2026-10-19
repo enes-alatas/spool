@@ -851,3 +851,6 @@ Sweep: #928 grew by Enes's DM decisions with Terra: no setup-token paste fallbac
 
 ## 2026-10-18 22:40 UTC
 Terra: #931 (one Claude login via the Claude proxy, ADR-0058) merged 19:35, #934 (login supersedes setup-token, Sign out) merged 22:10; #933 (accepted risk, closes #932) merged. #928 still open (asked Terra whether a part remains). Terra next: #935 (hub CLI runs send no nonessential traffic; homed Cloud runtime, parent #860) → #922 → #924 → #923. v0.6.0 candidate waits for #928 closed + #929 (Iris).
+
+## 2026-10-19 02:40 UTC
+Night sweep: #938 merged (#935 done). Open PRs: #936 (Iris, #929 one Claude login web half), #939 (Terra, #922 fix), #453. #937 (itest flake) → CI reliability. #928 stays open: hub work finished, one part remains (see below).
