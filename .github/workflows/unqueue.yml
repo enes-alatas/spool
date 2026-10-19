@@ -22,7 +22,7 @@ jobs:
   unqueue:
     # A fork's PR is never queued, and its token could not write anyway.
     if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       # `contents: write` is what GitHub asks of a token that turns
       # auto-merge off; the job checks out main's script and runs none of
