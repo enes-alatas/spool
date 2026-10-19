@@ -5,6 +5,7 @@ import {
   accountState,
   addressState,
   checkRows,
+  FUNNEL_BESIDE_PROXY_DOCS,
   firstOpenStep,
   isQuickTunnel,
   isQuickTunnelHost,
@@ -173,7 +174,7 @@ function AccountLine({ view, onOpen }: { view: CloudSettings; onOpen: () => void
 }
 
 function CheckRows({ view }: { view: CloudSettings }) {
-  const rows = checkRows(view.check)
+  const rows = checkRows(view.check, view.address)
   const failing = rows.find((row) => row.tone === 'bad')
   return (
     <>
@@ -182,7 +183,19 @@ function CheckRows({ view }: { view: CloudSettings }) {
           <CheckLine key={row.key} row={row} />
         ))}
       </ul>
-      {failing?.hint && <div className="cloud-check-hint">{failing.hint}</div>}
+      {failing?.hint && (
+        <div className="cloud-check-hint">
+          {failing.hint}
+          {failing.docs && (
+            <>
+              {' '}
+              <a href={failing.docs} target="_blank" rel="noreferrer">
+                How, with Caddy
+              </a>
+            </>
+          )}
+        </div>
+      )}
       {view.check?.detail && <div className="cloud-check-detail">{view.check.detail}</div>}
     </>
   )
@@ -597,6 +610,14 @@ function Recipe({ tunnel, port, host }: { tunnel: Tunnel; port: string; host: st
         </li>
         <li>
           Enter the address it prints, such as <code>https://hub.tail1234.ts.net</code>, below.
+        </li>
+        <li className="cloud-recipe-aside">
+          A proxy such as Caddy already holds :443 on this machine? The funnel works, but the hub's check from
+          here reaches the proxy instead.{' '}
+          <a href={FUNNEL_BESIDE_PROXY_DOCS} target="_blank" rel="noreferrer">
+            Give the proxy the name too
+          </a>
+          .
         </li>
       </ol>
     )
