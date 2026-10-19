@@ -4,6 +4,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { api, type CloudSettings, type LoopView } from './api'
+import { unmarked } from './marked'
 
 type CloudLoop = Pick<LoopView, 'workstation_up' | 'down_reason' | 'workstation_detail' | 'problems'>
 
@@ -46,7 +47,10 @@ export function cloudSessionCondition(loop: CloudLoop, hold: string): { status: 
   if (loop.workstation_up) return { status: 'ready', alert: false }
   // the cloud environment is made at the loop's first wake
   if (loop.down_reason === 'not_provisioned') return { status: 'no session yet', alert: false }
-  return { status: loop.workstation_detail ? `down: ${loop.workstation_detail}` : 'down', alert: true }
+  return {
+    status: loop.workstation_detail ? `down: ${unmarked(loop.workstation_detail)}` : 'down',
+    alert: true,
+  }
 }
 
 // GitHub's owner and repo name rules over HTTPS, as the hub reads

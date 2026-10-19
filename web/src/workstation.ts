@@ -1,4 +1,5 @@
 import type { LoopView } from './api'
+import { unmarked } from './marked'
 
 type Station = Pick<LoopView, 'workstation_up' | 'down_reason' | 'workstation_detail' | 'runtime'>
 
@@ -65,8 +66,15 @@ export function hubUnreachable(detail: string | undefined): string {
 }
 
 // The fleet row's note: said in the row rather than in hover text, since a
-// warning nobody can see on a touch screen is not a warning.
+// warning nobody can see on a touch screen is not a warning. The hub's
+// detail may mark literals (#871), which a row can't draw as chips, so the
+// marks are dropped.
 export function workstationNote(loop: Station): { text: string; bad: boolean } | undefined {
+  const note = rowNote(loop)
+  return note && { ...note, text: unmarked(note.text) }
+}
+
+function rowNote(loop: Station): { text: string; bad: boolean } | undefined {
   if (loop.workstation_up) return undefined
   // A cloud loop has a session, not a workstation, and one its first wake
   // hasn't made yet is nothing to remark on (ADR-0056).
@@ -93,8 +101,13 @@ export function workstationNote(loop: Station): { text: string; bad: boolean } |
 // names no runtime, so an unauthenticated one without a detail says only
 // what is wrong, not where to fix it. One whose claude cannot reach the hub
 // is not called unreachable: the machine is up, and it is the hub it cannot
-// reach.
+// reach. The event is a plain line, so a marked detail's marks are
+// dropped, as in the fleet row.
 export function workstationDownEvent(reason: string | undefined, detail: string | undefined): string {
+  return unmarked(downEvent(reason, detail))
+}
+
+function downEvent(reason: string | undefined, detail: string | undefined): string {
   if (reason === 'unauthenticated') {
     return `workstation down: ${detail || 'no usable Claude login to run claude under'}`
   }

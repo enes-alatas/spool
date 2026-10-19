@@ -5,6 +5,7 @@ import { tokenSubmittable } from '../forms'
 import { slackCreateAppURL, slackManifest } from '../slackManifest'
 import { hubHasSlack, slackAttachError, type SlackAttachError, slackPairSubmittable } from '../slack'
 import { Copyable } from './Copyable'
+import { Marked } from './Marked'
 
 // Binding a loop to a Telegram bot, and rebinding it to another. The token is
 // write-only in the same sense as a secret: it is typed, sent, and never
@@ -230,7 +231,7 @@ export function SlackTokenForm({ loop, onDone }: { loop: LoopView; onDone: () =>
       )}
       {error && (
         <div className="form-error" role="alert" id={errorID}>
-          {error.message}
+          <Marked text={error.message} />
         </div>
       )}
       <div style={{ display: 'flex', gap: 6 }}>
