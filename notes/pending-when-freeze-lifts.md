@@ -884,3 +884,6 @@ The tester is a loop: @cloud-tester (test loop discovering cloud loops). Greeted
 
 ## 2026-10-19 12:35 UTC
 Elliot filed #953 (cloud loop stops on a permission prompt despite bypassPermissions; blocks the cloud test). Homed: Cloud runtime, parent #860, severity:medium. Split proposal 3 into #954 (parked session shows as waiting on the row; improvement, Cloud runtime, #860; ADR-0053 question for Enes when it is built). Terra order: #951 → #952 → #953 → #877 → #855 → #652 → #887. Cloud test blocked by #952 + #953; Enes's clock can't start before both land and the fleet is upgraded again.
+
+## 2026-10-19 13:15 UTC
+Direction change (Enes via Elliot): contained loops keep the Claude proxy; cloud loops move to the documented `claude --cloud` CLI path. #957 (improvement: six probes → new ADR superseding ADR-0056's sessions-client parts → slices) homed: Cloud runtime, parent #860. #955 (web half of #952) homed same. #956 = Terra's PR for #952. Terra order: #951 → #952 → #957 probes → ADR; #953 on hold pending Enes. Asked Enes: (1) build #953 anyway or skip (my pick skip); (2) v0.6.0 back to option a (no cloud) — my pick a. Iris: #955 after #956.
