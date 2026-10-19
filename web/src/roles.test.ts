@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { grants, may } from './roles'
+import { grants, lowersAnOwner, may } from './roles'
 
 describe('may', () => {
   it('lets every role talk to loops', () => {
@@ -47,5 +47,20 @@ describe('grants', () => {
     expect(grants('owner', 'admin')).toBe(false)
     expect(grants('owner', 'member')).toBe(false)
     expect(grants('admin', 'member')).toBe(false)
+  })
+})
+
+describe('lowersAnOwner', () => {
+  it('is lowering or removing an owner', () => {
+    expect(lowersAnOwner('owner', 'admin')).toBe(true)
+    expect(lowersAnOwner('owner', 'member')).toBe(true)
+    expect(lowersAnOwner('owner')).toBe(true)
+  })
+
+  it('is not keeping an owner, or lowering or removing anyone else', () => {
+    expect(lowersAnOwner('owner', 'owner')).toBe(false)
+    expect(lowersAnOwner('admin', 'member')).toBe(false)
+    expect(lowersAnOwner('admin')).toBe(false)
+    expect(lowersAnOwner('member')).toBe(false)
   })
 })
