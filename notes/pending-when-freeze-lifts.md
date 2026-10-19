@@ -854,3 +854,6 @@ Terra: #931 (one Claude login via the Claude proxy, ADR-0058) merged 19:35, #934
 
 ## 2026-10-19 02:40 UTC
 Night sweep: #938 merged (#935 done). Open PRs: #936 (Iris, #929 one Claude login web half), #939 (Terra, #922 fix), #453. #937 (itest flake) → CI reliability. #928 stays open: hub work finished, one part remains (see below).
+
+## 2026-10-19 06:25 UTC
+#936 merged (closed #929); closed #928 as landed (#931, #934, #936). v0.6.0 candidate = main tip 343a35a → DM'd Enes to upgrade (first start asks for the claude.ai sign-in), then create his cloud loop; two-day clock from there. Iris idle → filed #940 (web half of #924) and #941 (web half of #923), security/low, L6, parent #777; pinged her: #940 then #941, agree shape with Terra on #924. Terra: #939 (#922) in review → #924 → #923 → #877 → #855 → #652 → #887 → #766 → #871 → #830 → #630.
