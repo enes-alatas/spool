@@ -908,3 +908,6 @@ Enes wants Settings → Egress improved, UI and UX. Asked him what bothers him a
 
 ## 2026-10-19 21:00 UTC
 Sweep: #967 (#964) and #969 (#959) merged. #970 (itest flake, cloud sign-in) → CI reliability. Terra on #957 probes (run E: Stop hook as read-back, needs Enes on the hub machine). Open PRs: #453 only. Enes's egress scope still due.
+
+## 2026-10-19 22:45 UTC
+Elliot: #899 docs half landed (bf907b9); Go half (engine-version boot warning) unowned → queued on the issue for Terra after #957 probes + ADR, beside #877 and #901, before #855. Elliot reviews. No group ping (Terra mid-probes). Terra order: #957 → #877 → #899 → #901 → #855 → #652 → #887 → #766 → #830 → #630.
