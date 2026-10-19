@@ -12,6 +12,7 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/enes-alatas/spool/internal/roomtext"
 	"github.com/enes-alatas/spool/internal/route"
 )
 
@@ -226,7 +227,8 @@ func (adapter *Adapter) run(ctx context.Context, link *link) {
 			// that it is still disabled is
 			backoff = timing.backoffMax
 		default:
-			link.down(err.Error())
+			// a platform's or the network's words, not the hub's (#959)
+			link.down(roomtext.Plain(err.Error()))
 			adapter.log.Warn("slack: socket mode connection lost", "loop", link.loopID, "err", err)
 			if reachedHello {
 				backoff = timing.backoffMin

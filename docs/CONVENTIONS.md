@@ -528,6 +528,12 @@ agents — Claude sessions today, Spool's own loops from L2.*
   literal the operator types or copies, such as a command, a flag, a scope or a
   settings label, in single backticks, and the room renders it as a copy chip
   (#870, #871). A backtick means nothing else there: no nesting, no escaping.
+  A value the hub interpolates into such a sentence (a name, a host, a
+  platform's error) goes through `roomtext.Plain`, which takes its backticks
+  out, so only the hub's own words make chips. `jsonErr` does this for its
+  string arguments. A platform's or a tool's text is plained where it comes
+  in, in its error type, so an error passes whole and keeps the hub's own
+  remedy marks; a sentence built elsewhere plains where it fills one in (#959).
 
 ## Prompts
 

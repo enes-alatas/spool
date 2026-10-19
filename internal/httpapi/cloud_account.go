@@ -11,6 +11,7 @@ import (
 	"unicode"
 
 	"github.com/enes-alatas/spool/internal/loop"
+	"github.com/enes-alatas/spool/internal/roomtext"
 	"github.com/enes-alatas/spool/internal/store"
 )
 
@@ -254,7 +255,9 @@ func (server *Server) CheckCloudAccount(ctx context.Context) {
 	case server.CloudAccounts == nil:
 		result.Stage, result.Detail = CloudAccountStageOther, "this hub has no cloud runtime to check the account with"
 	default:
-		if result.Stage, result.Detail = server.CloudAccounts.CheckAccount(ctx); result.Stage == "" {
+		stage, detail := server.CloudAccounts.CheckAccount(ctx)
+		// the detail quotes Anthropic's answer, not the hub's words (#959)
+		if result.Stage, result.Detail = stage, roomtext.Plain(detail); result.Stage == "" {
 			result.State = CloudCheckOK
 		} else {
 			server.Log.Warn("cloud account check failed", "stage", result.Stage, "detail", result.Detail)

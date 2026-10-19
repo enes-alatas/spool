@@ -147,3 +147,15 @@ func TestASignInPrefersTheHostCLI(t *testing.T) {
 		t.Errorf("a hub with its own claude ran the image's: %v", image.runs)
 	}
 }
+
+// The CLI's last line is its words, and a sign-in refusal carries it to the
+// room: it draws no copy chip (#959).
+func TestTailLastQuotesTheCLIWithoutMarks(t *testing.T) {
+	var output tail
+	if _, err := output.Write([]byte("Login failed: run `claude doctor`\n")); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := output.last(), "Login failed: run 'claude doctor'"; got != want {
+		t.Errorf("last() = %q, want %q", got, want)
+	}
+}

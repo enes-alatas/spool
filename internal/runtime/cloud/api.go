@@ -25,6 +25,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/enes-alatas/spool/internal/roomtext"
 )
 
 // DefaultBaseURL is Anthropic's API, where the sessions API lives.
@@ -115,11 +117,13 @@ func (err *APIError) LastID() string {
 	return match[len(match)-1][1]
 }
 
+// Error carries no backticks: it quotes Anthropic's answer, and a decode
+// error's, and it reaches the room as a loop's workstation detail (#959).
 func (err *APIError) Error() string {
 	if err.Status != 0 {
-		return fmt.Sprintf("cloud API %s %s answered %d: %s", err.Method, err.Endpoint, err.Status, err.Body)
+		return roomtext.Plain(fmt.Sprintf("cloud API %s %s answered %d: %s", err.Method, err.Endpoint, err.Status, err.Body))
 	}
-	return fmt.Sprintf("cloud API %s %s: %s: %s", err.Method, err.Endpoint, err.Reason, err.Body)
+	return roomtext.Plain(fmt.Sprintf("cloud API %s %s: %s: %s", err.Method, err.Endpoint, err.Reason, err.Body))
 }
 
 // Transient reports whether the API refused for now rather than for good:

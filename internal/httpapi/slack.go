@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/enes-alatas/spool/internal/bus"
+	"github.com/enes-alatas/spool/internal/roomtext"
 	"github.com/enes-alatas/spool/internal/store"
 	"github.com/enes-alatas/spool/internal/surface"
 )
@@ -100,11 +101,13 @@ func (server *Server) slackIdentity(ctx context.Context, loopID, appToken, botTo
 	return identity, nil
 }
 
+// describeTeam names a Slack workspace in a refusal. The name and the id are
+// Slack's, set by whoever runs the workspace, so they go in plain (#959).
 func describeTeam(name, id string) string {
 	if name == "" {
-		return id
+		return roomtext.Plain(id)
 	}
-	return name + " (" + id + ")"
+	return roomtext.Plain(name) + " (" + roomtext.Plain(id) + ")"
 }
 
 // handleSlackStatus reports a loop's Slack app and what the surface is doing

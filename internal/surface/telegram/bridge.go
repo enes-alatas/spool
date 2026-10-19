@@ -20,6 +20,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/enes-alatas/spool/internal/bus"
+	"github.com/enes-alatas/spool/internal/roomtext"
 	"github.com/enes-alatas/spool/internal/route"
 	"github.com/enes-alatas/spool/internal/store"
 	"github.com/enes-alatas/spool/internal/surface"
@@ -319,7 +320,8 @@ func (br *Bridge) pollLoop(ctx context.Context, bot *poller) {
 				return
 			}
 			bot.mu.Lock()
-			bot.lastError = err.Error()
+			// a platform's or the network's words, not the hub's (#959)
+			bot.lastError = roomtext.Plain(err.Error())
 			bot.mu.Unlock()
 			var apiErr *APIError
 			if errors.As(err, &apiErr) {

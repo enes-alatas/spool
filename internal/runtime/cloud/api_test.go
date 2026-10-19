@@ -290,3 +290,12 @@ func TestNoAccountCallsNothing(t *testing.T) {
 		t.Fatalf("%d requests went out with no account", len(*requests))
 	}
 }
+
+// The answer's body is Anthropic's text, and the error reaches the room as a
+// loop's workstation detail: it draws no copy chip (#959).
+func TestAPIErrorQuotesTheAnswerWithoutMarks(t *testing.T) {
+	err := &APIError{Method: "GET", Endpoint: "/v1/sessions/x", Status: 400, Body: "run `rm -rf ~`"}
+	if got, want := err.Error(), "cloud API GET /v1/sessions/x answered 400: run 'rm -rf ~'"; got != want {
+		t.Errorf("Error() = %q, want %q", got, want)
+	}
+}
