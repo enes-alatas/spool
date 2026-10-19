@@ -147,7 +147,7 @@ func (server *Server) handleSetUserRole(w http.ResponseWriter, r *http.Request) 
 		server.userErr(w, err)
 		return
 	}
-	if grants(user.Role, in.Role) && !server.confirmed(w, r, in.CurrentPassword) {
+	if (grants(user.Role, in.Role) || demotesOwner(user.Role, in.Role)) && !server.confirmed(w, r, in.CurrentPassword) {
 		return
 	}
 	if err := server.Users.SetRole(r.Context(), user.Name, in.Role); err != nil {
@@ -161,11 +161,28 @@ func (server *Server) handleSetUserRole(w http.ResponseWriter, r *http.Request) 
 
 // handleRemoveUser deletes a user, and with them their links: each person
 // they linked is unlinked, and the Access page hears what became of them.
-// Their open streams end (#722).
+// Their open streams end (#722). Removing an owner takes the acting
+// owner's password again, as current_password in the body, which may be
+// empty for anyone else (#923).
 func (server *Server) handleRemoveUser(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		CurrentPassword string `json:"current_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil && !errors.Is(err, io.EOF) {
+		server.jsonErr(w, http.StatusBadRequest, "bad json: %v", err)
+		return
+	}
 	var links []*store.UserLink
 	var userID string
-	if user, err := server.Store.Users().GetByName(r.Context(), r.PathValue("name")); err == nil {
+	user, err := server.Store.Users().GetByName(r.Context(), r.PathValue("name"))
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		server.userErr(w, err)
+		return
+	}
+	if err == nil {
+		if user.Role == store.RoleOwner && !server.confirmed(w, r, in.CurrentPassword) {
+			return
+		}
 		userID = user.ID
 		links, _ = server.Store.UserLinks().List(r.Context(), user.ID)
 	}
@@ -190,6 +207,14 @@ func (server *Server) handleRemoveUser(w http.ResponseWriter, r *http.Request) {
 // thief an admin (ADR-0048).
 func grants(from, to string) bool {
 	return roleRank[to] > roleRank[from] && roleRank[to] >= roleRank[store.RoleAdmin]
+}
+
+// demotesOwner reports whether a change from role from to role to takes
+// owner away, which asks for the password again as a grant does: a
+// stolen session alone must not be able to lock the other owners out and
+// keep the hub (#923). Removing an owner asks the same.
+func demotesOwner(from, to string) bool {
+	return from == store.RoleOwner && roleRank[to] < roleRank[store.RoleOwner]
 }
 
 // confirmed checks the password the caller typed again, and answers the

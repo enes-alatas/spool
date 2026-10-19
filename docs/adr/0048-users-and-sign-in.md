@@ -1,6 +1,6 @@
 # ADR-0048: The hub has users, who sign in with a username and password
 
-Date: 2026-10-09 · Status: accepted (operator decisions of 2026-10-04, 2026-10-07 and 2026-10-09, recorded on #582) · Amended: 2026-10-09 (item 1: the roles are enforced, #677); 2026-10-10 (item 1: a member reads no pairing code, #689); 2026-10-10 (item 7: owners manage users on the API, #690); 2026-10-10 (item 1: the hub records who acted, #695); 2026-10-10 (item 1: a member reads no dm:<name>, #702); 2026-10-10 (item 1: a member reads their own private conversations, #703); 2026-10-19 (item 1: a member reads no connection config, #924) · Supersedes: ADR-0030 decision 5 in part (the cookie is a session, not the token) · Relates to: ADR-0046
+Date: 2026-10-09 · Status: accepted (operator decisions of 2026-10-04, 2026-10-07 and 2026-10-09, recorded on #582) · Amended: 2026-10-09 (item 1: the roles are enforced, #677); 2026-10-10 (item 1: a member reads no pairing code, #689); 2026-10-10 (item 7: owners manage users on the API, #690); 2026-10-10 (item 1: the hub records who acted, #695); 2026-10-10 (item 1: a member reads no dm:<name>, #702); 2026-10-10 (item 1: a member reads their own private conversations, #703); 2026-10-19 (item 1: a member reads no connection config, #924); 2026-10-19 (item 7: demoting or removing an owner takes the password, #923) · Supersedes: ADR-0030 decision 5 in part (the cookie is a session, not the token) · Relates to: ADR-0046
 
 ## Context
 
@@ -223,6 +223,16 @@ gathered here. This ADR is the hub half of slice 1. The sign-in pages are
      demoting the hub's only owner. The store checks that last rule in the
      statement that makes the change, so two owners demoting each other at
      once can't both get through.
+
+   **Amendment (2026-10-19, #923):** demoting an owner, or removing one,
+   takes `current_password` too, as a grant does. Enes decided this on
+   2026-10-17 (#917). Otherwise a stolen owner's session could demote or
+   remove every other owner and keep the hub. `PATCH /api/users/{name}`
+   asks for it when the user is an owner and the new role is lower, and
+   `DELETE /api/users/{name}` takes `{current_password}` in its body when
+   the user is an owner. The operator token confirms with itself, as for a
+   grant. Lowering an admin or a member, and removing one, still ask for
+   no password: taking either away can't lock an owner out of the hub.
 
 8. **The CLI manages users against the data directory, as `spool token`
    does.**
