@@ -121,8 +121,8 @@ Slack connects out over Socket Mode, so no port is opened for either
   in that time is signed in as its user (#799).
 - Sign-in is throttled per name tried, and an unknown name answers like a
   wrong password.
-- Granting admin or owner, and resetting a password, take the acting
-  owner's password (ADR-0048).
+- Granting admin or owner, demoting or removing an owner, and resetting
+  a password take the acting owner's password (ADR-0048, #923).
 
 **What a member doesn't read:** other people's private conversations
 and the reactions and votes on them (#922), a loop's events, turns and
@@ -146,9 +146,6 @@ made with `spool user` counts within a minute.
   loop in its control-room thread about a private conversation it took
   part in, and only the prompt rule (ADR-0026) keeps it from answering.
   Accepted (below).
-- **An owner can demote or remove another owner** without re-entering
-  their password. Only granting admin or owner, and resetting a password,
-  ask for it.
 - **A stream whose session ended** gets no more items. It stays open on
   pings until the next item would reach it, and the hub closes it then.
   On a quiet hub, that can be a long time.
@@ -604,7 +601,7 @@ above says what it is; this is why it stays.
   Accepted 2026-10-18 (#932): they run on Anthropic's side, not the
   hub's host, and are no wider than when a loop held the setup-token.
 
-Three more findings were decided as fixes. Reactions and votes on
-private messages (#922) and members reading connection configs (#924)
-are fixed, and their lines are gone. Demoting or removing an owner
-(#923) keeps its line until its fix lands.
+Three more findings were decided as fixes, and all three are fixed:
+reactions and votes on private messages (#922), members reading
+connection configs (#924), and demoting or removing an owner (#923).
+Their lines are gone.

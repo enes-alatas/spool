@@ -20,8 +20,9 @@ type oneTimeJSON struct {
 // terminal: lists them, adds one with a one-time password shown once,
 // resets one, changes a role and removes one. A reset or a removal ends the
 // user's sessions. Granting admin or owner, or resetting anyone, takes
-// the acting owner's password again, and the hub keeps an owner. A member
-// and an admin are refused every one of these routes (ADR-0048).
+// the acting owner's password again, as does demoting or removing an
+// owner, and the hub keeps an owner. A member and an admin are refused
+// every one of these routes (ADR-0048).
 func TestOwnersManageUsersOnTheAPI(t *testing.T) {
 	t.Parallel()
 	srv := startServer(t, t.TempDir())
@@ -167,17 +168,18 @@ func TestOwnersManageUsersOnTheAPI(t *testing.T) {
 	}
 
 	// The hub keeps an owner: with the others gone, olive can neither
-	// step down nor leave.
+	// step down nor leave. Removing an owner takes the password, so the
+	// token types itself (#923).
 	for _, name := range []string{"admin", "abe"} {
-		if resp, out := srv.do("DELETE", "/api/users/"+name, nil); resp.StatusCode != http.StatusNoContent {
+		if resp, out := srv.do("DELETE", "/api/users/"+name, map[string]string{"current_password": srv.operatorToken}); resp.StatusCode != http.StatusNoContent {
 			t.Fatalf("removing owner %s = %d %s", name, resp.StatusCode, out)
 		}
 	}
-	if resp, out := srv.asCookie("PATCH", "/api/users/olive", owner, map[string]string{"role": "admin"}); resp.StatusCode != http.StatusConflict ||
+	if resp, out := srv.asCookie("PATCH", "/api/users/olive", owner, map[string]string{"role": "admin", "current_password": ownersPassword}); resp.StatusCode != http.StatusConflict ||
 		!strings.Contains(string(out), `"last_owner"`) {
 		t.Errorf("the last owner stepping down = %d %s; want 409 last_owner", resp.StatusCode, out)
 	}
-	if resp, out := srv.asCookie("DELETE", "/api/users/olive", owner, nil); resp.StatusCode != http.StatusConflict ||
+	if resp, out := srv.asCookie("DELETE", "/api/users/olive", owner, map[string]string{"current_password": ownersPassword}); resp.StatusCode != http.StatusConflict ||
 		!strings.Contains(string(out), `"last_owner"`) {
 		t.Errorf("the last owner leaving = %d %s; want 409 last_owner", resp.StatusCode, out)
 	}
@@ -198,4 +200,57 @@ func roleOfUser(t *testing.T, srv *server, cookie, name string) string {
 	}
 	t.Fatalf("no %s in the list: %s", name, out)
 	return ""
+}
+
+// Demoting an owner or removing one takes the acting owner's password
+// again, as a grant does, so a stolen owner's session alone can't lock the
+// other owners out. A missing or wrong password changes nothing. Lowering
+// an admin and removing a member still take none (#923).
+func TestDemotingOrRemovingAnOwnerTakesThePassword(t *testing.T) {
+	t.Parallel()
+	srv := startServer(t, t.TempDir())
+	owner := srv.signedInAs("olive", "owner")
+	const ownersPassword = "olive's own password"
+	srv.signedInAs("oscar", "owner")
+	srv.signedInAs("otto", "owner")
+	srv.signedInAs("ada", "admin")
+	srv.signedInAs("mia", "member")
+
+	for _, password := range []string{"", "not olive's password"} {
+		for _, role := range []string{"admin", "member"} {
+			if resp, out := srv.asCookie("PATCH", "/api/users/oscar", owner, map[string]string{"role": role, "current_password": password}); resp.StatusCode != http.StatusForbidden ||
+				!strings.Contains(string(out), `"confirm_password"`) {
+				t.Errorf("making owner oscar %s with password %q = %d %s; want 403 confirm_password", role, password, resp.StatusCode, out)
+			}
+		}
+		if resp, out := srv.asCookie("DELETE", "/api/users/otto", owner, map[string]string{"current_password": password}); resp.StatusCode != http.StatusForbidden ||
+			!strings.Contains(string(out), `"confirm_password"`) {
+			t.Errorf("removing owner otto with password %q = %d %s; want 403 confirm_password", password, resp.StatusCode, out)
+		}
+	}
+	if resp, out := srv.asCookie("DELETE", "/api/users/otto", owner, nil); resp.StatusCode != http.StatusForbidden ||
+		!strings.Contains(string(out), `"confirm_password"`) {
+		t.Errorf("removing owner otto with no body = %d %s; want 403 confirm_password", resp.StatusCode, out)
+	}
+	if got := roleOfUser(t, srv, owner, "oscar"); got != "owner" {
+		t.Fatalf("a refused demotion left oscar %q", got)
+	}
+	roleOfUser(t, srv, owner, "otto") // a refused removal leaves otto listed
+
+	if resp, out := srv.asCookie("PATCH", "/api/users/oscar", owner, map[string]string{"role": "admin", "current_password": ownersPassword}); resp.StatusCode != http.StatusOK {
+		t.Fatalf("demoting oscar with the password = %d %s", resp.StatusCode, out)
+	}
+	if resp, out := srv.asCookie("DELETE", "/api/users/otto", owner, map[string]string{"current_password": ownersPassword}); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("removing otto with the password = %d %s", resp.StatusCode, out)
+	}
+
+	// below owner, a change that grants nothing asks for nothing
+	if resp, out := srv.asCookie("PATCH", "/api/users/ada", owner, map[string]string{"role": "member"}); resp.StatusCode != http.StatusOK {
+		t.Errorf("making admin ada a member = %d %s; want it without a password", resp.StatusCode, out)
+	}
+	for _, name := range []string{"oscar", "mia"} {
+		if resp, out := srv.asCookie("DELETE", "/api/users/"+name, owner, nil); resp.StatusCode != http.StatusNoContent {
+			t.Errorf("removing %s, no owner now = %d %s; want it without a password", name, resp.StatusCode, out)
+		}
+	}
 }
