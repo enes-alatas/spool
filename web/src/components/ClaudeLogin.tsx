@@ -4,6 +4,7 @@ import { api, ApiError, type CloudSettings, type Settings } from '../api'
 import { accountState, loginState, signInCodeShaped } from '../cloud'
 import { formatAgo } from '../format'
 import { CheckIcon } from './Icons'
+import { Copyable } from './Copyable'
 import { StepDialog } from './StepDialog'
 import { useMinuteClock } from './PlanUsage'
 
@@ -138,7 +139,7 @@ function LoginLine({
 }
 
 // What the line can't say in a few words: why a check failed, what a
-// refused login stops, how a hub with no claude CLI signs in, and that a
+// refused login stops, how a hub with no claude CLI to run gets one, and that a
 // setup-token saved before the login still runs contained loops until one
 // is signed in (ADR-0058's migration).
 function LoginNote({ view, settings, error }: { view: CloudSettings; settings?: Settings; error: string }) {
@@ -156,8 +157,7 @@ function LoginNote({ view, settings, error }: { view: CloudSettings; settings?: 
     ),
     (!set || refused) && !cli && (
       <div className="cloud-check-hint" key="cli">
-        The sign-in runs the <code>claude</code> CLI on this machine, and the hub can't find it. Install
-        Claude Code here, then reload this page to sign in{refused && ' again'}.
+        <NoClaudeCLI again={refused} />
       </div>
     ),
     !set && (
@@ -183,6 +183,22 @@ const SIGN_OUT =
   'Sign out of the Claude login? Every contained and cloud loop stops until the hub is signed in again. ' +
   "The hub asks Anthropic to revoke the login but can't confirm it did. claude.ai's settings list the " +
   "account's sign-ins, so you can check there."
+
+// What a hub with no sign-in to run says (#955): the hub runs the claude
+// CLI in the workstation image, or the host's own when it has no image
+// (#952), so `cli` is false only with neither, and either one fixes it. On
+// the standard deployment the hub runs as its own system user, which can't
+// reach the operator's install, so the image is named first.
+function NoClaudeCLI({ again = false }: { again?: boolean }) {
+  return (
+    <>
+      The sign-in runs the <code>claude</code> CLI, and the hub finds neither the workstation image nor Claude
+      Code on this machine. Fetch the image with <Copyable text="spool images | sh" />, or{' '}
+      <Copyable text="make image" /> in a source checkout, or install Claude Code where the hub's user can run
+      it. Then reload this page to sign in{again && ' again'}.
+    </>
+  )
+}
 
 // Why the last check failed, and the hub's detail of it (an admin's alone).
 export function AccountHint({ view }: { view: CloudSettings }) {
@@ -237,8 +253,8 @@ export function SignedIn() {
 // the login. A refused code ends that sign-in, as ten minutes without one
 // does, so either starts again from the link. A login already signed in
 // whose check failed says so above the steps, so signing in again replaces
-// it. With no claude CLI on the hub's machine there is no sign-in to run,
-// and the steps say how to get one.
+// it. With no claude CLI to run, neither the workstation image's nor this
+// machine's, there is no sign-in, and the steps say how to get one.
 export function SignInSteps({ view, setBusy }: { view: CloudSettings; setBusy: (busy: boolean) => void }) {
   const qc = useQueryClient()
   const [link, setLink] = useState('')
@@ -364,8 +380,7 @@ export function SignInSteps({ view, setBusy }: { view: CloudSettings; setBusy: (
         </ol>
       ) : (
         <p className="step-dialog-state">
-          The sign-in runs the <code>claude</code> CLI on this machine, and the hub can't find it. Install
-          Claude Code here, then reload this page to sign in.
+          <NoClaudeCLI />
         </p>
       )}
       {error && (
