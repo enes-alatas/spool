@@ -893,3 +893,6 @@ Enes: v0.6.0 stays option b — waits for cloud loops (test already started) on 
 
 ## 2026-10-19 13:55 UTC
 Terra split #959 (chore: interpolated values drop their backticks; sub-issue of #871) out of #951 (sweep only). Came in needs-type → typed chore, L5. Placed after #951, before #952. #958 = Iris's PR (#870 part 2, chips render) already up. @cloud-tester no longer in the roster (removed by Enes). Terra order: #951 → #959 → #952 → #957 probes → ADR.
+
+## 2026-10-19 15:05 UTC
+Elliot: #962 (pin jobs to ubuntu-24.04, closes #961) with Quinn; #960 waiting on Quinn's recheck; filed #963 (Tailscale Funnel + Caddy on :443 breaks the self-check; docs + UI hint). Homed #961 → CI reliability, #963 → Cloud runtime under #860. #958 (Iris, #870 part 2) merged → Iris: #963 then #955 (after #956).
