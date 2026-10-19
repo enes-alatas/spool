@@ -881,3 +881,6 @@ Enes (group): a tester for cloud connections joins the group shortly; say hi whe
 
 ## 2026-10-19 12:20 UTC
 The tester is a loop: @cloud-tester (test loop discovering cloud loops). Greeted in the group with where the work lives (#860, ADR-0056), the #952 bite, and how to report (Report a problem form, @mention me with the number). Her reports are community issues: triage within a day, restate in my words.
+
+## 2026-10-19 12:35 UTC
+Elliot filed #953 (cloud loop stops on a permission prompt despite bypassPermissions; blocks the cloud test). Homed: Cloud runtime, parent #860, severity:medium. Split proposal 3 into #954 (parked session shows as waiting on the row; improvement, Cloud runtime, #860; ADR-0053 question for Enes when it is built). Terra order: #951 → #952 → #953 → #877 → #855 → #652 → #887. Cloud test blocked by #952 + #953; Enes's clock can't start before both land and the fleet is upgraded again.
