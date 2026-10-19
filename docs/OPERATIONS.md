@@ -186,6 +186,37 @@ machine.
 - `sudo systemctl restart spool` brings the control room back within
   seconds, and `sudo reboot` brings it back without you.
 
+### A Tailscale Funnel beside Caddy
+
+The cloud setup's Tailscale step runs `tailscale funnel --bg 8090`, with your
+cloud listener's port, 8090 unless you changed it. From outside, the funnel
+works beside Caddy. From the server itself, the `*.ts.net` name resolves to
+the server's own tailnet address, and there Caddy holds 443 with no
+certificate for that name. The hub's self-check of the public address runs
+from the server, so it fails with
+`tls: internal error` while the address works from everywhere else.
+
+Give Caddy the name too, with Tailscale's certificate. Add to
+`/etc/caddy/Caddyfile`, with your machine and tailnet names and that port:
+
+```caddyfile
+<machine>.<tailnet>.ts.net {
+	tls {
+		get_certificate tailscale
+	}
+	reverse_proxy 127.0.0.1:8090
+}
+```
+
+Then let the caddy user fetch that certificate from tailscaled, and reload:
+
+```bash
+echo 'TS_PERMIT_CERT_UID=caddy' | sudo tee -a /etc/default/tailscaled
+sudo systemctl restart tailscaled && sudo systemctl reload caddy
+```
+
+The cloud setup's Public address step then passes.
+
 ## Back up and restore
 
 The commands here assume the layout of [Run it as a service](#run-it-as-a-service):
