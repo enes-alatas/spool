@@ -27,8 +27,8 @@ type HostGroup struct {
 // (ADR-0028), so an address is never what is compared.
 var BuiltIn = []HostGroup{
 	{
-		Reason: "Claude: the API the loop's own turns run against, plus the hosts the CLI needs to authenticate and check its version.",
-		Hosts:  []string{"api.anthropic.com", "statsig.anthropic.com", "console.anthropic.com", "downloads.claude.ai"},
+		Reason: "Claude: the API the loop's own turns run against, plus the hosts the CLI needs to authenticate (the hub's own sign-in included) and to check its version.",
+		Hosts:  []string{"api.anthropic.com", "statsig.anthropic.com", "console.anthropic.com", "platform.claude.com", "downloads.claude.ai"},
 	},
 	{
 		Reason: "GitHub: the work itself, through gh, git over HTTPS, and release and archive downloads.",
