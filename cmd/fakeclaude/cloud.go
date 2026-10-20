@@ -24,6 +24,9 @@ package main
 // first turn, then the turn, written to the session's transcript as the
 // CLI writes one, then Stop. The reply is "fake cloud reply: " and the
 // message. Turns of one session run one at a time.
+//
+// A "cloud-start-held" file in $FAKECLAUDE_STATE holds a new VM's
+// SessionStart back until it is removed, for at most half a minute.
 
 import (
 	"crypto/rand"
@@ -172,6 +175,7 @@ func cloudTurn(session, message string, first bool) int {
 	defer unlock()
 	env := hookEnv(repo, session)
 	if first {
+		holdStart()
 		runHooks(repo, repo, "SessionStart", "startup", env, map[string]any{
 			"hook_event_name": "SessionStart", "source": "startup", "session_id": "local-" + session, "cwd": repo,
 		}, "")
@@ -296,4 +300,16 @@ func matches(matcher, source string) bool {
 		}
 	}
 	return false
+}
+
+// holdStart waits, for at most half a minute, while a "cloud-start-held"
+// file is in $FAKECLAUDE_STATE: a new VM's SessionStart is held back, so a
+// test can post while the hub's start of the loop is pending.
+func holdStart() {
+	held := filepath.Join(filepath.Dir(cloudRoot()), "cloud-start-held")
+	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+		if _, err := os.Stat(held); err != nil {
+			return
+		}
+	}
 }

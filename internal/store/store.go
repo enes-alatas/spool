@@ -40,6 +40,7 @@ const (
 	EndReasonCrash   = "crash"
 	EndReasonLost    = "lost"
 	EndReasonRotated = "rotated" // retired by a deliberate context rotation (ADR-0022)
+	EndReasonPaused  = "paused"  // ended by a pause, as a cloud loop's session is (ADR-0059)
 
 	TriggerTick     = "tick"
 	TriggerMessage  = "message"

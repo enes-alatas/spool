@@ -408,6 +408,11 @@ func main() {
 		Logger:                    log,
 		DataDir:                   *dataDir,
 		CloudGate:                 cloudGate,
+		SecretsChanged: func(ctx context.Context) {
+			if err := redactor.Refresh(ctx); err != nil {
+				log.Error("reload secrets for redaction", "err", err)
+			}
+		},
 		RenderPrompt: func(loopRecord *store.Loop) loop.Prompt {
 			cat, rules := catalogOf(rdb, loopRecord), rulesOf(rdb)
 			return loop.Prompt{

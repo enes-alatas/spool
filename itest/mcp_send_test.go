@@ -37,6 +37,32 @@ func hubMCPToken(t *testing.T, s *server, name string) string {
 	return loopRecord.HubMCPToken
 }
 
+// sessionEndReason reads why the loop's session id ended from spool.db, ""
+// while it runs on.
+func sessionEndReason(t *testing.T, s *server, name, id string) string {
+	t.Helper()
+	db, err := sqlite.Open(filepath.Join(s.dataDir, "spool.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	loopRecord, err := db.Loops().GetByName(context.Background(), name)
+	if err != nil {
+		t.Fatalf("sessions of %s: %v", name, err)
+	}
+	sessions, err := db.Sessions().ListByLoop(context.Background(), loopRecord.ID, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, session := range sessions {
+		if session.ID == id {
+			return session.EndReason
+		}
+	}
+	t.Fatalf("%s has no session %s", name, id)
+	return ""
+}
+
 type bearerTransport struct{ token string }
 
 func (b bearerTransport) RoundTrip(r *http.Request) (*http.Response, error) {

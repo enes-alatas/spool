@@ -99,6 +99,7 @@ The runs below were on CLI 2.1.304, 2026-10-19 and 10-20, on the operator's acco
 | A turn runs on after the local `--cloud` process is killed once the session has started | assumed | ADR-0059 item 1 ends the local process once `SessionStart` posts. Nothing records the real CLI being killed then. |
 | Sends to one session run as turns one at a time | partly | Run D: sends during a turn join the next one. The fake runs each send as its own turn, after the one in flight. |
 | The reply is `fake cloud reply: ` and the message | deliberate difference | A test can read what the hub sent. |
+| A VM's `SessionStart` can be held back, while a `cloud-start-held` file is in `$FAKECLAUDE_STATE` | deliberate difference | A test instrument: it holds a start pending so a test can post during it. |
 
 ## Directives that are test instruments
 
