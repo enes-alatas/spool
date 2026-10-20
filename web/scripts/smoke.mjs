@@ -236,10 +236,35 @@ try {
   await heading('Settings')
   await see(page.getByRole('heading', { name: 'Claude login', exact: true }), 'the Claude login section')
 
+  // Egress opens as a dialog from its summary (#971), and adding a host as a
+  // second one over it, whose hint carries a chip.
+  step = 'Egress'
+  await page.getByRole('button', { name: 'Manage' }).click()
+  const egress = page.getByRole('dialog', { name: 'Egress' })
+  await see(egress.getByRole('button', { name: 'Add a host' }), 'the add-host button')
+  const addHost = page.getByRole('dialog', { name: 'Add a host' })
+  // Closing the dialog on top leaves the one under it open: a dialog's close
+  // event bubbles through the React tree to the dialog it renders in.
+  for (const [how, close] of [
+    ['Escape', () => addHost.getByLabel('Host').press('Escape')],
+    ['its ✕', () => addHost.getByRole('button', { name: 'Close' }).click()],
+  ]) {
+    await egress.getByRole('button', { name: 'Add a host' }).click()
+    await see(addHost.getByLabel('Host'), 'the add-host field')
+    await close()
+    await gone(addHost, `Add a host, closed with ${how},`)
+    await sleep(300)
+    if (!(await egress.isVisible()))
+      throw new Error(`${step}: closing Add a host with ${how} closed Egress too`)
+  }
+  await egress.getByRole('button', { name: 'Add a host' }).click()
+  await see(addHost.getByLabel('Host'), 'the add-host field')
+
   // A literal to type copies on a click (#870): the clipboard holds the
-  // command afterwards, and the chip says so.
+  // command afterwards, and the chip says so. This one sits in a modal
+  // dialog, where the rest of the page is inert.
   step = 'copy chip'
-  const chip = page.getByRole('button', { name: 'Copy --egress-allow' }).first()
+  const chip = addHost.getByRole('button', { name: 'Copy --egress-allow' })
   await chip.click()
   await see(page.locator('.copyable.copied'), 'the copied chip')
   const copied = await page.evaluate(() => globalThis.navigator.clipboard.readText())

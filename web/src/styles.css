@@ -2501,6 +2501,69 @@ button.panel-link {
   flex-wrap: wrap;
   gap: 4px 14px;
 }
+/* the list in a dialog (#971): a summary on Settings, and lists that
+   scroll on their own */
+.connection-dialog.egress-dialog {
+  width: min(44rem, calc(100vw - 32px));
+}
+/* the filter sits on the list it filters, slimmer than a form's field */
+.egress-filter {
+  display: block;
+  width: 100%;
+  margin-bottom: 6px;
+  padding: 4px 10px;
+  font-size: 0.8125rem;
+}
+/* a list a few rows high that scrolls on its own. Unlike the room's other
+   scrollers its track shows, faintly, so a list cut off at its sixth row
+   reads as one that goes on (#971) */
+.egress-list {
+  max-height: 15.5rem;
+  overflow-y: auto;
+  padding-right: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text) 30%, transparent)
+    color-mix(in srgb, var(--text) 6%, transparent);
+}
+/* Your hosts with its + at the end of the line, over the list's Remove */
+.egress-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 18px 0 8px;
+}
+.egress-list-head .egress-head {
+  margin: 0;
+}
+.egress-list-head .panel-action {
+  margin: -6px 0;
+  color: var(--text);
+}
+.egress-count {
+  font-family: var(--mono);
+  font-weight: 400;
+  color: var(--text-muted);
+  margin-left: 6px;
+}
+/* the built-in hosts fold away: none of them can change */
+.egress-toggle {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+}
+.egress-none {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  padding: 8px 0;
+}
+.egress-row.added code {
+  color: var(--ready);
+}
+.egress-summary {
+  border-top: 1px solid var(--hairline);
+}
 /* each cloud loop's environment beside the list, and the entries the
    environments leave off (ADR-0056, #865) */
 .egress-entry {

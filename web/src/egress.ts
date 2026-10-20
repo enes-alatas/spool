@@ -1,4 +1,4 @@
-import type { CloudEnvironmentSync, EgressView } from './api'
+import type { CloudEnvironmentSync, EgressGroup, EgressView } from './api'
 import { formatAgo } from './format'
 
 // Whether a change to the list is still on its way: egress is walled, and
@@ -22,4 +22,16 @@ export function allowlistSyncText(environment: CloudEnvironmentSync, now: number
   if (environment.in_sync)
     return `in sync${environment.synced_at ? ` · ${formatAgo(environment.synced_at, now)}` : ''}`
   return `not in sync${environment.error ? `: ${environment.error}` : ''}`
+}
+
+// The operator's hosts under the Egress dialog's filter (#971): those whose
+// name contains it, in any case. An empty filter, or one of spaces, keeps
+// them all.
+export function filterHosts(hosts: string[], filter: string): string[] {
+  const query = filter.trim().toLowerCase()
+  return hosts.filter((host) => host.toLowerCase().includes(query))
+}
+
+export function countHosts(groups: EgressGroup[]): number {
+  return groups.reduce((n, g) => n + g.hosts.length, 0)
 }

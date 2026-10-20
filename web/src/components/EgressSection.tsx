@@ -1,48 +1,26 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ApiError, type CloudEgress, type EgressView } from '../api'
 import { messageTime } from './MessageKnot'
-import { allowlistSyncText, applying } from '../egress'
+import { allowlistSyncText, applying, countHosts, filterHosts } from '../egress'
 import { Copyable } from './Copyable'
 import { useMinuteClock } from './PlanUsage'
 import { Marked } from './Marked'
+import { PlusIcon } from './Icons'
+import { StepDialog } from './StepDialog'
 
 // The fleet's workstation egress allowlist (#542, ADR-0028): what a docker
-// loop's workstation may reach. The built-in hosts are read-only, each group
-// with why it is there; the operator's own are added and removed here, and
-// the hub's one egress proxy, shared by every docker loop, takes the list
-// while the hub runs, so the section says when it did. Each cloud loop's
-// environment carries the list too (ADR-0056): the section shows each one in
-// sync or what failed, and marks the entries an environment can't carry.
+// loop's workstation may reach. Settings shows it as a summary, and the list
+// opens in a dialog (#971), so a long one neither stretches the page nor
+// crowds the form that adds to it. The built-in hosts are read-only, each
+// group with why it is there; the operator's own are added and removed in
+// the dialog, and the hub's one egress proxy, shared by every docker loop,
+// takes the list while the hub runs, so both say when it did. Each cloud
+// loop's environment carries the list too (ADR-0056): each one shows in sync
+// or what failed, and the entries an environment can't carry are marked.
 export function EgressSection() {
-  const qc = useQueryClient()
-  const { data, error: loadError } = useQuery({
-    queryKey: ['egress'],
-    queryFn: api.egress,
-    // Polled only while a change is on its way to the proxy.
-    refetchInterval: (query) => (applying(query.state.data) ? 1000 : false),
-  })
-  const [host, setHost] = useState('')
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState('')
-
-  const run = async (key: string, request: () => Promise<EgressView>) => {
-    setBusy(key)
-    setError('')
-    try {
-      qc.setQueryData(['egress'], await request())
-      return true
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-      return false
-    } finally {
-      setBusy('')
-    }
-  }
-
-  const add = async () => {
-    if (await run('+', () => api.addEgressHost(host.trim()))) setHost('')
-  }
+  const { data, error: loadError } = useEgress()
+  const [open, setOpen] = useState(false)
 
   // A hub from before #542 has no such route.
   const missing = loadError instanceof ApiError && loadError.status === 404
@@ -53,8 +31,7 @@ export function EgressSection() {
       <p className="page-lede">
         The hosts a docker loop's workstation can reach, on ports 80 and 443 unless an entry names its own. A
         change applies to every docker loop within a few seconds, with nothing restarted.
-        {data?.cloud &&
-          ` Each cloud loop's environment carries the list too, enforced by Anthropic's proxy${data.cloud.not_applied.length > 0 ? ', except the entries marked as not applied to cloud loops' : ''}.`}
+        {data?.cloud && " Each cloud loop's environment carries the list too, enforced by Anthropic's proxy."}
       </p>
       {missing ? (
         <div className="form-error" role="alert">
@@ -67,84 +44,282 @@ export function EgressSection() {
         </div>
       ) : !data ? null : (
         <>
-          <EgressStatus view={data} />
-
-          <h3 className="egress-head">Your hosts</h3>
-          {data.extra.length === 0 ? (
-            <div className="empty">None yet: a loop reaches the built-in hosts below and nothing else.</div>
-          ) : (
-            <div className="egress-extra">
-              {data.extra.map((h) => (
-                <div className="egress-row" key={h}>
-                  <Entry host={h} cloud={data.cloud} />
-                  <button
-                    className="btn sm danger"
-                    disabled={busy !== ''}
-                    onClick={() => {
-                      if (confirm(`Remove ${h}? Loops lose it within a few seconds, mid-turn included.`))
-                        run(h, () => api.removeEgressHost(h))
-                    }}
-                  >
-                    {busy === h ? 'Removing…' : 'Remove'}
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-          {data.flag && (
-            <div className="egress-note">
-              From the command line (<Copyable text="--egress-allow" />
-              ): {data.flag.length > 0 ? data.flag.join(', ') : 'empty'}. It seeded this list on first start;
-              the list above is what applies.
-            </div>
-          )}
-          <form
-            className="egress-add"
-            onSubmit={(e) => {
-              e.preventDefault()
-              add()
-            }}
-          >
-            <input
-              className="mono"
-              aria-label="Host"
-              placeholder="pkg.example.dev or .example.com"
-              value={host}
-              disabled={busy !== ''}
-              onChange={(e) => setHost(e.target.value)}
-            />
-            <button className="btn primary" disabled={busy !== '' || !host.trim()}>
-              {busy === '+' ? 'Adding…' : 'Add host'}
-            </button>
-          </form>
-          <div className="egress-note">
-            A name, not an address or a URL. A leading dot allows a domain and everything under it. Ports
-            other than 80 and 443 are set with <Copyable text="--egress-allow" />.
-          </div>
-          {error && (
-            <div className="form-error" role="alert">
-              <Marked text={error} />
-            </div>
-          )}
-
-          {data.cloud && <CloudSync cloud={data.cloud} />}
-
-          <h3 className="egress-head">Built in</h3>
-          <div className="egress-groups">
-            {data.built_in.map((g) => (
-              <div className="egress-group" key={g.reason}>
-                <div className="egress-reason">{g.reason}</div>
-                <div className="egress-hosts">
-                  {g.hosts.map((h) => (
-                    <Entry key={h} host={h} cloud={data.cloud} />
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
+          <EgressSummary view={data} onOpen={() => setOpen(true)} />
+          {open && <EgressDialog onClose={() => setOpen(false)} />}
         </>
       )}
     </section>
+  )
+}
+
+function useEgress() {
+  return useQuery({
+    queryKey: ['egress'],
+    queryFn: api.egress,
+    // Polled only while a change is on its way to the proxy.
+    refetchInterval: (query) => (applying(query.state.data) ? 1000 : false),
+  })
+}
+
+// The list in a line or two: how many hosts, whether the proxy has them, and
+// whether every cloud loop's environment does.
+function EgressSummary({ view, onOpen }: { view: EgressView; onOpen: () => void }) {
+  const builtIn = countHosts(view.built_in)
+  const status = statusLine(view)
+  const out = view.cloud?.environments.filter((e) => !e.in_sync).length ?? 0
+  return (
+    <div className="egress-summary">
+      <div className={`cloud-step ${status.tone}`}>
+        <span className="cloud-dot" aria-hidden />
+        <span className="cloud-step-title">
+          {view.extra.length === 0 ? 'No hosts of yours' : `${plural(view.extra.length, 'host')} of yours`}
+        </span>
+        <span className="cloud-step-value">+ {builtIn} built in</span>
+        <span className="cloud-step-end">
+          <span className="cloud-step-state">{status.text}</span>
+          <button className="btn sm" onClick={onOpen}>
+            Manage
+          </button>
+        </span>
+      </div>
+      {view.cloud && view.cloud.environments.length > 0 && (
+        <div className={`cloud-step ${out > 0 ? 'bad' : 'ok'}`}>
+          <span className="cloud-dot" aria-hidden />
+          <span className="cloud-step-title">Cloud loops</span>
+          <span className="cloud-step-end">
+            <span className="cloud-step-state">
+              {out > 0
+                ? `${out} of ${view.cloud.environments.length} not in sync`
+                : `${plural(view.cloud.environments.length, 'environment')} in sync`}
+            </span>
+          </span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? '' : 's'}`
+}
+
+function statusLine(view: EgressView): { text: string; tone: 'ok' | 'bad' | 'todo' } {
+  if (!view.enforced) return { text: 'not enforced', tone: 'bad' }
+  if (applying(view)) return { text: 'applying…', tone: 'todo' }
+  if (view.applied_at === undefined) return { text: 'not applied yet', tone: 'todo' }
+  return { text: `applied ${messageTime(view.applied_at)}`, tone: 'ok' }
+}
+
+// The list itself: the status, the operator's hosts with their filter and
+// Remove, the cloud loops' environments, and the built-in hosts, folded away
+// since none of them can change. Each list scrolls in a box of its own a few
+// rows high, so the dialog keeps its filter and its + in view however long
+// the list grows (#971). The + beside Your hosts opens a dialog of its own
+// on top, and a host it adds shows here, scrolled to and marked.
+function EgressDialog({ onClose }: { onClose: () => void }) {
+  const qc = useQueryClient()
+  const { data } = useEgress()
+  const [filter, setFilter] = useState('')
+  const [adding, setAdding] = useState(false)
+  const [builtInOpen, setBuiltInOpen] = useState(false)
+  const [added, setAdded] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState('')
+
+  if (!data) return null
+  const extra = filterHosts(data.extra, filter)
+  const filtered = extra.length !== data.extra.length
+
+  const remove = async (h: string) => {
+    if (!confirm(`Remove ${h}? Loops lose it within a few seconds, mid-turn included.`)) return
+    setBusy(h)
+    setError('')
+    try {
+      qc.setQueryData(['egress'], await api.removeEgressHost(h))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy('')
+    }
+  }
+
+  return (
+    <StepDialog title="Egress" className="egress-dialog" busy={busy !== ''} onClose={onClose}>
+      <EgressStatus view={data} />
+      {error && (
+        <div className="form-error" role="alert">
+          <Marked text={error} />
+        </div>
+      )}
+
+      <div className="egress-list-head">
+        <h3 className="egress-head">
+          Your hosts{' '}
+          <span className="egress-count">
+            {filtered ? `${extra.length} of ${data.extra.length}` : data.extra.length}
+          </span>
+        </h3>
+        <button
+          className="panel-action"
+          onClick={() => setAdding(true)}
+          disabled={busy !== ''}
+          aria-label="Add a host"
+          title="Add a host"
+        >
+          <PlusIcon />
+        </button>
+      </div>
+      {data.extra.length > 0 && (
+        <input
+          className="mono egress-filter"
+          type="search"
+          aria-label="Filter your hosts"
+          placeholder={`Filter ${plural(data.extra.length, 'host')}`}
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+        />
+      )}
+      {data.extra.length === 0 ? (
+        <div className="egress-none">None yet: a loop reaches the built-in hosts below and nothing else.</div>
+      ) : extra.length === 0 ? (
+        <div className="egress-none">None of yours match.</div>
+      ) : (
+        <div className="egress-extra egress-list">
+          {extra.map((h) => (
+            <Row key={h} host={h} cloud={data.cloud} added={h === added}>
+              <button className="btn sm danger" disabled={busy !== ''} onClick={() => remove(h)}>
+                {busy === h ? 'Removing…' : 'Remove'}
+              </button>
+            </Row>
+          ))}
+        </div>
+      )}
+      {data.flag && (
+        <div className="egress-note">
+          From the command line (<Copyable text="--egress-allow" />
+          ): {data.flag.length > 0 ? data.flag.join(', ') : 'empty'}. It seeded this list on first start; the
+          list above is what applies.
+        </div>
+      )}
+
+      {data.cloud && <CloudSync cloud={data.cloud} />}
+
+      <h3 className="egress-head">
+        <button
+          className="egress-toggle"
+          aria-expanded={builtInOpen}
+          onClick={() => setBuiltInOpen(!builtInOpen)}
+        >
+          <span aria-hidden>{builtInOpen ? '▾' : '▸'}</span> Built in
+        </button>{' '}
+        <span className="egress-count">{countHosts(data.built_in)}</span>
+      </h3>
+      {builtInOpen && (
+        <div className="egress-groups egress-list">
+          {data.built_in.map((g) => (
+            <div className="egress-group" key={g.reason}>
+              <div className="egress-reason">{g.reason}</div>
+              <div className="egress-hosts">
+                {g.hosts.map((h) => (
+                  <Entry key={h} host={h} cloud={data.cloud} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {adding && (
+        <AddHostDialog
+          onClose={() => setAdding(false)}
+          onAdded={(h) => {
+            setAdding(false)
+            setFilter('')
+            setAdded(h)
+          }}
+        />
+      )}
+    </StepDialog>
+  )
+}
+
+// A host of the operator's, scrolled into view and marked when just added.
+function Row({
+  host,
+  cloud,
+  added,
+  children,
+}: {
+  host: string
+  cloud?: CloudEgress
+  added: boolean
+  children: ReactNode
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (added) ref.current?.scrollIntoView({ block: 'nearest' })
+  }, [added])
+  return (
+    <div ref={ref} className={`egress-row${added ? ' added' : ''}`}>
+      <Entry host={host} cloud={cloud} />
+      {children}
+    </div>
+  )
+}
+
+// Adding a host, over the list: what an entry may be, and the hub's reason
+// when it refuses one, kept beside what was typed.
+function AddHostDialog({ onClose, onAdded }: { onClose: () => void; onAdded: (host: string) => void }) {
+  const qc = useQueryClient()
+  const [host, setHost] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const add = async () => {
+    const h = host.trim()
+    setBusy(true)
+    setError('')
+    try {
+      qc.setQueryData(['egress'], await api.addEgressHost(h))
+      onAdded(h)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <StepDialog title="Add a host" className="egress-add-dialog" busy={busy} onClose={onClose}>
+      <form
+        className="egress-add"
+        onSubmit={(e) => {
+          e.preventDefault()
+          add()
+        }}
+      >
+        <input
+          className="mono"
+          aria-label="Host"
+          placeholder="pkg.example.dev or .example.com"
+          value={host}
+          disabled={busy}
+          autoFocus
+          onChange={(e) => setHost(e.target.value)}
+        />
+        <button className="btn primary" disabled={busy || !host.trim()}>
+          {busy ? 'Adding…' : 'Add'}
+        </button>
+      </form>
+      <div className="egress-note">
+        A name, not an address or a URL. A leading dot allows a domain and everything under it. Ports other
+        than 80 and 443 are set with <Copyable text="--egress-allow" />.
+      </div>
+      {error && (
+        <div className="form-error" role="alert">
+          <Marked text={error} />
+        </div>
+      )}
+    </StepDialog>
   )
 }
 

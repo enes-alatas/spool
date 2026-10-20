@@ -227,15 +227,16 @@ await courierWorkstation.screenshot({ path: rehomeFile })
 taken.push(rehomeFile)
 await page.setViewportSize({ width: 1180, height: 900 })
 
-// Settings' Egress section (#542), shot as the section: Settings scrolls in
-// its own container, so a page shot cuts it off, and the viewport grows to
-// hold all of it. The fixture hub runs no egress image, so as served it
-// draws the open state; the walled one is the same view with the proxy's
-// answer patched in, as a docker hub serves it.
+// Settings' Egress section (#542), shot as the section, a summary since
+// #971: Settings scrolls in its own container, so a page shot cuts it off,
+// and the viewport grows to hold all of it. The fixture hub runs no egress
+// image, so as served it draws the open state; the walled one is the same
+// view with the proxy's answer patched in, as a docker hub serves it, shot
+// as the dialog Manage opens.
 await page.setViewportSize({ width: 1180, height: 1900 })
 await page.goto(base + '/settings', { waitUntil: 'networkidle' })
 const egress = page.locator('section.egress')
-await egress.locator('.egress-status').waitFor({ timeout: 15000 })
+await egress.locator('.egress-summary').waitFor({ timeout: 15000 })
 const egressOpenFile = `${outDir}/settings-egress-open.png`
 await egress.screenshot({ path: egressOpenFile })
 taken.push(egressOpenFile)
@@ -251,10 +252,13 @@ await page.route('**/api/settings/egress', async (route) => {
   })
 })
 await page.goto(base + '/settings', { waitUntil: 'networkidle' })
-await egress.locator('.egress-status.ok').waitFor({ timeout: 15000 })
+await egress.getByRole('button', { name: 'Manage' }).click()
+const egressDialog = page.locator('.egress-dialog')
+await egressDialog.locator('.egress-status.ok').waitFor({ timeout: 15000 })
 const egressFile = `${outDir}/settings-egress.png`
-await egress.screenshot({ path: egressFile })
+await egressDialog.screenshot({ path: egressFile })
 taken.push(egressFile)
+await egressDialog.getByRole('button', { name: 'Close' }).click()
 await page.unroute('**/api/settings/egress')
 
 // Settings' Users and access section (#691, #732), as the owner admin sees

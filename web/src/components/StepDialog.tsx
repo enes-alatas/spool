@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, type ReactNode } from 'react'
+import { useEffect, useId, useRef, type ReactNode, type SyntheticEvent } from 'react'
 
 // The shell the first-run cards open their step in (#588, #589): a native
 // modal `<dialog>`, as Add connection is, so the backdrop, the focus trap
@@ -45,7 +45,14 @@ export function StepDialog({
   // page refuse only the first Escape after the reader's last input, and
   // closes on the second. So a close that none of the dialog's own controls
   // asked for is undone, and the body, edit and all, never unmounts.
-  const closed = () => {
+  //
+  // A dialog hears the close and cancel of every dialog rendered inside it
+  // too: React bubbles its copies of them through the component tree, though
+  // the browser's own don't bubble. Closing a dialog opened over this one
+  // must leave this one open, so only an event this dialog fired counts
+  // (#971).
+  const closed = (e: SyntheticEvent<HTMLDialogElement>) => {
+    if (e.target !== e.currentTarget) return
     const dialog = ref.current
     if (dialog && (!dismissible || busy) && dialog.returnValue === '') {
       dialog.showModal()
@@ -61,7 +68,7 @@ export function StepDialog({
       aria-labelledby={titleId}
       onClose={closed}
       // Escape: the browser cancels before it closes, when it lets the page.
-      onCancel={(e) => (!dismissible || busy) && e.preventDefault()}
+      onCancel={(e) => e.target === e.currentTarget && (!dismissible || busy) && e.preventDefault()}
       // A click on the backdrop lands on the dialog element itself.
       onClick={(e) => dismissible && !busy && e.target === e.currentTarget && close()}
     >
