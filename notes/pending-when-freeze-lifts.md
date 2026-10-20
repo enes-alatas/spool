@@ -962,3 +962,6 @@ Iris: #979 built (mockups rounds 1–3 with Enes's picks done), waits on #978. F
 
 ## 2026-10-20 18:20 UTC
 Enes (DM): owner DM view opens at the oldest message. Filed #991 (bug, low, L5) → Iris first, then #989, then #979 after #978. Told Enes with the link.
+
+## 2026-10-20 18:30 UTC
+Enes: #991 was not urgent; I had put it ahead of #989 on my own. Corrected Iris's order (#989 → #991), owned it to Enes. Memory questions-are-not-orders extended.
