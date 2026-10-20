@@ -1,6 +1,6 @@
 # ADR-0028: Workstation egress runs through an allowlist proxy
 
-Date: 2026-09-20 · Status: accepted · Amends: ADR-0017 (decision 9, "open egress") · Amended 2026-09-20 (decision 3: the hub entry is the MCP listener, #238); 2026-10-01 (consequences: a docker loop behind a loopback listener is refused, #474); 2026-10-01 (decision 3: the loop listener does not refuse a host.docker.internal Host, #508); 2026-10-05 (decision 4: a loop's own entries, keyed by its proxy token, #599); 2026-10-06 (decision 4: the operator's extra hosts are stored and change while the hub runs, #542); 2026-10-06 (decision 4: brokered MCP servers open no host, #622); 2026-10-07 (decision 4: a loop's own entries are removed, #626); 2026-10-08 (decision 5: the wall is ensured at every docker wake, #657); 2026-10-11 (decision 5: a rebuilt proxy image replaces the proxy, #715); 2026-10-16 (decision 1: each workstation has a network of its own, and no NET_RAW, #906)
+Date: 2026-09-20 · Status: accepted · Amends: ADR-0017 (decision 9, "open egress") · Amended 2026-09-20 (decision 3: the hub entry is the MCP listener, #238); 2026-10-01 (consequences: a docker loop behind a loopback listener is refused, #474); 2026-10-01 (decision 3: the loop listener does not refuse a host.docker.internal Host, #508); 2026-10-05 (decision 4: a loop's own entries, keyed by its proxy token, #599); 2026-10-06 (decision 4: the operator's extra hosts are stored and change while the hub runs, #542); 2026-10-06 (decision 4: brokered MCP servers open no host, #622); 2026-10-07 (decision 4: a loop's own entries are removed, #626); 2026-10-08 (decision 5: the wall is ensured at every docker wake, #657); 2026-10-11 (decision 5: a rebuilt proxy image replaces the proxy, #715); 2026-10-16 (decision 1: each workstation has a network of its own, and no NET_RAW, #906); 2026-10-20 (decision 4: `*.example.com` is the domain form, #972)
 
 ## Context
 
@@ -227,6 +227,20 @@ by asking the agent nicely (#193).
    - **A per-loop host comes back with a producer.** If a loop needs a
      host the fleet shouldn't have, such as one a stdio server calls, the
      issue that wants it reopens this decision with the source named.
+
+   **Amendment (2026-10-20, #972): `*.example.com` is another spelling of
+   the domain form.** An entry on its way in, from the Settings page or
+   `--egress-allow`, whose host starts with `*.` is read as the leading
+   dot. So `*.example.com` allows what `.example.com` does: the domain and
+   everything under it. Only the dotted form is stored, shown and matched,
+   so no new `*` is kept or sent anywhere. A `*` anywhere else in a host is
+   still refused.
+   - **An entry already stored with a `*` stays inert.** One stored before
+     the hub refused a `*` still permits nothing at the wall and is still
+     left off cloud environments. Reading it as the domain form now would
+     open a domain on upgrade that the operator never saw opened.
+   - **It is removed as written,** so removing it can't take the dotted
+     rule it would read as.
 
 5. **Lifecycle matches the workstation's.** The network and the proxy are
    ensured idempotently before a workstation is provisioned, and the proxy runs

@@ -12,8 +12,9 @@ import (
 // everything under it, which a cloud environment spells *.example.com and
 // example.com (#861). An entry with a port of its own has no form there:
 // it is left off and returned in notApplied, as is one holding a *, which
-// the hub refuses but may have stored before it did: the wall matches it as
-// a name nothing has, an environment as a wildcard. So the list is never
+// the hub no longer stores (a leading *. comes in as the dotted form, #972)
+// but may have stored before: the wall matches it as a name nothing has, an
+// environment as a wildcard. So the list is never
 // wider than the hub's (ADR-0056).
 func Allowlist(entries []string) (hosts, notApplied []string) {
 	seen := map[string]bool{}
