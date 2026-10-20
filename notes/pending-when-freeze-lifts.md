@@ -950,3 +950,6 @@ Terra's #976 scoping question: decided cut (a) — CLI path end to end behind a 
 
 ## 2026-10-20 15:35 UTC
 #986 = slice 1 PR (Terra), passes Elliot's security review at db8803d, with Quinn. Two carries put on #977: per-start token must bind SessionStart (stale-holder test); sweep temp loop homes at hub start.
+
+## 2026-10-20 17:30 UTC
+#986 merged (slice 1); closed #976 as landed. Terra on #977; connection delivery to the VM waits on Enes's run I (real account, hub machine), else the PR carries a pending line. Nudged Enes with the run I link.
