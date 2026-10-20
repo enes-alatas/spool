@@ -923,3 +923,6 @@ Sweep quiet. Terra posted the cloud ADR shape on #957 (01:32) with four operator
 
 ## 2026-10-20 09:30 UTC
 Enes synced with Terra on #957 directly (his four calls answered there, not via me). Egress UX scope arrived: dialog + pagination + plus → add dialog; wildcard subdomains. Verified: `.example.com` already covers subdomains; `*` refused since #908 (cloud env reads it as a wildcard). Filed #971 (web dialog, L6, Iris, mockups first) and #972 (hub accepts `*.x` as `.x`, L6, Terra after #957 ADR, Elliot reviews). Pinged both; told Enes with links and the posture note. Iris: #971. Terra: #957 ADR → #972 → #877 → #899 → #901 → #855 → #652 → #887 → #830 → #630.
+
+## 2026-10-20 11:15 UTC
+Sweep: #971 done in a morning (mockups → Enes picked A with revisions → PR #974 merged 10:48; #971 closed). Terra: PR #973 = ADR-0059 (cloud loops through the claude CLI), no pending decision line, with Quinn. Board tidy. Iris idle again after #974; next web work: ADR-0059's slices' web halves, #954's web half.
