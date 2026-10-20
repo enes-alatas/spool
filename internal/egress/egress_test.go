@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -79,8 +80,13 @@ func TestValidateRejectsWhatWouldPermitNothing(t *testing.T) {
 		"",                    // nothing at all
 		":443",                // a port with no host
 		"*",                   // a wildcard, which a cloud environment would widen
-		"*.example.com",       // ditto, where the domain form is meant
+		"*.example.com",       // stored, it permits nothing: Canonical reads it on the way in
+		"*.",                  // the domain spelling with no domain
+		"*.*.example.com",     // a wildcard past the leading one
+		"**.example.com",      // ditto, doubled
+		"*example.com",        // a wildcard with no dot after it
 		"a*b.example.com",     // ditto, inside a label
+		"api.*.example.com",   // ditto, inside the name
 	} {
 		if err := Validate(entry); err == nil {
 			t.Errorf("Validate(%q) = nil, want a complaint", entry)
@@ -359,6 +365,9 @@ func TestCanonical(t *testing.T) {
 		" .internal.example ":  ".internal.example",
 		"pkg.example.dev:0443": "pkg.example.dev:443",
 		"tracker.example:8080": "tracker.example:8080",
+		"*.example.com":        ".example.com", // the domain form, as operators also write it (#972)
+		" *.Example.COM. ":     ".example.com",
+		"*.example.com:8443":   ".example.com:8443",
 	} {
 		got, err := Canonical(entry)
 		if err != nil || got != want {
@@ -370,5 +379,25 @@ func TestCanonical(t *testing.T) {
 	}
 	if _, err := Canonical("https://pkg.example.dev/"); err == nil {
 		t.Error("Canonical accepted a URL")
+	}
+
+	// Both spellings of the domain form land on the same rule at the wall.
+	for _, entry := range []string{"*.example.com", ".example.com"} {
+		canonical, _ := Canonical(entry)
+		allow := New([]string{canonical})
+		if !allow.Allows("example.com", "443") || !allow.Allows("api.example.com", "443") || allow.Allows("example.org", "443") {
+			t.Errorf("New(%q) does not allow exactly example.com and everything under it", entry)
+		}
+		if entries := allow.Entries(); !slices.Equal(entries, []string{".example.com:443", ".example.com:80"}) {
+			t.Errorf("New(%q).Entries() = %q, want the dotted form", entry, entries)
+		}
+	}
+
+	// An entry stored with a * before the hub read the spelling stays inert:
+	// reading it at the wall would open a domain on upgrade that the operator
+	// never saw opened.
+	legacy := New([]string{"*.legacy.example"})
+	if legacy.Allows("legacy.example", "443") || legacy.Allows("api.legacy.example", "443") || len(legacy.Entries()) != 0 {
+		t.Errorf("a stored *.legacy.example permits %q, want nothing", legacy.Entries())
 	}
 }

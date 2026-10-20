@@ -3,10 +3,17 @@
 package itest
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
 	"net/url"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/enes-alatas/spool/internal/store"
+	"github.com/enes-alatas/spool/internal/store/sqlite"
 )
 
 // egressSettings is GET /api/settings/egress, as much as these tests read.
@@ -96,5 +103,47 @@ func TestEgressHostsSeedFromTheFlagOnce(t *testing.T) {
 	}
 	if strings.Contains(s.log(), "differs from the stored extra egress hosts") {
 		t.Fatal("a hub started without the flag warned about it")
+	}
+}
+
+// *.example.com is another spelling of the domain form: it is stored, shown
+// and removed as .example.com, so no * is kept. An entry with a * stored
+// before the hub refused one is still removed as written, without taking
+// the domain rule beside it (#972).
+func TestEgressHostsReadTheStarSpellingAsTheDomainForm(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	s := startServerArgs(t, dir, "--runtime", "bare", "--egress-image", "", "--egress-allow", "*.Flag.example")
+
+	var added egressSettings
+	s.mustJSON("POST", "/api/settings/egress/hosts", map[string]string{"host": "*.Example.dev"}, &added)
+	s.mustJSON("POST", "/api/settings/egress/hosts", map[string]string{"host": ".example.dev"}, &added)
+	if want := []string{".flag.example", ".example.dev"}; !reflect.DeepEqual(added.Extra, want) {
+		t.Fatalf("extra after adding both spellings = %q, want %q", added.Extra, want)
+	}
+	if resp, body := s.do("POST", "/api/settings/egress/hosts", map[string]string{"host": "a*b.example.dev"}); resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("a * inside a label = %d %s, want 400", resp.StatusCode, body)
+	}
+	var removed egressSettings
+	s.mustJSON("DELETE", "/api/settings/egress/hosts/"+url.PathEscape("*.example.dev"), nil, &removed)
+	if want := []string{".flag.example"}; !reflect.DeepEqual(removed.Extra, want) {
+		t.Fatalf("extra after removing *.example.dev = %q, want %q", removed.Extra, want)
+	}
+	s.stop()
+
+	db, err := sqlite.Open(filepath.Join(dir, "spool.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy, _ := json.Marshal(store.EgressHosts{Hosts: []string{"*.legacy.example", ".legacy.example"}, ChangedAt: 1})
+	if err := db.Settings().Set(context.Background(), store.SettingEgressHosts, string(legacy)); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	s = startServerArgs(t, dir, "--runtime", "bare", "--egress-image", "")
+	s.mustJSON("DELETE", "/api/settings/egress/hosts/"+url.PathEscape("*.legacy.example"), nil, &removed)
+	if want := []string{".legacy.example"}; !reflect.DeepEqual(removed.Extra, want) {
+		t.Fatalf("extra after removing the stored *.legacy.example = %q, want %q", removed.Extra, want)
 	}
 }

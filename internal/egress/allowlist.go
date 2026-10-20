@@ -62,11 +62,12 @@ func DefaultHosts() []string {
 	return hosts
 }
 
-// Canonical is entry as the allowlist reads it: trimmed, lowercased, the
-// trailing dot dropped and the port in decimal. Two entries with one
-// canonical form permit the same thing, so a stored list keys on it.
+// Canonical is entry as the allowlist reads it: trimmed, lowercased, a
+// leading *. read as the domain form's dot, the trailing dot dropped and the
+// port in decimal. Two entries with one canonical form permit the same
+// thing, so a stored list keys on it.
 func Canonical(entry string) (string, error) {
-	host, ports, err := parseEntry(entry)
+	host, ports, err := parseEntry(entry, true)
 	if err != nil {
 		return "", err
 	}
@@ -116,7 +117,7 @@ func New(entries []string) *Allowlist {
 		// An entry that cannot be acted on is left out rather than kept as a
 		// rule matching nothing: whoever accepted it reports it (Validate),
 		// and the allowlist itself holds only rules that can fire.
-		host, ports, err := parseEntry(entry)
+		host, ports, err := parseEntry(entry, false)
 		if err != nil {
 			continue
 		}
@@ -188,7 +189,7 @@ func render(host string, ports map[string]bool) []string {
 // (`--egress-allow`, `--allow`) says so at startup rather than leaving a host
 // mysteriously unreachable.
 func Validate(entry string) error {
-	_, _, err := parseEntry(entry)
+	_, _, err := parseEntry(entry, false)
 	return err
 }
 
@@ -200,8 +201,14 @@ func Validate(entry string) error {
 // sign, no leading zeros — because matching is on the string. "example.com:0443"
 // is an ordinary typo with an unambiguous intent, so it becomes 443 rather
 // than an entry that is live in the list and dead in practice.
-func parseEntry(entry string) (host string, ports map[string]bool, err error) {
+//
+// incoming is true only for an entry on its way into a stored list
+// (Canonical): only there is a leading *. read as the domain form.
+func parseEntry(entry string, incoming bool) (host string, ports map[string]bool, err error) {
 	rawHost, rawPort := cutPort(strings.TrimSpace(entry))
+	if incoming {
+		rawHost = domainForm(rawHost)
+	}
 	if err := validHost(entry, rawHost); err != nil {
 		return "", nil, err
 	}
@@ -221,6 +228,19 @@ func parseEntry(entry string) (host string, ports map[string]bool, err error) {
 	}
 	permitted[strconv.Itoa(number)] = true
 	return normalize(rawHost), permitted, nil
+}
+
+// domainForm reads a leading "*." as the leading dot it means: operators
+// write *.example.com for a domain and everything under it, which is what
+// .example.com allows (#972). It reads an entry on its way in, so only the
+// dotted form is stored. An entry stored with a * before then stays one New
+// leaves out, permitting nothing, as it did: reading it now would open a
+// domain at the wall that the operator never saw opened.
+func domainForm(host string) string {
+	if rest, ok := strings.CutPrefix(strings.TrimSpace(host), "*."); ok {
+		return "." + rest
+	}
+	return host
 }
 
 // validHost holds an entry's host to what a client can actually ask for: a

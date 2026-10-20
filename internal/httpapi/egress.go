@@ -134,11 +134,15 @@ func (server *Server) handleAddEgressHost(w http.ResponseWriter, r *http.Request
 // on the list changes nothing.
 func (server *Server) handleRemoveEgressHost(w http.ResponseWriter, r *http.Request) {
 	entry := r.PathValue("entry")
-	if canonical, err := egress.Canonical(entry); err == nil {
-		entry = canonical
-	}
 	server.changeEgressHosts(w, r, func(hosts []string) []string {
-		return slices.DeleteFunc(hosts, func(host string) bool { return host == entry })
+		// An entry stored as written goes as written. One with a * stored
+		// before the hub refused it now reads as the domain form (#972), and
+		// removing it must not take that rule in its place.
+		target := entry
+		if canonical, err := egress.Canonical(entry); err == nil && !slices.Contains(hosts, entry) {
+			target = canonical
+		}
+		return slices.DeleteFunc(hosts, func(host string) bool { return host == target })
 	})
 }
 
