@@ -207,6 +207,17 @@ func TestPromptDescribesTheLoopsConversations(t *testing.T) {
 func waitPromptAfterRotation(t *testing.T, s *server, name, old string) string {
 	t.Helper()
 	s.mustJSON("POST", "/api/loops/"+name+"/rotate", nil, nil)
+	// /rotate answers 202 before the rotation lands: a loop still draining
+	// takes it at its next quiet boundary, and a message sent before then is
+	// queued work that runs first, on the old session (#880). So the wake is
+	// sent once the old session is retired.
+	deadline := time.Now().Add(30 * time.Second)
+	for s.loop(name).CurrentSessionID == old {
+		if time.Now().After(deadline) {
+			t.Fatalf("%s still on session %s 30s after /rotate", name, old)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 	at := time.Now().UnixMilli()
 	s.message(name, "wake on the successor")
 	tn := s.waitTurn(name, 30*time.Second, func(tn turn) bool {

@@ -1291,7 +1291,8 @@ func (server *Server) handleKill(w http.ResponseWriter, r *http.Request) {
 
 // handleRotate queues an operator-asked context rotation (ADR-0022): the
 // loop writes its handoff note at the next quiet boundary and continues on
-// a fresh session seeded from it.
+// a fresh session seeded from it. It answers 202 before the rotation lands;
+// the loop's current_session_id changing says it has.
 func (server *Server) handleRotate(w http.ResponseWriter, r *http.Request) {
 	loopRecord := server.loopByName(w, r)
 	if loopRecord == nil {
