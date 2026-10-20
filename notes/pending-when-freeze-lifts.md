@@ -959,3 +959,6 @@ Terra: #977 as 3 sequential PRs (CLI-only path + per-session tokens → ADR-0056
 
 ## 2026-10-20 18:05 UTC
 Iris: #979 built (mockups rounds 1–3 with Enes's picks done), waits on #978. Filed #989 (sync marks dropped from Egress page + Settings → Cloud; web half of #977 PR 1; no mockup; lands after PR 1) → Iris. Noted on #977.
+
+## 2026-10-20 18:20 UTC
+Enes (DM): owner DM view opens at the oldest message. Filed #991 (bug, low, L5) → Iris first, then #989, then #979 after #978. Told Enes with the link.
