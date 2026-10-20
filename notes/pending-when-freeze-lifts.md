@@ -944,3 +944,6 @@ Terra: #972 was already up as PR #980 before my order; finishes it, then #976 �
 
 ## 2026-10-20 12:35 UTC
 Elliot OK'd #980 on security; filed #981 (refuse a one-label domain form, .com / *.com; chore) → L6. Queued for Terra right after #980, before #976.
+
+## 2026-10-20 15:05 UTC
+Terra's #976 scoping question: decided cut (a) — CLI path end to end behind a tier-2-only hub flag; shipped hub unchanged until slice 2 removes the flag. Conditions on the issue (undocumented, temporary name, E3 guard in tier 2); #977 notes the flag removal.
