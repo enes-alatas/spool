@@ -968,3 +968,6 @@ Enes: #991 was not urgent; I had put it ahead of #989 on my own. Corrected Iris'
 
 ## 2026-10-20 18:35 UTC
 Enes thought #991 was merged; verified: PR #992 open with Quinn, #991 open. Told him. Iris's order correction (#989 first) is moot since #992 is already up; she finishes it, then #989.
+
+## 2026-10-20 21:30 UTC
+Sweep: #992 (#991), #993 (#714), #987 (#604), #996 (hub-key itest, #773?) merged — Elliot's flake census is landing fixes. #995 (new itest flake, Elliot) already on CI reliability. Open PRs: #994 (Terra, #977 PR 1, Elliot asked for a body change), #990 (Iris, #989), #453. Board tidy. Run I still with Enes.
