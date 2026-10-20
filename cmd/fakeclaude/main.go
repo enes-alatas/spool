@@ -133,6 +133,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -168,6 +169,9 @@ func main() {
 	partials := false
 
 	args := os.Args[1:]
+	if slices.Contains(args, "--cloud") || (len(args) > 0 && args[0] == cloudVMArg) {
+		os.Exit(cloudMain(args))
+	}
 	if len(args) >= 2 && args[0] == "auth" && args[1] == "login" {
 		os.Exit(authLogin())
 	}

@@ -43,6 +43,9 @@ type Runtime struct {
 	EgressEntries func(ctx context.Context) ([]string, error)
 	// Bounds are a turn's read-back bounds; zero fields are the defaults.
 	Bounds Bounds
+	// CLI, when set, drives every cloud session through the claude CLI in
+	// place of the sessions client. It is temporary: see CLI.
+	CLI *CLI
 
 	mu sync.Mutex // guards every state file
 	// writing is held from reading the allowlist through an environment's
@@ -50,6 +53,8 @@ type Runtime struct {
 	// before an edit would otherwise write it back over what the edit's Sync
 	// just wrote, and record it as written.
 	writing sync.Mutex
+	// waits are the hook posts CLI sessions are waiting on.
+	waits hookWaits
 }
 
 var _ runtime.Runtime = (*Runtime)(nil)
@@ -231,6 +236,10 @@ func (cloud *Runtime) Ensure(ctx context.Context, spec runtime.Spec) error {
 	if err != nil {
 		return err
 	}
+	if cloud.CLI != nil {
+		// the CLI's sessions run in the operator's environment, not one of ours
+		return nil
+	}
 	cloud.writing.Lock()
 	defer cloud.writing.Unlock()
 	hosts, _, err := cloud.allowedHosts(ctx)
@@ -383,6 +392,9 @@ func (cloud *Runtime) loopIDs() ([]string, error) {
 // token other than the one its cloud session was created with: the session
 // holds that token for its life, and the hub would refuse it.
 func (cloud *Runtime) Start(ctx context.Context, spec runtime.Spec) (runtime.Proc, error) {
+	if cloud.CLI != nil {
+		return cloud.startCLI(spec)
+	}
 	hub, err := hubFrom(spec)
 	if err != nil {
 		return nil, err
@@ -437,6 +449,10 @@ func (cloud *Runtime) Destroy(ctx context.Context, loopID string) error {
 	if err != nil {
 		return err
 	}
+	if cloud.CLI != nil {
+		// the CLI can't archive: the session is left for claude.ai
+		current = state{}
+	}
 	if current.SessionID != "" {
 		if err := cloud.Client.ArchiveSession(ctx, current.SessionID); err != nil && !isInactive(err) {
 			return err
@@ -478,6 +494,10 @@ func (cloud *Runtime) HasWorkstation() bool { return false }
 // workstation at all; one with no session yet is up, since its first
 // message creates one.
 func (cloud *Runtime) Health(ctx context.Context, loopID string) (runtime.Health, error) {
+	if cloud.CLI != nil {
+		// the CLI can't read a session's status
+		return runtime.Health{Up: true}, nil
+	}
 	current, err := cloud.load(loopID)
 	if err != nil {
 		return runtime.Health{}, err
