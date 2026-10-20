@@ -36,7 +36,7 @@ export function Copyable({ text }: { text: string }) {
         // denied: try the older way below
       }
     }
-    if (copyByCommand(text)) {
+    if (copyByCommand(text, ref.current?.closest('dialog') ?? document.body)) {
       setOutcome('copied')
       return
     }
@@ -67,15 +67,18 @@ export function Copyable({ text }: { text: string }) {
 // Copies through a selected, off-screen textarea and execCommand: obsolete,
 // but the one way to copy from an insecure context, and still in every
 // browser. False when the browser refuses. Selecting focuses the textarea, so
-// focus goes back to whatever held it, the chip for a keyboard copy.
-function copyByCommand(text: string): boolean {
+// focus goes back to whatever held it, the chip for a keyboard copy. The
+// textarea goes in the chip's modal dialog when it has one: a modal dialog
+// makes the rest of the page inert, and an inert textarea selects nothing,
+// so the copy took an empty string (#971).
+function copyByCommand(text: string, into: HTMLElement): boolean {
   const held = document.activeElement
   const area = document.createElement('textarea')
   area.value = text
   area.setAttribute('readonly', '')
   area.style.position = 'fixed'
   area.style.opacity = '0'
-  document.body.appendChild(area)
+  into.appendChild(area)
   area.select()
   try {
     return document.execCommand('copy')
