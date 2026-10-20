@@ -91,6 +91,14 @@ func TestSlackPollCarriesVotesToTheHub(t *testing.T) {
 			return true
 		}
 	}
+	// The fake stores the post before the hub reads Slack's answer and
+	// records its ts, and a click on a ts the hub doesn't hold yet is
+	// dropped, once (#604). A person can't click before then; the test can.
+	eventually(t, "the hub holding the post's ts", func() bool {
+		var held int
+		_ = db.QueryRow(`SELECT count(*) FROM messages WHERE slack_channel_id=? AND slack_ts=?`, slackChannel, post.TS).Scan(&held)
+		return held == 1
+	})
 	slack.pushClick(t, slackAppToken, "U0STRANGER", slackChannel, post.TS, 0)
 	slack.pushClick(t, slackAppToken, slackOperator, slackChannel, post.TS, 1)
 	eventually(t, "the operator's vote tallied", func() bool { return choiceOf() == "[1]" })
