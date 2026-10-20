@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/enes-alatas/spool/internal/runtime/cloud/cloudfake"
 	"github.com/enes-alatas/spool/internal/store"
 	"github.com/enes-alatas/spool/internal/store/sqlite"
 )
@@ -20,10 +19,9 @@ import (
 // startProxyHub starts a bare hub with one loop, its Claude login signed in
 // on the synthetic token and Anthropic's API a stand-in that admits that
 // token alone.
-func startProxyHub(t *testing.T, name string) (*server, *cloudfake.Server) {
+func startProxyHub(t *testing.T, name string) (*server, *anthropicFake) {
 	t.Helper()
-	fake := cloudfake.New(cloudFixtureToken)
-	t.Cleanup(fake.Close)
+	fake := newAnthropicFake(t, cloudFixtureToken)
 	dataDir := t.TempDir()
 	s := startServerArgs(t, dataDir, "--runtime", "bare")
 	s.createLoop(name, nil)
@@ -73,7 +71,7 @@ func TestTheClaudeProxyForwardsModelRequestsOnTheHubsToken(t *testing.T) {
 		t.Fatalf("a loop's model request answered %d, want 200 from the stand-in on the hub's token", got)
 	}
 	fake.Mu.Lock()
-	messages := append([]cloudfake.Message(nil), fake.Messages...)
+	messages := append([]apiMessage(nil), fake.Messages...)
 	fake.Mu.Unlock()
 	if len(messages) != 1 {
 		t.Fatalf("the stand-in took %d model requests, want 1", len(messages))
@@ -135,8 +133,7 @@ func TestTheClaudeProxyRefusesWithNoLogin(t *testing.T) {
 // proxy. Its model request reaches Anthropic's API through the hub on the
 // hub's Claude token (ADR-0058).
 func dockerLoopReachesTheModelThroughTheClaudeProxy(t *testing.T) {
-	fake := cloudfake.New(dockerTestToken)
-	t.Cleanup(fake.Close)
+	fake := newAnthropicFake(t, dockerTestToken)
 	s := startDockerServer(t, t.TempDir(), "--cloud-api-base", fake.URL)
 	s.createLoop("wsproxy", nil)
 	cleanupWorkstation(t, s.loop("wsproxy").ID)

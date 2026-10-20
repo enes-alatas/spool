@@ -2,54 +2,68 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
-	"net/url"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
-	"github.com/enes-alatas/spool/internal/egress"
+	"github.com/enes-alatas/spool/internal/claude"
 	"github.com/enes-alatas/spool/internal/httpapi"
 	"github.com/enes-alatas/spool/internal/runtime/cloud"
 	"github.com/enes-alatas/spool/internal/store"
 )
 
-// newCloudRuntime is the cloud runtime as this hub wires it (ADR-0056): the
-// account and the public address are read from the store at each call, so
-// a sign-in or a new address takes effect at once, and its state lives in
-// the data directory.
-func newCloudRuntime(settings store.SettingsStore, dataDir, apiBase string, loopbackAddress bool) *cloud.Runtime {
+// newCloudRuntime is the cloud runtime as this hub wires it (ADR-0059): the
+// account is read from the store at each CLI run, so a sign-in takes
+// effect at once, and its state lives in the data directory. The CLI's
+// runs, loop homes among them, are made outside the data directory, which
+// backups carry: a home holds its loop's token. Each hub's dir is its own,
+// named for its data directory, so one hub's boot sweep never removes
+// another's homes.
+func newCloudRuntime(settings store.SettingsStore, dataDir, claudeBin string) *cloud.Runtime {
 	return &cloud.Runtime{
-		Client: &cloud.Client{
-			BaseURL: apiBase,
-			Account: func(ctx context.Context) (cloud.Account, error) {
-				raw, err := storedSetting(settings, store.SettingCloudAccount)
-				if err != nil {
-					return cloud.Account{}, err
-				}
-				if raw == "" {
-					return cloud.Account{}, cloud.ErrNoAccount
-				}
-				var account store.CloudAccount
-				if err := json.Unmarshal([]byte(raw), &account); err != nil || account.Token == "" {
-					return cloud.Account{}, errors.New("cloud: the stored Claude account can't be read; sign in again")
-				}
-				return cloud.Account{Token: account.Token, OrgUUID: account.OrgUUID}, nil
-			},
+		CLI: &cloud.CLI{Binary: claudeBin, Dir: cloudCLIDir(dataDir), Env: signInEnv(os.Environ())},
+		Account: func(ctx context.Context) (cloud.Account, error) {
+			raw, err := storedSetting(settings, store.SettingCloudAccount)
+			if err != nil {
+				return cloud.Account{}, err
+			}
+			if raw == "" {
+				return cloud.Account{}, cloud.ErrNoAccount
+			}
+			var account store.CloudAccount
+			if err := json.Unmarshal([]byte(raw), &account); err != nil || account.Token == "" {
+				return cloud.Account{}, errors.New("cloud: the stored Claude account can't be read; sign in again")
+			}
+			return cloud.Account{Token: account.Token, OrgUUID: account.OrgUUID}, nil
 		},
 		Dir: filepath.Join(dataDir, "cloud"),
-		EgressEntries: func(ctx context.Context) ([]string, error) {
-			return cloudEgressEntries(ctx, settings, loopbackAddress)
-		},
 	}
 }
 
-// cloudAPIBase checks --cloud-api-base: the calls carry the account's
-// token, so the API is reached over HTTPS, or over plain HTTP to a stand-in
-// on this machine's loopback, which is what tests point it at.
-func cloudAPIBase(raw string) (string, error) {
+// cloudCLIDir is where this hub's cloud CLI runs are made: the temp dir,
+// under a name of the data directory's own.
+func cloudCLIDir(dataDir string) string {
+	if abs, err := filepath.Abs(dataDir); err == nil {
+		dataDir = abs
+	}
+	sum := sha256.Sum256([]byte(dataDir))
+	return filepath.Join(os.TempDir(), "spool-cloud-"+hex.EncodeToString(sum[:6]))
+}
+
+// anthropicAPI is Anthropic's API, the Claude proxy's upstream.
+const anthropicAPI = "https://api.anthropic.com"
+
+// claudeAPIBase checks --cloud-api-base: the Claude proxy's calls carry the
+// hub's Claude token, so the API is reached over HTTPS, or over plain HTTP
+// to a stand-in on this machine's loopback, which is what tests point it
+// at.
+func claudeAPIBase(raw string) (string, error) {
 	return raw, httpapi.HTTPSOrLoopback(raw)
 }
 
@@ -73,71 +87,41 @@ func cloudAddress(ctx context.Context, settings store.SettingsStore, loopback bo
 	return strings.TrimSuffix(address, "/"), nil
 }
 
-// cloudEgressEntries are the egress allowlist entries every cloud
-// environment is held to: the hub's egress allowlist, built-in and the
-// operator's, and the public address's host. The runtime translates them,
-// leaving off what has no form in a cloud environment (cloud.Allowlist).
-func cloudEgressEntries(ctx context.Context, settings store.SettingsStore, loopbackAddress bool) ([]string, error) {
-	entries := egress.DefaultHosts()
-	raw, err := settings.Get(ctx, store.SettingEgressHosts)
+// cloudAccounts makes the account check (ADR-0059): ADR-0044's login check
+// on the account's token. The host's claude runs it when the hub finds
+// one, as it runs cloud sessions, or else the workstation image's does, as
+// it runs the sign-in on a hub that has only the image (#952).
+type cloudAccounts struct {
+	runtime *cloud.Runtime
+	image   interface {
+		CheckLogin(ctx context.Context, token string) (claude.LoginCheck, error)
+	}
+}
+
+// CheckAccount makes the check, and names where a failed one stopped as
+// Settings → Cloud does.
+func (accounts cloudAccounts) CheckAccount(ctx context.Context) (stage, detail string) {
+	check, err := accounts.check(ctx)
 	switch {
-	case errors.Is(err, store.ErrNotFound):
-	case err != nil:
-		return nil, err
-	default:
-		var stored store.EgressHosts
-		if err := json.Unmarshal([]byte(raw), &stored); err != nil {
-			return nil, err
-		}
-		entries = append(entries, stored.Hosts...)
-	}
-	address, err := cloudAddress(ctx, settings, loopbackAddress)
-	if err != nil {
-		return nil, err
-	}
-	if parsed, err := url.Parse(address); err == nil && parsed.Hostname() != "" {
-		entries = append(entries, parsed.Hostname())
-	}
-	return entries, nil
-}
-
-// cloudEnvironments is the cloud runtime as the egress routes drive it.
-// httpapi may not import a runtime adapter (archtest), so it names an
-// interface of its own, and this fits the runtime to it.
-type cloudEnvironments struct{ runtime *cloud.Runtime }
-
-func (environments cloudEnvironments) SyncEnvironments(ctx context.Context) error {
-	return environments.runtime.Sync(ctx)
-}
-
-func (environments cloudEnvironments) EnvironmentSyncs(ctx context.Context) ([]httpapi.CloudEnvironmentSync, []string, error) {
-	syncs, notApplied, err := environments.runtime.Syncs(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	var converted []httpapi.CloudEnvironmentSync
-	for _, sync := range syncs {
-		converted = append(converted, httpapi.CloudEnvironmentSync(sync))
-	}
-	return converted, notApplied, nil
-}
-
-// CheckAccount makes the account check (ADR-0056), and names where a
-// failed one stopped as Settings → Cloud does.
-func (environments cloudEnvironments) CheckAccount(ctx context.Context) (stage, detail string) {
-	err := environments.runtime.Client.CheckAccount(ctx)
-	var apiErr *cloud.APIError
-	switch {
-	case err == nil:
-		return "", ""
 	case errors.Is(err, cloud.ErrNoAccount):
 		return httpapi.CloudAccountStageNone, err.Error()
-	case errors.As(err, &apiErr) && (apiErr.Status == http.StatusUnauthorized || apiErr.Status == http.StatusForbidden):
-		return httpapi.CloudAccountStageRefused, err.Error()
-	case errors.As(err, &apiErr):
+	case err != nil:
 		return httpapi.CloudAccountStageOther, err.Error()
+	case !check.OK:
+		return httpapi.CloudAccountStageRefused, check.Refusal
 	}
-	return httpapi.CloudAccountStageUnreachable, err.Error()
+	return "", ""
+}
+
+func (accounts cloudAccounts) check(ctx context.Context) (claude.LoginCheck, error) {
+	if _, err := exec.LookPath(accounts.runtime.CLI.Binary); err == nil || accounts.image == nil {
+		return accounts.runtime.CheckAccount(ctx)
+	}
+	account, err := accounts.runtime.Account(ctx)
+	if err != nil {
+		return claude.LoginCheck{}, err
+	}
+	return accounts.image.CheckLogin(ctx, account.Token)
 }
 
 // storedSetting reads the setting key, "" while it is unset.

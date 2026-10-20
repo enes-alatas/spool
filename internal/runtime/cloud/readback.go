@@ -141,3 +141,14 @@ func turnEvents(post StopPost, hubSession string, bounds Bounds) ([]claude.Event
 	}
 	return append(append([]claude.Event{claude.DecodeEvent(init)}, events...), claude.DecodeEvent(result)), nil
 }
+
+// errorSnippet is how much of an unexpected post or CLI answer an error
+// quotes.
+const errorSnippet = 300
+
+func snippet(raw []byte) string {
+	if len(raw) > errorSnippet {
+		return string(raw[:errorSnippet]) + "…"
+	}
+	return string(raw)
+}

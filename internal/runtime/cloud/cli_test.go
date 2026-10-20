@@ -2,6 +2,7 @@ package cloud
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,10 +22,10 @@ func cliRuntime(t *testing.T, cli string) *Runtime {
 		t.Fatal(err)
 	}
 	return &Runtime{
-		Client: &Client{Account: func(context.Context) (Account, error) { return testAccount, nil }},
-		Dir:    t.TempDir(),
-		CLI:    &CLI{Binary: binary, Dir: t.TempDir(), Env: os.Environ(), StartWithin: 2 * time.Second},
-		Bounds: Bounds{Quiet: 5 * time.Second},
+		Account: func(context.Context) (Account, error) { return testAccount, nil },
+		Dir:     t.TempDir(),
+		CLI:     &CLI{Binary: binary, Dir: filepath.Join(t.TempDir(), "cli"), Env: os.Environ(), StartWithin: 2 * time.Second},
+		Bounds:  Bounds{Quiet: 5 * time.Second},
 	}
 }
 
@@ -264,5 +265,160 @@ func TestLastLineDropsTheTerminalsEscapes(t *testing.T) {
 	_, _ = screen.Write([]byte("\x1b[2J\x1b[1;1HWelcome\r\n\x1b[32m✓ Uploaded\x1b[0m\r\n\x1b[?25l"))
 	if got := screen.String(); got != "✓ Uploaded" {
 		t.Errorf("the last line is %q", got)
+	}
+}
+
+// A hub that stopped mid-start left that start's loop home, token and all,
+// in the CLI's dir: the next boot removes it. A dir at that path that
+// isn't this user's own is refused, at boot and before every run.
+func TestPrepareSweepsTheCLIsDirAndRefusesOneNotPrivate(t *testing.T) {
+	cli := &CLI{Dir: filepath.Join(t.TempDir(), "cli")}
+	if removed, err := cli.Prepare(); err != nil || removed != 0 {
+		t.Fatalf("Prepare on no dir = %d, %v; want it made, with nothing removed", removed, err)
+	}
+	if err := os.MkdirAll(filepath.Join(cli.Dir, "spool-home-1", ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cli.Dir, "spool-home-1", ".mcp.json"), []byte(testHubToken), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if removed, err := cli.Prepare(); err != nil || removed != 1 {
+		t.Fatalf("Prepare = %d, %v; want the left home removed", removed, err)
+	}
+	if entries, _ := os.ReadDir(cli.Dir); len(entries) != 0 {
+		t.Errorf("after Prepare the dir holds %v", entries)
+	}
+
+	if err := os.Chmod(cli.Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cli.Prepare(); err == nil {
+		t.Error("Prepare took a dir other users can open")
+	}
+	if err := cli.ownDir(); err == nil {
+		t.Error("a run took a dir other users can open")
+	}
+	link := &CLI{Dir: filepath.Join(t.TempDir(), "link")}
+	if err := os.Symlink(t.TempDir(), link.Dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := link.Prepare(); err == nil {
+		t.Error("Prepare followed a symlink")
+	}
+}
+
+// What the CLI writes into its config dir besides what the hub gave it is
+// removed with the dir, and named; a clean run leaves nothing to name.
+func TestARunsConfigDirIsCheckedAndRemoved(t *testing.T) {
+	cloud := cliRuntime(t, `sleep 30`)
+	clean, err := cloud.newCLIRun(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	configDir := configDirOf(clean)
+	if found := leftovers(configDir); len(found) != 0 {
+		t.Errorf("a clean run's config dir holds %v", found)
+	}
+	clean.remove()
+
+	dirty, err := cloud.newCLIRun(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	configDir = configDirOf(dirty)
+	for _, name := range []string{"projects/-tmp/s.jsonl", "shell-snapshots/s.sh", "debug/s.txt", ".credentials.json"} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(configDir, name)), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(configDir, name), []byte("[wake] synthetic"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if found := leftovers(configDir); strings.Join(found, " ") != ".credentials.json projects shell-snapshots debug" {
+		t.Errorf("the leftovers named are %v", found)
+	}
+	dirty.remove()
+	if _, err := os.Stat(configDir); !os.IsNotExist(err) {
+		t.Errorf("the config dir outlived its run: %v", err)
+	}
+	if entries, _ := os.ReadDir(cloud.CLI.Dir); len(entries) != 0 {
+		t.Errorf("the runs left %v in the CLI's dir", entries)
+	}
+}
+
+// A send runs in an empty dir of its own, never the hub's working dir,
+// whose project settings and hooks the CLI would load.
+func TestASendRunsInAnEmptyDirOfItsOwn(t *testing.T) {
+	seen := filepath.Join(t.TempDir(), "seen")
+	cloud := cliRuntime(t, `case "$1" in
+--cloud) sleep 30 ;;
+-p) { pwd; ls -A; } > `+seen+`; echo '{"ok":true}' ;;
+esac
+`)
+	proc := startCLI(t, cloud, testSpec())
+	postWhenPending(t, cloud, "", "session_01Synthetic", StopPost{Hook: []byte(`{}`), Lines: []byte(transcriptTurn)})
+	turnResult(t, proc, "first words")
+	go func() {
+		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+			if cloud.Stop(context.Background(), "loop-1", []byte(`{}`), nil, false) == nil {
+				return
+			}
+		}
+	}()
+	turnResult(t, proc, "second words")
+	raw, err := os.ReadFile(seen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
+	hubDir, _ := os.Getwd()
+	if len(lines) != 1 || !strings.HasPrefix(lines[0], cloud.CLI.Dir+"/") || lines[0] == hubDir {
+		t.Errorf("the send ran in %q, want an empty dir under the CLI's dir", lines)
+	}
+}
+
+func TestCheckAccountRunsTheLoginCheckOnTheAccountsToken(t *testing.T) {
+	seen := filepath.Join(t.TempDir(), "seen")
+	cloud := cliRuntime(t, `echo "$* $CLAUDE_CODE_OAUTH_TOKEN" > `+seen+`
+read -r line
+echo '{"type":"result","subtype":"success","is_error":false,"result":"hi"}'
+`)
+	check, err := cloud.CheckAccount(context.Background())
+	if err != nil || !check.OK {
+		t.Fatalf("CheckAccount = %+v, %v; want a passed check", check, err)
+	}
+	raw, _ := os.ReadFile(seen)
+	if want := strings.Join(claude.LoginCheckArgs(), " ") + " " + testAccount.Token + "\n"; string(raw) != want {
+		t.Errorf("the check ran as %q, want %q", raw, want)
+	}
+
+	cloud.Account = func(context.Context) (Account, error) { return Account{}, ErrNoAccount }
+	if _, err := cloud.CheckAccount(context.Background()); !errors.Is(err, ErrNoAccount) {
+		t.Errorf("with no account CheckAccount = %v, want ErrNoAccount", err)
+	}
+}
+
+// configDirOf is the config dir run sets, the last CLAUDE_CONFIG_DIR in
+// its environment.
+func configDirOf(run cliRun) (dir string) {
+	for _, kv := range run.env {
+		if value, ok := strings.CutPrefix(kv, "CLAUDE_CONFIG_DIR="); ok {
+			dir = value
+		}
+	}
+	return dir
+}
+
+// A private dir another user owns is refused too: a hub running as root
+// could write into it, and its owner could swap what the hub put there.
+// /root stands in for it where it is a 0700 dir this user doesn't own.
+func TestOwnDirRefusesAnotherUsersPrivateDir(t *testing.T) {
+	info, err := os.Lstat("/root")
+	if err != nil || info.Mode().Perm() != 0o700 || os.Getuid() == 0 {
+		t.Skip("no private dir of another user's here")
+	}
+	cli := &CLI{Dir: "/root"}
+	if err := cli.ownDir(); err == nil || !strings.Contains(err.Error(), "another user") {
+		t.Errorf("ownDir on another user's private dir = %v, want it refused", err)
 	}
 }

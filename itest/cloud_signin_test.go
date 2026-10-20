@@ -30,12 +30,12 @@ func signInCloudFromThePage(t *testing.T, s *server) cloudSettings {
 // Settings → Cloud signs in to the account cloud loops spend with the
 // Claude Code CLI's own login, run in a config directory of the hub's that
 // is gone once the sign-in ends (ADR-0056). The sign-in is checked with
-// one read-only call. A refused code, or a code with no sign-in waiting,
+// one login check (ADR-0059). A refused code, or a code with no sign-in waiting,
 // says so. While no account is signed in, a cloud loop waits, and a
 // sign-in wakes it with what waited. Remove forgets the account.
 func TestSettingsCloudSignsInWithTheCLIsLogin(t *testing.T) {
 	t.Parallel()
-	s, fake := startCloudHub(t, "cirrus")
+	s := startCloudHub(t, "cirrus")
 
 	s.mustJSON("DELETE", "/api/settings/cloud/account", nil, nil)
 	var view cloudSettings
@@ -65,16 +65,12 @@ func TestSettingsCloudSignsInWithTheCLIsLogin(t *testing.T) {
 	s.wantRefusal("POST", "/api/settings/cloud/account/code", map[string]string{"code": "not-the-code"}, 400, "cloud_sign_in")
 	s.wantRefusal("POST", "/api/settings/cloud/account/code", map[string]string{"code": "fixture-code"}, 409, "cloud_sign_in")
 
-	fake.Mu.Lock()
-	checks := fake.AccountChecks
-	fake.Mu.Unlock()
+	checks := loginChecks(t, s)
 	view = signInCloudFromThePage(t, s)
 	if !view.Account.Set || view.Account.Check == nil || view.Account.Check.State != "ok" {
 		t.Fatalf("after the sign-in: %+v %+v, want an account checked ok", view.Account, view.Account.Check)
 	}
-	fake.Mu.Lock()
-	checked := fake.AccountChecks - checks
-	fake.Mu.Unlock()
+	checked := loginChecks(t, s) - checks
 	if checked != 1 {
 		t.Errorf("the sign-in made %d account checks, want 1", checked)
 	}
@@ -115,7 +111,7 @@ func TestAStartingHubRemovesAnUnfinishedCloudSignIn(t *testing.T) {
 // hub finds the CLI it signs in with.
 func TestAClaudeLoginSupersedesTheSetupToken(t *testing.T) {
 	t.Parallel()
-	s, _ := startCloudHub(t, "altostratus")
+	s := startCloudHub(t, "altostratus")
 	const setupToken = "sk-ant-oat01-itesttokenABCDEFGHIJKLMNOP0123456789"
 
 	var view cloudSettings
@@ -156,5 +152,30 @@ func wantQuietCLIRuns(t *testing.T, s *server) {
 		t.Errorf("the hub ran the claude CLI with its telemetry on: %q", strings.Split(strings.TrimSpace(string(logged)), "\n"))
 	} else if !os.IsNotExist(err) {
 		t.Error(err)
+	}
+}
+
+// loginChecks counts the login checks fakeclaude has run for s.
+func loginChecks(t *testing.T, s *server) int {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(s.fkState, "login-checks"))
+	if os.IsNotExist(err) {
+		return 0
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.Count(string(raw), "\n")
+}
+
+// admitOnly has fakeclaude take token alone as the Claude login, as the API
+// takes a refreshed account's new token and no longer its old one.
+func admitOnly(t *testing.T, s *server, token string) {
+	t.Helper()
+	if err := os.MkdirAll(s.fkState, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(s.fkState, "admitted-token"), []byte(token), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }

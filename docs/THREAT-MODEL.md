@@ -229,10 +229,10 @@ ADR-0043), and a contained loop's model requests under `/claude`
 
 ### Cloud listener: `/mcp` for cloud loops, from the internet
 
-**What crosses:** a cloud loop's MCP calls, from its Claude Code cloud
-session over the internet, through the tunnel or TLS proxy the operator
-puts in front of the listener; and the hub's own address check
-(ADR-0056).
+**What crosses:** a cloud loop's MCP calls and its loop home's hook posts,
+from its Claude Code cloud session over the internet, through the tunnel
+or TLS proxy the operator puts in front of the listener; and the hub's
+own address check (ADR-0056, ADR-0059).
 
 **Holds:**
 - **It is off** unless the hub is started with `--cloud-listen` or an
@@ -251,10 +251,8 @@ puts in front of the listener; and the hub's own address check
   once, and 404 for anything else. Values are 130 bits from
   `crypto/rand`, the hub keeps only their SHA-256, and the set is capped,
   so nothing an outsider sends grows it.
-  `/hooks`, where a cloud session's hooks post its id and each turn
-  (ADR-0059), is 404 too until slice 2 of ADR-0059 (#977) turns it on;
-  only tier 2 runs it before then. It takes a cloud loop's token alone,
-  as `/mcp` does.
+  `/hooks` is where a cloud session's hooks post its id and each turn
+  (ADR-0059). It takes a cloud loop's token alone, as `/mcp` does.
 - **Bounds come before authentication:** headers at 16 KiB, a body at
   1 MiB (16 MiB on `/hooks`, for a turn's transcript lines), 10 seconds
   for the headers and 30 for the request, two minutes for the answer.
@@ -271,9 +269,12 @@ puts in front of the listener; and the hub's own address check
 ### Cloud session: the cloud runtime
 
 **What crosses:** the hub drives a cloud loop's Claude Code cloud session
-over Anthropic's sessions API, with the claude.ai account's OAuth token:
-it creates the loop's environment and session, sends each turn's message
-in, and reads the turn's events back (ADR-0056).
+through the `claude` CLI, on the claude.ai account's OAuth token. It starts
+the session with `claude --cloud` under a pseudo-terminal, from a *loop
+home* it builds for that start: a git repo of one commit, which the CLI
+uploads. It sends each wake with `claude -p --cloud`. The loop home's
+hooks post the session's id and each turn's transcript lines back to the
+cloud listener (ADR-0059).
 
 **Holds:**
 - **The account token is sealed** under `hub.key`, known to the redactor,
@@ -283,15 +284,40 @@ in, and reads the turn's events back (ADR-0056).
   the tokens out. It removes any a stopped hub left as it next starts,
   before it serves, and the backup script never copies one. Only an
   admin signs in, checks the account or removes it. The calls go to
-  Anthropic's API over HTTPS and follow no redirect
-  (`--cloud-api-base` takes plain HTTP only on loopback, for tests).
+  admin signs in, checks the account or removes it.
+- **The CLI runs hold no credential at rest.** Each run gets the access
+  token in `CLAUDE_CODE_OAUTH_TOKEN` and a config dir of its own that
+  holds only the onboarding and trust flags and the account's
+  organization. Each runs in a directory of its own, the start in its
+  loop home and every other run in an empty one, never the hub's working
+  directory or the shared temp dir, whose project settings and hooks the
+  CLI would load. After each run the hub removes the config dir, and logs
+  by name any credential, transcript, shell snapshot or debug log the
+  CLI left there. The CLI's environment is the sign-in's, with the
+  credential variables stripped and its nonessential traffic off. The
+  token in it is visible only to the hub's own user. The account check is
+  ADR-0044's login check on the token: one haiku answer, run by the
+  host's CLI, or by the workstation image's on a hub with none.
 - **No setup-token leaves the machine.** A cloud session runs on the
-  account, and the hub gives it no `CLAUDE_CODE_OAUTH_TOKEN`.
-- **The session carries one credential, the loop's MCP token,** as a
-  session variable the session's record doesn't serve back. The
-  environment's setup script names the variable, never the value. A
-  session is created with an empty MCP config, so it gets no built-in
-  tools that start or message other sessions, and no `github` server.
+  account, never on the setup-token.
+- **The session carries one credential, a hub token of its own** (ADR-0059).
+  The hub mints a fresh one for each session it starts and writes it
+  into that start's loop home's `.mcp.json`, which registers the hub's
+  cloud listener as the one server the home names. Stopping or killing a
+  cloud loop revokes its token at once, without waiting for a turn, as
+  does the next session's start. So a copy lifted out of a session dies
+  with that session, and an old VM of a loop can't bind itself to a
+  start of a new one: its token is refused.
+- **The loop home holds the token only for its start.** The hub makes it
+  in a fresh 0700 directory under a directory of its own in the temp dir,
+  named for the data directory, outside the data directory, which backups
+  carry. It removes the home once the session has posted its id or the
+  start has failed. A hub stopped mid-start leaves its home there, and
+  the next boot removes everything in that directory before any start.
+  The hub uses the directory only while it is a 0700 directory of its
+  own user's, checked at boot and before every run, so a temp-dir
+  cleaner removing it and another user making it again gets them
+  nothing, even from a hub running as root.
 - **The token goes only to an HTTPS address.** The public address is
   checked at every use, whatever wrote it: one that isn't `https://`
   wakes no cloud loop and seeds no allowlist. Settings → Cloud refuses
@@ -305,50 +331,30 @@ in, and reads the turn's events back (ADR-0056).
   redirect, and passes only on its own listener's 204. A failure names
   its stage: the listener off, DNS, TLS, a timeout, the connection, or
   another server answering.
-- **The allowlist is the hub's own,** never Anthropic's Trusted
-  defaults: the egress allowlist plus the hub's public host. A domain
-  rule, `.example.com`, is written as `*.example.com` and `example.com`,
-  which is what it allows at the wall. An entry with a port of its own
-  has no form there, so it is left off, never widened, and Settings marks
-  it not applied to cloud loops. A `*` would be a wildcard there and a
-  name nothing has at the wall, so the hub refuses it in a host, and one
-  stored before is left off the same way, and permits nothing at the
-  wall. A leading `*.` on an entry coming in is read as the domain rule's
-  leading dot and stored as it, so no `*` comes in that way (#972). A
-  domain form of one label, `.com`, is refused, since it would open a
-  whole top-level domain there; one stored before is left off and permits
-  nothing at the wall (#981).
-- **An allowlist edit reaches every cloud environment at once,** with no
-  wake. Settings names any environment whose write failed, and the
-  loop's next wake or the next edit retries it. The reason quotes the
-  cloud's answer, unredacted, so only an admin reads it; a member sees
-  in sync or not.
-- **Deleting a cloud loop revokes its token first.** The hub stops the
-  loop and deletes its record, token and all, before the calls that
-  archive its session and environment. Those take up to a minute, or
-  fail, and the token works at no point in between.
+- **A start binds only the session its own VM names.** The hub takes a
+  `SessionStart` post only while a start of that loop is pending, within
+  its two minutes, once, and only with a session id of a session's shape.
+  The loop can read its token and run curl, so without this it could
+  rebind its own wakes into another session.
+- **Deleting a cloud loop revokes its token,** with its record. The CLI
+  can't archive the session, so it is left for the operator to archive
+  on claude.ai.
 - **A cloud loop is created only once Settings → Cloud is green:** the
   public address's last check passed, and a signed-in account's did. A
   cloud loop never moves runtime, and takes no docker settings.
-- **The session link is claude.ai's or none.** The API's `session_url`
-  is untrusted, so the view carries it only as a `https://claude.ai/code/`
-  page.
-- **Each session gets a hub token of its own** (ADR-0059). The hub mints
-  a fresh one for each session it starts, and stopping or killing a cloud
-  loop revokes it at once, without waiting for a turn. So a copy lifted
-  out of a session dies with that session, and an old VM of a loop can't
-  bind itself to a start of a new one: its token is refused. A session
-  holds the token it was started with, so a loop whose token is replaced
-  starts a fresh session at its next wake rather than resume one the hub
-  would refuse.
-- **What comes back is untrusted** and read under bounds: 4 MiB a page,
-  with one event over it skipped and named, and per turn 20 000 events
-  and 64 MiB. An answer or event the hub can't read, a refusal other than
-  a rate limit or the API's own fault, a session that parks, goes idle
-  with no result or never takes the message, and two hours with no event
-  each end the turn as an error that says which. A rate limit or fault is
-  retried with a backoff, six polls in a row at most. The events go
-  through the same redaction as a contained turn's.
+- **The session link is claude.ai's or none.** The session id comes from
+  a hook post, which is untrusted, so the view carries it only as a
+  `https://claude.ai/code/` page.
+- **What the hooks post is untrusted** and read under bounds, on the cloud
+  listener's hook route: a `Stop` post over its bound ends the turn as an
+  error, and so do a transcript line the hub can't read and two hours
+  with no post. The lines go through the same redaction as a contained
+  turn's. The hook script retries a post lost to a timeout, a refused
+  connection, or a 408, 429 or 5xx, and never one the hub refused.
+- **A cloud loop made under ADR-0056 starts a new session** at its next
+  wake, through the CLI, on a token of its own: the hub never resumes a
+  session the sessions client created. A repo given at creation is kept
+  and no session starts from it, until #977 removes the field.
 - **Attachments don't cross.** A file sent to a cloud loop is shown as
   not kept, and the loop can't attach one: the hub never reads its own
   disk for a cloud loop.
@@ -421,20 +427,30 @@ in, and reads the turn's events back (ADR-0056).
   starts more than a minute after the last pass. The minute is the gap:
   a turn that starts in it, like one already in flight, still sends its
   token to whoever answers the name.
-- **The read-back is undocumented.** Anthropic may change the events
-  endpoint without notice; the hub fails loudly when it does, and can't
-  do more.
-- **A session's GitHub reach is the Claude GitHub App's**, on the
-  account. A repo given at creation is only where the session starts:
-  the installation can cover every repo of the organisation, where a
-  contained loop holds only the token the operator gave it (ADR-0056).
+- **The read-back rests on the transcript's line format,** which is the
+  CLI's and not a published API. A change there fails the turn loudly
+  and leaves the sends working (ADR-0059).
+- **The hub's egress allowlist doesn't bind a cloud loop.** A session
+  reaches what its claude.ai environment allows, which the hub can't set
+  or read: Settings → Cloud's environment step comes with slice 3 of
+  ADR-0059 (#978). Until then a session runs in the account's default
+  environment.
+- **A cloud loop has no GitHub reach of its own** until its connections
+  are handed to its session (ADR-0059, #977). It no longer starts from a
+  repo through the Claude GitHub App.
 - **The loop can read its own token**, as a contained loop can read its
-  MCP config, and the environment's allowlist is enforced by Anthropic's
-  proxy, not the egress wall (ADR-0056 item 8).
-- **An oversized event is skipped only up to 64 MiB.** Past that the hub
-  reads no further, so it can't find the page's end to move past the
-  event. Every turn of that session then fails the same way, and the
-  error says to rotate the loop's session.
+  MCP config, and use it from anywhere until its session ends. The token
+  is also in the bundle the CLI uploaded, which Anthropic keeps with the
+  session (ADR-0059).
+- **A stop can't interrupt the turn in flight.** The CLI has no way to,
+  so the turn runs on in the VM until it ends, cut off from the hub but
+  with its other tools. A wake sent just before the stop may start a turn
+  after it. The operator interrupts and archives the session on
+  claude.ai.
+- **The wake crosses in argv.** `claude --cloud` and `claude -p --cloud`
+  take the envelope as an argument, so any user on the hub's host can
+  read it in `/proc/<pid>/cmdline` while the run lasts, and Linux refuses
+  one over 128 KiB. Whether the CLI takes it on stdin is checked on #977.
 - **A copy of the data directory with its keys** yields the account
   token and its refresh token, which drive the account, not only its
   turns, and the refresh token for as long as Anthropic keeps it

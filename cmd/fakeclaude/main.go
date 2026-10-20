@@ -112,6 +112,11 @@
 // every turn two seconds before it answers, so a test can read a login
 // check while it is still running.
 //
+// An "admitted-token" file there is the one token the API takes: a run on
+// any other CLAUDE_CODE_OAUTH_TOKEN is refused as an expired login is. A
+// login check, the one run with --no-session-persistence, adds a line to
+// "login-checks" there, so a test can count them.
+//
 // The init event lists the spool MCP server whenever there is an MCP config,
 // as connected; it does not dial it to find out. An "mcp-failed" file in
 // $FAKECLAUDE_STATE reports it failed instead, for every loop of the hub, as
@@ -223,6 +228,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	if slices.Contains(os.Args[1:], "--no-session-persistence") {
+		countLoginCheck(stateDir)
+	}
+
 	// A session the CLI can no longer load: a resume that dies before init,
 	// with a diagnostic on stderr and no stream-json at all. The stderr line
 	// is invented. No real signature was ever observed, and the engine
@@ -312,7 +321,7 @@ func main() {
 		if _, err := os.Stat(filepath.Join(stateDir, "login-slow")); err == nil {
 			time.Sleep(2 * time.Second)
 		}
-		if _, err := os.Stat(filepath.Join(stateDir, "login-expired")); err == nil {
+		if loginRefused(stateDir) {
 			const refusal = "Failed to authenticate: OAuth session expired and could not be refreshed"
 			emit(map[string]any{
 				"type": "assistant", "session_id": id,
@@ -1116,4 +1125,25 @@ func modelRequest() string {
 	}
 	defer resp.Body.Close()
 	return fmt.Sprintf("model: %d", resp.StatusCode)
+}
+
+// loginRefused reports whether the API refuses this run's login: every
+// run's while "login-expired" is in stateDir, and while "admitted-token"
+// is, a run on any other token.
+func loginRefused(stateDir string) bool {
+	if _, err := os.Stat(filepath.Join(stateDir, "login-expired")); err == nil {
+		return true
+	}
+	admitted, err := os.ReadFile(filepath.Join(stateDir, "admitted-token"))
+	return err == nil && strings.TrimSpace(string(admitted)) != os.Getenv("CLAUDE_CODE_OAUTH_TOKEN")
+}
+
+// countLoginCheck adds a line to stateDir's login-checks.
+func countLoginCheck(stateDir string) {
+	file, err := os.OpenFile(filepath.Join(stateDir, "login-checks"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	_, _ = file.WriteString("check\n")
+	_ = file.Close()
 }

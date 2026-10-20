@@ -33,27 +33,6 @@ type EgressWall interface {
 	FleetEgressApplied() time.Time
 }
 
-// CloudEnvironments is the part of the cloud runtime the egress routes
-// drive: every cloud loop's environment carries the hub's allowlist, as
-// far as it translates (ADR-0056).
-type CloudEnvironments interface {
-	// SyncEnvironments writes the allowlist to every environment whose
-	// copy is out of date, and names each loop whose write failed.
-	SyncEnvironments(ctx context.Context) error
-	// EnvironmentSyncs reads each environment's sync state, and the
-	// allowlist entries no environment carries.
-	EnvironmentSyncs(ctx context.Context) (syncs []CloudEnvironmentSync, notApplied []string, err error)
-}
-
-// CloudEnvironmentSync is one cloud loop's environment, as
-// EnvironmentSyncs reads it.
-type CloudEnvironmentSync struct {
-	LoopID   string
-	InSync   bool   // written with the allowlist as it stands
-	Error    string // why its last write failed, while it isn't in sync
-	SyncedAt int64  // when a write last landed, Unix ms
-}
-
 // codeEgressHostInvalid refuses an entry the allowlist can't act on, with
 // the reason as the message for the form to show.
 const codeEgressHostInvalid = "egress_host_invalid"
@@ -69,23 +48,6 @@ type egressView struct {
 	Flag      []string           `json:"flag,omitzero"` // [] for a hub started with an empty flag
 	ChangedAt int64              `json:"changed_at,omitempty"`
 	AppliedAt int64              `json:"applied_at,omitempty"`
-	// Cloud is the cloud loops' environments, absent on a hub with none.
-	Cloud *cloudEgressView `json:"cloud,omitempty"`
-}
-
-// cloudEgressView is how far the allowlist reaches the cloud loops: each
-// environment in sync or with what failed, and the entries marked "not
-// applied to cloud loops" (ADR-0056).
-type cloudEgressView struct {
-	Environments []cloudEnvironmentView `json:"environments"`
-	NotApplied   []string               `json:"not_applied"`
-}
-
-type cloudEnvironmentView struct {
-	Loop     string `json:"loop"`
-	InSync   bool   `json:"in_sync"`
-	Error    string `json:"error,omitempty"`
-	SyncedAt int64  `json:"synced_at,omitempty"`
 }
 
 type addEgressHostReq struct {
@@ -99,7 +61,6 @@ func (server *Server) handleGetEgress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view := server.egressView(hosts)
-	view.Cloud = server.cloudEgress(r.Context(), callerOf(r))
 	writeJSON(w, 200, view)
 }
 
@@ -171,14 +132,8 @@ func (server *Server) changeEgressHosts(w http.ResponseWriter, r *http.Request, 
 				server.Log.Warn("egress hosts stored but not yet applied; the next wake retries", "err", err)
 			}
 		}
-		if server.Cloud != nil {
-			if err := server.Cloud.SyncEnvironments(r.Context()); err != nil {
-				server.Log.Warn("egress hosts stored but not yet in every cloud environment; each one's next wake retries", "err", err)
-			}
-		}
 	}
 	view := server.egressView(hosts)
-	view.Cloud = server.cloudEgress(r.Context(), callerOf(r))
 	writeJSON(w, 200, view)
 }
 
@@ -249,39 +204,4 @@ func storeEgressHosts(ctx context.Context, settings store.SettingsStore, hosts s
 		return err
 	}
 	return settings.Set(ctx, store.SettingEgressHosts, string(raw))
-}
-
-// cloudEgress reads how far the allowlist reaches the cloud loops, nil on
-// a hub with none. It is best effort: a failed read leaves the cloud out
-// of the view and is logged, since the rest of the view still holds. A
-// member sees whether each environment is in sync, not why a write failed
-// (seesSyncErrors).
-func (server *Server) cloudEgress(ctx context.Context, who *caller) *cloudEgressView {
-	if server.Cloud == nil {
-		return nil
-	}
-	syncs, notApplied, err := server.Cloud.EnvironmentSyncs(ctx)
-	if err != nil {
-		server.Log.Warn("cloud environments' sync state unread", "err", err)
-		return nil
-	}
-	if len(syncs) == 0 {
-		return nil
-	}
-	view := &cloudEgressView{Environments: []cloudEnvironmentView{}, NotApplied: notApplied}
-	if view.NotApplied == nil {
-		view.NotApplied = []string{}
-	}
-	for _, sync := range syncs {
-		name := sync.LoopID
-		if loopRecord, err := server.Store.Loops().Get(ctx, sync.LoopID); err == nil {
-			name = loopRecord.Name
-		}
-		environment := cloudEnvironmentView{Loop: name, InSync: sync.InSync, SyncedAt: sync.SyncedAt}
-		if seesSyncErrors(who) {
-			environment.Error = sync.Error
-		}
-		view.Environments = append(view.Environments, environment)
-	}
-	return view
 }

@@ -10,22 +10,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/enes-alatas/spool/internal/runtime/cloud/cloudfake"
 	"github.com/enes-alatas/spool/internal/store"
 )
 
 // A hub with no claude of its own signs in to the Claude account with the
 // workstation image's, in a throwaway container behind the egress wall
 // that sees only the sign-in's directory (#952). The page offers the
-// sign-in, the code reaches the CLI and the account checks ok, the token
+// sign-in, the code reaches the CLI and the account checks ok there, the token
 // is refreshed the same way in its last hour, and Sign out runs there
 // too. Nothing is left: no tokens in the data directory, no container.
 func dockerSignInRunsInTheImage(t *testing.T) {
-	fake := cloudfake.New(cloudFixtureToken)
-	t.Cleanup(fake.Close)
 	dataDir := t.TempDir()
 	noClaude := filepath.Join(t.TempDir(), "claude")
-	s := startDockerServer(t, dataDir, "--cloud-api-base", fake.URL, "--claude-bin", noClaude)
+	s := startDockerServer(t, dataDir, "--claude-bin", noClaude)
 
 	var view cloudSettings
 	s.mustJSON("GET", "/api/settings/cloud", nil, &view)
@@ -51,8 +48,7 @@ func dockerSignInRunsInTheImage(t *testing.T) {
 	}
 	wantNothingLeft("the sign-in")
 
-	// the refresh: the account in its last hour, and the API admitting
-	// only the token fakeclaude's refresh rotates it to
+	// the refresh: the account in its last hour
 	s.stop()
 	storeCloudAccount(t, dataDir, store.CloudAccount{
 		Token:        cloudFixtureToken,
@@ -61,12 +57,11 @@ func dockerSignInRunsInTheImage(t *testing.T) {
 		OrgUUID:      "00000000-0000-4000-8000-000000000001",
 		Scopes:       []string{"user:inference", "user:sessions:claude_code"},
 	})
-	fake.Admit(cloudFixtureToken + "-r")
 	// started as startDockerServer does, less the setup-token, which a
 	// signed-in hub refuses
 	s = startServerOn(t, dataDir, "", "--runtime", "docker", "--workstation-image", workstationTestImage,
 		"--egress-image", egressTestImage, "--workstation-health-sec", "2",
-		"--cloud-api-base", fake.URL, "--claude-bin", noClaude)
+		"--claude-bin", noClaude)
 	deadline := time.Now().Add(30 * time.Second)
 	for !strings.Contains(s.log(), "Claude login refreshed") {
 		if time.Now().After(deadline) {

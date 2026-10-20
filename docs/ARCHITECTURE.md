@@ -72,7 +72,7 @@ Use these words exactly — in code, UI, docs, and prompts. Don't introduce syno
 | **user** | A person who signs in to the control room with a username and password, and holds one of the org roles. The hub's first start creates owner `admin` with a one-time password, printed once and changed at first sign-in, and `spool user` adds, resets, lists and removes the rest, as an owner does on the API (ADR-0048). A user links their own identity on each surface by sending a code from the control room to a loop's bot or app in a DM, and then reads the private conversations that are theirs (ADR-0050). A loop's owner is chosen as a user, and the loop reaches them at that user's link on its surface (ADR-0051, #731). |
 | **change record** | The hub's append-only list of who changed which loop or acted on it through the API: a user's name, or `operator` for the operator token, with the action and the loop's name as it was. The loop shows who made it and who changed it last. Activity stays the message list, whose rows already name their author (ADR-0048). |
 | **operator token** | The credential the human running Spool presents to the API: minted at first start into `<data-dir>/operator-token`, and the owner's credential for the CLI and automation. For one more release the control room can also trade it for a `SameSite=Strict` session cookie, which belongs to no user (ADR-0048). Distinct from a loop's hub MCP token in every way — different file, different check, different listener — and never given to a loop (ADR-0030). |
-| **Claude login** | The claude.ai account the hub signs in to with the CLI's own login, and the one Claude credential it runs loops on: cloud loops through the sessions API, contained loops through the *Claude proxy*. Sealed, refreshed by the hub before it expires, and never in a workstation. Sign out asks the source to revoke it, which the hub can't confirm. Until one is signed in, a stored setup-token stands in for it (ADR-0056, ADR-0058). |
+| **Claude login** | The claude.ai account the hub signs in to with the CLI's own login, and the one Claude credential it runs loops on: cloud loops through the `claude` CLI, contained loops through the *Claude proxy*. Sealed, refreshed by the hub before it expires, and never in a workstation. Sign out asks the source to revoke it, which the hub can't confirm. Until one is signed in, a stored setup-token stands in for it (ADR-0056, ADR-0058, ADR-0059). |
 | **Claude proxy** | The loop listener's `/claude`: a contained loop's claude sends its model requests there, logged in with the loop's own hub token, and the hub forwards them to Anthropic's API on the hub's Claude token. It forwards model requests alone (ADR-0058). |
 | **connection** | An org-level tool credential/config (GitHub app, MCP server) attachable to loops. |
 | **control room** | The web UI. |
@@ -124,7 +124,7 @@ Dependencies point inward: adapters → hub interfaces, never hub → adapter in
 | Seam | Interface (owner) | Implementations |
 |---|---|---|
 | **Surface** | `surface.Surface` — start, stop, validate a loop credential, follow loop config changes; the adapter delivers inbound to the router and mirrors outbound off the bus (ADR-0029) | `telegram` (today), `slack` (L3) |
-| **SandboxRuntime** | `runtime.Runtime` — provision/start/exec/stop a loop's workstation, own claude's stdio inside it, watch workstation liveness, copy a file into it or read one out (`PutFile`, `GetFile`, ADR-0037, ADR-0026) | `bare` (direct subprocess; local edition only, opt-in with `--runtime bare`, badged *uncontained*), `docker` (long-lived named container + volume per loop, driven through the docker CLI; the default whenever the daemon is reachable — ADR-0017, ADR-0018), `cloud` (a Claude Code cloud session per loop on Anthropic's machines, driven over the sessions API; no workstation of the hub's, no files — ADR-0056), `sbx` (possible later hardening, ADR-0010) |
+| **SandboxRuntime** | `runtime.Runtime` — provision/start/exec/stop a loop's workstation, own claude's stdio inside it, watch workstation liveness, copy a file into it or read one out (`PutFile`, `GetFile`, ADR-0037, ADR-0026) | `bare` (direct subprocess; local edition only, opt-in with `--runtime bare`, badged *uncontained*), `docker` (long-lived named container + volume per loop, driven through the docker CLI; the default whenever the daemon is reachable — ADR-0017, ADR-0018), `cloud` (a Claude Code cloud session per loop on Anthropic's machines, driven through the `claude` CLI and the loop home's hooks; no workstation of the hub's, no files — ADR-0056, ADR-0059), `sbx` (possible later hardening, ADR-0010) |
 | **Store** | `store.*` interfaces | `sqlite` (today), `postgres` (service era) |
 | **Runner** | the narrow command surface the hub uses: deliver, tick, pause, resume, kill, state | in-process (`internal/loop`) today; extractable to a per-host runner process for the hosted service — the seam exists so this is transport substitution, not redesign |
 
@@ -164,9 +164,11 @@ implementation and nothing substitutes for it — the seams are the four above.
 The SandboxRuntime seam is live with three implementations: `internal/runtime` owns
 the interface, `internal/runtime/bare` runs host subprocesses,
 `internal/runtime/docker` runs workstations through the docker CLI (ADR-0018), and
-`internal/runtime/cloud` runs each loop in a Claude Code cloud session, sending its
-turns in and reading their events back over Anthropic's undocumented sessions API,
-and failing loudly when that changes (ADR-0056). Settings → Cloud switches the cloud listener and sets and checks
+`internal/runtime/cloud` runs each loop in a Claude Code cloud session through the
+`claude` CLI: `claude --cloud` under a pseudo-terminal starts it from a loop home
+the hub builds for that start, `claude -p --cloud` sends each wake, and the home's
+hooks post the session's id and each turn back to the cloud listener's `/hooks`.
+Each session gets a hub token of its own, and a stop revokes it at once (ADR-0059). Settings → Cloud switches the cloud listener and sets and checks
 the public address (`/api/settings/cloud`), and a cloud loop takes a turn
 only within a minute of a check that passed. It also signs in to the
 account by running the Claude Code CLI's own login, `claude auth login`, in a
@@ -175,9 +177,9 @@ keeps the tokens sealed. The CLI is the host's, or on a hub with none, the
 workstation image's, in a throwaway container behind the egress wall that
 sees only that directory.
 Once both steps
-are green, `POST /api/loops` takes `runtime: cloud`, with an optional
-`cloud_repo` its sessions start from; the loop's view carries the repo and
-its current session's page on claude.ai. A cloud loop never moves runtime.
+are green, `POST /api/loops` takes `runtime: cloud`, with an optional `cloud_repo`, which no session starts
+from since ADR-0059 and #977 removes; the loop's view carries the repo and its
+current session's page on claude.ai. A cloud loop never moves runtime.
 Each docker workstation sits on an internal network of its own, shared with
 the proxy alone and with no route off it; its only
 way out is `spool-egress-proxy`, a container running `cmd/spool-egress` that

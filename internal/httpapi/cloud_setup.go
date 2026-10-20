@@ -172,18 +172,11 @@ func (server *Server) handleClearCloudAddress(w http.ResponseWriter, r *http.Req
 	server.changeCloudAddress(w, r, "")
 }
 
-// changeCloudAddress stores address, "" for none, and checks it. The
-// address's host is on every cloud environment's allowlist, so the
-// environments are written again too.
+// changeCloudAddress stores address, "" for none, and checks it.
 func (server *Server) changeCloudAddress(w http.ResponseWriter, r *http.Request, address string) {
 	if err := server.Store.Settings().Set(r.Context(), store.SettingCloudAddress, address); err != nil {
 		server.jsonErr(w, 500, "%v", err)
 		return
-	}
-	if server.Cloud != nil {
-		if err := server.Cloud.SyncEnvironments(r.Context()); err != nil {
-			server.Log.Warn("cloud address stored but not yet in every cloud environment; each one's next wake retries", "err", err)
-		}
 	}
 	server.CheckCloudAddress(r.Context())
 	server.writeCloudSettings(w, r)
