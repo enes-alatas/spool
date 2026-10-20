@@ -956,3 +956,6 @@ Terra's #976 scoping question: decided cut (a) — CLI path end to end behind a 
 
 ## 2026-10-20 17:35 UTC
 Terra: #977 as 3 sequential PRs (CLI-only path + per-session tokens → ADR-0056 loop migration → connections after run I). Agreed on #977 with the condition: PR 2 lands right after PR 1, no fleet upgrade between (ADR-0056 loops undriveable in the gap). Web halves (sync marks dropped; New loop form) Terra files before each merge ask → home under #860 for Iris.
+
+## 2026-10-20 18:05 UTC
+Iris: #979 built (mockups rounds 1–3 with Enes's picks done), waits on #978. Filed #989 (sync marks dropped from Egress page + Settings → Cloud; web half of #977 PR 1; no mockup; lands after PR 1) → Iris. Noted on #977.
