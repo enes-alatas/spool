@@ -111,6 +111,9 @@ func main() {
 	slackAPI := flag.String("slack-api-base", slack.APIBase, "Slack Web API base URL (tests point this at a stand-in server)")
 	cloudAPIFlag := flag.String("cloud-api-base", cloud.DefaultBaseURL, "Anthropic's API base URL, which cloud loops are driven through and the Claude proxy forwards contained loops' model requests to (tests point this at a stand-in server); https, or http on loopback")
 	cloudLoopbackAddress := flag.Bool("cloud-loopback-address", false, "accept a plain-HTTP loopback address as the cloud listener's public address (tests only: no cloud session can reach one, though the hub checks it green from itself)")
+	// Temporary, and tests only, until slice 2 of ADR-0059 (#977) removes it
+	// and the CLI path is the only one.
+	temporaryCloudCLI := flag.Bool("temporary-cloud-cli", false, "temporary, tests only: drive cloud loops through the claude CLI in place of the sessions client (removed by #977)")
 	answerTimeoutSec := flag.Int("telegram-answer-timeout-sec", 0, "seconds a Telegram call waits for the Bot API's answer before it is retried on a fresh connection (0 = the production 60s; tests against a stand-in API shorten it)")
 	bindSettleSec := flag.Int("telegram-bind-settle-sec", 0, "seconds a newly bound bot waits before it may ingest a group (0 = the production margin; tests against a stand-in API shorten it)")
 	retentionDays := flag.Int("events-retention-days", 30, "prune raw claude events older than this many days (0 disables; messages and turns are never pruned)")
@@ -373,6 +376,11 @@ func main() {
 	// The cloud runtime reads its account and the hub's public address from
 	// the store, so it joins the others once there is one (ADR-0056).
 	cloudRuntime := newCloudRuntime(rdb.Settings(), *dataDir, cloudAPI, *cloudLoopbackAddress)
+	if *temporaryCloudCLI {
+		// the loop homes hold loops' tokens, so they are made outside the
+		// data directory, which backups carry (ADR-0059)
+		cloudRuntime.CLI = &cloud.CLI{Binary: *claudeBin, Dir: os.TempDir(), Env: signInEnv(os.Environ())}
+	}
 	runtimes[store.RuntimeCloud] = cloudRuntime
 
 	pubsub := bus.New()
@@ -579,6 +587,9 @@ func main() {
 		EgressFlag:           egressFlag(allowEntries),
 		Log:                  log,
 		WebFS:                web.Dist(),
+	}
+	if cloudRuntime.CLI != nil {
+		api.CloudHooks = cloudRuntime
 	}
 
 	srv := &http.Server{Handler: redact.HTTP(api.Handler(), redactor)}

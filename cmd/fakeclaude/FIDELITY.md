@@ -83,6 +83,23 @@ The rules, in `docs/QUALITY.md` "Review (human)":
 | A PreToolUse hook that exits 2 blocks the call, and its stderr reaches the model as the reason; any other exit lets the call run | partly | 2.1.288 with haiku-4-5, 2026-10-03, one tier-3 call on #564 with `spool-hook` as the `--settings` hook. Recorded: `echo` ran (exit 0); `git stash pop` was blocked, the stash left in place, and the tool result was an error reading `PreToolUse:Bash hook error: [<hook command>]: ` followed by the hook's stderr. The fake replies `blocked: ` and the stderr instead. Not recorded: an exit other than 0 or 2. |
 | The PreToolUse input carries `session_id`, `cwd`, `hook_event_name`, `tool_name` and `tool_input.command` for a Bash call | partly | `internal/hook` reads only `tool_name` and `tool_input`, and refused the right command in the tier-3 call above, so those two are recorded. The other fields are the documented contract. |
 
+## Cloud sessions (`--cloud`, ADR-0059)
+
+The runs below were on CLI 2.1.304, 2026-10-19 and 10-20, on the operator's account, and each is recorded on #957.
+
+| Behaviour | Status | Evidence |
+|---|---|---|
+| `--cloud <message>` refuses without a terminal | partly | Runs A and D recorded the refusal. The fake's message is invented. |
+| `--cloud` starts from a local git repo with a commit, and carries only what is committed | partly | Run A: a repo with no remote starts a session, which reads the repo's `.mcp.json` and `.claude/settings.json`. That uncommitted files stay behind is assumed from the bundle being a git bundle. The fake refuses a directory with no commit; the real CLI's answer to one isn't recorded. |
+| The local `--cloud` fires the project's `SessionStart` on the operator's machine, with no `CLAUDE_CODE_REMOTE_SESSION_ID`, before uploading | partly | Run E3: the hook fired locally with `source: startup` and a local `transcript_path`. That the variable is unset there is assumed: run E3's hook didn't print it. The fake also counts each local run in the session's `local-session-starts`. |
+| In the VM the repo's hooks run with `CLAUDE_PROJECT_DIR` and `CLAUDE_CODE_REMOTE_SESSION_ID` set: `SessionStart` (`startup`) at the start, `Stop` after every turn, `-p` sends included | partly | Runs E4–E6 recorded `SessionStart` and `Stop` firing in the VM on every turn, with `cwd` `/home/user/repo`. `CLAUDE_CODE_REMOTE_SESSION_ID` in a hook's environment is what ADR-0059 item 1 rests on; run I on #976 checks it. The fake applies a `SessionStart` matcher as `\|`-split alternatives, which is assumed. |
+| The `Stop` input carries `transcript_path` and `last_assistant_message`, and the transcript is JSONL with `user` and `assistant` lines, the assistant's `message` carrying `id`, `model`, `content` and `usage` | partly | Runs E4 and E6. The real CLI writes a message as several lines, one per content block, each repeating the message's `id` and `usage`: seen in a local 2.1.303 transcript, 2026-10-20, not yet in a cloud one. The hub's reader is unit-tested against that shape; the fake writes one line per message. Other line types the real transcript carries are left out of the fake's transcript. |
+| `-p <message> --cloud <id>` prints `{"ok":true,"session_id":…,"url":…}` and the turn runs on in the VM | verified | Run E5, `--output-format json`. |
+| `-p --cloud` of a session the CLI can't send into prints `{"ok":false,…}` and exits 1 | partly | ADR-0059: an archived session refuses a send with `{ok:false, …}`. The other fields and the exit code are assumed. |
+| A turn runs on after the local `--cloud` process is killed once the session has started | assumed | ADR-0059 item 1 ends the local process once `SessionStart` posts. Nothing records the real CLI being killed then. |
+| Sends to one session run as turns one at a time | partly | Run D: sends during a turn join the next one. The fake runs each send as its own turn, after the one in flight. |
+| The reply is `fake cloud reply: ` and the message | deliberate difference | A test can read what the hub sent. |
+
 ## Directives that are test instruments
 
 These drive the engine from outside and make no claim about the CLI beyond
