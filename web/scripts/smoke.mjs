@@ -135,6 +135,29 @@ try {
   if (tail.below >= 32)
     throw new Error(`${step}: the timeline opened ${Math.round(tail.below)}px above its tail`)
   await page.unroute('**/api/loops/gardener')
+
+  // A private conversation opens at its newest message too (#991): the
+  // follow effect didn't run on its messages arriving, so it opened at the
+  // oldest. The fixture's owner DM is two messages, too few to scroll, so
+  // the hub's answer is repeated into a long one.
+  step = 'private tail'
+  const dm = '**/api/loops/gardener/conversation?conversation=owner_dm*'
+  await page.route(dm, async (route) => {
+    const msgs = await (await route.fetch()).json()
+    const long = Array.from({ length: 15 }, (_, i) => msgs.map((m) => ({ ...m, id: m.id * 100 + i }))).flat()
+    await route.fulfill({ json: long })
+  })
+  await page.goto(base + '/loops/gardener?private=owner_dm')
+  await see(page.locator('.pane-scroll .timeline'), 'the owner DM')
+  tail = await position()
+  for (let tries = 0; tail.below >= 32 && tries < 20; tries++) {
+    await sleep(250)
+    tail = await position()
+  }
+  if (!tail.scrolls) throw new Error(`${step}: the conversation fits its pane, so the check proves nothing`)
+  if (tail.below >= 32)
+    throw new Error(`${step}: the owner DM opened ${Math.round(tail.below)}px above its newest message`)
+  await page.unroute(dm)
   await page.setViewportSize({ width: 1180, height: 900 })
 
   // The side column scrolls on its own (#848): its last card brought into
