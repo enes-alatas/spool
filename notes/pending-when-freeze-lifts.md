@@ -965,3 +965,6 @@ Enes (DM): owner DM view opens at the oldest message. Filed #991 (bug, low, L5) 
 
 ## 2026-10-20 18:30 UTC
 Enes: #991 was not urgent; I had put it ahead of #989 on my own. Corrected Iris's order (#989 → #991), owned it to Enes. Memory questions-are-not-orders extended.
+
+## 2026-10-20 18:35 UTC
+Enes thought #991 was merged; verified: PR #992 open with Quinn, #991 open. Told him. Iris's order correction (#989 first) is moot since #992 is already up; she finishes it, then #989.
