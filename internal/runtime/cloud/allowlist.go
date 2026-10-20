@@ -14,8 +14,9 @@ import (
 // it is left off and returned in notApplied, as is one holding a *, which
 // the hub no longer stores (a leading *. comes in as the dotted form, #972)
 // but may have stored before: the wall matches it as a name nothing has, an
-// environment as a wildcard. So the list is never
-// wider than the hub's (ADR-0056).
+// environment as a wildcard. Any other entry the wall refuses is left off
+// the same way, such as a domain form of one label stored before the hub
+// refused it (#981). So the list is never wider than the hub's (ADR-0056).
 func Allowlist(entries []string) (hosts, notApplied []string) {
 	seen := map[string]bool{}
 	add := func(host string) {
@@ -26,7 +27,7 @@ func Allowlist(entries []string) (hosts, notApplied []string) {
 	}
 	for _, entry := range entries {
 		switch {
-		case egress.HasPort(entry), strings.Contains(entry, "*"):
+		case egress.HasPort(entry), egress.Validate(entry) != nil:
 			if !seen[entry] {
 				seen[entry] = true
 				notApplied = append(notApplied, entry)

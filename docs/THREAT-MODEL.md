@@ -310,7 +310,10 @@ in, and reads the turn's events back (ADR-0056).
   name nothing has at the wall, so the hub refuses it in a host, and one
   stored before is left off the same way, and permits nothing at the
   wall. A leading `*.` on an entry coming in is read as the domain rule's
-  leading dot and stored as it, so no `*` comes in that way (#972).
+  leading dot and stored as it, so no `*` comes in that way (#972). A
+  domain form of one label, `.com`, is refused, since it would open a
+  whole top-level domain there; one stored before is left off and permits
+  nothing at the wall (#981).
 - **An allowlist edit reaches every cloud environment at once,** with no
   wake. Settings names any environment whose write failed, and the
   loop's next wake or the next edit retries it. The reason quotes the

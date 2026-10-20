@@ -264,7 +264,15 @@ func validHost(entry, host string) error {
 	case strings.ContainsAny(host, " \t\r\n@?#"):
 		return fmt.Errorf("%q: %q is not a host name", entry, host)
 	}
-	for _, label := range strings.Split(strings.Trim(normalize(host), "."), ".") {
+	labels := strings.Split(strings.Trim(normalize(host), "."), ".")
+	if strings.HasPrefix(strings.TrimSpace(host), ".") && len(labels) < 2 {
+		// A domain form of one label opens a whole top-level domain at the
+		// wall and in every cloud environment, which an operator never means:
+		// they dropped the name. Two labels is the floor; .co.uk still passes,
+		// since telling a public suffix apart takes a list we don't carry (#981).
+		return fmt.Errorf("%q: name the domain, not a top-level one — write .example.com", entry)
+	}
+	for _, label := range labels {
 		if label == "" {
 			return fmt.Errorf("%q: %q is not a host name", entry, host)
 		}
