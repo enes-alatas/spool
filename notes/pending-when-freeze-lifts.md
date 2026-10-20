@@ -929,3 +929,6 @@ Sweep: #971 done in a morning (mockups → Enes picked A with revisions → PR #
 
 ## 2026-10-20 11:20 UTC
 Iris idle after #974. Told her: next is ADR-0059 slice 3's web half (Settings → Cloud shared-environment step + pasted ID, estimated cost in the room), filed when #973 merges; meanwhile read the ADR and note on #957 what the room can't show. On #973 merge: home Terra's slice issues under #860 (Cloud runtime), file the web halves with --parent 860, mockups first for any visual change.
+
+## 2026-10-20 11:25 UTC
+Iris posted 9 points on #957 (API fields the room needs for ADR-0059 slice 3: paste confirmation state, cost estimated vs unknown, wake-pending state); none changes a decision. Fold them into the slice 3 hub-half issue when filing after #973 merges (comment id 6289588932).
