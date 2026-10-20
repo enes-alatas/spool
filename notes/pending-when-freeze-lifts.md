@@ -947,3 +947,6 @@ Elliot OK'd #980 on security; filed #981 (refuse a one-label domain form, .com /
 
 ## 2026-10-20 15:05 UTC
 Terra's #976 scoping question: decided cut (a) — CLI path end to end behind a tier-2-only hub flag; shipped hub unchanged until slice 2 removes the flag. Conditions on the issue (undocumented, temporary name, E3 guard in tier 2); #977 notes the flag removal.
+
+## 2026-10-20 15:35 UTC
+#986 = slice 1 PR (Terra), passes Elliot's security review at db8803d, with Quinn. Two carries put on #977: per-start token must bind SessionStart (stale-holder test); sweep temp loop homes at hub start.
