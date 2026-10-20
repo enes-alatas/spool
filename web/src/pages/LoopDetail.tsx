@@ -1682,8 +1682,10 @@ export default function LoopDetail() {
     if (parked instanceof HTMLElement) el.scrollTop = parked.offsetTop - held.offset
     // `entries`, not its length: the window is a fixed size, so a new event
     // slides it rather than growing it, and a length dependency would miss
-    // exactly the update this effect exists for.
-  }, [paneMounted, entries, liveText, pane, thread])
+    // exactly the update this effect exists for. Each pane's own messages
+    // are here too: without the private thread's, a private conversation
+    // opened at its oldest message (#991).
+  }, [paneMounted, entries, liveText, pane, thread, openPrivate, privateThread])
 
   // Where the reader is, recorded as they move: whether they are at the tail,
   // and if not, the first entry still on screen and how far down the pane it
