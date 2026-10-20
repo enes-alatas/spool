@@ -251,9 +251,13 @@ puts in front of the listener; and the hub's own address check
   once, and 404 for anything else. Values are 130 bits from
   `crypto/rand`, the hub keeps only their SHA-256, and the set is capped,
   so nothing an outsider sends grows it.
+  `/hooks`, where a cloud session's hooks post its id and each turn
+  (ADR-0059), is 404 too until slice 2 of ADR-0059 (#977) turns it on;
+  only tier 2 runs it before then. It takes a cloud loop's token alone,
+  as `/mcp` does.
 - **Bounds come before authentication:** headers at 16 KiB, a body at
-  1 MiB, 10 seconds for the headers and 30 for the request, two minutes
-  for the answer.
+  1 MiB (16 MiB on `/hooks`, for a turn's transcript lines), 10 seconds
+  for the headers and 30 for the request, two minutes for the answer.
 
 **Doesn't hold:**
 - **The token is the only gate**, as on the loop listener, and here any

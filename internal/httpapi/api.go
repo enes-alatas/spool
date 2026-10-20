@@ -115,6 +115,9 @@ type Server struct {
 	// CloudListener is the cloud listener's switch (ADR-0056). Nil
 	// on a hub that wires none: the page reads it as off and can't open it.
 	CloudListener CloudListener
+	// CloudHooks takes the posts of cloud loops' hooks on the cloud
+	// listener (ADR-0059). Nil on a hub that wires none: the route is 404.
+	CloudHooks CloudHooks
 	// CloudLoopbackAddress accepts a plain-HTTP loopback public address,
 	// which no cloud session can reach. Only tests set it
 	// (--cloud-loopback-address).

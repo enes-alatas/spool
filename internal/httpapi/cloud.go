@@ -13,8 +13,9 @@ import (
 
 // The cloud listener (ADR-0056) is how a loop in a Claude Code cloud
 // session reaches the hub: over the internet, through the tunnel or proxy
-// the operator puts in front of it. It serves /mcp for cloud loops' tokens
-// and the address check, and nothing else. Any host on the internet can
+// the operator puts in front of it. It serves /mcp for cloud loops' tokens,
+// the address check, and the hooks' route when the hub takes hook posts
+// (ADR-0059), and nothing else. Any host on the internet can
 // reach its parser, so every bound below applies before a token is read.
 
 // Bounds on a cloud listener request, all applied before authentication.
@@ -50,16 +51,23 @@ func CloudHTTPServer(handler http.Handler) *http.Server {
 }
 
 // CloudHandler serves the cloud listener: the loop listener's /mcp for a
-// cloud loop's token alone, and the address check. Every other path is 404,
+// cloud loop's token alone, the address check, and the hooks' route while
+// CloudHooks is set. Every other path is 404,
 // the brokered servers' included: they carry organisation credentials, and
 // putting them on the internet is a decision of its own.
 func (server *Server) CloudHandler() http.Handler {
 	mcpHandler := server.mcpHandler(isCloudLoop)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.Body = http.MaxBytesReader(w, r.Body, cloudMaxBody)
+		limit := int64(cloudMaxBody)
+		if r.URL.Path == cloudHooksPath {
+			limit = cloudMaxHookBody
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, limit)
 		switch {
 		case r.URL.Path == "/mcp":
 			mcpHandler.ServeHTTP(w, r)
+		case r.URL.Path == cloudHooksPath:
+			server.handleCloudHook(w, r)
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, cloudCheckPrefix):
 			if server.cloudChecks.redeem(strings.TrimPrefix(r.URL.Path, cloudCheckPrefix), time.Now()) {
 				w.WriteHeader(http.StatusNoContent)
