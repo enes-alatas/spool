@@ -87,6 +87,10 @@ func TestValidateRejectsWhatWouldPermitNothing(t *testing.T) {
 		"*example.com",        // a wildcard with no dot after it
 		"a*b.example.com",     // ditto, inside a label
 		"api.*.example.com",   // ditto, inside the name
+		".com",                // a domain form of one label: a whole top-level domain (#981)
+		".com:443",            // ditto, with a port
+		". ",                  // ditto, with no label at all
+		".com.",               // ditto, with the trailing dot normalized away
 	} {
 		if err := Validate(entry); err == nil {
 			t.Errorf("Validate(%q) = nil, want a complaint", entry)
@@ -379,6 +383,19 @@ func TestCanonical(t *testing.T) {
 	}
 	if _, err := Canonical("https://pkg.example.dev/"); err == nil {
 		t.Error("Canonical accepted a URL")
+	}
+	// A domain form of one label is refused in either spelling (#981), with a
+	// message that names the fix. Two labels is the floor, so .co.uk, a public
+	// suffix, still passes: telling one apart takes a list we don't carry.
+	for _, entry := range []string{".com", "*.com", ".com:443", ". "} {
+		if _, err := Canonical(entry); err == nil || !strings.Contains(err.Error(), "name the domain, not a top-level one") {
+			t.Errorf("Canonical(%q) = %v, want the top-level refusal", entry, err)
+		}
+	}
+	for _, entry := range []string{".example.com", ".co.uk"} {
+		if _, err := Canonical(entry); err != nil {
+			t.Errorf("Canonical(%q) = %v, want it accepted", entry, err)
+		}
 	}
 
 	// Both spellings of the domain form land on the same rule at the wall.

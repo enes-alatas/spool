@@ -1,6 +1,6 @@
 # ADR-0028: Workstation egress runs through an allowlist proxy
 
-Date: 2026-09-20 · Status: accepted · Amends: ADR-0017 (decision 9, "open egress") · Amended 2026-09-20 (decision 3: the hub entry is the MCP listener, #238); 2026-10-01 (consequences: a docker loop behind a loopback listener is refused, #474); 2026-10-01 (decision 3: the loop listener does not refuse a host.docker.internal Host, #508); 2026-10-05 (decision 4: a loop's own entries, keyed by its proxy token, #599); 2026-10-06 (decision 4: the operator's extra hosts are stored and change while the hub runs, #542); 2026-10-06 (decision 4: brokered MCP servers open no host, #622); 2026-10-07 (decision 4: a loop's own entries are removed, #626); 2026-10-08 (decision 5: the wall is ensured at every docker wake, #657); 2026-10-11 (decision 5: a rebuilt proxy image replaces the proxy, #715); 2026-10-16 (decision 1: each workstation has a network of its own, and no NET_RAW, #906); 2026-10-20 (decision 4: `*.example.com` is the domain form, #972)
+Date: 2026-09-20 · Status: accepted · Amends: ADR-0017 (decision 9, "open egress") · Amended 2026-09-20 (decision 3: the hub entry is the MCP listener, #238); 2026-10-01 (consequences: a docker loop behind a loopback listener is refused, #474); 2026-10-01 (decision 3: the loop listener does not refuse a host.docker.internal Host, #508); 2026-10-05 (decision 4: a loop's own entries, keyed by its proxy token, #599); 2026-10-06 (decision 4: the operator's extra hosts are stored and change while the hub runs, #542); 2026-10-06 (decision 4: brokered MCP servers open no host, #622); 2026-10-07 (decision 4: a loop's own entries are removed, #626); 2026-10-08 (decision 5: the wall is ensured at every docker wake, #657); 2026-10-11 (decision 5: a rebuilt proxy image replaces the proxy, #715); 2026-10-16 (decision 1: each workstation has a network of its own, and no NET_RAW, #906); 2026-10-20 (decision 4: `*.example.com` is the domain form, #972); 2026-10-20 (decision 4: a domain form names a domain, not a top-level one, #981)
 
 ## Context
 
@@ -241,6 +241,16 @@ by asking the agent nicely (#193).
      open a domain on upgrade that the operator never saw opened.
    - **It is removed as written,** so removing it can't take the dotted
      rule it would read as.
+
+   **Amendment (2026-10-20, #981): a domain form names a domain, not a
+   top-level one.** A domain form of one label, `.com` or `*.com` read as
+   it, is refused with a message naming the fix, since it opens every name
+   under that top-level domain at the wall and in every cloud environment.
+   Two labels is the floor: `.co.uk` still passes, because telling a public
+   suffix apart needs a list the hub doesn't carry. One already stored
+   permits nothing at the wall and is left off cloud environments, as a
+   stored `*` is: a narrowing, so the operator checks Settings → Egress for
+   one.
 
 5. **Lifecycle matches the workstation's.** The network and the proxy are
    ensured idempotently before a workstation is provisioned, and the proxy runs
