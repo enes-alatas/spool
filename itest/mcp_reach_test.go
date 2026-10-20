@@ -32,7 +32,7 @@ func TestTheLoopViewShowsWhatMCPReaches(t *testing.T) {
 	s := startServer(t, dataDir)
 	s.createLoop("aster", nil)
 	s.message("aster", "hello")
-	s.waitTurn("aster", 30*time.Second, func(tn turn) bool { return strings.Contains(tn.ResultText, "hello") })
+	s.waitTurn("aster", firstTurnWait, func(tn turn) bool { return strings.Contains(tn.ResultText, "hello") })
 
 	var reach mcpReachView
 	s.mustJSON("GET", "/api/loops/aster", nil, &reach)

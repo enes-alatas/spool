@@ -20,7 +20,7 @@ func TestEchoTurn(t *testing.T) {
 	s.createLoop("echoer", nil)
 	s.message("echoer", "hello pineapple")
 
-	tn := s.waitTurn("echoer", 15*time.Second, func(tn turn) bool {
+	tn := s.waitTurn("echoer", firstTurnWait, func(tn turn) bool {
 		return strings.Contains(tn.ResultText, "hello pineapple")
 	})
 	if !strings.HasPrefix(tn.ResultText, "echo: ") {
@@ -39,7 +39,7 @@ func TestIdleReapResumesSameSession(t *testing.T) {
 	s.createLoop("napper", nil)
 
 	s.message("napper", "first")
-	s.waitTurn("napper", 15*time.Second, func(tn turn) bool {
+	s.waitTurn("napper", firstTurnWait, func(tn turn) bool {
 		return strings.Contains(tn.ResultText, "first")
 	})
 	s.waitState("napper", "asleep", 30*time.Second)
@@ -62,7 +62,7 @@ func TestResumeAcrossServerRestart(t *testing.T) {
 	s := startServer(t, dataDir)
 	s.createLoop("phoenix", nil)
 	s.message("phoenix", "before restart")
-	s.waitTurn("phoenix", 15*time.Second, func(tn turn) bool {
+	s.waitTurn("phoenix", firstTurnWait, func(tn turn) bool {
 		return strings.Contains(tn.ResultText, "before restart")
 	})
 	s.stop()
@@ -86,7 +86,7 @@ func TestSessionLostRecovery(t *testing.T) {
 	s := startServer(t, t.TempDir())
 	s.createLoop("amnesiac", nil)
 	s.message("amnesiac", "remember me")
-	s.waitTurn("amnesiac", 15*time.Second, func(tn turn) bool {
+	s.waitTurn("amnesiac", firstTurnWait, func(tn turn) bool {
 		return strings.Contains(tn.ResultText, "remember me")
 	})
 	s.waitState("amnesiac", "asleep", 30*time.Second)
@@ -175,7 +175,7 @@ func TestSendRoutedLoopToLoop(t *testing.T) {
 	s.createLoop("caller", map[string]any{"workspace_path": wsCaller})
 	s.message("caller", "go talk")
 
-	tn := s.waitTurn("callee", 20*time.Second, func(tn turn) bool {
+	tn := s.waitTurn("callee", firstTurnWait, func(tn turn) bool {
 		return tn.Trigger == "message" && strings.Contains(tn.ResultText, "received.")
 	})
 	if tn.IsError {
@@ -659,7 +659,7 @@ func TestManualRotation(t *testing.T) {
 	ws := workspaceWithScript(t, "!ctx 0\nhandoff note from the old self\n")
 	s := startServer(t, t.TempDir())
 	s.createLoop("aster", map[string]any{"workspace_path": ws})
-	s.waitTurn("aster", 20*time.Second, func(tn turn) bool { return tn.Trigger == "tick" })
+	s.waitTurn("aster", firstTurnWait, func(tn turn) bool { return tn.Trigger == "tick" })
 
 	s.mustJSON("POST", "/api/loops/aster/rotate", nil, nil)
 	handoff := s.waitTurn("aster", 30*time.Second, func(tn turn) bool {
@@ -692,7 +692,7 @@ func TestManualRotationWaitsForTheRunningTurn(t *testing.T) {
 	ws := workspaceWithScript(t, "!ctx 0\n!hang 3\nlate handoff note\n")
 	s := startServer(t, t.TempDir())
 	s.createLoop("aster", map[string]any{"workspace_path": ws})
-	s.waitTurn("aster", 20*time.Second, func(tn turn) bool { return tn.Trigger == "tick" })
+	s.waitTurn("aster", firstTurnWait, func(tn turn) bool { return tn.Trigger == "tick" })
 
 	s.message("aster", "start hanging")
 	s.waitState("aster", "busy", 10*time.Second)

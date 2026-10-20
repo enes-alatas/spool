@@ -31,7 +31,7 @@ func TestTheHookRefusesASharedStateCommand(t *testing.T) {
 	s.createLoop("lister", map[string]any{"workspace_path": workspaceWithScript(t, "!bash git stash list\n"), "workspace_mode": "dir"})
 
 	s.message("stasher", "put your work back")
-	blocked := s.waitTurn("stasher", 30*time.Second, func(tr turn) bool { return tr.Trigger == "message" })
+	blocked := s.waitTurn("stasher", firstTurnWait, func(tr turn) bool { return tr.Trigger == "message" })
 	if !strings.HasPrefix(blocked.ResultText, "blocked: Refused by Spool: ") || !strings.Contains(blocked.ResultText, "stash") {
 		t.Fatalf("git stash pop was not refused with a reason: %q", blocked.ResultText)
 	}
@@ -99,7 +99,7 @@ func TestTheHookRefusesAKillByName(t *testing.T) {
 	s.createLoop("bypid", map[string]any{"workspace_path": workspaceWithScript(t, "!bash kill $(cat run.pid)\n"), "workspace_mode": "dir"})
 
 	s.message("byname", "stop the tests")
-	blocked := s.waitTurn("byname", 30*time.Second, func(tr turn) bool { return tr.Trigger == "message" })
+	blocked := s.waitTurn("byname", firstTurnWait, func(tr turn) bool { return tr.Trigger == "message" })
 	if !strings.HasPrefix(blocked.ResultText, "blocked: Refused by Spool: ") || !strings.Contains(blocked.ResultText, "pgrep") {
 		t.Fatalf("a kill by name was not refused with a reason: %q", blocked.ResultText)
 	}

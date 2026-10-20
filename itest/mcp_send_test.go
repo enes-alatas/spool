@@ -182,7 +182,7 @@ func TestMCPSendCap(t *testing.T) {
 	// pause so no further turn begins: on a slow machine that turn
 	// otherwise starts mid-count and the eleventh send lands in a fresh
 	// budget.
-	s.waitTurn("aster", 30*time.Second, func(tn turn) bool { return tn.Trigger == "tick" })
+	s.waitTurn("aster", firstTurnWait, func(tn turn) bool { return tn.Trigger == "tick" })
 	s.mustJSON("POST", "/api/loops/aster/pause", nil, nil)
 	sess := mcpSession(t, s, hubMCPToken(t, s, "aster"))
 
@@ -224,7 +224,7 @@ func TestFakeclaudeSendDirective(t *testing.T) {
 	s.createLoop("aster", map[string]any{"workspace_path": ws})
 
 	s.message("aster", "go")
-	tn := s.waitTurn("aster", 20*time.Second, func(tn turn) bool {
+	tn := s.waitTurn("aster", firstTurnWait, func(tn turn) bool {
 		return strings.Contains(tn.ResultText, "sent")
 	})
 	if tn.IsError || strings.Contains(tn.ResultText, "send error") {
@@ -253,7 +253,7 @@ func TestSendBudgetResetsPerTurn(t *testing.T) {
 	ws := workspaceWithScript(t, "!ctx 0\n"+full+"\n"+`!send {"destination":"control_room","text":"after reset"}`+"\n")
 	s := startServer(t, t.TempDir())
 	s.createLoop("aster", map[string]any{"workspace_path": ws})
-	s.waitTurn("aster", 20*time.Second, func(tn turn) bool { return tn.Trigger == "tick" })
+	s.waitTurn("aster", firstTurnWait, func(tn turn) bool { return tn.Trigger == "tick" })
 
 	s.message("aster", "one")
 	first := s.waitTurn("aster", 20*time.Second, func(tn turn) bool {
@@ -284,7 +284,7 @@ func TestRedeliveredTurnKnowsItsSends(t *testing.T) {
 		`!send {"destination":"control_room","text":"pre-loss"} !lost`+"\n")
 	s := startServer(t, t.TempDir())
 	s.createLoop("aster", map[string]any{"workspace_path": ws})
-	s.waitTurn("aster", 20*time.Second, func(tn turn) bool { return tn.Trigger == "tick" })
+	s.waitTurn("aster", firstTurnWait, func(tn turn) bool { return tn.Trigger == "tick" })
 
 	s.message("aster", "risky business")
 	redelivered := s.waitTurn("aster", 30*time.Second, func(tn turn) bool {

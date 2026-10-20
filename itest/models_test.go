@@ -181,7 +181,7 @@ func TestATurnOnTheDefaultRuntimeRefreshesItsAlias(t *testing.T) {
 	})
 
 	s.createLoop("aster", map[string]any{"model": "sonnet"})
-	s.waitTurn("aster", 30*time.Second, func(tn turn) bool { return !tn.IsError })
+	s.waitTurn("aster", firstTurnWait, func(tn turn) bool { return !tn.IsError })
 	s.waitModels(10*time.Second, func(v modelsView) bool {
 		for _, a := range v.Aliases {
 			if a.Model == "sonnet" {
