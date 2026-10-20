@@ -287,9 +287,12 @@ func TestASendHeldByAStoppedBotIsAFailure(t *testing.T) {
 	if res := callSend(t, alpha, map[string]any{"destination": "group", "text": text}); res.IsError {
 		t.Fatalf("alpha's group send refused: %s", resultText(res))
 	}
-	for deadline := time.Now().Add(10 * time.Second); tg.sendAttempts() == 0; time.Sleep(50 * time.Millisecond) {
+	// alpha's own send, not any: the fleet's link confirmations already
+	// count as sends, and a bot cleared before it picks this one up keeps it
+	// on the hub instead, with no failure to record (#937).
+	for deadline := time.Now().Add(10 * time.Second); !tg.triedToSend(text); time.Sleep(50 * time.Millisecond) {
 		if time.Now().After(deadline) {
-			t.Fatal("the bridge never attempted the send")
+			t.Fatal("the bridge never attempted alpha's send")
 		}
 	}
 	srv.mustJSON("PATCH", "/api/loops/alpha", map[string]any{"tg_bot_token": ""}, nil)

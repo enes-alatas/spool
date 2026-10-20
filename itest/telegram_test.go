@@ -38,6 +38,10 @@ type fakeTelegram struct {
 	// how a test fails one part of a long message and not the others.
 	failText  string
 	sendCalls int
+	// attempted is the text of every sendMessage call, refused or not, in
+	// order: how a test waits for the bridge to try one message in
+	// particular rather than any send at all.
+	attempted []string
 	// stallSends holds the next n sendMessage calls without an answer
 	// until the bridge hangs up on them: a connection that died after the
 	// request was written, as the hub sees one. A held call records nothing
@@ -149,6 +153,14 @@ func (tg *fakeTelegram) sendAttempts() int {
 	tg.mu.Lock()
 	defer tg.mu.Unlock()
 	return tg.sendCalls
+}
+
+// triedToSend reports whether the bridge has made a sendMessage call, refused
+// or not, whose text contains text.
+func (tg *fakeTelegram) triedToSend(text string) bool {
+	tg.mu.Lock()
+	defer tg.mu.Unlock()
+	return slices.ContainsFunc(tg.attempted, func(attempt string) bool { return strings.Contains(attempt, text) })
 }
 
 type sentMessage struct {
@@ -275,6 +287,7 @@ func (tg *fakeTelegram) handle(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body)
 		tg.mu.Lock()
 		tg.sendCalls++
+		tg.attempted = append(tg.attempted, req.Text)
 		if tg.stallSends > 0 {
 			tg.stallSends--
 			tg.mu.Unlock()
