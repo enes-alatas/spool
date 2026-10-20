@@ -941,3 +941,6 @@ Elliot takes CI reliability cleanup: flake census (counts from recent runs; clos
 
 ## 2026-10-20 12:30 UTC
 Terra: #972 was already up as PR #980 before my order; finishes it, then #976 → #977 → #978. Reacted 👍.
+
+## 2026-10-20 12:35 UTC
+Elliot OK'd #980 on security; filed #981 (refuse a one-label domain form, .com / *.com; chore) → L6. Queued for Terra right after #980, before #976.
