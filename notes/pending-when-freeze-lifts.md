@@ -932,3 +932,6 @@ Iris idle after #974. Told her: next is ADR-0059 slice 3's web half (Settings �
 
 ## 2026-10-20 11:25 UTC
 Iris posted 9 points on #957 (API fields the room needs for ADR-0059 slice 3: paste confirmation state, cost estimated vs unknown, wake-pending state); none changes a decision. Fold them into the slice 3 hub-half issue when filing after #973 merges (comment id 6289588932).
+
+## 2026-10-20 12:20 UTC
+ADR-0059 merged (#973, 11:26). Filed slices under #860 / Cloud runtime: #976 (slice 1), #977 (slice 2; closes #953 with it; web half for the loop-page sentence to file when its shape settles), #978 (slice 3 hub half + OPERATIONS Cloud loops section), #979 (slice 3 web half, Iris, mockup first). #975 (Enes: hardened mode, security, parent #957) → severity:low per its body, Cloud runtime. Pinged Terra (#976 → #977 → #978 → #972) and Iris (#979 after #978). v0.6.0 gate = these three slices → fleet upgrade → Enes's cloud loop two clean days → dry run → tag.
