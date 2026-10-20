@@ -199,6 +199,12 @@ func TestARefusedLoginKeepsOneTick(t *testing.T) {
 		s.waitTurn("aster", 30*time.Second, func(tn turn) bool {
 			return tn.IsError && len(s.completed("aster")) > refused
 		})
+		// the loop drains a refused process until it exits, and a word
+		// that lands meanwhile waits out the crash backoff, past this
+		// test's wait (#501): the next send comes after the exit
+		eventually(t, "the refused process's exit", func() bool {
+			return countEvents(t, s, "aster", "proc_exit") >= countEvents(t, s, "aster", "proc_spawn")
+		})
 	}
 	s.message("aster", "second word")
 
