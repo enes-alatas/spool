@@ -290,8 +290,10 @@ func TestEventsNewestWindow(t *testing.T) {
 	s := startServer(t, t.TempDir())
 	s.createLoop("historian", nil)
 
-	// a few turns is already tens of events: envelopes, results, spool events
-	for _, text := range []string{"one", "two", "three"} {
+	// a few turns is already tens of events: envelopes, results, spool events.
+	// Four, not three: a first message can beat the creation tick, which the
+	// waking loop then drops, and three turns on one spawn are only 11 (#500).
+	for _, text := range []string{"one", "two", "three", "four"} {
 		s.message("historian", text)
 		s.waitTurn("historian", 30*time.Second, func(tr turn) bool {
 			return strings.Contains(tr.ResultText, text)
