@@ -151,6 +151,22 @@ func TestLoopHubMCPToken(t *testing.T) {
 	if _, err := db.Loops().GetByHubMCPToken(ctx, ""); err != store.ErrNotFound {
 		t.Fatalf("empty token: err = %v, want ErrNotFound", err)
 	}
+
+	// a rotated token revokes the old one at once, and the new one is read
+	// back sealed as the first was
+	rotated, err := db.Loops().RotateHubMCPToken(ctx, terra.ID)
+	if err != nil || rotated == "" || rotated == terra.HubMCPToken {
+		t.Fatalf("RotateHubMCPToken = %q, %v; want a new token", rotated, err)
+	}
+	if _, err := db.Loops().GetByHubMCPToken(ctx, terra.HubMCPToken); err != store.ErrNotFound {
+		t.Errorf("the rotated-out token: err = %v, want ErrNotFound", err)
+	}
+	if got, err := db.Loops().GetByHubMCPToken(ctx, rotated); err != nil || got.ID != terra.ID || got.HubMCPToken != rotated {
+		t.Errorf("the rotated token resolves to %+v, %v; want terra holding it", got, err)
+	}
+	if _, err := db.Loops().RotateHubMCPToken(ctx, "l_gone"); err != store.ErrNotFound {
+		t.Errorf("rotating a missing loop's token: err = %v, want ErrNotFound", err)
+	}
 }
 
 // TestMigrateWithoutAllowlistedSender: a database holding loops and nobody
