@@ -917,3 +917,6 @@ Night sweep: quiet, board tidy. Waiting on Enes: egress UX scope (promised late 
 
 ## 2026-10-20 02:45 UTC
 Elliot: #747's five children all closed; v0.5.1 has no assets. Told him: v0.6.0 waits for cloud on the CLI path (Enes, 10-19); #747 closes with the tag, #897 runs the same day. #766 is closed → drop from Terra's queue: #957 → #877 → #899 → #901 → #855 → #652 → #887 → #830 → #630.
+
+## 2026-10-20 06:50 UTC
+Sweep quiet. Terra posted the cloud ADR shape on #957 (01:32) with four operator calls (pty-launched `claude --cloud` + SessionStart hook; one env per loop set up on claude.ai with the hub token as a network secret; tokens-only cost; stop = send nothing, archive by hand). DM'd Enes with his recommendations and a one-word accept path; corrected a link I had typed from memory (lesson: read html_url before pasting an anchor — see link-after-it-exists). Egress scope still open.
