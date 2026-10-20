@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, ApiError, type CloudEgress, type EgressView } from '../api'
+import { api, ApiError, type EgressView } from '../api'
 import { messageTime } from './MessageKnot'
-import { allowlistSyncText, applying, countHosts, filterHosts } from '../egress'
+import { applying, countHosts, filterHosts } from '../egress'
 import { Copyable } from './Copyable'
-import { useMinuteClock } from './PlanUsage'
 import { Marked } from './Marked'
 import { PlusIcon } from './Icons'
 import { StepDialog } from './StepDialog'
@@ -15,9 +14,9 @@ import { StepDialog } from './StepDialog'
 // crowds the form that adds to it. The built-in hosts are read-only, each
 // group with why it is there; the operator's own are added and removed in
 // the dialog, and the hub's one egress proxy, shared by every docker loop,
-// takes the list while the hub runs, so both say when it did. Each cloud
-// loop's environment carries the list too (ADR-0056): each one shows in sync
-// or what failed, and the entries an environment can't carry are marked.
+// takes the list while the hub runs, so both say when it did. Cloud loops
+// don't go through it: they reach what their shared environment on
+// claude.ai allows (ADR-0059), which the dialog says.
 export function EgressSection() {
   const { data, error: loadError } = useEgress()
   const [open, setOpen] = useState(false)
@@ -31,7 +30,6 @@ export function EgressSection() {
       <p className="page-lede">
         The hosts a docker loop's workstation can reach, on ports 80 and 443 unless an entry names its own. A
         change applies to every docker loop within a few seconds, with nothing restarted.
-        {data?.cloud && " Each cloud loop's environment carries the list too, enforced by Anthropic's proxy."}
       </p>
       {missing ? (
         <div className="form-error" role="alert">
@@ -61,12 +59,10 @@ function useEgress() {
   })
 }
 
-// The list in a line or two: how many hosts, whether the proxy has them, and
-// whether every cloud loop's environment does.
+// The list in a line: how many hosts, and whether the proxy has them.
 function EgressSummary({ view, onOpen }: { view: EgressView; onOpen: () => void }) {
   const builtIn = countHosts(view.built_in)
   const status = statusLine(view)
-  const out = view.cloud?.environments.filter((e) => !e.in_sync).length ?? 0
   return (
     <div className="egress-summary">
       <div className={`cloud-step ${status.tone}`}>
@@ -82,19 +78,6 @@ function EgressSummary({ view, onOpen }: { view: EgressView; onOpen: () => void 
           </button>
         </span>
       </div>
-      {view.cloud && view.cloud.environments.length > 0 && (
-        <div className={`cloud-step ${out > 0 ? 'bad' : 'ok'}`}>
-          <span className="cloud-dot" aria-hidden />
-          <span className="cloud-step-title">Cloud loops</span>
-          <span className="cloud-step-end">
-            <span className="cloud-step-state">
-              {out > 0
-                ? `${out} of ${view.cloud.environments.length} not in sync`
-                : `${plural(view.cloud.environments.length, 'environment')} in sync`}
-            </span>
-          </span>
-        </div>
-      )}
     </div>
   )
 }
@@ -111,14 +94,18 @@ function statusLine(view: EgressView): { text: string; tone: 'ok' | 'bad' | 'tod
 }
 
 // The list itself: the status, the operator's hosts with their filter and
-// Remove, the cloud loops' environments, and the built-in hosts, folded away
-// since none of them can change. Each list scrolls in a box of its own a few
-// rows high, so the dialog keeps its filter and its + in view however long
-// the list grows (#971). The + beside Your hosts opens a dialog of its own
-// on top, and a host it adds shows here, scrolled to and marked.
+// Remove, a line on cloud loops where the hub has any, and the built-in
+// hosts, folded away since none of them can change. Each list scrolls in a
+// box of its own a few rows high, so the dialog keeps its filter and its + in
+// view however long the list grows (#971). The + beside Your hosts opens a
+// dialog of its own on top, and a host it adds shows here, scrolled to and
+// marked.
 function EgressDialog({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient()
   const { data } = useEgress()
+  // The line on cloud loops shows only on a hub that has one.
+  const { data: loops } = useQuery({ queryKey: ['loops'], queryFn: api.loops })
+  const hasCloudLoops = loops?.some((l) => l.runtime === 'cloud') ?? false
   const [filter, setFilter] = useState('')
   const [adding, setAdding] = useState(false)
   const [builtInOpen, setBuiltInOpen] = useState(false)
@@ -186,7 +173,7 @@ function EgressDialog({ onClose }: { onClose: () => void }) {
       ) : (
         <div className="egress-extra egress-list">
           {extra.map((h) => (
-            <Row key={h} host={h} cloud={data.cloud} added={h === added}>
+            <Row key={h} host={h} added={h === added}>
               <button className="btn sm danger" disabled={busy !== ''} onClick={() => remove(h)}>
                 {busy === h ? 'Removing…' : 'Remove'}
               </button>
@@ -202,7 +189,12 @@ function EgressDialog({ onClose }: { onClose: () => void }) {
         </div>
       )}
 
-      {data.cloud && <CloudSync cloud={data.cloud} />}
+      {hasCloudLoops && (
+        <div className="egress-note">
+          Cloud loops don't go through this list: they reach what their environment's network access on
+          claude.ai allows.
+        </div>
+      )}
 
       <h3 className="egress-head">
         <button
@@ -221,7 +213,7 @@ function EgressDialog({ onClose }: { onClose: () => void }) {
               <div className="egress-reason">{g.reason}</div>
               <div className="egress-hosts">
                 {g.hosts.map((h) => (
-                  <Entry key={h} host={h} cloud={data.cloud} />
+                  <code key={h}>{h}</code>
                 ))}
               </div>
             </div>
@@ -243,24 +235,14 @@ function EgressDialog({ onClose }: { onClose: () => void }) {
 }
 
 // A host of the operator's, scrolled into view and marked when just added.
-function Row({
-  host,
-  cloud,
-  added,
-  children,
-}: {
-  host: string
-  cloud?: CloudEgress
-  added: boolean
-  children: ReactNode
-}) {
+function Row({ host, added, children }: { host: string; added: boolean; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (added) ref.current?.scrollIntoView({ block: 'nearest' })
   }, [added])
   return (
     <div ref={ref} className={`egress-row${added ? ' added' : ''}`}>
-      <Entry host={host} cloud={cloud} />
+      <code>{host}</code>
       {children}
     </div>
   )
@@ -344,51 +326,5 @@ function EgressStatus({ view }: { view: EgressView }) {
     <div className="egress-status ok">
       Applied to every running docker loop at {messageTime(view.applied_at)}.
     </div>
-  )
-}
-
-// Why an entry is left off the cloud environments (ADR-0056): a cloud
-// environment has no form for a port of its own, and a stored * would be a
-// wildcard there where the wall matches it as a name nothing has.
-const NOT_APPLIED_TITLE =
-  "A cloud loop's environment can't carry this entry, so cloud loops can't reach it: an entry with a " +
-  'port of its own has no form there, and neither does one holding a *.'
-
-// One entry of the list, marked when the cloud environments leave it off.
-function Entry({ host, cloud }: { host: string; cloud?: CloudEgress }) {
-  if (!cloud?.not_applied.includes(host)) return <code>{host}</code>
-  return (
-    <span className="egress-entry">
-      <code>{host}</code>
-      <span className="egress-tag" title={NOT_APPLIED_TITLE}>
-        not applied to cloud loops
-      </span>
-    </span>
-  )
-}
-
-// Each cloud loop's environment, in sync with the list or with what failed.
-// A failed write is retried at the loop's next wake, and by the next change
-// to the list.
-function CloudSync({ cloud }: { cloud: CloudEgress }) {
-  const now = useMinuteClock()
-  return (
-    <>
-      <h3 className="egress-head">Cloud loops</h3>
-      <div className="egress-extra">
-        {cloud.environments.map((e) => (
-          <div className="egress-row" key={e.loop}>
-            <span>@{e.loop}</span>
-            <span className={`egress-sync ${e.in_sync ? 'ok' : 'bad'}`}>{allowlistSyncText(e, now)}</span>
-          </div>
-        ))}
-      </div>
-      {cloud.environments.some((e) => !e.in_sync) && (
-        <div className="egress-note">
-          A loop out of sync keeps the list it had. The hub writes it again at the loop's next wake, and at
-          the next change here.
-        </div>
-      )}
-    </>
   )
 }
