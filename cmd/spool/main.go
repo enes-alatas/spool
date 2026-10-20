@@ -33,7 +33,6 @@ import (
 	"github.com/enes-alatas/spool/internal/route"
 	"github.com/enes-alatas/spool/internal/runtime"
 	"github.com/enes-alatas/spool/internal/runtime/bare"
-	"github.com/enes-alatas/spool/internal/runtime/cloud"
 	"github.com/enes-alatas/spool/internal/runtime/docker"
 	"github.com/enes-alatas/spool/internal/sched"
 	"github.com/enes-alatas/spool/internal/store"
@@ -109,11 +108,10 @@ func main() {
 	partials := flag.Bool("partial-messages", true, "stream token deltas to the UI (--include-partial-messages)")
 	telegramAPI := flag.String("telegram-api-base", telegram.APIBase, "Telegram Bot API base URL (tests point this at a stand-in server)")
 	slackAPI := flag.String("slack-api-base", slack.APIBase, "Slack Web API base URL (tests point this at a stand-in server)")
-	cloudAPIFlag := flag.String("cloud-api-base", cloud.DefaultBaseURL, "Anthropic's API base URL, which cloud loops are driven through and the Claude proxy forwards contained loops' model requests to (tests point this at a stand-in server); https, or http on loopback")
+	cloudAPIFlag := flag.String("cloud-api-base", anthropicAPI, "Anthropic's API base URL, which the Claude proxy forwards contained loops' model requests to (tests point this at a stand-in server); https, or http on loopback")
 	cloudLoopbackAddress := flag.Bool("cloud-loopback-address", false, "accept a plain-HTTP loopback address as the cloud listener's public address (tests only: no cloud session can reach one, though the hub checks it green from itself)")
 	// Temporary, and tests only, until slice 2 of ADR-0059 (#977) removes it
 	// and the CLI path is the only one.
-	temporaryCloudCLI := flag.Bool("temporary-cloud-cli", false, "temporary, tests only: drive cloud loops through the claude CLI in place of the sessions client (removed by #977)")
 	answerTimeoutSec := flag.Int("telegram-answer-timeout-sec", 0, "seconds a Telegram call waits for the Bot API's answer before it is retried on a fresh connection (0 = the production 60s; tests against a stand-in API shorten it)")
 	bindSettleSec := flag.Int("telegram-bind-settle-sec", 0, "seconds a newly bound bot waits before it may ingest a group (0 = the production margin; tests against a stand-in API shorten it)")
 	retentionDays := flag.Int("events-retention-days", 30, "prune raw claude events older than this many days (0 disables; messages and turns are never pruned)")
@@ -132,7 +130,7 @@ func main() {
 	if flag.NArg() > 0 {
 		usageError("unknown argument %q — spool takes flags, not subcommands", flag.Arg(0))
 	}
-	cloudAPI, err := cloudAPIBase(*cloudAPIFlag)
+	cloudAPI, err := claudeAPIBase(*cloudAPIFlag)
 	if err != nil {
 		usageError("--cloud-api-base: %v", err)
 	}
@@ -373,13 +371,15 @@ func main() {
 	log = slog.New(redact.Handler(logTo, redactor))
 	slog.SetDefault(log)
 	rdb := redact.Store(db, redactor)
-	// The cloud runtime reads its account and the hub's public address from
-	// the store, so it joins the others once there is one (ADR-0056).
-	cloudRuntime := newCloudRuntime(rdb.Settings(), *dataDir, cloudAPI, *cloudLoopbackAddress)
-	if *temporaryCloudCLI {
-		// the loop homes hold loops' tokens, so they are made outside the
-		// data directory, which backups carry (ADR-0059)
-		cloudRuntime.CLI = &cloud.CLI{Binary: *claudeBin, Dir: os.TempDir(), Env: signInEnv(os.Environ())}
+	// The cloud runtime reads its account from the store, so it joins the
+	// others once there is one (ADR-0059).
+	cloudRuntime := newCloudRuntime(rdb.Settings(), *dataDir, *claudeBin)
+	// a dir another user holds fails every cloud start loudly, on the loop,
+	// and needn't stop a hub that runs no cloud loop
+	if removed, err := cloudRuntime.CLI.Prepare(); err != nil {
+		log.Error("the cloud loops' run dir is unusable; no cloud loop can start", "err", err)
+	} else if removed > 0 {
+		log.Info("removed what a stopped hub left of its cloud starts", "removed", removed)
 	}
 	runtimes[store.RuntimeCloud] = cloudRuntime
 
@@ -580,21 +580,18 @@ func main() {
 		ListenAddr:           apiAddr,
 		TrustedHosts:         splitList(*trustedHosts),
 		Egress:               dockerRuntime,
-		Cloud:                cloudEnvironments{cloudRuntime},
 		CloudListener:        cloudSwitch,
 		CloudLoopbackAddress: *cloudLoopbackAddress,
 		CloudGate:            cloudGate,
 		CloudSignIn:          cloudSignIn,
 		CloudLogin:           loginRefresh,
 		ClaudeAPIBase:        cloudAPI,
-		CloudAccounts:        cloudEnvironments{cloudRuntime},
+		CloudAccounts:        cloudAccounts{runtime: cloudRuntime, image: dockerRuntime},
 		CloudSessions:        cloudRuntime,
+		CloudHooks:           cloudRuntime,
 		EgressFlag:           egressFlag(allowEntries),
 		Log:                  log,
 		WebFS:                web.Dist(),
-	}
-	if cloudRuntime.CLI != nil {
-		api.CloudHooks = cloudRuntime
 	}
 
 	srv := &http.Server{Handler: redact.HTTP(api.Handler(), redactor)}

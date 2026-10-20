@@ -16,15 +16,16 @@ type cloudLoopJSON struct {
 }
 
 // A cloud loop is created as one once Settings → Cloud is green, with the
-// GitHub repo its sessions start from (ADR-0056). Its view carries its
-// runtime, the repo and, once its first session exists, the session's
-// page on claude.ai. Asked of a hub whose account is gone, the creation
-// is refused and names the step; a repo on another runtime's loop, a
-// docker loop's settings on a cloud loop, a repo that isn't GitHub's, and
-// moving a cloud loop are refused too.
+// GitHub repo it was asked for (ADR-0056), which no session starts from
+// since the sessions client went: #977 removes it (ADR-0059). Its view
+// carries its runtime, the repo and, once its first session exists, the
+// session's page on claude.ai. Asked of a hub whose account is gone, the
+// creation is refused and names the step; a repo on another runtime's
+// loop, a docker loop's settings on a cloud loop, a repo that isn't
+// GitHub's, and moving a cloud loop are refused too.
 func TestACloudLoopIsCreatedWithItsRepo(t *testing.T) {
 	t.Parallel()
-	s, fake := startCloudHub(t, "cirrus")
+	s := startCloudHub(t, "cirrus")
 
 	var created cloudLoopJSON
 	s.mustJSON("POST", "/api/loops", map[string]any{
@@ -36,20 +37,14 @@ func TestACloudLoopIsCreatedWithItsRepo(t *testing.T) {
 	}
 
 	s.message("nimbus", "first words")
-	s.waitTurn("nimbus", 20*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "first words") })
-	session := fake.Newest()
-	fake.Mu.Lock()
-	sources, _ := session.Context["sources"].([]any)
-	fake.Mu.Unlock()
-	if len(sources) != 1 {
-		t.Fatalf("the session's sources: %v, want the repo", sources)
-	}
-	if source, _ := sources[0].(map[string]any); source["type"] != "git_repository" || source["url"] != "https://github.com/example-org/nimbus" {
-		t.Errorf("the session's source: %v, want the repo as a git_repository", sources[0])
+	s.waitTurn("nimbus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "first words") })
+	vms := cloudVMs(t, s)
+	if len(vms) != 1 {
+		t.Fatalf("the first turn started %d sessions, want 1", len(vms))
 	}
 	var viewed cloudLoopJSON
 	s.mustJSON("GET", "/api/loops/nimbus", nil, &viewed)
-	if viewed.CloudSessionURL != "https://claude.ai/code/"+session.ID {
+	if viewed.CloudSessionURL != "https://claude.ai/code/"+vms[0] {
 		t.Errorf("the loop's session link = %q, want the session's page", viewed.CloudSessionURL)
 	}
 
@@ -71,7 +66,7 @@ func TestACloudLoopIsCreatedWithItsRepo(t *testing.T) {
 // step to finish.
 func TestACloudLoopWaitsForThePublicAddress(t *testing.T) {
 	t.Parallel()
-	s, _ := startCloudHubAt(t, "cirrus", "")
+	s := startCloudHubAt(t, "cirrus", "")
 	resp, body := s.do("POST", "/api/loops", map[string]any{"name": "nimbus", "mission": "m", "runtime": "cloud"})
 	if resp.StatusCode != 409 || errorCode(body) != "cloud_not_ready" || !strings.Contains(string(body), "public address") {
 		t.Errorf("a cloud loop with no public address: %d %s, want 409 cloud_not_ready naming the address", resp.StatusCode, body)

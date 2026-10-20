@@ -7,25 +7,22 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/enes-alatas/spool/internal/claude"
-	"github.com/enes-alatas/spool/internal/runtime"
 )
 
-// CLI drives cloud sessions through the claude CLI and the loop home's
-// hooks, on documented surfaces (ADR-0059): `claude --cloud` under a
-// pseudo-terminal starts a session, `claude -p --cloud` sends into it, and
-// each turn is read back from what the Stop hook posts.
-//
-// It is temporary: until slice 2 of ADR-0059 (#977) makes it the cloud
-// runtime's only path, the hub sets it only under its temporary flag, and
-// the sessions client runs every cloud loop otherwise.
+// CLI is the claude CLI cloud sessions run through, and where its runs
+// are made (ADR-0059): `claude --cloud` under a pseudo-terminal starts a
+// session, `claude -p --cloud` sends into it, and each turn is read back
+// from what the loop home's Stop hook posts.
 type CLI struct {
 	// Binary is the claude CLI.
 	Binary string
@@ -39,6 +36,43 @@ type CLI struct {
 	// SessionStart post; two minutes when zero.
 	StartWithin time.Duration
 }
+
+// Bounds are what a cloud turn's read-back is held to. What the Stop hook
+// posts is untrusted, and a turn over a bound ends as an error (ADR-0059).
+type Bounds struct {
+	// Quiet is how long a turn may go with no Stop post, the backstop for
+	// a post that never comes: the session's status can't be read without
+	// the sessions API. A single tool call can run quiet for long, so it is
+	// generous.
+	Quiet time.Duration
+	// Events and Bytes bound one turn's events, counted as passed on.
+	Events int
+	Bytes  int
+}
+
+// The read-back bounds a turn has by default.
+var defaultBounds = Bounds{
+	Quiet:  2 * time.Hour,
+	Events: 20000,
+	Bytes:  64 << 20,
+}
+
+func (bounds Bounds) withDefaults() Bounds {
+	if bounds.Quiet <= 0 {
+		bounds.Quiet = defaultBounds.Quiet
+	}
+	if bounds.Events <= 0 {
+		bounds.Events = defaultBounds.Events
+	}
+	if bounds.Bytes <= 0 {
+		bounds.Bytes = defaultBounds.Bytes
+	}
+	return bounds
+}
+
+// sessionLost is the CLI's own words for a resume of a session it doesn't
+// have, which the runner answers by starting a fresh one.
+const sessionLost = "No conversation found with session ID: "
 
 // The bound on a start, and on a send's CLI run.
 const (
@@ -133,40 +167,6 @@ func (cloud *Runtime) Stop(_ context.Context, loopID string, hook, lines []byte,
 	delete(cloud.waits.stops, loopID)
 	stops <- stopArrival{post: StopPost{Hook: hook, Lines: lines}, overBound: overBound}
 	return nil
-}
-
-// startCLI hands back the loop's session as a Proc driven through the CLI,
-// as Start does for the sessions client: a fresh hub session starts a cloud
-// session with its first message, and a resume carries on in the one it ran
-// in, under the token it was started with.
-func (cloud *Runtime) startCLI(spec runtime.Spec) (runtime.Proc, error) {
-	hub, err := hubFrom(spec)
-	if err != nil {
-		return nil, err
-	}
-	current, err := cloud.load(spec.LoopID)
-	if err != nil {
-		return nil, err
-	}
-	session := &cliSession{
-		cloud:  cloud,
-		loopID: spec.LoopID,
-		prompt: spec.AppendSystemPrompt,
-		hub:    hub,
-		bounds: cloud.Bounds.withDefaults(),
-	}
-	switch {
-	case spec.SessionID != "":
-		session.claudeSession = spec.SessionID
-	case spec.ResumeID == current.ClaudeSession && current.SessionID != "" && current.SessionToken == tokenHash(hub.token):
-		session.claudeSession = spec.ResumeID
-		session.sessionID = current.SessionID
-	default:
-		session.claudeSession = spec.ResumeID
-		session.lost = true
-	}
-	session.start()
-	return session, nil
 }
 
 // cliSession is a loop's cloud session driven through the CLI, seen by the
@@ -327,7 +327,7 @@ func (session *cliSession) startSession(text string) error {
 	}
 	ctx, cancel := context.WithTimeout(session.ctx, within)
 	defer cancel()
-	if err := os.MkdirAll(cli.Dir, 0o700); err != nil {
+	if err := cli.ownDir(); err != nil {
 		return err
 	}
 	home, err := BuildHome(ctx, cli.Dir, Home{MCPURL: session.hub.url, Token: session.hub.token, Prompt: session.prompt})
@@ -335,16 +335,16 @@ func (session *cliSession) startSession(text string) error {
 		return err
 	}
 	defer func() { _ = os.RemoveAll(home) }()
-	env, removeConfig, err := session.cloud.cliEnv(ctx, home)
+	run, err := session.cloud.newCLIRun(ctx, home)
 	if err != nil {
 		return err
 	}
-	defer removeConfig()
+	defer run.remove()
 
 	pending := session.cloud.waits.awaitStart(session.loopID, within)
 	defer session.cloud.waits.forgetStart(session.loopID, pending)
 	cmd := exec.Command(cli.Binary, "--cloud", text, "--permission-mode", "auto")
-	cmd.Dir, cmd.Env = home, env
+	cmd.Dir, cmd.Env = run.dir, run.env
 	terminal, err := startOnTerminal(cmd)
 	if err != nil {
 		return fmt.Errorf("cloud: starting the session: %w", err)
@@ -372,7 +372,7 @@ func (session *cliSession) startSession(text string) error {
 	case sessionID := <-pending.session:
 		session.sessionID = sessionID
 		return session.cloud.update(session.loopID, func(s *state) {
-			s.SessionID, s.ClaudeSession, s.AfterID = sessionID, session.claudeSession, ""
+			s.SessionID, s.ClaudeSession, s.EnvironmentID = sessionID, session.claudeSession, ""
 			s.SessionURL = sessionPages + sessionID
 			s.SessionToken = tokenHash(session.hub.token)
 		})
@@ -397,13 +397,13 @@ func (session *cliSession) startSession(text string) error {
 func (session *cliSession) send(text string) error {
 	ctx, cancel := context.WithTimeout(session.ctx, sendWithin)
 	defer cancel()
-	env, removeConfig, err := session.cloud.cliEnv(ctx, "")
+	run, err := session.cloud.newCLIRun(ctx, "")
 	if err != nil {
 		return err
 	}
-	defer removeConfig()
+	defer run.remove()
 	cmd := exec.CommandContext(ctx, session.cloud.CLI.Binary, "-p", text, "--cloud", session.sessionID, "--output-format", "json")
-	cmd.Env = env
+	cmd.Dir, cmd.Env = run.dir, run.env
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	ran := cmd.Run()
@@ -417,21 +417,43 @@ func (session *cliSession) send(text string) error {
 	return nil
 }
 
-// cliEnv is a CLI run's environment: the CLI's own, a fresh config dir and
-// the account's token. The config dir holds no credential: only the
+// cliRun is where one CLI run is made: its environment, and the directory
+// it runs in.
+type cliRun struct {
+	env []string
+	dir string
+	// remove removes the run's config dir, and its own empty directory
+	// when it has one, once the run ends.
+	remove func()
+}
+
+// newCLIRun makes a CLI run: the CLI's own environment, a fresh config dir
+// and the account's token. The config dir holds no credential: only the
 // onboarding flag, the account's organization, which the sign-in reads,
-// and the trust of home when there is one (ADR-0059). The caller removes it
-// once the run ends.
-func (cloud *Runtime) cliEnv(ctx context.Context, home string) (env []string, remove func(), err error) {
-	account, err := cloud.Client.Account(ctx)
+// and the trust of home when there is one (ADR-0059). The run is made in
+// home, or with none in an empty directory of its own: never the hub's
+// working directory or the shared temp dir, whose project settings, hooks
+// among them, the CLI would load and run.
+func (cloud *Runtime) newCLIRun(ctx context.Context, home string) (cliRun, error) {
+	account, err := cloud.Account(ctx)
 	if err != nil {
-		return nil, nil, err
+		return cliRun{}, err
 	}
-	configDir, err := os.MkdirTemp(cloud.CLI.Dir, "spool-cli-*")
+	if err := cloud.CLI.ownDir(); err != nil {
+		return cliRun{}, err
+	}
+	scratch, err := os.MkdirTemp(cloud.CLI.Dir, "spool-cli-*")
 	if err != nil {
-		return nil, nil, err
+		return cliRun{}, err
 	}
-	remove = func() { _ = os.RemoveAll(configDir) }
+	configDir := filepath.Join(scratch, "config")
+	run := cliRun{dir: home, remove: func() {
+		removeConfig(configDir)
+		_ = os.RemoveAll(scratch)
+	}}
+	if run.dir == "" {
+		run.dir = filepath.Join(scratch, "work")
+	}
 	config := map[string]any{
 		"hasCompletedOnboarding": true,
 		"oauthAccount":           map[string]string{"organizationUuid": account.OrgUUID},
@@ -441,15 +463,18 @@ func (cloud *Runtime) cliEnv(ctx context.Context, home string) (env []string, re
 	}
 	raw, err := json.Marshal(config)
 	if err == nil {
+		err = errors.Join(os.Mkdir(configDir, 0o700), os.MkdirAll(run.dir, 0o700))
+	}
+	if err == nil {
 		err = os.WriteFile(filepath.Join(configDir, ".claude.json"), raw, 0o600)
 	}
 	if err != nil {
-		remove()
-		return nil, nil, err
+		run.remove()
+		return cliRun{}, err
 	}
-	env = append(append([]string(nil), cloud.CLI.Env...),
+	run.env = append(append([]string(nil), cloud.CLI.Env...),
 		"CLAUDE_CONFIG_DIR="+configDir, "CLAUDE_CODE_OAUTH_TOKEN="+account.Token)
-	return env, remove, nil
+	return run, nil
 }
 
 // fail ends the turn as an error that says what went wrong.
@@ -527,4 +552,110 @@ func stripEscapes(raw []byte) string {
 		}
 	}
 	return out.String()
+}
+
+// cliLeftovers are what the CLI may write into its config dir that the
+// hub never gave it: a credential, or a project's transcript, shell
+// snapshot or debug log, which can carry the envelope the run was sent
+// (ADR-0059).
+var cliLeftovers = []string{".credentials.json", "projects", "shell-snapshots", "debug"}
+
+// removeConfig removes a run's config dir, and logs any of cliLeftovers
+// it found there first, by name only.
+func removeConfig(configDir string) {
+	if found := leftovers(configDir); len(found) > 0 {
+		slog.Default().Warn("the claude CLI left state in its config dir; removed", "found", found)
+	}
+	_ = os.RemoveAll(configDir)
+}
+
+// leftovers names each of cliLeftovers in configDir.
+func leftovers(configDir string) []string {
+	var found []string
+	for _, name := range cliLeftovers {
+		if _, err := os.Lstat(filepath.Join(configDir, name)); err == nil {
+			found = append(found, name)
+		}
+	}
+	return found
+}
+
+// CheckAccount is ADR-0044's login check on the account's token, run as a
+// cloud session's CLI runs are, in a config dir of its own (ADR-0059): one
+// haiku answer to a one-word prompt, which spends a sliver of the plan
+// and reaches no session. It is ErrNoAccount with no account signed in.
+func (cloud *Runtime) CheckAccount(ctx context.Context) (claude.LoginCheck, error) {
+	run, err := cloud.newCLIRun(ctx, "")
+	if err != nil {
+		return claude.LoginCheck{}, err
+	}
+	defer run.remove()
+	cmd := exec.Command(cloud.CLI.Binary, claude.LoginCheckArgs()...)
+	cmd.Dir, cmd.Env = run.dir, run.env
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return claude.LoginCheck{}, err
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return claude.LoginCheck{}, err
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return claude.LoginCheck{}, err
+	}
+	if err := cmd.Start(); err != nil {
+		return claude.LoginCheck{}, fmt.Errorf("cloud: starting %s: %w", cloud.CLI.Binary, err)
+	}
+	defer func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	}()
+	return claude.CheckLogin(ctx, claude.Attach(stdin, stdout, stderr))
+}
+
+// Prepare makes Dir, or takes it as it is when it is a 0700 directory
+// already, and removes everything in it: a hub that stopped mid-start
+// left that start's loop home there, and it holds a token (ADR-0059). It
+// is the hub's to call once at boot, before any start. Dir is in the
+// shared temp dir, so anything else at that path is refused: a directory
+// another user made there would hand them the homes.
+func (cli *CLI) Prepare() (removed int, err error) {
+	if err := cli.ownDir(); err != nil {
+		return 0, err
+	}
+	entries, err := os.ReadDir(cli.Dir)
+	if err != nil {
+		return 0, err
+	}
+	for _, entry := range entries {
+		if err := os.RemoveAll(filepath.Join(cli.Dir, entry.Name())); err != nil {
+			return removed, err
+		}
+		removed++
+	}
+	return removed, nil
+}
+
+// ownDir makes Dir, or checks the directory there is a 0700 one this user
+// owns. It runs before every run, not just at boot: a temp dir cleaner may
+// remove Dir while the hub idles, and another user could make it again in
+// its place.
+func (cli *CLI) ownDir() error {
+	if err := os.Mkdir(cli.Dir, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
+		return err
+	}
+	info, err := os.Lstat(cli.Dir)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() || info.Mode().Perm() != 0o700 {
+		return fmt.Errorf("cloud: %s is not a directory only this user can open (%s); remove it", cli.Dir, info.Mode())
+	}
+	// a hub running as root can write into another user's 0700 directory,
+	// and that user, its owner, could swap what the hub puts there
+	if stat, ok := info.Sys().(*syscall.Stat_t); !ok || int(stat.Uid) != os.Getuid() {
+		return fmt.Errorf("cloud: %s belongs to another user; remove it", cli.Dir)
+	}
+	return nil
 }

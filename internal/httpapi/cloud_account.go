@@ -42,10 +42,10 @@ var ErrNoCloudSignIn = errors.New("no sign-in is waiting for a code; start one")
 // ErrCloudSignInRefused is a code the CLI didn't take.
 var ErrCloudSignInRefused = errors.New("the code was not accepted")
 
-// CloudAccountChecker makes the account check: one read-only call to the
-// sessions API that spends no turn (ADR-0056).
+// CloudAccountChecker makes the account check: ADR-0044's login check on
+// the account's token, one haiku answer to a one-word prompt (ADR-0059).
 type CloudAccountChecker interface {
-	// CheckAccount reports where the call stopped, "" when it passed, and
+	// CheckAccount reports where the check stopped, "" when it passed, and
 	// how.
 	CheckAccount(ctx context.Context) (stage, detail string)
 }
@@ -54,12 +54,11 @@ type CloudAccountChecker interface {
 const (
 	// CloudAccountStageNone: no account is signed in. No call is made.
 	CloudAccountStageNone = "no_account"
-	// CloudAccountStageRefused: the API refused the account's token, with
-	// a 401 or 403: sign in again.
+	// CloudAccountStageRefused: the API refused the account's token, in
+	// the CLI's words: sign in again.
 	CloudAccountStageRefused = "refused"
-	// CloudAccountStageUnreachable: the API didn't answer.
-	CloudAccountStageUnreachable = "unreachable"
-	// CloudAccountStageOther: the API answered with something else.
+	// CloudAccountStageOther: the check couldn't run, or ended without
+	// saying either way.
 	CloudAccountStageOther = "other"
 )
 
@@ -243,8 +242,15 @@ func (server *Server) signOutAtTheSource(ctx context.Context) {
 	server.Log.Info("Claude login signed out at the source")
 }
 
+// cloudAccountCheckTimeout bounds one account check, as ADR-0044's checker
+// bounds the same run: the CLI's start and one model answer. Boot and a
+// sign-in check on a context that never ends.
+const cloudAccountCheckTimeout = 90 * time.Second
+
 // CheckCloudAccount makes the account check and records what it found.
 func (server *Server) CheckCloudAccount(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, cloudAccountCheckTimeout)
+	defer cancel()
 	result := CloudAccountCheckResult{State: CloudCheckFailed, CheckedAt: time.Now().UnixMilli()}
 	switch set, err := server.cloudAccountSet(ctx); {
 	case err != nil:
@@ -256,7 +262,7 @@ func (server *Server) CheckCloudAccount(ctx context.Context) {
 		result.Stage, result.Detail = CloudAccountStageOther, "this hub has no cloud runtime to check the account with"
 	default:
 		stage, detail := server.CloudAccounts.CheckAccount(ctx)
-		// the detail quotes Anthropic's answer, not the hub's words (#959)
+		// the detail quotes the CLI, not the hub's words (#959)
 		if result.Stage, result.Detail = stage, roomtext.Plain(detail); result.Stage == "" {
 			result.State = CloudCheckOK
 		} else {

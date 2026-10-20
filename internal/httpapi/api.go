@@ -108,10 +108,6 @@ type Server struct {
 	// extra hosts are applied to (#542). Nil on a hub that wires none: the
 	// list is still stored and served, and applies to nothing.
 	Egress EgressWall
-	// Cloud is the cloud runtime's environments, which an edit to the
-	// extra hosts is pushed to as well (ADR-0056). Nil on a hub that wires
-	// none.
-	Cloud CloudEnvironments
 	// CloudListener is the cloud listener's switch (ADR-0056). Nil
 	// on a hub that wires none: the page reads it as off and can't open it.
 	CloudListener CloudListener

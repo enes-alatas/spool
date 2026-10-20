@@ -165,13 +165,6 @@ func seesPairCodes(who *caller) bool {
 	return who != nil && roleRank[roleOf(who)] >= roleRank[store.RoleAdmin]
 }
 
-// seesSyncErrors reports whether who reads why a cloud environment's
-// allowlist write failed: an admin or an owner. The reason quotes the
-// cloud's answer, which reaches the view without passing the redactor.
-func seesSyncErrors(who *caller) bool {
-	return who != nil && roleRank[roleOf(who)] >= roleRank[store.RoleAdmin]
-}
-
 // seesConnectionConfig reports whether who reads a connection's config:
 // an admin or an owner, who set it up. It is stored as given, URL,
 // command and arguments, so a credential put there rather than in the

@@ -19,7 +19,7 @@ import (
 // (ADR-0058).
 func TestTheHubRefreshesTheClaudeAccountInItsLastHour(t *testing.T) {
 	t.Parallel()
-	s, fake := startCloudHub(t, "nimbus")
+	s := startCloudHub(t, "nimbus")
 	s.stop()
 	storeCloudAccount(t, s.dataDir, store.CloudAccount{
 		Token:        cloudFixtureToken,
@@ -29,8 +29,8 @@ func TestTheHubRefreshesTheClaudeAccountInItsLastHour(t *testing.T) {
 		Scopes:       []string{"user:inference", "user:sessions:claude_code"},
 	})
 	// fakeclaude's refresh appends "-r" to both tokens
-	fake.Admit(cloudFixtureToken + "-r")
-	s = startServerArgs(t, s.dataDir, "--runtime", "bare", "--cloud-api-base", fake.URL)
+	admitOnly(t, s, cloudFixtureToken+"-r")
+	s = startServerArgs(t, s.dataDir, "--runtime", "bare")
 
 	deadline := time.Now().Add(20 * time.Second)
 	for {
@@ -68,7 +68,7 @@ func TestTheHubRefreshesTheClaudeAccountInItsLastHour(t *testing.T) {
 // every try (ADR-0058).
 func TestARefusedLoginRefreshKeepsTheToken(t *testing.T) {
 	t.Parallel()
-	s, fake := startCloudHub(t, "stratus")
+	s := startCloudHub(t, "stratus")
 	s.stop()
 	storeCloudAccount(t, s.dataDir, store.CloudAccount{
 		Token: cloudFixtureToken,
@@ -77,7 +77,7 @@ func TestARefusedLoginRefreshKeepsTheToken(t *testing.T) {
 		ExpiresAt:    time.Now().Add(30 * time.Minute).UnixMilli(),
 		OrgUUID:      "00000000-0000-4000-8000-000000000001",
 	})
-	s = startServerArgs(t, s.dataDir, "--runtime", "bare", "--cloud-api-base", fake.URL)
+	s = startServerArgs(t, s.dataDir, "--runtime", "bare")
 
 	deadline := time.Now().Add(20 * time.Second)
 	for !strings.Contains(s.log(), "Claude login refresh failed") {
@@ -104,7 +104,7 @@ func TestARefusedLoginRefreshKeepsTheToken(t *testing.T) {
 func TestSignOutRevokesTheClaudeLoginAtTheSource(t *testing.T) {
 	t.Parallel()
 	const refresh = "sk-ant-ort01-fixture-cloud-refresh"
-	s, fake := startCloudHub(t, "nimbostratus")
+	s := startCloudHub(t, "nimbostratus")
 	s.stop()
 	login := store.CloudAccount{
 		Token:        cloudFixtureToken,
@@ -113,7 +113,7 @@ func TestSignOutRevokesTheClaudeLoginAtTheSource(t *testing.T) {
 		OrgUUID:      "00000000-0000-4000-8000-000000000001",
 	}
 	storeCloudAccount(t, s.dataDir, login)
-	s = startServerArgs(t, s.dataDir, "--runtime", "bare", "--cloud-api-base", fake.URL)
+	s = startServerArgs(t, s.dataDir, "--runtime", "bare")
 
 	var view cloudSettings
 	s.mustJSON("DELETE", "/api/settings/cloud/account", nil, &view)
@@ -139,7 +139,7 @@ func TestSignOutRevokesTheClaudeLoginAtTheSource(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(s.fkState, "logout-fails"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s = startServerArgs(t, s.dataDir, "--runtime", "bare", "--cloud-api-base", fake.URL)
+	s = startServerArgs(t, s.dataDir, "--runtime", "bare")
 	s.mustJSON("DELETE", "/api/settings/cloud/account", nil, &view)
 	if view.Account.Set {
 		t.Fatal("a failed logout left the login signed in")

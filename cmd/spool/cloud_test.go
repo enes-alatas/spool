@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"slices"
 	"testing"
 
 	"github.com/enes-alatas/spool/internal/store"
@@ -22,7 +21,7 @@ func (settings mapSettings) Get(_ context.Context, key string) (string, error) {
 
 // The API's calls carry the account's token, so plain HTTP is taken only
 // to a stand-in on loopback.
-func TestCloudAPIBase(t *testing.T) {
+func TestClaudeAPIBase(t *testing.T) {
 	for raw, ok := range map[string]bool{
 		"https://api.anthropic.com": true,
 		"http://127.0.0.1:4000":     true,
@@ -33,35 +32,16 @@ func TestCloudAPIBase(t *testing.T) {
 		"ftp://127.0.0.1":           false,
 		"api.anthropic.com":         false,
 	} {
-		if _, err := cloudAPIBase(raw); (err == nil) != ok {
-			t.Errorf("cloudAPIBase(%q) = %v, want ok %v", raw, err, ok)
-		}
-	}
-}
-
-// A cloud environment is held to the hub's egress allowlist, built-in and
-// stored, and the public host. The runtime translates them (cloud.Allowlist's
-// tests say how), so every entry is handed on as the hub reads it.
-func TestCloudEgressEntries(t *testing.T) {
-	settings := mapSettings{values: map[string]string{
-		store.SettingEgressHosts:  `{"hosts":["pypi.org","registry.example.test:8443",".example.test","github.com"]}`,
-		store.SettingCloudAddress: "https://hub.example.test/",
-	}}
-	entries, err := cloudEgressEntries(context.Background(), settings, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{"api.anthropic.com", ".githubusercontent.com", "pypi.org", "registry.example.test:8443", ".example.test", "hub.example.test"} {
-		if !slices.Contains(entries, want) {
-			t.Errorf("%s is missing from %v", want, entries)
+		if _, err := claudeAPIBase(raw); (err == nil) != ok {
+			t.Errorf("claudeAPIBase(%q) = %v, want ok %v", raw, err, ok)
 		}
 	}
 }
 
 // The loop's token is sent to the cloud address, so one it would cross in
 // the clear, or that no cloud session could reach, is refused at use,
-// whatever wrote it, and so is every allowlist built from it. Plain HTTP on
-// loopback passes only under the tests' opt-in.
+// whatever wrote it. Plain HTTP on loopback passes only under the tests'
+// opt-in.
 func TestCloudAddressFailsClosed(t *testing.T) {
 	for _, tc := range []struct {
 		stored   string
@@ -78,9 +58,6 @@ func TestCloudAddressFailsClosed(t *testing.T) {
 		address, err := cloudAddress(context.Background(), settings, tc.loopback)
 		if (err == nil) != tc.ok || (!tc.ok && address != "") {
 			t.Errorf("cloudAddress(%q, loopback %v) = %q, %v; want ok %v", tc.stored, tc.loopback, address, err, tc.ok)
-		}
-		if _, err := cloudEgressEntries(context.Background(), settings, tc.loopback); (err == nil) != tc.ok {
-			t.Errorf("cloudEgressEntries with %q, loopback %v: %v, want ok %v", tc.stored, tc.loopback, err, tc.ok)
 		}
 	}
 	if address, err := cloudAddress(context.Background(), mapSettings{}, false); address != "" || err != nil {
