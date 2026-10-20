@@ -29,6 +29,9 @@ func TestTheHubSealsItsSecretsUnderItsKey(t *testing.T) {
 	dataDir := t.TempDir()
 	s := startServer(t, dataDir)
 	s.createLoop("keeper", nil)
+	// the creation tick's turn ends before the hub stops: one killed mid-turn,
+	// after its session was saved, can't be resumed after the restart (#773)
+	s.waitTurn("keeper", firstTurnWait, func(turn) bool { return true })
 	s.mustJSON("POST", "/api/connections", map[string]any{
 		"name": "script", "kind": "env-var", "config": map[string]any{"env": "FAKECLAUDE_SCRIPT"},
 		"secret": "!env MARKER",
