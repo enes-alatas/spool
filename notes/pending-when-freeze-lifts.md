@@ -953,3 +953,6 @@ Terra's #976 scoping question: decided cut (a) — CLI path end to end behind a 
 
 ## 2026-10-20 17:30 UTC
 #986 merged (slice 1); closed #976 as landed. Terra on #977; connection delivery to the VM waits on Enes's run I (real account, hub machine), else the PR carries a pending line. Nudged Enes with the run I link.
+
+## 2026-10-20 17:35 UTC
+Terra: #977 as 3 sequential PRs (CLI-only path + per-session tokens → ADR-0056 loop migration → connections after run I). Agreed on #977 with the condition: PR 2 lands right after PR 1, no fleet upgrade between (ADR-0056 loops undriveable in the gap). Web halves (sync marks dropped; New loop form) Terra files before each merge ask → home under #860 for Iris.
