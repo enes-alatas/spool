@@ -43,7 +43,7 @@ func TestThePlanCapSleepsTheFleetUntilAThresholdIsRaised(t *testing.T) {
 		"first\n!usage 0.95 0.3 !hang 3\nheld\n")})
 	srv.createLoop("bystander", map[string]any{"workspace_path": workspaceWithScript(t, "first\nlater\n")})
 	for _, name := range []string{"spender", "bystander"} {
-		srv.waitTurn(name, 30*time.Second, func(tr turn) bool { return strings.Contains(tr.ResultText, "first") })
+		srv.waitTurn(name, firstTurnWait, func(tr turn) bool { return strings.Contains(tr.ResultText, "first") })
 	}
 	if view := srv.planUsage(); view.Cap != nil {
 		t.Fatalf("unknown usage capped the fleet: %+v", view.Cap)
@@ -91,7 +91,7 @@ func TestThePlanCapLiftsAtTheResetAndOnResumeNow(t *testing.T) {
 	srv := startServer(t, t.TempDir())
 	srv.createLoop("spender", map[string]any{"workspace_path": workspaceWithScript(t,
 		"first\n!usage 0.95 0.3 resets=8 over\nwoke\n!usage 0.95 0.3 over again\nresumed\n")})
-	srv.waitTurn("spender", 30*time.Second, func(tr turn) bool { return strings.Contains(tr.ResultText, "first") })
+	srv.waitTurn("spender", firstTurnWait, func(tr turn) bool { return strings.Contains(tr.ResultText, "first") })
 
 	srv.message("spender", "spend")
 	srv.waitTurn("spender", 30*time.Second, func(tr turn) bool { return tr.ResultText == "over" })

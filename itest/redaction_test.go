@@ -144,7 +144,7 @@ func TestALoopCannotRelayASecretToATeammate(t *testing.T) {
 	s := startServer(t, t.TempDir())
 	s.createLoop("alpha", map[string]any{"workspace_path": wsAlpha})
 	s.createLoop("bravo", map[string]any{"workspace_path": wsBravo})
-	s.waitTurn("alpha", 30*time.Second, func(turn) bool { return true })
+	s.waitTurn("alpha", firstTurnWait, func(turn) bool { return true })
 	s.setLoopEnv("alpha", "API_KEY", secret)
 
 	s.message("alpha", "go")
@@ -177,7 +177,7 @@ func TestTheHubsOwnCredentialsNeverReachTheRecord(t *testing.T) {
 	s.createLoop("leaky", nil)
 	s.scriptLoop("leaky", `!send {"destination":"control_room","text":"`+said+`"} `+said)
 	s.message("leaky", "say them")
-	turn := s.waitTurn("leaky", 30*time.Second, func(tn turn) bool { return strings.HasPrefix(tn.ResultText, "token ") })
+	turn := s.waitTurn("leaky", firstTurnWait, func(tn turn) bool { return strings.HasPrefix(tn.ResultText, "token ") })
 	if !strings.HasPrefix(turn.ResultText, "token <redacted:operator_token> key <redacted:hub_key> bytes ") {
 		t.Errorf("stored turn = %q, want each credential's placeholder", turn.ResultText)
 	}

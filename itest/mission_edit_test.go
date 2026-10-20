@@ -28,7 +28,7 @@ func TestMissionRotationTellsTheLoopWhy(t *testing.T) {
 	dataDir := t.TempDir()
 	s := startServer(t, dataDir)
 	s.createLoop("clerk", map[string]any{"mission": "Keep the ledger."})
-	s.waitTurn("clerk", 30*time.Second, func(turn) bool { return true })
+	s.waitTurn("clerk", firstTurnWait, func(turn) bool { return true })
 	s.waitState("clerk", "asleep", 30*time.Second)
 
 	var saved patchResult

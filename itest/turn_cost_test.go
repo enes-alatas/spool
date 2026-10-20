@@ -53,7 +53,7 @@ func TestTurnCostIsPerTurnNotSessionTotal(t *testing.T) {
 	s.createLoop("spender", nil)
 
 	s.message("spender", "first")
-	s.waitTurn("spender", 15*time.Second, func(tn turn) bool {
+	s.waitTurn("spender", firstTurnWait, func(tn turn) bool {
 		return strings.Contains(tn.ResultText, "first")
 	})
 	s.message("spender", "second")
@@ -82,7 +82,7 @@ func TestTurnCostSurvivesRestartMidSession(t *testing.T) {
 	s.createLoop("resumer", nil)
 
 	s.message("resumer", "before restart")
-	before := s.waitTurn("resumer", 15*time.Second, func(tn turn) bool {
+	before := s.waitTurn("resumer", firstTurnWait, func(tn turn) bool {
 		return strings.Contains(tn.ResultText, "before restart")
 	})
 	s.stop()

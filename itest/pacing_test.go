@@ -25,7 +25,7 @@ func TestPauseHoldsWorkUntilResume(t *testing.T) {
 	s.createLoop("restive", map[string]any{"tick_interval_sec": 2})
 
 	// let the creation tick land, so what follows is the paused loop's doing
-	s.waitTurn("restive", 30*time.Second, func(turn) bool { return true })
+	s.waitTurn("restive", firstTurnWait, func(turn) bool { return true })
 	s.mustJSON("POST", "/api/loops/restive/pause", nil, nil)
 	if next := s.loop("restive").NextTickAt; next != 0 {
 		t.Fatalf("pause left a tick scheduled at %d", next)
@@ -59,7 +59,7 @@ func TestKillThenWakeResumesTheSameSession(t *testing.T) {
 	s := startServer(t, t.TempDir())
 	s.createLoop("interruptible", nil)
 
-	first := s.waitTurn("interruptible", 30*time.Second, func(turn) bool { return true })
+	first := s.waitTurn("interruptible", firstTurnWait, func(turn) bool { return true })
 	s.mustJSON("POST", "/api/loops/interruptible/kill", nil, nil)
 	s.waitState("interruptible", "asleep", 30*time.Second)
 
@@ -85,7 +85,7 @@ func TestOverdueTickFiresSoonAfterRestart(t *testing.T) {
 	// a long interval, so a tick scheduled the ordinary way is hours out and
 	// cannot be mistaken for the overdue one being pulled forward
 	s.createLoop("overdue", map[string]any{"tick_interval_sec": 7200})
-	s.waitTurn("overdue", 30*time.Second, func(turn) bool { return true })
+	s.waitTurn("overdue", firstTurnWait, func(turn) bool { return true })
 	s.waitState("overdue", "asleep", 30*time.Second)
 	s.stop()
 
@@ -120,7 +120,7 @@ func TestTickDueDuringSuspendStillFires(t *testing.T) {
 	dataDir := t.TempDir()
 	s := startServer(t, dataDir)
 	s.createLoop("sleeper", map[string]any{"tick_interval_sec": 7200})
-	first := s.waitTurn("sleeper", 30*time.Second, func(turn) bool { return true })
+	first := s.waitTurn("sleeper", firstTurnWait, func(turn) bool { return true })
 	s.waitState("sleeper", "asleep", 30*time.Second)
 
 	setNextTick(t, dataDir, "sleeper", time.Now().Add(-time.Hour).UnixMilli())

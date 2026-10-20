@@ -162,7 +162,7 @@ func TestFleetRulesReachThePrompt(t *testing.T) {
 	s.createLoop("ruled", map[string]any{"workspace_path": ws, "workspace_mode": "dir", "mission": "keep the tests green"})
 
 	s.message("ruled", "show me")
-	first := s.waitTurn("ruled", 15*time.Second, func(tn turn) bool {
+	first := s.waitTurn("ruled", firstTurnWait, func(tn turn) bool {
 		return strings.Contains(tn.ResultText, "MISSION")
 	})
 	section := "FLEET RULES\n1. sign your work\n   End every artifact with your name.\nWhere a fleet rule and your mission conflict, the fleet rule wins.\n\nMISSION\nkeep the tests green"
@@ -221,7 +221,7 @@ func TestStandingInstructionsReachARunningSession(t *testing.T) {
 	s.createLoop("bound", map[string]any{"workspace_path": ws, "workspace_mode": "dir"})
 
 	s.message("bound", "first")
-	s.waitTurn("bound", 15*time.Second, func(tn turn) bool {
+	s.waitTurn("bound", firstTurnWait, func(tn turn) bool {
 		return strings.Contains(tn.ResultText, "first")
 	})
 	s.waitState("bound", "asleep", 30*time.Second)
@@ -286,7 +286,7 @@ func TestStandingInstructionsAreNotSpentOnAHandoffTurn(t *testing.T) {
 	s.createLoop("rotator", map[string]any{"workspace_path": ws, "workspace_mode": "dir"})
 
 	s.message("rotator", "first")
-	first := s.waitTurn("rotator", 15*time.Second, func(tn turn) bool {
+	first := s.waitTurn("rotator", firstTurnWait, func(tn turn) bool {
 		return strings.Contains(tn.ResultText, "first")
 	})
 	s.waitState("rotator", "asleep", 30*time.Second)

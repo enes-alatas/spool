@@ -20,7 +20,7 @@ func TestAnEnvChangeReachesTheNextTurn(t *testing.T) {
 	// alive between turns for as long as the test runs
 	workspace := workspaceWithScript(t, "!echo\n!env MARKER\n!env MARKER\n!hang 3\n!env MARKER\n")
 	s.createLoop("aster", map[string]any{"workspace_path": workspace, "idle_timeout_sec": 600})
-	s.waitTurn("aster", 30*time.Second, func(turn) bool { return true })
+	s.waitTurn("aster", firstTurnWait, func(turn) bool { return true })
 	s.mustJSON("POST", "/api/connections", map[string]any{
 		"name": "marker", "kind": "env-var", "config": map[string]any{"env": "MARKER"}, "secret": "one",
 	}, nil)
@@ -72,7 +72,7 @@ func TestAnEnvChangeDoesNotDeferADueRotation(t *testing.T) {
 	// is line 1 again
 	workspace := workspaceWithScript(t, "!env MARKER\n!hang 3\nhandoff note\n")
 	s.createLoop("aster", map[string]any{"workspace_path": workspace, "idle_timeout_sec": 600})
-	s.waitTurn("aster", 30*time.Second, func(tn turn) bool { return tn.Trigger == "tick" })
+	s.waitTurn("aster", firstTurnWait, func(tn turn) bool { return tn.Trigger == "tick" })
 	s.mustJSON("POST", "/api/connections", map[string]any{
 		"name": "marker", "kind": "env-var", "config": map[string]any{"env": "MARKER"}, "secret": "one",
 	}, nil)

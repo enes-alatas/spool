@@ -47,7 +47,7 @@ func TestThePlanUsageIsReadFromTheLoopsStream(t *testing.T) {
 	// reports the windows; line 3 is a turn with no event again
 	ws := workspaceWithScript(t, "first\n!usage 0.42 0.17 measured\nquiet\n")
 	srv.createLoop("meter", map[string]any{"workspace_path": ws})
-	srv.waitTurn("meter", 30*time.Second, func(tr turn) bool { return strings.Contains(tr.ResultText, "first") })
+	srv.waitTurn("meter", firstTurnWait, func(tr turn) bool { return strings.Contains(tr.ResultText, "first") })
 
 	if view := srv.planUsage(); view.Unknown == "" || view.FiveHour != nil || view.SevenDay != nil || view.AsOf != 0 {
 		t.Fatalf("before any rate-limit event the read must be unknown with a reason, got %+v", view)

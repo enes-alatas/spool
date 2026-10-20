@@ -584,6 +584,11 @@ func workspaceWithScript(t *testing.T, lines string) string {
 	return dir
 }
 
+// firstTurnWait bounds the wait from a loop's creation to its first turn.
+// Nothing in that path waits on purpose, but a loaded runner can take a
+// while to schedule, wake and spawn, so the bound is generous (#714).
+const firstTurnWait = 90 * time.Second
+
 // scriptLoop gives a loop its turn script through the env-var the engine
 // injects into every exec, which is the only route into a contained loop: its
 // working directory is inside its workstation, where the test cannot write a
@@ -597,7 +602,7 @@ func workspaceWithScript(t *testing.T, lines string) string {
 func (s *server) scriptLoop(name, script string) {
 	s.t.Helper()
 	s.setLoopEnv(name, "FAKECLAUDE_SCRIPT", script)
-	s.waitTurn(name, 90*time.Second, func(turn) bool { return true })
+	s.waitTurn(name, firstTurnWait, func(turn) bool { return true })
 	s.waitState(name, "asleep", 90*time.Second)
 }
 

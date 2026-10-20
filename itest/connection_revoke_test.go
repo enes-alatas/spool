@@ -20,7 +20,7 @@ func TestRevokingAConnectionTakesItFromItsLoops(t *testing.T) {
 	s.createLoop("aster", nil)
 	// its first wake's process ran without them, and a process keeps the
 	// env it was spawned with
-	s.waitTurn("aster", 30*time.Second, func(turn) bool { return true })
+	s.waitTurn("aster", firstTurnWait, func(turn) bool { return true })
 	s.waitState("aster", "asleep", 30*time.Second)
 	s.mustJSON("POST", "/api/connections", map[string]any{
 		"name": "script", "kind": "env-var", "config": map[string]any{"env": "FAKECLAUDE_SCRIPT"},
