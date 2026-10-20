@@ -582,25 +582,6 @@ export interface EgressView {
   // failed or the proxy went away; the next wake copies it.
   changed_at?: number
   applied_at?: number
-  // The cloud loops' environments (ADR-0056), absent on a hub with none.
-  cloud?: CloudEgress
-}
-
-// How far the allowlist reaches the cloud loops: each loop's environment,
-// written with the list as it stands or not, and the entries a cloud
-// environment doesn't carry.
-export interface CloudEgress {
-  environments: CloudEnvironmentSync[]
-  not_applied: string[]
-}
-
-export interface CloudEnvironmentSync {
-  loop: string
-  in_sync: boolean
-  // Why its last write failed, while it isn't in sync; an admin's alone.
-  error?: string
-  // When a write last landed, Unix ms.
-  synced_at?: number
 }
 
 // The Claude plan's usage as the hub last observed it (#647), mirrored from

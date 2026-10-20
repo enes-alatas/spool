@@ -1,5 +1,4 @@
-import type { CloudEnvironmentSync, EgressGroup, EgressView } from './api'
-import { formatAgo } from './format'
+import type { EgressGroup, EgressView } from './api'
 
 // Whether a change to the list is still on its way: egress is walled, and
 // the proxy last loaded a list older than the current one. No
@@ -12,16 +11,6 @@ export function applying(view?: EgressView): boolean {
     view.applied_at !== undefined &&
     view.applied_at < view.changed_at
   )
-}
-
-// Whether a cloud loop's environment carries the allowlist as it stands
-// (ADR-0056), in the words the Egress section and the loop's Workstation
-// card both use. The error is an admin's alone, so a member reads only that
-// it isn't in sync.
-export function allowlistSyncText(environment: CloudEnvironmentSync, now: number): string {
-  if (environment.in_sync)
-    return `in sync${environment.synced_at ? ` · ${formatAgo(environment.synced_at, now)}` : ''}`
-  return `not in sync${environment.error ? `: ${environment.error}` : ''}`
 }
 
 // The operator's hosts under the Egress dialog's filter (#971): those whose

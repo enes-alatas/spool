@@ -1,16 +1,12 @@
 import { Link } from 'react-router'
-import { useQuery } from '@tanstack/react-query'
-import { api, type LoopView } from '../api'
+import type { LoopView } from '../api'
 import { cloudHold, cloudSessionCondition, useCloudSettings } from '../cloudLoop'
-import { allowlistSyncText } from '../egress'
 import { MCPReach } from './MCPReach'
-import { useMinuteClock } from './PlanUsage'
 
 // The Workstation card of a cloud loop (ADR-0056, #867): its session runs on
 // Anthropic's machine, so there is nothing here to power. The card says
-// where the session is, the repo it starts from, whether its environment
-// carries the allowlist as it stands, and, while the hub holds the loop,
-// where that is fixed.
+// where the session is, the repo it starts from, and, while the hub holds
+// the loop, where that is fixed.
 export function CloudWorkstation({ loop }: { loop: LoopView }) {
   const hold = cloudHold(loop, useCloudSettings(loop))
   const condition = cloudSessionCondition(loop, hold)
@@ -46,7 +42,6 @@ export function CloudWorkstation({ loop }: { loop: LoopView }) {
           {loop.cloud_repo ? loop.cloud_repo.replace('https://github.com/', '') : 'none'}
         </span>
       </div>
-      <AllowlistRow loop={loop} />
       <MCPReach loop={loop} />
       {hold && (
         <div className="panel-note bad">
@@ -58,25 +53,9 @@ export function CloudWorkstation({ loop }: { loop: LoopView }) {
         </div>
       )}
       <div className="panel-note">
-        Anthropic's machine: there is nothing here to power. Its allowlist is this hub's, enforced by
-        Anthropic's proxy, not this hub's egress wall.
+        Anthropic's machine: there is nothing here to power. It reaches what its environment's network access
+        on claude.ai allows, not this hub's egress list.
       </div>
-    </div>
-  )
-}
-
-// Whether the loop's cloud environment carries the allowlist as it stands
-// (Settings → Egress). No row before the hub reports the environment, which
-// its first wake makes.
-function AllowlistRow({ loop }: { loop: LoopView }) {
-  const { data } = useQuery({ queryKey: ['egress'], queryFn: api.egress })
-  const now = useMinuteClock()
-  const environment = data?.cloud?.environments.find((e) => e.loop === loop.name)
-  if (!environment) return null
-  return (
-    <div className="row">
-      <span className="k">allowlist</span>
-      <span className={`v ${environment.in_sync ? '' : 'bad'}`}>{allowlistSyncText(environment, now)}</span>
     </div>
   )
 }
