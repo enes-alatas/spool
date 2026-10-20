@@ -428,6 +428,19 @@ func (table loops) List(ctx context.Context) ([]*store.Loop, error) {
 	return out, rows.Err()
 }
 
+func (table loops) RotateHubMCPToken(ctx context.Context, id string) (string, error) {
+	token := store.NewHubMCPToken()
+	result, err := table.db.ExecContext(ctx, `UPDATE loops SET hub_mcp_token=?, hub_mcp_token_hash=? WHERE id=?`,
+		table.sealer.seal(token), tokenHash(token), id)
+	if err != nil {
+		return "", err
+	}
+	if rows, err := result.RowsAffected(); err == nil && rows == 0 {
+		return "", store.ErrNotFound
+	}
+	return token, nil
+}
+
 func (table loops) SetRuntime(ctx context.Context, id, sessionID string, pid int) error {
 	_, err := table.db.ExecContext(ctx,
 		`UPDATE loops SET current_session_id=?, current_pid=? WHERE id=?`, sessionID, pid, id)

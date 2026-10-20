@@ -822,6 +822,10 @@ type LoopStore interface {
 	// hub's MCP endpoint; ErrNotFound for an unknown token.
 	GetByHubMCPToken(ctx context.Context, token string) (*Loop, error)
 	List(ctx context.Context) ([]*Loop, error)
+	// RotateHubMCPToken gives the loop a fresh hub token, which revokes the
+	// one it held at once, and returns it. A cloud loop gets one for each
+	// session it starts, and on a stop (ADR-0059).
+	RotateHubMCPToken(ctx context.Context, id string) (string, error)
 	SetRuntime(ctx context.Context, id, sessionID string, pid int) error
 	// SetRotation persists a rotation in progress: whether the current session
 	// has been retired by a handoff turn, why the rotation was taken, and the
