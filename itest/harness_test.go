@@ -359,6 +359,7 @@ type loopView struct {
 	ID                 string  `json:"id"`
 	Name               string  `json:"name"`
 	State              string  `json:"state"`
+	CurrentSessionID   string  `json:"current_session_id"`
 	Status             string  `json:"status"`
 	Runtime            string  `json:"runtime"`
 	WorkspacePath      string  `json:"workspace_path"`
