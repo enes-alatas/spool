@@ -926,3 +926,6 @@ Enes synced with Terra on #957 directly (his four calls answered there, not via 
 
 ## 2026-10-20 11:15 UTC
 Sweep: #971 done in a morning (mockups → Enes picked A with revisions → PR #974 merged 10:48; #971 closed). Terra: PR #973 = ADR-0059 (cloud loops through the claude CLI), no pending decision line, with Quinn. Board tidy. Iris idle again after #974; next web work: ADR-0059's slices' web halves, #954's web half.
+
+## 2026-10-20 11:20 UTC
+Iris idle after #974. Told her: next is ADR-0059 slice 3's web half (Settings → Cloud shared-environment step + pasted ID, estimated cost in the room), filed when #973 merges; meanwhile read the ADR and note on #957 what the room can't show. On #973 merge: home Terra's slice issues under #860 (Cloud runtime), file the web halves with --parent 860, mockups first for any visual change.
