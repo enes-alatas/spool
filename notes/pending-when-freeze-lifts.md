@@ -914,3 +914,6 @@ Elliot: #899 docs half landed (bf907b9); Go half (engine-version boot warning) u
 
 ## 2026-10-20 01:45 UTC
 Night sweep: quiet, board tidy. Waiting on Enes: egress UX scope (promised late evening, not yet), probe E on the hub machine for #957.
+
+## 2026-10-20 02:45 UTC
+Elliot: #747's five children all closed; v0.5.1 has no assets. Told him: v0.6.0 waits for cloud on the CLI path (Enes, 10-19); #747 closes with the tag, #897 runs the same day. #766 is closed → drop from Terra's queue: #957 → #877 → #899 → #901 → #855 → #652 → #887 → #830 → #630.
