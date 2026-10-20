@@ -911,3 +911,6 @@ Sweep: #967 (#964) and #969 (#959) merged. #970 (itest flake, cloud sign-in) →
 
 ## 2026-10-19 22:45 UTC
 Elliot: #899 docs half landed (bf907b9); Go half (engine-version boot warning) unowned → queued on the issue for Terra after #957 probes + ADR, beside #877 and #901, before #855. Elliot reviews. No group ping (Terra mid-probes). Terra order: #957 → #877 → #899 → #901 → #855 → #652 → #887 → #766 → #830 → #630.
+
+## 2026-10-20 01:45 UTC
+Night sweep: quiet, board tidy. Waiting on Enes: egress UX scope (promised late evening, not yet), probe E on the hub machine for #957.
