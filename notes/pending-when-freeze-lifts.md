@@ -938,3 +938,6 @@ ADR-0059 merged (#973, 11:26). Filed slices under #860 / Cloud runtime: #976 (sl
 
 ## 2026-10-20 12:25 UTC
 Elliot takes CI reliability cleanup: flake census (counts from recent runs; close proposals on each issue → I close on sweep), test-only races one PR each, hub-side races (#970) stay Terra's with evidence; then #630 and #472 (now Elliot's, off Terra's queue). Terra order: #976 → #977 → #978 → #972 → #877 → #899 → #901 → #855 → #652 → #887 → #830.
+
+## 2026-10-20 12:30 UTC
+Terra: #972 was already up as PR #980 before my order; finishes it, then #976 → #977 → #978. Reacted 👍.
