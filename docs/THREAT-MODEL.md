@@ -333,9 +333,14 @@ in, and reads the turn's events back (ADR-0056).
 - **The session link is claude.ai's or none.** The API's `session_url`
   is untrusted, so the view carries it only as a `https://claude.ai/code/`
   page.
-- **A session holds the token it was created with.** A loop whose token
-  is replaced, as a key reset replaces every one, starts a fresh session
-  at its next wake rather than resume one the hub would refuse.
+- **Each session gets a hub token of its own** (ADR-0059). The hub mints
+  a fresh one for each session it starts, and stopping or killing a cloud
+  loop revokes it at once, without waiting for a turn. So a copy lifted
+  out of a session dies with that session, and an old VM of a loop can't
+  bind itself to a start of a new one: its token is refused. A session
+  holds the token it was started with, so a loop whose token is replaced
+  starts a fresh session at its next wake rather than resume one the hub
+  would refuse.
 - **What comes back is untrusted** and read under bounds: 4 MiB a page,
   with one event over it skipped and named, and per turn 20 000 events
   and 64 MiB. An answer or event the hub can't read, a refusal other than

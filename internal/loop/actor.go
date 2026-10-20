@@ -166,6 +166,10 @@ type Deps struct {
 	// a cloud loop: while it holds, a cloud loop takes no turns (ADR-0056).
 	// Nil in tests that do not care, which never hold one.
 	CloudGate *CloudGate
+	// SecretsChanged is called after the actor replaces a secret, a cloud
+	// loop's hub token, so the redactor learns it. Nil in tests that do not
+	// care.
+	SecretsChanged func(ctx context.Context)
 	// DataDir is the hub's data directory, where a rehomed loop's
 	// auto-memory waits for its workstation (#624). "" carries none.
 	DataDir string
@@ -485,6 +489,7 @@ func (actor *Actor) handleCmd(command cmd) {
 		actor.pump()
 	case "pause":
 		actor.paused = true
+		actor.cutOffCloud(context.Background(), "pause", store.EndReasonPaused)
 		actor.publishState()
 	case "resume":
 		actor.paused = false
@@ -507,6 +512,7 @@ func (actor *Actor) handleCmd(command cmd) {
 		command.reply <- actor.requestRehome()
 		actor.publishState()
 	case "kill":
+		actor.cutOffCloud(context.Background(), "kill", store.EndReasonKilled)
 		if actor.proc != nil {
 			_ = actor.proc.Kill()
 			// exit handled via procEvents close
@@ -524,6 +530,9 @@ func (actor *Actor) handleCmd(command cmd) {
 		// edit's own row is what the next wake must be compared against,
 		// but only the actor knows what it last spawned with (#162)
 		actor.loop.PromptHash = token.PromptHash
+		// and a cloud loop's hub token, which the actor replaces with each
+		// session it starts: the edit's row may carry one already revoked
+		actor.loop.HubMCPToken = token.HubMCPToken
 		// and where the loop runs: no edit changes it, and a rehome the
 		// actor made after the edit read its row must not be undone (#624)
 		actor.loop.Runtime, actor.loop.WorkspaceMode, actor.loop.WorkspacePath = token.Runtime, token.WorkspaceMode, token.WorkspacePath
@@ -679,6 +688,15 @@ func (actor *Actor) wake() {
 	prompt := actor.renderPrompt()
 	if fresh {
 		actor.mintSession(ctx)
+		if actor.loop.Runtime == store.RuntimeCloud {
+			// the session about to start holds this token for its life
+			if err := actor.mintHubToken(ctx); err != nil {
+				actor.log().Error("workstation not ready", "err", err)
+				actor.setWorkstationDown(DownReasonUnreachable, err.Error())
+				actor.crashBackoff()
+				return
+			}
+		}
 	}
 	actor.reconcilePrompt(ctx, fresh, prompt)
 	// The loop's connections are read fresh each wake, so an edit lands on
@@ -2281,7 +2299,7 @@ func (actor *Actor) power(verb string) error {
 		}
 	case PowerRecreate:
 		if err = loopRuntime.Destroy(ctx, actor.loop.ID); err == nil {
-			actor.forgetSession(ctx)
+			actor.forgetSession(ctx, store.EndReasonLost)
 			err = loopRuntime.Ensure(ctx, spec)
 		}
 		if err == nil {
@@ -2328,7 +2346,7 @@ func (actor *Actor) stopProcess(verb string) {
 	if actor.proc == nil {
 		return
 	}
-	actor.log().Info("power control ends the running turn", "verb", verb)
+	actor.log().Info("the running turn is ended", "by", verb)
 	_ = actor.proc.Kill()
 	grace := time.NewTimer(procStopGrace)
 	defer grace.Stop()
@@ -2345,14 +2363,15 @@ func (actor *Actor) stopProcess(verb string) {
 	}
 }
 
-// forgetSession drops the loop's claude session: recreate destroys the state
-// it lived in, so the next wake starts fresh instead of failing to resume.
-func (actor *Actor) forgetSession(ctx context.Context) {
+// forgetSession drops the loop's claude session, ending it for reason:
+// recreate destroys the state it lived in, and a cloud loop's stop cuts it
+// off, so the next wake starts fresh instead of failing to resume.
+func (actor *Actor) forgetSession(ctx context.Context, reason string) {
 	old := actor.loop.CurrentSessionID
 	if old == "" {
 		return
 	}
-	_ = actor.deps.Store.Sessions().End(ctx, old, store.EndReasonLost, now())
+	_ = actor.deps.Store.Sessions().End(ctx, old, reason, now())
 	actor.loop.CurrentSessionID = ""
 	_ = actor.deps.Store.Loops().SetRuntime(ctx, actor.loop.ID, "", 0)
 	// the fill measurement described the forgotten session; left standing it
