@@ -129,7 +129,7 @@ func TestTickDueDuringSuspendStillFires(t *testing.T) {
 	if woken.Trigger != "tick" {
 		t.Fatalf("the overdue tick came back as trigger %q", woken.Trigger)
 	}
-	if !strings.Contains(s.log(), "tick fired late") {
+	if !s.logged("tick fired late") {
 		t.Fatalf("an hour-late tick fired without a warning; the log is where a suspend shows:\n%s", s.log())
 	}
 }

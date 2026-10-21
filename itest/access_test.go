@@ -190,7 +190,7 @@ func TestAnAdminLiftsTheStrangersLinkPause(t *testing.T) {
 		tg.dm("alpha", user{ID: int64(8400 + i), First: "Guesser"}, "link-aaaaaaaaaa")
 	}
 	settled(t, srv, tg, "alpha", operator, "after the guesses")
-	if !strings.Contains(srv.log(), "link codes from strangers paused") {
+	if !srv.logged("link codes from strangers paused") {
 		t.Fatalf("the pause was not logged; log:\n%s", srv.log())
 	}
 
