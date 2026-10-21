@@ -149,7 +149,7 @@ jobs:
           if echo "$files" | grep -qxF web/package-lock.json; then
             lockfile=true
           fi
-          if echo "$files" | grep -qE '^(\.github/workflows/|\.github/security-review-paths$|scripts/)'; then
+          if echo "$files" | grep -qE '^(\.github/workflows/|\.github/security-review-paths$|scripts/|\.claude/(hooks/|settings\.json$))'; then
             workflows=true
           fi
           printf 'unit=%s\nitest=%s\nweb=%s\nsmoke=%s\nlockfile=%s\nworkflows=%s\n' "$go" "$go" "$web" "$smoke" "$lockfile" "$workflows" >> "$GITHUB_OUTPUT"
@@ -429,6 +429,12 @@ jobs:
       - name: the PR watch still reports what it claims to
         if: needs.changes.outputs.workflows == 'true'
         run: bash scripts/pr-watch-test.sh
+      # The repo's own PreToolUse hook only ever runs inside a loop's
+      # session, where a matcher that stopped matching reads as all clear;
+      # these are the bodies it must still refuse and let through (#630).
+      - name: the gh body guard still refuses what it claims to
+        if: needs.changes.outputs.workflows == 'true'
+        run: bash scripts/gh-body-guard-test.sh
       # The list decides which PRs get a security review; a pattern that
       # stopped matching would drop a path from review with every PR green
       # (#742).

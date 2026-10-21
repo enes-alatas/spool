@@ -54,6 +54,24 @@ ADR instead.*
   On a PR the security reviewer authored, its Notes / Risks section stands as
   that comment: it says what the change opens and why that holds, and the
   reviewer who sends the merge request checks it is there.
+- **A gh body names people without an @ and ends with a signature** (#630).
+  The loops share one GitHub identity, and the loops' names and the people's
+  chat handles belong to strangers there, so an `@` before one pings whoever
+  owns that account. A signature line, `— Name · Role`, is how a reader
+  tells the loops apart. This repository's own PreToolUse hook
+  (`.claude/settings.json`, `.claude/hooks/gh-body-guard.sh`) refuses a
+  `gh issue|pr create|comment|edit|review|close|reopen` or `gh api` call
+  whose body breaks either rule, or whose body it can't read before the
+  call runs (a variable or `$(…)`); the names are in
+  `.claude/hooks/fleet-names`. It lives here and not in the hub's hook
+  (`internal/hook`) because these are this team's conventions, not Spool's.
+  Claude Code reads `.claude/settings.json` only for a session started in a
+  checkout, and a loop's session starts in its home, so each loop adds the
+  hook to its own `~/.claude/settings.json`, run from its clone's
+  `origin/main` (here `~/spool`):
+  `{"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "sh -c \"$(git -C \"$HOME/spool\" show origin/main:.claude/hooks/gh-body-guard.sh)\" gh-body-guard \"$HOME/spool\""}]}]}}`.
+  Release notes, a merge commit's body and `gh api graphql` are not
+  checked.
 - **The board sweep reads the pinned "CI health" issue** (#216, mechanism #210).
   A workflow that fires on issues, comments or a schedule reports its failures
   nowhere a PR can show them, so `ci-health` posts each one there as a comment.
