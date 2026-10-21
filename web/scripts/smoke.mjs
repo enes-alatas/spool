@@ -394,7 +394,10 @@ try {
     page.getByText('Cloud loops are not isolated from each other', { exact: false }),
     'the trust warning',
   )
-  await see(page.getByLabel('GitHub repo (optional)'), 'the repo field in place of the workspace')
+  await see(
+    page.getByText('has no GitHub access yet', { exact: false }),
+    'the cloud note in place of the repo field',
+  )
   if (await page.getByRole('button', { name: 'Create loop' }).isEnabled())
     throw new Error('Create loop is enabled for a cloud loop on a hub not set up for one')
 

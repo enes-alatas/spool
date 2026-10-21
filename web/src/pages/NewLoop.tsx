@@ -16,7 +16,6 @@ import { PACE_HINT, type Pace } from '../pace'
 import { PaceRange } from '../components/PaceRange'
 import { CloudSetup } from '../components/CloudSection'
 import { firstOpenStep, type SetupStep } from '../cloud'
-import { cloudRepoError } from '../cloudLoop'
 import { Marked } from '../components/Marked'
 
 export default function NewLoop() {
@@ -43,7 +42,6 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
   const [runtime, setRuntime] = useState('')
   const [wsPath, setWsPath] = useState('')
   const [wsInfo, setWsInfo] = useState<{ exists: boolean; is_git: boolean } | null>(null)
-  const [repo, setRepo] = useState('')
   const [setup, setSetup] = useState<SetupStep | null>(null)
   // The hub's own min and max wake defaults, 5 min and 4 h, shown so the
   // range is chosen with the tick rather than discovered after it.
@@ -93,7 +91,6 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
   })
   const cloudStep = cloudSettings ? firstOpenStep(cloudSettings) : undefined
   const cloudReady = cloudStep === 'done'
-  const repoError = cloud ? cloudRepoError(repo) : ''
 
   const chooseRuntime = async (kind: string) => {
     setRuntime(kind)
@@ -146,7 +143,6 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
         // be wrong.
         runtime: (chosenRuntime as 'bare' | 'docker' | 'cloud') || undefined,
         workspace_path: (!wsLocked && wsPath.trim()) || undefined,
-        cloud_repo: (cloud && repo.trim()) || undefined,
         tick_interval_sec: pace.tick,
         min_wake_sec: pace.min,
         max_wake_sec: pace.max,
@@ -293,43 +289,26 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
         </div>
       </div>
 
-      {cloud ? (
-        <div className="field">
-          <label htmlFor="nl-repo">GitHub repo (optional)</label>
-          <input
-            id="nl-repo"
-            className="mono"
-            placeholder="https://github.com/owner/repo, or leave empty for a conversational loop"
-            value={repo}
-            onChange={(e) => setRepo(e.target.value)}
-          />
-          <div className={`hint ${repoError ? 'warn' : ''}`}>
-            {repoError ||
-              'Each of its sessions starts from a clone of the repo. The Claude GitHub App has to be installed on it: a session reaches GitHub as the app does, so give the app only the repos your loops need.'}
+      <div className="field">
+        <label htmlFor="nl-ws">Workspace (optional)</label>
+        <input
+          id="nl-ws"
+          placeholder={wsNote ? '' : '/path/to/repo, or leave empty for a conversational loop'}
+          value={wsLocked ? '' : wsPath}
+          onChange={(e) => inspect(e.target.value)}
+          disabled={wsLocked}
+        />
+        {wsNote && <div className="hint">{wsNote}</div>}
+        {!wsLocked && wsInfo && wsPath.trim() && (
+          <div className={`hint ${wsInfo.exists ? (wsInfo.is_git ? 'ok' : '') : 'warn'}`}>
+            {!wsInfo.exists
+              ? 'Directory not found.'
+              : wsInfo.is_git
+                ? `Git repo: an isolated worktree will be created on branch loop/${name || '<name>'}.`
+                : 'Plain directory: the loop works here directly.'}
           </div>
-        </div>
-      ) : (
-        <div className="field">
-          <label htmlFor="nl-ws">Workspace (optional)</label>
-          <input
-            id="nl-ws"
-            placeholder={wsNote ? '' : '/path/to/repo, or leave empty for a conversational loop'}
-            value={wsLocked ? '' : wsPath}
-            onChange={(e) => inspect(e.target.value)}
-            disabled={wsLocked}
-          />
-          {wsNote && <div className="hint">{wsNote}</div>}
-          {!wsLocked && wsInfo && wsPath.trim() && (
-            <div className={`hint ${wsInfo.exists ? (wsInfo.is_git ? 'ok' : '') : 'warn'}`}>
-              {!wsInfo.exists
-                ? 'Directory not found.'
-                : wsInfo.is_git
-                  ? `Git repo: an isolated worktree will be created on branch loop/${name || '<name>'}.`
-                  : 'Plain directory: the loop works here directly.'}
-            </div>
-          )}
-        </div>
-      )}
+        )}
+      </div>
 
       <label className="switch-row">
         <input
@@ -356,7 +335,7 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
         <button
           className="btn primary"
           onClick={create}
-          disabled={busy || !slugOk || !mission.trim() || (cloud && (!cloudReady || repoError !== ''))}
+          disabled={busy || !slugOk || !mission.trim() || (cloud && !cloudReady)}
         >
           {busy ? 'Creating…' : 'Create loop'}
         </button>

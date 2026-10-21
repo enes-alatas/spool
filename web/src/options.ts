@@ -168,9 +168,8 @@ export function runtimeFieldNote(
 export function workspaceFieldNote(chosenRuntime: string): string {
   if (chosenRuntime === 'docker')
     return 'A Docker loop works inside its workstation; the workspace lives there.'
-  // the form shows the repo field in its place
   if (chosenRuntime === 'cloud')
-    return 'A cloud loop works in its session, from a GitHub repo if you name one.'
+    return 'A cloud loop works in its session on claude.ai, and has no GitHub access yet.'
   return ''
 }
 

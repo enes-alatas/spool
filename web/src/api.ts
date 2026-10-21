@@ -35,9 +35,6 @@ export interface LoopView {
   worktree_path: string
   branch: string
   runtime: 'bare' | 'docker' | 'cloud'
-  // A cloud loop's GitHub repo, as https://github.com/<owner>/<repo>, that
-  // its sessions start from; '' for none, and on every other loop.
-  cloud_repo: string
   // A cloud loop's current session on claude.ai, absent before its first
   // session; the hub serves only a https://claude.ai/code/ page (ADR-0056).
   cloud_session_url?: string
@@ -909,7 +906,6 @@ export interface CreateLoopReq {
   // Create-only; empty = server default. `cloud` is refused with 409
   // `cloud_not_ready` until Settings → Cloud is green.
   runtime?: 'bare' | 'docker' | 'cloud'
-  cloud_repo?: string // cloud only
   image?: string // docker only
   mem_mb?: number // docker only
   cpus?: number // docker only

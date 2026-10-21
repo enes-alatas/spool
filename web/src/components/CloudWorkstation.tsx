@@ -5,8 +5,8 @@ import { MCPReach } from './MCPReach'
 
 // The Workstation card of a cloud loop (ADR-0056, #867): its session runs on
 // Anthropic's machine, so there is nothing here to power. The card says
-// where the session is, the repo it starts from, and, while the hub holds
-// the loop, where that is fixed.
+// where the session is and, while the hub holds the loop, where that is
+// fixed.
 export function CloudWorkstation({ loop }: { loop: LoopView }) {
   const hold = cloudHold(loop, useCloudSettings(loop))
   const condition = cloudSessionCondition(loop, hold)
@@ -34,12 +34,6 @@ export function CloudWorkstation({ loop }: { loop: LoopView }) {
           ) : (
             'none yet'
           )}
-        </span>
-      </div>
-      <div className="row">
-        <span className="k">repo</span>
-        <span className="v">
-          {loop.cloud_repo ? loop.cloud_repo.replace('https://github.com/', '') : 'none'}
         </span>
       </div>
       <MCPReach loop={loop} />
