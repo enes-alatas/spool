@@ -1,6 +1,6 @@
 # ADR-0059: Cloud loops run through the claude CLI, on documented surfaces
 
-Date: 2026-10-20 · Status: proposed (operator direction of 2026-10-19 on #957: drive cloud loops through the `claude` CLI, keep the Claude proxy; operator decisions of 2026-10-20 on #957: items 1, 2, 4, 5, 6, 7 and 10) · Amended: 2026-10-21 (item 9: no ADR-0056 loop to move, #977) · Supersedes: ADR-0056 item 2 (the sessions client, its amendment's event stream and interrupt), item 3 (the watched read-back), item 4 (for `env-var` connections only, "A cloud loop gets no connections at first"), item 5 (an environment per loop the hub creates and keeps, and for cloud loops the operator decision of 2026-10-15 on #859 that their allowlist is the hub's own), item 6 (the repo a session starts from, and its 2026-10-15 amendment's optional repo field), item 7's amendment (the cap sees cloud turns), and its Alternatives entry *Drive sessions through the `claude` CLI* · Relates to: ADR-0022, ADR-0028, ADR-0047, ADR-0053, ADR-0056, ADR-0058
+Date: 2026-10-20 · Status: proposed (operator direction of 2026-10-19 on #957: drive cloud loops through the `claude` CLI, keep the Claude proxy; operator decisions of 2026-10-20 on #957: items 1, 2, 4, 5, 6, 7 and 10) · Amended: 2026-10-21 (item 9: no ADR-0056 loop to move, #977); 2026-10-21 (items 6 and 11: the environment is picked from the account's list, #978) · Supersedes: ADR-0056 item 2 (the sessions client, its amendment's event stream and interrupt), item 3 (the watched read-back), item 4 (for `env-var` connections only, "A cloud loop gets no connections at first"), item 5 (an environment per loop the hub creates and keeps, and for cloud loops the operator decision of 2026-10-15 on #859 that their allowlist is the hub's own), item 6 (the repo a session starts from, and its 2026-10-15 amendment's optional repo field), item 7's amendment (the cap sees cloud turns), and its Alternatives entry *Drive sessions through the `claude` CLI* · Relates to: ADR-0022, ADR-0028, ADR-0047, ADR-0053, ADR-0056, ADR-0058
 
 ## Context
 
@@ -224,6 +224,26 @@ and 2026-10-20, found the shape. Each finding is recorded on the issue:
    - the hub checks the ID's shape before it goes into the `--settings`
      JSON.
 
+   **Amendment (2026-10-21, #978): the environment is picked by name.**
+   claude.ai shows no environment ID, and the one documented way to read
+   one is the CLI's `/remote-env` picker. So Settings → Cloud lists the
+   account's environments by name, with one read-only call on the hub's
+   Claude login (item 11's amendment), and the hub stores the ID of the
+   one picked, with the name the list gave it (operator decision of
+   2026-10-20 on #978). When the list fails, the page asks for the ID,
+   read from `remote.defaultEnvironmentId` after a `/remote-env` pick. The
+   hub never leaves the choice to the CLI, which takes the first
+   environment in the list: that holds only for an account with one. With
+   none chosen, no cloud loop is created and none wakes.
+   - The list to paste has one host per line, as the environment's
+     *Allowed domains* field takes them, the public address's host first.
+   - A confirm names the SHA-256 of the text it confirmed. An allowlist
+     edit, a new public address or another environment changes the text
+     or the ID, and so drops the confirm with no reset of its own.
+   - The page counts the setup done only once the list is confirmed
+     (operator decision of 2026-10-20 on #979). The hub refuses no loop
+     for it: a loop made before an edit runs on, with the warning.
+
 7. **Cost is the hub's estimate, and the cap can't see cloud turns**
    (operator decision of 2026-10-20, keeping that of 2026-10-15 on #872
    that cloud turns report their cost).
@@ -391,6 +411,15 @@ and 2026-10-20, found the shape. Each finding is recorded on the issue:
    the interrupt and the archive. Every cloud call goes through the CLI.
    The hub needs the `claude` CLI on its machine for cloud loops, as it
    already does for the sign-in (ADR-0058 item 5).
+
+   **Amendment (2026-10-21, #978): one call stays.** Listing the
+   account's environments for item 6's pick is the one call the hub still
+   makes to the API the CLI's `/remote-env` reads,
+   `GET /v1/environment_providers` (operator decision of 2026-10-20 on
+   #978). It is read-only, and made only when Settings → Cloud lists the
+   environments or stores a choice. No start or send depends on it: a
+   start runs with the stored ID, so a change to that API breaks only the
+   pick, and the page falls back to the paste.
 
 12. **It ships in slices**, each with its docs of record
     (ARCHITECTURE.md's runtime row and *Claude login* entry,

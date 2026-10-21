@@ -327,6 +327,10 @@ func (session *cliSession) startSession(text string) error {
 	}
 	ctx, cancel := context.WithTimeout(session.ctx, within)
 	defer cancel()
+	settings, err := session.cloud.startSettings(ctx)
+	if err != nil {
+		return err
+	}
 	if err := cli.ownDir(); err != nil {
 		return err
 	}
@@ -343,7 +347,7 @@ func (session *cliSession) startSession(text string) error {
 
 	pending := session.cloud.waits.awaitStart(session.loopID, within)
 	defer session.cloud.waits.forgetStart(session.loopID, pending)
-	cmd := exec.Command(cli.Binary, "--cloud", text, "--permission-mode", "auto")
+	cmd := exec.Command(cli.Binary, "--cloud", text, "--permission-mode", "auto", "--settings", settings)
 	cmd.Dir, cmd.Env = run.dir, run.env
 	terminal, err := startOnTerminal(cmd)
 	if err != nil {
@@ -658,4 +662,22 @@ func (cli *CLI) ownDir() error {
 		return fmt.Errorf("cloud: %s belongs to another user; remove it", cli.Dir)
 	}
 	return nil
+}
+
+// startSettings is the --settings a start runs with: the environment the
+// session starts in (ADR-0059). With none chosen there is no start, since
+// the CLI would pick one of the account's environments by itself.
+func (cloud *Runtime) startSettings(ctx context.Context) (string, error) {
+	id := ""
+	if cloud.EnvironmentID != nil {
+		var err error
+		if id, err = cloud.EnvironmentID(ctx); err != nil {
+			return "", err
+		}
+	}
+	if id == "" {
+		return "", errors.New("cloud: no environment is chosen in Settings → Cloud")
+	}
+	raw, err := json.Marshal(map[string]any{"remote": map[string]string{"defaultEnvironmentId": id}})
+	return string(raw), err
 }

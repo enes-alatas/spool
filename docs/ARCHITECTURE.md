@@ -176,9 +176,15 @@ config directory of the hub's with the CLI's nonessential traffic off, and
 keeps the tokens sealed. The CLI is the host's, or on a hub with none, the
 workstation image's, in a throwaway container behind the egress wall that
 sees only that directory.
-Once both steps
+Its last step picks the one environment every cloud loop starts in, by name
+from the account's list (one read-only `GET /v1/environment_providers`, the
+call ADR-0059 keeps), or by a pasted ID when the list fails. Each start passes
+the ID through `--settings`. The step serves the allowlist to paste into the
+environment and keeps the operator's confirm of it as the hub's state.
+Once the steps
 are green, `POST /api/loops` takes `runtime: cloud`; the loop's view carries its
-current session's page on claude.ai. A cloud loop never moves runtime. The repo
+current session's page on claude.ai, and a warning while the list isn't
+confirmed. A cloud loop never moves runtime. The repo
 field went with the sessions client (ADR-0059): a loop that needs a repo gets
 a `GH_TOKEN` connection and names the repo in its mission.
 Each docker workstation sits on an internal network of its own, shared with

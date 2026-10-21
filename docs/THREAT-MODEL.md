@@ -283,7 +283,6 @@ cloud listener (ADR-0059).
   operator's own, and the hub deletes that directory once it has read
   the tokens out. It removes any a stopped hub left as it next starts,
   before it serves, and the backup script never copies one. Only an
-  admin signs in, checks the account or removes it. The calls go to
   admin signs in, checks the account or removes it.
 - **The CLI runs hold no credential at rest.** Each run gets the access
   token in `CLAUDE_CODE_OAUTH_TOKEN` and a config dir of its own that
@@ -429,11 +428,26 @@ cloud listener (ADR-0059).
 - **The read-back rests on the transcript's line format,** which is the
   CLI's and not a published API. A change there fails the turn loudly
   and leaves the sends working (ADR-0059).
+- **The environment pick rests on an undocumented call:** one read-only
+  `GET /v1/environment_providers` on the account token, which lists the
+  account's environments for Settings → Cloud. No start or send depends
+  on it, so a change there breaks only the pick, and the page falls back
+  to a pasted ID (ADR-0059).
+- **Every session starts in the environment Settings → Cloud chose.**
+  The ID's shape is checked at each start before it goes into the
+  `--settings` JSON. With none chosen no session starts, rather than the
+  CLI picking the account's first environment (ADR-0059). When the
+  account's list is read, a choice must be on it, so a bridge to one of
+  the operator's machines or an archived environment is refused. An ID
+  pasted while the list fails is checked for its shape only.
 - **The hub's egress allowlist doesn't bind a cloud loop.** A session
   reaches what its claude.ai environment allows, which the hub can't set
-  or read: Settings → Cloud's environment step comes with slice 3 of
-  ADR-0059 (#978). Until then a session runs in the account's default
-  environment.
+  or read. Settings → Cloud shows the list to paste there and takes the
+  operator's word that they did. The confirm drops whenever the list, the
+  public address or the environment changes, and until it is given again
+  every cloud loop carries a warning. A list never pasted, or edited on
+  claude.ai after the confirm, shows only as a fetch that fails or one
+  that shouldn't have worked (ADR-0059).
 - **A cloud loop has no GitHub reach of its own** until its connections
   are handed to its session (ADR-0059, #977). It no longer starts from a
   repo through the Claude GitHub App.

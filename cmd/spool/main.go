@@ -108,7 +108,7 @@ func main() {
 	partials := flag.Bool("partial-messages", true, "stream token deltas to the UI (--include-partial-messages)")
 	telegramAPI := flag.String("telegram-api-base", telegram.APIBase, "Telegram Bot API base URL (tests point this at a stand-in server)")
 	slackAPI := flag.String("slack-api-base", slack.APIBase, "Slack Web API base URL (tests point this at a stand-in server)")
-	cloudAPIFlag := flag.String("cloud-api-base", anthropicAPI, "Anthropic's API base URL, which the Claude proxy forwards contained loops' model requests to (tests point this at a stand-in server); https, or http on loopback")
+	cloudAPIFlag := flag.String("cloud-api-base", anthropicAPI, "Anthropic's API base URL, which the Claude proxy forwards contained loops' model requests to and Settings → Cloud lists the account's environments from (tests point this at a stand-in server); https, or http on loopback")
 	cloudLoopbackAddress := flag.Bool("cloud-loopback-address", false, "accept a plain-HTTP loopback address as the cloud listener's public address (tests only: no cloud session can reach one, though the hub checks it green from itself)")
 	// Temporary, and tests only, until slice 2 of ADR-0059 (#977) removes it
 	// and the CLI path is the only one.
@@ -373,7 +373,7 @@ func main() {
 	rdb := redact.Store(db, redactor)
 	// The cloud runtime reads its account from the store, so it joins the
 	// others once there is one (ADR-0059).
-	cloudRuntime := newCloudRuntime(rdb.Settings(), *dataDir, *claudeBin)
+	cloudRuntime := newCloudRuntime(rdb.Settings(), *dataDir, *claudeBin, cloudAPI)
 	// a dir another user holds fails every cloud start loudly, on the loop,
 	// and needn't stop a hub that runs no cloud loop
 	if removed, err := cloudRuntime.CLI.Prepare(); err != nil {
@@ -396,7 +396,11 @@ func main() {
 		return storedSetting(rdb.Settings(), store.SettingCloudAddress)
 	}, func() (bool, error) {
 		account, err := storedSetting(rdb.Settings(), store.SettingCloudAccount)
-		return account != "", err
+		if err != nil || account == "" {
+			return false, err
+		}
+		environment, err := chosenCloudEnvironment(rdb.Settings())
+		return environment != "", err
 	})
 	deps := loop.Deps{
 		Store:                     rdb,
@@ -588,6 +592,7 @@ func main() {
 		ClaudeAPIBase:        cloudAPI,
 		CloudAccounts:        cloudAccounts{runtime: cloudRuntime, image: dockerRuntime},
 		CloudSessions:        cloudRuntime,
+		CloudEnvironments:    cloudEnvironments{runtime: cloudRuntime},
 		CloudHooks:           cloudRuntime,
 		EgressFlag:           egressFlag(allowEntries),
 		Log:                  log,
