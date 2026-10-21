@@ -40,10 +40,12 @@ export function useCloudSettings(loop: Pick<LoopView, 'runtime'>): CloudSettings
   return useQuery({ queryKey: ['cloud'], queryFn: api.cloudSettings, enabled: loop.runtime === 'cloud' }).data
 }
 
-// The cloud loop's session as the Workstation card says it. Held outranks
-// the rest: a session that is up still takes no turn while held.
+// The cloud loop's session as the Workstation card says it. A hold outranks
+// the rest, since a session that is up still takes no turn while held; the
+// room calls it "needs setup", as every hold is a gap in Settings → Cloud
+// (#1009).
 export function cloudSessionCondition(loop: CloudLoop, hold: string): { status: string; alert: boolean } {
-  if (hold) return { status: 'held', alert: true }
+  if (hold) return { status: 'needs setup', alert: true }
   if (loop.workstation_up) return { status: 'ready', alert: false }
   // the cloud environment is made at the loop's first wake
   if (loop.down_reason === 'not_provisioned') return { status: 'no session yet', alert: false }

@@ -658,7 +658,7 @@ function CloudSessionNote({ loop }: { loop: LoopView }) {
   if (hold)
     return (
       <div className="ws-down-note">
-        Held: {hold}, so no turn starts. Fix it in{' '}
+        Needs setup: {hold}, so no turn starts. Fix it in{' '}
         <Link className="text-link" to="/settings">
           Settings → Cloud
         </Link>

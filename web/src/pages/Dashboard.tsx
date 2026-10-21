@@ -111,7 +111,7 @@ function FleetRow({
 }) {
   const nav = useNavigate()
   const hold = unnamedCloudHold(loop, useCloudSettings(loop))
-  const station = hold ? { text: `held: ${hold}`, bad: true } : workstationNote(loop)
+  const station = hold ? { text: `needs setup: ${hold}`, bad: true } : workstationNote(loop)
   const undelivered = undeliveredNote(loop.undelivered)
   return (
     <Link to={`/loops/${loop.name}`} className="fleet-row">

@@ -39,7 +39,7 @@ export function CloudWorkstation({ loop }: { loop: LoopView }) {
       <MCPReach loop={loop} />
       {hold && (
         <div className="panel-note bad">
-          Held: {hold}, so no turn starts and messages wait. Fix it in{' '}
+          Needs setup: {hold}, so no turn starts and messages wait. Fix it in{' '}
           <Link className="text-link" to="/settings">
             Settings → Cloud
           </Link>

@@ -54,9 +54,9 @@ describe('cloudHold', () => {
 })
 
 describe('cloudSessionCondition', () => {
-  it('reads a held loop as held, even with its session up', () => {
+  it('reads a held loop as needing setup, even with its session up', () => {
     expect(cloudSessionCondition(loop(), 'no Claude account is signed in')).toEqual({
-      status: 'held',
+      status: 'needs setup',
       alert: true,
     })
   })
