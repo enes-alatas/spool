@@ -6,6 +6,7 @@ import {
   formatTokens,
   fillTone,
   hasFillPct,
+  formatSpend,
   formatUsd,
   inTurn,
   nextWake,
@@ -208,8 +209,8 @@ function FleetRow({
         <span className="f-share">
           <ShareStat cost={loop.cost_today_usd} total={spentToday} />
         </span>
-        <span className="f-today">
-          {formatUsd(loop.cost_today_usd)} <span className="lbl after">today</span>
+        <span className="f-today" title={formatSpend(loop).title}>
+          {formatSpend(loop).text} <span className="lbl after">today</span>
         </span>
       </div>
     </Link>

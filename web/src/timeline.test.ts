@@ -34,9 +34,31 @@ const spawn = (resume: boolean, session = 'minted') => ev('spool', session, { pi
 const costs = (events: LoopEvent[], hole?: { from: number; to: number }) =>
   toEntries(events, hole)
     .filter((e) => e.kind === 'result')
-    .map((e) => (e.kind === 'result' ? [Number(e.costUsd.toFixed(4)), e.costBasis] : []))
+    .map((e) =>
+      e.kind === 'result' ? [e.costUsd === null ? null : Number(e.costUsd.toFixed(4)), e.costBasis] : [],
+    )
+
+// A cloud turn's result, priced by the hub: its own estimate, or null.
+const cloudResult = (session: string, cost: number | null) =>
+  ev('result', session, { cost_estimated: true, turn_cost_usd: cost, duration_ms: 5 })
 
 describe('toEntries result costs', () => {
+  it("takes a cloud turn's estimate as its own cost, and null as unknown", () => {
+    expect(costs([cloudResult('c1', 0.0421), cloudResult('c1', null), cloudResult('c1', 0.013)])).toEqual([
+      [0.0421, 'estimate'],
+      [null, 'estimate'],
+      [0.013, 'estimate'],
+    ])
+  })
+
+  it("leaves a session's reported total alone across an estimated turn", () => {
+    expect(costs([spawn(false), result('s1', 0.1), cloudResult('s1', 0.05), result('s1', 0.25)])).toEqual([
+      [0.1, 'turn'],
+      [0.05, 'estimate'],
+      [0.15, 'turn'],
+    ])
+  })
+
   // #195: the CLI's total_cost_usd is the session's running total under
   // --resume, so three twelve-cent turns used to read 0.12 / 0.24 / 0.37.
   it('prices each turn at its increment over the session total', () => {

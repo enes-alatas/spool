@@ -111,7 +111,15 @@ export function Timeline({
                       out until the turns above it arrive, so the footer says
                       which figure it is showing rather than passing the
                       running total off as this turn's. */}
-                  {e.costBasis === 'session' ? (
+                  {e.costUsd === null ? (
+                    <span title="the hub has no price for this turn's model, so its cost is unknown">
+                      cost unknown
+                    </span>
+                  ) : e.costBasis === 'estimate' ? (
+                    <span title="estimated from token usage: a cloud session reports no cost">
+                      ~${e.costUsd.toFixed(4)}
+                    </span>
+                  ) : e.costBasis === 'session' ? (
                     <span title="the turns before this one in its session are not loaded, so this is the session's total so far, not this turn's cost">
                       ${e.costUsd.toFixed(4)} session
                     </span>
