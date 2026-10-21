@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { api, type LoopView } from '../api'
-import { healthNote, problemHealth, problemLine } from '../health'
+import { healthNote, problemHealth, problemLine, problemMeaning } from '../health'
 import { useMinuteClock } from './PlanUsage'
 import { useMay } from './Session'
 
@@ -49,7 +49,7 @@ export function Problems({ loop }: { loop: LoopView }) {
     <div className="problems">
       {loop.problems.map((problem) => (
         <div key={problem.symptom} className={`problem-line health-${problemHealth(problem)}`}>
-          <span>{problemLine(problem, now)}</span>
+          <span title={problemMeaning(problem)}>{problemLine(problem, now)}</span>
           {may('manage') && (
             <button
               className="btn"

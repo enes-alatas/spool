@@ -3,7 +3,7 @@
 // A problem the hub's health check found with a loop (ADR-0053), open
 // since since (Unix ms) until the signal clears or an admin acknowledges it.
 export interface Problem {
-  symptom: 'workstation_down' | 'turn_errors' | 'cloud_address' | string
+  symptom: 'workstation_down' | 'turn_errors' | 'cloud_address' | 'cloud_connections' | string
   since: number
 }
 export type Health = 'ok' | 'warning' | 'failing'
