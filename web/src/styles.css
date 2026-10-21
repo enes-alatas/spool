@@ -828,6 +828,17 @@ textarea {
   padding: 7px 11px;
   margin-bottom: 12px;
 }
+/* a cloud loop's allowlist not confirmed (ADR-0059): a warning, not
+   an alarm, so in the warning's colour rather than the danger's */
+.ws-warn-note {
+  font-size: 0.78125rem;
+  color: var(--active);
+  background: var(--active-wash);
+  border: 1px solid var(--active-line);
+  border-radius: 7px;
+  padding: 7px 11px;
+  margin-bottom: 12px;
+}
 /* a workstation the operator switched off — deliberate, so not an alarm */
 .ws-off-note {
   font-size: 0.78125rem;
@@ -1166,6 +1177,9 @@ textarea {
 }
 .fleet-row .note.bad {
   color: var(--danger);
+}
+.fleet-row .note.warn {
+  color: var(--active);
 }
 /* what the loop says it is on: the one note in the row's own voice, so it
    reads in the body face; dimmed once it is a day old and may no longer be
