@@ -44,10 +44,11 @@ type transcriptMessage struct {
 // on, the assistant and tool-result events, and a result. The result's
 // text is the hook's last_assistant_message, and its usage is the turn's
 // API calls summed: the CLI writes one line per content block, each
-// repeating its message's usage, so a message counts once. A line the hub
-// can't read fails the whole post, as the transcript's format is the CLI's
-// and not a published one (ADR-0059): a changed format must be loud. So does
-// a post over its bounds.
+// repeating its message's usage, so a message counts once. Its cost is
+// the hub's estimate, each call priced at its own model and usage. A line
+// the hub can't read fails the whole post, as the transcript's format is
+// the CLI's and not a published one (ADR-0059): a changed format must be
+// loud. So does a post over its bounds.
 func turnEvents(post StopPost, hubSession string, bounds Bounds) ([]claude.Event, error) {
 	bounds = bounds.withDefaults()
 	if len(post.Hook)+len(post.Lines) > bounds.Bytes {
@@ -62,6 +63,8 @@ func turnEvents(post StopPost, hubSession string, bounds Bounds) ([]claude.Event
 		model    string
 		lastText string
 		usage    claude.Usage
+		cost     float64
+		unpriced bool
 		counted  = map[string]bool{}
 		calls    int
 	)
@@ -94,12 +97,29 @@ func turnEvents(post StopPost, hubSession string, bounds Bounds) ([]claude.Event
 				model = message.Model
 			}
 			if message.Usage != nil && (message.ID == "" || !counted[message.ID]) {
+				if negativeCount(*message.Usage) {
+					// the counts are the session's word: a negative one
+					// would price to a negative cost and lower the day total
+					return nil, fmt.Errorf("transcript line %d has a negative token count: %s", number+1, snippet(raw))
+				}
 				counted[message.ID] = true
 				calls++
+				if estimate, priced := claude.EstimateCost(message.Model, *message.Usage); priced {
+					cost += estimate
+				} else {
+					unpriced = true
+				}
 				usage.InputTokens += message.Usage.InputTokens
 				usage.OutputTokens += message.Usage.OutputTokens
 				usage.CacheCreationTokens += message.Usage.CacheCreationTokens
 				usage.CacheReadTokens += message.Usage.CacheReadTokens
+				if split := message.Usage.CacheCreation; split != nil {
+					if usage.CacheCreation == nil {
+						usage.CacheCreation = &claude.CacheCreation{}
+					}
+					usage.CacheCreation.Ephemeral5mInputTokens += split.Ephemeral5mInputTokens
+					usage.CacheCreation.Ephemeral1hInputTokens += split.Ephemeral1hInputTokens
+				}
 			}
 		}
 		event, err := json.Marshal(map[string]any{
@@ -127,19 +147,43 @@ func turnEvents(post StopPost, hubSession string, bounds Bounds) ([]claude.Event
 	if err != nil {
 		return nil, err
 	}
+	// the transcript carries no cost: the hub prices each call's tokens at
+	// its own model, as an estimate, and a call on a model it has no price
+	// for leaves the turn's cost unknown
+	var turnCost *float64
+	if !unpriced {
+		turnCost = &cost
+	}
 	result, err := json.Marshal(map[string]any{
-		"type":       "result",
-		"subtype":    "success",
-		"is_error":   false,
-		"result":     lastText,
-		"session_id": hubSession,
-		"num_turns":  calls,
-		"usage":      usage,
+		"type":           "result",
+		"subtype":        "success",
+		"is_error":       false,
+		"result":         lastText,
+		"session_id":     hubSession,
+		"num_turns":      calls,
+		"usage":          usage,
+		"cost_estimated": true,
+		"turn_cost_usd":  turnCost,
 	})
 	if err != nil {
 		return nil, err
 	}
 	return append(append([]claude.Event{claude.DecodeEvent(init)}, events...), claude.DecodeEvent(result)), nil
+}
+
+// negativeCount reports whether any of usage's token counts is negative,
+// which no API call reports.
+func negativeCount(usage claude.Usage) bool {
+	counts := []int{usage.InputTokens, usage.OutputTokens, usage.CacheCreationTokens, usage.CacheReadTokens}
+	if split := usage.CacheCreation; split != nil {
+		counts = append(counts, split.Ephemeral5mInputTokens, split.Ephemeral1hInputTokens)
+	}
+	for _, count := range counts {
+		if count < 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // errorSnippet is how much of an unexpected post or CLI answer an error
