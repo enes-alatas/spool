@@ -58,6 +58,20 @@ func (s *server) log() string {
 	return string(b)
 }
 
+// logged reports whether the orchestrator logs want within a few seconds.
+// The hub's output reaches logPath through a pipe a goroutine copies, so a
+// line the hub wrote before answering a request can land in the file just
+// after the answer: read straight after one, log() can miss it.
+func (s *server) logged(want string) bool {
+	s.t.Helper()
+	for deadline := time.Now().Add(10 * time.Second); !strings.Contains(s.log(), want); time.Sleep(50 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			return false
+		}
+	}
+	return true
+}
+
 func repoRoot(t *testing.T) string {
 	wd, err := os.Getwd()
 	if err != nil {

@@ -80,7 +80,7 @@ func dockerSignInRunsInTheImage(t *testing.T) {
 	if view.Account.Set {
 		t.Fatalf("after Sign out the account is still set: %+v", view.Account)
 	}
-	if !strings.Contains(s.log(), "claude auth logout") {
+	if !s.logged("claude auth logout") {
 		t.Errorf("Sign out ran no logout\n%s", s.log())
 	}
 	wantNothingLeft("Sign out")

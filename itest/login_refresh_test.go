@@ -125,7 +125,7 @@ func TestSignOutRevokesTheClaudeLoginAtTheSource(t *testing.T) {
 		t.Fatalf("the CLI revoked %q (%v), want the login's refresh token", revoked, err)
 	}
 	wantQuietCLIRuns(t, s)
-	if !strings.Contains(s.log(), "Claude login signed out at the source") {
+	if !s.logged("Claude login signed out at the source") {
 		t.Errorf("the hub logged no sign-out\n%s", s.log())
 	}
 	left, err := filepath.Glob(filepath.Join(s.dataDir, "cloud-sign-in", "sign-out-*"))
@@ -144,7 +144,7 @@ func TestSignOutRevokesTheClaudeLoginAtTheSource(t *testing.T) {
 	if view.Account.Set {
 		t.Fatal("a failed logout left the login signed in")
 	}
-	if !strings.Contains(s.log(), "Claude login not revoked at the source; revoke it at claude.ai") {
+	if !s.logged("Claude login not revoked at the source; revoke it at claude.ai") {
 		t.Errorf("the hub didn't say the revoke failed\n%s", s.log())
 	}
 	if strings.Contains(s.log(), refresh) {
