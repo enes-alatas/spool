@@ -26,7 +26,7 @@ import {
   TGSender,
   Turn,
 } from '../api'
-import { formatTokens, fillTone, hasFillPct, formatUsd, inTurn, nextWake } from '../format'
+import { formatTokens, fillTone, hasFillPct, formatSpend, inTurn, nextWake } from '../format'
 import { customModelError } from '../forms'
 import { type Pace } from '../pace'
 import { PaceFacts, PaceRange } from '../components/PaceRange'
@@ -2001,8 +2001,15 @@ export default function LoopDetail() {
             )}
             <div className="row">
               <span className="k">today</span>
-              <span className="v" title={loop.cost_day ? `spend on ${loop.cost_day}` : undefined}>
-                {formatUsd(loop.cost_today_usd)}
+              <span
+                className="v"
+                title={
+                  [loop.cost_day && `spend on ${loop.cost_day}`, formatSpend(loop).title]
+                    .filter(Boolean)
+                    .join('; ') || undefined
+                }
+              >
+                {formatSpend(loop).text}
               </span>
             </div>
             <PacingChoice loop={loop} />

@@ -17,10 +17,13 @@ export type Entry =
       kind: 'result'
       id: number
       ts: number
-      costUsd: number
+      // null when the turn's cost is unknown: a cloud turn on a model the
+      // hub can't price (ADR-0059).
+      costUsd: number | null
       // 'turn' when costUsd is what this turn spent; 'session' when the
       // turns before it in its session are not loaded, so the only true
-      // figure available is the session's running total.
+      // figure available is the session's running total; 'estimate' when
+      // it is the hub's estimate for a cloud turn, from its token usage.
       costBasis: CostBasis
       durationMs: number
       inTok: number
@@ -37,7 +40,7 @@ function splitEnvelope(text: string): { who: string; body: string } {
   return { who: m[1], body: m[2] }
 }
 
-export type CostBasis = 'turn' | 'session'
+export type CostBasis = 'turn' | 'session' | 'estimate'
 
 // The CLI reports `total_cost_usd` as the session's running total, not the
 // turn's own spend (#191), so a turn costs the increment over the highest
@@ -94,6 +97,23 @@ export function toEntries(events: LoopEvent[], hole?: { from: number; to: number
         }
         case 'result': {
           const r = JSON.parse(e.payload)
+          // A cloud turn's result carries the hub's estimate of its own
+          // cost, not a running total, so it is taken as it is and leaves
+          // the session's reported total alone.
+          if (r.cost_estimated) {
+            out.push({
+              kind: 'result',
+              id: e.id,
+              ts: e.ts,
+              costUsd: typeof r.turn_cost_usd === 'number' ? r.turn_cost_usd : null,
+              costBasis: 'estimate',
+              durationMs: r.duration_ms ?? 0,
+              inTok: r.usage?.input_tokens ?? 0,
+              outTok: r.usage?.output_tokens ?? 0,
+              isError: !!r.is_error,
+            })
+            break
+          }
           const total: number = r.total_cost_usd ?? 0
           let basis: CostBasis = 'turn'
           let spent = total

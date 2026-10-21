@@ -5,6 +5,7 @@ import {
   formatTokens,
   formatAgo,
   formatResets,
+  formatSpend,
   formatUsd,
   inTurn,
   nextWake,
@@ -163,5 +164,28 @@ describe('formatAgo', () => {
     expect(formatAgo(now - 3 * 60000, now)).toBe('3m ago')
     expect(formatAgo(now - 6 * 3600000, now)).toBe('6h ago')
     expect(formatAgo(now - 2 * 86400000, now)).toBe('2d ago')
+  })
+})
+
+describe('formatSpend', () => {
+  it('reads a reported figure plainly', () => {
+    expect(formatSpend({ cost_today_usd: 0.04 })).toEqual({ text: '$0.04', title: undefined })
+  })
+  it('marks an estimate or unknown turns with ~, saying which', () => {
+    expect(formatSpend({ cost_today_usd: 0.42, cost_today_estimated: true })).toEqual({
+      text: '~$0.42',
+      title: 'estimated from token usage: a cloud session reports no cost',
+    })
+    expect(
+      formatSpend({ cost_today_usd: 0.12, cost_today_estimated: true, cost_today_unknown_turns: 2 }),
+    ).toEqual({
+      text: '~$0.12',
+      title:
+        'estimated from token usage: a cloud session reports no cost; 2 turns of unknown cost, not counted',
+    })
+    expect(formatSpend({ cost_today_usd: 0, cost_today_unknown_turns: 1 })).toEqual({
+      text: '~$0.00',
+      title: '1 turn of unknown cost, not counted',
+    })
   })
 })

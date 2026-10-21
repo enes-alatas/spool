@@ -11,6 +11,23 @@ export function formatUsd(n: number): string {
   return `$${n.toFixed(2)}`
 }
 
+// A loop's spend today, marked ~ where it isn't a plain figure (ADR-0059):
+// when it includes the hub's estimate for a cloud turn, or leaves out a
+// turn whose cost is unknown, which is not zero. The title says which.
+export function formatSpend(loop: {
+  cost_today_usd: number
+  cost_today_estimated?: boolean
+  cost_today_unknown_turns?: number
+}): { text: string; title?: string } {
+  const unknown = loop.cost_today_unknown_turns ?? 0
+  const text = `${loop.cost_today_estimated || unknown ? '~' : ''}${formatUsd(loop.cost_today_usd)}`
+  const why = [
+    loop.cost_today_estimated && 'estimated from token usage: a cloud session reports no cost',
+    unknown && `${unknown} turn${unknown === 1 ? '' : 's'} of unknown cost, not counted`,
+  ].filter(Boolean)
+  return { text, title: why.length ? why.join('; ') : undefined }
+}
+
 // What the fleet has spent today: the sum of the real per-loop values, not of
 // the rounded ones on screen. Ten loops at a third of a cent each show $0.00
 // on every row and $0.03 in the header — the header is right, and a total

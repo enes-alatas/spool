@@ -72,7 +72,12 @@ export interface LoopView {
   // When a capped loop wakes: the reset that lifts the fleet's plan cap
   // (#650). 0 while the loop is not capped.
   capped_until: number
+  // The known costs of today's turns, a cloud turn's being the hub's
+  // estimate from its token usage (ADR-0059). Whether any is an estimate,
+  // and how many turns have no cost at all, since unknown is not zero.
   cost_today_usd: number
+  cost_today_estimated: boolean
+  cost_today_unknown_turns: number
   // The calendar day cost_today_usd sums, YYYY-MM-DD in the server's zone.
   // The boundary is the operator's midnight, not UTC's, so the client shows
   // the day rather than deriving one.
@@ -159,7 +164,10 @@ export interface Turn {
   ended_at: number
   is_error: boolean
   result_text: string
-  cost_usd: number
+  // Per turn and summable (#194). A cloud turn's is the hub's estimate
+  // (cost_estimated), and null when the hub can't price its model.
+  cost_usd: number | null
+  cost_estimated: boolean
   input_tokens: number
   output_tokens: number
   cache_read_tokens: number
