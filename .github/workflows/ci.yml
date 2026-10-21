@@ -353,6 +353,12 @@ jobs:
       - run: npm run lint
         if: needs.changes.outputs.web == 'true'
         working-directory: web
+      # A selector of the no-em-dash rule that stopped matching would pass
+      # every file green; this lints the phrasings it must catch (#1013).
+      - name: the no-em-dash rule still catches what it claims to
+        if: needs.changes.outputs.web == 'true'
+        working-directory: web
+        run: node scripts/em-dash-test.mjs
       - run: npm run format:check
         if: needs.changes.outputs.web == 'true'
         working-directory: web
