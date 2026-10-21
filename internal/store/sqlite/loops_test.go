@@ -636,3 +636,12 @@ func TestLoopRuntimeCloud(t *testing.T) {
 		t.Fatalf("integrity_check = %q, %v", check, err)
 	}
 }
+
+// The repo field went with the sessions client (ADR-0059): the column is
+// gone, so nothing can be stored in it.
+func TestLoopsHaveNoCloudRepoColumn(t *testing.T) {
+	db := openTestDB(t)
+	if _, err := db.db.Exec(`SELECT cloud_repo FROM loops`); err == nil {
+		t.Error("the cloud_repo column is still there")
+	}
+}

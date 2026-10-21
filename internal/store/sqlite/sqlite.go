@@ -180,7 +180,7 @@ const loopCols = `id, name, mission, model, workspace_mode, workspace_path, repo
 	workstation_off, outside_fleet_channel, status, current_session_id, current_pid, created_at, updated_at,
 	runtime, image, mem_mb, cpus, hub_mcp_token, rotate_pending, rotate_reason, handoff_note, prompt_hash, model_refusal,
 	slack_app_token, slack_bot_token, slack_bot_user_id, slack_bot_name, slack_team_id, slack_team_name,
-	owner_slack_user_id, owner_slack_dm_channel, cloud_repo`
+	owner_slack_user_id, owner_slack_dm_channel`
 
 const loopReadCols = loopCols + `,
 	COALESCE((SELECT CAST(room_id AS INTEGER) FROM rooms WHERE rooms.loop_id=loops.id
@@ -206,7 +206,7 @@ func (table loops) scanLoop(row interface{ Scan(...any) error }) (*store.Loop, e
 		&loopRecord.RotatePending, &loopRecord.RotateReason, &loopRecord.HandoffNote, &loopRecord.PromptHash, &loopRecord.ModelRefusal,
 		&loopRecord.SlackAppToken, &loopRecord.SlackBotToken, &loopRecord.SlackBotUserID, &loopRecord.SlackBotName,
 		&loopRecord.SlackTeamID, &loopRecord.SlackTeamName,
-		&loopRecord.OwnerSlackUserID, &loopRecord.OwnerSlackDMChannel, &loopRecord.CloudRepo,
+		&loopRecord.OwnerSlackUserID, &loopRecord.OwnerSlackDMChannel,
 		&loopRecord.TGGroupChatID, &loopRecord.TGGroupBoundAt,
 		&loopRecord.SlackChannelID, &loopRecord.SlackChannelBoundAt,
 		&loopRecord.CreatedBy, &loopRecord.UpdatedBy, &loopRecord.Doing, &loopRecord.DoingAt)
@@ -234,7 +234,7 @@ func (table loops) Create(ctx context.Context, loopRecord *store.Loop) error {
 	}
 	sealer := table.sealer
 	_, err := table.db.ExecContext(ctx, `INSERT INTO loops (`+loopCols+`, hub_mcp_token_hash) VALUES
-		(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		loopRecord.ID, loopRecord.Name, loopRecord.Mission, loopRecord.Model, loopRecord.WorkspaceMode, loopRecord.WorkspacePath, loopRecord.RepoPath,
 		loopRecord.WorktreePath, loopRecord.Branch, loopRecord.TickIntervalSec, loopRecord.MinWakeSec, loopRecord.MaxWakeSec,
 		loopRecord.IdleTimeoutSec, loopRecord.Pacing, loopRecord.Effort, sealer.seal(loopRecord.TGBotToken), loopRecord.TGBotUsername,
@@ -245,7 +245,7 @@ func (table loops) Create(ctx context.Context, loopRecord *store.Loop) error {
 		loopRecord.HandoffNote, loopRecord.PromptHash, loopRecord.ModelRefusal,
 		sealer.seal(loopRecord.SlackAppToken), sealer.seal(loopRecord.SlackBotToken), loopRecord.SlackBotUserID, loopRecord.SlackBotName,
 		loopRecord.SlackTeamID, loopRecord.SlackTeamName,
-		loopRecord.OwnerSlackUserID, loopRecord.OwnerSlackDMChannel, loopRecord.CloudRepo, tokenHash(loopRecord.HubMCPToken))
+		loopRecord.OwnerSlackUserID, loopRecord.OwnerSlackDMChannel, tokenHash(loopRecord.HubMCPToken))
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return store.ErrDuplicate
 	}

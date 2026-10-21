@@ -177,9 +177,10 @@ keeps the tokens sealed. The CLI is the host's, or on a hub with none, the
 workstation image's, in a throwaway container behind the egress wall that
 sees only that directory.
 Once both steps
-are green, `POST /api/loops` takes `runtime: cloud`, with an optional `cloud_repo`, which no session starts
-from since ADR-0059 and #977 removes; the loop's view carries the repo and its
-current session's page on claude.ai. A cloud loop never moves runtime.
+are green, `POST /api/loops` takes `runtime: cloud`; the loop's view carries its
+current session's page on claude.ai. A cloud loop never moves runtime. The repo
+field went with the sessions client (ADR-0059): a loop that needs a repo gets
+a `GH_TOKEN` connection and names the repo in its mission.
 Each docker workstation sits on an internal network of its own, shared with
 the proxy alone and with no route off it; its only
 way out is `spool-egress-proxy`, a container running `cmd/spool-egress` that

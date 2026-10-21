@@ -1,6 +1,6 @@
 # ADR-0059: Cloud loops run through the claude CLI, on documented surfaces
 
-Date: 2026-10-20 · Status: proposed (operator direction of 2026-10-19 on #957: drive cloud loops through the `claude` CLI, keep the Claude proxy; operator decisions of 2026-10-20 on #957: items 1, 2, 4, 5, 6, 7 and 10) · Supersedes: ADR-0056 item 2 (the sessions client, its amendment's event stream and interrupt), item 3 (the watched read-back), item 4 (for `env-var` connections only, "A cloud loop gets no connections at first"), item 5 (an environment per loop the hub creates and keeps, and for cloud loops the operator decision of 2026-10-15 on #859 that their allowlist is the hub's own), item 6 (the repo a session starts from, and its 2026-10-15 amendment's optional repo field), item 7's amendment (the cap sees cloud turns), and its Alternatives entry *Drive sessions through the `claude` CLI* · Relates to: ADR-0022, ADR-0028, ADR-0047, ADR-0053, ADR-0056, ADR-0058
+Date: 2026-10-20 · Status: proposed (operator direction of 2026-10-19 on #957: drive cloud loops through the `claude` CLI, keep the Claude proxy; operator decisions of 2026-10-20 on #957: items 1, 2, 4, 5, 6, 7 and 10) · Amended: 2026-10-21 (item 9: no ADR-0056 loop to move, #977) · Supersedes: ADR-0056 item 2 (the sessions client, its amendment's event stream and interrupt), item 3 (the watched read-back), item 4 (for `env-var` connections only, "A cloud loop gets no connections at first"), item 5 (an environment per loop the hub creates and keeps, and for cloud loops the operator decision of 2026-10-15 on #859 that their allowlist is the hub's own), item 6 (the repo a session starts from, and its 2026-10-15 amendment's optional repo field), item 7's amendment (the cap sees cloud turns), and its Alternatives entry *Drive sessions through the `claude` CLI* · Relates to: ADR-0022, ADR-0028, ADR-0047, ADR-0053, ADR-0056, ADR-0058
 
 ## Context
 
@@ -286,6 +286,15 @@ and 2026-10-20, found the shape. Each finding is recorded on the issue:
    - a loop that has a repo field loses it (item 10). The Cloud page
      lists those loops with the repo each had, so the operator can attach
      a `GH_TOKEN` connection and name the repo in the loop's prompt.
+
+   **Amendment (2026-10-21, #977):** no cloud loop was made under
+   ADR-0056 (operator, 2026-10-21), and no release carries the cloud
+   runtime, so there is nothing to move. Slice 2 builds none of this
+   item but the repo field's removal: the column is dropped, and a
+   create that still names a repo is refused, saying to attach a
+   `GH_TOKEN` connection and name the repo in the loop's prompt. No
+   first-boot revocation and no list on the Cloud page; item 12's
+   slice 2 drops them too.
 
 10. **A cloud loop's secrets are its `env-var` connections, which the
     hub hands to each session as it starts** (operator decision of
