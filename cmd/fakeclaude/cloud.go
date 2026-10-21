@@ -13,7 +13,9 @@ package main
 //     the session's local-session-starts. It clones the repo into the VM,
 //     which carries only what is committed, as the bundle does, starts the
 //     first turn there, prints the session's address, and waits to be
-//     ended.
+//     ended. It writes the environment --settings chose,
+//     remote.defaultEnvironmentId, into the session's environment file,
+//     "" for none.
 //   - `-p <message> --cloud <id>` prints {ok, session_id, url} and starts
 //     the turn in the VM, or prints {"ok":false,…} and exits 1 for a
 //     session it doesn't have.
@@ -58,7 +60,7 @@ func cloudMain(args []string) int {
 	if len(args) == 4 && args[0] == cloudVMArg {
 		return cloudTurn(args[1], args[2], args[3] == "startup")
 	}
-	var message, session string
+	var message, session, settings string
 	sending := false
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -77,19 +79,24 @@ func cloudMain(args []string) int {
 					message = args[i]
 				}
 			}
-		case "--permission-mode", "--settings", "--output-format", "--model":
+		case "--settings":
+			if i+1 < len(args) {
+				i++
+				settings = args[i]
+			}
+		case "--permission-mode", "--output-format", "--model":
 			i++
 		}
 	}
 	if sending {
 		return cloudSend(session, message)
 	}
-	return cloudStart(message)
+	return cloudStart(message, settings)
 }
 
 var cloudSessionID = regexp.MustCompile(`^session_[A-Za-z0-9]+$`)
 
-func cloudStart(message string) int {
+func cloudStart(message, settings string) int {
 	if !isTerminal(os.Stdin) {
 		fmt.Fprintln(os.Stderr, "Error: --cloud needs an interactive terminal")
 		return 1
@@ -102,6 +109,17 @@ func cloudStart(message string) int {
 	id := "session_" + strings.ToLower(rand.Text())
 	vm := filepath.Join(cloudRoot(), id)
 	if err := os.MkdirAll(vm, 0o700); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	// the environment the session runs in, as --settings chose it
+	var chosen struct {
+		Remote struct {
+			DefaultEnvironmentID string `json:"defaultEnvironmentId"`
+		} `json:"remote"`
+	}
+	_ = json.Unmarshal([]byte(settings), &chosen)
+	if err := os.WriteFile(filepath.Join(vm, "environment"), []byte(chosen.Remote.DefaultEnvironmentID), 0o600); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}

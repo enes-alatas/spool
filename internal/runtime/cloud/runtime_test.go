@@ -16,6 +16,9 @@ const testHubToken = "spool-hub-synthetic-token"
 
 var testAccount = Account{Token: "sk-ant-oat01-synthetic", OrgUUID: "00000000-0000-4000-8000-000000000001"}
 
+// testEnvironment is the synthetic environment test sessions start in.
+const testEnvironment = "env_01Synthetic"
+
 func testSpec() runtime.Spec {
 	return runtime.Spec{
 		LoopID:             "loop-1",

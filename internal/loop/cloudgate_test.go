@@ -8,7 +8,7 @@ import "testing"
 // a failing address is not checked in a loop (ADR-0056).
 func TestCloudGateHoldsUntilAFreshPass(t *testing.T) {
 	const address = "https://hub.example.test"
-	gate := NewCloudGate(func() (string, error) { return address, nil }, signedIn)
+	gate := NewCloudGate(func() (string, error) { return address, nil }, setUp)
 	notified := 0
 	gate.OnChange(func() { notified++ })
 	fresh := CloudCheckFresh.Milliseconds()
@@ -50,7 +50,7 @@ func TestCloudGateHoldsUntilAFreshPass(t *testing.T) {
 // that check passes on it (ADR-0056).
 func TestCloudGatePassIsForItsAddress(t *testing.T) {
 	stored := "https://old.example.test"
-	gate := NewCloudGate(func() (string, error) { return stored, nil }, signedIn)
+	gate := NewCloudGate(func() (string, error) { return stored, nil }, setUp)
 	gate.Record(stored, true, 1000)
 	if gate.Holds(1000) {
 		t.Fatal("a fresh pass on the stored address must let cloud loops wake")
@@ -79,8 +79,9 @@ func asked(gate *CloudGate) bool {
 	}
 }
 
-// signedIn is a gate's account reader with one signed in.
-func signedIn() (bool, error) { return true, nil }
+// setUp is a gate's setup reader with an account signed in and an
+// environment chosen.
+func setUp() (bool, error) { return true, nil }
 
 // With no account signed in the gate holds, whatever the checks found,
 // without asking for one; a sign-in tells the loops (ADR-0056).
@@ -95,7 +96,7 @@ func TestCloudGateHoldsWithNoAccount(t *testing.T) {
 		t.Fatal("a gate with no account must hold, without asking for a check")
 	}
 	account = true
-	gate.AccountChanged()
+	gate.SetupChanged()
 	if gate.Holds(1000) || notified != 2 {
 		t.Fatalf("after a sign-in: holds %v, OnChange heard %d, want open and 2", gate.Holds(1000), notified)
 	}

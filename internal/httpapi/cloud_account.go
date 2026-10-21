@@ -197,7 +197,7 @@ func (server *Server) changeCloudAccount(w http.ResponseWriter, r *http.Request,
 	}
 	server.secretsChanged(ctx)
 	if server.CloudGate != nil {
-		server.CloudGate.AccountChanged()
+		server.CloudGate.SetupChanged()
 	}
 	server.CheckCloudAccount(ctx)
 	token, err := loop.HubClaudeToken(ctx, server.Store.Settings())

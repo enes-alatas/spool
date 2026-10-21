@@ -132,6 +132,42 @@ const SettingCloudAddress = "cloud_address"
 // start. Unset or "", the listener is off unless --cloud-listen opens it.
 const SettingCloudListen = "cloud_listen"
 
+// SettingCloudEnvironment holds the environment every cloud loop starts
+// in, which the operator sets up on claude.ai once (ADR-0059), a
+// CloudEnvironment as JSON. Unset, no cloud loop wakes.
+const SettingCloudEnvironment = "cloud_environment"
+
+// CloudEnvironment is the environment Settings → Cloud chose, and the
+// allowlist text the operator last confirmed pasting into it.
+type CloudEnvironment struct {
+	ID string `json:"id"`
+	// Name is what the account's list called it when it was chosen, ""
+	// for an ID the list didn't show.
+	Name string `json:"name,omitempty"`
+	// ConfirmedDigest is the SHA-256, in hex, of the text confirmed, ""
+	// before a confirm. A list that has moved since is no longer
+	// confirmed.
+	ConfirmedDigest string `json:"confirmed_digest,omitempty"`
+	// ConfirmedAt is when, in Unix ms.
+	ConfirmedAt int64 `json:"confirmed_at,omitempty"`
+}
+
+// ValidCloudEnvironmentID reports whether id has an environment ID's
+// shape: env_ and 1–100 letters and digits. It is checked before the ID
+// goes into the --settings JSON a start runs with (ADR-0059).
+func ValidCloudEnvironmentID(id string) bool {
+	rest, found := strings.CutPrefix(id, "env_")
+	if !found || rest == "" || len(rest) > 100 {
+		return false
+	}
+	for _, char := range rest {
+		if (char < 'a' || char > 'z') && (char < 'A' || char > 'Z') && (char < '0' || char > '9') {
+			return false
+		}
+	}
+	return true
+}
+
 // SettingLoginCheck holds the last login check's outcome (ADR-0044), a
 // LoginCheckRecord as JSON. Saving a setup-token resets it to pending.
 const SettingLoginCheck = "login_check"

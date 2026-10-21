@@ -74,6 +74,8 @@ var adminRoutes = []string{
 	"PUT /api/settings/cloud/address", "DELETE /api/settings/cloud/address", "POST /api/settings/cloud/check",
 	"PUT /api/settings/cloud/listener", "POST /api/settings/cloud/account/sign-in", "POST /api/settings/cloud/account/code",
 	"DELETE /api/settings/cloud/account", "POST /api/settings/cloud/account/check",
+	"GET /api/settings/cloud/environments", "PUT /api/settings/cloud/environment", "DELETE /api/settings/cloud/environment",
+	"POST /api/settings/cloud/environment/confirm",
 	"POST /api/plan-cap/resume", "POST /api/onboarding/harness-check", "POST /api/onboarding/skip-surface",
 	"POST /api/workspace/inspect",
 	"POST /api/rules", "PATCH /api/rules/{id}", "DELETE /api/rules/{id}",

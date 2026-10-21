@@ -134,6 +134,10 @@ type Server struct {
 	// refresh of its token never writes back over the change (ADR-0058).
 	// Nil holds nothing.
 	CloudLogin sync.Locker
+	// CloudEnvironments lists the account's cloud environments for
+	// Settings → Cloud's pick (ADR-0059). Nil on a hub that wires none:
+	// the page falls back to a pasted ID.
+	CloudEnvironments CloudEnvironments
 	// CloudSessions reads each cloud loop's session link. Nil on a hub
 	// that wires none: the view carries no link.
 	CloudSessions CloudSessions
@@ -160,6 +164,9 @@ type Server struct {
 	// before writing, and two interleaving could leave two env-vars setting
 	// one.
 	envMu sync.Mutex
+	// cloudEnvironmentMu serializes changes to the chosen environment: a
+	// confirm reads it and the list to paste before it writes.
+	cloudEnvironmentMu sync.Mutex
 	// cloudChecks are the address-check values issued and not yet seen
 	// back on the cloud listener (ADR-0056).
 	cloudChecks cloudChecks
@@ -257,6 +264,10 @@ func (server *Server) routes() *routeMux {
 	mux.HandleFunc("POST /api/settings/cloud/account/code", server.handleFinishCloudSignIn)
 	mux.HandleFunc("DELETE /api/settings/cloud/account", server.handleRemoveCloudAccount)
 	mux.HandleFunc("POST /api/settings/cloud/account/check", server.handleCheckCloudAccount)
+	mux.HandleFunc("GET /api/settings/cloud/environments", server.handleListCloudEnvironments)
+	mux.HandleFunc("PUT /api/settings/cloud/environment", server.handleChooseCloudEnvironment)
+	mux.HandleFunc("DELETE /api/settings/cloud/environment", server.handleClearCloudEnvironment)
+	mux.HandleFunc("POST /api/settings/cloud/environment/confirm", server.handleConfirmCloudAllowlist)
 	mux.HandleFunc("GET /api/rules", server.handleListRules)
 	mux.HandleFunc("POST /api/rules", server.handleCreateRule)
 	mux.HandleFunc("PATCH /api/rules/{id}", server.handlePatchRule)
@@ -505,6 +516,11 @@ type loopView struct {
 	// CloudSessionURL is a cloud loop's current session on claude.ai,
 	// absent before its first session (ADR-0056).
 	CloudSessionURL string `json:"cloud_session_url,omitempty"`
+	// CloudAllowlistUnconfirmed is set on a cloud loop while the operator
+	// hasn't confirmed pasting the current allowlist into the environment:
+	// the hub's egress allowlist doesn't bind the loop, only what its
+	// environment allows (ADR-0059).
+	CloudAllowlistUnconfirmed bool `json:"cloud_allowlist_unconfirmed,omitempty"`
 }
 
 // loopConnectionView is one connection a loop holds.
@@ -604,6 +620,9 @@ func (server *Server) view(ctx context.Context, loopRecord *store.Loop) *loopVie
 	}
 	if loopRecord.Runtime == store.RuntimeCloud && server.CloudSessions != nil {
 		out.CloudSessionURL = server.CloudSessions.SessionURL(loopRecord.ID)
+	}
+	if loopRecord.Runtime == store.RuntimeCloud {
+		out.CloudAllowlistUnconfirmed = server.cloudAllowlistUnconfirmed(ctx)
 	}
 	if failures, err := server.Store.Messages().UnresolvedSendFailures(ctx, loopRecord.ID); err == nil {
 		out.Undelivered = failures

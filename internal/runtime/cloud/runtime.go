@@ -51,6 +51,14 @@ type Runtime struct {
 	// Account returns the signed-in account, or ErrNoAccount. Read at every
 	// CLI run, so a sign-in or a removal takes effect at once.
 	Account func(ctx context.Context) (Account, error)
+	// EnvironmentID returns the environment every session starts in, which
+	// Settings → Cloud chose (ADR-0059): an ID whose shape the hub has
+	// checked, or "" with none chosen, which fails the start. Read at each
+	// start.
+	EnvironmentID func(ctx context.Context) (string, error)
+	// APIBase is Anthropic's API, which Environments lists from;
+	// DefaultAPIBase when empty. Tests point it at a stand-in.
+	APIBase string
 	// Dir holds one state file per cloud loop. Its files carry no
 	// credential.
 	Dir string

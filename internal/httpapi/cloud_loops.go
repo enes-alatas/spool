@@ -12,8 +12,10 @@ type CloudSessions interface {
 }
 
 // cloudReady is nil when Settings → Cloud is green, as its page shows it:
-// the public address's last check passed, and an account is signed in
-// whose last check passed. Otherwise it says which step to finish.
+// the public address's last check passed, an account is signed in whose
+// last check passed, and an environment is chosen. Otherwise it says which
+// step to finish. An allowlist not confirmed is a warning on the loops, not
+// a hold (ADR-0059).
 func (server *Server) cloudReady(ctx context.Context) error {
 	address, err := server.storedCloudAddress(ctx)
 	if err != nil {
@@ -34,6 +36,13 @@ func (server *Server) cloudReady(ctx context.Context) error {
 	}
 	if check := server.cloudAccountCheck.result(); check == nil || check.State != CloudCheckOK {
 		return errors.New("the Claude account in Settings → Cloud hasn't passed its check")
+	}
+	chosen, err := server.storedCloudEnvironment(ctx)
+	if err != nil {
+		return err
+	}
+	if chosen.ID == "" {
+		return errors.New("choose the environment cloud loops start in, in Settings → Cloud, first")
 	}
 	return nil
 }

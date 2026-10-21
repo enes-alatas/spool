@@ -22,10 +22,11 @@ func cliRuntime(t *testing.T, cli string) *Runtime {
 		t.Fatal(err)
 	}
 	return &Runtime{
-		Account: func(context.Context) (Account, error) { return testAccount, nil },
-		Dir:     t.TempDir(),
-		CLI:     &CLI{Binary: binary, Dir: filepath.Join(t.TempDir(), "cli"), Env: os.Environ(), StartWithin: 2 * time.Second},
-		Bounds:  Bounds{Quiet: 5 * time.Second},
+		Account:       func(context.Context) (Account, error) { return testAccount, nil },
+		EnvironmentID: func(context.Context) (string, error) { return testEnvironment, nil },
+		Dir:           t.TempDir(),
+		CLI:           &CLI{Binary: binary, Dir: filepath.Join(t.TempDir(), "cli"), Env: os.Environ(), StartWithin: 2 * time.Second},
+		Bounds:        Bounds{Quiet: 5 * time.Second},
 	}
 }
 
@@ -122,7 +123,7 @@ sleep 30
 	got := string(raw)
 	for _, want := range []string{
 		"terminal\n",
-		"args: --cloud first words --permission-mode auto\n",
+		"args: --cloud first words --permission-mode auto --settings {\"remote\":{\"defaultEnvironmentId\":\"" + testEnvironment + "\"}}\n",
 		"token: " + testAccount.Token + "\n",
 		`"hasCompletedOnboarding":true`,
 		`"organizationUuid":"` + testAccount.OrgUUID + `"`,
@@ -154,6 +155,22 @@ func TestCLIStartFailsWithTheCLIsLastLine(t *testing.T) {
 	_, result := turnResult(t, proc, "hello")
 	if !result.IsError || !strings.Contains(result.ResultText, "exited") || !strings.Contains(result.ResultText, "Error: no session for you") {
 		t.Errorf("the turn ended as %q, want an error quoting the CLI's last line", result.ResultText)
+	}
+}
+
+// A start with no environment chosen fails before the CLI runs: the CLI
+// would pick one of the account's environments by itself (ADR-0059).
+func TestCLIStartNeedsAChosenEnvironment(t *testing.T) {
+	ran := filepath.Join(t.TempDir(), "ran")
+	cloud := cliRuntime(t, "touch "+ran)
+	cloud.EnvironmentID = func(context.Context) (string, error) { return "", nil }
+	proc := startCLI(t, cloud, testSpec())
+	_, result := turnResult(t, proc, "hello")
+	if !result.IsError || !strings.Contains(result.ResultText, "no environment is chosen") {
+		t.Errorf("the turn ended as %q, want an error naming the missing environment", result.ResultText)
+	}
+	if _, err := os.Stat(ran); err == nil {
+		t.Error("the CLI ran with no environment chosen")
 	}
 }
 

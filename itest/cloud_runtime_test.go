@@ -20,6 +20,10 @@ import (
 // real one.
 const cloudFixtureToken = "sk-ant-oat01-fixture-cloud-account"
 
+// cloudFixtureEnvironment is the environment the harness's cloud loops
+// start in, as Settings → Cloud would have chosen it.
+const cloudFixtureEnvironment = "env_01Fixture"
+
 // startCloudHub starts a hub with one cloud loop and its account signed in,
 // driven through the claude CLI, fakeclaude's --cloud (ADR-0059). Its
 // public address is its own cloud listener on loopback, set through
@@ -57,8 +61,8 @@ func startCloudHubAt(t *testing.T, name, address string, args ...string) *server
 	return startServerArgs(t, dataDir, append([]string{"--runtime", "bare"}, args...)...)
 }
 
-// signInCloud stores the synthetic account and the public address, "" for
-// none, as Settings → Cloud will.
+// signInCloud stores the synthetic account, the public address, "" for
+// none, and the environment, as Settings → Cloud will.
 func signInCloud(t *testing.T, dataDir, address string) {
 	t.Helper()
 	db, err := sqlite.Open(filepath.Join(dataDir, "spool.db"))
@@ -83,6 +87,10 @@ func signInCloud(t *testing.T, dataDir, address string) {
 		t.Fatal(err)
 	}
 	if err := db.Settings().Set(ctx, store.SettingCloudAddress, address); err != nil {
+		t.Fatal(err)
+	}
+	environment, _ := json.Marshal(store.CloudEnvironment{ID: cloudFixtureEnvironment})
+	if err := db.Settings().Set(ctx, store.SettingCloudEnvironment, string(environment)); err != nil {
 		t.Fatal(err)
 	}
 }

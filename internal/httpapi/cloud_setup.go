@@ -116,8 +116,9 @@ type cloudSettingsView struct {
 	Address string `json:"address"`
 	Warning string `json:"warning,omitempty"`
 	// Check is the last check of Address, absent until one has run.
-	Check   *CloudCheckResult `json:"check,omitempty"`
-	Account cloudAccountView  `json:"account"`
+	Check       *CloudCheckResult    `json:"check,omitempty"`
+	Account     cloudAccountView     `json:"account"`
+	Environment cloudEnvironmentView `json:"environment"`
 }
 
 type cloudListenerView struct {
@@ -263,6 +264,9 @@ func (server *Server) cloudSettings(ctx context.Context, who *caller) (cloudSett
 	view.Account.Check = server.cloudAccountCheck.result()
 	if view.Account.Check != nil && !seesCloudCheckDetail(who) {
 		view.Account.Check.Detail = ""
+	}
+	if view.Environment, err = server.cloudEnvironment(ctx); err != nil {
+		return view, err
 	}
 	return view, nil
 }
