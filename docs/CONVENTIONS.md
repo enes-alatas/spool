@@ -71,7 +71,12 @@ ADR instead.*
   `origin/main` (here `~/spool`):
   `{"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "sh -c \"$(git -C \"$HOME/spool\" show origin/main:.claude/hooks/gh-body-guard.sh)\" gh-body-guard \"$HOME/spool\""}]}]}}`.
   Release notes, a merge commit's body and `gh api graphql` are not
-  checked.
+  checked. A body that gets past the hook anyway, from a session without
+  it or from the web, is flagged after the fact: `issue-guards` and
+  `pr-guards` add `fleet-mention` to the issue or PR when an issue, PR or
+  comment body has an @ before a name in that list, outside code. The ping
+  has gone out by then; the author takes the @ out, and whoever sees the
+  label fixed removes it.
 - **The board sweep reads the pinned "CI health" issue** (#216, mechanism #210).
   A workflow that fires on issues, comments or a schedule reports its failures
   nowhere a PR can show them, so `ci-health` posts each one there as a comment.

@@ -95,3 +95,20 @@ jobs:
           1) echo "security-label: no path in the list; nothing to label." ;;
           *) exit "$status" ;;
           esac
+
+      # An @ before a fleet name in the PR's own body (#630), the step
+      # issue-guards runs on issue and comment bodies. Here, in the job that
+      # already holds the label write, rather than on a runner of its own. A
+      # push changes no body, so not on synchronize. The script is the base
+      # branch's for the reason the security list is, with the same fallback.
+      - name: flag an @ before a fleet name
+        if: github.event.action != 'synchronize'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          work=$(mktemp -d)
+          for f in scripts/fleet-mention-flag.sh scripts/fleet-mention.sh .claude/hooks/fleet-names; do
+            mkdir -p "$work/$(dirname "$f")"
+            git show "FETCH_HEAD:$f" > "$work/$f" 2>/dev/null || cp "$f" "$work/$f"
+          done
+          bash "$work/scripts/fleet-mention-flag.sh"
