@@ -217,6 +217,66 @@ sudo systemctl restart tailscaled && sudo systemctl reload caddy
 
 The cloud setup's Public address step then passes.
 
+## Cloud loops
+
+A cloud loop's claude runs in a Claude Code cloud session on Anthropic's
+machines, on the hub's Claude login, and reaches the hub over the internet
+(ADR-0059). Settings → Cloud walks the setup in four steps, in this order. Each
+step the hub checks before the next opens. The hub needs the `claude` CLI on
+its machine, the same one the Claude login signs in with.
+
+1. **Cloud listener.** Switch it on. On Spool's side, the hub opens the
+   cloud listener on `127.0.0.1:8090`, the one listener a cloud session can
+   reach. It serves only the cloud loops' MCP and the posts their sessions'
+   hooks make. Nothing changes on claude.ai.
+2. **Public address.** Put a tunnel or a TLS proxy in front of the
+   listener ([TLS with Caddy](#tls-with-caddy),
+   [a Tailscale Funnel](#a-tailscale-funnel-beside-caddy)) and paste its
+   HTTPS address. On Spool's side, the hub sends a request through the
+   address and checks that its own listener answered. It checks again every
+   five minutes, and just before a cloud loop wakes. Nothing changes on
+   claude.ai.
+3. **Claude login.** Sign in with Claude, or keep the login the hub
+   already has. On Spool's side, the hub checks the login with one haiku
+   answer. The account is the one every cloud loop spends.
+4. **Environment.** Every cloud loop starts in one cloud environment, which
+   you set up on claude.ai once.
+   - On claude.ai: at [claude.ai/code](https://claude.ai/code), open the
+     environment selector under the message box and choose **New
+     environment**. Under **Network access**, choose **Custom**, paste the
+     list the step shows into **Allowed domains**, and leave **Also include
+     default list of common package managers** unchecked. Put no variables
+     or secrets in it: every cloud loop shares the environment, so each
+     would reach them all. Choose **Add environment**.
+   - In the step, pick the environment by name. On Spool's side, the hub
+     lists the account's environments with one read-only call on the
+     Claude login, and keeps the ID of the one you pick. If the list fails,
+     the step asks for the ID instead. Run `/remote-env` in your own
+     `claude`, pick the environment, and copy `remote.defaultEnvironmentId`
+     from `~/.claude/settings.json` into the field.
+   - Confirm that you pasted the list. The hub can't read an environment's
+     allowed hosts back, so it relies on your word. The list it shows is
+     its egress allowlist ([CONTAINMENT.md](CONTAINMENT.md)) as an
+     environment spells it, with the public address's host first. An entry
+     an environment can't hold, such as a host with a port of its own, is
+     named beside the list and left out of it. Each time you edit the egress
+     allowlist or change the address or the environment, the confirmation
+     drops. Until you paste the new list and confirm again, each cloud loop
+     carries a warning: only what its environment allows binds it, not the
+     hub's allowlist. An edit you save on claude.ai reaches running
+     sessions within about a minute.
+
+Then create a loop with the cloud runtime. At its first wake, the hub runs
+`claude --cloud` on its own machine, with the wake as the first message and
+the chosen environment. The CLI uploads a small repo the hub builds, the
+loop's home, and a session starts on claude.ai. The home's `SessionStart`
+hook posts the session's id to the hub, and the hub ends the local CLI. The
+loop's page links the session, which you can open on claude.ai. When the
+turn ends, the home's `Stop` hook posts it back, and the loop's reply lands
+in its rooms as any loop's does. Each later wake is sent into the same
+session with `claude -p --cloud`. Anthropic idles the session's machine
+between turns, and the next message brings it back.
+
 ## Back up and restore
 
 The commands here assume the layout of [Run it as a service](#run-it-as-a-service):
