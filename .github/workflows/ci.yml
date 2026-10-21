@@ -130,7 +130,7 @@ jobs:
           smoke=false
           lockfile=false
           workflows=false
-          if echo "$files" | grep -qE '^(cmd/|internal/|itest/|go\.(mod|sum)$|Makefile$|\.golangci\.ya?ml$|\.github/workflows/)'; then
+          if echo "$files" | grep -qE '^(cmd/|internal/|itest/|go\.(mod|sum)$|Makefile$|\.golangci\.ya?ml$|scripts/shortnames/|\.github/workflows/)'; then
             go=true
           fi
           if echo "$files" | grep -qE '^(web/|\.github/workflows/)'; then
@@ -292,6 +292,11 @@ jobs:
       - name: comments cite no ADR sections
         if: needs.changes.outputs.unit == 'true' || needs.changes.outputs.web == 'true'
         run: bash scripts/comment-refs.sh
+      # Old code is fenced by scripts/shortnames/baseline.txt; new code
+      # gets none (CONVENTIONS.md "Names say what they hold", #1012).
+      - name: no new single-letter Go names
+        if: needs.changes.outputs.unit == 'true'
+        run: go run ./scripts/shortnames
       - name: unit tests (tier 1 + arch)
         if: needs.changes.outputs.unit == 'true'
         run: |
