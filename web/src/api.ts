@@ -527,6 +527,39 @@ export interface CloudSettings {
   check?: CloudCheck
   // Whether the account is set, never what it is, and its last check.
   account: CloudAccountView
+  // The one environment every cloud loop shares (ADR-0059).
+  environment: CloudEnvironmentView
+}
+
+// The shared environment the operator made on claude.ai (ADR-0059,
+// as #978 amends it), and the list to paste into its network access. The
+// hub can't read the environment back, so the operator's confirm is all it
+// knows. An allowlist edit or a new address changes `digest`, and another
+// ID drops the confirm.
+export interface CloudEnvironmentView {
+  // env_…, '' while none is chosen.
+  id: string
+  // Its name on claude.ai, as the hub's list gave it; '' for an ID pasted
+  // that the list doesn't show.
+  name: string
+  // The environment's Allowed domains, one host per line, built from the
+  // current allowlist on each request: the public address's host first.
+  allowlist: string
+  // The allowlist's entries an environment can't carry: a host with a port
+  // of its own, or an old `*` entry.
+  not_applied: string[]
+  // The allowlist's SHA-256, which a confirm names.
+  digest: string
+  confirmed: boolean
+  // Unix ms, present only while confirmed.
+  confirmed_at?: number
+}
+
+// One of the account's environments, as the hub lists them on its Claude
+// login, for the step's pick by name.
+export interface CloudEnvironmentChoice {
+  id: string
+  name: string
 }
 
 // Where a failed account check stopped: `no_account` made no call, and
@@ -1311,6 +1344,24 @@ export const api = {
   // `cloud_address_invalid` unless it is an HTTPS origin.
   setCloudAddress: (address: string) =>
     req<CloudSettings>('/api/settings/cloud/address', { method: 'PUT', body: JSON.stringify({ address }) }),
+  // The account's environments, read on the hub's Claude login through an
+  // API Anthropic doesn't publish: a 502 `cloud_environments_unlisted` when
+  // it fails, and the step falls back to pasting the ID.
+  cloudEnvironments: () =>
+    req<{ environments: CloudEnvironmentChoice[] }>('/api/settings/cloud/environments'),
+  // Refused with 400 `cloud_environment_invalid` unless it is env_ plus
+  // letters and digits, and `cloud_environment_unlisted` for an ID the
+  // account's list doesn't show while that list can be read: a pasted ID is
+  // taken only when it can't. The name is the hub's, from its list.
+  setCloudEnvironment: (id: string) =>
+    req<CloudSettings>('/api/settings/cloud/environment', { method: 'PUT', body: JSON.stringify({ id }) }),
+  // Refused with 409 `cloud_allowlist_stale` for a digest that isn't the
+  // current list's, or with no environment chosen.
+  confirmCloudEnvironment: (digest: string) =>
+    req<CloudSettings>('/api/settings/cloud/environment/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ digest }),
+    }),
   clearCloudAddress: () => req<CloudSettings>('/api/settings/cloud/address', { method: 'DELETE' }),
   checkCloudAddress: () => req<CloudSettings>('/api/settings/cloud/check', { method: 'POST' }),
   // The CLI's own login, run by the hub (#864): sign-in answers the claude.ai

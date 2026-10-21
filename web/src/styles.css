@@ -2731,6 +2731,10 @@ button.panel-link {
   background: var(--ready);
   border-color: var(--ready);
 }
+.cloud-step.warn .cloud-dot {
+  background: var(--active);
+  border-color: var(--active);
+}
 .cloud-step.bad .cloud-dot {
   background: var(--danger);
   border-color: var(--danger);
@@ -2756,6 +2760,9 @@ button.panel-link {
 }
 .cloud-step.ok .cloud-step-state {
   color: var(--ready);
+}
+.cloud-step.warn .cloud-step-state {
+  color: var(--active);
 }
 .cloud-step.bad .cloud-step-state {
   color: var(--danger);
@@ -2996,7 +3003,14 @@ button.panel-link {
 .cloud-code {
   margin-top: 6px;
 }
+/* the refresh beside the environment pick, centred on the select rather
+   than pulled into a panel head's corner */
+.cloud-code .panel-action {
+  align-self: center;
+  margin: 0;
+}
 .cloud-small a,
+.cloud-recipe a,
 .cloud-recipe-aside a,
 .cloud-check-hint a {
   color: var(--text);
@@ -4642,6 +4656,25 @@ button.panel-link {
    since a button's text otherwise is not */
 .copyable.selected code {
   user-select: all;
+}
+.copyable.block {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  width: 100%;
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  text-align: left;
+}
+.copyable.block code {
+  flex: 1;
+  white-space: pre-wrap;
+  max-height: 9.5em;
+  overflow-y: auto;
+}
+.copyable.block .copyable-icon {
+  visibility: visible;
+  padding-top: 2px;
 }
 .copyable.copied .copyable-icon {
   color: var(--ready);

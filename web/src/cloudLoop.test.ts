@@ -10,11 +10,20 @@ const loop = (over: Partial<Parameters<typeof cloudSessionCondition>[0]> = {}) =
 })
 
 const ok = { state: 'ok', checked_at: 0 } as const
+const ENV = {
+  id: 'env_01Fixture',
+  name: 'spool',
+  allowlist: 'spool.example.com\napi.anthropic.com',
+  not_applied: [],
+  digest: 'd1',
+  confirmed: true,
+}
 const settings = (over: Partial<CloudSettings> = {}): CloudSettings => ({
   listener: { on: true, addr: '127.0.0.1:8090', from_flag: false },
   address: 'https://spool.example.com',
   check: ok,
   account: { set: true, cli: true, check: ok },
+  environment: ENV,
   ...over,
 })
 const failing = loop({ problems: [{ symptom: 'cloud_address', since: 0 }] })
@@ -33,7 +42,14 @@ describe('cloudHold', () => {
     expect(cloudHold(loop(), settings({ account: { set: false, cli: true } }))).toBe(
       'no Claude account is signed in',
     )
+    expect(cloudHold(loop(), settings({ environment: { ...ENV, id: '', name: '', confirmed: false } }))).toBe(
+      'no cloud environment is chosen',
+    )
     expect(cloudHold(loop(), settings())).toBe('')
+  })
+
+  it("doesn't hold on an unconfirmed allowlist, which is a warning", () => {
+    expect(cloudHold(loop(), settings({ environment: { ...ENV, confirmed: false } }))).toBe('')
   })
 
   it("doesn't hold on a signed-in account whose check fails, as the hub doesn't", () => {

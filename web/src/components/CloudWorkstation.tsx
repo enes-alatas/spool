@@ -48,7 +48,7 @@ export function CloudWorkstation({ loop }: { loop: LoopView }) {
       )}
       <div className="panel-note">
         Anthropic's machine: there is nothing here to power. It reaches what its environment's network access
-        on claude.ai allows, not this hub's egress list.
+        on claude.ai allows: this hub's allowlist once you paste it there.
       </div>
     </div>
   )

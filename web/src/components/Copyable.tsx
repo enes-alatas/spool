@@ -16,7 +16,10 @@ type Outcome = '' | 'copied' | 'selected'
 // plain http on a LAN address is not one, so there the copy goes through
 // the older execCommand, which needs no secure context. Should that refuse
 // too, the click selects the text and says to press Ctrl+C.
-export function Copyable({ text }: { text: string }) {
+//
+// A `label` makes it a block: a list of lines, copied whole, which the label
+// names in place of reading the whole text out.
+export function Copyable({ text, label }: { text: string; label?: string }) {
   const ref = useRef<HTMLElement>(null)
   const [outcome, setOutcome] = useState<Outcome>('')
 
@@ -48,9 +51,9 @@ export function Copyable({ text }: { text: string }) {
   return (
     <button
       type="button"
-      className={`copyable${outcome ? ` ${outcome}` : ''}`}
+      className={`copyable${label ? ' block' : ''}${outcome ? ` ${outcome}` : ''}`}
       onClick={copy}
-      aria-label={`Copy ${text}`}
+      aria-label={`Copy ${label ?? text}`}
       title={said || 'Click to copy'}
     >
       <code ref={ref}>{text}</code>
