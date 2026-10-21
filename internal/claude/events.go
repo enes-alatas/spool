@@ -85,6 +85,16 @@ type Usage struct {
 	OutputTokens        int `json:"output_tokens"`
 	CacheCreationTokens int `json:"cache_creation_input_tokens"`
 	CacheReadTokens     int `json:"cache_read_input_tokens"`
+	// CacheCreation splits CacheCreationTokens by the cache's lifetime,
+	// nil when the usage doesn't.
+	CacheCreation *CacheCreation `json:"cache_creation,omitempty"`
+}
+
+// CacheCreation is the cache writes of a usage by lifetime: a one-hour
+// write costs more than a five-minute one.
+type CacheCreation struct {
+	Ephemeral5mInputTokens int `json:"ephemeral_5m_input_tokens"`
+	Ephemeral1hInputTokens int `json:"ephemeral_1h_input_tokens"`
 }
 
 type ResultInfo struct {
@@ -97,6 +107,11 @@ type ResultInfo struct {
 	// APIErrorStatus is the HTTP status of the API call the turn failed on,
 	// 0 when it failed on none.
 	APIErrorStatus int `json:"api_error_status"`
+	// CostEstimated marks a result the hub wrote from a cloud turn's
+	// transcript: it has no CostUSD, and TurnCostUSD is the hub's estimate
+	// of this turn alone, nil when the model has no price (ADR-0059).
+	CostEstimated bool     `json:"cost_estimated"`
+	TurnCostUSD   *float64 `json:"turn_cost_usd"`
 }
 
 // RateLimitInfo is a rate_limit_event's payload, which the CLI emits when
