@@ -4,6 +4,8 @@ import {
   accountState,
   addressState,
   checkRows,
+  environmentOptions,
+  environmentState,
   FUNNEL_BESIDE_PROXY_DOCS,
   firstOpenStep,
   isQuickTunnel,
@@ -18,6 +20,7 @@ const view = (over: Partial<CloudSettings> = {}): CloudSettings => ({
   listener: { on: true, addr: '127.0.0.1:8090', from_flag: false },
   address: 'https://spool.example.com',
   account: { set: false, cli: true },
+  environment: { id: '', name: '', allowlist: '', not_applied: [], digest: '', confirmed: false },
   ...over,
 })
 
@@ -109,9 +112,44 @@ describe('firstOpenStep', () => {
         }),
       ),
     ).toBe('account')
-    expect(firstOpenStep(view({ check: reaches, account: { set: true, cli: true, check: reaches } }))).toBe(
-      'done',
+    const signedIn = { set: true, cli: true, check: reaches }
+    expect(firstOpenStep(view({ check: reaches, account: signedIn }))).toBe('environment')
+    const picked = {
+      id: 'env_01Fixture',
+      name: 'spool',
+      allowlist: 'a.test',
+      not_applied: [],
+      digest: 'd1',
+      confirmed: false,
+    }
+    expect(firstOpenStep(view({ check: reaches, account: signedIn, environment: picked }))).toBe(
+      'environment',
     )
+    expect(
+      firstOpenStep(view({ check: reaches, account: signedIn, environment: { ...picked, confirmed: true } })),
+    ).toBe('done')
+  })
+})
+
+describe('environmentState', () => {
+  const env = (over: Partial<CloudSettings['environment']>) =>
+    environmentState(
+      view({
+        environment: {
+          id: 'env_01Fixture',
+          name: 'spool',
+          allowlist: 'a.test',
+          not_applied: [],
+          digest: 'd1',
+          confirmed: false,
+          ...over,
+        },
+      }),
+    )
+  it('reads a picked environment as done only once its list is confirmed', () => {
+    expect(env({ id: '', name: '' })).toEqual({ text: 'no environment', tone: 'todo' })
+    expect(env({})).toEqual({ text: 'allowlist not confirmed', tone: 'warn' })
+    expect(env({ confirmed: true })).toEqual({ text: 'allowlist pasted', tone: 'ok' })
   })
 })
 
@@ -192,5 +230,34 @@ describe('loginState', () => {
       text: 'signed in',
       tone: 'ok',
     })
+  })
+})
+
+describe('environmentOptions', () => {
+  const choices = [
+    { id: 'env_01Spool', name: 'spool' },
+    { id: 'env_01Default', name: 'Default' },
+  ]
+  it('prompts for a pick while none is chosen', () => {
+    expect(environmentOptions(choices, { id: '', name: '' }).map((option) => option.value)).toEqual([
+      '',
+      'env_01Spool',
+      'env_01Default',
+    ])
+  })
+  it('offers the list as it is when it shows the chosen one', () => {
+    expect(environmentOptions(choices, { id: 'env_01Default', name: 'Default' })).toEqual([
+      { value: 'env_01Spool', label: 'spool' },
+      { value: 'env_01Default', label: 'Default' },
+    ])
+  })
+  it('leads with a chosen ID the list no longer shows, so no other one reads as chosen', () => {
+    expect(environmentOptions(choices, { id: 'env_01Pasted', name: '' })[0]).toEqual({
+      value: 'env_01Pasted',
+      label: "env_01Pasted (not on this account's list)",
+    })
+    expect(environmentOptions([], { id: 'env_01Gone', name: 'old' })).toEqual([
+      { value: 'env_01Gone', label: "old (not on this account's list)" },
+    ])
   })
 })

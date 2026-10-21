@@ -1,7 +1,14 @@
 // Settings → Cloud (ADR-0056, #865): what the hub's cloud setup says, step
 // by step. The hub checks each step; these read its answer.
 
-import type { CloudAccountStage, CloudCheck, CloudCheckStage, CloudSettings } from './api'
+import type {
+  CloudAccountStage,
+  CloudCheck,
+  CloudCheckStage,
+  CloudEnvironmentChoice,
+  CloudEnvironmentView,
+  CloudSettings,
+} from './api'
 
 // The port the cloud listener serves on, from its address: what a tunnel
 // forwards to. '' while the listener is off.
@@ -11,7 +18,7 @@ export function listenerPort(addr: string | undefined): string {
   return colon < 0 ? '' : addr.slice(colon + 1)
 }
 
-export type Tone = 'ok' | 'bad' | 'todo'
+export type Tone = 'ok' | 'warn' | 'bad' | 'todo'
 
 // One stage of the address check, in the order a request meets them: the
 // listener has to be on, the name has to resolve, the address has to take a
@@ -169,13 +176,38 @@ export function loginState(view: CloudSettings): { text: string; tone: Tone; hin
 }
 
 // The step the guided setup opens on: the first one not done.
-export type SetupStep = 'listener' | 'address' | 'account' | 'done'
+export type SetupStep = 'listener' | 'address' | 'account' | 'environment' | 'done'
 
 export function firstOpenStep(view: CloudSettings): SetupStep {
   if (!view.listener.on) return 'listener'
   if (view.check?.state !== 'ok') return 'address'
   if (view.account.check?.state !== 'ok') return 'account'
+  if (!view.environment.id || !view.environment.confirmed) return 'environment'
   return 'done'
+}
+
+// The environment step's state on the status page (ADR-0059). An ID
+// without a confirmed list still runs loops, limited to what the
+// environment allows, so it warns rather than fails.
+export function environmentState(view: CloudSettings): { text: string; tone: Tone } {
+  const { id, confirmed } = view.environment
+  if (!id) return { text: 'no environment', tone: 'todo' }
+  if (confirmed) return { text: 'allowlist pasted', tone: 'ok' }
+  return { text: 'allowlist not confirmed', tone: 'warn' }
+}
+
+// The environment picker's options: the account's list, led by the stored
+// choice when the list doesn't show it (an ID pasted while the list failed,
+// or an environment since deleted on claude.ai), so the select never shows
+// another environment as chosen; and a prompt while none is chosen.
+export function environmentOptions(
+  choices: CloudEnvironmentChoice[],
+  chosen: Pick<CloudEnvironmentView, 'id' | 'name'>,
+): { value: string; label: string }[] {
+  const listed = choices.map((choice) => ({ value: choice.id, label: choice.name }))
+  if (!chosen.id) return [{ value: '', label: 'Pick an environment' }, ...listed]
+  if (choices.some((choice) => choice.id === chosen.id)) return listed
+  return [{ value: chosen.id, label: `${chosen.name || chosen.id} (not on this account's list)` }, ...listed]
 }
 
 // Whether an address's host is a Cloudflare quick tunnel's, which is handed

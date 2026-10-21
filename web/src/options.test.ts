@@ -36,11 +36,11 @@ describe('runtimeNote', () => {
     expect(RUNTIME_OPTIONS.map((o) => o.value)).toEqual(['docker', 'bare', 'cloud'])
   })
 
-  it('says where a cloud loop runs, and whose proxy holds its allowlist', () => {
+  it('says where a cloud loop runs, and where its allowlist goes', () => {
     const note = runtimeNote('cloud')
     expect(note.warn).toBe(false)
     expect(note.text).toMatch(/Anthropic's machines/)
-    expect(note.text).toMatch(/Anthropic's proxy/)
+    expect(note.text).toMatch(/environment on claude.ai/)
   })
 })
 

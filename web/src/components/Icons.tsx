@@ -211,6 +211,18 @@ export function RotateIcon() {
   )
 }
 
+// Refresh: an arrow round, for a list fetched again on demand.
+export function RefreshIcon() {
+  return (
+    <Icon>
+      <path d="M4.25 10a5.75 5.75 0 0 1 9.8-4.1" />
+      <path d="M14.75 3.25v3.25H11.5" />
+      <path d="M15.75 10a5.75 5.75 0 0 1-9.8 4.1" />
+      <path d="M5.25 16.75V13.5H8.5" />
+    </Icon>
+  )
+}
+
 // Kill process: the power mark, the process stopped.
 export function KillIcon() {
   return (

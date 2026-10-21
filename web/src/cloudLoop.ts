@@ -13,9 +13,10 @@ type CloudLoop = Pick<LoopView, 'workstation_up' | 'down_reason' | 'workstation_
 // opens the `cloud_address` problem on the loop. The rest open nothing, so
 // they are read from Settings → Cloud, which the hub holds every cloud loop
 // on: no address, an address that hasn't passed a check (one changed since
-// its pass included), and no account signed in. A signed-in account whose
-// check fails doesn't hold the loop. Until Settings → Cloud answers, only
-// the problem counts.
+// its pass included), no account signed in, and no environment chosen. A
+// signed-in account whose check fails doesn't hold the loop, and neither
+// does an unconfirmed allowlist, which is a warning (ADR-0059).
+// Until Settings → Cloud answers, only the problem counts.
 export function cloudHold(loop: Pick<LoopView, 'problems'>, cloud: CloudSettings | undefined): string {
   if (loop.problems.some((problem) => problem.symptom === 'cloud_address'))
     return 'the public address fails its check'
@@ -24,6 +25,7 @@ export function cloudHold(loop: Pick<LoopView, 'problems'>, cloud: CloudSettings
   if (cloud.check?.state === 'failed') return 'the public address fails its check'
   if (cloud.check?.state !== 'ok') return "the public address hasn't passed a check yet"
   if (!cloud.account.set) return 'no Claude account is signed in'
+  if (!cloud.environment.id) return 'no cloud environment is chosen'
   return ''
 }
 
