@@ -979,3 +979,4 @@ Night sweep (four ticks collapsed). #994 (#977 PR 1: CLI is the only path, per-s
 - Terra's PR 2 shape (issue 977 comment 6307266868): `cloud_moved_loops` table (migration 0061), idempotent first-boot rotate/record/clear, `moved_loops` on GET /api/settings/cloud, DELETE …/moved/{loop_id}, 400 on non-empty `cloud_repo`. Matches ADR-0059 items 9+10. OK'd at comment 6307279159; group ref:6138.
 - Consequence: moved loops stay held until #978 (shared environment). Fleet upgrade hold now runs through #978, not just PR 2. Tell Enes when PR 2 merges.
 - Iris web half for PR 2: Terra files it from the shape before the merge ask.
+- 03:45: PR #998 (#977 PR 2) open, Quinn reviewing, Elliot asked for a security pass. #997 (web half, Iris) filed under #860; I set milestone Cloud runtime. Assigned to Iris after #990 (ref:6140): mockups to Enes first, build after #998 merges. Iris queue now: #990 → #997 → #979 (after #978).
