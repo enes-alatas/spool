@@ -64,7 +64,7 @@ func TestControlRoomThreadEndpoint(t *testing.T) {
 	s.message("aster", "thread question")
 
 	var thread []activityMessage
-	deadline := time.Now().Add(20 * time.Second)
+	deadline := time.Now().Add(firstTurnWait)
 	for time.Now().Before(deadline) {
 		s.mustJSON("GET", "/api/loops/aster/conversation", nil, &thread)
 		if len(thread) >= 2 {
