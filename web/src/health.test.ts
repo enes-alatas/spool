@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { errorTurnsField, errorTurnsValue, healthNote, openFor, problemHealth, problemLine } from './health'
+import {
+  errorTurnsField,
+  errorTurnsValue,
+  healthNote,
+  openFor,
+  problemHealth,
+  problemLine,
+  problemMeaning,
+} from './health'
 
 const minute = 60 * 1000
 const now = 100_000 * minute
@@ -47,6 +55,13 @@ describe('problemHealth', () => {
       'Public address failing for 40m',
     )
     expect(problemHealth({ symptom: 'turn_errors', since: 0 })).toBe('warning')
+    // a cloud session refused its connections still runs (ADR-0059)
+    expect(problemHealth({ symptom: 'cloud_connections', since: 0 })).toBe('warning')
+    expect(problemLine({ symptom: 'cloud_connections', since: now - 40 * minute }, now)).toBe(
+      'Running without its secrets for 40m',
+    )
+    expect(problemMeaning({ symptom: 'cloud_connections', since: 0 })).toMatch(/Pause and resume the loop/)
+    expect(problemMeaning({ symptom: 'turn_errors', since: 0 })).toBeUndefined()
   })
 })
 

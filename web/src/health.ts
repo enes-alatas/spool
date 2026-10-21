@@ -20,6 +20,23 @@ const SAID: Record<string, string> = {
   turn_errors: 'Turns failing',
   // a cloud loop held while the public address fails its check (#864)
   cloud_address: 'Public address failing',
+  // a cloud loop's session refused its connections, so its shell may run
+  // without them (ADR-0059); said as what the loop lacks, a warning, as the
+  // loop still runs
+  cloud_connections: 'Running without its secrets',
+}
+
+// What a symptom means and what to do, where the label alone leaves the
+// operator asking; a symptom without one has no tooltip.
+const MEANS: Record<string, string> = {
+  cloud_connections:
+    'Its cloud session asked the hub for its secrets, the env variables attached to it on the ' +
+    'Connections page (like GH_TOKEN), and was refused, so commands that need them may fail. ' +
+    'Pause and resume the loop to hand them over again.',
+}
+
+export function problemMeaning(problem: Problem): string | undefined {
+  return MEANS[problem.symptom]
 }
 
 // "Workstation down for 2h".
