@@ -23,6 +23,9 @@ humans and each other. This file orients you; it links, it doesn't duplicate.
 - Existing code is not precedent — the docs of record are; where they disagree,
   docs win. Improve opportunistically or rewrite behind the seams.
 - Conventional Commit titles; branches `<type>/<topic>` (`loop/*` is reserved).
+- A gh body names people without an `@` and ends `— Name · Role`; the repo's
+  own PreToolUse hook refuses one that doesn't (`.claude/`, CONVENTIONS.md, #630).
+  A loop whose session starts outside a checkout adds it to its user settings.
 - Issues are typed (ADR-0014): file via the forms; `gh` filings need exactly one
   type label + the matching form's headings (CI flags strays `needs-type`). PRs
   link their issue (`Closes #n` / `Part of #n`) in the PR body; a commit
