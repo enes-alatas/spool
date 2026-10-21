@@ -111,7 +111,14 @@ function FleetRow({
 }) {
   const nav = useNavigate()
   const hold = unnamedCloudHold(loop, useCloudSettings(loop))
-  const station = hold ? { text: `needs setup: ${hold}`, bad: true } : workstationNote(loop)
+  // An unconfirmed allowlist is a warning, never a hold (ADR-0059),
+  // so a hold or a session down outranks it.
+  const station: { text: string; bad: boolean; warn?: boolean } | undefined = hold
+    ? { text: `needs setup: ${hold}`, bad: true }
+    : (workstationNote(loop) ??
+      (loop.cloud_allowlist_unconfirmed
+        ? { text: 'allowlist not confirmed', bad: false, warn: true }
+        : undefined))
   const undelivered = undeliveredNote(loop.undelivered)
   return (
     <Link to={`/loops/${loop.name}`} className="fleet-row">
@@ -136,7 +143,11 @@ function FleetRow({
                 row's news (ADR-0053). */}
             <HealthNote loop={loop} />
             <RuntimeBadge runtime={loop.runtime} />
-            {station && <span className={station.bad ? 'note bad' : 'note'}>{station.text}</span>}
+            {station && (
+              <span className={station.bad ? 'note bad' : station.warn ? 'note warn' : 'note'}>
+                {station.text}
+              </span>
+            )}
             {/* With the faults rather than with the metadata: a loop whose
                 messages are not arriving is something to act on, and the
                 branch and bot handle beside it are not. */}

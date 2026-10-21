@@ -38,6 +38,9 @@ export interface LoopView {
   // A cloud loop's current session on claude.ai, absent before its first
   // session; the hub serves only a https://claude.ai/code/ page (ADR-0056).
   cloud_session_url?: string
+  // Set on a cloud loop while the environment's allowlist isn't confirmed
+  // (ADR-0059): a warning, never a hold.
+  cloud_allowlist_unconfirmed?: boolean
   // A bare loop asked to move into a docker workstation (#632): true from
   // the ask until the move lands or fails, or a hub restart drops it.
   rehoming: boolean
