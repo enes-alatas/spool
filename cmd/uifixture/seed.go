@@ -44,7 +44,7 @@ func seedTimeline(ctx context.Context, db store.Store, loopID string) error {
 	}
 	turn.EndedAt = ms(-8 * time.Minute)
 	turn.DurationMS = 64_000
-	turn.CostUSD = 0.1382
+	turn.CostUSD = dollars(0.1382)
 	turn.SessionCostUSD = 1.9041
 	turn.InputTokens = 4_318
 	turn.OutputTokens = 1_204
@@ -161,7 +161,7 @@ func seedSpend(ctx context.Context, db store.Store, ids map[string]string) error
 			}
 			turn.EndedAt = ms(at + 40*time.Second)
 			turn.DurationMS = 40_000
-			turn.CostUSD = spend.cost
+			turn.CostUSD = dollars(spend.cost)
 			turn.SessionCostUSD = running
 			turn.InputTokens = 2_100
 			turn.OutputTokens = 480
@@ -230,7 +230,7 @@ func seedCurrentSessions(ctx context.Context, db store.Store, ids map[string]str
 		}
 		turn.EndedAt = ms(cur.endedAt)
 		turn.DurationMS = 40_000
-		turn.CostUSD = cur.cost
+		turn.CostUSD = dollars(cur.cost)
 		turn.SessionCostUSD = cur.cost
 		turn.InputTokens = 2_100
 		turn.OutputTokens = 480
@@ -1028,3 +1028,6 @@ func seedRules(ctx context.Context, db store.Store) error {
 	}
 	return nil
 }
+
+// dollars is a turn's known cost.
+func dollars(amount float64) *float64 { return &amount }

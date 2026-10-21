@@ -277,6 +277,13 @@ in its rooms as any loop's does. Each later wake is sent into the same
 session with `claude -p --cloud`. Anthropic idles the session's machine
 between turns, and the next message brings it back.
 
+A cloud turn's cost is the hub's estimate. The session reports its token
+counts but no cost, so the hub prices the tokens by its own table of model
+prices. A model missing from that table leaves the turn's cost unknown, and
+the day's total says it leaves that turn out. Cloud turns don't report the
+plan's usage limits either: the hub reads those from contained loops only,
+so a hub with only cloud loops has no plan usage to show.
+
 ## Back up and restore
 
 The commands here assume the layout of [Run it as a service](#run-it-as-a-service):

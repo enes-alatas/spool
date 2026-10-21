@@ -1286,38 +1286,55 @@ func (table turns) Create(ctx context.Context, turn *store.Turn) error {
 	return err
 }
 
+// Finish stores a nil cost as unknown only on an estimated turn: a turn
+// that ended with no result, its process gone, reported no cost, and the
+// session's next total takes in what it spent.
 func (table turns) Finish(ctx context.Context, turn *store.Turn) error {
+	cost := 0.0
+	if turn.CostUSD != nil {
+		cost = *turn.CostUSD
+	}
 	_, err := table.db.ExecContext(ctx, `UPDATE turns SET ended_at=?, is_error=?, result_text=?,
-		cost_usd=?, session_cost_usd=?, input_tokens=?, output_tokens=?, cache_read_tokens=?,
-		cache_write_tokens=?, context_tokens=?, duration_ms=?, model=? WHERE id=?`,
-		turn.EndedAt, boolInt(turn.IsError), turn.ResultText, turn.CostUSD, turn.SessionCostUSD,
-		turn.InputTokens, turn.OutputTokens,
+		cost_usd=?, cost_estimated=?, cost_unknown=?, session_cost_usd=?, input_tokens=?, output_tokens=?,
+		cache_read_tokens=?, cache_write_tokens=?, context_tokens=?, duration_ms=?, model=? WHERE id=?`,
+		turn.EndedAt, boolInt(turn.IsError), turn.ResultText, cost, boolInt(turn.CostEstimated),
+		boolInt(turn.CostEstimated && turn.CostUSD == nil), turn.SessionCostUSD, turn.InputTokens, turn.OutputTokens,
 		turn.CacheReadTokens, turn.CacheWriteTokens, turn.ContextTokens, turn.DurationMS, turn.Model, turn.ID)
 	return err
 }
 
 const turnCols = `id, loop_id, session_id, trigger_kind, started_at, ended_at, is_error,
-	result_text, cost_usd, session_cost_usd, input_tokens, output_tokens, cache_read_tokens,
-	cache_write_tokens, context_tokens, duration_ms, model`
+	result_text, cost_usd, cost_estimated, cost_unknown, session_cost_usd, input_tokens, output_tokens,
+	cache_read_tokens, cache_write_tokens, context_tokens, duration_ms, model`
+
+// scanTurn reads one row of turnCols. An unknown cost comes back nil.
+func scanTurn(row interface{ Scan(...any) error }) (*store.Turn, error) {
+	var turn store.Turn
+	var isErr, estimated, unknown int
+	var cost float64
+	if err := row.Scan(&turn.ID, &turn.LoopID, &turn.SessionID, &turn.Trigger, &turn.StartedAt, &turn.EndedAt,
+		&isErr, &turn.ResultText, &cost, &estimated, &unknown, &turn.SessionCostUSD,
+		&turn.InputTokens, &turn.OutputTokens, &turn.CacheReadTokens, &turn.CacheWriteTokens,
+		&turn.ContextTokens, &turn.DurationMS, &turn.Model); err != nil {
+		return nil, err
+	}
+	turn.IsError = isErr != 0
+	turn.CostEstimated = estimated != 0
+	if unknown == 0 {
+		turn.CostUSD = &cost
+	}
+	return &turn, nil
+}
 
 // Latest is the most recent turn the loop actually finished: an in-flight
 // turn has no usage yet, and an errored one reports what it managed.
 func (table turns) Latest(ctx context.Context, loopID string) (*store.Turn, error) {
-	row := table.db.QueryRowContext(ctx, `SELECT `+turnCols+`
-		FROM turns WHERE loop_id=? AND ended_at>0 ORDER BY ended_at DESC LIMIT 1`, loopID)
-	var turn store.Turn
-	var isErr int
-	err := row.Scan(&turn.ID, &turn.LoopID, &turn.SessionID, &turn.Trigger, &turn.StartedAt, &turn.EndedAt,
-		&isErr, &turn.ResultText, &turn.CostUSD, &turn.SessionCostUSD, &turn.InputTokens, &turn.OutputTokens,
-		&turn.CacheReadTokens, &turn.CacheWriteTokens, &turn.ContextTokens, &turn.DurationMS, &turn.Model)
+	turn, err := scanTurn(table.db.QueryRowContext(ctx, `SELECT `+turnCols+`
+		FROM turns WHERE loop_id=? AND ended_at>0 ORDER BY ended_at DESC LIMIT 1`, loopID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, store.ErrNotFound
 	}
-	if err != nil {
-		return nil, err
-	}
-	turn.IsError = isErr != 0
-	return &turn, nil
+	return turn, err
 }
 
 // LastCompleted asks across every loop; a deleted loop's turns went with it.
@@ -1337,16 +1354,11 @@ func (table turns) ListByLoop(ctx context.Context, loopID string, limit int) ([]
 	defer rows.Close()
 	var out []*store.Turn
 	for rows.Next() {
-		var turn store.Turn
-		var isErr int
-		if err := rows.Scan(&turn.ID, &turn.LoopID, &turn.SessionID, &turn.Trigger, &turn.StartedAt,
-			&turn.EndedAt, &isErr, &turn.ResultText, &turn.CostUSD, &turn.SessionCostUSD,
-			&turn.InputTokens, &turn.OutputTokens,
-			&turn.CacheReadTokens, &turn.CacheWriteTokens, &turn.ContextTokens, &turn.DurationMS, &turn.Model); err != nil {
+		turn, err := scanTurn(rows)
+		if err != nil {
 			return nil, err
 		}
-		turn.IsError = isErr != 0
-		out = append(out, &turn)
+		out = append(out, turn)
 	}
 	return out, rows.Err()
 }
@@ -1357,11 +1369,13 @@ func (table turns) InterruptDangling(ctx context.Context, endedAt int64) error {
 	return err
 }
 
-func (table turns) CostSince(ctx context.Context, loopID string, since int64) (float64, error) {
-	var cost sql.NullFloat64
-	err := table.db.QueryRowContext(ctx,
-		`SELECT SUM(cost_usd) FROM turns WHERE loop_id=? AND started_at>=?`, loopID, since).Scan(&cost)
-	return cost.Float64, err
+// CostSince's sum leaves out an unknown cost, which is stored as 0.
+func (table turns) CostSince(ctx context.Context, loopID string, since int64) (store.Spend, error) {
+	var spend store.Spend
+	err := table.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(cost_usd), 0),
+		COALESCE(MAX(cost_estimated AND NOT cost_unknown), 0), COALESCE(SUM(cost_unknown), 0)
+		FROM turns WHERE loop_id=? AND started_at>=?`, loopID, since).Scan(&spend.USD, &spend.Estimated, &spend.UnknownTurns)
+	return spend, err
 }
 
 // SessionCost is the highest total recorded for the session. The CLI's

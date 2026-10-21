@@ -489,6 +489,12 @@ cloud listener (ADR-0059).
   read-only root, and sits behind the egress wall. Its command is the
   hub's, and only the pasted code reaches its stdin. It ends itself, so
   a hub stopped mid-sign-in leaves no container past its wait.
+- **A cloud turn's cost is the session's own count.** The hub prices the
+  token counts the transcript reports (ADR-0059), and the loop has a
+  shell where the transcript is written, so a loop can understate its
+  own spend. A negative count is refused as an unreadable line, but a
+  low one is believed. The figure is shown and never enforced; the
+  account's usage page on claude.ai is the record.
 
 ### Workstation: the docker runtime
 

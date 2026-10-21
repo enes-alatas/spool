@@ -79,8 +79,8 @@ func TestCostBackfillRewritesHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := 8.75 + 0.17 + 0.16 + 0.29; !nearly(got, want) {
-		t.Errorf("CostSince %v, want %v — the sum used to read %v", got, want, 8.75+8.92+9.08+9.08+0.29)
+	if want := 8.75 + 0.17 + 0.16 + 0.29; !nearly(got.USD, want) {
+		t.Errorf("CostSince %v, want %v — the sum used to read %v", got.USD, want, 8.75+8.92+9.08+9.08+0.29)
 	}
 }
 
@@ -207,8 +207,8 @@ func TestCostBackfillPricesAgainstTheSessionHigh(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := 9.08; !nearly(got, want) {
-		t.Errorf("CostSince %v, want the session's own total %v", got, want)
+	if want := 9.08; !nearly(got.USD, want) {
+		t.Errorf("CostSince %v, want the session's own total %v", got.USD, want)
 	}
 }
 
@@ -224,4 +224,60 @@ func testLoop() *store.Loop {
 func nearly(got, want float64) bool {
 	diff := got - want
 	return diff < 0.0001 && diff > -0.0001
+}
+
+// An estimated cost is stored as one, an unknown one comes back nil and is
+// left out of a sum that counts it instead, and a turn that ended with no
+// result still costs 0, not unknown (ADR-0059).
+func TestAnEstimatedTurnCostKeepsItsMarks(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	if err := db.Loops().Create(ctx, testLoop()); err != nil {
+		t.Fatal(err)
+	}
+	reported, estimated := 0.25, 0.5
+	for _, turn := range []*store.Turn{
+		{ID: "reported", CostUSD: &reported},
+		{ID: "estimated", CostUSD: &estimated, CostEstimated: true},
+		{ID: "unknown", CostEstimated: true},
+		{ID: "died"},
+	} {
+		turn.LoopID, turn.SessionID, turn.StartedAt = "l1", "s1", 1
+		if err := db.Turns().Create(ctx, turn); err != nil {
+			t.Fatal(err)
+		}
+		turn.EndedAt = 2
+		if err := db.Turns().Finish(ctx, turn); err != nil {
+			t.Fatal(err)
+		}
+	}
+	turns, err := db.Turns().ListByLoop(ctx, "l1", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored := map[string]*store.Turn{}
+	for _, turn := range turns {
+		stored[turn.ID] = turn
+	}
+	for id, want := range map[string]struct {
+		cost      *float64
+		estimated bool
+	}{"reported": {&reported, false}, "estimated": {&estimated, true}, "unknown": {nil, true}, "died": {new(float64), false}} {
+		got := stored[id]
+		if got == nil || (got.CostUSD == nil) != (want.cost == nil) ||
+			(got.CostUSD != nil && !nearly(*got.CostUSD, *want.cost)) || got.CostEstimated != want.estimated {
+			t.Errorf("turn %s came back as %+v, want cost %v, estimated %v", id, got, want.cost, want.estimated)
+		}
+	}
+	spend, err := db.Turns().CostSince(ctx, "l1", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !nearly(spend.USD, 0.75) || !spend.Estimated || spend.UnknownTurns != 1 {
+		t.Errorf("CostSince %+v, want 0.75, estimated, one unknown turn left out", spend)
+	}
 }

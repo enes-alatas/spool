@@ -712,6 +712,16 @@ type SurfaceRef struct {
 	TGMessageID int64
 }
 
+// Spend is a sum of turn costs. USD leaves out every turn whose cost is
+// unknown, so a total that does says so (ADR-0059).
+type Spend struct {
+	USD float64
+	// Estimated is whether any cost in USD is the hub's estimate.
+	Estimated bool
+	// UnknownTurns counts the turns USD leaves out.
+	UnknownTurns int
+}
+
 type Turn struct {
 	ID        string `json:"id"`
 	LoopID    string `json:"loop_id"`
@@ -727,8 +737,12 @@ type Turn struct {
 	// CostUSD is what this turn cost. The CLI reports the session's running
 	// total instead, so the actor records the difference from the previous
 	// turn of the same session (#191) — which makes this column safe to sum,
-	// and SessionCostUSD the one that is not.
-	CostUSD float64 `json:"cost_usd"`
+	// and SessionCostUSD the one that is not. Nil on an estimated turn when
+	// the cost is unknown: a model the hub has no price for (ADR-0059).
+	CostUSD *float64 `json:"cost_usd"`
+	// CostEstimated marks a cost the hub priced from the turn's tokens,
+	// a cloud turn's, rather than one the CLI reported.
+	CostEstimated bool `json:"cost_estimated"`
 	// SessionCostUSD is the CLI's total_cost_usd verbatim: the session's
 	// spend up to and including this turn. Kept because it is the figure we
 	// were given, so a later turn can be priced against it after a restart,
@@ -1254,7 +1268,8 @@ type TurnStore interface {
 	LastCompleted(ctx context.Context) (int64, error)
 	// InterruptDangling marks unfinished turns as errored (orchestrator crash).
 	InterruptDangling(ctx context.Context, endedAt int64) error
-	CostSince(ctx context.Context, loopID string, since int64) (float64, error)
+	// CostSince sums the cost of the loop's turns started since then.
+	CostSince(ctx context.Context, loopID string, since int64) (Spend, error)
 	// SessionCost returns the session's spend so far — the highest
 	// session_cost_usd recorded for it, or 0 when it has no finished turn.
 	// It is how a turn is priced: the CLI hands us a running total, and the
