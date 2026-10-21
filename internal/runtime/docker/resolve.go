@@ -19,7 +19,8 @@ const auxHome = "/tmp/spool-aux"
 // resolveLifetime is how long a resolution container may live, enforced
 // inside it by coreutils timeout (ADR-0018 requires coreutils). A hub
 // stopped mid-run cannot remove its container, and the CLI in it would retry
-// a refused connection forever; this ends it, and --rm then removes it.
+// a refused connection forever; this ends it, and the hub's next sweep
+// (sweepResolveLeftovers) removes the stopped container.
 const resolveLifetime = "60"
 
 // resolveLabel marks resolution containers, so that one a stopped hub left
@@ -45,7 +46,7 @@ func (rt *Runtime) ResolveModel(ctx context.Context, model string) (string, erro
 	}
 	rt.sweepOnce.Do(func() { rt.sweepResolveLeftovers(ctx) })
 	name := "spool-resolve-" + hex.EncodeToString(suffix)
-	argv := []string{"run", "--pull=never", "--rm", "-i", "--name", name, "--network", "none", "--cap-drop", "NET_RAW", "--label", resolveLabel}
+	argv := []string{"run", "--pull=never", "-i", "--name", name, "--network", "none", "--cap-drop", "NET_RAW", "--label", resolveLabel}
 	for _, kv := range claude.AuxEnv("", auxHome, resolveBaseURL) {
 		argv = append(argv, "-e", kv) // synthetic values only: nothing here is a secret
 	}
@@ -71,7 +72,10 @@ func (rt *Runtime) ResolveModel(ctx context.Context, model string) (string, erro
 	}
 	defer func() {
 		// Killing the client leaves the container running (ADR-0018),
-		// so the container is removed by name.
+		// so the container is removed by name. With no --rm this is its
+		// only remover, so rm -f returns once the container is gone; a
+		// daemon removal already under way would make it return at once,
+		// with the container still listed (#910).
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
 		_, _ = rt.command(context.Background(), queryTimeout, "rm", "-f", name)
@@ -80,7 +84,7 @@ func (rt *Runtime) ResolveModel(ctx context.Context, model string) (string, erro
 }
 
 // sweepResolveLeftovers removes resolution containers a stopped hub left
-// behind: created but never started, so --rm never applied to them. Only
+// behind: stopped by resolveLifetime, or created but never started. Only
 // stopped ones older than any run could be are taken, so a run another hub
 // on this daemon has in flight is left alone. Best effort, once per hub.
 func (rt *Runtime) sweepResolveLeftovers(ctx context.Context) {

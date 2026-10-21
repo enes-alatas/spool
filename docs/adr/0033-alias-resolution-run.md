@@ -1,6 +1,6 @@
 # ADR-0033: The hub resolves model aliases with a CLI run that can reach nothing
 
-Date: 2026-09-25 · Status: accepted (operator decisions of 2026-09-24 on #332 and 2026-09-25 on this shape) · Amends: ADR-0001 (the CLI is run for one thing besides a loop's turns) · Amended: 2026-10-04 (item 6: the login check, ADR-0044, #585)
+Date: 2026-09-25 · Status: accepted (operator decisions of 2026-09-24 on #332 and 2026-09-25 on this shape) · Amends: ADR-0001 (the CLI is run for one thing besides a loop's turns) · Amended: 2026-10-04 (item 6: the login check, ADR-0044, #585); 2026-10-21 (item 2: no `--rm`, #910)
 
 ## Context
 
@@ -72,6 +72,15 @@ Anthropic in any run:
    the request, and would have to promise not to log headers that, under the
    operator's login, carry a real token. Here there is no listener that reads
    anything, and on Linux no token to send.
+
+   **Amendment (2026-10-21, #910): no `--rm`.** The docker run drops
+   `--rm`. The hub removes the container by name when the run ends, and
+   with `--rm` that removal raced the daemon's own: it returned at once,
+   with the container still listed. Without it, the removal by name is the
+   only one and returns once the container is gone. A container a stopped
+   hub left behind is stopped by its lifetime bound and removed by the
+   label sweep of a later start, as one never started already was. The
+   network wall above is unchanged.
 
 3. **It runs the CLI the loops run.** The resolver uses the hub's default
    runtime: the default workstation image on a docker hub, the host's `claude`
