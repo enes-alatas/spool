@@ -980,3 +980,4 @@ Night sweep (four ticks collapsed). #994 (#977 PR 1: CLI is the only path, per-s
 - Consequence: moved loops stay held until #978 (shared environment). Fleet upgrade hold now runs through #978, not just PR 2. Tell Enes when PR 2 merges.
 - Iris web half for PR 2: Terra files it from the shape before the merge ask.
 - 03:45: PR #998 (#977 PR 2) open, Quinn reviewing, Elliot asked for a security pass. #997 (web half, Iris) filed under #860; I set milestone Cloud runtime. Assigned to Iris after #990 (ref:6140): mockups to Enes first, build after #998 merges. Iris queue now: #990 → #997 → #979 (after #978).
+- 05:45 sweep: #999 (govulncheck GO-2026-6809, toolchain go1.26.10) filed by Terra, fix PR #1000 green, Quinn commented not yet approved; it gates #998's CI (Quinn: code ready, approval waits on CI). Set #999 milestone CI reliability. Elliot's #998 security pass OK. #1001 (Elliot, gh body guard hook, Part of #630) open. #753 stays triage with Enes. No pings needed.
