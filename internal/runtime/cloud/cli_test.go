@@ -30,6 +30,15 @@ func cliRuntime(t *testing.T, cli string) *Runtime {
 	}
 }
 
+// startupHook is the input of a session's first SessionStart hook.
+var startupHook = []byte(`{"hook_event_name":"SessionStart","source":"startup"}`)
+
+// postStartup posts a session's first SessionStart for loopID.
+func postStartup(ctx context.Context, cloud *Runtime, loopID, sessionID string) error {
+	_, err := cloud.SessionStart(ctx, loopID, sessionID, startupHook)
+	return err
+}
+
 func startCLI(t *testing.T, cloud *Runtime, spec runtime.Spec) runtime.Proc {
 	t.Helper()
 	proc, err := cloud.Start(context.Background(), spec)
@@ -75,7 +84,7 @@ func postWhenPending(t *testing.T, cloud *Runtime, after, sessionID string, post
 			}
 		}
 		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
-			if cloud.SessionStart(context.Background(), "loop-1", sessionID, nil) == nil {
+			if postStartup(context.Background(), cloud, "loop-1", sessionID) == nil {
 				break
 			}
 		}
@@ -183,7 +192,7 @@ func TestCLIStartFailsWhenNoSessionStartsInTime(t *testing.T) {
 		!strings.Contains(result.ResultText, "Uploading the repository") {
 		t.Errorf("the turn ended as %q, want an error naming the bound and the CLI's last line", result.ResultText)
 	}
-	if err := cloud.SessionStart(context.Background(), "loop-1", "session_01Late", nil); err == nil {
+	if err := postStartup(context.Background(), cloud, "loop-1", "session_01Late"); err == nil {
 		t.Error("a SessionStart after the start failed was taken")
 	}
 }
@@ -230,7 +239,7 @@ func TestCLITurnWhosePostIsOverItsBoundEndsAsAnError(t *testing.T) {
 	proc := startCLI(t, cloud, testSpec())
 	go func() {
 		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
-			if cloud.SessionStart(context.Background(), "loop-1", "session_01Synthetic", nil) == nil {
+			if postStartup(context.Background(), cloud, "loop-1", "session_01Synthetic") == nil {
 				break
 			}
 		}
@@ -250,29 +259,29 @@ func TestCLITurnWhosePostIsOverItsBoundEndsAsAnError(t *testing.T) {
 func TestCLIHookPostsAreTakenOnlyWhenAwaited(t *testing.T) {
 	cloud := cliRuntime(t, `sleep 30`)
 	ctx := context.Background()
-	if err := cloud.SessionStart(ctx, "loop-1", "session_01Synthetic", nil); err == nil {
+	if err := postStartup(ctx, cloud, "loop-1", "session_01Synthetic"); err == nil {
 		t.Error("a SessionStart with no start pending was taken")
 	}
 	if err := cloud.Stop(ctx, "loop-1", []byte(`{}`), nil, false); err == nil {
 		t.Error("a Stop with no turn in flight was taken")
 	}
 
-	start := cloud.waits.awaitStart("loop-1", time.Minute)
-	if err := cloud.SessionStart(ctx, "loop-2", "session_01Synthetic", nil); err == nil {
+	start := cloud.waits.awaitStart("loop-1", time.Minute, nil)
+	if err := postStartup(ctx, cloud, "loop-2", "session_01Synthetic"); err == nil {
 		t.Error("another loop's post was taken for this loop's start")
 	}
-	if err := cloud.SessionStart(ctx, "loop-1", "session_01First", nil); err != nil {
+	if err := postStartup(ctx, cloud, "loop-1", "session_01First"); err != nil {
 		t.Fatal(err)
 	}
-	if err := cloud.SessionStart(ctx, "loop-1", "session_01Second", nil); err == nil {
+	if err := postStartup(ctx, cloud, "loop-1", "session_01Second"); err == nil {
 		t.Error("a second SessionStart for one start was taken")
 	}
 	if got := <-start.session; got != "session_01First" {
 		t.Errorf("the start got %q, want the first post's", got)
 	}
 
-	cloud.waits.awaitStart("loop-1", -time.Second)
-	if err := cloud.SessionStart(ctx, "loop-1", "session_01Late", nil); err == nil {
+	cloud.waits.awaitStart("loop-1", -time.Second, nil)
+	if err := postStartup(ctx, cloud, "loop-1", "session_01Late"); err == nil {
 		t.Error("a SessionStart past its start's bound was taken")
 	}
 }

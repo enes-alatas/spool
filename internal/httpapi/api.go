@@ -1257,9 +1257,10 @@ func (server *Server) handleAcknowledge(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	symptom := r.PathValue("symptom")
-	if symptom != store.SymptomWorkstationDown && symptom != store.SymptomTurnErrors && symptom != store.SymptomCloudAddress {
-		server.jsonErr(w, http.StatusBadRequest, "unknown symptom %q: want %s, %s or %s",
-			symptom, store.SymptomWorkstationDown, store.SymptomTurnErrors, store.SymptomCloudAddress)
+	if symptom != store.SymptomWorkstationDown && symptom != store.SymptomTurnErrors && symptom != store.SymptomCloudAddress &&
+		symptom != store.SymptomCloudConnections {
+		server.jsonErr(w, http.StatusBadRequest, "unknown symptom %q: want %s, %s, %s or %s",
+			symptom, store.SymptomWorkstationDown, store.SymptomTurnErrors, store.SymptomCloudAddress, store.SymptomCloudConnections)
 		return
 	}
 	actor, ok := server.Manager.Get(loopRecord.ID)

@@ -51,6 +51,12 @@ func TestProblemNoticeText(t *testing.T) {
 			"Spool: the hub's public address passes its check again, so the cloud loop cirrus is running."},
 		{ProblemNotice{LoopName: "cirrus", Symptom: "cloud_address", ByOperator: true},
 			"Spool: the alert about the public address holding cirrus was cleared in the control room."},
+		{ProblemNotice{LoopName: "cirrus", Symptom: "cloud_connections", Opened: true, Since: since},
+			"Spool: the cloud loop cirrus's session asked for its connections at 09:12 UTC and the hub refused, so its shell commands may run without them."},
+		{ProblemNotice{LoopName: "cirrus", Symptom: "cloud_connections"},
+			"Spool: the cloud loop cirrus's session was handed its connections again."},
+		{ProblemNotice{LoopName: "cirrus", Symptom: "cloud_connections", ByOperator: true},
+			"Spool: the alert about cirrus's session being refused its connections was cleared in the control room."},
 	}
 	for _, testCase := range cases {
 		if got := testCase.notice.Text(); !strings.HasPrefix(got, testCase.want) {

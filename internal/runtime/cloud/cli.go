@@ -89,10 +89,12 @@ type hookWaits struct {
 }
 
 // pendingStart is a start of a loop waiting for its session's id: it takes
-// one post, before its deadline.
+// one post, before its deadline. It answers that post with exports, the
+// loop's connections.
 type pendingStart struct {
 	deadline time.Time
 	session  chan string
+	exports  []byte
 }
 
 // stopArrival is a Stop post as the turn in flight takes it.
@@ -101,13 +103,13 @@ type stopArrival struct {
 	overBound bool
 }
 
-func (waits *hookWaits) awaitStart(loopID string, within time.Duration) *pendingStart {
+func (waits *hookWaits) awaitStart(loopID string, within time.Duration, exports []byte) *pendingStart {
 	waits.mu.Lock()
 	defer waits.mu.Unlock()
 	if waits.starts == nil {
 		waits.starts = map[string]*pendingStart{}
 	}
-	start := &pendingStart{deadline: time.Now().Add(within), session: make(chan string, 1)}
+	start := &pendingStart{deadline: time.Now().Add(within), session: make(chan string, 1), exports: exports}
 	waits.starts[loopID] = start
 	return start
 }
@@ -139,20 +141,43 @@ func (waits *hookWaits) forgetStop(loopID string, stops chan stopArrival) {
 	}
 }
 
-// SessionStart takes a SessionStart post: the session's id, recorded as
-// the loop's while a start of it is pending, within its bound, once
-// (ADR-0059). At any other time it is refused: the loop can read its token
-// and post, and must not rebind its wakes into another session.
-func (cloud *Runtime) SessionStart(_ context.Context, loopID, sessionID string, _ []byte) error {
+// SessionStart takes a SessionStart post and answers it with the loop's
+// connections as export lines (ADR-0059). A startup post's session id is
+// recorded as the loop's while a start of it is pending, within its bound,
+// once. Any other post is refused: the loop can read its token and
+// post, and must not rebind its wakes into another session or read the
+// connections at will. An answer is told to HandOff, and so is a refused
+// post from the loop's own session, which may have lost them.
+// Each answer is logged, without its values.
+func (cloud *Runtime) SessionStart(_ context.Context, loopID, sessionID string, hook []byte) ([]byte, error) {
+	source := hookSource(hook)
+	exports, err := cloud.answerSessionStart(loopID, sessionID, source)
+	if err == nil {
+		slog.Default().Info("cloud: a session was handed its loop's connections", "loop", loopID, "source", source, "session", sessionID)
+	}
+	if cloud.HandOff != nil {
+		if err == nil {
+			cloud.HandOff(loopID, true)
+		} else if current, loadErr := cloud.load(loopID); loadErr == nil && current.SessionID == sessionID {
+			cloud.HandOff(loopID, false)
+		}
+	}
+	return exports, err
+}
+
+func (cloud *Runtime) answerSessionStart(loopID, sessionID, source string) ([]byte, error) {
 	cloud.waits.mu.Lock()
 	defer cloud.waits.mu.Unlock()
+	if source != sourceStartup {
+		return nil, fmt.Errorf("cloud: a SessionStart post from %q is never answered", source)
+	}
 	start := cloud.waits.starts[loopID]
 	if start == nil || time.Now().After(start.deadline) {
-		return errors.New("cloud: no start of this loop is pending")
+		return nil, errNoHandOff
 	}
 	delete(cloud.waits.starts, loopID)
 	start.session <- sessionID
-	return nil
+	return start.exports, nil
 }
 
 // Stop takes a Stop post: it ends the loop's turn in flight, once. With no
@@ -177,6 +202,9 @@ type cliSession struct {
 	prompt string
 	hub    hubEndpoint
 	bounds Bounds
+	// env is the loop's connections as the spec carries them, which a
+	// start hands to the session.
+	env map[string]string
 
 	// claudeSession is the hub's session id, which the events carry;
 	// sessionID is the cloud session, "" until the first Send starts one.
@@ -345,7 +373,7 @@ func (session *cliSession) startSession(text string) error {
 	}
 	defer run.remove()
 
-	pending := session.cloud.waits.awaitStart(session.loopID, within)
+	pending := session.cloud.waits.awaitStart(session.loopID, within, exportLines(session.env))
 	defer session.cloud.waits.forgetStart(session.loopID, pending)
 	cmd := exec.Command(cli.Binary, "--cloud", text, "--permission-mode", "auto", "--settings", settings)
 	cmd.Dir, cmd.Env = run.dir, run.env

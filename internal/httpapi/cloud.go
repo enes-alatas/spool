@@ -52,31 +52,37 @@ func CloudHTTPServer(handler http.Handler) *http.Server {
 
 // CloudHandler serves the cloud listener: the loop listener's /mcp for a
 // cloud loop's token alone, the address check, and the hooks' route while
-// CloudHooks is set. Every other path is 404,
-// the brokered servers' included: they carry organisation credentials, and
-// putting them on the internet is a decision of its own.
-func (server *Server) CloudHandler() http.Handler {
+// CloudHooks is set. Every response goes through redacted, the hub's
+// response redactor, which rewrites JSON and event-stream bodies, but one:
+// the connections a SessionStart post is answered with, text/plain, which
+// the hooks' route writes past it on purpose (ADR-0059). The route's other
+// text/plain answers, its refusals and 404s, carry no secret. Every other
+// path is 404, the brokered servers' included: they carry organisation
+// credentials, and putting them on the internet is a decision of its own.
+func (server *Server) CloudHandler(redacted func(http.Handler) http.Handler) http.Handler {
 	mcpHandler := server.mcpHandler(isCloudLoop)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(unredacted http.ResponseWriter, r *http.Request) {
 		limit := int64(cloudMaxBody)
 		if r.URL.Path == cloudHooksPath {
 			limit = cloudMaxHookBody
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, limit)
-		switch {
-		case r.URL.Path == "/mcp":
-			mcpHandler.ServeHTTP(w, r)
-		case r.URL.Path == cloudHooksPath:
-			server.handleCloudHook(w, r)
-		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, cloudCheckPrefix):
-			if server.cloudChecks.redeem(strings.TrimPrefix(r.URL.Path, cloudCheckPrefix), time.Now()) {
-				w.WriteHeader(http.StatusNoContent)
-				return
+		r.Body = http.MaxBytesReader(unredacted, r.Body, limit)
+		redacted(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.URL.Path == "/mcp":
+				mcpHandler.ServeHTTP(w, r)
+			case r.URL.Path == cloudHooksPath:
+				server.handleCloudHook(w, unredacted, r)
+			case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, cloudCheckPrefix):
+				if server.cloudChecks.redeem(strings.TrimPrefix(r.URL.Path, cloudCheckPrefix), time.Now()) {
+					w.WriteHeader(http.StatusNoContent)
+					return
+				}
+				http.NotFound(w, r)
+			default:
+				http.NotFound(w, r)
 			}
-			http.NotFound(w, r)
-		default:
-			http.NotFound(w, r)
-		}
+		})).ServeHTTP(unredacted, r)
 	})
 }
 

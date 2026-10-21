@@ -41,3 +41,17 @@ func (actor *Actor) cutOffCloud(ctx context.Context, verb, endReason string) {
 	actor.stopProcess(verb)
 	actor.forgetSession(ctx, endReason)
 }
+
+// cloudHandOff opens the cloud_connections problem when the loop's session
+// was refused its connections, since its shell may now run without them,
+// and clears it when a session is handed them again (ADR-0059).
+func (actor *Actor) cloudHandOff(answered bool) {
+	if actor.loop.Runtime != store.RuntimeCloud {
+		return
+	}
+	if answered {
+		actor.clearProblem(store.SymptomCloudConnections, store.ClearedByRecovery)
+		return
+	}
+	actor.openProblem(store.SymptomCloudConnections, now(), 0)
+}

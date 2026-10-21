@@ -193,15 +193,16 @@ func (deps *Deps) runtimeFor(kind string) runtime.Runtime {
 }
 
 type cmd struct {
-	kind    string // deliver|tick|pause|resume|kill|update|power|rotate|rehome|acknowledge|cap|cloud|shutdown
-	env     Envelope
-	loop    *store.Loop
-	verb    string        // for power
-	reason  string        // for rotate: a store.RotationReason* value
-	reply   chan error    // for power: the caller waits on the result
-	done    chan struct{} // for shutdown
-	symptom string        // for acknowledge
-	cleared chan bool     // for acknowledge: whether a problem was open
+	kind     string // deliver|tick|pause|resume|kill|update|power|rotate|rehome|acknowledge|cap|cloud|handoff|shutdown
+	env      Envelope
+	loop     *store.Loop
+	verb     string        // for power
+	reason   string        // for rotate: a store.RotationReason* value
+	reply    chan error    // for power: the caller waits on the result
+	done     chan struct{} // for shutdown
+	symptom  string        // for acknowledge
+	cleared  chan bool     // for acknowledge: whether a problem was open
+	answered bool          // for handoff: whether the session was handed its connections
 }
 
 // Actor owns one loop: a single goroutine serializing every command,
@@ -376,6 +377,12 @@ func (actor *Actor) CapChanged() { actor.cmds <- cmd{kind: "cap"} }
 // (ADR-0056). Any other loop ignores it.
 func (actor *Actor) CloudGateChanged() { actor.cmds <- cmd{kind: "cloud"} }
 
+// CloudHandOff tells a cloud loop how its session's SessionStart post
+// went: answered with its connections, or refused (ADR-0059).
+func (actor *Actor) CloudHandOff(answered bool) {
+	actor.cmds <- cmd{kind: "handoff", answered: answered}
+}
+
 // Rotate asks the loop to shed its context through the ADR-0022 handoff flow
 // at the next quiet boundary, and blocks for the immediate verdict: an error
 // means there is no session to rotate. The reason, a store.RotationReason*
@@ -500,6 +507,8 @@ func (actor *Actor) handleCmd(command cmd) {
 		actor.capChanged()
 	case "cloud":
 		actor.cloudGateChanged()
+	case "handoff":
+		actor.cloudHandOff(command.answered)
 	case "acknowledge":
 		command.cleared <- actor.acknowledge(command.symptom)
 	case "power":

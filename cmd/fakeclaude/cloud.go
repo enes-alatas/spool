@@ -24,8 +24,15 @@ package main
 // .claude/settings.json names them, with CLAUDE_PROJECT_DIR and
 // CLAUDE_CODE_REMOTE_SESSION_ID set: SessionStart (source startup) at the
 // first turn, then the turn, written to the session's transcript as the
-// CLI writes one, then Stop. The reply is "fake cloud reply: " and the
-// message. Turns of one session run one at a time.
+// CLI writes one, then Stop. SessionStart's hooks get CLAUDE_ENV_FILE, the
+// session's claude-env file. The reply is "fake cloud reply: " and the
+// message, or, for a message with a "!env NAME" or "!envsum NAME" line, NAME
+// and its value as sh reads it after claude-env, or for !envsum its SHA-256.
+// Turns of one session run one at a time.
+//
+// A "reclaimed" file in a session's directory makes its next turn a VM
+// Anthropic reclaimed while idle: claude-env is kept, and SessionStart
+// fires again with source resume before the turn.
 //
 // A "cloud-start-held" file in $FAKECLAUDE_STATE holds a new VM's
 // SessionStart back until it is removed, for at most half a minute.
@@ -34,6 +41,8 @@ package main
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -194,14 +203,33 @@ func cloudTurn(session, message string, first bool) int {
 	unlock := lockTurn(vm)
 	defer unlock()
 	env := hookEnv(repo, session)
-	if first {
+	// SessionStart's hooks write variables for the session's shell into
+	// CLAUDE_ENV_FILE, which every shell command reads first
+	envFile := filepath.Join(vm, "claude-env")
+	source := ""
+	switch reclaimed := filepath.Join(vm, "reclaimed"); {
+	case first:
 		holdStart()
-		runHooks(repo, repo, "SessionStart", "startup", env, map[string]any{
-			"hook_event_name": "SessionStart", "source": "startup", "session_id": "local-" + session, "cwd": repo,
+		source = "startup"
+	case os.Remove(reclaimed) == nil:
+		// a VM Anthropic reclaimed keeps its env file (run I on #976)
+		source = "resume"
+	}
+	if source != "" {
+		runHooks(repo, repo, "SessionStart", source, append(env, "CLAUDE_ENV_FILE="+envFile), map[string]any{
+			"hook_event_name": "SessionStart", "source": source, "session_id": "local-" + session, "cwd": repo,
 		}, "")
 	}
 	transcript := filepath.Join(vm, "transcript.jsonl")
 	reply := "fake cloud reply: " + message
+	if name, encoded, asked := envAsked(message); asked {
+		value := shellEnv(envFile, name)
+		if encoded {
+			sum := sha256.Sum256([]byte(value))
+			value = hex.EncodeToString(sum[:])
+		}
+		reply = name + "=" + value
+	}
 	turn := len(readLines(transcript))
 	usage := map[string]any{"input_tokens": 10, "output_tokens": 5, "cache_creation_input_tokens": 100, "cache_read_input_tokens": 1000}
 	model := "claude-opus-5-5"
@@ -336,4 +364,29 @@ func holdStart() {
 			return
 		}
 	}
+}
+
+// envAsked finds a "!env NAME" or "!envsum NAME" line in a turn's message:
+// the turn then replies with the variable as the session's shell sees it,
+// its SHA-256 for !envsum, which the hub's redaction doesn't mask.
+func envAsked(message string) (name string, encoded, asked bool) {
+	for _, line := range strings.Split(message, "\n") {
+		line = strings.TrimSpace(line)
+		if rest, found := strings.CutPrefix(line, "!envsum "); found {
+			return strings.TrimSpace(rest), true, true
+		}
+		if rest, found := strings.CutPrefix(line, "!env "); found {
+			return strings.TrimSpace(rest), false, true
+		}
+	}
+	return "", false, false
+}
+
+// shellEnv is the variable name as a shell command in the session sees
+// it: run by sh after it reads envFile, as the CLI's shell does.
+func shellEnv(envFile, name string) string {
+	cmd := exec.Command("sh", "-c", `[ -f "$1" ] && . "$1"; printenv "$2"`, "sh", envFile, name)
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH")}
+	out, _ := cmd.Output()
+	return strings.TrimSuffix(string(out), "\n")
 }

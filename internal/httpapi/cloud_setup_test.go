@@ -57,7 +57,7 @@ func checked(t *testing.T, server *Server, address string) CloudCheckResult {
 func TestTheCloudCheckNamesWhereItStopped(t *testing.T) {
 	t.Run("this hub answers", func(t *testing.T) {
 		server := cloudCheckServer(t, "")
-		public := httptest.NewServer(server.CloudHandler())
+		public := httptest.NewServer(server.CloudHandler(noRedaction))
 		t.Cleanup(public.Close)
 		server = withAddress(t, server, public.URL)
 		if result := checked(t, server, public.URL); result.State != CloudCheckOK || result.CheckedAt == 0 {
@@ -74,7 +74,7 @@ func TestTheCloudCheckNamesWhereItStopped(t *testing.T) {
 	})
 	t.Run("a redirect is not followed", func(t *testing.T) {
 		server := cloudCheckServer(t, "")
-		hub := httptest.NewServer(server.CloudHandler())
+		hub := httptest.NewServer(server.CloudHandler(noRedaction))
 		t.Cleanup(hub.Close)
 		redirecting := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, hub.URL+r.URL.Path, http.StatusFound)
@@ -87,7 +87,7 @@ func TestTheCloudCheckNamesWhereItStopped(t *testing.T) {
 	})
 	t.Run("a certificate this machine doesn't trust", func(t *testing.T) {
 		server := cloudCheckServer(t, "")
-		public := httptest.NewTLSServer(server.CloudHandler())
+		public := httptest.NewTLSServer(server.CloudHandler(noRedaction))
 		t.Cleanup(public.Close)
 		server = withAddress(t, server, public.URL)
 		if result := checked(t, server, public.URL); result.Stage != CloudStageTLS {
@@ -126,7 +126,7 @@ func TestTheCloudCheckNamesWhereItStopped(t *testing.T) {
 // failed, and no address holds it with no failure (ADR-0056).
 func TestTheCloudGateHearsEachCheck(t *testing.T) {
 	server := cloudCheckServer(t, "")
-	public := httptest.NewServer(server.CloudHandler())
+	public := httptest.NewServer(server.CloudHandler(noRedaction))
 	t.Cleanup(public.Close)
 	server.CloudGate = loop.NewCloudGate(func() (string, error) { return server.storedCloudAddress(context.Background()) },
 		func() (bool, error) { return true, nil })

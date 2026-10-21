@@ -428,6 +428,22 @@ and 2026-10-20, found the shape. Each finding is recorded on the issue:
     of the organisation. The field and its column (migration 0060) go
     with the sessions client.
 
+    **Amendment (2026-10-21, #977): how the hand-off is built.**
+    - Run I on #976 (2026-10-21) found the env file kept through a
+      compaction and on a VM whose boot id had changed, and the variable
+      read on every turn. So the loop home's matcher is `startup` alone,
+      and no re-delivery on resume is built: a `SessionStart` post whose
+      source is anything else is refused.
+    - The connections are the ones the loop's wake read, as a contained
+      loop's are: a start answers with the wake that started it. A change
+      made since reaches the loop at its next start.
+    - The hook appends the answer to `CLAUDE_ENV_FILE` (`>>`).
+    - A refused post from the loop's recorded session opens the
+      `cloud_connections` problem (ADR-0053), told to the owner as the
+      other symptoms are. The next answered post clears it.
+    - Each answered post is logged at Info with the loop, its source and
+      its session, never the values.
+
 11. **What leaves the hub.** The sessions client in
    `internal/runtime/cloud` and its fake, the event-stream read-back,
    the environment and setup-script management with its allowlist sync,

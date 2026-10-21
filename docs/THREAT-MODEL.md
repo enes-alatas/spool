@@ -253,6 +253,10 @@ own address check (ADR-0056, ADR-0059).
   so nothing an outsider sends grows it.
   `/hooks` is where a cloud session's hooks post its id and each turn
   (ADR-0059). It takes a cloud loop's token alone, as `/mcp` does.
+- **The response redactor rewrites every JSON and event-stream
+  response.** The hand-off, `text/plain`, is written past it on purpose
+  (ADR-0059), and the route's other `text/plain` answers, its refusals
+  and 404s, carry no secret.
 - **Bounds come before authentication:** headers at 16 KiB, a body at
   1 MiB (16 MiB on `/hooks`, for a turn's transcript lines), 10 seconds
   for the headers and 30 for the request, two minutes for the answer.
@@ -265,6 +269,9 @@ own address check (ADR-0056, ADR-0059).
 - **TLS is the tunnel's or proxy's,** not the hub's: the listener speaks
   plain HTTP, and what keeps a token off the wire is the HTTPS address in
   front of it (ADR-0056 item 6).
+  A tunnel that ends TLS off the hub's host, as Cloudflare Tunnel does at
+  its edge, sees the hub token in clear, and the values of the env-var
+  connections handed to each cloud session as it starts (ADR-0059).
 
 ### Cloud session: the cloud runtime
 
@@ -448,9 +455,20 @@ cloud listener (ADR-0059).
   every cloud loop carries a warning. A list never pasted, or edited on
   claude.ai after the confirm, shows only as a fetch that fails or one
   that shouldn't have worked (ADR-0059).
-- **A cloud loop has no GitHub reach of its own** until its connections
-  are handed to its session (ADR-0059, #977). It no longer starts from a
-  repo through the Claude GitHub App.
+- **A cloud loop's env-var connections are in its VM,** handed to its
+  session as it starts (ADR-0059, #977). The hub answers the session's
+  `SessionStart` post with them as `export` lines, and the hook appends
+  them to `CLAUDE_ENV_FILE`. The answer comes only to the post a start of
+  the loop waits for, once: a lifted token reads them only while the hub
+  is starting that loop. A VM Anthropic reclaims keeps the file (run I on
+  #976), so a `resume` post is never answered. Each answered hand-off is
+  logged at Info, without its values. A refused post from that session
+  opens the `cloud_connections` problem. The values are
+  in the VM's environment file, on Anthropic's disk, as long as the
+  session is kept, and outlive the loop until the operator archives it; a
+  GitHub token outlives that. `mcp-server` connections never reach a cloud
+  loop. It no longer starts from a repo through the Claude GitHub App: its
+  GitHub reach is its `GH_TOKEN` connection's.
 - **The loop can read its own token**, as a contained loop can read its
   MCP config, and use it from anywhere until its session ends. The token
   is also in the bundle the CLI uploaded, which Anthropic keeps with the

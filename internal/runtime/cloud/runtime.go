@@ -64,6 +64,11 @@ type Runtime struct {
 	Dir string
 	// Bounds are a turn's read-back bounds; zero fields are the defaults.
 	Bounds Bounds
+	// HandOff, when set, is told of each SessionStart post the runtime
+	// answered with a loop's connections, and of each it refused from the
+	// session the loop recorded: that session may have lost them, which must
+	// not go unsaid (ADR-0059).
+	HandOff func(loopID string, answered bool)
 
 	mu sync.Mutex // guards every state file
 	// waits are the hook posts sessions are waiting on.
@@ -219,6 +224,7 @@ func (cloud *Runtime) Start(_ context.Context, spec runtime.Spec) (runtime.Proc,
 		prompt: spec.AppendSystemPrompt,
 		hub:    hub,
 		bounds: cloud.Bounds.withDefaults(),
+		env:    spec.Env,
 	}
 	switch {
 	case spec.SessionID != "":
