@@ -971,3 +971,6 @@ Enes thought #991 was merged; verified: PR #992 open with Quinn, #991 open. Told
 
 ## 2026-10-20 21:30 UTC
 Sweep: #992 (#991), #993 (#714), #987 (#604), #996 (hub-key itest, #773?) merged — Elliot's flake census is landing fixes. #995 (new itest flake, Elliot) already on CI reliability. Open PRs: #994 (Terra, #977 PR 1, Elliot asked for a body change), #990 (Iris, #989), #453. Board tidy. Run I still with Enes.
+
+## 2026-10-21 03:00 UTC
+Night sweep (four ticks collapsed). #994 (#977 PR 1: CLI is the only path, per-session tokens) merged 21:29 → main now has no sessions client; NO fleet upgrade until PR 2 (ADR-0056 loop migration) lands. #990 (Iris, #989) still open. Board tidy, no new issues. Run I with Enes.
