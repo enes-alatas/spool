@@ -52,21 +52,3 @@ export function cloudSessionCondition(loop: CloudLoop, hold: string): { status: 
     alert: true,
   }
 }
-
-// GitHub's owner and repo name rules over HTTPS, as the hub reads
-// `cloud_repo` (internal/httpapi/cloud_loops.go).
-const REPO = /^https:\/\/github\.com\/[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/
-
-// Why a repo the form was given won't be taken, or '' when it will. A
-// trailing slash or .git, as a clone URL has, is dropped first, as the hub
-// drops it.
-export function cloudRepoError(raw: string): string {
-  let repo = raw.trim()
-  if (repo.endsWith('/')) repo = repo.slice(0, -1)
-  if (repo.endsWith('.git')) repo = repo.slice(0, -4)
-  if (repo === '') return ''
-  const name = repo.slice(repo.lastIndexOf('/') + 1)
-  if (!REPO.test(repo) || name === '.' || name === '..')
-    return 'A GitHub repo, as https://github.com/<owner>/<repo>.'
-  return ''
-}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CloudSettings } from './api'
-import { cloudHold, cloudRepoError, cloudSessionCondition, unnamedCloudHold } from './cloudLoop'
+import { cloudHold, cloudSessionCondition, unnamedCloudHold } from './cloudLoop'
 
 const loop = (over: Partial<Parameters<typeof cloudSessionCondition>[0]> = {}) => ({
   workstation_up: true,
@@ -78,24 +78,5 @@ describe('cloudSessionCondition', () => {
         '',
       ),
     ).toEqual({ status: 'down: HTTP 502', alert: true })
-  })
-})
-
-describe('cloudRepoError', () => {
-  it('takes a GitHub repo as the hub does, a clone URL included', () => {
-    expect(cloudRepoError('')).toBe('')
-    expect(cloudRepoError('https://github.com/enes-alatas/spool')).toBe('')
-    expect(cloudRepoError(' https://github.com/enes-alatas/spool.git/ ')).toBe('')
-  })
-
-  it('refuses another host, http, a path past the repo, and ..', () => {
-    for (const repo of [
-      'https://gitlab.com/a/b',
-      'http://github.com/a/b',
-      'https://github.com/a/b/tree/main',
-      'https://github.com/a/..',
-      'github.com/a/b',
-    ])
-      expect(cloudRepoError(repo)).not.toBe('')
   })
 })
