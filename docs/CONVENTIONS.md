@@ -530,8 +530,9 @@ agents — Claude sessions today, Spool's own loops from L2.*
 - **No em dashes in UI text** (operator's call, #331): labels, placeholders, hover
   titles, notices and timeline lines use a colon, comma, full stop or parentheses
   instead. An option label separates its value from the description with a middle
-  dot (`opus · deep agentic work`), and an empty cell shows a dim middle dot. Code
-  comments are not UI text.
+  dot (`opus · deep agentic work`), and an empty cell shows a dim middle dot.
+  `npm run lint` refuses one in a string, template or JSX text under `src/`
+  (`eslint.config.js`, #1013); comments and test files pass.
 - Message and timeline text is untrusted (a loop's words, or a stranger's) and is
   rendered as text: no HTML, no markdown. `<Linked>` (`src/components/Linked.tsx`,
   splitting with `src/linkify.ts`) is the only thing that reads it, and it makes only
