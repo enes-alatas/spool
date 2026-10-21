@@ -477,12 +477,11 @@ agents — Claude sessions today, Spool's own loops from L2.*
 - Format/lint: `gofmt`, `go vet`, `golangci-lint` — all CI-gated. No custom style
   debates beyond that and the naming rule below.
 - **Names say what they hold.** No single-letter variables, receivers included:
-  `actor`, not `a`; `stream`, not `s`. Tooling can't catch this and a reader
-  three months later can't guess it, so it's a review rule. Exceptions, because
-  they're universal in Go and carry no domain meaning: `err`, `ok`, `ctx`, `i`/`j`
-  as numeric loop indices, `t *testing.T`, and `w http.ResponseWriter` with
-  `r *http.Request` as a handler's parameters. The MVP code predates the rule —
-  don't add more, and rename what you touch.
+  `actor`, not `a`; `stream`, not `s`. Exceptions: `i`/`j` as loop indices,
+  `t *testing.T`, and `w http.ResponseWriter` with `r *http.Request` as
+  parameters. `make lint` and CI run `scripts/shortnames`; code that predates
+  the rule is fenced by its baseline, which only shrinks: rename what you
+  touch and lower the count.
 - **Stdlib-first**: see **Dependencies** under Agent workflow; the rule is the
   same in both languages.
 - Errors: wrap with `fmt.Errorf("…: %w", err)`; sentinel errors as package vars
