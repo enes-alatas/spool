@@ -353,8 +353,7 @@ cloud listener (ADR-0059).
   connection, or a 408, 429 or 5xx, and never one the hub refused.
 - **A cloud loop made under ADR-0056 starts a new session** at its next
   wake, through the CLI, on a token of its own: the hub never resumes a
-  session the sessions client created. A repo given at creation is kept
-  and no session starts from it, until #977 removes the field.
+  session the sessions client created.
 - **Attachments don't cross.** A file sent to a cloud loop is shown as
   not kept, and the loop can't attach one: the hub never reads its own
   disk for a cloud loop.

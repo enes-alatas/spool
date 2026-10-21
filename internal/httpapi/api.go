@@ -685,7 +685,7 @@ type createLoopReq struct {
 	CPUs            float64 `json:"cpus"`           // docker only; 0 = 2
 	WorkspacePath   string  `json:"workspace_path"` // bare only; empty = no workspace
 	WorkspaceMode   string  `json:"workspace_mode"` // "auto" (default) | "dir" | "none"
-	CloudRepo       string  `json:"cloud_repo"`     // cloud only; the GitHub repo its sessions start from, "" = none (ADR-0056)
+	CloudRepo       string  `json:"cloud_repo"`     // refused: the repo field went with the sessions client (ADR-0059)
 	TickIntervalSec int     `json:"tick_interval_sec"`
 	MinWakeSec      int     `json:"min_wake_sec"`
 	MaxWakeSec      int     `json:"max_wake_sec"`
@@ -793,13 +793,8 @@ func (server *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 		server.jsonErr(w, 400, "runtime must be 'bare', 'docker' or 'cloud' (or empty for the server default)")
 		return
 	}
-	repo, err := cloudRepo(req.CloudRepo)
-	if err != nil {
-		server.jsonErr(w, 400, "%v", err)
-		return
-	}
-	if repo != "" && loopRuntime != store.RuntimeCloud {
-		server.jsonErr(w, 400, "cloud_repo applies to cloud loops only")
+	if strings.TrimSpace(req.CloudRepo) != "" {
+		server.jsonErr(w, 400, "cloud_repo is gone: attach a GH_TOKEN connection to the loop and name the repo in its mission")
 		return
 	}
 
@@ -817,7 +812,6 @@ func (server *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 		IdleTimeoutSec:  defaultInt(req.IdleTimeoutSec, 90),
 		TGBotToken:      strings.TrimSpace(req.TGBotToken),
 		Runtime:         loopRuntime,
-		CloudRepo:       repo,
 		Status:          store.StatusActive,
 		CreatedAt:       nowMS,
 		UpdatedAt:       nowMS,
