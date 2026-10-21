@@ -498,6 +498,7 @@ func main() {
 	manager := loop.NewManager(deps)
 	planCap.OnChange(manager.CapChanged)
 	cloudGate.OnChange(manager.CloudGateChanged)
+	cloudRuntime.HandOff = manager.CloudHandOff
 	router = route.New(rdb, pubsub, manager, log)
 	files, err := attach.Open(filepath.Join(*dataDir, "files"))
 	if err != nil {
@@ -615,10 +616,14 @@ func main() {
 		// that looks healthy and never wakes is the worse failure.
 		{name: "mcp", srv: mcpSrv, listener: mcpListener, addr: mcpAddr},
 	}
-	cloudSwitch.handler = redact.HTTP(api.CloudHandler(), redactor)
+	// the cloud listener redacts every response but the connections a
+	// session is handed as it starts, which it writes past the redactor
+	// (ADR-0059)
+	cloudHandler := api.CloudHandler(func(next http.Handler) http.Handler { return redact.HTTP(next, redactor) })
+	cloudSwitch.handler = cloudHandler
 	if cloudListener != nil {
 		listeners = append(listeners, served{name: "cloud", listener: cloudListener, addr: cloudAddr,
-			srv: httpapi.CloudHTTPServer(redact.HTTP(api.CloudHandler(), redactor))})
+			srv: httpapi.CloudHTTPServer(cloudHandler)})
 	}
 	cloudSwitch.reopen(ctx)
 	if cloudAddr == "" {

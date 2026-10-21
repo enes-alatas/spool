@@ -33,9 +33,10 @@ var cloudSessionID = regexp.MustCompile(`^session_[A-Za-z0-9]{1,128}$`)
 // post. The posts are the loop's own word: the runtime takes from a Stop
 // post only its turn's read-back.
 type CloudHooks interface {
-	// SessionStart records sessionID as the loop's session, while a start
-	// of that loop is pending.
-	SessionStart(ctx context.Context, loopID, sessionID string, hook []byte) error
+	// SessionStart answers a SessionStart post with the loop's connections
+	// as export lines at a start of that loop, recording sessionID as its
+	// session.
+	SessionStart(ctx context.Context, loopID, sessionID string, hook []byte) ([]byte, error)
 	// Stop ends the loop's turn in flight with what the post carries.
 	// overBound says the post ran past the route's bound, and lines holds
 	// none of it: the turn ends as an error.
@@ -45,9 +46,12 @@ type CloudHooks interface {
 // handleCloudHook serves a loop home's hook post: a multipart form with the
 // hook's input as its hook field, the session id for SessionStart, and the
 // transcript's new lines for Stop. The parts are read into memory, never a
-// temporary file: the lines carry the loop's turn. 204 takes it, 409 refuses
-// it.
-func (server *Server) handleCloudHook(w http.ResponseWriter, r *http.Request) {
+// temporary file: the lines carry the loop's turn. 204 takes a Stop post,
+// 200 answers a SessionStart one with the loop's connections, and 409
+// refuses either. w is the redacting writer every response goes through;
+// handOff is the one written past it, the connections' answer, whose
+// values must arrive as they are (ADR-0059).
+func (server *Server) handleCloudHook(w, handOff http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost || server.CloudHooks == nil {
 		http.NotFound(w, r)
 		return
@@ -85,7 +89,15 @@ func (server *Server) handleCloudHook(w http.ResponseWriter, r *http.Request) {
 			refuse(http.StatusBadRequest, post.event, "no session id")
 			return
 		}
-		err = server.CloudHooks.SessionStart(r.Context(), caller.ID, post.session, post.hook)
+		// written past the redactor on purpose: the values are the answer
+		var exports []byte
+		if exports, err = server.CloudHooks.SessionStart(r.Context(), caller.ID, post.session, post.hook); err == nil {
+			handOff.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			handOff.Header().Set("Cache-Control", "no-store")
+			handOff.WriteHeader(http.StatusOK)
+			_, _ = handOff.Write(exports)
+			return
+		}
 	case "Stop":
 		err = server.CloudHooks.Stop(r.Context(), caller.ID, post.hook, post.lines, false)
 	default:

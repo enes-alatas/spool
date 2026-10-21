@@ -277,6 +277,19 @@ in its rooms as any loop's does. Each later wake is sent into the same
 session with `claude -p --cloud`. Anthropic idles the session's machine
 between turns, and the next message brings it back.
 
+A cloud loop's secrets are its env-var connections, attached as a
+contained loop's are. The hub answers the home's
+`SessionStart` post with them, and the hook writes them where the
+session's shell commands read them. A loop that needs a repo gets a
+`GH_TOKEN` connection and names the repo in its mission. A change to a
+connection reaches the loop at its next session start, not its next turn:
+stop and start the loop to apply it now. If Anthropic reclaims the idle
+machine, the session keeps them. A post the hub refuses raises a problem on the
+loop, saying its shell may be running without them. The values stay in
+the session on Anthropic's disk until you archive it on claude.ai, so
+deleting a cloud loop that misbehaved is the time to rotate them.
+`mcp-server` connections never reach a cloud loop.
+
 A cloud turn's cost is the hub's estimate. The session reports its token
 counts but no cost, so the hub prices the tokens by its own table of model
 prices. A model missing from that table leaves the turn's cost unknown, and

@@ -106,7 +106,7 @@ func homeFiles(home Home, hooksURL string) (map[string][]byte, error) {
 		// .mcp.json's servers wait for an approval no one gives otherwise
 		"enabledMcpjsonServers": []string{claude.SpoolMCPServer},
 		"hooks": map[string]any{
-			HookSessionStart: []any{map[string]any{"matcher": "startup", "hooks": hookCommand(HookSessionStart)}},
+			HookSessionStart: []any{map[string]any{"matcher": sourceStartup, "hooks": hookCommand(HookSessionStart)}},
 			HookStop:         []any{map[string]any{"hooks": hookCommand(HookStop)}},
 		},
 	}, "", "  ")
@@ -128,7 +128,8 @@ func homeFiles(home Home, hooksURL string) (map[string][]byte, error) {
 // exits 0 whatever happens, since a SessionStart hook's output is added to
 // the model's context.
 //
-// SessionStart posts the hook's input and the session's id. Stop posts the
+// SessionStart posts the hook's input and the session's id, and appends the
+// answer, the loop's connections, to CLAUDE_ENV_FILE. Stop posts the
 // hook's input and the transcript's lines after the last ones a post
 // landed, and records how far it got only once the hub took them. curl
 // tries a lost post again; one the hub refused, or that stayed lost, is
@@ -147,7 +148,10 @@ trap 'rm -rf "$tmp"' EXIT
 cat > "$tmp/hook"
 case "$1" in
 ` + HookSessionStart + `)
-  curl -sf -o /dev/null $retry -H "$auth" -F "hook=<$tmp/hook" --form-string "session=$CLAUDE_CODE_REMOTE_SESSION_ID" "$url" >/dev/null 2>&1
+  # the answer is the loop's connections, written only once it all came:
+  # a refusal never truncates the env file or puts an error page in it
+  curl -sf -o "$tmp/env" $retry -H "$auth" -F "hook=<$tmp/hook" --form-string "session=$CLAUDE_CODE_REMOTE_SESSION_ID" "$url" >/dev/null 2>&1 &&
+    [ -n "$CLAUDE_ENV_FILE" ] && cat "$tmp/env" >> "$CLAUDE_ENV_FILE" 2>/dev/null
   ;;
 ` + HookStop + `)
   t=$(sed -n 's/.*"transcript_path" *: *"\([^"]*\)".*/\1/p' "$tmp/hook")

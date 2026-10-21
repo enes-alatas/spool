@@ -36,13 +36,18 @@ type recordingHooks struct {
 	mu     sync.Mutex
 	calls  []hookCall
 	refuse error
+	// exports is what a SessionStart post is answered with.
+	exports []byte
 }
 
-func (hooks *recordingHooks) SessionStart(_ context.Context, loopID, sessionID string, hook []byte) error {
+func (hooks *recordingHooks) SessionStart(_ context.Context, loopID, sessionID string, hook []byte) ([]byte, error) {
 	hooks.mu.Lock()
 	defer hooks.mu.Unlock()
 	hooks.calls = append(hooks.calls, hookCall{event: "SessionStart", loopID: loopID, session: sessionID, hook: string(hook)})
-	return hooks.refuse
+	if hooks.refuse != nil {
+		return nil, hooks.refuse
+	}
+	return hooks.exports, nil
 }
 
 func (hooks *recordingHooks) Stop(_ context.Context, loopID string, hook, lines []byte, overBound bool) error {
@@ -58,9 +63,20 @@ func (hooks *recordingHooks) taken() []hookCall {
 	return append([]hookCall(nil), hooks.calls...)
 }
 
+// noRedaction is a cloud listener's redactor for a test with no secret to
+// redact.
+func noRedaction(next http.Handler) http.Handler { return next }
+
 // hookServer is a hub with one cloud loop and one contained loop, whose
 // cloud listener hands hook posts to hooks.
 func hookServer(t *testing.T, hooks CloudHooks) http.Handler {
+	t.Helper()
+	return hookServerRedacting(t, hooks, noRedaction)
+}
+
+// hookServerRedacting is hookServer whose cloud listener redacts through
+// redacted.
+func hookServerRedacting(t *testing.T, hooks CloudHooks, redacted func(http.Handler) http.Handler) http.Handler {
 	t.Helper()
 	db, err := sqlite.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -78,7 +94,7 @@ func hookServer(t *testing.T, hooks CloudHooks) http.Handler {
 		}
 	}
 	server := &Server{Store: db, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), CloudHooks: hooks}
-	return server.CloudHandler()
+	return server.CloudHandler(redacted)
 }
 
 // hookForm is a hook post's body as curl -F sends it, and its content type.
@@ -118,8 +134,8 @@ func TestCloudHookRouteHandsEachPostToItsLoop(t *testing.T) {
 	handler := hookServer(t, hooks)
 
 	body, contentType := hookForm(t, [2]string{"hook", startInput}, [2]string{"session", "session_01Synthetic"})
-	if code := postHook(handler, cloudLoopToken, body, contentType); code != http.StatusNoContent {
-		t.Fatalf("SessionStart: %d, want 204", code)
+	if code := postHook(handler, cloudLoopToken, body, contentType); code != http.StatusOK {
+		t.Fatalf("SessionStart: %d, want 200", code)
 	}
 	body, contentType = hookForm(t, [2]string{"hook", stopInput}, [2]string{"lines", "{\"type\":\"user\"}\n"})
 	if code := postHook(handler, cloudLoopToken, body, contentType); code != http.StatusNoContent {
@@ -204,5 +220,71 @@ func TestCloudHookRouteIsOffWithNoHooksWired(t *testing.T) {
 	body, contentType := hookForm(t, [2]string{"hook", startInput}, [2]string{"session", "session_01Synthetic"})
 	if code := postHook(handler, cloudLoopToken, body, contentType); code != http.StatusNotFound {
 		t.Errorf("with no CloudHooks: %d, want 404", code)
+	}
+}
+
+// markedWriter is a response writer that marks every response written
+// through it, standing in for the hub's redactor.
+type markedWriter struct{ http.ResponseWriter }
+
+func (writer markedWriter) WriteHeader(status int) {
+	writer.Header().Set("X-Redacted", "yes")
+	writer.ResponseWriter.WriteHeader(status)
+}
+
+func (writer markedWriter) Write(data []byte) (int, error) {
+	writer.Header().Set("X-Redacted", "yes")
+	return writer.ResponseWriter.Write(data)
+}
+
+// The connections' answer to a SessionStart post is written past the
+// redactor, on purpose, and so is nothing else on the cloud listener: a
+// refusal, a Stop post's answer, /mcp and an unknown path all go through
+// it (ADR-0059).
+func TestCloudListenerWritesOnlyTheHandOffPastTheRedactor(t *testing.T) {
+	const exports = "export GH_TOKEN='synthetic-value'\n"
+	hooks := &recordingHooks{exports: []byte(exports)}
+	handler := hookServerRedacting(t, hooks, func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { next.ServeHTTP(markedWriter{w}, r) })
+	})
+	serve := func(method, path, token string, body io.Reader, contentType string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, body)
+		req.Header.Set("Content-Type", contentType)
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, req)
+		return recorder
+	}
+
+	body, contentType := hookForm(t, [2]string{"hook", startInput}, [2]string{"session", "session_01Synthetic"})
+	answer := serve(http.MethodPost, cloudHooksPath, cloudLoopToken, body, contentType)
+	if answer.Code != http.StatusOK || answer.Body.String() != exports || answer.Header().Get("X-Redacted") != "" {
+		t.Errorf("the hand-off is %d %q (redacted %q), want 200 with the exports, past the redactor",
+			answer.Code, answer.Body.String(), answer.Header().Get("X-Redacted"))
+	}
+	if got := answer.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/plain") {
+		t.Errorf("the hand-off's content type is %q, want text/plain", got)
+	}
+
+	stopBody, stopType := hookForm(t, [2]string{"hook", stopInput}, [2]string{"lines", ""})
+	refusedBody, refusedType := hookForm(t, [2]string{"hook", startInput}, [2]string{"session", "not-a-session"})
+	for name, response := range map[string]*httptest.ResponseRecorder{
+		"a Stop post":          serve(http.MethodPost, cloudHooksPath, cloudLoopToken, stopBody, stopType),
+		"a refused post":       serve(http.MethodPost, cloudHooksPath, cloudLoopToken, refusedBody, refusedType),
+		"a post with no token": serve(http.MethodPost, cloudHooksPath, "", strings.NewReader(""), "text/plain"),
+		"/mcp":                 serve(http.MethodPost, "/mcp", cloudLoopToken, strings.NewReader(`{}`), "application/json"),
+		"an unknown path":      serve(http.MethodGet, "/api/loops", cloudLoopToken, nil, ""),
+	} {
+		if response.Header().Get("X-Redacted") != "yes" {
+			t.Errorf("%s (%d) was written past the redactor", name, response.Code)
+		}
+	}
+	hooks.refuse = errors.New("no start pending")
+	refused, refusedType := hookForm(t, [2]string{"hook", startInput}, [2]string{"session", "session_01Synthetic"})
+	if response := serve(http.MethodPost, cloudHooksPath, cloudLoopToken, refused, refusedType); response.Header().Get("X-Redacted") != "yes" ||
+		strings.Contains(response.Body.String(), "synthetic-value") {
+		t.Errorf("a refused SessionStart post (%d) was written past the redactor, or carried the exports", response.Code)
 	}
 }

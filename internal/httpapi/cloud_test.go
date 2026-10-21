@@ -59,7 +59,7 @@ func TestCloudCheckValuesAreCapped(t *testing.T) {
 // path and method: the brokered servers and the API are not on it.
 func TestCloudHandlerServesNothingElse(t *testing.T) {
 	server := &Server{}
-	handler := server.CloudHandler()
+	handler := server.CloudHandler(noRedaction)
 	status := func(method, path string) int {
 		recorder := httptest.NewRecorder()
 		handler.ServeHTTP(recorder, httptest.NewRequest(method, path, nil))

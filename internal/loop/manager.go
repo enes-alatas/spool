@@ -198,6 +198,14 @@ func (manager *Manager) CloudGateChanged() {
 	}
 }
 
+// CloudHandOff tells the loop id how its cloud session's SessionStart post
+// went (ADR-0059). An id with no actor is ignored.
+func (manager *Manager) CloudHandOff(id string, answered bool) {
+	if actor, ok := manager.Get(id); ok {
+		actor.CloudHandOff(answered)
+	}
+}
+
 // actors is every running actor, read under the lock and told outside it,
 // since telling one blocks while its command queue is full.
 func (manager *Manager) actors() []*Actor {
