@@ -175,6 +175,7 @@ workflow-lint:
 	bash scripts/release-smoke-test.sh
 	bash scripts/gh-body-guard-test.sh
 	bash scripts/fleet-mention-test.sh
+	bash scripts/commit-subjects-test.sh
 
 e2e-m1: server
 	bash scripts/e2e/m1.sh

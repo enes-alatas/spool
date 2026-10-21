@@ -42,6 +42,24 @@ jobs:
           jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH" > "$work/body"
           gh api "repos/$GH_REPO/pulls/$PR/files" --paginate -q '.[].filename' > "$work/files"
           bash scripts/other-half.sh "$(cat "$work/title")" "$work/body" "$work/files"
+      # The PR's commits against the mechanical commit-message rules
+      # (#1011): rebase merges keep each message as written (ADR-0016). The
+      # messages come through the API into a file, never through `${{ }}`.
+      # On `edited` too: the concurrency group cancels the run in flight,
+      # so a body edit landing during a push's run would otherwise leave that
+      # push unchecked. After a red other-half step as well, since the two
+      # say different things.
+      - name: the commit subjects follow the rules
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          work=$(mktemp -d)
+          gh api "repos/$GH_REPO/pulls/$PR/commits" --paginate \
+            -q '.[] | {sha, author: (.author.login // ""), parents: (.parents | length), message: .commit.message}' > "$work/commits.jsonl"
+          bash scripts/commit-subjects.sh "$work/commits.jsonl"
 
   # A PR touching a path in .github/security-review-paths is labelled for a
   # security review, and its merge request waits for that review (#742).
