@@ -103,6 +103,8 @@ The runs below were on CLI 2.1.304, 2026-10-19 and 10-20, on the operator's acco
 | The reply is `fake cloud reply: ` and the message | deliberate difference | A test can read what the hub sent. |
 | `-p --cloud <id>` takes its message in argv | partly | Run E5 sent it in argv. Whether the CLI reads it from stdin when argv carries none isn't recorded: step 2b of run I on #976 checks it, for #977. The fake reads argv only. |
 | A VM's `SessionStart` can be held back, while a `cloud-start-held` file is in `$FAKECLAUDE_STATE` | deliberate difference | A test instrument: it holds a start pending so a test can post during it. |
+| A transcript assistant line's `usage` splits `cache_creation_input_tokens` by lifetime in `cache_creation` (`ephemeral_5m_input_tokens`, `ephemeral_1h_input_tokens`) | assumed | It is the API's usage shape, and the CLI writes the message's usage as the API returned it; no cloud transcript records it. Without it the hub prices every cache write at the five-minute rate. The fake writes no split. |
+| A turn's transcript names the model it ran on in `message.model` | verified | Runs E4–E6 on #957: the last assistant line carries the model, the reply and the full token usage (ADR-0059). The hub prices the turn by it (ADR-0059). The fake names `claude-opus-5-5`, or the model in a `cloud-model` file in `$FAKECLAUDE_STATE`, a test instrument for a model the hub has no price for. |
 
 ## Directives that are test instruments
 

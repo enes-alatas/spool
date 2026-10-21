@@ -261,6 +261,29 @@ and 2026-10-20, found the shape. Each finding is recorded on the issue:
      loops observe, it caps cloud loops too, and a hub with only cloud
      loops has unknown usage.
 
+   **Amendment (2026-10-21, #978): how the estimate is served.**
+   - The price table is in the hub's `claude` package. It is keyed by
+     model ID, and also matches an ID with a snapshot date after it. It
+     prices input, output, cache reads, and cache writes; a write the
+     usage reports as one-hour is priced at the one-hour rate.
+   - The hub prices each API call of the turn, at the model and usage
+     its transcript message records, and sums the estimates: a turn may
+     change model, and a rate can depend on one call's prompt length.
+     A model with a second rate card for long prompts, as
+     `claude-haiku-5-5` has above 100K prompt tokens (input, cache reads
+     and cache writes), prices a call over that length on it. A call on
+     a model the table lacks leaves the turn's cost unknown.
+   - A cloud turn's `result` event carries `cost_estimated: true` and
+     `turn_cost_usd`, the estimate of this turn alone, and no
+     `total_cost_usd`, which would be a session's running total.
+   - A turn in the API carries `cost_estimated` beside `cost_usd`. The
+     store keeps an unknown cost as 0 with a mark of its own, so a sum
+     leaves it out, and the API serves it as null.
+   - A loop's day total keeps `cost_today_usd` as the sum of known
+     costs. Beside it, `cost_today_estimated` says whether that sum
+     includes an estimate, and `cost_today_unknown_turns` counts the
+     turns it leaves out.
+
 8. **The hub's Claude login stays sealed.** The hub runs each
    `claude --cloud` and `claude -p --cloud` with the login's current
    access token in `CLAUDE_CODE_OAUTH_TOKEN` and a config dir of its own.

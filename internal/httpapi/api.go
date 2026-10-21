@@ -434,6 +434,12 @@ type loopView struct {
 	// work out which day it belongs to, and the boundary is not the one a
 	// UTC client would guess.
 	CostDay string `json:"cost_day"`
+	// CostTodayEstimated is whether CostToday includes a cost the hub
+	// estimated, a cloud turn's, and CostTodayUnknownTurns how many of
+	// the day's turns it leaves out because their cost is unknown
+	// (ADR-0059).
+	CostTodayEstimated    bool `json:"cost_today_estimated"`
+	CostTodayUnknownTurns int  `json:"cost_today_unknown_turns"`
 	// Undelivered counts this loop's messages that never reached their
 	// surface and that nobody has dealt with: no successful retry, no
 	// dismissal (#269). No age limit — a failure stops counting when
@@ -615,8 +621,8 @@ func (server *Server) view(ctx context.Context, loopRecord *store.Loop) *loopVie
 	}
 	dayStart, day := localDayStart(time.Now())
 	out.CostDay = day
-	if cost, err := server.Store.Turns().CostSince(ctx, loopRecord.ID, dayStart); err == nil {
-		out.CostToday = cost
+	if spend, err := server.Store.Turns().CostSince(ctx, loopRecord.ID, dayStart); err == nil {
+		out.CostToday, out.CostTodayEstimated, out.CostTodayUnknownTurns = spend.USD, spend.Estimated, spend.UnknownTurns
 	}
 	if loopRecord.Runtime == store.RuntimeCloud && server.CloudSessions != nil {
 		out.CloudSessionURL = server.CloudSessions.SessionURL(loopRecord.ID)

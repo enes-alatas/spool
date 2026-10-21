@@ -1463,16 +1463,23 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 		// prices the next turn correctly. Clamped at zero: a total that
 		// failed to grow means nothing was spent — an errored turn repeats
 		// the previous figure — never that a turn earned money back.
-		turn.SessionCostUSD = res.CostUSD
-		prior, err := actor.deps.Store.Turns().SessionCost(context.Background(), actor.loop.ID, turn.SessionID)
-		if err != nil {
-			// Price it as a first turn: the whole total. Wrong when the
-			// session had earlier turns, and wrong in the direction that
-			// shows up as too much rather than as free work.
-			actor.log().Error("session cost unavailable", "err", err)
-			prior = 0
+		// A cloud turn's result carries the hub's estimate of the turn
+		// alone, and no running total (ADR-0059).
+		if res.CostEstimated {
+			turn.CostUSD, turn.CostEstimated = res.TurnCostUSD, true
+		} else {
+			turn.SessionCostUSD = res.CostUSD
+			prior, err := actor.deps.Store.Turns().SessionCost(context.Background(), actor.loop.ID, turn.SessionID)
+			if err != nil {
+				// Price it as a first turn: the whole total. Wrong when the
+				// session had earlier turns, and wrong in the direction that
+				// shows up as too much rather than as free work.
+				actor.log().Error("session cost unavailable", "err", err)
+				prior = 0
+			}
+			cost := max(0, res.CostUSD-prior)
+			turn.CostUSD = &cost
 		}
-		turn.CostUSD = max(0, res.CostUSD-prior)
 		turn.InputTokens = res.Usage.InputTokens
 		turn.OutputTokens = res.Usage.OutputTokens
 		turn.CacheReadTokens = res.Usage.CacheReadTokens

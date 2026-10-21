@@ -29,6 +29,8 @@ package main
 //
 // A "cloud-start-held" file in $FAKECLAUDE_STATE holds a new VM's
 // SessionStart back until it is removed, for at most half a minute.
+// A "cloud-model" file in $FAKECLAUDE_STATE names the model a turn's
+// transcript says it ran on, claude-opus-5-5 without one.
 
 import (
 	"crypto/rand"
@@ -202,11 +204,15 @@ func cloudTurn(session, message string, first bool) int {
 	reply := "fake cloud reply: " + message
 	turn := len(readLines(transcript))
 	usage := map[string]any{"input_tokens": 10, "output_tokens": 5, "cache_creation_input_tokens": 100, "cache_read_input_tokens": 1000}
+	model := "claude-opus-5-5"
+	if named, err := os.ReadFile(filepath.Join(filepath.Dir(cloudRoot()), "cloud-model")); err == nil {
+		model = strings.TrimSpace(string(named))
+	}
 	lines := []map[string]any{
 		{"type": "user", "uuid": fmt.Sprintf("u%d", turn), "sessionId": "local-" + session,
 			"message": map[string]any{"role": "user", "content": message}},
 		{"type": "assistant", "uuid": fmt.Sprintf("a%d", turn), "sessionId": "local-" + session,
-			"message": map[string]any{"id": fmt.Sprintf("msg_%d", turn), "model": "claude-opus-5-5", "role": "assistant",
+			"message": map[string]any{"id": fmt.Sprintf("msg_%d", turn), "model": model, "role": "assistant",
 				"content": []map[string]any{{"type": "text", "text": reply}}, "usage": usage}},
 	}
 	file, err := os.OpenFile(transcript, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
