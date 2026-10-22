@@ -36,6 +36,16 @@ survive the reading going away.
    whenever the hub's view of the cap can change: a new observation, a
    threshold change, a Resume now, and a reset.
 
+   **Amendment (2026-10-22, #1052):** an observation comes from a loop's
+   own stream, which is within that loop's reach (THREAT-MODEL), and the
+   hub keeps one record for the whole fleet. So within a window that has
+   not reset, an observation can only raise the usage, and none moves the
+   reset. A window whose reset is already past, or further off than the
+   window's span plus 15 minutes, is refused, as is a negative usage. One
+   reading can then neither lift the fleet's cap nor hold it past its
+   window; a loop can still cap the fleet each window it reports in
+   (THREAT-MODEL).
+
 4. **Unknown usage never caps.** With no observation, or with every
    observed window reset, nothing is over. The Fleet page says the usage
    is unknown. If a CLI release stops reporting the windows, the cap fails

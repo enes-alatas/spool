@@ -95,3 +95,33 @@ func assertPlanUsage(t *testing.T, view planUsageJSON, since int64) {
 		t.Fatalf("seven_day = %+v; want 17%% resetting in seven days", view.SevenDay)
 	}
 }
+
+// Within a window that has not reset, the hub's plan usage only rises: a
+// reading lower than the last one leaves it, and a window whose reset is
+// further off than its span is refused, so neither can lift or stretch the
+// fleet's plan cap (ADR-0047).
+func TestThePlanUsageOnlyRisesWithinAWindow(t *testing.T) {
+	t.Parallel()
+	srv := startServer(t, t.TempDir())
+	ws := workspaceWithScript(t, "first\n!usage 0.42 0.17 measured\n!usage 0.05 0.02 lower\n!usage 0.99 0.17 resets=86400 far\n")
+	srv.createLoop("meter", map[string]any{"workspace_path": ws})
+	srv.waitTurn("meter", firstTurnWait, func(tr turn) bool { return strings.Contains(tr.ResultText, "first") })
+
+	before := time.Now().UnixMilli()
+	srv.message("meter", "how much is used?")
+	srv.waitTurn("meter", 30*time.Second, func(tr turn) bool { return strings.Contains(tr.ResultText, "measured") })
+	measured := srv.planUsage()
+	assertPlanUsage(t, measured, before)
+
+	srv.message("meter", "and now?")
+	srv.waitTurn("meter", 30*time.Second, func(tr turn) bool { return strings.Contains(tr.ResultText, "lower") })
+	if view := srv.planUsage(); *view.FiveHour != *measured.FiveHour || *view.SevenDay != *measured.SevenDay {
+		t.Fatalf("a lower reading lowered the plan usage: %+v %+v, was %+v %+v", view.FiveHour, view.SevenDay, measured.FiveHour, measured.SevenDay)
+	}
+
+	srv.message("meter", "and now?")
+	srv.waitTurn("meter", 30*time.Second, func(tr turn) bool { return strings.Contains(tr.ResultText, "far") })
+	if view := srv.planUsage(); view.Cap != nil || *view.FiveHour != *measured.FiveHour {
+		t.Fatalf("a five-hour window resetting in a day was kept: cap %+v, five_hour %+v", view.Cap, view.FiveHour)
+	}
+}
