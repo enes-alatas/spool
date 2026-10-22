@@ -55,7 +55,11 @@ func TestAllowlistMatching(t *testing.T) {
 // so it has to be rejected where it is accepted, not discovered as a host
 // that will not resolve.
 func TestValidateRejectsWhatWouldPermitNothing(t *testing.T) {
-	for _, entry := range []string{"example.com", "example.com:8080", "  api.github.com  ", ".example.com", "host.docker.internal:65535"} {
+	for _, entry := range []string{
+		"example.com", "example.com:8080", "  api.github.com  ", ".example.com", "host.docker.internal:65535",
+		// a number short of the last label is a name, not an address (#901)
+		"1e100.net", "123.example.com", "0x7f.example.com", "example.0xg",
+	} {
 		if err := Validate(entry); err != nil {
 			t.Errorf("Validate(%q) = %v, want nil", entry, err)
 		}
@@ -75,6 +79,15 @@ func TestValidateRejectsWhatWouldPermitNothing(t *testing.T) {
 		"::1",                 // IP literals are not host names
 		"fe80::1",             // ditto, unbracketed
 		"[fe80::1]:8080",      // ditto, bracketed
+		"10.0.0.1",            // an IPv4 literal (#901)
+		"169.254.169.254:80",  // ditto, a metadata service, with a port
+		"10.0.0.1.",           // ditto, fully qualified
+		"127.1",               // ditto, a short form inet_aton reads
+		"2130706433",          // ditto, one decimal number
+		"0x7f000001",          // ditto, hexadecimal
+		"0X7F000001",          // ditto, upper case
+		"0177.0.0.1",          // ditto, octal
+		".10.0.0.1",           // ditto, as a domain form
 		"example..com",        // an empty label
 		".",                   // punctuation, not a host
 		"",                    // nothing at all
@@ -98,9 +111,10 @@ func TestValidateRejectsWhatWouldPermitNothing(t *testing.T) {
 	}
 
 	// And the rejected ones really would have permitted nothing.
-	allow := New([]string{"example.com:https", "example.com:99999", "[fe80::1]:8080", "."})
+	allow := New([]string{"example.com:https", "example.com:99999", "[fe80::1]:8080", "10.0.0.1", "0x7f000001", "."})
 	for _, port := range []string{"80", "443", "99999", "8080"} {
-		if allow.Allows("example.com", port) || allow.Allows("fe80::1", port) {
+		if allow.Allows("example.com", port) || allow.Allows("fe80::1", port) ||
+			allow.Allows("10.0.0.1", port) || allow.Allows("0x7f000001", port) {
 			t.Errorf("a malformed entry permitted something on port %s", port)
 		}
 	}

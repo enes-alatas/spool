@@ -277,7 +277,23 @@ func validHost(entry, host string) error {
 			return fmt.Errorf("%q: %q is not a host name", entry, host)
 		}
 	}
+	if numericLabel(labels[len(labels)-1]) {
+		// A name ending in a number is an IPv4 address to a URL parser and
+		// to inet_aton, in any of their spellings: 10.0.0.1, 127.1,
+		// 2130706433, 0x7f000001. No top-level domain is one (#901).
+		return fmt.Errorf("%q: host names only — an IP literal cannot be allowlisted", entry)
+	}
 	return nil
+}
+
+// numericLabel reports whether label is a number as an IPv4 parser reads
+// one: decimal (octal with a leading 0), or hexadecimal after 0x.
+func numericLabel(label string) bool {
+	digits := "0123456789"
+	if hex, ok := strings.CutPrefix(label, "0x"); ok {
+		label, digits = hex, "0123456789abcdef"
+	}
+	return strings.Trim(label, digits) == ""
 }
 
 // cutPort splits an entry at its last colon. Both halves come back raw: what

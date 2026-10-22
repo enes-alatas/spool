@@ -338,6 +338,14 @@ func main() {
 		log.Warn("--egress-allow differs from the stored extra egress hosts; the stored list is in force, edit it through /api/settings/egress",
 			"flag", allowEntries, "in_force", egressHosts)
 	}
+	// A host stored before the allowlist refused its kind permits nothing
+	// now, an IP literal included (#901). It stays on the list until an
+	// admin removes it, so the terminal says why it no longer works.
+	for _, entry := range egressHosts {
+		if err := egress.Validate(entry); err != nil {
+			log.Warn("a stored extra egress host is refused and permits nothing; remove it through /api/settings/egress", "err", err)
+		}
+	}
 	if len(egressHosts) > 0 {
 		log.Info("extra egress hosts", "hosts", egressHosts)
 	}
