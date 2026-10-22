@@ -48,6 +48,18 @@ func TestExecArgvCarriesNoEnvValues(t *testing.T) {
 	}
 }
 
+// A workstation loop set to work alone runs claude with the Agent tool
+// denied, as a bare one does (#855).
+func TestExecArgvDeniesSubagents(t *testing.T) {
+	argv, err := execArgv(runtime.Spec{LoopID: "abc", SessionID: "sess-1", NoSubagents: true}, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if joined := strings.Join(argv, " "); !strings.Contains(joined, "--disallowedTools Agent,Task") {
+		t.Fatalf("argv does not deny the Agent tool: %q", joined)
+	}
+}
+
 func TestExecArgvRequiresSession(t *testing.T) {
 	if _, err := execArgv(runtime.Spec{LoopID: "abc"}, nil, ""); err == nil {
 		t.Fatal("want the claude.Args session error to propagate")

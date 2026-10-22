@@ -14,6 +14,7 @@ import (
 type Opts struct {
 	Model              string
 	Effort             string // ""|low|medium|high|xhigh|max → --effort
+	NoSubagents        bool   // → --disallowedTools Agent,Task: the loop works alone (#855)
 	AppendSystemPrompt string
 	SessionID          string
 	ResumeID           string
@@ -31,6 +32,14 @@ type Opts struct {
 	PreToolUseHook string
 	ExtraArgs      []string
 }
+
+// AgentTools are the CLI's names for the tool that spawns a subagent: Agent,
+// as the 2.1.303 CLI's own source names it, and Task, its alias there and
+// its name in older CLIs. Both are denied, since no run has shown which one
+// the CLI Spool is verified against (TestedVersion) answers to, and denying
+// a name the CLI doesn't have is harmless. A rename lands here and nowhere
+// else (#855).
+var AgentTools = []string{"Agent", "Task"}
 
 // Args builds the argument list for a stream-json claude run. Every runtime
 // spawns claude with these arguments; only the way they are handed to a
@@ -50,6 +59,10 @@ func Args(opts Opts) ([]string, error) {
 	}
 	if opts.Effort != "" {
 		args = append(args, "--effort", opts.Effort)
+	}
+	if opts.NoSubagents {
+		// one comma-separated word, which the CLI's help allows
+		args = append(args, "--disallowedTools", strings.Join(AgentTools, ","))
 	}
 	if opts.SessionID != "" {
 		args = append(args, "--session-id", opts.SessionID)

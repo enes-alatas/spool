@@ -375,6 +375,7 @@ type loopView struct {
 	State              string  `json:"state"`
 	CurrentSessionID   string  `json:"current_session_id"`
 	Status             string  `json:"status"`
+	Subagents          string  `json:"subagents"`
 	Runtime            string  `json:"runtime"`
 	WorkspacePath      string  `json:"workspace_path"`
 	WorkstationUp      bool    `json:"workstation_up"`

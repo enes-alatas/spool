@@ -224,6 +224,7 @@ func (host *Runtime) Start(ctx context.Context, spec runtime.Spec) (runtime.Proc
 	opts := claude.Opts{
 		Model:              spec.Model,
 		Effort:             spec.Effort,
+		NoSubagents:        spec.NoSubagents,
 		SessionID:          spec.SessionID,
 		ResumeID:           spec.ResumeID,
 		AppendSystemPrompt: spec.AppendSystemPrompt,

@@ -463,6 +463,7 @@ func execArgv(spec runtime.Spec, egressEnv []string, hook string) ([]string, err
 	opts := claude.Opts{
 		Model:              spec.Model,
 		Effort:             spec.Effort,
+		NoSubagents:        spec.NoSubagents,
 		SessionID:          spec.SessionID,
 		ResumeID:           spec.ResumeID,
 		AppendSystemPrompt: spec.AppendSystemPrompt,

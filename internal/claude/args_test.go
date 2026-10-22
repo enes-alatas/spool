@@ -77,12 +77,19 @@ func TestArgsOptionalFlags(t *testing.T) {
 		{
 			name:   "defaults omit optional flags",
 			opts:   Opts{SessionID: "s-1"},
-			absent: []string{"--model", "--effort", "--append-system-prompt", "--add-dir", "--include-partial-messages"},
+			absent: []string{"--model", "--effort", "--disallowedTools", "--append-system-prompt", "--add-dir", "--include-partial-messages"},
 		},
 		{
 			name: "model and effort",
 			opts: Opts{SessionID: "s-1", Model: "claude-opus-5", Effort: "high"},
 			want: []string{"--model", "claude-opus-5", "--effort", "high"},
+		},
+		{
+			// --disallowedTools takes every word up to the next flag, so the
+			// next word must be a flag, never a value of another one
+			name: "no subagents denies the Agent tool",
+			opts: Opts{SessionID: "s-1", NoSubagents: true},
+			want: []string{"--disallowedTools", "Agent,Task", "--session-id", "s-1"},
 		},
 		{
 			name: "system prompt is passed as one argument",
