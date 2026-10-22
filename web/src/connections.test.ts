@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { Connection } from './api'
 import {
+  attachErrorText,
+  attachRefusal,
+  connectionShapes,
+  givesGitHubIdentity,
   connectionEventLabel,
   EMPTY_DRAFT,
   connectionArgs,
@@ -117,8 +121,8 @@ describe('reading a connection back', () => {
   })
 
   it('says a kind this build does not know in its own words', () => {
-    const future = stored({ kind: 'github-app' as Connection['kind'], config: {} })
-    expect(connectionKindLabel(future)).toBe('github-app')
+    const future = stored({ kind: 'gitlab-app' as Connection['kind'], config: {} })
+    expect(connectionKindLabel(future)).toBe('gitlab-app')
     const sse = stored({ kind: 'mcp-server', config: { transport: 'sse' as 'http' } })
     expect(connectionKindLabel(sse)).toBe('mcp-server · sse')
   })
@@ -142,7 +146,7 @@ describe('kindLabel', () => {
     expect(['env-var', 'mcp-server', 'github-app'].map(kindLabel)).toEqual([
       'env variable',
       'MCP server',
-      'github-app',
+      'GitHub App',
     ])
   })
 })
@@ -182,5 +186,61 @@ describe('connectionEventLabel', () => {
         'loop',
       ),
     ).toBe('gardener-old-0f1a7e revoked')
+  })
+})
+
+describe('a GitHub App connection (#887)', () => {
+  const app = { name: 'deploy-bot', shape: 'github' as const, appId: ' 123456 ', installationId: '51234567' }
+
+  it('sends the app, the installation as a number, and the key as pasted', () => {
+    expect(connectionRequest(draft({ ...app, secret: 'KEY\n', url: 'https://x' }))).toEqual({
+      name: 'deploy-bot',
+      kind: 'github-app',
+      config: { app_id: '123456', installation_id: 51234567 },
+      secret: 'KEY\n',
+    })
+  })
+
+  it('needs the app, a whole installation id and the key', () => {
+    expect(connectionSubmittable(draft({ ...app, secret: 'k' }))).toBe(true)
+    expect(connectionSubmittable(draft({ ...app }))).toBe(false)
+    expect(connectionSubmittable(draft({ ...app, secret: 'k', appId: '' }))).toBe(false)
+    for (const installationId of ['', '0', '-3', '12.5', 'abc'])
+      expect(connectionSubmittable(draft({ ...app, secret: 'k', installationId }))).toBe(false)
+  })
+
+  it('reads back as the app and its installation', () => {
+    const c = stored({ kind: 'github-app', config: { app_id: '123456', installation_id: 51234567 } })
+    expect(connectionKindLabel(c)).toBe('GitHub App')
+    expect(connectionDetail(c)).toBe('app 123456 · installation 51234567')
+  })
+
+  it('is not offered to a cloud loop', () => {
+    expect(connectionShapes(true).map((s) => s.value)).not.toContain('github')
+    expect(connectionShapes(false).map((s) => s.value)).toContain('github')
+  })
+
+  it('is a GitHub identity, as an env variable on GH_TOKEN is', () => {
+    expect(givesGitHubIdentity({ kind: 'github-app' })).toBe(true)
+    expect(givesGitHubIdentity({ kind: 'env-var', config: { env: 'GH_TOKEN' } })).toBe(true)
+    expect(givesGitHubIdentity({ kind: 'env-var', config: { env: 'NPM_TOKEN' } })).toBe(false)
+    expect(givesGitHubIdentity({ kind: 'mcp-server', config: {} })).toBe(false)
+  })
+
+  it('says a second GitHub identity is refused before the hub does', () => {
+    const second = { name: 'deploy-bot', kind: 'github-app' as const }
+    expect(attachRefusal(second, 'gardener', 'github')).toBe(
+      'gardener already acts on GitHub as github. Detach it first: a loop has one GitHub identity.',
+    )
+    expect(attachRefusal(second, 'gardener', undefined)).toBeUndefined()
+    expect(attachRefusal({ name: 'docs', kind: 'mcp-server' }, 'gardener', 'github')).toBeUndefined()
+  })
+
+  it("puts the hub's two GitHub refusals in the room's words", () => {
+    expect(attachErrorText('connection_github_taken', 'deploy-bot', 'gardener')).toMatch(
+      /^gardener already has a GitHub identity, so deploy-bot can't be attached/,
+    )
+    expect(attachErrorText('connection_runtime', 'deploy-bot', 'courier')).toMatch(/a cloud loop can't hold/)
+    expect(attachErrorText('connection_env_taken', 'x', 'y')).toBeUndefined()
   })
 })

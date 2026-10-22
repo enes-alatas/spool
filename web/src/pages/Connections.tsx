@@ -8,9 +8,10 @@ import { ConnectionForm } from '../components/ConnectionForm'
 import { ConnectionEvents, RotateForm } from '../components/ConnectionRecord'
 import { messageTime } from '../components/MessageKnot'
 
-// The org's connections (ADR-0043, #506): env variables and MCP servers,
-// each defined once under a name. A secret is typed into the create form,
-// sent, and never rendered back; the list knows only whether there is one.
+// The org's connections (ADR-0043, #506): env variables, MCP servers and
+// GitHub Apps (#887), each defined once under a name. A secret is typed into
+// the create form, sent, and never rendered back; the list knows only whether
+// there is one.
 //
 // Attaching is done from the loop's page (`LoopConnections`). An attached
 // env variable is set in its loop's env from its next turn (#640), and an
@@ -158,7 +159,7 @@ function ConnectionRow({
         </button>
         {manage && !revoked && c.has_secret && (
           <button className="text-button" onClick={() => toggle('rotate')} aria-expanded={panel === 'rotate'}>
-            Rotate value
+            {c.kind === 'github-app' ? 'Replace key' : 'Rotate value'}
           </button>
         )}
         {manage && !revoked && (
@@ -213,6 +214,8 @@ function ConnectionRow({
 
 // When a change to the connection reaches a cloud loop it is attached to.
 function CloudReach({ kind }: { kind: Connection['kind'] }) {
+  // A cloud loop can't hold one, so no row names a cloud loop beside one.
+  if (kind === 'github-app') return null
   if (kind === 'mcp-server')
     return (
       <span title="A cloud loop's session gets no MCP servers but Spool's own.">
@@ -250,11 +253,13 @@ export default function Connections() {
     <div className="page measure">
       <h1>Connections</h1>
       <p className="page-lede">
-        A connection is an env variable or an MCP server, defined once for the whole fleet and attached to
-        loops on their pages. A loop's secrets live here too: an env variable added on a loop's page is a
-        connection private to that loop, until you share it with the fleet. An attached env variable applies
-        from the loop's next turn, or a cloud loop's next session, and an MCP server from the loop's next
-        wake, though never on a cloud loop. A connection's secret is redacted from everything the hub records.
+        A connection is an env variable, an MCP server or a GitHub App, defined once for the whole fleet and
+        attached to loops on their pages. A loop's secrets live here too: an env variable added on a loop's
+        page is a connection private to that loop, until you share it with the fleet. An attached env variable
+        applies from the loop's next turn, or a cloud loop's next session, and an MCP server from the loop's
+        next wake, though never on a cloud loop. A GitHub App's key stays in the hub, and a loop holding it is
+        handed hour-long tokens; a cloud loop can't hold one. A connection's secret is redacted from
+        everything the hub records.
         {!may('manage') && ' Only an admin sees what each connection points at.'}
       </p>
       {!data ? (

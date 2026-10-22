@@ -1,18 +1,26 @@
 import type { Connection, ConnectionEvent, CreateConnectionReq } from './api'
 
 // What the Connections page's create form holds, and what it reads back
-// (#506). The API has two kinds and an mcp-server two transports; the form
-// offers the three shapes those make as one choice, because each asks for
-// different fields and an operator thinks of "an MCP server over stdio" as
-// one thing, not a kind and then a transport.
+// (#506). The API has three kinds and an mcp-server two transports; the
+// form offers the four shapes those make as one choice, because each asks
+// for different fields and an operator thinks of "an MCP server over stdio"
+// as one thing, not a kind and then a transport.
 
-export type ConnectionShape = 'env' | 'http' | 'stdio'
+export type ConnectionShape = 'env' | 'http' | 'stdio' | 'github'
 
 export const CONNECTION_SHAPES: { value: ConnectionShape; label: string }[] = [
   { value: 'env', label: 'env variable' },
   { value: 'http', label: 'MCP server · http' },
   { value: 'stdio', label: 'MCP server · stdio' },
+  { value: 'github', label: 'GitHub App' },
 ]
+
+// The shapes a loop can be given: a cloud loop can't hold a GitHub App,
+// whose tokens are fetched from a route its session has no way to reach
+// (#887), so it is not offered one.
+export function connectionShapes(cloud: boolean): { value: ConnectionShape; label: string }[] {
+  return cloud ? CONNECTION_SHAPES.filter((s) => s.value !== 'github') : CONNECTION_SHAPES
+}
 
 export interface ConnectionDraft {
   name: string
@@ -23,6 +31,10 @@ export interface ConnectionDraft {
   // One argument per line: an argument may hold a space, and splitting on
   // spaces would break it in two with no way to say otherwise.
   args: string
+  // A GitHub App's App ID or Client ID, and its installation's id, as
+  // typed: the id is sent as a number once it is one.
+  appId: string
+  installationId: string
   secret: string
 }
 
@@ -33,8 +45,14 @@ export const EMPTY_DRAFT: ConnectionDraft = {
   url: '',
   command: '',
   args: '',
+  appId: '',
+  installationId: '',
   secret: '',
 }
+
+// An installation's id: a positive whole number, as GitHub shows it in the
+// installation's settings URL. The server checks it again and says why.
+const INSTALLATION_ID = /^[1-9][0-9]*$/
 
 // The server's alphabet for a name (ADR-0043, ADR-0038). The server checks
 // it again and says why; this only keeps Create shut on a name it would
@@ -70,6 +88,13 @@ export function connectionRequest(draft: ConnectionDraft): CreateConnectionReq {
         secret,
       }
     }
+    case 'github':
+      return {
+        name,
+        kind: 'github-app',
+        config: { app_id: draft.appId.trim(), installation_id: Number(draft.installationId.trim()) },
+        secret,
+      }
   }
 }
 
@@ -86,6 +111,10 @@ export function connectionSubmittable(draft: ConnectionDraft): boolean {
       return draft.url.trim() !== ''
     case 'stdio':
       return draft.command.trim() !== ''
+    case 'github':
+      return (
+        draft.appId.trim() !== '' && INSTALLATION_ID.test(draft.installationId.trim()) && draft.secret !== ''
+      )
   }
 }
 
@@ -93,6 +122,7 @@ export function connectionSubmittable(draft: ConnectionDraft): boolean {
 // does not know reads as its raw words rather than as a shape it is not.
 export function connectionShape(c: Connection): ConnectionShape | null {
   if (c.kind === 'env-var') return 'env'
+  if (c.kind === 'github-app') return 'github'
   const transport = c.config?.transport
   if (c.kind === 'mcp-server' && (transport === 'http' || transport === 'stdio')) {
     return transport
@@ -105,6 +135,7 @@ export function connectionShape(c: Connection): ConnectionShape | null {
 export function kindLabel(kind: string): string {
   if (kind === 'env-var') return 'env variable'
   if (kind === 'mcp-server') return 'MCP server'
+  if (kind === 'github-app') return 'GitHub App'
   return kind
 }
 
@@ -117,10 +148,11 @@ export function connectionKindLabel(c: Connection): string {
   return known ? known.label : [c.kind, c.config.transport].filter(Boolean).join(' · ')
 }
 
-// What the connection points at, in one line: the env var, the URL, or the
-// command line. An argument with a space in it is quoted, so the line says
-// where one argument ends. Null for a reader the hub gives no config to
-// (#924), who is shown no line rather than an empty one.
+// What the connection points at, in one line: the env var, the URL, the
+// command line, or the GitHub App and its installation. An argument with a
+// space in it is quoted, so the line says where one argument ends. Null for
+// a reader the hub gives no config to (#924), who is shown no line rather
+// than an empty one.
 export function connectionDetail(c: Connection): string | null {
   const { config } = c
   if (!config) return null
@@ -129,6 +161,8 @@ export function connectionDetail(c: Connection): string | null {
       return config.env ?? ''
     case 'http':
       return config.url ?? ''
+    case 'github':
+      return `app ${config.app_id ?? ''} · installation ${config.installation_id ?? ''}`
     default:
       return [config.command ?? '', ...(config.args ?? []).map((a) => (/\s/.test(a) ? JSON.stringify(a) : a))]
         .filter(Boolean)
@@ -160,4 +194,36 @@ export function connectionEventLabel(e: ConnectionEvent, from: 'connection' | 'l
     case 'revoke':
       return `${subject}revoked`
   }
+}
+
+// Whether a connection gives a loop its GitHub identity: a GitHub App, or an
+// env variable on GH_TOKEN. A loop holds one at most, and the hub refuses a
+// second (`connection_github_taken`), so the attach list says so first.
+export function givesGitHubIdentity(c: Pick<Connection, 'kind' | 'config'>): boolean {
+  return c.kind === 'github-app' || (c.kind === 'env-var' && c.config?.env === 'GH_TOKEN')
+}
+
+// Why a connection can't be attached to this loop, as the attach list says
+// it beside the connection, or undefined when it can. `identity` is the
+// connection already giving the loop its GitHub identity, if any.
+export function attachRefusal(
+  c: Pick<Connection, 'name' | 'kind' | 'config'>,
+  loop: string,
+  identity: string | undefined,
+): string | undefined {
+  if (identity && identity !== c.name && givesGitHubIdentity(c)) {
+    return `${loop} already acts on GitHub as ${identity}. Detach it first: a loop has one GitHub identity.`
+  }
+  return undefined
+}
+
+// The sentence for an attach the hub refused over GitHub (#887), in place
+// of its own, which names the route behind it. Undefined for any other
+// refusal, whose own sentence stands.
+export function attachErrorText(code: string, connection: string, loop: string): string | undefined {
+  if (code === 'connection_github_taken')
+    return `${loop} already has a GitHub identity, so ${connection} can't be attached. Detach the other first: a loop has one GitHub identity.`
+  if (code === 'connection_runtime')
+    return `${connection} is a GitHub App, which a cloud loop can't hold: its session has no way to fetch the app's tokens.`
+  return undefined
 }

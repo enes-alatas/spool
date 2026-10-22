@@ -864,20 +864,26 @@ export interface Onboarding {
 // A connection (ADR-0043): an org-level env variable or tool config, defined
 // once under a name and attachable to loops (#572). An attached env-var is
 // set in its loop's env from its next turn (#640); an mcp-server reaches its loop
-// with #505. Mirrors httpapi's connectionView. The secret is write-only: a
+// with #505. A github-app (#887) holds an app's private key, which never
+// leaves the hub: a loop holding one fetches hour-long installation tokens
+// from it. Mirrors httpapi's connectionView. The secret is write-only: a
 // create sends it, and no response carries it — only whether there is one.
-export type ConnectionKind = 'env-var' | 'mcp-server'
+export type ConnectionKind = 'env-var' | 'mcp-server' | 'github-app'
 export type MCPTransport = 'http' | 'stdio'
 
 // Which fields are set is the kind's: `env` for an env-var;
-// `transport`, then `url` or `command` with `args`, for an mcp-server. Read
-// back in full, so nothing secret belongs in it. Empty fields are omitted.
+// `transport`, then `url` or `command` with `args`, for an mcp-server;
+// `app_id`, the App ID or Client ID, and `installation_id` for a
+// github-app. Read back in full, so nothing secret belongs in it. Empty
+// fields are omitted.
 export interface ConnectionConfig {
   env?: string
   transport?: MCPTransport
   url?: string
   command?: string
   args?: string[]
+  app_id?: string
+  installation_id?: number
 }
 
 export interface Connection {
@@ -1328,7 +1334,8 @@ export const api = {
   // One way: a shared value may already be in another loop's env (#600).
   shareConnection: (name: string) => req<Connection>(`/api/connections/${name}/share`, { method: 'POST' }),
   // Replaces the value (#609): every loop holding the connection ends its
-  // session with a handoff and wakes with the new one.
+  // session with a handoff and wakes with the new one. A github-app's new
+  // key ends no session, since no loop held the old one (#887).
   rotateConnection: (name: string, value: string) =>
     req<Connection>(`/api/connections/${name}/secret`, { method: 'PUT', body: JSON.stringify({ value }) }),
   // Takes it from every loop, for good (#610). Attaching it after is refused

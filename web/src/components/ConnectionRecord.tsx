@@ -45,7 +45,9 @@ export function ConnectionEvents({
 
 // A new value for a connection (#609), typed and confirmed: the old one is
 // never readable again, and every loop holding it starts a fresh session.
-// The value is write-only, as on create.
+// A GitHub App's new key ends no session, since no loop held the old one;
+// the token loops were last handed ends instead (#887). The value is
+// write-only, as on create.
 export function RotateForm({
   connection,
   onDone,
@@ -61,6 +63,8 @@ export function RotateForm({
   const what = connection.config?.env ?? connection.name
   const holders = connection.loops ?? []
 
+  const app = connection.kind === 'github-app'
+
   const rotate = async () => {
     const sessions =
       holders.length > 0
@@ -68,8 +72,10 @@ export function RotateForm({
           ? ` ${holders[0]} ends its session with a handoff and wakes with the new value.`
           : ` ${holders.join(', ')} end their sessions with a handoff and wake with the new value.`
         : ''
-    if (!confirm(`Rotate ${what}? The old value is never readable again, and stays redacted.${sessions}`))
-      return
+    const question = app
+      ? `Replace the private key of ${what}? No session ends, since no loop held the key: the token loops were last handed stops working, and the next is minted under the new key. The old key stays valid at GitHub until you delete it under the app's private keys.`
+      : `Rotate ${what}? The old value is never readable again, and stays redacted.${sessions}`
+    if (!confirm(question)) return
     setBusy(true)
     setError('')
     try {
@@ -90,17 +96,33 @@ export function RotateForm({
         rotate()
       }}
     >
-      <input
-        aria-label={`New value for ${what}`}
-        type="password"
-        autoComplete="off"
-        placeholder="new value"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        autoFocus
-      />
+      {app ? (
+        <textarea
+          aria-label={`New private key for ${what}`}
+          className="mono key-paste"
+          rows={4}
+          autoComplete="off"
+          spellCheck={false}
+          autoCapitalize="off"
+          autoCorrect="off"
+          placeholder="paste the whole new .pem file"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          autoFocus
+        />
+      ) : (
+        <input
+          aria-label={`New value for ${what}`}
+          type="password"
+          autoComplete="off"
+          placeholder="new value"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          autoFocus
+        />
+      )}
       <button className="btn sm primary" disabled={busy || !value}>
-        {busy ? 'Rotating…' : 'Rotate'}
+        {busy ? (app ? 'Replacing…' : 'Rotating…') : app ? 'Replace key' : 'Rotate'}
       </button>
       <button type="button" className="btn sm" onClick={onCancel} disabled={busy}>
         Cancel
