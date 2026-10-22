@@ -544,8 +544,18 @@ the CLI (ADR-0018).
   on (ADR-0042).
 - **A workstation can't forge packets.** It runs without `NET_RAW`, so it
   can't pose as another container on a network it is on (ADR-0028).
+- **One reading can't lift or stretch the fleet's plan cap.** A stream's
+  plan-usage reading can only raise a window that hasn't reset, never
+  moves that window's reset, and is refused with a reset beyond the
+  window's span (ADR-0047).
 
 **Doesn't hold:**
+- **The stream a loop's claude writes is within the loop's reach.** Turn
+  cost and plan usage are the CLI's own report, so a loop working against
+  the hub can understate its cost, or raise the plan usage and cap the
+  fleet, a window at a time, for as long as it runs. Resume now lifts
+  each such cap until its window resets; pausing the loop ends it
+  (ADR-0047).
 - **Inside, the loop is root in all but name.** sudo is passwordless, and
   the hook guards against slips, not an adversary (ADR-0042).
 - **Docker's other default capabilities are kept.** Only `NET_RAW` is
