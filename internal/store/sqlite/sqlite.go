@@ -175,7 +175,7 @@ type loops struct {
 // writes (ADR-0048).
 const loopCols = `id, name, mission, model, workspace_mode, workspace_path, repo_path,
 	worktree_path, branch, tick_interval_sec, min_wake_sec, max_wake_sec, idle_timeout_sec,
-	pacing, effort, subagents, tg_bot_token, tg_bot_username,
+	pacing, effort, subagents, daily_cap_usd, tg_bot_token, tg_bot_username,
 	owner_tg_user_id, owner_dm_chat_id,
 	workstation_off, outside_fleet_channel, status, current_session_id, current_pid, created_at, updated_at,
 	runtime, image, mem_mb, cpus, hub_mcp_token, rotate_pending, rotate_reason, handoff_note, prompt_hash, model_refusal,
@@ -198,7 +198,7 @@ func (table loops) scanLoop(row interface{ Scan(...any) error }) (*store.Loop, e
 	var loopRecord store.Loop
 	err := row.Scan(&loopRecord.ID, &loopRecord.Name, &loopRecord.Mission, &loopRecord.Model, &loopRecord.WorkspaceMode, &loopRecord.WorkspacePath,
 		&loopRecord.RepoPath, &loopRecord.WorktreePath, &loopRecord.Branch, &loopRecord.TickIntervalSec, &loopRecord.MinWakeSec,
-		&loopRecord.MaxWakeSec, &loopRecord.IdleTimeoutSec, &loopRecord.Pacing, &loopRecord.Effort, &loopRecord.Subagents, &loopRecord.TGBotToken,
+		&loopRecord.MaxWakeSec, &loopRecord.IdleTimeoutSec, &loopRecord.Pacing, &loopRecord.Effort, &loopRecord.Subagents, &loopRecord.DailyCapUSD, &loopRecord.TGBotToken,
 		&loopRecord.TGBotUsername,
 		&loopRecord.OwnerTGUserID, &loopRecord.OwnerDMChatID, &loopRecord.WorkstationOff, &loopRecord.OutsideFleetChannel,
 		&loopRecord.Status, &loopRecord.CurrentSessionID, &loopRecord.CurrentPID,
@@ -237,10 +237,10 @@ func (table loops) Create(ctx context.Context, loopRecord *store.Loop) error {
 	}
 	sealer := table.sealer
 	_, err := table.db.ExecContext(ctx, `INSERT INTO loops (`+loopCols+`, hub_mcp_token_hash) VALUES
-		(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		loopRecord.ID, loopRecord.Name, loopRecord.Mission, loopRecord.Model, loopRecord.WorkspaceMode, loopRecord.WorkspacePath, loopRecord.RepoPath,
 		loopRecord.WorktreePath, loopRecord.Branch, loopRecord.TickIntervalSec, loopRecord.MinWakeSec, loopRecord.MaxWakeSec,
-		loopRecord.IdleTimeoutSec, loopRecord.Pacing, loopRecord.Effort, loopRecord.Subagents, sealer.seal(loopRecord.TGBotToken), loopRecord.TGBotUsername,
+		loopRecord.IdleTimeoutSec, loopRecord.Pacing, loopRecord.Effort, loopRecord.Subagents, loopRecord.DailyCapUSD, sealer.seal(loopRecord.TGBotToken), loopRecord.TGBotUsername,
 		loopRecord.OwnerTGUserID, loopRecord.OwnerDMChatID,
 		loopRecord.WorkstationOff, loopRecord.OutsideFleetChannel, loopRecord.Status, loopRecord.CurrentSessionID, loopRecord.CurrentPID,
 		loopRecord.CreatedAt, loopRecord.UpdatedAt,
@@ -299,6 +299,9 @@ func (table loops) Edit(ctx context.Context, id string, edit store.LoopEdit) (*s
 	}
 	if edit.Subagents != nil {
 		set("subagents", *edit.Subagents)
+	}
+	if edit.DailyCapUSD != nil {
+		set("daily_cap_usd", *edit.DailyCapUSD)
 	}
 	if edit.TickIntervalSec != nil {
 		set("tick_interval_sec", *edit.TickIntervalSec)

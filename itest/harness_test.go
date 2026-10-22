@@ -399,6 +399,8 @@ type loopView struct {
 	ModelRefusal       string  `json:"model_refusal"`
 	ResolvedModel      string  `json:"resolved_model"`
 	CappedUntil        int64   `json:"capped_until"`
+	DailyCapReached    bool    `json:"daily_cap_reached"`
+	DailyCapUSD        float64 `json:"daily_cap_usd"`
 	Doing              string  `json:"doing"`
 	DoingAt            int64   `json:"doing_at"`
 	Problems           []struct {
