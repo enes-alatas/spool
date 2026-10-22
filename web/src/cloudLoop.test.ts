@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import type { CloudSettings } from './api'
-import { cloudHold, cloudSessionCondition, deleteQuestion, unnamedCloudHold } from './cloudLoop'
+import {
+  cloudHold,
+  cloudSessionCondition,
+  cutOffTurn,
+  deleteQuestion,
+  killQuestion,
+  turnUntil,
+  unnamedCloudHold,
+} from './cloudLoop'
 
 const loop = (over: Partial<Parameters<typeof cloudSessionCondition>[0]> = {}) => ({
   workstation_up: true,
@@ -120,5 +128,31 @@ describe('deleteQuestion', () => {
   })
   it("keeps the worktree question for a loop that isn't a cloud one", () => {
     expect(deleteQuestion({ name: 'gardener', runtime: 'docker' })).toMatch(/worktree is removed/)
+  })
+})
+
+describe('cloud turn', () => {
+  const turn = {
+    since: 1_000,
+    until: 7_201_000,
+    session_url: 'https://claude.ai/code/session_01x',
+    cut_off: true,
+  }
+  it('shows a cut-off turn until its bound, and not after', () => {
+    expect(cutOffTurn({ cloud_turn: turn }, 5_000)).toBe(turn)
+    expect(cutOffTurn({ cloud_turn: turn }, 7_201_000)).toBeUndefined()
+    expect(cutOffTurn({}, 5_000)).toBeUndefined()
+  })
+  it('says nothing of a turn the loop still hears', () => {
+    expect(cutOffTurn({ cloud_turn: { ...turn, cut_off: false } }, 5_000)).toBeUndefined()
+  })
+  it('asks before a kill while a turn may run, cut off or not', () => {
+    const question = `Kill @nimbus? A turn may still be running in its session on claude.ai until ${turnUntil(turn)}, and Spool can't stop it. Open the session on claude.ai to interrupt it.`
+    expect(killQuestion({ name: 'nimbus', cloud_turn: turn }, 5_000)).toBe(question)
+    expect(killQuestion({ name: 'nimbus', cloud_turn: { ...turn, cut_off: false } }, 5_000)).toBe(question)
+  })
+  it('kills unasked with no turn, or one past its bound', () => {
+    expect(killQuestion({ name: 'nimbus' }, 5_000)).toBeUndefined()
+    expect(killQuestion({ name: 'nimbus', cloud_turn: turn }, 7_201_000)).toBeUndefined()
   })
 })

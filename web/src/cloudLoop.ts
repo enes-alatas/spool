@@ -3,7 +3,7 @@
 // the hub holds it while its public address fails.
 
 import { useQuery } from '@tanstack/react-query'
-import { api, type CloudSettings, type LoopView } from './api'
+import { api, type CloudSettings, type CloudTurn, type LoopView } from './api'
 import { unmarked } from './marked'
 
 type CloudLoop = Pick<LoopView, 'workstation_up' | 'down_reason' | 'workstation_detail' | 'problems'>
@@ -71,4 +71,29 @@ export function deleteQuestion(loop: Pick<LoopView, 'name' | 'runtime' | 'connec
     ? ` Its sessions on claude.ai keep the secrets they were handed until you archive them there. It has ${attached.join(', ')} attached now; rotate them, and any you detached, if the loop misbehaved.`
     : ' Archive its sessions on claude.ai once it is gone: they keep any secrets they were handed.'
   return `Delete loop @${loop.name}?${after}`
+}
+
+// The clock time a cloud turn stops being counted, "14:32".
+export function turnUntil(turn: CloudTurn): string {
+  return new Date(turn.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+// A turn Spool can no longer hear, cut off by a stop, a kill or a rotation,
+// that may still run until its bound: the page says so, and where to
+// interrupt it. A turn past its bound, or one the loop still hears, isn't.
+export function cutOffTurn(loop: Pick<LoopView, 'cloud_turn'>, now: number): CloudTurn | undefined {
+  const turn = loop.cloud_turn
+  return turn?.cut_off && now < turn.until ? turn : undefined
+}
+
+// What the kill button asks first while a cloud turn may be running: a kill
+// stops the hub's side, never the turn in the session (ADR-0059). undefined
+// when there's nothing to warn of, and the kill goes ahead unasked.
+export function killQuestion(loop: Pick<LoopView, 'name' | 'cloud_turn'>, now: number): string | undefined {
+  const turn = loop.cloud_turn
+  if (!turn || now >= turn.until) return undefined
+  return (
+    `Kill @${loop.name}? A turn may still be running in its session on claude.ai until ${turnUntil(turn)}, ` +
+    `and Spool can't stop it. Open the session on claude.ai to interrupt it.`
+  )
 }

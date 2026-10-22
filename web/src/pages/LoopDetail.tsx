@@ -61,7 +61,8 @@ import { channelLabel } from '../channels'
 import { privateLabel, privatePerson } from '../privates'
 import { MCPReach } from '../components/MCPReach'
 import { CloudWorkstation } from '../components/CloudWorkstation'
-import { unnamedCloudHold, useCloudSettings } from '../cloudLoop'
+import { useMinuteClock } from '../components/PlanUsage'
+import { cutOffTurn, turnUntil, unnamedCloudHold, useCloudSettings } from '../cloudLoop'
 import { LeftBehind, RehomeControl } from '../components/Rehome'
 import { SpoolGlyph } from '../components/Spool'
 import { EditIcon } from '../components/Icons'
@@ -602,6 +603,23 @@ const VERB_PROGRESS: Record<string, string> = {
   poweroff: 'Powering off…',
   poweron: 'Powering on…',
   recreate: 'Recreating…',
+}
+
+// A cloud turn the loop was cut off from (ADR-0059): a stop, a kill or a
+// rotation leaves it running in its session, where Spool can't reach it, so
+// the line says until when it may run and links that session to interrupt it.
+function CloudTurnNote({ loop }: { loop: LoopView }) {
+  const turn = cutOffTurn(loop, useMinuteClock())
+  if (!turn) return null
+  return (
+    <div className="ws-warn-note">
+      A turn may still be running in this loop's session until {turnUntil(turn)}, and Spool can't stop it.{' '}
+      <a className="text-link" href={turn.session_url} target="_blank" rel="noopener noreferrer">
+        Open the session on claude.ai ↗
+      </a>{' '}
+      to interrupt it.
+    </div>
+  )
 }
 
 // The line under the loop's name when its workstation is not up: what the
@@ -1793,6 +1811,7 @@ export default function LoopDetail() {
           <Doing loop={loop} className="loop-doing" />
           <LoopProvenance loop={loop} />
           <WorkstationNote loop={loop} />
+          <CloudTurnNote loop={loop} />
           <Problems loop={loop} />
           {/* On the refusal rather than the state: a dead workstation outranks
               model_unrecognized, and the model still needs changing (#289). */}
