@@ -18,6 +18,8 @@ import { PaceRange } from '../components/PaceRange'
 import { CloudSetup } from '../components/CloudSection'
 import { firstOpenStep, type SetupStep } from '../cloud'
 import { Marked } from '../components/Marked'
+import { dailyCapHint, dailyCapValue } from '../dailyCap'
+import { CapChips } from '../components/CapChips'
 
 export default function NewLoop() {
   const nav = useNavigate()
@@ -41,6 +43,9 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
   const [effort, setEffort] = useState('')
   const [pacing, setPacing] = useState<'fixed' | 'self'>('fixed')
   const [subagents, setSubagents] = useState<Subagents>('allowed')
+  // A chip's amount, or custom with the field's text.
+  const [capChoice, setCapChoice] = useState<number | 'custom'>(0)
+  const [customCap, setCustomCap] = useState('')
   const [runtime, setRuntime] = useState('')
   const [wsPath, setWsPath] = useState('')
   const [wsInfo, setWsInfo] = useState<{ exists: boolean; is_git: boolean } | null>(null)
@@ -129,6 +134,11 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
       setError(invalid)
       return
     }
+    const capUSD = capChoice === 'custom' ? dailyCapValue(customCap) : capChoice
+    if (capUSD === undefined) {
+      setError('The custom daily cap is an amount in dollars, like 15 or 2.50.')
+      return
+    }
     setBusy(true)
     setError('')
     try {
@@ -141,6 +151,9 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
         // Never off for a cloud loop, which the hub refuses: the switch is
         // disabled there, and a choice made before switching to cloud is dropped.
         subagents: cloud ? undefined : subagents,
+        // Omitted for no cap, which is the hub's default, so a hub too old
+        // to know the field creates the same loop.
+        daily_cap_usd: capUSD || undefined,
         // Sent explicitly, so the same click means the same thing on a
         // docker hub and a bare one — but only once the hub has said what it
         // is. Omitted otherwise, which is what the form did before this
@@ -307,6 +320,25 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
           <span className="hint">{noSubagentsHint(subagents, cloud)}</span>
         </span>
       </label>
+
+      <div className="field">
+        <label id="nl-cap-label">Daily cap</label>
+        <CapChips
+          cap={capChoice === 'custom' ? 0 : capChoice}
+          custom={capChoice === 'custom'}
+          customText={customCap}
+          invalid={capChoice === 'custom' && dailyCapValue(customCap) === undefined}
+          inputId="nl-cap"
+          labelledBy="nl-cap-label"
+          onPreset={(usd) => {
+            setCapChoice(usd)
+            setCustomCap('')
+          }}
+          onCustomFocus={() => setCapChoice('custom')}
+          onCustomText={setCustomCap}
+        />
+        <div className="hint">{dailyCapHint(cloud)}</div>
+      </div>
 
       <div className="field">
         <label htmlFor="nl-ws">Workspace (optional)</label>

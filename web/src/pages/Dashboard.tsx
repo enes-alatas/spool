@@ -24,6 +24,7 @@ import { undeliveredNote } from '../messages'
 import { workstationNote } from '../workstation'
 import { unnamedCloudHold, useCloudSettings } from '../cloudLoop'
 import { useEffect, useState } from 'react'
+import { cappedBy } from '../dailyCap'
 
 function Countdown({ at }: { at: number }) {
   const [s, setS] = useState<number | null>(null)
@@ -121,6 +122,8 @@ function FleetRow({
         ? { text: 'allowlist not confirmed', bad: false, warn: true }
         : undefined))
   const undelivered = undeliveredNote(loop.undelivered)
+  // Its own daily cap takes a loop at its turn's end the same way (#652).
+  const cappedNext = fleetCapped || !!loop.daily_cap_reached
   return (
     <Link to={`/loops/${loop.name}`} className="fleet-row">
       <div className="identity">
@@ -178,7 +181,10 @@ function FleetRow({
           </span>
         )}
       </div>
-      <span className={`f-state${loop.state === 'capped' ? ' capped' : ''}`}>
+      <span
+        className={`f-state${loop.state === 'capped' ? ' capped' : ''}`}
+        title={loop.state === 'capped' ? cappedBy(loop, fleetCapped) : undefined}
+      >
         <StateDot state={loop.state} />
         {loop.state}
       </span>
@@ -196,8 +202,8 @@ function FleetRow({
             // dash under the NEXT WAKE column header, words where there is no
             // header to explain the dash.
             <>
-              <span className="only-wide dim">{fleetCapped ? 'capped next' : '·'}</span>
-              <span className="only-narrow hot">turn in progress{fleetCapped && ', then capped'}</span>
+              <span className="only-wide dim">{cappedNext ? 'capped next' : '·'}</span>
+              <span className="only-narrow hot">turn in progress{cappedNext && ', then capped'}</span>
             </>
           ) : (
             <Countdown at={nextWake(loop)} />

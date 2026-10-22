@@ -423,6 +423,30 @@ await page.unroute(cappedLoop)
 await page.unroute('**/api/settings')
 await page.unroute('**/api/loops')
 await page.unroute('**/api/plan-usage')
+// A loop at its own daily cap (#652), the fleet's plan cap not holding:
+// the pane names the cap and that raising it past today's spend, or
+// removing it, wakes the loop, the chips to change it under that spend.
+const midnight = new Date()
+midnight.setHours(24, 0, 0, 0)
+await page.route(cappedLoop, async (route) => {
+  const loop = await (await route.fetch()).json()
+  route.fulfill({
+    json: {
+      ...loop,
+      state: 'capped',
+      capped_until: midnight.getTime(),
+      cost_today_usd: 5.08,
+      daily_cap_usd: 5,
+      daily_cap_reached: true,
+    },
+  })
+})
+await page.goto(base + '/loops/gardener', { waitUntil: 'networkidle' })
+await wakePanel.locator('.cap-chips').waitFor({ timeout: 15000 })
+const loopDailyCapFile = `${outDir}/loop-daily-capped.png`
+await wakePanel.screenshot({ path: loopDailyCapFile })
+taken.push(loopDailyCapFile)
+await page.unroute(cappedLoop)
 
 // The first-run page (#581) in the states its cards draw. The fixture
 // hub has done all three pillars, so it opens on Fleet; these answers stand
