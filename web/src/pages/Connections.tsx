@@ -16,8 +16,20 @@ import { messageTime } from '../components/MessageKnot'
 // env variable is set in its loop's env from its next turn (#640), and an
 // MCP server is in its MCP config from its next wake. A connection private to one loop
 // (#600) is listed with its owner, and Share makes it the fleet's, one way.
+// A cloud loop is handed its env variables as a new session starts, and a
+// wake carries on in the same session, so a change reaches it at its next
+// session, and an MCP server never does (ADR-0059): the row says so beside
+// each cloud loop.
 
-function ConnectionRow({ c, onChanged }: { c: Connection; onChanged: () => void }) {
+function ConnectionRow({
+  c,
+  cloudLoops,
+  onChanged,
+}: {
+  c: Connection
+  cloudLoops: Set<string>
+  onChanged: () => void
+}) {
   // Rotating, revoking, sharing and deleting are an admin's (#679); the
   // record is anyone's to read.
   const manage = useMay()('manage')
@@ -115,6 +127,7 @@ function ConnectionRow({ c, onChanged }: { c: Connection; onChanged: () => void 
         ) : c.owner_loop ? (
           <>
             private to <Link to={`/loops/${c.owner_loop}`}>{c.owner_loop}</Link>
+            {cloudLoops.has(c.owner_loop) && <CloudReach kind={c.kind} />}
           </>
         ) : attached ? (
           <>
@@ -123,6 +136,7 @@ function ConnectionRow({ c, onChanged }: { c: Connection; onChanged: () => void 
               <Fragment key={loop}>
                 {i > 0 && ', '}
                 <Link to={`/loops/${loop}`}>{loop}</Link>
+                {cloudLoops.has(loop) && <CloudReach kind={c.kind} />}
               </Fragment>
             ))}
           </>
@@ -197,10 +211,31 @@ function ConnectionRow({ c, onChanged }: { c: Connection; onChanged: () => void 
   )
 }
 
+// When a change to the connection reaches a cloud loop it is attached to.
+function CloudReach({ kind }: { kind: Connection['kind'] }) {
+  if (kind === 'mcp-server')
+    return (
+      <span title="A cloud loop's session gets no MCP servers but Spool's own.">
+        {' '}
+        (cloud: never reaches it)
+      </span>
+    )
+  return (
+    <span title="A cloud loop is handed its env variables when a new session starts, and a wake carries on in the same session. Pause and resume it to apply a change now.">
+      {' '}
+      (cloud: at its next session)
+    </span>
+  )
+}
+
 export default function Connections() {
   const qc = useQueryClient()
   const may = useMay()
   const { data, isPending, error } = useQuery({ queryKey: ['connections'], queryFn: api.connections })
+  const { data: loops } = useQuery({ queryKey: ['loops'], queryFn: api.loops })
+  const cloudLoops = new Set(
+    (loops ?? []).filter((loop) => loop.runtime === 'cloud').map((loop) => loop.name),
+  )
   // Every change lands on the record too (#606).
   const refresh = () =>
     Promise.all([
@@ -218,8 +253,8 @@ export default function Connections() {
         A connection is an env variable or an MCP server, defined once for the whole fleet and attached to
         loops on their pages. A loop's secrets live here too: an env variable added on a loop's page is a
         connection private to that loop, until you share it with the fleet. An attached env variable applies
-        from the loop's next turn, an MCP server from its next wake. A connection's secret is redacted from
-        everything the hub records.
+        from the loop's next turn, or a cloud loop's next session, and an MCP server from the loop's next
+        wake, though never on a cloud loop. A connection's secret is redacted from everything the hub records.
         {!may('manage') && ' Only an admin sees what each connection points at.'}
       </p>
       {!data ? (
@@ -236,7 +271,7 @@ export default function Connections() {
           ) : (
             <div className="connection-list">
               {data.map((c) => (
-                <ConnectionRow key={c.name} c={c} onChanged={refresh} />
+                <ConnectionRow key={c.name} c={c} cloudLoops={cloudLoops} onChanged={refresh} />
               ))}
             </div>
           )}
