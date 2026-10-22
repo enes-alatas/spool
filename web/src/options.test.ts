@@ -173,6 +173,12 @@ describe('workspaceFieldNote', () => {
     )
   })
 
+  it('says a cloud loop reaches a repo through a GH_TOKEN connection', () => {
+    expect(workspaceFieldNote('cloud')).toBe(
+      'A cloud loop works in its session on claude.ai. To give it a repo, name the repo in its mission, then attach a GH_TOKEN connection on its page and pause and resume it, so its session starts with the token.',
+    )
+  })
+
   it('leaves the field open for a bare loop, and says nothing before the hub answers', () => {
     expect(workspaceFieldNote('bare')).toBe('')
     expect(workspaceFieldNote('')).toBe('')
