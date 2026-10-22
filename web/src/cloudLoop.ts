@@ -56,3 +56,19 @@ export function cloudSessionCondition(loop: CloudLoop, hold: string): { status: 
     alert: true,
   }
 }
+
+// What deleting the loop leaves behind, asked before it goes. A cloud loop
+// has no worktree. Each new session it started (a pause and resume, a kill,
+// a rotation) is still on claude.ai, holding the values of the env-var
+// connections it was handed, until the operator archives it there. So a
+// loop deleted for misbehaving names the ones attached now to rotate, and
+// any detached since (ADR-0059).
+export function deleteQuestion(loop: Pick<LoopView, 'name' | 'runtime' | 'connections'>): string {
+  if (loop.runtime !== 'cloud')
+    return `Delete loop @${loop.name}? Its worktree is removed; the branch is kept.`
+  const attached = (loop.connections ?? []).filter((c) => c.kind === 'env-var').map((c) => c.name)
+  const after = attached.length
+    ? ` Its sessions on claude.ai keep the secrets they were handed until you archive them there. It has ${attached.join(', ')} attached now; rotate them, and any you detached, if the loop misbehaved.`
+    : ' Archive its sessions on claude.ai once it is gone: they keep any secrets they were handed.'
+  return `Delete loop @${loop.name}?${after}`
+}

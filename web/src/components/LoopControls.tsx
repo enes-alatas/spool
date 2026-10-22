@@ -1,7 +1,8 @@
 import { useId, type ReactNode } from 'react'
 import { useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { api } from '../api'
+import { api, type LoopView } from '../api'
+import { deleteQuestion } from '../cloudLoop'
 import { useMay } from './Session'
 import { DeleteIcon, KillIcon, PauseIcon, ResumeIcon, RotateIcon, WakeIcon } from './Icons'
 
@@ -19,7 +20,8 @@ type Control = {
 // readers never hover. The name is the button's accessible name and the line
 // its description, so a screen reader hears both. The two that end something
 // sit apart from the rest, in the danger tone.
-export function LoopControls({ name, paused }: { name: string; paused: boolean }) {
+export function LoopControls({ loop, paused }: { loop: LoopView; paused: boolean }) {
+  const { name } = loop
   const qc = useQueryClient()
   const nav = useNavigate()
   const may = useMay()
@@ -81,7 +83,7 @@ export function LoopControls({ name, paused }: { name: string; paused: boolean }
         icon: <DeleteIcon />,
         danger: true,
         act: () => {
-          if (confirm(`Delete loop @${name}? Its worktree is removed; the branch is kept.`)) {
+          if (confirm(deleteQuestion(loop))) {
             api.deleteLoop(name, true).then(() => {
               qc.invalidateQueries({ queryKey: ['loops'] })
               nav('/')

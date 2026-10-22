@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CloudSettings } from './api'
-import { cloudHold, cloudSessionCondition, unnamedCloudHold } from './cloudLoop'
+import { cloudHold, cloudSessionCondition, deleteQuestion, unnamedCloudHold } from './cloudLoop'
 
 const loop = (over: Partial<Parameters<typeof cloudSessionCondition>[0]> = {}) => ({
   workstation_up: true,
@@ -94,5 +94,31 @@ describe('cloudSessionCondition', () => {
         '',
       ),
     ).toEqual({ status: 'down: HTTP 502', alert: true })
+  })
+})
+
+describe('deleteQuestion', () => {
+  it('names the env variables attached now, which its sessions keep, to rotate', () => {
+    expect(
+      deleteQuestion({
+        name: 'nimbus',
+        runtime: 'cloud',
+        connections: [
+          { name: 'github', kind: 'env-var' },
+          { name: 'docs-mcp', kind: 'mcp-server' },
+          { name: 'npm', kind: 'env-var' },
+        ],
+      }),
+    ).toBe(
+      'Delete loop @nimbus? Its sessions on claude.ai keep the secrets they were handed until you archive them there. It has github, npm attached now; rotate them, and any you detached, if the loop misbehaved.',
+    )
+  })
+  it('asks a cloud loop with none to have its sessions archived', () => {
+    expect(deleteQuestion({ name: 'nimbus', runtime: 'cloud', connections: [] })).toBe(
+      'Delete loop @nimbus? Archive its sessions on claude.ai once it is gone: they keep any secrets they were handed.',
+    )
+  })
+  it("keeps the worktree question for a loop that isn't a cloud one", () => {
+    expect(deleteQuestion({ name: 'gardener', runtime: 'docker' })).toMatch(/worktree is removed/)
   })
 })
