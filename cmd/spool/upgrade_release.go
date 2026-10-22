@@ -25,7 +25,7 @@ func goPlatform() string { return runtime.GOOS + "_" + runtime.GOARCH }
 // download gets a release the way OPERATIONS does by hand (ADR-0057): the
 // archive and SHA256SUMS over HTTPS into a fresh 0700 directory,
 // the sum checked, the attestation checked with gh where it can be, and
-// only spool and spool-hook taken out of the archive.
+// only spool, spool-hook and spool-github taken out of the archive.
 func (up *upgrader) download(ctx context.Context, p plan) (candidate, error) {
 	tag := p.tag
 	if tag == "" {
@@ -64,6 +64,9 @@ func (up *upgrader) download(ctx context.Context, p plan) (candidate, error) {
 		return cand, err
 	}
 	cand.spool, cand.hook = filepath.Join(dir, "spool"), filepath.Join(dir, "spool-hook")
+	if _, err := os.Stat(filepath.Join(dir, "spool-github")); err == nil {
+		cand.github = filepath.Join(dir, "spool-github")
+	}
 	cand.pulls = make([]string, 2)
 	return cand, nil
 }
@@ -187,10 +190,11 @@ func (up *upgrader) attest(ctx context.Context, archive string) error {
 	return nil
 }
 
-// extractRelease takes spool and spool-hook, regular files at the top of
-// the archive's one directory, into dir. Any entry that climbs out, is
-// absolute, or is a link, and either of the two missing or doubled, is a
-// refusal.
+// extractRelease takes spool, spool-hook and spool-github, regular files at
+// the top of the archive's one directory, into dir. Any entry that climbs
+// out, is absolute, or is a link, any of the three doubled, and spool or
+// spool-hook missing, is a refusal. A release from before #1054 has no
+// spool-github.
 func extractRelease(archive, name, dir string) error {
 	in, err := os.Open(archive)
 	if err != nil {
@@ -201,7 +205,7 @@ func extractRelease(archive, name, dir string) error {
 	if err != nil {
 		return fmt.Errorf("reading %s: %w", filepath.Base(archive), err)
 	}
-	want := map[string]string{name + "/spool": "spool", name + "/spool-hook": "spool-hook"}
+	want := map[string]string{name + "/spool": "spool", name + "/spool-hook": "spool-hook", name + "/spool-github": "spool-github"}
 	got := map[string]bool{}
 	entries := tar.NewReader(unzipped)
 	for {
@@ -245,7 +249,7 @@ func extractRelease(archive, name, dir string) error {
 		}
 	}
 	for _, file := range want {
-		if !got[file] {
+		if !got[file] && file != "spool-github" {
 			return fmt.Errorf("refusing %s: it holds no %s/%s", filepath.Base(archive), name, file)
 		}
 	}

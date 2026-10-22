@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Builds what a release carries (ADR-0052): one archive per
-# platform holding spool, with the web UI embedded, and spool-hook beside
-# it, where the hub looks for it. SHA256SUMS covers them all. The release
-# workflow runs this, and so can anyone on Linux (it takes GNU date, tar
-# and sha256sum). Every timestamp is the commit's, so the same commit
-# built with the same Go and Node gives the same bytes.
+# platform holding spool, with the web UI embedded, and spool-hook and
+# spool-github (#1054) beside it, where the hub looks for them. SHA256SUMS
+# covers them all. The release workflow runs this, and so can anyone on
+# Linux (it takes GNU date, tar and sha256sum). Every timestamp is the
+# commit's, so the same commit built with the same Go and Node gives the
+# same bytes.
 #
 #   scripts/release-build.sh [out-dir]    (default: dist)
 #
@@ -70,6 +71,8 @@ for platform in $platforms; do
 		-o "$stage/$name/spool" ./cmd/spool
 	CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch "$go" build -trimpath \
 		-o "$stage/$name/spool-hook" ./cmd/spool-hook
+	CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch "$go" build -trimpath \
+		-o "$stage/$name/spool-github" ./cmd/spool-github
 	cp LICENSE README.md "$stage/$name/"
 	tar -C "$stage" --sort=name --owner=0 --group=0 --numeric-owner \
 		--mtime="@$epoch" -cf - "$name" | gzip -n -9 > "$out/$name.tar.gz"

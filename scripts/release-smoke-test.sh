@@ -70,7 +70,8 @@ case $3 in *${STUB_ATTEST_FAILS:-NONE}*) exit 1 ;; esac
 EOF
 chmod +x "$work/bin/"*
 
-# A release: one archive holding a fake spool and spool-hook, and its sums.
+# A release: one archive holding a fake spool, spool-hook and spool-github,
+# and its sums.
 # FAKE_IMAGES is what the fake spool's `images` prints (a dry run's prints
 # nothing and fails); serving, it logs runtime ready and FAKE_LOG.
 release() { # <dir> <version> [images-plan]
@@ -91,7 +92,8 @@ images)
 esac
 EOF
 	printf '#!/bin/sh\n' >"$dir/$name/spool-hook"
-	chmod +x "$dir/$name/spool" "$dir/$name/spool-hook"
+	printf '#!/bin/sh\n' >"$dir/$name/spool-github"
+	chmod +x "$dir/$name/spool" "$dir/$name/spool-hook" "$dir/$name/spool-github"
 	tar -C "$dir" -czf "$dir/$name.tar.gz" "$name"
 	rm -rf "${dir:?}/$name"
 	(cd "$dir" && sha256sum -- *.tar.gz >SHA256SUMS)

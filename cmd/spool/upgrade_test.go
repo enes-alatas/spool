@@ -355,6 +355,38 @@ func TestUpgradeRunsTheRunbookOrder(t *testing.T) {
 	}
 }
 
+// A release that carries spool-github has it installed beside the hub, for
+// a layout that had none too (#1054); one from before it installs the
+// other two and leaves the layout without one.
+func TestUpgradeInstallsSpoolGitHubWhenTheReleaseCarriesIt(t *testing.T) {
+	env, up, _, out := newUpgradeEnv(t)
+	name := "spool_" + testTag + "_" + goPlatform()
+	env.setArchive(releaseArchive(t, []tar.Header{
+		{Name: name + "/", Typeflag: tar.TypeDir},
+		{Name: name + "/spool", Typeflag: tar.TypeReg},
+		{Name: name + "/spool-hook", Typeflag: tar.TypeReg},
+		{Name: name + "/spool-github", Typeflag: tar.TypeReg},
+	}, map[string]string{name + "/spool": "new spool", name + "/spool-hook": "new hook", name + "/spool-github": "new github"}))
+	if err := up.run(context.Background()); err != nil {
+		t.Fatalf("upgrade: %v\n%s", err, out)
+	}
+	helper := filepath.Join(env.binDir, "spool-github")
+	if got := read(t, helper); got != "new github" {
+		t.Errorf("%s holds %q; want the release's", helper, got)
+	}
+	if _, err := os.Stat(helper + ".previous"); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("a layout with no spool-github kept a previous one: %v", err)
+	}
+
+	env, up, _, out = newUpgradeEnv(t)
+	if err := up.run(context.Background()); err != nil {
+		t.Fatalf("upgrade to a release with no spool-github: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(env.binDir, "spool-github")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("a release with no spool-github left one installed: %v", err)
+	}
+}
+
 // No target means the latest release.
 func TestUpgradeWithNoTargetTakesTheLatestRelease(t *testing.T) {
 	_, up, _, out := newUpgradeEnv(t)

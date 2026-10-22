@@ -120,10 +120,11 @@ else
 	step "attestation: none on a dry run, not checked"
 fi
 
-# 4. Unpacked as the README says: spool and spool-hook side by side.
+# 4. Unpacked as the README says: spool, spool-hook and spool-github side
+# by side.
 tar -xzf "$dl/$name.tar.gz" -C "$work" || die "cannot unpack $name.tar.gz"
 bin=$work/$name
-for f in spool spool-hook; do
+for f in spool spool-hook spool-github; do
 	[ -x "$bin/$f" ] || die "$name.tar.gz has no executable $f"
 done
 got=$("$bin/spool" --version) || die "spool --version failed"

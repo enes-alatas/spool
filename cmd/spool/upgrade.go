@@ -342,7 +342,7 @@ func (up *upgrader) printPlan(p plan) {
 		target = "the latest release"
 	}
 	up.printf("spool upgrade: plan for unit %s (dry run; nothing changes)", u.Name)
-	up.printf("  binary      %s  (hook %s)", u.Bin, u.HookBin)
+	up.printf("  binary      %s  (hook %s, github helper %s)", u.Bin, u.HookBin, u.GitHubBin)
 	up.printf("  data        %s", u.DataDir)
 	up.printf("  health      http://%s/api/health", healthHost(u.Listen))
 	up.printf("  images      %s, %s", u.WorkstationImage, u.EgressImage)
@@ -358,8 +358,8 @@ func (up *upgrader) printPlan(p plan) {
 		"check "+up.backupPath+" and "+up.restorePath+" are installed and "+up.backupDir+" has room",
 		"systemctl stop "+u.Name,
 		up.backupPath+" --data-dir "+u.DataDir+" --out "+up.backupDir+" --no-volumes (the upgrade changes no workstation volume)",
-		"keep "+u.Bin+" and "+u.HookBin+" as *.previous",
-		"install the new pair there"+map[bool]string{true: " (the build is the install: the unit runs the checkout's bin/spool)", false: ""}[p.buildIsInstall],
+		"keep "+u.Bin+", "+u.HookBin+" and "+u.GitHubBin+" as *.previous, those there are",
+		"install the new build there"+map[bool]string{true: " (the build is the install: the unit runs the checkout's bin/spool)", false: ""}[p.buildIsInstall],
 		"systemctl start "+u.Name,
 		"wait up to "+up.healthWait.String()+" for /api/health and /api/version at the target; else roll back the binary, the images and the data directory",
 	)
@@ -370,10 +370,13 @@ func (up *upgrader) printPlan(p plan) {
 
 // candidate is the new build, checked before anything stops.
 type candidate struct {
-	spool, hook string   // files to install
-	version     string   // what /api/version must answer
-	pulls       []string // for a release: refs by digest, workstation then egress
-	cleanup     func()
+	spool, hook string // files to install
+	// github is spool-github, "" for a build from before it (#1054): the
+	// hub runs without it, and says so.
+	github  string
+	version string   // what /api/version must answer
+	pulls   []string // for a release: refs by digest, workstation then egress
+	cleanup func()
 }
 
 // execute runs the runbook's order (ADR-0057). Every check comes before the stop,
@@ -452,7 +455,11 @@ func (up *upgrader) execute(ctx context.Context, p plan) error {
 		if err := up.keepPrevious(p); err != nil {
 			return up.unstarted(ctx, p, retag, true, err)
 		}
-		for src, dst := range map[string]string{cand.spool: u.Bin, cand.hook: u.HookBin} {
+		installs := map[string]string{cand.spool: u.Bin, cand.hook: u.HookBin}
+		if cand.github != "" {
+			installs[cand.github] = u.GitHubBin
+		}
+		for src, dst := range installs {
 			if err := installFile(src, dst, p.ownerIfInCheckout(dst)); err != nil {
 				return up.unstarted(ctx, p, retag, true, err)
 			}
@@ -547,7 +554,7 @@ func (up *upgrader) rollback(ctx context.Context, p plan, dataFile, keysFile str
 			return err
 		}},
 		{"retag the recorded image ids onto " + u.WorkstationImage + " and " + u.EgressImage, func() error { return errors.Join(retag()...) }},
-		{"put back " + u.Bin + ".previous and " + u.HookBin + ".previous", func() error { return up.restorePrevious(p) }},
+		{"put back " + u.Bin + ".previous, " + u.HookBin + ".previous and " + u.GitHubBin + ".previous, those there are", func() error { return up.restorePrevious(p) }},
 		{"systemctl start " + u.Name, func() error {
 			_, err := up.host.Run(ctx, hostCmd{Name: "systemctl", Args: []string{"start", u.Name}})
 			return err
@@ -571,8 +578,8 @@ func (p plan) ownerIfInCheckout(path string) *user.User {
 }
 
 func (up *upgrader) keepPrevious(p plan) error {
-	for _, path := range []string{p.unit.Bin, p.unit.HookBin} {
-		if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) && path == p.unit.HookBin {
+	for _, path := range p.unit.installed() {
+		if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) && path != p.unit.Bin {
 			continue
 		}
 		if err := installFile(path, path+".previous", p.ownerIfInCheckout(path)); err != nil {
@@ -583,8 +590,8 @@ func (up *upgrader) keepPrevious(p plan) error {
 }
 
 func (up *upgrader) restorePrevious(p plan) error {
-	for _, path := range []string{p.unit.Bin, p.unit.HookBin} {
-		if _, err := os.Stat(path + ".previous"); errors.Is(err, os.ErrNotExist) && path == p.unit.HookBin {
+	for _, path := range p.unit.installed() {
+		if _, err := os.Stat(path + ".previous"); errors.Is(err, os.ErrNotExist) && path != p.unit.Bin {
 			continue
 		}
 		if err := installFile(path+".previous", path, p.ownerIfInCheckout(path)); err != nil {
@@ -749,6 +756,13 @@ func (up *upgrader) build(ctx context.Context, p plan) (candidate, error) {
 		}
 	}
 	cand.spool, cand.hook = filepath.Join(dir, "spool"), filepath.Join(dir, "spool-hook")
+	github := filepath.Join(p.checkout, "bin", "spool-github")
+	if _, err := os.Stat(github); err == nil {
+		cand.github = filepath.Join(dir, "spool-github")
+		if err := installFile(github, cand.github, nil); err != nil {
+			return cand, err
+		}
+	}
 	return cand, nil
 }
 
