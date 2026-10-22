@@ -2032,7 +2032,7 @@ export default function LoopDetail() {
             )}
           </div>
 
-          <LoopControls name={name} paused={paused} />
+          <LoopControls loop={loop} paused={paused} />
 
           <MissionPanel name={name} mission={loop.mission} hasSession={loop.current_session_id !== ''} />
 
