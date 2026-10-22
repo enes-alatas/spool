@@ -1,6 +1,6 @@
 # ADR-0043: Connections are org-level credentials and configs, defined once and attachable to loops
 
-Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572); 2026-10-04 (item 2: the env-var kind, #574); 2026-10-04 (item 5: per-loop secrets are connections, #576); 2026-10-05 (item 2: an mcp-server reaches its loop, #597); 2026-10-05 (item 1: private connections, #600); 2026-10-05 (item 5: the record of changes, #606); 2026-10-05 (item 3: rotation, #609); 2026-10-06 (item 3: revoke, #610); 2026-10-06 (item 5: the per-loop secrets routes are gone, #617); 2026-10-06 (item 2: the hub brokers an http server, #622); 2026-10-07 (item 5: an env-var change reaches the next turn, #640); 2026-10-07 (item 2: the database seals its secrets, ADR-0046); 2026-10-22 (item 4: the github-app kind, #887)
+Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572); 2026-10-04 (item 2: the env-var kind, #574); 2026-10-04 (item 5: per-loop secrets are connections, #576); 2026-10-05 (item 2: an mcp-server reaches its loop, #597); 2026-10-05 (item 1: private connections, #600); 2026-10-05 (item 5: the record of changes, #606); 2026-10-05 (item 3: rotation, #609); 2026-10-06 (item 3: revoke, #610); 2026-10-06 (item 5: the per-loop secrets routes are gone, #617); 2026-10-06 (item 2: the hub brokers an http server, #622); 2026-10-07 (item 5: an env-var change reaches the next turn, #640); 2026-10-07 (item 2: the database seals its secrets, ADR-0046); 2026-10-22 (item 4: the github-app kind, #887); 2026-10-22 (item 4: git and gh fetch the token, #1054)
 
 ## Context
 
@@ -233,6 +233,24 @@ follow in their own slice and amend this ADR.
      replaced in its last 15 minutes lives those out, and a detach ends
      nothing, since every loop holding the app shares the cached token,
      so a detached loop keeps the one it fetched, an hour at most.
+
+   **Amendment (2026-10-22, #1054): git and gh fetch the token.** A loop
+   holding a `github-app` runs nothing of its own to fetch. The hub hands
+   it `spool-github`, a helper shipped beside `spool-hook`: in the
+   workstation image for a contained loop, beside the hub binary for a
+   bare one (`--github-bin`).
+   - **git** asks it as the credential helper for `https://github.com`,
+     registered in the loop's env (`GIT_CONFIG_COUNT`), so the loop's own
+     gitconfig is untouched. It answers `x-access-token` and a fresh
+     token, each time git asks.
+   - **gh** is its link named `gh`, ahead of the real one on PATH, which
+     runs the real `gh` with `GH_TOKEN` set to a fresh token. With no
+     route in its env it passes straight through.
+   - **The env** is the route (`SPOOL_GITHUB_TOKEN_URL`) and the loop's
+     own hub token (`SPOOL_HUB_TOKEN`), handed only to a loop holding an
+     app. Attaching or detaching one closes the loop's process at its next
+     quiet boundary, as an `env-var` change does (item 5's #640
+     amendment), so the next turn runs with it.
 
 5. **Injection doesn't change in this epic's first slice.** A connection
    reaches no loop until attachments land. Loops keep getting their

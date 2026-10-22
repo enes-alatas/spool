@@ -15,6 +15,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -325,4 +327,108 @@ func TestALoopHoldsOneGitHubIdentity(t *testing.T) {
 	conflict("/api/loops/basil/connections/gh-app", "connection_github_taken")
 	conflict("/api/loops/cirrus/connections/gh-app-two", "connection_runtime")
 	hub.mustJSON("PUT", "/api/loops/aster/connections/gh-app", nil, nil) // attaching what is attached changes nothing
+}
+
+// A loop holding a github-app gets its token in git and gh with nothing of
+// its own to run (#1054). Its git asks spool-github, the credential helper
+// the hub registers through git's env config, and is answered with the
+// hub's token, a new one once the cached one is under MinLife. Its gh is
+// spool-github's link, first on PATH, which runs the real gh with GH_TOKEN
+// set. Neither token is in a reply as itself. A loop holding no app is
+// handed none of it, and the gh link with no route passes straight through.
+func TestALoopsGitAndGHGetItsGitHubAppToken(t *testing.T) {
+	t.Parallel()
+	fake, api := startFakeGitHubApps(t)
+	hub := startServerArgs(t, t.TempDir(), "--runtime", "bare", "--github-api-base", api)
+	hub.createLoop("aster", nil)
+	hub.createLoop("basil", nil)
+	hub.mustJSON("POST", "/api/connections", map[string]any{
+		"name": "gh-app", "kind": "github-app", "secret": fake.newAppKey(),
+		"config": map[string]any{"app_id": "1234", "installation_id": 42},
+	}, nil)
+	hub.mustJSON("PUT", "/api/loops/aster/connections/gh-app", nil, nil)
+
+	// A stand-in for the real gh, which says what it was run with: its
+	// arguments and the SHA-256 of the GH_TOKEN it got.
+	tools := t.TempDir()
+	writeExecutable(t, filepath.Join(tools, "gh"), "#!/bin/sh\nprintf 'gh %s: ' \"$*\"; printf %s \"$GH_TOKEN\" | sha256sum | cut -c1-12\n")
+	// Each turn runs the commands in this file, which the test rewrites:
+	// the loop's script line is the same every turn.
+	commands := filepath.Join(t.TempDir(), "turn.sh")
+	asked := map[string]bool{}
+	run := func(loopName, script string) string {
+		t.Helper()
+		if err := os.WriteFile(commands, []byte(script), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		hub.message(loopName, "go")
+		done := hub.waitTurn(loopName, 30*time.Second, func(done turn) bool {
+			return !asked[done.ID] && strings.HasPrefix(done.ResultText, "sh: ")
+		})
+		asked[done.ID] = true
+		return strings.TrimPrefix(done.ResultText, "sh: ")
+	}
+	for _, name := range []string{"aster", "basil"} {
+		hub.scriptLoop(name, "!sh sh "+commands)
+		for _, done := range hub.completed(name) {
+			asked[done.ID] = true
+		}
+	}
+	sumOf := func(token string) string {
+		sum := sha256.Sum256([]byte(token))
+		return hex.EncodeToString(sum[:])[:12]
+	}
+	const fill = "printf 'protocol=https\\nhost=github.com\\n\\n' | GIT_TERMINAL_PROMPT=0 git credential fill"
+	// the gh stand-in goes right after the link's directory, ahead of any gh
+	// the host has, so the link finds it as the real gh
+	const gh = `PATH="${PATH%%:*}:` + "TOOLS" + `:${PATH#*:}" gh`
+
+	if answer := run("aster", fill); !strings.Contains(answer, "username=x-access-token") || !strings.Contains(answer, "password=<redacted:github_app_token>") {
+		t.Fatalf("the loop's git was answered %q; want x-access-token and the token, redacted", answer)
+	}
+	first := run("aster", fill+" | sed -n 's/^password=//p' | tr -d '\\n' | sha256sum | cut -c1-12")
+	if len(fake.minted()) != 1 || first != sumOf(fake.minted()[0]) {
+		t.Fatalf("the loop's git got a token summing %q; want GitHub's first, %d minted", first, len(fake.minted()))
+	}
+	time.Sleep(fakeTokenSlack + time.Second) // the cached token now has under MinLife left
+	second := run("aster", fill+" | sed -n 's/^password=//p' | tr -d '\\n' | sha256sum | cut -c1-12")
+	if second == first || len(fake.minted()) != 2 || second != sumOf(fake.minted()[1]) {
+		t.Fatalf("past MinLife the loop's git got %q again; want a new token", second)
+	}
+	if answer := run("aster", strings.ReplaceAll(gh, "TOOLS", tools)+" pr list"); answer != "gh pr list: "+second {
+		t.Fatalf("the loop's gh ran as %q; want the real gh with the current token as GH_TOKEN", answer)
+	}
+	environment := run("aster", "env")
+	if !strings.Contains(environment, "SPOOL_HUB_TOKEN=<redacted:hub_mcp_token>") || !strings.Contains(environment, "GIT_CONFIG_COUNT=2") {
+		t.Fatalf("the loop's env: %s; want its hub token, redacted, and git's helper", environment)
+	}
+
+	if answer := run("basil", "env | grep -c '^SPOOL_GITHUB\\|^SPOOL_HUB\\|^GIT_CONFIG' || true"); answer != "0" {
+		t.Fatalf("a loop holding no app has %s of the github env, want none", answer)
+	}
+	link := filepath.Join(hub.dataDir, "github-bin", "gh")
+	if answer := run("basil", "GH_TOKEN=ghp_fixtureOWN PATH="+tools+":$PATH "+link+" auth status"); answer != "gh auth status: "+sumOf("ghp_fixtureOWN") {
+		t.Fatalf("the gh link with no route ran as %q; want the real gh with the loop's own GH_TOKEN", answer)
+	}
+
+	for _, name := range []string{"aster", "basil"} {
+		raw, _ := json.Marshal(hub.turns(name))
+		for _, token := range fake.minted() {
+			if strings.Contains(string(raw), token) {
+				t.Errorf("%s's turns hold minted token %s", name, token)
+			}
+		}
+	}
+	for _, token := range fake.minted() {
+		if strings.Contains(hub.log(), token) {
+			t.Errorf("the hub's log holds minted token %s", token)
+		}
+	}
+}
+
+func writeExecutable(t *testing.T, path, text string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(text), 0o755); err != nil {
+		t.Fatal(err)
+	}
 }

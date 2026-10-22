@@ -400,13 +400,14 @@ func (server *Server) handleLoopConnection(attach bool) http.HandlerFunc {
 	}
 }
 
-// envChanged tells a loop that an env-var connection was attached to it or
-// taken from it, so its live process closes at its next quiet boundary and
-// its next turn runs with the new env (#640). A rotation needs no call: it
-// ends the session, which spawns afresh. An mcp-server's config is read at
-// spawn too, and is left to its next wake.
+// envChanged tells a loop that an env-var or a github-app connection was
+// attached to it or taken from it, so its live process closes at its next
+// quiet boundary and its next turn runs with the new env (#640): a
+// github-app gives the loop its token route and git's helper (#1054). A
+// rotation needs no call: it ends the session, which spawns afresh. An
+// mcp-server's config is read at spawn too, and is left to its next wake.
 func (server *Server) envChanged(connection *store.Connection, loopID string) {
-	if connection.Kind != store.ConnectionEnvVar {
+	if connection.Kind != store.ConnectionEnvVar && connection.Kind != store.ConnectionGitHubApp {
 		return
 	}
 	if actor, ok := server.Manager.Get(loopID); ok {

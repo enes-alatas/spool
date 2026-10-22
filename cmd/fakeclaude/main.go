@@ -86,6 +86,9 @@
 // "!github-token" fetches the loop's GitHub token from the hub's token
 // route, as the workstation's helper would, and replies "github token:
 // <its SHA-256, short> <the token>" or "github token: error: …" (#887).
+// "!sh <command>" runs the command in sh, with the env the fake was
+// spawned with, and replies "sh: <its output>" (#1054): a loop's shell, as
+// the Bash tool's would run it, so a test sees what git and gh get there.
 // "!mcp-config-contains <text>" replies "mcp-config contains: yes" or
 // "mcp-config contains: no" for whether the mcp-config claude was started
 // with holds text: how a test sees that a secret is absent from a file the
@@ -537,6 +540,8 @@ func main() {
 				}
 			case line == "!github-token":
 				reply = "github token: " + githubToken(mcpConfig)
+			case strings.HasPrefix(line, "!sh "):
+				reply = "sh: " + shell(cwd, strings.TrimPrefix(line, "!sh "))
 			case strings.HasPrefix(line, "!get "):
 				// A loop making an outbound request — the move an exfiltration
 				// would use, and the only way a tier-2 test can see the egress
@@ -1186,4 +1191,17 @@ func countLoginCheck(stateDir string) {
 	}
 	_, _ = file.WriteString("check\n")
 	_ = file.Close()
+}
+
+// shell runs command in sh from cwd and returns its output, stdout and
+// stderr together, with how it failed if it did.
+func shell(cwd, command string) string {
+	cmd := exec.Command("sh", "-c", command)
+	cmd.Dir = cwd
+	out, err := cmd.CombinedOutput()
+	text := strings.TrimSpace(string(out))
+	if err != nil {
+		return text + " (" + err.Error() + ")"
+	}
+	return text
 }

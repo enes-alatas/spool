@@ -17,11 +17,13 @@ LDFLAGS  := -X main.buildVersion=$(VERSION) -X main.buildCommit=$(COMMIT) -X mai
 build: ui
 	$(GO) build -ldflags "$(LDFLAGS)" -o bin/spool ./cmd/spool
 	$(GO) build -o bin/spool-hook ./cmd/spool-hook
+	$(GO) build -o bin/spool-github ./cmd/spool-github
 
 # backend-only build (uses whatever is in web/dist, placeholder included)
 server:
 	$(GO) build -ldflags "$(LDFLAGS)" -o bin/spool ./cmd/spool
 	$(GO) build -o bin/spool-hook ./cmd/spool-hook
+	$(GO) build -o bin/spool-github ./cmd/spool-github
 
 fakeclaude:
 	$(GO) build -o bin/fakeclaude ./cmd/fakeclaude
@@ -33,12 +35,15 @@ egress:
 	CGO_ENABLED=0 GOOS=linux GOARCH=$$($(GO) env GOARCH) \
 	    $(GO) build -o bin/spool-egress-$$($(GO) env GOARCH) ./cmd/spool-egress
 
-# The PreToolUse hook for the workstation image (ADR-0042), built static,
-# for Linux, and arch-suffixed as the egress proxy is. bin/spool-hook, built
-# with the hub, is the host's own for bare loops.
+# The PreToolUse hook (ADR-0042) and spool-github (#1054) for the workstation
+# image, built static, for Linux, and arch-suffixed as the egress proxy is.
+# bin/spool-hook and bin/spool-github, built with the hub, are the host's own
+# for bare loops.
 hook:
 	CGO_ENABLED=0 GOOS=linux GOARCH=$$($(GO) env GOARCH) \
 	    $(GO) build -o bin/spool-hook-$$($(GO) env GOARCH) ./cmd/spool-hook
+	CGO_ENABLED=0 GOOS=linux GOARCH=$$($(GO) env GOARCH) \
+	    $(GO) build -o bin/spool-github-$$($(GO) env GOARCH) ./cmd/spool-github
 
 # tier 2 (docs/QUALITY.md): real binary + fakeclaude over HTTP. The docker
 # workstation suites run against a real daemon and the fakeclaude image;
@@ -91,6 +96,8 @@ image-multiarch:
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GO) build -o bin/spool-egress-arm64 ./cmd/spool-egress
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build -o bin/spool-hook-amd64 ./cmd/spool-hook
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GO) build -o bin/spool-hook-arm64 ./cmd/spool-hook
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build -o bin/spool-github-amd64 ./cmd/spool-github
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GO) build -o bin/spool-github-arm64 ./cmd/spool-github
 	docker buildx build --platform linux/amd64,linux/arm64 \
 	    -t spool-workstation -f docker/workstation/Dockerfile \
 	    --build-arg CLAUDE_CODE_CACHEBUST=$(CLAUDE_CODE_CACHEBUST) .

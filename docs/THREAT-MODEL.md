@@ -673,7 +673,9 @@ ADR-0045 is the whole record. In short:
   holds no Claude credential: its MCP token is also its login to the
   Claude proxy (ADR-0058). A loop holding a github-app holds no key,
   only the installation tokens it fetches, each an hour old at most
-  (#887).
+  (#887). Its MCP token is in its env too, as `SPOOL_HUB_TOKEN`, for
+  `spool-github` to fetch them with: no new credential, since its MCP
+  config already holds it (#1054).
   Whatever steers the loop can use them.
 - **Spool keeps them** out of everything it writes and relays, and, behind
   the wall, away from hosts off the allowlist.

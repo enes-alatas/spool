@@ -490,6 +490,11 @@ func execArgv(spec runtime.Spec, egressEnv []string, hook string) ([]string, err
 // PreToolUse hook (docker/workstation/Dockerfile).
 const WorkstationHook = "/usr/local/bin/spool-hook"
 
+// WorkstationGitHub is where the default workstation image carries
+// spool-github, with its gh link ahead of the real gh on PATH
+// (docker/workstation/Dockerfile, #1054).
+const WorkstationGitHub = "/usr/local/bin/spool-github"
+
 // mcpConfigPath is where a workstation keeps its loop's hub MCP config,
 // written fresh at every wake.
 const mcpConfigPath = runtime.WorkstationHome + "/.spool-mcp.json"

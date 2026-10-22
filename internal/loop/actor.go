@@ -174,6 +174,10 @@ type Deps struct {
 	// DataDir is the hub's data directory, where a rehomed loop's
 	// auto-memory waits for its workstation (#624). "" carries none.
 	DataDir string
+	// GitHubHelpers is spool-github by runtime kind, as each runtime's
+	// workstation runs it (#1054). A loop holding a github-app on a runtime
+	// listed is handed it; on any other, its git and gh get no token.
+	GitHubHelpers map[string]GitHubHelper
 }
 
 func (deps *Deps) log() *slog.Logger {
@@ -406,11 +410,12 @@ func (actor *Actor) Rotate(reason string) error {
 	return <-reply
 }
 
-// RefreshEnv tells the loop that an env-var connection it holds was
-// attached or detached (#640). A process is spawned with its env, so the
-// live one closes at its next quiet boundary, now if it is idle and after
-// its turn if not, and the next turn spawns with the new env on the same
-// session. A loop with no process reads the env at its next wake anyway.
+// RefreshEnv tells the loop that an env-var or a github-app connection it
+// holds was attached or detached (#640, #1054). A process is spawned with
+// its env, so the live one closes at its next quiet boundary, now if it is
+// idle and after its turn if not, and the next turn spawns with the new env
+// on the same session. A loop with no process reads the env at its next
+// wake anyway.
 func (actor *Actor) RefreshEnv() {
 	actor.cmds <- cmd{kind: "env"}
 }
@@ -783,6 +788,7 @@ func (actor *Actor) wake() {
 		// to the proxy alone (FIDELITY.md)
 		system["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
 	}
+	actor.githubEnv(system, loopRuntime.Kind(), connections)
 	spec.Env = buildExecEnv(system, connections)
 	// The loop still reads its pre-wake state while Ensure builds or pulls
 	// the workstation, so this is the only sign that a wake is under way.
@@ -2215,7 +2221,11 @@ const ClaudeProxyPath = "/claude"
 
 // claudeProxyURL is the Claude proxy as the loop's workstation reaches it,
 // beside its hub MCP endpoint, "" when the loop has none.
-func (actor *Actor) claudeProxyURL() string {
+func (actor *Actor) claudeProxyURL() string { return actor.loopListenerURL(ClaudeProxyPath) }
+
+// loopListenerURL is path on the loop listener as the loop's workstation
+// reaches it, beside its hub MCP endpoint, "" when the loop has none.
+func (actor *Actor) loopListenerURL(path string) string {
 	if actor.deps.MCPEndpoint == nil || actor.loop.HubMCPToken == "" {
 		return ""
 	}
@@ -2223,12 +2233,8 @@ func (actor *Actor) claudeProxyURL() string {
 	if url == "" {
 		return ""
 	}
-	return strings.TrimSuffix(url, "/mcp") + ClaudeProxyPath
+	return strings.TrimSuffix(url, "/mcp") + path
 }
-
-// GitHubTokenPath is where the loop listener serves a fresh installation
-// token to a loop that holds a github-app connection (#887).
-const GitHubTokenPath = "/github/token"
 
 // SpoolMCPServer is the hub's own server's name in a loop's --mcp-config,
 // which no mcp-server connection may take.
