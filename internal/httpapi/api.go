@@ -486,10 +486,15 @@ type loopView struct {
 	// hub_unreachable (ADR-0021).
 	DownReason string `json:"down_reason"`
 	// CappedUntil is when a capped loop wakes: the latest reset among the
-	// plan windows over their thresholds (ADR-0047). 0 for a loop whose
-	// state is not capped, even while a cap holds, since a loop in its turn
-	// is still busy.
+	// plan windows over their thresholds (ADR-0047), or the next local day
+	// for a loop at its own daily cap (#652), whichever is later. 0 for a
+	// loop whose state is not capped, even while a cap holds, since a loop
+	// in its turn is still busy.
 	CappedUntil int64 `json:"capped_until"`
+	// DailyCapReached is whether the loop's own daily cap holds, so a capped
+	// loop's page can say which cap it is under. It is true for a loop in
+	// its turn too, which a cap takes at the turn's end.
+	DailyCapReached bool `json:"daily_cap_reached"`
 	// Problems are the open problems the health check found with the loop,
 	// oldest first, and Health sums them up for the Fleet row: ok with
 	// none, failing while the workstation is down, and otherwise warning
@@ -557,8 +562,7 @@ type mcpServerView struct {
 // own location. That is also what makes it survive a DST change, where the
 // local day is 23 or 25 hours long and no fixed duration is the day.
 func localDayStart(now time.Time) (int64, string) {
-	year, month, day := now.Date()
-	start := time.Date(year, month, day, 0, 0, 0, 0, now.Location())
+	start, _ := loop.LocalDay(now)
 	return start.UnixMilli(), start.Format("2006-01-02")
 }
 
@@ -597,8 +601,16 @@ func (server *Server) view(ctx context.Context, loopRecord *store.Loop) *loopVie
 		if problems := actor.Problems(); len(problems) > 0 {
 			out.Problems, out.Health = problems, loop.Health(problems)
 		}
+		dailyUntil := actor.DailyCapUntil()
+		out.DailyCapReached = dailyUntil > 0
 		if out.State == loop.StateCapped {
-			out.CappedUntil = server.PlanCap.At(time.Now().UnixMilli()).Until
+			nowMS := time.Now().UnixMilli()
+			out.CappedUntil = dailyUntil
+			if server.PlanCap != nil {
+				if planCap := server.PlanCap.At(nowMS); planCap.Holds(nowMS) {
+					out.CappedUntil = max(out.CappedUntil, planCap.Until)
+				}
+			}
 		}
 		if reach, ok := actor.MCPReach(); ok {
 			out.MCPSessionID, out.ToolCount = reach.SessionID, &reach.ToolCount
@@ -709,6 +721,7 @@ type createLoopReq struct {
 	Effort          string  `json:"effort"`         // ""|low|medium|high|xhigh|max
 	Pacing          string  `json:"pacing"`         // ""(=fixed)|fixed|self
 	Subagents       string  `json:"subagents"`      // ""(=allowed)|allowed|off
+	DailyCapUSD     float64 `json:"daily_cap_usd"`  // 0 = no cap
 	Runtime         string  `json:"runtime"`        // ""(=server default)|bare|docker|cloud; set at creation; a bare loop moves to docker only through POST .../rehome (ADR-0018)
 	Image           string  `json:"image"`          // docker only; "" = the server's default image
 	MemMB           int     `json:"mem_mb"`         // docker only; 0 = 4096 (ADR-0017)
@@ -749,6 +762,19 @@ func validSubagents(subagents string) bool {
 func subagentsRefusal(subagents, loopRuntime string) string {
 	if subagents == store.SubagentsOff && loopRuntime == store.RuntimeCloud {
 		return "subagents can't be turned off on a cloud loop: the hub starts its session with no say over its tools"
+	}
+	return ""
+}
+
+// maxDailyCapUSD bounds a loop's daily cap: past it a cap is a typo, not
+// a limit anyone means.
+const maxDailyCapUSD = 100000
+
+// dailyCapRefusal says why capUSD can't be a loop's daily cap, or "" when
+// it can (#652).
+func dailyCapRefusal(capUSD float64) string {
+	if capUSD < 0 || capUSD > maxDailyCapUSD {
+		return fmt.Sprintf("daily_cap_usd must be between 0 (no cap) and %d", maxDailyCapUSD)
 	}
 	return ""
 }
@@ -848,6 +874,10 @@ func (server *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 		server.jsonErr(w, 400, "%s", refusal)
 		return
 	}
+	if refusal := dailyCapRefusal(req.DailyCapUSD); refusal != "" {
+		server.jsonErr(w, 400, "%s", refusal)
+		return
+	}
 	if strings.TrimSpace(req.CloudRepo) != "" {
 		server.jsonErr(w, 400, "cloud_repo is gone: attach a GH_TOKEN connection to the loop and name the repo in its mission")
 		return
@@ -862,6 +892,7 @@ func (server *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 		Effort:          req.Effort,
 		Pacing:          defaultStr(req.Pacing, store.PacingFixed),
 		Subagents:       defaultStr(req.Subagents, store.SubagentsAllowed),
+		DailyCapUSD:     req.DailyCapUSD,
 		TickIntervalSec: defaultInt(req.TickIntervalSec, 1800),
 		MinWakeSec:      defaultInt(req.MinWakeSec, 300),
 		MaxWakeSec:      defaultInt(req.MaxWakeSec, 14400),
@@ -1040,16 +1071,17 @@ func missionChanged(before, after string) bool {
 }
 
 type patchLoopReq struct {
-	Mission         *string `json:"mission"`
-	Model           *string `json:"model"`
-	Effort          *string `json:"effort"`
-	Pacing          *string `json:"pacing"`
-	Subagents       *string `json:"subagents"`
-	TickIntervalSec *int    `json:"tick_interval_sec"`
-	MinWakeSec      *int    `json:"min_wake_sec"`
-	MaxWakeSec      *int    `json:"max_wake_sec"`
-	IdleTimeoutSec  *int    `json:"idle_timeout_sec"`
-	TGBotToken      *string `json:"tg_bot_token"`
+	Mission         *string  `json:"mission"`
+	Model           *string  `json:"model"`
+	Effort          *string  `json:"effort"`
+	Pacing          *string  `json:"pacing"`
+	Subagents       *string  `json:"subagents"`
+	DailyCapUSD     *float64 `json:"daily_cap_usd"`
+	TickIntervalSec *int     `json:"tick_interval_sec"`
+	MinWakeSec      *int     `json:"min_wake_sec"`
+	MaxWakeSec      *int     `json:"max_wake_sec"`
+	IdleTimeoutSec  *int     `json:"idle_timeout_sec"`
+	TGBotToken      *string  `json:"tg_bot_token"`
 	// SlackAppToken and SlackBotToken attach, rotate or (both "") detach the
 	// loop's Slack app. Both or neither.
 	SlackAppToken  *string `json:"slack_app_token"`
@@ -1128,6 +1160,13 @@ func (server *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		edit.Subagents = &subagents
+	}
+	if req.DailyCapUSD != nil {
+		if refusal := dailyCapRefusal(*req.DailyCapUSD); refusal != "" {
+			server.jsonErr(w, 400, "%s", refusal)
+			return
+		}
+		edit.DailyCapUSD = req.DailyCapUSD
 	}
 	if req.InFleetChannel != nil {
 		outside := !*req.InFleetChannel

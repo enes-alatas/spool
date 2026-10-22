@@ -293,6 +293,8 @@ type Loop struct {
 	Pacing          string `json:"pacing"`    // fixed|self
 	Effort          string `json:"effort"`    // ""|low|medium|high|xhigh|max
 	Subagents       string `json:"subagents"` // allowed|off
+	// DailyCapUSD is the loop's own daily USD cap, 0 for none (#652).
+	DailyCapUSD float64 `json:"daily_cap_usd"`
 
 	TGBotToken    string `json:"-"`
 	TGBotUsername string `json:"tg_bot_username"`
@@ -804,11 +806,12 @@ type InboxItem struct {
 // loop's group traffic dead with nothing in the control room to explain it
 // (#164, and the same mechanism as #161).
 type LoopEdit struct {
-	Mission   *string
-	Model     *string
-	Effort    *string
-	Pacing    *string
-	Subagents *string
+	Mission     *string
+	Model       *string
+	Effort      *string
+	Pacing      *string
+	Subagents   *string
+	DailyCapUSD *float64
 
 	TickIntervalSec *int
 	MinWakeSec      *int

@@ -45,8 +45,9 @@ const (
 	// as model_refusal. It outranks pause, because pause will not fix it,
 	// and yields to a dead workstation, which must be fixed first.
 	StateModelUnrecognized = "model_unrecognized"
-	// StateCapped: the plan is over the fleet's plan cap, so the loop sleeps
-	// until the windows over it reset (ADR-0047). A loop in its turn stays
+	// StateCapped: the plan is over the fleet's plan cap, or the loop is at
+	// its own daily cap, so it sleeps until the windows over it reset or the
+	// hub's local day turns (ADR-0047). A loop in its turn stays
 	// busy until the turn ends. Every other hold outranks it, since each is
 	// something the operator must undo for this loop in particular.
 	StateCapped = "capped"
@@ -217,6 +218,7 @@ type Actor struct {
 	rehomeSnap   atomic.Bool  // a rehome is asked for and not yet landed, for REST reads
 	ensureSnap   atomic.Bool  // a wake is ensuring the workstation, for REST reads
 	problemsSnap atomic.Value // []store.Problem; the open problems, for REST reads
+	dailyCapSnap atomic.Int64 // when the loop's daily cap lets it go, 0 when it doesn't hold, for REST reads
 
 	// goroutine-owned state below
 	loop         store.Loop
@@ -304,9 +306,15 @@ type Actor struct {
 	pollCloseIDs []int64
 
 	powering bool // a power verb is running; nothing may spawn a process under it
-	// wasCapped is whether the plan cap held when the actor last looked, so
-	// a "cap" command can tell a lift, which wakes the loop, from a cap.
+	// wasCapped is whether a cap held when the actor last looked, so a "cap"
+	// command or the daily cap's timer can tell a lift, which wakes the
+	// loop, from a cap.
 	wasCapped bool
+	// The loop's spend today, as its daily cap last read it, and the day it
+	// is for: read again when spendStale says a turn recorded a cost since.
+	spendToday float64
+	spendDay   int64
+	spendStale bool
 	// cloudTickDropped is whether the public address held a tick of the
 	// cloud loop, so the check that lets it go wakes it with one.
 	cloudTickDropped bool
@@ -315,6 +323,8 @@ type Actor struct {
 	retryTimer  *time.Timer
 	healthTimer *time.Timer
 	downTimer   *time.Timer
+	// dailyCapTimer fires when the day turns under a loop its daily cap holds.
+	dailyCapTimer *time.Timer
 }
 
 func NewActor(deps Deps, loopRecord *store.Loop) *Actor {
@@ -355,6 +365,9 @@ func NewActor(deps Deps, loopRecord *store.Loop) *Actor {
 	actor.healthTimer = time.NewTimer(actor.healthInterval())
 	actor.downTimer = time.NewTimer(time.Hour)
 	actor.downTimer.Stop()
+	actor.dailyCapTimer = time.NewTimer(time.Hour)
+	actor.dailyCapTimer.Stop()
+	actor.armDailyCap()
 	actor.loadProblems()
 	go actor.run()
 	return actor
@@ -465,6 +478,12 @@ func (actor *Actor) run() {
 			actor.healthTimer.Reset(actor.healthInterval())
 		case <-actor.downTimer.C:
 			actor.downLasted()
+		case <-actor.dailyCapTimer.C:
+			// The timer runs on the monotonic clock and the day turns on the
+			// wall clock, so a clock set back fires it early: re-arm it while
+			// the cap still holds, or nothing would wake the loop.
+			actor.armDailyCap()
+			actor.capChanged()
 		}
 	}
 }
@@ -572,7 +591,10 @@ func (actor *Actor) handleCmd(command cmd) {
 			actor.pump()
 			return
 		}
-		actor.publishState()
+		// the edit may have set, raised or removed the loop's daily cap: one
+		// that no longer holds wakes it, as a lifted plan cap does
+		actor.armDailyCap()
+		actor.capChanged()
 	}
 }
 
@@ -584,15 +606,16 @@ func (actor *Actor) holdsWork() bool {
 	return actor.paused || actor.loop.WorkstationOff || actor.loop.ModelRefusal != "" || actor.held()
 }
 
-// capped reports whether the fleet's plan cap holds now. It is asked at
-// every boundary rather than told, so a turn whose own usage report crossed
-// a threshold stops the next turn from starting (ADR-0047).
+// capped reports whether the fleet's plan cap or the loop's own daily cap
+// holds now. It is asked at every boundary rather than told, so a turn whose
+// own usage report crossed a threshold, or whose cost reached the loop's
+// cap, stops the next turn from starting (ADR-0047).
 func (actor *Actor) capped() bool {
-	return actor.deps.PlanCap != nil && actor.deps.PlanCap.Holds(now())
+	return actor.deps.PlanCap != nil && actor.deps.PlanCap.Holds(now()) || actor.dailyCapUntil() > 0
 }
 
-// held reports whether something the whole fleet shares stops the loop's
-// next turn: the plan cap, or for a cloud loop its public address
+// held reports whether a cap stops the loop's next turn, the fleet's plan
+// cap or its own daily one, or for a cloud loop its public address
 // (cloudHeld).
 func (actor *Actor) held() bool { return actor.capped() || actor.cloudHeld() }
 
@@ -1500,6 +1523,8 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 		if err := actor.deps.Store.Turns().Finish(context.Background(), turn); err != nil {
 			actor.log().Error("turn finish", "err", err)
 		}
+		actor.spendStale = true
+		actor.armDailyCap()
 		actor.deps.Bus.Publish(bus.Item{Kind: bus.KindTurnResult, LoopID: actor.loop.ID, Payload: turn})
 		actor.noteTurnEnd(turn.IsError && !loginRejected, turn.EndedAt)
 
@@ -2710,6 +2735,10 @@ func (actor *Actor) storeEventFull(typ, subtype, payload string) {
 	actor.deps.Bus.Publish(bus.Item{Kind: bus.KindAgentEvent, LoopID: actor.loop.ID, Payload: event})
 }
 
+// DailyCapUntil returns when the loop's own daily cap lets it go, as last
+// published: 0 while the cap doesn't hold (safe from any goroutine).
+func (actor *Actor) DailyCapUntil() int64 { return actor.dailyCapSnap.Load() }
+
 // State returns the last published loop state (safe from any goroutine).
 func (actor *Actor) State() string {
 	if state, ok := actor.stateSnap.Load().(string); ok {
@@ -2740,6 +2769,7 @@ func (actor *Actor) publishState() {
 		state = StateWorkstationDown
 	}
 	actor.stateSnap.Store(state)
+	actor.dailyCapSnap.Store(actor.dailyCapUntil())
 	rehoming := actor.rehomePending()
 	actor.rehomeSnap.Store(rehoming)
 	actor.deps.Bus.Publish(bus.Item{Kind: bus.KindLoopStatus, LoopID: actor.loop.ID, Payload: map[string]any{

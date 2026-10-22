@@ -1,6 +1,6 @@
 # ADR-0047: Above the plan cap, every loop sleeps until the window resets
 
-Date: 2026-10-09 · Status: accepted (operator decisions of 2026-10-08, recorded on #650) · Relates to: ADR-0017, ADR-0022
+Date: 2026-10-09 · Status: accepted (operator decisions of 2026-10-08, recorded on #650) · Amended: 2026-10-22 (item 10: a loop's own daily USD cap, #652) · Relates to: ADR-0017, ADR-0022
 
 ## Context
 
@@ -83,6 +83,43 @@ survive the reading going away.
      leaves a threshold alone, and the two are independent.
    - The loop view carries `capped_until`, which is 0 for a loop that is
      not capped.
+
+10. **A loop's own daily USD cap (added 2026-10-22, #652).** One loop can
+    be boxed in whatever the plan's usage, by a cap on what it spends in a
+    day.
+    - **The setting.** `daily_cap_usd` is on the loop. It is a number of
+      dollars from 0 to 100,000, and 0 is no cap, the default. `POST
+      /api/loops` and `PATCH /api/loops/{name}` take it.
+    - **The measured value.** The loop's spend today is the sum of the
+      `cost_usd` of its turns started since the hub's local day began.
+      The day is the one the loop view's `cost_today_usd` sums. The
+      actor reads the spend again after each turn that records a cost,
+      and when the day turns. A spend it can't read caps nothing, as
+      unknown plan usage doesn't (item 4).
+    - **A cap is the same sleep.** At or over its cap, the loop sleeps
+      at its next quiet boundary in the state `capped`, as items 5 and 6
+      say. The cap caps only that loop.
+    - **It wakes when the day turns,** at the first instant of the hub's
+      next local day, or when the cap is raised or removed. Either way it
+      hears what waited, or takes a tick if nothing did, as in item 7.
+      Resume now lifts the plan cap only.
+    - **Both caps can hold.** The loop wakes once neither does, and
+      `capped_until` is the later of the two times. The loop view adds
+      `daily_cap_reached`, true while the loop's own cap holds, so its
+      page can say which cap it is under.
+    - **A cloud loop's cap counts the estimate** (the operator's call,
+      2026-10-22, to try it and see). Its `cost_usd` is the hub's
+      estimate from token counts its own session reports, and the loop
+      has a shell where that transcript is written (ADR-0059), so it can
+      understate its spend. A turn on a model the hub's price table
+      lacks has no cost and adds nothing to the day.
+    - **It is a cost guard,** not a hard ceiling. The overshoot is the
+      turn in flight, as in item 6. That turn's own cost is what crosses
+      the cap, so a loop can end its day above it by that turn's cost.
+      It stops a runaway loop, not one working against it: on bare and
+      docker the figure is the CLI's own report, from a process within
+      the loop's reach, and on cloud it is an estimate from a transcript
+      the loop can write (THREAT-MODEL).
 
 ## Consequences
 

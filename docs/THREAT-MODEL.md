@@ -521,8 +521,10 @@ cloud listener (ADR-0059).
   token counts the transcript reports (ADR-0059), and the loop has a
   shell where the transcript is written, so a loop can understate its
   own spend. A negative count is refused as an unreadable line, but a
-  low one is believed. The figure is shown and never enforced; the
-  account's usage page on claude.ai is the record.
+  low one is believed. The figure is shown, and a loop's daily USD cap
+  counts it (ADR-0047, #652), so the cap stops a runaway loop but not
+  one that understates its spend. The account's usage page on claude.ai
+  is the record.
 
 ### Workstation: the docker runtime
 
