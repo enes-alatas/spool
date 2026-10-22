@@ -83,6 +83,9 @@
 // --mcp-config into $FAKECLAUDE_STATE, and "!mcp-saved <server> <tool>"
 // calls the tool with the copy instead: a loop that kept what it was once
 // given, after the hub stopped giving it (#622).
+// "!github-token" fetches the loop's GitHub token from the hub's token
+// route, as the workstation's helper would, and replies "github token:
+// <its SHA-256, short> <the token>" or "github token: error: …" (#887).
 // "!mcp-config-contains <text>" replies "mcp-config contains: yes" or
 // "mcp-config contains: no" for whether the mcp-config claude was started
 // with holds text: how a test sees that a secret is absent from a file the
@@ -129,10 +132,13 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -529,6 +535,8 @@ func main() {
 				default:
 					reply = "mcp " + server + ": " + mcpCall(entry, tool)
 				}
+			case line == "!github-token":
+				reply = "github token: " + githubToken(mcpConfig)
 			case strings.HasPrefix(line, "!get "):
 				// A loop making an outbound request — the move an exfiltration
 				// would use, and the only way a tier-2 test can see the egress
@@ -868,6 +876,38 @@ func mcpCall(srv mcpServerEntry, tool string) string {
 // request completed (403 from the proxy is a completed request), an error
 // when it did not. The body is deliberately not read — what a test needs is
 // whether the host was reachable at all.
+// githubToken fetches the loop's GitHub token from the hub's token route,
+// beside the spool server --mcp-config names and with its credential, as
+// the workstation's helper does (#887). It answers the token's SHA-256,
+// short, and the token itself: the first tells two tokens apart, and the
+// second is what redaction has to catch in the stored reply.
+func githubToken(flagConfig string) string {
+	servers, err := readMCPConfig(flagConfig)
+	if err != nil {
+		return "error: " + err.Error()
+	}
+	spool, ok := servers["spool"]
+	if !ok {
+		return "error: mcp config names no spool server"
+	}
+	req, err := http.NewRequest(http.MethodGet, strings.TrimSuffix(spool.URL, "/mcp")+"/github/token", nil)
+	if err != nil {
+		return "error: " + err.Error()
+	}
+	req.Header.Set("Authorization", spool.Headers["Authorization"])
+	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+	if err != nil {
+		return "error: " + err.Error()
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if resp.StatusCode != http.StatusOK {
+		return "error: " + resp.Status + ": " + strings.TrimSpace(string(body))
+	}
+	sum := sha256.Sum256(body)
+	return hex.EncodeToString(sum[:])[:12] + " " + string(body)
+}
+
 func fetch(rawURL string) string {
 	client := &http.Client{Timeout: 20 * time.Second}
 	resp, err := client.Get(rawURL)

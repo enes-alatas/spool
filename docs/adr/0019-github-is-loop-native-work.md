@@ -1,6 +1,6 @@
 # ADR-0019: GitHub is loop-native work, not a Spool surface
 
-Date: 2026-08-20 · Status: accepted
+Date: 2026-08-20 · Status: accepted · Amended: 2026-10-22 (item 1: the github-app connection mints its own tokens, #887)
 
 ## Context
 
@@ -29,6 +29,17 @@ human would.
    them, filing issues, responding to review — all of it is work a loop does with
    `git`/`gh` inside its workstation. Spool has no PR/branch/issue/review model,
    no GitHub API client, and no code that triggers or tracks these operations.
+
+   **Amendment (2026-10-22, #887): the github-app connection mints its own
+   tokens.** A `github-app` connection (ADR-0043 item 4) keeps an app's
+   private key in the hub, so the hub calls GitHub's API for that
+   connection alone: it mints an installation token
+   (`POST /app/installations/{id}/access_tokens`) and, on a revoke, a new
+   key or a delete, ends the cached one (`DELETE /installation/token`).
+   That is the credential, item 2's responsibility, and nothing
+   downstream of it. The hub still reads, triggers and tracks no PR,
+   branch, issue or review, and a loop still does its GitHub work with
+   `git` and `gh`.
 2. **Spool's only GitHub responsibility is the connection.** An org-level GitHub
    credential (the `connection` term already in the ubiquitous language) is
    attached per loop and injected into the workstation as environment, value-lessly

@@ -21,6 +21,7 @@ import (
 	"unicode"
 
 	"github.com/enes-alatas/spool/internal/bus"
+	"github.com/enes-alatas/spool/internal/githubapp"
 	"github.com/enes-alatas/spool/internal/gitws"
 	"github.com/enes-alatas/spool/internal/loop"
 	"github.com/enes-alatas/spool/internal/roomtext"
@@ -141,6 +142,10 @@ type Server struct {
 	// CloudSessions reads each cloud loop's session link. Nil on a hub
 	// that wires none: the view carries no link.
 	CloudSessions CloudSessions
+	// GitHubApps mints the installation tokens of github-app connections
+	// (#887). Nil on a hub that wires none: the token route answers 404,
+	// and a new key or a revoke has no cached token to drop.
+	GitHubApps *githubapp.Minter
 	// EgressFlag is --egress-allow as this hub was started with it, which
 	// seeded the stored list on the first start (#542); nil when the hub
 	// was started without the flag.
@@ -159,11 +164,12 @@ type Server struct {
 	// stored list before writing it, and the proxy must take them in the
 	// order they were stored.
 	egressMu sync.Mutex
-	// envMu serializes changes to which env-vars a loop holds: creating a
-	// private env-var and attaching one each read the loop's variables
-	// before writing, and two interleaving could leave two env-vars setting
-	// one.
-	envMu sync.Mutex
+	// attachMu serializes changes to which env-vars and github-apps a loop
+	// holds: creating a private env-var and attaching a connection each
+	// read the loop's connections before writing, and two interleaving
+	// could leave two env-vars setting one variable, or two GitHub
+	// identities.
+	attachMu sync.Mutex
 	// cloudEnvironmentMu serializes changes to the chosen environment: a
 	// confirm reads it and the list to paste before it writes.
 	cloudEnvironmentMu sync.Mutex
@@ -2116,22 +2122,6 @@ const (
 // codeNoSetupToken refuses a login check on a docker hub with no Claude
 // token to check: neither a Claude login nor a setup-token.
 const codeNoSetupToken = "no_setup_token"
-
-// loopEnvVars returns the env-var connections attached to a loop, by the
-// variable each sets.
-func (server *Server) loopEnvVars(ctx context.Context, loopID string) (map[string]*store.Connection, error) {
-	connections, err := server.Store.Connections().ListByLoop(ctx, loopID)
-	if err != nil {
-		return nil, err
-	}
-	byEnv := map[string]*store.Connection{}
-	for _, connection := range connections {
-		if connection.Kind == store.ConnectionEnvVar {
-			byEnv[connection.Config.Env] = connection
-		}
-	}
-	return byEnv, nil
-}
 
 // createLoopEnvVar creates a private env-var connection, which the store
 // attaches to its owner, named as migration 0042 names a moved loop

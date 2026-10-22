@@ -26,6 +26,7 @@ import (
 	"github.com/enes-alatas/spool/internal/claude"
 	"github.com/enes-alatas/spool/internal/datadir"
 	"github.com/enes-alatas/spool/internal/egress"
+	"github.com/enes-alatas/spool/internal/githubapp"
 	"github.com/enes-alatas/spool/internal/httpapi"
 	"github.com/enes-alatas/spool/internal/loop"
 	"github.com/enes-alatas/spool/internal/operator"
@@ -109,6 +110,7 @@ func main() {
 	telegramAPI := flag.String("telegram-api-base", telegram.APIBase, "Telegram Bot API base URL (tests point this at a stand-in server)")
 	slackAPI := flag.String("slack-api-base", slack.APIBase, "Slack Web API base URL (tests point this at a stand-in server)")
 	cloudAPIFlag := flag.String("cloud-api-base", anthropicAPI, "Anthropic's API base URL, which the Claude proxy forwards contained loops' model requests to and Settings → Cloud lists the account's environments from (tests point this at a stand-in server); https, or http on loopback")
+	githubAPIFlag := flag.String("github-api-base", githubapp.DefaultAPI, "GitHub's REST API base URL, where github-app connections' installation tokens are minted (tests point this at a stand-in server); https, or http on loopback")
 	cloudLoopbackAddress := flag.Bool("cloud-loopback-address", false, "accept a plain-HTTP loopback address as the cloud listener's public address (tests only: no cloud session can reach one, though the hub checks it green from itself)")
 	// Temporary, and tests only, until slice 2 of ADR-0059 (#977) removes it
 	// and the CLI path is the only one.
@@ -133,6 +135,9 @@ func main() {
 	cloudAPI, err := claudeAPIBase(*cloudAPIFlag)
 	if err != nil {
 		usageError("--cloud-api-base: %v", err)
+	}
+	if err := httpapi.HTTPSOrLoopback(*githubAPIFlag); err != nil {
+		usageError("--github-api-base: %v", err)
 	}
 
 	build := version.Resolve(buildVersion, buildCommit, buildTime)
@@ -354,6 +359,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	// The installation tokens the hub mints for github-app connections are
+	// held nowhere but in the minter, so it is a redaction source of its
+	// own, and teaches the redactor each token before handing it out
+	// (#887).
+	githubApps := &githubapp.Minter{API: *githubAPIFlag}
 	// Redaction (#150): every secret Spool holds, kept out of the
 	// log, the stored transcripts and the API's responses. It reads the raw
 	// db — it is the thing that knows the values — and everything else from
@@ -366,6 +376,7 @@ func main() {
 	hubKey := db.HubKey()
 	redactor := redact.New(redact.Sources{
 		redact.StoreSource{Store: db},
+		githubApps,
 		redact.Fixed{
 			{Name: "operator_token", Value: operatorToken},
 			{Name: "hub_key", Value: string(hubKey)},
@@ -376,6 +387,7 @@ func main() {
 		log.Error("load secrets for redaction", "err", err)
 		os.Exit(1)
 	}
+	githubApps.Minted = redactor.Refresh
 	log = slog.New(redact.Handler(logTo, redactor))
 	slog.SetDefault(log)
 	rdb := redact.Store(db, redactor)
@@ -599,6 +611,7 @@ func main() {
 		CloudSignIn:          cloudSignIn,
 		CloudLogin:           loginRefresh,
 		ClaudeAPIBase:        cloudAPI,
+		GitHubApps:           githubApps,
 		CloudAccounts:        cloudAccounts{runtime: cloudRuntime, image: dockerRuntime},
 		CloudSessions:        cloudSessions{runtime: cloudRuntime},
 		CloudEnvironments:    cloudEnvironments{runtime: cloudRuntime},
@@ -611,9 +624,11 @@ func main() {
 	srv := httpapi.OperatorHTTPServer(redact.HTTP(api.Handler(), redactor))
 	// the Claude proxy streams the model's answer to the loop as it comes,
 	// outside the redactor: the hub redacts it from the loop's own stream
-	// (ADR-0058)
+	// (ADR-0058), and the GitHub token route serves the token
+	// the redactor would blank (#887)
 	loopMux := http.NewServeMux()
 	loopMux.Handle(loop.ClaudeProxyPath+"/", api.ClaudeProxyHandler())
+	loopMux.Handle(loop.GitHubTokenPath, api.GitHubTokenHandler())
 	loopMux.Handle("/", redact.HTTP(api.MCPHandler(), redactor))
 	mcpSrv := httpapi.LoopHTTPServer(loopMux)
 

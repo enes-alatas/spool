@@ -2226,6 +2226,10 @@ func (actor *Actor) claudeProxyURL() string {
 	return strings.TrimSuffix(url, "/mcp") + ClaudeProxyPath
 }
 
+// GitHubTokenPath is where the loop listener serves a fresh installation
+// token to a loop that holds a github-app connection (#887).
+const GitHubTokenPath = "/github/token"
+
 // SpoolMCPServer is the hub's own server's name in a loop's --mcp-config,
 // which no mcp-server connection may take.
 const SpoolMCPServer = claude.SpoolMCPServer
