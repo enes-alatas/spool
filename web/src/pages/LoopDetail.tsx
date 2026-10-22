@@ -46,7 +46,7 @@ import {
 } from '../slack'
 import { ownerChoices, type OwnerPerson } from '../owner'
 import { missionDraft, missionSaveResult, missionSaveWarning } from '../mission'
-import { EFFORT_OPTIONS, PACING_OPTIONS } from '../options'
+import { EFFORT_OPTIONS, PACING_OPTIONS, SUBAGENT_LABELS, noSubagentsHint } from '../options'
 import { useModelOptions } from '../models'
 import { useStream } from '../stream'
 import { claudeLoginDown, hubUnreachable, workstationCondition } from '../workstation'
@@ -160,6 +160,11 @@ function ModelFacts({ loop, context }: { loop: LoopView; context: ReactNode }) {
         <span className="k">effort</span>
         <span className="v">{label(EFFORT_OPTIONS, loop.effort)}</span>
       </div>
+      <div className="row">
+        <span className="k">subagents</span>
+        <span className="v">{SUBAGENT_LABELS[loop.subagents ?? 'allowed']}</span>
+      </div>
+      {loop.subagents === 'off' && <div className="panel-note">{noSubagentsHint('off', false)}</div>}
       {context}
     </div>
   )
@@ -284,8 +289,55 @@ function ModelEditor({ loop, context }: { loop: LoopView; context: ReactNode }) 
           </option>
         ))}
       </select>
+      <NoSubagents loop={loop} patch={patch} />
       {context}
     </div>
+  )
+}
+
+// Whether the loop may spawn subagents (#855): switched on, its turns can't,
+// from its next wake. A switch, as the fleet channel is, since it
+// is on or off. A cloud loop's session takes tools the hub has no say over,
+// so there it stays off, disabled, with that reason.
+function NoSubagents({
+  loop,
+  patch,
+}: {
+  loop: LoopView
+  patch: (body: Record<string, string>) => Promise<void>
+}) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const subagents = loop.subagents ?? 'allowed'
+  const cloud = loop.runtime === 'cloud'
+  const toggle = (noSubagents: boolean) => {
+    setBusy(true)
+    setError('')
+    patch({ subagents: noSubagents ? 'off' : 'allowed' })
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setBusy(false))
+  }
+  return (
+    <>
+      <label className="switch-row">
+        <input
+          type="checkbox"
+          role="switch"
+          checked={subagents === 'off'}
+          disabled={cloud || busy}
+          onChange={(e) => toggle(e.target.checked)}
+        />
+        <span>
+          No subagents
+          <span className="hint">{noSubagentsHint(subagents, cloud)}</span>
+        </span>
+      </label>
+      {error && (
+        <div className="form-error" role="alert">
+          {error}
+        </div>
+      )}
+    </>
   )
 }
 

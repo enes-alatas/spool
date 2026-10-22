@@ -1,6 +1,6 @@
-import type { ModelList, Settings } from './api'
+import type { ModelList, Settings, Subagents } from './api'
 
-// Shared dropdown options for model / effort / pacing.
+// Shared options for model / effort / pacing, and the subagents switch.
 
 // Values are what the `claude` CLI's --model accepts. The hub names the
 // families it offers and what each resolves to on this machine (#332), so a
@@ -57,6 +57,26 @@ export const EFFORT_OPTIONS = [
   { value: 'xhigh', label: 'xhigh · hard agentic work' },
   { value: 'max', label: 'max · correctness over cost' },
 ]
+
+// Whether a loop's turns may spawn subagents (#855), as words where it can't
+// be switched. Off is a guard on spend, not containment: it denies Claude
+// Code's Agent tool, and a loop with a shell and a claude login could still
+// run claude itself.
+export const SUBAGENT_LABELS: Record<Subagents, string> = {
+  allowed: 'allowed',
+  off: "off · can't spawn subagents",
+}
+
+// The hint under the No subagents switch, on and off, and for a cloud loop,
+// which can't be switched: its session starts with tools the hub has no say
+// over.
+export function noSubagentsHint(subagents: Subagents, cloud: boolean): string {
+  if (cloud)
+    return "A cloud loop's session starts with tools the hub has no say over, so it can't be stopped from spawning subagents."
+  return subagents === 'off'
+    ? "It can't spawn subagents: Claude Code's Agent tool is denied on every turn. A guard on spend, not a sandbox."
+    : 'A turn may hand work to subagents, which spend the plan too.'
+}
 
 export const PACING_OPTIONS = [
   { value: 'fixed', label: 'Fixed interval' },

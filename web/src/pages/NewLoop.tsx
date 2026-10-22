@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type LoopView } from '../api'
+import { api, type LoopView, type Subagents } from '../api'
 import {
   CLOUD_TRUST_WARNING,
   EFFORT_OPTIONS,
+  noSubagentsHint,
   PACING_OPTIONS,
   RUNTIME_OPTIONS,
   runtimeFieldNote,
@@ -39,6 +40,7 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
   const modelOptions = useModelOptions()
   const [effort, setEffort] = useState('')
   const [pacing, setPacing] = useState<'fixed' | 'self'>('fixed')
+  const [subagents, setSubagents] = useState<Subagents>('allowed')
   const [runtime, setRuntime] = useState('')
   const [wsPath, setWsPath] = useState('')
   const [wsInfo, setWsInfo] = useState<{ exists: boolean; is_git: boolean } | null>(null)
@@ -136,6 +138,9 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
         model: chosenModel || undefined,
         effort: effort || undefined,
         pacing,
+        // Never off for a cloud loop, which the hub refuses: the switch is
+        // disabled there, and a choice made before switching to cloud is dropped.
+        subagents: cloud ? undefined : subagents,
         // Sent explicitly, so the same click means the same thing on a
         // docker hub and a bare one — but only once the hub has said what it
         // is. Omitted otherwise, which is what the form did before this
@@ -288,6 +293,20 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
           <code>--strict-mcp-config</code>).
         </div>
       </div>
+
+      <label className="switch-row" style={{ marginTop: 0, marginBottom: 14 }}>
+        <input
+          type="checkbox"
+          role="switch"
+          checked={!cloud && subagents === 'off'}
+          disabled={cloud}
+          onChange={(e) => setSubagents(e.target.checked ? 'off' : 'allowed')}
+        />
+        <span>
+          No subagents
+          <span className="hint">{noSubagentsHint(subagents, cloud)}</span>
+        </span>
+      </label>
 
       <div className="field">
         <label htmlFor="nl-ws">Workspace (optional)</label>
