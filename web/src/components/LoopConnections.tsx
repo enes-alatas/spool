@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, Connection, LoopView } from '../api'
-import { connectionDetail, connectionKindLabel, kindLabel } from '../connections'
+import { api, ApiError, Connection, LoopView } from '../api'
+import {
+  attachErrorText,
+  attachRefusal,
+  connectionDetail,
+  connectionKindLabel,
+  givesGitHubIdentity,
+  kindLabel,
+} from '../connections'
 import { ConnectionForm } from './ConnectionForm'
 import { ConnectionEvents, RotateForm } from './ConnectionRecord'
 import { PlusIcon } from './Icons'
@@ -30,13 +37,23 @@ export function LoopConnections({ loop }: { loop: LoopView }) {
   const byName = new Map((all ?? []).map((c) => [c.name, c]))
   // Another loop's private connection is never on offer (#600). This
   // loop's own is, should it ever be detached here: nothing else could
-  // attach or delete it again. A revoked one is on offer nowhere (#610).
+  // attach or delete it again. A revoked one is on offer nowhere (#610),
+  // and a GitHub App is not on a cloud loop's offer, which can't hold one
+  // (#887).
+  const cloud = loop.runtime === 'cloud'
   const attachable = (all ?? []).filter(
     (c) =>
       (!c.owner_loop || c.owner_loop === loop.name) &&
       c.revoked_at === undefined &&
+      !(cloud && c.kind === 'github-app') &&
       !attached.some((a) => a.name === c.name),
   )
+  // The connection giving the loop its GitHub identity, if one does: the
+  // attach list says a second is refused before the hub has to.
+  const identity = attached.find((a) => {
+    const c = byName.get(a.name)
+    return givesGitHubIdentity(c ?? { kind: a.kind })
+  })?.name
   const [rotating, setRotating] = useState('')
   const [history, setHistory] = useState(false)
 
@@ -202,6 +219,8 @@ export function LoopConnections({ loop }: { loop: LoopView }) {
       {adding && (
         <AddConnectionDialog
           loop={loop.name}
+          cloud={cloud}
+          identity={identity}
           attachable={attachable}
           onChanged={refresh}
           onClose={() => setAdding(false)}
@@ -287,11 +306,15 @@ function AddPrivateVariable({ loop, onAdded }: { loop: string; onAdded: () => Pr
 // Escape with it, and the control room has no dependency to spend on them.
 function AddConnectionDialog({
   loop,
+  cloud,
+  identity,
   attachable,
   onChanged,
   onClose,
 }: {
   loop: string
+  cloud: boolean
+  identity: string | undefined
   attachable: Connection[]
   onChanged: () => Promise<unknown>
   onClose: () => void
@@ -313,7 +336,7 @@ function AddConnectionDialog({
       await api.attachConnection(loop, name)
       await onChanged()
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(attachError(e, name, loop))
     } finally {
       setBusy('')
     }
@@ -328,7 +351,7 @@ function AddConnectionDialog({
     } catch (e) {
       await onChanged()
       throw new Error(
-        `Created ${created.name}, but could not attach it: ${e instanceof Error ? e.message : String(e)}`,
+        `Created ${created.name}, but could not attach it: ${attachError(e, created.name, loop)}`,
       )
     }
     await onChanged()
@@ -392,22 +415,30 @@ function AddConnectionDialog({
           </div>
         ) : (
           <div className="connection-list">
-            {attachable.map((c) => (
-              <div className="connection-pick" key={c.name}>
-                <span className="connection-name">{c.name}</span>
-                <span className="connection-kind">{connectionKindLabel(c)}</span>
-                <span className="connection-detail" title={connectionDetail(c) ?? undefined}>
-                  {connectionDetail(c)}
-                </span>
-                <button className="btn sm primary" onClick={() => attach(c.name)} disabled={busy !== ''}>
-                  {busy === c.name ? 'Attaching…' : 'Attach'}
-                </button>
-              </div>
-            ))}
+            {attachable.map((c) => {
+              const refusal = attachRefusal(c, loop, identity)
+              return (
+                <div className="connection-pick" key={c.name}>
+                  <span className="connection-name">{c.name}</span>
+                  <span className="connection-kind">{connectionKindLabel(c)}</span>
+                  <span className="connection-detail" title={connectionDetail(c) ?? undefined}>
+                    {connectionDetail(c)}
+                  </span>
+                  <button
+                    className="btn sm primary"
+                    onClick={() => attach(c.name)}
+                    disabled={busy !== '' || !!refusal}
+                  >
+                    {busy === c.name ? 'Attaching…' : 'Attach'}
+                  </button>
+                  {refusal && <span className="connection-refusal">{refusal}</span>}
+                </div>
+              )
+            })}
           </div>
         )
       ) : tab === 'create' ? (
-        <ConnectionForm onCreated={createAndAttach} submitLabel="Create and attach" />
+        <ConnectionForm onCreated={createAndAttach} submitLabel="Create and attach" cloud={cloud} />
       ) : (
         <AddPrivateVariable
           loop={loop}
@@ -424,4 +455,11 @@ function AddConnectionDialog({
       )}
     </dialog>
   )
+}
+
+// An attach the hub refused, in its sentence, or in ours where its own names
+// the route behind a GitHub refusal (#887).
+function attachError(e: unknown, connection: string, loop: string): string {
+  const ours = e instanceof ApiError ? attachErrorText(e.code, connection, loop) : undefined
+  return ours ?? (e instanceof Error ? e.message : String(e))
 }

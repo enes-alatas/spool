@@ -3631,6 +3631,54 @@ button.panel-link {
 .connection-pick .btn {
   grid-area: attach;
 }
+/* why a connection can't be attached here, under it (#887): a loop has
+   one GitHub identity */
+.connection-refusal {
+  grid-column: 1 / -1;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+/* A GitHub App's private key (#887): pasted into a field many lines long,
+   or read from the chosen .pem file and never drawn. A pasted key is drawn
+   as discs, like a password field, so a screen share never shows the whole
+   credential (a textarea has no type=password). The chooser is a label
+   over a file input, so the form's field-name rule is undone on it, and the
+   input is kept reachable by keyboard though unseen. */
+.key-paste {
+  font-size: 0.75rem;
+  resize: vertical;
+  -webkit-text-security: disc;
+}
+.field .key-choose {
+  position: relative;
+  display: inline-flex;
+  margin: 8px 0 0;
+  font-family: var(--sans);
+  font-size: 0.75rem;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--text);
+  cursor: pointer;
+}
+.key-choose input[type='file'] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+.key-choose:focus-within {
+  outline: 1px solid var(--text);
+}
+.key-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 0.8125rem;
+}
+.rotate-form .key-paste {
+  flex: 1 1 100%;
+}
 .connection-new {
   margin: 28px 0 12px;
 }
