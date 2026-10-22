@@ -82,6 +82,12 @@ const (
 	PacingFixed = "fixed" // orchestrator interval; trailer optional
 	PacingSelf  = "self"  // the loop schedules itself via trailers; interval is a fallback
 
+	SubagentsAllowed = "allowed" // a turn may spawn subagents (the CLI's default)
+	// SubagentsOff denies every turn the Agent tool (#855). It is a cost
+	// guard on how far the CLI fans out, not containment: a loop with a
+	// shell and a claude login can still run claude itself.
+	SubagentsOff = "off"
+
 	RuntimeBare   = "bare"   // host subprocess, uncontained (ADR-0017)
 	RuntimeDocker = "docker" // long-lived container + volume workstation
 	RuntimeCloud  = "cloud"  // a Claude Code cloud session (ADR-0056)
@@ -284,8 +290,9 @@ type Loop struct {
 	MinWakeSec      int    `json:"min_wake_sec"`
 	MaxWakeSec      int    `json:"max_wake_sec"`
 	IdleTimeoutSec  int    `json:"idle_timeout_sec"`
-	Pacing          string `json:"pacing"` // fixed|self
-	Effort          string `json:"effort"` // ""|low|medium|high|xhigh|max
+	Pacing          string `json:"pacing"`    // fixed|self
+	Effort          string `json:"effort"`    // ""|low|medium|high|xhigh|max
+	Subagents       string `json:"subagents"` // allowed|off
 
 	TGBotToken    string `json:"-"`
 	TGBotUsername string `json:"tg_bot_username"`
@@ -797,10 +804,11 @@ type InboxItem struct {
 // loop's group traffic dead with nothing in the control room to explain it
 // (#164, and the same mechanism as #161).
 type LoopEdit struct {
-	Mission *string
-	Model   *string
-	Effort  *string
-	Pacing  *string
+	Mission   *string
+	Model     *string
+	Effort    *string
+	Pacing    *string
+	Subagents *string
 
 	TickIntervalSec *int
 	MinWakeSec      *int

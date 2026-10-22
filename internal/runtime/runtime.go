@@ -55,6 +55,8 @@ type Spec struct {
 
 	Model  string
 	Effort string // ""|low|medium|high|xhigh|max
+	// NoSubagents denies the turn the Agent tool (#855).
+	NoSubagents bool
 
 	// Exactly one of SessionID (fresh session with a pre-chosen uuid) or
 	// ResumeID (continue an existing session) is set.

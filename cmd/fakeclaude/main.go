@@ -212,7 +212,7 @@ func main() {
 			i++
 			settings = args[i] // inline JSON or a file path; its hooks run on !bash
 		case "--input-format", "--output-format", "--permission-mode",
-			"--effort", "--add-dir":
+			"--effort", "--add-dir", "--disallowedTools":
 			i++ // value consumed, ignored
 		default:
 			// -p, --verbose, unknown flags: ignored

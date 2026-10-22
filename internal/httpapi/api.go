@@ -708,6 +708,7 @@ type createLoopReq struct {
 	Model           string  `json:"model"`
 	Effort          string  `json:"effort"`         // ""|low|medium|high|xhigh|max
 	Pacing          string  `json:"pacing"`         // ""(=fixed)|fixed|self
+	Subagents       string  `json:"subagents"`      // ""(=allowed)|allowed|off
 	Runtime         string  `json:"runtime"`        // ""(=server default)|bare|docker|cloud; set at creation; a bare loop moves to docker only through POST .../rehome (ADR-0018)
 	Image           string  `json:"image"`          // docker only; "" = the server's default image
 	MemMB           int     `json:"mem_mb"`         // docker only; 0 = 4096 (ADR-0017)
@@ -733,6 +734,23 @@ var validEfforts = map[string]bool{"": true, "low": true, "medium": true, "high"
 
 func validPacing(pacing string) bool {
 	return pacing == "" || pacing == store.PacingFixed || pacing == store.PacingSelf
+}
+
+// validSubagents reports whether subagents is a loop's setting, or empty
+// for the default.
+func validSubagents(subagents string) bool {
+	return subagents == "" || subagents == store.SubagentsAllowed || subagents == store.SubagentsOff
+}
+
+// subagentsRefusal says why a loop on loopRuntime cannot have subagents
+// set as asked, or "" when it can. A cloud loop's claude runs on Anthropic's machine,
+// started by a command line that carries no tool list, so the hub could
+// store "off" and not enforce it (#855).
+func subagentsRefusal(subagents, loopRuntime string) string {
+	if subagents == store.SubagentsOff && loopRuntime == store.RuntimeCloud {
+		return "subagents can't be turned off on a cloud loop: the hub starts its session with no say over its tools"
+	}
+	return ""
 }
 
 func (server *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
@@ -769,6 +787,10 @@ func (server *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 	}
 	if !validPacing(req.Pacing) {
 		server.jsonErr(w, 400, "pacing must be 'fixed' or 'self'")
+		return
+	}
+	if !validSubagents(req.Subagents) {
+		server.jsonErr(w, 400, "subagents must be 'allowed' or 'off'")
 		return
 	}
 
@@ -822,6 +844,10 @@ func (server *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 		server.jsonErr(w, 400, "runtime must be 'bare', 'docker' or 'cloud' (or empty for the server default)")
 		return
 	}
+	if refusal := subagentsRefusal(req.Subagents, loopRuntime); refusal != "" {
+		server.jsonErr(w, 400, "%s", refusal)
+		return
+	}
 	if strings.TrimSpace(req.CloudRepo) != "" {
 		server.jsonErr(w, 400, "cloud_repo is gone: attach a GH_TOKEN connection to the loop and name the repo in its mission")
 		return
@@ -835,6 +861,7 @@ func (server *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 		Model:           req.Model,
 		Effort:          req.Effort,
 		Pacing:          defaultStr(req.Pacing, store.PacingFixed),
+		Subagents:       defaultStr(req.Subagents, store.SubagentsAllowed),
 		TickIntervalSec: defaultInt(req.TickIntervalSec, 1800),
 		MinWakeSec:      defaultInt(req.MinWakeSec, 300),
 		MaxWakeSec:      defaultInt(req.MaxWakeSec, 14400),
@@ -1017,6 +1044,7 @@ type patchLoopReq struct {
 	Model           *string `json:"model"`
 	Effort          *string `json:"effort"`
 	Pacing          *string `json:"pacing"`
+	Subagents       *string `json:"subagents"`
 	TickIntervalSec *int    `json:"tick_interval_sec"`
 	MinWakeSec      *int    `json:"min_wake_sec"`
 	MaxWakeSec      *int    `json:"max_wake_sec"`
@@ -1088,6 +1116,18 @@ func (server *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 		}
 		pacing := defaultStr(*req.Pacing, store.PacingFixed)
 		edit.Pacing = &pacing
+	}
+	if req.Subagents != nil {
+		if !validSubagents(*req.Subagents) {
+			server.jsonErr(w, 400, "subagents must be 'allowed' or 'off'")
+			return
+		}
+		subagents := defaultStr(*req.Subagents, store.SubagentsAllowed)
+		if refusal := subagentsRefusal(subagents, loopRecord.Runtime); refusal != "" {
+			server.jsonErr(w, 400, "%s", refusal)
+			return
+		}
+		edit.Subagents = &subagents
 	}
 	if req.InFleetChannel != nil {
 		outside := !*req.InFleetChannel

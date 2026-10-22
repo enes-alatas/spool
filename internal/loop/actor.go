@@ -1085,6 +1085,7 @@ func (actor *Actor) wakeSpec(fresh bool, prompt string, connections []*store.Con
 		WorkDir:            actor.loop.WorkspacePath,
 		Model:              actor.loop.Model,
 		Effort:             actor.loop.Effort,
+		NoSubagents:        actor.loop.Subagents == store.SubagentsOff,
 		Image:              actor.loop.Image,
 		MemMB:              actor.loop.MemMB,
 		CPUs:               actor.loop.CPUs,
