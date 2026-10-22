@@ -131,7 +131,7 @@ func (rt *Runtime) HasWorkstation() bool { return true }
 // Available reports whether the daemon is reachable — the cheap slice of
 // Preflight, for validating a create request that names this runtime.
 func (rt *Runtime) Available(ctx context.Context) error {
-	if _, err := rt.command(ctx, queryTimeout, "version", "--format", "{{.Server.Version}}"); err != nil {
+	if _, err := rt.EngineVersion(ctx); err != nil {
 		return fmt.Errorf("docker daemon unreachable: %w", err)
 	}
 	return nil

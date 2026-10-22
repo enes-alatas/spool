@@ -20,7 +20,8 @@ you own. The rest of this page assumes this layout:
 
 Use Docker Engine 26.0.0 or later. Of the older lines, only a 25.x from
 25.0.5 and a 23.x from 23.0.11 are fixed; no 24.x is. Any other engine lets a workstation resolve outside
-names, which can carry data past the egress allowlist (CVE-2024-29018).
+names, which can carry data past the egress allowlist (CVE-2024-29018),
+and the hub warns at boot when it finds one.
 `docker version --format '{{.Server.Version}}'` prints yours.
 
 Each docker loop gets a network of its own (ADR-0028), and Docker's default
