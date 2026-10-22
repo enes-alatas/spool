@@ -8,6 +8,8 @@ export interface Problem {
 }
 export type Health = 'ok' | 'warning' | 'failing'
 
+export type Subagents = 'allowed' | 'off'
+
 export interface LoopView {
   id: string
   name: string
@@ -56,6 +58,10 @@ export interface LoopView {
   idle_timeout_sec: number
   pacing: 'fixed' | 'self'
   effort: string
+  // Whether a turn may spawn subagents (#855): 'off' denies Claude Code's
+  // Agent tool on every turn. Never 'off' on a cloud loop, whose session's
+  // tools the hub has no say over. Absent from a hub too old to set it.
+  subagents?: Subagents
   tg_bot_username: string
   tg_group_chat_id: number
   status: 'active' | 'paused' | 'archived'
@@ -963,6 +969,7 @@ export interface CreateLoopReq {
   model?: string
   effort?: string
   pacing?: 'fixed' | 'self'
+  subagents?: Subagents
   // Create-only; empty = server default. `cloud` is refused with 409
   // `cloud_not_ready` until Settings → Cloud is green.
   runtime?: 'bare' | 'docker' | 'cloud'

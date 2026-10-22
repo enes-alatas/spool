@@ -8,6 +8,7 @@ import {
   runtimeFieldNote,
   runtimeNote,
   workspaceFieldNote,
+  noSubagentsHint,
 } from './options'
 
 describe('runtimeNote', () => {
@@ -182,5 +183,22 @@ describe('workspaceFieldNote', () => {
   it('leaves the field open for a bare loop, and says nothing before the hub answers', () => {
     expect(workspaceFieldNote('bare')).toBe('')
     expect(workspaceFieldNote('')).toBe('')
+  })
+})
+
+describe('noSubagentsHint', () => {
+  it('says off is a guard on spend, not a sandbox', () => {
+    expect(noSubagentsHint('off', false)).toMatch(
+      /^It can't spawn subagents: Claude Code's Agent tool is denied on every turn/,
+    )
+    expect(noSubagentsHint('off', false)).toMatch(/not a sandbox/)
+  })
+  it('says what allowed spends', () => {
+    expect(noSubagentsHint('allowed', false)).toBe(
+      'A turn may hand work to subagents, which spend the plan too.',
+    )
+  })
+  it('gives a cloud loop the reason it cannot be switched', () => {
+    expect(noSubagentsHint('allowed', true)).toMatch(/no say over/)
   })
 })
