@@ -150,14 +150,22 @@ ADR instead.*
   `gh issue create --parent n`, or `gh issue edit <child> --parent n` after the
   fact. The `Part of` line stays, because PR bodies and search read it and a
   sub-issue link is invisible to both.
-- **One PR, one issue** (#462). An issue that will take more than one PR is
-  split before its first PR opens: each slice is a typed sub-issue of it,
-  filed under the epic-children rule above, with one owner and its own
-  acceptance bar, and each PR closes exactly one slice. The parent keeps only
-  the contract and the recorded decisions, and closes when its last slice
-  does. Posting a slice plan on the parent is the trigger: whoever posts it
-  files the slices in the same sitting. Without them a reader reconstructs
-  from the PR list which slice is done, in review or next (#123, #420).
+- **One PR, one issue** (#462, #1027). An issue carries one responsibility,
+  named in its title (below): an "and" that joins two deliverables means two
+  issues, as it means two commits in a subject (above), while one that
+  describes a single change is fine. An issue that will take more than one
+  PR is split before its first PR opens: each slice is a typed sub-issue of
+  it, filed under the epic-children rule above, with one owner and its own
+  acceptance bar, and each PR closes exactly one slice. The parent keeps
+  only the contract and the recorded decisions, and closes when its last
+  slice does. Posting a slice plan on the parent is the trigger: whoever
+  posts it files the slices in the same sitting. Without them a reader
+  reconstructs from the PR list which slice is done, in review or next
+  (#123, #420). `Part of #n` on a PR names an epic or a split parent, never
+  an unsplit issue: a second PR against one is the cue to split it first.
+  #979 carried the environment step and the cost display in one issue, and
+  #977 and #978 ran three and two PRs as "Part of" issues that were never
+  split.
 - **An issue's title says what changes, for whoever the change is for**
   (#1034). A product issue's title is one sentence in the operator's words
   saying what changes for them, in the room, on a surface or in a deploy,
