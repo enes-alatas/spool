@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -272,22 +273,23 @@ func (allowlist cloudAllowlistText) digest() string {
 // cloudAllowlist builds the list to paste from the allowlist as it is now:
 // the public address's host, which every session's hooks post to, then
 // ADR-0028's built-in hosts and the stored ones, as an environment spells
-// them (egress.EnvironmentHosts).
+// them (egress.EnvironmentHosts). The public address's host goes first and
+// as it is: it may be an IP literal, which the wall refuses as an entry
+// (#901) but a session must still reach.
 func (server *Server) cloudAllowlist(ctx context.Context) (cloudAllowlistText, error) {
-	var entries []string
 	address, err := server.storedCloudAddress(ctx)
 	if err != nil {
 		return cloudAllowlistText{}, err
-	}
-	if parsed, err := url.Parse(address); err == nil && parsed.Hostname() != "" {
-		entries = append(entries, parsed.Hostname())
 	}
 	extra, err := server.egressHosts(ctx)
 	if err != nil {
 		return cloudAllowlistText{}, err
 	}
-	entries = append(append(entries, egress.DefaultHosts()...), extra.Hosts...)
-	hosts, notApplied := egress.EnvironmentHosts(entries)
+	hosts, notApplied := egress.EnvironmentHosts(append(egress.DefaultHosts(), extra.Hosts...))
+	if parsed, err := url.Parse(address); err == nil && parsed.Hostname() != "" {
+		hub := parsed.Hostname()
+		hosts = append([]string{hub}, slices.DeleteFunc(hosts, func(host string) bool { return host == hub })...)
+	}
 	return cloudAllowlistText{hosts: hosts, notApplied: notApplied}, nil
 }
 

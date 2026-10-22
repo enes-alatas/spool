@@ -147,3 +147,47 @@ func TestEgressHostsReadTheStarSpellingAsTheDomainForm(t *testing.T) {
 		t.Fatalf("extra after removing the stored *.legacy.example = %q, want %q", removed.Extra, want)
 	}
 }
+
+// An IPv4 literal is refused as an extra host in every spelling a resolver
+// reads as one, as an IPv6 literal already was. One stored before the hub
+// refused it permits nothing: the hub warns at boot, naming it, and it is
+// removed as written (#901).
+func TestEgressHostsRefuseAnIPv4Literal(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	hub := startServerArgs(t, dir, "--runtime", "bare", "--egress-image", "")
+	for _, literal := range []string{"169.254.169.254", "10.0.0.1", "127.1", "2130706433", "0x7f000001", ".10.0.0.1"} {
+		resp, body := hub.do("POST", "/api/settings/egress/hosts", map[string]string{"host": literal})
+		if resp.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), "IP literal") {
+			t.Errorf("adding %s = %d %s, want 400 naming an IP literal", literal, resp.StatusCode, body)
+		}
+	}
+	hub.stop()
+
+	db, err := sqlite.Open(filepath.Join(dir, "spool.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy, _ := json.Marshal(store.EgressHosts{Hosts: []string{"169.254.169.254", "example.com"}, ChangedAt: 1})
+	if err := db.Settings().Set(context.Background(), store.SettingEgressHosts, string(legacy)); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	hub = startServerArgs(t, dir, "--runtime", "bare", "--egress-image", "")
+	// one warning, for the literal and not the name beside it
+	var warnings []string
+	for _, line := range strings.Split(hub.log(), "\n") {
+		if strings.Contains(line, "a stored extra egress host is refused") {
+			warnings = append(warnings, line)
+		}
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "169.254.169.254") {
+		t.Fatalf("boot warnings = %q, want one naming the stored IP literal", warnings)
+	}
+	var removed egressSettings
+	hub.mustJSON("DELETE", "/api/settings/egress/hosts/"+url.PathEscape("169.254.169.254"), nil, &removed)
+	if want := []string{"example.com"}; !reflect.DeepEqual(removed.Extra, want) {
+		t.Fatalf("extra after removing the stored literal = %q, want %q", removed.Extra, want)
+	}
+}

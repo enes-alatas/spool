@@ -567,7 +567,9 @@ the CLI (ADR-0018).
   port against a built-in list (`internal/egress/allowlist.go`: Anthropic,
   GitHub, the Go, npm, PyPI and Debian archives) plus the fleet's stored
   extra hosts, which an admin edits. Entries without a port allow 80 and
-  443 only, and IP literals are refused.
+  443 only. IP literals are refused as entries, an IPv4 one in every
+  spelling a resolver reads (10.0.0.1, 127.1, 0x7f000001); one stored
+  before that permits nothing, and the hub warns at boot (#901).
 - **The hub is reachable** on the loop listener's port and no other.
 - **Outside names don't resolve** on the internal network, on Docker
   Engine 26.0.0 or later, or a 25.x from 25.0.5, or a 23.x from 23.0.11.
