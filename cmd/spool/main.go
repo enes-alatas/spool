@@ -1160,16 +1160,23 @@ func selectDefaultRuntime(log *slog.Logger, choice string, runtimes map[string]r
 // logEgressPosture says out loud, once at boot, whether the wall around
 // workstation egress is up (ADR-0028). Both warnings describe a fleet that
 // runs — with open egress, or with contained loops that cannot wake until the
-// image exists — so neither is fatal.
+// image exists — so neither is fatal. A wall on an engine without the
+// CVE-2024-29018 fix is up for HTTP and open for DNS, and says so too (#899).
 func logEgressPosture(log *slog.Logger, rt *docker.Runtime) {
-	image, ready := rt.EgressWall(context.Background())
+	ctx := context.Background()
+	image, ready := rt.EgressWall(ctx)
 	switch {
 	case image == "":
 		log.Warn("workstation egress is open: no egress proxy configured, so a loop can reach any host (ADR-0028)")
+		return
 	case !ready:
 		log.Warn("egress proxy image missing — contained loops cannot wake until it exists; run `make image`", "image", image)
 	default:
 		log.Info("workstation egress allowlisted", "proxy_image", image)
+	}
+	if version, err := rt.EngineVersion(ctx); err == nil && docker.ForwardsOutsideNames(version) {
+		log.Warn("this docker engine lets a workstation resolve outside names, which can carry data past the egress allowlist (CVE-2024-29018): "+
+			"use 26.0.0 or later, or 25.0.5 on 25.x, or 23.0.11 on 23.x", "engine", version)
 	}
 }
 
