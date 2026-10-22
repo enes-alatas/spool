@@ -16,7 +16,8 @@ func TestParseUnitReadsPathsFromExecStart(t *testing.T) {
 	}
 	want := hubUnit{
 		Name: "spool", Bin: "/usr/local/bin/spool", HookBin: "/usr/local/bin/spool-hook",
-		DataDir: "/var/lib/spool", Listen: "127.0.0.1:9090",
+		GitHubBin: "/usr/local/bin/spool-github",
+		DataDir:   "/var/lib/spool", Listen: "127.0.0.1:9090",
 		WorkstationImage: "spool-workstation", EgressImage: "spool-egress-x", User: "spool",
 	}
 	if unit != want {
@@ -26,6 +27,10 @@ func TestParseUnitReadsPathsFromExecStart(t *testing.T) {
 	unit, err = parseUnit("spool", strings.Replace(testUnitShow, "--listen=127.0.0.1:9090", "--hook-bin=/opt/hook", 1))
 	if err != nil || unit.HookBin != "/opt/hook" || unit.Listen != "127.0.0.1:8080" {
 		t.Fatalf("with --hook-bin: %+v, %v", unit, err)
+	}
+	unit, err = parseUnit("spool", strings.Replace(testUnitShow, "--listen=127.0.0.1:9090", "--github-bin /opt/github", 1))
+	if err != nil || unit.GitHubBin != "/opt/github" {
+		t.Fatalf("with --github-bin: %+v, %v", unit, err)
 	}
 }
 

@@ -1,6 +1,6 @@
 # ADR-0057: `spool upgrade`, one root-run command that upgrades a hub
 
-Date: 2026-10-16 · Status: accepted (operator decisions of 2026-10-16 on #888 and #889) · Amended: 2026-10-19 (item 6: the backup takes the data directory alone, #947) · Relates to: ADR-0030, ADR-0046, ADR-0052, #708, #747, #885
+Date: 2026-10-16 · Status: accepted (operator decisions of 2026-10-16 on #888 and #889) · Amended: 2026-10-19 (item 6: the backup takes the data directory alone, #947); 2026-10-22 (item 3: a third binary, #1054) · Relates to: ADR-0030, ADR-0046, ADR-0052, #708, #747, #885
 
 ## Context
 
@@ -71,6 +71,17 @@ replaces a binary. That needs its limits written down before it is built.
    install, as with the runbook's `-ef` skip (#886). Nothing is installed
    by root inside the checkout. The `*.previous` copies are made there as
    the checkout's owner, so item 4's rule holds.
+
+   **Amendment (2026-10-22, #1054): a third binary.** A release from
+   #1054 on carries `spool-github` beside `spool-hook`, the helper a bare
+   loop holding a github-app runs. Its path is `--github-bin`, or else
+   `spool-github` beside the binary. It is installed, kept as
+   `*.previous` and put back on a rollback with the other two, and item
+   6's "pair" is all three. A build or a layout from before it has none:
+   the upgrade installs the other two and says nothing of it. So the
+   upgrade *onto* the first release that carries it, run by an older
+   `spool`, installs no helper, and the next one does; until then the
+   hub logs that bare loops get no GitHub token.
 
 4. **It gets the build one of two ways, and checks it before anything
    stops.**

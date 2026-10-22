@@ -580,6 +580,8 @@ sudo systemctl stop spool
 sudo /usr/local/sbin/spool-backup.sh --data-dir "$DATA" --out /var/backups/spool
 # Install the build where the unit runs it; a unit that runs bin/spool in place needs nothing.
 [ "$BIN" -ef bin/spool ] || sudo install -m 755 bin/spool bin/spool-hook "$(dirname "$BIN")/"
+# spool-github, for a bare loop holding a github-app (#1054); a build from before it has none.
+[ "$BIN" -ef bin/spool ] || [ ! -f bin/spool-github ] || sudo install -m 755 bin/spool-github "$(dirname "$BIN")/"
 
 # Only for a target of v0.5.1 or earlier, whose hub doesn't notice a rebuilt
 # image (#715): remove the containers, never the volumes, and the hub
@@ -622,6 +624,7 @@ sha256sum -c --ignore-missing SHA256SUMS     # the file is the release's
 gh attestation verify "spool_${v}_${p}.tar.gz" --repo enes-alatas/spool   # optional: the release workflow built it
 tar -xzf "spool_${v}_${p}.tar.gz"
 install -m 755 "spool_${v}_${p}/spool" "spool_${v}_${p}/spool-hook" /opt/spool/bin/
+[ ! -f "spool_${v}_${p}/spool-github" ] || install -m 755 "spool_${v}_${p}/spool-github" /opt/spool/bin/   # a release from before #1054 has none
 cd /opt/spool && rm -rf "$dl"                # back for the rest of the block
 
 ./bin/spool images                           # read it: two pulls by digest, two tags

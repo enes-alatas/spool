@@ -14,6 +14,7 @@ type hubUnit struct {
 	Name             string
 	Bin              string // ExecStart's path
 	HookBin          string // --hook-bin, or spool-hook beside Bin
+	GitHubBin        string // --github-bin, or spool-github beside Bin
 	DataDir          string // --data-dir
 	Listen           string // --listen, for the health check
 	WorkstationImage string // --workstation-image, or its default
@@ -46,7 +47,7 @@ func parseUnit(name, show string) (hubUnit, error) {
 	}
 	unit.Bin = path
 	flags := map[string]*string{
-		"data-dir": &unit.DataDir, "hook-bin": &unit.HookBin, "listen": &unit.Listen,
+		"data-dir": &unit.DataDir, "hook-bin": &unit.HookBin, "github-bin": &unit.GitHubBin, "listen": &unit.Listen,
 		"workstation-image": &unit.WorkstationImage, "egress-image": &unit.EgressImage,
 	}
 	for i := 1; i < len(argv); i++ {
@@ -77,6 +78,9 @@ func parseUnit(name, show string) (hubUnit, error) {
 	if unit.HookBin == "" {
 		unit.HookBin = filepath.Join(filepath.Dir(unit.Bin), "spool-hook")
 	}
+	if unit.GitHubBin == "" {
+		unit.GitHubBin = filepath.Join(filepath.Dir(unit.Bin), "spool-github")
+	}
 	return unit, nil
 }
 
@@ -101,3 +105,7 @@ func parseExecStart(value string) (string, []string, error) {
 	}
 	return path, argv, nil
 }
+
+// installed is every file an upgrade installs, the hub binary first: the
+// others may be missing from a layout older than them.
+func (unit hubUnit) installed() []string { return []string{unit.Bin, unit.HookBin, unit.GitHubBin} }
