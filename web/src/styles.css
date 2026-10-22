@@ -2445,6 +2445,91 @@ button.panel-link {
   font-family: var(--mono);
   font-size: 0.75rem;
 }
+/* the daily cap under today's spend (#652): one row of same-size chips,
+   the chosen one lit, in the sans the panel's labels use because five mono
+   labels do not fit its width. The last is a field for any other amount,
+   drawn as a well, the canvas a field sits on and a $ leading it, so it
+   reads as somewhere to type rather than one more choice. */
+.cap-chips {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 3px;
+  margin: 4px 0 10px;
+}
+.cap-chips button,
+.cap-other {
+  min-width: 0;
+  padding: 3px 0;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+  white-space: nowrap;
+}
+.cap-chips button {
+  cursor: pointer;
+}
+.cap-chips button:hover:not(:disabled) {
+  color: var(--text);
+}
+.cap-chips button[aria-pressed='true'],
+.cap-other.on {
+  border-color: var(--text);
+  color: var(--text);
+}
+.cap-other {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-left: 7px;
+  background: var(--canvas);
+  border-style: dashed;
+  cursor: text;
+}
+.cap-other.on,
+.cap-other:focus-within {
+  border-style: solid;
+}
+.cap-other input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-family: var(--mono);
+  color: var(--text);
+  outline: none;
+}
+.cap-other input::placeholder {
+  font-family: var(--sans);
+  color: var(--text-muted);
+}
+.cap-other:has(input[aria-invalid='true']) {
+  border-color: var(--danger);
+}
+.field .cap-chips {
+  max-width: 440px;
+  gap: 6px;
+  margin: 0;
+}
+.field .cap-chips button,
+.field .cap-other {
+  padding-top: 6px;
+  padding-bottom: 6px;
+  font-size: 0.875rem;
+}
+/* the form's label rule is for field names; the other-amount chip is a
+   label too, and takes none of it */
+.field .cap-other {
+  display: flex;
+  margin: 0;
+  padding-left: 12px;
+  font-family: var(--sans);
+  letter-spacing: normal;
+  text-transform: none;
+}
 
 /* ---- Settings → Egress (#542) ---- */
 .egress-head {

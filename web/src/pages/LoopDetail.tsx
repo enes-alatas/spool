@@ -26,7 +26,9 @@ import {
   TGSender,
   Turn,
 } from '../api'
-import { formatTokens, fillTone, hasFillPct, formatSpend, inTurn, nextWake } from '../format'
+import { formatTokens, fillTone, hasFillPct, formatSpend, formatUsd, inTurn, nextWake } from '../format'
+import { cappedNote, dailyCapField, dailyCapValue, isPreset, thenCappedNote } from '../dailyCap'
+import { CapChips } from '../components/CapChips'
 import { customModelError } from '../forms'
 import { type Pace } from '../pace'
 import { PaceFacts, PaceRange } from '../components/PaceRange'
@@ -332,6 +334,92 @@ function NoSubagents({
           <span className="hint">{noSubagentsHint(subagents, cloud)}</span>
         </span>
       </label>
+      {error && (
+        <div className="form-error" role="alert">
+          {error}
+        </div>
+      )}
+    </>
+  )
+}
+
+// DailyCap is the loop's own daily spending cap (#652), under today's
+// spend it is measured against. A chip sets it at once, a cap raised past
+// that spend or removed waking a loop it holds; the last chip takes any
+// other amount, set on Enter or on leaving it. Words for a session that may not change it.
+function DailyCap({ loop }: { loop: LoopView }) {
+  const qc = useQueryClient()
+  const manage = useMay()('manage')
+  const stored = loop.daily_cap_usd ?? 0
+  // Whether the other-amount chip is lit: while the operator is in it, and
+  // otherwise whether the cap is an amount no chip names.
+  const [typing, setTyping] = useState(false)
+  const custom = typing || !isPreset(stored)
+  const [draft, setDraft] = useState<string | null>(null)
+  const [error, setError] = useState('')
+  const shown = draft ?? (isPreset(stored) ? '' : dailyCapField(stored))
+  const value = dailyCapValue(shown)
+  const cap = useMutation({
+    mutationFn: (usd: number) => api.patchLoop(loop.name, { daily_cap_usd: usd }),
+    onSuccess: () => {
+      setError('')
+      setDraft(null)
+      qc.invalidateQueries({ queryKey: ['loop', loop.name] })
+      qc.invalidateQueries({ queryKey: ['loops'] })
+    },
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
+  })
+  if (!manage) {
+    return (
+      <div className="row">
+        <span className="k">daily cap</span>
+        <span className="v">{stored ? formatUsd(stored) : 'no cap'}</span>
+      </div>
+    )
+  }
+  const pick = (usd: number) => {
+    setTyping(false)
+    setDraft(null)
+    setError('')
+    if (usd !== stored) cap.mutate(usd)
+  }
+  // Enter and leaving the field both land here: an untouched or emptied
+  // field changes nothing, and an amount the hub already holds is not sent.
+  const commit = () => {
+    setTyping(false)
+    if (draft === null || cap.isPending) return
+    if (draft.trim() === '') return setDraft(null)
+    if (value === undefined) return setError('An amount in dollars, like 15 or 2.50.')
+    if (value === stored) return setDraft(null)
+    cap.mutate(value)
+  }
+  return (
+    <>
+      <div className="row">
+        <span className="k" id="daily-cap-label">
+          daily cap
+        </span>
+      </div>
+      <CapChips
+        cap={stored}
+        custom={custom}
+        customText={shown}
+        invalid={value === undefined}
+        disabled={cap.isPending}
+        inputId="daily-cap"
+        labelledBy="daily-cap-label"
+        onPreset={pick}
+        onCustomFocus={() => setTyping(true)}
+        onCustomText={(text) => {
+          setDraft(text)
+          setError('')
+        }}
+        onCustomCommit={commit}
+        onCustomCancel={() => {
+          setDraft(null)
+          setError('')
+        }}
+      />
       {error && (
         <div className="form-error" role="alert">
           {error}
@@ -1500,6 +1588,7 @@ export default function LoopDetail() {
   // the end of it, so the pane says so where a wake would be expected.
   const { data: planUsage } = useQuery({ queryKey: ['plan-usage'], queryFn: api.planUsage })
   const fleetCapped = !!planUsage?.cap
+  const thenCapped = thenCappedNote(loop?.daily_cap_reached, fleetCapped)
   const { data: events, error: eventsError } = useQuery({
     queryKey: ['events', name],
     queryFn: () => api.events(name),
@@ -2063,12 +2152,9 @@ export default function LoopDetail() {
               <Countdown at={nextWake(loop)} />
             )}
             {loop.state === 'capped' ? (
-              <div className="wake-note">
-                Capped: the plan cap holds it until the window resets. Messages wait in its inbox.
-              </div>
+              <div className="wake-note">{cappedNote(loop, fleetCapped)}</div>
             ) : (
-              inTurn(loop.state) &&
-              fleetCapped && <div className="wake-note">Then capped: it sleeps when this turn ends.</div>
+              inTurn(loop.state) && thenCapped && <div className="wake-note">{thenCapped}</div>
             )}
             <div className="row">
               <span className="k">today</span>
@@ -2083,6 +2169,7 @@ export default function LoopDetail() {
                 {formatSpend(loop).text}
               </span>
             </div>
+            <DailyCap loop={loop} />
             <PacingChoice loop={loop} />
             {may('manage') ? (
               <ScheduleEditor

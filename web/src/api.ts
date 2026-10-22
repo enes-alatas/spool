@@ -62,6 +62,15 @@ export interface LoopView {
   // Agent tool on every turn. Never 'off' on a cloud loop, whose session's
   // tools the hub has no say over. Absent from a hub too old to set it.
   subagents?: Subagents
+  // The loop's own daily USD cap (#652), 0 for none: at or over it the loop
+  // sleeps until the hub's local day turns. A cloud loop's spend is the
+  // hub's estimate, and the cap counts that. Absent from a hub too old to
+  // set it.
+  daily_cap_usd?: number
+  // Whether that cap holds now, so a capped loop's page can say which cap
+  // it is under. True for a loop in its turn too, which the cap takes at
+  // the turn's end.
+  daily_cap_reached?: boolean
   tg_bot_username: string
   tg_group_chat_id: number
   status: 'active' | 'paused' | 'archived'
@@ -79,7 +88,8 @@ export interface LoopView {
   state: string
   next_tick_at: number
   // When a capped loop wakes: the reset that lifts the fleet's plan cap
-  // (#650). 0 while the loop is not capped.
+  // (#650), or the hub's next local day for a loop at its own daily cap
+  // (#652), whichever is later. 0 while the loop is not capped.
   capped_until: number
   // The known costs of today's turns, a cloud turn's being the hub's
   // estimate from its token usage (ADR-0059). Whether any is an estimate,
@@ -970,6 +980,7 @@ export interface CreateLoopReq {
   effort?: string
   pacing?: 'fixed' | 'self'
   subagents?: Subagents
+  daily_cap_usd?: number // 0 = no cap; 0 to 100000
   // Create-only; empty = server default. `cloud` is refused with 409
   // `cloud_not_ready` until Settings → Cloud is green.
   runtime?: 'bare' | 'docker' | 'cloud'
