@@ -125,5 +125,6 @@ the row they rest on.
 | `!hang <seconds>`, `nosuch-slow` | A slow turn. |
 | `!env NAME` | A loop echoing an injected credential, which is what redaction has to catch (#150). |
 | `!get URL` | A loop's outbound request, through Go's proxy-honouring client (#193). That the real CLI honours `HTTP_PROXY`/`HTTPS_PROXY` is **assumed**: ADR-0028 states it, and nothing records a measurement. |
+| `!github-token` | The workstation's GitHub helper fetching the loop's token from the hub's token route, with the hub credential `--mcp-config` gives the `spool` server (#887). It stands for the helper, not the CLI, and makes no claim about the real CLI. |
 | `!bash <command>` | The model calling the Bash tool. The PreToolUse hooks run on it (see Hooks above); the command itself never runs, and the reply is `blocked: <stderr>` or `ran: <command>`. |
 | `!send {json}` | The model calling the hub's `send_message` tool mid-turn (ADR-0026). The call shape is the MCP SDK's and runs daily on the real fleet. Assumed: the inline-JSON `--mcp-config` form (production passes a path) and one connection per session, to the server named `spool`. |

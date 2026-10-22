@@ -1,6 +1,6 @@
 # ADR-0043: Connections are org-level credentials and configs, defined once and attachable to loops
 
-Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572); 2026-10-04 (item 2: the env-var kind, #574); 2026-10-04 (item 5: per-loop secrets are connections, #576); 2026-10-05 (item 2: an mcp-server reaches its loop, #597); 2026-10-05 (item 1: private connections, #600); 2026-10-05 (item 5: the record of changes, #606); 2026-10-05 (item 3: rotation, #609); 2026-10-06 (item 3: revoke, #610); 2026-10-06 (item 5: the per-loop secrets routes are gone, #617); 2026-10-06 (item 2: the hub brokers an http server, #622); 2026-10-07 (item 5: an env-var change reaches the next turn, #640); 2026-10-07 (item 2: the database seals its secrets, ADR-0046)
+Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572); 2026-10-04 (item 2: the env-var kind, #574); 2026-10-04 (item 5: per-loop secrets are connections, #576); 2026-10-05 (item 2: an mcp-server reaches its loop, #597); 2026-10-05 (item 1: private connections, #600); 2026-10-05 (item 5: the record of changes, #606); 2026-10-05 (item 3: rotation, #609); 2026-10-06 (item 3: revoke, #610); 2026-10-06 (item 5: the per-loop secrets routes are gone, #617); 2026-10-06 (item 2: the hub brokers an http server, #622); 2026-10-07 (item 5: an env-var change reaches the next turn, #640); 2026-10-07 (item 2: the database seals its secrets, ADR-0046); 2026-10-22 (item 4: the github-app kind, #887)
 
 ## Context
 
@@ -197,6 +197,42 @@ follow in their own slice and amend this ADR.
 4. **GitHub stays an env credential until L5.** A GitHub token is an
    `env-credential` on `GH_TOKEN`. A GitHub App with its own kind waits for
    explicit orgs (operator's call, 2026-10-01).
+
+   **Amendment (2026-10-22, #887): the github-app kind.** Enes took the
+   GitHub App kind on 2026-10-16 (#884), ahead of explicit orgs: a GitHub
+   token in an `env-var` is held for a whole turn, and an installation
+   token lives an hour, so a long turn lost GitHub mid-turn. A
+   `github-app` connection holds an app's `app_id` (its App ID or Client
+   ID) and `installation_id` in its config, and the app's private key, an
+   RSA key in PEM, as its secret.
+   - **The key never leaves the hub.** No loop is given it, in env, file
+     or config. The hub signs the app's JWT with it and mints installation
+     tokens itself (ADR-0019 item 1's amendment).
+   - **A loop fetches a token when it needs one,** from `GET
+     /github/token` on the loop listener, with its own hub token. The hub
+     reads the connection on every request, so a detach or a revoke
+     refuses the next fetch. It serves a token with at least 15 minutes
+     left, from its cache or minted afresh, so no turn outlives its token
+     and nothing has to rotate the value from outside. Each token is
+     redacted before it is served, and kept for redaction while the hub
+     runs. How a loop's `git` and `gh` fetch it is #1054.
+   - **One GitHub identity per loop.** A second `github-app` on a loop is
+     refused, and so is a `github-app` beside an `env-var` on `GH_TOKEN`,
+     in either order (409 `connection_github_taken`).
+   - **A cloud loop can't hold one** (409 `connection_runtime`): the
+     cloud listener doesn't serve the token route.
+   - **A new key ends no session.** Item 3's rotation ends the sessions
+     that ran with the old value, and no loop held this one. The next
+     fetch mints under the new key. The old key stays valid at GitHub
+     until the operator deletes it under the App's private keys.
+   - **A revoke, a new key or a delete ends the cached token at GitHub,**
+     so the token loops were last handed dies at once rather than within
+     the hour. A fetch that raced the change reads the connection again
+     after its mint and ends its own token. These calls are best effort,
+     and a failure is logged. Two tokens outlive them: one the cache
+     replaced in its last 15 minutes lives those out, and a detach ends
+     nothing, since every loop holding the app shares the cached token,
+     so a detached loop keeps the one it fetched, an hour at most.
 
 5. **Injection doesn't change in this epic's first slice.** A connection
    reaches no loop until attachments land. Loops keep getting their

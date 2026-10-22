@@ -95,7 +95,7 @@ func TestConnectionsRoundTrip(t *testing.T) {
 		code string
 	}{
 		{map[string]any{"name": "Git_Hub", "kind": "env-var", "config": map[string]any{"env": "X"}, "secret": "s"}, "connection_name_invalid"},
-		{map[string]any{"name": "app", "kind": "github-app", "config": map[string]any{"env": "X"}, "secret": "s"}, "connection_kind_invalid"},
+		{map[string]any{"name": "app", "kind": "gitlab-app", "config": map[string]any{"env": "X"}, "secret": "s"}, "connection_kind_invalid"},
 		{map[string]any{"name": "env", "kind": "env-var", "config": map[string]any{"env": "GH-TOKEN"}, "secret": "s"}, "connection_config_invalid"},
 		{map[string]any{"name": "mcp", "kind": "mcp-server", "config": map[string]any{"transport": "http", "url": "ftp://example.test"}}, "connection_config_invalid"},
 		{map[string]any{"name": "bare", "kind": "env-var", "config": map[string]any{"env": "X"}}, "connection_secret_invalid"},

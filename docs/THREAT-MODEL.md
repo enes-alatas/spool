@@ -22,6 +22,7 @@ The local edition is in scope. The hosted edition (L7) gets its own model.
 | User passwords | `spool.db` | PBKDF2-SHA256, 600,000 iterations, random salt (ADR-0048) |
 | Sessions, link codes | `spool.db` | Only their SHA-256 is kept (ADR-0048, ADR-0050) |
 | Conversations, turns, events, the change record | `spool.db` | Redacted of every known secret on write, not encrypted (ADR-0045) |
+| Installation tokens minted for github-app connections | The hub's memory while it runs; a loop's workstation, if it keeps one | An hour's life at most, redacted before one is served, and the cached one ended at GitHub on a revoke, a new key or a delete (#887) |
 | Files sent and received | `<data-dir>/files/`, at most 20 MB, 30 days | The data directory's mode (ADR-0037) |
 | A loop's home: memory, sessions, tools, workspace, the credentials it was given | docker volume `spool-ws-<id>` | The workstation (below); not sealed |
 | The host | | The workstation and egress walls, for docker loops only |
@@ -158,12 +159,13 @@ made with `spool user` counts within a minute.
   pings until the next item would reach it, and the hub closes it then.
   On a quiet hub, that can be a long time.
 
-### Loop listener: `/mcp`, the brokered servers and the Claude proxy
+### Loop listener: `/mcp`, the brokered servers, the Claude proxy and the GitHub token route
 
 **What crosses:** a loop's MCP calls (its single `send_message` tool),
 its calls to a brokered server under `/mcp/connections/` (ADR-0026,
-ADR-0043), and a contained loop's model requests under `/claude`
-(ADR-0058).
+ADR-0043), a contained loop's model requests under `/claude`
+(ADR-0058), and a loop's fetch of its GitHub App installation token at
+`/github/token` (#887).
 
 **Holds:**
 - **Every request carries the loop's own token**, looked up by hash. The
@@ -199,10 +201,30 @@ ADR-0043), and a contained loop's model requests under `/claude`
   workstation's environment, its config or its volume. The loop's claude
   is told to make no call past the proxy, so it sends the hub token
   nowhere else (ADR-0058).
+- **The GitHub token route keeps the app's key in the hub.** It serves
+  a loop an installation token for the github-app it holds, read on every
+  request, so a detach or a revoke refuses the next fetch. The hub signs
+  the app's JWT and mints the token itself, and redacts each token before
+  it serves it. A revoke, a new key or a delete also ends the cached
+  token at GitHub, and a fetch that raced one ends its own (ADR-0043).
 
 **Doesn't hold:**
 - **The token is the only gate.** Any container on the default bridge can
   reach the listener's HTTP handling before authentication (ADR-0039).
+- **A loop holding an app holds its installation's reach.** A steered
+  loop can fetch tokens and act with every permission the installation
+  grants, and can copy a token out, where it works until it expires, an
+  hour at most, or until a revoke ends it. A revoke ends only the token
+  cached at that moment: one the cache replaced in its last 15 minutes
+  lives those out, and a detached loop keeps the token it fetched, which
+  every loop holding the app shares. Narrowing an app per loop is the L4
+  catalog's (#887).
+- **A new key in Spool leaves the old one valid at GitHub,** until the
+  operator deletes it under the App's private keys. After a leak, set the
+  new key here, then delete the old one there (#887).
+- **The hub itself calls `api.github.com`** to mint and revoke tokens,
+  with the app's JWT, which lives nine minutes. It follows no redirect
+  (#887).
 - **The broker forwards** any path, method and body under the server's
   stored URL (ADR-0045). It relays the server's answer as sent, without
   redacting it, so a server that echoes its request's headers back hands
@@ -649,7 +671,9 @@ ADR-0045 is the whole record. In short:
 - **A loop holds its credentials in the clear:** its environment
   variables, its MCP token and its stdio MCP secrets. A contained loop
   holds no Claude credential: its MCP token is also its login to the
-  Claude proxy (ADR-0058).
+  Claude proxy (ADR-0058). A loop holding a github-app holds no key,
+  only the installation tokens it fetches, each an hour old at most
+  (#887).
   Whatever steers the loop can use them.
 - **Spool keeps them** out of everything it writes and relays, and, behind
   the wall, away from hosts off the allowlist.

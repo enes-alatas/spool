@@ -1825,6 +1825,10 @@ const (
 	ConnectionEnvVar = "env-var"
 	// ConnectionMCPServer is an MCP server a loop's claude can be given.
 	ConnectionMCPServer = "mcp-server"
+	// ConnectionGitHubApp is a GitHub App's installation: the hub holds the
+	// app's private key and mints the loop short-lived installation tokens
+	// on demand (#887).
+	ConnectionGitHubApp = "github-app"
 )
 
 // The transports an mcp-server connection reaches its server by.
@@ -1835,14 +1839,20 @@ const (
 
 // ConnectionConfig is what a connection says about itself besides its
 // secret. Which fields it uses is its kind's: Env for an env-var;
-// Transport, and URL or Command with Args, for an mcp-server. It is read
-// back in full, so nothing secret belongs in it.
+// Transport, and URL or Command with Args, for an mcp-server; AppID and
+// InstallationID for a github-app. It is read back in full, so nothing
+// secret belongs in it.
 type ConnectionConfig struct {
 	Env       string   `json:"env,omitempty"`
 	Transport string   `json:"transport,omitempty"`
 	URL       string   `json:"url,omitempty"`
 	Command   string   `json:"command,omitempty"`
 	Args      []string `json:"args,omitempty"`
+	// AppID is a GitHub App's App ID or its Client ID: GitHub takes either
+	// as the issuer of the app's JWT.
+	AppID string `json:"app_id,omitempty"`
+	// InstallationID is the app's installation the tokens are minted for.
+	InstallationID int64 `json:"installation_id,omitempty"`
 }
 
 // Cleartext reports whether an http mcp-server's URL would carry its secret

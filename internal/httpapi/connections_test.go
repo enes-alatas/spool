@@ -1,6 +1,10 @@
 package httpapi
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"strings"
 	"testing"
 
@@ -17,6 +21,14 @@ func TestConnectionProblem(t *testing.T) {
 		config := stdio
 		config.Env = name
 		return config
+	}
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	appKey := string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}))
+	app := func(appID string, installation int64) store.ConnectionConfig {
+		return store.ConnectionConfig{AppID: appID, InstallationID: installation}
 	}
 	cases := []struct {
 		name       string
@@ -43,7 +55,7 @@ func TestConnectionProblem(t *testing.T) {
 		{"name too long", store.Connection{Name: strings.Repeat("a", 33), Kind: store.ConnectionEnvVar, Config: env("GH_TOKEN"), Secret: "s"}, codeConnectionNameInvalid},
 
 		{"no kind", store.Connection{Name: "github", Config: env("GH_TOKEN"), Secret: "s"}, codeConnectionKindInvalid},
-		{"unknown kind", store.Connection{Name: "github", Kind: "github-app", Config: env("GH_TOKEN"), Secret: "s"}, codeConnectionKindInvalid},
+		{"unknown kind", store.Connection{Name: "github", Kind: "gitlab-app", Config: env("GH_TOKEN"), Secret: "s"}, codeConnectionKindInvalid},
 
 		{"env-var, env with a dash", store.Connection{Name: "github", Kind: store.ConnectionEnvVar, Config: env("GH-TOKEN"), Secret: "s"}, codeConnectionConfigInvalid},
 		{"env-var, no env", store.Connection{Name: "github", Kind: store.ConnectionEnvVar, Secret: "s"}, codeConnectionConfigInvalid},
@@ -68,6 +80,17 @@ func TestConnectionProblem(t *testing.T) {
 
 		{"env-var, no secret", store.Connection{Name: "github", Kind: store.ConnectionEnvVar, Config: env("GH_TOKEN")}, codeConnectionSecretInvalid},
 		{"secret too large", store.Connection{Name: "docs", Kind: store.ConnectionMCPServer, Config: stdio, Secret: strings.Repeat("s", maxSecretValueLen+1)}, codeConnectionSecretInvalid},
+
+		{"github-app", store.Connection{Name: "gh-app", Kind: store.ConnectionGitHubApp, Config: app("123456", 42), Secret: appKey}, ""},
+		{"github-app by its client id", store.Connection{Name: "gh-app", Kind: store.ConnectionGitHubApp, Config: app("Iv23liAbCdEf", 42), Secret: appKey}, ""},
+		{"github-app, no app id", store.Connection{Name: "gh-app", Kind: store.ConnectionGitHubApp, Config: app("", 42), Secret: appKey}, codeConnectionConfigInvalid},
+		{"github-app, an app id of words", store.Connection{Name: "gh-app", Kind: store.ConnectionGitHubApp, Config: app("my app", 42), Secret: appKey}, codeConnectionConfigInvalid},
+		{"github-app, no installation", store.Connection{Name: "gh-app", Kind: store.ConnectionGitHubApp, Config: app("123456", 0), Secret: appKey}, codeConnectionConfigInvalid},
+		{"github-app with an env", store.Connection{Name: "gh-app", Kind: store.ConnectionGitHubApp, Config: store.ConnectionConfig{AppID: "123456", InstallationID: 42, Env: "GH_TOKEN"}, Secret: appKey}, codeConnectionConfigInvalid},
+		{"github-app, no key", store.Connection{Name: "gh-app", Kind: store.ConnectionGitHubApp, Config: app("123456", 42)}, codeConnectionSecretInvalid},
+		{"github-app, a token for a key", store.Connection{Name: "gh-app", Kind: store.ConnectionGitHubApp, Config: app("123456", 42), Secret: "ghp_synthetic0000"}, codeConnectionSecretInvalid},
+		{"env-var with an app id", store.Connection{Name: "github", Kind: store.ConnectionEnvVar, Config: store.ConnectionConfig{Env: "GH_TOKEN", AppID: "123456"}, Secret: "s"}, codeConnectionConfigInvalid},
+		{"mcp-server with an installation", store.Connection{Name: "docs", Kind: store.ConnectionMCPServer, Config: store.ConnectionConfig{Transport: store.MCPTransportStdio, Command: "c", InstallationID: 42}}, codeConnectionConfigInvalid},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

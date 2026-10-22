@@ -6,9 +6,11 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"time"
 
+	"github.com/enes-alatas/spool/internal/githubapp"
 	"github.com/enes-alatas/spool/internal/loop"
 	"github.com/enes-alatas/spool/internal/store"
 )
@@ -28,6 +30,8 @@ const (
 	codeConnectionEnvTaken      = "connection_env_taken"
 	codeConnectionPrivate       = "connection_private"
 	codeConnectionRevoked       = "connection_revoked"
+	codeConnectionRuntime       = "connection_runtime"
+	codeConnectionGitHubTaken   = "connection_github_taken"
 )
 
 // connectionView is a connection as the control room reads it: everything
@@ -151,9 +155,9 @@ func (server *Server) handleCreateConnection(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if owner != nil {
-		server.envMu.Lock()
-		defer server.envMu.Unlock()
-		if !server.envFreeFor(w, r, connection, owner) {
+		server.attachMu.Lock()
+		defer server.attachMu.Unlock()
+		if !server.attachableTo(w, r, connection, owner) {
 			return
 		}
 	}
@@ -192,6 +196,7 @@ func (server *Server) handleDeleteConnection(w http.ResponseWriter, r *http.Requ
 		server.connectionErr(w, r, err)
 		return
 	}
+	server.revokeGitHubToken(r.Context(), connection.Name)
 	server.secretsChanged(r.Context())
 	for _, id := range connection.LoopIDs {
 		server.loopChanged(r.Context(), id)
@@ -264,14 +269,22 @@ func (server *Server) handleRotateConnection(w http.ResponseWriter, r *http.Requ
 // holds it for a context rotation: the session that ran with the old value
 // ends at the loop's next quiet boundary, and its successor's wake reads
 // the new one. A loop with no session needs none (Enes, 2026-10-05, #507).
+// A github-app ends no session: no loop held its key.
 func (server *Server) rotateConnection(ctx context.Context, connection *store.Connection, value string) error {
 	if err := server.Store.Connections().SetSecret(ctx, connection.Name, value, time.Now().UnixMilli()); err != nil {
 		return err
 	}
 	server.secretsChanged(ctx)
+	// A github-app's key never reached a loop, so no session ran with it:
+	// the token minted under the old key ends, and the next fetch mints
+	// under the new one (#887).
+	appKey := connection.Kind == store.ConnectionGitHubApp
+	if appKey {
+		server.revokeGitHubToken(ctx, connection.Name)
+	}
 	for _, id := range connection.LoopIDs {
 		server.loopChanged(ctx, id)
-		if actor, ok := server.Manager.Get(id); ok {
+		if actor, ok := server.Manager.Get(id); ok && !appKey {
 			_ = actor.Rotate(store.RotationReasonConnection) // an error is no session to end
 		}
 	}
@@ -290,6 +303,7 @@ func (server *Server) handleRevokeConnection(w http.ResponseWriter, r *http.Requ
 		server.connectionErr(w, r, err)
 		return
 	}
+	server.revokeGitHubToken(r.Context(), name)
 	server.secretsChanged(r.Context())
 	for _, id := range loopIDs {
 		server.loopChanged(r.Context(), id)
@@ -361,11 +375,11 @@ func (server *Server) handleLoopConnection(attach bool) http.HandlerFunc {
 			return
 		}
 		name := r.PathValue("connection")
-		server.envMu.Lock()
-		defer server.envMu.Unlock()
+		server.attachMu.Lock()
+		defer server.attachMu.Unlock()
 		var err error
 		if attach {
-			if !server.envFree(w, r, name, loopRecord) {
+			if !server.attachable(w, r, name, loopRecord) {
 				return
 			}
 			err = server.Store.Connections().Attach(r.Context(), name, loopRecord.ID, time.Now().UnixMilli())
@@ -400,40 +414,64 @@ func (server *Server) envChanged(connection *store.Connection, loopID string) {
 	}
 }
 
-// envFree reports whether the named connection can be attached to the loop
-// without two env-vars setting one variable, which would leave the loop's
-// value to whichever the env build read last. It answers the request when
-// it can't.
-func (server *Server) envFree(w http.ResponseWriter, r *http.Request, name string, loopRecord *store.Loop) bool {
+// attachable reports whether the named connection can be attached to the
+// loop, and answers the request when it can't (attachableTo).
+func (server *Server) attachable(w http.ResponseWriter, r *http.Request, name string, loopRecord *store.Loop) bool {
 	connection, err := server.Store.Connections().Get(r.Context(), name)
 	if err == nil && connection.RevokedAt != 0 {
-		err = store.ErrConnectionRevoked // no variable to free for one that can't be attached
+		err = store.ErrConnectionRevoked // ahead of what attaching it would clash with
 	}
 	if err != nil {
 		server.connectionErr(w, r, err)
 		return false
 	}
-	return server.envFreeFor(w, r, connection, loopRecord)
+	return server.attachableTo(w, r, connection, loopRecord)
 }
 
-// envFreeFor is envFree for a connection in hand, which may not be stored
-// yet. The caller holds envMu.
-func (server *Server) envFreeFor(w http.ResponseWriter, r *http.Request, connection *store.Connection, loopRecord *store.Loop) bool {
-	name := connection.Name
-	if connection.Kind != store.ConnectionEnvVar {
+// attachableTo is attachable for a connection in hand, which may not be
+// stored yet. It refuses what would leave the loop two answers to one
+// question: two env-vars setting one variable, which would leave the value
+// to whichever the env build read last, or two GitHub identities, a second
+// github-app or a github-app beside an env-var on GH_TOKEN (#887). A cloud
+// loop can't hold a github-app: its listener doesn't serve the token route.
+// The caller holds attachMu.
+func (server *Server) attachableTo(w http.ResponseWriter, r *http.Request, connection *store.Connection, loopRecord *store.Loop) bool {
+	if connection.Kind == store.ConnectionMCPServer {
 		return true
 	}
-	byEnv, err := server.loopEnvVars(r.Context(), loopRecord.ID)
+	if connection.Kind == store.ConnectionGitHubApp && loopRecord.Runtime == store.RuntimeCloud {
+		server.jsonErrCode(w, 409, codeConnectionRuntime, "a cloud loop can't hold a github-app: its listener doesn't serve the token route")
+		return false
+	}
+	held, err := server.Store.Connections().ListByLoop(r.Context(), loopRecord.ID)
 	if err != nil {
 		server.jsonErr(w, 500, "%v", err)
 		return false
 	}
-	if holder, ok := byEnv[connection.Config.Env]; ok && holder.Name != name {
-		server.jsonErrCode(w, 409, codeConnectionEnvTaken, "%s already sets %s on loop %q; detach it first",
-			holder.Name, connection.Config.Env, loopRecord.Name)
-		return false
+	for _, holder := range held {
+		if holder.Name == connection.Name {
+			continue
+		}
+		switch {
+		case connection.Kind == store.ConnectionEnvVar && holder.Kind == store.ConnectionEnvVar && holder.Config.Env == connection.Config.Env:
+			server.jsonErrCode(w, 409, codeConnectionEnvTaken, "%s already sets %s on loop %q; detach it first",
+				holder.Name, connection.Config.Env, loopRecord.Name)
+			return false
+		case githubIdentity(connection) && githubIdentity(holder):
+			server.jsonErrCode(w, 409, codeConnectionGitHubTaken, "%s already gives loop %q its GitHub identity; detach it first",
+				holder.Name, loopRecord.Name)
+			return false
+		}
 	}
 	return true
+}
+
+// githubIdentity reports whether a connection is a loop's answer to which
+// GitHub identity it acts as: a github-app, or an env-var on GH_TOKEN. Two
+// on one loop would leave git and gh to disagree.
+func githubIdentity(connection *store.Connection) bool {
+	return connection.Kind == store.ConnectionGitHubApp ||
+		connection.Kind == store.ConnectionEnvVar && connection.Config.Env == "GH_TOKEN"
 }
 
 // connectionErr answers a store error about the connection the path names:
@@ -465,6 +503,9 @@ func connectionProblem(connection *store.Connection) (code, problem string) {
 	}
 	if len(connection.Secret) > maxSecretValueLen {
 		return codeConnectionSecretInvalid, "the secret is too large (max 16 KiB)"
+	}
+	if connection.Kind != store.ConnectionGitHubApp && (config.AppID != "" || config.InstallationID != 0) {
+		return codeConnectionConfigInvalid, "only a github-app's config has app_id and installation_id"
 	}
 	switch connection.Kind {
 	case store.ConnectionEnvVar:
@@ -516,8 +557,37 @@ func connectionProblem(connection *store.Connection) (code, problem string) {
 		default:
 			return codeConnectionConfigInvalid, "an mcp-server's config.transport is http or stdio"
 		}
+	case store.ConnectionGitHubApp:
+		switch {
+		case !appIDRe.MatchString(config.AppID):
+			return codeConnectionConfigInvalid, "a github-app's config.app_id is the app's App ID or Client ID"
+		case config.InstallationID <= 0:
+			return codeConnectionConfigInvalid, "a github-app's config.installation_id is the installation's id, a positive number"
+		case config.Env != "" || config.Transport != "" || config.URL != "" || config.Command != "" || len(config.Args) > 0:
+			return codeConnectionConfigInvalid, "a github-app's config has app_id and installation_id and nothing else"
+		}
+		if _, err := githubapp.ParseKey(connection.Secret); err != nil {
+			return codeConnectionSecretInvalid, "a github-app's secret is the app's private key, an RSA key in PEM: " + err.Error()
+		}
 	default:
-		return codeConnectionKindInvalid, "a connection's kind is env-var or mcp-server"
+		return codeConnectionKindInvalid, "a connection's kind is env-var, mcp-server or github-app"
 	}
 	return "", ""
+}
+
+// appIDRe matches a GitHub App's App ID, a number, or its Client ID, which
+// starts Iv.
+var appIDRe = regexp.MustCompile(`^([1-9][0-9]{0,19}|Iv[0-9A-Za-z.]{1,40})$`)
+
+// revokeGitHubToken ends a github-app connection's cached token at GitHub
+// when it is revoked, given a new key or deleted, so the last token a loop
+// was handed dies now rather than within the hour. Best effort: it expires
+// anyway. Any other connection has no token cached.
+func (server *Server) revokeGitHubToken(ctx context.Context, name string) {
+	if server.GitHubApps == nil {
+		return
+	}
+	if err := server.GitHubApps.Revoke(ctx, name); err != nil {
+		server.Log.Warn("github-app: the cached token lives out its hour", "connection", name, "err", err)
+	}
 }
