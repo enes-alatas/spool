@@ -158,6 +158,23 @@ ADR instead.*
   does. Posting a slice plan on the parent is the trigger: whoever posts it
   files the slices in the same sitting. Without them a reader reconstructs
   from the PR list which slice is done, in review or next (#123, #420).
+- **An issue's title says what changes, for whoever the change is for**
+  (#1034). A product issue's title is one sentence in the operator's words
+  saying what changes for them, in the room, on a surface or in a deploy,
+  with no ADR, slice, PR or symbol name in it; those go in the body, under
+  "Seams / ADRs touched" where the form has it. A team-only issue (CI,
+  tests, docs of record, repo guards) is written for the team: its title may
+  name the test or workflow it is about, since that is what changes, and may
+  open with a Conventional prefix, `type(scope):` or `type:`, matching the
+  commit that will close it. A product issue carries no prefix, and neither
+  kind puts "Part of #n" or "web half of" in its title. A product issue's
+  body opens with what the operator sees or does today and what is wrong
+  with it; references and internals follow. Its proposed shape names each
+  surface that changes, so a screenshot comment can say which one it shows;
+  a shot of something the issue doesn't name means the issue is missing a
+  line, or the shot belongs to another issue. #1023's title named a slice, a
+  PR and a symbol before what changed, and the operator could not tell what
+  it was about or how its screenshots related to it.
 - **The issue body is the spec of record; comments are history** (#388). A
   loop rotates and reads the body first, so a decision that exists only in
   a comment gets asked again: #230's body still called the WebSocket
