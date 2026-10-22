@@ -34,6 +34,9 @@ package main
 // Anthropic reclaimed while idle: claude-env is kept, and SessionStart
 // fires again with source resume before the turn.
 //
+// A "turn-held" file in a session's directory holds its turns before
+// their Stop hook until it is removed, for at most half a minute.
+//
 // A "cloud-start-held" file in $FAKECLAUDE_STATE holds a new VM's
 // SessionStart back until it is removed, for at most half a minute.
 // A "cloud-model" file in $FAKECLAUDE_STATE names the model a turn's
@@ -253,6 +256,7 @@ func cloudTurn(session, message string, first bool) int {
 		_, _ = file.Write(append(raw, '\n'))
 	}
 	file.Close()
+	hold(filepath.Join(vm, "turn-held"))
 	runHooks(repo, repo, "Stop", "", env, map[string]any{
 		"hook_event_name": "Stop", "session_id": "local-" + session, "cwd": repo,
 		"transcript_path": transcript, "last_assistant_message": reply, "stop_hook_active": false,
@@ -358,7 +362,11 @@ func matches(matcher, source string) bool {
 // file is in $FAKECLAUDE_STATE: a new VM's SessionStart is held back, so a
 // test can post while the hub's start of the loop is pending.
 func holdStart() {
-	held := filepath.Join(filepath.Dir(cloudRoot()), "cloud-start-held")
+	hold(filepath.Join(filepath.Dir(cloudRoot()), "cloud-start-held"))
+}
+
+// hold waits, for at most half a minute, while the file held is there.
+func hold(held string) {
 	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
 		if _, err := os.Stat(held); err != nil {
 			return

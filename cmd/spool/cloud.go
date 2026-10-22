@@ -166,3 +166,19 @@ func (environments cloudEnvironments) Environments(ctx context.Context) ([]httpa
 	}
 	return out, nil
 }
+
+// cloudSessions is each cloud loop's session link and its turn that may be
+// running, for the loop's page.
+type cloudSessions struct{ runtime *cloud.Runtime }
+
+func (sessions cloudSessions) SessionURL(loopID string) string {
+	return sessions.runtime.SessionURL(loopID)
+}
+
+func (sessions cloudSessions) Turn(loopID string) *httpapi.CloudTurn {
+	turn, ok := sessions.runtime.Turn(loopID)
+	if !ok {
+		return nil
+	}
+	return &httpapi.CloudTurn{Since: turn.Since, Until: turn.Until, SessionURL: turn.SessionURL, CutOff: turn.CutOff}
+}

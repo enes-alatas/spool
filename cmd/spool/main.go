@@ -592,7 +592,7 @@ func main() {
 		CloudLogin:           loginRefresh,
 		ClaudeAPIBase:        cloudAPI,
 		CloudAccounts:        cloudAccounts{runtime: cloudRuntime, image: dockerRuntime},
-		CloudSessions:        cloudRuntime,
+		CloudSessions:        cloudSessions{runtime: cloudRuntime},
 		CloudEnvironments:    cloudEnvironments{runtime: cloudRuntime},
 		CloudHooks:           cloudRuntime,
 		EgressFlag:           egressFlag(allowEntries),

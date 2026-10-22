@@ -522,6 +522,9 @@ type loopView struct {
 	// CloudSessionURL is a cloud loop's current session on claude.ai,
 	// absent before its first session (ADR-0056).
 	CloudSessionURL string `json:"cloud_session_url,omitempty"`
+	// CloudTurn is a cloud loop's turn that may be running in a session,
+	// absent when the hub knows of none (ADR-0059).
+	CloudTurn *CloudTurn `json:"cloud_turn,omitempty"`
 	// CloudAllowlistUnconfirmed is set on a cloud loop while the operator
 	// hasn't confirmed pasting the current allowlist into the environment:
 	// the hub's egress allowlist doesn't bind the loop, only what its
@@ -626,6 +629,7 @@ func (server *Server) view(ctx context.Context, loopRecord *store.Loop) *loopVie
 	}
 	if loopRecord.Runtime == store.RuntimeCloud && server.CloudSessions != nil {
 		out.CloudSessionURL = server.CloudSessions.SessionURL(loopRecord.ID)
+		out.CloudTurn = server.CloudSessions.Turn(loopRecord.ID)
 	}
 	if loopRecord.Runtime == store.RuntimeCloud {
 		out.CloudAllowlistUnconfirmed = server.cloudAllowlistUnconfirmed(ctx)
