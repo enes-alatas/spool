@@ -38,6 +38,9 @@ export interface LoopView {
   // A cloud loop's current session on claude.ai, absent before its first
   // session; the hub serves only a https://claude.ai/code/ page (ADR-0056).
   cloud_session_url?: string
+  // A cloud loop's turn that may be running in a session, absent when the
+  // hub knows of none (ADR-0059, #1028).
+  cloud_turn?: CloudTurn
   // Set on a cloud loop while the environment's allowlist isn't confirmed
   // (ADR-0059): a warning, never a hold.
   cloud_allowlist_unconfirmed?: boolean
@@ -902,6 +905,19 @@ export interface ConnectionEvent {
   connection: string
   loop?: string
   at: number
+}
+
+// A cloud loop's turn that may be running in a session (ADR-0059). The CLI
+// can't interrupt a session, so a stop, a kill or a rotation leaves the turn
+// running out of the hub's hearing: cut_off. since is the hub's send, which a
+// turn about to start shares with one running; until is when the hub stops
+// counting it. session_url is the turn's own session, which after a rotation
+// is not the loop's current one. Times are Unix ms.
+export interface CloudTurn {
+  since: number
+  until: number
+  session_url: string
+  cut_off: boolean
 }
 
 // A connection as a loop's view lists it: what it is, never what it holds.
