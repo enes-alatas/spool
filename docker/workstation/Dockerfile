@@ -77,6 +77,13 @@ RUN useradd --create-home --shell /bin/bash loop \
 ARG TARGETARCH
 COPY bin/spool-hook-${TARGETARCH} /usr/local/bin/spool-hook
 
+# spool-github (#1054): git's credential helper for github.com, and, as the gh
+# link in /usr/local/bin ahead of /usr/bin/gh, the gh that sets GH_TOKEN. Both
+# ask the hub for a fresh token of the github-app the loop holds; for a loop
+# holding none the hub hands no route, and gh passes straight through.
+COPY bin/spool-github-${TARGETARCH} /usr/local/bin/spool-github
+RUN ln -s spool-github /usr/local/bin/gh
+
 # Turn off all non-essential network traffic — telemetry, error reporting, and
 # update checks. Spool sends no telemetry.
 ENV CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
