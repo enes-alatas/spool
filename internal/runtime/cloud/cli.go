@@ -304,10 +304,13 @@ func (session *cliSession) run() {
 
 // turn starts the session with text, or sends text into it, and passes on
 // the turn its Stop post reads back. The wait for that post is registered
-// before the CLI runs, so a turn that ends at once is not missed.
+// before the CLI runs, so a turn that ends at once is not missed. The turn
+// is recorded from the send until its post, or, when the session is closed
+// first, as cut off until its quiet bound.
 func (session *cliSession) turn(text string) {
 	stops := session.cloud.waits.awaitStop(session.loopID)
 	defer session.cloud.waits.forgetStop(session.loopID, stops)
+	sent := time.Now()
 	var err error
 	if session.sessionID == "" {
 		err = session.startSession(text)
@@ -318,13 +321,17 @@ func (session *cliSession) turn(text string) {
 		session.fail(err.Error())
 		return
 	}
+	inFlight := session.cloud.beginTurn(session.loopID, sent, session.bounds.Quiet)
 	backstop := time.NewTimer(session.bounds.Quiet)
 	defer backstop.Stop()
 	select {
 	case <-session.ctx.Done():
+		session.cloud.cutOffTurn(session.loopID, inFlight)
 	case <-backstop.C:
+		session.cloud.endTurn(session.loopID, inFlight.Since)
 		session.fail(fmt.Sprintf("the session posted no turn for %s", session.bounds.Quiet))
 	case arrival := <-stops:
+		session.cloud.endTurn(session.loopID, inFlight.Since)
 		if arrival.overBound {
 			session.fail("the turn's Stop post is over its bound and was not read")
 			return

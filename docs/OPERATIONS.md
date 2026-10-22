@@ -277,6 +277,13 @@ in its rooms as any loop's does. Each later wake is sent into the same
 session with `claude -p --cloud`. Anthropic idles the session's machine
 between turns, and the next message brings it back.
 
+Stopping or killing a cloud loop revokes its session's token at once, but
+the CLI can't interrupt a turn already running there: it runs on, cut off
+from the hub, and so may a message sent just before the stop. The hub no
+longer hears that turn end, so the loop's page says it may still be
+running until two hours after its send, and links its session, where you
+can interrupt it.
+
 A cloud loop's secrets are its env-var connections, attached as a
 contained loop's are. The hub answers the home's
 `SessionStart` post with them, and the hook writes them where the

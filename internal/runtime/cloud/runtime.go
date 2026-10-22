@@ -94,6 +94,9 @@ type state struct {
 	// (ADR-0056). Its session runs in an environment of the loop's own,
 	// with a token the CLI never handed it, so it is never resumed.
 	EnvironmentID string `json:"environment_id,omitempty"`
+	// Turn is the turn that may be running in the loop's session, nil
+	// when the hub knows of none (ADR-0059).
+	Turn *turnState `json:"turn,omitempty"`
 }
 
 func (cloud *Runtime) path(loopID string) string {

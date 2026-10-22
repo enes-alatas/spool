@@ -184,6 +184,26 @@ and 2026-10-20, found the shape. Each finding is recorded on the issue:
    - The VM idles, pauses and is reclaimed by Anthropic, as ADR-0056's
      sleep already relies on.
 
+   **Amendment (2026-10-22, #1028):** the hub hears a turn end only
+   while the loop holds its token. A stop, a kill or a rotation revokes
+   the token first, so the VM's `Stop` post gets a 401 and that turn's
+   end is never heard.
+   - A turn counts as running until its `Stop` post, or, once cut off,
+     until its quiet bound (two hours from the send), the backstop the
+     runtime already keeps for a post that never comes.
+   - A hub that stops cuts its turns off too: nothing waits for their
+     posts once it is back.
+   - The loop's JSON carries it as `cloud_turn` (`since`, `until`,
+     `session_url`, `cut_off`), kept in the loop's state file.
+     `session_url` is the turn's session, which after a rotation is not
+     the loop's current one.
+   - A later turn sent while a cut-off one is still within its bound
+     leaves that one shown, until it is cut off itself and takes its
+     place.
+   - Not taken: accepting a `Stop` post on a token revoked in the last
+     two hours, to clear the field. A revoked token would still
+     authenticate something. Stop still revokes at once.
+
 6. **One environment for every cloud loop, which the operator sets up on
    claude.ai once.** The operator pastes its `env_…` ID into Settings,
    and the hub passes it on each start (item 1). The environment must let

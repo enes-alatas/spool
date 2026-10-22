@@ -476,8 +476,10 @@ cloud listener (ADR-0059).
 - **A stop can't interrupt the turn in flight.** The CLI has no way to,
   so the turn runs on in the VM until it ends, cut off from the hub but
   with its other tools. A wake sent just before the stop may start a turn
-  after it. The operator interrupts and archives the session on
-  claude.ai.
+  after it. With the token revoked, the hub never hears that turn end, so
+  the loop's page says it may still be running until its two-hour quiet
+  bound, and links its session (ADR-0059, #1028). The operator interrupts
+  and archives the session on claude.ai.
 - **The wake crosses in argv.** `claude --cloud` and `claude -p --cloud`
   take the envelope as an argument, so any user on the hub's host can
   read it in `/proc/<pid>/cmdline` while the run lasts, and Linux refuses
