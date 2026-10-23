@@ -50,6 +50,26 @@ func (actor *Actor) githubEnv(system map[string]string, kind string, connections
 	}
 }
 
+// ShadowsGitHubEnv reports whether an env-var on name would undo what
+// githubEnv sets, since an attached env-var wins a clash with the system
+// env (#1060): the route and hub token, git's env config, or PATH, which
+// carries a bare loop's gh link. GIT_CONFIG_PARAMETERS too: githubEnv
+// doesn't set it, but git reads it after the GIT_CONFIG_COUNT pairs, so an
+// empty helper there clears the hub's. Beside a github-app any of them
+// would leave git or gh unauthenticated with nothing pointing at why.
+func ShadowsGitHubEnv(name string) bool {
+	switch name {
+	case githubhelper.EnvTokenURL, githubhelper.EnvHubToken, "GIT_CONFIG_COUNT", "GIT_CONFIG_PARAMETERS", "PATH":
+		return true
+	}
+	for _, prefix := range []string{"GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_"} {
+		if index, ok := strings.CutPrefix(name, prefix); ok && index != "" && strings.Trim(index, "0123456789") == "" {
+			return true
+		}
+	}
+	return false
+}
+
 func holdsGitHubApp(connections []*store.Connection) bool {
 	for _, connection := range connections {
 		if connection.Kind == store.ConnectionGitHubApp && connection.RevokedAt == 0 {

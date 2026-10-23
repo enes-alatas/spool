@@ -1,6 +1,6 @@
 # ADR-0043: Connections are org-level credentials and configs, defined once and attachable to loops
 
-Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572); 2026-10-04 (item 2: the env-var kind, #574); 2026-10-04 (item 5: per-loop secrets are connections, #576); 2026-10-05 (item 2: an mcp-server reaches its loop, #597); 2026-10-05 (item 1: private connections, #600); 2026-10-05 (item 5: the record of changes, #606); 2026-10-05 (item 3: rotation, #609); 2026-10-06 (item 3: revoke, #610); 2026-10-06 (item 5: the per-loop secrets routes are gone, #617); 2026-10-06 (item 2: the hub brokers an http server, #622); 2026-10-07 (item 5: an env-var change reaches the next turn, #640); 2026-10-07 (item 2: the database seals its secrets, ADR-0046); 2026-10-22 (item 4: the github-app kind, #887); 2026-10-22 (item 4: git and gh fetch the token, #1054)
+Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572); 2026-10-04 (item 2: the env-var kind, #574); 2026-10-04 (item 5: per-loop secrets are connections, #576); 2026-10-05 (item 2: an mcp-server reaches its loop, #597); 2026-10-05 (item 1: private connections, #600); 2026-10-05 (item 5: the record of changes, #606); 2026-10-05 (item 3: rotation, #609); 2026-10-06 (item 3: revoke, #610); 2026-10-06 (item 5: the per-loop secrets routes are gone, #617); 2026-10-06 (item 2: the hub brokers an http server, #622); 2026-10-07 (item 5: an env-var change reaches the next turn, #640); 2026-10-07 (item 2: the database seals its secrets, ADR-0046); 2026-10-22 (item 4: the github-app kind, #887); 2026-10-22 (item 4: git and gh fetch the token, #1054); 2026-10-23 (item 4: no env-var shadows the helper's env, #1060)
 
 ## Context
 
@@ -251,6 +251,18 @@ follow in their own slice and amend this ADR.
      app. Attaching or detaching one closes the loop's process at its next
      quiet boundary, as an `env-var` change does (item 5's #640
      amendment), so the next turn runs with it.
+
+   **Amendment (2026-10-23, #1060): no env-var shadows the helper's env.**
+   An attached `env-var` wins a clash with a system variable (item 5's
+   #576 amendment), so one on a variable the hub sets for the helper
+   would leave git or gh unauthenticated with nothing saying why. Beside
+   a `github-app` an `env-var` on `PATH`, `GIT_CONFIG_COUNT`,
+   `GIT_CONFIG_KEY_<n>`, `GIT_CONFIG_VALUE_<n>`, `GIT_CONFIG_PARAMETERS`
+   (which git reads after the counted pairs, so an empty helper there
+   clears the hub's), `SPOOL_GITHUB_TOKEN_URL` or `SPOOL_HUB_TOKEN` is
+   refused, in either order (409 `connection_github_env`). It is refused
+   on every runtime, though a contained loop's PATH carries no link,
+   since its value would still replace the image's.
 
 5. **Injection doesn't change in this epic's first slice.** A connection
    reaches no loop until attachments land. Loops keep getting their

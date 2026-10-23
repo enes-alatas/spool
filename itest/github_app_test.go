@@ -329,6 +329,43 @@ func TestALoopHoldsOneGitHubIdentity(t *testing.T) {
 	hub.mustJSON("PUT", "/api/loops/aster/connections/gh-app", nil, nil) // attaching what is attached changes nothing
 }
 
+// An env-var on a variable the hub sets for a github-app holder's git and
+// gh, PATH or git's env config among them, is refused beside a github-app
+// in either order (#1060): it would win the clash and leave git or gh
+// unauthenticated. One on any other variable attaches.
+func TestAnEnvVarCantShadowTheGitHubHelpersEnv(t *testing.T) {
+	t.Parallel()
+	fake, api := startFakeGitHubApps(t)
+	hub := startServerArgs(t, t.TempDir(), "--runtime", "bare", "--github-api-base", api)
+	hub.createLoop("aster", nil)
+	hub.createLoop("basil", nil)
+	hub.mustJSON("POST", "/api/connections", map[string]any{
+		"name": "gh-app", "kind": "github-app", "secret": fake.newAppKey(),
+		"config": map[string]any{"app_id": "1234", "installation_id": 42},
+	}, nil)
+	for name, env := range map[string]string{"own-path": "PATH", "own-helper": "GIT_CONFIG_VALUE_1", "own-route": "SPOOL_GITHUB_TOKEN_URL", "own-params": "GIT_CONFIG_PARAMETERS", "editor": "EDITOR"} {
+		hub.mustJSON("POST", "/api/connections", map[string]any{
+			"name": name, "kind": "env-var", "secret": "fixture-value", "config": map[string]any{"env": env},
+		}, nil)
+	}
+	conflict := func(path, want string) {
+		t.Helper()
+		resp, body := hub.do("PUT", path, nil)
+		if resp.StatusCode != http.StatusConflict || !strings.Contains(string(body), "connection_github_env") || !strings.Contains(string(body), want) {
+			t.Errorf("PUT %s = %d %s, want 409 connection_github_env naming %s", path, resp.StatusCode, body, want)
+		}
+	}
+
+	hub.mustJSON("PUT", "/api/loops/aster/connections/gh-app", nil, nil)
+	conflict("/api/loops/aster/connections/own-path", "PATH")
+	conflict("/api/loops/aster/connections/own-helper", "GIT_CONFIG_VALUE_1")
+	conflict("/api/loops/aster/connections/own-route", "SPOOL_GITHUB_TOKEN_URL")
+	conflict("/api/loops/aster/connections/own-params", "GIT_CONFIG_PARAMETERS")
+	hub.mustJSON("PUT", "/api/loops/aster/connections/editor", nil, nil)
+	hub.mustJSON("PUT", "/api/loops/basil/connections/own-path", nil, nil)
+	conflict("/api/loops/basil/connections/gh-app", "PATH")
+}
+
 // A loop holding a github-app gets its token in git and gh with nothing of
 // its own to run (#1054). Its git asks spool-github, the credential helper
 // the hub registers through git's env config, and is answered with the
