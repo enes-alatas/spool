@@ -491,6 +491,11 @@ changes none, and a rollback restores none, so copying them would only
 keep the hub down longer. So it isn't a full backup: keep the
 [scheduled one](#back-up-and-restore) running for the volumes.
 
+Before it builds or pulls, the upgrade tags the images the hub runs as
+`spool-workstation:spool-previous` and `spool-egress:spool-previous`, and
+a rollback tags them back. They stay until the next upgrade moves them;
+`docker image rm` them to reclaim the space once the new hub is checked.
+
 `main`, or a tag with `--from-source <checkout>`, is built in the
 checkout as its owner. Until a release ships binaries (#747), only those
 work. The installed backup and restore scripts are needed either way:

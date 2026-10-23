@@ -315,7 +315,9 @@ func newUpgradeEnv(t *testing.T) (*upgradeEnv, *upgrader, *fakeHost, *bytes.Buff
 var releaseOrder = []string{
 	"systemctl show",
 	"docker image inspect --format {{.Id}} spool-workstation",
+	"docker tag sha256:old-spool-workstation spool-workstation:spool-previous",
 	"docker image inspect --format {{.Id}} spool-egress",
+	"docker tag sha256:old-spool-egress spool-egress:spool-previous",
 	"nobody --version",
 	"nobody migrations",
 	"nobody images",
@@ -549,6 +551,11 @@ func TestUpgradeRollsBackAFailedCheck(t *testing.T) {
 		env, up, host, out := newUpgradeEnv(t)
 		env.startsAs = startsAs
 		host.answer = func(cmd hostCmd) (string, error, bool) {
+			// a docker that drops the image a moved tag left behind, as on
+			// an operator's host: the recorded id no longer resolves (#1086)
+			if cmd.Name == "docker" && cmd.Args[0] == "tag" && strings.HasPrefix(cmd.Args[1], "sha256:") && !strings.HasSuffix(cmd.Args[2], ":spool-previous") {
+				return "", errors.New("No such image: " + cmd.Args[1]), true
+			}
 			// once rolled back, the previous build starts
 			if cmd.Name == "systemctl" && cmd.Args[0] == "start" && read(t, env.bin) == "old spool" {
 				env.setServing("v0.5.1")
@@ -565,8 +572,8 @@ func TestUpgradeRollsBackAFailedCheck(t *testing.T) {
 		want := append(slices.Clone(releaseOrder),
 			"systemctl stop spool",
 			"restore --data "+data+" --data-dir "+env.dataDir+" --no-volumes --keys "+keys,
-			"docker tag sha256:old-spool-workstation spool-workstation",
-			"docker tag sha256:old-spool-egress spool-egress",
+			"docker tag spool-workstation:spool-previous spool-workstation",
+			"docker tag spool-egress:spool-previous spool-egress",
 			"systemctl start spool",
 		)
 		if got := host.commands(); !slices.Equal(got, want) {
@@ -603,7 +610,7 @@ func TestUpgradeRollbackStopsAtAFailedStep(t *testing.T) {
 	if got[len(got)-1] != "restore --data "+filepath.Join(env.backupDir, "spool-data-20261016T000000Z.tar.gz")+" --data-dir "+env.dataDir+" --no-volumes --keys "+filepath.Join(env.backupDir, "spool-keys-20261016T000000Z.tar") {
 		t.Errorf("a command ran after the failed restore: %q", got[len(got)-1])
 	}
-	for _, left := range []string{"left to do by hand", "retag the recorded image ids", "put back " + env.bin + ".previous", "systemctl start spool"} {
+	for _, left := range []string{"left to do by hand", "docker tag spool-workstation:spool-previous spool-workstation && docker tag spool-egress:spool-previous spool-egress", "put back " + env.bin + ".previous", "systemctl start spool"} {
 		if !strings.Contains(out.String(), left) {
 			t.Errorf("the output lacks %q:\n%s", left, out)
 		}
@@ -700,7 +707,9 @@ func TestUpgradeBuildsMainAsTheCheckoutOwner(t *testing.T) {
 		"systemctl show",
 		owner + buildTools,
 		"docker image inspect --format {{.Id}} spool-workstation",
+		"docker tag sha256:old-spool-workstation spool-workstation:spool-previous",
 		"docker image inspect --format {{.Id}} spool-egress",
+		"docker tag sha256:old-spool-egress spool-egress:spool-previous",
 		owner + "git fetch --tags origin && git checkout main && git pull --ff-only origin main",
 		owner + "make build",
 		owner + "make image",
@@ -743,7 +752,7 @@ func TestUpgradeARefusedBuildPutsTheImagesBack(t *testing.T) {
 		t.Fatalf("upgrade = %v; want a refusal before the stop", err)
 	}
 	got := host.commands()
-	if !slices.Equal(got[len(got)-2:], []string{"docker tag sha256:old-spool-workstation spool-workstation", "docker tag sha256:old-spool-egress spool-egress"}) {
+	if !slices.Equal(got[len(got)-2:], []string{"docker tag spool-workstation:spool-previous spool-workstation", "docker tag spool-egress:spool-previous spool-egress"}) {
 		t.Errorf("after the refusal ran %q; want the recorded images retagged", got)
 	}
 }
@@ -933,5 +942,40 @@ func TestUpgradeRefusesASourceBuildMissingItsTools(t *testing.T) {
 		if strings.Contains(out.String(), "plan for unit") {
 			t.Errorf("dry run %v printed a plan it can't carry out:\n%s", dryRun, out)
 		}
+	}
+}
+
+// The rollback's images are kept under the repository's spool-previous
+// tag, whatever the unit names them with.
+func TestPreviousImageKeepsTheRepository(t *testing.T) {
+	for image, want := range map[string]string{
+		"spool-workstation":                          "spool-workstation:spool-previous",
+		"spool-egress:latest":                        "spool-egress:spool-previous",
+		"registry.local:5000/spool-workstation":      "registry.local:5000/spool-workstation:spool-previous",
+		"registry.local:5000/spool-egress:v1":        "registry.local:5000/spool-egress:spool-previous",
+		"ghcr.io/enes-alatas/spool-egress@sha256:ab": "ghcr.io/enes-alatas/spool-egress:spool-previous",
+	} {
+		if got := previousImage(image); got != want {
+			t.Errorf("previousImage(%q) = %q; want %q", image, got, want)
+		}
+	}
+}
+
+// An image that can't be kept for a rollback refuses the upgrade before
+// anything is built, pulled or stopped.
+func TestUpgradeRefusesWhenItCantKeepThePreviousImages(t *testing.T) {
+	_, up, host, _ := newUpgradeEnv(t)
+	host.answer = func(cmd hostCmd) (string, error, bool) {
+		if cmd.Name == "docker" && cmd.Args[0] == "tag" && cmd.Args[2] == "spool-egress:spool-previous" {
+			return "", errors.New("no space left on device"), true
+		}
+		return "", nil, false
+	}
+	err := up.run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "nothing changed") || stopped(host) {
+		t.Fatalf("upgrade = %v; want a refusal before the stop", err)
+	}
+	if got := host.commands(); slices.ContainsFunc(got, func(command string) bool { return strings.HasPrefix(command, "docker pull") }) {
+		t.Errorf("ran %q; want nothing pulled", got)
 	}
 }
