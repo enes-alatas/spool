@@ -140,15 +140,33 @@ func dockerLoopReachesTheModelThroughTheClaudeProxy(t *testing.T) {
 
 	// one probe per script: fakeclaude answers a session's turn N with line
 	// N, and the creation tick may already have taken turn 1, so a single
-	// line, which repeats, is the only one every turn reads
+	// line, which repeats, is the only one every turn reads. A script set
+	// again rotates the session, and a loop already asleep spawns afresh for
+	// the handoff turn, which then runs the new script too (#995). So each
+	// probe reads only the turn its own message started, and the model
+	// requests made from then on.
+	var requestsBefore int
 	probe := func(directive, ask, prefix string) turn {
 		s.scriptLoop("wsproxy", directive+"\n")
+		seen := map[string]bool{}
+		for _, done := range s.completed("wsproxy") {
+			seen[done.ID] = true
+		}
+		fake.Mu.Lock()
+		requestsBefore = len(fake.Messages)
+		fake.Mu.Unlock()
 		s.message("wsproxy", ask)
-		return s.waitTurn("wsproxy", 90*time.Second, func(tr turn) bool { return strings.HasPrefix(tr.ResultText, prefix) })
+		return s.waitTurn("wsproxy", 90*time.Second, func(tr turn) bool {
+			return !seen[tr.ID] && tr.Trigger == "message" && strings.HasPrefix(tr.ResultText, prefix)
+		})
 	}
 	login := probe("!env64 CLAUDE_CODE_OAUTH_TOKEN", "which login?", "CLAUDE_CODE_OAUTH_TOKEN=")
 	base := probe("!env ANTHROPIC_BASE_URL", "where?", "ANTHROPIC_BASE_URL=")
 	quiet := probe("!env CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "anything past the proxy?", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=")
+	// asleep, so the rotation's handoff turn spawns on the new script and
+	// asks the model too, on every run rather than when the timing falls
+	// that way (#995): the ask is counted apart from it
+	s.waitState("wsproxy", "asleep", 30*time.Second)
 	asked := probe("!model", "ask the model", "model:")
 
 	// the redactor names what it matched: the loop's hub token, never the
@@ -168,8 +186,14 @@ func dockerLoopReachesTheModelThroughTheClaudeProxy(t *testing.T) {
 	}
 	fake.Mu.Lock()
 	defer fake.Mu.Unlock()
-	if len(fake.Messages) != 1 || fake.Messages[0].Headers.Get("Authorization") != "Bearer "+dockerTestToken {
-		t.Fatalf("the stand-in took %d model requests, want 1 on the hub's token", len(fake.Messages))
+	asks := fake.Messages[requestsBefore:]
+	if len(asks) != 1 {
+		t.Fatalf("the stand-in took %d model requests for the ask, want 1", len(asks))
+	}
+	for _, request := range fake.Messages {
+		if request.Headers.Get("Authorization") != "Bearer "+dockerTestToken {
+			t.Fatal("a model request reached the stand-in on a token other than the hub's")
+		}
 	}
 }
 
