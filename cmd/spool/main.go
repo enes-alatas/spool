@@ -570,9 +570,9 @@ func main() {
 	bridge.Start(ctx)
 	slackSurface := slack.New(rdb, pubsub, router, log, *slackAPI)
 	slackSurface.Start(ctx)
-	// After the surfaces start, though their mirrors subscribe as they come
-	// up and may miss a close published at once: an adapter also stops a
-	// platform poll that is voted in after its close (ADR-0041).
+	// After the surfaces start, so their mirrors have subscribed and see
+	// every close; an adapter also stops a platform poll that is voted in
+	// after its close (ADR-0041).
 	go closePolls(ctx, router, log)
 
 	// Settings → Cloud can open the cloud listener too (ADR-0056);
