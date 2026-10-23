@@ -1036,3 +1036,6 @@ Enes (ref:6595): cloud-tester loop received his Telegram message, reply visible 
 
 ## 2026-10-23 17:36 UTC
 Enes theory (ref:6597): tunnel not running on the server but Settings > Cloud step 2 shows green. OPERATIONS says the check reruns every 5 min and before each cloud wake, so a stale green is a bug on its own. Asked (ref:6598) for (a) tunnel really down? (b) step 2 after refresh and after check again. Plan: bug for stale green check (Terra, pre-tag); second bug for lost reply only if it reproduces with the tunnel up.
+
+## 2026-10-23 21:02 UTC
+Enes confirmed (ref:6609): the Tailscale Funnel was down, now started. Filed #1093 (bug, severity:high, Cloud runtime, sub-issue of #860): step 2 green with the funnel down, cloud loop woke and turn errored. Group ping to Terra (ref:6610), top item before the tag. Told Enes (ref:6611); a second bug only if the turn still errors with the funnel up.
