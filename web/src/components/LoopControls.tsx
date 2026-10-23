@@ -2,7 +2,7 @@ import { useId, type ReactNode } from 'react'
 import { useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { api, type LoopView } from '../api'
-import { deleteQuestion, killQuestion } from '../cloudLoop'
+import { deleteQuestion, killHint, killQuestion } from '../cloudLoop'
 import { useMay } from './Session'
 import { DeleteIcon, KillIcon, PauseIcon, ResumeIcon, RotateIcon, WakeIcon } from './Icons'
 
@@ -72,7 +72,7 @@ export function LoopControls({ loop, paused }: { loop: LoopView; paused: boolean
       },
       {
         label: 'Kill process',
-        hint: 'Stops its claude process now, mid-turn if need be; it wakes again as scheduled.',
+        hint: killHint(loop),
         icon: <KillIcon />,
         danger: true,
         // A cloud turn outlives the kill (ADR-0059), so the operator is

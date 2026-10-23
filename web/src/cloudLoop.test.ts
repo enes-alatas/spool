@@ -5,6 +5,7 @@ import {
   cloudSessionCondition,
   cutOffTurn,
   deleteQuestion,
+  killHint,
   killQuestion,
   turnUntil,
   unnamedCloudHold,
@@ -150,6 +151,14 @@ describe('cloud turn', () => {
     const question = `Kill @nimbus? A turn may still be running in its session on claude.ai until ${turnUntil(turn)}, and Spool can't stop it. Open the session on claude.ai to interrupt it.`
     expect(killQuestion({ name: 'nimbus', cloud_turn: turn }, 5_000)).toBe(question)
     expect(killQuestion({ name: 'nimbus', cloud_turn: { ...turn, cut_off: false } }, 5_000)).toBe(question)
+  })
+  it("doesn't promise a kill stops a cloud turn", () => {
+    expect(killHint({ runtime: 'cloud' })).toBe(
+      'Cuts its session off from this hub now; a turn already running on claude.ai runs on. It wakes again as scheduled.',
+    )
+    expect(killHint({ runtime: 'docker' })).toBe(
+      'Stops its claude process now, mid-turn if need be; it wakes again as scheduled.',
+    )
   })
   it('kills unasked with no turn, or one past its bound', () => {
     expect(killQuestion({ name: 'nimbus' }, 5_000)).toBeUndefined()

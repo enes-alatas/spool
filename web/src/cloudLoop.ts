@@ -86,6 +86,15 @@ export function cutOffTurn(loop: Pick<LoopView, 'cloud_turn'>, now: number): Clo
   return turn?.cut_off && now < turn.until ? turn : undefined
 }
 
+// What the kill button does, in its hover line. A cloud loop's kill revokes
+// its session's token, but a turn already running there runs on, cut off
+// from the hub (ADR-0059), so its line doesn't promise the turn stops.
+export function killHint(loop: Pick<LoopView, 'runtime'>): string {
+  if (loop.runtime !== 'cloud')
+    return 'Stops its claude process now, mid-turn if need be; it wakes again as scheduled.'
+  return 'Cuts its session off from this hub now; a turn already running on claude.ai runs on. It wakes again as scheduled.'
+}
+
 // What the kill button asks first while a cloud turn may be running: a kill
 // stops the hub's side, never the turn in the session (ADR-0059). undefined
 // when there's nothing to warn of, and the kill goes ahead unasked.
