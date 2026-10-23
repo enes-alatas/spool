@@ -41,8 +41,11 @@ type fakeGitHubApps struct {
 }
 
 // fakeTokenSlack is how long a fake token lives past MinLife: a token is
-// served from the hub's cache until then, and minted afresh after.
-const fakeTokenSlack = 3 * time.Second
+// served from the hub's cache until then, and minted afresh after. It
+// must outlast the fetches a test expects served from the cache, a wake
+// each, after expires_at loses up to a second to GitHub's whole-second
+// format: at 3s, two fetches across an attach's restart outran it.
+const fakeTokenSlack = 8 * time.Second
 
 func startFakeGitHubApps(t *testing.T) (*fakeGitHubApps, string) {
 	t.Helper()
