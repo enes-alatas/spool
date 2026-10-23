@@ -61,3 +61,35 @@ func TestGitHubEnvHandsALoopHoldingAnAppItsHelper(t *testing.T) {
 		}
 	}
 }
+
+// Every variable githubEnv sets is one an env-var beside a github-app is
+// refused (#1060), so a name added to one can't be missed in the other.
+// So is GIT_CONFIG_PARAMETERS, which git reads after the counted pairs.
+// Other names stay attachable.
+func TestShadowsGitHubEnvCoversEverythingGitHubEnvSets(t *testing.T) {
+	actor := &Actor{
+		deps: Deps{
+			MCPEndpoint:   func(*store.Loop) string { return "http://127.0.0.1:7777/mcp" },
+			GitHubHelpers: map[string]GitHubHelper{store.RuntimeBare: {Path: "/bin/spool-github", PATH: "/data/github-bin:/usr/bin"}},
+		},
+		loop: store.Loop{HubMCPToken: "spool_fixtureHUB"},
+	}
+	env := map[string]string{}
+	actor.githubEnv(env, store.RuntimeBare, []*store.Connection{{Kind: store.ConnectionGitHubApp}})
+	if len(env) == 0 {
+		t.Fatal("githubEnv set nothing")
+	}
+	for name := range env {
+		if !ShadowsGitHubEnv(name) {
+			t.Errorf("githubEnv sets %s, which ShadowsGitHubEnv lets an env-var replace", name)
+		}
+	}
+	if !ShadowsGitHubEnv("GIT_CONFIG_PARAMETERS") {
+		t.Error("an env-var on GIT_CONFIG_PARAMETERS, which git reads after the COUNT pairs, is let through")
+	}
+	for _, name := range []string{"GH_TOKEN", "GIT_CONFIG_KEY_", "GIT_CONFIG_KEY_X", "GIT_CONFIG_GLOBAL", "PATHS", "HOME"} {
+		if ShadowsGitHubEnv(name) {
+			t.Errorf("ShadowsGitHubEnv(%q) = true, want false", name)
+		}
+	}
+}

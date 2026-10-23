@@ -32,6 +32,7 @@ const (
 	codeConnectionRevoked       = "connection_revoked"
 	codeConnectionRuntime       = "connection_runtime"
 	codeConnectionGitHubTaken   = "connection_github_taken"
+	codeConnectionGitHubEnv     = "connection_github_env"
 )
 
 // connectionView is a connection as the control room reads it: everything
@@ -433,8 +434,10 @@ func (server *Server) attachable(w http.ResponseWriter, r *http.Request, name st
 // stored yet. It refuses what would leave the loop two answers to one
 // question: two env-vars setting one variable, which would leave the value
 // to whichever the env build read last, or two GitHub identities, a second
-// github-app or a github-app beside an env-var on GH_TOKEN (#887). A cloud
-// loop can't hold a github-app: its listener doesn't serve the token route.
+// github-app or a github-app beside an env-var on GH_TOKEN (#887). Nor
+// may an env-var beside a github-app set a variable the hub sets for its
+// git and gh (#1060). A cloud loop can't hold a github-app: its listener
+// doesn't serve the token route.
 // The caller holds attachMu.
 func (server *Server) attachableTo(w http.ResponseWriter, r *http.Request, connection *store.Connection, loopRecord *store.Loop) bool {
 	if connection.Kind == store.ConnectionMCPServer {
@@ -462,9 +465,24 @@ func (server *Server) attachableTo(w http.ResponseWriter, r *http.Request, conne
 			server.jsonErrCode(w, 409, codeConnectionGitHubTaken, "%s already gives loop %q its GitHub identity; detach it first",
 				holder.Name, loopRecord.Name)
 			return false
+		case shadowsGitHubEnv(connection, holder) || shadowsGitHubEnv(holder, connection):
+			envVar := connection
+			if envVar.Kind != store.ConnectionEnvVar {
+				envVar = holder
+			}
+			server.jsonErrCode(w, 409, codeConnectionGitHubEnv, "%s sets %s, which loop %q's github-app sets for its git and gh; detach it first",
+				envVar.Name, envVar.Config.Env, loopRecord.Name)
+			return false
 		}
 	}
 	return true
+}
+
+// shadowsGitHubEnv reports whether envVar is an env-var that would replace
+// what app, a github-app, has the hub set for the loop's git and gh.
+func shadowsGitHubEnv(envVar, app *store.Connection) bool {
+	return envVar.Kind == store.ConnectionEnvVar && app.Kind == store.ConnectionGitHubApp &&
+		loop.ShadowsGitHubEnv(envVar.Config.Env)
 }
 
 // githubIdentity reports whether a connection is a loop's answer to which
