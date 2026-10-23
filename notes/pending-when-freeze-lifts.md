@@ -1042,3 +1042,6 @@ Enes confirmed (ref:6609): the Tailscale Funnel was down, now started. Filed #10
 
 ## 2026-10-23 21:08 UTC
 Enes (ref:6613, photo of claude.ai Cloud list with 8 Cloud Tester sessions): loop still not answering on Telegram/hub, new chat per wake. Read ADR-0059 item 1: SessionStart hook posts the session id through the public address; funnel down means no post, start fails after 2 min (errored turn), nothing recorded, next wake starts a new session; .mcp.json on the same address means no send_message tool. Explained (ref:6614); asked for the newest turn after 20:56 (funnel up): errored text or fine. Orphan sessions: operator archives on claude.ai.
+
+## 2026-10-23 21:14 UTC
+Enes (ref:6618): funnel up (checked), loop still answers on claude.ai only. Crossed with my 6614/6616. New hypothesis: the cloud environment cannot reach the public address (Allowed domains missing the host, or wrong environment); OPERATIONS step 4 says the hub cannot verify this. Sent (ref:6619) a 3-step diagnostic: turn error text, curl from inside the session to <address>/mcp, compare Allowed domains with the step 4 list.
