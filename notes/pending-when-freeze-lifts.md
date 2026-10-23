@@ -1054,3 +1054,6 @@ Enes (ref:6623): tailscale funnel is on but the page does not load from off-tail
 
 ## 2026-10-23 21:28 UTC
 Enes (ref:6625): tailscale funnel status shows Funnel on, / proxy http://127.0.0.1:8090: configured correctly. Cloud listener answers / with 404 text (cloud.go), so "does not load" needs defining. Asked (ref:6627): exact outside browser result (404 text = reached) with Tailscale off, and a re-run of the curl from the session now (502 -> proxy status output). If it reaches: send the loop a Telegram message and watch for the reply.
+
+## 2026-10-23 21:33 UTC
+Enes (ref:6628, screenshot): off-tailnet browser gets DNS_PROBE_FINISHED_NXDOMAIN for the funnel host. Public DNS has no record: Funnel needs HTTPS certs enabled on the tailnet before the ts.net name publishes; negative caching possible. My box cannot resolve it either (egress 403 = allowlist, vs the sandbox 502 = upstream, confirming the distinction). Sent (ref:6630): dig @1.1.1.1 from the server, enable MagicDNS + HTTPS certs, tailscale cert once, then re-curl from the session.
