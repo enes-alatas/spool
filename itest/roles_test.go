@@ -149,7 +149,7 @@ func TestAMemberReadsNoOwnerDM(t *testing.T) {
 	}
 }
 
-// A member reads who is waiting on the Access page, but no pending
+// A member reads who is waiting through the senders routes, but no pending
 // sender's pairing code: the code is how an admin knows the person
 // vouching for a sender got the bot's DM. An admin and the operator token
 // read every code (#689).

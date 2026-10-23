@@ -17,7 +17,7 @@ import (
 
 // allowLegacySender makes person an allowed sender no user is linked as,
 // as a hub from before ADR-0051 holds them: a pending row, which nothing
-// creates any more, allowed on the Access page.
+// creates any more, then allowed through the senders route.
 func (s *server) allowLegacySender(person user) {
 	s.t.Helper()
 	db, err := sqlite.Open(filepath.Join(s.dataDir, "spool.db"))

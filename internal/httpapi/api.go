@@ -2068,8 +2068,8 @@ func (server *Server) messageID(w http.ResponseWriter, r *http.Request) (int64, 
 	return id, true
 }
 
-// tgSenderView is a Telegram sender as the Access page lists them, with
-// the name of the user they are linked to: "" for a sender allowed before
+// tgSenderView is a Telegram sender as Settings → Users and access reads it,
+// with the name of the user it is linked to: "" for a sender allowed before
 // ADR-0051, who keeps working, not linked (#731).
 type tgSenderView struct {
 	*store.TGSender
