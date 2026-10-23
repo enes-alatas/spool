@@ -478,7 +478,8 @@ have `gh` and are logged in; without that it warns, and
 `--require-attestation` makes it refuse. A target that doesn't know a
 migration the database has applied is refused. It then stops the hub,
 backs up the data directory with the installed `spool-backup.sh
---no-volumes` into `/var/backups/spool` (`--backup-dir`), installs,
+--no-volumes` into `/var/backups/spool` (`--backup-dir`, which must lie
+outside the data directory and is checked before anything stops), installs,
 starts, and waits two minutes for the hub to answer at the target
 version. If it doesn't, the command rolls the binary, the images and
 the data directory back, leaves the volumes, and prints where the
