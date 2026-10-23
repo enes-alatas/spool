@@ -11,7 +11,9 @@ package main
 //     SessionStart hooks locally, as the real CLI does on the operator's
 //     machine, with no remote session id (#957, run E3), and counts them in
 //     the session's local-session-starts. It clones the repo into the VM,
-//     which carries only what is committed, as the bundle does, starts the
+//     which carries only what is committed, as the bundle does, or, unless
+//     CCR_ENABLE_BUNDLE is set or the CLI may fetch its feature flags,
+//     leaves the VM's directory empty (#1094). It starts the
 //     first turn there, prints the session's address, and waits to be
 //     ended. It writes the environment --settings chose,
 //     remote.defaultEnvironmentId, into the session's environment file,
@@ -142,8 +144,13 @@ func cloudStart(message, settings string) int {
 	runHooks(cwd, cwd, "SessionStart", "startup", hookEnv(cwd, ""), map[string]any{
 		"hook_event_name": "SessionStart", "source": "startup", "cwd": cwd,
 	}, filepath.Join(vm, "local-session-starts"))
-	if out, err := exec.Command("git", "clone", "-q", cwd, filepath.Join(vm, "repo")).CombinedOutput(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: uploading the repository: %v: %s\n", err, out)
+	if seedsFromRepo() {
+		if out, err := exec.Command("git", "clone", "-q", cwd, filepath.Join(vm, "repo")).CombinedOutput(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: uploading the repository: %v: %s\n", err, out)
+			return 1
+		}
+	} else if err := os.Mkdir(filepath.Join(vm, "repo"), 0o700); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	if err := startVMTurn(id, message, true); err != nil {
@@ -154,6 +161,18 @@ func cloudStart(message, settings string) int {
 	// the real CLI stays on the session's view until it is ended
 	time.Sleep(10 * time.Minute)
 	return 0
+}
+
+// seedsFromRepo reports whether a start uploads the working directory's
+// repo: with CCR_ENABLE_BUNDLE set, or when the CLI fetched its feature
+// flags, the account's saying to. CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC
+// stops that fetch, and the flag then reads false (#1094).
+func seedsFromRepo() bool {
+	switch os.Getenv("CCR_ENABLE_BUNDLE") {
+	case "1", "true":
+		return true
+	}
+	return os.Getenv("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC") == ""
 }
 
 func cloudSend(session, message string) int {

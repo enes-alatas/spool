@@ -1,6 +1,6 @@
 # ADR-0059: Cloud loops run through the claude CLI, on documented surfaces
 
-Date: 2026-10-20 · Status: proposed (operator direction of 2026-10-19 on #957: drive cloud loops through the `claude` CLI, keep the Claude proxy; operator decisions of 2026-10-20 on #957: items 1, 2, 4, 5, 6, 7 and 10) · Amended: 2026-10-21 (item 9: no ADR-0056 loop to move, #977); 2026-10-21 (items 6 and 11: the environment is picked from the account's list, #978) · Supersedes: ADR-0056 item 2 (the sessions client, its amendment's event stream and interrupt), item 3 (the watched read-back), item 4 (for `env-var` connections only, "A cloud loop gets no connections at first"), item 5 (an environment per loop the hub creates and keeps, and for cloud loops the operator decision of 2026-10-15 on #859 that their allowlist is the hub's own), item 6 (the repo a session starts from, and its 2026-10-15 amendment's optional repo field), item 7's amendment (the cap sees cloud turns), and its Alternatives entry *Drive sessions through the `claude` CLI* · Relates to: ADR-0022, ADR-0028, ADR-0047, ADR-0053, ADR-0056, ADR-0058
+Date: 2026-10-20 · Status: proposed (operator direction of 2026-10-19 on #957: drive cloud loops through the `claude` CLI, keep the Claude proxy; operator decisions of 2026-10-20 on #957: items 1, 2, 4, 5, 6, 7 and 10) · Amended: 2026-10-21 (item 9: no ADR-0056 loop to move, #977); 2026-10-21 (items 6 and 11: the environment is picked from the account's list, #978); 2026-10-23 (item 8: a start sets CCR_ENABLE_BUNDLE, #1094) · Supersedes: ADR-0056 item 2 (the sessions client, its amendment's event stream and interrupt), item 3 (the watched read-back), item 4 (for `env-var` connections only, "A cloud loop gets no connections at first"), item 5 (an environment per loop the hub creates and keeps, and for cloud loops the operator decision of 2026-10-15 on #859 that their allowlist is the hub's own), item 6 (the repo a session starts from, and its 2026-10-15 amendment's optional repo field), item 7's amendment (the cap sees cloud turns), and its Alternatives entry *Drive sessions through the `claude` CLI* · Relates to: ADR-0022, ADR-0028, ADR-0047, ADR-0053, ADR-0056, ADR-0058
 
 ## Context
 
@@ -325,6 +325,16 @@ and 2026-10-20, found the shape. Each finding is recorded on the issue:
    variables stripped and `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`
    set. The token in that environment is visible only to the hub's own
    user.
+
+   **Amendment (2026-10-23, #1094):** a `--cloud` start also sets
+   `CCR_ENABLE_BUNDLE=1`. The CLI uploads the loop home only with that
+   variable set or when the account's feature flag
+   `tengu_ccr_bundle_seed_enabled` says to, and
+   `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` stops it fetching flags. So
+   without the variable every session started in an empty sandbox, with no
+   MCP server and no hooks. The variable is the CLI's own, read in its
+   source rather than documented, so fakeclaude's FIDELITY.md carries it
+   as a row to recheck on a new CLI.
 
 9. **Cloud loops made under ADR-0056 move over at their next start.**
    Each has a session the sessions client created, in an environment

@@ -383,7 +383,11 @@ func (session *cliSession) startSession(text string) error {
 	pending := session.cloud.waits.awaitStart(session.loopID, within, exportLines(session.env))
 	defer session.cloud.waits.forgetStart(session.loopID, pending)
 	cmd := exec.Command(cli.Binary, "--cloud", text, "--permission-mode", "auto", "--settings", settings)
-	cmd.Dir, cmd.Env = run.dir, run.env
+	// The CLI uploads the home only when CCR_ENABLE_BUNDLE is set or a
+	// feature flag says to, and the hub's runs fetch no feature flags
+	// (CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC): without it the session
+	// starts in an empty sandbox, with no MCP server and no hooks (#1094).
+	cmd.Dir, cmd.Env = run.dir, append(run.env, "CCR_ENABLE_BUNDLE=1")
 	terminal, err := startOnTerminal(cmd)
 	if err != nil {
 		return fmt.Errorf("cloud: starting the session: %w", err)
