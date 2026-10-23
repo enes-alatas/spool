@@ -24,14 +24,22 @@ internal/egress/*
 internal/hook/*
 internal/attach/*
 internal/loop/actor.go
+# A loop's GitHub token: the env the hub hands it (#1054, #1060), and the
+# helper that fetches the token with the loop's hub token.
+internal/loop/github.go
+internal/githubhelper/*
 cmd/spool-egress/*
 cmd/spool-hook/*
+cmd/spool-github/*
 docker/*
 
 # Where a credential rests, and what keeps one out of the record.
 internal/store/*
 internal/datadir/*
 internal/redact/*
+# Holds a GitHub App's private key, signs its JWT, mints and revokes its
+# installation tokens, and is a redaction source (#887).
+internal/githubapp/*
 scripts/secret-*
 scripts/spool-backup*
 scripts/spool-restore*
