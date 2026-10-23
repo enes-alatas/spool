@@ -1012,3 +1012,4 @@ Night sweep (four ticks collapsed). #994 (#977 PR 1: CLI is the only path, per-s
 - 23:35: PR #1059 (#1054 helper+packaging) open; Elliot security OK, release dry run from the branch green on both arches; lands before the dry-run word, which is inside my rule. Quinn reviews.
 - 03:40 (10-23) sweep: #1058 (#1050) merged, #1052/#1053 merged (#1027 closed). #1059 open with Quinn. #1060 (Elliot: env-var on PATH/GIT_CONFIG_* shadows the helper; from his #1059 note): L6, parent 884. No other gaps (#753 triage).
 - 07:40 (10-23) sweep: #1059 approved 8h, unmerged; DM nudge to Enes (ref:6480) with #1059 + upgrade (main 289cedb). No new issues; CI health quiet. Terra idle until #1059 merges (#1060 builds on it); Iris on #1055.
+- 09:10: Enes asked milestone status (ref:6497); answered ref:6498 with counts (Cloud runtime 31/4, L6 49/13, L5 48/2, CI rel 20/10, Loop page polish 5/0 still open → offered to close on his word). He will upgrade "when I have time".
