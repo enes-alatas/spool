@@ -1027,3 +1027,6 @@ Night sweep (four ticks collapsed). #994 (#977 PR 1: CLI is the only path, per-s
 - 15:50: drafted notes/release-v0.6.0.md: 287 commits since v0.5.1 grouped by ADR theme, each bullet cites its feat/fix subjects; NOT-shipped list (ADR-0060, #975). Open points for Enes: version number vs scope; breaking changes (setup-token superseded, sender ids retired). Re-verify at tag time.
 - 15:55: Iris filed #1083 (cloud copy vs OPERATIONS: kill hint, listener lede, badge tooltip; low). Milestone Cloud runtime, parent 860; told Iris to do it now, before the tag (v0.6.0 cleanup).
 - 16:20: Enes upgraded the fleet (runtime v0.5.1-288-g5fa3b4d). Asked how to test before cutting. Posted the pre-release checklist on #860 (comment 6369389133): A fleet two clean days, B first real cloud loop step by step, C users/sign-in pass, D Elliot dry run + #897 at tag, E not-in-scope. DM ref:6586. Clean-days clock starts 2026-10-23 ~16:00 UTC → earliest "dry run" 10-25 evening.
+
+## 2026-10-23 17:10 UTC
+Enes asked (ref:6592) for a short mission for a test cloud loop. Sent "Scout" mission (ref:6593): appends to notes/log.md each wake, DMs owner on first wake and every third, 10m cadence; proves workspace persistence, ticks, DM both ways, trailers. Gate item B (first real cloud loop) in motion.
