@@ -1,6 +1,6 @@
 # ADR-0057: `spool upgrade`, one root-run command that upgrades a hub
 
-Date: 2026-10-16 · Status: accepted (operator decisions of 2026-10-16 on #888 and #889) · Amended: 2026-10-19 (item 6: the backup takes the data directory alone, #947); 2026-10-22 (item 3: a third binary, #1054) · Relates to: ADR-0030, ADR-0046, ADR-0052, #708, #747, #885
+Date: 2026-10-16 · Status: accepted (operator decisions of 2026-10-16 on #888 and #889) · Amended: 2026-10-19 (item 6: the backup takes the data directory alone, #947); 2026-10-22 (item 3: a third binary, #1054); 2026-10-23 (items 6 and 7: the previous images are kept by name, #1086) · Relates to: ADR-0030, ADR-0046, ADR-0052, #708, #747, #885
 
 ## Context
 
@@ -168,6 +168,17 @@ replaces a binary. That needs its limits written down before it is built.
    it did and where the backup and the failed directory are. A failure
    during the rollback stops the command with the remaining steps
    printed. It never retries blindly.
+
+   **Amendment (2026-10-23, #1086): the images are kept by name, not by
+   id.** Step 1 of item 6 now tags each image the hub's names point at
+   as `<repository>:spool-previous`, and the rollback tags those names
+   back. On an operator's host the bare ids were gone by the time a
+   rollback needed them: the build that moved the names had dropped the
+   old images. So the rollback stopped before it started the unit. A
+   name keeps its image as long as the name exists, on either of
+   docker's image stores. An image that can't be kept refuses the
+   upgrade before anything moves. The `spool-previous` tags stay until
+   the next upgrade moves them.
 
 8. **It reuses the scripts rather than reimplementing them.** The backup
    and restore are the installed scripts. They are tested

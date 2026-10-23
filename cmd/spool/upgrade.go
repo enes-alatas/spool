@@ -354,7 +354,7 @@ func (up *upgrader) printPlan(p plan) {
 	up.printf("  health      http://%s/api/health", healthHost(u.Listen))
 	up.printf("  images      %s, %s", u.WorkstationImage, u.EgressImage)
 	up.printf("  target      %s", target)
-	steps := []string{"record the image ids " + u.WorkstationImage + " and " + u.EgressImage + " point at"}
+	steps := []string{"tag the images " + u.WorkstationImage + " and " + u.EgressImage + " point at as " + previousImage(u.WorkstationImage) + " and " + previousImage(u.EgressImage) + ", for a rollback"}
 	if up.sourceBuild() {
 		steps = append(steps, fmt.Sprintf("in %s, as %s: git fetch, check out %s, make build, make image", p.checkout, p.owner.Username, target))
 	} else {
@@ -390,19 +390,27 @@ type candidate struct {
 // and a failure after the start rolls back.
 func (up *upgrader) execute(ctx context.Context, p plan) error {
 	u := p.unit
-	// 1. the image ids, before any build or pull moves them
+	// 1. the images, before any build or pull moves them: each gets a
+	// second name of its own, which the rollback retags from. A name, not
+	// the bare id: a build that moves a tag can drop the image it left
+	// behind, as one did on an operator's host, and the id with it (#1086).
 	recorded := map[string]string{}
 	for _, name := range []string{u.WorkstationImage, u.EgressImage} {
 		id, err := up.host.Run(ctx, hostCmd{Name: "docker", Args: []string{"image", "inspect", "--format", "{{.Id}}", name}})
-		if err == nil {
-			recorded[name] = strings.TrimSpace(id)
+		if err != nil {
+			continue
 		}
+		previous := previousImage(name)
+		if _, err := up.host.Run(ctx, hostCmd{Name: "docker", Args: []string{"tag", strings.TrimSpace(id), previous}}); err != nil {
+			return fmt.Errorf("nothing changed: keeping %s as %s for a rollback: %w", name, previous, err)
+		}
+		recorded[name] = previous
 	}
 	retag := func() []error {
 		var errs []error
 		for _, name := range []string{u.WorkstationImage, u.EgressImage} {
-			if id := recorded[name]; id != "" {
-				if _, err := up.host.Run(ctx, hostCmd{Name: "docker", Args: []string{"tag", id, name}}); err != nil {
+			if previous := recorded[name]; previous != "" {
+				if _, err := up.host.Run(ctx, hostCmd{Name: "docker", Args: []string{"tag", previous, name}}); err != nil {
 					errs = append(errs, err)
 				}
 			}
@@ -504,7 +512,7 @@ func (up *upgrader) unstarted(ctx context.Context, p plan, retag func() []error,
 		steps = append(steps, rollbackStep{"put back " + p.unit.Bin + ".previous", func() error { return up.restorePrevious(p) }})
 	}
 	steps = append(steps, []rollbackStep{
-		{"retag the recorded images", func() error { return errors.Join(retag()...) }},
+		{p.unit.retagPrevious(), func() error { return errors.Join(retag()...) }},
 		{"systemctl start " + p.unit.Name, func() error {
 			_, err := up.host.Run(ctx, hostCmd{Name: "systemctl", Args: []string{"start", p.unit.Name}})
 			return err
@@ -560,7 +568,7 @@ func (up *upgrader) rollback(ctx context.Context, p plan, dataFile, keysFile str
 			_, err := up.host.Run(ctx, hostCmd{Name: up.restorePath, Args: restore})
 			return err
 		}},
-		{"retag the recorded image ids onto " + u.WorkstationImage + " and " + u.EgressImage, func() error { return errors.Join(retag()...) }},
+		{u.retagPrevious(), func() error { return errors.Join(retag()...) }},
 		{"put back " + u.Bin + ".previous, " + u.HookBin + ".previous and " + u.GitHubBin + ".previous, those there are", func() error { return up.restorePrevious(p) }},
 		{"systemctl start " + u.Name, func() error {
 			_, err := up.host.Run(ctx, hostCmd{Name: "systemctl", Args: []string{"start", u.Name}})
@@ -1025,4 +1033,26 @@ func within(dir, root string) (bool, error) {
 		return false, nil
 	}
 	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))), nil
+}
+
+// previousTag names the images an upgrade started from, until the next.
+const previousTag = "spool-previous"
+
+// previousImage is the name an upgrade keeps image's current image under,
+// its repository with previousTag: spool-workstation becomes
+// spool-workstation:spool-previous.
+func previousImage(image string) string {
+	if at := strings.LastIndex(image, "@"); at >= 0 {
+		image = image[:at]
+	}
+	if colon := strings.LastIndex(image, ":"); colon > strings.LastIndex(image, "/") {
+		image = image[:colon]
+	}
+	return image + ":" + previousTag
+}
+
+// retagPrevious is the rollback's image step, as the command that does it
+// by hand.
+func (unit hubUnit) retagPrevious() string {
+	return "docker tag " + previousImage(unit.WorkstationImage) + " " + unit.WorkstationImage + " && docker tag " + previousImage(unit.EgressImage) + " " + unit.EgressImage
 }
