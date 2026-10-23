@@ -1045,3 +1045,6 @@ Enes (ref:6613, photo of claude.ai Cloud list with 8 Cloud Tester sessions): loo
 
 ## 2026-10-23 21:14 UTC
 Enes (ref:6618): funnel up (checked), loop still answers on claude.ai only. Crossed with my 6614/6616. New hypothesis: the cloud environment cannot reach the public address (Allowed domains missing the host, or wrong environment); OPERATIONS step 4 says the hub cannot verify this. Sent (ref:6619) a 3-step diagnostic: turn error text, curl from inside the session to <address>/mcp, compare Allowed domains with the step 4 list.
+
+## 2026-10-23 21:20 UTC
+Enes (ref:6621): curl from inside the session gets CONNECT 502 from the egress proxy; host on the allowed list. Hypothesis (ref:6622): the Funnel is not public (serve vs funnel); hub and Enes are on the tailnet so both checks pass, the sandbox cannot reach. Asked for tailscale funnel status and an off-tailnet request. Recorded the tailnet-reach finding on #1093 (the hub-side check cannot prove public reach; probe differently or say so: Enes decides).
