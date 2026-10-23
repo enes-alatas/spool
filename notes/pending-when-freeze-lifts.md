@@ -1051,3 +1051,6 @@ Enes (ref:6621): curl from inside the session gets CONNECT 502 from the egress p
 
 ## 2026-10-23 21:24 UTC
 Enes (ref:6623): tailscale funnel is on but the page does not load from off-tailnet. Sent (ref:6624) the Funnel checklist: tailnet nodeAttrs funnel + HTTPS certs, public ports 443/8443/10000, --bg so it persists, propagation; asked for funnel status output and the outside error. Not a Spool defect beyond #1093.
+
+## 2026-10-23 21:28 UTC
+Enes (ref:6625): tailscale funnel status shows Funnel on, / proxy http://127.0.0.1:8090: configured correctly. Cloud listener answers / with 404 text (cloud.go), so "does not load" needs defining. Asked (ref:6627): exact outside browser result (404 text = reached) with Tailscale off, and a re-run of the curl from the session now (502 -> proxy status output). If it reaches: send the loop a Telegram message and watch for the reply.
