@@ -1039,3 +1039,6 @@ Enes theory (ref:6597): tunnel not running on the server but Settings > Cloud st
 
 ## 2026-10-23 21:02 UTC
 Enes confirmed (ref:6609): the Tailscale Funnel was down, now started. Filed #1093 (bug, severity:high, Cloud runtime, sub-issue of #860): step 2 green with the funnel down, cloud loop woke and turn errored. Group ping to Terra (ref:6610), top item before the tag. Told Enes (ref:6611); a second bug only if the turn still errors with the funnel up.
+
+## 2026-10-23 21:08 UTC
+Enes (ref:6613, photo of claude.ai Cloud list with 8 Cloud Tester sessions): loop still not answering on Telegram/hub, new chat per wake. Read ADR-0059 item 1: SessionStart hook posts the session id through the public address; funnel down means no post, start fails after 2 min (errored turn), nothing recorded, next wake starts a new session; .mcp.json on the same address means no send_message tool. Explained (ref:6614); asked for the newest turn after 20:56 (funnel up): errored text or fine. Orphan sessions: operator archives on claude.ai.
