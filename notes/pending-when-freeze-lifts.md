@@ -1048,3 +1048,6 @@ Enes (ref:6618): funnel up (checked), loop still answers on claude.ai only. Cros
 
 ## 2026-10-23 21:20 UTC
 Enes (ref:6621): curl from inside the session gets CONNECT 502 from the egress proxy; host on the allowed list. Hypothesis (ref:6622): the Funnel is not public (serve vs funnel); hub and Enes are on the tailnet so both checks pass, the sandbox cannot reach. Asked for tailscale funnel status and an off-tailnet request. Recorded the tailnet-reach finding on #1093 (the hub-side check cannot prove public reach; probe differently or say so: Enes decides).
+
+## 2026-10-23 21:24 UTC
+Enes (ref:6623): tailscale funnel is on but the page does not load from off-tailnet. Sent (ref:6624) the Funnel checklist: tailnet nodeAttrs funnel + HTTPS certs, public ports 443/8443/10000, --bg so it persists, propagation; asked for funnel status output and the outside error. Not a Spool defect beyond #1093.
