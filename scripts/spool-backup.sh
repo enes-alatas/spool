@@ -89,6 +89,8 @@ cleanup() {
 		docker start "$c" >/dev/null || printf 'spool-backup: could not restart %s\n' "$c" >&2
 	done
 	rm -rf "$stage"
+	# a backup cut short leaves no half-written file (#1089)
+	rm -f "$out"/spool-*-"$ts".*.part
 }
 trap cleanup EXIT
 
@@ -144,7 +146,10 @@ if [ "$volumes" = 1 ]; then
 	done
 	if [ ${#mounts[@]} -gt 0 ]; then
 		volumes_out=$out/spool-volumes-$ts.tar.gz
-		docker run --rm --network none --user 0 --entrypoint tar \
+		# --log-driver none: docker would also write the whole stream into
+		# the container's log, needing its size again on docker's disk
+		# (#1089).
+		docker run --rm --log-driver none --network none --user 0 --entrypoint tar \
 			-v "$stage/vmeta:/b/meta:ro" "${mounts[@]}" "$image" \
 			--numeric-owner -C /b/meta -cf - FORMAT manifest.tsv -C /b volumes |
 			"${compress[@]}" >"$volumes_out.part"
