@@ -1033,3 +1033,6 @@ Enes asked (ref:6592) for a short mission for a test cloud loop. Sent "Scout" mi
 
 ## 2026-10-23 17:18 UTC
 Enes (ref:6595): cloud-tester loop received his Telegram message, reply visible on claude.ai, but no Telegram reply and the control room shows the turn errored. No issue exists yet. Asked (ref:6596) for the turn error text, hub log lines 17:10-17:14 UTC, and whether the first wake DM went through. Plan: file bug on Cloud runtime under #860, assign Terra top priority before the tag.
+
+## 2026-10-23 17:36 UTC
+Enes theory (ref:6597): tunnel not running on the server but Settings > Cloud step 2 shows green. OPERATIONS says the check reruns every 5 min and before each cloud wake, so a stale green is a bug on its own. Asked (ref:6598) for (a) tunnel really down? (b) step 2 after refresh and after check again. Plan: bug for stale green check (Terra, pre-tag); second bug for lost reply only if it reproduces with the tunnel up.
