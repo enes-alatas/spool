@@ -1057,3 +1057,6 @@ Enes (ref:6625): tailscale funnel status shows Funnel on, / proxy http://127.0.0
 
 ## 2026-10-23 21:33 UTC
 Enes (ref:6628, screenshot): off-tailnet browser gets DNS_PROBE_FINISHED_NXDOMAIN for the funnel host. Public DNS has no record: Funnel needs HTTPS certs enabled on the tailnet before the ts.net name publishes; negative caching possible. My box cannot resolve it either (egress 403 = allowlist, vs the sandbox 502 = upstream, confirming the distinction). Sent (ref:6630): dig @1.1.1.1 from the server, enable MagicDNS + HTTPS certs, tailscale cert once, then re-curl from the session.
+
+## 2026-10-23 21:38 UTC
+Terra (ref:6637) confirmed #1093 cause in code: check runs from the hub machine, MagicDNS resolves the host to its own 100.x, passes via Caddy regardless of Funnel; gate and page are not stale. Options on the issue (comment 6375114941): 1 honest green + session verdict holds loops (needs ADR-0056 amendment, Terra recommends), 2 public DoH resolve (third party, hairpin unproven). Put to Enes (ref:6638) recommending option 1; told Terra to hold (ref:6639). Pending from Enes: DNS lookup result (6630) and the option choice (6638).
