@@ -41,17 +41,21 @@ const (
 	uploadTimeout = 2 * time.Minute
 )
 
-// mirror carries loop sends, and operator retries of failed ones, to Slack,
-// sets loops' reactions, redraws their polls, and tells owners of their
-// loops' login and problem notices. A retry (#269) is the same send of the same row,
-// and is decided the same way.
-func (adapter *Adapter) mirror(ctx context.Context) {
-	// lossless: an item dropped here is a loop's send lost without a
-	// record (#302)
-	items, cancel := adapter.bus.SubscribeLossless(func(item bus.Item) bool {
+// subscribe takes the bus items the mirror consumes, losslessly: an item
+// dropped here is a loop's send lost without a record (#302).
+func (adapter *Adapter) subscribe() (<-chan bus.Item, func()) {
+	return adapter.bus.SubscribeLossless(func(item bus.Item) bool {
 		return item.Kind == bus.KindMessage || item.Kind == bus.KindSendRetry || item.Kind == bus.KindClaudeLogin ||
 			item.Kind == bus.KindLoopProblem || item.Kind == bus.KindReaction || item.Kind == bus.KindPoll
 	})
+}
+
+// mirror carries loop sends, and operator retries of failed ones, to Slack,
+// sets loops' reactions, redraws their polls, and tells owners of their
+// loops' login and problem notices, from the items subscribe took, until
+// ctx ends; it then cancels the subscription. A retry (#269) is the same
+// send of the same row, and is decided the same way.
+func (adapter *Adapter) mirror(ctx context.Context, items <-chan bus.Item, cancel func()) {
 	defer cancel()
 	for {
 		select {

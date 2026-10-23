@@ -201,6 +201,37 @@ func (loops loginLoops) Get(_ context.Context, id string) (*store.Loop, error) {
 	return loops.rows[id], nil
 }
 
+// List lists no loop, so a started bridge runs only the pollers a test
+// placed.
+func (loops loginLoops) List(context.Context) ([]*store.Loop, error) { return nil, nil }
+
+// A notice published the moment Start returns reaches the owner: the hub
+// starts listening right after, and a loop recovering at once used to clear
+// its problem before the mirror had subscribed, so the owner never heard
+// that the workstation was up again (#1006).
+func TestANoticePublishedAsStartReturnsIsSent(t *testing.T) {
+	const owner, chat = 6200, 6200
+	bot := &poller{loopID: "alpha", sendCh: make(chan sendReq, 1)}
+	st := loginStore{loops: loginLoops{rows: map[string]*store.Loop{
+		"alpha": {ID: "alpha", Name: "alpha", TGBotToken: "alpha", OwnerTGUserID: owner, OwnerDMChatID: chat},
+	}}, events: &queueFullEvents{}}
+	br := withLedger(&Bridge{store: st, log: slog.Default(), bus: bus.New(),
+		pollers: map[string]*poller{"alpha": bot}})
+	br.Start(context.Background())
+	defer br.Stop(context.Background())
+
+	br.bus.Publish(bus.Item{Kind: bus.KindLoopProblem, LoopID: "alpha", Payload: &surface.ProblemNotice{
+		LoopID: "alpha", LoopName: "alpha", Symptom: store.SymptomWorkstationDown}})
+	select {
+	case req := <-bot.sendCh:
+		if req.chatID != chat || !strings.Contains(req.text, "workstation is up again") {
+			t.Fatalf("sent %q to chat %d, want the up notice to the owner's %d", req.text, req.chatID, chat)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the notice published as Start returned was never sent")
+	}
+}
+
 // One refused login stops every loop that shares it, each at its own next
 // turn, and the owner hears about it once (#419): from the first loop that
 // can reach them privately, with the all-clear in the same chat, whichever

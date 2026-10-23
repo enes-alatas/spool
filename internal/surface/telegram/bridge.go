@@ -150,7 +150,11 @@ func (br *Bridge) Start(ctx context.Context) {
 			br.startPoller(loopRecord)
 		}
 	}
-	br.running.Go(func() { br.mirror(ctx) })
+	// subscribed before Start returns, not as the mirror comes up: the hub
+	// listens next, and a notice published at once would miss a mirror
+	// still on its way (#1006)
+	items, cancel := br.subscribe()
+	br.running.Go(func() { br.mirror(ctx, items, cancel) })
 }
 
 // Stop cancels the mirror and every poller, and waits for them: each send
@@ -1590,18 +1594,22 @@ func (br *Bridge) roomOf(ctx context.Context, loopRecord *store.Loop, channel st
 	return 0
 }
 
-// mirror consumes message bus items and applies the mirror rules, and
-// delivers the hub's login and problem notices to owners.
-func (br *Bridge) mirror(ctx context.Context) {
-	// Both kinds, one path: a retry (#269) is the same send of the same row,
-	// asked for by the operator instead of by the loop, and anything the
-	// mirror rules decide about a message must decide the same way twice.
-	// Lossless: an item dropped here is a loop's send lost without a
-	// record (#302).
-	items, cancel := br.bus.SubscribeLossless(func(item bus.Item) bool {
+// subscribe takes the bus items the mirror consumes. Both kinds, one path:
+// a retry (#269) is the same send of the same row, asked for by the
+// operator instead of by the loop, and anything the mirror rules decide
+// about a message must decide the same way twice. Lossless: an item
+// dropped here is a loop's send lost without a record (#302).
+func (br *Bridge) subscribe() (<-chan bus.Item, func()) {
+	return br.bus.SubscribeLossless(func(item bus.Item) bool {
 		return item.Kind == bus.KindMessage || item.Kind == bus.KindSendRetry || item.Kind == bus.KindClaudeLogin ||
 			item.Kind == bus.KindLoopProblem || item.Kind == bus.KindReaction || item.Kind == bus.KindPoll
 	})
+}
+
+// mirror consumes the items subscribe took and applies the mirror rules,
+// and delivers the hub's login and problem notices to owners, until ctx
+// ends; it then cancels the subscription.
+func (br *Bridge) mirror(ctx context.Context, items <-chan bus.Item, cancel func()) {
 	defer cancel()
 	for {
 		select {

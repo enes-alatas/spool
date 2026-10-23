@@ -63,7 +63,11 @@ func (adapter *Adapter) Start(ctx context.Context) {
 	adapter.mu.Lock()
 	adapter.ctx, adapter.cancel = context.WithCancel(ctx)
 	ctx = adapter.ctx
-	adapter.running.Go(func() { adapter.mirror(ctx) })
+	// subscribed before Start returns, not as the mirror comes up: the hub
+	// listens next, and a notice published at once would miss a mirror
+	// still on its way (#1006)
+	items, cancelItems := adapter.subscribe()
+	adapter.running.Go(func() { adapter.mirror(ctx, items, cancelItems) })
 	adapter.mu.Unlock()
 	loops, err := adapter.store.Loops().List(ctx)
 	if err != nil {
