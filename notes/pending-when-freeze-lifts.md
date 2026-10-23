@@ -1060,3 +1060,6 @@ Enes (ref:6628, screenshot): off-tailnet browser gets DNS_PROBE_FINISHED_NXDOMAI
 
 ## 2026-10-23 21:38 UTC
 Terra (ref:6637) confirmed #1093 cause in code: check runs from the hub machine, MagicDNS resolves the host to its own 100.x, passes via Caddy regardless of Funnel; gate and page are not stale. Options on the issue (comment 6375114941): 1 honest green + session verdict holds loops (needs ADR-0056 amendment, Terra recommends), 2 public DoH resolve (third party, hairpin unproven). Put to Enes (ref:6638) recommending option 1; told Terra to hold (ref:6639). Pending from Enes: DNS lookup result (6630) and the option choice (6638).
+
+## 2026-10-23 22:45 UTC
+Elliot (ref:6667) filed #1094: on claude 2.1.304 the cloud session starts in an empty non-git /home/user, loop home never arrives (no .mcp.json, no hooks); network ruled out (/mcp answers 401 from inside). Supersedes the DNS thread. Tidy: retitled to operator words, severity:high, Cloud runtime, parent #860; comment recording priority. Group (ref:6669): Terra takes #1094 first, #1093 waits on Enes. DM Enes (ref:6670): drop the DNS steps, #1093 option still owed.
