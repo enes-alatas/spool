@@ -1030,3 +1030,6 @@ Night sweep (four ticks collapsed). #994 (#977 PR 1: CLI is the only path, per-s
 
 ## 2026-10-23 17:10 UTC
 Enes asked (ref:6592) for a short mission for a test cloud loop. Sent "Scout" mission (ref:6593): appends to notes/log.md each wake, DMs owner on first wake and every third, 10m cadence; proves workspace persistence, ticks, DM both ways, trailers. Gate item B (first real cloud loop) in motion.
+
+## 2026-10-23 17:18 UTC
+Enes (ref:6595): cloud-tester loop received his Telegram message, reply visible on claude.ai, but no Telegram reply and the control room shows the turn errored. No issue exists yet. Asked (ref:6596) for the turn error text, hub log lines 17:10-17:14 UTC, and whether the first wake DM went through. Plan: file bug on Cloud runtime under #860, assign Terra top priority before the tag.
