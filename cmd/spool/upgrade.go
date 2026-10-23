@@ -272,6 +272,13 @@ func (up *upgrader) resolve(ctx context.Context) (plan, error) {
 		return plan{}, err
 	}
 	p := plan{unit: unit}
+	// spool-backup.sh refuses an --out inside the data directory, and it
+	// runs only after the stop: refuse it here, before anything moves (#1085)
+	if inside, err := within(up.backupDir, unit.DataDir); err != nil {
+		return plan{}, err
+	} else if inside {
+		return plan{}, fmt.Errorf("--backup-dir %s is inside the data directory %s, which the backup refuses: name a directory outside it, or leave the flag out for %s", up.backupDir, unit.DataDir, defaultBackupDir)
+	}
 	switch {
 	case up.target == "main":
 	case up.target == "" && up.fromSource != "":
@@ -1002,3 +1009,20 @@ func (up *upgrader) getJSON(ctx context.Context, url string, into any) error {
 // sourceBuild says the target is built from a checkout rather than
 // downloaded: main always is, and a tag with --from-source.
 func (up *upgrader) sourceBuild() bool { return up.target == "main" || up.fromSource != "" }
+
+// within reports whether dir is root or inside it, as spool-backup.sh
+// compares its --out with its --data-dir: absolute, cleaned, symlinks kept.
+func within(dir, root string) (bool, error) {
+	dir, err := filepath.Abs(dir)
+	if err != nil {
+		return false, err
+	}
+	if root, err = filepath.Abs(root); err != nil {
+		return false, err
+	}
+	rel, err := filepath.Rel(root, dir)
+	if err != nil {
+		return false, nil
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))), nil
+}

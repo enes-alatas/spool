@@ -764,6 +764,42 @@ func TestUpgradeChecksItCanBackUpBeforeTheStop(t *testing.T) {
 	if err := up.run(context.Background()); err == nil || !strings.Contains(err.Error(), "MiB free") || stopped(host) {
 		t.Errorf("a full disk: %v; want a refusal before the stop", err)
 	}
+
+	// spool-backup.sh refuses an --out inside the data directory; the
+	// upgrade refuses it before it builds or stops anything (#1085)
+	for _, under := range []string{"", "/backups", "/./"} {
+		env, up, host, _ := newUpgradeEnv(t)
+		dir := env.dataDir + under
+		up.backupDir = dir
+		err := up.run(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "inside the data directory") || stopped(host) {
+			t.Errorf("--backup-dir %s: %v; want a refusal before the stop", dir, err)
+		}
+		for _, cmd := range host.commands() {
+			if !strings.HasPrefix(cmd, "systemctl show") {
+				t.Errorf("--backup-dir %s ran %q before refusing; want nothing but reading the unit", dir, cmd)
+			}
+		}
+	}
+}
+
+// within compares a backup directory with the data directory as
+// spool-backup.sh does: the directory itself and anything under it are
+// inside, a sibling that shares a prefix is not.
+func TestWithinMatchesTheBackupScriptsRule(t *testing.T) {
+	for dir, want := range map[string]bool{
+		"/var/lib/spool":          true,
+		"/var/lib/spool/":         true,
+		"/var/lib/spool/backups":  true,
+		"/var/lib/spool/../spool": true,
+		"/var/lib/spool-backups":  false,
+		"/var/lib":                false,
+		"/var/backups/spool":      false,
+	} {
+		if got, err := within(dir, "/var/lib/spool"); err != nil || got != want {
+			t.Errorf("within(%q, /var/lib/spool) = %v, %v; want %v", dir, got, err, want)
+		}
+	}
 }
 
 // When the unit runs the checkout's own bin/spool, a refused build is not
