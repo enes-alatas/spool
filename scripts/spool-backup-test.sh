@@ -55,10 +55,12 @@ stop) echo false >"$STUB/containers/$2"; echo "$2" ;;
 start) echo true >"$STUB/containers/$2"; echo "$2" ;;
 run)
 	shift; mounts=()
+	# a container that dies partway, as one whose disk fills
+	[ -z "${STUB_RUN_FAIL:-}" ] || { echo partial; exit 1; }
 	while [ $# -gt 0 ]; do
 		case $1 in
 		--rm | -i) shift ;;
-		--network | --user | --entrypoint) shift 2 ;;
+		--network | --user | --entrypoint | --log-driver) shift 2 ;;
 		-v) mounts+=("$2"); shift 2 ;;
 		spool-workstation) shift; break ;;
 		*) echo "stub docker: unexpected $1" >&2; exit 1 ;;
@@ -136,6 +138,9 @@ check "backup refuses without docker unless --no-volumes" '[ $? -ne 0 ] && grep 
 bash scripts/spool-backup.sh --data-dir "$src" --out "$src/files" >/dev/null 2>&1
 check "backup refuses an --out inside the data directory" '[ $? -ne 0 ]'
 
+STUB_RUN_FAIL=1 bash scripts/spool-backup.sh --data-dir "$src" --out "$out" >/dev/null 2>"$work/err"
+check "a backup cut short leaves no half-written file in --out (#1089)" '[ $? -ne 0 ] && [ -z "$(ls -A "$out")" ] && grep -qx "start spool-ws-a" "$STUB/log"'
+
 : >"$STUB/log"
 bash scripts/spool-backup.sh --data-dir "$src" --out "$out" >"$work/stdout" 2>"$work/err"
 check "backup succeeds on a stopped hub" '[ $? -eq 0 ]'
@@ -147,6 +152,7 @@ check "the data file holds no credential" '! tar -tzf "$data" | grep -qE "hub\.k
 check "the keys file holds only the two credentials" '[ "$(tar -tf "$keys" | sort | tr "\n" " ")" = "hub.key operator-token " ]'
 check "one container reads every volume, read-only" '[ "$(grep -c "^run" "$STUB/log")" = 1 ] && [ "$(grep "^run" "$STUB/log" | grep -o -- "-v [^ ]*:/b/volumes/[^ ]*:ro" | wc -l)" = 3 ] && ! grep "^run" "$STUB/log" | grep -o -- "-v [^ ]*" | grep -qv ":ro$"'
 check "that container never mounts the data directory" '! grep "^run" "$STUB/log" | grep -qF -- "$src"'
+check "that container keeps no log of the stream it writes (#1089)" 'grep "^run" "$STUB/log" | grep -q -- "--log-driver none"'
 check "a running workstation is stopped and started again" 'grep -qx "stop spool-ws-a" "$STUB/log" && grep -qx "start spool-ws-a" "$STUB/log" && ! grep -q "stop spool-ws-b" "$STUB/log"'
 check "no staging directory is left behind" '[ "$(ls -A "$out" | wc -l)" = 3 ]'
 check "a volume with no labels is backed up, its id read off its name" 'grep -qx "volume spool-ws-c (loop id c, no loop labels: a restore adds them)" "$work/stdout" && tar -xzOf "$vols" manifest.tsv | grep -qx "spool-ws-c${tab}c${tab}"'
