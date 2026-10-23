@@ -42,6 +42,12 @@ const (
 	maxAnswer = 64 << 10
 	// errorSnippet bounds how much of a refusal is quoted in an error.
 	errorSnippet = 300
+	// refusalMemory is how long a mint GitHub refused, or that failed to
+	// reach it, is answered from memory rather than asked again (#1057):
+	// a misconfigured app, or a loop spinning on the route, would otherwise
+	// drive a GitHub call per fetch and draw its rate limits onto the app,
+	// and so onto every loop holding it.
+	refusalMemory = 30 * time.Second
 )
 
 // ParseKey reads a GitHub App's private key: an RSA key in PEM, PKCS#1 as
@@ -98,11 +104,18 @@ type entry struct {
 	// name, makes the cached token one the connection no longer vouches for.
 	mintedFor [32]byte
 	token     Token
+	// refusedFor, refused and refusedUntil remember the last failed mint,
+	// for the key and installation it was asked with, until refusalMemory
+	// has passed.
+	refusedFor   [32]byte
+	refused      error
+	refusedUntil time.Time
 }
 
 // Token returns an installation token for a github-app connection with at
 // least MinLife left, minting one when the cached token has less or was
-// minted under another key or installation.
+// minted under another key or installation. A mint that failed is answered
+// from memory for refusalMemory, unless the key or installation changed.
 func (minter *Minter) Token(ctx context.Context, connection *store.Connection) (Token, error) {
 	key, err := ParseKey(connection.Secret)
 	if err != nil {
@@ -115,8 +128,16 @@ func (minter *Minter) Token(ctx context.Context, connection *store.Connection) (
 	if cached.mintedFor == mintedFor && time.Until(cached.token.ExpiresAt) >= MinLife {
 		return cached.token, nil
 	}
+	if cached.refused != nil && cached.refusedFor == mintedFor && time.Now().Before(cached.refusedUntil) {
+		return Token{}, fmt.Errorf("%w (remembered: GitHub is asked again after %s)", cached.refused, cached.refusedUntil.UTC().Format(time.RFC3339))
+	}
+	// The mint outlives a fetch that hangs up, bounded by callTimeout, so
+	// every call to GitHub lands in the cache or the memory: a loop asking
+	// and hanging up at once can't make each fetch a call.
+	ctx = context.WithoutCancel(ctx)
 	token, err := minter.mint(ctx, connection.Config, key)
 	if err != nil {
+		cached.refusedFor, cached.refused, cached.refusedUntil = mintedFor, err, time.Now().Add(refusalMemory)
 		return Token{}, err
 	}
 	minter.mu.Lock()
@@ -127,6 +148,7 @@ func (minter *Minter) Token(ctx context.Context, connection *store.Connection) (
 			return Token{}, fmt.Errorf("teaching the redactor a new token: %w", err)
 		}
 	}
+	cached.refused = nil
 	cached.mintedFor, cached.token = mintedFor, token
 	return token, nil
 }

@@ -36,6 +36,7 @@ type fakeGitHubApps struct {
 	keys    []*rsa.PublicKey
 	tokens  []string
 	revoked []string
+	refused int // mints refused for a JWT none of keys signed
 	// beforeMint, when set, runs once ahead of the next mint, outside mu.
 	beforeMint func()
 }
@@ -59,14 +60,35 @@ func startFakeGitHubApps(t *testing.T) (*fakeGitHubApps, string) {
 // fake accepts JWTs from.
 func (fake *fakeGitHubApps) newAppKey() string {
 	fake.t.Helper()
+	key, text := fake.generateKey()
+	fake.mu.Lock()
+	fake.keys = append(fake.keys, &key.PublicKey)
+	fake.mu.Unlock()
+	return text
+}
+
+// strangerAppKey is a fresh app key the fake refuses JWTs from, as GitHub
+// refuses a deleted one.
+func (fake *fakeGitHubApps) strangerAppKey() string {
+	fake.t.Helper()
+	_, text := fake.generateKey()
+	return text
+}
+
+func (fake *fakeGitHubApps) generateKey() (*rsa.PrivateKey, string) {
+	fake.t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		fake.t.Fatal(err)
 	}
+	return key, string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}))
+}
+
+// refusals is how many mints the fake has refused.
+func (fake *fakeGitHubApps) refusals() int {
 	fake.mu.Lock()
-	fake.keys = append(fake.keys, &key.PublicKey)
-	fake.mu.Unlock()
-	return string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}))
+	defer fake.mu.Unlock()
+	return fake.refused
 }
 
 func (fake *fakeGitHubApps) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -81,6 +103,7 @@ func (fake *fakeGitHubApps) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == http.MethodPost && r.URL.Path == "/app/installations/42/access_tokens":
 		if !fake.signed(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")) {
+			fake.refused++
 			w.WriteHeader(http.StatusUnauthorized)
 			_, _ = w.Write([]byte(`{"message":"A JSON web token could not be decoded"}`))
 			return
@@ -293,6 +316,45 @@ func TestARevokeDuringAMintEndsThatToken(t *testing.T) {
 	minted := fake.minted()
 	if len(minted) != 1 || !slices.Contains(fake.revokedTokens(), minted[0]) {
 		t.Fatalf("minted %d tokens and revoked %d; want the one minted ended at GitHub", len(minted), len(fake.revokedTokens()))
+	}
+}
+
+// A mint GitHub refuses is remembered briefly (#1057): a loop fetching again
+// gets the same refusal, saying so, and GitHub isn't asked twice. A new key
+// mints at once.
+func TestARefusedGitHubAppMintIsRememberedBriefly(t *testing.T) {
+	t.Parallel()
+	fake, api := startFakeGitHubApps(t)
+	hub := startServerArgs(t, t.TempDir(), "--runtime", "bare", "--github-api-base", api)
+	hub.createLoop("aster", nil)
+	hub.mustJSON("POST", "/api/connections", map[string]any{
+		"name": "gh-app", "kind": "github-app", "secret": fake.strangerAppKey(),
+		"config": map[string]any{"app_id": "1234", "installation_id": 42},
+	}, nil)
+	hub.mustJSON("PUT", "/api/loops/aster/connections/gh-app", nil, nil)
+	hub.scriptLoop("aster", "!github-token")
+	asked := map[string]bool{}
+	fetch := func() string {
+		t.Helper()
+		hub.message("aster", "go")
+		done := hub.waitTurn("aster", 30*time.Second, func(done turn) bool {
+			return !asked[done.ID] && strings.HasPrefix(done.ResultText, "github token:")
+		})
+		asked[done.ID] = true
+		return strings.TrimPrefix(done.ResultText, "github token: ")
+	}
+
+	first, again := fetch(), fetch()
+	if !strings.HasPrefix(first, "error: 502") || !strings.HasPrefix(again, "error: 502") || !strings.Contains(again, "remembered") {
+		t.Fatalf("two fetches with a key GitHub refuses: %q, then %q; want 502 twice, the second remembered", first, again)
+	}
+	if refused := fake.refusals(); refused != 1 {
+		t.Fatalf("GitHub refused %d mints, want 1: the second fetch asked again", refused)
+	}
+
+	hub.mustJSON("PUT", "/api/connections/gh-app/secret", map[string]any{"value": fake.newAppKey()}, nil)
+	if reply := fetch(); !strings.Contains(reply, "<redacted:github_app_token>") || len(fake.minted()) != 1 {
+		t.Fatalf("after a new key the loop got %q, want a token minted at once", reply)
 	}
 }
 

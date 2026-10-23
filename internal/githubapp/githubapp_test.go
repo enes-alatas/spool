@@ -78,6 +78,7 @@ type fakeGitHub struct {
 	life    atomic.Int64 // a time.Duration
 	mints   atomic.Int32
 	refuse  atomic.Bool
+	asked   atomic.Int32 // mints asked for, refused ones too
 	mu      sync.Mutex
 	revoked []string
 }
@@ -92,6 +93,7 @@ func newFake(t *testing.T, key *rsa.PrivateKey) *fakeGitHub {
 func (fake *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == http.MethodPost && r.URL.Path == "/app/installations/42/access_tokens":
+		fake.asked.Add(1)
 		if fake.refuse.Load() {
 			w.WriteHeader(http.StatusUnauthorized)
 			_, _ = w.Write([]byte(`{"message":"A JSON web token could not be decoded"}`))
@@ -210,7 +212,7 @@ func TestTheMinterCachesATokenWhileItHasLifeLeft(t *testing.T) {
 }
 
 // GitHub's refusal comes back in the error, its message and status, and
-// caches nothing.
+// caches no token.
 func TestAMintGitHubRefusesIsAnError(t *testing.T) {
 	key := testKey(t)
 	fake := newFake(t, key)
@@ -225,6 +227,68 @@ func TestAMintGitHubRefusesIsAnError(t *testing.T) {
 	if secrets, _ := minter.Secrets(context.Background()); len(secrets) != 0 {
 		t.Errorf("a refused mint left tokens for the redactor: %+v", secrets)
 	}
+}
+
+// A refused mint is remembered for refusalMemory (#1057): a fetch inside it
+// gets the same refusal without asking GitHub, and says it was remembered.
+// A new key asks at once, and a mint that succeeds forgets the refusal. A
+// Revoke, or the memory passing, lets the next fetch ask. A fetch whose
+// caller gave up still asks, and its refusal is remembered.
+func TestARefusedMintIsRememberedBriefly(t *testing.T) {
+	key := testKey(t)
+	fake := newFake(t, key)
+	fake.refuse.Store(true)
+	server := httptest.NewServer(fake)
+	defer server.Close()
+	minter := &Minter{API: server.URL}
+	connection := connectionFor(key)
+	asked := func(want int32, after string) {
+		t.Helper()
+		if got := fake.asked.Load(); got != want {
+			t.Fatalf("after %s GitHub was asked %d times, want %d", after, got, want)
+		}
+	}
+
+	_, first := minter.Token(context.Background(), connection)
+	_, again := minter.Token(context.Background(), connection)
+	asked(1, "two fetches inside the memory")
+	if again == nil || !strings.Contains(again.Error(), "could not be decoded") || !strings.Contains(again.Error(), "remembered") || strings.Contains(first.Error(), "remembered") {
+		t.Fatalf("a refusal %v, then %v; want the second remembered", first, again)
+	}
+
+	newKey := testKey(t)
+	fake.key.Store(&newKey.PublicKey)
+	fake.refuse.Store(false)
+	if _, err := minter.Token(context.Background(), connectionFor(newKey)); err != nil {
+		t.Fatalf("a new key, which GitHub mints for: %v", err)
+	}
+	asked(2, "a new key")
+	fake.refuse.Store(true)
+	_, _ = minter.Token(context.Background(), connection)
+	asked(3, "the old key again, its refusal forgotten by the new key's mint")
+	_ = minter.Revoke(context.Background(), connection.Name)
+	_, _ = minter.Token(context.Background(), connection)
+	asked(4, "a revoke")
+
+	cached := minter.entry(connection.Name)
+	cached.mu.Lock()
+	cached.refusedUntil = time.Now()
+	cached.mu.Unlock()
+	fake.key.Store(&key.PublicKey)
+	fake.refuse.Store(false)
+	if _, err := minter.Token(context.Background(), connection); err != nil {
+		t.Fatalf("past the memory, with GitHub minting again: %v", err)
+	}
+	asked(5, "the memory passed")
+
+	gone, cancel := context.WithCancel(context.Background())
+	cancel()
+	fake.refuse.Store(true)
+	_ = minter.Revoke(context.Background(), connection.Name)
+	_, _ = minter.Token(gone, connection)
+	asked(6, "a fetch whose caller gave up")
+	_, _ = minter.Token(context.Background(), connection)
+	asked(6, "a fetch after one whose caller gave up, its refusal remembered")
 }
 
 // Revoke ends the cached token at GitHub and forgets it, so the next fetch
