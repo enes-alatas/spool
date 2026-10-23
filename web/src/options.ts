@@ -96,10 +96,12 @@ export const RUNTIME_OPTIONS = [
 ]
 
 // The cloud badge's tooltip (ADR-0056): where a cloud loop runs, and whose
-// wall its network allowlist is held by.
+// wall its network allowlist is held by. The environment holds this hub's
+// list only once the operator pastes it there, so it isn't promised.
 export const CLOUD_BADGE_TITLE =
-  "Runs in a Claude Code cloud session on Anthropic's machines. Its network allowlist is this hub's, " +
-  "but Anthropic's proxy enforces it, not this hub's egress wall."
+  "Runs in a Claude Code cloud session on Anthropic's machines. Its network access is set in its environment " +
+  "on claude.ai, which holds this hub's allowlist once you paste it there; Anthropic's proxy enforces it, " +
+  "not this hub's egress wall."
 
 // The warning New loop shows beside the cloud runtime's note. Cloud loops are
 // one trust domain (ADR-0056, operator decision of 2026-10-18 on #919), and

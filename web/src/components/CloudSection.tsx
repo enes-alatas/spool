@@ -405,8 +405,9 @@ function ListenerStep({
     <>
       <p className="step-dialog-lede">
         A cloud loop runs on Anthropic's machines, not this one, so it calls this hub over the internet to
-        send a message. The hub answers on a listener of its own, which serves the loops' one tool and nothing
-        else: the control room stays private.
+        send a message. The hub answers on a listener of its own, which serves the loops' one tool and the
+        posts their sessions make when one starts and when a turn ends, and nothing else: the control room
+        stays private.
       </p>
       {listener.on ? (
         <>
