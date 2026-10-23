@@ -187,8 +187,8 @@ func (router *Router) adoptOwnerless(ctx context.Context, person string) {
 	}
 }
 
-// PublishSender tells the Access page what became of the person's sender
-// row after a link changed it: its frame, or that it is gone.
+// PublishSender tells Settings → Users and access what became of the
+// person's sender row after a link changed it: its frame, or that it is gone.
 func PublishSender(ctx context.Context, st store.Store, publisher *bus.Bus, person string) {
 	surface := store.PersonSurface(person)
 	_, id, _ := strings.Cut(person, ":")

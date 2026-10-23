@@ -160,8 +160,8 @@ func (server *Server) handleSetUserRole(w http.ResponseWriter, r *http.Request) 
 }
 
 // handleRemoveUser deletes a user, and with them their links: each person
-// they linked is unlinked, and the Access page hears what became of them.
-// Their open streams end (#722). Removing an owner takes the acting
+// they linked is unlinked, and Settings → Users and access hears what became
+// of them. Their open streams end (#722). Removing an owner takes the acting
 // owner's password again, as current_password in the body, which may be
 // empty for anyone else (#923).
 func (server *Server) handleRemoveUser(w http.ResponseWriter, r *http.Request) {
