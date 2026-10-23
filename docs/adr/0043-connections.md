@@ -1,6 +1,6 @@
 # ADR-0043: Connections are org-level credentials and configs, defined once and attachable to loops
 
-Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572); 2026-10-04 (item 2: the env-var kind, #574); 2026-10-04 (item 5: per-loop secrets are connections, #576); 2026-10-05 (item 2: an mcp-server reaches its loop, #597); 2026-10-05 (item 1: private connections, #600); 2026-10-05 (item 5: the record of changes, #606); 2026-10-05 (item 3: rotation, #609); 2026-10-06 (item 3: revoke, #610); 2026-10-06 (item 5: the per-loop secrets routes are gone, #617); 2026-10-06 (item 2: the hub brokers an http server, #622); 2026-10-07 (item 5: an env-var change reaches the next turn, #640); 2026-10-07 (item 2: the database seals its secrets, ADR-0046); 2026-10-22 (item 4: the github-app kind, #887); 2026-10-22 (item 4: git and gh fetch the token, #1054); 2026-10-23 (item 4: no env-var shadows the helper's env, #1060)
+Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572); 2026-10-04 (item 2: the env-var kind, #574); 2026-10-04 (item 5: per-loop secrets are connections, #576); 2026-10-05 (item 2: an mcp-server reaches its loop, #597); 2026-10-05 (item 1: private connections, #600); 2026-10-05 (item 5: the record of changes, #606); 2026-10-05 (item 3: rotation, #609); 2026-10-06 (item 3: revoke, #610); 2026-10-06 (item 5: the per-loop secrets routes are gone, #617); 2026-10-06 (item 2: the hub brokers an http server, #622); 2026-10-07 (item 5: an env-var change reaches the next turn, #640); 2026-10-07 (item 2: the database seals its secrets, ADR-0046); 2026-10-22 (item 4: the github-app kind, #887); 2026-10-22 (item 4: git and gh fetch the token, #1054); 2026-10-23 (item 4: no env-var shadows the helper's env, #1060); 2026-10-23 (item 4: a refused mint is remembered briefly, #1057)
 
 ## Context
 
@@ -263,6 +263,18 @@ follow in their own slice and amend this ADR.
    refused, in either order (409 `connection_github_env`). It is refused
    on every runtime, though a contained loop's PATH carries no link,
    since its value would still replace the image's.
+
+   **Amendment (2026-10-23, #1057): a refused mint is remembered briefly.**
+   A mint GitHub refused, or that failed to reach it, is answered from
+   memory for 30 seconds: a fetch inside that window gets the same 502,
+   saying when GitHub is asked again, and GitHub is not called. A
+   misconfigured app, or a loop spinning on the route, would otherwise
+   drive one GitHub call per fetch and draw GitHub's rate limits onto the
+   app, and so onto every loop holding it. A new key or installation asks
+   at once, as does the next fetch after a revoke or a delete. A mint
+   outlives a fetch that hangs up, bounded by the call's timeout, so a
+   loop asking and hanging up at once still lands each result in the
+   cache or the memory.
 
 5. **Injection doesn't change in this epic's first slice.** A connection
    reaches no loop until attachments land. Loops keep getting their
