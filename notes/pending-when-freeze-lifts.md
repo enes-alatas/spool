@@ -1075,3 +1075,6 @@ Fleet now on v0.5.1-295-g75dd5a0 (tip 5a78c51 = #1095 fix), so Enes upgraded; no
 
 ## 2026-10-24 13:22 UTC
 Quiet: no #860 result, no #1093 answer, PR #1098 still in flight. Re-nudged Enes (ref:6690) with the proposed answer (option 1) and a 16:00 default. CORRECTION for the follow-through: an ADR-0056 amendment is his call; at 16:00 record option 1 ONLY on his word (yes/thumbs is not enough: words). If silent, nudge again, do not record.
+
+## 2026-10-24 14:25 UTC
+Enes (ref:6696): cloud loop on build 295 answers on Telegram, but each message starts a new claude.ai session; "seems ok" on option 1. Filed #1099 (bug, high, Cloud runtime, parent #860). Recorded option 1 on #1093 (comment 6385290277; it says "after #1098 and #1099", which now exists). Group (ref:6697): Terra takes #1099 then #1093 after PR #1098. DM Enes (ref:6698): asked for hub log lines around a message and the turn state on the loop page.
