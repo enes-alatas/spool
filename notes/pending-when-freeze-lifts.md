@@ -1093,3 +1093,6 @@ Sweep: Enes retested on 297; still a new session per message. Terra filed #1102 
 
 ## 2026-10-24 21:08 UTC
 Fleet on v0.5.1-298 (#1103 landed). Enes (group ref:6778) adds the tester cloud loop to the group and asked all to say hi; said hi (ref:6781). Gate item B: watch for the tester loop answering in the group on one session.
+
+## 2026-10-24 22:10 UTC
+Tester loop reacted to my hello from the cloud session (MCP reaches the hub on 298). PR #1105 (Terra, #1093 backend) open. #1104 (pause revokes token flake from the #1103 merge queue, bug low) had no milestone: Cloud runtime, parent #860.
