@@ -447,11 +447,16 @@ func (session *cliSession) startSession(text string) error {
 			case <-read:
 			case <-time.After(time.Second):
 			}
+			// The timeline shows only that the turn errored, so the hub's log
+			// says why (#1102), without the CLI's line: its screen can show
+			// the wake's text.
+			slog.Default().Warn("cloud: a start failed: the CLI exited before the session started", "loop", session.loopID, "exit", exitErr)
 			return fmt.Errorf("cloud: the CLI exited (%v) before the session started: %s", exitErr, screen.String())
 		case <-ctx.Done():
 			if session.ctx.Err() != nil {
 				return session.ctx.Err()
 			}
+			slog.Default().Warn("cloud: a start failed: no session started in time", "loop", session.loopID, "within", within, "cli_exited", cliExited == nil)
 			return fmt.Errorf("cloud: no session started within %s: %s", within, screen.String())
 		}
 	}
@@ -478,6 +483,7 @@ func (session *cliSession) send(text string) error {
 	}
 	if json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &ack) != nil || !ack.OK || ran != nil {
 		said := strings.TrimSpace(stdout.String() + " " + stderr.String())
+		slog.Default().Warn("cloud: a send failed: the CLI refused it", "loop", session.loopID, "exit", ran)
 		return fmt.Errorf("cloud: the CLI refused the send (%v): %s", ran, snippet([]byte(said)))
 	}
 	return nil
@@ -602,7 +608,9 @@ func (screen *lastLine) String() string {
 	return screen.last
 }
 
-// stripEscapes drops a terminal's CSI sequences and other control bytes.
+// stripEscapes drops a terminal's escape sequences, CSI, OSC and the
+// two-byte ones such as a charset choice, and other control bytes. A
+// window title set through OSC is dropped with its text (#1102).
 func stripEscapes(raw []byte) string {
 	var out strings.Builder
 	for i := 0; i < len(raw); i++ {
@@ -612,6 +620,18 @@ func stripEscapes(raw []byte) string {
 			for i < len(raw) && (raw[i] < 0x40 || raw[i] > 0x7e) {
 				i++
 			}
+		case raw[i] == 0x1b && i+1 < len(raw) && raw[i+1] == ']':
+			// to its BEL, or its ESC \
+			for i += 2; i < len(raw) && raw[i] != 0x07; i++ {
+				if raw[i] == 0x1b && i+1 < len(raw) && raw[i+1] == '\\' {
+					i++
+					break
+				}
+			}
+		case raw[i] == 0x1b && i+2 < len(raw) && strings.IndexByte("()*+", raw[i+1]) >= 0:
+			i += 2
+		case raw[i] == 0x1b && i+1 < len(raw):
+			i++
 		case raw[i] < 0x20 || raw[i] == 0x7f:
 		default:
 			out.WriteByte(raw[i])
