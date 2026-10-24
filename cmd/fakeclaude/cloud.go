@@ -47,6 +47,10 @@ package main
 // holds the VM's SessionStart until it has.
 // A "cloud-model" file in $FAKECLAUDE_STATE names the model a turn's
 // transcript says it ran on, claude-opus-5-5 without one.
+// A "cloud-egress-refused" file in $FAKECLAUDE_STATE makes the VM's
+// egress proxy refuse every request, as it refuses a public address the
+// internet can't reach (#1093): the hooks' curl fails with the proxy's
+// 502, and nothing the VM posts reaches the hub.
 
 import (
 	"crypto/rand"
@@ -242,6 +246,9 @@ func cloudTurn(session, message string, first bool) int {
 	unlock := lockTurn(vm)
 	defer unlock()
 	env := hookEnv(repo, session)
+	if _, err := os.Stat(filepath.Join(filepath.Dir(cloudRoot()), "cloud-egress-refused")); err == nil {
+		env = refusingEgress(vm, env)
+	}
 	// SessionStart's hooks write variables for the session's shell into
 	// CLAUDE_ENV_FILE, which every shell command reads first
 	envFile := filepath.Join(vm, "claude-env")
@@ -299,6 +306,24 @@ func cloudTurn(session, message string, first bool) int {
 		"transcript_path": transcript, "last_assistant_message": reply, "stop_hook_active": false,
 	}, "")
 	return 0
+}
+
+// refusingEgress is env with a curl ahead of the VM's on PATH that fails
+// as curl does behind an egress proxy that refuses the host: exit 56, with
+// the proxy's 502.
+func refusingEgress(vm string, env []string) []string {
+	bin := filepath.Join(vm, "refused-egress")
+	script := "#!/bin/sh\necho 'curl: (56) CONNECT tunnel failed, response 502' >&2\nexit 56\n"
+	if os.MkdirAll(bin, 0o700) != nil || os.WriteFile(filepath.Join(bin, "curl"), []byte(script), 0o700) != nil {
+		return env
+	}
+	for i, entry := range env {
+		if path, ok := strings.CutPrefix(entry, "PATH="); ok {
+			env[i] = "PATH=" + bin + string(os.PathListSeparator) + path
+			return env
+		}
+	}
+	return append(env, "PATH="+bin)
 }
 
 // lockTurn holds the session's turns to one at a time.

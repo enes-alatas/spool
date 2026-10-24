@@ -287,3 +287,97 @@ func TestCloudLoopsWaitWhileTheAddressFailsItsCheck(t *testing.T) {
 		t.Fatalf("after the check passed: problems %+v, want none", after.Problems)
 	}
 }
+
+// The hub's check of its public address can pass where a cloud session
+// can't reach the hub: over a tailnet, the address resolves on the hub's
+// machine to a private route (#1093). Its pass says so, and a session whose
+// start never reaches the hub has the last word: step 2 turns red, every
+// cloud loop is held with a cloud_address problem, and only a check the
+// operator asks for lets them go (ADR-0056).
+func TestASessionThatCantReachTheHubHoldsCloudLoops(t *testing.T) {
+	t.Parallel()
+	hub := startCloudHub(t, "cirrus", "--cloud-start-within-sec", "3")
+	var view cloudSettings
+	hub.mustJSON("GET", "/api/settings/cloud", nil, &view)
+	if view.Check == nil || view.Check.State != "ok" || view.Check.Route != "private" {
+		t.Fatalf("a pass over loopback checks as %+v, want ok over a private route", view.Check)
+	}
+
+	// the CLI exits once it has created the session, as CLI 2.1.310 does
+	if err := os.WriteFile(filepath.Join(hub.fkState, "cloud-start-exits"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	refused := filepath.Join(hub.fkState, "cloud-egress-refused")
+	if err := os.WriteFile(refused, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	hub.message("cirrus", "unheard words")
+	within(t, 30*time.Second, "step 2 to take the session's verdict", func() bool {
+		hub.mustJSON("GET", "/api/settings/cloud", nil, &view)
+		return view.Check != nil && view.Check.Stage == "session"
+	})
+	if view.Check.State != "failed" {
+		t.Errorf("the session's verdict reads as %+v, want failed", view.Check)
+	}
+	held := hub.waitHealth("cirrus", "failing")
+	if len(held.Problems) != 1 || held.Problems[0].Symptom != "cloud_address" {
+		t.Fatalf("problems = %+v, want one cloud_address", held.Problems)
+	}
+
+	vms := len(cloudVMs(t, hub))
+	before := len(hub.turns("cirrus"))
+	hub.message("cirrus", "held words")
+	time.Sleep(2 * time.Second)
+	if after := len(hub.turns("cirrus")); after != before {
+		t.Fatalf("a held cloud loop ran %d turns, want none", after-before)
+	}
+	if after := len(cloudVMs(t, hub)); after != vms {
+		t.Fatalf("a held cloud loop started %d sessions, want none", after-vms)
+	}
+
+	if err := os.Remove(refused); err != nil {
+		t.Fatal(err)
+	}
+	hub.mustJSON("POST", "/api/settings/cloud/check", nil, &view)
+	if view.Check == nil || view.Check.State != "ok" {
+		t.Fatalf("the check asked for from the page: %+v, want ok", view.Check)
+	}
+	hub.waitTurn("cirrus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "held words") })
+	if after := hub.waitHealth("cirrus", "ok"); len(after.Problems) != 0 {
+		t.Fatalf("after the check passed: problems %+v, want none", after.Problems)
+	}
+}
+
+// A SessionStart post the hub refuses still came from the session, so it
+// reached the hub: here its id is of a shape the hub doesn't know, as a
+// change of the CLI's ids would make it (#1099). The start fails, but it
+// is no verdict on the address, and the loop isn't held (#1093).
+func TestARefusedSessionStartIsNoVerdictOnTheAddress(t *testing.T) {
+	t.Parallel()
+	hub := startCloudHub(t, "nimbus", "--cloud-start-within-sec", "3")
+	for _, instrument := range []string{"cloud-start-exits", "cloud-start-held"} {
+		if err := os.WriteFile(filepath.Join(hub.fkState, instrument), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	hub.message("nimbus", "first words")
+	within(t, 10*time.Second, "the start's VM", func() bool { return len(cloudVMs(t, hub)) == 1 })
+	token := vmToken(t, hub, cloudVMs(t, hub)[0])
+	if got := postHook(t, hub, token, "cse_not-a-known-shape"); got != http.StatusBadRequest {
+		t.Fatalf("a SessionStart with an id of an unknown shape: %d, want 400", got)
+	}
+	hub.waitTurn("nimbus", 30*time.Second, func(turn turn) bool {
+		return turn.IsError && strings.Contains(turn.ResultText, "no session started within 3s")
+	})
+
+	var view cloudSettings
+	hub.mustJSON("GET", "/api/settings/cloud", nil, &view)
+	if view.Check == nil || view.Check.State != "ok" || view.Check.Stage == "session" {
+		t.Errorf("after a start whose session posted: step 2 is %+v, want it still ok", view.Check)
+	}
+	for _, problem := range hub.loop("nimbus").Problems {
+		if problem.Symptom == "cloud_address" {
+			t.Errorf("a start whose session posted held the loop: %+v", problem)
+		}
+	}
+}

@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/enes-alatas/spool/internal/claude"
 	"github.com/enes-alatas/spool/internal/runtime"
@@ -69,6 +70,12 @@ type Runtime struct {
 	// session the loop recorded: that session may have lost them, which must
 	// not go unsaid (ADR-0059).
 	HandOff func(loopID string, answered bool)
+	// Unreached, when set, is told of a start whose session never reached
+	// the hub: the CLI exited cleanly, so the session was created, and no
+	// SessionStart post of its session came within the start's bound,
+	// answered or refused. The session posts to the public address, so
+	// this is its word that it can't reach the hub there (ADR-0056).
+	Unreached func(loopID string, within time.Duration)
 
 	mu sync.Mutex // guards every state file
 	// waits are the hook posts sessions are waiting on.

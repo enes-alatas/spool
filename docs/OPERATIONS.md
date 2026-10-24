@@ -216,7 +216,14 @@ echo 'TS_PERMIT_CERT_UID=caddy' | sudo tee -a /etc/default/tailscaled
 sudo systemctl restart tailscaled && sudo systemctl reload caddy
 ```
 
-The cloud setup's Public address step then passes.
+The cloud setup's Public address step then passes, and says it reached the
+listener over a private route from this machine: the request went over the
+tailnet, which proves nothing of the Funnel. So test from off the tailnet
+too, such as from a phone on mobile data:
+`curl -i https://<machine>.<tailnet>.ts.net/mcp` should get the hub's
+answer, a 401. If a cloud session still can't reach the hub, its start
+turns the step red and holds every cloud loop, until you fix the Funnel
+and check the step again (#1093).
 
 ## Cloud loops
 
@@ -237,6 +244,13 @@ its machine, the same one the Claude login signs in with.
    address and checks that its own listener answered. It checks again every
    five minutes, and just before a cloud loop wakes. Nothing changes on
    claude.ai.
+   - A request from the hub's own machine can take a route no cloud
+     session can, such as a tailnet's. When it went to a private address,
+     the step says so: test the address from outside your network too.
+   - The cloud session has the last word. A session whose start never
+     reaches the hub turns the step red and holds every cloud loop. The
+     hub's own checks don't clear that; **Check again** on the step does,
+     once the address works from outside.
 3. **Claude login.** Sign in with Claude, or keep the login the hub
    already has. On Spool's side, the hub checks the login with one haiku
    answer. The account is the one every cloud loop spends.

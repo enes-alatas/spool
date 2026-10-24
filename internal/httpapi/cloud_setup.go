@@ -10,6 +10,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptrace"
+	"net/netip"
 	"net/url"
 	"strings"
 	"sync"
@@ -77,7 +79,16 @@ const (
 	// CloudStageOtherServer: something answered, but not this hub's
 	// listener with the value it issued.
 	CloudStageOtherServer = "other_server"
+	// CloudStageSession: the hub's own check passed, but a cloud session
+	// never reached the hub at the address. It is the session's verdict,
+	// so only a check the operator asks for clears it (ADR-0056).
+	CloudStageSession = "session"
 )
+
+// CloudRoutePrivate is a pass whose request went to a loopback, private,
+// CGNAT or link-local address: it reached the listener from this machine,
+// which proves nothing of the internet a cloud session comes from.
+const CloudRoutePrivate = "private"
 
 // cloudWarningQuickTunnel marks an address on a Cloudflare quick tunnel,
 // whose hostname is reissued once the tunnel stops. It is accepted; the
@@ -94,8 +105,11 @@ const codeCloudListener = "cloud_listener"
 type CloudCheckResult struct {
 	State string `json:"state"`
 	// Stage and Detail say where a failed check stopped, and how.
-	Stage     string `json:"stage,omitempty"`
-	Detail    string `json:"detail,omitempty"`
+	Stage  string `json:"stage,omitempty"`
+	Detail string `json:"detail,omitempty"`
+	// Route is CloudRoutePrivate on a pass that went to an address of a
+	// private route, "" otherwise.
+	Route     string `json:"route,omitempty"`
 	CheckedAt int64  `json:"checked_at"`
 	// address is the one checked: a result for another is no result.
 	address string
@@ -108,6 +122,9 @@ type cloudCheckState struct {
 	running sync.Mutex
 	mu      sync.Mutex
 	last    *CloudCheckResult
+	// session is a session's verdict that it can't reach the hub, which
+	// stands as the last check until the operator asks for one.
+	session *CloudCheckResult
 }
 
 type cloudSettingsView struct {
@@ -179,12 +196,12 @@ func (server *Server) changeCloudAddress(w http.ResponseWriter, r *http.Request,
 		server.jsonErr(w, 500, "%v", err)
 		return
 	}
-	server.CheckCloudAddress(r.Context())
+	server.askCloudCheck(r.Context())
 	server.writeCloudSettings(w, r)
 }
 
 func (server *Server) handleCheckCloudAddress(w http.ResponseWriter, r *http.Request) {
-	server.CheckCloudAddress(r.Context())
+	server.askCloudCheck(r.Context())
 	server.writeCloudSettings(w, r)
 }
 
@@ -222,7 +239,7 @@ func (server *Server) handleSwitchCloudListener(w http.ResponseWriter, r *http.R
 			return
 		}
 	}
-	server.CheckCloudAddress(r.Context())
+	server.askCloudCheck(r.Context())
 	server.writeCloudSettings(w, r)
 }
 
@@ -285,7 +302,9 @@ func (server *Server) storedCloudAddress(ctx context.Context) (string, error) {
 // is set it checks nothing, and cloud loops are held. The hub runs it when
 // the address or the listener changes, on the page's ask, every
 // CloudCheckEvery, and when CloudGate asks for one before a cloud loop
-// wakes.
+// wakes. While a session's verdict stands on the address
+// (CloudSessionUnreached), it makes no request and the verdict stays the
+// last check: only askCloudCheck sets it aside.
 func (server *Server) CheckCloudAddress(ctx context.Context) {
 	server.cloudCheck.running.Lock()
 	defer server.cloudCheck.running.Unlock()
@@ -301,6 +320,12 @@ func (server *Server) CheckCloudAddress(ctx context.Context) {
 		}
 		return
 	}
+	if verdict := server.cloudCheck.sessionVerdict(address); verdict != nil {
+		if server.CloudGate != nil {
+			server.CloudGate.Record(address, false, verdict.CheckedAt)
+		}
+		return
+	}
 	result := server.checkCloudAddress(ctx, address)
 	if result.State != CloudCheckOK {
 		server.Log.Warn("cloud address check failed", "address", address, "stage", result.Stage, "detail", result.Detail)
@@ -308,6 +333,41 @@ func (server *Server) CheckCloudAddress(ctx context.Context) {
 	server.cloudCheck.record(&result)
 	if server.CloudGate != nil {
 		server.CloudGate.Record(address, result.State == CloudCheckOK, result.CheckedAt)
+	}
+}
+
+// askCloudCheck is a check the operator asked for, from the page or by
+// changing the address or the listener: it sets a session's verdict aside
+// and checks again.
+func (server *Server) askCloudCheck(ctx context.Context) {
+	server.cloudCheck.dropSession()
+	server.CheckCloudAddress(ctx)
+}
+
+// CloudSessionUnreached takes a cloud session's word that it can't reach
+// the hub: its start posted nothing within within (cloud.Runtime's
+// Unreached). The hub's own check can pass where the session's request
+// can't, over a private route such as a tailnet's, so the session's word
+// wins: the step turns red and every cloud loop is held, until the operator
+// asks for a check (ADR-0056).
+func (server *Server) CloudSessionUnreached(loopID string, within time.Duration) {
+	server.cloudCheck.running.Lock()
+	defer server.cloudCheck.running.Unlock()
+	address, err := server.storedCloudAddress(context.Background())
+	if err != nil || address == "" {
+		return
+	}
+	result := CloudCheckResult{
+		State: CloudCheckFailed, Stage: CloudStageSession,
+		Detail: fmt.Sprintf("a cloud session was created and posted nothing to the hub within %s, "+
+			"so it can't reach the hub at this address, though this machine can", within),
+		CheckedAt: time.Now().UnixMilli(),
+		address:   address,
+	}
+	server.Log.Warn("cloud session never reached the hub", "loop", loopID, "address", address)
+	server.cloudCheck.holdSession(&result)
+	if server.CloudGate != nil {
+		server.CloudGate.Record(address, false, result.CheckedAt)
 	}
 }
 
@@ -354,6 +414,10 @@ func (server *Server) checkCloudAddress(ctx context.Context, address string) Clo
 		result.Stage, result.Detail = CloudStageUnreachable, err.Error()
 		return result
 	}
+	var reached net.Addr
+	req = req.WithContext(httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
+		GotConn: func(info httptrace.GotConnInfo) { reached = info.Conn.RemoteAddr() },
+	}))
 	resp, err := cloudCheckClient.Do(req)
 	if err != nil {
 		stage, detail := cloudCheckFailure(err)
@@ -369,7 +433,33 @@ func (server *Server) checkCloudAddress(ctx context.Context, address string) Clo
 		return result
 	}
 	result.State = CloudCheckOK
+	if privateRoute(reached) {
+		result.Route = CloudRoutePrivate
+	}
 	return result
+}
+
+// cgnat is the shared address space of RFC 6598, which tailnets number
+// their machines from.
+var cgnat = netip.MustParsePrefix("100.64.0.0/10")
+
+// privateRoute reports whether addr is one a request from this machine can
+// reach without crossing the internet: loopback, private (fc00::/7 holds
+// Tailscale's), CGNAT, link-local or unspecified.
+// Behind HTTPS_PROXY the address is the proxy's, so a proxy on a private
+// address makes every pass read private: a label only, which wakes loops
+// all the same.
+func privateRoute(addr net.Addr) bool {
+	tcp, ok := addr.(*net.TCPAddr)
+	if !ok {
+		return false
+	}
+	ip, ok := netip.AddrFromSlice(tcp.IP)
+	if !ok {
+		return false
+	}
+	ip = ip.Unmap()
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() || cgnat.Contains(ip)
 }
 
 // cloudCheckClient follows no redirect: an address that sends the check
@@ -412,6 +502,33 @@ func (state *cloudCheckState) record(result *CloudCheckResult) {
 	state.mu.Lock()
 	defer state.mu.Unlock()
 	state.last = result
+}
+
+// holdSession records a session's verdict as the last check, standing
+// until dropSession.
+func (state *cloudCheckState) holdSession(result *CloudCheckResult) {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	state.last, state.session = result, result
+}
+
+// sessionVerdict is the session's verdict standing on address, nil when
+// there is none. One on another address no longer stands.
+func (state *cloudCheckState) sessionVerdict(address string) *CloudCheckResult {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if state.session == nil || state.session.address != address {
+		state.session = nil
+		return nil
+	}
+	verdict := *state.session
+	return &verdict
+}
+
+func (state *cloudCheckState) dropSession() {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	state.session = nil
 }
 
 // result is the last check of address, nil when none has run on it.
