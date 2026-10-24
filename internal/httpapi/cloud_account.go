@@ -79,6 +79,10 @@ type CloudAccountCheckResult struct {
 type cloudAccountCheckState struct {
 	mu   sync.Mutex
 	last *CloudAccountCheckResult
+	// changes counts the account's sign-ins and removals, so a check that
+	// read the account before one doesn't record over the check made
+	// after it (#970).
+	changes int
 }
 
 type cloudSignInView struct {
@@ -191,6 +195,9 @@ func (server *Server) changeCloudAccount(w http.ResponseWriter, r *http.Request,
 	if server.CloudLogin != nil {
 		server.CloudLogin.Unlock()
 	}
+	// even a failed write may have changed the account, and dropping a
+	// check that ran over an unchanged one costs only that check
+	server.cloudAccountCheck.changed()
 	if err != nil {
 		server.jsonErr(w, 500, "%v", err)
 		return
@@ -249,6 +256,7 @@ const cloudAccountCheckTimeout = 90 * time.Second
 
 // CheckCloudAccount makes the account check and records what it found.
 func (server *Server) CheckCloudAccount(ctx context.Context) {
+	changes := server.cloudAccountCheck.changesSoFar()
 	ctx, cancel := context.WithTimeout(ctx, cloudAccountCheckTimeout)
 	defer cancel()
 	result := CloudAccountCheckResult{State: CloudCheckFailed, CheckedAt: time.Now().UnixMilli()}
@@ -269,9 +277,34 @@ func (server *Server) CheckCloudAccount(ctx context.Context) {
 			server.Log.Warn("cloud account check failed", "stage", result.Stage, "detail", result.Detail)
 		}
 	}
-	server.cloudAccountCheck.mu.Lock()
-	server.cloudAccountCheck.last = &result
-	server.cloudAccountCheck.mu.Unlock()
+	server.cloudAccountCheck.record(&result, changes)
+}
+
+// changed records that the account was signed in or removed.
+func (state *cloudAccountCheckState) changed() {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	state.changes++
+}
+
+// changesSoFar is how many times the account has changed, which a check
+// takes before it reads the account.
+func (state *cloudAccountCheckState) changesSoFar() int {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	return state.changes
+}
+
+// record keeps result as the last check, unless the account changed after
+// the check took changes: the check made after that change is the one to
+// keep, and a check that began before it would overwrite it with the
+// account as it was.
+func (state *cloudAccountCheckState) record(result *CloudAccountCheckResult, changes int) {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if changes == state.changes {
+		state.last = result
+	}
 }
 
 // result is the last account check, nil when none has run.
