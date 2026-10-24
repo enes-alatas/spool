@@ -24,9 +24,10 @@ const cloudMaxHookBody = 16 << 20
 const cloudMaxHookInput = 64 << 10
 
 // cloudSessionID is the shape of a cloud session's id, the one thing a
-// SessionStart post binds. Anything else is refused before it reaches the
-// runtime.
-var cloudSessionID = regexp.MustCompile(`^session_[A-Za-z0-9]{1,128}$`)
+// SessionStart post binds: cse_… as the VM's CLAUDE_CODE_REMOTE_SESSION_ID
+// names it, or session_… as claude.ai does (#1099). Anything else is
+// refused before it reaches the runtime.
+var cloudSessionID = regexp.MustCompile(`^(?:cse|session)_[A-Za-z0-9]{1,128}$`)
 
 // CloudHooks takes the posts of a cloud loop's hooks (ADR-0059). Each
 // call names the loop whose token the post carried; an error refuses the

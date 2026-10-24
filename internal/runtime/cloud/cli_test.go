@@ -208,7 +208,8 @@ esac
 		t.Fatal(err)
 	}
 	proc := startCLI(t, cloud, testSpec())
-	postWhenPending(t, cloud, "", "session_01Synthetic", StopPost{Hook: []byte(`{}`), Lines: []byte(transcriptTurn)})
+	// the VM names its session cse_…, and the send names it session_…
+	postWhenPending(t, cloud, "", "cse_01Synthetic", StopPost{Hook: []byte(`{}`), Lines: []byte(transcriptTurn)})
 	turnResult(t, proc, "first words")
 
 	go func() {
