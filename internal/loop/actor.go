@@ -246,6 +246,7 @@ type Actor struct {
 	activeModel  string       // model the CLI reported at init, for the turn record
 	spawnModel   string       // model the running process was started on, which an edit does not change
 	lastCall     claude.Usage // usage of the in-flight turn's latest API call (assistant event)
+	killedFor    string       // why the hub killed the current process, for the turn it ends
 	backoff      time.Duration
 
 	// The health check's watch (ADR-0053): errored turns in a row and when
@@ -547,7 +548,7 @@ func (actor *Actor) handleCmd(command cmd) {
 	case "kill":
 		actor.cutOffCloud(context.Background(), "kill", store.EndReasonKilled)
 		if actor.proc != nil {
-			_ = actor.proc.Kill()
+			actor.killProc("killed by the operator")
 			// exit handled via procEvents close
 		}
 	case "update":
@@ -1390,7 +1391,7 @@ func (actor *Actor) sendBatch(batch []Envelope) {
 
 	if err := actor.proc.Send(text); err != nil {
 		actor.log().Error("send failed", "err", err)
-		_ = actor.proc.Kill()
+		actor.killProc(fmt.Sprintf("the hub could not hand the turn to claude: %v", err))
 		// exit path will requeue currentBatch if the session was lost
 		return
 	}
@@ -1733,7 +1734,7 @@ func (actor *Actor) handleIdleTimeout() {
 		// the process ignored EOF past the grace: kill it — the exit path
 		// still carries out whatever the drain was for (sleep or rotation)
 		actor.log().Warn("drain timed out; killing process")
-		_ = actor.proc.Kill()
+		actor.killProc("claude did not finish within the drain's grace, so the hub ended it")
 	}
 }
 
@@ -1774,6 +1775,8 @@ func (actor *Actor) handleProcExit() {
 	inTurn := actor.turn != nil
 	wasHandoff := actor.handoffTurn
 	actor.handoffTurn = false
+	killedFor := actor.killedFor
+	actor.killedFor = ""
 	sessionLost := claude.IsSessionNotFound(exit)
 	// A resume that dies before the CLI announces itself never loaded the
 	// session at all. One can be a blip; a run of them means this session
@@ -1790,6 +1793,12 @@ func (actor *Actor) handleProcExit() {
 		turn := actor.turn
 		turn.EndedAt = now()
 		turn.IsError = true
+		if turn.ResultText == "" {
+			turn.ResultText = killedFor
+		}
+		if turn.ResultText == "" {
+			turn.ResultText = exitReason(exit, sessionLost)
+		}
 		_ = actor.deps.Store.Turns().Finish(context.Background(), turn)
 		actor.turn = nil
 		actor.noteTurnEnd(true, turn.EndedAt)
@@ -1918,14 +1927,16 @@ func (actor *Actor) rejectLogin(sentence string) {
 // rotation it is for still happens.
 func (actor *Actor) holdWithoutHub(status string) {
 	actor.hubUnreachable = true
-	actor.setWorkstationDown(DownReasonHubUnreachable, fmt.Sprintf(
-		"claude reported its Spool MCP server %s, so the loop cannot send anything: the workstation cannot reach the hub's loop listener, or the hub refused its token", status))
+	why := fmt.Sprintf(
+		"claude reported its Spool MCP server %s, so the loop cannot send anything: the workstation cannot reach the hub's loop listener, or the hub refused its token", status)
+	actor.setWorkstationDown(DownReasonHubUnreachable, why)
 	if actor.handoffTurn {
 		return
 	}
 	if actor.turn != nil {
 		actor.turn.EndedAt = now()
 		actor.turn.IsError = true
+		actor.turn.ResultText = why
 		_ = actor.deps.Store.Turns().Finish(context.Background(), actor.turn)
 	}
 	actor.inbox = latestTickOnly(append(append([]Envelope(nil), actor.currentBatch...), actor.inbox...))
@@ -2398,7 +2409,11 @@ func (actor *Actor) stopProcess(verb string) {
 		return
 	}
 	actor.log().Info("the running turn is ended", "by", verb)
-	_ = actor.proc.Kill()
+	if verb == "kill" {
+		actor.killProc("killed by the operator")
+	} else {
+		actor.killProc("ended by " + verb)
+	}
 	grace := time.NewTimer(procStopGrace)
 	defer grace.Stop()
 	for {
@@ -2690,6 +2705,9 @@ func (actor *Actor) loopHadHistory() bool {
 	return err == nil && len(turns) > 0
 }
 
+// recentReplies are the loop's own words from its latest turns, for a
+// fresh session's preamble. An errored turn's text is the hub's or the
+// CLI's reason, not a reply, so it is left out (#1096).
 func (actor *Actor) recentReplies() []string {
 	turns, err := actor.deps.Store.Turns().ListByLoop(context.Background(), actor.loop.ID, recentTurnCount)
 	if err != nil {
@@ -2698,7 +2716,7 @@ func (actor *Actor) recentReplies() []string {
 	// ListByLoop is newest-first; preamble wants oldest-first
 	var out []string
 	for i := len(turns) - 1; i >= 0; i-- {
-		if turns[i].ResultText != "" {
+		if turns[i].ResultText != "" && !turns[i].IsError {
 			out = append(out, turns[i].ResultText)
 		}
 	}
@@ -2818,6 +2836,40 @@ func (actor *Actor) log() *slog.Logger {
 }
 
 func now() int64 { return time.Now().UnixMilli() }
+
+// killProc kills the claude process for why, which the turn it ends says
+// in place of the process's own exit (#1096).
+func (actor *Actor) killProc(why string) {
+	actor.killedFor = why
+	_ = actor.proc.Kill()
+}
+
+// exitReason is what a turn the claude process ended says, so the loop's
+// page shows why it errored, not an empty row (#1096).
+func exitReason(exit claude.ExitInfo, sessionLost bool) string {
+	if sessionLost {
+		return "the session could not be resumed; the loop goes on in a fresh one"
+	}
+	reason := fmt.Sprintf("claude exited (code %d) before the turn ended", exit.Code)
+	if said := strings.TrimSpace(lastLines(exit.Stderr, 300)); said != "" {
+		reason += ": " + said
+	}
+	return reason
+}
+
+// lastLines is the tail of text within limit bytes, starting on a whole
+// line. The store redacts the turn after this cut, and a secret cut in two
+// would no longer match, so a partial first line is dropped instead.
+func lastLines(text string, limit int) string {
+	cut := tail(text, limit)
+	if len(cut) == len(text) {
+		return cut
+	}
+	if newline := strings.IndexByte(cut, '\n'); newline >= 0 {
+		return cut[newline+1:]
+	}
+	return "" // one line longer than the window: none of it
+}
 
 func tail(text string, limit int) string {
 	if len(text) <= limit {
