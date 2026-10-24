@@ -364,8 +364,9 @@ func (session *cliSession) turn(text string) {
 // startSession runs `claude --cloud` on a terminal in a fresh loop home,
 // and waits for the home's SessionStart hook to post the session's id. It
 // records the session, then ends the local CLI and removes the home, which
-// holds the loop's token. A CLI that exits first, or a post that doesn't
-// come within the bound, fails the start with the CLI's last line.
+// holds the loop's token. A CLI that exits with an error first, or a post
+// that doesn't come within the bound, fails the start with the CLI's last
+// line.
 func (session *cliSession) startSession(text string) error {
 	cli := session.cloud.CLI
 	within := cli.StartWithin
@@ -423,26 +424,36 @@ func (session *cliSession) startSession(text string) error {
 		<-read
 	}()
 
-	select {
-	case sessionID := <-pending.session:
-		session.sessionID = sessionID
-		return session.cloud.update(session.loopID, func(s *state) {
-			s.SessionID, s.ClaudeSession, s.EnvironmentID = sessionID, session.claudeSession, ""
-			s.SessionURL = sessionPages + sessionID
-			s.SessionToken = tokenHash(session.hub.token)
-		})
-	case <-exited:
-		// what it last showed may still be on its way through the terminal
+	// A CLI that exits cleanly has started the session: CLI 2.1.310 ends
+	// once the session is created, before its VM posts SessionStart, so
+	// the start waits on for that post within its bound (#1102).
+	cliExited := exited
+	for {
 		select {
-		case <-read:
-		case <-time.After(time.Second):
+		case sessionID := <-pending.session:
+			session.sessionID = sessionID
+			return session.cloud.update(session.loopID, func(s *state) {
+				s.SessionID, s.ClaudeSession, s.EnvironmentID = sessionID, session.claudeSession, ""
+				s.SessionURL = sessionPages + sessionID
+				s.SessionToken = tokenHash(session.hub.token)
+			})
+		case <-cliExited:
+			if exitErr == nil {
+				cliExited = nil
+				continue
+			}
+			// what it last showed may still be on its way through the terminal
+			select {
+			case <-read:
+			case <-time.After(time.Second):
+			}
+			return fmt.Errorf("cloud: the CLI exited (%v) before the session started: %s", exitErr, screen.String())
+		case <-ctx.Done():
+			if session.ctx.Err() != nil {
+				return session.ctx.Err()
+			}
+			return fmt.Errorf("cloud: no session started within %s: %s", within, screen.String())
 		}
-		return fmt.Errorf("cloud: the CLI exited (%v) before the session started: %s", exitErr, screen.String())
-	case <-ctx.Done():
-		if session.ctx.Err() != nil {
-			return session.ctx.Err()
-		}
-		return fmt.Errorf("cloud: no session started within %s: %s", within, screen.String())
 	}
 }
 

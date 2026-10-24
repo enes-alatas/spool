@@ -167,6 +167,26 @@ func TestCLIStartFailsWithTheCLIsLastLine(t *testing.T) {
 	}
 }
 
+// CLI 2.1.310 ends once it has created the session, before the VM posts
+// SessionStart: a clean exit leaves the start waiting for that post (#1102).
+func TestCLIStartThatExitsCleanlyTakesTheLaterPost(t *testing.T) {
+	exited := filepath.Join(t.TempDir(), "exited")
+	cloud := cliRuntime(t, "touch "+exited+"; exit 0")
+	proc := startCLI(t, cloud, testSpec())
+	postWhenPending(t, cloud, exited, "session_01Synthetic", StopPost{
+		Hook:  []byte(`{"last_assistant_message":"It is Tuesday."}`),
+		Lines: []byte(transcriptTurn),
+	})
+
+	_, result := turnResult(t, proc, "first words")
+	if result.IsError || result.ResultText != "It is Tuesday." {
+		t.Fatalf("the turn's result: %+v", result)
+	}
+	if url := cloud.SessionURL("loop-1"); url != "https://claude.ai/code/session_01Synthetic" {
+		t.Errorf("the loop's session link = %q, want the posted session's", url)
+	}
+}
+
 // A start with no environment chosen fails before the CLI runs: the CLI
 // would pick one of the account's environments by itself (ADR-0059).
 func TestCLIStartNeedsAChosenEnvironment(t *testing.T) {

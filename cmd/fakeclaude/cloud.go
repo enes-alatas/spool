@@ -42,6 +42,9 @@ package main
 //
 // A "cloud-start-held" file in $FAKECLAUDE_STATE holds a new VM's
 // SessionStart back until it is removed, for at most half a minute.
+// A "cloud-start-exits" file in $FAKECLAUDE_STATE makes `--cloud` end
+// once it has printed the session's address, as CLI 2.1.310 does, and
+// holds the VM's SessionStart until it has.
 // A "cloud-model" file in $FAKECLAUDE_STATE names the model a turn's
 // transcript says it ran on, claude-opus-5-5 without one.
 
@@ -154,11 +157,24 @@ func cloudStart(message, settings string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+	exits := cloudStartExits()
+	if exits {
+		if err := os.WriteFile(filepath.Join(vm, "cli-running"), nil, 0o600); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+	}
 	if err := startVMTurn(id, message, true); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	fmt.Printf("Started a cloud session: https://claude.ai/code/%s\n", id)
+	if exits {
+		// CLI 2.1.310 ends once the session is created, and its VM posts
+		// SessionStart only after (#1102)
+		_ = os.Remove(filepath.Join(vm, "cli-running"))
+		return 0
+	}
 	// the real CLI stays on the session's view until it is ended
 	time.Sleep(10 * time.Minute)
 	return 0
@@ -232,6 +248,7 @@ func cloudTurn(session, message string, first bool) int {
 	source := ""
 	switch reclaimed := filepath.Join(vm, "reclaimed"); {
 	case first:
+		hold(filepath.Join(vm, "cli-running"))
 		holdStart()
 		source = "startup"
 	case os.Remove(reclaimed) == nil:
@@ -377,6 +394,15 @@ func matches(matcher, source string) bool {
 		}
 	}
 	return false
+}
+
+// cloudStartExits reports whether a "cloud-start-exits" file is in
+// $FAKECLAUDE_STATE: `--cloud` then ends once it has printed the session's
+// address, as CLI 2.1.310 does, and the VM's SessionStart waits for it
+// to (#1102).
+func cloudStartExits() bool {
+	_, err := os.Stat(filepath.Join(filepath.Dir(cloudRoot()), "cloud-start-exits"))
+	return err == nil
 }
 
 // holdStart waits, for at most half a minute, while a "cloud-start-held"
