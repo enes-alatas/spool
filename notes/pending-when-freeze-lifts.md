@@ -1063,3 +1063,6 @@ Terra (ref:6637) confirmed #1093 cause in code: check runs from the hub machine,
 
 ## 2026-10-23 22:45 UTC
 Elliot (ref:6667) filed #1094: on claude 2.1.304 the cloud session starts in an empty non-git /home/user, loop home never arrives (no .mcp.json, no hooks); network ruled out (/mcp answers 401 from inside). Supersedes the DNS thread. Tidy: retitled to operator words, severity:high, Cloud runtime, parent #860; comment recording priority. Group (ref:6669): Terra takes #1094 first, #1093 waits on Enes. DM Enes (ref:6670): drop the DNS steps, #1093 option still owed.
+
+## 2026-10-24 00:18 UTC
+Sweep: PR #1095 (fix for #1094, cloud start uploads the loop home) open, CI green, review in progress (comment 23:04). #1096 (cloud turn errored with no reason) filed by Terra: added severity:medium, Cloud runtime, parent #860. #1077/#1078 had no milestone: set L6 OSS 1.0. #753 stays triage (community report). Enes has not answered the #1093 option (ref:6638); re-nudge in the morning if still open. cloud-tester loop no longer in the fleet list.
