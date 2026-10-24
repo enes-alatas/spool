@@ -123,6 +123,7 @@ function AddressLine({ view, onOpen }: { view: CloudSettings; onOpen: () => void
   const state = addressState(view)
   const now = useMinuteClock()
   const failing = view.check?.state === 'failed'
+  const privateRoute = view.check?.state === 'ok' && view.check.route === 'private'
   return (
     <>
       <StepLine
@@ -140,9 +141,9 @@ function AddressLine({ view, onOpen }: { view: CloudSettings; onOpen: () => void
           {view.check && ` · ${formatAgo(view.check.checked_at, now)}`}
         </span>
       </StepLine>
-      {(failing || view.warning) && (
+      {(failing || privateRoute || view.warning) && (
         <div className="cloud-step-open">
-          {failing && <CheckRows view={view} />}
+          {(failing || privateRoute) && <CheckRows view={view} />}
           {view.warning === 'quick_tunnel' && <QuickTunnelWarning />}
         </div>
       )}
@@ -219,7 +220,9 @@ function UnconfirmedAllowlistWarning() {
 
 function CheckRows({ view }: { view: CloudSettings }) {
   const rows = checkRows(view.check, view.address)
-  const failing = rows.find((row) => row.tone === 'bad')
+  // The row whose hint the step shows: where the check failed, or the
+  // private-route row of a pass.
+  const flagged = rows.find((row) => row.tone === 'bad' || row.tone === 'warn')
   return (
     <>
       <ul className="cloud-check" aria-label="The address check">
@@ -227,13 +230,13 @@ function CheckRows({ view }: { view: CloudSettings }) {
           <CheckLine key={row.key} row={row} />
         ))}
       </ul>
-      {failing?.hint && (
+      {flagged?.hint && (
         <div className="cloud-check-hint">
-          {failing.hint}
-          {failing.docs && (
+          {flagged.hint}
+          {flagged.docs && (
             <>
               {' '}
-              <a href={failing.docs} target="_blank" rel="noreferrer">
+              <a href={flagged.docs} target="_blank" rel="noreferrer">
                 How, with Caddy
               </a>
             </>
@@ -249,11 +252,17 @@ function CheckLine({ row }: { row: CheckRow }) {
   return (
     <li className={row.tone}>
       <span className="cloud-mark" aria-hidden>
-        {row.tone === 'ok' ? '✓' : row.tone === 'bad' ? '✕' : '·'}
+        {row.tone === 'ok' ? '✓' : row.tone === 'bad' ? '✕' : row.tone === 'warn' ? '!' : '·'}
       </span>
       {row.text}
       <span className="sr-only">
-        {row.tone === 'ok' ? ': passed' : row.tone === 'bad' ? ': failed here' : ': not reached'}
+        {row.tone === 'ok'
+          ? ': passed'
+          : row.tone === 'bad'
+            ? ': failed here'
+            : row.tone === 'warn'
+              ? ': untested from the internet'
+              : ': not reached'}
       </span>
     </li>
   )
