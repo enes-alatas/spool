@@ -68,6 +68,32 @@ const HINT: Record<CloudCheckStage, string> = {
   tls: 'The certificate is not valid for this name. A tunnel serves one for you; a proxy needs its own.',
   other_server:
     'Something answered, but not this hub. Point the tunnel or proxy at the cloud listener’s port.',
+  session:
+    'Make the address reachable from the internet, then press Check again. On Tailscale, run tailscale funnel status to see whether the Funnel is on.',
+}
+
+// The two lines no stage of the hub's own request can say (#1093): it
+// passed over a private route, so the internet is untested, or a cloud
+// session's start never arrived though it passed. Each is a row after
+// the five, since all five passed from this machine.
+const SESSION_ROW = {
+  key: 'session',
+  text: 'a cloud session couldn’t reach this hub at this address, though this machine can',
+  failed: 'a cloud session can’t reach it',
+}
+// A CheckRow needs a `failed`, but this one is never read: the row comes
+// only on a pass, and a passing step's line doesn't ask the rows.
+const PRIVATE_ROW = {
+  key: 'private',
+  text: 'reached over a private route from this machine',
+  failed: 'reached over a private route only',
+}
+
+// The outside test for an address the hub reached privately: from off the
+// tailnet or LAN, the listener answers /mcp with this hub's 401.
+export function privateRouteHint(address: string): string {
+  const mcp = address ? `${address.replace(/\/+$/, '')}/mcp` : 'https://<address>/mcp'
+  return `This machine reached the address over a private route, such as a tailnet, so the check doesn’t show the internet can. From a machine off that network, curl -i ${mcp} should get this hub’s 401.`
 }
 
 // A Tailscale Funnel's certificate fails the check only from this machine
@@ -83,8 +109,13 @@ export const FUNNEL_BESIDE_PROXY_DOCS =
 // stage, so it is a row of its own.
 export function checkRows(check: CloudCheck | undefined, address = ''): CheckRow[] {
   if (!check) return []
-  if (check.state === 'ok') return ROWS.map(({ key, text, failed }) => ({ key, text, failed, tone: 'ok' }))
+  const passed: CheckRow[] = ROWS.map(({ key, text, failed }) => ({ key, text, failed, tone: 'ok' }))
+  if (check.state === 'ok')
+    return check.route === 'private'
+      ? [...passed, { ...PRIVATE_ROW, tone: 'warn', hint: privateRouteHint(address) }]
+      : passed
   const stage = check.stage
+  if (stage === 'session') return [...passed, { ...SESSION_ROW, tone: 'bad', hint: HINT.session }]
   if (stage === 'refused')
     return [
       {
@@ -122,7 +153,10 @@ export function checkRows(check: CloudCheck | undefined, address = ''): CheckRow
 export function addressState(view: CloudSettings): { text: string; tone: Tone } {
   if (!view.address) return { text: 'not set', tone: 'todo' }
   if (!view.check) return { text: 'not checked yet', tone: 'todo' }
-  if (view.check.state === 'ok') return { text: 'reaches this hub', tone: 'ok' }
+  if (view.check.state === 'ok')
+    return view.check.route === 'private'
+      ? { text: 'reaches this hub over a private route', tone: 'warn' }
+      : { text: 'reaches this hub', tone: 'ok' }
   const failing = checkRows(view.check).find((row) => row.tone === 'bad')
   return { text: `fails: ${failing?.failed ?? 'unknown'}`, tone: 'bad' }
 }

@@ -535,12 +535,19 @@ export interface CloudListenerView {
 
 // Where a failed check stopped. `listener_off` and `refused` made no request:
 // the listener is off, or the stored address is one the hub won't accept.
+// `session`: the hub's own request passed, but a cloud session's start
+// never reached the hub at the address (#1093). It holds until the operator
+// checks again, changes the address or switches the listener.
 export type CloudCheckStage =
-  'listener_off' | 'refused' | 'dns' | 'tls' | 'timeout' | 'unreachable' | 'other_server'
+  'listener_off' | 'refused' | 'dns' | 'tls' | 'timeout' | 'unreachable' | 'other_server' | 'session'
 
 export interface CloudCheck {
   state: 'ok' | 'failed'
   stage?: CloudCheckStage
+  // `private` on a pass whose request went to a loopback, private, CGNAT,
+  // ULA or link-local address: it shows this machine reaches the hub, not
+  // that the internet does (#1093).
+  route?: 'private'
   // What answered, or how it failed; an admin's alone.
   detail?: string
   checked_at: number

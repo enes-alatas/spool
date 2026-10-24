@@ -76,6 +76,36 @@ describe('checkRows', () => {
     expect(rows).toEqual([expect.objectContaining({ tone: 'bad', text: 'the check failed (quantum)' })])
   })
 
+  it('puts a session that never arrived on a row of its own, after five passes', () => {
+    const rows = checkRows({ state: 'failed', stage: 'session', checked_at: 0 })
+    expect(rows.map((row) => [row.key, row.tone])).toEqual([
+      ['listener', 'ok'],
+      ['dns', 'ok'],
+      ['connect', 'ok'],
+      ['tls', 'ok'],
+      ['answer', 'ok'],
+      ['session', 'bad'],
+    ])
+    expect(rows[5].text).toBe(
+      'a cloud session couldn’t reach this hub at this address, though this machine can',
+    )
+    expect(rows[5].hint).toMatch(/reachable from the internet.*Check again.*tailscale funnel status/)
+  })
+
+  it('says a pass over a private route is one from this machine, and names the outside test', () => {
+    const rows = checkRows({ state: 'ok', route: 'private', checked_at: 0 }, 'https://hub.tail1234.ts.net/')
+    expect(rows.slice(0, 5).every((row) => row.tone === 'ok')).toBe(true)
+    expect(rows[5]).toEqual(
+      expect.objectContaining({
+        key: 'private',
+        tone: 'warn',
+        text: 'reached over a private route from this machine',
+      }),
+    )
+    expect(rows[5].hint).toContain('curl -i https://hub.tail1234.ts.net/mcp')
+    expect(rows[5].hint).toContain('401')
+  })
+
   it('passes every stage when the check passed, and has no rows before one ran', () => {
     expect(checkRows({ state: 'ok', checked_at: 0 }).every((row) => row.tone === 'ok')).toBe(true)
     expect(checkRows(undefined)).toEqual([])
@@ -92,6 +122,14 @@ describe('addressState', () => {
     })
     expect(addressState(view({ check: { state: 'failed', stage: 'other_server', checked_at: 0 } }))).toEqual({
       text: 'fails: another server answered',
+      tone: 'bad',
+    })
+    expect(addressState(view({ check: { state: 'ok', route: 'private', checked_at: 0 } }))).toEqual({
+      text: 'reaches this hub over a private route',
+      tone: 'warn',
+    })
+    expect(addressState(view({ check: { state: 'failed', stage: 'session', checked_at: 0 } }))).toEqual({
+      text: 'fails: a cloud session can’t reach it',
       tone: 'bad',
     })
   })
