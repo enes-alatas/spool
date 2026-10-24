@@ -133,7 +133,7 @@ func TestCloudHookRouteHandsEachPostToItsLoop(t *testing.T) {
 	hooks := &recordingHooks{}
 	handler := hookServer(t, hooks)
 
-	body, contentType := hookForm(t, [2]string{"hook", startInput}, [2]string{"session", "session_01Synthetic"})
+	body, contentType := hookForm(t, [2]string{"hook", startInput}, [2]string{"session", "cse_01Synthetic"})
 	if code := postHook(handler, cloudLoopToken, body, contentType); code != http.StatusOK {
 		t.Fatalf("SessionStart: %d, want 200", code)
 	}
@@ -144,7 +144,7 @@ func TestCloudHookRouteHandsEachPostToItsLoop(t *testing.T) {
 
 	calls := hooks.taken()
 	want := []hookCall{
-		{event: "SessionStart", loopID: "l-cloud", session: "session_01Synthetic", hook: startInput},
+		{event: "SessionStart", loopID: "l-cloud", session: "cse_01Synthetic", hook: startInput},
 		{event: "Stop", loopID: "l-cloud", hook: stopInput, lines: "{\"type\":\"user\"}\n"},
 	}
 	if len(calls) != len(want) || calls[0] != want[0] || calls[1] != want[1] {

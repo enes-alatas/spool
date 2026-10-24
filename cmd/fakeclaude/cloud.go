@@ -24,7 +24,8 @@ package main
 //
 // A turn in the VM runs the repo's hooks as the CLI's committed
 // .claude/settings.json names them, with CLAUDE_PROJECT_DIR and
-// CLAUDE_CODE_REMOTE_SESSION_ID set: SessionStart (source startup) at the
+// CLAUDE_CODE_REMOTE_SESSION_ID set, in the cse_… form the VM names its
+// session by: SessionStart (source startup) at the
 // first turn, then the turn, written to the session's transcript as the
 // CLI writes one, then Stop. SessionStart's hooks get CLAUDE_ENV_FILE, the
 // session's claude-env file. The reply is "fake cloud reply: " and the
@@ -317,7 +318,8 @@ func hookEnv(projectDir, remoteSession string) []string {
 	}
 	env = append(env, "CLAUDE_PROJECT_DIR="+projectDir)
 	if remoteSession != "" {
-		env = append(env, "CLAUDE_CODE_REMOTE_SESSION_ID="+remoteSession)
+		// the VM names its session cse_…, the CLI and claude.ai session_…
+		env = append(env, "CLAUDE_CODE_REMOTE_SESSION_ID=cse_"+strings.TrimPrefix(remoteSession, "session_"))
 	}
 	return env
 }

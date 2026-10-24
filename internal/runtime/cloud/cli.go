@@ -150,6 +150,7 @@ func (waits *hookWaits) forgetStop(loopID string, stops chan stopArrival) {
 // post from the loop's own session, which may have lost them.
 // Each answer is logged, without its values.
 func (cloud *Runtime) SessionStart(_ context.Context, loopID, sessionID string, hook []byte) ([]byte, error) {
+	sessionID = sessionAddress(sessionID)
 	source := hookSource(hook)
 	exports, err := cloud.answerSessionStart(loopID, sessionID, source)
 	if err == nil {
@@ -163,6 +164,17 @@ func (cloud *Runtime) SessionStart(_ context.Context, loopID, sessionID string, 
 		}
 	}
 	return exports, err
+}
+
+// sessionAddress is a session's id as claude.ai's pages and `-p --cloud`
+// name it, session_…. The VM's CLAUDE_CODE_REMOTE_SESSION_ID names the
+// same session cse_… (run A on #957), and a start recorded as that one
+// was never sent into again (#1099).
+func sessionAddress(sessionID string) string {
+	if rest, ok := strings.CutPrefix(sessionID, "cse_"); ok {
+		return "session_" + rest
+	}
+	return sessionID
 }
 
 func (cloud *Runtime) answerSessionStart(loopID, sessionID, source string) ([]byte, error) {
