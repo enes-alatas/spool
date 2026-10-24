@@ -313,6 +313,10 @@ func TestLastLineDropsTheTerminalsEscapes(t *testing.T) {
 	if got := screen.String(); got != "✓ Uploaded" {
 		t.Errorf("the last line is %q", got)
 	}
+	// the escapes CLI 2.1.310 left in a start error's last line (#1102)
+	if got := stripEscapes([]byte("\x1b(B\x1b7\x1b8\x1b]0;claude\x07Started\x1b]2;title\x1b\\ \x1bMhere")); got != "Started here" {
+		t.Errorf("stripEscapes left %q", got)
+	}
 }
 
 // A hub that stopped mid-start left that start's loop home, token and all,
