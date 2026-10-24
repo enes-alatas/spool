@@ -58,7 +58,8 @@ func TestALoopThatCannotReachTheHubIsDownAndItsWorkWaits(t *testing.T) {
 		t.Fatalf("down_reason = %q after a retry's spawn, want the alert held until a spawn connects", v.DownReason)
 	}
 	for _, tn := range s.turns("aster") {
-		if !tn.IsError || tn.ResultText != "" {
+		// the turn is held, saying why, rather than run (#1096)
+		if !tn.IsError || !strings.Contains(tn.ResultText, "Spool MCP server") {
 			t.Fatalf("a turn ran without the hub's tools: %+v", tn)
 		}
 	}
