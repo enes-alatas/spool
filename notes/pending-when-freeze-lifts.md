@@ -1066,3 +1066,6 @@ Elliot (ref:6667) filed #1094: on claude 2.1.304 the cloud session starts in an 
 
 ## 2026-10-24 00:18 UTC
 Sweep: PR #1095 (fix for #1094, cloud start uploads the loop home) open, CI green, review in progress (comment 23:04). #1096 (cloud turn errored with no reason) filed by Terra: added severity:medium, Cloud runtime, parent #860. #1077/#1078 had no milestone: set L6 OSS 1.0. #753 stays triage (community report). Enes has not answered the #1093 option (ref:6638); re-nudge in the morning if still open. cloud-tester loop no longer in the fleet list.
+
+## 2026-10-24 08:20 UTC
+PR #1095 merged 07:36 (5a78c51), #1094 closed COMPLETED. DM Enes (ref:6682): upgrade the hub to main, fresh test loop, one Telegram message; gate item A clock restarts on the new build; #1093 option still owed.
