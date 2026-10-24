@@ -1072,3 +1072,6 @@ PR #1095 merged 07:36 (5a78c51), #1094 closed COMPLETED. DM Enes (ref:6682): upg
 
 ## 2026-10-24 10:20 UTC
 Fleet now on v0.5.1-295-g75dd5a0 (tip 5a78c51 = #1095 fix), so Enes upgraded; no #860 retest comment yet, no reply to 6682. #1097 (Elliot, docs: Caddy same-name, NXDOMAIN, address change restart) had no milestone: Cloud runtime, parent #860. PR #1098 (account check vs sign-in, #970 flake) open, CI partly red/pending, Terra on it. #1093 decision still owed.
+
+## 2026-10-24 13:22 UTC
+Quiet: no #860 result, no #1093 answer, PR #1098 still in flight. Re-nudged Enes (ref:6690) with the proposed answer (option 1) and a 16:00 default. CORRECTION for the follow-through: an ADR-0056 amendment is his call; at 16:00 record option 1 ONLY on his word (yes/thumbs is not enough: words). If silent, nudge again, do not record.
