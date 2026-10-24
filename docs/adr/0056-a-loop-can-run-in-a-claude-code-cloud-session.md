@@ -1,6 +1,6 @@
 # ADR-0056: A loop can run in a Claude Code cloud session, beside contained loops
 
-Date: 2026-10-15 · Status: accepted (operator decision of 2026-10-15 on #859, accepting it as written; operator direction of 2026-10-15 on #758: build it, in a mixed hub, on the undocumented read-back if that is noted, without OpenTelemetry; and of 2026-10-15 on #859: the egress allowlist is the hub's own) · Amended: 2026-10-15 (items 2, 3, 5, 6, 7 and 9: the API check, #861; operator decision of 2026-10-15 on #872: cloud turns report their cost); 2026-10-16 (item 4: the page switches the listener on, #864; item 6: what holds a cloud loop, and the cloud_address symptom, #864; item 6: the sign-in is the CLI's own login, #864); 2026-10-17 (item 5: the ingress-credentials probe — no copyable token found, but private-key material is shell-reachable and its scope untested; operator decision of 2026-10-18 on #919: ship as one trust domain, #866); 2026-10-18 (item 6: the account is the hub's Claude login, and how it refreshes, ADR-0058, #928); 2026-10-19 (item 6: a hub with no `claude` signs in with the workstation image's, #952) · Relates to: ADR-0017, ADR-0018, ADR-0022, ADR-0026, ADR-0028, ADR-0030, ADR-0037, ADR-0039, ADR-0044, ADR-0046, ADR-0047, ADR-0053
+Date: 2026-10-15 · Status: accepted (operator decision of 2026-10-15 on #859, accepting it as written; operator direction of 2026-10-15 on #758: build it, in a mixed hub, on the undocumented read-back if that is noted, without OpenTelemetry; and of 2026-10-15 on #859: the egress allowlist is the hub's own) · Amended: 2026-10-15 (items 2, 3, 5, 6, 7 and 9: the API check, #861; operator decision of 2026-10-15 on #872: cloud turns report their cost); 2026-10-16 (item 4: the page switches the listener on, #864; item 6: what holds a cloud loop, and the cloud_address symptom, #864; item 6: the sign-in is the CLI's own login, #864); 2026-10-17 (item 5: the ingress-credentials probe — no copyable token found, but private-key material is shell-reachable and its scope untested; operator decision of 2026-10-18 on #919: ship as one trust domain, #866); 2026-10-18 (item 6: the account is the hub's Claude login, and how it refreshes, ADR-0058, #928); 2026-10-19 (item 6: a hub with no `claude` signs in with the workstation image's, #952); 2026-10-24 (item 6: what green means, and the session's verdict, #1093) · Relates to: ADR-0017, ADR-0018, ADR-0022, ADR-0026, ADR-0028, ADR-0030, ADR-0037, ADR-0039, ADR-0044, ADR-0046, ADR-0047, ADR-0053
 
 ## Context
 
@@ -461,6 +461,36 @@ the bar for setup: it has to be really simple.
       - an address stored before the rule above narrowed, or written
         past the page, that the hub now refuses fails the check without
         a request, at a stage of its own, `refused`.
+
+      **Amendment (2026-10-24, #1093): what green means, and the
+      session's verdict** (operator decision of 2026-10-24, option 1 on
+      #1093). The check is sent from the hub's own machine. On a tailnet,
+      the address resolves there to the machine's tailnet address, so the
+      check passed with the Funnel down while no cloud session could reach
+      the hub. So "Green means a cloud session can reach the hub" narrows
+      to: the hub's own request reached its listener at the address.
+      - A pass whose request went to a loopback, private, CGNAT
+        (100.64.0.0/10), ULA or link-local address says so: it reached the
+        listener over a private route from this machine, and the page
+        names the test to run from outside. It still lets cloud loops
+        wake.
+      - The session's word is the truth. A start whose CLI exited cleanly,
+        so the session was created (ADR-0059's 2026-10-24 amendment, #1102),
+        and whose session then posts nothing to the hub within the start's
+        bound, is the session's verdict that it can't reach the hub at the
+        address. A CLI still running at the bound has created no session,
+        so its start is no verdict. A post the hub refused still reached
+        it, so it isn't one either: any SessionStart post that names a
+        session counts, whatever its id's shape or however it is refused,
+        but only on the loop's token. A post the token check refuses can't
+        be told apart from anyone's, so it doesn't count, and neither does
+        the local CLI's own post, which names no session and comes from the
+        hub's machine. The step turns red at a stage of its own, `session`, and
+        every cloud loop is held with its `cloud_address` problem.
+      - The hub's own checks, scheduled or before a wake, don't clear that
+        verdict, since the hub's pass is what's in doubt. A check the
+        operator asks for does, from the page, by changing the address or
+        by switching the listener. So does a different address stored.
    2. **The Claude account.** The account whose plan the cloud loops
       spend. If the setup-token the hub already holds (ADR-0044) is
       accepted by the sessions API, this step is already done. Otherwise

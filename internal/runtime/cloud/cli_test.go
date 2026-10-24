@@ -3,9 +3,11 @@ package cloud
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -203,17 +205,59 @@ func TestCLIStartNeedsAChosenEnvironment(t *testing.T) {
 	}
 }
 
+// A start whose session posts nothing within its bound fails, naming the
+// bound and the CLI's last line. When the CLI exited cleanly, so the
+// session was created, it is told to Unreached: the session can't reach
+// the hub. One whose session posted, even a post the runtime refused,
+// reached it, and is not; nor is one whose CLI still runs, which has
+// created no session yet (#1093, #1102).
 func TestCLIStartFailsWhenNoSessionStartsInTime(t *testing.T) {
-	cloud := cliRuntime(t, `echo "Uploading the repository"; sleep 30`)
-	cloud.CLI.StartWithin = 300 * time.Millisecond
-	proc := startCLI(t, cloud, testSpec())
-	_, result := turnResult(t, proc, "hello")
-	if !result.IsError || !strings.Contains(result.ResultText, "no session started within 300ms") ||
-		!strings.Contains(result.ResultText, "Uploading the repository") {
-		t.Errorf("the turn ended as %q, want an error naming the bound and the CLI's last line", result.ResultText)
-	}
-	if err := postStartup(context.Background(), cloud, "loop-1", "session_01Late"); err == nil {
-		t.Error("a SessionStart after the start failed was taken")
+	for name, tc := range map[string]struct {
+		cli       string
+		post      bool
+		said      string
+		unreached bool
+	}{
+		"nothing posted":         {cli: "exit 0", post: false, said: "the session never reached the hub within 300ms", unreached: true},
+		"a post was refused":     {cli: "exit 0", post: true, said: "no session started within 300ms", unreached: false},
+		"the CLI is still going": {cli: "sleep 30", post: false, said: "no session started within 300ms", unreached: false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cloud := cliRuntime(t, `echo "Uploading the repository"; `+tc.cli)
+			cloud.CLI.StartWithin = 300 * time.Millisecond
+			var told []string
+			var mu sync.Mutex
+			cloud.Unreached = func(loopID string, within time.Duration) {
+				mu.Lock()
+				defer mu.Unlock()
+				told = append(told, fmt.Sprintf("%s %s", loopID, within))
+			}
+			proc := startCLI(t, cloud, testSpec())
+			if tc.post {
+				go func() {
+					resume := []byte(`{"hook_event_name":"SessionStart","source":"resume"}`)
+					for deadline := time.Now().Add(time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+						if cloud.waits.pending("loop-1") {
+							_, _ = cloud.SessionStart(context.Background(), "loop-1", "session_01Synthetic", resume)
+							return
+						}
+					}
+				}()
+			}
+			_, result := turnResult(t, proc, "hello")
+			if !result.IsError || !strings.Contains(result.ResultText, tc.said) ||
+				!strings.Contains(result.ResultText, "Uploading the repository") {
+				t.Errorf("the turn ended as %q, want an error saying %q and the CLI's last line", result.ResultText, tc.said)
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if want := []string{"loop-1 300ms"}; tc.unreached != (len(told) == 1 && told[0] == want[0]) {
+				t.Errorf("Unreached was told %q, want it told: %v", told, tc.unreached)
+			}
+			if err := postStartup(context.Background(), cloud, "loop-1", "session_01Late"); err == nil {
+				t.Error("a SessionStart after the start failed was taken")
+			}
+		})
 	}
 }
 
@@ -472,4 +516,11 @@ func TestOwnDirRefusesAnotherUsersPrivateDir(t *testing.T) {
 	if err := cli.ownDir(); err == nil || !strings.Contains(err.Error(), "another user") {
 		t.Errorf("ownDir on another user's private dir = %v, want it refused", err)
 	}
+}
+
+// pending reports whether a start of loopID waits for its SessionStart.
+func (waits *hookWaits) pending(loopID string) bool {
+	waits.mu.Lock()
+	defer waits.mu.Unlock()
+	return waits.starts[loopID] != nil
 }

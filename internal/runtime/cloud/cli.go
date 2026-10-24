@@ -95,6 +95,9 @@ type pendingStart struct {
 	deadline time.Time
 	session  chan string
 	exports  []byte
+	// heard is whether any SessionStart post of the loop came while the
+	// start waited, a refused one too: its session reached the hub.
+	heard bool
 }
 
 // stopArrival is a Stop post as the turn in flight takes it.
@@ -120,6 +123,26 @@ func (waits *hookWaits) forgetStart(loopID string, start *pendingStart) {
 	if waits.starts[loopID] == start {
 		delete(waits.starts, loopID)
 	}
+}
+
+// SessionPosted is told of a SessionStart post of the loop that names a
+// session, before the hub reads it any further: a post the hub refuses,
+// for an id of a shape it doesn't know or a body it can't read, still
+// came from the session, so it reached the hub (#1093).
+func (cloud *Runtime) SessionPosted(loopID string) {
+	cloud.waits.mu.Lock()
+	defer cloud.waits.mu.Unlock()
+	if start := cloud.waits.starts[loopID]; start != nil {
+		start.heard = true
+	}
+}
+
+// heard reports whether a SessionStart post of start's loop came while it
+// waited.
+func (waits *hookWaits) heard(start *pendingStart) bool {
+	waits.mu.Lock()
+	defer waits.mu.Unlock()
+	return start.heard
 }
 
 func (waits *hookWaits) awaitStop(loopID string) chan stopArrival {
@@ -180,10 +203,13 @@ func sessionAddress(sessionID string) string {
 func (cloud *Runtime) answerSessionStart(loopID, sessionID, source string) ([]byte, error) {
 	cloud.waits.mu.Lock()
 	defer cloud.waits.mu.Unlock()
+	start := cloud.waits.starts[loopID]
+	if start != nil {
+		start.heard = true
+	}
 	if source != sourceStartup {
 		return nil, fmt.Errorf("cloud: a SessionStart post from %q is never answered", source)
 	}
-	start := cloud.waits.starts[loopID]
 	if start == nil || time.Now().After(start.deadline) {
 		return nil, errNoHandOff
 	}
@@ -366,7 +392,8 @@ func (session *cliSession) turn(text string) {
 // records the session, then ends the local CLI and removes the home, which
 // holds the loop's token. A CLI that exits with an error first, or a post
 // that doesn't come within the bound, fails the start with the CLI's last
-// line.
+// line. A start whose CLI exited cleanly, and whose session then posted
+// nothing at all in the bound, is told to Unreached.
 func (session *cliSession) startSession(text string) error {
 	cli := session.cloud.CLI
 	within := cli.StartWithin
@@ -456,7 +483,17 @@ func (session *cliSession) startSession(text string) error {
 			if session.ctx.Err() != nil {
 				return session.ctx.Err()
 			}
-			slog.Default().Warn("cloud: a start failed: no session started in time", "loop", session.loopID, "within", within, "cli_exited", cliExited == nil)
+			heard := session.cloud.waits.heard(pending)
+			slog.Default().Warn("cloud: a start failed: no session started in time", "loop", session.loopID, "within", within, "cli_exited", cliExited == nil, "session_posted", heard)
+			// Only a CLI that exited cleanly created the session, so only then
+			// is its silence the session's word on the address. A CLI still
+			// running has created none yet (#1102).
+			if cliExited == nil && !heard {
+				if unreached := session.cloud.Unreached; unreached != nil {
+					unreached(session.loopID, within)
+				}
+				return fmt.Errorf("cloud: the session never reached the hub within %s: %s", within, screen.String())
+			}
 			return fmt.Errorf("cloud: no session started within %s: %s", within, screen.String())
 		}
 	}

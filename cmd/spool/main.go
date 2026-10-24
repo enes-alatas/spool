@@ -113,6 +113,7 @@ func main() {
 	cloudAPIFlag := flag.String("cloud-api-base", anthropicAPI, "Anthropic's API base URL, which the Claude proxy forwards contained loops' model requests to and Settings → Cloud lists the account's environments from (tests point this at a stand-in server); https, or http on loopback")
 	githubAPIFlag := flag.String("github-api-base", githubapp.DefaultAPI, "GitHub's REST API base URL, where github-app connections' installation tokens are minted (tests point this at a stand-in server); https, or http on loopback")
 	cloudLoopbackAddress := flag.Bool("cloud-loopback-address", false, "accept a plain-HTTP loopback address as the cloud listener's public address (tests only: no cloud session can reach one, though the hub checks it green from itself)")
+	cloudStartWithinSec := flag.Int("cloud-start-within-sec", 0, "seconds a cloud start waits for its session to post back before it fails (0 = the production two minutes; tests shorten it)")
 	// Temporary, and tests only, until slice 2 of ADR-0059 (#977) removes it
 	// and the CLI path is the only one.
 	answerTimeoutSec := flag.Int("telegram-answer-timeout-sec", 0, "seconds a Telegram call waits for the Bot API's answer before it is retried on a fresh connection (0 = the production 60s; tests against a stand-in API shorten it)")
@@ -404,6 +405,7 @@ func main() {
 	// The cloud runtime reads its account from the store, so it joins the
 	// others once there is one (ADR-0059).
 	cloudRuntime := newCloudRuntime(rdb.Settings(), *dataDir, *claudeBin, cloudAPI)
+	cloudRuntime.CLI.StartWithin = time.Duration(*cloudStartWithinSec) * time.Second
 	// a dir another user holds fails every cloud start loudly, on the loop,
 	// and needn't stop a hub that runs no cloud loop
 	if removed, err := cloudRuntime.CLI.Prepare(); err != nil {
@@ -650,6 +652,8 @@ func main() {
 		// that looks healthy and never wakes is the worse failure.
 		{name: "mcp", srv: mcpSrv, listener: mcpListener, addr: mcpAddr},
 	}
+	// a session that never reached the hub is the address check's verdict
+	cloudRuntime.Unreached = api.CloudSessionUnreached
 	// the cloud listener redacts every response but the connections a
 	// session is handed as it starts, which it writes past the redactor
 	// (ADR-0059)

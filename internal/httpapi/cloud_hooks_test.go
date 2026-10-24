@@ -38,6 +38,8 @@ type recordingHooks struct {
 	refuse error
 	// exports is what a SessionStart post is answered with.
 	exports []byte
+	// posted is each loop SessionPosted was told of.
+	posted []string
 }
 
 func (hooks *recordingHooks) SessionStart(_ context.Context, loopID, sessionID string, hook []byte) ([]byte, error) {
@@ -55,6 +57,12 @@ func (hooks *recordingHooks) Stop(_ context.Context, loopID string, hook, lines 
 	defer hooks.mu.Unlock()
 	hooks.calls = append(hooks.calls, hookCall{event: "Stop", loopID: loopID, hook: string(hook), lines: string(lines), overBound: overBound})
 	return hooks.refuse
+}
+
+func (hooks *recordingHooks) SessionPosted(loopID string) {
+	hooks.mu.Lock()
+	defer hooks.mu.Unlock()
+	hooks.posted = append(hooks.posted, loopID)
 }
 
 func (hooks *recordingHooks) taken() []hookCall {
@@ -189,6 +197,37 @@ func TestCloudHookRouteRefusesWhatIsNotACloudLoopsPost(t *testing.T) {
 	}
 	if calls := hooks.taken(); len(calls) != 0 {
 		t.Errorf("refused posts reached the runtime: %+v", calls)
+	}
+}
+
+// A SessionStart post naming a session came from it, so it reached the
+// hub, though the route refuses it: the runtime is told before any
+// refusal, as no verdict that the session can't reach the hub (#1093).
+// One naming none, the local CLI's, or on a token that isn't a cloud
+// loop's, is not.
+func TestCloudHookRouteTellsTheRuntimeOfASessionsRefusedPost(t *testing.T) {
+	for name, tc := range map[string]struct {
+		token, session string
+		want           int
+		posted         bool
+	}{
+		"a session id of another shape": {cloudLoopToken, "cse_not-a-known-shape", http.StatusBadRequest, true},
+		"no session id":                 {cloudLoopToken, "", http.StatusBadRequest, false},
+		"a contained loop's token":      {containedLoopToken, "cse_01Synthetic", http.StatusUnauthorized, false},
+		"an unknown token":              {"spool-hub-synthetic-none", "cse_01Synthetic", http.StatusUnauthorized, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			hooks := &recordingHooks{}
+			body, contentType := hookForm(t, [2]string{"hook", startInput}, [2]string{"session", tc.session})
+			if code := postHook(hookServer(t, hooks), tc.token, body, contentType); code != tc.want {
+				t.Fatalf("the post: %d, want %d", code, tc.want)
+			}
+			hooks.mu.Lock()
+			defer hooks.mu.Unlock()
+			if told := len(hooks.posted) == 1 && hooks.posted[0] == "l-cloud"; told != tc.posted || len(hooks.posted) > 1 {
+				t.Errorf("SessionPosted was told %q, want it told of the cloud loop: %v", hooks.posted, tc.posted)
+			}
+		})
 	}
 }
 

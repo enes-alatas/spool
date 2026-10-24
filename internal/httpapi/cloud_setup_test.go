@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/enes-alatas/spool/internal/loop"
 	"github.com/enes-alatas/spool/internal/store"
@@ -144,6 +145,73 @@ func TestTheCloudGateHearsEachCheck(t *testing.T) {
 	server.CheckCloudAddress(context.Background())
 	if server.CloudGate.Passed() || server.CloudGate.FailedSince() != 0 {
 		t.Fatal("with no address the gate must hold, with no failure")
+	}
+}
+
+// A session's word that it can't reach the hub outranks the hub's own
+// pass: it stands as the last check, holding the gate, through the checks
+// the hub makes by itself, and only one the operator asks for sets it
+// aside. One on another address no longer stands (ADR-0056).
+func TestASessionsVerdictStandsUntilACheckIsAsked(t *testing.T) {
+	server := cloudCheckServer(t, "")
+	public := httptest.NewServer(server.CloudHandler(noRedaction))
+	t.Cleanup(public.Close)
+	server.CloudGate = loop.NewCloudGate(func() (string, error) { return server.storedCloudAddress(context.Background()) },
+		func() (bool, error) { return true, nil })
+	server = withAddress(t, server, public.URL)
+	if result := checked(t, server, public.URL); result.State != CloudCheckOK || result.Route != CloudRoutePrivate {
+		t.Fatalf("a pass over loopback: %+v, want ok over a private route", result)
+	}
+
+	server.CloudSessionUnreached("l-cloud", 2*time.Minute)
+	if result := checked(t, server, public.URL); result.Stage != CloudStageSession || !strings.Contains(result.Detail, "2m0s") {
+		t.Fatalf("a check the hub made by itself after the verdict: %+v, want the session's verdict to stand", result)
+	}
+	if server.CloudGate.Passed() || server.CloudGate.FailedSince() == 0 {
+		t.Fatal("the session's verdict left the gate open")
+	}
+
+	server.askCloudCheck(context.Background())
+	if result := server.cloudCheck.result(public.URL); result == nil || result.State != CloudCheckOK {
+		t.Fatalf("a check the operator asked for: %+v, want it made, and passed", result)
+	}
+	if !server.CloudGate.Passed() {
+		t.Fatal("a check the operator asked for that passed left the gate held")
+	}
+
+	server.CloudSessionUnreached("l-cloud", 2*time.Minute)
+	other := httptest.NewServer(server.CloudHandler(noRedaction))
+	t.Cleanup(other.Close)
+	server = withAddress(t, server, other.URL)
+	if result := checked(t, server, other.URL); result.State != CloudCheckOK {
+		t.Fatalf("a check of an address stored past the page: %+v, want the verdict on the old one gone", result)
+	}
+}
+
+// A pass is over a private route when the request went to an address this
+// machine reaches without the internet, a tailnet's among them (#1093).
+func TestPrivateRoute(t *testing.T) {
+	for address, want := range map[string]bool{
+		"127.0.0.1":            true,
+		"::1":                  true,
+		"10.1.2.3":             true,
+		"172.16.0.9":           true,
+		"192.168.1.20":         true,
+		"100.101.102.103":      true,
+		"fd7a:115c:a1e0::1":    true,
+		"169.254.10.1":         true,
+		"0.0.0.0":              true,
+		"::ffff:100.64.0.1":    true,
+		"100.128.0.1":          false,
+		"203.0.113.7":          false,
+		"2606:4700:4700::1111": false,
+	} {
+		if got := privateRoute(&net.TCPAddr{IP: net.ParseIP(address), Port: 443}); got != want {
+			t.Errorf("privateRoute(%s) = %v, want %v", address, got, want)
+		}
+	}
+	if privateRoute(nil) {
+		t.Error("a check that made no connection reads as a private route")
 	}
 }
 

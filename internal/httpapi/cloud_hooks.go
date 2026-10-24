@@ -42,6 +42,9 @@ type CloudHooks interface {
 	// overBound says the post ran past the route's bound, and lines holds
 	// none of it: the turn ends as an error.
 	Stop(ctx context.Context, loopID string, hook, lines []byte, overBound bool) error
+	// SessionPosted is told of each SessionStart post of the loop that
+	// names a session, before any refusal: the session reached the hub.
+	SessionPosted(loopID string)
 }
 
 // handleCloudHook serves a loop home's hook post: a multipart form with the
@@ -71,6 +74,12 @@ func (server *Server) handleCloudHook(w, handOff http.ResponseWriter, r *http.Re
 		http.Error(w, reason, status)
 	}
 	post, err := readHookPost(r)
+	// A SessionStart post naming a session came from its VM, which reached
+	// the hub, though it may be refused below. The local CLI's own post
+	// names none and comes from this machine, so it never counts (#1093).
+	if post.event == "SessionStart" && post.session != "" {
+		server.CloudHooks.SessionPosted(caller.ID)
+	}
 	var tooLarge *http.MaxBytesError
 	switch {
 	case errors.As(err, &tooLarge) && post.event == "Stop":
