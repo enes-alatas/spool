@@ -1084,3 +1084,6 @@ Enes (ref:6700, loop page screenshot): per wake "turn errored $0 0.0s 0 tok" -> 
 
 ## 2026-10-24 15:10 UTC
 Enes (ref:6704, journalctl screenshot): every SessionStart hook post refused 400 "no session id", every Stop post 409 "no turn in flight". Posted the lines on #1099 (comment 6385778825): hook on claude 2.1.304 posts without the remote session id; fix in home.go hook or hub acceptance + FIDELITY row. Told Enes nothing more needed (ref:6705). Terra picks it up after PR #1098.
+
+## 2026-10-24 17:12 UTC
+Sweep: #1099 fixed and merged (84b140d), #1098 merged (e284af5), fleet on v0.5.1-297. #1093 in progress (Terra building option 1, design comment 15:40). #1101 (web half of #1093, filed by Terra): severity:medium, Cloud runtime; --parent 860 failed (already a sub-issue). Assigned Iris (ref:6727). DM Enes (ref:6728): retest two messages on 297, one session expected, then I record gate item B on #860; archive orphans.
