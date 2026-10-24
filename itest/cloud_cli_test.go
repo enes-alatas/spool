@@ -76,6 +76,35 @@ func TestCloudCLILoopReadsItsTurnsBackFromItsHooks(t *testing.T) {
 	}
 }
 
+// CLI 2.1.310 ends `--cloud` once it has created the session, before the
+// VM posts SessionStart (#1102). The start waits on for that post: the
+// loop records its session, and its next wake sends into it.
+func TestACloudStartWhoseCLIExitsFirstKeepsItsSession(t *testing.T) {
+	t.Parallel()
+	hub := startCloudHub(t, "altus")
+	if err := os.WriteFile(filepath.Join(hub.fkState, "cloud-start-exits"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	hub.message("altus", "first words")
+	first := hub.waitTurn("altus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "first words") })
+	if first.IsError {
+		t.Fatalf("the first turn: %+v, want the session's reply", first)
+	}
+	hub.waitState("altus", "asleep", 20*time.Second)
+	hub.message("altus", "second words")
+	second := hub.waitTurn("altus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "second words") })
+	if second.IsError || second.SessionID != first.SessionID {
+		t.Fatalf("the second wake's turn: %+v, want one in session %s", second, first.SessionID)
+	}
+	if vms := cloudVMs(t, hub); len(vms) != 1 {
+		t.Errorf("two wakes made %d sessions, want the second to send into the first", len(vms))
+	}
+	if strings.Contains(hub.log(), "cloud hook refused") {
+		t.Errorf("the hub refused a hook post:\n%s", hub.log())
+	}
+}
+
 // The hook route takes a cloud loop's SessionStart only with a session id
 // of a session's shape, and only while a start of that loop is pending: a
 // post from the hub's own machine carries none (#957, run E3), and the
