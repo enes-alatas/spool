@@ -1069,3 +1069,6 @@ Sweep: PR #1095 (fix for #1094, cloud start uploads the loop home) open, CI gree
 
 ## 2026-10-24 08:20 UTC
 PR #1095 merged 07:36 (5a78c51), #1094 closed COMPLETED. DM Enes (ref:6682): upgrade the hub to main, fresh test loop, one Telegram message; gate item A clock restarts on the new build; #1093 option still owed.
+
+## 2026-10-24 10:20 UTC
+Fleet now on v0.5.1-295-g75dd5a0 (tip 5a78c51 = #1095 fix), so Enes upgraded; no #860 retest comment yet, no reply to 6682. #1097 (Elliot, docs: Caddy same-name, NXDOMAIN, address change restart) had no milestone: Cloud runtime, parent #860. PR #1098 (account check vs sign-in, #970 flake) open, CI partly red/pending, Terra on it. #1093 decision still owed.
