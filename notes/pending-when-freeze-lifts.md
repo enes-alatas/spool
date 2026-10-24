@@ -1081,3 +1081,6 @@ Enes (ref:6696): cloud loop on build 295 answers on Telegram, but each message s
 
 ## 2026-10-24 15:00 UTC
 Enes (ref:6700, loop page screenshot): per wake "turn errored $0 0.0s 0 tok" -> "previous session lost; continuing fresh" -> "new session started". That is cliSession.run lost branch (Runtime.Start mismatch on resume id / session id / token hash / EnvironmentID). Posted the reading on #1099 (comment 6385668134). Asked Enes (ref:6701) to grep the hub log for "cloud hook refused" and "handed its loop.s connections".
+
+## 2026-10-24 15:10 UTC
+Enes (ref:6704, journalctl screenshot): every SessionStart hook post refused 400 "no session id", every Stop post 409 "no turn in flight". Posted the lines on #1099 (comment 6385778825): hook on claude 2.1.304 posts without the remote session id; fix in home.go hook or hub acceptance + FIDELITY row. Told Enes nothing more needed (ref:6705). Terra picks it up after PR #1098.
