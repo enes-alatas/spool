@@ -1078,3 +1078,6 @@ Quiet: no #860 result, no #1093 answer, PR #1098 still in flight. Re-nudged Enes
 
 ## 2026-10-24 14:25 UTC
 Enes (ref:6696): cloud loop on build 295 answers on Telegram, but each message starts a new claude.ai session; "seems ok" on option 1. Filed #1099 (bug, high, Cloud runtime, parent #860). Recorded option 1 on #1093 (comment 6385290277; it says "after #1098 and #1099", which now exists). Group (ref:6697): Terra takes #1099 then #1093 after PR #1098. DM Enes (ref:6698): asked for hub log lines around a message and the turn state on the loop page.
+
+## 2026-10-24 15:00 UTC
+Enes (ref:6700, loop page screenshot): per wake "turn errored $0 0.0s 0 tok" -> "previous session lost; continuing fresh" -> "new session started". That is cliSession.run lost branch (Runtime.Start mismatch on resume id / session id / token hash / EnvironmentID). Posted the reading on #1099 (comment 6385668134). Asked Enes (ref:6701) to grep the hub log for "cloud hook refused" and "handed its loop.s connections".
