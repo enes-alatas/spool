@@ -1090,3 +1090,6 @@ Sweep: #1099 fixed and merged (84b140d), #1098 merged (e284af5), fleet on v0.5.1
 
 ## 2026-10-24 19:12 UTC
 Sweep: Enes retested on 297; still a new session per message. Terra filed #1102 (claude 2.1.310: local claude --cloud exits cleanly before the VM SessionStart post; hub reads the exit as a failed start) with PR #1103 open, CI green, Quinn commenting. Tidy: #1102 to Cloud runtime, parent #860. Gate item B still open; nothing to ask Enes until #1103 lands and the fleet upgrades.
+
+## 2026-10-24 21:08 UTC
+Fleet on v0.5.1-298 (#1103 landed). Enes (group ref:6778) adds the tester cloud loop to the group and asked all to say hi; said hi (ref:6781). Gate item B: watch for the tester loop answering in the group on one session.
