@@ -1126,3 +1126,6 @@ Terra (ref:6860): PR #1119 (closes #1114) to Quinn; web half #1118 filed. #1111 
 
 ## 2026-10-25 15:05 UTC
 Terra (ref:6883): #1111/#1114/#1113 merged, queue empty. Assigned #773 then #595, the two open itest flakes, 20x green bar; #926 parked until after the tag (ref:6884).
+
+## 2026-10-25 15:30 UTC
+Iris (ref:6885): #1121 merged (closes #1118), queue empty; multi-login web slices wait on #1069. Gave her the README control-room shots check against main; stale -> one docs issue + fixture refresh, shots to Enes first; none -> idle until the tag (ref:6886).
