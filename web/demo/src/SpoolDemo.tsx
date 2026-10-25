@@ -670,7 +670,7 @@ function Link() {
         }}
       />
       <Caption step="02 · Link" left={PAIR_LEFT}>
-        Give it a bot, then link yourself. You become its owner.
+        Give it a Telegram or Slack bot, then link yourself. You become its owner.
       </Caption>
     </Stage>
   )
@@ -705,7 +705,7 @@ function Talk() {
   return (
     <Pair
       step="04 · Talk"
-      caption="Talk to loops in Telegram. The room shows it as it happens."
+      caption="Talk to loops in Telegram or Slack. The room shows it as it happens."
       url="localhost:8080/?view=channel"
       src="talk.mp4"
       from={TK.ready}
