@@ -24,6 +24,24 @@ describe('privateLabel', () => {
   })
 })
 
+describe('a member linked as a Spool user', () => {
+  it('is named by the user, not the surface id', () => {
+    const ezgi = { ...conv('dm:8976442770', '8976442770'), user: 'Ezgi' }
+    expect(privateLabel(ezgi)).toBe('Ezgi · private')
+    expect(privatePerson(ezgi)).toBe('Ezgi')
+  })
+
+  it('keeps the surface name for a person no user is linked as', () => {
+    expect(privateLabel(conv('dm:8976442770', '8976442770'))).toBe('8976442770 · private')
+  })
+
+  it('leaves the owner DM named as the surface names its owner', () => {
+    const owner = { ...conv('owner_dm', 'rana_example'), user: 'Rana' }
+    expect(privateLabel(owner)).toBe('rana_example · owner DM')
+    expect(privatePerson(owner)).toBe('rana_example')
+  })
+})
+
 describe('privatePerson', () => {
   it('calls a nameless owner DM the owner', () => {
     expect(privatePerson(conv('owner_dm', ''))).toBe('its owner')

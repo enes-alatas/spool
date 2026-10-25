@@ -759,6 +759,9 @@ export interface PrivateConversation {
   name: string
   person_id: string
   last_at: number
+  // The Spool user the person is linked as (#1111); absent for one no user
+  // is, and from a hub before #1111.
+  user?: string
 }
 
 // A link code, answered once (#703). It links whoever sends it to a loop's
