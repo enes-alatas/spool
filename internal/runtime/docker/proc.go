@@ -29,6 +29,7 @@ func (proc *workstationProc) Kill() error {
 
 func (proc *workstationProc) Wait() claude.ExitInfo {
 	proc.waitOnce.Do(func() {
+		proc.AwaitStderr(claude.StderrSettle)
 		err := proc.cmd.Wait()
 		code := 0
 		if err != nil {

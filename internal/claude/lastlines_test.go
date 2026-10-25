@@ -28,7 +28,7 @@ func TestReadStderrKeepsWholeLines(t *testing.T) {
 	line := strings.Repeat("y", 49) + "\n"
 	// 8220 bytes: the cut to 8 KiB falls 28 bytes in, inside the secret
 	input := "remote said " + secret + "\n" + strings.Repeat(line, 163)
-	stream := &Stream{}
+	stream := &Stream{stderrDone: make(chan struct{})}
 	stream.readStderr(strings.NewReader(input))
 	kept := stream.StderrTail()
 	if strings.Contains(kept, "xxxx") {
@@ -47,7 +47,7 @@ func TestReadStderrDropsALineLongerThanItKeeps(t *testing.T) {
 	// with 4096-byte reads the buffer is cut at byte 12,288, inside the secret
 	long := strings.Repeat("z", 12270-len("head\n")) + secret
 	long += strings.Repeat("z", 20000-len(long)) // and a whole read past it with no newline
-	stream := &Stream{}
+	stream := &Stream{stderrDone: make(chan struct{})}
 	stream.readStderr(strings.NewReader("head\n" + long + "\nafter\n"))
 	if kept := stream.StderrTail(); kept != "after\n" {
 		t.Errorf("the kept stderr is %q…, want only the line after the long one", kept[:min(len(kept), 40)])
