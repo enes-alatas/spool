@@ -1114,3 +1114,6 @@ Enes (ref:6831, screenshot of the tester loop page): member private chat chip sh
 
 ## 2026-10-25 09:35 UTC
 Iris (ref:6834): #1110 splits; hub half #1111 (conversations API adds the linked Spool user). Set #1111 milestone L6 OSS 1.0. Assigned Terra after #1107 (ref:6835).
+
+## 2026-10-25 09:40 UTC
+Enes (ref:6837): Ezgi sees only what members see. Recorded gate item C on #860. Left: A (clock to Monday evening) and D at tag time.
