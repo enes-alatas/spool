@@ -4761,6 +4761,12 @@ button.panel-link {
   color: var(--text);
   font-weight: 500;
 }
+/* a control the hub refused, its answer under the buttons (#1118) */
+.control-error {
+  margin-top: 14px;
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
 
 /* ---- a literal that copies on a click (#870) ---- */
 .copyable {
