@@ -46,9 +46,11 @@ func New(st store.Store, publisher *bus.Bus, ticker Ticker, log *slog.Logger) *S
 	return &Scheduler{store: st, bus: publisher, ticker: ticker, log: log, poke: make(chan struct{}, 1)}
 }
 
-// Run blocks until ctx is done. On start, overdue ticks are rescheduled with
-// 0–60s jitter so a fleet doesn't spawn all at once after a restart.
-func (scheduler *Scheduler) Run(ctx context.Context) {
+// Recover reschedules the ticks that came due while the hub was down, each
+// 0–60s out, so a fleet doesn't spawn all at once after a restart. It runs
+// before the hub serves anything: run beside the API, it also jittered a
+// tick asked for since the start, such as a new loop's first (#595).
+func (scheduler *Scheduler) Recover(ctx context.Context) {
 	entries, err := scheduler.store.Schedule().All(ctx)
 	if err != nil {
 		scheduler.log.Error("schedule load", "err", err)
@@ -60,7 +62,10 @@ func (scheduler *Scheduler) Run(ctx context.Context) {
 			_ = scheduler.store.Schedule().Set(ctx, entry.LoopID, nowMS+jitter)
 		}
 	}
+}
 
+// Run fires ticks as they come due, until ctx is done. Recover goes first.
+func (scheduler *Scheduler) Run(ctx context.Context) {
 	for {
 		wait := recheckInterval
 		if next := scheduler.earliest(ctx); next != 0 {
