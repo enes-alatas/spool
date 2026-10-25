@@ -288,10 +288,11 @@ habits below.*
   shoot a second one against. Taking one by hand against a dev server pointed
   at a real fleet is what the rule forbids, and it is how the thirteen
   live-data images the go-public audit found were made.
-  **`make demo`** records the README video the same way (#447): Playwright
+  **`make demo`** records the README's videos the same way (#447): Playwright
   drives the room on a fixture hub, and Remotion (`web/demo/`, a package of
-  its own that the binary never carries) composes and renders it. The mp4 is
-  uploaded as a GitHub attachment, never committed. `DEMO_TAKES=<clip,…>`
+  its own that the binary never carries) composes and renders them,
+  `spool-demo.mp4` and the cloud loop's `cloud-demo.mp4` (#1126). The mp4s
+  are uploaded as GitHub attachments, never committed. `DEMO_TAKES=<clip,…>`
   re-records only the clips it names. Remotion is
   source-available, not open source: it is free for individuals, non-profits
   and companies of up to three people, and anyone else needs a company licence

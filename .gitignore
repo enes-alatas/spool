@@ -12,8 +12,8 @@ web/node_modules/
 web/shots/
 # `make ui-smoke` leaves its Playwright trace here when the walk fails
 web/smoke-trace.zip
-# `make demo` records footage and renders the README video here; the video
-# is uploaded to GitHub, never committed
+# `make demo` records footage and renders the README's videos here; the
+# videos are uploaded to GitHub, never committed
 web/demo/node_modules/
 web/demo/public/
 web/demo/out/
