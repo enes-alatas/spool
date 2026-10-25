@@ -694,6 +694,274 @@ await take(
   { width: 1098, height: 750 },
 )
 
+// The cloud clip (#1126), a video of its own: New loop picks the cloud
+// runtime, and the loop's page says where it runs as its first answer
+// lands. The fixture hub has no cloud setup and can start no cloud session,
+// so its answers stand in: Settings → Cloud reads green, and the loop is
+// created on this hub as a bare one, so every card on its page has a hub
+// behind it, then reads as cloud everywhere the page asks. Its first turn
+// is served in place of its events, and its own stream is shut, so the
+// fixture's fake turn never shows.
+const CLOUD = {
+  name: 'triage',
+  mission:
+    'Triage new issues on the handbook: label them, link duplicates, and tell me which need a decision.',
+  answer: 'Four new issues since yesterday.',
+}
+// Settings → Cloud as a hub set up for cloud loops answers it, every step
+// green, with synthetic values throughout.
+const cloudSettings = (now) => ({
+  listener: { on: true, addr: '127.0.0.1:8392', from_flag: false },
+  address: 'https://spool.example.com',
+  check: { state: 'ok', checked_at: now - 36e5 },
+  account: { set: true, cli: true, check: { state: 'ok', checked_at: now - 36e5 } },
+  environment: {
+    id: 'env_01demo',
+    name: 'spool-loops',
+    allowlist: 'spool.example.com\ngithub.com',
+    not_applied: [],
+    digest: 'demo',
+    confirmed: true,
+    confirmed_at: now - 36e5,
+  },
+})
+// The loop read back as the cloud loop it stands in for.
+const asCloud = (l) =>
+  l.name === CLOUD.name
+    ? {
+        ...l,
+        runtime: 'cloud',
+        workstation_up: true,
+        down_reason: undefined,
+        workstation_detail: undefined,
+        cloud_session_url: 'https://claude.ai/code/session_01demo',
+        problems: [],
+      }
+    : l
+await take('cloud', async (page, mark) => {
+  const now = Date.now()
+  await page.route('**/api/settings/cloud', (route) =>
+    route.request().method() === 'GET' ? route.fulfill({ json: cloudSettings(now) }) : route.continue(),
+  )
+  await page.route('**/api/loops', async (route) => {
+    const req = route.request()
+    if (req.method() === 'POST') {
+      const body = JSON.parse(req.postData())
+      const res = await route.fetch({ postData: JSON.stringify({ ...body, runtime: 'bare' }) })
+      return route.fulfill({ response: res, json: asCloud(await res.json()) })
+    }
+    const res = await route.fetch()
+    return route.fulfill({ response: res, json: (await res.json()).map(asCloud) })
+  })
+  await page.route(`**/api/loops/${CLOUD.name}`, async (route) => {
+    if (route.request().method() !== 'GET') return route.continue()
+    const res = await route.fetch()
+    return route.fulfill({ response: res, json: asCloud(await res.json()) })
+  })
+  await page.route(`**/api/loops/${CLOUD.name}/stream*`, (route) => route.abort())
+  const utc = new Date(now).toISOString().slice(0, 16).replace('T', ' ')
+  const event = (id, sec, type, payload) => ({
+    id,
+    loop_id: CLOUD.name,
+    session_id: 'demo-cloud-session',
+    turn_id: 'c1',
+    ts: now + sec * 1000,
+    type,
+    subtype: '',
+    payload: JSON.stringify(payload),
+  })
+  const events = [
+    event(991001, 0, 'envelope', {
+      trigger: 'tick',
+      text: `[tick · ${utc} UTC · first wake]\n\nContinue working toward your mission.`,
+    }),
+    event(991002, 20, 'assistant', {
+      message: {
+        content: [
+          {
+            type: 'text',
+            text: `${CLOUD.answer} I labelled three and linked #212 as a duplicate of #198. #215 asks whether the install page should cover Windows: that one is your call.`,
+          },
+          {
+            type: 'tool_use',
+            name: 'mcp__spool__send_message',
+            id: 'toolu_demo_cloud',
+            input: { destination: 'control_room', text: `${CLOUD.answer}…` },
+          },
+        ],
+      },
+    }),
+    event(991003, 22, 'result', {
+      cost_estimated: true,
+      turn_cost_usd: 0.0386,
+      duration_ms: 21400,
+      is_error: false,
+      usage: { input_tokens: 6240, output_tokens: 318 },
+    }),
+  ]
+  await page.route(`**/api/loops/${CLOUD.name}/events*`, (route) => route.fulfill({ json: events }))
+
+  await page.goto(base + '/new', { waitUntil: 'networkidle' })
+  await page.locator('#nl-name').waitFor()
+  await page.mouse.move(size.width / 2, size.height - 80)
+  mark('ready')
+  await page.waitForTimeout(500)
+  await pointAt(page, page.locator('#nl-name'))
+  await page.keyboard.type(CLOUD.name, { delay: 110 })
+  await page.waitForTimeout(300)
+  await pointAt(page, page.locator('#nl-mission'))
+  await page.keyboard.type(CLOUD.mission, { delay: 32 })
+  await page.waitForTimeout(400)
+  const runtime = page.getByLabel('Runtime')
+  mark('scroll-runtime')
+  await glideTo(page, runtime)
+  await pointAt(page, runtime)
+  await runtime.selectOption('cloud')
+  mark('cloud')
+  await page.waitForTimeout(2200)
+  const create = page.getByRole('button', { name: 'Create loop' })
+  await glideTo(page, create)
+  mark('create-click')
+  await pointAt(page, create)
+  await page.waitForURL(`**/loops/${CLOUD.name}`)
+  await page.waitForSelector('.knot')
+  await page.evaluate(() => {
+    for (const id of [991002, 991003]) {
+      const knot = document.querySelector(`.knot[data-entry-id="${id}"]`)
+      if (knot) knot.style.display = 'none'
+    }
+  })
+  mark('page')
+  await page.waitForTimeout(1200)
+  const card = page.locator('.side-panel', { has: page.getByRole('heading', { name: 'Workstation' }) })
+  await card.evaluate((el) => el.scrollIntoView({ behavior: 'smooth', block: 'center' }))
+  mark('workstation')
+  await page.waitForTimeout(2400)
+  await page.evaluate(() => {
+    for (const id of [991002, 991003]) {
+      const knot = document.querySelector(`.knot[data-entry-id="${id}"]`)
+      if (knot) knot.style.display = ''
+    }
+  })
+  mark('answer')
+  await page.waitForTimeout(3500)
+  mark('end')
+})
+// The cloud clip's second take: triage in a channel with a contained loop,
+// handbook, on its own page, beside the Telegram group that carries it. The
+// operator asks triage there, triage hands the page question to gardener,
+// and gardener answers. The fixture has no such channel and no cloud loop,
+// so the channel, its rooms and its messages are served; the messages take
+// their shape from the fixture's docs channel. It needs the loop the cloud
+// clip makes, so DEMO_TAKES names the two together.
+const HANDBOOK = [
+  'anything on the handbook that needs me',
+  '#215 wants Windows on the install page',
+  'add a Windows section today',
+]
+await take(
+  'cloud-talk',
+  async (page, mark) => {
+    const now = Date.now()
+    const withBot = (l) =>
+      l.name === CLOUD.name
+        ? { ...asCloud(l), surface: 'telegram', has_tg_token: true, tg_bot_username: 'triage_example_bot' }
+        : l
+    await page.route('**/api/settings/cloud', (route) =>
+      route.request().method() === 'GET' ? route.fulfill({ json: cloudSettings(now) }) : route.continue(),
+    )
+    await page.route('**/api/loops', async (route) => {
+      const res = await route.fetch()
+      return route.fulfill({ response: res, json: (await res.json()).map(withBot) })
+    })
+    await page.route(`**/api/loops/${CLOUD.name}`, async (route) => {
+      const res = await route.fetch()
+      return route.fulfill({ response: res, json: withBot(await res.json()) })
+    })
+    await page.route(`**/api/loops/${CLOUD.name}/stream*`, (route) => route.abort())
+    const room = {
+      surface: 'telegram',
+      room_id: '-1002000000003',
+      title: 'Handbook',
+      channel: 'handbook',
+      first_seen_at: now - 864e5,
+      bound_at: now - 864e5,
+    }
+    for (const loop of [CLOUD.name, 'gardener'])
+      await page.route(`**/api/loops/${loop}/rooms`, (route) => route.fulfill({ json: [room] }))
+    await page.route('**/api/channels', async (route) => {
+      if (route.request().method() !== 'GET') return route.continue()
+      const res = await route.fetch()
+      const handbook = {
+        name: 'handbook',
+        description: 'The handbook repo: new issues, and who takes them.',
+        created_at: now - 864e5,
+        loops: ['gardener', CLOUD.name],
+      }
+      return route.fulfill({ response: res, json: [...(await res.json()), handbook] })
+    })
+    await page.route('**/api/channels/handbook/messages*', async (route) => {
+      if (route.request().method() !== 'GET') return route.continue()
+      const docs = await (await route.fetch({ url: base + '/api/channels/docs/messages?limit=100' })).json()
+      const fromLoop = docs.find((m) => m.from_loop_id)
+      const fromPerson = docs.find((m) => !m.from_loop_id)
+      const at = (i) => now - (HANDBOOK.length - i) * 60_000
+      // Only the fields every message has: a template's poll, reactions or
+      // reply would ride along otherwise.
+      const line = ({ origin, author, from_loop_id, mirror }, i, fields) => ({
+        origin,
+        author,
+        from_loop_id,
+        mirror,
+        id: 992001 + i,
+        ts: at(i),
+        conversation: 'handbook',
+        ...fields,
+      })
+      // Newest first, as the hub lists them.
+      return route.fulfill({
+        json: [
+          line(fromPerson, 0, {
+            origin: 'telegram-group',
+            text: `@${CLOUD.name} ${HANDBOOK[0]}?`,
+            mentions: [CLOUD.name],
+            delivered_to: [CLOUD.name],
+          }),
+          line(fromLoop, 1, {
+            origin: 'loop',
+            author: CLOUD.name,
+            from_loop_id: CLOUD.name,
+            text: `One: ${HANDBOOK[1]}. @gardener is that page yours?`,
+            mentions: ['gardener'],
+            delivered_to: ['gardener'],
+          }),
+          line(fromLoop, 2, {
+            origin: 'loop',
+            author: 'gardener',
+            from_loop_id: 'gardener',
+            text: `Mine. I'll ${HANDBOOK[2]} and link it on #215.`,
+            mentions: [],
+            delivered_to: [],
+          }),
+        ].reverse(),
+      })
+    })
+    await page.goto(base + `/loops/${CLOUD.name}?channel=handbook`, { waitUntil: 'networkidle' })
+    await page.waitForSelector('.knot')
+    for (const [i, snippet] of HANDBOOK.entries()) await mark.time(`line${i}`, snippet)
+    await hide(page, HANDBOOK)
+    await page.waitForTimeout(400)
+    mark('ready')
+    for (const [i, snippet] of HANDBOOK.entries()) {
+      await page.waitForTimeout(i === 0 ? 800 : 2400)
+      await reveal(page, snippet)
+      mark(`line${i}`)
+    }
+    await page.waitForTimeout(3000)
+  },
+  { width: 1098, height: 750 },
+)
+
 await browser.close()
 writeFileSync(out + 'marks.json', JSON.stringify({ ...marks, times }, null, 2) + '\n')
 console.log(marks)

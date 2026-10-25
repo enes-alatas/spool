@@ -20,7 +20,7 @@ const { times } = marks
 // The control room's own tokens (web/src/styles.css), so the frame around
 // the footage reads as Spool rather than as a template. The faces are the
 // ones fonts.ts loads and record.mjs pins in the footage.
-const T = {
+export const T = {
   canvas: '#050505',
   surface: '#0c0c0e',
   hairline: '#24242a',
@@ -34,12 +34,12 @@ const T = {
 export const W = 1920
 export const H = 1080
 export const FPS = 30
-const s = (sec: number) => Math.round(sec * FPS)
+export const s = (sec: number) => Math.round(sec * FPS)
 
 // The footage's CSS size; record.mjs captures it at 2x device pixels.
-const PAGE = { w: 1280, h: 720 }
+export const PAGE = { w: 1280, h: 720 }
 
-const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' } as const
+export const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' } as const
 const fade = (frame: number, len: number, inF = 8, outF = 8) =>
   interpolate(frame, [0, inF, len - outF, len], [0, 1, 1, 0], clamp)
 
@@ -47,7 +47,7 @@ const fade = (frame: number, len: number, inF = 8, outF = 8) =>
 // pixels) that lands at the box's centre. zoom 1 shows the whole page. The
 // camera is either one focus or keyframes in clip seconds, eased between, so
 // it can follow the action as the clip plays.
-type Focus = { x: number; y: number; zoom: number }
+export type Focus = { x: number; y: number; zoom: number }
 type Camera = Focus | [number, Focus][]
 const ease = Easing.inOut(Easing.cubic)
 function aim(camera: Camera, t: number): Focus {
@@ -168,7 +168,7 @@ function Window({
 
 // A window holding footage; the content keeps the page's 16:9 unless a
 // height crops it to the part that matters.
-function Screen({
+export function Screen({
   width,
   height,
   url,
@@ -190,7 +190,7 @@ function Screen({
 
 // The backdrop every beat sits on: a soft light behind the window, so the
 // frame reads as lit rather than as a black void around a screenshot.
-function Stage({ children }: { children: ReactNode }) {
+export function Stage({ children }: { children: ReactNode }) {
   return (
     <AbsoluteFill
       style={{
@@ -207,11 +207,11 @@ function Stage({ children }: { children: ReactNode }) {
 }
 
 // The main window's geometry, shared by the full-width beats.
-const MAIN = { width: 1440, top: 64 }
+export const MAIN = { width: 1440, top: 64 }
 const MAIN_H = BAR + Math.round(((MAIN.width - 2) * PAGE.h) / PAGE.w) + 2
 const CAPTION_TOP = MAIN.top + MAIN_H + 40
 
-function Caption({
+export function Caption({
   step,
   children,
   delay = 10,
@@ -263,7 +263,7 @@ function Caption({
 // The control room's wordmark (App.tsx .wordmark), drawn at any size: the
 // glyph, then "spool" in Nunito, lifted so the glyph's centre runs through the
 // middle of the lowercase letters.
-function Wordmark({ size = 23 }: { size?: number }) {
+export function Wordmark({ size = 23 }: { size?: number }) {
   return (
     <div
       style={{
@@ -321,7 +321,7 @@ function Pitch() {
   )
 }
 
-const mainScreen: CSSProperties = { position: 'absolute', top: MAIN.top, left: (W - MAIN.width) / 2 }
+export const mainScreen: CSSProperties = { position: 'absolute', top: MAIN.top, left: (W - MAIN.width) / 2 }
 
 // Beat 2: create a loop from the first-run Loops card (#733). The form
 // fill plays fast, then the press at real pace; the wait for the first
@@ -568,7 +568,7 @@ function ChatPane({
 const PAIR = { width: 1100, height: 750, gap: 56 }
 const PAIR_LEFT = (W - PAIR.width - PAIR.gap - CHAT.w) / 2
 const PAIR_H = BAR + PAIR.height + 2
-function Pair({
+export function Pair({
   step,
   caption,
   chat,
@@ -700,7 +700,7 @@ function Fleet() {
 const TK = marks.talk
 // record.mjs takes the talk and report clips at the window's own size
 // (PAIR's content box), so they play at 1:1 with nothing cropped.
-const TALK_PAGE = { w: 1098, h: 750 }
+export const TALK_PAGE = { w: 1098, h: 750 }
 function Talk() {
   return (
     <Pair
@@ -883,7 +883,7 @@ const SPANS = LENGTHS.map((len, i) => {
 })
 export const DURATION = s(SPANS[SPANS.length - 1][1])
 
-function Beat({ span, children }: { span: number[]; children: ReactNode }) {
+export function Beat({ span, children }: { span: number[]; children: ReactNode }) {
   const len = s(span[1] - span[0])
   return (
     <Sequence from={s(span[0])} durationInFrames={len}>
