@@ -12,7 +12,7 @@ COMMIT   ?= $(shell git rev-parse --short HEAD 2>/dev/null)
 BUILT_AT ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS  := -X main.buildVersion=$(VERSION) -X main.buildCommit=$(COMMIT) -X main.buildTime=$(BUILT_AT)
 
-.PHONY: build dev test itest lint secret-scan workflow-lint fakeclaude egress hook vet vet-darwin e2e-context e2e-m1 ui ui-dev ui-shots ui-smoke demo image image-multiarch clean
+.PHONY: build dev test itest perf-docker lint secret-scan workflow-lint fakeclaude egress hook vet vet-darwin e2e-context e2e-m1 ui ui-dev ui-shots ui-smoke demo image image-multiarch clean
 
 build: ui
 	$(GO) build -ldflags "$(LDFLAGS)" -o bin/spool ./cmd/spool
@@ -74,6 +74,14 @@ itest: server fakeclaude egress
 	$(ITEST) -skip '^TestDockerRows$$' -parallel $(ITEST_PARALLEL) ./itest/... ./internal/runtime/docker/ || status=1; \
 	wait $$docker_rows || status=1; \
 	exit $$status
+
+# The perf smoke on docker workstations (#445): a hundred of them, so it is
+# not part of itest. It needs a daemon whose address pools hold a hundred
+# networks (OPERATIONS.md), and runs when the perf workflow is dispatched.
+perf-docker: server fakeclaude egress
+	docker build -q -t spool-workstation-itest -f itest/testdata/workstation/Dockerfile bin >/dev/null
+	docker build -q -t spool-egress-itest -f docker/egress/Dockerfile bin >/dev/null
+	SPOOL_PERF_DOCKER=1 $(ITEST) -v -run '^TestPerfSmokeOnDockerWorkstations$$' ./itest/
 
 # Build the workstation image. `image` builds for the host architecture and loads
 # it into the local Docker daemon, so it can be run directly. `image-multiarch`
