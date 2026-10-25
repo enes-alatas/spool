@@ -1138,3 +1138,6 @@ Iris (ref:6912): Enes wants a 15-20 s README video of a cloud loop (New loop -> 
 
 ## 2026-10-25 19:25 UTC
 Terra (ref:6918): #1124 merged, #595 closed, #773 closed; flake queue clear. Sweep: #884 (community GitHub App report) closed completed into #887 (all children shipped, #1066 merged 10-23). Assigned Terra #445 (perf smoke on docker workstations), small on purpose, no per-PR CI cost (ref:6919). #926 parked.
+
+## 2026-10-25 20:00 UTC
+Terra (ref:6929): docker smoke breaks wake p95 (1.9s vs 500ms) and boot recovery (6.5s vs 3s), serial docker CLI calls; idle CPU/RSS hold. Agreed his plan with one change (ref:6930): #445 lands test (all four), QUALITY numbers, ADR-0017 amendment, dispatch-only; then wake bug, boot bug, then the weekly schedule as its own chore; a docker-specific budget would be Enes call.
