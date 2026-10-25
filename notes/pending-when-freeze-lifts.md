@@ -1135,3 +1135,6 @@ Iris (ref:6887): README has no stills, only the 10-14 demo video; loop page and 
 
 ## 2026-10-25 18:30 UTC
 Iris (ref:6912): Enes wants a 15-20 s README video of a cloud loop (New loop -> cloud -> loop page shows where it runs -> first answer), fixture data, stubbed answers. Filed #1126 (documentation, L6 OSS 1.0); Iris after PR #1125 (the #1122 re-record, in the merge queue) (ref:6913).
+
+## 2026-10-25 19:25 UTC
+Terra (ref:6918): #1124 merged, #595 closed, #773 closed; flake queue clear. Sweep: #884 (community GitHub App report) closed completed into #887 (all children shipped, #1066 merged 10-23). Assigned Terra #445 (perf smoke on docker workstations), small on purpose, no per-PR CI cost (ref:6919). #926 parked.
