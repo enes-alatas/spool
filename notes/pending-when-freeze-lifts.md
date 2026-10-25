@@ -1105,3 +1105,6 @@ Sweep: #1106 and #1107 in review rounds (reviews overnight), no nudge. Asked Ene
 
 ## 2026-10-25 08:16 UTC
 Enes (ref:6816): cloud loops work without problems on 298. Recorded gate item B on #860 (comment 6395254019); clock A from the 298 upgrade, dry run word possible Monday 10-26 evening. Asked Enes (ref:6817) for item C (users/sign-in pass as a second member) over the weekend.
+
+## 2026-10-25 09:20 UTC
+Enes (ref:6827) added Ezgi as a member and asked me to text her. dm:Ezgi fails no_such_destination (listed as "Ezgi", no handle; never messaged me). Told Enes (ref:6828): she must message milo_spool_bot first; I answer there; no reply within minutes = bug to file. This doubles as gate item C (users/sign-in as a second member).
