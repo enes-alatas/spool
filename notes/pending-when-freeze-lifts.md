@@ -1120,3 +1120,6 @@ Enes (ref:6837): Ezgi sees only what members see. Recorded gate item C on #860. 
 
 ## 2026-10-25 10:55 UTC
 Elliot (ref:6848) filed #1115 from the #1112 security pass (PR #1112 merged: pause/kill answer once a cloud loop is cut off). It bundled #1113 (waiters hang on a shutting-down actor) and #1114 (revocation failure still answers paused/killed) which Terra had already filed: closed #1115 not planned with a note. #1113 -> L6 OSS 1.0; #1114 -> Cloud runtime, parent #860. Terra after #1111: #1114 then #1113 (ref:6849). #1106 and #1107 merged.
+
+## 2026-10-25 13:15 UTC
+Terra (ref:6860): PR #1119 (closes #1114) to Quinn; web half #1118 filed. #1111 merged (closed). #1118 -> L6 OSS 1.0; Iris after #1117 (ref:6861). Open PRs: #1117 (Iris, #1110), #1119 (Terra, #1114).
