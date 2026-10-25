@@ -1,4 +1,4 @@
-import { useId, type ReactNode } from 'react'
+import { useId, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { api, type LoopView } from '../api'
@@ -27,6 +27,17 @@ export function LoopControls({ loop, paused }: { loop: LoopView; paused: boolean
   const may = useMay()
   const id = useId()
   const refresh = () => qc.invalidateQueries({ queryKey: ['loop', name] })
+  // The last control the hub refused, and its answer (#1118): a pause or
+  // kill of a cloud loop whose token could not be revoked says so in a 500
+  // the operator has to read. A pause or resume refreshes the loop either
+  // way, since a pause can take effect and still answer an error.
+  const [failed, setFailed] = useState<{ label: string; message: string } | null>(null)
+  const run = (label: string, call: () => Promise<unknown>, after?: () => unknown) => {
+    setFailed(null)
+    call()
+      .catch((e: unknown) => setFailed({ label, message: e instanceof Error ? e.message : String(e) }))
+      .finally(() => after?.())
+  }
 
   const controls: Control[] = []
   if (may('manage')) {
@@ -36,13 +47,13 @@ export function LoopControls({ loop, paused }: { loop: LoopView; paused: boolean
             label: 'Resume',
             hint: 'Ticks wake it again, and its queued messages are read.',
             icon: <ResumeIcon />,
-            act: () => api.resume(name).then(refresh),
+            act: () => run('Resume', () => api.resume(name), refresh),
           }
         : {
             label: 'Pause',
             hint: 'No tick wakes it; messages queue until it is resumed.',
             icon: <PauseIcon />,
-            act: () => api.pause(name).then(refresh),
+            act: () => run('Pause', () => api.pause(name), refresh),
           },
     )
   }
@@ -51,7 +62,7 @@ export function LoopControls({ loop, paused }: { loop: LoopView; paused: boolean
       label: 'Wake now',
       hint: 'Starts a turn now rather than at its next wake.',
       icon: <WakeIcon />,
-      act: () => api.wake(name),
+      act: () => run('Wake now', () => api.wake(name)),
     })
   }
   if (may('manage')) {
@@ -66,7 +77,7 @@ export function LoopControls({ loop, paused }: { loop: LoopView; paused: boolean
               `Rotate @${name}'s session? It writes a handoff note and continues fresh; conversational context is shed by design.`,
             )
           ) {
-            api.rotate(name)
+            run('Rotate session', () => api.rotate(name))
           }
         },
       },
@@ -79,7 +90,7 @@ export function LoopControls({ loop, paused }: { loop: LoopView; paused: boolean
         // told where to interrupt it before the kill goes ahead.
         act: () => {
           const question = killQuestion(loop, Date.now())
-          if (!question || confirm(question)) api.kill(name)
+          if (!question || confirm(question)) run('Kill process', () => api.kill(name), refresh)
         },
       },
       {
@@ -89,10 +100,12 @@ export function LoopControls({ loop, paused }: { loop: LoopView; paused: boolean
         danger: true,
         act: () => {
           if (confirm(deleteQuestion(loop))) {
-            api.deleteLoop(name, true).then(() => {
-              qc.invalidateQueries({ queryKey: ['loops'] })
-              nav('/')
-            })
+            run('Delete loop', () =>
+              api.deleteLoop(name, true).then(() => {
+                qc.invalidateQueries({ queryKey: ['loops'] })
+                nav('/')
+              }),
+            )
           }
         },
       },
@@ -128,6 +141,11 @@ export function LoopControls({ loop, paused }: { loop: LoopView; paused: boolean
         <div className="round-ctl-group">{safe.map((c, i) => button(c, i))}</div>
         <div className="round-ctl-group">{ending.map((c, i) => button(c, safe.length + i))}</div>
       </div>
+      {failed && (
+        <div className="form-error control-error" role="alert">
+          <strong>{failed.label}:</strong> {failed.message}
+        </div>
+      )}
     </div>
   )
 }
