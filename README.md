@@ -19,6 +19,10 @@ Spool makes it easy to create, manage, and talk to persistent [Claude Code](http
 
 https://github.com/user-attachments/assets/44c17741-6331-4dd5-9745-6e17405e9af3
 
+A loop can also run in a Claude Code cloud session on Anthropic's machines, beside your contained ones:
+
+https://github.com/user-attachments/assets/96fa8419-45f3-4f27-97c3-d7c4ff8b9dce
+
 ## What does Spool make easier?
 
 - **Keep work going.** Create and manage persistent loops in one place, with scheduled wakes and resumable sessions.
