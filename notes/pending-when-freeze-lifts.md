@@ -1108,3 +1108,6 @@ Enes (ref:6816): cloud loops work without problems on 298. Recorded gate item B 
 
 ## 2026-10-25 09:20 UTC
 Enes (ref:6827) added Ezgi as a member and asked me to text her. dm:Ezgi fails no_such_destination (listed as "Ezgi", no handle; never messaged me). Told Enes (ref:6828): she must message milo_spool_bot first; I answer there; no reply within minutes = bug to file. This doubles as gate item C (users/sign-in as a second member).
+
+## 2026-10-25 09:30 UTC
+Enes (ref:6831, screenshot of the tester loop page): member private chat chip shows the Telegram id "8976442770 · private" instead of Ezgi; also the read-only line. Filed #1110 (bug, low, L6 OSS 1.0). Iris after #1106 (ref:6832). Same shot shows Ezgi DMed the tester loop and got replies: proposed counting it as gate item C unless Enes wants a fuller control-room member pass (ref:6833).
