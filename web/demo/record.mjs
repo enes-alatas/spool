@@ -202,9 +202,17 @@ await login.close()
 // public/marks.json, which SpoolDemo.tsx cuts and pans on.
 // times holds the clock a message shows in the room, by clip and mark, so
 // the chat pane beside it stamps its bubble with the same minute.
-const marks = {}
-const times = {}
+// DEMO_TAKES, a comma-separated list such as "cloud", records only those
+// clips and keeps every other clip's marks from the last run. The link clip
+// needs the loop the create clip makes, so those two go together.
+const only = process.env.DEMO_TAKES ? process.env.DEMO_TAKES.split(',') : null
+const { times: lastTimes = {}, ...lastMarks } = only
+  ? JSON.parse(readFileSync(out + 'marks.json', 'utf8'))
+  : {}
+const marks = lastMarks
+const times = lastTimes
 async function take(name, fn, viewport = size) {
+  if (only && !only.includes(name)) return
   const ctx = await browser.newContext({ viewport, deviceScaleFactor: DPR, storageState })
   await ctx.addInitScript(injectFonts, fontCSS)
   await ctx.route(`**${EMOJI_PATH}*`, (route) =>

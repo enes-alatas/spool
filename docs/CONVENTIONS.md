@@ -291,7 +291,8 @@ habits below.*
   **`make demo`** records the README video the same way (#447): Playwright
   drives the room on a fixture hub, and Remotion (`web/demo/`, a package of
   its own that the binary never carries) composes and renders it. The mp4 is
-  uploaded as a GitHub attachment, never committed. Remotion is
+  uploaded as a GitHub attachment, never committed. `DEMO_TAKES=<clip,…>`
+  re-records only the clips it names. Remotion is
   source-available, not open source: it is free for individuals, non-profits
   and companies of up to three people, and anyone else needs a company licence
   from remotion.pro before running the target.
