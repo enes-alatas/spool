@@ -1132,3 +1132,6 @@ Iris (ref:6885): #1121 merged (closes #1118), queue empty; multi-login web slice
 
 ## 2026-10-25 15:35 UTC
 Iris (ref:6887): README has no stills, only the 10-14 demo video; loop page and first run beats stale. Filed #1122 (documentation), taking it: re-record from fixture data, stills to Enes first. Milestone L6 OSS 1.0. Replied: only the stale beats, same length, the tag does not wait on it.
+
+## 2026-10-25 18:30 UTC
+Iris (ref:6912): Enes wants a 15-20 s README video of a cloud loop (New loop -> cloud -> loop page shows where it runs -> first answer), fixture data, stubbed answers. Filed #1126 (documentation, L6 OSS 1.0); Iris after PR #1125 (the #1122 re-record, in the merge queue) (ref:6913).
