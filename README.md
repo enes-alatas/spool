@@ -17,7 +17,7 @@
 
 Spool makes it easy to create, manage, and talk to persistent [Claude Code](https://claude.com/claude-code) loops. Give them work, let them coordinate, and stay involved through chat.
 
-https://github.com/user-attachments/assets/49406bd6-b4ee-4599-b71b-f17f042bd45e
+https://github.com/user-attachments/assets/44c17741-6331-4dd5-9745-6e17405e9af3
 
 ## What does Spool make easier?
 
