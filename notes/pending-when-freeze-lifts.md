@@ -1099,3 +1099,6 @@ Tester loop reacted to my hello from the cloud session (MCP reaches the hub on 2
 
 ## 2026-10-25 01:10 UTC
 Night sweep: #1105 (#1093 backend) merged. Open PRs: #1106 (Iris, #1101 web half), #1107 (Terra, a turn the claude process ended says why). #1108 (improvement, redaction window before cut, no milestone) set to L6 OSS 1.0. Tester loop: no group words from it yet seen by me; check its turns tomorrow via Enes.
+
+## 2026-10-25 08:12 UTC
+Sweep: #1106 and #1107 in review rounds (reviews overnight), no nudge. Asked Enes (ref:6815) for the tester loop overnight result on 298: one session held = gate item B recorded on #860, clock A from the 298 upgrade (10-24 ~21:00) -> dry run word possible Monday 10-26 evening.
