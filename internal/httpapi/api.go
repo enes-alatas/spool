@@ -1297,10 +1297,15 @@ func (server *Server) handlePause(w http.ResponseWriter, r *http.Request) {
 	loopRecord.Status = store.StatusPaused
 	loopRecord.UpdatedAt = time.Now().UnixMilli()
 	_ = server.Store.Loops().SetStatus(r.Context(), loopRecord.ID, loopRecord.Status, loopRecord.UpdatedAt)
+	var cutOff error
 	if actor, ok := server.Manager.Get(loopRecord.ID); ok {
-		actor.Pause()
+		cutOff = actor.Pause()
 	}
 	server.Sched.Suspend(loopRecord.ID)
+	if cutOff != nil {
+		server.jsonErr(w, http.StatusInternalServerError, "the loop is paused, but its cloud session's token was not revoked, so the session can still reach the hub; pausing or killing it again retries the revocation: %v", cutOff)
+		return
+	}
 	writeJSON(w, 200, server.view(r.Context(), loopRecord))
 }
 
@@ -1392,7 +1397,10 @@ func (server *Server) handleKill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if actor, ok := server.Manager.Get(loopRecord.ID); ok {
-		actor.Kill()
+		if err := actor.Kill(); err != nil {
+			server.jsonErr(w, http.StatusInternalServerError, "the loop is killed, but its cloud session's token was not revoked, so the session can still reach the hub; killing it again retries the revocation: %v", err)
+			return
+		}
 	}
 	writeJSON(w, 200, map[string]bool{"killed": true})
 }

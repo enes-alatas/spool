@@ -297,7 +297,10 @@ the CLI can't interrupt a turn already running there: it runs on, cut off
 from the hub, and so may a message sent just before the stop. The hub no
 longer hears that turn end, so the loop's page says it may still be
 running until two hours after its send, and links its session, where you
-can interrupt it.
+can interrupt it. If the hub can't write the new token, the stop or the
+kill still happens, but it answers with an error saying the token was not
+revoked and the session can still reach the hub. Stopping or killing the
+loop again retries the revocation.
 
 A cloud loop's secrets are its env-var connections, attached as a
 contained loop's are. The hub answers the home's
