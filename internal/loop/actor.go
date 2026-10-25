@@ -203,8 +203,8 @@ type cmd struct {
 	loop     *store.Loop
 	verb     string        // for power
 	reason   string        // for rotate: a store.RotationReason* value
-	reply    chan error    // for power: the caller waits on the result
-	done     chan struct{} // for shutdown, pause and kill: closed once handled
+	reply    chan error    // for power, pause and kill: the caller waits on the result
+	done     chan struct{} // for shutdown
 	symptom  string        // for acknowledge
 	cleared  chan bool     // for acknowledge: whether a problem was open
 	answered bool          // for handoff: whether the session was handed its connections
@@ -386,14 +386,15 @@ func (actor *Actor) Resume()              { actor.cmds <- cmd{kind: "resume"} }
 
 // Pause and Kill return once the loop has stopped: a cloud loop's session
 // token is revoked by then, so the caller's answer can say it is cut off
-// (ADR-0059, #1104).
-func (actor *Actor) Pause() { actor.await(cmd{kind: "pause"}) }
-func (actor *Actor) Kill()  { actor.await(cmd{kind: "kill"}) }
+// (ADR-0059, #1104). The error is a revocation that failed, which leaves
+// the session able to reach the hub (#1114).
+func (actor *Actor) Pause() error { return actor.await(cmd{kind: "pause"}) }
+func (actor *Actor) Kill() error  { return actor.await(cmd{kind: "kill"}) }
 
-func (actor *Actor) await(command cmd) {
-	command.done = make(chan struct{})
+func (actor *Actor) await(command cmd) error {
+	command.reply = make(chan error, 1)
 	actor.cmds <- command
-	<-command.done
+	return <-command.reply
 }
 
 // CapChanged tells the loop the plan cap started or stopped holding: it
@@ -531,9 +532,9 @@ func (actor *Actor) handleCmd(command cmd) {
 		actor.pump()
 	case "pause":
 		actor.paused = true
-		actor.cutOffCloud(context.Background(), "pause", store.EndReasonPaused)
+		err := actor.cutOffCloud(context.Background(), "pause", store.EndReasonPaused)
 		actor.publishState()
-		close(command.done)
+		command.reply <- err
 	case "resume":
 		actor.paused = false
 		actor.drainStoredInbox()
@@ -557,12 +558,12 @@ func (actor *Actor) handleCmd(command cmd) {
 		command.reply <- actor.requestRehome()
 		actor.publishState()
 	case "kill":
-		actor.cutOffCloud(context.Background(), "kill", store.EndReasonKilled)
+		err := actor.cutOffCloud(context.Background(), "kill", store.EndReasonKilled)
 		if actor.proc != nil {
 			actor.killProc("killed by the operator")
 			// exit handled via procEvents close
 		}
-		close(command.done)
+		command.reply <- err
 	case "update":
 		token := actor.loop // keep runtime-only fields
 		actor.loop = *command.loop

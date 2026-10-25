@@ -30,16 +30,20 @@ func (actor *Actor) mintHubToken(ctx context.Context) error {
 // does: its token is revoked, and the next wake starts a session of its
 // own, on a token of its own. The CLI can't interrupt a cloud session, so
 // a turn in flight runs on in the VM, cut off from the hub. The session is
-// ended for endReason. Any other loop is left as it is.
-func (actor *Actor) cutOffCloud(ctx context.Context, verb, endReason string) {
+// ended for endReason. Any other loop is left as it is. The error is a
+// revocation that failed: the rest is still done, but the session can
+// reach the hub until the token is minted again (#1114).
+func (actor *Actor) cutOffCloud(ctx context.Context, verb, endReason string) error {
 	if actor.loop.Runtime != store.RuntimeCloud {
-		return
+		return nil
 	}
-	if err := actor.mintHubToken(ctx); err != nil {
+	err := actor.mintHubToken(ctx)
+	if err != nil {
 		actor.log().Error("cloud loop's token not revoked; its session can still reach the hub", "verb", verb, "err", err)
 	}
 	actor.stopProcess(verb)
 	actor.forgetSession(ctx, endReason)
+	return err
 }
 
 // cloudHandOff opens the cloud_connections problem when the loop's session

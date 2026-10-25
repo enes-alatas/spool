@@ -4,6 +4,7 @@ package itest
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -216,6 +217,44 @@ func TestStoppingACloudLoopRevokesItsTokenAtOnce(t *testing.T) {
 	within(t, 10*time.Second, "the kill's revoke", func() bool {
 		return postTo(t, s.cloudURL, token, mcpInitialize) == http.StatusUnauthorized
 	})
+}
+
+// A stop or a kill whose revocation fails says so, rather than answering
+// as if the session were cut off: its token still reaches the hub (#1114).
+// Stopping again once the store takes the write revokes it.
+func TestACloudLoopsStopSaysWhenItsTokenWasNotRevoked(t *testing.T) {
+	t.Parallel()
+	hub := startCloudHub(t, "cirrus")
+	hub.message("cirrus", "hello")
+	hub.waitTurn("cirrus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "hello") })
+	token := hubMCPToken(t, hub, "cirrus")
+
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(hub.dataDir, "spool.db")+"?_pragma=busy_timeout(5000)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`CREATE TRIGGER refuse_revoke BEFORE UPDATE OF hub_mcp_token ON loops
+		BEGIN SELECT RAISE(ABORT, 'the test refuses the write'); END`); err != nil {
+		t.Fatal(err)
+	}
+	for _, verb := range []string{"pause", "kill"} {
+		resp, body := hub.do("POST", "/api/loops/cirrus/"+verb, nil)
+		if resp.StatusCode != http.StatusInternalServerError || !strings.Contains(string(body), "not revoked") {
+			t.Errorf("a %s whose revocation failed = %d %s, want a 500 that says so", verb, resp.StatusCode, body)
+		}
+	}
+	if got := postTo(t, hub.cloudURL, token, mcpInitialize); got != http.StatusOK {
+		t.Fatalf("the token after a failed revocation: %d, want it still working, as the answer said", got)
+	}
+
+	if _, err := db.Exec(`DROP TRIGGER refuse_revoke`); err != nil {
+		t.Fatal(err)
+	}
+	hub.mustJSON("POST", "/api/loops/cirrus/pause", nil, nil)
+	if got := postTo(t, hub.cloudURL, token, mcpInitialize); got != http.StatusUnauthorized {
+		t.Errorf("the token after the retried pause: %d, want 401", got)
+	}
 }
 
 // Deleting a cloud loop revokes its hub token. The CLI can't archive the
