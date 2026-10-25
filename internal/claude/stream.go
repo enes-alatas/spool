@@ -2,6 +2,7 @@ package claude
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -102,15 +103,28 @@ func (stream *Stream) readStdout(stdout io.Reader) {
 func (stream *Stream) readStderr(stderr io.Reader) {
 	const keep = 8 * 1024
 	buf := make([]byte, 4096)
+	// midLine: the kept tail was cut inside a line longer than keep, so the
+	// rest of that line is dropped as it arrives, up to its newline
+	midLine := false
 	for {
 		count, err := stderr.Read(buf)
 		if count > 0 {
+			read := buf[:count]
+			if midLine {
+				if newline := bytes.IndexByte(read, '\n'); newline >= 0 {
+					read, midLine = read[newline+1:], false
+				} else {
+					read = nil
+				}
+			}
 			stream.stderrMu.Lock()
-			stream.stderr.Write(buf[:count])
+			stream.stderr.Write(read)
 			if stream.stderr.Len() > keep {
-				tail := stream.stderr.String()
+				// on a whole line, so the tail never starts inside a secret
+				kept := stream.stderr.String()
+				midLine = !strings.Contains(kept[len(kept)-keep:], "\n")
 				stream.stderr.Reset()
-				stream.stderr.WriteString(tail[len(tail)-keep:])
+				stream.stderr.WriteString(LastLines(kept, keep))
 			}
 			stream.stderrMu.Unlock()
 		}

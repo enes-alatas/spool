@@ -1810,7 +1810,7 @@ func (actor *Actor) handleProcExit() {
 		// costs the note, not the rotation. Its envelope is not requeued: the
 		// rotation it asked for is happening.
 		actor.currentBatch = nil
-		actor.rotateContext(tail(exit.Stderr, 500))
+		actor.rotateContext(claude.LastLines(exit.Stderr, 500))
 	case wasDraining || (exit.Code == 0 && !inTurn):
 		// clean idle exit
 		actor.currentBatch = nil
@@ -1840,9 +1840,9 @@ func (actor *Actor) handleProcExit() {
 		// onto a fresh session and carry the mission across.
 		actor.storeSpoolEvent("resume_failed",
 			fmt.Sprintf(`{"session":%q,"attempt":%d,"stderr":%q}`,
-				actor.loop.CurrentSessionID, actor.deadResumes, tail(exit.Stderr, 500)))
+				actor.loop.CurrentSessionID, actor.deadResumes, claude.LastLines(exit.Stderr, 500)))
 		if actor.deadResumes >= deadResumeLimit {
-			actor.rotateSession("session_unusable", tail(exit.Stderr, 500))
+			actor.rotateSession("session_unusable", claude.LastLines(exit.Stderr, 500))
 			return
 		}
 		// keep the undelivered work: the retry is what earns the second
@@ -1857,8 +1857,8 @@ func (actor *Actor) handleProcExit() {
 		// the batch is dropped, so any lost-send tally for it dies with it
 		actor.currentBatch = nil
 		actor.lostSends = nil
-		actor.storeSpoolEvent("crash", fmt.Sprintf(`{"code":%d,"stderr":%q}`, exit.Code, tail(exit.Stderr, 2000)))
-		actor.log().Warn("claude process crashed", "code", exit.Code, "stderr", tail(exit.Stderr, 500))
+		actor.storeSpoolEvent("crash", fmt.Sprintf(`{"code":%d,"stderr":%q}`, exit.Code, claude.LastLines(exit.Stderr, 2000)))
+		actor.log().Warn("claude process crashed", "code", exit.Code, "stderr", claude.LastLines(exit.Stderr, 500))
 		actor.crashBackoff()
 	}
 }
@@ -2851,31 +2851,10 @@ func exitReason(exit claude.ExitInfo, sessionLost bool) string {
 		return "the session could not be resumed; the loop goes on in a fresh one"
 	}
 	reason := fmt.Sprintf("claude exited (code %d) before the turn ended", exit.Code)
-	if said := strings.TrimSpace(lastLines(exit.Stderr, 300)); said != "" {
+	if said := strings.TrimSpace(claude.LastLines(exit.Stderr, 300)); said != "" {
 		reason += ": " + said
 	}
 	return reason
-}
-
-// lastLines is the tail of text within limit bytes, starting on a whole
-// line. The store redacts the turn after this cut, and a secret cut in two
-// would no longer match, so a partial first line is dropped instead.
-func lastLines(text string, limit int) string {
-	cut := tail(text, limit)
-	if len(cut) == len(text) {
-		return cut
-	}
-	if newline := strings.IndexByte(cut, '\n'); newline >= 0 {
-		return cut[newline+1:]
-	}
-	return "" // one line longer than the window: none of it
-}
-
-func tail(text string, limit int) string {
-	if len(text) <= limit {
-		return text
-	}
-	return text[len(text)-limit:]
 }
 
 // newUUID returns a random v4 UUID (claude --session-id requires valid UUIDs).

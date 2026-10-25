@@ -68,7 +68,7 @@ func ResolvedModel(ctx context.Context, stream *Stream) (string, error) {
 			return "", fmt.Errorf("claude: resolve: no init: %w", ctx.Err())
 		case ev, ok := <-stream.Events():
 			if !ok {
-				return "", fmt.Errorf("claude: resolve: exited without an init (stderr: %s)", tailOf(stream.StderrTail(), 300))
+				return "", fmt.Errorf("claude: resolve: exited without an init (stderr: %s)", LastLines(stream.StderrTail(), 300))
 			}
 			if ev.Init == nil {
 				continue
@@ -79,11 +79,4 @@ func ResolvedModel(ctx context.Context, stream *Stream) (string, error) {
 			return ev.Init.Model, nil
 		}
 	}
-}
-
-func tailOf(text string, limit int) string {
-	if len(text) > limit {
-		return text[len(text)-limit:]
-	}
-	return text
 }
