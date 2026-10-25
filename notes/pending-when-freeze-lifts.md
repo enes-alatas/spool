@@ -1096,3 +1096,6 @@ Fleet on v0.5.1-298 (#1103 landed). Enes (group ref:6778) adds the tester cloud 
 
 ## 2026-10-24 22:10 UTC
 Tester loop reacted to my hello from the cloud session (MCP reaches the hub on 298). PR #1105 (Terra, #1093 backend) open. #1104 (pause revokes token flake from the #1103 merge queue, bug low) had no milestone: Cloud runtime, parent #860.
+
+## 2026-10-25 01:10 UTC
+Night sweep: #1105 (#1093 backend) merged. Open PRs: #1106 (Iris, #1101 web half), #1107 (Terra, a turn the claude process ended says why). #1108 (improvement, redaction window before cut, no milestone) set to L6 OSS 1.0. Tester loop: no group words from it yet seen by me; check its turns tomorrow via Enes.
