@@ -204,7 +204,7 @@ type cmd struct {
 	verb     string        // for power
 	reason   string        // for rotate: a store.RotationReason* value
 	reply    chan error    // for power: the caller waits on the result
-	done     chan struct{} // for shutdown
+	done     chan struct{} // for shutdown, pause and kill: closed once handled
 	symptom  string        // for acknowledge
 	cleared  chan bool     // for acknowledge: whether a problem was open
 	answered bool          // for handoff: whether the session was handed its connections
@@ -382,9 +382,19 @@ func NewActor(deps Deps, loopRecord *store.Loop) *Actor {
 
 func (actor *Actor) Deliver(env Envelope) { actor.cmds <- cmd{kind: "deliver", env: env} }
 func (actor *Actor) Tick()                { actor.cmds <- cmd{kind: "tick"} }
-func (actor *Actor) Pause()               { actor.cmds <- cmd{kind: "pause"} }
 func (actor *Actor) Resume()              { actor.cmds <- cmd{kind: "resume"} }
-func (actor *Actor) Kill()                { actor.cmds <- cmd{kind: "kill"} }
+
+// Pause and Kill return once the loop has stopped: a cloud loop's session
+// token is revoked by then, so the caller's answer can say it is cut off
+// (ADR-0059, #1104).
+func (actor *Actor) Pause() { actor.await(cmd{kind: "pause"}) }
+func (actor *Actor) Kill()  { actor.await(cmd{kind: "kill"}) }
+
+func (actor *Actor) await(command cmd) {
+	command.done = make(chan struct{})
+	actor.cmds <- command
+	<-command.done
+}
 
 // CapChanged tells the loop the plan cap started or stopped holding: it
 // says so in its state, and wakes if the cap lifted (ADR-0047).
@@ -523,6 +533,7 @@ func (actor *Actor) handleCmd(command cmd) {
 		actor.paused = true
 		actor.cutOffCloud(context.Background(), "pause", store.EndReasonPaused)
 		actor.publishState()
+		close(command.done)
 	case "resume":
 		actor.paused = false
 		actor.drainStoredInbox()
@@ -551,6 +562,7 @@ func (actor *Actor) handleCmd(command cmd) {
 			actor.killProc("killed by the operator")
 			// exit handled via procEvents close
 		}
+		close(command.done)
 	case "update":
 		token := actor.loop // keep runtime-only fields
 		actor.loop = *command.loop
