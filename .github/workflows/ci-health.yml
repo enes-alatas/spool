@@ -3,11 +3,11 @@
 # `ci` reports itself: a PR failure is a red check on the PR its author is
 # already looking at. The rest fire on issues and comments (`issue-guards`)
 # or a schedule (`advisories`, #737) or a tag (`release`, #756) or main's
-# pushes (`queue`, #819), or work behind a PR author's back (`unqueue`), so
-# a failure is a red run in a tab nobody opens and a mail in the operator's
-# inbox. #203 left the redaction guard inert that way for a day, red the
-# whole time. The fleet reads issues, so failures go to a pinned issue as
-# comments.
+# pushes (`queue`, #819) or a dispatch (`perf`, #445), or work behind a PR
+# author's back (`unqueue`), so a failure is a red run in a tab nobody
+# opens and a mail in the operator's inbox. #203 left the redaction guard
+# inert that way for a day, red the whole time. The fleet reads issues, so
+# failures go to a pinned issue as comments.
 name: ci-health
 
 on:
@@ -15,7 +15,7 @@ on:
   # sentinel silently unless it is added here. scripts/workflow-lint.awk has
   # a rule that fails CI when one is missing — same failure class as #209.
   workflow_run:
-    workflows: [issue-guards, advisories, release, queue, unqueue]
+    workflows: [issue-guards, advisories, release, queue, unqueue, perf]
     types: [completed]
   # Runnable from a branch against a known-failed run, which is the only way
   # to prove the posting path: a healthy repo never fires the real trigger
@@ -59,12 +59,15 @@ jobs:
   #
   # A `release` run is reported only when it is a tag or main's dry run: a
   # dry run failing on a branch is someone iterating on the release script,
-  # not the fleet's health (#757).
+  # not the fleet's health (#757). A `perf` run is reported only from main,
+  # for the same reason: one on a branch is someone working on the smoke.
   report:
     if: >-
       github.event.workflow_run.conclusion != 'success' &&
       (github.event.workflow_run.name != 'release' ||
       github.event.workflow_run.event == 'push' ||
+      github.event.workflow_run.head_branch == 'main') &&
+      (github.event.workflow_run.name != 'perf' ||
       github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-26.04
     steps:

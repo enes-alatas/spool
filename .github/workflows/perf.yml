@@ -1,0 +1,42 @@
+# The perf smoke on docker workstations (#445). ADR-0017 claims a fleet of
+# idle workstations stays inside QUALITY.md's envelope; the perf smoke in
+# `itest` runs bare loops, so it cannot say. This stands up the envelope,
+# a hundred workstations, which takes minutes and a daemon with its address
+# pools widened, so it runs on dispatch rather than on every PR. Its log is
+# the measurement QUALITY.md records. Two baselines fail on docker today
+# (#1133, #1134); it runs weekly once they pass (#1135).
+name: perf
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docker:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      # Every docker loop takes a network, and the default pools hold about
+      # 30 (OPERATIONS.md). This is the widening that page tells an operator
+      # to make, merged into whatever the runner image configures already.
+      - name: widen the daemon's address pools
+        run: |
+          current=$(sudo cat /etc/docker/daemon.json 2>/dev/null || echo '{}')
+          printf '%s' "$current" | jq '. + {"default-address-pools": [{"base": "10.201.0.0/16", "size": 24}]}' | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
+          docker version --format 'docker {{.Server.Version}}'
+      - name: the perf smoke on docker workstations
+        run: |
+          set -o pipefail
+          make perf-docker 2>&1 | tee go-test.log
+      - name: name the failed tests
+        if: failure()
+        run: bash scripts/test-failures.sh go-test.log "perf"

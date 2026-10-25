@@ -34,7 +34,9 @@ scale arrives via runner extraction (ADR-0004), not by inflating this envelope.
 
 The perf smoke (`TestPerfSmokeAtTheScaleEnvelope` in `itest/perf_test.go`, #4)
 asserts the first four rows against fakeclaude. It builds the envelope, 100
-loops with 15 held awake, and measures the hub process alone, from `/proc`.
+loops with 15 held awake, and measures the hub process, from `/proc`: idle CPU
+counts the subprocesses it has reaped, and leaves out the claude processes
+still running, which are the loops' cost.
 Idle CPU and RSS are sampled once the fleet has settled. Wake overhead is
 sampled over three bursts of 15 asleep loops messaged at once, as a message
 to every loop in the fleet channel wakes them. Boot recovery is measured after
@@ -53,6 +55,34 @@ numbers, set as constants at the top of the file. Measured on its first runs
 
 The first run found the wake baseline broken: a burst's p95 was 551 ms until
 the store stopped waiting on an fsync per commit (ADR-0035).
+
+The same phases run on docker workstations in
+`TestPerfSmokeOnDockerWorkstations` (`itest/perf_docker_test.go`, #445). The
+test stands up a hundred workstations, so it takes minutes and a daemon whose
+address pools hold a hundred networks (OPERATIONS.md). It runs from
+`make perf-docker` and the `perf` workflow, dispatched by hand, never on a
+PR. It skips under `make itest`. The hub runs at the default 45s liveness
+interval, and the idle window is 95s so that it spans two sweeps. The reaped
+subprocesses that idle CPU counts are, on docker, the sweep's
+docker CLI calls. The test also logs what the baselines leave out, the
+workstations' own cost. Measured on its first run (2026-10-25, ubuntu-26.04
+runner, docker 29.4.2,
+[run 40225841142](https://github.com/enes-alatas/spool/actions/runs/40225841142)):
+
+| Metric | Measured | Budget |
+|---|---|---|
+| Idle CPU at the envelope | 0.07% of one core over 95s, plus 0.18% in its docker CLI calls | < 1% |
+| Idle RSS at the envelope | 38 MB | < 100 MB |
+| Wake overhead, bursts of 15 | p50 1.54 s, **p95 1.91 s** (#1133) | p95 < 500 ms |
+| Boot recovery after a `kill -9` | **6.5 s** (#1134) | < 3 s |
+| An asleep workstation | 0.5 MB, 0.00% CPU | — |
+| An awake workstation, between turns | 2.3 MB, 0.00% CPU, running fakeclaude: claude itself is the loop's cost | — |
+| The daemon's containerd shim, per workstation | 11.7 MB RSS (1.2 GB for 101 containers) | — |
+
+The two misses are serial docker CLI calls: every wake checks the egress wall
+under one runtime-wide lock before it starts, and the boot reaps each awake
+workstation in turn. Each is a bug against the baseline, not a new budget for
+docker. The `perf` workflow runs weekly once both pass (#1135).
 
 Workstation liveness polling honours the idle-CPU baseline by construction: the
 docker runtime answers per-loop `Health` reads from a short-TTL cache filled by

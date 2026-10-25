@@ -1,6 +1,6 @@
 # ADR-0017: Workstation design — long-lived Docker containers behind the SandboxRuntime seam
 
-Date: 2026-08-17 · Status: accepted (item 5's injection of the token into every workstation exec superseded by ADR-0058: the Claude proxy) · Amended: 2026-09-20 (redaction), 2026-09-21 (bare is opt-in), 2026-09-30 (the perf smoke covers bare loops only), 2026-10-04 (item 8: per-loop secrets are connections, ADR-0043), 2026-10-06 (consequences and parking lot: the credential broker is rejected for env-var secrets, ADR-0045), 2026-10-07 (item 5: the token is sealed at rest, ADR-0046), 2026-10-11 (item 1: a rebuilt image replaces the container, #715)
+Date: 2026-08-17 · Status: accepted (item 5's injection of the token into every workstation exec superseded by ADR-0058: the Claude proxy) · Amended: 2026-09-20 (redaction), 2026-09-21 (bare is opt-in), 2026-09-30 (the perf smoke covers bare loops only), 2026-10-04 (item 8: per-loop secrets are connections, ADR-0043), 2026-10-06 (consequences and parking lot: the credential broker is rejected for env-var secrets, ADR-0045), 2026-10-07 (item 5: the token is sealed at rest, ADR-0046), 2026-10-11 (item 1: a rebuilt image replaces the container, #715), 2026-10-25 (the perf smoke covers docker workstations, #445)
 
 ## Context
 
@@ -135,6 +135,16 @@ in every exec's env, still write-only through the API and redacted.
   envelope (100 defined / 15 awake), negligible; the perf smoke (#4) verifies.
   *Amended 2026-09-30:* the perf smoke that landed runs bare loops, so this
   claim is not yet verified; #445 tracks running it on workstations.
+  **Amendment (2026-10-25, #445): the perf smoke covers docker workstations.**
+  `TestPerfSmokeOnDockerWorkstations` (`make perf-docker`, the dispatched
+  `perf` workflow) runs the envelope with every loop in a workstation. On its
+  first run, the idle claim held: each idle workstation used about 0.5 MB and
+  no measurable CPU, and the hub's idle CPU and RSS stayed in budget. The
+  daemon's containerd shim, about 12 MB per container, is the largest cost
+  per workstation, and it is not in the hub's. Two other baselines failed:
+  wake overhead in bursts (#1133) and boot recovery (#1134). Both come from
+  serial docker CLI calls, not from idle workstations, and each is tracked
+  in its own issue. QUALITY.md holds the numbers.
 - **Injected secrets are readable by the loop.** Env-var injection — the setup-
   token and per-loop secrets alike — necessarily puts credentials where the
   agent can read them, since it must use them. A loop can therefore be steered

@@ -44,15 +44,17 @@ const (
 // TestPerfSmokeAtTheScaleEnvelope builds the envelope, 100 defined loops
 // with 15 awake, and asserts QUALITY.md's four orchestrator baselines on it:
 // idle CPU and RSS, wake overhead, and boot recovery. It measures the hub
-// process alone: the claude processes, fakeclaude's here, are the loops'
-// cost, not Spool's.
+// process, with the subprocesses it has reaped in its idle CPU: the claude
+// processes still running, fakeclaude's here, are the loops' cost, not
+// Spool's. The loops are bare; TestPerfSmokeOnDockerWorkstations
+// measures the same on docker ones.
 func TestPerfSmokeAtTheScaleEnvelope(t *testing.T) {
 	if _, err := os.Stat("/proc/self/stat"); err != nil {
 		t.Skip("the perf smoke reads the hub's CPU and memory from /proc")
 	}
 	t.Parallel()
 	dataDir := t.TempDir()
-	s := startServer(t, dataDir)
+	hub := startServer(t, dataDir)
 
 	// The awake loops answer their creation tick and then hang on every
 	// later turn. They stay awake between turns, and their hung turns are
@@ -60,7 +62,7 @@ func TestPerfSmokeAtTheScaleEnvelope(t *testing.T) {
 	awake := make([]string, envelopeAwake)
 	for i := range awake {
 		awake[i] = fmt.Sprintf("awake-%02d", i)
-		s.createLoop(awake[i], map[string]any{
+		hub.createLoop(awake[i], map[string]any{
 			"workspace_path":   workspaceWithScript(t, "!echo\n!hang 600\n"),
 			"workspace_mode":   "dir",
 			"idle_timeout_sec": 3600,
@@ -69,22 +71,52 @@ func TestPerfSmokeAtTheScaleEnvelope(t *testing.T) {
 	asleep := make([]string, envelopeLoops-envelopeAwake)
 	for i := range asleep {
 		asleep[i] = fmt.Sprintf("asleep-%02d", i)
-		s.createLoop(asleep[i], nil)
+		hub.createLoop(asleep[i], nil)
 	}
 	// every loop's creation tick wakes it once; the envelope is only
 	// standing once those turns are done and the fleet has settled
-	s.waitFleet(awake, asleep, 3*time.Minute)
+	hub.waitFleet(awake, asleep, 3*time.Minute)
 
+	measureEnvelope(t, envelope{
+		hub: hub, dataDir: dataDir, awake: awake, asleep: asleep,
+		idleWindow: idleWindow,
+		restart:    func() *server { return startServer(t, dataDir) },
+	})
+}
+
+// envelope is a fleet standing at the scale envelope and settled: every
+// awake loop idle, with a hang as its next turn, and every asleep one
+// asleep.
+type envelope struct {
+	hub           *server
+	dataDir       string
+	awake, asleep []string
+	// idleWindow is how long the idle phase samples the hub's CPU for.
+	idleWindow time.Duration
+	// restart starts a hub on dataDir again, the way the fleet's was.
+	restart func() *server
+}
+
+// measureEnvelope asserts the four orchestrator baselines on a standing
+// envelope.
+func measureEnvelope(t *testing.T, fleet envelope) {
+	t.Helper()
+	hub := fleet.hub
 	t.Run("idle", func(t *testing.T) {
 		time.Sleep(time.Second) // let the last exits and writes land
-		before := hubCPUTicks(t, s)
-		time.Sleep(idleWindow)
-		used := float64(hubCPUTicks(t, s)-before) / clockTicks / idleWindow.Seconds()
-		rss := hubRSSKB(t, s)
-		t.Logf("idle at the envelope: CPU %.2f%% of one core over %s, RSS %.1f MB",
-			used*100, idleWindow, float64(rss)/1024)
-		if used > idleCPUBudget {
-			t.Errorf("idle CPU %.2f%% of one core, want ~0 (under %.0f%%)", used*100, idleCPUBudget*100)
+		before := hubCPU(t, hub)
+		time.Sleep(fleet.idleWindow)
+		after := hubCPU(t, hub)
+		used := float64(after.own-before.own) / clockTicks / fleet.idleWindow.Seconds()
+		// The hub's subprocesses are part of what it costs to stand idle: on
+		// a docker fleet, the docker CLI calls of the liveness sweep.
+		children := float64(after.children-before.children) / clockTicks / fleet.idleWindow.Seconds()
+		rss := hubRSSKB(t, hub)
+		t.Logf("idle at the envelope: CPU %.2f%% of one core over %s, its subprocesses %.2f%% more, RSS %.1f MB",
+			used*100, fleet.idleWindow, children*100, float64(rss)/1024)
+		if used+children > idleCPUBudget {
+			t.Errorf("idle CPU %.2f%% of one core with its subprocesses, want ~0 (under %.0f%%)",
+				(used+children)*100, idleCPUBudget*100)
 		}
 		if rss > idleRSSBudgetKB {
 			t.Errorf("idle RSS %.1f MB, want under %d MB", float64(rss)/1024, idleRSSBudgetKB/1024)
@@ -94,14 +126,14 @@ func TestPerfSmokeAtTheScaleEnvelope(t *testing.T) {
 	t.Run("wake", func(t *testing.T) {
 		var overheads []time.Duration
 		for burst := range wakeBursts {
-			targets := asleep[burst*envelopeAwake : (burst+1)*envelopeAwake]
+			targets := fleet.asleep[burst*envelopeAwake : (burst+1)*envelopeAwake]
 			sentAt := map[string]int64{}
 			for _, name := range targets {
 				sentAt[name] = time.Now().UnixMilli()
-				s.message(name, "wake up")
+				hub.message(name, "wake up")
 			}
 			for _, name := range targets {
-				woke := s.waitTurn(name, time.Minute, func(tr turn) bool {
+				woke := hub.waitTurn(name, time.Minute, func(tr turn) bool {
 					return tr.Trigger == "message"
 				})
 				overheads = append(overheads, time.Duration(woke.StartedAt-sentAt[name])*time.Millisecond)
@@ -120,32 +152,32 @@ func TestPerfSmokeAtTheScaleEnvelope(t *testing.T) {
 		// Crash the hub with every awake loop mid-turn. Its turns are left
 		// dangling and its pid stored, and while it is down every tick falls
 		// overdue: all three things a boot recovers.
-		for _, name := range awake {
-			s.message(name, "hang")
+		for _, name := range fleet.awake {
+			hub.message(name, "hang")
 		}
-		for _, name := range awake {
-			s.waitRunningTurn(name, time.Minute, func(tr turn) bool { return tr.Trigger == "message" })
+		for _, name := range fleet.awake {
+			hub.waitRunningTurn(name, time.Minute, func(tr turn) bool { return tr.Trigger == "message" })
 		}
-		if err := s.cmd.Process.Kill(); err != nil {
+		if err := hub.cmd.Process.Kill(); err != nil {
 			t.Fatal(err)
 		}
-		<-s.exited
-		overdueEveryTick(t, dataDir, time.Now().Add(-time.Hour).UnixMilli())
+		<-hub.exited
+		overdueEveryTick(t, fleet.dataDir, time.Now().Add(-time.Hour).UnixMilli())
 
 		// startServer returns on the first healthy answer, and the listeners
-		// are served only once the boot has interrupted the dangling turns
-		// and reaped the stored pids. The overdue ticks are respread by the
-		// scheduler as it starts, beside the listeners; the time includes
-		// the process start and the harness's 100ms health poll.
+		// are served only once the boot has interrupted the dangling turns,
+		// reaped the stored pids and respread the overdue ticks (#595). The
+		// time includes the process start and the harness's 100ms health
+		// poll.
 		started := time.Now()
-		s2 := startServer(t, dataDir)
+		restarted := fleet.restart()
 		took := time.Since(started)
 		t.Logf("boot recovery at the envelope: %s", took)
 		if took > bootRecoveryLimit {
 			t.Errorf("boot recovery took %s, want under %s", took, bootRecoveryLimit)
 		}
-		for _, name := range awake {
-			for _, tr := range s2.turns(name) {
+		for _, name := range fleet.awake {
+			for _, tr := range restarted.turns(name) {
 				if tr.EndedAt == 0 {
 					t.Fatalf("%s: turn %s still dangling after the boot", name, tr.ID)
 				}
@@ -185,26 +217,34 @@ func (s *server) waitFleet(awake, asleep []string, timeout time.Duration) {
 	}
 }
 
-// hubCPUTicks is the CPU time the hub process has used, user and system, in
-// clock ticks.
-func hubCPUTicks(t *testing.T, s *server) int64 {
+// cpuTicks is CPU time, user and system together, in clock ticks.
+type cpuTicks struct {
+	// own is the hub process's.
+	own int64
+	// children is its subprocesses', counted as the hub reaps each: one
+	// still running is not in it yet.
+	children int64
+}
+
+// hubCPU is the CPU time the hub process and its subprocesses have used.
+func hubCPU(t *testing.T, hub *server) cpuTicks {
 	t.Helper()
-	raw, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", s.cmd.Process.Pid))
+	raw, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", hub.cmd.Process.Pid))
 	if err != nil {
 		t.Fatal(err)
 	}
 	// the command name is parenthesised and may hold spaces; the fields
-	// counted from after it are utime and stime at 12 and 13
+	// counted from after it are utime, stime, cutime and cstime at 12 to 15
 	fields := strings.Fields(string(raw[strings.LastIndexByte(string(raw), ')')+1:]))
-	var ticks int64
-	for _, field := range fields[11:13] {
-		n, err := strconv.ParseInt(field, 10, 64)
+	var ticks [4]int64
+	for i, field := range fields[11:15] {
+		count, err := strconv.ParseInt(field, 10, 64)
 		if err != nil {
 			t.Fatalf("parse /proc stat: %v", err)
 		}
-		ticks += n
+		ticks[i] = count
 	}
-	return ticks
+	return cpuTicks{own: ticks[0] + ticks[1], children: ticks[2] + ticks[3]}
 }
 
 // hubRSSKB is the hub process's resident set, in kB.
