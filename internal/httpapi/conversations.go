@@ -11,12 +11,14 @@ import (
 
 // privateConversationView is one of a loop's private conversations as its
 // page lists them (#720): owner_dm, or dm:<name> under the person's name of
-// now; the person's id on their surface, which outlives a rename; and when
-// the newest message in it was said.
+// now; the person's id on their surface, which outlives a rename; the
+// Spool user they are linked to, left out for a person no user is linked
+// as (#1111); and when the newest message in it was said.
 type privateConversationView struct {
 	Conversation string `json:"conversation"`
 	Name         string `json:"name"`
 	PersonID     string `json:"person_id"`
+	User         string `json:"user,omitempty"`
 	LastAt       int64  `json:"last_at"`
 	// person is who it is with, as the messages record them.
 	person string
@@ -28,6 +30,10 @@ type privateConversationView struct {
 // listed once, under the person of its newest message the reader reads.
 func (server *Server) privateConversations(ctx context.Context, loopID string, reader *privateReader) ([]privateConversationView, error) {
 	threads, err := server.Store.Messages().ListPrivateThreads(ctx, loopID)
+	if err != nil {
+		return nil, err
+	}
+	linked, err := server.Store.UserLinks().LinkedUsers(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -48,6 +54,7 @@ func (server *Server) privateConversations(ctx context.Context, loopID string, r
 			var username string
 			view.PersonID, username, _ = server.senderOf(ctx, thread.DMPerson)
 			view.Name = store.DMName(username, view.PersonID)
+			view.User = linked[thread.DMPerson]
 		}
 		if store.IsDM(thread.Conversation) {
 			view.Conversation = store.DMDestinationPrefix + view.Name

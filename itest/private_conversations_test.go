@@ -16,6 +16,7 @@ type privateConversation struct {
 	Conversation string `json:"conversation"`
 	Name         string `json:"name"`
 	PersonID     string `json:"person_id"`
+	User         string `json:"user"`
 	LastAt       int64  `json:"last_at"`
 }
 
@@ -52,8 +53,10 @@ func (s *server) thread(session, conversation string) string {
 // A loop's private conversations are served per person (#720): an admin
 // lists everyone the loop holds one with and reads each thread by name; a
 // member lists and reads only their own; a thread keeps the messages its
-// person wrote under an older name; and a name the caller may not read
-// answers an empty thread, as a name nobody answers to does.
+// person wrote under an older name; each carries the Spool user its person
+// is linked to, and no user field for a person nobody is linked as (#1111);
+// and a name the caller may not read answers an empty thread, as a name
+// nobody answers to does.
 func TestALoopsPrivateConversationsAreServedPerPerson(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 8190, First: "Operator", Username: "operator"}
@@ -77,9 +80,9 @@ func TestALoopsPrivateConversationsAreServedPerPerson(t *testing.T) {
 	id := func(u user) string { return strconv.FormatInt(u.ID, 10) }
 	got := srv.privateConversations("")
 	want := []privateConversation{
-		{Conversation: "dm:friend", Name: "friend", PersonID: id(friend)},
-		{Conversation: "owner_dm", Name: "operator", PersonID: id(operator)},
-		{Conversation: "dm:other", Name: "other", PersonID: id(other)},
+		{Conversation: "dm:friend", Name: "friend", PersonID: id(friend), User: "mia"},
+		{Conversation: "owner_dm", Name: "operator", PersonID: id(operator), User: "tg8190"},
+		{Conversation: "dm:other", Name: "other", PersonID: id(other), User: "tg8192"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("an admin's list = %+v; want %+v", got, want)
@@ -131,5 +134,18 @@ func TestALoopsPrivateConversationsAreServedPerPerson(t *testing.T) {
 
 	if resp, body := srv.do("GET", "/api/loops/alpha/conversation?conversation=group", nil); resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("conversation=group = %d %s; want 400", resp.StatusCode, body)
+	}
+
+	// With other's link removed, their thread stays and carries no user.
+	srv.mustJSON("DELETE", "/api/users/tg8192/links/telegram", nil, nil)
+	resp, body := srv.do("GET", "/api/loops/alpha/conversations", nil)
+	var raw []map[string]any
+	if resp.StatusCode != http.StatusOK || json.Unmarshal(body, &raw) != nil || len(raw) != 3 {
+		t.Fatalf("conversations after the unlink = %d %s; want all three", resp.StatusCode, body)
+	}
+	for _, entry := range raw {
+		if _, has := entry["user"]; has == (entry["person_id"] == id(other)) {
+			t.Errorf("after other's unlink, an entry's user is wrong: %v", entry)
+		}
 	}
 }
