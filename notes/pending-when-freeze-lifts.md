@@ -1111,3 +1111,6 @@ Enes (ref:6827) added Ezgi as a member and asked me to text her. dm:Ezgi fails n
 
 ## 2026-10-25 09:30 UTC
 Enes (ref:6831, screenshot of the tester loop page): member private chat chip shows the Telegram id "8976442770 · private" instead of Ezgi; also the read-only line. Filed #1110 (bug, low, L6 OSS 1.0). Iris after #1106 (ref:6832). Same shot shows Ezgi DMed the tester loop and got replies: proposed counting it as gate item C unless Enes wants a fuller control-room member pass (ref:6833).
+
+## 2026-10-25 09:35 UTC
+Iris (ref:6834): #1110 splits; hub half #1111 (conversations API adds the linked Spool user). Set #1111 milestone L6 OSS 1.0. Assigned Terra after #1107 (ref:6835).
