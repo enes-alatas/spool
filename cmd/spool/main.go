@@ -680,6 +680,9 @@ func main() {
 	if serveErr != nil {
 		log.Error("serve", "err", serveErr)
 	}
+	// After serve, which has drained the handlers: a stopped actor answers a
+	// pause or a kill as done (#1113), true only if no handler can still ask
+	// one whose cloud session holds a live token.
 	manager.Shutdown()
 	if stopSurfaces(log, bridge, slackSurface) {
 		// Every surface has settled what it held. A send still pending was
