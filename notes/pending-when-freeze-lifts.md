@@ -1129,3 +1129,6 @@ Terra (ref:6883): #1111/#1114/#1113 merged, queue empty. Assigned #773 then #595
 
 ## 2026-10-25 15:30 UTC
 Iris (ref:6885): #1121 merged (closes #1118), queue empty; multi-login web slices wait on #1069. Gave her the README control-room shots check against main; stale -> one docs issue + fixture refresh, shots to Enes first; none -> idle until the tag (ref:6886).
+
+## 2026-10-25 15:35 UTC
+Iris (ref:6887): README has no stills, only the 10-14 demo video; loop page and first run beats stale. Filed #1122 (documentation), taking it: re-record from fixture data, stills to Enes first. Milestone L6 OSS 1.0. Replied: only the stale beats, same length, the tag does not wait on it.
