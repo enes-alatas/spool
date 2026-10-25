@@ -552,6 +552,7 @@ func main() {
 	// close sessions left dangling by a previous crash (best effort)
 	_ = rdb.Sessions().EndDangling(ctx, store.EndReasonCrash, time.Now().UnixMilli())
 
+	scheduler.Recover(ctx) // before anything is served, which may ask for a tick
 	go scheduler.Run(ctx)
 	go planCap.Run(ctx)
 	go loginRefresh.Run(ctx)
