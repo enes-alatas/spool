@@ -1117,3 +1117,6 @@ Iris (ref:6834): #1110 splits; hub half #1111 (conversations API adds the linked
 
 ## 2026-10-25 09:40 UTC
 Enes (ref:6837): Ezgi sees only what members see. Recorded gate item C on #860. Left: A (clock to Monday evening) and D at tag time.
+
+## 2026-10-25 10:55 UTC
+Elliot (ref:6848) filed #1115 from the #1112 security pass (PR #1112 merged: pause/kill answer once a cloud loop is cut off). It bundled #1113 (waiters hang on a shutting-down actor) and #1114 (revocation failure still answers paused/killed) which Terra had already filed: closed #1115 not planned with a note. #1113 -> L6 OSS 1.0; #1114 -> Cloud runtime, parent #860. Terra after #1111: #1114 then #1113 (ref:6849). #1106 and #1107 merged.
