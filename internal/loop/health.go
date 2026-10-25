@@ -69,8 +69,15 @@ func (actor *Actor) Problems() []store.Problem {
 // and a loop still failing after as many errored turns again.
 func (actor *Actor) Acknowledge(symptom string) bool {
 	reply := make(chan bool, 1)
-	actor.cmds <- cmd{kind: "acknowledge", symptom: symptom, cleared: reply}
-	return <-reply
+	if !actor.send(cmd{kind: "acknowledge", symptom: symptom, cleared: reply}) {
+		return false
+	}
+	select {
+	case cleared := <-reply:
+		return cleared
+	case <-actor.stopped:
+		return false
+	}
 }
 
 func (actor *Actor) acknowledge(symptom string) bool {

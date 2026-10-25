@@ -5,6 +5,7 @@ import (
 	crand "crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
@@ -201,13 +202,12 @@ type cmd struct {
 	kind     string // deliver|tick|pause|resume|kill|update|power|rotate|rehome|acknowledge|cap|cloud|handoff|shutdown
 	env      Envelope
 	loop     *store.Loop
-	verb     string        // for power
-	reason   string        // for rotate: a store.RotationReason* value
-	reply    chan error    // for power, pause and kill: the caller waits on the result
-	done     chan struct{} // for shutdown
-	symptom  string        // for acknowledge
-	cleared  chan bool     // for acknowledge: whether a problem was open
-	answered bool          // for handoff: whether the session was handed its connections
+	verb     string     // for power
+	reason   string     // for rotate: a store.RotationReason* value
+	reply    chan error // for a command its caller waits on (ask)
+	symptom  string     // for acknowledge
+	cleared  chan bool  // for acknowledge: whether a problem was open
+	answered bool       // for handoff: whether the session was handed its connections
 }
 
 // Actor owns one loop: a single goroutine serializing every command,
@@ -215,14 +215,15 @@ type cmd struct {
 type Actor struct {
 	deps         Deps
 	cmds         chan cmd
-	stateSnap    atomic.Value // string; last published state, for REST reads
-	healthSnap   atomic.Value // workstationSnap; last workstation poll, for REST reads
-	offSnap      atomic.Bool  // the operator's power-off intent, for REST reads
-	mcpSnap      atomic.Value // MCPReach; the latest init's, for REST reads
-	rehomeSnap   atomic.Bool  // a rehome is asked for and not yet landed, for REST reads
-	ensureSnap   atomic.Bool  // a wake is ensuring the workstation, for REST reads
-	problemsSnap atomic.Value // []store.Problem; the open problems, for REST reads
-	dailyCapSnap atomic.Int64 // when the loop's daily cap lets it go, 0 when it doesn't hold, for REST reads
+	stopped      chan struct{} // closed when the actor's loop returns, so no caller waits on it
+	stateSnap    atomic.Value  // string; last published state, for REST reads
+	healthSnap   atomic.Value  // workstationSnap; last workstation poll, for REST reads
+	offSnap      atomic.Bool   // the operator's power-off intent, for REST reads
+	mcpSnap      atomic.Value  // MCPReach; the latest init's, for REST reads
+	rehomeSnap   atomic.Bool   // a rehome is asked for and not yet landed, for REST reads
+	ensureSnap   atomic.Bool   // a wake is ensuring the workstation, for REST reads
+	problemsSnap atomic.Value  // []store.Problem; the open problems, for REST reads
+	dailyCapSnap atomic.Int64  // when the loop's daily cap lets it go, 0 when it doesn't hold, for REST reads
 
 	// goroutine-owned state below
 	loop         store.Loop
@@ -334,10 +335,11 @@ type Actor struct {
 
 func NewActor(deps Deps, loopRecord *store.Loop) *Actor {
 	actor := &Actor{
-		deps:  deps,
-		cmds:  make(chan cmd, 32),
-		loop:  *loopRecord,
-		state: StateAsleep,
+		deps:    deps,
+		cmds:    make(chan cmd, 32),
+		stopped: make(chan struct{}),
+		loop:    *loopRecord,
+		state:   StateAsleep,
 		// the defaults hold until the first wake reads the operator's:
 		// a zero force threshold would read as "every turn is over it"
 		armPct:   DefaultContextArmPercent,
@@ -380,36 +382,75 @@ func NewActor(deps Deps, loopRecord *store.Loop) *Actor {
 
 // --- public API (thread-safe; commands are serialized onto the actor) ---
 
-func (actor *Actor) Deliver(env Envelope) { actor.cmds <- cmd{kind: "deliver", env: env} }
-func (actor *Actor) Tick()                { actor.cmds <- cmd{kind: "tick"} }
-func (actor *Actor) Resume()              { actor.cmds <- cmd{kind: "resume"} }
+// ErrStopped is the answer of an actor that has shut down, as its loop is
+// deleted or the hub stops: nothing will handle the command (#1113).
+var ErrStopped = errors.New("the loop has stopped")
+
+// send hands command to the actor, and reports false once it has stopped:
+// a stopped actor reads nothing, and a send would wait on it for good.
+func (actor *Actor) send(command cmd) bool {
+	select {
+	case actor.cmds <- command:
+		return true
+	case <-actor.stopped:
+		return false
+	}
+}
+
+// ask sends command and waits for its reply, or ErrStopped should the
+// actor stop first.
+func (actor *Actor) ask(command cmd) error {
+	command.reply = make(chan error, 1)
+	if !actor.send(command) {
+		return ErrStopped
+	}
+	select {
+	case err := <-command.reply:
+		return err
+	case <-actor.stopped:
+		// the command may have been answered just before the stop
+		select {
+		case err := <-command.reply:
+			return err
+		default:
+			return ErrStopped
+		}
+	}
+}
+
+func (actor *Actor) Deliver(env Envelope) { actor.send(cmd{kind: "deliver", env: env}) }
+func (actor *Actor) Tick()                { actor.send(cmd{kind: "tick"}) }
+func (actor *Actor) Resume()              { actor.send(cmd{kind: "resume"}) }
 
 // Pause and Kill return once the loop has stopped: a cloud loop's session
 // token is revoked by then, so the caller's answer can say it is cut off
 // (ADR-0059, #1104). The error is a revocation that failed, which leaves
-// the session able to reach the hub (#1114).
-func (actor *Actor) Pause() error { return actor.await(cmd{kind: "pause"}) }
-func (actor *Actor) Kill() error  { return actor.await(cmd{kind: "kill"}) }
+// the session able to reach the hub (#1114). A stopped actor has nothing
+// left to cut off (its loop was deleted, which revokes the token, or the
+// hub is stopping), so it answers as a loop without an actor does.
+func (actor *Actor) Pause() error { return stoppedIsDone(actor.ask(cmd{kind: "pause"})) }
+func (actor *Actor) Kill() error  { return stoppedIsDone(actor.ask(cmd{kind: "kill"})) }
 
-func (actor *Actor) await(command cmd) error {
-	command.reply = make(chan error, 1)
-	actor.cmds <- command
-	return <-command.reply
+func stoppedIsDone(err error) error {
+	if errors.Is(err, ErrStopped) {
+		return nil
+	}
+	return err
 }
 
 // CapChanged tells the loop the plan cap started or stopped holding: it
 // says so in its state, and wakes if the cap lifted (ADR-0047).
-func (actor *Actor) CapChanged() { actor.cmds <- cmd{kind: "cap"} }
+func (actor *Actor) CapChanged() { actor.send(cmd{kind: "cap"}) }
 
 // CloudGateChanged tells the loop the public address was checked: a cloud
 // loop says so in its problems, and wakes if the check let it go
 // (ADR-0056). Any other loop ignores it.
-func (actor *Actor) CloudGateChanged() { actor.cmds <- cmd{kind: "cloud"} }
+func (actor *Actor) CloudGateChanged() { actor.send(cmd{kind: "cloud"}) }
 
 // CloudHandOff tells a cloud loop how its session's SessionStart post
 // went: answered with its connections, or refused (ADR-0059).
 func (actor *Actor) CloudHandOff(answered bool) {
-	actor.cmds <- cmd{kind: "handoff", answered: answered}
+	actor.send(cmd{kind: "handoff", answered: answered})
 }
 
 // Rotate asks the loop to shed its context through the ADR-0022 handoff flow
@@ -417,9 +458,7 @@ func (actor *Actor) CloudHandOff(answered bool) {
 // means there is no session to rotate. The reason, a store.RotationReason*
 // value, is what the handoff turn tells the loop about why.
 func (actor *Actor) Rotate(reason string) error {
-	reply := make(chan error, 1)
-	actor.cmds <- cmd{kind: "rotate", reason: reason, reply: reply}
-	return <-reply
+	return actor.ask(cmd{kind: "rotate", reason: reason})
 }
 
 // RefreshEnv tells the loop that an env-var or a github-app connection it
@@ -429,7 +468,7 @@ func (actor *Actor) Rotate(reason string) error {
 // on the same session. A loop with no process reads the env at its next
 // wake anyway.
 func (actor *Actor) RefreshEnv() {
-	actor.cmds <- cmd{kind: "env"}
+	actor.send(cmd{kind: "env"})
 }
 
 // Rehome asks a bare loop to move into a docker workstation (#624), and
@@ -438,9 +477,7 @@ func (actor *Actor) RefreshEnv() {
 // handoff turn; one without moves now, and its next wake is in the
 // workstation.
 func (actor *Actor) Rehome() error {
-	reply := make(chan error, 1)
-	actor.cmds <- cmd{kind: "rehome", reply: reply}
-	return <-reply
+	return actor.ask(cmd{kind: "rehome"})
 }
 
 // Power runs one of the operator's power controls against the loop's
@@ -448,31 +485,30 @@ func (actor *Actor) Rehome() error {
 // state it produced rather than a promise (ADR-0021). Serialized onto the
 // actor like every other command, which is what keeps it from racing a wake.
 func (actor *Actor) Power(verb string) error {
-	reply := make(chan error, 1)
-	actor.cmds <- cmd{kind: "power", verb: verb, reply: reply}
-	return <-reply
+	return actor.ask(cmd{kind: "power", verb: verb})
 }
 func (actor *Actor) UpdateLoop(loopRecord *store.Loop) {
-	actor.cmds <- cmd{kind: "update", loop: loopRecord}
+	actor.send(cmd{kind: "update", loop: loopRecord})
 }
 
-// Shutdown stops the actor, killing any live process. Blocks until done.
+// Shutdown stops the actor, killing any live process. Blocks until done;
+// an actor already stopped is done.
 func (actor *Actor) Shutdown() {
-	done := make(chan struct{})
-	actor.cmds <- cmd{kind: "shutdown", done: done}
-	<-done
+	if actor.send(cmd{kind: "shutdown"}) {
+		<-actor.stopped
+	}
 }
 
 // --- actor loop ---
 
 func (actor *Actor) run() {
+	defer close(actor.stopped)
 	actor.publishState()
 	for {
 		select {
 		case command := <-actor.cmds:
 			if command.kind == "shutdown" {
 				actor.handleShutdown()
-				close(command.done)
 				return
 			}
 			actor.handleCmd(command)
