@@ -8,6 +8,7 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"time"
 )
 
 // maxLineBytes bounds a single stream-json line. Tool results can be huge;
@@ -23,8 +24,9 @@ type Stream struct {
 	stdin  io.WriteCloser
 	events chan Event
 
-	stderrMu sync.Mutex
-	stderr   strings.Builder
+	stderrMu   sync.Mutex
+	stderr     strings.Builder
+	stderrDone chan struct{} // closed when stderr reaches EOF
 
 	stdinMu   sync.Mutex
 	stdinDone bool
@@ -33,7 +35,7 @@ type Stream struct {
 // Attach starts pumping a running claude process's pipes. Events() closes
 // when stdout closes.
 func Attach(stdin io.WriteCloser, stdout, stderr io.Reader) *Stream {
-	stream := &Stream{stdin: stdin, events: make(chan Event, 64)}
+	stream := &Stream{stdin: stdin, events: make(chan Event, 64), stderrDone: make(chan struct{})}
 	go stream.readStderr(stderr)
 	go stream.readStdout(stdout)
 	return stream
@@ -79,6 +81,23 @@ func (stream *Stream) CloseStdin() error {
 	return stream.stdin.Close()
 }
 
+// StderrSettle is how long an exit waits on its stderr to end.
+const StderrSettle = time.Second
+
+// AwaitStderr waits for stderr to reach its end, at most bound: a process
+// that has exited may still have stderr in the pipe, and the exit is
+// classified by it, a lost session by its "No conversation found" (#773).
+// A process's own children can hold stderr open, hence the bound. Call it
+// before the exec's Wait, which closes the pipe under the reader.
+func (stream *Stream) AwaitStderr(bound time.Duration) {
+	timer := time.NewTimer(bound)
+	defer timer.Stop()
+	select {
+	case <-stream.stderrDone:
+	case <-timer.C:
+	}
+}
+
 // StderrTail returns what has been collected of stderr so far.
 func (stream *Stream) StderrTail() string {
 	stream.stderrMu.Lock()
@@ -101,6 +120,7 @@ func (stream *Stream) readStdout(stdout io.Reader) {
 }
 
 func (stream *Stream) readStderr(stderr io.Reader) {
+	defer close(stream.stderrDone)
 	const keep = 8 * 1024
 	buf := make([]byte, 4096)
 	// midLine: the kept tail was cut inside a line longer than keep, so the
