@@ -1177,3 +1177,6 @@ Enes (ref:7013) wants to share cloud support on HN with a link to the demo video
 
 ## 2026-10-26 16:40 UTC
 Dry run 40357562882 completed green on 54a1da4 (guard, images-check amd64/arm64, build, smoke-dry-run pass; publish/index skipped by design). Told Enes (ref:7016): gate D met, Elliot brings the tag ask. Nudged Elliot (ref:7017). Next for me once v0.6.0 is tagged: verify notes/release-v0.6.0.md against git log v0.5.1..v0.6.0, hand to Enes; close #860 and #747 with the tag; #897 after the fresh-machine proof.
+
+## 2026-10-26 16:50 UTC
+Elliot (ref:7022): v0.6.0 tagged on 54a1da4 at Enes ask, release run 40360723275 in progress. Release notes re-verified: 325 commits v0.5.1..v0.6.0; added the post-draft fixes section (42b186d). Unfroze main (ref:7023). Sent Enes the notes file (ref:7025) asking for "release created" (then close #860, #747) and the #926 go for Terra. #897 starts after the release run is green (Elliot).
