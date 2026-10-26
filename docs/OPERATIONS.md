@@ -225,6 +225,55 @@ answer, a 401. If a cloud session still can't reach the hub, its start
 turns the step red and holds every cloud loop, until you fix the Funnel
 and check the step again (#1093).
 
+## Claude logins
+
+The hub runs contained and cloud loops on a *Claude login*: a claude.ai
+account it signs in to with the `claude` CLI's own login, and keeps
+sealed under the hub key. It refreshes each one before its token expires,
+and never puts one in a workstation (ADR-0058, ADR-0060).
+
+A hub can hold several Claude logins, each under a name. The one named
+`default` is the one **Sign in with Claude** signs in, on the setup card
+and in Settings → Cloud, and every contained and cloud loop runs on it.
+Choosing another login for a loop comes in a later release (#1071), so
+for now another login is held, refreshed and checked but runs no loop.
+Until `default` is signed in, a stored setup-token stands in for it.
+
+**Whose subscription a login is.** Each login is the subscription of the
+person who signs it in, and it runs the loops they run. Spool never pools
+or resells capacity. The operator is responsible for following the terms
+of each plan.
+
+**Who may do what.** Any user may add a login of their own, and becomes
+its owner. Its owner or an admin may sign it in, check it, sign it out
+and remove it. `default` is the hub's, so it is an admin's. Every
+user sees each login's name, owner and whether it is signed in, but the
+address it signed in with only on the logins they may manage. Removing a
+user signs out the logins they own, revoked at the source, and keeps
+them, so the loops on them keep a valid name. `spool user remove` has no
+hub to revoke them with, so it only forgets their tokens and names the
+logins to revoke at claude.ai. With the hub running, remove the user
+from the control room instead: a refresh under way could write a
+rotated token back over what the command cleared.
+
+**From the API**, until the control room lists them (#1070):
+- `GET /api/claude-logins` lists them, with each one's last check and,
+  on the logins the caller may manage, the address it signed in with;
+  never a token.
+- `POST /api/claude-logins` with `{"name": "ada"}` adds one, signed out.
+  Then `POST /api/claude-logins/ada/sign-in` answers with the link to
+  open, and `POST /api/claude-logins/ada/sign-in/code` with `{"code": …}`
+  hands back the code claude.ai shows. Each sign-in waiting for its code
+  runs the CLI on the hub's host for up to ten minutes, so a user may
+  have one waiting and the hub four; past either the start answers 429.
+- `POST /api/claude-logins/ada/check` checks it with one haiku answer, on
+  the docker runtime the way a contained loop would run.
+- `POST /api/claude-logins/ada/sign-out` revokes it at the source and
+  keeps it, so the loops on it keep a valid name. Sign out is never
+  refused.
+- `DELETE /api/claude-logins/ada` removes it. It is refused while loops
+  run on it, and `default` counts every loop.
+
 ## Cloud loops
 
 A cloud loop's claude runs in a Claude Code cloud session on Anthropic's

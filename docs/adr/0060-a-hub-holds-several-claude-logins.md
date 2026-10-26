@@ -1,6 +1,6 @@
 # ADR-0060: A hub holds several Claude logins, and a loop runs on one of them
 
-Date: 2026-10-23 · Status: accepted (operator decisions of 2026-10-23, recorded on #926: items 3, 4, 5, 6 and 8) · Amends: ADR-0044 item 2, ADR-0047 items 3, 5, 7, 8 and 9, ADR-0058 items 1, 2, 3, 6 and 7 · Relates to: ADR-0043, ADR-0046, ADR-0048, ADR-0059
+Date: 2026-10-23 · Status: accepted (operator decisions of 2026-10-23, recorded on #926: items 3, 4, 5, 6 and 8) · Amended: 2026-10-27 · Amends: ADR-0044 item 2, ADR-0047 items 3, 5, 7, 8 and 9, ADR-0058 items 1, 2, 3, 6 and 7 · Relates to: ADR-0043, ADR-0046, ADR-0048, ADR-0059
 
 ## Context
 
@@ -102,6 +102,16 @@ refreshes it.
      pages state it.
    - A loop running only on its own user's login waits for #100, which
      gives loops owners.
+
+   **Amendment (2026-10-27, #1148):** two operator decisions of
+   2026-10-27, from the slice's security review.
+   - Removing a user signs out the logins they own: each is revoked at
+     the source and kept, as Sign out is, so its loops keep a valid name.
+     A removed owner can no longer withdraw it themselves, and no admin
+     should put loops on a departed person's subscription.
+   - Every user sees each login's name, owner and signed-in state. The
+     address it signed in with is shown only to its owner and the
+     admins, the default's only to the admins.
 
 7. **The API.**
    - `GET` and `POST /api/claude-logins` list and add logins.

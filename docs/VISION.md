@@ -23,7 +23,7 @@ who is responsible for it.
 |---|---|
 | Edition strategy | **One core, local-first.** Single codebase; the OSS local edition is the product core, evolved from the current prototype. The hosted service is a managed multi-tenant deployment of the same core, built after the core is solid. Every milestone stays runnable locally. |
 | First target customer | **Small software teams** — startups/dev teams who want AI teammates in their Slack doing engineering work on GitHub. When trade-offs come up, their workflow wins. |
-| Hosted capacity model | **Customer's own Claude login.** Loops on the service run the plain `claude` CLI under the customer's Claude subscription and plan limits — identical to local behavior. Spool sells orchestration, never resells tokens. (Locally, unchanged hard constraint: your own `claude` login, normal session limits, no SDK, no API keys.) |
+| Hosted capacity model | **Customer's own Claude login.** Loops on the service run the plain `claude` CLI under the customer's Claude subscription and plan limits — identical to local behavior. Spool sells orchestration, never resells tokens. (Locally, unchanged hard constraint: your own `claude` login, one per loop when a team runs several (ADR-0060), normal session limits, no SDK, no API keys.) |
 | License | **Open core, Apache-2.0.** The local edition — the full single-operator product: loops, sandboxes, Slack/Telegram surfaces, control room — is genuinely open source. The hosted-service layer (multi-tenancy, accounts, billing) stays closed. |
 
 ### The coworker model

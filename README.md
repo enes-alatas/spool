@@ -46,7 +46,7 @@ You need Linux, macOS or Windows with [WSL2](https://learn.microsoft.com/windows
 
    The control room opens on **Set up your fleet**: three cards, in the order below. Each checks itself and turns done on its own.
 
-3. **Harness.** Choose **Sign in with Claude** on the card. claude.ai opens in a new tab and asks you to allow the sign-in; paste the code it shows back into the card. Contained and cloud loops run on your Claude plan through that one login.
+3. **Harness.** Choose **Sign in with Claude** on the card. claude.ai opens in a new tab and asks you to allow the sign-in; paste the code it shows back into the card. Contained and cloud loops run on your Claude plan through that login. Each Claude login is the subscription of the person who signs it in. Spool never pools or resells capacity, and you follow your plan's terms. A hub can hold more than one: see [Claude logins](docs/OPERATIONS.md#claude-logins).
 
 4. **Loops.** Choose **New loop**, and give it a name and a mission. Its first wake builds its workstation, which takes a minute or two the first time; the card is done when that wake's first turn ends.
 
