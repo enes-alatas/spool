@@ -60,8 +60,9 @@ The same phases run on docker workstations in
 `TestPerfSmokeOnDockerWorkstations` (`itest/perf_docker_test.go`, #445). The
 test stands up a hundred workstations, so it takes minutes and a daemon whose
 address pools hold a hundred networks (OPERATIONS.md). It runs from
-`make perf-docker` and the `perf` workflow, dispatched by hand, never on a
-PR. It skips under `make itest`. The hub runs at the default 45s liveness
+`make perf-docker` and the `perf` workflow, weekly on main and on dispatch,
+never on a PR. ci-health posts a failed run on main to the pinned issue. It
+skips under `make itest`. The hub runs at the default 45s liveness
 interval, and the idle window is 95s so that it spans two sweeps. The reaped
 subprocesses that idle CPU counts are, on docker, the sweep's
 docker CLI calls. The test also logs what the baselines leave out, the
@@ -82,7 +83,8 @@ runner, docker 29.4.2,
 The two misses are serial docker CLI calls: every wake checks the egress wall
 under one runtime-wide lock before it starts, and the boot reaps every
 workstation in turn. Each is a bug against the baseline, not a new budget for
-docker. The `perf` workflow runs weekly once both pass (#1135).
+docker. Both are fixed, below, and the `perf` workflow now runs weekly
+(#1135).
 
 The wake miss is fixed (#1133). A burst shares the reads its wakes make alike,
 and a wake makes its reads side by side. A workstation running on its loop

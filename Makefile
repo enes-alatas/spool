@@ -77,7 +77,8 @@ itest: server fakeclaude egress
 
 # The perf smoke on docker workstations (#445): a hundred of them, so it is
 # not part of itest. It needs a daemon whose address pools hold a hundred
-# networks (OPERATIONS.md), and runs when the perf workflow is dispatched.
+# networks (OPERATIONS.md), and runs in the perf workflow, weekly on main and
+# on dispatch (#1135).
 perf-docker: server fakeclaude egress
 	docker build -q -t spool-workstation-itest -f itest/testdata/workstation/Dockerfile bin >/dev/null
 	docker build -q -t spool-egress-itest -f docker/egress/Dockerfile bin >/dev/null
