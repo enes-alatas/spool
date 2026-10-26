@@ -87,13 +87,18 @@ type containerState struct {
 	Paused  bool   `json:"Paused"`
 	Image   string `json:"-"`
 	Posture string `json:"-"`
+	// EgressSpec is the configuration a proxy was provisioned under, ""
+	// for any other container.
+	EgressSpec string `json:"-"`
+	// Networks names the networks the container is on.
+	Networks []string `json:"-"`
 }
 
 func (rt *Runtime) inspectState(ctx context.Context, name string) (*containerState, error) {
 	// --type container matters: the loop's volume shares the name, and an
 	// unscoped inspect would resolve to it once the container is gone.
 	out, err := rt.command(ctx, queryTimeout, "inspect", "--type", "container",
-		"--format", `{"State":{{json .State}},"Image":{{json .Image}},"Labels":{{json .Config.Labels}}}`, name)
+		"--format", `{"State":{{json .State}},"Image":{{json .Image}},"Labels":{{json .Config.Labels}},"Networks":{{json .NetworkSettings.Networks}}}`, name)
 	if err != nil {
 		if notFound(err) {
 			return nil, errNotFound
@@ -101,29 +106,36 @@ func (rt *Runtime) inspectState(ctx context.Context, name string) (*containerSta
 		return nil, err
 	}
 	var inspected struct {
-		State  containerState
-		Image  string
-		Labels map[string]string
+		State    containerState
+		Image    string
+		Labels   map[string]string
+		Networks map[string]json.RawMessage
 	}
 	if err := json.Unmarshal(bytes.TrimSpace(out), &inspected); err != nil {
 		return nil, fmt.Errorf("docker inspect %s: %w", name, err)
 	}
 	inspected.State.Image = inspected.Image
 	inspected.State.Posture = inspected.Labels[postureLabel]
+	inspected.State.EgressSpec = inspected.Labels[egressSpecLabel]
+	for network := range inspected.Networks {
+		inspected.State.Networks = append(inspected.State.Networks, network)
+	}
 	return &inspected.State, nil
 }
 
 // imageID is the ID image names now, or errNotFound when there is no such
 // image here. A rebuild under the same tag gives the tag a new ID.
 func (rt *Runtime) imageID(ctx context.Context, image string) (string, error) {
-	out, err := rt.command(ctx, queryTimeout, "image", "inspect", "--format", "{{.Id}}", image)
-	if err != nil {
-		if notFound(err) {
-			return "", errNotFound
+	return rt.imageIDs.do(ctx, image, func(ctx context.Context) (string, error) {
+		out, err := rt.command(ctx, queryTimeout, "image", "inspect", "--format", "{{.Id}}", image)
+		if err != nil {
+			if notFound(err) {
+				return "", errNotFound
+			}
+			return "", err
 		}
-		return "", err
-	}
-	return strings.TrimSpace(string(out)), nil
+		return strings.TrimSpace(string(out)), nil
+	})
 }
 
 // notFound recognizes the CLI's ways of saying a container, volume or

@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -62,9 +63,17 @@ type Runtime struct {
 	fleet     map[string]runtime.Health
 	fleetErr  error
 
-	// egressMu serializes ensureEgress: two wakes, or a wake and a login
-	// check, can both find a stale proxy, and two removals of it collide.
-	egressMu sync.Mutex
+	// egressMu serializes the wall's check: two wakes, or a wake and a
+	// login check, can both find a stale proxy, and two removals of it
+	// collide.
+	// A loop's own network is put up or taken down under its read lock: one
+	// loop's beside another's is no collision, but beside a proxy being
+	// replaced it is.
+	egressMu sync.RWMutex
+	// wallChecks and imageIDs share the reads a burst of wakes makes alike:
+	// the egress wall's check, and an image's ID (#1133).
+	wallChecks flight[struct{}]
+	imageIDs   flight[string]
 
 	// fleetEgress is the operator's extra hosts (#542), under egressFileMu:
 	// the proxy's file holds them and is rewritten one change at a time.
@@ -188,15 +197,44 @@ func (rt *Runtime) Preflight(ctx context.Context) (string, error) {
 // decides that no turn is in flight, never the container: what runs in it
 // is the loop's to name, and a process it left behind must not keep it on
 // an old build.
+//
+// The wall, the workstation and its image are read side by side, since no
+// read waits on another: a wake that finds all three up costs the slowest
+// read, not their sum (#1133). Nothing is provisioned, started or replaced
+// until the wall is up.
 func (rt *Runtime) Ensure(ctx context.Context, spec runtime.Spec) error {
-	if err := rt.ensureLoopEgress(ctx, spec.LoopID); err != nil {
-		return err
+	walled := make(chan error, 1)
+	go func() { walled <- rt.ensureEgress(ctx) }()
+	image := workstationImage(spec, rt.defaultImage)
+	type imageRead struct {
+		id  string
+		err error
 	}
+	imaged := make(chan imageRead, 1)
+	go func() {
+		id, err := rt.imageID(ctx, image)
+		imaged <- imageRead{id, err}
+	}()
 	name := containerName(spec.LoopID)
 	state, err := rt.inspectState(ctx, name)
+	current := <-imaged
+	if wallErr := <-walled; wallErr != nil {
+		return wallErr
+	}
+	// A workstation running on its loop network shows that network is up:
+	// docker removes no network a running container is on, and the proxy
+	// joined it before the workstation was provisioned. A wake that finds
+	// one so leaves the network unread. A proxy disconnected from it by
+	// hand is no longer rejoined by that wake, then, but by the next one
+	// that provisions the workstation, or replaces the proxy.
+	if err != nil || !state.Running || state.Paused || !slices.Contains(state.Networks, rt.loopNetwork(spec.LoopID)) {
+		if netErr := rt.ensureLoopNetwork(ctx, spec.LoopID); netErr != nil {
+			return netErr
+		}
+	}
 	if err == nil {
 		var stale bool
-		if stale, err = rt.replaceStale(ctx, spec, state); err != nil || stale {
+		if stale, err = rt.replaceStale(ctx, spec, state, current.id, current.err); err != nil || stale {
 			return err
 		}
 	}
@@ -219,11 +257,11 @@ func (rt *Runtime) Ensure(ctx context.Context, spec runtime.Spec) error {
 // replaceStale replaces the workstation, keeping its volume, when the image
 // it names has been rebuilt since the container was created from it, or
 // when it was provisioned under another posture, and reports whether it
-// did. An image that is not here any more replaces nothing: there would be
+// did. current is the ID the image names now, or the error reading it gave.
+// An image that is not here any more replaces nothing: there would be
 // nothing to provision from.
-func (rt *Runtime) replaceStale(ctx context.Context, spec runtime.Spec, state *containerState) (bool, error) {
+func (rt *Runtime) replaceStale(ctx context.Context, spec runtime.Spec, state *containerState, current string, err error) (bool, error) {
 	image := workstationImage(spec, rt.defaultImage)
-	current, err := rt.imageID(ctx, image)
 	switch {
 	case errors.Is(err, errNotFound):
 		return false, nil

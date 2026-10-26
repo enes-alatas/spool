@@ -119,8 +119,7 @@ func TestAWakeOfARunningWorkstationCatchesUpTheProxy(t *testing.T) {
 	script := "#!/bin/sh\ncat >/dev/null\necho \"$*\" >>" + calls + "\n" +
 		"case \"$*\" in\n" +
 		"'network inspect '*) echo true ;;\n" +
-		"*'.State'*) echo '{\"State\":{\"Running\":true},\"Image\":\"sha256:1\",\"Labels\":{\"" + postureLabel + "\":\"" + rt.posture(runtime.Spec{LoopID: "survivor"}) + "\"}}' ;;\n" +
-		"*'.Config.Labels'*) echo '{\"" + egressSpecLabel + "\":\"" + rt.egressSpecHash("sha256:1") + "\"}' ;;\n" +
+		"*'.State'*) echo '{\"State\":{\"Running\":true},\"Image\":\"sha256:1\",\"Labels\":{\"" + postureLabel + "\":\"" + rt.posture(runtime.Spec{LoopID: "survivor"}) + "\",\"" + egressSpecLabel + "\":\"" + rt.egressSpecHash("sha256:1") + "\"}}' ;;\n" +
 		"*'{{.Id}}'*) echo sha256:1 ;;\n" +
 		"esac\n"
 	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
