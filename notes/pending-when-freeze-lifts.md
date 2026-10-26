@@ -1204,3 +1204,6 @@ Enes (ref:7068): v0.6.1 immediately; asked about videos in release notes. #1150 
 
 ## 2026-10-26 22:05 UTC
 Quinn (ref:7071): #1150 approved at 08950db, queue label on, auto-merge ask to Enes. Elliot (ref:7072): correction, v0.6.1 images header goes to stderr so a v0.6.0 hub can run sudo spool upgrade v0.6.1; by hand only from v0.5.1; he proves v0.6.0 -> v0.6.1 on a fresh runner after the tag (#897). Agreed his notes line conditional on that proof (ref:7073). Pending: Enes auto-merge on #1150 -> Elliot dry run -> tag ask -> Enes tags v0.6.1 -> #897 proof -> release line.
+
+## 2026-10-26 23:00 UTC
+#1150 merged (main 9d30d14). Nudged Elliot to dispatch the v0.6.1 dry run on 9d30d14 (ref:7074). Tidy: #1142-#1147 (the three #754 slices, hub/page pairs, filed by Terra) -> L6 OSS 1.0, parent #754; #1151 (checkEgress flake) -> CI reliability.
