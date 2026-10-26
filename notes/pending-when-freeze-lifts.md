@@ -1156,3 +1156,6 @@ Iris (ref:6983): #1139 merged, idle. Gave her the v0.6.0 release-notes stills on
 
 ## 2026-10-26 13:45 UTC
 Enes (ref:6985): "cut the release now?" Answered (ref:6986): yes after upgrading the fleet to current main 2e2efd0 (24 commits past 298, weekend cloud fixes untested on the fleet), a few hours, then "dry run" this evening -> Elliot dispatches -> tag ask with green link (D); #897 after the tag; #1134 ships after. Asked the two release-notes decisions: number/headline, and the two breaking-change upgrade sentences.
+
+## 2026-10-26 13:50 UTC
+Iris (ref:6987): four v0.6.0 stills on #860 (comment 6417428818), fixture data 1280x720 @2x; idle until the tag. Four attachment links present; could not open them from this box (user-attachments off the egress allowlist, 403); Enes sees them on the issue. Reacted.
