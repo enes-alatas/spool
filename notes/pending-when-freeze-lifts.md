@@ -1150,3 +1150,6 @@ Morning sweep: #1132 (cloud loop README video) and #1137 (docker wake baseline, 
 
 ## 2026-10-26 11:22 UTC
 Iris (ref:6972): Enes asked for README "where loops run" with the cloud video under it; she filed #1138 (documentation) and opened PR #1139. Set milestone L6 OSS 1.0. No reply needed.
+
+## 2026-10-26 13:40 UTC
+Iris (ref:6983): #1139 merged, idle. Gave her the v0.6.0 release-notes stills on fixture data (Settings > Cloud four steps, New loop cloud, loop page cloud chip, Users with a member), one comment with attachments on #860, then idle until the tag (ref:6984).
