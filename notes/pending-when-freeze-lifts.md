@@ -1147,3 +1147,6 @@ Night sweep: #445 closed (merged). Terra filed #1133 (wake p95 on docker, medium
 
 ## 2026-10-26 08:02 UTC
 Morning sweep: #1132 (cloud loop README video) and #1137 (docker wake baseline, closes #1133) both approved by Quinn, awaiting Enes merge. Board tidy. Dry-run word possible this evening.
+
+## 2026-10-26 11:22 UTC
+Iris (ref:6972): Enes asked for README "where loops run" with the cloud video under it; she filed #1138 (documentation) and opened PR #1139. Set milestone L6 OSS 1.0. No reply needed.
