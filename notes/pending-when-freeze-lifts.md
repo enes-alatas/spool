@@ -1195,3 +1195,6 @@ Terra (ref:7046) posted the #754 plan: turn_stuck (120 min, warning), wake_misse
 
 ## 2026-10-26 19:45 UTC
 Enes (ref:7049): #754 thresholds ok as proposed; #926 go; release body stays generated for now. Recorded on #754 (comment 6425607173) and #926 (6425607587). Group (ref:7050): Terra files the three #754 slices then starts #1069; Iris takes #1070 after #1069. Nothing pending from Enes.
+
+## 2026-10-26 20:35 UTC
+Elliot (ref:7058): #897 probe found #1149: v0.6.0 spool upgrade refuses every release (parseImages rejects # lines from spool images); fails safe; fix PR #1150 with Quinn. #1149 -> L6 OSS 1.0. DM Enes (ref:7059): recommend v0.6.1 from the fix commit after a dry run, plus a known-issue line on the v0.6.0 release body; tag only on his word. #897 proof reruns on a release with the fix.
