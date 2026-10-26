@@ -361,17 +361,15 @@ func (rt *Runtime) Start(ctx context.Context, spec runtime.Spec) (runtime.Proc, 
 }
 
 // Reap terminates any claude left inside the workstation by a previous
-// orchestrator run. The recorded pid is meaningless across the wall —
-// reaping keys on the workstation itself.
+// orchestrator run. The recorded pid is the exec client's (see PID), so
+// it cannot pick the process out, but it does say whether a claude was
+// running: with none recorded there is nothing to reap, and docker is not
+// asked. Boot recovery reaps every loop, and an exec into each idle
+// workstation of a hundred held the hub's listeners for seconds (#1134).
+// Nor does it inspect first: a workstation that is gone, stopped or
+// paused refuses the exec, and that leaves nothing to reap.
 func (rt *Runtime) Reap(ctx context.Context, loopID string, pid int) error {
-	state, err := rt.inspectState(ctx, containerName(loopID))
-	if errors.Is(err, errNotFound) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if !state.Running || state.Paused {
+	if pid <= 0 {
 		return nil
 	}
 	return rt.stopClaude(ctx, containerName(loopID))
@@ -403,8 +401,9 @@ func (rt *Runtime) Destroy(ctx context.Context, loopID string) error {
 
 // stopClaude terminates claude inside a workstation: TERM now, KILL after a
 // grace (the bare runtime's orphan shape). pkill matches the process name —
-// the ADR-0018 image convention — and its exit code 1 (nothing matched)
-// means already gone, which is success.
+// the ADR-0018 image convention. The KILL follows even a TERM that found no
+// claude: claude's exec runs sh until sh execs claude, so a stop that lands
+// in that window would otherwise leave claude to run on.
 func (rt *Runtime) stopClaude(ctx context.Context, container string) error {
 	if err := rt.pkill(ctx, container, "-TERM"); err != nil {
 		return err
@@ -416,10 +415,14 @@ func (rt *Runtime) stopClaude(ctx context.Context, container string) error {
 	return nil
 }
 
+// pkill signals the claude in container. Exit code 1 with nothing on
+// stderr is pkill matching nothing; a workstation that is gone, stopped or
+// paused refuses the exec. Either way there is no claude to signal, which
+// is success.
 func (rt *Runtime) pkill(ctx context.Context, container, signal string) error {
 	_, err := rt.command(ctx, queryTimeout, "exec", container, "pkill", signal, "-x", "claude")
 	var cli *cliError
-	if errors.As(err, &cli) && cli.exitCode == 1 {
+	if errors.As(err, &cli) && cli.exitCode == 1 && strings.TrimSpace(cli.stderr) == "" || notFound(err) || notRunning(err) {
 		return nil
 	}
 	return err
