@@ -119,9 +119,11 @@ type Runtime interface {
 	// by cancelling ctx.
 	Start(ctx context.Context, spec Spec) (Proc, error)
 
-	// Reap cleans up an execution left behind by a previous orchestrator run,
-	// identified by the pid the store recorded for it. Called during boot
-	// recovery, before the loop's first wake.
+	// Reap cleans up an execution left behind by a previous orchestrator run.
+	// pid is the Proc.PID the store recorded for the loop: above 0, an
+	// execution was running when the hub went down; 0, none was. A runtime
+	// may read it as only that, as docker does, or as a host pid, as bare
+	// does. Called during boot recovery, before the loop's first wake.
 	Reap(ctx context.Context, loopID string, pid int) error
 
 	// Halt stops the workstation, keeping everything on it. The operator's
@@ -187,7 +189,10 @@ type Proc interface {
 	Kill() error
 	// Wait blocks until the process exits and returns its code and stderr tail.
 	Wait() claude.ExitInfo
-	// PID identifies the execution for boot-time reaping. Runtimes that have
-	// no host pid to give report 0.
+	// PID is above 0 for an execution boot-time reaping should hear of: the
+	// engine stores it once the execution starts and clears it to 0 when it
+	// exits, so a stored pid tells Reap one was running. It need not
+	// identify the process (docker's is the exec client's). A runtime with
+	// nothing to reap reports 0, as cloud does.
 	PID() int
 }

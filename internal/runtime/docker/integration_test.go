@@ -395,11 +395,14 @@ func TestReapKillsLeftoverClaude(t *testing.T) {
 	awaitResult(t, proc, 30*time.Second)
 
 	// abandon the exec client (a previous orchestrator's leftover) and reap
-	if err := rt.Reap(context.Background(), spec.LoopID, 0); err != nil {
+	if err := rt.Reap(context.Background(), spec.LoopID, proc.PID()); err != nil {
 		t.Fatalf("Reap: %v", err)
 	}
 	awaitClose(t, proc, 30*time.Second)
 	assertNoClaudeInside(t, containerName(spec.LoopID))
+	if err := rt.Reap(context.Background(), spec.LoopID, proc.PID()); err != nil {
+		t.Fatalf("Reap with no claude left inside: %v", err)
+	}
 }
 
 func assertNoClaudeInside(t *testing.T, container string) {
@@ -494,6 +497,11 @@ func TestHaltStopsWithoutDestroying(t *testing.T) {
 	if _, err := dockerOut(t, "volume", "inspect", name); err != nil {
 		t.Fatalf("volume gone after Halt: %v", err)
 	}
+	// A claude recorded running in a workstation stopped since leaves
+	// nothing to reap: the workstation refuses the exec.
+	if err := rt.Reap(context.Background(), spec.LoopID, 4242); err != nil {
+		t.Fatalf("Reap of a stopped workstation: %v", err)
+	}
 
 	mustEnsure(t, rt, spec)
 	if state, err := dockerOut(t, "inspect", "--format", "{{.State.Running}}", name); err != nil || strings.TrimSpace(state) != "true" {
@@ -501,6 +509,9 @@ func TestHaltStopsWithoutDestroying(t *testing.T) {
 	}
 	if err := rt.Halt(context.Background(), "itest-absent-"+randomHex(4)); err != nil {
 		t.Fatalf("Halt of a workstation that isn't there must be a no-op: %v", err)
+	}
+	if err := rt.Reap(context.Background(), "itest-absent-"+randomHex(4), 4242); err != nil {
+		t.Fatalf("Reap of a workstation that isn't there must be a no-op: %v", err)
 	}
 }
 

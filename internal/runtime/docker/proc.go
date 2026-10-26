@@ -47,6 +47,8 @@ func (proc *workstationProc) Wait() claude.ExitInfo {
 	return proc.exit
 }
 
-// PID reports 0: the interesting pid lives inside the container, and boot
-// reaping keys on the workstation, not on a host pid.
-func (proc *workstationProc) PID() int { return 0 }
+// PID is the docker exec client's host pid. Claude's own pid lives inside
+// the container and means nothing out here, so boot reaping keys on the
+// workstation. A pid stored for the loop says only that a claude was
+// running in it when the hub went down (#1134).
+func (proc *workstationProc) PID() int { return proc.cmd.Process.Pid }

@@ -249,3 +249,14 @@ func (rt *Runtime) RepoDigests(ctx context.Context, image string) ([]string, err
 	}
 	return digests, nil
 }
+
+// notRunning recognizes the daemon refusing an exec into a workstation
+// that is stopped or paused.
+func notRunning(err error) bool {
+	var failure *cliError
+	if !errors.As(err, &failure) {
+		return false
+	}
+	msg := strings.ToLower(failure.stderr)
+	return strings.Contains(msg, "is not running") || strings.Contains(msg, "is paused")
+}
