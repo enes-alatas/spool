@@ -1168,3 +1168,6 @@ Elliot (ref:6990, #860 comment 6417835749) answered both upgrade sentences plus 
 
 ## 2026-10-26 14:55 UTC
 Enes (ref:6997) upgraded the fleet to v0.5.1-322-g2e2efd0 = main tip. Told him (ref:6998): say "dry run" this evening if clean. Group freeze (ref:6999): nothing lands on main until the tag, #1134 after, Elliot stands by to dispatch on 2e2efd0.
+
+## 2026-10-26 16:20 UTC
+Enes (ref:7009): "cut the release now" = dry run word. Main moved to 54a1da4 (#1134 merged: boot recovery reaps side by side, reap exec, QUALITY) and the fleet runs it (v0.5.1-325). Told Elliot (ref:7010): dispatch on 54a1da4, tag ask to Enes with green link, #897 after the tag, main frozen. Confirmed to Enes (ref:7011). Next: when the tag is on, re-verify notes/release-v0.6.0.md against git log v0.5.1..v0.6.0 and hand it to Enes; close #860, #747, #897 after their proofs.
