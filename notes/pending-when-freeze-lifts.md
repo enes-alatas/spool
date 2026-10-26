@@ -1171,3 +1171,6 @@ Enes (ref:6997) upgraded the fleet to v0.5.1-322-g2e2efd0 = main tip. Told him (
 
 ## 2026-10-26 16:20 UTC
 Enes (ref:7009): "cut the release now" = dry run word. Main moved to 54a1da4 (#1134 merged: boot recovery reaps side by side, reap exec, QUALITY) and the fleet runs it (v0.5.1-325). Told Elliot (ref:7010): dispatch on 54a1da4, tag ask to Enes with green link, #897 after the tag, main frozen. Confirmed to Enes (ref:7011). Next: when the tag is on, re-verify notes/release-v0.6.0.md against git log v0.5.1..v0.6.0 and hand it to Enes; close #860, #747, #897 after their proofs.
+
+## 2026-10-26 16:38 UTC
+Enes (ref:7013) wants to share cloud support on HN with a link to the demo video. Verified README on main: "### Where loops run" at line 75 with the cloud video; gave the anchor link and two cautions (claim only what ships; tag not on yet) (ref:7014).
