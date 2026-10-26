@@ -263,3 +263,58 @@ func TestEveryRunRefusesToPull(t *testing.T) {
 		t.Fatalf("found %d docker runs, want at least the 5 the runtime issues; has the argv's shape changed?", runs)
 	}
 }
+
+// A wake with an MCP config starts claude in one exec that writes the config
+// first: owner-only, with the config crossing as a value-less --env rather
+// than argv, and gone from the env claude runs with (#1133).
+func TestExecArgvWritesTheMCPConfigBeforeClaude(t *testing.T) {
+	config := `{"mcpServers":{"spool":{"headers":{"Authorization":"Bearer hub-token-for-test"}}}}`
+	argv, err := execArgv(runtime.Spec{LoopID: "abc", SessionID: "sess-1", MCPConfig: config}, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if joined := strings.Join(argv, " "); strings.Contains(joined, "hub-token-for-test") {
+		t.Fatalf("the MCP config leaked into argv: %q", joined)
+	}
+	container := slices.Index(argv, "spool-ws-abc")
+	if container < 2 || argv[container-2] != "--env" || argv[container-1] != mcpConfigEnv {
+		t.Fatalf("want the config as a value-less --env %s before the container: %q", mcpConfigEnv, argv)
+	}
+	inner := argv[container+1:]
+	if len(inner) < 4 || inner[0] != "sh" || inner[1] != "-c" || inner[3] != "claude" ||
+		!slices.Contains(inner, "--mcp-config") {
+		t.Fatalf("want sh -c <script> claude <claude's args>: %q", inner)
+	}
+
+	// The script itself, run here with the workstation's path moved into a
+	// temporary home and a claude that reports what it was started with.
+	dir := t.TempDir()
+	target := filepath.Join(dir, ".spool-mcp.json")
+	fake := filepath.Join(dir, "claude")
+	report := "#!/bin/sh\necho \"umask=$(umask) mcp=${" + mcpConfigEnv + "-unset} args=$*\"\n"
+	if err := os.WriteFile(fake, []byte(report), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// the umask a workstation's shell starts with, which claude must keep
+	script := "umask 022; " + strings.ReplaceAll(inner[2], mcpConfigPath, target)
+	cmd := exec.Command("sh", append([]string{"-c", script}, inner[3:]...)...)
+	cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"), mcpConfigEnv+"="+config)
+	got, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("the script failed: %v", err)
+	}
+	written, err := os.ReadFile(target)
+	if err != nil || string(written) != config {
+		t.Fatalf("config written = %q (%v), want %q", written, err, config)
+	}
+	if info, _ := os.Stat(target); info.Mode().Perm() != 0o600 {
+		t.Errorf("config mode = %v, want owner-only", info.Mode().Perm())
+	}
+	if !strings.Contains(string(got), "mcp=unset") || !strings.Contains(string(got), "args=") ||
+		!strings.Contains(string(got), "--session-id sess-1") {
+		t.Errorf("claude was started with %q; want the config unset and its own args", got)
+	}
+	if strings.Contains(string(got), "umask=0077") {
+		t.Errorf("claude inherited the config's umask: %q", got)
+	}
+}

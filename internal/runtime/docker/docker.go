@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net"
 	"os"
 	"os/exec"
@@ -320,19 +321,20 @@ func (rt *Runtime) provision(ctx context.Context, spec runtime.Spec) error {
 // the inner claude anyway (ADR-0018) — Kill and boot-time Reap go through
 // the wall instead.
 func (rt *Runtime) Start(ctx context.Context, spec runtime.Spec) (runtime.Proc, error) {
-	if spec.MCPConfig != "" {
-		// The config carries the loop's hub token: written inside the
-		// workstation over exec stdin, so it never crosses host argv.
-		if err := rt.writeMCPConfig(ctx, spec); err != nil {
-			return nil, err
-		}
-	}
 	argv, err := execArgv(spec, rt.egressEnv(), rt.hook)
 	if err != nil {
 		return nil, err
 	}
+	env := spec.Env
+	if spec.MCPConfig != "" {
+		env = maps.Clone(spec.Env)
+		if env == nil {
+			env = map[string]string{}
+		}
+		env[mcpConfigEnv] = spec.MCPConfig
+	}
 	cmd := exec.Command(rt.bin, argv...)
-	cmd.Env = environ(spec.Env)
+	cmd.Env = environ(env)
 	cmd.SysProcAttr = runtime.ChildAttr()
 
 	stdin, err := cmd.StdinPipe()
@@ -520,7 +522,12 @@ func execArgv(spec runtime.Spec, egressEnv []string, hook string) ([]string, err
 	for _, key := range sortedKeys(spec.Env) {
 		argv = append(argv, "--env", key)
 	}
-	argv = append(argv, containerName(spec.LoopID), "claude")
+	if spec.MCPConfig == "" {
+		argv = append(argv, containerName(spec.LoopID), "claude")
+		return append(argv, claudeArgs...), nil
+	}
+	// the shell's $0, then claude's own arguments as its "$@"
+	argv = append(argv, "--env", mcpConfigEnv, containerName(spec.LoopID), "sh", "-c", writeMCPConfigThenClaude, "claude")
 	return append(argv, claudeArgs...), nil
 }
 
@@ -537,15 +544,18 @@ const WorkstationGitHub = "/usr/local/bin/spool-github"
 // written fresh at every wake.
 const mcpConfigPath = runtime.WorkstationHome + "/.spool-mcp.json"
 
-// writeMCPConfig lands the loop's MCP config inside the workstation over
-// exec stdin — owner-only, and never through host argv (ADR-0018's rule for
-// credentials).
-func (rt *Runtime) writeMCPConfig(ctx context.Context, spec runtime.Spec) error {
-	_, err := rt.commandInput(ctx, queryTimeout, spec.MCPConfig,
-		"exec", "--interactive", containerName(spec.LoopID),
-		"sh", "-c", "umask 077 && cat > "+mcpConfigPath)
-	return err
-}
+// mcpConfigEnv carries the loop's MCP config into the exec that starts
+// claude. The config holds the loop's hub token, so it crosses the way the
+// loop's other credentials do, as a value-less --env and never through host
+// argv (ADR-0018).
+const mcpConfigEnv = "SPOOL_MCP_CONFIG"
+
+// writeMCPConfigThenClaude is what that exec runs: it writes the config
+// owner-only, drops the variable so claude never holds it, and becomes
+// claude. One exec where a write and a start were two, each a docker CLI
+// call a burst of wakes waits on (#1133). The umask stays in the subshell:
+// claude's own files are made as they always were.
+const writeMCPConfigThenClaude = `(umask 077 && printf '%s' "$` + mcpConfigEnv + `" > ` + mcpConfigPath + `) && unset ` + mcpConfigEnv + ` && exec claude "$@"`
 
 // fileCopyTimeout bounds one file's copy in or out: 20 MB through docker
 // exec is seconds, and a daemon that takes minutes is not going to finish.
