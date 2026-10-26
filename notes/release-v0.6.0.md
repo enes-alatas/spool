@@ -131,11 +131,16 @@ A loop can run in a Claude Code cloud session beside contained loops.
   an operator types; round loop controls; the mission edited in a dialog;
   web addresses are links; a Fleet row shows its loop's mission. [feat(web) ×6]
 
-## Open points for Enes before publishing
-- The scope is far beyond "cloud loops": users/sign-in, Claude proxy login,
-  corrections, upgrade. Is v0.6.0 the right number, and is the headline
-  "cloud loops" or "users and sign-in"? His call.
-- Breaking: the setup-token is superseded by the Claude login; sender ids
-  retired in favour of users (feat(httpapi): a loop's owner is named only as a
-  user, and the sender ids are retired). The upgrade path needs one sentence
-  each in the notes; verify against OPERATIONS at tag time.
+## Decided 2026-10-26 (Enes, ref:6988; Elliot, #860 comment 6417835749)
+- Number and headline: v0.6.0, "Cloud loops, users, and one Claude login".
+- Upgrading from v0.5.1 (verified: cmd/spool/user.go has `reset`; OPERATIONS.md:112):
+  - The setup-token keeps working after the upgrade until an admin signs in
+    under Settings → Claude login; that sign-in replaces it. Cloud loops need
+    the sign-in.
+  - No re-linking: senders allowed before the upgrade keep working and keep
+    their loops. A person links in Settings → Account only before they are
+    chosen as a loop's owner.
+  - By hand, this once: v0.5.1 has no `spool upgrade`, so follow
+    OPERATIONS.md → Upgrading. The new admin's one-time password goes to
+    stdout, which the unit discards: run `spool user reset admin`. A stored
+    egress host that is now refused is removed in Settings → Egress.
