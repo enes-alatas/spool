@@ -36,12 +36,8 @@ func (manager *Manager) Boot(ctx context.Context) error {
 	if err := manager.deps.Store.Turns().InterruptDangling(ctx, nowMS); err != nil {
 		return err
 	}
+	manager.reapOrphans(ctx, loops)
 	for _, loopRecord := range loops {
-		if loopRuntime := manager.deps.runtimeFor(loopRecord.Runtime); loopRuntime == nil {
-			manager.log().Warn("reap orphan", "loop", loopRecord.Name, "err", fmt.Errorf("no %q runtime available", loopRecord.Runtime))
-		} else if err := loopRuntime.Reap(ctx, loopRecord.ID, loopRecord.CurrentPID); err != nil {
-			manager.log().Warn("reap orphan", "loop", loopRecord.Name, "err", err)
-		}
 		if loopRecord.CurrentPID > 0 {
 			_ = manager.deps.Store.Loops().SetRuntime(ctx, loopRecord.ID, loopRecord.CurrentSessionID, 0)
 			loopRecord.CurrentPID = 0
@@ -244,4 +240,34 @@ func (manager *Manager) log() *slog.Logger {
 		return slog.Default()
 	}
 	return manager.deps.Logger
+}
+
+// maxReaping is how many loops boot recovery reaps at once. A sandboxed
+// reap asks the runtime's CLI over a round trip or two, so reaping a
+// hundred loops one after another kept the listeners down for seconds
+// (#1134); a bounded number side by side keeps the CLI's daemon from a
+// hundred-call stampede.
+const maxReaping = 16
+
+// reapOrphans reaps every loop's leftover execution, maxReaping at a time,
+// and returns once all are done: no loop wakes before its orphan is gone.
+// A reap that fails is logged and boot goes on.
+func (manager *Manager) reapOrphans(ctx context.Context, loops []*store.Loop) {
+	reaping := make(chan struct{}, maxReaping)
+	var reaps sync.WaitGroup
+	for _, loopRecord := range loops {
+		loopRuntime := manager.deps.runtimeFor(loopRecord.Runtime)
+		if loopRuntime == nil {
+			manager.log().Warn("reap orphan", "loop", loopRecord.Name, "err", fmt.Errorf("no %q runtime available", loopRecord.Runtime))
+			continue
+		}
+		reaping <- struct{}{}
+		reaps.Go(func() {
+			defer func() { <-reaping }()
+			if err := loopRuntime.Reap(ctx, loopRecord.ID, loopRecord.CurrentPID); err != nil {
+				manager.log().Warn("reap orphan", "loop", loopRecord.Name, "err", err)
+			}
+		})
+	}
+	reaps.Wait()
 }
