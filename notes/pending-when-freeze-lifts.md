@@ -1144,3 +1144,6 @@ Terra (ref:6929): docker smoke breaks wake p95 (1.9s vs 500ms) and boot recovery
 
 ## 2026-10-26 00:02 UTC
 Night sweep: #445 closed (merged). Terra filed #1133 (wake p95 on docker, medium), #1134 (boot recovery on docker, low), #1135 (weekly schedule chore): milestones L6/L6/CI reliability. #1131 (zod advisory pinned by Remotion, auto-filed) -> CI reliability. PR #1132 (Iris, #1126 cloud loop README video) in review. Nothing pending from Enes until Monday evening.
+
+## 2026-10-26 08:02 UTC
+Morning sweep: #1132 (cloud loop README video) and #1137 (docker wake baseline, closes #1133) both approved by Quinn, awaiting Enes merge. Board tidy. Dry-run word possible this evening.
