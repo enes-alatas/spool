@@ -1153,3 +1153,6 @@ Iris (ref:6972): Enes asked for README "where loops run" with the cloud video un
 
 ## 2026-10-26 13:40 UTC
 Iris (ref:6983): #1139 merged, idle. Gave her the v0.6.0 release-notes stills on fixture data (Settings > Cloud four steps, New loop cloud, loop page cloud chip, Users with a member), one comment with attachments on #860, then idle until the tag (ref:6984).
+
+## 2026-10-26 13:45 UTC
+Enes (ref:6985): "cut the release now?" Answered (ref:6986): yes after upgrading the fleet to current main 2e2efd0 (24 commits past 298, weekend cloud fixes untested on the fleet), a few hours, then "dry run" this evening -> Elliot dispatches -> tag ask with green link (D); #897 after the tag; #1134 ships after. Asked the two release-notes decisions: number/headline, and the two breaking-change upgrade sentences.
