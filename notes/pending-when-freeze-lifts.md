@@ -1222,3 +1222,9 @@ green. Body is GitHub's generated one (#1141, #1150 + Images). v0.6.0's Known-is
 "Fixed in v0.6.1" (same ask as ref:7077). Waiting: Elliot's #897 fresh-runner proof v0.6.0→v0.6.1;
 only after it passes goes the upgrade line (ref:7073 wording) to Enes for the v0.6.1 body, #897 closes,
 and I suggest the fleet upgrade to v0.6.1.
+
+## 2026-10-27 00:05 UTC — #897 proven, v0.6.1 release line with Enes
+Verified: #897 CLOSED COMPLETED; comment 6430196466 shows probe run 40422578955 green: forced
+rollback back to v0.6.0, then `sudo spool upgrade v0.6.1 --require-attestation` from v0.6.0 →
+/api/version v0.6.1. Sent Enes (owner_dm ref:7087) the agreed line for the v0.6.1 body (his edit,
+or mine on his word) and suggested the fleet upgrade to v0.6.1. v0.6.1 work is otherwise done.
