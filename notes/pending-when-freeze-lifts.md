@@ -1192,3 +1192,6 @@ Terra (ref:7044): docker perf trio done (#1133/#1134/#1135, #1141 merged), free.
 
 ## 2026-10-26 18:35 UTC
 Terra (ref:7046) posted the #754 plan: turn_stuck (120 min, warning), wake_missed (10 min grace, failing, scheduler-side, ADR-0053 amendment), send_failed (2 min grace, warning, one wake per problem, outage guard 3 loops/5 min). Put to Enes with my recommendation to accept all three (ref:7047), plus the still-open #926 go and the release body swap. On his ok: tell Terra to file the three slices (hub/page pairs) and start turn_stuck.
+
+## 2026-10-26 19:45 UTC
+Enes (ref:7049): #754 thresholds ok as proposed; #926 go; release body stays generated for now. Recorded on #754 (comment 6425607173) and #926 (6425607587). Group (ref:7050): Terra files the three #754 slices then starts #1069; Iris takes #1070 after #1069. Nothing pending from Enes.
