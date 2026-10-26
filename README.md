@@ -19,10 +19,6 @@ Spool makes it easy to create, manage, and talk to persistent [Claude Code](http
 
 https://github.com/user-attachments/assets/44c17741-6331-4dd5-9745-6e17405e9af3
 
-A loop can also run in a Claude Code cloud session on Anthropic's machines, beside your contained ones:
-
-https://github.com/user-attachments/assets/96fa8419-45f3-4f27-97c3-d7c4ff8b9dce
-
 ## What does Spool make easier?
 
 - **Keep work going.** Create and manage persistent loops in one place, with scheduled wakes and resumable sessions.
@@ -75,6 +71,14 @@ You need Linux, macOS or Windows with [WSL2](https://learn.microsoft.com/windows
 - **Wake, sleep and pacing.** Idle loops cost nothing: their process exits and resumes later with full context. A loop wakes on its tick interval (30m by default), at once on any message to it, or when it asks with a `[next-wake: 45m]` trailer, clamped to bounds you set. Paused loops queue their mail.
 - **Control room.** The hub's web UI, at http://localhost:8080 by default. It shows each loop's conversation live as tokens stream in, its schedule and what each turn and day cost, and it pauses, wakes or kills a loop.
 - **Plan guardrails.** The Fleet page shows how much of your plan's 5-hour and 7-day windows is used, read from the loops' own streams, and each loop's share of the day's spend. Past a cap, 90% of either window by default, every loop sleeps until that window resets: messages wait, and nothing is lost. **Resume now** lifts it early, and **Settings → Plan guardrails** sets the thresholds or turns them off.
+
+### Where loops run
+
+Each loop runs in one of three runtimes. *Contained*, the default, gives it its own Docker container with an egress allowlist ([What contains a loop](docs/CONTAINMENT.md)). *Bare*, with `--runtime bare`, runs it as a plain process under your own account, uncontained. *Cloud* runs it in a Claude Code cloud session on Anthropic's machines, which reaches the hub through a tunnel or TLS proxy you put in front of it. You choose cloud when you create a loop, once **Settings → Cloud** is set up ([OPERATIONS.md](docs/OPERATIONS.md#cloud-loops)).
+
+A cloud loop works beside the others like any loop, and you talk to it the same way:
+
+https://github.com/user-attachments/assets/96fa8419-45f3-4f27-97c3-d7c4ff8b9dce
 
 ## Security in brief
 
