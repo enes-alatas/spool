@@ -389,6 +389,14 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			// way into the table it is read back out of is a circle.
 			"Set": false, "Get": false,
 		},
+		"ClaudeLoginStore": {
+			// A Claude login's sign-in, which the redactor reads its tokens
+			// from: redacting it on the way in is a circle, as for settings.
+			// The rest is a name, a user id, times and a check's outcome
+			// (ADR-0060).
+			"Create": false, "SetAccount": false, "SetCheck": false, "Delete": false,
+			"Get": false, "List": false,
+		},
 		"ConnectionStore": {
 			// A connection's secret, the loops' tool secrets among them,
 			// same reason; its config is operator-written, like a rule, and

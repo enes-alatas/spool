@@ -147,6 +147,10 @@ func (database *DB) PrivateChats() store.PrivateChatStore       { return private
 func (database *DB) Problems() store.ProblemStore               { return problems{database.db} }
 func (database *DB) UserLinks() store.UserLinkStore             { return userLinks{database.db} }
 
+func (database *DB) ClaudeLogins() store.ClaudeLoginStore {
+	return claudeLogins{database.db, database.sealer}
+}
+
 func toJSON(values []string) string {
 	if values == nil {
 		values = []string{}

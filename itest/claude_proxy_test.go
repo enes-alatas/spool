@@ -5,7 +5,7 @@ package itest
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"errors"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -197,8 +197,8 @@ func dockerLoopReachesTheModelThroughTheClaudeProxy(t *testing.T) {
 	}
 }
 
-// storeCloudAccount stores account as the signed-in one, with the hub
-// stopped.
+// storeCloudAccount stores account as the default Claude login's sign-in,
+// with the hub stopped.
 func storeCloudAccount(t *testing.T, dataDir string, account store.CloudAccount) {
 	t.Helper()
 	db, err := sqlite.Open(filepath.Join(dataDir, "spool.db"))
@@ -206,11 +206,19 @@ func storeCloudAccount(t *testing.T, dataDir string, account store.CloudAccount)
 		t.Fatal(err)
 	}
 	defer db.Close()
-	raw, err := json.Marshal(account)
-	if err != nil {
-		t.Fatal(err)
+	putDefaultLogin(t, db, account)
+}
+
+// putDefaultLogin stores account as the default Claude login's sign-in in
+// db, adding the login if it holds none.
+func putDefaultLogin(t *testing.T, db store.Store, account store.CloudAccount) {
+	t.Helper()
+	ctx := context.Background()
+	err := db.ClaudeLogins().SetAccount(ctx, store.DefaultClaudeLogin, account)
+	if errors.Is(err, store.ErrNotFound) {
+		err = db.ClaudeLogins().Create(ctx, &store.ClaudeLogin{Name: store.DefaultClaudeLogin, Account: account, CreatedAt: 1})
 	}
-	if err := db.Settings().Set(context.Background(), store.SettingCloudAccount, string(raw)); err != nil {
+	if err != nil {
 		t.Fatal(err)
 	}
 }

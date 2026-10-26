@@ -404,7 +404,7 @@ func main() {
 	rdb := redact.Store(db, redactor)
 	// The cloud runtime reads its account from the store, so it joins the
 	// others once there is one (ADR-0059).
-	cloudRuntime := newCloudRuntime(rdb.Settings(), *dataDir, *claudeBin, cloudAPI)
+	cloudRuntime := newCloudRuntime(rdb, *dataDir, *claudeBin, cloudAPI)
 	cloudRuntime.CLI.StartWithin = time.Duration(*cloudStartWithinSec) * time.Second
 	// a dir another user holds fails every cloud start loudly, on the loop,
 	// and needn't stop a hub that runs no cloud loop
@@ -427,8 +427,8 @@ func main() {
 	cloudGate := loop.NewCloudGate(func() (string, error) {
 		return storedSetting(rdb.Settings(), store.SettingCloudAddress)
 	}, func() (bool, error) {
-		account, err := storedSetting(rdb.Settings(), store.SettingCloudAccount)
-		if err != nil || account == "" {
+		_, signedIn, err := store.SignedInAccount(context.Background(), rdb.ClaudeLogins(), store.DefaultClaudeLogin)
+		if err != nil || !signedIn {
 			return false, err
 		}
 		environment, err := chosenCloudEnvironment(rdb.Settings())
@@ -502,7 +502,7 @@ func main() {
 			scheduler.ScheduleAfterTurn(loopRecord, trailer, has)
 		},
 		ClaudeToken: func(ctx context.Context) (string, error) {
-			return loop.HubClaudeToken(ctx, rdb.Settings())
+			return loop.HubClaudeToken(ctx, rdb)
 		},
 	}
 	models := loop.NewModels(rdb, pubsub, runtimes[defaultRuntime], defaultRuntime, ver, log)
@@ -523,7 +523,7 @@ func main() {
 	}
 	// the account's token is refreshed by the CLI that signed it in
 	// (ADR-0058)
-	loginRefresh := loop.NewLoginRefresh(rdb.Settings(), cloudSignIn.Refresh, func(ctx context.Context) {
+	loginRefresh := loop.NewLoginRefresh(rdb.ClaudeLogins(), cloudSignIn.Refresh, func(ctx context.Context) {
 		if err := redactor.Refresh(ctx); err != nil {
 			log.Error("reload secrets for redaction", "err", err)
 		}
@@ -623,7 +623,7 @@ func main() {
 		CloudLoopbackAddress: *cloudLoopbackAddress,
 		CloudGate:            cloudGate,
 		CloudSignIn:          cloudSignIn,
-		CloudLogin:           loginRefresh,
+		LoginLocks:           loginRefresh,
 		ClaudeAPIBase:        cloudAPI,
 		GitHubApps:           githubApps,
 		CloudAccounts:        cloudAccounts{runtime: cloudRuntime, image: dockerRuntime},

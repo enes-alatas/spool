@@ -57,7 +57,7 @@ func (server *Server) ClaudeProxyHandler() http.Handler {
 			writeClaudeProxyError(w, http.StatusNotFound, "not_found_error", "the Claude proxy forwards model requests only")
 			return
 		}
-		token, err := loop.HubClaudeToken(r.Context(), server.Store.Settings())
+		token, err := loop.HubClaudeToken(r.Context(), server.Store)
 		if err != nil {
 			server.Log.Warn("Claude proxy: the hub's Claude token can't be read", "loop", caller.Name, "err", err)
 		}

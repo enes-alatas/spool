@@ -25,20 +25,18 @@ import (
 // backups carry: a home holds its loop's token. Each hub's dir is its own,
 // named for its data directory, so one hub's boot sweep never removes
 // another's homes.
-func newCloudRuntime(settings store.SettingsStore, dataDir, claudeBin, apiBase string) *cloud.Runtime {
+func newCloudRuntime(st store.Store, dataDir, claudeBin, apiBase string) *cloud.Runtime {
+	settings := st.Settings()
 	return &cloud.Runtime{
 		CLI: &cloud.CLI{Binary: claudeBin, Dir: cloudCLIDir(dataDir), Env: signInEnv(os.Environ())},
 		Account: func(ctx context.Context) (cloud.Account, error) {
-			raw, err := storedSetting(settings, store.SettingCloudAccount)
+			// cloud loops run on the default login (ADR-0060)
+			account, signedIn, err := store.SignedInAccount(ctx, st.ClaudeLogins(), store.DefaultClaudeLogin)
 			if err != nil {
 				return cloud.Account{}, err
 			}
-			if raw == "" {
+			if !signedIn {
 				return cloud.Account{}, cloud.ErrNoAccount
-			}
-			var account store.CloudAccount
-			if err := json.Unmarshal([]byte(raw), &account); err != nil || account.Token == "" {
-				return cloud.Account{}, errors.New("cloud: the stored Claude account can't be read; sign in again")
 			}
 			return cloud.Account{Token: account.Token, OrgUUID: account.OrgUUID}, nil
 		},

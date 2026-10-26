@@ -127,11 +127,12 @@ var sealedColumns = []sealedColumn{
 	{"loops", "slack_app_token", "1"},
 	{"loops", "slack_bot_token", "1"},
 	{"loops", "hub_mcp_token", "1"},
-	{"settings", "value", "key IN ('" + store.SettingClaudeOAuthToken + "', '" + store.SettingCloudAccount + "')"},
+	{"settings", "value", "key = '" + store.SettingClaudeOAuthToken + "'"},
+	{"claude_logins", "account", "1"},
 }
 
 // sealedSettings are the settings keys whose values are secrets.
-var sealedSettings = map[string]bool{store.SettingClaudeOAuthToken: true, store.SettingCloudAccount: true}
+var sealedSettings = map[string]bool{store.SettingClaudeOAuthToken: true}
 
 // unseal opens the key beside the database and proves it is the one the
 // database was sealed with, minting one for a database that has none yet.
@@ -184,8 +185,8 @@ func (database *DB) unseal(dir string, forget bool) (bool, error) {
 // a secret is revoked, as Revoke does but with no value to retire, and
 // the retired values go, which nothing can read. Each loop's chat bots
 // are unbound, and its hub MCP token is minted again, since a loop must
-// have one. The setup-token is cleared. The operator re-enters what they
-// still need.
+// have one. The setup-token is cleared, and every Claude login signed
+// out. The operator re-enters what they still need.
 func (database *DB) forgetSecrets(at int64) error {
 	ctx := context.Background()
 	tx, err := database.db.BeginTx(ctx, nil)
@@ -259,6 +260,10 @@ func (database *DB) forgetSecrets(at int64) error {
 		if _, err := tx.ExecContext(ctx, `UPDATE settings SET value='' WHERE key=?`, key); err != nil {
 			return err
 		}
+	}
+	// a login signed out still exists, so its loops keep a valid name
+	if _, err := tx.ExecContext(ctx, `UPDATE claude_logins SET account=''`); err != nil {
+		return err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE settings SET value=? WHERE key=?`,
 		database.sealer.seal(keyCheck), keyCheckSetting); err != nil {

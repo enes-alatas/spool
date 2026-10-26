@@ -15,12 +15,25 @@ type sourceStore struct {
 	connections []*store.Connection
 	retired     []store.RetiredSecret
 	settings    map[string]string
+	logins      []*store.ClaudeLogin
 }
 
 func (fake sourceStore) Settings() store.SettingsStore { return noSettings{values: fake.settings} }
 func (fake sourceStore) Loops() store.LoopStore        { return listedLoops{loops: fake.loops} }
 func (fake sourceStore) Connections() store.ConnectionStore {
 	return listedConnections{connections: fake.connections, retired: fake.retired}
+}
+func (fake sourceStore) ClaudeLogins() store.ClaudeLoginStore {
+	return listedLogins{logins: fake.logins}
+}
+
+type listedLogins struct {
+	store.ClaudeLoginStore
+	logins []*store.ClaudeLogin
+}
+
+func (listed listedLogins) List(context.Context) ([]*store.ClaudeLogin, error) {
+	return listed.logins, nil
 }
 
 type noSettings struct {
@@ -168,20 +181,26 @@ func TestSourcesJoinsEachSource(t *testing.T) {
 	}
 }
 
-// The cloud account's token is redacted by its value, not the JSON it is
-// kept in; a value that doesn't read as an account is redacted whole.
-func TestStoreSourceNamesTheCloudAccount(t *testing.T) {
-	for stored, want := range map[string]string{
-		`{"token":"sk-ant-oat01-synthetic-cloud","org_uuid":"o"}`: "sk-ant-oat01-synthetic-cloud",
-		"not-json-synthetic-cloud":                                "not-json-synthetic-cloud",
-	} {
-		source := StoreSource{Store: sourceStore{settings: map[string]string{store.SettingCloudAccount: stored}}}
-		secrets, err := source.Secrets(context.Background())
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(secrets) != 1 || secrets[0].Name != store.SettingCloudAccount || secrets[0].Value != want {
-			t.Errorf("stored %s: secrets = %+v, want %s", stored, secrets, want)
-		}
+// Every Claude login's tokens are redacted by value, the refresh token
+// with the access token, and a login signed out holds none (ADR-0060).
+func TestStoreSourceNamesEveryClaudeLogin(t *testing.T) {
+	source := StoreSource{Store: sourceStore{logins: []*store.ClaudeLogin{
+		{Name: "default", Account: store.CloudAccount{Token: "sk-ant-oat01-synthetic-default", RefreshToken: "sk-ant-ort01-synthetic-default"}},
+		{Name: "ada", Account: store.CloudAccount{Token: "sk-ant-oat01-synthetic-ada"}},
+		{Name: "gone"},
+		{Name: "garbled", Unreadable: "sk-ant-oat01-synthetic-garbled"},
+	}}}
+	secrets, err := source.Secrets(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Secret{
+		{Name: "claude_login", Value: "sk-ant-oat01-synthetic-default"},
+		{Name: "claude_login", Value: "sk-ant-ort01-synthetic-default"},
+		{Name: "claude_login", Value: "sk-ant-oat01-synthetic-ada"},
+		{Name: "claude_login", Value: "sk-ant-oat01-synthetic-garbled"},
+	}
+	if !reflect.DeepEqual(secrets, want) {
+		t.Fatalf("secrets = %+v, want %+v", secrets, want)
 	}
 }

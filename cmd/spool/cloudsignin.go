@@ -236,6 +236,7 @@ func (signIn *claudeSignIn) Finish(ctx context.Context, code string) (store.Clou
 		RefreshToken: signedIn.RefreshToken,
 		ExpiresAt:    signedIn.ExpiresAt,
 		OrgUUID:      signedIn.OrgUUID,
+		Email:        signedIn.Email,
 		Scopes:       signedIn.Scopes,
 	}, nil
 }
@@ -296,7 +297,10 @@ func (signIn *claudeSignIn) Refresh(ctx context.Context, account store.CloudAcco
 		RefreshToken: refreshed.RefreshToken,
 		ExpiresAt:    refreshed.ExpiresAt,
 		OrgUUID:      refreshed.OrgUUID,
-		Scopes:       refreshed.Scopes,
+		// a refresh signs in to the same account, whose address the CLI
+		// was not given
+		Email:  account.Email,
+		Scopes: refreshed.Scopes,
 	}
 	if refreshedAccount.RefreshToken == "" {
 		// a refresh that hands back no new refresh token keeps the old one

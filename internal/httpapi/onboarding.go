@@ -182,7 +182,7 @@ func (server *Server) harnessPillar(ctx context.Context, loops []*store.Loop) (p
 	}
 	bare := server.defaultRuntime() == store.RuntimeBare
 	if !bare {
-		token, err := loop.HubClaudeToken(ctx, server.Store.Settings())
+		token, err := loop.HubClaudeToken(ctx, server.Store)
 		if err != nil || token == "" {
 			return pillarView{Reason: noClaudeToken}, err
 		}
@@ -238,7 +238,7 @@ func (server *Server) handleLoginCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if server.defaultRuntime() != store.RuntimeBare {
-		if token, err := loop.HubClaudeToken(r.Context(), server.Store.Settings()); err != nil || token == "" {
+		if token, err := loop.HubClaudeToken(r.Context(), server.Store); err != nil || token == "" {
 			server.jsonErrCode(w, 409, codeNoSetupToken, "%s to check", noClaudeToken)
 			return
 		}
