@@ -1201,3 +1201,6 @@ Elliot (ref:7058): #897 probe found #1149: v0.6.0 spool upgrade refuses every re
 
 ## 2026-10-26 22:00 UTC
 Enes (ref:7068): v0.6.1 immediately; asked about videos in release notes. #1150 still open (no review yet); main has only 3ddf154 since the tag. Group (ref:7069): Quinn reviews #1150 first; Elliot dry-runs the merge commit and brings the v0.6.1 tag ask; gave the one-line note. DM Enes (ref:7070): pipeline + videos embed in release bodies via user-attachments links (both demos already uploaded to GitHub, so within its limit).
+
+## 2026-10-26 22:05 UTC
+Quinn (ref:7071): #1150 approved at 08950db, queue label on, auto-merge ask to Enes. Elliot (ref:7072): correction, v0.6.1 images header goes to stderr so a v0.6.0 hub can run sudo spool upgrade v0.6.1; by hand only from v0.5.1; he proves v0.6.0 -> v0.6.1 on a fresh runner after the tag (#897). Agreed his notes line conditional on that proof (ref:7073). Pending: Enes auto-merge on #1150 -> Elliot dry run -> tag ask -> Enes tags v0.6.1 -> #897 proof -> release line.
