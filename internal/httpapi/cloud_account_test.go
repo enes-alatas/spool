@@ -29,7 +29,7 @@ func TestTheCloudAccountCheckHasATimeLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
-	if err := db.Settings().Set(context.Background(), store.SettingCloudAccount, `{"token":"synthetic"}`); err != nil {
+	if err := db.ClaudeLogins().Create(context.Background(), &store.ClaudeLogin{Name: store.DefaultClaudeLogin, Account: store.CloudAccount{Token: "synthetic"}, CreatedAt: 1}); err != nil {
 		t.Fatal(err)
 	}
 	checker := &deadlineChecker{}
@@ -59,7 +59,7 @@ func TestACheckBegunBeforeRemoveDoesNotOutliveIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
-	if err := db.Settings().Set(context.Background(), store.SettingCloudAccount, `{"token":"synthetic"}`); err != nil {
+	if err := db.ClaudeLogins().Create(context.Background(), &store.ClaudeLogin{Name: store.DefaultClaudeLogin, Account: store.CloudAccount{Token: "synthetic"}, CreatedAt: 1}); err != nil {
 		t.Fatal(err)
 	}
 	checker := &heldChecker{started: make(chan struct{}), release: make(chan struct{})}
@@ -71,7 +71,7 @@ func TestACheckBegunBeforeRemoveDoesNotOutliveIt(t *testing.T) {
 	}()
 	<-checker.started
 
-	server.changeCloudAccount(httptest.NewRecorder(), httptest.NewRequest("DELETE", "/api/settings/cloud/account", nil), "")
+	server.changeCloudAccount(httptest.NewRecorder(), httptest.NewRequest("DELETE", "/api/settings/cloud/account", nil), store.CloudAccount{})
 	close(checker.release)
 	<-booted
 	if check := server.cloudAccountCheck.result(); check == nil || check.Stage != CloudAccountStageNone {

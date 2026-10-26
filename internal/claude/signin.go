@@ -47,10 +47,14 @@ type SignIn struct {
 	ExpiresAt int64
 	Scopes    []string
 	OrgUUID   string
+	// Email is the address the account signed in with, "" when the CLI
+	// didn't write one.
+	Email string
 }
 
 // ReadSignIn reads the sign-in a finished login left in configDir: the
-// tokens from .credentials.json and the organization from .claude.json.
+// tokens from .credentials.json, and the organization and the address from
+// .claude.json.
 func ReadSignIn(configDir string) (SignIn, error) {
 	var credentials struct {
 		ClaudeAiOauth *struct {
@@ -70,6 +74,7 @@ func ReadSignIn(configDir string) (SignIn, error) {
 	var config struct {
 		OAuthAccount *struct {
 			OrganizationUUID string `json:"organizationUuid"`
+			EmailAddress     string `json:"emailAddress"`
 		} `json:"oauthAccount"`
 	}
 	if err := readJSON(filepath.Join(configDir, ".claude.json"), &config); err != nil {
@@ -84,6 +89,7 @@ func ReadSignIn(configDir string) (SignIn, error) {
 		ExpiresAt:    oauth.ExpiresAt,
 		Scopes:       oauth.Scopes,
 		OrgUUID:      config.OAuthAccount.OrganizationUUID,
+		Email:        config.OAuthAccount.EmailAddress,
 	}, nil
 }
 

@@ -131,10 +131,10 @@ type Server struct {
 	// ClaudeAPIBase is Anthropic's API, which the Claude proxy forwards a
 	// contained loop's model requests to (ADR-0058).
 	ClaudeAPIBase string
-	// CloudLogin is held while the Claude login is replaced or removed, so a
-	// refresh of its token never writes back over the change (ADR-0058).
-	// Nil holds nothing.
-	CloudLogin sync.Locker
+	// LoginLocks holds a Claude login while it is replaced or removed, so a
+	// refresh of its token never writes back over the change (ADR-0058,
+	// ADR-0060). Nil holds nothing.
+	LoginLocks LoginLocks
 	// CloudEnvironments lists the account's cloud environments for
 	// Settings → Cloud's pick (ADR-0059). Nil on a hub that wires none:
 	// the page falls back to a pasted ID.
@@ -1710,7 +1710,7 @@ func (server *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) 
 		server.secretsChanged(r.Context())
 		// a setup-token cleared under a Claude login leaves the hub's
 		// Claude token as it was
-		hubToken, err := loop.HubClaudeToken(r.Context(), server.Store.Settings())
+		hubToken, err := loop.HubClaudeToken(r.Context(), server.Store)
 		if err == nil && (token != "" || hubToken == "") {
 			err = server.loginTokenChanged(r.Context(), hubToken)
 		}
@@ -1780,14 +1780,13 @@ func (server *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) 
 }
 
 // setSetupToken stores the setup-token, "" to clear it, and answers the
-// status a failure gets. A Claude login supersedes the setup-token, so one
-// is refused while a login is signed in (ADR-0058). The check and the
-// write hold the login's lock, so a sign-in can't land between them.
+// status a failure gets. The default Claude login supersedes the
+// setup-token, so one is refused while it is signed in (ADR-0058). The
+// check and the write hold its lock, so a sign-in can't land between
+// them.
 func (server *Server) setSetupToken(ctx context.Context, token string) (int, error) {
-	if server.CloudLogin != nil {
-		server.CloudLogin.Lock()
-		defer server.CloudLogin.Unlock()
-	}
+	server.lockLogin(store.DefaultClaudeLogin)
+	defer server.unlockLogin(store.DefaultClaudeLogin)
 	if token != "" {
 		switch signedIn, err := server.cloudAccountSet(ctx); {
 		case err != nil:

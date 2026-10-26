@@ -153,16 +153,11 @@ func (server *Server) handleFinishCloudSignIn(w http.ResponseWriter, r *http.Req
 		server.jsonErr(w, 500, "%v", err)
 		return
 	}
-	raw, err := json.Marshal(account)
-	if err != nil {
-		server.jsonErr(w, 500, "%v", err)
-		return
-	}
-	server.changeCloudAccount(w, r, string(raw))
+	server.changeCloudAccount(w, r, account)
 }
 
 func (server *Server) handleRemoveCloudAccount(w http.ResponseWriter, r *http.Request) {
-	server.changeCloudAccount(w, r, "")
+	server.changeCloudAccount(w, r, store.CloudAccount{})
 }
 
 func (server *Server) handleCheckCloudAccount(w http.ResponseWriter, r *http.Request) {
@@ -170,31 +165,17 @@ func (server *Server) handleCheckCloudAccount(w http.ResponseWriter, r *http.Req
 	server.writeCloudSettings(w, r)
 }
 
-// changeCloudAccount stores the Claude login, "" to sign it out, and
-// checks it. Sign out asks the source to revoke the login before
-// forgetting it, and a sign-in supersedes the setup-token, which the hub
-// clears with it (ADR-0058). Both hold the login's lock, so a refresh never
-// rotates the tokens in between. The redactor learns the new tokens before
-// anything else can quote them, and the cloud loops are told: with no
-// account they are held. The login check then runs on the hub's Claude
-// token, or is cleared with none, as saving a setup-token did. A closed
-// tab doesn't cut the change short: a logout or a store write left halfway
-// would leave the login neither kept nor forgotten.
-func (server *Server) changeCloudAccount(w http.ResponseWriter, r *http.Request, raw string) {
+// changeCloudAccount stores the default Claude login's sign-in, the zero
+// account to sign it out, and checks it (ADR-0060). The redactor learns
+// the new tokens before anything else can quote them, and the cloud loops
+// are told: with no default login they are held. The login check then runs
+// on the hub's Claude token, or is cleared with none, as saving a
+// setup-token did. A closed tab doesn't cut the change short: a logout or
+// a store write left halfway would leave the login neither kept nor
+// forgotten.
+func (server *Server) changeCloudAccount(w http.ResponseWriter, r *http.Request, account store.CloudAccount) {
 	ctx := context.WithoutCancel(r.Context())
-	if server.CloudLogin != nil {
-		server.CloudLogin.Lock()
-	}
-	if raw == "" {
-		server.signOutAtTheSource(ctx)
-	}
-	err := server.Store.Settings().Set(ctx, store.SettingCloudAccount, raw)
-	if err == nil && raw != "" {
-		err = server.Store.Settings().Set(ctx, store.SettingClaudeOAuthToken, "")
-	}
-	if server.CloudLogin != nil {
-		server.CloudLogin.Unlock()
-	}
+	err := server.storeLoginAccount(ctx, store.DefaultClaudeLogin, account)
 	// even a failed write may have changed the account, and dropping a
 	// check that ran over an unchanged one costs only that check
 	server.cloudAccountCheck.changed()
@@ -207,7 +188,7 @@ func (server *Server) changeCloudAccount(w http.ResponseWriter, r *http.Request,
 		server.CloudGate.SetupChanged()
 	}
 	server.CheckCloudAccount(ctx)
-	token, err := loop.HubClaudeToken(ctx, server.Store.Settings())
+	token, err := loop.HubClaudeToken(ctx, server.Store)
 	if err == nil {
 		err = server.loginTokenChanged(ctx, token)
 	}
@@ -218,35 +199,54 @@ func (server *Server) changeCloudAccount(w http.ResponseWriter, r *http.Request,
 	server.writeCloudSettings(w, r)
 }
 
-// signOutAtTheSource runs the CLI's logout on the stored login, which
+// storeLoginAccount stores the sign-in of the login called name, the zero
+// account to sign it out, adding the login if the hub doesn't hold it yet.
+// Sign out asks the source to revoke the login before forgetting its
+// tokens, and keeps the login: the loops on it keep a valid name
+// (ADR-0060). A sign-in of the default login supersedes the setup-token,
+// which goes with it (ADR-0058). It all holds the login's lock, so a
+// refresh never rotates the tokens in between.
+func (server *Server) storeLoginAccount(ctx context.Context, name string, account store.CloudAccount) error {
+	server.lockLogin(name)
+	defer server.unlockLogin(name)
+	logins := server.Store.ClaudeLogins()
+	if account.Token == "" {
+		server.signOutAtTheSource(ctx, name)
+	}
+	err := logins.SetAccount(ctx, name, account)
+	if errors.Is(err, store.ErrNotFound) && account.Token != "" {
+		err = logins.Create(ctx, &store.ClaudeLogin{Name: name, Account: account, CreatedAt: time.Now().UnixMilli()})
+	} else if errors.Is(err, store.ErrNotFound) {
+		err = nil
+	}
+	if err == nil && account.Token != "" && name == store.DefaultClaudeLogin {
+		err = server.Store.Settings().Set(ctx, store.SettingClaudeOAuthToken, "")
+	}
+	return err
+}
+
+// signOutAtTheSource runs the CLI's logout on the login called name, which
 // revokes its refresh token (ADR-0058). A failure is logged, not returned:
-// Sign out forgets the login whatever the source says, and the page says
+// Sign out forgets the tokens whatever the source says, and the page says
 // where claude.ai lists the account's sign-ins. A login with no refresh
 // token has nothing to revoke. The caller holds the login's lock.
-func (server *Server) signOutAtTheSource(ctx context.Context) {
+func (server *Server) signOutAtTheSource(ctx context.Context, name string) {
 	if server.CloudSignIn == nil {
 		return
 	}
-	raw, err := server.Store.Settings().Get(ctx, store.SettingCloudAccount)
-	if errors.Is(err, store.ErrNotFound) || (err == nil && raw == "") {
-		return
-	}
-	var account store.CloudAccount
-	if err == nil {
-		err = json.Unmarshal([]byte(raw), &account)
-	}
+	account, signedIn, err := store.SignedInAccount(ctx, server.Store.ClaudeLogins(), name)
 	if err != nil {
-		server.Log.Warn("Claude login unread, so not revoked at the source; revoke it at claude.ai", "err", err)
+		server.Log.Warn("Claude login unread, so not revoked at the source; revoke it at claude.ai", "login", name, "err", err)
 		return
 	}
-	if account.RefreshToken == "" {
+	if !signedIn || account.RefreshToken == "" {
 		return
 	}
 	if err := server.CloudSignIn.SignOut(ctx, account); err != nil {
-		server.Log.Warn("Claude login not revoked at the source; revoke it at claude.ai", "err", err)
+		server.Log.Warn("Claude login not revoked at the source; revoke it at claude.ai", "login", name, "err", err)
 		return
 	}
-	server.Log.Info("Claude login signed out at the source")
+	server.Log.Info("Claude login signed out at the source", "login", name)
 }
 
 // cloudAccountCheckTimeout bounds one account check, as ADR-0044's checker
@@ -318,12 +318,27 @@ func (state *cloudAccountCheckState) result() *CloudAccountCheckResult {
 	return &result
 }
 
-// cloudAccountSet reports whether an account is signed in. Remove stores
-// "", which reads as none.
+// cloudAccountSet reports whether the default Claude login is signed in.
 func (server *Server) cloudAccountSet(ctx context.Context) (bool, error) {
-	raw, err := server.Store.Settings().Get(ctx, store.SettingCloudAccount)
-	if errors.Is(err, store.ErrNotFound) {
-		return false, nil
+	_, signedIn, err := store.SignedInAccount(ctx, server.Store.ClaudeLogins(), store.DefaultClaudeLogin)
+	return signedIn, err
+}
+
+// LoginLocks holds one Claude login against a refresh of its token
+// (loop.LoginRefresh).
+type LoginLocks interface {
+	Lock(name string)
+	Unlock(name string)
+}
+
+func (server *Server) lockLogin(name string) {
+	if server.LoginLocks != nil {
+		server.LoginLocks.Lock(name)
 	}
-	return raw != "", err
+}
+
+func (server *Server) unlockLogin(name string) {
+	if server.LoginLocks != nil {
+		server.LoginLocks.Unlock(name)
+	}
 }

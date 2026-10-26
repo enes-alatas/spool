@@ -146,11 +146,11 @@ type Deps struct {
 	SendsThisTurn func(loopID string) []string
 	// OnTurnDone reschedules the loop's next tick after any completed turn.
 	OnTurnDone func(loopRecord *store.Loop, trailer time.Duration, hasTrailer bool)
-	// ClaudeToken returns the hub's Claude token: the Claude login's access
-	// token, else the stored setup-token, else "" (ADR-0058). A contained
-	// loop wakes only while there is one, and never holds it: the Claude
-	// proxy adds it to the loop's model requests. Bare loops use the host
-	// login and never call it.
+	// ClaudeToken returns the hub's Claude token: the default Claude login's
+	// access token, else the stored setup-token, else "" (ADR-0058,
+	// ADR-0060). A contained loop wakes only while there is one, and never
+	// holds it: the Claude proxy adds it to the loop's model requests. Bare
+	// loops use the host login and never call it.
 	ClaudeToken func(ctx context.Context) (string, error)
 	// ObserveModel is told, at each init, what the loop's process reported
 	// for the model it was spawned on: the model list keeps what the

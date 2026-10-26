@@ -2,7 +2,6 @@ package redact
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 
 	"github.com/enes-alatas/spool/internal/store"
@@ -30,22 +29,22 @@ func (source StoreSource) Secrets(ctx context.Context) ([]Secret, error) {
 		out = append(out, Secret{Name: store.SettingClaudeOAuthToken, Value: token})
 	}
 
-	// The account cloud loops spend drives it whole, not only its turns, and
-	// its refresh token mints more of the same.
-	raw, err := source.Store.Settings().Get(ctx, store.SettingCloudAccount)
-	if err != nil && !errors.Is(err, store.ErrNotFound) {
+	// A Claude login's token drives its account whole, not only its turns,
+	// and its refresh token mints more of the same (ADR-0060).
+	logins, err := source.Store.ClaudeLogins().List(ctx)
+	if err != nil {
 		return nil, err
 	}
-	if raw != "" {
-		// a value that doesn't read as an account is redacted whole
-		var account store.CloudAccount
-		if json.Unmarshal([]byte(raw), &account) == nil && account.Token != "" {
-			raw = account.Token
-			if account.RefreshToken != "" {
-				out = append(out, Secret{Name: store.SettingCloudAccount, Value: account.RefreshToken})
-			}
+	for _, login := range logins {
+		if login.Account.Token != "" {
+			out = append(out, Secret{Name: "claude_login", Value: login.Account.Token})
 		}
-		out = append(out, Secret{Name: store.SettingCloudAccount, Value: raw})
+		if login.Account.RefreshToken != "" {
+			out = append(out, Secret{Name: "claude_login", Value: login.Account.RefreshToken})
+		}
+		if login.Unreadable != "" {
+			out = append(out, Secret{Name: "claude_login", Value: login.Unreadable})
+		}
 	}
 
 	// Every loop, archived included: an archived loop's token still opens

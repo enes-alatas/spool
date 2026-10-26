@@ -22,7 +22,7 @@ const (
 	fixtureConnection = "ghp-synthetic-secret"
 	fixtureRotated    = "ghp-synthetic-rotated"
 	fixtureSetupToken = "sk-ant-oat01-synthetic"
-	fixtureCloud      = `{"token":"sk-ant-oat01-synthetic-cloud","org_uuid":"00000000-0000-4000-8000-000000000001"}`
+	fixtureCloud      = "sk-ant-oat01-synthetic-cloud"
 )
 
 // fixtureLong is a synthetic secret longer than a database page.
@@ -52,7 +52,9 @@ func seedSecrets(t *testing.T, db *DB) {
 	if err := db.Settings().Set(ctx, store.SettingClaudeOAuthToken, fixtureSetupToken); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Settings().Set(ctx, store.SettingCloudAccount, fixtureCloud); err != nil {
+	if err := db.ClaudeLogins().Create(ctx, &store.ClaudeLogin{
+		Name: store.DefaultClaudeLogin, Account: store.CloudAccount{Token: fixtureCloud, OrgUUID: "00000000-0000-4000-8000-000000000001"}, CreatedAt: 1,
+	}); err != nil {
 		t.Fatal(err)
 	}
 	// one longer than a page, which SQLite keeps in overflow pages and
@@ -91,8 +93,8 @@ func assertSecretsRead(t *testing.T, db *DB) {
 	if setupToken, err := db.Settings().Get(ctx, store.SettingClaudeOAuthToken); err != nil || setupToken != fixtureSetupToken {
 		t.Fatalf("the setup-token reads back as %q (%v)", setupToken, err)
 	}
-	if account, err := db.Settings().Get(ctx, store.SettingCloudAccount); err != nil || account != fixtureCloud {
-		t.Fatalf("the cloud account doesn't read back (%v)", err)
+	if login, err := db.ClaudeLogins().Get(ctx, store.DefaultClaudeLogin); err != nil || login.Account.Token != fixtureCloud {
+		t.Fatalf("the Claude login doesn't read back (%v)", err)
 	}
 }
 
@@ -364,6 +366,10 @@ func TestALostKeyIsForgottenOnRequest(t *testing.T) {
 			}
 			if setupToken, err := db.Settings().Get(ctx, store.SettingClaudeOAuthToken); err != nil || setupToken != "" {
 				t.Errorf("the setup-token survives (%v)", err)
+			}
+			// the login itself stays, signed out, so its loops keep a valid name
+			if login, err := db.ClaudeLogins().Get(ctx, store.DefaultClaudeLogin); err != nil || login.SignedIn() {
+				t.Errorf("the Claude login is gone or still signed in: %+v (%v)", login, err)
 			}
 			// every sealed column, so one added later is forgotten too
 			for _, col := range sealedColumns {

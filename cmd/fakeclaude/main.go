@@ -1020,12 +1020,15 @@ func bashCall(settings, sessionID, cwd, command string) string {
 }
 
 // The sign-in fakeclaude's auth login takes: synthetic values, never real
-// ones. A pasted code that starts with signInCode is accepted.
+// ones. A pasted code that starts with signInCode is accepted. What follows
+// it, as in "fixture-code-ada", names another account, whose tokens and
+// address carry the name, so a test can sign in several (#1069).
 const (
 	signInCode    = "fixture-code"
 	signInToken   = "sk-ant-oat01-fixture-cloud-account"
 	signInRefresh = "sk-ant-ort01-fixture-cloud-refresh"
 	signInOrg     = "00000000-0000-4000-8000-000000000001"
+	signInEmail   = "fixture@example.test"
 )
 
 // eventLogging is the event-logging batch the real CLI posts on an auth
@@ -1057,16 +1060,25 @@ func authLogin() int {
 	fmt.Println("If the browser didn't open, visit: https://claude.example.test/cai/oauth/authorize?code=true&client_id=fixture&response_type=code&state=fixture")
 	fmt.Print("Paste code here if prompted > ")
 	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
-	if !strings.HasPrefix(strings.TrimSpace(line), signInCode) {
+	account, ok := strings.CutPrefix(strings.TrimSpace(line), signInCode)
+	if !ok {
 		fmt.Println("Invalid code. Please make sure the full code was copied.")
 		return 1
 	}
+	// "-ada" names the account ada; the code's "#state" tail names none
+	account, _, _ = strings.Cut(account, "#")
+	email := signInEmail
+	if name, named := strings.CutPrefix(account, "-"); named && name != "" {
+		email = name + "@example.test"
+	} else {
+		account = ""
+	}
 	dir := os.Getenv("CLAUDE_CONFIG_DIR")
 	credentials, _ := json.Marshal(map[string]any{"claudeAiOauth": map[string]any{
-		"accessToken": signInToken, "refreshToken": signInRefresh,
+		"accessToken": signInToken + account, "refreshToken": signInRefresh + account,
 		"expiresAt": time.Now().Add(8 * time.Hour).UnixMilli(), "scopes": []string{"user:inference", "user:sessions:claude_code"},
 	}})
-	config, _ := json.Marshal(map[string]any{"oauthAccount": map[string]any{"organizationUuid": signInOrg}})
+	config, _ := json.Marshal(map[string]any{"oauthAccount": map[string]any{"organizationUuid": signInOrg, "emailAddress": email}})
 	if os.WriteFile(filepath.Join(dir, ".credentials.json"), credentials, 0o600) != nil ||
 		os.WriteFile(filepath.Join(dir, ".claude.json"), config, 0o600) != nil {
 		fmt.Println("Login failed: the config directory can't be written.")

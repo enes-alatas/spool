@@ -3,6 +3,7 @@ package loop
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"path/filepath"
@@ -126,47 +127,52 @@ func TestALoginCheckLeftPendingReadsInconclusive(t *testing.T) {
 	}
 }
 
-func openSettings(t *testing.T) store.SettingsStore {
+func openStore(t *testing.T) store.Store {
 	t.Helper()
 	db, err := sqlite.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	return db.Settings()
+	return db
 }
 
-func setAccount(t *testing.T, settings store.SettingsStore, account store.CloudAccount) {
+// setAccount stores account as the sign-in of the login called name,
+// adding the login if the store doesn't hold it.
+func setAccount(t *testing.T, st store.Store, name string, account store.CloudAccount) {
 	t.Helper()
-	raw, err := json.Marshal(account)
+	ctx := context.Background()
+	err := st.ClaudeLogins().SetAccount(ctx, name, account)
+	if errors.Is(err, store.ErrNotFound) {
+		err = st.ClaudeLogins().Create(ctx, &store.ClaudeLogin{Name: name, Account: account, CreatedAt: 1})
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := settings.Set(context.Background(), store.SettingCloudAccount, string(raw)); err != nil {
-		t.Fatal(err)
-	}
 }
 
-func TestHubClaudeTokenPrefersTheLogin(t *testing.T) {
+func TestHubClaudeTokenPrefersTheDefaultLogin(t *testing.T) {
 	ctx := context.Background()
-	settings := openSettings(t)
-	if token, err := HubClaudeToken(ctx, settings); err != nil || token != "" {
+	st := openStore(t)
+	if token, err := HubClaudeToken(ctx, st); err != nil || token != "" {
 		t.Fatalf("with nothing stored: %q, %v", token, err)
 	}
-	if err := settings.Set(ctx, store.SettingClaudeOAuthToken, "sk-ant-oat01-fixture-setup"); err != nil {
+	if err := st.Settings().Set(ctx, store.SettingClaudeOAuthToken, "sk-ant-oat01-fixture-setup"); err != nil {
 		t.Fatal(err)
 	}
-	if token, _ := HubClaudeToken(ctx, settings); token != "sk-ant-oat01-fixture-setup" {
+	if token, _ := HubClaudeToken(ctx, st); token != "sk-ant-oat01-fixture-setup" {
 		t.Fatalf("with a setup-token only: %q", token)
 	}
-	setAccount(t, settings, store.CloudAccount{Token: "sk-ant-oat01-fixture-login", OrgUUID: "org"})
-	if token, _ := HubClaudeToken(ctx, settings); token != "sk-ant-oat01-fixture-login" {
-		t.Fatalf("with both: %q, want the login's", token)
+	setAccount(t, st, "ada", store.CloudAccount{Token: "sk-ant-oat01-fixture-ada", OrgUUID: "org"})
+	if token, _ := HubClaudeToken(ctx, st); token != "sk-ant-oat01-fixture-setup" {
+		t.Fatalf("with another login only: %q, want the setup-token", token)
 	}
-	if err := settings.Set(ctx, store.SettingCloudAccount, "not json"); err != nil {
-		t.Fatal(err)
+	setAccount(t, st, store.DefaultClaudeLogin, store.CloudAccount{Token: "sk-ant-oat01-fixture-login", OrgUUID: "org"})
+	if token, _ := HubClaudeToken(ctx, st); token != "sk-ant-oat01-fixture-login" {
+		t.Fatalf("with both: %q, want the default login's", token)
 	}
-	if _, err := HubClaudeToken(ctx, settings); err == nil {
-		t.Fatal("an unreadable login fell back to the setup-token")
+	setAccount(t, st, store.DefaultClaudeLogin, store.CloudAccount{})
+	if token, _ := HubClaudeToken(ctx, st); token != "sk-ant-oat01-fixture-setup" {
+		t.Fatalf("with the default login signed out: %q, want the setup-token", token)
 	}
 }

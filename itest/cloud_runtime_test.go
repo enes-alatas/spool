@@ -83,10 +83,7 @@ func signInCloud(t *testing.T, dataDir, address string) {
 			t.Fatal(err)
 		}
 	}
-	account, _ := json.Marshal(store.CloudAccount{Token: cloudFixtureToken, OrgUUID: "00000000-0000-4000-8000-000000000001"})
-	if err := db.Settings().Set(ctx, store.SettingCloudAccount, string(account)); err != nil {
-		t.Fatal(err)
-	}
+	putDefaultLogin(t, db, store.CloudAccount{Token: cloudFixtureToken, OrgUUID: "00000000-0000-4000-8000-000000000001"})
 	if err := db.Settings().Set(ctx, store.SettingCloudAddress, address); err != nil {
 		t.Fatal(err)
 	}

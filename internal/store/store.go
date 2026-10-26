@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"net"
 	"net/url"
 	"strconv"
@@ -109,23 +110,78 @@ const (
 // through the API; never logged.
 const SettingClaudeOAuthToken = "claude_oauth_token"
 
-// SettingCloudAccount holds the Claude login, the claude.ai account every
-// loop on the hub's token spends (ADR-0056, ADR-0058), a CloudAccount as
-// JSON. Sealed, write-only through the API, and never logged; unset until
-// the operator signs in.
-const SettingCloudAccount = "cloud_account"
+// DefaultClaudeLogin names the default Claude login: the one a loop that
+// names no login runs on, and the one cloud loops run on (ADR-0060). The
+// upgrade made today's sign-in a login of this name.
+const DefaultClaudeLogin = "default"
 
-// CloudAccount is the account's sign-in: the OAuth access token, the
-// refresh token the sign-in gave with it, and the organization it acts in.
+// ClaudeLogin is one claude.ai sign-in the hub holds (ADR-0060). Account
+// is sealed at rest (ADR-0046), and its zero value is a login signed out,
+// which still exists so the loops on it keep a valid name.
+type ClaudeLogin struct {
+	Name    string
+	Account CloudAccount
+	// OwnerUserID is the user who added it, "" for the one the upgrade made.
+	OwnerUserID string
+	CreatedAt   int64
+	// Check is its last login check (ADR-0044), nil before the first. The
+	// default login's is kept in SettingLoginCheck instead.
+	Check *LoginCheckRecord
+	// Unreadable is its opened sign-in when that doesn't read as an
+	// account, "" otherwise. The login reads as signed out, and the
+	// redactor masks the value whole.
+	Unreadable string
+}
+
+// SignedIn reports whether the login holds a sign-in.
+func (login *ClaudeLogin) SignedIn() bool { return login.Account.Token != "" }
+
+// SignedInAccount reads the sign-in of the login called name. ok is false
+// when the hub holds no such login or it is signed out.
+func SignedInAccount(ctx context.Context, logins ClaudeLoginStore, name string) (account CloudAccount, ok bool, err error) {
+	login, err := logins.Get(ctx, name)
+	if errors.Is(err, ErrNotFound) {
+		return CloudAccount{}, false, nil
+	}
+	if err != nil {
+		return CloudAccount{}, false, err
+	}
+	return login.Account, login.SignedIn(), nil
+}
+
+// CloudAccount is a Claude login's sign-in: the OAuth access token, the
+// refresh token the sign-in gave with it, and the account it signed in
+// to.
 type CloudAccount struct {
 	Token        string `json:"token"`
 	RefreshToken string `json:"refresh_token,omitempty"`
 	// ExpiresAt is when Token expires, in Unix ms, 0 when unknown.
 	ExpiresAt int64  `json:"expires_at,omitempty"`
 	OrgUUID   string `json:"org_uuid"`
+	// Email is the address the account signed in with, "" when the CLI
+	// didn't say, as for a sign-in made before it was kept.
+	Email string `json:"email,omitempty"`
 	// Scopes are what the sign-in granted, handed back to the CLI when it
 	// refreshes the token (ADR-0058).
 	Scopes []string `json:"scopes,omitempty"`
+}
+
+// ClaudeLoginStore keeps the hub's Claude logins.
+type ClaudeLoginStore interface {
+	// List returns every login, by name.
+	List(ctx context.Context) ([]*ClaudeLogin, error)
+	// Get is ErrNotFound for a name the hub doesn't hold.
+	Get(ctx context.Context, name string) (*ClaudeLogin, error)
+	// Create adds a login; ErrDuplicate for a name held already.
+	Create(ctx context.Context, login *ClaudeLogin) error
+	// SetAccount stores the login's sign-in, the zero CloudAccount to sign
+	// it out. ErrNotFound for a name the hub doesn't hold.
+	SetAccount(ctx context.Context, name string, account CloudAccount) error
+	// SetCheck stores the login's last check, nil to forget it.
+	// ErrNotFound for a name the hub doesn't hold.
+	SetCheck(ctx context.Context, name string, check *LoginCheckRecord) error
+	// Delete removes a login; ErrNotFound for a name the hub doesn't hold.
+	Delete(ctx context.Context, name string) error
 }
 
 // SettingCloudAddress holds the public HTTPS address in front of the cloud
@@ -1418,6 +1474,7 @@ type Store interface {
 	LoopChanges() LoopChangeStore
 	PrivateChats() PrivateChatStore
 	Problems() ProblemStore
+	ClaudeLogins() ClaudeLoginStore
 	UserLinks() UserLinkStore
 	FleetRules() FleetRuleStore
 	Sessions() SessionStore
