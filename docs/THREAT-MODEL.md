@@ -18,7 +18,7 @@ The local edition is in scope. The hosted edition (L7) gets its own model.
 |---|---|---|
 | Operator token | `<data-dir>/operator-token`, mode 0600 | The file mode; it acts as the owner and never expires (ADR-0030, ADR-0048) |
 | Hub key | `<data-dir>/hub.key`, mode 0600 | The file mode (ADR-0046) |
-| The Claude login's tokens, the Claude setup-token, Telegram and Slack tokens, connection secrets and their retired values, each loop's hub MCP token | `spool.db` | Sealed with AES-256-GCM under the hub key (ADR-0046) |
+| Every Claude login's tokens, the Claude setup-token, Telegram and Slack tokens, connection secrets and their retired values, each loop's hub MCP token | `spool.db` | Sealed with AES-256-GCM under the hub key (ADR-0046) |
 | User passwords | `spool.db` | PBKDF2-SHA256, 600,000 iterations, random salt (ADR-0048) |
 | Sessions, link codes | `spool.db` | Only their SHA-256 is kept (ADR-0048, ADR-0050) |
 | Conversations, turns, events, the change record | `spool.db` | Redacted of every known secret on write, not encrypted (ADR-0045) |
@@ -654,9 +654,9 @@ the CLI (ADR-0018).
   reports no deletions, so a Telegram message keeps its words.
 - **A copy of the whole data directory**, or a data file together with its
   keys file, yields every secret and the operator token (ADR-0046).
-  That includes the Claude login, which renews itself until someone
-  signs out or revokes it at claude.ai, where a setup-token had a fixed
-  life (ADR-0058).
+  That includes every Claude login the hub holds, each of which renews
+  itself until someone signs it out or revokes it at claude.ai, where a
+  setup-token had a fixed life (ADR-0058, ADR-0060).
 - **A setup-token a sign-in replaces stays valid at Anthropic.** The hub
   clears it and stops redacting it, but can't revoke it: it lives out
   its year unless the operator revokes it at claude.ai. A copy of it
