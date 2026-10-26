@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/enes-alatas/spool/internal/httpapi"
+	"github.com/enes-alatas/spool/internal/store"
 )
 
 // A CLI that ended on its own, as at its own timeout, takes no code: the
@@ -26,11 +27,11 @@ func TestACodeForAnEndedSignInAsksForANewOne(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := signIn.Start(context.Background()); err != nil {
+	if _, err := signIn.Start(context.Background(), store.DefaultClaudeLogin, ""); err != nil {
 		t.Fatal(err)
 	}
-	<-signIn.run.exited
-	if _, err := signIn.Finish(context.Background(), "fixture-code"); !errors.Is(err, httpapi.ErrNoCloudSignIn) {
+	<-signIn.runs[store.DefaultClaudeLogin].exited
+	if _, err := signIn.Finish(context.Background(), store.DefaultClaudeLogin, "fixture-code"); !errors.Is(err, httpapi.ErrNoCloudSignIn) {
 		t.Fatalf("Finish after the CLI ended = %v, want ErrNoCloudSignIn", err)
 	}
 	if entries, err := os.ReadDir(filepath.Join(dir, "cloud-sign-in")); err != nil || len(entries) != 0 {
@@ -113,13 +114,13 @@ func TestASignInWithNoHostCLIRunsInTheImage(t *testing.T) {
 	if !signIn.Available() {
 		t.Fatal("a hub with the image reports no sign-in can run")
 	}
-	if _, err := signIn.Start(context.Background()); err != nil {
+	if _, err := signIn.Start(context.Background(), store.DefaultClaudeLogin, ""); err != nil {
 		t.Fatal(err)
 	}
 	if len(image.runs) != 1 || !slices.Equal(image.runs[0], []string{"auth", "login", "--claudeai"}) {
 		t.Fatalf("the image ran %v, want one claude auth login", image.runs)
 	}
-	if _, err := signIn.Finish(context.Background(), "fixture-code"); !errors.Is(err, httpapi.ErrCloudSignInRefused) {
+	if _, err := signIn.Finish(context.Background(), store.DefaultClaudeLogin, "fixture-code"); !errors.Is(err, httpapi.ErrCloudSignInRefused) {
 		t.Fatalf("Finish on a refused code = %v, want ErrCloudSignInRefused", err)
 	}
 	if image.removed != 1 {
@@ -139,12 +140,54 @@ func TestASignInPrefersTheHostCLI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := signIn.Start(context.Background()); err != nil {
+	if _, err := signIn.Start(context.Background(), store.DefaultClaudeLogin, ""); err != nil {
 		t.Fatal(err)
 	}
-	signIn.end(signIn.run)
+	signIn.end(store.DefaultClaudeLogin, signIn.runs[store.DefaultClaudeLogin])
 	if len(image.runs) != 0 {
 		t.Errorf("a hub with its own claude ran the image's: %v", image.runs)
+	}
+}
+
+// Each login's sign-in waits on its own: starting one for another login
+// leaves the first waiting for its code, and starting one again for the
+// same login ends the one it left (ADR-0060).
+func TestEachLoginSignsInOnItsOwn(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "claude")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\necho 'visit: https://claude.ai/oauth/authorize?code=true'\nread code\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	signIn, err := newClaudeSignIn(bin, filepath.Join(dir, "cloud-sign-in"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := signIn.Start(ctx, "ada", ""); err != nil {
+		t.Fatal(err)
+	}
+	ada := signIn.runs["ada"]
+	if _, err := signIn.Start(ctx, "grace", ""); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-ada.exited:
+		t.Fatal("starting grace's sign-in ended ada's")
+	default:
+	}
+	if _, err := signIn.Start(ctx, "ada", ""); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-ada.exited:
+	default:
+		t.Fatal("starting ada's sign-in again left the first waiting")
+	}
+	for _, login := range []string{"ada", "grace"} {
+		signIn.end(login, signIn.runs[login])
+	}
+	if entries, err := os.ReadDir(filepath.Join(dir, "cloud-sign-in")); err != nil || len(entries) != 0 {
+		t.Errorf("the ended sign-ins left %v (%v), want nothing", entries, err)
 	}
 }
 
@@ -157,5 +200,72 @@ func TestTailLastQuotesTheCLIWithoutMarks(t *testing.T) {
 	}
 	if got, want := output.last(), "Login failed: run 'claude doctor'"; got != want {
 		t.Errorf("last() = %q, want %q", got, want)
+	}
+}
+
+// Sign-ins waiting for a code are capped, since each holds a CLI or a
+// container on the hub's host: one per user, and maxSignIns across the
+// hub. Starting a login's own again replaces it, so it passes either cap.
+func TestSignInsWaitingForACodeAreCapped(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "claude")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\necho 'visit: https://claude.ai/oauth/authorize?code=true'\nread code\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	signIn, err := newClaudeSignIn(bin, filepath.Join(dir, "cloud-sign-in"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	t.Cleanup(func() {
+		for login, run := range signIn.runs {
+			signIn.end(login, run)
+		}
+	})
+	if _, err := signIn.Start(ctx, "ada", "u1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := signIn.Start(ctx, "ada2", "u1"); !errors.Is(err, httpapi.ErrTooManySignIns) {
+		t.Fatalf("u1's second sign-in: %v, want ErrTooManySignIns", err)
+	}
+	if _, err := signIn.Start(ctx, "ada", "u1"); err != nil {
+		t.Fatalf("u1 starting ada's again: %v, want it replaced", err)
+	}
+	for login, by := range map[string]string{"grace": "u2", "alan": "u3", "default": ""} {
+		if _, err := signIn.Start(ctx, login, by); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := signIn.Start(ctx, "edsger", ""); !errors.Is(err, httpapi.ErrTooManySignIns) {
+		t.Fatalf("a sign-in past %d waiting: %v, want ErrTooManySignIns", maxSignIns, err)
+	}
+	if len(signIn.runs) != maxSignIns {
+		t.Errorf("%d sign-ins waiting, want %d", len(signIn.runs), maxSignIns)
+	}
+}
+
+// A removed login's waiting sign-in is ended, so its starter can start
+// another straight away under the one-per-user cap.
+func TestEndingASignInFreesItsStartersSlot(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "claude")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\necho 'visit: https://claude.ai/oauth/authorize?code=true'\nread code\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	signIn, err := newClaudeSignIn(bin, filepath.Join(dir, "cloud-sign-in"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	t.Cleanup(func() { signIn.End("work2") })
+	if _, err := signIn.Start(ctx, "work", "u1"); err != nil {
+		t.Fatal(err)
+	}
+	signIn.End("work")
+	if _, err := signIn.Start(ctx, "work2", "u1"); err != nil {
+		t.Fatalf("u1's sign-in after work's was ended: %v, want it started", err)
+	}
+	if _, waiting := signIn.runs["work"]; waiting {
+		t.Error("work's sign-in still waits after End")
 	}
 }

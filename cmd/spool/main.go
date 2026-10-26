@@ -578,6 +578,10 @@ func main() {
 	// after its close (ADR-0041).
 	go closePolls(ctx, router, log)
 
+	loginChecker := loop.NewLoginChecker(rdb, runtimes[defaultRuntime], log)
+	// a login other than the default serves contained loops (ADR-0060)
+	loginChecker.Contained = dockerRuntime
+
 	// Settings → Cloud can open the cloud listener too (ADR-0056);
 	// one --cloud-listen opened is only reported there.
 	cloudSwitch := &cloudListenerSwitch{settings: rdb.Settings(), log: log}
@@ -591,7 +595,7 @@ func main() {
 		Router:       router,
 		Sched:        scheduler,
 		Models:       models,
-		LoginChecker: loop.NewLoginChecker(rdb, runtimes[defaultRuntime], log),
+		LoginChecker: loginChecker,
 		PlanCap:      planCap,
 		Users:        hubUsers,
 		Surfaces: map[string]surface.Surface{

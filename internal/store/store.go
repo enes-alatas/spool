@@ -149,6 +149,22 @@ func SignedInAccount(ctx context.Context, logins ClaudeLoginStore, name string) 
 	return login.Account, login.SignedIn(), nil
 }
 
+// SignInsOf is the logins the user with userID owns that hold a sign-in,
+// one that reads or one that doesn't: what signing them out clears.
+func SignInsOf(ctx context.Context, logins ClaudeLoginStore, userID string) ([]*ClaudeLogin, error) {
+	all, err := logins.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var held []*ClaudeLogin
+	for _, login := range all {
+		if login.OwnerUserID == userID && (login.SignedIn() || login.Unreadable != "") {
+			held = append(held, login)
+		}
+	}
+	return held, nil
+}
+
 // CloudAccount is a Claude login's sign-in: the OAuth access token, the
 // refresh token the sign-in gave with it, and the account it signed in
 // to.

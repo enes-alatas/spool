@@ -15,17 +15,19 @@ import (
 	"github.com/enes-alatas/spool/internal/store"
 )
 
-// CloudSignIn runs the Claude Code CLI's own login for the account cloud
-// loops spend (ADR-0056): the hub never holds an OAuth client of its own.
+// CloudSignIn runs the Claude Code CLI's own login for a Claude login
+// (ADR-0056, ADR-0060): the hub never holds an OAuth client of its own.
 type CloudSignIn interface {
-	// Start begins a sign-in, ending any left unfinished, and returns the
-	// link the operator opens.
-	Start(ctx context.Context) (string, error)
-	// Finish hands the waiting sign-in the code the page showed and
+	// Start begins a sign-in for the login called login, started by the
+	// user by ("" for the operator token), ending the one it left
+	// unfinished, and returns the link the operator opens. It wraps
+	// ErrTooManySignIns past the hub's caps.
+	Start(ctx context.Context, login, by string) (string, error)
+	// Finish hands the login's waiting sign-in the code the page showed and
 	// returns what it signed in as. It is ErrNoCloudSignIn with none
 	// waiting, and wraps ErrCloudSignInRefused when the CLI didn't take
 	// the code.
-	Finish(ctx context.Context, code string) (store.CloudAccount, error)
+	Finish(ctx context.Context, login, code string) (store.CloudAccount, error)
 	// Available reports whether the CLI the sign-in runs is on this
 	// machine. It looks each time it is asked, so installing the CLI needs
 	// a reload of the page and no restart of the hub (ADR-0058).
@@ -34,6 +36,9 @@ type CloudSignIn interface {
 	// refresh token at the source (ADR-0058). A nil error says the logout
 	// ran: the CLI doesn't say whether the revoke was accepted.
 	SignOut(ctx context.Context, account store.CloudAccount) error
+	// End ends the login's sign-in waiting for its code, if any, so a
+	// removed login holds no slot under the caps.
+	End(login string)
 }
 
 // ErrNoCloudSignIn is a code handed in with no sign-in waiting for one.
@@ -41,6 +46,10 @@ var ErrNoCloudSignIn = errors.New("no sign-in is waiting for a code; start one")
 
 // ErrCloudSignInRefused is a code the CLI didn't take.
 var ErrCloudSignInRefused = errors.New("the code was not accepted")
+
+// ErrTooManySignIns is a sign-in past the hub's caps on those waiting
+// for a code: one per user, and a few across the hub.
+var ErrTooManySignIns = errors.New("too many sign-ins are waiting for a code")
 
 // CloudAccountChecker makes the account check: ADR-0044's login check on
 // the account's token, one haiku answer to a one-word prompt (ADR-0059).
@@ -115,13 +124,27 @@ func (server *Server) handleStartCloudSignIn(w http.ResponseWriter, r *http.Requ
 		server.jsonErrCode(w, 409, codeCloudSignIn, "this hub can't sign in to a Claude account")
 		return
 	}
-	link, err := server.CloudSignIn.Start(r.Context())
-	if err != nil {
-		server.Log.Warn("cloud sign-in didn't start", "err", err)
-		server.jsonErrCode(w, 502, codeCloudSignIn, "%v", err)
-		return
+	server.startSignIn(w, r, store.DefaultClaudeLogin)
+}
+
+// startSignIn begins the CLI's login for the login called name, as the
+// caller, and answers with its link: 429 past the hub's caps on sign-ins
+// waiting for a code.
+func (server *Server) startSignIn(w http.ResponseWriter, r *http.Request, name string) {
+	by := ""
+	if who := callerOf(r); who != nil && who.user != nil {
+		by = who.user.ID
 	}
-	writeJSON(w, 200, cloudSignInView{Link: link})
+	link, err := server.CloudSignIn.Start(r.Context(), name, by)
+	switch {
+	case errors.Is(err, ErrTooManySignIns):
+		server.jsonErrCode(w, 429, codeCloudSignIn, "%v", err)
+	case err != nil:
+		server.Log.Warn("Claude sign-in didn't start", "login", name, "err", err)
+		server.jsonErrCode(w, 502, codeCloudSignIn, "%v", err)
+	default:
+		writeJSON(w, 200, cloudSignInView{Link: link})
+	}
 }
 
 // handleFinishCloudSignIn hands the CLI the code, stores what it signed
@@ -140,7 +163,7 @@ func (server *Server) handleFinishCloudSignIn(w http.ResponseWriter, r *http.Req
 		server.jsonErrCode(w, 400, codeCloudSignIn, "that is not a sign-in code: one word, at most %d bytes", maxSignInCode)
 		return
 	}
-	account, err := server.CloudSignIn.Finish(r.Context(), req.Code)
+	account, err := server.CloudSignIn.Finish(r.Context(), store.DefaultClaudeLogin, req.Code)
 	switch {
 	case errors.Is(err, ErrNoCloudSignIn):
 		server.jsonErrCode(w, 409, codeCloudSignIn, "%v", err)
@@ -166,46 +189,67 @@ func (server *Server) handleCheckCloudAccount(w http.ResponseWriter, r *http.Req
 }
 
 // changeCloudAccount stores the default Claude login's sign-in, the zero
-// account to sign it out, and checks it (ADR-0060). The redactor learns
-// the new tokens before anything else can quote them, and the cloud loops
-// are told: with no default login they are held. The login check then runs
-// on the hub's Claude token, or is cleared with none, as saving a
-// setup-token did. A closed tab doesn't cut the change short: a logout or
-// a store write left halfway would leave the login neither kept nor
-// forgotten.
+// account to sign it out, and tells the hub (loginChanged). A closed tab
+// doesn't cut the change short: a logout or a store write left halfway
+// would leave the login neither kept nor forgotten.
 func (server *Server) changeCloudAccount(w http.ResponseWriter, r *http.Request, account store.CloudAccount) {
 	ctx := context.WithoutCancel(r.Context())
-	err := server.storeLoginAccount(ctx, store.DefaultClaudeLogin, account)
-	// even a failed write may have changed the account, and dropping a
-	// check that ran over an unchanged one costs only that check
-	server.cloudAccountCheck.changed()
-	if err != nil {
+	if err := server.storeLoginAccount(ctx, store.DefaultClaudeLogin, account); err != nil {
+		// even a failed write may have changed the account, and dropping a
+		// check that ran over an unchanged one costs only that check
+		server.cloudAccountCheck.changed()
 		server.jsonErr(w, 500, "%v", err)
 		return
 	}
-	server.secretsChanged(ctx)
-	if server.CloudGate != nil {
-		server.CloudGate.SetupChanged()
-	}
-	server.CheckCloudAccount(ctx)
-	token, err := loop.HubClaudeToken(ctx, server.Store)
-	if err == nil {
-		err = server.loginTokenChanged(ctx, token)
-	}
-	if err != nil {
+	if err := server.loginChanged(ctx, store.DefaultClaudeLogin); err != nil {
 		server.jsonErr(w, 500, "%v", err)
 		return
 	}
 	server.writeCloudSettings(w, r)
 }
 
+// loginChanged tells the hub that the login called name was signed in,
+// signed out or removed: the redactor learns its tokens before anything
+// else can quote them. A change of the default login reaches further,
+// since it is the hub's Claude token and the cloud loops' account: they
+// are held with none, the account is checked again, and the login check
+// runs on the hub's Claude token, or is cleared with none. Another login
+// is checked when it is signed in.
+func (server *Server) loginChanged(ctx context.Context, name string) error {
+	if name != store.DefaultClaudeLogin {
+		server.secretsChanged(ctx)
+		_, signedIn, err := store.SignedInAccount(ctx, server.Store.ClaudeLogins(), name)
+		if err != nil || !signedIn || server.LoginChecker == nil {
+			return err
+		}
+		return server.LoginChecker.StartLogin(ctx, name)
+	}
+	server.cloudAccountCheck.changed()
+	server.secretsChanged(ctx)
+	if server.CloudGate != nil {
+		server.CloudGate.SetupChanged()
+	}
+	server.CheckCloudAccount(ctx)
+	token, err := loop.HubClaudeToken(ctx, server.Store)
+	if err != nil {
+		return err
+	}
+	return server.loginTokenChanged(ctx, token)
+}
+
+// errLoginRemoved is a sign-in that finished after its login was removed.
+var errLoginRemoved = errors.New("this Claude login was removed while it signed in")
+
 // storeLoginAccount stores the sign-in of the login called name, the zero
-// account to sign it out, adding the login if the hub doesn't hold it yet.
-// Sign out asks the source to revoke the login before forgetting its
-// tokens, and keeps the login: the loops on it keep a valid name
-// (ADR-0060). A sign-in of the default login supersedes the setup-token,
-// which goes with it (ADR-0058). It all holds the login's lock, so a
-// refresh never rotates the tokens in between.
+// account to sign it out. The default login is added if the hub doesn't
+// hold it yet. Any other login the hub no longer holds was removed while
+// it signed in: the new sign-in is revoked at the source and refused with
+// errLoginRemoved, so no login comes back without its owner. Sign out
+// asks the source to revoke the login before forgetting its tokens, and
+// keeps the login: the loops on it keep a valid name (ADR-0060). A
+// sign-in of the default login supersedes the setup-token, which goes
+// with it (ADR-0058). It all holds the login's lock, so a refresh never
+// rotates the tokens in between.
 func (server *Server) storeLoginAccount(ctx context.Context, name string, account store.CloudAccount) error {
 	server.lockLogin(name)
 	defer server.unlockLogin(name)
@@ -214,10 +258,15 @@ func (server *Server) storeLoginAccount(ctx context.Context, name string, accoun
 		server.signOutAtTheSource(ctx, name)
 	}
 	err := logins.SetAccount(ctx, name, account)
-	if errors.Is(err, store.ErrNotFound) && account.Token != "" {
-		err = logins.Create(ctx, &store.ClaudeLogin{Name: name, Account: account, CreatedAt: time.Now().UnixMilli()})
-	} else if errors.Is(err, store.ErrNotFound) {
+	switch {
+	case !errors.Is(err, store.ErrNotFound):
+	case account.Token == "":
 		err = nil
+	case name == store.DefaultClaudeLogin:
+		err = logins.Create(ctx, &store.ClaudeLogin{Name: name, Account: account, CreatedAt: time.Now().UnixMilli()})
+	default:
+		server.revokeAtTheSource(ctx, name, account)
+		return errLoginRemoved
 	}
 	if err == nil && account.Token != "" && name == store.DefaultClaudeLogin {
 		err = server.Store.Settings().Set(ctx, store.SettingClaudeOAuthToken, "")
@@ -239,7 +288,16 @@ func (server *Server) signOutAtTheSource(ctx context.Context, name string) {
 		server.Log.Warn("Claude login unread, so not revoked at the source; revoke it at claude.ai", "login", name, "err", err)
 		return
 	}
-	if !signedIn || account.RefreshToken == "" {
+	if signedIn {
+		server.revokeAtTheSource(ctx, name, account)
+	}
+}
+
+// revokeAtTheSource runs the CLI's logout on account, the sign-in of the
+// login called name, logging what came of it. An account with no refresh
+// token has nothing to revoke.
+func (server *Server) revokeAtTheSource(ctx context.Context, name string, account store.CloudAccount) {
+	if server.CloudSignIn == nil || account.RefreshToken == "" {
 		return
 	}
 	if err := server.CloudSignIn.SignOut(ctx, account); err != nil {

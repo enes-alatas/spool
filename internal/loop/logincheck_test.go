@@ -176,3 +176,63 @@ func TestHubClaudeTokenPrefersTheDefaultLogin(t *testing.T) {
 		t.Fatalf("with the default login signed out: %q, want the setup-token", token)
 	}
 }
+
+// A login other than the default is checked on the contained runtime and
+// keeps its outcome on itself, leaving the hub's check alone; with no
+// contained runtime, or no sign-in, its check ends inconclusive (ADR-0060).
+func TestALoginsCheckIsKeptOnTheLogin(t *testing.T) {
+	ctx := context.Background()
+	st := openStore(t)
+	setAccount(t, st, "ada", store.CloudAccount{Token: "sk-ant-oat01-fixture-ada"})
+	contained := checkingRuntime{answers: make(chan claude.LoginCheck, 1)}
+	checker := NewLoginChecker(st, checkingRuntime{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	checkOf := func(name string) *store.LoginCheckRecord {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			login, err := st.ClaudeLogins().Get(ctx, name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if login.Check != nil && login.Check.Status != store.LoginCheckPending || time.Now().After(deadline) {
+				return login.Check
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	if err := checker.StartLogin(ctx, "ada"); err != nil {
+		t.Fatal(err)
+	}
+	if got := checkOf("ada"); got == nil || got.Status != store.LoginCheckInconclusive {
+		t.Fatalf("with no contained runtime: %+v, want inconclusive", got)
+	}
+	checker.Contained = contained
+	contained.answers <- claude.LoginCheck{Refusal: "invalid"}
+	if err := checker.StartLogin(ctx, "ada"); err != nil {
+		t.Fatal(err)
+	}
+	if got := checkOf("ada"); got == nil || got.Status != store.LoginCheckRefused || got.Refusal != "invalid" {
+		t.Fatalf("a refused check: %+v, want refused", got)
+	}
+	contained.answers <- claude.LoginCheck{OK: true}
+	if err := checker.StartLogin(ctx, "ada"); err != nil {
+		t.Fatal(err)
+	}
+	if got := checkOf("ada"); got == nil || got.Status != store.LoginCheckOK {
+		t.Fatalf("a passed check: %+v, want ok", got)
+	}
+	if hub, err := checker.Last(ctx); err != nil || hub.Status != "" {
+		t.Errorf("ada's checks touched the hub's: %+v (%v)", hub, err)
+	}
+	setAccount(t, st, "ada", store.CloudAccount{})
+	if err := checker.StartLogin(ctx, "ada"); err != nil {
+		t.Fatal(err)
+	}
+	if got := checkOf("ada"); got == nil || got.Status != store.LoginCheckInconclusive {
+		t.Fatalf("signed out: %+v, want inconclusive", got)
+	}
+	if err := checker.StartLogin(ctx, "nobody"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("checking a login the hub doesn't hold: %v, want ErrNotFound", err)
+	}
+}

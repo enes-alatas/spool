@@ -24,14 +24,21 @@ type LoginChecker struct {
 	store   store.Store
 	runtime runtime.Runtime // the default runtime's, which new loops get
 	log     *slog.Logger
+	// Contained checks a Claude login other than the default: one serves
+	// only contained loops (ADR-0060), so it is checked as one of them
+	// would run. Nil on a hub with no docker runtime, where such a check
+	// ends inconclusive.
+	Contained runtime.Runtime
 
 	mu      sync.Mutex
 	started int64 // the newest check's At; an older one's outcome is not kept
+	// startedFor is started for each login but the default
+	startedFor map[string]int64
 }
 
 // NewLoginChecker returns the checker for a hub whose default runtime is rt.
 func NewLoginChecker(st store.Store, rt runtime.Runtime, log *slog.Logger) *LoginChecker {
-	return &LoginChecker{store: st, runtime: rt, log: log}
+	return &LoginChecker{store: st, runtime: rt, log: log, startedFor: map[string]int64{}}
 }
 
 // Start records a pending check and runs it in the background. A check
@@ -153,4 +160,73 @@ func HubClaudeToken(ctx context.Context, st store.Store) (string, error) {
 		return "", nil
 	}
 	return token, err
+}
+
+// StartLogin checks the Claude login called name, as Start checks the
+// hub's token, and keeps the outcome on the login (ADR-0060). The default
+// login's check is Start's, kept where onboarding reads it.
+func (checker *LoginChecker) StartLogin(ctx context.Context, name string) error {
+	if name == store.DefaultClaudeLogin {
+		return checker.Start(ctx)
+	}
+	checker.mu.Lock()
+	at := max(time.Now().UnixMilli(), checker.startedFor[name]+1)
+	checker.startedFor[name] = at
+	checker.mu.Unlock()
+	if err := checker.keepFor(ctx, name, at, store.LoginCheckRecord{Status: store.LoginCheckPending, At: at}); err != nil {
+		return err
+	}
+	go checker.runLogin(name, at)
+	return nil
+}
+
+func (checker *LoginChecker) runLogin(name string, at int64) {
+	ctx, cancel := context.WithTimeout(context.Background(), loginCheckTimeout)
+	defer cancel()
+	record := store.LoginCheckRecord{Status: store.LoginCheckInconclusive, At: at}
+	account, signedIn, err := store.SignedInAccount(ctx, checker.store.ClaudeLogins(), name)
+	switch {
+	case err != nil || !signedIn:
+		checker.log.Warn("login check: the Claude login holds no sign-in to check", "login", name, "err", err)
+	case checker.Contained == nil:
+		checker.log.Warn("login check: no docker runtime to check the Claude login with", "login", name)
+	default:
+		result, err := checker.Contained.CheckLogin(ctx, account.Token)
+		switch {
+		case err != nil:
+			checker.log.Warn("login check proved nothing either way", "login", name, "err", err)
+		case result.OK:
+			checker.log.Info("login check: the API accepted the login", "login", name)
+			record.Status = store.LoginCheckOK
+		default:
+			checker.log.Warn("login check: the API refused the login", "login", name, "refusal", result.Refusal)
+			record.Status, record.Refusal = store.LoginCheckRefused, result.Refusal
+		}
+	}
+	if err := checker.keepFor(context.Background(), name, at, record); err != nil && !errors.Is(err, store.ErrNotFound) {
+		checker.log.Error("store login check", "login", name, "err", err)
+	}
+}
+
+// keepFor keeps a check of the login called name unless a newer one has
+// started since.
+func (checker *LoginChecker) keepFor(ctx context.Context, name string, at int64, record store.LoginCheckRecord) error {
+	checker.mu.Lock()
+	defer checker.mu.Unlock()
+	if at != checker.startedFor[name] {
+		return nil
+	}
+	return checker.store.ClaudeLogins().SetCheck(ctx, name, &record)
+}
+
+// SettledCheck is record as it reads now: a check still pending past
+// loginCheckTimeout reads inconclusive, as LastLoginCheck reads the
+// default's.
+func SettledCheck(record *store.LoginCheckRecord) *store.LoginCheckRecord {
+	if record == nil || record.Status != store.LoginCheckPending || time.Since(time.UnixMilli(record.At)) <= loginCheckTimeout {
+		return record
+	}
+	settled := *record
+	settled.Status = store.LoginCheckInconclusive
+	return &settled
 }
