@@ -1,6 +1,6 @@
-# v0.6.0 release notes — DRAFT (Milo, 2026-10-23)
+# v0.6.0 release notes — VERIFIED DRAFT (Milo, 2026-10-26)
 
-Base: v0.5.1 (2026-10-09). 287 commits on main as of 9a4a484. Every bullet
+Base: v0.5.1 (2026-10-09). 325 commits in v0.5.1..v0.6.0 (tag on 54a1da4, 2026-10-26). Every bullet
 names the commit subject(s) it rests on; a claim with no subject is not made.
 NOT shipped, do not claim: ADR-0060 several Claude logins (docs only, #926
 slices wait for after the tag); hardened cloud mode (#975, documented only).
@@ -130,6 +130,42 @@ A loop can run in a Claude Code cloud session beside contained loops.
 - Settings → Egress as a dialog with a filtered list; copy chips for literals
   an operator types; round loop controls; the mission edited in a dialog;
   web addresses are links; a Fleet row shows its loop's mission. [feat(web) ×6]
+
+
+## Fixes between the first draft (9a4a484) and the tag, all in v0.6.0
+Cloud loops, found by the first real cloud loop on 2026-10-23/24:
+- A cloud start uploads the loop home whatever the CLI's flags say; takes its
+  session's id in the VM's cse_ form; waits on through a CLI that exits
+  cleanly; a failed start says why in the hub's log. [fix(runtime) ×4]
+- A cloud session that can't reach the hub turns Settings → Cloud step 2 red,
+  and the step shows a private-route pass and the session stage.
+  [fix(httpapi); feat(web)]
+- Pause and kill answer once a cloud loop is cut off; a stop that could not
+  revoke a cloud token says so; the loop page's controls show the hub's answer
+  when one fails. [fix(loop); fix(httpapi); fix(web)]
+- Cloud-loop copy says what the operations guide says. [fix(web)]
+Users and conversations:
+- A private conversation names the Spool user it is with, and a member's
+  private chat is named by their Spool user on the loop page. [fix(httpapi);
+  fix(web)]
+Hub and runtimes:
+- A turn the claude process ended says why; an exit is read once its stderr
+  has ended; every stderr excerpt starts on a whole line, so redaction holds.
+  [fix(loop); fix(claude) ×2]
+- No caller waits on a loop's actor once it has stopped; a tick asked for
+  after the start is not jittered; a mirror subscribes before its surface's
+  Start returns. [fix(loop); fix(sched); fix(surface)]
+- Docker workstations: a burst of wakes asks docker each thing once, boot
+  recovery reaps its loops side by side, a reap execs only where a claude was
+  running, and the exec that starts claude writes its MCP config; the perf
+  smoke now runs on docker too. [fix(docker) ×3; fix(loop); test(itest)]
+- An account check doesn't record over a later sign-in or Remove.
+  [fix(httpapi)]
+- Upgrade keeps the previous images by name so the rollback can retag them;
+  backup keeps the volume stream out of docker's container log.
+  [fix(upgrade); fix(backup)]
+README: the demo video shows the room as it ships, and a "Where loops run"
+section shows a cloud loop running. [docs(readme) ×3]
 
 ## Decided 2026-10-26 (Enes, ref:6988; Elliot, #860 comment 6417835749)
 - Number and headline: v0.6.0, "Cloud loops, users, and one Claude login".
