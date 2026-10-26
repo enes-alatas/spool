@@ -1215,3 +1215,10 @@ verified draft from notes/release-v0.6.0.md, reworded for readers: headline, sec
 "Upgrading from v0.5.1" section (Elliot's facts from #860), a "Known issue" line for #1149 (fix on
 main, ships in v0.6.1). Kept Full Changelog link and the Images section verbatim. Previous body
 saved at notes/.release-body-before.md; new body at notes/.release-body.md. Enes told in owner_dm.
+
+## 2026-10-27 00:00 UTC — v0.6.1 published (Elliot ref:7081)
+Verified: tag v0.6.1 on 9d30d14, not draft/pre, 4 binaries + SHA256SUMS, release run 40422031947
+green. Body is GitHub's generated one (#1141, #1150 + Images). v0.6.0's Known-issue line now says
+"Fixed in v0.6.1" (same ask as ref:7077). Waiting: Elliot's #897 fresh-runner proof v0.6.0→v0.6.1;
+only after it passes goes the upgrade line (ref:7073 wording) to Enes for the v0.6.1 body, #897 closes,
+and I suggest the fleet upgrade to v0.6.1.
