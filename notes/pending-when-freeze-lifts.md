@@ -1186,3 +1186,6 @@ Elliot (ref:7031): release run failed at the first GHCR push ("denied"), package
 
 ## 2026-10-26 17:45 UTC
 Release run re-ran green; v0.6.0 release exists (created 15:43 by the workflow, generated notes, 5 assets, images pushed). Closed #860 and #747 completed with notes. DM Enes (ref:7040): release live; replacing the generated body with the curated notes is his call (command given); #926 go for Terra asked. #897 is Elliot on his own. Cloud runtime milestone: only #1097 (Elliot docs) left open on it; close the milestone needs Enes word (outward-facing).
+
+## 2026-10-26 18:25 UTC
+Terra (ref:7044): docker perf trio done (#1133/#1134/#1135, #1141 merged), free. Assigned #754 health watchdog as a plan-first comment (signals: stuck, silent, failed delivery; one slice per issue, hub/page pairs, thresholds proposed); thresholds go to Enes before slice 1; #926 takes over on Enes go (ref:7045). #975 not picked: open design question on the token bind, security posture, needs Enes.
