@@ -2,12 +2,15 @@
 # idle workstations stays inside QUALITY.md's envelope; the perf smoke in
 # `itest` runs bare loops, so it cannot say. This stands up the envelope,
 # a hundred workstations, which takes minutes and a daemon with its address
-# pools widened, so it runs on dispatch rather than on every PR. Its log is
-# the measurement QUALITY.md records. Two baselines fail on docker today
-# (#1133, #1134); it runs weekly once they pass (#1135).
+# pools widened, so it never runs on a PR. Its log is the measurement
+# QUALITY.md records. It runs on dispatch, and weekly now that docker meets
+# the baselines (#1133, #1134): a regression shows within a week, and
+# ci-health posts a failed run on main to the pinned issue (#1135).
 name: perf
 
 on:
+  schedule:
+    - cron: '23 4 * * 1'
   workflow_dispatch:
 
 permissions:

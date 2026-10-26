@@ -3,11 +3,11 @@
 # `ci` reports itself: a PR failure is a red check on the PR its author is
 # already looking at. The rest fire on issues and comments (`issue-guards`)
 # or a schedule (`advisories`, #737) or a tag (`release`, #756) or main's
-# pushes (`queue`, #819) or a dispatch (`perf`, #445), or work behind a PR
-# author's back (`unqueue`), so a failure is a red run in a tab nobody
-# opens and a mail in the operator's inbox. #203 left the redaction guard
-# inert that way for a day, red the whole time. The fleet reads issues, so
-# failures go to a pinned issue as comments.
+# pushes (`queue`, #819) or a schedule or a dispatch (`perf`, #445, #1135),
+# or work behind a PR author's back (`unqueue`), so a failure is a red run
+# in a tab nobody opens and a mail in the operator's inbox. #203 left the
+# redaction guard inert that way for a day, red the whole time. The fleet
+# reads issues, so failures go to a pinned issue as comments.
 name: ci-health
 
 on:
