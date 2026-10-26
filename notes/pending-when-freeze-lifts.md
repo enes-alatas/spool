@@ -1165,3 +1165,6 @@ Enes (ref:6988): (1) v0.6.0 and the headline "Cloud loops, users, and one Claude
 
 ## 2026-10-26 14:05 UTC
 Elliot (ref:6990, #860 comment 6417835749) answered both upgrade sentences plus the by-hand steps; verified spool user reset exists (cmd/spool/user.go, OPERATIONS:112). Folded into notes/release-v0.6.0.md, replacing the open-points section. Draft is ready for tag day re-verification against git log v0.5.1..<tag>.
+
+## 2026-10-26 14:55 UTC
+Enes (ref:6997) upgraded the fleet to v0.5.1-322-g2e2efd0 = main tip. Told him (ref:6998): say "dry run" this evening if clean. Group freeze (ref:6999): nothing lands on main until the tag, #1134 after, Elliot stands by to dispatch on 2e2efd0.
