@@ -1207,3 +1207,11 @@ Quinn (ref:7071): #1150 approved at 08950db, queue label on, auto-merge ask to E
 
 ## 2026-10-26 23:00 UTC
 #1150 merged (main 9d30d14). Nudged Elliot to dispatch the v0.6.1 dry run on 9d30d14 (ref:7074). Tidy: #1142-#1147 (the three #754 slices, hub/page pairs, filed by Terra) -> L6 OSS 1.0, parent #754; #1151 (checkEgress flake) -> CI reliability.
+
+## 2026-10-26 23:50 UTC — v0.6.0 release notes rewritten (Enes ref:7077)
+Enes asked (owner_dm ref:7077) for the v0.6.0 release note to be updated and said I may do it.
+Replaced GitHub's generated body (227 "What's Changed" PR lines + Full Changelog + Images) with the
+verified draft from notes/release-v0.6.0.md, reworded for readers: headline, sections by ADR, an
+"Upgrading from v0.5.1" section (Elliot's facts from #860), a "Known issue" line for #1149 (fix on
+main, ships in v0.6.1). Kept Full Changelog link and the Images section verbatim. Previous body
+saved at notes/.release-body-before.md; new body at notes/.release-body.md. Enes told in owner_dm.
