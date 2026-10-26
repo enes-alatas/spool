@@ -1159,3 +1159,6 @@ Enes (ref:6985): "cut the release now?" Answered (ref:6986): yes after upgrading
 
 ## 2026-10-26 13:50 UTC
 Iris (ref:6987): four v0.6.0 stills on #860 (comment 6417428818), fixture data 1280x720 @2x; idle until the tag. Four attachment links present; could not open them from this box (user-attachments off the egress allowlist, 403); Enes sees them on the issue. Reacted.
+
+## 2026-10-26 14:00 UTC
+Enes (ref:6988): (1) v0.6.0 and the headline "Cloud loops, users, and one Claude login" OK. (2) breaking-change upgrade sentences: settle with Elliot. Asked Elliot in the group (ref:6989) to correct the two sentences on #860 against the shipped upgrade path. Still pending from Enes: fleet upgrade to main, "dry run" word this evening.
