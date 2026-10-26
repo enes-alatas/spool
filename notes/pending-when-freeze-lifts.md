@@ -1198,3 +1198,6 @@ Enes (ref:7049): #754 thresholds ok as proposed; #926 go; release body stays gen
 
 ## 2026-10-26 20:35 UTC
 Elliot (ref:7058): #897 probe found #1149: v0.6.0 spool upgrade refuses every release (parseImages rejects # lines from spool images); fails safe; fix PR #1150 with Quinn. #1149 -> L6 OSS 1.0. DM Enes (ref:7059): recommend v0.6.1 from the fix commit after a dry run, plus a known-issue line on the v0.6.0 release body; tag only on his word. #897 proof reruns on a release with the fix.
+
+## 2026-10-26 22:00 UTC
+Enes (ref:7068): v0.6.1 immediately; asked about videos in release notes. #1150 still open (no review yet); main has only 3ddf154 since the tag. Group (ref:7069): Quinn reviews #1150 first; Elliot dry-runs the merge commit and brings the v0.6.1 tag ask; gave the one-line note. DM Enes (ref:7070): pipeline + videos embed in release bodies via user-attachments links (both demos already uploaded to GitHub, so within its limit).
