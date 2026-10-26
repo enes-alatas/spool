@@ -32,18 +32,27 @@ const (
 	signInFinishWait = 30 * time.Second
 )
 
-// claudeSignIn runs claude auth login for the account cloud loops spend
-// (ADR-0056), in a config directory of its own under dir, so it never
-// reads or touches the operator's own login. The claude is the host's,
-// found on PATH or at --claude-bin, or else the workstation image's, on a
-// hub that has the image (#952). One runs at a time.
+// maxSignIns bounds the sign-ins waiting for a code across the hub, and
+// maxSignInsPerUser those one user started: each is a CLI or a container
+// on the hub's host for up to signInLifetime.
+const (
+	maxSignIns        = 4
+	maxSignInsPerUser = 1
+)
+
+// claudeSignIn runs claude auth login for a Claude login (ADR-0058,
+// ADR-0060), in a config directory of its own under dir, so it never reads
+// or touches the operator's own login. The claude is the host's, found on
+// PATH or at --claude-bin, or else the workstation image's, on a hub that
+// has the image (#952). One runs at a time for each login, so two people
+// adding their own don't end each other's.
 type claudeSignIn struct {
 	bin   string
 	dir   string
 	image claudeImage
 
-	mu  sync.Mutex
-	run *signInRun
+	mu   sync.Mutex
+	runs map[string]*signInRun
 }
 
 // claudeImage runs the hub's claude auth in the workstation image
@@ -61,7 +70,7 @@ func newClaudeSignIn(bin, dir string, image claudeImage) (*claudeSignIn, error) 
 	if err := os.RemoveAll(dir); err != nil {
 		return nil, err
 	}
-	return &claudeSignIn{bin: bin, dir: dir, image: image}, nil
+	return &claudeSignIn{bin: bin, dir: dir, image: image, runs: map[string]*signInRun{}}, nil
 }
 
 // imageReadyWait bounds Available's ask of the docker daemon.
@@ -102,6 +111,8 @@ func (signIn *claudeSignIn) command(ctx context.Context, configDir string, lifet
 type signInRun struct {
 	cmd   *exec.Cmd
 	stdin io.WriteCloser
+	// by is the user who started it, "" for the operator token.
+	by string
 	// configDir is the login's CLAUDE_CONFIG_DIR, removed when it ends.
 	configDir string
 	// remove removes what the run leaves once it has exited: the image's
@@ -114,17 +125,24 @@ type signInRun struct {
 	timer  *time.Timer
 }
 
-// Start ends any sign-in left unfinished, begins a new one, and returns
-// the link it printed.
-func (signIn *claudeSignIn) Start(ctx context.Context) (string, error) {
+// Start ends the login's sign-in left unfinished, if any, begins a new
+// one for the user by, and returns the link it printed. It is
+// ErrTooManySignIns past maxSignIns waiting, or past maxSignInsPerUser
+// that by started; the operator token, by "", has only the first.
+func (signIn *claudeSignIn) Start(ctx context.Context, login, by string) (string, error) {
 	signIn.mu.Lock()
 	defer signIn.mu.Unlock()
-	signIn.endLocked()
-	// with none waiting, anything in dir is a sign-in no one ended
-	if err := os.RemoveAll(signIn.dir); err != nil {
+	signIn.endLocked(login)
+	if err := signIn.roomLocked(by); err != nil {
 		return "", err
 	}
-	if err := os.Mkdir(signIn.dir, 0o700); err != nil {
+	if len(signIn.runs) == 0 {
+		// with none waiting, anything in dir is a sign-in no one ended
+		if err := os.RemoveAll(signIn.dir); err != nil {
+			return "", err
+		}
+	}
+	if err := os.MkdirAll(signIn.dir, 0o700); err != nil {
 		return "", err
 	}
 	configDir, err := os.MkdirTemp(signIn.dir, "login-")
@@ -138,7 +156,7 @@ func (signIn *claudeSignIn) Start(ctx context.Context) (string, error) {
 		_ = os.RemoveAll(configDir)
 		return "", err
 	}
-	run := &signInRun{configDir: configDir, remove: remove, exited: make(chan struct{}), output: &tail{}}
+	run := &signInRun{by: by, configDir: configDir, remove: remove, exited: make(chan struct{}), output: &tail{}}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		_ = os.RemoveAll(configDir)
@@ -180,34 +198,63 @@ func (signIn *claudeSignIn) Start(ctx context.Context) (string, error) {
 		_, _ = io.Copy(run.output, output)
 		_ = read.Close()
 	}()
-	signIn.run = run
+	signIn.runs[login] = run
 	select {
 	case found := <-link:
-		run.timer = time.AfterFunc(signInLifetime, func() { signIn.end(run) })
+		run.timer = time.AfterFunc(signInLifetime, func() { signIn.end(login, run) })
 		return found, nil
 	case err := <-failed:
-		signIn.endLocked()
+		signIn.endLocked(login)
 		return "", err
 	case <-time.After(signInLinkWait):
-		signIn.endLocked()
+		signIn.endLocked(login)
 		return "", errors.New("claude auth login printed no link in time")
 	case <-ctx.Done():
-		signIn.endLocked()
+		signIn.endLocked(login)
 		return "", ctx.Err()
 	}
 }
 
-// Finish hands the waiting sign-in the code the page showed, and returns
-// what the CLI signed in as. The sign-in ends either way: one whose code
-// was refused starts again.
-func (signIn *claudeSignIn) Finish(ctx context.Context, code string) (store.CloudAccount, error) {
+// End ends the login's sign-in waiting for its code, if any: the login
+// was removed, and the run would only hold a slot under the caps.
+func (signIn *claudeSignIn) End(login string) {
 	signIn.mu.Lock()
 	defer signIn.mu.Unlock()
-	run := signIn.run
+	signIn.endLocked(login)
+}
+
+// roomLocked is ErrTooManySignIns when another sign-in, one by started,
+// would pass a cap. The caller holds mu.
+func (signIn *claudeSignIn) roomLocked(by string) error {
+	if len(signIn.runs) >= maxSignIns {
+		return fmt.Errorf("%w: %d are waiting for a code", httpapi.ErrTooManySignIns, len(signIn.runs))
+	}
+	if by == "" {
+		return nil
+	}
+	started := 0
+	for _, run := range signIn.runs {
+		if run.by == by {
+			started++
+		}
+	}
+	if started >= maxSignInsPerUser {
+		return fmt.Errorf("%w: finish or wait out the one you started", httpapi.ErrTooManySignIns)
+	}
+	return nil
+}
+
+// Finish hands the login's waiting sign-in the code the page showed, and
+// returns what the CLI signed in as. The sign-in ends either way: one whose
+// code was refused starts again.
+func (signIn *claudeSignIn) Finish(ctx context.Context, login, code string) (store.CloudAccount, error) {
+	signIn.mu.Lock()
+	defer signIn.mu.Unlock()
+	run := signIn.runs[login]
 	if run == nil {
 		return store.CloudAccount{}, httpapi.ErrNoCloudSignIn
 	}
-	defer signIn.endLocked()
+	defer signIn.endLocked(login)
 	// a CLI that has ended on its own takes no code: the operator starts again
 	select {
 	case <-run.exited:
@@ -357,23 +404,23 @@ func (signIn *claudeSignIn) SignOut(ctx context.Context, account store.CloudAcco
 	return nil
 }
 
-// end ends run if it is still the sign-in waiting.
-func (signIn *claudeSignIn) end(run *signInRun) {
+// end ends run if it is still the login's sign-in waiting.
+func (signIn *claudeSignIn) end(login string, run *signInRun) {
 	signIn.mu.Lock()
 	defer signIn.mu.Unlock()
-	if signIn.run == run {
-		signIn.endLocked()
+	if signIn.runs[login] == run {
+		signIn.endLocked(login)
 	}
 }
 
-// endLocked stops the waiting sign-in, if any, and removes its config
-// directory, tokens and all. The caller holds mu.
-func (signIn *claudeSignIn) endLocked() {
-	run := signIn.run
+// endLocked stops the login's waiting sign-in, if any, and removes its
+// config directory, tokens and all. The caller holds mu.
+func (signIn *claudeSignIn) endLocked(login string) {
+	run := signIn.runs[login]
 	if run == nil {
 		return
 	}
-	signIn.run = nil
+	delete(signIn.runs, login)
 	if run.timer != nil {
 		run.timer.Stop()
 	}

@@ -46,6 +46,12 @@ var memberRoutes = []string{
 
 	"POST /api/loops/{name}/message", "POST /api/loops/{name}/wake",
 	"POST /api/group", "POST /api/channels/{name}/messages", "POST " + uploadPath,
+
+	// Any user may add a Claude login of their own (ADR-0060); a handler that
+	// changes one asks whether the caller is its owner or an admin.
+	"GET /api/claude-logins", "POST /api/claude-logins", "DELETE /api/claude-logins/{name}",
+	"POST /api/claude-logins/{name}/sign-in", "POST /api/claude-logins/{name}/sign-in/code",
+	"POST /api/claude-logins/{name}/check", "POST /api/claude-logins/{name}/sign-out",
 }
 
 // adminRoutes are the routes that create, change, remove or operate

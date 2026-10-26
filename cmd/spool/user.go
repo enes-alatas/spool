@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/enes-alatas/spool/internal/store"
@@ -93,11 +94,23 @@ func userCommand(args []string, stdout, stderr io.Writer) int {
 		printOneTimePassword(stdout, names[0], password)
 		fmt.Fprintln(stdout, "Their sessions have ended.")
 	case "remove":
-		if err := hubUsers.Remove(ctx, names[0]); err != nil {
+		user, err := db.Users().GetByName(ctx, names[0])
+		if err == nil {
+			err = hubUsers.Remove(ctx, names[0])
+		}
+		if err != nil {
 			fmt.Fprintf(stderr, "spool user remove: %v\n", notFoundAsName(err, names[0]))
 			return 1
 		}
 		fmt.Fprintf(stdout, "Removed %q; their sessions have ended.\n", names[0])
+		signedOut, err := signOutLoginsOf(ctx, db.ClaudeLogins(), user.ID)
+		if err != nil {
+			fmt.Fprintf(stderr, "spool user remove: their Claude logins are still signed in: %v\n", err)
+			return 1
+		}
+		if len(signedOut) > 0 {
+			fmt.Fprintf(stdout, "Signed out their Claude logins %s. Only the hub can revoke a login at the source, so revoke these at claude.ai.\n", strings.Join(signedOut, ", "))
+		}
 	case "list":
 		all, err := db.Users().List(ctx)
 		if err != nil {
@@ -133,4 +146,23 @@ func notFoundAsName(err error, name string) error {
 		return fmt.Errorf("no user named %q", name)
 	}
 	return err
+}
+
+// signOutLoginsOf signs out the Claude logins the removed user with userID
+// owned, keeping each, and names them. The hub signs a removed user's out
+// itself, revoking them at the source; with no hub here to run the CLI's
+// logout, the tokens are only forgotten (Enes, 2026-10-27, #1148).
+func signOutLoginsOf(ctx context.Context, logins store.ClaudeLoginStore, userID string) ([]string, error) {
+	held, err := store.SignInsOf(ctx, logins, userID)
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, login := range held {
+		if err := logins.SetAccount(ctx, login.Name, store.CloudAccount{}); err != nil && !errors.Is(err, store.ErrNotFound) {
+			return names, err
+		}
+		names = append(names, login.Name)
+	}
+	return names, nil
 }

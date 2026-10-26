@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -161,9 +162,10 @@ func (server *Server) handleSetUserRole(w http.ResponseWriter, r *http.Request) 
 
 // handleRemoveUser deletes a user, and with them their links: each person
 // they linked is unlinked, and Settings → Users and access hears what became
-// of them. Their open streams end (#722). Removing an owner takes the acting
-// owner's password again, as current_password in the body, which may be
-// empty for anyone else (#923).
+// of them. Their open streams end (#722), and the Claude logins they own
+// are signed out, revoked at the source (#1148). Removing an owner takes
+// the acting owner's password again, as current_password in the body,
+// which may be empty for anyone else (#923).
 func (server *Server) handleRemoveUser(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		CurrentPassword string `json:"current_password"`
@@ -192,6 +194,7 @@ func (server *Server) handleRemoveUser(w http.ResponseWriter, r *http.Request) {
 	}
 	if userID != "" {
 		server.userChanged(userID)
+		server.signOutLoginsOf(context.WithoutCancel(r.Context()), userID)
 	}
 	for _, link := range links {
 		server.Bus.Publish(bus.Item{Kind: bus.KindLink, Payload: &route.LinkPayload{
