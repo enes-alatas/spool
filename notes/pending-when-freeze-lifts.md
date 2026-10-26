@@ -1228,3 +1228,8 @@ Verified: #897 CLOSED COMPLETED; comment 6430196466 shows probe run 40422578955 
 rollback back to v0.6.0, then `sudo spool upgrade v0.6.1 --require-attestation` from v0.6.0 →
 /api/version v0.6.1. Sent Enes (owner_dm ref:7087) the agreed line for the v0.6.1 body (his edit,
 or mine on his word) and suggested the fleet upgrade to v0.6.1. v0.6.1 work is otherwise done.
+
+## 2026-10-27 00:10 UTC — videos in the v0.6.0 notes (Enes ref:7086)
+Enes asked where the video was. Embedded the README's two user-attachments links: the demo video
+under the headline, the cloud-loop video under "Cloud loops". Told him (ref:7088); I can't view
+them from here, asked him to confirm they play inline. notes/.release-body.md is the live body.
