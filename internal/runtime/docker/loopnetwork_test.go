@@ -147,7 +147,7 @@ func TestANetworkThatIsNotInternalIsRefused(t *testing.T) {
 			bin, calls := filepath.Join(dir, "docker"), filepath.Join(dir, "calls")
 			script := "#!/bin/sh\ncat >/dev/null\necho \"$*\" >>" + calls + "\n" +
 				"case \"$*\" in\n" +
-				"'network inspect --format {{.Internal}} " + network + "') echo false ;;\n" +
+				"'network inspect --format " + internalNetworkFormat + " " + network + "') echo false ;;\n" +
 				"'network inspect '*) echo true ;;\n" +
 				"*'{{.Id}}'*) echo sha256:1 ;;\n" +
 				"*'.State'*) echo 'Error: No such object' >&2; exit 1 ;;\n" +

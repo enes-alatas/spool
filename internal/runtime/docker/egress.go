@@ -4,10 +4,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 )
 
@@ -78,39 +78,62 @@ func (rt *Runtime) egressProxyURL() string {
 // ensureEgress makes the internal network and the proxy container exist and
 // run. Idempotent — it is called on every wake, so a proxy an
 // operator removed comes back with the next wake.
+//
+// A burst of wakes checks it once: the wakes that ask while a check runs
+// take its answer.
 func (rt *Runtime) ensureEgress(ctx context.Context) error {
 	if !rt.egressEnabled() {
 		return nil
 	}
+	_, err := rt.wallChecks.do(ctx, "", func(ctx context.Context) (struct{}, error) { return struct{}{}, rt.checkEgress(ctx) })
+	return err
+}
+
+// checkEgress is ensureEgress's work, done by one caller at a time.
+func (rt *Runtime) checkEgress(ctx context.Context) error {
 	rt.egressMu.Lock()
 	defer rt.egressMu.Unlock()
-	if err := rt.ensureEgressNetwork(ctx); err != nil {
+	// Its three reads go side by side, and what they found is acted on in
+	// order: the network first, since the proxy is provisioned onto it.
+	network := make(chan networkRead, 1)
+	go func() { network <- rt.readNetwork(ctx, rt.egressNetwork()) }()
+	proxy := make(chan stateRead, 1)
+	go func() {
+		state, err := rt.inspectState(ctx, rt.egressContainer())
+		proxy <- stateRead{state, err}
+	}()
+	imageID, imageErr := rt.imageID(ctx, rt.egressImage)
+	if _, err := rt.ensureInternalNetwork(ctx, rt.egressNetwork(), <-network, "spool.egress=network"); err != nil {
 		return err
 	}
-	if err := rt.ensureEgressProxy(ctx); err != nil {
+	if err := rt.ensureEgressProxy(ctx, imageID, imageErr, <-proxy); err != nil {
 		return err
 	}
 	return rt.catchUpEgressFile(ctx)
 }
 
-// ensureLoopEgress puts the wall up and the loop's own network beside it,
-// with the proxy on that network.
-func (rt *Runtime) ensureLoopEgress(ctx context.Context, loopID string) error {
+// ensureLoopNetwork puts the loop's own network up beside the wall, with
+// the proxy on it. The wall is up first.
+func (rt *Runtime) ensureLoopNetwork(ctx context.Context, loopID string) error {
 	if !rt.egressEnabled() {
 		return nil
 	}
-	if err := rt.ensureEgress(ctx); err != nil {
-		return err
-	}
-	rt.egressMu.Lock()
-	defer rt.egressMu.Unlock()
+	// A loop's network is its own, so loops put theirs up side by side; only
+	// a check of the wall, which may replace the proxy, waits for them.
+	rt.egressMu.RLock()
+	defer rt.egressMu.RUnlock()
 	network := rt.loopNetwork(loopID)
-	err := rt.ensureInternalNetwork(ctx, network,
+	members, err := rt.ensureInternalNetwork(ctx, network, rt.readNetwork(ctx, network),
 		"spool.egress=loop-network",
 		loopNetworkWallLabel+"="+rt.egressNetwork(),
 		"spool.loop.id="+loopID)
 	if err != nil {
 		return withPoolRemedy(err)
+	}
+	// the read that found the network says whether the proxy is on it, so
+	// a wake that finds it there asks docker nothing more (#1133)
+	if slices.Contains(members, rt.egressContainer()) {
+		return nil
 	}
 	return rt.connectProxy(ctx, network)
 }
@@ -148,8 +171,8 @@ func (rt *Runtime) removeLoopNetwork(ctx context.Context, loopID string) error {
 	if !rt.egressEnabled() {
 		return nil
 	}
-	rt.egressMu.Lock()
-	defer rt.egressMu.Unlock()
+	rt.egressMu.RLock()
+	defer rt.egressMu.RUnlock()
 	network := rt.loopNetwork(loopID)
 	if _, err := rt.command(ctx, startTimeout, "network", "disconnect", "--force", network, rt.egressContainer()); err != nil && !networkGone(err) && !notFound(err) && !notConnected(err) {
 		return err
@@ -160,39 +183,61 @@ func (rt *Runtime) removeLoopNetwork(ctx context.Context, loopID string) error {
 	return nil
 }
 
-func (rt *Runtime) ensureEgressNetwork(ctx context.Context) error {
-	return rt.ensureInternalNetwork(ctx, rt.egressNetwork(), "spool.egress=network")
+// internalNetworkFormat reads whether a network is internal, then the names
+// of the containers on it.
+const internalNetworkFormat = "{{.Internal}}{{range .Containers}} {{.Name}}{{end}}"
+
+// networkRead is one inspect of a network: out is what internalNetworkFormat
+// read, and err why the inspect failed, taken for the network not being
+// there.
+type networkRead struct {
+	out []byte
+	err error
 }
 
-// ensureInternalNetwork makes network exist, --internal and with labels.
-// A network already there under the name is refused unless it is
-// internal: one made without --internal, by hand or by another tool,
-// would give everything on it a route out that skips the proxy.
-func (rt *Runtime) ensureInternalNetwork(ctx context.Context, network string, labels ...string) error {
-	out, err := rt.command(ctx, queryTimeout, "network", "inspect", "--format", "{{.Internal}}", network)
-	if err == nil {
-		if strings.TrimSpace(string(out)) != "true" {
-			return fmt.Errorf("docker network %s is not internal, so it would give a workstation a way out past the egress proxy: "+
+func (rt *Runtime) readNetwork(ctx context.Context, network string) networkRead {
+	out, err := rt.command(ctx, queryTimeout, "network", "inspect", "--format", internalNetworkFormat, network)
+	return networkRead{out, err}
+}
+
+// ensureInternalNetwork makes network exist, --internal and with labels,
+// given what reading it found, and returns the containers already on it:
+// none, when it was just made. A network already there under the name is
+// refused unless it is internal: one made without --internal, by hand or
+// by another tool, would give everything on it a route out that skips the
+// proxy.
+func (rt *Runtime) ensureInternalNetwork(ctx context.Context, network string, read networkRead, labels ...string) (members []string, err error) {
+	if read.err == nil {
+		fields := strings.Fields(string(read.out))
+		if len(fields) == 0 || fields[0] != "true" {
+			return nil, fmt.Errorf("docker network %s is not internal, so it would give a workstation a way out past the egress proxy: "+
 				"remove it (docker network rm %s) and the hub recreates it", network, network)
 		}
-		return nil
+		return fields[1:], nil
 	}
 	argv := []string{"network", "create", "--internal"}
 	for _, label := range labels {
 		argv = append(argv, "--label", label)
 	}
 	if _, err := rt.command(ctx, startTimeout, append(argv, network)...); err != nil && !alreadyExists(err) {
-		return err
+		return nil, err
 	}
-	return nil
+	return nil, nil
 }
 
-func (rt *Runtime) ensureEgressProxy(ctx context.Context) error {
-	imageID, err := rt.imageID(ctx, rt.egressImage)
-	if err != nil && !errors.Is(err, errNotFound) {
-		return err
+// stateRead is one inspect of a container's state.
+type stateRead struct {
+	state *containerState
+	err   error
+}
+
+// ensureEgressProxy makes the proxy run on the hub's configuration, given
+// what the egress image's ID and the proxy's state were read as.
+func (rt *Runtime) ensureEgressProxy(ctx context.Context, imageID string, imageErr error, proxy stateRead) error {
+	if imageErr != nil && !errors.Is(imageErr, errNotFound) {
+		return imageErr
 	}
-	state, err := rt.inspectState(ctx, rt.egressContainer())
+	state, err := proxy.state, proxy.err
 	if err == nil && imageID != "" {
 		// A proxy running an older configuration — a rebuilt image (#715),
 		// or a hub that has moved to another port — is the wrong wall, and
@@ -200,11 +245,7 @@ func (rt *Runtime) ensureEgressProxy(ctx context.Context) error {
 		// one state, the operator's extra hosts, is the hub's to copy back
 		// in, and a workstation reconnects to the name. With its image gone
 		// there is nothing to replace it from, so it is kept.
-		current, readErr := rt.egressSpec(ctx)
-		if readErr != nil {
-			return readErr
-		}
-		if current != rt.egressSpecHash(imageID) {
+		if state.EgressSpec != rt.egressSpecHash(imageID) {
 			slog.Default().Info("egress proxy configuration changed", "image", rt.egressImage, "id", shortID(imageID))
 			if _, rmErr := rt.command(ctx, startTimeout, "rm", "--force", rt.egressContainer()); rmErr != nil && !notFound(rmErr) {
 				return rmErr
@@ -313,22 +354,6 @@ func (rt *Runtime) egressSpecHash(imageID string) string {
 	spec := append([]string{rt.egressImage, imageID, egressPort, egressFileFormat}, rt.egressEntries()...)
 	sum := sha256.Sum256([]byte(strings.Join(spec, "\x00")))
 	return hex.EncodeToString(sum[:6])
-}
-
-func (rt *Runtime) egressSpec(ctx context.Context) (string, error) {
-	out, err := rt.command(ctx, queryTimeout,
-		"inspect", "--type", "container", "--format", "{{json .Config.Labels}}", rt.egressContainer())
-	if err != nil {
-		if notFound(err) {
-			return "", nil
-		}
-		return "", err
-	}
-	var labels map[string]string
-	if err := json.Unmarshal([]byte(strings.TrimSpace(string(out))), &labels); err != nil {
-		return "", err
-	}
-	return labels[egressSpecLabel], nil
 }
 
 func (rt *Runtime) egressEnabled() bool { return rt.egressImage != "" }
