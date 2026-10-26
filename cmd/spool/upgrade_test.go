@@ -462,6 +462,14 @@ func TestUpgradeReadsTheCandidateStrictly(t *testing.T) {
 	if got, err := parseImages(testImagesOK); err != nil || !slices.Equal(got, []string{testWSRef, testEgRef}) {
 		t.Errorf("good images = %v, %v", got, err)
 	}
+	// v0.6.0's own output, header on stdout: refused by v0.6.0 itself (#1149)
+	v060 := "# The images v0.6.0 was built with (ADR-0052). Each is pulled by digest,\n# which is its check, and tagged with the name the hub runs.\n" + testImagesOK
+	if got, err := parseImages(v060); err != nil || !slices.Equal(got, []string{testWSRef, testEgRef}) {
+		t.Errorf("v0.6.0's images = %v, %v", got, err)
+	}
+	if _, err := parseImages(strings.Replace(testImagesOK, "docker pull "+testWSRef, "docker pull "+testWSRef+" # x", 1)); err == nil {
+		t.Errorf("a comment after a command: parsed; want a refusal")
+	}
 
 	_, up, host, _ := newUpgradeEnv(t)
 	host.answer = func(cmd hostCmd) (string, error, bool) {

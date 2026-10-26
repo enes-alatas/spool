@@ -41,6 +41,26 @@ func TestImagesPrintsAPullAndATagForEachImage(t *testing.T) {
 	}
 }
 
+// What a release prints on stdout is what `spool upgrade` reads from a
+// candidate: the parser here takes it, and so does v0.6.0's, which allows
+// no comment line (#1149). The header goes to stderr.
+func TestImagesStdoutIsWhatAnUpgradeReads(t *testing.T) {
+	withReleaseImages(t, testWSRef, testEgRef)
+	var stdout, stderr bytes.Buffer
+	if code := imagesCommand(nil, &stdout, &stderr); code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, stderr.String())
+	}
+	if got, err := parseImages(stdout.String()); err != nil || len(got) != 2 {
+		t.Fatalf("parseImages(stdout) = %v, %v", got, err)
+	}
+	if strings.Contains(stdout.String(), "#") {
+		t.Errorf("stdout holds a comment, which v0.6.0's upgrade refuses:\n%s", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "# The images") {
+		t.Errorf("stderr lacks the header: %q", stderr.String())
+	}
+}
+
 // A build from source names no images, and says where its images come from
 // instead of printing commands that would fetch nothing.
 func TestImagesFromASourceBuildPointsAtMakeImage(t *testing.T) {
