@@ -1183,3 +1183,6 @@ Elliot (ref:7022): v0.6.0 tagged on 54a1da4 at Enes ask, release run 40360723275
 
 ## 2026-10-26 16:58 UTC
 Elliot (ref:7031): release run failed at the first GHCR push ("denied"), package permission for Enes to grant; tag stays; Elliot re-runs after; #897 waits. Read release.yml publish job: keeps an existing release and appends Images; else creates with generated notes. Told Enes the order (ref:7033): grant, create the release from my notes file, then re-run. Pending from Enes: permission + release creation + "release created" word + #926 go.
+
+## 2026-10-26 17:45 UTC
+Release run re-ran green; v0.6.0 release exists (created 15:43 by the workflow, generated notes, 5 assets, images pushed). Closed #860 and #747 completed with notes. DM Enes (ref:7040): release live; replacing the generated body with the curated notes is his call (command given); #926 go for Terra asked. #897 is Elliot on his own. Cloud runtime milestone: only #1097 (Elliot docs) left open on it; close the milestone needs Enes word (outward-facing).
