@@ -40,7 +40,10 @@ func imagesCommand(args []string, stdout, stderr io.Writer) int {
 			"Build the images in the checkout with `make image`.")
 		return 1
 	}
-	fmt.Fprintf(stdout, "# The images %s was built with (ADR-0052). Each is pulled by digest,\n"+
+	// The header goes to stderr, so stdout is the commands alone: a
+	// `spool upgrade` run by v0.6.0 reads a candidate's stdout with no
+	// comment line allowed (#1149), and `spool images | sh` still shows it.
+	fmt.Fprintf(stderr, "# The images %s was built with (ADR-0052). Each is pulled by digest,\n"+
 		"# which is its check, and tagged with the name the hub runs.\n", version.Resolve(buildVersion, buildCommit, buildTime).Version)
 	for _, image := range []struct{ release, local string }{
 		{releaseWorkstationImage, localWorkstationImage},

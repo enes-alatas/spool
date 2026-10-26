@@ -878,12 +878,15 @@ func parseMigrations(out string) ([]string, error) {
 
 // parseImages reads `spool images` strictly: two pulls by digest,
 // workstation then egress, each tagged with the hub's own name, and no
-// other line.
+// other line but a comment, as release-smoke.sh reads it. v0.6.0 printed
+// its header on stdout, and a parser without the comment case refused
+// every release (#1149).
 func parseImages(out string) ([]string, error) {
 	var pulls []string
 	for line := range strings.SplitSeq(strings.TrimSuffix(out, "\n"), "\n") {
 		fields := strings.Fields(line)
 		switch {
+		case strings.HasPrefix(line, "#"):
 		case len(fields) == 3 && fields[0] == "docker" && fields[1] == "pull" && imageRef.MatchString(fields[2]):
 			pulls = append(pulls, fields[2])
 		case len(fields) == 4 && fields[0] == "docker" && fields[1] == "tag" && imageRef.MatchString(fields[2]) &&
