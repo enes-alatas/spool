@@ -1180,3 +1180,6 @@ Dry run 40357562882 completed green on 54a1da4 (guard, images-check amd64/arm64,
 
 ## 2026-10-26 16:50 UTC
 Elliot (ref:7022): v0.6.0 tagged on 54a1da4 at Enes ask, release run 40360723275 in progress. Release notes re-verified: 325 commits v0.5.1..v0.6.0; added the post-draft fixes section (42b186d). Unfroze main (ref:7023). Sent Enes the notes file (ref:7025) asking for "release created" (then close #860, #747) and the #926 go for Terra. #897 starts after the release run is green (Elliot).
+
+## 2026-10-26 16:58 UTC
+Elliot (ref:7031): release run failed at the first GHCR push ("denied"), package permission for Enes to grant; tag stays; Elliot re-runs after; #897 waits. Read release.yml publish job: keeps an existing release and appends Images; else creates with generated notes. Told Enes the order (ref:7033): grant, create the release from my notes file, then re-run. Pending from Enes: permission + release creation + "release created" word + #926 go.
