@@ -84,6 +84,17 @@ under one runtime-wide lock before it starts, and the boot reaps each awake
 workstation in turn. Each is a bug against the baseline, not a new budget for
 docker. The `perf` workflow runs weekly once both pass (#1135).
 
+The wake miss is fixed (#1133). A burst shares the reads its wakes make alike,
+and a wake makes its reads side by side. A workstation running on its loop
+network has that network left unread, and claude's exec writes the MCP config
+itself. A warm wake used to make nine docker CLI calls, one after another,
+before claude's exec. It now makes one of its own, plus the burst's shared
+reads. Bursts of 15 measured p50 172–302 ms and p95 308–428 ms over three
+runs (2026-10-26,
+[40256584704](https://github.com/enes-alatas/spool/actions/runs/40256584704),
+[40256589744](https://github.com/enes-alatas/spool/actions/runs/40256589744),
+[40256594588](https://github.com/enes-alatas/spool/actions/runs/40256594588)).
+
 Workstation liveness polling honours the idle-CPU baseline by construction: the
 docker runtime answers per-loop `Health` reads from a short-TTL cache filled by
 one batched `docker ps` sweep, so the fleet costs one subprocess per cache
