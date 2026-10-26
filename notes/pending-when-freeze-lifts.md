@@ -1189,3 +1189,6 @@ Release run re-ran green; v0.6.0 release exists (created 15:43 by the workflow, 
 
 ## 2026-10-26 18:25 UTC
 Terra (ref:7044): docker perf trio done (#1133/#1134/#1135, #1141 merged), free. Assigned #754 health watchdog as a plan-first comment (signals: stuck, silent, failed delivery; one slice per issue, hub/page pairs, thresholds proposed); thresholds go to Enes before slice 1; #926 takes over on Enes go (ref:7045). #975 not picked: open design question on the token bind, security posture, needs Enes.
+
+## 2026-10-26 18:35 UTC
+Terra (ref:7046) posted the #754 plan: turn_stuck (120 min, warning), wake_missed (10 min grace, failing, scheduler-side, ADR-0053 amendment), send_failed (2 min grace, warning, one wake per problem, outage guard 3 loops/5 min). Put to Enes with my recommendation to accept all three (ref:7047), plus the still-open #926 go and the release body swap. On his ok: tell Terra to file the three slices (hub/page pairs) and start turn_stuck.
