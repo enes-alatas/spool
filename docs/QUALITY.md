@@ -80,7 +80,7 @@ runner, docker 29.4.2,
 | The daemon's containerd shim, per workstation | 11.7 MB RSS (1.2 GB for 101 containers) | — |
 
 The two misses are serial docker CLI calls: every wake checks the egress wall
-under one runtime-wide lock before it starts, and the boot reaps each awake
+under one runtime-wide lock before it starts, and the boot reaps every
 workstation in turn. Each is a bug against the baseline, not a new budget for
 docker. The `perf` workflow runs weekly once both pass (#1135).
 
@@ -94,6 +94,18 @@ runs (2026-10-26,
 [40256584704](https://github.com/enes-alatas/spool/actions/runs/40256584704),
 [40256589744](https://github.com/enes-alatas/spool/actions/runs/40256589744),
 [40256594588](https://github.com/enes-alatas/spool/actions/runs/40256594588)).
+
+The boot miss is fixed (#1134). The boot used to make two docker CLI calls
+for each of the hundred workstations, one loop after another: an inspect,
+then a `pkill` exec into each running one. It now reaps up to 16 loops side
+by side. A docker reap execs `pkill` only where the store recorded a claude
+running, with no inspect before it, so the envelope's boot makes 15 calls,
+one per awake loop. Running the reaps side by side alone measured 3.1–3.9 s.
+The CLI calls cost CPU on a 2-vCPU runner, so the fix had to make fewer of
+them. Boot recovery measured 1.44–2.08 s over three runs (2026-10-26,
+[40337307322](https://github.com/enes-alatas/spool/actions/runs/40337307322),
+[40337313480](https://github.com/enes-alatas/spool/actions/runs/40337313480),
+[40337318451](https://github.com/enes-alatas/spool/actions/runs/40337318451)).
 
 Workstation liveness polling honours the idle-CPU baseline by construction: the
 docker runtime answers per-loop `Health` reads from a short-TTL cache filled by
