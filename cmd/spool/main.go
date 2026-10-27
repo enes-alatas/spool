@@ -501,8 +501,8 @@ func main() {
 		OnTurnDone: func(loopRecord *store.Loop, trailer time.Duration, has bool) {
 			scheduler.ScheduleAfterTurn(loopRecord, trailer, has)
 		},
-		ClaudeToken: func(ctx context.Context) (string, error) {
-			return loop.HubClaudeToken(ctx, rdb)
+		ClaudeToken: func(ctx context.Context, login string) (string, error) {
+			return loop.ClaudeTokenFor(ctx, rdb, login)
 		},
 	}
 	models := loop.NewModels(rdb, pubsub, runtimes[defaultRuntime], defaultRuntime, ver, log)

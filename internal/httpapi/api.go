@@ -735,6 +735,7 @@ type createLoopReq struct {
 	Pacing          string  `json:"pacing"`         // ""(=fixed)|fixed|self
 	Subagents       string  `json:"subagents"`      // ""(=allowed)|allowed|off
 	DailyCapUSD     float64 `json:"daily_cap_usd"`  // 0 = no cap
+	ClaudeLogin     string  `json:"claude_login"`   // docker only; ""(=the default) or a Claude login's name (ADR-0060)
 	Runtime         string  `json:"runtime"`        // ""(=server default)|bare|docker|cloud; set at creation; a bare loop moves to docker only through POST .../rehome (ADR-0018)
 	Image           string  `json:"image"`          // docker only; "" = the server's default image
 	MemMB           int     `json:"mem_mb"`         // docker only; 0 = 4096 (ADR-0017)
@@ -891,6 +892,11 @@ func (server *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 		server.jsonErr(w, 400, "%s", refusal)
 		return
 	}
+	claudeLogin := loopLoginName(req.ClaudeLogin)
+	if refusal := loopLoginRefusal(claudeLogin, loopRuntime); refusal != nil {
+		server.refuse(w, refusal)
+		return
+	}
 	if strings.TrimSpace(req.CloudRepo) != "" {
 		server.jsonErr(w, 400, "cloud_repo is gone: attach a GH_TOKEN connection to the loop and name the repo in its mission")
 		return
@@ -906,6 +912,7 @@ func (server *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 		Pacing:          defaultStr(req.Pacing, store.PacingFixed),
 		Subagents:       defaultStr(req.Subagents, store.SubagentsAllowed),
 		DailyCapUSD:     req.DailyCapUSD,
+		ClaudeLogin:     claudeLogin,
 		TickIntervalSec: defaultInt(req.TickIntervalSec, 1800),
 		MinWakeSec:      defaultInt(req.MinWakeSec, 300),
 		MaxWakeSec:      defaultInt(req.MaxWakeSec, 14400),
@@ -977,7 +984,14 @@ func (server *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 	}
 	loopRecord.OutsideFleetChannel = !*inFleet
 
-	if err := server.Store.Loops().Create(r.Context(), loopRecord); err != nil {
+	refusal, err := server.putOnLogin(r.Context(), claudeLogin, func() error {
+		return server.Store.Loops().Create(r.Context(), loopRecord)
+	})
+	if refusal != nil {
+		server.refuse(w, refusal)
+		return
+	}
+	if err != nil {
 		if errors.Is(err, store.ErrDuplicate) {
 			server.jsonErr(w, 409, "a loop named %q already exists", loopRecord.Name)
 		} else {
@@ -1090,6 +1104,7 @@ type patchLoopReq struct {
 	Pacing          *string  `json:"pacing"`
 	Subagents       *string  `json:"subagents"`
 	DailyCapUSD     *float64 `json:"daily_cap_usd"`
+	ClaudeLogin     *string  `json:"claude_login"`
 	TickIntervalSec *int     `json:"tick_interval_sec"`
 	MinWakeSec      *int     `json:"min_wake_sec"`
 	MaxWakeSec      *int     `json:"max_wake_sec"`
@@ -1181,6 +1196,15 @@ func (server *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 		}
 		edit.DailyCapUSD = req.DailyCapUSD
 	}
+	putOn := ""
+	if req.ClaudeLogin != nil {
+		putOn = loopLoginName(*req.ClaudeLogin)
+		if refusal := loopLoginRefusal(putOn, loopRecord.Runtime); refusal != nil {
+			server.refuse(w, refusal)
+			return
+		}
+		edit.ClaudeLogin = &putOn
+	}
 	if req.InFleetChannel != nil {
 		outside := !*req.InFleetChannel
 		edit.OutsideFleetChannel = &outside
@@ -1236,7 +1260,15 @@ func (server *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 		// them as they are: the groups are the same groups.
 		edit.ClearTelegramRooms = token == ""
 	}
-	updated, err := server.Store.Loops().Edit(r.Context(), loopRecord.ID, edit)
+	var updated *store.Loop
+	refusal, err := server.putOnLogin(r.Context(), putOn, func() (err error) {
+		updated, err = server.Store.Loops().Edit(r.Context(), loopRecord.ID, edit)
+		return err
+	})
+	if refusal != nil {
+		server.refuse(w, refusal)
+		return
+	}
 	if err != nil {
 		server.storeErr(w, err, "loop")
 		return
@@ -1248,6 +1280,15 @@ func (server *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 	// name reaches the actor and the surface as it actually stands.
 	server.Manager.UpdateLoop(updated)
 	server.loopChanged(r.Context(), updated.ID)
+	// The proxy picks the token at each request, and a move also closes the
+	// process at its next quiet boundary, as an env-var change does, so the
+	// session goes on in a process that has only known the new login
+	// (ADR-0060).
+	if updated.ClaudeLogin != loopRecord.ClaudeLogin {
+		if actor, ok := server.Manager.Get(updated.ID); ok {
+			actor.RefreshEnv()
+		}
+	}
 	// After UpdateLoop, so the session the rotation starts is built from the
 	// mission this request saved rather than the one it replaced. `loopRecord`
 	// is the row as it was read at the top of the handler, which is what makes

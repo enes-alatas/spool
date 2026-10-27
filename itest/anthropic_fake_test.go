@@ -21,12 +21,15 @@ type apiMessage struct {
 
 // anthropicFake is a stand-in for Anthropic's Messages API, the Claude
 // proxy's upstream. It admits the one token it is made with, which tests
-// keep synthetic. Lock Mu to read Messages.
+// keep synthetic. Lock Mu to read Messages and Authorizations.
 type anthropicFake struct {
 	*httptest.Server
 	Mu       sync.Mutex
 	Messages []apiMessage
-	token    string
+	// Authorizations is every request's Authorization header, admitted or
+	// not, so a test can tell which token a refused request carried.
+	Authorizations []string
+	token          string
 }
 
 // newAnthropicFake starts a stand-in that admits token alone, closed when
@@ -41,6 +44,9 @@ func newAnthropicFake(t *testing.T, token string) *anthropicFake {
 
 func (fake *anthropicFake) serve(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	fake.Mu.Lock()
+	fake.Authorizations = append(fake.Authorizations, r.Header.Get("Authorization"))
+	fake.Mu.Unlock()
 	if r.Header.Get("Authorization") != "Bearer "+fake.token {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = io.WriteString(w, `{"type":"error","error":{"type":"authentication_error","message":"invalid token"}}`)

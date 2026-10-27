@@ -177,6 +177,32 @@ func TestHubClaudeTokenPrefersTheDefaultLogin(t *testing.T) {
 	}
 }
 
+// A loop on another login runs on that login's token alone: signed out or
+// gone, it has none, and never the default's or the setup-token.
+func TestClaudeTokenForReadsTheLoopsOwnLogin(t *testing.T) {
+	ctx := context.Background()
+	st := openStore(t)
+	if err := st.Settings().Set(ctx, store.SettingClaudeOAuthToken, "sk-ant-oat01-fixture-setup"); err != nil {
+		t.Fatal(err)
+	}
+	setAccount(t, st, store.DefaultClaudeLogin, store.CloudAccount{Token: "sk-ant-oat01-fixture-login", OrgUUID: "org"})
+	setAccount(t, st, "ada", store.CloudAccount{Token: "sk-ant-oat01-fixture-ada", OrgUUID: "org"})
+	for _, tc := range []struct{ login, want string }{
+		{"", "sk-ant-oat01-fixture-login"},
+		{store.DefaultClaudeLogin, "sk-ant-oat01-fixture-login"},
+		{"ada", "sk-ant-oat01-fixture-ada"},
+		{"gone", ""},
+	} {
+		if token, err := ClaudeTokenFor(ctx, st, tc.login); err != nil || token != tc.want {
+			t.Errorf("login %q: %q (%v), want %q", tc.login, token, err, tc.want)
+		}
+	}
+	setAccount(t, st, "ada", store.CloudAccount{})
+	if token, _ := ClaudeTokenFor(ctx, st, "ada"); token != "" {
+		t.Errorf("ada signed out: %q, want none, not the default's", token)
+	}
+}
+
 // A login other than the default is checked on the contained runtime and
 // keeps its outcome on itself, leaving the hub's check alone; with no
 // contained runtime, or no sign-in, its check ends inconclusive (ADR-0060).

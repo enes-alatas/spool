@@ -4,6 +4,7 @@ package itest
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -239,5 +240,105 @@ func TestAUsersLoginsAreTheirsToSeeAndGoWithThem(t *testing.T) {
 	}
 	if got := hub.claudeLogins()["default"]; !got.SignedIn {
 		t.Errorf("the default after mia's removal: %+v, want it still signed in", got)
+	}
+}
+
+// adaLoginToken is the synthetic access token of the login named ada.
+const adaLoginToken = "sk-ant-oat01-fixture-login-ada"
+
+// lastAuthorization is the Authorization header the stand-in last saw.
+func lastAuthorization(fake *anthropicFake) string {
+	fake.Mu.Lock()
+	defer fake.Mu.Unlock()
+	if len(fake.Authorizations) == 0 {
+		return ""
+	}
+	return fake.Authorizations[len(fake.Authorizations)-1]
+}
+
+// A contained loop runs on the Claude login it names, and one that names
+// none on the default (ADR-0060). The Claude proxy picks the token
+// by the calling loop's login at each request, so a move reaches the next
+// one. A bare loop names no login, nor does a loop name one the hub
+// doesn't hold, and a login a loop runs on can't be removed. A login
+// signed out holds its loops: the proxy never falls back to the default.
+func TestEachContainedLoopRunsOnItsOwnClaudeLogin(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fake := newAnthropicFake(t, cloudFixtureToken)
+	dataDir := t.TempDir()
+	hub := startServerArgs(t, dataDir, "--runtime", "bare")
+	for _, name := range []string{"aster", "bloom", "cosmos"} {
+		hub.createLoop(name, nil)
+	}
+	hub.stop()
+	// two contained loops, which this hub can't run but whose model
+	// requests the proxy serves all the same, and one bare
+	db := openStoreAt(t, dataDir)
+	putDefaultLogin(t, db, store.CloudAccount{Token: cloudFixtureToken, ExpiresAt: time.Now().Add(8 * time.Hour).UnixMilli()})
+	if err := db.ClaudeLogins().Create(ctx, &store.ClaudeLogin{Name: "ada", Account: store.CloudAccount{Token: adaLoginToken, ExpiresAt: time.Now().Add(8 * time.Hour).UnixMilli()}, CreatedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	raw, err := sql.Open("sqlite", "file:"+filepath.Join(dataDir, "spool.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, statement := range []string{
+		`UPDATE loops SET runtime = 'docker' WHERE name IN ('aster', 'bloom')`,
+		`UPDATE loops SET claude_login = 'ada' WHERE name = 'bloom'`,
+	} {
+		if _, err := raw.Exec(statement); err != nil {
+			t.Fatalf("%s: %v", statement, err)
+		}
+	}
+	raw.Close()
+	hub = startServerArgs(t, dataDir, "--runtime", "bare", "--cloud-api-base", fake.URL)
+	aster, bloom := hubMCPToken(t, hub, "aster"), hubMCPToken(t, hub, "bloom")
+
+	if got := postModel(t, hub, "POST", "/claude/v1/messages", aster); got != http.StatusOK || lastAuthorization(fake) != "Bearer "+cloudFixtureToken {
+		t.Errorf("aster's model request: %d on %.20q…, want 200 on the default's token", got, lastAuthorization(fake))
+	}
+	// the stand-in admits the default's token alone, so ada's is refused there
+	if got := postModel(t, hub, "POST", "/claude/v1/messages", bloom); got != http.StatusUnauthorized || lastAuthorization(fake) != "Bearer "+adaLoginToken {
+		t.Errorf("bloom's model request: %d on %.20q…, want it sent on ada's token", got, lastAuthorization(fake))
+	}
+	if got := hub.loop("bloom").ClaudeLogin; got != "ada" {
+		t.Errorf("bloom's view names %q, want ada", got)
+	}
+
+	var moved loopView
+	hub.mustJSON("PATCH", "/api/loops/aster", map[string]any{"claude_login": "ada"}, &moved)
+	if moved.ClaudeLogin != "ada" {
+		t.Errorf("aster after its move names %q, want ada", moved.ClaudeLogin)
+	}
+	if postModel(t, hub, "POST", "/claude/v1/messages", aster); lastAuthorization(fake) != "Bearer "+adaLoginToken {
+		t.Errorf("aster's request after the move went on %.20q…, want ada's token", lastAuthorization(fake))
+	}
+	hub.mustJSON("PATCH", "/api/loops/aster", map[string]any{"claude_login": "default"}, &moved)
+	if moved.ClaudeLogin != "" {
+		t.Errorf("aster moved back names %q, want none, the default", moved.ClaudeLogin)
+	}
+
+	hub.wantRefusal("PATCH", "/api/loops/aster", map[string]any{"claude_login": "nobody"}, 400, "claude_login")
+	hub.wantRefusal("PATCH", "/api/loops/cosmos", map[string]any{"claude_login": "ada"}, 409, "claude_login")
+	hub.wantRefusal("POST", "/api/loops", map[string]any{"name": "dahlia", "mission": "m", "claude_login": "ada"}, 409, "claude_login")
+	resp, body := hub.do("DELETE", "/api/claude-logins/ada", nil)
+	if resp.StatusCode != http.StatusConflict || !strings.Contains(string(body), "bloom") || strings.Contains(string(body), "aster") {
+		t.Errorf("removing ada with bloom on it = %d %s, want 409 naming bloom alone", resp.StatusCode, body)
+	}
+
+	hub.mustJSON("POST", "/api/claude-logins/ada/sign-out", nil, nil)
+	fake.Mu.Lock()
+	seen := len(fake.Authorizations)
+	fake.Mu.Unlock()
+	if got := postModel(t, hub, "POST", "/claude/v1/messages", bloom); got != http.StatusUnauthorized {
+		t.Errorf("bloom's request with ada signed out answered %d, want 401", got)
+	}
+	fake.Mu.Lock()
+	reached := len(fake.Authorizations) - seen
+	fake.Mu.Unlock()
+	if reached != 0 {
+		t.Error("bloom's request with ada signed out reached Anthropic, on the default's token or another")
 	}
 }

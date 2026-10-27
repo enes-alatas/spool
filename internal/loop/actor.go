@@ -146,12 +146,13 @@ type Deps struct {
 	SendsThisTurn func(loopID string) []string
 	// OnTurnDone reschedules the loop's next tick after any completed turn.
 	OnTurnDone func(loopRecord *store.Loop, trailer time.Duration, hasTrailer bool)
-	// ClaudeToken returns the hub's Claude token: the default Claude login's
-	// access token, else the stored setup-token, else "" (ADR-0058,
-	// ADR-0060). A contained loop wakes only while there is one, and never
-	// holds it: the Claude proxy adds it to the loop's model requests. Bare
-	// loops use the host login and never call it.
-	ClaudeToken func(ctx context.Context) (string, error)
+	// ClaudeToken returns the token of the Claude login called login, ""
+	// for the default: the default's access token, else the stored
+	// setup-token, and another login's access token; "" while it has none
+	// (ADR-0058, ADR-0060). A contained loop wakes only while its login has
+	// one, and never holds it: the Claude proxy adds it to the loop's model
+	// requests. Bare loops use the host login and never call it.
+	ClaudeToken func(ctx context.Context, login string) (string, error)
 	// ObserveModel is told, at each init, what the loop's process reported
 	// for the model it was spawned on: the model list keeps what the
 	// default runtime's aliases run as (ADR-0033). Nil in tests that do not
@@ -817,7 +818,7 @@ func (actor *Actor) wake() {
 			actor.crashBackoff()
 			return
 		case token == "":
-			actor.setWorkstationDown(DownReasonUnauthenticated, noClaudeTokenDetail)
+			actor.setWorkstationDown(DownReasonUnauthenticated, noClaudeTokenDetail(actor.loop.ClaudeLogin))
 			actor.crashBackoff()
 			return
 		}
@@ -2222,9 +2223,15 @@ func (actor *Actor) handleShutdown() {
 // --- workstation liveness (ADR-0017: a seam duty, surfaced as a state) ---
 
 // noClaudeTokenDetail is the workstation-down reason shown when a contained
-// loop has neither a Claude login nor a stored setup-token to run claude
-// under. It names only the sign-in, which #929 leaves as Settings' one way in.
-const noClaudeTokenDetail = "Claude login not signed in. Sign in with Claude in Settings"
+// loop's Claude login, login "" for the default, has no token to run claude
+// under. It names only the sign-in, which #929 leaves as Settings' one way
+// in; another login's names it, since the default may be signed in.
+func noClaudeTokenDetail(login string) string {
+	if login == "" {
+		return "Claude login not signed in. Sign in with Claude in Settings"
+	}
+	return fmt.Sprintf("Claude login %s not signed in. Its owner or an admin signs it in", login)
+}
 
 // needsClaudeToken reports whether a runtime is a contained workstation that
 // must carry the operator's setup-token. Bare loops use the host login, and
@@ -2344,13 +2351,13 @@ func mcpServers(connections []*store.Connection, runtime, hubURL, hubToken strin
 	return servers
 }
 
-// claudeToken reads the operator's stored setup-token, treating a missing
-// wiring as "unconfigured" rather than panicking a loop's goroutine.
+// claudeToken reads the token of the loop's Claude login, treating a
+// missing wiring as "unconfigured" rather than panicking a loop's goroutine.
 func (actor *Actor) claudeToken(ctx context.Context) (string, error) {
 	if actor.deps.ClaudeToken == nil {
 		return "", nil
 	}
-	return actor.deps.ClaudeToken(ctx)
+	return actor.deps.ClaudeToken(ctx, actor.loop.ClaudeLogin)
 }
 
 // power carries out one operator power control, in the actor's goroutine.
@@ -2544,7 +2551,7 @@ func (actor *Actor) checkWorkstation() {
 		case token == "":
 			// A contained loop can't run without the operator token; say so
 			// here too, so the poll doesn't overwrite it with "not found".
-			actor.setWorkstationDown(DownReasonUnauthenticated, noClaudeTokenDetail)
+			actor.setWorkstationDown(DownReasonUnauthenticated, noClaudeTokenDetail(actor.loop.ClaudeLogin))
 			return
 		}
 	}

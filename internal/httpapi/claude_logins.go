@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -292,16 +293,20 @@ func (server *Server) handleRemoveClaudeLogin(w http.ResponseWriter, r *http.Req
 		return
 	}
 	ctx := context.WithoutCancel(r.Context())
+	// under the login's lock, which a loop naming it takes too, so no loop
+	// is put on it between the count and the delete
+	server.lockLogin(login.Name)
 	onIt, err := server.loopsOnLogin(ctx, login.Name)
 	if err != nil {
+		server.unlockLogin(login.Name)
 		server.jsonErr(w, 500, "%v", err)
 		return
 	}
 	if len(onIt) > 0 {
+		server.unlockLogin(login.Name)
 		server.jsonErrCode(w, 409, codeClaudeLogin, "loops run on the Claude login %s: %s; move them first", login.Name, strings.Join(onIt, ", "))
 		return
 	}
-	server.lockLogin(login.Name)
 	server.signOutAtTheSource(ctx, login.Name)
 	if server.CloudSignIn != nil {
 		server.CloudSignIn.End(login.Name)
@@ -319,20 +324,17 @@ func (server *Server) handleRemoveClaudeLogin(w http.ResponseWriter, r *http.Req
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// loopsOnLogin names the loops that run on the login called name. No loop
-// names a login yet (#1071), so they are every loop not archived for the
-// default, and none for any other.
+// loopsOnLogin names the loops not archived that run on the login called
+// name: those that name it, or for the default every loop that names no
+// login (ADR-0060).
 func (server *Server) loopsOnLogin(ctx context.Context, name string) ([]string, error) {
-	if name != store.DefaultClaudeLogin {
-		return nil, nil
-	}
 	loops, err := server.Store.Loops().List(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var names []string
 	for _, loopRecord := range loops {
-		if loopRecord.Status != store.StatusArchived {
+		if loopRecord.Status != store.StatusArchived && loginKey(loopRecord.ClaudeLogin) == name {
 			names = append(names, loopRecord.Name)
 		}
 	}
@@ -376,4 +378,63 @@ func (server *Server) signOutLoginsOf(ctx context.Context, userID string) {
 			server.Log.Warn("a removed user's Claude login signed out, but the hub wasn't told", "login", login.Name, "err", err)
 		}
 	}
+}
+
+// loginKey is the name of the Claude login a loop's claude_login stands
+// for: "" is the default.
+func loginKey(claudeLogin string) string {
+	if claudeLogin == "" {
+		return store.DefaultClaudeLogin
+	}
+	return claudeLogin
+}
+
+// loopLoginName is the claude_login a loop stores for the login a request
+// names: trimmed, and "" for the default, which a loop names by naming
+// none.
+func loopLoginName(name string) string {
+	if name = strings.TrimSpace(name); name == store.DefaultClaudeLogin {
+		return ""
+	}
+	return name
+}
+
+// loopLoginRefusal says why a loop of runtime loopRuntime may not name the
+// Claude login login, as loopLoginName stores it, or nil. A bare loop runs
+// on the host's own login, and a cloud loop on the default until #1078
+// (ADR-0060). Whether the hub holds the login is putOnLogin's to say.
+func loopLoginRefusal(login, loopRuntime string) *requestError {
+	switch {
+	case login == "":
+		return nil
+	case loopRuntime == store.RuntimeBare:
+		return &requestError{409, codeClaudeLogin, "a bare loop runs on this machine's own Claude login, so it names none"}
+	case loopRuntime == store.RuntimeCloud:
+		return &requestError{409, codeClaudeLogin, "a cloud loop runs on the default Claude login until #1078 lets it name another"}
+	}
+	return nil
+}
+
+// putOnLogin runs write, which puts a loop on the Claude login login, under
+// that login's lock, once the hub is seen to hold it: a removal, which
+// counts the loops on a login under the same lock, can't land in between.
+// A login the hub doesn't hold is a refusal, and write's own error is
+// returned as it is, for the caller to answer. The default, login "", is
+// written without the lock, which a refresh holds for up to a minute: a
+// loop saved on it as the default is removed is held until it is signed in
+// again, as every loop is when it is signed out.
+func (server *Server) putOnLogin(ctx context.Context, login string, write func() error) (*requestError, error) {
+	if login == "" {
+		return nil, write()
+	}
+	server.lockLogin(login)
+	defer server.unlockLogin(login)
+	_, err := server.Store.ClaudeLogins().Get(ctx, login)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return &requestError{400, codeClaudeLogin, fmt.Sprintf("the hub holds no Claude login named %s", login)}, nil
+	case err != nil:
+		return &requestError{500, "", err.Error()}, nil
+	}
+	return nil, write()
 }
