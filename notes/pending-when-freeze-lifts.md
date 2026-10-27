@@ -1305,3 +1305,10 @@ Egress allowed (ref:7154). 10 Algolia queries, 60 days, 110 unique comments pars
 with drafted replies in notes/hn-outreach.md, claims verified on main; sent to Enes as an attachment.
 Enes posts; I don't. Next: his edits or a go; possibly a watch for new Ask HN threads on multi-session
 work (he'd need to say so).
+
+## 2026-10-27 13:20 UTC — HN watch standing (Enes ref:7167)
+Enes wants the newest submissions watched for hot candidates. /home/loop/tools/hnwatch.sh (14
+queries, comments + stories, since last run, unseen ids only; state notes/hn/watch/{seen.txt,last_run})
+runs EVERY WAKE: `/home/loop/tools/hnwatch.sh`, read the output, DM Enes only hot fits with a draft
+(same rules as notes/hn-outreach.md). Enes posted draft 5 himself (50258139, OpenCode thread).
+Wake cadence ~2h while this stands.
