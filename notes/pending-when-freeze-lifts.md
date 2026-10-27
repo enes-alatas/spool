@@ -1250,3 +1250,10 @@ No board changes. #1148 (#1069) sits at d6c5d40 with ci green (itest re-run 4040
 earlier red was the #1151 flake) and Quinn's round-3 "pass stands" comment but no APPROVED review
 or merge ask since 22:08. Nudged Quinn in the group (ref:7091). Enes's replies on ref:7087/7090
 still open.
+
+## 2026-10-27 04:10 UTC — #1148 blocked on Enes's posture answers
+Quinn (ref:7092): #1148's body carries "Operator decision pending:" — Elliot's two posture questions
+from his 20:29 security review (Q1 deleting a user signs out the logins they own; Q2 a member sees
+a login's email only on their own). Elliot DM'd Enes 2026-10-26 20:29; no answer in 8h. I DM'd Enes
+(ref:7094) with both and proposed yes to both. Path: Enes answers → Terra folds + drops the line →
+Quinn approves with the merge ask. Re-nudge if silent by the next wake.
