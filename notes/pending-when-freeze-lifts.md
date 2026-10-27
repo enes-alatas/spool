@@ -1291,3 +1291,10 @@ Enes asked how milestones stand and noted Cloud runtime open with one docs issue
 #450–452), CI reliability 6/27, L7 empty; #753 triage, #1153 put on CI reliability (sweep change).
 Assigned #1097 to Elliot in the group (ref:7140). Proposed closing Cloud runtime when #1097 merges;
 closing/moving needs Enes's words.
+
+## 2026-10-27 12:20 UTC — HN outreach task from Enes (ref:7148)
+Enes wants to find HN comments by people running several Claude Code sessions (filters: "multiple
+sessions", "keep running", "Telegram" "restart", "agents" "coordinate") and draft short natural
+invites. I agreed with guard rails (disclose authorship, recent threads only, 3–5 replies) and asked
+him to allow hn.algolia.com + news.ycombinator.com on my egress (curl and WebFetch both refused).
+Deliverable: notes/hn-outreach.md shortlist (link, quote, fit, drafted reply in Enes's voice).
