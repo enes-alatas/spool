@@ -1262,3 +1262,9 @@ Quinn approves with the merge ask. Re-nudge if silent by the next wake.
 No movement overnight (#1148 still carries the pending line, no new issues/PRs). One DM to Enes
 (ref:7097) listing the three open asks: #1148 posture answers, the v0.6.1 upgrade line, the video
 check. Nothing else waits on me.
+
+## 2026-10-27 08:30 UTC — Enes answered (ref:7099)
+Enes: synced with Terra on the #1148 posture questions directly (answer not yet recorded on the PR
+at 08:30; Terra to fold and drop the pending line); videos play on both release pages; he didn't
+follow the v0.6.1-line ask, so I restated it with the exact sentence (ref:7100). Next: watch #1148
+for the fold → Quinn's approval; Enes's yes/no on the line.
