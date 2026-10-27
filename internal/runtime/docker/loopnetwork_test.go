@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -145,7 +146,11 @@ func TestANetworkThatIsNotInternalIsRefused(t *testing.T) {
 		t.Run(network, func(t *testing.T) {
 			dir := t.TempDir()
 			bin, calls := filepath.Join(dir, "docker"), filepath.Join(dir, "calls")
-			script := "#!/bin/sh\ncat >/dev/null\necho \"$*\" >>" + calls + "\n" +
+			// The proxy's inspect is slowed, so a check that returned without
+			// waiting for it would leave it writing calls after the test (#1151).
+			script := "#!/bin/sh\ncat >/dev/null\n" +
+				"case \"$*\" in *'.State'*' spool-egress-proxy') sleep 0.3 ;; esac\n" +
+				"echo \"$*\" >>" + calls + "\n" +
 				"case \"$*\" in\n" +
 				"'network inspect --format " + internalNetworkFormat + " " + network + "') echo false ;;\n" +
 				"'network inspect '*) echo true ;;\n" +
@@ -160,7 +165,13 @@ func TestANetworkThatIsNotInternalIsRefused(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), "docker network "+network+" is not internal") {
 				t.Fatalf("Ensure = %v; want %s refused as not internal", err, network)
 			}
-			if log := readCalls(t, calls); callIndex(log, "run --pull=never --detach --init --name spool-ws-l1") >= 0 {
+			log := readCalls(t, calls)
+			if !slices.ContainsFunc(log, func(call string) bool {
+				return strings.Contains(call, ".State") && strings.HasSuffix(call, " "+rt.egressContainer())
+			}) {
+				t.Errorf("Ensure returned before its read of the proxy finished; docker was called with:\n%s", strings.Join(log, "\n"))
+			}
+			if callIndex(log, "run --pull=never --detach --init --name spool-ws-l1") >= 0 {
 				t.Errorf("a workstation was provisioned despite the refusal; docker was called with:\n%s", strings.Join(log, "\n"))
 			}
 		})

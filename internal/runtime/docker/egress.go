@@ -103,10 +103,13 @@ func (rt *Runtime) checkEgress(ctx context.Context) error {
 		proxy <- stateRead{state, err}
 	}()
 	imageID, imageErr := rt.imageID(ctx, rt.egressImage)
-	if _, err := rt.ensureInternalNetwork(ctx, rt.egressNetwork(), <-network, "spool.egress=network"); err != nil {
+	// Both reads are taken before either is acted on, so a refused network
+	// returns with no docker inspect still running behind it (#1151).
+	networkFound, proxyFound := <-network, <-proxy
+	if _, err := rt.ensureInternalNetwork(ctx, rt.egressNetwork(), networkFound, "spool.egress=network"); err != nil {
 		return err
 	}
-	if err := rt.ensureEgressProxy(ctx, imageID, imageErr, <-proxy); err != nil {
+	if err := rt.ensureEgressProxy(ctx, imageID, imageErr, proxyFound); err != nil {
 		return err
 	}
 	return rt.catchUpEgressFile(ctx)
