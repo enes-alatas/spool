@@ -3,11 +3,16 @@
 package itest
 
 import (
+	"context"
+	"database/sql"
 	"net/http"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/enes-alatas/spool/internal/store"
 )
 
 // noTurn fails if any loop named in replies takes a turn whose reply
@@ -31,11 +36,12 @@ func (s *server) noTurn(window time.Duration, replies map[string]string) {
 	}
 }
 
-// Above the plan cap every loop sleeps at its next quiet boundary
-// (ADR-0047): unknown usage caps nothing; the turn whose usage crossed a
-// threshold finishes and the message queued behind it waits; a loop that
-// was asleep is capped too and keeps what it is told; and raising the
-// threshold wakes both with what waited.
+// Above the plan cap every loop on the login sleeps at its next quiet
+// boundary (ADR-0047), here the default, which both loops run on: unknown
+// usage caps nothing; the turn whose usage crossed a threshold finishes and
+// the message queued behind it waits; a loop that was asleep is capped too
+// and keeps what it is told; and raising the threshold wakes both with
+// what waited.
 func TestThePlanCapSleepsTheFleetUntilAThresholdIsRaised(t *testing.T) {
 	t.Parallel()
 	srv := startServer(t, t.TempDir())
@@ -129,4 +135,72 @@ func (s *server) settingsThresholds() [2]int {
 	}
 	s.mustJSON("GET", "/api/settings", nil, &view)
 	return [2]int{view.FiveHour, view.SevenDay}
+}
+
+// Each Claude login has its own plan cap (ADR-0060): a login over a
+// threshold sleeps the loops on it alone, while the default's loops keep
+// taking turns; a loop moved off it wakes; Resume now names the login it
+// lifts, and one naming the default leaves another login's cap. The loops
+// are bare, which the API refuses to put on a login, so the test names one
+// in the store: the cap holds a loop the same way on any runtime.
+func TestThePlanCapSleepsOnlyTheLoopsOnTheLoginOver(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dataDir := t.TempDir()
+	hub := startServer(t, dataDir)
+	hub.createLoop("aster", map[string]any{"workspace_path": workspaceWithScript(t, "first\nanswered\n")})
+	hub.createLoop("bloom", map[string]any{"workspace_path": workspaceWithScript(t, "first\n!usage 0.95 0.3 over\nheld\n")})
+	hub.createLoop("dahlia", map[string]any{"workspace_path": workspaceWithScript(t, "first\nmoved\n")})
+	for _, name := range []string{"aster", "bloom", "dahlia"} {
+		hub.waitTurn(name, firstTurnWait, func(tr turn) bool { return strings.Contains(tr.ResultText, "first") })
+	}
+	hub.stop()
+	db := openStoreAt(t, dataDir)
+	if err := db.ClaudeLogins().Create(ctx, &store.ClaudeLogin{Name: "ada", CreatedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	raw, err := sql.Open("sqlite", "file:"+filepath.Join(dataDir, "spool.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(`UPDATE loops SET claude_login = 'ada' WHERE name IN ('bloom', 'dahlia')`); err != nil {
+		t.Fatal(err)
+	}
+	raw.Close()
+	hub = startServer(t, dataDir)
+
+	hub.message("bloom", "spend")
+	hub.waitTurn("bloom", 30*time.Second, func(tr turn) bool { return tr.ResultText == "over" })
+	hub.waitState("bloom", "capped", 15*time.Second)
+	hub.waitState("dahlia", "capped", 15*time.Second)
+	hub.message("aster", "still here?")
+	hub.waitTurn("aster", 30*time.Second, func(tr turn) bool { return strings.Contains(tr.ResultText, "answered") })
+
+	view := hub.planUsage()
+	ada := view.login("ada")
+	if view.Cap != nil || view.login("default").Cap != nil || ada.Cap == nil || !slices.Equal(ada.Cap.Windows, []string{"five_hour"}) {
+		t.Fatalf("caps: top-level %+v, default %+v, ada %+v; want ada's alone", view.Cap, view.login("default").Cap, ada.Cap)
+	}
+	if aster, bloom := hub.loop("aster").CappedUntil, hub.loop("bloom").CappedUntil; aster != 0 || bloom != ada.Cap.Until {
+		t.Fatalf("capped_until: aster %d, bloom %d; want 0 and ada's %d", aster, bloom, ada.Cap.Until)
+	}
+
+	hub.message("dahlia", "on the move")
+	hub.message("bloom", "while capped")
+	hub.noTurn(2*time.Second, map[string]string{"bloom": "held", "dahlia": "moved"})
+	var moved loopView
+	hub.mustJSON("PATCH", "/api/loops/dahlia", map[string]any{"claude_login": "default"}, &moved)
+	hub.waitTurn("dahlia", 30*time.Second, func(tr turn) bool { return strings.Contains(tr.ResultText, "moved") })
+
+	hub.wantRefusal("POST", "/api/plan-cap/resume", map[string]any{"claude_login": "nobody"}, 400, "claude_login")
+	hub.mustJSON("POST", "/api/plan-cap/resume", nil, nil)
+	hub.noTurn(time.Second, map[string]string{"bloom": "held"})
+	var resumed planUsageJSON
+	hub.mustJSON("POST", "/api/plan-cap/resume", map[string]any{"claude_login": "ada"}, &resumed)
+	if ada := resumed.login("ada"); ada.Cap != nil || ada.ResumedUntil < time.Now().Add(4*time.Hour).UnixMilli() || resumed.ResumedUntil != 0 {
+		t.Fatalf("Resume now on ada answered ada %+v %d, default %d; want ada held off to its reset, the default untouched",
+			ada.Cap, ada.ResumedUntil, resumed.ResumedUntil)
+	}
+	hub.waitTurn("bloom", 30*time.Second, func(tr turn) bool { return strings.Contains(tr.ResultText, "held") })
 }

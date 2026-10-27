@@ -135,6 +135,10 @@ type ClaudeLogin struct {
 	// record before the first observation. The default login's is kept
 	// in SettingPlanUsage instead.
 	PlanUsage PlanUsageRecord
+	// PlanCapResumedUntil is when its last Resume now stops holding its
+	// plan cap off, 0 when there has been none. The default login's is
+	// kept in SettingPlanCapResumedUntil instead.
+	PlanCapResumedUntil int64
 }
 
 // SignedIn reports whether the login holds a sign-in.
@@ -203,6 +207,9 @@ type ClaudeLoginStore interface {
 	// SetPlanUsage stores the login's plan usage. ErrNotFound for a name
 	// the hub doesn't hold.
 	SetPlanUsage(ctx context.Context, name string, usage PlanUsageRecord) error
+	// SetPlanCapResumedUntil stores when the login's Resume now stops
+	// holding its plan cap off. ErrNotFound for a name the hub doesn't hold.
+	SetPlanCapResumedUntil(ctx context.Context, name string, until int64) error
 	// Delete removes a login; ErrNotFound for a name the hub doesn't hold.
 	Delete(ctx context.Context, name string) error
 }
@@ -337,8 +344,9 @@ const (
 
 // Plan-cap settings (ADR-0047). The thresholds are integer percentages of
 // each plan window, 0 for off, and the default while unset. The resume
-// setting holds when the operator's last Resume now stops holding the cap
-// off, in Unix milliseconds.
+// setting holds when the operator's last Resume now stops holding the
+// default login's cap off, in Unix milliseconds; another login keeps its
+// own on its ClaudeLogin (ADR-0060).
 const (
 	SettingPlanCapFiveHourPercent = "plan_cap_five_hour_percent"
 	SettingPlanCapSevenDayPercent = "plan_cap_seven_day_percent"

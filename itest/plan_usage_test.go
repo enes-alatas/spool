@@ -121,7 +121,7 @@ func assertPlanUsage(t *testing.T, view planUsageJSON, since int64) {
 // Within a window that has not reset, the hub's plan usage only rises: a
 // reading lower than the last one leaves it, and a window whose reset is
 // further off than its span is refused, so neither can lift or stretch the
-// fleet's plan cap (ADR-0047).
+// plan cap (ADR-0047).
 func TestThePlanUsageOnlyRisesWithinAWindow(t *testing.T) {
 	t.Parallel()
 	srv := startServer(t, t.TempDir())

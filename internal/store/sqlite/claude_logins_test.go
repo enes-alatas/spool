@@ -85,6 +85,7 @@ func TestTheUpgradeMakesTheSignInTheDefaultLogin(t *testing.T) {
 			`DROP TABLE claude_logins`,
 			`DELETE FROM schema_migrations WHERE version='0065_claude_logins.sql'`,
 			`DELETE FROM schema_migrations WHERE version='0067_claude_login_plan_usage.sql'`,
+			`DELETE FROM schema_migrations WHERE version='0068_claude_login_plan_cap.sql'`,
 		} {
 			if _, err := db.db.Exec(statement); err != nil {
 				t.Fatal(err)

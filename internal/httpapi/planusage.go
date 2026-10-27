@@ -1,6 +1,9 @@
 package httpapi
 
 import (
+	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"time"
 
@@ -28,7 +31,7 @@ type planUsageView struct {
 
 // planUsagesView is GET /api/plan-usage: the default login's plan usage at
 // the top, and every login's in logins, the default first (ADR-0060).
-// Until the cap works per login (#1075), each carries the fleet's cap.
+// Each carries its own cap and Resume now hold.
 type planUsagesView struct {
 	planUsageView
 	Logins []loginPlanUsageView `json:"logins"`
@@ -62,11 +65,33 @@ type planCapView struct {
 // the plan's usage.
 const unknownNotObserved = "no loop has reported the plan's usage yet"
 
-// handleResumePlanCap holds the plan cap off until its windows reset, and
-// answers with the plan usage that results. With nothing capped it changes
+// resumePlanCapReq names the Claude login whose cap Resume now holds off,
+// as a loop names it: none, or "default", for the default.
+type resumePlanCapReq struct {
+	ClaudeLogin string `json:"claude_login"`
+}
+
+// handleResumePlanCap holds a login's plan cap off until its windows
+// reset, and answers with the plan usage that results. A request with no
+// body resumes the default's. With that login not capped it changes
 // nothing, so a second press is harmless.
 func (server *Server) handleResumePlanCap(w http.ResponseWriter, r *http.Request) {
-	if err := server.PlanCap.Resume(r.Context(), time.Now().UnixMilli()); err != nil {
+	var req resumePlanCapReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		server.jsonErr(w, 400, "bad json: %v", err)
+		return
+	}
+	login := loopLoginName(req.ClaudeLogin)
+	if login != "" {
+		if _, err := server.Store.ClaudeLogins().Get(r.Context(), login); errors.Is(err, store.ErrNotFound) {
+			server.jsonErrCode(w, 400, codeClaudeLogin, "the hub holds no Claude login named %s", login)
+			return
+		} else if err != nil {
+			server.jsonErr(w, 500, "%v", err)
+			return
+		}
+	}
+	if err := server.PlanCap.Resume(r.Context(), login, time.Now().UnixMilli()); err != nil {
 		server.jsonErr(w, 500, "%v", err)
 		return
 	}
@@ -81,14 +106,13 @@ func (server *Server) handlePlanUsage(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now().UnixMilli()
 	fiveHour, sevenDay := server.PlanCap.Thresholds()
-	planCap := server.PlanCap.At(now)
 	// the first is the default's, which the top-level fields stay until
 	// the control room reads logins alone (ADR-0060)
-	view := planUsagesView{planUsageView: planUsageOf(usages[0].Usage, planCap, fiveHour, sevenDay, now)}
+	view := planUsagesView{planUsageView: planUsageOf(usages[0].Usage, server.PlanCap.At("", now), fiveHour, sevenDay, now)}
 	for _, usage := range usages {
 		view.Logins = append(view.Logins, loginPlanUsageView{
 			Name:          usage.Login,
-			planUsageView: planUsageOf(usage.Usage, planCap, fiveHour, sevenDay, now),
+			planUsageView: planUsageOf(usage.Usage, server.PlanCap.At(usage.Login, now), fiveHour, sevenDay, now),
 		})
 	}
 	writeJSON(w, 200, view)

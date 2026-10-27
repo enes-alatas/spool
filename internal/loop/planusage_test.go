@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
-	"slices"
 	"testing"
 	"time"
 
@@ -183,25 +182,5 @@ func TestPlanUsageIsKeptPerLogin(t *testing.T) {
 	}
 	if _, err := PlanUsageOf(ctx, db.Settings(), db.ClaudeLogins(), "gone"); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("a login the hub doesn't hold reads %v; want ErrNotFound", err)
-	}
-}
-
-// Until the cap works per login (#1075), any login over a threshold caps
-// the fleet, until the latest reset among the logins over.
-func TestPlanCapHoldsWhileAnyLoginIsOver(t *testing.T) {
-	usages := []LoginPlanUsage{
-		{Login: "default", Usage: store.PlanUsageRecord{FiveHour: &store.PlanUsageWindow{Utilization: 0.2, ResetsAt: 9000}}},
-		{Login: "ada", Usage: store.PlanUsageRecord{FiveHour: &store.PlanUsageWindow{Utilization: 0.95, ResetsAt: 5000}}},
-		{Login: "bloom", Usage: store.PlanUsageRecord{
-			FiveHour: &store.PlanUsageWindow{Utilization: 0.91, ResetsAt: 7000},
-			SevenDay: &store.PlanUsageWindow{Utilization: 0.5, ResetsAt: 80000},
-		}},
-	}
-	planCap := fleetCapOf(usages, 90, 90, 0, 1000)
-	if !planCap.Holds(1000) || !slices.Equal(planCap.Windows, []string{PlanWindowFiveHour}) || planCap.Until != 7000 {
-		t.Fatalf("cap = %+v; want five_hour until 7000, bloom's reset", planCap)
-	}
-	if planCap := fleetCapOf(usages, 90, 90, 0, 7000); planCap.Holds(7000) {
-		t.Fatalf("cap at 7000 = %+v; want lifted once both logins over have reset", planCap)
 	}
 }
