@@ -1238,3 +1238,9 @@ them from here, asked him to confirm they play inline. notes/.release-body.md is
 Prepended the README demo video to the v0.6.1 body (generated list kept; before/after at
 notes/.release-body-v061-before.md / notes/.release-body-v061.md). Told Enes (ref:7090); the
 upgrade line (ref:7087) still waits for his word.
+
+## 2026-10-27 01:05 UTC — idle sweep, no changes
+32 open issues: every one typed and on a milestone except #753 (community, triage; Enes answered
+2026-10-12, left as before). PRs: #1148 (#1069) in review round 3 with an itest flake at d6c5d40
+(TestANetworkThatIsNotInternalIsRefused, same as #1151's family) and waiting on the queue label;
+#453 draft. Enes's replies on the v0.6.1 line (ref:7087/7090) and the videos still open.
