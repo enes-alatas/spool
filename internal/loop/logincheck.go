@@ -162,6 +162,19 @@ func HubClaudeToken(ctx context.Context, st store.Store) (string, error) {
 	return token, err
 }
 
+// ClaudeTokenFor reads the token of the Claude login a contained loop
+// names, login "" for the default: the default's is HubClaudeToken's, and
+// another's is its access token, or "" while it is signed out or gone
+// (ADR-0060). A loop on another login never falls back to the default's:
+// it would spend a subscription its loop wasn't put on.
+func ClaudeTokenFor(ctx context.Context, st store.Store, login string) (string, error) {
+	if login == "" || login == store.DefaultClaudeLogin {
+		return HubClaudeToken(ctx, st)
+	}
+	account, _, err := store.SignedInAccount(ctx, st.ClaudeLogins(), login)
+	return account.Token, err
+}
+
 // StartLogin checks the Claude login called name, as Start checks the
 // hub's token, and keeps the outcome on the login (ADR-0060). The default
 // login's check is Start's, kept where onboarding reads it.

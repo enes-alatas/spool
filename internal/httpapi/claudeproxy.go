@@ -26,8 +26,9 @@ type claudeTokenKey struct{}
 // loop.ClaudeProxyPath (ADR-0058). A contained loop's claude sends its model
 // requests here, logged in with the loop's own hub token; the proxy admits
 // that token alone, and forwards the request to Anthropic's API with the
-// hub's Claude token in its place. No Claude credential enters a
-// workstation. The response streams back as it comes, unredacted: it is
+// token of the loop's Claude login in its place, read at each request so a
+// refresh or a move reaches the next one (ADR-0060). No Claude credential
+// enters a workstation. The response streams back as it comes, unredacted: it is
 // the model's answer to the loop, which the hub records, and redacts, from
 // the loop's own stream.
 func (server *Server) ClaudeProxyHandler() http.Handler {
@@ -57,13 +58,13 @@ func (server *Server) ClaudeProxyHandler() http.Handler {
 			writeClaudeProxyError(w, http.StatusNotFound, "not_found_error", "the Claude proxy forwards model requests only")
 			return
 		}
-		token, err := loop.HubClaudeToken(r.Context(), server.Store)
+		token, err := loop.ClaudeTokenFor(r.Context(), server.Store, caller.ClaudeLogin)
 		if err != nil {
-			server.Log.Warn("Claude proxy: the hub's Claude token can't be read", "loop", caller.Name, "err", err)
+			server.Log.Warn("Claude proxy: the loop's Claude token can't be read", "loop", caller.Name, "login", caller.ClaudeLogin, "err", err)
 		}
 		if token == "" {
 			// claude reads this as a refused login, which holds the loop
-			writeClaudeProxyError(w, http.StatusUnauthorized, "authentication_error", "no Claude login is signed in on the hub")
+			writeClaudeProxyError(w, http.StatusUnauthorized, "authentication_error", "the loop's Claude login is not signed in on the hub")
 			return
 		}
 		out := r.Clone(context.WithValue(r.Context(), claudeTokenKey{}, token))

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/enes-alatas/spool/internal/store"
@@ -107,5 +108,32 @@ func TestRemovingALoginEndsItsWaitingSignIn(t *testing.T) {
 	}
 	if len(recorder.ended) != 1 || recorder.ended[0] != "work" {
 		t.Errorf("sign-ins ended: %v, want work's", recorder.ended)
+	}
+}
+
+// A bare loop runs on the host's own login and a cloud loop on the default
+// until #1078, so either naming a login is refused; naming the default is
+// naming none.
+func TestOnlyAContainedLoopNamesALogin(t *testing.T) {
+	if got := loopLoginName("  default "); got != "" {
+		t.Errorf("naming the default stores %q, want none", got)
+	}
+	for _, tc := range []struct {
+		login, runtime string
+		refused        bool
+	}{
+		{"", store.RuntimeBare, false},
+		{"", store.RuntimeCloud, false},
+		{"ada", store.RuntimeDocker, false},
+		{"ada", store.RuntimeBare, true},
+		{"ada", store.RuntimeCloud, true},
+	} {
+		refusal := loopLoginRefusal(tc.login, tc.runtime)
+		if (refusal != nil) != tc.refused || (refusal != nil && refusal.status != 409) {
+			t.Errorf("a %s loop naming %q: %+v, want refused %v with 409", tc.runtime, tc.login, refusal, tc.refused)
+		}
+	}
+	if refusal := loopLoginRefusal("ada", store.RuntimeCloud); refusal == nil || !strings.Contains(refusal.msg, "#1078") {
+		t.Errorf("the cloud refusal %+v, want it naming #1078", refusal)
 	}
 }

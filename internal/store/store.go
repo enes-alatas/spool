@@ -367,6 +367,10 @@ type Loop struct {
 	Subagents       string `json:"subagents"` // allowed|off
 	// DailyCapUSD is the loop's own daily USD cap, 0 for none (#652).
 	DailyCapUSD float64 `json:"daily_cap_usd"`
+	// ClaudeLogin names the Claude login a contained loop runs on, "" for
+	// the default (ADR-0060). A bare loop runs on the host's own login and a
+	// cloud loop on the default, so theirs is always "".
+	ClaudeLogin string `json:"claude_login"`
 
 	TGBotToken    string `json:"-"`
 	TGBotUsername string `json:"tg_bot_username"`
@@ -884,6 +888,7 @@ type LoopEdit struct {
 	Pacing      *string
 	Subagents   *string
 	DailyCapUSD *float64
+	ClaudeLogin *string
 
 	TickIntervalSec *int
 	MinWakeSec      *int
