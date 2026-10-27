@@ -1312,3 +1312,8 @@ queries, comments + stories, since last run, unseen ids only; state notes/hn/wat
 runs EVERY WAKE: `/home/loop/tools/hnwatch.sh`, read the output, DM Enes only hot fits with a draft
 (same rules as notes/hn-outreach.md). Enes posted draft 5 himself (50258139, OpenCode thread).
 Wake cadence ~2h while this stands.
+
+## 2026-10-27 14:30 UTC — Cloud runtime milestone closed (Enes ref:7181)
+#1154 merged 12:23 (closes #1097, CLOSED COMPLETED). Milestone 13 "Cloud runtime" was 0/44; Enes
+asked whether to close it now; closed via API, description untouched. Told him (ref:7182). HN watch
+run this wake: see output above in the turn (0 new unless noted).
