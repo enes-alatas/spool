@@ -11,6 +11,11 @@ Pre-1.0, only `main` is supported. Fixes land on `main` and appear in the next
 tag; there are no backports and no maintained release branches. If you are
 running an older tag, the first step of any fix is to update.
 
+From 1.0, only the latest minor release gets security fixes. An older
+minor is fixed by upgrading to the latest, with `spool upgrade`
+([OPERATIONS.md, "Upgrade"](docs/OPERATIONS.md#upgrade)); there are still
+no backports.
+
 ## Reporting a vulnerability
 
 Use GitHub's private vulnerability reporting: the repository's **Security** tab
