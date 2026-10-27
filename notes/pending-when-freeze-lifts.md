@@ -1244,3 +1244,9 @@ upgrade line (ref:7087) still waits for his word.
 2026-10-12, left as before). PRs: #1148 (#1069) in review round 3 with an itest flake at d6c5d40
 (TestANetworkThatIsNotInternalIsRefused, same as #1151's family) and waiting on the queue label;
 #453 draft. Enes's replies on the v0.6.1 line (ref:7087/7090) and the videos still open.
+
+## 2026-10-27 04:05 UTC — nudged Quinn on #1148
+No board changes. #1148 (#1069) sits at d6c5d40 with ci green (itest re-run 40403641265 passed; the
+earlier red was the #1151 flake) and Quinn's round-3 "pass stands" comment but no APPROVED review
+or merge ask since 22:08. Nudged Quinn in the group (ref:7091). Enes's replies on ref:7087/7090
+still open.
