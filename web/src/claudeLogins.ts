@@ -110,3 +110,32 @@ export function defaultLineState(
   const checked = loginLineState(login)
   return SEVERITY[checked.tone] > SEVERITY[account.tone] ? checked : account
 }
+
+// The login a loop runs on, as its page names it: a bare loop on this
+// machine's own, a cloud loop on the default (ADR-0060), and a contained
+// loop on the one it names, or the default when it names none.
+export function loopLogin(loop: Pick<LoopView, 'runtime' | 'claude_login'>): string {
+  if (loop.runtime === 'bare') return "this machine's own"
+  if (loop.runtime === 'cloud') return 'default'
+  return loop.claude_login || 'default'
+}
+
+// What a login picker offers: the default first, and a signed-out login
+// says so, since a loop put on it waits until it is signed in.
+export function loginOptions(logins: ClaudeLogin[]): { value: string; label: string }[] {
+  return defaultFirst(logins).map((l) => ({
+    value: l.name,
+    label: l.signed_in ? l.name : `${l.name} (signed out)`,
+  }))
+}
+
+// The rule a picker states, which nothing enforces until loops have
+// owners (ADR-0060, #100).
+export const LOGIN_SAY_SO = "Use your own login, the default, or another user's only with their say-so."
+
+// Why a loop of this runtime names no login, or '' when it may name one.
+export function noLoginChoice(runtime: string): string {
+  if (runtime === 'bare') return "A bare loop runs on this machine's own Claude login."
+  if (runtime === 'cloud') return 'A cloud loop runs on the default login.'
+  return ''
+}

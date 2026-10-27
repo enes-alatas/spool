@@ -6,9 +6,12 @@ import {
   defaultLineState,
   loginLineState,
   loginNameError,
+  loginOptions,
   loginWho,
+  loopLogin,
   loopsOn,
   mayManageLogin,
+  noLoginChoice,
   signOutConfirm,
 } from './claudeLogins'
 
@@ -187,5 +190,37 @@ describe('defaultLineState', () => {
   it('ignores a check left from before a sign-out', () => {
     const out = { text: 'not signed in', tone: 'todo' as const }
     expect(defaultLineState(out, def({ signed_in: false, check: { status: 'refused', at: 1 } }))).toEqual(out)
+  })
+})
+
+describe('loopLogin', () => {
+  it('names the login a loop runs on, by runtime', () => {
+    expect(loopLogin({ runtime: 'docker', claude_login: 'ada' })).toBe('ada')
+    expect(loopLogin({ runtime: 'docker', claude_login: '' })).toBe('default')
+    expect(loopLogin({ runtime: 'cloud', claude_login: '' })).toBe('default')
+    expect(loopLogin({ runtime: 'bare', claude_login: '' })).toBe("this machine's own")
+  })
+})
+
+describe('loginOptions', () => {
+  it('offers the default first and says which are signed out', () => {
+    const logins = [
+      login({ name: 'robin', signed_in: false }),
+      login({ name: 'default', default: true }),
+      login({ name: 'ada' }),
+    ]
+    expect(loginOptions(logins)).toEqual([
+      { value: 'default', label: 'default' },
+      { value: 'ada', label: 'ada' },
+      { value: 'robin', label: 'robin (signed out)' },
+    ])
+  })
+})
+
+describe('noLoginChoice', () => {
+  it('lets only a contained loop name a login', () => {
+    expect(noLoginChoice('docker')).toBe('')
+    expect(noLoginChoice('bare')).toContain("this machine's own")
+    expect(noLoginChoice('cloud')).toContain('default')
   })
 })

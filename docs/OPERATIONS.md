@@ -306,7 +306,10 @@ default first, each with its state and last check. **Add a Claude
 login** takes a name, then runs the same sign-in as the default. Each
 login's line carries Sign in, Check again, Sign out and Remove for its
 owner and the admins, and Sign out first names the loops it holds
-(#1070).
+(#1070). New loop picks a contained loop's login, default preselected,
+and the loop's Workstation card names the login it runs on; there an
+admin moves a contained loop to another, which takes effect from its
+next turn (#1072).
 
 **From the API**:
 - `GET /api/claude-logins` lists them, with each one's last check and,

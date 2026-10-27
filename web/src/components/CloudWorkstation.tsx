@@ -1,6 +1,7 @@
 import { Link } from 'react-router'
 import type { LoopView } from '../api'
 import { cloudHold, cloudSessionCondition, useCloudSettings } from '../cloudLoop'
+import { LoopLogin } from './LoopLogin'
 import { MCPReach } from './MCPReach'
 
 // The Workstation card of a cloud loop (ADR-0056, #867): its session runs on
@@ -24,6 +25,7 @@ export function CloudWorkstation({ loop }: { loop: LoopView }) {
         <span className="k">runtime</span>
         <span className="v">cloud</span>
       </div>
+      <LoopLogin loop={loop} />
       <div className="row">
         <span className="k">session</span>
         <span className="v">

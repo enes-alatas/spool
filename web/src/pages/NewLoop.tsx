@@ -20,6 +20,7 @@ import { firstOpenStep, type SetupStep } from '../cloud'
 import { Marked } from '../components/Marked'
 import { dailyCapHint, dailyCapValue } from '../dailyCap'
 import { CapChips } from '../components/CapChips'
+import { LOGIN_SAY_SO, loginOptions, noLoginChoice } from '../claudeLogins'
 
 export default function NewLoop() {
   const nav = useNavigate()
@@ -47,6 +48,7 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
   const [capChoice, setCapChoice] = useState<number | 'custom'>(0)
   const [customCap, setCustomCap] = useState('')
   const [runtime, setRuntime] = useState('')
+  const [login, setLogin] = useState('default')
   const [wsPath, setWsPath] = useState('')
   const [wsInfo, setWsInfo] = useState<{ exists: boolean; is_git: boolean } | null>(null)
   const [setup, setSetup] = useState<SetupStep | null>(null)
@@ -96,6 +98,12 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
     queryFn: api.cloudSettings,
     enabled: cloud,
   })
+  // The hub's logins, for a contained loop's pick (ADR-0060). A bare or
+  // cloud loop names none, so the field only says which it runs on.
+  const { data: logins } = useQuery({ queryKey: ['claude-logins'], queryFn: api.claudeLogins })
+  const loginNote = noLoginChoice(chosenRuntime)
+  const pickLogin = hubKnown && !loginNote && logins !== undefined
+  const chosenLogin = logins?.logins.find((l) => l.name === login)
   const cloudStep = cloudSettings ? firstOpenStep(cloudSettings) : undefined
   const cloudReady = cloudStep === 'done'
 
@@ -167,6 +175,9 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
         // Sent whenever the switch shows a state, so it means what it shows; the
         // server's own default covers a form that has none yet.
         in_fleet_channel: joinsChannel,
+        // Omitted for the default, which a loop that names none runs on, so
+        // a hub too old to know the field creates the same loop.
+        claude_login: pickLogin && login !== 'default' ? login : undefined,
       })
       qc.invalidateQueries({ queryKey: ['loops'] })
       onCreated(loop)
@@ -305,6 +316,35 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
           MCP servers and connectors on your Claude account are never passed to a loop (
           <code>--strict-mcp-config</code>).
         </div>
+      </div>
+
+      <div className="field">
+        <label htmlFor="nl-login">Claude login</label>
+        <select
+          id="nl-login"
+          value={pickLogin ? login : loginNote ? 'fixed' : ''}
+          onChange={(e) => setLogin(e.target.value)}
+          disabled={!pickLogin}
+        >
+          {pickLogin ? (
+            loginOptions(logins.logins).map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))
+          ) : (
+            <option value={loginNote ? 'fixed' : ''}>
+              {chosenRuntime === 'bare' ? "this machine's own" : loginNote ? 'default' : '…'}
+            </option>
+          )}
+        </select>
+        <div className="hint">{loginNote || `The loop reaches the model on this login. ${LOGIN_SAY_SO}`}</div>
+        {pickLogin && chosenLogin && !chosenLogin.signed_in && (
+          <div className="hint warn">
+            {chosenLogin.name} is signed out: the loop waits until it is signed in under Settings → Claude
+            logins.
+          </div>
+        )}
       </div>
 
       <label className="switch-row" style={{ marginTop: 0, marginBottom: 14 }}>
