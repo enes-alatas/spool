@@ -566,7 +566,7 @@ the CLI (ADR-0018).
   on (ADR-0042).
 - **A workstation can't forge packets.** It runs without `NET_RAW`, so it
   can't pose as another container on a network it is on (ADR-0028).
-- **One reading can't lift or stretch the fleet's plan cap.** A stream's
+- **One reading can't lift or stretch a login's plan cap.** A stream's
   plan-usage reading can only raise a window that hasn't reset, never
   moves that window's reset, and is refused with a reset beyond the
   window's span (ADR-0047).
@@ -574,12 +574,14 @@ the CLI (ADR-0018).
 **Doesn't hold:**
 - **The stream a loop's claude writes is within the loop's reach.** Turn
   cost and plan usage are the CLI's own report, so a loop working against
-  the hub can understate its cost, or raise the plan usage and cap the
-  fleet, a window at a time, for as long as it runs. It raises only the
-  usage of the Claude login it runs on (ADR-0060), but until the cap works
-  per login (#1075) that still caps every loop. Resume now lifts
-  each such cap until its window resets; pausing the loop ends it
-  (ADR-0047).
+  the hub can understate its cost, or raise the plan usage of the Claude
+  login it runs on and cap the loops on that login, a window at a time,
+  for as long as it runs. Loops on other logins are out of its reach
+  (ADR-0060), except that bare and cloud loops share the `default`
+  login's usage and cap: a contained loop on `default` can cap every
+  bare and cloud loop, and a bare loop, which runs on the host's own
+  login, can cap every loop on `default`. Resume now lifts each such cap
+  until its window resets; pausing the loop ends it (ADR-0047).
 - **Inside, the loop is root in all but name.** sudo is passwordless, and
   the hook guards against slips, not an adversary (ADR-0042).
 - **Docker's other default capabilities are kept.** Only `NET_RAW` is

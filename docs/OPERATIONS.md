@@ -281,9 +281,14 @@ that is signed out is held until the login is signed in again or the
 loop moves: it never falls back to `default`.
 Until `default` is signed in, a stored setup-token stands in for it.
 Each login keeps its own plan usage, which only its own loops report
-into, and `GET /api/plan-usage` lists it under `logins`. Until #1075,
-though, every login's loops share one plan cap, so another login's
-five-hour window filling up sleeps the loops on `default` too.
+into, and `GET /api/plan-usage` lists it under `logins`. The plan cap
+works per login too: a login over a threshold sleeps only the loops on
+it, until that login's windows reset, and the two thresholds apply to
+every login. Resume now names the login it lifts
+(`POST /api/plan-cap/resume` with `{"claude_login": "<name>"}`, the
+default with none). Bare loops follow the `default` login's cap, since
+they report into its usage, and so do cloud loops. Moving a capped loop
+to a login that isn't capped wakes it.
 
 **Whose subscription a login is.** Each login is the subscription of the
 person who signs it in, and it runs the loops they run. Spool never pools
