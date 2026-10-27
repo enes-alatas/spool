@@ -73,6 +73,7 @@ import { SideColumn } from '../components/SideColumn'
 import { LoopControls } from '../components/LoopControls'
 import { BotTokenForm, SlackStep, SlackTokenForm } from '../components/SurfaceAttach'
 import { Marked } from '../components/Marked'
+import { LoopLogin } from '../components/LoopLogin'
 
 function Countdown({ at }: { at: number }) {
   const [s, setS] = useState<number | null>(null)
@@ -908,6 +909,7 @@ function WorkstationPanel({ loop, runningVerb }: { loop: LoopView; runningVerb: 
         <span className="k">runtime</span>
         <span className="v">{loop.runtime}</span>
       </div>
+      <LoopLogin loop={loop} />
       <WorkspaceRows loop={loop} />
       {contained ? (
         <>

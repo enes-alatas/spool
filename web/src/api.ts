@@ -1044,6 +1044,10 @@ export interface CreateLoopReq {
   // Whether the loop is in the fleet channel (ADR-0032). On create, absent
   // means the server's default: out for a fleet's first loop, in otherwise.
   in_fleet_channel?: boolean
+  // The Claude login a contained loop runs on (ADR-0060): absent or
+  // `default` for the default. A bare or cloud loop naming another is
+  // refused 409 `claude_login`, and a login the hub doesn't hold 400.
+  claude_login?: string
 }
 
 // The answer to a rehome: the host workspace the move leaves behind ('' for
