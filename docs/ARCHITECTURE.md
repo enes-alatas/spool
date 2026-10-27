@@ -74,7 +74,7 @@ Use these words exactly — in code, UI, docs, and prompts. Don't introduce syno
 | **change record** | The hub's append-only list of who changed which loop or acted on it through the API: a user's name, or `operator` for the operator token, with the action and the loop's name as it was. The loop shows who made it and who changed it last. Activity stays the message list, whose rows already name their author (ADR-0048). |
 | **operator token** | The credential the human running Spool presents to the API: minted at first start into `<data-dir>/operator-token`, and the owner's credential for the CLI and automation. For one more release the control room can also trade it for a `SameSite=Strict` session cookie, which belongs to no user (ADR-0048). Distinct from a loop's hub MCP token in every way — different file, different check, different listener — and never given to a loop (ADR-0030). |
 | **Claude login** | A claude.ai account the hub signs in to with the CLI's own login, held under a name, and the Claude credential it runs loops on: cloud loops through the `claude` CLI, contained loops through the *Claude proxy*. A hub holds several; the one named `default` runs every loop that names none. Each is its signer's own subscription, and has an owner, the user who added it. Sealed, refreshed by the hub before it expires, and never in a workstation. Sign out asks the source to revoke it, which the hub can't confirm, and keeps the login. Until `default` is signed in, a stored setup-token stands in for it (ADR-0056, ADR-0058, ADR-0059, ADR-0060). |
-| **Claude proxy** | The loop listener's `/claude`: a contained loop's claude sends its model requests there, logged in with the loop's own hub token, and the hub forwards them to Anthropic's API on the hub's Claude token. It forwards model requests alone (ADR-0058). |
+| **Claude proxy** | The loop listener's `/claude`: a contained loop's claude sends its model requests there, logged in with the loop's own hub token, and the hub forwards them to Anthropic's API on the token of the *Claude login* the loop names, the default's for one that names none, read at each request. It forwards model requests alone (ADR-0058, ADR-0060). |
 | **connection** | An org-level tool credential/config attachable to loops, of a kind: an `env-var`, an `mcp-server`, or a `github-app`, whose key the hub keeps and whose installation tokens a loop fetches from the hub (ADR-0043). |
 | **control room** | The web UI. |
 | **storm guard** | The rate limit on loop→loop delivery. A recipient it refuses is not listed in the message's `delivered_to` — that field names the loops a message reached, not the ones it addressed — and the refusal is recorded as a `storm_drop` event on the sender. |
@@ -207,8 +207,9 @@ secret itself, so the loop never holds it (ADR-0043, #622). Nor does
 a contained loop hold a Claude credential: its claude sends its model
 requests to the *Claude proxy* on the loop listener, under `/claude`,
 logged in with the loop's own hub token, and the hub forwards them to
-Anthropic's API with the hub's Claude token, the *Claude login*'s or else
-the setup-token (ADR-0058). A
+Anthropic's API with the token of the *Claude login* the loop names, or
+for one that names none the default's or else the setup-token (ADR-0058,
+ADR-0060). A
 bare loop has the host's own network and no wall — one more thing the
 *uncontained* badge means. A bare loop can be moved into a workstation with
 `POST /api/loops/{name}/rehome`: the move lands at a `rehome` context rotation,
