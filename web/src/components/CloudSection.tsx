@@ -613,7 +613,7 @@ function AccountStep({
     <>
       <p className="step-dialog-lede">
         Cloud loops run on the hub's Claude login, the one contained loops use too. Signed in once, here or in
-        Settings → Claude login, it serves both.
+        Settings → Claude logins, it serves both.
       </p>
       {signedIn ? <SignedIn /> : <SignInSteps view={view} setBusy={busy} />}
       <div className="pillar-actions">
