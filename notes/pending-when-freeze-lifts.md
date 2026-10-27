@@ -1334,3 +1334,9 @@ him to check the quote. Sweep: new flake #1163 put on CI reliability. PRs #1161/
 Verified CLOSED COMPLETED with all 17 sub-issues completed; summary on the issue. Elliot free.
 Asked Enes (ref:7203) whether #975 hardened cloud mode is built before 1.0 or parked (my advice:
 park). L6 now: #926 chain, #754 watchdog, #975, evals #450–452.
+
+## 2026-10-27 19:35 UTC — #1164 pending decision carried to Enes (ref:7210)
+HN watch 0 new; no Spool mention on 50257325 yet. New PR #1164 closes #1075 (Terra) with an
+"Operator decision pending" line: bare loops follow the default login's plan usage and cap (ADR-0060
+item 5 amendment). Not on #926 yet; Terra asked Enes today. I DM'd Enes with "yes" proposed. Open
+with Enes: HN thread (7201), #975 (7203), #1164 (7210). #1161/#1162 in review.
