@@ -699,6 +699,9 @@ ADR-0045 is the whole record. In short:
 **Doesn't hold:**
 - **A tag ruleset is recommended, not enforced** (ADR-0052).
 - **A released image freezes the Claude Code CLI** it was built with.
+- **An older release is never patched.** A fix ships in the next release
+  only, so a hub that doesn't upgrade keeps what it fixed (SECURITY.md,
+  "Supported versions").
 
 ### Runner
 
@@ -733,6 +736,10 @@ above says what it is; this is why it stays.
 - **Server-side tools reach hosts off the allowlist** (Loop listener).
   Accepted 2026-10-18 (#932): they run on Anthropic's side, not the
   hub's host, and are no wider than when a loop held the setup-token.
+- **A hub on an older minor release keeps vulnerabilities a later one
+  fixed** (What a release ships). Accepted 2026-10-13 (#777): from 1.0
+  only the latest minor gets security fixes (SECURITY.md), and
+  `spool upgrade` is the way to them.
 
 Three more findings were decided as fixes, and all three are fixed:
 reactions and votes on private messages (#922), members reading
