@@ -45,9 +45,21 @@ if [ "$method" = PATCH ]; then
 fi
 if [ "$method" != GET ]; then
   printf '%s %s %s\n' "$method" "${path##*/}" "${fields[*]}" >> "$CALLS"
+  # delete-fails: the DELETE answers 404, as when the label is already off
+  if [ "$method" = DELETE ] && [ -e "$FIX/delete-fails" ]; then
+    echo 'gh: Label does not exist (HTTP 404)' >&2
+    exit 1
+  fi
   exit 0
 fi
+# labels-fails: the labels read answers 5xx (here, not in the case below,
+# whose exit the pipe into jq would swallow)
+if [[ $path == */issues/*/labels ]] && [ -e "$FIX/labels-fails" ]; then
+  echo 'gh: Server Error (HTTP 502)' >&2
+  exit 1
+fi
 case $path in
+  */issues/*/labels) cat "$FIX/labels.json" 2>/dev/null || echo '[]' ;;
   */commits/main) printf '{"sha":"%s"}' "$(cat "$FIX/main")" ;;
   */commits/*/status) cat "$FIX/status-$(basename "$(dirname "$path")").json" 2>/dev/null || echo '{"statuses":[]}' ;;
   */pulls\?*) cat "$FIX/pulls.json" ;;
@@ -272,6 +284,26 @@ pr 5 s5b "" > "$FIX/pull-5.json"
 unqueue pushed-auto
 refuse 'no label, no label removal' "$CALLS" '^DELETE'
 expect 'auto-merge alone is still turned off' "$CALLS" '^POST graphql '
+# The label is taken off by someone else between the read and the delete
+# (#1155): the 404 is no failure, and the rest of the unqueue goes on.
+fresh pushed-raced
+pr 5 s5b queue > "$FIX/pull-5.json"
+touch "$FIX/delete-fails"
+if unqueue pushed-raced; then pass 'a label already off is no failure'; else fail 'a label already off is no failure'; fi
+expect 'and auto-merge is still turned off' "$CALLS" '^POST graphql '
+expect 'and the head is still marked not queued' "$CALLS" '^POST s5b state=pending .*pushed after queueing'
+expect 'and a queue run is still asked for' "$work/unqueue-pushed-raced" '^unqueued=true$'
+fresh pushed-stuck
+pr 5 s5b queue > "$FIX/pull-5.json"
+touch "$FIX/delete-fails"
+echo '[{"name":"queue"}]' > "$FIX/labels.json"
+if unqueue pushed-stuck; then fail 'a label the delete left on fails the unqueue'; else pass 'a label the delete left on fails the unqueue'; fi
+refuse 'and marks nothing' "$CALLS" '^POST s5b'
+fresh pushed-unread
+pr 5 s5b queue > "$FIX/pull-5.json"
+touch "$FIX/delete-fails" "$FIX/labels-fails"
+if unqueue pushed-unread; then fail 'a label that cannot be read back fails the unqueue'; else pass 'a label that cannot be read back fails the unqueue'; fi
+refuse 'and marks nothing either' "$CALLS" '^POST s5b'
 
 # The tree: a real origin with main and a PR ref, cloned the way
 # actions/checkout leaves a job.

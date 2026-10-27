@@ -138,8 +138,16 @@ unqueue() {
   pr=$(gh api "repos/$repo/pulls/$PR")
   read -r labelled auto node sha < <(jq -r --arg label "$label" \
     '"\([.labels[].name] | index($label) != null) \(.auto_merge != null) \(.node_id) \(.head.sha)"' <<< "$pr")
-  if [ "$labelled" = true ]; then
-    gh api --method DELETE "repos/$repo/issues/$PR/labels/$label" > /dev/null
+  if [ "$labelled" = true ] && ! gh api --method DELETE "repos/$repo/issues/$PR/labels/$label" > /dev/null; then
+    # Someone took the label off between the read and the delete (#1155):
+    # the PR is off the queue either way. Only a label still on is a failure.
+    # Read whole before matching, so a failed read is a failure and grep's
+    # early exit can't SIGPIPE gh into a pipefail "off".
+    local labels
+    labels=$(gh api "repos/$repo/issues/$PR/labels" --jq '.[].name') || return 1
+    if grep -qx "$label" <<< "$labels"; then
+      return 1
+    fi
   fi
   if [ "$auto" = true ]; then
     gh api --method POST graphql -f id="$node" \
