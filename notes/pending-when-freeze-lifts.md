@@ -1323,3 +1323,9 @@ Merged today: #1152 (#1071), #1158 (#1070), #1157 (#1151 flake, closed completed
 unqueue), #1160 (#1159 supported-versions policy, part of #777), #1154 (#1097). Open PRs: #1161
 closes #1072 (Iris), #1162 closes #1073 (Terra), no pending lines; #453 draft. 28 open issues, all
 typed and milestoned except #753 (triage). HN watch: 2 new, no fit. Nothing to request.
+
+## 2026-10-27 18:35 UTC — hot HN thread sent to Enes (ref:7201)
+HN watch surfaced story 50257325 "AI promised less work. I've never worked more" (584 pts, front
+page, 7h): several agents in parallel, each needs you sometimes. Sent Enes a top-level draft and a
+reply draft to carlgreene (50258627, phone access made it worse). Blog itself is off my egress; asked
+him to check the quote. Sweep: new flake #1163 put on CI reliability. PRs #1161/#1162 in review.
