@@ -1,6 +1,6 @@
 # ADR-0060: A hub holds several Claude logins, and a loop runs on one of them
 
-Date: 2026-10-23 · Status: accepted (operator decisions of 2026-10-23, recorded on #926: items 3, 4, 5, 6 and 8) · Amended: 2026-10-27 · Amends: ADR-0044 item 2, ADR-0047 items 3, 5, 7, 8 and 9, ADR-0058 items 1, 2, 3, 6 and 7 · Relates to: ADR-0043, ADR-0046, ADR-0048, ADR-0059
+Date: 2026-10-23 · Status: accepted (operator decisions of 2026-10-23, recorded on #926: items 3, 4, 5, 6 and 8) · Amended: 2026-10-27, 2026-10-28 · Amends: ADR-0044 item 2, ADR-0047 items 3, 5, 7, 8 and 9, ADR-0058 items 1, 2, 3, 6 and 7 · Relates to: ADR-0043, ADR-0046, ADR-0048, ADR-0059
 
 ## Context
 
@@ -88,6 +88,21 @@ refreshes it.
    - Resume now takes a login, and the hold it stores is that login's.
    - Cloud loops follow the default login's cap, as today they follow
      the fleet's.
+
+   **Amendment (2026-10-28, #1075):** bare loops report into the default
+   login's plan usage (item 4), and follow its cap (operator decision of
+   2026-10-28).
+   - A bare loop runs on the host's own login (item 3), which the hub
+     doesn't hold and can't name. Its usage has to go somewhere, and
+     before this ADR it went into the fleet's one record with every
+     other loop's.
+   - On the usual hub the host's login is the operator's, and so is
+     `default`. Counting the two as one plan keeps a one-subscription
+     hub exactly as it was.
+   - Where the host's login is another subscription, a bare loop and the
+     loops on `default` can cap each other. A record of its own for the
+     host, or no plan cap on bare loops, can come later as its own
+     issue.
 
 6. **Who may do what** (operator decision of 2026-10-23; the roles are
    ADR-0048's).
