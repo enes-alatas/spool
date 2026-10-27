@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, PlanWindow } from '../api'
 import { formatAgo, formatResets, formatUsd, gradedColor } from '../format'
-import { capReason } from '../planCap'
+import { capReason, usageLogins } from '../planCap'
+import { LoginRings } from './LoginRings'
 import { useMay } from './Session'
 
 // The relative times on the strip are minutes, so a render a minute keeps
@@ -53,17 +54,22 @@ function PlanWindowStat({ name, window, now }: { name: string; window: PlanWindo
 // moved here from the header so it stands over the TODAY column it totals.
 // The spend is the rows' own sum and shows whatever the plan read says; a
 // hub that cannot read the plan says "unknown", with its reason on hover.
+// A hub with more than one Claude login (ADR-0060) shows a ring a login in
+// the bars' place (LoginRings); a hub with one keeps the bars.
 export function PlanUsageStrip({ spentToday, costDayTitle }: { spentToday: number; costDayTitle?: string }) {
   const { data: usage, error } = useQuery({ queryKey: ['plan-usage'], queryFn: api.planUsage })
   const now = useMinuteClock()
   const unknown = error ? (error instanceof Error ? error.message : String(error)) : usage?.unknown
   const capped = capReason(usage, now)
+  const logins = error ? undefined : usageLogins(usage)
   return (
     <>
       <div className="plan-strip-frame">
         <div className="plan-strip">
           <span className="plan-title">plan usage</span>
-          {unknown !== undefined ? (
+          {logins ? (
+            <LoginRings logins={logins} now={now} />
+          ) : unknown !== undefined ? (
             <span className="plan-window dim" title={unknown}>
               unknown
             </span>

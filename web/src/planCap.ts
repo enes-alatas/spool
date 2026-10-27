@@ -1,4 +1,4 @@
-import type { PlanUsage, PlanWindowKey } from './api'
+import type { LoginPlanUsage, PlanUsage, PlanWindowKey } from './api'
 import { formatResets } from './format'
 
 // The plan cap (#650, #651): above a window's threshold every loop sleeps at
@@ -84,3 +84,20 @@ export function capValue(field: string): number | undefined {
   if (value === '') return 0
   return /^\d+$/.test(value) ? Number(value) : undefined
 }
+
+// The logins the plan strip gives a ring each (ADR-0060): every login's
+// usage when the hub holds more than one, and none on a hub with one, or
+// one older than #1073, which reads as the strip always has.
+export function usageLogins(usage: PlanUsage | undefined): LoginPlanUsage[] | undefined {
+  const logins = usage?.logins
+  return logins && logins.length > 1 ? logins : undefined
+}
+
+// A login's name as its ring fits it: a name up to 8 characters whole, a
+// longer one cut short, since the ring's details name it in full.
+export function ringName(name: string): string {
+  return name.length > 8 ? `${name.slice(0, 7)}…` : name
+}
+
+// What a ring's two windows are, on hover: the strip has no legend.
+export const RING_KEY = '5-hour round the outside, 7-day inside. Click for the figures.'

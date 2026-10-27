@@ -677,8 +677,8 @@ export interface EgressView {
 }
 
 // The Claude plan's usage as the hub last observed it (#647), mirrored from
-// planUsageView in internal/httpapi/planusage.go. One per hub: every loop runs
-// on the operator's one login. With nothing observed both windows are null
+// planUsageView in internal/httpapi/planusage.go: one Claude login's, or the
+// default's at the top level. With nothing observed both windows are null
 // and `unknown` says why.
 export interface PlanUsage {
   five_hour: PlanWindow | null
@@ -686,12 +686,23 @@ export interface PlanUsage {
   as_of?: number
   source?: string
   unknown?: string
-  // The fleet's plan cap (#650): set while a window is over its threshold
-  // and every loop sleeps at its next quiet boundary; null or absent while
-  // nothing is capped.
+  // The login's plan cap (#650, #1075): set while a window is over its
+  // threshold and the loops on that login sleep at their next quiet
+  // boundary; null or absent while nothing is capped.
   cap?: PlanCap | null
   // While a Resume now holds (#650): the cap stays off until this reset.
   resumed_until?: number
+  // Every Claude login's usage (ADR-0060), the default first and the rest
+  // by name; the fields above are the default's. Each entry carries its
+  // own login's cap and Resume now hold (#1075). Only on
+  // GET /api/plan-usage and Resume now's answer, and absent from a hub
+  // older than #1073.
+  logins?: LoginPlanUsage[]
+}
+
+// One Claude login's plan usage, by its name (loginPlanUsageView).
+export interface LoginPlanUsage extends Omit<PlanUsage, 'logins'> {
+  name: string
 }
 
 export type PlanWindowKey = 'five_hour' | 'seven_day'
