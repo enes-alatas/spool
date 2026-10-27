@@ -46,7 +46,7 @@ const (
 	// as model_refusal. It outranks pause, because pause will not fix it,
 	// and yields to a dead workstation, which must be fixed first.
 	StateModelUnrecognized = "model_unrecognized"
-	// StateCapped: the plan is over the fleet's plan cap, or the loop is at
+	// StateCapped: the loop's Claude login is over its plan cap, or it is at
 	// its own daily cap, so it sleeps until the windows over it reset or the
 	// hub's local day turns (ADR-0047). A loop in its turn stays
 	// busy until the turn ends. Every other hold outranks it, since each is
@@ -162,8 +162,9 @@ type Deps struct {
 	// for the Claude login the loop runs on (ADR-0060). Nil in tests that
 	// do not care.
 	PlanUsage *PlanUsage
-	// PlanCap judges the fleet's plan cap: while it holds, the loop takes
-	// no turns (ADR-0047). Nil in tests that do not care, which never cap.
+	// PlanCap judges each Claude login's plan cap: while the loop's holds,
+	// the loop takes no turns (ADR-0047, ADR-0060). Nil in tests that do
+	// not care, which never cap.
 	PlanCap *PlanCap
 	// CloudGate is what the checks of the public address say about waking
 	// a cloud loop: while it holds, a cloud loop takes no turns (ADR-0056).
@@ -439,8 +440,8 @@ func stoppedIsDone(err error) error {
 	return err
 }
 
-// CapChanged tells the loop the plan cap started or stopped holding: it
-// says so in its state, and wakes if the cap lifted (ADR-0047).
+// CapChanged tells the loop a plan cap started or stopped holding: it says
+// so in its state, and wakes if its own login's cap lifted (ADR-0047).
 func (actor *Actor) CapChanged() { actor.send(cmd{kind: "cap"}) }
 
 // CloudGateChanged tells the loop the public address was checked: a cloud
@@ -647,30 +648,31 @@ func (actor *Actor) handleCmd(command cmd) {
 			actor.pump()
 			return
 		}
-		// the edit may have set, raised or removed the loop's daily cap: one
-		// that no longer holds wakes it, as a lifted plan cap does
+		// the edit may have set, raised or removed the loop's daily cap, or
+		// moved it to another Claude login's plan cap: one that no longer
+		// holds wakes it, as a lifted plan cap does
 		actor.armDailyCap()
 		actor.capChanged()
 	}
 }
 
 // holdsWork reports that the loop is not taking turns — paused, its
-// workstation switched off, its model refused, the fleet capped, or a cloud
+// workstation switched off, its model refused, its login capped, or a cloud
 // loop's public address not lately passing its check — so a message is
 // stored until it can be heard and a tick is skipped.
 func (actor *Actor) holdsWork() bool {
 	return actor.paused || actor.loop.WorkstationOff || actor.loop.ModelRefusal != "" || actor.held()
 }
 
-// capped reports whether the fleet's plan cap or the loop's own daily cap
-// holds now. It is asked at every boundary rather than told, so a turn whose
-// own usage report crossed a threshold, or whose cost reached the loop's
-// cap, stops the next turn from starting (ADR-0047).
+// capped reports whether the plan cap of the loop's Claude login, or the
+// loop's own daily cap, holds now. It is asked at every boundary rather
+// than told, so a turn whose own usage report crossed a threshold, or whose
+// cost reached the loop's cap, stops the next turn from starting (ADR-0047).
 func (actor *Actor) capped() bool {
-	return actor.deps.PlanCap != nil && actor.deps.PlanCap.Holds(now()) || actor.dailyCapUntil() > 0
+	return actor.deps.PlanCap != nil && actor.deps.PlanCap.Holds(actor.loop.ClaudeLogin, now()) || actor.dailyCapUntil() > 0
 }
 
-// held reports whether a cap stops the loop's next turn, the fleet's plan
+// held reports whether a cap stops the loop's next turn, its login's plan
 // cap or its own daily one, or for a cloud loop its public address
 // (cloudHeld).
 func (actor *Actor) held() bool { return actor.capped() || actor.cloudHeld() }
@@ -696,7 +698,7 @@ func (actor *Actor) capChanged() {
 
 // drainStoredInbox re-queues the messages that arrived while the loop was
 // not accepting work — paused, its workstation switched off, its model
-// refused, the fleet capped, or a cloud loop's address held. Whatever was
+// refused, its login capped, or a cloud loop's address held. Whatever was
 // said to the loop meanwhile is said again the moment it can hear it.
 func (actor *Actor) drainStoredInbox() {
 	envs, err := actor.deps.Store.Inbox().Drain(context.Background(), actor.loop.ID)
@@ -1674,7 +1676,7 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 	}
 	actor.measureContext()
 
-	// A capped fleet starts no turn here, the handoff included, which
+	// A capped loop starts no turn here, the handoff included, which
 	// spends the plan like any other: this is the quiet boundary the cap
 	// takes hold at (ADR-0047). So is it for a cloud loop its public
 	// address holds (ADR-0056).

@@ -18,7 +18,7 @@ type claudeLogins struct {
 	sealer *box
 }
 
-const claudeLoginColumns = `name, account, owner_user_id, created_at, check_record, plan_usage`
+const claudeLoginColumns = `name, account, owner_user_id, created_at, check_record, plan_usage, plan_cap_resumed_until`
 
 func (table claudeLogins) List(ctx context.Context) ([]*store.ClaudeLogin, error) {
 	rows, err := table.db.QueryContext(ctx, `SELECT `+claudeLoginColumns+` FROM claude_logins ORDER BY name`)
@@ -58,8 +58,8 @@ func (table claudeLogins) Create(ctx context.Context, login *store.ClaudeLogin) 
 	if err != nil {
 		return err
 	}
-	_, err = table.db.ExecContext(ctx, `INSERT INTO claude_logins (`+claudeLoginColumns+`) VALUES (?,?,?,?,?,?)`,
-		login.Name, account, login.OwnerUserID, login.CreatedAt, check, usage)
+	_, err = table.db.ExecContext(ctx, `INSERT INTO claude_logins (`+claudeLoginColumns+`) VALUES (?,?,?,?,?,?,?)`,
+		login.Name, account, login.OwnerUserID, login.CreatedAt, check, usage, login.PlanCapResumedUntil)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return store.ErrDuplicate
 	}
@@ -88,6 +88,10 @@ func (table claudeLogins) SetPlanUsage(ctx context.Context, name string, usage s
 		return err
 	}
 	return table.update(ctx, `UPDATE claude_logins SET plan_usage=? WHERE name=?`, raw, name)
+}
+
+func (table claudeLogins) SetPlanCapResumedUntil(ctx context.Context, name string, until int64) error {
+	return table.update(ctx, `UPDATE claude_logins SET plan_cap_resumed_until=? WHERE name=?`, until, name)
 }
 
 func (table claudeLogins) Delete(ctx context.Context, name string) error {
@@ -142,7 +146,7 @@ func planUsageJSON(usage store.PlanUsageRecord) (string, error) {
 func (table claudeLogins) scan(row interface{ Scan(...any) error }) (*store.ClaudeLogin, error) {
 	var login store.ClaudeLogin
 	var sealed, check, usage string
-	if err := row.Scan(&login.Name, &sealed, &login.OwnerUserID, &login.CreatedAt, &check, &usage); err != nil {
+	if err := row.Scan(&login.Name, &sealed, &login.OwnerUserID, &login.CreatedAt, &check, &usage, &login.PlanCapResumedUntil); err != nil {
 		return nil, err
 	}
 	opened, err := table.sealer.open(sealed)

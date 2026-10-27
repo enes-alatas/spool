@@ -178,8 +178,8 @@ func (manager *Manager) Tick(id string) bool {
 	return true
 }
 
-// CapChanged tells every loop that the plan cap started or stopped holding
-// (ADR-0047).
+// CapChanged tells every loop that a Claude login's plan cap started or
+// stopped holding (ADR-0047, ADR-0060): each asks after its own login's.
 func (manager *Manager) CapChanged() {
 	for _, actor := range manager.actors() {
 		actor.CapChanged()

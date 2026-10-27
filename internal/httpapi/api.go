@@ -49,10 +49,10 @@ type Server struct {
 	// login, when a setup-token is saved and when the operator asks
 	// (ADR-0044). Nil runs no check.
 	LoginChecker *loop.LoginChecker
-	// PlanCap judges the fleet's plan cap (ADR-0047): the plan-usage read
-	// reports it, and a threshold change or a Resume now re-judges it.
-	// Required: a serving hub always has one, and the handlers that read
-	// it do not check.
+	// PlanCap judges each Claude login's plan cap (ADR-0047, ADR-0060): the
+	// plan-usage read reports them, and a threshold change or a Resume now
+	// re-judges them. Required: a serving hub always has one, and the
+	// handlers that read it do not check.
 	PlanCap *loop.PlanCap
 	// Users signs users in and keeps their sessions (ADR-0048). Required:
 	// the guard reads every session cookie through it.
@@ -620,7 +620,7 @@ func (server *Server) view(ctx context.Context, loopRecord *store.Loop) *loopVie
 			nowMS := time.Now().UnixMilli()
 			out.CappedUntil = dailyUntil
 			if server.PlanCap != nil {
-				if planCap := server.PlanCap.At(nowMS); planCap.Holds(nowMS) {
+				if planCap := server.PlanCap.At(loopRecord.ClaudeLogin, nowMS); planCap.Holds(nowMS) {
 					out.CappedUntil = max(out.CappedUntil, planCap.Until)
 				}
 			}
