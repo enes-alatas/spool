@@ -187,6 +187,34 @@ machine.
 - `sudo systemctl restart spool` brings the control room back within
   seconds, and `sudo reboot` brings it back without you.
 
+### The cloud listener on the control room's name
+
+A host that already serves the control room through Caddy can make the
+cloud listener public on the same name, with no tunnel. Route the cloud
+listener's three paths to its port, 8090 unless you changed it, and
+everything else to the control room. This replaces the site block in
+[TLS with Caddy](#tls-with-caddy):
+
+```caddyfile
+spool.example.com {
+	@cloud path /mcp /mcp/check/* /hooks
+	handle @cloud {
+		reverse_proxy 127.0.0.1:8090
+	}
+	handle {
+		reverse_proxy 127.0.0.1:8080
+	}
+}
+```
+
+Reload Caddy, and paste `https://spool.example.com` as the Public address.
+The control room serves none of those paths, so routing them away takes
+nothing from it. The trade-off: the cloud listener then shares the control
+room's origin. The internet reaches both on one name, and a browser sends
+the control room's cookie along to the cloud paths, which ignore it. Give
+the cloud listener a name of its own, a second site block with only the
+`reverse_proxy` to 8090, to keep the two apart.
+
 ### A Tailscale Funnel beside Caddy
 
 The cloud setup's Tailscale step runs `tailscale funnel --bg 8090`, with your
@@ -224,6 +252,15 @@ too, such as from a phone on mobile data:
 answer, a 401. If a cloud session still can't reach the hub, its start
 turns the step red and holds every cloud loop, until you fix the Funnel
 and check the step again (#1093).
+
+**The name doesn't resolve.** `tailscale funnel status` can show the
+Funnel as on before public DNS has the `*.ts.net` name. Until it does,
+the Public address step fails. Check the name from off the tailnet:
+`dig +short <machine>.<tailnet>.ts.net @1.1.1.1`. An empty answer means
+the name hasn't reached public DNS yet. Wait a few minutes and check the
+step again. If it stays empty, put the cloud listener on
+[the control room's name](#the-cloud-listener-on-the-control-rooms-name)
+instead.
 
 ## Claude logins
 
@@ -301,6 +338,7 @@ its machine, the same one the Claude login signs in with.
    hooks make. Nothing changes on claude.ai.
 2. **Public address.** Put a tunnel or a TLS proxy in front of the
    listener ([TLS with Caddy](#tls-with-caddy),
+   [the control room's name](#the-cloud-listener-on-the-control-rooms-name),
    [a Tailscale Funnel](#a-tailscale-funnel-beside-caddy)) and paste its
    HTTPS address. On Spool's side, the hub sends a request through the
    address and checks that its own listener answered. It checks again every
@@ -342,6 +380,10 @@ its machine, the same one the Claude login signs in with.
      carries a warning: only what its environment allows binds it, not the
      hub's allowlist. An edit you save on claude.ai reaches running
      sessions within about a minute.
+   - Changing the public address takes one more step. A cloud loop's
+     session keeps the address it started with, in its `.mcp.json` and
+     its hooks. After you paste the new list and confirm, stop and start
+     each cloud loop, so that its next session starts on the new address.
 
 Then create a loop with the cloud runtime. At its first wake, the hub runs
 `claude --cloud` on its own machine, with the wake as the first message and
