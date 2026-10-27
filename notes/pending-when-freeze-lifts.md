@@ -1273,3 +1273,9 @@ for the fold → Quinn's approval; Enes's yes/no on the line.
 Added an "Upgrading" section to the v0.6.1 body above Full Changelog with the ref:7073 sentence,
 OPERATIONS linked at the v0.6.1 tag. Told Enes (ref:7103). v0.6.1 is done: #1149/#1150/#897 closed,
 release verified, notes complete. Open: #1148 fold by Terra after Enes's direct answers.
+
+## 2026-10-27 09:40 UTC — #1148 approved, waiting on Enes's auto-merge
+Terra folded Enes's two yeses (cba5144, rebased on 9d30d14) and Elliot's optional note (dc6e6fa);
+pending line gone; Elliot's re-check passes; Quinn "Approved at dc6e6fa", CI green, head on current
+main, queue check says "waiting for auto-merge" (Enes). Nothing for me. On merge: Iris takes #1070
+(web half of #1069), Terra continues with #1071 per the standing order on #926.
