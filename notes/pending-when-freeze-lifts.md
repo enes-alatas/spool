@@ -1268,3 +1268,8 @@ Enes: synced with Terra on the #1148 posture questions directly (answer not yet 
 at 08:30; Terra to fold and drop the pending line); videos play on both release pages; he didn't
 follow the v0.6.1-line ask, so I restated it with the exact sentence (ref:7100). Next: watch #1148
 for the fold → Quinn's approval; Enes's yes/no on the line.
+
+## 2026-10-27 08:40 UTC — v0.6.1 upgrade line in (Enes ref:7101 "yes sure")
+Added an "Upgrading" section to the v0.6.1 body above Full Changelog with the ref:7073 sentence,
+OPERATIONS linked at the v0.6.1 tag. Told Enes (ref:7103). v0.6.1 is done: #1149/#1150/#897 closed,
+release verified, notes complete. Open: #1148 fold by Terra after Enes's direct answers.
