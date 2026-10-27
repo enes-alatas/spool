@@ -392,9 +392,9 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 		"ClaudeLoginStore": {
 			// A Claude login's sign-in, which the redactor reads its tokens
 			// from: redacting it on the way in is a circle, as for settings.
-			// The rest is a name, a user id, times and a check's outcome
-			// (ADR-0060).
-			"Create": false, "SetAccount": false, "SetCheck": false, "Delete": false,
+			// The rest is a name, a user id, times, a check's outcome and
+			// plan usage (ADR-0060).
+			"Create": false, "SetAccount": false, "SetCheck": false, "SetPlanUsage": false, "Delete": false,
 			"Get": false, "List": false,
 		},
 		"ConnectionStore": {

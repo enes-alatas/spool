@@ -18,7 +18,7 @@ type claudeLogins struct {
 	sealer *box
 }
 
-const claudeLoginColumns = `name, account, owner_user_id, created_at, check_record`
+const claudeLoginColumns = `name, account, owner_user_id, created_at, check_record, plan_usage`
 
 func (table claudeLogins) List(ctx context.Context) ([]*store.ClaudeLogin, error) {
 	rows, err := table.db.QueryContext(ctx, `SELECT `+claudeLoginColumns+` FROM claude_logins ORDER BY name`)
@@ -54,8 +54,12 @@ func (table claudeLogins) Create(ctx context.Context, login *store.ClaudeLogin) 
 	if err != nil {
 		return err
 	}
-	_, err = table.db.ExecContext(ctx, `INSERT INTO claude_logins (`+claudeLoginColumns+`) VALUES (?,?,?,?,?)`,
-		login.Name, account, login.OwnerUserID, login.CreatedAt, check)
+	usage, err := planUsageJSON(login.PlanUsage)
+	if err != nil {
+		return err
+	}
+	_, err = table.db.ExecContext(ctx, `INSERT INTO claude_logins (`+claudeLoginColumns+`) VALUES (?,?,?,?,?,?)`,
+		login.Name, account, login.OwnerUserID, login.CreatedAt, check, usage)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return store.ErrDuplicate
 	}
@@ -76,6 +80,14 @@ func (table claudeLogins) SetCheck(ctx context.Context, name string, check *stor
 		return err
 	}
 	return table.update(ctx, `UPDATE claude_logins SET check_record=? WHERE name=?`, raw, name)
+}
+
+func (table claudeLogins) SetPlanUsage(ctx context.Context, name string, usage store.PlanUsageRecord) error {
+	raw, err := planUsageJSON(usage)
+	if err != nil {
+		return err
+	}
+	return table.update(ctx, `UPDATE claude_logins SET plan_usage=? WHERE name=?`, raw, name)
 }
 
 func (table claudeLogins) Delete(ctx context.Context, name string) error {
@@ -117,10 +129,20 @@ func checkJSON(check *store.LoginCheckRecord) (string, error) {
 	return string(raw), err
 }
 
+// planUsageJSON is the usage as stored, "" for the zero record: no
+// observation yet.
+func planUsageJSON(usage store.PlanUsageRecord) (string, error) {
+	if usage == (store.PlanUsageRecord{}) {
+		return "", nil
+	}
+	raw, err := json.Marshal(usage)
+	return string(raw), err
+}
+
 func (table claudeLogins) scan(row interface{ Scan(...any) error }) (*store.ClaudeLogin, error) {
 	var login store.ClaudeLogin
-	var sealed, check string
-	if err := row.Scan(&login.Name, &sealed, &login.OwnerUserID, &login.CreatedAt, &check); err != nil {
+	var sealed, check, usage string
+	if err := row.Scan(&login.Name, &sealed, &login.OwnerUserID, &login.CreatedAt, &check, &usage); err != nil {
 		return nil, err
 	}
 	opened, err := table.sealer.open(sealed)
@@ -138,6 +160,10 @@ func (table claudeLogins) scan(row interface{ Scan(...any) error }) (*store.Clau
 		if json.Unmarshal([]byte(check), login.Check) != nil {
 			login.Check = nil
 		}
+	}
+	// usage that doesn't read is usage unknown, which never caps
+	if usage != "" && json.Unmarshal([]byte(usage), &login.PlanUsage) != nil {
+		login.PlanUsage = store.PlanUsageRecord{}
 	}
 	return &login, nil
 }

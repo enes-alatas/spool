@@ -131,6 +131,10 @@ type ClaudeLogin struct {
 	// account, "" otherwise. The login reads as signed out, and the
 	// redactor masks the value whole.
 	Unreadable string
+	// PlanUsage is its plan usage as last observed (ADR-0060), the zero
+	// record before the first observation. The default login's is kept
+	// in SettingPlanUsage instead.
+	PlanUsage PlanUsageRecord
 }
 
 // SignedIn reports whether the login holds a sign-in.
@@ -196,6 +200,9 @@ type ClaudeLoginStore interface {
 	// SetCheck stores the login's last check, nil to forget it.
 	// ErrNotFound for a name the hub doesn't hold.
 	SetCheck(ctx context.Context, name string, check *LoginCheckRecord) error
+	// SetPlanUsage stores the login's plan usage. ErrNotFound for a name
+	// the hub doesn't hold.
+	SetPlanUsage(ctx context.Context, name string, usage PlanUsageRecord) error
 	// Delete removes a login; ErrNotFound for a name the hub doesn't hold.
 	Delete(ctx context.Context, name string) error
 }
@@ -266,13 +273,15 @@ const (
 	LoginCheckInconclusive = "inconclusive"
 )
 
-// SettingPlanUsage holds the newest plan usage the hub has observed, a
-// PlanUsageRecord as JSON. Unset until a first observation.
+// SettingPlanUsage holds the default Claude login's plan usage, a
+// PlanUsageRecord as JSON: the usage of every loop that names no login.
+// Unset until a first observation. Another login keeps its own on its
+// ClaudeLogin (ADR-0060).
 const SettingPlanUsage = "plan_usage"
 
 // PlanUsageRecord is the Claude plan's usage as last observed: how much of
-// each limit window is used and when that window resets. Every loop runs on
-// the one login, so the plan has one record per hub, not one per loop. A
+// each limit window is used and when that window resets. A Claude login
+// has one, which every loop on it reports into, not one per loop. A
 // window the observation did not carry is nil.
 type PlanUsageRecord struct {
 	FiveHour *PlanUsageWindow `json:"five_hour,omitempty"`
