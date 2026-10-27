@@ -234,10 +234,18 @@ and never puts one in a workstation (ADR-0058, ADR-0060).
 
 A hub can hold several Claude logins, each under a name. The one named
 `default` is the one **Sign in with Claude** signs in, on the setup card
-and in Settings → Cloud, and every contained and cloud loop runs on it.
-Choosing another login for a loop comes in a later release (#1071), so
-for now another login is held, refreshed and checked but runs no loop.
+and in Settings → Cloud. A contained loop runs on the login it names, its
+`claude_login`, and one that names none on `default`. A bare loop runs on
+this machine's own login, and a cloud loop on `default` until a later
+release (#1078), so naming a login on either is refused (409). Moving a
+loop to another login closes its process at its next quiet boundary, as
+an attached env-var does, and its session goes on. A loop on a login
+that is signed out is held until the login is signed in again or the
+loop moves: it never falls back to `default`.
 Until `default` is signed in, a stored setup-token stands in for it.
+Until #1073 and #1075, every login's loops share the hub's one plan
+usage and plan cap, so another login's five-hour window filling up
+sleeps the loops on `default` too.
 
 **Whose subscription a login is.** Each login is the subscription of the
 person who signs it in, and it runs the loops they run. Spool never pools
@@ -272,7 +280,12 @@ rotated token back over what the command cleared.
   keeps it, so the loops on it keep a valid name. Sign out is never
   refused.
 - `DELETE /api/claude-logins/ada` removes it. It is refused while loops
-  run on it, and `default` counts every loop.
+  run on it, and `default` counts every loop that names none.
+- An admin puts a loop on a login with `"claude_login": "ada"` in the
+  loop's create or `PATCH`, and `"default"` or `""` moves it back. A
+  member changes no loop's config. Put a loop on another user's login
+  only with that user's say-so: nothing enforces it until loops have
+  owners (#100).
 
 ## Cloud loops
 
