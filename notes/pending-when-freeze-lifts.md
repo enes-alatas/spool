@@ -1284,3 +1284,10 @@ main, queue check says "waiting for auto-merge" (Enes). Nothing for me. On merge
 #1069 CLOSED COMPLETED. Iris took #1070 (11:04), Terra took #1071 (11:03) on their own per the
 standing order on #926; no ping needed. Nothing waits on Enes from me. Next sweep: watch for the
 #1070/#1071 PRs; the v0.6.1 fleet upgrade suggestion (ref:7103) stands.
+
+## 2026-10-27 12:15 UTC — milestone report to Enes (ref:7139)
+Enes asked how milestones stand and noted Cloud runtime open with one docs issue. Reported
+(ref:7141): Cloud runtime 1/43 (#1097), L6 22/71 (#926 chain, #754 watchdog, #777/#975, evals
+#450–452), CI reliability 6/27, L7 empty; #753 triage, #1153 put on CI reliability (sweep change).
+Assigned #1097 to Elliot in the group (ref:7140). Proposed closing Cloud runtime when #1097 merges;
+closing/moving needs Enes's words.
