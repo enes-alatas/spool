@@ -1090,11 +1090,112 @@ textarea {
 .plan-spend .lbl-inline {
   color: var(--text-muted);
 }
+/* A hub with several Claude logins (ADR-0060, #1074): a ring a login in
+   the bars' place. The details open under a ring over the page, so the
+   strip keeps its height whether they are open or not. */
+/* the rings stand taller than a line of text, so the title and the spend
+   sit level with their middles rather than their baseline */
+.plan-strip:has(.login-rings) {
+  align-items: center;
+}
+.login-rings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+}
+.login-ring-slot {
+  position: relative;
+}
+.login-ring {
+  display: block;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}
+.login-ring svg {
+  display: block;
+}
+.login-ring:focus-visible {
+  outline: 2px solid var(--active);
+  outline-offset: 2px;
+}
+.login-ring-track,
+.login-ring-used,
+.login-ring-unknown {
+  fill: none;
+}
+.login-ring-track {
+  stroke: var(--hairline);
+}
+.login-ring-used {
+  stroke-linecap: round;
+}
+.login-ring-cap {
+  stroke: var(--text);
+  stroke-opacity: 0.55;
+  stroke-width: 1.5;
+}
+.login-ring-unknown {
+  stroke: var(--text-muted);
+  stroke-opacity: 0.6;
+  stroke-width: 1.5;
+  stroke-dasharray: 3 4;
+}
+.login-ring-name {
+  fill: var(--text);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+.login-ring-details {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 20;
+  min-width: 19rem;
+  padding: 10px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 7px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  white-space: nowrap;
+}
+.login-ring-details b {
+  color: var(--text);
+  font-weight: 600;
+}
+.login-ring-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 6px;
+}
 /* Narrow, the title takes a line of its own: beside the first window it
    squeezed that bar to its floor while the second had the line to itself. */
 @container plan (max-width: 40rem) {
   .plan-title {
     flex-basis: 100%;
+  }
+  /* A ring's figures hang from the row's left edge, not their ring's:
+     under the last ring they ran past a phone's edge. Each window's
+     figures go under its name, and wrap within the strip. */
+  .login-rings {
+    position: relative;
+  }
+  .login-ring-slot {
+    position: static;
+  }
+  .login-ring-details {
+    min-width: 0;
+    width: max-content;
+    max-width: 100cqi;
+    white-space: normal;
+  }
+  .login-ring-row {
+    flex-direction: column;
+    gap: 0;
   }
 }
 .fleet-note {

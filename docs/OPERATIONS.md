@@ -288,7 +288,9 @@ every login. Resume now names the login it lifts
 (`POST /api/plan-cap/resume` with `{"claude_login": "<name>"}`, the
 default with none). Bare loops follow the `default` login's cap, since
 they report into its usage, and so do cloud loops. Moving a capped loop
-to a login that isn't capped wakes it.
+to a login that isn't capped wakes it. With more than one login, the
+Fleet page's plan strip shows a ring for each, named, whose figures
+open on a click (#1074).
 
 **Whose subscription a login is.** Each login is the subscription of the
 person who signs it in, and it runs the loops they run. Spool never pools

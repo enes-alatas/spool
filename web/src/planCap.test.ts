@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PlanUsage } from './api'
-import { capFields, capGate, capIdleStatus, capReason, capValue } from './planCap'
+import { capFields, capGate, capIdleStatus, capReason, capValue, ringName, usageLogins } from './planCap'
 
 const now = Date.UTC(2026, 9, 9, 12, 0)
 const minutes = (m: number) => now + m * 60000
@@ -78,5 +78,26 @@ describe('the threshold fields', () => {
     expect(capGate(stored, { fiveHour: '90', sevenDay: '90' }).changed).toBe(false)
     expect(capGate(stored, { fiveHour: '', sevenDay: '90' }).sendable).toBe(true)
     expect(capGate(stored, { fiveHour: '80%', sevenDay: '90' }).sendable).toBe(false)
+  })
+})
+
+describe('usageLogins', () => {
+  const line = (name: string) => ({ ...usage(), name })
+  it('gives a ring a login on a hub with more than one', () => {
+    const logins = [line('default'), line('ada')]
+    expect(usageLogins(usage({ logins }))).toEqual(logins)
+  })
+  it('leaves the strip as it was with one login, or on a hub that lists none', () => {
+    expect(usageLogins(usage({ logins: [line('default')] }))).toBeUndefined()
+    expect(usageLogins(usage())).toBeUndefined()
+    expect(usageLogins(undefined)).toBeUndefined()
+  })
+})
+
+describe('ringName', () => {
+  it('keeps a name that fits the ring and cuts a longer one short', () => {
+    expect(ringName('default')).toBe('default')
+    expect(ringName('research')).toBe('research')
+    expect(ringName('research-team')).toBe('researc…')
   })
 })
