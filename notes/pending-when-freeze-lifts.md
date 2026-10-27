@@ -1233,3 +1233,8 @@ or mine on his word) and suggested the fleet upgrade to v0.6.1. v0.6.1 work is o
 Enes asked where the video was. Embedded the README's two user-attachments links: the demo video
 under the headline, the cloud-loop video under "Cloud loops". Told him (ref:7088); I can't view
 them from here, asked him to confirm they play inline. notes/.release-body.md is the live body.
+
+## 2026-10-27 00:15 UTC — demo video on the v0.6.1 notes (Enes ref:7089)
+Prepended the README demo video to the v0.6.1 body (generated list kept; before/after at
+notes/.release-body-v061-before.md / notes/.release-body-v061.md). Told Enes (ref:7090); the
+upgrade line (ref:7087) still waits for his word.
