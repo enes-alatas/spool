@@ -575,7 +575,9 @@ the CLI (ADR-0018).
 - **The stream a loop's claude writes is within the loop's reach.** Turn
   cost and plan usage are the CLI's own report, so a loop working against
   the hub can understate its cost, or raise the plan usage and cap the
-  fleet, a window at a time, for as long as it runs. Resume now lifts
+  fleet, a window at a time, for as long as it runs. It raises only the
+  usage of the Claude login it runs on (ADR-0060), but until the cap works
+  per login (#1075) that still caps every loop. Resume now lifts
   each such cap until its window resets; pausing the loop ends it
   (ADR-0047).
 - **Inside, the loop is root in all but name.** sudo is passwordless, and

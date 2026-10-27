@@ -280,9 +280,10 @@ an attached env-var does, and its session goes on. A loop on a login
 that is signed out is held until the login is signed in again or the
 loop moves: it never falls back to `default`.
 Until `default` is signed in, a stored setup-token stands in for it.
-Until #1073 and #1075, every login's loops share the hub's one plan
-usage and plan cap, so another login's five-hour window filling up
-sleeps the loops on `default` too.
+Each login keeps its own plan usage, which only its own loops report
+into, and `GET /api/plan-usage` lists it under `logins`. Until #1075,
+though, every login's loops share one plan cap, so another login's
+five-hour window filling up sleeps the loops on `default` too.
 
 **Whose subscription a login is.** Each login is the subscription of the
 person who signs it in, and it runs the loops they run. Spool never pools
