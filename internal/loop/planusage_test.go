@@ -2,7 +2,9 @@ package loop
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -21,14 +23,14 @@ func TestPlanUsageKeepsTheNewestObservation(t *testing.T) {
 	}
 	defer db.Close()
 	ctx := context.Background()
-	usage := NewPlanUsage(db.Settings())
+	usage := NewPlanUsage(db.Settings(), db.ClaudeLogins())
 
 	if record, err := LastPlanUsage(ctx, db.Settings()); err != nil || record.At != 0 {
 		t.Fatalf("before any observation = %+v, %v; want the zero record", record, err)
 	}
 	observe := func(record store.PlanUsageRecord) {
 		t.Helper()
-		if err := usage.Observe(ctx, record); err != nil {
+		if err := usage.Observe(ctx, "", record); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -67,10 +69,10 @@ func TestPlanUsageOnlyRisesWithinAWindow(t *testing.T) {
 	}
 	defer db.Close()
 	ctx := context.Background()
-	usage := NewPlanUsage(db.Settings())
+	usage := NewPlanUsage(db.Settings(), db.ClaudeLogins())
 	fiveHour := func(utilization float64, resetsAt, at int64) *store.PlanUsageWindow {
 		t.Helper()
-		if err := usage.Observe(ctx, store.PlanUsageRecord{
+		if err := usage.Observe(ctx, "", store.PlanUsageRecord{
 			FiveHour: &store.PlanUsageWindow{Utilization: utilization, ResetsAt: resetsAt}, At: at, Source: "stream",
 		}); err != nil {
 			t.Fatal(err)
@@ -129,5 +131,77 @@ func TestPlanUsageFromRefusesAWindowOutsideItsSpan(t *testing.T) {
 	far := claude.UnifiedWindow{Utilization: 0.99, ResetsAt: in(30 * 24 * time.Hour)}
 	if _, ok := planUsageFrom(&claude.RateLimitInfo{UnifiedWindows: &claude.UnifiedWindows{SevenDay: &far}}, at); ok {
 		t.Error("a seven-day window resetting in thirty days was kept")
+	}
+}
+
+// Each Claude login keeps its own plan usage (ADR-0060): an observation on
+// one login neither raises nor lowers another's, a loop that names none
+// reports into the default's, a removed login keeps nothing, and the list
+// gives the default first, the rest by name.
+func TestPlanUsageIsKeptPerLogin(t *testing.T) {
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	for _, name := range []string{"bloom", "ada"} {
+		if err := db.ClaudeLogins().Create(ctx, &store.ClaudeLogin{Name: name, CreatedAt: 1}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	usage := NewPlanUsage(db.Settings(), db.ClaudeLogins())
+	observe := func(login string, utilization float64, at int64) {
+		t.Helper()
+		if err := usage.Observe(ctx, login, store.PlanUsageRecord{
+			FiveHour: &store.PlanUsageWindow{Utilization: utilization, ResetsAt: 1 << 50}, At: at, Source: "stream",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	observe("ada", 0.9, 1000)
+	observe("", 0.2, 2000)
+	observe("bloom", 0.1, 3000)
+	observe("default", 0.3, 4000)
+	observe("gone", 0.99, 5000)
+
+	usages, err := PlanUsages(ctx, db.Settings(), db.ClaudeLogins())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []struct {
+		login string
+		used  float64
+	}{{"default", 0.3}, {"ada", 0.9}, {"bloom", 0.1}}
+	if len(usages) != len(want) {
+		t.Fatalf("usages = %+v; want %v", usages, want)
+	}
+	for i, row := range want {
+		if got := usages[i]; got.Login != row.login || got.Usage.FiveHour == nil || got.Usage.FiveHour.Utilization != row.used {
+			t.Errorf("usages[%d] = %s %+v; want %s at %v", i, got.Login, got.Usage.FiveHour, row.login, row.used)
+		}
+	}
+	if _, err := PlanUsageOf(ctx, db.Settings(), db.ClaudeLogins(), "gone"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("a login the hub doesn't hold reads %v; want ErrNotFound", err)
+	}
+}
+
+// Until the cap works per login (#1075), any login over a threshold caps
+// the fleet, until the latest reset among the logins over.
+func TestPlanCapHoldsWhileAnyLoginIsOver(t *testing.T) {
+	usages := []LoginPlanUsage{
+		{Login: "default", Usage: store.PlanUsageRecord{FiveHour: &store.PlanUsageWindow{Utilization: 0.2, ResetsAt: 9000}}},
+		{Login: "ada", Usage: store.PlanUsageRecord{FiveHour: &store.PlanUsageWindow{Utilization: 0.95, ResetsAt: 5000}}},
+		{Login: "bloom", Usage: store.PlanUsageRecord{
+			FiveHour: &store.PlanUsageWindow{Utilization: 0.91, ResetsAt: 7000},
+			SevenDay: &store.PlanUsageWindow{Utilization: 0.5, ResetsAt: 80000},
+		}},
+	}
+	planCap := fleetCapOf(usages, 90, 90, 0, 1000)
+	if !planCap.Holds(1000) || !slices.Equal(planCap.Windows, []string{PlanWindowFiveHour}) || planCap.Until != 7000 {
+		t.Fatalf("cap = %+v; want five_hour until 7000, bloom's reset", planCap)
+	}
+	if planCap := fleetCapOf(usages, 90, 90, 0, 7000); planCap.Holds(7000) {
+		t.Fatalf("cap at 7000 = %+v; want lifted once both logins over have reset", planCap)
 	}
 }

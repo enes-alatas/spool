@@ -507,8 +507,8 @@ func main() {
 	}
 	models := loop.NewModels(rdb, pubsub, runtimes[defaultRuntime], defaultRuntime, ver, log)
 	deps.ObserveModel = models.Observe
-	deps.PlanUsage = loop.NewPlanUsage(rdb.Settings())
-	planCap := loop.NewPlanCap(rdb.Settings(), log)
+	deps.PlanUsage = loop.NewPlanUsage(rdb.Settings(), rdb.ClaudeLogins())
+	planCap := loop.NewPlanCap(rdb.Settings(), rdb.ClaudeLogins(), log)
 	// read before the actors start, so a hub restarted while capped
 	// starts its loops capped
 	if err := planCap.Refresh(context.Background()); err != nil {

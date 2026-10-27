@@ -26,6 +26,20 @@ type planUsageView struct {
 	ResumedUntil int64 `json:"resumed_until,omitempty"`
 }
 
+// planUsagesView is GET /api/plan-usage: the default login's plan usage at
+// the top, and every login's in logins, the default first (ADR-0060).
+// Until the cap works per login (#1075), each carries the fleet's cap.
+type planUsagesView struct {
+	planUsageView
+	Logins []loginPlanUsageView `json:"logins"`
+}
+
+// loginPlanUsageView is one Claude login's plan usage, by its name.
+type loginPlanUsageView struct {
+	Name string `json:"name"`
+	planUsageView
+}
+
 // planWindowView is one window. A window whose reset time has passed since
 // the observation reads Reset with nothing used, and no next reset time,
 // which only the next observation can tell. CapPercent is the window's
@@ -60,14 +74,24 @@ func (server *Server) handleResumePlanCap(w http.ResponseWriter, r *http.Request
 }
 
 func (server *Server) handlePlanUsage(w http.ResponseWriter, r *http.Request) {
-	record, err := loop.LastPlanUsage(r.Context(), server.Store.Settings())
+	usages, err := loop.PlanUsages(r.Context(), server.Store.Settings(), server.Store.ClaudeLogins())
 	if err != nil {
 		server.jsonErr(w, 500, "%v", err)
 		return
 	}
 	now := time.Now().UnixMilli()
 	fiveHour, sevenDay := server.PlanCap.Thresholds()
-	writeJSON(w, 200, planUsageOf(record, server.PlanCap.At(now), fiveHour, sevenDay, now))
+	planCap := server.PlanCap.At(now)
+	// the first is the default's, which the top-level fields stay until
+	// the control room reads logins alone (ADR-0060)
+	view := planUsagesView{planUsageView: planUsageOf(usages[0].Usage, planCap, fiveHour, sevenDay, now)}
+	for _, usage := range usages {
+		view.Logins = append(view.Logins, loginPlanUsageView{
+			Name:          usage.Login,
+			planUsageView: planUsageOf(usage.Usage, planCap, fiveHour, sevenDay, now),
+		})
+	}
+	writeJSON(w, 200, view)
 }
 
 // planUsageOf renders record as read at the time now, with the plan cap as

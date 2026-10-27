@@ -159,8 +159,8 @@ type Deps struct {
 	// care.
 	ObserveModel func(loopRecord *store.Loop, spawned, resolved string)
 	// PlanUsage keeps the plan usage a loop's process reports, the newest
-	// across the fleet, since every loop runs on the one login. Nil in tests
-	// that do not care.
+	// for the Claude login the loop runs on (ADR-0060). Nil in tests that
+	// do not care.
 	PlanUsage *PlanUsage
 	// PlanCap judges the fleet's plan cap: while it holds, the loop takes
 	// no turns (ADR-0047). Nil in tests that do not care, which never cap.
@@ -1505,7 +1505,7 @@ func (actor *Actor) handleEvent(ev claude.Event) {
 	case ev.Type == "rate_limit_event":
 		actor.storeClaudeEvent(ev)
 		if observed, ok := planUsageFrom(ev.RateLimit, now()); ok && actor.deps.PlanUsage != nil {
-			if err := actor.deps.PlanUsage.Observe(context.Background(), observed); err != nil {
+			if err := actor.deps.PlanUsage.Observe(context.Background(), actor.loop.ClaudeLogin, observed); err != nil {
 				actor.log().Error("plan usage", "err", err)
 			} else if actor.deps.PlanCap != nil {
 				// judged before the turn ends, so its end is the boundary

@@ -117,7 +117,7 @@ func TestPlanCapReadsItsSettings(t *testing.T) {
 		At:       1000,
 	})
 	set(store.SettingPlanUsage, string(raw))
-	planCap := NewPlanCap(settings, nil)
+	planCap := NewPlanCap(settings, db.ClaudeLogins(), nil)
 	if err := planCap.Refresh(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestPlanCapReadsItsSettings(t *testing.T) {
 	if planCap.Holds(2000) {
 		t.Fatal("the cap still holds after Resume now")
 	}
-	restarted := NewPlanCap(settings, nil)
+	restarted := NewPlanCap(settings, db.ClaudeLogins(), nil)
 	if err := restarted.Refresh(ctx); err != nil {
 		t.Fatal(err)
 	}

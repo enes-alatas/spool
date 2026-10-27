@@ -3,9 +3,14 @@
 package itest
 
 import (
+	"context"
+	"database/sql"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/enes-alatas/spool/internal/store"
 )
 
 type planWindowJSON struct {
@@ -26,6 +31,23 @@ type planUsageJSON struct {
 		Until   int64    `json:"until"`
 	} `json:"cap"`
 	ResumedUntil int64 `json:"resumed_until"`
+	// Logins is every Claude login's plan usage, the default first.
+	Logins []loginPlanUsageJSON `json:"logins"`
+}
+
+type loginPlanUsageJSON struct {
+	Name string `json:"name"`
+	planUsageJSON
+}
+
+// login is the entry for the Claude login called name, nil without one.
+func (view planUsageJSON) login(name string) *loginPlanUsageJSON {
+	for i := range view.Logins {
+		if view.Logins[i].Name == name {
+			return &view.Logins[i]
+		}
+	}
+	return nil
 }
 
 func (s *server) planUsage() planUsageJSON {
@@ -123,5 +145,70 @@ func TestThePlanUsageOnlyRisesWithinAWindow(t *testing.T) {
 	srv.waitTurn("meter", 30*time.Second, func(tr turn) bool { return strings.Contains(tr.ResultText, "far") })
 	if view := srv.planUsage(); view.Cap != nil || *view.FiveHour != *measured.FiveHour {
 		t.Fatalf("a five-hour window resetting in a day was kept: cap %+v, five_hour %+v", view.Cap, view.FiveHour)
+	}
+}
+
+// Each Claude login keeps its own plan usage (ADR-0060): a loop's report
+// lands on the login it runs on, and neither raises nor lowers another
+// login's. The top-level fields stay the default's, and a login's usage
+// survives a restart. The loops are bare, which the API refuses to put on
+// a login, so the test names one in the store: what the hub does with a
+// loop's report is the same on any runtime.
+func TestPlanUsageIsKeptPerClaudeLogin(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dataDir := t.TempDir()
+	hub := startServer(t, dataDir)
+	hub.createLoop("aster", map[string]any{"workspace_path": workspaceWithScript(t, "first\n!usage 0.42 0.17 measured\n!usage 0.05 0.02 lower\n")})
+	hub.createLoop("bloom", map[string]any{"workspace_path": workspaceWithScript(t, "first\n!usage 0.60 0.30 bloomed\n")})
+	for _, name := range []string{"aster", "bloom"} {
+		hub.waitTurn(name, firstTurnWait, func(tr turn) bool { return strings.Contains(tr.ResultText, "first") })
+	}
+	hub.stop()
+	db := openStoreAt(t, dataDir)
+	if err := db.ClaudeLogins().Create(ctx, &store.ClaudeLogin{Name: "ada", CreatedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	raw, err := sql.Open("sqlite", "file:"+filepath.Join(dataDir, "spool.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(`UPDATE loops SET claude_login = 'ada' WHERE name = 'bloom'`); err != nil {
+		t.Fatal(err)
+	}
+	raw.Close()
+	hub = startServer(t, dataDir)
+
+	view := hub.planUsage()
+	if len(view.Logins) != 2 || view.Logins[0].Name != "default" || view.Logins[1].Name != "ada" {
+		t.Fatalf("logins = %+v; want default, then ada", view.Logins)
+	}
+	if ada := view.login("ada"); ada.Unknown == "" || ada.FiveHour != nil {
+		t.Fatalf("ada before any report = %+v; want unknown with a reason", ada.planUsageJSON)
+	}
+
+	before := time.Now().UnixMilli()
+	hub.message("aster", "how much is used?")
+	hub.waitTurn("aster", 30*time.Second, func(tr turn) bool { return strings.Contains(tr.ResultText, "measured") })
+	hub.message("bloom", "how much is used?")
+	hub.waitTurn("bloom", 30*time.Second, func(tr turn) bool { return strings.Contains(tr.ResultText, "bloomed") })
+	view = hub.planUsage()
+	assertPlanUsage(t, view.login("default").planUsageJSON, before)
+	assertPlanUsage(t, view, before)
+	ada := view.login("ada")
+	if ada.FiveHour == nil || ada.FiveHour.UsedPercent < 59.99 || ada.FiveHour.UsedPercent > 60.01 || ada.SevenDay == nil {
+		t.Fatalf("ada = %+v %+v; want bloom's 60%%", ada.FiveHour, ada.SevenDay)
+	}
+
+	// a lower report on the default leaves it, and leaves ada's too
+	hub.message("aster", "and now?")
+	hub.waitTurn("aster", 30*time.Second, func(tr turn) bool { return strings.Contains(tr.ResultText, "lower") })
+	hub.stop()
+	hub = startServer(t, dataDir)
+	after := hub.planUsage()
+	if *after.FiveHour != *view.FiveHour || *after.login("ada").FiveHour != *ada.FiveHour {
+		t.Fatalf("after a lower report and a restart: default %+v, ada %+v; want %+v and %+v kept",
+			after.FiveHour, after.login("ada").FiveHour, view.FiveHour, ada.FiveHour)
 	}
 }

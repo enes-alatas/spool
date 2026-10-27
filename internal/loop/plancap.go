@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -38,31 +39,33 @@ func (planCap Cap) Holds(now int64) bool {
 	return len(planCap.Windows) > 0 && now < planCap.Until && planCap.ResumedUntil < planCap.Until
 }
 
-// PlanCap judges the plan cap for the whole fleet, since every loop draws on
-// the operator's one plan. It keeps what the judgment rests on in memory, so
-// an actor can ask on every message and tick without a store read, and
-// re-reads it whenever one of them changes.
+// PlanCap judges the plan cap for the whole fleet: any Claude login over a
+// threshold caps every loop, on whichever login, until the cap works per
+// login (#1075). It keeps what the judgment rests on in memory, so an actor
+// can ask on every message and tick without a store read, and re-reads it
+// whenever one of them changes.
 type PlanCap struct {
 	settings store.SettingsStore
+	logins   store.ClaudeLoginStore
 	log      *slog.Logger
 	changed  chan struct{} // wakes Run to judge again; holds at most one
 
 	mu           sync.Mutex
-	usage        store.PlanUsageRecord
+	usages       []LoginPlanUsage
 	fiveHour     int
 	sevenDay     int
 	resumedUntil int64
 	onChange     func()
 }
 
-// NewPlanCap returns a cap that reads its thresholds, the plan usage and
-// any Resume now from settings. Nothing is capped until Refresh first reads
-// them.
-func NewPlanCap(settings store.SettingsStore, log *slog.Logger) *PlanCap {
+// NewPlanCap returns a cap that reads its thresholds and any Resume now
+// from settings, and each login's plan usage where PlanUsage keeps it.
+// Nothing is capped until Refresh first reads them.
+func NewPlanCap(settings store.SettingsStore, logins store.ClaudeLoginStore, log *slog.Logger) *PlanCap {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &PlanCap{settings: settings, log: log, changed: make(chan struct{}, 1)}
+	return &PlanCap{settings: settings, logins: logins, log: log, changed: make(chan struct{}, 1)}
 }
 
 // OnChange sets what Run calls each time the cap starts or stops holding.
@@ -73,11 +76,11 @@ func (planCap *PlanCap) OnChange(notify func()) {
 	planCap.onChange = notify
 }
 
-// Refresh re-reads the thresholds, the plan usage and the Resume now hold,
-// and has Run judge the cap again. A read that fails keeps what was last
-// read: the cap neither appears nor lifts on a store error.
+// Refresh re-reads the thresholds, every login's plan usage and the Resume
+// now hold, and has Run judge the cap again. A read that fails keeps what
+// was last read: the cap neither appears nor lifts on a store error.
 func (planCap *PlanCap) Refresh(ctx context.Context) error {
-	usage, err := LastPlanUsage(ctx, planCap.settings)
+	usages, err := PlanUsages(ctx, planCap.settings, planCap.logins)
 	if err != nil {
 		return err
 	}
@@ -87,7 +90,7 @@ func (planCap *PlanCap) Refresh(ctx context.Context) error {
 	}
 	fiveHour, sevenDay := PlanCapThresholds(ctx, planCap.settings, planCap.log)
 	planCap.mu.Lock()
-	planCap.usage, planCap.fiveHour, planCap.sevenDay, planCap.resumedUntil = usage, fiveHour, sevenDay, resumedUntil
+	planCap.usages, planCap.fiveHour, planCap.sevenDay, planCap.resumedUntil = usages, fiveHour, sevenDay, resumedUntil
 	planCap.mu.Unlock()
 	planCap.signal()
 	return nil
@@ -97,7 +100,7 @@ func (planCap *PlanCap) Refresh(ctx context.Context) error {
 func (planCap *PlanCap) At(now int64) Cap {
 	planCap.mu.Lock()
 	defer planCap.mu.Unlock()
-	return capOf(planCap.usage, planCap.fiveHour, planCap.sevenDay, planCap.resumedUntil, now)
+	return fleetCapOf(planCap.usages, planCap.fiveHour, planCap.sevenDay, planCap.resumedUntil, now)
 }
 
 // Holds reports whether the cap stops the loops at the time now.
@@ -116,7 +119,7 @@ func (planCap *PlanCap) Thresholds() (fiveHour, sevenDay int) {
 // is stored, so a restart keeps it.
 func (planCap *PlanCap) Resume(ctx context.Context, now int64) error {
 	planCap.mu.Lock()
-	current := capOf(planCap.usage, planCap.fiveHour, planCap.sevenDay, planCap.resumedUntil, now)
+	current := fleetCapOf(planCap.usages, planCap.fiveHour, planCap.sevenDay, planCap.resumedUntil, now)
 	if !current.Holds(now) {
 		planCap.mu.Unlock()
 		return nil
@@ -169,6 +172,23 @@ func (planCap *PlanCap) signal() {
 	case planCap.changed <- struct{}{}:
 	default: // a judgment is already due, and it reads the newest state
 	}
+}
+
+// fleetCapOf judges the cap on every login's usage at the time now: the
+// windows any login is over, and the latest of those logins' resets, so
+// it holds until every login over has reset.
+func fleetCapOf(usages []LoginPlanUsage, fiveHour, sevenDay int, resumedUntil, now int64) Cap {
+	fleet := Cap{ResumedUntil: resumedUntil}
+	for _, usage := range usages {
+		login := capOf(usage.Usage, fiveHour, sevenDay, resumedUntil, now)
+		for _, window := range login.Windows {
+			if !slices.Contains(fleet.Windows, window) {
+				fleet.Windows = append(fleet.Windows, window)
+			}
+		}
+		fleet.Until = max(fleet.Until, login.Until)
+	}
+	return fleet
 }
 
 // capOf judges the cap on usage at the time now. A window counts only while
