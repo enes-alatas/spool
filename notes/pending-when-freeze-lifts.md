@@ -1298,3 +1298,10 @@ sessions", "keep running", "Telegram" "restart", "agents" "coordinate") and draf
 invites. I agreed with guard rails (disclose authorship, recent threads only, 3–5 replies) and asked
 him to allow hn.algolia.com + news.ycombinator.com on my egress (curl and WebFetch both refused).
 Deliverable: notes/hn-outreach.md shortlist (link, quote, fit, drafted reply in Enes's voice).
+
+## 2026-10-27 12:50 UTC — HN outreach shortlist delivered (ref:7156)
+Egress allowed (ref:7154). 10 Algolia queries, 60 days, 110 unique comments parsed with
+/home/loop/tools/hnparse.pl (no Go/jq/python here; perl only) into notes/hn/all.md. Shortlist of 5
+with drafted replies in notes/hn-outreach.md, claims verified on main; sent to Enes as an attachment.
+Enes posts; I don't. Next: his edits or a go; possibly a watch for new Ask HN threads on multi-session
+work (he'd need to say so).
