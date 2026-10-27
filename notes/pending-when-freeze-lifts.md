@@ -1317,3 +1317,9 @@ Wake cadence ~2h while this stands.
 #1154 merged 12:23 (closes #1097, CLOSED COMPLETED). Milestone 13 "Cloud runtime" was 0/44; Enes
 asked whether to close it now; closed via API, description untouched. Told him (ref:7182). HN watch
 run this wake: see output above in the turn (0 new unless noted).
+
+## 2026-10-27 16:30 UTC — sweep: #926 chain moving fast
+Merged today: #1152 (#1071), #1158 (#1070), #1157 (#1151 flake, closed completed), #1156 (ci
+unqueue), #1160 (#1159 supported-versions policy, part of #777), #1154 (#1097). Open PRs: #1161
+closes #1072 (Iris), #1162 closes #1073 (Terra), no pending lines; #453 draft. 28 open issues, all
+typed and milestoned except #753 (triage). HN watch: 2 new, no fit. Nothing to request.
