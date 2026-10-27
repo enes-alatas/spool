@@ -301,7 +301,14 @@ logins to revoke at claude.ai. With the hub running, remove the user
 from the control room instead: a refresh under way could write a
 rotated token back over what the command cleared.
 
-**From the API**, until the control room lists them (#1070):
+**In the control room**, Settings → Claude logins lists them, the
+default first, each with its state and last check. **Add a Claude
+login** takes a name, then runs the same sign-in as the default. Each
+login's line carries Sign in, Check again, Sign out and Remove for its
+owner and the admins, and Sign out first names the loops it holds
+(#1070).
+
+**From the API**:
 - `GET /api/claude-logins` lists them, with each one's last check and,
   on the logins the caller may manage, the address it signed in with;
   never a token.

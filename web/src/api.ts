@@ -37,6 +37,9 @@ export interface LoopView {
   worktree_path: string
   branch: string
   runtime: 'bare' | 'docker' | 'cloud'
+  // The Claude login a contained loop runs on, '' for the default; a bare
+  // or cloud loop's is always '' (ADR-0060).
+  claude_login: string
   // A cloud loop's current session on claude.ai, absent before its first
   // session; the hub serves only a https://claude.ai/code/ page (ADR-0056).
   cloud_session_url?: string
@@ -620,6 +623,28 @@ export interface CloudAccountView {
   cli: boolean
   // The last account check, absent until one has run.
   check?: CloudAccountCheck
+}
+
+// One of the hub's Claude logins (ADR-0060), mirrored from httpapi's
+// claudeLoginView: never its tokens. email is the address it signed in
+// with, absent when unknown or when the caller is neither its owner nor an
+// admin; owner is the user who added it, absent for the one the hub made.
+export interface ClaudeLogin {
+  name: string
+  email?: string
+  owner?: string
+  signed_in: boolean
+  default: boolean
+  created_at: number
+  // The last login check, absent before the first.
+  check?: LoginCheckRecord
+}
+
+// How a login check ended, or that it has not yet (store.LoginCheckRecord).
+export interface LoginCheckRecord {
+  status: 'pending' | 'ok' | 'refused' | 'inconclusive'
+  refusal?: string
+  at: number
 }
 
 // The fleet's workstation egress allowlist (#542, ADR-0028): the built-in
@@ -1440,6 +1465,27 @@ export const api = {
   // Forgets the account; it doesn't revoke it yet.
   removeCloudAccount: () => req<CloudSettings>('/api/settings/cloud/account', { method: 'DELETE' }),
   checkCloudAccount: () => req<CloudSettings>('/api/settings/cloud/account/check', { method: 'POST' }),
+  // The hub's Claude logins (ADR-0060): any user lists them and adds one of
+  // their own; its owner or an admin signs it in, checks it, signs it out and
+  // removes it. The sign-in answers as the cloud one does, refused with
+  // `cloud_sign_in`. Removal is refused (409 `claude_login`) while loops run
+  // on the login, and the refusal names them.
+  claudeLogins: () => req<{ logins: ClaudeLogin[] }>('/api/claude-logins'),
+  addClaudeLogin: (name: string) =>
+    req<ClaudeLogin>('/api/claude-logins', { method: 'POST', body: JSON.stringify({ name }) }),
+  removeClaudeLogin: (name: string) =>
+    req<void>(`/api/claude-logins/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+  startClaudeLoginSignIn: (name: string) =>
+    req<{ link: string }>(`/api/claude-logins/${encodeURIComponent(name)}/sign-in`, { method: 'POST' }),
+  finishClaudeLoginSignIn: (name: string, code: string) =>
+    req<ClaudeLogin>(`/api/claude-logins/${encodeURIComponent(name)}/sign-in/code`, {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    }),
+  checkClaudeLogin: (name: string) =>
+    req<ClaudeLogin>(`/api/claude-logins/${encodeURIComponent(name)}/check`, { method: 'POST' }),
+  signOutClaudeLogin: (name: string) =>
+    req<ClaudeLogin>(`/api/claude-logins/${encodeURIComponent(name)}/sign-out`, { method: 'POST' }),
   egress: () => req<EgressView>('/api/settings/egress'),
   // Refused with 400 `egress_host_invalid` and egress.Validate's reason, a
   // port included; a host already on the list, once normalized, changes

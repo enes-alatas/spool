@@ -4,7 +4,6 @@ import { api, ApiError, type CustomModel, type Settings as SettingsView } from '
 import { customModelError, MODEL_LABEL_MAX, rotationGate } from '../forms'
 import { customModelNote } from '../options'
 import { buildFacts, useVersion } from '../version'
-import { HarnessCheck } from '../components/HarnessCheck'
 import { useMay, useSignOut } from '../components/Session'
 import { SignOutIcon } from '../components/Icons'
 import { EgressSection } from '../components/EgressSection'
@@ -13,7 +12,6 @@ import { ClaudeLoginSection } from '../components/ClaudeLogin'
 import { UsersSection } from '../components/UsersSection'
 import { ChatAccess } from '../components/ChatAccess'
 import { LinksSection } from '../components/LinksSection'
-import { loginCheckTone } from '../onboarding'
 import { CapBanner, useMinuteClock } from '../components/PlanUsage'
 import { capFields, capGate, capIdleStatus, capReason, capValue, type CapDraft } from '../planCap'
 import { errorTurnsField, errorTurnsValue } from '../health'
@@ -29,12 +27,14 @@ export default function Settings() {
       {/* An owner's Users section carries the rest of Access under its
           list; an admin, who manages no users, gets that part alone. */}
       {may('manage-users') ? <UsersSection /> : may('manage') && <ChatAccess />}
+      {/* Any user adds a Claude login of their own (ADR-0060); its owner or an
+          admin acts on it, and only an admin runs the login check. */}
+      <ClaudeLoginSection settings={settings} />
       {/* The rest is the hub's own configuration, which only an admin
-          changes (#679): a member's Settings is who they are and which
-          Spool this is. */}
+          changes (#679): a member's Settings is who they are, their Claude
+          logins and which Spool this is. */}
       {may('manage') && (
         <>
-          <ClaudeLogin settings={settings} />
           <CustomModels />
           <PlanGuardrails settings={settings} loadError={loadError} />
           <HealthCheck settings={settings} loadError={loadError} />
@@ -127,39 +127,6 @@ function Build() {
 // that section to find out.
 function loadFailure(loadError: Error): string {
   return `Could not load settings: ${loadError.message}`
-}
-
-// The hub's Claude login (ADR-0058), and under it the harness's last login
-// check (ADR-0044), which a sign-in starts.
-function ClaudeLogin({ settings }: { settings?: SettingsView }) {
-  return (
-    <ClaudeLoginSection settings={settings}>
-      <div className="form">
-        <LoginCheck />
-      </div>
-    </ClaudeLoginSection>
-  )
-}
-
-// The harness's last login check (ADR-0044), as the onboarding read words
-// it, and a way to run one. Polled quickly only while a check runs.
-function LoginCheck() {
-  const { data } = useQuery({
-    queryKey: ['onboarding'],
-    queryFn: api.onboarding,
-    refetchInterval: (q) => (q.state.data?.harness.checking ? 2000 : false),
-    retry: false,
-  })
-  const harness = data?.harness
-  if (!harness) return null
-  return (
-    <div className="login-check">
-      <span className={`login-check-state ${loginCheckTone(harness)}`}>
-        {harness.reason ?? (harness.done ? 'the login works' : 'the login is not checked yet')}
-      </span>
-      <HarnessCheck pillar={harness} />
-    </div>
-  )
 }
 
 // The plan cap's two thresholds (#650, #651): past either window's, every

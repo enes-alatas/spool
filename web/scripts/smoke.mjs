@@ -257,7 +257,26 @@ try {
   step = 'Settings'
   await page.goto(base + '/settings')
   await heading('Settings')
-  await see(page.getByRole('heading', { name: 'Claude login', exact: true }), 'the Claude login section')
+  await see(page.getByRole('heading', { name: 'Claude logins', exact: true }), 'the Claude logins section')
+
+  // Adding a Claude login (#1070) adds it signed out and opens its sign-in;
+  // closed unfinished, it stays on the list to sign in later, and Remove
+  // takes it off.
+  step = 'Claude logins'
+  const logins = page.locator('section.claude-login')
+  await logins.getByRole('button', { name: 'Add a Claude login' }).click()
+  const addLogin = page.getByRole('dialog', { name: 'Add a Claude login' })
+  await addLogin.getByLabel('Name').fill('ada')
+  await addLogin.getByRole('button', { name: 'Add and sign in' }).click()
+  const loginSignIn = page.getByRole('dialog', { name: 'Sign in ada' })
+  await see(loginSignIn, "the new login's sign-in")
+  await loginSignIn.getByText('Close', { exact: true }).click()
+  await gone(loginSignIn, "the new login's sign-in")
+  const remove = logins.getByRole('button', { name: 'Remove the Claude login ada' })
+  await see(remove, 'the new login on the list')
+  page.once('dialog', (dialog) => dialog.accept())
+  await remove.click()
+  await gone(remove, 'the removed login')
 
   // Egress opens as a dialog from its summary (#971), and adding a host as a
   // second one over it, whose hint carries a chip.

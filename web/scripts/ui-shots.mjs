@@ -529,16 +529,40 @@ await page.screenshot({ path: signInDialogFile })
 taken.push(signInDialogFile)
 await page.unroute('**/api/settings')
 
-// Settings → Claude login (#929) with the login check's row (#588) under
-// it, after a refusal.
-await page.route('**/api/onboarding', (route) => route.fulfill({ json: firstRun.refused }))
+// Settings → Claude logins (#929, #1070) after the hub's login check
+// (#588) refused the default, which its one line reads.
+await page.route('**/api/claude-logins', (route) =>
+  route.fulfill({
+    json: {
+      logins: [
+        {
+          name: 'default',
+          signed_in: true,
+          default: true,
+          created_at: 0,
+          check: { status: 'refused', refusal: 'OAuth token has expired', at: Date.now() - 120000 },
+        },
+      ],
+    },
+  }),
+)
+const cloudView = await (await page.request.get(base + '/api/settings/cloud')).json()
+await page.route('**/api/settings/cloud', (route) =>
+  route.fulfill({
+    json: {
+      ...cloudView,
+      account: { set: true, cli: true, check: { state: 'ok', checked_at: Date.now() - 720000 } },
+    },
+  }),
+)
 await page.goto(base + '/settings', { waitUntil: 'networkidle' })
 const claudeLogin = page.locator('section.claude-login')
-await claudeLogin.locator('.login-check').waitFor({ timeout: 15000 })
+await claudeLogin.locator('.cloud-step.bad').waitFor({ timeout: 15000 })
 const loginCheckFile = `${outDir}/settings-login-check.png`
 await claudeLogin.screenshot({ path: loginCheckFile })
 taken.push(loginCheckFile)
-await page.unroute('**/api/onboarding')
+await page.unroute('**/api/claude-logins')
+await page.unroute('**/api/settings/cloud')
 
 // The Loops and Chat surface cards' dialogs (#589), opened over the
 // first-run page. The fixture's loops all carry Telegram bots; the attach

@@ -176,16 +176,3 @@ export function checkError(e: Error): string {
   if (e instanceof ApiError && e.code === 'no_setup_token') return 'Sign in with Claude first.'
   return e.message
 }
-
-// The colour of what the harness's last login check found (ADR-0027): a
-// login that works is ready, a check in flight is work happening now, and
-// a login that does not work is what is wrong. Only a check that has not
-// run yet is neutral. The hub words that state "… not checked yet" (#587).
-export type LoginCheckTone = 'ok' | 'active' | 'danger' | 'muted'
-
-export function loginCheckTone(harness: OnboardingPillar): LoginCheckTone {
-  if (harness.done) return 'ok'
-  if (harness.checking) return 'active'
-  if (harness.reason === undefined || harness.reason.endsWith('not checked yet')) return 'muted'
-  return 'danger'
-}

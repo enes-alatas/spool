@@ -4,7 +4,6 @@ import {
   canSkipSurface,
   checkError,
   doneCount,
-  loginCheckTone,
   nextPillar,
   pillarHow,
   pillarWork,
@@ -103,33 +102,6 @@ describe('checkError', () => {
       'login checks are off on this hub',
     )
     expect(checkError(new Error('Failed to fetch'))).toBe('Failed to fetch')
-  })
-})
-
-describe('loginCheckTone', () => {
-  it('reads a working login as ready and a running check as active', () => {
-    expect(loginCheckTone({ done: true, reason: 'the login check authenticated' })).toBe('ok')
-    expect(
-      loginCheckTone({ done: false, reason: "the hub's Claude token is being checked", checking: true }),
-    ).toBe('active')
-  })
-
-  it('reads a refused or unfinished check, or a missing token, as wrong', () => {
-    expect(
-      loginCheckTone({ done: false, reason: 'the login check was refused: OAuth token has expired' }),
-    ).toBe('danger')
-    expect(loginCheckTone({ done: false, reason: 'the login check did not finish; run it again' })).toBe(
-      'danger',
-    )
-    expect(loginCheckTone({ done: false, reason: 'no Claude login signed in' })).toBe('danger')
-  })
-
-  it('keeps a check that has not run neutral, on either runtime', () => {
-    expect(loginCheckTone({ done: false, reason: "the hub's Claude token is not checked yet" })).toBe('muted')
-    expect(loginCheckTone({ done: false, reason: "the host's claude login is not checked yet" })).toBe(
-      'muted',
-    )
-    expect(loginCheckTone({ done: false })).toBe('muted')
   })
 })
 

@@ -2376,39 +2376,6 @@ button.panel-link {
 .token-state.ok {
   color: var(--ready);
 }
-/* Settings' login check (#588): what the last one found, and "Check now"
-   beside it, under the token's own controls. */
-.login-check {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid var(--hairline);
-}
-.login-check-state {
-  font-family: var(--mono);
-  font-size: 0.75rem;
-  color: var(--text-muted);
-}
-.login-check-state.ok {
-  color: var(--ready);
-}
-.login-check-state.active {
-  color: var(--active);
-}
-.login-check-state.danger {
-  color: var(--danger);
-}
-.login-check .form-error {
-  flex-basis: 100%;
-}
-/* under Settings → Claude login's line (#929), whose hairline it shares */
-.claude-login .login-check {
-  margin-top: 0;
-  border-top: none;
-}
 /* The two controls a side panel carries. Both sit on the raised fill the panel
    already has, so the well inverts to the canvas to stay a well; both are
    compact because they are inside a panel of rows, not a form. */
@@ -4834,4 +4801,10 @@ button.panel-link {
 }
 .copyable.copied .copyable-icon {
   color: var(--ready);
+}
+
+/* Settings → Claude logins (#1070): who a login is, beside its name */
+.claude-login-who {
+  font-size: 0.75rem;
+  color: var(--text-muted);
 }

@@ -1,38 +1,147 @@
-import { useState, type ReactNode } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, ApiError, type CloudSettings, type Settings } from '../api'
+import { useState } from 'react'
+import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { api, ApiError, type ClaudeLogin, type CloudSettings, type Settings } from '../api'
 import { accountState, loginState, signInCodeShaped } from '../cloud'
+import {
+  checking,
+  defaultFirst,
+  defaultLineState,
+  loginLineState,
+  loginNameError,
+  loginWho,
+  loopsOn,
+  mayManageLogin,
+  signOutConfirm,
+} from '../claudeLogins'
 import { formatAgo } from '../format'
 import { CheckIcon } from './Icons'
 import { Copyable } from './Copyable'
 import { StepDialog } from './StepDialog'
 import { useMinuteClock } from './PlanUsage'
+import { useMay } from './Session'
 
-// The hub's one Claude login (ADR-0058, #929): the claude.ai account the hub
-// signs in to with the CLI's own login. Contained loops reach the model
-// through the hub, which adds the login's token, and cloud loops' sessions
-// run under it. Settings, first run and the cloud setup each sign in here,
-// and Settings → Claude login is where it is checked and signed out.
+// The hub's Claude logins (ADR-0058, ADR-0060): the claude.ai accounts the
+// hub signs in to with the CLI's own login. Contained loops reach the model
+// through the hub, which adds a login's token, and cloud loops' sessions
+// run under the default. Settings, first run and the cloud setup each sign
+// the default in, and Settings → Claude logins lists every login, adds one
+// and signs in, checks, signs out and removes each.
 
-// Settings → Claude login: the login's state, its check, and Sign out.
-// Signing in opens the same dialog first run does. Settings puts the login
-// check's line under it as children.
-export function ClaudeLoginSection({ settings, children }: { settings?: Settings; children?: ReactNode }) {
-  const { data: view, error: loadError } = useQuery({ queryKey: ['cloud'], queryFn: api.cloudSettings })
-  const [signingIn, setSigningIn] = useState(false)
+// Every change to a login can change the hub's Claude token, which the
+// settings, first run and the list each read.
+function loginsChanged(qc: QueryClient) {
+  void qc.invalidateQueries({ queryKey: ['claude-logins'] })
+  void qc.invalidateQueries({ queryKey: ['settings'] })
+  void qc.invalidateQueries({ queryKey: ['onboarding'] })
+}
+
+// Settings → Claude logins: a line a login, and Add. Any user sees the
+// list and adds a login of their own; a login's owner or an admin acts on
+// it (ADR-0060). The default's line, for an admin, is the one the
+// hub has always had: it reads Settings → Cloud's account, whose check says
+// why a sign-in failed, together with the hub's login check.
+export function ClaudeLoginSection({ settings }: { settings?: Settings }) {
+  const { data: view } = useQuery({ queryKey: ['cloud'], queryFn: api.cloudSettings })
+  const { data: me } = useQuery({ queryKey: ['session'], queryFn: api.me, retry: false })
+  const { data: list, error: loadError } = useQuery({
+    queryKey: ['claude-logins'],
+    queryFn: api.claudeLogins,
+    refetchInterval: (q) => (checking(q.state.data?.logins) ? 2000 : false),
+  })
+  const { data: loops } = useQuery({ queryKey: ['loops'], queryFn: api.loops })
+  const may = useMay()
+  const [signingIn, setSigningIn] = useState<string | null>(null)
+  const [adding, setAdding] = useState(false)
+  const logins = list?.logins
+
+  return (
+    <section className="claude-login">
+      <h2 className="section-head" id="claude-login">
+        Claude logins
+      </h2>
+      <p className="page-lede">
+        A Claude login is a claude.ai account this hub signs in to. Contained loops reach the model through
+        the hub, which adds the login, and cloud loops' sessions run under it. The hub keeps each login
+        sealed, renews it before it runs out, and never shows it. A contained loop runs on the login it names,
+        or on default when it names none, and a cloud loop on default. Bare loops keep this machine's own
+        login.
+      </p>
+      {loadError ? (
+        <div className="form-error" role="alert">
+          Could not load the Claude logins:{' '}
+          {loadError instanceof Error ? loadError.message : String(loadError)}
+        </div>
+      ) : !logins ? null : (
+        <div className="cloud-steps">
+          {defaultFirst(logins).map((login) =>
+            login.default && may('manage') && view ? (
+              <DefaultLogin
+                key={login.name}
+                login={login}
+                held={loopsOn(loops, login.name)}
+                view={view}
+                settings={settings}
+                onSignIn={() => setSigningIn(login.name)}
+              />
+            ) : (
+              <NamedLogin
+                key={login.name}
+                login={login}
+                held={loopsOn(loops, login.name)}
+                manages={mayManageLogin(me, login)}
+                cli={view?.account.cli ?? true}
+                onSignIn={() => setSigningIn(login.name)}
+              />
+            ),
+          )}
+        </div>
+      )}
+      {logins && (
+        <div className="cloud-actions">
+          <button className="btn sm" onClick={() => setAdding(true)}>
+            Add a Claude login
+          </button>
+        </div>
+      )}
+      {signingIn === 'default' && <SignInDialog onClose={() => setSigningIn(null)} />}
+      {signingIn && signingIn !== 'default' && (
+        <LoginSignInDialog name={signingIn} onClose={() => setSigningIn(null)} />
+      )}
+      {adding && logins && <AddLoginDialog logins={logins} onClose={() => setAdding(false)} />}
+    </section>
+  )
+}
+
+// The default login's line for an admin: its state as Settings → Cloud's
+// account check and the hub's login check (ADR-0044) read it, with why a
+// check failed under it. One Check again runs both: the account check tries
+// the login as a cloud loop's session would, the login check as this hub's
+// loops run, and an operator needs only to know whether it works.
+function DefaultLogin({
+  login,
+  held,
+  view,
+  settings,
+  onSignIn,
+}: {
+  login: ClaudeLogin
+  held: string[]
+  view: CloudSettings
+  settings?: Settings
+  onSignIn: () => void
+}) {
   const [working, setWorking] = useState(false)
   const [error, setError] = useState('')
   const qc = useQueryClient()
   const now = useMinuteClock()
 
-  const change = async (request: () => Promise<CloudSettings>) => {
+  const change = async (request: () => Promise<CloudSettings>, alongside?: () => Promise<unknown>) => {
     setWorking(true)
     setError('')
     try {
-      qc.setQueryData(['cloud'], await request())
-      // the hub's Claude token changed with it
-      void qc.invalidateQueries({ queryKey: ['settings'] })
-      void qc.invalidateQueries({ queryKey: ['onboarding'] })
+      const [view] = await Promise.all([request(), alongside?.()])
+      qc.setQueryData(['cloud'], view)
+      loginsChanged(qc)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -40,45 +149,38 @@ export function ClaudeLoginSection({ settings, children }: { settings?: Settings
     }
   }
   const signOut = () => {
-    if (confirm(SIGN_OUT)) void change(api.removeCloudAccount)
+    if (confirm(signOutConfirm(login.name, held))) void change(api.removeCloudAccount)
   }
 
   return (
-    <section className="claude-login">
-      <h2 className="section-head" id="claude-login">
-        Claude login
-      </h2>
-      <p className="page-lede">
-        Contained and cloud loops run on one Claude login: the claude.ai account this hub signs in to.
-        Contained loops reach the model through the hub, which adds the login, and cloud loops' sessions run
-        under it. The hub keeps the login sealed, renews it before it runs out, and never shows it. Bare loops
-        keep this machine's own login.
-      </p>
-      {loadError ? (
-        <div className="form-error" role="alert">
-          Could not load the Claude login:{' '}
-          {loadError instanceof Error ? loadError.message : String(loadError)}
-        </div>
-      ) : !view ? null : (
-        <div className="cloud-steps">
-          <LoginLine
-            view={view}
-            now={now}
-            working={working}
-            onSignIn={() => setSigningIn(true)}
-            onCheck={() => change(api.checkCloudAccount)}
-            onSignOut={signOut}
-          />
-          <LoginNote view={view} settings={settings} error={error} />
-        </div>
-      )}
-      {children}
-      {signingIn && <SignInDialog onClose={() => setSigningIn(false)} />}
-    </section>
+    <>
+      <LoginLine
+        login={login}
+        view={view}
+        now={now}
+        working={working}
+        onSignIn={onSignIn}
+        onCheck={() => change(api.checkCloudAccount, checkOnHub)}
+        onSignOut={signOut}
+      />
+      <LoginNote login={login} view={view} settings={settings} error={error} />
+    </>
   )
 }
 
+// The hub's login check of the default, which it answers at once and runs
+// in the background. A hub with nothing to check it with refuses it 409,
+// which leaves the account check to speak alone.
+async function checkOnHub() {
+  try {
+    await api.checkClaudeLogin('default')
+  } catch (e) {
+    if (!(e instanceof ApiError && e.status === 409)) throw e
+  }
+}
+
 function LoginLine({
+  login,
   view,
   now,
   working,
@@ -86,6 +188,7 @@ function LoginLine({
   onCheck,
   onSignOut,
 }: {
+  login: ClaudeLogin
   view: CloudSettings
   now: number
   working: boolean
@@ -94,32 +197,34 @@ function LoginLine({
   onSignOut: () => void
 }) {
   const { set, cli, check } = view.account
-  const state = loginState(view)
+  const state = set ? defaultLineState(loginState(view), login) : loginState(view)
+  const pending = login.check?.status === 'pending'
+  const checkedAt = Math.max(check?.checked_at ?? 0, pending ? 0 : (login.check?.at ?? 0))
   return (
     <div className={`cloud-step ${state.tone}`}>
       <span className="cloud-dot" aria-hidden />
-      <span className="cloud-step-title">Claude login</span>
+      <LoginName login={login} />
       <span className="cloud-step-end">
         <span className="cloud-step-state">
           {state.text}
-          {set && check && ` · checked ${formatAgo(check.checked_at, now)}`}
+          {set && !pending && checkedAt > 0 && ` · checked ${formatAgo(checkedAt, now)}`}
         </span>
         {set ? (
           <>
-            {check?.stage === 'refused' ? (
+            {check?.stage === 'refused' || login.check?.status === 'refused' ? (
               cli && (
                 <button className="btn sm" onClick={onSignIn} disabled={working}>
                   Sign in again
                 </button>
               )
             ) : (
-              <button className="btn sm" onClick={onCheck} disabled={working}>
-                {working ? 'Checking…' : 'Check again'}
+              <button className="btn sm" onClick={onCheck} disabled={working || pending}>
+                {working || pending ? 'Checking…' : 'Check again'}
               </button>
             )}
             <button
               className="btn sm"
-              aria-label="Sign out of the Claude login"
+              aria-label="Sign out of the Claude login default"
               onClick={onSignOut}
               disabled={working}
             >
@@ -138,17 +243,275 @@ function LoginLine({
   )
 }
 
+// A login's name, and who it is: the address it signed in with, when the
+// session may see it, and whose it is.
+function LoginName({ login }: { login: ClaudeLogin }) {
+  const who = loginWho(login)
+  return (
+    <>
+      <span className="cloud-step-title mono">{login.name}</span>
+      {who && <span className="claude-login-who">{who}</span>}
+    </>
+  )
+}
+
+// Any login but the default as an admin sees it, and the default as a
+// member does: its state from its own check, and, for its owner or an
+// admin, its actions. Sign out is never refused (ADR-0060); Remove
+// is refused while loops run on the login, and the refusal names them.
+function NamedLogin({
+  login,
+  held,
+  manages,
+  cli,
+  onSignIn,
+}: {
+  login: ClaudeLogin
+  held: string[]
+  manages: boolean
+  cli: boolean
+  onSignIn: () => void
+}) {
+  const [working, setWorking] = useState<'' | 'check' | 'sign-out' | 'remove'>('')
+  const [error, setError] = useState('')
+  const qc = useQueryClient()
+  const now = useMinuteClock()
+  const state = loginLineState(login)
+  const { check } = login
+
+  const act = async (what: 'check' | 'sign-out' | 'remove', request: () => Promise<unknown>) => {
+    setWorking(what)
+    setError('')
+    try {
+      await request()
+      loginsChanged(qc)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setWorking('')
+    }
+  }
+  const signOut = () => {
+    if (confirm(signOutConfirm(login.name, held)))
+      void act('sign-out', () => api.signOutClaudeLogin(login.name))
+  }
+  const remove = () => {
+    if (confirm(`Remove the Claude login ${login.name}? The hub signs it out first.`))
+      void act('remove', () => api.removeClaudeLogin(login.name))
+  }
+
+  return (
+    <>
+      <div className={`cloud-step ${state.tone}`}>
+        <span className="cloud-dot" aria-hidden />
+        <LoginName login={login} />
+        <span className="cloud-step-end">
+          <span className="cloud-step-state">
+            {state.text}
+            {login.signed_in &&
+              check &&
+              check.status !== 'pending' &&
+              ` · checked ${formatAgo(check.at, now)}`}
+          </span>
+          {manages && (
+            <>
+              {!login.signed_in || check?.status === 'refused' ? (
+                cli && (
+                  <button
+                    className={`btn sm${login.signed_in ? '' : ' primary'}`}
+                    onClick={onSignIn}
+                    disabled={working !== ''}
+                  >
+                    {login.signed_in ? 'Sign in again' : 'Sign in'}
+                  </button>
+                )
+              ) : (
+                <button
+                  className="btn sm"
+                  onClick={() => act('check', () => api.checkClaudeLogin(login.name))}
+                  disabled={working !== '' || check?.status === 'pending'}
+                >
+                  {working === 'check' || check?.status === 'pending' ? 'Checking…' : 'Check again'}
+                </button>
+              )}
+              {login.signed_in && (
+                <button
+                  className="btn sm"
+                  aria-label={`Sign out of the Claude login ${login.name}`}
+                  onClick={signOut}
+                  disabled={working !== ''}
+                >
+                  Sign out
+                </button>
+              )}
+              {!login.default && (
+                <button
+                  className="btn sm danger"
+                  aria-label={`Remove the Claude login ${login.name}`}
+                  onClick={remove}
+                  disabled={working !== ''}
+                >
+                  Remove
+                </button>
+              )}
+            </>
+          )}
+        </span>
+      </div>
+      {(error || (login.signed_in && check?.status === 'refused' && check.refusal)) && (
+        <div className="cloud-step-open">
+          {login.signed_in && check?.status === 'refused' && (
+            <div className="cloud-check-hint">
+              {check.refusal ? `${check.refusal} ` : ''}Loops can't run on a refused login. Sign in again.
+            </div>
+          )}
+          {error && (
+            <div className="form-error" role="alert">
+              {error}
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  )
+}
+
+// Whose subscription a login is (ADR-0060), said where one is added.
+const TERMS =
+  'A Claude login is the subscription of the person who signs it in, and runs the loops they run. ' +
+  'Spool never pools or resells capacity. You are responsible for following the terms of your plan.'
+
+// Add a Claude login: a name, then the same sign-in the default has. The
+// login is added signed out, owned by whoever adds it, so a sign-in left
+// unfinished leaves it on the list to sign in later.
+function AddLoginDialog({ logins, onClose }: { logins: ClaudeLogin[]; onClose: () => void }) {
+  const qc = useQueryClient()
+  const [name, setName] = useState('')
+  const [added, setAdded] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const invalid = loginNameError(name, logins)
+
+  const add = async () => {
+    if (invalid || !name.trim()) return
+    setBusy(true)
+    setError('')
+    try {
+      const login = await api.addClaudeLogin(name.trim())
+      void qc.invalidateQueries({ queryKey: ['claude-logins'] })
+      setAdded(login.name)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (added) return <LoginSignInDialog name={added} onClose={onClose} />
+  return (
+    <StepDialog title="Add a Claude login" busy={busy} onClose={onClose}>
+      <form
+        className="form"
+        onSubmit={(e) => {
+          e.preventDefault()
+          void add()
+        }}
+      >
+        <p className="step-dialog-lede">{TERMS}</p>
+        <div className="field">
+          <label htmlFor="add-claude-login">Name</label>
+          <input
+            id="add-claude-login"
+            className="mono"
+            value={name}
+            autoFocus
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="ada"
+            disabled={busy}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <div className={`hint${invalid ? ' warn' : ''}`}>
+            {invalid ||
+              'Lowercase, 2–32 characters. You sign it in next, and it is yours to sign out or remove.'}
+          </div>
+        </div>
+        {error && (
+          <div className="form-error" role="alert">
+            {error}
+          </div>
+        )}
+        <div className="pillar-actions">
+          <button className="btn primary" disabled={busy || !name.trim() || invalid !== ''}>
+            {busy ? 'Adding…' : 'Add and sign in'}
+          </button>
+        </div>
+      </form>
+    </StepDialog>
+  )
+}
+
+// Signing a login other than the default in, from its line or straight
+// after Add. It closes on Done once the hub has checked the login.
+function LoginSignInDialog({ name, onClose }: { name: string; onClose: () => void }) {
+  const { data: view } = useQuery({ queryKey: ['cloud'], queryFn: api.cloudSettings })
+  const { data: list } = useQuery({
+    queryKey: ['claude-logins'],
+    queryFn: api.claudeLogins,
+    refetchInterval: (q) => (checking(q.state.data?.logins) ? 2000 : false),
+  })
+  const [busy, setBusy] = useState(false)
+  const login = list?.logins.find((l) => l.name === name)
+  const signedIn = login?.signed_in === true && login.check?.status === 'ok'
+  return (
+    <StepDialog title={`Sign in ${name}`} busy={busy} onClose={onClose}>
+      <div className="form">
+        <p className="step-dialog-lede">
+          The hub signs in to your Claude account under the name {name}. It keeps the login sealed, renews it,
+          and never shows it. You can sign out in Settings → Claude logins.
+        </p>
+        {view &&
+          login &&
+          (signedIn ? <SignedIn /> : <SignInSteps view={view} login={login} setBusy={setBusy} />)}
+        <form method="dialog" className="pillar-actions">
+          <button className={`btn${signedIn ? ' primary' : ''}`} disabled={busy}>
+            {signedIn ? 'Done' : 'Close'}
+          </button>
+        </form>
+      </div>
+    </StepDialog>
+  )
+}
+
 // What the line can't say in a few words: why a check failed, what a
 // refused login stops, how a hub with no claude CLI to run gets one, and that a
 // setup-token saved before the login still runs contained loops until one
 // is signed in (ADR-0058's migration).
-function LoginNote({ view, settings, error }: { view: CloudSettings; settings?: Settings; error: string }) {
+function LoginNote({
+  login,
+  view,
+  settings,
+  error,
+}: {
+  login: ClaudeLogin
+  view: CloudSettings
+  settings?: Settings
+  error: string
+}) {
   const { set, cli } = view.account
   const { tone } = accountState(view)
-  const refused = set && view.account.check?.stage === 'refused'
+  // the hub's login check says only that it was refused, and what the API
+  // answered, so its refusal stands where the account check gives none
+  const checkRefused = set && login.check?.status === 'refused'
+  const refused = (set && view.account.check?.stage === 'refused') || checkRefused
   const setupToken = !set && settings?.claude_token_set === true
   const lines = [
     set && tone === 'bad' && <AccountHint key="hint" view={view} />,
+    checkRefused && tone !== 'bad' && login.check?.refusal && (
+      <div className="cloud-check-hint" key="refusal">
+        {login.check.refusal}
+      </div>
+    ),
     refused && (
       <div className="cloud-check-hint" key="held">
         Loops can't run on a refused login: contained loops stop at their next turn, and cloud loops' sessions
@@ -175,14 +538,6 @@ function LoginNote({ view, settings, error }: { view: CloudSettings; settings?: 
   ].filter(Boolean)
   return lines.length > 0 ? <div className="cloud-step-open">{lines}</div> : null
 }
-
-// Sign out asks Anthropic to revoke the login through the CLI's own logout,
-// which can't confirm the revoke took (ADR-0058, probe E on #928), so
-// claude.ai's list of sign-ins is where the operator checks it ended.
-const SIGN_OUT =
-  'Sign out of the Claude login? Every contained and cloud loop stops until the hub is signed in again. ' +
-  "The hub asks Anthropic to revoke the login but can't confirm it did. claude.ai's settings list the " +
-  "account's sign-ins, so you can check there."
 
 // What a hub with no sign-in to run says (#955): the hub runs the claude
 // CLI in the workstation image, or the host's own when it has no image
@@ -213,7 +568,7 @@ export function AccountHint({ view }: { view: CloudSettings }) {
 }
 
 // Signing in, over whichever page asked: first run's Harness card and
-// Settings → Claude login. It closes on Done once the hub has checked the
+// Settings → Claude logins. It closes on Done once the hub has checked the
 // login.
 export function SignInDialog({ onClose }: { onClose: () => void }) {
   const { data: view } = useQuery({ queryKey: ['cloud'], queryFn: api.cloudSettings })
@@ -223,9 +578,9 @@ export function SignInDialog({ onClose }: { onClose: () => void }) {
     <StepDialog title="Sign in with Claude" busy={busy} onClose={onClose}>
       <div className="form">
         <p className="step-dialog-lede">
-          Contained and cloud loops run on one Claude login, so the hub signs in to your Claude account once.
-          It keeps the login sealed, renews it, and never shows it. You can sign out in Settings → Claude
-          login.
+          Contained and cloud loops run on the hub's default Claude login, so the hub signs in to your Claude
+          account once. It keeps the login sealed, renews it, and never shows it. You can sign out in Settings
+          → Claude logins.
         </p>
         {view && (signedIn ? <SignedIn /> : <SignInSteps view={view} setBusy={setBusy} />)}
         <form method="dialog" className="pillar-actions">
@@ -254,14 +609,26 @@ export function SignedIn() {
 // does, so either starts again from the link. A login already signed in
 // whose check failed says so above the steps, so signing in again replaces
 // it. With no claude CLI to run, neither the workstation image's nor this
-// machine's, there is no sign-in, and the steps say how to get one.
-export function SignInSteps({ view, setBusy }: { view: CloudSettings; setBusy: (busy: boolean) => void }) {
+// machine's, there is no sign-in, and the steps say how to get one. Given a
+// login, it signs that one in through its own routes; without one, the
+// default through Settings → Cloud's.
+export function SignInSteps({
+  view,
+  login,
+  setBusy,
+}: {
+  view: CloudSettings
+  login?: ClaudeLogin
+  setBusy: (busy: boolean) => void
+}) {
   const qc = useQueryClient()
   const [link, setLink] = useState('')
   const [code, setCode] = useState('')
   const [error, setError] = useState('')
   const [working, setWorking] = useState<'' | 'start' | 'code' | 'check'>('')
-  const { set, cli, check } = view.account
+  const { cli } = view.account
+  const set = login ? login.signed_in : view.account.set
+  const checked = login ? login.check !== undefined : view.account.check !== undefined
 
   const act = async (what: 'start' | 'code' | 'check', request: () => Promise<void>) => {
     setWorking(what)
@@ -294,7 +661,7 @@ export function SignInSteps({ view, setBusy }: { view: CloudSettings; setBusy: (
     if (tab) tab.opener = null
     return act('start', async () => {
       try {
-        const { link } = await api.startCloudSignIn()
+        const { link } = await (login ? api.startClaudeLoginSignIn(login.name) : api.startCloudSignIn())
         setLink(link)
         setCode('')
         if (tab) tab.location.href = link
@@ -310,17 +677,18 @@ export function SignInSteps({ view, setBusy }: { view: CloudSettings; setBusy: (
       return
     }
     return act('code', async () => {
-      qc.setQueryData(['cloud'], await api.finishCloudSignIn(code.trim()))
-      // the hub's Claude token changed with it
-      void qc.invalidateQueries({ queryKey: ['settings'] })
-      void qc.invalidateQueries({ queryKey: ['onboarding'] })
+      if (login) await api.finishClaudeLoginSignIn(login.name, code.trim())
+      else qc.setQueryData(['cloud'], await api.finishCloudSignIn(code.trim()))
+      loginsChanged(qc)
       setLink('')
       setCode('')
     })
   }
   const recheck = () =>
     act('check', async () => {
-      qc.setQueryData(['cloud'], await api.checkCloudAccount())
+      if (login) await api.checkClaudeLogin(login.name)
+      else qc.setQueryData(['cloud'], await api.checkCloudAccount())
+      void qc.invalidateQueries({ queryKey: ['claude-logins'] })
     })
 
   return (
@@ -328,9 +696,17 @@ export function SignInSteps({ view, setBusy }: { view: CloudSettings; setBusy: (
       {set && (
         <div aria-live="polite">
           <p className="step-dialog-state">
-            {check ? 'Signed in, but the last check failed.' : 'Signed in, not checked yet.'}
+            {login?.check?.status === 'pending'
+              ? 'Signed in, checking the login…'
+              : checked
+                ? 'Signed in, but the last check failed.'
+                : 'Signed in, not checked yet.'}
           </p>
-          <AccountHint view={view} />
+          {login ? (
+            login.check?.refusal && <div className="cloud-check-hint">{login.check.refusal}</div>
+          ) : (
+            <AccountHint view={view} />
+          )}
         </div>
       )}
       {cli ? (
