@@ -1496,3 +1496,9 @@ at acceptance. #1178 security pass at d6ef33f, no asks (Quinn's review pending).
 environment the login's account doesn't own); retitled; recorded. Terra now on #1180 ADR (pinged
 ref:7397; he asks Enes for the sign-in himself). #926 closes with #1078. Iris and Elliot idle
 until #1182 / ADR acceptance.
+
+## 2026-10-28 19:25 UTC — token is a network secret (Terra ref:7399)
+Correction on #1180 (comment 6478145150): the hub token goes on the environment as a claude.ai
+network secret for the hub's host; the proxy adds the header; never in the VM; setup script carries
+no token. Edited #1179, #1182, #1184 bodies accordingly (#1181/#1183 had no variable wording).
+Terra drafts (a) token valid only while the loop runs + Rotate token for Enes to accept.
