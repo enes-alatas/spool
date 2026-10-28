@@ -1389,3 +1389,9 @@ env-var value rotates cloud loops onto new sessions (third workaround: scripted 
 secret). Shapes: A reporter's token route + helper (Elliot: acceptable, 5 conditions); B hub-minted
 token + hourly session rotation, no new route. Sent Enes A/B with A proposed. On his letter: record
 on #1166, tell the reporter the workaround, Terra files slices (ADR-0059 amendment first).
+
+## 2026-10-28 10:05 UTC — #1166 addendum to Enes (ref:7265)
+Elliot's follow-up: B tighter posture but mid-turn gap; leans A; keep workaround 3 out of docs (App
+key + operator token on a job outside the hub). Told Enes; one letter still awaited. New PRs: #1167
+closes #1153 (itest flake), #1165 closes #1074 (Iris). #1161/#1162 unmerged since yesterday (Quinn's
+asks). HN watch 0 new. Board: only #753 unmilestoned.
