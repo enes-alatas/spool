@@ -1465,3 +1465,8 @@ the loop's substitute.
 ## 2026-10-28 13:40 UTC — #1177 artifacts spike filed (Enes ref:7371)
 Enes: yes to the probe, file for later, not urgent. #1177 (chore, L6): one-prompt probe of
 --tools default,Artifact headless; unassigned; hand to Terra after #926. Told Enes (ref:7372).
+
+## 2026-10-28 14:30 UTC — #1175/#1176 merged; Iris idle (ref:7377)
+#1174 and #1173 closed. #1077 clear for Terra (Iris told him). Iris asked for next web item: none
+ready; #1145–#1147 wait on #1142–#1144 (after #1077, #1078). Told her long wake (ref:7378); PING
+IRIS when #1142 lands. Still with Enes: #1168 number (ref:7314).
