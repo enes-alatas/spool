@@ -440,6 +440,54 @@ const loopCappedFile = `${outDir}/loop-capped.png`
 await wakePanel.screenshot({ path: loopCappedFile })
 taken.push(loopCappedFile)
 await page.unroute(cappedLoop)
+await page.unroute('**/api/loops')
+await page.unroute('**/api/plan-usage')
+// The same cap on one Claude login of three (#1075, #1076): its ring wears
+// a red rim and its details name the loops on it that sleep, in the
+// banner's place, and Settings says where each other login stands.
+await page.route('**/api/plan-usage', async (route) => {
+  const view = await (await route.fetch()).json()
+  const ada = {
+    five_hour: { used_percent: 93, resets_at: capUntil, cap_percent: 90 },
+    seven_day: { used_percent: 64, resets_at: view.seven_day.resets_at, cap_percent: 90 },
+    as_of: Date.now() - 3 * 60000,
+    cap: { windows: ['five_hour'], until: capUntil },
+  }
+  const unknown = "no loop has reported the plan's usage yet"
+  route.fulfill({
+    json: {
+      ...view,
+      logins: [
+        { name: 'default', ...view },
+        { name: 'ada', ...ada },
+        { name: 'robin', five_hour: null, seven_day: null, unknown, cap: null },
+      ],
+    },
+  })
+})
+await page.route('**/api/loops', async (route) => {
+  const loops = await (await route.fetch()).json()
+  route.fulfill({
+    json: loops.map((loop, i) =>
+      i === 0
+        ? { ...loop, claude_login: 'ada', state: 'capped', capped_until: capUntil }
+        : i === 1
+          ? { ...loop, claude_login: 'ada', state: 'busy' }
+          : loop,
+    ),
+  })
+})
+await page.goto(base + '/', { waitUntil: 'networkidle' })
+await page.getByRole('button', { name: 'Plan usage of the Claude login ada' }).click()
+await page.locator('.login-ring-capped-note').waitFor({ timeout: 15000 })
+const loginCappedFile = `${outDir}/fleet-login-capped.png`
+await page.screenshot({ path: loginCappedFile, clip: { x: 0, y: 0, width: 1180, height: 560 } })
+taken.push(loginCappedFile)
+await page.goto(base + '/settings', { waitUntil: 'networkidle' })
+await guardrails.locator('.cap-banner').waitFor({ timeout: 15000 })
+const guardrailsLoginFile = `${outDir}/settings-plan-guardrails-logins.png`
+await guardrails.screenshot({ path: guardrailsLoginFile })
+taken.push(guardrailsLoginFile)
 await page.unroute('**/api/settings')
 await page.unroute('**/api/loops')
 await page.unroute('**/api/plan-usage')

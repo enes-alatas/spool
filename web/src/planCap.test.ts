@@ -1,6 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import type { PlanUsage } from './api'
-import { capFields, capGate, capIdleStatus, capReason, capValue, ringName, usageLogins } from './planCap'
+import {
+  capFields,
+  capGate,
+  capIdleStatus,
+  cappedLogins,
+  capWake,
+  capReason,
+  capValue,
+  loginUsage,
+  loopPlanCapped,
+  ringName,
+  usageLogins,
+} from './planCap'
 
 const now = Date.UTC(2026, 9, 9, 12, 0)
 const minutes = (m: number) => now + m * 60000
@@ -33,6 +45,57 @@ describe('capReason', () => {
     expect(capReason(usage(), now)).toBeUndefined()
     expect(capReason(usage({ cap: null }), now)).toBeUndefined()
     expect(capReason(undefined, now)).toBeUndefined()
+  })
+})
+
+describe('capReason for one login of several', () => {
+  const capped = usage({ cap: { windows: ['five_hour'], until: minutes(41) } })
+  it('names the loops on the login that sleep', () => {
+    expect(capReason(capped, now, ['scout', 'gardener', 'scribe'])).toBe(
+      'The 5-hour window is at 93%, over its 90% threshold. scout, gardener and scribe sleep until it resets in 41m; messages wait in their inboxes.',
+    )
+    expect(capReason(capped, now, ['scout'])).toContain('. scout sleeps until it resets in 41m;')
+  })
+
+  it('says alone which loops sleep and when they wake, for a ring', () => {
+    expect(capWake(capped.cap!, now, ['scout', 'gardener'])).toBe(
+      'scout and gardener sleep until it resets in 41m; messages wait in their inboxes.',
+    )
+  })
+
+  it('says when no loop runs on the login', () => {
+    expect(capReason(capped, now, [])).toContain('. No loop runs on it; one moved to it sleeps until')
+  })
+})
+
+describe("a loop's login cap", () => {
+  const cap = { windows: ['five_hour' as const], until: minutes(41) }
+  const several = usage({
+    logins: [
+      { name: 'default', ...usage() },
+      { name: 'ada', ...usage({ cap }) },
+    ],
+  })
+
+  it("reads the loop's own login, the default for a bare or cloud loop", () => {
+    expect(loopPlanCapped(several, { claude_login: 'ada' })).toBe(true)
+    expect(loopPlanCapped(several, { claude_login: '' })).toBe(false)
+    expect(loopPlanCapped(several, { claude_login: 'robin' })).toBe(false)
+  })
+
+  it('reads the top level as the default on a hub older than #1073', () => {
+    const old = usage({ cap })
+    expect(loginUsage(old, 'default')).toBe(old)
+    expect(loopPlanCapped(old, { claude_login: '' })).toBe(true)
+    expect(loopPlanCapped(old, { claude_login: 'ada' })).toBe(false)
+  })
+
+  it('lists the capped logins of several, and the one of a hub with one', () => {
+    expect(cappedLogins(several).map((login) => login.name)).toEqual(['ada'])
+    expect(cappedLogins(usage())).toEqual([])
+    expect(cappedLogins(usage({ cap })).map((login) => login.name)).toEqual(['default'])
+    const one = usage({ cap, logins: [{ name: 'default', ...usage({ cap }) }] })
+    expect(cappedLogins(one).map((login) => login.name)).toEqual(['default'])
   })
 })
 

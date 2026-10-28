@@ -28,6 +28,7 @@ import {
 } from '../api'
 import { formatTokens, fillTone, hasFillPct, formatSpend, formatUsd, inTurn, nextWake } from '../format'
 import { cappedNote, dailyCapField, dailyCapValue, isPreset, thenCappedNote } from '../dailyCap'
+import { loopPlanCapped } from '../planCap'
 import { CapChips } from '../components/CapChips'
 import { customModelError } from '../forms'
 import { type Pace } from '../pace'
@@ -1586,11 +1587,12 @@ export default function LoopDetail() {
     // backoff before saying there is no such loop (#349).
     retry: (failureCount, error) => !needsLogin(error) && !isMissing(error) && failureCount < 3,
   })
-  // The plan cap (#651): a loop in its turn when the cap has fired sleeps at
-  // the end of it, so the pane says so where a wake would be expected.
+  // The plan cap (#651): a loop in its turn when its login's cap has fired
+  // (#1075) sleeps at the end of it, so the pane says so where a wake would
+  // be expected.
   const { data: planUsage } = useQuery({ queryKey: ['plan-usage'], queryFn: api.planUsage })
-  const fleetCapped = !!planUsage?.cap
-  const thenCapped = thenCappedNote(loop?.daily_cap_reached, fleetCapped)
+  const loginCapped = !!loop && loopPlanCapped(planUsage, loop)
+  const thenCapped = thenCappedNote(loop?.daily_cap_reached, loginCapped)
   const { data: events, error: eventsError } = useQuery({
     queryKey: ['events', name],
     queryFn: () => api.events(name),
@@ -2154,7 +2156,7 @@ export default function LoopDetail() {
               <Countdown at={nextWake(loop)} />
             )}
             {loop.state === 'capped' ? (
-              <div className="wake-note">{cappedNote(loop, fleetCapped)}</div>
+              <div className="wake-note">{cappedNote(loop, loginCapped)}</div>
             ) : (
               inTurn(loop.state) && thenCapped && <div className="wake-note">{thenCapped}</div>
             )}
