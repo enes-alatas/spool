@@ -1,6 +1,6 @@
 # ADR-0059: Cloud loops run through the claude CLI, on documented surfaces
 
-Date: 2026-10-20 · Status: proposed (operator direction of 2026-10-19 on #957: drive cloud loops through the `claude` CLI, keep the Claude proxy; operator decisions of 2026-10-20 on #957: items 1, 2, 4, 5, 6, 7 and 10) · Amended: 2026-10-21 (item 9: no ADR-0056 loop to move, #977); 2026-10-21 (items 6 and 11: the environment is picked from the account's list, #978); 2026-10-23 (item 8: a start sets CCR_ENABLE_BUNDLE, #1094); 2026-10-24 (item 1: a session id's two forms, #1099); 2026-10-24 (item 1: a start survives a clean CLI exit, #1102) · Supersedes: ADR-0056 item 2 (the sessions client, its amendment's event stream and interrupt), item 3 (the watched read-back), item 4 (for `env-var` connections only, "A cloud loop gets no connections at first"), item 5 (an environment per loop the hub creates and keeps, and for cloud loops the operator decision of 2026-10-15 on #859 that their allowlist is the hub's own), item 6 (the repo a session starts from, and its 2026-10-15 amendment's optional repo field), item 7's amendment (the cap sees cloud turns), and its Alternatives entry *Drive sessions through the `claude` CLI* · Relates to: ADR-0022, ADR-0028, ADR-0047, ADR-0053, ADR-0056, ADR-0058
+Date: 2026-10-20 · Status: proposed (operator direction of 2026-10-19 on #957: drive cloud loops through the `claude` CLI, keep the Claude proxy; operator decisions of 2026-10-20 on #957: items 1, 2, 4, 5, 6, 7 and 10) · Amended: 2026-10-21 (item 9: no ADR-0056 loop to move, #977); 2026-10-21 (items 6 and 11: the environment is picked from the account's list, #978); 2026-10-23 (item 8: a start sets CCR_ENABLE_BUNDLE, #1094); 2026-10-24 (item 1: a session id's two forms, #1099); 2026-10-24 (item 1: a start survives a clean CLI exit, #1102); 2026-10-28 (item 10: no repo reach in an Anthropic-hosted environment, #1169) · Supersedes: ADR-0056 item 2 (the sessions client, its amendment's event stream and interrupt), item 3 (the watched read-back), item 4 (for `env-var` connections only, "A cloud loop gets no connections at first"), item 5 (an environment per loop the hub creates and keeps, and for cloud loops the operator decision of 2026-10-15 on #859 that their allowlist is the hub's own), item 6 (the repo a session starts from, and its 2026-10-15 amendment's optional repo field), item 7's amendment (the cap sees cloud turns), and its Alternatives entry *Drive sessions through the `claude` CLI* · Relates to: ADR-0022, ADR-0028, ADR-0047, ADR-0053, ADR-0056, ADR-0058
 
 ## Context
 
@@ -490,6 +490,27 @@ and 2026-10-20, found the shape. Each finding is recorded on the issue:
       other symptoms are. The next answered post clears it.
     - Each answered post is logged at Info with the loop, its source and
       its session, never the values.
+
+    **Amendment (2026-10-28, #1169): the repo reach above doesn't hold in
+    an Anthropic-hosted environment.**
+    - Every GitHub request from such a session goes through Anthropic's
+      GitHub proxy, whatever token the session holds. The proxy serves
+      only the repositories attached to the session and answers anything
+      else with a 403, a public repository included. A start from the
+      loop home attaches none, so a cloud loop's `GH_TOKEN` connection
+      reaches no repository, and the sentence above that it "clones what
+      its prompt names" is not true on v0.6.x (#1168).
+    - Even for an attached repository, the proxy refuses GraphQL whatever
+      the credential, so only REST through `gh api` works. A push can
+      update a branch, never push a tag or delete a branch.
+    - So until #1168's fix ships, a cloud loop does chat and hub work, not
+      GitHub work, and the docs say so: OPERATIONS.md's *Cloud loops*,
+      ARCHITECTURE.md, the New loop form's cloud note and
+      THREAT-MODEL.md's *Cloud session* boundary. The rest of this item
+      stands: `env-var` connections still reach the session, for hosts
+      the environment allows. The create refusal in item 9's #977
+      amendment still names a `GH_TOKEN` connection; #1168's fix
+      rewrites it.
 
 11. **What leaves the hub.** The sessions client in
    `internal/runtime/cloud` and its fake, the event-stream read-back,

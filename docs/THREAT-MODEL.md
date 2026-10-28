@@ -497,8 +497,12 @@ cloud listener (ADR-0059).
   in the VM's environment file, on Anthropic's disk, as long as the
   session is kept, and outlive the loop until the operator archives it; a
   GitHub token outlives that. `mcp-server` connections never reach a cloud
-  loop. It no longer starts from a repo through the Claude GitHub App: its
-  GitHub reach is its `GH_TOKEN` connection's.
+  loop. It no longer starts from a repo through the Claude GitHub App, and
+  on v0.6.x in an Anthropic-hosted environment it has no GitHub reach:
+  Anthropic's GitHub proxy serves only the repositories attached to the
+  session, the start attaches none, and a `GH_TOKEN` connection reaches
+  nothing through it (#1168). The token still sits in the session's
+  environment file, so it can still leak from there.
 - **The loop can read its own token**, as a contained loop can read its
   MCP config, and use it from anywhere until its session ends. The token
   is also in the bundle the CLI uploaded, which Anthropic keeps with the

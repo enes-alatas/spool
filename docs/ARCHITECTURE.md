@@ -191,8 +191,10 @@ Once the steps
 are green, `POST /api/loops` takes `runtime: cloud`; the loop's view carries its
 current session's page on claude.ai, and a warning while the list isn't
 confirmed. A cloud loop never moves runtime. The repo
-field went with the sessions client (ADR-0059): a loop that needs a repo gets
-a `GH_TOKEN` connection and names the repo in its mission.
+field went with the sessions client (ADR-0059). On v0.6.x a cloud loop in an
+Anthropic-hosted environment reaches no GitHub repo: Anthropic's GitHub proxy
+serves only repositories attached to the session, the start attaches none, and
+a `GH_TOKEN` connection doesn't change that (#1168).
 Each docker workstation sits on an internal network of its own, shared with
 the proxy alone and with no route off it; its only
 way out is `spool-egress-proxy`, a container running `cmd/spool-egress` that

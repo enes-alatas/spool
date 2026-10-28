@@ -174,9 +174,9 @@ describe('workspaceFieldNote', () => {
     )
   })
 
-  it('says a cloud loop reaches a repo through a GH_TOKEN connection', () => {
+  it('says a cloud loop reaches no GitHub repo yet', () => {
     expect(workspaceFieldNote('cloud')).toBe(
-      'A cloud loop works in its session on claude.ai. To give it a repo, name the repo in its mission, then attach a GH_TOKEN connection on its page and pause and resume it, so its session starts with the token.',
+      "A cloud loop works in its session on claude.ai. It can't reach GitHub yet: its session gets no repository, and a GH_TOKEN connection doesn't change that. Give GitHub work to a contained loop.",
     )
   })
 
