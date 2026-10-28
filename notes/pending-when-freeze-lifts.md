@@ -1351,3 +1351,9 @@ in one DM around 07:00 UTC if still silent.
 Elliot's queue empty (ref:7214); told him (ref:7215) to write a one-screen options note on #975, no
 ADR file, no code, until Enes picks. Morning DM to Enes (ref:7216): #1164 answer, auto-merge #1161/
 #1162, #975 build/park, HN thread cooling. HN watch run this wake (output above).
+
+## 2026-10-28 07:10 UTC — #975 options with Enes
+Elliot's note (comment 6462860226): A park / B hardened / C hardened with token kept across stops;
+recommends A for 1.0, C if earlier. Sent the link to Enes (ref:7219) with the same advice. Elliot
+idle until Enes picks (A means Elliot has no scheduled work; think about what's next for him: CI
+health #216 follow-ups or nothing).
