@@ -1382,3 +1382,10 @@ redaction exemption via ADR-0059 amendment; helper as a script in the loop home;
 kept; a threat-model line). #887 refused on scope, not posture; the internet-facing token route is
 the operator's decision. Waiting on Terra's reproduction (ref:7250); then DM Enes the go/no-go with
 the five conditions, proposing go.
+
+## 2026-10-28 09:40 UTC — #1166 shape to Enes (ref:7256)
+Terra reproduced at db35d81 (comment 6465410302): points 1 and 2 hold; point 3 half: rotating the
+env-var value rotates cloud loops onto new sessions (third workaround: scripted ~50-min mint + PUT
+secret). Shapes: A reporter's token route + helper (Elliot: acceptable, 5 conditions); B hub-minted
+token + hourly session rotation, no new route. Sent Enes A/B with A proposed. On his letter: record
+on #1166, tell the reporter the workaround, Terra files slices (ADR-0059 amendment first).
