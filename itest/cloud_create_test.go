@@ -56,7 +56,7 @@ func TestACloudLoopIsCreated(t *testing.T) {
 	}
 	s.wantRefusal("POST", "/api/loops/nimbus/rehome", nil, 409, "")
 
-	s.mustJSON("DELETE", "/api/settings/cloud/account", nil, nil)
+	s.signOutCloudAccount()
 	resp, body := s.do("POST", "/api/loops", map[string]any{"name": "stratus", "mission": "m", "runtime": "cloud"})
 	if resp.StatusCode != 409 || errorCode(body) != "cloud_not_ready" || !strings.Contains(string(body), "sign in") {
 		t.Errorf("a cloud loop with no account: %d %s, want 409 cloud_not_ready naming the sign-in", resp.StatusCode, body)

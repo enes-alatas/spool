@@ -5,6 +5,7 @@ package itest
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -20,6 +21,7 @@ type planWindowJSON struct {
 	CapPercent  int     `json:"cap_percent"`
 }
 
+// planUsageJSON is one Claude login's plan usage.
 type planUsageJSON struct {
 	FiveHour *planWindowJSON `json:"five_hour"`
 	SevenDay *planWindowJSON `json:"seven_day"`
@@ -31,7 +33,11 @@ type planUsageJSON struct {
 		Until   int64    `json:"until"`
 	} `json:"cap"`
 	ResumedUntil int64 `json:"resumed_until"`
-	// Logins is every Claude login's plan usage, the default first.
+}
+
+// planUsagesJSON is GET /api/plan-usage: every Claude login's plan usage,
+// the default first.
+type planUsagesJSON struct {
 	Logins []loginPlanUsageJSON `json:"logins"`
 }
 
@@ -41,7 +47,7 @@ type loginPlanUsageJSON struct {
 }
 
 // login is the entry for the Claude login called name, nil without one.
-func (view planUsageJSON) login(name string) *loginPlanUsageJSON {
+func (view planUsagesJSON) login(name string) *loginPlanUsageJSON {
 	for i := range view.Logins {
 		if view.Logins[i].Name == name {
 			return &view.Logins[i]
@@ -50,11 +56,33 @@ func (view planUsageJSON) login(name string) *loginPlanUsageJSON {
 	return nil
 }
 
-func (s *server) planUsage() planUsageJSON {
-	s.t.Helper()
-	var view planUsageJSON
-	s.mustJSON("GET", "/api/plan-usage", nil, &view)
+// planUsages reads plan usage, which carries logins and nothing else: the
+// default login's fields at the top went with the single-login routes
+// (#1077).
+func (hub *server) planUsages() planUsagesJSON {
+	hub.t.Helper()
+	var fields map[string]json.RawMessage
+	hub.mustJSON("GET", "/api/plan-usage", nil, &fields)
+	for field := range fields {
+		if field != "logins" {
+			hub.t.Fatalf("plan usage carries %q, want logins alone", field)
+		}
+	}
+	var view planUsagesJSON
+	if err := json.Unmarshal(fields["logins"], &view.Logins); err != nil {
+		hub.t.Fatalf("plan usage logins: %v", err)
+	}
 	return view
+}
+
+// planUsage is the default Claude login's plan usage.
+func (hub *server) planUsage() planUsageJSON {
+	hub.t.Helper()
+	usage := hub.planUsages().login("default")
+	if usage == nil {
+		hub.t.Fatal("plan usage has no entry for the default login")
+	}
+	return usage.planUsageJSON
 }
 
 // The hub reads the Claude plan's usage from the rate-limit event a loop's
@@ -180,7 +208,7 @@ func TestPlanUsageIsKeptPerClaudeLogin(t *testing.T) {
 	raw.Close()
 	hub = startServer(t, dataDir)
 
-	view := hub.planUsage()
+	view := hub.planUsages()
 	if len(view.Logins) != 2 || view.Logins[0].Name != "default" || view.Logins[1].Name != "ada" {
 		t.Fatalf("logins = %+v; want default, then ada", view.Logins)
 	}
@@ -193,9 +221,8 @@ func TestPlanUsageIsKeptPerClaudeLogin(t *testing.T) {
 	hub.waitTurn("aster", 30*time.Second, func(tr turn) bool { return strings.Contains(tr.ResultText, "measured") })
 	hub.message("bloom", "how much is used?")
 	hub.waitTurn("bloom", 30*time.Second, func(tr turn) bool { return strings.Contains(tr.ResultText, "bloomed") })
-	view = hub.planUsage()
+	view = hub.planUsages()
 	assertPlanUsage(t, view.login("default").planUsageJSON, before)
-	assertPlanUsage(t, view, before)
 	ada := view.login("ada")
 	if ada.FiveHour == nil || ada.FiveHour.UsedPercent < 59.99 || ada.FiveHour.UsedPercent > 60.01 || ada.SevenDay == nil {
 		t.Fatalf("ada = %+v %+v; want bloom's 60%%", ada.FiveHour, ada.SevenDay)
@@ -206,9 +233,9 @@ func TestPlanUsageIsKeptPerClaudeLogin(t *testing.T) {
 	hub.waitTurn("aster", 30*time.Second, func(tr turn) bool { return strings.Contains(tr.ResultText, "lower") })
 	hub.stop()
 	hub = startServer(t, dataDir)
-	after := hub.planUsage()
-	if *after.FiveHour != *view.FiveHour || *after.login("ada").FiveHour != *ada.FiveHour {
+	after := hub.planUsages()
+	if *after.login("default").FiveHour != *view.login("default").FiveHour || *after.login("ada").FiveHour != *ada.FiveHour {
 		t.Fatalf("after a lower report and a restart: default %+v, ada %+v; want %+v and %+v kept",
-			after.FiveHour, after.login("ada").FiveHour, view.FiveHour, ada.FiveHour)
+			after.login("default").FiveHour, after.login("ada").FiveHour, view.login("default").FiveHour, ada.FiveHour)
 	}
 }

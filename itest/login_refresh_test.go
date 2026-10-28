@@ -35,7 +35,7 @@ func TestTheHubRefreshesTheClaudeAccountInItsLastHour(t *testing.T) {
 	deadline := time.Now().Add(20 * time.Second)
 	for {
 		var view cloudSettings
-		s.mustJSON("POST", "/api/settings/cloud/account/check", nil, &view)
+		view = s.checkCloudAccount()
 		if view.Account.Check != nil && view.Account.Check.State == "ok" {
 			break
 		}
@@ -88,7 +88,7 @@ func TestARefusedLoginRefreshKeepsTheToken(t *testing.T) {
 	}
 	// the stand-in admits the old token alone, and the hub still holds it
 	var view cloudSettings
-	s.mustJSON("POST", "/api/settings/cloud/account/check", nil, &view)
+	view = s.checkCloudAccount()
 	if view.Account.Check == nil || view.Account.Check.State != "ok" {
 		t.Fatalf("after a refused refresh the account checks as %+v, want ok on the token kept", view.Account.Check)
 	}
@@ -116,7 +116,7 @@ func TestSignOutRevokesTheClaudeLoginAtTheSource(t *testing.T) {
 	s = startServerArgs(t, s.dataDir, "--runtime", "bare")
 
 	var view cloudSettings
-	s.mustJSON("DELETE", "/api/settings/cloud/account", nil, &view)
+	view = s.signOutCloudAccount()
 	if view.Account.Set {
 		t.Fatal("Sign out left the login signed in")
 	}
@@ -140,7 +140,7 @@ func TestSignOutRevokesTheClaudeLoginAtTheSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	s = startServerArgs(t, s.dataDir, "--runtime", "bare")
-	s.mustJSON("DELETE", "/api/settings/cloud/account", nil, &view)
+	view = s.signOutCloudAccount()
 	if view.Account.Set {
 		t.Fatal("a failed logout left the login signed in")
 	}

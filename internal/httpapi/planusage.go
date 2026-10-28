@@ -29,11 +29,10 @@ type planUsageView struct {
 	ResumedUntil int64 `json:"resumed_until,omitempty"`
 }
 
-// planUsagesView is GET /api/plan-usage: the default login's plan usage at
-// the top, and every login's in logins, the default first (ADR-0060).
-// Each carries its own cap and Resume now hold.
+// planUsagesView is GET /api/plan-usage: every login's plan usage in
+// logins, the default first (ADR-0060). Each carries its own cap and
+// Resume now hold.
 type planUsagesView struct {
-	planUsageView
 	Logins []loginPlanUsageView `json:"logins"`
 }
 
@@ -106,9 +105,7 @@ func (server *Server) handlePlanUsage(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now().UnixMilli()
 	fiveHour, sevenDay := server.PlanCap.Thresholds()
-	// the first is the default's, which the top-level fields stay until
-	// the control room reads logins alone (ADR-0060)
-	view := planUsagesView{planUsageView: planUsageOf(usages[0].Usage, server.PlanCap.At("", now), fiveHour, sevenDay, now)}
+	view := planUsagesView{Logins: []loginPlanUsageView{}}
 	for _, usage := range usages {
 		view.Logins = append(view.Logins, loginPlanUsageView{
 			Name:          usage.Login,

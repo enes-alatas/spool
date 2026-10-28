@@ -51,8 +51,8 @@ func (checker *heldChecker) CheckAccount(context.Context) (string, string) {
 }
 
 // A check that began while the account was signed in, as boot's does, must
-// not finish over Remove's: once Remove returns, the last check says there
-// is no account (#970).
+// not finish over a sign-out's: once the sign-out returns, the last check
+// says there is no account (#970).
 func TestACheckBegunBeforeRemoveDoesNotOutliveIt(t *testing.T) {
 	db, err := sqlite.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -71,10 +71,10 @@ func TestACheckBegunBeforeRemoveDoesNotOutliveIt(t *testing.T) {
 	}()
 	<-checker.started
 
-	server.changeCloudAccount(httptest.NewRecorder(), httptest.NewRequest("DELETE", "/api/settings/cloud/account", nil), store.CloudAccount{})
+	server.changeLogin(httptest.NewRecorder(), httptest.NewRequest("POST", "/api/claude-logins/default/sign-out", nil), store.DefaultClaudeLogin, store.CloudAccount{})
 	close(checker.release)
 	<-booted
 	if check := server.cloudAccountCheck.result(); check == nil || check.Stage != CloudAccountStageNone {
-		t.Fatalf("after Remove and the earlier check: %+v, want no account", check)
+		t.Fatalf("after the sign-out and the earlier check: %+v, want no account", check)
 	}
 }

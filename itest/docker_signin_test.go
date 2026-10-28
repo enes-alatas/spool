@@ -75,7 +75,7 @@ func dockerSignInRunsInTheImage(t *testing.T) {
 	// read-only container can't write, so its logout fails and the hub
 	// forgets the login unrevoked: what is checked here is that the
 	// logout ran in the image and left nothing.
-	s.mustJSON("DELETE", "/api/settings/cloud/account", nil, nil)
+	s.signOutCloudAccount()
 	s.mustJSON("GET", "/api/settings/cloud", nil, &view)
 	if view.Account.Set {
 		t.Fatalf("after Sign out the account is still set: %+v", view.Account)

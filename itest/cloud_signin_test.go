@@ -10,20 +10,22 @@ import (
 	"time"
 )
 
-// signInCloudFromThePage signs the hub in to the fixture account the way
-// Settings → Cloud does: the CLI's own login prints a link, and the code
-// the page would show is handed back. It returns the settings after.
+// signInCloudFromThePage signs the default Claude login in to the fixture
+// account the way the control room does: the CLI's own login prints a
+// link, and the code the page would show is handed back. It returns the
+// Cloud page's settings after.
 func signInCloudFromThePage(t *testing.T, s *server) cloudSettings {
 	t.Helper()
 	var started struct {
 		Link string `json:"link"`
 	}
-	s.mustJSON("POST", "/api/settings/cloud/account/sign-in", nil, &started)
+	s.mustJSON("POST", "/api/claude-logins/default/sign-in", nil, &started)
 	if !strings.HasPrefix(started.Link, "https://") || !strings.Contains(started.Link, "oauth/authorize") {
 		t.Fatalf("the sign-in's link = %q, want the CLI's authorize link", started.Link)
 	}
+	s.mustJSON("POST", "/api/claude-logins/default/sign-in/code", map[string]string{"code": "fixture-code#fixture-state"}, nil)
 	var view cloudSettings
-	s.mustJSON("POST", "/api/settings/cloud/account/code", map[string]string{"code": "fixture-code#fixture-state"}, &view)
+	s.mustJSON("GET", "/api/settings/cloud", nil, &view)
 	return view
 }
 
@@ -37,7 +39,7 @@ func TestSettingsCloudSignsInWithTheCLIsLogin(t *testing.T) {
 	t.Parallel()
 	s := startCloudHub(t, "cirrus")
 
-	s.mustJSON("DELETE", "/api/settings/cloud/account", nil, nil)
+	s.signOutCloudAccount()
 	var view cloudSettings
 	s.mustJSON("GET", "/api/settings/cloud", nil, &view)
 	if view.Account.Set || view.Account.Check == nil || view.Account.Check.Stage != "no_account" {
@@ -55,15 +57,15 @@ func TestSettingsCloudSignsInWithTheCLIsLogin(t *testing.T) {
 		t.Fatal("the cloud loop tried to wake with no account, want it held")
 	}
 
-	s.wantRefusal("POST", "/api/settings/cloud/account/code", map[string]string{"code": "fixture-code"}, 409, "cloud_sign_in")
-	s.mustJSON("POST", "/api/settings/cloud/account/sign-in", nil, nil)
+	s.wantRefusal("POST", "/api/claude-logins/default/sign-in/code", map[string]string{"code": "fixture-code"}, 409, "cloud_sign_in")
+	s.mustJSON("POST", "/api/claude-logins/default/sign-in", nil, nil)
 	// a code is one word of at most 1 KB: a second line never reaches the
 	// CLI as another answer, and a sign-in refused for its shape still waits
-	s.wantRefusal("POST", "/api/settings/cloud/account/code", map[string]string{"code": "fixture-code\nmore"}, 400, "cloud_sign_in")
-	s.wantRefusal("POST", "/api/settings/cloud/account/code", map[string]string{"code": "fixture-code more"}, 400, "cloud_sign_in")
-	s.wantRefusal("POST", "/api/settings/cloud/account/code", map[string]string{"code": "fixture-code" + strings.Repeat("x", 1<<10)}, 400, "cloud_sign_in")
-	s.wantRefusal("POST", "/api/settings/cloud/account/code", map[string]string{"code": "not-the-code"}, 400, "cloud_sign_in")
-	s.wantRefusal("POST", "/api/settings/cloud/account/code", map[string]string{"code": "fixture-code"}, 409, "cloud_sign_in")
+	s.wantRefusal("POST", "/api/claude-logins/default/sign-in/code", map[string]string{"code": "fixture-code\nmore"}, 400, "cloud_sign_in")
+	s.wantRefusal("POST", "/api/claude-logins/default/sign-in/code", map[string]string{"code": "fixture-code more"}, 400, "cloud_sign_in")
+	s.wantRefusal("POST", "/api/claude-logins/default/sign-in/code", map[string]string{"code": "fixture-code" + strings.Repeat("x", 1<<10)}, 400, "cloud_sign_in")
+	s.wantRefusal("POST", "/api/claude-logins/default/sign-in/code", map[string]string{"code": "not-the-code"}, 400, "cloud_sign_in")
+	s.wantRefusal("POST", "/api/claude-logins/default/sign-in/code", map[string]string{"code": "fixture-code"}, 409, "cloud_sign_in")
 
 	checks := loginChecks(t, s)
 	view = signInCloudFromThePage(t, s)
@@ -126,7 +128,7 @@ func TestAClaudeLoginSupersedesTheSetupToken(t *testing.T) {
 		t.Fatalf("a setup-token under a Claude login answered %d, want 409 (%s)", resp.StatusCode, body)
 	}
 
-	s.mustJSON("DELETE", "/api/settings/cloud/account", nil, nil)
+	s.signOutCloudAccount()
 	if s.settings().ClaudeTokenSet {
 		t.Fatal("a hub signed out with no setup-token reads as having a Claude token")
 	}
@@ -136,7 +138,7 @@ func TestAClaudeLoginSupersedesTheSetupToken(t *testing.T) {
 	}
 
 	signInCloudFromThePage(t, s)
-	s.mustJSON("DELETE", "/api/settings/cloud/account", nil, nil)
+	s.signOutCloudAccount()
 	if s.settings().ClaudeTokenSet {
 		t.Fatal("the setup-token outlived the sign-in that superseded it")
 	}
@@ -177,5 +179,23 @@ func admitOnly(t *testing.T, s *server, token string) {
 	}
 	if err := os.WriteFile(filepath.Join(s.fkState, "admitted-token"), []byte(token), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// The default Claude login is signed in, checked and signed out under
+// /api/claude-logins/default like any other: the single-login routes that
+// did it for the default alone are gone (ADR-0060, #1077).
+func TestTheSingleLoginRoutesAreGone(t *testing.T) {
+	t.Parallel()
+	hub := startServer(t, t.TempDir())
+	for _, route := range []struct{ method, path string }{
+		{"POST", "/api/settings/cloud/account/sign-in"},
+		{"POST", "/api/settings/cloud/account/code"},
+		{"POST", "/api/settings/cloud/account/check"},
+		{"DELETE", "/api/settings/cloud/account"},
+	} {
+		if resp, data := hub.do(route.method, route.path, nil); resp.StatusCode != 404 {
+			t.Errorf("%s %s answered %d %s, want 404", route.method, route.path, resp.StatusCode, data)
+		}
 	}
 }

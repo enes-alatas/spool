@@ -35,6 +35,26 @@ type cloudSettings struct {
 	} `json:"account"`
 }
 
+// checkCloudAccount checks the default Claude login, the cloud loops'
+// account, and answers with the settings the Cloud page reads it in.
+func (hub *server) checkCloudAccount() cloudSettings {
+	hub.t.Helper()
+	hub.mustJSON("POST", "/api/claude-logins/default/check", nil, nil)
+	var view cloudSettings
+	hub.mustJSON("GET", "/api/settings/cloud", nil, &view)
+	return view
+}
+
+// signOutCloudAccount signs the default Claude login out, and answers with
+// the settings the Cloud page reads the account in.
+func (hub *server) signOutCloudAccount() cloudSettings {
+	hub.t.Helper()
+	hub.mustJSON("POST", "/api/claude-logins/default/sign-out", nil, nil)
+	var view cloudSettings
+	hub.mustJSON("GET", "/api/settings/cloud", nil, &view)
+	return view
+}
+
 // loopbackAddress lets these hubs take a plain-HTTP loopback public
 // address: the harness's stand-in for a tunnel is the listener itself.
 var loopbackAddress = []string{"--runtime", "bare", "--cloud-loopback-address"}
