@@ -1367,3 +1367,11 @@ has answered #975 and #1164; the HN thread (ref:7216 item 4) is his to drop or t
 ## 2026-10-28 09:15 UTC — Enes: skip the HN thread, keep scanning (ref:7237)
 Enes synced with everyone separately; drops the 50257325 thread; the watch stays standing. Nothing
 open with Enes from me now. Open: #1161/#1162 auto-merge (Quinn's asks), #1164 review.
+
+## 2026-10-28 09:30 UTC — community bug #1166 (Enes ref:7249)
+k-sok: a cloud loop's github-app installation token expires after an hour; hub can't refresh in
+place (ADR-0059 item 10 hands connections once; ADR-0043/#887 refuses github-app on cloud).
+Typed bug + severity:medium, community kept, triage removed, milestone L6; taken note (comment
+6465349935). Group ping to Terra (reproduce) and Elliot (posture of the proposed cloud-listener
+/github/token + spool-github hand-off) in ref:7250. Fix shape → Enes before code. Told Enes
+(ref:7251). Watch for their findings; then bring Enes the shape.
