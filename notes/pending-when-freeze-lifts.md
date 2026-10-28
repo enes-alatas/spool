@@ -1403,3 +1403,9 @@ L6, taken note (comment 6466672467). Group ping Terra (repro vs cloud start) + E
 vs OPERATIONS / New loop note) in ref:7270. Told Enes to hold the #1166 letter; asked whether his
 own cloud loop ever did GitHub work (ref:7271). Shape (loop names repos to attach) = Enes's call
 after findings. Merged: #1167 (#1153). HN watch 0 new.
+
+## 2026-10-28 10:45 UTC — Elliot confirms #1168 proxy facts (ref:7272)
+Comment 6466703608: attached repos only, GraphQL refused, pushes branch-only; OPERATIONS, the New
+loop cloud note and ADR-0059 say otherwise (docs fix needed whatever the shape). Two risks for
+Terra's repro: a multi-repo session loads no repo hooks and no .mcp.json (could kill our hand-off,
+Stop, send_message); whose identity a push goes out as. Waiting on Terra and Enes (ref:7271).
