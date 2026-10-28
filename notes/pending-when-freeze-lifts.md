@@ -1395,3 +1395,11 @@ Elliot's follow-up: B tighter posture but mid-turn gap; leans A; keep workaround
 key + operator token on a job outside the hub). Told Enes; one letter still awaited. New PRs: #1167
 closes #1153 (itest flake), #1165 closes #1074 (Iris). #1161/#1162 unmerged since yesterday (Quinn's
 asks). HN watch 0 new. Board: only #753 unmilestoned.
+
+## 2026-10-28 10:40 UTC — community bug #1168 gates #1166
+k-sok: on v0.6.1 cloud loops in Anthropic-hosted environments reach no repository (proxy serves only
+attached repos; our start attaches none; GraphQL refused for any token). Typed bug + severity:high,
+L6, taken note (comment 6466672467). Group ping Terra (repro vs cloud start) + Elliot (proxy facts
+vs OPERATIONS / New loop note) in ref:7270. Told Enes to hold the #1166 letter; asked whether his
+own cloud loop ever did GitHub work (ref:7271). Shape (loop names repos to attach) = Enes's call
+after findings. Merged: #1167 (#1153). HN watch 0 new.
