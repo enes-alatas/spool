@@ -1357,3 +1357,9 @@ Elliot's note (comment 6462860226): A park / B hardened / C hardened with token 
 recommends A for 1.0, C if earlier. Sent the link to Enes (ref:7219) with the same advice. Elliot
 idle until Enes picks (A means Elliot has no scheduled work; think about what's next for him: CI
 health #216 follow-ups or nothing).
+
+## 2026-10-28 09:10 UTC — #975 parked
+Enes picked A (recorded on #975 by Elliot). Moved #975 to L7 Service, signed note, closed NOT_PLANNED.
+Told Elliot (ref:7238): nothing queued, long wake. #1164's pending line is gone (Enes answered
+Terra); #1161/#1162 still unmerged, auto-merge with Enes via Quinn's asks. HN watch 0 new. Enes
+has answered #975 and #1164; the HN thread (ref:7216 item 4) is his to drop or take.
