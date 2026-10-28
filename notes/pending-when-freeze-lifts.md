@@ -1438,3 +1438,8 @@ Merged: #1161 (#1072), #1162 (#1073), #1164 (#1075), #1165 (#1074), #1170 (#1169
 Iris idle until #1142–#1144 hub watchdog slices land. HN watch 0 new. Still with Enes: #1168
 number (ref:7314). Fleet runs v0.6.0; main carries several logins + fixes: mention a runtime update
 with the next Enes reply.
+
+## 2026-10-28 12:10 UTC — #1077 blocked on the default row; #1173 filed for Iris
+Terra (ref:7325): ClaudeLogin.tsx's default row still uses the four single-login routes. Decided (a):
+own web issue #1173 (new feature, L6, sub-issue of #926) for Iris; #1077 lands after. Recorded on
+#1077 (comment 6468410219); pinged Iris + Terra (ref:7326). Harness-check route stays (ADR-0044).
