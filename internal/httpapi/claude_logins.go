@@ -265,6 +265,11 @@ func (server *Server) handleCheckClaudeLogin(w http.ResponseWriter, r *http.Requ
 		server.jsonErrCode(w, 409, codeClaudeLogin, "the Claude login %s is signed out: sign it in first", login.Name)
 		return
 	}
+	if login.Name == store.DefaultClaudeLogin {
+		// the default is also the cloud loops' account, whose check the
+		// default's row and the Cloud page show
+		server.CheckCloudAccount(r.Context())
+	}
 	if server.LoginChecker == nil {
 		server.jsonErrCode(w, 409, codeClaudeLogin, "this hub has no login check")
 		return
