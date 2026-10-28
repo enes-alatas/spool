@@ -1455,3 +1455,9 @@ Iris: nothing under /api/claude-logins re-runs CheckCloudAccount (verified: hand
 only starts the login check). Decided (i): #1174 (new feature, L6, sub-issue of #926) for Terra:
 default's check also runs the cloud account check; ahead of #1173. Recorded on #1173 (comment
 6468448146); pinged both (ref:7332). Order #1174 → #1173 → #1077 → #1078.
+
+## 2026-10-28 13:30 UTC — Enes: can loops make artifacts? (ref:7366)
+Answered (ref:7367): Spool disallows only Agent/Task (works-alone); loops run claude -p, which
+doesn't offer the Artifact tools (my own session lacks them). Possible `--tools default,Artifact`
+probe if Enes wants it (Terra, one prompt). Asked what Terra needed it for; send_message attach is
+the loop's substitute.
