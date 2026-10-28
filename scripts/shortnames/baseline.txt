@@ -100,7 +100,6 @@
 5 itest/pacing_test.go
 3 itest/perf_test.go
 2 itest/plan_cap_test.go
-1 itest/plan_usage_test.go
 1 itest/poll_send_test.go
 1 itest/polls_test.go
 6 itest/power_test.go

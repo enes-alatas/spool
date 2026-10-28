@@ -236,7 +236,8 @@ func (server *Server) handleSignOutClaudeLogin(w http.ResponseWriter, r *http.Re
 
 // changeLogin stores the login's sign-in, the zero account to sign it out,
 // tells the hub, and answers with the login. A closed tab doesn't cut the
-// change short, as for changeCloudAccount.
+// change short: a logout or a store write left halfway would leave the
+// login neither kept nor forgotten.
 func (server *Server) changeLogin(w http.ResponseWriter, r *http.Request, name string, account store.CloudAccount) {
 	ctx := context.WithoutCancel(r.Context())
 	if err := server.storeLoginAccount(ctx, name, account); errors.Is(err, errLoginRemoved) {

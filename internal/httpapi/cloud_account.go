@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -118,15 +117,6 @@ func signInCodeShaped(code string) bool {
 	})
 }
 
-// handleStartCloudSignIn begins the CLI's login and answers with its link.
-func (server *Server) handleStartCloudSignIn(w http.ResponseWriter, r *http.Request) {
-	if server.CloudSignIn == nil {
-		server.jsonErrCode(w, 409, codeCloudSignIn, "this hub can't sign in to a Claude account")
-		return
-	}
-	server.startSignIn(w, r, store.DefaultClaudeLogin)
-}
-
 // startSignIn begins the CLI's login for the login called name, as the
 // caller, and answers with its link: 429 past the hub's caps on sign-ins
 // waiting for a code.
@@ -145,67 +135,6 @@ func (server *Server) startSignIn(w http.ResponseWriter, r *http.Request, name s
 	default:
 		writeJSON(w, 200, cloudSignInView{Link: link})
 	}
-}
-
-// handleFinishCloudSignIn hands the CLI the code, stores what it signed
-// in as, sealed, and checks it.
-func (server *Server) handleFinishCloudSignIn(w http.ResponseWriter, r *http.Request) {
-	if server.CloudSignIn == nil {
-		server.jsonErrCode(w, 409, codeCloudSignIn, "this hub can't sign in to a Claude account")
-		return
-	}
-	var req cloudSignInCodeReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		server.jsonErr(w, 400, "bad json: %v", err)
-		return
-	}
-	if !signInCodeShaped(req.Code) {
-		server.jsonErrCode(w, 400, codeCloudSignIn, "that is not a sign-in code: one word, at most %d bytes", maxSignInCode)
-		return
-	}
-	account, err := server.CloudSignIn.Finish(r.Context(), store.DefaultClaudeLogin, req.Code)
-	switch {
-	case errors.Is(err, ErrNoCloudSignIn):
-		server.jsonErrCode(w, 409, codeCloudSignIn, "%v", err)
-		return
-	case errors.Is(err, ErrCloudSignInRefused):
-		server.jsonErrCode(w, 400, codeCloudSignIn, "%v", err)
-		return
-	case err != nil:
-		server.Log.Warn("cloud sign-in didn't finish", "err", err)
-		server.jsonErr(w, 500, "%v", err)
-		return
-	}
-	server.changeCloudAccount(w, r, account)
-}
-
-func (server *Server) handleRemoveCloudAccount(w http.ResponseWriter, r *http.Request) {
-	server.changeCloudAccount(w, r, store.CloudAccount{})
-}
-
-func (server *Server) handleCheckCloudAccount(w http.ResponseWriter, r *http.Request) {
-	server.CheckCloudAccount(r.Context())
-	server.writeCloudSettings(w, r)
-}
-
-// changeCloudAccount stores the default Claude login's sign-in, the zero
-// account to sign it out, and tells the hub (loginChanged). A closed tab
-// doesn't cut the change short: a logout or a store write left halfway
-// would leave the login neither kept nor forgotten.
-func (server *Server) changeCloudAccount(w http.ResponseWriter, r *http.Request, account store.CloudAccount) {
-	ctx := context.WithoutCancel(r.Context())
-	if err := server.storeLoginAccount(ctx, store.DefaultClaudeLogin, account); err != nil {
-		// even a failed write may have changed the account, and dropping a
-		// check that ran over an unchanged one costs only that check
-		server.cloudAccountCheck.changed()
-		server.jsonErr(w, 500, "%v", err)
-		return
-	}
-	if err := server.loginChanged(ctx, store.DefaultClaudeLogin); err != nil {
-		server.jsonErr(w, 500, "%v", err)
-		return
-	}
-	server.writeCloudSettings(w, r)
 }
 
 // loginChanged tells the hub that the login called name was signed in,

@@ -115,9 +115,9 @@ func TestThePlanCapLiftsAtTheResetAndOnResumeNow(t *testing.T) {
 	srv.message("spender", "resume")
 	srv.noTurn(2*time.Second, map[string]string{"spender": "resumed"})
 
-	var resumed planUsageJSON
-	srv.mustJSON("POST", "/api/plan-cap/resume", nil, &resumed)
-	if resumed.Cap != nil || resumed.ResumedUntil < time.Now().Add(4*time.Hour).UnixMilli() {
+	var answered planUsagesJSON
+	srv.mustJSON("POST", "/api/plan-cap/resume", nil, &answered)
+	if resumed := answered.login("default"); resumed.Cap != nil || resumed.ResumedUntil < time.Now().Add(4*time.Hour).UnixMilli() {
 		t.Fatalf("Resume now answered cap %+v, resumed_until %d; want no cap, held to the five-hour reset", resumed.Cap, resumed.ResumedUntil)
 	}
 	srv.waitTurn("spender", 30*time.Second, func(tr turn) bool { return strings.Contains(tr.ResultText, "resumed") })
@@ -177,10 +177,10 @@ func TestThePlanCapSleepsOnlyTheLoopsOnTheLoginOver(t *testing.T) {
 	hub.message("aster", "still here?")
 	hub.waitTurn("aster", 30*time.Second, func(tr turn) bool { return strings.Contains(tr.ResultText, "answered") })
 
-	view := hub.planUsage()
+	view := hub.planUsages()
 	ada := view.login("ada")
-	if view.Cap != nil || view.login("default").Cap != nil || ada.Cap == nil || !slices.Equal(ada.Cap.Windows, []string{"five_hour"}) {
-		t.Fatalf("caps: top-level %+v, default %+v, ada %+v; want ada's alone", view.Cap, view.login("default").Cap, ada.Cap)
+	if view.login("default").Cap != nil || ada.Cap == nil || !slices.Equal(ada.Cap.Windows, []string{"five_hour"}) {
+		t.Fatalf("caps: default %+v, ada %+v; want ada's alone", view.login("default").Cap, ada.Cap)
 	}
 	if aster, bloom := hub.loop("aster").CappedUntil, hub.loop("bloom").CappedUntil; aster != 0 || bloom != ada.Cap.Until {
 		t.Fatalf("capped_until: aster %d, bloom %d; want 0 and ada's %d", aster, bloom, ada.Cap.Until)
@@ -196,11 +196,11 @@ func TestThePlanCapSleepsOnlyTheLoopsOnTheLoginOver(t *testing.T) {
 	hub.wantRefusal("POST", "/api/plan-cap/resume", map[string]any{"claude_login": "nobody"}, 400, "claude_login")
 	hub.mustJSON("POST", "/api/plan-cap/resume", nil, nil)
 	hub.noTurn(time.Second, map[string]string{"bloom": "held"})
-	var resumed planUsageJSON
+	var resumed planUsagesJSON
 	hub.mustJSON("POST", "/api/plan-cap/resume", map[string]any{"claude_login": "ada"}, &resumed)
-	if ada := resumed.login("ada"); ada.Cap != nil || ada.ResumedUntil < time.Now().Add(4*time.Hour).UnixMilli() || resumed.ResumedUntil != 0 {
+	if ada := resumed.login("ada"); ada.Cap != nil || ada.ResumedUntil < time.Now().Add(4*time.Hour).UnixMilli() || resumed.login("default").ResumedUntil != 0 {
 		t.Fatalf("Resume now on ada answered ada %+v %d, default %d; want ada held off to its reset, the default untouched",
-			ada.Cap, ada.ResumedUntil, resumed.ResumedUntil)
+			ada.Cap, ada.ResumedUntil, resumed.login("default").ResumedUntil)
 	}
 	hub.waitTurn("bloom", 30*time.Second, func(tr turn) bool { return strings.Contains(tr.ResultText, "held") })
 }

@@ -695,9 +695,8 @@ export interface PlanUsage {
 
 // GET /api/plan-usage and Resume now's answer (planUsagesView): every
 // Claude login's plan usage, the default first and the rest by name
-// (ADR-0060), each with its own cap and Resume now hold (#1075). The hub
-// also serves the default's at the top level until #1077 removes it; the
-// control room reads logins alone (#1173).
+// (ADR-0060), each with its own cap and Resume now hold (#1075). There is
+// no top level: the default's is its entry in logins (#1077).
 export interface PlanUsages {
   logins: LoginPlanUsage[]
 }

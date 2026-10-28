@@ -150,6 +150,15 @@ refreshes it.
    again checks everything with one route once the single-login check
    route goes (#1077).
 
+   **Amendment (2026-10-28, #1077):** the removal has landed.
+   - The four `/api/settings/cloud/account` routes are gone. They signed
+     the default in (`sign-in`, `code`), checked it (`check`) and signed
+     it out (`DELETE`). The default now does all of that under
+     `/api/claude-logins/default/`, as any login does.
+   - `GET /api/plan-usage` serves `logins` alone.
+   - `POST /api/onboarding/harness-check` stays: it is ADR-0044's login
+     check of the hub's Claude token, not one of the single-login routes.
+
 8. **The docs say whose subscription a login is** (operator decision of
    2026-10-23). The Add page, OPERATIONS.md and the README say:
    - each login is the subscription of the person who signs it in, used

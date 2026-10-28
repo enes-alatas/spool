@@ -116,7 +116,7 @@ func TestTheClaudeProxyForwardsModelRequestsOnTheHubsToken(t *testing.T) {
 func TestTheClaudeProxyRefusesWithNoLogin(t *testing.T) {
 	t.Parallel()
 	s, fake := startProxyHub(t, "cosmos")
-	s.mustJSON("DELETE", "/api/settings/cloud/account", nil, nil)
+	s.signOutCloudAccount()
 	if got := postModel(t, s, "POST", "/claude/v1/messages", hubMCPToken(t, s, "cosmos")); got != http.StatusUnauthorized {
 		t.Fatalf("with no login a model request answered %d, want 401", got)
 	}
