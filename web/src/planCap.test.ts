@@ -6,6 +6,7 @@ import {
   capIdleStatus,
   cappedLogins,
   capWake,
+  defaultUsage,
   capReason,
   capValue,
   loginUsage,
@@ -70,12 +71,12 @@ describe('capReason for one login of several', () => {
 
 describe("a loop's login cap", () => {
   const cap = { windows: ['five_hour' as const], until: minutes(41) }
-  const several = usage({
+  const several = {
     logins: [
       { name: 'default', ...usage() },
       { name: 'ada', ...usage({ cap }) },
     ],
-  })
+  }
 
   it("reads the loop's own login, the default for a bare or cloud loop", () => {
     expect(loopPlanCapped(several, { claude_login: 'ada' })).toBe(true)
@@ -83,19 +84,21 @@ describe("a loop's login cap", () => {
     expect(loopPlanCapped(several, { claude_login: 'robin' })).toBe(false)
   })
 
-  it('reads the top level as the default on a hub older than #1073', () => {
-    const old = usage({ cap })
-    expect(loginUsage(old, 'default')).toBe(old)
-    expect(loopPlanCapped(old, { claude_login: '' })).toBe(true)
-    expect(loopPlanCapped(old, { claude_login: 'ada' })).toBe(false)
+  it('reads the default from its entry in logins', () => {
+    const one = { logins: [{ name: 'default', ...usage({ cap }) }] }
+    expect(defaultUsage(one)).toBe(one.logins[0])
+    expect(loginUsage(one, 'default')).toBe(one.logins[0])
+    expect(loopPlanCapped(one, { claude_login: '' })).toBe(true)
+    expect(defaultUsage(undefined)).toBeUndefined()
   })
 
-  it('lists the capped logins of several, and the one of a hub with one', () => {
+  it('lists the capped logins of several, and the default of a hub with one', () => {
     expect(cappedLogins(several).map((login) => login.name)).toEqual(['ada'])
-    expect(cappedLogins(usage())).toEqual([])
-    expect(cappedLogins(usage({ cap })).map((login) => login.name)).toEqual(['default'])
-    const one = usage({ cap, logins: [{ name: 'default', ...usage({ cap }) }] })
-    expect(cappedLogins(one).map((login) => login.name)).toEqual(['default'])
+    expect(cappedLogins({ logins: [{ name: 'default', ...usage() }] })).toEqual([])
+    expect(
+      cappedLogins({ logins: [{ name: 'default', ...usage({ cap }) }] }).map((login) => login.name),
+    ).toEqual(['default'])
+    expect(cappedLogins(undefined)).toEqual([])
   })
 })
 
@@ -148,11 +151,10 @@ describe('usageLogins', () => {
   const line = (name: string) => ({ ...usage(), name })
   it('gives a ring a login on a hub with more than one', () => {
     const logins = [line('default'), line('ada')]
-    expect(usageLogins(usage({ logins }))).toEqual(logins)
+    expect(usageLogins({ logins })).toEqual(logins)
   })
-  it('leaves the strip as it was with one login, or on a hub that lists none', () => {
-    expect(usageLogins(usage({ logins: [line('default')] }))).toBeUndefined()
-    expect(usageLogins(usage())).toBeUndefined()
+  it('leaves the strip as it was with one login', () => {
+    expect(usageLogins({ logins: [line('default')] })).toBeUndefined()
     expect(usageLogins(undefined)).toBeUndefined()
   })
 })

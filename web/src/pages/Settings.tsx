@@ -136,7 +136,7 @@ function loadFailure(loadError: Error): string {
 // Resume now lifts it until the reset without touching the numbers.
 function PlanGuardrails({ settings, loadError }: { settings?: SettingsView; loadError: Error | null }) {
   const qc = useQueryClient()
-  const { data: usage } = useQuery({ queryKey: ['plan-usage'], queryFn: api.planUsage })
+  const { data: usages } = useQuery({ queryKey: ['plan-usage'], queryFn: api.planUsage })
   // As the rotation pair: the stored values are the truth, a draft overlays.
   const [draft, setDraft] = useState<CapDraft | null>(null)
   const [error, setError] = useState('')
@@ -183,7 +183,7 @@ function PlanGuardrails({ settings, loadError }: { settings?: SettingsView; load
       </p>
 
       <div className="form">
-        <CapBanners usage={usage} now={now} idle />
+        <CapBanners usages={usages} now={now} idle />
 
         <div className="field-row">
           <div className="field">

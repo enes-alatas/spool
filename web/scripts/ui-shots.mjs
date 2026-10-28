@@ -347,21 +347,31 @@ taken.push(activityFile)
 // to yet, and a hub with three Claude logins, one of them not reported
 // yet (#1074). The fixture's own reading is in the fleet shot. Clipped to the
 // header, the strip and the column heads, which is all that changes.
+// Each read serves logins alone, as the hub will once #1077 drops the
+// default's top-level copy, so a shot shows any reader still left on it.
+const defaultOf = (view) => view.logins[0]
+const withDefault = (view, patch) => ({
+  logins: [{ ...defaultOf(view), ...patch }, ...view.logins.slice(1)],
+})
 const planStates = {
-  hot: (view) => ({
-    ...view,
-    five_hour: { used_percent: 93, resets_at: Date.now() + 41 * 60000 },
-    seven_day: { used_percent: 72, resets_at: view.seven_day.resets_at },
-  }),
-  unknown: () => ({ five_hour: null, seven_day: null, unknown: "no loop has reported the plan's usage yet" }),
+  hot: (view) =>
+    withDefault(view, {
+      five_hour: { used_percent: 93, resets_at: Date.now() + 41 * 60000 },
+      seven_day: { used_percent: 72, resets_at: defaultOf(view).seven_day.resets_at },
+    }),
+  unknown: (view) =>
+    withDefault(view, {
+      five_hour: null,
+      seven_day: null,
+      unknown: "no loop has reported the plan's usage yet",
+    }),
   logins: (view) => ({
-    ...view,
     logins: [
-      { name: 'default', ...view },
+      defaultOf(view),
       {
         name: 'ada',
         five_hour: { used_percent: 78, resets_at: Date.now() + 66 * 60000 },
-        seven_day: { used_percent: 64, resets_at: view.seven_day.resets_at },
+        seven_day: { used_percent: 64, resets_at: defaultOf(view).seven_day.resets_at },
         as_of: Date.now() - 25 * 60000,
         cap: null,
       },
@@ -396,12 +406,11 @@ const capUntil = Date.now() + 41 * 60000
 await page.route('**/api/plan-usage', async (route) => {
   const view = await (await route.fetch()).json()
   route.fulfill({
-    json: {
-      ...view,
+    json: withDefault(view, {
       five_hour: { used_percent: 93, resets_at: capUntil, cap_percent: 90 },
-      seven_day: { ...view.seven_day, cap_percent: 90 },
+      seven_day: { ...defaultOf(view).seven_day, cap_percent: 90 },
       cap: { windows: ['five_hour'], until: capUntil },
-    },
+    }),
   })
 })
 await page.route('**/api/loops', async (route) => {
@@ -449,16 +458,15 @@ await page.route('**/api/plan-usage', async (route) => {
   const view = await (await route.fetch()).json()
   const ada = {
     five_hour: { used_percent: 93, resets_at: capUntil, cap_percent: 90 },
-    seven_day: { used_percent: 64, resets_at: view.seven_day.resets_at, cap_percent: 90 },
+    seven_day: { used_percent: 64, resets_at: defaultOf(view).seven_day.resets_at, cap_percent: 90 },
     as_of: Date.now() - 3 * 60000,
     cap: { windows: ['five_hour'], until: capUntil },
   }
   const unknown = "no loop has reported the plan's usage yet"
   route.fulfill({
     json: {
-      ...view,
       logins: [
-        { name: 'default', ...view },
+        defaultOf(view),
         { name: 'ada', ...ada },
         { name: 'robin', five_hour: null, seven_day: null, unknown, cap: null },
       ],

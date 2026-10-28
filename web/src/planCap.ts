@@ -1,4 +1,4 @@
-import type { LoginPlanUsage, PlanCap, PlanUsage, PlanWindowKey } from './api'
+import type { LoginPlanUsage, PlanCap, PlanUsage, PlanUsages, PlanWindowKey } from './api'
 import { formatResets } from './format'
 
 // The plan cap (#650, #651), which works per Claude login (#1075): above a
@@ -103,11 +103,17 @@ export function capValue(field: string): number | undefined {
 }
 
 // The logins the plan strip gives a ring each (ADR-0060): every login's
-// usage when the hub holds more than one, and none on a hub with one, or
-// one older than #1073, which reads as the strip always has.
-export function usageLogins(usage: PlanUsage | undefined): LoginPlanUsage[] | undefined {
-  const logins = usage?.logins
+// usage when the hub holds more than one, and none on a hub with one,
+// which reads as the strip always has.
+export function usageLogins(usages: PlanUsages | undefined): LoginPlanUsage[] | undefined {
+  const logins = usages?.logins
   return logins && logins.length > 1 ? logins : undefined
+}
+
+// The default login's plan usage, which the hub always lists, first: the
+// strip's bars and the fleet's banner on a hub with one login.
+export function defaultUsage(usages: PlanUsages | undefined): LoginPlanUsage | undefined {
+  return loginUsage(usages, 'default')
 }
 
 // A login's name as its ring fits it: a name up to 8 characters whole, a
@@ -125,23 +131,21 @@ export function loopLogin(loop: { claude_login: string }): string {
   return loop.claude_login || 'default'
 }
 
-// A login's plan usage, cap and all: the default's is the top-level read,
-// on a hub older than #1073 too, and any other its entry in logins.
-export function loginUsage(usage: PlanUsage | undefined, login: string): PlanUsage | undefined {
-  if (login === 'default') return usage
-  return usage?.logins?.find((entry) => entry.name === login)
+// A login's plan usage, cap and all: its entry in logins.
+export function loginUsage(usages: PlanUsages | undefined, login: string): LoginPlanUsage | undefined {
+  return usages?.logins.find((entry) => entry.name === login)
 }
 
 // Whether a loop's login is capped, so the loop sleeps at its turn's end.
-export function loopPlanCapped(usage: PlanUsage | undefined, loop: { claude_login: string }): boolean {
-  return !!loginUsage(usage, loopLogin(loop))?.cap
+export function loopPlanCapped(usages: PlanUsages | undefined, loop: { claude_login: string }): boolean {
+  return !!loginUsage(usages, loopLogin(loop))?.cap
 }
 
-// The logins whose cap holds, each with the read the banner says it from.
-// Every capped login on a hub with more than one; the top-level read on a
-// hub with one, or one older than #1073, whose banner speaks of the fleet.
-export function cappedLogins(usage: PlanUsage | undefined): LoginPlanUsage[] {
-  const logins = usageLogins(usage)
-  if (logins) return logins.filter((login) => login.cap)
-  return usage?.cap ? [{ ...usage, name: 'default' }] : []
+// The logins whose cap holds, each with the read the banner says it from:
+// every capped login on a hub with more than one, and the default on a hub
+// with one, whose banner speaks of the fleet.
+export function cappedLogins(usages: PlanUsages | undefined): LoginPlanUsage[] {
+  return (usageLogins(usages) ?? [defaultUsage(usages)]).filter(
+    (login): login is LoginPlanUsage => !!login?.cap,
+  )
 }
