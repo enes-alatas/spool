@@ -242,7 +242,7 @@ export default function Dashboard() {
   const { data: thresholds } = useQuery({ queryKey: ['settings'], queryFn: api.settings })
   // the strip's own read, shared through the cache: whether each login's
   // cap has fired
-  const { data: usage } = useQuery({ queryKey: ['plan-usage'], queryFn: api.planUsage })
+  const { data: usages } = useQuery({ queryKey: ['plan-usage'], queryFn: api.planUsage })
 
   // The sum of the rows' badges, which are the store's per-loop counts: each
   // row's badge opens that loop's pane (#281), and the pane lists the same
@@ -342,7 +342,7 @@ export default function Dashboard() {
                   loop={fleetLoop}
                   thresholds={thresholds}
                   spentToday={spentToday}
-                  planCapped={loopPlanCapped(usage, fleetLoop)}
+                  planCapped={loopPlanCapped(usages, fleetLoop)}
                 />
               ))}
             </div>

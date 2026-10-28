@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, PlanUsage, PlanWindow } from '../api'
+import { api, PlanUsages, PlanWindow } from '../api'
 import { formatAgo, formatResets, formatUsd, gradedColor } from '../format'
-import { capIdleStatus, cappedLogins, capReason, loopLogin, usageLogins } from '../planCap'
+import { capIdleStatus, cappedLogins, capReason, defaultUsage, loopLogin, usageLogins } from '../planCap'
 import { LoginRings } from './LoginRings'
 import { useMay } from './Session'
 
@@ -57,11 +57,12 @@ function PlanWindowStat({ name, window, now }: { name: string; window: PlanWindo
 // A hub with more than one Claude login (ADR-0060) shows a ring a login in
 // the bars' place (LoginRings); a hub with one keeps the bars.
 export function PlanUsageStrip({ spentToday, costDayTitle }: { spentToday: number; costDayTitle?: string }) {
-  const { data: usage, error } = useQuery({ queryKey: ['plan-usage'], queryFn: api.planUsage })
+  const { data: usages, error } = useQuery({ queryKey: ['plan-usage'], queryFn: api.planUsage })
+  const usage = defaultUsage(usages)
   const now = useMinuteClock()
   const unknown = error ? (error instanceof Error ? error.message : String(error)) : usage?.unknown
-  const logins = error ? undefined : usageLogins(usage)
-  const sleeps = useSleeps(usage)
+  const logins = error ? undefined : usageLogins(usages)
+  const sleeps = useSleeps(usages)
   return (
     <>
       <div className="plan-strip-frame">
@@ -98,7 +99,7 @@ export function PlanUsageStrip({ spentToday, costDayTitle }: { spentToday: numbe
       </div>
       {/* With several logins a capped one shows on its ring, which says
           what the banner would (Enes's call on #1076). */}
-      {!logins && <CapBanners usage={usage} now={now} />}
+      {!logins && <CapBanners usages={usages} now={now} />}
     </>
   )
 }
@@ -108,25 +109,24 @@ export function PlanUsageStrip({ spentToday, costDayTitle }: { spentToday: numbe
 // capped say where their usage stands instead, as the Settings section
 // does over its thresholds.
 export function CapBanners({
-  usage,
+  usages,
   now,
   idle,
 }: {
-  usage: PlanUsage | undefined
+  usages: PlanUsages | undefined
   now: number
   idle?: boolean
 }) {
-  const several = !!usageLogins(usage)
-  const capped = cappedLogins(usage)
-  const sleeps = useSleeps(usage)
+  const logins = usageLogins(usages)
+  const several = !!logins
+  const capped = cappedLogins(usages)
+  const sleeps = useSleeps(usages)
   const idleLines = !idle
     ? []
     : several
-      ? usageLogins(usage)!
-          .filter((login) => !login.cap)
-          .map((login) => `${login.name} · ${capIdleStatus(login, now)}`)
+      ? logins.filter((login) => !login.cap).map((login) => `${login.name} · ${capIdleStatus(login, now)}`)
       : capped.length === 0
-        ? [capIdleStatus(usage, now)].filter((line) => line !== undefined)
+        ? [capIdleStatus(defaultUsage(usages), now)].filter((line) => line !== undefined)
         : []
   return (
     <>
@@ -152,9 +152,9 @@ export function CapBanners({
 // undefined on a hub with one login, where the cap sleeps every loop, and
 // until the loops have loaded, so the copy says "Loops sleep" rather than
 // that none runs on it.
-function useSleeps(usage: PlanUsage | undefined): (login: string) => string[] | undefined {
+function useSleeps(usages: PlanUsages | undefined): (login: string) => string[] | undefined {
   const { data: loops } = useQuery({ queryKey: ['loops'], queryFn: api.loops })
-  const several = !!usageLogins(usage)
+  const several = !!usageLogins(usages)
   return (login) =>
     several && loops
       ? loops.filter((loop) => loop.status === 'active' && loopLogin(loop) === login).map((loop) => loop.name)
@@ -227,8 +227,8 @@ function useResume() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: api.resumePlanCap,
-    onSuccess: (usage) => {
-      qc.setQueryData(['plan-usage'], usage)
+    onSuccess: (usages) => {
+      qc.setQueryData(['plan-usage'], usages)
       void qc.invalidateQueries({ queryKey: ['loops'] })
     },
   })
