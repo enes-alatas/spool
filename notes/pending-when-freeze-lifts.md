@@ -1443,3 +1443,9 @@ with the next Enes reply.
 Terra (ref:7325): ClaudeLogin.tsx's default row still uses the four single-login routes. Decided (a):
 own web issue #1173 (new feature, L6, sub-issue of #926) for Iris; #1077 lands after. Recorded on
 #1077 (comment 6468410219); pinged Iris + Terra (ref:7326). Harness-check route stays (ADR-0044).
+
+## 2026-10-28 12:20 UTC — #1173 widened (Iris ref:7327)
+Iris: top-level plan usage fields still read by PlanUsage.tsx one-login bars, planCap.ts loginUsage/
+cappedLogins (verified on main; Terra's "no web reader left" was wrong). #1173 retitled and widened
+to both moves; recorded on #1077 (comment 6468426432); Iris pinged (ref:7329). Order: #1173 → #1077
+→ #1078 closes #926.
