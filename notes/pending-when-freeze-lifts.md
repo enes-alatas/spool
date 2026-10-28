@@ -1449,3 +1449,9 @@ Iris: top-level plan usage fields still read by PlanUsage.tsx one-login bars, pl
 cappedLogins (verified on main; Terra's "no web reader left" was wrong). #1173 retitled and widened
 to both moves; recorded on #1077 (comment 6468426432); Iris pinged (ref:7329). Order: #1173 → #1077
 → #1078 closes #926.
+
+## 2026-10-28 12:30 UTC — #1174 filed (Iris ref:7331)
+Iris: nothing under /api/claude-logins re-runs CheckCloudAccount (verified: handleCheckClaudeLogin
+only starts the login check). Decided (i): #1174 (new feature, L6, sub-issue of #926) for Terra:
+default's check also runs the cloud account check; ahead of #1173. Recorded on #1173 (comment
+6468448146); pinged both (ref:7332). Order #1174 → #1173 → #1077 → #1078.
