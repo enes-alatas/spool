@@ -1346,3 +1346,8 @@ with Enes: HN thread (7201), #975 (7203), #1164 (7210). #1161/#1162 in review.
 waits on his bare-loop cap answer (ref:7210). HN watch 2 new, no fit; Enes has not posted on
 50257325 (thread now ~16h old, cooling). Board: only #753 unmilestoned. Re-nudge the three decisions
 in one DM around 07:00 UTC if still silent.
+
+## 2026-10-28 07:05 UTC — Elliot on #975 options; morning bundle to Enes
+Elliot's queue empty (ref:7214); told him (ref:7215) to write a one-screen options note on #975, no
+ADR file, no code, until Enes picks. Morning DM to Enes (ref:7216): #1164 answer, auto-merge #1161/
+#1162, #975 build/park, HN thread cooling. HN watch run this wake (output above).
