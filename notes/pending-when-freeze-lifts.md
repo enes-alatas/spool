@@ -1490,3 +1490,9 @@ Comment 6475976600: hub can refuse a cloud loop's token while the loop is stoppe
 running) + a Rotate token action; token reach; keep the token out of the setup script; GitHub App
 on selected repos only; allowlist per environment. Terra folds it into the ADR draft; Enes decides
 at acceptance. #1178 security pass at d6ef33f, no asks (Quinn's review pending).
+
+## 2026-10-28 19:15 UTC — #1178 merged; #1078 re-scoped (Terra ref:7395)
+#1077 done. Decided (b): #1078 stays as a thin slice after #1181 (login's token, lift 409, refuse an
+environment the login's account doesn't own); retitled; recorded. Terra now on #1180 ADR (pinged
+ref:7397; he asks Enes for the sign-in himself). #926 closes with #1078. Iris and Elliot idle
+until #1182 / ADR acceptance.
