@@ -1423,3 +1423,11 @@ on #1168/#1166.
 Closes #1169 only; files OPERATIONS, THREAT-MODEL, ADR-0059 (dated item 10 amendment), web cloud
 note + test + smoke. Quinn tagged by Elliot. Nothing for me. Still waiting: Enes's sign-in for
 Terra's #1168 probe (ref:7278).
+
+## 2026-10-28 11:35 UTC — #1168 probe results; options to Enes (ref:7314)
+Terra (comment 6467741001): A today's start 403; B origin+FORCE_BUNDLE loses the remote; C sessions
+API with repo source + seed bundle → REST 200, hooks run, push unproven (auto mode refused as
+exfiltration), no clone. Options: 1 hub creates sessions via API; 2 self-hosted env (untested);
+3 ask Anthropic, no repo access meanwhile. Advised 3. On Enes's number: record on #1168, answer the
+reporter, and either file the Anthropic ask (who sends it? Enes) or slice option 1 with a push probe.
+#1166 letter stays held behind #1168.
