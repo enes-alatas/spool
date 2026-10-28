@@ -1502,3 +1502,6 @@ Correction on #1180 (comment 6478145150): the hub token goes on the environment 
 network secret for the hub's host; the proxy adds the header; never in the VM; setup script carries
 no token. Edited #1179, #1182, #1184 bodies accordingly (#1181/#1183 had no variable wording).
 Terra drafts (a) token valid only while the loop runs + Rotate token for Enes to accept.
+
+## 2026-10-28 21:10 UTC tick
+Quiet. HN watch: 0 new. Open PRs: only #453 (eval spike, long-parked). Board tidy (type+milestone on all open; #753 triage as agreed). #1180 unchanged since 19:10: Terra drafting the ADR; Elliot's follow-up notes that the network-secret route revives #975's hardened mode and the ADR should say it supersedes the park — Enes weighs that at acceptance, nothing for me now.
