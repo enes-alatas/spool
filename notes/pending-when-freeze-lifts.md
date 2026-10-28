@@ -1418,3 +1418,8 @@ undocumented claude-code-remote MCP add_repo not a surface. Live probe needs a s
 Enes; I backed it in ref:7278). Filed #1169 (documentation, L6, Part of #1168): docs promise reach
 cloud loops lack; assigned Elliot (ref:7277). Next: Enes's sign-in → Terra's probe → shape → letters
 on #1168/#1166.
+
+## 2026-10-28 11:05 UTC — #1170 up for #1169 (Elliot ref:7285)
+Closes #1169 only; files OPERATIONS, THREAT-MODEL, ADR-0059 (dated item 10 amendment), web cloud
+note + test + smoke. Quinn tagged by Elliot. Nothing for me. Still waiting: Enes's sign-in for
+Terra's #1168 probe (ref:7278).
