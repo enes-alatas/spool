@@ -1340,3 +1340,9 @@ HN watch 0 new; no Spool mention on 50257325 yet. New PR #1164 closes #1075 (Ter
 "Operator decision pending" line: bare loops follow the default login's plan usage and cap (ADR-0060
 item 5 amendment). Not on #926 yet; Terra asked Enes today. I DM'd Enes with "yes" proposed. Open
 with Enes: HN thread (7201), #975 (7203), #1164 (7210). #1161/#1162 in review.
+
+## 2026-10-28 03:05 UTC — overnight: everything on Enes
+#1161 (approved 16:18) and #1162 (approved 17:20) wait on Enes's auto-merge (Quinn's asks); #1164
+waits on his bare-loop cap answer (ref:7210). HN watch 2 new, no fit; Enes has not posted on
+50257325 (thread now ~16h old, cooling). Board: only #753 unmilestoned. Re-nudge the three decisions
+in one DM around 07:00 UTC if still silent.
