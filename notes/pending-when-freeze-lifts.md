@@ -1484,3 +1484,9 @@ Terra (ref:7386), told Enes (ref:7387). Later: ping Iris at #1182 landing, Ellio
 #1178 (Terra, closes #1077, breaking refactor) open with one review; Quinn's. HN watch: 8 new; only
 Parley (Show HN, IRC agent collaboration, 4 pts) worth a note; sent Enes as optional peer comment
 (ref:7389). Board tidy (#753 triage only). Epic #1179 slices filed 15:13, all on L6.
+
+## 2026-10-28 17:35 UTC — Elliot's security input for the #1180 ADR (ref:7390)
+Comment 6475976600: hub can refuse a cloud loop's token while the loop is stopped (valid only while
+running) + a Rotate token action; token reach; keep the token out of the setup script; GitHub App
+on selected repos only; allowlist per environment. Terra folds it into the ADR draft; Enes decides
+at acceptance. #1178 security pass at d6ef33f, no asks (Quinn's review pending).
