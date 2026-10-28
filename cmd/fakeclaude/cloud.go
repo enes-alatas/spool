@@ -326,11 +326,14 @@ func refusingEgress(vm string, env []string) []string {
 	return append(env, "PATH="+bin)
 }
 
-// lockTurn holds the session's turns to one at a time.
+// lockTurn holds the session's turns to one at a time. The lock holds the
+// turn's pid, which leads its own process group, so a test can end a turn
+// still running when it returns, its hooks with it (#1153).
 func lockTurn(vm string) func() {
 	path := filepath.Join(vm, "turn.lock")
 	for deadline := time.Now().Add(time.Minute); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
 		if file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600); err == nil {
+			_, _ = fmt.Fprint(file, os.Getpid())
 			file.Close()
 			return func() { _ = os.Remove(path) }
 		}

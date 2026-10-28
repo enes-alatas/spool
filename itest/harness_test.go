@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -119,6 +120,9 @@ func startServerOn(t *testing.T, dataDir, mcpHost string, extraArgs ...string) *
 	// back from its log: nothing is reserved here and released, so nothing
 	// else on the machine can take a port before the hub has it (#344).
 	fkState := filepath.Join(dataDir, "fkstate")
+	// registered before the hub's stop, so it runs after it: no VM starts
+	// once it is waiting
+	t.Cleanup(func() { settleCloudVMs(t, fkState) })
 	args := []string{"--listen", "127.0.0.1:0"}
 	if mcpHost == "" {
 		// the hub's own choice, as an operator who names none gets (#475)
@@ -656,4 +660,59 @@ func wipeDir(t *testing.T, dir string) {
 			t.Fatal(err)
 		}
 	}
+}
+
+// settleCloudVMs ends every turn still running in fakeclaude's cloud VMs.
+// A VM runs detached from the hub and outlives it, and one held when the
+// test returns would otherwise be let go by t.TempDir's own removal of
+// the hold, and write into its session's directory while that removal is
+// still under way (#1153). Its hooks then retry their posts to the stopped
+// hub for half a minute, so the turn is killed, not waited for: each lock
+// names its turn's pid, which leads the turn's process group.
+func settleCloudVMs(t *testing.T, fkState string) {
+	t.Helper()
+	if _, err := os.Stat(filepath.Join(fkState, "cloud")); err != nil {
+		return // no VM was started
+	}
+	// a turn waiting on another's lock takes it within 20ms of its release,
+	// so the VMs are settled once two looks a little apart find none held
+	quiet := 0
+	for deadline := time.Now().Add(10 * time.Second); quiet < 2; time.Sleep(100 * time.Millisecond) {
+		locks, _ := filepath.Glob(filepath.Join(fkState, "cloud", "*", "turn.lock"))
+		if len(locks) == 0 {
+			quiet++
+			continue
+		}
+		quiet = 0
+		for _, lock := range locks {
+			raw, _ := os.ReadFile(lock)
+			pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
+			if err != nil || pid <= 0 {
+				continue // taken a moment ago, and its pid not written yet
+			}
+			if !running(pid) {
+				_ = os.Remove(lock) // its turn is gone
+				continue
+			}
+			_ = syscall.Kill(-pid, syscall.SIGKILL)
+		}
+		if time.Now().After(deadline) {
+			t.Errorf("a cloud VM's turn still runs in %s: %v", fkState, locks)
+			return
+		}
+	}
+}
+
+// running reports whether the process pid is alive: a zombie, which a
+// parent that let it go never reaps, is not.
+func running(pid int) bool {
+	if syscall.Kill(pid, 0) != nil {
+		return false
+	}
+	stat, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "stat"))
+	if err != nil {
+		return true // no /proc to say otherwise
+	}
+	_, state, _ := strings.Cut(string(stat), ") ")
+	return !strings.HasPrefix(state, "Z")
 }
