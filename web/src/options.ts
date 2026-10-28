@@ -188,14 +188,14 @@ export function runtimeFieldNote(
 // docker loop's workstation is its workspace (ADR-0017): a host path means
 // nothing to it, and the API refuses one (#427), so the field is locked and
 // says where the workspace is instead. A cloud loop has no workspace on the
-// hub either; its repo reach is a GH_TOKEN connection (ADR-0059). Create
-// starts its first session at once, before a connection can be attached on
-// its page, so the note says to pause and resume after attaching.
+// hub either, and on v0.6.x no repo reach: Anthropic's GitHub proxy serves
+// only repositories attached to the session, and the start attaches none, so
+// a GH_TOKEN connection reaches nothing (ADR-0059, #1168).
 export function workspaceFieldNote(chosenRuntime: string): string {
   if (chosenRuntime === 'docker')
     return 'A Docker loop works inside its workstation; the workspace lives there.'
   if (chosenRuntime === 'cloud')
-    return 'A cloud loop works in its session on claude.ai. To give it a repo, name the repo in its mission, then attach a GH_TOKEN connection on its page and pause and resume it, so its session starts with the token.'
+    return "A cloud loop works in its session on claude.ai. It can't reach GitHub yet: its session gets no repository, and a GH_TOKEN connection doesn't change that. Give GitHub work to a contained loop."
   return ''
 }
 

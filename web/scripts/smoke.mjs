@@ -429,7 +429,7 @@ try {
     'the trust warning',
   )
   await see(
-    page.getByText('attach a GH_TOKEN connection on its page and pause and resume it', { exact: false }),
+    page.getByText("It can't reach GitHub yet", { exact: false }),
     'the cloud note in place of the repo field',
   )
   if (await page.getByRole('button', { name: 'Create loop' }).isEnabled())

@@ -425,8 +425,7 @@ loop again retries the revocation.
 A cloud loop's secrets are its env-var connections, attached as a
 contained loop's are. The hub answers the home's
 `SessionStart` post with them, and the hook writes them where the
-session's shell commands read them. A loop that needs a repo gets a
-`GH_TOKEN` connection and names the repo in its mission. A change to a
+session's shell commands read them. A change to a
 connection reaches the loop at its next session start, not its next turn:
 stop and start the loop to apply it now. If Anthropic reclaims the idle
 machine, the session keeps them. A post the hub refuses raises a problem on the
@@ -434,6 +433,18 @@ loop, saying its shell may be running without them. The values stay in
 the session on Anthropic's disk until you archive it on claude.ai, so
 deleting a cloud loop that misbehaved is the time to rotate them.
 `mcp-server` connections never reach a cloud loop.
+
+On v0.6.x, a cloud loop in an Anthropic-hosted environment does chat and
+hub work, not GitHub work (#1168). Each of its GitHub requests goes through
+Anthropic's GitHub proxy, whatever token the session holds, and the proxy
+serves only the repositories attached to the session. The hub's start
+attaches none, so every clone, fetch, push and API call gets a 403, a
+public repository's included. A `GH_TOKEN` connection doesn't change
+that, and naming a repo in the mission doesn't either. Even for an
+attached repository the proxy refuses GraphQL, so `gh pr` and `gh issue`
+fail and only REST through `gh api` works. A push can update a branch,
+never push a tag or delete a branch. Until #1168's fix ships, give GitHub work to
+a contained loop.
 
 A cloud turn's cost is the hub's estimate. The session reports its token
 counts but no cost, so the hub prices the tokens by its own table of model
