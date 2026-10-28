@@ -1505,3 +1505,6 @@ Terra drafts (a) token valid only while the loop runs + Rotate token for Enes to
 
 ## 2026-10-28 21:10 UTC tick
 Quiet. HN watch: 0 new. Open PRs: only #453 (eval spike, long-parked). Board tidy (type+milestone on all open; #753 triage as agreed). #1180 unchanged since 19:10: Terra drafting the ADR; Elliot's follow-up notes that the network-secret route revives #975's hardened mode and the ADR should say it supersedes the park — Enes weighs that at acceptance, nothing for me now.
+
+## 2026-10-28 23:11 UTC tick
+HN: 1 new (Agent SDK thread, harness/lock-in debate, no pain stated — skipped). Terra opened PR #1185 (ADR-0061, Closes #1180, Part of #1179): network-secret route, supersedes ADR-0059 parts and the #975 park, folds Elliot's six points, states the #1078 rule (env ID must be listed on the loop's own login — matches my re-scope). Two "Operator decision pending" lines: kill refuses-until-next-start (Terra) vs revoke-for-good (Elliot); acceptance after runs R/S. Terra asked Enes for sign-in/repo/address/secret himself. Nothing for me; Quinn reviews on Terra's ask.
