@@ -79,3 +79,56 @@ func TestALoopThatCannotReachTheHubIsDownAndItsWorkWaits(t *testing.T) {
 		t.Fatal("the alert cleared without a workstation_up event on the loop's timeline")
 	}
 }
+
+// A hold kills the CLI at init, before the turn's first API call, and the
+// CLI writes a session only after it, so the session that spawn began is
+// never written. The next spawn begins another rather than resuming it,
+// which would fail as an unknown session and rotate the loop for a loss
+// that never happened (#1163). The turn is held two seconds past init, so
+// the kill always lands before the fake writes the session, as it does on
+// the real CLI.
+func TestAHeldFirstSpawnBeginsAnotherSessionRatherThanResumingIt(t *testing.T) {
+	t.Parallel()
+	hub := startServer(t, t.TempDir())
+	if err := os.MkdirAll(hub.fkState, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, marker := range []string{"mcp-failed", "login-slow"} {
+		if err := os.WriteFile(filepath.Join(hub.fkState, marker), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	hub.createLoop("aster", nil)
+	hub.waitState("aster", "workstation_down", 30*time.Second)
+
+	var spawns, exits []spoolEvent
+	for deadline := time.Now().Add(40 * time.Second); len(exits) < 2 && time.Now().Before(deadline); {
+		spawns, exits = nil, nil
+		for _, event := range hub.eventsQuery("aster", "limit=200") {
+			switch event.Subtype {
+			case "proc_spawn":
+				spawns = append(spawns, event)
+			case "proc_exit":
+				exits = append(exits, event)
+			case "session_lost", "resume_failed", "session_unusable":
+				t.Fatalf("the held session was taken for lost: %s %s", event.Subtype, event.Payload)
+			}
+		}
+		if len(exits) < 2 {
+			time.Sleep(200 * time.Millisecond)
+		}
+	}
+	if len(exits) < 2 {
+		t.Fatalf("saw %d spawns and %d exits, want the retry's spawn to have ended too", len(spawns), len(exits))
+	}
+	for _, spawn := range spawns {
+		if !strings.Contains(spawn.Payload, `"resume":false`) {
+			t.Fatalf("a spawn resumed the session its first process never wrote: %s", spawn.Payload)
+		}
+	}
+	for _, tn := range hub.turns("aster") {
+		if !tn.IsError || !strings.Contains(tn.ResultText, "Spool MCP server") {
+			t.Fatalf("a turn did not say it was held: %+v", tn)
+		}
+	}
+}
