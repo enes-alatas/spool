@@ -1431,3 +1431,10 @@ exfiltration), no clone. Options: 1 hub creates sessions via API; 2 self-hosted 
 3 ask Anthropic, no repo access meanwhile. Advised 3. On Enes's number: record on #1168, answer the
 reporter, and either file the Anthropic ask (who sends it? Enes) or slice option 1 with a push probe.
 #1166 letter stays held behind #1168.
+
+## 2026-10-28 12:00 UTC — big merge batch; #1077 to Terra
+Merged: #1161 (#1072), #1162 (#1073), #1164 (#1075), #1165 (#1074), #1170 (#1169), #1171 (#1163),
+#1172 (#1076). Open PRs: only #453 draft. #926 chain left: #1077, #1078 (Terra, pinged ref:7324).
+Iris idle until #1142–#1144 hub watchdog slices land. HN watch 0 new. Still with Enes: #1168
+number (ref:7314). Fleet runs v0.6.0; main carries several logins + fixes: mention a runtime update
+with the next Enes reply.
