@@ -1375,3 +1375,10 @@ Typed bug + severity:medium, community kept, triage removed, milestone L6; taken
 6465349935). Group ping to Terra (reproduce) and Elliot (posture of the proposed cloud-listener
 /github/token + spool-github hand-off) in ref:7250. Fix shape → Enes before code. Told Enes
 (ref:7251). Watch for their findings; then bring Enes the shape.
+
+## 2026-10-28 09:35 UTC — Elliot's #1166 assessment in (ref:7254)
+Comment 6465378594: shape acceptable with five conditions (cloud-loop tokens only; a second named
+redaction exemption via ADR-0059 amendment; helper as a script in the loop home; today's bounds
+kept; a threat-model line). #887 refused on scope, not posture; the internet-facing token route is
+the operator's decision. Waiting on Terra's reproduction (ref:7250); then DM Enes the go/no-go with
+the five conditions, proposing go.
