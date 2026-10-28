@@ -1144,6 +1144,27 @@ textarea {
   stroke-width: 1.5;
   stroke-dasharray: 3 4;
 }
+.login-ring-capped {
+  fill: none;
+  stroke: var(--danger);
+  stroke-width: 1.5;
+}
+.login-ring-capped-label {
+  fill: var(--danger);
+  font-family: var(--mono);
+  font-size: 8px;
+}
+.login-ring-capped-row {
+  align-items: center;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--hairline);
+  color: var(--danger);
+}
+.login-ring-capped-note {
+  max-width: 24rem;
+  white-space: normal;
+}
 .login-ring-name {
   fill: var(--text);
   font-family: var(--mono);

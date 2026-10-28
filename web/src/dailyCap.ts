@@ -43,18 +43,18 @@ export function dailyCapHint(cloud: boolean): string {
     : hint
 }
 
-// Why a capped loop sleeps, under its next-wake countdown: its own cap, the
-// fleet's plan cap, or both, and what lifts each.
+// Why a capped loop sleeps, under its next-wake countdown: its own cap, its
+// Claude login's plan cap (#1075), or both, and what lifts each.
 export function cappedNote(
   loop: { daily_cap_usd?: number; daily_cap_reached?: boolean },
-  fleetCapped: boolean,
+  planCapped: boolean,
 ): string {
   if (!loop.daily_cap_reached) {
     return 'Capped: the plan cap holds it until the window resets. Messages wait in its inbox.'
   }
   const cap = loop.daily_cap_usd ? `its ${formatUsd(loop.daily_cap_usd)} daily cap` : 'its daily cap'
-  if (fleetCapped) {
-    return `Capped: it reached ${cap}, and the plan cap holds the fleet. It wakes when both lift; messages wait in its inbox.`
+  if (planCapped) {
+    return `Capped: it reached ${cap}, and its login's plan cap holds it. It wakes when both lift; messages wait in its inbox.`
   }
   return `Capped: it reached ${cap}. It sleeps until midnight on the hub's clock, or wakes now if you raise the cap past today's spend or remove it. Messages wait in its inbox.`
 }
@@ -63,15 +63,15 @@ export function cappedNote(
 // turn's end. Undefined when no cap will.
 export function thenCappedNote(
   dailyCapReached: boolean | undefined,
-  fleetCapped: boolean,
+  planCapped: boolean,
 ): string | undefined {
   if (dailyCapReached) return 'Then capped: it reached its daily cap, so it sleeps when this turn ends.'
-  if (fleetCapped) return 'Then capped: it sleeps when this turn ends.'
+  if (planCapped) return 'Then capped: it sleeps when this turn ends.'
   return undefined
 }
 
 // Which cap a capped Fleet row is under, for the state's title.
-export function cappedBy(loop: { daily_cap_reached?: boolean }, fleetCapped: boolean): string {
+export function cappedBy(loop: { daily_cap_reached?: boolean }, planCapped: boolean): string {
   if (!loop.daily_cap_reached) return 'Capped by the plan cap'
-  return fleetCapped ? 'Capped by its daily cap and the plan cap' : 'Capped by its daily cap'
+  return planCapped ? 'Capped by its daily cap and the plan cap' : 'Capped by its daily cap'
 }

@@ -90,8 +90,8 @@ export interface LoopView {
   // workstation_down, model_unrecognized (#289) or capped (#650).
   state: string
   next_tick_at: number
-  // When a capped loop wakes: the reset that lifts the fleet's plan cap
-  // (#650), or the hub's next local day for a loop at its own daily cap
+  // When a capped loop wakes: the reset that lifts its login's plan cap
+  // (#650, #1075), or the hub's next local day for a loop at its own daily cap
   // (#652), whichever is later. 0 while the loop is not capped.
   capped_until: number
   // The known costs of today's turns, a cloud turn's being the hub's
@@ -1345,9 +1345,14 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ plan_cap_five_hour_percent: fiveHour, plan_cap_seven_day_percent: sevenDay }),
     }),
-  // Lifts the cap until the next reset of the windows that set it, without
-  // touching the thresholds (#650). Answers with the plan read.
-  resumePlanCap: () => req<PlanUsage>('/api/plan-cap/resume', { method: 'POST' }),
+  // Lifts a login's cap until the next reset of the windows that set it,
+  // without touching the thresholds (#650, #1075): the default's with no
+  // login named. Answers with the plan read.
+  resumePlanCap: (login?: string) =>
+    req<PlanUsage>('/api/plan-cap/resume', {
+      method: 'POST',
+      body: login === undefined ? undefined : JSON.stringify({ claude_login: login }),
+    }),
   // Both thresholds go in one write: the server validates them as a pair
   // (1-99, arm below force), so sending one alone would be judged against a
   // stored neighbour the operator may be in the middle of changing.

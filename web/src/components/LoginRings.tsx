@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import type { LoginPlanUsage, PlanWindow } from '../api'
 import { formatAgo, formatResets, gradedColor } from '../format'
-import { ringName, RING_KEY } from '../planCap'
+import { capWake, ringName, RING_KEY } from '../planCap'
 
 // The plan strip on a hub with more than one Claude login (ADR-0060,
 // #1074): a ring a login, its name in the middle, the 5-hour window round
@@ -9,7 +9,22 @@ import { ringName, RING_KEY } from '../planCap'
 // use and with its cap threshold's tick. A login no loop on it has
 // reported to yet is a dashed ring. A click opens the login's figures over
 // the page, without moving it; a click elsewhere or Escape closes them.
-export function LoginRings({ logins, now }: { logins: LoginPlanUsage[]; now: number }) {
+//
+// A login whose plan cap holds (#1076) wears a red rim and says "capped"
+// under its name, and its details name the loops that sleep (sleeps) and
+// when they wake, with resume (Resume now, for those who may) beside it.
+// The Fleet page has no cap banner then: the ring says it.
+export function LoginRings({
+  logins,
+  now,
+  sleeps,
+  resume,
+}: {
+  logins: LoginPlanUsage[]
+  now: number
+  sleeps: (login: string) => string[] | undefined
+  resume?: (login: string) => ReactNode
+}) {
   const [open, setOpen] = useState<string | null>(null)
   const frame = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -42,7 +57,9 @@ export function LoginRings({ logins, now }: { logins: LoginPlanUsage[]; now: num
           >
             <Ring login={login} />
           </button>
-          {open === login.name && <RingDetails login={login} now={now} />}
+          {open === login.name && (
+            <RingDetails login={login} now={now} sleeps={sleeps(login.name)} resume={resume} />
+          )}
         </div>
       ))}
     </div>
@@ -57,7 +74,13 @@ const INNER = OUTER - 8
 function Ring({ login }: { login: LoginPlanUsage }) {
   const half = SIZE / 2
   return (
-    <svg width={SIZE} height={SIZE} viewBox={`${-half} ${-half} ${SIZE} ${SIZE}`} aria-hidden>
+    <svg
+      width={SIZE}
+      height={SIZE}
+      viewBox={`${-half} ${-half} ${SIZE} ${SIZE}`}
+      overflow="visible"
+      aria-hidden
+    >
       {login.unknown !== undefined ? (
         <circle className="login-ring-unknown" r={OUTER} />
       ) : (
@@ -66,9 +89,15 @@ function Ring({ login }: { login: LoginPlanUsage }) {
           <Arc r={INNER} window={login.seven_day} />
         </>
       )}
-      <text className="login-ring-name" textAnchor="middle" dominantBaseline="central">
+      {login.cap && <circle className="login-ring-capped" r={OUTER + WIDTH / 2 + 2.5} />}
+      <text className="login-ring-name" textAnchor="middle" dominantBaseline="central" y={login.cap ? -5 : 0}>
         {ringName(login.name)}
       </text>
+      {login.cap && (
+        <text className="login-ring-capped-label" textAnchor="middle" dominantBaseline="central" y={8}>
+          capped
+        </text>
+      )}
     </svg>
   )
 }
@@ -102,7 +131,17 @@ function Arc({ r, window }: { r: number; window: PlanWindow | null }) {
   )
 }
 
-function RingDetails({ login, now }: { login: LoginPlanUsage; now: number }) {
+function RingDetails({
+  login,
+  now,
+  sleeps,
+  resume,
+}: {
+  login: LoginPlanUsage
+  now: number
+  sleeps?: string[]
+  resume?: (login: string) => ReactNode
+}) {
   return (
     <div className="login-ring-details" role="dialog" aria-label={`Plan usage of ${login.name}`}>
       <div>
@@ -116,6 +155,12 @@ function RingDetails({ login, now }: { login: LoginPlanUsage; now: number }) {
           <WindowRow name="5-hour · outer ring" window={login.five_hour} now={now} />
           <WindowRow name="7-day · inner ring" window={login.seven_day} now={now} />
         </>
+      )}
+      {login.cap && (
+        <div className="login-ring-row login-ring-capped-row">
+          <span className="login-ring-capped-note">Capped. {capWake(login.cap, now, sleeps)}</span>
+          {resume?.(login.name)}
+        </div>
       )}
     </div>
   )

@@ -81,7 +81,7 @@ describe('cappedNote', () => {
 
   it('says both caps must lift when both hold', () => {
     expect(cappedNote({ daily_cap_usd: 5, daily_cap_reached: true }, true)).toMatch(
-      /reached its \$5\.00 daily cap, and the plan cap holds the fleet\. It wakes when both lift/,
+      /reached its \$5\.00 daily cap, and its login.s plan cap holds it\. It wakes when both lift/,
     )
   })
 })

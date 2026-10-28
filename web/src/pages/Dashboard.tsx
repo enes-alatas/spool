@@ -25,6 +25,7 @@ import { workstationNote } from '../workstation'
 import { unnamedCloudHold, useCloudSettings } from '../cloudLoop'
 import { useEffect, useState } from 'react'
 import { cappedBy } from '../dailyCap'
+import { loopPlanCapped } from '../planCap'
 
 function Countdown({ at }: { at: number }) {
   const [s, setS] = useState<number | null>(null)
@@ -102,14 +103,15 @@ function FleetRow({
   loop,
   thresholds,
   spentToday,
-  fleetCapped,
+  planCapped,
 }: {
   loop: LoopView
   thresholds?: Settings
   spentToday: number
-  // The plan cap has fired (#651): a loop still in its turn sleeps when it
-  // ends, so its next wake is the cap's, not one it will choose.
-  fleetCapped: boolean
+  // Its login's plan cap has fired (#651, #1075): a loop still in its turn
+  // sleeps when it ends, so its next wake is the cap's, not one it will
+  // choose.
+  planCapped: boolean
 }) {
   const nav = useNavigate()
   const hold = unnamedCloudHold(loop, useCloudSettings(loop))
@@ -123,7 +125,7 @@ function FleetRow({
         : undefined))
   const undelivered = undeliveredNote(loop.undelivered)
   // Its own daily cap takes a loop at its turn's end the same way (#652).
-  const cappedNext = fleetCapped || !!loop.daily_cap_reached
+  const cappedNext = planCapped || !!loop.daily_cap_reached
   return (
     <Link to={`/loops/${loop.name}`} className="fleet-row">
       <div className="identity">
@@ -183,7 +185,7 @@ function FleetRow({
       </div>
       <span
         className={`f-state${loop.state === 'capped' ? ' capped' : ''}`}
-        title={loop.state === 'capped' ? cappedBy(loop, fleetCapped) : undefined}
+        title={loop.state === 'capped' ? cappedBy(loop, planCapped) : undefined}
       >
         <StateDot state={loop.state} />
         {loop.state}
@@ -238,9 +240,9 @@ export default function Dashboard() {
   const { data: loops, isLoading, isError, error } = useQuery({ queryKey: ['loops'], queryFn: api.loops })
   // the rotation thresholds the gauge colours mean something against
   const { data: thresholds } = useQuery({ queryKey: ['settings'], queryFn: api.settings })
-  // the strip's own read, shared through the cache: whether the cap has fired
+  // the strip's own read, shared through the cache: whether each login's
+  // cap has fired
   const { data: usage } = useQuery({ queryKey: ['plan-usage'], queryFn: api.planUsage })
-  const fleetCapped = !!usage?.cap
 
   // The sum of the rows' badges, which are the store's per-loop counts: each
   // row's badge opens that loop's pane (#281), and the pane lists the same
@@ -340,7 +342,7 @@ export default function Dashboard() {
                   loop={fleetLoop}
                   thresholds={thresholds}
                   spentToday={spentToday}
-                  fleetCapped={fleetCapped}
+                  planCapped={loopPlanCapped(usage, fleetLoop)}
                 />
               ))}
             </div>

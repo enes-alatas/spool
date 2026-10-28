@@ -12,8 +12,8 @@ import { ClaudeLoginSection } from '../components/ClaudeLogin'
 import { UsersSection } from '../components/UsersSection'
 import { ChatAccess } from '../components/ChatAccess'
 import { LinksSection } from '../components/LinksSection'
-import { CapBanner, useMinuteClock } from '../components/PlanUsage'
-import { capFields, capGate, capIdleStatus, capReason, capValue, type CapDraft } from '../planCap'
+import { CapBanners, useMinuteClock } from '../components/PlanUsage'
+import { capFields, capGate, capValue, type CapDraft } from '../planCap'
 import { errorTurnsField, errorTurnsValue } from '../health'
 
 export default function Settings() {
@@ -129,9 +129,10 @@ function loadFailure(loadError: Error): string {
   return `Could not load settings: ${loadError.message}`
 }
 
-// The plan cap's two thresholds (#650, #651): past either window's, every
-// loop sleeps at the end of its turn and wakes when that window resets. The
-// status line over them says whether the cap has fired, and while it has,
+// The plan cap's two thresholds (#650, #651): past either window's, the
+// loops on that Claude login sleep at the end of their turn and wake when
+// that window resets (#1075). The same two apply to every login. The lines
+// over them say whether each login's cap has fired, and while one has,
 // Resume now lifts it until the reset without touching the numbers.
 function PlanGuardrails({ settings, loadError }: { settings?: SettingsView; loadError: Error | null }) {
   const qc = useQueryClient()
@@ -146,8 +147,6 @@ function PlanGuardrails({ settings, loadError }: { settings?: SettingsView; load
     : null
   const { shown, changed, sendable } = capGate(stored, draft)
   const now = useMinuteClock()
-  const capped = capReason(usage, now)
-  const idle = capIdleStatus(usage, now)
 
   const edit = (patch: Partial<CapDraft>) => {
     if (!shown) return
@@ -177,13 +176,14 @@ function PlanGuardrails({ settings, loadError }: { settings?: SettingsView; load
     <section className="plan-guardrails">
       <h2 className="section-head">Plan guardrails</h2>
       <p className="page-lede">
-        When the Claude plan's usage reaches a threshold, every loop sleeps at the end of its turn and wakes
-        when that window resets. Nothing is lost: workstations stay up and messages wait in the inbox. Until a
-        loop has reported the plan's usage, the cap does not fire.
+        When a Claude login's plan usage reaches a threshold, the loops on that login sleep at the end of
+        their turn and wake when that window resets; the thresholds apply to every login. Nothing is lost:
+        workstations stay up and messages wait in the inbox. Until a loop has reported a login's usage, its
+        cap does not fire.
       </p>
 
       <div className="form">
-        {capped ? <CapBanner reason={capped} /> : idle && <div className="cap-idle">{idle}</div>}
+        <CapBanners usage={usage} now={now} idle />
 
         <div className="field-row">
           <div className="field">
@@ -197,7 +197,7 @@ function PlanGuardrails({ settings, loadError }: { settings?: SettingsView; load
               onChange={(e) => edit({ fiveHour: e.target.value })}
             />
             <div className="hint">
-              At this, loops sleep until the 5-hour window resets. Empty turns it off.
+              At this, a login's loops sleep until its 5-hour window resets. Empty turns it off.
             </div>
           </div>
           <div className="field">
@@ -211,7 +211,7 @@ function PlanGuardrails({ settings, loadError }: { settings?: SettingsView; load
               onChange={(e) => edit({ sevenDay: e.target.value })}
             />
             <div className="hint">
-              At this, loops sleep until the weekly window resets. Empty turns it off.
+              At this, a login's loops sleep until its weekly window resets. Empty turns it off.
             </div>
           </div>
         </div>
