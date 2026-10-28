@@ -1461,3 +1461,7 @@ Answered (ref:7367): Spool disallows only Agent/Task (works-alone); loops run cl
 doesn't offer the Artifact tools (my own session lacks them). Possible `--tools default,Artifact`
 probe if Enes wants it (Terra, one prompt). Asked what Terra needed it for; send_message attach is
 the loop's substitute.
+
+## 2026-10-28 13:40 UTC — #1177 artifacts spike filed (Enes ref:7371)
+Enes: yes to the probe, file for later, not urgent. #1177 (chore, L6): one-prompt probe of
+--tools default,Artifact headless; unassigned; hand to Terra after #926. Told Enes (ref:7372).
