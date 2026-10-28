@@ -1991,6 +1991,15 @@ func (actor *Actor) holdWithoutHub(status string) {
 		actor.turn.ResultText = why
 		_ = actor.deps.Store.Turns().Finish(context.Background(), actor.turn)
 	}
+	if actor.freshSpawn {
+		// The kill comes before the turn's first API call, and the CLI
+		// writes a session only after it: a resume of the session this
+		// process began would fail as unknown, and rotate the loop for a
+		// loss that never happened. The next wake begins another (#1163).
+		_ = actor.deps.Store.Sessions().End(context.Background(), actor.loop.CurrentSessionID, store.EndReasonCrash, now())
+		actor.loop.CurrentSessionID = ""
+		_ = actor.deps.Store.Loops().SetRuntime(context.Background(), actor.loop.ID, "", 0)
+	}
 	actor.inbox = latestTickOnly(append(append([]Envelope(nil), actor.currentBatch...), actor.inbox...))
 	actor.turn = nil
 	actor.currentBatch = nil
