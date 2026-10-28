@@ -342,3 +342,34 @@ func TestEachContainedLoopRunsOnItsOwnClaudeLogin(t *testing.T) {
 		t.Error("bloom's request with ada signed out reached Anthropic, on the default's token or another")
 	}
 }
+
+// Checking the default Claude login checks the cloud account too, since
+// the default is the cloud loops' account, whose check the default's row
+// and the Cloud page show; checking another login leaves it as it was
+// (ADR-0060).
+func TestCheckingTheDefaultLoginChecksTheCloudAccount(t *testing.T) {
+	t.Parallel()
+	hub := startCloudHub(t, "cirrus")
+	hub.mustJSON("POST", "/api/claude-logins", map[string]string{"name": "ada"}, nil)
+	hub.signInClaudeLogin("ada", "ada")
+	accountCheckedAt := func() int64 {
+		var view cloudSettings
+		hub.mustJSON("GET", "/api/settings/cloud", nil, &view)
+		if view.Account.Check == nil || view.Account.Check.State != "ok" {
+			t.Fatalf("the account checks as %+v, want ok", view.Account.Check)
+		}
+		return view.Account.Check.CheckedAt
+	}
+	before := accountCheckedAt()
+
+	// the check times are in milliseconds
+	time.Sleep(5 * time.Millisecond)
+	hub.mustJSON("POST", "/api/claude-logins/ada/check", nil, nil)
+	if got := accountCheckedAt(); got != before {
+		t.Errorf("checking ada checked the cloud account again (at %d, was %d)", got, before)
+	}
+	hub.mustJSON("POST", "/api/claude-logins/default/check", nil, nil)
+	if got := accountCheckedAt(); got <= before {
+		t.Errorf("checking the default left the cloud account check at %d, want one after %d", got, before)
+	}
+}

@@ -142,6 +142,14 @@ refreshes it.
      in the control room reads them. Anyone else reading them breaks
      there, so it lands as a change of its own.
 
+   **Amendment (2026-10-28, #1174):** checking the default login also
+   checks the cloud account (ADR-0056 item 6), since the default is the
+   cloud loops' account. That check's result is the note under the
+   default's row in Settings → Claude login, and the Cloud page shows it
+   too. Another login's check doesn't run it, and so the row's Check
+   again checks everything with one route once the single-login check
+   route goes (#1077).
+
 8. **The docs say whose subscription a login is** (operator decision of
    2026-10-23). The Add page, OPERATIONS.md and the README say:
    - each login is the subscription of the person who signs it in, used

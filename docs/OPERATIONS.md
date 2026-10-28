@@ -333,6 +333,8 @@ next turn (#1072).
   have one waiting and the hub four; past either the start answers 429.
 - `POST /api/claude-logins/ada/check` checks it with one haiku answer, on
   the docker runtime the way a contained loop would run.
+  Checking `default` checks the cloud account too, whose result is the
+  note under the default's row and on the Cloud page.
 - `POST /api/claude-logins/ada/sign-out` revokes it at the source and
   keeps it, so the loops on it keep a valid name. Sign out is never
   refused.
