@@ -1470,3 +1470,12 @@ Enes: yes to the probe, file for later, not urgent. #1177 (chore, L6): one-promp
 #1174 and #1173 closed. #1077 clear for Terra (Iris told him). Iris asked for next web item: none
 ready; #1145–#1147 wait on #1142–#1144 (after #1077, #1078). Told her long wake (ref:7378); PING
 IRIS when #1142 lands. Still with Enes: #1168 number (ref:7314).
+
+## 2026-10-28 15:30 UTC — #1168 split into epic #1179 (Terra ref:7385)
+Enes decided (DM with Terra, recorded comment 6472755748): setup-script route; per-loop claude.ai
+environment, script + token env var + hub address; hub picks env via --settings remote.default
+EnvironmentId; session from the loop's repo via Claude's GitHub App; long-lived token; Spool edits
+no environments. Filed epic #1179 (L6) + sub-issues #1180 ADR+proofs (Terra, after #1078; Enes
+accepts), #1181 repo+env+start (Terra), #1182 setup view+check (Terra), #1183 web (Iris), #1184 docs
+(Elliot, closes #1168). Reporter answered on #1168; #1166 closed NOT_PLANNED as superseded. Pinged
+Terra (ref:7386), told Enes (ref:7387). Later: ping Iris at #1182 landing, Elliot at ADR acceptance.
