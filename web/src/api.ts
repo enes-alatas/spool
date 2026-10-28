@@ -1471,25 +1471,15 @@ export const api = {
     }),
   clearCloudAddress: () => req<CloudSettings>('/api/settings/cloud/address', { method: 'DELETE' }),
   checkCloudAddress: () => req<CloudSettings>('/api/settings/cloud/check', { method: 'POST' }),
-  // The CLI's own login, run by the hub (#864): sign-in answers the claude.ai
-  // link to open, and the code claude.ai then shows finishes it. A code is
-  // refused with `cloud_sign_in`: 400 when the CLI didn't take it, which ends
-  // that sign-in, and 409 when none is waiting, one ended after ten minutes
-  // included.
-  startCloudSignIn: () => req<{ link: string }>('/api/settings/cloud/account/sign-in', { method: 'POST' }),
-  finishCloudSignIn: (code: string) =>
-    req<CloudSettings>('/api/settings/cloud/account/code', {
-      method: 'POST',
-      body: JSON.stringify({ code }),
-    }),
-  // Forgets the account; it doesn't revoke it yet.
-  removeCloudAccount: () => req<CloudSettings>('/api/settings/cloud/account', { method: 'DELETE' }),
-  checkCloudAccount: () => req<CloudSettings>('/api/settings/cloud/account/check', { method: 'POST' }),
   // The hub's Claude logins (ADR-0060): any user lists them and adds one of
   // their own; its owner or an admin signs it in, checks it, signs it out and
-  // removes it. The sign-in answers as the cloud one does, refused with
-  // `cloud_sign_in`. Removal is refused (409 `claude_login`) while loops run
-  // on the login, and the refusal names them.
+  // removes it, the default included (#1173). Removal is refused (409
+  // `claude_login`) while loops run on the login, and the refusal names them.
+  // The sign-in is the CLI's own login, run by the hub (#864): it answers the
+  // claude.ai link to open, and the code claude.ai then shows finishes it. A
+  // sign-in is refused with `cloud_sign_in`, a code with 400 when the CLI
+  // didn't take it, which ends that sign-in, and 409 when none is waiting,
+  // one ended after ten minutes included.
   claudeLogins: () => req<{ logins: ClaudeLogin[] }>('/api/claude-logins'),
   addClaudeLogin: (name: string) =>
     req<ClaudeLogin>('/api/claude-logins', { method: 'POST', body: JSON.stringify({ name }) }),

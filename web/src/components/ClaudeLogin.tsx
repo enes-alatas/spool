@@ -27,6 +27,14 @@ import { useMay } from './Session'
 // the default in, and Settings → Claude logins lists every login, adds one
 // and signs in, checks, signs out and removes each.
 
+// A change of the default login is the cloud account's too (ADR-0060),
+// which Settings → Cloud, first run and the default's line read, and the
+// hub checks it again; the per-login routes answer with the login, so the
+// account is read afresh.
+function cloudChanged(qc: QueryClient) {
+  void qc.invalidateQueries({ queryKey: ['cloud'] })
+}
+
 // Every change to a login can change the hub's Claude token, which the
 // settings, first run and the list each read.
 function loginsChanged(qc: QueryClient) {
@@ -114,7 +122,7 @@ export function ClaudeLoginSection({ settings }: { settings?: Settings }) {
 
 // The default login's line for an admin: its state as Settings → Cloud's
 // account check and the hub's login check (ADR-0044) read it, with why a
-// check failed under it. One Check again runs both: the account check tries
+// check failed under it. One Check again runs both (#1174): the account check tries
 // the login as a cloud loop's session would, the login check as this hub's
 // loops run, and an operator needs only to know whether it works.
 function DefaultLogin({
@@ -135,12 +143,12 @@ function DefaultLogin({
   const qc = useQueryClient()
   const now = useMinuteClock()
 
-  const change = async (request: () => Promise<CloudSettings>, alongside?: () => Promise<unknown>) => {
+  const change = async (request: () => Promise<unknown>) => {
     setWorking(true)
     setError('')
     try {
-      const [view] = await Promise.all([request(), alongside?.()])
-      qc.setQueryData(['cloud'], view)
+      await request()
+      cloudChanged(qc)
       loginsChanged(qc)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -149,7 +157,7 @@ function DefaultLogin({
     }
   }
   const signOut = () => {
-    if (confirm(signOutConfirm(login.name, held))) void change(api.removeCloudAccount)
+    if (confirm(signOutConfirm(login.name, held))) void change(() => api.signOutClaudeLogin('default'))
   }
 
   return (
@@ -160,7 +168,7 @@ function DefaultLogin({
         now={now}
         working={working}
         onSignIn={onSignIn}
-        onCheck={() => change(api.checkCloudAccount, checkOnHub)}
+        onCheck={() => change(checkDefault)}
         onSignOut={signOut}
       />
       <LoginNote login={login} view={view} settings={settings} error={error} />
@@ -168,10 +176,11 @@ function DefaultLogin({
   )
 }
 
-// The hub's login check of the default, which it answers at once and runs
-// in the background. A hub with nothing to check it with refuses it 409,
-// which leaves the account check to speak alone.
-async function checkOnHub() {
+// Both checks of the default in one request (#1174): the hub checks the
+// cloud account before it answers, and starts its login check, which runs
+// in the background. A hub with nothing to run the login check with
+// refuses it 409 after the account check, which then speaks alone.
+async function checkDefault() {
   try {
     await api.checkClaudeLogin('default')
   } catch (e) {
@@ -610,8 +619,8 @@ export function SignedIn() {
 // whose check failed says so above the steps, so signing in again replaces
 // it. With no claude CLI to run, neither the workstation image's nor this
 // machine's, there is no sign-in, and the steps say how to get one. Given a
-// login, it signs that one in through its own routes; without one, the
-// default through Settings → Cloud's.
+// login, it signs that one in; without one, the default. Both go through
+// the login's own routes (#1173).
 export function SignInSteps({
   view,
   login,
@@ -661,7 +670,7 @@ export function SignInSteps({
     if (tab) tab.opener = null
     return act('start', async () => {
       try {
-        const { link } = await (login ? api.startClaudeLoginSignIn(login.name) : api.startCloudSignIn())
+        const { link } = await api.startClaudeLoginSignIn(login?.name ?? 'default')
         setLink(link)
         setCode('')
         if (tab) tab.location.href = link
@@ -677,8 +686,8 @@ export function SignInSteps({
       return
     }
     return act('code', async () => {
-      if (login) await api.finishClaudeLoginSignIn(login.name, code.trim())
-      else qc.setQueryData(['cloud'], await api.finishCloudSignIn(code.trim()))
+      await api.finishClaudeLoginSignIn(login?.name ?? 'default', code.trim())
+      if (!login) cloudChanged(qc)
       loginsChanged(qc)
       setLink('')
       setCode('')
@@ -687,7 +696,10 @@ export function SignInSteps({
   const recheck = () =>
     act('check', async () => {
       if (login) await api.checkClaudeLogin(login.name)
-      else qc.setQueryData(['cloud'], await api.checkCloudAccount())
+      else {
+        await checkDefault()
+        cloudChanged(qc)
+      }
       void qc.invalidateQueries({ queryKey: ['claude-logins'] })
     })
 
