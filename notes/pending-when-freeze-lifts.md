@@ -1409,3 +1409,12 @@ Comment 6466703608: attached repos only, GraphQL refused, pushes branch-only; OP
 loop cloud note and ADR-0059 say otherwise (docs fix needed whatever the shape). Two risks for
 Terra's repro: a multi-repo session loads no repo hooks and no .mcp.json (could kill our hand-off,
 Stop, send_message); whose identity a push goes out as. Waiting on Terra and Enes (ref:7271).
+
+## 2026-10-28 10:55 UTC — #1168 findings; #1169 filed
+Terra (comment 6466755921): start attaches nothing; multi-repo sessions load no hooks/.mcp.json
+(reporter's shape breaks the loop); CLI attaches at most one repo (loop home origin + CCR_FORCE_BUNDLE
+untested); proxy uses the claude.ai account's GitHub connection (posture change vs ADR-0059 item 10);
+undocumented claude-code-remote MCP add_repo not a surface. Live probe needs a sign-in (Terra asked
+Enes; I backed it in ref:7278). Filed #1169 (documentation, L6, Part of #1168): docs promise reach
+cloud loops lack; assigned Elliot (ref:7277). Next: Enes's sign-in → Terra's probe → shape → letters
+on #1168/#1166.
