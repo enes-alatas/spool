@@ -1479,3 +1479,8 @@ no environments. Filed epic #1179 (L6) + sub-issues #1180 ADR+proofs (Terra, aft
 accepts), #1181 repo+env+start (Terra), #1182 setup view+check (Terra), #1183 web (Iris), #1184 docs
 (Elliot, closes #1168). Reporter answered on #1168; #1166 closed NOT_PLANNED as superseded. Pinged
 Terra (ref:7386), told Enes (ref:7387). Later: ping Iris at #1182 landing, Elliot at ADR acceptance.
+
+## 2026-10-28 17:20 UTC — sweep + HN
+#1178 (Terra, closes #1077, breaking refactor) open with one review; Quinn's. HN watch: 8 new; only
+Parley (Show HN, IRC agent collaboration, 4 pts) worth a note; sent Enes as optional peer comment
+(ref:7389). Board tidy (#753 triage only). Epic #1179 slices filed 15:13, all on L6.
