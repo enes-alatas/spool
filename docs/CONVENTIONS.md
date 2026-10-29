@@ -242,90 +242,37 @@ ADR instead.*
 
 ## Secrets and evidence
 
-*Written after 2026-09-18, when a bot token reached a log line, then an issue
-body quoting that log, then a test asserting that tokens do not leak. The old
-rule — no secrets in code, logs or API responses — already covered two of those
-three, and they happened anyway. What was missing was not coverage but the
-habits below.*
-
-- **Secrets never land in code, logs, API responses — or evidence.** Evidence is
-  everything a change carries with it: issue and PR bodies, review comments, commit
-  messages, fixtures, attachments, chat. A rule about code alone leaves every
-  route a person takes.
-- **Quote credentials redacted.** A credential-shaped string lifted from a log,
-  response or transcript is written as at most eight characters followed by `…`,
-  fewer if that already identifies it. A structural prefix counts toward the eight
-  (`ghp_abcd…`) unless the prefix is itself longer, in which case the eight are
-  counted after it (`sk-ant-api03-Xf9k2b…`) — a reader has to be able to match the
-  value against the store, and a quote that is all prefix identifies nothing. Never
-  the whole value, not even in a private repo: edit history outlives the redaction.
-- **Fixtures are synthetic.** A fixture needs a whole working-shaped value, so
-  redaction is not available to it: never paste a real credential into a test, a
-  seed script or a mock response — write one that is obviously fake
-  (`0000000000:AA-not-a-real-bot-token`). This is the one place the rule above
-  cannot help, which is what makes it a separate rule.
-- **Screenshots come from fixtures.** A control-room screenshot in a PR is driven
-  against fixture data, never the live fleet — the timeline renders raw
-  assistant text and tool inputs, so anything a loop ever echoed is in the picture.
-  A loop's Undelivered pane (#263, #281) lists the full body of every message
-  that failed to send, an undelivered owner DM among them, and is covered by
-  being *in* the standard set: a shot of it taken any other way is the
-  violation. The Activity page carries the same kind of text and is
-  screenshotted never, not even from the fixture. That is the operator's
-  standing decision, in the fleet rules every loop runs under (#277), and not
-  a gap in the fixture argument: a fixture shot of Activity would be as safe
-  as the Undelivered one. The page whose whole content is the operator's own
-  conversations stays out of every picture, so whether a shot of it came from
-  the fixture is a question nobody ever has to answer.
-  **`make ui-shots` is how** (#248): it seeds a throwaway store with an invented
-  fleet (`cmd/uifixture`), starts a hub on it, and writes the standard set —
-  Fleet, the fleet channel, a loop timeline, New loop, Rules, Settings with its Egress and Users and access sections, a loop's Undelivered pane, a
-  loop's Connections panel, the Connections page, the mission editor, a bare loop's
-  move into a docker container —
-  to the gitignored `web/shots/`. The hub and its store are gone the moment the
-  command returns, so a page the set does not cover is covered by adding it to
-  the `shots` list in `web/scripts/ui-shots.mjs` — there is no hub left to
-  shoot a second one against. Taking one by hand against a dev server pointed
-  at a real fleet is what the rule forbids, and it is how the thirteen
-  live-data images the go-public audit found were made.
-  **`make demo`** records the README's videos the same way (#447): Playwright
-  drives the room on a fixture hub, and Remotion (`web/demo/`, a package of
-  its own that the binary never carries) composes and renders them,
-  `spool-demo.mp4` and the cloud loop's `cloud-demo.mp4` (#1126). The mp4s
-  are uploaded as GitHub attachments, never committed. `DEMO_TAKES=<clip,…>`
-  re-records only the clips it names. Remotion is
-  source-available, not open source: it is free for individuals, non-profits
-  and companies of up to three people, and anyone else needs a company licence
-  from remotion.pro before running the target.
-- **A live credential in front of you is an incident.** Stop, do not copy it,
-  redact it where you can still reach it, and tell the operator privately;
-  the value never goes in the group.
-  Procedure: `/credential-incident` (`.claude/skills/credential-incident/`).
-- **Secrets at rest are private by mode.** Everything Spool writes — the database
-  with its tokens and injected secrets, the loop homes with their transcripts and
-  checkouts — lives under a `0700` data directory, and the files Spool owns there
-  are `0600`. `internal/datadir` applies this at every startup, narrowing what it
-  inherits, because the default umask does not: world-readable is how a token
-  that had only reached a log became readable to every account on the box. A new
-  file under the data directory that carries secrets joins that list in the PR
-  that adds it.
-- **A stored credential is sealed.** The store seals every credential it keeps
-  under the hub key (ADR-0046). A new column that holds one joins
-  `sealedColumns` in `internal/store/sqlite/seal.go`, and a new settings key
-  joins `sealedSettings` beside it, in the PR that adds it, and `forgetSecrets`
-  there clears it. Its table writes it sealed and reads it opened, and never
-  compares it in SQL.
-- **Credential inputs are masked and decline autofill.** An input that takes a
-  credential is `type="password"` with `autoComplete="off"`, wherever the value is
-  entered — a first entry is as exposed as a replacement, and the field a form
-  forgets to type is the one left standing in cleartext. `off` is best-effort:
-  browsers honour it unevenly on password fields. The stronger-looking
-  `autoComplete="new-password"` is deliberately not used — it invites the browser's
-  password generator to offer to invent a value for a field that must hold a token
-  the user was given, which is worse than the autofill it prevents. Name fields
-  beside a credential (a secret's NAME) are not credentials and stay unmasked.
-- **Loops are bound by this too**, through a fleet rule the operator sets; this
-  section is what that rule points at.
+- **Secrets never land in code, logs, API responses or evidence**: issue and
+  PR bodies, reviews, commit messages, fixtures, attachments and chat (#152).
+- **Quote credentials redacted**: at most eight characters and `…`, counted
+  after a structural prefix longer than that (`ghp_abcd…`,
+  `sk-ant-api03-Xf9k2b…`); never the whole value, not even in a private repo
+  (#152).
+- **Fixtures are synthetic**: a test, seed or mock never holds a real
+  credential, only an obviously fake one (`0000000000:AA-not-a-real-bot-token`)
+  (#152).
+- **Screenshots come from fixtures**: `make ui-shots` (#248) shoots a fixture
+  hub, and a page it lacks is added to `web/scripts/ui-shots.mjs`, never shot
+  against a live fleet. The Activity page is never shot, not even from the
+  fixture: that is the operator's decision (#277).
+- **Videos too**: `make demo` (#447) records the README videos on a fixture
+  hub; the mp4s are uploaded as attachments, never committed. Remotion is
+  source-available: companies of more than three people need a licence from
+  remotion.pro before running it.
+- **A live credential in front of you is an incident**: stop, don't copy it,
+  redact it where you can, and tell the operator privately; the value never
+  goes in the group. Procedure: `/credential-incident`
+  (`.claude/skills/credential-incident/`).
+- **Secrets at rest are private by mode**: the data directory is `0700` and
+  its files `0600` (`internal/datadir`); a new secret-bearing file joins that
+  list in the PR that adds it (#149).
+- **A stored credential is sealed** under the hub key (ADR-0046): a new column
+  joins `sealedColumns` and a new settings key `sealedSettings`, both cleared
+  by `forgetSecrets`, and it is never compared in SQL.
+- **Credential inputs are masked**: `type="password"` with
+  `autoComplete="off"`, never `new-password`; the name field beside one stays
+  unmasked (#167).
+- **Loops are bound by this too**, through a fleet rule that points here.
 
 ## Agent workflow (ADR-0015)
 
