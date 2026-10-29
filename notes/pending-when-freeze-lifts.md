@@ -1526,3 +1526,4 @@ Quiet. HN: 0 new. #1185 head d43d63e: Quinn's three fixes folded, citation slips
 
 ## 2026-10-29 14:31 UTC — backlog review with Enes (DM ref:7491–7494)
 #1185 merged 14:16, #1180 closed. Enes: clusters 4–6 (artifacts spike, eval cluster, CI reliability) stay; #753 stays in triage for a while. #1131 is Elliot's tracker on his own 10-25 decision (waits on Remotion, not Elliot) — my "slow" was wrong. #368: sub-issues 470/471/472 COMPLETED; steps 4–5 (histories out, 150-line target) not done; CONVENTIONS now 604 lines. Proposed to Enes: retitle #368 to the remaining slice, or close. Awaiting his call. Assigned #1181 to Terra in group (ref:7495).
+14:34 Enes: retitle #368 and "try to optimize what we have". Retitled to the remaining slice, re-scope comment 6499585777. Asked Enes who takes it (recommend Iris, idle; Terra on #1181) — ref:7497.
