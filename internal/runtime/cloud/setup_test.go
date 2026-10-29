@@ -2,11 +2,13 @@ package cloud
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -358,5 +360,94 @@ func TestHooksTakeTheSessionStartAnswer(t *testing.T) {
 	}
 	if again, _ := os.ReadFile(filepath.Join(home, "claude-env")); string(again) != string(env) {
 		t.Errorf("an answer with no connections changed the env file to %q", again)
+	}
+}
+
+// guard runs the add_repo guard the setup wrote in home, as the CLI runs
+// a PreToolUse hook, and returns its exit code and stderr, which the
+// model reads when the code is 2.
+func guard(t *testing.T, home, input, remoteSession string) (code int, stderr string) {
+	t.Helper()
+	cmd := exec.Command("sh", filepath.Join(home, hookFile), HookPreToolUse)
+	cmd.Dir = home
+	cmd.Env = append(os.Environ(), "HOME="+home, "CLAUDE_CODE_REMOTE_SESSION_ID="+remoteSession)
+	cmd.Stdin = strings.NewReader(input)
+	var errOut strings.Builder
+	cmd.Stderr = &errOut
+	err := cmd.Run()
+	var exit *exec.ExitError
+	if err != nil && !errors.As(err, &exit) {
+		t.Fatal(err)
+	}
+	return cmd.ProcessState.ExitCode(), errOut.String()
+}
+
+const addRepoInput = `{"hook_event_name":"PreToolUse","tool_name":"mcp__claude-code-remote__add_repo","tool_input":{"owner":"example-org","repo":"second","access":"push"}}`
+
+// The setup has the session deny the claude-code-remote tools that act on
+// the account, and guard add_repo (ADR-0061).
+func TestSetupScriptDeniesTheAccountsToolsAndGuardsAddRepo(t *testing.T) {
+	home := setUpTestVM(t, "https://hub.example.test/mcp")
+	var settings struct {
+		Hooks map[string][]struct {
+			Matcher string `json:"matcher"`
+			Hooks   []struct {
+				Command string `json:"command"`
+			} `json:"hooks"`
+		} `json:"hooks"`
+		Permissions struct {
+			Deny []string `json:"deny"`
+		} `json:"permissions"`
+	}
+	raw, _ := os.ReadFile(filepath.Join(home, ".claude", "settings.json"))
+	if err := json.Unmarshal(raw, &settings); err != nil {
+		t.Fatalf("~/.claude/settings.json: %v: %s", err, raw)
+	}
+	guards := settings.Hooks[HookPreToolUse]
+	if len(guards) != 1 || guards[0].Matcher != "mcp__claude-code-remote__add_repo" ||
+		!strings.Contains(guards[0].Hooks[0].Command, hookFile+`" PreToolUse`) {
+		t.Errorf("the PreToolUse hooks are %+v, want the guard on add_repo", guards)
+	}
+	denied := strings.Join(settings.Permissions.Deny, " ")
+	for _, tool := range []string{"list_sessions", "get_session", "list_events", "list_triggers", "list_environments",
+		"send_later", "send_message", "create_session", "archive_session", "create_trigger", "fire_trigger",
+		"update_trigger", "delete_trigger", "check_repo_access"} {
+		if !slices.Contains(settings.Permissions.Deny, "mcp__claude-code-remote__"+tool) {
+			t.Errorf("%s isn't denied: %s", tool, denied)
+		}
+	}
+	for _, tool := range []string{"add_repo", "register_repo_root", "list_repos"} {
+		if strings.Contains(denied, "__"+tool) {
+			t.Errorf("%s, which attaching the loop's repos needs, is denied", tool)
+		}
+	}
+}
+
+// The guard lets add_repo go ahead only on the hub's 204, and refuses it
+// with exit 2 otherwise: on the hub's refusal, with the hub down, or with
+// no session to name (ADR-0061).
+func TestAddRepoGuardGoesAheadOnlyOnTheHubsWord(t *testing.T) {
+	t.Parallel() // curl backs off before it gives up on a hub that's down
+	inbox := &hookInbox{answers: []int{http.StatusNoContent, http.StatusConflict}}
+	hub := httptest.NewServer(inbox)
+	defer hub.Close()
+	home := setUpTestVM(t, hub.URL+"/mcp")
+
+	if code, errOut := guard(t, home, addRepoInput, "cse_01Synthetic"); code != 0 {
+		t.Errorf("the hub took the repo, and the guard exited %d: %s", code, errOut)
+	}
+	posts := inbox.taken()
+	if len(posts) != 1 || posts[0].hook != addRepoInput || posts[0].session != "cse_01Synthetic" {
+		t.Errorf("the guard posted %+v, want the call's input and the session", posts)
+	}
+	if code, errOut := guard(t, home, addRepoInput, "cse_01Synthetic"); code != 2 || !strings.Contains(errOut, "Spool refused this add_repo") {
+		t.Errorf("the hub refused the repo, and the guard exited %d: %q, want 2 with the refusal", code, errOut)
+	}
+	if code, _ := guard(t, home, addRepoInput, ""); code != 2 {
+		t.Errorf("with no session to name the guard exited %d, want 2", code)
+	}
+	hub.Close()
+	if code, errOut := guard(t, home, addRepoInput, "cse_01Synthetic"); code != 2 || !strings.Contains(errOut, "can't be reached") {
+		t.Errorf("with the hub down the guard exited %d: %q, want 2 saying so", code, errOut)
 	}
 }

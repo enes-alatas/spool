@@ -58,8 +58,13 @@ func TestCloudCLILoopStartsFromItsRepoAndReadsItsTurnsBack(t *testing.T) {
 		t.Errorf("the loop's session link = %q, want the session its SessionStart posted", viewed.CloudSessionURL)
 	}
 	args, _ := os.ReadFile(filepath.Join(vm, "cli-args"))
+	var denied []string
+	for _, tool := range []string{"list_sessions", "get_session", "list_events", "list_triggers", "list_environments", "send_later",
+		"send_message", "create_session", "archive_session", "create_trigger", "fire_trigger", "update_trigger", "delete_trigger", "check_repo_access"} {
+		denied = append(denied, `"mcp__claude-code-remote__`+tool+`"`)
+	}
 	wantArgs := "first words\n--permission-mode\nauto\n--settings\n" +
-		`{"remote":{"defaultEnvironmentId":"` + cloudEnvironmentOf("cirrus") + `"}}` + "\n--ref\nmain\n"
+		`{"permissions":{"deny":[` + strings.Join(denied, ",") + `]},"remote":{"defaultEnvironmentId":"` + cloudEnvironmentOf("cirrus") + `"}}` + "\n--ref\nmain\n"
 	if !strings.HasPrefix(string(args), "--cloud\n") || !strings.HasSuffix(string(args), wantArgs) {
 		t.Errorf("the start ran with\n%s\nwant --cloud, the wake, and then\n%s", args, wantArgs)
 	}

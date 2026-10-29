@@ -47,7 +47,9 @@ package main
 // "!envsum NAME" line, NAME and its value as sh reads it after claude-env,
 // or for !envsum its SHA-256, or for a "!send {json}" line, what the hub's
 // send_message answered the call through the VM's spool server
-// (sendFromVM). Turns of one session run one at a time.
+// (sendFromVM), or for a "!tool <name> {json}" line, whether the user
+// settings' deny rules and PreToolUse hooks let the call go ahead
+// (callTool). Turns of one session run one at a time.
 //
 // A "reclaimed" file in a session's directory makes its next turn a VM
 // Anthropic reclaimed while idle: claude-env is kept, and SessionStart
@@ -81,6 +83,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -344,6 +347,9 @@ func cloudTurn(session, message string, first bool) int {
 	}
 	if args, asked := sendAsked(message); asked {
 		reply = sendFromVM(home, string(environment), env, args)
+	}
+	if tool, input, asked := toolAsked(message); asked {
+		reply = callTool([]string{home, repo}, repo, env, tool, input)
 	}
 	turn := len(readLines(transcript))
 	usage := map[string]any{"input_tokens": 10, "output_tokens": 5, "cache_creation_input_tokens": 100, "cache_read_input_tokens": 1000}
@@ -729,4 +735,69 @@ func sendAsked(message string) (map[string]any, bool) {
 		}
 	}
 	return nil, false
+}
+
+// callTool stands in for the session calling tool with input: a tool the
+// user settings' permissions.deny names is denied, and a PreToolUse hook
+// of the user's or the project's settings whose matcher names it may
+// refuse it by exiting 2, with stderr as its reason, as Claude Code's
+// hooks do. It replies "tool <tool>: denied", "tool <tool>: refused:
+// <reason>" or "tool <tool>: called"; the fake calls nothing.
+func callTool(dirs []string, cwd string, env []string, tool string, input json.RawMessage) string {
+	for _, dir := range dirs {
+		raw, err := os.ReadFile(filepath.Join(dir, ".claude", "settings.json"))
+		if err != nil {
+			continue
+		}
+		var settings struct {
+			Hooks map[string][]struct {
+				Matcher string `json:"matcher"`
+				Hooks   []struct {
+					Type    string `json:"type"`
+					Command string `json:"command"`
+				} `json:"hooks"`
+			} `json:"hooks"`
+			Permissions struct {
+				Deny []string `json:"deny"`
+			} `json:"permissions"`
+		}
+		if json.Unmarshal(raw, &settings) != nil {
+			continue
+		}
+		if slices.Contains(settings.Permissions.Deny, tool) {
+			return "tool " + tool + ": denied"
+		}
+		stdin, _ := json.Marshal(map[string]any{"hook_event_name": "PreToolUse", "tool_name": tool, "tool_input": input, "cwd": cwd})
+		for _, group := range settings.Hooks["PreToolUse"] {
+			if !matches(group.Matcher, tool) {
+				continue
+			}
+			for _, hook := range group.Hooks {
+				cmd := exec.Command("sh", "-c", hook.Command)
+				cmd.Dir, cmd.Env = cwd, env
+				cmd.Stdin = strings.NewReader(string(stdin))
+				var stderr strings.Builder
+				cmd.Stderr = &stderr
+				if err := cmd.Run(); cmd.ProcessState != nil && cmd.ProcessState.ExitCode() == 2 {
+					return "tool " + tool + ": refused: " + strings.TrimSpace(stderr.String())
+				} else if err != nil {
+					fmt.Fprintf(os.Stderr, "fakeclaude: PreToolUse hook: %v %s\n", err, stderr.String())
+				}
+			}
+		}
+	}
+	return "tool " + tool + ": called"
+}
+
+// toolAsked is the tool and input of a turn's "!tool <name> <json>" line.
+func toolAsked(message string) (string, json.RawMessage, bool) {
+	for _, line := range strings.Split(message, "\n") {
+		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "!tool "); ok {
+			tool, input, _ := strings.Cut(rest, " ")
+			if json.Valid([]byte(input)) {
+				return tool, json.RawMessage(input), true
+			}
+		}
+	}
+	return "", nil, false
 }

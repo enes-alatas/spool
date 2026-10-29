@@ -417,6 +417,13 @@ A cloud loop whose repo, environment or token isn't set waits with a
 token the upgrade revoked. A loop's repo, branch and environment change
 only while it is stopped.
 
+The setup script also denies the session the `claude-code-remote` tools that
+act on the claude.ai account, such as `create_trigger` and `list_sessions`, and
+lets `add_repo` attach only the loop's own repos. Both are guards a root shell
+in the VM can undo, not a boundary. Stop, kill and Rotate token end no routine
+or session a loop made on claude.ai, so after killing a loop that misbehaved,
+check the account's routines and sessions there.
+
 At its first wake, the hub runs `claude --cloud` on its own machine, with
 the wake as the first message, in an empty directory whose `origin` is the
 loop's repo, with `--ref` naming its branch and the loop's environment.
