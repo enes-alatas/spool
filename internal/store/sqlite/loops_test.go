@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -637,11 +638,40 @@ func TestLoopRuntimeCloud(t *testing.T) {
 	}
 }
 
-// The repo field went with the sessions client (ADR-0059): the column is
-// gone, so nothing can be stored in it.
-func TestLoopsHaveNoCloudRepoColumn(t *testing.T) {
-	db := openTestDB(t)
-	if _, err := db.db.Exec(`SELECT cloud_repo FROM loops`); err == nil {
-		t.Error("the cloud_repo column is still there")
+// A cloud loop's repos and environment round-trip, and an edit replaces
+// them whole (ADR-0061).
+func TestLoopCloudSetup(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	now := time.Now().UnixMilli()
+	loop := &store.Loop{
+		ID: "c1", Name: "cloudy", Mission: "m", Status: store.StatusActive,
+		WorkspaceMode: store.WorkspaceNone, Pacing: store.PacingFixed, Runtime: store.RuntimeCloud,
+		CloudRepo: "owner/first", CloudBranch: "main", CloudRepos: []string{"owner/second"}, CloudEnvironmentID: "env_01a",
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.Loops().Create(ctx, loop); err != nil {
+		t.Fatal(err)
+	}
+	got, err := db.Loops().Get(ctx, "c1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := store.CloudSetupOf(loop); !slices.Equal(got.CloudRepos, want.Repos) || got.CloudRepo != want.Repo ||
+		got.CloudBranch != want.Branch || got.CloudEnvironmentID != want.EnvironmentID {
+		t.Fatalf("the cloud setup didn't round-trip: %+v", store.CloudSetupOf(got))
+	}
+	edited, err := db.Loops().Edit(ctx, "c1", store.LoopEdit{
+		Cloud: &store.CloudSetup{Repo: "owner/third", Branch: "dev", EnvironmentID: "env_02b"}, UpdatedAt: now + 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if edited.CloudRepo != "owner/third" || edited.CloudBranch != "dev" || edited.CloudRepos != nil || edited.CloudEnvironmentID != "env_02b" {
+		t.Fatalf("an edit must replace the setup whole: %+v", store.CloudSetupOf(edited))
 	}
 }

@@ -179,7 +179,8 @@ type loops struct {
 // writes (ADR-0048).
 const loopCols = `id, name, mission, model, workspace_mode, workspace_path, repo_path,
 	worktree_path, branch, tick_interval_sec, min_wake_sec, max_wake_sec, idle_timeout_sec,
-	pacing, effort, subagents, daily_cap_usd, claude_login, tg_bot_token, tg_bot_username,
+	pacing, effort, subagents, daily_cap_usd, claude_login, cloud_repo, cloud_branch, cloud_repos,
+	cloud_environment_id, tg_bot_token, tg_bot_username,
 	owner_tg_user_id, owner_dm_chat_id,
 	workstation_off, outside_fleet_channel, status, current_session_id, current_pid, created_at, updated_at,
 	runtime, image, mem_mb, cpus, hub_mcp_token, rotate_pending, rotate_reason, handoff_note, prompt_hash, model_refusal,
@@ -200,9 +201,11 @@ const loopReadCols = loopCols + `,
 // scanLoop reads a loops row, opening its sealed tokens.
 func (table loops) scanLoop(row interface{ Scan(...any) error }) (*store.Loop, error) {
 	var loopRecord store.Loop
+	var cloudRepos string
 	err := row.Scan(&loopRecord.ID, &loopRecord.Name, &loopRecord.Mission, &loopRecord.Model, &loopRecord.WorkspaceMode, &loopRecord.WorkspacePath,
 		&loopRecord.RepoPath, &loopRecord.WorktreePath, &loopRecord.Branch, &loopRecord.TickIntervalSec, &loopRecord.MinWakeSec,
-		&loopRecord.MaxWakeSec, &loopRecord.IdleTimeoutSec, &loopRecord.Pacing, &loopRecord.Effort, &loopRecord.Subagents, &loopRecord.DailyCapUSD, &loopRecord.ClaudeLogin, &loopRecord.TGBotToken,
+		&loopRecord.MaxWakeSec, &loopRecord.IdleTimeoutSec, &loopRecord.Pacing, &loopRecord.Effort, &loopRecord.Subagents, &loopRecord.DailyCapUSD, &loopRecord.ClaudeLogin,
+		&loopRecord.CloudRepo, &loopRecord.CloudBranch, &cloudRepos, &loopRecord.CloudEnvironmentID, &loopRecord.TGBotToken,
 		&loopRecord.TGBotUsername,
 		&loopRecord.OwnerTGUserID, &loopRecord.OwnerDMChatID, &loopRecord.WorkstationOff, &loopRecord.OutsideFleetChannel,
 		&loopRecord.Status, &loopRecord.CurrentSessionID, &loopRecord.CurrentPID,
@@ -218,6 +221,9 @@ func (table loops) scanLoop(row interface{ Scan(...any) error }) (*store.Loop, e
 		return nil, store.ErrNotFound
 	}
 	if err != nil {
+		return nil, err
+	}
+	if loopRecord.CloudRepos, err = decodeCloudRepos(cloudRepos); err != nil {
 		return nil, err
 	}
 	for _, token := range []*string{&loopRecord.TGBotToken, &loopRecord.SlackAppToken, &loopRecord.SlackBotToken, &loopRecord.HubMCPToken} {
@@ -241,10 +247,11 @@ func (table loops) Create(ctx context.Context, loopRecord *store.Loop) error {
 	}
 	sealer := table.sealer
 	_, err := table.db.ExecContext(ctx, `INSERT INTO loops (`+loopCols+`, hub_mcp_token_hash) VALUES
-		(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		loopRecord.ID, loopRecord.Name, loopRecord.Mission, loopRecord.Model, loopRecord.WorkspaceMode, loopRecord.WorkspacePath, loopRecord.RepoPath,
 		loopRecord.WorktreePath, loopRecord.Branch, loopRecord.TickIntervalSec, loopRecord.MinWakeSec, loopRecord.MaxWakeSec,
-		loopRecord.IdleTimeoutSec, loopRecord.Pacing, loopRecord.Effort, loopRecord.Subagents, loopRecord.DailyCapUSD, loopRecord.ClaudeLogin, sealer.seal(loopRecord.TGBotToken), loopRecord.TGBotUsername,
+		loopRecord.IdleTimeoutSec, loopRecord.Pacing, loopRecord.Effort, loopRecord.Subagents, loopRecord.DailyCapUSD, loopRecord.ClaudeLogin,
+		loopRecord.CloudRepo, loopRecord.CloudBranch, encodeCloudRepos(loopRecord.CloudRepos), loopRecord.CloudEnvironmentID, sealer.seal(loopRecord.TGBotToken), loopRecord.TGBotUsername,
 		loopRecord.OwnerTGUserID, loopRecord.OwnerDMChatID,
 		loopRecord.WorkstationOff, loopRecord.OutsideFleetChannel, loopRecord.Status, loopRecord.CurrentSessionID, loopRecord.CurrentPID,
 		loopRecord.CreatedAt, loopRecord.UpdatedAt,
@@ -309,6 +316,12 @@ func (table loops) Edit(ctx context.Context, id string, edit store.LoopEdit) (*s
 	}
 	if edit.ClaudeLogin != nil {
 		set("claude_login", *edit.ClaudeLogin)
+	}
+	if edit.Cloud != nil {
+		set("cloud_repo", edit.Cloud.Repo)
+		set("cloud_branch", edit.Cloud.Branch)
+		set("cloud_repos", encodeCloudRepos(edit.Cloud.Repos))
+		set("cloud_environment_id", edit.Cloud.EnvironmentID)
 	}
 	if edit.TickIntervalSec != nil {
 		set("tick_interval_sec", *edit.TickIntervalSec)
@@ -1811,4 +1824,26 @@ func (table slackSenders) List(ctx context.Context) ([]*store.SlackSender, error
 func (table slackSenders) Delete(ctx context.Context, slackUserID string) error {
 	_, err := table.db.ExecContext(ctx, `DELETE FROM slack_senders WHERE slack_user_id=?`, slackUserID)
 	return err
+}
+
+// encodeCloudRepos is a cloud loop's further repos as the cloud_repos
+// column holds them: a JSON list, or ” for none.
+func encodeCloudRepos(repos []string) string {
+	if len(repos) == 0 {
+		return ""
+	}
+	raw, _ := json.Marshal(repos) // a list of strings always encodes
+	return string(raw)
+}
+
+// decodeCloudRepos reads the cloud_repos column back.
+func decodeCloudRepos(column string) ([]string, error) {
+	if column == "" {
+		return nil, nil
+	}
+	var repos []string
+	if err := json.Unmarshal([]byte(column), &repos); err != nil {
+		return nil, fmt.Errorf("sqlite: a loop's cloud_repos: %w", err)
+	}
+	return repos, nil
 }

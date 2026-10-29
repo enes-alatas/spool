@@ -738,7 +738,6 @@ type createLoopReq struct {
 	CPUs            float64 `json:"cpus"`           // docker only; 0 = 2
 	WorkspacePath   string  `json:"workspace_path"` // bare only; empty = no workspace
 	WorkspaceMode   string  `json:"workspace_mode"` // "auto" (default) | "dir" | "none"
-	CloudRepo       string  `json:"cloud_repo"`     // refused: the repo field went with the sessions client (ADR-0059)
 	TickIntervalSec int     `json:"tick_interval_sec"`
 	MinWakeSec      int     `json:"min_wake_sec"`
 	MaxWakeSec      int     `json:"max_wake_sec"`
@@ -751,6 +750,9 @@ type createLoopReq struct {
 	// InFleetChannel places the new loop in the fleet channel or outside
 	// it; absent, the server decides (defaultInFleetChannel).
 	InFleetChannel *bool `json:"in_fleet_channel"`
+	// cloud only: the repos and environment its sessions start from
+	// (ADR-0061)
+	cloudSetupReq
 }
 
 var validEfforts = map[string]bool{"": true, "low": true, "medium": true, "high": true, "xhigh": true, "max": true}
@@ -893,31 +895,44 @@ func (server *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 		server.refuse(w, refusal)
 		return
 	}
-	if strings.TrimSpace(req.CloudRepo) != "" {
-		server.jsonErr(w, 400, "cloud_repo is gone: attach a GH_TOKEN connection to the loop and name the repo in its mission")
-		return
+	var cloudSetup store.CloudSetup
+	if req.given() {
+		if loopRuntime != store.RuntimeCloud {
+			server.jsonErr(w, 400, "cloud_repo, cloud_branch, cloud_repos and cloud_environment_id apply to cloud loops only")
+			return
+		}
+		setup, refusal := server.cloudSetup(r.Context(), store.CloudSetup{}, req.cloudSetupReq)
+		if refusal != nil {
+			server.refuse(w, refusal)
+			return
+		}
+		cloudSetup = setup
 	}
 
 	nowMS := time.Now().UnixMilli()
 	loopRecord := &store.Loop{
-		ID:              loopID(),
-		Name:            req.Name,
-		Mission:         req.Mission,
-		Model:           req.Model,
-		Effort:          req.Effort,
-		Pacing:          defaultStr(req.Pacing, store.PacingFixed),
-		Subagents:       defaultStr(req.Subagents, store.SubagentsAllowed),
-		DailyCapUSD:     req.DailyCapUSD,
-		ClaudeLogin:     claudeLogin,
-		TickIntervalSec: defaultInt(req.TickIntervalSec, 1800),
-		MinWakeSec:      defaultInt(req.MinWakeSec, 300),
-		MaxWakeSec:      defaultInt(req.MaxWakeSec, 14400),
-		IdleTimeoutSec:  defaultInt(req.IdleTimeoutSec, 90),
-		TGBotToken:      strings.TrimSpace(req.TGBotToken),
-		Runtime:         loopRuntime,
-		Status:          store.StatusActive,
-		CreatedAt:       nowMS,
-		UpdatedAt:       nowMS,
+		ID:                 loopID(),
+		Name:               req.Name,
+		Mission:            req.Mission,
+		Model:              req.Model,
+		Effort:             req.Effort,
+		Pacing:             defaultStr(req.Pacing, store.PacingFixed),
+		Subagents:          defaultStr(req.Subagents, store.SubagentsAllowed),
+		DailyCapUSD:        req.DailyCapUSD,
+		ClaudeLogin:        claudeLogin,
+		CloudRepo:          cloudSetup.Repo,
+		CloudBranch:        cloudSetup.Branch,
+		CloudRepos:         cloudSetup.Repos,
+		CloudEnvironmentID: cloudSetup.EnvironmentID,
+		TickIntervalSec:    defaultInt(req.TickIntervalSec, 1800),
+		MinWakeSec:         defaultInt(req.MinWakeSec, 300),
+		MaxWakeSec:         defaultInt(req.MaxWakeSec, 14400),
+		IdleTimeoutSec:     defaultInt(req.IdleTimeoutSec, 90),
+		TGBotToken:         strings.TrimSpace(req.TGBotToken),
+		Runtime:            loopRuntime,
+		Status:             store.StatusActive,
+		CreatedAt:          nowMS,
+		UpdatedAt:          nowMS,
 	}
 	if loopRuntime == store.RuntimeDocker {
 		loopRecord.Image = strings.TrimSpace(req.Image)
@@ -1111,6 +1126,8 @@ type patchLoopReq struct {
 	SlackAppToken  *string `json:"slack_app_token"`
 	SlackBotToken  *string `json:"slack_bot_token"`
 	InFleetChannel *bool   `json:"in_fleet_channel"`
+	// cloud only, while the loop is paused (ADR-0061)
+	cloudSetupReq
 }
 
 // patchLoopResp is the saved loop with one field the loop itself does not
@@ -1204,6 +1221,22 @@ func (server *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 	if req.InFleetChannel != nil {
 		outside := !*req.InFleetChannel
 		edit.OutsideFleetChannel = &outside
+	}
+	if req.given() {
+		if loopRecord.Runtime != store.RuntimeCloud {
+			server.jsonErr(w, 400, "cloud_repo, cloud_branch, cloud_repos and cloud_environment_id apply to cloud loops only")
+			return
+		}
+		if loopRecord.Status != store.StatusPaused {
+			server.jsonErrCode(w, 409, codeCloudLoopRunning, "a cloud loop's repos and environment change only while it is paused: its sessions start from them")
+			return
+		}
+		setup, refusal := server.cloudSetup(r.Context(), store.CloudSetupOf(loopRecord), req.cloudSetupReq)
+		if refusal != nil {
+			server.refuse(w, refusal)
+			return
+		}
+		edit.Cloud = &setup
 	}
 	// One surface per loop (ADR-0029), judged on what the loop would
 	// hold after this request and before any live call is made.

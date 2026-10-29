@@ -10,18 +10,22 @@ import (
 
 // cloudLoopJSON is what a cloud loop's view carries for the control room.
 type cloudLoopJSON struct {
-	Runtime         string  `json:"runtime"`
-	CloudRepo       *string `json:"cloud_repo"`
-	CloudSessionURL string  `json:"cloud_session_url"`
+	Runtime            string   `json:"runtime"`
+	CloudRepo          string   `json:"cloud_repo"`
+	CloudBranch        string   `json:"cloud_branch"`
+	CloudRepos         []string `json:"cloud_repos"`
+	CloudEnvironmentID string   `json:"cloud_environment_id"`
+	CloudSessionURL    string   `json:"cloud_session_url"`
 }
 
 // A cloud loop is created as one once Settings → Cloud is green. Its view
 // carries its runtime and, once its first session exists, the session's
 // page on claude.ai. Asked of a hub whose account is gone, the creation is
 // refused and names the step; a docker loop's settings on a cloud loop
-// and moving a cloud loop are refused too. The repo field went with the
-// sessions client (ADR-0059): a creation that still sends one is
-// refused, and says what took its place.
+// and moving a cloud loop are refused too. A cloud loop names the repos and
+// the environment its sessions start from (ADR-0061): checked when they
+// are set, refused on any other runtime, and changed only while the loop
+// is paused.
 func TestACloudLoopIsCreated(t *testing.T) {
 	t.Parallel()
 	s := startCloudHub(t, "cirrus")
@@ -29,10 +33,12 @@ func TestACloudLoopIsCreated(t *testing.T) {
 	var created cloudLoopJSON
 	s.mustJSON("POST", "/api/loops", map[string]any{
 		"name": "nimbus", "mission": "integration test loop", "runtime": "cloud",
-		"idle_timeout_sec": 2,
+		"idle_timeout_sec": 2, "cloud_repo": " example-org/nimbus ", "cloud_repos": []string{"example-org/tools"},
+		"cloud_environment_id": cloudFixtureEnvironment,
 	}, &created)
-	if created.Runtime != "cloud" || created.CloudRepo != nil || created.CloudSessionURL != "" {
-		t.Fatalf("the created loop: %+v, want a cloud loop with no repo field and no session yet", created)
+	if created.Runtime != "cloud" || created.CloudRepo != "example-org/nimbus" || created.CloudBranch != "main" ||
+		len(created.CloudRepos) != 1 || created.CloudEnvironmentID != cloudFixtureEnvironment || created.CloudSessionURL != "" {
+		t.Fatalf("the created loop: %+v, want a cloud loop on its repo's main, in its environment, with no session yet", created)
 	}
 
 	s.message("nimbus", "first words")
@@ -48,11 +54,22 @@ func TestACloudLoopIsCreated(t *testing.T) {
 	}
 
 	s.wantRefusal("POST", "/api/loops", map[string]any{"name": "stratus", "mission": "m", "runtime": "cloud", "mem_mb": 1024}, 400, "")
-	for _, runtime := range []string{"cloud", "bare"} {
-		resp, body := s.do("POST", "/api/loops", map[string]any{"name": "stratus", "mission": "m", "runtime": runtime, "cloud_repo": "https://github.com/example-org/stratus"})
-		if resp.StatusCode != 400 || !strings.Contains(string(body), "GH_TOKEN") {
-			t.Errorf("a %s loop with a repo: %d %s, want 400 naming the GH_TOKEN connection", runtime, resp.StatusCode, body)
-		}
+	for _, refused := range []map[string]any{
+		{"runtime": "bare", "cloud_repo": "example-org/stratus"},
+		{"runtime": "cloud", "cloud_repo": "https://github.com/example-org/stratus", "cloud_environment_id": cloudFixtureEnvironment},
+		{"runtime": "cloud", "cloud_repo": "example-org/stratus", "cloud_branch": "-x", "cloud_environment_id": cloudFixtureEnvironment},
+		{"runtime": "cloud", "cloud_repo": "example-org/stratus", "cloud_environment_id": "ccpool_01Laptop"},
+		{"runtime": "cloud", "cloud_repo": "example-org/stratus"},
+	} {
+		refused["name"], refused["mission"] = "stratus", "m"
+		s.wantRefusal("POST", "/api/loops", refused, 400, "")
+	}
+
+	s.wantRefusal("PATCH", "/api/loops/nimbus", map[string]any{"cloud_branch": "dev"}, 409, "cloud_loop_running")
+	s.mustJSON("POST", "/api/loops/nimbus/pause", nil, nil)
+	s.mustJSON("PATCH", "/api/loops/nimbus", map[string]any{"cloud_branch": "dev", "cloud_repos": []string{}}, &viewed)
+	if viewed.CloudBranch != "dev" || len(viewed.CloudRepos) != 0 || viewed.CloudRepo != "example-org/nimbus" {
+		t.Errorf("the paused loop's edit: %+v, want its branch dev, no further repos and its repo kept", viewed)
 	}
 	s.wantRefusal("POST", "/api/loops/nimbus/rehome", nil, 409, "")
 
