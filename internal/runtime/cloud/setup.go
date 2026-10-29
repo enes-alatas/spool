@@ -122,10 +122,10 @@ SPOOL_JSON
 // first line is the loop's connections as export lines, base64, which it
 // appends to CLAUDE_ENV_FILE; the rest is the hook's output, the hub's
 // prompt as context, which it prints (sessionStartAnswer). Stop posts the
-// hook's input and the transcript's lines after the last ones a post
-// landed, and records how far it got only once the hub took them. curl
-// tries a lost post again; one the hub refused, or that stayed lost, is
-// sent again with the next turn's.
+// hook's input, the session's ID and the transcript's lines after the
+// last ones a post landed, and records how far it got only once the hub
+// took them. curl tries a lost post again; one the hub refused, or that
+// stayed lost, is sent again with the next turn's.
 func hookScript(hooksURL string) string {
 	return `#!/bin/sh
 # Spool's hooks for this loop (ADR-0061): sh, sed, base64 and curl.
@@ -154,7 +154,7 @@ case "$1" in
   total=$(wc -l < "$t")
   [ "$sent" -le "$total" ] 2>/dev/null || sent=0
   tail -n "+$((sent + 1))" "$t" | head -n "$((total - sent))" > "$tmp/lines"
-  curl -sf -o /dev/null $retry -F "hook=<$tmp/hook" -F "lines=<$tmp/lines" "$url" >/dev/null 2>&1 &&
+  curl -sf -o /dev/null $retry -F "hook=<$tmp/hook" --form-string "session=$CLAUDE_CODE_REMOTE_SESSION_ID" -F "lines=<$tmp/lines" "$url" >/dev/null 2>&1 &&
     echo "$total" > "$t.spool-sent"
   ;;
 esac

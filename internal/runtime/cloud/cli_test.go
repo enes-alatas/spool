@@ -103,7 +103,7 @@ func postWhenPending(t *testing.T, cloud *Runtime, after, sessionID string, post
 			}
 		}
 		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
-			if cloud.Stop(context.Background(), "loop-1", post.Hook, post.Lines, false) == nil {
+			if cloud.Stop(context.Background(), "loop-1", sessionID, post.Hook, post.Lines, false) == nil {
 				return
 			}
 		}
@@ -291,7 +291,7 @@ esac
 
 	go func() {
 		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
-			if cloud.Stop(context.Background(), "loop-1", []byte(`{"last_assistant_message":"second"}`), nil, false) == nil {
+			if cloud.Stop(context.Background(), "loop-1", "session_01Synthetic", []byte(`{"last_assistant_message":"second"}`), nil, false) == nil {
 				return
 			}
 		}
@@ -322,7 +322,7 @@ func TestCLITurnWhosePostIsOverItsBoundEndsAsAnError(t *testing.T) {
 			}
 		}
 		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
-			if cloud.Stop(context.Background(), "loop-1", []byte(`{}`), nil, true) == nil {
+			if cloud.Stop(context.Background(), "loop-1", "session_01Synthetic", []byte(`{}`), nil, true) == nil {
 				return
 			}
 		}
@@ -340,7 +340,7 @@ func TestCLIHookPostsAreTakenOnlyWhenAwaited(t *testing.T) {
 	if err := postStartup(ctx, cloud, "loop-1", "session_01Synthetic"); err == nil {
 		t.Error("a SessionStart with no start pending was taken")
 	}
-	if err := cloud.Stop(ctx, "loop-1", []byte(`{}`), nil, false); err == nil {
+	if err := cloud.Stop(ctx, "loop-1", "session_01Synthetic", []byte(`{}`), nil, false); err == nil {
 		t.Error("a Stop with no turn in flight was taken")
 	}
 
@@ -389,7 +389,7 @@ sleep 30
 			}
 		}
 		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
-			if cloud.Stop(ctx, "loop-1", []byte(`{}`), []byte(transcriptTurn), false) == nil {
+			if cloud.Stop(ctx, "loop-1", "cse_01Printed", []byte(`{}`), []byte(transcriptTurn), false) == nil {
 				return
 			}
 		}
@@ -557,7 +557,7 @@ esac
 	turnResult(t, proc, "first words")
 	go func() {
 		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
-			if cloud.Stop(context.Background(), "loop-1", []byte(`{}`), nil, false) == nil {
+			if cloud.Stop(context.Background(), "loop-1", "session_01Synthetic", []byte(`{}`), nil, false) == nil {
 				return
 			}
 		}
@@ -658,5 +658,114 @@ func TestStartDirRefusesARepoOrBranchGitCouldMisread(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
 			t.Errorf("the start directory holds no git repo: %v", err)
 		}
+	}
+}
+
+// A Stop post ends the turn only from the loop's recorded session, in
+// either of its ID's forms (ADR-0061): every session in the loop's
+// environment holds the token.
+func TestCLIStopTakesOnlyTheLoopsSession(t *testing.T) {
+	cloud := cliRuntime(t, `sleep 30`)
+	ctx := context.Background()
+	if err := cloud.update("loop-1", func(current *state) { current.SessionID = "session_01Recorded" }); err != nil {
+		t.Fatal(err)
+	}
+	stops := cloud.waits.awaitStop("loop-1")
+	defer cloud.waits.forgetStop("loop-1", stops)
+	for _, other := range []string{"session_01Other", "cse_01Other", ""} {
+		if err := cloud.Stop(ctx, "loop-1", other, []byte(`{}`), nil, false); !errors.Is(err, errNotTheSession) {
+			t.Errorf("a Stop post from %q: %v, want refused", other, err)
+		}
+	}
+	if err := cloud.Stop(ctx, "loop-1", "cse_01Recorded", []byte(`{}`), nil, false); err != nil {
+		t.Fatalf("the loop's own Stop post: %v", err)
+	}
+	if arrival := <-stops; string(arrival.post.Hook) != `{}` {
+		t.Errorf("the turn got %+v", arrival)
+	}
+}
+
+// /mcp takes a tool call only from the loop's session, and only while a turn
+// of it runs or within turnGrace of its end (ADR-0061).
+func TestCLIMCPCallTakesOnlyTheLoopsSessionInATurn(t *testing.T) {
+	cloud := cliRuntime(t, `sleep 30`)
+	ctx := context.Background()
+	if err := cloud.MCPCall(ctx, "loop-1", "session_01Recorded"); !errors.Is(err, errNotTheSession) {
+		t.Errorf("a call before any session: %v, want refused", err)
+	}
+	if err := cloud.update("loop-1", func(current *state) { current.SessionID = "session_01Recorded" }); err != nil {
+		t.Fatal(err)
+	}
+	if err := cloud.MCPCall(ctx, "loop-1", "session_01Recorded"); !errors.Is(err, errNoTurn) {
+		t.Errorf("a call with no turn ever run: %v, want refused", err)
+	}
+
+	stops := cloud.waits.awaitStop("loop-1")
+	if err := cloud.MCPCall(ctx, "loop-1", "cse_01Recorded"); err != nil {
+		t.Errorf("the session's call in a turn: %v", err)
+	}
+	if err := cloud.MCPCall(ctx, "loop-1", "cse_01ByHand"); !errors.Is(err, errNotTheSession) {
+		t.Errorf("another session's call in a turn: %v, want refused", err)
+	}
+	cloud.waits.forgetStop("loop-1", stops)
+	if err := cloud.MCPCall(ctx, "loop-1", "session_01Recorded"); err != nil {
+		t.Errorf("the session's call just after its turn: %v", err)
+	}
+	cloud.waits.mu.Lock()
+	cloud.waits.ended["loop-1"] = time.Now().Add(-turnGrace)
+	cloud.waits.mu.Unlock()
+	if err := cloud.MCPCall(ctx, "loop-1", "session_01Recorded"); !errors.Is(err, errNoTurn) {
+		t.Errorf("the session's call past the grace: %v, want refused", err)
+	}
+	// its client may still connect between turns, and only it
+	if err := cloud.MCPSession(ctx, "loop-1", "cse_01Recorded"); err != nil {
+		t.Errorf("the session's handshake between turns: %v", err)
+	}
+	if err := cloud.MCPSession(ctx, "loop-1", "cse_01ByHand"); !errors.Is(err, errNotTheSession) {
+		t.Errorf("another session's handshake: %v, want refused", err)
+	}
+
+	// a turn a hub restart cut off may run until its bound
+	if err := cloud.update("loop-1", func(current *state) {
+		current.Turn = &turnState{Since: time.Now().UnixMilli(), Until: time.Now().Add(time.Minute).UnixMilli(), CutOff: true}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cloud.MCPCall(ctx, "loop-1", "session_01Recorded"); err != nil {
+		t.Errorf("the session's call in a cut-off turn: %v", err)
+	}
+}
+
+// While a start is pending, /mcp takes the session the start's CLI
+// printed, and a call before the line is read waits for it: the client
+// connects before SessionStart binds the session (run S on #1180).
+func TestCLIMCPCallWaitsForAPendingStartsSession(t *testing.T) {
+	cloud := cliRuntime(t, `sleep 30`)
+	ctx := context.Background()
+	if err := cloud.update("loop-1", func(current *state) { current.SessionID = "session_01Old" }); err != nil {
+		t.Fatal(err)
+	}
+	start := cloud.waits.awaitStart("loop-1", time.Minute, nil)
+	defer cloud.waits.forgetStart("loop-1", start)
+	early := make(chan error, 1)
+	go func() { early <- cloud.MCPCall(ctx, "loop-1", "cse_01Printed") }()
+	select {
+	case err := <-early:
+		t.Fatalf("a call before the CLI's line was judged at once: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	cloud.waits.viewed(start, "session_01Printed")
+	if err := <-early; err != nil {
+		t.Errorf("the printed session's early call: %v", err)
+	}
+	if err := cloud.MCPCall(ctx, "loop-1", "session_01Old"); !errors.Is(err, errNotTheSession) {
+		t.Errorf("the loop's old session's call during a start: %v, want refused", err)
+	}
+
+	cloud.waits.forgetStart("loop-1", start)
+	unread := cloud.waits.awaitStart("loop-1", 50*time.Millisecond, nil)
+	defer cloud.waits.forgetStart("loop-1", unread)
+	if err := cloud.MCPCall(ctx, "loop-1", "session_01Printed"); !errors.Is(err, errNotTheSession) {
+		t.Errorf("a call when the start's line never came: %v, want refused", err)
 	}
 }

@@ -181,7 +181,10 @@ adds to every request for the hub's host: the token never enters the VM.
 The token outlives the loop's sessions and the hub keeps only its hash: Rotate token
 (`POST /api/loops/{name}/cloud/token`) stops the loop, mints it and shows it once,
 the cloud listener refuses it while the loop is paused, and a kill revokes it until
-the next Rotate token. A cloud loop whose repo, environment or token isn't set is
+the next Rotate token. Its `/mcp` takes only the loop's own session, which the
+session's MCP client names in `X-Spool-Session`, and its tool calls only during a
+turn and a minute after.
+A cloud loop whose repo, environment or token isn't set is
 held with a `cloud_setup` problem.
 The hub answers each start's `SessionStart` post with the loop's env-var
 connections as `export` lines, which the hook appends to `CLAUDE_ENV_FILE`, and the

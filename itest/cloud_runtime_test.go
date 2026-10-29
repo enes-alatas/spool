@@ -158,8 +158,8 @@ func TestAStaleVMOfALoopCantBindItsNextStart(t *testing.T) {
 	if strings.HasSuffix(viewed.CloudSessionURL, "session_01Stale") {
 		t.Errorf("the stale post bound the loop to %s", viewed.CloudSessionURL)
 	}
-	if got := postTo(t, s.cloudURL, stale, mcpInitialize); got != http.StatusOK {
-		t.Errorf("the loop's token after the new start: %d, want 200: the token is the environment's, not the session's", got)
+	if got := postHook(t, s, stale, "session_01Probe"); got != http.StatusConflict {
+		t.Errorf("the loop's token after the new start: %d, want 409 (taken, and no start pending): the token is the environment's, not the session's", got)
 	}
 }
 
@@ -174,12 +174,12 @@ func TestStoppingACloudLoopRefusesItsTokenAndAKillRevokesIt(t *testing.T) {
 	s.message("stratus", "hello")
 	first := s.waitTurn("stratus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "hello") })
 	token := cloudTokenOf("stratus")
-	if got := postTo(t, s.cloudURL, token, mcpInitialize); got != http.StatusOK {
-		t.Fatalf("the loop's token before the stop: %d, want 200", got)
+	if got := postHook(t, s, token, "session_01Probe"); got != http.StatusConflict {
+		t.Fatalf("the loop's token before the stop: %d, want 409 (taken, and no start pending)", got)
 	}
 
 	s.mustJSON("POST", "/api/loops/stratus/pause", nil, nil)
-	if got := postTo(t, s.cloudURL, token, mcpInitialize); got != http.StatusUnauthorized {
+	if got := postHook(t, s, token, "session_01Probe"); got != http.StatusUnauthorized {
 		t.Errorf("the token of a stopped loop: %d, want 401", got)
 	}
 	if got := postHook(t, s, token, "session_01Paused"); got != http.StatusUnauthorized {
@@ -189,20 +189,20 @@ func TestStoppingACloudLoopRefusesItsTokenAndAKillRevokesIt(t *testing.T) {
 		t.Errorf("the stopped session ended as %q, want %q", got, store.EndReasonPaused)
 	}
 	s.mustJSON("POST", "/api/loops/stratus/resume", nil, nil)
-	if got := postTo(t, s.cloudURL, token, mcpInitialize); got != http.StatusOK {
-		t.Errorf("the same token once the loop runs again: %d, want 200", got)
+	if got := postHook(t, s, token, "session_01Probe"); got != http.StatusConflict {
+		t.Errorf("the same token once the loop runs again: %d, want 409 (taken, and no start pending)", got)
 	}
 	s.message("stratus", "again")
 	again := s.waitTurn("stratus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "again") })
 	if again.IsError || again.SessionID == first.SessionID || len(cloudVMs(t, s)) != 2 {
 		t.Fatalf("the wake after the stop: %+v in %d VMs, want a new session", again, len(cloudVMs(t, s)))
 	}
-	if got := postTo(t, s.cloudURL, token, mcpInitialize); got != http.StatusOK {
-		t.Errorf("the token after the new session: %d, want 200: the new session runs on the same token", got)
+	if got := postHook(t, s, token, "session_01Probe"); got != http.StatusConflict {
+		t.Errorf("the token after the new session: %d, want 409 (taken, and no start pending): the new session runs on the same token", got)
 	}
 
 	s.mustJSON("POST", "/api/loops/stratus/kill", nil, nil)
-	if got := postTo(t, s.cloudURL, token, mcpInitialize); got != http.StatusUnauthorized {
+	if got := postHook(t, s, token, "session_01Probe"); got != http.StatusUnauthorized {
 		t.Errorf("the killed loop's token: %d, want 401", got)
 	}
 	if killed := s.waitHealth("stratus", "failing"); len(killed.Problems) != 1 || killed.Problems[0].Symptom != store.SymptomCloudSetup {
@@ -226,8 +226,8 @@ func TestStoppingACloudLoopRefusesItsTokenAndAKillRevokesIt(t *testing.T) {
 	// the operator sets it as the environment's secret, then starts the loop
 	setUpCloudEnvironment(t, s, cloudEnvironmentOf("stratus"), rotated)
 	s.mustJSON("POST", "/api/loops/stratus/resume", nil, nil)
-	if got := postTo(t, s.cloudURL, rotated, mcpInitialize); got != http.StatusOK {
-		t.Errorf("the rotated token once the loop runs: %d, want 200", got)
+	if got := postHook(t, s, rotated, "session_01Probe"); got != http.StatusConflict {
+		t.Errorf("the rotated token once the loop runs: %d, want 409 (taken, and no start pending)", got)
 	}
 	held := s.waitTurn("stratus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "held words") })
 	if held.IsError {
@@ -236,7 +236,7 @@ func TestStoppingACloudLoopRefusesItsTokenAndAKillRevokesIt(t *testing.T) {
 	if after := s.waitHealth("stratus", "ok"); len(after.Problems) != 0 {
 		t.Errorf("problems after the rotation = %+v, want none", after.Problems)
 	}
-	if got := postTo(t, s.cloudURL, token, mcpInitialize); got != http.StatusUnauthorized {
+	if got := postHook(t, s, token, "session_01Probe"); got != http.StatusUnauthorized {
 		t.Errorf("the killed token after the rotation: %d, want 401", got)
 	}
 	if strings.Contains(s.log(), rotated) {
@@ -269,7 +269,7 @@ func TestACloudLoopsStopSaysWhenItsTokenWasNotRevoked(t *testing.T) {
 		if resp.StatusCode != http.StatusInternalServerError || !strings.Contains(string(body), "can still reach the hub") {
 			t.Errorf("a %s whose write failed = %d %s, want a 500 that says so", verb, resp.StatusCode, body)
 		}
-		if got := postTo(t, hub.cloudURL, token, mcpInitialize); got != http.StatusOK {
+		if got := postHook(t, hub, token, "session_01Probe"); got != http.StatusConflict {
 			t.Fatalf("the token after a failed %s: %d, want it still working, as the answer said", verb, got)
 		}
 		if _, err := db.Exec(`DROP TRIGGER refuse_write`); err != nil {
@@ -278,7 +278,7 @@ func TestACloudLoopsStopSaysWhenItsTokenWasNotRevoked(t *testing.T) {
 	}
 
 	hub.mustJSON("POST", "/api/loops/cirrus/kill", nil, nil)
-	if got := postTo(t, hub.cloudURL, token, mcpInitialize); got != http.StatusUnauthorized {
+	if got := postHook(t, hub, token, "session_01Probe"); got != http.StatusUnauthorized {
 		t.Errorf("the token after the retried kill: %d, want 401", got)
 	}
 }
@@ -292,7 +292,7 @@ func TestDeletingACloudLoopRevokesItsToken(t *testing.T) {
 	s.waitTurn("cumulus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "hello") })
 	token := cloudTokenOf("cumulus")
 	s.mustJSON("DELETE", "/api/loops/cumulus", nil, nil)
-	if got := postTo(t, s.cloudURL, token, mcpInitialize); got != http.StatusUnauthorized {
+	if got := postHook(t, s, token, "session_01Probe"); got != http.StatusUnauthorized {
 		t.Errorf("the deleted loop's token: %d, want 401", got)
 	}
 }
@@ -444,5 +444,87 @@ func TestARefusedSessionStartIsNoVerdictOnTheAddress(t *testing.T) {
 		if problem.Symptom == "cloud_address" {
 			t.Errorf("a start whose session posted held the loop: %+v", problem)
 		}
+	}
+}
+
+// A cloud loop's /mcp takes only its own session, by the session ID the
+// setup script has its MCP client send, and only while a turn of it runs
+// or just after (ADR-0061): every session in the loop's environment holds
+// the token, a session someone starts there by hand included. Here the
+// VM's own client sends through the spool server the setup script wrote,
+// on the environment's network secret.
+func TestACloudLoopsMCPTakesOnlyItsSessionInATurn(t *testing.T) {
+	t.Parallel()
+	hub := startCloudHub(t, "altus")
+	hub.message("altus", `!send {"destination":"control_room","text":"hello from the vm"}`)
+	sent := hub.waitTurn("altus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "sent") })
+	if sent.IsError || strings.Contains(sent.ResultText, "send error") {
+		t.Fatalf("the VM's send: %+v", sent)
+	}
+	if len(hub.activityWith("hello from the vm")) == 0 {
+		t.Fatal("the VM's send was answered but never stored")
+	}
+
+	token := cloudTokenOf("altus")
+	var viewed cloudLoopJSON
+	hub.mustJSON("GET", "/api/loops/altus", nil, &viewed)
+	session := viewed.CloudSessionURL[strings.LastIndex(viewed.CloudSessionURL, "/")+1:]
+	if !strings.HasPrefix(session, "session_") {
+		t.Fatalf("the loop's session is %q", viewed.CloudSessionURL)
+	}
+	// the turn ended a moment ago, within its grace
+	if got := postToAs(t, hub.cloudURL, token, "cse_"+strings.TrimPrefix(session, "session_"), mcpInitialize); got != http.StatusOK {
+		t.Errorf("the loop's session just after its turn: %d, want 200", got)
+	}
+	if got := postToAs(t, hub.cloudURL, token, "cse_01ByHand", mcpInitialize); got != http.StatusUnauthorized {
+		t.Errorf("a session started by hand in the loop's environment: %d, want 401", got)
+	}
+	if got := postTo(t, hub.cloudURL, token, mcpInitialize); got != http.StatusUnauthorized {
+		t.Errorf("a call naming no session: %d, want 401", got)
+	}
+	if !strings.Contains(hub.log(), "cloud mcp call refused") {
+		t.Error("the refused calls weren't logged")
+	}
+}
+
+// Past a turn's grace, the loop's own session can still connect and list
+// the hub's tools, since a client refused between turns stays failed
+// into the next (live checks on #1190), and a tool call is refused as a
+// tool error naming why. The next turn's send goes through (ADR-0061).
+func TestACloudSessionsMCPReconnectsBetweenTurns(t *testing.T) {
+	t.Parallel()
+	hub := startCloudHub(t, "stratus")
+	hub.message("stratus", "first words")
+	hub.waitTurn("stratus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "first words") })
+	hub.waitState("stratus", "asleep", 20*time.Second)
+	var viewed cloudLoopJSON
+	hub.mustJSON("GET", "/api/loops/stratus", nil, &viewed)
+	session := "cse_" + strings.TrimPrefix(viewed.CloudSessionURL[strings.LastIndex(viewed.CloudSessionURL, "/")+1:], "session_")
+	token := cloudTokenOf("stratus")
+
+	// the hub's grace after a turn is a minute
+	time.Sleep(62 * time.Second)
+	const listTools = `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`
+	for _, body := range []string{mcpInitialize, listTools} {
+		if status, answer := mcpAnswer(t, hub.cloudURL, token, session, body); status != http.StatusOK || !strings.Contains(answer, `"result"`) {
+			t.Errorf("the loop's session between turns: %d %s, want it answered", status, answer)
+		}
+	}
+	const send = `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"send_message","arguments":{"destination":"control_room","text":"between turns"}}}`
+	if status, answer := mcpAnswer(t, hub.cloudURL, token, session, send); status != http.StatusOK ||
+		!strings.Contains(answer, `"isError":true`) || !strings.Contains(answer, "no turn of this loop is in flight") {
+		t.Errorf("a send between turns: %d %s, want a tool error naming the turn", status, answer)
+	}
+	if len(hub.activityWith("between turns")) != 0 {
+		t.Error("a send between turns was stored")
+	}
+	if got := postToAs(t, hub.cloudURL, token, "cse_01ByHand", mcpInitialize); got != http.StatusUnauthorized {
+		t.Errorf("a session started by hand, between turns: %d, want 401", got)
+	}
+
+	hub.message("stratus", `!send {"destination":"control_room","text":"from the next turn"}`)
+	sent := hub.waitTurn("stratus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "sent") })
+	if sent.IsError || strings.Contains(sent.ResultText, "send error") || len(hub.activityWith("from the next turn")) == 0 {
+		t.Errorf("the next turn's send: %+v, want it stored", sent)
 	}
 }

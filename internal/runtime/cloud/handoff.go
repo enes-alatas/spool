@@ -74,6 +74,14 @@ var errNoHandOff = errors.New("cloud: no start of this loop is pending")
 // the one its start's CLI printed.
 var errOtherSession = errors.New("cloud: the post names a session this start didn't create")
 
+// errNotTheSession refuses a Stop post or an MCP call from a session that
+// isn't the loop's.
+var errNotTheSession = errors.New("cloud: the request isn't from the loop's session")
+
+// errNoTurn refuses a post or a call that comes with no turn of the loop
+// in flight.
+var errNoTurn = errors.New("cloud: no turn of this loop is in flight")
+
 // viewLine is the line CLI 2.1.310 prints once it has created a session,
 // `View: https://claude.ai/code/session_…?from=cli&m=0` (#1180, comment
 // 6483144237).

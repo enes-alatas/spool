@@ -99,7 +99,7 @@ esac
 	proc := startCLI(t, cloud, resumeSpec(testSource))
 	go func() {
 		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
-			if cloud.Stop(context.Background(), "loop-1", []byte(`{"last_assistant_message":"again"}`), nil, false) == nil {
+			if cloud.Stop(context.Background(), "loop-1", "session_01Synthetic", []byte(`{"last_assistant_message":"again"}`), nil, false) == nil {
 				return
 			}
 		}

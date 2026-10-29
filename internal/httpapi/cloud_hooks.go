@@ -38,18 +38,31 @@ type CloudHooks interface {
 	// as export lines at a start of that loop, recording sessionID as its
 	// session.
 	SessionStart(ctx context.Context, loopID, sessionID string, hook []byte) ([]byte, error)
-	// Stop ends the loop's turn in flight with what the post carries.
-	// overBound says the post ran past the route's bound, and lines holds
-	// none of it: the turn ends as an error.
-	Stop(ctx context.Context, loopID string, hook, lines []byte, overBound bool) error
+	// Stop ends the loop's turn in flight with what the post carries, when
+	// sessionID is the loop's session. overBound says the post ran past
+	// the route's bound, and lines holds none of it: the turn ends as an
+	// error.
+	Stop(ctx context.Context, loopID, sessionID string, hook, lines []byte, overBound bool) error
 	// SessionPosted is told of each SessionStart post of the loop that
 	// names a session, before any refusal: the session reached the hub.
 	SessionPosted(loopID string)
+	// MCPSession says whether sessionID is the loop's own session, which
+	// the loop's /mcp takes at any time (ADR-0061). It may wait for a
+	// pending start's session.
+	MCPSession(ctx context.Context, loopID, sessionID string) error
+	// MCPCall says whether the loop's /mcp takes a tool call that names
+	// sessionID as its session: only the loop's own, while a turn of it
+	// runs (ADR-0061). It may wait for a pending start's session.
+	MCPCall(ctx context.Context, loopID, sessionID string) error
 }
 
+// cloudSessionHeader is the header a cloud session's MCP client sends its
+// session's ID in: the cloud runtime's SessionHeader (ADR-0061).
+const cloudSessionHeader = "X-Spool-Session"
+
 // handleCloudHook serves a cloud session's hook post: a multipart form with
-// the hook's input as its hook field, the session id for SessionStart, and
-// the transcript's new lines for Stop. The parts are read into memory,
+// the hook's input as its hook field, the session id, and the
+// transcript's new lines for Stop. The parts are read into memory,
 // never a temporary file: the lines carry the loop's turn. 204 takes a
 // Stop post, 200 answers a SessionStart one with the loop's connections
 // and prompt, and 409 refuses either. w is the redacting writer every
@@ -83,7 +96,7 @@ func (server *Server) handleCloudHook(w, handOff http.ResponseWriter, r *http.Re
 	var tooLarge *http.MaxBytesError
 	switch {
 	case errors.As(err, &tooLarge) && post.event == "Stop":
-		_ = server.CloudHooks.Stop(r.Context(), caller.ID, post.hook, nil, true)
+		_ = server.CloudHooks.Stop(r.Context(), caller.ID, post.session, post.hook, nil, true)
 		refuse(http.StatusRequestEntityTooLarge, post.event, "the post is over its bound")
 		return
 	case errors.As(err, &tooLarge):
@@ -109,7 +122,7 @@ func (server *Server) handleCloudHook(w, handOff http.ResponseWriter, r *http.Re
 			return
 		}
 	case "Stop":
-		err = server.CloudHooks.Stop(r.Context(), caller.ID, post.hook, post.lines, false)
+		err = server.CloudHooks.Stop(r.Context(), caller.ID, post.session, post.hook, post.lines, false)
 	default:
 		refuse(http.StatusBadRequest, post.event, "no such hook")
 		return
