@@ -329,6 +329,7 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			"SetRuntime": false, "SetStatus": false, "SetWorkstationOff": false,
 			// mints the hub token itself, which is the secret, from no text
 			"RotateHubMCPToken": false,
+			"RevokeHubMCPToken": false,
 			// a fixed path and the workstation's size
 			"Rehome": false,
 			// Slack ids and a timestamp, the counterparts of the two

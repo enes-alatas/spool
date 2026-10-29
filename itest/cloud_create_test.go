@@ -3,9 +3,12 @@
 package itest
 
 import (
+	"net/http"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/enes-alatas/spool/internal/store"
 )
 
 // cloudLoopJSON is what a cloud loop's view carries for the control room.
@@ -25,7 +28,8 @@ type cloudLoopJSON struct {
 // and moving a cloud loop are refused too. A cloud loop names the repos and
 // the environment its sessions start from (ADR-0061): checked when they
 // are set, refused on any other runtime, and changed only while the loop
-// is paused.
+// is paused. It is created with no hub token, and held until one is
+// minted.
 func TestACloudLoopIsCreated(t *testing.T) {
 	t.Parallel()
 	s := startCloudHub(t, "cirrus")
@@ -41,7 +45,14 @@ func TestACloudLoopIsCreated(t *testing.T) {
 		t.Fatalf("the created loop: %+v, want a cloud loop on its repo's main, in its environment, with no session yet", created)
 	}
 
+	// it is created with no hub token, and held until its setup mints one
+	if held := s.waitHealth("nimbus", "failing"); len(held.Problems) != 1 || held.Problems[0].Symptom != store.SymptomCloudSetup {
+		t.Fatalf("problems of a loop with no token = %+v, want one cloud_setup", held.Problems)
+	}
 	s.message("nimbus", "first words")
+	if resp, _ := s.do("POST", "/api/loops/nimbus/cloud/token", nil); resp.StatusCode != http.StatusOK {
+		t.Fatalf("minting the loop's token: %d", resp.StatusCode)
+	}
 	s.waitTurn("nimbus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "first words") })
 	vms := cloudVMs(t, s)
 	if len(vms) != 1 {
@@ -72,6 +83,8 @@ func TestACloudLoopIsCreated(t *testing.T) {
 		t.Errorf("the paused loop's edit: %+v, want its branch dev, no further repos and its repo kept", viewed)
 	}
 	s.wantRefusal("POST", "/api/loops/nimbus/rehome", nil, 409, "")
+	s.createLoop("plain", nil)
+	s.wantRefusal("POST", "/api/loops/plain/cloud/token", nil, 400, "")
 
 	s.signOutCloudAccount()
 	resp, body := s.do("POST", "/api/loops", map[string]any{"name": "stratus", "mission": "m", "runtime": "cloud"})

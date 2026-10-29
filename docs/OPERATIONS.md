@@ -420,15 +420,20 @@ in its rooms as any loop's does. Each later wake is sent into the same
 session with `claude -p --cloud`. Anthropic idles the session's machine
 between turns, and the next message brings it back.
 
-Stopping or killing a cloud loop revokes its session's token at once, but
-the CLI can't interrupt a turn already running there: it runs on, cut off
-from the hub, and so may a message sent just before the stop. The hub no
-longer hears that turn end, so the loop's page says it may still be
-running until two hours after its send, and links its session, where you
-can interrupt it. If the hub can't write the new token, the stop or the
-kill still happens, but it answers with an error saying the token was not
-revoked and the session can still reach the hub. Stopping or killing the
-loop again retries the revocation.
+A cloud loop's hub token belongs to the loop, not to one session. A new
+cloud loop has none, and waits with a `cloud_setup` problem until Rotate
+token (`POST /api/loops/<name>/cloud/token`) mints one; the answer shows
+the token once. Stopping a cloud loop refuses its token at once, and
+starting it again takes the same token. Killing it revokes the token for
+good: the loop waits, with the same problem, until Rotate token mints
+another. Either way the CLI can't interrupt a turn already running
+there: it runs on, cut off from the hub, and so may a message sent just
+before the stop. The hub no longer hears that turn end, so the loop's
+page says it may still be running until two hours after its send, and
+links its session, where you can interrupt it. If the hub can't store
+the stop or the revocation, the stop or the kill still happens, but it
+answers with an error saying the session can still reach the hub.
+Stopping or killing the loop again retries.
 
 A cloud loop's secrets are its env-var connections, attached as a
 contained loop's are. The hub answers the home's

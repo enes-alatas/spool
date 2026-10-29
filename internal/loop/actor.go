@@ -444,6 +444,10 @@ func stoppedIsDone(err error) error {
 // so in its state, and wakes if its own login's cap lifted (ADR-0047).
 func (actor *Actor) CapChanged() { actor.send(cmd{kind: "cap"}) }
 
+// TokenChanged tells a cloud loop Rotate token minted it a hub token: it
+// takes the new one, and wakes if the want of one held it (ADR-0061).
+func (actor *Actor) TokenChanged() { actor.send(cmd{kind: "token"}) }
+
 // CloudGateChanged tells the loop the public address was checked: a cloud
 // loop says so in its problems, and wakes if the check let it go
 // (ADR-0056). Any other loop ignores it.
@@ -505,6 +509,9 @@ func (actor *Actor) Shutdown() {
 
 func (actor *Actor) run() {
 	defer close(actor.stopped)
+	if actor.cloudTokenless() {
+		actor.openProblem(store.SymptomCloudSetup, now(), 0)
+	}
 	actor.publishState()
 	for {
 		select {
@@ -556,7 +563,7 @@ func (actor *Actor) handleCmd(command cmd) {
 		actor.pump()
 	case "tick":
 		if actor.holdsWork() {
-			actor.cloudTickDropped = actor.cloudTickDropped || actor.cloudHeld()
+			actor.cloudTickDropped = actor.cloudTickDropped || actor.cloudHeld() || actor.cloudTokenless()
 			// a switched-off workstation stays off: ticks are skipped, not
 			// queued, so power-on isn't met by a backlog of stale wakes —
 			// and the same goes for a refused model and a paused loop
@@ -570,7 +577,7 @@ func (actor *Actor) handleCmd(command cmd) {
 		actor.pump()
 	case "pause":
 		actor.paused = true
-		err := actor.cutOffCloud(context.Background(), "pause", store.EndReasonPaused)
+		err := actor.cutOffCloud(context.Background(), "pause", store.EndReasonPaused, false)
 		actor.publishState()
 		command.reply <- err
 	case "resume":
@@ -580,6 +587,8 @@ func (actor *Actor) handleCmd(command cmd) {
 		actor.pump()
 	case "cap":
 		actor.capChanged()
+	case "token":
+		actor.tokenChanged(context.Background())
 	case "cloud":
 		actor.cloudGateChanged()
 	case "handoff":
@@ -596,7 +605,7 @@ func (actor *Actor) handleCmd(command cmd) {
 		command.reply <- actor.requestRehome()
 		actor.publishState()
 	case "kill":
-		err := actor.cutOffCloud(context.Background(), "kill", store.EndReasonKilled)
+		err := actor.cutOffCloud(context.Background(), "kill", store.EndReasonKilled, true)
 		if actor.proc != nil {
 			actor.killProc("killed by the operator")
 			// exit handled via procEvents close
@@ -615,8 +624,9 @@ func (actor *Actor) handleCmd(command cmd) {
 		// edit's own row is what the next wake must be compared against,
 		// but only the actor knows what it last spawned with (#162)
 		actor.loop.PromptHash = token.PromptHash
-		// and a cloud loop's hub token, which the actor replaces with each
-		// session it starts: the edit's row may carry one already revoked
+		// and a cloud loop's hub token, which a kill revokes and Rotate
+		// token tells the actor of: the edit's row may carry one already
+		// revoked
 		actor.loop.HubMCPToken = token.HubMCPToken
 		// and where the loop runs: no edit changes it, and a rehome the
 		// actor made after the edit read its row must not be undone (#624)
@@ -674,8 +684,8 @@ func (actor *Actor) capped() bool {
 
 // held reports whether a cap stops the loop's next turn, its login's plan
 // cap or its own daily one, or for a cloud loop its public address
-// (cloudHeld).
-func (actor *Actor) held() bool { return actor.capped() || actor.cloudHeld() }
+// (cloudHeld) or its want of a hub token (cloudTokenless).
+func (actor *Actor) held() bool { return actor.capped() || actor.cloudHeld() || actor.cloudTokenless() }
 
 // capChanged follows the plan cap starting or stopping to hold. A lift
 // wakes the loop with whatever waited meanwhile, or with a tick when
@@ -778,15 +788,6 @@ func (actor *Actor) wake() {
 	prompt := actor.renderPrompt()
 	if fresh {
 		actor.mintSession(ctx)
-		if actor.loop.Runtime == store.RuntimeCloud {
-			// the session about to start holds this token for its life
-			if err := actor.mintHubToken(ctx); err != nil {
-				actor.log().Error("workstation not ready", "err", err)
-				actor.setWorkstationDown(DownReasonUnreachable, err.Error())
-				actor.crashBackoff()
-				return
-			}
-		}
 	}
 	actor.reconcilePrompt(ctx, fresh, prompt)
 	// The loop's connections are read fresh each wake, so an edit lands on

@@ -171,7 +171,9 @@ the interface, `internal/runtime/bare` runs host subprocesses,
 `claude` CLI: `claude --cloud` under a pseudo-terminal starts it from a loop home
 the hub builds for that start, `claude -p --cloud` sends each wake, and the home's
 hooks post the session's id and each turn back to the cloud listener's `/hooks`.
-Each session gets a hub token of its own, and a stop revokes it at once (ADR-0059).
+The loop's hub token outlives its sessions: Rotate token mints it and shows it once,
+the cloud listener refuses it while the loop is paused, and a kill revokes it until
+the next Rotate token (ADR-0061).
 The hub answers each start's `SessionStart` post with the loop's env-var
 connections as `export` lines, which the hook appends to `CLAUDE_ENV_FILE`;
 a reclaimed VM keeps that file. Settings → Cloud switches the cloud listener and sets and checks

@@ -64,7 +64,7 @@ func (server *Server) handleCloudHook(w, handOff http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
-	if !isCloudLoop(caller) {
+	if !runningCloudLoop(caller) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}

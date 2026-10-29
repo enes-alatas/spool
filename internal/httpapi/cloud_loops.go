@@ -125,3 +125,33 @@ func (server *Server) cloudSetup(ctx context.Context, current store.CloudSetup, 
 	}
 	return setup, nil
 }
+
+// handleRotateCloudToken is Rotate token (ADR-0061): it mints the cloud
+// loop a new hub token, which refuses the one it held at once, and answers
+// with it, once, for the operator to set as the loop's environment's
+// secret. The answer is text/plain, which the response redactor passes
+// as it is, uncached: no other answer of the hub's carries the token.
+// A loop a kill or the want of a token held wakes on it.
+func (server *Server) handleRotateCloudToken(w http.ResponseWriter, r *http.Request) {
+	loopRecord := server.loopByName(w, r)
+	if loopRecord == nil {
+		return
+	}
+	if loopRecord.Runtime != store.RuntimeCloud {
+		server.jsonErr(w, http.StatusBadRequest, "loop %s runs on the %s runtime: only a cloud loop's token is set by hand", loopRecord.Name, loopRecord.Runtime)
+		return
+	}
+	token, err := server.Store.Loops().RotateHubMCPToken(r.Context(), loopRecord.ID)
+	if err != nil {
+		server.jsonErr(w, http.StatusInternalServerError, "rotate the token: %v", err)
+		return
+	}
+	server.secretsChanged(r.Context())
+	if actor, ok := server.Manager.Get(loopRecord.ID); ok {
+		actor.TokenChanged()
+	}
+	server.Log.Info("cloud loop's token rotated", "loop", loopRecord.Name)
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write([]byte(token))
+}

@@ -238,8 +238,9 @@ func (table loops) Create(ctx context.Context, loopRecord *store.Loop) error {
 	// Workstation columns (runtime, image, mem_mb, cpus) and hub_mcp_token are
 	// set here and deliberately absent from Update: immutable after creation
 	// (ADR-0018, ADR-0026), the same enforcement-by-omission as
-	// current_session_id/current_pid.
-	if loopRecord.HubMCPToken == "" {
+	// current_session_id/current_pid. A cloud loop starts with none: its
+	// setup mints the one it shows once (ADR-0061).
+	if loopRecord.HubMCPToken == "" && loopRecord.Runtime != store.RuntimeCloud {
 		loopRecord.HubMCPToken = store.NewHubMCPToken()
 	}
 	if loopRecord.Subagents == "" {
@@ -468,6 +469,17 @@ func (table loops) RotateHubMCPToken(ctx context.Context, id string) (string, er
 		return "", store.ErrNotFound
 	}
 	return token, nil
+}
+
+func (table loops) RevokeHubMCPToken(ctx context.Context, id string) error {
+	result, err := table.db.ExecContext(ctx, `UPDATE loops SET hub_mcp_token='', hub_mcp_token_hash='' WHERE id=?`, id)
+	if err != nil {
+		return err
+	}
+	if rows, err := result.RowsAffected(); err == nil && rows == 0 {
+		return store.ErrNotFound
+	}
+	return nil
 }
 
 func (table loops) SetRuntime(ctx context.Context, id, sessionID string, pid int) error {
