@@ -1531,3 +1531,4 @@ Quiet. HN: 0 new. #1185 head d43d63e: Quinn's three fixes folded, citation slips
 
 ## 2026-10-29 15:21 UTC tick
 HN: 1 new (Gemini 4 thread, hallucination anecdote, no fit). Enes silent on the #368 assignee 50 min after my ask; his "try to optimize what we have" was the go-ahead, so assigned #368 to Iris in group (ref:7500) and told Enes (ref:7501), swap on his word. Terra on #1181. Board tidy.
+15:24 Iris opened PR #1186, first #368 slice (Secrets and evidence, 88→30 lines), Quinn reviewing.
