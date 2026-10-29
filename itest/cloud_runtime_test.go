@@ -528,3 +528,48 @@ func TestACloudSessionsMCPReconnectsBetweenTurns(t *testing.T) {
 		t.Errorf("the next turn's send: %+v, want it stored", sent)
 	}
 }
+
+// A cloud loop's session attaches only the repos the loop names: the
+// setup script's guard asks the hub about each add_repo call, which
+// takes only the loop's repos, and its deny rules refuse the
+// claude-code-remote tools that act on the account (ADR-0061). The
+// prompt names the loop's other repos for it to attach.
+func TestACloudLoopsAddRepoIsHeldToItsRepos(t *testing.T) {
+	t.Parallel()
+	hub := startCloudHub(t, "cirrus")
+	hub.mustJSON("POST", "/api/loops/cirrus/pause", nil, nil)
+	hub.mustJSON("PATCH", "/api/loops/cirrus", map[string]any{
+		"cloud_repo": "example-org/cirrus", "cloud_branch": "main", "cloud_repos": []string{"example-org/tools"},
+		"cloud_environment_id": cloudEnvironmentOf("cirrus"),
+	}, nil)
+	hub.mustJSON("POST", "/api/loops/cirrus/resume", nil, nil)
+
+	answered := map[string]bool{}
+	ask := func(line string) string {
+		hub.message("cirrus", line)
+		answer := hub.waitTurn("cirrus", 30*time.Second, func(turn turn) bool {
+			return !answered[turn.ID] && strings.Contains(turn.ResultText, "tool ")
+		})
+		answered[answer.ID] = true
+		return answer.ResultText
+	}
+	if got := ask(`!tool mcp__claude-code-remote__add_repo {"owner":"example-org","repo":"tools","access":"push"}`); got != "tool mcp__claude-code-remote__add_repo: called" {
+		t.Errorf("add_repo for the loop's other repo: %q, want it called", got)
+	}
+	got := ask(`!tool mcp__claude-code-remote__add_repo {"owner":"example-org","repo":"payroll","access":"push"}`)
+	if !strings.Contains(got, "refused") || !strings.Contains(got, "example-org/payroll is not one of this loop's repos") {
+		t.Errorf("add_repo for a repo the loop doesn't name: %q, want it refused with the hub's reason", got)
+	}
+	if !strings.Contains(hub.log(), "cloud hook refused") {
+		t.Error("the refused add_repo wasn't logged")
+	}
+	if got := ask(`!tool mcp__claude-code-remote__create_trigger {}`); got != "tool mcp__claude-code-remote__create_trigger: denied" {
+		t.Errorf("create_trigger: %q, want it denied", got)
+	}
+
+	vms := cloudVMs(t, hub)
+	context, err := os.ReadFile(filepath.Join(hub.fkState, "cloud", vms[len(vms)-1], "context"))
+	if err != nil || !strings.Contains(string(context), "Your other repos are example-org/tools.") {
+		t.Errorf("the session's context (%v) doesn't name the loop's other repos:\n%s", err, context)
+	}
+}

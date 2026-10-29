@@ -48,8 +48,15 @@ func TestSystemPromptWorkspaceSection(t *testing.T) {
 		{
 			name: "cloud session",
 			loop: store.Loop{Name: "c", Mission: "m", Runtime: store.RuntimeCloud,
-				WorkspaceMode: store.WorkspaceNone},
-			want:     "Claude Code cloud session on Anthropic's machines",
+				WorkspaceMode: store.WorkspaceNone, CloudRepo: "owner/first", CloudBranch: "main"},
+			want:     "Claude Code cloud session on Anthropic's machines, which\nstarts in a checkout of owner/first on branch main.",
+			dontWant: "add_repo",
+		},
+		{
+			name: "cloud session with other repos",
+			loop: store.Loop{Name: "c", Mission: "m", Runtime: store.RuntimeCloud, WorkspaceMode: store.WorkspaceNone,
+				CloudRepo: "owner/first", CloudBranch: "main", CloudRepos: []string{"owner/second", "other/third"}},
+			want:     "Your other repos are owner/second, other/third.\nTo work in one, attach it with the add_repo tool,",
 			dontWant: "workstation",
 		},
 	}

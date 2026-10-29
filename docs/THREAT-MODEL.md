@@ -444,8 +444,30 @@ and each turn's transcript lines back to the cloud listener (ADR-0059).
   `claude`'s readable memory (about 400 MB, 60 regions) found no `sk-ant`,
   `oat01`, JWT, `Authorization: Bearer` or `x-api-key` value, while
   `claude` itself authenticated.
+- **The account's own tools are denied, and `add_repo` is guarded.** The
+  setup script writes `permissions.deny` rules into the session's user
+  settings for every `claude-code-remote` tool runs M and M2 saw but
+  `add_repo`, `register_repo_root` and `list_repos`, which attaching the
+  loop's repos needs, and the start's `--settings` carries the same
+  rules. It also writes a `PreToolUse` guard on `add_repo`, which posts
+  the call to `/hooks`: the hub lets it go ahead only from the loop's
+  session, during a turn, for a repo the loop names, and logs each
+  refusal. A guard that can't reach the hub refuses (ADR-0061).
 
 **Doesn't hold:**
+- **The deny rules and the `add_repo` guard are guards, not a
+  boundary.** A shell in the VM runs as root and can edit the rules and
+  remove the hook. The first live start (#1190, comment 6526275151)
+  found none of the denied tools in the session's tool list, the
+  `always_allow` ones included, from the rules the setup script writes;
+  that the start's `--settings` copy reaches the session is unproven. A
+  tool a later CLI adds isn't denied until it is named. Unless the rules hold, a loop reaches
+  every repo of the account's GitHub user and every session and routine
+  on the claude.ai account (ADR-0061).
+- **Stop, kill and Rotate token end nothing a loop made on claude.ai.**
+  They act on the loop's hub token, so a routine from `create_trigger`
+  or a session from `create_session` outlives them. After killing a loop
+  that misbehaved, the operator checks claude.ai's routines and sessions.
 - **Cloud loops are one trust domain: a cloud loop is not isolated from
   the account's other cloud loops.** The shell is root and can read
   `/proc/<pid>/mem` of the session `claude` (no Yama `ptrace_scope`,

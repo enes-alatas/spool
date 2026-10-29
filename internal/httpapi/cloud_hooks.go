@@ -4,10 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"net/http"
 	"regexp"
+	"strings"
+
+	"github.com/enes-alatas/spool/internal/store"
 )
 
 // cloudHooksPath is the route a cloud session's hooks post to on the cloud
@@ -65,7 +69,9 @@ const cloudSessionHeader = "X-Spool-Session"
 // transcript's new lines for Stop. The parts are read into memory,
 // never a temporary file: the lines carry the loop's turn. 204 takes a
 // Stop post, 200 answers a SessionStart one with the loop's connections
-// and prompt, and 409 refuses either. w is the redacting writer every
+// and prompt, 204 lets the add_repo call of a PreToolUse one go ahead,
+// from the loop's session in a turn, for one of the loop's repos
+// (ADR-0061), and 409 refuses any of them. w is the redacting writer every
 // response goes through; handOff is the one written past it, the
 // SessionStart answer, whose values must arrive as they are (ADR-0059).
 func (server *Server) handleCloudHook(w, handOff http.ResponseWriter, r *http.Request) {
@@ -123,6 +129,14 @@ func (server *Server) handleCloudHook(w, handOff http.ResponseWriter, r *http.Re
 		}
 	case "Stop":
 		err = server.CloudHooks.Stop(r.Context(), caller.ID, post.session, post.hook, post.lines, false)
+	case "PreToolUse":
+		if !cloudSessionID.MatchString(post.session) {
+			refuse(http.StatusBadRequest, post.event, "no session id")
+			return
+		}
+		if err = server.CloudHooks.MCPCall(r.Context(), caller.ID, post.session); err == nil {
+			err = attachableRepo(caller, post.hook)
+		}
 	default:
 		refuse(http.StatusBadRequest, post.event, "no such hook")
 		return
@@ -200,4 +214,35 @@ func readPart(part io.Reader, limit int64) ([]byte, error) {
 		return nil, &http.MaxBytesError{Limit: limit}
 	}
 	return read, nil
+}
+
+// attachableRepo refuses an add_repo call whose hook input names a repo
+// the loop doesn't, its first or one of its others (ADR-0061). GitHub
+// names are case-blind, so the match is too. The input's shape is the
+// one run M saw, owner and repo apart; a repo given as owner/name alone
+// is read so too.
+func attachableRepo(caller *store.Loop, hook []byte) error {
+	var input struct {
+		ToolInput struct {
+			Owner string `json:"owner"`
+			Repo  string `json:"repo"`
+		} `json:"tool_input"`
+	}
+	if err := json.Unmarshal(hook, &input); err != nil {
+		return errors.New("the call's input can't be read")
+	}
+	named := input.ToolInput.Repo
+	if input.ToolInput.Owner != "" {
+		named = input.ToolInput.Owner + "/" + named
+	}
+	owner, name, ok := strings.Cut(named, "/")
+	if !ok || owner == "" || name == "" || strings.Contains(name, "/") {
+		return errors.New("the call names no owner/name repo")
+	}
+	for _, repo := range append([]string{caller.CloudRepo}, caller.CloudRepos...) {
+		if repo != "" && strings.EqualFold(repo, named) {
+			return nil
+		}
+	}
+	return fmt.Errorf("%s is not one of this loop's repos", named)
 }

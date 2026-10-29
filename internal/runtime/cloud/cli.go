@@ -988,14 +988,19 @@ func (cli *CLI) ownDir() error {
 }
 
 // startSettings is the --settings a start runs with: the loop's
-// environment (ADR-0061), built by the encoder. With none there is no
-// start, since the CLI would pick one of the account's environments by
-// itself.
+// environment (ADR-0061), built by the encoder, and the deny rules the
+// setup script writes too. The first live start found the VM's copy of
+// the rules holding, and couldn't tell whether this one reaches the
+// session (#1190). With no environment there is no start, since the
+// CLI would pick one of the account's environments by itself.
 func startSettings(environmentID string) (string, error) {
 	if environmentID == "" {
 		return "", errors.New("cloud: the loop has no environment")
 	}
-	raw, err := json.Marshal(map[string]any{"remote": map[string]string{"defaultEnvironmentId": environmentID}})
+	raw, err := json.Marshal(map[string]any{
+		"remote":      map[string]string{"defaultEnvironmentId": environmentID},
+		"permissions": map[string]any{"deny": deniedTools()},
+	})
 	return string(raw), err
 }
 

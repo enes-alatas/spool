@@ -176,8 +176,10 @@ binds a start to the session the CLI's `View:` line names. The environment, whic
 the operator creates by hand, carries Spool's setup script, the same text for every
 cloud loop of a hub (`cloud.SetupScript`), which writes the cloud listener as the
 session's MCP server and the hooks that post the session's id and each turn back to
-its `/hooks`, and the loop's hub token as its network secret, which the egress proxy
-adds to every request for the hub's host: the token never enters the VM.
+its `/hooks`, with a guard that holds `add_repo` to the loop's repos and deny rules
+for the `claude-code-remote` tools that act on the account; and the loop's hub token
+as its network secret, which the egress proxy adds to every request for the hub's
+host: the token never enters the VM.
 The token outlives the loop's sessions and the hub keeps only its hash: Rotate token
 (`POST /api/loops/{name}/cloud/token`) stops the loop, mints it and shows it once,
 the cloud listener refuses it while the loop is paused, and a kill revokes it until

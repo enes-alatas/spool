@@ -109,7 +109,8 @@ func hookServerRedacting(t *testing.T, hooks CloudHooks, redacted func(http.Hand
 	}
 	t.Cleanup(func() { db.Close() })
 	for _, loopRecord := range []store.Loop{
-		{ID: "l-cloud", Name: "cirrus", Runtime: store.RuntimeCloud, HubMCPToken: cloudLoopToken},
+		{ID: "l-cloud", Name: "cirrus", Runtime: store.RuntimeCloud, HubMCPToken: cloudLoopToken,
+			CloudRepo: "example-org/cirrus", CloudBranch: "main", CloudRepos: []string{"example-org/second"}},
 		{ID: "l-docker", Name: "aster", Runtime: store.RuntimeDocker, HubMCPToken: containedLoopToken},
 	} {
 		loopRecord.Status, loopRecord.WorkspaceMode, loopRecord.Pacing = store.StatusActive, store.WorkspaceNone, store.PacingFixed
@@ -401,6 +402,46 @@ func TestCloudMCPTakesOnlyTheSessionTheRuntimeAdmits(t *testing.T) {
 	want := []hookCall{session, turn, session, turn, session, turn, session, turn, session}
 	if calls := hooks.taken(); !slices.Equal(calls, want) {
 		t.Errorf("the runtime was asked %+v, want %+v", calls, want)
+	}
+}
+
+// The add_repo guard's post goes ahead only for one of the loop's repos,
+// in any case, from the session the runtime admits (ADR-0061).
+func TestCloudHookRouteHoldsAddRepoToTheLoopsRepos(t *testing.T) {
+	hooks := &recordingHooks{}
+	handler := hookServer(t, hooks)
+	guard := func(toolInput, session string) int {
+		body, contentType := hookForm(t,
+			[2]string{"hook", `{"hook_event_name":"PreToolUse","tool_name":"mcp__claude-code-remote__add_repo","tool_input":` + toolInput + `}`},
+			[2]string{"session", session})
+		return postHook(handler, cloudLoopToken, body, contentType)
+	}
+	for _, input := range []string{
+		`{"owner":"example-org","repo":"second","access":"push"}`,
+		`{"owner":"Example-Org","repo":"Cirrus"}`,
+		`{"repo":"example-org/second"}`,
+	} {
+		if code := guard(input, "cse_01Synthetic"); code != http.StatusNoContent {
+			t.Errorf("add_repo %s: %d, want 204", input, code)
+		}
+	}
+	for _, input := range []string{
+		`{"owner":"example-org","repo":"third"}`,
+		`{"owner":"other-org","repo":"second"}`,
+		`{"repo":"second"}`,
+		`{"owner":"example-org","repo":"second/extra"}`,
+		`"example-org/second"`,
+	} {
+		if code := guard(input, "cse_01Synthetic"); code != http.StatusConflict {
+			t.Errorf("add_repo %s: %d, want 409", input, code)
+		}
+	}
+	if code := guard(`{"owner":"example-org","repo":"second"}`, ""); code != http.StatusBadRequest {
+		t.Errorf("add_repo naming no session: %d, want 400", code)
+	}
+	hooks.refuse = errors.New("cloud: the request isn't from the loop's session")
+	if code := guard(`{"owner":"example-org","repo":"second"}`, "cse_01ByHand"); code != http.StatusConflict {
+		t.Errorf("add_repo from a session the runtime refuses: %d, want 409", code)
 	}
 }
 

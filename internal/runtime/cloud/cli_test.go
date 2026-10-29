@@ -2,6 +2,7 @@ package cloud
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -144,9 +145,11 @@ sleep 30
 		t.Fatal(err)
 	}
 	got := string(raw)
+	denied, _ := json.Marshal(deniedTools())
+	settings := `{"permissions":{"deny":` + string(denied) + `},"remote":{"defaultEnvironmentId":"` + testEnvironment + `"}}`
 	for _, want := range []string{
 		"terminal\n",
-		"args: --cloud first words --permission-mode auto --settings {\"remote\":{\"defaultEnvironmentId\":\"" + testEnvironment + "\"}} --ref main\n",
+		"args: --cloud first words --permission-mode auto --settings " + settings + " --ref main\n",
 		"token: " + testAccount.Token + "\n",
 		`"hasCompletedOnboarding":true`,
 		`"organizationUuid":"` + testAccount.OrgUUID + `"`,
