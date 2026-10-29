@@ -12,10 +12,8 @@ humans and each other. This file orients you; it links, it doesn't duplicate.
 4. `docs/QUALITY.md` — baselines and CI gates
    (`docs/THREAT-MODEL.md` beside it: what each boundary holds and does not)
 5. `docs/adr/` — why things are the way they are; never contradict an accepted
-   ADR silently. A narrowing or clarification is a dated in-place
-   `**Amendment (YYYY-MM-DD, #n):**` block that adds lines; a reversal is a
-   new, superseding ADR. Existing lines stay as accepted — `/amend-adr`
-   lists the three exceptions (a bare rename, a rewrap, bookkeeping) (#141)
+   ADR silently: amend it with a dated block that only adds lines, or
+   reverse it with a new ADR (`/amend-adr`, #141)
 
 ## Non-negotiables (digest — CONVENTIONS.md is authoritative)
 
@@ -47,17 +45,17 @@ humans and each other. This file orients you; it links, it doesn't duplicate.
 
 ## Working agreement (digest — ADR-0015)
 
-- Lifecycle: typed issue → `git fetch` and branch off fresh `main` → implement
-  → self-check → PR → stop for review. "Fresh" means synced with `origin/main`,
-  not a local `main` you assume is current — verify, since the checkout can lag
-  the remote. Reviews may come from humans or agents; merging needs a human
-  approval.
+- Lifecycle: typed issue → `git fetch` and branch off `origin/main` →
+  implement → self-check → PR → stop for review. Reviews may come from humans
+  or agents; merging needs a human approval, and the merge request comes
+  from the reviewer, never the author.
 - Issue-first for anything non-trivial (behavior, seams, deps, prompts, docs of
   record). Trivial mechanical fixes may skip it — the PR's Issue section says why.
-- Done means: `make lint && make test && make itest` green locally, docs of
-  record updated in the same PR, template filled. A change that removes,
-  renames or re-routes a flow updates its copy, or files and links the
-  other seam's issue before the merge ask (#793).
+- Done means: `make lint && make test && make itest` green locally (plus
+  `npm run lint`, `npm run format:check` and `npm test` when `web/` changes),
+  docs of record updated in the same PR, template filled. A removed, renamed
+  or re-routed flow updates its copy in the same PR; copy in another owner's
+  seam gets an issue there, linked before the merge ask (#793).
 - Commits are atomic and land verbatim (rebase-merge, ADR-0016): one logical
   change each, self-standing, Conventional. Review fixes fold into their origin
   commit — use `/review-fix`; never add "address review" commits.
@@ -65,10 +63,10 @@ humans and each other. This file orients you; it links, it doesn't duplicate.
   new dep, seam/prompt contract, terminology, API shape, security posture,
   real-token runs — stop, interview the human, record an ADR. Where stopping
   would idle the PR and the work holds under either answer, flag and continue:
-  the PR carries an `Operator decision pending:` line, which blocks the merge
-  until you delete it and tell the reviewer. A question from the operator is a
-  question. Reprioritizing or interrupting in-flight work takes an explicit
-  yes; finished work gets its PR before any redirect.
+  the PR's Notes / Risks carries an `Operator decision pending:` line, which
+  blocks the merge until you delete it and tell the reviewer (#192). A question from the operator is a question;
+  reprioritizing or interrupting in-flight work takes an explicit yes, and
+  finished work gets its PR before any redirect.
 
 ## Commands
 
