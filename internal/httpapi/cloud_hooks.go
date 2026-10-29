@@ -10,7 +10,7 @@ import (
 	"regexp"
 )
 
-// cloudHooksPath is the route a loop home's hooks post to on the cloud
+// cloudHooksPath is the route a cloud session's hooks post to on the cloud
 // listener, beside /mcp (ADR-0059). It is the cloud runtime's HooksPath.
 const cloudHooksPath = "/hooks"
 
@@ -47,14 +47,14 @@ type CloudHooks interface {
 	SessionPosted(loopID string)
 }
 
-// handleCloudHook serves a loop home's hook post: a multipart form with the
-// hook's input as its hook field, the session id for SessionStart, and the
-// transcript's new lines for Stop. The parts are read into memory, never a
-// temporary file: the lines carry the loop's turn. 204 takes a Stop post,
-// 200 answers a SessionStart one with the loop's connections, and 409
-// refuses either. w is the redacting writer every response goes through;
-// handOff is the one written past it, the connections' answer, whose
-// values must arrive as they are (ADR-0059).
+// handleCloudHook serves a cloud session's hook post: a multipart form with
+// the hook's input as its hook field, the session id for SessionStart, and
+// the transcript's new lines for Stop. The parts are read into memory,
+// never a temporary file: the lines carry the loop's turn. 204 takes a
+// Stop post, 200 answers a SessionStart one with the loop's connections
+// and prompt, and 409 refuses either. w is the redacting writer every
+// response goes through; handOff is the one written past it, the
+// SessionStart answer, whose values must arrive as they are (ADR-0059).
 func (server *Server) handleCloudHook(w, handOff http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost || server.CloudHooks == nil {
 		http.NotFound(w, r)

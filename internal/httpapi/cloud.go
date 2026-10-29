@@ -54,11 +54,12 @@ func CloudHTTPServer(handler http.Handler) *http.Server {
 // cloud loop's token alone, the address check, and the hooks' route while
 // CloudHooks is set. Every response goes through redacted, the hub's
 // response redactor, which rewrites JSON and event-stream bodies, but one:
-// the connections a SessionStart post is answered with, text/plain, which
-// the hooks' route writes past it on purpose (ADR-0059). The route's other
-// text/plain answers, its refusals and 404s, carry no secret. Every other
-// path is 404, the brokered servers' included: they carry organisation
-// credentials, and putting them on the internet is a decision of its own.
+// the SessionStart answer, the connections and the prompt as text/plain,
+// which the hooks' route writes past it on purpose (ADR-0059). The
+// route's other text/plain answers, its refusals and 404s, carry no
+// secret. Every other path is 404, the brokered servers' included: they
+// carry organisation credentials, and putting them on the internet is a
+// decision of its own.
 func (server *Server) CloudHandler(redacted func(http.Handler) http.Handler) http.Handler {
 	mcpHandler := server.mcpHandler(runningCloudLoop)
 	return http.HandlerFunc(func(unredacted http.ResponseWriter, r *http.Request) {

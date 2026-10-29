@@ -18,11 +18,12 @@ const CloudCheckFresh = time.Minute
 // gate is the fleet's: it holds them all while the last check failed,
 // while none has run, once the last pass is older than CloudCheckFresh,
 // while the address stored is not the one that passed, and while the rest
-// of Settings → Cloud isn't set up: no account is signed in, or no
-// environment is chosen (ADR-0059). Cloud loops fail closed (ADR-0056).
+// of Settings → Cloud isn't set up: no account is signed in (ADR-0059).
+// A loop's own setup, its repo, environment and token, holds that loop
+// alone (ADR-0061). Cloud loops fail closed (ADR-0056).
 type CloudGate struct {
 	// address reads the public address as stored now, "" for none, and
-	// setUp whether an account is signed in and an environment chosen.
+	// setUp whether an account is signed in.
 	address func() (string, error)
 	setUp   func() (bool, error)
 	recheck chan struct{} // asks the checker for a check; holds at most one
@@ -41,7 +42,7 @@ type CloudGate struct {
 
 // NewCloudGate returns a gate that holds until a check first passes. It
 // reads the address it guards with address, and with setUp whether an
-// account is signed in and an environment chosen.
+// account is signed in.
 func NewCloudGate(address func() (string, error), setUp func() (bool, error)) *CloudGate {
 	return &CloudGate{address: address, setUp: setUp, recheck: make(chan struct{}, 1)}
 }
@@ -75,8 +76,7 @@ func (gate *CloudGate) Record(address string, passed bool, at int64) {
 }
 
 // SetupChanged tells OnChange that an account was signed in or removed,
-// or an environment chosen or cleared, which holds or lets go every cloud
-// loop as a check does.
+// which holds or lets go every cloud loop as a check does.
 func (gate *CloudGate) SetupChanged() {
 	gate.mu.Lock()
 	notify := gate.onChange

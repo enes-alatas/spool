@@ -248,10 +248,12 @@ func (database *DB) forgetSecrets(at int64) error {
 	if err != nil {
 		return err
 	}
+	// a cloud loop's token is kept only as its hash, which needs no key
+	// (ADR-0061), so it is left as it is
 	for _, id := range ids {
 		token := store.NewHubMCPToken()
-		if _, err := tx.ExecContext(ctx, `UPDATE loops SET hub_mcp_token=?, hub_mcp_token_hash=? WHERE id=?`,
-			database.sealer.seal(token), tokenHash(token), id); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE loops SET hub_mcp_token=?, hub_mcp_token_hash=? WHERE id=? AND runtime<>?`,
+			database.sealer.seal(token), tokenHash(token), id, store.RuntimeCloud); err != nil {
 			return err
 		}
 	}

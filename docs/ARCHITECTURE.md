@@ -168,15 +168,26 @@ The SandboxRuntime seam is live with three implementations: `internal/runtime` o
 the interface, `internal/runtime/bare` runs host subprocesses,
 `internal/runtime/docker` runs workstations through the docker CLI (ADR-0018), and
 `internal/runtime/cloud` runs each loop in a Claude Code cloud session through the
-`claude` CLI: `claude --cloud` under a pseudo-terminal starts it from a loop home
-the hub builds for that start, `claude -p --cloud` sends each wake, and the home's
-hooks post the session's id and each turn back to the cloud listener's `/hooks`.
-The loop's hub token outlives its sessions: Rotate token mints it and shows it once,
+`claude` CLI (ADR-0061): `claude --cloud` under a pseudo-terminal starts it from
+the loop's GitHub repo, from an empty start directory whose `origin` is that repo,
+with `--ref` naming its branch and `--settings` the loop's own claude.ai
+environment, and nothing uploaded; `claude -p --cloud` sends each wake. The hub
+binds a start to the session the CLI's `View:` line names. The environment, which
+the operator creates by hand, carries Spool's setup script, the same text for every
+cloud loop of a hub (`cloud.SetupScript`), which writes the cloud listener as the
+session's MCP server and the hooks that post the session's id and each turn back to
+its `/hooks`, and the loop's hub token as its network secret, which the egress proxy
+adds to every request for the hub's host: the token never enters the VM.
+The token outlives the loop's sessions and the hub keeps only its hash: Rotate token
+(`POST /api/loops/{name}/cloud/token`) stops the loop, mints it and shows it once,
 the cloud listener refuses it while the loop is paused, and a kill revokes it until
-the next Rotate token (ADR-0061).
+the next Rotate token. A cloud loop whose repo, environment or token isn't set is
+held with a `cloud_setup` problem.
 The hub answers each start's `SessionStart` post with the loop's env-var
-connections as `export` lines, which the hook appends to `CLAUDE_ENV_FILE`;
-a reclaimed VM keeps that file. Settings → Cloud switches the cloud listener and sets and checks
+connections as `export` lines, which the hook appends to `CLAUDE_ENV_FILE`, and the
+loop's prompt, which it adds to the session's context; a compaction's or a
+`/clear`'s post from the loop's session, during a turn, gets the prompt again.
+A reclaimed VM keeps the env file. Settings → Cloud switches the cloud listener and sets and checks
 the public address (`/api/settings/cloud`), and a cloud loop takes a turn
 only within a minute of a check that passed. It also signs in to the
 account by running the Claude Code CLI's own login, `claude auth login`, in a
@@ -184,19 +195,17 @@ config directory of the hub's with the CLI's nonessential traffic off, and
 keeps the tokens sealed. The CLI is the host's, or on a hub with none, the
 workstation image's, in a throwaway container behind the egress wall that
 sees only that directory.
-Its last step picks the one environment every cloud loop starts in, by name
-from the account's list (one read-only `GET /v1/environment_providers`, the
-call ADR-0059 keeps), or by a pasted ID when the list fails. Each start passes
-the ID through `--settings`. The step serves the allowlist to paste into the
-environment and keeps the operator's confirm of it as the hub's state.
-Once the steps
-are green, `POST /api/loops` takes `runtime: cloud`; the loop's view carries its
-current session's page on claude.ai, and a warning while the list isn't
-confirmed. A cloud loop never moves runtime. The repo
-field went with the sessions client (ADR-0059). On v0.6.x a cloud loop in an
-Anthropic-hosted environment reaches no GitHub repo: Anthropic's GitHub proxy
-serves only repositories attached to the session, the start attaches none, and
-a `GH_TOKEN` connection doesn't change that (#1168).
+Its last step lists the account's environments, by name (one read-only
+`GET /v1/environment_providers`, the call ADR-0059 keeps), for a loop to pick
+its own from, or a pasted ID when the list fails; the step's own pick and its
+allowlist confirm go with the control room's (#1182, #1183), and no start reads
+them. Once the steps
+are green, `POST /api/loops` takes `runtime: cloud`, with the loop's repo,
+branch, further repos and environment, which a PATCH changes only while the loop
+is stopped; the loop's view carries its current session's page on claude.ai,
+and a warning while the list isn't confirmed. A cloud loop never moves runtime.
+The session's GitHub reach is Claude's GitHub App through the account's connection,
+which covers every repository that GitHub user's installations do (ADR-0061).
 Each docker workstation sits on an internal network of its own, shared with
 the proxy alone and with no route off it; its only
 way out is `spool-egress-proxy`, a container running `cmd/spool-egress` that

@@ -428,11 +428,7 @@ func main() {
 		return storedSetting(rdb.Settings(), store.SettingCloudAddress)
 	}, func() (bool, error) {
 		_, signedIn, err := store.SignedInAccount(context.Background(), rdb.ClaudeLogins(), store.DefaultClaudeLogin)
-		if err != nil || !signedIn {
-			return false, err
-		}
-		environment, err := chosenCloudEnvironment(rdb.Settings())
-		return environment != "", err
+		return signedIn, err
 	})
 	deps := loop.Deps{
 		Store:                     rdb,

@@ -509,7 +509,7 @@ func (actor *Actor) Shutdown() {
 
 func (actor *Actor) run() {
 	defer close(actor.stopped)
-	if actor.cloudTokenless() {
+	if actor.cloudUnset() {
 		actor.openProblem(store.SymptomCloudSetup, now(), 0)
 	}
 	actor.publishState()
@@ -563,7 +563,7 @@ func (actor *Actor) handleCmd(command cmd) {
 		actor.pump()
 	case "tick":
 		if actor.holdsWork() {
-			actor.cloudTickDropped = actor.cloudTickDropped || actor.cloudHeld() || actor.cloudTokenless()
+			actor.cloudTickDropped = actor.cloudTickDropped || actor.cloudHeld() || actor.cloudUnset()
 			// a switched-off workstation stays off: ticks are skipped, not
 			// queued, so power-on isn't met by a backlog of stale wakes —
 			// and the same goes for a refused model and a paused loop
@@ -627,7 +627,7 @@ func (actor *Actor) handleCmd(command cmd) {
 		// and a cloud loop's hub token, which a kill revokes and Rotate
 		// token tells the actor of: the edit's row may carry one already
 		// revoked
-		actor.loop.HubMCPToken = token.HubMCPToken
+		actor.loop.HubMCPToken, actor.loop.HasHubToken = token.HubMCPToken, token.HasHubToken
 		// and where the loop runs: no edit changes it, and a rehome the
 		// actor made after the edit read its row must not be undone (#624)
 		actor.loop.Runtime, actor.loop.WorkspaceMode, actor.loop.WorkspacePath = token.Runtime, token.WorkspaceMode, token.WorkspacePath
@@ -658,6 +658,11 @@ func (actor *Actor) handleCmd(command cmd) {
 			actor.pump()
 			return
 		}
+		// a cloud loop's edit may have set its repo or environment, which
+		// lets a loop held for its setup go
+		if actor.loop.Runtime == store.RuntimeCloud {
+			actor.cloudSetupChanged()
+		}
 		// the edit may have set, raised or removed the loop's daily cap, or
 		// moved it to another Claude login's plan cap: one that no longer
 		// holds wakes it, as a lifted plan cap does
@@ -684,8 +689,8 @@ func (actor *Actor) capped() bool {
 
 // held reports whether a cap stops the loop's next turn, its login's plan
 // cap or its own daily one, or for a cloud loop its public address
-// (cloudHeld) or its want of a hub token (cloudTokenless).
-func (actor *Actor) held() bool { return actor.capped() || actor.cloudHeld() || actor.cloudTokenless() }
+// (cloudHeld) or its own setup unfinished (cloudUnset).
+func (actor *Actor) held() bool { return actor.capped() || actor.cloudHeld() || actor.cloudUnset() }
 
 // capChanged follows the plan cap starting or stopping to hold. A lift
 // wakes the loop with whatever waited meanwhile, or with a tick when
@@ -810,6 +815,18 @@ func (actor *Actor) wake() {
 		actor.setWorkstationDown(DownReasonUnreachable, fmt.Sprintf("no %q runtime available", actor.loop.Runtime))
 		actor.crashBackoff()
 		return
+	}
+	if actor.loop.Runtime == store.RuntimeCloud {
+		// checked again at each start, whatever wrote the row: the repo and
+		// branch go into the start's git commands and argv (ADR-0061)
+		setup := store.CloudSetup{Repo: actor.loop.CloudRepo, Branch: actor.loop.CloudBranch,
+			Repos: actor.loop.CloudRepos, EnvironmentID: actor.loop.CloudEnvironmentID}
+		if err := setup.Check(); err != nil {
+			actor.log().Error("workstation not ready", "err", err)
+			actor.setWorkstationDown(DownReasonUnreachable, err.Error())
+			actor.crashBackoff()
+			return
+		}
 	}
 	system := map[string]string{}
 	if needsClaudeToken(loopRuntime) {
@@ -1174,6 +1191,12 @@ func (actor *Actor) wakeSpec(fresh bool, prompt string, connections []*store.Con
 		CPUs:               actor.loop.CPUs,
 		AppendSystemPrompt: prompt,
 		PartialMessages:    actor.deps.PartialMessages,
+	}
+	if actor.loop.Runtime == store.RuntimeCloud {
+		// no token: the session reaches the hub on the environment's secret
+		spec.Cloud = runtime.CloudStart{
+			Repo: actor.loop.CloudRepo, Branch: actor.loop.CloudBranch, EnvironmentID: actor.loop.CloudEnvironmentID,
+		}
 	}
 	if actor.deps.MCPEndpoint != nil && actor.loop.HubMCPToken != "" {
 		if url := actor.deps.MCPEndpoint(&actor.loop); url != "" {

@@ -4,6 +4,8 @@ package itest
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -28,12 +30,15 @@ func cloudVMs(t *testing.T, s *server) []string {
 }
 
 // A cloud loop driven through the CLI starts its session with `claude
-// --cloud` on a terminal, in a loop home whose SessionStart hook tells the
-// hub the session's id. Each turn comes back by the home's Stop hook, and
-// the next wake sends into the same session with `claude -p --cloud`. The
-// home's hooks did nothing when the local CLI fired SessionStart on the
-// hub's own machine, where there is no remote session (#957, run E3).
-func TestCloudCLILoopReadsItsTurnsBackFromItsHooks(t *testing.T) {
+// --cloud` on a terminal, from a start directory: an empty repo whose
+// origin is the loop's repo on GitHub, with --ref naming its branch and
+// --settings its environment, and nothing bundled (ADR-0061). The session
+// runs the environment's setup script, whose SessionStart hook tells the
+// hub the session's id and adds the hub's prompt to its context. Each turn
+// comes back by the Stop hook, and the next wake sends into the same
+// session with `claude -p --cloud`. The token never enters the VM: the
+// egress proxy adds it as the environment's secret.
+func TestCloudCLILoopStartsFromItsRepoAndReadsItsTurnsBack(t *testing.T) {
 	t.Parallel()
 	s := startCloudHub(t, "cirrus")
 
@@ -46,17 +51,32 @@ func TestCloudCLILoopReadsItsTurnsBackFromItsHooks(t *testing.T) {
 	if len(vms) != 1 {
 		t.Fatalf("one start made %d sessions, want 1", len(vms))
 	}
+	vm := filepath.Join(s.fkState, "cloud", vms[0])
 	var viewed cloudLoopJSON
 	s.mustJSON("GET", "/api/loops/cirrus", nil, &viewed)
 	if viewed.CloudSessionURL != "https://claude.ai/code/"+vms[0] {
 		t.Errorf("the loop's session link = %q, want the session its SessionStart posted", viewed.CloudSessionURL)
 	}
-	local, err := os.ReadFile(filepath.Join(s.fkState, "cloud", vms[0], "local-session-starts"))
-	if err != nil || strings.Count(string(local), "exit=<nil>") != 1 || strings.Contains(string(local), `output=""`) == false {
-		t.Errorf("the local SessionStart hook ran as %q (%v), want once, quiet and clean", local, err)
+	args, _ := os.ReadFile(filepath.Join(vm, "cli-args"))
+	wantArgs := "first words\n--permission-mode\nauto\n--settings\n" +
+		`{"remote":{"defaultEnvironmentId":"` + cloudEnvironmentOf("cirrus") + `"}}` + "\n--ref\nmain\n"
+	if !strings.HasPrefix(string(args), "--cloud\n") || !strings.HasSuffix(string(args), wantArgs) {
+		t.Errorf("the start ran with\n%s\nwant --cloud, the wake, and then\n%s", args, wantArgs)
+	}
+	if repo, err := os.ReadFile(filepath.Join(vm, "repo", "CLAUDE.md")); err != nil || string(repo) != "The repo example-org/cirrus.\n" {
+		t.Errorf("the session's repo holds %q (%v), want a clone of example-org/cirrus", repo, err)
+	}
+	if context, err := os.ReadFile(filepath.Join(vm, "context")); err != nil || !strings.Contains(string(context), "cirrus") {
+		t.Errorf("the session's context is %q (%v), want the hub's prompt", context, err)
+	}
+	if vmHolds(t, s, vms[0], cloudTokenOf("cirrus")) {
+		t.Error("the VM holds the loop's token")
+	}
+	if _, err := os.Stat(filepath.Join(vm, "local-session-starts")); err == nil {
+		t.Error("the local CLI fired a SessionStart hook: the start directory holds none")
 	}
 	if strings.Contains(s.log(), "cloud hook refused") {
-		t.Errorf("the hub refused a hook post, the local one's among them:\n%s", s.log())
+		t.Errorf("the hub refused a hook post:\n%s", s.log())
 	}
 
 	s.waitState("cirrus", "asleep", 20*time.Second)
@@ -68,12 +88,71 @@ func TestCloudCLILoopReadsItsTurnsBackFromItsHooks(t *testing.T) {
 	if vms := cloudVMs(t, s); len(vms) != 1 {
 		t.Errorf("a second wake made %d sessions, want it to send into the one", len(vms))
 	}
-	homes, _ := filepath.Glob(filepath.Join(os.TempDir(), "spool-cloud-*", "spool-home-*", "CLAUDE.md"))
-	for _, home := range homes {
-		if prompt, _ := os.ReadFile(home); strings.Contains(string(prompt), "cirrus") {
-			t.Errorf("a loop home outlived its start: %s", filepath.Dir(home))
-		}
+	starts, _ := filepath.Glob(filepath.Join(hubCLIDir(s.dataDir), "spool-start-*"))
+	if len(starts) != 0 {
+		t.Errorf("start directories outlived their starts: %v", starts)
 	}
+}
+
+// A session that compacts loses the context SessionStart gave it. Its
+// post from the loop's session, during a turn, is answered with the
+// prompt alone: the hook adds it as context again and leaves the env
+// file as the first start wrote it (ADR-0061).
+func TestACompactedCloudSessionIsHandedItsPromptAgain(t *testing.T) {
+	t.Parallel()
+	hub := startCloudHub(t, "nimbus")
+	if resp, body := hub.do("POST", "/api/connections", map[string]any{
+		"name": "github", "kind": "env-var", "config": map[string]any{"env": "GH_TOKEN"}, "secret": "synthetic-gh-value",
+	}); resp.StatusCode != 201 {
+		t.Fatalf("creating the connection: %d %s", resp.StatusCode, body)
+	}
+	if resp, body := hub.do("PUT", "/api/loops/nimbus/connections/github", nil); resp.StatusCode != 204 {
+		t.Fatalf("attaching the connection: %d %s", resp.StatusCode, body)
+	}
+	hub.message("nimbus", "first words")
+	hub.waitTurn("nimbus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "first words") })
+	vms := cloudVMs(t, hub)
+	if len(vms) != 1 {
+		t.Fatalf("one start made %d sessions, want 1", len(vms))
+	}
+	vm := filepath.Join(hub.fkState, "cloud", vms[0])
+	prompt, err := os.ReadFile(filepath.Join(vm, "context"))
+	if err != nil || !strings.Contains(string(prompt), "nimbus") {
+		t.Fatalf("the session's first context is %q (%v), want the hub's prompt", prompt, err)
+	}
+	env, err := os.ReadFile(filepath.Join(vm, "claude-env"))
+	if err != nil || len(env) == 0 {
+		t.Fatalf("the session's env file is %q (%v), want the loop's connections", env, err)
+	}
+
+	hub.waitState("nimbus", "asleep", 20*time.Second)
+	hub.message("nimbus", "!compact\nsecond words")
+	compacted := hub.waitTurn("nimbus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "second words") })
+	if compacted.IsError {
+		t.Fatalf("the compacted turn: %+v", compacted)
+	}
+	if context, _ := os.ReadFile(filepath.Join(vm, "context")); string(context) != string(prompt)+string(prompt) {
+		t.Errorf("the session's context after compacting is\n%s\nwant the prompt twice", context)
+	}
+	if again, _ := os.ReadFile(filepath.Join(vm, "claude-env")); string(again) != string(env) {
+		t.Errorf("compacting changed the session's env file:\n%s\nwant\n%s", again, env)
+	}
+	if !strings.Contains(hub.log(), "a session was handed its loop's prompt again") {
+		t.Errorf("the compaction's post wasn't logged as answered:\n%s", hub.log())
+	}
+	if strings.Contains(hub.log(), "cloud hook refused") {
+		t.Errorf("the hub refused a hook post:\n%s", hub.log())
+	}
+}
+
+// hubCLIDir is where the hub at dataDir makes its cloud CLI runs, as
+// cmd/spool names it.
+func hubCLIDir(dataDir string) string {
+	if abs, err := filepath.Abs(dataDir); err == nil {
+		dataDir = abs
+	}
+	sum := sha256.Sum256([]byte(dataDir))
+	return filepath.Join(os.TempDir(), "spool-cloud-"+hex.EncodeToString(sum[:6]))
 }
 
 // CLI 2.1.310 ends `--cloud` once it has created the session, before the
@@ -115,7 +194,7 @@ func TestCloudHookRouteRefusesASessionStartItIsNotWaitingFor(t *testing.T) {
 	// once a turn has ended, no start of the loop is pending
 	s.message("nimbus", "hello")
 	s.waitTurn("nimbus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "hello") })
-	token := hubMCPToken(t, s, "nimbus")
+	token := cloudTokenOf("nimbus")
 	if got := postHook(t, s, token, ""); got != http.StatusBadRequest {
 		t.Errorf("a SessionStart with no session id: %d, want 400", got)
 	}

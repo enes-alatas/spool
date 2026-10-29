@@ -1,6 +1,6 @@
 # ADR-0061: A cloud loop starts from its GitHub repo, in an environment of its own
 
-Date: 2026-10-28 · Status: accepted (operator decision of 2026-10-29 on #1180, comment 6498693769: the flow as written, with multi-repo loops; the operator decision of 2026-10-29 on #1185, comment 6498931340: the deny rules and the `add_repo` guard of item 2, with a dedicated GitHub user recommended, not required; the operator decision of 2026-10-28 on #1168: the setup-script route, with the token as an environment variable; the network secret in its place is Terra's correction of the same day on #1180, comment 6478145150, agreed by Elliot in 6478162314, which narrows that posture; and the operator decision of 2026-10-29 on #1180, comment 6493335622, that a kill revokes the token for good) · Supersedes: the operator's park of #975's hardened mode (option A, 2026-10-28), which this route builds as the only mode; ADR-0059 item 1 (that the hub doesn't read the TUI, and the binding's "only on that start's token"), item 2 (the loop home a start bundles), item 4 (a fresh hub token per session, in the VM), item 6 (one environment for every cloud loop) and its #978 amendment's single stored choice, item 8's #1094 amendment (`CCR_ENABLE_BUNDLE`), item 10's *The repo field goes* and its #1169 amendment, and item 9's #977 amendment's create refusal · Relates to: ADR-0022, ADR-0028, ADR-0043, ADR-0053, ADR-0056, ADR-0058, ADR-0059, ADR-0060
+Date: 2026-10-28 · Status: accepted (operator decision of 2026-10-29 on #1180, comment 6498693769: the flow as written, with multi-repo loops; the operator decision of 2026-10-29 on #1185, comment 6498931340: the deny rules and the `add_repo` guard of item 2, with a dedicated GitHub user recommended, not required; the operator decision of 2026-10-28 on #1168: the setup-script route, with the token as an environment variable; the network secret in its place is Terra's correction of the same day on #1180, comment 6478145150, agreed by Elliot in 6478162314, which narrows that posture; and the operator decision of 2026-10-29 on #1180, comment 6493335622, that a kill revokes the token for good) · Amended: 2026-10-29 (the `SessionStart` answer's shape, #1181) · Supersedes: the operator's park of #975's hardened mode (option A, 2026-10-28), which this route builds as the only mode; ADR-0059 item 1 (that the hub doesn't read the TUI, and the binding's "only on that start's token"), item 2 (the loop home a start bundles), item 4 (a fresh hub token per session, in the VM), item 6 (one environment for every cloud loop) and its #978 amendment's single stored choice, item 8's #1094 amendment (`CCR_ENABLE_BUNDLE`), item 10's *The repo field goes* and its #1169 amendment, and item 9's #977 amendment's create refusal · Relates to: ADR-0022, ADR-0028, ADR-0043, ADR-0053, ADR-0056, ADR-0058, ADR-0059, ADR-0060
 
 ## Context
 
@@ -381,6 +381,15 @@ real hub behind the allowlist is checked at #1181's first live start:
      home's, on its first turn and on a turn after a compaction.
    - The answer stays the one route the response redactor exempts
      (ADR-0059 item 10).
+
+   **Amendment (2026-10-29, #1181):** the answer isn't one JSON body.
+   Its first line is the connections' `export` lines as one base64
+   line, empty for a `compact` or `clear` answer; the rest is the
+   hook's output JSON, whose `additionalContext` is the prompt. The
+   hook appends the decoded first line to `CLAUDE_ENV_FILE` and prints
+   the rest, so it needs only `sh`, `sed`, `base64` and `curl`, and no
+   JSON parser in the VM. Both ends are Spool's own, the hook script and
+   the hub.
 
 6. **Each loop's allowlist is its environment's, confirmed per loop.**
    The hub's confirm step of ADR-0059 item 6 moves from Settings → Cloud

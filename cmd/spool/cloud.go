@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -21,12 +20,10 @@ import (
 // newCloudRuntime is the cloud runtime as this hub wires it (ADR-0059): the
 // account is read from the store at each CLI run, so a sign-in takes
 // effect at once, and its state lives in the data directory. The CLI's
-// runs, loop homes among them, are made outside the data directory, which
-// backups carry: a home holds its loop's token. Each hub's dir is its own,
-// named for its data directory, so one hub's boot sweep never removes
-// another's homes.
+// runs, start directories among them, are made outside the data directory,
+// which backups carry. Each hub's dir is its own, named for its data
+// directory, so one hub's boot sweep never removes another's runs.
 func newCloudRuntime(st store.Store, dataDir, claudeBin, apiBase string) *cloud.Runtime {
-	settings := st.Settings()
 	return &cloud.Runtime{
 		CLI: &cloud.CLI{Binary: claudeBin, Dir: cloudCLIDir(dataDir), Env: signInEnv(os.Environ())},
 		Account: func(ctx context.Context) (cloud.Account, error) {
@@ -39,9 +36,6 @@ func newCloudRuntime(st store.Store, dataDir, claudeBin, apiBase string) *cloud.
 				return cloud.Account{}, cloud.ErrNoAccount
 			}
 			return cloud.Account{Token: account.Token, OrgUUID: account.OrgUUID}, nil
-		},
-		EnvironmentID: func(context.Context) (string, error) {
-			return chosenCloudEnvironment(settings)
 		},
 		APIBase: apiBase,
 		Dir:     filepath.Join(dataDir, "cloud"),
@@ -133,21 +127,6 @@ func storedSetting(settings store.SettingsStore, key string) (string, error) {
 		return "", nil
 	}
 	return value, err
-}
-
-// chosenCloudEnvironment is the environment Settings → Cloud chose, "" for
-// none. Its shape is checked here, at every read, whatever wrote it: it
-// goes into the --settings JSON each start runs with (ADR-0059).
-func chosenCloudEnvironment(settings store.SettingsStore) (string, error) {
-	raw, err := storedSetting(settings, store.SettingCloudEnvironment)
-	if err != nil || raw == "" {
-		return "", err
-	}
-	var chosen store.CloudEnvironment
-	if err := json.Unmarshal([]byte(raw), &chosen); err != nil || !store.ValidCloudEnvironmentID(chosen.ID) {
-		return "", errors.New("cloud: the stored environment is not an environment ID; choose it again in Settings → Cloud")
-	}
-	return chosen.ID, nil
 }
 
 // cloudEnvironments is the account's list for Settings → Cloud's pick.
