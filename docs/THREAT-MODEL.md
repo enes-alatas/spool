@@ -336,14 +336,21 @@ cloud listener (ADR-0059).
   host's CLI, or by the workstation image's on a hub with none.
 - **No setup-token leaves the machine.** A cloud session runs on the
   account, never on the setup-token.
-- **The session carries one credential, a hub token of its own** (ADR-0059).
-  The hub mints a fresh one for each session it starts and writes it
-  into that start's loop home's `.mcp.json`, which registers the hub's
-  cloud listener as the one server the home names. Stopping or killing a
-  cloud loop revokes its token at once, without waiting for a turn, as
-  does the next session's start. So a copy lifted out of a session dies
-  with that session, and an old VM of a loop can't bind itself to a
-  start of a new one: its token is refused.
+- **The session carries one credential, the loop's hub token** (ADR-0061).
+  The token belongs to the loop, not to one session: Rotate token
+  (`POST /api/loops/{name}/cloud/token`, an admin's) mints it and shows
+  it once, as text/plain past the response redactor and uncached, and
+  revokes the one before at once. A cloud loop is created with none. The
+  hub writes it into each start's loop home's `.mcp.json`, which
+  registers the hub's cloud listener as the one server the home names.
+  The cloud listener refuses it while its loop is paused, by the loop's
+  stored status, at once and without waiting for a turn, and takes it
+  again once the loop runs; a pause whose status isn't stored says the
+  session can still reach the hub. A kill revokes the token for good:
+  the loop holds its work, with a `cloud_setup` problem, until Rotate
+  token mints another. An old VM of the loop holds the same token, so
+  what keeps it from binding a start of a new one is the start's
+  binding below.
 - **The loop home holds the token only for its start.** The hub makes it
   in a fresh 0700 directory under a directory of its own in the temp dir,
   named for the data directory, outside the data directory, which backups
@@ -508,13 +515,14 @@ cloud listener (ADR-0059).
   nothing through it (#1168). The token still sits in the session's
   environment file, so it can still leak from there.
 - **The loop can read its own token**, as a contained loop can read its
-  MCP config, and use it from anywhere until its session ends. The token
-  is also in the bundle the CLI uploaded, which Anthropic keeps with the
-  session (ADR-0059).
+  MCP config, and use it from anywhere while the loop runs, since it
+  outlives the session, until a kill or Rotate token. The token is also
+  in the bundle the CLI uploaded, which Anthropic keeps with the session
+  (ADR-0059).
 - **A stop can't interrupt the turn in flight.** The CLI has no way to,
   so the turn runs on in the VM until it ends, cut off from the hub but
   with its other tools. A wake sent just before the stop may start a turn
-  after it. With the token revoked, the hub never hears that turn end, so
+  after it. With the token refused, the hub never hears that turn end, so
   the loop's page says it may still be running until its two-hour quiet
   bound, and links its session (ADR-0059, #1028). The operator interrupts
   and archives the session on claude.ai.

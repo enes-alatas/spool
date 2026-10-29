@@ -117,12 +117,12 @@ func vmToken(t *testing.T, s *server, vm string) string {
 	return token
 }
 
-// Each session a cloud loop starts gets a hub token of its own, which
-// revokes the one before (ADR-0059): an old VM of the loop, or a copy
-// lifted out of it, can't bind itself to the loop's next start. Here a
+// A cloud loop's hub token outlives its sessions (ADR-0061), so an old VM
+// of the loop holds a token that still works. What keeps it from binding
+// the loop's next start is the session the start's CLI printed: here a
 // rotation's next start holds its VM's SessionStart back, and the old
-// VM's token posts one while the start is pending: it is refused, and
-// the start takes its own VM's post.
+// VM posts one while the start is pending. It is refused, and the start
+// takes its own VM's post.
 func TestAStaleVMOfALoopCantBindItsNextStart(t *testing.T) {
 	t.Parallel()
 	s := startCloudHub(t, "nimbus")
@@ -142,11 +142,11 @@ func TestAStaleVMOfALoopCantBindItsNextStart(t *testing.T) {
 	within(t, 30*time.Second, "the rotation", func() bool { return strings.Contains(s.log(), "context rotated") })
 	s.message("nimbus", "second words")
 	within(t, 30*time.Second, "the next start's VM", func() bool { return len(cloudVMs(t, s)) == 2 })
-	if got := postHook(t, s, stale, "session_01Stale"); got != http.StatusUnauthorized {
-		t.Errorf("the old VM's SessionStart during the new start: %d, want 401", got)
+	if got := postHook(t, s, stale, "session_01Stale"); got != http.StatusConflict {
+		t.Errorf("the old VM's SessionStart during the new start: %d, want 409", got)
 	}
-	if got := postTo(t, s.cloudURL, stale, mcpInitialize); got != http.StatusUnauthorized {
-		t.Errorf("the old VM's token on /mcp: %d, want 401", got)
+	if !strings.Contains(s.log(), "didn't create") {
+		t.Error("the refused post wasn't logged")
 	}
 	if err := os.Remove(held); err != nil {
 		t.Fatal(err)
@@ -161,28 +161,17 @@ func TestAStaleVMOfALoopCantBindItsNextStart(t *testing.T) {
 	if strings.HasSuffix(viewed.CloudSessionURL, "session_01Stale") {
 		t.Errorf("the stale post bound the loop to %s", viewed.CloudSessionURL)
 	}
-	if fresh := hubMCPToken(t, s, "nimbus"); fresh == stale || fresh != vmToken(t, s, newestVM(t, s, firstVM)) {
-		t.Error("the new session doesn't hold a token of its own")
+	if hubMCPToken(t, s, "nimbus") != stale {
+		t.Error("the new session started on a new token: the token is the environment's, not the session's")
 	}
 }
 
-// newestVM is the session's VM other than old, of the two there are.
-func newestVM(t *testing.T, s *server, old string) string {
-	t.Helper()
-	for _, vm := range cloudVMs(t, s) {
-		if vm != old {
-			return vm
-		}
-	}
-	t.Fatal("no VM besides the first")
-	return ""
-}
-
-// Stopping a cloud loop, and killing it, revoke its session's token at
-// once, without waiting for a turn (ADR-0059): an operator stopping a
-// misbehaving loop cuts it off now. Its next wake starts a session of its
-// own, on a token of its own.
-func TestStoppingACloudLoopRevokesItsTokenAtOnce(t *testing.T) {
+// Stopping a cloud loop refuses its token at once, without waiting for a
+// turn, and starting it again takes the same token, with nothing to set
+// again (ADR-0061). A kill revokes the token for good: the loop is held,
+// with a problem that says so, until Rotate token mints another, which
+// it then wakes on.
+func TestStoppingACloudLoopRefusesItsTokenAndAKillRevokesIt(t *testing.T) {
 	t.Parallel()
 	s := startCloudHub(t, "stratus")
 	s.message("stratus", "hello")
@@ -194,31 +183,65 @@ func TestStoppingACloudLoopRevokesItsTokenAtOnce(t *testing.T) {
 
 	s.mustJSON("POST", "/api/loops/stratus/pause", nil, nil)
 	if got := postTo(t, s.cloudURL, token, mcpInitialize); got != http.StatusUnauthorized {
-		t.Errorf("the session's token after the stop: %d, want 401", got)
+		t.Errorf("the token of a stopped loop: %d, want 401", got)
+	}
+	if got := postHook(t, s, token, "session_01Paused"); got != http.StatusUnauthorized {
+		t.Errorf("a hook post on a stopped loop's token: %d, want 401", got)
 	}
 	if got := sessionEndReason(t, s, "stratus", first.SessionID); got != store.EndReasonPaused {
 		t.Errorf("the stopped session ended as %q, want %q", got, store.EndReasonPaused)
 	}
 	s.mustJSON("POST", "/api/loops/stratus/resume", nil, nil)
+	if got := postTo(t, s.cloudURL, token, mcpInitialize); got != http.StatusOK {
+		t.Errorf("the same token once the loop runs again: %d, want 200", got)
+	}
 	s.message("stratus", "again")
 	again := s.waitTurn("stratus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "again") })
 	if again.IsError || again.SessionID == first.SessionID || len(cloudVMs(t, s)) != 2 {
 		t.Fatalf("the wake after the stop: %+v in %d VMs, want a new session", again, len(cloudVMs(t, s)))
 	}
-	token = hubMCPToken(t, s, "stratus")
-	if got := postTo(t, s.cloudURL, token, mcpInitialize); got != http.StatusOK {
-		t.Fatalf("the new session's token: %d, want 200", got)
+	if hubMCPToken(t, s, "stratus") != token {
+		t.Error("the new session started on a new token")
 	}
 
 	s.mustJSON("POST", "/api/loops/stratus/kill", nil, nil)
-	within(t, 10*time.Second, "the kill's revoke", func() bool {
-		return postTo(t, s.cloudURL, token, mcpInitialize) == http.StatusUnauthorized
-	})
+	if got := postTo(t, s.cloudURL, token, mcpInitialize); got != http.StatusUnauthorized {
+		t.Errorf("the killed loop's token: %d, want 401", got)
+	}
+	if killed := s.waitHealth("stratus", "failing"); len(killed.Problems) != 1 || killed.Problems[0].Symptom != store.SymptomCloudSetup {
+		t.Fatalf("problems after the kill = %+v, want one cloud_setup", killed.Problems)
+	}
+	s.message("stratus", "held words")
+	time.Sleep(time.Second)
+	if len(cloudVMs(t, s)) != 2 {
+		t.Fatal("a killed loop started a session before its token was rotated")
+	}
+
+	resp, body := s.do("POST", "/api/loops/stratus/cloud/token", nil)
+	rotated := string(body)
+	if resp.StatusCode != http.StatusOK || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/plain") ||
+		resp.Header.Get("Cache-Control") != "no-store" || rotated == "" || rotated == token || rotated != hubMCPToken(t, s, "stratus") {
+		t.Fatalf("Rotate token answered %d %q, want the new token, uncached", resp.StatusCode, resp.Header)
+	}
+	held := s.waitTurn("stratus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "held words") })
+	if held.IsError {
+		t.Fatalf("the held message's turn: %+v", held)
+	}
+	if after := s.waitHealth("stratus", "ok"); len(after.Problems) != 0 {
+		t.Errorf("problems after the rotation = %+v, want none", after.Problems)
+	}
+	if got := postTo(t, s.cloudURL, token, mcpInitialize); got != http.StatusUnauthorized {
+		t.Errorf("the killed token after the rotation: %d, want 401", got)
+	}
+	if strings.Contains(s.log(), rotated) {
+		t.Error("the rotated token is in the hub's log")
+	}
 }
 
-// A stop or a kill whose revocation fails says so, rather than answering
-// as if the session were cut off: its token still reaches the hub (#1114).
-// Stopping again once the store takes the write revokes it.
+// A stop whose status wasn't stored, and a kill whose revocation failed,
+// say so, rather than answering as if the session were cut off: its
+// token still reaches the hub (#1114). Doing it again once the store
+// takes the write cuts it off.
 func TestACloudLoopsStopSaysWhenItsTokenWasNotRevoked(t *testing.T) {
 	t.Parallel()
 	hub := startCloudHub(t, "cirrus")
@@ -231,26 +254,26 @@ func TestACloudLoopsStopSaysWhenItsTokenWasNotRevoked(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	if _, err := db.Exec(`CREATE TRIGGER refuse_revoke BEFORE UPDATE OF hub_mcp_token ON loops
-		BEGIN SELECT RAISE(ABORT, 'the test refuses the write'); END`); err != nil {
-		t.Fatal(err)
-	}
-	for _, verb := range []string{"pause", "kill"} {
+	for verb, column := range map[string]string{"pause": "status", "kill": "hub_mcp_token"} {
+		if _, err := db.Exec(`CREATE TRIGGER refuse_write BEFORE UPDATE OF ` + column + ` ON loops
+			BEGIN SELECT RAISE(ABORT, 'the test refuses the write'); END`); err != nil {
+			t.Fatal(err)
+		}
 		resp, body := hub.do("POST", "/api/loops/cirrus/"+verb, nil)
-		if resp.StatusCode != http.StatusInternalServerError || !strings.Contains(string(body), "not revoked") {
-			t.Errorf("a %s whose revocation failed = %d %s, want a 500 that says so", verb, resp.StatusCode, body)
+		if resp.StatusCode != http.StatusInternalServerError || !strings.Contains(string(body), "can still reach the hub") {
+			t.Errorf("a %s whose write failed = %d %s, want a 500 that says so", verb, resp.StatusCode, body)
+		}
+		if got := postTo(t, hub.cloudURL, token, mcpInitialize); got != http.StatusOK {
+			t.Fatalf("the token after a failed %s: %d, want it still working, as the answer said", verb, got)
+		}
+		if _, err := db.Exec(`DROP TRIGGER refuse_write`); err != nil {
+			t.Fatal(err)
 		}
 	}
-	if got := postTo(t, hub.cloudURL, token, mcpInitialize); got != http.StatusOK {
-		t.Fatalf("the token after a failed revocation: %d, want it still working, as the answer said", got)
-	}
 
-	if _, err := db.Exec(`DROP TRIGGER refuse_revoke`); err != nil {
-		t.Fatal(err)
-	}
-	hub.mustJSON("POST", "/api/loops/cirrus/pause", nil, nil)
+	hub.mustJSON("POST", "/api/loops/cirrus/kill", nil, nil)
 	if got := postTo(t, hub.cloudURL, token, mcpInitialize); got != http.StatusUnauthorized {
-		t.Errorf("the token after the retried pause: %d, want 401", got)
+		t.Errorf("the token after the retried kill: %d, want 401", got)
 	}
 }
 

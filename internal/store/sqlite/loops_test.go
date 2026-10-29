@@ -168,6 +168,34 @@ func TestLoopHubMCPToken(t *testing.T) {
 	if _, err := db.Loops().RotateHubMCPToken(ctx, "l_gone"); err != store.ErrNotFound {
 		t.Errorf("rotating a missing loop's token: err = %v, want ErrNotFound", err)
 	}
+
+	// a revoked token is refused, and the loop holds none until the next
+	// rotation
+	if err := db.Loops().RevokeHubMCPToken(ctx, terra.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Loops().GetByHubMCPToken(ctx, rotated); err != store.ErrNotFound {
+		t.Errorf("the revoked token: err = %v, want ErrNotFound", err)
+	}
+	if got, err := db.Loops().Get(ctx, terra.ID); err != nil || got.HubMCPToken != "" {
+		t.Errorf("the revoked loop = %+v, %v; want it holding no token", got, err)
+	}
+	if err := db.Loops().RevokeHubMCPToken(ctx, "l_gone"); err != store.ErrNotFound {
+		t.Errorf("revoking a missing loop's token: err = %v, want ErrNotFound", err)
+	}
+
+	// a cloud loop is created with none: its setup mints it
+	cloudLoop := &store.Loop{
+		ID: "l_nimbus", Name: "nimbus", Mission: "m", Status: store.StatusActive,
+		WorkspaceMode: store.WorkspaceNone, Pacing: store.PacingFixed,
+		Runtime: store.RuntimeCloud, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.Loops().Create(ctx, cloudLoop); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := db.Loops().Get(ctx, cloudLoop.ID); err != nil || got.HubMCPToken != "" {
+		t.Errorf("a new cloud loop = %+v, %v; want it holding no token", got, err)
+	}
 }
 
 // TestMigrateWithoutAllowlistedSender: a database holding loops and nobody

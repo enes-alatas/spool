@@ -56,7 +56,7 @@
 4 itest/cloud_cli_test.go
 2 itest/cloud_create_test.go
 3 itest/cloud_listener_test.go
-9 itest/cloud_runtime_test.go
+8 itest/cloud_runtime_test.go
 2 itest/cloud_setup_test.go
 6 itest/cloud_signin_test.go
 3 itest/connection_env_test.go

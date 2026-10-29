@@ -48,7 +48,7 @@ type ProblemNotice struct {
 	LoopID   string `json:"loop_id"`
 	LoopName string `json:"loop_name"`
 	// Symptom is the store's: "workstation_down", "turn_errors",
-	// "cloud_address" or "cloud_connections".
+	// "cloud_address", "cloud_connections" or "cloud_setup".
 	Symptom string `json:"symptom"`
 	// Opened is true when the problem opened, false when it cleared.
 	Opened bool `json:"opened"`
@@ -73,6 +73,10 @@ func (notice ProblemNotice) Text() string {
 			return fmt.Sprintf("Spool: %s's workstation has been down since %s, so the loop is not running. "+
 				"The hub keeps retrying, and the loop's page in the control room says why it is down. "+
 				"You will hear once more when this clears.", notice.LoopName, since)
+		case "cloud_setup":
+			return fmt.Sprintf("Spool: the cloud loop %s has had no hub token since %s, so it is not running. "+
+				"Its messages wait until Rotate token mints one, to set as its environment's secret. "+
+				"You will hear once more when this clears.", notice.LoopName, since)
 		case "cloud_address":
 			return fmt.Sprintf("Spool: the hub's public address has failed its check since %s, so the cloud loop %s is not running. "+
 				"Its messages wait until the address passes. Settings → Cloud in the control room says what failed. "+
@@ -95,6 +99,8 @@ func (notice ProblemNotice) Text() string {
 			problem = "the public address holding " + notice.LoopName
 		case "cloud_connections":
 			problem = notice.LoopName + "'s session being refused its connections"
+		case "cloud_setup":
+			problem = notice.LoopName + "'s missing hub token"
 		}
 		return fmt.Sprintf("Spool: the alert about %s was cleared in the control room. "+
 			"You will hear again if it comes back.", problem)
@@ -106,6 +112,8 @@ func (notice ProblemNotice) Text() string {
 		return fmt.Sprintf("Spool: the hub's public address passes its check again, so the cloud loop %s is running.", notice.LoopName)
 	case "cloud_connections":
 		return fmt.Sprintf("Spool: the cloud loop %s's session was handed its connections again.", notice.LoopName)
+	case "cloud_setup":
+		return fmt.Sprintf("Spool: the cloud loop %s has its hub token, so it is running.", notice.LoopName)
 	}
 	return fmt.Sprintf("Spool: %s finished a turn without an error again.", notice.LoopName)
 }

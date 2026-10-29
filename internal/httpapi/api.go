@@ -206,6 +206,7 @@ func (server *Server) routes() *routeMux {
 	mux.HandleFunc("POST /api/loops/{name}/kill", server.handleKill)
 	mux.HandleFunc("POST /api/loops/{name}/rotate", server.handleRotate)
 	mux.HandleFunc("POST /api/loops/{name}/rehome", server.handleRehome)
+	mux.HandleFunc("POST /api/loops/{name}/cloud/token", server.handleRotateCloudToken)
 	mux.HandleFunc("POST /api/loops/{name}/workstation/restart", server.handlePower(loop.PowerRestart))
 	mux.HandleFunc("POST /api/loops/{name}/workstation/poweroff", server.handlePower(loop.PowerOff))
 	mux.HandleFunc("POST /api/loops/{name}/workstation/poweron", server.handlePower(loop.PowerOn))
@@ -1373,14 +1374,15 @@ func (server *Server) handlePause(w http.ResponseWriter, r *http.Request) {
 	}
 	loopRecord.Status = store.StatusPaused
 	loopRecord.UpdatedAt = time.Now().UnixMilli()
-	_ = server.Store.Loops().SetStatus(r.Context(), loopRecord.ID, loopRecord.Status, loopRecord.UpdatedAt)
-	var cutOff error
+	// a cloud loop's token is refused by this status (ADR-0061), so a
+	// write that failed leaves its session able to reach the hub
+	stored := server.Store.Loops().SetStatus(r.Context(), loopRecord.ID, loopRecord.Status, loopRecord.UpdatedAt)
 	if actor, ok := server.Manager.Get(loopRecord.ID); ok {
-		cutOff = actor.Pause()
+		_ = actor.Pause()
 	}
 	server.Sched.Suspend(loopRecord.ID)
-	if cutOff != nil {
-		server.jsonErr(w, http.StatusInternalServerError, "the loop is paused, but its cloud session's token was not revoked, so the session can still reach the hub; pausing or killing it again retries the revocation: %v", cutOff)
+	if stored != nil && loopRecord.Runtime == store.RuntimeCloud {
+		server.jsonErr(w, http.StatusInternalServerError, "the loop is paused, but its pause was not stored, so its cloud session can still reach the hub; pausing it again retries: %v", stored)
 		return
 	}
 	writeJSON(w, 200, server.view(r.Context(), loopRecord))

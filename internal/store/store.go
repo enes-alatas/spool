@@ -986,9 +986,13 @@ type LoopStore interface {
 	GetByHubMCPToken(ctx context.Context, token string) (*Loop, error)
 	List(ctx context.Context) ([]*Loop, error)
 	// RotateHubMCPToken gives the loop a fresh hub token, which revokes the
-	// one it held at once, and returns it. A cloud loop gets one for each
-	// session it starts, and on a stop (ADR-0059).
+	// one it held at once, and returns it. A cloud loop's is minted for its
+	// setup and by Rotate token, and outlives its sessions (ADR-0061).
 	RotateHubMCPToken(ctx context.Context, id string) (string, error)
+	// RevokeHubMCPToken leaves the loop with no hub token, so none it held
+	// is taken again: a cloud loop's kill (ADR-0061). The loop holds no
+	// token until RotateHubMCPToken mints one.
+	RevokeHubMCPToken(ctx context.Context, id string) error
 	SetRuntime(ctx context.Context, id, sessionID string, pid int) error
 	// SetRotation persists a rotation in progress: whether the current session
 	// has been retired by a handoff turn, why the rotation was taken, and the
@@ -2133,6 +2137,7 @@ const (
 	LoopChangeKill        = "kill"
 	LoopChangeRotate      = "rotate"
 	LoopChangeRehome      = "rehome"
+	LoopChangeCloudToken  = "cloud_token"
 	LoopChangeRestart     = "workstation_restart"
 	LoopChangePowerOff    = "workstation_poweroff"
 	LoopChangePowerOn     = "workstation_poweron"
@@ -2193,7 +2198,7 @@ type PrivateChatStore interface {
 // #764). A loop has at most one open per symptom.
 type Problem struct {
 	// Symptom is SymptomWorkstationDown, SymptomTurnErrors,
-	// SymptomCloudAddress or SymptomCloudConnections.
+	// SymptomCloudAddress, SymptomCloudConnections or SymptomCloudSetup.
 	Symptom string `json:"symptom"`
 	// Since is when the problem opened, in Unix ms.
 	Since int64 `json:"since"`
@@ -2213,6 +2218,10 @@ const (
 	// connections and the hub refused, so its shell may run without them
 	// (ADR-0059).
 	SymptomCloudConnections = "cloud_connections"
+	// SymptomCloudSetup: a cloud loop is held because its setup isn't
+	// done: it has no hub token, never minted or revoked by a kill
+	// (ADR-0061).
+	SymptomCloudSetup = "cloud_setup"
 
 	ClearedByOperator = "operator"
 	ClearedByRecovery = "recovery"

@@ -60,7 +60,7 @@ func CloudHTTPServer(handler http.Handler) *http.Server {
 // path is 404, the brokered servers' included: they carry organisation
 // credentials, and putting them on the internet is a decision of its own.
 func (server *Server) CloudHandler(redacted func(http.Handler) http.Handler) http.Handler {
-	mcpHandler := server.mcpHandler(isCloudLoop)
+	mcpHandler := server.mcpHandler(runningCloudLoop)
 	return http.HandlerFunc(func(unredacted http.ResponseWriter, r *http.Request) {
 		limit := int64(cloudMaxBody)
 		if r.URL.Path == cloudHooksPath {
@@ -160,6 +160,11 @@ func (checks *cloudChecks) expire(now time.Time) {
 	}
 }
 
-// isCloudLoop admits a cloud loop's token alone: a contained loop's token
-// that leaks out of its workstation is still useless from the internet.
-func isCloudLoop(caller *store.Loop) bool { return caller.Runtime == store.RuntimeCloud }
+// runningCloudLoop admits a cloud loop's token alone, and only while the
+// loop runs: a contained loop's token that leaks out of its workstation is
+// still useless from the internet, and a cloud loop's outlives its
+// sessions, so a paused loop's is refused at once and taken again on its
+// resume (ADR-0061).
+func runningCloudLoop(caller *store.Loop) bool {
+	return caller.Runtime == store.RuntimeCloud && caller.Status == store.StatusActive
+}

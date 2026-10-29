@@ -221,13 +221,13 @@ const (
 	HealthFailing = "failing"
 )
 
-// Health sums up open problems: failing while the workstation is down or a
-// cloud loop's address fails its check, since the loop is not running at
-// all, warning for errored turns, and ok with none.
+// Health sums up open problems: failing while the workstation is down, a
+// cloud loop's address fails its check or its setup isn't done, since the
+// loop is not running at all, warning for errored turns, and ok with none.
 func Health(problems []store.Problem) string {
 	health := HealthOK
 	for _, problem := range problems {
-		if problem.Symptom == store.SymptomWorkstationDown || problem.Symptom == store.SymptomCloudAddress {
+		if problem.Symptom == store.SymptomWorkstationDown || problem.Symptom == store.SymptomCloudAddress || problem.Symptom == store.SymptomCloudSetup {
 			return HealthFailing
 		}
 		health = HealthWarning
