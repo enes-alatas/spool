@@ -1514,3 +1514,6 @@ Quiet. HN: 0 new. #1185: three Quinn review rounds + two Elliot security passes 
 
 ## 2026-10-29 04:13 UTC tick
 Quiet. HN: 0 new. #1185 head 12c5ea3 unchanged; #1180 newest is Terra's View:-line evidence (23:13). All waits on Enes (sign-in for runs R/S, two decisions) — Terra's ask, night hours, no re-nudge from me. Board tidy.
+
+## 2026-10-29 08:14 UTC tick
+HN: 1 new (SyneRyder on "Claude Code sends background agents' transcripts": frustrated CC updates change unattended overnight sessions, "build my own harness again" — Spool inherits CC's behaviour, no fit, skipped). #1185: Elliot's security pass holds at 12c5ea3 (05:14). Waits on Enes (sign-in for runs R/S, two decisions) — Terra's ask. Board tidy.
