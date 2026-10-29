@@ -3,6 +3,11 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"net/http"
+	"slices"
+	"strings"
+
+	"github.com/enes-alatas/spool/internal/store"
 )
 
 // CloudSessions reads a cloud loop's session on claude.ai (ADR-0056).
@@ -62,4 +67,61 @@ func (server *Server) cloudReady(ctx context.Context) error {
 		return errors.New("choose the environment cloud loops start in, in Settings → Cloud, first")
 	}
 	return nil
+}
+
+// cloudSetupReq is a cloud loop's repos and environment as a create or a
+// PATCH names them (ADR-0061). A field left out keeps what the loop has.
+type cloudSetupReq struct {
+	CloudRepo          *string   `json:"cloud_repo"`
+	CloudBranch        *string   `json:"cloud_branch"`
+	CloudRepos         *[]string `json:"cloud_repos"`
+	CloudEnvironmentID *string   `json:"cloud_environment_id"`
+}
+
+func (req cloudSetupReq) given() bool {
+	return req.CloudRepo != nil || req.CloudBranch != nil || req.CloudRepos != nil || req.CloudEnvironmentID != nil
+}
+
+// codeCloudLoopRunning: a cloud loop's repos or environment changed while
+// it isn't paused. A session runs from them, so they change only while
+// the loop is stopped (ADR-0061).
+const codeCloudLoopRunning = "cloud_loop_running"
+
+// cloudSetup is the loop's setup after req: what it names over what the
+// loop has, trimmed, with the branch DefaultCloudBranch once a repo is
+// named without one. Each field is checked by ADR-0061's rule, and an
+// environment the loop's login lists must be on that list; one pasted
+// while the list can't be read is taken, as Settings → Cloud took one,
+// and checked again at each start (item 7).
+func (server *Server) cloudSetup(ctx context.Context, current store.CloudSetup, req cloudSetupReq) (store.CloudSetup, *requestError) {
+	setup := current
+	if req.CloudRepo != nil {
+		setup.Repo = strings.TrimSpace(*req.CloudRepo)
+	}
+	if req.CloudBranch != nil {
+		setup.Branch = strings.TrimSpace(*req.CloudBranch)
+	}
+	if req.CloudRepos != nil {
+		setup.Repos = nil
+		for _, repo := range *req.CloudRepos {
+			setup.Repos = append(setup.Repos, strings.TrimSpace(repo))
+		}
+	}
+	if req.CloudEnvironmentID != nil {
+		setup.EnvironmentID = strings.TrimSpace(*req.CloudEnvironmentID)
+	}
+	if setup.Repo != "" && setup.Branch == "" {
+		setup.Branch = store.DefaultCloudBranch
+	}
+	if err := setup.Check(); err != nil {
+		return setup, &requestError{status: http.StatusBadRequest, msg: err.Error()}
+	}
+	if req.CloudEnvironmentID != nil && setup.EnvironmentID != current.EnvironmentID {
+		if listed, err := server.listCloudEnvironments(ctx); err == nil &&
+			!slices.ContainsFunc(listed, func(environment CloudEnvironment) bool { return environment.ID == setup.EnvironmentID }) {
+			return setup, &requestError{status: http.StatusBadRequest, code: codeCloudEnvironmentUnlisted,
+				msg: setup.EnvironmentID + " is not one of this account's cloud environments"}
+		}
+	}
+	return setup, nil
 }

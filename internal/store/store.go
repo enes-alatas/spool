@@ -388,6 +388,15 @@ type Loop struct {
 	// the default (ADR-0060). A bare loop runs on the host's own login and a
 	// cloud loop on the default, so theirs is always "".
 	ClaudeLogin string `json:"claude_login"`
+	// A cloud loop's GitHub repos and claude.ai environment (ADR-0061): its
+	// sessions start from CloudRepo's CloudBranch in the environment
+	// CloudEnvironmentID names, and attach CloudRepos. Every other
+	// runtime's loop has none, and so does a cloud loop made under ADR-0059
+	// until the operator sets them. Written together, by LoopEdit.Cloud.
+	CloudRepo          string   `json:"cloud_repo"`
+	CloudBranch        string   `json:"cloud_branch"`
+	CloudRepos         []string `json:"cloud_repos"`
+	CloudEnvironmentID string   `json:"cloud_environment_id"`
 
 	TGBotToken    string `json:"-"`
 	TGBotUsername string `json:"tg_bot_username"`
@@ -906,6 +915,8 @@ type LoopEdit struct {
 	Subagents   *string
 	DailyCapUSD *float64
 	ClaudeLogin *string
+	// Cloud replaces a cloud loop's repos and environment whole.
+	Cloud *CloudSetup
 
 	TickIntervalSec *int
 	MinWakeSec      *int
