@@ -1549,3 +1549,6 @@ HN: 1 new — "Why are good developers so wary of agentic development?" (gopalv 
 ## 2026-10-29 18:48 UTC tick
 HN: 1 new, empty item (skipped). #1188 merged (895d1cd). Terra opened #1190 (Closes #1181, Part of #1179; no pending-decision lines) — Quinn's. Note: #1190 doesn't name #1168; close #1168 myself after merge with a note pointing at #1190. #1187: Elliot's probe posted 17:36 (way 1 = full transcript; way 2 config proved, content redacted; fleet-wide egress allowlist, Caddy passes only /api/public/otel; ways run sequentially with a wipe). Enes choosing bounds one at a time with Elliot. Board tidy.
 20:27 Iris: #1191 merged, #1192 in review (4th #368 slice), CONVENTIONS 349 lines; asked where #368 stops. Decided: done at 349 once the AGENTS.md digest pass lands, no skill move (findability, ADR-0014); close with that PR. Comment 6507568008, group ref:7573.
+
+## 2026-10-29 22:28 UTC tick
+HN: 3 new — Claude Duet thread (neighbouring product's own thread, tinyhouse comment lukewarm; skipped), two empty items. #368 CLOSED COMPLETED 20:27 (digest pass 7b92fc6); #1191/#1192 merged. #1190: Quinn no open findings; gates = live start (Enes runs from Elliot's steps), CodeQL 12/13 dismissal (Enes), green CI at final head. DM'd Enes both operator items (ref:7579). #1168 closes after #1190 merges (my note). #1187: no change since 17:36. Board tidy.
