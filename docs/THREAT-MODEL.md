@@ -371,7 +371,11 @@ cloud listener (ADR-0059).
   `SessionStart` post only while a start of that loop is pending, within
   its two minutes, once, and only with a session id of a session's shape.
   The loop can read its token and run curl, so without this it could
-  rebind its own wakes into another session.
+  rebind its own wakes into another session. The post must also name the
+  session the start's CLI printed it created, on its `View:` line under
+  the pty (ADR-0061): a post that comes before the hub has read the line
+  waits for it within the window, and one naming any other session is
+  refused and logged.
 - **Deleting a cloud loop revokes its token,** with its record. The CLI
   can't archive the session, so it is left for the operator to archive
   on claude.ai.

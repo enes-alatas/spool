@@ -89,8 +89,8 @@ type hookWaits struct {
 }
 
 // pendingStart is a start of a loop waiting for its session's id: it takes
-// one post, before its deadline. It answers that post with exports, the
-// loop's connections.
+// one post, before its deadline, that names the session its CLI printed.
+// It answers that post with exports, the loop's connections.
 type pendingStart struct {
 	deadline time.Time
 	session  chan string
@@ -98,6 +98,10 @@ type pendingStart struct {
 	// heard is whether any SessionStart post of the loop came while the
 	// start waited, a refused one too: its session reached the hub.
 	heard bool
+	// viewed is the session the CLI printed it had created, "" until the
+	// hub reads it; seen is closed then.
+	viewed string
+	seen   chan struct{}
 }
 
 // stopArrival is a Stop post as the turn in flight takes it.
@@ -112,7 +116,7 @@ func (waits *hookWaits) awaitStart(loopID string, within time.Duration, exports 
 	if waits.starts == nil {
 		waits.starts = map[string]*pendingStart{}
 	}
-	start := &pendingStart{deadline: time.Now().Add(within), session: make(chan string, 1), exports: exports}
+	start := &pendingStart{deadline: time.Now().Add(within), session: make(chan string, 1), exports: exports, seen: make(chan struct{})}
 	waits.starts[loopID] = start
 	return start
 }
@@ -134,6 +138,17 @@ func (cloud *Runtime) SessionPosted(loopID string) {
 	defer cloud.waits.mu.Unlock()
 	if start := cloud.waits.starts[loopID]; start != nil {
 		start.heard = true
+	}
+}
+
+// viewed records the session start's CLI printed it had created. Only the
+// first counts: the CLI prints one.
+func (waits *hookWaits) viewed(start *pendingStart, sessionID string) {
+	waits.mu.Lock()
+	defer waits.mu.Unlock()
+	if start.viewed == "" {
+		start.viewed = sessionID
+		close(start.seen)
 	}
 }
 
@@ -167,15 +182,17 @@ func (waits *hookWaits) forgetStop(loopID string, stops chan stopArrival) {
 // SessionStart takes a SessionStart post and answers it with the loop's
 // connections as export lines (ADR-0059). A startup post's session id is
 // recorded as the loop's while a start of it is pending, within its bound,
-// once. Any other post is refused: the loop can read its token and
+// once, and only if it names the session the start's CLI printed it had
+// created (ADR-0061): an old session of the loop may hold a token that
+// works too. Any other post is refused: the loop can read its token and
 // post, and must not rebind its wakes into another session or read the
 // connections at will. An answer is told to HandOff, and so is a refused
 // post from the loop's own session, which may have lost them.
 // Each answer is logged, without its values.
-func (cloud *Runtime) SessionStart(_ context.Context, loopID, sessionID string, hook []byte) ([]byte, error) {
+func (cloud *Runtime) SessionStart(ctx context.Context, loopID, sessionID string, hook []byte) ([]byte, error) {
 	sessionID = sessionAddress(sessionID)
 	source := hookSource(hook)
-	exports, err := cloud.answerSessionStart(loopID, sessionID, source)
+	exports, err := cloud.answerSessionStart(ctx, loopID, sessionID, source)
 	if err == nil {
 		slog.Default().Info("cloud: a session was handed its loop's connections", "loop", loopID, "source", source, "session", sessionID)
 	}
@@ -200,18 +217,38 @@ func sessionAddress(sessionID string) string {
 	return sessionID
 }
 
-func (cloud *Runtime) answerSessionStart(loopID, sessionID, source string) ([]byte, error) {
+func (cloud *Runtime) answerSessionStart(ctx context.Context, loopID, sessionID, source string) ([]byte, error) {
 	cloud.waits.mu.Lock()
-	defer cloud.waits.mu.Unlock()
 	start := cloud.waits.starts[loopID]
 	if start != nil {
 		start.heard = true
 	}
+	cloud.waits.mu.Unlock()
 	if source != sourceStartup {
 		return nil, fmt.Errorf("cloud: a SessionStart post from %q is never answered", source)
 	}
 	if start == nil || time.Now().After(start.deadline) {
 		return nil, errNoHandOff
+	}
+	// The VM can post before the hub has read the CLI's line through the
+	// terminal, and the hook doesn't post again, so the post waits for the
+	// line, within the start's bound, and is judged then.
+	deadline := time.NewTimer(time.Until(start.deadline))
+	defer deadline.Stop()
+	select {
+	case <-start.seen:
+	case <-deadline.C:
+		return nil, errNoHandOff
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	cloud.waits.mu.Lock()
+	defer cloud.waits.mu.Unlock()
+	if cloud.waits.starts[loopID] != start {
+		return nil, errNoHandOff
+	}
+	if sessionID != start.viewed {
+		return nil, errOtherSession
 	}
 	delete(cloud.waits.starts, loopID)
 	start.session <- sessionID
@@ -432,7 +469,11 @@ func (session *cliSession) startSession(text string) error {
 	if err != nil {
 		return fmt.Errorf("cloud: starting the session: %w", err)
 	}
-	screen := &lastLine{}
+	screen := &lastLine{line: func(line string) {
+		if sessionID, ok := viewedSession(line); ok {
+			session.cloud.waits.viewed(pending, sessionID)
+		}
+	}}
 	read := make(chan struct{})
 	go func() {
 		defer close(read)
@@ -608,11 +649,13 @@ func (session *cliSession) pass(event claude.Event) bool {
 }
 
 // lastLine keeps the last non-empty line a terminal showed, for an error
-// to quote. A TUI redraws with escape sequences, which it drops.
+// to quote. A TUI redraws with escape sequences, which it drops. line,
+// when set, is told each line as it ends.
 type lastLine struct {
 	mu      sync.Mutex
 	partial []byte
 	last    string
+	line    func(string)
 }
 
 func (screen *lastLine) Write(p []byte) (int, error) {
@@ -622,6 +665,9 @@ func (screen *lastLine) Write(p []byte) (int, error) {
 		if b == '\n' || b == '\r' {
 			if line := strings.TrimSpace(stripEscapes(screen.partial)); line != "" {
 				screen.last = line
+				if screen.line != nil {
+					screen.line(line)
+				}
 			}
 			screen.partial = screen.partial[:0]
 			continue

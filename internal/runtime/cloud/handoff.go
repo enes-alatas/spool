@@ -63,3 +63,21 @@ func hookSource(hook []byte) string {
 
 // errNoHandOff refuses a SessionStart post nothing is waiting for.
 var errNoHandOff = errors.New("cloud: no start of this loop is pending")
+
+// errOtherSession refuses a SessionStart post naming a session other than
+// the one its start's CLI printed.
+var errOtherSession = errors.New("cloud: the post names a session this start didn't create")
+
+// viewLine is the line CLI 2.1.310 prints once it has created a session,
+// `View: https://claude.ai/code/session_…?from=cli&m=0` (#1180, comment
+// 6483144237).
+var viewLine = regexp.MustCompile(`^View: ` + regexp.QuoteMeta(sessionPages) + `(session_[A-Za-z0-9]+)(?:[?#]\S*)?$`)
+
+// viewedSession is the session a line of the CLI's says it created.
+func viewedSession(line string) (string, bool) {
+	match := viewLine.FindStringSubmatch(line)
+	if match == nil {
+		return "", false
+	}
+	return match[1], true
+}
