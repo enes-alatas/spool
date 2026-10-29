@@ -235,43 +235,36 @@ ADR instead.*
 
 - New engine behavior needs a tier-2 test; a bug found in tier 3 gets a tier-2
   regression reproducing it via fakeclaude.
-- A tier-2 test calls `t.Parallel()` first (#182). Each test owns its data
-  directory, its ports and its stand-in Telegram or Slack, so tests are
-  isolated by construction. Two kinds stay out of the parallel set, and
-  each says why. A test that drives the real docker daemon is a row of
-  `TestDockerRows`, run in series with the other rows, because hubs on one
-  image share the egress wall (ADR-0028). A test that changes the
-  environment every hub inherits (`t.Setenv`) runs serially.
-- The web's tier 1 is pure logic: formatting, timeline entry building, form
-  gates, API type guards. Logic worth testing gets lifted out of the component
-  into a module of its own rather than tested through a rendered tree. A DOM
-  environment is opt-in per test file and earns its way in only where a defect
-  has already bitten in the markup; browser automation stays a manual
-  verification tool (the screenshot practice), never CI.
-- Quality baselines (perf numbers, scale envelope, reliability/security rules) and
-  the full CI gate list live in `docs/QUALITY.md` (ADR-0013). Arch tests enforce the
-  seams mechanically; a perf smoke at the scale envelope runs with tier 2.
-- fakeclaude scenarios are declarative fixtures checked into the repo; fakeclaude
-  itself must track the real CLI's observed behavior (version-noted, like
-  `claude/preflight.go`'s TestedVersion).
-  `cmd/fakeclaude/FIDELITY.md` is that record: one line per modelled
-  behaviour, verified or assumed, with the review rule in `docs/QUALITY.md`.
-- A scenario reaches a loop one of two ways: a `.fakeclaude` file in a bare
-  loop's workspace, or the `FAKECLAUDE_SCRIPT` secret, which the engine injects
-  into every exec. The secret is the only route into a contained loop, whose
-  workspace lives inside its workstation — reach for it whenever a tier-2 row
-  must run on both runtimes.
+- A tier-2 test calls `t.Parallel()` first and owns its data directory, ports
+  and stand-in Telegram or Slack (#182). Two kinds run in series and say why:
+  a real-docker test is a row of `TestDockerRows`, since hubs on one image
+  share the egress wall (ADR-0028), and a `t.Setenv` test.
+- The web's tier 1 is pure logic (formatting, timeline entries, form gates,
+  API type guards): logic worth testing moves into a module of its own, a DOM
+  environment is opt-in per file only where a markup defect has bitten, and
+  browser automation is a manual tool, never CI.
+- Quality baselines (perf, scale envelope, reliability and security rules) and
+  the full CI gate list live in `docs/QUALITY.md` (ADR-0013);
+  arch tests enforce the seams, and a perf smoke at the scale envelope runs
+  with tier 2.
+- fakeclaude scenarios are declarative fixtures in the repo, and fakeclaude
+  tracks the real CLI's observed behaviour, version-noted like
+  `claude/preflight.go`'s TestedVersion; `cmd/fakeclaude/FIDELITY.md` records
+  each modelled behaviour as verified or assumed, under the review rule in
+  `docs/QUALITY.md`.
+- A scenario reaches a loop by a `.fakeclaude` file in a bare loop's
+  workspace, or by the `FAKECLAUDE_SCRIPT` secret, the only route into a
+  contained loop and so the one for a row that runs on both runtimes.
 
 ## Go
 
-- Format/lint: `gofmt`, `go vet`, `golangci-lint` — all CI-gated. No custom style
-  debates beyond that and the naming rule below.
-- **Names say what they hold.** No single-letter variables, receivers included:
-  `actor`, not `a`; `stream`, not `s`. Exceptions: `i`/`j` as loop indices,
-  `t *testing.T`, and `w http.ResponseWriter` with `r *http.Request` as
-  parameters. `make lint` and CI run `scripts/shortnames`; code that predates
-  the rule is fenced by its baseline, which only shrinks: rename what you
-  touch and lower the count.
+- Format/lint: `gofmt`, `go vet`, `golangci-lint`, all CI-gated; no style
+  debates beyond those and the naming rule.
+- **Names say what they hold.** No single-letter variables or receivers
+  (`actor`, not `a`), except `i`/`j` as loop indices, `t *testing.T`, and
+  `w http.ResponseWriter` with `r *http.Request` as parameters.
+  `scripts/shortnames` checks it in `make lint` against a baseline that only
+  shrinks: rename what you touch and lower the count.
 - **Stdlib-first**: see **Dependencies** under Agent workflow; the rule is the
   same in both languages.
 - Errors: wrap with `fmt.Errorf("…: %w", err)`; sentinel errors as package vars
@@ -283,85 +276,74 @@ ADR instead.*
 
 ## Comments
 
-- **Self-contained.** A comment must be meaningful on its own, without sending the
-  reader elsewhere to understand it. State the reason in place. A bare `#n` or
-  `ADR-nnnn` may appear anywhere in it as a pointer to the history behind the
-  comment (#368), but the comment must still read correctly if that issue, PR
-  or ADR is gone, since a reader should not need GitHub to understand the code:
-  never "see #n" or "per ADR-nnnn" in place of the reason. Don't cite ADR
-  section numbers or milestones, which drift as ADRs are amended and milestones
-  close. `scripts/comment-refs.sh` fails `make lint` and CI on an ADR section
-  number in a Go, TS or CSS comment; the rest is review-enforced.
+- **Self-contained.** A comment states its reason in place. A bare `#n` or
+  `ADR-nnnn` may point at the history (#368), but the comment reads correctly
+  without it: never "see #n" or "per ADR-nnnn" instead of the reason, and no
+  ADR section numbers or milestones, which drift. `scripts/comment-refs.sh`
+  fails `make lint` on an ADR section number in a Go, TS or CSS comment; the
+  rest is review-enforced.
 
 ## Web
 
 - TypeScript strict; React function components; TanStack Query for server state; no
   component library, no CSS framework — hand-rolled `styles.css` on the design tokens.
-- Prettier + ESLint, CI-gated. API types live in `src/api.ts` only, mirrored by hand
-  from the Go structs (snake_case JSON) — until the API freezes at L6, the mirror is
-  maintained manually and checked in code review.
-- A new `spool` event subtype ships with its timeline copy in `src/timeline.ts`, in the
-  same PR that emits it. `spoolNote` renders nothing for a subtype it does not know, so
-  an unlisted event is not terse in the room — it is absent, and nobody notices.
-- A control's dressing — well, hairline, radius, focus ring, and the disabled
-  treatment — sits on `input`, `textarea` and `select` themselves, never on a wrapper
-  class. A wrapper sets width and layout; a variant sets only what it changes. Markup
-  that forgets the wrapper then renders a field, not a browser default white box in a
-  near-black room.
-- A control that is not accepting input says so by muting its text to `--text-muted`,
-  and drops its well back to the canvas behind that (ADR-0027 §11). Never the button's
-  `opacity` — on a control that manufactures a text colour below the contrast floor.
-  Disabling a field while a request is in flight therefore costs no CSS.
-- An error the room draws carries `role="alert"`, so a screen reader announces it
-  when it appears rather than leaving it silent somewhere else on the page (#354).
-  Errors are drawn with `.form-error`, or `.load-older-failed` for the timeline's
-  inline note. `src/alerts.test.ts` fails on either class without the role, and a
+- Prettier + ESLint, CI-gated. API types live in `src/api.ts` only, mirrored by
+  hand from the Go structs (snake_case JSON) and checked in review until the
+  API freezes at L6.
+- A new `spool` event subtype ships with its timeline copy in `src/timeline.ts`
+  in the PR that emits it: `spoolNote` renders nothing for a subtype it doesn't
+  know.
+- A control's dressing (well, hairline, radius, focus ring, disabled
+  treatment) sits on `input`, `textarea` and `select` themselves, never on a
+  wrapper class; a wrapper sets width and layout, a variant only what it
+  changes.
+- A control not accepting input mutes its text to `--text-muted` and drops its
+  well to the canvas (ADR-0027 §11), never `opacity`, which falls below the
+  contrast floor.
+- An error the room draws carries `role="alert"` (#354): `.form-error`, or
+  `.load-older-failed` in the timeline. `src/alerts.test.ts` checks both, and a
   new error class joins its list.
-- **No em dashes in UI text** (operator's call, #331): labels, placeholders, hover
-  titles, notices and timeline lines use a colon, comma, full stop or parentheses
-  instead. An option label separates its value from the description with a middle
-  dot (`opus · deep agentic work`), and an empty cell shows a dim middle dot.
-  `npm run lint` refuses one in a string, template or JSX text under `src/`
-  (`eslint.config.js`, #1013); comments and test files pass.
-- Message and timeline text is untrusted (a loop's words, or a stranger's) and is
-  rendered as text: no HTML, no markdown. `<Linked>` (`src/components/Linked.tsx`,
-  splitting with `src/linkify.ts`) is the only thing that reads it, and it makes only
-  `http://` and `https://` URLs into anchors.
-  An anchor shows the URL itself, never a label, and opens in a new tab with
-  `rel="noopener noreferrer"` (#759).
+- **No em dashes in UI text** (#331, the operator's call): labels,
+  placeholders, hover titles, notices and timeline lines use a colon, comma,
+  full stop or parentheses; an option label separates value from description
+  with a middle dot (`opus · deep agentic work`), and an empty cell shows a dim
+  middle dot. `npm run lint` refuses one under `src/` (`eslint.config.js`,
+  #1013), comments and tests excepted.
+- Message and timeline text is untrusted and renders as text, no HTML or
+  markdown. Only `<Linked>` (`src/components/Linked.tsx`, `src/linkify.ts`)
+  reads it, linking only `http://` and `https://` URLs; an anchor shows the URL
+  itself and opens in a new tab with `rel="noopener noreferrer"` (#759).
 
 ## API
 
 - REST under `/api/`, method-routed stdlib mux, JSON snake_case. SSE for streams.
-- Every mutating endpoint validates server-side (the UI's dropdowns are convenience,
-  not enforcement).
-- A write whose subject is gone answers 404, not 500: the store returns `ErrNotFound`
-  and the handler maps it with `storeErr`. 500 means the server broke.
+- Every mutating endpoint validates server-side; the UI's dropdowns are
+  convenience.
+- A write whose subject is gone answers 404, not 500: the store returns
+  `ErrNotFound` and the handler maps it with `storeErr`; 500 means the server
+  broke.
 - Secrets (bot tokens, connection creds) never appear in API responses (`json:"-"`).
-- A sentence the hub writes for the room (an error, a status reason) wraps each
-  literal the operator types or copies, such as a command, a flag, a scope or a
-  settings label, in single backticks, and the room renders it as a copy chip
-  (#870, #871). A backtick means nothing else there: no nesting, no escaping.
-  A value the hub interpolates into such a sentence (a name, a host, a
-  platform's error) goes through `roomtext.Plain`, which takes its backticks
-  out, so only the hub's own words make chips. `jsonErr` does this for its
-  string arguments. A platform's or a tool's text is plained where it comes
-  in, in its error type, so an error passes whole and keeps the hub's own
-  remedy marks; a sentence built elsewhere plains where it fills one in (#959).
+- A sentence the hub writes for the room wraps each literal the operator types
+  or copies (a command, flag, scope or settings label) in single backticks,
+  which the room renders as a copy chip, and backticks mean nothing else: no
+  nesting, no escaping (#870, #871). An interpolated value goes through
+  `roomtext.Plain`, as `jsonErr` does for its string arguments; a platform's or
+  tool's text is plained in its error type where it comes in, and a sentence
+  built elsewhere plains where it fills one in (#959).
 
 ## Prompts
 
-- Everything injected into a loop (system prompt, envelopes, preambles) lives in
-  `internal/loop/prompt.go` — never inline strings elsewhere. Envelope headers are
-  part of the product's contract with loops; changing them is a `feat`, not a tweak.
+- Everything injected into a loop (system prompt, envelopes, preambles) lives
+  in `internal/loop/prompt.go`, never inline elsewhere; changing an envelope
+  header is a `feat`.
 
 ## Dev environment
 
-- Canonical entry points are `make` targets; if it isn't in the Makefile, it isn't a
-  supported workflow. Go toolchain pinned in `go.mod`; Node 20.19+ or 22.12+ (vite 7's
-  floor); `.editorconfig` at root.
-- `AGENTS.md` at repo root (with `CLAUDE.md` symlinked to it, ADR-0015) orients
-  agent sessions and loops: read VISION → ARCHITECTURE → CONVENTIONS, then the
+- `make` targets are the canonical entry points: if it isn't in the Makefile,
+  it isn't a supported workflow. Go is pinned in `go.mod`;
+  Node 20.19+ or 22.12+ (vite 7's floor); `.editorconfig` at root.
+- `AGENTS.md` (with `CLAUDE.md` symlinked to it, ADR-0015) orients agent
+  sessions and loops: read VISION → ARCHITECTURE → CONVENTIONS, then the
   package you're touching. It links, it doesn't duplicate.
-- Real-claude e2e (tier 3) spends plan tokens — run deliberately, prefer haiku, note
-  the run in the PR.
+- Real-claude e2e (tier 3) spends plan tokens: run it deliberately, prefer
+  haiku, and note the run in the PR.
