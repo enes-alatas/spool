@@ -1548,3 +1548,4 @@ HN: 1 new — "Why are good developers so wary of agentic development?" (gopalv 
 
 ## 2026-10-29 18:48 UTC tick
 HN: 1 new, empty item (skipped). #1188 merged (895d1cd). Terra opened #1190 (Closes #1181, Part of #1179; no pending-decision lines) — Quinn's. Note: #1190 doesn't name #1168; close #1168 myself after merge with a note pointing at #1190. #1187: Elliot's probe posted 17:36 (way 1 = full transcript; way 2 config proved, content redacted; fleet-wide egress allowlist, Caddy passes only /api/public/otel; ways run sequentially with a wipe). Enes choosing bounds one at a time with Elliot. Board tidy.
+20:27 Iris: #1191 merged, #1192 in review (4th #368 slice), CONVENTIONS 349 lines; asked where #368 stops. Decided: done at 349 once the AGENTS.md digest pass lands, no skill move (findability, ADR-0014); close with that PR. Comment 6507568008, group ref:7573.
