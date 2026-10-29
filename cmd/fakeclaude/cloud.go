@@ -172,7 +172,9 @@ func cloudStart(message, settings string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	fmt.Printf("Started a cloud session: https://claude.ai/code/%s\n", id)
+	// CLI 2.1.310's lines once it has created the session (#1180, comment
+	// 6483144237); the hub binds the start to the session they name
+	fmt.Printf("Created cloud session: %s\nView: https://claude.ai/code/%s?from=cli&m=0\nResume with: claude --teleport %s\n", sessionTitle(message), id, id)
 	if exits {
 		// CLI 2.1.310 ends once the session is created, and its VM posts
 		// SessionStart only after (#1102)
@@ -472,4 +474,14 @@ func shellEnv(envFile, name string) string {
 	cmd.Env = []string{"PATH=" + os.Getenv("PATH")}
 	out, _ := cmd.Output()
 	return strings.TrimSuffix(string(out), "\n")
+}
+
+// sessionTitle is the title a start prints for its session. The real CLI
+// has one written for it; the fake takes the message's first line.
+func sessionTitle(message string) string {
+	title, _, _ := strings.Cut(message, "\n")
+	if runes := []rune(title); len(runes) > 40 {
+		title = string(runes[:40])
+	}
+	return title
 }

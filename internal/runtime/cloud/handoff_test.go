@@ -71,6 +71,7 @@ func TestSessionStartHandsTheConnectionsOverOnlyWhenAwaited(t *testing.T) {
 	exports := []byte("export GH_TOKEN='synthetic'\n")
 
 	cloud.waits.awaitStart("loop-1", time.Minute, exports)
+	printView(cloud, "loop-1", "session_01First")
 	if answer, err := cloud.SessionStart(ctx, "loop-1", "session_01First", startupHook); err != nil || string(answer) != string(exports) {
 		t.Fatalf("the start was answered %q (%v), want the exports", answer, err)
 	}

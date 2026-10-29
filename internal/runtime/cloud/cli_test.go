@@ -35,10 +35,23 @@ func cliRuntime(t *testing.T, cli string) *Runtime {
 // startupHook is the input of a session's first SessionStart hook.
 var startupHook = []byte(`{"hook_event_name":"SessionStart","source":"startup"}`)
 
-// postStartup posts a session's first SessionStart for loopID.
+// postStartup posts a session's first SessionStart for loopID, once the
+// pending start's CLI, if there is one, has printed it created sessionID.
 func postStartup(ctx context.Context, cloud *Runtime, loopID, sessionID string) error {
+	printView(cloud, loopID, sessionID)
 	_, err := cloud.SessionStart(ctx, loopID, sessionID, startupHook)
 	return err
+}
+
+// printView stands in for the CLI's `View:` line naming sessionID, read
+// for loopID's pending start, if there is one.
+func printView(cloud *Runtime, loopID, sessionID string) {
+	cloud.waits.mu.Lock()
+	start := cloud.waits.starts[loopID]
+	cloud.waits.mu.Unlock()
+	if start != nil {
+		cloud.waits.viewed(start, sessionAddress(sessionID))
+	}
 }
 
 func startCLI(t *testing.T, cloud *Runtime, spec runtime.Spec) runtime.Proc {
@@ -348,6 +361,95 @@ func TestCLIHookPostsAreTakenOnlyWhenAwaited(t *testing.T) {
 	cloud.waits.awaitStart("loop-1", -time.Second, nil)
 	if err := postStartup(ctx, cloud, "loop-1", "session_01Late"); err == nil {
 		t.Error("a SessionStart past its start's bound was taken")
+	}
+}
+
+// A start takes only a post from the session its CLI printed it created
+// (ADR-0061): an old session of the loop may hold a token that works, and
+// one posting inside the start's window is refused.
+func TestCLIStartTakesOnlyTheSessionItsCLIPrinted(t *testing.T) {
+	cloud := cliRuntime(t, `printf 'Created cloud session: Greeting\r\n\033[2mView: https://claude.ai/code/session_01Printed?from=cli&m=0\033[0m\r\nResume with: claude --teleport session_01Printed\r\n'
+sleep 30
+`)
+	proc := startCLI(t, cloud, testSpec())
+	stale := make(chan error, 1)
+	go func() {
+		ctx := context.Background()
+		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+			_, err := cloud.SessionStart(ctx, "loop-1", "session_01Stale", startupHook)
+			if !errors.Is(err, errNoHandOff) {
+				stale <- err
+				break
+			}
+		}
+		// the VM names its session cse_…
+		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+			if _, err := cloud.SessionStart(ctx, "loop-1", "cse_01Printed", startupHook); err == nil {
+				break
+			}
+		}
+		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+			if cloud.Stop(ctx, "loop-1", []byte(`{}`), []byte(transcriptTurn), false) == nil {
+				return
+			}
+		}
+	}()
+
+	_, result := turnResult(t, proc, "first words")
+	if result.IsError {
+		t.Fatalf("the turn's result: %+v", result)
+	}
+	if err := <-stale; !errors.Is(err, errOtherSession) {
+		t.Errorf("the other session's post = %v, want it refused as another session", err)
+	}
+	if url := cloud.SessionURL("loop-1"); url != "https://claude.ai/code/session_01Printed" {
+		t.Errorf("the loop's session link = %q, want the printed session's", url)
+	}
+}
+
+// A post can reach the hub before the CLI's line has come through the
+// terminal, and the hook doesn't post again: it waits for the line within
+// the start's bound, and is judged then.
+func TestASessionStartPostWaitsForTheCLIsLine(t *testing.T) {
+	cloud := cliRuntime(t, `sleep 30`)
+	ctx := context.Background()
+	start := cloud.waits.awaitStart("loop-1", time.Minute, []byte("export A='1'\n"))
+	answered := make(chan error, 1)
+	go func() {
+		_, err := cloud.SessionStart(ctx, "loop-1", "session_01Early", startupHook)
+		answered <- err
+	}()
+	select {
+	case err := <-answered:
+		t.Fatalf("the post was judged before the line was read: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	cloud.waits.viewed(start, "session_01Early")
+	if err := <-answered; err != nil {
+		t.Fatalf("the held post, once the line named it: %v", err)
+	}
+	if got := <-start.session; got != "session_01Early" {
+		t.Errorf("the start took %q", got)
+	}
+
+	cloud.waits.awaitStart("loop-1", 200*time.Millisecond, nil)
+	if _, err := cloud.SessionStart(ctx, "loop-1", "session_01Unprinted", startupHook); !errors.Is(err, errNoHandOff) {
+		t.Errorf("a post whose start's CLI printed nothing in its bound = %v, want no hand-off", err)
+	}
+}
+
+func TestViewedSessionReadsTheCLIsLine(t *testing.T) {
+	for line, want := range map[string]string{
+		"View: https://claude.ai/code/session_01MWPu?from=cli&m=0": "session_01MWPu",
+		"View: https://claude.ai/code/session_01MWPu":              "session_01MWPu",
+		"View: https://example.test/code/session_01MWPu":           "",
+		"Resume with: claude --teleport session_01MWPu":            "",
+		"View: https://claude.ai/code/session_01MWPu and more":     "",
+		"Task: View: https://claude.ai/code/session_01MWPu":        "",
+	} {
+		if got, _ := viewedSession(line); got != want {
+			t.Errorf("viewedSession(%q) = %q, want %q", line, got, want)
+		}
 	}
 }
 
