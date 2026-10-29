@@ -1520,3 +1520,6 @@ HN: 1 new (SyneRyder on "Claude Code sends background agents' transcripts": frus
 
 ## 2026-10-29 11:16 UTC tick
 HN: 0 new. #1180: runs R and S done (09:41, Enes's sign-in, spike repo, synthetic secret, archived after). Findings folded into #1185 at 54f8758: start passes --ref; allowlist host gates spool loading; /mcp binds the View: ID with early calls held; GET→405; reclaim re-runs no setup script. Enes decided (DM to Terra, recorded 09:44): kill revokes the hub token for good, Rotate before restart. Elliot's pass at 54f8758: no asks; stray branch claude/spoolprobe-test-v756f1 on spool-cloud-spike for Enes to delete (Terra's thread). Left: Enes accepts ADR-0061, Quinn approves. Slices #1181–#1184 unchanged by the findings.
+
+## 2026-10-29 13:17 UTC tick
+Quiet. HN: 0 new. #1185 head d43d63e: Quinn's three fixes folded, citation slips in #1180 comment edited by Terra. Approval held solely on the "accept with Run S narrowed" pending line → Enes. Terra's DM ask; Enes answered the kill question this morning, so no duplicate nudge from me yet. Board tidy.
