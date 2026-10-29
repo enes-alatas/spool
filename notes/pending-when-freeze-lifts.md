@@ -1523,3 +1523,6 @@ HN: 0 new. #1180: runs R and S done (09:41, Enes's sign-in, spike repo, syntheti
 
 ## 2026-10-29 13:17 UTC tick
 Quiet. HN: 0 new. #1185 head d43d63e: Quinn's three fixes folded, citation slips in #1180 comment edited by Terra. Approval held solely on the "accept with Run S narrowed" pending line → Enes. Terra's DM ask; Enes answered the kill question this morning, so no duplicate nudge from me yet. Board tidy.
+
+## 2026-10-29 14:31 UTC — backlog review with Enes (DM ref:7491–7494)
+#1185 merged 14:16, #1180 closed. Enes: clusters 4–6 (artifacts spike, eval cluster, CI reliability) stay; #753 stays in triage for a while. #1131 is Elliot's tracker on his own 10-25 decision (waits on Remotion, not Elliot) — my "slow" was wrong. #368: sub-issues 470/471/472 COMPLETED; steps 4–5 (histories out, 150-line target) not done; CONVENTIONS now 604 lines. Proposed to Enes: retitle #368 to the remaining slice, or close. Awaiting his call. Assigned #1181 to Terra in group (ref:7495).
