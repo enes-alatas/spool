@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -48,16 +49,18 @@ func TestCloudListenerAdmitsCloudLoopsOnly(t *testing.T) {
 	}
 	cloudToken, containedToken := cloudTokenOf("cirrus"), hubMCPToken(t, s, "aster")
 
-	sess := mcpSessionAt(t, s.cloudURL, cloudToken)
-	res := callSend(t, sess, map[string]any{"destination": "control_room", "text": "hello from the cloud"})
-	if res.IsError {
-		t.Fatalf("a cloud loop's send on the cloud listener was refused: %s", resultText(res))
+	// taken, and refused only for want of a pending start; /mcp takes it
+	// from the loop's session alone (TestACloudLoopsMCPTakesOnlyItsSessionInATurn)
+	if got := postHook(t, s, cloudToken, "session_01Probe"); got != http.StatusConflict {
+		t.Fatalf("a cloud loop's token on the cloud listener's hooks: %d, want 409", got)
 	}
-	if len(s.activityWith("hello from the cloud")) == 0 {
-		t.Fatal("the cloud loop's send was answered but never stored")
+	if got := postHook(t, s, containedToken, "session_01Probe"); got != http.StatusUnauthorized {
+		t.Errorf("a contained loop's token on the cloud listener's hooks: %d, want 401", got)
 	}
-
-	initialize := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"itest","version":"0"}}}`
+	initialize := mcpInitialize
+	if got := postTo(t, s.cloudURL, cloudToken, initialize); got != http.StatusUnauthorized {
+		t.Errorf("a cloud loop's token on /mcp with no session named: %d, want 401", got)
+	}
 	if got := postTo(t, s.cloudURL, containedToken, initialize); got != http.StatusUnauthorized {
 		t.Errorf("a contained loop's token on the cloud listener: %d, want 401", got)
 	}
@@ -116,7 +119,24 @@ func TestCloudListenerBoundsComeBeforeAuth(t *testing.T) {
 // bearer unless it is empty, and returns the status.
 func postTo(t *testing.T, baseURL, token, body string) int {
 	t.Helper()
+	return postToAs(t, baseURL, token, "", body)
+}
+
+// postToAs is postTo from the cloud session named session, as its MCP
+// client names it in X-Spool-Session; "" names none.
+func postToAs(t *testing.T, baseURL, token, session, body string) int {
+	t.Helper()
+	status, _ := mcpAnswer(t, baseURL, token, session, body)
+	return status
+}
+
+// mcpAnswer is postToAs, with the answer's body too.
+func mcpAnswer(t *testing.T, baseURL, token, session, body string) (int, string) {
+	t.Helper()
 	req, _ := http.NewRequest(http.MethodPost, baseURL+"/mcp", strings.NewReader(body))
+	if session != "" {
+		req.Header.Set("X-Spool-Session", session)
+	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	if token != "" {
@@ -126,8 +146,9 @@ func postTo(t *testing.T, baseURL, token, body string) int {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
-	return resp.StatusCode
+	defer resp.Body.Close()
+	answer, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(answer)
 }
 
 // makeCloudLoop makes the loop name, in the stopped hub at dataDir, a

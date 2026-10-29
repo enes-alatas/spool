@@ -45,7 +45,9 @@ package main
 // CLAUDE_ENV_FILE, the session's claude-env file. The reply is "fake cloud
 // reply: " and the message, or, for a message with a "!env NAME" or
 // "!envsum NAME" line, NAME and its value as sh reads it after claude-env,
-// or for !envsum its SHA-256. Turns of one session run one at a time.
+// or for !envsum its SHA-256, or for a "!send {json}" line, what the hub's
+// send_message answered the call through the VM's spool server
+// (sendFromVM). Turns of one session run one at a time.
 //
 // A "reclaimed" file in a session's directory makes its next turn a VM
 // Anthropic reclaimed while idle: claude-env is kept, and SessionStart
@@ -67,11 +69,14 @@ package main
 // 502, and nothing the VM posts reaches the hub.
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -79,6 +84,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // cloudVMArg runs one turn in a session's VM: fakeclaude re-runs itself
@@ -334,6 +341,9 @@ func cloudTurn(session, message string, first bool) int {
 			value = hex.EncodeToString(sum[:])
 		}
 		reply = name + "=" + value
+	}
+	if args, asked := sendAsked(message); asked {
+		reply = sendFromVM(home, string(environment), env, args)
 	}
 	turn := len(readLines(transcript))
 	usage := map[string]any{"input_tokens": 10, "output_tokens": 5, "cache_creation_input_tokens": 100, "cache_read_input_tokens": 1000}
@@ -648,4 +658,75 @@ func compacted(message string) bool {
 		}
 	}
 	return false
+}
+
+// sendFromVM calls the hub's send_message tool with args, as the session's
+// MCP client would: through the spool server the setup script wrote into
+// the VM's ~/.claude.json, its headers' ${VAR}s expanded from the
+// session's env (comment 6469183361 on #1168), and the environment's
+// network secret added for its host, as the egress proxy adds it (run S
+// on #1180). It replies "sent <the tool's text>" or "send error: …".
+func sendFromVM(home, environment string, env []string, args map[string]any) string {
+	servers, err := readMCPConfig(filepath.Join(home, ".claude.json"))
+	if err != nil {
+		return "send error: " + err.Error()
+	}
+	srv, ok := servers["spool"]
+	if !ok || srv.URL == "" {
+		return "send error: the VM's ~/.claude.json names no spool server"
+	}
+	vars := map[string]string{}
+	for _, entry := range env {
+		name, value, _ := strings.Cut(entry, "=")
+		vars[name] = value
+	}
+	headers := map[string]string{}
+	for name, value := range srv.Headers {
+		headers[name] = os.Expand(value, func(name string) string { return vars[name] })
+	}
+	raw, _ := os.ReadFile(filepath.Join(environmentDir(environment), "secret"))
+	if host, token, ok := strings.Cut(strings.TrimSpace(string(raw)), " "); ok {
+		if parsed, err := url.Parse(srv.URL); err == nil && parsed.Host == host {
+			headers["Authorization"] = "Bearer " + token
+		}
+	}
+	client := mcp.NewClient(&mcp.Implementation{Name: "fakeclaude", Version: "0"}, nil)
+	sess, err := client.Connect(context.Background(), &mcp.StreamableClientTransport{
+		Endpoint:             srv.URL,
+		HTTPClient:           &http.Client{Transport: headerTransport{headers}, Timeout: 20 * time.Second},
+		DisableStandaloneSSE: true,
+		MaxRetries:           -1,
+	}, nil)
+	if err != nil {
+		return "send error: " + err.Error()
+	}
+	defer func() { _ = sess.Close() }()
+	res, err := sess.CallTool(context.Background(), &mcp.CallToolParams{Name: "send_message", Arguments: args})
+	if err != nil {
+		return "send error: " + err.Error()
+	}
+	var parts []string
+	for _, content := range res.Content {
+		if text, ok := content.(*mcp.TextContent); ok {
+			parts = append(parts, text.Text)
+		}
+	}
+	if res.IsError {
+		return "send error: " + strings.Join(parts, " ")
+	}
+	return "sent " + strings.Join(parts, " ")
+}
+
+// sendAsked is the arguments of a turn's "!send {json}" line, the
+// directive a contained turn takes too.
+func sendAsked(message string) (map[string]any, bool) {
+	for _, line := range strings.Split(message, "\n") {
+		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "!send "); ok {
+			var args map[string]any
+			if json.Unmarshal([]byte(rest), &args) == nil {
+				return args, true
+			}
+		}
+	}
+	return nil, false
 }

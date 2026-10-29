@@ -89,6 +89,13 @@ type hookWaits struct {
 	starts  map[string]*pendingStart
 	stops   map[string]chan stopArrival
 	prompts map[string]string
+	// ended is when each loop's last turn ended: /mcp takes its session's
+	// calls for turnGrace after.
+	ended map[string]time.Time
+	// binding is the session a SessionStart post just bound, until the
+	// start has recorded it in the loop's state: the session's first MCP
+	// call can come in between.
+	binding map[string]string
 }
 
 // setPrompt records the prompt the loop's session runs with.
@@ -190,6 +197,15 @@ func (waits *hookWaits) forgetStop(loopID string, stops chan stopArrival) {
 	if waits.stops[loopID] == stops {
 		delete(waits.stops, loopID)
 	}
+	waits.endedLocked(loopID)
+}
+
+// endedLocked records that the loop's turn ended now. waits.mu is held.
+func (waits *hookWaits) endedLocked(loopID string) {
+	if waits.ended == nil {
+		waits.ended = map[string]time.Time{}
+	}
+	waits.ended[loopID] = time.Now()
 }
 
 // SessionStart takes a SessionStart post and answers it with the loop's
@@ -238,14 +254,14 @@ func (cloud *Runtime) answerContextLost(loopID, sessionID string) ([]byte, error
 		return nil, err
 	}
 	if current.SessionID == "" || current.SessionID != sessionID {
-		return nil, errors.New("cloud: the post isn't from the loop's session")
+		return nil, errNotTheSession
 	}
 	cloud.waits.mu.Lock()
 	inFlight := cloud.waits.stops[loopID] != nil
 	prompt, known := cloud.waits.prompts[loopID]
 	cloud.waits.mu.Unlock()
 	if !inFlight || !known {
-		return nil, errors.New("cloud: no turn of this loop is in flight")
+		return nil, errNoTurn
 	}
 	return sessionStartAnswer(nil, prompt)
 }
@@ -295,22 +311,113 @@ func (cloud *Runtime) answerSessionStart(ctx context.Context, loopID, sessionID,
 		return nil, errOtherSession
 	}
 	delete(cloud.waits.starts, loopID)
+	if cloud.waits.binding == nil {
+		cloud.waits.binding = map[string]string{}
+	}
+	cloud.waits.binding[loopID] = sessionID
 	start.session <- sessionID
 	return start.answer, nil
 }
 
-// Stop takes a Stop post: it ends the loop's turn in flight, once. With no
-// turn in flight it is refused.
-func (cloud *Runtime) Stop(_ context.Context, loopID string, hook, lines []byte, overBound bool) error {
+// Stop takes a Stop post from the loop's recorded session: it ends the
+// loop's turn in flight, once. A post from any other session of the
+// loop's environment, or with no turn in flight, is refused (ADR-0061).
+func (cloud *Runtime) Stop(_ context.Context, loopID, sessionID string, hook, lines []byte, overBound bool) error {
+	current, err := cloud.recorded(loopID)
+	if err != nil {
+		return err
+	}
+	if current.SessionID == "" || sessionAddress(sessionID) != current.SessionID {
+		return errNotTheSession
+	}
 	cloud.waits.mu.Lock()
 	defer cloud.waits.mu.Unlock()
 	stops := cloud.waits.stops[loopID]
 	if stops == nil {
-		return errors.New("cloud: no turn of this loop is in flight")
+		return errNoTurn
 	}
 	delete(cloud.waits.stops, loopID)
+	cloud.waits.endedLocked(loopID)
 	stops <- stopArrival{post: StopPost{Hook: hook, Lines: lines}, overBound: overBound}
 	return nil
+}
+
+// turnGrace is how long after a turn ends /mcp still takes its session's
+// calls (ADR-0061).
+const turnGrace = time.Minute
+
+// MCPSession says whether sessionID is the loop's own session, at any
+// time: its MCP client may connect and list the hub's tools between turns
+// too, since a client refused there stays failed into the next turn
+// (ADR-0061). While a start is pending it is the session the start's CLI
+// printed: the client connects before SessionStart binds it, and a
+// request that comes before the hub has read the CLI's line waits for it
+// within the start's bound, as an early SessionStart post does.
+func (cloud *Runtime) MCPSession(ctx context.Context, loopID, sessionID string) error {
+	_, err := cloud.boundSession(ctx, loopID, sessionID)
+	return err
+}
+
+// MCPCall says whether the loop's /mcp takes a tool call that names
+// sessionID as its session: only the loop's own session (MCPSession),
+// while a turn of it is in flight or within turnGrace of one, since a
+// process left running in the VM is the likeliest misuse between wakes
+// (ADR-0061). A pending start's session is in its first turn.
+func (cloud *Runtime) MCPCall(ctx context.Context, loopID, sessionID string) error {
+	pending, err := cloud.boundSession(ctx, loopID, sessionID)
+	if err != nil || pending {
+		return err
+	}
+	current, err := cloud.recorded(loopID)
+	if err != nil {
+		return err
+	}
+	// a turn cut off by a hub restart may still run until its bound
+	if turn := current.Turn; turn != nil && (!turn.CutOff || time.Now().UnixMilli() < turn.Until) {
+		return nil
+	}
+	cloud.waits.mu.Lock()
+	defer cloud.waits.mu.Unlock()
+	if cloud.waits.stops[loopID] != nil || time.Since(cloud.waits.ended[loopID]) < turnGrace {
+		return nil
+	}
+	return errNoTurn
+}
+
+// boundSession refuses sessionID unless it is the loop's session: the one
+// a pending start's CLI printed, which pending reports, or the recorded
+// one.
+func (cloud *Runtime) boundSession(ctx context.Context, loopID, sessionID string) (pending bool, err error) {
+	sessionID = sessionAddress(sessionID)
+	cloud.waits.mu.Lock()
+	start := cloud.waits.starts[loopID]
+	cloud.waits.mu.Unlock()
+	if start != nil {
+		deadline := time.NewTimer(time.Until(start.deadline))
+		defer deadline.Stop()
+		select {
+		case <-start.seen:
+		case <-deadline.C:
+			return true, errNotTheSession
+		case <-ctx.Done():
+			return true, ctx.Err()
+		}
+		cloud.waits.mu.Lock()
+		viewed := start.viewed
+		cloud.waits.mu.Unlock()
+		if sessionID != viewed {
+			return true, errNotTheSession
+		}
+		return true, nil
+	}
+	current, err := cloud.recorded(loopID)
+	if err != nil {
+		return false, err
+	}
+	if current.SessionID == "" || sessionID != current.SessionID {
+		return false, errNotTheSession
+	}
+	return false, nil
 }
 
 // cliSession is a loop's cloud session driven through the CLI, seen by the
@@ -547,11 +654,15 @@ func (session *cliSession) startSession(text string) error {
 		select {
 		case sessionID := <-pending.session:
 			session.sessionID = sessionID
-			return session.cloud.update(session.loopID, func(s *state) {
+			err := session.cloud.update(session.loopID, func(s *state) {
 				s.SessionID, s.ClaudeSession, s.EnvironmentID = sessionID, session.claudeSession, ""
 				s.SessionURL = sessionPages + sessionID
 				s.Source = sourceKey(session.source)
 			})
+			session.cloud.waits.mu.Lock()
+			delete(session.cloud.waits.binding, session.loopID)
+			session.cloud.waits.mu.Unlock()
+			return err
 		case <-cliExited:
 			if exitErr == nil {
 				cliExited = nil
@@ -942,4 +1053,16 @@ func gitSafe(source runtime.CloudStart) bool {
 		}
 	}
 	return true
+}
+
+// recorded is the loop's state, with the session a SessionStart post has
+// just bound in its place until the start has recorded it.
+func (cloud *Runtime) recorded(loopID string) (state, error) {
+	current, err := cloud.load(loopID)
+	cloud.waits.mu.Lock()
+	defer cloud.waits.mu.Unlock()
+	if bound := cloud.waits.binding[loopID]; bound != "" {
+		current.SessionID = bound
+	}
+	return current, err
 }

@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"net/http"
@@ -61,13 +62,14 @@ func CloudHTTPServer(handler http.Handler) *http.Server {
 // carry organisation credentials, and putting them on the internet is a
 // decision of its own.
 func (server *Server) CloudHandler(redacted func(http.Handler) http.Handler) http.Handler {
-	mcpHandler := server.mcpHandler(runningCloudLoop)
+	mcpHandler := server.mcpHandler(server.cloudMCPCall)
 	return http.HandlerFunc(func(unredacted http.ResponseWriter, r *http.Request) {
 		limit := int64(cloudMaxBody)
 		if r.URL.Path == cloudHooksPath {
 			limit = cloudMaxHookBody
 		}
 		r.Body = http.MaxBytesReader(unredacted, r.Body, limit)
+		r = r.WithContext(context.WithValue(r.Context(), cloudListenerKey{}, true))
 		redacted(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch {
 			case r.URL.Path == "/mcp":
@@ -168,4 +170,29 @@ func (checks *cloudChecks) expire(now time.Time) {
 // resume (ADR-0061).
 func runningCloudLoop(caller *store.Loop) bool {
 	return caller.Runtime == store.RuntimeCloud && caller.Status == store.StatusActive
+}
+
+// cloudMCPCall admits a request to the cloud listener's /mcp from a
+// running cloud loop's own session, named in cloudSessionHeader, at any
+// time, and holds its tool calls back unless a turn of it runs
+// (ADR-0061): every session in the loop's environment holds the token, a
+// session someone starts there by hand included. The handshake stays
+// open between turns, since a client refused there stays failed into the
+// next one. held is the reason its tool calls are refused, nil in a turn.
+// A refusal is logged with the loop, so a turn the hub wrongly thinks
+// ended shows up.
+func (server *Server) cloudMCPCall(r *http.Request, caller *store.Loop) (admitted bool, held error) {
+	if !runningCloudLoop(caller) || server.CloudHooks == nil {
+		return false, nil
+	}
+	session := r.Header.Get(cloudSessionHeader)
+	if !cloudSessionID.MatchString(session) {
+		server.Log.Warn("cloud mcp call refused", "loop", caller.Name, "reason", "no session id")
+		return false, nil
+	}
+	if err := server.CloudHooks.MCPSession(r.Context(), caller.ID, session); err != nil {
+		server.Log.Warn("cloud mcp call refused", "loop", caller.Name, "session", session, "reason", err.Error())
+		return false, nil
+	}
+	return true, server.CloudHooks.MCPCall(r.Context(), caller.ID, session)
 }

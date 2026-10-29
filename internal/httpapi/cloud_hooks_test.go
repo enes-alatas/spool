@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -36,6 +37,8 @@ type recordingHooks struct {
 	mu     sync.Mutex
 	calls  []hookCall
 	refuse error
+	// refuseSession is what MCPSession answers.
+	refuseSession error
 	// exports is what a SessionStart post is answered with.
 	exports []byte
 	// posted is each loop SessionPosted was told of.
@@ -52,10 +55,10 @@ func (hooks *recordingHooks) SessionStart(_ context.Context, loopID, sessionID s
 	return hooks.exports, nil
 }
 
-func (hooks *recordingHooks) Stop(_ context.Context, loopID string, hook, lines []byte, overBound bool) error {
+func (hooks *recordingHooks) Stop(_ context.Context, loopID, sessionID string, hook, lines []byte, overBound bool) error {
 	hooks.mu.Lock()
 	defer hooks.mu.Unlock()
-	hooks.calls = append(hooks.calls, hookCall{event: "Stop", loopID: loopID, hook: string(hook), lines: string(lines), overBound: overBound})
+	hooks.calls = append(hooks.calls, hookCall{event: "Stop", loopID: loopID, session: sessionID, hook: string(hook), lines: string(lines), overBound: overBound})
 	return hooks.refuse
 }
 
@@ -63,6 +66,20 @@ func (hooks *recordingHooks) SessionPosted(loopID string) {
 	hooks.mu.Lock()
 	defer hooks.mu.Unlock()
 	hooks.posted = append(hooks.posted, loopID)
+}
+
+func (hooks *recordingHooks) MCPCall(_ context.Context, loopID, sessionID string) error {
+	hooks.mu.Lock()
+	defer hooks.mu.Unlock()
+	hooks.calls = append(hooks.calls, hookCall{event: "mcp", loopID: loopID, session: sessionID})
+	return hooks.refuse
+}
+
+func (hooks *recordingHooks) MCPSession(_ context.Context, loopID, sessionID string) error {
+	hooks.mu.Lock()
+	defer hooks.mu.Unlock()
+	hooks.calls = append(hooks.calls, hookCall{event: "mcp session", loopID: loopID, session: sessionID})
+	return hooks.refuseSession
 }
 
 func (hooks *recordingHooks) taken() []hookCall {
@@ -145,7 +162,7 @@ func TestCloudHookRouteHandsEachPostToItsLoop(t *testing.T) {
 	if code := postHook(handler, cloudLoopToken, body, contentType); code != http.StatusOK {
 		t.Fatalf("SessionStart: %d, want 200", code)
 	}
-	body, contentType = hookForm(t, [2]string{"hook", stopInput}, [2]string{"lines", "{\"type\":\"user\"}\n"})
+	body, contentType = hookForm(t, [2]string{"hook", stopInput}, [2]string{"session", "cse_01Synthetic"}, [2]string{"lines", "{\"type\":\"user\"}\n"})
 	if code := postHook(handler, cloudLoopToken, body, contentType); code != http.StatusNoContent {
 		t.Fatalf("Stop: %d, want 204", code)
 	}
@@ -153,7 +170,7 @@ func TestCloudHookRouteHandsEachPostToItsLoop(t *testing.T) {
 	calls := hooks.taken()
 	want := []hookCall{
 		{event: "SessionStart", loopID: "l-cloud", session: "cse_01Synthetic", hook: startInput},
-		{event: "Stop", loopID: "l-cloud", hook: stopInput, lines: "{\"type\":\"user\"}\n"},
+		{event: "Stop", loopID: "l-cloud", session: "cse_01Synthetic", hook: stopInput, lines: "{\"type\":\"user\"}\n"},
 	}
 	if len(calls) != len(want) || calls[0] != want[0] || calls[1] != want[1] {
 		t.Errorf("the route made %+v, want %+v", calls, want)
@@ -325,5 +342,109 @@ func TestCloudListenerWritesOnlyTheHandOffPastTheRedactor(t *testing.T) {
 	if response := serve(http.MethodPost, cloudHooksPath, cloudLoopToken, refused, refusedType); response.Header().Get("X-Redacted") != "yes" ||
 		strings.Contains(response.Body.String(), "synthetic-value") {
 		t.Errorf("a refused SessionStart post (%d) was written past the redactor, or carried the exports", response.Code)
+	}
+}
+
+// The cloud listener's /mcp asks the runtime about the session a request
+// names in its header, and refuses one that names none, or a session the
+// runtime refuses, as it refuses an unknown token. The loop's own session
+// gets the handshake and the tool list at any time, and outside a turn
+// each tool call is refused as a tool error naming why: a 401 between
+// turns would leave the session's client failed into the next (ADR-0061).
+func TestCloudMCPTakesOnlyTheSessionTheRuntimeAdmits(t *testing.T) {
+	hooks := &recordingHooks{}
+	handler := hookServer(t, hooks)
+	call := func(session, body string) (int, string) {
+		req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		req.Header.Set("Authorization", "Bearer "+cloudLoopToken)
+		if session != "" {
+			req.Header.Set(cloudSessionHeader, session)
+		}
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, req)
+		return recorder.Code, recorder.Body.String()
+	}
+	const (
+		initialize = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}`
+		listTools  = `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`
+		send       = `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"send_message","arguments":{"destination":"control_room","text":"hello"}}}`
+	)
+	if code, _ := call("cse_01Synthetic", initialize); code != http.StatusOK {
+		t.Errorf("a call the runtime admits: %d, want 200", code)
+	}
+	if code, _ := call("", initialize); code != http.StatusUnauthorized {
+		t.Errorf("a call naming no session: %d, want 401", code)
+	}
+	if code, _ := call("not-a-session", initialize); code != http.StatusUnauthorized {
+		t.Errorf("a call naming no session's shape: %d, want 401", code)
+	}
+
+	hooks.refuse = errors.New("no turn of this loop is in flight")
+	for _, body := range []string{initialize, listTools} {
+		if code, answer := call("cse_01Synthetic", body); code != http.StatusOK || strings.Contains(answer, `"error"`) {
+			t.Errorf("the loop's session's %s between turns: %d %s, want it answered", body[:40], code, answer)
+		}
+	}
+	if code, answer := call("cse_01Synthetic", send); code != http.StatusOK || !strings.Contains(answer, `"isError":true`) ||
+		!strings.Contains(answer, "no turn of this loop is in flight") {
+		t.Errorf("the loop's session's send between turns: %d %s, want a tool error naming the turn", code, answer)
+	}
+
+	hooks.refuseSession = errors.New("the request isn't from the loop's session")
+	if code, _ := call("cse_01Synthetic", initialize); code != http.StatusUnauthorized {
+		t.Errorf("a session the runtime refuses: %d, want 401", code)
+	}
+	session := hookCall{event: "mcp session", loopID: "l-cloud", session: "cse_01Synthetic"}
+	turn := hookCall{event: "mcp", loopID: "l-cloud", session: "cse_01Synthetic"}
+	want := []hookCall{session, turn, session, turn, session, turn, session, turn, session}
+	if calls := hooks.taken(); !slices.Equal(calls, want) {
+		t.Errorf("the runtime was asked %+v, want %+v", calls, want)
+	}
+}
+
+// A request the cloud listener refuses for its token is logged, at most
+// once a minute, with the path and what came but never the token; the
+// loop listener's refusals log nothing.
+func TestCloudListenerLogsATokenRefusalOnceAMinute(t *testing.T) {
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	var logged bytes.Buffer
+	server := &Server{Store: db, Log: slog.New(slog.NewTextHandler(&logged, nil))}
+	cloudHandler := server.CloudHandler(noRedaction)
+	post := func(handler http.Handler, token string) int {
+		req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{}`))
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, req)
+		return recorder.Code
+	}
+	if code := post(cloudHandler, "spool-hub-synthetic-unknown"); code != http.StatusUnauthorized {
+		t.Fatalf("an unknown token: %d, want 401", code)
+	}
+	if code := post(cloudHandler, ""); code != http.StatusUnauthorized {
+		t.Fatalf("no token: %d, want 401", code)
+	}
+	if got := strings.Count(logged.String(), "cloud listener refused a request"); got != 1 {
+		t.Errorf("two refusals in a minute logged %d lines, want 1:\n%s", got, logged.String())
+	}
+	if !strings.Contains(logged.String(), "path=/mcp") || !strings.Contains(logged.String(), `came="a token no loop holds"`) ||
+		strings.Contains(logged.String(), "synthetic-unknown") {
+		t.Errorf("the line doesn't name the path and what came, or names the token:\n%s", logged.String())
+	}
+
+	server.cloudRefusedLogged.Store(0)
+	logged.Reset()
+	if code := post(server.mcpHandler(everyLoop), ""); code != http.StatusUnauthorized {
+		t.Fatalf("no token on the loop listener: %d, want 401", code)
+	}
+	if logged.Len() != 0 {
+		t.Errorf("the loop listener's refusal was logged:\n%s", logged.String())
 	}
 }

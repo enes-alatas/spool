@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -180,6 +181,9 @@ type Server struct {
 	cloudCheck cloudCheckState
 	// cloudAccountCheck is the last account check.
 	cloudAccountCheck cloudAccountCheckState
+	// cloudRefusedLogged is when the cloud listener last logged a request
+	// it refused for its token, in Unix ms: at most one a minute.
+	cloudRefusedLogged atomic.Int64
 }
 
 func (server *Server) Handler() http.Handler {

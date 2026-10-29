@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -57,20 +58,23 @@ type sendMessageOut struct {
 
 // mcpHandler serves /mcp to a caller whose loop admits lets onto this
 // listener. One it refuses is answered as an unknown token is, so a
-// refusal says nothing about whose token it was.
-func (server *Server) mcpHandler(admits func(*store.Loop) bool) http.Handler {
+// refusal says nothing about whose token it was. One it admits with a
+// held reason gets the handshake and the tool list, and each tool call
+// is refused as a tool error naming it.
+func (server *Server) mcpHandler(admits func(*http.Request, *store.Loop) (admitted bool, held error)) http.Handler {
 	inner := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
 		caller, ok := r.Context().Value(mcpLoopKey{}).(*store.Loop)
 		if !ok {
 			return nil
 		}
+		held, _ := r.Context().Value(mcpHeldKey{}).(error)
 		mcpServer := mcp.NewServer(&mcp.Implementation{Name: "spool", Version: server.ClaudeVer}, nil)
 		mcp.AddTool(mcpServer, &mcp.Tool{
 			Name: "send_message",
 			Description: "Send one explicitly addressed message. Each call is one message to one " +
 				"destination; call again for another destination or recipient set. Errors are " +
 				"correctable: fix what the message names and retry.",
-		}, server.sendMessageTool(caller))
+		}, server.sendMessageTool(caller, held))
 		return mcpServer
 	}, &mcp.StreamableHTTPOptions{
 		Stateless: true,
@@ -90,11 +94,16 @@ func (server *Server) mcpHandler(admits func(*store.Loop) bool) http.Handler {
 		if !ok {
 			return
 		}
-		if !admits(caller) {
+		admitted, held := admits(r, caller)
+		if !admitted {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		inner.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), mcpLoopKey{}, caller)))
+		ctx := context.WithValue(r.Context(), mcpLoopKey{}, caller)
+		if held != nil {
+			ctx = context.WithValue(ctx, mcpHeldKey{}, held)
+		}
+		inner.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
@@ -106,21 +115,53 @@ func (server *Server) mcpCaller(w http.ResponseWriter, r *http.Request) (*store.
 	// Refused before the lookup, so no row with an empty token can ever
 	// answer for it: this check is all that keeps a rebinding page out.
 	if token == "" {
+		server.cloudRefused(r, "no token")
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return nil, false
 	}
 	caller, err := server.Store.Loops().GetByHubMCPToken(r.Context(), token)
 	if err != nil {
+		server.cloudRefused(r, "a token no loop holds")
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return nil, false
 	}
 	return caller, true
 }
 
+// cloudRefused logs a request the cloud listener refused for its token,
+// at most once a minute: a session whose network secret is missing or
+// wrong is refused on every request, and the log is where the operator
+// finds why. It names the path and what came, never a token or its hash.
+// A request on the loop listener logs nothing.
+func (server *Server) cloudRefused(r *http.Request, came string) {
+	if r.Context().Value(cloudListenerKey{}) == nil {
+		return
+	}
+	now := time.Now().UnixMilli()
+	last := server.cloudRefusedLogged.Load()
+	if now-last < time.Minute.Milliseconds() || !server.cloudRefusedLogged.CompareAndSwap(last, now) {
+		return
+	}
+	server.Log.Warn("cloud listener refused a request for its token, logged at most once a minute: check the environment's network secret",
+		"path", r.URL.Path, "came", came)
+}
+
+// cloudListenerKey marks a request that came in on the cloud listener.
+type cloudListenerKey struct{}
+
 type mcpLoopKey struct{}
 
-func (server *Server) sendMessageTool(caller *store.Loop) func(context.Context, *mcp.CallToolRequest, sendMessageIn) (*mcp.CallToolResult, sendMessageOut, error) {
+// mcpHeldKey carries why an admitted request's tool calls are refused.
+type mcpHeldKey struct{}
+
+// sendMessageTool is the send_message tool for caller. A held one refuses
+// every call, as a tool error the model reads, and logs it with the loop.
+func (server *Server) sendMessageTool(caller *store.Loop, held error) func(context.Context, *mcp.CallToolRequest, sendMessageIn) (*mcp.CallToolResult, sendMessageOut, error) {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in sendMessageIn) (*mcp.CallToolResult, sendMessageOut, error) {
+		if held != nil {
+			server.Log.Warn("cloud mcp call refused", "loop", caller.Name, "tool", "send_message", "reason", held.Error())
+			return nil, sendMessageOut{}, fmt.Errorf("refused: %v; this loop's sends reach the hub only during its turns", held)
+		}
 		req := route.SendRequest{
 			From:        caller,
 			Destination: in.Destination,
@@ -179,4 +220,4 @@ func (server *Server) sendMessageTool(caller *store.Loop) func(context.Context, 
 }
 
 // everyLoop admits any loop's token: the loop listener's rule.
-func everyLoop(*store.Loop) bool { return true }
+func everyLoop(*http.Request, *store.Loop) (bool, error) { return true, nil }

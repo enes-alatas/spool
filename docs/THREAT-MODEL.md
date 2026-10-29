@@ -396,6 +396,17 @@ and each turn's transcript lines back to the cloud listener (ADR-0059).
   the pty (ADR-0061): a post that comes before the hub has read the line
   waits for it within the window, and one naming any other session is
   refused and logged.
+- **`/mcp` and `Stop` take only the loop's session, and tool calls only
+  during a turn.** Every session in the loop's environment holds the
+  token, one started there by hand included. The setup script has the
+  session's MCP client send its session's ID in `X-Spool-Session`, and
+  `/mcp` takes a request only from the loop's recorded session, or the
+  one a pending start's CLI printed. It answers that session's handshake
+  and tool list at any time, since a client refused between turns stays
+  failed into the next. A tool call is taken only while a turn of it runs
+  or within a minute of its end, and is otherwise refused as a tool error
+  (ADR-0061). A `Stop` post from any other session is refused. Each
+  refusal is logged with the loop.
 - **Deleting a cloud loop revokes its token,** with its record. The CLI
   can't archive the session, so it is left for the operator to archive
   on claude.ai.
@@ -538,7 +549,9 @@ and each turn's transcript lines back to the cloud listener (ADR-0059).
   holds it: the proxy adds it to whatever request is made for the hub's
   host, from anywhere in the session, while the loop runs, until a kill
   or Rotate token. It reaches only the cloud listener's routes for its
-  own loop.
+  own loop. A process in the VM can forge the session header, and
+  so call `/mcp`'s tools as the loop during its turns and the minute
+  after, and list them at any time.
 - **A stop can't interrupt the turn in flight.** The CLI has no way to,
   so the turn runs on in the VM until it ends, cut off from the hub but
   with its other tools. A wake sent just before the stop may start a turn
