@@ -276,137 +276,67 @@ ADR instead.*
 
 ## Agent workflow (ADR-0015)
 
-*The same loop a human follows, written down because most contributors are
-agents — Claude sessions today, Spool's own loops from L2.*
-
 - **Lifecycle**: typed issue → branch `<type>/<topic>` off fresh `main` →
   implement → self-check → PR (template filled, issue linked) → stop for
-  review. **Fresh means synced**: `git fetch` and branch off `origin/main`,
-  never a local `main` you haven't updated — in an agent session the checkout
-  can lag the remote (a dependency PR may already be merged under new SHAs), and
-  branching on a stale base costs a needless rebase or, worse, duplicate-looking
-  commits. Reviews may come from humans or agents; merging needs a human
-  approval (ADR-0008), and agents never merge their own work.
-- **Code is not precedent** — the docs of record are; where code and docs
-  disagree, docs win. Improve opportunistically or rewrite behind the seams.
-  Neither is a file's local habit precedent: a pattern the neighbouring lines
-  have settled into may be one contributor's from last week, and citing it back
-  is how a rule already on the books gets reviewed past (#141). Check the doc,
-  not the neighbours.
-- **Issue-first**: any change touching behavior, seams, dependencies, prompts,
-  or the docs of record (VISION, ARCHITECTURE, CONVENTIONS, QUALITY, ADRs)
-  starts from a typed issue the human could have seen. Trivial mechanical fixes
-  (typo, formatting, broken link) may go straight to PR — the template's Issue
-  section says why.
-- **Secret shapes are scanned, not remembered**: `make secret-scan` runs the same
-  check CI runs on every PR — the lines a change *adds*, against the known
-  credential shapes. Test files and fixtures may hold a token-shaped string only
-  when the value reads as obviously synthetic; production code never may. A hit
-  prints at most eight characters, because a CI log is an artefact too. The
-  rules need an awk with regex intervals: gawk, or a mawk newer than the
-  1.3.4 20200120 that Ubuntu 22.04 and Debian 12 ship. Under an awk without
-  them the scan refuses rather than passes; install gawk, or point
-  `SECRET_AWK` at one that works (#718).
-- **An issue or comment body is redacted, not rejected** (#206): the
-  `issue-guards` workflow edits the value out, but the revision history still
-  holds it, so rotation is not optional, and a loop reports it privately for
-  the operator to delete. Procedure: `/credential-incident`.
-- **The board is world-readable** (ADR-0031): once the repo is public, every
-  issue, comment, review and commit is readable by anyone, history included,
-  and a deletion is not a recall. One rule follows, which the redaction rules
-  enforce only the edges of — a bot handle and the group's chat id are taken
-  out of a body automatically, the words are not: **nothing said in the
-  fleet channel, or the Telegram group it is mirrored to, is quoted on
-  GitHub.** The channel is where the fleet coordinates and the operator
-  thinks out loud, and neither was written for an audience; an issue or PR that needs the substance
-  of something said there states it in its own words, as the writer's own
-  claim.
+  review; reviews may come from humans or agents, merging takes a human
+  approval, and nobody merges their own work (ADR-0008).
+- **Fresh means synced**: `git fetch` and branch off `origin/main`, never a
+  local `main` you haven't updated.
+- **Code is not precedent**: the docs of record are, and win where the two
+  disagree; neither is a file's local habit, so check the doc, not the
+  neighbours (#141).
+- **Issue-first**: a change to behaviour, seams, dependencies, prompts or the
+  docs of record starts from a typed issue; a trivial mechanical fix may go
+  straight to PR, and its Issue section says why.
+- **Secret shapes are scanned, not remembered**: `make secret-scan` runs CI's
+  scan of added lines; only test files and fixtures may hold a token shape,
+  and only an obviously synthetic one. It needs an awk with regex intervals
+  (`scripts/secret-awk.sh`, #718).
+- **An issue or comment body is redacted, not rejected** (#206): the revision
+  history still holds the value, so rotate it and report it privately
+  (`/credential-incident`).
+- **The board is world-readable** (ADR-0031): **nothing said in the fleet
+  channel, or the Telegram group it is mirrored to, is quoted on GitHub**; an
+  issue or PR states the substance in its own words.
 - **Proving an event-driven workflow** (#209): a workflow firing on anything
-  but `pull_request` or `push` declares `workflow_dispatch`, and a PR that
-  adds or changes one links a green dispatched run from its own branch in
-  Verification. A brand-new workflow, which cannot be dispatched yet, is the
-  exception until it lands, when its author dispatches it and reports the run
-  on the PR. Procedure: `/prove-event-workflow`
+  but `pull_request` or `push` declares `workflow_dispatch`, and its PR links
+  a green dispatched run from its branch. Procedure: `/prove-event-workflow`
   (`.claude/skills/prove-event-workflow/`).
-- **Definition of done** — self-check before opening a PR:
-  `make lint && make test && make itest` green locally, plus `npm run lint`,
-  `npm run format:check` and `npm test` in `web/` when the change touches it;
-  engine behavior carries a tier-2 test; docs of record updated in the same PR
-  when behavior or rules changed; an ADR when a constraining decision was made.
-  A change that removes, renames or re-routes a flow updates every piece of
-  copy that describes it in the same PR: control-room strings and dialogs,
-  the first-run checklist, README steps, OPERATIONS. Where the copy lives in
-  another owner's seam, the web or docs issue is filed and linked in the PR
-  body before the merge ask, and the reviewer checks for it (#793).
-- **Ask vs proceed**: implementation details — reversible choices inside
-  existing rules — proceed autonomously. Anything that constrains the future
-  stops for a human interview and gets an ADR: a new dependency (a dev-only one
-  skips the ADR, see Dependencies), a seam or prompt-contract change,
-  terminology, public API shape, security posture, or spending real plan tokens
-  (tier-3 e2e). A question from the operator is a question. Reprioritizing or
-  interrupting in-flight work takes an explicit yes; finished work gets its PR
-  before any redirect. **A decision is not a reorder** either (#462): backlog
-  talk with the operator reaches a developer only once it is a decision, and
-  the decision joins the back of that developer's queue. Whoever relays it
-  files the issue, notes the queue position on it, and holds the assignment
-  until the developer's current PR merges. Only an explicit "first" or "now"
-  from the operator moves it ahead, and even then not past work one step from
+- **Definition of done**: `make lint && make test && make itest` green, plus
+  `npm run lint`, `npm run format:check` and `npm test` in `web/` when it is
+  touched; engine behaviour carries a tier-2 test; docs of record and any ADR
+  land in the same PR. A removed, renamed or re-routed flow updates all of its
+  copy in the same PR; copy in another owner's seam gets an issue there,
+  linked in the PR before the merge ask, and the reviewer checks it (#793).
+- **Ask vs proceed**: reversible implementation details proceed; a new
+  dependency (a dev-only one skips the ADR, see Dependencies), a seam or
+  prompt-contract change, terminology, public API shape, security posture or
+  real plan tokens stop for a human interview and an ADR.
+  A question from the operator is a question; reprioritizing in-flight work
+  takes an explicit yes, and finished work gets its PR before any redirect.
+- **A decision is not a reorder** (#462): it joins the back of the
+  developer's queue; whoever relays it files the issue, notes the position
+  there and holds it until the developer's current PR merges; only the
+  operator's "first" or "now" moves it ahead, never past work one step from
   its PR.
-- **Dependencies** are stdlib-first in Go and the control room alike (#266).
-  Every new one stops for a human interview, whatever it reaches, and is
-  argued in its PR description. One the shipped binary carries (a module the
-  binary's non-test code imports, or an entry in `web/package.json`
-  `dependencies`) reaches every operator's install, so it also gets an ADR the
-  PR cites, as `modelcontextprotocol/go-sdk` took ADR-0026. A `devDependency`,
-  or a tool that runs only on a maintainer's machine or in CI (a Go module
-  only tests or a `tool` directive use), can be removed without changing what
-  an operator runs, so it takes no ADR, unless it adds or changes a CI gate,
-  which amends ADR-0013 as Vitest did. The manifests are where to look, not a
-  copy here: `go.mod`'s `require` block holds both kinds, so check what
-  imports a module; `web/package.json` splits them itself.
-- **Flag and continue** is the third state, between those two (#192). Where
-  stopping would idle a PR, the author may put the question to the operator and
-  keep working — but only when the work stays correct under either answer, or
-  the answer is cheap to fold. The PR carries the `Operator decision pending:`
-  line until the answer arrives, and the answer is recorded where the decision
-  lives (the issue's body, or an ADR), never only in chat.
-- **Refused at the tool call** (ADR-0042): a loop's Bash calls pass
-  `spool-hook` first, and the mechanical rules it knows are refused before the
-  command runs, with the reason in the loop's turn. Today that is the host's
-  shared state: a `git stash` with no named entry (push without `-m`, `pop`,
-  `apply` or `drop` with none named, `clear`), `pkill`, `killall`,
-  `killall5`, `fuser -k`, `kill -1` and a kill whose PID came from
-  `pgrep`, `pidof` or `lsof -t` (kill by the PID you recorded), a force
-  push to or deletion of `main`, and `git add -A`/`--all`/`.` (stage by
-  path). A `gh` or `git` call that carries a credential shape is refused
-  too, in its arguments, its standard input, or a body, notes or gist file
-  it names: quote a credential as at most eight characters and an ellipsis.
-  The hook catches slips. A rule it enforces still binds a human, and a
-  rule it does not know binds everyone as before.
-- **Seeing your PRs' CI** (#904): a loop is asleep when its CI finishes, so
-  `scripts/pr-watch.sh` puts what is red in front of its next turn. It
-  covers the open PRs whose branch is in the loop's clone, never a fork's:
-  each failed check or status, the queue's included, and the first failing
-  tests. It
-  prints nothing when everything is green. A loop hooks it up in its own
-  `~/.claude/settings.json`, naming its clone and the variable its GitHub
-  token is in. The hook runs the script as `origin/main` has it, never the
-  checked-out branch's copy, so a PR under review can't change what runs
-  at every turn:
-
-  ```json
-  {"hooks": {"UserPromptSubmit": [{"hooks": [{"type": "command", "timeout": 30,
-    "command": "GH_TOKEN=\"$GH_TOKEN_SPOOL\" bash -c \"$(git -C \"$HOME/spool\" show origin/main:scripts/pr-watch.sh)\" pr-watch \"$HOME/spool\""}]}]}}
-  ```
-
-  A red PR is its author's to fix, or to queue again when the failure
-  isn't its own (the merge queue, above).
-- **Scoped delegation**: the interview may end with the human delegating the
-  decision back ("you decide"). That delegation is per-decision: it covers
-  exactly the questions put to the human, and the ADR or issue recording the
-  outcome quotes it verbatim in its Context. A standing delegation — a class
-  of decisions the fleet may settle without asking — is itself a constraining
-  decision and needs its own ADR.
+- **Dependencies** are stdlib-first and each takes a human interview argued
+  in its PR (#266); one the shipped binary carries (non-test Go imports, or
+  `web/package.json` `dependencies`) also takes an ADR, and a dev-only one
+  takes none unless it changes a CI gate (ADR-0013).
+- **Flag and continue** (#192): where stopping would idle a PR and either
+  answer holds or is cheap to fold, ask and keep working; the PR carries an
+  `Operator decision pending:` line until the answer is recorded in the issue
+  or ADR.
+- **Refused at the tool call** (ADR-0042): `spool-hook` (`internal/hook`)
+  refuses a loop's unnamed `git stash`, broad kills (kill by the PID you
+  recorded), force push or deletion of `main`, `git add -A`/`.` (stage by
+  path) and credential shapes in `gh`/`git` calls; each still binds a human,
+  and a rule it doesn't know binds everyone as before.
+- **Seeing your PRs' CI** (#904): a loop hooks `scripts/pr-watch.sh` into its
+  own settings to see its red PRs at each turn (the script's header has the
+  hook), and a red PR is its author's to fix or re-queue.
+- **Scoped delegation**: a "you decide" covers only the questions put, and
+  its record quotes it verbatim; a standing delegation needs its own ADR.
 
 ## Testing (ADR-0009)
 

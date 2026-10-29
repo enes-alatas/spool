@@ -18,7 +18,12 @@
 # nothing on GitHub beyond those reads.
 #
 # Hook it up in the loop's own ~/.claude/settings.json (CONVENTIONS.md,
-# "Seeing your PRs' CI").
+# "Seeing your PRs' CI"), naming its clone and the variable its GitHub token
+# is in. The hook runs the script as origin/main has it, never the checked-out
+# branch's copy, so a PR under review can't change what runs at every turn:
+#
+#   {"hooks": {"UserPromptSubmit": [{"hooks": [{"type": "command", "timeout": 30,
+#     "command": "GH_TOKEN=\"$GH_TOKEN_SPOOL\" bash -c \"$(git -C \"$HOME/spool\" show origin/main:scripts/pr-watch.sh)\" pr-watch \"$HOME/spool\""}]}]}}
 #
 # PR_WATCH_REPO is the repo (default enes-alatas/spool); PR_WATCH_NOTES the
 # annotations shown per failed job (default 3).
