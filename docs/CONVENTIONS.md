@@ -6,239 +6,125 @@ ADR instead.*
 
 ## Workflow (humans in the loop)
 
-- **PR-only, no exceptions** (ADR-0008). `main` is protected; every change — human,
-  Claude session, or loop — lands via a pull request with CI green and at least one
-  human approval. Loops never merge their own work.
-- **Rebase & merge only** (ADR-0016): the branch's commits land in `main`
-  verbatim — linear history, no merge or squash commits (repo settings enforce
-  this). The PR title is still a valid Conventional Commit; the template's
-  Commit Structure section lists what will land.
-- **The merge queue** (ADR-0054, #819): an approved PR gets the `queue` label
-  from its reviewer, and the merge ask asks the operator to turn on
-  auto-merge. The queue tests it rebased onto the `main` it lands on, and its
-  `queue` status says where it stands, so nobody rebases a PR only because
-  `main` moved. A PR that conflicts or fails there is red, and its author
-  rebases or fixes it. Any push to a queued PR takes it out (label and
-  auto-merge off), so a new head goes back through review and the merge ask.
-- **Atomic commits** (ADR-0016): one logical change per commit — a subject that
-  needs "and" means split. Each commit builds and passes tiers 1–2 on its own
-  (history stays bisectable; review-enforced — CI tests the head). Mechanical
-  churn (gofmt, renames, moves) never mixes with behavior changes. Every commit
-  is a valid Conventional Commit — if no single type fits the diff, split it.
-- **Review feedback folds into the origin commit** (ADR-0016; procedure:
-  `/review-fix`): no "address review" commits — rewrite the branch, prove the
-  fold with a byte-identical tree diff, push `--force-with-lease`. Genuinely
-  new scope gets its own commit, or its own issue and PR. Accepted costs:
-  inline comments go outdated; the changes-since-last-review diff resets.
-- **A review's last word is one of two things, never both** (#141): either
-  "approved at `<sha>`; merge as-is — remaining notes are follow-ups", or
-  "notes to fold; not ready for merge". An approval that also leaves fixes
-  hanging is how a PR gets merged out from under its reviewer (#165). A new
-  push voids the approval: the author re-pings the reviewer, never the
-  operator.
-- **The merge request comes from the reviewer**, in the same message as the
-  final approval, with the PR link. Authors never ask for a merge — if the
-  reviewer marked fixes optional, the author either declines them on the PR or
-  folds them and waits for re-approval. Either way the reviewer pings last
-  (#170).
-- **A PR labelled `needs-security-review` waits for the security review** (#742).
-  `pr-guards` adds the label when a PR changes a path in
-  `.github/security-review-paths`; anyone adds it by hand to a PR that makes
-  the hub trust something a loop controls without touching the list (an
-  answer read from inside a workstation, say). The security reviewer (the
-  DevSecOps role) reviews it as a peer and says so in a PR comment, which may
-  be "nothing from me". The reviewer who sends merge requests sends none on a
-  labelled PR until that comment exists at the current head, or at a head
-  whose later pushes are a bare rebase. A fork PR is not labelled
-  mechanically (its token is read-only), so its reviewer labels it by hand.
-  On a PR the security reviewer authored, its Notes / Risks section stands as
-  that comment: it says what the change opens and why that holds, and the
-  reviewer who sends the merge request checks it is there.
-- **A gh body names people without an @ and ends with a signature** (#630).
-  The loops share one GitHub identity, and the loops' names and the people's
-  chat handles belong to strangers there, so an `@` before one pings whoever
-  owns that account. A signature line, `— Name · Role`, is how a reader
-  tells the loops apart. This repository's own PreToolUse hook
-  (`.claude/settings.json`, `.claude/hooks/gh-body-guard.sh`) refuses a
-  `gh issue|pr create|comment|edit|review|close|reopen` or `gh api` call
-  whose body breaks either rule, or whose body it can't read before the
-  call runs (a variable or `$(…)`); the names are in
-  `.claude/hooks/fleet-names`. It lives here and not in the hub's hook
-  (`internal/hook`) because these are this team's conventions, not Spool's.
-  Claude Code reads `.claude/settings.json` only for a session started in a
-  checkout, and a loop's session starts in its home, so each loop adds the
-  hook to its own `~/.claude/settings.json`, run from its clone's
-  `origin/main` (here `~/spool`):
-  `{"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "sh -c \"$(git -C \"$HOME/spool\" show origin/main:.claude/hooks/gh-body-guard.sh)\" gh-body-guard \"$HOME/spool\""}]}]}}`.
-  Release notes, a merge commit's body and `gh api graphql` are not
-  checked. A body that gets past the hook anyway, from a session without
-  it or from the web, is flagged after the fact: `issue-guards` and
-  `pr-guards` add `fleet-mention` to the issue or PR when an issue, PR or
-  comment body has an @ before a name in that list, outside code. The ping
-  has gone out by then; the author takes the @ out, and whoever sees the
-  label fixed removes it.
-- **The board sweep reads the pinned "CI health" issue** (#216, mechanism #210).
-  A workflow that fires on issues, comments or a schedule reports its failures
-  nowhere a PR can show them, so `ci-health` posts each one there as a comment.
-  A new comment is triaged on the sweep it appears in: open a `bug` linking the
-  run, and leave the comment as the record that the failure was seen. Silence
-  there is the normal state and is not evidence the sentinel is alive — that is
-  proven by dispatching it at a known-failed run, which a PR touching it links.
-- **A pending operator decision blocks the merge** the way red CI does (#192).
-  A PR resting on a question still with the operator carries, in Notes / Risks,
-  one live line per question, citing where it was asked so the reviewer can
-  check it is real and still open:
-  `Operator decision pending: <the question> (<#n or link>)`. Live means
-  outside an HTML comment — the template reproduces the marker in its own
-  comment, and a commented marker blocks nothing. The reviewer may review and
-  approve while one stands — that is an approval *pending*, not a mandate to
-  merge — but issues no merge request until the line is gone. The author
-  deletes it once the answer lands and reports that like ready-for-review (a PR
-  comment naming the answer and where it is recorded, plus a ping to the
-  reviewer): such a question usually resolves with no push, so nothing else
-  would wake them. An answer that changes the work voids the approval exactly
-  as a push does (#188).
-- **Branches**: `<type>/<topic>` (e.g. `feat/sandbox-runtime`, `fix/trailer-clamp`).
-  The `loop/<name>` namespace is reserved for loop worktree branches — never use it
-  for feature work.
-- **Commits / PR titles**: [Conventional Commits](https://www.conventionalcommits.org)
-  — `feat|fix|refactor|docs|test|chore|ci(scope): summary`. Scopes are package names
-  (`loop`, `route`, `surface/telegram`, `web`, …). The subject rules below
-  (#76) are checked by the author before the PR opens, against
-  `git log --format=%s -50` as well as this list. `pr-guards` checks the
-  mechanical ones on every PR's commits (`scripts/commit-subjects.sh`,
-  #1011): the `type(scope): summary` shape, one scope, 80 characters at
-  most, and no closing keyword next to `#n`. The rest take judgement:
-  - **One scope or none.** A scope names exactly one package (or, for `docs`,
-    one doc or `adr`). A change no single package dominates drops the scope —
-    `chore: the model lists know Opus 5.5 and Fable 5.1` — and never lists
-    several (`feat(route,loop)` is wrong).
-  - **The summary says what is true once the commit lands**, as a
-    present-tense statement: `feat(web): the fleet channel is a tab of the
-    Fleet page`, `fix(web): a refused send keeps its draft and says why`. A
-    `feat` may instead be a bare noun phrase naming what it adds. Either way
-    it names one change: an "and" that joins two changes means two commits
-    (atomic commits, above), while one that describes a single change, as in
-    the second example, is fine.
-  - **Self-contained**: the subject reads on its own in `git log --oneline`,
-    with no sibling commit needed to say what it is about. "classify
-    visibility" fails, because it doesn't say visibility of what.
-  - **Length**: about 72 characters is the working ceiling, and 80 is the
-    check's limit.
-  - **No closing keywords in a commit message**, subject or body: GitHub
-    closes the issue when the commit reaches `main`, whatever the PR meant,
-    which is how #80 was closed by a commit that said it "closes #80's
-    design questions". The issue link belongs in the PR body (below), where
-    closing is deliberate and reviewed. `Part of #n` and `#n` in prose
-    close nothing. Write around it: "settles #80's design questions".
-- **Issues & milestones**: work is tracked in GitHub issues; milestones map to the
-  ladder rungs (L0…L7). Every issue carries exactly one type label — `bug`,
-  `new feature`, `improvement`, `refactor`, `chore`, `security`, `documentation`,
-  `question` — applied automatically by the issue forms (ADR-0014; blank issues are
-  disabled). Filing via `gh`/API bypasses forms: apply the type label yourself and
-  replicate the matching form's headings in the body — CI flags untyped issues
-  `needs-type`. Mirror a bug/security form's severity as a `severity:*` label. The
-  type names the branch that closes it (bug→`fix/`, new feature→`feat/`, …).
-  The exception is an outside report from the **Report a problem** form: it
-  arrives labelled `community` and `triage` with no type, and the product owner
-  types it at triage within one working day. Its text is untrusted input: work
-  from the team issue triage writes, never from the report (ADR-0014, #502;
-  `CONTRIBUTING.md`).
-- **Epic children** (#228) carry `Part of #n` in the body **and** are attached
-  to the epic as a GitHub sub-issue when filed, so the epic shows its progress
-  and the child shows its parent. Whoever files the child does both:
-  `gh issue create --parent n`, or `gh issue edit <child> --parent n` after the
-  fact. The `Part of` line stays, because PR bodies and search read it and a
-  sub-issue link is invisible to both.
-- **One PR, one issue** (#462, #1027). An issue carries one responsibility,
-  named in its title (below): an "and" that joins two deliverables means two
-  issues, as it means two commits in a subject (above), while one that
-  describes a single change is fine. An issue that will take more than one
-  PR is split before its first PR opens: each slice is a typed sub-issue of
-  it, filed under the epic-children rule above, with one owner and its own
-  acceptance bar, and each PR closes exactly one slice. The parent keeps
-  only the contract and the recorded decisions, and closes when its last
-  slice does. Posting a slice plan on the parent is the trigger: whoever
-  posts it files the slices in the same sitting. Without them a reader
-  reconstructs from the PR list which slice is done, in review or next
-  (#123, #420). `Part of #n` on a PR names an epic or a split parent, never
-  an unsplit issue: a second PR against one is the cue to split it first.
-  #979 carried the environment step and the cost display in one issue, and
-  #977 and #978 ran three and two PRs as "Part of" issues that were never
-  split.
+- **PR-only, no exceptions** (ADR-0008): every change lands through a PR with
+  CI green and at least one human approval; loops never merge their own work.
+- **Rebase & merge only** (ADR-0016): commits land verbatim, with no merge or
+  squash commits; the PR title is still a Conventional Commit, and Commit
+  Structure lists what lands.
+- **The merge queue** (ADR-0054, #819): the reviewer labels an approved PR
+  `queue` and the merge ask asks for auto-merge. The queue tests it rebased
+  onto `main`, so nobody rebases only because `main` moved; a red `queue` is
+  the author's to rebase or fix, and any push takes the PR out of the queue
+  and back through review.
+- **Atomic commits** (ADR-0016): one logical change each, a valid Conventional
+  Commit that builds and passes tiers 1–2 alone (review-enforced); a diff no
+  single type fits is split, and mechanical churn never mixes with behaviour.
+- **Review feedback folds into the origin commit** (ADR-0016): no "address
+  review" commits; procedure: `/review-fix`. New scope gets its own commit or
+  issue.
+- **A review's last word is one of two things, never both** (#141, #165):
+  "approved at `<sha>`; merge as-is, remaining notes are follow-ups" or "notes
+  to fold; not ready for merge". A new push voids the approval, and the author
+  re-pings the reviewer, never the operator.
+- **The merge request comes from the reviewer** (#170), with the final
+  approval and the PR link; authors never ask; they decline optional fixes on
+  the PR, or fold them and wait for re-approval, so the reviewer pings last.
+- **A PR labelled `needs-security-review` waits for the security review**
+  (#742): `pr-guards` labels a PR touching `.github/security-review-paths`,
+  anyone labels one that makes the hub trust something a loop controls, and a
+  fork PR's reviewer labels it by hand. No merge request goes out until the
+  security reviewer has commented at the current head (or before a bare
+  rebase), "nothing from me" included; on their own PR, Notes / Risks stands
+  as that comment, saying what the change opens and why that holds.
+- **A gh body names people without an @ and ends with a signature** (#630), `—
+  Name · Role`: the loops share one GitHub identity, and their names belong to
+  strangers there. `.claude/hooks/gh-body-guard.sh` refuses a body that breaks
+  either rule, and its header has the user-settings hook a loop adds; release
+  notes, a merge commit's body and `gh api graphql` are not checked, so their
+  author checks them by hand; `issue-guards` and `pr-guards` label a slip
+  `fleet-mention`, its author takes the @ out, and whoever sees it fixed
+  removes the label.
+- **The board sweep reads the pinned "CI health" issue** (#216, #210): each
+  new `ci-health` comment gets a `bug` linking the run on the sweep it appears
+  in; silence proves nothing, and a PR touching the sentinel links a dispatch
+  of it at a known-failed run.
+- **A pending operator decision blocks the merge** the way red CI does (#192,
+  #188): Notes / Risks carries one live line per open question, `Operator
+  decision pending: <the question> (<#n or link>)`, outside an HTML comment.
+  The reviewer may approve pending but sends no merge request until it is
+  gone; the author deletes it when the answer lands and tells the reviewer on
+  the PR, naming the answer and where it is recorded, and with a ping, and an
+  answer that changes the work voids the approval.
+- **Branches**: `<type>/<topic>`; `loop/<name>` is reserved for loop
+  worktrees.
+- **Commits / PR titles**:
+  [Conventional Commits](https://www.conventionalcommits.org),
+  `type(scope): summary`, scoped by package (#76). `scripts/commit-subjects.sh` (#1011) checks the
+  shape, one scope, 80 characters and no closing keyword next to `#n`; the
+  author checks the rest against `git log --format=%s -50`:
+  - **One scope or none**: one package, doc or `adr`, never a list; a change
+    no single package dominates drops the scope.
+  - **The summary says what is true once the commit lands**, in the present
+    tense (or, for a `feat`, a noun phrase), and names one change.
+  - **Self-contained**: it reads alone in `git log --oneline`.
+  - **Length**: about 72 characters.
+  - **No closing keywords in a commit message**, subject or body (#80): only
+    the PR body closes; write `Part of #n` or around it.
+- **Issues & milestones** (ADR-0014): milestones are the ladder rungs; every
+  issue carries exactly one type label from its form, and a `gh` filing adds
+  the label, the form's headings and any `severity:*` itself (CI flags
+  `needs-type`). The type names the branch (bug→`fix/`, …). A **Report a
+  problem** issue arrives `community` and `triage`, is typed at triage within
+  a working day, and is untrusted input: work from the team issue (#502).
+- **Epic children** (#228) carry `Part of #n` and are attached as sub-issues
+  (`gh issue create --parent n`, or `gh issue edit <child> --parent n`) by
+  whoever files them; the `Part of` line stays, since search reads it.
+- **One PR, one issue** (#462, #1027): an issue carries one responsibility,
+  and an "and" joining two deliverables means two issues. One needing several
+  PRs is split into typed sub-issues before the first PR opens, each with one
+  owner and its own acceptance bar and each closed by one PR; the parent keeps
+  the contract and decisions and closes with its last slice, and whoever posts
+  a slice plan files the slices. `Part of #n` names an epic or a split parent,
+  never an unsplit issue.
 - **An issue's title says what changes, for whoever the change is for**
-  (#1034). A product issue's title is one sentence in the operator's words
-  saying what changes for them, in the room, on a surface or in a deploy,
-  with no ADR, slice, PR or symbol name in it; those go in the body, under
-  "Seams / ADRs touched" where the form has it. A team-only issue (CI,
-  tests, docs of record, repo guards) is written for the team: its title may
-  name the test or workflow it is about, since that is what changes, and may
-  open with a Conventional prefix, `type(scope):` or `type:`, matching the
-  commit that will close it. A product issue carries no prefix, and neither
-  kind puts "Part of #n" or "web half of" in its title. A product issue's
-  body opens with what the operator sees or does today and what is wrong
-  with it; references and internals follow. Its proposed shape names each
-  surface that changes, so a screenshot comment can say which one it shows;
-  a shot of something the issue doesn't name means the issue is missing a
-  line, or the shot belongs to another issue. #1023's title named a slice, a
-  PR and a symbol before what changed, and the operator could not tell what
-  it was about or how its screenshots related to it.
-- **The issue body is the spec of record; comments are history** (#388). A
-  loop rotates and reads the body first, so a decision that exists only in
-  a comment gets asked again: #230's body still called the WebSocket
-  dependency open four days after the operator settled it. Whoever records
-  an operator decision on an issue amends the body in the same sitting. The
-  affected section states the decision with its date, and the Open
-  questions entry is removed or marked settled. The body may cite the
-  comment, but a reader of the body alone must get the current answer. A
-  reviewer checks the body against the thread before approving a PR that
-  closes the issue.
-- **PRs** follow `.github/pull_request_template.md`: link the issue (`Closes #n` /
-  `Part of #n` — if none, say why), and cite ADRs for seam changes and new deps.
-  The exception is Dependabot's weekly `ci:` PR bumping action pins (#707).
-  It carries no issue link, template or signature. Its reviewer checks
-  three things: each new SHA is the commit of the release tag in the pin's
-  comment and the PR's release notes,
-  nothing in those notes widens what the action does with the job's token,
-  and CI is green. Then the reviewer sends the merge request as for any PR.
-  A bump the reviewer won't take is closed with the reason, never left
-  open.
-- **A feat names its other half** (#634). A `feat` PR that changes
-  `internal/` but not `web/`, or `web/` but not `internal/`, carries an
-  `Other half:` line under the template's Issue section: the sibling issue
-  (`#n`), `none — <reason>`, `API-only` or `UI-only`. The `pr-guards`
-  workflow fails the PR without one, or when `#n` names no issue (a pull
-  request's number included). v0.4.2 was tagged with #631's hub route and no
-  room to use it, because the pairing lived in one reviewer's head. The
-  check proves only that the line is there: the reviewer approves a one-half
-  feat only when its other half is filed, or argued away on the PR.
-- **Decisions**: any choice that constrains future work gets an ADR in `docs/adr/`
-  (sequential number, `proposed → accepted → superseded by ADR-XXXX`). Living docs
-  (VISION / ARCHITECTURE / CONVENTIONS) state current truth and link the ADRs.
-- **Amending an accepted ADR** (#141): a change that narrows, extends or
-  clarifies a decision is a dated `**Amendment (YYYY-MM-DD, #n):**` block
-  that adds lines and never touches an existing one, with the date added to
-  the file's `Amended:` header; a reversal is a new ADR. The three exceptions, supersession of one clause, and the reviewer
-  bar: `/amend-adr` (`.claude/skills/amend-adr/`).
-- **Releases**: semver, `v0.<rung>.x` — completing ladder rung Ln tags `v0.n+1.0`
-  (the MVP is retroactively v0.1.0). `v1.0.0` is OSS launch (L6). The
-  README names what the release ships: a docs issue lists the release's
-  additions, says whether the demo video still shows what ships
-  (re-recorded if not), and lands before the tag ask (#684). The tag ask links a
-  green dispatched `release` dry run on the commit to be tagged, whose smoke
-  job installed its artifacts on a fresh runner (#770). A change that
-  alters stored data at its first start (a re-seal, or a rewrite the
-  previous release cannot read) adds its row to OPERATIONS.md's
-  release-specific steps in the same PR, because generated notes cannot say
-  what an operator must do about it (#712).
-- **The operator tags, never a loop** (#223). Release notes are generated
-  from the commit titles; there is no CHANGELOG file. Procedure, and how a
-  build names itself: `/release` (`.claude/skills/release/`).
-  The tag fires `release.yml`, which publishes the images by digest and
-  attaches the binaries and `SHA256SUMS`, all attested (ADR-0052, #756,
-  #763). A tag whose commit is not on `main` is refused. After publishing, it
-  installs the release on a fresh runner the README's way; red there means
-  the release is out and broken (`/release` says what then).
+  (#1034): a product issue's title is one sentence in the operator's words,
+  with no ADR, slice, PR or symbol and no prefix, and its body opens with what
+  the operator sees today and names each surface that changes (a shot of
+  anything else means a missing line, or another issue); a team-only issue
+  (CI, tests, docs of record, repo guards) may name its test or workflow and
+  take a Conventional prefix. Neither puts "Part of #n" or "web half of" in
+  its title.
+- **The issue body is the spec of record; comments are history** (#388):
+  whoever records an operator decision amends the body in the same sitting,
+  dated, with its Open questions entry settled, so the body alone gives the
+  current answer; the reviewer checks the body against the thread before
+  approving.
+- **PRs** follow the template: link the issue (`Closes #n` / `Part of #n`, or
+  say why not) and cite ADRs for seam changes and new deps. Dependabot's
+  action-pin bumps are the exception (#707), with no link, template or
+  signature: the reviewer checks each SHA against its release tag, that no
+  note widens the action's token use, and CI, then sends the merge request or
+  closes the bump with the reason.
+- **A feat names its other half** (#634): a `feat` touching only one of
+  `internal/` and `web/` carries an `Other half:` line, which `pr-guards`
+  checks; the reviewer approves only once that half is filed or argued away.
+- **Decisions**: a choice that constrains future work gets an ADR (`proposed →
+  accepted → superseded by ADR-XXXX`); living docs state current truth and
+  link them.
+- **Amending an accepted ADR** (#141): a dated `**Amendment (YYYY-MM-DD,
+  #n):**` block that only adds lines, dated in the `Amended:` header; a
+  reversal is a new ADR. The exceptions and the reviewer bar: `/amend-adr`
+  (`.claude/skills/amend-adr/`).
+- **Releases**: semver, `v0.<rung>.x`; completing rung Ln tags `v0.n+1.0`, and
+  `v1.0.0` is the OSS launch (L6). A docs issue lists the release's additions
+  in the README and says whether the demo video still shows what ships,
+  re-recorded if not, before the tag ask (#684), and the ask links a green
+  `release` dry run on the commit (#770). A change that alters stored data at
+  first start adds its row to OPERATIONS.md's release-specific steps in the
+  same PR (#712).
+- **The operator tags, never a loop** (#223): notes come from commit titles,
+  with no CHANGELOG, and `release.yml` publishes attested artifacts
+  (ADR-0052). Procedure: `/release` (`.claude/skills/release/`).
 
 ## Secrets and evidence
 
