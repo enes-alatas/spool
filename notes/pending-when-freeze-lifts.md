@@ -1517,3 +1517,6 @@ Quiet. HN: 0 new. #1185 head 12c5ea3 unchanged; #1180 newest is Terra's View:-li
 
 ## 2026-10-29 08:14 UTC tick
 HN: 1 new (SyneRyder on "Claude Code sends background agents' transcripts": frustrated CC updates change unattended overnight sessions, "build my own harness again" — Spool inherits CC's behaviour, no fit, skipped). #1185: Elliot's security pass holds at 12c5ea3 (05:14). Waits on Enes (sign-in for runs R/S, two decisions) — Terra's ask. Board tidy.
+
+## 2026-10-29 11:16 UTC tick
+HN: 0 new. #1180: runs R and S done (09:41, Enes's sign-in, spike repo, synthetic secret, archived after). Findings folded into #1185 at 54f8758: start passes --ref; allowlist host gates spool loading; /mcp binds the View: ID with early calls held; GET→405; reclaim re-runs no setup script. Enes decided (DM to Terra, recorded 09:44): kill revokes the hub token for good, Rotate before restart. Elliot's pass at 54f8758: no asks; stray branch claude/spoolprobe-test-v756f1 on spool-cloud-spike for Enes to delete (Terra's thread). Left: Enes accepts ADR-0061, Quinn approves. Slices #1181–#1184 unchanged by the findings.
