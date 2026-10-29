@@ -6,46 +6,48 @@ a Langfuse of their own: way 1 (Langfuse's Stop hook) for a day, then way 2
 the hub runs as before throughout. Each file here was proved on a fresh runner
 first; the evidence is on #1187.
 
-Needs on the hub's machine: Docker with compose v2, `curl`, `jq`, `openssl`,
-and a DNS name for Langfuse's ingestion, below `langfuse.example.com`, pointing
-at the machine your Caddy already serves the hub from. Replace `<loop id>` and
-`<loop name>` with the loop's, from its page.
+Needs on the hub's machine: Docker with compose v2, `curl`, `jq` and `openssl`.
+Replace `<loop id>` and `<loop name>` with the loop's, from its page.
 
 ## 1. Fetch and start Langfuse
 
 ```sh
 mkdir -p ~/langfuse && cd ~/langfuse
 b=https://raw.githubusercontent.com/enes-alatas/spool/<commit>/spike/langfuse
-for f in compose.langfuse.yml make-env.sh langfuse-report.sh lf-install.sh; do curl -fsSLO "$b/$f"; done
+for f in compose.langfuse.yml compose.spool-egress.yml make-env.sh langfuse-report.sh lf-install.sh; do curl -fsSLO "$b/$f"; done
 chmod +x ./*.sh
 LANGFUSE_PROJECT=way1 ./make-env.sh                 # langfuse.env, 0600, every secret generated
-docker compose -f compose.langfuse.yml --env-file langfuse.env --profile langfuse up -d
+docker compose -f compose.langfuse.yml -f compose.spool-egress.yml --env-file langfuse.env --profile langfuse up -d
 curl -s http://127.0.0.1:3000/api/public/health      # {"status":"OK",...} after about a minute
 ```
 
-Without `--profile langfuse`, compose starts nothing. Langfuse listens on
-`127.0.0.1:3000` only, with telemetry off and sign-up off.
+Without `--profile langfuse`, compose starts nothing. On the host, Langfuse
+publishes `127.0.0.1:3000` only, with telemetry off and sign-up off.
 
-## 2. Let the loop reach ingestion, and nothing else
+## 2. Let the loops reach it through the egress proxy
 
-Add a site to your Caddyfile that passes only the OpenTelemetry ingestion
-through, then `sudo systemctl reload caddy`:
+`compose.spool-egress.yml` puts Langfuse's web container on the egress proxy's
+own network, as `langfuse-web`. No loop's network gets it, since a loop's
+network carries that loop's hub token in plain HTTP. The proxy reaches
+Langfuse by that name, so there's no public name, Caddy site or TLS. Inside
+its container Langfuse listens on port 80, the port a control-room entry
+without a port opens.
 
-```caddyfile
-langfuse.example.com {
-	@ingest path /api/public/otel/* /api/public/health
-	handle @ingest {
-		reverse_proxy 127.0.0.1:3000
-	}
-	handle {
-		respond 404
-	}
-}
+The overlay expects the network to be called `spool-egress`, which is the
+hub's default. Check the name before step 1's `up`:
+
+```sh
+docker network ls --filter label=spool.egress=network --format '{{.Name}}'   # spool-egress
 ```
 
-Then, in the control room, **Settings → Egress**: add `langfuse.example.com`.
-This list is the fleet's, so every docker loop can reach the name. Only the
-loop you give the keys to can send, and Langfuse refuses the rest.
+If it prints another name, put `SPOOL_EGRESS_NETWORK=<that name>` in
+`langfuse.env`.
+
+Then, in the control room, **Settings → Egress**: add `langfuse-web`. This
+list is the fleet's, so every docker loop can reach the whole Langfuse API,
+the read API included. Only the key pair keeps them out, and only the loop
+you give it to holds it. If the hub ever recreates its egress network, run
+step 1's `up` again to rejoin it.
 
 The Langfuse UI stays on loopback. Open it over SSH from your own machine:
 `ssh -L 3000:127.0.0.1:3000 <hub machine>`, then <http://localhost:3000>,
@@ -69,7 +71,7 @@ that path.
 
    ```sh
    docker run --rm -u loop -e HOME=/home/loop -v spool-ws-<loop id>:/home/loop -v "$PWD":/spike:ro \
-     --entrypoint sh spool-workstation /spike/lf-install.sh way1 https://langfuse.example.com <loop name>
+     --entrypoint sh spool-workstation /spike/lf-install.sh way1 http://langfuse-web <loop name>
    ```
 
 4. **Resume** the loop and leave it a day. The first turn should show a trace
@@ -93,9 +95,9 @@ other's data:
 ```sh
 docker run --rm -u loop -e HOME=/home/loop -v spool-ws-<loop id>:/home/loop -v "$PWD":/spike:ro \
   --entrypoint sh spool-workstation /spike/lf-install.sh remove
-docker compose -f compose.langfuse.yml --env-file langfuse.env --profile langfuse down -v
+docker compose -f compose.langfuse.yml -f compose.spool-egress.yml --env-file langfuse.env --profile langfuse down -v
 rm langfuse.env && LANGFUSE_PROJECT=way2 ./make-env.sh
-docker compose -f compose.langfuse.yml --env-file langfuse.env --profile langfuse up -d
+docker compose -f compose.langfuse.yml -f compose.spool-egress.yml --env-file langfuse.env --profile langfuse up -d
 ```
 
 Delete the loop's two Langfuse connections.
@@ -117,7 +119,7 @@ all off by default. Turning on any `OTEL_LOG_*` is a separate choice, made on
 
    ```sh
    docker run --rm -u loop -e HOME=/home/loop -v spool-ws-<loop id>:/home/loop -v "$PWD":/spike:ro \
-     --entrypoint sh spool-workstation /spike/lf-install.sh way2 https://langfuse.example.com <loop name>
+     --entrypoint sh spool-workstation /spike/lf-install.sh way2 http://langfuse-web <loop name>
    ```
 
 3. After a day, report as in way 1, into `way2-report.txt` and
@@ -128,10 +130,10 @@ all off by default. Turning on any `OTEL_LOG_*` is a separate choice, made on
 ```sh
 docker run --rm -u loop -e HOME=/home/loop -v spool-ws-<loop id>:/home/loop -v "$PWD":/spike:ro \
   --entrypoint sh spool-workstation /spike/lf-install.sh remove
-docker compose -f compose.langfuse.yml --env-file langfuse.env --profile langfuse down -v
+docker compose -f compose.langfuse.yml -f compose.spool-egress.yml --env-file langfuse.env --profile langfuse down -v
 rm langfuse.env
 ```
 
-Then remove the loop's Langfuse connection, the `langfuse.example.com` egress
-entry and the Caddy site. `down -v` deletes every trace. Way 1's traces can
+Then remove the loop's Langfuse connection and the `langfuse-web` egress
+entry. `down -v` deletes every trace. Way 1's traces can
 hold anything a tool printed, so delete them rather than keep them.

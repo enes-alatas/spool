@@ -1,0 +1,21 @@
+# Puts langfuse-web on the egress proxy's own network, for the #1187 spike, so
+# a docker loop reaches it through the proxy as http://langfuse-web with no
+# public name, Caddy site or TLS. Only the proxy is on that network: a loop's
+# own network, which carries its hub token in plain HTTP, never gets Langfuse.
+# Use it on top of compose.langfuse.yml:
+#   docker compose -f compose.langfuse.yml -f compose.spool-egress.yml \
+#     --env-file langfuse.env --profile langfuse up -d
+# then add `langfuse-web` under Settings -> Egress. That list is the fleet's,
+# so every docker loop can reach the whole Langfuse API on port 80; only the
+# loop holding the project keys gets past its auth.
+services:
+  langfuse-web:
+    networks:
+      default: {}
+      spool-egress:
+        aliases: [langfuse-web]
+
+networks:
+  spool-egress:
+    external: true
+    name: ${SPOOL_EGRESS_NETWORK:-spool-egress}
