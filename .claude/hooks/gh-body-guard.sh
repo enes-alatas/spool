@@ -15,8 +15,8 @@
 # Claude Code reads .claude/settings.json only for a session started in a
 # checkout. A loop's session starts in its home, so a loop runs this hook
 # from its user settings instead, reading the script and its two files from
-# a clone's origin/main (CONVENTIONS.md):
-#   sh -c "$(git -C ~/spool show origin/main:.claude/hooks/gh-body-guard.sh)" gh-body-guard ~/spool
+# a clone's origin/main (CONVENTIONS.md), here ~/spool:
+#   {"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "sh -c \"$(git -C \"$HOME/spool\" show origin/main:.claude/hooks/gh-body-guard.sh)\" gh-body-guard \"$HOME/spool\""}]}]}}
 # $1 is that clone, and $2 the ref, origin/main unless given.
 here=$(dirname "$0")
 repo=${1:-}
