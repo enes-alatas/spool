@@ -6,32 +6,46 @@ package main
 // started apart from the CLI's, as the VM is: the hub ends the local CLI
 // once a session has started, and the turn runs on.
 //
-//   - `--cloud <message>` refuses without a terminal, and in a directory
-//     that is no git repo with a commit. It fires the working directory's
-//     SessionStart hooks locally, as the real CLI does on the operator's
-//     machine, with no remote session id (#957, run E3), and counts them in
-//     the session's local-session-starts. It clones the repo into the VM,
-//     which carries only what is committed, as the bundle does, or, unless
+//   - `--cloud <message>` refuses without a terminal. With `--ref <branch>`
+//     it starts from that branch of the working directory's origin on
+//     github.com, cloned into the VM from $FAKECLAUDE_STATE/github/<owner>/<name>,
+//     and fails when the repo or the branch isn't there (run R on #1180).
+//     Without it, it bundles the working directory, which must be a git
+//     repo with a commit: it clones the repo into the VM, which carries
+//     only what is committed, as the bundle does, or, unless
 //     CCR_ENABLE_BUNDLE is set or the CLI may fetch its feature flags,
-//     leaves the VM's directory empty (#1094). It starts the
-//     first turn there, prints the session's address, and waits to be
-//     ended. It writes the environment --settings chose,
-//     remote.defaultEnvironmentId, into the session's environment file,
-//     "" for none.
+//     leaves the VM's directory empty (#1094). It fires the working
+//     directory's SessionStart hooks locally, as the real CLI does on the
+//     operator's machine, with no remote session id (#957, run E3), and
+//     counts them in the session's local-session-starts. It writes its
+//     argument list to the session's cli-args and the environment
+//     --settings chose, remote.defaultEnvironmentId, into the session's
+//     environment file, "" for none. It starts the first turn, prints the
+//     session's lines as CLI 2.1.310 does, and waits to be ended.
 //   - `-p <message> --cloud <id>` prints {ok, session_id, url} and starts
 //     the turn in the VM, or prints {"ok":false,…} and exits 1 for a
 //     session it doesn't have.
 //
-// A turn in the VM runs the repo's hooks as the CLI's committed
-// .claude/settings.json names them, with CLAUDE_PROJECT_DIR and
-// CLAUDE_CODE_REMOTE_SESSION_ID set, in the cse_… form the VM names its
-// session by: SessionStart (source startup) at the
-// first turn, then the turn, written to the session's transcript as the
-// CLI writes one, then Stop. SessionStart's hooks get CLAUDE_ENV_FILE, the
-// session's claude-env file. The reply is "fake cloud reply: " and the
-// message, or, for a message with a "!env NAME" or "!envsum NAME" line, NAME
-// and its value as sh reads it after claude-env, or for !envsum its SHA-256.
-// Turns of one session run one at a time.
+// A turn in the VM runs the hooks the VM's ~/.claude/settings.json names,
+// where the environment's setup script wrote them, and then the repo's
+// committed .claude/settings.json, with CLAUDE_PROJECT_DIR,
+// CLAUDE_CODE_REMOTE_SESSION_ID, in the cse_… form the VM names its
+// session by, and HOME, the VM's home, set. The setup script,
+// $FAKECLAUDE_STATE/environments/<id>/setup.sh for the session's
+// environment, runs once, as the first turn starts, with the VM's home as
+// HOME; its output is in the session's setup.log. The environment's
+// network secret, a line "host token" in its secret file, is added as a
+// bearer to every curl request the hooks make for that host, as the VM's
+// egress proxy adds it, and to none of the setup script's (run S on
+// #1180). SessionStart (source startup) runs at the first turn, and with
+// source compact before a turn whose message has a "!compact" line; what
+// its hooks print as hookSpecificOutput.additionalContext is appended to
+// the session's context file. Then the turn, written to the session's
+// transcript as the CLI writes one, then Stop. SessionStart's hooks get
+// CLAUDE_ENV_FILE, the session's claude-env file. The reply is "fake cloud
+// reply: " and the message, or, for a message with a "!env NAME" or
+// "!envsum NAME" line, NAME and its value as sh reads it after claude-env,
+// or for !envsum its SHA-256. Turns of one session run one at a time.
 //
 // A "reclaimed" file in a session's directory makes its next turn a VM
 // Anthropic reclaimed while idle: claude-env is kept, and SessionStart
@@ -84,7 +98,7 @@ func cloudMain(args []string) int {
 	if len(args) == 4 && args[0] == cloudVMArg {
 		return cloudTurn(args[1], args[2], args[3] == "startup")
 	}
-	var message, session, settings string
+	var message, session, settings, ref string
 	sending := false
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -103,6 +117,11 @@ func cloudMain(args []string) int {
 					message = args[i]
 				}
 			}
+		case "--ref":
+			if i+1 < len(args) {
+				i++
+				ref = args[i]
+			}
 		case "--settings":
 			if i+1 < len(args) {
 				i++
@@ -115,24 +134,40 @@ func cloudMain(args []string) int {
 	if sending {
 		return cloudSend(session, message)
 	}
-	return cloudStart(message, settings)
+	return cloudStart(message, settings, ref)
 }
 
 var cloudSessionID = regexp.MustCompile(`^session_[A-Za-z0-9]+$`)
 
-func cloudStart(message, settings string) int {
+func cloudStart(message, settings, ref string) int {
 	if !isTerminal(os.Stdin) {
 		fmt.Fprintln(os.Stderr, "Error: --cloud needs an interactive terminal")
 		return 1
 	}
 	cwd, _ := os.Getwd()
-	if out, err := exec.Command("git", "-C", cwd, "rev-parse", "--verify", "HEAD").CombinedOutput(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: --cloud needs a git repository with a commit: %s\n", out)
+	// With --ref the session starts from that branch of the working
+	// directory's origin on GitHub; without it the CLI bundles the
+	// working directory, which needs a commit (run R on #1180).
+	var source string
+	if ref != "" {
+		out, err := exec.Command("git", "-C", cwd, "remote", "get-url", "origin").Output()
+		repo, ok := githubRepo(strings.TrimSpace(string(out)))
+		if err != nil || !ok {
+			fmt.Fprintln(os.Stderr, "Error: --ref needs an origin on github.com")
+			return 1
+		}
+		source = filepath.Join(filepath.Dir(cloudRoot()), "github", repo)
+		if err := exec.Command("git", "-C", source, "rev-parse", "--verify", "refs/heads/"+ref).Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: github.com/%s has no branch %s\n", repo, ref)
+			return 1
+		}
+	} else if out, err := exec.Command("git", "-C", cwd, "rev-parse", "--verify", "HEAD").CombinedOutput(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: Repository has no local branch, tag, or checkout to seed from yet: %s\n", out)
 		return 1
 	}
 	id := "session_" + strings.ToLower(rand.Text())
 	vm := filepath.Join(cloudRoot(), id)
-	if err := os.MkdirAll(vm, 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(vm, "home"), 0o700); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
@@ -143,23 +178,36 @@ func cloudStart(message, settings string) int {
 		} `json:"remote"`
 	}
 	_ = json.Unmarshal([]byte(settings), &chosen)
+	// the start's argument list, for a test to hold
+	if err := os.WriteFile(filepath.Join(vm, "cli-args"), []byte(strings.Join(os.Args[1:], "\n")+"\n"), 0o600); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
 	if err := os.WriteFile(filepath.Join(vm, "environment"), []byte(chosen.Remote.DefaultEnvironmentID), 0o600); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	// The local CLI fires the project's SessionStart on this machine,
 	// where there is no remote session.
-	runHooks(cwd, cwd, "SessionStart", "startup", hookEnv(cwd, ""), map[string]any{
+	runHooks([]string{cwd}, cwd, "SessionStart", "startup", hookEnv(cwd, "", ""), map[string]any{
 		"hook_event_name": "SessionStart", "source": "startup", "cwd": cwd,
 	}, filepath.Join(vm, "local-session-starts"))
-	if seedsFromRepo() {
+	switch {
+	case source != "":
+		if out, err := exec.Command("git", "clone", "-q", "--branch", ref, source, filepath.Join(vm, "repo")).CombinedOutput(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: cloning the repository: %v: %s\n", err, out)
+			return 1
+		}
+	case seedsFromRepo():
 		if out, err := exec.Command("git", "clone", "-q", cwd, filepath.Join(vm, "repo")).CombinedOutput(); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: uploading the repository: %v: %s\n", err, out)
 			return 1
 		}
-	} else if err := os.Mkdir(filepath.Join(vm, "repo"), 0o700); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+	default:
+		if err := os.Mkdir(filepath.Join(vm, "repo"), 0o700); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
 	}
 	exits := cloudStartExits()
 	if exits {
@@ -244,30 +292,38 @@ func startVMTurn(session, message string, first bool) error {
 // cloudTurn is one turn in the session's VM.
 func cloudTurn(session, message string, first bool) int {
 	vm := filepath.Join(cloudRoot(), session)
-	repo := filepath.Join(vm, "repo")
+	repo, home := filepath.Join(vm, "repo"), filepath.Join(vm, "home")
 	unlock := lockTurn(vm)
 	defer unlock()
-	env := hookEnv(repo, session)
+	environment, _ := os.ReadFile(filepath.Join(vm, "environment"))
+	env := withNetworkSecret(vm, string(environment), hookEnv(repo, session, home))
 	if _, err := os.Stat(filepath.Join(filepath.Dir(cloudRoot()), "cloud-egress-refused")); err == nil {
 		env = refusingEgress(vm, env)
 	}
 	// SessionStart's hooks write variables for the session's shell into
 	// CLAUDE_ENV_FILE, which every shell command reads first
 	envFile := filepath.Join(vm, "claude-env")
-	source := ""
+	startEnv := append(env, "CLAUDE_ENV_FILE="+envFile)
+	sessionStart := func(source string) {
+		outputs := runHooks([]string{home, repo}, repo, "SessionStart", source, startEnv, map[string]any{
+			"hook_event_name": "SessionStart", "source": source, "session_id": "local-" + session, "cwd": repo,
+		}, "")
+		addContext(vm, outputs)
+	}
 	switch reclaimed := filepath.Join(vm, "reclaimed"); {
 	case first:
 		hold(filepath.Join(vm, "cli-running"))
+		// the environment's setup script runs once per machine, before
+		// the first SessionStart (run R on #1180)
+		runSetup(vm, string(environment), home)
 		holdStart()
-		source = "startup"
+		sessionStart("startup")
 	case os.Remove(reclaimed) == nil:
 		// a VM Anthropic reclaimed keeps its env file (run I on #976)
-		source = "resume"
+		sessionStart("resume")
 	}
-	if source != "" {
-		runHooks(repo, repo, "SessionStart", source, append(env, "CLAUDE_ENV_FILE="+envFile), map[string]any{
-			"hook_event_name": "SessionStart", "source": source, "session_id": "local-" + session, "cwd": repo,
-		}, "")
+	if compacted(message) {
+		sessionStart("compact")
 	}
 	transcript := filepath.Join(vm, "transcript.jsonl")
 	reply := "fake cloud reply: " + message
@@ -303,7 +359,7 @@ func cloudTurn(session, message string, first bool) int {
 	}
 	file.Close()
 	hold(filepath.Join(vm, "turn-held"))
-	runHooks(repo, repo, "Stop", "", env, map[string]any{
+	runHooks([]string{home, repo}, repo, "Stop", "", env, map[string]any{
 		"hook_event_name": "Stop", "session_id": "local-" + session, "cwd": repo,
 		"transcript_path": transcript, "last_assistant_message": reply, "stop_hook_active": false,
 	}, "")
@@ -352,18 +408,26 @@ func readLines(path string) []string {
 }
 
 // hookEnv is a hook's environment: the CLI's, with the project's dir and,
-// in the VM, the remote session's id.
-func hookEnv(projectDir, remoteSession string) []string {
+// in the VM, the remote session's id and the VM's home, where the
+// environment's setup script wrote the user's settings.
+func hookEnv(projectDir, remoteSession, home string) []string {
 	var env []string
 	for _, entry := range os.Environ() {
 		name, _, _ := strings.Cut(entry, "=")
 		switch name {
 		case "CLAUDE_PROJECT_DIR", "CLAUDE_CODE_REMOTE_SESSION_ID", "CLAUDE_CODE_OAUTH_TOKEN":
 			continue
+		case "HOME":
+			if home != "" {
+				continue
+			}
 		}
 		env = append(env, entry)
 	}
 	env = append(env, "CLAUDE_PROJECT_DIR="+projectDir)
+	if home != "" {
+		env = append(env, "HOME="+home)
+	}
 	if remoteSession != "" {
 		// the VM names its session cse_…, the CLI and claude.ai session_…
 		env = append(env, "CLAUDE_CODE_REMOTE_SESSION_ID=cse_"+strings.TrimPrefix(remoteSession, "session_"))
@@ -371,49 +435,57 @@ func hookEnv(projectDir, remoteSession string) []string {
 	return env
 }
 
-// runHooks runs the hooks dir's .claude/settings.json names for event,
-// those whose matcher takes source when it is a SessionStart, with input
-// on stdin, and counts each run in countFile when it is set.
-func runHooks(dir, cwd, event, source string, env []string, input map[string]any, countFile string) {
-	raw, err := os.ReadFile(filepath.Join(dir, ".claude", "settings.json"))
-	if err != nil {
-		return
-	}
-	var settings struct {
-		Hooks map[string][]struct {
-			Matcher string `json:"matcher"`
-			Hooks   []struct {
-				Type    string `json:"type"`
-				Command string `json:"command"`
-			} `json:"hooks"`
-		} `json:"hooks"`
-	}
-	if json.Unmarshal(raw, &settings) != nil {
-		return
-	}
-	stdin, _ := json.Marshal(input)
-	for _, group := range settings.Hooks[event] {
-		if source != "" && group.Matcher != "" && !matches(group.Matcher, source) {
+// runHooks runs the hooks each of dirs' .claude/settings.json names for
+// event, the user's and then the project's, those whose matcher takes
+// source when it is a SessionStart, with input on stdin, and counts each
+// run in countFile when it is set. It returns each hook's stdout.
+func runHooks(dirs []string, cwd, event, source string, env []string, input map[string]any, countFile string) []string {
+	var outputs []string
+	for _, dir := range dirs {
+		raw, err := os.ReadFile(filepath.Join(dir, ".claude", "settings.json"))
+		if err != nil {
 			continue
 		}
-		for _, hook := range group.Hooks {
-			if hook.Type != "command" {
+		var settings struct {
+			Hooks map[string][]struct {
+				Matcher string `json:"matcher"`
+				Hooks   []struct {
+					Type    string `json:"type"`
+					Command string `json:"command"`
+				} `json:"hooks"`
+			} `json:"hooks"`
+		}
+		if json.Unmarshal(raw, &settings) != nil {
+			continue
+		}
+		stdin, _ := json.Marshal(input)
+		for _, group := range settings.Hooks[event] {
+			if source != "" && group.Matcher != "" && !matches(group.Matcher, source) {
 				continue
 			}
-			cmd := exec.Command("sh", "-c", hook.Command)
-			cmd.Dir, cmd.Env = cwd, env
-			cmd.Stdin = strings.NewReader(string(stdin))
-			out, ran := cmd.CombinedOutput()
-			fmt.Fprintf(os.Stderr, "fakeclaude: %s hook: %v %s\n", event, ran, out)
-			if countFile != "" {
-				file, err := os.OpenFile(countFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-				if err == nil {
-					fmt.Fprintf(file, "exit=%v output=%q\n", ran, out)
-					file.Close()
+			for _, hook := range group.Hooks {
+				if hook.Type != "command" {
+					continue
+				}
+				cmd := exec.Command("sh", "-c", hook.Command)
+				cmd.Dir, cmd.Env = cwd, env
+				cmd.Stdin = strings.NewReader(string(stdin))
+				var stdout, stderr strings.Builder
+				cmd.Stdout, cmd.Stderr = &stdout, &stderr
+				ran := cmd.Run()
+				outputs = append(outputs, stdout.String())
+				fmt.Fprintf(os.Stderr, "fakeclaude: %s hook: %v %s%s\n", event, ran, stdout.String(), stderr.String())
+				if countFile != "" {
+					file, err := os.OpenFile(countFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+					if err == nil {
+						fmt.Fprintf(file, "exit=%v output=%q\n", ran, stdout.String()+stderr.String())
+						file.Close()
+					}
 				}
 			}
 		}
 	}
+	return outputs
 }
 
 // matches is a hook matcher's test of source: its alternatives split on |.
@@ -484,4 +556,96 @@ func sessionTitle(message string) string {
 		title = string(runes[:40])
 	}
 	return title
+}
+
+// githubRepo is origin's owner/name when it is a repo on github.com.
+func githubRepo(origin string) (string, bool) {
+	rest, ok := strings.CutPrefix(origin, "https://github.com/")
+	rest = strings.TrimSuffix(rest, ".git")
+	owner, name, split := strings.Cut(rest, "/")
+	if !ok || !split || owner == "" || name == "" || strings.Contains(name, "/") {
+		return "", false
+	}
+	return owner + "/" + name, true
+}
+
+// environmentDir is where a test keeps environment's setup: its setup
+// script, setup.sh, and its network secret, secret, a line "host token".
+func environmentDir(environment string) string {
+	return filepath.Join(filepath.Dir(cloudRoot()), "environments", filepath.Base(environment))
+}
+
+// runSetup runs the environment's setup script in the VM, once, with the
+// VM's home as HOME, and logs its output to the VM's setup.log. An
+// environment with none runs nothing.
+func runSetup(vm, environment, home string) {
+	script := filepath.Join(environmentDir(environment), "setup.sh")
+	if _, err := os.Stat(script); err != nil || environment == "" {
+		return
+	}
+	cmd := exec.Command("sh", script)
+	cmd.Dir = home
+	cmd.Env = hookEnv(home, "", home)
+	out, err := cmd.CombinedOutput()
+	_ = os.WriteFile(filepath.Join(vm, "setup.log"), append(out, []byte(fmt.Sprintf("exit=%v\n", err))...), 0o600)
+}
+
+// withNetworkSecret is env with a curl ahead of the VM's on PATH that adds
+// the environment's network secret to a request for its host, as the
+// VM's egress proxy adds it to every request the session and its hooks
+// make there, and to none of the setup script's (run S on #1180).
+func withNetworkSecret(vm, environment string, env []string) []string {
+	raw, err := os.ReadFile(filepath.Join(environmentDir(environment), "secret"))
+	host, token, ok := strings.Cut(strings.TrimSpace(string(raw)), " ")
+	curl, lookErr := exec.LookPath("curl")
+	if err != nil || !ok || environment == "" || lookErr != nil {
+		return env
+	}
+	// the proxy is Anthropic's, outside the VM
+	bin := filepath.Join(filepath.Dir(cloudRoot()), "proxies", filepath.Base(vm))
+	script := "#!/bin/sh\nfor a; do case \"$a\" in http://" + host + "/*|https://" + host + "/*)\n" +
+		"  exec " + curl + " -H 'Authorization: Bearer " + token + "' \"$@\";;\nesac; done\nexec " + curl + " \"$@\"\n"
+	if os.MkdirAll(bin, 0o700) != nil || os.WriteFile(filepath.Join(bin, "curl"), []byte(script), 0o700) != nil {
+		return env
+	}
+	for i, entry := range env {
+		if path, found := strings.CutPrefix(entry, "PATH="); found {
+			env[i] = "PATH=" + bin + string(os.PathListSeparator) + path
+			return env
+		}
+	}
+	return append(env, "PATH="+bin)
+}
+
+// addContext appends what SessionStart hooks' outputs add to the session's
+// context, hookSpecificOutput.additionalContext, to the VM's context file.
+func addContext(vm string, outputs []string) {
+	for _, output := range outputs {
+		var parsed struct {
+			HookSpecificOutput struct {
+				AdditionalContext string `json:"additionalContext"`
+			} `json:"hookSpecificOutput"`
+		}
+		if json.Unmarshal([]byte(strings.TrimSpace(output)), &parsed) != nil || parsed.HookSpecificOutput.AdditionalContext == "" {
+			continue
+		}
+		file, err := os.OpenFile(filepath.Join(vm, "context"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+		if err != nil {
+			continue
+		}
+		_, _ = file.WriteString(parsed.HookSpecificOutput.AdditionalContext + "\n")
+		file.Close()
+	}
+}
+
+// compacted reports whether a turn's message has a "!compact" line: the
+// session then compacts before the turn, and fires SessionStart with
+// source compact.
+func compacted(message string) bool {
+	for _, line := range strings.Split(message, "\n") {
+		if strings.TrimSpace(line) == "!compact" {
+			return true
+		}
+	}
+	return false
 }

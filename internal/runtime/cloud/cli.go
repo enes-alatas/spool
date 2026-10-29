@@ -17,17 +17,18 @@ import (
 	"time"
 
 	"github.com/enes-alatas/spool/internal/claude"
+	"github.com/enes-alatas/spool/internal/runtime"
 )
 
 // CLI is the claude CLI cloud sessions run through, and where its runs
 // are made (ADR-0059): `claude --cloud` under a pseudo-terminal starts a
 // session, `claude -p --cloud` sends into it, and each turn is read back
-// from what the loop home's Stop hook posts.
+// from what the session's Stop hook posts.
 type CLI struct {
 	// Binary is the claude CLI.
 	Binary string
-	// Dir is where each run's loop home and config dir are made, outside
-	// the data directory, and removed once the run ends.
+	// Dir is where each run's start directory and config dir are made,
+	// outside the data directory, and removed once the run ends.
 	Dir string
 	// Env is the CLI's environment: the hub's, with no credential of its
 	// own. Each run adds its config dir and the account's token.
@@ -81,20 +82,32 @@ const (
 )
 
 // hookWaits are the hook posts the runtime is waiting on: a start's
-// SessionStart and a turn's Stop, each by loop.
+// SessionStart and a turn's Stop, each by loop, and the prompt each loop's
+// session runs with, which a compaction's post is answered with.
 type hookWaits struct {
-	mu     sync.Mutex
-	starts map[string]*pendingStart
-	stops  map[string]chan stopArrival
+	mu      sync.Mutex
+	starts  map[string]*pendingStart
+	stops   map[string]chan stopArrival
+	prompts map[string]string
+}
+
+// setPrompt records the prompt the loop's session runs with.
+func (waits *hookWaits) setPrompt(loopID, prompt string) {
+	waits.mu.Lock()
+	defer waits.mu.Unlock()
+	if waits.prompts == nil {
+		waits.prompts = map[string]string{}
+	}
+	waits.prompts[loopID] = prompt
 }
 
 // pendingStart is a start of a loop waiting for its session's id: it takes
 // one post, before its deadline, that names the session its CLI printed.
-// It answers that post with exports, the loop's connections.
+// It answers that post with answer, the loop's connections and prompt.
 type pendingStart struct {
 	deadline time.Time
 	session  chan string
-	exports  []byte
+	answer   []byte
 	// heard is whether any SessionStart post of the loop came while the
 	// start waited, a refused one too: its session reached the hub.
 	heard bool
@@ -110,13 +123,13 @@ type stopArrival struct {
 	overBound bool
 }
 
-func (waits *hookWaits) awaitStart(loopID string, within time.Duration, exports []byte) *pendingStart {
+func (waits *hookWaits) awaitStart(loopID string, within time.Duration, answer []byte) *pendingStart {
 	waits.mu.Lock()
 	defer waits.mu.Unlock()
 	if waits.starts == nil {
 		waits.starts = map[string]*pendingStart{}
 	}
-	start := &pendingStart{deadline: time.Now().Add(within), session: make(chan string, 1), exports: exports, seen: make(chan struct{})}
+	start := &pendingStart{deadline: time.Now().Add(within), session: make(chan string, 1), answer: answer, seen: make(chan struct{})}
 	waits.starts[loopID] = start
 	return start
 }
@@ -180,19 +193,29 @@ func (waits *hookWaits) forgetStop(loopID string, stops chan stopArrival) {
 }
 
 // SessionStart takes a SessionStart post and answers it with the loop's
-// connections as export lines (ADR-0059). A startup post's session id is
-// recorded as the loop's while a start of it is pending, within its bound,
-// once, and only if it names the session the start's CLI printed it had
-// created (ADR-0061): an old session of the loop may hold a token that
-// works too. Any other post is refused: the loop can read its token and
-// post, and must not rebind its wakes into another session or read the
-// connections at will. An answer is told to HandOff, and so is a refused
-// post from the loop's own session, which may have lost them.
-// Each answer is logged, without its values.
+// connections as export lines (ADR-0059) and the hub's prompt
+// (sessionStartAnswer). A startup post's session id is recorded as the
+// loop's while a start of it is pending, within its bound, once, and only
+// if it names the session the start's CLI printed it had created
+// (ADR-0061): every session in the loop's environment reaches the hub on
+// its token. A compaction's or a /clear's post is answered with the prompt
+// alone, and only from the loop's recorded session while a turn of it is
+// in flight. Any other post is refused: anything in the VM can post with
+// the token, and must not rebind the loop's wakes into another session or
+// read the connections at will. A startup answer is told to HandOff, and
+// so is a refused startup post from the loop's own session, which may have
+// lost them. Each answer is logged, without its values.
 func (cloud *Runtime) SessionStart(ctx context.Context, loopID, sessionID string, hook []byte) ([]byte, error) {
 	sessionID = sessionAddress(sessionID)
 	source := hookSource(hook)
-	exports, err := cloud.answerSessionStart(ctx, loopID, sessionID, source)
+	if source == sourceCompact || source == sourceClear {
+		answer, err := cloud.answerContextLost(loopID, sessionID)
+		if err == nil {
+			slog.Default().Info("cloud: a session was handed its loop's prompt again", "loop", loopID, "source", source, "session", sessionID)
+		}
+		return answer, err
+	}
+	answer, err := cloud.answerSessionStart(ctx, loopID, sessionID, source)
 	if err == nil {
 		slog.Default().Info("cloud: a session was handed its loop's connections", "loop", loopID, "source", source, "session", sessionID)
 	}
@@ -203,7 +226,28 @@ func (cloud *Runtime) SessionStart(ctx context.Context, loopID, sessionID string
 			cloud.HandOff(loopID, false)
 		}
 	}
-	return exports, err
+	return answer, err
+}
+
+// answerContextLost answers a compaction's or a /clear's SessionStart post
+// with the prompt the loop's session was started with, when it comes from
+// that session while a turn of it is in flight.
+func (cloud *Runtime) answerContextLost(loopID, sessionID string) ([]byte, error) {
+	current, err := cloud.load(loopID)
+	if err != nil {
+		return nil, err
+	}
+	if current.SessionID == "" || current.SessionID != sessionID {
+		return nil, errors.New("cloud: the post isn't from the loop's session")
+	}
+	cloud.waits.mu.Lock()
+	inFlight := cloud.waits.stops[loopID] != nil
+	prompt, known := cloud.waits.prompts[loopID]
+	cloud.waits.mu.Unlock()
+	if !inFlight || !known {
+		return nil, errors.New("cloud: no turn of this loop is in flight")
+	}
+	return sessionStartAnswer(nil, prompt)
 }
 
 // sessionAddress is a session's id as claude.ai's pages and `-p --cloud`
@@ -252,7 +296,7 @@ func (cloud *Runtime) answerSessionStart(ctx context.Context, loopID, sessionID,
 	}
 	delete(cloud.waits.starts, loopID)
 	start.session <- sessionID
-	return start.exports, nil
+	return start.answer, nil
 }
 
 // Stop takes a Stop post: it ends the loop's turn in flight, once. With no
@@ -275,7 +319,7 @@ type cliSession struct {
 	cloud  *Runtime
 	loopID string
 	prompt string
-	hub    hubEndpoint
+	source runtime.CloudStart
 	bounds Bounds
 	// env is the loop's connections as the spec carries them, which a
 	// start hands to the session.
@@ -424,10 +468,10 @@ func (session *cliSession) turn(text string) {
 	}
 }
 
-// startSession runs `claude --cloud` on a terminal in a fresh loop home,
-// and waits for the home's SessionStart hook to post the session's id. It
-// records the session, then ends the local CLI and removes the home, which
-// holds the loop's token. A CLI that exits with an error first, or a post
+// startSession runs `claude --cloud` on a terminal in a fresh start
+// directory, and waits for the session's SessionStart hook to post the
+// session's id. It records the session, then ends the local CLI and
+// removes the directory. A CLI that exits with an error first, or a post
 // that doesn't come within the bound, fails the start with the CLI's last
 // line. A start whose CLI exited cleanly, and whose session then posted
 // nothing at all in the bound, is told to Unreached.
@@ -439,32 +483,35 @@ func (session *cliSession) startSession(text string) error {
 	}
 	ctx, cancel := context.WithTimeout(session.ctx, within)
 	defer cancel()
-	settings, err := session.cloud.startSettings(ctx)
+	settings, err := startSettings(session.source.EnvironmentID)
 	if err != nil {
 		return err
 	}
 	if err := cli.ownDir(); err != nil {
 		return err
 	}
-	home, err := BuildHome(ctx, cli.Dir, Home{MCPURL: session.hub.url, Token: session.hub.token, Prompt: session.prompt})
+	dir, err := makeStartDir(ctx, cli.Dir, session.source)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = os.RemoveAll(home) }()
-	run, err := session.cloud.newCLIRun(ctx, home)
+	defer func() { _ = os.RemoveAll(dir) }()
+	run, err := session.cloud.newCLIRun(ctx, dir)
 	if err != nil {
 		return err
 	}
 	defer run.remove()
 
-	pending := session.cloud.waits.awaitStart(session.loopID, within, exportLines(session.env))
+	answer, err := sessionStartAnswer(exportLines(session.env), session.prompt)
+	if err != nil {
+		return err
+	}
+	pending := session.cloud.waits.awaitStart(session.loopID, within, answer)
 	defer session.cloud.waits.forgetStart(session.loopID, pending)
-	cmd := exec.Command(cli.Binary, "--cloud", text, "--permission-mode", "auto", "--settings", settings)
-	// The CLI uploads the home only when CCR_ENABLE_BUNDLE is set or a
-	// feature flag says to, and the hub's runs fetch no feature flags
-	// (CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC): without it the session
-	// starts in an empty sandbox, with no MCP server and no hooks (#1094).
-	cmd.Dir, cmd.Env = run.dir, append(run.env, "CCR_ENABLE_BUNDLE=1")
+	// --ref starts the session from the branch on GitHub: without it the
+	// CLI bundles the start directory, which has nothing to bundle (run R
+	// on #1180). CCR_ENABLE_BUNDLE stays unset, so nothing is uploaded.
+	cmd := exec.Command(cli.Binary, "--cloud", text, "--permission-mode", "auto", "--settings", settings, "--ref", session.source.Branch)
+	cmd.Dir, cmd.Env = run.dir, run.env
 	terminal, err := startOnTerminal(cmd)
 	if err != nil {
 		return fmt.Errorf("cloud: starting the session: %w", err)
@@ -503,7 +550,7 @@ func (session *cliSession) startSession(text string) error {
 			return session.cloud.update(session.loopID, func(s *state) {
 				s.SessionID, s.ClaudeSession, s.EnvironmentID = sessionID, session.claudeSession, ""
 				s.SessionURL = sessionPages + sessionID
-				s.SessionToken = tokenHash(session.hub.token)
+				s.Source = sourceKey(session.source)
 			})
 		case <-cliExited:
 			if exitErr == nil {
@@ -785,10 +832,10 @@ func (cloud *Runtime) CheckAccount(ctx context.Context) (claude.LoginCheck, erro
 
 // Prepare makes Dir, or takes it as it is when it is a 0700 directory
 // already, and removes everything in it: a hub that stopped mid-start
-// left that start's loop home there, and it holds a token (ADR-0059). It
+// left that start's directories there, the CLI's config dir among them. It
 // is the hub's to call once at boot, before any start. Dir is in the
 // shared temp dir, so anything else at that path is refused: a directory
-// another user made there would hand them the homes.
+// another user made there would hand them the runs.
 func (cli *CLI) Prepare() (removed int, err error) {
 	if err := cli.ownDir(); err != nil {
 		return 0, err
@@ -829,20 +876,70 @@ func (cli *CLI) ownDir() error {
 	return nil
 }
 
-// startSettings is the --settings a start runs with: the environment the
-// session starts in (ADR-0059). With none chosen there is no start, since
-// the CLI would pick one of the account's environments by itself.
-func (cloud *Runtime) startSettings(ctx context.Context) (string, error) {
-	id := ""
-	if cloud.EnvironmentID != nil {
-		var err error
-		if id, err = cloud.EnvironmentID(ctx); err != nil {
-			return "", err
+// startSettings is the --settings a start runs with: the loop's
+// environment (ADR-0061), built by the encoder. With none there is no
+// start, since the CLI would pick one of the account's environments by
+// itself.
+func startSettings(environmentID string) (string, error) {
+	if environmentID == "" {
+		return "", errors.New("cloud: the loop has no environment")
+	}
+	raw, err := json.Marshal(map[string]any{"remote": map[string]string{"defaultEnvironmentId": environmentID}})
+	return string(raw), err
+}
+
+// makeStartDir makes a start directory under parent (ADR-0061): a fresh
+// 0700 directory holding an empty git repo on source's branch, its
+// origin source's repo on GitHub. It holds no file of the hub's and no
+// clone, so the CLI sends the repo as the session's source. git runs by
+// argument list, with the operator's git config kept out, on a repo and
+// branch it checks again here, whatever its caller checked (gitSafe).
+// The caller removes the directory once the start ends.
+func makeStartDir(ctx context.Context, parent string, source runtime.CloudStart) (dir string, err error) {
+	if !gitSafe(source) {
+		return "", fmt.Errorf("cloud: %q on %q is not a repo and branch to start from", source.Repo, source.Branch)
+	}
+	dir, err = os.MkdirTemp(parent, "spool-start-*")
+	if err != nil {
+		return "", err
+	}
+	for _, step := range []struct {
+		name string
+		args []string
+	}{
+		{"init", []string{"init", "-q", "-b", source.Branch}},
+		{"remote", []string{"remote", "add", "origin", "https://github.com/" + source.Repo + ".git"}},
+	} {
+		cmd := exec.CommandContext(ctx, "git", step.args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1")
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			_ = os.RemoveAll(dir)
+			return "", fmt.Errorf("cloud: making the start directory: git %s: %w: %s", step.name, err, strings.TrimSpace(stderr.String()))
 		}
 	}
-	if id == "" {
-		return "", errors.New("cloud: no environment is chosen in Settings → Cloud")
+	return dir, nil
+}
+
+// gitSafe reports whether source's repo and branch can go into the start
+// directory's git arguments: a branch that doesn't start with "-", so git
+// can't read it as a flag, and a repo that is one owner/name of letters,
+// digits, '.', '-' and '_', its owner not starting with "-" and its name
+// not "." or "..". It is the runtime's own guard, since the seam keeps it
+// from the store: looser than CloudSetup.Check, so it refuses no setup
+// the store took, but enough that git reads both as values.
+func gitSafe(source runtime.CloudStart) bool {
+	owner, name, found := strings.Cut(source.Repo, "/")
+	if source.Branch == "" || source.Branch[0] == '-' || !found || owner == "" || name == "" ||
+		owner[0] == '-' || name == "." || name == ".." {
+		return false
 	}
-	raw, err := json.Marshal(map[string]any{"remote": map[string]string{"defaultEnvironmentId": id}})
-	return string(raw), err
+	for _, char := range owner + name {
+		if (char < 'a' || char > 'z') && (char < 'A' || char > 'Z') && (char < '0' || char > '9') && !strings.ContainsRune("._-", char) {
+			return false
+		}
+	}
+	return true
 }

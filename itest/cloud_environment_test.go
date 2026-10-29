@@ -42,12 +42,11 @@ func environmentsAPI(t *testing.T) *httptest.Server {
 	return api
 }
 
-// Settings → Cloud picks the environment by name from the account's list,
-// and the loop's next start runs in it (ADR-0059). Until the operator
-// confirms pasting the current list, the loop carries the warning that
-// the hub's allowlist doesn't bind it; an edit to the allowlist brings the
-// warning back.
-func TestACloudLoopStartsInTheEnvironmentThePagePicked(t *testing.T) {
+// Settings → Cloud's environment step still lists, picks and confirms, and
+// its allowlist warning holds as before (ADR-0059): it goes with the
+// control room's step (#1183). A loop no longer starts in the picked
+// environment but in its own (ADR-0061).
+func TestACloudLoopStartsInItsOwnEnvironmentNotThePagesPick(t *testing.T) {
 	t.Parallel()
 	hub := startCloudHub(t, "cirrus", "--cloud-api-base", environmentsAPI(t).URL)
 
@@ -81,8 +80,8 @@ func TestACloudLoopStartsInTheEnvironmentThePagePicked(t *testing.T) {
 	if len(vms) != 1 {
 		t.Fatalf("one start made %d sessions", len(vms))
 	}
-	if environment, err := os.ReadFile(filepath.Join(hub.fkState, "cloud", vms[0], "environment")); err != nil || string(environment) != "env_01Picked" {
-		t.Errorf("the session started in %q (%v), want env_01Picked", environment, err)
+	if environment, err := os.ReadFile(filepath.Join(hub.fkState, "cloud", vms[0], "environment")); err != nil || string(environment) != cloudEnvironmentOf("cirrus") {
+		t.Errorf("the session started in %q (%v), want the loop's own", environment, err)
 	}
 
 	hub.mustJSON("POST", "/api/settings/egress/hosts", map[string]string{"host": "tools.example.test"}, nil)
@@ -92,31 +91,42 @@ func TestACloudLoopStartsInTheEnvironmentThePagePicked(t *testing.T) {
 	hub.wantRefusal("POST", "/api/settings/cloud/environment/confirm", map[string]string{"digest": step.Environment.Digest}, 409, "cloud_allowlist_stale")
 }
 
-// With no environment chosen a cloud loop can't be created, and one that
-// exists is held, waking once one is chosen: a start without one would
-// run in whichever environment the CLI picked. The account's list fails
-// here, so the ID is pasted.
-func TestCloudLoopsWaitForAnEnvironment(t *testing.T) {
+// A cloud loop is created with no repo or environment, and is held until
+// its setup is done: a start without an environment would run in whichever
+// one the CLI picked (ADR-0061). The account's list fails here, so the ID
+// is pasted, while the loop is stopped.
+func TestCloudLoopsWaitForTheirEnvironment(t *testing.T) {
 	t.Parallel()
 	down := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "unavailable", http.StatusServiceUnavailable)
 	}))
 	t.Cleanup(down.Close)
 	hub := startCloudHub(t, "cirrus", "--cloud-api-base", down.URL)
-	hub.mustJSON("DELETE", "/api/settings/cloud/environment", nil, nil)
-	resp, body := hub.do("POST", "/api/loops", map[string]any{"name": "nimbus", "mission": "m", "runtime": "cloud"})
-	if resp.StatusCode != 409 || errorCode(body) != "cloud_not_ready" || !strings.Contains(string(body), "environment") {
-		t.Errorf("a cloud loop with no environment: %d %s, want 409 cloud_not_ready naming the environment", resp.StatusCode, body)
+	hub.mustJSON("POST", "/api/loops", map[string]any{"name": "nimbus", "mission": "m", "runtime": "cloud"}, nil)
+	if held := hub.waitHealth("nimbus", "failing"); len(held.Problems) != 1 || held.Problems[0].Symptom != "cloud_setup" {
+		t.Fatalf("problems of a loop with no environment = %+v, want one cloud_setup", held.Problems)
 	}
-	hub.wantRefusal("PUT", "/api/settings/cloud/environment", map[string]string{"id": `env_01","x":"y`}, 400, "cloud_environment_invalid")
-
-	hub.message("cirrus", "held words")
+	resp, minted := hub.do("POST", "/api/loops/nimbus/cloud/token", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("minting the loop's token: %d", resp.StatusCode)
+	}
+	makeGitHubRepo(t, hub.fkState, "example-org/nimbus")
+	setUpCloudEnvironment(t, hub, "env_01Pasted", string(minted))
+	hub.message("nimbus", "held words")
+	hub.mustJSON("POST", "/api/loops/nimbus/resume", nil, nil)
 	time.Sleep(3 * time.Second)
 	if vms := cloudVMs(t, hub); len(vms) != 0 {
 		t.Fatalf("a loop with no environment started %d sessions", len(vms))
 	}
-	hub.mustJSON("PUT", "/api/settings/cloud/environment", map[string]string{"id": "env_01Pasted"}, nil)
-	hub.waitTurn("cirrus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "held words") })
+
+	hub.mustJSON("POST", "/api/loops/nimbus/pause", nil, nil)
+	hub.wantRefusal("PATCH", "/api/loops/nimbus", map[string]any{"cloud_repo": "example-org/nimbus", "cloud_environment_id": `env_01","x":"y`}, 400, "")
+	hub.mustJSON("PATCH", "/api/loops/nimbus", map[string]any{"cloud_repo": "example-org/nimbus", "cloud_environment_id": "env_01Pasted"}, nil)
+	hub.mustJSON("POST", "/api/loops/nimbus/resume", nil, nil)
+	hub.waitTurn("nimbus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "held words") })
+	if after := hub.waitHealth("nimbus", "ok"); len(after.Problems) != 0 {
+		t.Errorf("problems once its setup is done = %+v, want none", after.Problems)
+	}
 }
 
 // cloudLoopWarned reports whether the loop's view carries the warning that

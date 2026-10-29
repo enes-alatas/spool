@@ -85,7 +85,7 @@ func TestACloudLoopsShellGetsItsConnections(t *testing.T) {
 	}
 
 	// a resume: a VM woken on claude.ai, or a lifted token
-	token := hubMCPToken(t, hub, "cirrus")
+	token := cloudTokenOf("cirrus")
 	if status, body := postSessionStart(t, hub, token, vms[0], "resume"); status != http.StatusConflict || strings.Contains(body, "synthetic-gh") {
 		t.Fatalf("a resume: %d %q, want 409 and no value", status, body)
 	}

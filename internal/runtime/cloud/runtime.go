@@ -1,9 +1,10 @@
 // Package cloud is the cloud runtime (ADR-0059): a loop whose claude runs
 // in a Claude Code cloud session on Anthropic's machines, driven through
 // the claude CLI on documented surfaces. `claude --cloud` under a
-// pseudo-terminal starts a session from a loop home the hub builds,
-// `claude -p --cloud` sends each wake into it, and the loop home's hooks
-// post the session's id and each turn back to the cloud listener.
+// pseudo-terminal starts a session from the loop's GitHub repo in its own
+// environment (ADR-0061), `claude -p --cloud` sends each wake into it,
+// and the hooks the environment's setup script writes post the session's
+// id and each turn back to the cloud listener.
 //
 // What the hooks post is untrusted: it carries text the loop wrote, and
 // every post is read under a size bound.
@@ -44,7 +45,7 @@ var ErrNoAccount = errors.New("cloud: no Claude account is signed in")
 // (ADR-0059).
 //
 // It is hub-free, as the seam is: what it keeps of each loop, its session
-// and the hash of the token the session was started with, is a file of
+// and a hash of the source the session started from, is a file of
 // its own under Dir.
 type Runtime struct {
 	// CLI is the claude CLI every session runs through.
@@ -52,11 +53,6 @@ type Runtime struct {
 	// Account returns the signed-in account, or ErrNoAccount. Read at every
 	// CLI run, so a sign-in or a removal takes effect at once.
 	Account func(ctx context.Context) (Account, error)
-	// EnvironmentID returns the environment every session starts in, which
-	// Settings → Cloud chose (ADR-0059): an ID whose shape the hub has
-	// checked, or "" with none chosen, which fails the start. Read at each
-	// start.
-	EnvironmentID func(ctx context.Context) (string, error)
 	// APIBase is Anthropic's API, which Environments lists from;
 	// DefaultAPIBase when empty. Tests point it at a stand-in.
 	APIBase string
@@ -93,10 +89,11 @@ type state struct {
 	ClaudeSession string `json:"claude_session,omitempty"`
 	// SessionURL is where SessionID is read on claude.ai.
 	SessionURL string `json:"session_url,omitempty"`
-	// SessionToken is the SHA-256 of the hub token SessionID was started
-	// with, which the session holds for its life: a replaced token needs a
-	// session of its own. A hash, so the file still carries no credential.
-	SessionToken string `json:"session_token,omitempty"`
+	// Source is sourceKey of the repo, branch and environment SessionID
+	// started from: a session started from another needs one of its own.
+	// A state written before ADR-0061 has none, so its session isn't
+	// resumed: it held a token of its own, which the hub no longer keeps.
+	Source string `json:"source,omitempty"`
 	// EnvironmentID is set only on a state the sessions client wrote
 	// (ADR-0056). Its session runs in an environment of the loop's own,
 	// with a token the CLI never handed it, so it is never resumed.
@@ -170,32 +167,21 @@ func (cloud *Runtime) Kind() string { return "cloud" }
 // run too.
 func (cloud *Runtime) Preflight(context.Context) (string, error) { return "", nil }
 
-// hubEndpoint is the hub's MCP server as the loop's spec names it: the
-// address it reaches the hub at, and its token.
-type hubEndpoint struct{ url, token string }
+// startFrom is the loop's source as the spec names it. A loop whose repo,
+// branch or environment isn't set has none, and starts no session.
+func startFrom(spec runtime.Spec) (runtime.CloudStart, error) {
+	source := spec.Cloud
+	if source.Repo == "" || source.Branch == "" || source.EnvironmentID == "" {
+		return source, errors.New("cloud: the loop's repo, branch and environment aren't all set")
+	}
+	return source, nil
+}
 
-// hubFrom reads the hub's MCP server out of the spec's MCP config. Of every
-// server there, the hub's is the one a cloud session gets, through the
-// loop home's .mcp.json.
-func hubFrom(spec runtime.Spec) (hubEndpoint, error) {
-	var config struct {
-		MCPServers map[string]struct {
-			URL     string            `json:"url"`
-			Headers map[string]string `json:"headers"`
-		} `json:"mcpServers"`
-	}
-	if spec.MCPConfig == "" {
-		return hubEndpoint{}, errors.New("cloud: the hub has no address a cloud session can reach it at")
-	}
-	if err := json.Unmarshal([]byte(spec.MCPConfig), &config); err != nil {
-		return hubEndpoint{}, fmt.Errorf("cloud: reading the loop's MCP config: %w", err)
-	}
-	server, ok := config.MCPServers[claude.SpoolMCPServer]
-	token, bearer := strings.CutPrefix(server.Headers["Authorization"], "Bearer ")
-	if !ok || server.URL == "" || !bearer || token == "" {
-		return hubEndpoint{}, errors.New("cloud: the loop's MCP config names no hub server")
-	}
-	return hubEndpoint{url: server.URL, token: token}, nil
+// sourceKey is what a state file keeps of the source a session started
+// from: a session started from another repo, branch or environment is
+// not resumed.
+func sourceKey(source runtime.CloudStart) string {
+	return tokenHash(source.Repo + "\n" + source.Branch + "\n" + source.EnvironmentID)
 }
 
 // shellQuote quotes value as one word for sh.
@@ -203,11 +189,11 @@ func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
 }
 
-// Ensure checks the loop can reach the hub. There is nothing of the
-// loop's own to build: its session starts from a loop home made for that
-// start alone.
+// Ensure checks the loop has a source to start from. There is nothing of
+// the loop's own to build: its session starts from its repo, in its
+// environment (ADR-0061).
 func (cloud *Runtime) Ensure(_ context.Context, spec runtime.Spec) error {
-	_, err := hubFrom(spec)
+	_, err := startFrom(spec)
 	return err
 }
 
@@ -215,12 +201,11 @@ func (cloud *Runtime) Ensure(_ context.Context, spec runtime.Spec) error {
 // a cloud session of its own, started with its first message; a resumed
 // one carries on in the cloud session it ran in. A resume of a session
 // this runtime holds no cloud session for ends at once as the CLI's own
-// does, so the runner starts a fresh one. So does a resume under a hub
-// token other than the one its cloud session was started with, since the
-// session holds that token for its life and the hub would refuse it, and a
-// resume of a session the sessions client created.
+// does, so the runner starts a fresh one. So does a resume of a session
+// started from another source than the loop's now, and of a session the
+// sessions client created.
 func (cloud *Runtime) Start(_ context.Context, spec runtime.Spec) (runtime.Proc, error) {
-	hub, err := hubFrom(spec)
+	source, err := startFrom(spec)
 	if err != nil {
 		return nil, err
 	}
@@ -232,15 +217,16 @@ func (cloud *Runtime) Start(_ context.Context, spec runtime.Spec) (runtime.Proc,
 		cloud:  cloud,
 		loopID: spec.LoopID,
 		prompt: spec.AppendSystemPrompt,
-		hub:    hub,
+		source: source,
 		bounds: cloud.Bounds.withDefaults(),
 		env:    spec.Env,
 	}
+	cloud.waits.setPrompt(spec.LoopID, spec.AppendSystemPrompt)
 	switch {
 	case spec.SessionID != "":
 		session.claudeSession = spec.SessionID
 	case spec.ResumeID == current.ClaudeSession && current.SessionID != "" &&
-		current.SessionToken == tokenHash(hub.token) && current.EnvironmentID == "":
+		current.Source == sourceKey(source) && current.EnvironmentID == "":
 		session.claudeSession = spec.ResumeID
 		session.sessionID = current.SessionID
 	default:

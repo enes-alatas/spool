@@ -34,10 +34,10 @@ type CloudTurn struct {
 }
 
 // cloudReady is nil when Settings → Cloud is green, as its page shows it:
-// the public address's last check passed, an account is signed in whose
-// last check passed, and an environment is chosen. Otherwise it says which
-// step to finish. An allowlist not confirmed is a warning on the loops, not
-// a hold (ADR-0059).
+// the public address's last check passed, and an account is signed in
+// whose last check passed. Otherwise it says which step to finish. Each
+// cloud loop names its own environment, which it needs before it wakes,
+// not before it is made (ADR-0061).
 func (server *Server) cloudReady(ctx context.Context) error {
 	address, err := server.storedCloudAddress(ctx)
 	if err != nil {
@@ -58,13 +58,6 @@ func (server *Server) cloudReady(ctx context.Context) error {
 	}
 	if check := server.cloudAccountCheck.result(); check == nil || check.State != CloudCheckOK {
 		return errors.New("the Claude account in Settings → Cloud hasn't passed its check")
-	}
-	chosen, err := server.storedCloudEnvironment(ctx)
-	if err != nil {
-		return err
-	}
-	if chosen.ID == "" {
-		return errors.New("choose the environment cloud loops start in, in Settings → Cloud, first")
 	}
 	return nil
 }
@@ -126,12 +119,14 @@ func (server *Server) cloudSetup(ctx context.Context, current store.CloudSetup, 
 	return setup, nil
 }
 
-// handleRotateCloudToken is Rotate token (ADR-0061): it mints the cloud
-// loop a new hub token, which refuses the one it held at once, and answers
-// with it, once, for the operator to set as the loop's environment's
-// secret. The answer is text/plain, which the response redactor passes
-// as it is, uncached: no other answer of the hub's carries the token.
-// A loop a kill or the want of a token held wakes on it.
+// handleRotateCloudToken is Rotate token (ADR-0061): it stops the cloud
+// loop, mints it a new hub token, which refuses the one it held at once,
+// and answers with it, once, for the operator to set as the loop's
+// environment's secret. The loop stays stopped until the operator starts
+// it, once the secret is set: a session started before that would reach
+// the hub on the old one. The hub keeps only the token's hash, so the
+// redactor doesn't know it, and the answer is text/plain and uncached:
+// nothing else the hub writes carries the token.
 func (server *Server) handleRotateCloudToken(w http.ResponseWriter, r *http.Request) {
 	loopRecord := server.loopByName(w, r)
 	if loopRecord == nil {
@@ -141,12 +136,15 @@ func (server *Server) handleRotateCloudToken(w http.ResponseWriter, r *http.Requ
 		server.jsonErr(w, http.StatusBadRequest, "loop %s runs on the %s runtime: only a cloud loop's token is set by hand", loopRecord.Name, loopRecord.Runtime)
 		return
 	}
+	if err := server.pauseLoop(r.Context(), loopRecord); err != nil {
+		server.jsonErr(w, http.StatusInternalServerError, "stop the loop: %v", err)
+		return
+	}
 	token, err := server.Store.Loops().RotateHubMCPToken(r.Context(), loopRecord.ID)
 	if err != nil {
 		server.jsonErr(w, http.StatusInternalServerError, "rotate the token: %v", err)
 		return
 	}
-	server.secretsChanged(r.Context())
 	if actor, ok := server.Manager.Get(loopRecord.ID); ok {
 		actor.TokenChanged()
 	}

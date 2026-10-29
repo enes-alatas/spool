@@ -259,7 +259,7 @@ ADR-0043), a contained loop's model requests under `/claude`
 
 ### Cloud listener: `/mcp` for cloud loops, from the internet
 
-**What crosses:** a cloud loop's MCP calls and its loop home's hook posts,
+**What crosses:** a cloud loop's MCP calls and its session's hook posts,
 from its Claude Code cloud session over the internet, through the tunnel
 or TLS proxy the operator puts in front of the listener; and the hub's
 own address check (ADR-0056, ADR-0059).
@@ -307,11 +307,11 @@ own address check (ADR-0056, ADR-0059).
 
 **What crosses:** the hub drives a cloud loop's Claude Code cloud session
 through the `claude` CLI, on the claude.ai account's OAuth token. It starts
-the session with `claude --cloud` under a pseudo-terminal, from a *loop
-home* it builds for that start: a git repo of one commit, which the CLI
-uploads. It sends each wake with `claude -p --cloud`. The loop home's
-hooks post the session's id and each turn's transcript lines back to the
-cloud listener (ADR-0059).
+the session with `claude --cloud` under a pseudo-terminal, from the loop's
+GitHub repo and branch, in the loop's own claude.ai environment, with
+nothing uploaded (ADR-0061). It sends each wake with `claude -p --cloud`.
+The hooks the environment's setup script writes post the session's id
+and each turn's transcript lines back to the cloud listener (ADR-0059).
 
 **Holds:**
 - **The account token is sealed** under `hub.key`, known to the redactor,
@@ -325,42 +325,55 @@ cloud listener (ADR-0059).
   token in `CLAUDE_CODE_OAUTH_TOKEN` and a config dir of its own that
   holds only the onboarding and trust flags and the account's
   organization. Each runs in a directory of its own, the start in its
-  loop home and every other run in an empty one, never the hub's working
-  directory or the shared temp dir, whose project settings and hooks the
-  CLI would load. After each run the hub removes the config dir, and logs
-  by name any credential, transcript, shell snapshot or debug log the
-  CLI left there. The CLI's environment is the sign-in's, with the
+  start directory and every other run in an empty one, never the hub's
+  working directory or the shared temp dir, whose project settings and
+  hooks the CLI would load. After each run the hub removes the config
+  dir, and logs by name any credential, transcript, shell snapshot or
+  debug log the CLI left there. The CLI's environment is the sign-in's, with the
   credential variables stripped and its nonessential traffic off. The
   token in it is visible only to the hub's own user. The account check is
   ADR-0044's login check on the token: one haiku answer, run by the
   host's CLI, or by the workstation image's on a hub with none.
 - **No setup-token leaves the machine.** A cloud session runs on the
   account, never on the setup-token.
-- **The session carries one credential, the loop's hub token** (ADR-0061).
-  The token belongs to the loop, not to one session: Rotate token
-  (`POST /api/loops/{name}/cloud/token`, an admin's) mints it and shows
-  it once, as text/plain past the response redactor and uncached, and
-  revokes the one before at once. A cloud loop is created with none. The
-  hub writes it into each start's loop home's `.mcp.json`, which
-  registers the hub's cloud listener as the one server the home names.
-  The cloud listener refuses it while its loop is paused, by the loop's
-  stored status, at once and without waiting for a turn, and takes it
-  again once the loop runs; a pause whose status isn't stored says the
-  session can still reach the hub. A kill revokes the token for good:
-  the loop holds its work, with a `cloud_setup` problem, until Rotate
-  token mints another. An old VM of the loop holds the same token, so
-  what keeps it from binding a start of a new one is the start's
-  binding below.
-- **The loop home holds the token only for its start.** The hub makes it
-  in a fresh 0700 directory under a directory of its own in the temp dir,
+- **The session carries one credential, the loop's hub token, and never
+  holds it** (ADR-0061). The token is the loop's environment's network
+  secret on claude.ai: the egress proxy adds it to every request the
+  session and its hooks make for the hub's host, so no file, variable or
+  upload in the VM holds it, and anything running in the VM can still
+  use it. The hub keeps only its hash, so the redactor never learns it
+  and a backup carries no usable copy. Rotate token
+  (`POST /api/loops/{name}/cloud/token`, an admin's) stops the loop, mints
+  the token and shows it once, as text/plain and uncached, and revokes the
+  one before at once; the operator sets it as the secret and starts the
+  loop. A cloud loop is created with none. The cloud listener refuses it
+  while its loop is paused, by the loop's stored status, at once and
+  without waiting for a turn, and takes it again once the loop runs; a
+  pause whose status isn't stored says the session can still reach the
+  hub. A kill revokes the token for good: the loop holds its work, with a
+  `cloud_setup` problem, until Rotate token mints another. Every session
+  in the environment holds the same token, an old one a rotation left
+  behind included, so what keeps it from binding a start of a new one is
+  the start's binding below. A cloud loop made under ADR-0059 had its
+  per-session token revoked by migration 0070, and is held until Rotate
+  token mints one.
+- **The start directory holds nothing of the hub's.** The hub makes it, an
+  empty git repo whose `origin` is the loop's repo, by argument list, in
+  a fresh 0700 directory under a directory of its own in the temp dir,
   named for the data directory, outside the data directory, which backups
-  carry. It removes the home once the session has posted its id or the
-  start has failed. A hub stopped mid-start leaves its home there, and
-  the next boot removes everything in that directory before any start.
-  The hub uses the directory only while it is a 0700 directory of its
-  own user's, checked at boot and before every run, so a temp-dir
-  cleaner removing it and another user making it again gets them
-  nothing, even from a hub running as root.
+  carry. The loop's repo and branch are checked at every start before
+  they reach git or argv. It removes the directory once the session has
+  posted its id or the start has failed. A hub stopped mid-start leaves
+  it there, and the next boot removes everything in that directory
+  before any start. The hub uses the directory only while it is a 0700
+  directory of its own user's, checked at boot and before every run, so a
+  temp-dir cleaner removing it and another user making it again gets
+  them nothing, even from a hub running as root.
+- **The setup script holds no secret.** It is the same text for every
+  cloud loop of a hub, fixed but for the hub's public address, and
+  fetches nothing at run time. It writes the cloud listener as the
+  session's MCP server, by URL, with the session's ID in a header, and
+  the hooks, into the VM's home; a resumed machine keeps them.
 - **The token goes only to an HTTPS address.** The public address is
   checked at every use, whatever wrote it: one that isn't `https://`
   wakes no cloud loop and seeds no allowlist. Settings → Cloud refuses
@@ -481,13 +494,14 @@ cloud listener (ADR-0059).
   account's environments for Settings → Cloud. No start or send depends
   on it, so a change there breaks only the pick, and the page falls back
   to a pasted ID (ADR-0059).
-- **Every session starts in the environment Settings → Cloud chose.**
-  The ID's shape is checked at each start before it goes into the
-  `--settings` JSON. With none chosen no session starts, rather than the
-  CLI picking the account's first environment (ADR-0059). When the
-  account's list is read, a choice must be on it, so a bridge to one of
-  the operator's machines or an archived environment is refused. An ID
-  pasted while the list fails is checked for its shape only.
+- **Each session starts in its loop's own environment,** which the
+  operator names on the loop (ADR-0061). The ID's shape is checked at
+  each start before it goes into the `--settings` JSON, built by the
+  encoder. A loop with none starts no session, rather than the CLI
+  picking the account's first environment. When the account's list is
+  read, the ID must be on it, so a bridge to one of the operator's
+  machines or an archived environment is refused. An ID pasted while the
+  list fails is checked for its shape only.
 - **The hub's egress allowlist doesn't bind a cloud loop.** A session
   reaches what its claude.ai environment allows, which the hub can't set
   or read. Settings → Cloud shows the list to paste there and takes the
@@ -500,25 +514,31 @@ cloud listener (ADR-0059).
   session as it starts (ADR-0059, #977). The hub answers the session's
   `SessionStart` post with them as `export` lines, and the hook appends
   them to `CLAUDE_ENV_FILE`. The answer comes only to the post a start of
-  the loop waits for, once: a lifted token reads them only while the hub
-  is starting that loop. A VM Anthropic reclaims keeps the file (run I on
+  the loop waits for, once, and only from the session the start's CLI
+  named: the token reads them only while the hub is starting that loop,
+  for that session. A VM Anthropic reclaims keeps the file (run I on
   #976), so a `resume` post is never answered. Each answered hand-off is
   logged at Info, without its values. A refused post from that session
   opens the `cloud_connections` problem. The values are
   in the VM's environment file, on Anthropic's disk, as long as the
   session is kept, and outlive the loop until the operator archives it; a
   GitHub token outlives that. `mcp-server` connections never reach a cloud
-  loop. It no longer starts from a repo through the Claude GitHub App, and
-  on v0.6.x in an Anthropic-hosted environment it has no GitHub reach:
-  Anthropic's GitHub proxy serves only the repositories attached to the
-  session, the start attaches none, and a `GH_TOKEN` connection reaches
-  nothing through it (#1168). The token still sits in the session's
-  environment file, so it can still leak from there.
-- **The loop can read its own token**, as a contained loop can read its
-  MCP config, and use it from anywhere while the loop runs, since it
-  outlives the session, until a kill or Rotate token. The token is also
-  in the bundle the CLI uploaded, which Anthropic keeps with the session
-  (ADR-0059).
+  loop. Its GitHub reach is Claude's GitHub App through the account's
+  connection, from the repo it starts from (ADR-0061); a `GH_TOKEN`
+  connection is refused through Anthropic's GitHub proxy for any
+  repository the session didn't start from or attach (#1169), and still
+  sits in the session's environment file, so it can still leak from
+  there. What a cloud loop pushes through the App is authored and
+  committed as `Claude <noreply@anthropic.com>` (runs R and M), on the
+  account's connection, so neither git history nor GitHub's audit log
+  says which loop or hub made it. The operator ties a push to its loop
+  by the session link on the loop's page, and the loop's commit
+  trailers and branch.
+- **Anything in the VM can use the loop's token**, though nothing there
+  holds it: the proxy adds it to whatever request is made for the hub's
+  host, from anywhere in the session, while the loop runs, until a kill
+  or Rotate token. It reaches only the cloud listener's routes for its
+  own loop.
 - **A stop can't interrupt the turn in flight.** The CLI has no way to,
   so the turn runs on in the VM until it ends, cut off from the hub but
   with its other tools. A wake sent just before the stop may start a turn

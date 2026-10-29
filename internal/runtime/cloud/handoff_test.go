@@ -82,16 +82,16 @@ func TestSessionStartHandsTheConnectionsOverOnlyWhenAwaited(t *testing.T) {
 	for name, hook := range map[string][]byte{
 		"a resume":                    []byte(`{"source":"resume"}`),
 		"a startup with no start":     startupHook,
-		"a clear":                     []byte(`{"source":"clear"}`),
-		"a compaction":                []byte(`{"source":"compact"}`),
+		"a clear with no turn":        []byte(`{"source":"clear"}`),
+		"a compaction with no turn":   []byte(`{"source":"compact"}`),
 		"a post that names no source": nil,
 	} {
 		if answer, err := cloud.SessionStart(ctx, "loop-1", "session_01First", hook); err == nil {
 			t.Errorf("%s was answered %q", name, answer)
 		}
 	}
-	if refused != 5 {
-		t.Errorf("the recorded session's refused posts were told %d times, want 5", refused)
+	if refused != 3 {
+		t.Errorf("the recorded session's refused startup posts were told %d times, want 3: a compaction's asks for no connections", refused)
 	}
 
 	cloud.waits.awaitStart("loop-1", time.Minute, exports)
@@ -99,7 +99,7 @@ func TestSessionStartHandsTheConnectionsOverOnlyWhenAwaited(t *testing.T) {
 	if _, err := cloud.SessionStart(ctx, "loop-1", "session_01Other", startupHook); err == nil {
 		t.Error("a start past its bound was answered")
 	}
-	if refused != 5 {
+	if refused != 3 {
 		t.Error("a refused post from a session the loop never recorded was told")
 	}
 	if answered != 1 {
@@ -110,5 +110,36 @@ func TestSessionStartHandsTheConnectionsOverOnlyWhenAwaited(t *testing.T) {
 	}
 	if strings.Contains(logged.String(), "synthetic") {
 		t.Error("a hand-off's log carries its values")
+	}
+}
+
+// A compaction or a /clear drops the context the start added, so its post
+// is answered with the prompt alone (ADR-0061): only from the loop's
+// recorded session, in either of its ID's forms, and only while a turn of
+// it is in flight.
+func TestACompactionsPostIsAnsweredWithThePromptAlone(t *testing.T) {
+	cloud := cliRuntime(t, `sleep 30`)
+	ctx := context.Background()
+	compact := []byte(`{"source":"compact"}`)
+	if err := cloud.update("loop-1", func(loaded *state) { loaded.SessionID = "session_01First" }); err != nil {
+		t.Fatal(err)
+	}
+	cloud.waits.setPrompt("loop-1", "You are cirrus.")
+	if _, err := cloud.SessionStart(ctx, "loop-1", "cse_01First", compact); err == nil {
+		t.Error("a compaction's post with no turn in flight was answered")
+	}
+
+	stops := cloud.waits.awaitStop("loop-1")
+	defer cloud.waits.forgetStop("loop-1", stops)
+	answer, err := cloud.SessionStart(ctx, "loop-1", "cse_01First", compact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := sessionStartAnswer(nil, "You are cirrus.")
+	if string(answer) != string(want) {
+		t.Errorf("the compaction was answered %q, want the prompt alone, %q", answer, want)
+	}
+	if _, err := cloud.SessionStart(ctx, "loop-1", "session_01Other", []byte(`{"source":"clear"}`)); err == nil {
+		t.Error("another session's /clear was answered")
 	}
 }

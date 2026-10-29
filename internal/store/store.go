@@ -406,7 +406,12 @@ type Loop struct {
 	// HubMCPToken is the bearer token this loop's claude process presents to
 	// the hub's MCP endpoint (ADR-0026). Minted at creation, immutable, and
 	// secret: json:"-" keeps it out of every API response, like TGBotToken.
+	// A cloud loop's is kept only as its hash, so it is always "" here
+	// (ADR-0061): HasHubToken says whether it has one.
 	HubMCPToken string `json:"-"`
+	// HasHubToken is whether the loop holds a hub token at all: a cloud loop
+	// has none until Rotate token mints it, nor after a kill revokes it.
+	HasHubToken bool `json:"-"`
 	// WorkstationOff records that the operator switched this loop's
 	// workstation off. Intent, not observation: a health poll cannot tell a
 	// halted workstation from a dead one (ADR-0021). Surfaced to the UI as
@@ -2219,8 +2224,8 @@ const (
 	// (ADR-0059).
 	SymptomCloudConnections = "cloud_connections"
 	// SymptomCloudSetup: a cloud loop is held because its setup isn't
-	// done: it has no hub token, never minted or revoked by a kill
-	// (ADR-0061).
+	// done: it names no repo or environment, or has no hub token, never
+	// minted or revoked by a kill (ADR-0061).
 	SymptomCloudSetup = "cloud_setup"
 
 	ClearedByOperator = "operator"

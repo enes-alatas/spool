@@ -74,8 +74,8 @@ func (notice ProblemNotice) Text() string {
 				"The hub keeps retrying, and the loop's page in the control room says why it is down. "+
 				"You will hear once more when this clears.", notice.LoopName, since)
 		case "cloud_setup":
-			return fmt.Sprintf("Spool: the cloud loop %s has had no hub token since %s, so it is not running. "+
-				"Its messages wait until Rotate token mints one, to set as its environment's secret. "+
+			return fmt.Sprintf("Spool: the cloud loop %s's setup has been unfinished since %s, so it is not running. "+
+				"Its messages wait until it names its repo and its environment and has a hub token, which Rotate token mints for its environment's secret. "+
 				"You will hear once more when this clears.", notice.LoopName, since)
 		case "cloud_address":
 			return fmt.Sprintf("Spool: the hub's public address has failed its check since %s, so the cloud loop %s is not running. "+
@@ -100,7 +100,7 @@ func (notice ProblemNotice) Text() string {
 		case "cloud_connections":
 			problem = notice.LoopName + "'s session being refused its connections"
 		case "cloud_setup":
-			problem = notice.LoopName + "'s missing hub token"
+			problem = notice.LoopName + "'s unfinished setup"
 		}
 		return fmt.Sprintf("Spool: the alert about %s was cleared in the control room. "+
 			"You will hear again if it comes back.", problem)
@@ -113,7 +113,7 @@ func (notice ProblemNotice) Text() string {
 	case "cloud_connections":
 		return fmt.Sprintf("Spool: the cloud loop %s's session was handed its connections again.", notice.LoopName)
 	case "cloud_setup":
-		return fmt.Sprintf("Spool: the cloud loop %s has its hub token, so it is running.", notice.LoopName)
+		return fmt.Sprintf("Spool: the cloud loop %s's setup is done, so it is running.", notice.LoopName)
 	}
 	return fmt.Sprintf("Spool: %s finished a turn without an error again.", notice.LoopName)
 }

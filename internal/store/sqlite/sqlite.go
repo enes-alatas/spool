@@ -196,7 +196,7 @@ const loopReadCols = loopCols + `,
 		AND surface='` + store.SurfaceSlack + `' AND channel='` + store.FleetChannel + `'), ''),
 	COALESCE((SELECT bound_at FROM rooms WHERE rooms.loop_id=loops.id
 		AND surface='` + store.SurfaceSlack + `' AND channel='` + store.FleetChannel + `'), 0),
-	created_by, updated_by, doing, doing_at`
+	created_by, updated_by, doing, doing_at, hub_mcp_token_hash <> ''`
 
 // scanLoop reads a loops row, opening its sealed tokens.
 func (table loops) scanLoop(row interface{ Scan(...any) error }) (*store.Loop, error) {
@@ -216,7 +216,7 @@ func (table loops) scanLoop(row interface{ Scan(...any) error }) (*store.Loop, e
 		&loopRecord.OwnerSlackUserID, &loopRecord.OwnerSlackDMChannel,
 		&loopRecord.TGGroupChatID, &loopRecord.TGGroupBoundAt,
 		&loopRecord.SlackChannelID, &loopRecord.SlackChannelBoundAt,
-		&loopRecord.CreatedBy, &loopRecord.UpdatedBy, &loopRecord.Doing, &loopRecord.DoingAt)
+		&loopRecord.CreatedBy, &loopRecord.UpdatedBy, &loopRecord.Doing, &loopRecord.DoingAt, &loopRecord.HasHubToken)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, store.ErrNotFound
 	}
@@ -460,8 +460,10 @@ func (table loops) List(ctx context.Context) ([]*store.Loop, error) {
 
 func (table loops) RotateHubMCPToken(ctx context.Context, id string) (string, error) {
 	token := store.NewHubMCPToken()
-	result, err := table.db.ExecContext(ctx, `UPDATE loops SET hub_mcp_token=?, hub_mcp_token_hash=? WHERE id=?`,
-		table.sealer.seal(token), tokenHash(token), id)
+	// a cloud loop's is shown once and kept only as its hash (ADR-0061)
+	result, err := table.db.ExecContext(ctx, `UPDATE loops SET hub_mcp_token=CASE WHEN runtime=? THEN '' ELSE ? END,
+		hub_mcp_token_hash=? WHERE id=?`,
+		store.RuntimeCloud, table.sealer.seal(token), tokenHash(token), id)
 	if err != nil {
 		return "", err
 	}

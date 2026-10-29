@@ -11,16 +11,22 @@ import (
 )
 
 // A cloud loop's env-var connections reach its session as the session
-// starts (ADR-0059): the hub answers the loop home's SessionStart post with
+// starts (ADR-0059): the hub answers the session's SessionStart post with
 // them as `export` lines, which the hook writes to CLAUDE_ENV_FILE, so the
 // session's shell commands see them as a contained loop's do. The answer
-// comes only to the post a start is waiting on.
+// comes only to the post a start is waiting on, and carries the hub's
+// prompt too (ADR-0061).
 
-// sourceStartup is the one SessionStart source the hub answers, a
-// session's first start. Run I on #976 found the env file kept through a
-// compaction and on a VM Anthropic reclaimed, so the loop home's matcher
-// posts nothing else.
-const sourceStartup = "startup"
+// The SessionStart sources the hub answers. sourceStartup is a session's
+// first start, the one answered with the connections: run I on #976 found
+// the env file kept through a compaction and on a VM Anthropic reclaimed.
+// A compaction or a /clear drops the context the first start added, so
+// those are answered with the prompt alone.
+const (
+	sourceStartup = "startup"
+	sourceCompact = "compact"
+	sourceClear   = "clear"
+)
 
 // envName is ADR-0043's rule for an env-var connection's variable, checked
 // again at hand-off: the name is written into a line the VM's shell reads.

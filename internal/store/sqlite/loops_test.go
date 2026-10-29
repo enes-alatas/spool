@@ -196,6 +196,18 @@ func TestLoopHubMCPToken(t *testing.T) {
 	if got, err := db.Loops().Get(ctx, cloudLoop.ID); err != nil || got.HubMCPToken != "" {
 		t.Errorf("a new cloud loop = %+v, %v; want it holding no token", got, err)
 	}
+	// its token is shown once and kept only as its hash
+	minted, err := db.Loops().RotateHubMCPToken(ctx, cloudLoop.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := db.Loops().GetByHubMCPToken(ctx, minted); err != nil || got.ID != cloudLoop.ID || got.HubMCPToken != "" || !got.HasHubToken {
+		t.Errorf("the minted cloud token resolves to %+v, %v; want nimbus, holding only its hash", got, err)
+	}
+	var sealed string
+	if err := db.db.QueryRowContext(ctx, `SELECT hub_mcp_token FROM loops WHERE id=?`, cloudLoop.ID).Scan(&sealed); err != nil || sealed != "" {
+		t.Errorf("the cloud loop's stored token = %q, %v; want none", sealed, err)
+	}
 }
 
 // TestMigrateWithoutAllowlistedSender: a database holding loops and nobody

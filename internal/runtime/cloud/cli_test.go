@@ -24,11 +24,10 @@ func cliRuntime(t *testing.T, cli string) *Runtime {
 		t.Fatal(err)
 	}
 	return &Runtime{
-		Account:       func(context.Context) (Account, error) { return testAccount, nil },
-		EnvironmentID: func(context.Context) (string, error) { return testEnvironment, nil },
-		Dir:           t.TempDir(),
-		CLI:           &CLI{Binary: binary, Dir: filepath.Join(t.TempDir(), "cli"), Env: os.Environ(), StartWithin: 2 * time.Second},
-		Bounds:        Bounds{Quiet: 5 * time.Second},
+		Account: func(context.Context) (Account, error) { return testAccount, nil },
+		Dir:     t.TempDir(),
+		CLI:     &CLI{Binary: binary, Dir: filepath.Join(t.TempDir(), "cli"), Env: os.Environ(), StartWithin: 2 * time.Second},
+		Bounds:  Bounds{Quiet: 5 * time.Second},
 	}
 }
 
@@ -119,8 +118,8 @@ func TestCLIStartRecordsTheSessionItsHookPosted(t *testing.T) {
   echo "token: $CLAUDE_CODE_OAUTH_TOKEN"
   cat "$CLAUDE_CONFIG_DIR/.claude.json"; echo
   echo "home: $(pwd)"
-  cat CLAUDE.md; echo
-  git log --oneline | wc -l
+  git remote get-url origin; git symbolic-ref HEAD; ls -A | tr "\n" " "; echo
+  git rev-list --all | wc -l
   echo "$CLAUDE_CONFIG_DIR"
 } > `+seen+`.tmp
 mv `+seen+`.tmp `+seen+`
@@ -147,12 +146,12 @@ sleep 30
 	got := string(raw)
 	for _, want := range []string{
 		"terminal\n",
-		"args: --cloud first words --permission-mode auto --settings {\"remote\":{\"defaultEnvironmentId\":\"" + testEnvironment + "\"}}\n",
+		"args: --cloud first words --permission-mode auto --settings {\"remote\":{\"defaultEnvironmentId\":\"" + testEnvironment + "\"}} --ref main\n",
 		"token: " + testAccount.Token + "\n",
 		`"hasCompletedOnboarding":true`,
 		`"organizationUuid":"` + testAccount.OrgUUID + `"`,
 		`"hasTrustDialogAccepted":true`,
-		"You are cirrus.",
+		"https://github.com/example-org/cirrus.git\nrefs/heads/main\n.git \n0\n",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the CLI ran without %q:\n%s", want, got)
@@ -168,7 +167,7 @@ sleep 30
 	}
 	for _, dir := range []string{home, configDir} {
 		if _, err := os.Stat(dir); !os.IsNotExist(err) {
-			t.Errorf("%s outlived the start (%v): it holds the loop's token or the CLI's state", dir, err)
+			t.Errorf("%s outlived the start (%v): the start directory and the CLI's state go with it", dir, err)
 		}
 	}
 }
@@ -202,19 +201,20 @@ func TestCLIStartThatExitsCleanlyTakesTheLaterPost(t *testing.T) {
 	}
 }
 
-// A start with no environment chosen fails before the CLI runs: the CLI
-// would pick one of the account's environments by itself (ADR-0059).
-func TestCLIStartNeedsAChosenEnvironment(t *testing.T) {
+// A start with no environment fails before the CLI runs: the CLI would
+// pick one of the account's environments by itself (ADR-0061).
+func TestCLIStartNeedsTheLoopsEnvironment(t *testing.T) {
 	ran := filepath.Join(t.TempDir(), "ran")
 	cloud := cliRuntime(t, "touch "+ran)
-	cloud.EnvironmentID = func(context.Context) (string, error) { return "", nil }
-	proc := startCLI(t, cloud, testSpec())
-	_, result := turnResult(t, proc, "hello")
-	if !result.IsError || !strings.Contains(result.ResultText, "no environment is chosen") {
-		t.Errorf("the turn ended as %q, want an error naming the missing environment", result.ResultText)
+	spec := testSpec()
+	spec.Cloud.EnvironmentID = ""
+	proc, err := cloud.Start(context.Background(), spec)
+	if err == nil {
+		_ = proc.Kill()
+		t.Fatal("a loop with no environment started")
 	}
 	if _, err := os.Stat(ran); err == nil {
-		t.Error("the CLI ran with no environment chosen")
+		t.Error("the CLI ran for a loop with no environment")
 	}
 }
 
@@ -465,22 +465,22 @@ func TestLastLineDropsTheTerminalsEscapes(t *testing.T) {
 	}
 }
 
-// A hub that stopped mid-start left that start's loop home, token and all,
-// in the CLI's dir: the next boot removes it. A dir at that path that
+// A hub that stopped mid-start left that start's directory in the CLI's
+// dir: the next boot removes it. A dir at that path that
 // isn't this user's own is refused, at boot and before every run.
 func TestPrepareSweepsTheCLIsDirAndRefusesOneNotPrivate(t *testing.T) {
 	cli := &CLI{Dir: filepath.Join(t.TempDir(), "cli")}
 	if removed, err := cli.Prepare(); err != nil || removed != 0 {
 		t.Fatalf("Prepare on no dir = %d, %v; want it made, with nothing removed", removed, err)
 	}
-	if err := os.MkdirAll(filepath.Join(cli.Dir, "spool-home-1", ".git"), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(cli.Dir, "spool-start-1", ".git"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(cli.Dir, "spool-home-1", ".mcp.json"), []byte(testHubToken), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(cli.Dir, "spool-start-1", ".git", "HEAD"), []byte("ref: refs/heads/main\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if removed, err := cli.Prepare(); err != nil || removed != 1 {
-		t.Fatalf("Prepare = %d, %v; want the left home removed", removed, err)
+		t.Fatalf("Prepare = %d, %v; want the left directory removed", removed, err)
 	}
 	if entries, _ := os.ReadDir(cli.Dir); len(entries) != 0 {
 		t.Errorf("after Prepare the dir holds %v", entries)
@@ -625,4 +625,38 @@ func (waits *hookWaits) pending(loopID string) bool {
 	waits.mu.Lock()
 	defer waits.mu.Unlock()
 	return waits.starts[loopID] != nil
+}
+
+// A start directory's git takes the repo and branch as arguments, so
+// makeStartDir checks them itself, whatever its caller checked: a branch
+// read as a flag, or a repo that isn't owner/name, makes no directory.
+func TestStartDirRefusesARepoOrBranchGitCouldMisread(t *testing.T) {
+	parent := t.TempDir()
+	for _, source := range []runtime.CloudStart{
+		{Repo: "example-org/cirrus", Branch: "--upload-pack=touch pwned", EnvironmentID: "env_01Fixture"},
+		{Repo: "example-org/cirrus", Branch: "-b", EnvironmentID: "env_01Fixture"},
+		{Repo: "example-org/../cirrus", Branch: "main", EnvironmentID: "env_01Fixture"},
+		{Repo: "--config=x/y", Branch: "main", EnvironmentID: "env_01Fixture"},
+	} {
+		if dir, err := makeStartDir(context.Background(), parent, source); err == nil {
+			t.Errorf("a start from %q on %q made %s, want it refused", source.Repo, source.Branch, dir)
+		}
+	}
+	if left, _ := os.ReadDir(parent); len(left) != 0 {
+		t.Errorf("refused starts left %d directories", len(left))
+	}
+	// edges the store's rules take, which the runtime mustn't refuse
+	for _, source := range []runtime.CloudStart{
+		{Repo: "example-org/cirrus", Branch: "feat/x", EnvironmentID: "env_01Fixture"},
+		{Repo: "a-b/-dash.name_1", Branch: "v1.2@x", EnvironmentID: "env_01Fixture"},
+	} {
+		dir, err := makeStartDir(context.Background(), parent, source)
+		if err != nil {
+			t.Errorf("a start from %q on %q: %v", source.Repo, source.Branch, err)
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
+			t.Errorf("the start directory holds no git repo: %v", err)
+		}
+	}
 }

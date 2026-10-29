@@ -7,29 +7,34 @@ import (
 	"github.com/enes-alatas/spool/internal/store"
 )
 
-// A cloud loop's hub token belongs to its environment, not to one session
-// (ADR-0061): the operator sets it as the environment's secret, so it
-// outlives every session the loop starts. The hub refuses it while the
-// loop is paused, by the loop's status, and takes it again on a resume. A
-// kill revokes it for good: the loop holds its work until Rotate token
-// mints another, which the operator sets in its place.
+// A cloud loop's sessions start from its repo, in its environment, on its
+// hub token (ADR-0061). The token belongs to the environment, not to one
+// session: the operator sets it as the environment's secret, so it
+// outlives every session the loop starts, and the hub keeps only its
+// hash. The hub refuses it while the loop is paused, by the loop's status,
+// and takes it again on a resume. A kill revokes it for good: the loop
+// holds its work until Rotate token mints another, which the operator sets
+// in its place.
 
-// cloudTokenless reports whether the loop is a cloud loop with no hub
-// token, one never set up or killed: it holds its work, as its session
-// couldn't reach the hub.
-func (actor *Actor) cloudTokenless() bool {
-	return actor.loop.Runtime == store.RuntimeCloud && actor.loop.HubMCPToken == ""
+// cloudUnset reports whether the loop is a cloud loop whose setup isn't
+// done: it names no repo, branch or environment, or holds no hub token,
+// one never minted or killed. It holds its work, as no session of it could
+// start or reach the hub.
+func (actor *Actor) cloudUnset() bool {
+	return actor.loop.Runtime == store.RuntimeCloud && (!actor.loop.HasHubToken ||
+		actor.loop.CloudRepo == "" || actor.loop.CloudBranch == "" || actor.loop.CloudEnvironmentID == "")
 }
 
-// cloudSetupChanged follows a cloud loop's token being minted or revoked:
-// one with none opens the cloud_setup problem, and one given a token
+// cloudSetupChanged follows a cloud loop's setup changing, its token
+// minted or revoked or its repo or environment edited: one whose setup
+// isn't done opens the cloud_setup problem, and one whose setup is done
 // clears it and wakes with whatever waited meanwhile, or with a tick when
 // one was dropped and nothing else waits.
 func (actor *Actor) cloudSetupChanged() {
 	if actor.loop.Runtime != store.RuntimeCloud {
 		return
 	}
-	if actor.cloudTokenless() {
+	if actor.cloudUnset() {
 		actor.openProblem(store.SymptomCloudSetup, now(), 0)
 		actor.publishState()
 		return
@@ -47,18 +52,15 @@ func (actor *Actor) cloudSetupChanged() {
 	actor.pump()
 }
 
-// tokenChanged takes the loop's hub token as the store holds it now, after
-// Rotate token, and has the redactor learn it.
+// tokenChanged takes whether the loop holds a hub token as the store says
+// now, after Rotate token.
 func (actor *Actor) tokenChanged(ctx context.Context) {
 	stored, err := actor.deps.Store.Loops().Get(ctx, actor.loop.ID)
 	if err != nil {
 		actor.log().Error("read the loop's new hub token", "err", err)
 		return
 	}
-	actor.loop.HubMCPToken = stored.HubMCPToken
-	if actor.deps.SecretsChanged != nil {
-		actor.deps.SecretsChanged(ctx)
-	}
+	actor.loop.HasHubToken = stored.HasHubToken
 	actor.cloudSetupChanged()
 }
 
@@ -79,10 +81,7 @@ func (actor *Actor) cutOffCloud(ctx context.Context, verb, endReason string, rev
 		if err = actor.deps.Store.Loops().RevokeHubMCPToken(ctx, actor.loop.ID); err != nil {
 			actor.log().Error("cloud loop's token not revoked; its session can still reach the hub", "verb", verb, "err", err)
 		} else {
-			actor.loop.HubMCPToken = ""
-			if actor.deps.SecretsChanged != nil {
-				actor.deps.SecretsChanged(ctx)
-			}
+			actor.loop.HasHubToken = false
 		}
 	}
 	actor.stopProcess(verb)

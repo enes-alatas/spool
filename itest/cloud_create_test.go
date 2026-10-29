@@ -50,9 +50,14 @@ func TestACloudLoopIsCreated(t *testing.T) {
 		t.Fatalf("problems of a loop with no token = %+v, want one cloud_setup", held.Problems)
 	}
 	s.message("nimbus", "first words")
-	if resp, _ := s.do("POST", "/api/loops/nimbus/cloud/token", nil); resp.StatusCode != http.StatusOK {
+	resp, minted := s.do("POST", "/api/loops/nimbus/cloud/token", nil)
+	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("minting the loop's token: %d", resp.StatusCode)
 	}
+	// the operator makes its repo and sets its environment up, then starts it
+	makeGitHubRepo(t, s.fkState, "example-org/nimbus")
+	setUpCloudEnvironment(t, s, cloudFixtureEnvironment, string(minted))
+	s.mustJSON("POST", "/api/loops/nimbus/resume", nil, nil)
 	s.waitTurn("nimbus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "first words") })
 	vms := cloudVMs(t, s)
 	if len(vms) != 1 {

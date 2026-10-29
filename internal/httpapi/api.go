@@ -1372,20 +1372,26 @@ func (server *Server) handlePause(w http.ResponseWriter, r *http.Request) {
 	if loopRecord == nil {
 		return
 	}
-	loopRecord.Status = store.StatusPaused
-	loopRecord.UpdatedAt = time.Now().UnixMilli()
-	// a cloud loop's token is refused by this status (ADR-0061), so a
-	// write that failed leaves its session able to reach the hub
-	stored := server.Store.Loops().SetStatus(r.Context(), loopRecord.ID, loopRecord.Status, loopRecord.UpdatedAt)
-	if actor, ok := server.Manager.Get(loopRecord.ID); ok {
-		_ = actor.Pause()
-	}
-	server.Sched.Suspend(loopRecord.ID)
-	if stored != nil && loopRecord.Runtime == store.RuntimeCloud {
+	if stored := server.pauseLoop(r.Context(), loopRecord); stored != nil && loopRecord.Runtime == store.RuntimeCloud {
 		server.jsonErr(w, http.StatusInternalServerError, "the loop is paused, but its pause was not stored, so its cloud session can still reach the hub; pausing it again retries: %v", stored)
 		return
 	}
 	writeJSON(w, 200, server.view(r.Context(), loopRecord))
+}
+
+// pauseLoop stops the loop: its status, then its actor and its schedule.
+// The error is the status's write, which the rest goes on without. A
+// cloud loop's token is refused by that status (ADR-0061), so a write
+// that failed leaves its session able to reach the hub.
+func (server *Server) pauseLoop(ctx context.Context, loopRecord *store.Loop) error {
+	loopRecord.Status = store.StatusPaused
+	loopRecord.UpdatedAt = time.Now().UnixMilli()
+	stored := server.Store.Loops().SetStatus(ctx, loopRecord.ID, loopRecord.Status, loopRecord.UpdatedAt)
+	if actor, ok := server.Manager.Get(loopRecord.ID); ok {
+		_ = actor.Pause()
+	}
+	server.Sched.Suspend(loopRecord.ID)
+	return stored
 }
 
 // handlePower runs one of the operator's power controls on a loop's

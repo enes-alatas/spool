@@ -360,7 +360,8 @@ func (server *Server) CloudSessionUnreached(loopID string, within time.Duration)
 	result := CloudCheckResult{
 		State: CloudCheckFailed, Stage: CloudStageSession,
 		Detail: fmt.Sprintf("a cloud session was created and posted nothing to the hub within %s, "+
-			"so it can't reach the hub at this address, though this machine can", within),
+			"so it can't reach the hub at this address, though this machine can: check the loop's "+
+			"environment's network access, and that its setup script is this hub's", within),
 		CheckedAt: time.Now().UnixMilli(),
 		address:   address,
 	}

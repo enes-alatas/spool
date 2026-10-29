@@ -8,7 +8,7 @@ import (
 	"github.com/enes-alatas/spool/internal/claude"
 )
 
-// StopPost is one post of the loop home's Stop hook: the hook's input, and
+// StopPost is one post of the session's Stop hook: the hook's input, and
 // the transcript's lines since the last post that landed (ADR-0059). It is
 // the loop's own word, so it drives nothing but its turn's read-back.
 type StopPost struct {

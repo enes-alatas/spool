@@ -5,7 +5,7 @@ package itest
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -21,16 +21,17 @@ import (
 // real one.
 const cloudFixtureToken = "sk-ant-oat01-fixture-cloud-account"
 
-// cloudFixtureEnvironment is the environment the harness's cloud loops
-// start in, as Settings → Cloud would have chosen it.
+// cloudFixtureEnvironment is an environment a cloud loop the API creates
+// names.
 const cloudFixtureEnvironment = "env_01Fixture"
 
 // startCloudHub starts a hub with one cloud loop and its account signed in,
 // driven through the claude CLI, fakeclaude's --cloud (ADR-0059). Its
 // public address is its own cloud listener on loopback, set through
 // Settings → Cloud, so the address check passes and cloud loops wake: the
-// harness's stand-in for a tunnel is the listener itself, which the loop
-// home's hooks post to. args are the hub's besides.
+// harness's stand-in for a tunnel is the listener itself, which the
+// session's hooks post to, and the loop's environment is set up for it.
+// args are the hub's besides.
 func startCloudHub(t *testing.T, name string, args ...string) *server {
 	t.Helper()
 	s := startCloudHubAt(t, name, "", append([]string{"--cloud-listen", "127.0.0.1:0", "--cloud-loopback-address"}, args...)...)
@@ -44,6 +45,7 @@ func startCloudHub(t *testing.T, name string, args ...string) *server {
 		s.mustJSON("GET", "/api/settings/cloud", nil, &view)
 		return view.Account.Check != nil && view.Account.Check.State == "ok"
 	})
+	setUpCloudEnvironment(t, s, cloudEnvironmentOf(name), cloudTokenOf(name))
 	return s
 }
 
@@ -62,8 +64,8 @@ func startCloudHubAt(t *testing.T, name, address string, args ...string) *server
 	return startServerArgs(t, dataDir, append([]string{"--runtime", "bare"}, args...)...)
 }
 
-// signInCloud stores the synthetic account, the public address, "" for
-// none, and the environment, as Settings → Cloud will.
+// signInCloud stores the synthetic account and the public address, "" for
+// none, as Settings → Cloud will.
 func signInCloud(t *testing.T, dataDir, address string) {
 	t.Helper()
 	db, err := sqlite.Open(filepath.Join(dataDir, "spool.db"))
@@ -87,34 +89,29 @@ func signInCloud(t *testing.T, dataDir, address string) {
 	if err := db.Settings().Set(ctx, store.SettingCloudAddress, address); err != nil {
 		t.Fatal(err)
 	}
-	environment, _ := json.Marshal(store.CloudEnvironment{ID: cloudFixtureEnvironment})
-	if err := db.Settings().Set(ctx, store.SettingCloudEnvironment, string(environment)); err != nil {
-		t.Fatal(err)
-	}
 }
 
 // mcpInitialize is a JSON-RPC initialize, the first call a session's MCP
 // client makes.
 const mcpInitialize = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"itest","version":"0"}}}`
 
-// vmToken is the hub token the session's VM holds, as its loop home's
-// .mcp.json carried it there: what a copy lifted out of that VM would be.
-func vmToken(t *testing.T, s *server, vm string) string {
+// vmHolds reports whether any file in the session's VM holds value: the
+// hub token never enters it (ADR-0061), so a copy can't be lifted out.
+func vmHolds(t *testing.T, s *server, vm, value string) bool {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join(s.fkState, "cloud", vm, "repo", ".mcp.json"))
+	found := false
+	err := filepath.WalkDir(filepath.Join(s.fkState, "cloud", vm), func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return err
+		}
+		raw, err := os.ReadFile(path)
+		found = found || strings.Contains(string(raw), value)
+		return err
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	var config struct {
-		MCPServers map[string]struct {
-			Headers map[string]string `json:"headers"`
-		} `json:"mcpServers"`
-	}
-	if err := json.Unmarshal(raw, &config); err != nil {
-		t.Fatal(err)
-	}
-	token, _ := strings.CutPrefix(config.MCPServers["spool"].Headers["Authorization"], "Bearer ")
-	return token
+	return found
 }
 
 // A cloud loop's hub token outlives its sessions (ADR-0061), so an old VM
@@ -129,9 +126,9 @@ func TestAStaleVMOfALoopCantBindItsNextStart(t *testing.T) {
 	s.message("nimbus", "first words")
 	first := s.waitTurn("nimbus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "first words") })
 	firstVM := cloudVMs(t, s)[0]
-	stale := vmToken(t, s, firstVM)
-	if stale == "" || stale != hubMCPToken(t, s, "nimbus") {
-		t.Fatal("the first VM doesn't hold the loop's token")
+	stale := cloudTokenOf("nimbus")
+	if vmHolds(t, s, firstVM, stale) {
+		t.Fatal("the first VM holds the loop's token: it is the environment's secret, which the proxy adds")
 	}
 
 	held := filepath.Join(s.fkState, "cloud-start-held")
@@ -161,8 +158,8 @@ func TestAStaleVMOfALoopCantBindItsNextStart(t *testing.T) {
 	if strings.HasSuffix(viewed.CloudSessionURL, "session_01Stale") {
 		t.Errorf("the stale post bound the loop to %s", viewed.CloudSessionURL)
 	}
-	if hubMCPToken(t, s, "nimbus") != stale {
-		t.Error("the new session started on a new token: the token is the environment's, not the session's")
+	if got := postTo(t, s.cloudURL, stale, mcpInitialize); got != http.StatusOK {
+		t.Errorf("the loop's token after the new start: %d, want 200: the token is the environment's, not the session's", got)
 	}
 }
 
@@ -176,7 +173,7 @@ func TestStoppingACloudLoopRefusesItsTokenAndAKillRevokesIt(t *testing.T) {
 	s := startCloudHub(t, "stratus")
 	s.message("stratus", "hello")
 	first := s.waitTurn("stratus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "hello") })
-	token := hubMCPToken(t, s, "stratus")
+	token := cloudTokenOf("stratus")
 	if got := postTo(t, s.cloudURL, token, mcpInitialize); got != http.StatusOK {
 		t.Fatalf("the loop's token before the stop: %d, want 200", got)
 	}
@@ -200,8 +197,8 @@ func TestStoppingACloudLoopRefusesItsTokenAndAKillRevokesIt(t *testing.T) {
 	if again.IsError || again.SessionID == first.SessionID || len(cloudVMs(t, s)) != 2 {
 		t.Fatalf("the wake after the stop: %+v in %d VMs, want a new session", again, len(cloudVMs(t, s)))
 	}
-	if hubMCPToken(t, s, "stratus") != token {
-		t.Error("the new session started on a new token")
+	if got := postTo(t, s.cloudURL, token, mcpInitialize); got != http.StatusOK {
+		t.Errorf("the token after the new session: %d, want 200: the new session runs on the same token", got)
 	}
 
 	s.mustJSON("POST", "/api/loops/stratus/kill", nil, nil)
@@ -220,8 +217,17 @@ func TestStoppingACloudLoopRefusesItsTokenAndAKillRevokesIt(t *testing.T) {
 	resp, body := s.do("POST", "/api/loops/stratus/cloud/token", nil)
 	rotated := string(body)
 	if resp.StatusCode != http.StatusOK || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/plain") ||
-		resp.Header.Get("Cache-Control") != "no-store" || rotated == "" || rotated == token || rotated != hubMCPToken(t, s, "stratus") {
-		t.Fatalf("Rotate token answered %d %q, want the new token, uncached", resp.StatusCode, resp.Header)
+		resp.Header.Get("Cache-Control") != "no-store" || rotated == "" || rotated == token || hubMCPToken(t, s, "stratus") != "" {
+		t.Fatalf("Rotate token answered %d %q, want the new token, uncached, and kept only as its hash", resp.StatusCode, resp.Header)
+	}
+	if view := s.loop("stratus"); view.Status != "paused" {
+		t.Errorf("after Rotate token the loop is %q, want it stopped until its new secret is set", view.Status)
+	}
+	// the operator sets it as the environment's secret, then starts the loop
+	setUpCloudEnvironment(t, s, cloudEnvironmentOf("stratus"), rotated)
+	s.mustJSON("POST", "/api/loops/stratus/resume", nil, nil)
+	if got := postTo(t, s.cloudURL, rotated, mcpInitialize); got != http.StatusOK {
+		t.Errorf("the rotated token once the loop runs: %d, want 200", got)
 	}
 	held := s.waitTurn("stratus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "held words") })
 	if held.IsError {
@@ -247,7 +253,7 @@ func TestACloudLoopsStopSaysWhenItsTokenWasNotRevoked(t *testing.T) {
 	hub := startCloudHub(t, "cirrus")
 	hub.message("cirrus", "hello")
 	hub.waitTurn("cirrus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "hello") })
-	token := hubMCPToken(t, hub, "cirrus")
+	token := cloudTokenOf("cirrus")
 
 	db, err := sql.Open("sqlite", "file:"+filepath.Join(hub.dataDir, "spool.db")+"?_pragma=busy_timeout(5000)")
 	if err != nil {
@@ -284,7 +290,7 @@ func TestDeletingACloudLoopRevokesItsToken(t *testing.T) {
 	s := startCloudHub(t, "cumulus")
 	s.message("cumulus", "hello")
 	s.waitTurn("cumulus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "hello") })
-	token := hubMCPToken(t, s, "cumulus")
+	token := cloudTokenOf("cumulus")
 	s.mustJSON("DELETE", "/api/loops/cumulus", nil, nil)
 	if got := postTo(t, s.cloudURL, token, mcpInitialize); got != http.StatusUnauthorized {
 		t.Errorf("the deleted loop's token: %d, want 401", got)
@@ -421,7 +427,7 @@ func TestARefusedSessionStartIsNoVerdictOnTheAddress(t *testing.T) {
 	}
 	hub.message("nimbus", "first words")
 	within(t, 10*time.Second, "the start's VM", func() bool { return len(cloudVMs(t, hub)) == 1 })
-	token := vmToken(t, hub, cloudVMs(t, hub)[0])
+	token := cloudTokenOf("nimbus")
 	if got := postHook(t, hub, token, "cse_not-a-known-shape"); got != http.StatusBadRequest {
 		t.Fatalf("a SessionStart with an id of an unknown shape: %d, want 400", got)
 	}

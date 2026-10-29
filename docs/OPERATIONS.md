@@ -378,65 +378,78 @@ its machine, the same one the Claude login signs in with.
 3. **Claude login.** Sign in with Claude, or keep the login the hub
    already has. On Spool's side, the hub checks the login with one haiku
    answer. The account is the one every cloud loop spends.
-4. **Environment.** Every cloud loop starts in one cloud environment, which
-   you set up on claude.ai once.
-   - On claude.ai: at [claude.ai/code](https://claude.ai/code), open the
-     environment selector under the message box and choose **New
-     environment**. Under **Network access**, choose **Custom**, paste the
-     list the step shows into **Allowed domains**, and leave **Also include
-     default list of common package managers** unchecked. Put no variables
-     or secrets in it: every cloud loop shares the environment, so each
-     would reach them all. Choose **Add environment**.
-   - In the step, pick the environment by name. On Spool's side, the hub
-     lists the account's environments with one read-only call on the
-     Claude login, and keeps the ID of the one you pick. If the list fails,
-     the step asks for the ID instead. Run `/remote-env` in your own
-     `claude`, pick the environment, and copy `remote.defaultEnvironmentId`
-     from `~/.claude/settings.json` into the field.
-   - Confirm that you pasted the list. The hub can't read an environment's
-     allowed hosts back, so it relies on your word. The list it shows is
-     its egress allowlist ([CONTAINMENT.md](CONTAINMENT.md)) as an
-     environment spells it, with the public address's host first. An entry
-     an environment can't hold, such as a host with a port of its own, is
-     named beside the list and left out of it. Each time you edit the egress
-     allowlist or change the address or the environment, the confirmation
-     drops. Until you paste the new list and confirm again, each cloud loop
-     carries a warning: only what its environment allows binds it, not the
-     hub's allowlist. An edit you save on claude.ai reaches running
-     sessions within about a minute.
-   - Changing the public address takes one more step. A cloud loop's
-     session keeps the address it started with, in its `.mcp.json` and
-     its hooks. After you paste the new list and confirm, stop and start
-     each cloud loop, so that its next session starts on the new address.
+4. **Environments.** Each cloud loop runs in a cloud environment of its
+   own, which you create on claude.ai for it (below). The step lists the
+   Claude login's environments by name, with one read-only call, for a
+   loop to name its own; if the list fails, a loop takes a pasted ID. The
+   list to paste into an environment's allowed domains is the hub's egress
+   allowlist ([CONTAINMENT.md](CONTAINMENT.md)) as an environment spells
+   it, with the public address's host first: without that host the
+   session never loads the hub's MCP server. An entry an environment
+   can't hold, such as a host with a port of its own, is named beside the
+   list and left out of it. The step's own pick and its confirm of the
+   list no longer decide where a loop starts; they move to each loop's
+   setup (#1182, #1183).
 
-Then create a loop with the cloud runtime. At its first wake, the hub runs
-`claude --cloud` on its own machine, with the wake as the first message and
-the chosen environment. The CLI uploads a small repo the hub builds, the
-loop's home, and a session starts on claude.ai. The home's `SessionStart`
-hook posts the session's id to the hub, and the hub ends the local CLI. The
-loop's page links the session, which you can open on claude.ai. When the
-turn ends, the home's `Stop` hook posts it back, and the loop's reply lands
-in its rooms as any loop's does. Each later wake is sent into the same
-session with `claude -p --cloud`. Anthropic idles the session's machine
-between turns, and the next message brings it back.
+Then set each cloud loop up. Until the loop's setup view lands (#1182), its
+steps go through the API:
 
-A cloud loop's hub token belongs to the loop, not to one session. A new
-cloud loop has none, and waits with a `cloud_setup` problem until Rotate
-token (`POST /api/loops/<name>/cloud/token`) mints one; the answer shows
-the token once. Stopping a cloud loop refuses its token at once, and
-starting it again takes the same token. Killing it revokes the token for
-good: the loop waits, with the same problem, until Rotate token mints
-another. Either way the CLI can't interrupt a turn already running
-there: it runs on, cut off from the hub, and so may a message sent just
-before the stop. The hub no longer hears that turn end, so the loop's
-page says it may still be running until two hours after its send, and
-links its session, where you can interrupt it. If the hub can't store
-the stop or the revocation, the stop or the kill still happens, but it
-answers with an error saying the session can still reach the hub.
-Stopping or killing the loop again retries.
+1. **Its repo.** Create the loop with the cloud runtime and its GitHub repo,
+   `owner/name`, its branch, `main` unless you name another, and any further
+   repos it attaches. Install Claude's GitHub App on those repositories
+   only, and review the installations of the GitHub user behind the
+   Claude login at `github.com/settings/installations`: the session can
+   reach every repository they cover.
+2. **Its environment.** On claude.ai, at
+   [claude.ai/code](https://claude.ai/code), open the environment selector
+   under the message box and choose **New environment**. Under **Network
+   access**, choose **Custom**, paste the list into **Allowed domains**,
+   and leave **Also include default list of common package managers**
+   unchecked. Paste the hub's setup script as its **Setup script**; the
+   loop's setup view that shows it comes with #1182. Name
+   the environment's ID on the loop, `cloud_environment_id`.
+3. **Its token.** Rotate token, `POST /api/loops/<name>/cloud/token`,
+   stops the loop and shows its hub token once. Set it as the
+   environment's network secret for the public address's host, then start
+   the loop. The hub keeps only the token's hash, so a lost token is
+   rotated, not read back.
+
+A cloud loop whose repo, environment or token isn't set waits with a
+`cloud_setup` problem, and so does one made before ADR-0061, whose old
+token the upgrade revoked. A loop's repo, branch and environment change
+only while it is stopped.
+
+At its first wake, the hub runs `claude --cloud` on its own machine, with
+the wake as the first message, in an empty directory whose `origin` is the
+loop's repo, with `--ref` naming its branch and the loop's environment.
+Nothing is uploaded: the session clones the repo from GitHub, its
+environment's setup script connects it to the hub, and its `SessionStart`
+hook posts the session's id. The hub takes the post only from the session
+the CLI printed it had created, answers it with the loop's prompt, and ends
+the local CLI. The loop's page links the session, which you can open on
+claude.ai. When the turn ends, the `Stop` hook posts it back, and the
+loop's reply lands in its rooms as any loop's does. Each later wake is
+sent into the same session with `claude -p --cloud`. Anthropic idles the
+session's machine between turns, and the next message brings it back.
+Changing the public address takes one more step: paste the new setup
+script into each loop's environment, and its host into the allowed
+domains, then stop and start each cloud loop.
+
+A cloud loop's hub token belongs to its environment, not to one session.
+Stopping a cloud loop refuses its token at once, and starting it again
+takes the same token, with nothing to set again. Killing it revokes the
+token for good: the loop waits, with the `cloud_setup` problem, until
+Rotate token mints another and you set it. Either way the CLI can't
+interrupt a turn already running there: it runs on, cut off from the hub,
+and so may a message sent just before the stop. The hub no longer hears
+that turn end, so the loop's page says it may still be running until two
+hours after its send, and links its session, where you can interrupt it.
+If the hub can't store the stop or the revocation, the stop or the kill
+still happens, but it answers with an error saying the session can still
+reach the hub. Stopping or killing the loop again retries.
 
 A cloud loop's secrets are its env-var connections, attached as a
-contained loop's are. The hub answers the home's
+contained loop's are. The hub answers the session's
 `SessionStart` post with them, and the hook writes them where the
 session's shell commands read them. A change to a
 connection reaches the loop at its next session start, not its next turn:
@@ -447,17 +460,12 @@ the session on Anthropic's disk until you archive it on claude.ai, so
 deleting a cloud loop that misbehaved is the time to rotate them.
 `mcp-server` connections never reach a cloud loop.
 
-On v0.6.x, a cloud loop in an Anthropic-hosted environment does chat and
-hub work, not GitHub work (#1168). Each of its GitHub requests goes through
-Anthropic's GitHub proxy, whatever token the session holds, and the proxy
-serves only the repositories attached to the session. The hub's start
-attaches none, so every clone, fetch, push and API call gets a 403, a
-public repository's included. A `GH_TOKEN` connection doesn't change
-that, and naming a repo in the mission doesn't either. Even for an
-attached repository the proxy refuses GraphQL, so `gh pr` and `gh issue`
-fail and only REST through `gh api` works. A push can update a branch,
-never push a tag or delete a branch. Until #1168's fix ships, give GitHub work to
-a contained loop.
+A cloud loop's GitHub work goes through Claude's GitHub App, from the repo
+it starts from (ADR-0061). Its requests go through Anthropic's GitHub
+proxy, which refuses GraphQL, so `gh pr` and `gh issue` fail and only REST
+through `gh api` works. A push can update a branch, never push a tag or
+delete a branch. A `GH_TOKEN` connection reaches no repository the session
+didn't start from or attach (#1169).
 
 A cloud turn's cost is the hub's estimate. The session reports its token
 counts but no cost, so the hub prices the tokens by its own table of model

@@ -11,13 +11,15 @@ import (
 	"github.com/enes-alatas/spool/internal/runtime"
 )
 
-// A synthetic hub token and account: never real ones.
-const testHubToken = "spool-hub-synthetic-token"
-
+// A synthetic account: never a real one.
 var testAccount = Account{Token: "sk-ant-oat01-synthetic", OrgUUID: "00000000-0000-4000-8000-000000000001"}
 
 // testEnvironment is the synthetic environment test sessions start in.
 const testEnvironment = "env_01Synthetic"
+
+// testSource is the synthetic repo, branch and environment test sessions
+// start from.
+var testSource = runtime.CloudStart{Repo: "example-org/cirrus", Branch: "main", EnvironmentID: testEnvironment}
 
 func testSpec() runtime.Spec {
 	return runtime.Spec{
@@ -25,33 +27,39 @@ func testSpec() runtime.Spec {
 		LoopName:           "cirrus",
 		Model:              "claude-haiku-5-5",
 		AppendSystemPrompt: "You are cirrus.",
-		MCPConfig:          claude.MCPConfigJSON("https://hub.example.test/mcp", testHubToken, nil),
 		SessionID:          "hub-session-1",
+		Cloud:              testSource,
 	}
 }
 
-// resumeSpec is testSpec resuming its hub session, under token.
-func resumeSpec(token string) runtime.Spec {
+// resumeSpec is testSpec resuming its hub session, from source.
+func resumeSpec(source runtime.CloudStart) runtime.Spec {
 	spec := testSpec()
 	spec.SessionID, spec.ResumeID = "", "hub-session-1"
-	spec.MCPConfig = claude.MCPConfigJSON("https://hub.example.test/mcp", token, nil)
+	spec.Cloud = source
 	return spec
 }
 
-func TestEnsureRefusesALoopWithNoHubAddress(t *testing.T) {
+func TestEnsureRefusesALoopWithNoSource(t *testing.T) {
 	cloud := cliRuntime(t, `sleep 30`)
-	spec := testSpec()
-	spec.MCPConfig = ""
-	if err := cloud.Ensure(context.Background(), spec); err == nil {
-		t.Error("a loop the hub has no address for passed Ensure")
+	for _, unset := range []func(*runtime.CloudStart){
+		func(source *runtime.CloudStart) { source.Repo = "" },
+		func(source *runtime.CloudStart) { source.Branch = "" },
+		func(source *runtime.CloudStart) { source.EnvironmentID = "" },
+	} {
+		spec := testSpec()
+		unset(&spec.Cloud)
+		if err := cloud.Ensure(context.Background(), spec); err == nil {
+			t.Errorf("a loop with %+v passed Ensure", spec.Cloud)
+		}
 	}
 	if err := cloud.Ensure(context.Background(), testSpec()); err != nil {
-		t.Errorf("Ensure = %v, want nil for a loop that can reach the hub", err)
+		t.Errorf("Ensure = %v, want nil for a loop with its source set", err)
 	}
 }
 
 // startedSession runs testSpec's first turn to its end, so the runtime
-// records session_01Synthetic as the loop's, under testHubToken.
+// records session_01Synthetic as the loop's, started from testSource.
 func startedSession(t *testing.T, cloud *Runtime) {
 	t.Helper()
 	proc := startCLI(t, cloud, testSpec())
@@ -88,7 +96,7 @@ esac
 `)
 	startedSession(t, cloud)
 
-	proc := startCLI(t, cloud, resumeSpec(testHubToken))
+	proc := startCLI(t, cloud, resumeSpec(testSource))
 	go func() {
 		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
 			if cloud.Stop(context.Background(), "loop-1", []byte(`{"last_assistant_message":"again"}`), nil, false) == nil {
@@ -111,12 +119,14 @@ func TestAResumeOfAnUnknownSessionIsLost(t *testing.T) {
 	waitLost(t, startCLI(t, cloud, spec))
 }
 
-// A session holds the token it was started with for its life, so a
-// resume under a replaced token starts a session of its own.
-func TestAResumeUnderAReplacedTokenIsLost(t *testing.T) {
+// A session started from another repo, branch or environment than the
+// loop's now isn't resumed: the loop's next wake starts one of its own.
+func TestAResumeFromAnotherSourceIsLost(t *testing.T) {
 	cloud := cliRuntime(t, `sleep 30`)
 	startedSession(t, cloud)
-	waitLost(t, startCLI(t, cloud, resumeSpec("spool-hub-synthetic-replaced")))
+	moved := testSource
+	moved.EnvironmentID = "env_01Moved"
+	waitLost(t, startCLI(t, cloud, resumeSpec(moved)))
 }
 
 // A session the sessions client created runs in an environment of the
@@ -124,12 +134,12 @@ func TestAResumeUnderAReplacedTokenIsLost(t *testing.T) {
 func TestAResumeOfASessionsClientSessionIsLost(t *testing.T) {
 	cloud := cliRuntime(t, `sleep 30`)
 	if err := cloud.update("loop-1", func(s *state) {
-		s.SessionID, s.ClaudeSession, s.SessionToken = "session_01Old", "hub-session-1", tokenHash(testHubToken)
+		s.SessionID, s.ClaudeSession, s.Source = "session_01Old", "hub-session-1", sourceKey(testSource)
 		s.EnvironmentID = "env_01Old"
 	}); err != nil {
 		t.Fatal(err)
 	}
-	waitLost(t, startCLI(t, cloud, resumeSpec(testHubToken)))
+	waitLost(t, startCLI(t, cloud, resumeSpec(testSource)))
 }
 
 func TestDestroyForgetsTheSession(t *testing.T) {
