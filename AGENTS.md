@@ -64,8 +64,10 @@ humans and each other. This file orients you; it links, it doesn't duplicate.
   real-token runs — stop, interview the human, record an ADR. Where stopping
   would idle the PR and the work holds under either answer, flag and continue:
   the PR's Notes / Risks carries an `Operator decision pending:` line, which
-  blocks the merge until you delete it and tell the reviewer (#192). A question from the operator is a question;
-  reprioritizing or interrupting in-flight work takes an explicit yes, and
+  blocks the merge until you delete it and tell the reviewer (#192). The
+  moment an item only the operator can do is ready, DM them naming it and
+  what to do, with the PR link (#1195). A question from the operator is a
+  question; reprioritizing or interrupting in-flight work takes an explicit yes, and
   finished work gets its PR before any redirect.
 
 ## Commands

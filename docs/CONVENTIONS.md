@@ -55,6 +55,10 @@ ADR instead.*
   gone; the author deletes it when the answer lands and tells the reviewer on
   the PR, naming the answer and where it is recorded, and with a ping, and an
   answer that changes the work voids the approval.
+- **An item only the operator can do is sent to them** (#1195): the moment
+  one is ready (a pending decision, a CodeQL dismissal, a live run on their
+  account), the PR's author DMs the operator naming it and what to do, with
+  the PR link; the PR records it, and the merge request stays the reviewer's.
 - **Branches**: `<type>/<topic>`; `loop/<name>` is reserved for loop
   worktrees.
 - **Commits / PR titles**:
