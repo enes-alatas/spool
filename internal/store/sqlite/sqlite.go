@@ -246,6 +246,13 @@ func (table loops) Create(ctx context.Context, loopRecord *store.Loop) error {
 	if loopRecord.Subagents == "" {
 		loopRecord.Subagents = store.SubagentsAllowed
 	}
+	// a loop with no token keeps no hash: the empty string's would read as
+	// a token held, and the unique index would refuse a second such loop
+	// (#1213)
+	hash := ""
+	if loopRecord.HubMCPToken != "" {
+		hash = tokenHash(loopRecord.HubMCPToken)
+	}
 	sealer := table.sealer
 	_, err := table.db.ExecContext(ctx, `INSERT INTO loops (`+loopCols+`, hub_mcp_token_hash) VALUES
 		(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -260,7 +267,7 @@ func (table loops) Create(ctx context.Context, loopRecord *store.Loop) error {
 		loopRecord.HandoffNote, loopRecord.PromptHash, loopRecord.ModelRefusal,
 		sealer.seal(loopRecord.SlackAppToken), sealer.seal(loopRecord.SlackBotToken), loopRecord.SlackBotUserID, loopRecord.SlackBotName,
 		loopRecord.SlackTeamID, loopRecord.SlackTeamName,
-		loopRecord.OwnerSlackUserID, loopRecord.OwnerSlackDMChannel, tokenHash(loopRecord.HubMCPToken))
+		loopRecord.OwnerSlackUserID, loopRecord.OwnerSlackDMChannel, hash)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return store.ErrDuplicate
 	}
