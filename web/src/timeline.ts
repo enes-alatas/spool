@@ -214,6 +214,17 @@ function spoolNote(e: LoopEvent): Note | null {
           `message too long for the model's context window ` +
             `(${p.messages} messages, ${p.chars.toLocaleString('en-US')} characters); not delivered`,
         )
+      case 'batch_dropped':
+        // A message whose turn the loop's process died on three times, killed
+        // from outside or not, is given up on so the messages queued behind
+        // it are answered (#1189). The copy blames neither.
+        return p.envelopes === 1
+          ? plain(
+              `message dropped after the loop's process died ${p.attempts} times running it; not delivered`,
+            )
+          : plain(
+              `messages dropped after the loop's process died ${p.attempts} times running them; not delivered`,
+            )
       case 'model_unrecognized':
         return plain(
           `${p.model ? `model ${p.model}` : 'the default model'} not recognized; ` +
