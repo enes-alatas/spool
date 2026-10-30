@@ -1582,3 +1582,4 @@ HN: Show HN Bot_board (tool's own thread — no pitch). Merged: #1190 (→#1181 
 
 ## 2026-10-30 23:13 UTC tick
 HN: 0 new. Merged: #1209 (→#1198 closed), Iris's #1197 fix (c9c56fa), Terra's album fix (fbd474d, #1199). Terra idle → assigning #1182 (setup view + check). Then #1078, #1205. Iris: #1183 after #1182. Enes silent on the tag suggestion (ref:7749) — it was a suggestion, no re-nudge. Board tidy.
+23:20 Iris idle → #1203 (retitled to operator words; bug low, bare hub login row vs dialog). Iris takes the web half, files the hub half for Terra if the check result lacks which login it checked.
