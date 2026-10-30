@@ -94,6 +94,11 @@ const (
 	// itself before the session is written off as unusable. Two, so a single
 	// transient failure still gets its ordinary retry.
 	deadResumeLimit = 2
+	// crashAttemptLimit is how many claude processes may die running an
+	// envelope before it is dropped (ADR-0026). Three, so a kill from outside
+	// costs a message nothing, and one that kills every process still lets
+	// the queue move.
+	crashAttemptLimit = 3
 	// drainGrace bounds a stdin-close drain; a process that ignores EOF is
 	// killed rather than left parking the loop (and any queued work) forever.
 	drainGrace = 30 * time.Second
@@ -607,7 +612,7 @@ func (actor *Actor) handleCmd(command cmd) {
 	case "kill":
 		err := actor.cutOffCloud(context.Background(), "kill", store.EndReasonKilled, true)
 		if actor.proc != nil {
-			actor.killProc("killed by the operator")
+			actor.killProc(killedByOperator)
 			// exit handled via procEvents close
 		}
 		command.reply <- err
@@ -1922,21 +1927,86 @@ func (actor *Actor) handleProcExit() {
 			return
 		}
 		// keep the undelivered work: the retry is what earns the second
-		// data point, and the generic crash path would drop it
-		if len(actor.currentBatch) > 0 {
-			actor.inbox = append(actor.currentBatch, actor.inbox...)
-			actor.currentBatch = nil
-			actor.redelivered = true
-		}
+		// data point
+		actor.requeueBatch()
 		actor.crashBackoff()
 	default:
-		// the batch is dropped, so any lost-send tally for it dies with it
-		actor.currentBatch = nil
-		actor.lostSends = nil
 		actor.storeSpoolEvent("crash", fmt.Sprintf(`{"code":%d,"stderr":%q}`, exit.Code, claude.LastLines(exit.Stderr, 2000)))
 		actor.log().Warn("claude process crashed", "code", exit.Code, "stderr", claude.LastLines(exit.Stderr, 500))
+		actor.carryCrashedBatch(killedFor)
 		actor.crashBackoff()
 	}
+}
+
+// carryCrashedBatch settles the batch of a turn whose process died (#1189,
+// ADR-0026). A process killed from outside (a workstation's daemon going
+// away, the OOM killer) or ended by a power verb leaves a turn nobody
+// answered, and a person's message must not vanish with the process it was
+// handed to: the batch goes back to the front of the queue for the retry,
+// as a lost session's does, and a switched-off workstation holds it until it
+// is on again. The operator's kill ends a turn on purpose, and a batch of
+// ticks only needs no repeat, since the next tick comes on its own: neither
+// is said again. A power verb's end is the operator's too, so it costs the
+// batch no attempt. Every other death counts against each envelope it
+// carried, and an envelope whose turn has died that way crashAttemptLimit
+// times is dropped, with an event saying so, rather than held at the front
+// of the queue where nothing behind it could ever be answered. A message
+// that joined the batch later keeps its own count and goes back.
+func (actor *Actor) carryCrashedBatch(killedFor string) {
+	batch := actor.currentBatch
+	switch {
+	case len(batch) == 0:
+		return
+	case killedFor == killedByOperator || !carriesMessage(batch):
+		// the lost-send tally belongs to the batch, and dies with it
+		actor.currentBatch = nil
+		actor.lostSends = nil
+		return
+	case strings.HasPrefix(killedFor, endedByVerb):
+		actor.requeueBatch()
+		return
+	}
+	var kept, dropped []Envelope
+	for _, env := range batch {
+		env.crashes++
+		if env.crashes < crashAttemptLimit {
+			kept = append(kept, env)
+		} else {
+			dropped = append(dropped, env)
+		}
+	}
+	if len(dropped) > 0 {
+		actor.storeSpoolEvent("batch_dropped", fmt.Sprintf(`{"envelopes":%d,"attempts":%d}`,
+			len(dropped), crashAttemptLimit))
+		actor.log().Warn("dropped what crashed every process that ran it",
+			"envelopes", len(dropped), "attempts", crashAttemptLimit)
+	}
+	actor.currentBatch = kept
+	if len(kept) == 0 {
+		actor.lostSends = nil
+	}
+	actor.requeueBatch()
+}
+
+// carriesMessage reports whether a batch holds anything but ticks.
+func carriesMessage(batch []Envelope) bool {
+	for _, env := range batch {
+		if env.Trigger != store.TriggerTick {
+			return true
+		}
+	}
+	return false
+}
+
+// requeueBatch puts the turn's unanswered batch back at the front of the
+// inbox, marked as a repeat so its next attempt learns what this one sent.
+func (actor *Actor) requeueBatch() {
+	if len(actor.currentBatch) == 0 {
+		return
+	}
+	actor.inbox = append(actor.currentBatch, actor.inbox...)
+	actor.currentBatch = nil
+	actor.redelivered = true
 }
 
 // refuseModel stops the loop on a model the API does not know (#289). Every
@@ -2137,11 +2207,7 @@ func (actor *Actor) rotateSession(reason, detail string) {
 		actor.storeSpoolEvent(reason, fmt.Sprintf(`{"old_session":%q,"stderr":%q}`, old, detail))
 		actor.log().Warn("session cannot be resumed; rotating", "old_session", old, "stderr", detail)
 	}
-	if len(actor.currentBatch) > 0 {
-		actor.inbox = append(actor.currentBatch, actor.inbox...)
-		actor.currentBatch = nil
-		actor.redelivered = true
-	}
+	actor.requeueBatch()
 	actor.retireSession()
 	// The retry, not an immediate wake: a rotation forced by failure is no
 	// evidence that a spawn will work now, and waking straight into one
@@ -2501,9 +2567,9 @@ func (actor *Actor) stopProcess(verb string) {
 	}
 	actor.log().Info("the running turn is ended", "by", verb)
 	if verb == "kill" {
-		actor.killProc("killed by the operator")
+		actor.killProc(killedByOperator)
 	} else {
-		actor.killProc("ended by " + verb)
+		actor.killProc(endedByVerb + verb)
 	}
 	grace := time.NewTimer(procStopGrace)
 	defer grace.Stop()
@@ -2927,6 +2993,14 @@ func (actor *Actor) log() *slog.Logger {
 }
 
 func now() int64 { return time.Now().UnixMilli() }
+
+// killedByOperator is what a turn the operator's kill ended says. Its batch
+// is the one a crash does not say again.
+const killedByOperator = "killed by the operator"
+
+// endedByVerb begins what a turn a power verb ended says, the verb after it.
+// Its batch is said again without counting as an attempt.
+const endedByVerb = "ended by "
 
 // killProc kills the claude process for why, which the turn it ends says
 // in place of the process's own exit (#1096).

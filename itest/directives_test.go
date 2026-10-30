@@ -15,10 +15,10 @@ import (
 
 // TestCrashedTurnIsRecordedAndTheLoopIsNotWedged: a process that exits
 // mid-turn leaves the turn errored, saying why (#1096), rather than open
-// forever, and the loop still takes the next message — it starts a turn
-// for it and finishes that one too. Every turn crashes here, by design:
-// what is pinned is that a crash costs a turn rather than the loop, not
-// that the reply after one is any good.
+// forever, and the loop goes on — it starts the next message's turn, or the
+// crashed message's retry (#1189), and finishes that one too. Every turn
+// crashes here, by design: what is pinned is that a crash costs a turn
+// rather than the loop, not that the reply after one is any good.
 func TestCrashedTurnIsRecordedAndTheLoopIsNotWedged(t *testing.T) {
 	t.Parallel()
 	s := startServer(t, t.TempDir())

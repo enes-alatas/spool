@@ -779,6 +779,10 @@ type Envelope struct {
 	Ref string `json:"ref,omitempty"`
 	// Corrects is set on a correction's envelope, nil on any other.
 	Corrects *Correction `json:"corrects,omitempty"`
+	// crashes counts the claude processes that died running this envelope,
+	// so a message that joins a batch already being retried is counted from
+	// its own first attempt (#1189). The hub's memory only: never stored.
+	crashes int
 }
 
 // Correction is what a correction's envelope corrects, so the actor can
