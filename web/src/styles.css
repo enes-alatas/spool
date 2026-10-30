@@ -4556,6 +4556,14 @@ button.panel-link {
     stroke-dashoffset: 0;
   }
 }
+/* A loop exists and its wake failed (#1197): a red outline, and the line
+   that names the loop and what failed reads in the same red. */
+.pillar.failed {
+  border-color: var(--danger-line);
+}
+.pillar.failed .pillar-state {
+  color: var(--danger);
+}
 /* A step the hub is working on (#661): an orange outline, what to expect,
    and its phases, ticked behind, spinning now, hollow ahead. */
 .pillar.working {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ApiError, type Onboarding } from './api'
+import { ApiError, type LoopView, type Onboarding } from './api'
 import {
   canSkipSurface,
   checkError,
@@ -10,6 +10,7 @@ import {
   PILLARS,
   showFirstRun,
   surfaceTarget,
+  wakeFailed,
 } from './onboarding'
 
 const state = (harness: boolean, surface: boolean, loops: boolean, completed = false): Onboarding => ({
@@ -150,5 +151,106 @@ describe('pillarWork', () => {
     expect(pillarWork('harness', { done: false, progress: 'checking' }, 'docker')).toBeUndefined()
     // a code from another pillar is not this one's
     expect(pillarWork('surface', { done: false, progress: 'waking' }, 'docker')).toBeUndefined()
+  })
+})
+
+describe('wakeFailed', () => {
+  const failed = (failure?: string) => ({
+    done: false,
+    reason: 'no loop has woken',
+    progress: 'wake_failed',
+    progress_loop: 'scout',
+    failure,
+  })
+
+  it('names the loop and what failed, for each kind', () => {
+    expect(wakeFailed('loops', failed('workstation'), undefined)).toMatchObject({
+      loop: 'scout',
+      what: 'workstation down',
+    })
+    expect(wakeFailed('loops', failed('crashed'), undefined)).toMatchObject({ what: 'Claude Code stopped' })
+    expect(wakeFailed('loops', failed('first_turn'), undefined)).toMatchObject({ what: 'first turn failed' })
+  })
+
+  // The code says only that the loop reads workstation_down; its
+  // down_reason says why, and the card says that rather than a guess.
+  it('names a down workstation by its reason when the loops list has it', () => {
+    const station = (down_reason: LoopView['down_reason'], workstation_detail = '') => [
+      { name: 'scout', workstation_up: false, down_reason, workstation_detail, runtime: 'docker' as const },
+    ]
+    expect(wakeFailed('loops', failed('workstation'), station('unauthenticated'))).toEqual({
+      loop: 'scout',
+      what: 'no Claude login',
+      how: 'The hub has no Claude login, or Anthropic refused it. Sign in with Claude in Settings.',
+    })
+    expect(
+      wakeFailed('loops', failed('workstation'), station('hub_unreachable', 'the token was refused')),
+    ).toEqual({
+      loop: 'scout',
+      what: "can't reach the hub",
+      how: 'The token was refused.',
+    })
+    expect(wakeFailed('loops', failed('workstation'), station('unreachable', 'no route to `host`'))).toEqual({
+      loop: 'scout',
+      what: 'workstation down',
+      how: "The loop's workstation is down: no route to host.",
+    })
+    // a loops list that has not caught up, or lacks the loop, keeps the general copy
+    const up = [
+      {
+        name: 'scout',
+        workstation_up: true,
+        down_reason: '' as const,
+        workstation_detail: '',
+        runtime: 'docker' as const,
+      },
+    ]
+    expect(wakeFailed('loops', failed('workstation'), up)).toMatchObject({ what: 'workstation down' })
+    // a just-created loop's first snapshot, or a calm reason, is not the failure
+    for (const reason of ['not_provisioned', 'powered_off'] as const) {
+      expect(wakeFailed('loops', failed('workstation'), station(reason))).toEqual({
+        loop: 'scout',
+        what: 'workstation down',
+        how: "The loop's workstation is down, so it cannot wake. Its page says why.",
+      })
+    }
+    expect(wakeFailed('loops', failed('workstation'), [])).toMatchObject({ what: 'workstation down' })
+  })
+
+  // A cloud loop has a session, not a workstation, and the card says so
+  // the way its fleet row does.
+  it('names a cloud loop by its session', () => {
+    const cloud = (down_reason: LoopView['down_reason'], workstation_detail = '') => [
+      { name: 'scout', workstation_up: false, down_reason, workstation_detail, runtime: 'cloud' as const },
+    ]
+    expect(wakeFailed('loops', failed('workstation'), cloud('unreachable', 'session `ended`'))).toEqual({
+      loop: 'scout',
+      what: 'cloud session down',
+      how: "The loop's cloud session is down: session ended.",
+    })
+    expect(wakeFailed('loops', failed('workstation'), cloud('not_provisioned'))).toEqual({
+      loop: 'scout',
+      what: 'cloud session down',
+      how: "The loop's cloud session is down, so it cannot wake. Its page says why.",
+    })
+  })
+
+  // A newer hub's kind still reads as a failure, never as nothing having
+  // started; and a key that only the object prototype has is not a kind.
+  it('reads an unknown kind as a failed wake', () => {
+    for (const kind of ['oom', 'constructor', undefined]) {
+      expect(wakeFailed('loops', failed(kind), undefined)).toMatchObject({
+        loop: 'scout',
+        what: 'wake failed',
+      })
+    }
+  })
+
+  it('says nothing for any other reading', () => {
+    expect(wakeFailed('surface', failed('crashed'), undefined)).toBeUndefined()
+    expect(wakeFailed('loops', { ...failed('crashed'), done: true }, undefined)).toBeUndefined()
+    expect(wakeFailed('loops', { ...failed('crashed'), progress: 'waking' }, undefined)).toBeUndefined()
+    expect(wakeFailed('loops', { ...failed('crashed'), progress_loop: undefined }, undefined)).toBeUndefined()
+    expect(wakeFailed('loops', { done: false, reason: 'no loop has woken' }, undefined)).toBeUndefined()
   })
 })
