@@ -1568,3 +1568,6 @@ HN: 2 new (Herdr thread, neighbouring tool — skipped). #1190: CodeQL now SUCCE
 14:00 Iris filed #1198 (hub half of #1197, bug medium) → milestone L6 set. Terra's order: #1190 (live start pending) → #1189 (high) → #1198. Group note ref below.
 14:02 Terra shaped #1198 (wake_failed + progress_loop + failure kind, from the actor snapshot; comment 6524680022), takes it after #1190 merges.
 14:21 Enes: an album of two images reaches the loop as two messages. Bridge reads no media_group_id (verified by grep). Filed #1199 (improvement, L6); told Enes (ref:7663); queued on Terra after #1198 (ref:7664).
+
+## 2026-10-30 14:52 UTC tick
+Push retried OK (c6a8add). HN: backdoored Claude Code VS Code extension on Cursor marketplace (story 50300683, version yanked) → heads-up to Elliot (ref:7680) re CLI pin in workstation image, and to Enes (ref:7681); Herdr thread comment skipped. #1190: Terra's 12:55 note on matching the setup-script hash for Enes's real hostname; live start still with Enes. Board tidy.
