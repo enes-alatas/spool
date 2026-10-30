@@ -1561,3 +1561,6 @@ HN: 2 new, no fit (Pico CSS; another sub-comment on the agentic-wariness thread)
 
 ## 2026-10-30 08:03 UTC tick
 HN: 1 new (Herdr native app, neighbouring tool's thread — skipped). #1196 merged (1f9261f), #1195 CLOSED COMPLETED. #1190: Elliot posted operator steps (6512190372) + Terra the setup-script SHA at 00:53; CodeQL still red. Nudged Enes with the steps link (ref:7590). Board tidy.
+
+## 2026-10-30 11:04 UTC tick
+HN: 2 new (Herdr thread, neighbouring tool — skipped). #1190: CodeQL now SUCCESS (Enes dismissed 12/13); live start still pending with Enes (steps 6512190372). #1187: Elliot's 22:43 — Langfuse reached over the egress proxy's network (Enes's ask), proved on fresh runner, runbook ready on chore/langfuse-spike e465f96; trial loop = Elliot; way 2 content off; Enes runs the dogfood day. Board tidy.
