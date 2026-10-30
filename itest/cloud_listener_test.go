@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/enes-alatas/spool/internal/runtime/cloud"
 )
@@ -229,5 +230,50 @@ func setUpCloudEnvironment(t *testing.T, hub *server, environment, token string)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "secret"), []byte(host+" "+token+"\n"), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// cloudLoopSetup is a cloud loop's setup view, as the tests read it.
+type cloudLoopSetup struct {
+	Steps      []string `json:"steps"`
+	Settings   string   `json:"settings"`
+	Script     string   `json:"script"`
+	SecretHost string   `json:"secret_host"`
+	Token      struct {
+		Set bool `json:"set"`
+	} `json:"token"`
+	Allowlist struct {
+		Text      string `json:"text"`
+		Digest    string `json:"digest"`
+		Confirmed bool   `json:"confirmed"`
+	} `json:"allowlist"`
+	Check *struct {
+		State     string `json:"state"`
+		Stage     string `json:"stage"`
+		Detail    string `json:"detail"`
+		CheckedAt int64  `json:"checked_at"`
+		Current   bool   `json:"current"`
+	} `json:"check"`
+}
+
+// checkCloudLoop runs the loop's setup check and waits for it to end,
+// returning the view it ended with.
+func checkCloudLoop(t *testing.T, hub *server, name string) cloudLoopSetup {
+	t.Helper()
+	var view cloudLoopSetup
+	hub.mustJSON("POST", "/api/loops/"+name+"/cloud/check", nil, &view)
+	within(t, 60*time.Second, name+"'s setup check", func() bool {
+		hub.mustJSON("GET", "/api/loops/"+name+"/cloud/setup", nil, &view)
+		return view.Check != nil && view.Check.State != "running"
+	})
+	return view
+}
+
+// passCloudCheck runs the loop's setup check, which must pass: the
+// operator's last step before the loop wakes (#1182).
+func passCloudCheck(t *testing.T, hub *server, name string) {
+	t.Helper()
+	if view := checkCloudLoop(t, hub, name); view.Check.State != "ok" || !view.Check.Current {
+		t.Fatalf("%s's setup check = %+v, want a current pass", name, view.Check)
 	}
 }

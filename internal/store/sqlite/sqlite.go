@@ -196,12 +196,13 @@ const loopReadCols = loopCols + `,
 		AND surface='` + store.SurfaceSlack + `' AND channel='` + store.FleetChannel + `'), ''),
 	COALESCE((SELECT bound_at FROM rooms WHERE rooms.loop_id=loops.id
 		AND surface='` + store.SurfaceSlack + `' AND channel='` + store.FleetChannel + `'), 0),
-	created_by, updated_by, doing, doing_at, hub_mcp_token_hash <> ''`
+	created_by, updated_by, doing, doing_at, hub_mcp_token_hash <> '', hub_mcp_token_hash,
+	cloud_allowlist_digest, cloud_allowlist_confirmed_at, cloud_check`
 
 // scanLoop reads a loops row, opening its sealed tokens.
 func (table loops) scanLoop(row interface{ Scan(...any) error }) (*store.Loop, error) {
 	var loopRecord store.Loop
-	var cloudRepos string
+	var cloudRepos, cloudCheck string
 	err := row.Scan(&loopRecord.ID, &loopRecord.Name, &loopRecord.Mission, &loopRecord.Model, &loopRecord.WorkspaceMode, &loopRecord.WorkspacePath,
 		&loopRecord.RepoPath, &loopRecord.WorktreePath, &loopRecord.Branch, &loopRecord.TickIntervalSec, &loopRecord.MinWakeSec,
 		&loopRecord.MaxWakeSec, &loopRecord.IdleTimeoutSec, &loopRecord.Pacing, &loopRecord.Effort, &loopRecord.Subagents, &loopRecord.DailyCapUSD, &loopRecord.ClaudeLogin,
@@ -216,7 +217,8 @@ func (table loops) scanLoop(row interface{ Scan(...any) error }) (*store.Loop, e
 		&loopRecord.OwnerSlackUserID, &loopRecord.OwnerSlackDMChannel,
 		&loopRecord.TGGroupChatID, &loopRecord.TGGroupBoundAt,
 		&loopRecord.SlackChannelID, &loopRecord.SlackChannelBoundAt,
-		&loopRecord.CreatedBy, &loopRecord.UpdatedBy, &loopRecord.Doing, &loopRecord.DoingAt, &loopRecord.HasHubToken)
+		&loopRecord.CreatedBy, &loopRecord.UpdatedBy, &loopRecord.Doing, &loopRecord.DoingAt, &loopRecord.HasHubToken, &loopRecord.HubTokenHash,
+		&loopRecord.CloudAllowlistDigest, &loopRecord.CloudAllowlistConfirmedAt, &cloudCheck)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, store.ErrNotFound
 	}
@@ -225,6 +227,12 @@ func (table loops) scanLoop(row interface{ Scan(...any) error }) (*store.Loop, e
 	}
 	if loopRecord.CloudRepos, err = decodeCloudRepos(cloudRepos); err != nil {
 		return nil, err
+	}
+	if cloudCheck != "" {
+		loopRecord.CloudCheck = &store.CloudCheck{}
+		if err := json.Unmarshal([]byte(cloudCheck), loopRecord.CloudCheck); err != nil {
+			return nil, fmt.Errorf("sqlite: a loop's cloud_check: %w", err)
+		}
 	}
 	for _, token := range []*string{&loopRecord.TGBotToken, &loopRecord.SlackAppToken, &loopRecord.SlackBotToken, &loopRecord.HubMCPToken} {
 		if *token, err = table.sealer.open(*token); err != nil {
@@ -482,6 +490,34 @@ func (table loops) RotateHubMCPToken(ctx context.Context, id string) (string, er
 
 func (table loops) RevokeHubMCPToken(ctx context.Context, id string) error {
 	result, err := table.db.ExecContext(ctx, `UPDATE loops SET hub_mcp_token='', hub_mcp_token_hash='' WHERE id=?`, id)
+	if err != nil {
+		return err
+	}
+	if rows, err := result.RowsAffected(); err == nil && rows == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
+func (table loops) ConfirmCloudAllowlist(ctx context.Context, id, digest string, at int64) error {
+	return table.setOne(ctx, `UPDATE loops SET cloud_allowlist_digest=?, cloud_allowlist_confirmed_at=? WHERE id=?`, digest, at, id)
+}
+
+func (table loops) SetCloudCheck(ctx context.Context, id string, check *store.CloudCheck) error {
+	raw := ""
+	if check != nil {
+		encoded, err := json.Marshal(check)
+		if err != nil {
+			return err
+		}
+		raw = string(encoded)
+	}
+	return table.setOne(ctx, `UPDATE loops SET cloud_check=? WHERE id=?`, raw, id)
+}
+
+// setOne runs an update of one loop's row, ErrNotFound when there is none.
+func (table loops) setOne(ctx context.Context, query string, args ...any) error {
+	result, err := table.db.ExecContext(ctx, query, args...)
 	if err != nil {
 		return err
 	}

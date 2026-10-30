@@ -64,6 +64,12 @@ type recordingLoops struct {
 	note    string
 	refusal string
 	doing   string
+	check   *store.CloudCheck
+}
+
+func (recorder *recordingLoops) SetCloudCheck(_ context.Context, _ string, check *store.CloudCheck) error {
+	recorder.check = check
+	return nil
 }
 
 func (recorder *recordingLoops) SetDoing(_ context.Context, _, doing string, _ int64) (bool, error) {
@@ -144,6 +150,25 @@ func TestModelRefusalIsRedacted(t *testing.T) {
 	}
 	if want := "no model named <redacted:GH_TOKEN>"; recorders.loops.refusal != want {
 		t.Errorf("stored refusal %q", recorders.loops.refusal)
+	}
+}
+
+// A failed setup check's detail quotes the CLI's last line (#1182).
+func TestCloudCheckDetailIsRedacted(t *testing.T) {
+	redacting, recorders := decorated(t)
+
+	check := &store.CloudCheck{State: store.CloudCheckFailed, Stage: "environment", Detail: "the CLI said " + secretValue}
+	if err := redacting.Loops().SetCloudCheck(context.Background(), "loop", check); err != nil {
+		t.Fatalf("SetCloudCheck: %v", err)
+	}
+	if want := "the CLI said <redacted:GH_TOKEN>"; recorders.loops.check == nil || recorders.loops.check.Detail != want {
+		t.Errorf("stored check %+v", recorders.loops.check)
+	}
+	if check.Detail != "the CLI said "+secretValue {
+		t.Error("the decorator changed the caller's check")
+	}
+	if err := redacting.Loops().SetCloudCheck(context.Background(), "loop", nil); err != nil || recorders.loops.check != nil {
+		t.Errorf("a nil check: %v, stored %+v", err, recorders.loops.check)
 	}
 }
 
@@ -330,6 +355,8 @@ func TestEveryStoreWriteIsClassified(t *testing.T) {
 			// mints the hub token itself, which is the secret, from no text
 			"RotateHubMCPToken": false,
 			"RevokeHubMCPToken": false,
+			// a digest and a time; a check's detail quotes the CLI
+			"ConfirmCloudAllowlist": false, "SetCloudCheck": true,
 			// a fixed path and the workstation's size
 			"Rehome": false,
 			// Slack ids and a timestamp, the counterparts of the two

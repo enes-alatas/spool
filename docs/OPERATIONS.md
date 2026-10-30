@@ -388,11 +388,15 @@ its machine, the same one the Claude login signs in with.
    session never loads the hub's MCP server. An entry an environment
    can't hold, such as a host with a port of its own, is named beside the
    list and left out of it. The step's own pick and its confirm of the
-   list no longer decide where a loop starts; they move to each loop's
-   setup (#1182, #1183).
+   list no longer decide where a loop starts or whether it is warned:
+   each loop names its own environment and confirms its own list on its
+   setup view (#1182). The step itself goes with the control room's
+   (#1183).
 
-Then set each cloud loop up. Until the loop's setup view lands (#1182), its
-steps go through the API:
+Then set each cloud loop up. Its setup view, `GET
+/api/loops/<name>/cloud/setup`, shows what to paste and which steps are
+left: `settings`, `repo`, `environment`, `token`, `allowlist` and `check`.
+Until the control room shows it (#1183), the steps go through the API:
 
 1. **Its repo.** Create the loop with the cloud runtime and its GitHub repo,
    `owner/name`, its branch, `main` unless you name another, and any further
@@ -405,18 +409,37 @@ steps go through the API:
    under the message box and choose **New environment**. Under **Network
    access**, choose **Custom**, paste the list into **Allowed domains**,
    and leave **Also include default list of common package managers**
-   unchecked. Paste the hub's setup script as its **Setup script**; the
-   loop's setup view that shows it comes with #1182. Name
-   the environment's ID on the loop, `cloud_environment_id`.
+   unchecked. Paste the setup view's `script` as its **Setup script**: the
+   same text for every cloud loop of the hub, holding no secret. Name the
+   environment's ID on the loop, `cloud_environment_id`.
 3. **Its token.** Rotate token, `POST /api/loops/<name>/cloud/token`,
    stops the loop and shows its hub token once. Set it as the
-   environment's network secret for the public address's host, then start
-   the loop. The hub keeps only the token's hash, so a lost token is
+   environment's network secret for the setup view's `secret_host`, then
+   start the loop. The hub keeps only the token's hash, so a lost token is
    rotated, not read back.
+4. **Its allowed domains.** Once the list is pasted, confirm it with
+   `POST /api/loops/<name>/cloud/allowlist/confirm`, naming the view's
+   `digest`. Until you do, the loop carries the warning that the hub's
+   egress allowlist doesn't bind it, and an edit to the hub's allowlist
+   asks for the list again.
+5. **Its check.** `POST /api/loops/<name>/cloud/check`, with the loop
+   started, starts one short session in the environment with a message
+   that asks nothing of it, and the setup view reads how it went. It
+   passes when that session's `SessionStart` post reaches the hub. A
+   failed check names where it stopped: `environment`, the CLI refused
+   the start, as for an environment the Claude login doesn't have, with
+   its last line; `token`, the session reached the hub without the loop's
+   token, so the network secret is missing or wrong; `unreached`, the hub
+   heard nothing, so the public host isn't in the allowed domains or the
+   setup script isn't the hub's. The session is never the loop's, gets
+   none of its connections, and stays on claude.ai, where you can
+   archive it.
 
-A cloud loop whose repo, environment or token isn't set waits with a
-`cloud_setup` problem, and so does one made before ADR-0061, whose old
-token the upgrade revoked. A loop's repo, branch and environment change
+A cloud loop whose repo, environment or token isn't set, or whose check
+hasn't passed on its setup as it is now, waits with a `cloud_setup`
+problem, and so does one made before ADR-0061, whose old token the upgrade
+revoked. An edit of its repo, branch or environment, a Rotate token or a
+kill takes a new check. A loop's repo, branch and environment change
 only while it is stopped.
 
 The setup script also denies the session the `claude-code-remote` tools that
@@ -440,7 +463,9 @@ sent into the same session with `claude -p --cloud`. Anthropic idles the
 session's machine between turns, and the next message brings it back.
 Changing the public address takes one more step: paste the new setup
 script into each loop's environment, and its host into the allowed
-domains, then stop and start each cloud loop.
+domains, then stop and start each cloud loop, which drops its session, and
+check it again. A check stands for the address it ran against, so one
+that passed before the change counts again if the address goes back.
 
 A cloud loop's hub token belongs to its environment, not to one session.
 Stopping a cloud loop refuses its token at once, and starting it again

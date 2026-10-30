@@ -69,4 +69,10 @@ func TestProblemNoticeText(t *testing.T) {
 			t.Errorf("%+v: Text() = %q, want it to open %q", testCase.notice, got, testCase.want)
 		}
 	}
+	// A loop held only for its setup check, as every cloud loop is after
+	// the upgrade (#1182), is told of the check and where it runs.
+	held := ProblemNotice{LoopName: "cirrus", Symptom: "cloud_setup", Opened: true, Since: since}
+	if got := held.Text(); !strings.Contains(got, "passed a setup check") || !strings.Contains(got, "setup view") {
+		t.Errorf("cloud_setup notice = %q, want it to name the setup check and the setup view", got)
+	}
 }

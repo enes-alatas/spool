@@ -13,12 +13,40 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/enes-alatas/spool/internal/loop"
 )
 
-// cloudVMs lists the sessions fakeclaude's --cloud started, by id.
+// cloudVMs lists the sessions fakeclaude's --cloud started for loops'
+// turns, by id. A setup check's session (checkVMs) is left out: it is
+// never the loop's.
 func cloudVMs(t *testing.T, s *server) []string {
 	t.Helper()
-	entries, err := os.ReadDir(filepath.Join(s.fkState, "cloud"))
+	var ids []string
+	for _, id := range startedVMs(t, s) {
+		if !checkVM(t, s, id) {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+// checkVMs lists the sessions setup checks started, by id.
+func checkVMs(t *testing.T, hub *server) []string {
+	t.Helper()
+	var ids []string
+	for _, id := range startedVMs(t, hub) {
+		if checkVM(t, hub, id) {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+// startedVMs lists every session fakeclaude's --cloud started, by id.
+func startedVMs(t *testing.T, hub *server) []string {
+	t.Helper()
+	entries, err := os.ReadDir(filepath.Join(hub.fkState, "cloud"))
 	if err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
@@ -27,6 +55,14 @@ func cloudVMs(t *testing.T, s *server) []string {
 		ids = append(ids, entry.Name())
 	}
 	return ids
+}
+
+// checkVM reports whether session id was started by a setup check: its
+// start's argument list carries the check's message.
+func checkVM(t *testing.T, hub *server, id string) bool {
+	t.Helper()
+	args, err := os.ReadFile(filepath.Join(hub.fkState, "cloud", id, "cli-args"))
+	return err == nil && strings.Contains(string(args), loop.CloudCheckMessage)
 }
 
 // A cloud loop driven through the CLI starts its session with `claude

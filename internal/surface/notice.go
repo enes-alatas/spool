@@ -75,7 +75,8 @@ func (notice ProblemNotice) Text() string {
 				"You will hear once more when this clears.", notice.LoopName, since)
 		case "cloud_setup":
 			return fmt.Sprintf("Spool: the cloud loop %s's setup has been unfinished since %s, so it is not running. "+
-				"Its messages wait until it names its repo and its environment and has a hub token, which Rotate token mints for its environment's secret. "+
+				"Its messages wait until it names its repo and its environment, has a hub token, which Rotate token mints for its environment's secret, "+
+				"and has passed a setup check on that setup. An edit, a Rotate token, a kill or a new public address takes a new check, which an admin runs from the loop's setup view. "+
 				"You will hear once more when this clears.", notice.LoopName, since)
 		case "cloud_address":
 			return fmt.Sprintf("Spool: the hub's public address has failed its check since %s, so the cloud loop %s is not running. "+

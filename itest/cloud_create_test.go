@@ -58,6 +58,7 @@ func TestACloudLoopIsCreated(t *testing.T) {
 	makeGitHubRepo(t, s.fkState, "example-org/nimbus")
 	setUpCloudEnvironment(t, s, cloudFixtureEnvironment, string(minted))
 	s.mustJSON("POST", "/api/loops/nimbus/resume", nil, nil)
+	passCloudCheck(t, s, "nimbus")
 	s.waitTurn("nimbus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "first words") })
 	vms := cloudVMs(t, s)
 	if len(vms) != 1 {
