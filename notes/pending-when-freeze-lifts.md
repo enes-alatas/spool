@@ -1571,3 +1571,4 @@ HN: 2 new (Herdr thread, neighbouring tool — skipped). #1190: CodeQL now SUCCE
 
 ## 2026-10-30 14:52 UTC tick
 Push retried OK (c6a8add). HN: backdoored Claude Code VS Code extension on Cursor marketplace (story 50300683, version yanked) → heads-up to Elliot (ref:7680) re CLI pin in workstation image, and to Enes (ref:7681); Herdr thread comment skipped. #1190: Terra's 12:55 note on matching the setup-script hash for Enes's real hostname; live start still with Enes. Board tidy.
+14:54 Elliot: workstation image installs Claude Code from Anthropic's signed apt repo, unpinned (latest at build), signing key fetched without fingerprint check. He files a security issue (pin key fingerprint + pin CLI version in release builds; undoes #304's latest → Enes's call) after the #1190 live checks. Enes already aware of the extension incident.
