@@ -1567,3 +1567,4 @@ HN: 2 new (Herdr thread, neighbouring tool — skipped). #1190: CodeQL now SUCCE
 13:58 Enes: first-run Loops card says no loop has woken even when a loop exists and failed. Filed #1197 (bug medium, L6), assigned Iris (ref:7641), told Enes (ref:7642). Hub half to be filed by Iris if the onboarding read lacks the failed state.
 14:00 Iris filed #1198 (hub half of #1197, bug medium) → milestone L6 set. Terra's order: #1190 (live start pending) → #1189 (high) → #1198. Group note ref below.
 14:02 Terra shaped #1198 (wake_failed + progress_loop + failure kind, from the actor snapshot; comment 6524680022), takes it after #1190 merges.
+14:21 Enes: an album of two images reaches the loop as two messages. Bridge reads no media_group_id (verified by grep). Filed #1199 (improvement, L6); told Enes (ref:7663); queued on Terra after #1198 (ref:7664).
