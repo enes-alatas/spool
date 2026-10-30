@@ -1555,3 +1555,6 @@ HN: 3 new — Claude Duet thread (neighbouring product's own thread, tinyhouse c
 00:51 Enes asks why Terra didn't DM him the #1190 operator items. Answered (ref:7581): can't see Terra's DMs; CodeQL dismissal operator-ready since 18:27 with no DM in sight; live start waits on Elliot's steps. Proposed a convention: operator-only items on a PR get a DM from the author when ready, with the link. Awaiting his yes.
 00:59 Enes: yes to the convention. Filed #1195 (documentation, L6): author DMs the operator when an operator-only PR item is ready, beside the pending-decision rule in CONVENTIONS Workflow. Assigned Iris (ref:7586), told Enes (ref:7587).
 01:02 Iris opened PR #1196 for #1195 (CONVENTIONS + AGENTS digest), Quinn reviewing.
+
+## 2026-10-30 04:02 UTC tick
+HN: 2 new, no fit (Pico CSS; another sub-comment on the agentic-wariness thread). Sweep: #1194 (Iris, bug low, gh body guard ~/ path) had no milestone → CI reliability. #1196 open for Quinn; #1190 unchanged since 18:51 (CodeQL still red, Enes's dismissal + live start pending; updatedAt 00:53 = push, no comment). #1187 unchanged. #753 triage as agreed.
