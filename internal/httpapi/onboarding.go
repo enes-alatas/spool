@@ -36,6 +36,11 @@ type pillarView struct {
 	// ProgressLoop names the loop a loops or surface code is about.
 	Progress     string `json:"progress,omitempty"`
 	ProgressLoop string `json:"progress_loop,omitempty"`
+	// Failure says how the loop ProgressLoop names failed to run, with the
+	// progress code wake_failed and with no other: one of the loop
+	// package's WakeFailure kinds (#1198). For workstation, the cause is
+	// the loop's down_reason, which a page reads to name it.
+	Failure string `json:"failure,omitempty"`
 }
 
 // The progress codes (#662).
@@ -45,6 +50,7 @@ const (
 	progressFirstTurn           = "first_turn"
 	progressAnswering           = "answering"
 	progressChecking            = "checking"
+	progressWakeFailed          = "wake_failed"
 )
 
 // firstWakePhases are the loops codes in the order a first wake passes
@@ -281,8 +287,26 @@ func (server *Server) surfacePillar(ctx context.Context, loops []*store.Loop) (p
 	return view, nil
 }
 
+// firstWakeFailure finds the first loop, in the store's order, whose last
+// try to run failed, and how; both are "" when none did. A wake under way
+// on any loop is read first, by furthestWake: it says the fleet is still
+// trying, and the order keeps a polling page on one loop.
+func (server *Server) firstWakeFailure(loops []*store.Loop) (name, failure string) {
+	for _, loopRecord := range loops {
+		actor, ok := server.Manager.Get(loopRecord.ID)
+		if !ok {
+			continue
+		}
+		if failure := actor.WakeFailure(); failure != "" {
+			return loopRecord.Name, failure
+		}
+	}
+	return "", ""
+}
+
 // loopsPillar reads whether a loop has woken and finished a turn, and until
-// one has, how far the furthest wake has got.
+// one has, how far the furthest wake has got, or, with none under way, which
+// loop's last try failed and how.
 func (server *Server) loopsPillar(ctx context.Context, loops []*store.Loop) (pillarView, error) {
 	if len(loops) == 0 {
 		return pillarView{Reason: "no loops"}, nil
@@ -291,6 +315,12 @@ func (server *Server) loopsPillar(ctx context.Context, loops []*store.Loop) (pil
 	if err != nil || lastTurn == 0 {
 		view := pillarView{Reason: "no loop has woken"}
 		view.Progress, view.ProgressLoop = server.furthestWake(loops)
+		if view.Progress == "" {
+			view.ProgressLoop, view.Failure = server.firstWakeFailure(loops)
+			if view.Failure != "" {
+				view.Progress = progressWakeFailed
+			}
+		}
 		return view, err
 	}
 	return pillarView{Done: true}, nil

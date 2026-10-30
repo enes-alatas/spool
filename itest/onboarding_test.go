@@ -17,6 +17,7 @@ type pillarJSON struct {
 	Checking     bool   `json:"checking"`
 	Progress     string `json:"progress"`
 	ProgressLoop string `json:"progress_loop"`
+	Failure      string `json:"failure"`
 }
 
 type onboardingJSON struct {
