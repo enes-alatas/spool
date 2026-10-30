@@ -1579,3 +1579,6 @@ HN: Herdr thread only (skipped). #1190: live checks running (Enes on a test hub;
 
 ## 2026-10-30 20:11 UTC tick
 HN: Show HN Bot_board (tool's own thread — no pitch). Merged: #1190 (→#1181 closed), #1189 fix e978e4f, Iris's batch_dropped timeline line b83cac9. Closed #1168 completed with pointer to #1190. Terra's #1209 (for #1198) open. Suggesting a runtime update/tag to Enes (fleet on v0.6.0; #1189 fix is the bug he hit). Board tidy.
+
+## 2026-10-30 23:13 UTC tick
+HN: 0 new. Merged: #1209 (→#1198 closed), Iris's #1197 fix (c9c56fa), Terra's album fix (fbd474d, #1199). Terra idle → assigning #1182 (setup view + check). Then #1078, #1205. Iris: #1183 after #1182. Enes silent on the tag suggestion (ref:7749) — it was a suggestion, no re-nudge. Board tidy.
