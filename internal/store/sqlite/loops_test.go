@@ -715,3 +715,45 @@ func TestLoopCloudSetup(t *testing.T) {
 		t.Fatalf("an edit must replace the setup whole: %+v", store.CloudSetupOf(edited))
 	}
 }
+
+// A cloud loop created with no hub token keeps no hash of one, so it holds
+// no token until one is minted, and a second such loop can be created; a
+// row written with the empty string's hash before the fix is cleared
+// (#1213).
+func TestACloudLoopWithNoTokenKeepsNoHash(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.db")
+	db, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	now := time.Now().UnixMilli()
+	for _, id := range []string{"c1", "c2"} {
+		if err := db.Loops().Create(ctx, &store.Loop{
+			ID: id, Name: id, Mission: "m", Status: store.StatusActive,
+			WorkspaceMode: store.WorkspaceNone, Pacing: store.PacingFixed, Runtime: store.RuntimeCloud,
+			CreatedAt: now, UpdatedAt: now,
+		}); err != nil {
+			t.Fatalf("creating cloud loop %s: %v", id, err)
+		}
+		if got, err := db.Loops().Get(ctx, id); err != nil || got.HasHubToken {
+			t.Fatalf("cloud loop %s with no token reads as holding one (%v)", id, err)
+		}
+	}
+
+	if _, err := db.db.ExecContext(ctx, `UPDATE loops SET hub_mcp_token_hash = ? WHERE id = 'c1'`, tokenHash("")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.db.ExecContext(ctx, `DELETE FROM schema_migrations WHERE version = '0071_cloud_token_hash_empty.sql'`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	db, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if got, err := db.Loops().Get(ctx, "c1"); err != nil || got.HasHubToken {
+		t.Errorf("a row written with the empty string's hash still holds a token after the migration (%v)", err)
+	}
+}
