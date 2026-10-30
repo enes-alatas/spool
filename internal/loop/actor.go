@@ -231,6 +231,7 @@ type Actor struct {
 	ensureSnap   atomic.Bool   // a wake is ensuring the workstation, for REST reads
 	problemsSnap atomic.Value  // []store.Problem; the open problems, for REST reads
 	dailyCapSnap atomic.Int64  // when the loop's daily cap lets it go, 0 when it doesn't hold, for REST reads
+	failSnap     atomic.Value  // string; how the loop's last try to run failed, "" for none, for REST reads
 
 	// goroutine-owned state below
 	loop         store.Loop
@@ -582,11 +583,13 @@ func (actor *Actor) handleCmd(command cmd) {
 		actor.pump()
 	case "pause":
 		actor.paused = true
+		actor.noteWakeFailure("")
 		err := actor.cutOffCloud(context.Background(), "pause", store.EndReasonPaused, false)
 		actor.publishState()
 		command.reply <- err
 	case "resume":
 		actor.paused = false
+		actor.noteWakeFailure("")
 		actor.drainStoredInbox()
 		actor.publishState()
 		actor.pump()
@@ -610,6 +613,7 @@ func (actor *Actor) handleCmd(command cmd) {
 		command.reply <- actor.requestRehome()
 		actor.publishState()
 	case "kill":
+		actor.noteWakeFailure("")
 		err := actor.cutOffCloud(context.Background(), "kill", store.EndReasonKilled, true)
 		if actor.proc != nil {
 			actor.killProc(killedByOperator)
@@ -1615,6 +1619,14 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 		actor.armDailyCap()
 		actor.deps.Bus.Publish(bus.Item{Kind: bus.KindTurnResult, LoopID: actor.loop.ID, Payload: turn})
 		actor.noteTurnEnd(turn.IsError && !loginRejected, turn.EndedAt)
+		switch {
+		case loginRejected:
+			// told by the workstation's state instead
+		case turn.IsError:
+			actor.noteWakeFailure(WakeFailureTurn)
+		default:
+			actor.noteWakeFailure("")
+		}
 
 		// The final reply is the turn's status note (ADR-0026): stored and
 		// published above, delivered to no conversation — a loop that wants
@@ -1912,6 +1924,7 @@ func (actor *Actor) handleProcExit() {
 		}
 	case sessionLost:
 		// the CLI said outright that the session is gone
+		actor.noteWakeFailure(WakeFailureCrashed)
 		actor.rotateSession("session_lost", "")
 	case deadOnResume:
 		// The session never loaded. One failure gets an ordinary retry — it
@@ -1922,6 +1935,7 @@ func (actor *Actor) handleProcExit() {
 		actor.storeSpoolEvent("resume_failed",
 			fmt.Sprintf(`{"session":%q,"attempt":%d,"stderr":%q}`,
 				actor.loop.CurrentSessionID, actor.deadResumes, claude.LastLines(exit.Stderr, 500)))
+		actor.noteWakeFailure(WakeFailureCrashed)
 		if actor.deadResumes >= deadResumeLimit {
 			actor.rotateSession("session_unusable", claude.LastLines(exit.Stderr, 500))
 			return
@@ -1934,6 +1948,12 @@ func (actor *Actor) handleProcExit() {
 		actor.storeSpoolEvent("crash", fmt.Sprintf(`{"code":%d,"stderr":%q}`, exit.Code, claude.LastLines(exit.Stderr, 2000)))
 		actor.log().Warn("claude process crashed", "code", exit.Code, "stderr", claude.LastLines(exit.Stderr, 500))
 		actor.carryCrashedBatch(killedFor)
+		if killedFor == killedByOperator || strings.HasPrefix(killedFor, endedByVerb) {
+			// the operator ended it: nothing failed
+			actor.noteWakeFailure("")
+		} else {
+			actor.noteWakeFailure(WakeFailureCrashed)
+		}
 		actor.crashBackoff()
 	}
 }
@@ -2979,6 +2999,43 @@ func (actor *Actor) rehomePending() bool {
 // from any goroutine). It turns false when the move lands or fails, and
 // after a restart that lost a rehome whose handoff turn never began.
 func (actor *Actor) Rehoming() bool { return actor.rehomeSnap.Load() }
+
+// How a loop's last try to run failed, as WakeFailure reports it for the
+// first-run read (#1198). Each holds until a turn ends clean, or the
+// operator pauses, resumes or kills the loop.
+const (
+	// WakeFailureWorkstation: the loop reads workstation_down for a reason
+	// that is not calm. The cause is the loop's DownReason: unreachable,
+	// unauthenticated or hub_unreachable, so the machine itself may be up.
+	WakeFailureWorkstation = "workstation"
+	// WakeFailureCrashed: the claude process died, and the loop waits on the
+	// crash ladder to try again.
+	WakeFailureCrashed = "crashed"
+	// WakeFailureTurn: the last turn ended in an error.
+	WakeFailureTurn = "first_turn"
+)
+
+// WakeFailure reports how the loop's last try to run failed, "" when it
+// did not (safe from any goroutine). A workstation that is down outranks
+// the rest, as it does in the loop's state; one down for a calm reason
+// (switched off, or not built yet, which the first wake does) is not a
+// failure, and reads "". The record is the actor's memory only, so a hub
+// restart forgets it until the next try.
+func (actor *Actor) WakeFailure() string {
+	if actor.State() == StateWorkstationDown {
+		switch actor.DownReason() {
+		case DownReasonPoweredOff, DownReasonNotProvisioned:
+			return ""
+		}
+		return WakeFailureWorkstation
+	}
+	failure, _ := actor.failSnap.Load().(string)
+	return failure
+}
+
+// noteWakeFailure records how the loop's last try to run ended: "" for a
+// turn that ended clean, or for the operator's own act on the loop.
+func (actor *Actor) noteWakeFailure(failure string) { actor.failSnap.Store(failure) }
 
 // EnsuringWorkstation reports whether a wake is ensuring the loop's
 // workstation right now (safe from any goroutine): the build or pull that
