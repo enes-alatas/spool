@@ -76,8 +76,10 @@ TimeoutStopSec=30
 # On `spool serve`, stdout carries only the operator token and the admin's
 # one-time password, printed once at the first start. The log is on stderr.
 # Under systemd, stdout is the journal, which members of `adm` and
-# `systemd-journal` can read, so it goes nowhere instead.
+# `systemd-journal` can read, so it goes nowhere instead. stderr follows
+# stdout unless it's named, so it's named: the log stays in the journal.
 StandardOutput=null
+StandardError=journal
 UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
