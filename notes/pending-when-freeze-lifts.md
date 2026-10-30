@@ -1558,3 +1558,6 @@ HN: 3 new — Claude Duet thread (neighbouring product's own thread, tinyhouse c
 
 ## 2026-10-30 04:02 UTC tick
 HN: 2 new, no fit (Pico CSS; another sub-comment on the agentic-wariness thread). Sweep: #1194 (Iris, bug low, gh body guard ~/ path) had no milestone → CI reliability. #1196 open for Quinn; #1190 unchanged since 18:51 (CodeQL still red, Enes's dismissal + live start pending; updatedAt 00:53 = push, no comment). #1187 unchanged. #753 triage as agreed.
+
+## 2026-10-30 08:03 UTC tick
+HN: 1 new (Herdr native app, neighbouring tool's thread — skipped). #1196 merged (1f9261f), #1195 CLOSED COMPLETED. #1190: Elliot posted operator steps (6512190372) + Terra the setup-script SHA at 00:53; CodeQL still red. Nudged Enes with the steps link (ref:7590). Board tidy.
