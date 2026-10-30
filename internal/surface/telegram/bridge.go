@@ -315,10 +315,21 @@ func (br *Bridge) stopPoller(loopID string) {
 }
 
 func (br *Bridge) pollLoop(ctx context.Context, bot *poller) {
+	// offset is the update after the last one this poller took.
 	var offset int64
 	backoff := time.Second
+	held := newAlbums()
 	for ctx.Err() == nil {
-		updates, err := bot.client.GetUpdates(ctx, offset, pollTimeoutSec)
+		// Telegram forgets every update before the offset a getUpdates
+		// names, so while an album is held its items stay unconfirmed: a
+		// restart replays them, as it replays any message, instead of
+		// losing them. They come back on every poll, at once, and are
+		// skipped below.
+		confirm, timeout := offset, pollTimeoutSec
+		if first, ok := held.earliest(); ok {
+			confirm, timeout = min(offset, first), 0
+		}
+		updates, err := bot.client.GetUpdates(ctx, confirm, timeout)
 		if err != nil {
 			if ctx.Err() != nil {
 				return
@@ -351,12 +362,24 @@ func (br *Bridge) pollLoop(ctx context.Context, bot *poller) {
 		bot.lastError = ""
 		bot.lastUpdate = time.Now().UnixMilli()
 		bot.mu.Unlock()
+		tookAny := false
 		for _, update := range updates {
-			if update.UpdateID >= offset {
-				offset = update.UpdateID + 1
+			if update.UpdateID < offset {
+				continue // a held album's item, sent again
 			}
-			if update.Message != nil {
-				br.handleMessage(ctx, bot, update.Message)
+			offset = update.UpdateID + 1
+			tookAny = true
+			if message := update.Message; message != nil {
+				if message.MediaGroupID != "" {
+					if whole := held.add(message, update.UpdateID, time.Now()); whole != nil {
+						br.handleAlbum(ctx, bot, whole)
+					}
+				} else {
+					for _, earlier := range held.inChat(message.Chat.ID) {
+						br.handleAlbum(ctx, bot, earlier)
+					}
+					br.handleMessage(ctx, bot, message, attachmentsOf(bot, message))
+				}
 			}
 			if update.EditedMessage != nil {
 				br.handleEdit(ctx, bot, update.EditedMessage)
@@ -368,10 +391,27 @@ func (br *Bridge) pollLoop(ctx context.Context, bot *poller) {
 				br.handlePollAnswer(ctx, bot, update.PollAnswer)
 			}
 		}
+		// Settled only after the poll, so an item that arrived while the
+		// poller slept extends its album rather than missing it.
+		for _, whole := range held.settled(time.Now()) {
+			br.handleAlbum(ctx, bot, whole)
+		}
+		if !tookAny && held.waiting() {
+			// Only held items came back, which Telegram answers with at
+			// once: wait for the album to settle instead of asking again.
+			sleepCtx(ctx, time.Until(held.nextSettle()))
+		}
 	}
 }
 
-func (br *Bridge) handleMessage(ctx context.Context, bot *poller, message *tgMsgAlias) {
+// handleAlbum takes a whole album as the one message its sender meant.
+func (br *Bridge) handleAlbum(ctx context.Context, bot *poller, whole *album) {
+	message, attachments := whole.asOneMessage(bot)
+	br.handleMessage(ctx, bot, message, attachments)
+}
+
+// handleMessage takes one inbound message and the files it carries.
+func (br *Bridge) handleMessage(ctx context.Context, bot *poller, message *tgMsgAlias, attachments []route.InboundAttachment) {
 	// Telegram's own word that a chat changed id, read before any sender
 	// check: an anonymous admin's upgrade arrives from a bot.
 	switch {
@@ -389,7 +429,6 @@ func (br *Bridge) handleMessage(ctx context.Context, bot *poller, message *tgMsg
 	if text == "" {
 		text = strings.TrimSpace(message.Caption)
 	}
-	attachments := attachmentsOf(bot, message)
 	if text == "" && len(attachments) == 0 {
 		return
 	}

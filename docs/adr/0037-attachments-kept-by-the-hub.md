@@ -1,6 +1,6 @@
 # ADR-0037: Attachments are kept by the hub and read from the workstation
 
-Date: 2026-09-30 · Status: accepted. The shape follows the operator's decisions of 2026-09-30 on #123, including item 4's change to the SandboxRuntime seam. · Amends: ADR-0004 (the SandboxRuntime seam gains `PutFile`) · Amended: 2026-09-30 (the outbound half, ADR-0026); 2026-09-30 (item 3: control-room uploads); 2026-10-15 (item 2: an app that may not read files)
+Date: 2026-09-30 · Status: accepted. The shape follows the operator's decisions of 2026-09-30 on #123, including item 4's change to the SandboxRuntime seam. · Amends: ADR-0004 (the SandboxRuntime seam gains `PutFile`) · Amended: 2026-09-30 (the outbound half, ADR-0026); 2026-09-30 (item 3: control-room uploads); 2026-10-15 (item 2: an app that may not read files); 2026-10-30 (item 1: a Telegram album is one message, #1199)
 
 ## Context
 
@@ -27,6 +27,16 @@ loop there cannot read a host file the hub holds.
    can carry several files.
    - Two messages carrying the same bytes each get their own copy, so
      expiring one never removes the other's.
+
+   **Amendment (2026-10-30, #1199):** a Telegram album is one message too.
+   Telegram delivers each photo or file of an album as a message of its own,
+   sharing a `media_group_id`. The bridge holds one sender's items until
+   1.5 s pass with no new one, or a message from the same chat follows
+   them, or the tenth arrives, and stores them as one message: the first
+   item's ids, every item's caption, one per line, as its words, and a row
+   for every file. Until then the poller confirms none of the album's
+   updates to Telegram, so a restart is sent the album again, as it is any
+   message.
 2. **Limits.** A file over 20 MB is not kept. Its row records `too_large`,
    and the loop is told it was sent but not kept. A file the surface would
    not hand over is recorded as `fetch_failed` in the same way. A file is

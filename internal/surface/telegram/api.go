@@ -227,6 +227,13 @@ type Message struct {
 	Caption  string      `json:"caption,omitempty"`
 	Photo    []PhotoSize `json:"photo,omitempty"`
 	Document *Document   `json:"document,omitempty"`
+	// MediaGroupID is the album a photo or document belongs to: Telegram
+	// delivers each item of an album as a message of its own, all of them
+	// carrying the same id (#1199).
+	MediaGroupID string `json:"media_group_id,omitempty"`
+	// SenderChat is the chat a message was sent on behalf of: a channel,
+	// or a group's anonymous admin, whose From is then Telegram's own bot.
+	SenderChat *Chat `json:"sender_chat,omitempty"`
 	// A group upgraded to a supergroup gets a new chat id: Telegram says so
 	// with a service message in each, MigrateToChatID in the old chat and
 	// MigrateFromChatID in the new one.
