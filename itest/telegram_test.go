@@ -259,7 +259,11 @@ func (tg *fakeTelegram) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		writeOK(w, map[string]any{"id": 1, "is_bot": true, "username": botUsername(token)})
 	case "getUpdates":
-		writeOK(w, tg.drain(token))
+		var req struct {
+			Offset int64 `json:"offset"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		writeOK(w, tg.drain(token, req.Offset))
 	case "getFile":
 		var req struct {
 			FileID string `json:"file_id"`
@@ -422,14 +426,18 @@ func writeOK(w http.ResponseWriter, result any) {
 	_, _ = fmt.Fprintf(w, `{"ok":true,"result":%s}`, body)
 }
 
-// drain returns a bot's pending updates, waiting briefly so pollers don't
-// spin. The real API long-polls for up to 50s.
-func (tg *fakeTelegram) drain(token string) []map[string]any {
+// drain returns a bot's pending updates from offset on, waiting briefly so
+// pollers don't spin. The real API long-polls for up to 50s. As there, an
+// update is forgotten only once a later call names an offset past it, so
+// a poller that stops before then is sent it again.
+func (tg *fakeTelegram) drain(token string, offset int64) []map[string]any {
 	deadline := time.Now().Add(time.Second)
 	for {
 		tg.mu.Lock()
-		pending := tg.queued[token]
-		tg.queued[token] = nil
+		tg.queued[token] = slices.DeleteFunc(tg.queued[token], func(update map[string]any) bool {
+			return update["update_id"].(int64) < offset
+		})
+		pending := slices.Clone(tg.queued[token])
 		tg.mu.Unlock()
 		if len(pending) > 0 || time.Now().After(deadline) {
 			return pending
@@ -556,6 +564,9 @@ type media struct {
 	size   int64
 	width  int
 	height int
+	// album is the media_group_id Telegram gives each item of an album; "" for
+	// a file sent on its own
+	album string
 }
 
 // withMedia is post and dm for a message carrying a file, the caption as
@@ -593,6 +604,9 @@ func (tg *fakeTelegram) withMedia(tokens []string, chatID int64, chatType, capti
 			}
 		} else {
 			msg["document"] = map[string]any{"file_id": fileID, "file_name": file.name, "file_size": size}
+		}
+		if file.album != "" {
+			msg["media_group_id"] = file.album
 		}
 		tg.queued[token] = append(tg.queued[token], map[string]any{"update_id": tg.updates, "message": msg})
 	}
