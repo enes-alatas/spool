@@ -1,6 +1,6 @@
 # ADR-0026: Loops send through a hub-served MCP tool
 
-Date: 2026-09-15 · Status: accepted (operator interview; implementation pending); the 2026-09-16 refusal of a non-owner's DM superseded by ADR-0049 · Amended: 2026-09-16 (`owner_dm` routing, twice); 2026-09-18 (undelivered sends); 2026-09-20 (item 1 is a Surface rule); 2026-09-22 (a resend names the failure it replaces); 2026-09-23 (item 1: `group` is a hub conversation); 2026-09-29 (`owner_dm` on Slack is opened, not captured); 2026-09-30 (item 2: `attach` sends a file); 2026-09-30 (item 2: Slack carries files); 2026-10-01 (item 1: `group` holds named channels); 2026-10-03 (a loop dismisses a lost send, and is reminded until it does); 2026-10-14 (item 3: a `[doing]` trailer says what the loop is working on)
+Date: 2026-09-15 · Status: accepted (operator interview; implementation pending); the 2026-09-16 refusal of a non-owner's DM superseded by ADR-0049 · Amended: 2026-09-16 (`owner_dm` routing, twice); 2026-09-18 (undelivered sends); 2026-09-20 (item 1 is a Surface rule); 2026-09-22 (a resend names the failure it replaces); 2026-09-23 (item 1: `group` is a hub conversation); 2026-09-29 (`owner_dm` on Slack is opened, not captured); 2026-09-30 (item 2: `attach` sends a file); 2026-09-30 (item 2: Slack carries files); 2026-10-01 (item 1: `group` holds named channels); 2026-10-03 (a loop dismisses a lost send, and is reminded until it does); 2026-10-14 (item 3: a `[doing]` trailer says what the loop is working on); 2026-10-30 (item 5: a crashed turn's batch is said again, three attempts at most)
 
 ## Context
 
@@ -136,6 +136,24 @@ non-delivery guarantees ADR-0025's scenario matrix demands.
    like chat. A turn that fails after sending does not unsend; a batch
    redelivered after session loss may lead to re-sends, and the recovery
    preamble tells the fresh session what was already sent. No outbox.
+
+   **Amendment (2026-10-30, #1189):** a batch is said again after a crash
+   too, not only after session loss. When the claude process dies mid-turn,
+   whether killed from outside (a workstation's daemon going away, the OOM
+   killer) or ended by a power verb, the turn's batch goes back to the front
+   of the queue. Its retry is told what the dead attempt already sent, as
+   above. Only sends are told: any other tool call the dead attempt made, a
+   push or a file write, may run again, as after session loss. Two kinds of
+   batch are not said again. The operator's kill ends a turn on purpose. A
+   batch of ticks only needs no repeat, since the next tick comes on its own.
+   Every crash that is not a power verb's counts against each envelope the
+   batch carried, and an envelope whose turn has died that way three times
+   is dropped. That is the one place the hub discards a person's message
+   after it reached a turn. It is done so that a message that kills every
+   process cannot hold the front of the queue forever. A message that joined
+   the batch later keeps its own count and goes back. The drop is recorded
+   as a `batch_dropped` event. Telling the sender is #1205. Milo settled
+   this scope on #1189 on 2026-10-30.
 
 6. **A per-turn send cap backstops runaway turns.** Exceeding it (default 10)
    returns a typed error for the rest of the turn. It sits on top of the
