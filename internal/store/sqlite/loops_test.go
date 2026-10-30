@@ -716,6 +716,80 @@ func TestLoopCloudSetup(t *testing.T) {
 	}
 }
 
+// A cloud loop's allowlist confirm and setup check round-trip, and the
+// check stands only for the setup it ran on: an edit, a Rotate token or a
+// kill makes it stale (#1182).
+func TestLoopCloudCheck(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	now := time.Now().UnixMilli()
+	loops := db.Loops()
+	if err := loops.Create(ctx, &store.Loop{
+		ID: "c1", Name: "cloudy", Mission: "m", Status: store.StatusActive,
+		WorkspaceMode: store.WorkspaceNone, Pacing: store.PacingFixed, Runtime: store.RuntimeCloud,
+		CloudRepo: "owner/first", CloudBranch: "main", CloudEnvironmentID: "env_01a",
+		CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loops.RotateHubMCPToken(ctx, "c1"); err != nil {
+		t.Fatal(err)
+	}
+	read := func() *store.Loop {
+		t.Helper()
+		got, err := loops.Get(ctx, "c1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	if err := loops.ConfirmCloudAllowlist(ctx, "c1", "digest", now); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(); got.CloudAllowlistDigest != "digest" || got.CloudAllowlistConfirmedAt != now {
+		t.Errorf("the allowlist confirm didn't round-trip: %q at %d", got.CloudAllowlistDigest, got.CloudAllowlistConfirmedAt)
+	}
+	if read().CloudCheckPassed() {
+		t.Fatal("a loop with no check reads as checked")
+	}
+	pass := func() {
+		t.Helper()
+		check := &store.CloudCheck{State: store.CloudCheckOK, CheckedAt: now, Address: "https://hub.example", For: store.CloudCheckFor(read())}
+		if err := loops.SetCloudCheck(ctx, "c1", check); err != nil {
+			t.Fatal(err)
+		}
+		if got := read(); !got.CloudCheckPassed() || got.CloudCheck.Address != "https://hub.example" {
+			t.Fatalf("a passed check didn't round-trip: %+v", got.CloudCheck)
+		}
+	}
+	for name, change := range map[string]func() error{
+		"an edit": func() error {
+			_, err := loops.Edit(ctx, "c1", store.LoopEdit{Cloud: &store.CloudSetup{Repo: "owner/first", Branch: "dev", EnvironmentID: "env_01a"}, UpdatedAt: now})
+			return err
+		},
+		"a Rotate token": func() error { _, err := loops.RotateHubMCPToken(ctx, "c1"); return err },
+		"a kill":         func() error { return loops.RevokeHubMCPToken(ctx, "c1") },
+	} {
+		pass()
+		if err := change(); err != nil {
+			t.Fatal(err)
+		}
+		if read().CloudCheckPassed() {
+			t.Errorf("the check still stands after %s", name)
+		}
+	}
+	if err := loops.SetCloudCheck(ctx, "c1", nil); err != nil || read().CloudCheck != nil {
+		t.Errorf("a nil check isn't forgotten: %v", err)
+	}
+	if err := loops.SetCloudCheck(ctx, "nobody", nil); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("a check of no loop answers %v, want ErrNotFound", err)
+	}
+}
+
 // A cloud loop created with no hub token keeps no hash of one, so it holds
 // no token until one is minted, and a second such loop can be created; a
 // row written with the empty string's hash before the fix is cleared

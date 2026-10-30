@@ -15,6 +15,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/enes-alatas/spool/internal/runtime"
 	"github.com/enes-alatas/spool/internal/store"
 	"github.com/enes-alatas/spool/internal/store/sqlite"
 )
@@ -43,6 +44,10 @@ type recordingHooks struct {
 	exports []byte
 	// posted is each loop SessionPosted was told of.
 	posted []string
+	// refusedTokens is each session TokenRefused was told of.
+	refusedTokens []string
+	// checkStage and checkDetail are what CheckSetup answers.
+	checkStage, checkDetail string
 }
 
 func (hooks *recordingHooks) SessionStart(_ context.Context, loopID, sessionID string, hook []byte) ([]byte, error) {
@@ -80,6 +85,23 @@ func (hooks *recordingHooks) MCPSession(_ context.Context, loopID, sessionID str
 	defer hooks.mu.Unlock()
 	hooks.calls = append(hooks.calls, hookCall{event: "mcp session", loopID: loopID, session: sessionID})
 	return hooks.refuseSession
+}
+
+func (hooks *recordingHooks) TokenRefused(sessionID string) {
+	hooks.mu.Lock()
+	defer hooks.mu.Unlock()
+	hooks.refusedTokens = append(hooks.refusedTokens, sessionID)
+}
+
+func (hooks *recordingHooks) CheckSetup(_ context.Context, loopID string, source runtime.CloudStart, message string) (string, string) {
+	hooks.mu.Lock()
+	defer hooks.mu.Unlock()
+	hooks.calls = append(hooks.calls, hookCall{event: "check", loopID: loopID, hook: source.Repo + "@" + source.Branch + " in " + source.EnvironmentID})
+	return hooks.checkStage, hooks.checkDetail
+}
+
+func (hooks *recordingHooks) SetupScript(mcpURL string) (string, error) {
+	return "#!/bin/sh\n# setup for " + mcpURL + "\n", nil
 }
 
 func (hooks *recordingHooks) taken() []hookCall {
@@ -225,14 +247,16 @@ func TestCloudHookRouteRefusesWhatIsNotACloudLoopsPost(t *testing.T) {
 // loop's, is not.
 func TestCloudHookRouteTellsTheRuntimeOfASessionsRefusedPost(t *testing.T) {
 	for name, tc := range map[string]struct {
-		token, session string
-		want           int
-		posted         bool
+		token, session  string
+		want            int
+		posted, refused bool
 	}{
-		"a session id of another shape": {cloudLoopToken, "cse_not-a-known-shape", http.StatusBadRequest, true},
-		"no session id":                 {cloudLoopToken, "", http.StatusBadRequest, false},
-		"a contained loop's token":      {containedLoopToken, "cse_01Synthetic", http.StatusUnauthorized, false},
-		"an unknown token":              {"spool-hub-synthetic-none", "cse_01Synthetic", http.StatusUnauthorized, false},
+		"a session id of another shape": {cloudLoopToken, "cse_not-a-known-shape", http.StatusBadRequest, true, false},
+		"no session id":                 {cloudLoopToken, "", http.StatusBadRequest, false, false},
+		"a contained loop's token":      {containedLoopToken, "cse_01Synthetic", http.StatusUnauthorized, false, false},
+		"an unknown token":              {"spool-hub-synthetic-none", "cse_01Synthetic", http.StatusUnauthorized, false, true},
+		"no token":                      {"", "cse_01Synthetic", http.StatusUnauthorized, false, true},
+		"no token, no session's shape":  {"", "cse_not-a-known-shape", http.StatusUnauthorized, false, false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			hooks := &recordingHooks{}
@@ -244,6 +268,10 @@ func TestCloudHookRouteTellsTheRuntimeOfASessionsRefusedPost(t *testing.T) {
 			defer hooks.mu.Unlock()
 			if told := len(hooks.posted) == 1 && hooks.posted[0] == "l-cloud"; told != tc.posted || len(hooks.posted) > 1 {
 				t.Errorf("SessionPosted was told %q, want it told of the cloud loop: %v", hooks.posted, tc.posted)
+			}
+			// a session refused for its token is named to a setup check (#1182)
+			if told := slices.Equal(hooks.refusedTokens, []string{"cse_01Synthetic"}); told != tc.refused || (!tc.refused && len(hooks.refusedTokens) > 0) {
+				t.Errorf("TokenRefused was told %q, want the session named: %v", hooks.refusedTokens, tc.refused)
 			}
 		})
 	}
@@ -487,5 +515,29 @@ func TestCloudListenerLogsATokenRefusalOnceAMinute(t *testing.T) {
 	}
 	if logged.Len() != 0 {
 		t.Errorf("the loop listener's refusal was logged:\n%s", logged.String())
+	}
+}
+
+// An MCP request refused for its token names its session to a setup check,
+// as a refused hook post does: the session's client connects before its
+// SessionStart post, so it may be the first word that the session reached
+// the hub with the wrong token (#1182).
+func TestCloudMCPTellsTheRuntimeOfASessionRefusedForItsToken(t *testing.T) {
+	hooks := &recordingHooks{}
+	handler := hookServer(t, hooks)
+	for _, session := range []string{"cse_01Synthetic", "not-a-session"} {
+		req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{}`))
+		req.Header.Set("Authorization", "Bearer spool-hub-synthetic-none")
+		req.Header.Set("X-Spool-Session", session)
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, req)
+		if recorder.Code != http.StatusUnauthorized {
+			t.Fatalf("an unknown token: %d, want 401", recorder.Code)
+		}
+	}
+	hooks.mu.Lock()
+	defer hooks.mu.Unlock()
+	if !slices.Equal(hooks.refusedTokens, []string{"cse_01Synthetic"}) {
+		t.Errorf("TokenRefused was told %q, want the one session of a session's shape", hooks.refusedTokens)
 	}
 }

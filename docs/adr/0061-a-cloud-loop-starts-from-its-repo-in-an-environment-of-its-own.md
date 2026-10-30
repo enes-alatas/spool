@@ -1,6 +1,6 @@
 # ADR-0061: A cloud loop starts from its GitHub repo, in an environment of its own
 
-Date: 2026-10-28 · Status: accepted (operator decision of 2026-10-29 on #1180, comment 6498693769: the flow as written, with multi-repo loops; the operator decision of 2026-10-29 on #1185, comment 6498931340: the deny rules and the `add_repo` guard of item 2, with a dedicated GitHub user recommended, not required; the operator decision of 2026-10-28 on #1168: the setup-script route, with the token as an environment variable; the network secret in its place is Terra's correction of the same day on #1180, comment 6478145150, agreed by Elliot in 6478162314, which narrows that posture; and the operator decision of 2026-10-29 on #1180, comment 6493335622, that a kill revokes the token for good) · Amended: 2026-10-29 (the `SessionStart` answer's shape, #1181); 2026-10-30 (`/mcp` takes the handshake between turns, #1181) · Supersedes: the operator's park of #975's hardened mode (option A, 2026-10-28), which this route builds as the only mode; ADR-0059 item 1 (that the hub doesn't read the TUI, and the binding's "only on that start's token"), item 2 (the loop home a start bundles), item 4 (a fresh hub token per session, in the VM), item 6 (one environment for every cloud loop) and its #978 amendment's single stored choice, item 8's #1094 amendment (`CCR_ENABLE_BUNDLE`), item 10's *The repo field goes* and its #1169 amendment, and item 9's #977 amendment's create refusal · Relates to: ADR-0022, ADR-0028, ADR-0043, ADR-0053, ADR-0056, ADR-0058, ADR-0059, ADR-0060
+Date: 2026-10-28 · Status: accepted (operator decision of 2026-10-29 on #1180, comment 6498693769: the flow as written, with multi-repo loops; the operator decision of 2026-10-29 on #1185, comment 6498931340: the deny rules and the `add_repo` guard of item 2, with a dedicated GitHub user recommended, not required; the operator decision of 2026-10-28 on #1168: the setup-script route, with the token as an environment variable; the network secret in its place is Terra's correction of the same day on #1180, comment 6478145150, agreed by Elliot in 6478162314, which narrows that posture; and the operator decision of 2026-10-29 on #1180, comment 6493335622, that a kill revokes the token for good) · Amended: 2026-10-29 (the `SessionStart` answer's shape, #1181); 2026-10-30 (`/mcp` takes the handshake between turns, #1181); 2026-10-30 (item 6: the setup check, #1182) · Supersedes: the operator's park of #975's hardened mode (option A, 2026-10-28), which this route builds as the only mode; ADR-0059 item 1 (that the hub doesn't read the TUI, and the binding's "only on that start's token"), item 2 (the loop home a start bundles), item 4 (a fresh hub token per session, in the VM), item 6 (one environment for every cloud loop) and its #978 amendment's single stored choice, item 8's #1094 amendment (`CCR_ENABLE_BUNDLE`), item 10's *The repo field goes* and its #1169 amendment, and item 9's #977 amendment's create refusal · Relates to: ADR-0022, ADR-0028, ADR-0043, ADR-0053, ADR-0056, ADR-0058, ADR-0059, ADR-0060
 
 ## Context
 
@@ -412,6 +412,30 @@ real hub behind the allowlist is checked at #1181's first live start:
    host, a confirm names the SHA-256 of the text it confirmed, and a loop
    whose text isn't confirmed carries the warning that the hub's
    allowlist doesn't bind it.
+
+   **Amendment (2026-10-30, #1182):** the setup view also checks the
+   setup, as Consequences foresaw: the hub can't read the environment
+   back, only see whether a start reaches it.
+   - An admin's check of a running loop starts one session from the
+     loop's repo in its environment, as a start does, with a fixed message
+     from `prompt.go` that asks nothing of it. It passes on a
+     `SessionStart` post naming the session the CLI printed, held for the
+     `View:` line as a start's post is (item 4).
+   - The check's session is never the loop's. Its post is answered with
+     no connection and no prompt, `/mcp` refuses it, and its `Stop` post
+     is taken and dropped. It stays on claude.ai, as every session does.
+   - A failed check names its stage: `environment` (the CLI refused the
+     start), `token` (a post or an MCP request naming the session was
+     refused for its token) or `unreached` (nothing of the session came
+     within the start's bound).
+   - The loop is held with the `cloud_setup` problem until a check passes
+     on its repo, branch, environment and hub token as they are now,
+     against the address that last passed the hub's own check. An edit,
+     a Rotate token or a kill takes a new check, and so does a new public
+     address. A check against an earlier address counts again if that
+     address comes back.
+   - A confirm made on Settings → Cloud no longer warns or clears any
+     loop. That step goes with the control room's slice (#1183).
 
 7. **A cloud loop runs on its own Claude login's account** (ADR-0060).
    - Its environment must belong to the claude.ai account of the loop's

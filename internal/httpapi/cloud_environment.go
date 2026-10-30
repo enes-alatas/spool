@@ -315,11 +315,3 @@ func (server *Server) cloudEnvironment(ctx context.Context) (cloudEnvironmentVie
 	}
 	return view, nil
 }
-
-// cloudAllowlistUnconfirmed reports whether cloud loops carry the warning
-// that the hub's egress allowlist doesn't bind them: no environment is
-// chosen, or the list to paste isn't the one confirmed (ADR-0059).
-func (server *Server) cloudAllowlistUnconfirmed(ctx context.Context) bool {
-	view, err := server.cloudEnvironment(ctx)
-	return err != nil || !view.Confirmed
-}

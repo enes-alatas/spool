@@ -145,6 +145,14 @@ func (gate *CloudGate) FailedSince() int64 {
 	return gate.failedSince
 }
 
+// PassedAddress is the address the last check passed on, "" while the last
+// one failed or none has run.
+func (gate *CloudGate) PassedAddress() string {
+	gate.mu.Lock()
+	defer gate.mu.Unlock()
+	return gate.passedFor
+}
+
 // Recheck asks for a check of the address now, without waiting for it.
 func (gate *CloudGate) Recheck() {
 	select {
@@ -185,6 +193,13 @@ func (actor *Actor) cloudGateChanged() {
 		actor.openProblem(store.SymptomCloudAddress, since, 0)
 	} else if actor.deps.CloudGate.Passed() {
 		actor.clearProblem(store.SymptomCloudAddress, store.ClearedByRecovery)
+	}
+	// a check follows an address change, which may make the loop's own
+	// setup check stale or current again
+	if actor.cloudUnset() {
+		actor.openProblem(store.SymptomCloudSetup, now(), 0)
+	} else {
+		actor.clearProblem(store.SymptomCloudSetup, store.ClearedByRecovery)
 	}
 	if actor.holdsWork() {
 		return

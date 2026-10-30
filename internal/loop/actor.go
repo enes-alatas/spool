@@ -636,7 +636,7 @@ func (actor *Actor) handleCmd(command cmd) {
 		// and a cloud loop's hub token, which a kill revokes and Rotate
 		// token tells the actor of: the edit's row may carry one already
 		// revoked
-		actor.loop.HubMCPToken, actor.loop.HasHubToken = token.HubMCPToken, token.HasHubToken
+		actor.loop.HubMCPToken, actor.loop.HasHubToken, actor.loop.HubTokenHash = token.HubMCPToken, token.HasHubToken, token.HubTokenHash
 		// and where the loop runs: no edit changes it, and a rehome the
 		// actor made after the edit read its row must not be undone (#624)
 		actor.loop.Runtime, actor.loop.WorkspaceMode, actor.loop.WorkspacePath = token.Runtime, token.WorkspaceMode, token.WorkspacePath

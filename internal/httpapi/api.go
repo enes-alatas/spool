@@ -181,6 +181,8 @@ type Server struct {
 	cloudCheck cloudCheckState
 	// cloudAccountCheck is the last account check.
 	cloudAccountCheck cloudAccountCheckState
+	// cloudLoopChecks are the cloud loops' setup checks under way.
+	cloudLoopChecks cloudLoopChecks
 	// cloudRefusedLogged is when the cloud listener last logged a request
 	// it refused for its token, in Unix ms: at most one a minute.
 	cloudRefusedLogged atomic.Int64
@@ -211,6 +213,9 @@ func (server *Server) routes() *routeMux {
 	mux.HandleFunc("POST /api/loops/{name}/rotate", server.handleRotate)
 	mux.HandleFunc("POST /api/loops/{name}/rehome", server.handleRehome)
 	mux.HandleFunc("POST /api/loops/{name}/cloud/token", server.handleRotateCloudToken)
+	mux.HandleFunc("GET /api/loops/{name}/cloud/setup", server.handleGetCloudLoopSetup)
+	mux.HandleFunc("POST /api/loops/{name}/cloud/allowlist/confirm", server.handleConfirmCloudLoopAllowlist)
+	mux.HandleFunc("POST /api/loops/{name}/cloud/check", server.handleCheckCloudLoop)
 	mux.HandleFunc("POST /api/loops/{name}/workstation/restart", server.handlePower(loop.PowerRestart))
 	mux.HandleFunc("POST /api/loops/{name}/workstation/poweroff", server.handlePower(loop.PowerOff))
 	mux.HandleFunc("POST /api/loops/{name}/workstation/poweron", server.handlePower(loop.PowerOn))
@@ -545,9 +550,9 @@ type loopView struct {
 	// absent when the hub knows of none (ADR-0059).
 	CloudTurn *CloudTurn `json:"cloud_turn,omitempty"`
 	// CloudAllowlistUnconfirmed is set on a cloud loop while the operator
-	// hasn't confirmed pasting the current allowlist into the environment:
-	// the hub's egress allowlist doesn't bind the loop, only what its
-	// environment allows (ADR-0059).
+	// hasn't confirmed pasting the current allowlist into the loop's own
+	// environment: the hub's egress allowlist doesn't bind the loop, only
+	// what its environment allows (ADR-0061).
 	CloudAllowlistUnconfirmed bool `json:"cloud_allowlist_unconfirmed,omitempty"`
 }
 
@@ -658,7 +663,7 @@ func (server *Server) view(ctx context.Context, loopRecord *store.Loop) *loopVie
 		out.CloudTurn = server.CloudSessions.Turn(loopRecord.ID)
 	}
 	if loopRecord.Runtime == store.RuntimeCloud {
-		out.CloudAllowlistUnconfirmed = server.cloudAllowlistUnconfirmed(ctx)
+		out.CloudAllowlistUnconfirmed = server.cloudLoopAllowlistUnconfirmed(ctx, loopRecord)
 	}
 	if failures, err := server.Store.Messages().UnresolvedSendFailures(ctx, loopRecord.ID); err == nil {
 		out.Undelivered = failures

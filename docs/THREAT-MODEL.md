@@ -283,6 +283,11 @@ own address check (ADR-0056, ADR-0059).
   so nothing an outsider sends grows it.
   `/hooks` is where a cloud session's hooks post its id and each turn
   (ADR-0059). It takes a cloud loop's token alone, as `/mcp` does.
+- **A request refused for its token is read for one thing:** the session
+  it names, in `X-Spool-Session` on `/mcp` or the `session` field of a
+  `/hooks` post, inside the same bounds, checked against a session's shape,
+  and only to tell a setup check under way that its session reached the
+  hub with the wrong token (#1182). Each check keeps at most 64 of them.
 - **The response redactor rewrites every JSON and event-stream
   response.** The hand-off, `text/plain`, is written past it on purpose
   (ADR-0059), and the route's other `text/plain` answers, its refusals
@@ -294,6 +299,12 @@ own address check (ADR-0056, ADR-0059).
 **Doesn't hold:**
 - **The token is the only gate**, as on the loop listener, and here any
   host on the internet can try one.
+- **A refused request can misname a check's failure.** Anyone who knows
+  the session a check started can send a request with no token naming it,
+  and the check then fails at `token` rather than `unreached`. Anyone
+  can also fill a check's 64 places with made-up sessions while it runs,
+  and a check whose session did reach the hub with the wrong token then
+  fails at `unreached` rather than `token`. Neither makes a check pass.
 - **No rate limit.** A guess at a token or a check value is bounded by
   their size, not by a count of attempts.
 - **TLS is the tunnel's or proxy's,** not the hub's: the listener speaks
@@ -396,6 +407,14 @@ and each turn's transcript lines back to the cloud listener (ADR-0059).
   the pty (ADR-0061): a post that comes before the hub has read the line
   waits for it within the window, and one naming any other session is
   refused and logged.
+- **A setup check binds nothing** (#1182). An admin's check of a running
+  loop starts one session with a fixed message from `prompt.go` that asks
+  nothing of it. It passes on a `SessionStart` post naming the session its
+  CLI printed, held for the line as a start's is, and answers it with no
+  connection and no prompt. The session is never recorded as the loop's,
+  so `/mcp` refuses its calls, and its `Stop` post is taken and dropped.
+  The check stands only for the loop's repo, branch, environment and
+  token hash as they were, and the address it ran against.
 - **`/mcp` and `Stop` take only the loop's session, and tool calls only
   during a turn.** Every session in the loop's environment holds the
   token, one started there by hand included. The setup script has the

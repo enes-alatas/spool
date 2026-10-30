@@ -1407,3 +1407,11 @@ func dur(sec int) string {
 		return fmt.Sprintf("%ds", int(duration.Seconds()))
 	}
 }
+
+// CloudCheckMessage is the one message a cloud loop's setup check starts its
+// session with (#1182). The check passes when the session reaches the hub,
+// before the model reads a word, so the message asks nothing of it: the
+// session is not the loop's, has no tool of the hub's and no mission, and
+// should spend as little as it can.
+const CloudCheckMessage = "Spool is checking that this environment reaches its hub. Nothing is " +
+	"asked of you: reply with the single word ok, run no tool, and end your turn."

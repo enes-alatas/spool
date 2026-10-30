@@ -122,6 +122,17 @@ func (loopStore loops) SetDoing(ctx context.Context, id, doing string, at int64)
 	return loopStore.LoopStore.SetDoing(ctx, id, loopStore.redactor.Text(doing), at)
 }
 
+func (loopStore loops) SetCloudCheck(ctx context.Context, id string, check *store.CloudCheck) error {
+	// A failed check's detail quotes the CLI's last line, what claude.ai
+	// answered a start, which the hub can't vouch for (#1182).
+	if check != nil {
+		redacted := *check
+		redacted.Detail = loopStore.redactor.Text(check.Detail)
+		check = &redacted
+	}
+	return loopStore.LoopStore.SetCloudCheck(ctx, id, check)
+}
+
 // Each decorator embeds the interface it wraps, so a method added to the
 // store seam keeps compiling here and passes straight through. That is the
 // right default for reads; a new *write* of free text has to be added below,

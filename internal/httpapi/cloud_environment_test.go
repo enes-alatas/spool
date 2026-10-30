@@ -132,17 +132,11 @@ func TestTheAllowlistConfirmFollowsTheList(t *testing.T) {
 		!view.Environment.Confirmed || view.Environment.ConfirmedAt == 0 {
 		t.Fatalf("confirm: %d %+v", code, view.Environment)
 	}
-	if server.cloudAllowlistUnconfirmed(context.Background()) {
-		t.Error("a confirmed list still warns on the loops")
-	}
 
 	cloudCall(t, server, "POST", "/api/settings/egress/hosts", `{"host":"tools.example.test"}`, nil)
 	cloudCall(t, server, "GET", "/api/settings/cloud", "", &view)
 	if view.Environment.Confirmed || !strings.HasSuffix(view.Environment.Allowlist, "\ntools.example.test") {
 		t.Errorf("after an allowlist edit: %+v, want the new host listed and the confirm dropped", view.Environment)
-	}
-	if !server.cloudAllowlistUnconfirmed(context.Background()) {
-		t.Error("an allowlist edit left the loops without the warning")
 	}
 	if code := cloudCall(t, server, "POST", "/api/settings/cloud/environment/confirm", `{"digest":"`+shown+`"}`, nil); code != 409 {
 		t.Errorf("a confirm of the list before the edit: %d, want 409", code)

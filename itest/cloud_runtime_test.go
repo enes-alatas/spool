@@ -46,6 +46,7 @@ func startCloudHub(t *testing.T, name string, args ...string) *server {
 		return view.Account.Check != nil && view.Account.Check.State == "ok"
 	})
 	setUpCloudEnvironment(t, s, cloudEnvironmentOf(name), cloudTokenOf(name))
+	passCloudCheck(t, s, name)
 	return s
 }
 
@@ -229,6 +230,7 @@ func TestStoppingACloudLoopRefusesItsTokenAndAKillRevokesIt(t *testing.T) {
 	if got := postHook(t, s, rotated, "session_01Probe"); got != http.StatusConflict {
 		t.Errorf("the rotated token once the loop runs: %d, want 409 (taken, and no start pending)", got)
 	}
+	passCloudCheck(t, s, "stratus")
 	held := s.waitTurn("stratus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "held words") })
 	if held.IsError {
 		t.Fatalf("the held message's turn: %+v", held)

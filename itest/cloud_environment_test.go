@@ -43,9 +43,9 @@ func environmentsAPI(t *testing.T) *httptest.Server {
 }
 
 // Settings → Cloud's environment step still lists, picks and confirms, and
-// its allowlist warning holds as before (ADR-0059): it goes with the
-// control room's step (#1183). A loop no longer starts in the picked
-// environment but in its own (ADR-0061).
+// its confirm stands as before (ADR-0059), until it goes with the control
+// room's step (#1183). A loop no longer starts in the picked environment
+// but in its own, and carries the warning by its own confirm (ADR-0061).
 func TestACloudLoopStartsInItsOwnEnvironmentNotThePagesPick(t *testing.T) {
 	t.Parallel()
 	hub := startCloudHub(t, "cirrus", "--cloud-api-base", environmentsAPI(t).URL)
@@ -69,9 +69,17 @@ func TestACloudLoopStartsInItsOwnEnvironmentNotThePagesPick(t *testing.T) {
 	if !cloudLoopWarned(t, hub, "cirrus") {
 		t.Error("a loop with no confirmed list carries no warning")
 	}
+	// the page's confirm no longer speaks for any loop: each loop confirms
+	// its own environment's list on its setup view (ADR-0061)
 	hub.mustJSON("POST", "/api/settings/cloud/environment/confirm", map[string]string{"digest": step.Environment.Digest}, &step)
-	if !step.Environment.Confirmed || cloudLoopWarned(t, hub, "cirrus") {
-		t.Errorf("after the confirm: %+v, warned %v", step.Environment, cloudLoopWarned(t, hub, "cirrus"))
+	if !step.Environment.Confirmed || !cloudLoopWarned(t, hub, "cirrus") {
+		t.Errorf("after the page's confirm: %+v, warned %v, want the loop still warned", step.Environment, cloudLoopWarned(t, hub, "cirrus"))
+	}
+	var setup cloudLoopSetup
+	hub.mustJSON("GET", "/api/loops/cirrus/cloud/setup", nil, &setup)
+	hub.mustJSON("POST", "/api/loops/cirrus/cloud/allowlist/confirm", map[string]string{"digest": setup.Allowlist.Digest}, &setup)
+	if !setup.Allowlist.Confirmed || cloudLoopWarned(t, hub, "cirrus") {
+		t.Errorf("after the loop's confirm: %+v, warned %v", setup.Allowlist, cloudLoopWarned(t, hub, "cirrus"))
 	}
 
 	hub.message("cirrus", "hello")
@@ -89,6 +97,7 @@ func TestACloudLoopStartsInItsOwnEnvironmentNotThePagesPick(t *testing.T) {
 		t.Error("an allowlist edit left the loop without the warning")
 	}
 	hub.wantRefusal("POST", "/api/settings/cloud/environment/confirm", map[string]string{"digest": step.Environment.Digest}, 409, "cloud_allowlist_stale")
+	hub.wantRefusal("POST", "/api/loops/cirrus/cloud/allowlist/confirm", map[string]string{"digest": setup.Allowlist.Digest}, 409, "cloud_allowlist_stale")
 }
 
 // A cloud loop is created with no repo or environment, and is held until
@@ -123,6 +132,7 @@ func TestCloudLoopsWaitForTheirEnvironment(t *testing.T) {
 	hub.wantRefusal("PATCH", "/api/loops/nimbus", map[string]any{"cloud_repo": "example-org/nimbus", "cloud_environment_id": `env_01","x":"y`}, 400, "")
 	hub.mustJSON("PATCH", "/api/loops/nimbus", map[string]any{"cloud_repo": "example-org/nimbus", "cloud_environment_id": "env_01Pasted"}, nil)
 	hub.mustJSON("POST", "/api/loops/nimbus/resume", nil, nil)
+	passCloudCheck(t, hub, "nimbus")
 	hub.waitTurn("nimbus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "held words") })
 	if after := hub.waitHealth("nimbus", "ok"); len(after.Problems) != 0 {
 		t.Errorf("problems once its setup is done = %+v, want none", after.Problems)

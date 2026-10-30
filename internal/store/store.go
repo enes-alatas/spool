@@ -412,6 +412,17 @@ type Loop struct {
 	// HasHubToken is whether the loop holds a hub token at all: a cloud loop
 	// has none until Rotate token mints it, nor after a kill revokes it.
 	HasHubToken bool `json:"-"`
+	// HubTokenHash is the hash the loop's hub token is kept as, "" for
+	// none. A check of a cloud loop's setup names it (CloudCheckFor), so a
+	// Rotate token or a kill makes the check stale.
+	HubTokenHash string `json:"-"`
+	// CloudAllowlistDigest is the SHA-256 of the allowed-hosts text the
+	// operator confirmed pasting into the cloud loop's environment, at
+	// CloudAllowlistConfirmedAt; "" for none (ADR-0061).
+	CloudAllowlistDigest      string `json:"-"`
+	CloudAllowlistConfirmedAt int64  `json:"-"`
+	// CloudCheck is the cloud loop's last setup check, nil for none.
+	CloudCheck *CloudCheck `json:"-"`
 	// WorkstationOff records that the operator switched this loop's
 	// workstation off. Intent, not observation: a health poll cannot tell a
 	// halted workstation from a dead one (ADR-0021). Surfaced to the UI as
@@ -998,6 +1009,12 @@ type LoopStore interface {
 	// is taken again: a cloud loop's kill (ADR-0061). The loop holds no
 	// token until RotateHubMCPToken mints one.
 	RevokeHubMCPToken(ctx context.Context, id string) error
+	// ConfirmCloudAllowlist records that the operator pasted the allowed
+	// hosts whose SHA-256 is digest into the cloud loop's environment.
+	ConfirmCloudAllowlist(ctx context.Context, id, digest string, at int64) error
+	// SetCloudCheck records the cloud loop's last setup check, nil to
+	// forget it.
+	SetCloudCheck(ctx context.Context, id string, check *CloudCheck) error
 	SetRuntime(ctx context.Context, id, sessionID string, pid int) error
 	// SetRotation persists a rotation in progress: whether the current session
 	// has been retired by a handoff turn, why the rotation was taken, and the
@@ -2143,6 +2160,8 @@ const (
 	LoopChangeRotate      = "rotate"
 	LoopChangeRehome      = "rehome"
 	LoopChangeCloudToken  = "cloud_token"
+	LoopChangeCloudAllow  = "cloud_allowlist"
+	LoopChangeCloudCheck  = "cloud_check"
 	LoopChangeRestart     = "workstation_restart"
 	LoopChangePowerOff    = "workstation_poweroff"
 	LoopChangePowerOn     = "workstation_poweron"
@@ -2224,8 +2243,9 @@ const (
 	// (ADR-0059).
 	SymptomCloudConnections = "cloud_connections"
 	// SymptomCloudSetup: a cloud loop is held because its setup isn't
-	// done: it names no repo or environment, or has no hub token, never
-	// minted or revoked by a kill (ADR-0061).
+	// done: it names no repo or environment, has no hub token, never
+	// minted or revoked by a kill, or hasn't passed its setup check on the
+	// setup it has now (ADR-0061, #1182).
 	SymptomCloudSetup = "cloud_setup"
 
 	ClearedByOperator = "operator"

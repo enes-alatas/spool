@@ -137,6 +137,10 @@ func (server *Server) cloudRefused(r *http.Request, came string) {
 	if r.Context().Value(cloudListenerKey{}) == nil {
 		return
 	}
+	// an MCP client names its session: a setup check of it says so (#1182)
+	if session := r.Header.Get(cloudSessionHeader); server.CloudHooks != nil && cloudSessionID.MatchString(session) {
+		server.CloudHooks.TokenRefused(session)
+	}
 	now := time.Now().UnixMilli()
 	last := server.cloudRefusedLogged.Load()
 	if now-last < time.Minute.Milliseconds() || !server.cloudRefusedLogged.CompareAndSwap(last, now) {

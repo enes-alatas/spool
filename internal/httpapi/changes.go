@@ -28,6 +28,8 @@ var loopChangeRoutes = map[string]loopChange{
 	"POST /api/loops/{name}/rotate":                         {store.LoopChangeRotate, "name"},
 	"POST /api/loops/{name}/rehome":                         {store.LoopChangeRehome, "name"},
 	"POST /api/loops/{name}/cloud/token":                    {store.LoopChangeCloudToken, "name"},
+	"POST /api/loops/{name}/cloud/allowlist/confirm":        {store.LoopChangeCloudAllow, "name"},
+	"POST /api/loops/{name}/cloud/check":                    {store.LoopChangeCloudCheck, "name"},
 	"POST /api/loops/{name}/workstation/restart":            {store.LoopChangeRestart, "name"},
 	"POST /api/loops/{name}/workstation/poweroff":           {store.LoopChangePowerOff, "name"},
 	"POST /api/loops/{name}/workstation/poweron":            {store.LoopChangePowerOn, "name"},

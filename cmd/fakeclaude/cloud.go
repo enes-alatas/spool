@@ -65,6 +65,8 @@ package main
 // holds the VM's SessionStart until it has.
 // A "cloud-model" file in $FAKECLAUDE_STATE names the model a turn's
 // transcript says it ran on, claude-opus-5-5 without one.
+// A "gone" file in an environment's directory makes `--cloud` refuse a
+// start in it, as the CLI refuses an environment the account doesn't have.
 // A "cloud-egress-refused" file in $FAKECLAUDE_STATE makes the VM's
 // egress proxy refuse every request, as it refuses a public address the
 // internet can't reach (#1093): the hooks' curl fails with the proxy's
@@ -188,6 +190,15 @@ func cloudStart(message, settings, ref string) int {
 		} `json:"remote"`
 	}
 	_ = json.Unmarshal([]byte(settings), &chosen)
+	// an environment the account no longer has, archived or another
+	// account's, is refused before any session is made
+	if environment := chosen.Remote.DefaultEnvironmentID; environment != "" {
+		if _, err := os.Stat(filepath.Join(filepath.Dir(cloudRoot()), "environments", environment, "gone")); err == nil {
+			_ = os.RemoveAll(vm)
+			fmt.Fprintf(os.Stderr, "Error: Environment %s not found\n", environment)
+			return 1
+		}
+	}
 	// the start's argument list, for a test to hold
 	if err := os.WriteFile(filepath.Join(vm, "cli-args"), []byte(strings.Join(os.Args[1:], "\n")+"\n"), 0o600); err != nil {
 		fmt.Fprintln(os.Stderr, err)

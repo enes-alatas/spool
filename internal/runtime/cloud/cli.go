@@ -96,6 +96,10 @@ type hookWaits struct {
 	// start has recorded it in the loop's state: the session's first MCP
 	// call can come in between.
 	binding map[string]string
+	// checks are the setup checks waiting on their session, by loop, and
+	// checked the session of each loop's last check (check.go).
+	checks  map[string]*pendingCheck
+	checked map[string]string
 }
 
 // setPrompt records the prompt the loop's session runs with.
@@ -224,6 +228,12 @@ func (waits *hookWaits) endedLocked(loopID string) {
 func (cloud *Runtime) SessionStart(ctx context.Context, loopID, sessionID string, hook []byte) ([]byte, error) {
 	sessionID = sessionAddress(sessionID)
 	source := hookSource(hook)
+	if source == sourceStartup {
+		if answer, ok := cloud.answerCheck(ctx, loopID, sessionID); ok {
+			slog.Default().Info("cloud: a setup check's session reached the hub", "loop", loopID, "session", sessionID)
+			return answer, nil
+		}
+	}
 	if source == sourceCompact || source == sourceClear {
 		answer, err := cloud.answerContextLost(loopID, sessionID)
 		if err == nil {
@@ -323,6 +333,9 @@ func (cloud *Runtime) answerSessionStart(ctx context.Context, loopID, sessionID,
 // loop's turn in flight, once. A post from any other session of the
 // loop's environment, or with no turn in flight, is refused (ADR-0061).
 func (cloud *Runtime) Stop(_ context.Context, loopID, sessionID string, hook, lines []byte, overBound bool) error {
+	if cloud.waits.checkSession(loopID, sessionID) {
+		return nil // a setup check's turn, which nothing waits on
+	}
 	current, err := cloud.recorded(loopID)
 	if err != nil {
 		return err

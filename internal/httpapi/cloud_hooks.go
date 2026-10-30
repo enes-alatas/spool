@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/enes-alatas/spool/internal/runtime"
 	"github.com/enes-alatas/spool/internal/store"
 )
 
@@ -58,6 +59,16 @@ type CloudHooks interface {
 	// sessionID as its session: only the loop's own, while a turn of it
 	// runs (ADR-0061). It may wait for a pending start's session.
 	MCPCall(ctx context.Context, loopID, sessionID string) error
+	// TokenRefused is told of a hook post refused for its token, naming
+	// sessionID: a setup check of that session stopped at the token.
+	TokenRefused(sessionID string)
+	// CheckSetup starts one session from source in its environment with
+	// message, and says where the check stopped: "" when the hub heard from
+	// the session, otherwise a stage and what it found (#1182).
+	CheckSetup(ctx context.Context, loopID string, source runtime.CloudStart, message string) (stage, detail string)
+	// SetupScript is the setup script every cloud loop's environment runs,
+	// for a hub whose cloud listener's /mcp is at mcpURL (ADR-0061).
+	SetupScript(mcpURL string) (string, error)
 }
 
 // cloudSessionHeader is the header a cloud session's MCP client sends its
@@ -81,6 +92,11 @@ func (server *Server) handleCloudHook(w, handOff http.ResponseWriter, r *http.Re
 	}
 	caller, ok := server.mcpCaller(w, r)
 	if !ok {
+		// the session reached the hub, with a token it doesn't take: a
+		// setup check of that session says so (#1182)
+		if post, err := readHookPost(r); err == nil && cloudSessionID.MatchString(post.session) {
+			server.CloudHooks.TokenRefused(post.session)
+		}
 		return
 	}
 	if !runningCloudLoop(caller) {

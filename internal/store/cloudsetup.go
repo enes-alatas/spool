@@ -1,6 +1,8 @@
 package store
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -136,4 +138,46 @@ func ValidCloudBranch(branch string) bool {
 		}
 	}
 	return true
+}
+
+// What a check of a cloud loop's setup found (#1182).
+const (
+	CloudCheckOK     = "ok"
+	CloudCheckFailed = "failed"
+)
+
+// CloudCheck is the last check of a cloud loop's setup (ADR-0061): a
+// session started in the loop's environment, and whether the hub heard
+// from it. A loop whose check hasn't passed for its current setup is held,
+// as one with no repo is.
+type CloudCheck struct {
+	State string `json:"state"`
+	// Stage and Detail say where a failed check stopped, and how.
+	Stage     string `json:"stage,omitempty"`
+	Detail    string `json:"detail,omitempty"`
+	CheckedAt int64  `json:"checked_at"`
+	// Address is the hub's public address the check ran against: the setup
+	// script the environment holds is that address's.
+	Address string `json:"address"`
+	// For is the setup the check ran on (CloudCheckFor). A check of
+	// another, before an edit, a Rotate token or a kill, is no check.
+	For string `json:"for"`
+}
+
+// CloudCheckFor names the setup a check of the loop runs on: its repo,
+// branch, environment and hub token. The further repos are left out, as
+// the check starts from the first alone. Only the token's hash takes part,
+// and only hashed again.
+func CloudCheckFor(loopRecord *Loop) string {
+	sum := sha256.Sum256([]byte(strings.Join([]string{
+		loopRecord.CloudRepo, loopRecord.CloudBranch, loopRecord.CloudEnvironmentID, loopRecord.HubTokenHash,
+	}, "\x00")))
+	return hex.EncodeToString(sum[:])
+}
+
+// CloudCheckPassed reports whether the loop's last check passed on the
+// setup it has now.
+func (loopRecord *Loop) CloudCheckPassed() bool {
+	check := loopRecord.CloudCheck
+	return check != nil && check.State == CloudCheckOK && check.For == CloudCheckFor(loopRecord)
 }

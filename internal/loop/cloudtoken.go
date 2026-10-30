@@ -17,12 +17,32 @@ import (
 // in its place.
 
 // cloudUnset reports whether the loop is a cloud loop whose setup isn't
-// done: it names no repo, branch or environment, or holds no hub token,
-// one never minted or killed. It holds its work, as no session of it could
-// start or reach the hub.
+// done: it names no repo, branch or environment, holds no hub token, one
+// never minted or killed, or hasn't passed its setup check on the setup it
+// has now (#1182). It holds its work, as no session of it could start or
+// reach the hub, or none is known to.
 func (actor *Actor) cloudUnset() bool {
 	return actor.loop.Runtime == store.RuntimeCloud && (!actor.loop.HasHubToken ||
-		actor.loop.CloudRepo == "" || actor.loop.CloudBranch == "" || actor.loop.CloudEnvironmentID == "")
+		actor.loop.CloudRepo == "" || actor.loop.CloudBranch == "" || actor.loop.CloudEnvironmentID == "" ||
+		!actor.cloudChecked())
+}
+
+// cloudChecked reports whether the loop's setup check passed on the setup
+// it has now, against the public address that last passed its own check:
+// the environment's setup script names the address it was pasted for, so
+// a check against another stands again only once that address is back.
+// While no address passes, the cloud_address problem holds the loop, and
+// the address takes no part here.
+func (actor *Actor) cloudChecked() bool {
+	if !actor.loop.CloudCheckPassed() {
+		return false
+	}
+	gate := actor.deps.CloudGate
+	if gate == nil {
+		return true
+	}
+	passed := gate.PassedAddress()
+	return passed == "" || passed == actor.loop.CloudCheck.Address
 }
 
 // cloudSetupChanged follows a cloud loop's setup changing, its token
@@ -60,7 +80,7 @@ func (actor *Actor) tokenChanged(ctx context.Context) {
 		actor.log().Error("read the loop's new hub token", "err", err)
 		return
 	}
-	actor.loop.HasHubToken = stored.HasHubToken
+	actor.loop.HasHubToken, actor.loop.HubTokenHash = stored.HasHubToken, stored.HubTokenHash
 	actor.cloudSetupChanged()
 }
 
@@ -81,7 +101,7 @@ func (actor *Actor) cutOffCloud(ctx context.Context, verb, endReason string, rev
 		if err = actor.deps.Store.Loops().RevokeHubMCPToken(ctx, actor.loop.ID); err != nil {
 			actor.log().Error("cloud loop's token not revoked; its session can still reach the hub", "verb", verb, "err", err)
 		} else {
-			actor.loop.HasHubToken = false
+			actor.loop.HasHubToken, actor.loop.HubTokenHash = false, ""
 		}
 	}
 	actor.stopProcess(verb)
