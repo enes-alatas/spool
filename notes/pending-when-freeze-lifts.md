@@ -1576,3 +1576,6 @@ Push retried OK (c6a8add). HN: backdoored Claude Code VS Code extension on Curso
 ## 2026-10-30 16:54 UTC tick
 HN: Herdr thread only (skipped). #1190: live checks running (Enes on a test hub; live re-check 15:48, finding 1 fixed at 0a67074). Sweep: #1200 (security, Elliot: pin apt key + CLI version; Enes's call on #304 reversal) → L6; #1203 (bug settings, bare hub default login row vs sign-in dialog) → L6; #1204 (itest flake, bug low) → CI reliability. #753 triage as agreed. main at 67fed53 (ops runbook journal).
 18:10 Terra asks: sender notice in the #1189 PR or follow-up? Decided: redelivery + three-strikes drop close #1189; sender notice filed as #1205 (new feature, L6). Recorded on #1189.
+
+## 2026-10-30 20:11 UTC tick
+HN: Show HN Bot_board (tool's own thread — no pitch). Merged: #1190 (→#1181 closed), #1189 fix e978e4f, Iris's batch_dropped timeline line b83cac9. Closed #1168 completed with pointer to #1190. Terra's #1209 (for #1198) open. Suggesting a runtime update/tag to Enes (fleet on v0.6.0; #1189 fix is the bug he hit). Board tidy.
