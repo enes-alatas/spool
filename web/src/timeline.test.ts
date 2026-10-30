@@ -152,6 +152,23 @@ describe('toEntries result costs across a hole', () => {
   })
 })
 
+describe('toEntries dropped batch', () => {
+  const notes = (events: LoopEvent[]) =>
+    toEntries(events)
+      .filter((e) => e.kind === 'note')
+      .map((e) => (e.kind === 'note' ? e.text : ''))
+
+  // The one sign a message was given up on, so it must not render as nothing.
+  it('says the message was dropped and not delivered', () => {
+    const one = ev('spool', 's1', { envelopes: 1, attempts: 3 }, 'batch_dropped')
+    const two = ev('spool', 's1', { envelopes: 2, attempts: 3 }, 'batch_dropped')
+    expect(notes([one, two])).toEqual([
+      "message dropped after the loop's process died 3 times running it; not delivered",
+      "messages dropped after the loop's process died 3 times running them; not delivered",
+    ])
+  })
+})
+
 describe('toEntries model notes', () => {
   const notes = (events: LoopEvent[]) =>
     toEntries(events)
