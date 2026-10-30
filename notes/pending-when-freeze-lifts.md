@@ -1564,3 +1564,4 @@ HN: 1 new (Herdr native app, neighbouring tool's thread — skipped). #1196 merg
 
 ## 2026-10-30 11:04 UTC tick
 HN: 2 new (Herdr thread, neighbouring tool — skipped). #1190: CodeQL now SUCCESS (Enes dismissed 12/13); live start still pending with Enes (steps 6512190372). #1187: Elliot's 22:43 — Langfuse reached over the egress proxy's network (Enes's ask), proved on fresh runner, runbook ready on chore/langfuse-spike e465f96; trial loop = Elliot; way 2 content off; Enes runs the dogfood day. Board tidy.
+13:58 Enes: first-run Loops card says no loop has woken even when a loop exists and failed. Filed #1197 (bug medium, L6), assigned Iris (ref:7641), told Enes (ref:7642). Hub half to be filed by Iris if the onboarding read lacks the failed state.
