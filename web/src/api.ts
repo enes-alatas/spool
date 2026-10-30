@@ -897,9 +897,20 @@ export interface OnboardingPillar {
   progress?: PillarProgress | (string & {})
   // The loop that progress is about, when it is about one.
   progress_loop?: string
+  // How that loop failed to run, with progress wake_failed and no other
+  // (#1198): no loop is waking, no turn has finished, and this one's last
+  // try did not get through. A kind this build does not know reads as a
+  // failure all the same.
+  failure?: WakeFailure | (string & {})
 }
 
-export type PillarProgress = 'building_workstation' | 'waking' | 'first_turn' | 'answering' | 'checking'
+export type PillarProgress =
+  'building_workstation' | 'waking' | 'first_turn' | 'answering' | 'checking' | 'wake_failed'
+
+// How a loop's wake failed: its workstation did not come up, its claude
+// process died and waits to be tried again, or its first turn ended in an
+// error. Mirrors the loop package's WakeFailure kinds.
+export type WakeFailure = 'workstation' | 'crashed' | 'first_turn'
 
 export interface Onboarding {
   completed: boolean

@@ -1,4 +1,6 @@
-import { ApiError, type Onboarding, type OnboardingPillar, type PillarProgress } from './api'
+import { ApiError, type LoopView, type Onboarding, type OnboardingPillar, type PillarProgress } from './api'
+import { unmarked } from './marked'
+import { claudeLoginDown, hubUnreachable, workstationCondition } from './workstation'
 
 // The first-run page's three pillars (#581), in the order an operator does
 // them: the harness a loop runs on, the first loop, and the surface they talk
@@ -129,6 +131,100 @@ export function pillarWork(
       return { state: 'todo', label: p.done }
     }),
   }
+}
+
+// What the Loops card says when a loop exists and its wake failed (#1197),
+// in place of the step text: which loop, what failed, and that its page is
+// where to look. Nothing for any other reading, so a wake under way keeps
+// its phases.
+export interface WakeFailed {
+  loop: string
+  what: string
+  how: string
+}
+
+const WAKE_FAILURES: Record<string, { what: string; how: string }> = {
+  // Read with the loop's down_reason when the loops list has it: the code
+  // only says the loop reads workstation_down, and the reason says why. A
+  // loop the list doesn't have yet has no runtime to read, so a cloud loop
+  // gets these words until the list catches up, within one refetch.
+  workstation: {
+    what: 'workstation down',
+    how: "The loop's workstation is down, so it cannot wake. Its page says why.",
+  },
+  crashed: {
+    what: 'Claude Code stopped',
+    how: "Claude Code stopped before the loop's first turn finished. The hub tries again on its own, waiting longer each time; the loop's page shows what happened.",
+  },
+  first_turn: {
+    what: 'first turn failed',
+    how: 'The loop woke, but its first turn ended in an error. Its page shows what went wrong.',
+  },
+}
+
+export function wakeFailed(
+  key: PillarKey,
+  pillar: OnboardingPillar,
+  loops: Station[] | undefined,
+): WakeFailed | undefined {
+  if (key !== 'loops' || pillar.done || pillar.progress !== 'wake_failed' || !pillar.progress_loop)
+    return undefined
+  const name = pillar.progress_loop
+  if (pillar.failure === 'workstation') {
+    const station = loops?.find((l) => l.name === name)
+    const down = station && (station.runtime === 'cloud' ? cloudDown(station) : workstationDown(station))
+    if (down) return { loop: name, ...down }
+  }
+  const known =
+    pillar.failure && Object.hasOwn(WAKE_FAILURES, pillar.failure) ? WAKE_FAILURES[pillar.failure] : undefined
+  return {
+    loop: name,
+    what: known?.what ?? 'wake failed',
+    how: known?.how ?? "The loop's wake failed. Its page shows what went wrong.",
+  }
+}
+
+type Station = Pick<LoopView, 'name' | 'workstation_up' | 'down_reason' | 'workstation_detail' | 'runtime'>
+
+// A down workstation by its reason: the room's own status word, and the
+// sentence that says what is wrong and where it is fixed. Nothing while the
+// loops list still reads it up or calm (a just-created loop's first snapshot
+// is not_provisioned, and the list polls slower than the onboarding read),
+// and the generic copy stands.
+function workstationDown(loop: Station): { what: string; how: string } | undefined {
+  if (!workstationCondition(loop).alert) return undefined
+  const what = workstationCondition(loop).status
+  switch (loop.down_reason) {
+    case 'unauthenticated':
+      return { what, how: sentence(claudeLoginDown(loop)) }
+    case 'hub_unreachable':
+      return { what, how: sentence(hubUnreachable(loop.workstation_detail)) }
+    default:
+      return {
+        what: `workstation ${what}`,
+        how: loop.workstation_detail
+          ? `The loop's workstation is down: ${unmarked(loop.workstation_detail)}.`
+          : "The loop's workstation is down, so it cannot wake. Its page says why.",
+      }
+  }
+}
+
+// A cloud loop has a session, not a workstation, and the card names it the
+// way its fleet row does (ADR-0056).
+function cloudDown(loop: Station): { what: string; how: string } {
+  const detail = !loop.workstation_up && loop.workstation_detail
+  return {
+    what: 'cloud session down',
+    how: detail
+      ? `The loop's cloud session is down: ${unmarked(detail)}.`
+      : "The loop's cloud session is down, so it cannot wake. Its page says why.",
+  }
+}
+
+// A hub's lower-case clause as the card's sentence, its literal marks dropped.
+function sentence(clause: string): string {
+  const text = unmarked(clause)
+  return text.charAt(0).toUpperCase() + text.slice(1) + (/[.!?]$/.test(text) ? '' : '.')
 }
 
 // What a pillar asks for on this hub, by the runtime its new loops get.

@@ -15,6 +15,7 @@ import {
   pillarWork,
   PILLARS,
   surfaceTarget,
+  wakeFailed,
   type Phase,
   type PillarKey,
 } from '../onboarding'
@@ -85,7 +86,10 @@ export default function FirstRun({
           // While the hub works on the step there is nothing for the
           // operator to do: the card says what is happening instead (#661).
           const work = pillarWork(p.key, state, settings?.default_runtime)
-          const status = state.done ? ' done' : work ? ' working' : ''
+          // A loop that exists and failed to wake says so, rather than the
+          // step text that reads as if none had been made (#1197).
+          const failed = wakeFailed(p.key, state, loops)
+          const status = state.done ? ' done' : work ? ' working' : failed ? ' failed' : ''
           return (
             <li key={p.key} className={`pillar${status}${p.key === next ? ' next' : ''}`}>
               <div className="pillar-head">
@@ -102,6 +106,18 @@ export default function FirstRun({
                   <p className="pillar-how">{work.expect}</p>
                   <PhaseList phases={work.phases} />
                 </>
+              ) : failed ? (
+                <>
+                  <p className="pillar-how">{failed.how}</p>
+                  <div className="pillar-state">
+                    @{failed.loop}: {failed.what}
+                  </div>
+                  <div className="pillar-actions">
+                    <Link to={`/loops/${failed.loop}`} className={primary}>
+                      Open @{failed.loop}
+                    </Link>
+                  </div>
+                </>
               ) : (
                 <>
                   <p className="pillar-how">{pillarHow(p, settings?.default_runtime)}</p>
@@ -110,7 +126,7 @@ export default function FirstRun({
               )}
               {/* The harness's actions depend on the runtime: none until the
                   settings say which, or a bare hub would offer the sign-in. */}
-              {!state.done && !work && (p.key !== 'harness' || settings) && (
+              {!state.done && !work && !failed && (p.key !== 'harness' || settings) && (
                 <div className="pillar-actions">
                   {p.key === 'harness' ? (
                     // A bare hub's loops use the host's login: there is no
