@@ -416,8 +416,12 @@ try {
     'the trust warning',
   )
   await see(
-    page.getByText("It can't reach GitHub yet", { exact: false }),
-    'the cloud note in place of the repo field',
+    page.getByText('which starts from its own repo through Claude', { exact: false }),
+    'the cloud note in place of the workspace field',
+  )
+  await see(
+    page.getByRole('link', { name: "Anthropic's docs on the proxy ↗" }),
+    "the link to Anthropic's GitHub proxy docs",
   )
   if (await page.getByRole('button', { name: 'Create loop' }).isEnabled())
     throw new Error('Create loop is enabled for a cloud loop on a hub not set up for one')
