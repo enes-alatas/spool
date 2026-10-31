@@ -41,12 +41,12 @@ func TestReadSignIn(t *testing.T) {
 		signIn.ExpiresAt != 1792228778627 || signIn.OrgUUID != "00000000-0000-4000-8000-000000000001" {
 		t.Fatalf("ReadSignIn = %+v, %v", signIn, err)
 	}
-	if signIn.Email != "" {
-		t.Fatalf("with no address written, ReadSignIn's email = %q, want none", signIn.Email)
+	if signIn.Email != "" || signIn.AccountUUID != "" {
+		t.Fatalf("with no address or account written, ReadSignIn = %+v, want neither", signIn)
 	}
-	write(".claude.json", `{"oauthAccount":{"organizationUuid":"00000000-0000-4000-8000-000000000001","emailAddress":"fixture@example.test"}}`)
-	if signIn, err := ReadSignIn(dir); err != nil || signIn.Email != "fixture@example.test" {
-		t.Fatalf("ReadSignIn's email = %q, %v, want the address written", signIn.Email, err)
+	write(".claude.json", `{"oauthAccount":{"organizationUuid":"00000000-0000-4000-8000-000000000001","accountUuid":"00000000-0000-4000-8000-0000000000a1","emailAddress":"fixture@example.test"}}`)
+	if signIn, err := ReadSignIn(dir); err != nil || signIn.Email != "fixture@example.test" || signIn.AccountUUID != "00000000-0000-4000-8000-0000000000a1" {
+		t.Fatalf("ReadSignIn = %+v, %v, want the address and account written", signIn, err)
 	}
 	write(".credentials.json", `{"claudeAiOauth":{"accessToken":""}}`)
 	if _, err := ReadSignIn(dir); err == nil {

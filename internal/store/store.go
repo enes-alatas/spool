@@ -182,6 +182,10 @@ type CloudAccount struct {
 	// ExpiresAt is when Token expires, in Unix ms, 0 when unknown.
 	ExpiresAt int64  `json:"expires_at,omitempty"`
 	OrgUUID   string `json:"org_uuid"`
+	// AccountUUID is the claude.ai account the sign-in is of, "" for a
+	// sign-in kept before it was (#1230): two sign-ins of one login with
+	// different IDs are of different accounts.
+	AccountUUID string `json:"account_uuid,omitempty"`
 	// Email is the address the account signed in with, "" when the CLI
 	// didn't say, as for a sign-in made before it was kept.
 	Email string `json:"email,omitempty"`

@@ -4,8 +4,10 @@ package itest
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"errors"
+	"fmt"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -22,6 +24,14 @@ import (
 // The account token fakeclaude runs cloud sessions on: synthetic, never a
 // real one.
 const cloudFixtureToken = "sk-ant-oat01-fixture-cloud-account"
+
+// fixtureAccountID is the account ID fakeclaude's sign-in writes for the
+// account whose address is email, so the harness's login is the account a
+// sign-in of the fixture code signs in again (#1230).
+func fixtureAccountID(email string) string {
+	sum := sha256.Sum256([]byte(email))
+	return fmt.Sprintf("00000000-0000-4000-8000-%x", sum[:6])
+}
 
 // cloudFixtureEnvironment is an environment a cloud loop the API creates
 // names.
@@ -111,7 +121,7 @@ func signInCloud(t *testing.T, dataDir, address string) {
 			t.Fatal(err)
 		}
 	}
-	putDefaultLogin(t, db, store.CloudAccount{Token: cloudFixtureToken, OrgUUID: "00000000-0000-4000-8000-000000000001"})
+	putDefaultLogin(t, db, store.CloudAccount{Token: cloudFixtureToken, OrgUUID: "00000000-0000-4000-8000-000000000001", AccountUUID: fixtureAccountID("fixture@example.test")})
 	if err := db.Settings().Set(ctx, store.SettingCloudAddress, address); err != nil {
 		t.Fatal(err)
 	}

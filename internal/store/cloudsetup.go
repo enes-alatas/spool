@@ -162,6 +162,11 @@ type CloudCheck struct {
 	// For is the setup the check ran on (CloudCheckFor). A check of
 	// another, before an edit, a Rotate token or a kill, is no check.
 	For string `json:"for"`
+	// Account is the ID of the account the loop's Claude login was signed
+	// in as when the check ran, "" when the hub didn't know it. Signing
+	// the login in again as another account fails a check that passed,
+	// and, where this is known, revokes the loop's hub token (#1230).
+	Account string `json:"account,omitempty"`
 }
 
 // CloudCheckFor names the setup a check of the loop runs on: its repo,

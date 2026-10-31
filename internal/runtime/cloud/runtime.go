@@ -28,11 +28,13 @@ import (
 )
 
 // Account is the claude.ai account whose plan cloud loops spend: the
-// OAuth access token of its sign-in, and the organization it acts in.
-// Never logged.
+// OAuth access token of its sign-in, the organization it acts in, and the
+// account's own ID, "" for a sign-in kept before the hub read it. Never
+// logged.
 type Account struct {
-	Token   string
-	OrgUUID string
+	Token       string
+	OrgUUID     string
+	AccountUUID string
 }
 
 // ErrNoAccount is what a run returns when the hub holds no signed-in
@@ -184,13 +186,18 @@ func startFrom(spec runtime.Spec) (runtime.CloudStart, error) {
 }
 
 // sourceKey is what a state file keeps of the source a session started
-// from: a session started from another repo, branch or environment, or
-// under another login's account, is not resumed. The default login adds
-// nothing, so a key kept before logins were named still matches.
-func sourceKey(source runtime.CloudStart) string {
+// from, under the account whose ID is account: a session started from
+// another repo, branch or environment, under another login, or under
+// another account the login signed in as since (#1230), is not resumed.
+// The default login adds nothing, and nor does a sign-in kept before the
+// hub read its account's ID, so a key kept before either still matches.
+func sourceKey(source runtime.CloudStart, account string) string {
 	key := source.Repo + "\n" + source.Branch + "\n" + source.EnvironmentID
 	if source.Login != "" {
 		key += "\n" + source.Login
+	}
+	if account != "" {
+		key += "\naccount " + account
 	}
 	return tokenHash(key)
 }
@@ -213,9 +220,9 @@ func (cloud *Runtime) Ensure(_ context.Context, spec runtime.Spec) error {
 // one carries on in the cloud session it ran in. A resume of a session
 // this runtime holds no cloud session for ends at once as the CLI's own
 // does, so the runner starts a fresh one. So does a resume of a session
-// started from another source than the loop's now, and of a session the
-// sessions client created.
-func (cloud *Runtime) Start(_ context.Context, spec runtime.Spec) (runtime.Proc, error) {
+// started from another source than the loop's now, or under another
+// account of its login's, and of a session the sessions client created.
+func (cloud *Runtime) Start(ctx context.Context, spec runtime.Spec) (runtime.Proc, error) {
 	source, err := startFrom(spec)
 	if err != nil {
 		return nil, err
@@ -232,14 +239,27 @@ func (cloud *Runtime) Start(_ context.Context, spec runtime.Spec) (runtime.Proc,
 		bounds: cloud.Bounds.withDefaults(),
 		env:    spec.Env,
 	}
+	resumable := spec.SessionID == "" && spec.ResumeID == current.ClaudeSession &&
+		current.SessionID != "" && current.EnvironmentID == ""
+	var account string
+	if resumable {
+		// a login signed in again as another account doesn't own the
+		// session its last one started (#1230)
+		signedIn, err := cloud.Account(ctx, source.Login)
+		if err != nil {
+			return nil, err
+		}
+		account = signedIn.AccountUUID
+		resumable = current.Source == sourceKey(source, account)
+	}
 	cloud.waits.setPrompt(spec.LoopID, spec.AppendSystemPrompt)
 	switch {
 	case spec.SessionID != "":
 		session.claudeSession = spec.SessionID
-	case spec.ResumeID == current.ClaudeSession && current.SessionID != "" &&
-		current.Source == sourceKey(source) && current.EnvironmentID == "":
+	case resumable:
 		session.claudeSession = spec.ResumeID
 		session.sessionID = current.SessionID
+		session.account = account
 	default:
 		session.claudeSession = spec.ResumeID
 		session.lost = true

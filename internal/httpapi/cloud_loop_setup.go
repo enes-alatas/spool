@@ -322,9 +322,17 @@ func (server *Server) handleCheckCloudLoop(w http.ResponseWriter, r *http.Reques
 // of its setup is done.
 func (server *Server) runCloudLoopCheck(ctx context.Context, loopRecord *store.Loop, address string) {
 	defer server.cloudLoopChecks.end(loopRecord.ID)
+	login := loginKey(loopRecord.ClaudeLogin)
+	account := server.loginAccountID(ctx, login)
 	source := runtime.CloudStart{Repo: loopRecord.CloudRepo, Branch: loopRecord.CloudBranch, EnvironmentID: loopRecord.CloudEnvironmentID, Login: loopRecord.ClaudeLogin}
 	stage, detail := server.CloudHooks.CheckSetup(ctx, loopRecord.ID, source, loop.CloudCheckMessage)
-	check := &store.CloudCheck{State: store.CloudCheckOK, CheckedAt: time.Now().UnixMilli(), Address: address, For: store.CloudCheckFor(loopRecord)}
+	check := &store.CloudCheck{State: store.CloudCheckOK, CheckedAt: time.Now().UnixMilli(), Address: address, For: store.CloudCheckFor(loopRecord), Account: account}
+	// under the login's lock, which a sign-in takes too, so one landing
+	// as another account fails this check rather than missing it
+	server.lockLogin(login)
+	if stage == "" && server.loginAccountID(ctx, login) != account {
+		stage, detail = cloudStepCheck, resignedDetail(login)
+	}
 	if stage != "" {
 		// the CLI's line quotes what claude.ai answered (#959)
 		check.State, check.Stage, check.Detail = store.CloudCheckFailed, stage, roomtext.Plain(detail)
@@ -332,7 +340,9 @@ func (server *Server) runCloudLoopCheck(ctx context.Context, loopRecord *store.L
 	} else {
 		server.Log.Info("cloud loop's setup check passed", "loop", loopRecord.Name)
 	}
-	if err := server.Store.Loops().SetCloudCheck(ctx, loopRecord.ID, check); err != nil {
+	err := server.Store.Loops().SetCloudCheck(ctx, loopRecord.ID, check)
+	server.unlockLogin(login)
+	if err != nil {
 		server.Log.Error("record a cloud loop's setup check", "loop", loopRecord.Name, "err", err)
 		return
 	}

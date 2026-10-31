@@ -449,7 +449,10 @@ type cliSession struct {
 	// sessionID is the cloud session, "" until the first Send starts one.
 	claudeSession string
 	sessionID     string
-	lost          bool
+	// account is the ID of the account sessionID was started or resumed
+	// under: a send under another is refused (#1230).
+	account string
+	lost    bool
 
 	sends  chan string
 	events chan claude.Event
@@ -673,11 +676,11 @@ func (session *cliSession) startSession(text string) error {
 	for {
 		select {
 		case sessionID := <-pending.session:
-			session.sessionID = sessionID
+			session.sessionID, session.account = sessionID, run.account
 			err := session.cloud.update(session.loopID, func(s *state) {
 				s.SessionID, s.ClaudeSession, s.EnvironmentID = sessionID, session.claudeSession, ""
 				s.SessionURL = sessionPages + sessionID
-				s.Source = sourceKey(session.source)
+				s.Source = sourceKey(session.source, run.account)
 			})
 			session.cloud.waits.mu.Lock()
 			delete(session.cloud.waits.binding, session.loopID)
@@ -760,6 +763,12 @@ func (session *cliSession) send(text string) error {
 		return err
 	}
 	defer run.remove()
+	if run.account != session.account {
+		// the login signed in as another account since the session
+		// started, which doesn't own it; the hub closes this Proc, and the
+		// next start doesn't resume the session
+		return errors.New("cloud: the Claude login signed in as another account since the session started, so nothing is sent into it")
+	}
 	cmd := exec.CommandContext(ctx, session.cloud.CLI.Binary, "-p", text, "--cloud", session.sessionID, "--output-format", "json")
 	cmd.Dir, cmd.Env = run.dir, run.env
 	var stdout, stderr bytes.Buffer
@@ -785,6 +794,9 @@ type cliRun struct {
 	// run's own directory, which remove takes with it: the log carries the
 	// wake's text, and names the environment the CLI picked (#1232).
 	debugLog string
+	// account is the ID of the account the run signs in as, "" for a
+	// sign-in kept before the hub read it.
+	account string
 	// remove removes the run's config dir, and its own directory with the
 	// debug log in it, once the run ends.
 	remove func()
@@ -811,7 +823,7 @@ func (cloud *Runtime) newCLIRun(ctx context.Context, login, home string) (cliRun
 		return cliRun{}, err
 	}
 	configDir := filepath.Join(scratch, "config")
-	run := cliRun{dir: home, debugLog: filepath.Join(scratch, "debug.log"), remove: func() {
+	run := cliRun{dir: home, debugLog: filepath.Join(scratch, "debug.log"), account: account.AccountUUID, remove: func() {
 		removeConfig(configDir)
 		warnTokenIn(filepath.Join(scratch, "debug.log"), account.Token)
 		_ = os.RemoveAll(scratch)
