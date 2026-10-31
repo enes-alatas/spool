@@ -632,8 +632,9 @@ func (session *cliSession) startSession(text string) error {
 	defer session.cloud.waits.forgetStart(session.loopID, pending)
 	// --ref starts the session from the branch on GitHub: without it the
 	// CLI bundles the start directory, which has nothing to bundle (run R
-	// on #1180). CCR_ENABLE_BUNDLE stays unset, so nothing is uploaded.
-	cmd := exec.Command(cli.Binary, "--cloud", text, "--permission-mode", "auto", "--settings", settings, "--ref", session.source.Branch)
+	// on #1180). CCR_ENABLE_BUNDLE stays unset, so nothing is uploaded. Its
+	// debug log says which environment it picked (#1232).
+	cmd := exec.Command(cli.Binary, "--cloud", text, "--permission-mode", "auto", "--settings", settings, "--ref", session.source.Branch, "--debug-file", run.debugLog)
 	cmd.Dir, cmd.Env = run.dir, run.env
 	terminal, err := startOnTerminal(cmd)
 	if err != nil {
@@ -665,6 +666,9 @@ func (session *cliSession) startSession(text string) error {
 	// A CLI that exits cleanly has started the session: CLI 2.1.310 ends
 	// once the session is created, before its VM posts SessionStart, so
 	// the start waits on for that post within its bound (#1102).
+	watched := make(chan struct{})
+	defer close(watched)
+	misplaced := watchEnvironment(run.debugLog, session.source.EnvironmentID, watched)
 	cliExited := exited
 	for {
 		select {
@@ -679,6 +683,8 @@ func (session *cliSession) startSession(text string) error {
 			delete(session.cloud.waits.binding, session.loopID)
 			session.cloud.waits.mu.Unlock()
 			return err
+		case picked := <-misplaced:
+			return session.misplaced(pending, picked)
 		case <-cliExited:
 			if exitErr == nil {
 				cliExited = nil
@@ -714,6 +720,35 @@ func (session *cliSession) startSession(text string) error {
 	}
 }
 
+// misplaced fails a start whose CLI picked environment picked rather than
+// the loop's, and tells Misplaced, so the loop holds until a setup check
+// passes rather than making a stray session at every wake (#1232). The
+// local CLI is ended on return, which usually comes before it creates the
+// session.
+func (session *cliSession) misplaced(pending *pendingStart, picked string) error {
+	session.cloud.waits.mu.Lock()
+	viewed := pending.viewed
+	session.cloud.waits.mu.Unlock()
+	detail := misplacedDetail(session.source.EnvironmentID, picked, viewed)
+	slog.Default().Warn("cloud: a start failed: the CLI picked another environment", "loop", session.loopID, "environment", session.source.EnvironmentID, "picked", picked, "session", viewed)
+	if tell := session.cloud.Misplaced; tell != nil {
+		tell(session.loopID, detail)
+	}
+	return fmt.Errorf("cloud: %s", detail)
+}
+
+// misplacedDetail says that the CLI picked environment picked, not want,
+// and what the operator does about the session it made, viewed, or may
+// have made when "".
+func misplacedDetail(want, picked, viewed string) string {
+	made := "check claude.ai for a session it may have made, and archive it"
+	if viewed != "" {
+		made = "archive session " + viewed + " on claude.ai"
+	}
+	return fmt.Sprintf("the CLI picked environment %s, not the loop's %s, which the account doesn't hold: %s, and name one of the account's environments",
+		picked, want, made)
+}
+
 // send runs `claude -p --cloud` with text, which only acknowledges the
 // send: the turn comes back by the Stop hook. A send the CLI refuses fails
 // the turn with what it said.
@@ -746,8 +781,12 @@ func (session *cliSession) send(text string) error {
 type cliRun struct {
 	env []string
 	dir string
-	// remove removes the run's config dir, and its own empty directory
-	// when it has one, once the run ends.
+	// debugLog is where a start asks the CLI for its debug log, in the
+	// run's own directory, which remove takes with it: the log carries the
+	// wake's text, and names the environment the CLI picked (#1232).
+	debugLog string
+	// remove removes the run's config dir, and its own directory with the
+	// debug log in it, once the run ends.
 	remove func()
 }
 
@@ -772,8 +811,9 @@ func (cloud *Runtime) newCLIRun(ctx context.Context, login, home string) (cliRun
 		return cliRun{}, err
 	}
 	configDir := filepath.Join(scratch, "config")
-	run := cliRun{dir: home, remove: func() {
+	run := cliRun{dir: home, debugLog: filepath.Join(scratch, "debug.log"), remove: func() {
 		removeConfig(configDir)
+		warnTokenIn(filepath.Join(scratch, "debug.log"), account.Token)
 		_ = os.RemoveAll(scratch)
 	}}
 	if run.dir == "" {
@@ -1087,4 +1127,18 @@ func (cloud *Runtime) recorded(loopID string) (state, error) {
 		current.SessionID = bound
 	}
 	return current, err
+}
+
+// warnTokenIn logs, by name only, a debug log at path that holds token.
+// No CLI has been seen writing it there, but the CLI runs with the token
+// in its environment, and a later one could start: the log is removed
+// with the run either way, so this only makes sure it gets noticed.
+func warnTokenIn(path, token string) {
+	if token == "" {
+		return
+	}
+	raw, err := os.ReadFile(path)
+	if err == nil && bytes.Contains(raw, []byte(token)) {
+		slog.Default().Warn("the claude CLI wrote the account's token to its debug log; removed", "file", filepath.Base(path))
+	}
 }

@@ -25,7 +25,8 @@ type cloudEnvironmentJSON struct {
 }
 
 // environmentsAPI stands in for Anthropic's API, listing the account's
-// environments on the fixture account's token only.
+// environments on the fixture account's token only: the one the page
+// picks, and cirrus's own, which its starts confirm (#1232).
 func environmentsAPI(t *testing.T) *httptest.Server {
 	t.Helper()
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -35,6 +36,7 @@ func environmentsAPI(t *testing.T) *httptest.Server {
 		}
 		_, _ = w.Write([]byte(`{"environments":[
 			{"kind":"anthropic_cloud","environment_id":"env_01Picked","name":"spool","state":"active"},
+			{"kind":"anthropic_cloud","environment_id":"` + cloudEnvironmentOf("cirrus") + `","name":"cirrus","state":"active"},
 			{"kind":"bridge","environment_id":"env_01Laptop","name":"laptop","state":"active"}
 		],"has_more":false}`))
 	}))
@@ -54,8 +56,8 @@ func TestACloudLoopStartsInItsOwnEnvironmentNotThePagesPick(t *testing.T) {
 		Environments []struct{ ID, Name string } `json:"environments"`
 	}
 	hub.mustJSON("GET", "/api/settings/cloud/environments", nil, &listed)
-	if len(listed.Environments) != 1 || listed.Environments[0].ID != "env_01Picked" || listed.Environments[0].Name != "spool" {
-		t.Fatalf("the list = %+v, want the one cloud environment", listed.Environments)
+	if len(listed.Environments) != 2 || listed.Environments[0].ID != "env_01Picked" || listed.Environments[0].Name != "spool" {
+		t.Fatalf("the list = %+v, want the two cloud environments", listed.Environments)
 	}
 	hub.wantRefusal("PUT", "/api/settings/cloud/environment", map[string]string{"id": "env_01Laptop"}, 400, "cloud_environment_unlisted")
 	var step cloudEnvironmentJSON
@@ -103,14 +105,16 @@ func TestACloudLoopStartsInItsOwnEnvironmentNotThePagesPick(t *testing.T) {
 // A cloud loop is created with no repo or environment, and is held until
 // its setup is done: a start without an environment would run in whichever
 // one the CLI picked (ADR-0061). The account's list fails here, so the ID
-// is pasted, while the loop is stopped.
+// is pasted, while the loop is stopped. A pasted ID isn't started in until
+// the list shows it, on the default login too (#1232): the check fails at
+// the environment and starts nothing while the list is down.
 func TestCloudLoopsWaitForTheirEnvironment(t *testing.T) {
 	t.Parallel()
-	down := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		http.Error(w, "unavailable", http.StatusServiceUnavailable)
-	}))
-	t.Cleanup(down.Close)
-	hub := startCloudHub(t, "cirrus", "--cloud-api-base", down.URL)
+	hub := startCloudHub(t, "cirrus")
+	down := filepath.Join(hub.fkState, "environments-down")
+	if err := os.WriteFile(down, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	hub.mustJSON("POST", "/api/loops", map[string]any{"name": "nimbus", "mission": "m", "runtime": "cloud"}, nil)
 	if held := hub.waitHealth("nimbus", "failing"); len(held.Problems) != 1 || held.Problems[0].Symptom != "cloud_setup" {
 		t.Fatalf("problems of a loop with no environment = %+v, want one cloud_setup", held.Problems)
@@ -132,6 +136,16 @@ func TestCloudLoopsWaitForTheirEnvironment(t *testing.T) {
 	hub.wantRefusal("PATCH", "/api/loops/nimbus", map[string]any{"cloud_repo": "example-org/nimbus", "cloud_environment_id": `env_01","x":"y`}, 400, "")
 	hub.mustJSON("PATCH", "/api/loops/nimbus", map[string]any{"cloud_repo": "example-org/nimbus", "cloud_environment_id": "env_01Pasted"}, nil)
 	hub.mustJSON("POST", "/api/loops/nimbus/resume", nil, nil)
+	before := len(startedVMs(t, hub))
+	if view := checkCloudLoop(t, hub, "nimbus"); view.Check.State != "failed" || view.Check.Stage != "environment" || !strings.Contains(view.Check.Detail, "can't be listed") {
+		t.Errorf("the check while the list is down = %+v, want failed at environment", view.Check)
+	}
+	if after := len(startedVMs(t, hub)); after != before {
+		t.Errorf("the held check started %d sessions, want none", after-before)
+	}
+	if err := os.Remove(down); err != nil {
+		t.Fatal(err)
+	}
 	passCloudCheck(t, hub, "nimbus")
 	hub.waitTurn("nimbus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "held words") })
 	if after := hub.waitHealth("nimbus", "ok"); len(after.Problems) != 0 {

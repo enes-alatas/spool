@@ -339,6 +339,31 @@ func (server *Server) runCloudLoopCheck(ctx context.Context, loopRecord *store.L
 	server.cloudSetupStored(ctx, loopRecord.ID)
 }
 
+// CloudSessionMisplaced takes the cloud runtime's word that a start of the
+// loop's ran in an environment other than its own (cloud.Runtime's
+// Misplaced): it records a failed setup check at the environment, saying
+// detail, so the loop holds until a check passes rather than making a
+// stray session at every wake (#1232).
+func (server *Server) CloudSessionMisplaced(loopID, detail string) {
+	ctx := context.Background()
+	loopRecord, err := server.Store.Loops().Get(ctx, loopID)
+	if err != nil {
+		server.Log.Error("read a misplaced cloud loop", "loop", loopID, "err", err)
+		return
+	}
+	address, _ := server.storedCloudAddress(ctx)
+	check := &store.CloudCheck{
+		State: store.CloudCheckFailed, Stage: cloudStepEnvironment, Detail: roomtext.Plain(detail),
+		CheckedAt: time.Now().UnixMilli(), Address: address, For: store.CloudCheckFor(loopRecord),
+	}
+	server.Log.Warn("cloud loop's start ran in another environment", "loop", loopRecord.Name, "detail", detail)
+	if err := server.Store.Loops().SetCloudCheck(ctx, loopID, check); err != nil {
+		server.Log.Error("record a misplaced cloud loop's check", "loop", loopRecord.Name, "err", err)
+		return
+	}
+	server.cloudSetupStored(ctx, loopID)
+}
+
 // cloudSetupStored tells the loop's actor that its stored setup changed.
 func (server *Server) cloudSetupStored(ctx context.Context, loopID string) {
 	stored, err := server.Store.Loops().Get(ctx, loopID)

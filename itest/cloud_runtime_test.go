@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io/fs"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -58,6 +59,9 @@ func startCloudHub(t *testing.T, name string, args ...string) *server {
 func startCloudHubAt(t *testing.T, name, address string, args ...string) *server {
 	t.Helper()
 	dataDir := t.TempDir()
+	// every start lists the account's environments first (#1232); a test
+	// that passes a --cloud-api-base of its own overrides this one
+	args = append([]string{"--cloud-api-base", accountEnvironmentsAPI(t, filepath.Join(dataDir, "fkstate")).URL}, args...)
 	s := startServerArgs(t, dataDir, append([]string{"--runtime", "bare"}, args...)...)
 	s.createLoop(name, nil)
 	// The loop's first wake runs here, on the bare hub, before it stops:
@@ -596,4 +600,32 @@ func TestACloudLoopsAddRepoIsHeldToItsRepos(t *testing.T) {
 	if err != nil || !strings.Contains(string(context), "Your other repos are example-org/tools.") {
 		t.Errorf("the session's context (%v) doesn't name the loop's other repos:\n%s", err, context)
 	}
+}
+
+// accountEnvironmentsAPI stands in for Anthropic's API, listing as the
+// account's environments the fixture account's own and every one set up
+// under fkState, as the operator makes them on claude.ai: one marked gone
+// too, which stands for an environment deleted between the hub's list and
+// the CLI's start. While fkState holds an environments-down file, it
+// answers 503.
+func accountEnvironmentsAPI(t *testing.T, fkState string) *httptest.Server {
+	t.Helper()
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/environment_providers" || r.Header.Get("Authorization") == "" {
+			http.Error(w, `{"error":{"type":"not_found_error"}}`, http.StatusNotFound)
+			return
+		}
+		if _, err := os.Stat(filepath.Join(fkState, "environments-down")); err == nil {
+			http.Error(w, "unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		entries, _ := os.ReadDir(filepath.Join(fkState, "environments"))
+		listed := []string{`{"kind":"anthropic_cloud","environment_id":"` + cloudFixtureEnvironment + `","name":"fixture","state":"active"}`}
+		for _, entry := range entries {
+			listed = append(listed, `{"kind":"anthropic_cloud","environment_id":"`+entry.Name()+`","name":"spool","state":"active"}`)
+		}
+		_, _ = w.Write([]byte(`{"environments":[` + strings.Join(listed, ",") + `],"has_more":false}`))
+	}))
+	t.Cleanup(api.Close)
+	return api
 }

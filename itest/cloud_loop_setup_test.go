@@ -101,8 +101,9 @@ func TestACloudLoopsSetupViewWalksItsStepsAndNeverShowsItsToken(t *testing.T) {
 
 // A check that fails says where it stopped: a secret that isn't the loop's
 // token reaches the hub and is refused, a hub the environment's network
-// can't reach hears nothing, and an environment the account doesn't have
-// starts no session. Each holds the loop until a check passes again.
+// can't reach hears nothing, and an environment the account no longer has
+// makes the CLI pick another, which the check catches. Each holds the
+// loop until a check passes again.
 func TestTheSetupCheckSaysWhereItStopped(t *testing.T) {
 	t.Parallel()
 	hub := startCloudHub(t, "cirrus", "--cloud-start-within-sec", "3")
@@ -131,11 +132,15 @@ func TestTheSetupCheckSaysWhereItStopped(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// gone between the hub's list and the start: the CLI falls back to
+	// another of the account's environments, which the check catches in
+	// its debug log (#1232)
+	setUpCloudEnvironment(t, hub, "env_01Another", cloudTokenOf("cirrus"))
 	gone := filepath.Join(environment, "gone")
 	if err := os.WriteFile(gone, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	failsAt("environment", "not found")
+	failsAt("environment", "picked environment env_01Another")
 	if err := os.Remove(gone); err != nil {
 		t.Fatal(err)
 	}
