@@ -176,6 +176,8 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
+    outputs:
+      claude_code: ${{ steps.claude_code.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -203,6 +205,11 @@ jobs:
             exit 1
           fi
           scripts/release-build.sh dist
+
+      # The CLI the workstation image pins (#1223), for the release notes.
+      - name: claude code version
+        id: claude_code
+        run: echo "version=$(tr -d '[:space:]' < docker/workstation/claude-code.version)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -240,6 +247,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           WORKSTATION: ${{ needs.index.outputs.workstation }}
           EGRESS: ${{ needs.index.outputs.egress }}
+          CLAUDE_CODE: ${{ needs.build.outputs.claude_code }}
           GH_REPO: ${{ github.repository }}
         run: |
           if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
@@ -249,8 +257,8 @@ jobs:
           notes=$(gh release view "$GITHUB_REF_NAME" --json body --jq .body)
           case $notes in
           *"## Images"*) ;;
-          *) printf '%s\n\n## Images\n\n`spool images` prints how to fetch them. By digest:\n\n- `%s`\n- `%s`\n' \
-               "$notes" "$WORKSTATION" "$EGRESS" | gh release edit "$GITHUB_REF_NAME" --notes-file - ;;
+          *) printf '%s\n\n## Images\n\n`spool images` prints how to fetch them. By digest:\n\n- `%s`\n- `%s`\n\nThe workstation image runs Claude Code %s.\n' \
+               "$notes" "$WORKSTATION" "$EGRESS" "$CLAUDE_CODE" | gh release edit "$GITHUB_REF_NAME" --notes-file - ;;
           esac
 
   # The README's release path on a fresh runner (#770): no Go, no Node, no

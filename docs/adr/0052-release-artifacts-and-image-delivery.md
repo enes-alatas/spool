@@ -1,6 +1,6 @@
 # ADR-0052: A release ships built artifacts, and the operator verifies them before the hub runs them
 
-Date: 2026-10-11 · Status: accepted (operator decisions of 2026-10-12 on #749: A for decision 4, S2 for decision 5) · Relates to: ADR-0017, ADR-0028, ADR-0042, #747
+Date: 2026-10-11 · Status: accepted (operator decisions of 2026-10-12 on #749: A for decision 4, S2 for decision 5) · Amended: 2026-10-31 (decision 1: a release pins its Claude Code CLI, #1223) · Relates to: ADR-0017, ADR-0028, ADR-0042, #747
 
 ## Context
 
@@ -49,6 +49,17 @@ Three facts shape the options:
    - `SHA256SUMS`, covering every attached file.
    - The source stays GitHub's own tarball. Windows and package managers
      are out of scope (#747).
+
+   **Amendment (2026-10-31, #1223):** a released workstation image pins
+   its Claude Code CLI (operator decision of 2026-10-31 on #1223).
+   - `docker/workstation/claude-code.version` names a version the fleet
+     has run. `scripts/release-images.sh` builds with it, the build
+     refuses to finish on any other installed version, and the image's
+     `dev.spool.claude-code.version` label and the release notes name it.
+   - This reverses #304's "every build installs the newest CLI" for
+     release builds only: a new upstream CLI reaches a release through a
+     reviewed bump of that file. `make image` still installs the newest
+     one unless `CLAUDE_CODE_VERSION` is set, so decision 6 holds.
 2. **One workflow builds a release, on GitHub-hosted runners, from the tag
    the operator pushes.** No loop tags (CONVENTIONS.md, #223), and no
    artifact is built on a workstation or on the fleet's VPS.

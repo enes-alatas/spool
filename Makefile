@@ -94,10 +94,15 @@ perf-docker: server fakeclaude egress
 # release (#304); the layers above it stay cached. Fix the value to reuse the
 # installed CLI instead, e.g. `make image CLAUDE_CODE_CACHEBUST=keep` offline.
 CLAUDE_CODE_CACHEBUST ?= $(shell date +%s)
+# Empty installs whatever the repo serves. A release pins the CLI to the
+# version in docker/workstation/claude-code.version (#1223):
+# scripts/release-images.sh passes it, and so can a build of your own.
+CLAUDE_CODE_VERSION ?=
 
 image: egress hook
 	docker build -t spool-workstation -f docker/workstation/Dockerfile \
-	    --build-arg CLAUDE_CODE_CACHEBUST=$(CLAUDE_CODE_CACHEBUST) .
+	    --build-arg CLAUDE_CODE_CACHEBUST=$(CLAUDE_CODE_CACHEBUST) \
+	    --build-arg CLAUDE_CODE_VERSION=$(CLAUDE_CODE_VERSION) .
 	docker build -t spool-egress -f docker/egress/Dockerfile bin
 
 image-multiarch:
@@ -109,7 +114,8 @@ image-multiarch:
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GO) build -o bin/spool-github-arm64 ./cmd/spool-github
 	docker buildx build --platform linux/amd64,linux/arm64 \
 	    -t spool-workstation -f docker/workstation/Dockerfile \
-	    --build-arg CLAUDE_CODE_CACHEBUST=$(CLAUDE_CODE_CACHEBUST) .
+	    --build-arg CLAUDE_CODE_CACHEBUST=$(CLAUDE_CODE_CACHEBUST) \
+	    --build-arg CLAUDE_CODE_VERSION=$(CLAUDE_CODE_VERSION) .
 	docker buildx build --platform linux/amd64,linux/arm64 \
 	    -t spool-egress -f docker/egress/Dockerfile bin
 
