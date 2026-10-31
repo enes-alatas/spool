@@ -1605,3 +1605,6 @@ HN: 0 new. Merged: #1216 (#1212), #1218 (#1183), Iris's #1203 fix. Open: Terra's
 ## 2026-10-31 17:17 UTC tick
 HN: Prospero + Herdr threads, no fit. Merged: #1222 (#1200), Iris's #1194, Terra's flake fixes (#1204/#1219), Elliot's #1226 (#1184). Epic #1179 all children closed → closed completed with a note. New #1225 (bug low, New loop cloud note stale) → L6, Iris. Terra on #1078 next. #1223 decision with Enes via Elliot.
 19:31 Elliot: #1229 (Terra, Closes #1078) one docs ask; #1232 (security medium: unchecked env ID on default login falls back to another environment) → next cloud slice. Milestone set L6. Order for Terra after #1229: #1232 → #1205 → #1142–#1144.
+
+## 2026-10-31 22:32 UTC tick
+HN: no fit (Cursor/backdoor thread, Prospero). Merged: #1229 (→#1078), Iris's #1225 fix. Open PRs: #1233 (Terra, #1232), #1234 (Elliot, #1223 — Enes said yes 19:43 via Elliot DM), #1236 (Iris, #1228). Closed #926 and #925 completed (all slices merged). #1235 (chore, TestedVersion vs pin) → L6. Board tidy.
