@@ -25,6 +25,8 @@ package main
 //   - `-p <message> --cloud <id>` prints {ok, session_id, url} and starts
 //     the turn in the VM, or prints {"ok":false,…} and exits 1 for a
 //     session it doesn't have.
+//   - Both append the SHA-256 of the run's CLAUDE_CODE_OAUTH_TOKEN to the
+//     session's account-sums, whose account the run acts for (#1078).
 //
 // A turn in the VM runs the hooks the VM's ~/.claude/settings.json names,
 // where the environment's setup script wrote them, and then the repo's
@@ -78,6 +80,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -204,6 +207,10 @@ func cloudStart(message, settings, ref string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+	if err := recordAccount(vm); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
 	if err := os.WriteFile(filepath.Join(vm, "environment"), []byte(chosen.Remote.DefaultEnvironmentID), 0o600); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -274,6 +281,10 @@ func cloudSend(session, message string) int {
 	}
 	if _, err := os.Stat(filepath.Join(cloudRoot(), session, "repo")); err != nil {
 		fmt.Println(`{"ok":false,"error":"no such session"}`)
+		return 1
+	}
+	if err := recordAccount(filepath.Join(cloudRoot(), session)); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	if err := startVMTurn(session, message, false); err != nil {
@@ -811,4 +822,18 @@ func toolAsked(message string) (string, json.RawMessage, bool) {
 		}
 	}
 	return "", nil, false
+}
+
+// recordAccount appends the SHA-256 of the token the CLI run carries,
+// CLAUDE_CODE_OAUTH_TOKEN, to the session's account-sums, one line per
+// start or send: a test learns whose account a session runs under without
+// the token in the state dir.
+func recordAccount(vm string) error {
+	sum := sha256.Sum256([]byte(os.Getenv("CLAUDE_CODE_OAUTH_TOKEN")))
+	sums, err := os.OpenFile(filepath.Join(vm, "account-sums"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(sums, hex.EncodeToString(sum[:]))
+	return errors.Join(err, sums.Close())
 }

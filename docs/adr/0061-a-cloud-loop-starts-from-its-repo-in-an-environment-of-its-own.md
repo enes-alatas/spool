@@ -1,6 +1,6 @@
 # ADR-0061: A cloud loop starts from its GitHub repo, in an environment of its own
 
-Date: 2026-10-28 · Status: accepted (operator decision of 2026-10-29 on #1180, comment 6498693769: the flow as written, with multi-repo loops; the operator decision of 2026-10-29 on #1185, comment 6498931340: the deny rules and the `add_repo` guard of item 2, with a dedicated GitHub user recommended, not required; the operator decision of 2026-10-28 on #1168: the setup-script route, with the token as an environment variable; the network secret in its place is Terra's correction of the same day on #1180, comment 6478145150, agreed by Elliot in 6478162314, which narrows that posture; and the operator decision of 2026-10-29 on #1180, comment 6493335622, that a kill revokes the token for good) · Amended: 2026-10-29 (the `SessionStart` answer's shape, #1181); 2026-10-30 (`/mcp` takes the handshake between turns, #1181); 2026-10-30 (item 6: the setup check, #1182) · Supersedes: the operator's park of #975's hardened mode (option A, 2026-10-28), which this route builds as the only mode; ADR-0059 item 1 (that the hub doesn't read the TUI, and the binding's "only on that start's token"), item 2 (the loop home a start bundles), item 4 (a fresh hub token per session, in the VM), item 6 (one environment for every cloud loop) and its #978 amendment's single stored choice, item 8's #1094 amendment (`CCR_ENABLE_BUNDLE`), item 10's *The repo field goes* and its #1169 amendment, and item 9's #977 amendment's create refusal · Relates to: ADR-0022, ADR-0028, ADR-0043, ADR-0053, ADR-0056, ADR-0058, ADR-0059, ADR-0060
+Date: 2026-10-28 · Status: accepted (operator decision of 2026-10-29 on #1180, comment 6498693769: the flow as written, with multi-repo loops; the operator decision of 2026-10-29 on #1185, comment 6498931340: the deny rules and the `add_repo` guard of item 2, with a dedicated GitHub user recommended, not required; the operator decision of 2026-10-28 on #1168: the setup-script route, with the token as an environment variable; the network secret in its place is Terra's correction of the same day on #1180, comment 6478145150, agreed by Elliot in 6478162314, which narrows that posture; and the operator decision of 2026-10-29 on #1180, comment 6493335622, that a kill revokes the token for good) · Amended: 2026-10-29 (the `SessionStart` answer's shape, #1181); 2026-10-30 (`/mcp` takes the handshake between turns, #1181); 2026-10-30 (item 6: the setup check, #1182); 2026-10-31 (item 7: what the CLI answers, #1078) · Supersedes: the operator's park of #975's hardened mode (option A, 2026-10-28), which this route builds as the only mode; ADR-0059 item 1 (that the hub doesn't read the TUI, and the binding's "only on that start's token"), item 2 (the loop home a start bundles), item 4 (a fresh hub token per session, in the VM), item 6 (one environment for every cloud loop) and its #978 amendment's single stored choice, item 8's #1094 amendment (`CCR_ENABLE_BUNDLE`), item 10's *The repo field goes* and its #1169 amendment, and item 9's #977 amendment's create refusal · Relates to: ADR-0022, ADR-0028, ADR-0043, ADR-0053, ADR-0056, ADR-0058, ADR-0059, ADR-0060
 
 ## Context
 
@@ -452,6 +452,17 @@ real hub behind the allowlist is checked at #1181's first live start:
      environment. The default login's pasted ID is the one unverified
      case, as it is today, and #1078 records what the CLI answers to an ID
      its account doesn't list.
+
+   **Amendment (2026-10-31, #1078):** the CLI doesn't refuse such an ID.
+   In one real start under the operator's sign-in (CLI 2.1.310, operator
+   decision of 2026-10-31), `remote.defaultEnvironmentId` named an ID the
+   account doesn't hold. The CLI logged that the configured environment
+   wasn't found, used the first environment the account lists, created
+   the session there, and exited 0 with its usual "Created cloud
+   session" line. So the default login's unverified ID, if wrong, starts
+   the loop in another environment of the account, perhaps another cloud
+   loop's, without an error. The session was archived at once, and no
+   branch was pushed.
 
 8. **Settings → Cloud loses its environment step.** The shared
    environment, its stored ID and its allowlist confirm go. Settings →

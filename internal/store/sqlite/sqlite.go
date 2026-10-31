@@ -339,6 +339,10 @@ func (table loops) Edit(ctx context.Context, id string, edit store.LoopEdit) (*s
 		set("cloud_repos", encodeCloudRepos(edit.Cloud.Repos))
 		set("cloud_environment_id", edit.Cloud.EnvironmentID)
 	}
+	if edit.RevokeHubToken {
+		set("hub_mcp_token", "")
+		set("hub_mcp_token_hash", "")
+	}
 	if edit.TickIntervalSec != nil {
 		set("tick_interval_sec", *edit.TickIntervalSec)
 	}

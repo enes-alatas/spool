@@ -911,7 +911,7 @@ func (server *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 			server.jsonErr(w, 400, "cloud_repo, cloud_branch, cloud_repos and cloud_environment_id apply to cloud loops only")
 			return
 		}
-		setup, refusal := server.cloudSetup(r.Context(), store.CloudSetup{}, req.cloudSetupReq)
+		setup, refusal := server.cloudSetup(r.Context(), claudeLogin, false, store.CloudSetup{}, req.cloudSetupReq)
 		if refusal != nil {
 			server.refuse(w, refusal)
 			return
@@ -1232,21 +1232,36 @@ func (server *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 		outside := !*req.InFleetChannel
 		edit.OutsideFleetChannel = &outside
 	}
-	if req.given() {
-		if loopRecord.Runtime != store.RuntimeCloud {
-			server.jsonErr(w, 400, "cloud_repo, cloud_branch, cloud_repos and cloud_environment_id apply to cloud loops only")
-			return
-		}
+	if req.given() && loopRecord.Runtime != store.RuntimeCloud {
+		server.jsonErr(w, 400, "cloud_repo, cloud_branch, cloud_repos and cloud_environment_id apply to cloud loops only")
+		return
+	}
+	// A cloud loop's session runs under its login's account, in an
+	// environment of that account, so a move to another login is a change
+	// of where it starts, as a repo or environment change is (#1078).
+	moved := loopRecord.Runtime == store.RuntimeCloud && req.ClaudeLogin != nil && putOn != loopRecord.ClaudeLogin
+	if req.given() || moved {
 		if loopRecord.Status != store.StatusPaused {
-			server.jsonErrCode(w, 409, codeCloudLoopRunning, "a cloud loop's repos and environment change only while it is paused: its sessions start from them")
+			server.jsonErrCode(w, 409, codeCloudLoopRunning, "a cloud loop's repos, environment and Claude login change only while it is paused: its sessions start from them")
 			return
 		}
-		setup, refusal := server.cloudSetup(r.Context(), store.CloudSetupOf(loopRecord), req.cloudSetupReq)
+		login := loopRecord.ClaudeLogin
+		if req.ClaudeLogin != nil {
+			login = putOn
+		}
+		setup, refusal := server.cloudSetup(r.Context(), login, moved, store.CloudSetupOf(loopRecord), req.cloudSetupReq)
 		if refusal != nil {
 			server.refuse(w, refusal)
 			return
 		}
-		edit.Cloud = &setup
+		if req.given() {
+			edit.Cloud = &setup
+		}
+		// The hub token is the old account's environment secret, which
+		// that account keeps after the move, so the move revokes it as a
+		// kill does; the loop waits for Rotate token to mint one for the
+		// new environment (#1078).
+		edit.RevokeHubToken = moved
 	}
 	// One surface per loop (ADR-0029), judged on what the loop would
 	// hold after this request and before any live call is made.
@@ -1326,6 +1341,9 @@ func (server *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 	if updated.ClaudeLogin != loopRecord.ClaudeLogin {
 		if actor, ok := server.Manager.Get(updated.ID); ok {
 			actor.RefreshEnv()
+			if edit.RevokeHubToken {
+				actor.TokenChanged()
+			}
 		}
 	}
 	// After UpdateLoop, so the session the rotation starts is built from the

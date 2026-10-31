@@ -782,6 +782,17 @@ func TestLoopCloudCheck(t *testing.T) {
 			t.Errorf("the check still stands after %s", name)
 		}
 	}
+	// a move to another Claude login revokes the token in its own edit
+	if _, err := loops.RotateHubMCPToken(ctx, "c1"); err != nil {
+		t.Fatal(err)
+	}
+	login := "ada"
+	if _, err := loops.Edit(ctx, "c1", store.LoopEdit{ClaudeLogin: &login, RevokeHubToken: true, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(); got.HasHubToken || got.HubTokenHash != "" || got.ClaudeLogin != "ada" {
+		t.Errorf("after a move the loop holds a token (%v) on %q, want none on ada", got.HasHubToken, got.ClaudeLogin)
+	}
 	if err := loops.SetCloudCheck(ctx, "c1", nil); err != nil || read().CloudCheck != nil {
 		t.Errorf("a nil check isn't forgotten: %v", err)
 	}

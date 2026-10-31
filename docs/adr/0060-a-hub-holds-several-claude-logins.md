@@ -1,6 +1,6 @@
 # ADR-0060: A hub holds several Claude logins, and a loop runs on one of them
 
-Date: 2026-10-23 · Status: accepted (operator decisions of 2026-10-23, recorded on #926: items 3, 4, 5, 6 and 8) · Amended: 2026-10-27, 2026-10-28 · Amends: ADR-0044 item 2, ADR-0047 items 3, 5, 7, 8 and 9, ADR-0058 items 1, 2, 3, 6 and 7 · Relates to: ADR-0043, ADR-0046, ADR-0048, ADR-0059
+Date: 2026-10-23 · Status: accepted (operator decisions of 2026-10-23, recorded on #926: items 3, 4, 5, 6 and 8) · Amended: 2026-10-27, 2026-10-28, 2026-10-31 · Amends: ADR-0044 item 2, ADR-0047 items 3, 5, 7, 8 and 9, ADR-0058 items 1, 2, 3, 6 and 7 · Relates to: ADR-0043, ADR-0046, ADR-0048, ADR-0059
 
 ## Context
 
@@ -71,6 +71,19 @@ refreshes it.
      #1078 builds that, naming a login on a cloud loop is refused (409),
      and the refusal names #1078.
 
+   **Amendment (2026-10-31, #1078):** a cloud loop names its login too,
+   by ADR-0061 item 7's rule.
+   - The 409 is lifted. Its sessions start and take their turns under
+     that login's token, in an environment of that login's account: one
+     its list doesn't show is refused, and on a login other than the
+     default the hub lists again before each start and starts only in
+     one the list shows.
+   - Unlike a contained loop's, a cloud loop's move waits for it to
+     stop and drops its session, which belongs to the old account. It
+     revokes the loop's hub token, which the old account's environment
+     keeps as its secret, so the loop waits for Rotate token. Its
+     setup check stands again only after a pass on the new login.
+
 4. **Plan usage is kept per login.** A loop's rate-limit event is
    recorded against the login it ran on.
    - ADR-0047's #1052 rule (within a window, usage only rises) holds per
@@ -103,6 +116,11 @@ refreshes it.
      loops on `default` can cap each other. A record of its own for the
      host, or no plan cap on bare loops, can come later as its own
      issue.
+
+   **Amendment (2026-10-31, #1078):** a cloud loop follows the cap of
+   the login it names (item 3's #1078 amendment), the default's when it
+   names none. Its turns report no usage (ADR-0059 item 7), so only the
+   login's other loops move it.
 
 6. **Who may do what** (operator decision of 2026-10-23; the roles are
    ADR-0048's).

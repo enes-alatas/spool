@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/enes-alatas/spool/internal/runtime"
 )
 
 // The list is read as the CLI's /remote-env reads it, page by page on the
@@ -34,8 +36,8 @@ func TestEnvironmentsListTheAccountsCloudEnvironments(t *testing.T) {
 		],"has_more":false}`))
 	}))
 	defer api.Close()
-	cloud := &Runtime{APIBase: api.URL, Account: func(context.Context) (Account, error) { return testAccount, nil }}
-	listed, err := cloud.Environments(context.Background())
+	cloud := &Runtime{APIBase: api.URL, Account: func(context.Context, string) (Account, error) { return testAccount, nil }}
+	listed, err := cloud.Environments(context.Background(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,13 +57,60 @@ func TestEnvironmentsFailLoudly(t *testing.T) {
 		http.Error(w, `{"error":{"type":"authentication_error"}}`, http.StatusUnauthorized)
 	}))
 	defer api.Close()
-	cloud := &Runtime{APIBase: api.URL, Account: func(context.Context) (Account, error) { return testAccount, nil }}
-	if _, err := cloud.Environments(context.Background()); err == nil || !strings.Contains(err.Error(), "answered 401") ||
+	cloud := &Runtime{APIBase: api.URL, Account: func(context.Context, string) (Account, error) { return testAccount, nil }}
+	if _, err := cloud.Environments(context.Background(), ""); err == nil || !strings.Contains(err.Error(), "answered 401") ||
 		!strings.Contains(err.Error(), "authentication_error") {
 		t.Errorf("a refused list: %v, want the status and the answer", err)
 	}
-	cloud.Account = func(context.Context) (Account, error) { return Account{}, ErrNoAccount }
-	if _, err := cloud.Environments(context.Background()); !errors.Is(err, ErrNoAccount) {
+	cloud.Account = func(context.Context, string) (Account, error) { return Account{}, ErrNoAccount }
+	if _, err := cloud.Environments(context.Background(), ""); !errors.Is(err, ErrNoAccount) {
 		t.Errorf("with no account: %v, want ErrNoAccount", err)
+	}
+}
+
+// A start on a login other than the default lists that login's account's
+// environments, on its own token, and goes ahead only in one the list
+// shows; a list that can't be read holds it too. The default's start
+// lists nothing (#1078).
+func TestAStartOnAnotherLoginNeedsItsOwnEnvironment(t *testing.T) {
+	ada := Account{Token: "sk-ant-oat01-fixture-ada", OrgUUID: "00000000-0000-4000-8000-00000000ada0"}
+	listings := 0
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		listings++
+		if r.Header.Get("Authorization") != "Bearer "+ada.Token || r.Header.Get("x-organization-uuid") != ada.OrgUUID {
+			http.Error(w, "not ada", http.StatusUnauthorized)
+			return
+		}
+		_, _ = w.Write([]byte(`{"environments":[{"kind":"anthropic_cloud","environment_id":"env_01Ada","name":"ada","state":"active"}]}`))
+	}))
+	defer api.Close()
+	var asked []string
+	cloud := &Runtime{APIBase: api.URL, Account: func(_ context.Context, login string) (Account, error) {
+		asked = append(asked, login)
+		if login == "ada" {
+			return ada, nil
+		}
+		return testAccount, nil
+	}}
+	ctx := context.Background()
+
+	if err := cloud.confirmEnvironment(ctx, runtime.CloudStart{EnvironmentID: "env_01Anything"}); err != nil || listings != 0 {
+		t.Errorf("the default's start: %v after %d listings, want it going ahead unlisted", err, listings)
+	}
+	if err := cloud.confirmEnvironment(ctx, runtime.CloudStart{EnvironmentID: "env_01Ada", Login: "ada"}); err != nil {
+		t.Errorf("ada's start in ada's environment: %v", err)
+	}
+	if err := cloud.confirmEnvironment(ctx, runtime.CloudStart{EnvironmentID: "env_01Spool", Login: "ada"}); err == nil ||
+		!strings.Contains(err.Error(), "env_01Spool is not one of the cloud environments of Claude login ada's account") {
+		t.Errorf("ada's start in another account's environment: %v, want it held, naming both", err)
+	}
+	if len(asked) != 2 || asked[0] != "ada" || asked[1] != "ada" {
+		t.Errorf("accounts read: %q, want ada's for each of ada's starts", asked)
+	}
+
+	cloud.Account = func(context.Context, string) (Account, error) { return Account{}, ErrNoAccount }
+	if err := cloud.confirmEnvironment(ctx, runtime.CloudStart{EnvironmentID: "env_01Ada", Login: "ada"}); !errors.Is(err, ErrNoAccount) ||
+		!strings.Contains(err.Error(), "can't be listed") {
+		t.Errorf("ada signed out: %v, want the start held for a list that can't be read", err)
 	}
 }

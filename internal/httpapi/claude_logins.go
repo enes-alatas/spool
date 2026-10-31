@@ -407,16 +407,13 @@ func loopLoginName(name string) string {
 
 // loopLoginRefusal says why a loop of runtime loopRuntime may not name the
 // Claude login login, as loopLoginName stores it, or nil. A bare loop runs
-// on the host's own login, and a cloud loop on the default until #1078
-// (ADR-0060). Whether the hub holds the login is putOnLogin's to say.
+// on the host's own login (ADR-0060). A cloud loop names one as a
+// contained loop does, and its environment must be that login's account's
+// (ADR-0061, #1078). Whether the hub holds the login is putOnLogin's to
+// say.
 func loopLoginRefusal(login, loopRuntime string) *requestError {
-	switch {
-	case login == "":
-		return nil
-	case loopRuntime == store.RuntimeBare:
+	if login != "" && loopRuntime == store.RuntimeBare {
 		return &requestError{409, codeClaudeLogin, "a bare loop runs on this machine's own Claude login, so it names none"}
-	case loopRuntime == store.RuntimeCloud:
-		return &requestError{409, codeClaudeLogin, "a cloud loop runs on the default Claude login until #1078 lets it name another"}
 	}
 	return nil
 }

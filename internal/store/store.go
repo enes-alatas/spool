@@ -946,6 +946,11 @@ type LoopEdit struct {
 	ClaudeLogin *string
 	// Cloud replaces a cloud loop's repos and environment whole.
 	Cloud *CloudSetup
+	// RevokeHubToken forgets the loop's hub token in the same statement, as
+	// a kill does: set when a cloud loop moves to another Claude login, since
+	// the old account's environment still holds the token as its secret
+	// (#1078).
+	RevokeHubToken bool
 
 	TickIntervalSec *int
 	MinWakeSec      *int

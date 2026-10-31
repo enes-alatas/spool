@@ -275,10 +275,12 @@ A hub can hold several Claude logins, each under a name. The one named
 `default` is the one **Sign in with Claude** signs in, on the setup card
 and in Settings → Cloud. A contained loop runs on the login it names, its
 `claude_login`, and one that names none on `default`. A bare loop runs on
-this machine's own login, and a cloud loop on `default` until a later
-release (#1078), so naming a login on either is refused (409). Moving a
-loop to another login closes its process at its next quiet boundary, as
-an attached env-var does, and its session goes on. A loop on a login
+this machine's own login, so naming a login on one is refused (409). A
+cloud loop names one too, and its environment must be one of that
+login's account's ([Cloud loops](#cloud-loops), #1078). Moving a
+contained loop to another login closes its process at its next quiet
+boundary, as an attached env-var does, and its session goes on. A loop
+on a login
 that is signed out is held until the login is signed in again or the
 loop moves: it never falls back to `default`.
 Until `default` is signed in, a stored setup-token stands in for it.
@@ -289,10 +291,11 @@ it, until that login's windows reset, and the two thresholds apply to
 every login. Resume now names the login it lifts
 (`POST /api/plan-cap/resume` with `{"claude_login": "<name>"}`, the
 default with none). Bare loops follow the `default` login's cap, since
-they report into its usage, and so do cloud loops. Moving a capped loop
-to a login that isn't capped wakes it. With more than one login, the
-Fleet page's plan strip shows a ring for each, named, whose figures
-open on a click (#1074). A capped login's ring wears a red rim in place
+they report into its usage. A cloud loop follows its own login's, though
+its turns report no usage (ADR-0059), so only the login's other loops
+move it. Moving a capped loop to a login that isn't capped wakes it.
+With more than one login, the Fleet page's plan strip shows a ring for
+each, named, whose figures open on a click (#1074). A capped login's ring wears a red rim in place
 of a cap banner, and its figures name the loops on it that sleep, with a
 Resume now for that login alone (#1076).
 
@@ -351,8 +354,8 @@ next turn (#1072).
 ## Cloud loops
 
 A cloud loop's claude runs in a Claude Code cloud session on Anthropic's
-machines, on the hub's Claude login, and reaches the hub over the internet
-(ADR-0059). Settings → Cloud walks the hub's setup in three steps, in this
+machines, on a Claude login of the hub's, `default` unless the loop
+names another, and reaches the hub over the internet (ADR-0059). Settings → Cloud walks the hub's setup in three steps, in this
 order. Each step the hub checks before the next opens. The hub needs the
 `claude` CLI on its machine, the same one the Claude login signs in with.
 
@@ -377,7 +380,7 @@ order. Each step the hub checks before the next opens. The hub needs the
      once the address works from outside.
 3. **Claude login.** Sign in with Claude, or keep the login the hub
    already has. On Spool's side, the hub checks the login with one haiku
-   answer. The account is the one every cloud loop spends.
+   answer. The account is the one every cloud loop on `default` spends.
 
 Then set each cloud loop up, in a cloud environment of its own that you
 create on claude.ai for it. Its setup view, `GET
@@ -394,6 +397,13 @@ session never loads the hub's MCP server. An entry an environment can't
 hold, such as a host with a port of its own, is named beside the list and
 left out of it. The walk lists the Claude login's environments by name,
 with one read-only call; if the list fails, the loop takes a pasted ID.
+On the default login a pasted ID is used unchecked, so copy it exactly:
+the CLI doesn't refuse an ID the account doesn't hold, but starts each
+wake's session in the account's first environment, outside the loop's
+guards and allowed domains, where the hub never binds it to the loop,
+and it stays until you archive it on claude.ai (#1078). For the same
+reason, if you delete or recreate a default-login loop's environment,
+stop the loop and name the new ID before it wakes again.
 The steps, in order:
 
 1. **Its repo.** Create the loop with the cloud runtime and its GitHub repo,
@@ -436,9 +446,31 @@ The steps, in order:
 A cloud loop whose repo, environment or token isn't set, or whose check
 hasn't passed on its setup as it is now, waits with a `cloud_setup`
 problem, and so does one made before ADR-0061, whose old token the upgrade
-revoked. An edit of its repo, branch or environment, a Rotate token or a
-kill takes a new check. A loop's repo, branch and environment change
-only while it is stopped.
+revoked. An edit of its repo, branch, environment or Claude login, a
+Rotate token or a kill takes a new check. A loop's repo, branch,
+environment and Claude login change only while it is stopped.
+
+**A cloud loop on another Claude login** (#1078). Name the login,
+`claude_login`, as for a contained loop. Its sessions start and take
+their turns under that login's token, so they spend that login's plan,
+and its environment must be one the login's account made: create it on
+claude.ai signed in as that account. The walk lists that login's
+environments, `GET /api/settings/cloud/environments?login=<name>`, and
+an environment the list doesn't show is refused. One pasted while the
+list fails is taken, but the loop starts nothing, its check included,
+until the list shows it: the hub lists the login's environments before
+each start, and a list that doesn't show the loop's environment, or
+can't be read, fails the start and names why. Moving a cloud loop to
+another login refuses an environment that login's account doesn't
+list, drops its session, which belongs to the old account, revokes its
+hub token, which the old environment still holds as its secret, and
+takes a new check. The loop then waits at step 3: Rotate token, set the
+new token as the new environment's secret, and delete the old
+environment's secret on claude.ai. Unlike a contained loop's, a cloud
+loop's sessions are open to the login's account: whoever holds it
+reads every turn, can send into a session and run commands in its VM,
+where the loop's `env-var` connections sit. Attach to such a loop only
+connections the login's owner may hold.
 
 The setup script also denies the session the `claude-code-remote` tools that
 act on the claude.ai account, such as `create_trigger` and `list_sessions`, and

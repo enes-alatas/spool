@@ -165,13 +165,16 @@ type CloudCheck struct {
 }
 
 // CloudCheckFor names the setup a check of the loop runs on: its repo,
-// branch, environment and hub token. The further repos are left out, as
-// the check starts from the first alone. Only the token's hash takes part,
-// and only hashed again.
+// branch, environment, hub token and Claude login. The further repos are
+// left out, as the check starts from the first alone. Only the token's
+// hash takes part, and only hashed again. The default login adds nothing,
+// so a pass recorded before a loop could name another still stands.
 func CloudCheckFor(loopRecord *Loop) string {
-	sum := sha256.Sum256([]byte(strings.Join([]string{
-		loopRecord.CloudRepo, loopRecord.CloudBranch, loopRecord.CloudEnvironmentID, loopRecord.HubTokenHash,
-	}, "\x00")))
+	parts := []string{loopRecord.CloudRepo, loopRecord.CloudBranch, loopRecord.CloudEnvironmentID, loopRecord.HubTokenHash}
+	if loopRecord.ClaudeLogin != "" {
+		parts = append(parts, loopRecord.ClaudeLogin)
+	}
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
 	return hex.EncodeToString(sum[:])
 }
 

@@ -322,7 +322,7 @@ func (server *Server) handleCheckCloudLoop(w http.ResponseWriter, r *http.Reques
 // of its setup is done.
 func (server *Server) runCloudLoopCheck(ctx context.Context, loopRecord *store.Loop, address string) {
 	defer server.cloudLoopChecks.end(loopRecord.ID)
-	source := runtime.CloudStart{Repo: loopRecord.CloudRepo, Branch: loopRecord.CloudBranch, EnvironmentID: loopRecord.CloudEnvironmentID}
+	source := runtime.CloudStart{Repo: loopRecord.CloudRepo, Branch: loopRecord.CloudBranch, EnvironmentID: loopRecord.CloudEnvironmentID, Login: loopRecord.ClaudeLogin}
 	stage, detail := server.CloudHooks.CheckSetup(ctx, loopRecord.ID, source, loop.CloudCheckMessage)
 	check := &store.CloudCheck{State: store.CloudCheckOK, CheckedAt: time.Now().UnixMilli(), Address: address, For: store.CloudCheckFor(loopRecord)}
 	if stage != "" {
