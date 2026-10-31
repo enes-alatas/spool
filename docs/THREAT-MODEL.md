@@ -487,6 +487,16 @@ and each turn's transcript lines back to the cloud listener (ADR-0059).
   They act on the loop's hub token, so a routine from `create_trigger`
   or a session from `create_session` outlives them. After killing a loop
   that misbehaved, the operator checks claude.ai's routines and sessions.
+- **The hub token lives at Anthropic, and doesn't expire.** As the
+  environment's network secret it is stored on the claude.ai account,
+  under Anthropic's keeping, not the hub's. Whoever holds the account
+  can start a session in that environment by hand, and that session's
+  requests to the hub carry the token. The token stays
+  valid until Rotate token, a kill or a delete ends it; a stop only
+  refuses it while the loop is stopped, and starting the loop admits it
+  again. The operator accepts this with the setup-script route
+  (ADR-0061, #1168). What keeps such a session from acting as the loop is
+  the start's binding and `/mcp`'s session check above, not the token.
 - **Cloud loops are one trust domain: a cloud loop is not isolated from
   the account's other cloud loops.** The shell is root and can read
   `/proc/<pid>/mem` of the session `claude` (no Yama `ptrace_scope`,

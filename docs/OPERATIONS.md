@@ -466,6 +466,11 @@ check it again. A check stands for the address it ran against, so one
 that passed before the change counts again if the address goes back.
 
 A cloud loop's hub token belongs to its environment, not to one session.
+It is kept at Anthropic as that environment's network secret, with no
+expiry: anyone who holds the claude.ai account can start a session there
+that carries it, though the hub binds the loop's wakes only to the
+session its own start created. Rotate token is how to end it while
+keeping the loop.
 Stopping a cloud loop refuses its token at once, and starting it again
 takes the same token, with nothing to set again. Killing it revokes the
 token for good: the loop waits, with the `cloud_setup` problem, until
