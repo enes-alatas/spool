@@ -1598,3 +1598,4 @@ HN: 0 new. #1216 approved by Quinn 05:57, awaiting Enes's merge (Quinn's nudge i
 
 ## 2026-10-31 12:56 UTC tick
 HN: 0 new. Merged: #1216 (#1212), #1218 (#1183), Iris's #1203 fix. Open: Terra's #1220 (test, Closes #1217), Elliot's #1222 (Part of #1200). Iris → #1194 (ref:7813). Split #1200: narrowed to the key fingerprint pin (retitled; #1222 closes it); filed #1223 (security, L6) for the version pin + record, with the operator decision line (reverses #304 for release builds) — Elliot's ask to Enes. Board tidy.
+12:59 Elliot: #1222 body now Closes #1200, version pin → #1223; his question to Enes on the version pin stands.
