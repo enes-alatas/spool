@@ -23,6 +23,13 @@ type claudeLoginJSON struct {
 	Owner    string `json:"owner"`
 	SignedIn bool   `json:"signed_in"`
 	Default  bool   `json:"default"`
+	// Check is the login's last check
+	Check *loginCheckJSON `json:"check"`
+}
+
+type loginCheckJSON struct {
+	Status  string `json:"status"`
+	Checked string `json:"checked"`
 }
 
 func (srv *server) claudeLogins() map[string]claudeLoginJSON {
@@ -373,3 +380,36 @@ func TestCheckingTheDefaultLoginChecksTheCloudAccount(t *testing.T) {
 		t.Errorf("checking the default left the cloud account check at %d, want one after %d", got, before)
 	}
 }
+
+// A login check says which login it checked (#1212): on a bare hub the
+// default's runs the host CLI's own login, which a sign-in the hub keeps
+// doesn't change, and another login's is of the sign-in the hub keeps.
+func TestALoginCheckSaysWhichLoginItChecked(t *testing.T) {
+	t.Parallel()
+	hub := startServerArgs(t, t.TempDir(), "--runtime", "bare")
+	hub.mustJSON("POST", "/api/claude-logins", map[string]string{"name": "ada"}, nil)
+	hub.signInClaudeLogin("default", "")
+	hub.signInClaudeLogin("ada", "ada")
+
+	hub.mustJSON("POST", "/api/claude-logins/default/check", nil, nil)
+	hub.mustJSON("POST", "/api/claude-logins/ada/check", nil, nil)
+	var logins map[string]claudeLoginJSON
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		logins = hub.claudeLogins()
+		if logins["default"].Check.done() && logins["ada"].Check.done() || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if got := logins["default"].Check; got == nil || got.Status != "ok" || got.Checked != "host_cli" {
+		t.Errorf("the default's check: %+v, want ok on host_cli", got)
+	}
+	// a bare hub has no docker runtime to check another login with
+	if got := logins["ada"].Check; got == nil || got.Status != "inconclusive" || got.Checked != "stored" {
+		t.Errorf("ada's check: %+v, want inconclusive on stored", got)
+	}
+}
+
+// done is whether the check has an outcome, not still pending.
+func (check *loginCheckJSON) done() bool { return check != nil && check.Status != "pending" }

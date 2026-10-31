@@ -95,6 +95,70 @@ func TestALoginCheckKeepsOnlyTheNewestOutcome(t *testing.T) {
 	}
 }
 
+// dockerCheckingRuntime is checkingRuntime on a docker hub, whose check
+// runs on the stored login.
+type dockerCheckingRuntime struct{ checkingRuntime }
+
+func (dockerCheckingRuntime) Kind() string { return store.RuntimeDocker }
+
+// TestALoginCheckNamesTheLoginItChecked: the hub's check records the
+// host CLI's login on a bare hub and the stored one on a docker hub, from
+// the moment it starts; another login's check is always of the stored
+// one (#1212).
+func TestALoginCheckNamesTheLoginItChecked(t *testing.T) {
+	ctx := context.Background()
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	bare := checkingRuntime{answers: make(chan claude.LoginCheck, 1)}
+	docker := dockerCheckingRuntime{checkingRuntime{answers: make(chan claude.LoginCheck, 1)}}
+	for _, tc := range []struct {
+		rt      runtime.Runtime
+		answers chan claude.LoginCheck
+		want    string
+	}{
+		{bare, bare.answers, store.LoginCheckedHostCLI},
+		{docker, docker.answers, store.LoginCheckedStored},
+	} {
+		st := openStore(t)
+		setAccount(t, st, store.DefaultClaudeLogin, store.CloudAccount{Token: "sk-ant-oat01-fixture-login", OrgUUID: "org"})
+		checker := NewLoginChecker(st, tc.rt, quiet)
+		if err := checker.Start(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if got, _ := checker.Last(ctx); got.Status != store.LoginCheckPending || got.Checked != tc.want {
+			t.Errorf("%s hub, as the check starts: %+v, want pending on %s", tc.rt.Kind(), got, tc.want)
+		}
+		tc.answers <- claude.LoginCheck{Refusal: "Failed to authenticate"}
+		got := waitSettled(t, checker)
+		if got.Status != store.LoginCheckRefused || got.Checked != tc.want {
+			t.Errorf("%s hub, refused: %+v, want refused on %s", tc.rt.Kind(), got, tc.want)
+		}
+	}
+
+	st := openStore(t)
+	setAccount(t, st, "ada", store.CloudAccount{Token: "sk-ant-oat01-fixture-ada"})
+	checker := NewLoginChecker(st, checkingRuntime{}, quiet)
+	if err := checker.StartLogin(ctx, "ada"); err != nil {
+		t.Fatal(err)
+	}
+	if login, err := st.ClaudeLogins().Get(ctx, "ada"); err != nil || login.Check == nil || login.Check.Checked != store.LoginCheckedStored {
+		t.Errorf("ada's check: %+v (%v), want one on the stored login", login, err)
+	}
+}
+
+// waitSettled waits for the hub's check to leave pending.
+func waitSettled(t *testing.T, checker *LoginChecker) store.LoginCheckRecord {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		record, err := checker.Last(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if record.Status != store.LoginCheckPending || time.Now().After(deadline) {
+			return record
+		}
+	}
+}
+
 // TestALoginCheckLeftPendingReadsInconclusive: a hub stopped mid-check
 // leaves a pending record no run will finish, so once the check's bound has
 // passed it reads as one that did not finish, not as one still running.

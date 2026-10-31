@@ -266,11 +266,24 @@ const SettingLoginCheck = "login_check"
 
 // LoginCheckRecord is a login check as the hub remembers it: its status and,
 // for a refusal, the sentence the CLI gave. At is when the check began.
+// Checked is which login it ran on, LoginCheckedHostCLI or
+// LoginCheckedStored; "" on a record kept before it was (#1212).
 type LoginCheckRecord struct {
 	Status  string `json:"status"`
 	Refusal string `json:"refusal,omitempty"`
 	At      int64  `json:"at"`
+	Checked string `json:"checked,omitempty"`
 }
+
+// Which login a check ran on (ADR-0044).
+const (
+	// LoginCheckedHostCLI: the hub user's own claude login, which bare
+	// loops run on.
+	LoginCheckedHostCLI = "host_cli"
+	// LoginCheckedStored: a sign-in or setup-token the hub keeps, which
+	// docker loops get.
+	LoginCheckedStored = "stored"
+)
 
 // How a login check ended, or that it has not yet.
 const (
