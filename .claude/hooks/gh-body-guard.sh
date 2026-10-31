@@ -51,7 +51,9 @@ printf '%s\n' "$command" | grep -Eq -- "$given" || exit 0
 # The body files named, read when they are there yet; one the command
 # writes first is in the command's own text. A body or a body file given
 # through a variable or $(…) resolves only when the call runs, so it is
-# listed apart, as "?" and the word.
+# listed apart, as "?" and the word. A path the shell starts with ~/ is
+# read where the shell finds it, in $HOME (#1194); a quoted one, or one
+# after --body-file=, the shell leaves as it is, and so does the hook.
 files=$(printf '%s\n' "$command" | LC_ALL=C awk '{
 	for (i = 1; i <= NF; i++) {
 		w = $i; f = ""
@@ -59,7 +61,10 @@ files=$(printf '%s\n' "$command" | LC_ALL=C awk '{
 		if ((w == "-F" || w == "--field") && next_word ~ /=/) {
 			# gh api'"'"'s typed field: key=@file reads the file
 			if (next_word ~ /=@/) { f = next_word; sub(/^[^@]*@/, "", f) }
-		} else if (w == "--body-file" || w == "-F" || w == "--input") f = next_word
+		} else if (w == "--body-file" || w == "-F" || w == "--input") {
+			f = next_word
+			if (f ~ /^~\// && ENVIRON["HOME"] != "") f = ENVIRON["HOME"] substr(f, 2)
+		}
 		else if (w ~ /^--(body-file|input)=/) { f = w; sub(/^[^=]*=/, "", f) }
 		else if (w ~ /^(--body|-b|--comment|-c)$/ && next_word ~ /^["'"'"']?[$`]/) print "?" next_word
 		else if (w ~ /^--(body|comment)=["'"'"']?[$`]/) print "?" w
@@ -69,6 +74,9 @@ files=$(printf '%s\n' "$command" | LC_ALL=C awk '{
 	}
 }')
 unread=$(printf '%s\n' "$files" | sed -n 's/^?//p' | head -n 1)
+missing=$(printf '%s\n' "$files" | grep -v '^?' | while IFS= read -r f; do
+	[ -n "$f" ] && [ ! -f "$f" ] && printf '%s\n' "$f"
+done | head -n 1)
 bodies=$(printf '%s\n' "$command"
 	printf '%s\n' "$files" | grep -v '^?' | while IFS= read -r f; do
 		[ -n "$f" ] && [ -f "$f" ] && head -c 1048576 "$f" && printf '\n'
@@ -86,6 +94,10 @@ fi
 if ! printf '%s\n' "$bodies" | LC_ALL=C grep -Eq '—[[:space:]]*[[:alpha:]][^·]*·[[:space:]]*[[:alpha:]]'; then
 	if [ -n "$unread" ]; then
 		echo "this gh body comes through $unread, which the hook can't read before the call runs; name the body file by a literal path so it can be checked (#630)." >&2
+		exit 2
+	fi
+	if [ -n "$missing" ]; then
+		echo "this gh body comes from $missing, which isn't there for the hook to read before the call runs; write the file in an earlier call, or name it by a path the hook can find (#1194)." >&2
 		exit 2
 	fi
 	echo "this gh body has no signature line; every loop posts as the same GitHub user, so end it with \"— Name · Role\" (#630)." >&2

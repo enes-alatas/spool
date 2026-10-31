@@ -95,6 +95,18 @@ check 0 "no body: a title edit" "gh pr edit 12 --title \"fix: @terra's note\""
 check 0 "close with no comment" "gh issue close 5"
 check 0 "close with a signed comment" "gh pr close 5 -c \"superseded by 6 $sig\""
 
+# A body file named from home (#1194): the shell expands an unquoted ~/,
+# so the hook reads it there; quoted, or after --body-file=, it stays as
+# written, and a file that isn't there is named as such.
+run_hook() { HOME="$work" sh "$hook"; }
+check 0 "a signed body file under ~/" "gh pr create --title t --body-file ~/signed.md"
+check 2 "a body file under ~/ with a mention" "gh issue comment 3 --body-file ~/mention.md" "" "@-mentions Quinn"
+check 2 "a body file under ~/, unsigned" "gh pr create --title t --body-file ~/unsigned.md" "" "no signature"
+check 2 "a quoted ~/ body file" "gh pr create --title t --body-file \"~/signed.md\"" "" "isn't there"
+check 2 "a ~/ body file after =" "gh pr create --title t --body-file=~/signed.md" "" "isn't there"
+check 2 "a body file not there yet" "gh pr create --title t --body-file ~/later.md" "" "isn't there"
+run_hook() { sh "$hook"; }
+
 if printf '{"tool_name":"Read","tool_input":{"file_path":"/x"}}' | sh "$hook"; then
 	echo "ok   a tool with no command"
 else
