@@ -26,11 +26,22 @@ RUN apt-get update \
         ca-certificates curl gnupg git make sudo procps \
     && rm -rf /var/lib/apt/lists/*
 
+# Each apt repo's signing key is downloaded at build time, so the build checks
+# the key's primary fingerprints against the ones its publisher documents, and
+# stops on any other: a swapped key would otherwise vouch for a swapped package
+# from the same origin. A publisher's key rotation is then a reviewed change
+# here (#1200). The Claude Code key is pinned beside its own layer below.
+ARG GH_KEY_FPRS="2C6106201985B60E6C7AC87323F3D4EA75716059 7F38BBB59D064DBCB3D84D725612B36462313325"
+
 # GitHub CLI, installed from GitHub's own apt repo because Debian doesn't package
-# it. The arch= field picks the build matching the image's architecture.
+# it. The arch= field picks the build matching the image's architecture. Its two
+# fingerprints are the ones https://github.com/cli/cli/blob/trunk/docs/install_linux.md lists.
 RUN install -d -m 0755 /etc/apt/keyrings \
     && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
         -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+    && fprs=$(gpg --show-keys --with-colons /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+        | awk -F: '$1=="pub"{p=1;next} p&&$1=="fpr"{print $10;p=0}' | sort | paste -sd' ') \
+    && { [ "$fprs" = "$GH_KEY_FPRS" ] || { echo "GitHub CLI key fingerprints are '$fprs', not the pinned '$GH_KEY_FPRS'" >&2; exit 1; }; } \
     && chmod 0644 /etc/apt/keyrings/githubcli-archive-keyring.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
         > /etc/apt/sources.list.d/github-cli.list \
@@ -54,9 +65,16 @@ RUN install -d -m 0755 /etc/apt/keyrings \
 # declared here, below the OS and gh layers, so a new value re-runs this install
 # and everything after it and leaves the layers above cached. `make image`
 # passes the time, so every rebuild installs whatever the repo serves then.
+#
+# The key's fingerprint is the one Claude Code's setup docs publish
+# (https://code.claude.com/docs/en/setup).
+ARG CLAUDE_CODE_KEY_FPR="31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE"
 ARG CLAUDE_CODE_CACHEBUST
 RUN curl -fsSL https://downloads.claude.ai/keys/claude-code.asc \
         -o /etc/apt/keyrings/claude-code.asc \
+    && fprs=$(gpg --show-keys --with-colons /etc/apt/keyrings/claude-code.asc \
+        | awk -F: '$1=="pub"{p=1;next} p&&$1=="fpr"{print $10;p=0}' | sort | paste -sd' ') \
+    && { [ "$fprs" = "$CLAUDE_CODE_KEY_FPR" ] || { echo "Claude Code key fingerprints are '$fprs', not the pinned '$CLAUDE_CODE_KEY_FPR'" >&2; exit 1; }; } \
     && echo "deb [signed-by=/etc/apt/keyrings/claude-code.asc] https://downloads.claude.ai/claude-code/apt/latest latest main" \
         > /etc/apt/sources.list.d/claude-code.list \
     && apt-get update && apt-get install -y claude-code \
