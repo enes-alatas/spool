@@ -397,13 +397,16 @@ session never loads the hub's MCP server. An entry an environment can't
 hold, such as a host with a port of its own, is named beside the list and
 left out of it. The walk lists the Claude login's environments by name,
 with one read-only call; if the list fails, the loop takes a pasted ID.
-On the default login a pasted ID is used unchecked, so copy it exactly:
-the CLI doesn't refuse an ID the account doesn't hold, but starts each
-wake's session in the account's first environment, outside the loop's
-guards and allowed domains, where the hub never binds it to the loop,
-and it stays until you archive it on claude.ai (#1078). For the same
-reason, if you delete or recreate a default-login loop's environment,
-stop the loop and name the new ID before it wakes again.
+A pasted ID is started in only once the list shows it, on every login:
+the hub lists the login's environments before each start and setup
+check, and a list that doesn't show the loop's environment, or can't
+be read, fails the start and names why (#1232). The CLI doesn't refuse
+an environment the account doesn't hold, but starts in the account's
+first one, so if the environment goes between the list and the start,
+the hub ends the CLI and records the loop's check as failed at the
+environment: archive any session the check names on claude.ai, name
+one of the account's environments, and check again. If you delete or
+recreate a loop's environment, stop the loop and name the new ID.
 The steps, in order:
 
 1. **Its repo.** Create the loop with the cloud runtime and its GitHub repo,

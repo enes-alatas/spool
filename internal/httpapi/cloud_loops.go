@@ -87,9 +87,8 @@ const codeCloudLoopRunning = "cloud_loop_running"
 // runs on after the request, "" for the default: checked when the
 // environment changes, or when moved is set because the login does. One
 // pasted while the list can't be read is taken, as Settings → Cloud took
-// one. On a login other than the default the runtime checks it again at
-// each start, and the loop doesn't start until the list shows it (item 7,
-// #1078).
+// one. The runtime checks it again at each start, on every login, and the
+// loop doesn't start until the list shows it (item 7, #1078, #1232).
 func (server *Server) cloudSetup(ctx context.Context, login string, moved bool, current store.CloudSetup, req cloudSetupReq) (store.CloudSetup, *requestError) {
 	setup := current
 	if req.CloudRepo != nil {

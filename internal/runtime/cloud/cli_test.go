@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,11 +27,29 @@ func cliRuntime(t *testing.T, cli string) *Runtime {
 		t.Fatal(err)
 	}
 	return &Runtime{
+		APIBase: environmentsListing(t, testEnvironment, "env_01Moved", "env_01Fixture"),
 		Account: func(context.Context, string) (Account, error) { return testAccount, nil },
 		Dir:     t.TempDir(),
 		CLI:     &CLI{Binary: binary, Dir: filepath.Join(t.TempDir(), "cli"), Env: os.Environ(), StartWithin: 2 * time.Second},
 		Bounds:  Bounds{Quiet: 5 * time.Second},
 	}
+}
+
+// environmentsListing stands in for Anthropic's API, listing environments
+// as the test account's on any token, and answers with its address: every
+// start lists the account's environments first (#1232), and a runtime
+// with no API base would ask Anthropic's own.
+func environmentsListing(t *testing.T, environments ...string) string {
+	t.Helper()
+	var listed []string
+	for _, environment := range environments {
+		listed = append(listed, `{"kind":"anthropic_cloud","environment_id":"`+environment+`","name":"spool","state":"active"}`)
+	}
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"environments":[` + strings.Join(listed, ",") + `]}`))
+	}))
+	t.Cleanup(api.Close)
+	return api.URL
 }
 
 // startupHook is the input of a session's first SessionStart hook.
@@ -149,7 +169,7 @@ sleep 30
 	settings := `{"permissions":{"deny":` + string(denied) + `},"remote":{"defaultEnvironmentId":"` + testEnvironment + `"}}`
 	for _, want := range []string{
 		"terminal\n",
-		"args: --cloud first words --permission-mode auto --settings " + settings + " --ref main\n",
+		"args: --cloud first words --permission-mode auto --settings " + settings + " --ref main --debug-file ",
 		"token: " + testAccount.Token + "\n",
 		`"hasCompletedOnboarding":true`,
 		`"organizationUuid":"` + testAccount.OrgUUID + `"`,

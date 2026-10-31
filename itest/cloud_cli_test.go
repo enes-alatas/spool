@@ -6,6 +6,8 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
+	"io/fs"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -100,9 +102,15 @@ func TestCloudCLILoopStartsFromItsRepoAndReadsItsTurnsBack(t *testing.T) {
 		denied = append(denied, `"mcp__claude-code-remote__`+tool+`"`)
 	}
 	wantArgs := "first words\n--permission-mode\nauto\n--settings\n" +
-		`{"permissions":{"deny":[` + strings.Join(denied, ",") + `]},"remote":{"defaultEnvironmentId":"` + cloudEnvironmentOf("cirrus") + `"}}` + "\n--ref\nmain\n"
-	if !strings.HasPrefix(string(args), "--cloud\n") || !strings.HasSuffix(string(args), wantArgs) {
+		`{"permissions":{"deny":[` + strings.Join(denied, ",") + `]},"remote":{"defaultEnvironmentId":"` + cloudEnvironmentOf("cirrus") + `"}}` + "\n--ref\nmain\n--debug-file\n"
+	_, debugLog, _ := strings.Cut(string(args), wantArgs)
+	debugLog = strings.TrimSuffix(debugLog, "\n")
+	if !strings.HasPrefix(string(args), "--cloud\n") || !strings.Contains(string(args), wantArgs) || !filepath.IsAbs(debugLog) {
 		t.Errorf("the start ran with\n%s\nwant --cloud, the wake, and then\n%s", args, wantArgs)
+	}
+	// the debug log carries the wake's text, and goes with the start's run
+	if _, err := os.Stat(debugLog); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("the start's debug log %s is still there (%v)", debugLog, err)
 	}
 	if repo, err := os.ReadFile(filepath.Join(vm, "repo", "CLAUDE.md")); err != nil || string(repo) != "The repo example-org/cirrus.\n" {
 		t.Errorf("the session's repo holds %q (%v), want a clone of example-org/cirrus", repo, err)

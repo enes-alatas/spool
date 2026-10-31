@@ -655,6 +655,8 @@ func main() {
 	}
 	// a session that never reached the hub is the address check's verdict
 	cloudRuntime.Unreached = api.CloudSessionUnreached
+	// a start in another environment holds the loop at its setup check
+	cloudRuntime.Misplaced = api.CloudSessionMisplaced
 	// the cloud listener redacts every response but the connections a
 	// session is handed as it starts, which it writes past the redactor
 	// (ADR-0059)

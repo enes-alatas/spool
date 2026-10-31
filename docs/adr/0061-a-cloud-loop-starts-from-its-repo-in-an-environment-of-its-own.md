@@ -1,6 +1,6 @@
 # ADR-0061: A cloud loop starts from its GitHub repo, in an environment of its own
 
-Date: 2026-10-28 · Status: accepted (operator decision of 2026-10-29 on #1180, comment 6498693769: the flow as written, with multi-repo loops; the operator decision of 2026-10-29 on #1185, comment 6498931340: the deny rules and the `add_repo` guard of item 2, with a dedicated GitHub user recommended, not required; the operator decision of 2026-10-28 on #1168: the setup-script route, with the token as an environment variable; the network secret in its place is Terra's correction of the same day on #1180, comment 6478145150, agreed by Elliot in 6478162314, which narrows that posture; and the operator decision of 2026-10-29 on #1180, comment 6493335622, that a kill revokes the token for good) · Amended: 2026-10-29 (the `SessionStart` answer's shape, #1181); 2026-10-30 (`/mcp` takes the handshake between turns, #1181); 2026-10-30 (item 6: the setup check, #1182); 2026-10-31 (item 7: what the CLI answers, #1078) · Supersedes: the operator's park of #975's hardened mode (option A, 2026-10-28), which this route builds as the only mode; ADR-0059 item 1 (that the hub doesn't read the TUI, and the binding's "only on that start's token"), item 2 (the loop home a start bundles), item 4 (a fresh hub token per session, in the VM), item 6 (one environment for every cloud loop) and its #978 amendment's single stored choice, item 8's #1094 amendment (`CCR_ENABLE_BUNDLE`), item 10's *The repo field goes* and its #1169 amendment, and item 9's #977 amendment's create refusal · Relates to: ADR-0022, ADR-0028, ADR-0043, ADR-0053, ADR-0056, ADR-0058, ADR-0059, ADR-0060
+Date: 2026-10-28 · Status: accepted (operator decision of 2026-10-29 on #1180, comment 6498693769: the flow as written, with multi-repo loops; the operator decision of 2026-10-29 on #1185, comment 6498931340: the deny rules and the `add_repo` guard of item 2, with a dedicated GitHub user recommended, not required; the operator decision of 2026-10-28 on #1168: the setup-script route, with the token as an environment variable; the network secret in its place is Terra's correction of the same day on #1180, comment 6478145150, agreed by Elliot in 6478162314, which narrows that posture; and the operator decision of 2026-10-29 on #1180, comment 6493335622, that a kill revokes the token for good) · Amended: 2026-10-29 (the `SessionStart` answer's shape, #1181); 2026-10-30 (`/mcp` takes the handshake between turns, #1181); 2026-10-30 (item 6: the setup check, #1182); 2026-10-31 (item 7: what the CLI answers, #1078); 2026-10-31 (item 7: every start confirms its environment, #1232) · Supersedes: the operator's park of #975's hardened mode (option A, 2026-10-28), which this route builds as the only mode; ADR-0059 item 1 (that the hub doesn't read the TUI, and the binding's "only on that start's token"), item 2 (the loop home a start bundles), item 4 (a fresh hub token per session, in the VM), item 6 (one environment for every cloud loop) and its #978 amendment's single stored choice, item 8's #1094 amendment (`CCR_ENABLE_BUNDLE`), item 10's *The repo field goes* and its #1169 amendment, and item 9's #977 amendment's create refusal · Relates to: ADR-0022, ADR-0028, ADR-0043, ADR-0053, ADR-0056, ADR-0058, ADR-0059, ADR-0060
 
 ## Context
 
@@ -463,6 +463,19 @@ real hub behind the allowlist is checked at #1181's first live start:
    the loop in another environment of the account, perhaps another cloud
    loop's, without an error. The session was archived at once, and no
    branch was pushed.
+
+   **Amendment (2026-10-31, #1232):** the default login's pasted ID is no
+   longer used unverified. Every start and setup check, on every login,
+   lists the login's environments first and starts only in one the list
+   shows; a list it can't read holds the start. Each start and check
+   also asks the CLI for its debug log and reads it as it runs: a pick
+   other than the loop's environment ends the CLI and fails the check,
+   and for a start records the loop's check as failed at the
+   environment, so the loop holds until a check passes. Only a line in
+   the CLI's own shape counts as the pick, since the log also carries
+   the wake's text; the hub warns if the log ever holds the account's
+   token. Security's call on PR 1229 and #1232, with the order Milo
+   set.
 
 8. **Settings → Cloud loses its environment step.** The shared
    environment, its stored ID and its allowlist confirm go. Settings →

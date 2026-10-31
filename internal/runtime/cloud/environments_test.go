@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -68,20 +69,21 @@ func TestEnvironmentsFailLoudly(t *testing.T) {
 	}
 }
 
-// A start on a login other than the default lists that login's account's
-// environments, on its own token, and goes ahead only in one the list
-// shows; a list that can't be read holds it too. The default's start
-// lists nothing (#1078).
-func TestAStartOnAnotherLoginNeedsItsOwnEnvironment(t *testing.T) {
+// A start lists the account's environments of its loop's login, on that
+// login's own token, and goes ahead only in one the list shows; a list
+// that can't be read holds it too. The default's start lists as any
+// other's (#1078, #1232).
+func TestAStartNeedsAnEnvironmentOfItsLoginsAccount(t *testing.T) {
 	ada := Account{Token: "sk-ant-oat01-fixture-ada", OrgUUID: "00000000-0000-4000-8000-00000000ada0"}
-	listings := 0
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		listings++
-		if r.Header.Get("Authorization") != "Bearer "+ada.Token || r.Header.Get("x-organization-uuid") != ada.OrgUUID {
-			http.Error(w, "not ada", http.StatusUnauthorized)
-			return
+		switch {
+		case r.Header.Get("Authorization") == "Bearer "+ada.Token && r.Header.Get("x-organization-uuid") == ada.OrgUUID:
+			_, _ = w.Write([]byte(`{"environments":[{"kind":"anthropic_cloud","environment_id":"env_01Ada","name":"ada","state":"active"}]}`))
+		case r.Header.Get("Authorization") == "Bearer "+testAccount.Token:
+			_, _ = w.Write([]byte(`{"environments":[{"kind":"anthropic_cloud","environment_id":"env_01Spool","name":"spool","state":"active"}]}`))
+		default:
+			http.Error(w, "no such account", http.StatusUnauthorized)
 		}
-		_, _ = w.Write([]byte(`{"environments":[{"kind":"anthropic_cloud","environment_id":"env_01Ada","name":"ada","state":"active"}]}`))
 	}))
 	defer api.Close()
 	var asked []string
@@ -94,8 +96,12 @@ func TestAStartOnAnotherLoginNeedsItsOwnEnvironment(t *testing.T) {
 	}}
 	ctx := context.Background()
 
-	if err := cloud.confirmEnvironment(ctx, runtime.CloudStart{EnvironmentID: "env_01Anything"}); err != nil || listings != 0 {
-		t.Errorf("the default's start: %v after %d listings, want it going ahead unlisted", err, listings)
+	if err := cloud.confirmEnvironment(ctx, runtime.CloudStart{EnvironmentID: "env_01Spool"}); err != nil {
+		t.Errorf("the default's start in its environment: %v", err)
+	}
+	if err := cloud.confirmEnvironment(ctx, runtime.CloudStart{EnvironmentID: "env_01Anything"}); err == nil ||
+		!strings.Contains(err.Error(), "env_01Anything is not one of the cloud environments of Claude login default's account") {
+		t.Errorf("the default's start in an environment its account doesn't hold: %v, want it held", err)
 	}
 	if err := cloud.confirmEnvironment(ctx, runtime.CloudStart{EnvironmentID: "env_01Ada", Login: "ada"}); err != nil {
 		t.Errorf("ada's start in ada's environment: %v", err)
@@ -104,8 +110,8 @@ func TestAStartOnAnotherLoginNeedsItsOwnEnvironment(t *testing.T) {
 		!strings.Contains(err.Error(), "env_01Spool is not one of the cloud environments of Claude login ada's account") {
 		t.Errorf("ada's start in another account's environment: %v, want it held, naming both", err)
 	}
-	if len(asked) != 2 || asked[0] != "ada" || asked[1] != "ada" {
-		t.Errorf("accounts read: %q, want ada's for each of ada's starts", asked)
+	if want := []string{"", "", "ada", "ada"}; !slices.Equal(asked, want) {
+		t.Errorf("accounts read: %q, want %q, each start's own login's", asked, want)
 	}
 
 	cloud.Account = func(context.Context, string) (Account, error) { return Account{}, ErrNoAccount }
