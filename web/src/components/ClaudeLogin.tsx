@@ -79,9 +79,8 @@ export function ClaudeLoginSection({ settings }: { settings?: Settings }) {
       <p className="page-lede">
         A Claude login is a claude.ai account this hub signs in to. Contained loops reach the model through
         the hub, which adds the login, and cloud loops' sessions run under it. The hub keeps each login
-        sealed, renews it before it runs out, and never shows it. A contained loop runs on the login it names,
-        or on default when it names none, and a cloud loop on default. Bare loops keep this machine's own
-        login.
+        sealed, renews it before it runs out, and never shows it. A contained or cloud loop runs on the login
+        it names, or on default when it names none. Bare loops keep this machine's own login.
       </p>
       {loadError ? (
         <div className="form-error" role="alert">
@@ -634,9 +633,9 @@ export function SignInDialog({ onClose }: { onClose: () => void }) {
     <StepDialog title="Sign in with Claude" busy={busy} onClose={onClose}>
       <div className="form">
         <p className="step-dialog-lede">
-          Contained and cloud loops run on the hub's default Claude login, so the hub signs in to your Claude
-          account once. It keeps the login sealed, renews it, and never shows it. You can sign out in Settings
-          → Claude logins.
+          Contained and cloud loops run on the hub's default Claude login unless they name another, so the hub
+          signs in to your Claude account once. It keeps the login sealed, renews it, and never shows it. You
+          can sign out in Settings → Claude logins.
         </p>
         {view && (signedIn ? <SignedIn /> : <SignInSteps view={view} setBusy={setBusy} />)}
         <form method="dialog" className="pillar-actions">

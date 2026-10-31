@@ -40,7 +40,7 @@ export function CloudWorkstation({ loop }: { loop: LoopView }) {
     )
   const repo = loop.cloud_repo ? `${loop.cloud_repo}@${loop.cloud_branch || 'main'}` : ''
   const more = loop.cloud_repos?.length ?? 0
-  const check = setup && checkSays(setup, loop.cloud_repo ?? '')
+  const check = setup && checkSays(setup, loop.cloud_repo ?? '', loop.claude_login)
   return (
     <div className="side-panel">
       <h3>Workstation</h3>

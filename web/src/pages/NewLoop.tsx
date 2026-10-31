@@ -24,7 +24,7 @@ import { firstOpenStep, type SetupStep } from '../cloud'
 import { Marked } from '../components/Marked'
 import { dailyCapHint, dailyCapValue } from '../dailyCap'
 import { CapChips } from '../components/CapChips'
-import { LOGIN_SAY_SO, loginOptions, noLoginChoice } from '../claudeLogins'
+import { LOGIN_SAY_SO, loginAccount, loginOptions, noLoginChoice } from '../claudeLogins'
 
 export default function NewLoop() {
   const nav = useNavigate()
@@ -359,10 +359,11 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
           <label id="nl-env-label" style={{ marginTop: 10 }}>
             Environment
           </label>
-          <EnvironmentPick chosen={environment} onPick={setEnvironment} />
+          <EnvironmentPick login={login} chosen={environment} onPick={setEnvironment} />
           <div className="hint">
-            The loop's own environment on claude.ai. Make it once the loop exists: its page walks you through
-            it, so you can leave this until then.
+            The loop's own environment on claude.ai, on {loginAccount(login)}: the Claude login below, which
+            its sessions run under. Make it once the loop exists: its page walks you through it, so you can
+            leave this until then.
           </div>
         </div>
       )}
@@ -372,7 +373,11 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
         <select
           id="nl-login"
           value={pickLogin ? login : loginNote ? 'fixed' : ''}
-          onChange={(e) => setLogin(e.target.value)}
+          onChange={(e) => {
+            setLogin(e.target.value)
+            // Another login's account lists other environments.
+            setEnvironment('')
+          }}
           disabled={!pickLogin}
         >
           {pickLogin ? (
@@ -387,7 +392,10 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
             </option>
           )}
         </select>
-        <div className="hint">{loginNote || `The loop reaches the model on this login. ${LOGIN_SAY_SO}`}</div>
+        <div className="hint">
+          {loginNote ||
+            `${cloud ? "The loop's sessions run under this login's account." : 'The loop reaches the model on this login.'} ${LOGIN_SAY_SO}`}
+        </div>
         {pickLogin && chosenLogin && !chosenLogin.signed_in && (
           <div className="hint warn">
             {chosenLogin.name} is signed out: the loop waits until it is signed in under Settings → Claude

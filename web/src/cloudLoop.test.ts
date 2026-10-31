@@ -171,28 +171,36 @@ describe('cloud turn', () => {
 describe('checkSays', () => {
   const setup = (check?: CloudLoopCheck) => ({ check, secret_host: 'spool.example.com' })
   it('reads a check by its state', () => {
-    expect(checkSays(setup(), 'acme/app')).toEqual({ text: 'not checked yet', tone: 'todo' })
-    expect(checkSays(setup({ state: 'running', current: false }), 'acme/app')).toEqual({
+    expect(checkSays(setup(), 'acme/app', '')).toEqual({ text: 'not checked yet', tone: 'todo' })
+    expect(checkSays(setup({ state: 'running', current: false }), 'acme/app', '')).toEqual({
       text: 'checking…',
       tone: 'todo',
     })
-    const passed = checkSays(setup({ state: 'ok', checked_at: 1, current: true }), 'acme/app')
+    const passed = checkSays(setup({ state: 'ok', checked_at: 1, current: true }), 'acme/app', '')
     expect(passed).toMatchObject({ text: 'passed', tone: 'ok' })
     // what the loop can do once it passes, named by its repo
     expect(passed.hint).toContain('work in acme/app, push branches and open pull requests')
   })
   it('asks for another check once a pass is of an earlier setup', () => {
-    expect(checkSays(setup({ state: 'ok', checked_at: 1, current: false }), 'acme/app')).toMatchObject({
+    expect(checkSays(setup({ state: 'ok', checked_at: 1, current: false }), 'acme/app', '')).toMatchObject({
       text: 'passed on an earlier setup',
       tone: 'warn',
     })
   })
   it('names where a failed check stopped and what to try', () => {
     const failed = (stage: string) =>
-      checkSays(setup({ state: 'failed', stage, checked_at: 1, current: true }), 'acme/app')
+      checkSays(setup({ state: 'failed', stage, checked_at: 1, current: true }), 'acme/app', '')
     expect(failed('environment')).toMatchObject({ text: 'fails: claude.ai refused the start', tone: 'bad' })
+    expect(failed('environment').hint).toContain("on the default Claude login's account")
     expect(failed('token').hint).toContain('network secret for spool.example.com')
     expect(failed('unreached').hint).toContain('spool.example.com is in the environment')
+    // a loop on another login looks for its environment on that account
+    const onAda = checkSays(
+      setup({ state: 'failed', stage: 'environment', current: true }),
+      'acme/app',
+      'ada',
+    )
+    expect(onAda.hint).toContain("on Claude login ada's account")
     // a stage this build doesn't know still reads as a failure, by its name
     expect(failed('quota')).toEqual({ text: 'fails: quota', tone: 'bad' })
   })

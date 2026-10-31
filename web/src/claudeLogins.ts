@@ -65,11 +65,11 @@ export function defaultFirst(logins: ClaudeLogin[]): ClaudeLogin[] {
   return [...logins].sort((a, b) => Number(b.default) - Number(a.default) || a.name.localeCompare(b.name))
 }
 
-// The loops that run on the login called name: a contained loop on the one
-// it names, or on the default when it names none, and a cloud loop on the
-// default. A bare loop runs on the host's own login, so on none of them,
-// and an archived loop runs on none, as the hub counts them; a paused one
-// still counts, since it runs on the login once resumed.
+// The loops that run on the login called name: a contained or cloud loop
+// on the one it names, or on the default when it names none. A bare loop
+// runs on the host's own login, so on none of them, and an archived loop
+// runs on none, as the hub counts them; a paused one still counts, since
+// it runs on the login once resumed.
 export function loopsOn(loops: LoopView[] | undefined, name: string): string[] {
   return (loops ?? [])
     .filter((l) => l.runtime !== 'bare' && l.status !== 'archived' && (l.claude_login || 'default') === name)
@@ -135,12 +135,19 @@ export function defaultLineState(
 }
 
 // The login a loop runs on, as its page names it: a bare loop on this
-// machine's own, a cloud loop on the default (ADR-0060), and a contained
-// loop on the one it names, or the default when it names none.
+// machine's own (ADR-0060), and a contained or cloud loop on the one it
+// names, or the default when it names none (#1078).
 export function loopLogin(loop: Pick<LoopView, 'runtime' | 'claude_login'>): string {
   if (loop.runtime === 'bare') return "this machine's own"
-  if (loop.runtime === 'cloud') return 'default'
   return loop.claude_login || 'default'
+}
+
+// The account behind a login, as the hub's refusals name it: a cloud
+// loop's session runs under it, and its environment must be one of its.
+export function loginAccount(login: string): string {
+  return !login || login === 'default'
+    ? "the default Claude login's account"
+    : `Claude login ${login}'s account`
 }
 
 // What a login picker offers: the default first, and a signed-out login
@@ -159,6 +166,5 @@ export const LOGIN_SAY_SO = "Use your own login, the default, or another user's 
 // Why a loop of this runtime names no login, or '' when it may name one.
 export function noLoginChoice(runtime: string): string {
   if (runtime === 'bare') return "A bare loop runs on this machine's own Claude login."
-  if (runtime === 'cloud') return 'A cloud loop runs on the default login.'
   return ''
 }
