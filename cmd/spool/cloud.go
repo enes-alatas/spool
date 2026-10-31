@@ -26,9 +26,13 @@ import (
 func newCloudRuntime(st store.Store, dataDir, claudeBin, apiBase string) *cloud.Runtime {
 	return &cloud.Runtime{
 		CLI: &cloud.CLI{Binary: claudeBin, Dir: cloudCLIDir(dataDir), Env: signInEnv(os.Environ())},
-		Account: func(ctx context.Context) (cloud.Account, error) {
-			// cloud loops run on the default login (ADR-0060)
-			account, signedIn, err := store.SignedInAccount(ctx, st.ClaudeLogins(), store.DefaultClaudeLogin)
+		Account: func(ctx context.Context, login string) (cloud.Account, error) {
+			// a cloud loop runs on its own login, "" for the default
+			// (ADR-0061, #1078)
+			if login == "" {
+				login = store.DefaultClaudeLogin
+			}
+			account, signedIn, err := store.SignedInAccount(ctx, st.ClaudeLogins(), login)
 			if err != nil {
 				return cloud.Account{}, err
 			}
@@ -113,7 +117,7 @@ func (accounts cloudAccounts) check(ctx context.Context) (claude.LoginCheck, err
 	if _, err := exec.LookPath(accounts.runtime.CLI.Binary); err == nil || accounts.image == nil {
 		return accounts.runtime.CheckAccount(ctx)
 	}
-	account, err := accounts.runtime.Account(ctx)
+	account, err := accounts.runtime.Account(ctx, "")
 	if err != nil {
 		return claude.LoginCheck{}, err
 	}
@@ -129,11 +133,11 @@ func storedSetting(settings store.SettingsStore, key string) (string, error) {
 	return value, err
 }
 
-// cloudEnvironments is the account's list for Settings → Cloud's pick.
+// cloudEnvironments is a Claude login's list for the environment pick.
 type cloudEnvironments struct{ runtime *cloud.Runtime }
 
-func (environments cloudEnvironments) Environments(ctx context.Context) ([]httpapi.CloudEnvironment, error) {
-	listed, err := environments.runtime.Environments(ctx)
+func (environments cloudEnvironments) Environments(ctx context.Context, login string) ([]httpapi.CloudEnvironment, error) {
+	listed, err := environments.runtime.Environments(ctx, login)
 	if err != nil {
 		return nil, err
 	}

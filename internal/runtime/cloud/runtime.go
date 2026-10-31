@@ -50,9 +50,10 @@ var ErrNoAccount = errors.New("cloud: no Claude account is signed in")
 type Runtime struct {
 	// CLI is the claude CLI every session runs through.
 	CLI *CLI
-	// Account returns the signed-in account, or ErrNoAccount. Read at every
-	// CLI run, so a sign-in or a removal takes effect at once.
-	Account func(ctx context.Context) (Account, error)
+	// Account returns the signed-in account of the Claude login called
+	// login, "" for the default, or ErrNoAccount. Read at every CLI run,
+	// so a sign-in or a removal takes effect at once.
+	Account func(ctx context.Context, login string) (Account, error)
 	// APIBase is Anthropic's API, which Environments lists from;
 	// DefaultAPIBase when empty. Tests point it at a stand-in.
 	APIBase string
@@ -178,10 +179,15 @@ func startFrom(spec runtime.Spec) (runtime.CloudStart, error) {
 }
 
 // sourceKey is what a state file keeps of the source a session started
-// from: a session started from another repo, branch or environment is
-// not resumed.
+// from: a session started from another repo, branch or environment, or
+// under another login's account, is not resumed. The default login adds
+// nothing, so a key kept before logins were named still matches.
 func sourceKey(source runtime.CloudStart) string {
-	return tokenHash(source.Repo + "\n" + source.Branch + "\n" + source.EnvironmentID)
+	key := source.Repo + "\n" + source.Branch + "\n" + source.EnvironmentID
+	if source.Login != "" {
+		key += "\n" + source.Login
+	}
+	return tokenHash(key)
 }
 
 // shellQuote quotes value as one word for sh.

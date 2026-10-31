@@ -450,8 +450,9 @@ func stoppedIsDone(err error) error {
 // so in its state, and wakes if its own login's cap lifted (ADR-0047).
 func (actor *Actor) CapChanged() { actor.send(cmd{kind: "cap"}) }
 
-// TokenChanged tells a cloud loop Rotate token minted it a hub token: it
-// takes the new one, and wakes if the want of one held it (ADR-0061).
+// TokenChanged tells a cloud loop Rotate token minted it a hub token, or a
+// move to another Claude login revoked it: it takes the store's word, and
+// wakes if the want of one held it (ADR-0061, #1078).
 func (actor *Actor) TokenChanged() { actor.send(cmd{kind: "token"}) }
 
 // CloudGateChanged tells the loop the public address was checked: a cloud
@@ -1202,9 +1203,11 @@ func (actor *Actor) wakeSpec(fresh bool, prompt string, connections []*store.Con
 		PartialMessages:    actor.deps.PartialMessages,
 	}
 	if actor.loop.Runtime == store.RuntimeCloud {
-		// no token: the session reaches the hub on the environment's secret
+		// no token: the session reaches the hub on the environment's
+		// secret, and runs under the account of the loop's login
 		spec.Cloud = runtime.CloudStart{
 			Repo: actor.loop.CloudRepo, Branch: actor.loop.CloudBranch, EnvironmentID: actor.loop.CloudEnvironmentID,
+			Login: actor.loop.ClaudeLogin,
 		}
 	}
 	if actor.deps.MCPEndpoint != nil && actor.loop.HubMCPToken != "" {

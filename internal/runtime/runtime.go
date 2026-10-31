@@ -84,10 +84,14 @@ type Spec struct {
 
 // CloudStart is where a cloud loop's sessions start from (ADR-0061): its
 // GitHub repo, as owner/name, and branch, checked by the hub before each
-// start, and the claude.ai environment they run in. It carries no
-// credential: the loop's hub token is the environment's secret.
+// start, and the claude.ai environment they run in. Login names the
+// Claude login whose account the environment belongs to and the sessions
+// run under, "" for the default (ADR-0061, #1078). It carries no
+// credential: the loop's hub token is the environment's secret, and the
+// login is a name the runtime reads the account by.
 type CloudStart struct {
 	Repo, Branch, EnvironmentID string
+	Login                       string
 }
 
 // Health is a workstation's liveness as the control room reports it.

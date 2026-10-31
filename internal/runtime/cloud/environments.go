@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/enes-alatas/spool/internal/roomtext"
+	"github.com/enes-alatas/spool/internal/runtime"
 )
 
 // DefaultAPIBase is Anthropic's API, where the account's environments are
@@ -19,8 +20,10 @@ const DefaultAPIBase = "https://api.anthropic.com"
 
 // environmentsEndpoint lists the account's environments. It is the one
 // call the hub makes to the API the CLI's own /remote-env reads, which
-// Anthropic doesn't document (ADR-0059): only Settings → Cloud's pick
-// makes it, and no start or send depends on it.
+// Anthropic doesn't document (ADR-0059). The environment pick makes it,
+// and so does a start on a login other than the default, which starts
+// only in an environment the list shows (ADR-0061, #1078). No start on
+// the default login, and no send, depends on it.
 const environmentsEndpoint = "/v1/environment_providers"
 
 // Bounds on the list: a page of environments, how many pages are read,
@@ -43,13 +46,14 @@ type Environment struct {
 	Name string
 }
 
-// Environments lists the account's cloud environments, as the CLI's own
-// /remote-env does: by name and ID, in the order the API gives them. It
-// is ErrNoAccount with no account signed in, and an answer it can't read
+// Environments lists the cloud environments of the account of the Claude
+// login called login, "" for the default, as the CLI's own /remote-env
+// does: by name and ID, in the order the API gives them. It is
+// ErrNoAccount with that login not signed in, and an answer it can't read
 // is an error naming the endpoint. What the API says is untrusted: the
 // hub checks an ID's shape before it keeps one.
-func (cloud *Runtime) Environments(ctx context.Context) ([]Environment, error) {
-	account, err := cloud.Account(ctx)
+func (cloud *Runtime) Environments(ctx context.Context, login string) ([]Environment, error) {
+	account, err := cloud.Account(ctx, login)
 	if err != nil {
 		return nil, err
 	}
@@ -129,4 +133,26 @@ func (cloud *Runtime) environmentsPage(ctx context.Context, account Account, aft
 var environmentsClient = &http.Client{
 	Timeout:       environmentsTimeout,
 	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+}
+
+// confirmEnvironment checks that a start on a login other than the
+// default names an environment of that login's account: a loop on one
+// never starts in another account's environment, so a list that can't be
+// read holds the start as one that doesn't show the ID does (ADR-0061,
+// #1078). The default login's ID was picked from its list or pasted when
+// the list failed, and is used as it is.
+func (cloud *Runtime) confirmEnvironment(ctx context.Context, source runtime.CloudStart) error {
+	if source.Login == "" {
+		return nil
+	}
+	listed, err := cloud.Environments(ctx, source.Login)
+	if err != nil {
+		return fmt.Errorf("cloud: the environments of Claude login %s can't be listed, so its loop doesn't start until they can: %w", source.Login, err)
+	}
+	for _, environment := range listed {
+		if environment.ID == source.EnvironmentID {
+			return nil
+		}
+	}
+	return fmt.Errorf("cloud: %s is not one of the cloud environments of Claude login %s's account", source.EnvironmentID, source.Login)
 }

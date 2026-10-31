@@ -317,12 +317,14 @@ own address check (ADR-0056, ADR-0059).
 ### Cloud session: the cloud runtime
 
 **What crosses:** the hub drives a cloud loop's Claude Code cloud session
-through the `claude` CLI, on the claude.ai account's OAuth token. It starts
-the session with `claude --cloud` under a pseudo-terminal, from the loop's
-GitHub repo and branch, in the loop's own claude.ai environment, with
-nothing uploaded (ADR-0061). It sends each wake with `claude -p --cloud`.
-The hooks the environment's setup script writes post the session's id
-and each turn's transcript lines back to the cloud listener (ADR-0059).
+through the `claude` CLI, on the OAuth token of the claude.ai account
+of the loop's Claude login, `default` unless it names another (#1078).
+It starts the session with `claude --cloud` under a pseudo-terminal,
+from the loop's GitHub repo and branch, in the loop's own claude.ai
+environment, with nothing uploaded (ADR-0061). It sends each wake with
+`claude -p --cloud`. The hooks the environment's setup script writes
+post the session's id and each turn's transcript lines back to the
+cloud listener (ADR-0059).
 
 **Holds:**
 - **The account token is sealed** under `hub.key`, known to the redactor,
@@ -347,6 +349,16 @@ and each turn's transcript lines back to the cloud listener (ADR-0059).
   host's CLI, or by the workstation image's on a hub with none.
 - **No setup-token leaves the machine.** A cloud session runs on the
   account, never on the setup-token.
+- **A loop on another login never starts in another account's
+  environment** (ADR-0061, #1078). Its CLI runs carry that login's token
+  alone. Before each start, its setup check's included, the hub lists
+  the login's environments on its token and starts only in one the list
+  shows; a list it can't read holds the start. A move to another login
+  waits for the loop to stop, drops its session and its check, revokes
+  its hub token, which the old account's environment still holds, and
+  refuses an environment the new login's account doesn't list. The one
+  environment started in unverified is the default login's, pasted while
+  its list failed.
 - **The session carries one credential, the loop's hub token, and never
   holds it** (ADR-0061). The token is the loop's environment's network
   secret on claude.ai: the egress proxy adds it to every request the
@@ -497,6 +509,29 @@ and each turn's transcript lines back to the cloud listener (ADR-0059).
   again. The operator accepts this with the setup-script route
   (ADR-0061, #1168). What keeps such a session from acting as the loop is
   the start's binding and `/mcp`'s session check above, not the token.
+- **A cloud loop on a member's login is open to that member's
+  account.** Its environment and sessions live on that claude.ai
+  account (#1078), so whoever holds the account can read every turn of
+  each session, send into it, run commands in its root VM, whose
+  environment file holds the loop's `env-var` connections, and start a
+  session in the environment, which carries the hub token. A contained
+  loop on a member's login spends the plan and shows the account
+  nothing. The operator attaches to such a loop only connections the
+  login's owner may hold.
+- **A default-login loop whose environment ID the account doesn't hold
+  runs its wakes outside its guards** (ADR-0061, #1078, #1232). Given
+  such an ID, the CLI starts the session in the account's first listed
+  environment and exits 0. The ID gets there by a wrong paste while the
+  list fails, or by going stale when its environment is deleted on
+  claude.ai, since the default login's environment isn't listed again
+  at a start. The session starts from the loop's repo and works on the
+  wake's text with no hub turn around it. Unless that environment is
+  one of the hub's, it runs without the deny rules and the `add_repo`
+  guard, on that environment's network access rather than the hub's
+  allowed domains. No connection or hub token of the loop's reaches it:
+  the hub binds no start to it, and the start times out. Each wake
+  repeats it, leaving a new session on the account until the operator
+  archives them on claude.ai.
 - **Cloud loops are one trust domain: a cloud loop is not isolated from
   the account's other cloud loops.** The shell is root and can read
   `/proc/<pid>/mem` of the session `claude` (no Yama `ptrace_scope`,

@@ -607,6 +607,9 @@ func (session *cliSession) startSession(text string) error {
 	if err != nil {
 		return err
 	}
+	if err := session.cloud.confirmEnvironment(ctx, session.source); err != nil {
+		return err
+	}
 	if err := cli.ownDir(); err != nil {
 		return err
 	}
@@ -615,7 +618,7 @@ func (session *cliSession) startSession(text string) error {
 		return err
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
-	run, err := session.cloud.newCLIRun(ctx, dir)
+	run, err := session.cloud.newCLIRun(ctx, session.source.Login, dir)
 	if err != nil {
 		return err
 	}
@@ -717,7 +720,7 @@ func (session *cliSession) startSession(text string) error {
 func (session *cliSession) send(text string) error {
 	ctx, cancel := context.WithTimeout(session.ctx, sendWithin)
 	defer cancel()
-	run, err := session.cloud.newCLIRun(ctx, "")
+	run, err := session.cloud.newCLIRun(ctx, session.source.Login, "")
 	if err != nil {
 		return err
 	}
@@ -748,15 +751,16 @@ type cliRun struct {
 	remove func()
 }
 
-// newCLIRun makes a CLI run: the CLI's own environment, a fresh config dir
+// newCLIRun makes a CLI run under the Claude login called login, "" for
+// the default: the CLI's own environment, a fresh config dir
 // and the account's token. The config dir holds no credential: only the
 // onboarding flag, the account's organization, which the sign-in reads,
 // and the trust of home when there is one (ADR-0059). The run is made in
 // home, or with none in an empty directory of its own: never the hub's
 // working directory or the shared temp dir, whose project settings, hooks
 // among them, the CLI would load and run.
-func (cloud *Runtime) newCLIRun(ctx context.Context, home string) (cliRun, error) {
-	account, err := cloud.Account(ctx)
+func (cloud *Runtime) newCLIRun(ctx context.Context, login, home string) (cliRun, error) {
+	account, err := cloud.Account(ctx, login)
 	if err != nil {
 		return cliRun{}, err
 	}
@@ -925,7 +929,7 @@ func leftovers(configDir string) []string {
 // haiku answer to a one-word prompt, which spends a sliver of the plan
 // and reaches no session. It is ErrNoAccount with no account signed in.
 func (cloud *Runtime) CheckAccount(ctx context.Context) (claude.LoginCheck, error) {
-	run, err := cloud.newCLIRun(ctx, "")
+	run, err := cloud.newCLIRun(ctx, "", "")
 	if err != nil {
 		return claude.LoginCheck{}, err
 	}

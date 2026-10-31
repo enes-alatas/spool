@@ -24,11 +24,12 @@ import (
 // the text to paste there and keeps whether the operator confirmed
 // pasting the current one.
 
-// CloudEnvironments lists the account's cloud environments, through the
-// one read-only call ADR-0059 keeps on the API the CLI's /remote-env
-// reads. Nil on a hub that wires none: the page falls back to the paste.
+// CloudEnvironments lists the cloud environments of a Claude login's
+// account, login "" for the default, through the one read-only call
+// ADR-0059 keeps on the API the CLI's /remote-env reads. Nil on a hub
+// that wires none: the page falls back to the paste.
 type CloudEnvironments interface {
-	Environments(ctx context.Context) ([]CloudEnvironment, error)
+	Environments(ctx context.Context, login string) ([]CloudEnvironment, error)
 }
 
 // CloudEnvironment is one of the account's cloud environments.
@@ -86,8 +87,24 @@ type cloudAllowlistConfirmReq struct {
 	Digest string `json:"digest"`
 }
 
+// handleListCloudEnvironments lists the default login's environments, or
+// with ?login= another login's, for a cloud loop on it to pick from
+// (#1078). A login the caller may not manage reads as one the hub doesn't
+// hold.
 func (server *Server) handleListCloudEnvironments(w http.ResponseWriter, r *http.Request) {
-	listed, err := server.listCloudEnvironments(r.Context())
+	login := loopLoginName(r.URL.Query().Get("login"))
+	if login != "" {
+		claudeLogin, err := server.Store.ClaudeLogins().Get(r.Context(), login)
+		if errors.Is(err, store.ErrNotFound) || (err == nil && !mayManage(callerOf(r), claudeLogin)) {
+			server.jsonErrCode(w, http.StatusNotFound, codeClaudeLogin, "no Claude login %s of yours", login)
+			return
+		}
+		if err != nil {
+			server.jsonErr(w, http.StatusInternalServerError, "%v", err)
+			return
+		}
+	}
+	listed, err := server.listCloudEnvironments(r.Context(), login)
 	if err != nil {
 		server.jsonErrCode(w, http.StatusBadGateway, codeCloudEnvironmentsUnlisted, "%v", err)
 		return
@@ -95,15 +112,16 @@ func (server *Server) handleListCloudEnvironments(w http.ResponseWriter, r *http
 	writeJSON(w, 200, map[string]any{"environments": listed})
 }
 
-// listCloudEnvironments is the account's list, without an ID of the
-// wrong shape: what the API says is untrusted, and the page must never
-// offer an ID the hub would refuse. A name is the API's free text too,
-// so it is capped and loses its backticks.
-func (server *Server) listCloudEnvironments(ctx context.Context) ([]CloudEnvironment, error) {
+// listCloudEnvironments is the list of the Claude login called login, ""
+// for the default, without an ID of the wrong shape: what the API says is
+// untrusted, and the page must never offer an ID the hub would refuse. A
+// name is the API's free text too, so it is capped and loses its
+// backticks.
+func (server *Server) listCloudEnvironments(ctx context.Context, login string) ([]CloudEnvironment, error) {
 	if server.CloudEnvironments == nil {
 		return nil, errors.New("this hub can't list environments; paste the ID")
 	}
-	listed, err := server.CloudEnvironments.Environments(ctx)
+	listed, err := server.CloudEnvironments.Environments(ctx, login)
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +156,7 @@ func (server *Server) handleChooseCloudEnvironment(w http.ResponseWriter, r *htt
 		return
 	}
 	name := ""
-	listed, listErr := server.listCloudEnvironments(r.Context())
+	listed, listErr := server.listCloudEnvironments(r.Context(), "")
 	if listErr == nil {
 		found := false
 		for _, environment := range listed {

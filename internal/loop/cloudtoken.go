@@ -12,7 +12,9 @@ import (
 // session: the operator sets it as the environment's secret, so it
 // outlives every session the loop starts, and the hub keeps only its
 // hash. The hub refuses it while the loop is paused, by the loop's status,
-// and takes it again on a resume. A kill revokes it for good: the loop
+// and takes it again on a resume. A kill, or a move to another Claude
+// login, whose account's environment needs a token of its own (#1078),
+// revokes it for good: the loop
 // holds its work until Rotate token mints another, which the operator sets
 // in its place.
 
@@ -73,7 +75,7 @@ func (actor *Actor) cloudSetupChanged() {
 }
 
 // tokenChanged takes whether the loop holds a hub token as the store says
-// now, after Rotate token.
+// now, after Rotate token or a move to another Claude login.
 func (actor *Actor) tokenChanged(ctx context.Context) {
 	stored, err := actor.deps.Store.Loops().Get(ctx, actor.loop.ID)
 	if err != nil {

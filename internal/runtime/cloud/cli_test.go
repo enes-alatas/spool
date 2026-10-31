@@ -25,7 +25,7 @@ func cliRuntime(t *testing.T, cli string) *Runtime {
 		t.Fatal(err)
 	}
 	return &Runtime{
-		Account: func(context.Context) (Account, error) { return testAccount, nil },
+		Account: func(context.Context, string) (Account, error) { return testAccount, nil },
 		Dir:     t.TempDir(),
 		CLI:     &CLI{Binary: binary, Dir: filepath.Join(t.TempDir(), "cli"), Env: os.Environ(), StartWithin: 2 * time.Second},
 		Bounds:  Bounds{Quiet: 5 * time.Second},
@@ -511,7 +511,7 @@ func TestPrepareSweepsTheCLIsDirAndRefusesOneNotPrivate(t *testing.T) {
 // removed with the dir, and named; a clean run leaves nothing to name.
 func TestARunsConfigDirIsCheckedAndRemoved(t *testing.T) {
 	cloud := cliRuntime(t, `sleep 30`)
-	clean, err := cloud.newCLIRun(context.Background(), "")
+	clean, err := cloud.newCLIRun(context.Background(), "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -521,7 +521,7 @@ func TestARunsConfigDirIsCheckedAndRemoved(t *testing.T) {
 	}
 	clean.remove()
 
-	dirty, err := cloud.newCLIRun(context.Background(), "")
+	dirty, err := cloud.newCLIRun(context.Background(), "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -592,7 +592,7 @@ echo '{"type":"result","subtype":"success","is_error":false,"result":"hi"}'
 		t.Errorf("the check ran as %q, want %q", raw, want)
 	}
 
-	cloud.Account = func(context.Context) (Account, error) { return Account{}, ErrNoAccount }
+	cloud.Account = func(context.Context, string) (Account, error) { return Account{}, ErrNoAccount }
 	if _, err := cloud.CheckAccount(context.Background()); !errors.Is(err, ErrNoAccount) {
 		t.Errorf("with no account CheckAccount = %v, want ErrNoAccount", err)
 	}

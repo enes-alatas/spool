@@ -42,7 +42,7 @@ Use these words exactly — in code, UI, docs, and prompts. Don't introduce syno
 | **turn** | One request→result cycle of a claude session. |
 | **turn cost** | What one turn spent: `cost_usd`, and the only cost column that may be summed. The CLI reports the session's running total instead, which is kept beside it as `session_cost_usd` (#191). A cloud turn reports no cost, so the hub estimates it from each call's tokens and model by its own price table and sets `cost_estimated`; a call on a model the table lacks leaves `cost_usd` null, unknown rather than free (ADR-0059). |
 | **plan usage** | How much of the Claude plan's five-hour and seven-day limit windows is used, and when each resets. One record per Claude login, which every loop on that login reports into (ADR-0060): the newest such a loop's claude process reported in its stream's rate-limit event, kept by the hub (which, within a window that has not reset, only lets it rise; ADR-0047) and read at `GET /api/plan-usage`, which says unknown, with why, until a loop on that login has reported one (#647). Not *turn cost*, which is what Spool's own turns spent. |
-| **plan cap** | The guardrail on each Claude login's *plan usage*: a threshold per window, 90% by default and 0 for off, the same for every login. While any of a login's windows is at or over its threshold, every loop on that login is **capped** (ADR-0060); bare and cloud loops follow the `default` login's cap. A capped loop sleeps at its next quiet boundary, keeps its workstation, and holds its inbox. It wakes once every window of its login over its threshold has reset, or when the operator raises a threshold, presses Resume now for that login, or moves the loop to a login that isn't capped. Unknown usage never caps. A loop is also capped, alone, at its own *daily cap* (ADR-0047). |
+| **plan cap** | The guardrail on each Claude login's *plan usage*: a threshold per window, 90% by default and 0 for off, the same for every login. While any of a login's windows is at or over its threshold, every loop on that login is **capped** (ADR-0060); bare loops follow the `default` login's cap, and a cloud loop its own login's, though its turns report no usage. A capped loop sleeps at its next quiet boundary, keeps its workstation, and holds its inbox. It wakes once every window of its login over its threshold has reset, or when the operator raises a threshold, presses Resume now for that login, or moves the loop to a login that isn't capped. Unknown usage never caps. A loop is also capped, alone, at its own *daily cap* (ADR-0047). |
 | **daily cap** | One loop's own limit, in USD, on its *turn cost* in the hub's local day, 0 for off. At or over it, only that loop is **capped**, as under the plan cap, until the hub's day turns or the operator raises or removes the cap; Resume now does not lift it. Unknown spend never caps. On a cloud loop it counts the hub's estimate, and a turn of unknown cost adds nothing. It stops a runaway loop, not one working against it, since the cost it counts comes from within the loop's reach (ADR-0047). |
 | **wake / sleep** | A loop's process lifecycle: asleep (no process) → awake (spawned, `--resume`). |
 | **tick** | A scheduled wake with no inbound message. |
@@ -182,8 +182,8 @@ as its network secret, which the egress proxy adds to every request for the hub'
 host: the token never enters the VM.
 The token outlives the loop's sessions and the hub keeps only its hash: Rotate token
 (`POST /api/loops/{name}/cloud/token`) stops the loop, mints it and shows it once,
-the cloud listener refuses it while the loop is paused, and a kill revokes it until
-the next Rotate token. Its `/mcp` takes only the loop's own session, which the
+the cloud listener refuses it while the loop is paused, and a kill or a move to
+another Claude login revokes it until the next Rotate token. Its `/mcp` takes only the loop's own session, which the
 session's MCP client names in `X-Spool-Session`, and its tool calls only during a
 turn and a minute after.
 A cloud loop whose repo, environment or token isn't set is
@@ -200,13 +200,16 @@ config directory of the hub's with the CLI's nonessential traffic off, and
 keeps the tokens sealed. The CLI is the host's, or on a hub with none, the
 workstation image's, in a throwaway container behind the egress wall that
 sees only that directory.
-A cloud loop's setup walk lists the account's environments, by name (one
-read-only `GET /v1/environment_providers`, the call ADR-0059 keeps), for the
-loop to pick its own from, or a pasted ID when the list fails; Settings →
-Cloud has no environment step (#1183). Once the steps
+A cloud loop runs on its Claude login's account, `default` unless it names
+another, and its sessions start and take turns on that login's token (#1078).
+Its setup walk lists that account's environments, by name (one read-only
+`GET /v1/environment_providers`, the call ADR-0059 keeps), for the loop to pick
+its own from, or a pasted ID when the list fails; on a login other than the
+default the hub lists them again before each start and starts only in one the
+list shows. Settings → Cloud has no environment step (#1183). Once the steps
 are green, `POST /api/loops` takes `runtime: cloud`, with the loop's repo,
-branch, further repos and environment, which a PATCH changes only while the loop
-is stopped; the loop's view carries its current session's page on claude.ai,
+branch, further repos, environment and Claude login, which a PATCH changes only
+while the loop is stopped; the loop's view carries its current session's page on claude.ai,
 and a warning while the list isn't confirmed. A cloud loop never moves runtime.
 The session's GitHub reach is Claude's GitHub App through the account's connection,
 which covers every repository that GitHub user's installations do (ADR-0061).

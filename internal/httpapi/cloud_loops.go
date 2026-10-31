@@ -83,10 +83,14 @@ const codeCloudLoopRunning = "cloud_loop_running"
 // cloudSetup is the loop's setup after req: what it names over what the
 // loop has, trimmed, with the branch DefaultCloudBranch once a repo is
 // named without one. Each field is checked by ADR-0061's rule, and an
-// environment the loop's login lists must be on that list; one pasted
-// while the list can't be read is taken, as Settings → Cloud took one,
-// and checked again at each start (item 7).
-func (server *Server) cloudSetup(ctx context.Context, current store.CloudSetup, req cloudSetupReq) (store.CloudSetup, *requestError) {
+// environment must be on the list of login, the Claude login the loop
+// runs on after the request, "" for the default: checked when the
+// environment changes, or when moved is set because the login does. One
+// pasted while the list can't be read is taken, as Settings → Cloud took
+// one. On a login other than the default the runtime checks it again at
+// each start, and the loop doesn't start until the list shows it (item 7,
+// #1078).
+func (server *Server) cloudSetup(ctx context.Context, login string, moved bool, current store.CloudSetup, req cloudSetupReq) (store.CloudSetup, *requestError) {
 	setup := current
 	if req.CloudRepo != nil {
 		setup.Repo = strings.TrimSpace(*req.CloudRepo)
@@ -109,11 +113,12 @@ func (server *Server) cloudSetup(ctx context.Context, current store.CloudSetup, 
 	if err := setup.Check(); err != nil {
 		return setup, &requestError{status: http.StatusBadRequest, msg: err.Error()}
 	}
-	if req.CloudEnvironmentID != nil && setup.EnvironmentID != current.EnvironmentID {
-		if listed, err := server.listCloudEnvironments(ctx); err == nil &&
+	changed := req.CloudEnvironmentID != nil && setup.EnvironmentID != current.EnvironmentID
+	if setup.EnvironmentID != "" && (changed || moved) {
+		if listed, err := server.listCloudEnvironments(ctx, login); err == nil &&
 			!slices.ContainsFunc(listed, func(environment CloudEnvironment) bool { return environment.ID == setup.EnvironmentID }) {
 			return setup, &requestError{status: http.StatusBadRequest, code: codeCloudEnvironmentUnlisted,
-				msg: setup.EnvironmentID + " is not one of this account's cloud environments"}
+				msg: setup.EnvironmentID + " is not one of the cloud environments of " + loginAccount(login)}
 		}
 	}
 	return setup, nil
@@ -152,4 +157,13 @@ func (server *Server) handleRotateCloudToken(w http.ResponseWriter, r *http.Requ
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write([]byte(token))
+}
+
+// loginAccount names the account of the Claude login called login, ""
+// for the default, as a refusal says it.
+func loginAccount(login string) string {
+	if login == "" {
+		return "the default Claude login's account"
+	}
+	return "Claude login " + login + "'s account"
 }

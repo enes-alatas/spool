@@ -19,7 +19,7 @@ type fixedEnvironments struct {
 	err    error
 }
 
-func (environments fixedEnvironments) Environments(context.Context) ([]CloudEnvironment, error) {
+func (environments fixedEnvironments) Environments(context.Context, string) ([]CloudEnvironment, error) {
 	return environments.listed, environments.err
 }
 

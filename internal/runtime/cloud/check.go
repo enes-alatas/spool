@@ -27,6 +27,9 @@ const (
 	// CheckStageEnvironment: the CLI refused the start, so no session
 	// exists: an environment the account doesn't have, or a repo or branch
 	// its GitHub connection can't reach. The detail is the CLI's last line.
+	// On a login other than the default it is also a start the hub held
+	// back: that login's list doesn't show the environment, or can't be
+	// read (#1078), and the detail says which.
 	CheckStageEnvironment = "environment"
 	// CheckStageToken: the session reached the hub, but with no hub token
 	// or one the hub doesn't take: the environment's network secret isn't
@@ -78,6 +81,9 @@ func (cloud *Runtime) CheckSetup(ctx context.Context, loopID string, source runt
 	if err != nil {
 		return CheckStageEnvironment, err.Error()
 	}
+	if err := cloud.confirmEnvironment(ctx, source); err != nil {
+		return CheckStageEnvironment, err.Error()
+	}
 	if !gitSafe(source) {
 		return CheckStageEnvironment, "the loop's repo or branch isn't one a start can name"
 	}
@@ -89,7 +95,7 @@ func (cloud *Runtime) CheckSetup(ctx context.Context, loopID string, source runt
 		return CheckStageHub, err.Error()
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
-	run, err := cloud.newCLIRun(ctx, dir)
+	run, err := cloud.newCLIRun(ctx, source.Login, dir)
 	if err != nil {
 		return CheckStageHub, err.Error()
 	}
