@@ -59,10 +59,30 @@ func startCloudHubAt(t *testing.T, name, address string, args ...string) *server
 	dataDir := t.TempDir()
 	s := startServerArgs(t, dataDir, append([]string{"--runtime", "bare"}, args...)...)
 	s.createLoop(name, nil)
+	// The loop's first wake runs here, on the bare hub, before it stops:
+	// stopped first, the wake would wait for the cloud hub and take a
+	// turn of its own there (#1217).
+	s.waitTurn(name, 30*time.Second, func(turn) bool { return true })
 	s.stop()
 	makeCloudLoop(t, dataDir, name)
+	forgetTurns(t, dataDir, name)
 	signInCloud(t, dataDir, address)
 	return startServerArgs(t, dataDir, append([]string{"--runtime", "bare"}, args...)...)
+}
+
+// forgetTurns deletes the turns the loop called name took on the bare hub
+// it was created on: a cloud loop is created as one, so it has taken none
+// elsewhere, and the bare turn's cost would count in the cloud loop's day.
+func forgetTurns(t *testing.T, dataDir, name string) {
+	t.Helper()
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(dataDir, "spool.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DELETE FROM turns WHERE loop_id = (SELECT id FROM loops WHERE name = ?)`, name); err != nil {
+		t.Fatalf("forget %s's bare turns: %v", name, err)
+	}
 }
 
 // signInCloud stores the synthetic account and the public address, "" for
