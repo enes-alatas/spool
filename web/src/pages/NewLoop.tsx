@@ -10,6 +10,7 @@ import {
   RUNTIME_OPTIONS,
   runtimeFieldNote,
   workspaceFieldNote,
+  GITHUB_PROXY_DOCS,
 } from '../options'
 import { useModelOptions } from '../models'
 import { customModelError, startsInFleetChannel } from '../forms'
@@ -437,7 +438,19 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
           onChange={(e) => inspect(e.target.value)}
           disabled={wsLocked}
         />
-        {wsNote && <div className="hint">{wsNote}</div>}
+        {wsNote && (
+          <div className="hint">
+            {wsNote}
+            {cloud && (
+              <>
+                {' '}
+                <a className="text-link" href={GITHUB_PROXY_DOCS} target="_blank" rel="noopener noreferrer">
+                  Anthropic's docs on the proxy ↗
+                </a>
+              </>
+            )}
+          </div>
+        )}
         {!wsLocked && wsInfo && wsPath.trim() && (
           <div className={`hint ${wsInfo.exists ? (wsInfo.is_git ? 'ok' : '') : 'warn'}`}>
             {!wsInfo.exists

@@ -174,9 +174,9 @@ describe('workspaceFieldNote', () => {
     )
   })
 
-  it('says a cloud loop reaches no GitHub repo yet', () => {
+  it('says a cloud loop reaches GitHub only through its repos, by REST', () => {
     expect(workspaceFieldNote('cloud')).toBe(
-      "A cloud loop works in its session on claude.ai. It can't reach GitHub yet: its session gets no repository, and a GH_TOKEN connection doesn't change that. Give GitHub work to a contained loop.",
+      "A cloud loop works in its session on claude.ai, which starts from its own repo through Claude's GitHub App; the loop's page walks its setup once it is created. Its GitHub work is REST through gh api only, as Anthropic's GitHub proxy refuses GraphQL, and a GH_TOKEN connection reaches no repo beyond the ones the loop names.",
     )
   })
 
