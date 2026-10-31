@@ -51,7 +51,7 @@ func (checker *LoginChecker) Start(ctx context.Context) error {
 	at := max(time.Now().UnixMilli(), checker.started+1)
 	checker.started = at
 	checker.mu.Unlock()
-	if err := checker.keep(ctx, at, store.LoginCheckRecord{Status: store.LoginCheckPending, At: at}); err != nil {
+	if err := checker.keep(ctx, at, store.LoginCheckRecord{Status: store.LoginCheckPending, At: at, Checked: checker.checked()}); err != nil {
 		return err
 	}
 	go checker.run(at)
@@ -97,12 +97,13 @@ func LastLoginCheck(ctx context.Context, settings store.SettingsStore) (store.Lo
 func (checker *LoginChecker) run(at int64) {
 	ctx, cancel := context.WithTimeout(context.Background(), loginCheckTimeout)
 	defer cancel()
+	checked := checker.checked()
 	token := ""
 	if needsClaudeToken(checker.runtime) {
 		var err error
 		if token, err = HubClaudeToken(ctx, checker.store); err != nil || token == "" {
 			checker.log.Warn("login check: no Claude token to check", "err", err)
-			checker.finish(at, store.LoginCheckRecord{Status: store.LoginCheckInconclusive, At: at})
+			checker.finish(at, store.LoginCheckRecord{Status: store.LoginCheckInconclusive, At: at, Checked: checked})
 			return
 		}
 	}
@@ -112,14 +113,24 @@ func (checker *LoginChecker) run(at int64) {
 		// the reason stays in the log: a run's stderr is no place to read
 		// back to a browser
 		checker.log.Warn("login check proved nothing either way", "err", err)
-		checker.finish(at, store.LoginCheckRecord{Status: store.LoginCheckInconclusive, At: at})
+		checker.finish(at, store.LoginCheckRecord{Status: store.LoginCheckInconclusive, At: at, Checked: checked})
 	case result.OK:
 		checker.log.Info("login check: the API accepted the login")
-		checker.finish(at, store.LoginCheckRecord{Status: store.LoginCheckOK, At: at})
+		checker.finish(at, store.LoginCheckRecord{Status: store.LoginCheckOK, At: at, Checked: checked})
 	default:
 		checker.log.Warn("login check: the API refused the login", "refusal", result.Refusal)
-		checker.finish(at, store.LoginCheckRecord{Status: store.LoginCheckRefused, Refusal: result.Refusal, At: at})
+		checker.finish(at, store.LoginCheckRecord{Status: store.LoginCheckRefused, Refusal: result.Refusal, At: at, Checked: checked})
 	}
+}
+
+// checked is which login the hub's check runs on: the stored one a
+// docker hub hands its loops, or the host CLI's own a bare hub's loops
+// run on (#1212).
+func (checker *LoginChecker) checked() string {
+	if needsClaudeToken(checker.runtime) {
+		return store.LoginCheckedStored
+	}
+	return store.LoginCheckedHostCLI
 }
 
 // finish keeps a check's outcome unless a newer check has started since.
@@ -186,7 +197,7 @@ func (checker *LoginChecker) StartLogin(ctx context.Context, name string) error 
 	at := max(time.Now().UnixMilli(), checker.startedFor[name]+1)
 	checker.startedFor[name] = at
 	checker.mu.Unlock()
-	if err := checker.keepFor(ctx, name, at, store.LoginCheckRecord{Status: store.LoginCheckPending, At: at}); err != nil {
+	if err := checker.keepFor(ctx, name, at, store.LoginCheckRecord{Status: store.LoginCheckPending, At: at, Checked: store.LoginCheckedStored}); err != nil {
 		return err
 	}
 	go checker.runLogin(name, at)
@@ -196,7 +207,7 @@ func (checker *LoginChecker) StartLogin(ctx context.Context, name string) error 
 func (checker *LoginChecker) runLogin(name string, at int64) {
 	ctx, cancel := context.WithTimeout(context.Background(), loginCheckTimeout)
 	defer cancel()
-	record := store.LoginCheckRecord{Status: store.LoginCheckInconclusive, At: at}
+	record := store.LoginCheckRecord{Status: store.LoginCheckInconclusive, At: at, Checked: store.LoginCheckedStored}
 	account, signedIn, err := store.SignedInAccount(ctx, checker.store.ClaudeLogins(), name)
 	switch {
 	case err != nil || !signedIn:

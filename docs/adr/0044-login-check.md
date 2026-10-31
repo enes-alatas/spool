@@ -1,6 +1,6 @@
 # ADR-0044: The hub checks the Claude login with one haiku answer, on save and on request
 
-Date: 2026-10-04 · Status: accepted (operator decision of 2026-10-04 15:34 UTC, recorded on #580; shape on #585) · Amends: ADR-0033 item 6 (a CLI run outside a loop's turns that uses the operator's login) · Amended: 2026-10-18 (item 2: the token is the hub's Claude token, ADR-0058, #928)
+Date: 2026-10-04 · Status: accepted (operator decision of 2026-10-04 15:34 UTC, recorded on #580; shape on #585) · Amends: ADR-0033 item 6 (a CLI run outside a loop's turns that uses the operator's login) · Amended: 2026-10-18 (item 2: the token is the hub's Claude token, ADR-0058, #928), 2026-10-31 (item 4: the record names the login it checked, #1212)
 
 ## Context
 
@@ -78,6 +78,13 @@ that ADR.
      is kept.
    - Why an inconclusive check ended goes to the log only: a run's stderr is
      no place to read back to a browser.
+
+   **Amendment (2026-10-31, #1212): the record names the login it checked.**
+   A bare hub's check runs the host CLI's own login, and a docker hub's
+   the sign-in the hub keeps, so a refusal on its own doesn't say which
+   one was refused. The record also keeps `checked`: `host_cli` or
+   `stored`, set as the check starts. A record kept before this has none,
+   and reads as unknown.
 
 5. **The harness pillar weighs the check against the turns.**
    - A loop down `unauthenticated` says no, whatever else says yes.
