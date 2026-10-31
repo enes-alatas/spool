@@ -204,9 +204,11 @@ A cloud loop runs on its Claude login's account, `default` unless it names
 another, and its sessions start and take turns on that login's token (#1078).
 Its setup walk lists that account's environments, by name (one read-only
 `GET /v1/environment_providers`, the call ADR-0059 keeps), for the loop to pick
-its own from, or a pasted ID when the list fails; on a login other than the
-default the hub lists them again before each start and starts only in one the
-list shows. Settings → Cloud has no environment step (#1183). Once the steps
+its own from, or a pasted ID when the list fails. The hub lists them again
+before each start, on every login, and starts only in one the list shows;
+it reads the CLI's debug log as the start runs, and ends one whose CLI
+picked another environment, holding the loop at its setup check (#1232).
+Settings → Cloud has no environment step (#1183). Once the steps
 are green, `POST /api/loops` takes `runtime: cloud`, with the loop's repo,
 branch, further repos, environment and Claude login, which a PATCH changes only
 while the loop is stopped; the loop's view carries its current session's page on claude.ai,

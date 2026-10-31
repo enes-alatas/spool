@@ -21,9 +21,9 @@ const DefaultAPIBase = "https://api.anthropic.com"
 // environmentsEndpoint lists the account's environments. It is the one
 // call the hub makes to the API the CLI's own /remote-env reads, which
 // Anthropic doesn't document (ADR-0059). The environment pick makes it,
-// and so does a start on a login other than the default, which starts
-// only in an environment the list shows (ADR-0061, #1078). No start on
-// the default login, and no send, depends on it.
+// and so does every start and setup check, which starts only in an
+// environment the list shows (ADR-0061, #1078, #1232). No send depends on
+// it.
 const environmentsEndpoint = "/v1/environment_providers"
 
 // Bounds on the list: a page of environments, how many pages are read,
@@ -135,24 +135,26 @@ var environmentsClient = &http.Client{
 	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 }
 
-// confirmEnvironment checks that a start on a login other than the
-// default names an environment of that login's account: a loop on one
-// never starts in another account's environment, so a list that can't be
-// read holds the start as one that doesn't show the ID does (ADR-0061,
-// #1078). The default login's ID was picked from its list or pasted when
-// the list failed, and is used as it is.
+// confirmEnvironment checks that a start names an environment of the
+// account of the loop's login, the default's too: a list that can't be
+// read holds the start as one that doesn't show the ID does. The CLI
+// doesn't refuse an ID the account doesn't hold, but starts in the
+// account's first environment (run U on #1078), so an ID pasted while the
+// list failed, or one whose environment was deleted since, is never
+// handed to it (ADR-0061, #1232).
 func (cloud *Runtime) confirmEnvironment(ctx context.Context, source runtime.CloudStart) error {
-	if source.Login == "" {
-		return nil
+	login := source.Login
+	if login == "" {
+		login = "default"
 	}
 	listed, err := cloud.Environments(ctx, source.Login)
 	if err != nil {
-		return fmt.Errorf("cloud: the environments of Claude login %s can't be listed, so its loop doesn't start until they can: %w", source.Login, err)
+		return fmt.Errorf("cloud: the environments of Claude login %s can't be listed, so its loop doesn't start until they can: %w", login, err)
 	}
 	for _, environment := range listed {
 		if environment.ID == source.EnvironmentID {
 			return nil
 		}
 	}
-	return fmt.Errorf("cloud: %s is not one of the cloud environments of Claude login %s's account", source.EnvironmentID, source.Login)
+	return fmt.Errorf("cloud: %s is not one of the cloud environments of Claude login %s's account", source.EnvironmentID, login)
 }

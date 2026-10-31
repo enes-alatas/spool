@@ -349,16 +349,34 @@ cloud listener (ADR-0059).
   host's CLI, or by the workstation image's on a hub with none.
 - **No setup-token leaves the machine.** A cloud session runs on the
   account, never on the setup-token.
-- **A loop on another login never starts in another account's
-  environment** (ADR-0061, #1078). Its CLI runs carry that login's token
+- **A loop never starts in an environment its login's account doesn't
+  list** (ADR-0061, #1078, #1232). Its CLI runs carry that login's token
   alone. Before each start, its setup check's included, the hub lists
   the login's environments on its token and starts only in one the list
-  shows; a list it can't read holds the start. A move to another login
-  waits for the loop to stop, drops its session and its check, revokes
-  its hub token, which the old account's environment still holds, and
-  refuses an environment the new login's account doesn't list. The one
-  environment started in unverified is the default login's, pasted while
-  its list failed.
+  shows; a list it can't read holds the start, on the default login
+  too. A move to another login waits for the loop to stop, drops its
+  session and its check, revokes its hub token, which the old account's
+  environment still holds, and refuses an environment the new login's
+  account doesn't list.
+- **A start the CLI moves to another environment is ended**
+  (ADR-0061, #1232). The CLI doesn't refuse an environment the account
+  doesn't hold: it starts in the account's first one and exits 0,
+  saying so only in its debug log (run U on #1078). That covers an
+  environment deleted between the hub's list and the start. Each start
+  and setup check asks for that log and reads it as it grows: a pick
+  other than the loop's environment ends the CLI, usually before it
+  creates the session, and fails the check, or records a failed check
+  for a start, so the loop holds rather than repeating it at each wake.
+  The log carries the wake's text, which whoever messages the loop
+  writes, so only a line in the CLI's own shape counts as the pick: a
+  time, a level, the phrase at its start and an ID of an environment
+  ID's shape. In run U the text comes after the pick, JSON-escaped in
+  the line that creates the session; that line, or any line of another
+  shape, ends the watch, so the text can't forge a pick. The log
+  carries the session's create request too, and no credential: the hub
+  checks it for the account's token before removing it and warns, by
+  name only, if a CLI starts writing one. It sits in the run's own 0700
+  directory, which goes when the run ends.
 - **The session carries one credential, the loop's hub token, and never
   holds it** (ADR-0061). The token is the loop's environment's network
   secret on claude.ai: the egress proxy adds it to every request the
@@ -518,20 +536,24 @@ cloud listener (ADR-0059).
   loop on a member's login spends the plan and shows the account
   nothing. The operator attaches to such a loop only connections the
   login's owner may hold.
-- **A default-login loop whose environment ID the account doesn't hold
-  runs its wakes outside its guards** (ADR-0061, #1078, #1232). Given
-  such an ID, the CLI starts the session in the account's first listed
-  environment and exits 0. The ID gets there by a wrong paste while the
-  list fails, or by going stale when its environment is deleted on
-  claude.ai, since the default login's environment isn't listed again
-  at a start. The session starts from the loop's repo and works on the
-  wake's text with no hub turn around it. Unless that environment is
-  one of the hub's, it runs without the deny rules and the `add_repo`
-  guard, on that environment's network access rather than the hub's
-  allowed domains. No connection or hub token of the loop's reaches it:
-  the hub binds no start to it, and the start times out. Each wake
-  repeats it, leaving a new session on the account until the operator
-  archives them on claude.ai.
+- **A start the CLI moves to another environment can still leave a stray
+  session** (ADR-0061, #1078, #1232). The hub lists before each start,
+  but an environment deleted after the list, or a CLI that creates the
+  session before the hub reads its pick, can still put one session in
+  the account's first environment. That session starts from the loop's
+  repo and works on the wake's text with no hub turn around it. Unless
+  that environment is one of the hub's, it runs without the deny rules
+  and the `add_repo` guard, on that environment's network access rather
+  than the hub's allowed domains. No connection or hub token of the
+  loop's reaches it, since the hub binds no start to it. The loop then
+  holds, so there is one such session, not one per wake, and its failed
+  check tells the operator to archive it on claude.ai. A CLI whose
+  debug log stops naming its pick isn't caught at all; the list before
+  each start is then the only guard. Nor is one that writes the wake's
+  text over many lines before its pick, and there a wake that writes a
+  whole CLI-shaped pick line naming another environment can hold the
+  loop until a check passes: anyone who can message the loop could
+  hold it. CLI 2.1.310 writes the text after the pick (run U).
 - **Cloud loops are one trust domain: a cloud loop is not isolated from
   the account's other cloud loops.** The shell is root and can read
   `/proc/<pid>/mem` of the session `claude` (no Yama `ptrace_scope`,
@@ -586,11 +608,13 @@ cloud listener (ADR-0059).
 - **The read-back rests on the transcript's line format,** which is the
   CLI's and not a published API. A change there fails the turn loudly
   and leaves the sends working (ADR-0059).
-- **The environment pick rests on an undocumented call:** one read-only
-  `GET /v1/environment_providers` on the account token, which lists the
-  account's environments for Settings → Cloud. No start or send depends
-  on it, so a change there breaks only the pick, and the page falls back
-  to a pasted ID (ADR-0059).
+- **Every start rests on an undocumented call:** one read-only
+  `GET /v1/environment_providers` on the login's token, which lists the
+  account's environments for the setup walk and before each start and
+  setup check (#1232). A change there fails every cloud loop's starts
+  and setup checks at the environment until it is fixed; sends to
+  a running session go on, and the walk falls back to a pasted ID
+  (ADR-0059).
 - **Each session starts in its loop's own environment,** which the
   operator names on the loop (ADR-0061). The ID's shape is checked at
   each start before it goes into the `--settings` JSON, built by the
@@ -598,7 +622,8 @@ cloud listener (ADR-0059).
   picking the account's first environment. When the account's list is
   read, the ID must be on it, so a bridge to one of the operator's
   machines or an archived environment is refused. An ID pasted while the
-  list fails is checked for its shape only.
+  list fails is checked for its shape only, and started in only once
+  the list shows it (#1232).
 - **The hub's egress allowlist doesn't bind a cloud loop.** A session
   reaches what its claude.ai environment allows, which the hub can't set
   or read. Settings → Cloud shows the list to paste there and takes the

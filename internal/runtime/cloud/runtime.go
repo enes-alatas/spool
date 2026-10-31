@@ -73,6 +73,11 @@ type Runtime struct {
 	// answered or refused. The session posts to the public address, so
 	// this is its word that it can't reach the hub there (ADR-0056).
 	Unreached func(loopID string, within time.Duration)
+	// Misplaced, when set, is told of a start the runtime failed because
+	// the CLI picked an environment other than the loop's, with what to
+	// say: every later start would do the same, so the loop must hold
+	// until its setup check passes again (#1232).
+	Misplaced func(loopID, detail string)
 
 	mu sync.Mutex // guards every state file
 	// waits are the hook posts sessions are waiting on.

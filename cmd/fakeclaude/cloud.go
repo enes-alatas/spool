@@ -19,9 +19,10 @@ package main
 //     operator's machine, with no remote session id (#957, run E3), and
 //     counts them in the session's local-session-starts. It writes its
 //     argument list to the session's cli-args and the environment
-//     --settings chose, remote.defaultEnvironmentId, into the session's
-//     environment file, "" for none. It starts the first turn, prints the
-//     session's lines as CLI 2.1.310 does, and waits to be ended.
+//     it runs in, the one --settings chose, remote.defaultEnvironmentId,
+//     unless it is gone, into the session's environment file, "" for
+//     none. It starts the first turn, prints the session's lines as CLI
+//     2.1.310 does, and waits to be ended.
 //   - `-p <message> --cloud <id>` prints {ok, session_id, url} and starts
 //     the turn in the VM, or prints {"ok":false,…} and exits 1 for a
 //     session it doesn't have.
@@ -67,8 +68,10 @@ package main
 // holds the VM's SessionStart until it has.
 // A "cloud-model" file in $FAKECLAUDE_STATE names the model a turn's
 // transcript says it ran on, claude-opus-5-5 without one.
-// A "gone" file in an environment's directory makes `--cloud` refuse a
-// start in it, as the CLI refuses an environment the account doesn't have.
+// A "gone" file in an environment's directory makes the account not have
+// it: `--cloud` falls back to the first environment that isn't gone, as
+// CLI 2.1.310 does, and logs both its fallback and its pick to the
+// --debug-file (run U on #1078), or refuses with no environment left.
 // A "cloud-egress-refused" file in $FAKECLAUDE_STATE makes the VM's
 // egress proxy refuse every request, as it refuses a public address the
 // internet can't reach (#1093): the hooks' curl fails with the proxy's
@@ -113,7 +116,7 @@ func cloudMain(args []string) int {
 	if len(args) == 4 && args[0] == cloudVMArg {
 		return cloudTurn(args[1], args[2], args[3] == "startup")
 	}
-	var message, session, settings, ref string
+	var message, session, settings, ref, debugFile string
 	sending := false
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -137,6 +140,11 @@ func cloudMain(args []string) int {
 				i++
 				ref = args[i]
 			}
+		case "--debug-file":
+			if i+1 < len(args) {
+				i++
+				debugFile = args[i]
+			}
 		case "--settings":
 			if i+1 < len(args) {
 				i++
@@ -149,12 +157,12 @@ func cloudMain(args []string) int {
 	if sending {
 		return cloudSend(session, message)
 	}
-	return cloudStart(message, settings, ref)
+	return cloudStart(message, settings, ref, debugFile)
 }
 
 var cloudSessionID = regexp.MustCompile(`^session_[A-Za-z0-9]+$`)
 
-func cloudStart(message, settings, ref string) int {
+func cloudStart(message, settings, ref, debugFile string) int {
 	if !isTerminal(os.Stdin) {
 		fmt.Fprintln(os.Stderr, "Error: --cloud needs an interactive terminal")
 		return 1
@@ -180,12 +188,6 @@ func cloudStart(message, settings, ref string) int {
 		fmt.Fprintf(os.Stderr, "Error: Repository has no local branch, tag, or checkout to seed from yet: %s\n", out)
 		return 1
 	}
-	id := "session_" + strings.ToLower(rand.Text())
-	vm := filepath.Join(cloudRoot(), id)
-	if err := os.MkdirAll(filepath.Join(vm, "home"), 0o700); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
 	// the environment the session runs in, as --settings chose it
 	var chosen struct {
 		Remote struct {
@@ -193,14 +195,16 @@ func cloudStart(message, settings, ref string) int {
 		} `json:"remote"`
 	}
 	_ = json.Unmarshal([]byte(settings), &chosen)
-	// an environment the account no longer has, archived or another
-	// account's, is refused before any session is made
-	if environment := chosen.Remote.DefaultEnvironmentID; environment != "" {
-		if _, err := os.Stat(filepath.Join(filepath.Dir(cloudRoot()), "environments", environment, "gone")); err == nil {
-			_ = os.RemoveAll(vm)
-			fmt.Fprintf(os.Stderr, "Error: Environment %s not found\n", environment)
-			return 1
-		}
+	environment, ok := pickEnvironment(chosen.Remote.DefaultEnvironmentID, debugFile)
+	if !ok {
+		fmt.Fprintln(os.Stderr, "Error: No environments available")
+		return 1
+	}
+	id := "session_" + strings.ToLower(rand.Text())
+	vm := filepath.Join(cloudRoot(), id)
+	if err := os.MkdirAll(filepath.Join(vm, "home"), 0o700); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
 	}
 	// the start's argument list, for a test to hold
 	if err := os.WriteFile(filepath.Join(vm, "cli-args"), []byte(strings.Join(os.Args[1:], "\n")+"\n"), 0o600); err != nil {
@@ -211,7 +215,7 @@ func cloudStart(message, settings, ref string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	if err := os.WriteFile(filepath.Join(vm, "environment"), []byte(chosen.Remote.DefaultEnvironmentID), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(vm, "environment"), []byte(environment), 0o600); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
@@ -836,4 +840,48 @@ func recordAccount(vm string) error {
 	}
 	_, err = fmt.Fprintln(sums, hex.EncodeToString(sum[:]))
 	return errors.Join(err, sums.Close())
+}
+
+// pickEnvironment is the environment a start runs in, as CLI 2.1.310
+// picks it (run U on #1078): the one --settings named, or, when that one
+// is gone, the first the account has, sorted by ID, with no word on the
+// screen. It logs its pick to debugFile, when there is one, as the CLI's
+// --debug-file does. After a fallback it takes a second to create the
+// session, as the CLI does. ok is false when the account has no
+// environment left.
+func pickEnvironment(chosen, debugFile string) (string, bool) {
+	gone := func(environment string) bool {
+		_, err := os.Stat(filepath.Join(environmentDir(environment), "gone"))
+		return err == nil
+	}
+	picked := chosen
+	var lines []string
+	if chosen != "" && gone(chosen) {
+		picked = ""
+		entries, _ := os.ReadDir(filepath.Join(filepath.Dir(cloudRoot()), "environments"))
+		for _, entry := range entries {
+			if entry.IsDir() && !gone(entry.Name()) {
+				picked = entry.Name()
+				break
+			}
+		}
+		if picked == "" {
+			return "", false
+		}
+		lines = append(lines, "Configured default environment "+chosen+" not found, using the fallback")
+	}
+	if picked != "" {
+		lines = append(lines, "Selected environment: "+picked+" (spool, anthropic_cloud)")
+	}
+	if debugFile != "" {
+		var log strings.Builder
+		for _, line := range lines {
+			log.WriteString(time.Now().UTC().Format(time.RFC3339Nano) + " [DEBUG] " + line + "\n")
+		}
+		_ = os.WriteFile(debugFile, []byte(log.String()), 0o600)
+	}
+	if picked != chosen {
+		time.Sleep(time.Second)
+	}
+	return picked, true
 }
