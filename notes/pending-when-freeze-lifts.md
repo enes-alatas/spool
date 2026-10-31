@@ -1595,3 +1595,6 @@ HN: 2 new, no fit (SRE deskilling; "AI changed what I can build"). #1214 merged 
 
 ## 2026-10-31 09:55 UTC tick
 HN: 0 new. #1216 approved by Quinn 05:57, awaiting Enes's merge (Quinn's nudge if it lingers). Iris's #1218 (for #1183) open for Quinn. Sweep: #1219 (itest flake, same test as #1204, different cause) had only needs-type → bug + CI reliability. Board tidy.
+
+## 2026-10-31 12:56 UTC tick
+HN: 0 new. Merged: #1216 (#1212), #1218 (#1183), Iris's #1203 fix. Open: Terra's #1220 (test, Closes #1217), Elliot's #1222 (Part of #1200). Iris → #1194 (ref:7813). Split #1200: narrowed to the key fingerprint pin (retitled; #1222 closes it); filed #1223 (security, L6) for the version pin + record, with the operator decision line (reverses #304 for release builds) — Elliot's ask to Enes. Board tidy.
