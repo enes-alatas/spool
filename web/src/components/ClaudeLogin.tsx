@@ -1,11 +1,20 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
-import { api, ApiError, type ClaudeLogin, type CloudSettings, type Settings } from '../api'
+import {
+  api,
+  ApiError,
+  type ClaudeLogin,
+  type CloudSettings,
+  type LoginCheckRecord,
+  type Settings,
+} from '../api'
 import { accountState, loginState, signInCodeShaped } from '../cloud'
 import {
   checking,
+  checksHostLogin,
   defaultFirst,
   defaultLineState,
+  hostLoginLineState,
   loginLineState,
   loginNameError,
   loginWho,
@@ -172,6 +181,7 @@ function DefaultLogin({
         onSignOut={signOut}
       />
       <LoginNote login={login} view={view} settings={settings} error={error} />
+      {checksHostLogin(login) && login.check && <HostLoginLine check={login.check} now={now} />}
     </>
   )
 }
@@ -208,7 +218,9 @@ function LoginLine({
   const { set, cli, check } = view.account
   const state = set ? defaultLineState(loginState(view), login) : loginState(view)
   const pending = login.check?.status === 'pending'
-  const checkedAt = Math.max(check?.checked_at ?? 0, pending ? 0 : (login.check?.at ?? 0))
+  // a check of this machine's own login is its own line's, not this one's
+  const ownCheck = checksHostLogin(login) ? undefined : login.check
+  const checkedAt = Math.max(check?.checked_at ?? 0, pending ? 0 : (ownCheck?.at ?? 0))
   return (
     <div className={`cloud-step ${state.tone}`}>
       <span className="cloud-dot" aria-hidden />
@@ -220,7 +232,7 @@ function LoginLine({
         </span>
         {set ? (
           <>
-            {check?.stage === 'refused' || login.check?.status === 'refused' ? (
+            {check?.stage === 'refused' || ownCheck?.status === 'refused' ? (
               cli && (
                 <button className="btn sm" onClick={onSignIn} disabled={working}>
                   Sign in again
@@ -249,6 +261,38 @@ function LoginLine({
         )}
       </span>
     </div>
+  )
+}
+
+// This machine's own claude login, when the hub's check of the default ran
+// on it, as on a bare hub (#1203): bare loops run on it, and signing in
+// with Claude here doesn't change it, so a refusal says where it is fixed.
+// The default's Check again checks it too.
+function HostLoginLine({ check, now }: { check: LoginCheckRecord; now: number }) {
+  const state = hostLoginLineState(check)
+  return (
+    <>
+      <div className={`cloud-step ${state.tone}`}>
+        <span className="cloud-dot" aria-hidden />
+        <span className="cloud-step-title">this machine's own</span>
+        <span className="claude-login-who">bare loops run on it</span>
+        <span className="cloud-step-end">
+          <span className="cloud-step-state">
+            {state.text}
+            {check.status !== 'pending' && ` · checked ${formatAgo(check.at, now)}`}
+          </span>
+        </span>
+      </div>
+      {check.status === 'refused' && (
+        <div className="cloud-step-open">
+          {check.refusal && <div className="cloud-check-hint">{check.refusal}</div>}
+          <div className="cloud-check-hint">
+            Bare loops can't run until this machine's login works: log in again with claude on this machine,
+            as the user the hub runs as. Signing in with Claude above doesn't change it.
+          </div>
+        </div>
+      )}
+    </>
   )
 }
 
@@ -285,8 +329,10 @@ function NamedLogin({
   const [error, setError] = useState('')
   const qc = useQueryClient()
   const now = useMinuteClock()
-  const state = loginLineState(login)
-  const { check } = login
+  // a check of this machine's own login is its own line's, not this one's
+  const check = checksHostLogin(login) ? undefined : login.check
+  const state = loginLineState({ ...login, check })
+  const pending = login.check?.status === 'pending'
 
   const act = async (what: 'check' | 'sign-out' | 'remove', request: () => Promise<unknown>) => {
     setWorking(what)
@@ -338,9 +384,9 @@ function NamedLogin({
                 <button
                   className="btn sm"
                   onClick={() => act('check', () => api.checkClaudeLogin(login.name))}
-                  disabled={working !== '' || check?.status === 'pending'}
+                  disabled={working !== '' || pending}
                 >
-                  {working === 'check' || check?.status === 'pending' ? 'Checking…' : 'Check again'}
+                  {working === 'check' || pending ? 'Checking…' : 'Check again'}
                 </button>
               )}
               {login.signed_in && (
@@ -381,6 +427,7 @@ function NamedLogin({
           )}
         </div>
       )}
+      {checksHostLogin(login) && login.check && <HostLoginLine check={login.check} now={now} />}
     </>
   )
 }
@@ -511,7 +558,7 @@ function LoginNote({
   const { tone } = accountState(view)
   // the hub's login check says only that it was refused, and what the API
   // answered, so its refusal stands where the account check gives none
-  const checkRefused = set && login.check?.status === 'refused'
+  const checkRefused = set && !checksHostLogin(login) && login.check?.status === 'refused'
   const refused = (set && view.account.check?.stage === 'refused') || checkRefused
   const setupToken = !set && settings?.claude_token_set === true
   const lines = [

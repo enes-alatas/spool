@@ -3,7 +3,9 @@ import type { ClaudeLogin, LoopView, Me } from './api'
 import {
   checking,
   defaultFirst,
+  checksHostLogin,
   defaultLineState,
+  hostLoginLineState,
   loginLineState,
   loginNameError,
   loginOptions,
@@ -187,6 +189,17 @@ describe('defaultLineState', () => {
     expect(defaultLineState(bad, def({ check: { status: 'refused', at: 1 } }))).toEqual(bad)
     expect(defaultLineState(bad, def({ check: { status: 'ok', at: 1 } }))).toEqual(bad)
   })
+  // On a bare hub the check ran on this machine's own login, which is not
+  // the sign-in this line reads (#1203).
+  it("ignores a check of this machine's own login", () => {
+    const host = def({ check: { status: 'refused', refusal: 'Not logged in', at: 1, checked: 'host_cli' } })
+    expect(defaultLineState(ok, host)).toEqual(ok)
+    expect(checksHostLogin(host)).toBe(true)
+    const stored = def({ check: { status: 'refused', at: 1, checked: 'stored' } })
+    expect(defaultLineState(ok, stored)).toEqual({ text: 'refused', tone: 'bad' })
+    expect(checksHostLogin(stored)).toBe(false)
+    expect(checksHostLogin(def({ check: { status: 'ok', at: 1 } }))).toBe(false)
+  })
   it('ignores a check left from before a sign-out', () => {
     const out = { text: 'not signed in', tone: 'todo' as const }
     expect(defaultLineState(out, def({ signed_in: false, check: { status: 'refused', at: 1 } }))).toEqual(out)
@@ -222,5 +235,26 @@ describe('noLoginChoice', () => {
     expect(noLoginChoice('docker')).toBe('')
     expect(noLoginChoice('bare')).toContain("this machine's own")
     expect(noLoginChoice('cloud')).toContain('default')
+  })
+})
+
+describe('hostLoginLineState', () => {
+  it("reads this machine's own login by its check alone", () => {
+    expect(hostLoginLineState({ status: 'pending', at: 1, checked: 'host_cli' })).toEqual({
+      text: 'checking…',
+      tone: 'todo',
+    })
+    expect(hostLoginLineState({ status: 'ok', at: 1, checked: 'host_cli' })).toEqual({
+      text: 'signed in',
+      tone: 'ok',
+    })
+    expect(hostLoginLineState({ status: 'refused', at: 1, checked: 'host_cli' })).toEqual({
+      text: 'refused',
+      tone: 'bad',
+    })
+    expect(hostLoginLineState({ status: 'inconclusive', at: 1, checked: 'host_cli' })).toEqual({
+      text: 'check inconclusive',
+      tone: 'warn',
+    })
   })
 })

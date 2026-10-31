@@ -681,6 +681,10 @@ export interface LoginCheckRecord {
   status: 'pending' | 'ok' | 'refused' | 'inconclusive'
   refusal?: string
   at: number
+  // Which login it ran on (#1212): `host_cli` is this machine's own claude
+  // login, which bare loops run on, and `stored` a login the hub keeps.
+  // Absent on a check kept before the hub said.
+  checked?: 'host_cli' | 'stored'
 }
 
 // The fleet's workstation egress allowlist (#542, ADR-0028): the built-in

@@ -2,7 +2,7 @@
 // and who may act on it. The hub decides both; the room mirrors it so it
 // draws no button the hub would refuse.
 
-import type { ClaudeLogin, LoopView, Me } from './api'
+import type { ClaudeLogin, LoginCheckRecord, LoopView, Me } from './api'
 import type { Tone } from './cloud'
 import { may } from './roles'
 
@@ -98,15 +98,38 @@ export function signOutConfirm(name: string, loops: string[]): string {
 // its two checks.
 const SEVERITY: Record<Tone, number> = { ok: 0, todo: 1, warn: 2, bad: 3 }
 
+// Whether the hub's login check of the default ran on this machine's own
+// claude login, as it does on a bare hub (#1203), rather than on the
+// sign-in the hub keeps: then it is another login's, with a line of its own.
+export function checksHostLogin(login: ClaudeLogin): boolean {
+  return login.check?.checked === 'host_cli'
+}
+
+// The line for this machine's own login, from the hub's check of it. Being
+// signed in is not the hub's to know until the check ends.
+export function hostLoginLineState(check: LoginCheckRecord): { text: string; tone: Tone } {
+  switch (check.status) {
+    case 'pending':
+      return { text: 'checking…', tone: 'todo' }
+    case 'ok':
+      return { text: 'signed in', tone: 'ok' }
+    case 'refused':
+      return { text: 'refused', tone: 'bad' }
+    case 'inconclusive':
+      return { text: 'check inconclusive', tone: 'warn' }
+  }
+}
+
 // The default's line for an admin: Check again runs both Settings → Cloud's
 // account check and the hub's login check (ADR-0044), and the line reads
 // whichever found worse, the account check's on a tie since its hint says
-// why. A login check that hasn't run, or a login signed out, adds nothing.
+// why. A login check that hasn't run, or a login signed out, adds nothing,
+// and nor does one of this machine's own login, which has its own line.
 export function defaultLineState(
   account: { text: string; tone: Tone },
   login: ClaudeLogin,
 ): { text: string; tone: Tone } {
-  if (!login.signed_in || !login.check) return account
+  if (!login.signed_in || !login.check || checksHostLogin(login)) return account
   const checked = loginLineState(login)
   return SEVERITY[checked.tone] > SEVERITY[account.tone] ? checked : account
 }
