@@ -5,6 +5,7 @@ package itest
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"io/fs"
 	"net/http"
 	"os"
@@ -126,6 +127,11 @@ func vmHolds(t *testing.T, s *server, vm, value string) bool {
 			return err
 		}
 		raw, err := os.ReadFile(path)
+		if errors.Is(err, fs.ErrNotExist) {
+			// gone since the walk listed it, such as the turn.lock a CLI
+			// still exiting removes (#1219)
+			return nil
+		}
 		found = found || strings.Contains(string(raw), value)
 		return err
 	})
