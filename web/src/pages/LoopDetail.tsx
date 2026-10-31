@@ -63,7 +63,7 @@ import { ChannelChat } from '../components/ChannelChat'
 import { channelLabel } from '../channels'
 import { privateLabel, privatePerson } from '../privates'
 import { MCPReach } from '../components/MCPReach'
-import { CloudWorkstation } from '../components/CloudWorkstation'
+import { CloudWorkstation, SETUP_PARAM } from '../components/CloudWorkstation'
 import { useMinuteClock } from '../components/PlanUsage'
 import { cutOffTurn, turnUntil, unnamedCloudHold, useCloudSettings } from '../cloudLoop'
 import { LeftBehind, RehomeControl } from '../components/Rehome'
@@ -810,12 +810,13 @@ function WorkstationNote({ loop }: { loop: LoopView }) {
   }
 }
 
-// A cloud loop's line under its name (ADR-0056): a hold the
-// `cloud_address` problem doesn't already name, a session that is down, and
-// an allowlist not confirmed, which only warns (ADR-0059). A session
-// its first wake hasn't made yet is nothing to remark on.
+// A cloud loop's line under its name (ADR-0056): a hold no problem line
+// already names, a session that is down, and allowed domains not
+// confirmed, which only warns (ADR-0061). A session its first wake hasn't
+// made yet is nothing to remark on.
 function CloudSessionNote({ loop }: { loop: LoopView }) {
   const hold = unnamedCloudHold(loop, useCloudSettings(loop))
+  const manage = useMay()('manage')
   if (hold)
     return (
       <div className="ws-down-note">
@@ -830,12 +831,19 @@ function CloudSessionNote({ loop }: { loop: LoopView }) {
     if (!loop.cloud_allowlist_unconfirmed) return null
     return (
       <div className="ws-warn-note">
-        The allowlist isn't confirmed, so this loop can reach whatever its environment on claude.ai allows,
-        not this hub's allowlist. Paste the list and confirm it in{' '}
-        <Link className="text-link" to="/settings">
-          Settings → Cloud
-        </Link>
-        .
+        The allowed domains aren't confirmed, so this loop can reach whatever its environment on claude.ai
+        allows, not this hub's allowlist.{' '}
+        {manage ? (
+          <>
+            Paste them and confirm in{' '}
+            <Link className="text-link" to={`?${SETUP_PARAM}`}>
+              its setup
+            </Link>
+            .
+          </>
+        ) : (
+          'An admin confirms them in its setup.'
+        )}
       </div>
     )
   }

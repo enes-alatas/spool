@@ -5,8 +5,6 @@ import {
   accountState,
   addressState,
   checkRows,
-  environmentOptions,
-  environmentState,
   FUNNEL_BESIDE_PROXY_DOCS,
   firstOpenStep,
   isQuickTunnel,
@@ -17,7 +15,7 @@ import {
   type Tone,
 } from '../cloud'
 import { formatAgo } from '../format'
-import { CheckIcon, RefreshIcon } from './Icons'
+import { CheckIcon } from './Icons'
 import { Copyable } from './Copyable'
 import { StepDialog } from './StepDialog'
 import { useMinuteClock } from './PlanUsage'
@@ -57,7 +55,6 @@ export function CloudSection() {
             <ListenerLine view={view} onOpen={() => setOpen('listener')} />
             <AddressLine view={view} onOpen={() => setOpen('address')} />
             <AccountLine view={view} onOpen={() => setOpen('account')} />
-            <EnvironmentLine view={view} onOpen={() => setOpen('environment')} />
           </div>
           {firstOpenStep(view) !== 'done' && (
             <div className="cloud-actions">
@@ -177,47 +174,6 @@ function AccountLine({ view, onOpen }: { view: CloudSettings; onOpen: () => void
   )
 }
 
-// The shared environment (ADR-0059): its ID, and whether the
-// allowlist pasted into it is the current one. Until it is, cloud loops run
-// on whatever the environment allows, which the warning under it says.
-function EnvironmentLine({ view, onOpen }: { view: CloudSettings; onOpen: () => void }) {
-  const state = environmentState(view)
-  return (
-    <>
-      <StepLine
-        title="Environment"
-        tone={state.tone}
-        value={view.environment.name || view.environment.id || undefined}
-        action={
-          <button className="btn sm" onClick={onOpen}>
-            {view.environment.id ? 'Change' : 'Set up'}
-          </button>
-        }
-      >
-        <span className="cloud-step-state">{state.text}</span>
-      </StepLine>
-      {state.tone === 'warn' && (
-        <div className="cloud-step-open">
-          <UnconfirmedAllowlistWarning />
-        </div>
-      )}
-    </>
-  )
-}
-
-// Cloud loops follow the environment's network access, not this hub's
-// allowlist, so a list not confirmed since it last changed needs pasting
-// again: an allowlist edit, a new address or another environment drops the
-// confirm.
-function UnconfirmedAllowlistWarning() {
-  return (
-    <div className="cloud-warning">
-      Cloud loops can reach only what the environment's settings on claude.ai allow. Paste the current list
-      there, then confirm.
-    </div>
-  )
-}
-
 function CheckRows({ view }: { view: CloudSettings }) {
   const rows = checkRows(view.check, view.address)
   // The row whose hint the step shows: where the check failed, or the
@@ -284,7 +240,6 @@ const STEPS: { key: SetupStep; label: string }[] = [
   { key: 'listener', label: 'Cloud listener' },
   { key: 'address', label: 'Public address' },
   { key: 'account', label: 'Claude login' },
-  { key: 'environment', label: 'Environment' },
 ]
 
 export function CloudSetup({
@@ -337,14 +292,6 @@ export function CloudSetup({
             view={view}
             setBusy={setBusy}
             onBack={() => setStep('address')}
-            onNext={() => setStep('environment')}
-          />
-        )}
-        {step === 'environment' && (
-          <EnvironmentStep
-            view={view}
-            setBusy={setBusy}
-            onBack={() => setStep('account')}
             onNext={() => setStep('done')}
           />
         )}
@@ -352,13 +299,14 @@ export function CloudSetup({
           <>
             <p className="step-dialog-state" aria-live="polite">
               <span className="ok">
-                <CheckIcon size={14} /> The listener is on, the address reaches this hub, the Claude login is
-                signed in, and the environment holds this hub's allowlist.
+                <CheckIcon size={14} /> The listener is on, the address reaches this hub, and the Claude login
+                is signed in.
               </span>
             </p>
             <p className="step-dialog-lede">
               The hub checks the address every five minutes and the login each time it starts, and Settings →
-              Cloud shows where each step stands.
+              Cloud shows where each step stands. Each cloud loop then gets an environment of its own on
+              claude.ai, which its page walks you through.
             </p>
             <form method="dialog" className="pillar-actions">
               <button className="btn primary">{doneLabel}</button>
@@ -625,191 +573,6 @@ function AccountStep({
         </button>
       </div>
     </>
-  )
-}
-
-// The environment step (ADR-0059), in OPERATIONS.md's order: make
-// the environment on claude.ai, paste the list into its network access,
-// pick it here, confirm. The hub builds the list on every read of the page,
-// and the confirm names its digest, so a list changed since is refused.
-function EnvironmentStep({
-  view,
-  setBusy,
-  onBack,
-  onNext,
-}: {
-  view: CloudSettings
-  setBusy: (busy: boolean) => void
-  onBack: () => void
-  onNext: () => void
-}) {
-  const { run, error } = useCloudChange(setBusy)
-  const { environment } = view
-
-  return (
-    <>
-      <p className="step-dialog-lede">
-        Every cloud loop runs in one environment you make on claude.ai. It holds network settings only. Every
-        cloud loop shares it, so put no variables or secrets in it: a loop's secrets come from this hub.
-      </p>
-      <ol className="cloud-recipe">
-        <li>
-          On{' '}
-          <a href="https://claude.ai/code" target="_blank" rel="noreferrer">
-            claude.ai/code
-          </a>
-          , open the environment selector under the message box and choose <strong>New environment</strong>.
-          Name it <Copyable text="spool" />.
-        </li>
-        <li>
-          Under <strong>Network access</strong>, choose <strong>Custom</strong> and paste this list into{' '}
-          <strong>Allowed domains</strong>. Leave{' '}
-          <strong>Also include default list of common package managers</strong> unchecked, then choose{' '}
-          <strong>Add environment</strong>.
-          <Copyable text={environment.allowlist} label="the allowed domains" />
-          {environment.not_applied.length > 0 && (
-            <div className="cloud-small">
-              Left out, as an environment can't take a port or a bare <code>*</code>:{' '}
-              {environment.not_applied.map((entry, i) => (
-                <span key={entry}>
-                  {i > 0 && ', '}
-                  <code>{entry}</code>
-                </span>
-              ))}
-              .
-            </div>
-          )}
-        </li>
-        <li>
-          Pick it here.
-          <EnvironmentPick environment={environment} run={run} />
-        </li>
-        <li>
-          Confirm that you pasted the list from step 2 into the environment's settings on claude.ai. If the
-          allowlist in Settings → Egress, the public address or the environment changes, the hub asks you to
-          paste it again.
-          {environment.confirmed ? (
-            <p className="step-dialog-state" aria-live="polite">
-              <span className="ok">
-                <CheckIcon size={14} /> {environment.name || environment.id} holds this hub's allowlist.
-              </span>
-            </p>
-          ) : (
-            <div className="cloud-code">
-              <button
-                className="btn"
-                disabled={!environment.id}
-                onClick={() => void run(() => api.confirmCloudEnvironment(environment.digest))}
-              >
-                I pasted it
-              </button>
-            </div>
-          )}
-        </li>
-      </ol>
-      {error && (
-        <div className="form-error" role="alert">
-          {error}
-        </div>
-      )}
-      <div className="pillar-actions">
-        <button className="btn" onClick={onBack}>
-          Back
-        </button>
-        <button className="btn primary" onClick={onNext} disabled={!environment.confirmed}>
-          Next
-        </button>
-      </div>
-    </>
-  )
-}
-
-// The environment, picked by name from the account's list, which the hub
-// reads on its Claude login (ADR-0059). That list rests on an API
-// Anthropic doesn't publish, so when it fails the step falls back to the
-// documented way to an ID: /remote-env in the operator's own claude.
-function EnvironmentPick({
-  environment,
-  run,
-}: {
-  environment: CloudSettings['environment']
-  run: (request: () => Promise<CloudSettings>) => Promise<CloudSettings | undefined>
-}) {
-  const {
-    data,
-    error: listError,
-    refetch,
-    isFetching,
-  } = useQuery({
-    queryKey: ['cloud', 'environments'],
-    queryFn: api.cloudEnvironments,
-    refetchOnMount: 'always',
-    retry: false,
-  })
-  const [pasted, setPasted] = useState('')
-
-  if (listError) {
-    const typed = pasted.trim()
-    return (
-      <>
-        <div className="cloud-small">
-          The hub couldn't list your environments (
-          {listError instanceof Error ? listError.message : String(listError)}). Pick it in your own Claude
-          Code instead: run <Copyable text="/remote-env" /> in <code>claude</code>, choose the environment,
-          then copy <code>remote.defaultEnvironmentId</code> from <code>~/.claude/settings.json</code> here.
-        </div>
-        <form
-          className="egress-add cloud-code"
-          onSubmit={(e) => {
-            e.preventDefault()
-            void run(() => api.setCloudEnvironment(typed))
-          }}
-        >
-          <input
-            className="mono"
-            value={pasted}
-            onChange={(e) => setPasted(e.target.value)}
-            placeholder={environment.id || 'env_…'}
-            aria-label="Environment ID"
-            spellCheck={false}
-          />
-          <button className="btn" disabled={!typed || typed === environment.id}>
-            Save
-          </button>
-        </form>
-      </>
-    )
-  }
-  if (!data) return null
-  const options = environmentOptions(data.environments, environment)
-  return (
-    <div className="egress-add cloud-code">
-      {data.environments.length === 0 && !environment.id ? (
-        <span className="cloud-small">No environments on this account yet.</span>
-      ) : (
-        <select
-          value={environment.id}
-          onChange={(e) => void run(() => api.setCloudEnvironment(e.target.value))}
-          aria-label="Environment"
-        >
-          {options.map((option) => (
-            <option key={option.value} value={option.value} disabled={option.value === ''}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      )}
-      <button
-        type="button"
-        className="panel-action"
-        onClick={() => void refetch()}
-        disabled={isFetching}
-        aria-label="Refresh the list"
-        title="Refresh the list"
-      >
-        <RefreshIcon />
-      </button>
-    </div>
   )
 }
 

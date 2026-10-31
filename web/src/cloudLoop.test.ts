@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import type { CloudSettings } from './api'
+import type { CloudLoopCheck, CloudSettings } from './api'
 import {
+  checkSays,
   cloudHold,
   cloudSessionCondition,
   cutOffTurn,
   deleteQuestion,
+  holdIsLoops,
   killHint,
   killQuestion,
+  reposOf,
+  stepsLeft,
   turnUntil,
   unnamedCloudHold,
 } from './cloudLoop'
@@ -19,20 +23,11 @@ const loop = (over: Partial<Parameters<typeof cloudSessionCondition>[0]> = {}) =
 })
 
 const ok = { state: 'ok', checked_at: 0 } as const
-const ENV = {
-  id: 'env_01Fixture',
-  name: 'spool',
-  allowlist: 'spool.example.com\napi.anthropic.com',
-  not_applied: [],
-  digest: 'd1',
-  confirmed: true,
-}
 const settings = (over: Partial<CloudSettings> = {}): CloudSettings => ({
   listener: { on: true, addr: '127.0.0.1:8090', from_flag: false },
   address: 'https://spool.example.com',
   check: ok,
   account: { set: true, cli: true, check: ok },
-  environment: ENV,
   ...over,
 })
 const failing = loop({ problems: [{ symptom: 'cloud_address', since: 0 }] })
@@ -51,14 +46,20 @@ describe('cloudHold', () => {
     expect(cloudHold(loop(), settings({ account: { set: false, cli: true } }))).toBe(
       'no Claude account is signed in',
     )
-    expect(cloudHold(loop(), settings({ environment: { ...ENV, id: '', name: '', confirmed: false } }))).toBe(
-      'no cloud environment is chosen',
-    )
     expect(cloudHold(loop(), settings())).toBe('')
   })
 
-  it("doesn't hold on an unconfirmed allowlist, which is a warning", () => {
-    expect(cloudHold(loop(), settings({ environment: { ...ENV, confirmed: false } }))).toBe('')
+  // The loop's own setup is the hub's to judge (ADR-0061), and says so by
+  // its problem; a gap in Settings → Cloud is named first, as it is fixed first.
+  it("holds on the loop's own setup by its problem", () => {
+    const unset = loop({ problems: [{ symptom: 'cloud_setup', since: 0 }] })
+    expect(cloudHold(unset, settings())).toBe("the loop's setup isn't finished")
+    expect(cloudHold(unset, undefined)).toBe("the loop's setup isn't finished")
+    expect(cloudHold(unset, settings({ account: { set: false, cli: true } }))).toBe(
+      'no Claude account is signed in',
+    )
+    expect(holdIsLoops(cloudHold(unset, settings()))).toBe(true)
+    expect(holdIsLoops(cloudHold(failing, settings()))).toBe(false)
   })
 
   it("doesn't hold on a signed-in account whose check fails, as the hub doesn't", () => {
@@ -72,6 +73,7 @@ describe('cloudHold', () => {
 
   it('leaves a hold the cloud_address problem names to the problem', () => {
     expect(unnamedCloudHold(failing, settings())).toBe('')
+    expect(unnamedCloudHold(loop({ problems: [{ symptom: 'cloud_setup', since: 0 }] }), settings())).toBe('')
     expect(unnamedCloudHold(loop(), settings({ account: { set: false, cli: true } }))).toBe(
       'no Claude account is signed in',
     )
@@ -163,5 +165,49 @@ describe('cloud turn', () => {
   it('kills unasked with no turn, or one past its bound', () => {
     expect(killQuestion({ name: 'nimbus' }, 5_000)).toBeUndefined()
     expect(killQuestion({ name: 'nimbus', cloud_turn: turn }, 7_201_000)).toBeUndefined()
+  })
+})
+
+describe('checkSays', () => {
+  const setup = (check?: CloudLoopCheck) => ({ check, secret_host: 'spool.example.com' })
+  it('reads a check by its state', () => {
+    expect(checkSays(setup(), 'acme/app')).toEqual({ text: 'not checked yet', tone: 'todo' })
+    expect(checkSays(setup({ state: 'running', current: false }), 'acme/app')).toEqual({
+      text: 'checking…',
+      tone: 'todo',
+    })
+    const passed = checkSays(setup({ state: 'ok', checked_at: 1, current: true }), 'acme/app')
+    expect(passed).toMatchObject({ text: 'passed', tone: 'ok' })
+    // what the loop can do once it passes, named by its repo
+    expect(passed.hint).toContain('work in acme/app, push branches and open pull requests')
+  })
+  it('asks for another check once a pass is of an earlier setup', () => {
+    expect(checkSays(setup({ state: 'ok', checked_at: 1, current: false }), 'acme/app')).toMatchObject({
+      text: 'passed on an earlier setup',
+      tone: 'warn',
+    })
+  })
+  it('names where a failed check stopped and what to try', () => {
+    const failed = (stage: string) =>
+      checkSays(setup({ state: 'failed', stage, checked_at: 1, current: true }), 'acme/app')
+    expect(failed('environment')).toMatchObject({ text: 'fails: claude.ai refused the start', tone: 'bad' })
+    expect(failed('token').hint).toContain('network secret for spool.example.com')
+    expect(failed('unreached').hint).toContain('spool.example.com is in the environment')
+    // a stage this build doesn't know still reads as a failure, by its name
+    expect(failed('quota')).toEqual({ text: 'fails: quota', tone: 'bad' })
+  })
+})
+
+describe('stepsLeft', () => {
+  it('says what the setup still needs, in the view’s order', () => {
+    expect(stepsLeft(['repo', 'token', 'check'])).toBe('a repo, a hub token, a passed check')
+    expect(stepsLeft([])).toBe('')
+  })
+})
+
+describe('reposOf', () => {
+  it('reads one repo a line or comma-separated, trimmed', () => {
+    expect(reposOf(' acme/a \nacme/b, acme/c\n\n')).toEqual(['acme/a', 'acme/b', 'acme/c'])
+    expect(reposOf('')).toEqual([])
   })
 })

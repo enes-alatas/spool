@@ -3,7 +3,7 @@
 // A problem the hub's health check found with a loop (ADR-0053), open
 // since since (Unix ms) until the signal clears or an admin acknowledges it.
 export interface Problem {
-  symptom: 'workstation_down' | 'turn_errors' | 'cloud_address' | 'cloud_connections' | string
+  symptom: 'workstation_down' | 'turn_errors' | 'cloud_address' | 'cloud_connections' | 'cloud_setup' | string
   since: number
 }
 export type Health = 'ok' | 'warning' | 'failing'
@@ -46,9 +46,17 @@ export interface LoopView {
   // A cloud loop's turn that may be running in a session, absent when the
   // hub knows of none (ADR-0059, #1028).
   cloud_turn?: CloudTurn
-  // Set on a cloud loop while the environment's allowlist isn't confirmed
-  // (ADR-0059): a warning, never a hold.
+  // Set on a cloud loop while its environment's allowlist isn't confirmed
+  // on its setup view (ADR-0061): a warning, never a hold.
   cloud_allowlist_unconfirmed?: boolean
+  // A cloud loop's GitHub repo, owner/name, its branch, the further repos
+  // its sessions attach, and its claude.ai environment (ADR-0061); '' and
+  // [] on any other loop, or until they are set. Changed only while the
+  // loop is stopped.
+  cloud_repo?: string
+  cloud_branch?: string
+  cloud_repos?: string[] | null
+  cloud_environment_id?: string
   // A bare loop asked to move into a docker workstation (#632): true from
   // the ask until the move lands or fails, or a hub restart drops it.
   rehoming: boolean
@@ -567,32 +575,60 @@ export interface CloudSettings {
   check?: CloudCheck
   // Whether the account is set, never what it is, and its last check.
   account: CloudAccountView
-  // The one environment every cloud loop shares (ADR-0059).
-  environment: CloudEnvironmentView
 }
 
-// The shared environment the operator made on claude.ai (ADR-0059,
-// as #978 amends it), and the list to paste into its network access. The
-// hub can't read the environment back, so the operator's confirm is all it
-// knows. An allowlist edit or a new address changes `digest`, and another
-// ID drops the confirm.
-export interface CloudEnvironmentView {
-  // env_…, '' while none is chosen.
-  id: string
-  // Its name on claude.ai, as the hub's list gave it; '' for an ID pasted
-  // that the list doesn't show.
-  name: string
-  // The environment's Allowed domains, one host per line, built from the
-  // current allowlist on each request: the public address's host first.
-  allowlist: string
-  // The allowlist's entries an environment can't carry: a host with a port
-  // of its own, or an old `*` entry.
+// A cloud loop's setup view (ADR-0061, #1182), an admin's: what goes into
+// the loop's environment on claude.ai, and the hub's check that a session
+// started there reaches it. Mirrors httpapi's cloudLoopSetupView. It never
+// carries the loop's hub token, which only a mint answers, once.
+export interface CloudLoopSetup {
+  // What the loop still needs, in order; [] once its setup is done.
+  steps: CloudLoopStep[]
+  // What Settings → Cloud still needs, absent while it is green.
+  settings?: string
+  // The setup script to paste, the same for every cloud loop of the hub
+  // and holding no secret; '' while the hub has no public address.
+  script: string
+  // The host the loop's hub token is the environment's network secret for.
+  secret_host: string
+  token: { set: boolean }
+  allowlist: CloudLoopAllowlist
+  // The last check, absent before the first.
+  check?: CloudLoopCheck
+}
+
+// `settings` first, then the loop's own, in the order the view lists them.
+export type CloudLoopStep = 'settings' | 'repo' | 'environment' | 'token' | 'allowlist' | 'check'
+
+// The environment's allowed domains, built from the hub's allowlist on each
+// read, and whether the operator confirmed pasting them as they are now.
+export interface CloudLoopAllowlist {
+  // One host per line, the public address's host first.
+  text: string
+  // Entries an environment can't carry: a host with a port of its own, or
+  // an old `*` entry.
   not_applied: string[]
-  // The allowlist's SHA-256, which a confirm names.
+  // The text's SHA-256, which a confirm names.
   digest: string
   confirmed: boolean
   // Unix ms, present only while confirmed.
   confirmed_at?: number
+}
+
+// Where a failed check stopped: `environment`, the CLI refused the start;
+// `token`, the session reached the hub without the loop's token; or
+// `unreached`, nothing of it came.
+export type CloudLoopCheckStage = 'environment' | 'token' | 'unreached'
+
+export interface CloudLoopCheck {
+  state: 'running' | 'ok' | 'failed'
+  stage?: CloudLoopCheckStage | string
+  // How it failed, the CLI's line redacted.
+  detail?: string
+  checked_at?: number
+  // Whether a finished check was of the loop's setup and the public address
+  // as they are now: a stale pass holds the loop as no check does.
+  current: boolean
 }
 
 // One of the account's environments, as the hub lists them on its Claude
@@ -1048,6 +1084,15 @@ export interface CreateLoopReq {
   // Create-only; empty = server default. `cloud` is refused with 409
   // `cloud_not_ready` until Settings → Cloud is green.
   runtime?: 'bare' | 'docker' | 'cloud'
+  // A cloud loop's repo, branch, further repos and environment (ADR-0061):
+  // the branch is `main` once a repo is named without one. On PATCH only
+  // while the loop is stopped, else 409 `cloud_loop_running`; an
+  // environment its login's list doesn't show is 400
+  // `cloud_environment_unlisted` while that list can be read.
+  cloud_repo?: string
+  cloud_branch?: string
+  cloud_repos?: string[]
+  cloud_environment_id?: string
   image?: string // docker only
   mem_mb?: number // docker only
   cpus?: number // docker only
@@ -1100,6 +1145,17 @@ export class ApiError extends Error {
 }
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await answer(path, init)
+  if (res.status === 204) return undefined as T
+  return res.json()
+}
+
+// A request whose answer is text, not JSON: refused as req refuses.
+async function reqText(path: string, init?: RequestInit): Promise<string> {
+  return (await answer(path, init)).text()
+}
+
+async function answer(path: string, init?: RequestInit): Promise<Response> {
   const res = await fetch(path, {
     headers: { 'Content-Type': 'application/json' },
     ...init,
@@ -1118,8 +1174,7 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new ApiError(res.status, msg, code, retryAfter)
   }
-  if (res.status === 204) return undefined as T
-  return res.json()
+  return res
 }
 
 // One window of a loop's timeline, live or historical. Exported because the
@@ -1468,19 +1523,23 @@ export const api = {
   // it fails, and the step falls back to pasting the ID.
   cloudEnvironments: () =>
     req<{ environments: CloudEnvironmentChoice[] }>('/api/settings/cloud/environments'),
-  // Refused with 400 `cloud_environment_invalid` unless it is env_ plus
-  // letters and digits, and `cloud_environment_unlisted` for an ID the
-  // account's list doesn't show while that list can be read: a pasted ID is
-  // taken only when it can't. The name is the hub's, from its list.
-  setCloudEnvironment: (id: string) =>
-    req<CloudSettings>('/api/settings/cloud/environment', { method: 'PUT', body: JSON.stringify({ id }) }),
+  // A cloud loop's setup view (ADR-0061), and what changes it. Each answers
+  // 400 `not_cloud_loop` for any other loop.
+  cloudLoopSetup: (name: string) => req<CloudLoopSetup>(`/api/loops/${name}/cloud/setup`),
+  // Mints the loop's hub token, refusing the one it held at once, and stops
+  // the loop: the answer is the token, the one time it is shown.
+  mintCloudToken: (name: string) => reqText(`/api/loops/${name}/cloud/token`, { method: 'POST' }),
   // Refused with 409 `cloud_allowlist_stale` for a digest that isn't the
-  // current list's, or with no environment chosen.
-  confirmCloudEnvironment: (digest: string) =>
-    req<CloudSettings>('/api/settings/cloud/environment/confirm', {
+  // current text's.
+  confirmCloudLoopAllowlist: (name: string, digest: string) =>
+    req<CloudLoopSetup>(`/api/loops/${name}/cloud/allowlist/confirm`, {
       method: 'POST',
       body: JSON.stringify({ digest }),
     }),
+  // Starts the check and answers 202 with it running. Refused with 409
+  // `cloud_check_refused` naming what to finish first: Settings → Cloud,
+  // the repo and environment, the token, or a stopped loop.
+  checkCloudLoop: (name: string) => req<CloudLoopSetup>(`/api/loops/${name}/cloud/check`, { method: 'POST' }),
   clearCloudAddress: () => req<CloudSettings>('/api/settings/cloud/address', { method: 'DELETE' }),
   checkCloudAddress: () => req<CloudSettings>('/api/settings/cloud/check', { method: 'POST' }),
   // The hub's Claude logins (ADR-0060): any user lists them and adds one of

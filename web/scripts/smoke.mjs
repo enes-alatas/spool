@@ -393,19 +393,6 @@ try {
   await setup.getByRole('button', { name: 'Close' }).click()
   await gone(setup, 'the setup dialog')
 
-  // The environment step (ADR-0059): the fixture hub can't list
-  // the account's environments, so the step falls back to pasting the ID,
-  // and the setup is done only once the pasted list is confirmed.
-  await stepLine('Environment').getByRole('button', { name: 'Set up', exact: true }).click()
-  await see(setup.getByRole('button', { name: 'Copy the allowed domains' }), 'the list to paste')
-  await setup.getByLabel('Environment ID').fill('env_01SmokeFixture')
-  await setup.getByRole('button', { name: 'Save', exact: true }).click()
-  await see(stepLine('Environment').getByText('allowlist not confirmed'), 'the unconfirmed environment')
-  await setup.getByRole('button', { name: 'I pasted it' }).click()
-  await see(setup.getByText("holds this hub's allowlist", { exact: false }), 'the confirmed list')
-  await setup.getByRole('button', { name: 'Close' }).click()
-  await gone(setup, 'the setup dialog')
-  await see(stepLine('Environment').getByText('allowlist pasted'), 'the confirmed environment')
   const login = page.locator('section.claude-login')
   page.once('dialog', (dialog) => dialog.accept())
   await login.getByRole('button', { name: 'Sign out of the Claude login' }).click()
