@@ -834,6 +834,12 @@ ADR-0045 is the whole record. In short:
   them. The workstation's base image is pinned by digest too.
 - **A dry run installs the build** on a fresh runner before a tag is asked
   for, and the tag's run installs the published release again (#770).
+- **The workstation image's Claude Code is one the fleet has run.** Its
+  apt key is pinned by fingerprint (#1200), and a release installs the
+  version `docker/workstation/claude-code.version` names, refusing to
+  build on any other. The image's label and the release notes name it, so
+  a bad upstream build reaches a release only through a reviewed bump
+  (ADR-0052, #1223). `make image` stays unpinned.
 
 **Doesn't hold:**
 - **A tag ruleset is recommended, not enforced** (ADR-0052).

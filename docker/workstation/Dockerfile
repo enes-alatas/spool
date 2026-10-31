@@ -66,10 +66,18 @@ RUN install -d -m 0755 /etc/apt/keyrings \
 # and everything after it and leaves the layers above cached. `make image`
 # passes the time, so every rebuild installs whatever the repo serves then.
 #
+# A release doesn't take whatever the repo serves: it pins CLAUDE_CODE_VERSION
+# to docker/workstation/claude-code.version, a version the fleet has run, so
+# the image is tied to it and a bad upstream build waits for a reviewed bump
+# (#1223, ADR-0052). The build checks that the CLI it installed is that one, and
+# the image's label names it. Empty, as `make image` leaves it, means unpinned.
+#
 # The key's fingerprint is the one Claude Code's setup docs publish
 # (https://code.claude.com/docs/en/setup).
 ARG CLAUDE_CODE_KEY_FPR="31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE"
 ARG CLAUDE_CODE_CACHEBUST
+ARG CLAUDE_CODE_VERSION
+LABEL dev.spool.claude-code.version="${CLAUDE_CODE_VERSION:-unpinned}"
 RUN curl -fsSL https://downloads.claude.ai/keys/claude-code.asc \
         -o /etc/apt/keyrings/claude-code.asc \
     && fprs=$(gpg --show-keys --with-colons /etc/apt/keyrings/claude-code.asc \
@@ -77,8 +85,12 @@ RUN curl -fsSL https://downloads.claude.ai/keys/claude-code.asc \
     && { [ "$fprs" = "$CLAUDE_CODE_KEY_FPR" ] || { echo "Claude Code key fingerprints are '$fprs', not the pinned '$CLAUDE_CODE_KEY_FPR'" >&2; exit 1; }; } \
     && echo "deb [signed-by=/etc/apt/keyrings/claude-code.asc] https://downloads.claude.ai/claude-code/apt/latest latest main" \
         > /etc/apt/sources.list.d/claude-code.list \
-    && apt-get update && apt-get install -y claude-code \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get update \
+    && apt-get install -y "claude-code${CLAUDE_CODE_VERSION:+=$CLAUDE_CODE_VERSION-*}" \
+    && rm -rf /var/lib/apt/lists/* \
+    && installed=$(claude --version | cut -d' ' -f1) \
+    && { [ -z "$CLAUDE_CODE_VERSION" ] || [ "$installed" = "$CLAUDE_CODE_VERSION" ] \
+        || { echo "Claude Code installed is $installed, not the pinned $CLAUDE_CODE_VERSION" >&2; exit 1; }; }
 
 # The unprivileged user loops run as. Its home, /home/loop, is where each loop's
 # persistent volume is mounted. sudo is passwordless because loops run with no
