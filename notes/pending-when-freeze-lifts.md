@@ -1588,3 +1588,6 @@ HN: 0 new. Merged: #1209 (→#1198 closed), Iris's #1197 fix (c9c56fa), Terra's 
 
 ## 2026-10-31 02:52 UTC tick
 HN: 1 new (Anthropic credit-rating story, Paseo mention — no fit). #1214 (Closes #1182 + #1213, a bug the slice surfaced, own commit) in Quinn's rounds (last 00:57). Sweep: #1213 (bug, Terra) → L6. #1212 (hub half for #1203) on L6 already. Board tidy.
+
+## 2026-10-31 06:53 UTC tick
+HN: 2 new, no fit (SRE deskilling; "AI changed what I can build"). #1214 merged (5a7412a; #1182 + #1213 closed). Terra's #1216 (for #1212) open for Quinn. Sweep: #1215, #1217 (itest flakes) → CI reliability. Iris: #1183 unblocked → assigning now; #1203 web half after #1216. Terra after #1216: #1078, then #1205.
