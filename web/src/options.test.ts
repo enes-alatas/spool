@@ -41,7 +41,7 @@ describe('runtimeNote', () => {
     const note = runtimeNote('cloud')
     expect(note.warn).toBe(false)
     expect(note.text).toMatch(/Anthropic's machines/)
-    expect(note.text).toMatch(/environment on claude.ai/)
+    expect(note.text).toMatch(/an environment of its own on claude.ai/)
   })
 })
 

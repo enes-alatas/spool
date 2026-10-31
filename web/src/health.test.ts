@@ -54,6 +54,9 @@ describe('problemHealth', () => {
     expect(problemLine({ symptom: 'cloud_address', since: now - 40 * minute }, now)).toBe(
       'Public address failing for 40m',
     )
+    // nor one held until its own setup is done (ADR-0061)
+    expect(problemHealth({ symptom: 'cloud_setup', since: 0 })).toBe('failing')
+    expect(problemLine({ symptom: 'cloud_setup', since: now - 40 * minute }, now)).toBe('Needs setup for 40m')
     expect(problemHealth({ symptom: 'turn_errors', since: 0 })).toBe('warning')
     // a cloud session refused its connections still runs (ADR-0059)
     expect(problemHealth({ symptom: 'cloud_connections', since: 0 })).toBe('warning')

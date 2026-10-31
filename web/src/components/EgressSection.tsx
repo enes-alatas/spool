@@ -15,8 +15,8 @@ import { StepDialog } from './StepDialog'
 // group with why it is there; the operator's own are added and removed in
 // the dialog, and the hub's one egress proxy, shared by every docker loop,
 // takes the list while the hub runs, so both say when it did. Cloud loops
-// don't go through it: they reach what their shared environment on
-// claude.ai allows (ADR-0059), which the dialog says.
+// don't go through it: they reach what each one's environment on
+// claude.ai allows (ADR-0061), which the dialog says.
 export function EgressSection() {
   const { data, error: loadError } = useEgress()
   const [open, setOpen] = useState(false)

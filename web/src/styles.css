@@ -4938,3 +4938,57 @@ button.panel-link {
   font-size: 0.75rem;
   color: var(--text-muted);
 }
+/* A cloud loop's setup walk (ADR-0061, #1183): four steps, each with the
+   hub's word on whether it is done, and the substeps on claude.ai under
+   the environment's. */
+.cloud-loop-steps > li > strong {
+  display: inline-block;
+  margin-bottom: 4px;
+}
+.cloud-step-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  font-size: 0.75rem;
+  color: var(--ready);
+}
+.cloud-substeps {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cloud-loop-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 0;
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+}
+.cloud-loop-check.ok {
+  color: var(--ready);
+}
+.cloud-loop-check.ok .cloud-dot {
+  background: var(--ready);
+  border-color: var(--ready);
+}
+.cloud-loop-check.warn {
+  color: var(--active);
+}
+.cloud-loop-check.warn .cloud-dot {
+  background: var(--active);
+  border-color: var(--active);
+}
+.cloud-loop-check.bad {
+  color: var(--danger);
+}
+.cloud-loop-check.bad .cloud-dot {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+.side-panel .row .v.warn {
+  color: var(--active);
+}

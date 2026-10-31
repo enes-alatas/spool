@@ -143,8 +143,8 @@ export function runtimeNote(kind: string): RuntimeNote {
     return {
       text:
         "The loop runs in a Claude Code cloud session on Anthropic's machines, so it keeps running while " +
-        'this machine sleeps. Its network access is set in a shared environment on claude.ai, which ' +
-        "holds this hub's allowlist once you paste it there.",
+        'this machine sleeps. Its network access is set in an environment of its own on claude.ai, ' +
+        "which holds this hub's allowlist once you paste it there.",
       warn: false,
     }
   }

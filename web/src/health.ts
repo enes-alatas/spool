@@ -20,6 +20,9 @@ const SAID: Record<string, string> = {
   turn_errors: 'Turns failing',
   // a cloud loop held while the public address fails its check (#864)
   cloud_address: 'Public address failing',
+  // a cloud loop held until its own setup is done: its repo, environment
+  // and hub token, and a check passed on them (ADR-0061)
+  cloud_setup: 'Needs setup',
   // a cloud loop's session refused its connections, so its shell may run
   // without them (ADR-0059); said as what the loop lacks, a warning, as the
   // loop still runs
@@ -51,11 +54,13 @@ export function healthNote(problems: Problem[], now: number): string {
 }
 
 // A problem's line takes its loop's colour: a workstation down, or a cloud
-// loop held by its public address, stops the loop, so it is the alarm;
-// failing turns are a warning.
+// loop held by its public address or its own setup, stops the loop, so it
+// is the alarm; failing turns are a warning.
 export function problemHealth(problem: Problem): Health {
-  return problem.symptom === 'workstation_down' || problem.symptom === 'cloud_address' ? 'failing' : 'warning'
+  return HOLDS.includes(problem.symptom) ? 'failing' : 'warning'
 }
+
+const HOLDS = ['workstation_down', 'cloud_address', 'cloud_setup']
 
 // The error-turn threshold as Settings edits it: '' for off.
 export function errorTurnsField(turns: number): string {

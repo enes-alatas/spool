@@ -6,7 +6,6 @@ import type {
   CloudCheck,
   CloudCheckStage,
   CloudEnvironmentChoice,
-  CloudEnvironmentView,
   CloudSettings,
 } from './api'
 
@@ -209,25 +208,16 @@ export function loginState(view: CloudSettings): { text: string; tone: Tone; hin
   return accountState(view)
 }
 
-// The step the guided setup opens on: the first one not done.
-export type SetupStep = 'listener' | 'address' | 'account' | 'environment' | 'done'
+// The step the guided setup opens on: the first one not done. Each cloud
+// loop names its own environment on its page (ADR-0061), so Settings →
+// Cloud is done once the address and the login check green.
+export type SetupStep = 'listener' | 'address' | 'account' | 'done'
 
 export function firstOpenStep(view: CloudSettings): SetupStep {
   if (!view.listener.on) return 'listener'
   if (view.check?.state !== 'ok') return 'address'
   if (view.account.check?.state !== 'ok') return 'account'
-  if (!view.environment.id || !view.environment.confirmed) return 'environment'
   return 'done'
-}
-
-// The environment step's state on the status page (ADR-0059). An ID
-// without a confirmed list still runs loops, limited to what the
-// environment allows, so it warns rather than fails.
-export function environmentState(view: CloudSettings): { text: string; tone: Tone } {
-  const { id, confirmed } = view.environment
-  if (!id) return { text: 'no environment', tone: 'todo' }
-  if (confirmed) return { text: 'allowlist pasted', tone: 'ok' }
-  return { text: 'allowlist not confirmed', tone: 'warn' }
 }
 
 // The environment picker's options: the account's list, led by the stored
@@ -236,12 +226,12 @@ export function environmentState(view: CloudSettings): { text: string; tone: Ton
 // another environment as chosen; and a prompt while none is chosen.
 export function environmentOptions(
   choices: CloudEnvironmentChoice[],
-  chosen: Pick<CloudEnvironmentView, 'id' | 'name'>,
+  chosen: string,
 ): { value: string; label: string }[] {
   const listed = choices.map((choice) => ({ value: choice.id, label: choice.name }))
-  if (!chosen.id) return [{ value: '', label: 'Pick an environment' }, ...listed]
-  if (choices.some((choice) => choice.id === chosen.id)) return listed
-  return [{ value: chosen.id, label: `${chosen.name || chosen.id} (not on this account's list)` }, ...listed]
+  if (!chosen) return [{ value: '', label: 'Pick an environment' }, ...listed]
+  if (choices.some((choice) => choice.id === chosen)) return listed
+  return [{ value: chosen, label: `${chosen} (not on this account's list)` }, ...listed]
 }
 
 // Whether an address's host is a Cloudflare quick tunnel's, which is handed

@@ -200,11 +200,10 @@ config directory of the hub's with the CLI's nonessential traffic off, and
 keeps the tokens sealed. The CLI is the host's, or on a hub with none, the
 workstation image's, in a throwaway container behind the egress wall that
 sees only that directory.
-Its last step lists the account's environments, by name (one read-only
-`GET /v1/environment_providers`, the call ADR-0059 keeps), for a loop to pick
-its own from, or a pasted ID when the list fails; the step's own pick and its
-allowlist confirm go with the control room's (#1182, #1183), and no start reads
-them. Once the steps
+A cloud loop's setup walk lists the account's environments, by name (one
+read-only `GET /v1/environment_providers`, the call ADR-0059 keeps), for the
+loop to pick its own from, or a pasted ID when the list fails; Settings →
+Cloud has no environment step (#1183). Once the steps
 are green, `POST /api/loops` takes `runtime: cloud`, with the loop's repo,
 branch, further repos and environment, which a PATCH changes only while the loop
 is stopped; the loop's view carries its current session's page on claude.ai,

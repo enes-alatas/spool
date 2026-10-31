@@ -16,6 +16,9 @@ import { customModelError, startsInFleetChannel } from '../forms'
 import { PACE_HINT, type Pace } from '../pace'
 import { PaceRange } from '../components/PaceRange'
 import { CloudSetup } from '../components/CloudSection'
+import { CloudRepoFields, EnvironmentPick } from '../components/CloudLoopSetup'
+import { SETUP_PARAM } from '../components/CloudWorkstation'
+import { reposOf } from '../cloudLoop'
 import { firstOpenStep, type SetupStep } from '../cloud'
 import { Marked } from '../components/Marked'
 import { dailyCapHint, dailyCapValue } from '../dailyCap'
@@ -27,7 +30,13 @@ export default function NewLoop() {
   return (
     <div className="page measure">
       <h1>New loop</h1>
-      <NewLoopForm onCreated={(loop) => nav(`/loops/${loop.name}`)} />
+      <NewLoopForm
+        onCreated={(loop) =>
+          // a cloud loop's page opens on its setup walk: its environment is
+          // still to make on claude.ai (ADR-0061)
+          nav(`/loops/${loop.name}${loop.runtime === 'cloud' ? `?${SETUP_PARAM}` : ''}`)
+        }
+      />
     </div>
   )
 }
@@ -52,6 +61,12 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
   const [wsPath, setWsPath] = useState('')
   const [wsInfo, setWsInfo] = useState<{ exists: boolean; is_git: boolean } | null>(null)
   const [setup, setSetup] = useState<SetupStep | null>(null)
+  // A cloud loop's repo and environment (ADR-0061): asked here, and set or
+  // changed on its page's setup walk while it is stopped.
+  const [cloudRepo, setCloudRepo] = useState('')
+  const [cloudBranch, setCloudBranch] = useState('main')
+  const [cloudRepos, setCloudRepos] = useState('')
+  const [environment, setEnvironment] = useState('')
   // The hub's own min and max wake defaults, 5 min and 4 h, shown so the
   // range is chosen with the tick rather than discovered after it.
   const [pace, setPace] = useState<Pace>({ min: 300, tick: 1800, max: 14400 })
@@ -178,6 +193,12 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
         // Omitted for the default, which a loop that names none runs on, so
         // a hub too old to know the field creates the same loop.
         claude_login: pickLogin && login !== 'default' ? login : undefined,
+        ...(cloud && {
+          cloud_repo: cloudRepo.trim() || undefined,
+          cloud_branch: cloudRepo.trim() ? cloudBranch.trim() || undefined : undefined,
+          cloud_repos: reposOf(cloudRepos).length ? reposOf(cloudRepos) : undefined,
+          cloud_environment_id: environment || undefined,
+        }),
       })
       qc.invalidateQueries({ queryKey: ['loops'] })
       onCreated(loop)
@@ -317,6 +338,33 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
           <code>--strict-mcp-config</code>).
         </div>
       </div>
+
+      {cloud && cloudReady && (
+        <div className="field">
+          <CloudRepoFields
+            idPrefix="nl-cloud"
+            repo={cloudRepo}
+            branch={cloudBranch}
+            more={cloudRepos}
+            onRepo={setCloudRepo}
+            onBranch={setCloudBranch}
+            onMore={setCloudRepos}
+          />
+          <div className="hint">
+            Each session starts from this GitHub repo and branch, and attaches the further ones. Install
+            Claude's GitHub App on these repos only: the session reaches every repo the installation covers.
+            Once its check passes, the loop can work in its repo, push branches and open pull requests.
+          </div>
+          <label id="nl-env-label" style={{ marginTop: 10 }}>
+            Environment
+          </label>
+          <EnvironmentPick chosen={environment} onPick={setEnvironment} />
+          <div className="hint">
+            The loop's own environment on claude.ai. Make it once the loop exists: its page walks you through
+            it, so you can leave this until then.
+          </div>
+        </div>
+      )}
 
       <div className="field">
         <label htmlFor="nl-login">Claude login</label>

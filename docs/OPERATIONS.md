@@ -352,9 +352,9 @@ next turn (#1072).
 
 A cloud loop's claude runs in a Claude Code cloud session on Anthropic's
 machines, on the hub's Claude login, and reaches the hub over the internet
-(ADR-0059). Settings → Cloud walks the setup in four steps, in this order. Each
-step the hub checks before the next opens. The hub needs the `claude` CLI on
-its machine, the same one the Claude login signs in with.
+(ADR-0059). Settings → Cloud walks the hub's setup in three steps, in this
+order. Each step the hub checks before the next opens. The hub needs the
+`claude` CLI on its machine, the same one the Claude login signs in with.
 
 1. **Cloud listener.** Switch it on. On Spool's side, the hub opens the
    cloud listener on `127.0.0.1:8090`, the one listener a cloud session can
@@ -378,25 +378,23 @@ its machine, the same one the Claude login signs in with.
 3. **Claude login.** Sign in with Claude, or keep the login the hub
    already has. On Spool's side, the hub checks the login with one haiku
    answer. The account is the one every cloud loop spends.
-4. **Environments.** Each cloud loop runs in a cloud environment of its
-   own, which you create on claude.ai for it (below). The step lists the
-   Claude login's environments by name, with one read-only call, for a
-   loop to name its own; if the list fails, a loop takes a pasted ID. The
-   list to paste into an environment's allowed domains is the hub's egress
-   allowlist ([CONTAINMENT.md](CONTAINMENT.md)) as an environment spells
-   it, with the public address's host first: without that host the
-   session never loads the hub's MCP server. An entry an environment
-   can't hold, such as a host with a port of its own, is named beside the
-   list and left out of it. The step's own pick and its confirm of the
-   list no longer decide where a loop starts or whether it is warned:
-   each loop names its own environment and confirms its own list on its
-   setup view (#1182). The step itself goes with the control room's
-   (#1183).
 
-Then set each cloud loop up. Its setup view, `GET
+Then set each cloud loop up, in a cloud environment of its own that you
+create on claude.ai for it. Its setup view, `GET
 /api/loops/<name>/cloud/setup`, shows what to paste and which steps are
 left: `settings`, `repo`, `environment`, `token`, `allowlist` and `check`.
-Until the control room shows it (#1183), the steps go through the API:
+The loop's page walks those steps: **Set up** on its Workstation card,
+which New loop opens on a new cloud loop (#1183). The API takes each step
+too.
+
+The list to paste into an environment's allowed domains is the hub's
+egress allowlist ([CONTAINMENT.md](CONTAINMENT.md)) as an environment
+spells it, with the public address's host first: without that host the
+session never loads the hub's MCP server. An entry an environment can't
+hold, such as a host with a port of its own, is named beside the list and
+left out of it. The walk lists the Claude login's environments by name,
+with one read-only call; if the list fails, the loop takes a pasted ID.
+The steps, in order:
 
 1. **Its repo.** Create the loop with the cloud runtime and its GitHub repo,
    `owner/name`, its branch, `main` unless you name another, and any further
