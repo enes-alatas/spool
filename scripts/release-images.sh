@@ -12,8 +12,11 @@
 # <prefix>/spool-<name>:<tag>-<arch> and pushes them. The caller logs in to
 # the registry only for this step, so no registry credential is on the host
 # while the build runs (#765).
-# The images carry the newest Claude Code CLI at build time (#304), so,
-# unlike the binaries, two builds of one commit differ.
+# The workstation image carries the Claude Code CLI that
+# docker/workstation/claude-code.version names (#1223), not the newest one
+# (#304). The rest of each image still comes from what its base and apt
+# serve at build time, so, unlike the binaries, two builds of one commit
+# differ.
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
@@ -21,7 +24,14 @@ go=${GO:-go}
 arch=$("$go" env GOARCH)
 
 build() {
-	make GO="$go" image
+	version=$(tr -d '[:space:]' < docker/workstation/claude-code.version)
+	case $version in
+	*[!0-9.]* | .* | *. | *..* | "")
+		echo "docker/workstation/claude-code.version holds '$version', not a version" >&2
+		exit 1
+		;;
+	esac
+	make GO="$go" CLAUDE_CODE_VERSION="$version" image
 }
 
 case ${1:-} in
