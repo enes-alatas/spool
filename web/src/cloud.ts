@@ -165,7 +165,7 @@ export function addressState(view: CloudSettings): { text: string; tone: Tone } 
 const ACCOUNT_FAILED: Record<CloudAccountStage, { failed: string; hint: string }> = {
   no_account: {
     failed: 'not signed in',
-    hint: "Sign in with Claude: every loop runs on the hub's Claude login.",
+    hint: 'Sign in with Claude: contained and cloud loops that name no other login run on this one.',
   },
   refused: {
     failed: 'the login was refused',

@@ -631,8 +631,8 @@ export interface CloudLoopCheck {
   current: boolean
 }
 
-// One of the account's environments, as the hub lists them on its Claude
-// login, for the step's pick by name.
+// One of a Claude login's account's environments, as the hub lists them,
+// for the step's pick by name.
 export interface CloudEnvironmentChoice {
   id: string
   name: string
@@ -1522,11 +1522,15 @@ export const api = {
   // `cloud_address_invalid` unless it is an HTTPS origin.
   setCloudAddress: (address: string) =>
     req<CloudSettings>('/api/settings/cloud/address', { method: 'PUT', body: JSON.stringify({ address }) }),
-  // The account's environments, read on the hub's Claude login through an
-  // API Anthropic doesn't publish: a 502 `cloud_environments_unlisted` when
-  // it fails, and the step falls back to pasting the ID.
-  cloudEnvironments: () =>
-    req<{ environments: CloudEnvironmentChoice[] }>('/api/settings/cloud/environments'),
+  // The environments of a Claude login's account, the default's when login
+  // is '' or 'default', read through an API Anthropic doesn't publish: a
+  // 502 `cloud_environments_unlisted` when it fails, and the step falls
+  // back to pasting the ID; a 404 `claude_login` for a login the caller
+  // may not manage.
+  cloudEnvironments: (login = '') =>
+    req<{ environments: CloudEnvironmentChoice[] }>(
+      `/api/settings/cloud/environments${login && login !== 'default' ? `?login=${encodeURIComponent(login)}` : ''}`,
+    ),
   // A cloud loop's setup view (ADR-0061), and what changes it. Each answers
   // 400 `not_cloud_loop` for any other loop.
   cloudLoopSetup: (name: string) => req<CloudLoopSetup>(`/api/loops/${name}/cloud/setup`),

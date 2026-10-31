@@ -39,7 +39,8 @@ export function CloudSection() {
       <p className="page-lede">
         A cloud loop runs in a Claude Code cloud session on Anthropic's machines, so it keeps running while
         this machine sleeps. It reaches this hub over the internet, so the hub needs a listener for it and a
-        public address, and it runs on the hub's Claude login. The hub checks each step.
+        public address, and it runs on the hub's default Claude login unless it names another. The hub checks
+        each step.
       </p>
       {missing ? (
         <div className="form-error" role="alert">
@@ -560,8 +561,8 @@ function AccountStep({
   return (
     <>
       <p className="step-dialog-lede">
-        Cloud loops run on the hub's Claude login, the one contained loops use too. Signed in once, here or in
-        Settings → Claude logins, it serves both.
+        Cloud loops run on the hub's default Claude login unless they name another, as contained loops do.
+        Signed in once, here or in Settings → Claude logins, it serves both.
       </p>
       {signedIn ? <SignedIn /> : <SignInSteps view={view} setBusy={busy} />}
       <div className="pillar-actions">

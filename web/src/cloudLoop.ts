@@ -12,6 +12,7 @@ import {
   type LoopView,
 } from './api'
 import type { Tone } from './cloud'
+import { loginAccount } from './claudeLogins'
 import { unmarked } from './marked'
 
 type CloudLoop = Pick<LoopView, 'workstation_up' | 'down_reason' | 'workstation_detail' | 'problems'>
@@ -134,6 +135,7 @@ export function killQuestion(loop: Pick<LoopView, 'name' | 'cloud_turn'>, now: n
 export function checkSays(
   setup: Pick<CloudLoopSetup, 'check' | 'secret_host'>,
   repo: string,
+  login: string,
 ): { text: string; tone: Tone; hint?: string } {
   const { check } = setup
   const host = setup.secret_host || 'the public address'
@@ -156,7 +158,7 @@ export function checkSays(
       return {
         text: 'fails: claude.ai refused the start',
         tone: 'bad',
-        hint: "claude.ai wouldn't start a session there. Check that the environment is on the default Claude login's account, that the repo and branch exist, and that Claude's GitHub App is installed on the repo.",
+        hint: `claude.ai wouldn't start a session there. Check that the environment is on ${loginAccount(login)}, that the repo and branch exist, and that Claude's GitHub App is installed on the repo.`,
       }
     case 'token':
       return {

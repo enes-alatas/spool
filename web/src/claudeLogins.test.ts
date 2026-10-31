@@ -10,6 +10,7 @@ import {
   loginNameError,
   loginOptions,
   loginWho,
+  loginAccount,
   loopLogin,
   loopsOn,
   mayManageLogin,
@@ -211,6 +212,7 @@ describe('loopLogin', () => {
     expect(loopLogin({ runtime: 'docker', claude_login: 'ada' })).toBe('ada')
     expect(loopLogin({ runtime: 'docker', claude_login: '' })).toBe('default')
     expect(loopLogin({ runtime: 'cloud', claude_login: '' })).toBe('default')
+    expect(loopLogin({ runtime: 'cloud', claude_login: 'ada' })).toBe('ada')
     expect(loopLogin({ runtime: 'bare', claude_login: '' })).toBe("this machine's own")
   })
 })
@@ -231,10 +233,18 @@ describe('loginOptions', () => {
 })
 
 describe('noLoginChoice', () => {
-  it('lets only a contained loop name a login', () => {
+  it('lets a contained or cloud loop name a login, and not a bare one', () => {
     expect(noLoginChoice('docker')).toBe('')
+    expect(noLoginChoice('cloud')).toBe('')
     expect(noLoginChoice('bare')).toContain("this machine's own")
-    expect(noLoginChoice('cloud')).toContain('default')
+  })
+})
+
+describe('loginAccount', () => {
+  it('names the account behind a login as the hub does', () => {
+    expect(loginAccount('')).toBe("the default Claude login's account")
+    expect(loginAccount('default')).toBe("the default Claude login's account")
+    expect(loginAccount('ada')).toBe("Claude login ada's account")
   })
 })
 

@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type CloudLoopSetup, type CloudLoopStep, type LoopView } from '../api'
 import { environmentOptions, type Tone } from '../cloud'
 import { checkSays, reposOf } from '../cloudLoop'
+import { loginAccount } from '../claudeLogins'
 import { formatAgo } from '../format'
 import { CheckIcon, RefreshIcon } from './Icons'
 import { Copyable } from './Copyable'
@@ -278,8 +279,9 @@ function EnvironmentStep({
           <a href="https://claude.ai/code" target="_blank" rel="noreferrer">
             claude.ai/code
           </a>
-          , open the environment selector under the message box and choose <strong>New environment</strong>.
-          Name it <Copyable text={loop.name} />.
+          , signed in to {loginAccount(loop.claude_login)}, which the loop's sessions run under, open the
+          environment selector under the message box and choose <strong>New environment</strong>. Name it{' '}
+          <Copyable text={loop.name} />.
         </li>
         <li>
           Under <strong>Network access</strong>, choose <strong>Custom</strong> and paste this into{' '}
@@ -312,6 +314,7 @@ function EnvironmentStep({
           Choose <strong>Add environment</strong>, then pick it here.
           {stopped ? (
             <EnvironmentPick
+              login={loop.claude_login}
               chosen={loop.cloud_environment_id ?? ''}
               onPick={(id) => void run(() => api.patchLoop(loop.name, { cloud_environment_id: id }))}
             />
@@ -352,19 +355,28 @@ function EnvironmentStep({
   )
 }
 
-// The environment, picked by name from the account's list, which the hub
-// reads on its Claude login (ADR-0061). That list rests on an API
-// Anthropic doesn't publish, so when it fails the step falls back to the
-// documented way to an ID: /remote-env in the operator's own claude.
-export function EnvironmentPick({ chosen, onPick }: { chosen: string; onPick: (id: string) => void }) {
+// The environment, picked by name from the list of the account behind the
+// loop's Claude login, which the hub reads on that login (ADR-0061,
+// #1078). That list rests on an API Anthropic doesn't publish, so when it
+// fails the step falls back to the documented way to an ID: /remote-env
+// in the operator's own claude, signed in to that account.
+export function EnvironmentPick({
+  login,
+  chosen,
+  onPick,
+}: {
+  login: string
+  chosen: string
+  onPick: (id: string) => void
+}) {
   const {
     data,
     error: listError,
     refetch,
     isFetching,
   } = useQuery({
-    queryKey: ['cloud', 'environments'],
-    queryFn: api.cloudEnvironments,
+    queryKey: ['cloud', 'environments', login || 'default'],
+    queryFn: () => api.cloudEnvironments(login),
     refetchOnMount: 'always',
     retry: false,
   })
@@ -377,8 +389,9 @@ export function EnvironmentPick({ chosen, onPick }: { chosen: string; onPick: (i
         <div className="cloud-small">
           The hub couldn't list your environments (
           {listError instanceof Error ? listError.message : String(listError)}). Pick it in your own Claude
-          Code instead: run <Copyable text="/remote-env" /> in <code>claude</code>, choose the environment,
-          then copy <code>remote.defaultEnvironmentId</code> from <code>~/.claude/settings.json</code> here.
+          Code instead, signed in to {loginAccount(login)}: run <Copyable text="/remote-env" /> in{' '}
+          <code>claude</code>, choose the environment, then copy <code>remote.defaultEnvironmentId</code> from{' '}
+          <code>~/.claude/settings.json</code> here.
         </div>
         <form
           className="egress-add cloud-code"
@@ -407,7 +420,7 @@ export function EnvironmentPick({ chosen, onPick }: { chosen: string; onPick: (i
   return (
     <div className="egress-add cloud-code">
       {data.environments.length === 0 && !chosen ? (
-        <span className="cloud-small">No environments on this account yet.</span>
+        <span className="cloud-small">No environments on {loginAccount(login)} yet.</span>
       ) : (
         <select value={chosen} onChange={(e) => onPick(e.target.value)} aria-label="Environment">
           {options.map((option) => (
@@ -506,7 +519,7 @@ function CheckStep({
   const { run, error } = useLoopChange(loop, setBusy)
   const qc = useQueryClient()
   const now = useMinuteClock()
-  const said = checkSays(setup, loop.cloud_repo ?? '')
+  const said = checkSays(setup, loop.cloud_repo ?? '', loop.claude_login)
   const running = setup.check?.state === 'running'
   const stopped = loop.status === 'paused'
   const check = () =>
