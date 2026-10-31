@@ -78,3 +78,58 @@ func TestACheckBegunBeforeRemoveDoesNotOutliveIt(t *testing.T) {
 		t.Fatalf("after the sign-out and the earlier check: %+v, want no account", check)
 	}
 }
+
+// A sign-in as another account fails a passed check that ran under the
+// old one, and revokes the loop's hub token only where both accounts' IDs
+// are known: a check run before the hub read the ID, as every check is
+// right after an upgrade, fails once and keeps its token, so the operator
+// has no secret to paste again (#1230).
+func TestASignInAsAnotherAccountRevokesOnlyAKnownAccountsToken(t *testing.T) {
+	ctx := context.Background()
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	checks := map[string]*store.CloudCheck{
+		"unknown":       {State: store.CloudCheckOK, Account: ""},
+		"old":           {State: store.CloudCheckOK, Account: "00000000-0000-4000-8000-0000000000a1"},
+		"old-failed":    {State: store.CloudCheckFailed, Stage: cloudStepEnvironment, Account: "00000000-0000-4000-8000-0000000000a1"},
+		"same":          {State: store.CloudCheckOK, Account: "00000000-0000-4000-8000-0000000000b2"},
+		"unknown-ended": {State: store.CloudCheckFailed, Stage: cloudStepEnvironment, Account: ""},
+	}
+	for name, check := range checks {
+		loopRecord := store.Loop{ID: "l-" + name, Name: name, Runtime: store.RuntimeCloud, ClaudeLogin: "ada",
+			Status: store.StatusActive, WorkspaceMode: store.WorkspaceNone, Pacing: store.PacingFixed, CreatedAt: 1, UpdatedAt: 1}
+		if err := db.Loops().Create(ctx, &loopRecord); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Loops().RotateHubMCPToken(ctx, loopRecord.ID); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Loops().SetCloudCheck(ctx, loopRecord.ID, check); err != nil {
+			t.Fatal(err)
+		}
+	}
+	server := &Server{Store: db, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	server.failChecksOfAnotherAccount(ctx, "ada", "00000000-0000-4000-8000-0000000000b2")
+
+	for name, want := range map[string]struct {
+		state    string
+		hasToken bool
+	}{
+		"unknown":       {store.CloudCheckFailed, true},
+		"old":           {store.CloudCheckFailed, false},
+		"old-failed":    {store.CloudCheckFailed, false},
+		"same":          {store.CloudCheckOK, true},
+		"unknown-ended": {store.CloudCheckFailed, true},
+	} {
+		loopRecord, err := db.Loops().Get(ctx, "l-"+name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if loopRecord.CloudCheck.State != want.state || loopRecord.HasHubToken != want.hasToken {
+			t.Errorf("%s: check %s, hub token %v; want %s, %v", name, loopRecord.CloudCheck.State, loopRecord.HasHubToken, want.state, want.hasToken)
+		}
+	}
+}

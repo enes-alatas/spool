@@ -47,6 +47,9 @@ type SignIn struct {
 	ExpiresAt int64
 	Scopes    []string
 	OrgUUID   string
+	// AccountUUID is the claude.ai account the sign-in is of, "" when the
+	// CLI didn't write one.
+	AccountUUID string
 	// Email is the address the account signed in with, "" when the CLI
 	// didn't write one.
 	Email string
@@ -74,6 +77,7 @@ func ReadSignIn(configDir string) (SignIn, error) {
 	var config struct {
 		OAuthAccount *struct {
 			OrganizationUUID string `json:"organizationUuid"`
+			AccountUUID      string `json:"accountUuid"`
 			EmailAddress     string `json:"emailAddress"`
 		} `json:"oauthAccount"`
 	}
@@ -89,6 +93,7 @@ func ReadSignIn(configDir string) (SignIn, error) {
 		ExpiresAt:    oauth.ExpiresAt,
 		Scopes:       oauth.Scopes,
 		OrgUUID:      config.OAuthAccount.OrganizationUUID,
+		AccountUUID:  config.OAuthAccount.AccountUUID,
 		Email:        config.OAuthAccount.EmailAddress,
 	}, nil
 }

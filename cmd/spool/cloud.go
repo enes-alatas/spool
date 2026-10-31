@@ -39,7 +39,7 @@ func newCloudRuntime(st store.Store, dataDir, claudeBin, apiBase string) *cloud.
 			if !signedIn {
 				return cloud.Account{}, cloud.ErrNoAccount
 			}
-			return cloud.Account{Token: account.Token, OrgUUID: account.OrgUUID}, nil
+			return cloud.Account{Token: account.Token, OrgUUID: account.OrgUUID, AccountUUID: account.AccountUUID}, nil
 		},
 		APIBase: apiBase,
 		Dir:     filepath.Join(dataDir, "cloud"),

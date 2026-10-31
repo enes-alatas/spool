@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,7 +13,7 @@ import (
 )
 
 // A synthetic account: never a real one.
-var testAccount = Account{Token: "sk-ant-oat01-synthetic", OrgUUID: "00000000-0000-4000-8000-000000000001"}
+var testAccount = Account{Token: "sk-ant-oat01-synthetic", OrgUUID: "00000000-0000-4000-8000-000000000001", AccountUUID: "00000000-0000-4000-8000-0000000000a1"}
 
 // testEnvironment is the synthetic environment test sessions start in.
 const testEnvironment = "env_01Synthetic"
@@ -112,6 +113,33 @@ esac
 	}
 }
 
+// A live session whose login signed in as another account since it
+// started sends nothing into it: the session is the old account's (#1230).
+func TestASendUnderAnotherAccountIsRefused(t *testing.T) {
+	args := t.TempDir() + "/args"
+	cloud := cliRuntime(t, `case "$1" in
+--cloud) sleep 30 ;;
+-p) echo "$*" >> `+args+`; echo '{"ok":true}' ;;
+esac
+`)
+	proc := startCLI(t, cloud, testSpec())
+	postWhenPending(t, cloud, "", "session_01Synthetic", StopPost{Hook: []byte(`{}`), Lines: []byte(transcriptTurn)})
+	if _, result := turnResult(t, proc, "first words"); result.IsError {
+		t.Fatalf("the first turn: %+v", result)
+	}
+	cloud.Account = func(context.Context, string) (Account, error) {
+		resigned := testAccount
+		resigned.AccountUUID = "00000000-0000-4000-8000-0000000000b2"
+		return resigned, nil
+	}
+	if _, result := turnResult(t, proc, "second words"); !result.IsError || !strings.Contains(result.ResultText, "another account") {
+		t.Errorf("the send under another account = %+v, want it refused", result)
+	}
+	if sent, err := os.ReadFile(args); err == nil {
+		t.Errorf("the CLI sent %q into the old account's session", sent)
+	}
+}
+
 func TestAResumeOfAnUnknownSessionIsLost(t *testing.T) {
 	cloud := cliRuntime(t, `sleep 30`)
 	spec := testSpec()
@@ -129,12 +157,26 @@ func TestAResumeFromAnotherSourceIsLost(t *testing.T) {
 	waitLost(t, startCLI(t, cloud, resumeSpec(moved)))
 }
 
+// A login signed in again as another account doesn't own the session its
+// last sign-in started, so the loop's next wake starts one of its own
+// (#1230).
+func TestAResumeUnderAnotherAccountIsLost(t *testing.T) {
+	cloud := cliRuntime(t, `sleep 30`)
+	startedSession(t, cloud)
+	cloud.Account = func(context.Context, string) (Account, error) {
+		resigned := testAccount
+		resigned.AccountUUID = "00000000-0000-4000-8000-0000000000b2"
+		return resigned, nil
+	}
+	waitLost(t, startCLI(t, cloud, resumeSpec(testSource)))
+}
+
 // A session the sessions client created runs in an environment of the
 // loop's own, so the loop's next wake starts a session through the CLI.
 func TestAResumeOfASessionsClientSessionIsLost(t *testing.T) {
 	cloud := cliRuntime(t, `sleep 30`)
 	if err := cloud.update("loop-1", func(s *state) {
-		s.SessionID, s.ClaudeSession, s.Source = "session_01Old", "hub-session-1", sourceKey(testSource)
+		s.SessionID, s.ClaudeSession, s.Source = "session_01Old", "hub-session-1", sourceKey(testSource, testAccount.AccountUUID)
 		s.EnvironmentID = "env_01Old"
 	}); err != nil {
 		t.Fatal(err)

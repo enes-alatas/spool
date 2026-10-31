@@ -1078,7 +1078,10 @@ func authLogin() int {
 		"accessToken": signInToken + account, "refreshToken": signInRefresh + account,
 		"expiresAt": time.Now().Add(8 * time.Hour).UnixMilli(), "scopes": []string{"user:inference", "user:sessions:claude_code"},
 	}})
-	config, _ := json.Marshal(map[string]any{"oauthAccount": map[string]any{"organizationUuid": signInOrg, "emailAddress": email}})
+	// each account has an ID of its own, as claude.ai's do
+	sum := sha256.Sum256([]byte(email))
+	accountUUID := fmt.Sprintf("00000000-0000-4000-8000-%x", sum[:6])
+	config, _ := json.Marshal(map[string]any{"oauthAccount": map[string]any{"organizationUuid": signInOrg, "accountUuid": accountUUID, "emailAddress": email}})
 	if os.WriteFile(filepath.Join(dir, ".credentials.json"), credentials, 0o600) != nil ||
 		os.WriteFile(filepath.Join(dir, ".claude.json"), config, 0o600) != nil {
 		fmt.Println("Login failed: the config directory can't be written.")

@@ -178,8 +178,26 @@ var errLoginRemoved = errors.New("this Claude login was removed while it signed 
 // keeps the login: the loops on it keep a valid name (ADR-0060). A
 // sign-in of the default login supersedes the setup-token, which goes
 // with it (ADR-0058). It all holds the login's lock, so a refresh never
-// rotates the tokens in between.
+// rotates the tokens in between. A sign-in as another account than the one
+// a cloud loop on the login passed its check under fails that check, and
+// can revoke its hub token (failChecksOfAnotherAccount, #1230).
 func (server *Server) storeLoginAccount(ctx context.Context, name string, account store.CloudAccount) error {
+	var resigned []resignedLoop
+	defer func() {
+		for _, loopRecord := range resigned {
+			server.cloudSetupStored(ctx, loopRecord.id)
+			actor, ok := server.Manager.Get(loopRecord.id)
+			if !ok {
+				continue
+			}
+			// the live process sends into the old account's session: it
+			// closes, and the next start doesn't resume that session
+			actor.RefreshEnv()
+			if loopRecord.revoked {
+				actor.TokenChanged()
+			}
+		}
+	}()
 	server.lockLogin(name)
 	defer server.unlockLogin(name)
 	logins := server.Store.ClaudeLogins()
@@ -200,7 +218,89 @@ func (server *Server) storeLoginAccount(ctx context.Context, name string, accoun
 	if err == nil && account.Token != "" && name == store.DefaultClaudeLogin {
 		err = server.Store.Settings().Set(ctx, store.SettingClaudeOAuthToken, "")
 	}
+	if err == nil && account.Token != "" {
+		resigned = server.failChecksOfAnotherAccount(ctx, name, account.AccountUUID)
+	}
 	return err
+}
+
+// failChecksOfAnotherAccount fails the passed check of each cloud loop on
+// the login called name that ran under an account other than the one
+// whose ID is account, and names those loops. Its next wake would send
+// into a session the new account doesn't own (#1230). A check that ran
+// when the hub didn't know the account's ID fails too. Where both IDs are
+// known and differ, the loop's hub token is revoked as well, passed check
+// or not, as a move to another login revokes it: the old account's
+// environment holds it as its secret. A check run before the hub knew
+// the ID revokes nothing, so an upgrade leaves every token in place. The
+// caller holds the login's lock.
+func (server *Server) failChecksOfAnotherAccount(ctx context.Context, name, account string) []resignedLoop {
+	loops, err := server.Store.Loops().List(ctx)
+	if err != nil {
+		server.Log.Error("cloud loops unread, so their checks stand after a sign-in", "login", name, "err", err)
+		return nil
+	}
+	var failed []resignedLoop
+	for _, loopRecord := range loops {
+		check := loopRecord.CloudCheck
+		if loopRecord.Runtime != store.RuntimeCloud || loginKey(loopRecord.ClaudeLogin) != name ||
+			check == nil || check.Account == account {
+			continue
+		}
+		known := check.Account != "" && account != ""
+		if !known && check.State != store.CloudCheckOK {
+			continue
+		}
+		resigned := resignedLoop{id: loopRecord.ID}
+		detail := resignedDetail(name)
+		if known && loopRecord.HasHubToken {
+			if err := server.Store.Loops().RevokeHubMCPToken(ctx, loopRecord.ID); err != nil {
+				server.Log.Error("a cloud loop's hub token stands after a sign-in as another account", "loop", loopRecord.Name, "err", err)
+			} else {
+				resigned.revoked = true
+				detail = revokedDetail(name)
+			}
+		}
+		failedCheck := *check
+		failedCheck.State, failedCheck.Stage, failedCheck.Detail = store.CloudCheckFailed, cloudStepCheck, detail
+		failedCheck.CheckedAt = time.Now().UnixMilli()
+		if err := server.Store.Loops().SetCloudCheck(ctx, loopRecord.ID, &failedCheck); err != nil {
+			server.Log.Error("a cloud loop's check stands after a sign-in as another account", "loop", loopRecord.Name, "err", err)
+		} else {
+			server.Log.Warn("cloud loop's setup check failed: its Claude login signed in as another account", "loop", loopRecord.Name, "login", name, "token_revoked", resigned.revoked)
+		}
+		failed = append(failed, resigned)
+	}
+	return failed
+}
+
+// resignedLoop is a cloud loop whose login signed in as another account,
+// and whether its hub token was revoked for it.
+type resignedLoop struct {
+	id      string
+	revoked bool
+}
+
+// resignedDetail is what a check failed by a sign-in as another account
+// says.
+func resignedDetail(login string) string {
+	return "the Claude login " + login + " signed in as another account since this check ran; its session isn't that account's, so run the check again"
+}
+
+// revokedDetail is what a check failed by a sign-in as another account
+// says when the loop's hub token was revoked with it.
+func revokedDetail(login string) string {
+	return "the Claude login " + login + " signed in as another account since this check ran; the old account's environment held the loop's hub token, so it is revoked: pick an environment of the new account's, Rotate token, and run the check again"
+}
+
+// loginAccountID is the ID of the account the login called name is signed
+// in as, "" when it isn't, or the hub didn't read the ID.
+func (server *Server) loginAccountID(ctx context.Context, name string) string {
+	account, _, err := store.SignedInAccount(ctx, server.Store.ClaudeLogins(), name)
+	if err != nil {
+		server.Log.Warn("Claude login unread", "login", name, "err", err)
+	}
+	return account.AccountUUID
 }
 
 // signOutAtTheSource runs the CLI's logout on the login called name, which

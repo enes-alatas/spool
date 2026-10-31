@@ -358,6 +358,15 @@ cloud listener (ADR-0059).
   session and its check, revokes its hub token, which the old account's
   environment still holds, and refuses an environment the new login's
   account doesn't list.
+  A login signed in again as another claude.ai account (#1230) fails
+  the passed check of each cloud loop on it and closes its process; its
+  next start doesn't resume the old account's session, and no send goes
+  into a session started under another account. Where the loop's last
+  check knew the old account's ID, its hub token is revoked too, as on a
+  move; a loop that never ran a check keeps its token. The hub tells
+  accounts apart by the ID the CLI writes at sign-in; a sign-in kept
+  before the hub read it counts as another account once, for the check
+  and the session, and revokes nothing.
 - **A start the CLI moves to another environment is ended**
   (ADR-0061, #1232). The CLI doesn't refuse an environment the account
   doesn't hold: it starts in the account's first one and exits 0,

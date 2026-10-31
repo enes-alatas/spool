@@ -139,3 +139,101 @@ func TestACloudLoopRunsOnItsOwnLoginsAccount(t *testing.T) {
 		t.Errorf("the held check started %d sessions, want none", after-before)
 	}
 }
+
+// beaCloudToken is the access token fakeclaude's sign-in gives a login
+// signed in as bea, another account than ada's.
+const beaCloudToken = cloudFixtureToken + "-bea"
+
+// A Claude login signed out and in again as another account fails the
+// setup check of each cloud loop on it and revokes its hub token, which
+// the old account's environment holds, and the loop's next session is a
+// new one, on the new account: the old session is the old account's
+// (#1230). Signed in again as the same account, the check stands and the
+// session goes on.
+func TestALoginSignedInAsAnotherAccountChecksItsLoopsAgain(t *testing.T) {
+	t.Parallel()
+	const environment = "env_01Adacirrus"
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		listed := environment
+		switch r.Header.Get("Authorization") {
+		case "Bearer " + cloudFixtureToken:
+			listed = cloudEnvironmentOf("cirrus")
+		case "Bearer " + adaCloudToken, "Bearer " + beaCloudToken:
+		default:
+			http.Error(w, `{"error":{"type":"authentication_error"}}`, http.StatusUnauthorized)
+			return
+		}
+		_, _ = w.Write([]byte(`{"environments":[{"kind":"anthropic_cloud","environment_id":"` + listed + `","name":"spool","state":"active"}],"has_more":false}`))
+	}))
+	t.Cleanup(api.Close)
+	hub := startCloudHub(t, "cirrus", "--cloud-api-base", api.URL)
+	hub.mustJSON("POST", "/api/claude-logins", map[string]string{"name": "ada"}, nil)
+	hub.signInClaudeLogin("ada", "ada")
+	hub.mustJSON("POST", "/api/loops/cirrus/pause", nil, nil)
+	hub.mustJSON("PATCH", "/api/loops/cirrus", map[string]any{"claude_login": "ada", "cloud_environment_id": environment}, nil)
+	_, token := hub.do("POST", "/api/loops/cirrus/cloud/token", nil)
+	setUpCloudEnvironment(t, hub, environment, string(token))
+	hub.mustJSON("POST", "/api/loops/cirrus/resume", nil, nil)
+	passCloudCheck(t, hub, "cirrus")
+
+	hub.message("cirrus", "first words")
+	hub.waitTurn("cirrus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "first words") })
+	first := cloudVMs(t, hub)
+	if len(first) != 1 {
+		t.Fatalf("sessions after the first message = %v, want one", first)
+	}
+
+	// the same account again: the check stands, and the session goes on
+	hub.mustJSON("POST", "/api/claude-logins/ada/sign-out", nil, nil)
+	hub.signInClaudeLogin("ada", "ada")
+	var setup cloudLoopSetup
+	hub.mustJSON("GET", "/api/loops/cirrus/cloud/setup", nil, &setup)
+	if setup.Check == nil || setup.Check.State != "ok" || !setup.Check.Current {
+		t.Fatalf("the check after ada signed in again = %+v, want it to stand", setup.Check)
+	}
+	if got := postHook(t, hub, string(token), "session_01Probe"); got == http.StatusUnauthorized {
+		t.Errorf("the hub token after ada signed in again: %d, want it still taken", got)
+	}
+	hub.message("cirrus", "second words")
+	hub.waitTurn("cirrus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "second words") })
+	if vms := cloudVMs(t, hub); len(vms) != 1 {
+		t.Fatalf("sessions after ada signed in again = %v, want the first one going on", vms)
+	}
+
+	// another account: the check fails and holds the loop until it runs
+	// again, and the hub token the old account's environment holds is
+	// revoked, as on a move
+	hub.mustJSON("POST", "/api/claude-logins/ada/sign-out", nil, nil)
+	hub.signInClaudeLogin("ada", "bea")
+	hub.mustJSON("GET", "/api/loops/cirrus/cloud/setup", nil, &setup)
+	if setup.Check == nil || setup.Check.State != "failed" || setup.Check.Stage != "check" || !strings.Contains(setup.Check.Detail, "another account") || !strings.Contains(setup.Check.Detail, "revoked") {
+		t.Fatalf("the check after ada signed in as bea = %+v, want failed, saying so", setup.Check)
+	}
+	if got := postHook(t, hub, string(token), "session_01Probe"); got != http.StatusUnauthorized {
+		t.Errorf("the hub token the old account's environment holds, after ada signed in as bea: %d, want 401", got)
+	}
+	if held := hub.waitHealth("cirrus", "failing"); len(held.Problems) != 1 || held.Problems[0].Symptom != store.SymptomCloudSetup {
+		t.Fatalf("problems after ada signed in as bea = %+v, want one cloud_setup", held.Problems)
+	}
+	_, token = hub.do("POST", "/api/loops/cirrus/cloud/token", nil)
+	setUpCloudEnvironment(t, hub, environment, string(token))
+	hub.mustJSON("POST", "/api/loops/cirrus/resume", nil, nil)
+	passCloudCheck(t, hub, "cirrus")
+	hub.message("cirrus", "third words")
+	hub.waitTurn("cirrus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "third words") })
+	vms := cloudVMs(t, hub)
+	if len(vms) != 2 {
+		t.Fatalf("sessions after ada signed in as bea = %v (first %v, all started %v), want a new one", vms, first, startedVMs(t, hub))
+	}
+	beaSum := sha256.Sum256([]byte(beaCloudToken))
+	for _, vm := range vms {
+		raw, err := os.ReadFile(filepath.Join(hub.fkState, "cloud", vm, "account-sums"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		carriedBea := strings.Contains(string(raw), hex.EncodeToString(beaSum[:]))
+		if want := vm != first[0]; carriedBea != want {
+			t.Errorf("session %s carried bea's token: %v, want %v", vm, carriedBea, want)
+		}
+	}
+}
