@@ -178,9 +178,9 @@ func TestACompactedCloudSessionIsHandedItsPromptAgain(t *testing.T) {
 	if again, _ := os.ReadFile(filepath.Join(vm, "claude-env")); string(again) != string(env) {
 		t.Errorf("compacting changed the session's env file:\n%s\nwant\n%s", again, env)
 	}
-	if !strings.Contains(hub.log(), "a session was handed its loop's prompt again") {
-		t.Errorf("the compaction's post wasn't logged as answered:\n%s", hub.log())
-	}
+	within(t, 10*time.Second, "the compaction's post logged as answered", func() bool {
+		return strings.Contains(hub.log(), "a session was handed its loop's prompt again")
+	})
 	if strings.Contains(hub.log(), "cloud hook refused") {
 		t.Errorf("the hub refused a hook post:\n%s", hub.log())
 	}

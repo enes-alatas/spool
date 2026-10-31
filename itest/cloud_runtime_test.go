@@ -163,9 +163,9 @@ func TestAStaleVMOfALoopCantBindItsNextStart(t *testing.T) {
 	if got := postHook(t, s, stale, "session_01Stale"); got != http.StatusConflict {
 		t.Errorf("the old VM's SessionStart during the new start: %d, want 409", got)
 	}
-	if !strings.Contains(s.log(), "didn't create") {
-		t.Error("the refused post wasn't logged")
-	}
+	// the hub logs before it answers, but the line reaches s.log() through
+	// two copies after that (#1204)
+	within(t, 10*time.Second, "the refused post's log line", func() bool { return strings.Contains(s.log(), "didn't create") })
 	if err := os.Remove(held); err != nil {
 		t.Fatal(err)
 	}
@@ -504,9 +504,7 @@ func TestACloudLoopsMCPTakesOnlyItsSessionInATurn(t *testing.T) {
 	if got := postTo(t, hub.cloudURL, token, mcpInitialize); got != http.StatusUnauthorized {
 		t.Errorf("a call naming no session: %d, want 401", got)
 	}
-	if !strings.Contains(hub.log(), "cloud mcp call refused") {
-		t.Error("the refused calls weren't logged")
-	}
+	within(t, 10*time.Second, "the refused calls' log line", func() bool { return strings.Contains(hub.log(), "cloud mcp call refused") })
 }
 
 // Past a turn's grace, the loop's own session can still connect and list
@@ -582,9 +580,7 @@ func TestACloudLoopsAddRepoIsHeldToItsRepos(t *testing.T) {
 	if !strings.Contains(got, "refused") || !strings.Contains(got, "example-org/payroll is not one of this loop's repos") {
 		t.Errorf("add_repo for a repo the loop doesn't name: %q, want it refused with the hub's reason", got)
 	}
-	if !strings.Contains(hub.log(), "cloud hook refused") {
-		t.Error("the refused add_repo wasn't logged")
-	}
+	within(t, 10*time.Second, "the refused add_repo's log line", func() bool { return strings.Contains(hub.log(), "cloud hook refused") })
 	if got := ask(`!tool mcp__claude-code-remote__create_trigger {}`); got != "tool mcp__claude-code-remote__create_trigger: denied" {
 		t.Errorf("create_trigger: %q, want it denied", got)
 	}
