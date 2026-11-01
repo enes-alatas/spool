@@ -194,3 +194,42 @@ func TestADownWorkstationIsToldToTheOwnerOnce(t *testing.T) {
 		t.Fatalf("the owner was told of a down workstation %d times across the restart, want twice", n)
 	}
 }
+
+// A turn that runs past the limit is a problem the owner hears of once,
+// dated from the turn's start, and the hub leaves the turn running. The
+// owner's Kill ends the turn, which clears the problem, and they hear of
+// that once too (#1142).
+func TestATurnPastItsLimitIsToldToTheOwner(t *testing.T) {
+	t.Parallel()
+	operator := user{ID: 7575, First: "Operator", Username: "operator"}
+	workspace := workspaceWithScript(t, "ok\nok\n!hang 600\n")
+	hub, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": workspace})
+	hub.waitCompleted("alpha", 1)
+	tg.dm("alpha", operator, "hi alpha")
+	waitOwnerDMReady(t, hub, "alpha")
+	hub.waitCompleted("alpha", 2)
+	hub.mustJSON("PUT", "/api/settings", map[string]any{"health_turn_minutes": 1}, nil)
+
+	hub.message("alpha", "the long question")
+	hub.waitState("alpha", "busy", 30*time.Second)
+	var view loopView
+	within(t, 90*time.Second, "alpha's turn_stuck problem", func() bool {
+		view = hub.loop("alpha")
+		return view.Health == "warning"
+	})
+	if len(view.Problems) != 1 || view.Problems[0].Symptom != "turn_stuck" || view.Problems[0].Since == 0 {
+		t.Fatalf("problems = %+v, want one turn_stuck with a since", view.Problems)
+	}
+	tg.waitSentFrom(t, operator.ID, "alpha", "alpha's turn has been running since")
+	if state := hub.loop("alpha").State; state != "busy" {
+		t.Fatalf("alpha is %q past its limit, want the turn left running", state)
+	}
+	time.Sleep(time.Second)
+	if told := countSent(tg, operator.ID, "turn has been running since"); told != 1 {
+		t.Fatalf("the owner was told of one long turn %d times, want once", told)
+	}
+
+	hub.mustJSON("POST", "/api/loops/alpha/kill", nil, nil)
+	hub.waitHealth("alpha", "ok")
+	tg.waitSentFrom(t, operator.ID, "alpha", "alpha's long turn has ended")
+}

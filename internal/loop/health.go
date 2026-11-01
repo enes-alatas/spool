@@ -36,24 +36,44 @@ func ValidHealthErrorTurns(turns int) bool { return turns >= 0 && turns <= 100 }
 // HealthErrorTurns reads the turn_errors threshold, the default while unset
 // or unusable.
 func HealthErrorTurns(ctx context.Context, settings store.SettingsStore, log *slog.Logger) int {
+	return healthSetting(ctx, settings, log, store.SettingHealthErrorTurns, DefaultHealthErrorTurns, ValidHealthErrorTurns)
+}
+
+// DefaultHealthTurnMinutes is how many minutes a turn runs before it opens
+// a turn_stuck problem while the setting is unset (#1142, settled on #754).
+const DefaultHealthTurnMinutes = 120
+
+// ValidHealthTurnMinutes reports whether minutes is a usable limit: 1 to a
+// day, or 0 for off.
+func ValidHealthTurnMinutes(minutes int) bool { return minutes >= 0 && minutes <= 24*60 }
+
+// HealthTurnMinutes reads the turn_stuck limit, the default while unset or
+// unusable.
+func HealthTurnMinutes(ctx context.Context, settings store.SettingsStore, log *slog.Logger) int {
+	return healthSetting(ctx, settings, log, store.SettingHealthTurnMinutes, DefaultHealthTurnMinutes, ValidHealthTurnMinutes)
+}
+
+// healthSetting reads the health check's setting key as a whole number,
+// fallback while it is unset or isn't one valid takes.
+func healthSetting(ctx context.Context, settings store.SettingsStore, log *slog.Logger, key string, fallback int, valid func(int) bool) int {
 	if log == nil {
 		log = slog.Default()
 	}
-	raw, err := settings.Get(ctx, store.SettingHealthErrorTurns)
+	raw, err := settings.Get(ctx, key)
 	if errors.Is(err, store.ErrNotFound) {
-		return DefaultHealthErrorTurns
+		return fallback
 	}
 	if err != nil {
-		log.Warn("health error-turn threshold unreadable; using default", "default", DefaultHealthErrorTurns, "err", err)
-		return DefaultHealthErrorTurns
+		log.Warn("health setting unreadable; using default", "setting", key, "default", fallback, "err", err)
+		return fallback
 	}
-	turns, err := strconv.Atoi(strings.TrimSpace(raw))
-	if err != nil || !ValidHealthErrorTurns(turns) {
-		log.Warn("stored health error-turn threshold is not a count; using default",
-			"value", raw, "default", DefaultHealthErrorTurns)
-		return DefaultHealthErrorTurns
+	value, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || !valid(value) {
+		log.Warn("stored health setting is not a usable number; using default",
+			"setting", key, "value", raw, "default", fallback)
+		return fallback
 	}
-	return turns
+	return value
 }
 
 // Problems is the loop's open problems, oldest first (safe from any
@@ -66,7 +86,9 @@ func (actor *Actor) Problems() []store.Problem {
 // Acknowledge clears the loop's open problem for symptom as the operator's
 // doing, and reports whether there was one. The symptom's watch starts over:
 // a workstation still down is a problem again after another grace period,
-// and a loop still failing after as many errored turns again.
+// and a loop still failing after as many errored turns again. A turn past
+// its limit doesn't open it again, though the loop's next turn starts a new
+// limit.
 func (actor *Actor) Acknowledge(symptom string) bool {
 	reply := make(chan bool, 1)
 	if !actor.send(cmd{kind: "acknowledge", symptom: symptom, cleared: reply}) {
@@ -110,8 +132,38 @@ func (actor *Actor) noteTurnEnd(errored bool, at int64) {
 	}
 	threshold := HealthErrorTurns(context.Background(), actor.deps.Store.Settings(), actor.log())
 	if threshold > 0 && actor.errorTurns >= threshold {
-		actor.openProblem(store.SymptomTurnErrors, actor.firstErrorAt, actor.errorTurns)
+		actor.openProblem(surface.ProblemNotice{Symptom: store.SymptomTurnErrors, Since: actor.firstErrorAt, Turns: actor.errorTurns})
 	}
+}
+
+// watchTurn starts the turn_stuck limit for a turn that just started
+// (#1142). The turn is never killed for running long: the owner is told,
+// and Kill is theirs to use.
+func (actor *Actor) watchTurn(turn *store.Turn) {
+	minutes := HealthTurnMinutes(context.Background(), actor.deps.Store.Settings(), actor.log())
+	if minutes == 0 {
+		return
+	}
+	actor.stuckTurn = turn.ID
+	actor.stuckTimer.Reset(time.Duration(minutes) * time.Minute)
+}
+
+// turnLasted opens the turn_stuck problem, dated from the turn's start,
+// when the limit ends with the turn it was started for still running.
+func (actor *Actor) turnLasted() {
+	if actor.turn == nil || actor.turn.ID != actor.stuckTurn {
+		return
+	}
+	minutes := int(time.Duration(now()-actor.turn.StartedAt) * time.Millisecond / time.Minute)
+	actor.openProblem(surface.ProblemNotice{Symptom: store.SymptomTurnStuck, Since: actor.turn.StartedAt, Minutes: minutes})
+}
+
+// unwatchTurn stops the limit when the turn ends, well or not, and clears
+// its problem.
+func (actor *Actor) unwatchTurn() {
+	actor.stuckTurn = ""
+	actor.stuckTimer.Stop()
+	actor.clearProblem(store.SymptomTurnStuck, store.ClearedByRecovery)
 }
 
 // watchDown follows the workstation verdict: a workstation down for a
@@ -141,7 +193,7 @@ func (actor *Actor) watchDown() {
 // with the workstation still down.
 func (actor *Actor) downLasted() {
 	if actor.downSince != 0 {
-		actor.openProblem(store.SymptomWorkstationDown, actor.downSince, 0)
+		actor.openProblem(surface.ProblemNotice{Symptom: store.SymptomWorkstationDown, Since: actor.downSince})
 	}
 }
 
@@ -152,9 +204,11 @@ func (actor *Actor) downGrace() time.Duration {
 	return defaultDownGrace
 }
 
-// openProblem records a problem unless one is open for the symptom already,
-// and only then tells the owner and the control room.
-func (actor *Actor) openProblem(symptom string, since int64, turns int) {
+// openProblem records a problem for the notice's symptom, dated from its
+// Since, unless one is open for the symptom already, and only then tells
+// the owner and the control room.
+func (actor *Actor) openProblem(notice surface.ProblemNotice) {
+	symptom, since := notice.Symptom, notice.Since
 	opened, err := actor.deps.Store.Problems().Open(context.Background(), actor.loop.ID, symptom, since)
 	if err != nil {
 		actor.log().Error("open problem", "symptom", symptom, "err", err)
@@ -165,7 +219,8 @@ func (actor *Actor) openProblem(symptom string, since int64, turns int) {
 	}
 	actor.log().Warn("problem opened", "symptom", symptom)
 	actor.storeSpoolEvent("problem_opened", fmt.Sprintf(`{"symptom":%q,"since":%d}`, symptom, since))
-	actor.problemsChanged(surface.ProblemNotice{Symptom: symptom, Opened: true, Since: since, Turns: turns})
+	notice.Opened = true
+	actor.problemsChanged(notice)
 }
 
 // clearProblem closes the open problem for the symptom, if there is one,

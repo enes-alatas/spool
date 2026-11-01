@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/enes-alatas/spool/internal/store"
+	"github.com/enes-alatas/spool/internal/surface"
 )
 
 // A cloud loop's sessions start from its repo, in its environment, on its
@@ -57,7 +58,7 @@ func (actor *Actor) cloudSetupChanged() {
 		return
 	}
 	if actor.cloudUnset() {
-		actor.openProblem(store.SymptomCloudSetup, now(), 0)
+		actor.openProblem(surface.ProblemNotice{Symptom: store.SymptomCloudSetup, Since: now()})
 		actor.publishState()
 		return
 	}
@@ -125,5 +126,5 @@ func (actor *Actor) cloudHandOff(answered bool) {
 		actor.clearProblem(store.SymptomCloudConnections, store.ClearedByRecovery)
 		return
 	}
-	actor.openProblem(store.SymptomCloudConnections, now(), 0)
+	actor.openProblem(surface.ProblemNotice{Symptom: store.SymptomCloudConnections, Since: now()})
 }

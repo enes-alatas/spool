@@ -48,7 +48,7 @@ type ProblemNotice struct {
 	LoopID   string `json:"loop_id"`
 	LoopName string `json:"loop_name"`
 	// Symptom is the store's: "workstation_down", "turn_errors",
-	// "cloud_address", "cloud_connections" or "cloud_setup".
+	// "turn_stuck", "cloud_address", "cloud_connections" or "cloud_setup".
 	Symptom string `json:"symptom"`
 	// Opened is true when the problem opened, false when it cleared.
 	Opened bool `json:"opened"`
@@ -57,6 +57,9 @@ type ProblemNotice struct {
 	// Turns is how many errored turns in a row opened a turn_errors
 	// problem.
 	Turns int `json:"turns,omitempty"`
+	// Minutes is how long the turn that opened a turn_stuck problem had run
+	// (#1142).
+	Minutes int `json:"minutes,omitempty"`
 	// ByOperator is true when the operator cleared the problem by acting on
 	// the loop, false when the signal itself cleared.
 	ByOperator bool `json:"by_operator,omitempty"`
@@ -82,6 +85,10 @@ func (notice ProblemNotice) Text() string {
 			return fmt.Sprintf("Spool: the hub's public address has failed its check since %s, so the cloud loop %s is not running. "+
 				"Its messages wait until the address passes. Settings → Cloud in the control room says what failed. "+
 				"You will hear once more when this clears.", since, notice.LoopName)
+		case "turn_stuck":
+			return fmt.Sprintf("Spool: %s's turn has been running since %s, %d minutes so far, and is still going. "+
+				"The hub doesn't stop it: Kill on the loop's page in the control room does, if it is stuck. "+
+				"You will hear once more when this clears.", notice.LoopName, since, notice.Minutes)
 		case "cloud_connections":
 			return fmt.Sprintf("Spool: the cloud loop %s's session asked for its connections at %s and the hub refused, "+
 				"so its shell commands may run without them. Stopping and starting the loop hands them over again. "+
@@ -102,6 +109,8 @@ func (notice ProblemNotice) Text() string {
 			problem = notice.LoopName + "'s session being refused its connections"
 		case "cloud_setup":
 			problem = notice.LoopName + "'s unfinished setup"
+		case "turn_stuck":
+			problem = notice.LoopName + "'s long turn"
 		}
 		return fmt.Sprintf("Spool: the alert about %s was cleared in the control room. "+
 			"You will hear again if it comes back.", problem)
@@ -115,6 +124,8 @@ func (notice ProblemNotice) Text() string {
 		return fmt.Sprintf("Spool: the cloud loop %s's session was handed its connections again.", notice.LoopName)
 	case "cloud_setup":
 		return fmt.Sprintf("Spool: the cloud loop %s's setup is done, so it is running.", notice.LoopName)
+	case "turn_stuck":
+		return fmt.Sprintf("Spool: %s's long turn has ended.", notice.LoopName)
 	}
 	return fmt.Sprintf("Spool: %s finished a turn without an error again.", notice.LoopName)
 }
