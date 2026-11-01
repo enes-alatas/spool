@@ -1630,3 +1630,6 @@ HN: 0 new. #1239 in Quinn's rounds (07:33). #1234 holds on "pin 2.1.310 vs Teste
 
 ## 2026-11-01 14:12 UTC
 - Release run 41312318064 green (guard, images ×2, index, build, publish, smoke). Assets: 4 tarballs + SHA256SUMS. Images section present, pin line 2.1.310. Suggested fleet runtime update to Enes (owner_dm). HN watch: 0 new. Open PRs: #1239, #1241 in Quinn's rounds; #453 parked.
+
+## 2026-11-01 16:20 UTC
+- #1241 (Iris) merged 14:26, #1239 (Terra) merged 14:51, both after the v0.6.2 tag (note didn't cite them; fine). Terra on #1244 (Closes #1243: setup view read the stale check; Quinn found it on 1239's queue run). Sweep: #1243 retitled to operator words + L6 milestone, commented. Iris free; her #1145–#1147 wait on #1142–#1144 — no unblocked web work, no ping. HN: Ask HN 50326764 "manage your personal agents", 1 pt, about multi-vendor agent coordination — not a fit, skipped. hn.algolia was slow (120s hang once; use curl -m 20).
