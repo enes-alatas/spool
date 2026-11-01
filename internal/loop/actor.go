@@ -264,6 +264,9 @@ type Actor struct {
 	errorTurns   int
 	firstErrorAt int64
 	downSince    int64
+	// stuckTurn is the turn stuckTimer was started for, "" for none: the
+	// timer opens turn_stuck only if that turn is still running.
+	stuckTurn string
 
 	// loginRejected holds the unauthenticated alert through the spawns and
 	// health polls that would otherwise clear it: the machine is up, the
@@ -337,6 +340,7 @@ type Actor struct {
 	retryTimer  *time.Timer
 	healthTimer *time.Timer
 	downTimer   *time.Timer
+	stuckTimer  *time.Timer
 	// dailyCapTimer fires when the day turns under a loop its daily cap holds.
 	dailyCapTimer *time.Timer
 }
@@ -380,10 +384,15 @@ func NewActor(deps Deps, loopRecord *store.Loop) *Actor {
 	actor.healthTimer = time.NewTimer(actor.healthInterval())
 	actor.downTimer = time.NewTimer(time.Hour)
 	actor.downTimer.Stop()
+	actor.stuckTimer = time.NewTimer(time.Hour)
+	actor.stuckTimer.Stop()
 	actor.dailyCapTimer = time.NewTimer(time.Hour)
 	actor.dailyCapTimer.Stop()
 	actor.armDailyCap()
 	actor.loadProblems()
+	// a hub stopped mid-turn left turn_stuck open: no turn runs yet, so
+	// the turn it was about ended with the hub
+	actor.clearProblem(store.SymptomTurnStuck, store.ClearedByRecovery)
 	go actor.run()
 	return actor
 }
@@ -517,7 +526,7 @@ func (actor *Actor) Shutdown() {
 func (actor *Actor) run() {
 	defer close(actor.stopped)
 	if actor.cloudUnset() {
-		actor.openProblem(store.SymptomCloudSetup, now(), 0)
+		actor.openProblem(surface.ProblemNotice{Symptom: store.SymptomCloudSetup, Since: now()})
 	}
 	actor.publishState()
 	for {
@@ -547,6 +556,8 @@ func (actor *Actor) run() {
 			actor.healthTimer.Reset(actor.healthInterval())
 		case <-actor.downTimer.C:
 			actor.downLasted()
+		case <-actor.stuckTimer.C:
+			actor.turnLasted()
 		case <-actor.dailyCapTimer.C:
 			// The timer runs on the monotonic clock and the day turns on the
 			// wall clock, so a clock set back fires it early: re-arm it while
@@ -1466,6 +1477,7 @@ func (actor *Actor) sendBatch(batch []Envelope) {
 	}
 	actor.turn = turn
 	actor.lastCall = claude.Usage{}
+	actor.watchTurn(turn)
 	actor.turnRefusal = ""
 
 	for _, env := range batch {
@@ -1667,6 +1679,7 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 		return
 	}
 	actor.turn = nil
+	actor.unwatchTurn()
 	actor.currentBatch = nil
 	actor.lostSends = nil
 	if actor.handoffTurn {
@@ -1897,6 +1910,7 @@ func (actor *Actor) handleProcExit() {
 		}
 		_ = actor.deps.Store.Turns().Finish(context.Background(), turn)
 		actor.turn = nil
+		actor.unwatchTurn()
 		actor.noteTurnEnd(true, turn.EndedAt)
 	}
 
@@ -2148,6 +2162,7 @@ func (actor *Actor) holdWithoutHub(status string) {
 	}
 	actor.inbox = latestTickOnly(append(append([]Envelope(nil), actor.currentBatch...), actor.inbox...))
 	actor.turn = nil
+	actor.unwatchTurn()
 	actor.currentBatch = nil
 	actor.state = StateDraining
 	actor.publishState()
@@ -2218,6 +2233,7 @@ func (actor *Actor) retryEditedModel() {
 // The notes the turn owed stay owed: it did not deliver them.
 func (actor *Actor) drainRefusedProcess() {
 	actor.turn = nil
+	actor.unwatchTurn()
 	actor.currentBatch = nil
 	actor.lostSends = nil
 	actor.state = StateDraining

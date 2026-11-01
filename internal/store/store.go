@@ -342,6 +342,11 @@ const SettingEgressHosts = "egress_hosts"
 // symptom off. Unset means loop.DefaultHealthErrorTurns.
 const SettingHealthErrorTurns = "health_error_turns"
 
+// SettingHealthTurnMinutes is how many minutes a turn runs before it opens
+// a turn_stuck problem with its loop (ADR-0053, #1142), an integer; 0
+// turns that symptom off. Unset means loop.DefaultHealthTurnMinutes.
+const SettingHealthTurnMinutes = "health_turn_minutes"
+
 // EgressHosts is the hosts every docker loop may reach on top of the
 // built-in allowlist (ADR-0028), each canonical "host" or "host:port", in
 // the order they were added. ChangedAt is when the list last changed, in
@@ -2252,7 +2257,7 @@ type PrivateChatStore interface {
 // Since until the operator acts on the loop or the signal clears (ADR-0053,
 // #764). A loop has at most one open per symptom.
 type Problem struct {
-	// Symptom is SymptomWorkstationDown, SymptomTurnErrors,
+	// Symptom is SymptomWorkstationDown, SymptomTurnErrors, SymptomTurnStuck,
 	// SymptomCloudAddress, SymptomCloudConnections or SymptomCloudSetup.
 	Symptom string `json:"symptom"`
 	// Since is when the problem opened, in Unix ms.
@@ -2266,6 +2271,9 @@ const (
 	SymptomWorkstationDown = "workstation_down"
 	// SymptomTurnErrors: the loop's last turns all ended in an error.
 	SymptomTurnErrors = "turn_errors"
+	// SymptomTurnStuck: the loop's turn has run past the time limit, and
+	// is still running (#1142).
+	SymptomTurnStuck = "turn_stuck"
 	// SymptomCloudAddress: a cloud loop is held because the hub's public
 	// address fails its check (ADR-0056).
 	SymptomCloudAddress = "cloud_address"

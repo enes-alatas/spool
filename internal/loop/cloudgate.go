@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/enes-alatas/spool/internal/store"
+	"github.com/enes-alatas/spool/internal/surface"
 )
 
 // CloudCheckFresh is how long a passed check of the public address lets
@@ -190,14 +191,14 @@ func (actor *Actor) cloudGateChanged() {
 		return
 	}
 	if since := actor.deps.CloudGate.FailedSince(); since != 0 {
-		actor.openProblem(store.SymptomCloudAddress, since, 0)
+		actor.openProblem(surface.ProblemNotice{Symptom: store.SymptomCloudAddress, Since: since})
 	} else if actor.deps.CloudGate.Passed() {
 		actor.clearProblem(store.SymptomCloudAddress, store.ClearedByRecovery)
 	}
 	// a check follows an address change, which may make the loop's own
 	// setup check stale or current again
 	if actor.cloudUnset() {
-		actor.openProblem(store.SymptomCloudSetup, now(), 0)
+		actor.openProblem(surface.ProblemNotice{Symptom: store.SymptomCloudSetup, Since: now()})
 	} else {
 		actor.clearProblem(store.SymptomCloudSetup, store.ClearedByRecovery)
 	}

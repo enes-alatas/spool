@@ -144,3 +144,34 @@ func TestSettingsHealthErrorTurns(t *testing.T) {
 		t.Fatalf("rejected writes changed the stored threshold to %d", v.Turns)
 	}
 }
+
+// The turn_stuck limit (#1142) comes back as its default, stores minutes,
+// turns off at 0, and refuses one out of range without touching the stored
+// one.
+func TestSettingsHealthTurnMinutes(t *testing.T) {
+	t.Parallel()
+	hub := startServer(t, t.TempDir())
+
+	var settings struct {
+		Minutes int `json:"health_turn_minutes"`
+	}
+	hub.mustJSON("GET", "/api/settings", nil, &settings)
+	if settings.Minutes != 120 {
+		t.Fatalf("default = %d, want 120", settings.Minutes)
+	}
+	for _, minutes := range []int{30, 0} {
+		hub.mustJSON("PUT", "/api/settings", map[string]any{"health_turn_minutes": minutes}, &settings)
+		if settings.Minutes != minutes {
+			t.Fatalf("after PUT %d = %d", minutes, settings.Minutes)
+		}
+	}
+	for _, bad := range []int{-1, 1441} {
+		if resp, body := hub.do("PUT", "/api/settings", map[string]any{"health_turn_minutes": bad}); resp.StatusCode != 400 {
+			t.Fatalf("PUT %d: status %d, want 400 (%s)", bad, resp.StatusCode, body)
+		}
+	}
+	hub.mustJSON("GET", "/api/settings", nil, &settings)
+	if settings.Minutes != 0 {
+		t.Fatalf("rejected writes changed the stored limit to %d", settings.Minutes)
+	}
+}

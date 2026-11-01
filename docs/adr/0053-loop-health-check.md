@@ -1,6 +1,6 @@
 # ADR-0053: The hub checks each loop's health, and tells the owner once when a problem opens and once when it clears
 
-Date: 2026-10-14 · Status: accepted (operator decision of 2026-10-12 on #754 for the shape, and of 2026-10-14 on #764 for the three defaults below) · Relates to: ADR-0017, ADR-0026, ADR-0029, ADR-0047
+Date: 2026-10-14 · Status: accepted (operator decision of 2026-10-12 on #754 for the shape, and of 2026-10-14 on #764 for the three defaults below) · Relates to: ADR-0017, ADR-0026, ADR-0029, ADR-0047 · Amended: 2026-11-01 (item 9 added: turn_stuck, #1142)
 
 ## Context
 
@@ -96,6 +96,22 @@ an amendment here.
    /api/settings` carries `health_error_turns`. The loop's timeline
    records `problem_opened` and `problem_cleared` spool events, and the
    adapters' `owner_notice` events say whether each notice went out.
+
+9. **`turn_stuck`: a turn running past a time limit** (added 2026-11-01,
+   #1142, slice 1 of #754's plan). A turn that hangs keeps its loop busy,
+   and before this nothing told the owner. The actor starts a timer when a
+   turn starts. If that turn is still running when it fires, the problem
+   opens, dated from the turn's start, and the notice says how long it
+   has run. The turn ending, well or not, clears it, and a hub that starts
+   with one open clears it too, since the turn it was about ended with the
+   hub. The hub never kills the turn: the owner decides, and Kill on the
+   loop's page ends it, which clears the problem. Acknowledge clears it
+   while the turn keeps running, and the same turn doesn't open it again.
+   The limit is the setting `health_turn_minutes`, 0 to 1440 with 0 for
+   off, defaulting to **120** (accepted on #754), and `GET/PUT
+   /api/settings` carries it beside `health_error_turns`. Each turn takes
+   the limit as it stands when the turn starts. Health is `warning` while
+   it is open, as for `turn_errors`.
 
 ## Consequences
 
