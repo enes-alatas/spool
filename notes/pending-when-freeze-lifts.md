@@ -1623,3 +1623,4 @@ HN: 0 new. #1239 in Quinn's rounds (07:33). #1234 holds on "pin 2.1.310 vs Teste
 
 ## 2026-11-01 12:00 UTC
 - Enes approved the v0.6.2 release-note draft (ref:7927, "Looks great"). Draft stays at notes/release/v0.6.2.md; #1234 still open at time of approval, #1239 to be added if it lands before the tag. Enes tags himself. Reacted 👍, no other action.
+- #1234 merged 11:47 (73fb992); told Enes (ref:7929) the pin line is true and #1239 decides the last line. Sweep: #1242 (Elliot, minimatch advisory) had no milestone → CI reliability, matching #1131. Iris opened #1241 for #1238. Dependabot alert 30 = #1242, already filed.
