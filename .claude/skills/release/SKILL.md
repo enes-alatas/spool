@@ -31,7 +31,11 @@ archive, attaches the archives and `SHA256SUMS`, and adds the digests to
 the notes under **Images**, with the Claude Code version the workstation
 image pins. That version is `docker/workstation/claude-code.version`
 (#1223): to ship a newer CLI, bump it in a PR of its own to one the fleet
-has run, before the dry run. The first release that pushes images creates
+has run, before the dry run. That PR moves four things together (#1235):
+the pin file, `internal/claude.TestedVersion`, fakeclaude's `--version`
+line, and the stream-json check on the new build in
+`cmd/fakeclaude/FIDELITY.md`. `TestTestedVersionIsTheReleasePin` fails
+when the first three disagree. The first release that pushes images creates
 the two packages: check on the repository's Packages page that both are
 public, or an operator's `docker pull` is refused. The workflow creates
 the release, with generated notes, when a bare `git push` of the tag left
