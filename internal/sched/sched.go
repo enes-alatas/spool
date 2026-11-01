@@ -27,8 +27,11 @@ const recheckInterval = 30 * time.Second
 // or a scheduler that stalled.
 const lateTickThreshold = 2 * recheckInterval
 
+// Ticker fires a loop's tick, and checks that the wakes the loops owe
+// start their turns (#1143).
 type Ticker interface {
 	Tick(loopID string) bool
+	CheckWakes()
 }
 
 type Scheduler struct {
@@ -65,7 +68,12 @@ func (scheduler *Scheduler) Recover(ctx context.Context) {
 }
 
 // Run fires ticks as they come due, until ctx is done. Recover goes first.
+// Beside it, the wake check runs every recheckInterval on a goroutine of
+// its own: a poke restarts the wait for the next tick without firing any,
+// and a tick blocks on an actor that has stopped answering once its
+// commands back up, the very case the check is for (#1143).
 func (scheduler *Scheduler) Run(ctx context.Context) {
+	go scheduler.checkWakes(ctx)
 	for {
 		wait := recheckInterval
 		if next := scheduler.earliest(ctx); next != 0 {
@@ -196,4 +204,19 @@ func clamp(delay, min, max time.Duration) time.Duration {
 		return max
 	}
 	return delay
+}
+
+// checkWakes asks every recheckInterval that the wakes the loops owe start
+// their turns, until ctx is done.
+func (scheduler *Scheduler) checkWakes(ctx context.Context) {
+	every := time.NewTicker(recheckInterval)
+	defer every.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-every.C:
+			scheduler.ticker.CheckWakes()
+		}
+	}
 }

@@ -48,7 +48,8 @@ type ProblemNotice struct {
 	LoopID   string `json:"loop_id"`
 	LoopName string `json:"loop_name"`
 	// Symptom is the store's: "workstation_down", "turn_errors",
-	// "turn_stuck", "cloud_address", "cloud_connections" or "cloud_setup".
+	// "turn_stuck", "wake_missed", "cloud_address", "cloud_connections" or
+	// "cloud_setup".
 	Symptom string `json:"symptom"`
 	// Opened is true when the problem opened, false when it cleared.
 	Opened bool `json:"opened"`
@@ -89,6 +90,10 @@ func (notice ProblemNotice) Text() string {
 			return fmt.Sprintf("Spool: %s's turn has been running since %s, %d minutes so far, and is still going. "+
 				"The hub doesn't stop it: Kill on the loop's page in the control room does, if it is stuck. "+
 				"You will hear once more when this clears.", notice.LoopName, since, notice.Minutes)
+		case "wake_missed":
+			return fmt.Sprintf("Spool: %s has been due to wake since %s, and no turn has started though nothing holds it. "+
+				"The loop's page in the control room shows how its last try to run went. "+
+				"You will hear once more when this clears.", notice.LoopName, since)
 		case "cloud_connections":
 			return fmt.Sprintf("Spool: the cloud loop %s's session asked for its connections at %s and the hub refused, "+
 				"so its shell commands may run without them. Stopping and starting the loop hands them over again. "+
@@ -111,6 +116,8 @@ func (notice ProblemNotice) Text() string {
 			problem = notice.LoopName + "'s unfinished setup"
 		case "turn_stuck":
 			problem = notice.LoopName + "'s long turn"
+		case "wake_missed":
+			problem = notice.LoopName + "'s missed wake"
 		}
 		return fmt.Sprintf("Spool: the alert about %s was cleared in the control room. "+
 			"You will hear again if it comes back.", problem)
@@ -126,6 +133,8 @@ func (notice ProblemNotice) Text() string {
 		return fmt.Sprintf("Spool: the cloud loop %s's setup is done, so it is running.", notice.LoopName)
 	case "turn_stuck":
 		return fmt.Sprintf("Spool: %s's long turn has ended.", notice.LoopName)
+	case "wake_missed":
+		return fmt.Sprintf("Spool: %s has started a turn again.", notice.LoopName)
 	}
 	return fmt.Sprintf("Spool: %s finished a turn without an error again.", notice.LoopName)
 }

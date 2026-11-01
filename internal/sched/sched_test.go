@@ -19,6 +19,8 @@ func (counter tickCounter) Tick(loopID string) bool {
 	return true
 }
 
+func (tickCounter) CheckWakes() {}
+
 // Only the ticks that came due while the hub was down are pushed out: a
 // tick asked for once the scheduler runs, as a new loop's first is, fires
 // at once (#595). Run used to rescan on start, beside the API, and jittered

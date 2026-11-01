@@ -233,3 +233,52 @@ func TestATurnPastItsLimitIsToldToTheOwner(t *testing.T) {
 	hub.waitHealth("alpha", "ok")
 	tg.waitSentFrom(t, operator.ID, "alpha", "alpha's long turn has ended")
 }
+
+// A loop due to wake that starts no turn, though nothing holds it, is a
+// problem the owner hears of once, dated from the wake. Here the loop's
+// actor stops answering: its claude ends a turn, closes its output and
+// lives on, and the hub's wait for that exit holds the actor, so a tick
+// asked of it meanwhile goes unread. The turn the tick starts once the
+// process exits clears the problem, and the owner hears of that once too.
+// A paused loop's tick is no wake it owes, so it opens nothing (#1143).
+func TestAWakeThatStartsNoTurnIsToldToTheOwner(t *testing.T) {
+	t.Parallel()
+	operator := user{ID: 7676, First: "Operator", Username: "operator"}
+	workspace := workspaceWithScript(t, "ok\nok\n!wedge 150\nback to work\n")
+	hub, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": workspace})
+	hub.waitCompleted("alpha", 1)
+	tg.dm("alpha", operator, "hi alpha")
+	waitOwnerDMReady(t, hub, "alpha")
+	hub.waitCompleted("alpha", 2)
+	hub.mustJSON("PUT", "/api/settings", map[string]any{"health_wake_grace_minutes": 1}, nil)
+
+	hub.mustJSON("POST", "/api/loops/beta/pause", nil, nil)
+	hub.waitState("beta", "paused", 30*time.Second)
+	hub.mustJSON("POST", "/api/loops/beta/wake", nil, nil)
+
+	hub.message("alpha", "the last answer before the wedge")
+	hub.waitCompleted("alpha", 3)
+	hub.mustJSON("POST", "/api/loops/alpha/wake", nil, nil)
+	var view loopView
+	within(t, 120*time.Second, "alpha's wake_missed problem", func() bool {
+		view = hub.loop("alpha")
+		return view.Health == "failing"
+	})
+	if len(view.Problems) != 1 || view.Problems[0].Symptom != "wake_missed" || view.Problems[0].Since == 0 {
+		t.Fatalf("problems = %+v, want one wake_missed with a since", view.Problems)
+	}
+	tg.waitSentFrom(t, operator.ID, "alpha", "alpha has been due to wake since")
+	if beta := hub.loop("beta"); beta.Health != "ok" || len(beta.Problems) != 0 {
+		t.Fatalf("paused beta's health = %q with problems %+v after a tick, want ok", beta.Health, beta.Problems)
+	}
+	time.Sleep(time.Second)
+	if told := countSent(tg, operator.ID, "has been due to wake since"); told != 1 {
+		t.Fatalf("the owner was told of one missed wake %d times, want once", told)
+	}
+
+	within(t, 150*time.Second, "a turn clearing alpha's wake_missed problem", func() bool {
+		return hub.loop("alpha").Health == "ok"
+	})
+	tg.waitSentFrom(t, operator.ID, "alpha", "alpha has started a turn again")
+	hub.waitCompleted("alpha", 4)
+}

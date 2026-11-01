@@ -1465,9 +1465,9 @@ func (server *Server) handleAcknowledge(w http.ResponseWriter, r *http.Request) 
 	}
 	symptom := r.PathValue("symptom")
 	if symptom != store.SymptomWorkstationDown && symptom != store.SymptomTurnErrors && symptom != store.SymptomTurnStuck &&
-		symptom != store.SymptomCloudAddress && symptom != store.SymptomCloudConnections {
-		server.jsonErr(w, http.StatusBadRequest, "unknown symptom %q: want %s, %s, %s, %s or %s", symptom, store.SymptomWorkstationDown,
-			store.SymptomTurnErrors, store.SymptomTurnStuck, store.SymptomCloudAddress, store.SymptomCloudConnections)
+		symptom != store.SymptomWakeMissed && symptom != store.SymptomCloudAddress && symptom != store.SymptomCloudConnections {
+		server.jsonErr(w, http.StatusBadRequest, "unknown symptom %q: want %s, %s, %s, %s, %s or %s", symptom, store.SymptomWorkstationDown,
+			store.SymptomTurnErrors, store.SymptomTurnStuck, store.SymptomWakeMissed, store.SymptomCloudAddress, store.SymptomCloudConnections)
 		return
 	}
 	actor, ok := server.Manager.Get(loopRecord.ID)
@@ -1476,7 +1476,12 @@ func (server *Server) handleAcknowledge(w http.ResponseWriter, r *http.Request) 
 			"loop %s is not running", loopRecord.Name)
 		return
 	}
-	actor.Acknowledge(symptom)
+	if symptom == store.SymptomWakeMissed {
+		// outside the actor, which may be the one that stopped answering
+		actor.AcknowledgeMissedWake(loopRecord.ID, loopRecord.Name)
+	} else {
+		actor.Acknowledge(symptom)
+	}
 	writeJSON(w, 200, server.view(r.Context(), loopRecord))
 }
 
@@ -1728,6 +1733,10 @@ type settingsView struct {
 	// owner is told, 0 for never, the default included (#1142). A change
 	// holds from each loop's next turn.
 	HealthTurnMinutes int `json:"health_turn_minutes"`
+	// HealthWakeGraceMinutes is how many minutes a wake a loop owes goes
+	// without a turn before its owner is told, 0 for never, the default
+	// included (#1143).
+	HealthWakeGraceMinutes int `json:"health_wake_grace_minutes"`
 	// BareAllowed is how the control room knows whether to offer an
 	// uncontained loop at all (#255): the choice is the operator's, taken
 	// at the terminal when the hub was started, and a form that offered it
@@ -1762,6 +1771,7 @@ func (server *Server) settingsView(ctx context.Context) (settingsView, error) {
 		PlanCapSevenDayPercent: sevenDay,
 		HealthErrorTurns:       loop.HealthErrorTurns(ctx, server.Store.Settings(), server.Log),
 		HealthTurnMinutes:      loop.HealthTurnMinutes(ctx, server.Store.Settings(), server.Log),
+		HealthWakeGraceMinutes: loop.HealthWakeGraceMinutes(ctx, server.Store.Settings(), server.Log),
 		BareAllowed:            server.BareAllowed,
 		DefaultRuntime:         server.defaultRuntime(),
 		ClaudeVersion:          server.ClaudeVer,
@@ -1793,6 +1803,8 @@ type putSettingsReq struct {
 	HealthErrorTurns *int `json:"health_error_turns"`
 	// nil leaves the turn_stuck limit unchanged (minutes 0-1440, 0 for off).
 	HealthTurnMinutes *int `json:"health_turn_minutes"`
+	// nil leaves the wake_missed grace unchanged (minutes 0-1440, 0 for off).
+	HealthWakeGraceMinutes *int `json:"health_wake_grace_minutes"`
 }
 
 func (server *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
@@ -1815,6 +1827,10 @@ func (server *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) 
 	}
 	if req.HealthTurnMinutes != nil && !loop.ValidHealthTurnMinutes(*req.HealthTurnMinutes) {
 		server.jsonErr(w, 400, "health_turn_minutes must be minutes 0-1440, 0 for off (got %d)", *req.HealthTurnMinutes)
+		return
+	}
+	if req.HealthWakeGraceMinutes != nil && !loop.ValidHealthWakeGraceMinutes(*req.HealthWakeGraceMinutes) {
+		server.jsonErr(w, 400, "health_wake_grace_minutes must be minutes 0-1440, 0 for off (got %d)", *req.HealthWakeGraceMinutes)
 		return
 	}
 	if req.ClaudeOAuthToken != nil {
@@ -1897,6 +1913,12 @@ func (server *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) 
 	}
 	if req.HealthTurnMinutes != nil {
 		if err := server.Store.Settings().Set(r.Context(), store.SettingHealthTurnMinutes, strconv.Itoa(*req.HealthTurnMinutes)); err != nil {
+			server.jsonErr(w, 500, "%v", err)
+			return
+		}
+	}
+	if req.HealthWakeGraceMinutes != nil {
+		if err := server.Store.Settings().Set(r.Context(), store.SettingHealthWakeGraceMinutes, strconv.Itoa(*req.HealthWakeGraceMinutes)); err != nil {
 			server.jsonErr(w, 500, "%v", err)
 			return
 		}
