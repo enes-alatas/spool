@@ -1050,3 +1050,31 @@ func TestListPrivateThreads(t *testing.T) {
 		t.Fatalf("ListPrivateThreads(l3) = %+v, want none for a loop with no private messages", threads)
 	}
 }
+
+// A loop that drops a group message says nothing of the other loops it
+// reached, so each drop is recorded under its own loop, once (#1205).
+func TestAMessageIsDroppedPerLoopOnce(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	message := &store.Message{TS: 1, Origin: store.OriginTelegramGroup, Author: "alice", Text: "crash me",
+		Conversation: store.ConversationGroup}
+	if err := db.Messages().Insert(ctx, message); err != nil {
+		t.Fatal(err)
+	}
+	for _, loopID := range []string{"terra", "terra", "iris"} {
+		if err := db.Messages().MarkDropped(ctx, message.ID, loopID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := db.Messages().Get(ctx, message.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got.DroppedBy, []string{"terra", "iris"}) {
+		t.Fatalf("dropped_by = %v, want [terra iris]", got.DroppedBy)
+	}
+}

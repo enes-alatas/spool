@@ -118,3 +118,29 @@ func (notice ProblemNotice) Text() string {
 	}
 	return fmt.Sprintf("Spool: %s finished a turn without an error again.", notice.LoopName)
 }
+
+// DropNotice is the payload of bus.KindMessageDropped: a loop dropped a
+// message after its turn crashed every process that ran it (#1189,
+// #1205). For a person's message it is a hub notice, told to the person
+// who sent it, as a reply to it in the chat it came from: they would
+// otherwise believe the loop heard them, and the loop has no turn to say it
+// didn't. Another loop's message is told to nobody.
+type DropNotice struct {
+	LoopID    string `json:"loop_id"`
+	LoopName  string `json:"loop_name"`
+	MessageID int64  `json:"message_id"`
+	// FromLoop is true when another loop sent the message: the notice is
+	// then told to nobody.
+	FromLoop bool `json:"-"`
+	// Conversation and DMPerson are the dropped message's, as the store
+	// keeps them, so the stream carries the item only to whoever reads
+	// the message (#922).
+	Conversation string `json:"-"`
+	DMPerson     string `json:"-"`
+}
+
+// Text is the notice as the sender reads it, the same on every surface.
+func (notice DropNotice) Text() string {
+	return fmt.Sprintf("Spool: %s couldn't take this message. Each of the three turns that tried it crashed, "+
+		"so it won't be tried again. The loop's owner can see why on its page in the control room.", notice.LoopName)
+}

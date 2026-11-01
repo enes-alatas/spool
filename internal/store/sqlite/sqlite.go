@@ -922,6 +922,13 @@ func (table messages) MarkSendFailuresTold(ctx context.Context, ids []int64, tol
 	return err
 }
 
+// MarkDropped adds loopID to the loops that dropped the message, once.
+func (table messages) MarkDropped(ctx context.Context, id int64, loopID string) error {
+	_, err := table.db.ExecContext(ctx, `UPDATE messages SET dropped_by = json_insert(dropped_by, '$[#]', ?)
+		WHERE id=? AND NOT EXISTS (SELECT 1 FROM json_each(messages.dropped_by) WHERE value=?)`, loopID, id, loopID)
+	return err
+}
+
 func (table messages) SetDelivered(ctx context.Context, id int64, deliveredTo []string) error {
 	_, err := table.db.ExecContext(ctx, `UPDATE messages SET delivered_to=? WHERE id=?`, toJSON(deliveredTo), id)
 	return err
@@ -957,7 +964,7 @@ const messageCols = `id, ts, origin, author, from_loop_id, text,
 	conversation, conversation_loop_id, reply_to_id, send_failed_at, send_error,
 	send_failure_told_at, send_failure_tellings, send_resolved_at, send_resolution, send_resent_as,
 	resends_id, tg_key, mirror, slack_channel_id, slack_ts, channel, dm_person,
-	edit_of, edit_kind, edit_key, edited_at, deleted_at`
+	edit_of, edit_kind, edit_key, edited_at, deleted_at, dropped_by`
 
 func (table messages) List(ctx context.Context, limit int) ([]*store.Message, error) {
 	return table.query(ctx, `SELECT `+messageCols+` FROM messages ORDER BY id DESC LIMIT ?`, limit)
@@ -1245,18 +1252,19 @@ func (table messages) query(ctx context.Context, statement string, args ...any) 
 	var out []*store.Message
 	for rows.Next() {
 		var message store.Message
-		var mentions, delivered string
+		var mentions, delivered, dropped string
 		if err := rows.Scan(&message.ID, &message.TS, &message.Origin, &message.Author, &message.FromLoopID, &message.Text,
 			&mentions, &message.TGChatID, &message.TGMessageID, &message.TGBotLoopID, &delivered,
 			&message.Conversation, &message.ConversationLoopID, &message.ReplyToID,
 			&message.SendFailedAt, &message.SendError, &message.SendFailureToldAt, &message.SendFailureTellings, &message.SendResolvedAt,
 			&message.SendResolution, &message.SendResentAs, &message.ResendsID, &message.TGKey, &message.Mirror,
 			&message.SlackChannelID, &message.SlackTS, &message.Channel, &message.DMPerson,
-			&message.EditOf, &message.EditKind, &message.EditKey, &message.EditedAt, &message.DeletedAt); err != nil {
+			&message.EditOf, &message.EditKind, &message.EditKey, &message.EditedAt, &message.DeletedAt, &dropped); err != nil {
 			return nil, err
 		}
 		message.Mentions = fromJSON(mentions)
 		message.DeliveredTo = fromJSON(delivered)
+		message.DroppedBy = fromJSON(dropped)
 		message.SendLeftByLoop = message.SendResolvedAt == 0 && message.SendFailureTellings >= store.SendFailureTellings
 		out = append(out, &message)
 	}

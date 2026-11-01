@@ -15,6 +15,7 @@ import (
 	"github.com/enes-alatas/spool/internal/bus"
 	"github.com/enes-alatas/spool/internal/route"
 	"github.com/enes-alatas/spool/internal/store"
+	"github.com/enes-alatas/spool/internal/surface"
 )
 
 // TestEveryRouteHasARole: each /api route the hub registers is in the role
@@ -86,8 +87,8 @@ func TestRolesRankOverTheTable(t *testing.T) {
 
 // TestAMemberStreamCarriesNoOwnerDM: on a stream a member with no link
 // gets every message but an owner DM, resent or not, a reaction or a vote
-// only on a message they read, and no turn result or agent event; an admin
-// gets them all (#922).
+// only on a message they read, and so a drop, and no turn result or agent
+// event; an admin gets them all (#922, #1205).
 func TestAMemberStreamCarriesNoOwnerDM(t *testing.T) {
 	unlinked := (&privateReader{persons: map[string]bool{}}).reads
 	member := &caller{user: &store.User{Role: store.RoleMember}}
@@ -102,6 +103,9 @@ func TestAMemberStreamCarriesNoOwnerDM(t *testing.T) {
 	poll := func(conversation string) bus.Item {
 		return bus.Item{Kind: bus.KindPoll, Payload: &route.PollPayload{Vote: &store.Vote{Choice: []int{0}},
 			Target: &store.Message{Conversation: conversation}}}
+	}
+	dropped := func(conversation string) bus.Item {
+		return bus.Item{Kind: bus.KindMessageDropped, Payload: &surface.DropNotice{LoopName: "terra", Conversation: conversation}}
 	}
 	for _, test := range []struct {
 		item bus.Item
@@ -122,6 +126,10 @@ func TestAMemberStreamCarriesNoOwnerDM(t *testing.T) {
 		// a frame published with no target reaches no member
 		{bus.Item{Kind: bus.KindReaction, Payload: &route.ReactionPayload{Reaction: &store.Reaction{}}}, false},
 		{bus.Item{Kind: bus.KindPoll, Payload: &route.PollPayload{Closed: true}}, false},
+		{dropped(store.ConversationGroup), true},
+		{dropped(store.ConversationOwnerDM), false},
+		{dropped("dm:someone"), false},
+		{bus.Item{Kind: bus.KindMessageDropped, Payload: &surface.DropNotice{LoopName: "terra"}}, false},
 	} {
 		if got := streamable(member, test.item, unlinked); got != test.want {
 			t.Errorf("a member's stream with %s %+v = %v; want %v", test.item.Kind, test.item.Payload, got, test.want)

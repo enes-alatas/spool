@@ -638,6 +638,11 @@ type Message struct {
 	// only together with the bot that saw it. Storage detail, not surfaced.
 	TGBotLoopID string   `json:"-"`
 	DeliveredTo []string `json:"delivered_to"`
+	// DroppedBy names the loops that dropped this message after its turn
+	// crashed every process that ran it (#1189, #1205), so the control room
+	// can say it was not taken. A group message reaches several loops, and
+	// one dropping it says nothing of the others.
+	DroppedBy []string `json:"dropped_by,omitempty"`
 	// Conversation is the unit of privacy and addressing this message
 	// belongs to: one of the Conversation* constants.
 	Conversation string `json:"conversation"`
@@ -1236,6 +1241,10 @@ type MessageStore interface {
 	// (slackChannelID, slackTS); a duplicate returns ErrDuplicate.
 	Insert(ctx context.Context, message *Message) error
 	SetDelivered(ctx context.Context, id int64, deliveredTo []string) error
+	// MarkDropped records that the loop dropped the message: its turn
+	// crashed every process that ran it (#1189, #1205). Marking it twice
+	// for one loop is a no-op.
+	MarkDropped(ctx context.Context, id int64, loopID string) error
 	// Traffic reports, for each chat surface, whether a loop still in the
 	// fleet has carried a message each way there: its send got through,
 	// and a person wrote in to it. Only an allowlisted person's message is

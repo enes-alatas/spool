@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -106,6 +107,14 @@ func TestAMessageThatKillsEveryProcessIsDropped(t *testing.T) {
 	if tried := attemptsAt(hub, "doomed", "the late question"); tried != 1 {
 		t.Errorf("the late message was tried %d times by the drop, want the one it joined", tried)
 	}
+	// the control room reads which loop dropped it, and only it (#1205)
+	doomedID := hub.loop("doomed").ID
+	for text, dropped := range map[string]bool{"the poisoned question": true, "the late question": false} {
+		stored := hub.activityWith(text)
+		if len(stored) != 1 || slices.Contains(stored[0].DroppedBy, doomedID) != dropped {
+			t.Errorf("%q stored as %+v, want dropped by the loop %t", text, stored, dropped)
+		}
+	}
 
 	setScript(t, workspace, "!echo\n")
 	answered := hub.waitTurn("doomed", 90*time.Second, func(done turn) bool {
@@ -113,6 +122,51 @@ func TestAMessageThatKillsEveryProcessIsDropped(t *testing.T) {
 	})
 	if strings.Contains(answered.ResultText, "the poisoned question") {
 		t.Fatalf("the dropped message was said again:\n%s", answered.ResultText)
+	}
+}
+
+// TestADroppedMessageIsToldToItsSender: a person whose message a loop
+// dropped is told so once, by a hub notice that replies to their message
+// in the chat they wrote it in, on the loop's own bot (#1205). The notice
+// is not a message, and the control room reads the drop on the row.
+func TestADroppedMessageIsToldToItsSender(t *testing.T) {
+	t.Parallel()
+	operator := user{ID: 5151, First: "Operator", Username: "operator"}
+	workspace := t.TempDir()
+	hub, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": workspace, "workspace_mode": "dir"})
+	hub.waitTurn("alpha", firstTurnWait, func(turn) bool { return true })
+	hub.waitState("alpha", "asleep", 30*time.Second)
+	setScript(t, workspace, "!crash\n")
+
+	const text = "@alpha the poisoned question"
+	posted := tg.post(groupChatID, "supergroup", text, operator)
+	if !hub.hasEvent("alpha", "batch_dropped", 2*time.Minute) {
+		t.Fatalf("nothing was dropped; turns: %s", dump(hub.turns("alpha")))
+	}
+	const noticeText = "couldn't take this message"
+	notice := tg.waitSent(t, groupChatID, noticeText)
+	if notice.Token != "alpha" || notice.ReplyTo != posted.ids["alpha"] {
+		t.Fatalf("notice sent by %q replying to %d, want alpha's bot replying to its %d", notice.Token,
+			notice.ReplyTo, posted.ids["alpha"])
+	}
+	if !strings.Contains(notice.Text, "Spool: alpha") {
+		t.Fatalf("the notice does not name the hub and the loop: %q", notice.Text)
+	}
+	// give a second notice the time to go out, if it were going to
+	time.Sleep(2 * time.Second)
+	if told := countSent(tg, groupChatID, noticeText); told != 1 {
+		t.Fatalf("the sender was told of one drop %d times, want once", told)
+	}
+	if !hub.hasEvent("alpha", "owner_notice", 5*time.Second) {
+		t.Fatal("the drop notice went out without an owner_notice on the timeline")
+	}
+	for _, stored := range hub.activity() {
+		if strings.Contains(stored.Text, noticeText) {
+			t.Fatalf("the hub's notice was recorded as a message: %s", dump(stored))
+		}
+	}
+	if stored := hub.activityWith(text); len(stored) != 1 || !slices.Contains(stored[0].DroppedBy, hub.loop("alpha").ID) {
+		t.Fatalf("the dropped message is stored as %s, want it dropped by alpha", dump(stored))
 	}
 }
 

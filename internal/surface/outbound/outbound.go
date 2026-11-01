@@ -170,6 +170,13 @@ func (ledger *Ledger) ProblemNoticeEvent(ctx context.Context, notice *surface.Pr
 		kind, notice.Symptom, unsent == "", unsent))
 }
 
+// DropNoticeEvent puts a drop notice on the loop's timeline, as
+// LoginNoticeEvent does a login notice (#1205).
+func (ledger *Ledger) DropNoticeEvent(ctx context.Context, notice *surface.DropNotice, unsent string) {
+	ledger.noticeEvent(ctx, notice.LoopID, fmt.Sprintf(`{"notice":"message_dropped","message_id":%d,"sent":%t,"error":%q}`,
+		notice.MessageID, unsent == "", unsent))
+}
+
 // noticeEvent puts an owner notice on the loop's timeline. The notice is
 // the hub's words, not the loop's, so no message row records it.
 func (ledger *Ledger) noticeEvent(ctx context.Context, loopID, payload string) {

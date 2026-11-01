@@ -46,7 +46,8 @@ const (
 func (adapter *Adapter) subscribe() (<-chan bus.Item, func()) {
 	return adapter.bus.SubscribeLossless(func(item bus.Item) bool {
 		return item.Kind == bus.KindMessage || item.Kind == bus.KindSendRetry || item.Kind == bus.KindClaudeLogin ||
-			item.Kind == bus.KindLoopProblem || item.Kind == bus.KindReaction || item.Kind == bus.KindPoll
+			item.Kind == bus.KindLoopProblem || item.Kind == bus.KindReaction || item.Kind == bus.KindPoll ||
+			item.Kind == bus.KindMessageDropped
 	})
 }
 
@@ -72,6 +73,8 @@ func (adapter *Adapter) mirror(ctx context.Context, items <-chan bus.Item, cance
 				adapter.noticeLogin(ctx, payload)
 			case *surface.ProblemNotice:
 				adapter.noticeProblem(ctx, payload)
+			case *surface.DropNotice:
+				adapter.noticeDrop(ctx, payload)
 			case *route.ReactionPayload:
 				adapter.mirrorReaction(payload)
 			case *route.PollPayload:

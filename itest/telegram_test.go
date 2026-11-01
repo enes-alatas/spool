@@ -694,6 +694,7 @@ type activityMessage struct {
 	EditKind           string   `json:"edit_kind"`
 	EditedAt           int64    `json:"edited_at"`
 	DeletedAt          int64    `json:"deleted_at"`
+	DroppedBy          []string `json:"dropped_by"`
 }
 
 func (s *server) activity() []activityMessage {

@@ -39,6 +39,14 @@ const (
 	// loop's owner (ADR-0029). It is published once per opening and once per
 	// clearing, never while a problem stays open.
 	KindLoopProblem = "loop_problem"
+	// KindMessageDropped says a loop dropped a message after its turn
+	// crashed every process that ran it (#1189, #1205). Its payload is a
+	// surface.DropNotice, and every surface adapter must tell the person who
+	// sent it in the chat it came from, unless another loop did
+	// (ADR-0029). It is published once per message and loop, and streams
+	// only to whoever reads the message (#922), so the control room rereads
+	// it on the mark.
+	KindMessageDropped = "message_dropped"
 	// KindReaction says a reaction on a message was added or removed
 	// (ADR-0040). Its payload is a route.ReactionPayload. A reaction is not
 	// a message, so it is never published as KindMessage: the control room

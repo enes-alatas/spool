@@ -1641,7 +1641,8 @@ func (br *Bridge) roomOf(ctx context.Context, loopRecord *store.Loop, channel st
 func (br *Bridge) subscribe() (<-chan bus.Item, func()) {
 	return br.bus.SubscribeLossless(func(item bus.Item) bool {
 		return item.Kind == bus.KindMessage || item.Kind == bus.KindSendRetry || item.Kind == bus.KindClaudeLogin ||
-			item.Kind == bus.KindLoopProblem || item.Kind == bus.KindReaction || item.Kind == bus.KindPoll
+			item.Kind == bus.KindLoopProblem || item.Kind == bus.KindReaction || item.Kind == bus.KindPoll ||
+			item.Kind == bus.KindMessageDropped
 	})
 }
 
@@ -1665,6 +1666,8 @@ func (br *Bridge) mirror(ctx context.Context, items <-chan bus.Item, cancel func
 				br.noticeLogin(ctx, payload)
 			case *surface.ProblemNotice:
 				br.noticeProblem(ctx, payload)
+			case *surface.DropNotice:
+				br.noticeDrop(ctx, payload)
 			case *route.ReactionPayload:
 				br.mirrorReaction(ctx, payload)
 			case *route.PollPayload:
@@ -1890,6 +1893,37 @@ func (br *Bridge) noticeProblem(ctx context.Context, notice *surface.ProblemNoti
 		return
 	}
 	br.ledger.ProblemNoticeEvent(ctx, notice, bot.enqueue(sendReq{chatID: loopRecord.OwnerDMChatID, text: notice.Text()}))
+}
+
+// noticeDrop tells the person whose message a loop dropped, as a reply to
+// it in the chat it came from, on the loop's bot (#1205). A message the
+// bot never saw came in on another surface, or through another loop's bot
+// to a room this one is not in: there is no chat here to tell it in.
+func (br *Bridge) noticeDrop(ctx context.Context, notice *surface.DropNotice) {
+	if notice.FromLoop {
+		return
+	}
+	loopRecord, err := br.store.Loops().Get(ctx, notice.LoopID)
+	if err != nil {
+		br.log.Warn("telegram: read loop for drop notice", "loop", notice.LoopID, "err", err)
+		return
+	}
+	if loopRecord.Surface() != store.SurfaceTelegram {
+		return
+	}
+	ref, err := br.store.Messages().Ref(ctx, notice.MessageID, notice.LoopID)
+	if err != nil {
+		if !errors.Is(err, store.ErrNotFound) {
+			br.log.Warn("telegram: read dropped message", "message", notice.MessageID, "err", err)
+		}
+		return
+	}
+	bot := br.poller(notice.LoopID)
+	if bot == nil {
+		br.ledger.DropNoticeEvent(ctx, notice, "the loop's bot is not running")
+		return
+	}
+	br.ledger.DropNoticeEvent(ctx, notice, bot.enqueue(sendReq{chatID: ref.TGChatID, text: notice.Text(), replyTo: ref.TGMessageID}))
 }
 
 func (br *Bridge) poller(loopID string) *poller {
