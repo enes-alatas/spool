@@ -75,6 +75,12 @@ func TestProblemNoticeText(t *testing.T) {
 			"Spool: gardener has started a turn again."},
 		{ProblemNotice{LoopName: "gardener", Symptom: "wake_missed", ByOperator: true},
 			"Spool: the alert about gardener's missed wake was cleared in the control room."},
+		{ProblemNotice{LoopName: "gardener", Symptom: "send_failed", Opened: true, Since: since},
+			"Spool: a message gardener sent at 09:12 UTC has not been delivered, and nothing has resent or dismissed it."},
+		{ProblemNotice{LoopName: "gardener", Symptom: "send_failed"},
+			"Spool: gardener has no undelivered messages left: each was delivered, resent or dismissed."},
+		{ProblemNotice{LoopName: "gardener", Symptom: "send_failed", ByOperator: true},
+			"Spool: the alert about gardener's undelivered messages was cleared in the control room."},
 	}
 	for _, testCase := range cases {
 		if got := testCase.notice.Text(); !strings.HasPrefix(got, testCase.want) {

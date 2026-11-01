@@ -17,10 +17,16 @@ type Manager struct {
 	mu       sync.RWMutex
 	byID     map[string]*Actor
 	nameToID map[string]string
+
+	outages *sendOutages
 }
 
 func NewManager(deps Deps) *Manager {
-	return &Manager{deps: deps, byID: map[string]*Actor{}, nameToID: map[string]string{}}
+	outages := newSendOutages()
+	if deps.SendOutage == nil {
+		deps.SendOutage = outages.holds
+	}
+	return &Manager{deps: deps, byID: map[string]*Actor{}, nameToID: map[string]string{}, outages: outages}
 }
 
 // Boot recovers state after an orchestrator restart: reaps claude processes

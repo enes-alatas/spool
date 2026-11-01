@@ -44,14 +44,16 @@ const ErrQueueFull = "send queue full"
 
 // Result marks the message a send carried: a failure with its error, a
 // success by resolving whatever failure the row already carried. messageID 0
-// is a send no row records, a notice, and marks nothing.
+// is a send no row records, a notice, and marks nothing. loopID is the loop
+// whose identity on the surface carried the send, which the hub's health
+// check is told of with the outcome (#1144).
 //
 // A success does not erase send_failed_at. The row did fail, the loop's
 // timeline says so (#147), and a store that quietly disagreed with its own
 // event would be the harder bug. Resolving instead takes it out of the
 // operator's undelivered count and off the Undelivered pane, which is what
 // "the retry worked" actually means to them (#269).
-func (ledger *Ledger) Result(ctx context.Context, messageID int64, err error) {
+func (ledger *Ledger) Result(ctx context.Context, messageID int64, loopID string, err error) {
 	if messageID == 0 {
 		return
 	}
@@ -77,11 +79,22 @@ func (ledger *Ledger) Result(ctx context.Context, messageID int64, err error) {
 		if _, resErr := msgs.ResolveResends(ctx, messageID, now); resErr != nil {
 			ledger.Log.Warn(ledger.Surface+": resolve resent failures", "err", resErr)
 		}
+		ledger.outcome(loopID, false)
 		return
 	}
 	if setErr := msgs.SetSendResult(ctx, messageID, time.Now().UnixMilli(), err.Error()); setErr != nil {
 		ledger.Log.Warn(ledger.Surface+": record send result", "err", setErr)
 	}
+	ledger.outcome(loopID, true)
+}
+
+// outcome tells the hub's health check how the send ended, once the row
+// says so (#1144).
+func (ledger *Ledger) outcome(loopID string, failed bool) {
+	if ledger.Bus == nil {
+		return
+	}
+	ledger.Bus.Publish(bus.Item{Kind: bus.KindSendOutcome, Payload: &surface.SendOutcome{Surface: ledger.Surface, LoopID: loopID, Failed: failed}})
 }
 
 // FailedEvent puts a lost send on its loop's timeline, where the operator
@@ -110,7 +123,7 @@ func (ledger *Ledger) FailedEvent(ctx context.Context, loopID, chat string, atte
 // spoke, and a message must not vanish silently.
 func (ledger *Ledger) Unsendable(ctx context.Context, mp *route.MessagePayload, reason string) {
 	ledger.Log.Error(ledger.Surface+": send not attempted", "loop", mp.FromLoopID, "message", mp.ID, "err", reason)
-	ledger.Result(ctx, mp.ID, errors.New(reason))
+	ledger.Result(ctx, mp.ID, mp.FromLoopID, errors.New(reason))
 	ledger.FailedEvent(ctx, mp.FromLoopID, ConversationChat(mp.Conversation), 0, reason, mp.Text)
 }
 

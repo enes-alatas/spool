@@ -353,6 +353,12 @@ const SettingHealthTurnMinutes = "health_turn_minutes"
 // loop.DefaultHealthWakeGraceMinutes.
 const SettingHealthWakeGraceMinutes = "health_wake_grace_minutes"
 
+// SettingHealthSendGraceMinutes is how many minutes a loop's send may stay
+// undelivered and unresolved before it opens a send_failed problem
+// (ADR-0053, #1144), an integer; 0 turns that symptom off. Unset means
+// loop.DefaultHealthSendGraceMinutes.
+const SettingHealthSendGraceMinutes = "health_send_grace_minutes"
+
 // EgressHosts is the hosts every docker loop may reach on top of the
 // built-in allowlist (ADR-0028), each canonical "host" or "host:port", in
 // the order they were added. ChangedAt is when the list last changed, in
@@ -2264,8 +2270,8 @@ type PrivateChatStore interface {
 // #764). A loop has at most one open per symptom.
 type Problem struct {
 	// Symptom is SymptomWorkstationDown, SymptomTurnErrors, SymptomTurnStuck,
-	// SymptomWakeMissed, SymptomCloudAddress, SymptomCloudConnections or
-	// SymptomCloudSetup.
+	// SymptomWakeMissed, SymptomSendFailed, SymptomCloudAddress,
+	// SymptomCloudConnections or SymptomCloudSetup.
 	Symptom string `json:"symptom"`
 	// Since is when the problem opened, in Unix ms.
 	Since int64 `json:"since"`
@@ -2284,6 +2290,9 @@ const (
 	// SymptomWakeMissed: the loop was due to wake, from a tick or a message,
 	// and no turn has started, though nothing holds it (#1143).
 	SymptomWakeMissed = "wake_missed"
+	// SymptomSendFailed: a message the loop sent has stayed undelivered and
+	// unresolved past the grace (#1144).
+	SymptomSendFailed = "send_failed"
 	// SymptomCloudAddress: a cloud loop is held because the hub's public
 	// address fails its check (ADR-0056).
 	SymptomCloudAddress = "cloud_address"

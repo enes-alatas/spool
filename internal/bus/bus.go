@@ -68,6 +68,11 @@ const (
 	// names the user, and it never streams: each open stream rereads its
 	// caller's access from it (#722).
 	KindUser = "user"
+	// KindSendOutcome says a surface carried a send or gave up on it, or the
+	// operator dismissed a failure (#1144). Its payload is a
+	// surface.SendOutcome, published with no LoopID, and it never streams:
+	// the hub's health check is its only reader.
+	KindSendOutcome = "send_outcome"
 )
 
 type Item struct {

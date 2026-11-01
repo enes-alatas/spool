@@ -48,8 +48,8 @@ type ProblemNotice struct {
 	LoopID   string `json:"loop_id"`
 	LoopName string `json:"loop_name"`
 	// Symptom is the store's: "workstation_down", "turn_errors",
-	// "turn_stuck", "wake_missed", "cloud_address", "cloud_connections" or
-	// "cloud_setup".
+	// "turn_stuck", "wake_missed", "send_failed", "cloud_address",
+	// "cloud_connections" or "cloud_setup".
 	Symptom string `json:"symptom"`
 	// Opened is true when the problem opened, false when it cleared.
 	Opened bool `json:"opened"`
@@ -90,6 +90,10 @@ func (notice ProblemNotice) Text() string {
 			return fmt.Sprintf("Spool: %s's turn has been running since %s, %d minutes so far, and is still going. "+
 				"The hub doesn't stop it: Kill on the loop's page in the control room does, if it is stuck. "+
 				"You will hear once more when this clears.", notice.LoopName, since, notice.Minutes)
+		case "send_failed":
+			return fmt.Sprintf("Spool: a message %s sent at %s has not been delivered, and nothing has resent or dismissed it. "+
+				"The loop is woken to hear of it. Its undelivered messages are on its page in the control room, to retry or dismiss. "+
+				"You will hear once more when this clears.", notice.LoopName, since)
 		case "wake_missed":
 			return fmt.Sprintf("Spool: %s has been due to wake since %s, and no turn has started though nothing holds it. "+
 				"The loop's page in the control room shows how its last try to run went. "+
@@ -118,6 +122,8 @@ func (notice ProblemNotice) Text() string {
 			problem = notice.LoopName + "'s long turn"
 		case "wake_missed":
 			problem = notice.LoopName + "'s missed wake"
+		case "send_failed":
+			problem = notice.LoopName + "'s undelivered messages"
 		}
 		return fmt.Sprintf("Spool: the alert about %s was cleared in the control room. "+
 			"You will hear again if it comes back.", problem)
@@ -135,6 +141,8 @@ func (notice ProblemNotice) Text() string {
 		return fmt.Sprintf("Spool: %s's long turn has ended.", notice.LoopName)
 	case "wake_missed":
 		return fmt.Sprintf("Spool: %s has started a turn again.", notice.LoopName)
+	case "send_failed":
+		return fmt.Sprintf("Spool: %s has no undelivered messages left: each was delivered, resent or dismissed.", notice.LoopName)
 	}
 	return fmt.Sprintf("Spool: %s finished a turn without an error again.", notice.LoopName)
 }
