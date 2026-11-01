@@ -153,22 +153,12 @@ func (server *Server) handleGetCloudLoopSetup(w http.ResponseWriter, r *http.Req
 	if loopRecord == nil {
 		return
 	}
-	server.writeCloudLoopSetup(w, r, http.StatusOK, loopRecord)
-}
-
-func (server *Server) writeCloudLoopSetup(w http.ResponseWriter, r *http.Request, status int, loopRecord *store.Loop) {
-	view, err := server.cloudLoopSetup(r.Context(), loopRecord)
-	if err != nil {
-		server.jsonErr(w, http.StatusInternalServerError, "%v", err)
-		return
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, status, view)
+	server.answerCloudLoopSetup(w, r, http.StatusOK, loopRecord.ID)
 }
 
 // cloudLoopSetup is the loop's setup view as the store and the hub's
-// settings hold it now.
-func (server *Server) cloudLoopSetup(ctx context.Context, loopRecord *store.Loop) (cloudLoopSetupView, error) {
+// settings hold it now, with its check shown under way when running.
+func (server *Server) cloudLoopSetup(ctx context.Context, loopRecord *store.Loop, running bool) (cloudLoopSetupView, error) {
 	view := cloudLoopSetupView{Steps: []string{}, Token: cloudLoopTokenView{Set: loopRecord.HasHubToken}}
 	address, err := server.storedCloudAddress(ctx)
 	if err != nil {
@@ -213,7 +203,7 @@ func (server *Server) cloudLoopSetup(ctx context.Context, loopRecord *store.Loop
 	}
 	current := cloudCheckCurrent(loopRecord, address)
 	switch check := loopRecord.CloudCheck; {
-	case server.cloudLoopChecks.underWay(loopRecord.ID):
+	case running:
 		view.Check = &cloudLoopCheckView{State: cloudCheckRunning}
 	case check != nil:
 		view.Check = &cloudLoopCheckView{State: check.State, Stage: check.Stage, Detail: check.Detail, CheckedAt: check.CheckedAt, Current: current}
@@ -386,11 +376,22 @@ func (server *Server) cloudSetupStored(ctx context.Context, loopID string) {
 }
 
 // answerCloudLoopSetup answers with the loop's setup view, read again.
+// Whether a check is under way is asked before the row is read: a check
+// stores its result before it ends, so one that ends between the two has
+// its result in the row. Asked after, a check ending between the two left
+// the row from before it, shown as the latest (#1243).
 func (server *Server) answerCloudLoopSetup(w http.ResponseWriter, r *http.Request, status int, loopID string) {
+	running := server.cloudLoopChecks.underWay(loopID)
 	stored, err := server.Store.Loops().Get(r.Context(), loopID)
 	if err != nil {
 		server.jsonErr(w, http.StatusInternalServerError, "%v", err)
 		return
 	}
-	server.writeCloudLoopSetup(w, r, status, stored)
+	view, err := server.cloudLoopSetup(r.Context(), stored, running)
+	if err != nil {
+		server.jsonErr(w, http.StatusInternalServerError, "%v", err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, status, view)
 }
