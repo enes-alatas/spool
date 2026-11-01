@@ -1641,3 +1641,6 @@ HN: 0 new. #1239 in Quinn's rounds (07:33). #1234 holds on "pin 2.1.310 vs Teste
 
 ## 2026-11-01 20:35 UTC
 - #1245 merged 19:39 (#1142 done). Pinged Iris for #1145 in the group. Terra self-claimed #1143. HN: Crosswalk terminal manager, 1 pt, not a fit. Still no reply from Enes on prompts.chat (ref:7954) or runtime update; re-nudge tomorrow if silent.
+
+## 2026-11-01 23:36 UTC
+- New #1247 (Terra, bug low, from PR 1246's test): actor blocks in proc.Wait forever after claude closes stdout and lives on. Retitled to operator words, L6 milestone, commented. Terra's PR 1246 (for #1143) already merged? no — not in open list and 1143 ... check next wake. HN: nothing. No Enes reply yet.
