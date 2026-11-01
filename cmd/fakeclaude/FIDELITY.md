@@ -14,7 +14,7 @@ behaviour was observed and the rest was not; the line says which part.
 is our guess. Measurements from probes live in ADR-0001 "Recorded CLI
 behaviour"; this file points at them rather than restating them. A build here
 is the one the observation ran on, which is not always
-`internal/claude.TestedVersion` (2.1.281).
+`internal/claude.TestedVersion` (2.1.310).
 
 The rules, in `docs/QUALITY.md` "Review (human)":
 
@@ -27,12 +27,12 @@ The rules, in `docs/QUALITY.md` "Review (human)":
 
 | Behaviour | Status | Evidence |
 |---|---|---|
-| Silence until the first stdin user message, then `system`/`init` carrying `session_id`, `cwd`, `model` | partly | init carrying `model`: 2.1.282 and 2.1.281, 2026-09-24 (ADR-0033). Silence before the first stdin message: part of the stream-json contract the MVP's M1–M6 runs were built on (2026-08-15/16, when 2.1.233 was `TestedVersion`), never probed on its own. |
-| A family alias is reported resolved in init (`opus` → `claude-opus-5-5`, …) | verified | 2.1.282 host and 2.1.281 workstation image, 2026-09-24/25, by the alias-resolution run (ADR-0033, #332). |
-| Per turn: `assistant` event(s), then one `result` (`subtype`, `is_error`, `total_cost_usd`, `duration_ms`, `num_turns`, `result`, `usage`, `session_id`) | partly | The fleet's real turns on 2.1.281 parse through the same reader every day; no single probe records the full field list. |
+| Silence until the first stdin user message, then `system`/`init` carrying `session_id`, `cwd`, `model` | partly | init carrying `model`: 2.1.282 and 2.1.281, 2026-09-24 (ADR-0033), and 2.1.310, 2026-11-01 (#1235): a stream-json run with no login, in a fresh config dir, sent one stdin message and got an init carrying `session_id`, `cwd`, `model` and `claude_code_version`. Silence before the first stdin message: part of the stream-json contract the MVP's M1–M6 runs were built on (2026-08-15/16, when 2.1.233 was `TestedVersion`), never probed on its own. |
+| A family alias is reported resolved in init (`opus` → `claude-opus-5-5`, …) | verified | 2.1.282 host and 2.1.281 workstation image, 2026-09-24/25, by the alias-resolution run (ADR-0033, #332). 2.1.310, 2026-11-01: `haiku` came back as `claude-haiku-5-5` in the #1235 run's init. |
+| Per turn: `assistant` event(s), then one `result` (`subtype`, `is_error`, `total_cost_usd`, `duration_ms`, `num_turns`, `result`, `usage`, `session_id`) | partly | The fleet's real turns parse through the same reader every day, on 2.1.310 in the contained loops since the v0.6.0 images. The #1235 run (2.1.310, 2026-11-01, no login) recorded one `assistant` event and then a `result` carrying every field listed, with `subtype` `success`, `is_error` true, `num_turns` 1 and `result` `Not logged in · Please run /login`. Not recorded by a probe: a billed turn's field list. |
 | `--include-partial-messages` emits `stream_event` → `content_block_delta` → `text_delta` | partly | Token streaming worked in the MVP's M1–M6 runs (2026-08-15/16, when 2.1.233 was `TestedVersion`); the exact event shape is not recorded. |
 | stdin EOF after a result: clean exit 0 | verified | `internal/claude/stream.go`'s own "(verified: …)" on CloseStdin, from the MVP (2026-08-15/16), naming no build: 2.1.233 was `TestedVersion` then. Exercised since by `make e2e-m1`'s idle-reap. |
-| `--version` prints a version line | deliberate difference | The real CLI prints `X (Claude Code)`; the fake prints `2.1.281 (fakeclaude)`, so a log line tells them apart. |
+| `--version` prints a version line | deliberate difference | The real CLI prints `X (Claude Code)`; the fake prints `2.1.310 (fakeclaude)`, so a log line tells them apart. |
 | `--effort`, `--add-dir`, `--permission-mode`, `--disallowedTools` are consumed and ignored | assumed | Not measured on the real CLI (ADR-0001). Ignoring them is permissive in exactly the direction that would hide a pin. `--disallowedTools Agent,Task` (#855): the tool name was read from the 2.1.303 CLI's source, with Task as its alias, and the deny was never watched taking effect. |
 | Any other flag it does not parse is ignored, value and all | assumed | Production relies on this for `-p`, `--verbose`, `--strict-mcp-config` (`internal/claude/args.go`) and whatever a model's extra args add. Nothing records how the real CLI answers a flag it does not know, or what `--strict-mcp-config` does. So a misspelled or retired flag in `args.go` stays green in tier 2 whatever the real CLI would do. |
 | A `rate_limit_event` whose `rate_limit_info.unifiedWindows` carries `five_hour` and `seven_day`, each a `utilization` fraction and a `resetsAt` in unix seconds, emitted before the turn's `assistant` events (`!usage`) | assumed | The shape is read from the 2.1.292 binary's own stream schema, 2026-10-08 (#647): emitted "when rate limit info changes", `unifiedWindows` marked internal and documented as tracking both windows on every observation. No run was watched emitting one, so neither its presence on stdout nor its place in the turn is recorded. |

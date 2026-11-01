@@ -9,8 +9,10 @@ import (
 )
 
 // TestedVersion is the CLI version Spool's stream-json handling was verified
-// against. Other versions are allowed but logged.
-const TestedVersion = "2.1.281"
+// against. Other versions are allowed but logged. Release images pin the
+// same one, in docker/workstation/claude-code.version, and a test holds the
+// two together (#1235).
+const TestedVersion = "2.1.310"
 
 // Preflight checks the claude binary exists and returns its version string.
 // It is an auxiliary run (ADR-0033): the environment is built from nothing,
