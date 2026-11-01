@@ -135,6 +135,10 @@ type Deps struct {
 	// ProblemDownGrace is how long a workstation stays down before the
 	// health check opens a problem for it (ADR-0053); 0 means the default.
 	ProblemDownGrace time.Duration
+	// SendOutage reports whether the surface the loop's latest send failed
+	// on looks down, which holds its send_failed wake and notice (#1144).
+	// NewManager sets it; nil holds nothing.
+	SendOutage func(loopID string) bool
 
 	// RenderPrompt builds a loop's prompt text for one wake (peers and rules
 	// are resolved at call time so every wake sees the current fleet).
@@ -279,6 +283,13 @@ type Actor struct {
 	// stuckTurn is the turn stuckTimer was started for, "" for none: the
 	// timer opens turn_stuck only if that turn is still running.
 	stuckTurn string
+	// The send_failed watch (#1144): sendWoken is whether the open problem
+	// has had its one wake, sendHeld whether an outage holds its wake and
+	// notice, and sendAckAt when the operator last acknowledged it, which
+	// starts the grace over for the failures still unresolved.
+	sendWoken bool
+	sendHeld  bool
+	sendAckAt int64
 
 	// loginRejected holds the unauthenticated alert through the spawns and
 	// health polls that would otherwise clear it: the machine is up, the
@@ -353,6 +364,7 @@ type Actor struct {
 	healthTimer *time.Timer
 	downTimer   *time.Timer
 	stuckTimer  *time.Timer
+	sendTimer   *time.Timer
 	// dailyCapTimer fires when the day turns under a loop its daily cap holds.
 	dailyCapTimer *time.Timer
 }
@@ -398,6 +410,8 @@ func NewActor(deps Deps, loopRecord *store.Loop) *Actor {
 	actor.downTimer.Stop()
 	actor.stuckTimer = time.NewTimer(time.Hour)
 	actor.stuckTimer.Stop()
+	actor.sendTimer = time.NewTimer(time.Hour)
+	actor.sendTimer.Stop()
 	actor.dailyCapTimer = time.NewTimer(time.Hour)
 	actor.dailyCapTimer.Stop()
 	actor.armDailyCap()
@@ -541,6 +555,9 @@ func (actor *Actor) run() {
 		actor.openProblem(surface.ProblemNotice{Symptom: store.SymptomCloudSetup, Since: now()})
 	}
 	actor.publishState()
+	// a send_failed problem a previous hub opened had its wake then
+	actor.sendWoken = actor.hasProblem(store.SymptomSendFailed)
+	actor.watchSends()
 	for {
 		select {
 		case command := <-actor.cmds:
@@ -573,6 +590,8 @@ func (actor *Actor) run() {
 			actor.downLasted()
 		case <-actor.stuckTimer.C:
 			actor.turnLasted()
+		case <-actor.sendTimer.C:
+			actor.watchSends()
 		case <-actor.dailyCapTimer.C:
 			// The timer runs on the monotonic clock and the day turns on the
 			// wall clock, so a clock set back fires it early: re-arm it while
@@ -621,6 +640,8 @@ func (actor *Actor) handleCmd(command cmd) {
 		actor.drainStoredInbox()
 		actor.publishState()
 		actor.pump()
+	case "sends":
+		actor.watchSends()
 	case "cap":
 		actor.capChanged()
 	case "token":
@@ -1176,14 +1197,15 @@ func (actor *Actor) collectPolls(ctx context.Context) {
 }
 
 // hasWork reports whether the inbox holds anything to start a turn on. It
-// collects the reactions and votes the turn would carry first, and drops
-// the wakes that came for one when none is left to tell: a reaction
+// collects the reactions, votes and failed sends the turn would carry
+// first, and drops the wakes that came for one when none is left to tell: a reaction
 // removed before the loop heard of it is never told (ADR-0040), and a
 // wake with nothing to say is no turn.
 func (actor *Actor) hasWork() bool {
 	actor.collectReactions(context.Background())
 	actor.collectPolls(context.Background())
-	if actor.reactionNote == nil && actor.pollNote == nil {
+	actor.collectSendFailures(context.Background())
+	if actor.reactionNote == nil && actor.pollNote == nil && actor.sendFailure == nil {
 		actor.inbox = slices.DeleteFunc(actor.inbox, Envelope.wakeOnly)
 	}
 	return len(actor.inbox) > 0
@@ -1652,6 +1674,7 @@ func (actor *Actor) finishTurn(ev claude.Event) {
 		actor.armDailyCap()
 		actor.deps.Bus.Publish(bus.Item{Kind: bus.KindTurnResult, LoopID: actor.loop.ID, Payload: turn})
 		actor.noteTurnEnd(turn.IsError && !loginRejected, turn.EndedAt)
+		actor.watchSends()
 		switch {
 		case loginRejected:
 			// told by the workstation's state instead
@@ -1930,6 +1953,7 @@ func (actor *Actor) handleProcExit() {
 		actor.turn = nil
 		actor.unwatchTurn()
 		actor.noteTurnEnd(true, turn.EndedAt)
+		actor.watchSends()
 	}
 
 	switch {
@@ -2191,19 +2215,28 @@ func (actor *Actor) holdWithoutHub(status string) {
 
 // latestTickOnly leaves one tick in envs: the latest, whose header tells
 // the loop the time it wakes at, in the place of the first, so the queue's
-// order is otherwise untouched. Messages are kept as they are.
+// order is otherwise untouched. A tick with words wins over a later one
+// without (SendFailedWake): the wordless one only wakes the loop, and the
+// worded one's turn tells the same notes. Messages are kept as they are.
 func latestTickOnly(envs []Envelope) []Envelope {
-	first, last := -1, -1
+	first, last, lastWorded, ticks := -1, -1, -1, 0
 	for i, env := range envs {
 		if env.Trigger == store.TriggerTick {
 			if first < 0 {
 				first = i
 			}
 			last = i
+			if !env.wakeOnly() {
+				lastWorded = i
+			}
+			ticks++
 		}
 	}
-	if first == last {
+	if ticks < 2 {
 		return envs
+	}
+	if lastWorded >= 0 {
+		last = lastWorded
 	}
 	kept := make([]Envelope, 0, len(envs))
 	for i, env := range envs {

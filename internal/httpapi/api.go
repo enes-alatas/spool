@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -1465,9 +1466,11 @@ func (server *Server) handleAcknowledge(w http.ResponseWriter, r *http.Request) 
 	}
 	symptom := r.PathValue("symptom")
 	if symptom != store.SymptomWorkstationDown && symptom != store.SymptomTurnErrors && symptom != store.SymptomTurnStuck &&
-		symptom != store.SymptomWakeMissed && symptom != store.SymptomCloudAddress && symptom != store.SymptomCloudConnections {
-		server.jsonErr(w, http.StatusBadRequest, "unknown symptom %q: want %s, %s, %s, %s, %s or %s", symptom, store.SymptomWorkstationDown,
-			store.SymptomTurnErrors, store.SymptomTurnStuck, store.SymptomWakeMissed, store.SymptomCloudAddress, store.SymptomCloudConnections)
+		symptom != store.SymptomWakeMissed && symptom != store.SymptomSendFailed && symptom != store.SymptomCloudAddress &&
+		symptom != store.SymptomCloudConnections {
+		server.jsonErr(w, http.StatusBadRequest, "unknown symptom %q: want %s, %s, %s, %s, %s, %s or %s", symptom, store.SymptomWorkstationDown,
+			store.SymptomTurnErrors, store.SymptomTurnStuck, store.SymptomWakeMissed, store.SymptomSendFailed, store.SymptomCloudAddress,
+			store.SymptomCloudConnections)
 		return
 	}
 	actor, ok := server.Manager.Get(loopRecord.ID)
@@ -1737,6 +1740,10 @@ type settingsView struct {
 	// without a turn before its owner is told, 0 for never, the default
 	// included (#1143).
 	HealthWakeGraceMinutes int `json:"health_wake_grace_minutes"`
+	// HealthSendGraceMinutes is how many minutes a loop's send stays
+	// undelivered and unresolved before its owner is told, 0 for never, the
+	// default included (#1144).
+	HealthSendGraceMinutes int `json:"health_send_grace_minutes"`
 	// BareAllowed is how the control room knows whether to offer an
 	// uncontained loop at all (#255): the choice is the operator's, taken
 	// at the terminal when the hub was started, and a form that offered it
@@ -1772,6 +1779,7 @@ func (server *Server) settingsView(ctx context.Context) (settingsView, error) {
 		HealthErrorTurns:       loop.HealthErrorTurns(ctx, server.Store.Settings(), server.Log),
 		HealthTurnMinutes:      loop.HealthTurnMinutes(ctx, server.Store.Settings(), server.Log),
 		HealthWakeGraceMinutes: loop.HealthWakeGraceMinutes(ctx, server.Store.Settings(), server.Log),
+		HealthSendGraceMinutes: loop.HealthSendGraceMinutes(ctx, server.Store.Settings(), server.Log),
 		BareAllowed:            server.BareAllowed,
 		DefaultRuntime:         server.defaultRuntime(),
 		ClaudeVersion:          server.ClaudeVer,
@@ -1805,6 +1813,8 @@ type putSettingsReq struct {
 	HealthTurnMinutes *int `json:"health_turn_minutes"`
 	// nil leaves the wake_missed grace unchanged (minutes 0-1440, 0 for off).
 	HealthWakeGraceMinutes *int `json:"health_wake_grace_minutes"`
+	// nil leaves the send_failed grace unchanged (minutes 0-1440, 0 for off).
+	HealthSendGraceMinutes *int `json:"health_send_grace_minutes"`
 }
 
 func (server *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
@@ -1831,6 +1841,10 @@ func (server *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) 
 	}
 	if req.HealthWakeGraceMinutes != nil && !loop.ValidHealthWakeGraceMinutes(*req.HealthWakeGraceMinutes) {
 		server.jsonErr(w, 400, "health_wake_grace_minutes must be minutes 0-1440, 0 for off (got %d)", *req.HealthWakeGraceMinutes)
+		return
+	}
+	if req.HealthSendGraceMinutes != nil && !loop.ValidHealthSendGraceMinutes(*req.HealthSendGraceMinutes) {
+		server.jsonErr(w, 400, "health_send_grace_minutes must be minutes 0-1440, 0 for off (got %d)", *req.HealthSendGraceMinutes)
 		return
 	}
 	if req.ClaudeOAuthToken != nil {
@@ -1919,6 +1933,12 @@ func (server *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) 
 	}
 	if req.HealthWakeGraceMinutes != nil {
 		if err := server.Store.Settings().Set(r.Context(), store.SettingHealthWakeGraceMinutes, strconv.Itoa(*req.HealthWakeGraceMinutes)); err != nil {
+			server.jsonErr(w, 500, "%v", err)
+			return
+		}
+	}
+	if req.HealthSendGraceMinutes != nil {
+		if err := server.Store.Settings().Set(r.Context(), store.SettingHealthSendGraceMinutes, strconv.Itoa(*req.HealthSendGraceMinutes)); err != nil {
 			server.jsonErr(w, 500, "%v", err)
 			return
 		}
@@ -2212,6 +2232,9 @@ func (server *Server) handleDismissSend(w http.ResponseWriter, r *http.Request) 
 	if !resolved {
 		server.jsonErr(w, 404, "no unresolved send failure for message %d", id)
 		return
+	}
+	if message, err := server.Store.Messages().Get(r.Context(), id); err == nil && message.FromLoopID != "" {
+		server.Bus.Publish(bus.Item{Kind: bus.KindSendOutcome, Payload: &surface.SendOutcome{LoopID: message.FromLoopID}})
 	}
 	writeJSON(w, 200, map[string]bool{"dismissed": true})
 }
@@ -2601,6 +2624,25 @@ func (server *Server) handleWorkspaceInspect(w http.ResponseWriter, r *http.Requ
 	})
 }
 
+// onGlobalStream reports whether the hub-wide stream carries item. A
+// send's outcome never streams, on this stream or a loop's: it is the
+// hub's own bookkeeping for the send_failed check (#1144).
+func onGlobalStream(item bus.Item) bool {
+	return item.Kind != bus.KindAgentEvent && item.Kind != bus.KindUser && item.Kind != bus.KindSendOutcome
+}
+
+// onLoopStream reports whether the stream of loop id carries item.
+func onLoopStream(id string, item bus.Item) bool {
+	switch item.Kind {
+	case bus.KindSendOutcome:
+		return false
+	case bus.KindMessage:
+		mp, ok := item.Payload.(*route.MessagePayload)
+		return ok && (mp.FromLoopID == id || slices.Contains(mp.DeliveredTo, id))
+	}
+	return item.LoopID == id
+}
+
 func (server *Server) handleGlobalStream(w http.ResponseWriter, r *http.Request) {
 	access, err := server.openStreamAccess(r.Context(), callerOf(r))
 	if err != nil {
@@ -2609,7 +2651,7 @@ func (server *Server) handleGlobalStream(w http.ResponseWriter, r *http.Request)
 	}
 	serveSSE(w, r, server.Bus, func(item bus.Item) bool {
 		access.notice(item)
-		return item.Kind != bus.KindAgentEvent && item.Kind != bus.KindUser
+		return onGlobalStream(item)
 	}, func(item bus.Item) (bool, error) { return access.admits(r.Context(), item) })
 }
 
@@ -2626,20 +2668,7 @@ func (server *Server) handleLoopStream(w http.ResponseWriter, r *http.Request) {
 	id := loopRecord.ID
 	serveSSE(w, r, server.Bus, func(item bus.Item) bool {
 		access.notice(item)
-		if item.Kind == bus.KindMessage {
-			if mp, ok := item.Payload.(*route.MessagePayload); ok {
-				if mp.FromLoopID == id {
-					return true
-				}
-				for _, deliveredTo := range mp.DeliveredTo {
-					if deliveredTo == id {
-						return true
-					}
-				}
-			}
-			return false
-		}
-		return item.LoopID == id
+		return onLoopStream(id, item)
 	}, func(item bus.Item) (bool, error) { return access.admits(r.Context(), item) })
 }
 

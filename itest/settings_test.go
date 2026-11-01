@@ -206,3 +206,34 @@ func TestSettingsHealthWakeGraceMinutes(t *testing.T) {
 		t.Fatalf("rejected writes changed the stored grace to %d", settings.Minutes)
 	}
 }
+
+// The send_failed grace reads 2 minutes until set, takes 0 to 1440 with 0
+// for off, and refuses anything else without changing what is stored
+// (#1144).
+func TestSettingsHealthSendGraceMinutes(t *testing.T) {
+	t.Parallel()
+	hub := startServer(t, t.TempDir())
+
+	var settings struct {
+		Minutes int `json:"health_send_grace_minutes"`
+	}
+	hub.mustJSON("GET", "/api/settings", nil, &settings)
+	if settings.Minutes != 2 {
+		t.Fatalf("default = %d, want 2", settings.Minutes)
+	}
+	for _, minutes := range []int{30, 1440, 0} {
+		hub.mustJSON("PUT", "/api/settings", map[string]any{"health_send_grace_minutes": minutes}, &settings)
+		if settings.Minutes != minutes {
+			t.Fatalf("after PUT %d = %d", minutes, settings.Minutes)
+		}
+	}
+	for _, bad := range []int{-1, 1441} {
+		if resp, body := hub.do("PUT", "/api/settings", map[string]any{"health_send_grace_minutes": bad}); resp.StatusCode != 400 {
+			t.Fatalf("PUT %d: status %d, want 400 (%s)", bad, resp.StatusCode, body)
+		}
+	}
+	hub.mustJSON("GET", "/api/settings", nil, &settings)
+	if settings.Minutes != 0 {
+		t.Fatalf("rejected writes changed the stored grace to %d", settings.Minutes)
+	}
+}

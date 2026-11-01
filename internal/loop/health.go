@@ -71,6 +71,22 @@ func HealthWakeGraceMinutes(ctx context.Context, settings store.SettingsStore, l
 	return healthSetting(ctx, settings, log, store.SettingHealthWakeGraceMinutes, DefaultHealthWakeGraceMinutes, ValidHealthWakeGraceMinutes)
 }
 
+// DefaultHealthSendGraceMinutes is how many minutes a loop's send may stay
+// undelivered and unresolved before it opens a send_failed problem while
+// the setting is unset (#1144, settled on #754): a send the surface retries
+// and lands says nothing.
+const DefaultHealthSendGraceMinutes = 2
+
+// ValidHealthSendGraceMinutes reports whether minutes is a usable grace: 1
+// to a day, or 0 for off.
+func ValidHealthSendGraceMinutes(minutes int) bool { return minutes >= 0 && minutes <= 24*60 }
+
+// HealthSendGraceMinutes reads the send_failed grace, the default while
+// unset or unusable.
+func HealthSendGraceMinutes(ctx context.Context, settings store.SettingsStore, log *slog.Logger) int {
+	return healthSetting(ctx, settings, log, store.SettingHealthSendGraceMinutes, DefaultHealthSendGraceMinutes, ValidHealthSendGraceMinutes)
+}
+
 // healthSetting reads the health check's setting key as a whole number,
 // fallback while it is unset or isn't one valid takes.
 func healthSetting(ctx context.Context, settings store.SettingsStore, log *slog.Logger, key string, fallback int, valid func(int) bool) int {
@@ -122,6 +138,14 @@ func (actor *Actor) Acknowledge(symptom string) bool {
 }
 
 func (actor *Actor) acknowledge(symptom string) bool {
+	if symptom == store.SymptomSendFailed {
+		// the failures still unresolved are owed a new grace from now, and
+		// a problem whose notice an outage held clears without a word
+		cleared := actor.clearProblemTelling(symptom, store.ClearedByOperator, !actor.sendHeld)
+		actor.sendWoken, actor.sendHeld, actor.sendAckAt = false, false, now()
+		actor.watchSends()
+		return cleared
+	}
 	cleared := actor.clearProblem(symptom, store.ClearedByOperator)
 	switch symptom {
 	case store.SymptomTurnErrors:
@@ -401,6 +425,57 @@ func (actor *Actor) unwatchTurn() {
 	actor.clearProblem(store.SymptomTurnStuck, store.ClearedByRecovery)
 }
 
+// watchSends follows the loop's undelivered sends (#1144): failures that no
+// retry, resend or dismissal has resolved. The earliest of them, once
+// unresolved past the grace, opens send_failed dated from it, and the loop
+// gets one wake for the problem, whose turn carries the failures as #154's
+// note does. While the surface it last failed on looks down, the problem
+// opens all the same but its wake and its owner's notice wait for the
+// surface to carry a send again. No failure left unresolved clears it. Run
+// at the actor's start, at every turn's end, when a send's outcome or the
+// surface's changes, and when sendTimer fires.
+func (actor *Actor) watchSends() {
+	ctx := context.Background()
+	undelivered, err := actor.deps.Store.Messages().Undelivered(ctx, actor.loop.ID)
+	if err != nil {
+		actor.log().Error("read undelivered sends", "err", err)
+		return
+	}
+	if len(undelivered) == 0 {
+		actor.sendTimer.Stop()
+		actor.clearProblemTelling(store.SymptomSendFailed, store.ClearedByRecovery, !actor.sendHeld)
+		actor.sendWoken, actor.sendHeld, actor.sendAckAt = false, false, 0
+		return
+	}
+	minutes := HealthSendGraceMinutes(ctx, actor.deps.Store.Settings(), actor.log())
+	if minutes == 0 {
+		actor.sendTimer.Stop()
+		return
+	}
+	since := undelivered[0].SendFailedAt
+	for _, message := range undelivered {
+		since = min(since, message.SendFailedAt)
+	}
+	due := max(since, actor.sendAckAt) + (time.Duration(minutes) * time.Minute).Milliseconds()
+	if wait := due - now(); wait > 0 {
+		actor.sendTimer.Reset(time.Duration(wait) * time.Millisecond)
+		return
+	}
+	held := actor.deps.SendOutage != nil && actor.deps.SendOutage(actor.loop.ID)
+	if !actor.hasProblem(store.SymptomSendFailed) {
+		actor.sendHeld = held
+		actor.openProblemTelling(surface.ProblemNotice{Symptom: store.SymptomSendFailed, Since: since}, !held)
+	} else if actor.sendHeld && !held {
+		actor.sendHeld = false
+		actor.tellProblem(actor.loop.ID, actor.loop.Name, surface.ProblemNotice{Symptom: store.SymptomSendFailed, Since: since, Opened: true})
+	}
+	if !actor.sendHeld && !actor.sendWoken && actor.hasProblem(store.SymptomSendFailed) {
+		actor.sendWoken = true
+		actor.enqueue(SendFailedWake())
+		actor.pump()
+	}
+}
+
 // watchDown follows the workstation verdict: a workstation down for a
 // reason nobody else tells the owner about starts the grace period, and
 // one that is up clears its problem. A refused login has its own notice,
@@ -442,7 +517,11 @@ func (actor *Actor) downGrace() time.Duration {
 // openProblem records a problem for the notice's symptom, dated from its
 // Since, unless one is open for the symptom already, and only then tells
 // the owner and the control room.
-func (actor *Actor) openProblem(notice surface.ProblemNotice) {
+func (actor *Actor) openProblem(notice surface.ProblemNotice) { actor.openProblemTelling(notice, true) }
+
+// openProblemTelling is openProblem, telling the owner only when tell is
+// true: either way the control room refetches the loop record.
+func (actor *Actor) openProblemTelling(notice surface.ProblemNotice, tell bool) {
 	symptom, since := notice.Symptom, notice.Since
 	opened, err := actor.deps.Store.Problems().Open(context.Background(), actor.loop.ID, symptom, since)
 	if err != nil {
@@ -452,15 +531,21 @@ func (actor *Actor) openProblem(notice surface.ProblemNotice) {
 	if !opened {
 		return
 	}
-	actor.log().Warn("problem opened", "symptom", symptom)
+	actor.log().Warn("problem opened", "symptom", symptom, "told", tell)
 	actor.storeSpoolEvent("problem_opened", fmt.Sprintf(`{"symptom":%q,"since":%d}`, symptom, since))
 	notice.Opened = true
-	actor.problemsChanged(notice)
+	actor.problemsChanged(notice, tell)
 }
 
 // clearProblem closes the open problem for the symptom, if there is one,
 // and tells the owner and the control room; it reports whether there was.
 func (actor *Actor) clearProblem(symptom, by string) bool {
+	return actor.clearProblemTelling(symptom, by, true)
+}
+
+// clearProblemTelling is clearProblem, telling the owner only when tell is
+// true: a problem they were never told of clears without a word.
+func (actor *Actor) clearProblemTelling(symptom, by string, tell bool) bool {
 	var open *store.Problem
 	for _, problem := range actor.Problems() {
 		if problem.Symptom == symptom {
@@ -480,25 +565,35 @@ func (actor *Actor) clearProblem(symptom, by string) bool {
 	}
 	actor.log().Info("problem cleared", "symptom", symptom, "by", by)
 	actor.storeSpoolEvent("problem_cleared", fmt.Sprintf(`{"symptom":%q,"by":%q}`, symptom, by))
-	actor.problemsChanged(surface.ProblemNotice{Symptom: symptom, Since: open.Since, ByOperator: by == store.ClearedByOperator})
+	actor.problemsChanged(surface.ProblemNotice{Symptom: symptom, Since: open.Since, ByOperator: by == store.ClearedByOperator}, tell)
 	return true
 }
 
 // problemsChanged re-reads the open problems for the loop record, asks the
-// control room to refetch it, and hands the notice to the surfaces.
-func (actor *Actor) problemsChanged(notice surface.ProblemNotice) {
+// control room to refetch it, and when tell is true hands the notice to the
+// surfaces.
+func (actor *Actor) problemsChanged(notice surface.ProblemNotice, tell bool) {
 	actor.loadProblems()
+	if !tell {
+		actor.refetchProblems(actor.loop.ID, actor.loop.Name)
+		return
+	}
 	actor.tellProblem(actor.loop.ID, actor.loop.Name, notice)
 }
 
 // tellProblem asks the control room to refetch the loop record, and hands
 // the notice to the surfaces.
 func (actor *Actor) tellProblem(loopID, loopName string, notice surface.ProblemNotice) {
+	actor.refetchProblems(loopID, loopName)
+	notice.LoopID, notice.LoopName = loopID, loopName
+	actor.deps.Bus.Publish(bus.Item{Kind: bus.KindLoopProblem, LoopID: loopID, Payload: &notice})
+}
+
+// refetchProblems asks the control room to refetch the loop record.
+func (actor *Actor) refetchProblems(loopID, loopName string) {
 	actor.deps.Bus.Publish(bus.Item{Kind: bus.KindLoopStatus, LoopID: loopID, Payload: map[string]any{
 		"loop_id": loopID, "name": loopName, "problems_changed": true,
 	}})
-	notice.LoopID, notice.LoopName = loopID, loopName
-	actor.deps.Bus.Publish(bus.Item{Kind: bus.KindLoopProblem, LoopID: loopID, Payload: &notice})
 }
 
 func (actor *Actor) loadProblems() { actor.loadProblemsOf(actor.loop.ID) }
@@ -527,7 +622,7 @@ const (
 // Health sums up open problems: failing while the workstation is down, a
 // wake goes without a turn, or a cloud loop's address fails its check or
 // its setup isn't done, since the loop is not running at all, warning for
-// errored turns or a long one, and ok with none.
+// errored turns, a long one or undelivered sends, and ok with none.
 func Health(problems []store.Problem) string {
 	health := HealthOK
 	for _, problem := range problems {

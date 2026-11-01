@@ -373,7 +373,7 @@ func (adapter *Adapter) send(ctx context.Context, mp *route.MessagePayload) {
 			}
 		}
 	}
-	adapter.ledger.Result(settleCtx(ctx), mp.ID, nil)
+	adapter.ledger.Result(settleCtx(ctx), mp.ID, mp.FromLoopID, nil)
 }
 
 // partOf names the part of an n-part message a failure ended at, index i;
@@ -496,7 +496,7 @@ func settleCtx(ctx context.Context) context.Context {
 // fail records a send that did not get through.
 func (adapter *Adapter) fail(ctx context.Context, mp *route.MessagePayload, err error, attempts int) {
 	adapter.log.Error("slack send failed; giving up", "loop", mp.FromLoopID, "attempts", attempts, "err", err)
-	adapter.ledger.Result(ctx, mp.ID, err)
+	adapter.ledger.Result(ctx, mp.ID, mp.FromLoopID, err)
 	adapter.ledger.FailedEvent(ctx, mp.FromLoopID, outbound.ConversationChat(mp.Conversation), attempts, err.Error(), mp.Text)
 }
 

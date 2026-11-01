@@ -20,6 +20,12 @@ func TestLatestTickOnly(t *testing.T) {
 		{"the latest, where the first stood",
 			[]Envelope{message("a"), tick("t1"), message("b"), tick("t2"), tick("t3"), message("c")},
 			[]Envelope{message("a"), tick("t3"), message("b"), message("c")}},
+		{"a worded tick over a later wordless one",
+			[]Envelope{tick("t1"), message("a"), tick("")},
+			[]Envelope{tick("t1"), message("a")}},
+		{"the latest wordless one when none has words",
+			[]Envelope{tick(""), message("a"), tick("")},
+			[]Envelope{tick(""), message("a")}},
 	} {
 		if got := latestTickOnly(testCase.envs); !reflect.DeepEqual(got, testCase.want) {
 			t.Errorf("%s: got %+v, want %+v", testCase.name, got, testCase.want)

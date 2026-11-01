@@ -1,6 +1,6 @@
 # ADR-0053: The hub checks each loop's health, and tells the owner once when a problem opens and once when it clears
 
-Date: 2026-10-14 · Status: accepted (operator decision of 2026-10-12 on #754 for the shape, and of 2026-10-14 on #764 for the three defaults below) · Relates to: ADR-0017, ADR-0026, ADR-0029, ADR-0047 · Amended: 2026-11-01 (item 9 added: turn_stuck, #1142); 2026-11-01 (item 10 added: wake_missed, #1143)
+Date: 2026-10-14 · Status: accepted (operator decision of 2026-10-12 on #754 for the shape, and of 2026-10-14 on #764 for the three defaults below) · Relates to: ADR-0017, ADR-0026, ADR-0029, ADR-0047 · Amended: 2026-11-01 (item 9 added: turn_stuck, #1142); 2026-11-01 (item 10 added: wake_missed, #1143); 2026-11-01 (item 11 added: send_failed, #1144)
 
 ## Context
 
@@ -142,6 +142,55 @@ an amendment here.
     defaulting to **10** (accepted on #754), beside the other two in `GET/PUT
     /api/settings`. Health is `failing` while it is open, since the loop
     is doing nothing.
+
+11. **`send_failed`: a loop's send left undelivered** (added 2026-11-01,
+    #1144, slice 3 of #754's plan, carrying #158's need). A message a loop
+    sent stays undelivered past the grace, with nothing to resolve it: no
+    retry that got through, no resend, no dismissal. The problem opens,
+    dated from the earliest such failure, and clears once the loop has none
+    left. The actor watches it at its start, at every turn's end, when its
+    timer for the grace fires, and when a surface carries a send, gives
+    one up, or the operator dismisses one, which each surface's outbound
+    ledger and the dismissal publish as `bus.KindSendOutcome`. That kind
+    never streams.
+
+    **A problem opening wakes its loop**, the change in wake semantics
+    this item records: once per problem, not once per failure. The wake
+    carries no words of its own (`SendFailedWake`); the turn opens with
+    the note about its lost sends, as #154's does, and the actor drops the
+    wake when no failure is left to tell. It rides as a tick, and where a
+    login or hub outage keeps only one tick queued (#420), a tick with
+    words is kept over it, so it never takes a real tick's place.
+
+    **Outage guard** (the constraint of 2026-09-18). Failed sends from
+    **3** or more loops on one surface within **5 minutes** (accepted on
+    #754) mean the surface is down. A problem that opens while the surface
+    its loop last failed on is down still opens and shows, but its wake
+    and its owner's notice are held: the notice would go out over the
+    broken surface, and every loop would spend a turn on it. Before an
+    outage starts, a send that gets through leaves the count running: the
+    5 minutes count failing loops, not a stretch with no send landing, or
+    a surface that carries some sends and drops others would never trip
+    the guard. Every failed send counts, whatever refused it: one a loop
+    brought on itself (a chat the bot is not in, a message the surface
+    rejects) counts the same as a timeout or a 5xx, since the surfaces
+    share no error kinds to tell them apart. Three loops so refused can
+    hold notices that would have got through; the problems still open
+    and show, and the next send to land there ends the outage. Once an
+    outage has started, a send that surface carries ends it, and each
+    held problem then has its one notice and its one wake. A held
+    problem that clears before then clears without a word,
+    departing from item 6 for this case alone, since its owner never
+    heard it open. The outage is the hub's memory, not the store's, so a
+    restart forgets it: a problem a previous hub opened is neither woken
+    for nor told of again.
+
+    Acknowledge clears it and starts the grace over for the failures still
+    unresolved. The grace is the setting `health_send_grace_minutes`, 0 to
+    1440 with 0 for off, defaulting to **2** (accepted on #754), so a send
+    the surface retries and lands says nothing. `GET/PUT /api/settings`
+    carries it beside the other health settings. Health is `warning` while
+    it is open.
 
 ## Consequences
 

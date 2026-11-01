@@ -1150,6 +1150,13 @@ func OwnerAnswerWake(tgChatID int64) Envelope {
 	return Envelope{Trigger: store.TriggerMessage, Conversation: store.ConversationOwnerDM, TGChatID: tgChatID}
 }
 
+// SendFailedWake is the envelope that wakes a loop once when a send_failed
+// problem opens with it (#1144). It carries no words of its own: the
+// failures are told the way they always are, in the note ahead of the turn
+// (#154). The actor drops it when no failure is left to tell, and a queue
+// that keeps one tick keeps a tick with words over it (latestTickOnly).
+func SendFailedWake() Envelope { return Envelope{Trigger: store.TriggerTick} }
+
 // wakeOnly reports whether an envelope is a wake with no words of its own.
 func (env Envelope) wakeOnly() bool { return env.Text == "" }
 

@@ -1430,7 +1430,7 @@ func (br *Bridge) deliver(ctx context.Context, bot *poller, req sendReq) {
 			br.recordSentPoll(settleCtx(ctx), bot, req, sent)
 		}
 	}
-	br.ledger.Result(settleCtx(ctx), req.recordFor, nil)
+	br.ledger.Result(settleCtx(ctx), req.recordFor, bot.loopID, nil)
 }
 
 // deliverReaction sets a loop's reaction, retried as a post is. A reaction
@@ -1577,7 +1577,7 @@ func (br *Bridge) sendWithRetries(ctx context.Context, bot *poller, send sendPar
 func (br *Bridge) failSend(ctx context.Context, bot *poller, req sendReq, err error, attempts int) {
 	br.log.Error("telegram send failed; giving up",
 		"loop", bot.name, "chat", req.chatID, "attempts", attempts, "err", err)
-	br.ledger.Result(ctx, req.recordFor, err)
+	br.ledger.Result(ctx, req.recordFor, bot.loopID, err)
 	br.ledger.FailedEvent(ctx, bot.loopID, br.chatName(ctx, bot, req.chatID), attempts, err.Error(), req.text)
 }
 

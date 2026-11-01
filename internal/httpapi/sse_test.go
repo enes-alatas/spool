@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/enes-alatas/spool/internal/bus"
+	"github.com/enes-alatas/spool/internal/route"
+	"github.com/enes-alatas/spool/internal/surface"
 )
 
 // actingClient is a stream's response writer that, like a client acting
@@ -67,5 +69,26 @@ func TestAStreamHearsWhatIsPublishedOnceItIsOpen(t *testing.T) {
 			t.Fatalf("an item published once the stream was open never reached it; the stream wrote %q", client.body())
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestASendOutcomeStreamsNowhere: a send's outcome is the hub's own
+// bookkeeping, and stays off both streams even when it names the loop that
+// sent (#1144).
+func TestASendOutcomeStreamsNowhere(t *testing.T) {
+	outcome := bus.Item{Kind: bus.KindSendOutcome, LoopID: "l1", Payload: &surface.SendOutcome{Surface: "telegram", LoopID: "l1", Failed: true}}
+	if onGlobalStream(outcome) {
+		t.Error("the hub-wide stream carries a send's outcome")
+	}
+	if onLoopStream("l1", outcome) {
+		t.Error("the loop's stream carries a send's outcome")
+	}
+	if !onLoopStream("l1", bus.Item{Kind: bus.KindLoopStatus, LoopID: "l1"}) {
+		t.Error("the loop's stream drops the loop's own items")
+	}
+	sent := bus.Item{Kind: bus.KindMessage, Payload: &route.MessagePayload{}}
+	sent.Payload.(*route.MessagePayload).DeliveredTo = []string{"l2", "l1"}
+	if !onLoopStream("l1", sent) || onLoopStream("l3", sent) {
+		t.Error("the loop's stream follows a message's delivery wrongly")
 	}
 }

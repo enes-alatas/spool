@@ -550,6 +550,7 @@ func main() {
 
 	scheduler.Recover(ctx) // before anything is served, which may ask for a tick
 	go scheduler.Run(ctx)
+	go manager.WatchSends(ctx)
 	go planCap.Run(ctx)
 	go loginRefresh.Run(ctx)
 	models.Start(ctx)
