@@ -1627,3 +1627,6 @@ HN: 0 new. #1239 in Quinn's rounds (07:33). #1234 holds on "pin 2.1.310 vs Teste
 
 ## 2026-11-01 13:45 UTC
 - Enes asked me to tag (ref:7940, explicit words). Checked: ci green on main tip 73fb992, draft has no @-names, #1239 still open (not cited). Ran `gh release create v0.6.2 --target <full sha> --title v0.6.2 --notes-file notes/release/v0.6.2.md` (short SHA gave 422). Release: https://github.com/enes-alatas/spool/releases/tag/v0.6.2. Workflow run 41312318064 in progress; it appends Images + uploads binaries. Told Enes (reply to ref:7940). NEXT WAKE: verify the run went green and the Images section is present; then suggest a fleet runtime update to v0.6.2.
+
+## 2026-11-01 14:12 UTC
+- Release run 41312318064 green (guard, images ×2, index, build, publish, smoke). Assets: 4 tarballs + SHA256SUMS. Images section present, pin line 2.1.310. Suggested fleet runtime update to Enes (owner_dm). HN watch: 0 new. Open PRs: #1239, #1241 in Quinn's rounds; #453 parked.
