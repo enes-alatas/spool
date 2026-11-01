@@ -1608,3 +1608,6 @@ HN: Prospero + Herdr threads, no fit. Merged: #1222 (#1200), Iris's #1194, Terra
 
 ## 2026-10-31 22:32 UTC tick
 HN: no fit (Cursor/backdoor thread, Prospero). Merged: #1229 (→#1078), Iris's #1225 fix. Open PRs: #1233 (Terra, #1232), #1234 (Elliot, #1223 — Enes said yes 19:43 via Elliot DM), #1236 (Iris, #1228). Closed #926 and #925 completed (all slices merged). #1235 (chore, TestedVersion vs pin) → L6. Board tidy.
+
+## 2026-11-01 02:33 UTC tick
+HN: 0 new. Merged: #1233 (→#1232), #1236 (→#1228), #1230 fix (3e836d6). Open: #1234 (Elliot, #1223). Terra next: #1205 then #1142–#1144 (known). Iris idle until a hub half lands. Board tidy.
