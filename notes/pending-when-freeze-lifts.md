@@ -1620,3 +1620,6 @@ HN: 0 new. #1239 in Quinn's rounds (07:33). #1234 holds on "pin 2.1.310 vs Teste
 10:55 Enes: yes to pin 2.1.310 (ref:7916). Recorded on #1223; pinged Elliot. Tag: asked Enes for explicit word.
 10:56 Elliot cleared the pending line on #1234; Quinn re-review asked.
 11:38 Enes: yes to drafting v0.6.2 note. Drafted notes/release/v0.6.2.md (PR numbers verified by commit lookup; #1234 cited as pending merge). Sent to Enes.
+
+## 2026-11-01 12:00 UTC
+- Enes approved the v0.6.2 release-note draft (ref:7927, "Looks great"). Draft stays at notes/release/v0.6.2.md; #1234 still open at time of approval, #1239 to be added if it lands before the tag. Enes tags himself. Reacted 👍, no other action.
