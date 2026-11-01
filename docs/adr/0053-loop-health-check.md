@@ -1,6 +1,6 @@
 # ADR-0053: The hub checks each loop's health, and tells the owner once when a problem opens and once when it clears
 
-Date: 2026-10-14 · Status: accepted (operator decision of 2026-10-12 on #754 for the shape, and of 2026-10-14 on #764 for the three defaults below) · Relates to: ADR-0017, ADR-0026, ADR-0029, ADR-0047 · Amended: 2026-11-01 (item 9 added: turn_stuck, #1142)
+Date: 2026-10-14 · Status: accepted (operator decision of 2026-10-12 on #754 for the shape, and of 2026-10-14 on #764 for the three defaults below) · Relates to: ADR-0017, ADR-0026, ADR-0029, ADR-0047 · Amended: 2026-11-01 (item 9 added: turn_stuck, #1142); 2026-11-01 (item 10 added: wake_missed, #1143)
 
 ## Context
 
@@ -112,6 +112,36 @@ an amendment here.
    /api/settings` carries it beside `health_error_turns`. Each turn takes
    the limit as it stands when the turn starts. Health is `warning` while
    it is open, as for `turn_errors`.
+
+10. **`wake_missed`: a wake that starts no turn** (added 2026-11-01,
+    #1143, slice 2 of #754's plan). A loop is due to wake, from a tick
+    that fired or a message delivered, and no turn starts though nothing
+    holds it. If its actor has stopped answering, nothing it would report
+    ever comes, so the owner learns of it from the silence. This symptom
+    departs from item 2, which stands for every other one: no actor can
+    report that it has stopped, so the check runs outside every actor,
+    every 30 seconds on a goroutine of the scheduler's own, beside the
+    ticks it fires. A wake is owed from the moment it is asked, by a caller
+    that never waits on the actor, until the actor has read it; from then
+    on, for as long as work waits in its inbox with no turn running and
+    nothing holding the loop. A tick the actor drops, because a turn is
+    running or the loop is held, is owed no longer once read, and a turn
+    that starts after a wake was owed answers it. A wake owed past the
+    grace opens the problem, dated from when it was first owed, unless the
+    loop's last published state is busy, paused, capped, its workstation
+    switched off or down, its model refused, or a cloud loop has
+    `cloud_address` or `cloud_setup` open: each of those the owner already
+    hears of, or chose, and a busy loop is `turn_stuck`'s case. The crash
+    ladder's wait is not owed either: each of its tries is a turn, which
+    `turn_errors` watches. The check asks again once the row is stored,
+    and a turn or a hold that came meanwhile withdraws it before anyone is
+    told. A turn starting clears the problem. Acknowledge clears it outside
+    the actor too, so it answers at once for an actor that has stopped
+    answering, and restarts the grace for a wake still owed. The grace is
+    the setting `health_wake_grace_minutes`, 0 to 1440 with 0 for off,
+    defaulting to **10** (accepted on #754), beside the other two in `GET/PUT
+    /api/settings`. Health is `failing` while it is open, since the loop
+    is doing nothing.
 
 ## Consequences
 

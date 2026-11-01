@@ -27,8 +27,10 @@
 // "!huge <bytes>" replies with that many bytes; "!hang <seconds>" sleeps
 // first; "!toolong" returns an errored result saying the prompt did not fit
 // the window, with no usage, and keeps the session; "!error" returns the
-// errored result an API failure ends a turn with, and keeps the session. A
-// "!send" directive may write "$ref" where the reference of the message
+// errored result an API failure ends a turn with, and keeps the session;
+// "!wedge <seconds>" ends the turn well, then closes stdout and lives on
+// that long before it exits, so the hub's wait for the exit holds the
+// loop's actor that long (#1143). A "!send" directive may write "$ref" where the reference of the message
 // being answered belongs; the fake substitutes it from the envelope header.
 //
 // "!ctx <tokens>" prefix makes the turn report that many input tokens per API
@@ -384,6 +386,7 @@ func main() {
 		ctxTokens := 0
 		steps := 1
 		var planUsage []float64    // the turn's five-hour and seven-day utilization, when scripted
+		wedge := 0                 // seconds to live on with stdout closed after the result, when scripted
 		var fiveHourResetSec int64 // how far off the five-hour window's reset is, when scripted
 		if script != nil {
 			line := script[min(state.Turns, len(script))-1]
@@ -559,6 +562,9 @@ func main() {
 			case strings.HasPrefix(line, "!huge "):
 				size, _ := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(line, "!huge ")))
 				reply = strings.Repeat("x", size)
+			case strings.HasPrefix(line, "!wedge "):
+				wedge, _ = strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(line, "!wedge ")))
+				reply = "wedging for " + strconv.Itoa(wedge) + "s"
 			case strings.HasPrefix(line, "!hang "):
 				seconds, _ := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(line, "!hang ")))
 				time.Sleep(time.Duration(seconds) * time.Second)
@@ -621,6 +627,11 @@ func main() {
 		})
 
 		persist(stateDir, id, state)
+		if wedge > 0 {
+			os.Stdout.Close()
+			time.Sleep(time.Duration(wedge) * time.Second)
+			os.Exit(0)
+		}
 	}
 	// stdin closed: clean exit, like the real CLI.
 }

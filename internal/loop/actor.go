@@ -11,6 +11,7 @@ import (
 	"math/rand/v2"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -220,18 +221,29 @@ type cmd struct {
 // Actor owns one loop: a single goroutine serializing every command,
 // event and timer for that loop, and the claude process it drives.
 type Actor struct {
-	deps         Deps
-	cmds         chan cmd
-	stopped      chan struct{} // closed when the actor's loop returns, so no caller waits on it
-	stateSnap    atomic.Value  // string; last published state, for REST reads
-	healthSnap   atomic.Value  // workstationSnap; last workstation poll, for REST reads
-	offSnap      atomic.Bool   // the operator's power-off intent, for REST reads
-	mcpSnap      atomic.Value  // MCPReach; the latest init's, for REST reads
-	rehomeSnap   atomic.Bool   // a rehome is asked for and not yet landed, for REST reads
-	ensureSnap   atomic.Bool   // a wake is ensuring the workstation, for REST reads
-	problemsSnap atomic.Value  // []store.Problem; the open problems, for REST reads
-	dailyCapSnap atomic.Int64  // when the loop's daily cap lets it go, 0 when it doesn't hold, for REST reads
-	failSnap     atomic.Value  // string; how the loop's last try to run failed, "" for none, for REST reads
+	deps          Deps
+	cmds          chan cmd
+	stopped       chan struct{} // closed when the actor's loop returns, so no caller waits on it
+	stateSnap     atomic.Value  // string; last published state, for REST reads
+	healthSnap    atomic.Value  // workstationSnap; last workstation poll, for REST reads
+	offSnap       atomic.Bool   // the operator's power-off intent, for REST reads
+	mcpSnap       atomic.Value  // MCPReach; the latest init's, for REST reads
+	rehomeSnap    atomic.Bool   // a rehome is asked for and not yet landed, for REST reads
+	ensureSnap    atomic.Bool   // a wake is ensuring the workstation, for REST reads
+	problemsSnap  atomic.Value  // []store.Problem; the open problems, for REST reads
+	dailyCapSnap  atomic.Int64  // when the loop's daily cap lets it go, 0 when it doesn't hold, for REST reads
+	failSnap      atomic.Value  // string; how the loop's last try to run failed, "" for none, for REST reads
+	owedSnap      atomic.Int64  // since when queued work has waited for a turn, 0 for none, for the wake check
+	turnStartedAt atomic.Int64  // when the latest turn started, which answers every wake owed before it
+	wakeMu        sync.Mutex    // orders opening, acknowledging and clearing wake_missed, which run on three goroutines
+	problemsMu    sync.Mutex    // one read of the open problems at a time, so the last one stored is the newest
+
+	// The wakes asked of the loop from outside it, a tick or a delivery,
+	// that it has not finished handling, and since when: what an actor that
+	// has stopped reading its commands still owes (#1143).
+	wakesMu      sync.Mutex
+	wakesAsked   int
+	wakesAskedAt int64
 
 	// goroutine-owned state below
 	loop         store.Loop
@@ -435,8 +447,8 @@ func (actor *Actor) ask(command cmd) error {
 	}
 }
 
-func (actor *Actor) Deliver(env Envelope) { actor.send(cmd{kind: "deliver", env: env}) }
-func (actor *Actor) Tick()                { actor.send(cmd{kind: "tick"}) }
+func (actor *Actor) Deliver(env Envelope) { actor.askWake(cmd{kind: "deliver", env: env}) }
+func (actor *Actor) Tick()                { actor.askWake(cmd{kind: "tick"}) }
 func (actor *Actor) Resume()              { actor.send(cmd{kind: "resume"}) }
 
 // Pause and Kill return once the loop has stopped: a cloud loop's session
@@ -537,6 +549,9 @@ func (actor *Actor) run() {
 				return
 			}
 			actor.handleCmd(command)
+			if command.kind == "deliver" || command.kind == "tick" {
+				actor.wakeHandled()
+			}
 		case ev, ok := <-actor.procEvents:
 			if !ok {
 				actor.handleProcExit()
@@ -565,6 +580,7 @@ func (actor *Actor) run() {
 			actor.armDailyCap()
 			actor.capChanged()
 		}
+		actor.noteOwed()
 	}
 }
 
@@ -1478,6 +1494,8 @@ func (actor *Actor) sendBatch(batch []Envelope) {
 	actor.turn = turn
 	actor.lastCall = claude.Usage{}
 	actor.watchTurn(turn)
+	actor.turnStartedAt.Store(turn.StartedAt)
+	actor.clearMissedWake()
 	actor.turnRefusal = ""
 
 	for _, env := range batch {
