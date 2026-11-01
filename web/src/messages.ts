@@ -284,3 +284,35 @@ export function surfaceNote(m: ChatMessage): string {
   if (surface) return ` · via ${surface}`
   return hubOnly(m) ? ' · hub only' : ''
 }
+
+// What the room says under a message a loop dropped (#1238): its turn
+// crashed every process that ran it, three times, and the hub gave up on it
+// so the messages queued behind it are answered (#1189, #1205).
+//
+// Read from the row's `dropped_by`, not from the `batch_dropped` event: the
+// event sits on the loop's timeline, and the message is read here, in
+// conversations the timeline never shows. A message typed in the control
+// room gets no surface notice, so this is the only place it is said at all.
+//
+// It names only the loops that dropped it. A channel message reaches several,
+// and the others took it, which the "reached" line under it still says.
+// `nameOf` turns a loop id into the name the room shows; an id no loop has
+// any more is shown as it is, for the reason `Reached` keeps one.
+export function droppedNote(
+  m: ChatMessage,
+  nameOf: (id: string) => string,
+): { label: string; text: string; title: string } | null {
+  const ids = m.dropped_by ?? []
+  if (ids.length === 0) return null
+  const names = ids.map((id) => `@${nameOf(id)}`)
+  const who =
+    names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+  const whose = names.length === 1 ? 'its turn' : 'their turns'
+  return {
+    label: `dropped by ${names.join(', ')}`,
+    text: `${who} couldn't take this message: ${whose} crashed three times, so it won't be tried again.`,
+    title:
+      'Each of the three turns that tried this message crashed, so the hub gave up on it and answered the ' +
+      "messages queued behind it. Why the turns crashed is on the loop's page.",
+  }
+}

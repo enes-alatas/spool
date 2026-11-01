@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   destinationLabel,
+  droppedNote,
   hubOnly,
   mirrorOf,
   surfaceNote,
@@ -505,5 +506,43 @@ describe('the loop-side outcomes', () => {
     ).toBe('dismissed_by_loop')
     expect(undelivered(msg({ ...lost, send_left_by_loop: true }))?.leftByLoop).toBe(true)
     expect(undelivered(msg(lost))?.leftByLoop).toBe(false)
+  })
+})
+
+describe('droppedNote', () => {
+  const names: Record<string, string> = { l1: 'terra', l2: 'milo', l3: 'quinn' }
+  const nameOf = (id: string) => names[id] ?? id
+
+  it('says nothing about a message no loop dropped', () => {
+    expect(droppedNote(msg({}), nameOf)).toBeNull()
+    expect(droppedNote(msg({ dropped_by: [] }), nameOf)).toBeNull()
+  })
+
+  // #1238: a person's message whose turn crashed three times.
+  it('names the loop that dropped it', () => {
+    const note = droppedNote(msg({ origin: 'web', dropped_by: ['l1'] }), nameOf)
+    expect(note?.text).toBe(
+      "@terra couldn't take this message: its turn crashed three times, so it won't be tried again.",
+    )
+    expect(note?.label).toBe('dropped by @terra')
+  })
+
+  // In a channel only the loops that dropped it are named; the others took it.
+  it('names each loop that dropped a channel message, and only those', () => {
+    const two = droppedNote(
+      msg({ conversation: 'group', delivered_to: ['l1', 'l2', 'l3'], dropped_by: ['l1', 'l3'] }),
+      nameOf,
+    )
+    expect(two?.text).toBe(
+      "@terra and @quinn couldn't take this message: their turns crashed three times, so it won't be tried again.",
+    )
+    expect(two?.label).toBe('dropped by @terra, @quinn')
+    const three = droppedNote(msg({ dropped_by: ['l1', 'l2', 'l3'] }), nameOf)
+    expect(three?.text).toMatch(/^@terra, @milo and @quinn couldn't/)
+  })
+
+  // A deleted loop's id is still a loop that dropped it, so it is shown as is.
+  it('shows an id no loop has any more', () => {
+    expect(droppedNote(msg({ dropped_by: ['gone'] }), nameOf)?.label).toBe('dropped by @gone')
   })
 })

@@ -232,6 +232,11 @@ export interface ChatMessage {
   // The loops the hub delivered this to, by id — not by name. Hub delivery,
   // not surface delivery: people on an attached surface are never in it.
   delivered_to: string[]
+  // The loops that dropped this message, by id: each one's turn crashed
+  // every process that ran it, three times, so it gave up on the message
+  // (#1189, #1205). Absent when no loop dropped it. In a channel it names
+  // only the loops that dropped it; the others took it.
+  dropped_by?: string[]
   conversation: string
   conversation_loop_id?: string
   // A surface send that did not get through, after the retries (#148). Set

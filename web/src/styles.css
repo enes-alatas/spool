@@ -654,6 +654,18 @@ textarea {
 .undelivered-why {
   color: var(--text-muted);
 }
+/* a message a loop dropped (#1238): the undelivered mark's look, since it
+   is the same kind of fact about a message: nobody on the other end has it */
+.dropped {
+  font-size: 0.6875rem;
+  font-family: var(--mono);
+  color: var(--danger);
+  margin-top: 3px;
+}
+.feed-item .dropped {
+  margin-top: 0;
+  white-space: nowrap;
+}
 /* the fleet's total in the summary line: a fault among plain numbers */
 .undelivered-total {
   color: var(--danger);
