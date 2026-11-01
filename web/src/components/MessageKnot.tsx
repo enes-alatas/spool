@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import type { ChatMessage } from '../api'
 import { correctionTag, editedTag, isDeletion, replacedWords, wordsTaken } from '../edits'
 import { AttachmentList } from './Attachments'
+import { DroppedMark } from './DroppedMark'
 import { Linked } from './Linked'
 import { PollBallot } from './Poll'
 import { ReactionList } from './Reactions'
@@ -78,6 +79,7 @@ export function MessageKnot({
       <AttachmentList items={msg.attachments} />
       <ReactionList items={msg.reactions} />
       <UndeliveredMark msg={msg} />
+      <DroppedMark msg={msg} />
       {after}
     </div>
   )

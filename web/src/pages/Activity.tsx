@@ -11,6 +11,7 @@ import { messageTime } from '../components/MessageKnot'
 import { PollBallot } from '../components/Poll'
 import { ReactionList } from '../components/Reactions'
 import { UndeliveredMark } from '../components/UndeliveredMark'
+import { DroppedMark } from '../components/DroppedMark'
 
 // The newest messages and changes the feed asks for.
 const FEED = 100
@@ -98,6 +99,7 @@ export default function Activity() {
               they are not reading any one loop, which is exactly when an
               undelivered message would otherwise go unnoticed. */}
             <UndeliveredMark msg={m} inline />
+            <DroppedMark msg={m} inline />
             <span className="origin">{whereSaid(m)}</span>
             {m.origin === 'loop' && (
               <Link className="btn sm" to={`/loops/${m.author}`} title={`Open @${m.author}'s composer`}>

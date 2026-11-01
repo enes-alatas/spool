@@ -37,6 +37,7 @@ export function useStream(url: string, onItem: (item: BusItem) => void, onOpen?:
       'models',
       'reaction',
       'poll',
+      'message_dropped',
     ]
     const listeners = kinds.map((kind) => {
       const fn = (e: MessageEvent) => {
@@ -85,9 +86,12 @@ export function useGlobalStream() {
         break
       // A reaction added or removed (ADR-0040), or a vote or the close on a
       // poll (ADR-0041): neither carries a loop, and any timeline may hold
-      // its message, so each list of messages refetches.
+      // its message, so each list of messages refetches. So does a loop
+      // dropping a message (#1205): the row now carries
+      // `dropped_by`, which every list holding it shows (#1238).
       case 'reaction':
       case 'poll':
+      case 'message_dropped':
         qc.invalidateQueries({ queryKey: ['activity'] })
         qc.invalidateQueries({ queryKey: ['group'] })
         qc.invalidateQueries({ queryKey: ['channel'] })
