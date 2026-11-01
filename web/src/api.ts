@@ -3,7 +3,14 @@
 // A problem the hub's health check found with a loop (ADR-0053), open
 // since since (Unix ms) until the signal clears or an admin acknowledges it.
 export interface Problem {
-  symptom: 'workstation_down' | 'turn_errors' | 'cloud_address' | 'cloud_connections' | 'cloud_setup' | string
+  symptom:
+    | 'workstation_down'
+    | 'turn_errors'
+    | 'turn_stuck'
+    | 'cloud_address'
+    | 'cloud_connections'
+    | 'cloud_setup'
+    | string
   since: number
 }
 export type Health = 'ok' | 'warning' | 'failing'
@@ -21,8 +28,8 @@ export interface LoopView {
   doing_at: number
   // The open problems the hub's health check found with the loop, oldest
   // first, and health summing them up: 'failing' while workstation_down or
-  // cloud_address is open, 'warning' while only turn_errors is, 'ok' with
-  // none (ADR-0053).
+  // cloud_address is open, 'warning' while only turn_errors or turn_stuck
+  // is, 'ok' with none (ADR-0053).
   problems: Problem[]
   health: Health
   model: string
@@ -795,6 +802,10 @@ export interface Settings {
   // Errored turns in a row that open a turn_errors problem (ADR-0053), 0 to
   // 100; 0 turns that symptom off, and 3 is the default.
   health_error_turns: number
+  // Minutes a turn runs before it opens a turn_stuck problem (#1142), 0 to
+  // 1440; 0 turns that symptom off, and 120 is the default. A change holds
+  // from each loop's next turn.
+  health_turn_minutes: number
 }
 
 // The session's user (#582, #675). A session made with the operator token
@@ -1412,9 +1423,10 @@ export const api = {
     }),
   settings: () => req<Settings>('/api/settings'),
   planUsage: () => req<PlanUsages>('/api/plan-usage'),
-  // One count; 0 is off (ADR-0053).
-  setHealthErrorTurns: (turns: number) =>
-    req<Settings>('/api/settings', { method: 'PUT', body: JSON.stringify({ health_error_turns: turns }) }),
+  // The health check's settings in one write, as the rotation pair goes; a
+  // field left out stays as it is, and 0 is off (ADR-0053).
+  setHealthCheck: (body: { health_error_turns?: number; health_turn_minutes?: number }) =>
+    req<Settings>('/api/settings', { method: 'PUT', body: JSON.stringify(body) }),
   // Both thresholds go in one write, as the rotation pair does; 0 is off.
   setPlanCaps: (fiveHour: number, sevenDay: number) =>
     req<Settings>('/api/settings', {

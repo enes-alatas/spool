@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { api, type LoopView } from '../api'
-import { healthNote, problemHealth, problemLine, problemMeaning } from '../health'
+import { healthNote, problemHealth, problemLine, problemMeaning, problemNext } from '../health'
 import { useMinuteClock } from './PlanUsage'
 import { useMay } from './Session'
 
 // The Fleet row's health note (ADR-0053): a dot and the open problems, amber
-// while only turns are failing, red while the workstation is down, and
-// nothing for a loop with no open problem.
+// while only turns are failing or running long, red while the workstation
+// is down, and nothing for a loop with no open problem.
 export function HealthNote({ loop }: { loop: LoopView }) {
   const now = useMinuteClock()
   if (loop.health === 'ok' || loop.problems.length === 0) return null
@@ -49,7 +49,13 @@ export function Problems({ loop }: { loop: LoopView }) {
     <div className="problems">
       {loop.problems.map((problem) => (
         <div key={problem.symptom} className={`problem-line health-${problemHealth(problem)}`}>
-          <span title={problemMeaning(problem)}>{problemLine(problem, now)}</span>
+          <span title={problemMeaning(problem)}>
+            {problemLine(problem, now)}
+            {/* it names a control only an admin has, as Acknowledge is */}
+            {may('manage') && problemNext(problem) && (
+              <span className="problem-next"> · {problemNext(problem)}</span>
+            )}
+          </span>
           {may('manage') && (
             <button
               className="btn"

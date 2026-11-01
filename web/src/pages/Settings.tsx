@@ -14,7 +14,7 @@ import { ChatAccess } from '../components/ChatAccess'
 import { LinksSection } from '../components/LinksSection'
 import { CapBanners, useMinuteClock } from '../components/PlanUsage'
 import { capFields, capGate, capValue, type CapDraft } from '../planCap'
-import { errorTurnsField, errorTurnsValue } from '../health'
+import { errorTurnsField, errorTurnsValue, turnMinutesField, turnMinutesValue } from '../health'
 
 export default function Settings() {
   const { data: settings, error: loadError } = useQuery({ queryKey: ['settings'], queryFn: api.settings })
@@ -242,27 +242,40 @@ function PlanGuardrails({ settings, loadError }: { settings?: SettingsView; load
   )
 }
 
-// The health check's one setting (ADR-0053): how many errored turns in a
-// row open a problem with a loop. A workstation down past its grace period
-// opens one whatever this says.
+// The health check's settings (ADR-0053): how many errored turns in a row
+// open a problem with a loop, and how many minutes one turn runs before it
+// does (#1142). A workstation down past its grace period opens one whatever
+// these say.
 function HealthCheck({ settings, loadError }: { settings?: SettingsView; loadError: Error | null }) {
   const qc = useQueryClient()
-  // As the other sections: the stored value is the truth, a draft overlays.
-  const [draft, setDraft] = useState<string | null>(null)
+  // As the other sections: the stored values are the truth, a draft overlays.
+  // Each field has its own, so editing one leaves the other on the stored value.
+  const [turnsDraft, setTurnsDraft] = useState<string | null>(null)
+  const [minutesDraft, setMinutesDraft] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const shown = draft ?? (settings ? errorTurnsField(settings.health_error_turns) : null)
-  const value = draft === null ? undefined : errorTurnsValue(draft)
-  const sendable = value !== undefined && value !== settings?.health_error_turns
+  const turnsShown = turnsDraft ?? (settings ? errorTurnsField(settings.health_error_turns) : null)
+  const minutesShown = minutesDraft ?? (settings ? turnMinutesField(settings.health_turn_minutes) : null)
+  const turns = turnsDraft === null ? undefined : errorTurnsValue(turnsDraft)
+  const minutes = minutesDraft === null ? undefined : turnMinutesValue(minutesDraft)
+  // A draft that is not a value the hub takes holds Save back, whichever field
+  // it is in; an untouched field is left out of the write.
+  const valid =
+    (turnsDraft === null || turns !== undefined) && (minutesDraft === null || minutes !== undefined)
+  const changed =
+    (turns !== undefined && turns !== settings?.health_error_turns) ||
+    (minutes !== undefined && minutes !== settings?.health_turn_minutes)
+  const sendable = valid && changed
 
   const save = async () => {
-    if (value === undefined) return
+    if (!sendable) return
     setBusy(true)
     setError('')
     try {
-      const saved = await api.setHealthErrorTurns(value)
-      setDraft(null)
+      const saved = await api.setHealthCheck({ health_error_turns: turns, health_turn_minutes: minutes })
+      setTurnsDraft(null)
+      setMinutesDraft(null)
       qc.setQueryData(['settings'], saved)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -271,13 +284,14 @@ function HealthCheck({ settings, loadError }: { settings?: SettingsView; loadErr
     }
   }
 
+  const drafting = turnsDraft !== null || minutesDraft !== null
   return (
     <section>
       <h2 className="section-head">Health check</h2>
       <p className="page-lede">
         The hub tells a loop's owner once when a problem opens with it, and once when it clears: when its
-        turns keep ending in errors, or its workstation stays down. Fleet marks the loop, and its page says
-        what is wrong.
+        turns keep ending in errors, a turn runs too long, or its workstation stays down. Fleet marks the
+        loop, and its page says what is wrong.
       </p>
       <div className="form">
         <div className="field">
@@ -286,12 +300,28 @@ function HealthCheck({ settings, loadError }: { settings?: SettingsView; loadErr
             id="health-error-turns"
             inputMode="numeric"
             placeholder="off"
-            value={shown ?? ''}
-            disabled={shown === null || busy}
-            onChange={(e) => setDraft(e.target.value)}
+            value={turnsShown ?? ''}
+            disabled={turnsShown === null || busy}
+            onChange={(e) => setTurnsDraft(e.target.value)}
           />
           <div className="hint">
             This many turns ending in an error, one after another, open a problem. Empty turns it off.
+          </div>
+        </div>
+        <div className="field">
+          <label htmlFor="health-turn-minutes">Minutes a turn may run</label>
+          <input
+            id="health-turn-minutes"
+            inputMode="numeric"
+            placeholder="off"
+            value={minutesShown ?? ''}
+            disabled={minutesShown === null || busy}
+            onChange={(e) => setMinutesDraft(e.target.value)}
+          />
+          <div className="hint">
+            A turn still running after this many minutes opens a problem, up to 1440 (a day). The hub doesn't
+            end the turn: Kill process on the loop's page does. A change holds from each loop's next turn.
+            Empty turns it off.
           </div>
         </div>
 
@@ -310,8 +340,15 @@ function HealthCheck({ settings, loadError }: { settings?: SettingsView; loadErr
           <button className="btn primary" onClick={save} disabled={busy || !sendable}>
             {busy ? 'Saving…' : 'Save'}
           </button>
-          {draft !== null && (
-            <button className="btn" onClick={() => setDraft(null)} disabled={busy}>
+          {drafting && (
+            <button
+              className="btn"
+              onClick={() => {
+                setTurnsDraft(null)
+                setMinutesDraft(null)
+              }}
+              disabled={busy}
+            >
               Cancel
             </button>
           )}

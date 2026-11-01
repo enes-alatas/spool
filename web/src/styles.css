@@ -888,6 +888,10 @@ textarea {
   background: var(--active-wash);
   border: 1px solid var(--active-line);
 }
+/* where the way out is a control elsewhere on the page (#1145) */
+.problem-next {
+  color: var(--text-muted);
+}
 .problem-line .btn {
   padding: 3px 10px;
   font-size: 0.75rem;
