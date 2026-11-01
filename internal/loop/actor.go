@@ -1999,6 +1999,9 @@ func (actor *Actor) carryCrashedBatch(killedFor string) {
 		}
 	}
 	if len(dropped) > 0 {
+		// marked before anything says the batch was dropped, so whatever
+		// rereads the message on it reads the mark
+		actor.tellDropped(dropped)
 		actor.storeSpoolEvent("batch_dropped", fmt.Sprintf(`{"envelopes":%d,"attempts":%d}`,
 			len(dropped), crashAttemptLimit))
 		actor.log().Warn("dropped what crashed every process that ran it",
@@ -2009,6 +2012,32 @@ func (actor *Actor) carryCrashedBatch(killedFor string) {
 		actor.lostSends = nil
 	}
 	actor.requeueBatch()
+}
+
+// tellDropped records each dropped message as dropped by this loop, and
+// publishes it, so the control room rereads it and the surfaces tell a
+// person who sent one that it was not taken, rather than leave them
+// believing the loop heard them (#1205).
+func (actor *Actor) tellDropped(dropped []Envelope) {
+	ctx := context.Background()
+	for _, env := range dropped {
+		id, ok := ParseMessageRef(env.Ref)
+		if !ok {
+			continue
+		}
+		if err := actor.deps.Store.Messages().MarkDropped(ctx, id, actor.loop.ID); err != nil {
+			actor.log().Error("record dropped message", "message", id, "err", err)
+		}
+		message, err := actor.deps.Store.Messages().Get(ctx, id)
+		if err != nil {
+			actor.log().Error("read dropped message", "message", id, "err", err)
+			continue
+		}
+		actor.deps.Bus.Publish(bus.Item{Kind: bus.KindMessageDropped, LoopID: actor.loop.ID, Payload: &surface.DropNotice{
+			LoopID: actor.loop.ID, LoopName: actor.loop.Name, MessageID: id,
+			FromLoop: message.Origin == store.OriginLoop, Conversation: message.Conversation, DMPerson: message.DMPerson,
+		}})
+	}
 }
 
 // carriesMessage reports whether a batch holds anything but ticks.

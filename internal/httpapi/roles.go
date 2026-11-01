@@ -10,6 +10,7 @@ import (
 	"github.com/enes-alatas/spool/internal/bus"
 	"github.com/enes-alatas/spool/internal/route"
 	"github.com/enes-alatas/spool/internal/store"
+	"github.com/enes-alatas/spool/internal/surface"
 )
 
 // codeForbiddenRole refuses a caller whose role is below the route's.
@@ -392,6 +393,10 @@ func streamable(who *caller, item bus.Item, reads func(*store.Message) bool) boo
 	case bus.KindPoll:
 		payload, ok := item.Payload.(*route.PollPayload)
 		return ok && payload.Target != nil && reads(payload.Target)
+	case bus.KindMessageDropped:
+		payload, ok := item.Payload.(*surface.DropNotice)
+		return ok && payload.Conversation != "" &&
+			reads(&store.Message{Conversation: payload.Conversation, DMPerson: payload.DMPerson})
 	case bus.KindLink:
 		payload, ok := item.Payload.(*route.LinkPayload)
 		return ok && who.user != nil && payload.UserID == who.user.ID

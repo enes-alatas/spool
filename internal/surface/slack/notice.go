@@ -19,11 +19,13 @@ import (
 const notices = 16
 
 // notice is one post the hub makes as a loop's app: in channel, or in the
-// DM with user, which the app opens when channel is "".
+// DM with user, which the app opens when channel is "". threadTS puts it
+// in a thread, "" for none.
 type notice struct {
-	channel string
-	user    string
-	text    string
+	channel  string
+	user     string
+	text     string
+	threadTS string
 }
 
 // notify queues a notice on the loop's app. It returns "" when it did, and
@@ -59,7 +61,7 @@ func (adapter *Adapter) postNotice(ctx context.Context, loopID string, queued no
 			return
 		}
 	}
-	if _, err := adapter.client.PostMessage(ctx, loopRecord.SlackBotToken, channel, queued.text, ""); err != nil {
+	if _, err := adapter.client.PostMessage(ctx, loopRecord.SlackBotToken, channel, queued.text, queued.threadTS); err != nil {
 		adapter.log.Warn("slack: notice not posted", "loop", loopRecord.Name, "err", err)
 	}
 }
@@ -136,4 +138,34 @@ func (adapter *Adapter) noticeProblem(ctx context.Context, problemNotice *surfac
 	}
 	unsent := adapter.notify(loopRecord.ID, notice{user: loopRecord.OwnerSlackUserID, text: escape(problemNotice.Text())})
 	adapter.ledger.ProblemNoticeEvent(ctx, problemNotice, unsent)
+}
+
+// noticeDrop tells the person whose message a Slack loop dropped, in the
+// thread of that message in the channel it came from, on the loop's app
+// (#1205). A message with no Slack ts came in on another surface: there is
+// no channel here to tell it in.
+func (adapter *Adapter) noticeDrop(ctx context.Context, dropNotice *surface.DropNotice) {
+	if dropNotice.FromLoop {
+		return
+	}
+	loopRecord, err := adapter.store.Loops().Get(ctx, dropNotice.LoopID)
+	if err != nil {
+		adapter.log.Warn("slack: read loop for drop notice", "loop", dropNotice.LoopID, "err", err)
+		return
+	}
+	if loopRecord.Surface() != store.SurfaceSlack {
+		return
+	}
+	message, err := adapter.store.Messages().Get(ctx, dropNotice.MessageID)
+	if err != nil {
+		adapter.log.Warn("slack: read dropped message", "message", dropNotice.MessageID, "err", err)
+		return
+	}
+	if message.SlackChannelID == "" || message.SlackTS == "" {
+		return
+	}
+	root := adapter.threadOf(ctx, message)
+	unsent := adapter.notify(loopRecord.ID, notice{channel: message.SlackChannelID, threadTS: root.SlackTS,
+		text: escape(dropNotice.Text())})
+	adapter.ledger.DropNoticeEvent(ctx, dropNotice, unsent)
 }

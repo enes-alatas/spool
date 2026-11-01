@@ -120,3 +120,31 @@ func TestSlackOwnerIsToldOfARefusedLoginOnce(t *testing.T) {
 		t.Fatalf("the owner was told the login works again %d times, want once", n)
 	}
 }
+
+// A Slack sender whose message a loop dropped is told so once, in the
+// thread of that message, on the loop's own app (#1205).
+func TestSlackSenderIsToldOfADroppedMessage(t *testing.T) {
+	t.Parallel()
+	workspace := t.TempDir()
+	hub, slack := startSlackFleetWith(t, map[string]any{"workspace_path": workspace, "workspace_mode": "dir"})
+	hub.waitTurn("terra", firstTurnWait, func(turn) bool { return true })
+	hub.waitState("terra", "asleep", 30*time.Second)
+	setScript(t, workspace, "!crash\n")
+
+	operatorDM := "D" + slackOperator
+	const text, ts = "the poisoned question", "1727600000.000200"
+	slack.pushMessage(t, slackAppToken, "im", operatorDM, slackOperator, text, ts)
+	if !hub.hasEvent("terra", "batch_dropped", 2*time.Minute) {
+		t.Fatalf("nothing was dropped; turns: %s", dump(hub.turns("terra")))
+	}
+	const noticeText = "couldn't take this message"
+	notice := slack.waitPost(t, noticeText)
+	if notice.Token != slackBotToken || notice.Channel != operatorDM || notice.ThreadTS != ts {
+		t.Fatalf("notice posted as %+v, want terra's app in the thread of %s in %s", notice, ts, operatorDM)
+	}
+	// give a second notice the time to go out, if it were going to
+	time.Sleep(2 * time.Second)
+	if told := countPosts(slack, noticeText); told != 1 {
+		t.Fatalf("the sender was told of one drop %d times, want once", told)
+	}
+}

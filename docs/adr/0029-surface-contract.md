@@ -1,6 +1,6 @@
 # ADR-0029: The Surface contract
 
-Date: 2026-09-20 · Status: accepted; item 6's pairing-code allowlist and item 8's pairing notice superseded by ADR-0051 · Amends: ADR-0020, ADR-0025 (item 4), ADR-0026 (item 1) · Amended: 2026-09-22 (item 2: the bus kinds a surface mirrors); 2026-09-23 (items 5 and 7: a surface is attached later and mirrors the fleet channel); 2026-09-27 (item 2: a credential and an identity are structs); 2026-09-28 (item 8: hub notices); 2026-09-29 (item 8: Slack's notices and login notice); 2026-09-29 (item 2: the mirror subscription is lossless); 2026-09-30 (item 2: `Stop`, ADR-0036); 2026-10-01 (item 5: a mirror per room, ADR-0038); 2026-10-02 (items 2 and 5: reactions, ADR-0040); 2026-10-02 (items 2 and 5: polls, ADR-0041); 2026-10-10 (item 8: the owner-only DM notice is gone, ADR-0049); 2026-10-10 (item 8: the link notice, ADR-0050); 2026-10-14 (items 2 and 8: the problem notice, ADR-0053); 2026-10-14 (item 5: edits, ADR-0055)
+Date: 2026-09-20 · Status: accepted; item 6's pairing-code allowlist and item 8's pairing notice superseded by ADR-0051 · Amends: ADR-0020, ADR-0025 (item 4), ADR-0026 (item 1) · Amended: 2026-09-22 (item 2: the bus kinds a surface mirrors); 2026-09-23 (items 5 and 7: a surface is attached later and mirrors the fleet channel); 2026-09-27 (item 2: a credential and an identity are structs); 2026-09-28 (item 8: hub notices); 2026-09-29 (item 8: Slack's notices and login notice); 2026-09-29 (item 2: the mirror subscription is lossless); 2026-09-30 (item 2: `Stop`, ADR-0036); 2026-10-01 (item 5: a mirror per room, ADR-0038); 2026-10-02 (items 2 and 5: reactions, ADR-0040); 2026-10-02 (items 2 and 5: polls, ADR-0041); 2026-10-10 (item 8: the owner-only DM notice is gone, ADR-0049); 2026-10-10 (item 8: the link notice, ADR-0050); 2026-10-14 (items 2 and 8: the problem notice, ADR-0053); 2026-10-14 (item 5: edits, ADR-0055); 2026-11-01 (item 8: the drop notice, #1205)
 
 ## Context
 
@@ -262,6 +262,26 @@ contract.
    the adapter's: the notice is published only when a problem row opened
    or cleared. So item 2's list of kinds a surface subscribes to gains
    `KindLoopProblem`.
+
+   **Amendment (2026-11-01, #1205):** a fourth joins them, the **drop
+   notice**, and it is the first told to someone other than the owner. A
+   loop drops a message whose turn crashed every process that ran it,
+   three times (#1189), and the person who sent it would otherwise
+   believe the loop heard them. The loop publishes
+   `bus.KindMessageDropped` with a `surface.DropNotice` for each dropped
+   message. Every adapter tells it for one a person sent, not for another
+   loop's, on that loop's identity as a reply to the message in the chat
+   it came from: a Telegram reply, or a Slack thread reply. That chat may
+   be the owner's DM, a `dm:<name>` or a channel's room, where everyone in
+   the room reads it. A message that came in on another surface, or that
+   the loop's bot never saw, is told nothing there. The text is the
+   seam's (`DropNotice.Text`), and it is told once per message and loop.
+   It is still not a message, and the loop's timeline records an
+   `owner_notice` event for it. The control room learns of the drop from
+   the message row, which names the loops that dropped it
+   (`dropped_by`), and rereads it when the item reaches its stream, which
+   carries it only to whoever reads the message (#922). So item 2's list
+   of kinds a surface subscribes to gains `KindMessageDropped`.
 
 ## Consequences
 
