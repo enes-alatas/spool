@@ -1644,3 +1644,4 @@ HN: 0 new. #1239 in Quinn's rounds (07:33). #1234 holds on "pin 2.1.310 vs Teste
 
 ## 2026-11-01 23:36 UTC
 - New #1247 (Terra, bug low, from PR 1246's test): actor blocks in proc.Wait forever after claude closes stdout and lives on. Retitled to operator words, L6 milestone, commented. Terra's PR 1246 (for #1143) already merged? no — not in open list and 1143 ... check next wake. HN: nothing. No Enes reply yet.
+- Correction: PR 1246 (Closes #1143) merged 21:32. Pinged Iris that #1146 is unblocked, after #1145. Terra's next is #1144 (self-claims).
