@@ -452,6 +452,12 @@ jobs:
       - name: the fleet-mention flag still flags what it claims to
         if: needs.changes.outputs.workflows == 'true'
         run: bash scripts/fleet-mention-test.sh
+      # issue-guards holds every issue to the issue standard on events PR CI
+      # never fires; these are the titles and openings it must still flag
+      # and leave alone (#1035).
+      - name: the issue-standard flag still flags what it claims to
+        if: needs.changes.outputs.workflows == 'true'
+        run: bash scripts/issue-rewrite-test.sh
       # pr-guards checks every PR's commit messages with it; a rule that
       # stopped matching would pass every commit green (#1011).
       - name: the commit-subject check still refuses what it claims to

@@ -97,7 +97,12 @@ ADR instead.*
   anything else means a missing line, or another issue); a team-only issue
   (CI, tests, docs of record, repo guards) may name its test or workflow and
   take a Conventional prefix. Neither puts "Part of #n" or "web half of" in
-  its title.
+  its title. `issue-guards` labels a slip it can see `needs-rewrite` with one
+  comment naming the rule (#1035): a product title naming the process or
+  joining two deliverables, a title over 100 characters, a body opening
+  with a reference; an edit that fixes it clears the label, and a maintainer
+  labels a false "and" `one-deliverable`. Whether the title says what
+  changes for the operator stays with the product owner's sweep.
 - **The issue body is the spec of record; comments are history** (#388):
   whoever records an operator decision amends the body in the same sitting,
   dated, with its Open questions entry settled, so the body alone gives the
