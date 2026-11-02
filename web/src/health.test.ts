@@ -8,8 +8,13 @@ import {
   problemLine,
   problemMeaning,
   problemNext,
-  turnMinutesField,
-  turnMinutesValue,
+  minutesField,
+  minutesNote,
+  minutesValue,
+  stepField,
+  stopIndex,
+  stopLabel,
+  TURN_MINUTE_STOPS,
 } from './health'
 
 const minute = 60 * 1000
@@ -120,18 +125,74 @@ describe('turn_stuck', () => {
   })
 })
 
-describe('turnMinutesField and turnMinutesValue', () => {
+describe('minutesField and minutesValue', () => {
   it('shows off as empty and a limit as its minutes', () => {
-    expect(turnMinutesField(0)).toBe('')
-    expect(turnMinutesField(120)).toBe('120')
+    expect(minutesField(0)).toBe('')
+    expect(minutesField(120)).toBe('120')
   })
 
   it('takes empty for off and minutes up to a day', () => {
-    expect(turnMinutesValue('')).toBe(0)
-    expect(turnMinutesValue(' 90 ')).toBe(90)
-    expect(turnMinutesValue('1440')).toBe(1440)
-    expect(turnMinutesValue('1441')).toBeUndefined()
-    expect(turnMinutesValue('1.5')).toBeUndefined()
-    expect(turnMinutesValue('-5')).toBeUndefined()
+    expect(minutesValue('')).toBe(0)
+    expect(minutesValue(' 90 ')).toBe(90)
+    expect(minutesValue('1440')).toBe(1440)
+    expect(minutesValue('1441')).toBeUndefined()
+    expect(minutesValue('1.5')).toBeUndefined()
+    expect(minutesValue('-5')).toBeUndefined()
+  })
+})
+
+// #1146: a wake owed past health_wake_grace_minutes with no turn (#1143).
+describe('wake_missed', () => {
+  const at = new Date(2026, 10, 1, 14, 2).getTime()
+  const time = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+
+  it('says the loop was due to wake and has not, and since when', () => {
+    expect(problemLine({ symptom: 'wake_missed', since: at }, at + 25 * minute)).toBe(
+      `Due to wake and hasn't: waiting 25m, since ${time(at)}`,
+    )
+  })
+
+  it('is failing, since the loop is doing nothing', () => {
+    expect(problemHealth({ symptom: 'wake_missed', since: at })).toBe('failing')
+    expect(problemMeaning({ symptom: 'wake_missed', since: at })).toMatch(/stopped answering/)
+    expect(problemNext({ symptom: 'wake_missed', since: at })).toBeUndefined()
+  })
+})
+
+// #1146: Settings' sliders snap to steps; the number above takes any value.
+describe('the health limit controls', () => {
+  it('puts a value on the last step at or below it', () => {
+    expect(stopIndex(TURN_MINUTE_STOPS, 0)).toBe(0)
+    expect(stopIndex(TURN_MINUTE_STOPS, 120)).toBe(TURN_MINUTE_STOPS.indexOf(120))
+    expect(stopIndex(TURN_MINUTE_STOPS, 100)).toBe(TURN_MINUTE_STOPS.indexOf(90))
+    expect(stopIndex(TURN_MINUTE_STOPS, 1440)).toBe(TURN_MINUTE_STOPS.length - 1)
+  })
+
+  it('every step list starts at off and climbs', () => {
+    expect(TURN_MINUTE_STOPS[0]).toBe(0)
+    expect([...TURN_MINUTE_STOPS].sort((a, b) => a - b)).toEqual(TURN_MINUTE_STOPS)
+  })
+
+  it('steps the number by one within its range, empty for off', () => {
+    expect(stepField('120', 1, 1440)).toBe('121')
+    expect(stepField('1', -1, 1440)).toBe('')
+    expect(stepField('', 1, 100)).toBe('1')
+    expect(stepField('', -1, 100)).toBe('')
+    expect(stepField('1440', 1, 1440)).toBe('1440')
+    expect(stepField('abc', 1, 100)).toBe('1')
+  })
+
+  it('says minutes at a glance from an hour up', () => {
+    expect(minutesNote(45)).toBe('')
+    expect(minutesNote(60)).toBe('1h')
+    expect(minutesNote(90)).toBe('1h 30m')
+    expect(minutesNote(1440)).toBe('1d')
+  })
+
+  it('labels a step', () => {
+    expect(stopLabel(0, true)).toBe('off')
+    expect(stopLabel(15, true)).toBe('15m')
+    expect(stopLabel(240, true)).toBe('4h')
+    expect(stopLabel(20, false)).toBe('20')
   })
 })

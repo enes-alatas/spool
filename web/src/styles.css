@@ -5008,3 +5008,140 @@ button.panel-link {
 .side-panel .row .v.warn {
   color: var(--active);
 }
+/* The health check's limits (#1146): a card each, three to a row, with the
+   exact value as a large number and a slider for the common ones. The
+   slider is the pace control's look: a thin track lit up to a solid dot in
+   the active colour. */
+.health-limits {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.health-limit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.health-limit label {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.health-limit-value {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-family: var(--mono);
+}
+/* the number reads as the card's value until it is focused, when it shows
+   that it takes typing */
+.health-limit-value input {
+  min-width: 0;
+  padding: 0 2px;
+  border-color: transparent;
+  background: none;
+  font-family: var(--mono);
+  font-size: 1.5rem;
+}
+.health-limit-value input:hover:not(:disabled) {
+  border-color: var(--hairline);
+}
+.health-limit-value input[aria-invalid='true'] {
+  border-color: var(--danger-line);
+  color: var(--danger);
+}
+.health-limit-unit,
+.health-limit-note {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.health-limit-note::before {
+  content: '· ';
+}
+.health-limit input[type='range'] {
+  width: 100%;
+  height: 20px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.health-limit input[type='range']::-webkit-slider-runnable-track {
+  height: 2px;
+  border-radius: 1px;
+  background: linear-gradient(to right, var(--active) var(--lit), var(--hairline) var(--lit));
+}
+.health-limit input[type='range']::-moz-range-track {
+  height: 2px;
+  border-radius: 1px;
+  background: linear-gradient(to right, var(--active) var(--lit), var(--hairline) var(--lit));
+}
+.health-limit input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -6px;
+  border-radius: 50%;
+  border: none;
+  background: var(--active);
+  cursor: grab;
+}
+.health-limit input[type='range']::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: none;
+  background: var(--active);
+  cursor: grab;
+}
+.health-limit input[type='range']:focus-visible {
+  outline: none;
+}
+.health-limit input[type='range']:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px var(--active-line);
+}
+.health-limit input[type='range']:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 3px var(--active-line);
+}
+/* off: the track and dot go quiet, so a row of limits shows at a glance
+   which are on */
+.health-limit.off input[type='range']::-webkit-slider-thumb {
+  background: var(--text-muted);
+}
+.health-limit.off input[type='range']::-moz-range-thumb {
+  background: var(--text-muted);
+}
+/* the step labels, each under its step: a thumb's centre runs from half a
+   thumb in to half a thumb short of the end, so they are laid on that
+   inner length */
+.health-limit-ticks {
+  position: relative;
+  height: 14px;
+  margin: 0 7px;
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  color: var(--text-muted);
+}
+.health-limit-ticks span {
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.health-limit .hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+@media (max-width: 720px) {
+  .health-limits {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

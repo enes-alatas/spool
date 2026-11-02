@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type CSSProperties } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ApiError, type CustomModel, type Settings as SettingsView } from '../api'
 import { customModelError, MODEL_LABEL_MAX, rotationGate } from '../forms'
@@ -14,7 +14,19 @@ import { ChatAccess } from '../components/ChatAccess'
 import { LinksSection } from '../components/LinksSection'
 import { CapBanners, useMinuteClock } from '../components/PlanUsage'
 import { capFields, capGate, capValue, type CapDraft } from '../planCap'
-import { errorTurnsField, errorTurnsValue, turnMinutesField, turnMinutesValue } from '../health'
+import {
+  ERROR_TURN_STOPS,
+  TURN_MINUTE_STOPS,
+  WAKE_MINUTE_STOPS,
+  errorTurnsField,
+  errorTurnsValue,
+  minutesField,
+  minutesNote,
+  minutesValue,
+  stepField,
+  stopIndex,
+  stopLabel,
+} from '../health'
 
 export default function Settings() {
   const { data: settings, error: loadError } = useQuery({ queryKey: ['settings'], queryFn: api.settings })
@@ -242,40 +254,109 @@ function PlanGuardrails({ settings, loadError }: { settings?: SettingsView; load
   )
 }
 
+// The health check's settings, by their names in the settings view, and how
+// Settings shows and reads each one: the slider's steps and the ones it
+// labels, and the number field's largest value.
+type HealthKey = 'health_error_turns' | 'health_turn_minutes' | 'health_wake_grace_minutes'
+
+const HEALTH_FIELDS: {
+  key: HealthKey
+  id: string
+  label: string
+  unit: string
+  hint: string
+  minutes: boolean
+  max: number
+  stops: number[]
+  ticks: number[]
+  field: (stored: number) => string
+  value: (field: string) => number | undefined
+}[] = [
+  {
+    key: 'health_error_turns',
+    id: 'health-error-turns',
+    label: 'Errored turns',
+    unit: 'in a row',
+    hint: 'Turns ending in an error, one after another.',
+    minutes: false,
+    max: 100,
+    stops: ERROR_TURN_STOPS,
+    ticks: [0, 5, 10, 100],
+    field: errorTurnsField,
+    value: errorTurnsValue,
+  },
+  {
+    key: 'health_turn_minutes',
+    id: 'health-turn-minutes',
+    label: 'Long turn',
+    unit: 'min',
+    hint: 'A turn running this long. Kill process ends it.',
+    minutes: true,
+    max: 1440,
+    stops: TURN_MINUTE_STOPS,
+    ticks: [0, 60, 240, 1440],
+    field: minutesField,
+    value: minutesValue,
+  },
+  {
+    key: 'health_wake_grace_minutes',
+    id: 'health-wake-grace-minutes',
+    label: 'Missed wake',
+    unit: 'min',
+    hint: 'A wake that starts no turn this long.',
+    minutes: true,
+    max: 1440,
+    stops: WAKE_MINUTE_STOPS,
+    ticks: [0, 10, 60, 1440],
+    field: minutesField,
+    value: minutesValue,
+  },
+]
+
 // The health check's settings (ADR-0053): how many errored turns in a row
-// open a problem with a loop, and how many minutes one turn runs before it
-// does (#1142). A workstation down past its grace period opens one whatever
-// these say.
+// open a problem with a loop, how many minutes one turn runs before it does
+// (#1142), and how many a wake the loop owes waits for a turn (#1143). A
+// workstation down past its grace period opens one whatever these say.
+//
+// Each is a card with a slider for the common values and a number for an
+// exact one (#1146): dragging snaps to steps, ←/→ on the slider move one
+// step, and ↑/↓ in the number move it by one.
 function HealthCheck({ settings, loadError }: { settings?: SettingsView; loadError: Error | null }) {
   const qc = useQueryClient()
   // As the other sections: the stored values are the truth, a draft overlays.
-  // Each field has its own, so editing one leaves the other on the stored value.
-  const [turnsDraft, setTurnsDraft] = useState<string | null>(null)
-  const [minutesDraft, setMinutesDraft] = useState<string | null>(null)
+  // Each field has its own, so editing one leaves the others on the stored value.
+  const [drafts, setDrafts] = useState<Partial<Record<HealthKey, string>>>({})
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const turnsShown = turnsDraft ?? (settings ? errorTurnsField(settings.health_error_turns) : null)
-  const minutesShown = minutesDraft ?? (settings ? turnMinutesField(settings.health_turn_minutes) : null)
-  const turns = turnsDraft === null ? undefined : errorTurnsValue(turnsDraft)
-  const minutes = minutesDraft === null ? undefined : turnMinutesValue(minutesDraft)
-  // A draft that is not a value the hub takes holds Save back, whichever field
-  // it is in; an untouched field is left out of the write.
-  const valid =
-    (turnsDraft === null || turns !== undefined) && (minutesDraft === null || minutes !== undefined)
-  const changed =
-    (turns !== undefined && turns !== settings?.health_error_turns) ||
-    (minutes !== undefined && minutes !== settings?.health_turn_minutes)
+  // Only the fields drafted go in the write, so an untouched one is left out.
+  // A draft that is not a value the hub takes holds Save back, whichever
+  // field it is in.
+  const body: Partial<Record<HealthKey, number>> = {}
+  let valid = true
+  let changed = false
+  for (const f of HEALTH_FIELDS) {
+    const draft = drafts[f.key]
+    if (draft === undefined) continue
+    const value = f.value(draft)
+    if (value === undefined) {
+      valid = false
+      continue
+    }
+    body[f.key] = value
+    if (value !== settings?.[f.key]) changed = true
+  }
   const sendable = valid && changed
+  const drafting = Object.keys(drafts).length > 0
+  const draft = (key: HealthKey, text: string) => setDrafts((d) => ({ ...d, [key]: text }))
 
   const save = async () => {
     if (!sendable) return
     setBusy(true)
     setError('')
     try {
-      const saved = await api.setHealthCheck({ health_error_turns: turns, health_turn_minutes: minutes })
-      setTurnsDraft(null)
-      setMinutesDraft(null)
+      const saved = await api.setHealthCheck(body)
+      setDrafts({})
       qc.setQueryData(['settings'], saved)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -284,75 +365,88 @@ function HealthCheck({ settings, loadError }: { settings?: SettingsView; loadErr
     }
   }
 
-  const drafting = turnsDraft !== null || minutesDraft !== null
   return (
     <section>
       <h2 className="section-head">Health check</h2>
       <p className="page-lede">
-        The hub tells a loop's owner once when a problem opens with it, and once when it clears: when its
-        turns keep ending in errors, a turn runs too long, or its workstation stays down. Fleet marks the
-        loop, and its page says what is wrong.
+        The hub tells a loop's owner once when a problem opens with it, and once when it clears. Fleet marks
+        the loop, and its page says what is wrong. A workstation down opens one whatever these say.
       </p>
-      <div className="form">
-        <div className="field">
-          <label htmlFor="health-error-turns">Errored turns in a row</label>
-          <input
-            id="health-error-turns"
-            inputMode="numeric"
-            placeholder="off"
-            value={turnsShown ?? ''}
-            disabled={turnsShown === null || busy}
-            onChange={(e) => setTurnsDraft(e.target.value)}
-          />
-          <div className="hint">
-            This many turns ending in an error, one after another, open a problem. Empty turns it off.
-          </div>
-        </div>
-        <div className="field">
-          <label htmlFor="health-turn-minutes">Minutes a turn may run</label>
-          <input
-            id="health-turn-minutes"
-            inputMode="numeric"
-            placeholder="off"
-            value={minutesShown ?? ''}
-            disabled={minutesShown === null || busy}
-            onChange={(e) => setMinutesDraft(e.target.value)}
-          />
-          <div className="hint">
-            A turn still running after this many minutes opens a problem, up to 1440 (a day). The hub doesn't
-            end the turn: Kill process on the loop's page does. A change holds from each loop's next turn.
-            Empty turns it off.
-          </div>
-        </div>
+      <div className="health-limits">
+        {HEALTH_FIELDS.map((f) => {
+          const shown = drafts[f.key] ?? (settings ? f.field(settings[f.key]) : null)
+          const value = shown === null ? undefined : f.value(shown)
+          const off = value === 0
+          const note = f.minutes && value !== undefined ? minutesNote(value) : ''
+          const last = f.stops.length - 1
+          return (
+            <div className={`health-limit${off ? ' off' : ''}`} key={f.key}>
+              <label htmlFor={f.id}>{f.label}</label>
+              <div className="health-limit-value">
+                <input
+                  id={f.id}
+                  inputMode="numeric"
+                  placeholder="off"
+                  value={shown ?? ''}
+                  disabled={shown === null || busy}
+                  aria-invalid={value === undefined && shown !== null}
+                  onChange={(e) => draft(f.key, e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+                    e.preventDefault()
+                    draft(f.key, stepField(shown ?? '', e.key === 'ArrowUp' ? 1 : -1, f.max))
+                  }}
+                  // as wide as what it holds, so the unit sits beside the number
+                  style={{ width: `${Math.max((shown || 'off').length, 2) + 1}ch` }}
+                />
+                {!off && <span className="health-limit-unit">{f.unit}</span>}
+                {note && <span className="health-limit-note">{note}</span>}
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={last}
+                step={1}
+                value={stopIndex(f.stops, value ?? 0)}
+                disabled={shown === null || busy}
+                aria-label={`${f.label}, in steps`}
+                aria-valuetext={value ? `${value} ${f.unit}` : 'off'}
+                style={{ '--lit': `${(stopIndex(f.stops, value ?? 0) / last) * 100}%` } as CSSProperties}
+                onChange={(e) => draft(f.key, f.field(f.stops[Number(e.target.value)]))}
+              />
+              <div className="health-limit-ticks" aria-hidden="true">
+                {f.ticks.map((tick) => (
+                  <span key={tick} style={{ left: `${(stopIndex(f.stops, tick) / last) * 100}%` }}>
+                    {stopLabel(tick, f.minutes)}
+                  </span>
+                ))}
+              </div>
+              <div className="hint">{f.hint}</div>
+            </div>
+          )
+        })}
+      </div>
 
-        {!settings && loadError && (
-          <div className="form-error" role="alert">
-            {loadFailure(loadError)}
-          </div>
-        )}
-        {error && (
-          <div className="form-error" role="alert">
-            {error}
-          </div>
-        )}
+      {!settings && loadError && (
+        <div className="form-error" role="alert">
+          {loadFailure(loadError)}
+        </div>
+      )}
+      {error && (
+        <div className="form-error" role="alert">
+          {error}
+        </div>
+      )}
 
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn primary" onClick={save} disabled={busy || !sendable}>
-            {busy ? 'Saving…' : 'Save'}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button className="btn primary" onClick={save} disabled={busy || !sendable}>
+          {busy ? 'Saving…' : 'Save'}
+        </button>
+        {drafting && (
+          <button className="btn" onClick={() => setDrafts({})} disabled={busy}>
+            Cancel
           </button>
-          {drafting && (
-            <button
-              className="btn"
-              onClick={() => {
-                setTurnsDraft(null)
-                setMinutesDraft(null)
-              }}
-              disabled={busy}
-            >
-              Cancel
-            </button>
-          )}
-        </div>
+        )}
       </div>
     </section>
   )
