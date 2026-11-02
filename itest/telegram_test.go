@@ -775,8 +775,15 @@ func startTelegramFleet(t *testing.T, operator user, overrides ...map[string]any
 // holds, for a test that restarts the hub on it.
 func startTelegramFleetIn(t *testing.T, dataDir string, operator user, overrides ...map[string]any) (*server, *fakeTelegram) {
 	t.Helper()
+	return startTelegramFleetArgs(t, dataDir, nil, operator, overrides...)
+}
+
+// startTelegramFleetArgs is startTelegramFleetIn with flags of the test's
+// own added to the hub's.
+func startTelegramFleetArgs(t *testing.T, dataDir string, hubArgs []string, operator user, overrides ...map[string]any) (*server, *fakeTelegram) {
+	t.Helper()
 	tg := startFakeTelegram(t, "alpha", "beta")
-	srv := startTelegramServer(t, dataDir, tg)
+	srv := startTelegramServer(t, dataDir, tg, hubArgs...)
 	for i, name := range []string{"alpha", "beta"} {
 		req := map[string]any{"tg_bot_token": name}
 		if i < len(overrides) {
@@ -803,12 +810,12 @@ func startTelegramFleetIn(t *testing.T, dataDir string, operator user, overrides
 // cannot drift apart: the margin exists to cover Telegram's clock skew, the
 // stand-in has none, and 24 rows sleeping out the production five seconds
 // was a third of the suite's runtime (#136).
-func startTelegramServer(t *testing.T, dataDir string, tg *fakeTelegram) *server {
+func startTelegramServer(t *testing.T, dataDir string, tg *fakeTelegram, extra ...string) *server {
 	t.Helper()
-	return startServerArgs(t, dataDir, "--runtime", "bare",
+	return startServerArgs(t, dataDir, append([]string{"--runtime", "bare",
 		"--telegram-api-base", tg.srv.URL,
 		"--telegram-bind-settle-sec", "1",
-		"--telegram-answer-timeout-sec", "5")
+		"--telegram-answer-timeout-sec", "5"}, extra...)...)
 }
 
 // settleBindings waits out the margin a freshly bound bot serves before it
