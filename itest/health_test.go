@@ -238,14 +238,16 @@ func TestATurnPastItsLimitIsToldToTheOwner(t *testing.T) {
 // problem the owner hears of once, dated from the wake. Here the loop's
 // actor stops answering: its claude ends a turn, closes its output and
 // lives on, and the hub's wait for that exit holds the actor, so a tick
-// asked of it meanwhile goes unread. The turn the tick starts once the
-// process exits clears the problem, and the owner hears of that once too.
+// asked of it meanwhile goes unread: the hub's exit grace is lengthened
+// past the wedge here, or the hub would end the process after 30 seconds
+// (#1247). The turn the tick starts once the process exits clears the
+// problem, and the owner hears of that once too.
 // A paused loop's tick is no wake it owes, so it opens nothing (#1143).
 func TestAWakeThatStartsNoTurnIsToldToTheOwner(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 7676, First: "Operator", Username: "operator"}
 	workspace := workspaceWithScript(t, "ok\nok\n!wedge 150\nback to work\n")
-	hub, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": workspace})
+	hub, tg := startTelegramFleetArgs(t, t.TempDir(), []string{"--exit-grace-sec", "300"}, operator, map[string]any{"workspace_path": workspace})
 	hub.waitCompleted("alpha", 1)
 	tg.dm("alpha", operator, "hi alpha")
 	waitOwnerDMReady(t, hub, "alpha")

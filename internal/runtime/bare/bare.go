@@ -330,8 +330,15 @@ func (proc *hostProc) Kill() error {
 	if proc.cmd.Process == nil {
 		return nil
 	}
+	// TERM now, KILL after a grace, as Reap does: a claude that ignores the
+	// TERM would otherwise live on and hold its loop's wait (#1247). The
+	// KILL of a process already reaped finds nothing to signal.
 	_ = proc.cmd.Process.Signal(syscall.SIGTERM)
-	return nil // Wait() escalates to SIGKILL if needed via process group teardown
+	go func() {
+		time.Sleep(orphanGrace)
+		_ = proc.cmd.Process.Signal(syscall.SIGKILL)
+	}()
+	return nil
 }
 
 func (proc *hostProc) Wait() claude.ExitInfo {

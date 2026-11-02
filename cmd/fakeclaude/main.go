@@ -29,8 +29,8 @@
 // the window, with no usage, and keeps the session; "!error" returns the
 // errored result an API failure ends a turn with, and keeps the session;
 // "!wedge <seconds>" ends the turn well, then closes stdout and lives on
-// that long before it exits, so the hub's wait for the exit holds the
-// loop's actor that long (#1143). A "!send" directive may write "$ref" where the reference of the message
+// that long before it exits, unless the hub ends it first: its wait for
+// the exit holds the loop's actor for the exit grace (#1143, #1247). A "!send" directive may write "$ref" where the reference of the message
 // being answered belongs; the fake substitutes it from the envelope header.
 //
 // "!ctx <tokens>" prefix makes the turn report that many input tokens per API

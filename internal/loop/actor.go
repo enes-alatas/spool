@@ -135,6 +135,9 @@ type Deps struct {
 	// ProblemDownGrace is how long a workstation stays down before the
 	// health check opens a problem for it (ADR-0053); 0 means the default.
 	ProblemDownGrace time.Duration
+	// ExitGrace is how long a claude that has closed its output is given to
+	// exit before the hub ends it (#1247); 0 means the drain's grace.
+	ExitGrace time.Duration
 	// SendOutage reports whether the surface the loop's latest send failed
 	// on looks down, which holds its send_failed wake and notice (#1144).
 	// NewManager sets it; nil holds nothing.
@@ -1913,7 +1916,7 @@ func (actor *Actor) refreshEnv() {
 }
 
 func (actor *Actor) handleProcExit() {
-	exit := actor.proc.Wait()
+	exit := actor.awaitExit()
 	pid := actor.proc.PID()
 	actor.proc = nil
 	actor.procEvents = nil
@@ -3157,6 +3160,44 @@ const killedByOperator = "killed by the operator"
 // endedByVerb begins what a turn a power verb ended says, the verb after it.
 // Its batch is said again without counting as an attempt.
 const endedByVerb = "ended by "
+
+// awaitExit is the exit of the process whose output has closed. One that
+// closes its output and lives on would hold the actor in its wait, deaf to
+// every command, timer and message, so it is given the exit grace, then
+// killed and given procStopGrace more. One that outlives even that is left
+// to its runtime's kill, and the exit path goes on without it (#1247).
+func (actor *Actor) awaitExit() claude.ExitInfo {
+	proc := actor.proc
+	exited := make(chan claude.ExitInfo, 1)
+	go func() { exited <- proc.Wait() }()
+	grace := time.NewTimer(actor.exitGrace())
+	defer grace.Stop()
+	select {
+	case exit := <-exited:
+		return exit
+	case <-grace.C:
+	}
+	actor.log().Warn("claude closed its output and did not exit; killing it")
+	if actor.killedFor == "" {
+		actor.killedFor = "claude closed its output and did not exit, so the hub ended it"
+	}
+	_ = proc.Kill()
+	grace.Reset(procStopGrace)
+	select {
+	case exit := <-exited:
+		return exit
+	case <-grace.C:
+		actor.log().Error("claude outlived its kill; the loop goes on without it")
+		return claude.ExitInfo{Code: -1}
+	}
+}
+
+func (actor *Actor) exitGrace() time.Duration {
+	if actor.deps.ExitGrace > 0 {
+		return actor.deps.ExitGrace
+	}
+	return drainGrace
+}
 
 // killProc kills the claude process for why, which the turn it ends says
 // in place of the process's own exit (#1096).
