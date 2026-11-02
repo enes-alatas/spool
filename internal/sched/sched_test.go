@@ -19,7 +19,7 @@ func (counter tickCounter) Tick(loopID string) bool {
 	return true
 }
 
-func (tickCounter) CheckWakes() {}
+func (tickCounter) CheckHealth() {}
 
 // Only the ticks that came due while the hub was down are pushed out: a
 // tick asked for once the scheduler runs, as a new loop's first is, fires

@@ -197,8 +197,9 @@ func TestADownWorkstationIsToldToTheOwnerOnce(t *testing.T) {
 
 // A turn that runs past the limit is a problem the owner hears of once,
 // dated from the turn's start, and the hub leaves the turn running. The
-// owner's Kill ends the turn, which clears the problem, and they hear of
-// that once too (#1142).
+// check runs outside the actor every 30 seconds (#1260), so the problem
+// opens within one check of the limit. The owner's Kill ends the turn,
+// which clears the problem, and they hear of that once too (#1142).
 func TestATurnPastItsLimitIsToldToTheOwner(t *testing.T) {
 	t.Parallel()
 	operator := user{ID: 7575, First: "Operator", Username: "operator"}
@@ -213,7 +214,7 @@ func TestATurnPastItsLimitIsToldToTheOwner(t *testing.T) {
 	hub.message("alpha", "the long question")
 	hub.waitState("alpha", "busy", 30*time.Second)
 	var view loopView
-	within(t, 90*time.Second, "alpha's turn_stuck problem", func() bool {
+	within(t, 120*time.Second, "alpha's turn_stuck problem", func() bool {
 		view = hub.loop("alpha")
 		return view.Health == "warning"
 	})
@@ -346,4 +347,42 @@ func TestALoopThatStopsReadingHoldsNoOtherLoopsTick(t *testing.T) {
 		return hub.loop("alpha").Health == "ok"
 	})
 	hub.waitCompleted("alpha", 2)
+}
+
+// A long turn's problem the operator acknowledges stays closed for the
+// rest of that turn: the check outside the actor runs every 30 seconds
+// and finds the turn still past its limit at each, and opens nothing for
+// it (#1260). The owner heard of it once.
+func TestAnAcknowledgedLongTurnIsNotToldAgain(t *testing.T) {
+	t.Parallel()
+	operator := user{ID: 7578, First: "Operator", Username: "operator"}
+	workspace := workspaceWithScript(t, "ok\nok\n!hang 600\n")
+	hub, tg := startTelegramFleet(t, operator, map[string]any{"workspace_path": workspace})
+	hub.waitCompleted("alpha", 1)
+	tg.dm("alpha", operator, "hi alpha")
+	waitOwnerDMReady(t, hub, "alpha")
+	hub.waitCompleted("alpha", 2)
+	hub.mustJSON("PUT", "/api/settings", map[string]any{"health_turn_minutes": 1}, nil)
+
+	hub.message("alpha", "the long question")
+	hub.waitState("alpha", "busy", 30*time.Second)
+	within(t, 120*time.Second, "alpha's turn_stuck problem", func() bool {
+		return hub.loop("alpha").Health == "warning"
+	})
+	tg.waitSentFrom(t, operator.ID, "alpha", "alpha's turn has been running since")
+
+	var view loopView
+	hub.mustJSON("POST", "/api/loops/alpha/problems/turn_stuck/acknowledge", nil, &view)
+	if view.Health != "ok" || len(view.Problems) != 0 {
+		t.Fatalf("after the acknowledge alpha's health = %q with problems %+v, want ok", view.Health, view.Problems)
+	}
+	time.Sleep(65 * time.Second) // two checks, with the turn still running
+	if view = hub.loop("alpha"); view.State != "busy" || view.Health != "ok" || len(view.Problems) != 0 {
+		t.Fatalf("alpha is %q with health %q and problems %+v after the checks, want the turn running and ok", view.State, view.Health, view.Problems)
+	}
+	if told := countSent(tg, operator.ID, "turn has been running since"); told != 1 {
+		t.Fatalf("the owner was told of one long turn %d times, want once", told)
+	}
+	hub.mustJSON("POST", "/api/loops/alpha/kill", nil, nil)
+	hub.waitHealth("alpha", "ok")
 }

@@ -120,10 +120,9 @@ func (actor *Actor) Problems() []store.Problem {
 // Acknowledge clears the loop's open problem for symptom as the operator's
 // doing, and reports whether there was one. The symptom's watch starts over:
 // a workstation still down is a problem again after another grace period,
-// and a loop still failing after as many errored turns again. A turn past
-// its limit doesn't open it again, though the loop's next turn starts a new
-// limit.
-// A missed wake is acknowledged outside the actor, by AcknowledgeMissedWake.
+// and a loop still failing after as many errored turns again. A missed wake
+// and a turn past its limit are acknowledged outside the actor, by
+// AcknowledgeMissedWake and AcknowledgeStuckTurn.
 func (actor *Actor) Acknowledge(symptom string) bool {
 	reply := make(chan bool, 1)
 	if !actor.send(cmd{kind: "acknowledge", symptom: symptom, cleared: reply}) {
@@ -253,16 +252,14 @@ func (actor *Actor) hasProblem(symptom string) bool {
 	return slices.ContainsFunc(actor.Problems(), func(problem store.Problem) bool { return problem.Symptom == symptom })
 }
 
-// CheckWakes opens a wake_missed problem for each loop that has owed a
-// turn for longer than the grace while free to take one. The scheduler
-// calls it every 30 seconds, outside every actor, since an actor that has
-// stopped answering can't report itself.
-func (manager *Manager) CheckWakes() {
+// CheckHealth opens a wake_missed problem for each loop that has owed a
+// turn for longer than the grace while free to take one, and a turn_stuck
+// problem for each whose turn has run past the limit it took as it
+// started (#1260). The scheduler calls it every 30 seconds, outside every
+// actor, since an actor that has stopped answering can't report itself.
+func (manager *Manager) CheckHealth() {
 	ctx := context.Background()
 	grace := HealthWakeGraceMinutes(ctx, manager.deps.Store.Settings(), manager.deps.Logger)
-	if grace == 0 {
-		return
-	}
 	manager.mu.RLock()
 	names := make(map[string]string, len(manager.nameToID))
 	for name, loopID := range manager.nameToID {
@@ -271,7 +268,10 @@ func (manager *Manager) CheckWakes() {
 	actors := maps.Clone(manager.byID)
 	manager.mu.RUnlock()
 	for loopID, actor := range actors {
-		actor.checkMissedWake(loopID, names[loopID], time.Duration(grace)*time.Minute)
+		if grace > 0 {
+			actor.checkMissedWake(loopID, names[loopID], time.Duration(grace)*time.Minute)
+		}
+		actor.checkStuckTurn(loopID, names[loopID])
 	}
 }
 
@@ -395,34 +395,88 @@ func (actor *Actor) noteTurnEnd(errored bool, at int64) {
 	}
 }
 
-// watchTurn starts the turn_stuck limit for a turn that just started
-// (#1142). The turn is never killed for running long: the owner is told,
-// and Kill is theirs to use.
+// watchTurn starts the turn clock for a turn that just started, with the
+// limit as it stands now (#1142). The turn is never killed for running
+// long: the owner is told, and Kill is theirs to use. The clock is read
+// outside the actor, by checkStuckTurn, so a turn the actor stopped
+// answering in is caught too (#1260).
 func (actor *Actor) watchTurn(turn *store.Turn) {
 	minutes := HealthTurnMinutes(context.Background(), actor.deps.Store.Settings(), actor.log())
+	actor.stuckMu.Lock()
+	defer actor.stuckMu.Unlock()
 	if minutes == 0 {
+		actor.runningSince = 0
 		return
 	}
-	actor.stuckTurn = turn.ID
-	actor.stuckTimer.Reset(time.Duration(minutes) * time.Minute)
+	actor.runningSince, actor.runningLimit = turn.StartedAt, time.Duration(minutes)*time.Minute
 }
 
-// turnLasted opens the turn_stuck problem, dated from the turn's start,
-// when the limit ends with the turn it was started for still running.
-func (actor *Actor) turnLasted() {
-	if actor.turn == nil || actor.turn.ID != actor.stuckTurn {
-		return
-	}
-	minutes := int(time.Duration(now()-actor.turn.StartedAt) * time.Millisecond / time.Minute)
-	actor.openProblem(surface.ProblemNotice{Symptom: store.SymptomTurnStuck, Since: actor.turn.StartedAt, Minutes: minutes})
-}
-
-// unwatchTurn stops the limit when the turn ends, well or not, and clears
+// unwatchTurn stops the clock when the turn ends, well or not, and clears
 // its problem.
 func (actor *Actor) unwatchTurn() {
-	actor.stuckTurn = ""
-	actor.stuckTimer.Stop()
+	actor.stuckMu.Lock()
+	defer actor.stuckMu.Unlock()
+	actor.runningSince = 0
 	actor.clearProblem(store.SymptomTurnStuck, store.ClearedByRecovery)
+}
+
+// checkStuckTurn opens the turn_stuck problem, dated from the turn's start,
+// for a turn that has run past its limit and whose problem the operator
+// has not acknowledged. It runs outside the actor, which may be the one
+// that stopped answering. It holds stuckMu throughout, so the turn can't
+// end, and clear nothing, between the check and the row.
+func (actor *Actor) checkStuckTurn(loopID, loopName string) {
+	actor.stuckMu.Lock()
+	defer actor.stuckMu.Unlock()
+	since := actor.runningSince
+	if since == 0 || now()-since < actor.runningLimit.Milliseconds() || since == actor.stuckAcked || actor.hasProblem(store.SymptomTurnStuck) {
+		return
+	}
+	log := actor.outsideLog(loopName)
+	opened, err := actor.deps.Store.Problems().Open(context.Background(), loopID, store.SymptomTurnStuck, since)
+	if err != nil {
+		log.Error("open problem", "symptom", store.SymptomTurnStuck, "err", err)
+		return
+	}
+	if !opened {
+		return
+	}
+	minutes := int(time.Duration(now()-since) * time.Millisecond / time.Minute)
+	log.Warn("problem opened", "symptom", store.SymptomTurnStuck)
+	actor.outsideEvent(loopID, "problem_opened", fmt.Sprintf(`{"symptom":%q,"since":%d}`, store.SymptomTurnStuck, since), log)
+	actor.loadProblemsOf(loopID)
+	actor.tellProblem(loopID, loopName, surface.ProblemNotice{Symptom: store.SymptomTurnStuck, Since: since, Minutes: minutes, Opened: true})
+}
+
+// AcknowledgeStuckTurn clears the loop's open turn_stuck problem as the
+// operator's doing, and reports whether there was one. It is done outside
+// the actor, as the problem was opened, so an actor that stopped answering
+// mid-turn doesn't hold the operator's request. The turn still running
+// doesn't open it again; the loop's next turn starts a new limit.
+func (actor *Actor) AcknowledgeStuckTurn(loopID, loopName string) bool {
+	actor.stuckMu.Lock()
+	defer actor.stuckMu.Unlock()
+	log := actor.outsideLog(loopName)
+	var since int64
+	for _, problem := range actor.Problems() {
+		if problem.Symptom == store.SymptomTurnStuck {
+			since = problem.Since
+		}
+	}
+	cleared, err := actor.deps.Store.Problems().Clear(context.Background(), loopID, store.SymptomTurnStuck, now(), store.ClearedByOperator)
+	if err != nil {
+		log.Error("clear problem", "symptom", store.SymptomTurnStuck, "err", err)
+		return false
+	}
+	if !cleared {
+		return false
+	}
+	actor.stuckAcked = actor.runningSince
+	log.Info("problem cleared", "symptom", store.SymptomTurnStuck, "by", store.ClearedByOperator)
+	actor.outsideEvent(loopID, "problem_cleared", fmt.Sprintf(`{"symptom":%q,"by":%q}`, store.SymptomTurnStuck, store.ClearedByOperator), log)
+	actor.loadProblemsOf(loopID)
+	actor.tellProblem(loopID, loopName, surface.ProblemNotice{Symptom: store.SymptomTurnStuck, Since: since, ByOperator: true})
+	return true
 }
 
 // watchSends follows the loop's undelivered sends (#1144): failures that no

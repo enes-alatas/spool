@@ -28,10 +28,10 @@ const recheckInterval = 30 * time.Second
 const lateTickThreshold = 2 * recheckInterval
 
 // Ticker fires a loop's tick, and checks that the wakes the loops owe
-// start their turns (#1143).
+// start their turns (#1143) and that no turn runs past its limit (#1260).
 type Ticker interface {
 	Tick(loopID string) bool
-	CheckWakes()
+	CheckHealth()
 }
 
 type Scheduler struct {
@@ -68,12 +68,12 @@ func (scheduler *Scheduler) Recover(ctx context.Context) {
 }
 
 // Run fires ticks as they come due, until ctx is done. Recover goes first.
-// Beside it, the wake check runs every recheckInterval on a goroutine of
+// Beside it, the health check runs every recheckInterval on a goroutine of
 // its own, since a poke restarts the wait for the next tick without firing
 // any (#1143). A tick waits on no actor: one that has stopped reading its
 // commands has them queued, and the pass goes on to the next loop (#1259).
 func (scheduler *Scheduler) Run(ctx context.Context) {
-	go scheduler.checkWakes(ctx)
+	go scheduler.checkHealth(ctx)
 	for {
 		wait := recheckInterval
 		if next := scheduler.earliest(ctx); next != 0 {
@@ -206,9 +206,9 @@ func clamp(delay, min, max time.Duration) time.Duration {
 	return delay
 }
 
-// checkWakes asks every recheckInterval that the wakes the loops owe start
-// their turns, until ctx is done.
-func (scheduler *Scheduler) checkWakes(ctx context.Context) {
+// checkHealth asks every recheckInterval that the wakes the loops owe start
+// their turns and that their turns end within the limit, until ctx is done.
+func (scheduler *Scheduler) checkHealth(ctx context.Context) {
 	every := time.NewTicker(recheckInterval)
 	defer every.Stop()
 	for {
@@ -216,7 +216,7 @@ func (scheduler *Scheduler) checkWakes(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-every.C:
-			scheduler.ticker.CheckWakes()
+			scheduler.ticker.CheckHealth()
 		}
 	}
 }

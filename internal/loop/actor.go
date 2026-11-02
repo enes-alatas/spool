@@ -246,6 +246,18 @@ type Actor struct {
 	wakeMu        sync.Mutex    // orders opening, acknowledging and clearing wake_missed, which run on three goroutines
 	problemsMu    sync.Mutex    // one read of the open problems at a time, so the last one stored is the newest
 
+	// The turn clock (#1260), read by the turn check outside the actor, so
+	// an actor that stopped answering mid-turn is caught as well as a slow
+	// turn. Under stuckMu, which also orders opening, acknowledging and
+	// clearing turn_stuck: since when the running turn has run, 0 for none
+	// or with the limit off; the limit it took as it started; and the start
+	// of the turn whose problem the operator acknowledged, which is not
+	// opened again.
+	stuckMu      sync.Mutex
+	runningSince int64
+	runningLimit time.Duration
+	stuckAcked   int64
+
 	// The wakes asked of the loop from outside it, a tick or a delivery,
 	// that it has not finished handling, and since when: what an actor that
 	// has stopped reading its commands still owes (#1143).
@@ -291,9 +303,6 @@ type Actor struct {
 	errorTurns   int
 	firstErrorAt int64
 	downSince    int64
-	// stuckTurn is the turn stuckTimer was started for, "" for none: the
-	// timer opens turn_stuck only if that turn is still running.
-	stuckTurn string
 	// The send_failed watch (#1144): sendWoken is whether the open problem
 	// has had its one wake, sendHeld whether an outage holds its wake and
 	// notice, and sendAckAt when the operator last acknowledged it, which
@@ -374,7 +383,6 @@ type Actor struct {
 	retryTimer  *time.Timer
 	healthTimer *time.Timer
 	downTimer   *time.Timer
-	stuckTimer  *time.Timer
 	sendTimer   *time.Timer
 	// dailyCapTimer fires when the day turns under a loop its daily cap holds.
 	dailyCapTimer *time.Timer
@@ -420,8 +428,6 @@ func NewActor(deps Deps, loopRecord *store.Loop) *Actor {
 	actor.healthTimer = time.NewTimer(actor.healthInterval())
 	actor.downTimer = time.NewTimer(time.Hour)
 	actor.downTimer.Stop()
-	actor.stuckTimer = time.NewTimer(time.Hour)
-	actor.stuckTimer.Stop()
 	actor.sendTimer = time.NewTimer(time.Hour)
 	actor.sendTimer.Stop()
 	actor.dailyCapTimer = time.NewTimer(time.Hour)
@@ -665,8 +671,6 @@ func (actor *Actor) run() {
 			actor.healthTimer.Reset(actor.healthInterval())
 		case <-actor.downTimer.C:
 			actor.downLasted()
-		case <-actor.stuckTimer.C:
-			actor.turnLasted()
 		case <-actor.sendTimer.C:
 			actor.watchSends()
 		case <-actor.dailyCapTimer.C:

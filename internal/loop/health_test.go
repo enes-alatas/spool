@@ -195,7 +195,7 @@ func TestWorkWaitingPastTheGraceOpensWakeMissed(t *testing.T) {
 	owedAt := now() - 2*time.Minute.Milliseconds()
 	actor.owedSnap.Store(owedAt)
 
-	manager.CheckWakes()
+	manager.CheckHealth()
 	notice := nextNotice(t, notices)
 	if !notice.Opened || notice.Symptom != store.SymptomWakeMissed || notice.Since != owedAt || notice.LoopName != "gardener" {
 		t.Fatalf("told %+v, want wake_missed opened for gardener since %d", notice, owedAt)
@@ -203,7 +203,7 @@ func TestWorkWaitingPastTheGraceOpensWakeMissed(t *testing.T) {
 	if !actor.hasProblem(store.SymptomWakeMissed) {
 		t.Fatalf("open problems = %+v, want wake_missed", actor.Problems())
 	}
-	manager.CheckWakes()
+	manager.CheckHealth()
 	noNotice(t, notices, "the problem was open already")
 
 	actor.turnStartedAt.Store(now())
@@ -230,7 +230,7 @@ func TestAWakeAnsweredOrHeldOpensNothing(t *testing.T) {
 	for _, testCase := range cases {
 		manager, actor, notices := missedWakeHub(t, openTestStore(t))
 		testCase.setup(actor)
-		manager.CheckWakes()
+		manager.CheckHealth()
 		noNotice(t, notices, testCase.name)
 		if open := actor.Problems(); len(open) != 0 {
 			t.Fatalf("%s: open problems = %+v, want none", testCase.name, open)
@@ -278,7 +278,7 @@ func TestAWakeAnsweredWhileTheCheckOpensIsWithdrawn(t *testing.T) {
 		actor = built
 		actor.owedSnap.Store(now() - 2*time.Minute.Milliseconds())
 
-		manager.CheckWakes()
+		manager.CheckHealth()
 		noNotice(t, notices, "a "+change+" came as the row was stored")
 		if open := actor.Problems(); len(open) != 0 {
 			t.Fatalf("after a %s as the row was stored, open problems = %+v, want none", change, open)
@@ -297,7 +297,7 @@ func TestAcknowledgingAMissedWakeDoesNotWaitOnTheActor(t *testing.T) {
 	actor.wakesAskedAt = asked
 	actor.wakesMu.Unlock()
 
-	manager.CheckWakes()
+	manager.CheckHealth()
 	if notice := nextNotice(t, notices); !notice.Opened || notice.Since != asked {
 		t.Fatalf("an unread tick told %+v, want wake_missed opened since %d", notice, asked)
 	}
@@ -324,7 +324,7 @@ func TestAcknowledgingAMissedWakeDoesNotWaitOnTheActor(t *testing.T) {
 	if len(actor.cmds) != 1 {
 		t.Fatalf("the actor has %d commands waiting, want the tick alone", len(actor.cmds))
 	}
-	manager.CheckWakes()
+	manager.CheckHealth()
 	noNotice(t, notices, "the grace started over")
 }
 
@@ -411,4 +411,76 @@ func sendsWithoutWaiting(t *testing.T, sends func()) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("a send waited on an actor that reads nothing")
 	}
+}
+
+// A turn past its limit is caught outside the actor, so an actor that has
+// stopped answering mid-turn shows turn_stuck as a slow turn does; the
+// actor here reads nothing at all (#1260). The problem is dated from the
+// turn's start and told once; acknowledged, it doesn't open again for the
+// same turn, and the next turn takes a new limit.
+func TestATurnPastItsLimitIsCaughtOutsideTheActor(t *testing.T) {
+	st := openTestStore(t)
+	manager, actor, notices := missedWakeHub(t, st)
+	if err := st.Settings().Set(context.Background(), store.SettingHealthTurnMinutes, "1"); err != nil {
+		t.Fatal(err)
+	}
+	started := now() - 3*time.Minute.Milliseconds()
+	actor.watchTurn(&store.Turn{ID: "t1", StartedAt: started})
+
+	manager.CheckHealth()
+	notice := nextNotice(t, notices)
+	if !notice.Opened || notice.Symptom != store.SymptomTurnStuck || notice.Since != started || notice.Minutes != 3 {
+		t.Fatalf("a turn past its limit told %+v, want turn_stuck opened since %d after 3 minutes", notice, started)
+	}
+	manager.CheckHealth()
+	noNotice(t, notices, "the problem is open")
+
+	if !actor.AcknowledgeStuckTurn("l1", "gardener") {
+		t.Fatal("the acknowledge found no problem open")
+	}
+	if notice := nextNotice(t, notices); notice.Opened || !notice.ByOperator {
+		t.Fatalf("the acknowledge told %+v, want cleared by the operator", notice)
+	}
+	manager.CheckHealth()
+	noNotice(t, notices, "the operator acknowledged the turn that is still running")
+
+	actor.unwatchTurn()
+	manager.CheckHealth()
+	noNotice(t, notices, "no turn runs")
+	next := now() - 2*time.Minute.Milliseconds()
+	actor.watchTurn(&store.Turn{ID: "t2", StartedAt: next})
+	manager.CheckHealth()
+	if notice := nextNotice(t, notices); !notice.Opened || notice.Since != next {
+		t.Fatalf("the next turn past its limit told %+v, want turn_stuck opened since %d", notice, next)
+	}
+	actor.unwatchTurn()
+	if notice := nextNotice(t, notices); notice.Opened {
+		t.Fatalf("the turn's end told %+v, want turn_stuck cleared", notice)
+	}
+}
+
+// A turn within its limit opens nothing, and the limit a turn takes is the
+// one standing as it starts: the setting lowered meanwhile, or turned off,
+// doesn't reach the running turn (#1142, #1260).
+func TestATurnKeepsTheLimitItStartedWith(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	manager, actor, notices := missedWakeHub(t, st)
+	if err := st.Settings().Set(ctx, store.SettingHealthTurnMinutes, "5"); err != nil {
+		t.Fatal(err)
+	}
+	actor.watchTurn(&store.Turn{ID: "t1", StartedAt: now() - 3*time.Minute.Milliseconds()})
+	if err := st.Settings().Set(ctx, store.SettingHealthTurnMinutes, "1"); err != nil {
+		t.Fatal(err)
+	}
+	manager.CheckHealth()
+	noNotice(t, notices, "the turn is within the limit it started with")
+
+	if err := st.Settings().Set(ctx, store.SettingHealthTurnMinutes, "0"); err != nil {
+		t.Fatal(err)
+	}
+	actor.unwatchTurn()
+	actor.watchTurn(&store.Turn{ID: "t2", StartedAt: now() - 3*time.Minute.Milliseconds()})
+	manager.CheckHealth()
+	noNotice(t, notices, "the limit was off as the turn started")
 }

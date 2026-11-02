@@ -1,6 +1,6 @@
 # ADR-0053: The hub checks each loop's health, and tells the owner once when a problem opens and once when it clears
 
-Date: 2026-10-14 · Status: accepted (operator decision of 2026-10-12 on #754 for the shape, and of 2026-10-14 on #764 for the three defaults below) · Relates to: ADR-0017, ADR-0026, ADR-0029, ADR-0047 · Amended: 2026-11-01 (item 9 added: turn_stuck, #1142); 2026-11-01 (item 10 added: wake_missed, #1143); 2026-11-01 (item 11 added: send_failed, #1144)
+Date: 2026-10-14 · Status: accepted (operator decision of 2026-10-12 on #754 for the shape, and of 2026-10-14 on #764 for the three defaults below) · Relates to: ADR-0017, ADR-0026, ADR-0029, ADR-0047 · Amended: 2026-11-01 (item 9 added: turn_stuck, #1142); 2026-11-01 (item 10 added: wake_missed, #1143); 2026-11-01 (item 11 added: send_failed, #1144); 2026-11-02 (item 9: the turn limit checked outside the actor, #1260)
 
 ## Context
 
@@ -112,6 +112,18 @@ an amendment here.
    /api/settings` carries it beside `health_error_turns`. Each turn takes
    the limit as it stands when the turn starts. Health is `warning` while
    it is open, as for `turn_errors`.
+
+   **Amendment (2026-11-02, #1260):** the limit is checked outside the
+   actor, not by a timer inside it, so a turn whose actor has stopped
+   answering opens the problem as a slow turn does. Before this, that turn
+   showed nothing: its published state stays busy, which `wake_missed`
+   leaves to this check, and the timer that was this check could not fire
+   in an actor that read nothing. Like `wake_missed`, this departs from
+   item 2. The actor records the turn's start and the limit it takes as
+   it starts, and the scheduler's 30-second check opens the problem for
+   a turn past it, so it opens within 30 seconds of the limit rather than
+   at it. Acknowledge clears it outside the actor too, and the check
+   doesn't open it again for the turn still running.
 
 10. **`wake_missed`: a wake that starts no turn** (added 2026-11-01,
     #1143, slice 2 of #754's plan). A loop is due to wake, from a tick

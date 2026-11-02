@@ -1479,10 +1479,14 @@ func (server *Server) handleAcknowledge(w http.ResponseWriter, r *http.Request) 
 			"loop %s is not running", loopRecord.Name)
 		return
 	}
-	if symptom == store.SymptomWakeMissed {
-		// outside the actor, which may be the one that stopped answering
+	// the two problems an actor that stopped answering shows are
+	// acknowledged outside it
+	switch symptom {
+	case store.SymptomWakeMissed:
 		actor.AcknowledgeMissedWake(loopRecord.ID, loopRecord.Name)
-	} else {
+	case store.SymptomTurnStuck:
+		actor.AcknowledgeStuckTurn(loopRecord.ID, loopRecord.Name)
+	default:
 		actor.Acknowledge(symptom)
 	}
 	writeJSON(w, 200, server.view(r.Context(), loopRecord))
