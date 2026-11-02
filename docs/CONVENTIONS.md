@@ -322,6 +322,12 @@ ADR instead.*
   markdown. Only `<Linked>` (`src/components/Linked.tsx`, `src/linkify.ts`)
   reads it, linking only `http://` and `https://` URLs; an anchor shows the URL
   itself and opens in a new tab with `rel="noopener noreferrer"` (#759).
+- A third-party asset copied into the room (a font, a logo, an icon) ships
+  its licence's full notice as a text file under `public/`, which the build
+  copies into `dist` and so into the binary: `public/fonts/OFL-Nunito.txt`,
+  `public/marks/MIT-prompts-chat.txt`. A source comment alone doesn't do,
+  since the bundler strips comments, and naming the licence alone doesn't
+  meet MIT's condition that the notice travel with every copy (#1274).
 
 ## API
 

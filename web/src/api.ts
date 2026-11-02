@@ -711,6 +711,21 @@ export interface EgressGroup {
   hosts: string[]
 }
 
+// A loop draft the hub reads from a prompts.chat bot (ADR-0063), for New
+// loop to fill itself from; the hub creates nothing. mission is the bot's
+// text, someone else's writing, which the operator reads before Create.
+// runtime is 'cloud' when the bot needs the cloud alone, else the hub's
+// default. egress is a hint, the hosts of the bot's connectors whose host
+// is fixed, each with the connector that named it; nothing is allowed
+// until the operator adds a host. source is the bot's page.
+export interface PromptsChatDraft {
+  name: string
+  mission: string
+  runtime: string
+  egress: { host: string; connector: string }[]
+  source: string
+}
+
 export interface EgressView {
   // False only when the hub has no egress image: no loop's egress is
   // filtered, so the list binds nothing.
@@ -1607,6 +1622,11 @@ export const api = {
   signOutClaudeLogin: (name: string) =>
     req<ClaudeLogin>(`/api/claude-logins/${encodeURIComponent(name)}/sign-out`, { method: 'POST' }),
   egress: () => req<EgressView>('/api/settings/egress'),
+  // Refused with 400 `import_refused` and why (not prompts.chat, not a bot),
+  // 502 `import_failed` when prompts.chat didn't answer, 503 `import_off` on
+  // a hub that wires no fetcher (ADR-0063).
+  importPromptsChat: (url: string) =>
+    req<PromptsChatDraft>(`/api/import/prompts-chat?url=${encodeURIComponent(url)}`),
   // Refused with 400 `egress_host_invalid` and egress.Validate's reason, a
   // port included; a host already on the list, once normalized, changes
   // nothing. Removal takes the entry exactly as listed.

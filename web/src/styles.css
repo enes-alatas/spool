@@ -30,6 +30,8 @@
   /* the same pair for a warning: a problem wanting attention soon */
   --active-line: rgba(255, 138, 31, 0.38);
   --active-wash: rgba(255, 138, 31, 0.07);
+  /* --active at its brightest, the prompts.chat mark's shine (#1264) */
+  --active-shine: #ffd29e;
   /* meters and fills: data, drawn in the text colour. The token is a plain
      colour; each rule sets its own weight with opacity, so the dimming lives
      in one layer and an emphasised bar can still reach full strength */
@@ -2698,6 +2700,155 @@ button.panel-link {
 .egress-add input {
   flex: 1;
   min-width: 0;
+}
+/* New loop's prompts.chat field and the egress its bot suggests (#1264) */
+.import-row {
+  display: flex;
+  gap: 8px;
+}
+.import-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+}
+.import-input {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+.import-input .prompts-chat-logo {
+  position: absolute;
+  /* at the field's right end, where the opening carries it */
+  left: calc(100% - 28px);
+  top: 50%;
+  margin-top: -8px;
+  pointer-events: none;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.import-input input {
+  flex: 1;
+  min-width: 0;
+  padding-right: 38px;
+}
+.prompts-chat-logo {
+  flex: none;
+}
+/* Opening, the button stretches into the field (#1264): the field unclips
+   from the button's left end, and prompts.chat's mark rolls along its
+   opening edge to the right end, shining brighter as it arrives and then
+   cooling to the text's colour. Import and Cancel fade in after it. While
+   the hub fetches the bot, the mark spins and glows. */
+.import-field .import-input {
+  animation: import-unfold 520ms cubic-bezier(0.3, 0.7, 0.2, 1) both;
+}
+.import-field .prompts-chat-logo {
+  animation:
+    import-ride 520ms cubic-bezier(0.3, 0.7, 0.2, 1) both,
+    import-shine 1100ms ease-out both;
+}
+.import-field .import-row .btn,
+.import-field .hint {
+  animation: import-fade 240ms ease-out 420ms both;
+}
+.import-field .import-input.fetching .prompts-chat-logo {
+  animation:
+    import-spin 900ms linear infinite,
+    import-glow 1200ms ease-in-out infinite alternate;
+}
+@keyframes import-unfold {
+  from {
+    clip-path: inset(0 calc(100% - 44px) 0 0 round 8px);
+  }
+  to {
+    clip-path: inset(0 0 0 0 round 8px);
+  }
+}
+@keyframes import-ride {
+  from {
+    left: 12px;
+    transform: rotate(-360deg);
+  }
+}
+@keyframes import-shine {
+  0% {
+    color: var(--text-muted);
+    filter: none;
+  }
+  45% {
+    color: var(--active);
+    filter: drop-shadow(0 0 3px var(--active));
+  }
+  55% {
+    color: var(--active-shine);
+    filter: drop-shadow(0 0 4px var(--active)) drop-shadow(0 0 10px var(--active));
+  }
+  100% {
+    color: var(--text);
+    filter: none;
+  }
+}
+@keyframes import-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes import-glow {
+  from {
+    color: var(--active);
+    filter: drop-shadow(0 0 2px var(--active));
+  }
+  to {
+    color: var(--active-shine);
+    filter: drop-shadow(0 0 4px var(--active)) drop-shadow(0 0 9px var(--active));
+  }
+}
+@keyframes import-fade {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+/* still motion: the field opens at once, and fetching only lights the mark */
+@media (prefers-reduced-motion: reduce) {
+  .import-field .import-input,
+  .import-field .prompts-chat-logo,
+  .import-field .import-row .btn,
+  .import-field .hint {
+    animation: none;
+  }
+  .import-field .import-input.fetching .prompts-chat-logo {
+    animation: none;
+    color: var(--active);
+  }
+}
+.egress-hints {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+}
+.egress-hints li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+}
+.egress-hints li + li {
+  border-top: 1px solid var(--hairline);
+}
+.egress-hint-connector {
+  flex: 1;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+.egress-hint-allowed {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--ready);
 }
 .egress-note {
   font-size: 0.75rem;

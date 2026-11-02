@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type LoopView, type Subagents } from '../api'
+import { api, type LoopView, type PromptsChatDraft, type Subagents } from '../api'
 import {
   CLOUD_TRUST_WARNING,
   EFFORT_OPTIONS,
@@ -24,6 +24,7 @@ import { firstOpenStep, type SetupStep } from '../cloud'
 import { Marked } from '../components/Marked'
 import { dailyCapHint, dailyCapValue } from '../dailyCap'
 import { CapChips } from '../components/CapChips'
+import { EgressHints, ImportedFrom, PromptsChatFill } from '../components/PromptsChatImport'
 import { LOGIN_SAY_SO, loginAccount, loginOptions, noLoginChoice } from '../claudeLogins'
 
 export default function NewLoop() {
@@ -73,6 +74,9 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
   const [pace, setPace] = useState<Pace>({ min: 300, tick: 1800, max: 14400 })
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  // The prompts.chat draft the fields were last filled from (#1264), for the
+  // note on where the mission came from and the egress it suggests.
+  const [imported, setImported] = useState<PromptsChatDraft | null>(null)
 
   // What the hub was started as, and whether it will accept an uncontained
   // loop at all. Both are constants under a running server; the form reads
@@ -122,6 +126,22 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
   const chosenLogin = logins?.logins.find((l) => l.name === login)
   const cloudStep = cloudSettings ? firstOpenStep(cloudSettings) : undefined
   const cloudReady = cloudStep === 'done'
+
+  // A draft fills the fields it has and leaves the rest as they are. Its
+  // runtime is set without chooseRuntime's step into cloud setup: the field
+  // already says when the hub isn't set up, and the operator didn't pick it.
+  const fill = (draft: PromptsChatDraft) => {
+    setImported(draft)
+    setName(draft.name)
+    setMission(draft.mission)
+    if (runtimeChoices.some((o) => o.value === draft.runtime)) {
+      setRuntime(draft.runtime)
+      if (workspaceFieldNote(draft.runtime)) {
+        setWsPath('')
+        setWsInfo(null)
+      }
+    }
+  }
 
   const chooseRuntime = async (kind: string) => {
     setRuntime(kind)
@@ -220,6 +240,8 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
         </div>
       )}
 
+      <PromptsChatFill onDraft={fill} />
+
       <div className="field">
         <label htmlFor="nl-name">Name</label>
         <input
@@ -236,11 +258,13 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
         <label htmlFor="nl-mission">Mission</label>
         <textarea
           id="nl-mission"
-          rows={4}
+          // a filled mission is the bot's, read in full before Create
+          rows={imported ? 14 : 4}
           placeholder="What should this loop keep doing? It wakes on a schedule and whenever someone messages it."
           value={mission}
           onChange={(e) => setMission(e.target.value)}
         />
+        {imported && <ImportedFrom source={imported.source} />}
       </div>
 
       <div className="field-row">
@@ -339,6 +363,8 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
           <code>--strict-mcp-config</code>).
         </div>
       </div>
+
+      {imported && <EgressHints hints={imported.egress} />}
 
       {cloud && cloudReady && (
         <div className="field">

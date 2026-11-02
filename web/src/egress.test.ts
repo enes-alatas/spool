@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { EgressView } from './api'
-import { applying, countHosts, filterHosts } from './egress'
+import { applying, countHosts, egressAllows, filterHosts } from './egress'
 
 const view = (patch: Partial<EgressView>): EgressView => ({
   enforced: true,
@@ -48,5 +48,24 @@ describe('countHosts', () => {
         { reason: 'b', hosts: ['z'] },
       ]),
     ).toBe(3)
+  })
+})
+
+// #1264: an imported bot's hosts that the list already lets through.
+describe('egressAllows', () => {
+  const list = view({
+    built_in: [{ reason: 'Claude', hosts: ['api.anthropic.com'] }],
+    extra: ['.github.com', 'slack.com:8443', 'api.notion.com:443'],
+  })
+  it('matches a host entry, a domain entry, and a domain entry naming the domain itself', () => {
+    expect(egressAllows(list, 'api.anthropic.com')).toBe(true)
+    expect(egressAllows(list, 'api.github.com')).toBe(true)
+    expect(egressAllows(list, 'github.com')).toBe(true)
+    expect(egressAllows(list, 'API.Notion.com')).toBe(true)
+  })
+  it('refuses another host, a look-alike suffix, and an entry on another port', () => {
+    expect(egressAllows(list, 'gitlab.com')).toBe(false)
+    expect(egressAllows(list, 'notgithub.com')).toBe(false)
+    expect(egressAllows(list, 'slack.com')).toBe(false)
   })
 })

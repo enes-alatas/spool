@@ -24,3 +24,19 @@ export function filterHosts(hosts: string[], filter: string): string[] {
 export function countHosts(groups: EgressGroup[]): number {
   return groups.reduce((n, g) => n + g.hosts.length, 0)
 }
+
+// Whether the fleet's allowlist already lets a workstation reach host on
+// 443, as the hub's egress.Allowlist reads it: an entry naming the host with
+// no port or with :443, or a domain entry (".example.com") covering it.
+export function egressAllows(view: EgressView, host: string): boolean {
+  const name = host.trim().toLowerCase().replace(/\.$/, '')
+  return [...view.built_in.flatMap((g) => g.hosts), ...view.extra].some((raw) => {
+    const entry = raw.trim().toLowerCase()
+    const colon = entry.lastIndexOf(':')
+    const port = colon > 0 ? entry.slice(colon + 1) : ''
+    if (port && port !== '443') return false
+    const at = (port ? entry.slice(0, colon) : entry).replace(/\.$/, '')
+    if (at.startsWith('.')) return name.endsWith(at) || name === at.slice(1)
+    return name === at
+  })
+}
