@@ -155,8 +155,9 @@ func measureEnvelope(t *testing.T, fleet envelope) {
 		for _, name := range fleet.awake {
 			hub.message(name, "hang")
 		}
+		dangling := map[string]string{}
 		for _, name := range fleet.awake {
-			hub.waitRunningTurn(name, time.Minute, func(tr turn) bool { return tr.Trigger == "message" })
+			dangling[name] = hub.waitRunningTurn(name, time.Minute, func(tr turn) bool { return tr.Trigger == "message" }).ID
 		}
 		if err := hub.cmd.Process.Kill(); err != nil {
 			t.Fatal(err)
@@ -176,11 +177,17 @@ func measureEnvelope(t *testing.T, fleet envelope) {
 		if took > bootRecoveryLimit {
 			t.Errorf("boot recovery took %s, want under %s", took, bootRecoveryLimit)
 		}
-		for _, name := range fleet.awake {
-			for _, tr := range restarted.turns(name) {
-				if tr.EndedAt == 0 {
-					t.Fatalf("%s: turn %s still dangling after the boot", name, tr.ID)
-				}
+		// Only the turns the crash left are checked. Recover spreads the
+		// overdue ticks 0-60s out, so one may start a fresh turn before this
+		// reads, and an awake loop hangs on every turn after its first (#1215).
+		for name, turnID := range dangling {
+			turns := restarted.turns(name)
+			at := slices.IndexFunc(turns, func(tr turn) bool { return tr.ID == turnID })
+			switch {
+			case at < 0:
+				t.Fatalf("%s: turn %s is gone after the boot", name, turnID)
+			case turns[at].EndedAt == 0:
+				t.Fatalf("%s: turn %s still dangling after the boot", name, turnID)
 			}
 		}
 	})
