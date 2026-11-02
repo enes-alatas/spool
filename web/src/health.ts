@@ -24,6 +24,10 @@ const SAID: Record<string, string> = {
   // a wake owed past health_wake_grace_minutes with no turn started (#1143);
   // its since is when the wake was first owed
   wake_missed: "Due to wake and hasn't",
+  // a send the loop made left undelivered past health_send_grace_minutes,
+  // with nothing resolving it (#1144); its since is the earliest such
+  // failure
+  send_failed: 'Send failed',
   // a cloud loop held while the public address fails its check (#864)
   cloud_address: 'Public address failing',
   // a cloud loop held until its own setup is done: its repo, environment
@@ -46,6 +50,10 @@ const MEANS: Record<string, string> = {
     'The loop was due to wake, from a tick or a message, and no turn has started though nothing holds ' +
     'it, so its process may have stopped answering. A turn starting clears this. Acknowledge clears it ' +
     'and starts the wait over.',
+  send_failed:
+    'A message the loop sent did not arrive, and no retry, resend or dismissal has dealt with it. The ' +
+    'loop is woken once to hear so. Resending or dismissing every one under Undelivered clears this. ' +
+    'Acknowledge clears it and starts the wait over.',
   cloud_connections:
     'Its cloud session asked the hub for its secrets, the env variables attached to it on the ' +
     'Connections page (like GH_TOKEN), and was refused, so commands that need them may fail. ' +
@@ -60,7 +68,8 @@ export function problemMeaning(problem: Problem): string | undefined {
 // started as well, since that is the turn the owner is deciding about:
 // "Turn past its time limit: running for 2h, since 14:02". A missed wake
 // says when the wake fell due: "Due to wake and hasn't: waiting 25m, since
-// 14:02".
+// 14:02". A failed send says when the first one failed: "Send failed:
+// undelivered for 25m, since 14:02".
 export function problemLine(problem: Problem, now: number): string {
   const said = SAID[problem.symptom] ?? problem.symptom
   const doing = CLOCKED[problem.symptom]
@@ -73,13 +82,20 @@ export function problemLine(problem: Problem, now: number): string {
 const CLOCKED: Record<string, string> = {
   turn_stuck: 'running for',
   wake_missed: 'waiting',
+  send_failed: 'undelivered for',
 }
 
 // What the loop page offers beside a problem's line, where the way out is a
 // control elsewhere on the page rather than Acknowledge: the hub never ends
-// a long turn itself, so the owner is pointed at the one control that does.
+// a long turn itself, so the owner is pointed at the one control that does,
+// and an undelivered message at the pane that lists it.
 export function problemNext(problem: Problem): string | undefined {
-  return problem.symptom === 'turn_stuck' ? 'Kill process ends it' : undefined
+  return NEXT[problem.symptom]
+}
+
+const NEXT: Record<string, string> = {
+  turn_stuck: 'Kill process ends it',
+  send_failed: 'Resend or dismiss under Undelivered',
 }
 
 // A moment as a clock time, with the date as well when it is not today: a
@@ -128,7 +144,7 @@ export function errorTurnsValue(field: string): number | undefined {
   return turns <= 100 ? turns : undefined
 }
 
-// A health limit in minutes, turn_stuck's or wake_missed's, as Settings
+// A health limit in minutes, turn_stuck's, wake_missed's or send_failed's, as Settings
 // edits it: '' for off.
 export function minutesField(minutes: number): string {
   return minutes > 0 ? String(minutes) : ''
@@ -151,6 +167,7 @@ export function minutesValue(field: string): number | undefined {
 export const ERROR_TURN_STOPS = [0, 1, 2, 3, 4, 5, 6, 8, 10, 15, 20, 50, 100]
 export const TURN_MINUTE_STOPS = [0, 5, 15, 30, 60, 90, 120, 180, 240, 360, 480, 720, 1440]
 export const WAKE_MINUTE_STOPS = [0, 1, 2, 5, 10, 15, 30, 60, 120, 240, 480, 1440]
+export const SEND_MINUTE_STOPS = [0, 1, 2, 3, 5, 10, 15, 30, 60, 120, 240, 1440]
 
 // Where a value sits on its slider: the last step at or below it, so a
 // typed value between two steps puts the thumb on the lower one.

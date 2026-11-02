@@ -23,7 +23,10 @@ export function HealthNote({ loop }: { loop: LoopView }) {
 // open. Acknowledge clears one as the operator's doing: the owner hears that
 // it was, and the hub starts watching for it again (ADR-0053). It is an
 // admin's, so a member sees the lines alone.
-export function Problems({ loop }: { loop: LoopView }) {
+//
+// A failed send's way out is the Undelivered pane, so on the loop page its
+// pointer opens that pane: openUndelivered is how the page switches to it.
+export function Problems({ loop, openUndelivered }: { loop: LoopView; openUndelivered?: () => void }) {
   const now = useMinuteClock()
   const may = useMay()
   const qc = useQueryClient()
@@ -52,9 +55,18 @@ export function Problems({ loop }: { loop: LoopView }) {
           <span title={problemMeaning(problem)}>
             {problemLine(problem, now)}
             {/* it names a control only an admin has, as Acknowledge is */}
-            {may('manage') && problemNext(problem) && (
-              <span className="problem-next"> · {problemNext(problem)}</span>
-            )}
+            {may('manage') &&
+              problemNext(problem) &&
+              (problem.symptom === 'send_failed' && openUndelivered ? (
+                <>
+                  {' · '}
+                  <button type="button" className="problem-next link" onClick={openUndelivered}>
+                    {problemNext(problem)}
+                  </button>
+                </>
+              ) : (
+                <span className="problem-next"> · {problemNext(problem)}</span>
+              ))}
           </span>
           {may('manage') && (
             <button

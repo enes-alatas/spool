@@ -8,13 +8,16 @@ import {
   problemLine,
   problemMeaning,
   problemNext,
+  ERROR_TURN_STOPS,
   minutesField,
   minutesNote,
   minutesValue,
   stepField,
   stopIndex,
   stopLabel,
+  SEND_MINUTE_STOPS,
   TURN_MINUTE_STOPS,
+  WAKE_MINUTE_STOPS,
 } from './health'
 
 const minute = 60 * 1000
@@ -159,6 +162,25 @@ describe('wake_missed', () => {
   })
 })
 
+// #1147: a send left undelivered past health_send_grace_minutes (#1144).
+describe('send_failed', () => {
+  const at = new Date(2026, 10, 1, 14, 2).getTime()
+  const time = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+
+  it('says a send failed, how long it has gone undelivered, and since when', () => {
+    expect(problemLine({ symptom: 'send_failed', since: at }, at + 25 * minute)).toBe(
+      `Send failed: undelivered for 25m, since ${time(at)}`,
+    )
+  })
+
+  it('is a warning, and points to the Undelivered pane', () => {
+    const problem = { symptom: 'send_failed', since: at }
+    expect(problemHealth(problem)).toBe('warning')
+    expect(problemNext(problem)).toBe('Resend or dismiss under Undelivered')
+    expect(problemMeaning(problem)).toMatch(/did not arrive/)
+  })
+})
+
 // #1146: Settings' sliders snap to steps; the number above takes any value.
 describe('the health limit controls', () => {
   it('puts a value on the last step at or below it', () => {
@@ -169,8 +191,10 @@ describe('the health limit controls', () => {
   })
 
   it('every step list starts at off and climbs', () => {
-    expect(TURN_MINUTE_STOPS[0]).toBe(0)
-    expect([...TURN_MINUTE_STOPS].sort((a, b) => a - b)).toEqual(TURN_MINUTE_STOPS)
+    for (const stops of [ERROR_TURN_STOPS, TURN_MINUTE_STOPS, WAKE_MINUTE_STOPS, SEND_MINUTE_STOPS]) {
+      expect(stops[0]).toBe(0)
+      expect([...stops].sort((a, b) => a - b)).toEqual(stops)
+    }
   })
 
   it('steps the number by one within its range, empty for off', () => {

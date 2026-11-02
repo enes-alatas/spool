@@ -1965,7 +1965,7 @@ export default function LoopDetail() {
           <LoopProvenance loop={loop} />
           <WorkstationNote loop={loop} />
           <CloudTurnNote loop={loop} />
-          <Problems loop={loop} />
+          <Problems loop={loop} openUndelivered={() => showPane('undelivered')} />
           {/* On the refusal rather than the state: a dead workstation outranks
               model_unrecognized, and the model still needs changing (#289). */}
           {loop.model_refusal && (

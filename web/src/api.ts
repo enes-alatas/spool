@@ -8,6 +8,7 @@ export interface Problem {
     | 'turn_errors'
     | 'turn_stuck'
     | 'wake_missed'
+    | 'send_failed'
     | 'cloud_address'
     | 'cloud_connections'
     | 'cloud_setup'
@@ -29,8 +30,8 @@ export interface LoopView {
   doing_at: number
   // The open problems the hub's health check found with the loop, oldest
   // first, and health summing them up: 'failing' while workstation_down,
-  // wake_missed or cloud_address is open, 'warning' while only turn_errors
-  // or turn_stuck is, 'ok' with none (ADR-0053).
+  // wake_missed or cloud_address is open, 'warning' while only turn_errors,
+  // turn_stuck or send_failed is, 'ok' with none (ADR-0053).
   problems: Problem[]
   health: Health
   model: string
@@ -811,6 +812,10 @@ export interface Settings {
   // wake_missed problem (#1143), 0 to 1440; 0 turns that symptom off, and
   // 10 is the default.
   health_wake_grace_minutes: number
+  // Minutes a send the loop made stays undelivered, with no retry, resend
+  // or dismissal resolving it, before it opens a send_failed problem
+  // (#1144), 0 to 1440; 0 turns that symptom off, and 2 is the default.
+  health_send_grace_minutes: number
 }
 
 // The session's user (#582, #675). A session made with the operator token
@@ -1434,6 +1439,7 @@ export const api = {
     health_error_turns?: number
     health_turn_minutes?: number
     health_wake_grace_minutes?: number
+    health_send_grace_minutes?: number
   }) => req<Settings>('/api/settings', { method: 'PUT', body: JSON.stringify(body) }),
   // Both thresholds go in one write, as the rotation pair does; 0 is off.
   setPlanCaps: (fiveHour: number, sevenDay: number) =>

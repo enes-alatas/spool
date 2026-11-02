@@ -892,6 +892,20 @@ textarea {
 .problem-next {
   color: var(--text-muted);
 }
+/* a failed send's pointer opens the Undelivered pane (#1147) */
+.problem-next.link {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  text-decoration: underline;
+  text-align: left;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.problem-next.link:hover {
+  color: inherit;
+}
 .problem-line .btn {
   padding: 3px 10px;
   font-size: 0.75rem;
@@ -5008,24 +5022,84 @@ button.panel-link {
 .side-panel .row .v.warn {
   color: var(--active);
 }
-/* The health check's limits (#1146): a card each, three to a row, with the
-   exact value as a large number and a slider for the common ones. The
-   slider is the pace control's look: a thin track lit up to a solid dot in
-   the active colour. */
+/* The health check's settings (#1147): a line each, one opened in place to
+   edit into the exact value as a large number and a slider for the common
+   ones (#1146). The slider is the pace control's look: a thin track lit up
+   to a solid dot in the active colour. */
 .health-limits {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
   margin-bottom: 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.health-limits > * + * {
+  border-top: 1px solid var(--hairline);
+}
+.health-row {
+  display: grid;
+  grid-template-columns: 9rem 10rem minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 12px;
+  padding: 11px 14px;
+  background: var(--surface);
+}
+.health-row-label {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.health-row-value {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-family: var(--mono);
+  white-space: nowrap;
+}
+.health-row-value.off {
+  color: var(--text-muted);
+}
+/* a closed line holding a draft Save has not sent yet */
+.health-row-edited {
+  display: block;
+  margin-top: 2px;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--active);
+}
+.health-row-hint {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+.health-row-edit {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.health-row-edit:hover:not(:disabled) {
+  color: var(--text);
+}
+.health-row-edit:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 .health-limit {
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 14px;
-  border: 1px solid var(--hairline);
-  border-radius: 10px;
-  background: var(--surface);
+}
+.health-limit-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
 }
 .health-limit label {
   font-family: var(--mono);
@@ -5140,8 +5214,14 @@ button.panel-link {
   font-size: 0.75rem;
   color: var(--text-muted);
 }
+/* a phone puts the hint under the name and value */
 @media (max-width: 720px) {
-  .health-limits {
-    grid-template-columns: minmax(0, 1fr);
+  .health-row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    row-gap: 4px;
+  }
+  .health-row-hint {
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
 }

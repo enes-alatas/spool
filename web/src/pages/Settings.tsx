@@ -18,6 +18,7 @@ import {
   ERROR_TURN_STOPS,
   TURN_MINUTE_STOPS,
   WAKE_MINUTE_STOPS,
+  SEND_MINUTE_STOPS,
   errorTurnsField,
   errorTurnsValue,
   minutesField,
@@ -257,7 +258,8 @@ function PlanGuardrails({ settings, loadError }: { settings?: SettingsView; load
 // The health check's settings, by their names in the settings view, and how
 // Settings shows and reads each one: the slider's steps and the ones it
 // labels, and the number field's largest value.
-type HealthKey = 'health_error_turns' | 'health_turn_minutes' | 'health_wake_grace_minutes'
+type HealthKey =
+  'health_error_turns' | 'health_turn_minutes' | 'health_wake_grace_minutes' | 'health_send_grace_minutes'
 
 const HEALTH_FIELDS: {
   key: HealthKey
@@ -311,21 +313,38 @@ const HEALTH_FIELDS: {
     field: minutesField,
     value: minutesValue,
   },
+  {
+    key: 'health_send_grace_minutes',
+    id: 'health-send-grace-minutes',
+    label: 'Failed send',
+    unit: 'min',
+    hint: 'A message the loop sent, undelivered this long.',
+    minutes: true,
+    max: 1440,
+    stops: SEND_MINUTE_STOPS,
+    ticks: [0, 5, 60, 1440],
+    field: minutesField,
+    value: minutesValue,
+  },
 ]
 
 // The health check's settings (ADR-0053): how many errored turns in a row
 // open a problem with a loop, how many minutes one turn runs before it does
-// (#1142), and how many a wake the loop owes waits for a turn (#1143). A
-// workstation down past its grace period opens one whatever these say.
+// (#1142), how many a wake the loop owes waits for a turn (#1143), and how
+// many a message it sent stays undelivered (#1144). A workstation down past
+// its grace period opens one whatever these say.
 //
-// Each is a card with a slider for the common values and a number for an
+// Each is a line saying its value and what it watches; Edit opens it in
+// place (#1147) into a slider for the common values and a number for an
 // exact one (#1146): dragging snaps to steps, ←/→ on the slider move one
-// step, and ↑/↓ in the number move it by one.
+// step, and ↑/↓ in the number move it by one. One line is open at a time,
+// and a closed line shows its draft, so Save sends every edit made.
 function HealthCheck({ settings, loadError }: { settings?: SettingsView; loadError: Error | null }) {
   const qc = useQueryClient()
   // As the other sections: the stored values are the truth, a draft overlays.
   // Each field has its own, so editing one leaves the others on the stored value.
   const [drafts, setDrafts] = useState<Partial<Record<HealthKey, string>>>({})
+  const [open, setOpen] = useState<HealthKey | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -357,6 +376,7 @@ function HealthCheck({ settings, loadError }: { settings?: SettingsView; loadErr
     try {
       const saved = await api.setHealthCheck(body)
       setDrafts({})
+      setOpen(null)
       qc.setQueryData(['settings'], saved)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -379,12 +399,43 @@ function HealthCheck({ settings, loadError }: { settings?: SettingsView; loadErr
           const off = value === 0
           const note = f.minutes && value !== undefined ? minutesNote(value) : ''
           const last = f.stops.length - 1
+          if (open !== f.key)
+            return (
+              <div className="health-row" key={f.key}>
+                <span className="health-row-label">
+                  {f.label}
+                  {drafts[f.key] !== undefined && <span className="health-row-edited">edited</span>}
+                </span>
+                <span className={`health-row-value${off ? ' off' : ''}`}>
+                  {shown === null ? '…' : value === undefined ? shown : off ? 'off' : value}
+                  {!off && value !== undefined && <span className="health-limit-unit">{f.unit}</span>}
+                  {note && <span className="health-limit-note">{note}</span>}
+                </span>
+                <span className="health-row-hint">{f.hint}</span>
+                <button
+                  type="button"
+                  className="health-row-edit"
+                  disabled={shown === null || busy}
+                  aria-label={`Edit ${f.label}`}
+                  onClick={() => setOpen(f.key)}
+                >
+                  Edit
+                </button>
+              </div>
+            )
           return (
             <div className={`health-limit${off ? ' off' : ''}`} key={f.key}>
-              <label htmlFor={f.id}>{f.label}</label>
+              <div className="health-limit-head">
+                <label htmlFor={f.id}>{f.label}</label>
+                <button type="button" className="health-row-edit" onClick={() => setOpen(null)}>
+                  Done
+                </button>
+              </div>
               <div className="health-limit-value">
                 <input
                   id={f.id}
+                  // opened by Edit, so the number takes the keys at once
+                  autoFocus
                   inputMode="numeric"
                   placeholder="off"
                   value={shown ?? ''}
@@ -392,6 +443,7 @@ function HealthCheck({ settings, loadError }: { settings?: SettingsView; loadErr
                   aria-invalid={value === undefined && shown !== null}
                   onChange={(e) => draft(f.key, e.target.value)}
                   onKeyDown={(e) => {
+                    if (e.key === 'Escape') setOpen(null)
                     if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
                     e.preventDefault()
                     draft(f.key, stepField(shown ?? '', e.key === 'ArrowUp' ? 1 : -1, f.max))
@@ -443,7 +495,14 @@ function HealthCheck({ settings, loadError }: { settings?: SettingsView; loadErr
           {busy ? 'Saving…' : 'Save'}
         </button>
         {drafting && (
-          <button className="btn" onClick={() => setDrafts({})} disabled={busy}>
+          <button
+            className="btn"
+            onClick={() => {
+              setDrafts({})
+              setOpen(null)
+            }}
+            disabled={busy}
+          >
             Cancel
           </button>
         )}
