@@ -231,6 +231,7 @@ type Actor struct {
 	deps          Deps
 	cmds          chan cmd
 	stopped       chan struct{} // closed when the actor's loop returns, so no caller waits on it
+	id            string        // the loop's id, fixed for the actor's life, so safe from any goroutine
 	stateSnap     atomic.Value  // string; last published state, for REST reads
 	healthSnap    atomic.Value  // workstationSnap; last workstation poll, for REST reads
 	offSnap       atomic.Bool   // the operator's power-off intent, for REST reads
@@ -251,6 +252,13 @@ type Actor struct {
 	wakesMu      sync.Mutex
 	wakesAsked   int
 	wakesAskedAt int64
+
+	// The commands sent while cmds was full, oldest first, which one
+	// goroutine feeds into it as it drains: a sender never waits on an
+	// actor that has stopped reading (#1259).
+	overflowMu sync.Mutex
+	overflow   []cmd
+	feeding    bool // a feedOverflow is running; it alone writes the overflow into cmds
 
 	// goroutine-owned state below
 	loop         store.Loop
@@ -377,6 +385,7 @@ func NewActor(deps Deps, loopRecord *store.Loop) *Actor {
 		deps:    deps,
 		cmds:    make(chan cmd, 32),
 		stopped: make(chan struct{}),
+		id:      loopRecord.ID,
 		loop:    *loopRecord,
 		state:   StateAsleep,
 		// the defaults hold until the first wake reads the operator's:
@@ -432,15 +441,80 @@ func NewActor(deps Deps, loopRecord *store.Loop) *Actor {
 // deleted or the hub stops: nothing will handle the command (#1113).
 var ErrStopped = errors.New("the loop has stopped")
 
-// send hands command to the actor, and reports false once it has stopped:
-// a stopped actor reads nothing, and a send would wait on it for good.
+// send hands command to the actor without waiting on it, and reports false
+// once it has stopped: a stopped actor reads nothing. A command that finds
+// cmds full joins the overflow, behind any already there so the actor reads
+// them in the order sent. Waiting instead held the sender, and the
+// scheduler's tick pass is one sender for every loop: one actor that
+// stopped reading its commands stopped every loop's ticks once its buffer
+// filled (#1259). The wake check sees that actor's unread wakes, so it is
+// the one that shows a problem.
 func (actor *Actor) send(command cmd) bool {
+	actor.overflowMu.Lock()
+	defer actor.overflowMu.Unlock()
 	select {
-	case actor.cmds <- command:
-		return true
 	case <-actor.stopped:
 		return false
+	default:
 	}
+	if len(actor.overflow) == 0 {
+		select {
+		case actor.cmds <- command:
+			return true
+		default:
+		}
+	}
+	if !actor.feeding {
+		actor.feeding = true
+		actor.senderLog().Warn("the loop is not reading its commands; queueing them until it does", "kind", command.kind)
+		go actor.feedOverflow()
+	}
+	actor.overflow = append(actor.overflow, command)
+	return true
+}
+
+// feedOverflow moves the overflow into cmds as the actor reads it, oldest
+// first, until it is empty. Should the actor stop first, what is left is
+// dropped as a stopped actor's cmds are, and the wakes in it are settled.
+func (actor *Actor) feedOverflow() {
+	for {
+		actor.overflowMu.Lock()
+		if len(actor.overflow) == 0 {
+			actor.feeding = false
+			actor.overflowMu.Unlock()
+			actor.senderLog().Info("the loop has read the commands queued for it")
+			return
+		}
+		command := actor.overflow[0]
+		actor.overflowMu.Unlock()
+		select {
+		case actor.cmds <- command:
+		case <-actor.stopped:
+			actor.overflowMu.Lock()
+			dropped := actor.overflow
+			actor.overflow, actor.feeding = nil, false
+			actor.overflowMu.Unlock()
+			for _, command := range dropped {
+				if command.kind == "deliver" || command.kind == "tick" {
+					actor.wakeHandled()
+				}
+			}
+			return
+		}
+		actor.overflowMu.Lock()
+		actor.overflow = actor.overflow[1:]
+		actor.overflowMu.Unlock()
+	}
+}
+
+// senderLog is the actor's logger for its senders' goroutines. Not
+// actor.log(): the loop record that names is the actor goroutine's own.
+func (actor *Actor) senderLog() *slog.Logger {
+	logger := actor.deps.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return logger.With("loop_id", actor.id)
 }
 
 // ask sends command and waits for its reply, or ErrStopped should the

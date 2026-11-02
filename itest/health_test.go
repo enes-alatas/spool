@@ -284,3 +284,66 @@ func TestAWakeThatStartsNoTurnIsToldToTheOwner(t *testing.T) {
 	tg.waitSentFrom(t, operator.ID, "alpha", "alpha has started a turn again")
 	hub.waitCompleted("alpha", 4)
 }
+
+// One loop that stops reading its commands holds no other loop's tick
+// (#1259). alpha's claude ends its first turn, closes its output and lives
+// on, and the hub's wait for that exit, lengthened past the wedge, holds
+// alpha's actor. A hundred wakes asked of it meanwhile fill its command
+// buffer and go past it, and none of them waits on the actor. Then the
+// scheduler's pass fires alpha's due tick and goes on to beta's, which
+// starts beta's turn; before, the pass waited on alpha's full buffer and no
+// loop ticked again. alpha is the loop that shows a problem, and once the
+// wedge ends it reads what was queued for it and takes a turn.
+func TestALoopThatStopsReadingHoldsNoOtherLoopsTick(t *testing.T) {
+	t.Parallel()
+	operator := user{ID: 7677, First: "Operator", Username: "operator"}
+	workspace := workspaceWithScript(t, "!wedge 150\nback to work\n")
+	hub, _ := startTelegramFleetArgs(t, t.TempDir(), []string{"--exit-grace-sec", "300"}, operator, map[string]any{"workspace_path": workspace})
+	hub.waitCompleted("alpha", 1)
+	hub.waitCompleted("beta", 1)
+	hub.mustJSON("PUT", "/api/settings", map[string]any{"health_wake_grace_minutes": 1}, nil)
+	time.Sleep(2 * time.Second) // past the result, into the wait for the exit
+
+	asked := make(chan error, 1)
+	go func() {
+		for range 100 {
+			if resp, data := hub.do("POST", "/api/loops/alpha/wake", nil); resp.StatusCode != 200 {
+				asked <- fmt.Errorf("wake: %d %s", resp.StatusCode, data)
+				return
+			}
+		}
+		asked <- nil
+	}()
+	select {
+	case err := <-asked:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("a wake asked of a loop that reads nothing waited on it")
+	}
+
+	// a due tick for each, alpha's first: resuming a loop schedules one
+	// within seconds
+	hub.mustJSON("POST", "/api/loops/alpha/resume", nil, nil)
+	time.Sleep(10 * time.Second)
+	hub.mustJSON("POST", "/api/loops/beta/resume", nil, nil)
+	hub.waitCompleted("beta", 2)
+
+	var view loopView
+	within(t, 120*time.Second, "alpha's wake_missed problem", func() bool {
+		view = hub.loop("alpha")
+		return view.Health == "failing"
+	})
+	if len(view.Problems) != 1 || view.Problems[0].Symptom != "wake_missed" {
+		t.Fatalf("alpha's problems = %+v, want one wake_missed", view.Problems)
+	}
+	if beta := hub.loop("beta"); beta.Health != "ok" || len(beta.Problems) != 0 {
+		t.Fatalf("beta's health = %q with problems %+v, want ok: the wedged loop is alpha", beta.Health, beta.Problems)
+	}
+
+	within(t, 180*time.Second, "alpha reading its queued wakes and taking a turn", func() bool {
+		return hub.loop("alpha").Health == "ok"
+	})
+	hub.waitCompleted("alpha", 2)
+}

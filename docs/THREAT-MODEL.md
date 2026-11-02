@@ -80,6 +80,13 @@ Slack connects out over Socket Mode, so no port is opened for either
   spend the operator's plan (ADR-0051).
 - **The wrong-code limits live in memory**, so a restart resets them
   (ADR-0051).
+- **A loop that stops reading its commands queues them in memory with no
+  cap** (#1259), so that no sender waits on it. Each message delivered or
+  wake asked of the loop adds one entry until it reads again or stops.
+  The bound rests on who can do either: allowed senders, the operator
+  API, the loops' own sends (`SendCapPerTurn` a turn) and the schedule.
+  An input that wakes a loop without one of those gates would make the
+  queue unbounded.
 - **Strangers can pause new linking on a surface** by spending its count
   of 50 wrong codes an hour. Allowed and linked people are unaffected, the
   other surface still links, the hub logs the pause, and an admin reads it

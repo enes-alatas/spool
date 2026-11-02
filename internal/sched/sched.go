@@ -69,9 +69,9 @@ func (scheduler *Scheduler) Recover(ctx context.Context) {
 
 // Run fires ticks as they come due, until ctx is done. Recover goes first.
 // Beside it, the wake check runs every recheckInterval on a goroutine of
-// its own: a poke restarts the wait for the next tick without firing any,
-// and a tick blocks on an actor that has stopped answering once its
-// commands back up, the very case the check is for (#1143).
+// its own, since a poke restarts the wait for the next tick without firing
+// any (#1143). A tick waits on no actor: one that has stopped reading its
+// commands has them queued, and the pass goes on to the next loop (#1259).
 func (scheduler *Scheduler) Run(ctx context.Context) {
 	go scheduler.checkWakes(ctx)
 	for {

@@ -3,6 +3,7 @@ package loop
 import (
 	"context"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -325,4 +326,89 @@ func TestAcknowledgingAMissedWakeDoesNotWaitOnTheActor(t *testing.T) {
 	}
 	manager.CheckWakes()
 	noNotice(t, notices, "the grace started over")
+}
+
+// An actor that reads nothing holds none of its senders once its command
+// buffer is full: the scheduler's tick pass is one sender for every loop,
+// and waiting there stopped every loop's ticks (#1259). The commands it
+// was sent meanwhile reach it in the order sent once it reads again, and
+// the ticks among them stay owed until then.
+func TestASendToAFullActorWaitsForNothing(t *testing.T) {
+	_, actor, _ := missedWakeHub(t, openTestStore(t))
+	const sent = 40 // past the buffer's 32
+	sendsWithoutWaiting(t, func() {
+		for i := range sent {
+			actor.Tick()
+			actor.UpdateLoop(&store.Loop{Name: strconv.Itoa(i)})
+		}
+	})
+	actor.wakesMu.Lock()
+	asked := actor.wakesAsked
+	actor.wakesMu.Unlock()
+	if asked != sent {
+		t.Fatalf("%d ticks owed, want the %d sent", asked, sent)
+	}
+
+	for i := range sent {
+		for _, want := range []string{"tick", "update"} {
+			select {
+			case command := <-actor.cmds:
+				if command.kind != want || (want == "update" && command.loop.Name != strconv.Itoa(i)) {
+					t.Fatalf("command %d read as %q %+v, want %q of loop %d: out of order", i, command.kind, command.loop, want, i)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatalf("command %d never reached the actor", i)
+			}
+		}
+	}
+	select {
+	case command := <-actor.cmds:
+		t.Fatalf("an extra %q command reached the actor", command.kind)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+// An actor that stops with commands still queued for it drops them as it
+// drops its unread buffer, and the wakes among them are owed no longer:
+// nothing will ever read them (#1259).
+func TestAnActorThatStopsSettlesTheWakesQueuedForIt(t *testing.T) {
+	_, actor, _ := missedWakeHub(t, openTestStore(t))
+	sendsWithoutWaiting(t, func() {
+		for range 40 {
+			actor.Tick()
+		}
+	})
+	close(actor.stopped)
+	within := time.Now().Add(5 * time.Second)
+	for {
+		actor.wakesMu.Lock()
+		asked := actor.wakesAsked
+		actor.wakesMu.Unlock()
+		if asked == cap(actor.cmds) {
+			break
+		}
+		if time.Now().After(within) {
+			t.Fatalf("%d ticks owed after the stop, want only the %d in the buffer", asked, cap(actor.cmds))
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if actor.send(cmd{kind: "tick"}) {
+		t.Fatal("a send to a stopped actor was taken")
+	}
+}
+
+// sendsWithoutWaiting runs sends, failing the test should they wait on an
+// actor that reads nothing.
+func sendsWithoutWaiting(t *testing.T, sends func()) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		sends()
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("a send waited on an actor that reads nothing")
+	}
 }
