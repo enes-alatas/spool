@@ -526,3 +526,29 @@ jobs:
         with:
           path: .itest-green
           key: ${{ needs.changes.outputs.itest_key }}
+
+  # Tier 1 under Go's race detector (#1269). The hub is goroutines around
+  # shared state (actors, the scheduler, the router), and a data race there
+  # passes every other gate. Its own job, not a step of `checks`: it is
+  # about four minutes, and in parallel it adds no wall time.
+  #
+  # Pull requests only, for now. A push to main re-proves nothing (lever 4),
+  # and it is kept out of the merge queue's call so it is informational
+  # until branch protection lists it, which is the operator's setting
+  # (docs/QUALITY.md). It needs cgo, so a C compiler: the runner has one.
+  race:
+    needs: changes
+    if: needs.changes.outputs.unit == 'true' && github.event_name == 'pull_request' && !inputs.pr
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: unit tests under the race detector
+        run: |
+          set -o pipefail
+          make race 2>&1 | tee go-race.log
+      - name: name the failed tests
+        if: failure()
+        run: bash scripts/test-failures.sh go-race.log "tier 1 -race"

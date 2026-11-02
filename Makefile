@@ -12,7 +12,7 @@ COMMIT   ?= $(shell git rev-parse --short HEAD 2>/dev/null)
 BUILT_AT ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS  := -X main.buildVersion=$(VERSION) -X main.buildCommit=$(COMMIT) -X main.buildTime=$(BUILT_AT)
 
-.PHONY: build dev test itest perf-docker lint secret-scan workflow-lint fakeclaude egress hook vet vet-darwin e2e-context e2e-m1 ui ui-dev ui-shots ui-smoke demo image image-multiarch clean
+.PHONY: build dev test race itest perf-docker lint secret-scan workflow-lint fakeclaude egress hook vet vet-darwin e2e-context e2e-m1 ui ui-dev ui-shots ui-smoke demo image image-multiarch clean
 
 build: ui
 	$(GO) build -ldflags "$(LDFLAGS)" -o bin/spool ./cmd/spool
@@ -171,6 +171,11 @@ dev: server
 
 test:
 	$(GO) test ./...
+
+# Tier 1 under the race detector, as CI's `race` job runs it (#1269). It
+# needs cgo, so a C compiler on the PATH; CI's runner has one.
+race:
+	CGO_ENABLED=1 $(GO) test -race ./...
 
 vet:
 	$(GO) vet ./...

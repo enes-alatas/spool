@@ -264,6 +264,13 @@ protection (#1) requires all three:
   workflow rules.
 - `itest` — tier 2.
 
+`race` (#1269) runs tier 1 under Go's race detector (`make race`) on a pull
+request that sets the tier-1 filter, in parallel with `checks`. It needs a C
+compiler, which CI's runner has and a loop's workstation may not. It is
+informational for now: branch protection does not list it, and the merge
+queue's call skips it. Listing it there is the operator's setting, once it
+has run green on PRs for a while.
+
 `other-half` (the `pr-guards` workflow, #634) reports on every PR as well. It
 blocks a merge only once branch protection lists it, which is the operator's
 setting.
