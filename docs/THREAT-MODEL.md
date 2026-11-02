@@ -140,7 +140,9 @@ config, since they read connections by name, kind and the loops that
 hold them (#924), a file another user uploaded and hasn't sent, and
 can't send it either, and the file of a deleted message. An open stream
 follows a role change, a removal or a link from its next item; a change
-made with `spool user` counts within a minute.
+made with `spool user` counts within a minute. A member's stream carries
+only the kinds of item classified for members: a new kind reaches no
+member until it is, and a test fails until it is (#1240).
 
 **Doesn't hold:**
 - **No TLS.** Spool doesn't terminate it; beyond loopback, that is a

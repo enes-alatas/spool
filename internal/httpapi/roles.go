@@ -400,8 +400,19 @@ func streamable(who *caller, item bus.Item, reads func(*store.Message) bool) boo
 	case bus.KindLink:
 		payload, ok := item.Payload.(*route.LinkPayload)
 		return ok && who.user != nil && payload.UserID == who.user.ID
+	case bus.KindLoopStatus, bus.KindSchedule, bus.KindWorkstation, bus.KindModels,
+		bus.KindClaudeLogin, bus.KindLoopProblem, bus.KindAccess:
+		// what a member reads over the API anyway: a loop's state, its next
+		// tick, its workstation, its login and its problems, the model list,
+		// and the senders with no pairing code
+		return true
+	case bus.KindUser, bus.KindSendOutcome:
+		return false // the hub's own bookkeeping, on no stream
 	}
-	return true
+	// A kind named nowhere above reaches no member: forgetting one costs a
+	// live update, not a leak (#1240). TestEveryBusKindIsClassifiedForMembers
+	// fails until it is named.
+	return false
 }
 
 // seesEveryUpload reports whether who may read and send a file another

@@ -130,6 +130,8 @@ func TestAMemberStreamCarriesNoOwnerDM(t *testing.T) {
 		{dropped(store.ConversationOwnerDM), false},
 		{dropped("dm:someone"), false},
 		{bus.Item{Kind: bus.KindMessageDropped, Payload: &surface.DropNotice{LoopName: "terra"}}, false},
+		// a kind streamable names nowhere reaches no member (#1240)
+		{bus.Item{Kind: "a_kind_added_later"}, false},
 	} {
 		if got := streamable(member, test.item, unlinked); got != test.want {
 			t.Errorf("a member's stream with %s %+v = %v; want %v", test.item.Kind, test.item.Payload, got, test.want)
