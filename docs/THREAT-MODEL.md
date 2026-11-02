@@ -175,6 +175,9 @@ ADR-0043), a contained loop's model requests under `/claude`
   request, and an idle connection closed after 60 seconds, so a loop
   can't hold idle connections to the hub open. There is no write
   timeout, which would cut a long call.
+- **Plain TCP:** this listener, like every Spool listener, opens with
+  MPTCP off (ADR-0062), so a loop doesn't reach the kernel's MPTCP code
+  through it.
 - **A loop sends only where its contract allows** (ADR-0026, ADR-0049):
   - its owner;
   - a person who has already written to it privately;
