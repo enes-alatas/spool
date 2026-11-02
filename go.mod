@@ -4,6 +4,10 @@ go 1.25.0
 
 toolchain go1.26.10
 
+// Hub listeners take plain TCP, not the MPTCP Go has defaulted to since 1.24
+// (ADR-0062).
+godebug multipathtcp=0
+
 require (
 	github.com/coder/websocket v1.8.15
 	github.com/modelcontextprotocol/go-sdk v1.8.0
