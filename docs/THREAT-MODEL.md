@@ -167,6 +167,16 @@ member until it is, and a test fails until it is (#1240).
 - **A stream whose session ended** gets no more items. It stays open on
   pings until the next item would reach it, and the hub closes it then.
   On a quiet hub, that can be a long time.
+- **An import fetches from prompts.chat** (ADR-0063). An admin pasting a
+  bot's URL makes the hub GET that bot's `.json` from `prompts.chat`, by
+  exact name. It sends no credential, follows no redirect, and reads at
+  most 1 MiB within 15 seconds. Any other host is refused before a
+  request. The draft it answers creates nothing. Its mission is someone
+  else's text, which the operator reads before creating the loop; nothing
+  else checks what it asks. The hub drops control characters but newline
+  and tab, format characters (bidi, zero-width, tag characters) and both
+  variation-selector blocks, and nothing else: a character that only
+  looks blank, such as U+3164, stays. A mission over 64 KiB is refused.
 
 ### Loop listener: `/mcp`, the brokered servers, the Claude proxy and the GitHub token route
 

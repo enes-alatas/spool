@@ -30,6 +30,7 @@ import (
 	"github.com/enes-alatas/spool/internal/httpapi"
 	"github.com/enes-alatas/spool/internal/loop"
 	"github.com/enes-alatas/spool/internal/operator"
+	"github.com/enes-alatas/spool/internal/promptschat"
 	"github.com/enes-alatas/spool/internal/redact"
 	"github.com/enes-alatas/spool/internal/route"
 	"github.com/enes-alatas/spool/internal/runtime"
@@ -623,6 +624,7 @@ func main() {
 		TrustedHosts:         splitList(*trustedHosts),
 		Egress:               dockerRuntime,
 		CloudListener:        cloudSwitch,
+		PromptsChat:          promptschat.HTTPFetcher{},
 		CloudLoopbackAddress: *cloudLoopbackAddress,
 		CloudGate:            cloudGate,
 		CloudSignIn:          cloudSignIn,

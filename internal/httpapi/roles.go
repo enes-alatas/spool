@@ -63,7 +63,7 @@ var memberRoutes = []string{
 var adminRoutes = []string{
 	"GET /api/loops/{name}/events", "GET /api/loops/{name}/turns",
 
-	"POST /api/loops", "PATCH /api/loops/{name}", "DELETE /api/loops/{name}",
+	"POST /api/loops", "GET /api/import/prompts-chat", "PATCH /api/loops/{name}", "DELETE /api/loops/{name}",
 	"POST /api/loops/{name}/pause", "POST /api/loops/{name}/resume",
 	"POST /api/loops/{name}/kill", "POST /api/loops/{name}/rotate", "POST /api/loops/{name}/rehome",
 	"POST /api/loops/{name}/cloud/token", "GET /api/loops/{name}/cloud/setup",

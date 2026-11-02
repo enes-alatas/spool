@@ -152,6 +152,7 @@ internal/egress/      the host allowlist a workstation's egress is held to
 internal/hook/        the mechanical fleet rules spool-hook refuses a tool call on
 internal/githubhelper/ what spool-github asks the hub's token route, and how it hands git and gh the token
 internal/operator/    the operator's own credential for the API (ADR-0030)
+internal/promptschat/ a prompts.chat bot read into a loop draft (ADR-0063)
 internal/gitws/       git worktree helper
 internal/datadir/     permissions on the data directory
 web/                  control room (React/Vite/TS, go:embed)

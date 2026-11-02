@@ -26,6 +26,7 @@ import (
 	"github.com/enes-alatas/spool/internal/githubapp"
 	"github.com/enes-alatas/spool/internal/gitws"
 	"github.com/enes-alatas/spool/internal/loop"
+	"github.com/enes-alatas/spool/internal/promptschat"
 	"github.com/enes-alatas/spool/internal/roomtext"
 	"github.com/enes-alatas/spool/internal/route"
 	"github.com/enes-alatas/spool/internal/runtime"
@@ -114,6 +115,9 @@ type Server struct {
 	// CloudListener is the cloud listener's switch (ADR-0056). Nil
 	// on a hub that wires none: the page reads it as off and can't open it.
 	CloudListener CloudListener
+	// PromptsChat fetches the bots the operator imports (ADR-0063). Nil on
+	// a hub that wires none: an import is refused.
+	PromptsChat promptschat.Fetcher
 	// CloudHooks takes the posts of cloud loops' hooks on the cloud
 	// listener (ADR-0059). Nil on a hub that wires none: the route is 404.
 	CloudHooks CloudHooks
@@ -204,6 +208,7 @@ func (server *Server) routes() *routeMux {
 	mux.HandleFunc("GET /api/version", server.handleVersion)
 	mux.HandleFunc("GET /api/loops", server.handleListLoops)
 	mux.HandleFunc("POST /api/loops", server.handleCreateLoop)
+	mux.HandleFunc("GET /api/import/prompts-chat", server.handleImportPromptsChat)
 	mux.HandleFunc("GET /api/loops/{name}", server.handleGetLoop)
 	mux.HandleFunc("PATCH /api/loops/{name}", server.handlePatchLoop)
 	mux.HandleFunc("DELETE /api/loops/{name}", server.handleDeleteLoop)
