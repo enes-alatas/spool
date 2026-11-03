@@ -33,6 +33,8 @@ const (
 	maxBot = 1 << 20
 	// maxName is the longest loop name the hub takes.
 	maxName = 32
+	// fallbackName is the loop name of a slug that leaves too little.
+	fallbackName = "imported-bot"
 	// maxMission bounds the mission a bot makes: it goes into every turn
 	// of the loop, so a bloated or hostile bot is refused, not imported.
 	maxMission = 64 << 10
@@ -134,17 +136,11 @@ var notBots = map[string]bool{"teams": true, "new": true}
 // .json. A URL on any other host, or no bot's page on prompts.chat, is
 // refused. The bot's .json is its page's path plus .json.
 func BotPage(raw string) (string, error) {
-	parsed, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || parsed.Host == "" {
-		return "", refuse("That isn't a URL. Paste a bot's address on %s.", Host)
+	parsed, err := onPromptsChat(raw, "bot")
+	if err != nil {
+		return "", err
 	}
-	if !strings.EqualFold(parsed.Hostname(), Host) || parsed.Port() != "" || parsed.User != nil {
-		return "", refuse("Spool reads bots from %s only, not from %s.", Host, parsed.Host)
-	}
-	if parsed.Scheme != "https" && parsed.Scheme != "http" {
-		return "", refuse("Paste the bot's https address on %s.", Host)
-	}
-	if strings.HasPrefix(parsed.Path, "/bots/teams/") {
+	if strings.HasPrefix(parsed.Path, "/bots/teams/") || strings.HasPrefix(parsed.Path, "/api/bots/teams/") {
 		return "", refuse("That is a team on %s. Import its bots one at a time for now.", Host)
 	}
 	match := botPath.FindStringSubmatch(parsed.Path)
@@ -152,6 +148,23 @@ func BotPage(raw string) (string, error) {
 		return "", refuse("That page isn't a bot on %s. A bot's address starts with https://%s/bots/.", Host, Host)
 	}
 	return "https://" + Host + "/bots/" + match[1], nil
+}
+
+// onPromptsChat is raw parsed, refused unless it is an http or https URL
+// on prompts.chat by exact name, with no port or credentials. what names
+// the page it should be, for the refusal.
+func onPromptsChat(raw, what string) (*url.URL, error) {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Host == "" {
+		return nil, refuse("That isn't a URL. Paste a %s's address on %s.", what, Host)
+	}
+	if !strings.EqualFold(parsed.Hostname(), Host) || parsed.Port() != "" || parsed.User != nil {
+		return nil, refuse("Spool reads %ss from %s only, not from %s.", what, Host, parsed.Host)
+	}
+	if parsed.Scheme != "https" && parsed.Scheme != "http" {
+		return nil, refuse("Paste the %s's https address on %s.", what, Host)
+	}
+	return parsed, nil
 }
 
 // Draft is the loop a bot would make, for the operator to edit before
@@ -206,9 +219,16 @@ func Import(ctx context.Context, fetcher Fetcher, raw string) (Draft, error) {
 	if err != nil {
 		return Draft{}, err
 	}
+	return draftAt(ctx, fetcher, page, "%s has no bot at that address.")
+}
+
+// draftAt is the draft of the bot whose page is page, fetched through
+// fetcher. missing is the refusal when prompts.chat has no such bot, with
+// a %s for its host.
+func draftAt(ctx context.Context, fetcher Fetcher, page, missing string) (Draft, error) {
 	body, err := fetcher.Fetch(ctx, strings.TrimPrefix(page, "https://"+Host)+".json")
 	if errors.Is(err, ErrNotFound) {
-		return Draft{}, refuse("%s has no bot at that address.", Host)
+		return Draft{}, refuse(missing, Host)
 	}
 	if err != nil {
 		return Draft{}, err
@@ -252,7 +272,7 @@ func loopName(slug string) string {
 	}
 	made = strings.TrimRight(made, "_-")
 	if len(made) < 2 {
-		return "imported-bot"
+		return fallbackName
 	}
 	return made
 }

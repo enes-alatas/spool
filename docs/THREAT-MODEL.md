@@ -178,7 +178,9 @@ member until it is, and a test fails until it is (#1240).
   variation-selector blocks, and nothing else: a character that only
   looks blank, such as U+3164, stays. A mission over 64 KiB is refused.
   `--prompts-chat-base` moves where the fetch goes, and is the
-  operator's flag, never an admin's input.
+  operator's flag, never an admin's input. A team is drafted the same
+  way, with at most 12 bots fetched for it, and its loops are created
+  only from the draft the operator sends back.
 
 ### Loop listener: `/mcp`, the brokered servers, the Claude proxy and the GitHub token route
 

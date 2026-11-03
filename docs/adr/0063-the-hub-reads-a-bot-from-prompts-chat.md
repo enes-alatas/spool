@@ -1,6 +1,6 @@
 # ADR-0063: The hub reads a bot from prompts.chat, on the operator's paste
 
-Date: 2026-11-02 · Status: accepted (operator decision of 2026-11-02 on #1262 for the import, and of 2026-11-03, in a direct message to Terra, for the outbound fetch's bounds) · Relates to: ADR-0028, ADR-0048 · Amended: 2026-11-03 (item 1: fetch by path, teams and the base flag, #1265)
+Date: 2026-11-02 · Status: accepted (operator decision of 2026-11-02 on #1262 for the import, and of 2026-11-03, in a direct message to Terra, for the outbound fetch's bounds) · Relates to: ADR-0028, ADR-0048 · Amended: 2026-11-03 (item 1: fetch by path, teams and the base flag, #1265); 2026-11-03 (item 4: a team drafted, then created from its draft, #1265)
 
 ## Context
 
@@ -59,6 +59,28 @@ able to call it point the hub at its own network.
 
    The egress list is a hint. Nothing is added to the allowlist
    (ADR-0028).
+
+   **Amendment (2026-11-03, #1265):** a team is drafted the same way.
+   `GET /api/import/prompts-chat/team?url=` fetches the team's `.json`
+   and each member's, at most 12, and creates nothing. It answers:
+   - a `channel` named after the team's slug;
+   - its `description`, on one line;
+   - one loop per member, named from the member's role (or its bot's slug
+     when the role leaves no name), each with the bot's draft. Each
+     mission ends with a paragraph naming the channel and the other
+     loops, then a line for each handoff to or from the loop, by the
+     other loop's name and the handoff's label.
+
+   A loop or channel name the hub already has is suffixed `-2`, `-3` and
+   so on. `POST /api/import/prompts-chat/team` creates the team from the
+   draft as the operator edited it: the channel and every loop in it,
+   with no fetch. It is an admin's route. It is all or nothing: every
+   loop is checked before any is stored, and none starts until all of
+   them and the channel are stored, so a failure on the way removes what
+   it stored. A team's loops run on bare or docker, since a cloud loop
+   needs a repo and an environment of its own. The import creates loops
+   only through this second call, so item 5 holds for teams: an imported
+   mission reaches a loop only as the operator read it in the draft.
 5. **What the bot's text is.** It is someone else's writing, so it is
    untrusted. The only way it reaches a loop is through the mission the
    operator reads in the draft and chooses to create. From each field it

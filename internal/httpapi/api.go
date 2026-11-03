@@ -209,6 +209,8 @@ func (server *Server) routes() *routeMux {
 	mux.HandleFunc("GET /api/loops", server.handleListLoops)
 	mux.HandleFunc("POST /api/loops", server.handleCreateLoop)
 	mux.HandleFunc("GET /api/import/prompts-chat", server.handleImportPromptsChat)
+	mux.HandleFunc("GET /api/import/prompts-chat/team", server.handleImportPromptsChatTeam)
+	mux.HandleFunc("POST /api/import/prompts-chat/team", server.handleCreateTeam)
 	mux.HandleFunc("GET /api/loops/{name}", server.handleGetLoop)
 	mux.HandleFunc("PATCH /api/loops/{name}", server.handlePatchLoop)
 	mux.HandleFunc("DELETE /api/loops/{name}", server.handleDeleteLoop)
