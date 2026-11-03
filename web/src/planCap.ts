@@ -149,3 +149,84 @@ export function cappedLogins(usages: PlanUsages | undefined): LoginPlanUsage[] {
     (login): login is LoginPlanUsage => !!login?.cap,
   )
 }
+
+// The logins whose loops all run in the cloud (#1303): at least one loop and
+// none of it bare or docker. A cloud turn reports no rate-limit event
+// (ADR-0059), so no new reading of such a login arrives. Only the default
+// can be one: a cloud loop runs on it.
+export function cloudOnlyLogins(loops: { runtime: string; claude_login: string }[] | undefined): Set<string> {
+  const contained = new Set<string>()
+  const cloud = new Set<string>()
+  for (const loop of loops ?? []) (loop.runtime === 'cloud' ? cloud : contained).add(loopLogin(loop))
+  return new Set([...cloud].filter((login) => !contained.has(login)))
+}
+
+// Whether a login's reading still counts: a cap holding, or a window not yet
+// past its reset. The cap acts on such a reading whatever runtime its loops
+// are, cloud loops on the default included, so a cloud-only login with one
+// keeps its figures; only once nothing live is left can its cap not fire.
+export function liveReading(usage: PlanUsage | undefined): boolean {
+  if (!usage || usage.unknown !== undefined) return false
+  if (usage.cap) return true
+  return [usage.five_hour, usage.seven_day].some((window) => !!window && !window.reset)
+}
+
+// How a login's figures read for its runtime (#1303): 'unknown' for a
+// cloud-only login with nothing live, whose cap cannot fire; 'last' for one
+// whose last reading still counts; undefined for any other.
+export type CloudReading = 'unknown' | 'last' | undefined
+
+export function cloudReading(usage: PlanUsage | undefined, cloudOnly: boolean): CloudReading {
+  if (!cloudOnly) return undefined
+  return liveReading(usage) ? 'last' : 'unknown'
+}
+
+// A cloud-only login with nothing live, in place of its figures, and why.
+export const CLOUD_ONLY_USAGE = 'usage unknown, the cap does not act here'
+export const CLOUD_ONLY_WHY =
+  'Its loops all run in the cloud, and a cloud turn reports no plan usage, so the cap has nothing to read on this login.'
+
+// A cloud-only login with a live reading, under its figures, and why.
+export const CLOUD_ONLY_FROZEN = "won't update: its loops all run in the cloud"
+export const CLOUD_ONLY_FROZEN_WHY =
+  "A cloud turn reports no plan usage, so these are this login's last figures. The cap acts on them until their windows reset, and then not again."
+
+// The line beside the cap in Settings: which logins it acts on today, with
+// the cloud-only ones named apart (#1303): one with nothing live as not
+// among them, one with a live reading as acted on until it resets.
+// Undefined until the logins are read.
+export function capReach(logins: LoginPlanUsage[] | undefined, cloudOnly: Set<string>): string | undefined {
+  if (!logins || logins.length === 0) return undefined
+  const names = logins.map((login) => login.name)
+  const frozen = logins.filter((login) => cloudOnly.has(login.name) && liveReading(login)).map((l) => l.name)
+  const left = logins.filter((login) => cloudOnly.has(login.name) && !liveReading(login)).map((l) => l.name)
+  const acting = names.filter((name) => !cloudOnly.has(name))
+  const why = 'a cloud turn reports no plan usage'
+  if (frozen.length === 0 && left.length === 0) {
+    return `The cap acts on ${names.length === 1 ? 'the login' : 'every login'} here (${listed(names)}). A login whose loops all ran in the cloud would not be among them: ${why}.`
+  }
+  const lines: string[] = []
+  if (acting.length > 0) lines.push(`The cap acts on ${listed(acting)}.`)
+  if (frozen.length > 0) {
+    lines.push(
+      `On ${listed(frozen)}, which ${runsOnly(frozen)}, the cap acts on ${frozen.length === 1 ? 'its' : 'their'} last reading until those windows reset, then not again, since ${why}.`,
+    )
+  }
+  if (left.length > 0) {
+    lines.push(
+      acting.length === 0 && frozen.length === 0
+        ? `The cap acts on no login here today: ${listed(left)} ${runsOnly(left)}, and ${why}, so there is nothing for the cap to read.`
+        : `Not on ${listed(left)}, which ${runsOnly(left)}: ${why}, so there is nothing for the cap to read.`,
+    )
+  }
+  return lines.join(' ')
+}
+
+function runsOnly(names: string[]): string {
+  return names.length === 1 ? 'runs only cloud loops' : 'run only cloud loops'
+}
+
+function listed(names: string[]): string {
+  if (names.length === 1) return names[0]
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+}

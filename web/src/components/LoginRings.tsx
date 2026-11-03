@@ -1,7 +1,17 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import type { LoginPlanUsage, PlanWindow } from '../api'
 import { formatAgo, formatResets, gradedColor } from '../format'
-import { capWake, ringName, RING_KEY } from '../planCap'
+import {
+  capWake,
+  CLOUD_ONLY_FROZEN,
+  CLOUD_ONLY_FROZEN_WHY,
+  CLOUD_ONLY_USAGE,
+  CLOUD_ONLY_WHY,
+  cloudReading,
+  type CloudReading,
+  ringName,
+  RING_KEY,
+} from '../planCap'
 
 // The plan strip on a hub with more than one Claude login (ADR-0060,
 // #1074): a ring a login, its name in the middle, the 5-hour window round
@@ -14,13 +24,20 @@ import { capWake, ringName, RING_KEY } from '../planCap'
 // under its name, and its details name the loops that sleep (sleeps) and
 // when they wake, with resume (Resume now, for those who may) beside it.
 // The Fleet page has no cap banner then: the ring says it.
+//
+// A login whose loops all run in the cloud (cloudOnly, #1303) gets no new
+// reading. While its last one still counts, the cap acts on it, so the ring
+// keeps it and the details say it won't update; once nothing live is left
+// the ring is dashed and the details say the cap does not act.
 export function LoginRings({
   logins,
+  cloudOnly,
   now,
   sleeps,
   resume,
 }: {
   logins: LoginPlanUsage[]
+  cloudOnly: Set<string>
   now: number
   sleeps: (login: string) => string[] | undefined
   resume?: (login: string) => ReactNode
@@ -45,23 +62,38 @@ export function LoginRings({
 
   return (
     <div className="login-rings" ref={frame}>
-      {logins.map((login) => (
-        <div className="login-ring-slot" key={login.name}>
-          <button
-            type="button"
-            className="login-ring"
-            aria-expanded={open === login.name}
-            aria-label={`Plan usage of the Claude login ${login.name}`}
-            title={login.unknown ?? RING_KEY}
-            onClick={() => setOpen(open === login.name ? null : login.name)}
-          >
-            <Ring login={login} />
-          </button>
-          {open === login.name && (
-            <RingDetails login={login} now={now} sleeps={sleeps(login.name)} resume={resume} />
-          )}
-        </div>
-      ))}
+      {logins.map((login) => {
+        const cloud = cloudReading(login, cloudOnly.has(login.name))
+        return (
+          <div className="login-ring-slot" key={login.name}>
+            <button
+              type="button"
+              className="login-ring"
+              aria-expanded={open === login.name}
+              aria-label={`Plan usage of the Claude login ${login.name}`}
+              title={
+                cloud === 'unknown'
+                  ? CLOUD_ONLY_WHY
+                  : cloud === 'last'
+                    ? CLOUD_ONLY_FROZEN_WHY
+                    : (login.unknown ?? RING_KEY)
+              }
+              onClick={() => setOpen(open === login.name ? null : login.name)}
+            >
+              <Ring login={login} unknown={cloud === 'unknown' || login.unknown !== undefined} />
+            </button>
+            {open === login.name && (
+              <RingDetails
+                login={login}
+                cloud={cloud}
+                now={now}
+                sleeps={sleeps(login.name)}
+                resume={resume}
+              />
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -71,7 +103,7 @@ const WIDTH = 4.5
 const OUTER = SIZE / 2 - 4
 const INNER = OUTER - 8
 
-function Ring({ login }: { login: LoginPlanUsage }) {
+function Ring({ login, unknown }: { login: LoginPlanUsage; unknown: boolean }) {
   const half = SIZE / 2
   return (
     <svg
@@ -81,7 +113,7 @@ function Ring({ login }: { login: LoginPlanUsage }) {
       overflow="visible"
       aria-hidden
     >
-      {login.unknown !== undefined ? (
+      {unknown ? (
         <circle className="login-ring-unknown" r={OUTER} />
       ) : (
         <>
@@ -133,11 +165,13 @@ function Arc({ r, window }: { r: number; window: PlanWindow | null }) {
 
 function RingDetails({
   login,
+  cloud,
   now,
   sleeps,
   resume,
 }: {
   login: LoginPlanUsage
+  cloud: CloudReading
   now: number
   sleeps?: string[]
   resume?: (login: string) => ReactNode
@@ -146,14 +180,25 @@ function RingDetails({
     <div className="login-ring-details" role="dialog" aria-label={`Plan usage of ${login.name}`}>
       <div>
         <b>{login.name}</b>
-        {login.as_of !== undefined && ` · as of ${formatAgo(login.as_of, now)}`}
+        {cloud !== 'unknown' && login.as_of !== undefined && ` · as of ${formatAgo(login.as_of, now)}`}
       </div>
-      {login.unknown !== undefined ? (
+      {cloud === 'unknown' ? (
+        <>
+          <div className="login-ring-row">{CLOUD_ONLY_USAGE}</div>
+          <div className="login-ring-row login-ring-why">{CLOUD_ONLY_WHY}</div>
+        </>
+      ) : login.unknown !== undefined ? (
         <div className="login-ring-row">{login.unknown}</div>
       ) : (
         <>
           <WindowRow name="5-hour · outer ring" window={login.five_hour} now={now} />
           <WindowRow name="7-day · inner ring" window={login.seven_day} now={now} />
+          {cloud === 'last' && (
+            <>
+              <div className="login-ring-row">{CLOUD_ONLY_FROZEN}</div>
+              <div className="login-ring-row login-ring-why">{CLOUD_ONLY_FROZEN_WHY}</div>
+            </>
+          )}
         </>
       )}
       {login.cap && (

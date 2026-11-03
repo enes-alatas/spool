@@ -1105,7 +1105,8 @@ textarea {
   margin-left: auto;
   flex: none;
 }
-.cap-idle {
+.cap-idle,
+.cap-reach {
   font-size: 0.8125rem;
   color: var(--text-muted);
 }
@@ -1229,6 +1230,16 @@ textarea {
   justify-content: space-between;
   gap: 16px;
   margin-top: 6px;
+}
+/* why a cloud-only login has no figures (#1303): a sentence, so it wraps
+   in the width the other rows give the details rather than stretching them
+   (no width of its own, at least the box's) */
+.login-ring-row.login-ring-why {
+  display: block;
+  width: 0;
+  min-width: 100%;
+  white-space: normal;
+  color: var(--text-muted);
 }
 /* Narrow, the title takes a line of its own: beside the first window it
    squeezed that bar to its floor while the second had the line to itself. */

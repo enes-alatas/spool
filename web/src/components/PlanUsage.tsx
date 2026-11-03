@@ -1,8 +1,21 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, PlanUsages, PlanWindow } from '../api'
+import { api, LoginPlanUsage, PlanUsages, PlanWindow } from '../api'
 import { formatAgo, formatResets, formatUsd, gradedColor } from '../format'
-import { capIdleStatus, cappedLogins, capReason, defaultUsage, loopLogin, usageLogins } from '../planCap'
+import {
+  capIdleStatus,
+  cappedLogins,
+  capReason,
+  CLOUD_ONLY_FROZEN,
+  CLOUD_ONLY_FROZEN_WHY,
+  CLOUD_ONLY_USAGE,
+  CLOUD_ONLY_WHY,
+  cloudOnlyLogins,
+  cloudReading,
+  defaultUsage,
+  loopLogin,
+  usageLogins,
+} from '../planCap'
 import { LoginRings } from './LoginRings'
 import { useMay } from './Session'
 
@@ -63,6 +76,8 @@ export function PlanUsageStrip({ spentToday, costDayTitle }: { spentToday: numbe
   const unknown = error ? (error instanceof Error ? error.message : String(error)) : usage?.unknown
   const logins = error ? undefined : usageLogins(usages)
   const sleeps = useSleeps(usages)
+  const cloudOnly = useCloudOnly()
+  const cloud = cloudReading(usage, cloudOnly.has('default'))
   return (
     <>
       <div className="plan-strip-frame">
@@ -71,10 +86,18 @@ export function PlanUsageStrip({ spentToday, costDayTitle }: { spentToday: numbe
           {logins ? (
             <LoginRings
               logins={logins}
+              cloudOnly={cloudOnly}
               now={now}
               sleeps={sleeps}
               resume={(login) => <ResumeButton login={login} />}
             />
+          ) : cloud === 'unknown' ? (
+            // a hub with one login whose loops all run in the cloud, and no
+            // reading left that counts: nothing to show, nothing to cap on
+            // (#1303)
+            <span className="plan-window dim" title={CLOUD_ONLY_WHY}>
+              {CLOUD_ONLY_USAGE}
+            </span>
           ) : unknown !== undefined ? (
             <span className="plan-window dim" title={unknown}>
               unknown
@@ -87,6 +110,12 @@ export function PlanUsageStrip({ spentToday, costDayTitle }: { spentToday: numbe
                 {usage.as_of !== undefined && (
                   <span className="plan-as-of" title={new Date(usage.as_of).toLocaleString()}>
                     as of {formatAgo(usage.as_of, now)}
+                  </span>
+                )}
+                {/* the last reading still caps, but no newer one comes */}
+                {cloud === 'last' && (
+                  <span className="plan-window dim" title={CLOUD_ONLY_FROZEN_WHY}>
+                    {CLOUD_ONLY_FROZEN}
                   </span>
                 )}
               </>
@@ -121,11 +150,18 @@ export function CapBanners({
   const several = !!logins
   const capped = cappedLogins(usages)
   const sleeps = useSleeps(usages)
+  const cloudOnly = useCloudOnly()
+  // a cloud-only login with nothing live has no reading to say, nor a cap
+  // that can fire; the line beside the thresholds says so (#1303)
+  const noReading = (login: LoginPlanUsage | undefined) =>
+    cloudReading(login, cloudOnly.has(login?.name ?? 'default')) === 'unknown'
   const idleLines = !idle
     ? []
     : several
-      ? logins.filter((login) => !login.cap).map((login) => `${login.name} · ${capIdleStatus(login, now)}`)
-      : capped.length === 0
+      ? logins
+          .filter((login) => !login.cap && !noReading(login))
+          .map((login) => `${login.name} · ${capIdleStatus(login, now)}`)
+      : capped.length === 0 && !noReading(defaultUsage(usages))
         ? [capIdleStatus(defaultUsage(usages), now)].filter((line) => line !== undefined)
         : []
   return (
@@ -146,6 +182,13 @@ export function CapBanners({
       )}
     </>
   )
+}
+
+// The logins whose loops all run in the cloud (#1303), from the loops list
+// the page already reads; none until it has loaded.
+export function useCloudOnly(): Set<string> {
+  const { data: loops } = useQuery({ queryKey: ['loops'], queryFn: api.loops })
+  return cloudOnlyLogins(loops)
 }
 
 // The active loops on a login, which its cap sleeps, by the login's name;

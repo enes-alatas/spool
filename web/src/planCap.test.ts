@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import type { PlanUsage } from './api'
+import type { LoginPlanUsage, PlanUsage } from './api'
 import {
   capFields,
+  capReach,
+  cloudOnlyLogins,
+  liveReading,
   capGate,
   capIdleStatus,
   cappedLogins,
@@ -164,5 +167,81 @@ describe('ringName', () => {
     expect(ringName('default')).toBe('default')
     expect(ringName('research')).toBe('research')
     expect(ringName('research-team')).toBe('researc…')
+  })
+})
+
+describe('cloudOnlyLogins', () => {
+  it('names a login whose loops all run in the cloud', () => {
+    const loops = [
+      { runtime: 'cloud', claude_login: '' },
+      { runtime: 'docker', claude_login: 'work' },
+    ]
+    expect([...cloudOnlyLogins(loops)]).toEqual(['default'])
+  })
+
+  it('leaves a login with a bare or docker loop beside its cloud ones', () => {
+    const loops = [
+      { runtime: 'cloud', claude_login: '' },
+      { runtime: 'bare', claude_login: '' },
+    ]
+    expect(cloudOnlyLogins(loops).size).toBe(0)
+  })
+
+  it('names none before the loops load, or with no loop at all', () => {
+    expect(cloudOnlyLogins(undefined).size).toBe(0)
+    expect(cloudOnlyLogins([]).size).toBe(0)
+  })
+})
+
+const login = (name: string, usage: Partial<LoginPlanUsage> = {}): LoginPlanUsage => ({
+  name,
+  five_hour: null,
+  seven_day: null,
+  ...usage,
+})
+const live = { five_hour: { used_percent: 93, resets_at: 1 } }
+
+describe('liveReading', () => {
+  it('counts a window not yet reset, or a cap holding', () => {
+    expect(liveReading(login('default', live))).toBe(true)
+    expect(liveReading(login('default', { cap: { windows: ['seven_day'], until: 1 } }))).toBe(true)
+  })
+
+  it('leaves no reading, an unknown one, and windows past their reset', () => {
+    expect(liveReading(undefined)).toBe(false)
+    expect(liveReading(login('default'))).toBe(false)
+    expect(liveReading(login('default', { ...live, unknown: 'none yet' }))).toBe(false)
+    expect(liveReading(login('default', { five_hour: { used_percent: 0, reset: true } }))).toBe(false)
+  })
+})
+
+describe('capReach', () => {
+  it('says nothing until the logins are read', () => {
+    expect(capReach(undefined, new Set())).toBeUndefined()
+  })
+
+  it('names every login when none is cloud-only', () => {
+    expect(capReach([login('default'), login('work')], new Set())).toBe(
+      'The cap acts on every login here (default and work). A login whose loops all ran in the cloud would not be among them: a cloud turn reports no plan usage.',
+    )
+    expect(capReach([login('default')], new Set())).toMatch(/^The cap acts on the login here \(default\)\./)
+  })
+
+  it('names a cloud-only login with nothing live as not among them', () => {
+    expect(capReach([login('default'), login('work')], new Set(['default']))).toBe(
+      'The cap acts on work. Not on default, which runs only cloud loops: a cloud turn reports no plan usage, so there is nothing for the cap to read.',
+    )
+  })
+
+  it('says it acts on none when the only login is cloud-only with nothing live', () => {
+    expect(capReach([login('default')], new Set(['default']))).toBe(
+      'The cap acts on no login here today: default runs only cloud loops, and a cloud turn reports no plan usage, so there is nothing for the cap to read.',
+    )
+  })
+
+  it('says a cloud-only login with a live reading is acted on until it resets', () => {
+    expect(capReach([login('default', live), login('work')], new Set(['default']))).toBe(
+      'The cap acts on work. On default, which runs only cloud loops, the cap acts on its last reading until those windows reset, then not again, since a cloud turn reports no plan usage.',
+    )
   })
 })

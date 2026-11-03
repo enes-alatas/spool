@@ -12,8 +12,8 @@ import { ClaudeLoginSection } from '../components/ClaudeLogin'
 import { UsersSection } from '../components/UsersSection'
 import { ChatAccess } from '../components/ChatAccess'
 import { LinksSection } from '../components/LinksSection'
-import { CapBanners, useMinuteClock } from '../components/PlanUsage'
-import { capFields, capGate, capValue, type CapDraft } from '../planCap'
+import { CapBanners, useCloudOnly, useMinuteClock } from '../components/PlanUsage'
+import { capFields, capGate, capReach, capValue, type CapDraft } from '../planCap'
 import {
   ERROR_TURN_STOPS,
   TURN_MINUTE_STOPS,
@@ -150,6 +150,11 @@ function loadFailure(loadError: Error): string {
 function PlanGuardrails({ settings, loadError }: { settings?: SettingsView; loadError: Error | null }) {
   const qc = useQueryClient()
   const { data: usages } = useQuery({ queryKey: ['plan-usage'], queryFn: api.planUsage })
+  // Which logins the cap acts on (#1303): a login whose loops all run in
+  // the cloud gets no new reading, so it is acted on only while its last
+  // one counts.
+  const cloudOnly = useCloudOnly()
+  const reach = capReach(usages?.logins, cloudOnly)
   // As the rotation pair: the stored values are the truth, a draft overlays.
   const [draft, setDraft] = useState<CapDraft | null>(null)
   const [error, setError] = useState('')
@@ -197,6 +202,7 @@ function PlanGuardrails({ settings, loadError }: { settings?: SettingsView; load
 
       <div className="form">
         <CapBanners usages={usages} now={now} idle />
+        {reach && <div className="cap-reach">{reach}</div>}
 
         <div className="field-row">
           <div className="field">
