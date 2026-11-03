@@ -148,7 +148,13 @@ func startServerOn(t *testing.T, dataDir, mcpHost string, extraArgs ...string) *
 
 	// Claude's config dir is the hub's own: a bare loop's auto-memory is
 	// read from there (#624), and a test must never read the real one.
-	cmd.Env = append(os.Environ(), "FAKECLAUDE_STATE="+fkState, "CLAUDE_CONFIG_DIR="+claudeConfigDir(dataDir))
+	// The hub runs as on an operator's desktop, with a browser to open: one
+	// that writes down what it was asked to open (browserOpened).
+	browser := filepath.Join(dataDir, "browser")
+	if err := os.WriteFile(browser, []byte("#!/bin/sh\necho \"$@\" >> '"+filepath.Join(dataDir, "browser-opened")+"'\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cmd.Env = append(os.Environ(), "FAKECLAUDE_STATE="+fkState, "CLAUDE_CONFIG_DIR="+claudeConfigDir(dataDir), "BROWSER="+browser)
 	output, listening, copied := watchListening(logFile)
 	cmd.Stdout = output
 	cmd.Stderr = cmd.Stdout

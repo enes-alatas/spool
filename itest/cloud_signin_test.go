@@ -24,6 +24,11 @@ func signInCloudFromThePage(t *testing.T, s *server) cloudSettings {
 		t.Fatalf("the sign-in's link = %q, want the CLI's authorize link", started.Link)
 	}
 	s.mustJSON("POST", "/api/claude-logins/default/sign-in/code", map[string]string{"code": "fixture-code#fixture-state"}, nil)
+	// the CLI would open the hub machine's browser at a sign-in that ends
+	// at its own callback, with no code for the page (#1304)
+	if opened, err := os.ReadFile(filepath.Join(s.dataDir, "browser-opened")); err == nil {
+		t.Fatalf("the sign-in opened the hub machine's browser at %q, want the page's link alone", opened)
+	}
 	var view cloudSettings
 	s.mustJSON("GET", "/api/settings/cloud", nil, &view)
 	return view

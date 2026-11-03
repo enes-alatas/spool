@@ -1062,11 +1062,16 @@ func eventLogging(subcommand string) {
 	_ = logged.Close()
 }
 
-// authLogin is claude auth login, as 2.1.301 runs it with no TTY: it prints
-// the link, reads the pasted code from stdin, and on a good one writes the
-// sign-in into $CLAUDE_CONFIG_DIR (FIDELITY.md).
+// authLogin is claude auth login, as 2.1.301 runs it with no TTY: it opens
+// $BROWSER, when set, at a link whose sign-in ends at a localhost callback
+// (2.1.316, #1304), prints the link to the code page, reads the pasted code
+// from stdin, and on a good one writes the sign-in into $CLAUDE_CONFIG_DIR
+// (FIDELITY.md).
 func authLogin() int {
 	eventLogging("auth login")
+	if browser := os.Getenv("BROWSER"); browser != "" {
+		_ = exec.Command(browser, "https://claude.example.test/cai/oauth/authorize?code=true&client_id=fixture&response_type=code&redirect_uri=http%3A%2F%2Flocalhost%3A45454%2Fcallback&state=fixture").Run()
+	}
 	fmt.Println("Opening browser to sign in…")
 	fmt.Println("If the browser didn't open, visit: https://claude.example.test/cai/oauth/authorize?code=true&client_id=fixture&response_type=code&state=fixture")
 	fmt.Print("Paste code here if prompted > ")

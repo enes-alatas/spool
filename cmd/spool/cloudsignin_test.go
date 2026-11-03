@@ -60,15 +60,17 @@ func TestTheSignInFindsACLIInstalledWhileTheHubRuns(t *testing.T) {
 }
 
 // The CLI's runs leave out what would sign it in as something else, and
-// send no nonessential traffic whatever the hub's environment says (#935).
-func TestTheSignInEnvironmentIsQuietAndCarriesNoOtherCredential(t *testing.T) {
+// send no nonessential traffic whatever the hub's environment says (#935),
+// and open no browser on the hub's machine (#1304).
+func TestTheSignInEnvironmentIsQuietOpensNoBrowserAndCarriesNoOtherCredential(t *testing.T) {
 	env := signInEnv([]string{
 		"HOME=/home/fixture",
 		"CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-fixture",
 		"ANTHROPIC_API_KEY=fixture",
 		"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=0",
+		"BROWSER=/usr/bin/firefox",
 	})
-	want := []string{"HOME=/home/fixture", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1"}
+	want := []string{"HOME=/home/fixture", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1", "BROWSER=true"}
 	if !slices.Equal(env, want) {
 		t.Fatalf("signInEnv = %q, want %q", env, want)
 	}
