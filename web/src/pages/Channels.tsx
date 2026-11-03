@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useLocation } from 'react-router'
 import { useMay } from '../components/Session'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ApiError, Channel } from '../api'
@@ -6,6 +7,8 @@ import { CharCount } from '../components/CharCount'
 import {
   CHANNEL_DESCRIPTION_MAX,
   CHANNEL_NAME_MAX,
+  channelAnchor,
+  channelHash,
   FLEET_CHANNEL,
   descriptionLength,
   loopsOutside,
@@ -77,10 +80,13 @@ function ChannelCard({
   channel,
   loops,
   refresh,
+  landed,
 }: {
   channel: Channel
   loops: string[]
   refresh: () => void
+  // The card a team create just landed on (#1266), marked so it is found.
+  landed: boolean
 }) {
   const [editing, setEditing] = useState(false)
   // Editing a channel and who is in it are an admin's (#679).
@@ -102,7 +108,7 @@ function ChannelCard({
   }
 
   return (
-    <div className="rule-item">
+    <div className={`rule-item${landed ? ' channel-landed' : ''}`} id={channelAnchor(channel.name)}>
       <div className="rule-head">
         <span className="channel-name">#{channel.name}</span>
         {fleet && <span className="rule-badge">fleet channel</span>}
@@ -267,6 +273,13 @@ export default function Channels() {
   const may = useMay()
   const channels = useQuery({ queryKey: ['channels'], queryFn: api.channels })
   const loops = useQuery({ queryKey: ['loops'], queryFn: api.loops })
+  // A team create lands here on its channel's card (#1266), which exists
+  // only once the list has loaded, after the browser looked for it.
+  const { hash } = useLocation()
+  const loaded = channels.data !== undefined
+  useEffect(() => {
+    if (loaded && hash) document.getElementById(hash.slice(1))?.scrollIntoView({ block: 'center' })
+  }, [loaded, hash])
 
   // A change to `group` is a change to each loop's in_fleet_channel, which
   // the fleet and the loop pages read, so they refetch along with the list.
@@ -305,7 +318,13 @@ export default function Channels() {
         room carries them yet.
       </p>
       {channels.data.map((channel) => (
-        <ChannelCard key={channel.name} channel={channel} loops={loopNames} refresh={refresh} />
+        <ChannelCard
+          key={channel.name}
+          channel={channel}
+          loops={loopNames}
+          refresh={refresh}
+          landed={hash === channelHash(channel.name)}
+        />
       ))}
       {may('manage') && <NewChannel onCreated={refresh} />}
     </div>

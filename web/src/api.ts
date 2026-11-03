@@ -726,6 +726,40 @@ export interface PromptsChatDraft {
   source: string
 }
 
+// A team the hub reads from prompts.chat (ADR-0063, #1265), for the room to
+// show before it creates anything: one loop per member, named from its role
+// and suffixed where a name is taken, and the channel holding them all.
+// Each mission is the bot's text ending with the channel and its handoffs,
+// which name the other loops by these names, so the room sends the names
+// as drafted. handoffs are the same lines, structured, in mission order.
+// Mirrors promptschat.Team.
+export interface PromptsChatTeam {
+  channel: string
+  description: string
+  loops: PromptsChatTeamLoop[]
+  source: string
+}
+
+export interface PromptsChatTeamLoop extends PromptsChatDraft {
+  role: string
+  // [] for a member with none.
+  handoffs: PromptsChatHandoff[]
+}
+
+export interface PromptsChatHandoff {
+  direction: 'to' | 'from'
+  // The other loop's name in this draft.
+  loop: string
+  // One line; "" when the team gives none.
+  label: string
+}
+
+// A team create's answer: the channel made and its loops, started.
+export interface CreatedTeam {
+  channel: string
+  loops: LoopView[]
+}
+
 export interface EgressView {
   // False only when the hub has no egress image: no loop's egress is
   // filtered, so the list binds nothing.
@@ -1627,6 +1661,19 @@ export const api = {
   // a hub that wires no fetcher (ADR-0063).
   importPromptsChat: (url: string) =>
     req<PromptsChatDraft>(`/api/import/prompts-chat?url=${encodeURIComponent(url)}`),
+  // Refused as importPromptsChat is, for a page that is no team or a team
+  // too large; nothing is created.
+  importPromptsChatTeam: (url: string) =>
+    req<PromptsChatTeam>(`/api/import/prompts-chat/team?url=${encodeURIComponent(url)}`),
+  // All or nothing: a refusal (a name taken since the draft, a channel that
+  // exists, a mission too long) stores none of it. runtime is "" for the
+  // hub's default; a team is never cloud.
+  createTeam: (team: {
+    channel: string
+    description: string
+    runtime: string
+    loops: { name: string; mission: string }[]
+  }) => req<CreatedTeam>('/api/import/prompts-chat/team', { method: 'POST', body: JSON.stringify(team) }),
   // Refused with 400 `egress_host_invalid` and egress.Validate's reason, a
   // port included; a host already on the list, once normalized, changes
   // nothing. Removal takes the entry exactly as listed.

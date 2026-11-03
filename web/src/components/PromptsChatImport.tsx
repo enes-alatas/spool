@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type PromptsChatDraft } from '../api'
+import { api, type PromptsChatDraft, type PromptsChatTeam } from '../api'
+import { isTeamAddress } from '../team'
 import { egressAllows } from '../egress'
 import { PromptsChatLogo } from './PromptsChatLogo'
 
@@ -9,8 +10,15 @@ import { PromptsChatLogo } from './PromptsChatLogo'
 // operator to edit. Nothing is created here; Create does that, as without
 // an import. Closed it is one button, so a form most loops fill by hand
 // keeps Name first; open it takes the URL, and a refusal says the hub's
-// reason under it. A draft taken closes it again.
-export function PromptsChatFill({ onDraft }: { onDraft: (draft: PromptsChatDraft) => void }) {
+// reason under it. A draft taken closes it again. Given onTeam, it takes a
+// team's page as well (#1266) and hands over the team's draft instead.
+export function PromptsChatFill({
+  onDraft,
+  onTeam,
+}: {
+  onDraft: (draft: PromptsChatDraft) => void
+  onTeam?: (team: PromptsChatTeam) => void
+}) {
   const [open, setOpen] = useState(false)
   const [url, setUrl] = useState('')
   const [busy, setBusy] = useState(false)
@@ -27,7 +35,9 @@ export function PromptsChatFill({ onDraft }: { onDraft: (draft: PromptsChatDraft
     setBusy(true)
     setError('')
     try {
-      onDraft(await api.importPromptsChat(url.trim()))
+      const address = url.trim()
+      if (onTeam && isTeamAddress(address)) onTeam(await api.importPromptsChatTeam(address))
+      else onDraft(await api.importPromptsChat(address))
       close()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -41,7 +51,7 @@ export function PromptsChatFill({ onDraft }: { onDraft: (draft: PromptsChatDraft
       <div className="field">
         <button type="button" className="btn import-open" onClick={() => setOpen(true)}>
           <PromptsChatLogo />
-          Import a bot from prompts.chat
+          {onTeam ? 'Import a bot or a team from prompts.chat' : 'Import a bot from prompts.chat'}
         </button>
       </div>
     )
@@ -56,7 +66,7 @@ export function PromptsChatFill({ onDraft }: { onDraft: (draft: PromptsChatDraft
           <PromptsChatLogo />
           <input
             id="nl-import"
-            aria-label="Bot on prompts.chat"
+            aria-label={onTeam ? 'Bot or team on prompts.chat' : 'Bot on prompts.chat'}
             // opened by the button, so the URL can be pasted at once
             autoFocus
             inputMode="url"
@@ -91,7 +101,11 @@ export function PromptsChatFill({ onDraft }: { onDraft: (draft: PromptsChatDraft
           {error}
         </div>
       ) : (
-        <div className="hint">Its page's address. The bot fills the fields below, for you to edit.</div>
+        <div className="hint">
+          {onTeam
+            ? "Its page's address. A bot fills the fields below, for you to edit; a team shows the loops and the channel it makes, before any exists."
+            : "Its page's address. The bot fills the fields below, for you to edit."}
+        </div>
       )}
     </div>
   )

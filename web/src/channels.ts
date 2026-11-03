@@ -43,3 +43,13 @@ export function whereSaid(m: Pick<ChatMessage, 'conversation' | 'channel' | 'ori
   if (m.conversation === 'group' && m.channel && m.channel !== FLEET_CHANNEL) return `channel:${m.channel}`
   return m.conversation || m.origin
 }
+
+// A channel card's anchor on the Channels page, which a team create lands
+// on (#1266): "#channel-<name>", a channel name being URL-safe already.
+export function channelAnchor(name: string): string {
+  return `channel-${name}`
+}
+
+export function channelHash(name: string): string {
+  return `#${channelAnchor(name)}`
+}

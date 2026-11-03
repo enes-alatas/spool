@@ -5379,3 +5379,86 @@ button.panel-link {
     grid-row: 2;
   }
 }
+
+/* ---- New team (#1266) ---- */
+/* what Create makes: the channel, then a card per loop, as the Channels
+   page will show them once they exist */
+.team-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.team-channel {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.team-description {
+  flex-basis: 100%;
+  font-size: 0.875rem;
+}
+.team-loops {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.team-loop {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  padding: 12px 16px;
+}
+.team-loop-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.team-loop-name {
+  font-family: var(--mono);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.team-loop-role {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+.team-loop-handoffs {
+  margin-top: 4px;
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+.team-loop-mission {
+  margin-top: 6px;
+  font-size: 0.8125rem;
+}
+.team-loop-mission summary {
+  cursor: pointer;
+  color: var(--text-muted);
+}
+.team-loop-mission pre {
+  margin: 8px 0 0;
+  max-height: 20rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+}
+.team-preview .hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.team-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* the card a team create lands on */
+.rule-item.channel-landed {
+  border-color: var(--active-line);
+  background: var(--active-wash);
+}

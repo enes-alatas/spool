@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type LoopView, type PromptsChatDraft, type Subagents } from '../api'
+import { api, type LoopView, type PromptsChatDraft, type PromptsChatTeam, type Subagents } from '../api'
 import {
   CLOUD_TRUST_WARNING,
   EFFORT_OPTIONS,
@@ -25,14 +25,26 @@ import { Marked } from '../components/Marked'
 import { dailyCapHint, dailyCapValue } from '../dailyCap'
 import { CapChips } from '../components/CapChips'
 import { EgressHints, ImportedFrom, PromptsChatFill } from '../components/PromptsChatImport'
+import { TeamDraft } from '../components/TeamDraft'
 import { LOGIN_SAY_SO, loginAccount, loginOptions, noLoginChoice } from '../claudeLogins'
 
 export default function NewLoop() {
   const nav = useNavigate()
+  // A team read from prompts.chat (#1266) takes the form's place, and the
+  // page's title says what Create now makes.
+  const [team, setTeam] = useState<PromptsChatTeam | null>(null)
+  if (team)
+    return (
+      <div className="page measure">
+        <h1>New team</h1>
+        <TeamDraft team={team} onCancel={() => setTeam(null)} />
+      </div>
+    )
   return (
     <div className="page measure">
       <h1>New loop</h1>
       <NewLoopForm
+        onTeam={setTeam}
         onCreated={(loop) =>
           // a cloud loop's page opens on its setup walk: its environment is
           // still to make on claude.ai (ADR-0061)
@@ -45,7 +57,15 @@ export default function NewLoop() {
 
 // The form itself, without the page: the first-run Loops card opens it in a
 // dialog (#589), and what happens once the loop exists is the caller's.
-export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void }) {
+// Given onTeam, the import takes a team's page too and hands its draft
+// over; the first-run dialog makes one loop, so it gives none.
+export function NewLoopForm({
+  onCreated,
+  onTeam,
+}: {
+  onCreated: (loop: LoopView) => void
+  onTeam?: (team: PromptsChatTeam) => void
+}) {
   const qc = useQueryClient()
   const [name, setName] = useState('')
   const [mission, setMission] = useState('')
@@ -240,7 +260,7 @@ export function NewLoopForm({ onCreated }: { onCreated: (loop: LoopView) => void
         </div>
       )}
 
-      <PromptsChatFill onDraft={fill} />
+      <PromptsChatFill onDraft={fill} onTeam={onTeam} />
 
       <div className="field">
         <label htmlFor="nl-name">Name</label>
