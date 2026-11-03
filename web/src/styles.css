@@ -5237,9 +5237,12 @@ button.panel-link {
 .health-row-edit:hover:not(:disabled) {
   color: var(--text);
 }
+/* disabled while the settings load or a save is on its way: still
+   --text-muted, never dimmed by opacity (CONVENTIONS, Web), and without the
+   underline that says it can be clicked, as .load-older does */
 .health-row-edit:disabled {
   cursor: default;
-  opacity: 0.5;
+  text-decoration: none;
 }
 .health-limit {
   display: flex;
