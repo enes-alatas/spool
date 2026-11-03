@@ -177,6 +177,9 @@ type Router struct {
 	// redelivered turn can be told what was already sent; cleared with the
 	// budget.
 	turnSends map[string][]string
+	// collisions is each bot username met that is another loop's name,
+	// logged once (logCollision).
+	collisions map[string]bool
 
 	// gate limits wrong link codes and logs strangers (ADR-0051).
 	gate linkGate
@@ -380,14 +383,24 @@ func (router *Router) Ingest(ctx context.Context, in InboundMessage) error {
 // mentionTargets is the loops a group message's mentions address among the
 // members of its channel: each loop it names, by its name or its bot's
 // username, and every active member for @all. A loop never addresses
-// itself.
+// itself. A bot username that is another loop's name means that loop, as
+// its name says: the hub refuses such a pair now, and one stored before
+// that is logged, once (#1273).
 func (router *Router) mentionTargets(loops []*store.Loop, mentions []string, fromLoopID string, member func(*store.Loop) bool) map[string]*store.Loop {
 	byKey := map[string]*store.Loop{} // name and bot-username → loop
 	for _, loopRecord := range loops {
 		byKey[strings.ToLower(loopRecord.Name)] = loopRecord
-		if loopRecord.TGBotUsername != "" {
-			byKey[strings.ToLower(loopRecord.TGBotUsername)] = loopRecord
+	}
+	for _, loopRecord := range loops {
+		if loopRecord.TGBotUsername == "" {
+			continue
 		}
+		key := strings.ToLower(loopRecord.TGBotUsername)
+		if named, taken := byKey[key]; taken && named.ID != loopRecord.ID {
+			router.logCollision(key, named, loopRecord)
+			continue
+		}
+		byKey[key] = loopRecord
 	}
 	targets := map[string]*store.Loop{}
 	for _, mention := range mentions {
@@ -405,6 +418,22 @@ func (router *Router) mentionTargets(loops []*store.Loop, mentions []string, fro
 		}
 	}
 	return targets
+}
+
+// logCollision logs, the first time it is met, a bot username that is
+// another loop's name, which mentions of it no longer reach.
+func (router *Router) logCollision(key string, named, bot *store.Loop) {
+	router.mu.Lock()
+	logged := router.collisions[key]
+	if router.collisions == nil {
+		router.collisions = map[string]bool{}
+	}
+	router.collisions[key] = true
+	router.mu.Unlock()
+	if !logged {
+		router.log.Warn("a loop's bot username is another loop's name; mentions of it reach the loop of that name",
+			"mention", key, "loop", named.Name, "bot_of", bot.Name)
+	}
 }
 
 // DeliverAdoptedReply delivers a group message to the author of the message
