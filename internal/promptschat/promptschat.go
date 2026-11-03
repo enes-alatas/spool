@@ -141,7 +141,7 @@ func BotPage(raw string) (string, error) {
 		return "", err
 	}
 	if strings.HasPrefix(parsed.Path, "/bots/teams/") || strings.HasPrefix(parsed.Path, "/api/bots/teams/") {
-		return "", refuse("That is a team on %s. Import its bots one at a time for now.", Host)
+		return "", refuse("That is a team on %s. Import it on New loop, which takes a team's address too.", Host)
 	}
 	match := botPath.FindStringSubmatch(parsed.Path)
 	if match == nil || notBots[match[1]] {
