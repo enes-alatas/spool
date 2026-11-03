@@ -92,6 +92,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -357,6 +358,21 @@ func cloudTurn(session, message string, first bool) int {
 	case os.Remove(reclaimed) == nil:
 		// a VM Anthropic reclaimed keeps its env file (run I on #976)
 		sessionStart("resume")
+	}
+	if strings.TrimSpace(message) == "/clear" {
+		// the context is emptied in the same session, and SessionStart
+		// fires with source clear, under a new conversation whose
+		// CLAUDE_ENV_FILE starts empty: what the old one held is gone
+		// from the shell. No model turn runs, so nothing reaches the
+		// transcript, and Stop isn't fired (the probes of 2026-11-03 on
+		// #1278 and PR 1293, FIDELITY.md)
+		_ = os.Remove(filepath.Join(vm, "context"))
+		_ = os.Remove(envFile)
+		sessionStart("clear")
+		count, _ := os.ReadFile(filepath.Join(vm, "cleared"))
+		cleared, _ := strconv.Atoi(strings.TrimSpace(string(count)))
+		_ = os.WriteFile(filepath.Join(vm, "cleared"), []byte(strconv.Itoa(cleared+1)), 0o600)
+		return 0
 	}
 	if compacted(message) {
 		sessionStart("compact")

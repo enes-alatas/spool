@@ -30,6 +30,7 @@ func cliRuntime(t *testing.T, cli string) *Runtime {
 		APIBase: environmentsListing(t, testEnvironment, "env_01Moved", "env_01Fixture"),
 		Account: func(context.Context, string) (Account, error) { return testAccount, nil },
 		Dir:     t.TempDir(),
+		HubKey:  []byte("synthetic-hub-key-for-cloud-tests"),
 		CLI:     &CLI{Binary: binary, Dir: filepath.Join(t.TempDir(), "cli"), Env: os.Environ(), StartWithin: 2 * time.Second},
 		Bounds:  Bounds{Quiet: 5 * time.Second},
 	}

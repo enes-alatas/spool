@@ -38,7 +38,7 @@ func TestACloudLoopSaysATurnMayStillBeRunning(t *testing.T) {
 	}
 
 	hub.message("cirrus", "first words")
-	hub.waitTurn("cirrus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "first words") })
+	firstTurn := hub.waitTurn("cirrus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "first words") })
 	if viewed := view(); viewed.CloudTurn != nil {
 		t.Fatalf("a turn whose Stop post came still shows: %+v", viewed.CloudTurn)
 	}
@@ -93,5 +93,17 @@ func TestACloudLoopSaysATurnMayStillBeRunning(t *testing.T) {
 	if after.CloudSessionURL == first || after.CloudTurn == nil || after.CloudTurn.SessionURL != first || !after.CloudTurn.CutOff {
 		t.Errorf("after a new session: link %q, turn %+v; want the new session linked and the cut-off turn kept in %s",
 			after.CloudSessionURL, after.CloudTurn, first)
+	}
+	// the pause ended the session it cut the turn off in, so the resume
+	// started one of its own at once rather than finding it lost
+	if got := sessionEndReason(t, hub, "cirrus", firstTurn.SessionID); got != "paused" {
+		t.Errorf("the session the pause cut a turn off in ended %q, want paused", got)
+	}
+	var events []spoolEvent
+	hub.mustJSON("GET", "/api/loops/cirrus/events?limit=200", nil, &events)
+	for _, event := range events {
+		if event.Subtype == "session_lost" {
+			t.Errorf("a pause mid-turn read as a lost session: %+v", event)
+		}
 	}
 }

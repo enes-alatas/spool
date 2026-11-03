@@ -99,6 +99,28 @@ and 2026-10-20, found the shape. Each finding is recorded on the issue:
    on any exit lost every start on the operator's hub, and each wake
    started a new session.
 
+   **Amendment (2026-11-03, #1278):** a rotation by choice no longer
+   starts a new session. Each one left a session behind on claude.ai,
+   where they piled up in the operator's account.
+   - The new hub session's first turn sends `/clear` into the session
+     the last one ran in, with `-p --cloud`, then sends the turn there.
+     The probe of 2026-11-03 on #1278 showed `/clear` empties the
+     context in the same `session_…`.
+   - The session's `SessionStart` post with source `clear` is answered
+     as a start's is, with the loop's connections and prompt, but only
+     while the hub waits on a `/clear` it sent there. Any other `clear`
+     post is answered as a compaction's, with the prompt alone.
+   - The session is carried on only as it was left. That means its
+     last turn's `Stop` post came, and the loop's connections match
+     the ones it was handed at its start. The state file keeps an
+     HMAC-SHA256 of them under a key derived from the hub key, never
+     the values nor a bare hash a backup could test guesses against.
+     Otherwise, or when the `/clear` gets no post within the start's
+     two minutes, the rotation starts a session of its own as before.
+   - Every other new hub session still starts a session of its own: a
+     session lost on resume, a kill, a recreate, and a change of repo,
+     branch, environment, login or account.
+
 2. **Each start bundles a *loop home*: a small git repo the hub builds
    for that start alone, in a fresh 0700 directory outside the data
    directory, with one commit.** The hub removes it once the start ends,
@@ -220,6 +242,25 @@ and 2026-10-20, found the shape. Each finding is recorded on the issue:
    - Not taken: accepting a `Stop` post on a token revoked in the last
      two hours, to clear the field. A revoked token would still
      authenticate something. Stop still revokes at once.
+
+   **Amendment (2026-11-03, #1278):** a stop keeps the loop's session,
+   and resuming carries on in it.
+   - A stop dropped the session because, when this item was written,
+     each session had a hub token of its own. Since ADR-0061 the token
+     is the loop's, refused while the loop is stopped, so dropping the
+     session protected nothing. Elliot confirmed it on #1278.
+   - The session is carried on under item 1's #1278 rule. Connections
+     changed while the loop was stopped make the resume end as lost,
+     saying why in the loop's `session_lost` event, and the loop starts
+     a session of its own.
+   - A stop that cuts a turn off still drops the session, ended as
+     paused: that turn's `Stop` post never reaches the hub, so the
+     session can't be carried on, and the resume starts a session of
+     its own at once rather than finding the old one lost.
+   - A stop with the `cloud_connections` problem open still drops the
+     session, since stopping and starting is how that problem hands the
+     connections over again.
+   - A kill still drops the session, as well as revoking the token.
 
 6. **One environment for every cloud loop, which the operator sets up on
    claude.ai once.** The operator pastes its `env_…` ID into Settings,

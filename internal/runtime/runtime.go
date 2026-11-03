@@ -62,6 +62,11 @@ type Spec struct {
 	// ResumeID (continue an existing session) is set.
 	SessionID string
 	ResumeID  string
+	// Rotated says a fresh SessionID succeeds a session rotated by choice
+	// (ADR-0022): the cloud runtime may carry it on in the cloud session
+	// the last one ran in, cleared, rather than start another (#1278).
+	// Other runtimes start every fresh session anew.
+	Rotated bool
 
 	AppendSystemPrompt string
 	PartialMessages    bool

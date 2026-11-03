@@ -87,14 +87,35 @@ func (actor *Actor) tokenChanged(ctx context.Context) {
 	actor.cloudSetupChanged()
 }
 
-// cutOffCloud ends a cloud loop's session at once, as a stop or a kill
-// does, and the next wake starts a session of its own. A stop's token is
-// refused by the loop's status already; a kill revokes it for good. The
-// CLI can't interrupt a cloud session, so a turn in flight runs on in the
-// VM, cut off from the hub. The session is ended for endReason. Any other
-// loop is left as it is. The error is a revocation that failed: the rest
-// is still done, but the session can reach the hub until the loop is
-// killed again (#1114).
+// pauseCloud cuts a paused cloud loop off at once, without waiting for a
+// turn: its token is refused by the loop's status already. Its session is
+// kept, so resuming carries on in it (#1278), unless the runtime finds
+// that session can't be carried on: connections changed since it
+// started. A session the pause cuts a turn off in is forgotten, ended as
+// paused: the hub can't hear that turn end, so the resume starts a
+// session of its own at once rather than finding the old one lost. So is
+// one that was refused its connections: pausing and resuming is how the
+// operator hands them over again, which takes a new session. The CLI
+// can't interrupt a cloud session, so a turn in flight runs on in the VM,
+// cut off from the hub. Any other loop is left as it is.
+func (actor *Actor) pauseCloud(ctx context.Context) {
+	if actor.loop.Runtime != store.RuntimeCloud {
+		return
+	}
+	inTurn := actor.turn != nil
+	actor.stopProcess("pause")
+	if inTurn || actor.hasProblem(store.SymptomCloudConnections) {
+		actor.forgetSession(ctx, store.EndReasonPaused)
+	}
+}
+
+// cutOffCloud ends a cloud loop's session at once, as a kill does, and
+// the next wake starts a session of its own. A kill revokes the token for
+// good. The CLI can't interrupt a cloud session, so a turn in flight runs
+// on in the VM, cut off from the hub. The session is ended for endReason.
+// Any other loop is left as it is. The error is a revocation that failed:
+// the rest is still done, but the session can reach the hub until the loop
+// is killed again (#1114).
 func (actor *Actor) cutOffCloud(ctx context.Context, verb, endReason string, revoke bool) error {
 	if actor.loop.Runtime != store.RuntimeCloud {
 		return nil

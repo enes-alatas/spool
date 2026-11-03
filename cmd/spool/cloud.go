@@ -23,7 +23,7 @@ import (
 // runs, start directories among them, are made outside the data directory,
 // which backups carry. Each hub's dir is its own, named for its data
 // directory, so one hub's boot sweep never removes another's runs.
-func newCloudRuntime(st store.Store, dataDir, claudeBin, apiBase string) *cloud.Runtime {
+func newCloudRuntime(st store.Store, hubKey []byte, dataDir, claudeBin, apiBase string) *cloud.Runtime {
 	return &cloud.Runtime{
 		CLI: &cloud.CLI{Binary: claudeBin, Dir: cloudCLIDir(dataDir), Env: signInEnv(os.Environ())},
 		Account: func(ctx context.Context, login string) (cloud.Account, error) {
@@ -43,6 +43,7 @@ func newCloudRuntime(st store.Store, dataDir, claudeBin, apiBase string) *cloud.
 		},
 		APIBase: apiBase,
 		Dir:     filepath.Join(dataDir, "cloud"),
+		HubKey:  hubKey,
 	}
 }
 

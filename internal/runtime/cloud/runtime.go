@@ -12,11 +12,13 @@ package cloud
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -62,6 +64,11 @@ type Runtime struct {
 	// Dir holds one state file per cloud loop. Its files carry no
 	// credential.
 	Dir string
+	// HubKey keys what a state file keeps of a session's connections, so a
+	// backup of the state files alone tests no guess at their values (#1293).
+	// Without one no session is carried on; a replaced hub key only means
+	// the next start makes a new one.
+	HubKey []byte
 	// Bounds are a turn's read-back bounds; zero fields are the defaults.
 	Bounds Bounds
 	// HandOff, when set, is told of each SessionStart post the runtime
@@ -106,6 +113,10 @@ type state struct {
 	// (ADR-0056). Its session runs in an environment of the loop's own,
 	// with a token the CLI never handed it, so it is never resumed.
 	EnvironmentID string `json:"environment_id,omitempty"`
+	// Connections is connectionsKey of the connections SessionID was
+	// handed at its start. A state written before #1278 has none, so its
+	// session isn't carried on: the hub can't tell what its shell holds.
+	Connections string `json:"connections,omitempty"`
 	// Turn is the turn that may be running in the loop's session, nil
 	// when the hub knows of none (ADR-0059).
 	Turn *turnState `json:"turn,omitempty"`
@@ -222,6 +233,13 @@ func (cloud *Runtime) Ensure(_ context.Context, spec runtime.Spec) error {
 // does, so the runner starts a fresh one. So does a resume of a session
 // started from another source than the loop's now, or under another
 // account of its login's, and of a session the sessions client created.
+//
+// A cloud session is carried on only as it was left (#1278): its last
+// turn's Stop post came, and the loop's connections are the ones it was
+// handed at its start. A resume of one that isn't ends as lost, and says
+// why. A fresh hub session that succeeds one rotated by choice carries on
+// in the cloud session the last one ran in when it can, cleared first
+// with /clear, so a rotation leaves no session behind on claude.ai.
 func (cloud *Runtime) Start(ctx context.Context, spec runtime.Spec) (runtime.Proc, error) {
 	source, err := startFrom(spec)
 	if err != nil {
@@ -239,33 +257,83 @@ func (cloud *Runtime) Start(ctx context.Context, spec runtime.Spec) (runtime.Pro
 		bounds: cloud.Bounds.withDefaults(),
 		env:    spec.Env,
 	}
-	resumable := spec.SessionID == "" && spec.ResumeID == current.ClaudeSession &&
-		current.SessionID != "" && current.EnvironmentID == ""
-	var account string
-	if resumable {
-		// a login signed in again as another account doesn't own the
-		// session its last one started (#1230)
-		signedIn, err := cloud.Account(ctx, source.Login)
+	resuming := spec.SessionID == "" && spec.ResumeID == current.ClaudeSession
+	var account, unkept string
+	if resuming || spec.Rotated {
+		account, unkept, err = cloud.carriedOn(ctx, current, source, spec.Env)
 		if err != nil {
 			return nil, err
 		}
-		account = signedIn.AccountUUID
-		resumable = current.Source == sourceKey(source, account)
 	}
 	cloud.waits.setPrompt(spec.LoopID, spec.AppendSystemPrompt)
 	switch {
+	case spec.SessionID != "" && spec.Rotated && unkept == "":
+		session.claudeSession = spec.SessionID
+		session.sessionID = current.SessionID
+		session.account = account
+		session.clearFirst = true
 	case spec.SessionID != "":
 		session.claudeSession = spec.SessionID
-	case resumable:
+		if spec.Rotated {
+			slog.Default().Info("cloud: a rotation starts a session of its own", "loop", spec.LoopID, "why", unkept)
+		}
+	case resuming && unkept == "":
 		session.claudeSession = spec.ResumeID
 		session.sessionID = current.SessionID
 		session.account = account
 	default:
 		session.claudeSession = spec.ResumeID
 		session.lost = true
+		session.lostWhy = unkept
 	}
 	session.start()
 	return session, nil
+}
+
+// carriedOn says whether the loop's cloud session in current can be
+// carried on for a start from source with the connections env: unkept is
+// why not, "" when it can, and account the account it runs under then.
+func (cloud *Runtime) carriedOn(ctx context.Context, current state, source runtime.CloudStart, env map[string]string) (account, unkept string, err error) {
+	switch {
+	case current.SessionID == "":
+		return "", "the loop holds no cloud session", nil
+	case current.EnvironmentID != "":
+		return "", "its session was made by the sessions client", nil
+	case current.Turn != nil && current.Turn.SessionURL == current.SessionURL:
+		// a turn the hub didn't hear end may have changed the session
+		// out of its sight
+		return "", "its session's last turn was cut off before its Stop post came", nil
+	case current.Connections == "" || current.Connections != cloud.connectionsKey(env):
+		// a connection detached since the session started is still
+		// exported in its shell
+		return "", "the loop's connections changed since its session started", nil
+	}
+	// a login signed in again as another account doesn't own the session
+	// its last one started (#1230)
+	signedIn, err := cloud.Account(ctx, source.Login)
+	if err != nil {
+		return "", "", err
+	}
+	if current.Source != sourceKey(source, signedIn.AccountUUID) {
+		return "", "its session started from another repo, branch, environment or account", nil
+	}
+	return signedIn.AccountUUID, "", nil
+}
+
+// connectionsKey is what a state file keeps of the connections a session
+// was handed: a MAC of their export lines under a key derived from the
+// hub key, enough to tell a changed set, and no credential nor anything
+// a guess at one can be tested against offline. "" without a hub key,
+// which carries no session on.
+func (cloud *Runtime) connectionsKey(env map[string]string) string {
+	if len(cloud.HubKey) == 0 {
+		return ""
+	}
+	derive := hmac.New(sha256.New, cloud.HubKey)
+	derive.Write([]byte("spool cloud connections"))
+	mac := hmac.New(sha256.New, derive.Sum(nil))
+	mac.Write(exportLines(env))
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 // Reap has nothing to clean up: a cloud session is no process of the

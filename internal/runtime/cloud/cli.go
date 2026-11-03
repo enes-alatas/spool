@@ -100,6 +100,9 @@ type hookWaits struct {
 	// checked the session of each loop's last check (check.go).
 	checks  map[string]*pendingCheck
 	checked map[string]string
+	// clears are the /clears sent into loops' sessions for a rotation,
+	// waiting on their SessionStart post (clear.go).
+	clears map[string]*pendingClear
 }
 
 // setPrompt records the prompt the loop's session runs with.
@@ -231,6 +234,12 @@ func (cloud *Runtime) SessionStart(ctx context.Context, loopID, sessionID string
 	if source == sourceStartup {
 		if answer, ok := cloud.answerCheck(ctx, loopID, sessionID); ok {
 			slog.Default().Info("cloud: a setup check's session reached the hub", "loop", loopID, "session", sessionID)
+			return answer, nil
+		}
+	}
+	if source == sourceClear {
+		if answer, ok := cloud.answerClear(loopID, sessionID); ok {
+			slog.Default().Info("cloud: a cleared session was handed its loop's connections and prompt", "loop", loopID, "session", sessionID)
 			return answer, nil
 		}
 	}
@@ -453,6 +462,12 @@ type cliSession struct {
 	// under: a send under another is refused (#1230).
 	account string
 	lost    bool
+	// lostWhy is why the runtime didn't carry the session on, said after
+	// the CLI's words for a lost one.
+	lostWhy string
+	// clearFirst empties the session's context before the first turn,
+	// for a rotation's successor (clear.go).
+	clearFirst bool
 
 	sends  chan string
 	events chan claude.Event
@@ -526,7 +541,11 @@ func (session *cliSession) run() {
 	defer close(session.exited)
 	defer close(session.events)
 	if session.lost {
-		session.exit = claude.ExitInfo{Code: 1, Stderr: sessionLost + session.claudeSession}
+		stderr := sessionLost + session.claudeSession
+		if session.lostWhy != "" {
+			stderr += "\ncloud: the session isn't carried on: " + session.lostWhy
+		}
+		session.exit = claude.ExitInfo{Code: 1, Stderr: stderr}
 		return
 	}
 	for {
@@ -550,6 +569,9 @@ func (session *cliSession) run() {
 // is recorded from the send until its post, or, when the session is closed
 // first, as cut off until its quiet bound.
 func (session *cliSession) turn(text string) {
+	if session.clearFirst {
+		session.clearOrStartAnew()
+	}
 	stops := session.cloud.waits.awaitStop(session.loopID)
 	defer session.cloud.waits.forgetStop(session.loopID, stops)
 	sent := time.Now()
@@ -681,6 +703,7 @@ func (session *cliSession) startSession(text string) error {
 				s.SessionID, s.ClaudeSession, s.EnvironmentID = sessionID, session.claudeSession, ""
 				s.SessionURL = sessionPages + sessionID
 				s.Source = sourceKey(session.source, run.account)
+				s.Connections = session.cloud.connectionsKey(session.env)
 			})
 			session.cloud.waits.mu.Lock()
 			delete(session.cloud.waits.binding, session.loopID)

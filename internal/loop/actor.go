@@ -296,6 +296,10 @@ type Actor struct {
 	lastCall     claude.Usage // usage of the in-flight turn's latest API call (assistant event)
 	killedFor    string       // why the hub killed the current process, for the turn it ends
 	backoff      time.Duration
+	// rotated says the next fresh session succeeds one rotated by choice,
+	// which a cloud loop carries on in its cloud session (#1278). The spawn
+	// it reaches spends it, and so does any other retirement.
+	rotated bool
 
 	// The health check's watch (ADR-0053): errored turns in a row and when
 	// the first of them ended, and since when the workstation has been down
@@ -712,9 +716,9 @@ func (actor *Actor) handleCmd(command cmd) {
 	case "pause":
 		actor.paused = true
 		actor.noteWakeFailure("")
-		err := actor.cutOffCloud(context.Background(), "pause", store.EndReasonPaused, false)
+		actor.pauseCloud(context.Background())
 		actor.publishState()
-		command.reply <- err
+		command.reply <- nil
 	case "resume":
 		actor.paused = false
 		actor.noteWakeFailure("")
@@ -1023,6 +1027,7 @@ func (actor *Actor) wake() {
 	actor.proc = proc
 	actor.procEvents = proc.Events()
 	actor.freshSpawn = fresh
+	actor.rotated = false
 	actor.sawInit = false
 	actor.state = StateWaking
 	_ = actor.deps.Store.Loops().SetRuntime(ctx, actor.loop.ID, actor.loop.CurrentSessionID, proc.PID())
@@ -1347,6 +1352,7 @@ func (actor *Actor) wakeSpec(fresh bool, prompt string, connections []*store.Con
 	}
 	if fresh {
 		spec.SessionID = actor.loop.CurrentSessionID
+		spec.Rotated = actor.rotated
 	} else {
 		spec.ResumeID = actor.loop.CurrentSessionID
 	}
@@ -2065,7 +2071,9 @@ func (actor *Actor) handleProcExit() {
 	case sessionLost:
 		// the CLI said outright that the session is gone
 		actor.noteWakeFailure(WakeFailureCrashed)
-		actor.rotateSession("session_lost", "")
+		// the runtime may say why after the CLI's words, as the cloud one
+		// does for a session it won't carry on (#1278)
+		actor.rotateSession("session_lost", claude.LastLines(exit.Stderr, 500))
 	case deadOnResume:
 		// The session never loaded. One failure gets an ordinary retry — it
 		// may have been a blip — but a session that cannot be resumed twice
@@ -2458,6 +2466,7 @@ func (actor *Actor) retireSession() {
 		actor.moveIntoWorkstation()
 	}
 	actor.loop.CurrentSessionID = ""
+	actor.rotated = false
 	_ = actor.deps.Store.Loops().SetRuntime(context.Background(), actor.loop.ID, "", 0)
 	actor.deadResumes = 0
 	actor.armed = false
@@ -2483,6 +2492,8 @@ func (actor *Actor) retireSession() {
 // by choice.
 func (actor *Actor) startFreshSession() {
 	actor.retireSession()
+	// set after retireSession, which spends it on every other path
+	actor.rotated = true
 	// Never wake while a power verb is underway: stopProcess can land here
 	// mid-verb via a draining rotation, and a process spawned now would run
 	// on the workstation the verb is about to halt or destroy. The queued
@@ -2796,6 +2807,7 @@ func (actor *Actor) forgetSession(ctx context.Context, reason string) {
 	}
 	_ = actor.deps.Store.Sessions().End(ctx, old, reason, now())
 	actor.loop.CurrentSessionID = ""
+	actor.rotated = false
 	_ = actor.deps.Store.Loops().SetRuntime(ctx, actor.loop.ID, "", 0)
 	// the fill measurement described the forgotten session; left standing it
 	// would force a pointless rotation as the new empty session's first turn

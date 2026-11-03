@@ -683,7 +683,16 @@ cloud listener (ADR-0059).
   for that session. A VM Anthropic reclaims keeps the file (run I on
   #976), so a `resume` post is never answered. Each answered hand-off is
   logged at Info, without its values. A refused post from that session
-  opens the `cloud_connections` problem. The values are
+  opens the `cloud_connections` problem. A rotation's `/clear` post is
+  answered with them too, once, only while the hub waits on the `/clear`
+  it sent into that session (#1278). A session is kept through a
+  rotation and a stop only while the loop's connections match the ones
+  it was handed. The state file in `<data-dir>/cloud/` tells them apart
+  by an HMAC-SHA256 under a key derived from `hub.key`, so a backup
+  without the key tests no guess at a value (#1293). So **a detach takes
+  effect at the session's next start**: the next rotation, stop and start, or kill. Until then
+  the value stays exported in the running session's shell. Revoking the
+  credential at its issuer is still the real cut. The values are
   in the VM's environment file, on Anthropic's disk, as long as the
   session is kept, and outlive the loop until the operator archives it; a
   GitHub token outlives that. `mcp-server` connections never reach a cloud

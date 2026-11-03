@@ -410,7 +410,7 @@ func main() {
 	rdb := redact.Store(db, redactor)
 	// The cloud runtime reads its account from the store, so it joins the
 	// others once there is one (ADR-0059).
-	cloudRuntime := newCloudRuntime(rdb, *dataDir, *claudeBin, cloudAPI)
+	cloudRuntime := newCloudRuntime(rdb, hubKey, *dataDir, *claudeBin, cloudAPI)
 	cloudRuntime.CLI.StartWithin = time.Duration(*cloudStartWithinSec) * time.Second
 	// a dir another user holds fails every cloud start loudly, on the loop,
 	// and needn't stop a hub that runs no cloud loop

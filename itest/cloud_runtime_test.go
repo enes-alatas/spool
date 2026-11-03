@@ -172,6 +172,16 @@ func TestAStaleVMOfALoopCantBindItsNextStart(t *testing.T) {
 		t.Fatal("the first VM holds the loop's token: it is the environment's secret, which the proxy adds")
 	}
 
+	// a connection attached since the session started makes the rotation
+	// start a session of its own rather than carry this one on (#1278)
+	if resp, body := s.do("POST", "/api/connections", map[string]any{
+		"name": "github", "kind": "env-var", "config": map[string]any{"env": "GH_TOKEN"}, "secret": "synthetic-gh-value",
+	}); resp.StatusCode != 201 {
+		t.Fatalf("creating the connection: %d %s", resp.StatusCode, body)
+	}
+	if resp, body := s.do("PUT", "/api/loops/nimbus/connections/github", nil); resp.StatusCode != 204 {
+		t.Fatalf("attaching the connection: %d %s", resp.StatusCode, body)
+	}
 	held := filepath.Join(s.fkState, "cloud-start-held")
 	if err := os.WriteFile(held, nil, 0o600); err != nil {
 		t.Fatal(err)
@@ -206,7 +216,8 @@ func TestAStaleVMOfALoopCantBindItsNextStart(t *testing.T) {
 
 // Stopping a cloud loop refuses its token at once, without waiting for a
 // turn, and starting it again takes the same token, with nothing to set
-// again (ADR-0061). A kill revokes the token for good: the loop is held,
+// again (ADR-0061), and carries on in the same session (#1278). A kill
+// revokes the token for good and throws the session away: the loop is held,
 // with a problem that says so, until Rotate token mints another, which
 // it then wakes on.
 func TestStoppingACloudLoopRefusesItsTokenAndAKillRevokesIt(t *testing.T) {
@@ -226,8 +237,8 @@ func TestStoppingACloudLoopRefusesItsTokenAndAKillRevokesIt(t *testing.T) {
 	if got := postHook(t, s, token, "session_01Paused"); got != http.StatusUnauthorized {
 		t.Errorf("a hook post on a stopped loop's token: %d, want 401", got)
 	}
-	if got := sessionEndReason(t, s, "stratus", first.SessionID); got != store.EndReasonPaused {
-		t.Errorf("the stopped session ended as %q, want %q", got, store.EndReasonPaused)
+	if got := sessionEndReason(t, s, "stratus", first.SessionID); got != "" {
+		t.Errorf("the stopped session ended as %q, want it kept for the resume (#1278)", got)
 	}
 	s.mustJSON("POST", "/api/loops/stratus/resume", nil, nil)
 	if got := postHook(t, s, token, "session_01Probe"); got != http.StatusConflict {
@@ -235,11 +246,11 @@ func TestStoppingACloudLoopRefusesItsTokenAndAKillRevokesIt(t *testing.T) {
 	}
 	s.message("stratus", "again")
 	again := s.waitTurn("stratus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "again") })
-	if again.IsError || again.SessionID == first.SessionID || len(cloudVMs(t, s)) != 2 {
-		t.Fatalf("the wake after the stop: %+v in %d VMs, want a new session", again, len(cloudVMs(t, s)))
+	if again.IsError || again.SessionID != first.SessionID || len(cloudVMs(t, s)) != 1 {
+		t.Fatalf("the wake after the stop: %+v in %d VMs, want it carried on in the same session", again, len(cloudVMs(t, s)))
 	}
 	if got := postHook(t, s, token, "session_01Probe"); got != http.StatusConflict {
-		t.Errorf("the token after the new session: %d, want 409 (taken, and no start pending): the new session runs on the same token", got)
+		t.Errorf("the token after the resume: %d, want 409 (taken, and no start pending)", got)
 	}
 
 	s.mustJSON("POST", "/api/loops/stratus/kill", nil, nil)
@@ -251,7 +262,7 @@ func TestStoppingACloudLoopRefusesItsTokenAndAKillRevokesIt(t *testing.T) {
 	}
 	s.message("stratus", "held words")
 	time.Sleep(time.Second)
-	if len(cloudVMs(t, s)) != 2 {
+	if len(cloudVMs(t, s)) != 1 {
 		t.Fatal("a killed loop started a session before its token was rotated")
 	}
 
@@ -272,8 +283,8 @@ func TestStoppingACloudLoopRefusesItsTokenAndAKillRevokesIt(t *testing.T) {
 	}
 	passCloudCheck(t, s, "stratus")
 	held := s.waitTurn("stratus", 30*time.Second, func(turn turn) bool { return strings.Contains(turn.ResultText, "held words") })
-	if held.IsError {
-		t.Fatalf("the held message's turn: %+v", held)
+	if held.IsError || held.SessionID == first.SessionID || len(cloudVMs(t, s)) != 2 {
+		t.Fatalf("the held message's turn: %+v in %d VMs, want a new session after the kill", held, len(cloudVMs(t, s)))
 	}
 	if after := s.waitHealth("stratus", "ok"); len(after.Problems) != 0 {
 		t.Errorf("problems after the rotation = %+v, want none", after.Problems)
