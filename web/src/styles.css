@@ -125,12 +125,10 @@ select:focus {
    there is a well to drop.
 
    The text is the signal: #f2f1ed to --text-muted is 3.8:1 against itself and
-   fires on every control in every context. Not the button's `opacity: 0.45` —
-   that manufactures a colour nobody measured (#706f6d, 4.06:1 on the canvas
-   and 4.13:1 on a panel, under the 4.5:1 floor ADR-0027 sets for text), and
-   a field holds data an operator reads rather than a label they know by
-   shape. `.btn.primary` already splits off the opacity idiom for the same
-   reason.
+   fires on every control in every context. Not opacity: the `opacity: 0.45`
+   buttons once used manufactured a colour nobody measured (#706f6d, 4.06:1
+   on the canvas and 4.13:1 on a panel, under the 4.5:1 floor ADR-0027 sets
+   for text). Buttons and switches mute the same way since #1277.
 
    The fill change reinforces, it does not carry: --surface to --canvas is
    1.043:1, which reads only where the control sits on a raised panel, and is a
@@ -247,15 +245,22 @@ textarea {
 .btn.danger:hover {
   border-color: var(--danger);
 }
-.btn:disabled {
-  opacity: 0.45;
+/* A button not accepting a click mutes its text and drops its well to the
+   canvas, as a disabled field does; hover changes nothing. Not opacity,
+   which takes the label under the contrast floor (ADR-0027, #1277). A
+   danger button loses its red with the rest: it can't act either. */
+.btn:disabled,
+.btn:disabled:hover {
+  background: var(--canvas);
+  border-color: var(--hairline);
+  color: var(--text-muted);
   cursor: default;
 }
-.btn.primary:disabled {
+.btn.primary:disabled,
+.btn.primary:disabled:hover {
   background: transparent;
   border-color: var(--text-muted);
   color: var(--text-muted);
-  opacity: 1;
 }
 .btn.sm {
   padding: 3px 10px;
@@ -2457,8 +2462,20 @@ button.panel-link {
   outline: 2px solid var(--text);
   outline-offset: 2px;
 }
+/* a switch not accepting input keeps its state readable in the muted
+   tokens: off is a hairline well on the canvas, on a muted fill with a
+   canvas knob. Not opacity (ADR-0027, #1277). */
 .switch-row input[role='switch']:disabled {
-  opacity: 0.5;
+  background: var(--canvas);
+  cursor: default;
+}
+.switch-row input[role='switch']:checked:disabled {
+  border-color: var(--text-muted);
+  background: var(--text-muted);
+}
+/* and its words mute with it, the row no longer a target */
+.switch-row:has(> input:disabled) {
+  color: var(--text-muted);
   cursor: default;
 }
 .switch-row .hint {
