@@ -14,15 +14,15 @@ import (
 )
 
 // fixtureFetcher answers every fetch with one file of testdata, and
-// records the URLs asked for.
+// records the paths asked for.
 type fixtureFetcher struct {
 	file  string
 	err   error
 	asked []string
 }
 
-func (fixture *fixtureFetcher) Fetch(_ context.Context, botURL string) ([]byte, error) {
-	fixture.asked = append(fixture.asked, botURL)
+func (fixture *fixtureFetcher) Fetch(_ context.Context, path string) ([]byte, error) {
+	fixture.asked = append(fixture.asked, path)
 	if fixture.err != nil {
 		return nil, fixture.err
 	}
@@ -38,7 +38,7 @@ func TestABotBecomesADraft(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"https://prompts.chat/bots/cfixture0001_release-notes-scribe.json"}; !reflect.DeepEqual(fixture.asked, want) {
+	if want := []string{"/bots/cfixture0001_release-notes-scribe.json"}; !reflect.DeepEqual(fixture.asked, want) {
 		t.Errorf("fetched %q; want %q", fixture.asked, want)
 	}
 	wantMission := "You draft release notes from merged pull requests.\n\n- Group changes by area.\n- Never publish without a yes.\n\n" +
@@ -59,10 +59,10 @@ func TestABotBecomesADraft(t *testing.T) {
 }
 
 // TestEveryFormOfABotURLReadsItsJSON: a bot's page, .md and .json, over
-// http or https, with a trailing slash, query or fragment, all fetch the
-// one .json on prompts.chat.
+// http or https, with a trailing slash, query or fragment, all name the
+// one page on prompts.chat.
 func TestEveryFormOfABotURLReadsItsJSON(t *testing.T) {
-	const want = "https://prompts.chat/bots/cfixture0001_scribe.json"
+	const want = "https://prompts.chat/bots/cfixture0001_scribe"
 	for _, raw := range []string{
 		"https://prompts.chat/bots/cfixture0001_scribe",
 		"https://prompts.chat/bots/cfixture0001_scribe.md",
@@ -71,9 +71,9 @@ func TestEveryFormOfABotURLReadsItsJSON(t *testing.T) {
 		"http://prompts.chat/bots/cfixture0001_scribe?ref=x#top",
 		"https://PROMPTS.CHAT/bots/cfixture0001_scribe",
 	} {
-		got, err := JSONURL(raw)
+		got, err := BotPage(raw)
 		if err != nil || got != want {
-			t.Errorf("JSONURL(%q) = %q, %v; want %q", raw, got, err, want)
+			t.Errorf("BotPage(%q) = %q, %v; want %q", raw, got, err, want)
 		}
 	}
 }
@@ -165,13 +165,16 @@ func TestOnlyACloudOnlyBotHintsCloud(t *testing.T) {
 	}
 }
 
-// TestHTTPFetcherSendsOnlyAGETToPromptsChat: the fetcher refuses another
-// host before any request, sends a bare GET, follows no redirect and
-// reads no more than its bound.
+// TestHTTPFetcherSendsOnlyAGETToPromptsChat: the fetcher refuses a path
+// that is no bot's or team's .json before any request, sends a bare GET
+// to prompts.chat, follows no redirect and reads no more than its bound.
 func TestHTTPFetcherSendsOnlyAGETToPromptsChat(t *testing.T) {
-	for _, botURL := range []string{"https://example.com/bots/x.json", "http://prompts.chat/bots/x.json", "https://u@prompts.chat/bots/x.json"} {
-		if _, err := (HTTPFetcher{Client: &http.Client{Transport: refusingTransport{t}}}).Fetch(context.Background(), botURL); err == nil {
-			t.Errorf("Fetch(%q) succeeded; want it refused", botURL)
+	for _, path := range []string{
+		"https://example.com/bots/x.json", "//example.com/bots/x.json", "@example.com/bots/x.json",
+		"/bots/../x.json", "/bots/x.md", "/bots/x.json?y", "/api/bots/teams/x/../../y", "/api/bots/x",
+	} {
+		if _, err := (HTTPFetcher{Client: &http.Client{Transport: refusingTransport{t}}}).Fetch(context.Background(), path); err == nil {
+			t.Errorf("Fetch(%q) succeeded; want it refused", path)
 		}
 	}
 	var seen []*http.Request
@@ -198,7 +201,7 @@ func TestHTTPFetcherSendsOnlyAGETToPromptsChat(t *testing.T) {
 	client := &http.Client{Transport: transport, CheckRedirect: fetchClient.CheckRedirect}
 	fetcher := HTTPFetcher{Client: client}
 
-	body, err := fetcher.Fetch(context.Background(), "https://prompts.chat/bots/x.json")
+	body, err := fetcher.Fetch(context.Background(), "/bots/x.json")
 	if err != nil || string(body) != `{"slug":"x"}` {
 		t.Fatalf("Fetch = %q, %v", body, err)
 	}
@@ -207,13 +210,13 @@ func TestHTTPFetcherSendsOnlyAGETToPromptsChat(t *testing.T) {
 		t.Errorf("request = %s %s host %q cookie %q auth %q length %d; want a bare GET to %s",
 			got.Method, got.URL, got.Host, got.Header.Get("Cookie"), got.Header.Get("Authorization"), got.ContentLength, Host)
 	}
-	if _, err := fetcher.Fetch(context.Background(), "https://prompts.chat/bots/moved.json"); err == nil {
+	if _, err := fetcher.Fetch(context.Background(), "/bots/moved.json"); err == nil {
 		t.Error("Fetch followed a redirect off prompts.chat; want it refused")
 	}
-	if _, err := fetcher.Fetch(context.Background(), "https://prompts.chat/bots/huge.json"); err == nil {
+	if _, err := fetcher.Fetch(context.Background(), "/bots/huge.json"); err == nil {
 		t.Error("Fetch read past its bound")
 	}
-	if _, err := fetcher.Fetch(context.Background(), "https://prompts.chat/bots/gone.json"); !errors.Is(err, ErrNotFound) {
+	if _, err := fetcher.Fetch(context.Background(), "/bots/gone.json"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("Fetch of a 404 = %v; want ErrNotFound", err)
 	}
 	if len(seen) != 4 {

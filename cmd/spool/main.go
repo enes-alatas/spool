@@ -114,6 +114,7 @@ func main() {
 	slackAPI := flag.String("slack-api-base", slack.APIBase, "Slack Web API base URL (tests point this at a stand-in server)")
 	cloudAPIFlag := flag.String("cloud-api-base", anthropicAPI, "Anthropic's API base URL, which the Claude proxy forwards contained loops' model requests to and Settings → Cloud lists the account's environments from (tests point this at a stand-in server); https, or http on loopback")
 	githubAPIFlag := flag.String("github-api-base", githubapp.DefaultAPI, "GitHub's REST API base URL, where github-app connections' installation tokens are minted (tests point this at a stand-in server); https, or http on loopback")
+	promptsChatFlag := flag.String("prompts-chat-base", "https://"+promptschat.Host, "where the hub fetches the prompts.chat bots and teams an admin imports (tests point this at a stand-in server); https, or http on loopback (ADR-0063)")
 	cloudLoopbackAddress := flag.Bool("cloud-loopback-address", false, "accept a plain-HTTP loopback address as the cloud listener's public address (tests only: no cloud session can reach one, though the hub checks it green from itself)")
 	cloudStartWithinSec := flag.Int("cloud-start-within-sec", 0, "seconds a cloud start waits for its session to post back before it fails (0 = the production two minutes; tests shorten it)")
 	// Temporary, and tests only, until slice 2 of ADR-0059 (#977) removes it
@@ -139,6 +140,9 @@ func main() {
 	cloudAPI, err := claudeAPIBase(*cloudAPIFlag)
 	if err != nil {
 		usageError("--cloud-api-base: %v", err)
+	}
+	if err := httpapi.HTTPSOrLoopback(*promptsChatFlag); err != nil {
+		usageError("--prompts-chat-base: %v", err)
 	}
 	if err := httpapi.HTTPSOrLoopback(*githubAPIFlag); err != nil {
 		usageError("--github-api-base: %v", err)
@@ -624,7 +628,7 @@ func main() {
 		TrustedHosts:         splitList(*trustedHosts),
 		Egress:               dockerRuntime,
 		CloudListener:        cloudSwitch,
-		PromptsChat:          promptschat.HTTPFetcher{},
+		PromptsChat:          promptschat.HTTPFetcher{Base: *promptsChatFlag},
 		CloudLoopbackAddress: *cloudLoopbackAddress,
 		CloudGate:            cloudGate,
 		CloudSignIn:          cloudSignIn,

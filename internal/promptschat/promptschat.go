@@ -48,19 +48,24 @@ func refuse(format string, args ...any) error {
 	return &Refusal{Reason: fmt.Sprintf(format, args...)}
 }
 
-// Fetcher gets the bytes at a URL on prompts.chat. HTTPFetcher is the
-// hub's; a test hands in fixture bytes, so it never reaches the network.
+// Fetcher gets the bytes at a path on prompts.chat, such as
+// /bots/<bot>.json. HTTPFetcher is the hub's; a test hands in fixture
+// bytes, so it never reaches the network.
 type Fetcher interface {
-	Fetch(ctx context.Context, botURL string) ([]byte, error)
+	Fetch(ctx context.Context, path string) ([]byte, error)
 }
 
 // ErrNotFound is a URL prompts.chat answered 404 for.
 var ErrNotFound = errors.New("promptschat: not found")
 
-// HTTPFetcher fetches over HTTPS with a plain GET: no cookie, no
-// credential and no body. It follows no redirect, and refuses a URL whose
-// host isn't Host.
+// HTTPFetcher fetches from Base with a plain GET: no cookie, no
+// credential and no body. It follows no redirect, and takes only a path
+// fetchPath matches.
 type HTTPFetcher struct {
+	// Base is where prompts.chat is reached; empty means
+	// https://prompts.chat. A test points it at a stand-in server
+	// (ADR-0063).
+	Base string
 	// Client is the HTTP client fetches go through; nil means one with
 	// fetchTimeout and no redirects.
 	Client *http.Client
@@ -71,11 +76,18 @@ var fetchClient = &http.Client{
 	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 }
 
-// Fetch gets botURL, which must be an https URL on Host.
-func (fetcher HTTPFetcher) Fetch(ctx context.Context, botURL string) ([]byte, error) {
-	parsed, err := url.Parse(botURL)
-	if err != nil || parsed.Scheme != "https" || parsed.Host != Host || parsed.User != nil {
-		return nil, fmt.Errorf("promptschat: %q is not an https URL on %s", botURL, Host)
+// Fetch gets path from Base.
+func (fetcher HTTPFetcher) Fetch(ctx context.Context, path string) ([]byte, error) {
+	if !fetchPath.MatchString(path) {
+		return nil, fmt.Errorf("promptschat: %q is no path a bot or a team is fetched from", path)
+	}
+	base := fetcher.Base
+	if base == "" {
+		base = "https://" + Host
+	}
+	parsed, err := url.Parse(strings.TrimSuffix(base, "/") + path)
+	if err != nil {
+		return nil, err
 	}
 	client := fetcher.Client
 	if client == nil {
@@ -108,16 +120,20 @@ func (fetcher HTTPFetcher) Fetch(ctx context.Context, botURL string) ([]byte, er
 	return body, nil
 }
 
+// fetchPath is every path a fetch may ask for: a bot's .json and a
+// team's.
+var fetchPath = regexp.MustCompile(`^/(bots/[A-Za-z0-9][A-Za-z0-9_-]*\.json|api/bots/teams/[A-Za-z0-9][A-Za-z0-9_-]*)$`)
+
 // botPath is a bot's page, with .md or .json or neither.
 var botPath = regexp.MustCompile(`^/bots/([A-Za-z0-9][A-Za-z0-9_-]*)(\.md|\.json)?/?$`)
 
 // notBots are the pages under /bots/ that are no bot.
 var notBots = map[string]bool{"teams": true, "new": true}
 
-// JSONURL is the .json of the bot raw names: its page, its .md or its
+// BotPage is the page of the bot raw names by its page, its .md or its
 // .json. A URL on any other host, or no bot's page on prompts.chat, is
-// refused.
-func JSONURL(raw string) (string, error) {
+// refused. The bot's .json is its page's path plus .json.
+func BotPage(raw string) (string, error) {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || parsed.Host == "" {
 		return "", refuse("That isn't a URL. Paste a bot's address on %s.", Host)
@@ -135,7 +151,7 @@ func JSONURL(raw string) (string, error) {
 	if match == nil || notBots[match[1]] {
 		return "", refuse("That page isn't a bot on %s. A bot's address starts with https://%s/bots/.", Host, Host)
 	}
-	return "https://" + Host + "/bots/" + match[1] + ".json", nil
+	return "https://" + Host + "/bots/" + match[1], nil
 }
 
 // Draft is the loop a bot would make, for the operator to edit before
@@ -186,11 +202,11 @@ type bot struct {
 // A URL or page that is no bot is a *Refusal; any other error is the
 // fetch failing.
 func Import(ctx context.Context, fetcher Fetcher, raw string) (Draft, error) {
-	jsonURL, err := JSONURL(raw)
+	page, err := BotPage(raw)
 	if err != nil {
 		return Draft{}, err
 	}
-	body, err := fetcher.Fetch(ctx, jsonURL)
+	body, err := fetcher.Fetch(ctx, strings.TrimPrefix(page, "https://"+Host)+".json")
 	if errors.Is(err, ErrNotFound) {
 		return Draft{}, refuse("%s has no bot at that address.", Host)
 	}
@@ -201,7 +217,6 @@ func Import(ctx context.Context, fetcher Fetcher, raw string) (Draft, error) {
 	if err := json.Unmarshal(body, &read); err != nil || strings.TrimSpace(read.Slug) == "" || strings.TrimSpace(read.Instructions) == "" {
 		return Draft{}, refuse("That page on %s isn't a bot: it has no instructions.", Host)
 	}
-	page := strings.TrimSuffix(jsonURL, ".json")
 	made := mission(read, page)
 	if len(made) > maxMission {
 		return Draft{}, refuse("That bot is too long to import: its mission would be over %d KiB. Trim it on %s.", maxMission>>10, Host)

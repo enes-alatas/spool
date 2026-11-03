@@ -177,6 +177,8 @@ member until it is, and a test fails until it is (#1240).
   and tab, format characters (bidi, zero-width, tag characters) and both
   variation-selector blocks, and nothing else: a character that only
   looks blank, such as U+3164, stays. A mission over 64 KiB is refused.
+  `--prompts-chat-base` moves where the fetch goes, and is the
+  operator's flag, never an admin's input.
 
 ### Loop listener: `/mcp`, the brokered servers, the Claude proxy and the GitHub token route
 

@@ -1,6 +1,6 @@
 # ADR-0063: The hub reads a bot from prompts.chat, on the operator's paste
 
-Date: 2026-11-02 · Status: accepted (operator decision of 2026-11-02 on #1262 for the import, and of 2026-11-03, in a direct message to Terra, for the outbound fetch's bounds) · Relates to: ADR-0028, ADR-0048
+Date: 2026-11-02 · Status: accepted (operator decision of 2026-11-02 on #1262 for the import, and of 2026-11-03, in a direct message to Terra, for the outbound fetch's bounds) · Relates to: ADR-0028, ADR-0048 · Amended: 2026-11-03 (item 1: fetch by path, teams and the base flag, #1265)
 
 ## Context
 
@@ -27,6 +27,17 @@ able to call it point the hub at its own network.
    request, and so is a port, credentials in the URL, or a page that
    isn't a bot. The fetcher checks the host again, and follows no
    redirect.
+
+   **Amendment (2026-11-03, #1265):** the fetcher now takes a path, not a
+   URL, and refuses any path but a bot's `.json`
+   (`/bots/<bot>.json`) or a team's (`/api/bots/teams/<team>`), each
+   built from a matched path segment. A team import fetches both, from
+   the same host. The fetcher reaches that host at `--prompts-chat-base`,
+   which defaults to `https://prompts.chat`. Like `--github-api-base`,
+   it exists so tier 2 can point the hub at a stand-in server, and it
+   takes https, or http on loopback only. It is the operator's flag:
+   nothing an admin pastes reaches it, and a pasted URL must still name
+   `prompts.chat` by exact name.
 2. **On the operator's request only.** The fetch runs from
    `GET /api/import/prompts-chat?url=`, an admin route like
    `POST /api/loops`, behind the operator listener's host and cross-site
