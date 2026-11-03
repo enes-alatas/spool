@@ -813,114 +813,112 @@ func (server *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 		server.jsonErr(w, 400, "bad json: %v", err)
 		return
 	}
+	loopRecord, refusal := server.prepareLoop(r.Context(), &req)
+	if refusal != nil {
+		server.refuse(w, refusal)
+		return
+	}
+	if refusal := server.storeLoop(r.Context(), loopRecord); refusal != nil {
+		server.refuse(w, refusal)
+		return
+	}
+	// A new loop is minted with a hub MCP token, and may arrive with a bot
+	// token or a Slack app's pair: secret values that did not exist a
+	// moment ago.
+	server.secretsChanged(r.Context())
+	server.startLoop(r, loopRecord)
+	writeJSON(w, 201, server.view(r.Context(), loopRecord))
+}
+
+// prepareLoop checks what req asks for and builds the loop, which is not
+// stored yet. A refusal says why the loop can't be made as asked.
+func (server *Server) prepareLoop(ctx context.Context, req *createLoopReq) (*store.Loop, *requestError) {
 	req.Name = strings.ToLower(strings.TrimSpace(req.Name))
 	if !nameRe.MatchString(req.Name) {
-		server.jsonErr(w, 400, "name must match %s", nameRe.String())
-		return
+		return nil, refusalf(400, "", "name must match %s", nameRe.String())
 	}
 	if req.Name == route.BroadcastToken {
 		// @all addresses the group's eligible loops; a loop of that name
 		// could never be mentioned, only broadcast to (#74).
-		server.jsonErr(w, 400, "%q is reserved: @%s addresses every eligible loop in the group",
+		return nil, refusalf(400, "", "%q is reserved: @%s addresses every eligible loop in the group",
 			route.BroadcastToken, route.BroadcastToken)
-		return
 	}
 	if strings.TrimSpace(req.Mission) == "" {
-		server.jsonErr(w, 400, "mission is required")
-		return
+		return nil, refusalf(400, "", "mission is required")
 	}
 	if !validEfforts[req.Effort] {
-		server.jsonErr(w, 400, "effort must be one of: low, medium, high, xhigh, max (or empty for default)")
-		return
+		return nil, refusalf(400, "", "effort must be one of: low, medium, high, xhigh, max (or empty for default)")
 	}
 	// Trimmed as the model list trims what it is given.
 	req.Model = strings.TrimSpace(req.Model)
 	if err := loop.ValidLoopModel(req.Model); err != nil {
-		server.jsonErr(w, 400, "%v", err)
-		return
+		return nil, refusalf(400, "", "%v", err)
 	}
 	if !validPacing(req.Pacing) {
-		server.jsonErr(w, 400, "pacing must be 'fixed' or 'self'")
-		return
+		return nil, refusalf(400, "", "pacing must be 'fixed' or 'self'")
 	}
 	if !validSubagents(req.Subagents) {
-		server.jsonErr(w, 400, "subagents must be 'allowed' or 'off'")
-		return
+		return nil, refusalf(400, "", "subagents must be 'allowed' or 'off'")
 	}
 
 	loopRuntime := defaultStr(req.Runtime, server.defaultRuntime())
 	switch loopRuntime {
 	case store.RuntimeBare:
 		if !server.BareAllowed {
-			server.jsonErrCode(w, 400, codeBareNotEnabled,
+			return nil, refusalf(400, codeBareNotEnabled,
 				"a bare loop runs uncontained on this machine; start spool with `--allow-bare` (or `--runtime bare`) to allow one")
-			return
 		}
 		if req.Image != "" || req.MemMB != 0 || req.CPUs != 0 {
-			server.jsonErr(w, 400, "image, mem_mb and cpus apply to docker loops only")
-			return
+			return nil, refusalf(400, "", "image, mem_mb and cpus apply to docker loops only")
 		}
 	case store.RuntimeDocker:
 		if req.WorkspacePath != "" {
-			server.jsonErr(w, 400, "a docker loop's workstation is its workspace; workspace_path applies to bare loops only")
-			return
+			return nil, refusalf(400, "", "a docker loop's workstation is its workspace; workspace_path applies to bare loops only")
 		}
 		if req.MemMB != 0 && (req.MemMB < 256 || req.MemMB > 262144) {
-			server.jsonErr(w, 400, "mem_mb must be between 256 and 262144")
-			return
+			return nil, refusalf(400, "", "mem_mb must be between 256 and 262144")
 		}
 		if req.CPUs != 0 && (req.CPUs < 0.1 || req.CPUs > 64) {
-			server.jsonErr(w, 400, "cpus must be between 0.1 and 64")
-			return
+			return nil, refusalf(400, "", "cpus must be between 0.1 and 64")
 		}
 		if server.RuntimeAvailable != nil {
-			if err := server.RuntimeAvailable(r.Context(), store.RuntimeDocker); err != nil {
-				server.jsonErr(w, 400, "docker runtime unavailable: %v", err)
-				return
+			if err := server.RuntimeAvailable(ctx, store.RuntimeDocker); err != nil {
+				return nil, refusalf(400, "", "docker runtime unavailable: %v", err)
 			}
 		}
 		if server.LoopListenerReachable != nil {
-			if err := server.LoopListenerReachable(r.Context()); err != nil {
-				server.jsonErrCode(w, 400, codeLoopListenerUnreachable, "%v", err)
-				return
+			if err := server.LoopListenerReachable(ctx); err != nil {
+				return nil, refusalf(400, codeLoopListenerUnreachable, "%v", err)
 			}
 		}
 	case store.RuntimeCloud:
 		if req.Image != "" || req.MemMB != 0 || req.CPUs != 0 || req.WorkspacePath != "" {
-			server.jsonErr(w, 400, "a cloud loop runs on Anthropic's machine; image, mem_mb, cpus and workspace_path don't apply")
-			return
+			return nil, refusalf(400, "", "a cloud loop runs on Anthropic's machine; image, mem_mb, cpus and workspace_path don't apply")
 		}
-		if err := server.cloudReady(r.Context()); err != nil {
-			server.jsonErrCode(w, 409, codeCloudNotReady, "%v", err)
-			return
+		if err := server.cloudReady(ctx); err != nil {
+			return nil, refusalf(409, codeCloudNotReady, "%v", err)
 		}
 	default:
-		server.jsonErr(w, 400, "runtime must be 'bare', 'docker' or 'cloud' (or empty for the server default)")
-		return
+		return nil, refusalf(400, "", "runtime must be 'bare', 'docker' or 'cloud' (or empty for the server default)")
 	}
 	if refusal := subagentsRefusal(req.Subagents, loopRuntime); refusal != "" {
-		server.jsonErr(w, 400, "%s", refusal)
-		return
+		return nil, refusalf(400, "", "%s", refusal)
 	}
 	if refusal := dailyCapRefusal(req.DailyCapUSD); refusal != "" {
-		server.jsonErr(w, 400, "%s", refusal)
-		return
+		return nil, refusalf(400, "", "%s", refusal)
 	}
 	claudeLogin := loopLoginName(req.ClaudeLogin)
 	if refusal := loopLoginRefusal(claudeLogin, loopRuntime); refusal != nil {
-		server.refuse(w, refusal)
-		return
+		return nil, refusal
 	}
 	var cloudSetup store.CloudSetup
 	if req.given() {
 		if loopRuntime != store.RuntimeCloud {
-			server.jsonErr(w, 400, "cloud_repo, cloud_branch, cloud_repos and cloud_environment_id apply to cloud loops only")
-			return
+			return nil, refusalf(400, "", "cloud_repo, cloud_branch, cloud_repos and cloud_environment_id apply to cloud loops only")
 		}
-		setup, refusal := server.cloudSetup(r.Context(), claudeLogin, false, store.CloudSetup{}, req.cloudSetupReq)
+		setup, refusal := server.cloudSetup(ctx, claudeLogin, false, store.CloudSetup{}, req.cloudSetupReq)
 		if refusal != nil {
-			server.refuse(w, refusal)
-			return
+			return nil, refusal
 		}
 		cloudSetup = setup
 	}
@@ -960,22 +958,19 @@ func (server *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if telegram := server.Surfaces[store.SurfaceTelegram]; loopRecord.TGBotToken != "" && telegram != nil {
-		identity, err := telegram.ValidateCredential(r.Context(), surface.Credential{Token: loopRecord.TGBotToken})
+		identity, err := telegram.ValidateCredential(ctx, surface.Credential{Token: loopRecord.TGBotToken})
 		if err != nil {
-			server.jsonErr(w, 400, "telegram token rejected: %v", err)
-			return
+			return nil, refusalf(400, "", "telegram token rejected: %v", err)
 		}
 		loopRecord.TGBotUsername = identity.Name
 	}
 	if strings.TrimSpace(req.SlackAppToken) != "" || strings.TrimSpace(req.SlackBotToken) != "" {
 		if loopRecord.TGBotToken != "" {
-			server.refuse(w, oneSurface(""))
-			return
+			return nil, oneSurface("")
 		}
-		identity, refusal := server.slackIdentity(r.Context(), loopRecord.ID, req.SlackAppToken, req.SlackBotToken)
+		identity, refusal := server.slackIdentity(ctx, loopRecord.ID, req.SlackAppToken, req.SlackBotToken)
 		if refusal != nil {
-			server.refuse(w, refusal)
-			return
+			return nil, refusal
 		}
 		loopRecord.SlackAppToken, loopRecord.SlackBotToken = identity.AppToken, identity.BotToken
 		loopRecord.SlackBotUserID, loopRecord.SlackBotName = identity.BotUserID, identity.BotName
@@ -988,55 +983,55 @@ func (server *Server) handleCreateLoop(w http.ResponseWriter, r *http.Request) {
 		loopRecord.WorkspaceMode = store.WorkspaceNone
 		loopRecord.WorkspacePath = runtime.WorkstationHome
 	} else if err := server.resolveWorkspace(loopRecord, req.WorkspacePath, req.WorkspaceMode); err != nil {
-		server.jsonErr(w, 400, "%v", err)
-		return
+		return nil, refusalf(400, "", "%v", err)
 	}
 
 	// A new loop starts owned by the same person as the rest of the fleet:
 	// the first allowlisted sender no member's or admin's link allowed,
 	// reassignable per loop (#73, ADR-0051).
-	loopRecord.OwnerTGUserID = server.defaultOwnerID(r.Context())
+	loopRecord.OwnerTGUserID = server.defaultOwnerID(ctx)
 
 	// Membership is settled before the loop exists, never patched in after:
 	// a loop created in the channel and then taken out would be reachable
 	// by an @all in between.
 	inFleet := req.InFleetChannel
 	if inFleet == nil {
-		in, err := server.defaultInFleetChannel(r.Context())
+		in, err := server.defaultInFleetChannel(ctx)
 		if err != nil {
-			server.jsonErr(w, 500, "%v", err)
-			return
+			return nil, refusalf(500, "", "%v", err)
 		}
 		inFleet = &in
 	}
 	loopRecord.OutsideFleetChannel = !*inFleet
 
-	refusal, err := server.putOnLogin(r.Context(), claudeLogin, func() error {
-		return server.Store.Loops().Create(r.Context(), loopRecord)
+	return loopRecord, nil
+}
+
+// storeLoop stores a loop prepareLoop built, under its Claude login.
+func (server *Server) storeLoop(ctx context.Context, loopRecord *store.Loop) *requestError {
+	refusal, err := server.putOnLogin(ctx, loopRecord.ClaudeLogin, func() error {
+		return server.Store.Loops().Create(ctx, loopRecord)
 	})
-	if refusal != nil {
-		server.refuse(w, refusal)
-		return
+	switch {
+	case refusal != nil:
+		return refusal
+	case errors.Is(err, store.ErrDuplicate):
+		return refusalf(409, "", "a loop named %q already exists", loopRecord.Name)
+	case err != nil:
+		return refusalf(500, "", "%v", err)
 	}
-	if err != nil {
-		if errors.Is(err, store.ErrDuplicate) {
-			server.jsonErr(w, 409, "a loop named %q already exists", loopRecord.Name)
-		} else {
-			server.jsonErr(w, 500, "%v", err)
-		}
-		return
-	}
-	// A new loop is minted with a hub MCP token, and may arrive with a bot
-	// token or a Slack app's pair: secret values that did not exist a
-	// moment ago.
-	server.secretsChanged(r.Context())
+	return nil
+}
+
+// startLoop hands a stored loop to the manager and schedules its first
+// tick shortly, so the mission starts without waiting a full interval,
+// and records its creation. The caller tells the redactor of its secrets
+// first.
+func (server *Server) startLoop(r *http.Request, loopRecord *store.Loop) {
 	server.Manager.Add(loopRecord)
 	server.loopChanged(r.Context(), loopRecord.ID)
-	// first tick shortly after creation so the mission starts without waiting
-	// a full interval
 	server.Sched.ScheduleNow(loopRecord.ID)
 	server.recordChange(r, store.LoopChangeCreate, loopRecord)
-	writeJSON(w, 201, server.view(r.Context(), loopRecord))
 }
 
 // resolveWorkspace decides the loop's cwd. Every loop needs a stable cwd

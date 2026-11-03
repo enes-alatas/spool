@@ -259,3 +259,9 @@ func (server *Server) putSlackOwner(ctx context.Context, loopRecord *store.Loop,
 	}
 	return nil
 }
+
+// refusalf is a refusal whose message fills in format as the room shows
+// it.
+func refusalf(status int, code, format string, args ...any) *requestError {
+	return &requestError{status, code, roomSentence(format, args...)}
+}
