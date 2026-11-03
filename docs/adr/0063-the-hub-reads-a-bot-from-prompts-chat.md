@@ -81,6 +81,14 @@ able to call it point the hub at its own network.
    needs a repo and an environment of its own. The import creates loops
    only through this second call, so item 5 holds for teams: an imported
    mission reaches a loop only as the operator read it in the draft.
+
+   **Amendment (2026-11-03, #1266):** each drafted loop also lists its
+   handoffs as fields, `handoffs`, in its mission's order: a `direction`
+   (`to` or `from`), the other `loop` by its name in the draft, and the
+   `label` on one line, empty when the team gave none. The list is empty
+   for a loop with no handoffs. The room shows them from these fields
+   rather than by reading the mission's words. The create takes nothing
+   new: the mission the operator read is still all a loop is given.
 5. **What the bot's text is.** It is someone else's writing, so it is
    untrusted. The only way it reaches a loop is through the mission the
    operator reads in the draft and chooses to create. From each field it

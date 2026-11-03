@@ -39,11 +39,28 @@ type Team struct {
 	Source string `json:"source"`
 }
 
-// TeamLoop is one member of a team: its role on the team and the loop it
-// makes.
+// TeamLoop is one member of a team: its role on the team, the loop it
+// makes, and the handoffs its mission ends with, in the mission's order,
+// for the room to show without reading the mission's words (#1266).
 type TeamLoop struct {
 	Role string `json:"role"`
 	Draft
+	Handoffs []Handoff `json:"handoffs"`
+}
+
+// The directions of a Handoff.
+const (
+	HandoffTo   = "to"
+	HandoffFrom = "from"
+)
+
+// Handoff is one handoff of a team's loop: Direction HandoffTo the other
+// loop, or HandoffFrom it, by the other loop's name in the same draft,
+// with the team's label for it on one line, empty when it has none.
+type Handoff struct {
+	Direction string `json:"direction"`
+	Loop      string `json:"loop"`
+	Label     string `json:"label"`
 }
 
 // team is the part of a team's .json an import reads.
@@ -115,10 +132,9 @@ func ImportTeam(ctx context.Context, fetcher Fetcher, raw string, loopTaken, cha
 		draft.Name = uniqueName(base, maxName, loopTaken, inTeam)
 		inTeam[draft.Name] = true
 		names[member.ID] = draft.Name
-		made.Loops = append(made.Loops, TeamLoop{Role: plain(member.Role), Draft: draft})
+		made.Loops = append(made.Loops, TeamLoop{Role: plain(member.Role), Draft: draft, Handoffs: []Handoff{}})
 	}
 
-	handoffs := make([][]string, len(read.Members))
 	for _, handoff := range read.Handoffs {
 		from, fromOK := names[handoff.From]
 		to, toOK := names[handoff.To]
@@ -126,22 +142,26 @@ func ImportTeam(ctx context.Context, fetcher Fetcher, raw string, loopTaken, cha
 			return Team{}, refuse("That team hands work to or from a bot it doesn't have.")
 		}
 		label := oneLine(handoff.Label, maxLabel)
-		if label != "" {
-			label = ": " + label
-		}
 		for index, member := range read.Members {
 			switch member.ID {
 			case handoff.From:
-				handoffs[index] = append(handoffs[index], "- to @"+to+label)
+				made.Loops[index].Handoffs = append(made.Loops[index].Handoffs, Handoff{HandoffTo, to, label})
 			case handoff.To:
-				handoffs[index] = append(handoffs[index], "- from @"+from+label)
+				made.Loops[index].Handoffs = append(made.Loops[index].Handoffs, Handoff{HandoffFrom, from, label})
 			}
 		}
 	}
 	for index := range made.Loops {
 		closing := []string{"You are in the channel " + made.Channel + teammates(made.Loops, index) + "."}
-		if len(handoffs[index]) > 0 {
-			closing = append(append(closing, "Your handoffs:"), handoffs[index]...)
+		if len(made.Loops[index].Handoffs) > 0 {
+			closing = append(closing, "Your handoffs:")
+			for _, handoff := range made.Loops[index].Handoffs {
+				line := "- " + handoff.Direction + " @" + handoff.Loop
+				if handoff.Label != "" {
+					line += ": " + handoff.Label
+				}
+				closing = append(closing, line)
+			}
 		}
 		made.Loops[index].Mission += "\n\n" + strings.Join(closing, "\n")
 		if len(made.Loops[index].Mission) > maxMission {

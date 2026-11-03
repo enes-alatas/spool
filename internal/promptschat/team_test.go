@@ -2,6 +2,7 @@ package promptschat
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"reflect"
@@ -81,6 +82,16 @@ func TestATeamBecomesLoopsAndAChannel(t *testing.T) {
 	if !strings.HasSuffix(made.Loops[1].Mission, "\n\nYou are in the channel launch-crew with @planner-2 and @qa.\nYour handoffs:\n"+
 		"- from @planner-2: Hand the approved plan\n- to @qa: Send the build for checks") {
 		t.Errorf("builder's mission = %q", made.Loops[1].Mission)
+	}
+	wantHandoffs := [][]Handoff{
+		{{HandoffTo, "builder", "Hand the approved plan"}, {HandoffFrom, "qa", ""}},
+		{{HandoffFrom, "planner-2", "Hand the approved plan"}, {HandoffTo, "qa", "Send the build for checks"}},
+		{{HandoffFrom, "builder", "Send the build for checks"}, {HandoffTo, "planner-2", ""}},
+	}
+	for index, loop := range made.Loops {
+		if !reflect.DeepEqual(loop.Handoffs, wantHandoffs[index]) {
+			t.Errorf("%s's handoffs = %+v; want %+v, as its mission lists them", loop.Name, loop.Handoffs, wantHandoffs[index])
+		}
 	}
 }
 
@@ -167,7 +178,8 @@ func TestAChannelNameFromASlug(t *testing.T) {
 	}
 }
 
-// TestALoneMemberHasNoHandoffs: a team of one names its channel only.
+// TestALoneMemberHasNoHandoffs: a team of one names its channel only, and
+// its loop answers an empty handoffs list.
 func TestALoneMemberHasNoHandoffs(t *testing.T) {
 	fixture := &teamFixture{swap: map[string]string{"/api/bots/teams/launch-crew": `{"slug":"solo","members":[{"id":"cfixa","slug":"plan-keeper","role":"Lead"}]}`}}
 	made, err := ImportTeam(context.Background(), fixture, "https://prompts.chat/bots/teams/launch-crew", takenFrom(), takenFrom())
@@ -176,5 +188,8 @@ func TestALoneMemberHasNoHandoffs(t *testing.T) {
 	}
 	if !strings.HasSuffix(made.Loops[0].Mission, "\n\nYou are in the channel solo.") {
 		t.Errorf("mission = %q", made.Loops[0].Mission)
+	}
+	if raw, _ := json.Marshal(made.Loops[0]); !strings.Contains(string(raw), `"handoffs":[]`) {
+		t.Errorf("a loop with no handoffs answers %s; want an empty handoffs list, not null", raw)
 	}
 }

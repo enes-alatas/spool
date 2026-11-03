@@ -63,8 +63,13 @@ func TestATeamImportMakesItsLoopsAndChannel(t *testing.T) {
 		Channel     string `json:"channel"`
 		Description string `json:"description"`
 		Loops       []struct {
-			Name    string `json:"name"`
-			Mission string `json:"mission"`
+			Name     string `json:"name"`
+			Mission  string `json:"mission"`
+			Handoffs []struct {
+				Direction string `json:"direction"`
+				Loop      string `json:"loop"`
+				Label     string `json:"label"`
+			} `json:"handoffs"`
 		} `json:"loops"`
 	}
 	hub.mustJSON("GET", "/api/import/prompts-chat/team?url="+url.QueryEscape("https://prompts.chat/bots/teams/launch-crew"), nil, &draft)
@@ -74,6 +79,14 @@ func TestATeamImportMakesItsLoopsAndChannel(t *testing.T) {
 	}
 	if draft.Channel != "launch-crew" || strings.Join(drafted, " ") != "planner builder qa-2" {
 		t.Fatalf("the draft names channel %q and loops %q; want launch-crew and planner, builder, qa-2", draft.Channel, drafted)
+	}
+	// each handoff comes as fields too, by the draft's names (#1266)
+	var builderHandoffs []string
+	for _, handoff := range draft.Loops[1].Handoffs {
+		builderHandoffs = append(builderHandoffs, handoff.Direction+" "+handoff.Loop+": "+handoff.Label)
+	}
+	if strings.Join(builderHandoffs, "; ") != "from planner: Hand the approved plan; to qa-2: Send the build for checks" {
+		t.Errorf("builder's handoffs = %q; want from planner and to qa-2, labelled", builderHandoffs)
 	}
 	if count := len(hub.loopNames()); count != 1 {
 		t.Fatalf("the draft made loops: %d on the hub, want only qa", count)
