@@ -211,6 +211,13 @@ ADR-0043), a contained loop's model requests under `/claude`
   from another conversation is refused, and the refusal names only the
   conversation being sent to, never the other one (#719). Sends per turn
   are capped, and loop pairs have a storm guard.
+- **A mention means one loop** (#1273). A group mention routes by a loop's
+  name or its bot's username, so the hub refuses a new loop whose name is,
+  ignoring case, another loop's bot username or the username of a person
+  it allows, and a bot whose username is another loop's name. A team
+  draft suffixes such names. A collision stored before that routes to the
+  loop of that name, and is logged. A person allowed after a loop took
+  their name is not checked.
 - **An attachment** must be a file the loop owns, within the size cap, and
   holding no known secret in the forms the check reads (below).
 - **The broker** checks the connection on every request, replaces the

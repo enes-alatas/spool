@@ -924,6 +924,13 @@ func (server *Server) prepareLoop(ctx context.Context, req *createLoopReq) (*sto
 		}
 		cloudSetup = setup
 	}
+	names, err := server.namesInUse(ctx)
+	if err != nil {
+		return nil, refusalf(500, "", "%v", err)
+	}
+	if refusal := names.nameRefusal(req.Name); refusal != nil {
+		return nil, refusal
+	}
 
 	nowMS := time.Now().UnixMilli()
 	loopRecord := &store.Loop{
@@ -963,6 +970,9 @@ func (server *Server) prepareLoop(ctx context.Context, req *createLoopReq) (*sto
 		identity, err := telegram.ValidateCredential(ctx, surface.Credential{Token: loopRecord.TGBotToken})
 		if err != nil {
 			return nil, refusalf(400, "", "telegram token rejected: %v", err)
+		}
+		if refusal := names.botRefusal(identity.Name, loopRecord.ID); refusal != nil {
+			return nil, refusal
 		}
 		loopRecord.TGBotUsername = identity.Name
 	}
@@ -1308,6 +1318,15 @@ func (server *Server) handlePatchLoop(w http.ResponseWriter, r *http.Request) {
 			identity, err := telegram.ValidateCredential(r.Context(), surface.Credential{Token: token})
 			if err != nil {
 				server.jsonErr(w, 400, "telegram token rejected: %v", err)
+				return
+			}
+			names, err := server.namesInUse(r.Context())
+			if err != nil {
+				server.jsonErr(w, 500, "%v", err)
+				return
+			}
+			if refusal := names.botRefusal(identity.Name, loopRecord.ID); refusal != nil {
+				server.refuse(w, refusal)
 				return
 			}
 			username = identity.Name

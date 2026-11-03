@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/enes-alatas/spool/internal/promptschat"
-	"github.com/enes-alatas/spool/internal/route"
 	"github.com/enes-alatas/spool/internal/store"
 )
 
@@ -131,9 +130,10 @@ func (server *Server) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
 }
 
 // namesTaken says whether a loop name and a channel name are in use on
-// the hub, @all's name among them.
+// the hub. A loop name is in use as namesInUse says, @all's among them,
+// so a draft suffixes what its create would refuse.
 func (server *Server) namesTaken(ctx context.Context) (loopTaken, channelTaken func(string) bool, err error) {
-	loops, err := server.Store.Loops().List(ctx)
+	names, err := server.namesInUse(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -141,16 +141,11 @@ func (server *Server) namesTaken(ctx context.Context) (loopTaken, channelTaken f
 	if err != nil {
 		return nil, nil, err
 	}
-	loopNames := map[string]bool{route.BroadcastToken: true}
-	for _, loopRecord := range loops {
-		loopNames[loopRecord.Name] = true
-	}
 	channelNames := map[string]bool{store.FleetChannel: true}
 	for _, channel := range channels {
 		channelNames[channel.Name] = true
 	}
-	return func(name string) bool { return loopNames[name] },
-		func(name string) bool { return channelNames[name] }, nil
+	return names.taken, func(name string) bool { return channelNames[name] }, nil
 }
 
 // storeTeam stores loops, then channel with every loop in it. A write
