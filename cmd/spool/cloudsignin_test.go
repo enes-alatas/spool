@@ -3,13 +3,17 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/enes-alatas/spool/internal/claude"
 	"github.com/enes-alatas/spool/internal/httpapi"
 	"github.com/enes-alatas/spool/internal/store"
 )
@@ -269,5 +273,57 @@ func TestEndingASignInFreesItsStartersSlot(t *testing.T) {
 	}
 	if _, waiting := signIn.runs["work"]; waiting {
 		t.Error("work's sign-in still waits after End")
+	}
+}
+
+// On macOS a login missing from the hub's config directory may be in the
+// operator's Keychain, put there by a claude that called the system's
+// security past the hub's: the error names the item, and the hub reads or
+// removes nothing of it. Elsewhere, or for any other error, it is as it
+// was (#1304).
+func TestAMissingLoginOnAMacNamesTheKeychainItem(t *testing.T) {
+	missing := fmt.Errorf("claude auth login: %w", os.ErrNotExist)
+	hostOS = "darwin"
+	t.Cleanup(func() { hostOS = goruntime.GOOS })
+	err := keychainHint(missing, "/fixture/config")
+	if !errors.Is(err, os.ErrNotExist) || !strings.Contains(err.Error(), `"Claude Code-credentials-9e67da4d"`) {
+		t.Errorf("on a Mac: %v, want the missing file and the item named", err)
+	}
+	if other := errors.New("not JSON"); keychainHint(other, "/fixture/config") != other {
+		t.Error("another error on a Mac was changed")
+	}
+	hostOS = "linux"
+	if err := keychainHint(missing, "/fixture/config"); err != missing {
+		t.Errorf("on Linux: %v, want the error as it was", err)
+	}
+}
+
+// A hub started with a relative data directory still hands each CLI the
+// hub's security: the CLI runs inside its own directory, where a relative
+// PATH entry would name nothing and the lookup would go on to the system's
+// (#1304).
+func TestARelativeDataDirectoryStillFindsTheHubsSecurity(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "claude")
+	script := "#!/bin/sh\ncommand -v security > found\necho 'visit: https://claude.ai/oauth/authorize?code=true'\nread code\n"
+	if err := os.WriteFile(bin, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	signIn, err := newClaudeSignIn(bin, filepath.Join("data", "cloud-sign-in"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := signIn.Start(context.Background(), store.DefaultClaudeLogin, ""); err != nil {
+		t.Fatal(err)
+	}
+	run := signIn.runs[store.DefaultClaudeLogin]
+	defer signIn.end(store.DefaultClaudeLogin, run)
+	found, err := os.ReadFile(filepath.Join(run.configDir, "found"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.TrimSpace(string(found)), filepath.Join(claude.KeychainShimDir(run.configDir), "security"); got != want || !filepath.IsAbs(got) {
+		t.Errorf("the CLI found security at %q, want the hub's at %q", got, want)
 	}
 }

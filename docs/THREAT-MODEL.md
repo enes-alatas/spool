@@ -741,6 +741,23 @@ cloud listener (ADR-0059).
   directory, and the hub reads and deletes them as the CLI exits. A hub
   killed in that moment leaves them until it next starts, when it
   removes the directory first; the backup script never copies it.
+- **On macOS too, the tokens stay in that directory, not the operator's
+  Keychain** (#1304). The CLI keeps a login in the login Keychain
+  through the `security` tool, which it calls by name. Each claude the
+  hub runs on the host for a sign-in, a refresh or a sign-out finds a
+  `security` of the hub's first on its `PATH`, in a fresh 0700
+  directory inside the run's config directory, mode 0500. The stand-in
+  only exits 44, item not found, so the CLI falls back to
+  `.credentials.json` at 0600, as on Linux. It takes the token in argv
+  or stdin on a write and keeps none of it: it reads nothing and writes
+  nothing. Only the CLI's env carries that `PATH`, never the hub's own.
+  So the hub never reads, writes or deletes a Keychain item. The
+  stand-in rests on the CLI calling `security` by name, as 2.1.316 does.
+  A later CLI that called `/usr/bin/security` by its path would put the
+  login in the Keychain and delete the file. The sign-in or refresh then
+  fails closed, and its error names the item it may have left,
+  `Claude Code-credentials-` plus 8 hex digits of the config
+  directory's hash, for the operator to remove. The hub leaves it alone.
 - **On a hub with no `claude` of its own, the sign-in runs in the
   workstation image** (#952). The container runs as the hub's user and
   mounts that one directory, nothing else, so it can't read the data

@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"sync"
 	"time"
@@ -66,7 +68,13 @@ type claudeImage interface {
 // mid-sign-in left there removed: the CLI writes both tokens unsealed
 // before the hub reads them, and a data directory is backed up without
 // its key (ADR-0046). image is nil on a hub that runs only the host's.
+// dir is made absolute: each CLI runs inside its own directory under it,
+// where a relative one names nothing (#1304).
 func newClaudeSignIn(bin, dir string, image claudeImage) (*claudeSignIn, error) {
+	dir, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, err
+	}
 	if err := os.RemoveAll(dir); err != nil {
 		return nil, err
 	}
@@ -98,9 +106,15 @@ func (signIn *claudeSignIn) Available() bool {
 // the image's leaves.
 func (signIn *claudeSignIn) command(ctx context.Context, configDir string, lifetime time.Duration, args []string) (cmd *exec.Cmd, remove func(), err error) {
 	if _, lookErr := exec.LookPath(signIn.bin); lookErr == nil || signIn.image == nil {
+		// on macOS the login stays in configDir, not the operator's
+		// Keychain (#1304)
+		env, err := claude.KeychainEnv(append(signInEnv(os.Environ()), "CLAUDE_CONFIG_DIR="+configDir), configDir)
+		if err != nil {
+			return nil, nil, err
+		}
 		cmd := exec.CommandContext(ctx, signIn.bin, args...)
 		cmd.Dir = configDir
-		cmd.Env = append(signInEnv(os.Environ()), "CLAUDE_CONFIG_DIR="+configDir)
+		cmd.Env = env
 		cmd.SysProcAttr = runtime.ChildAttr()
 		return cmd, func() {}, nil
 	}
@@ -276,7 +290,7 @@ func (signIn *claudeSignIn) Finish(ctx context.Context, login, code string) (sto
 	}
 	signedIn, err := claude.ReadSignIn(run.configDir)
 	if err != nil {
-		return store.CloudAccount{}, err
+		return store.CloudAccount{}, keychainHint(err, run.configDir)
 	}
 	return store.CloudAccount{
 		Token:        signedIn.AccessToken,
@@ -332,7 +346,7 @@ func (signIn *claudeSignIn) Refresh(ctx context.Context, account store.CloudAcco
 	refreshed, err := claude.ReadSignIn(configDir)
 	switch {
 	case err != nil:
-		return store.CloudAccount{}, err
+		return store.CloudAccount{}, keychainHint(err, configDir)
 	case refreshed.AccessToken == account.Token:
 		// the CLI kept the token it was given, whatever it said
 		if runErr != nil {
@@ -449,7 +463,7 @@ func signInEnv(environ []string) []string {
 		name, _, _ := strings.Cut(entry, "=")
 		switch name {
 		case "CLAUDE_CONFIG_DIR", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
-			"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "BROWSER":
+			"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "BROWSER", "CLAUDE_SECURESTORAGE_CONFIG_DIR":
 			continue
 		}
 		env = append(env, entry)
@@ -490,4 +504,19 @@ func (output *tail) last() string {
 		}
 	}
 	return "the CLI said nothing"
+}
+
+// hostOS is the OS the hub runs on, a variable so a test can be macOS.
+var hostOS = goruntime.GOOS
+
+// keychainHint is err from reading a login back out of configDir. On
+// macOS a missing file may mean a claude that called the system's security
+// by its path, past the hub's, and stored the login in the operator's
+// Keychain: the error names the item the operator may find there, which
+// the hub neither reads nor deletes (#1304).
+func keychainHint(err error, configDir string) error {
+	if hostOS != "darwin" || !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return fmt.Errorf("%w; this claude may have stored the login in your login Keychain instead, as %q, which Spool doesn't read or remove", err, claude.KeychainItem(configDir))
 }

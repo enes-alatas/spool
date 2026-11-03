@@ -1098,7 +1098,7 @@ func authLogin() int {
 	sum := sha256.Sum256([]byte(email))
 	accountUUID := fmt.Sprintf("00000000-0000-4000-8000-%x", sum[:6])
 	config, _ := json.Marshal(map[string]any{"oauthAccount": map[string]any{"organizationUuid": signInOrg, "accountUuid": accountUUID, "emailAddress": email}})
-	if os.WriteFile(filepath.Join(dir, ".credentials.json"), credentials, 0o600) != nil ||
+	if writeCredentials(filepath.Join(dir, ".credentials.json"), credentials) != nil ||
 		os.WriteFile(filepath.Join(dir, ".claude.json"), config, 0o600) != nil {
 		fmt.Println("Login failed: the config directory can't be written.")
 		return 1
@@ -1139,7 +1139,7 @@ func authStatus() int {
 		oauth["accessToken"], oauth["refreshToken"] = access+"-r", refresh+"-r"
 		oauth["expiresAt"] = time.Now().Add(8 * time.Hour).UnixMilli()
 		rotated, _ := json.Marshal(credentials)
-		if os.WriteFile(path, rotated, 0o600) != nil {
+		if writeCredentials(path, rotated) != nil {
 			return 1
 		}
 	}
@@ -1235,4 +1235,45 @@ func shell(cwd, command string) string {
 		return text + " (" + err.Error() + ")"
 	}
 	return text
+}
+
+// writeCredentials stores a sign-in at path, .credentials.json in the
+// config directory, or, on a macOS the test models, in the Keychain first
+// as 2.1.316 does: a "keychain" file in $FAKECLAUDE_STATE names the
+// system's security, found where PATH finds none, as /usr/bin's is on a
+// Mac. The CLI calls security by name, so one earlier on PATH is called
+// instead. A write it takes leaves no file, the CLI deleting the
+// plaintext copy; any exit but 0 falls back to the file (#1304,
+// FIDELITY.md). The fake's Keychain is a "keychain-items" file there, a
+// service name per line, never the value.
+func writeCredentials(path string, credentials []byte) error {
+	state := os.Getenv("FAKECLAUDE_STATE")
+	system, err := os.ReadFile(filepath.Join(state, "keychain"))
+	if err != nil {
+		return os.WriteFile(path, credentials, 0o600)
+	}
+	security, err := exec.LookPath("security")
+	if err != nil {
+		security = strings.TrimSpace(string(system))
+	}
+	named := os.Getenv("CLAUDE_SECURESTORAGE_CONFIG_DIR")
+	if named == "" {
+		named = os.Getenv("CLAUDE_CONFIG_DIR")
+	}
+	sum := sha256.Sum256([]byte(named))
+	service := "Claude Code-credentials-" + hex.EncodeToString(sum[:])[:8]
+	cmd := exec.Command(security, "add-generic-password", "-U", "-a", os.Getenv("USER"), "-s", service, "-X", hex.EncodeToString(credentials))
+	if cmd.Run() != nil {
+		return os.WriteFile(path, credentials, 0o600)
+	}
+	items, err := os.OpenFile(filepath.Join(state, "keychain-items"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintln(items, service)
+	_ = items.Close()
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }
