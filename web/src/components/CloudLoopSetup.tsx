@@ -35,6 +35,9 @@ export function CloudLoopSetupDialog({ loop, onClose }: { loop: LoopView; onClos
   // only its hash, so this is the one time it can be read.
   const [token, setToken] = useState('')
   const left = (step: CloudLoopStep) => setup?.steps.includes(step) ?? true
+  // The repo fields, held here so the environment step can send them: on a
+  // loop with no environment yet the two are saved in one edit (#1286).
+  const repo = useRepoDraft(loop)
 
   return (
     <StepDialog
@@ -66,10 +69,10 @@ export function CloudLoopSetupDialog({ loop, onClose }: { loop: LoopView; onClos
             )}
             <ol className="cloud-recipe cloud-loop-steps">
               <Step title="Its repo" done={!left('repo')}>
-                <RepoStep loop={loop} setBusy={setBusy} />
+                <RepoStep loop={loop} draft={repo} setBusy={setBusy} />
               </Step>
               <Step title="Its environment on claude.ai" done={!left('environment') && !left('allowlist')}>
-                <EnvironmentStep loop={loop} setup={setup} setBusy={setBusy} />
+                <EnvironmentStep loop={loop} setup={setup} repo={repo} setBusy={setBusy} />
               </Step>
               <Step title="Its hub token" done={!left('token')}>
                 <TokenStep loop={loop} setup={setup} token={token} setToken={setToken} setBusy={setBusy} />
@@ -136,18 +139,58 @@ function StepError({ error }: { error: string }) {
   ) : null
 }
 
-// The repo a session starts from, its branch, and the repos it attaches,
-// which change only while the loop is stopped (ADR-0061).
-function RepoStep({ loop, setBusy }: { loop: LoopView; setBusy: (busy: boolean) => void }) {
-  const { run, error } = useLoopChange(loop, setBusy)
+// The repo step's fields as typed, and what they send.
+interface RepoDraft {
+  repo: string
+  branch: string
+  more: string
+  setRepo: (repo: string) => void
+  setBranch: (branch: string) => void
+  setMore: (more: string) => void
+  changed: boolean
+  fields: { cloud_repo: string; cloud_branch: string; cloud_repos: string[] }
+}
+
+function useRepoDraft(loop: LoopView): RepoDraft {
   const [repo, setRepo] = useState(loop.cloud_repo ?? '')
   const [branch, setBranch] = useState(loop.cloud_branch || 'main')
   const [more, setMore] = useState((loop.cloud_repos ?? []).join('\n'))
+  return {
+    repo,
+    branch,
+    more,
+    setRepo,
+    setBranch,
+    setMore,
+    changed:
+      repo.trim() !== (loop.cloud_repo ?? '') ||
+      branch.trim() !== (loop.cloud_branch || 'main') ||
+      reposOf(more).join('\n') !== (loop.cloud_repos ?? []).join('\n'),
+    fields: { cloud_repo: repo.trim(), cloud_branch: branch.trim(), cloud_repos: reposOf(more) },
+  }
+}
+
+// Whether the loop's repo and environment are saved together (#1286): a
+// cloud loop made before its environment was set has none, and the hub
+// checks a repo and an environment as one setup, so a repo sent alone is
+// refused. The walk then saves the repo with the environment picked next.
+function savedTogether(loop: LoopView): boolean {
+  return !loop.cloud_environment_id
+}
+
+// The repo a session starts from, its branch, and the repos it attaches,
+// which change only while the loop is stopped (ADR-0061).
+function RepoStep({
+  loop,
+  draft,
+  setBusy,
+}: {
+  loop: LoopView
+  draft: RepoDraft
+  setBusy: (busy: boolean) => void
+}) {
+  const { run, error } = useLoopChange(loop, setBusy)
   const stopped = loop.status === 'paused'
-  const changed =
-    repo.trim() !== (loop.cloud_repo ?? '') ||
-    branch.trim() !== (loop.cloud_branch || 'main') ||
-    reposOf(more).join('\n') !== (loop.cloud_repos ?? []).join('\n')
   return (
     <>
       <p className="cloud-small">
@@ -156,34 +199,31 @@ function RepoStep({ loop, setBusy }: { loop: LoopView; setBusy: (busy: boolean) 
       </p>
       <CloudRepoFields
         idPrefix="cs"
-        repo={repo}
-        branch={branch}
-        more={more}
+        repo={draft.repo}
+        branch={draft.branch}
+        more={draft.more}
         disabled={!stopped}
-        onRepo={setRepo}
-        onBranch={setBranch}
-        onMore={setMore}
+        onRepo={draft.setRepo}
+        onBranch={draft.setBranch}
+        onMore={draft.setMore}
       />
-      {stopped ? (
+      {!stopped ? (
+        <p className="cloud-small">Pause the loop to change these: a running session started from them.</p>
+      ) : savedTogether(loop) ? (
+        <p className="cloud-small">
+          The hub checks a repo and an environment together, and this loop has no environment yet, so the repo
+          is saved with the environment you pick in the next step.
+        </p>
+      ) : (
         <div className="cloud-code">
           <button
             className="btn"
-            disabled={!changed || !repo.trim()}
-            onClick={() =>
-              void run(() =>
-                api.patchLoop(loop.name, {
-                  cloud_repo: repo.trim(),
-                  cloud_branch: branch.trim(),
-                  cloud_repos: reposOf(more),
-                }),
-              )
-            }
+            disabled={!draft.changed || !draft.repo.trim()}
+            onClick={() => void run(() => api.patchLoop(loop.name, draft.fields))}
           >
             Save
           </button>
         </div>
-      ) : (
-        <p className="cloud-small">Pause the loop to change these: a running session started from them.</p>
       )}
       <StepError error={error} />
     </>
@@ -262,10 +302,12 @@ export function CloudRepoFields({
 function EnvironmentStep({
   loop,
   setup,
+  repo,
   setBusy,
 }: {
   loop: LoopView
   setup: CloudLoopSetup
+  repo: RepoDraft
   setBusy: (busy: boolean) => void
 }) {
   const { run, error } = useLoopChange(loop, setBusy)
@@ -312,12 +354,29 @@ function EnvironmentStep({
         </li>
         <li>
           Choose <strong>Add environment</strong>, then pick it here.
-          {stopped ? (
-            <EnvironmentPick
-              login={loop.claude_login}
-              chosen={loop.cloud_environment_id ?? ''}
-              onPick={(id) => void run(() => api.patchLoop(loop.name, { cloud_environment_id: id }))}
-            />
+          {stopped && savedTogether(loop) && !repo.repo.trim() ? (
+            <div className="cloud-small">Fill in its repo above first: the two are saved together.</div>
+          ) : stopped ? (
+            <>
+              <EnvironmentPick
+                login={loop.claude_login}
+                chosen={loop.cloud_environment_id ?? ''}
+                onPick={(id) =>
+                  void run(() =>
+                    api.patchLoop(
+                      loop.name,
+                      // with no environment yet, the repo goes in the same edit
+                      savedTogether(loop)
+                        ? { ...repo.fields, cloud_environment_id: id }
+                        : { cloud_environment_id: id },
+                    ),
+                  )
+                }
+              />
+              {savedTogether(loop) && (
+                <div className="cloud-small">Picking it saves the repo above with it, in one edit.</div>
+              )}
+            </>
           ) : (
             <div className="cloud-small">
               {loop.cloud_environment_id ? (

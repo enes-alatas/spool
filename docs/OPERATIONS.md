@@ -391,7 +391,8 @@ create on claude.ai for it. Its setup view, `GET
 left: `settings`, `repo`, `environment`, `token`, `allowlist` and `check`.
 The loop's page walks those steps: **Set up** on its Workstation card,
 which New loop opens on a new cloud loop (#1183). The API takes each step
-too.
+too, though on a loop made before ADR-0061 the repo and environment go in
+one edit, as below.
 
 The list to paste into an environment's allowed domains is the hub's
 egress allowlist ([CONTAINMENT.md](CONTAINMENT.md)) as an environment
@@ -452,7 +453,11 @@ The steps, in order:
 A cloud loop whose repo, environment or token isn't set, or whose check
 hasn't passed on its setup as it is now, waits with a `cloud_setup`
 problem, and so does one made before ADR-0061, whose old token the upgrade
-revoked. An edit of its repo, branch, environment or Claude login, a
+revoked. Such a loop has neither a repo nor an environment, and the hub
+checks the two together, so they go in one edit: the walk saves the repo
+with the environment you pick, and through the API one `PATCH
+/api/loops/<name>` names `cloud_repo` and `cloud_environment_id` (#1286).
+An edit of its repo, branch, environment or Claude login, a
 Rotate token or a kill takes a new check. A loop's repo, branch,
 environment and Claude login change only while it is stopped.
 
