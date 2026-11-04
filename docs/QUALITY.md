@@ -166,6 +166,8 @@ window regardless of loop count (ADR-0018).
   A scan that cannot run (the database unreachable, a report that isn't
   one) fails the workflow, and `ci-health` posts it to the pinned issue.
 - **No telemetry, ever.** The binary never phones home. This is a product promise.
+  An operator's own Langfuse, opt-in and self-hosted, isn't that: loops'
+  traces go to a host the operator set, and nowhere else (ADR-0064).
 - `bypassPermissions` containment story is documented per SandboxRuntime.
 - **The threat model stays current** (#780). A PR that changes what a
   boundary holds, or doesn't, updates that boundary's section of
