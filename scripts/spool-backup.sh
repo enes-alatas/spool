@@ -166,10 +166,19 @@ keys_out=$out/spool-keys-$ts.tar
 # operator-token). A cloud sign-in the hub was stopped in holds the
 # account's tokens unsealed; the hub removes it as it starts, and it is
 # never copied.
-tar -cf - -C "$stage" FORMAT manifest.tsv volumes \
-	-C "$data_dir" --exclude ./hub.key --exclude './hub.key.*' \
-	--exclude ./operator-token --exclude ./cloud-sign-in \
-	--transform 's,^\.,data,S' . | "${compress[@]}" >"$data_out.part"
+# GNU tar renames with --transform, the BSD tar macOS ships with -s, which
+# takes the same expression (#1311).
+rename=(--transform "s,^\.,data,S")
+if tar --version 2>/dev/null | grep -q bsdtar; then
+	rename=(-s ",^\.,data,S")
+fi
+# Every option goes before the first name: BSD tar reads a word after a
+# name as another name, all but -C, and GNU tar takes them there too.
+# Nothing staged starts with . or is named like a key, so the excludes and
+# the rename touch only the data directory's members.
+tar -cf - --exclude ./hub.key --exclude "./hub.key.*" \
+	--exclude ./operator-token --exclude ./cloud-sign-in "${rename[@]}" \
+	-C "$stage" FORMAT manifest.tsv volumes -C "$data_dir" . | "${compress[@]}" >"$data_out.part"
 mv "$data_out.part" "$data_out"
 
 keys=()

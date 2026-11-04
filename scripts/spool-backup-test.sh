@@ -251,6 +251,45 @@ done
 PATH=$work/nopigz-bin bash scripts/spool-backup.sh --data-dir "$dst" --out "$work/out4" --no-volumes >/dev/null 2>"$work/err"
 check "without pigz the backup says it compresses on one core" '[ $? -eq 0 ] && grep -q "one core" "$work/err"'
 
+
+# macOS ships BSD tar, which has no --transform and renames with -s
+# (#1311). A stand-in that answers as bsdtar and refuses --transform, and
+# runs GNU tar for -s, shows the backup picks -s there. Like BSD tar, it
+# reads every word after the first name as a name, but -C and its
+# directory, so an option placed there fails as on a Mac (a Mac run on
+# #1312 found that). It proves the choice and the order, not BSD tar
+# itself, which a Mac run checks.
+mkdir -p "$work/bsd-bin"
+gnu_tar=$(command -v tar)
+cat >"$work/bsd-bin/tar" <<BSD
+#!/usr/bin/env bash
+[ "\$1" = --version ] && { echo 'bsdtar 3.5.3 - libarchive 3.5.3'; exit 0; }
+args=()
+names=0
+while [ \$# -gt 0 ]; do
+	if [ \$names = 1 ]; then
+		case \$1 in
+		-C) args+=(-C "\$2"); shift 2; continue ;;
+		-*) echo "tar: \$1: Cannot stat: No such file or directory" >&2; exit 1 ;;
+		esac
+		args+=("\$1"); shift; continue
+	fi
+	case \$1 in
+	--transform*) echo "tar: Option --transform is not supported" >&2; exit 1 ;;
+	-s) args+=(--transform "s\$2"); shift 2 ;;
+	-C|-f|-cf|-xf|-tf|-czf|-xzf|-tzf|--exclude) args+=("\$1" "\$2"); shift 2 ;;
+	-*) args+=("\$1"); shift ;;
+	*) names=1; args+=("\$1"); shift ;;
+	esac
+done
+exec "$gnu_tar" "\${args[@]}"
+BSD
+chmod +x "$work/bsd-bin/tar"
+mkdir "$work/out-bsd"
+PATH=$work/bsd-bin:$PATH bash scripts/spool-backup.sh --data-dir "$dst" --out "$work/out-bsd" --no-volumes >/dev/null 2>"$work/err"
+bsd_data=$(ls "$work/out-bsd"/spool-data-*.tar.gz 2>/dev/null)
+check "with BSD tar the backup renames with -s, into the same layout" '[ -n "$bsd_data" ] && tar -tzf "$bsd_data" | grep -qx "data/spool.db" && ! tar -tzf "$bsd_data" | grep -qE "hub\.key|operator-token"'
+
 # The runbook runs restore with sudo while the hub runs as its own user, so
 # what root restores must stay readable by the data directory's owner.
 if sudo -n true 2>/dev/null; then
