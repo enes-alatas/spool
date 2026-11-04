@@ -764,6 +764,42 @@ sudo runuser -l "$USER" -c 'command -v go; command -v node; command -v npm'
 The steps [by hand](#by-hand) are the fallback, and the reference for
 what the command does.
 
+### A hub with no unit
+
+A hub you started by hand, such as `./bin/spool` on a Mac with its data
+in `~/.spool`, has no unit to read. Upgrade it as the user who runs it,
+**without** `sudo`, with the binary it runs:
+
+```bash
+./bin/spool upgrade --no-unit --dry-run    # the plan; changes nothing
+./bin/spool upgrade --no-unit              # the latest release; or vX.Y.Z, or main
+```
+
+`--no-unit` is implied where there is no `systemctl`. `--data-dir` names
+the data directory if it isn't `~/.spool` (ADR-0057, amendment of
+2026-11-04).
+
+- **Finding the hub.** The upgrade finds the hub by the one process
+  holding `spool.db` open, through `lsof`, and reads its flags from its
+  command line. On a Mac, `ps` can't show where a path with a space in
+  it splits, so the upgrade refuses such a command line: start the hub
+  from paths with no spaces. It refuses if that process runs another binary than the
+  one you ran, and names the right one.
+- **Stopping and starting.** The upgrade stops the hub with SIGTERM, as
+  systemd would. It can't start one in your terminal, so it prints the
+  command line the hub ran with. Type that where you started the hub
+  before. On a terminal that prompt is bold yellow, and a short line
+  under it blinks with the time left until the wait runs out; `NO_COLOR=1` turns
+  that off. The upgrade waits ten minutes for the hub to answer at the
+  target, and rolls back if it doesn't. A rollback asks you the same
+  way to start the previous build.
+- **Backups.** The backup goes into `spool-backups` beside the data
+  directory, so `~/spool-backups` for `~/.spool`, unless you name another
+  with `--backup-dir`. The [installed scripts](#installing-the-scripts)
+  are needed as for a unit.
+- **No docker.** If your user reaches no docker, as on a hub of bare
+  loops only, the upgrade leaves the images alone and says so.
+
 ### By hand
 
 The commands assume the checkout is at `/opt/spool` and the hub runs as a

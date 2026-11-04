@@ -940,6 +940,13 @@ ADR-0045 is the whole record. In short:
 - **An older release is never patched.** A fix ships in the next release
   only, so a hub that doesn't upgrade keeps what it fixed (SECURITY.md,
   "Supported versions").
+- **A hub with no unit can replace its own binary.** It runs as the
+  operator's user, who owns that binary, and `spool upgrade --no-unit`
+  runs as that user too (ADR-0057, amendment of 2026-11-04, #1311).
+  A taken-over hub of that kind can make itself permanent. One under a
+  unit can't, since root owns its binary. The no-unit upgrade checks a
+  release the same way, but asks the new build its version as that user
+  rather than as `nobody`. That user runs it next anyway.
 
 ### Runner
 

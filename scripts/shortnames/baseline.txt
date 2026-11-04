@@ -2,7 +2,7 @@
 # Lower a count as you rename; never raise one. Lower: go run ./scripts/shortnames -write
 1 cmd/spool/cloudsignin.go
 1 cmd/spool/main.go
-21 cmd/spool/upgrade.go
+20 cmd/spool/upgrade.go
 3 cmd/spool/upgrade_release.go
 2 cmd/spool/upgrade_test.go
 3 cmd/uifixture/attachments.go

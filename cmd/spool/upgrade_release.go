@@ -165,6 +165,18 @@ func (up *upgrader) attest(ctx context.Context, archive string) error {
 	if err != nil {
 		return unchecked("gh isn't installed", "install gh (cli.github.com)")
 	}
+	if up.asSelf() {
+		// a hub with no unit is upgraded as its own user, the operator,
+		// whose gh login this is (#1311)
+		if _, err := up.host.Run(ctx, hostCmd{Name: gh, Args: []string{"auth", "status"}}); err != nil {
+			return unchecked("gh has no GitHub login for you", "`gh auth login`")
+		}
+		if _, err := up.host.Run(ctx, hostCmd{Name: gh, Args: []string{"attestation", "verify", archive, "--repo", upgradeRepo}}); err != nil {
+			return fmt.Errorf("refusing the release: its attestation doesn't verify: %w", err)
+		}
+		up.printf("spool upgrade: the release's attestation verifies")
+		return nil
+	}
 	operator := up.getenv("SUDO_USER")
 	if operator == "" || operator == "root" {
 		return unchecked("no SUDO_USER to run gh as", "run it as `sudo spool upgrade` from your own account")

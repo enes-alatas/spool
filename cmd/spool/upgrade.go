@@ -14,6 +14,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"regexp"
+	goruntime "runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -57,12 +58,15 @@ type hostCmd struct {
 	Args  []string
 }
 
+// String is the command as run: under cmd.User's name when it runs as
+// another user, bare when it runs as the upgrade's own (root under a unit,
+// the hub's user with --no-unit, #1311).
 func (cmd hostCmd) String() string {
-	who := "root"
-	if cmd.User != "" {
-		who = cmd.User
+	line := strings.Join(append([]string{cmd.Name}, cmd.Args...), " ")
+	if cmd.User == "" {
+		return line
 	}
-	return who + ": " + strings.Join(append([]string{cmd.Name}, cmd.Args...), " ")
+	return cmd.User + ": " + line
 }
 
 // upgradeHost is every command the upgrade runs, behind one call, so the
@@ -78,6 +82,9 @@ type execHost struct{}
 func (execHost) Run(ctx context.Context, cmd hostCmd) (string, error) {
 	var c *exec.Cmd
 	switch {
+	case cmd.User == "" && cmd.Login:
+		// a script, as the user the upgrade runs as (#1311)
+		c = exec.CommandContext(ctx, "sh", "-c", cmd.Name)
 	case cmd.User == "":
 		c = exec.CommandContext(ctx, cmd.Name, cmd.Args...)
 	case cmd.Login:
@@ -108,6 +115,21 @@ type upgrader struct {
 	lookGh  func() (string, error)
 	freeAt  func(dir string) (uint64, error)
 	ownerOf func(path string) (*user.User, error)
+	// for a hub with no unit (#1311)
+	uidOf    func(path string) (int, error)
+	selfExe  func() (string, error)
+	exeOf    func(ctx context.Context, pid int) (string, error)
+	argvOf   func(ctx context.Context, pid int) ([]string, error)
+	procDir  string // /proc, where Linux gives a process's argv
+	lookPath func(name string) (string, error)
+	goos     string
+	stopWait time.Duration
+	// startWait is how long a manual hub's operator has to start it
+	startWait time.Duration
+	// attention colours the manual start's prompt and keeps it blinking
+	// while the upgrade waits: set when the output is a terminal that
+	// takes colour (#1311)
+	attention bool
 
 	releaseBase string // https://github.com/<repo>/releases
 	apiBase     string // https://api.github.com
@@ -126,10 +148,14 @@ type upgrader struct {
 	fromSource         string
 	requireAttestation bool
 	dryRun             bool
+	noUnit             bool
+	dataDir            string // a manual hub's
+	listen             string // a manual hub's, when it isn't running
+	backupDirSet       bool
 }
 
 func newUpgrader(out io.Writer) *upgrader {
-	return &upgrader{
+	up := &upgrader{
 		host:   execHost{},
 		http:   &http.Client{Timeout: 10 * time.Minute, CheckRedirect: httpsOnly},
 		out:    out,
@@ -152,7 +178,25 @@ func newUpgrader(out io.Writer) *upgrader {
 		restorePath: defaultRestorePath,
 		healthWait:  2 * time.Minute,
 		healthEvery: 2 * time.Second,
+		uidOf:       fileOwner,
+		selfExe: func() (string, error) {
+			self, err := os.Executable()
+			if err != nil {
+				return "", err
+			}
+			return filepath.EvalSymlinks(self)
+		},
+		lookPath:  exec.LookPath,
+		goos:      goruntime.GOOS,
+		procDir:   "/proc",
+		stopWait:  manualStopWait,
+		startWait: 10 * time.Minute,
+		dataDir:   defaultDataDir(),
+		listen:    "127.0.0.1:8080",
 	}
+	up.exeOf = up.exeOfDefault
+	up.argvOf = up.argvOfDefault
+	return up
 }
 
 // httpsOnly follows a release download's redirect only to another HTTPS
@@ -169,15 +213,19 @@ func httpsOnly(req *http.Request, via []*http.Request) error {
 
 func upgradeCommand(args []string, stdout, stderr io.Writer) int {
 	up := newUpgrader(stdout)
+	up.attention = colourTerminal(stdout)
 	fs := flag.NewFlagSet("spool upgrade", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.StringVar(&up.unitName, "unit", "spool", "the systemd unit that runs the hub")
 	fs.StringVar(&up.fromSource, "from-source", "", "build the target in this checkout, as its owner, rather than download a release")
 	fs.BoolVar(&up.requireAttestation, "require-attestation", false, "refuse a release whose attestation can't be checked with gh")
 	fs.BoolVar(&up.dryRun, "dry-run", false, "print the plan with the unit's paths and change nothing")
-	fs.StringVar(&up.backupDir, "backup-dir", defaultBackupDir, "where the backup taken before the start goes")
+	fs.StringVar(&up.backupDir, "backup-dir", defaultBackupDir, "where the backup taken before the start goes (with --no-unit: spool-backups beside the data directory)")
+	fs.BoolVar(&up.noUnit, "no-unit", false, "upgrade a hub no systemd unit runs, started by hand; implied where there is no systemctl")
+	fs.StringVar(&up.dataDir, "data-dir", up.dataDir, "with --no-unit: the hub's data directory")
+	fs.StringVar(&up.listen, "listen", up.listen, "with --no-unit: the hub's address, when it isn't running to say")
 	fs.Usage = func() {
-		fmt.Fprintln(stderr, "usage: sudo spool upgrade [vX.Y.Z | main] [flags]\n\nUpgrades the hub the unit runs: no target is the latest release (ADR-0057).")
+		fmt.Fprintln(stderr, "usage: sudo spool upgrade [vX.Y.Z | main] [flags]\n       spool upgrade --no-unit [--data-dir DIR] [vX.Y.Z | main] [flags]\n\nUpgrades the hub the unit runs, or with --no-unit one started by hand: no target is the latest release (ADR-0057).")
 		fs.PrintDefaults()
 	}
 	// the target may come before the flags or after them
@@ -199,6 +247,22 @@ func upgradeCommand(args []string, stdout, stderr io.Writer) int {
 	if len(positional) == 1 {
 		up.target = positional[0]
 	}
+	set := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
+	if !up.noUnit {
+		if _, err := up.lookPath("systemctl"); err != nil {
+			up.noUnit = true
+		}
+	}
+	if up.noUnit && set["unit"] {
+		fmt.Fprintln(stderr, "spool upgrade: --unit names a systemd unit, and --no-unit has none")
+		return 2
+	}
+	if !up.noUnit && (set["data-dir"] || set["listen"]) {
+		fmt.Fprintln(stderr, "spool upgrade: --data-dir and --listen are for --no-unit; a unit's own are read from it")
+		return 2
+	}
+	up.backupDirSet = set["backup-dir"]
 	if err := up.run(context.Background()); err != nil {
 		fmt.Fprintf(stderr, "spool upgrade: %v\n", err)
 		return 1
@@ -217,6 +281,9 @@ type plan struct {
 	// so make build is the install (ADR-0057)
 	buildIsInstall bool
 	owner          *user.User
+	// noDocker: a hub with no unit whose user reaches no docker, so the
+	// upgrade keeps, pulls and tags no image (#1311)
+	noDocker bool
 }
 
 func (up *upgrader) printf(format string, args ...any) {
@@ -236,23 +303,28 @@ func (up *upgrader) step(format string, args ...any) {
 
 func (up *upgrader) run(ctx context.Context) error {
 	up.began = time.Now()
-	if up.euid() != 0 && !up.dryRun {
+	if up.euid() != 0 && !up.dryRun && !up.noUnit {
 		return errors.New("run it as root (sudo spool upgrade): it stops the unit, installs the binary and runs the backup")
 	}
 	p, err := up.resolve(ctx)
 	if err != nil {
 		return err
 	}
+	if p.unit.Manual && !up.dryRun {
+		if err := up.checkManualUser(p.unit); err != nil {
+			return err
+		}
+	}
 	// a source build needs its tools as the owner's login shell finds
 	// them, which is checked before the plan is shown or anything moves
-	if up.sourceBuild() && up.euid() == 0 {
+	if up.sourceBuild() && (up.euid() == 0 || up.asSelf()) {
 		if err := up.checkBuildTools(ctx, p); err != nil {
 			return err
 		}
 	}
 	if up.dryRun {
 		up.printPlan(p)
-		if up.sourceBuild() && up.euid() != 0 {
+		if up.sourceBuild() && up.euid() != 0 && !up.asSelf() {
 			up.printf("  (the build tools are checked as %s only under sudo)", p.owner.Username)
 		}
 		return nil
@@ -263,15 +335,35 @@ func (up *upgrader) run(ctx context.Context) error {
 // resolve reads the unit and the target, and checks they fit together.
 // It changes nothing.
 func (up *upgrader) resolve(ctx context.Context) (plan, error) {
-	show, err := up.host.Run(ctx, hostCmd{Name: "systemctl", Args: []string{"show", up.unitName, "-p", "ExecStart", "-p", "User"}})
-	if err != nil {
-		return plan{}, err
-	}
-	unit, err := parseUnit(up.unitName, show)
-	if err != nil {
-		return plan{}, err
+	var unit hubUnit
+	if up.noUnit {
+		var err error
+		if unit, err = up.resolveManual(ctx); err != nil {
+			return plan{}, err
+		}
+		if !up.backupDirSet {
+			up.backupDir = filepath.Join(filepath.Dir(unit.DataDir), "spool-backups")
+		}
+	} else {
+		show, err := up.host.Run(ctx, hostCmd{Name: "systemctl", Args: []string{"show", up.unitName, "-p", "ExecStart", "-p", "User"}})
+		if err != nil {
+			return plan{}, err
+		}
+		if unit, err = parseUnit(up.unitName, show); err != nil {
+			return plan{}, err
+		}
 	}
 	p := plan{unit: unit}
+	var err error
+	// a hub with no unit may run no docker at all, such as one of bare
+	// loops on a Mac: the image steps are then left out, and said so
+	if unit.Manual {
+		if _, err := up.lookPath("docker"); err != nil {
+			p.noDocker = true
+		} else if _, err := up.host.Run(ctx, hostCmd{Name: "docker", Args: []string{"info", "--format", "{{.ID}}"}}); err != nil {
+			p.noDocker = true
+		}
+	}
 	// spool-backup.sh refuses an --out inside the data directory, and it
 	// runs only after the stop: refuse it here, before anything moves (#1085)
 	if inside, err := within(up.backupDir, unit.DataDir); err != nil {
@@ -348,27 +440,54 @@ func (up *upgrader) printPlan(p plan) {
 	case target == "":
 		target = "the latest release"
 	}
-	up.printf("spool upgrade: plan for unit %s (dry run; nothing changes)", u.Name)
+	if u.Manual {
+		running := "not running"
+		if len(u.Start) > 0 {
+			running = "running: " + u.startCommand()
+		}
+		up.printf("spool upgrade: plan for the hub with no unit on %s (dry run; nothing changes)", u.DataDir)
+		up.printf("  hub         %s", running)
+	} else {
+		up.printf("spool upgrade: plan for unit %s (dry run; nothing changes)", u.Name)
+	}
 	up.printf("  binary      %s  (hook %s, github helper %s)", u.Bin, u.HookBin, u.GitHubBin)
 	up.printf("  data        %s", u.DataDir)
 	up.printf("  health      http://%s/api/health", healthHost(u.Listen))
-	up.printf("  images      %s, %s", u.WorkstationImage, u.EgressImage)
+	if p.noDocker {
+		up.printf("  images      none: this user reaches no docker, so no image is kept, pulled or tagged")
+	} else {
+		up.printf("  images      %s, %s", u.WorkstationImage, u.EgressImage)
+	}
 	up.printf("  target      %s", target)
-	steps := []string{"tag the images " + u.WorkstationImage + " and " + u.EgressImage + " point at as " + previousImage(u.WorkstationImage) + " and " + previousImage(u.EgressImage) + ", for a rollback"}
+	var steps []string
+	if !p.noDocker {
+		steps = append(steps, "tag the images "+u.WorkstationImage+" and "+u.EgressImage+" point at as "+previousImage(u.WorkstationImage)+" and "+previousImage(u.EgressImage)+", for a rollback")
+	}
 	if up.sourceBuild() {
 		steps = append(steps, fmt.Sprintf("in %s, as %s: git fetch, check out %s, make build, make image", p.checkout, p.owner.Username, target))
 	} else {
-		steps = append(steps, "download the "+up.platform+" archive and SHA256SUMS, check the sum and, with gh, the attestation; pull the images by digest")
+		pull := "; pull the images by digest"
+		if p.noDocker {
+			pull = ""
+		}
+		steps = append(steps, "download the "+up.platform+" archive and SHA256SUMS, check the sum and, with gh, the attestation"+pull)
+	}
+	asker, wait := "nobody", up.healthWait
+	if up.asSelf() {
+		asker = "you"
+	}
+	if u.Manual {
+		wait = up.startWait
 	}
 	steps = append(steps,
-		"ask the new build, as nobody, for its version, migrations and images; refuse a downgrade onto "+filepath.Join(u.DataDir, "spool.db"),
+		"ask the new build, as "+asker+", for its version, migrations and images; refuse a downgrade onto "+filepath.Join(u.DataDir, "spool.db"),
 		"check "+up.backupPath+" and "+up.restorePath+" are installed and "+up.backupDir+" has room",
-		"systemctl stop "+u.Name,
+		u.stopWhat(),
 		up.backupPath+" --data-dir "+u.DataDir+" --out "+up.backupDir+" --no-volumes (the upgrade changes no workstation volume)",
 		"keep "+u.Bin+", "+u.HookBin+" and "+u.GitHubBin+" as *.previous, those there are",
-		"install the new build there"+map[bool]string{true: " (the build is the install: the unit runs the checkout's bin/spool)", false: ""}[p.buildIsInstall],
-		"systemctl start "+u.Name,
-		"wait up to "+up.healthWait.String()+" for /api/health and /api/version at the target; else roll back the binary, the images and the data directory",
+		"install the new build there"+map[bool]string{true: " (the build is the install: " + map[bool]string{true: "the hub", false: "the unit"}[u.Manual] + " runs the checkout's bin/spool)", false: ""}[p.buildIsInstall],
+		u.startWhat(),
+		"wait up to "+wait.String()+" for /api/health and /api/version at the target; else roll back the binary, the images and the data directory",
 	)
 	for i, step := range steps {
 		up.printf("  %d. %s", i+1, step)
@@ -395,7 +514,12 @@ func (up *upgrader) execute(ctx context.Context, p plan) error {
 	// the bare id: a build that moves a tag can drop the image it left
 	// behind, as one did on an operator's host, and the id with it (#1086).
 	recorded := map[string]string{}
-	for _, name := range []string{u.WorkstationImage, u.EgressImage} {
+	images := []string{u.WorkstationImage, u.EgressImage}
+	if p.noDocker {
+		up.step("this user reaches no docker: no image is kept, pulled or tagged")
+		images = nil
+	}
+	for _, name := range images {
 		id, err := up.host.Run(ctx, hostCmd{Name: "docker", Args: []string{"image", "inspect", "--format", "{{.Id}}", name}})
 		if err != nil {
 			continue
@@ -429,6 +553,9 @@ func (up *upgrader) execute(ctx context.Context, p plan) error {
 	if cand.cleanup != nil {
 		defer cand.cleanup()
 	}
+	if p.noDocker {
+		cand.pulls = nil
+	}
 	if err == nil {
 		err = up.check(ctx, p, cand)
 	}
@@ -448,8 +575,8 @@ func (up *upgrader) execute(ctx context.Context, p plan) error {
 	}
 
 	// 3. stop
-	up.step("stopping %s", u.Name)
-	if _, err := up.host.Run(ctx, hostCmd{Name: "systemctl", Args: []string{"stop", u.Name}}); err != nil {
+	up.step("stopping %s", u.label())
+	if err := up.stopHub(ctx, u); err != nil {
 		return err
 	}
 	// 4. back up the data directory alone: the upgrade changes no
@@ -487,14 +614,18 @@ func (up *upgrader) execute(ctx context.Context, p plan) error {
 		}
 	}
 	// 7, 8. start, and check
-	up.step("starting %s on %s", u.Name, cand.version)
-	_, err = up.host.Run(ctx, hostCmd{Name: "systemctl", Args: []string{"start", u.Name}})
+	up.step("starting %s on %s", u.label(), cand.version)
+	err = up.startHub(ctx, u)
 	if err == nil {
-		up.step("waiting up to %s for %s to answer at %s", up.healthWait, u.Name, cand.version)
-		err = up.healthy(ctx, u, cand.version)
+		wait := up.healthWait
+		if u.Manual {
+			wait = up.startWait
+		}
+		up.step("waiting up to %s for %s to answer at %s", wait, u.label(), cand.version)
+		err = up.healthy(ctx, u, cand.version, wait)
 	}
 	if err == nil {
-		up.step("%s runs %s and answers healthy. The backup is %s; the previous build is %s.previous.", u.Name, cand.version, dataFile, u.Bin)
+		up.step("%s runs %s and answers healthy. The backup is %s; the previous build is %s.previous.", u.label(), cand.version, dataFile, u.Bin)
 		return nil
 	}
 	up.step("the new hub failed its check (%v); rolling back", err)
@@ -513,10 +644,7 @@ func (up *upgrader) unstarted(ctx context.Context, p plan, retag func() []error,
 	}
 	steps = append(steps, []rollbackStep{
 		{p.unit.retagPrevious(), func() error { return errors.Join(retag()...) }},
-		{"systemctl start " + p.unit.Name, func() error {
-			_, err := up.host.Run(ctx, hostCmd{Name: "systemctl", Args: []string{"start", p.unit.Name}})
-			return err
-		}},
+		{p.unit.startWhat(), func() error { return up.startHub(ctx, p.unit) }},
 	}...)
 	if err := up.runSteps(steps); err != nil {
 		return errors.Join(cause, err)
@@ -559,10 +687,7 @@ func (up *upgrader) rollback(ctx context.Context, p plan, dataFile, keysFile str
 		restore = append(restore, "--keys", keysFile)
 	}
 	steps := []rollbackStep{
-		{"systemctl stop " + u.Name, func() error {
-			_, err := up.host.Run(ctx, hostCmd{Name: "systemctl", Args: []string{"stop", u.Name}})
-			return err
-		}},
+		{u.stopWhat(), func() error { return up.stopHub(ctx, u) }},
 		{"move " + u.DataDir + " aside as " + failed, func() error { return os.Rename(u.DataDir, failed) }},
 		{up.restorePath + " " + strings.Join(restore, " "), func() error {
 			_, err := up.host.Run(ctx, hostCmd{Name: up.restorePath, Args: restore})
@@ -570,10 +695,7 @@ func (up *upgrader) rollback(ctx context.Context, p plan, dataFile, keysFile str
 		}},
 		{u.retagPrevious(), func() error { return errors.Join(retag()...) }},
 		{"put back " + u.Bin + ".previous, " + u.HookBin + ".previous and " + u.GitHubBin + ".previous, those there are", func() error { return up.restorePrevious(p) }},
-		{"systemctl start " + u.Name, func() error {
-			_, err := up.host.Run(ctx, hostCmd{Name: "systemctl", Args: []string{"start", u.Name}})
-			return err
-		}},
+		{u.startWhat(), func() error { return up.startHub(ctx, u) }},
 	}
 	if err := up.runSteps(steps); err != nil {
 		return errors.Join(cause, err)
@@ -695,8 +817,13 @@ const buildPath = `export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"; ` +
 	`if [ -d "${ASDF_DATA_DIR:-$HOME/.asdf}/shims" ]; then PATH="${ASDF_DATA_DIR:-$HOME/.asdf}/shims:$PATH"; fi; ` +
 	`for d in /usr/local/go/bin "$HOME/go/bin"; do if [ -d "$d" ]; then PATH="$PATH:$d"; fi; done; export PATH; `
 
-func (up *upgrader) asOwner(ctx context.Context, p plan, script string) (string, error) {
-	return up.host.Run(ctx, hostCmd{User: p.owner.Username, Login: true, Name: buildPath + "cd " + shellWord(p.checkout) + " && " + script})
+func (up *upgrader) asOwner(ctx context.Context, hub plan, script string) (string, error) {
+	who := hub.owner.Username
+	if up.asSelf() {
+		// already the owner, with the owner's own environment
+		who = ""
+	}
+	return up.host.Run(ctx, hostCmd{User: who, Login: true, Name: buildPath + "cd " + shellWord(hub.checkout) + " && " + script})
 }
 
 // buildTools is what a source build runs as the owner: make build needs
@@ -796,8 +923,14 @@ func (up *upgrader) check(ctx context.Context, p plan, cand candidate) error {
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 	bin := filepath.Join(dir, filepath.Base(cand.spool))
+	asker := "nobody"
+	if up.asSelf() {
+		// a manual hub's own user, who runs the build next anyway: there
+		// is no root to keep it from (ADR-0057's amendment of 2026-11-04)
+		asker = ""
+	}
 	ask := func(args ...string) (string, error) {
-		return up.host.Run(ctx, hostCmd{User: "nobody", Name: bin, Args: args})
+		return up.host.Run(ctx, hostCmd{User: asker, Name: bin, Args: args})
 	}
 
 	printed, err := ask("--version")
@@ -966,9 +1099,12 @@ func healthHost(listen string) string {
 
 // healthy waits for the hub to answer /api/health and to name version on
 // /api/version.
-func (up *upgrader) healthy(ctx context.Context, u hubUnit, version string) error {
-	base := "http://" + healthHost(u.Listen)
-	deadline := time.Now().Add(up.healthWait)
+func (up *upgrader) healthy(ctx context.Context, unit hubUnit, version string, wait time.Duration) error {
+	if unit.Manual && up.attention {
+		defer up.blinkStart(unit, wait)()
+	}
+	base := "http://" + healthHost(unit.Listen)
+	deadline := time.Now().Add(wait)
 	var last error
 	for {
 		var health struct {
@@ -989,7 +1125,7 @@ func (up *upgrader) healthy(ctx context.Context, u hubUnit, version string) erro
 			return nil
 		}
 		if !time.Now().Before(deadline) {
-			return fmt.Errorf("after %s: %w", up.healthWait, last)
+			return fmt.Errorf("after %s: %w", wait, last)
 		}
 		select {
 		case <-ctx.Done():

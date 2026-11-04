@@ -1,6 +1,6 @@
 # ADR-0057: `spool upgrade`, one root-run command that upgrades a hub
 
-Date: 2026-10-16 · Status: accepted (operator decisions of 2026-10-16 on #888 and #889) · Amended: 2026-10-19 (item 6: the backup takes the data directory alone, #947); 2026-10-22 (item 3: a third binary, #1054); 2026-10-23 (items 6 and 7: the previous images are kept by name, #1086) · Relates to: ADR-0030, ADR-0046, ADR-0052, #708, #747, #885
+Date: 2026-10-16 · Status: accepted (operator decisions of 2026-10-16 on #888 and #889) · Amended: 2026-10-19 (item 6: the backup takes the data directory alone, #947); 2026-10-22 (item 3: a third binary, #1054); 2026-10-23 (items 6 and 7: the previous images are kept by name, #1086); 2026-11-04 (items 1, 3, 6 and 7: a hub no unit runs, #1311; accepted by the operator on 2026-11-05, in a direct message to Elliot, recorded on #1312) · Relates to: ADR-0030, ADR-0046, ADR-0052, #708, #747, #885
 
 ## Context
 
@@ -82,6 +82,64 @@ replaces a binary. That needs its limits written down before it is built.
    upgrade *onto* the first release that carries it, run by an older
    `spool`, installs no helper, and the next one does; until then the
    hub logs that bare loops get no GitHub token.
+
+   **Amendment (2026-11-04, #1311): a hub no unit runs.** A hub started
+   by hand, such as `./bin/spool` on a Mac with its data in `~/.spool`, has
+   no unit to read. `spool upgrade --no-unit` upgrades it. The flag is
+   implied where there is no `systemctl`, and `--unit` is refused beside it.
+   Everything else in this ADR holds, with these differences:
+   - **It finds the hub by its database.** The data directory is
+     `--data-dir`, or else the hub's default, `~/.spool`.
+     - The hub is the one process `lsof` names as holding that directory's
+       `spool.db` open. More than one is refused.
+     - When it runs, its paths come from its command line, read by item
+       3's flags. Linux gives it argument by argument in `/proc`.
+       Elsewhere `ps` prints it joined by spaces, so a path with a space
+       can't be told from two arguments. There the command refuses a
+       line with a word that is neither a hub flag nor a flag's value,
+       rather than install at a piece of a path. The start it prints
+       quotes each argument that needs it. The binary it runs must be the same
+       file as the one running the upgrade. Otherwise the command refuses
+       and names the right one.
+     - When no hub runs, the binary is the one running the upgrade, and
+       the health address is `--listen`.
+     - The database is always the one the data directory holds, whatever
+       the command line's flag says.
+   - **It runs as the data directory's owner, not root** (item 1 for a
+     unit). A hub with no unit runs as that user, who already owns the
+     binary it starts. So item 2's guarantee, that the hub's user can't
+     replace its own binary, doesn't exist here to keep, and root would
+     only leave root-owned files in the operator's directories.
+     - Root, or any other user, is refused.
+     - The candidate is asked its version, migrations and images as that
+       same user rather than as `nobody` (item 2). That user is about to
+       run it anyway, and a Mac has no `runuser`.
+     - A source build runs as that user, in their own environment.
+     - `gh` checks the attestation with that user's own login.
+   - **It stops the hub as systemd would, and the operator starts it**
+     (item 6, steps 3 and 7).
+     - The stop sends SIGTERM to the process holding `spool.db`. It reads
+       that process again at the stop rather than remembering it, and
+       checks it still runs the hub's binary. It then waits up to 90
+       seconds, systemd's default, for the database to be let go.
+     - The upgrade can't start a process in the operator's terminal. So
+       at step 7 it prints the command line the hub ran with, for the
+       operator to type where they started it before, and waits up to ten
+       minutes rather than two for the health check.
+     - A rollback (item 7) stops and asks in the same way, and ends by
+       asking the operator to start the previous build.
+     - A hub that wasn't running isn't stopped. The upgrade then names
+       its binary, data directory and listen address as the start.
+   - **The backup goes beside the data directory**, into `spool-backups`,
+     unless `--backup-dir` names another. The installed scripts are
+     required, as for a unit. `spool-backup.sh` takes the BSD tar macOS
+     ships as well as GNU tar.
+   - **A user who reaches no docker gets no image step.** Item 6's steps
+     1 and 6 and item 7's retag are left out, and the plan says so. One
+     example is a hub of bare loops on a Mac. A source build still needs
+     docker for `make image`, and is refused without it.
+   - **Out of scope:** a launchd unit for macOS, and a hub on Windows
+     outside WSL2.
 
 4. **It gets the build one of two ways, and checks it before anything
    stops.**
@@ -206,6 +264,9 @@ replaces a binary. That needs its limits written down before it is built.
   is there for an operator who wants the stronger check.
 - The command depends on systemd. A hub started some other way keeps the
   manual steps.
+- **Amendment (2026-11-04, #1311):** a hub started by hand is upgraded
+  with `--no-unit` (item 3's amendment). It is stopped with SIGTERM, and
+  started again by the operator. The manual steps stay as the fallback.
 - Until a release ships binaries (#747), only `main` and `--from-source`
   work.
 

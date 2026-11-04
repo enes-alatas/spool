@@ -1,6 +1,7 @@
 package main
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -20,7 +21,7 @@ func TestParseUnitReadsPathsFromExecStart(t *testing.T) {
 		DataDir:   "/var/lib/spool", Listen: "127.0.0.1:9090",
 		WorkstationImage: "spool-workstation", EgressImage: "spool-egress-x", User: "spool",
 	}
-	if unit != want {
+	if !reflect.DeepEqual(unit, want) {
 		t.Fatalf("unit = %+v\nwant %+v", unit, want)
 	}
 
