@@ -16,6 +16,13 @@ func TestSignInLink(t *testing.T) {
 	if err != nil || link != "https://claude.com/cai/oauth/authorize?code=true&state=x" {
 		t.Fatalf("SignInLink = %q, %v", link, err)
 	}
+	// as 2.1.316 prints it with iTerm2's TERM_PROGRAM: an OSC 8 hyperlink
+	// whose text is the URL again, closed by BEL (#1304)
+	const url = "https://claude.com/cai/oauth/authorize?code=true&state=x"
+	hyperlinked := "Opening browser to sign in…\nIf the browser didn't open, visit: \x1b]8;;" + url + "\a" + url + "\x1b]8;;\a\nPaste code here if prompted > "
+	if link, err := SignInLink(bufio.NewReader(strings.NewReader(hyperlinked))); err != nil || link != url {
+		t.Fatalf("SignInLink of a hyperlinked line = %q, %v", link, err)
+	}
 	if _, err := SignInLink(bufio.NewReader(strings.NewReader("Login failed\n"))); err == nil {
 		t.Fatal("output with no link must be an error")
 	}

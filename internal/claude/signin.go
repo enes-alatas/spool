@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // SignInArgs is the CLI's own login to a claude.ai account (ADR-0056). Run
@@ -20,13 +21,17 @@ func SignInArgs() []string { return []string{"auth", "login", "--claudeai"} }
 
 // SignInLink reads the CLI's output until the link the operator opens, and
 // returns it. The CLI prints it after "visit:", and it is the one https
-// URL on the line.
+// URL on the line. When the hub's env names a terminal the CLI takes for
+// one that draws links (iTerm2's or Ghostty's TERM_PROGRAM), it wraps the
+// URL in an OSC 8 hyperlink and colors it, so the line is split at the
+// escape sequences' ESC and BEL bytes as well as at spaces (#1304).
 func SignInLink(output *bufio.Reader) (string, error) {
 	for {
 		line, err := output.ReadString('\n')
-		for _, field := range strings.Fields(line) {
-			if strings.HasPrefix(field, "https://") && strings.Contains(field, "oauth/authorize") {
-				return field, nil
+		for _, field := range strings.FieldsFunc(line, linkBreak) {
+			start := strings.Index(field, "https://")
+			if start >= 0 && strings.Contains(field[start:], "oauth/authorize") {
+				return field[start:], nil
 			}
 		}
 		if err != nil {
@@ -37,6 +42,10 @@ func SignInLink(output *bufio.Reader) (string, error) {
 		}
 	}
 }
+
+// linkBreak ends a field of the CLI's output: a space, or the ESC and BEL
+// that open and close a terminal escape sequence.
+func linkBreak(char rune) bool { return unicode.IsSpace(char) || char == '\x1b' || char == '\a' }
 
 // SignIn is what a finished login wrote into its config directory.
 type SignIn struct {
