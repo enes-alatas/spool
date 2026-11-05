@@ -2,7 +2,10 @@ package redact
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 
 	"github.com/enes-alatas/spool/internal/store"
 )
@@ -27,6 +30,31 @@ func (source StoreSource) Secrets(ctx context.Context) ([]Secret, error) {
 	}
 	if token != "" {
 		out = append(out, Secret{Name: store.SettingClaudeOAuthToken, Value: token})
+	}
+
+	// Either Langfuse key pair reads every trace in its project (ADR-0064).
+	// Masking a pair masks its base64 too, which is the Authorization the
+	// relay sends.
+	raw, err := source.Store.Settings().Get(ctx, store.SettingLangfuse)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return nil, err
+	}
+	if raw != "" {
+		var langfuse store.Langfuse
+		if err := json.Unmarshal([]byte(raw), &langfuse); err != nil {
+			return nil, fmt.Errorf("langfuse settings: %w", err)
+		}
+		// the secret half alone too, as Langfuse's own pages show it, and
+		// every pair the settings let go of, which Langfuse still honours
+		for _, key := range append([]string{langfuse.IngestKey, langfuse.ReadKey}, langfuse.Retired...) {
+			if key == "" {
+				continue
+			}
+			out = append(out, Secret{Name: store.SettingLangfuse, Value: key})
+			if _, secret, found := strings.Cut(key, ":"); found && secret != "" {
+				out = append(out, Secret{Name: store.SettingLangfuse, Value: secret})
+			}
+		}
 	}
 
 	// A Claude login's token drives its account whole, not only its turns,

@@ -18,7 +18,7 @@ import (
 // RelaySettings is what the hub's Langfuse settings give the trace relay
 // (ADR-0064): where the proxy sends traces, where the hub reads them back,
 // and the Authorization value that lets traces in, built from the ingest
-// key. An empty Upstream turns the relay off.
+// key. An empty Upstream or Authorization turns the relay off.
 type RelaySettings struct {
 	Upstream      string
 	ReadAddress   string
@@ -158,16 +158,18 @@ func (rt *Runtime) proxyLoopAddresses(ctx context.Context) (map[string]string, e
 // one entry per loop network, in a stable order so an unchanged fleet
 // hands the same bytes.
 func relayFile(settings RelaySettings, addresses, names map[string]string) egress.RelayFile {
-	file := egress.RelayFile{Upstream: settings.Upstream}
-	if settings.Upstream != "" {
-		file.Authorization = settings.Authorization
+	// an upstream with no key to send it is the relay off, its hosts
+	// still refused
+	var file egress.RelayFile
+	if settings.Upstream != "" && settings.Authorization != "" {
+		file.Upstream, file.Authorization = settings.Upstream, settings.Authorization
 	}
 	for _, address := range []string{settings.Upstream, settings.ReadAddress} {
 		if parsed, err := url.Parse(address); err == nil && parsed.Hostname() != "" && !slices.Contains(file.Langfuse, parsed.Hostname()) {
 			file.Langfuse = append(file.Langfuse, parsed.Hostname())
 		}
 	}
-	if settings.Upstream == "" {
+	if file.Upstream == "" {
 		return file
 	}
 	for _, loopID := range slices.Sorted(maps.Keys(addresses)) {

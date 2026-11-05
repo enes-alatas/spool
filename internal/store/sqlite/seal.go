@@ -128,11 +128,12 @@ var sealedColumns = []sealedColumn{
 	{"loops", "slack_bot_token", "1"},
 	{"loops", "hub_mcp_token", "1"},
 	{"settings", "value", "key = '" + store.SettingClaudeOAuthToken + "'"},
+	{"settings", "value", "key = '" + store.SettingLangfuse + "'"},
 	{"claude_logins", "account", "1"},
 }
 
 // sealedSettings are the settings keys whose values are secrets.
-var sealedSettings = map[string]bool{store.SettingClaudeOAuthToken: true}
+var sealedSettings = map[string]bool{store.SettingClaudeOAuthToken: true, store.SettingLangfuse: true}
 
 // unseal opens the key beside the database and proves it is the one the
 // database was sealed with, minting one for a database that has none yet.

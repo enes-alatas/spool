@@ -112,6 +112,10 @@ type Server struct {
 	// extra hosts are applied to (#542). Nil on a hub that wires none: the
 	// list is still stored and served, and applies to nothing.
 	Egress EgressWall
+	// TraceRelay applies the Langfuse settings to the trace relay (ADR-0064).
+	// Nil on a hub that wires none: the settings are still stored, served
+	// and given to sessions, and the relay keeps what it last took.
+	TraceRelay func(ctx context.Context, langfuse store.Langfuse) error
 	// CloudListener is the cloud listener's switch (ADR-0056). Nil
 	// on a hub that wires none: the page reads it as off and can't open it.
 	CloudListener CloudListener
@@ -279,6 +283,8 @@ func (server *Server) routes() *routeMux {
 	mux.HandleFunc("GET /api/settings/egress", server.handleGetEgress)
 	mux.HandleFunc("POST /api/settings/egress/hosts", server.handleAddEgressHost)
 	mux.HandleFunc("DELETE /api/settings/egress/hosts/{entry}", server.handleRemoveEgressHost)
+	mux.HandleFunc("GET /api/settings/langfuse", server.handleGetLangfuse)
+	mux.HandleFunc("PUT /api/settings/langfuse", server.handlePutLangfuse)
 	mux.HandleFunc("GET /api/settings/cloud", server.handleGetCloudSettings)
 	mux.HandleFunc("PUT /api/settings/cloud/address", server.handleSetCloudAddress)
 	mux.HandleFunc("DELETE /api/settings/cloud/address", server.handleClearCloudAddress)
@@ -562,6 +568,11 @@ type loopView struct {
 	// environment: the hub's egress allowlist doesn't bind the loop, only
 	// what its environment allows (ADR-0061).
 	CloudAllowlistUnconfirmed bool `json:"cloud_allowlist_unconfirmed,omitempty"`
+	// Langfuse is "unsupported" on a cloud loop, which runs on Anthropic's
+	// machines and can't reach the operator's Langfuse, so it exports no
+	// traces whatever the settings say (ADR-0064). Absent on any other loop:
+	// the Langfuse settings say whether those export.
+	Langfuse string `json:"langfuse,omitempty"`
 }
 
 // loopConnectionView is one connection a loop holds.
@@ -672,6 +683,7 @@ func (server *Server) view(ctx context.Context, loopRecord *store.Loop) *loopVie
 	}
 	if loopRecord.Runtime == store.RuntimeCloud {
 		out.CloudAllowlistUnconfirmed = server.cloudLoopAllowlistUnconfirmed(ctx, loopRecord)
+		out.Langfuse = langfuseUnsupported
 	}
 	if failures, err := server.Store.Messages().UnresolvedSendFailures(ctx, loopRecord.ID); err == nil {
 		out.Undelivered = failures

@@ -235,3 +235,20 @@ func TestARemovedLoopNetworkWaitsForTheRelayToForgetIt(t *testing.T) {
 		t.Errorf("the hand-over came after the network was removed: %q", lines)
 	}
 }
+
+// An upstream with no key to send it can't let a trace in, so the relay
+// is handed off, with the upstream's host still refused to the proxy.
+func TestAnUpstreamWithNoKeyHandsARelayTurnedOff(t *testing.T) {
+	fake := newRelayDocker(t)
+	rt := New(Options{Bin: fake.bin, EgressImage: "spool-egress"})
+	if err := rt.SetRelay(context.Background(), RelaySettings{Upstream: "https://langfuse.example"}); err != nil {
+		t.Fatal(err)
+	}
+	file := fake.file(t)
+	if file.Upstream != "" || file.Authorization != "" || len(file.Loops) != 0 {
+		t.Errorf("handed %+v, want the relay off", file)
+	}
+	if !slices.Equal(file.Langfuse, []string{"langfuse.example"}) {
+		t.Errorf("Langfuse hosts = %q, want the upstream's still refused", file.Langfuse)
+	}
+}

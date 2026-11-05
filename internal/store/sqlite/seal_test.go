@@ -23,6 +23,7 @@ const (
 	fixtureRotated    = "ghp-synthetic-rotated"
 	fixtureSetupToken = "sk-ant-oat01-synthetic"
 	fixtureCloud      = "sk-ant-oat01-synthetic-cloud"
+	fixtureLangfuse   = `{"relay_upstream":"http://langfuse-web","ingest_key":"pk-lf-synthetic:sk-lf-synthetic"}`
 )
 
 // fixtureLong is a synthetic secret longer than a database page.
@@ -50,6 +51,9 @@ func seedSecrets(t *testing.T, db *DB) {
 		t.Fatal(err)
 	}
 	if err := db.Settings().Set(ctx, store.SettingClaudeOAuthToken, fixtureSetupToken); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Settings().Set(ctx, store.SettingLangfuse, fixtureLangfuse); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.ClaudeLogins().Create(ctx, &store.ClaudeLogin{
@@ -93,6 +97,9 @@ func assertSecretsRead(t *testing.T, db *DB) {
 	if setupToken, err := db.Settings().Get(ctx, store.SettingClaudeOAuthToken); err != nil || setupToken != fixtureSetupToken {
 		t.Fatalf("the setup-token reads back as %q (%v)", setupToken, err)
 	}
+	if langfuse, err := db.Settings().Get(ctx, store.SettingLangfuse); err != nil || langfuse != fixtureLangfuse {
+		t.Fatalf("the langfuse settings read back as %q (%v)", langfuse, err)
+	}
 	if login, err := db.ClaudeLogins().Get(ctx, store.DefaultClaudeLogin); err != nil || login.Account.Token != fixtureCloud {
 		t.Fatalf("the Claude login doesn't read back (%v)", err)
 	}
@@ -131,7 +138,7 @@ func assertNoPlainSecret(t *testing.T, db *DB, path string) {
 		if err != nil && !os.IsNotExist(err) {
 			t.Fatal(err)
 		}
-		for _, secret := range []string{fixtureTGToken, fixtureSlackApp, fixtureSlackBot, fixtureHubToken, fixtureConnection, fixtureRotated, fixtureSetupToken, fixtureCloud, fixtureLong} {
+		for _, secret := range []string{fixtureTGToken, fixtureSlackApp, fixtureSlackBot, fixtureHubToken, fixtureConnection, fixtureRotated, fixtureSetupToken, fixtureCloud, "sk-lf-synthetic", fixtureLong} {
 			// a value longer than a page is split across overflow
 			// pages, so its leading run is what is searched for
 			if strings.Contains(string(data), secret[:min(len(secret), 64)]) {
@@ -366,6 +373,9 @@ func TestALostKeyIsForgottenOnRequest(t *testing.T) {
 			}
 			if setupToken, err := db.Settings().Get(ctx, store.SettingClaudeOAuthToken); err != nil || setupToken != "" {
 				t.Errorf("the setup-token survives (%v)", err)
+			}
+			if langfuse, err := db.Settings().Get(ctx, store.SettingLangfuse); err != nil || langfuse != "" {
+				t.Errorf("the langfuse settings survive (%v)", err)
 			}
 			// the login itself stays, signed out, so its loops keep a valid name
 			if login, err := db.ClaudeLogins().Get(ctx, store.DefaultClaudeLogin); err != nil || login.SignedIn() {

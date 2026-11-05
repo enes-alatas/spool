@@ -2,9 +2,12 @@ package redact
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/enes-alatas/spool/internal/store"
 )
@@ -202,5 +205,53 @@ func TestStoreSourceNamesEveryClaudeLogin(t *testing.T) {
 	}
 	if !reflect.DeepEqual(secrets, want) {
 		t.Fatalf("secrets = %+v, want %+v", secrets, want)
+	}
+}
+
+// Either Langfuse key pair reads every trace in its project, so both are
+// secrets, and so is each one's secret half alone. The Authorization a
+// pair sends, its base64, is masked with it (ADR-0064).
+func TestStoreSourceNamesBothLangfuseKeys(t *testing.T) {
+	const ingest, read = "pk-lf-synthetic-in:sk-lf-synthetic-in", "pk-lf-synthetic-rd:sk-lf-synthetic-rd"
+	source := StoreSource{Store: sourceStore{settings: map[string]string{
+		store.SettingLangfuse: `{"relay_upstream":"http://langfuse-web","ingest_key":"` + ingest + `","read_key":"` + read + `"}`,
+	}}}
+	secrets, err := source.Secrets(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Secret{
+		{Name: store.SettingLangfuse, Value: ingest},
+		{Name: store.SettingLangfuse, Value: "sk-lf-synthetic-in"},
+		{Name: store.SettingLangfuse, Value: read},
+		{Name: store.SettingLangfuse, Value: "sk-lf-synthetic-rd"},
+	}
+	if !reflect.DeepEqual(secrets, want) {
+		t.Fatalf("secrets = %+v, want %+v", secrets, want)
+	}
+
+	redactor := New(source, time.Hour)
+	if err := redactor.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	header := "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte(ingest))
+	if got := redactor.Text(header); strings.Contains(got, base64.StdEncoding.EncodeToString([]byte(ingest))[:24]) {
+		t.Errorf("the ingest key's header survives redaction: %q", got)
+	}
+}
+
+// A key pair the settings let go of still opens its Langfuse project until
+// the operator deletes it there, so it stays a secret (ADR-0043).
+func TestStoreSourceKeepsRetiredLangfuseKeys(t *testing.T) {
+	const current, retired = "pk-lf-synthetic-new:sk-lf-synthetic-new", "pk-lf-synthetic-old:sk-lf-synthetic-old"
+	source := StoreSource{Store: sourceStore{settings: map[string]string{
+		store.SettingLangfuse: `{"ingest_key":"` + current + `","retired":["` + retired + `"]}`,
+	}}}
+	redactor := New(source, time.Hour)
+	if err := redactor.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := redactor.Text("old pair " + retired); strings.Contains(got, "sk-lf-synthetic-old") {
+		t.Errorf("a retired Langfuse key survives redaction: %q", got)
 	}
 }

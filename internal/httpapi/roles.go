@@ -42,7 +42,7 @@ var memberRoutes = []string{
 	"GET /api/attachments/{id}", "GET /api/undelivered", "GET /api/group",
 	"GET /api/connections", "GET /api/connections/{name}", "GET /api/connections/{name}/events",
 	"GET /api/channels", "GET /api/channels/{name}", "GET /api/channels/{name}/messages",
-	"GET /api/settings", "GET /api/settings/egress", "GET /api/settings/cloud", "GET /api/onboarding", "GET /api/plan-usage",
+	"GET /api/settings", "GET /api/settings/egress", "GET /api/settings/cloud", "GET /api/settings/langfuse", "GET /api/onboarding", "GET /api/plan-usage",
 	"GET /api/rules", "GET /api/models", "GET /api/telegram/senders", "GET /api/slack/senders",
 
 	"POST /api/loops/{name}/message", "POST /api/loops/{name}/wake",
@@ -81,7 +81,7 @@ var adminRoutes = []string{
 	"PUT /api/channels/{name}/loops/{loop}", "DELETE /api/channels/{name}/loops/{loop}",
 	"PUT /api/settings", "POST /api/settings/egress/hosts", "DELETE /api/settings/egress/hosts/{entry}",
 	"PUT /api/settings/cloud/address", "DELETE /api/settings/cloud/address", "POST /api/settings/cloud/check",
-	"PUT /api/settings/cloud/listener",
+	"PUT /api/settings/cloud/listener", "PUT /api/settings/langfuse",
 	"GET /api/settings/cloud/environments", "PUT /api/settings/cloud/environment", "DELETE /api/settings/cloud/environment",
 	"POST /api/settings/cloud/environment/confirm",
 	"POST /api/plan-cap/resume", "POST /api/onboarding/harness-check", "POST /api/onboarding/skip-surface",

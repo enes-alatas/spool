@@ -359,6 +359,30 @@ const SettingHealthWakeGraceMinutes = "health_wake_grace_minutes"
 // loop.DefaultHealthSendGraceMinutes.
 const SettingHealthSendGraceMinutes = "health_send_grace_minutes"
 
+// SettingLangfuse holds the operator's Langfuse settings (ADR-0064), a
+// Langfuse as JSON. It carries two keys, so the whole value is sealed
+// under the hub key (ADR-0046). Write-only through the API as to its
+// keys; never logged. Unset, or "" after a forgotten hub key, is no
+// Langfuse.
+const SettingLangfuse = "langfuse"
+
+// Langfuse is where the fleet's traces go and are read back (ADR-0064).
+// RelayUpstream is Langfuse as the egress proxy reaches it, ReadAddress
+// as the hub does, and a Langfuse run elsewhere has one https address in
+// both. Each key is a Langfuse key pair, "public:secret": IngestKey lets
+// traces in, ReadKey reads figures back.
+type Langfuse struct {
+	RelayUpstream string `json:"relay_upstream,omitempty"`
+	ReadAddress   string `json:"read_address,omitempty"`
+	IngestKey     string `json:"ingest_key,omitempty"`
+	ReadKey       string `json:"read_key,omitempty"`
+	// Retired is every key pair these settings have let go of, replaced
+	// or cleared, still redacted: Langfuse doesn't revoke a pair the hub
+	// stops using, so it opens the project until the operator deletes it
+	// there, as a rotated connection value does (ADR-0043). Never served.
+	Retired []string `json:"retired,omitempty"`
+}
+
 // EgressHosts is the hosts every docker loop may reach on top of the
 // built-in allowlist (ADR-0028), each canonical "host" or "host:port", in
 // the order they were added. ChangedAt is when the list last changed, in

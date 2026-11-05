@@ -19,6 +19,7 @@ type cloudLoopJSON struct {
 	CloudRepos         []string `json:"cloud_repos"`
 	CloudEnvironmentID string   `json:"cloud_environment_id"`
 	CloudSessionURL    string   `json:"cloud_session_url"`
+	Langfuse           string   `json:"langfuse"`
 }
 
 // A cloud loop is created as one once Settings → Cloud is green. Its view
@@ -68,6 +69,10 @@ func TestACloudLoopIsCreated(t *testing.T) {
 	s.mustJSON("GET", "/api/loops/nimbus", nil, &viewed)
 	if viewed.CloudSessionURL != "https://claude.ai/code/"+vms[0] {
 		t.Errorf("the loop's session link = %q, want the session's page", viewed.CloudSessionURL)
+	}
+	// it can't reach the operator's Langfuse, so it exports nothing (ADR-0064)
+	if viewed.Langfuse != "unsupported" {
+		t.Errorf("the cloud loop's langfuse = %q, want unsupported", viewed.Langfuse)
 	}
 
 	s.wantRefusal("POST", "/api/loops", map[string]any{"name": "stratus", "mission": "m", "runtime": "cloud", "mem_mb": 1024}, 400, "")

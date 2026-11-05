@@ -375,6 +375,19 @@ func main() {
 		log.Error("egress hosts", "err", err)
 		os.Exit(1)
 	}
+	// The trace relay's settings (ADR-0064), before any loop wakes or is
+	// removed: a proxy that outlived the last hub keeps its tmpfs, and a
+	// removal waits for the relay to forget the loop only once the runtime
+	// has been given settings (#1296). A failed hand-over is retried at the
+	// next wake.
+	langfuse, err := loop.LoadLangfuse(context.Background(), db.Settings())
+	if err != nil {
+		log.Error("langfuse settings", "err", err)
+		os.Exit(1)
+	}
+	if err := dockerRuntime.SetRelay(context.Background(), relaySettings(langfuse)); err != nil {
+		log.Warn("the trace relay's settings were not handed to the egress proxy; the next wake retries", "err", err)
+	}
 
 	// The installation tokens the hub mints for github-app connections are
 	// held nowhere but in the minter, so it is a redaction source of its
@@ -623,10 +636,13 @@ func main() {
 				log.Error("reload secrets for redaction", "err", err)
 			}
 		},
-		OperatorToken:        operatorToken,
-		ListenAddr:           apiAddr,
-		TrustedHosts:         splitList(*trustedHosts),
-		Egress:               dockerRuntime,
+		OperatorToken: operatorToken,
+		ListenAddr:    apiAddr,
+		TrustedHosts:  splitList(*trustedHosts),
+		Egress:        dockerRuntime,
+		TraceRelay: func(ctx context.Context, langfuse store.Langfuse) error {
+			return dockerRuntime.SetRelay(ctx, relaySettings(langfuse))
+		},
 		CloudListener:        cloudSwitch,
 		PromptsChat:          promptschat.HTTPFetcher{Base: *promptsChatFlag},
 		CloudLoopbackAddress: *cloudLoopbackAddress,
@@ -1345,4 +1361,14 @@ func githubLinkDir(dataDir, helper string) (string, error) {
 		return "", err
 	}
 	return dir, os.Symlink(helper, link)
+}
+
+// relaySettings is the trace relay's part of the Langfuse settings: the
+// upstream, the read address, and the ingest key as the header it sends.
+func relaySettings(langfuse store.Langfuse) docker.RelaySettings {
+	return docker.RelaySettings{
+		Upstream:      langfuse.RelayUpstream,
+		ReadAddress:   langfuse.ReadAddress,
+		Authorization: loop.LangfuseAuthorization(langfuse.IngestKey),
+	}
 }

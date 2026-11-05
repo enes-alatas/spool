@@ -57,6 +57,11 @@ const RelayFilePath = "/run/spool-relay/relay.json"
 // plain HTTP: the traffic never leaves the docker host.
 const relayComposeHost = "langfuse-web"
 
+// ComposeLangfuseUpstream is the relay's upstream with the compose
+// profile: its Langfuse web container, over plain HTTP on the wall's
+// network.
+const ComposeLangfuseUpstream = "http://" + relayComposeHost
+
 // MaxRelayFile bounds what `relay-config` reads from stdin. A fleet of a
 // few hundred loops is well under it.
 const MaxRelayFile = 1 << 20
@@ -92,6 +97,14 @@ func (file RelayFile) Validate() error {
 		seen[address.Unmap()] = true
 	}
 	return nil
+}
+
+// ValidateRelayUpstream reports whether raw is an upstream the relay may
+// forward to, so the hub refuses one at the settings form rather than the
+// proxy refusing it at the hand-over.
+func ValidateRelayUpstream(raw string) error {
+	_, err := relayUpstream(raw)
+	return err
 }
 
 // relayUpstream parses an upstream the relay may forward to: https to any
