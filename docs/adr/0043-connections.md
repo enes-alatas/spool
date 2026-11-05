@@ -1,6 +1,6 @@
 # ADR-0043: Connections are org-level credentials and configs, defined once and attachable to loops
 
-Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572); 2026-10-04 (item 2: the env-var kind, #574); 2026-10-04 (item 5: per-loop secrets are connections, #576); 2026-10-05 (item 2: an mcp-server reaches its loop, #597); 2026-10-05 (item 1: private connections, #600); 2026-10-05 (item 5: the record of changes, #606); 2026-10-05 (item 3: rotation, #609); 2026-10-06 (item 3: revoke, #610); 2026-10-06 (item 5: the per-loop secrets routes are gone, #617); 2026-10-06 (item 2: the hub brokers an http server, #622); 2026-10-07 (item 5: an env-var change reaches the next turn, #640); 2026-10-07 (item 2: the database seals its secrets, ADR-0046); 2026-10-22 (item 4: the github-app kind, #887); 2026-10-22 (item 4: git and gh fetch the token, #1054); 2026-10-23 (item 4: no env-var shadows the helper's env, #1060); 2026-10-23 (item 4: a refused mint is remembered briefly, #1057)
+Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572); 2026-10-04 (item 2: the env-var kind, #574); 2026-10-04 (item 5: per-loop secrets are connections, #576); 2026-10-05 (item 2: an mcp-server reaches its loop, #597); 2026-10-05 (item 1: private connections, #600); 2026-10-05 (item 5: the record of changes, #606); 2026-10-05 (item 3: rotation, #609); 2026-10-06 (item 3: revoke, #610); 2026-10-06 (item 5: the per-loop secrets routes are gone, #617); 2026-10-06 (item 2: the hub brokers an http server, #622); 2026-10-07 (item 5: an env-var change reaches the next turn, #640); 2026-10-07 (item 2: the database seals its secrets, ADR-0046); 2026-10-22 (item 4: the github-app kind, #887); 2026-10-22 (item 4: git and gh fetch the token, #1054); 2026-10-23 (item 4: no env-var shadows the helper's env, #1060); 2026-10-23 (item 4: a refused mint is remembered briefly, #1057); 2026-11-05 (item 2: a connection is checked from the hub, #1323)
 
 ## Context
 
@@ -146,6 +146,34 @@ follow in their own slice and amend this ADR.
      so the loop can use the secret on any request under the stored URL,
      not only through the server's tools (ADR-0045 item 4).
    The operator approved brokering on 2026-10-06 (ADR-0045, #30).
+
+   **Amendment (2026-11-05, #1323): a connection is checked from the hub.**
+   `POST /api/connections/{name}/check`, an admin's, says whether a
+   connection works, so a wrong url, key or installation shows when it is
+   saved, not at a loop's first session. Enes chose the shape on #1323.
+   - **What is checked.** An http mcp-server is sent an MCP `initialize`.
+     A github-app mints an installation token, which stays cached for the
+     loops that hold it. A stdio server and an env-var aren't checked.
+   - **From the hub, as the broker would reach it.** The hub brokers every
+     http server it checks (above), so the check takes the path a loop's
+     tool calls take, and no egress allowlist is consulted.
+   - **The secret goes only where a loop's use would send it**: when a
+     live loop holding the connection has the hub broker it. Otherwise
+     the check carries no secret, and an answer from the server is
+     `unverified`. A loopback server no bare loop holds isn't checked: for
+     a docker loop it is inside the workstation.
+   - **The dial is guarded.** https, or http to loopback for a loopback
+     url. The address the name resolves to is judged as it is dialled:
+     never link-local, where most clouds serve instance metadata, nor
+     multicast, nor AWS's IPv6 and Alibaba Cloud's metadata addresses;
+     and only this machine (loopback, or unspecified) for a loopback url. No redirect is followed, and no proxy is
+     used. The check lasts 10 seconds at most, and each caller may start
+     10 a minute.
+   - **A coarse answer.** A status (`ok`, `failed`, `unverified`,
+     `skipped`), a reason and a sentence, never the server's body or
+     headers. A github-app refusal quotes GitHub's message, as the token
+     route's errors do. The log line names the connection and the reason,
+     never the url or the secret.
 
 3. **The secret is write-only.** No response carries it: the API reports
    only `has_secret`. The config is read back in full, so nothing secret

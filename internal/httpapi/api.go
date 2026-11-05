@@ -176,6 +176,9 @@ type Server struct {
 	// could leave two env-vars setting one variable, or two GitHub
 	// identities.
 	attachMu sync.Mutex
+	// connectionChecks caps how many connection checks each caller
+	// starts a minute (#1323).
+	connectionChecks checkLimiter
 	// cloudEnvironmentMu serializes changes to the chosen environment: a
 	// confirm reads it and the list to paste before it writes.
 	cloudEnvironmentMu sync.Mutex
@@ -256,6 +259,7 @@ func (server *Server) routes() *routeMux {
 	mux.HandleFunc("POST /api/connections/{name}/share", server.handleShareConnection)
 	mux.HandleFunc("PUT /api/connections/{name}/secret", server.handleRotateConnection)
 	mux.HandleFunc("POST /api/connections/{name}/revoke", server.handleRevokeConnection)
+	mux.HandleFunc("POST /api/connections/{name}/check", server.handleCheckConnection)
 	mux.HandleFunc("GET /api/connections/{name}/events", server.handleConnectionEvents)
 	mux.HandleFunc("GET /api/loops/{name}/connection-events", server.handleLoopConnectionEvents)
 	mux.HandleFunc("PUT /api/loops/{name}/connections/{connection}", server.handleLoopConnection(true))

@@ -76,7 +76,7 @@ var adminRoutes = []string{
 	"PUT /api/loops/{name}/connections/{connection}", "DELETE /api/loops/{name}/connections/{connection}",
 	"POST /api/messages/{id}/retry", "POST /api/messages/{id}/dismiss",
 	"POST /api/connections", "DELETE /api/connections/{name}", "POST /api/connections/{name}/share",
-	"PUT /api/connections/{name}/secret", "POST /api/connections/{name}/revoke",
+	"PUT /api/connections/{name}/secret", "POST /api/connections/{name}/revoke", "POST /api/connections/{name}/check",
 	"POST /api/channels", "PATCH /api/channels/{name}", "DELETE /api/channels/{name}",
 	"PUT /api/channels/{name}/loops/{loop}", "DELETE /api/channels/{name}/loops/{loop}",
 	"PUT /api/settings", "POST /api/settings/egress/hosts", "DELETE /api/settings/egress/hosts/{entry}",

@@ -309,6 +309,10 @@ opportunistically, not big-bang.
   rotation (#609). Revoking one (`POST /api/connections/{name}/revoke`)
   detaches it everywhere, retires its value, refuses it from then on, and
   ends each holding loop's session with a `revoke` rotation (#610).
+  An admin checks one (`POST /api/connections/{name}/check`, #1323): the
+  hub sends an http mcp-server an MCP initialize and has a github-app mint
+  a token, and answers ok, failed, unverified or skipped with a coarse
+  reason.
 - **Runner extraction**: the hosted service will run runners near customer sandboxes.
   Anything crossing the Runner seam must stay serializable (no passing live channels
   or callbacks across it as its API matures).

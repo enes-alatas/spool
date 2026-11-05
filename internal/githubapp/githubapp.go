@@ -240,7 +240,7 @@ func (minter *Minter) mint(ctx context.Context, config store.ConnectionConfig, k
 		return Token{}, fmt.Errorf("minting an installation token: %w", err)
 	}
 	if status != http.StatusCreated {
-		return Token{}, fmt.Errorf("minting an installation token: GitHub answered %d: %s", status, refusal(answer))
+		return Token{}, &RefusedError{Status: status, Message: refusal(answer)}
 	}
 	var minted struct {
 		Token     string    `json:"token"`
@@ -326,4 +326,16 @@ func refusal(answer []byte) string {
 		text = text[:errorSnippet] + "…"
 	}
 	return roomtext.Plain(text)
+}
+
+// RefusedError is GitHub refusing a mint: the status it answered with and
+// the readable part of its answer. A mint that never reached GitHub is
+// another error.
+type RefusedError struct {
+	Status  int
+	Message string
+}
+
+func (err *RefusedError) Error() string {
+	return fmt.Sprintf("minting an installation token: GitHub answered %d: %s", err.Status, err.Message)
 }

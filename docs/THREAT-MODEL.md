@@ -181,6 +181,24 @@ member until it is, and a test fails until it is (#1240).
   operator's flag, never an admin's input. A team is drafted the same
   way, with at most 12 bots fetched for it, and its loops are created
   only from the draft the operator sends back.
+- **A connection check dials what an admin typed** (#1323). An admin's
+  `POST /api/connections/{name}/check` makes the hub send an http
+  mcp-server an MCP initialize, or a github-app mint a token at the API
+  base the operator's flag sets. The url is https, or http for a
+  loopback url. The address it resolves to is judged as it is dialled:
+  never link-local, where most clouds serve instance metadata, nor
+  multicast, nor `fd00:ec2::254` (AWS) and `100.100.100.200` (Alibaba
+  Cloud); and only this machine (loopback, or unspecified) for a
+  loopback url. A metadata address outside those, on some other cloud,
+  is not listed. Private LAN addresses
+  are allowed, as the broker allows them. No redirect is followed, no
+  proxy is used, a check lasts 10 seconds, and each caller may start 10
+  a minute. The answer is a coarse reason, never the server's body or
+  headers. It still tells an admin whether something answers at an
+  https address they chose. The secret goes only when a loop holding
+  the connection would have the hub broker it, so a check sends it
+  nowhere a loop's tool call wouldn't. The broker itself doesn't run
+  these address guards.
 
 ### Loop listener: `/mcp`, the brokered servers, the Claude proxy and the GitHub token route
 
