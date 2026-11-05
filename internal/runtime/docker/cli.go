@@ -85,8 +85,11 @@ type containerState struct {
 	Status  string `json:"Status"`
 	Running bool   `json:"Running"`
 	Paused  bool   `json:"Paused"`
-	Image   string `json:"-"`
-	Posture string `json:"-"`
+	// StartedAt is when the container last started: a proxy restarted
+	// since its relay file was handed has an empty tmpfs.
+	StartedAt string `json:"StartedAt"`
+	Image     string `json:"-"`
+	Posture   string `json:"-"`
 	// EgressSpec is the configuration a proxy was provisioned under, ""
 	// for any other container.
 	EgressSpec string `json:"-"`

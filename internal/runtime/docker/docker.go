@@ -88,6 +88,11 @@ type Runtime struct {
 	// yet: until it has, the file may hold a previous run's entries.
 	egressFileWritten bool
 
+	// relay is the trace relay's settings and what the proxy last took
+	// of them (ADR-0064), under relayMu.
+	relayMu sync.Mutex
+	relay   relayState
+
 	sweepOnce      sync.Once // resolution containers a stopped hub left behind
 	loginSweepOnce sync.Once // login-check containers, the same way
 }
@@ -232,6 +237,12 @@ func (rt *Runtime) Ensure(ctx context.Context, spec runtime.Spec) error {
 		if netErr := rt.ensureLoopNetwork(ctx, spec.LoopID); netErr != nil {
 			return netErr
 		}
+	}
+	// the relay stamps the loop's traces with its name and its network's
+	// address, either of which this wake may have just changed
+	if rt.egressEnabled() {
+		rt.relayLoopSeen(spec.LoopID, spec.LoopName)
+		rt.catchUpRelayOrWarn(ctx)
 	}
 	if err == nil {
 		var stale bool

@@ -9,6 +9,8 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+
+	"github.com/enes-alatas/spool/internal/egress"
 )
 
 // The egress wall (ADR-0028). Workstations sit on an internal network the
@@ -31,8 +33,10 @@ const (
 	// the spec so a proxy from an image that reads another file is replaced
 	// rather than kept: the fleet's entries moved into the file with #542,
 	// and an older proxy would refuse every one of them, and the file lost
-	// its loops' entries with #626, along with the flag that names it.
-	egressFileFormat = "file:fleet"
+	// its loops' entries with #626, along with the flag that names it. The
+	// relay (ADR-0064) added a listener, a tmpfs and a second file, which
+	// an older proxy has none of.
+	egressFileFormat = "file:fleet,relay"
 )
 
 // The wall is named after the image that enforces it: one daemon can carry a
@@ -112,7 +116,14 @@ func (rt *Runtime) checkEgress(ctx context.Context) error {
 	if err := rt.ensureEgressProxy(ctx, imageID, imageErr, proxyFound); err != nil {
 		return err
 	}
-	return rt.catchUpEgressFile(ctx)
+	if proxyFound.err == nil {
+		rt.relayProxyStarted(proxyFound.state.StartedAt)
+	}
+	if err := rt.catchUpEgressFile(ctx); err != nil {
+		return err
+	}
+	rt.catchUpRelayOrWarn(ctx)
+	return nil
 }
 
 // ensureLoopNetwork puts the loop's own network up beside the wall, with
@@ -148,6 +159,7 @@ func (rt *Runtime) connectProxy(ctx context.Context, network string) error {
 	if _, err := rt.command(ctx, startTimeout, "network", "connect", network, rt.egressContainer()); err != nil && !alreadyConnected(err) {
 		return err
 	}
+	rt.relayMoved()
 	return nil
 }
 
@@ -178,6 +190,9 @@ func (rt *Runtime) removeLoopNetwork(ctx context.Context, loopID string) error {
 	defer rt.egressMu.RUnlock()
 	network := rt.loopNetwork(loopID)
 	if _, err := rt.command(ctx, startTimeout, "network", "disconnect", "--force", network, rt.egressContainer()); err != nil && !networkGone(err) && !notFound(err) && !notConnected(err) {
+		return err
+	}
+	if err := rt.forgetRelayLoop(ctx, loopID); err != nil {
 		return err
 	}
 	if _, err := rt.command(ctx, startTimeout, "network", "rm", network); err != nil && !networkGone(err) {
@@ -278,7 +293,12 @@ func (rt *Runtime) provisionEgressProxyWithFleet(ctx context.Context, imageID st
 	if err := rt.provisionEgressProxy(ctx, imageID); err != nil {
 		return err
 	}
-	return rt.rewriteEgressFile(ctx)
+	if err := rt.rewriteEgressFile(ctx); err != nil {
+		return err
+	}
+	// a new proxy's tmpfs is empty, so its relay is off until handed
+	rt.relayMoved()
+	return nil
 }
 
 func (rt *Runtime) provisionEgressProxy(ctx context.Context, imageID string) error {
@@ -317,11 +337,15 @@ func (rt *Runtime) egressRunArgv(imageID string) []string {
 		"--restart", "unless-stopped",
 		"--network", rt.egressNetwork(),
 		"--add-host", egressGatewayHost + ":host-gateway",
+		// the relay's file holds the ingest key: in memory, never on disk
+		"--tmpfs", relayDir + ":rw,noexec,nosuid,nodev,size=1m,mode=0700",
 		"--label", "spool.egress=proxy",
 		"--label", egressSpecLabel + "=" + rt.egressSpecHash(imageID),
 		rt.egressImage,
 		"--listen", ":" + egressPort,
 		"--fleet-file", fleetEgressFile,
+		"--relay-listen", ":" + egress.RelayPort,
+		"--relay-file", egress.RelayFilePath,
 	}
 	if allow := rt.egressEntries(); len(allow) > 0 {
 		argv = append(argv, "--allow", strings.Join(allow, ","))

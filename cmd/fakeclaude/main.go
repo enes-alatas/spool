@@ -54,6 +54,9 @@
 // from outside, which is what redaction has to catch (#150).
 // "!env64 NAME" is the same with the value base64-encoded: a loop disguising
 // a credential the first way it would think of (#30).
+// "otlp-sink <addr>", run as the whole command line, is no CLI behaviour: it
+// serves a stand-in for Langfuse's OTLP endpoint at addr for the trace
+// relay's tier-2 test (#1296), printing each request as a JSON line.
 // "!get URL" fetches the URL with an ordinary proxy-honouring HTTP client
 // and replies with "get <url>: <status>" or "get <url>: error: …": how a loop
 // reaching out to a host looks from outside, which is what the egress
@@ -187,6 +190,9 @@ func main() {
 	args := os.Args[1:]
 	if slices.Contains(args, "--cloud") || (len(args) > 0 && args[0] == cloudVMArg) {
 		os.Exit(cloudMain(args))
+	}
+	if len(args) == 2 && args[0] == "otlp-sink" {
+		os.Exit(otlpSink(args[1]))
 	}
 	if len(args) >= 2 && args[0] == "auth" && args[1] == "login" {
 		os.Exit(authLogin())
