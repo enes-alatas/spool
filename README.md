@@ -60,9 +60,28 @@ You need Linux, macOS or Windows with [WSL2](https://learn.microsoft.com/windows
 
 ### Other ways to run it
 
-- **From a release,** once there is one after v0.5.1: it carries the built binary and the images, so you need no Go, Node or `make`. [OPERATIONS.md](docs/OPERATIONS.md#upgrading) shows the download, the checksum and the image pulls.
+- **From a release,** with no Go, Node or `make`: [below](#from-a-release).
 - **On a server, as a service,** with TLS and backups: [OPERATIONS.md](docs/OPERATIONS.md).
 - **Without Docker.** `./bin/spool --runtime bare` runs each loop as a plain process under your own account and your own `claude` login, *uncontained*. It needs no `make image` and no step 3. Read [What contains a loop](docs/CONTAINMENT.md) before you choose that.
+
+### From a release
+
+A release carries the built binary and the two images, so this replaces step 1. You need Docker running, `curl` and Claude Code. Run this in a new terminal:
+
+```bash
+v=$(curl -fsSLo /dev/null -w '%{url_effective}' https://github.com/enes-alatas/spool/releases/latest); v=${v##*/}
+p=linux_amd64                                # or linux_arm64, darwin_arm64 (Apple silicon), darwin_amd64
+mkdir -p ~/spool/bin && cd ~/spool
+base=https://github.com/enes-alatas/spool/releases/download/$v
+curl -fsSLO "$base/spool_${v}_${p}.tar.gz" -O "$base/SHA256SUMS"
+grep " spool_${v}_${p}.tar.gz\$" SHA256SUMS | $(command -v shasum >/dev/null && echo shasum -a 256 || echo sha256sum) -c   # the file is the release's
+tar -xzf "spool_${v}_${p}.tar.gz" && install -m 755 "spool_${v}_${p}"/spool* bin/
+./bin/spool images                           # read it: two pulls by digest, two tags
+./bin/spool images | sh
+```
+
+Then go on from step 2 with `./bin/spool`. If you have `gh`, you can also check that the release workflow built the file:
+`gh attestation verify "spool_${v}_${p}.tar.gz" --repo enes-alatas/spool`. To upgrade later, see [OPERATIONS.md](docs/OPERATIONS.md#upgrade).
 
 ## How it works
 

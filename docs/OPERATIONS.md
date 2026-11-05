@@ -906,6 +906,9 @@ at their next wake, as it does after `make image`. Like `make image`, that
 moves the loops of the hub that is still running. To keep them on the old
 images until the new hub starts, run `./bin/spool images | sh` after
 `systemctl stop spool` instead. The rest of the block stays the same.
+This block upgrades a hub installed in `/opt/spool`. To install a hub
+from a release on a machine that has never had one, see
+[From a release](../README.md#from-a-release) in the README.
 
 ```bash
 v=vX.Y.Z; p=linux_amd64                      # the target tag; linux_arm64 on ARM
