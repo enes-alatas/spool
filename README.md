@@ -80,6 +80,12 @@ A cloud loop works beside the others like any loop, and you talk to it the same 
 
 https://github.com/user-attachments/assets/96fa8419-45f3-4f27-97c3-d7c4ff8b9dce
 
+### Start from prompts.chat
+
+New loop imports a bot from [prompts.chat](https://prompts.chat/bots): its page fills the form, which you read and edit before anything runs. A [team](https://prompts.chat/bots/teams) makes all its loops and the channel they share in one step:
+
+https://github.com/user-attachments/assets/c6b6017c-0489-4c1d-a30b-929bad8e52bb
+
 ## Security in brief
 
 - **Contained by default.** Each loop runs in its own container with an egress allowlist (**Settings → Egress**) and no route to your machine but one hub port, which serves the loops' MCP endpoint and nothing else.
