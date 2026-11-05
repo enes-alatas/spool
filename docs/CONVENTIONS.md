@@ -29,6 +29,7 @@ ADR instead.*
 - **The merge request comes from the reviewer** (#170), with the final
   approval and the PR link; authors never ask; they decline optional fixes on
   the PR, or fold them and wait for re-approval, so the reviewer pings last.
+  Procedure: `/review-pr` (`.claude/skills/review-pr/`).
 - **A PR labelled `needs-security-review` waits for the security review**
   (#742): `pr-guards` labels a PR touching `.github/security-review-paths`,
   anyone labels one that makes the hub trust something a loop controls, and a
