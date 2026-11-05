@@ -53,6 +53,7 @@ export function PromptsChatFill({
           <PromptsChatLogo />
           {onTeam ? 'Import a bot or a team from prompts.chat' : 'Import a bot from prompts.chat'}
         </button>
+        <BrowseLinks teams={!!onTeam} />
       </div>
     )
 
@@ -107,9 +108,31 @@ export function PromptsChatFill({
             : "Its page's address. The bot fills the fields below, for you to edit."}
         </div>
       )}
+      <BrowseLinks teams={!!onTeam} />
     </div>
   )
 }
+
+// Where to find a bot or a team to import (#1325): prompts.chat's own
+// lists, opened in a new tab of the operator's browser. The hub fetches
+// nothing for them. Teams are offered only where a team can be imported.
+function BrowseLinks({ teams }: { teams: boolean }) {
+  return (
+    <div className="hint import-browse">
+      <a className="text-link" href={PROMPTS_CHAT_BOTS} target="_blank" rel="noopener noreferrer">
+        Browse bots ↗
+      </a>
+      {teams && (
+        <a className="text-link" href={PROMPTS_CHAT_TEAMS} target="_blank" rel="noopener noreferrer">
+          Browse teams ↗
+        </a>
+      )}
+    </div>
+  )
+}
+
+const PROMPTS_CHAT_BOTS = 'https://prompts.chat/bots'
+const PROMPTS_CHAT_TEAMS = 'https://prompts.chat/bots/teams'
 
 // Where a filled form came from, under the mission: the mission is the
 // bot's text, not the operator's, and reading it is the only check on it

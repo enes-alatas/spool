@@ -2734,6 +2734,10 @@ button.panel-link {
   display: flex;
   gap: 8px;
 }
+.import-browse {
+  display: flex;
+  gap: 14px;
+}
 .import-open {
   display: inline-flex;
   align-items: center;
