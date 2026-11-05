@@ -4,19 +4,21 @@
 # and died on a 12 GB host (#447). A rerun after a crash skips the chunks
 # already on disk and resumes rather than starting over.
 #
-#   bash render.sh [SpoolDemo|CloudDemo]
+#   bash render.sh [SpoolDemo|CloudDemo|ImportDemo]
 #
 # SpoolDemo, the README's main video, is the default and lands in
 # out/spool-demo.mp4; CloudDemo, the cloud loop one (#1126), in
-# out/cloud-demo.mp4.
+# out/cloud-demo.mp4; ImportDemo, the prompts.chat import (#1326), in
+# out/import-demo.mp4.
 set -euo pipefail
 cd "$(dirname "$0")"
 id="${1:-SpoolDemo}"
 case "$id" in
 SpoolDemo) name=spool-demo ;;
 CloudDemo) name=cloud-demo ;;
+ImportDemo) name=import-demo ;;
 *)
-	echo "render.sh: no composition $id; SpoolDemo or CloudDemo" >&2
+	echo "render.sh: no composition $id; SpoolDemo, CloudDemo or ImportDemo" >&2
 	exit 2
 	;;
 esac

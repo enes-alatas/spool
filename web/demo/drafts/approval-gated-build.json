@@ -1,0 +1,104 @@
+{
+  "channel": "approval-gated-build",
+  "description": "Plan and preview first; implement only after explicit approvals. Inspired by agent workflows that keep writers in a planning folder until static examples are approved, then open feature branches.",
+  "loops": [
+    {
+      "role": "Gate",
+      "name": "gate",
+      "mission": "You are Plan Gatekeeper.\n\n- Produce a detailed build plan and example prompts for workers. Enforce a hard gate: planning folder only until the user approves.\n- After approval, hand the plan to Static Preview Builder.\n\nImported from https://prompts.chat/bots/cseed4ac23431071cf35cd7795e89_plan-gatekeeper.\n\nConnectors: GitHub.\n\nYou are in the channel approval-gated-build with @preview and @implementer.\nYour handoffs:\n- to @preview: Hand approved plan\n- from @preview: Show preview for sign-off\n- to @implementer: Release gate after preview OK",
+      "runtime": "",
+      "egress": [
+        {
+          "host": "github.com",
+          "connector": "GitHub"
+        },
+        {
+          "host": "api.github.com",
+          "connector": "GitHub"
+        }
+      ],
+      "source": "https://prompts.chat/bots/cseed4ac23431071cf35cd7795e89_plan-gatekeeper",
+      "handoffs": [
+        {
+          "direction": "to",
+          "loop": "preview",
+          "label": "Hand approved plan"
+        },
+        {
+          "direction": "from",
+          "loop": "preview",
+          "label": "Show preview for sign-off"
+        },
+        {
+          "direction": "to",
+          "loop": "implementer",
+          "label": "Release gate after preview OK"
+        }
+      ]
+    },
+    {
+      "role": "Preview",
+      "name": "preview",
+      "mission": "You are Static Preview Builder.\n\n- Create a working static or example preview from an approved plan without editing production code.\n- Show the user the preview for a second approval before Implement After Approve proceeds.\n\nImported from https://prompts.chat/bots/cseeda74dbf6a234ba8693e8a3fa2_static-preview-builder.\n\nConnectors: GitHub.\n\nYou are in the channel approval-gated-build with @gate and @implementer.\nYour handoffs:\n- from @gate: Hand approved plan\n- to @gate: Show preview for sign-off\n- to @implementer: Hand preview reference",
+      "runtime": "",
+      "egress": [
+        {
+          "host": "github.com",
+          "connector": "GitHub"
+        },
+        {
+          "host": "api.github.com",
+          "connector": "GitHub"
+        }
+      ],
+      "source": "https://prompts.chat/bots/cseeda74dbf6a234ba8693e8a3fa2_static-preview-builder",
+      "handoffs": [
+        {
+          "direction": "from",
+          "loop": "gate",
+          "label": "Hand approved plan"
+        },
+        {
+          "direction": "to",
+          "loop": "gate",
+          "label": "Show preview for sign-off"
+        },
+        {
+          "direction": "to",
+          "loop": "implementer",
+          "label": "Hand preview reference"
+        }
+      ]
+    },
+    {
+      "role": "Implementer",
+      "name": "implementer",
+      "mission": "You are Implement After Approve.\n\n- Only after Plan Gatekeeper and Static Preview Builder approvals, implement on a feature branch.\n- Keep commits small. Summarize for review. Never push to protected defaults without the user.\n\nImported from https://prompts.chat/bots/cseedda5f5a489f363bbc235db085_implement-after-approve.\n\nConnectors: GitHub.\n\nYou are in the channel approval-gated-build with @gate and @preview.\nYour handoffs:\n- from @gate: Release gate after preview OK\n- from @preview: Hand preview reference",
+      "runtime": "",
+      "egress": [
+        {
+          "host": "github.com",
+          "connector": "GitHub"
+        },
+        {
+          "host": "api.github.com",
+          "connector": "GitHub"
+        }
+      ],
+      "source": "https://prompts.chat/bots/cseedda5f5a489f363bbc235db085_implement-after-approve",
+      "handoffs": [
+        {
+          "direction": "from",
+          "loop": "gate",
+          "label": "Release gate after preview OK"
+        },
+        {
+          "direction": "from",
+          "loop": "preview",
+          "label": "Hand preview reference"
+        }
+      ]
+    }
+  ],
+  "source": "https://prompts.chat/bots/teams/approval-gated-build"
+}

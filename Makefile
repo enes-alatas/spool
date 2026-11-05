@@ -160,11 +160,12 @@ ui-smoke: build
 # hub, like ui-shots, then compose and render it with Remotion. web/demo is a
 # package of its own so the control room never ships its dependencies. The
 # mp4s land in web/demo/out and are uploaded to GitHub, never committed:
-# spool-demo.mp4, and cloud-demo.mp4, the cloud loop one (#1126).
+# spool-demo.mp4, cloud-demo.mp4, the cloud loop one (#1126), and
+# import-demo.mp4, the prompts.chat import (#1326).
 demo: build
 	cd web/demo && npm install --silent
 	bash scripts/fixture-hub.sh node demo/record.mjs
-	cd web/demo && npm run -s render && npm run -s render -- CloudDemo
+	cd web/demo && npm run -s render && npm run -s render -- CloudDemo && npm run -s render -- ImportDemo
 
 dev: server
 	./bin/spool --listen 127.0.0.1:8080 --data-dir ./.data

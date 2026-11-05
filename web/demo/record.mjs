@@ -10,6 +10,7 @@ import { readFileSync, readdirSync, writeFileSync, mkdirSync, mkdtempSync, rmSyn
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { setTimeout as sleep } from 'node:timers/promises'
 
 const require = createRequire(import.meta.url)
 const base = process.env.SPOOL_URL
@@ -59,7 +60,10 @@ const fontCSS = [
     face('JetBrains Mono', '@fontsource/jetbrains-mono', `jetbrains-mono-latin-${w}-normal.woff2`, w),
   ),
   emojiCSS(),
-  ":root{--sans:'Inter','Noto Color Emoji',sans-serif !important;--mono:'JetBrains Mono','Noto Color Emoji',monospace !important;font-feature-settings:'cv11','ss01'}",
+  // Inter's latin subset has no arrows, and the emoji face draws ↗ as a
+  // blue tile; the arrows come from the host's DejaVu instead.
+  "@font-face{font-family:'Arrows';src:local('DejaVu Sans');unicode-range:U+2190-21FF}",
+  ":root{--sans:'Inter','Arrows','Noto Color Emoji',sans-serif !important;--mono:'JetBrains Mono','Arrows','Noto Color Emoji',monospace !important;font-feature-settings:'cv11','ss01'}",
 ].join('\n')
 const injectFonts = (css) => {
   const add = () => {
@@ -961,6 +965,174 @@ await take(
   },
   { width: 1098, height: 750 },
 )
+
+// The prompts.chat import (#1326, ADR-0063): New loop takes a bot's page
+// and fills its form, then a team's page and makes the team. The fixture
+// hub can't reach prompts.chat, so the hub's drafts are served, after a
+// pause as long as a fetch. They are the real bot and team at these
+// addresses, as a hub answered them once (drafts/), so what the video
+// pastes is an address a viewer can import. The team is the one the Find
+// beat opens. It is created for real, so its channel and its loops are
+// the hub's own; the fixture hub runs them bare, so Fleet reads them back
+// as the contained loops a hub with docker would make. The fixture loops
+// with a problem open, and its uncontained one, are left off Fleet here:
+// their red rows belong to the main video's story, not this one.
+const drafts = new URL('./drafts/', import.meta.url).pathname
+const BOT = {
+  url: 'https://prompts.chat/bots/cmw1v3sdl000iku08cwqfm4zu_dead-code-detector',
+  draft: JSON.parse(readFileSync(drafts + 'dead-code-detector.json', 'utf8')),
+}
+const TEAM = {
+  path: '/bots/teams/approval-gated-build',
+  team: JSON.parse(readFileSync(drafts + 'approval-gated-build.json', 'utf8')),
+}
+TEAM.url = 'https://prompts.chat' + TEAM.path
+// prompts.chat itself, where the bots and teams come from: its bot list,
+// then its team list and one team's page. These takes are the live site,
+// so they read as the site does on the day they are recorded. Its cookie
+// notice is declined and its sponsored card taken out before a mark, since
+// the video advertises nothing. A page of the site is settled before its
+// mark: a frame grabbed while it loads is stamped when the grab began,
+// not when the page it shows arrived.
+async function settle(page) {
+  await page
+    .getByRole('button', { name: 'Reject' })
+    .click({ timeout: 4000 })
+    .catch(() => {})
+  await page
+    .getByRole('button', { name: 'Yes, reject' })
+    .click({ timeout: 2000 })
+    .catch(() => {})
+  await page.evaluate(() => {
+    for (const ad of document.querySelectorAll('.sf-widget')) ad.style.display = 'none'
+  })
+  await page.waitForTimeout(1500)
+}
+await take('prompts-chat-bots', async (page, mark) => {
+  // The room is dark, and so is the site in a dark browser.
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await page.goto('https://prompts.chat/bots', { waitUntil: 'networkidle', timeout: 45000 })
+  await settle(page)
+  await page.mouse.move(size.width / 2, size.height - 80)
+  mark('ready')
+  await page.waitForTimeout(1200)
+  await page.mouse.wheel(0, 120)
+  await page.waitForTimeout(2200)
+  mark('end')
+})
+await take('prompts-chat-teams', async (page, mark) => {
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await page.goto('https://prompts.chat/bots/teams', { waitUntil: 'networkidle', timeout: 45000 })
+  await settle(page)
+  await page.mouse.move(size.width / 2, size.height - 80)
+  mark('ready')
+  await page.waitForTimeout(900)
+  // The team's name opens its page: the address the import takes.
+  await pointAt(page, page.locator(`a.font-semibold[href="${TEAM.path}"]`))
+  mark('click')
+  await page.waitForURL('**/bots/teams/*')
+  await page.waitForLoadState('networkidle')
+  await settle(page)
+  mark('team')
+  await page.waitForTimeout(3000)
+  mark('end')
+})
+
+// The hub's answer to an import, a moment late, as a fetch from prompts.chat is.
+const served = (json) => async (route) => {
+  await sleep(1100)
+  return route.fulfill({ json })
+}
+// Opens the import, pastes address into it and presses Import.
+async function importFrom(page, mark, address) {
+  await page.waitForTimeout(700)
+  await pointAt(page, page.locator('.import-open'))
+  await page.locator('#nl-import').waitFor()
+  mark('open')
+  await page.waitForTimeout(700)
+  // Pasted in one go, as an operator copies it from the site.
+  await page.keyboard.insertText(address)
+  await page.waitForTimeout(1100)
+  await pointAt(page, page.getByRole('button', { name: 'Import', exact: true }))
+  mark('import')
+}
+await take('import-bot', async (page, mark) => {
+  await page.route('**/api/import/prompts-chat?*', served(BOT.draft))
+  // The fixture hub's default login is signed out; a hub that runs loops has it signed in.
+  await page.route('**/api/claude-logins', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue()
+    const res = await route.fetch()
+    const { logins } = await res.json()
+    return route.fulfill({ response: res, json: { logins: logins.map((l) => ({ ...l, signed_in: true })) } })
+  })
+  // The bot leaves its runtime to the hub, and a hub with docker defaults to it.
+  await page.route('**/api/settings', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue()
+    const res = await route.fetch()
+    return route.fulfill({ response: res, json: { ...(await res.json()), default_runtime: 'docker' } })
+  })
+  await page.goto(base + '/new', { waitUntil: 'networkidle' })
+  await page.locator('.import-open').waitFor()
+  await page.mouse.move(size.width / 2, size.height - 80)
+  mark('ready')
+  await importFrom(page, mark, BOT.url)
+  await page.waitForFunction((name) => document.querySelector('#nl-name')?.value === name, BOT.draft.name)
+  mark('filled')
+  await page.waitForTimeout(2200)
+  const hints = page.locator('.egress-hints')
+  await glideTo(page, hints)
+  mark('egress')
+  await page.waitForTimeout(800)
+  // The bot's last connector is added: its row turns to allowed.
+  const hint = hints.locator('li').last()
+  await pointAt(page, hint.getByRole('button', { name: 'Add' }))
+  await hint.locator('.egress-hint-allowed').waitFor()
+  mark('added')
+  await page.waitForTimeout(2000)
+  mark('end')
+})
+await take('import-team', async (page, mark) => {
+  await page.route('**/api/import/prompts-chat/team?*', served(TEAM.team))
+  const names = TEAM.team.loops.map((l) => l.name)
+  const contained = (l) =>
+    names.includes(l.name)
+      ? { ...l, runtime: 'docker', workstation_up: true, down_reason: undefined, problems: [] }
+      : l
+  await page.route('**/api/loops', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue()
+    const res = await route.fetch()
+    const healthy = (l) =>
+      names.includes(l.name) || (l.problems.length === 0 && !l.undelivered && l.runtime !== 'bare')
+    return route.fulfill({ response: res, json: (await res.json()).filter(healthy).map(contained) })
+  })
+  await page.goto(base + '/new', { waitUntil: 'networkidle' })
+  await page.locator('.import-open').waitFor()
+  await page.mouse.move(size.width / 2, size.height - 80)
+  mark('ready')
+  await importFrom(page, mark, TEAM.url)
+  await page.locator('.team-preview').waitFor()
+  mark('preview')
+  await page.waitForTimeout(2400)
+  await pointAt(page, page.locator('.team-loop-mission summary').nth(1))
+  mark('mission')
+  await page.waitForTimeout(2600)
+  const create = page.getByRole('button', { name: /^Create 3 loops/ })
+  await glideTo(page, create)
+  mark('create-click')
+  await pointAt(page, create)
+  await page.waitForURL('**/channels*')
+  await page.mouse.move(size.width - 120, size.height / 2, { steps: 20 })
+  mark('channel')
+  await page.waitForTimeout(3200)
+  await pointAt(page, page.locator('.topbar').getByRole('link', { name: 'Fleet' }))
+  await page.waitForSelector('.fleet-row')
+  await page.mouse.move(size.width - 120, size.height / 2, { steps: 20 })
+  mark('fleet')
+  await page.waitForTimeout(900)
+  await glideTo(page, page.locator(`.fleet-row[href="/loops/${TEAM.team.loops[0].name}"]`))
+  await page.waitForTimeout(2600)
+  mark('end')
+})
 
 await browser.close()
 writeFileSync(out + 'marks.json', JSON.stringify({ ...marks, times }, null, 2) + '\n')
