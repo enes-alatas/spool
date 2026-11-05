@@ -406,7 +406,28 @@ func (rt *Runtime) egressEnv() []string {
 	for _, name := range []string{"HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"} {
 		argv = append(argv, "--env", name+"="+url)
 	}
-	return append(argv, "--env", "NO_PROXY=localhost,127.0.0.1,::1", "--env", "no_proxy=localhost,127.0.0.1,::1")
+	return append(argv, "--env", "NO_PROXY="+noProxy, "--env", "no_proxy="+noProxy)
+}
+
+// noProxy is the hosts a workstation reaches without the proxy.
+const noProxy = "localhost,127.0.0.1,::1"
+
+// TraceRelayEnv is what a workstation's session needs to export its traces
+// to the trace relay (ADR-0064): the relay's endpoint on the proxy, and the
+// proxy named in NO_PROXY, so an exporter that honours HTTP_PROXY doesn't
+// send the export through the allowlist, which would refuse it. 2.1.316's
+// exporter ignores HTTP_PROXY. It is nil with the wall down: there is no
+// relay then.
+func (rt *Runtime) TraceRelayEnv() map[string]string {
+	if !rt.egressEnabled() {
+		return nil
+	}
+	proxy := rt.egressContainer()
+	return map[string]string{
+		"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "http://" + proxy + ":" + egress.RelayPort + egress.RelayPath,
+		"NO_PROXY":                           noProxy + "," + proxy,
+		"no_proxy":                           noProxy + "," + proxy,
+	}
 }
 
 // networkArgs puts a container behind the wall, on network: a workstation

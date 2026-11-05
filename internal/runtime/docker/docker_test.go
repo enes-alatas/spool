@@ -2,6 +2,7 @@ package docker
 
 import (
 	"errors"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -316,5 +317,33 @@ func TestExecArgvWritesTheMCPConfigBeforeClaude(t *testing.T) {
 	}
 	if strings.Contains(string(got), "umask=0077") {
 		t.Errorf("claude inherited the config's umask: %q", got)
+	}
+}
+
+// A session reaches the relay on the proxy by its container name, which
+// NO_PROXY names too; with the wall down there is no relay. The session's
+// NO_PROXY follows the wall's in the exec argv, so it is the one in force.
+func TestTraceRelayEnv(t *testing.T) {
+	if env := (&Runtime{}).TraceRelayEnv(); env != nil {
+		t.Errorf("with the wall down, TraceRelayEnv = %v, want nil", env)
+	}
+	walled := &Runtime{egressImage: "spool-egress"}
+	env := walled.TraceRelayEnv()
+	want := map[string]string{
+		"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "http://spool-egress-proxy:4318/v1/traces",
+		"NO_PROXY":                           "localhost,127.0.0.1,::1,spool-egress-proxy",
+		"no_proxy":                           "localhost,127.0.0.1,::1,spool-egress-proxy",
+	}
+	if !maps.Equal(env, want) {
+		t.Errorf("TraceRelayEnv = %v\nwant %v", env, want)
+	}
+	argv, err := execArgv(runtime.Spec{LoopID: "abc", SessionID: "sess-1", Env: env}, walled.egressEnv(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wall := slices.Index(argv, "NO_PROXY=localhost,127.0.0.1,::1")
+	session := slices.Index(argv, "NO_PROXY")
+	if wall < 0 || session < wall {
+		t.Errorf("the session's NO_PROXY (at %d) must follow the wall's (at %d): %q", session, wall, argv)
 	}
 }

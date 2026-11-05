@@ -1004,6 +1004,9 @@ func (actor *Actor) wake() {
 	}
 	actor.githubEnv(system, loopRuntime.Kind(), connections)
 	spec.Env = buildExecEnv(system, connections)
+	if loopRuntime.Kind() != store.RuntimeCloud {
+		spec.Env = actor.traceEnv(ctx, loopRuntime, spec.Env)
+	}
 	// The loop still reads its pre-wake state while Ensure builds or pulls
 	// the workstation, so this is the only sign that a wake is under way.
 	actor.ensureSnap.Store(true)

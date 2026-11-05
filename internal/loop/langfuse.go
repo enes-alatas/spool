@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"net/url"
 	"slices"
 	"strings"
 
+	"github.com/enes-alatas/spool/internal/runtime"
 	"github.com/enes-alatas/spool/internal/store"
 )
 
@@ -113,4 +115,62 @@ func hostIsLoopback(host string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+// traceEnvOff is what a session gets when it exports no traces: telemetry
+// off, over whatever the hub's own environment says.
+var traceEnvOff = map[string]string{"CLAUDE_CODE_ENABLE_TELEMETRY": "0"}
+
+// withTraceEnv sets a session's trace export (ADR-0064) in env,
+// after its connections, so neither a connection nor anything the hub
+// inherited turns a setting on. Every OTEL_* a connection set is dropped,
+// and each OTEL_LOG_* stays unset, which is off. relay is the runtime's
+// way to the trace relay, nil when it has none: a docker loop with the
+// wall up exports there when the settings let it, and every other loop
+// exports nothing here (a bare loop's export is #1313's).
+func withTraceEnv(env map[string]string, langfuse store.Langfuse, relay map[string]string) map[string]string {
+	out := make(map[string]string, len(env)+8)
+	for name, value := range env {
+		if !strings.HasPrefix(name, "OTEL_") && name != "CLAUDE_CODE_ENABLE_TELEMETRY" &&
+			name != "CLAUDE_CODE_ENHANCED_TELEMETRY_BETA" {
+			out[name] = value
+		}
+	}
+	if relay == nil || !LangfuseExports(langfuse) {
+		maps.Copy(out, traceEnvOff)
+		return out
+	}
+	maps.Copy(out, map[string]string{
+		"CLAUDE_CODE_ENABLE_TELEMETRY":        "1",
+		"CLAUDE_CODE_ENHANCED_TELEMETRY_BETA": "1",
+		"OTEL_TRACES_EXPORTER":                "otlp",
+		"OTEL_METRICS_EXPORTER":               "none",
+		"OTEL_LOGS_EXPORTER":                  "none",
+		"OTEL_EXPORTER_OTLP_TRACES_PROTOCOL":  "http/json",
+	})
+	maps.Copy(out, relay)
+	return out
+}
+
+// traceRelay is a runtime with a trace relay in front of its loops: the
+// docker runtime with the wall up.
+type traceRelay interface {
+	TraceRelayEnv() map[string]string
+}
+
+// traceEnv is env with the session's trace export set (ADR-0064). Settings
+// it can't read leave the export off: a session that doesn't trace is
+// one the operator can turn on, and one exporting where it shouldn't
+// isn't one they can take back.
+func (actor *Actor) traceEnv(ctx context.Context, loopRuntime runtime.Runtime, env map[string]string) map[string]string {
+	langfuse, err := LoadLangfuse(ctx, actor.deps.Store.Settings())
+	if err != nil {
+		actor.log().Warn("langfuse settings unreadable; this session exports no traces", "err", err)
+		langfuse = store.Langfuse{}
+	}
+	var relay map[string]string
+	if withRelay, ok := loopRuntime.(traceRelay); ok {
+		relay = withRelay.TraceRelayEnv()
+	}
+	return withTraceEnv(env, langfuse, relay)
 }
