@@ -821,7 +821,7 @@ the CLI (ADR-0018).
 ### Egress wall
 
 **What crosses:** a workstation's HTTP and HTTPS, through the egress proxy
-(ADR-0028).
+(ADR-0028), and its traces, through the proxy's trace relay (ADR-0064).
 
 **Holds:**
 - **One way out.** Workstations sit on an internal network, and the proxy
@@ -842,10 +842,41 @@ the CLI (ADR-0018).
   Other engines forward them to the host's resolvers, and no 24.x is
   fixed (CVE-2024-29018, #899); the hub warns at boot on one.
   Denials are logged by host, never by URL.
+- **The trace relay writes, and reads nothing back** (ADR-0064, #1296).
+  The proxy's second listener, on OTLP's port 4318 of every network it is
+  on, takes `POST /v1/traces` in OTLP/JSON and nothing else. It forwards
+  to the one upstream the operator set: https, or plain http to
+  `langfuse-web`, the compose profile's container on the wall's network.
+  It follows no redirect and answers with the upstream's status alone, no
+  body and no header. Each loop gets a 4 MiB body, 60 requests a minute and
+  four in flight, and the listener and the upstream call are time-bounded.
+- **A trace names the loop it came from.** The relay finds the loop by the
+  proxy's own address the request reached. Only that loop's workstation
+  shares that network, and the sender must be on its subnet, so a
+  workstation that addressed the proxy on another loop's network is
+  refused. A loop network is removed only once the proxy has been handed a
+  file without it, so a loop given a reused subnet never inherits a removed
+  loop's identity. It sets `spool.loop.id` and `spool.loop.name` on every
+  resource, overwriting what the loop wrote, and removes `spool.loop.*`
+  from scopes, spans, and spans' events and links. A body spelling a
+  field the relay walks another way (`resource_spans`) is refused rather
+  than passed on unstamped.
+- **The ingest key stays out of loops and off disk.** The relay sets
+  `Authorization` itself and drops the loop's. Its configuration reaches
+  the proxy through `docker exec` on stdin, into a tmpfs, never through
+  run arguments or the container filesystem, and the relay logs neither
+  the key nor a body.
+- **Langfuse is reachable through the relay alone, by name.** The proxy
+  refuses a CONNECT or a forward to `langfuse-web` and to the hosts of both
+  Langfuse addresses, whatever the allowlist says, while it holds the
+  relay file (a restart drops it, below).
 
 **Doesn't hold:**
 - **The proxy matches names, not content.** It can't tell a fetch from an
   upload to an allowed host, a gist for example (ADR-0028, ADR-0045).
+  The same goes for Langfuse: its hosts are refused by the name a loop
+  writes, so an allowed IP literal or another name for the same server
+  reaches it. No docker loop holds a key it would take (ADR-0064).
 - **The proxy can reach every workstation.** It sits on every loop
   network, so docker's DNS resolves each `spool-ws-<id>` name from it. An
   extra host naming a workstation would open a way from one workstation
@@ -862,6 +893,18 @@ the CLI (ADR-0018).
   `--egress-image ""`, a bare loop, and a workstation made before the wall
   until its next wake replaces it, or for as long as its image is gone
   (ADR-0028).
+- **What reaches Langfuse is written by the loop.** A loop runs its own
+  shell, so it can post any spans it likes through the relay, content
+  included, whatever the hub's `OTEL_LOG_*` settings say. Only the stamp
+  is the relay's (ADR-0064).
+- **The proxy now holds a credential:** the ingest key, which Langfuse
+  doesn't scope, so it reads every trace in the project. Anything that
+  can read the proxy's memory or exec into it can take it. A proxy docker
+  restarted on its own has lost its tmpfs, and relays nothing until the
+  next wake hands the file again. Until then it refuses `langfuse-web`
+  alone of Langfuse's hosts, so an admin's allowlist entry naming an
+  outside Langfuse would reach it. Its read API still wants the key, which
+  no docker loop holds.
 
 ### Store and data at rest
 
