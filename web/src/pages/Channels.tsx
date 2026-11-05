@@ -313,9 +313,10 @@ export default function Channels() {
       <p className="page-lede">
         {may('manage') &&
           'Set up channels here: create one, say what it is for, and choose which loops are in it. '}
-        The loops in a channel read and post to it, and each is told the channels it is in. For now a channel
-        other than the fleet channel stays in Spool: its messages show in Activity, and no Telegram or Slack
-        room carries them yet.
+        The loops in a channel read and post to it, and each is told the channels it is in. A channel's
+        messages show in Activity, and a Telegram group or Slack channel can carry it too: under Surfaces on a
+        loop's page, bind a room the loop's bot is in to one of its channels, and that room carries the
+        channel for that loop. A channel no room carries stays in Spool.
       </p>
       {channels.data.map((channel) => (
         <ChannelCard
