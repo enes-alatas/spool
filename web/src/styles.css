@@ -5494,3 +5494,51 @@ button.panel-link {
   border-color: var(--active-line);
   background: var(--active-wash);
 }
+
+/* Adding a loop's bot to a Telegram group (#1319): the button that opens
+   the steps, and the live wait for the group in their dialog. The dot
+   breathes in the attention colour while the hub has heard of nothing. */
+.surface-rooms .group-add {
+  margin: 2px 0 10px;
+}
+.group-wait {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+.group-wait .hint {
+  flex-basis: 100%;
+  font-size: 0.75rem;
+}
+.group-wait-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--active);
+  animation: group-wait 1.6s ease-in-out infinite;
+}
+@keyframes group-wait {
+  50% {
+    opacity: 0.25;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .group-wait-dot {
+    animation: none;
+  }
+}
+/* An unbound group is what asks for the operator: it sits in a warning
+   wash, not only in the warning colour. */
+.side-panel .chan-room:has(.room-name.unbound),
+.group-dialog .chan-room:has(.room-name.unbound) {
+  padding: 8px 10px;
+  border: 1px solid var(--active-line);
+  border-radius: 6px;
+  background: var(--active-wash);
+}
+.group-dialog .chan-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}

@@ -3,8 +3,13 @@ import { Link } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type Channel, type LoopView, type Room } from '../api'
 import { channelLabel, FLEET_CHANNEL } from '../channels'
+import { groupProgress } from '../groupGuide'
 import { loopSurface } from '../slack'
 import { useMay } from './Session'
+import { CheckIcon } from './Icons'
+import { POLL_MS } from './LinksSection'
+import { StepDialog } from './StepDialog'
+import { Copyable } from './Copyable'
 
 // A channel as a pane of a loop's page shows it (#549): what the channel is
 // for, then each loop in it, this one first, with the room — a Telegram
@@ -113,6 +118,8 @@ type RoomSurface = keyof typeof ROOM_WORDS
 export function LoopRooms({ loop }: { loop: LoopView }) {
   const rooms = useLoopRooms(loop)
   const channels = useQuery({ queryKey: ['channels'], queryFn: api.channels, retry: false })
+  const manage = useMay()('manage')
+  const [adding, setAdding] = useState(false)
   const surface = loopSurface(loop)
   if (!rooms || surface === '') return null
   const words = ROOM_WORDS[surface]
@@ -126,9 +133,18 @@ export function LoopRooms({ loop }: { loop: LoopView }) {
     .map((channel) => channel.name)
     .filter((name) => !rooms.some((room) => room.channel === name))
   const bot = loop.tg_bot_username ? `@${loop.tg_bot_username}` : 'the bot'
+  // A Telegram loop's manager adds its bot to a group through the steps
+  // (#1319); anyone else reads how a group shows up.
+  const guide = surface === 'telegram' && manage
   return (
     <section className="surface-rooms" id={ROOMS_ANCHOR}>
       <h4 className="panel-sub">{words.title}</h4>
+      {guide && (
+        <button className="btn sm group-add" onClick={() => setAdding(true)}>
+          {rooms.length === 0 ? 'Add to a group' : 'Add to another group'}
+        </button>
+      )}
+      {adding && <GroupDialog loop={loop} rooms={rooms} channels={free} onClose={() => setAdding(false)} />}
       <div className="loop-chans">
         {unbound.map((room) => (
           <UnboundRoom key={room.room_id} loop={loop} room={room} rooms={rooms} channels={free} />
@@ -136,23 +152,23 @@ export function LoopRooms({ loop }: { loop: LoopView }) {
         {unbound.length > 0 && (
           <div className="chans-note">Not read until it carries one of @{loop.name}'s channels.</div>
         )}
-        {rooms.length === 0 ? (
-          <div className="chans-note">
-            {surface === 'slack' ? (
-              <>
-                None yet. Invite the app to a Slack channel: the first one an allowed sender writes in carries
-                the fleet channel, and any later one shows up here for a channel to take.
-              </>
-            ) : (
-              <>
-                None yet. Add {bot} to a Telegram group: the first one carries the fleet channel, and any
-                later one shows up here for a channel to take.
-              </>
-            )}
-          </div>
-        ) : (
-          unbound.length === 0 && <div className="chans-note">Every {words.kind} carries a channel.</div>
-        )}
+        {rooms.length === 0
+          ? !guide && (
+              <div className="chans-note">
+                {surface === 'slack' ? (
+                  <>
+                    None yet. Invite the app to a Slack channel: the first one an allowed sender writes in
+                    carries the fleet channel, and any later one shows up here for a channel to take.
+                  </>
+                ) : (
+                  <>
+                    None yet. Add {bot} to a Telegram group: the first one carries the fleet channel, and any
+                    later one shows up here for a channel to take.
+                  </>
+                )}
+              </div>
+            )
+          : unbound.length === 0 && <div className="chans-note">Every {words.kind} carries a channel.</div>}
         {bound.map((room) => (
           <BoundRoom key={room.room_id} loop={loop} room={room} rooms={rooms} />
         ))}
@@ -357,4 +373,104 @@ function ForgetButton({
 // does not know reads as Telegram's, whose rooms came first.
 function roomSurface(room: Room): RoomSurface {
   return room.surface === 'slack' ? 'slack' : 'telegram'
+}
+
+// Adding a loop's bot to a Telegram group, step by step (#1319): add the
+// bot, then send /spool_status there from a linked account, since the hub
+// learns of a group only from a message an allowed sender writes in it
+// (ADR-0051). The steps wait on the group live. The first group carries the
+// fleet channel by itself; a later one is bound here, from a pick-list.
+function GroupSteps({ loop, rooms, channels }: { loop: LoopView; rooms: Room[]; channels: string[] }) {
+  // The groups known when the steps opened: the one that arrives is the
+  // first not among them.
+  const [known] = useState(() => new Set(rooms.map((room) => room.room_id)))
+  // rooms_changed refreshes the list on the loop page; a poll covers a
+  // stream that dropped while the operator was in Telegram.
+  useQuery({
+    queryKey: ['rooms', loop.name],
+    queryFn: () => api.rooms(loop.name),
+    refetchInterval: POLL_MS,
+  })
+  const { arrived, needsChannel, done } = groupProgress(known, rooms)
+  const bot = loop.tg_bot_username ? `@${loop.tg_bot_username}` : `@${loop.name}'s bot`
+  // Addressed to the bot: with privacy on, Telegram's default, a bot gets a
+  // plain command only if it was the last bot to post in the group, and
+  // always gets one that names it. The hub reads either.
+  const command = loop.tg_bot_username ? `/spool_status@${loop.tg_bot_username}` : '/spool_status'
+  const steps = [
+    <>
+      In Telegram, add <strong>{bot}</strong> to the group.
+    </>,
+    <>
+      Send <Copyable text={command} /> there, from an account linked to Spool.
+    </>,
+    needsChannel ? (
+      <>Pick the channel it carries, one of @{loop.name}'s.</>
+    ) : (
+      <>It carries the fleet channel, as a loop's first group does.</>
+    ),
+  ]
+  // Until a group arrives, the first two steps are the operator's at once.
+  const now = (i: number) => (done === 0 ? i < 2 : i === done)
+  return (
+    <>
+      <ol className="link-steps">
+        {steps.map((text, i) => (
+          <li key={i} className={i < done ? 'done' : now(i) ? 'now' : ''}>
+            <span className="link-step-mark" aria-hidden>
+              {i < done ? <CheckIcon size={12} /> : i + 1}
+            </span>
+            <span>{text}</span>
+          </li>
+        ))}
+      </ol>
+      {arrived && !arrived.channel && (
+        <div className="loop-chans">
+          <UnboundRoom loop={loop} room={arrived} rooms={rooms} channels={channels} />
+        </div>
+      )}
+      {arrived?.channel ? (
+        <p className="step-dialog-state" aria-live="polite">
+          <span className="ok">
+            <CheckIcon size={14} /> {roomName('telegram', arrived)} carries{' '}
+            {arrived.channel === FLEET_CHANNEL ? 'the fleet channel' : channelLabel(arrived.channel)}.
+          </span>
+        </p>
+      ) : (
+        !arrived && (
+          <p className="step-dialog-state group-wait" aria-live="polite">
+            <span className="group-wait-dot" aria-hidden />
+            Waiting for the group…
+            <span className="hint">
+              Nothing yet? Only a linked account's message counts: link yours under Settings → Account.
+            </span>
+          </p>
+        )
+      )}
+    </>
+  )
+}
+
+// The steps in a dialog, from the groups section's button.
+function GroupDialog({
+  loop,
+  rooms,
+  channels,
+  onClose,
+}: {
+  loop: LoopView
+  rooms: Room[]
+  channels: string[]
+  onClose: () => void
+}) {
+  return (
+    <StepDialog title={`Add @${loop.name} to a group`} className="group-dialog" onClose={onClose}>
+      <div className="form">
+        <GroupSteps loop={loop} rooms={rooms} channels={channels} />
+        <form method="dialog" className="pillar-actions">
+          <button className="btn">Close</button>
+        </form>
+      </div>
+    </StepDialog>
+  )
 }
