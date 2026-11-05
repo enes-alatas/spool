@@ -24,3 +24,5 @@ web/dist/*
 *.db
 *.db-wal
 *.db-shm
+# scripts/langfuse-setup.sh writes the Langfuse profile's secrets here
+docker/langfuse/langfuse.env

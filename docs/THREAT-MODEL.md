@@ -905,6 +905,15 @@ the CLI (ADR-0018).
   alone of Langfuse's hosts, so an admin's allowlist entry naming an
   outside Langfuse would reach it. Its read API still wants the key, which
   no docker loop holds.
+- **With the `langfuse` profile up, the egress network holds a
+  third-party app** (ADR-0064 item 5, #1299). `langfuse-web` joins it,
+  beside the proxy, so the relay can reach it, and it has a way out of
+  its own through the bridge network that carries its UI port. No
+  workstation sits on that network. The hub's login check and sign-in
+  containers do, and they reach `http://langfuse-web` without the proxy.
+  They run only the `claude` CLI, and Langfuse's API takes its key pair.
+  Langfuse's datastores and worker sit on an internal network of their
+  own and join no Spool network.
 
 ### Store and data at rest
 

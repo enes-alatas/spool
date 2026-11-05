@@ -1,6 +1,6 @@
 # ADR-0064: Loops trace to the operator's own Langfuse, docker loops through the egress proxy
 
-Date: 2026-11-04 · Status: accepted (operator decision of 2026-11-05, in a direct message to Terra, recorded on #1310, accepting the ADR; operator decision of 2026-11-03, in a direct message to Elliot, recorded on #1187: way 2 with every `OTEL_LOG_*` off, and the relay in the egress proxy; operator decision of 2026-11-04, in a direct message to Terra, recorded on #1310: bare loops export straight to Langfuse with the key in their environment) · Relates to: ADR-0013, ADR-0028, ADR-0043, ADR-0046, ADR-0053, ADR-0059
+Date: 2026-11-04 · Status: accepted (operator decision of 2026-11-05, in a direct message to Terra, recorded on #1310, accepting the ADR; operator decision of 2026-11-03, in a direct message to Elliot, recorded on #1187: way 2 with every `OTEL_LOG_*` off, and the relay in the egress proxy; operator decision of 2026-11-04, in a direct message to Terra, recorded on #1310: bare loops export straight to Langfuse with the key in their environment) · Amended: 2026-11-05 (item 5: langfuse-web's networks, #1299; accepted by the operator on 2026-11-05, in a direct message to Elliot, recorded on #1315) · Relates to: ADR-0013, ADR-0028, ADR-0043, ADR-0046, ADR-0053, ADR-0059
 
 ## Context
 
@@ -242,6 +242,25 @@ needs such a relay. It is new surface, and this ADR places it.
        hub first.
      - ClickHouse, Postgres, Redis and MinIO sit on an internal-only
        `langfuse` network with no route out.
+
+     **Amendment (2026-11-05, #1299):** the networks are as follows.
+     - **The egress network is the only Spool network `langfuse-web`
+       joins.** It also joins two of the profile's own:
+       - the internal `langfuse` network, where it reaches the
+         datastores;
+       - `langfuse-ui`, a plain bridge network with nothing else on
+         it, which carries the published UI port.
+     - **Why `langfuse-ui`:** docker publishes no port for a container
+       whose networks are all internal, and the egress network is
+       internal (ADR-0028). So without a non-internal network there is no
+       UI on `127.0.0.1` for the operator or for the hub's read address.
+     - **What it costs:** `langfuse-web` has a route out of its own, as
+       upstream's compose file gives it. Its telemetry and AI features
+       stay off, as above.
+     - **The worker** sits on `langfuse` alone, beside the datastores,
+       with no route out.
+     - **No other port** is published, and no Spool container joins
+       `langfuse-ui`.
    - **Not backed up.** Langfuse's volumes are outside
      `spool-backup.sh`. They hold telemetry that rebuilds from nothing.
    - **The off switch:** clearing the upstream in Settings turns every

@@ -1004,3 +1004,81 @@ CONVENTIONS.md, Releases).
 |---|---|---|
 | v0.6.0 | Rewrites nothing. A loop's owner is now chosen as a hub user, and stored as that user's link on the loop's surface (#731). | Link your Telegram, or your Slack, in Settings → Account before changing any loop's owner. A user with no link there cannot be chosen. Senders allowed before the upgrade keep working, and keep the loops they own, shown as not linked. |
 | v0.5.0 | Mints `hub.key` and seals every stored secret in `spool.db` under it, rewriting the database (ADR-0046). | The pre-upgrade backup is the only copy of the database a v0.4 binary can read. From now on `hub.key` must be in every backup's keys file. A hub without it will not start. |
+
+## Langfuse beside the hub
+
+Langfuse is optional. With it, an operator sees each loop's spend, tokens,
+turn times, tool mix and failures, but no content (ADR-0064). It runs as
+the `langfuse` compose profile in `docker/langfuse/compose.yml`. It's off
+by default, and the hub runs the same without it. The commands run from
+the checkout as a user who can reach docker, on a hub that uses the docker
+runtime.
+
+- **Footprint:** about 2.6 GiB of RAM idle, whatever the traffic (1.8 GiB
+  measured just after a start), and about 40 KB of disk a turn. That's six
+  containers: web, worker, ClickHouse, Postgres, Redis and MinIO.
+- **What it reaches:**
+  - The datastores and the worker sit on an internal network with no
+    route out.
+  - The web container also joins the hub's egress network. There the
+    egress proxy's relay reaches it as `http://langfuse-web`. It never
+    joins a loop's network.
+  - It also joins a bridge network that carries only the UI's port, on
+    `127.0.0.1:3000`.
+  - Langfuse's own telemetry is off, sign-up is off, and no model
+    provider is set.
+
+### Turning it on
+
+The profile joins the hub's egress network, which the hub makes at its
+first start with the docker runtime. Start the hub first, then:
+
+```bash
+bash scripts/langfuse-setup.sh --admin-email you@example.com
+docker compose -f docker/langfuse/compose.yml \
+  --env-file docker/langfuse/langfuse.env --profile langfuse up -d --wait
+```
+
+- **The setup script:** it writes `docker/langfuse/langfuse.env` (0600,
+  ignored by git). Every secret in it is generated: the datastores'
+  passwords, the project's key pair, and the admin's password. It never
+  overwrites the file. Keep the file as you'd keep `hub.key`. Anyone with
+  the key pair can read every trace.
+- **A hub with a non-default proxy image:** its egress network has the
+  image's name. Pass it with `SPOOL_EGRESS_NETWORK=<name>` to the setup
+  script, which writes it into the env file.
+- **Signing in:** the UI is at `http://127.0.0.1:3000` on the hub's
+  machine, through `ssh -L 3000:127.0.0.1:3000` from elsewhere. Sign in as
+  the admin with the password from the env file.
+- **Through Caddy:** add a site with `reverse_proxy 127.0.0.1:3000`, then
+  add `LANGFUSE_URL=https://<that name>` to the env file and run the `up`
+  again. The UI keeps its own login.
+- **Telling the hub:** the hub learns Langfuse's addresses and keys in
+  Settings (ADR-0064 item 3):
+  - the upstream `http://langfuse-web`, the default;
+  - the read address `http://127.0.0.1:3000`;
+  - for both keys, the env file's `LANGFUSE_PUBLIC_KEY` and
+    `LANGFUSE_SECRET_KEY`.
+
+### Turning it off
+
+- **Clearing the upstream in Settings** turns every loop's export off at
+  its next session start.
+- **With bare loops,** also rotate or delete the project's key pair in
+  Langfuse's UI. A bare loop holds the key in its environment and may
+  have kept a copy (ADR-0064 item 5).
+- **Stopping Langfuse:**
+  `docker compose -f docker/langfuse/compose.yml --env-file docker/langfuse/langfuse.env --profile langfuse down`
+  stops it and keeps its data.
+- **Removing it for good:** add `-v` to that command to delete its
+  volumes, then delete `docker/langfuse/langfuse.env`. The hub's egress
+  network is the hub's, so it stays.
+
+### Backups and upgrades
+
+- **Not backed up:** `spool-backup.sh` doesn't back up Langfuse's volumes.
+  They hold telemetry, which builds up again once loops run, so losing
+  them loses history, not the fleet.
+- **Upgrading Langfuse:** the images are pinned by digest in the compose
+  file, so it moves only with a Spool release that changes them. After
+  pulling one, run the `up` again.

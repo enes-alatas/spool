@@ -1,0 +1,202 @@
+# Langfuse beside a Spool hub, as the optional `langfuse` profile (ADR-0064
+# item 5, #1299). Every service is under the profile, so this file starts
+# nothing without it, and the hub runs unchanged with or without it.
+#
+#   bash scripts/langfuse-setup.sh        # once: writes langfuse.env (0600)
+#   docker compose -f docker/langfuse/compose.yml \
+#     --env-file docker/langfuse/langfuse.env --profile langfuse up -d
+#
+# OPERATIONS ("Langfuse beside the hub") is the runbook. Against upstream's
+# docker-compose.yml (v4):
+#   - Networks: ClickHouse, Postgres, Redis, MinIO and the worker sit on
+#     `langfuse`, which is internal: no route out, nothing published.
+#     langfuse-web also joins the hub's egress network (external, never
+#     created or removed here, never a loop's network), where the egress
+#     proxy's relay reaches it as http://langfuse-web, and `langfuse-ui`,
+#     a plain bridge that exists only so docker can publish its port: a
+#     container on internal networks alone gets no published port.
+#   - Ports: only the UI's, on 127.0.0.1 (LANGFUSE_BIND). Upstream publishes
+#     web 3000 and MinIO 9090 on every interface, and a port docker
+#     publishes isn't filtered by ufw.
+#   - TELEMETRY_ENABLED is false (upstream defaults it to true), and no LLM
+#     provider is set, so Langfuse's own AI features send nothing.
+#   - No secret has a default: each is required from langfuse.env.
+#   - Sign-up is off; the org, the project, its key pair and the admin
+#     come from LANGFUSE_INIT_*.
+#   - Images are pinned by digest.
+name: spool-langfuse
+
+x-langfuse-env: &langfuse-env
+  NEXTAUTH_URL: ${LANGFUSE_URL:-http://localhost:3000}
+  DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:?}@postgres:5432/postgres
+  SALT: ${SALT:?}
+  ENCRYPTION_KEY: ${ENCRYPTION_KEY:?}
+  TELEMETRY_ENABLED: "false"
+  LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
+  CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+  CLICKHOUSE_URL: http://clickhouse:8123
+  CLICKHOUSE_USER: clickhouse
+  CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?}
+  CLICKHOUSE_CLUSTER_ENABLED: "false"
+  LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+  LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+  LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+  LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?}
+  LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+  LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+  LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+  LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+  LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+  LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: minio
+  LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?}
+  LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://minio:9000
+  LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+  LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+  LANGFUSE_S3_BATCH_EXPORT_ENABLED: "false"
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  REDIS_AUTH: ${REDIS_AUTH:?}
+
+x-healthy: &healthy
+  postgres:
+    condition: service_healthy
+  minio:
+    condition: service_healthy
+  redis:
+    condition: service_healthy
+  clickhouse:
+    condition: service_healthy
+
+services:
+  langfuse-worker:
+    profiles: [langfuse]
+    image: docker.langfuse.com/langfuse/langfuse-worker:4.71.0@sha256:68c9020b8352d49ad80d768981b21bd465edfcb7de602e76d9b13949bfa85e0e
+    restart: unless-stopped
+    depends_on: *healthy
+    environment: *langfuse-env
+    networks: [langfuse]
+
+  langfuse-web:
+    profiles: [langfuse]
+    image: docker.langfuse.com/langfuse/langfuse:4.71.0@sha256:480b07885c0dc2ad8f542826d66986050ce58c630a1a7830eea15c373ffce5bd
+    restart: unless-stopped
+    depends_on: *healthy
+    ports:
+      - ${LANGFUSE_BIND:-127.0.0.1}:${LANGFUSE_PORT:-3000}:80
+    networks:
+      langfuse: {}
+      langfuse-ui: {}
+      egress:
+        aliases: [langfuse-web]
+    environment:
+      <<: *langfuse-env
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?}
+      # 80 inside, so the relay reaches it as http://langfuse-web (ADR-0064
+      # item 3); the host still sees 127.0.0.1:3000.
+      PORT: "80"
+      # every interface: Docker sets HOSTNAME to the container's name, which
+      # Next.js binds to, and that is its first network's address alone
+      HOSTNAME: 0.0.0.0
+      AUTH_DISABLE_SIGNUP: "true"
+      LANGFUSE_INIT_ORG_ID: spool
+      LANGFUSE_INIT_ORG_NAME: Spool
+      LANGFUSE_INIT_PROJECT_ID: ${LANGFUSE_INIT_PROJECT_ID:-spool}
+      LANGFUSE_INIT_PROJECT_NAME: ${LANGFUSE_INIT_PROJECT_ID:-spool}
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:?}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY:?}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_ADMIN_EMAIL:?}
+      LANGFUSE_INIT_USER_NAME: admin
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_ADMIN_PASSWORD:?}
+
+  clickhouse:
+    profiles: [langfuse]
+    image: docker.io/clickhouse/clickhouse-server:25.12@sha256:8a790dd3468db22b1d4e7b18a176f378ff5ff6053b9c48dd4ea1fa71a24c5ba6
+    restart: unless-stopped
+    networks: [langfuse]
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?}
+    volumes:
+      - langfuse_clickhouse_data:/var/lib/clickhouse
+      - langfuse_clickhouse_logs:/var/log/clickhouse-server
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 1s
+
+  minio:
+    profiles: [langfuse]
+    image: cgr.dev/chainguard/minio:latest@sha256:e234321fd3abff7fb968b0674056e883b702aa1ad93a0d4d795cb6c21fa46407
+    restart: unless-stopped
+    networks: [langfuse]
+    entrypoint: sh
+    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?}
+    volumes:
+      - langfuse_minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 1s
+      timeout: 5s
+      retries: 5
+      start_period: 1s
+
+  redis:
+    profiles: [langfuse]
+    image: docker.io/redis:7@sha256:b6b6e3dc0c0952737748e55d5d885272840c7e42ba41ab1d5489f693419882f5
+    restart: unless-stopped
+    networks: [langfuse]
+    command: --requirepass ${REDIS_AUTH:?} --maxmemory-policy noeviction
+    volumes:
+      - langfuse_redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+      interval: 3s
+      timeout: 10s
+      retries: 10
+    environment:
+      REDIS_PASSWORD: ${REDIS_AUTH:?}
+
+  postgres:
+    profiles: [langfuse]
+    image: docker.io/postgres:17@sha256:31ba9c94a03ada9988f2bb493a22a75eef3a185884533e5cdbcd498ea835b08f
+    restart: unless-stopped
+    networks: [langfuse]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: postgres
+      TZ: UTC
+      PGTZ: UTC
+    volumes:
+      - langfuse_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  langfuse_postgres_data:
+  langfuse_clickhouse_data:
+  langfuse_clickhouse_logs:
+  langfuse_minio_data:
+  langfuse_redis_data:
+
+networks:
+  # internal: no route out of the datastores or the worker
+  langfuse:
+    internal: true
+  # the published UI port's network; langfuse-web alone is on it
+  langfuse-ui: {}
+  # the hub's egress network (ADR-0028), made by its docker runtime and
+  # named after the proxy image; joined, never created or removed here
+  egress:
+    external: true
+    name: ${SPOOL_EGRESS_NETWORK:-spool-egress}
