@@ -85,7 +85,12 @@ if [ -n "$volumes_file" ]; then
 	[ "$volumes" = 1 ] || die "--volumes and --no-volumes contradict each other"
 	[ ! -s "$manifest" ] || die "$archive holds its volumes itself; restore it without --volumes"
 	mkdir "$stage/vmeta"
-	tar -C "$stage/vmeta" -xzf "$volumes_file" --occurrence=1 FORMAT manifest.tsv 2>/dev/null || true
+	# Stop at the first match of each name, not read gigabytes past it.
+	# GNU tar spells it --occurrence=1, the BSD tar macOS ships -q (#1314).
+	# Options go before the names, where BSD tar reads them (#1312).
+	first=--occurrence=1
+	if tar --version 2>/dev/null | grep -q bsdtar; then first=-q; fi
+	tar -C "$stage/vmeta" -xzf "$volumes_file" "$first" FORMAT manifest.tsv 2>/dev/null || true
 	[ "$(cat "$stage/vmeta/FORMAT" 2>/dev/null)" = volumes-1 ] || die "$volumes_file is not a spool-backup volumes file"
 	manifest=$stage/vmeta/manifest.tsv
 fi

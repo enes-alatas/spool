@@ -253,8 +253,9 @@ check "without pigz the backup says it compresses on one core" '[ $? -eq 0 ] && 
 
 
 # macOS ships BSD tar, which has no --transform and renames with -s
-# (#1311). A stand-in that answers as bsdtar and refuses --transform, and
-# runs GNU tar for -s, shows the backup picks -s there. Like BSD tar, it
+# (#1311), nor --occurrence, which it spells -q (#1314). A stand-in that
+# answers as bsdtar, refuses both, and runs GNU tar for -s and -q, shows
+# the backup and the restore pick the BSD spelling. Like BSD tar, it
 # reads every word after the first name as a name, but -C and its
 # directory, so an option placed there fails as on a Mac (a Mac run on
 # #1312 found that). It proves the choice and the order, not BSD tar
@@ -275,7 +276,8 @@ while [ \$# -gt 0 ]; do
 		args+=("\$1"); shift; continue
 	fi
 	case \$1 in
-	--transform*) echo "tar: Option --transform is not supported" >&2; exit 1 ;;
+	--transform*|--occurrence*) echo "tar: Option \${1%%=*} is not supported" >&2; exit 1 ;;
+	-q) args+=(--occurrence=1); shift ;;
 	-s) args+=(--transform "s\$2"); shift 2 ;;
 	-C|-f|-cf|-xf|-tf|-czf|-xzf|-tzf|--exclude) args+=("\$1" "\$2"); shift 2 ;;
 	-*) args+=("\$1"); shift ;;
@@ -289,6 +291,13 @@ mkdir "$work/out-bsd"
 PATH=$work/bsd-bin:$PATH bash scripts/spool-backup.sh --data-dir "$dst" --out "$work/out-bsd" --no-volumes >/dev/null 2>"$work/err"
 bsd_data=$(ls "$work/out-bsd"/spool-data-*.tar.gz 2>/dev/null)
 check "with BSD tar the backup renames with -s, into the same layout" '[ -n "$bsd_data" ] && tar -tzf "$bsd_data" | grep -qx "data/spool.db" && ! tar -tzf "$bsd_data" | grep -qE "hub\.key|operator-token"'
+
+# BSD tar has no --occurrence either; a restore reads a volumes file's
+# FORMAT and manifest with -q there (#1314). Onto a fresh host again.
+mv "$STUB/volumes" "$work/pre-bsd-volumes"
+mkdir "$STUB/volumes"
+PATH=$work/bsd-bin:$PATH bash scripts/spool-restore.sh --data "$data" --volumes "$vols" --data-dir "$work/dst-bsd" >/dev/null 2>"$work/err"
+check "with BSD tar a restore reads the volumes file and restores its volumes" '[ $? -eq 0 ] && [ -f "$work/dst-bsd/spool.db" ] && diff -r "$work/old-volumes/spool-ws-b/data" "$STUB/volumes/spool-ws-b/data" && [ "$(cat "$STUB/volumes/spool-ws-c/spool.loop.id")" = c ]'
 
 # The runbook runs restore with sudo while the hub runs as its own user, so
 # what root restores must stay readable by the data directory's owner.
