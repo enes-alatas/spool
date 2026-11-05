@@ -152,7 +152,9 @@ func checkSum(archive, sums string) error {
 // attest runs `gh attestation verify` on the archive as the operator who
 // ran sudo, with their GitHub login, never root's. Without gh, a sudo user
 // or a login the attestation is unchecked: a warning, or a refusal with
-// --require-attestation (ADR-0057, operator decision of 2026-10-16).
+// --require-attestation (ADR-0057, operator decision of 2026-10-16). So is
+// it with a gh older than 2.49, which has no attestation command (#1338):
+// a gh that can't check is no failed check, and is told apart from one.
 func (up *upgrader) attest(ctx context.Context, archive string) error {
 	unchecked := func(why, fix string) error {
 		if up.requireAttestation {
@@ -165,37 +167,47 @@ func (up *upgrader) attest(ctx context.Context, archive string) error {
 	if err != nil {
 		return unchecked("gh isn't installed", "install gh (cli.github.com)")
 	}
-	if up.asSelf() {
-		// a hub with no unit is upgraded as its own user, the operator,
-		// whose gh login this is (#1311)
-		if _, err := up.host.Run(ctx, hostCmd{Name: gh, Args: []string{"auth", "status"}}); err != nil {
-			return unchecked("gh has no GitHub login for you", "`gh auth login`")
-		}
-		if _, err := up.host.Run(ctx, hostCmd{Name: gh, Args: []string{"attestation", "verify", archive, "--repo", upgradeRepo}}); err != nil {
-			return fmt.Errorf("refusing the release: its attestation doesn't verify: %w", err)
-		}
-		up.printf("spool upgrade: the release's attestation verifies")
-		return nil
-	}
-	operator := up.getenv("SUDO_USER")
-	if operator == "" || operator == "root" {
-		return unchecked("no SUDO_USER to run gh as", "run it as `sudo spool upgrade` from your own account")
-	}
-	account, err := user.Lookup(operator)
-	if err != nil {
-		return unchecked("SUDO_USER "+operator+" isn't a user here", "run it through sudo from your own account")
-	}
-	env := []string{"HOME=" + account.HomeDir, "PATH=/usr/local/bin:/usr/bin:/bin"}
-	if _, err := up.host.Run(ctx, hostCmd{User: operator, Env: env, Name: gh, Args: []string{"auth", "status"}}); err != nil {
-		return unchecked("gh has no GitHub login for "+operator, "`gh auth login`, as "+operator)
-	}
-	dir, err := sharedCopy(archive)
-	if err != nil {
+	// a hub with no unit is upgraded as its own user, the operator, whose
+	// gh login this is (#1311); otherwise gh runs as the sudo user
+	runGh := func(args ...string) error {
+		_, err := up.host.Run(ctx, hostCmd{Name: gh, Args: args})
 		return err
 	}
-	defer func() { _ = os.RemoveAll(dir) }()
-	shared := filepath.Join(dir, filepath.Base(archive))
-	if _, err := up.host.Run(ctx, hostCmd{User: operator, Env: env, Name: gh, Args: []string{"attestation", "verify", shared, "--repo", upgradeRepo}}); err != nil {
+	who, loginFix := "you", "`gh auth login`"
+	if !up.asSelf() {
+		operator := up.getenv("SUDO_USER")
+		if operator == "" || operator == "root" {
+			return unchecked("no SUDO_USER to run gh as", "run it as `sudo spool upgrade` from your own account")
+		}
+		account, err := user.Lookup(operator)
+		if err != nil {
+			return unchecked("SUDO_USER "+operator+" isn't a user here", "run it through sudo from your own account")
+		}
+		env := []string{"HOME=" + account.HomeDir, "PATH=/usr/local/bin:/usr/bin:/bin"}
+		runGh = func(args ...string) error {
+			_, err := up.host.Run(ctx, hostCmd{User: operator, Env: env, Name: gh, Args: args})
+			return err
+		}
+		who, loginFix = operator, "`gh auth login`, as "+operator
+	}
+	if err := runGh("auth", "status"); err != nil {
+		return unchecked("gh has no GitHub login for "+who, loginFix)
+	}
+	if err := runGh("attestation", "--help"); err != nil {
+		return unchecked("this gh is older than 2.49 and has no `gh attestation`",
+			"install a current gh from cli.github.com's apt repository (docs/OPERATIONS.md, Upgrading)")
+	}
+	verify := archive
+	if !up.asSelf() {
+		// the sudo user can't read root's download directory
+		dir, err := sharedCopy(archive)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = os.RemoveAll(dir) }()
+		verify = filepath.Join(dir, filepath.Base(archive))
+	}
+	if err := runGh("attestation", "verify", verify, "--repo", upgradeRepo); err != nil {
 		return fmt.Errorf("refusing the release: its attestation doesn't verify: %w", err)
 	}
 	up.printf("spool upgrade: the release's attestation verifies")

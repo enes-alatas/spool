@@ -721,9 +721,12 @@ It does the steps below in their order (ADR-0057). It reads the binary,
 the data directory and the images from the unit (`--unit`, default
 `spool`), and checks the new build before anything stops. A release is
 checked by its checksum, and by `gh attestation verify` run as you if you
-have `gh` and are logged in; without that it warns, and
-`--require-attestation` makes it refuse. A target that doesn't know a
-migration the database has applied is refused. It then stops the hub,
+have `gh` 2.49 or later and are logged in; without that it warns, and
+`--require-attestation` makes it refuse. Ubuntu's and Debian's own `gh`
+packages can be older: install it from cli.github.com's apt repository
+([Linux install](https://github.com/cli/cli/blob/trunk/docs/install_linux.md)) (#1338).
+A target that doesn't know a migration the database has applied is
+refused. It then stops the hub,
 backs up the data directory with the installed `spool-backup.sh
 --no-volumes` into `/var/backups/spool` (`--backup-dir`, which must lie
 outside the data directory and is checked before anything stops), installs,

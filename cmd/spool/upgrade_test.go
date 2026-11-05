@@ -536,7 +536,7 @@ func TestUpgradeChecksTheAttestationAsTheSudoUser(t *testing.T) {
 			if cmd.User != me.Username || cmd.Login || !slices.Contains(cmd.Env, "HOME="+me.HomeDir) {
 				t.Errorf("gh ran as %+v; want %s, with their HOME", cmd, me.Username)
 			}
-			if cmd.Args[0] == "attestation" && !verifies {
+			if slices.Equal(cmd.Args[:2], []string{"attestation", "verify"}) && !verifies {
 				return "", errors.New("verification failed"), true
 			}
 			return "", nil, true
@@ -547,6 +547,41 @@ func TestUpgradeChecksTheAttestationAsTheSudoUser(t *testing.T) {
 			t.Errorf("a verified attestation: %v\n%s", err, out)
 		case !verifies && (err == nil || stopped(host)):
 			t.Errorf("a failed attestation: %v; want a refusal before the stop", err)
+		}
+	}
+}
+
+// A gh older than 2.49 has no attestation command (#1338). That is a gh
+// that can't check, as no gh is: a warning naming the fix, or a refusal
+// with --require-attestation, never a failed attestation.
+func TestUpgradeTellsAGhTooOldForAttestation(t *testing.T) {
+	me, _ := user.Current()
+	for _, require := range []bool{false, true} {
+		_, up, host, out := newUpgradeEnv(t)
+		up.requireAttestation = require
+		up.lookGh = func() (string, error) { return "/usr/bin/gh", nil }
+		up.getenv = func(key string) string { return map[string]string{"SUDO_USER": me.Username}[key] }
+		verified := false
+		host.answer = func(cmd hostCmd) (string, error, bool) {
+			if cmd.Name != "/usr/bin/gh" {
+				return "", nil, false
+			}
+			if cmd.Args[0] == "attestation" {
+				if len(cmd.Args) > 1 && cmd.Args[1] == "verify" {
+					verified = true
+				}
+				return "", errors.New(`unknown command "attestation" for "gh"`), true
+			}
+			return "", nil, true
+		}
+		err := up.run(context.Background())
+		switch {
+		case verified:
+			t.Errorf("require %v: gh was asked to verify after it showed it can't", require)
+		case !require && (err != nil || !strings.Contains(out.String(), "older than 2.49")):
+			t.Errorf("an old gh: %v\n%s; want a warning naming gh 2.49 and the upgrade to go on", err, out)
+		case require && (err == nil || !strings.Contains(err.Error(), "older than 2.49") || strings.Contains(err.Error(), "doesn't verify") || stopped(host)):
+			t.Errorf("an old gh with --require-attestation: %v; want a refusal naming gh 2.49 before the stop", err)
 		}
 	}
 }
