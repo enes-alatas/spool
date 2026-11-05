@@ -22,7 +22,8 @@ const dialTimeout = 30 * time.Second
 // dialed, so a blocked call never opens a connection at all.
 type Proxy struct {
 	allow *Allowlist
-	fleet *FleetFile // the operator's extra hosts on top of allow; nil for none
+	fleet *FleetFile   // the operator's extra hosts on top of allow; nil for none
+	relay *RelayConfig // names the Langfuse hosts refused whatever the lists say; nil for none
 	log   *slog.Logger
 	dial  func(network, addr string) (net.Conn, error) // nil = net.Dial with a timeout
 }
@@ -38,8 +39,11 @@ func NewProxy(allow *Allowlist, fleet *FleetFile, log *slog.Logger) *Proxy {
 }
 
 // allows reports whether a request may reach host:port: on the proxy's own
-// list or the operator's extra hosts.
+// list or the operator's extra hosts, and not one of Langfuse's.
 func (proxy *Proxy) allows(host, port string) bool {
+	if proxy.isLangfuse(host) {
+		return false
+	}
 	if proxy.allow.Allows(host, port) {
 		return true
 	}
@@ -213,4 +217,31 @@ func splitHostPort(target, defaultPort string) (host, port string, err error) {
 		return "", "", &url.Error{Op: "proxy", URL: target, Err: errors.New("no host")}
 	}
 	return host, port, nil
+}
+
+// RefusingLangfuse makes the proxy refuse the Langfuse hosts relay names,
+// whatever its allowlist or the operator's extra hosts say (ADR-0064): the
+// relay is the only way to Langfuse, and it writes spans only, so an
+// allowlist entry can't open Langfuse's read API to a loop.
+func (proxy *Proxy) RefusingLangfuse(relay *RelayConfig) *Proxy {
+	proxy.relay = relay
+	return proxy
+}
+
+// isLangfuse reports whether host is one the relay names as Langfuse's.
+// The compose profile's container is always among them.
+func (proxy *Proxy) isLangfuse(host string) bool {
+	if proxy.relay == nil {
+		return false
+	}
+	host = normalize(host)
+	if host == relayComposeHost {
+		return true
+	}
+	for _, langfuse := range proxy.relay.Current().Langfuse {
+		if normalize(langfuse) == host {
+			return true
+		}
+	}
+	return false
 }
