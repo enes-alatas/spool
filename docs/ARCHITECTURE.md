@@ -237,7 +237,11 @@ ADR-0060). The egress proxy also runs the *trace relay*: a docker loop's
 traces go to it on OTLP's port, and it forwards them to the operator's
 Langfuse with the ingest key, stamped with the loop whose network they came
 in on, so the loop holds no Langfuse key and can't write as another loop
-(ADR-0064, #1296). A
+(ADR-0064, #1296). Its settings, two addresses and two key pairs sealed under
+`hub.key`, are `/api/settings/langfuse`, which serves each key as whether
+it is set. A docker loop's session exports to the relay while an upstream
+and an ingest key are set, and every other session runs with telemetry off
+(#1297). A
 bare loop has the host's own network and no wall — one more thing the
 *uncontained* badge means. A bare loop can be moved into a workstation with
 `POST /api/loops/{name}/rehome`: the move lands at a `rehome` context rotation,

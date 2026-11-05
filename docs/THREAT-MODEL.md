@@ -866,6 +866,18 @@ the CLI (ADR-0018).
   the proxy through `docker exec` on stdin, into a tmpfs, never through
   run arguments or the container filesystem, and the relay logs neither
   the key nor a body.
+  In the hub both key pairs are sealed under `hub.key`, the settings
+  API serves each only as whether it is set, and both, with each
+  one's secret half alone, join the redactor's secrets, which mask
+  their base64 too, the `Authorization` the relay sends (#1297). A pair
+  replaced or cleared stays among them, sealed in the same setting:
+  Langfuse honours it until the operator deletes it there (ADR-0043).
+- **The hub sets a session's export, not its connections.** It drops
+  every `OTEL_*` an env-var connection sets and sets no `OTEL_LOG_*`, so
+  neither a connection nor the hub's environment turns content on. A
+  docker session exports to the relay only while an upstream and an
+  ingest key are set; any other session runs with
+  `CLAUDE_CODE_ENABLE_TELEMETRY=0`, which 2.1.316 honours (#1297).
 - **Langfuse is reachable through the relay alone, by name.** The proxy
   refuses a CONNECT or a forward to `langfuse-web` and to the hosts of both
   Langfuse addresses, whatever the allowlist says, while it holds the
