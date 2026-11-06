@@ -149,7 +149,8 @@ ADR instead.*
 - **Screenshots come from fixtures**: `make ui-shots` (#248) shoots a fixture
   hub, and a page it lacks is added to `web/scripts/ui-shots.mjs`, never shot
   against a live fleet. The Activity page is never shot, not even from the
-  fixture: that is the operator's decision (#277).
+  fixture: that is the operator's decision (#277). Procedure:
+  `/visual-pr-shots` (`.claude/skills/visual-pr-shots/`).
 - **Videos too**: `make demo` (#447) records the README videos on a fixture
   hub; the mp4s are uploaded as attachments, never committed. Remotion is
   source-available: companies of more than three people need a licence from
