@@ -27,8 +27,9 @@ const (
 	// RelayPath is the one path the relay takes.
 	RelayPath = "/v1/traces"
 
-	// relayUpstreamPath is Langfuse's OTLP traces path, under the upstream.
-	relayUpstreamPath = "/api/public/otel/v1/traces"
+	// LangfuseTracesPath is Langfuse's OTLP traces path under its address:
+	// the relay's upstream, or the read address a bare loop exports to.
+	LangfuseTracesPath = "/api/public/otel/v1/traces"
 
 	maxRelayBody        = 4 << 20
 	relayPerMinute      = 60
@@ -165,7 +166,7 @@ func (relay *Relay) forward(ctx context.Context, config RelayFile, body []byte, 
 	if err != nil {
 		return http.StatusBadGateway
 	}
-	upstream.Path = strings.TrimRight(upstream.Path, "/") + relayUpstreamPath
+	upstream.Path = strings.TrimRight(upstream.Path, "/") + LangfuseTracesPath
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, upstream.String(), bytes.NewReader(body))
 	if err != nil {
 		return http.StatusBadGateway

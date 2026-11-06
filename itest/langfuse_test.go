@@ -3,6 +3,7 @@
 package itest
 
 import (
+	"encoding/base64"
 	"net/http"
 	"regexp"
 	"strings"
@@ -101,15 +102,20 @@ func TestLangfuseSettingsKeepTheirKeys(t *testing.T) {
 	}
 }
 
-// A bare loop exports nothing in this slice (#1313 turns it on): its
-// session runs with telemetry off whatever the settings say, and an
-// OTEL_* variable a connection sets is dropped, so a connection can't
-// turn content logging on (ADR-0064).
-func TestABareSessionExportsNoTraces(t *testing.T) {
-	t.Parallel()
+// A bare loop's session exports straight to Langfuse at the read address,
+// with the ingest key as its Authorization and the loop's stamp on its
+// resources. Neither an OTEL_* a connection sets nor one the hub
+// inherited reaches it, and a turn that prints the key shows it masked.
+// With the read address cleared, a new session exports nothing
+// (ADR-0064, #1313). Not parallel: the hub inherits this process's
+// environment, which t.Setenv refuses to change under t.Parallel.
+func TestABareSessionExportsToLangfuse(t *testing.T) {
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "https://inherited.example")
+	t.Setenv("OTEL_LOG_TOOL_DETAILS", "1")
 	hub := startServer(t, t.TempDir())
 	hub.mustJSON("PUT", "/api/settings/langfuse", map[string]any{
-		"relay_upstream": "http://langfuse-web", "ingest_key": syntheticIngestKey,
+		"relay_upstream": "http://langfuse-web", "read_address": "http://127.0.0.1:3000",
+		"ingest_key": syntheticIngestKey,
 	}, nil)
 	workspace := workspaceWithScript(t, traceEnvProbe+"\n")
 	hub.createLoop("tern", map[string]any{"workspace_path": workspace})
@@ -121,13 +127,35 @@ func TestABareSessionExportsNoTraces(t *testing.T) {
 	probed := hub.waitTurn("tern", 60*time.Second, func(tn turn) bool {
 		return tn.Trigger == "message" && strings.HasPrefix(tn.ResultText, "sh: ")
 	})
-	if !strings.Contains(probed.ResultText, "CLAUDE_CODE_ENABLE_TELEMETRY=0") {
-		t.Errorf("a bare session's telemetry isn't off:\n%s", probed.ResultText)
-	}
-	for _, unwanted := range []string{"OTEL_LOG_USER_PROMPTS", "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "CLAUDE_CODE_ENABLE_TELEMETRY=1"} {
-		if strings.Contains(probed.ResultText, unwanted) {
-			t.Errorf("a bare session got %s:\n%s", unwanted, probed.ResultText)
+	for _, wanted := range []string{
+		"CLAUDE_CODE_ENABLE_TELEMETRY=1",
+		"CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1",
+		"OTEL_TRACES_EXPORTER=otlp",
+		"OTEL_METRICS_EXPORTER=none",
+		"OTEL_LOGS_EXPORTER=none",
+		"OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/json",
+		"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:3000/api/public/otel/v1/traces",
+		"OTEL_EXPORTER_OTLP_TRACES_HEADERS=Authorization=",
+		"OTEL_RESOURCE_ATTRIBUTES=spool.loop.id=" + hub.loop("tern").ID + ",spool.loop.name=tern",
+	} {
+		if !strings.Contains(probed.ResultText, wanted) {
+			t.Errorf("the session lacks %s:\n%s", wanted, probed.ResultText)
 		}
+	}
+	// the key's secret half, and the Authorization built from the pair
+	authorization := base64.StdEncoding.EncodeToString([]byte(syntheticIngestKey))
+	for _, unwanted := range []string{"OTEL_LOG_", "OTEL_EXPORTER_OTLP_ENDPOINT", "inherited.example", "sk-lf-synthetic", authorization[:16]} {
+		if strings.Contains(probed.ResultText, unwanted) {
+			t.Errorf("the session's turn shows %s:\n%s", unwanted, probed.ResultText)
+		}
+	}
+
+	hub.mustJSON("PUT", "/api/settings/langfuse", map[string]any{"read_address": ""}, nil)
+	quietSpace := workspaceWithScript(t, traceEnvProbe+"\n")
+	hub.createLoop("quiet", map[string]any{"workspace_path": quietSpace})
+	quiet := hub.waitTurn("quiet", firstTurnWait, func(tn turn) bool { return strings.HasPrefix(tn.ResultText, "sh: ") })
+	if !strings.Contains(quiet.ResultText, "CLAUDE_CODE_ENABLE_TELEMETRY=0") || strings.Contains(quiet.ResultText, "OTEL_") {
+		t.Errorf("with the read address cleared, a new session still exports:\n%s", quiet.ResultText)
 	}
 }
 

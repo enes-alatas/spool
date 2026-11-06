@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/enes-alatas/spool/internal/egress"
 	"github.com/enes-alatas/spool/internal/runtime"
 	"github.com/enes-alatas/spool/internal/store"
 )
@@ -124,11 +125,11 @@ var traceEnvOff = map[string]string{"CLAUDE_CODE_ENABLE_TELEMETRY": "0"}
 // withTraceEnv sets a session's trace export (ADR-0064) in env,
 // after its connections, so neither a connection nor anything the hub
 // inherited turns a setting on. Every OTEL_* a connection set is dropped,
-// and each OTEL_LOG_* stays unset, which is off. relay is the runtime's
-// way to the trace relay, nil when it has none: a docker loop with the
-// wall up exports there when the settings let it, and every other loop
-// exports nothing here (a bare loop's export is #1313's).
-func withTraceEnv(env map[string]string, langfuse store.Langfuse, relay map[string]string) map[string]string {
+// and each OTEL_LOG_* stays unset, which is off. export is where the
+// session sends its traces, and how, nil when it has nowhere to: a
+// docker loop's relay, or a bare loop's way straight to Langfuse. Even
+// with one, a session exports only when the settings let it.
+func withTraceEnv(env map[string]string, langfuse store.Langfuse, export map[string]string) map[string]string {
 	out := make(map[string]string, len(env)+8)
 	for name, value := range env {
 		if !strings.HasPrefix(name, "OTEL_") && name != "CLAUDE_CODE_ENABLE_TELEMETRY" &&
@@ -136,7 +137,7 @@ func withTraceEnv(env map[string]string, langfuse store.Langfuse, relay map[stri
 			out[name] = value
 		}
 	}
-	if relay == nil || !LangfuseExports(langfuse) {
+	if export == nil || !LangfuseExports(langfuse) {
 		maps.Copy(out, traceEnvOff)
 		return out
 	}
@@ -148,9 +149,34 @@ func withTraceEnv(env map[string]string, langfuse store.Langfuse, relay map[stri
 		"OTEL_LOGS_EXPORTER":                  "none",
 		"OTEL_EXPORTER_OTLP_TRACES_PROTOCOL":  "http/json",
 	})
-	maps.Copy(out, relay)
+	maps.Copy(out, export)
 	return out
 }
+
+// bareTraceEnv is how a bare loop's session reaches Langfuse (ADR-0064):
+// straight at the read address, as the hub does, with the ingest key as
+// its Authorization and the loop's stamp on every resource. The relay
+// can't tell one bare loop from another, so a bare loop doesn't use it.
+// It is nil, no export, without an ingest key or with a read address
+// that breaks the https-or-loopback rule, so the key never crosses a
+// network in clear.
+func bareTraceEnv(langfuse store.Langfuse, loop *store.Loop) map[string]string {
+	if langfuse.IngestKey == "" || ValidLangfuseReadAddress(langfuse.ReadAddress) != nil {
+		return nil
+	}
+	return map[string]string{
+		"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": strings.TrimRight(langfuse.ReadAddress, "/") + egress.LangfuseTracesPath,
+		"OTEL_EXPORTER_OTLP_TRACES_HEADERS":  "Authorization=" + LangfuseAuthorization(langfuse.IngestKey),
+		"OTEL_RESOURCE_ATTRIBUTES": "spool.loop.id=" + resourceValue.Replace(loop.ID) +
+			",spool.loop.name=" + resourceValue.Replace(loop.Name),
+	}
+}
+
+// resourceValue escapes a value for OTEL_RESOURCE_ATTRIBUTES, a list that
+// splits on commas and equals signs and percent-decodes each value. No
+// loop's name or ID holds one of those today; escaping keeps one that
+// did from writing another attribute.
+var resourceValue = strings.NewReplacer("%", "%25", ",", "%2C", "=", "%3D", " ", "%20")
 
 // traceRelay is a runtime with a trace relay in front of its loops: the
 // docker runtime with the wall up.
@@ -168,9 +194,11 @@ func (actor *Actor) traceEnv(ctx context.Context, loopRuntime runtime.Runtime, e
 		actor.log().Warn("langfuse settings unreadable; this session exports no traces", "err", err)
 		langfuse = store.Langfuse{}
 	}
-	var relay map[string]string
+	var export map[string]string
 	if withRelay, ok := loopRuntime.(traceRelay); ok {
-		relay = withRelay.TraceRelayEnv()
+		export = withRelay.TraceRelayEnv()
+	} else if loopRuntime.Kind() == store.RuntimeBare {
+		export = bareTraceEnv(langfuse, &actor.loop)
 	}
-	return withTraceEnv(env, langfuse, relay)
+	return withTraceEnv(env, langfuse, export)
 }

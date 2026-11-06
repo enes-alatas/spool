@@ -34,7 +34,7 @@ func (source StoreSource) Secrets(ctx context.Context) ([]Secret, error) {
 
 	// Either Langfuse key pair reads every trace in its project (ADR-0064).
 	// Masking a pair masks its base64 too, which is the Authorization the
-	// relay sends.
+	// relay and a bare loop send.
 	raw, err := source.Store.Settings().Get(ctx, store.SettingLangfuse)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return nil, err

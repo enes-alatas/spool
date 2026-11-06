@@ -43,7 +43,7 @@ func TestWithTraceEnv(t *testing.T) {
 			"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT":  "http://spool-egress-proxy:4318/v1/traces",
 			"NO_PROXY":                            "localhost,127.0.0.1,::1,spool-egress-proxy",
 		}},
-		{"no relay: a bare loop, or the wall down", exporting, nil, off},
+		{"nowhere to export: the wall down, or a bare loop without a usable read address", exporting, nil, off},
 		{"no upstream", store.Langfuse{IngestKey: exporting.IngestKey}, relay, off},
 		{"no ingest key", store.Langfuse{RelayUpstream: exporting.RelayUpstream}, relay, off},
 	}
@@ -62,6 +62,41 @@ func TestWithTraceEnv(t *testing.T) {
 	}
 	if got := withTraceEnv(nil, store.Langfuse{}, nil); !maps.Equal(got, traceEnvOff) {
 		t.Errorf("an empty env = %v, want telemetry off", got)
+	}
+}
+
+// A bare loop exports straight to the read address, with the ingest key
+// as its Authorization and its stamp on the resources, and nowhere when
+// the read address would send the key across a network in clear.
+func TestBareTraceEnv(t *testing.T) {
+	const key = "pk-lf-synthetic:sk-lf-synthetic"
+	loop := &store.Loop{ID: "lp_1", Name: "tern"}
+	got := bareTraceEnv(store.Langfuse{ReadAddress: "http://127.0.0.1:3000/", IngestKey: key}, loop)
+	want := map[string]string{
+		"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "http://127.0.0.1:3000/api/public/otel/v1/traces",
+		"OTEL_EXPORTER_OTLP_TRACES_HEADERS":  "Authorization=Basic " + base64.StdEncoding.EncodeToString([]byte(key)),
+		"OTEL_RESOURCE_ATTRIBUTES":           "spool.loop.id=lp_1,spool.loop.name=tern",
+	}
+	if !maps.Equal(got, want) {
+		t.Errorf("env = %v\nwant %v", got, want)
+	}
+
+	odd := bareTraceEnv(store.Langfuse{ReadAddress: "https://langfuse.example/lf", IngestKey: key}, &store.Loop{ID: "lp_2", Name: "a,b=c d%"})
+	if odd["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] != "https://langfuse.example/lf/api/public/otel/v1/traces" ||
+		odd["OTEL_RESOURCE_ATTRIBUTES"] != "spool.loop.id=lp_2,spool.loop.name=a%2Cb%3Dc%20d%25" {
+		t.Errorf("a path prefix or a name needing escapes: %v", odd)
+	}
+
+	for name, langfuse := range map[string]store.Langfuse{
+		"no ingest key":       {ReadAddress: "https://langfuse.example"},
+		"no read address":     {IngestKey: key},
+		"http off loopback":   {ReadAddress: "http://langfuse.example", IngestKey: key},
+		"credentials in it":   {ReadAddress: "https://u:p@langfuse.example", IngestKey: key},
+		"unspecified address": {ReadAddress: "http://0.0.0.0:3000", IngestKey: key},
+	} {
+		if env := bareTraceEnv(langfuse, loop); env != nil {
+			t.Errorf("%s: env = %v, want no export", name, env)
+		}
 	}
 }
 
