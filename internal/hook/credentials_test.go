@@ -57,6 +57,8 @@ func TestCredentialsHandedToGhOrGitAreRefused(t *testing.T) {
 		"git config --global credential.token " + githubToken,
 		"gh api -H 'Authorization: " + bearerHeader + "' /user",
 		"gh api repos/o/r/issues -F body='" + assigned + "'",
+		// a value read from the environment does not launder one after it (#1351)
+		"gh issue comment 12 --body 'secret: process.env.SESSION_SECRET, " + assigned + "'",
 		"sudo git commit -m '" + anthropicKey + "'",
 		"cd sub && git commit -m 'key " + anthropicKey + "'",
 		"/usr/bin/gh issue comment 3 -b " + githubToken,
@@ -132,6 +134,10 @@ func TestCallsWithoutACredentialRun(t *testing.T) {
 		"gh gist create --filename body.md - <<< hello",
 		"echo $GH_TOKEN | gh auth login --with-token",
 		"git log --grep 'token=' --oneline",
+		// a value read from the environment holds none (#1351)
+		"gh issue comment 12 --body 'secret: process.env.SESSION_SECRET'",
+		"gh pr create --body 'const API_KEY = process.env.STRIPE_API_KEY'",
+		"gh pr create --body 'apiKey = import.meta.env.VITE_PUBLIC_API_KEY'",
 		"git push origin feat/creds",
 		// not gh or git: what they do with a value is not this rule's
 		"printf '%s' " + githubToken + " > ~/.config/token",
@@ -199,5 +205,22 @@ func TestCredentialShapesMatchTheSecretRules(t *testing.T) {
 	wantJSON, _ := json.Marshal(want)
 	if len(want) == 0 || string(gotJSON) != string(wantJSON) {
 		t.Fatalf("the hook's shapes:\n%s\nsecret-rules.awk's credential shapes:\n%s", gotJSON, wantJSON)
+	}
+}
+
+// TestEnvReferenceMatchesTheSecretRules keeps the hook's reading of an
+// environment reference the scan's, as the shapes are kept (#1353).
+func TestEnvReferenceMatchesTheSecretRules(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "scripts", "secret-rules.awk"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := regexp.MustCompile(`(?m)^\s*env_reference = "((?:[^"\\]|\\.)*)"$`).FindSubmatch(raw)
+	if found == nil {
+		t.Fatal("secret-rules.awk sets no env_reference")
+	}
+	want := strings.ReplaceAll(string(found[1]), `\"`, `"`)
+	if got := envReference.String(); got != want {
+		t.Fatalf("the hook's env reference:\n%s\nsecret-rules.awk's:\n%s", got, want)
 	}
 }

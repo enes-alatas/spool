@@ -1,6 +1,6 @@
 # ADR-0042: The hub pins a PreToolUse hook that refuses the mechanical fleet rules
 
-Date: 2026-10-03 · Status: accepted (operator decision of 2026-10-02, recorded on #529) · Amended: 2026-10-10 (item 4: credentials handed to gh or git, #698); 2026-10-10 (item 4: kill -1 and kills by name, #700)
+Date: 2026-10-03 · Status: accepted (operator decision of 2026-10-02, recorded on #529) · Amended: 2026-10-10 (item 4: credentials handed to gh or git, #698); 2026-10-10 (item 4: kill -1 and kills by name, #700); 2026-11-06 (item 4: a value read from the environment, #1353)
 
 ## Context
 
@@ -74,6 +74,13 @@ either: hooks from every source run together.
    substitution, not the file. Nor are release assets (`gh release
    create` arguments, `gh release upload`), or the files a commit or a
    push carries, which the CI secret scan reads in a pull request.
+
+   **Amendment (2026-11-06, #1353):** a second allowance, the secret
+   scan's too. An `assigned-secret` match whose value begins with
+   `process.env.` or `import.meta.env.` reads a value from the
+   environment rather than holding one, so it is not a credential. A
+   real value later on the same line is still one. The scan's rules and
+   the hook hold this reading as one text, and a test keeps them equal.
 
    **Amendment (2026-10-10, #700):** a kill that reaches past the loop's own
    processes is refused like `pkill`. That covers `kill -1` in any form, since PID

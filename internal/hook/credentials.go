@@ -28,12 +28,21 @@ var credentialShapes = []credentialShape{
 	{"assigned-secret", regexp.MustCompile(`(token|secret|password|passwd|api[_-]?key)[ \t]*[:=]{1,2}[ \t]*["']?[a-z0-9._-]{24,}`)},
 }
 
+// envReference is an assigned-secret match whose value reads the
+// environment, `secret: process.env.SESSION_SECRET` and the like: it names
+// where a value comes from and holds none. It is secret-rules.awk's
+// envReference, so a line the scan lets through the hook does too (#1351).
+var envReference = regexp.MustCompile(`[:=][ \t]*["']?(process[.]env[.]|import[.]meta[.]env[.])`)
+
 // carriedCredential returns the name of the first credential shape in text
 // whose value is not obviously synthetic, or "" when there is none.
 func carriedCredential(text string) string {
 	folded := foldASCII(text)
 	for _, shape := range credentialShapes {
 		for _, at := range shape.pattern.FindAllStringIndex(folded, -1) {
+			if shape.name == "assigned-secret" && envReference.MatchString(folded[at[0]:at[1]]) {
+				continue
+			}
 			if !synthetic(text[at[0]:at[1]]) {
 				return shape.name
 			}
