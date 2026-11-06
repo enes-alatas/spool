@@ -1,19 +1,30 @@
 import { Fragment, useState } from 'react'
 import { useMay } from '../components/Session'
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ApiError, Connection, type LoopView } from '../api'
 import { connectionDetail, connectionKindLabel } from '../connections'
 import { attachPlan, loopOptions } from '../connectionLoops'
 import { applyLoops, LoopChips } from '../components/ConnectionLoops'
 import { ConnectionForm } from '../components/ConnectionForm'
+import { ConnectionFilters } from '../components/ConnectionFilters'
+import {
+  CONNECTION_KINDS,
+  emptiedBy,
+  filterConnections,
+  NO_FILTER,
+  readFilter,
+  writeFilter,
+} from '../connectionFilters'
 import { ConnectionEvents, RotateForm } from '../components/ConnectionRecord'
 import { messageTime } from '../components/MessageKnot'
 
 // The org's connections (ADR-0043, #506): env variables, MCP servers and
 // GitHub Apps (#887), each defined once under a name. A secret is typed into
 // the create form, sent, and never rendered back; the list knows only whether
-// there is one.
+// there is one. The list is grouped under its kinds and narrowed by the
+// filters above it (#1322), which live in the URL query, so a link to
+// `?loop=<name>` is a link to that loop's connections.
 //
 // A shared connection is attached here, its loops as chips on its row
 // (#1321), or from the loop's page (`LoopConnections`). An attached
@@ -284,7 +295,21 @@ export default function Connections() {
       qc.invalidateQueries({ queryKey: ['loops'] }),
     ])
 
+  const [params, setParams] = useSearchParams()
+  const filter = readFilter(params)
+
   if (isPending) return <div className="page measure placeholder">Loading…</div>
+  const shown = filterConnections(data ?? [], filter)
+  const row = (c: Connection) => (
+    <ConnectionRow
+      key={c.name}
+      c={c}
+      cloudLoops={cloudLoops}
+      fleet={loops ?? []}
+      connections={data ?? []}
+      onChanged={refresh}
+    />
+  )
 
   return (
     <div className="page measure">
@@ -311,18 +336,38 @@ export default function Connections() {
           {data.length === 0 ? (
             <div className="empty">No connections yet.</div>
           ) : (
-            <div className="connection-list">
-              {data.map((c) => (
-                <ConnectionRow
-                  key={c.name}
-                  c={c}
-                  cloudLoops={cloudLoops}
-                  fleet={loops ?? []}
-                  connections={data}
-                  onChanged={refresh}
-                />
-              ))}
-            </div>
+            <>
+              <ConnectionFilters
+                filter={filter}
+                onChange={(f) => setParams(writeFilter(params, f), { replace: true })}
+                all={data}
+                shown={shown.length}
+                loops={(loops ?? []).map((loop) => loop.name)}
+              />
+              {shown.length === 0 ? (
+                <div className="empty">
+                  No connection matches: {emptiedBy(data, filter)}.{' '}
+                  <button
+                    className="text-button"
+                    onClick={() => setParams(writeFilter(params, NO_FILTER), { replace: true })}
+                  >
+                    Clear the filters
+                  </button>
+                </div>
+              ) : (
+                // Grouped under their kind, a kind with none left unsaid.
+                CONNECTION_KINDS.map((g) => ({ ...g, rows: shown.filter((c) => c.kind === g.value) }))
+                  .filter((g) => g.rows.length > 0)
+                  .map((g) => (
+                    <section key={g.value} className="connection-group">
+                      <h3 className="connection-group-head">
+                        {g.label} <span className="count">{g.rows.length}</span>
+                      </h3>
+                      <div className="connection-list">{g.rows.map(row)}</div>
+                    </section>
+                  ))
+              )}
+            </>
           )}
           {may('manage') && (
             <>

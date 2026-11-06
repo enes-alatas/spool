@@ -5569,3 +5569,100 @@ button.panel-link {
 .field .channel-add {
   width: auto;
 }
+
+/* The Connections page's filters (#1322): a narrowing of the list, so they
+   sit small above it, as the Activity page's channel filter does. The name
+   box takes what the row leaves; the count ends the row. */
+.connection-filters {
+  margin-bottom: 10px;
+}
+.connection-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.connection-search {
+  flex: 1 1 12rem;
+  min-width: 0;
+  background: var(--canvas);
+  border-radius: 5px;
+  padding: 4px 8px;
+  font-size: 0.8125rem;
+}
+.connection-filter-row .panel-select {
+  width: auto;
+}
+/* Revoked, shown or not: a pill the height of the pick-lists, outlined in
+   the text colour when pressed, its count in mono as the kind tabs have it. */
+.connection-filter-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--canvas);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.connection-filter-pill:hover {
+  color: var(--text);
+}
+.connection-filter-pill.on {
+  border-color: var(--text);
+  color: var(--text);
+}
+.connection-filter-pill .count {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+}
+.connection-filter-pill:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+.connection-filter-count {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+}
+/* The kinds as tabs with counts above the filters, and the rows grouped
+   under a heading per kind below them. */
+.connection-kind-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--hairline);
+}
+.connection-kind-tab {
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: 6px 10px;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.connection-kind-tab:hover {
+  color: var(--text);
+}
+.connection-kind-tab.on {
+  color: var(--text);
+  border-bottom-color: var(--text);
+}
+.connection-kind-tab .count,
+.connection-group-head .count {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+}
+.connection-group-head {
+  margin: 18px 0 6px;
+  font-size: 0.8125rem;
+}
