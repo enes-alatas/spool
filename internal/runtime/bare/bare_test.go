@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -135,5 +136,49 @@ func TestResolveModelRunHoldsNoCredential(t *testing.T) {
 	}
 	if _, err := os.Stat("/proc/" + strings.TrimSpace(string(pid))); err == nil {
 		t.Errorf("the run outlived its init")
+	}
+}
+
+// A bare session's trace export is the hub's setting alone: every OTEL_*
+// the hub inherited is dropped, and the loop's own variables still win
+// (ADR-0064).
+func TestEnvironDropsInheritedOTEL(t *testing.T) {
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "https://elsewhere.example")
+	t.Setenv("OTEL_LOG_USER_PROMPTS", "1")
+	t.Setenv("SPOOL_TEST_INHERITED", "kept")
+	env := environ(map[string]string{"OTEL_TRACES_EXPORTER": "otlp"})
+	joined := "\n" + strings.Join(env, "\n") + "\n"
+	for _, unwanted := range []string{"\nOTEL_EXPORTER_OTLP_ENDPOINT=", "\nOTEL_LOG_USER_PROMPTS="} {
+		if strings.Contains(joined, unwanted) {
+			t.Errorf("an inherited %s reaches the session", strings.TrimSpace(unwanted))
+		}
+	}
+	for _, wanted := range []string{"\nSPOOL_TEST_INHERITED=kept\n", "\nOTEL_TRACES_EXPORTER=otlp\n"} {
+		if !strings.Contains(joined, wanted) {
+			t.Errorf("the session lacks %s", strings.TrimSpace(wanted))
+		}
+	}
+	if env := environ(nil); slices.ContainsFunc(env, func(variable string) bool { return strings.HasPrefix(variable, "OTEL_") }) {
+		t.Error("a loop with no variables of its own still inherits OTEL_*")
+	}
+}
+
+// The login check runs the host's claude too, so the hub's inherited
+// OTEL_* stays out of it as well, and it exports nothing (ADR-0064).
+func TestCheckLoginDropsInheritedOTEL(t *testing.T) {
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "https://elsewhere.example")
+	t.Setenv("CLAUDE_CODE_ENABLE_TELEMETRY", "1")
+	dumped := filepath.Join(t.TempDir(), "env")
+	bin := filepath.Join(t.TempDir(), "claude")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\nenv > "+dumped+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = New(bin).CheckLogin(context.Background(), "")
+	env, err := os.ReadFile(dumped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(env), "OTEL_") || !strings.Contains("\n"+string(env), "\nCLAUDE_CODE_ENABLE_TELEMETRY=0\n") {
+		t.Errorf("the login check's env:\n%s", env)
 	}
 }

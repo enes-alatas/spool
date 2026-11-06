@@ -21,7 +21,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -299,17 +301,19 @@ func (host *Runtime) Reap(ctx context.Context, loopID string, pid int) error {
 }
 
 // environ returns the child's environment: inherited, plus the loop's own
-// variables. A loop with no variables of its own inherits ours unchanged.
+// variables. Every OTEL_* the hub inherited is dropped: a session's trace
+// export is the hub's setting alone, so a hub started from a shell that
+// exports an OTLP endpoint, or turns a content log on, doesn't pass it to
+// its bare loops (ADR-0064).
 func environ(extra map[string]string) []string {
-	if len(extra) == 0 {
-		return nil
-	}
 	keys := make([]string, 0, len(extra))
 	for key := range extra {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
-	env := os.Environ()
+	env := slices.DeleteFunc(os.Environ(), func(variable string) bool {
+		return strings.HasPrefix(variable, "OTEL_")
+	})
 	for _, key := range keys {
 		env = append(env, key+"="+extra[key])
 	}
@@ -414,6 +418,8 @@ func (host *Runtime) ResolveModel(ctx context.Context, model string) (string, er
 // CheckLogin runs the host's claude as a bare loop runs it, under the
 // operator's own login and environment, in a directory of its own that goes
 // with it (ADR-0044). The token is a docker workstation's and is not used.
+// Like a session's, its environment holds no OTEL_* the hub inherited, and
+// it exports no traces (ADR-0064).
 func (host *Runtime) CheckLogin(ctx context.Context, _ string) (claude.LoginCheck, error) {
 	dir, err := os.MkdirTemp("", "spool-login-check-")
 	if err != nil {
@@ -423,6 +429,7 @@ func (host *Runtime) CheckLogin(ctx context.Context, _ string) (claude.LoginChec
 
 	cmd := exec.Command(host.bin, claude.LoginCheckArgs()...)
 	cmd.Dir = dir
+	cmd.Env = environ(map[string]string{"CLAUDE_CODE_ENABLE_TELEMETRY": "0"})
 	cmd.SysProcAttr = runtime.ChildAttr()
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
