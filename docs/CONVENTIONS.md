@@ -59,6 +59,12 @@ ADR instead.*
   one is ready (a pending decision, a CodeQL dismissal, a live run on their
   account), the PR's author DMs the operator naming it and what to do, with
   the PR link; the PR records it, and the merge request stays the reviewer's.
+- **Only the DevSecOps loop asks the operator to upgrade the running hub**
+  (#1375): a loop that needs a merged change live tells the DevSecOps loop
+  which PR and why, and never asks the operator itself. The DevSecOps loop
+  asks for an upgrade to main only for a security fix, a critical bug, or a
+  change the operator must test, with the PR link and the reason; everything
+  else waits for the next version cut.
 - **Branches**: `<type>/<topic>`; `loop/<name>` is reserved for loop
   worktrees.
 - **Commits / PR titles**:
