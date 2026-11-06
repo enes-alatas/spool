@@ -3,6 +3,8 @@ name: credential-incident
 description: >-
   Use the moment a live credential is in front of you — in a log, a body, a
   transcript, a screenshot — or one has been posted to GitHub.
+metadata:
+  author: Spool maintainers
 ---
 
 # /credential-incident — a live credential in front of you

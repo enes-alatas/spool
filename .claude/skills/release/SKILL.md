@@ -3,6 +3,8 @@ name: release
 description: >-
   Use when tagging a Spool release, writing its notes, or working out which
   build a binary or a bug report names.
+metadata:
+  author: Spool maintainers
 ---
 
 # /release — tags, release notes and a build's name

@@ -4,6 +4,8 @@ description: >-
   Use when about to act on PR review comments on an active branch — before you start
   editing — or when asked to address review feedback, clean up a PR's commit story, or
   update a PR after a review round.
+metadata:
+  author: Spool maintainers
 ---
 
 # /review-fix — fold review feedback into the original commits

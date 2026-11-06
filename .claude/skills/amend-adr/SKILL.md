@@ -3,6 +3,8 @@ name: amend-adr
 description: >-
   Use when changing an accepted ADR in docs/adr/ — amending, superseding a
   clause, renaming inside one — or when reviewing a PR that touches one.
+metadata:
+  author: Spool maintainers
 ---
 
 # /amend-adr — changing an accepted ADR

@@ -4,6 +4,8 @@ description: >-
   Use when a PR adds or changes a GitHub Actions workflow that fires on anything
   but pull_request or push (issues, issue_comment, schedule, workflow_run), or
   when reviewing one.
+metadata:
+  author: Spool maintainers
 ---
 
 # /prove-event-workflow — proving a workflow PR CI never fires

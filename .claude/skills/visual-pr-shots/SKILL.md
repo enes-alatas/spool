@@ -4,6 +4,8 @@ description: >-
   Use when a change alters what a page looks like: before showing the
   options, before opening the PR, and again after each fold that touches
   anything rendered.
+metadata:
+  author: Spool maintainers
 ---
 
 # /visual-pr-shots — screenshots for a visual change
