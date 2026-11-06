@@ -79,6 +79,11 @@ BEGIN {
   name[6] = "loop-bot-handle";    regex[6] = "@?[a-z0-9_]+_spool_bot";  only[6] = "body"
   name[7] = "telegram-group-id";  regex[7] = "-100[0-9]{7,}";           only[7] = "body"
   patterns = 7
+
+  # An assigned-secret whose value reads the environment, see envReference().
+  # Written with [.] rather than an escape so the hook's copy can be the same
+  # text (internal/hook, TestEnvReferenceMatchesTheSecretRules).
+  env_reference = "[:=][ \t]*[\"']?(process[.]env[.]|import[.]meta[.]env[.])"
 }
 
 # Whether pattern i applies to the front end that loaded these rules.
@@ -113,16 +118,36 @@ function inScope(i) {
 # The search is done on a folded copy: tolower preserves length, so RSTART and
 # RLENGTH index the original text — the value the caller reads is the real
 # one, while the match itself is case-blind.
-function findSecret(s,   i, folded) {
+function findSecret(s,   i, folded, start, len) {
   folded = tolower(s)
   hit_pattern = 0
   for (i = 1; i <= patterns; i++) {
     if (!inScope(i)) continue
-    if (match(folded, regex[i]) && (hit_pattern == 0 || RSTART < hit_start)) {
+    if (!match(folded, regex[i])) continue
+    start = RSTART
+    len = RLENGTH
+    # An assignment that reads the environment holds no value: look on
+    # along the line for one that does (#1351).
+    while (envReference(i, substr(folded, start, len)) && match(substr(folded, start + len), regex[i])) {
+      start += len + RSTART - 1
+      len = RLENGTH
+    }
+    if (envReference(i, substr(folded, start, len))) continue
+    if (hit_pattern == 0 || start < hit_start) {
       hit_pattern = i
-      hit_start = RSTART
-      hit_len = RLENGTH
+      hit_start = start
+      hit_len = len
     }
   }
   return hit_pattern
+}
+
+# Whether pattern i's match `s` is an assignment that reads the environment,
+# `secret: process.env.SESSION_SECRET` and the like, which names where a
+# value comes from and holds none. Only the assigned-secret shape can match
+# one, since the others are the value's own spelling. A real value that
+# began this way would be a value nobody could tell from a reference.
+# Uses only `~`, so a caller's RSTART and RLENGTH survive it.
+function envReference(i, s) {
+  return name[i] == "assigned-secret" && tolower(s) ~ env_reference
 }

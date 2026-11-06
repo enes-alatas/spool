@@ -20,6 +20,7 @@ failures=0
 
 # Invented, structurally valid, cryptographically worthless.
 TG='7196384205:BQFgtZmKcrudPwvbxNhelisoqWTLGDMYjx'
+ASSIGNED='BQFgtZmKcrudPwvbxNhelisoq'
 
 stub=$(mktemp -d)
 trap 'rm -rf "$stub"' EXIT
@@ -103,6 +104,22 @@ if [ "$STATUS" -ne 0 ] || [ -s "$CALLS_FILE" ]; then
   fail "a clean body exits $STATUS with $(wc -l < "$CALLS_FILE") calls, want 0 and 0"
 else
   pass 'a clean body is left alone'
+fi
+
+# A body quoting code that reads a secret from the environment holds none
+# (#1351), and the quote does not launder a real value after it.
+run issues 'the pattern is `secret: process.env.SESSION_SECRET` in the server'
+if [ "$STATUS" -ne 0 ] || [ -s "$CALLS_FILE" ]; then
+  fail "a body quoting process.env exits $STATUS with $(wc -l < "$CALLS_FILE") calls, want 0 and 0"
+else
+  pass 'a body quoting process.env is left alone'
+fi
+
+run issues "secret: process.env.SESSION_SECRET, token: $ASSIGNED"
+if ! grep -q 'PATCH repos/o/r/issues/206' "$CALLS_FILE" || grep -qF "$ASSIGNED" "$SENT_FILE"; then
+  fail "a value after a reference was not redacted: $(cat "$CALLS_FILE")"
+else
+  pass 'a value after a reference is still redacted'
 fi
 
 run issues ''

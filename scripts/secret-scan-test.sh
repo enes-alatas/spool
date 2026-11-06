@@ -133,6 +133,22 @@ check 'a camelCase identifier is caught' 1 'assigned-secret' \
 check 'a screaming-snake env var is caught' 1 'assigned-secret' \
   "$(diff_adding .github/workflows/ci.yml 12 '  TG_BOT_TOKEN: BQFgtZmKcrudPwvbxNhelisoq')"
 
+# A line that reads a secret from the environment names where it comes from
+# and holds no value. Upstream's hardening patterns spell it this way, and
+# vendoring them failed the scan (#1351).
+check 'a value read from process.env is not a secret' 0 '' \
+  "$(diff_adding .claude/skills/x/references/patterns.md 36 '  secret: process.env.SESSION_SECRET,  // From environment, not code')"
+
+check 'an assignment from process.env is not a secret' 0 '' \
+  "$(diff_adding web/src/config.ts 3 'const API_KEY = process.env.STRIPE_API_KEY;')"
+
+check 'a value read from import.meta.env is not a secret' 0 '' \
+  "$(diff_adding web/src/config.ts 4 'const apiKey = import.meta.env.VITE_PUBLIC_API_KEY')"
+
+# The reference does not launder the rest of its line.
+check 'a real value after a reference on one line is still caught' 1 'web/src/config.ts:5: assigned-secret' \
+  "$(diff_adding web/src/config.ts 5 'const a = { secret: process.env.SESSION_SECRET, token: "BQFgtZmKcrudPwvbxNhelisoq" }')"
+
 # The marker is read case-blind: FIXTURE_ and FAKE_ are how an env or YAML
 # fixture is actually spelled, and a scanner that rejects the shouted form
 # sends its author to the exempt list instead of to a better value.

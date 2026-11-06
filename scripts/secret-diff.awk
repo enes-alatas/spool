@@ -53,15 +53,23 @@ BEGIN {
     if (!inScope(i)) continue
     if (match(folded, regex[i])) {
       if (path ~ exempt_always) continue
+      start = RSTART
+      len = RLENGTH
+      # An assignment that reads the environment holds no value; a later
+      # one on the same line still might (#1351).
+      while (envReference(i, substr(folded, start, len)) && match(substr(folded, start + len), regex[i])) {
+        start += len + RSTART - 1
+        len = RLENGTH
+      }
+      if (envReference(i, substr(folded, start, len))) continue
       # synthetic() uses only `~` and substr(), neither of which disturbs
-      # RSTART/RLENGTH — so the excerpt printed below is still this match.
-      # A future match() inside it would silently misalign both. findSecret()
-      # does call match(), which is why this front end does not use it.
-      if (path ~ exempt_if_fake && synthetic(substr(content, RSTART, RLENGTH))) continue
+      # start/len. findSecret() keeps its own, which is why this front end
+      # does not use it: it reports every pattern, not the earliest.
+      if (path ~ exempt_if_fake && synthetic(substr(content, start, len))) continue
       # Output is deliberately not the secret. A scanner that prints what it
       # found turns a private leak into a public one, since a CI log is an
       # artefact of its own; at most eight characters, per the fleet rule.
-      printf "%s:%d: %s — %.8s…\n", path, line, name[i], substr(content, RSTART, RLENGTH)
+      printf "%s:%d: %s — %.8s…\n", path, line, name[i], substr(content, start, len)
       hits++
     }
   }

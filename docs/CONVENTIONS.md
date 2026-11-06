@@ -185,7 +185,9 @@ ADR instead.*
   straight to PR, and its Issue section says why.
 - **Secret shapes are scanned, not remembered**: `make secret-scan` runs CI's
   scan of added lines; only test files and fixtures may hold a token shape,
-  and only an obviously synthetic one. It needs an awk with regex intervals
+  and only an obviously synthetic one. An assignment whose value is read
+  from `process.env.` or `import.meta.env.` holds none, so it is not a hit
+  anywhere (#1353). It needs an awk with regex intervals
   (`scripts/secret-awk.sh`, #718).
 - **An issue or comment body is redacted, not rejected** (#206): the revision
   history still holds the value, so rotate it and report it privately
