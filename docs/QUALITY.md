@@ -194,6 +194,13 @@ window regardless of loop count (ADR-0018).
   10 per step. That is how anyone without the job log, a loop included,
   finds a flaky test. `scripts/test-failures-test.sh` keeps it honest under
   the workflow rules step.
+- **Every other red gate says why on the job page too** (#1373): a script
+  gate or self-test step runs as `bash scripts/gate-annotate.sh <name> --
+  <command>`, which on failure adds one `::error` annotation with the last
+  15 lines the command printed, unless the command printed its own. A new
+  gate step uses the wrapper; `scripts/gate-annotate-test.sh` covers it.
+  Steps that run the base branch's script in a job holding a write token
+  (pr-guards' label step) stay as they are.
 - **The browser smoke** (`make ui-smoke`, a step of `checks`, #356): a tier-1 web
   gate that opens the room as it ships. `make build` is served by `bin/spool` on
   a hub `cmd/uifixture` seeded (`scripts/fixture-hub.sh`), and headless Chromium

@@ -41,7 +41,7 @@ jobs:
           jq -r '.pull_request.title' "$GITHUB_EVENT_PATH" > "$work/title"
           jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH" > "$work/body"
           gh api "repos/$GH_REPO/pulls/$PR/files" --paginate -q '.[].filename' > "$work/files"
-          bash scripts/other-half.sh "$(cat "$work/title")" "$work/body" "$work/files"
+          bash scripts/gate-annotate.sh other-half -- bash scripts/other-half.sh "$(cat "$work/title")" "$work/body" "$work/files"
       # The PR's commits against the mechanical commit-message rules
       # (#1011): rebase merges keep each message as written (ADR-0016). The
       # messages come through the API into a file, never through `${{ }}`.
@@ -59,7 +59,7 @@ jobs:
           work=$(mktemp -d)
           gh api "repos/$GH_REPO/pulls/$PR/commits" --paginate \
             -q '.[] | {sha, author: (.author.login // ""), parents: (.parents | length), message: .commit.message}' > "$work/commits.jsonl"
-          bash scripts/commit-subjects.sh "$work/commits.jsonl"
+          bash scripts/gate-annotate.sh commit-subjects -- bash scripts/commit-subjects.sh "$work/commits.jsonl"
 
   # A PR touching a path in .github/security-review-paths is labelled for a
   # security review, and its merge request waits for that review (#742).

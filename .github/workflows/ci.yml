@@ -232,31 +232,31 @@ jobs:
       # time (#151).
       - name: the scanner still catches what it claims to
         if: github.event_name == 'pull_request' || inputs.pr
-        run: bash scripts/secret-scan-test.sh
+        run: bash scripts/gate-annotate.sh secret-scan-test -- bash scripts/secret-scan-test.sh
       # The redaction guard (secret-redact.yml, the `issue-guards` workflow) fires on issue and comment
       # events, where nothing gates it — this is the only place its rules are
       # checked before they ship, and it shares its pattern list with the scan
       # above, so a change to either arrives here.
       - name: the redactor still takes out what it claims to
         if: github.event_name == 'pull_request' || inputs.pr
-        run: bash scripts/secret-redact-test.sh
+        run: bash scripts/gate-annotate.sh secret-redact-test -- bash scripts/secret-redact-test.sh
       # The step that guard runs, under the runner's own `bash -e` — the flag
       # is the difference that let #207 ship: every check passed under plain
       # bash and the guard did nothing on the runner.
       - name: the redaction step still acts on a hit
         if: github.event_name == 'pull_request' || inputs.pr
-        run: bash scripts/secret-redact-body-test.sh
+        run: bash scripts/gate-annotate.sh secret-redact-body-test -- bash scripts/secret-redact-body-test.sh
       # The welcome step posts on an event no PR fires, so this is the only
       # run it gets before it ships: under `bash -e`, with a stub gh (#503).
       - name: the welcome step still replies once, and only with its note
         if: github.event_name == 'pull_request' || inputs.pr
-        run: bash scripts/community-welcome-test.sh
+        run: bash scripts/gate-annotate.sh community-welcome-test -- bash scripts/community-welcome-test.sh
       - name: scan the lines this PR adds
         if: github.event_name == 'pull_request' || inputs.pr
         env:
           BASE: ${{ inputs.base || github.event.pull_request.base.sha }}
         run: |
-          git diff -U0 "$BASE" HEAD | bash scripts/secret-scan.sh --stdin
+          git diff -U0 "$BASE" HEAD | bash scripts/gate-annotate.sh secret-scan -- bash scripts/secret-scan.sh --stdin
 
       # Everything below reads `needs.changes.outputs.*`, which is empty when
       # the filter job failed — so every area would quietly decide it had
@@ -298,12 +298,12 @@ jobs:
       # runs it (CONVENTIONS.md "Comments").
       - name: comments cite no ADR sections
         if: needs.changes.outputs.unit == 'true' || needs.changes.outputs.web == 'true'
-        run: bash scripts/comment-refs.sh
+        run: bash scripts/gate-annotate.sh comment-refs -- bash scripts/comment-refs.sh
       # Old code is fenced by scripts/shortnames/baseline.txt; new code
       # gets none (CONVENTIONS.md "Names say what they hold", #1012).
       - name: no new single-letter Go names
         if: needs.changes.outputs.unit == 'true'
-        run: go run ./scripts/shortnames
+        run: bash scripts/gate-annotate.sh shortnames -- go run ./scripts/shortnames
       - name: unit tests (tier 1 + arch)
         if: needs.changes.outputs.unit == 'true'
         run: |
@@ -365,7 +365,7 @@ jobs:
       - name: the no-em-dash rule still catches what it claims to
         if: needs.changes.outputs.web == 'true'
         working-directory: web
-        run: node scripts/em-dash-test.mjs
+        run: bash ../scripts/gate-annotate.sh em-dash-test -- node scripts/em-dash-test.mjs
       - run: npm run format:check
         if: needs.changes.outputs.web == 'true'
         working-directory: web
@@ -415,10 +415,10 @@ jobs:
       # (CONVENTIONS.md).
       - name: the rules still catch the incidents they name
         if: needs.changes.outputs.workflows == 'true'
-        run: bash scripts/workflow-lint-test.sh
+        run: bash scripts/gate-annotate.sh workflow-lint-test -- bash scripts/workflow-lint-test.sh
       - name: the skills gate still refuses what it claims to
         if: needs.changes.outputs.workflows == 'true'
-        run: bash scripts/skill-tier1-gate-test.sh
+        run: bash scripts/gate-annotate.sh skill-tier1-gate-test -- bash scripts/skill-tier1-gate-test.sh
 
       # SkillEvaluator tier 1 over every skill (ADR-0065, #1369): static
       # quality, Gitleaks, PII and Unicode smuggling, no model and no key.
@@ -471,80 +471,85 @@ jobs:
       # it; nothing else exercises it before it ships (#210).
       - name: the failure sentinel still reports what it claims to
         if: needs.changes.outputs.workflows == 'true'
-        run: bash scripts/ci-health-test.sh
+        run: bash scripts/gate-annotate.sh ci-health-test -- bash scripts/ci-health-test.sh
       # The coverage report is informational, so nothing else would notice it
       # miscounting (#2).
       - name: the diff coverage still counts what it claims to
         if: needs.changes.outputs.workflows == 'true'
-        run: bash scripts/diff-coverage-test.sh
+        run: bash scripts/gate-annotate.sh diff-coverage-test -- bash scripts/diff-coverage-test.sh
       - name: the test-failure annotations still name what they claim to
         if: needs.changes.outputs.workflows == 'true'
-        run: bash scripts/test-failures-test.sh
+        run: bash scripts/gate-annotate.sh test-failures-test -- bash scripts/test-failures-test.sh
+      # Not through the wrapper it tests: a broken wrapper must not be what
+      # reports on itself (#1373).
+      - name: a failing gate still names why in an annotation
+        if: needs.changes.outputs.workflows == 'true'
+        run: bash scripts/gate-annotate-test.sh
       - name: the comment check still catches what it claims to
         if: needs.changes.outputs.workflows == 'true'
-        run: bash scripts/comment-refs-test.sh
+        run: bash scripts/gate-annotate.sh comment-refs-test -- bash scripts/comment-refs-test.sh
       # pr-guards runs the script on the PR in front of it, which says only
       # that this PR passes; the fixtures are what say it still refuses (#634).
       - name: the other-half check still refuses what it claims to
         if: needs.changes.outputs.workflows == 'true'
-        run: bash scripts/other-half-test.sh
+        run: bash scripts/gate-annotate.sh other-half-test -- bash scripts/other-half-test.sh
       # The advisory scan runs on a schedule, so this is what a PR can see
       # of its filing step: the tools' real output, a stubbed `gh` (#737).
       - name: the advisory scan still files what it claims to
         if: needs.changes.outputs.workflows == 'true'
-        run: bash scripts/advisories-test.sh
+        run: bash scripts/gate-annotate.sh advisories-test -- bash scripts/advisories-test.sh
       # Loops run it as a hook, where a wrong filter would read as all
       # green; the stub applies the script's own filters (#904).
       - name: the PR watch still reports what it claims to
         if: needs.changes.outputs.workflows == 'true'
-        run: bash scripts/pr-watch-test.sh
+        run: bash scripts/gate-annotate.sh pr-watch-test -- bash scripts/pr-watch-test.sh
       # The repo's own PreToolUse hook only ever runs inside a loop's
       # session, where a matcher that stopped matching reads as all clear;
       # these are the bodies it must still refuse and let through (#630).
       - name: the gh body guard still refuses what it claims to
         if: needs.changes.outputs.workflows == 'true'
-        run: bash scripts/gh-body-guard-test.sh
+        run: bash scripts/gate-annotate.sh gh-body-guard-test -- bash scripts/gh-body-guard-test.sh
       # issue-guards and pr-guards flag a body with an @ before a fleet name
       # on events PR CI never fires; these are the bodies and event shapes
       # the flag must still catch and leave alone (#630).
       - name: the fleet-mention flag still flags what it claims to
         if: needs.changes.outputs.workflows == 'true'
-        run: bash scripts/fleet-mention-test.sh
+        run: bash scripts/gate-annotate.sh fleet-mention-test -- bash scripts/fleet-mention-test.sh
       # issue-guards holds every issue to the issue standard on events PR CI
       # never fires; these are the titles and openings it must still flag
       # and leave alone (#1035).
       - name: the issue-standard flag still flags what it claims to
         if: needs.changes.outputs.workflows == 'true'
-        run: bash scripts/issue-rewrite-test.sh
+        run: bash scripts/gate-annotate.sh issue-rewrite-test -- bash scripts/issue-rewrite-test.sh
       # pr-guards checks every PR's commit messages with it; a rule that
       # stopped matching would pass every commit green (#1011).
       - name: the commit-subject check still refuses what it claims to
         if: needs.changes.outputs.workflows == 'true'
-        run: bash scripts/commit-subjects-test.sh
+        run: bash scripts/gate-annotate.sh commit-subjects-test -- bash scripts/commit-subjects-test.sh
       # The list decides which PRs get a security review; a pattern that
       # stopped matching would drop a path from review with every PR green
       # (#742).
       - name: the security-review paths still match what they claim to
         if: needs.changes.outputs.workflows == 'true'
-        run: bash scripts/security-paths-test.sh
+        run: bash scripts/gate-annotate.sh security-paths-test -- bash scripts/security-paths-test.sh
       # Restore is run once in anger, after the data is already gone, so a
       # backup that silently stopped copying volumes or started copying
       # hub.key into the data file would surface then and no sooner (#708).
       - name: the backup and restore still round-trip what they claim to
         if: needs.changes.outputs.workflows == 'true'
-        run: bash scripts/spool-backup-test.sh
+        run: bash scripts/gate-annotate.sh spool-backup-test -- bash scripts/spool-backup-test.sh
       # The smoke is what tells a broken release from a good one, and it runs
       # on a dispatch or a tag only; these say it still stops on each thing
       # it checks (#770).
       - name: the release smoke still stops on what it claims to
         if: needs.changes.outputs.workflows == 'true'
-        run: bash scripts/release-smoke-test.sh
+        run: bash scripts/gate-annotate.sh release-smoke-test -- bash scripts/release-smoke-test.sh
       # The queue runs on main's pushes and on label events, so this is what
       # a PR can see of it: its writing steps against a stub `gh`, and its
       # rebase against a real repository (#819).
       - name: the merge queue still marks and tests what it claims to
         if: needs.changes.outputs.workflows == 'true'
-        run: bash scripts/queue-test.sh
+        run: bash scripts/gate-annotate.sh queue-test -- bash scripts/queue-test.sh
 
   # The one job still filtered at job level, because it is the one worth
   # skipping outright: ~8 of the ~10 minutes a full run used to bill. A job
