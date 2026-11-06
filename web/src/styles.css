@@ -3699,7 +3699,9 @@ button.panel-link {
 }
 .connection-row {
   display: grid;
-  grid-template-columns: minmax(0, 10rem) minmax(0, 1fr) max-content max-content;
+  /* The third column fits the secret note and the loops, up to a width
+     past which a shared one's chips wrap, so they never squeeze the name. */
+  grid-template-columns: minmax(0, 10rem) minmax(0, 1fr) fit-content(18rem) max-content;
   grid-template-areas:
     'name kind secret delete'
     'detail detail loops delete'
@@ -3834,6 +3836,9 @@ button.panel-link {
   }
   .connection-loops {
     justify-self: start;
+  }
+  .connection-loops .connection-chips {
+    justify-content: flex-start;
   }
 }
 /* A loop's attached connections, in its side panel: one box each, the
@@ -5541,4 +5546,26 @@ button.panel-link {
   display: flex;
   gap: 6px;
   margin-top: 6px;
+}
+
+/* A shared connection's loops, chosen on the Connections page (#1321): the
+   chips of Channels, ending the row; and in the create form, the pick-list
+   at its own width. */
+.connection-loops .connection-chips {
+  justify-content: flex-end;
+  margin-top: 0;
+}
+/* A chip names its loop as a link to its page, in the chip's own colour. */
+.connection-chips .channel-loop {
+  color: var(--text);
+}
+.connection-chips .channel-loop a {
+  color: inherit;
+  text-decoration: none;
+}
+.connection-chips .channel-loop a:hover {
+  text-decoration: underline;
+}
+.field .channel-add {
+  width: auto;
 }

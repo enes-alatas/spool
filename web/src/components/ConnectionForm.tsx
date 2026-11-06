@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { api, Connection } from '../api'
+import { api, Connection, type LoopView } from '../api'
 import {
   ConnectionDraft,
   ConnectionShape,
@@ -8,6 +8,8 @@ import {
   connectionShapes,
   connectionSubmittable,
 } from '../connections'
+import { loopOptions } from '../connectionLoops'
+import { applyLoops, LoopChips } from './ConnectionLoops'
 
 // The create form for a connection, kind first and then that kind's fields
 // (#506). On the Connections page, and in a loop's Add connection dialog,
@@ -34,10 +36,17 @@ export function ConnectionForm({
   onCreated,
   submitLabel = 'Create connection',
   cloud = false,
+  fleet,
+  connections = [],
 }: {
   onCreated: (created: Connection) => unknown
   submitLabel?: string
   cloud?: boolean
+  // The fleet's loops, on the Connections page: the form ends with the
+  // loops to attach the new connection to (#1321). The loop page's dialog
+  // attaches to its own loop instead, and passes none.
+  fleet?: LoopView[]
+  connections?: Connection[]
 }) {
   const [draft, setDraft] = useState<ConnectionDraft>(EMPTY_DRAFT)
   // The .pem file the key was read from, when it came from one: the key is
@@ -46,14 +55,25 @@ export function ConnectionForm({
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const set = (patch: Partial<ConnectionDraft>) => setDraft((d) => ({ ...d, ...patch }))
+  const [picked, setPicked] = useState<string[]>([])
+  const request = connectionRequest(draft)
+  const options = fleet ? loopOptions({ name: request.name ?? '', ...request }, fleet, connections) : []
+  // A loop the kind picked can't take is dropped from the pick, not sent.
+  const attachTo = picked.filter((loop) => options.some((o) => o.name === loop && !o.refused))
 
   const create = async () => {
     setBusy(true)
     setError('')
     try {
-      const created = await api.createConnection(connectionRequest(draft))
+      const created = await api.createConnection(request)
       setDraft(EMPTY_DRAFT)
       setKeyFile('')
+      setPicked([])
+      // Created, then attached: a loop that refuses it leaves the
+      // connection created, and the form says which.
+      const refusals = await applyLoops(created.name, { attach: attachTo, detach: [] })
+      if (refusals.length > 0)
+        setError(`Created ${created.name}, but not every loop took it. ${refusals.join(' ')}`)
       await onCreated(created)
     } catch (e) {
       // The server's own sentence names the field and the rule (#568), so it
@@ -203,6 +223,21 @@ export function ConnectionForm({
             onChange={(e) => set({ secret: e.target.value })}
           />
           <div className="hint">{secretHint(draft)}</div>
+        </div>
+      )}
+
+      {fleet && (
+        <div className="field">
+          <label>Attach to</label>
+          <LoopChips
+            options={options}
+            picked={attachTo}
+            disabled={busy}
+            label="it"
+            onAdd={(loop) => setPicked([...picked, loop])}
+            onRemove={(loop) => setPicked(picked.filter((l) => l !== loop))}
+          />
+          <div className="hint">Optional: attach it later from its row, or from a loop's page.</div>
         </div>
       )}
 

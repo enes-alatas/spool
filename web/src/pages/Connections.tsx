@@ -2,8 +2,10 @@ import { Fragment, useState } from 'react'
 import { useMay } from '../components/Session'
 import { Link } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, ApiError, Connection } from '../api'
+import { api, ApiError, Connection, type LoopView } from '../api'
 import { connectionDetail, connectionKindLabel } from '../connections'
+import { attachPlan, loopOptions } from '../connectionLoops'
+import { applyLoops, LoopChips } from '../components/ConnectionLoops'
 import { ConnectionForm } from '../components/ConnectionForm'
 import { ConnectionEvents, RotateForm } from '../components/ConnectionRecord'
 import { messageTime } from '../components/MessageKnot'
@@ -13,7 +15,8 @@ import { messageTime } from '../components/MessageKnot'
 // the create form, sent, and never rendered back; the list knows only whether
 // there is one.
 //
-// Attaching is done from the loop's page (`LoopConnections`). An attached
+// A shared connection is attached here, its loops as chips on its row
+// (#1321), or from the loop's page (`LoopConnections`). An attached
 // env variable is set in its loop's env from its next turn (#640), and an
 // MCP server is in its MCP config from its next wake. A connection private to one loop
 // (#600) is listed with its owner, and Share makes it the fleet's, one way.
@@ -25,10 +28,14 @@ import { messageTime } from '../components/MessageKnot'
 function ConnectionRow({
   c,
   cloudLoops,
+  fleet,
+  connections,
   onChanged,
 }: {
   c: Connection
   cloudLoops: Set<string>
+  fleet: LoopView[]
+  connections: Connection[]
   onChanged: () => void
 }) {
   // Rotating, revoking, sharing and deleting are an admin's (#679); the
@@ -63,6 +70,18 @@ function ConnectionRow({
   const [panel, setPanel] = useState<'' | 'history' | 'rotate'>('')
   const toggle = (p: 'history' | 'rotate') => setPanel(panel === p ? '' : p)
   const revoked = c.revoked_at !== undefined
+  // A shared connection's loops are chosen here too (#1321); a private one
+  // stays on its owner loop, and a revoked one is on none.
+  const pickable = manage && !c.owner_loop && !revoked
+  const options = loopOptions(c, fleet, connections)
+  const saveLoops = async (next: string[]) => {
+    setBusy(true)
+    setError('')
+    const refusals = await applyLoops(c.name, attachPlan(loops, next))
+    setBusy(false)
+    if (refusals.length > 0) setError(`Not every loop took ${c.name}. ${refusals.join(' ')}`)
+    onChanged()
+  }
 
   const revoke = async () => {
     const holders =
@@ -93,7 +112,7 @@ function ConnectionRow({
   const share = async () => {
     if (
       !confirm(
-        `Share "${c.name}" with the fleet? Any loop can then be given it from its page. This cannot be undone: once another loop holds the value, it may already be in that loop's env.`,
+        `Share "${c.name}" with the fleet? Any loop can then be given it, here or from its page. This cannot be undone: once another loop holds the value, it may already be in that loop's env.`,
       )
     ) {
       return
@@ -121,7 +140,8 @@ function ConnectionRow({
           {detail}
         </span>
       )}
-      {/* Each loop a link to its page, where it is detached. */}
+      {/* Each loop a link to its page. A shared one's loops are chips, each
+          detached with its ×, for whoever may change connections. */}
       <span className="connection-loops">
         {revoked ? (
           <span className="connection-revoked">revoked {messageTime(c.revoked_at ?? 0)}</span>
@@ -130,6 +150,21 @@ function ConnectionRow({
             private to <Link to={`/loops/${c.owner_loop}`}>{c.owner_loop}</Link>
             {cloudLoops.has(c.owner_loop) && <CloudReach kind={c.kind} />}
           </>
+        ) : pickable ? (
+          <LoopChips
+            options={options}
+            picked={loops}
+            disabled={busy}
+            label={c.name}
+            onAdd={(loop) => saveLoops([...loops, loop])}
+            onRemove={(loop) => saveLoops(loops.filter((l) => l !== loop))}
+            renderLoop={(loop) => (
+              <>
+                <Link to={`/loops/${loop}`}>@{loop}</Link>
+                {cloudLoops.has(loop) && <CloudReach kind={c.kind} />}
+              </>
+            )}
+          />
         ) : attached ? (
           <>
             on{' '}
@@ -245,6 +280,8 @@ export default function Connections() {
       qc.invalidateQueries({ queryKey: ['connections'] }),
       qc.invalidateQueries({ queryKey: ['connection-events'] }),
       qc.invalidateQueries({ queryKey: ['loop-connection-events'] }),
+      // A loop's view lists what is attached to it.
+      qc.invalidateQueries({ queryKey: ['loops'] }),
     ])
 
   if (isPending) return <div className="page measure placeholder">Loading…</div>
@@ -254,12 +291,12 @@ export default function Connections() {
       <h1>Connections</h1>
       <p className="page-lede">
         A connection is an env variable, an MCP server or a GitHub App, defined once for the whole fleet and
-        attached to loops on their pages. A loop's secrets live here too: an env variable added on a loop's
-        page is a connection private to that loop, until you share it with the fleet. An attached env variable
-        applies from the loop's next turn, or a cloud loop's next session, and an MCP server from the loop's
-        next wake, though never on a cloud loop. A GitHub App's key stays in the hub, and a loop holding it is
-        handed hour-long tokens; a cloud loop can't hold one. A connection's secret is redacted from
-        everything the hub records.
+        attached to loops here or on their pages. A loop's secrets live here too: an env variable added on a
+        loop's page is a connection private to that loop, until you share it with the fleet. An attached env
+        variable applies from the loop's next turn, or a cloud loop's next session, and an MCP server from the
+        loop's next wake, though never on a cloud loop. A GitHub App's key stays in the hub, and a loop
+        holding it is handed hour-long tokens; a cloud loop can't hold one. A connection's secret is redacted
+        from everything the hub records.
         {!may('manage') && ' Only an admin sees what each connection points at.'}
       </p>
       {!data ? (
@@ -276,14 +313,21 @@ export default function Connections() {
           ) : (
             <div className="connection-list">
               {data.map((c) => (
-                <ConnectionRow key={c.name} c={c} cloudLoops={cloudLoops} onChanged={refresh} />
+                <ConnectionRow
+                  key={c.name}
+                  c={c}
+                  cloudLoops={cloudLoops}
+                  fleet={loops ?? []}
+                  connections={data}
+                  onChanged={refresh}
+                />
               ))}
             </div>
           )}
           {may('manage') && (
             <>
               <h3 className="connection-new">New connection</h3>
-              <ConnectionForm onCreated={refresh} />
+              <ConnectionForm onCreated={refresh} fleet={loops ?? []} connections={data} />
             </>
           )}
         </>
