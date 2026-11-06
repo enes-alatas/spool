@@ -220,6 +220,9 @@ ADR instead.*
   in its PR (#266); one the shipped binary carries (non-test Go imports, or
   `web/package.json` `dependencies`) also takes an ADR, and a dev-only one
   takes none unless it changes a CI gate (ADR-0013).
+- **Vendored skills** (#1350) are verbatim upstream copies pinned to a commit
+  in `.claude/VENDORED.md`, their licence notice beside it; local rules go in
+  a process skill on top, never into the copy.
 - **Flag and continue** (#192): where stopping would idle a PR and either
   answer holds or is cheap to fold, ask and keep working; the PR carries an
   `Operator decision pending:` line until the answer is recorded in the issue
