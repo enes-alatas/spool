@@ -390,6 +390,9 @@ func (br *Bridge) pollLoop(ctx context.Context, bot *poller) {
 			if update.PollAnswer != nil {
 				br.handlePollAnswer(ctx, bot, update.PollAnswer)
 			}
+			if update.MyChatMember != nil {
+				br.handleMyChatMember(ctx, bot, update.MyChatMember)
+			}
 		}
 		// Settled only after the poll, so an item that arrived while the
 		// poller slept extends its album rather than missing it.
@@ -445,7 +448,7 @@ func (br *Bridge) handleMessage(ctx context.Context, bot *poller, message *tgMsg
 
 	channel := ""
 	if isGroup {
-		channel = br.roomChannel(ctx, bot, message)
+		channel = br.roomChannel(ctx, bot, message.Chat)
 	}
 
 	// /spool_status works even with bot privacy mode on, and binds a loop
@@ -1169,17 +1172,60 @@ func (br *Bridge) logTurnedAway(bot *poller, message *tgMsgAlias, author, reason
 		"message_id", message.MessageID)
 }
 
+// handleMyChatMember records a group for this loop when an allowed person
+// adds its bot there, as that person's first message there would, so
+// adding the bot is enough (#1320). Telegram names who added the bot, not
+// who made the group, and the check is on the adder: only an allowed
+// person brings a loop into a group. A stranger's or a blocked person's
+// add records nothing and is answered with nothing, as their message is;
+// an allowed person's later message still records the group. The bot
+// leaving or being removed is logged and changes no room: forgetting one
+// stays the operator's act on the loop page.
+func (br *Bridge) handleMyChatMember(ctx context.Context, bot *poller, update *ChatMemberUpdated) {
+	if update.Chat.Type != "group" && update.Chat.Type != "supergroup" {
+		return
+	}
+	switch {
+	case !inChat(update.New):
+		br.log.Info("telegram bot left a group", "loop", bot.name, "chat_id", update.Chat.ID, "status", update.New.Status)
+		return
+	case inChat(update.Old):
+		return // a promotion or a restriction: the bot was there already
+	case update.From.IsBot || br.router == nil:
+		return
+	}
+	if !br.eventAllowed(ctx, bot, update.From.ID) {
+		br.log.Info("telegram group not recorded: the bot was added by someone not allowed",
+			"loop", bot.name, "chat_id", update.Chat.ID)
+		return
+	}
+	br.roomChannel(ctx, bot, update.Chat)
+}
+
+// inChat reports whether a chat member is in the chat. A restricted one
+// is when Telegram says so: is_member is false for one who left.
+func inChat(member ChatMember) bool {
+	switch member.Status {
+	case "creator", "administrator", "member":
+		return true
+	case "restricted":
+		return member.IsMember
+	}
+	return false
+}
+
 // roomChannel is the channel a group chat carries for this loop's bot, ""
 // for none. A chat the bot has no room for is recorded as one, unbound, for
 // the operator to bind from the loop page (ADR-0038). The one chat
-// bound without asking is the first a loop hears from while its fleet
-// channel has no room, as the fleet channel's group always was: a new fleet
-// still binds by its first message. A later group never moves it.
-func (br *Bridge) roomChannel(ctx context.Context, bot *poller, message *tgMsgAlias) string {
+// bound without asking is the first a loop hears from, or is added to by
+// an allowed person, while its fleet channel has no room, as the fleet
+// channel's group always was: a new fleet still binds by its first
+// message. A later group never moves it.
+func (br *Bridge) roomChannel(ctx context.Context, bot *poller, chat Chat) string {
 	now := time.Now().UnixMilli()
-	roomID := strconv.FormatInt(message.Chat.ID, 10)
+	roomID := strconv.FormatInt(chat.ID, 10)
 	room, added, err := br.store.Rooms().Sight(ctx, &store.Room{LoopID: bot.loopID, Surface: store.SurfaceTelegram,
-		RoomID: roomID, Title: message.Chat.Title, FirstSeenAt: now})
+		RoomID: roomID, Title: chat.Title, FirstSeenAt: now})
 	if err != nil {
 		br.log.Error("telegram: record room", "loop", bot.name, "err", err)
 		return ""
@@ -1196,7 +1242,7 @@ func (br *Bridge) roomChannel(ctx context.Context, bot *poller, message *tgMsgAl
 		_, err := br.store.Rooms().Bind(ctx, loopRecord.ID, store.SurfaceTelegram, roomID, store.FleetChannel, now)
 		switch {
 		case err == nil:
-			br.log.Info("telegram group bound", "loop", loopRecord.Name, "chat_id", message.Chat.ID)
+			br.log.Info("telegram group bound", "loop", loopRecord.Name, "chat_id", chat.ID)
 			br.bus.Publish(bus.Item{Kind: bus.KindLoopStatus, LoopID: loopRecord.ID, Payload: map[string]any{
 				"loop_id": loopRecord.ID, "name": loopRecord.Name, "tg_group_bound": true, "rooms_changed": true,
 			}})
@@ -1208,7 +1254,7 @@ func (br *Bridge) roomChannel(ctx context.Context, bot *poller, message *tgMsgAl
 		// another loop's room for another channel: this one waits unbound
 	}
 	if added {
-		br.log.Info("telegram room recorded unbound", "loop", loopRecord.Name, "chat_id", message.Chat.ID)
+		br.log.Info("telegram room recorded unbound", "loop", loopRecord.Name, "chat_id", chat.ID)
 		br.bus.Publish(bus.Item{Kind: bus.KindLoopStatus, LoopID: loopRecord.ID, Payload: map[string]any{
 			"loop_id": loopRecord.ID, "name": loopRecord.Name, "rooms_changed": true,
 		}})

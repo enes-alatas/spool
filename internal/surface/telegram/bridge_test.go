@@ -410,3 +410,21 @@ func TestStopBeforeStartReturns(t *testing.T) {
 		t.Fatal("Stop on a bridge never started waited for its deadline")
 	}
 }
+
+// A restricted member is in the chat only when Telegram says so.
+func TestInChat(t *testing.T) {
+	for member, want := range map[ChatMember]bool{
+		{Status: "creator"}:                        true,
+		{Status: "administrator"}:                  true,
+		{Status: "member"}:                         true,
+		{Status: "restricted", IsMember: true}:     true,
+		{Status: "restricted"}:                     false,
+		{Status: "left"}:                           false,
+		{Status: "kicked"}:                         false,
+		{Status: "a status Telegram adds one day"}: false,
+	} {
+		if got := inChat(member); got != want {
+			t.Errorf("inChat(%+v) = %v, want %v", member, got, want)
+		}
+	}
+}

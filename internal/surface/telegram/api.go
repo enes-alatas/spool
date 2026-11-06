@@ -283,6 +283,27 @@ type Update struct {
 	// PollAnswer is a person's choice in a poll changing. A bot hears it
 	// only in a non-anonymous poll it sent itself (ADR-0041).
 	PollAnswer *PollAnswer `json:"poll_answer"`
+	// MyChatMember is this bot's own membership in a chat changing: added
+	// to a group, promoted, removed. From is the person who changed it.
+	MyChatMember *ChatMemberUpdated `json:"my_chat_member"`
+}
+
+// ChatMemberUpdated is one member's status in one chat changing, from Old
+// to New. From is who made the change: for a bot added to a group, the
+// person who added it, not whoever created the group.
+type ChatMemberUpdated struct {
+	Chat Chat       `json:"chat"`
+	From User       `json:"from"`
+	Old  ChatMember `json:"old_chat_member"`
+	New  ChatMember `json:"new_chat_member"`
+}
+
+// ChatMember is a member's status in a chat: "creator", "administrator",
+// "member", "restricted", "left" or "kicked". IsMember is set only for a
+// restricted one, and says whether they are in the chat.
+type ChatMember struct {
+	Status   string `json:"status"`
+	IsMember bool   `json:"is_member"`
 }
 
 // PollAnswer is one voter's whole choice in one poll: OptionIDs are the
@@ -348,11 +369,15 @@ func (client *Client) GetMe(ctx context.Context) (*User, error) {
 	return &user, nil
 }
 
+// allowedUpdates is every update kind a bot asks Telegram for. Telegram
+// sends no other kind, and drops one it would have sent.
+var allowedUpdates = []string{"message", "edited_message", "message_reaction", "poll_answer", "my_chat_member"}
+
 func (client *Client) GetUpdates(ctx context.Context, offset int64, timeoutSec int) ([]Update, error) {
 	params := map[string]any{
 		"offset":          offset,
 		"timeout":         timeoutSec,
-		"allowed_updates": []string{"message", "edited_message", "message_reaction", "poll_answer"},
+		"allowed_updates": allowedUpdates,
 	}
 	var updates []Update
 	if err := client.call(ctx, "getUpdates", params, &updates); err != nil {

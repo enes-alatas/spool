@@ -260,10 +260,11 @@ func (tg *fakeTelegram) handle(w http.ResponseWriter, r *http.Request) {
 		writeOK(w, map[string]any{"id": 1, "is_bot": true, "username": botUsername(token)})
 	case "getUpdates":
 		var req struct {
-			Offset int64 `json:"offset"`
+			Offset         int64    `json:"offset"`
+			AllowedUpdates []string `json:"allowed_updates"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&req)
-		writeOK(w, tg.drain(token, req.Offset))
+		writeOK(w, tg.drain(token, req.Offset, req.AllowedUpdates))
 	case "getFile":
 		var req struct {
 			FileID string `json:"file_id"`
@@ -430,12 +431,14 @@ func writeOK(w http.ResponseWriter, result any) {
 // pollers don't spin. The real API long-polls for up to 50s. As there, an
 // update is forgotten only once a later call names an offset past it, so
 // a poller that stops before then is sent it again.
-func (tg *fakeTelegram) drain(token string, offset int64) []map[string]any {
+// As there, an update of a kind allowed doesn't name is dropped, never
+// sent (#1320).
+func (tg *fakeTelegram) drain(token string, offset int64, allowed []string) []map[string]any {
 	deadline := time.Now().Add(time.Second)
 	for {
 		tg.mu.Lock()
 		tg.queued[token] = slices.DeleteFunc(tg.queued[token], func(update map[string]any) bool {
-			return update["update_id"].(int64) < offset
+			return update["update_id"].(int64) < offset || !updateAllowed(update, allowed)
 		})
 		pending := slices.Clone(tg.queued[token])
 		tg.mu.Unlock()
@@ -444,6 +447,21 @@ func (tg *fakeTelegram) drain(token string, offset int64) []map[string]any {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+}
+
+// updateAllowed reports whether update is of a kind allowed names. An
+// empty list is Telegram's default: every kind but a few, my_chat_member
+// among those sent.
+func updateAllowed(update map[string]any, allowed []string) bool {
+	if len(allowed) == 0 {
+		return true
+	}
+	for kind := range update {
+		if kind != "update_id" && !slices.Contains(allowed, kind) {
+			return false
+		}
+	}
+	return true
 }
 
 // post delivers one human message to every bot listening on the chat, each
