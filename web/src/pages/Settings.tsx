@@ -8,6 +8,7 @@ import { useMay, useSignOut } from '../components/Session'
 import { SignOutIcon } from '../components/Icons'
 import { EgressSection } from '../components/EgressSection'
 import { CloudSection } from '../components/CloudSection'
+import { LangfuseSection } from '../components/LangfuseSection'
 import { ClaudeLoginSection } from '../components/ClaudeLogin'
 import { UsersSection } from '../components/UsersSection'
 import { ChatAccess } from '../components/ChatAccess'
@@ -54,6 +55,7 @@ export default function Settings() {
           <RotationThresholds settings={settings} loadError={loadError} />
           <EgressSection />
           <CloudSection />
+          <LangfuseSection />
         </>
       )}
       <Build />

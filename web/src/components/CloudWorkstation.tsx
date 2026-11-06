@@ -85,6 +85,12 @@ export function CloudWorkstation({ loop }: { loop: LoopView }) {
           )}
         </span>
       </div>
+      {loop.langfuse === 'unsupported' && (
+        <div className="row">
+          <span className="k">traces</span>
+          <span className="v muted">can't reach Langfuse</span>
+        </div>
+      )}
       <MCPReach loop={loop} />
       {hold && (
         <div className="panel-note bad">

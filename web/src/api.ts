@@ -58,6 +58,10 @@ export interface LoopView {
   // Set on a cloud loop while its environment's allowlist isn't confirmed
   // on its setup view (ADR-0061): a warning, never a hold.
   cloud_allowlist_unconfirmed?: boolean
+  // 'unsupported' on a cloud loop: it runs on Anthropic's machines, which
+  // can't reach the operator's Langfuse, so it sends no traces whatever the
+  // settings say (ADR-0064). Absent on every other loop.
+  langfuse?: 'unsupported'
   // A cloud loop's GitHub repo, owner/name, its branch, the further repos
   // its sessions attach, and its claude.ai environment (ADR-0061); '' and
   // [] on any other loop, or until they are set. Changed only while the
@@ -843,6 +847,30 @@ export interface PlanWindow {
   cap_percent?: number
 }
 
+// Settings → Langfuse (ADR-0064), GET and PUT /api/settings/langfuse.
+// Mirrors httpapi.langfuseView: the two addresses as stored, "" when
+// unset, and each key as whether it is set, never its value. exporting is
+// whether a loop's next session sends traces: a relay upstream and an
+// ingest key are both set. default_relay_upstream is the compose
+// profile's upstream, offered, never applied unasked.
+export interface LangfuseSettings {
+  relay_upstream: string
+  read_address: string
+  ingest_key_set: boolean
+  read_key_set: boolean
+  exporting: boolean
+  default_relay_upstream: string
+}
+
+// A Langfuse change: a field left out stays as it is, "" clears it. A key
+// is its public and secret halves joined by a colon.
+export interface LangfuseChange {
+  relay_upstream?: string
+  read_address?: string
+  ingest_key?: string
+  read_key?: string
+}
+
 export interface Settings {
   claude_token_set: boolean
   // Whether this hub was started to allow an uncontained loop (--runtime bare
@@ -1517,6 +1545,9 @@ export const api = {
     }),
   settings: () => req<Settings>('/api/settings'),
   planUsage: () => req<PlanUsages>('/api/plan-usage'),
+  langfuse: () => req<LangfuseSettings>('/api/settings/langfuse'),
+  setLangfuse: (body: LangfuseChange) =>
+    req<LangfuseSettings>('/api/settings/langfuse', { method: 'PUT', body: JSON.stringify(body) }),
   // The health check's settings in one write, as the rotation pair goes; a
   // field left out stays as it is, and 0 is off (ADR-0053).
   setHealthCheck: (body: {

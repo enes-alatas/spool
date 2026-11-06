@@ -261,6 +261,53 @@ taken.push(egressFile)
 await egressDialog.getByRole('button', { name: 'Close' }).click()
 await page.unroute('**/api/settings/egress')
 
+// Settings' Langfuse card (#1298, ADR-0064): off, as the fixture serves
+// it, and on, with both addresses and keys set as the hub answers once
+// they are. The keys are never in either: the view carries only whether
+// each is set. Then a cloud loop's workstation card, which says the loop
+// sends no traces: the fixture has no cloud loop, so one is patched in.
+await page.goto(base + '/settings', { waitUntil: 'networkidle' })
+const langfuse = page.locator('section.langfuse')
+await langfuse.locator('.panel-note').waitFor({ timeout: 15000 })
+const langfuseOffFile = `${outDir}/settings-langfuse-off.png`
+await langfuse.screenshot({ path: langfuseOffFile })
+taken.push(langfuseOffFile)
+await page.route('**/api/settings/langfuse', async (route) => {
+  if (route.request().method() !== 'GET') return route.continue()
+  const view = await (await route.fetch()).json()
+  await route.fulfill({
+    json: {
+      ...view,
+      relay_upstream: view.default_relay_upstream,
+      read_address: 'http://127.0.0.1:3000',
+      ingest_key_set: true,
+      read_key_set: true,
+      exporting: true,
+    },
+  })
+})
+await page.goto(base + '/settings', { waitUntil: 'networkidle' })
+await langfuse.getByRole('button', { name: 'Turn off' }).waitFor({ timeout: 15000 })
+const langfuseOnFile = `${outDir}/settings-langfuse-on.png`
+await langfuse.screenshot({ path: langfuseOnFile })
+taken.push(langfuseOnFile)
+await page.unroute('**/api/settings/langfuse')
+await page.setViewportSize({ width: 1180, height: 900 })
+await page.route('**/api/loops/gardener', async (route) => {
+  if (route.request().method() !== 'GET') return route.continue()
+  const loop = await (await route.fetch()).json()
+  await route.fulfill({ json: { ...loop, runtime: 'cloud', langfuse: 'unsupported' } })
+})
+await page.goto(base + '/loops/gardener', { waitUntil: 'networkidle' })
+const traces = page.locator('.row', { hasText: "can't reach Langfuse" })
+await traces.waitFor({ timeout: 15000 })
+const cloudCard = traces.locator('xpath=ancestor::*[contains(@class,"panel")][1]')
+const cloudTracesFile = `${outDir}/loop-cloud-traces.png`
+await cloudCard.screenshot({ path: cloudTracesFile })
+taken.push(cloudTracesFile)
+await page.unroute('**/api/loops/gardener')
+await page.setViewportSize({ width: 1180, height: 1900 })
+
 // Settings' Users and access section (#691, #732), as the owner admin sees
 // the fixture's users: robin still on a one-time password, admin the last
 // owner, whose own role and Remove are disabled with the reason, sam linked,

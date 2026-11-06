@@ -5762,3 +5762,38 @@ button.panel-link {
   font-size: 0.6875rem;
   color: var(--text-muted);
 }
+/* ---- Settings → Langfuse (#1298) ---- */
+.langfuse .panel-note {
+  margin-bottom: 14px;
+}
+.langfuse-form {
+  margin-bottom: 14px;
+}
+.langfuse-key-state {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+.langfuse-key-state.set {
+  color: var(--ready);
+  border-color: currentColor;
+}
+.langfuse-actions {
+  display: flex;
+  gap: 8px;
+}
+.langfuse-who {
+  margin: 14px 0 0;
+  padding-left: 18px;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+.langfuse-who li + li {
+  margin-top: 4px;
+}
+.side-panel .v.muted {
+  color: var(--text-muted);
+}
