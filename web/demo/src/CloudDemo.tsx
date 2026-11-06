@@ -65,14 +65,16 @@ function Title() {
 }
 
 // Beat 2: the form fills fast, the runtime is chosen at near pace so its
-// note can be read, and the reach for Create plays fast up to the page.
+// note can be read, and the reach for Create plays fast up to its click.
+// The page opens on the loop's setup walk, which the take closes off
+// camera: the cut goes from the click to the page (#1329).
 const FILL_RATE = 2.5
 const FILL_LEN = (C['scroll-runtime'] - C.ready) / FILL_RATE
 const PICK_RATE = 1.5
 const PICK_END = C.cloud + 1.6
 const PICK_LEN = (PICK_END - C['scroll-runtime']) / PICK_RATE
 const GO_RATE = 2
-const GO_LEN = (C.page - PICK_END) / GO_RATE
+const GO_LEN = (C.created - PICK_END) / GO_RATE
 const CREATE_LEN = FILL_LEN + PICK_LEN + GO_LEN
 function Create() {
   return (

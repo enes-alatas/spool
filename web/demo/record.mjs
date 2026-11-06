@@ -827,7 +827,12 @@ await take('cloud', async (page, mark) => {
   await glideTo(page, create)
   mark('create-click')
   await pointAt(page, create)
-  await page.waitForURL(`**/loops/${CLOUD.name}`)
+  mark('created')
+  // A new cloud loop's page opens on its setup walk (#1183). The clip is
+  // about where the loop runs, not its setup, so the operator closes the
+  // walk, and the video cuts from the click on Create to the page behind
+  // it, 'created' to 'page' (#1329). The answer stays hidden till its beat.
+  await page.waitForURL(new RegExp(`/loops/${CLOUD.name}(\\?setup=?)?$`))
   await page.waitForSelector('.knot')
   await page.evaluate(() => {
     for (const id of [991002, 991003]) {
@@ -835,6 +840,16 @@ await take('cloud', async (page, mark) => {
       if (knot) knot.style.display = 'none'
     }
   })
+  const walk = page.locator('dialog.cloud-setup')
+  const walking = await walk
+    .waitFor({ timeout: 3000 })
+    .then(() => true)
+    .catch(() => false)
+  if (walking) {
+    await pointAt(page, walk.locator('.panel-head').getByRole('button', { name: 'Close' }))
+    await walk.waitFor({ state: 'hidden' })
+    await page.mouse.move(size.width / 2, size.height - 80, { steps: 12 })
+  }
   mark('page')
   await page.waitForTimeout(1200)
   const card = page.locator('.side-panel', { has: page.getByRole('heading', { name: 'Workstation' }) })
