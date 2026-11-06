@@ -1,6 +1,6 @@
 # ADR-0038: Channels are the hub's named conversations, and the fleet channel is the first of them
 
-Date: 2026-10-01 · Status: accepted (operator decisions of 2026-10-01, recorded on #275) · Amends: ADR-0026 (item 1), ADR-0032 (item 2) · Amended: 2026-10-01 (item 4: routing by channel, #493); 2026-10-01 (item 5: Telegram rooms, #514); 2026-10-04 (item 5: Slack rooms, #548)
+Date: 2026-10-01 · Status: accepted (operator decisions of 2026-10-01, recorded on #275) · Amends: ADR-0026 (item 1), ADR-0032 (item 2) · Amended: 2026-10-01 (item 4: routing by channel, #493); 2026-10-01 (item 5: Telegram rooms, #514); 2026-10-04 (item 5: Slack rooms, #548); 2026-11-06 (item 5: adding a Telegram bot, #1320)
 
 ## Context
 
@@ -197,6 +197,23 @@ something it leaves open.
      Slack channel id (C…, or G… for an older private channel) for a loop
      with a Slack app; a DM's id is refused. Detaching the app forgets all
      of the loop's Slack rooms; rotating it keeps them.
+
+   **Amendment (2026-11-06, #1320): adding a Telegram bot is enough.**
+   Besides its first message, the hub notices a Telegram group when an
+   allowed person adds the loop's bot there, as the operator decided on
+   2026-11-05.
+   - **An add records a room as a first message does.** When the bot's own
+     status in a group goes from out of the chat to in it, and the person
+     who added it is an allowed sender (ADR-0051), the room is recorded
+     unbound. While the loop's fleet channel has no room, it binds to
+     `group` instead, so the first group an allowed person adds the bot to
+     becomes the fleet channel's, with no message sent.
+   - **The check is on the adder.** Telegram names who added the bot, not
+     who made the group. A stranger's add records nothing, and an allowed
+     person's later message records the group as before.
+   - **A removal changes no room.** The bot leaving or being removed is
+     logged; forgetting a room stays the operator's act.
+   - **Slack is unchanged** until an issue of its own.
 
 6. **Deleting a channel removes it and its membership, not its history.**
    Messages said in it keep its name. A channel created later under the same
