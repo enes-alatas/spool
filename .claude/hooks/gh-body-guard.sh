@@ -10,7 +10,9 @@
 #     same GitHub user, and the signature is how a reader tells them apart.
 # The bodies read are the command itself, which holds any --body, here-doc
 # or variable it sets, and every body file it names that is there yet.
-# Plain sh and awk: a workstation has no jq or Python.
+# Plain sh and awk: a workstation has no jq or Python. The two pr-guards
+# rules below (#1371) run CI's own bash scripts, with git and perl, which a
+# clone has; a call they can't judge goes through for CI to judge.
 #
 # Claude Code reads .claude/settings.json only for a session started in a
 # checkout. A loop's session starts in its home, so a loop runs this hook
@@ -35,6 +37,89 @@ command=$(printf '%s' "$input" | LC_ALL=C awk -v want=tool_input.command "$reade
 [ -n "$command" ] || exit 0
 cwd=$(printf '%s' "$input" | LC_ALL=C awk -v want=cwd "$reader")
 [ -n "$cwd" ] && cd "$cwd" 2>/dev/null
+
+# Two of pr-guards' checks, run before the call rather than minutes after it
+# (#1371): the commit rules at `git push`, and a feat PR's other half at
+# `gh pr create`/`edit`. CI stays the authority, since a hook only runs where
+# it is set up; this is the early copy. Both run CI's own scripts, read at
+# the hook's ref, so the rules have one text. Anything the hook can't work
+# out, it lets through for CI to judge.
+# repo_file prints one of the repository's files at the hook's ref.
+repo_file() {
+	if [ -n "$repo" ]; then
+		git -C "$repo" show "$ref:$1"
+	else
+		cat "$here/../../$1"
+	fi
+}
+# this_repo: the call runs in a clone of this repository, whose rules these
+# are, and not in some other project.
+slug() { sed -E 's#\.git$##; s#^.*[:/]([^/:]+/[^/:]+)$#\1#'; }
+this_repo() {
+	ours=$(git -C "${repo:-$here}" remote get-url origin 2>/dev/null | slug) || return 1
+	theirs=$(git remote get-url origin 2>/dev/null | slug) || return 1
+	[ -n "$ours" ] && [ "$ours" = "$theirs" ]
+}
+
+# A push, found among the call's words (quotes kept together), after any
+# `-c <key=value>` and `-C <dir>`: the credential-helper push is
+# `git -c credential.helper='!gh auth git-credential' push` (#1372). It
+# prints the -C directory and what is pushed: the refspec's source after
+# the remote, empty for HEAD, `-` for a deletion.
+pushed=$(printf '%s\n' "$command" | LC_ALL=C awk '
+{ s = s $0 "\n" }
+END {
+	n = 0; w = ""; inw = 0; q = ""
+	for (k = 1; k <= length(s); k++) {
+		c = substr(s, k, 1)
+		if (q != "") { if (c == q) q = ""; else w = w c; continue }
+		if (c == "\"" || c == "\047") { q = c; inw = 1; continue }
+		if (c ~ /[ \t\n]/) { if (inw) { words[++n] = w; w = ""; inw = 0 } continue }
+		w = w c; inw = 1
+	}
+	if (inw) words[++n] = w
+	for (i = 1; i <= n; i++) {
+		if (words[i] !~ /(^|\/)git$/) continue
+		j = i + 1; dir = ""
+		while (j < n && (words[j] == "-c" || words[j] == "-C")) {
+			if (words[j] == "-C") dir = words[j + 1]
+			j += 2
+		}
+		if (words[j] != "push") continue
+		m = 0; src = ""
+		for (j = j + 1; j <= n; j++) {
+			x = words[j]
+			if (x ~ /^(&&|\|\|?|;)$/ || x ~ /^[0-9]*>/) break
+			if (x == "--delete" || x == "-d") { src = "-"; break }
+			if (x ~ /^-/) continue
+			if (++m == 2) {
+				sub(/;$/, "", x); sub(/^\+/, "", x); sub(/:.*/, "", x)
+				src = (x == "" ? "-" : x); break
+			}
+		}
+		printf "push\t%s\t%s\n", dir, src
+		exit
+	}
+}')
+if [ -n "$pushed" ]; then
+	dir=$(printf '%s\n' "$pushed" | cut -f2)
+	src=$(printf '%s\n' "$pushed" | cut -f3)
+	[ -n "$src" ] || src=HEAD
+	# In the clone the push runs in; another project's clone, or a -C
+	# directory that isn't there, goes through.
+	said=$(
+		[ "$src" != - ] || exit 0
+		if [ -n "$dir" ]; then cd "$dir" 2>/dev/null || exit 0; fi
+		this_repo || exit 0
+		repo_file scripts/commit-subjects.sh | bash -s -- --git "origin/main..$src" 2>/dev/null
+		[ $? -eq 1 ] && exit 3
+		exit 0
+	)
+	if [ $? -eq 3 ]; then
+		printf 'this push carries commits that pr-guards will refuse (#1371):\n%s\n' "$said" >&2
+		exit 2
+	fi
+fi
 
 # Which gh calls send a body, and whether this one gives one.
 issue_pr='(^|[^[:alnum:]_./-])gh([[:space:]]+(-R|--repo)[[:space:]]+[^[:space:]]+)?[[:space:]]+(issue|pr)[[:space:]]+(create|comment|edit|review|close|reopen)([[:space:]]|$)'
@@ -102,5 +187,33 @@ if ! printf '%s\n' "$bodies" | LC_ALL=C grep -Eq '—[[:space:]]*[[:alpha:]][^·
 	fi
 	echo "this gh body has no signature line; every loop posts as the same GitHub user, so end it with \"— Name · Role\" (#630)." >&2
 	exit 2
+fi
+
+# A feat PR that changes one half names its other half (#634): pr-guards'
+# other-half check, on the body about to be sent (#1371). The hook checks
+# the line's form; whether #n is an issue is CI's lookup, so here any #n
+# passes. The PR's files are what this branch changes against origin/main,
+# so an edit that names a PR (a number, URL or branch) is skipped: its files
+# need the API, and HEAD's would be some other PR's (#1372).
+pr_body='(^|[^[:alnum:]_./-])gh([[:space:]]+(-R|--repo)[[:space:]]+[^[:space:]]+)?[[:space:]]+pr[[:space:]]+(create|edit)([[:space:]]|$)'
+named_pr='(^|[^[:alnum:]_./-])gh([[:space:]]+(-R|--repo)[[:space:]]+[^[:space:]]+)?[[:space:]]+pr[[:space:]]+edit[[:space:]]+[^-[:space:]]'
+if printf '%s\n' "$command" | grep -Eq "$pr_body" &&
+	! printf '%s\n' "$command" | grep -Eq "$named_pr" && this_repo; then
+	title=$(printf '%s\n' "$command" | LC_ALL=C sed -nE 's/.*(^|[[:space:]])(--title|-t)[=[:space:]]+["'"'"']?([^"'"'"']*).*/\3/p' | head -n 1)
+	case $title in
+	feat:* | feat\(* | feat!*)
+		scratch=$(mktemp -d) || exit 0
+		git diff --name-only origin/main...HEAD > "$scratch/files" 2>/dev/null
+		printf '%s\n' "$bodies" > "$scratch/body"
+		said=$({ echo 'any_number() { echo issue; }'; repo_file scripts/other-half.sh; } |
+			OTHER_HALF_LOOKUP=any_number bash -s -- "$title" "$scratch/body" "$scratch/files" 2>&1)
+		status=$?
+		rm -rf "$scratch"
+		if [ "$status" -eq 1 ]; then
+			printf '%s\n' "$said" >&2
+			exit 2
+		fi
+		;;
+	esac
 fi
 exit 0

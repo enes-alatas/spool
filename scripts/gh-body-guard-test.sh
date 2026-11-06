@@ -34,7 +34,7 @@ fails=0
 check() {
 	local want=$1 name=$2 command=$3 description=${4:-run it} phrase=${5:-} got=0 said
 	said=$(printf '{"session_id":"s","cwd":"%s","tool_name":"Bash","tool_input":{"description":"%s","command":"%s"}}' \
-		"$(json_string "$work")" "$(json_string "$description")" "$(json_string "$command")" |
+		"$(json_string "${cwd_dir:-$work}")" "$(json_string "$description")" "$(json_string "$command")" |
 		run_hook 2>&1) || got=$?
 	if [ "$got" -ne "$want" ] || [[ -n $phrase && $said != *"$phrase"* ]]; then
 		echo "FAIL $name: exit $got, want $want ${phrase:+saying \"$phrase\" }${said:+($said)}"
@@ -128,6 +128,60 @@ check 2 "from a clone: unsigned" "gh pr comment 12 --body \"Looks good.\"" "" "n
 check 0 "from a clone: signed" "gh pr create --title t --body-file signed.md"
 run_hook() { sh -c "$(git -C "$clone" show HEAD:.claude/hooks/gh-body-guard.sh)" gh-body-guard "$clone" no-such-ref; }
 check 0 "from a clone: a ref without its files" "gh pr comment 12 --body \"Looks good.\""
+
+# pr-guards' rules before the call (#1371). The hook clone carries CI's two
+# scripts, and a working clone of the same repository (by origin) holds a
+# base on origin/main and a branch on top of it.
+url=https://example.invalid/fixture/spool.git
+mkdir -p "$clone/scripts"
+cp "$root/scripts/commit-subjects.sh" "$root/scripts/other-half.sh" "$clone/scripts/"
+git -C "$clone" add scripts
+git -C "$clone" -c user.name=fixture -c user.email=fixture@example.invalid commit -qm scripts
+git -C "$clone" remote add origin "$url"
+wt="$work/wt"
+git init -q "$wt"
+gitw() { git -C "$wt" -c user.name=fixture -c user.email=fixture@example.invalid "$@"; }
+gitw remote add origin "$url"
+gitw commit -q --allow-empty -m "chore: the base"
+gitw update-ref refs/remotes/origin/main HEAD
+mkdir -p "$wt/internal"
+echo x > "$wt/internal/x.go"
+gitw add internal/x.go
+gitw commit -q -m "feat(api): a hub-only change"
+printf 'Closes #1\n\n%s\n' "$sig" > "$wt/nohalf.md"
+printf 'Closes #1\nOther half: #12\n\n%s\n' "$sig" > "$wt/half.md"
+printf 'Closes #1\nOther half: \n\n%s\n' "$sig" > "$wt/emptyhalf.md"
+run_hook() { sh -c "$(git -C "$clone" show HEAD:.claude/hooks/gh-body-guard.sh)" gh-body-guard "$clone" HEAD; }
+cwd_dir=$wt
+check 0 "push: good commits" "git push -u origin feat/x"
+check 2 "pr create: a feat with no other half" "gh pr create --title \"feat(api): x\" --body-file nohalf.md" "" "Other half:"
+check 2 "pr create: an empty other half" "gh pr create -t 'feat: x' --body-file emptyhalf.md" "" "is empty"
+check 0 "pr create: the other half named" "gh pr create --title \"feat(api): x\" --body-file half.md"
+check 0 "pr create: not a feat" "gh pr create --title \"fix(api): x\" --body-file nohalf.md"
+check 0 "pr edit: no title, nothing to judge" "gh pr edit --body-file nohalf.md"
+check 2 "pr edit: HEAD's PR, a feat with no other half" "gh pr edit --title \"feat(api): x\" --body-file nohalf.md" "" "Other half:"
+check 0 "pr edit: a PR named by number is some other branch's" "gh pr edit 5 --title \"feat(api): x\" --body-file nohalf.md"
+check 0 "pr edit: a PR named by branch" "gh pr edit feat/other -t 'feat: x' --body-file nohalf.md"
+mkdir -p "$wt/web"
+echo x > "$wt/web/x.ts"
+gitw add web/x.ts
+gitw commit -q -m "feat(web): the room half"
+check 0 "pr create: both halves" "gh pr create --title \"feat: x\" --body-file nohalf.md"
+gitw commit -q --allow-empty -m "the fleet channel is a tab"
+check 2 "push: a bad subject" "git push" "" "pr-guards will refuse"
+check 2 "push: piped, with an upstream flag" "git push -u origin HEAD 2>&1 | tail -n 5" "" "the subject isn't"
+check 2 "push then a gh call" "git push && gh pr comment 3 --body-file half.md" "" "pr-guards will refuse"
+check 2 "push: through gh's credential helper" "git -c credential.helper='!gh auth git-credential' push -u origin HEAD" "" "pr-guards will refuse"
+check 2 "push: two -c settings" "git -c a.b=1 -c credential.helper=\"!gh auth git-credential\" push" "" "pr-guards will refuse"
+check 2 "push: -C into the clone" "cd / && git -C $wt push origin HEAD" "" "pr-guards will refuse"
+check 0 "push: -C into a directory that isn't there" "git -C $work/nowhere push"
+check 0 "push: -C into another directory" "git -C $work push"
+check 0 "push: a deletion" "git push origin :old-branch"
+check 0 "push: --delete" "git push origin --delete old-branch"
+check 0 "push: a range the clone can't resolve" "git push origin no-such-branch"
+gitw remote set-url origin https://example.invalid/someone/else.git
+check 0 "push: another project's clone" "git push"
+cwd_dir=
 
 [ "$fails" -eq 0 ] || { echo "$fails case(s) failed"; exit 1; }
 echo "all cases pass"
