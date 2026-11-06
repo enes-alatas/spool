@@ -887,14 +887,19 @@ the CLI (ADR-0018).
   In the hub both key pairs are sealed under `hub.key`, the settings
   API serves each only as whether it is set, and both, with each
   one's secret half alone, join the redactor's secrets, which mask
-  their base64 too, the `Authorization` the relay sends (#1297). A pair
+  their base64 too, the `Authorization` the relay and a bare loop send
+  (#1297, #1313). A pair
   replaced or cleared stays among them, sealed in the same setting:
   Langfuse honours it until the operator deletes it there (ADR-0043).
 - **The hub sets a session's export, not its connections.** It drops
-  every `OTEL_*` an env-var connection sets and sets no `OTEL_LOG_*`, so
-  neither a connection nor the hub's environment turns content on. A
+  every `OTEL_*` an env-var connection sets, and a bare session gets none
+  the hub inherited, and it sets no `OTEL_LOG_*`. So neither a
+  connection nor the hub's environment turns content on. A
   docker session exports to the relay only while an upstream and an
-  ingest key are set; any other session runs with
+  ingest key are set. A bare session exports straight to the read
+  address only while the upstream, the read address and the ingest key
+  are all set, and only to https, or http on loopback, so the key never
+  crosses a network in clear (#1313). Any other session runs with
   `CLAUDE_CODE_ENABLE_TELEMETRY=0`, which 2.1.316 honours (#1297).
 - **Langfuse is reachable through the relay alone, by name.** The proxy
   refuses a CONNECT or a forward to `langfuse-web` and to the hosts of both
@@ -907,6 +912,22 @@ the CLI (ADR-0018).
   The same goes for Langfuse: its hosts are refused by the name a loop
   writes, so an allowed IP literal or another name for the same server
   reaches it. No docker loop holds a key it would take (ADR-0064).
+- **A bare loop's traces pass no relay** (ADR-0064, #1313). The operator
+  accepted three differences from a docker loop on 2026-11-04:
+  - its session holds the ingest key, which reads every trace in the
+    project, every loop's included, and content wherever it is turned on;
+  - its `spool.loop.*` stamp is the hub's setting, not a wall, so it can
+    rewrite it or post spans in another loop's name, and its attribution
+    is trusted no further than the loop;
+  - the relay's bounds don't apply to it.
+
+  A bare loop that copied the key keeps it, so turning its export off
+  means deleting or rotating the pair in Langfuse too. Its session also
+  reads the Claude Code settings of the hub's user, which every bare
+  loop shares: `~/.claude/settings.json`, or the one under the hub's
+  `CLAUDE_CONFIG_DIR`. An `env` block there sets variables over the
+  hub's, so it can turn content on or send the export elsewhere
+  (ADR-0064 item 6).
 - **The proxy can reach every workstation.** It sits on every loop
   network, so docker's DNS resolves each `spool-ws-<id>` name from it. An
   extra host naming a workstation would open a way from one workstation
