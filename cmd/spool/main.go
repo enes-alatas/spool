@@ -300,7 +300,7 @@ func main() {
 		// redaction and into files an operator shares; this is the one place
 		// the value is meant to be read by a person.
 		fmt.Printf("\nOperator token (this is the only time it is shown):\n\n    %s\n\n"+
-			"The control room asks for it once. `spool token --data-dir %s` prints it again.\n\n",
+			"It is for scripts and the API; the control room signs in with a username and password.\n`spool token --data-dir %s` prints it again.\n\n",
 			operatorToken, *dataDir)
 	}
 
