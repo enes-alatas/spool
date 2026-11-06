@@ -92,6 +92,7 @@ jobs:
       smoke: ${{ steps.filter.outputs.smoke }}
       lockfile: ${{ steps.filter.outputs.lockfile }}
       workflows: ${{ steps.filter.outputs.workflows }}
+      skills: ${{ steps.filter.outputs.skills }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -113,7 +114,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$EVENT" != pull_request ] && [ -z "$QUEUE_PR" ]; then
-            printf 'unit=true\nitest=false\nweb=false\nsmoke=false\nlockfile=false\nworkflows=false\n' >> "$GITHUB_OUTPUT"
+            printf 'unit=true\nitest=false\nweb=false\nsmoke=false\nlockfile=false\nworkflows=false\nskills=false\n' >> "$GITHUB_OUTPUT"
             echo 'Push to main: unit tests only — this content was green on its PR (ADR-0016).' >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
@@ -152,7 +153,13 @@ jobs:
           if echo "$files" | grep -qE '^(\.github/workflows/|\.github/security-review-paths$|scripts/|\.claude/(hooks/|settings\.json$))'; then
             workflows=true
           fi
-          printf 'unit=%s\nitest=%s\nweb=%s\nsmoke=%s\nlockfile=%s\nworkflows=%s\n' "$go" "$go" "$web" "$smoke" "$lockfile" "$workflows" >> "$GITHUB_OUTPUT"
+          # A skill, or the gate that judges skills (ADR-0065). Not every
+          # workflow change: the image is ~1 GB, and only ci.yml holds its pin.
+          skills=false
+          if echo "$files" | grep -qE '^(\.claude/skills/|scripts/skill-tier1-gate\.sh$|\.github/workflows/ci\.yml$)'; then
+            skills=true
+          fi
+          printf 'unit=%s\nitest=%s\nweb=%s\nsmoke=%s\nlockfile=%s\nworkflows=%s\nskills=%s\n' "$go" "$go" "$web" "$smoke" "$lockfile" "$workflows" "$skills" >> "$GITHUB_OUTPUT"
 
       # Lever 5. The content `itest` covers, as git already names it: the
       # tree id of each covered directory and the blob id of each covered
@@ -409,6 +416,57 @@ jobs:
       - name: the rules still catch the incidents they name
         if: needs.changes.outputs.workflows == 'true'
         run: bash scripts/workflow-lint-test.sh
+      - name: the skills gate still refuses what it claims to
+        if: needs.changes.outputs.workflows == 'true'
+        run: bash scripts/skill-tier1-gate-test.sh
+
+      # SkillEvaluator tier 1 over every skill (ADR-0065, #1369): static
+      # quality, Gitleaks, PII and Unicode smuggling, no model and no key.
+      # The image is the one SkillEvaluator's release reviewed, pinned by
+      # digest; Dependabot does not move a digest in a `run:`, so a bump is
+      # by hand, per the ADR. The scan gets no network, no capabilities and
+      # a read-only view of the tree. All skills, not the changed ones, so a
+      # bump is judged against the whole catalog. The container's own
+      # verdict is not the gate (see the script); its exit code is ignored.
+      - name: skills, SkillEvaluator tier 1
+        if: needs.changes.outputs.skills == 'true'
+        env:
+          IMAGE: ghcr.io/nvidia/skillevaluator-tier1@sha256:9d5483243918937be4f2178f74cf7c622a531dee41e3176906994d52fa14950a
+          SKILL_PATHS: .claude/skills
+          MIN_SCORE: '80'
+          LLM_ENABLED: 'false'
+          SCAN_MODE: all
+        run: |
+          set -euo pipefail
+          # The evaluator refuses a reports directory that isn't empty (stale
+          # evidence), so its own output goes beside it, not in it.
+          reports="$RUNNER_TEMP/skill-reports"
+          log="$RUNNER_TEMP/skill-run.log"
+          mkdir -p "$reports" "$RUNNER_TEMP/anonymous-docker-config"
+          if ! docker --config "$RUNNER_TEMP/anonymous-docker-config" pull -q "$IMAGE"; then
+            echo "::error title=skill tier 1::could not pull the pinned image"
+            exit 1
+          fi
+          docker run --rm --network none --user "$(id -u):$(id -g)" \
+            --read-only --tmpfs /tmp:rw,nosuid,noexec,size=1g \
+            --tmpfs /audit-tmp:rw,nosuid,noexec,mode=1777,size=1g --env TMPDIR=/audit-tmp \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --mount "type=bind,src=$GITHUB_WORKSPACE,dst=/workspace,readonly" \
+            --mount "type=bind,src=$reports,dst=/reports" \
+            --env SKILL_PATHS --env MIN_SCORE --env LLM_ENABLED --env SCAN_MODE --env GITHUB_ACTIONS \
+            "$IMAGE" > "$log" 2>&1 || true
+          if ! bash scripts/skill-tier1-gate.sh "$reports" .claude/skills "$GITHUB_STEP_SUMMARY"; then
+            # The output can quote skill text; a line in it starting `::`
+            # must not become a workflow command (an annotation on the PR).
+            stop=$(openssl rand -hex 16)
+            echo "SkillEvaluator's own output:"
+            echo "::stop-commands::$stop"
+            cat "$log"
+            echo "::$stop::"
+            echo "::error title=skill tier 1 output::$(tail -n 5 "$log" | tr '\n' ' ' | cut -c1-900)"
+            exit 1
+          fi
+
       # The sentinel's step is inline YAML, so this harness extracts and runs
       # it; nothing else exercises it before it ships (#210).
       - name: the failure sentinel still reports what it claims to

@@ -235,6 +235,29 @@ ADR instead.*
   hook), and a red PR is its author's to fix or re-queue.
 - **Scoped delegation**: a "you decide" covers only the questions put, and
   its record quotes it verbatim; a standing delegation needs its own ADR.
+- **Skills** (ADR-0065, #1369): a skill in `.claude/skills/` carries
+  `metadata.author` in its frontmatter, unless it is vendored. CI runs
+  SkillEvaluator tier 1 over every skill, and the gate's job summary lists
+  each skill's score and its advisory SkillSpector findings: read those in
+  review. To run the same check locally, with Docker, from the repo root:
+
+  ```bash
+  img=$(grep -o 'ghcr.io/nvidia/skillevaluator-tier1@sha256:[0-9a-f]*' .github/workflows/ci.yml)
+  reports=$(mktemp -d)   # the evaluator wants an empty one
+  docker run --rm --network none --user "$(id -u):$(id -g)" --read-only \
+    --tmpfs /tmp --tmpfs /audit-tmp:mode=1777 -e TMPDIR=/audit-tmp \
+    --mount "type=bind,src=$PWD,dst=/workspace,readonly" \
+    --mount "type=bind,src=$reports,dst=/reports" \
+    -e SKILL_PATHS=.claude/skills -e MIN_SCORE=80 -e LLM_ENABLED=false -e SCAN_MODE=all \
+    "$img"
+  bash scripts/skill-tier1-gate.sh "$reports" .claude/skills
+  ```
+
+  The container's own exit code is not the verdict; the gate's is.
+
+  Tier 3, the live A/B of a skill in a Docker sandbox, runs on demand and
+  spends real tokens. Ask the operator first, then follow SkillEvaluator's
+  tier 3 guide for the release `ci.yml` pins. It is never a gate.
 
 ## Testing (ADR-0009)
 

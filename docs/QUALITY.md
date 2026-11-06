@@ -263,7 +263,7 @@ protection (#1) requires all three:
   failed is *skipped*, which counts as passed (see below). Requiring it is
   what stops a broken filter from producing a green PR that ran nothing.
 - `checks` — tier 1 + lint + govulncheck, web, the secret scans, the
-  workflow rules.
+  workflow rules, the skills gate (ADR-0065).
 - `itest` — tier 2.
 
 `race` (#1269) runs tier 1 under Go's race detector (`make race`) on a pull
@@ -290,19 +290,21 @@ the secret scans — before the fold they were the one job with no `needs:`.
 The rest of that job then fails fast rather than reading an empty filter and
 deciding each area has nothing to do. The mapping:
 
-| touched | tier 1 + lint + govulncheck | tier 2 (itest) | web | browser smoke | workflows |
-|---|---|---|---|---|---|
-| `cmd/`, `internal/`, `itest/`, `go.mod`, `go.sum`, `Makefile` | yes | yes | no | only `cmd/uifixture/` | no |
-| `web/` | no | no | yes | yes | no |
-| `scripts/` | no | no | no | only `scripts/fixture-hub.sh` | yes |
-| `docs/`, `README`, anything else | no | no | no | no | no |
-| `.github/workflows/` | yes | yes | yes | yes | yes |
+| touched | tier 1 + lint + govulncheck | tier 2 (itest) | web | browser smoke | workflows | skills |
+|---|---|---|---|---|---|---|
+| `cmd/`, `internal/`, `itest/`, `go.mod`, `go.sum`, `Makefile` | yes | yes | no | only `cmd/uifixture/` | no | no |
+| `web/` | no | no | yes | yes | no | no |
+| `scripts/` | no | no | no | only `scripts/fixture-hub.sh` | yes | only `scripts/skill-tier1-gate.sh` |
+| `.claude/skills/` | no | no | no | no | no | yes |
+| `docs/`, `README`, anything else | no | no | no | no | no | no |
+| `.github/workflows/` | yes | yes | yes | yes | yes | only `ci.yml` |
 
 The secret scans are in no row: they run on every pull request whatever it
 touched, because a credential can be added to any file.
 
-A change to the workflow runs everything: the gates must prove themselves
-under the gates they are changing.
+A change to `ci.yml` runs everything: the gates must prove themselves
+under the gates they are changing. A change to another workflow runs all
+but the skills gate, whose ~1 GB image only `ci.yml` pins.
 
 `itest` is also skipped when the exact content it covers already passed it
 on the same PR (#314). A green run leaves an Actions cache marker keyed on
