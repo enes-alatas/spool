@@ -78,5 +78,36 @@ else
 	fails=$((fails + 1))
 fi
 
+# --git reads the same rules from a clone (#1371): a base commit, then one
+# good and one bad commit on top, and a merge that is left alone.
+repo="$work/repo"
+git init -q -b main "$repo"
+gitc() { git -C "$repo" -c user.name=t -c user.email=t@example.invalid "$@"; }
+gitc commit -q --allow-empty -m "chore: the base"
+gitc branch base
+gitc commit -q --allow-empty -m "fix(loop): a turn ends cleanly"
+said=$(cd "$repo" && bash "$OLDPWD/scripts/commit-subjects.sh" --git base..HEAD)
+if [ $? -eq 0 ]; then echo "ok   --git: a good range passes"; else
+	echo "FAIL --git: a good range passes: $said"; fails=$((fails + 1)); fi
+gitc checkout -q -b side base
+gitc commit -q --allow-empty -m "docs: a side note"
+gitc checkout -q main
+gitc merge -q --no-ff -m "Merge branch side" side
+said=$(cd "$repo" && bash "$OLDPWD/scripts/commit-subjects.sh" --git base..HEAD)
+if [ $? -eq 0 ]; then echo "ok   --git: a merge commit is left alone"; else
+	echo "FAIL --git: a merge commit is left alone: $said"; fails=$((fails + 1)); fi
+git -C "$repo" -c user.name='dependabot[bot]' -c user.email=bot@example.invalid \
+	commit -q --allow-empty -m "Bump left-pad from 1.0.0 to 1.0.1"
+said=$(cd "$repo" && bash "$OLDPWD/scripts/commit-subjects.sh" --git base..HEAD)
+if [ $? -eq 0 ]; then echo "ok   --git: Dependabot's commit is left alone"; else
+	echo "FAIL --git: Dependabot's commit is left alone: $said"; fails=$((fails + 1)); fi
+gitc commit -q --allow-empty -m "the fleet channel is a tab"
+bad=$(git -C "$repo" rev-parse --short=8 HEAD)
+said=$(cd "$repo" && bash "$OLDPWD/scripts/commit-subjects.sh" --git base..HEAD)
+if [ $? -eq 1 ] && [[ $said == *"$bad: the subject isn't"* ]]; then echo "ok   --git: a bad subject is named"; else
+	echo "FAIL --git: a bad subject is named: $said"; fails=$((fails + 1)); fi
+if (cd "$repo" && bash "$OLDPWD/scripts/commit-subjects.sh" --git no-such-ref..HEAD >/dev/null 2>&1); [ $? -eq 2 ]; then
+	echo "ok   --git: an unknown range"; else echo "FAIL --git: an unknown range"; fails=$((fails + 1)); fi
+
 [ "$fails" -eq 0 ] || { echo "$fails case(s) failed"; exit 1; }
 echo "all cases pass"
