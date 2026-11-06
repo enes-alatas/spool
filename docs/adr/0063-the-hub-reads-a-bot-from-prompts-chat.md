@@ -1,6 +1,6 @@
 # ADR-0063: The hub reads a bot from prompts.chat, on the operator's paste
 
-Date: 2026-11-02 · Status: accepted (operator decision of 2026-11-02 on #1262 for the import, and of 2026-11-03, in a direct message to Terra, for the outbound fetch's bounds) · Relates to: ADR-0028, ADR-0048 · Amended: 2026-11-03 (item 1: fetch by path, teams and the base flag, #1265); 2026-11-03 (item 4: a team drafted, then created from its draft, #1265)
+Date: 2026-11-02 · Status: accepted (operator decision of 2026-11-02 on #1262 for the import, and of 2026-11-03, in a direct message to Terra, for the outbound fetch's bounds) · Relates to: ADR-0028, ADR-0048 · Amended: 2026-11-03 (item 1: fetch by path, teams and the base flag, #1265); 2026-11-03 (item 4: a team drafted, then created from its draft, #1265); 2026-11-06 (item 5: a bot's skills are said to be missing, #1332)
 
 ## Context
 
@@ -110,6 +110,21 @@ able to call it point the hub at its own network.
    mission goes into every turn of the loop. Routines become text in the
    mission, not schedules: a loop's cadence stays its own `next-wake`.
    Skills are named, not installed.
+
+   **Amendment (2026-11-06, #1332): a bot's skills are said to be
+   missing.** Naming them in the mission told the loop it had skills it
+   didn't. A probe of every bot `/api/bots` listed that day found that
+   none links a skill prompts.chat serves: a skill's source was empty or
+   another platform's catalog path. So nothing is installed, and the
+   mission says so: "This bot was built to use these skills, which
+   aren't installed:", then one line per skill with its description on
+   one line, under the text rules above. The draft lists them as
+   `skills`, each a `name`, a `description`, `installed` (false) and a
+   `reason` ("prompts.chat publishes no files for it"); a team's loops
+   carry the same. No skill is looked up by its name, which anyone can
+   publish under: installing one waits for a bot whose source links a
+   prompts.chat skill (#1364). Milo set this shape on #1332, and Elliot
+   cleared its posture there.
 
 ## Consequences
 
