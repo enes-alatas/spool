@@ -20,7 +20,7 @@ type connections struct {
 	sealer *box
 }
 
-const connectionColumns = `name, kind, config, secret, created_at, updated_at, owner_loop, rotated_at, revoked_at`
+const connectionColumns = `name, kind, config, secret, created_at, updated_at, owner_loop, rotated_at, revoked_at, last_check`
 
 func (table connections) List(ctx context.Context) ([]*store.Connection, error) {
 	return table.list(ctx, `SELECT `+connectionColumns+` FROM connections ORDER BY name`)
@@ -101,7 +101,7 @@ func (table connections) Create(ctx context.Context, connection *store.Connectio
 		return err
 	}
 	defer tx.Rollback()
-	_, err = tx.ExecContext(ctx, `INSERT INTO connections (`+connectionColumns+`) VALUES (?,?,?,?,?,?,?,?,?)`,
+	_, err = tx.ExecContext(ctx, `INSERT INTO connections (`+connectionColumns+`) VALUES (?,?,?,?,?,?,?,?,?,'')`,
 		connection.Name, connection.Kind, string(config), table.sealer.seal(connection.Secret), connection.CreatedAt, connection.UpdatedAt,
 		nullable(connection.OwnerLoopID), connection.RotatedAt, connection.RevokedAt)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
@@ -240,7 +240,7 @@ func (table connections) SetSecret(ctx context.Context, name, secret string, at 
 	if err := retireSecrets(ctx, tx, `name = ?1`, at, name); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE connections SET secret=?, updated_at=?, rotated_at=? WHERE name=?`,
+	if _, err := tx.ExecContext(ctx, `UPDATE connections SET secret=?, updated_at=?, rotated_at=?, last_check='' WHERE name=?`,
 		table.sealer.seal(secret), at, at, name); err != nil {
 		return err
 	}
@@ -318,7 +318,7 @@ func (table connections) Revoke(ctx context.Context, name string, at int64) ([]s
 	if err := retireSecrets(ctx, tx, `name = ?1`, at, name); err != nil {
 		return nil, err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE connections SET secret='', revoked_at=? WHERE name=?`, at, name); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE connections SET secret='', revoked_at=?, last_check='' WHERE name=?`, at, name); err != nil {
 		return nil, err
 	}
 	// a private one's owner, so the loop's record shows it gone
@@ -396,10 +396,10 @@ func (table connections) Events(ctx context.Context, filter store.ConnectionEven
 // scanConnection reads a connections row, opening its sealed value.
 func (table connections) scanConnection(row interface{ Scan(...any) error }) (*store.Connection, error) {
 	var connection store.Connection
-	var config string
+	var config, lastCheck string
 	var owner sql.NullString
 	if err := row.Scan(&connection.Name, &connection.Kind, &config, &connection.Secret, &connection.CreatedAt, &connection.UpdatedAt,
-		&owner, &connection.RotatedAt, &connection.RevokedAt); err != nil {
+		&owner, &connection.RotatedAt, &connection.RevokedAt, &lastCheck); err != nil {
 		return nil, err
 	}
 	connection.OwnerLoopID = owner.String
@@ -410,7 +410,38 @@ func (table connections) scanConnection(row interface{ Scan(...any) error }) (*s
 	if err := json.Unmarshal([]byte(config), &connection.Config); err != nil {
 		return nil, err
 	}
+	if lastCheck != "" {
+		connection.LastCheck = &store.ConnectionCheck{}
+		if err := json.Unmarshal([]byte(lastCheck), connection.LastCheck); err != nil {
+			return nil, err
+		}
+	}
 	return &connection, nil
+}
+
+func (table connections) SetLastCheck(ctx context.Context, name string, valueAt int64, check store.ConnectionCheck) error {
+	raw, err := json.Marshal(check)
+	if err != nil {
+		return err
+	}
+	// Only onto the value the check read: a rotate moves updated_at, and a
+	// revoke sets revoked_at, between the check's read and this write.
+	res, err := table.db.ExecContext(ctx, `UPDATE connections SET last_check=? WHERE name=? AND updated_at=? AND revoked_at=0`,
+		string(raw), name, valueAt)
+	if err != nil {
+		return err
+	}
+	if changed, err := res.RowsAffected(); err != nil || changed > 0 {
+		return err
+	}
+	var exists bool
+	if err := table.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM connections WHERE name=?)`, name).Scan(&exists); err != nil {
+		return err
+	}
+	if !exists {
+		return store.ErrNotFound
+	}
+	return nil // the value moved on while the check ran
 }
 
 // retireSecrets keeps the values of the connections where matches, about

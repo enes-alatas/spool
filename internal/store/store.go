@@ -2019,6 +2019,18 @@ type Connection struct {
 	// one the fleet shares. A private one is attached to its owner when it
 	// is created, and to no other loop until it is shared.
 	OwnerLoopID string
+	// LastCheck is the last check anyone ran of the value it holds now,
+	// nil for none (#1360). A new value clears it.
+	LastCheck *ConnectionCheck
+}
+
+// ConnectionCheck is what a connection check found, as the hub keeps it:
+// the outcome and its coarse reason, never a message or anything the
+// server answered (#1323, #1360).
+type ConnectionCheck struct {
+	Status    string `json:"status"`
+	Reason    string `json:"reason"`
+	CheckedAt int64  `json:"checked_at"`
 }
 
 // The kinds a connection can be (ADR-0043).
@@ -2118,11 +2130,19 @@ type ConnectionStore interface {
 	// nothing. ErrNotFound for an unknown name, ErrConnectionRevoked for a
 	// revoked one.
 	Share(ctx context.Context, name string, at int64) error
-	// SetSecret replaces the secret, stamps UpdatedAt and RotatedAt, and
-	// retires the value it replaced; setting the value it holds changes
-	// nothing. ErrNotFound for an unknown name, ErrConnectionRevoked for a
-	// revoked one.
+	// SetSecret replaces the secret, stamps UpdatedAt and RotatedAt,
+	// retires the value it replaced, and clears LastCheck, which described
+	// the old value; setting the value it holds changes nothing.
+	// ErrNotFound for an unknown name, ErrConnectionRevoked for a revoked
+	// one.
 	SetSecret(ctx context.Context, name, secret string, at int64) error
+	// SetLastCheck keeps a check's result as the connection's last, but
+	// only while the connection still holds the value the check read:
+	// valueAt is that value's UpdatedAt. A check that ran while the value
+	// was replaced, or the connection revoked, keeps nothing, and that is
+	// not an error. ErrNotFound for an unknown name. It records no event:
+	// a check changes nothing about the connection.
+	SetLastCheck(ctx context.Context, name string, valueAt int64, check ConnectionCheck) error
 	// Attach gives a loop the connection; attaching it again changes
 	// nothing. ErrNotFound for an unknown connection or loop,
 	// ErrConnectionPrivate for another loop's private one, and
@@ -2132,8 +2152,8 @@ type ConnectionStore interface {
 	// nothing. ErrNotFound for an unknown connection.
 	Detach(ctx context.Context, name, loopID string, at int64) error
 	// Revoke detaches the connection from every loop, retires its value,
-	// and stamps RevokedAt, in one step. It returns the loops it was
-	// detached from. ErrNotFound for an unknown name, and
+	// clears LastCheck, and stamps RevokedAt, in one step. It returns the
+	// loops it was detached from. ErrNotFound for an unknown name, and
 	// ErrConnectionRevoked for one revoked already.
 	Revoke(ctx context.Context, name string, at int64) ([]string, error)
 	// ListByLoop returns the connections attached to one loop, name-sorted,

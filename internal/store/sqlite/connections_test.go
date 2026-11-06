@@ -735,3 +735,79 @@ func TestRevokedConnections(t *testing.T) {
 		t.Fatalf("Retired = %+v,\nwant %+v", retired, wantRetired)
 	}
 }
+
+// TestConnectionLastCheck pins the last check a connection keeps (#1360):
+// it lands only on the value the check read, a new value or a revoke clears
+// it, and setting the value already held keeps it.
+func TestConnectionLastCheck(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	connections := db.Connections()
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	lastCheck := func(name string) *store.ConnectionCheck {
+		t.Helper()
+		connection, err := connections.Get(ctx, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return connection.LastCheck
+	}
+	must(connections.Create(ctx, &store.Connection{Name: "search", Kind: store.ConnectionMCPServer,
+		Config: store.ConnectionConfig{Transport: store.MCPTransportHTTP, URL: "https://search.example.test"},
+		Secret: "s-1", CreatedAt: 1, UpdatedAt: 1}))
+	if got := lastCheck("search"); got != nil {
+		t.Fatalf("a new connection's last check = %+v, want none", got)
+	}
+
+	failed := store.ConnectionCheck{Status: "failed", Reason: "unreachable", CheckedAt: 2}
+	must(connections.SetLastCheck(ctx, "search", 1, failed))
+	if got := lastCheck("search"); got == nil || *got != failed {
+		t.Fatalf("last check = %+v, want %+v", got, failed)
+	}
+	if list, err := connections.List(ctx); err != nil || len(list) != 1 || list[0].LastCheck == nil || *list[0].LastCheck != failed {
+		t.Fatalf("List = %+v, %v; want the last check on it", list, err)
+	}
+
+	must(connections.SetSecret(ctx, "search", "s-1", 3)) // the value held: kept
+	if got := lastCheck("search"); got == nil || *got != failed {
+		t.Fatalf("after setting the value held, last check = %+v, want it kept", got)
+	}
+	must(connections.SetSecret(ctx, "search", "s-2", 4))
+	if got := lastCheck("search"); got != nil {
+		t.Fatalf("after a rotate, last check = %+v, want none", got)
+	}
+
+	// A check that read the old value, finishing after the rotate, keeps nothing.
+	must(connections.SetLastCheck(ctx, "search", 1, failed))
+	if got := lastCheck("search"); got != nil {
+		t.Fatalf("a check of the old value landed on the new one: %+v", got)
+	}
+	ok := store.ConnectionCheck{Status: "ok", Reason: "ok", CheckedAt: 5}
+	must(connections.SetLastCheck(ctx, "search", 4, ok))
+	if got := lastCheck("search"); got == nil || *got != ok {
+		t.Fatalf("last check = %+v, want %+v", got, ok)
+	}
+
+	if _, err := connections.Revoke(ctx, "search", 6); err != nil {
+		t.Fatal(err)
+	}
+	if got := lastCheck("search"); got != nil {
+		t.Fatalf("after a revoke, last check = %+v, want none", got)
+	}
+	must(connections.SetLastCheck(ctx, "search", 4, ok)) // revoked: nothing kept, no error
+	if got := lastCheck("search"); got != nil {
+		t.Fatalf("a revoked connection kept a check: %+v", got)
+	}
+	if err := connections.SetLastCheck(ctx, "nope", 1, ok); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("SetLastCheck(unknown) = %v, want ErrNotFound", err)
+	}
+}
