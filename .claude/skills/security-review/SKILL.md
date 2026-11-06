@@ -5,6 +5,8 @@ description: >-
   .github/security-review-paths, adds a workflow, vendors third-party code,
   or changes what a loop, an admin or a copy of the data directory can reach.
   Also for a re-check after the author pushes.
+metadata:
+  author: Spool maintainers
 ---
 
 # /security-review — Spool's security pass on a pull request
