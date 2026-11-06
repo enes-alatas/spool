@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type PromptsChatDraft, type PromptsChatTeam } from '../api'
+import { api, type PromptsChatDraft, type PromptsChatSkill, type PromptsChatTeam } from '../api'
 import { isTeamAddress } from '../team'
 import { egressAllows } from '../egress'
 import { PromptsChatLogo } from './PromptsChatLogo'
@@ -209,5 +209,32 @@ export function EgressHints({ hints }: { hints: PromptsChatDraft['egress'] }) {
         Slack's or Telegram's, lets it skip Spool's routing.
       </div>
     </div>
+  )
+}
+
+// The skills a bot was built to use (#1365), each said to be installed or
+// not, and why not in the hub's words. An import installs none yet (#1364),
+// so today every one is marked not installed. Nothing here is sent: the
+// create takes no skills.
+export function SkillHints({ skills }: { skills: PromptsChatSkill[] }) {
+  if (skills.length === 0) return null
+  return (
+    <ul className="skill-hints" aria-label="Skills the bot was built to use">
+      {/* keyed by place too: the hub keeps a name a bot repeats */}
+      {skills.map((skill, i) => (
+        <li key={`${i}:${skill.name}`}>
+          <span className="skill-hint-text">
+            <span className="skill-hint-name">{skill.name}</span>
+            {skill.description && <span className="skill-hint-description">{skill.description}</span>}
+            {!skill.installed && skill.reason && <span className="skill-hint-reason">{skill.reason}</span>}
+          </span>
+          {skill.installed ? (
+            <span className="skill-hint-state installed">installed</span>
+          ) : (
+            <span className="skill-hint-state">not installed</span>
+          )}
+        </li>
+      ))}
+    </ul>
   )
 }

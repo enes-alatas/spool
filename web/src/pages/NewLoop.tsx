@@ -24,7 +24,7 @@ import { firstOpenStep, type SetupStep } from '../cloud'
 import { Marked } from '../components/Marked'
 import { dailyCapHint, dailyCapValue } from '../dailyCap'
 import { CapChips } from '../components/CapChips'
-import { EgressHints, ImportedFrom, PromptsChatFill } from '../components/PromptsChatImport'
+import { EgressHints, ImportedFrom, PromptsChatFill, SkillHints } from '../components/PromptsChatImport'
 import { TeamDraft } from '../components/TeamDraft'
 import { LOGIN_SAY_SO, loginAccount, loginOptions, noLoginChoice } from '../claudeLogins'
 
@@ -286,6 +286,13 @@ export function NewLoopForm({
         />
         {imported && <ImportedFrom source={imported.source} />}
       </div>
+
+      {imported && imported.skills.length > 0 && (
+        <div className="field">
+          <label>Skills the bot was built to use</label>
+          <SkillHints skills={imported.skills} />
+        </div>
+      )}
 
       <div className="field-row">
         <div className="field">

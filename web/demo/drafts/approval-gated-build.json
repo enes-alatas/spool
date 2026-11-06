@@ -17,6 +17,7 @@
           "connector": "GitHub"
         }
       ],
+      "skills": [],
       "source": "https://prompts.chat/bots/cseed4ac23431071cf35cd7795e89_plan-gatekeeper",
       "handoffs": [
         {
@@ -51,6 +52,7 @@
           "connector": "GitHub"
         }
       ],
+      "skills": [],
       "source": "https://prompts.chat/bots/cseeda74dbf6a234ba8693e8a3fa2_static-preview-builder",
       "handoffs": [
         {
@@ -85,6 +87,7 @@
           "connector": "GitHub"
         }
       ],
+      "skills": [],
       "source": "https://prompts.chat/bots/cseedda5f5a489f363bbc235db085_implement-after-approve",
       "handoffs": [
         {

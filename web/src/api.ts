@@ -717,13 +717,26 @@ export interface EgressGroup {
 // runtime is 'cloud' when the bot needs the cloud alone, else the hub's
 // default. egress is a hint, the hosts of the bot's connectors whose host
 // is fixed, each with the connector that named it; nothing is allowed
-// until the operator adds a host. source is the bot's page.
+// until the operator adds a host. source is the bot's page. skills are the
+// skills the bot names, in its order, [] for none (#1332); the mission says
+// in words which aren't installed, and the create takes none of them.
 export interface PromptsChatDraft {
   name: string
   mission: string
   runtime: string
   egress: { host: string; connector: string }[]
+  skills: PromptsChatSkill[]
   source: string
+}
+
+// A skill a bot was built to use (#1332). installed is false for every
+// skill until skills are installed on import (#1364); reason says why one
+// isn't, in the hub's words. Mirrors promptschat.SkillHint.
+export interface PromptsChatSkill {
+  name: string
+  description: string
+  installed: boolean
+  reason: string
 }
 
 // A team the hub reads from prompts.chat (ADR-0063, #1265), for the room to

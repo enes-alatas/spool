@@ -9,6 +9,7 @@ const member = (handoffs: PromptsChatTeamLoop['handoffs']): PromptsChatTeamLoop 
   mission: 'm',
   runtime: '',
   egress: [],
+  skills: [],
   source: 'https://prompts.chat/bots/c2_review',
   handoffs,
 })

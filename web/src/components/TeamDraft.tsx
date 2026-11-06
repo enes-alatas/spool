@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { api, type PromptsChatTeam, type PromptsChatTeamLoop } from '../api'
 import { channelHash } from '../channels'
 import { handoffLine } from '../team'
+import { SkillHints } from './PromptsChatImport'
 
 // A team read from prompts.chat (#1266, ADR-0063), shown on New loop in
 // place of the form: what Create makes, read before anything exists.
@@ -104,6 +105,12 @@ function TeamMember({ loop }: { loop: PromptsChatTeamLoop }) {
         {loop.role && <span className="team-loop-role">{loop.role}</span>}
       </div>
       <div className="team-loop-handoffs">{handoffLine(loop)}</div>
+      {loop.skills.length > 0 && (
+        <div className="team-loop-skills">
+          <div className="team-loop-skills-label">Skills it was built to use</div>
+          <SkillHints skills={loop.skills} />
+        </div>
+      )}
       <details className="team-loop-mission">
         <summary>Mission</summary>
         <pre>{loop.mission}</pre>

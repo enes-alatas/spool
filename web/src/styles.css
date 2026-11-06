@@ -2882,6 +2882,58 @@ button.panel-link {
   font-size: 0.75rem;
   color: var(--ready);
 }
+.skill-hints {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+}
+.skill-hints li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 7px 10px;
+}
+.skill-hints li + li {
+  border-top: 1px solid var(--hairline);
+}
+.skill-hint-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-wrap: anywhere;
+}
+.skill-hint-name {
+  font-size: 0.875rem;
+}
+.skill-hint-description {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+.skill-hint-reason {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.skill-hint-state {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.skill-hint-state.installed {
+  color: var(--ready);
+}
+.team-loop-skills {
+  margin-top: 8px;
+}
+.team-loop-skills-label {
+  margin-bottom: 4px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
 .egress-note {
   font-size: 0.75rem;
   color: var(--text-muted);

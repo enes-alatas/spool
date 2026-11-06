@@ -16,5 +16,6 @@
       "connector": "Slack"
     }
   ],
+  "skills": [],
   "source": "https://prompts.chat/bots/cmw1v3sdl000iku08cwqfm4zu_dead-code-detector"
 }
