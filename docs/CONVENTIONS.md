@@ -36,6 +36,7 @@ ADR instead.*
   security reviewer has commented at the current head (or before a bare
   rebase), "nothing from me" included; on their own PR, Notes / Risks stands
   as that comment, saying what the change opens and why that holds.
+  Procedure: `/security-review` (`.claude/skills/security-review/`).
 - **A gh body names people without an @ and ends with a signature** (#630), `—
   Name · Role`: the loops share one GitHub identity, and their names belong to
   strangers there. `.claude/hooks/gh-body-guard.sh` refuses a body that breaks
