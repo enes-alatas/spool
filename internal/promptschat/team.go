@@ -234,10 +234,9 @@ func uniqueName(base string, longest int, taken func(string) bool, also map[stri
 	}
 }
 
-// oneLine is text plain, on one line, with runs of white space as one
-// space, cut to at most longest characters.
+// oneLine is singleLine cut to at most longest characters.
 func oneLine(text string, longest int) string {
-	made := strings.Join(strings.Fields(plain(text)), " ")
+	made := singleLine(text)
 	if utf8.RuneCountInString(made) <= longest {
 		return made
 	}

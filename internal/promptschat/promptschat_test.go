@@ -30,8 +30,10 @@ func (fixture *fixtureFetcher) Fetch(_ context.Context, path string) ([]byte, er
 }
 
 // TestABotBecomesADraft: a bot's .json answers its name, a mission of its
-// instructions, source line, routines, skills and connectors, the cloud
-// hint of a cloud-only bot and its connectors' known hosts.
+// instructions, source line, routines, the skills it was built to use
+// (said not to be installed, and listed so, each name and description
+// on one line) and connectors, the cloud hint of a cloud-only bot and its
+// connectors' known hosts.
 func TestABotBecomesADraft(t *testing.T) {
 	fixture := &fixtureFetcher{file: "bot.json"}
 	draft, err := Import(context.Background(), fixture, "https://prompts.chat/bots/cfixture0001_release-notes-scribe")
@@ -45,12 +47,14 @@ func TestABotBecomesADraft(t *testing.T) {
 		"Imported from https://prompts.chat/bots/cfixture0001_release-notes-scribe.\n\n" +
 		"Routines:\n- Weekly draft (Mondays at 09:00): Draft this week's release notes.\n" +
 		"- On a tag (A tag is pushed): Draft the notes for the new tag.\n\n" +
-		"Skills: Changelog style.\nConnectors: GitHub, Slack, Jira, github."
+		"This bot was built to use these skills, which aren't installed:\n- Changelog style: Keep a Changelog, by area.\n\n" +
+		"Connectors: GitHub, Slack, Jira, github."
 	want := Draft{
 		Name:    "release-notes-scribe",
 		Mission: wantMission,
 		Runtime: "cloud",
 		Egress:  []EgressHint{{"github.com", "GitHub"}, {"api.github.com", "GitHub"}, {"slack.com", "Slack"}},
+		Skills:  []SkillHint{{Name: "Changelog style", Description: "Keep a Changelog, by area.", Reason: "prompts.chat publishes no files for it"}},
 		Source:  "https://prompts.chat/bots/cfixture0001_release-notes-scribe",
 	}
 	if !reflect.DeepEqual(draft, want) {
@@ -263,7 +267,7 @@ func TestHiddenCharactersNeverReachTheMission(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "Be kind.\n\tAlways.\n\nImported from https://prompts.chat/bots/x_hidden.\n\n" +
-		"Routines:\n- Daily (Each day): Greet.\n\nSkills: Tact.\nConnectors: GitHub."
+		"Routines:\n- Daily (Each day): Greet.\n\nThis bot was built to use these skills, which aren't installed:\n- Tact\n\nConnectors: GitHub."
 	if draft.Mission != want {
 		t.Errorf("mission = %q\nwant      %q", draft.Mission, want)
 	}

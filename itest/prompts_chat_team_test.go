@@ -16,15 +16,17 @@ import (
 )
 
 // startFakePromptsChat serves the promptschat package's fixture team and
-// its bots, as prompts.chat would, plus a team half-crew whose second bot
-// is missing, and answers 404 for anything else.
+// its bots, and its fixture bot, as prompts.chat would, plus a team
+// half-crew whose second bot is missing, and answers 404 for anything
+// else.
 func startFakePromptsChat(t *testing.T) string {
 	t.Helper()
 	fixtures := map[string]string{
-		"/api/bots/teams/launch-crew":   "team.json",
-		"/bots/cfixa_plan-keeper.json":  "bot-cfixa.json",
-		"/bots/cfixb_page-builder.json": "bot-cfixb.json",
-		"/bots/cfixc_check-runner.json": "bot-cfixc.json",
+		"/api/bots/teams/launch-crew":                  "team.json",
+		"/bots/cfixa_plan-keeper.json":                 "bot-cfixa.json",
+		"/bots/cfixb_page-builder.json":                "bot-cfixb.json",
+		"/bots/cfixc_check-runner.json":                "bot-cfixc.json",
+		"/bots/cfixture0001_release-notes-scribe.json": "bot.json",
 	}
 	site := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.URL.Path == "/api/bots/teams/half-crew" {

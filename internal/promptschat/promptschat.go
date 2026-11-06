@@ -176,6 +176,8 @@ type Draft struct {
 	Mission string       `json:"mission"`
 	Runtime string       `json:"runtime"`
 	Egress  []EgressHint `json:"egress"`
+	// Skills are the skills the bot names, none of them installed.
+	Skills []SkillHint `json:"skills"`
 	// Source is the bot's page on prompts.chat.
 	Source string `json:"source"`
 }
@@ -187,10 +189,26 @@ type EgressHint struct {
 	Connector string `json:"connector"`
 }
 
-// skill is a skill a bot names.
+// skill is a skill a bot names. Its source, unread, was empty or another
+// platform's catalog path on every bot on 2026-11-06, never a skill on
+// prompts.chat (#1332).
 type skill struct {
-	Name string `json:"name"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
 }
+
+// SkillHint is a skill the bot was built to use, with its description
+// on one line. Installed is whether the loop would have it, which no
+// import does yet: Reason says why not (#1332).
+type SkillHint struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Installed   bool   `json:"installed"`
+	Reason      string `json:"reason"`
+}
+
+// notPublished is why a skill a bot names isn't installed.
+const notPublished = "prompts.chat publishes no files for it"
 
 // bot is the part of a bot's .json a draft reads.
 type bot struct {
@@ -246,6 +264,7 @@ func draftAt(ctx context.Context, fetcher Fetcher, page, missing string) (Draft,
 		Mission: made,
 		Runtime: runtimeHint(read.ComputerRequirements),
 		Egress:  egressHint(read.Connectors),
+		Skills:  skillHints(read.Skills),
 		Source:  page,
 	}, nil
 }
@@ -278,7 +297,9 @@ func loopName(slug string) string {
 }
 
 // mission is the bot's instructions, then a line naming page, then a
-// sentence per routine, then the skills and connectors it names.
+// sentence per routine, then the skills it was built to use, said to be
+// missing so the loop isn't told it has them (#1332), then the connectors
+// it names.
 func mission(read bot, page string) string {
 	parts := []string{plain(read.Instructions), "Imported from " + page + "."}
 	var routines []string
@@ -301,18 +322,38 @@ func mission(read bot, page string) string {
 	if len(routines) > 0 {
 		parts = append(parts, "Routines:\n"+strings.Join(routines, "\n"))
 	}
-	var named []string
-	if skills := names(read.Skills, func(item skill) string { return item.Name }); skills != "" {
-		named = append(named, "Skills: "+skills+".")
+	var skills []string
+	for _, hint := range skillHints(read.Skills) {
+		line := "- " + hint.Name
+		if hint.Description != "" {
+			line += ": " + hint.Description
+		}
+		skills = append(skills, line)
+	}
+	if len(skills) > 0 {
+		parts = append(parts, "This bot was built to use these skills, which aren't installed:\n"+strings.Join(skills, "\n"))
 	}
 	if connectors := names(read.Connectors, func(connector string) string { return connector }); connectors != "" {
-		named = append(named, "Connectors: "+connectors+".")
-	}
-	if len(named) > 0 {
-		parts = append(parts, strings.Join(named, "\n"))
+		parts = append(parts, "Connectors: "+connectors+".")
 	}
 	return strings.Join(parts, "\n\n")
 }
+
+// skillHints are the skills, each with a name, in the bot's order, its
+// name and description each on one line.
+func skillHints(skills []skill) []SkillHint {
+	hints := []SkillHint{}
+	for _, item := range skills {
+		if name := singleLine(item.Name); name != "" {
+			hints = append(hints, SkillHint{Name: name, Description: singleLine(item.Description), Reason: notPublished})
+		}
+	}
+	return hints
+}
+
+// singleLine is text made plain, its runs of white space, newlines among
+// them, each one space.
+func singleLine(text string) string { return strings.Join(strings.Fields(plain(text)), " ") }
 
 // names joins the non-empty names of items.
 func names[Item any](items []Item, name func(Item) string) string {
