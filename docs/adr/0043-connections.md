@@ -1,6 +1,6 @@
 # ADR-0043: Connections are org-level credentials and configs, defined once and attachable to loops
 
-Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572); 2026-10-04 (item 2: the env-var kind, #574); 2026-10-04 (item 5: per-loop secrets are connections, #576); 2026-10-05 (item 2: an mcp-server reaches its loop, #597); 2026-10-05 (item 1: private connections, #600); 2026-10-05 (item 5: the record of changes, #606); 2026-10-05 (item 3: rotation, #609); 2026-10-06 (item 3: revoke, #610); 2026-10-06 (item 5: the per-loop secrets routes are gone, #617); 2026-10-06 (item 2: the hub brokers an http server, #622); 2026-10-07 (item 5: an env-var change reaches the next turn, #640); 2026-10-07 (item 2: the database seals its secrets, ADR-0046); 2026-10-22 (item 4: the github-app kind, #887); 2026-10-22 (item 4: git and gh fetch the token, #1054); 2026-10-23 (item 4: no env-var shadows the helper's env, #1060); 2026-10-23 (item 4: a refused mint is remembered briefly, #1057); 2026-11-05 (item 2: a connection is checked from the hub, #1323)
+Date: 2026-10-03 · Status: accepted (operator decisions of 2026-10-01, recorded on #504) · Amended: 2026-10-04 (item 5: attachments, #572); 2026-10-04 (item 2: the env-var kind, #574); 2026-10-04 (item 5: per-loop secrets are connections, #576); 2026-10-05 (item 2: an mcp-server reaches its loop, #597); 2026-10-05 (item 1: private connections, #600); 2026-10-05 (item 5: the record of changes, #606); 2026-10-05 (item 3: rotation, #609); 2026-10-06 (item 3: revoke, #610); 2026-10-06 (item 5: the per-loop secrets routes are gone, #617); 2026-10-06 (item 2: the hub brokers an http server, #622); 2026-10-07 (item 5: an env-var change reaches the next turn, #640); 2026-10-07 (item 2: the database seals its secrets, ADR-0046); 2026-10-22 (item 4: the github-app kind, #887); 2026-10-22 (item 4: git and gh fetch the token, #1054); 2026-10-23 (item 4: no env-var shadows the helper's env, #1060); 2026-10-23 (item 4: a refused mint is remembered briefly, #1057); 2026-11-05 (item 2: a connection is checked from the hub, #1323); 2026-11-06 (item 2: a connection keeps its last check, #1360)
 
 ## Context
 
@@ -174,6 +174,21 @@ follow in their own slice and amend this ADR.
      headers. A github-app refusal quotes GitHub's message, as the token
      route's errors do. The log line names the connection and the reason,
      never the url or the secret.
+
+   **Amendment (2026-11-06, #1360): a connection keeps its last check.**
+   Enes asked for a problems filter on the Connections page, which needs
+   a check's result to outlive the answer.
+   - **What is kept.** Each check keeps the connection's last result:
+     its status, reason and time, never the sentence. In the list, an
+     admin reads it as `last_check`, which is absent for a connection
+     never checked. A member reads none, as a member reads no config: a
+     check is about the address an admin set.
+   - **Only for the value it read.** A check keeps its result only
+     while the connection still holds the value the check read, and isn't
+     revoked. A new value or a revoke clears it, since it described the
+     old one. Setting the value already held keeps it.
+   - **Nothing runs on its own.** Only a check someone starts is kept.
+     Re-checking on a schedule would be its own decision.
 
 3. **The secret is write-only.** No response carries it: the API reports
    only `has_secret`. The config is read back in full, so nothing secret

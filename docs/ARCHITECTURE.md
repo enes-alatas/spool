@@ -325,7 +325,9 @@ opportunistically, not big-bang.
   hub sends an http mcp-server an MCP initialize and has a github-app mint
   a token, and answers ok, failed, unverified or skipped with a coarse
   reason. The Connections page runs one after each create and rotate, and
-  says the answer on the connection's row (#1324); the hub keeps none.
+  says the answer on the connection's row (#1324). The connection keeps the
+  last one, for the value it holds, as `last_check` on an admin's list; a
+  new value or a revoke clears it (#1360).
 - **Runner extraction**: the hosted service will run runners near customer sandboxes.
   Anything crossing the Runner seam must stay serializable (no passing live channels
   or callbacks across it as its API matures).

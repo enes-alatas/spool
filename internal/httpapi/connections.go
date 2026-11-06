@@ -50,6 +50,11 @@ type connectionView struct {
 	OwnerLoop string                  `json:"owner_loop,omitempty"`
 	RotatedAt int64                   `json:"rotated_at,omitempty"`
 	RevokedAt int64                   `json:"revoked_at,omitempty"`
+	// LastCheck is the last check of the value it holds, absent for none
+	// and for a reader who doesn't see Config: a check is about the address
+	// an admin set, and its reason is news about what the hub can reach
+	// (#1360).
+	LastCheck *store.ConnectionCheck `json:"last_check,omitempty"`
 }
 
 func (server *Server) connectionViews(r *http.Request, connections ...*store.Connection) ([]connectionView, error) {
@@ -77,6 +82,7 @@ func (server *Server) connectionViews(r *http.Request, connections ...*store.Con
 		if seesConfig {
 			config := connection.Config
 			view.Config = &config
+			view.LastCheck = connection.LastCheck
 		}
 		for _, id := range connection.LoopIDs {
 			if name, ok := names[id]; ok {

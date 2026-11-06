@@ -134,3 +134,98 @@ func TestAConnectionIsChecked(t *testing.T) {
 		t.Error("the hub's log carries a checked secret or url, or no line of the checks")
 	}
 }
+
+// A connection keeps its last check (#1360): the list carries it to an
+// admin as last_check, never to a member, and a new value or a revoke
+// clears it, since it described the old one.
+func TestAConnectionKeepsItsLastCheck(t *testing.T) {
+	t.Parallel()
+	const secret = "fixture-mcp-LASTcheck-0000"
+	mcp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer "+secret {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18","capabilities":{},"serverInfo":{"name":"fixture","version":"1"}}}`))
+	}))
+	t.Cleanup(mcp.Close)
+	hub := startServerArgs(t, t.TempDir(), "--runtime", "bare")
+	hub.createLoop("aster", nil)
+
+	type lastCheck struct {
+		Status    string `json:"status"`
+		Reason    string `json:"reason"`
+		CheckedAt int64  `json:"checked_at"`
+	}
+	type listed struct {
+		Name      string     `json:"name"`
+		LastCheck *lastCheck `json:"last_check"`
+	}
+	last := func(cookie string) (*lastCheck, string) {
+		t.Helper()
+		var resp *http.Response
+		var body []byte
+		if cookie == "" {
+			resp, body = hub.do("GET", "/api/connections", nil)
+		} else {
+			resp, body = hub.asCookie("GET", "/api/connections", cookie, nil)
+		}
+		if resp.StatusCode != 200 {
+			t.Fatalf("GET /api/connections = %d %s", resp.StatusCode, body)
+		}
+		var views []listed
+		if err := json.Unmarshal(body, &views); err != nil {
+			t.Fatal(err)
+		}
+		for _, view := range views {
+			if view.Name == "docs" {
+				return view.LastCheck, string(body)
+			}
+		}
+		t.Fatalf("docs not listed: %s", body)
+		return nil, ""
+	}
+	check := func() checkJSON {
+		t.Helper()
+		var view checkJSON
+		hub.mustJSON("POST", "/api/connections/docs/check", nil, &view)
+		return view
+	}
+
+	hub.mustJSON("POST", "/api/connections", map[string]any{
+		"name": "docs", "kind": "mcp-server", "secret": secret,
+		"config": map[string]any{"transport": "http", "url": mcp.URL + "/mcp"},
+	}, nil)
+	if got, body := last(""); got != nil || strings.Contains(body, "last_check") {
+		t.Fatalf("a connection never checked lists %s, want no last_check", body)
+	}
+	hub.mustJSON("PUT", "/api/loops/aster/connections/docs", nil, nil)
+	ran := check()
+	if got, _ := last(""); got == nil || got.Status != "ok" || got.Reason != "ok" || got.CheckedAt != ran.CheckedAt {
+		t.Fatalf("after an ok check, last_check = %+v, want ok at %d", got, ran.CheckedAt)
+	}
+	member := hub.signedInAs("mia", "member")
+	if got, body := last(member); got != nil || strings.Contains(body, "last_check") {
+		t.Errorf("a member reads a last check: %s", body)
+	}
+
+	hub.mustJSON("PUT", "/api/connections/docs/secret", map[string]any{"value": "fixture-mcp-WRONGlast-0000"}, nil)
+	if got, _ := last(""); got != nil {
+		t.Fatalf("after a rotate, last_check = %+v, want none", got)
+	}
+	check()
+	if got, body := last(""); got == nil || got.Status != "failed" || got.Reason != "secret_refused" ||
+		strings.Contains(body, secret) || strings.Contains(body, mcp.URL+"/mcp\",\"") {
+		t.Fatalf("after a refused check, last_check = %+v, want failed secret_refused", got)
+	}
+
+	hub.mustJSON("DELETE", "/api/loops/aster/connections/docs", nil, nil)
+	hub.mustJSON("POST", "/api/connections/docs/revoke", nil, nil)
+	if got, _ := last(""); got != nil {
+		t.Errorf("after a revoke, last_check = %+v, want none", got)
+	}
+}

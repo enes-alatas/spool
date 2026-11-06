@@ -134,6 +134,13 @@ func (server *Server) handleCheckConnection(w http.ResponseWriter, r *http.Reque
 	view.CheckedAt = time.Now().UnixMilli()
 	// the reason alone: never the URL, which may carry a query, nor the secret
 	server.Log.Info("connection check", "connection", connection.Name, "status", view.Status, "reason", view.Reason, "secret_sent", view.SecretSent)
+	// Kept as the connection's last check, the outcome and reason alone,
+	// only while it holds the value this check read (#1360). Failing to
+	// keep it doesn't fail the check, which has its answer.
+	if err := server.Store.Connections().SetLastCheck(r.Context(), connection.Name, connection.UpdatedAt,
+		store.ConnectionCheck{Status: view.Status, Reason: view.Reason, CheckedAt: view.CheckedAt}); err != nil {
+		server.Log.Warn("connection check not kept", "connection", connection.Name, "err", err)
+	}
 	writeJSON(w, 200, view)
 }
 

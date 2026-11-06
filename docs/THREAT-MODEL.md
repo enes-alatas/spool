@@ -206,7 +206,10 @@ member until it is, and a test fails until it is (#1240).
   https address they chose. The secret goes only when a loop holding
   the connection would have the hub broker it, so a check sends it
   nowhere a loop's tool call wouldn't. The broker itself doesn't run
-  these address guards.
+  these address guards. The last check's status, reason and time are
+  kept with the connection, in the clear: none is a secret, but a copy
+  of the data directory says which addresses answered. The list shows
+  them to admins alone (#1360).
 
 ### Loop listener: `/mcp`, the brokered servers, the Claude proxy and the GitHub token route
 
