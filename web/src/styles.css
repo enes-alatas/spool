@@ -3706,6 +3706,7 @@ button.panel-link {
     'name kind secret delete'
     'detail detail loops delete'
     'tools tools tools tools'
+    'check check check check'
     'panel panel panel panel'
     'error error error error';
   column-gap: 12px;
@@ -3831,6 +3832,7 @@ button.panel-link {
       'detail detail detail'
       'loops loops loops'
       'tools tools tools'
+      'check check check'
       'panel panel panel'
       'error error error';
   }
@@ -5665,4 +5667,46 @@ button.panel-link {
 .connection-group-head {
   margin: 18px 0 6px;
   font-size: 0.8125rem;
+}
+
+/* Whether a connection works (#1324): a line under its tools once a check
+   has run, the status word first in its state's colour, then the hub's
+   sentence and what to do, and when it ran. */
+.connection-check {
+  grid-area: check;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin-top: 6px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.connection-check-word {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  white-space: nowrap;
+}
+.connection-check.ok .connection-check-word {
+  color: var(--ready);
+}
+.connection-check.failed .connection-check-word,
+.connection-check.failed {
+  color: var(--danger);
+}
+.connection-check.unverified .connection-check-word {
+  color: var(--active);
+}
+.connection-check-message {
+  flex: 1 1 16rem;
+  min-width: 0;
+  color: var(--text);
+}
+.connection-check.skipped .connection-check-message {
+  color: var(--text-muted);
+}
+.connection-check-when {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--text-muted);
 }

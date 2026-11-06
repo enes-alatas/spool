@@ -1086,6 +1086,28 @@ export interface Connection {
   revoked_at?: number
 }
 
+// A connection check (#1323), POST /api/connections/{name}/check, admin
+// only. Mirrors httpapi's connectionCheckView. A failed check is a 200
+// with status `failed`: the check worked, the connection didn't. Not kept
+// by the hub: each answer is the check just run.
+export type ConnectionCheckStatus = 'ok' | 'failed' | 'unverified' | 'skipped'
+export interface ConnectionCheck {
+  connection: string
+  // `unverified`: the server answered but the secret wasn't sent, so it is
+  // untested. `skipped`: nothing the hub can check.
+  status: ConnectionCheckStatus
+  // ok, unreachable, timed_out, tls_failed, redirected, secret_refused,
+  // secret_untested, credential_missing, not_mcp, http_error,
+  // address_refused, cleartext, workstation_local, not_checkable,
+  // github_refused
+  reason: string
+  // The hub's sentence, shown as it comes.
+  message: string
+  // Whether the check carried the connection's secret.
+  secret_sent: boolean
+  checked_at: number
+}
+
 // One change to a connection, on its append-only record (#606). Names, not
 // references: a row outlives the connection and the loop it names, and the
 // loop is named as it was then. `loop` is the loop the change was to: on
@@ -1547,6 +1569,10 @@ export const api = {
   // Takes it from every loop, for good (#610). Attaching it after is refused
   // (`connection_revoked`).
   revokeConnection: (name: string) => req<Connection>(`/api/connections/${name}/revoke`, { method: 'POST' }),
+  // Checks it works (#1323): at most 10 a minute a caller, then 429
+  // `connection_check_throttled`; a revoked one is refused.
+  checkConnection: (name: string) =>
+    req<ConnectionCheck>(`/api/connections/${name}/check`, { method: 'POST' }),
   // The record, newest first, readable by name after what it names is gone.
   connectionEvents: (name: string) => req<ConnectionEvent[]>(`/api/connections/${name}/events`),
   loopConnectionEvents: (loop: string) => req<ConnectionEvent[]>(`/api/loops/${loop}/connection-events`),

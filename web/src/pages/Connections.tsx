@@ -17,6 +17,8 @@ import {
   writeFilter,
 } from '../connectionFilters'
 import { ConnectionEvents, RotateForm } from '../components/ConnectionRecord'
+import { ConnectionCheckLine, useConnectionCheck, useRunCheck } from '../components/ConnectionCheck'
+import { checkable } from '../connectionCheck'
 import { messageTime } from '../components/MessageKnot'
 
 // The org's connections (ADR-0043, #506): env variables, MCP servers and
@@ -55,6 +57,9 @@ function ConnectionRow({
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const detail = connectionDetail(c)
+  // Whether it works (#1324): run after a rotate here, and by Check on a
+  // kind the hub can check. Checking is an admin's, as saving is.
+  const check = useConnectionCheck(c.name)
   // `?? []`: a hub from before attachments sends no `loops`.
   const loops = c.loops ?? []
   const attached = loops.length > 0
@@ -203,6 +208,11 @@ function ConnectionRow({
         <button className="text-button" onClick={() => toggle('history')} aria-expanded={panel === 'history'}>
           History
         </button>
+        {manage && !revoked && checkable(c) && (
+          <button className="text-button" onClick={() => check.refetch()} disabled={check.isFetching}>
+            {check.data || check.error ? 'Check again' : 'Check'}
+          </button>
+        )}
         {manage && !revoked && c.has_secret && (
           <button className="text-button" onClick={() => toggle('rotate')} aria-expanded={panel === 'rotate'}>
             {c.kind === 'github-app' ? 'Replace key' : 'Rotate value'}
@@ -233,6 +243,7 @@ function ConnectionRow({
           {busy ? 'Deleting…' : 'Delete'}
         </button>
       )}
+      {manage && !revoked && <ConnectionCheckLine connection={c} onRotate={() => setPanel('rotate')} />}
       {panel !== '' && (
         <div className="connection-panel">
           {panel === 'history' ? (
@@ -243,6 +254,7 @@ function ConnectionRow({
               onDone={() => {
                 setPanel('')
                 onChanged()
+                check.refetch()
               }}
               onCancel={() => setPanel('')}
             />
@@ -295,6 +307,7 @@ export default function Connections() {
       qc.invalidateQueries({ queryKey: ['loops'] }),
     ])
 
+  const runCheck = useRunCheck()
   const [params, setParams] = useSearchParams()
   const filter = readFilter(params)
 
@@ -372,7 +385,15 @@ export default function Connections() {
           {may('manage') && (
             <>
               <h3 className="connection-new">New connection</h3>
-              <ConnectionForm onCreated={refresh} fleet={loops ?? []} connections={data} />
+              <ConnectionForm
+                onCreated={(created) => {
+                  // Whether it works, said on its row as the list redraws.
+                  runCheck(created.name)
+                  return refresh()
+                }}
+                fleet={loops ?? []}
+                connections={data}
+              />
             </>
           )}
         </>

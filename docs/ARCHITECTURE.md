@@ -324,7 +324,8 @@ opportunistically, not big-bang.
   An admin checks one (`POST /api/connections/{name}/check`, #1323): the
   hub sends an http mcp-server an MCP initialize and has a github-app mint
   a token, and answers ok, failed, unverified or skipped with a coarse
-  reason.
+  reason. The Connections page runs one after each create and rotate, and
+  says the answer on the connection's row (#1324); the hub keeps none.
 - **Runner extraction**: the hosted service will run runners near customer sandboxes.
   Anything crossing the Runner seam must stay serializable (no passing live channels
   or callbacks across it as its API matures).
