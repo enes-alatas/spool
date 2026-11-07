@@ -1097,12 +1097,26 @@ export interface Connection {
   // is on no loop and can't be attached, shared or given a new value; it can
   // only be deleted, and its value stays redacted.
   revoked_at?: number
+  // The last check of the value it holds (#1360), absent if none: the hub
+  // keeps each check's outcome, and a rotate or a revoke clears it, since
+  // it was about the old value (ADR-0043). Absent from a member's read,
+  // with config. Attaching doesn't clear it, so a check run before any
+  // loop held it can still say the secret is untested.
+  last_check?: ConnectionLastCheck
+}
+
+// A connection's kept check: the outcome and its reason, never the hub's
+// sentence. Mirrors store.ConnectionCheck.
+export interface ConnectionLastCheck {
+  status: ConnectionCheckStatus
+  reason: string
+  checked_at: number
 }
 
 // A connection check (#1323), POST /api/connections/{name}/check, admin
 // only. Mirrors httpapi's connectionCheckView. A failed check is a 200
-// with status `failed`: the check worked, the connection didn't. Not kept
-// by the hub: each answer is the check just run.
+// with status `failed`: the check worked, the connection didn't. The hub
+// keeps its outcome and reason as the connection's last_check (#1360).
 export type ConnectionCheckStatus = 'ok' | 'failed' | 'unverified' | 'skipped'
 export interface ConnectionCheck {
   connection: string

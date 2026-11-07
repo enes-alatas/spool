@@ -261,6 +261,35 @@ taken.push(egressFile)
 await egressDialog.getByRole('button', { name: 'Close' }).click()
 await page.unroute('**/api/settings/egress')
 
+// The Connections page's Problems pill (#1361): the fixture keeps no
+// check, so the list is served with the two the hub would keep for its MCP
+// servers: the tracker's failed, and the handbook's skipped, a stdio server
+// the hub can't check, which isn't a problem. The page with the pill, then
+// the list it filters to, each tall enough to reach the tracker's row.
+await page.setViewportSize({ width: 1180, height: 1500 })
+const checkedAt = Date.now() - 40 * 60 * 1000
+await page.route('**/api/connections', async (route) => {
+  if (route.request().method() !== 'GET') return route.continue()
+  const list = await (await route.fetch()).json()
+  const kept = {
+    tracker: { status: 'failed', reason: 'secret_refused', checked_at: checkedAt },
+    'handbook-search': { status: 'skipped', reason: 'not_checkable', checked_at: checkedAt },
+  }
+  await route.fulfill({ json: list.map((c) => (kept[c.name] ? { ...c, last_check: kept[c.name] } : c)) })
+})
+for (const [name, query] of [
+  ['connections-problems-pill', ''],
+  ['connections-problems', '?problems=1'],
+]) {
+  await page.goto(base + '/connections' + query, { waitUntil: 'networkidle' })
+  await page.locator('.connection-filter-pill.problems-pill').waitFor({ timeout: 15000 })
+  const file = `${outDir}/${name}.png`
+  await page.screenshot({ path: file })
+  taken.push(file)
+}
+await page.unroute('**/api/connections')
+await page.setViewportSize({ width: 1180, height: 1900 })
+
 // Settings' Users and access section (#691, #732), as the owner admin sees
 // the fixture's users: robin still on a one-time password, admin the last
 // owner, whose own role and Remove are disabled with the reason, sam linked,

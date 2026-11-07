@@ -5649,9 +5649,12 @@ button.panel-link {
 .connection-filter-row .panel-select {
   width: auto;
 }
-/* Revoked, shown or not: a pill the height of the pick-lists, outlined in
-   the text colour when pressed, its count in mono as the kind tabs have it. */
+/* Problems and Revoked, each pressed or not: a pill the height of the
+   pick-lists, Revoked outlined in the text colour when pressed, its count in mono as
+   the kind tabs have it. It keeps its line: the row wraps, not the pill. */
 .connection-filter-pill {
+  flex: none;
+  white-space: nowrap;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -5674,6 +5677,26 @@ button.panel-link {
   font-family: var(--mono);
   font-size: 0.6875rem;
   color: var(--text-muted);
+}
+/* Problems is red throughout, and glows when pressed, as a lit button:
+   a full red outline and a soft red halo, outside and in. */
+.connection-filter-pill.problems-pill {
+  color: var(--danger);
+  border-color: var(--danger-line);
+  background: var(--danger-wash);
+}
+.connection-filter-pill.problems-pill:hover {
+  border-color: var(--danger);
+}
+.connection-filter-pill.problems-pill .count {
+  color: inherit;
+}
+.connection-filter-pill.problems-pill.on {
+  color: var(--danger);
+  border-color: var(--danger);
+  box-shadow:
+    0 0 10px var(--danger-line),
+    inset 0 0 6px var(--danger-line);
 }
 .connection-filter-pill:focus-visible {
   outline: 2px solid var(--text);

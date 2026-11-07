@@ -1,10 +1,12 @@
 import type { Connection, ConnectionKind } from './api'
 import { kindLabel } from './connections'
+import { hasProblem } from './connectionCheck'
 
 // Narrowing the Connections page (#1322). The filters live in the URL query,
 // so a link to one loop's connections is a link to the page: `q` the name
-// typed, `kind`, `scope` shared or private, `loop`, and `revoked` set when
-// revoked ones are shown too. An unknown `kind` or `scope` is ignored, not
+// typed, `kind`, `scope` shared or private, `loop`, `revoked` set when
+// revoked ones are shown too, and `problems` set when only the connections
+// whose last check failed are (#1361). An unknown `kind` or `scope` is ignored, not
 // an empty list; a `loop` is kept as named, even one gone from the fleet, so
 // the page says it holds nothing.
 export interface ConnectionFilter {
@@ -13,9 +15,17 @@ export interface ConnectionFilter {
   scope: 'shared' | 'private' | ''
   loop: string
   revoked: boolean
+  problems: boolean
 }
 
-export const NO_FILTER: ConnectionFilter = { q: '', kind: '', scope: '', loop: '', revoked: false }
+export const NO_FILTER: ConnectionFilter = {
+  q: '',
+  kind: '',
+  scope: '',
+  loop: '',
+  revoked: false,
+  problems: false,
+}
 
 // The kinds, in the order the page's tabs and groups take them.
 export const CONNECTION_KINDS: { value: ConnectionKind; label: string }[] = [
@@ -34,6 +44,7 @@ export function readFilter(params: URLSearchParams): ConnectionFilter {
     scope: scope === 'shared' || scope === 'private' ? scope : '',
     loop: params.get('loop') ?? '',
     revoked: params.get('revoked') === '1',
+    problems: params.get('problems') === '1',
   }
 }
 
@@ -41,19 +52,20 @@ export function readFilter(params: URLSearchParams): ConnectionFilter {
 // written, so the bare page is the bare URL.
 export function writeFilter(params: URLSearchParams, f: ConnectionFilter): URLSearchParams {
   const next = new URLSearchParams(params)
-  for (const key of ['q', 'kind', 'scope', 'loop', 'revoked']) next.delete(key)
+  for (const key of ['q', 'kind', 'scope', 'loop', 'revoked', 'problems']) next.delete(key)
   if (f.q) next.set('q', f.q)
   if (f.kind) next.set('kind', f.kind)
   if (f.scope) next.set('scope', f.scope)
   if (f.loop) next.set('loop', f.loop)
   if (f.revoked) next.set('revoked', '1')
+  if (f.problems) next.set('problems', '1')
   return next
 }
 
 // Whether anything narrows the list. Showing the revoked widens it, so it
 // doesn't count, and a name of only spaces matches everything.
 export function filtering(f: ConnectionFilter): boolean {
-  return f.q.trim() !== '' || f.kind !== '' || f.scope !== '' || f.loop !== ''
+  return f.q.trim() !== '' || f.kind !== '' || f.scope !== '' || f.loop !== '' || f.problems
 }
 
 // One test per filter, each with its own say on why a list came back
@@ -84,6 +96,11 @@ const tests: {
     say: (f) => `held by ${f.loop}`,
   },
   {
+    on: (f) => f.problems,
+    pass: (c) => hasProblem(c),
+    say: () => 'failing its check',
+  },
+  {
     on: (f) => f.q.trim() !== '',
     pass: (c, f) => c.name.toLowerCase().includes(f.q.trim().toLowerCase()),
     say: (f) => `named like "${f.q.trim()}"`,
@@ -95,7 +112,7 @@ export function filterConnections(all: Connection[], f: ConnectionFilter): Conne
 }
 
 // Why a filter came back empty: the first filter, in the order a reader
-// narrows (kind, scope, loop, name), past which nothing is left, said in
+// narrows (kind, scope, loop, problems, name), past which nothing is left, said in
 // its words. When revoked ones are hidden and would have matched, that is
 // the reason instead: the others say none exists.
 export function emptiedBy(all: Connection[], f: ConnectionFilter): string {

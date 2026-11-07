@@ -6,11 +6,13 @@ import {
   NO_FILTER,
   type ConnectionFilter,
 } from '../connectionFilters'
+import { hasProblem } from '../connectionCheck'
 
 // The Connections page's filter bar (#1322): the kinds as tabs, each with
 // how many the other filters leave of it, then a name box that narrows as
-// you type, shared or private, the loop holding it, and a Revoked pill that
-// shows the revoked, off by default. The count of what is shown ends it.
+// you type, shared or private, the loop holding it, a Problems pill that
+// lists only the connections whose last check failed, and a Revoked pill
+// that shows the revoked, both off by default. The count of what is shown ends it.
 export function ConnectionFilters({
   filter,
   onChange,
@@ -27,6 +29,8 @@ export function ConnectionFilters({
   const set = (patch: Partial<ConnectionFilter>) => onChange({ ...filter, ...patch })
   const revoked = all.filter((c) => c.revoked_at !== undefined).length
   const live = all.length - revoked
+  // A revoked one keeps no check, so it is never among them.
+  const problems = all.filter(hasProblem).length
   // A tab counts what the other filters leave of its kind.
   const countOf = (kind: ConnectionKind | '') => filterConnections(all, { ...filter, kind }).length
   const narrowed = filtering(filter)
@@ -78,6 +82,21 @@ export function ConnectionFilters({
             </option>
           ))}
         </select>
+        {/* Pressed, only the connections whose last check failed are
+            listed (#1361). Not drawn while none has failed, unless it is
+            pressed, so a link to it can still be let go of. */}
+        {(problems > 0 || filter.problems) && (
+          <button
+            className={`connection-filter-pill problems-pill${filter.problems ? ' on' : ''}`}
+            aria-pressed={filter.problems}
+            title={
+              filter.problems ? 'Show every connection' : 'Show only the connections whose last check failed'
+            }
+            onClick={() => set({ problems: !filter.problems })}
+          >
+            Problems <span className="count">{problems}</span>
+          </button>
+        )}
         {/* Pressed, the revoked are listed too; there are none to show
             on a hub that has revoked nothing, so it isn't drawn. */}
         {revoked > 0 && (

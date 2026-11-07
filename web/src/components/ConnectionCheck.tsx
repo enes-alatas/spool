@@ -1,11 +1,13 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ApiError, type Connection, type ConnectionCheck } from '../api'
-import { checkWord, nextStep } from '../connectionCheck'
+import { checkWord, keptCheck, nextStep } from '../connectionCheck'
 import { messageTime } from './MessageKnot'
 
-// A connection's check (#1324) lives in the query cache under its name, not
-// on the hub, which keeps no result: the row reads it, and a save on the
-// page, a create or a rotate, runs it. It runs only when asked.
+// A connection's check (#1324) runs only when asked: a save on the page, a
+// create or a rotate, or the row's Check. Its answer lives in the query
+// cache under the connection's name. The hub also keeps the last check of
+// the value the connection holds (#1360), which a rotate or a revoke
+// clears; the row shows that until a check runs here.
 const checkKey = (name: string) => ['connection-check', name]
 
 export function useConnectionCheck(name: string) {
@@ -30,7 +32,9 @@ export function useRunCheck() {
 }
 
 // The check's line on a row: "checking…" while it runs, then what the hub
-// found, in its words, and what to do next. Nothing until a check has run.
+// found, in its words, and what to do next. Before a check runs here, the
+// one the hub kept, in the page's words; nothing for a connection never
+// checked.
 export function ConnectionCheckLine({
   connection,
   onRotate,
@@ -56,8 +60,9 @@ export function ConnectionCheckLine({
       </div>
     )
   }
-  if (!check.data) return null
-  return <CheckResult check={check.data} connection={connection} onRotate={onRotate} />
+  const shown = check.data ?? (connection.last_check && keptCheck(connection, connection.last_check))
+  if (!shown) return null
+  return <CheckResult check={shown} connection={connection} onRotate={onRotate} />
 }
 
 function CheckResult({
