@@ -47,7 +47,9 @@ Re-read all of this on every round, not just the first:
   says the PR will close, not just the words. Does the evidence the body
   links (a run, a screenshot, a log) belong to the current head?
 - **The issue.** Read its newest comments. A decision taken there, or in a
-  comment, may already change what the PR should do.
+  comment, may already change what the PR should do. Find each of its
+  acceptance scenarios in the PR, with the test or check it names; one
+  with neither is a finding.
 - **The commits.** One logical change each, a subject that says what changed,
   and no "address review" commits if the project folds feedback into the
   commit it fixes.

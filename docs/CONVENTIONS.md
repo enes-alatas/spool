@@ -120,6 +120,15 @@ ADR instead.*
   dated, with its Open questions entry settled, so the body alone gives the
   current answer; the reviewer checks the body against the thread before
   approving.
+- **A feature lists its acceptance scenarios** (#1377, ADR-0014): the
+  feature form requires an "Acceptance scenarios" field and the improvement
+  form offers one, one per line as `WHEN <situation> THEN <what is seen>`.
+  Each names how it is checked: a tier-2 test for engine behaviour, a web
+  test or screenshot for the room, or a manual check the reviewer runs. The
+  PR proves every one, and a scenario with no test or check is a review
+  finding. `issue-guards` labels a new feature filed without them
+  `needs-rewrite`. An open feature filed before the rule gets its scenarios
+  from the product owner when it is assigned.
 - **PRs** follow the template: link the issue (`Closes #n` / `Part of #n`, or
   say why not) and cite ADRs for seam changes and new deps. Dependabot's
   action-pin bumps are the exception (#707), with no link, template or

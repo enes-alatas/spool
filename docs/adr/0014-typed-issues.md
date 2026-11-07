@@ -1,6 +1,6 @@
 # ADR-0014: Mandatory issue typing via forms and labels
 
-Date: 2026-08-17 · Status: accepted · Amended: 2026-10-02 (community reports)
+Date: 2026-08-17 · Status: accepted · Amended: 2026-10-02 (community reports); 2026-11-07 (acceptance scenarios, #1377)
 
 ## Context
 
@@ -67,6 +67,16 @@ report becomes a typed issue at triage.
   assignees are not an injection surface. The text is.
 - **Out of scope:** pull requests from outside the team, which follow the same
   path later.
+
+**Amendment (2026-11-07, #1377): acceptance scenarios.** The feature form
+gains a required *Acceptance scenarios* field and the improvement form an
+optional one: one line per scenario, `WHEN <situation> THEN <what is
+seen>`, each naming the test or check that proves it. A `gh` filing of a
+feature replicates the heading under rule 2. The issue guard's standard
+check (#1035) labels a feature filed without scenarios `needs-rewrite`,
+from 2026-11-07 on. A feature filed before then gets them when it is
+assigned, so the rule is not applied backwards. The typing guard of item 3
+is unchanged.
 
 ## Consequences
 

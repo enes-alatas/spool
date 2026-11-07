@@ -31,6 +31,14 @@ body:
     validations:
       required: true
   - type: textarea
+    id: acceptance-scenarios
+    attributes:
+      label: Acceptance scenarios
+      description: 'One per line: `WHEN <situation> THEN <what the operator or a loop sees>`, each naming how it is checked: an itest for engine behaviour, a web test or screenshot for the room, or a manual check the reviewer runs. The PR proves every one (#1377).'
+      placeholder: 'WHEN a cloud turn fails on an API error THEN the loop shows the error within a minute (itest: TestACloudTurnTheAPIFailsEndsAsAnError)'
+    validations:
+      required: true
+  - type: textarea
     id: open-questions
     attributes:
       label: Open questions
