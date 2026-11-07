@@ -1,6 +1,6 @@
 # ADR-0063: The hub reads a bot from prompts.chat, on the operator's paste
 
-Date: 2026-11-02 · Status: accepted (operator decision of 2026-11-02 on #1262 for the import, and of 2026-11-03, in a direct message to Terra, for the outbound fetch's bounds) · Relates to: ADR-0028, ADR-0048 · Amended: 2026-11-03 (item 1: fetch by path, teams and the base flag, #1265); 2026-11-03 (item 4: a team drafted, then created from its draft, #1265); 2026-11-06 (item 5: a bot's skills are said to be missing, #1332)
+Date: 2026-11-02 · Status: accepted (operator decision of 2026-11-02 on #1262 for the import, and of 2026-11-03, in a direct message to Terra, for the outbound fetch's bounds) · Relates to: ADR-0028, ADR-0048 · Amended: 2026-11-03 (item 1: fetch by path, teams and the base flag, #1265); 2026-11-03 (item 4: a team drafted, then created from its draft, #1265); 2026-11-06 (item 5: a bot's skills are said to be missing, #1332); 2026-11-07 (items 1, 4 and 5: a skill a bot links on prompts.chat is installed, text only, #1364)
 
 ## Context
 
@@ -38,6 +38,9 @@ able to call it point the hub at its own network.
    takes https, or http on loopback only. It is the operator's flag:
    nothing an admin pastes reaches it, and a pasted URL must still name
    `prompts.chat` by exact name.
+
+   **Amendment (2026-11-07, #1364):** the fetcher also takes a skill's
+   prompt, `/api/prompts/<id>`, built from a bot's skill link (item 5).
 2. **On the operator's request only.** The fetch runs from
    `GET /api/import/prompts-chat?url=`, an admin route like
    `POST /api/loops`, behind the operator listener's host and cross-site
@@ -89,6 +92,10 @@ able to call it point the hub at its own network.
    for a loop with no handoffs. The room shows them from these fields
    rather than by reading the mission's words. The create takes nothing
    new: the mission the operator read is still all a loop is given.
+
+   **Amendment (2026-11-07, #1364):** a create now also takes the skills
+   the operator ticked, as the draft carried them (item 5). The mission
+   is still taken as read.
 5. **What the bot's text is.** It is someone else's writing, so it is
    untrusted. The only way it reaches a loop is through the mission the
    operator reads in the draft and chooses to create. From each field it
@@ -125,6 +132,63 @@ able to call it point the hub at its own network.
    publish under: installing one waits for a bot whose source links a
    prompts.chat skill (#1364). Milo set this shape on #1332, and Elliot
    cleared its posture there.
+
+   **Amendment (2026-11-07, #1364): a skill a bot links on prompts.chat
+   is installed, text only.** prompts.chat lets a bot's author set a
+   skill's `source` to a SKILL.md URL. When that source is a prompts.chat
+   skill's page, the import fetches it, under the operator's decision of
+   2026-11-06 on #1332 (text-only skills, four musts):
+   - **The link.** Only `https://prompts.chat/prompts/<id>_<slug>` counts,
+     matched exactly: https, that host by exact name, no port,
+     credentials, query or fragment. The hub fetches `/api/prompts/<id>`,
+     never the URL as given, with item 3's bounds, and takes the answer
+     only if its `type` is `SKILL`. Any other source keeps the
+     "prompts.chat publishes no files for it" line. No skill is looked up
+     by its name.
+   - **The split.** A skill's `content` is its SKILL.md, then each further
+     file as `FILE:<path>` and its text. The hub splits it before
+     the text rules above, which would drop the separators, and then
+     applies them to every file.
+   - **Refused whole, never cleaned up** (`installed: false`, with a fixed
+     reason). That covers a file that isn't `.md` or `.txt`; a path that
+     is absolute, has a `.` or `..` segment, an empty segment, a
+     backslash or a character the text rules drop, or that repeats; an
+     empty SKILL.md; more than 24 files or 128 KiB after the split; a
+     9th skill of one bot and every one after it; and a second skill
+     whose folder name the first already took. The caps fit every
+     text-only skill prompts.chat served on 2026-11-07: 75 of 172, at
+     most 18 files and 78 KB.
+   - **The draft carries the files.** Each skill gains `source` (the
+     link, rebuilt), `dir` (its folder, made from the prompt's slug as a
+     loop name is) and `files` (`path` and `content`, SKILL.md first).
+     The mission names only the skills that aren't installed. An
+     installed one is found in `.claude/skills/`, so a skill the operator
+     unticks leaves no line claiming it.
+   - **Create installs what was read.** `POST /api/loops`, and each loop
+     of a team create, take `skills`: the ticked skills' `dir` and
+     `files`, as the draft gave them. Nothing is fetched. The hub checks
+     every rule above again on what it is sent, and a skill that fails
+     refuses the create (`skills_invalid`). The files are staged under
+     the data dir, and the loop's first wake writes them to its workdir's
+     `.claude/skills/<dir>/` before the session starts. A workstation
+     gets them through the runtime. On the host they are written inside
+     the workdir only, never through a link out of it, and never over a
+     file already there. They never go to `~/.claude`. Each skill's
+     folder also gets a `.gitignore` of `*`, written by the hub: in a
+     worktree, the operator's repo, the skill stays out of git, and a
+     loop that commits everything commits none of it. No file of the
+     operator's, such as the repo's `info/exclude`, is touched.
+   - **Where.** A docker loop, and a bare loop in its own home or
+     worktree. A cloud loop, and a bare loop in a directory of the
+     operator's that other loops may share, are refused
+     (`skills_unsupported`). A bare loop whose workdir already holds the
+     folder is refused too (`skills_exist`).
+   - **The two creates take a 4 MiB body,** against 1 MiB for the rest of
+     the API, since a team's missions alone reach 768 KiB.
+
+   Updating a skill after import, a skill carrying scripts, and a name
+   search stay out. Without updates, prompts.chat has no channel to
+   change a running loop. Elliot set the bounds, as #1364 asked.
 
 ## Consequences
 

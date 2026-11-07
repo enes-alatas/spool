@@ -189,6 +189,36 @@ member until it is, and a test fails until it is (#1240).
   operator's flag, never an admin's input. A team is drafted the same
   way, with at most 12 bots fetched for it, and its loops are created
   only from the draft the operator sends back.
+- **An imported skill is someone else's text the loop acts on** (#1364,
+  ADR-0063). A bot can link a prompts.chat skill as one it was built to
+  use. The hub then fetches that skill, and the draft shows its files for
+  the operator to read and untick. The loop's session runs with
+  permissions bypassed, so a skill that says "run this" gets run with no
+  prompt. On a bare loop that run is a host process, as the loop's user,
+  with that user's reach. Reading it before create is the only check, as
+  for the mission. What bounds it:
+  - only a link of the exact form `https://prompts.chat/prompts/<id>_<slug>`
+    is fetched, as `/api/prompts/<id>`, and only an answer of type
+    `SKILL` is taken;
+  - text files only (`.md`, `.txt`). A skill with any other file is not
+    installed, so no script reaches the disk;
+  - at most 8 skills a bot, 24 files and 128 KiB a skill. A skill over a
+    cap is not installed, never truncated;
+  - the mission's text rules on every file, after the split;
+  - paths are the hub's. A skill with an absolute path, a `..` segment
+    or a repeated path is refused whole. Its folder is made from the
+    prompt's slug, and the files go into the loop's own workdir
+    `.claude/skills/`, never `~/.claude`, never through a link out of
+    the workdir, and never over a file already there. A `.gitignore` of
+    `*` in the skill's folder keeps it out of git: in a worktree,
+    `git add -A` leaves it off the loop's branch;
+  - create installs the bytes the operator read, with no second fetch.
+    It checks every rule again on what it is sent, since an admin's
+    request can carry any text.
+
+  A bare loop working in the operator's own directory, and a cloud loop,
+  take no skills. A create's body may be up to 4 MiB, against 1 MiB for
+  the rest of the API. Like every body, it is bounded before sign-in.
 - **A connection check dials what an admin typed** (#1323). An admin's
   `POST /api/connections/{name}/check` makes the hub send an http
   mcp-server an MCP initialize, or a github-app mint a token at the API
