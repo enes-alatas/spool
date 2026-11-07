@@ -247,7 +247,11 @@ ADR instead.*
   and a rule it doesn't know binds everyone as before.
 - **Seeing your PRs' CI** (#904): a loop hooks `scripts/pr-watch.sh` into its
   own settings to see its red PRs at each turn (the script's header has the
-  hook), and a red PR is its author's to fix or re-queue.
+  hook), and a red PR is its author's to fix or re-queue. It lists a PR
+  that conflicts with main too, which is its author's to rebase (#1374).
+  A reviewer's hook sets `PR_WATCH_MERGE_ASK=1`, to see queued PRs whose
+  auto-merge is still off after 2h, and sends the operator one nudge that
+  links them all. The hook adds no wake.
 - **Scoped delegation**: a "you decide" covers only the questions put, and
   its record quotes it verbatim; a standing delegation needs its own ADR.
 - **Skills** (ADR-0065, #1369): a skill in `.claude/skills/` carries
