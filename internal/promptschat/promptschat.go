@@ -122,9 +122,9 @@ func (fetcher HTTPFetcher) Fetch(ctx context.Context, path string) ([]byte, erro
 	return body, nil
 }
 
-// fetchPath is every path a fetch may ask for: a bot's .json and a
-// team's.
-var fetchPath = regexp.MustCompile(`^/(bots/[A-Za-z0-9][A-Za-z0-9_-]*\.json|api/bots/teams/[A-Za-z0-9][A-Za-z0-9_-]*)$`)
+// fetchPath is every path a fetch may ask for: a bot's .json, a team's,
+// and a skill's prompt (#1364).
+var fetchPath = regexp.MustCompile(`^/(bots/[A-Za-z0-9][A-Za-z0-9_-]*\.json|api/bots/teams/[A-Za-z0-9][A-Za-z0-9_-]*|api/prompts/[a-z0-9]{1,40})$`)
 
 // botPath is a bot's page, with .md or .json or neither.
 var botPath = regexp.MustCompile(`^/bots/([A-Za-z0-9][A-Za-z0-9_-]*)(\.md|\.json)?/?$`)
@@ -176,7 +176,8 @@ type Draft struct {
 	Mission string       `json:"mission"`
 	Runtime string       `json:"runtime"`
 	Egress  []EgressHint `json:"egress"`
-	// Skills are the skills the bot names, none of them installed.
+	// Skills are the skills the bot names: those whose source links a
+	// prompts.chat skill with their files, the rest not installed.
 	Skills []SkillHint `json:"skills"`
 	// Source is the bot's page on prompts.chat.
 	Source string `json:"source"`
@@ -189,26 +190,30 @@ type EgressHint struct {
 	Connector string `json:"connector"`
 }
 
-// skill is a skill a bot names. Its source, unread, was empty or another
-// platform's catalog path on every bot on 2026-11-06, never a skill on
-// prompts.chat (#1332).
+// skill is a skill a bot names. Its source was empty or another
+// platform's catalog path on every bot on 2026-11-06 (#1332); one that
+// is a prompts.chat skill's page is fetched (#1364).
 type skill struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
+	Source      string `json:"source"`
 }
 
 // SkillHint is a skill the bot was built to use, with its description
-// on one line. Installed is whether the loop would have it, which no
-// import does yet: Reason says why not (#1332).
+// on one line. Installed is whether the draft carries its files, which
+// create installs unless the operator unticks it; when it is false,
+// Reason says why not (#1332) and Files is empty. Source is the
+// prompts.chat skill's page the bot links, rebuilt by the hub, "" for any
+// other source. Dir is its folder under .claude/skills/ (#1364).
 type SkillHint struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Installed   bool   `json:"installed"`
-	Reason      string `json:"reason"`
+	Name        string      `json:"name"`
+	Description string      `json:"description"`
+	Installed   bool        `json:"installed"`
+	Reason      string      `json:"reason"`
+	Source      string      `json:"source"`
+	Dir         string      `json:"dir"`
+	Files       []SkillFile `json:"files"`
 }
-
-// notPublished is why a skill a bot names isn't installed.
-const notPublished = "prompts.chat publishes no files for it"
 
 // bot is the part of a bot's .json a draft reads.
 type bot struct {
@@ -255,7 +260,8 @@ func draftAt(ctx context.Context, fetcher Fetcher, page, missing string) (Draft,
 	if err := json.Unmarshal(body, &read); err != nil || strings.TrimSpace(read.Slug) == "" || strings.TrimSpace(read.Instructions) == "" {
 		return Draft{}, refuse("That page on %s isn't a bot: it has no instructions.", Host)
 	}
-	made := mission(read, page)
+	skills := skillHints(ctx, fetcher, read.Skills)
+	made := mission(read, page, skills)
 	if len(made) > maxMission {
 		return Draft{}, refuse("That bot is too long to import: its mission would be over %d KiB. Trim it on %s.", maxMission>>10, Host)
 	}
@@ -264,7 +270,7 @@ func draftAt(ctx context.Context, fetcher Fetcher, page, missing string) (Draft,
 		Mission: made,
 		Runtime: runtimeHint(read.ComputerRequirements),
 		Egress:  egressHint(read.Connectors),
-		Skills:  skillHints(read.Skills),
+		Skills:  skills,
 		Source:  page,
 	}, nil
 }
@@ -297,10 +303,12 @@ func loopName(slug string) string {
 }
 
 // mission is the bot's instructions, then a line naming page, then a
-// sentence per routine, then the skills it was built to use, said to be
-// missing so the loop isn't told it has them (#1332), then the connectors
-// it names.
-func mission(read bot, page string) string {
+// sentence per routine, then the skills it was built to use that aren't
+// installed, said to be missing so the loop isn't told it has them
+// (#1332), then the connectors it names. An installed skill isn't named:
+// the loop finds it in .claude/skills/, and one the operator unticks
+// leaves no line claiming it (#1364).
+func mission(read bot, page string, hints []SkillHint) string {
 	parts := []string{plain(read.Instructions), "Imported from " + page + "."}
 	var routines []string
 	for _, routine := range read.Routines {
@@ -323,7 +331,10 @@ func mission(read bot, page string) string {
 		parts = append(parts, "Routines:\n"+strings.Join(routines, "\n"))
 	}
 	var skills []string
-	for _, hint := range skillHints(read.Skills) {
+	for _, hint := range hints {
+		if hint.Installed {
+			continue
+		}
 		line := "- " + hint.Name
 		if hint.Description != "" {
 			line += ": " + hint.Description
@@ -337,18 +348,6 @@ func mission(read bot, page string) string {
 		parts = append(parts, "Connectors: "+connectors+".")
 	}
 	return strings.Join(parts, "\n\n")
-}
-
-// skillHints are the skills, each with a name, in the bot's order, its
-// name and description each on one line.
-func skillHints(skills []skill) []SkillHint {
-	hints := []SkillHint{}
-	for _, item := range skills {
-		if name := singleLine(item.Name); name != "" {
-			hints = append(hints, SkillHint{Name: name, Description: singleLine(item.Description), Reason: notPublished})
-		}
-	}
-	return hints
 }
 
 // singleLine is text made plain, its runs of white space, newlines among

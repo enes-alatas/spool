@@ -54,7 +54,7 @@ func TestABotBecomesADraft(t *testing.T) {
 		Mission: wantMission,
 		Runtime: "cloud",
 		Egress:  []EgressHint{{"github.com", "GitHub"}, {"api.github.com", "GitHub"}, {"slack.com", "Slack"}},
-		Skills:  []SkillHint{{Name: "Changelog style", Description: "Keep a Changelog, by area.", Reason: "prompts.chat publishes no files for it"}},
+		Skills:  []SkillHint{{Name: "Changelog style", Description: "Keep a Changelog, by area.", Reason: "prompts.chat publishes no files for it", Files: []SkillFile{}}},
 		Source:  "https://prompts.chat/bots/cfixture0001_release-notes-scribe",
 	}
 	if !reflect.DeepEqual(draft, want) {
@@ -283,7 +283,7 @@ func TestHiddenCharactersNeverReachTheMission(t *testing.T) {
 // refused with a reason, and one at the bound is imported.
 func TestABotTooLongToBeAMissionIsRefused(t *testing.T) {
 	const page = "https://prompts.chat/bots/x_long"
-	frame := len(mission(bot{Instructions: "x"}, page)) - 1
+	frame := len(mission(bot{Instructions: "x"}, page, nil)) - 1
 	for _, test := range []struct {
 		length  int
 		refused bool
