@@ -19,6 +19,9 @@
 #   4. The body's first line, under the form's first heading, is not a
 #      reference: not "Part of", "ADR-", "Split out of", "Web half of",
 #      a bare #n, or their next phrasings.
+#   5. With `--scenarios` (a new feature filed from the day the rule
+#      began, #1377): the body has an "Acceptance scenarios" heading with
+#      a line under it, not the form's "_No response_".
 #
 # A title opening with a Conventional `type(scope):`, lowercase as the set
 # is (`Fix:` opens a sentence), is a team-only issue (CI, tests, docs, repo
@@ -32,17 +35,22 @@
 # A check of words, not meaning: whether the title says what changes for
 # the operator stays with the product owner's sweep.
 #
-# Usage: issue-rewrite.sh [--one-deliverable] <title> < body
+# Usage: issue-rewrite.sh [--one-deliverable] [--scenarios] <title> < body
 set -uo pipefail
 export LC_ALL=C.UTF-8
 
 one_deliverable=false
-if [ "${1:-}" = --one-deliverable ]; then
-	one_deliverable=true
+scenarios=false
+while [ $# -gt 1 ]; do
+	case $1 in
+	--one-deliverable) one_deliverable=true ;;
+	--scenarios) scenarios=true ;;
+	*) break ;;
+	esac
 	shift
-fi
+done
 [ $# -eq 1 ] && [ -n "$1" ] || {
-	echo "usage: issue-rewrite.sh [--one-deliverable] <title> < body" >&2
+	echo "usage: issue-rewrite.sh [--one-deliverable] [--scenarios] <title> < body" >&2
 	exit 2
 }
 title=$1
@@ -97,6 +105,18 @@ first=$(printf '%s\n' "$body" | awk '
 starts='part of|adr[- ]?[0-9]|split (out )?(of|from)|(web|hub|go|ui|backend|frontend|server) half of|slice [0-9]+ of|follow[- ]?up (to|of|on|from)|(parent|epic)( issue)?:|#[0-9]'
 if printf '%s\n' "$first" | grep -qiE "^($starts)"; then
 	broken+=("Body: opens with a reference. Its first line says what the operator sees today; \"Part of #n\" and the like go further down.")
+fi
+
+# The lines under an "Acceptance scenarios" heading, up to the next one.
+if $scenarios; then
+	listed=$(printf '%s\n' "$body" | awk '
+		/^#+[ \t]/ { inside = ($0 ~ /^#+[ \t]+Acceptance scenarios[ \t]*$/); next }
+		inside && NF && $0 !~ /^[ \t]*_No response_[ \t]*$/ { n++ }
+		END { print n + 0 }
+	')
+	if [ "$listed" -eq 0 ]; then
+		broken+=("Body: a new feature lists no acceptance scenarios. Under an \"Acceptance scenarios\" heading, one per line: WHEN <situation> THEN <what is seen>, and how it is checked.")
+	fi
 fi
 
 [ ${#broken[@]} -gt 0 ] || exit 0

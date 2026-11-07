@@ -28,6 +28,7 @@ num=${NUM:?}
 summary=${GITHUB_STEP_SUMMARY:-/dev/null}
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
+scenarios_from=2026-11-07T00:00:00Z
 
 gh api "repos/$repo/issues/$num" > "$work/issue.json"
 jq -r '.body // ""' "$work/issue.json" > "$work/body.md"
@@ -42,6 +43,13 @@ fi
 
 args=()
 labelled one-deliverable && args+=(--one-deliverable)
+# A new feature lists its acceptance scenarios (#1377), from the day the
+# rule began: one filed before gets them when it is assigned, so an edit
+# to it is not flagged.
+created=$(jq -r '.created_at // ""' "$work/issue.json")
+if labelled "new feature" && [[ ! $created < $scenarios_from ]]; then
+	args+=(--scenarios)
+fi
 status=0
 bash "$here/issue-rewrite.sh" "${args[@]}" "$title" < "$work/body.md" > "$work/broken" || status=$?
 

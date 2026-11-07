@@ -105,6 +105,18 @@ check 0 "" "a sentence that mentions part of something" "The room shows a missed
 check 0 "" "an empty body" "The room shows a missed wake" ""
 check 2 "" "no title" "" "" ""
 
+# Rule 5, acceptance scenarios (#1377), only with --scenarios.
+feat() { printf '### Problem statement\n\nA loop that misses a wake is shown as fine.\n\n### Proposed shape\n\nThe row says so.\n\n%s### Out of scope\n\nAlerts.\n' "$1"; }
+scen=$(feat $'### Acceptance scenarios\n\nWHEN a loop misses a wake THEN its row says missed (itest: TestMissedWake)\n\n')
+check 0 "" "scenarios listed" "The room shows a missed wake" "$scen" --scenarios
+check 1 "Body" "no scenarios heading" "The room shows a missed wake" "$(feat "")" --scenarios
+check 1 "Body" "the form's empty answer" "The room shows a missed wake" \
+	"$(feat $'### Acceptance scenarios\n\n_No response_\n\n')" --scenarios
+check 1 "Body" "a heading with nothing under it before the next" "The room shows a missed wake" \
+	"$(feat $'### Acceptance scenarios\n\n')" --scenarios
+check 0 "" "without --scenarios no heading is needed" "The room shows a missed wake" "$(feat "")"
+check 1 "Title" "--scenarios leaves the other rules" "The room shows a missed wake, and its grace" "$scen" --scenarios
+
 stub=$(mktemp -d)
 trap 'rm -rf "$stub"' EXIT
 cat > "$stub/gh" <<'STUB'
@@ -163,6 +175,20 @@ step "a community report is exempt" "$(issue "$bad" "Part of #1." community tria
 step "one-deliverable clears a joined title" \
 	"$(issue "The room shows a missed wake, and its grace" "$clean" chore one-deliverable needs-rewrite)" 0 "$remove"
 step "a null body" '{"title":"The room shows a missed wake","body":null,"labels":[]}' 0 ""
+
+issue_at() { # created title body labels...
+	local c=$1 t=$2 b=$3
+	shift 3
+	jq -nc --arg c "$c" --arg t "$t" --arg b "$b" '{created_at: $c, title: $t, body: $b, labels: ($ARGS.positional | map({name: .}))}' --args "$@"
+}
+step "a new feature filed with no scenarios is flagged" \
+	"$(issue_at 2026-11-07T09:00:00Z "$good" "$(feat "")" "new feature")" 0 "$add"
+step "a new feature with scenarios passes" \
+	"$(issue_at 2026-11-07T09:00:00Z "$good" "$scen" "new feature")" 0 ""
+step "a feature filed before the rule is not flagged" \
+	"$(issue_at 2026-11-06T23:59:59Z "$good" "$(feat "")" "new feature")" 0 ""
+step "an improvement needs none" \
+	"$(issue_at 2026-11-07T09:00:00Z "$good" "$(feat "")" improvement)" 0 ""
 
 [ "$fails" -eq 0 ] || { echo "$fails case(s) failed"; exit 1; }
 echo "all cases pass"
