@@ -24,5 +24,7 @@ web/dist/*
 *.db
 *.db-wal
 *.db-shm
-# scripts/langfuse-setup.sh writes the Langfuse profile's secrets here
+# scripts/langfuse-setup.sh writes the Langfuse profile's secrets here,
+# and the key pair the hub reads
 docker/langfuse/langfuse.env
+docker/langfuse/hub.env
