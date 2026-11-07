@@ -140,10 +140,11 @@ func TestSetupScriptConnectsTheSessionWithNoSecret(t *testing.T) {
 	if err := json.Unmarshal(raw, &settings); err != nil {
 		t.Fatalf("~/.claude/settings.json: %v: %s", err, raw)
 	}
-	start, stop := settings.Hooks[HookSessionStart], settings.Hooks[HookStop]
-	if len(start) != 1 || start[0].Matcher != "startup|compact|clear" || len(stop) != 1 ||
-		!strings.Contains(start[0].Hooks[0].Command, hookFile+`" SessionStart`) || !strings.Contains(stop[0].Hooks[0].Command, hookFile+`" Stop`) {
-		t.Errorf("the hooks are %+v, want SessionStart on startup, compact and clear, and Stop, each running the hook script", settings.Hooks)
+	start, stop, failure := settings.Hooks[HookSessionStart], settings.Hooks[HookStop], settings.Hooks[HookStopFailure]
+	if len(start) != 1 || start[0].Matcher != "startup|compact|clear" || len(stop) != 1 || len(failure) != 1 ||
+		!strings.Contains(start[0].Hooks[0].Command, hookFile+`" SessionStart`) || !strings.HasSuffix(stop[0].Hooks[0].Command, hookFile+`" Stop`) ||
+		!strings.HasSuffix(failure[0].Hooks[0].Command, hookFile+`" StopFailure`) {
+		t.Errorf("the hooks are %+v, want SessionStart on startup, compact and clear, Stop and StopFailure, each running the hook script", settings.Hooks)
 	}
 	if hook, err := os.ReadFile(filepath.Join(home, hookFile)); err != nil || !strings.Contains(string(hook), "https://hub.example.test/hooks") {
 		t.Errorf("the hook script (%v) doesn't post to the hub's /hooks:\n%s", err, hook)
@@ -235,6 +236,30 @@ func TestHooksPostTheSessionAndEachTurnsNewLines(t *testing.T) {
 	}
 	if posts[2].lines != "{\"n\":3}\n" {
 		t.Errorf("the second Stop posted %q, want only the line after the first post's", posts[2].lines)
+	}
+}
+
+// A turn the API failed runs StopFailure and no Stop (#1280): it posts as
+// Stop does, its input and the turn's new lines, and the next turn's Stop
+// carries only the lines after them.
+func TestHooksPostAFailedTurnAsStopDoes(t *testing.T) {
+	inbox := &hookInbox{}
+	hub := httptest.NewServer(inbox)
+	defer hub.Close()
+	dir := setUpTestVM(t, hub.URL+"/mcp")
+	transcript := filepath.Join(t.TempDir(), "session.jsonl")
+	failureInput := `{"hook_event_name":"StopFailure","transcript_path":"` + transcript + `","error":"rate_limit"}`
+	if err := os.WriteFile(transcript, []byte("{\"n\":1}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	runHook(t, dir, HookStopFailure, failureInput, "session_01synthetic")
+	appendLines(t, transcript, "{\"n\":2}\n")
+	runHook(t, dir, HookStop, `{"hook_event_name":"Stop","transcript_path":"`+transcript+`"}`, "session_01synthetic")
+
+	posts := inbox.taken()
+	if len(posts) != 2 || posts[0].hook != failureInput || posts[0].lines != "{\"n\":1}\n" || posts[1].lines != "{\"n\":2}\n" {
+		t.Fatalf("the hub got %+v, want the failed turn's input and line, then the next turn's line alone", posts)
 	}
 }
 

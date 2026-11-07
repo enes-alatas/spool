@@ -52,7 +52,10 @@ package main
 // send_message answered the call through the VM's spool server
 // (sendFromVM), or for a "!tool <name> {json}" line, whether the user
 // settings' deny rules and PreToolUse hooks let the call go ahead
-// (callTool). Turns of one session run one at a time.
+// (callTool). A message with a "!api-error <error>" line is a turn the API
+// fails: the transcript ends on the CLI's own "API Error: <error>" line,
+// on model <synthetic>, and StopFailure runs in Stop's place, naming the
+// error. Turns of one session run one at a time.
 //
 // A "reclaimed" file in a session's directory makes its next turn a VM
 // Anthropic reclaimed while idle: claude-env is kept, and SessionStart
@@ -417,6 +420,24 @@ func cloudTurn(session, message string, first bool) int {
 	}
 	file.Close()
 	hold(filepath.Join(vm, "turn-held"))
+	if failure, failed := apiErrorAsked(message); failed {
+		// the API failed the turn: the CLI writes its own sentence as a
+		// <synthetic> assistant line and runs StopFailure, not Stop, as a
+		// signed-out 2.1.318 did on 2026-11-07 (#1280, FIDELITY.md)
+		sentence := "API Error: " + failure
+		raw, _ := json.Marshal(map[string]any{"type": "assistant", "uuid": fmt.Sprintf("f%d", turn), "sessionId": "local-" + session,
+			"message": map[string]any{"id": fmt.Sprintf("synthetic_%d", turn), "model": "<synthetic>", "role": "assistant",
+				"content": []map[string]any{{"type": "text", "text": sentence}}, "usage": map[string]any{"input_tokens": 0, "output_tokens": 0}}})
+		if file, err := os.OpenFile(transcript, os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
+			_, _ = file.Write(append(raw, '\n'))
+			file.Close()
+		}
+		runHooks([]string{home, repo}, repo, "StopFailure", "", env, map[string]any{
+			"hook_event_name": "StopFailure", "session_id": "local-" + session, "cwd": repo,
+			"transcript_path": transcript, "error": failure, "last_assistant_message": sentence,
+		}, "")
+		return 0
+	}
 	runHooks([]string{home, repo}, repo, "Stop", "", env, map[string]any{
 		"hook_event_name": "Stop", "session_id": "local-" + session, "cwd": repo,
 		"transcript_path": transcript, "last_assistant_message": reply, "stop_hook_active": false,
@@ -595,6 +616,17 @@ func envAsked(message string) (name string, encoded, asked bool) {
 		}
 	}
 	return "", false, false
+}
+
+// apiErrorAsked is the error a message's "!api-error <error>" line names,
+// such as rate_limit, for a cloud turn the API fails (#1280).
+func apiErrorAsked(message string) (failure string, failed bool) {
+	for _, line := range strings.Split(message, "\n") {
+		if rest, found := strings.CutPrefix(strings.TrimSpace(line), "!api-error "); found {
+			return strings.TrimSpace(rest), true
+		}
+	}
+	return "", false
 }
 
 // shellEnv is the variable name as a shell command in the session sees

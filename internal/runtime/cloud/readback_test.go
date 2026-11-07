@@ -144,3 +144,38 @@ func TestTurnEventsRefuseWhatTheyCantRead(t *testing.T) {
 		}
 	}
 }
+
+// A turn the API failed, as a signed-out CLI 2.1.318 ended one on
+// 2026-11-07 (#1280): no Stop, a StopFailure naming the error, and a
+// transcript whose one assistant line the CLI wrote itself, on model
+// <synthetic> with no usage. It reads back as an errored result with the
+// CLI's sentence, and the synthetic line is no API call: no model, no
+// calls, a cost of zero. With no sentence, the error's name stands in.
+func TestTurnEventsReadAFailedTurnAsAnError(t *testing.T) {
+	const failedTurn = `{"type":"user","uuid":"u1","message":{"role":"user","content":"[wake] tick"}}
+{"type":"assistant","uuid":"a1","message":{"id":"m1","model":"<synthetic>","content":[{"type":"text","text":"Not logged in"}],"usage":{"input_tokens":0,"output_tokens":0}}}
+`
+	events, err := turnEvents(StopPost{
+		Hook:  []byte(`{"hook_event_name":"StopFailure","error":"authentication_failed","last_assistant_message":"Not logged in"}`),
+		Lines: []byte(failedTurn),
+	}, "hub-session-1", Bounds{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if init := events[0].Init; init == nil || init.Model != "" {
+		t.Errorf("init is %+v, want no model: the CLI's own line ran on none", init)
+	}
+	result := events[len(events)-1].Result
+	if result == nil || !result.IsError || result.ResultText != "Not logged in" || result.NumTurns != 0 ||
+		result.TurnCostUSD == nil || *result.TurnCostUSD != 0 {
+		t.Fatalf("result is %+v, want an error with the CLI's sentence, no calls and a cost of zero", result)
+	}
+
+	events, err = turnEvents(StopPost{Hook: []byte(`{"hook_event_name":"StopFailure","error":"server_error"}`)}, "hub-session-1", Bounds{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result := events[len(events)-1].Result; result == nil || !result.IsError || result.ResultText != "the turn ended on an API error: server_error" {
+		t.Fatalf("result is %+v, want an error naming server_error", result)
+	}
+}

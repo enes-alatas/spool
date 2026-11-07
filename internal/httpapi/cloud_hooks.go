@@ -117,7 +117,7 @@ func (server *Server) handleCloudHook(w, handOff http.ResponseWriter, r *http.Re
 	}
 	var tooLarge *http.MaxBytesError
 	switch {
-	case errors.As(err, &tooLarge) && post.event == "Stop":
+	case errors.As(err, &tooLarge) && (post.event == "Stop" || post.event == "StopFailure"):
 		_ = server.CloudHooks.Stop(r.Context(), caller.ID, post.session, post.hook, nil, true)
 		refuse(http.StatusRequestEntityTooLarge, post.event, "the post is over its bound")
 		return
@@ -143,7 +143,8 @@ func (server *Server) handleCloudHook(w, handOff http.ResponseWriter, r *http.Re
 			_, _ = handOff.Write(exports)
 			return
 		}
-	case "Stop":
+	case "Stop", "StopFailure":
+		// StopFailure ends a turn the API failed, in Stop's place (#1280)
 		err = server.CloudHooks.Stop(r.Context(), caller.ID, post.session, post.hook, post.lines, false)
 	case "PreToolUse":
 		if !cloudSessionID.MatchString(post.session) {

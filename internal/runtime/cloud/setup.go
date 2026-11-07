@@ -23,6 +23,9 @@ const SessionHeader = "X-Spool-Session"
 const (
 	HookSessionStart = "SessionStart"
 	HookStop         = "Stop"
+	// HookStopFailure ends a turn the API failed instead of Stop, which
+	// the CLI then doesn't run (#1280): its input names the error.
+	HookStopFailure = "StopFailure"
 )
 
 // hookMatcher is the SessionStart sources the hook posts: a session's
@@ -74,9 +77,9 @@ func deniedTools() []string {
 // request for the hub's host. It writes:
 //   - the hub's cloud listener as the MCP server spool in ~/.claude.json,
 //     sending the session's ID in SessionHeader;
-//   - the hook script, the SessionStart and Stop hooks that run it, the
-//     PreToolUse guard on AddRepoTool, and the deny rules of deniedTools,
-//     in ~/.claude/settings.json.
+//   - the hook script, the SessionStart, Stop and StopFailure hooks that
+//     run it, the PreToolUse guard on AddRepoTool, and the deny rules of
+//     deniedTools, in ~/.claude/settings.json.
 //
 // A file already there is merged into with python3, which the cloud image
 // has, keeping what it holds: a list is joined, not replaced. One that
@@ -107,6 +110,7 @@ func SetupScript(mcpURL string) (string, error) {
 		"hooks": map[string]any{
 			HookSessionStart: []any{map[string]any{"matcher": hookMatcher, "hooks": hookCommand(HookSessionStart)}},
 			HookStop:         []any{map[string]any{"hooks": hookCommand(HookStop)}},
+			HookStopFailure:  []any{map[string]any{"hooks": hookCommand(HookStopFailure)}},
 			HookPreToolUse:   []any{map[string]any{"matcher": AddRepoTool, "hooks": hookCommand(HookPreToolUse)}},
 		},
 		"permissions": map[string]any{"deny": deniedTools()},
@@ -169,11 +173,12 @@ SPOOL_JSON
 // SessionStart posts the hook's input and the session's ID. The answer's
 // first line is the loop's connections as export lines, base64, which it
 // appends to CLAUDE_ENV_FILE; the rest is the hook's output, the hub's
-// prompt as context, which it prints (sessionStartAnswer). Stop posts the
-// hook's input, the session's ID and the transcript's lines after the
-// last ones a post landed, and records how far it got only once the hub
-// took them. curl tries a lost post again; one the hub refused, or that
-// stayed lost, is sent again with the next turn's.
+// prompt as context, which it prints (sessionStartAnswer). Stop, and
+// StopFailure for a turn that ended on an error, posts the hook's input,
+// the session's ID and the transcript's lines after the last ones a post
+// landed, and records how far it got only once the hub took them. curl
+// tries a lost post again; one the hub refused, or that stayed lost, is
+// sent again with the next turn's.
 func hookScript(hooksURL string) string {
 	return `#!/bin/sh
 # Spool's hooks for this loop (ADR-0061): sh, sed, base64 and curl.
@@ -209,7 +214,7 @@ case "$1" in
   fi
   tail -n +2 "$tmp/answer"
   ;;
-` + HookStop + `)
+` + HookStop + `|` + HookStopFailure + `)
   t=$(sed -n 's/.*"transcript_path" *: *"\([^"]*\)".*/\1/p' "$tmp/hook")
   [ -f "$t" ] || t=/dev/null
   sent=$(cat "$t.spool-sent" 2>/dev/null) || sent=0

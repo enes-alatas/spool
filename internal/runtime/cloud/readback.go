@@ -16,10 +16,18 @@ type StopPost struct {
 	Lines []byte
 }
 
-// stopHook is what the hub reads of a Stop hook's input.
+// stopHook is what the hub reads of a Stop or StopFailure hook's input.
+// Error is a StopFailure's: what the API failed with, such as rate_limit
+// or server_error (#1280).
 type stopHook struct {
+	Event                string  `json:"hook_event_name"`
+	Error                string  `json:"error"`
 	LastAssistantMessage *string `json:"last_assistant_message"`
 }
+
+// syntheticModel is the model of an assistant line the CLI wrote itself,
+// such as the sentence a failed turn ends on: no API call made it.
+const syntheticModel = "<synthetic>"
 
 // transcriptLine is what the hub reads of one line of the CLI's
 // transcript. Only user and assistant lines become events.
@@ -44,8 +52,11 @@ type transcriptMessage struct {
 // on, the assistant and tool-result events, and a result. The result's
 // text is the hook's last_assistant_message, and its usage is the turn's
 // API calls summed: the CLI writes one line per content block, each
-// repeating its message's usage, so a message counts once. Its cost is
-// the hub's estimate, each call priced at its own model and usage. A line
+// repeating its message's usage, so a message counts once; a line the CLI
+// wrote itself (syntheticModel) is no call. Its cost is the hub's
+// estimate, each call priced at its own model and usage. A StopFailure
+// post's result is an error, its text the CLI's last sentence or else
+// the error's name, as a contained loop's failed turn is (#1280). A line
 // the hub can't read fails the whole post, as the transcript's format is
 // the CLI's and not a published one (ADR-0059): a changed format must be
 // loud. So does a post over its bounds.
@@ -92,7 +103,7 @@ func turnEvents(post StopPost, hubSession string, bounds Bounds) ([]claude.Event
 			// the wake's own text: the stream-json output echoes no prompt
 			continue
 		}
-		if line.Type == "assistant" {
+		if line.Type == "assistant" && message.Model != syntheticModel {
 			if model == "" {
 				model = message.Model
 			}
@@ -141,6 +152,10 @@ func turnEvents(post StopPost, hubSession string, bounds Bounds) ([]claude.Event
 	if hook.LastAssistantMessage != nil {
 		lastText = *hook.LastAssistantMessage
 	}
+	failed := hook.Event == HookStopFailure
+	if failed && lastText == "" {
+		lastText = "the turn ended on an API error: " + hook.Error
+	}
 	init, err := json.Marshal(map[string]any{
 		"type": "system", "subtype": "init", "session_id": hubSession, "model": model,
 	})
@@ -157,7 +172,7 @@ func turnEvents(post StopPost, hubSession string, bounds Bounds) ([]claude.Event
 	result, err := json.Marshal(map[string]any{
 		"type":           "result",
 		"subtype":        "success",
-		"is_error":       false,
+		"is_error":       failed,
 		"result":         lastText,
 		"session_id":     hubSession,
 		"num_turns":      calls,
