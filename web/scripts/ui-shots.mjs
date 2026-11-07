@@ -371,6 +371,102 @@ await page.screenshot({ path: activityFile, clip: { x: 0, y: top, width: 1180, h
 await page.setViewportSize({ width: 1180, height: 900 })
 taken.push(activityFile)
 
+// The Activity page's figures strip (#1301): the hub's figures route
+// (#1300) served from a fixture, since the fixture hub reads no Langfuse.
+// The overview of every loop's card, one loop's detail, the same figures
+// once Langfuse stopped answering three hours ago, and a hub with no
+// Langfuse.
+const minute = 60 * 1000
+const figuresNow = Date.now()
+// A loop's day, scaled by a seed so each card differs: two failed turns
+// in the first loop's, none in a quieter one's.
+const dayFigures = (seed) => {
+  const n = 12 + ((seed * 7) % 30)
+  const perTurn = Array.from({ length: n }, (_, i) => {
+    const wave = (Math.sin(i * 1.7 + seed) + 1) / 2
+    return {
+      started_at: figuresNow - (n - i) * Math.round((24 * 60) / n) * minute,
+      duration_ms: Math.round(22000 + wave * 140000 + (i % 5) * 9000),
+      cost_usd: Math.round((0.03 + wave * 0.16 + ((i + seed) % 4) * 0.02) * 100) / 100,
+      input_tokens: 800 + Math.round(wave * 2400),
+      output_tokens: 240 + Math.round(wave * 900),
+      cache_read_tokens: 38000 + Math.round(wave * 42000),
+      cache_write_tokens: 1200 + (i % 3) * 800,
+      tool_calls: 2 + (i % 7),
+      failed: seed === 0 && (i === 11 || i === n - 9),
+    }
+  })
+  const sum = (key) => perTurn.reduce((total, t) => total + t[key], 0)
+  const failed = perTurn.filter((t) => t.failed).length
+  return {
+    turns: n,
+    failed_turns: failed,
+    cost_usd: Math.round(sum('cost_usd') * 100) / 100,
+    tokens: {
+      input: sum('input_tokens'),
+      output: sum('output_tokens'),
+      cache_read: sum('cache_read_tokens'),
+      cache_write: sum('cache_write_tokens'),
+    },
+    turn_duration_ms: { p50: 52000 + seed * 9000, p95: 171000, max: 214000 },
+    failures: failed
+      ? [
+          { class: 'rate_limit', count: 1 },
+          { class: 'tool_error', count: 1 },
+        ]
+      : [],
+    tools: [
+      { name: 'Bash', calls: 96 - seed * 20, failures: failed ? 2 : 0, duration_ms_p50: 1400 },
+      { name: 'Read', calls: 61 - seed * 9, failures: 0, duration_ms_p50: 40 },
+      { name: 'mcp__spool__send_message', calls: n, failures: 0, duration_ms_p50: 180 },
+      { name: 'Edit', calls: 27, failures: failed ? 1 : 0, duration_ms_p50: 60 },
+      { name: 'Grep', calls: 19, failures: 0, duration_ms_p50: 90 },
+      { name: 'WebFetch', calls: 6, failures: 0, duration_ms_p50: 2100 },
+      { name: 'Write', calls: 4, failures: 0, duration_ms_p50: 50 },
+      { name: 'mcp__handbook__search', calls: 3, failures: 0, duration_ms_p50: 320 },
+    ].sort((a, b) => b.calls - a.calls),
+    per_turn: perTurn,
+  }
+}
+const fixtureLoops = (await (await page.request.get(base + '/api/loops')).json())
+  .map((l) => ({ name: l.name, cloud: l.runtime === 'cloud' }))
+  .sort((a, b) => a.name.localeCompare(b.name))
+const fresh = (i) => ({ langfuse: 'ok', fetched_at: figuresNow - 2 * minute, figures: dayFigures(i) })
+// The overview: the first loop with its failures, the second's figures
+// three hours old, a cloud loop without any.
+const overview = (loop) => {
+  const i = fixtureLoops.findIndex((l) => l.name === loop)
+  if (fixtureLoops[i]?.cloud) return { langfuse: 'unsupported', fetched_at: 0, figures: null }
+  if (i === 1) return { ...fresh(i), langfuse: 'stale', fetched_at: figuresNow - 180 * minute }
+  return fresh(i)
+}
+const firstLoop = fixtureLoops[0].name
+for (const [name, query, answer] of [
+  ['activity-figures', '', overview],
+  ['activity-figures-loop', `?loop=${firstLoop}`, () => fresh(0)],
+  [
+    'activity-figures-stale',
+    `?loop=${firstLoop}`,
+    () => ({ ...fresh(0), langfuse: 'stale', fetched_at: figuresNow - 180 * minute }),
+  ],
+  ['activity-figures-off', '', () => ({ langfuse: 'off', fetched_at: 0, figures: null })],
+]) {
+  await page.route('**/api/loops/*/figures*', (route) => {
+    const url = new URL(route.request().url())
+    const loop = url.pathname.split('/')[3]
+    const window = url.searchParams.get('window')
+    route.fulfill({ json: { loop, window, refresh_sec: 300, ...answer(loop) } })
+  })
+  await page.goto(base + '/activity' + query, { waitUntil: 'networkidle' })
+  const strip = page.locator('.figures')
+  await strip.waitFor({ timeout: 15000 })
+  const box = await strip.boundingBox()
+  const file = `${outDir}/${name}.png`
+  await page.screenshot({ path: file, clip: { x: 0, y: 0, width: 1180, height: box.y + box.height + 24 } })
+  taken.push(file)
+  await page.unroute('**/api/loops/*/figures*')
+}
+
 // The Fleet page's plan strip (#648) in the states the fixture cannot hold
 // at once: near both limits, a hub no loop has reported the plan's usage
 // to yet, and a hub with three Claude logins, one of them not reported

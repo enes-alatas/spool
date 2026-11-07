@@ -1305,6 +1305,50 @@ async function answer(path: string, init?: RequestInit): Promise<Response> {
   return res
 }
 
+// A loop's figures from Langfuse (#1300, #1301): numbers and names only,
+// over one window, from the hub's cache. langfuse says what there is to
+// show: 'ok' fresh; 'stale' the last figures, as of fetched_at, while
+// Langfuse doesn't answer; 'pending' traces are on and nothing is fetched
+// yet; 'off' the hub has no Langfuse read address or key; 'unsupported' a
+// cloud loop, which exports nothing. figures is null for the last three.
+// Times are Unix ms; fetched_at is 0 before any fetch.
+export type FiguresWindow = '1h' | '24h' | '7d' | '30d'
+export type FiguresLangfuse = 'ok' | 'stale' | 'pending' | 'off' | 'unsupported'
+export interface LoopFigures {
+  loop: string
+  window: FiguresWindow
+  langfuse: FiguresLangfuse
+  fetched_at: number
+  refresh_sec: number
+  figures: Figures | null
+}
+export interface Figures {
+  turns: number
+  failed_turns: number
+  // Langfuse's price for the window's generations, which can differ from the
+  // turns' cost_usd, the CLI's count; the strip labels it as Langfuse's.
+  cost_usd: number
+  tokens: { input: number; output: number; cache_read: number; cache_write: number }
+  turn_duration_ms: { p50: number; p95: number; max: number }
+  // by Langfuse's error class
+  failures: { class: string; count: number }[]
+  // by calls, most first
+  tools: { name: string; calls: number; failures: number; duration_ms_p50: number }[]
+  // one row per trace in the window, oldest first, the newest 200 at most
+  per_turn: FiguresTurn[]
+}
+export interface FiguresTurn {
+  started_at: number
+  duration_ms: number
+  cost_usd: number
+  input_tokens: number
+  output_tokens: number
+  cache_read_tokens: number
+  cache_write_tokens: number
+  tool_calls: number
+  failed: boolean
+}
+
 // One window of a loop's timeline, live or historical. Exported because the
 // page compares a returned page against it to know it has reached the loop's
 // first event: a short page means there was nothing more to give.
@@ -1314,6 +1358,8 @@ export const api = {
   version: () => req<VersionInfo>('/api/version'),
   loops: () => req<LoopView[]>('/api/loops'),
   loop: (name: string) => req<LoopView>(`/api/loops/${name}`),
+  figures: (name: string, window: FiguresWindow) =>
+    req<LoopFigures>(`/api/loops/${name}/figures?window=${window}`),
   createLoop: (body: CreateLoopReq) =>
     req<LoopView>('/api/loops', { method: 'POST', body: JSON.stringify(body) }),
   patchLoop: (name: string, body: Partial<CreateLoopReq>) =>

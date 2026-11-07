@@ -3554,6 +3554,243 @@ button.panel-link {
 .activity-filter .panel-select {
   width: auto;
 }
+/* The figures strip (#1301): one loop's figures from Langfuse over a
+   window, above the feed. Mono figures as the plan strip has them, data in
+   the text colour at a set weight, red for what failed and amber for
+   figures Langfuse couldn't refresh (ADR-0027). */
+.figures {
+  margin: 4px 0 18px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--hairline);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.figures-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.figures-head .panel-select {
+  width: auto;
+}
+.figures-title,
+.figures-label {
+  font-size: 0.65625rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.figures-windows {
+  display: inline-flex;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.figures-window {
+  padding: 3px 10px;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  cursor: pointer;
+}
+.figures-window:hover {
+  color: var(--text);
+}
+.figures-window.on {
+  background: var(--surface);
+  color: var(--text);
+}
+.figures-window:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: -2px;
+}
+.figures-head .figures-age {
+  margin-left: auto;
+}
+.figures-age {
+  font-size: 0.6875rem;
+}
+.figures-age.stale {
+  color: var(--active);
+}
+.figures-empty {
+  margin-top: 12px;
+  font-family: var(--sans);
+  font-size: 0.8125rem;
+}
+.figures-empty a {
+  color: var(--text);
+  text-decoration: underline;
+  text-decoration-color: var(--text-muted);
+  text-underline-offset: 2px;
+}
+.figures-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 12px 24px;
+  margin: 16px 0;
+}
+.figures-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.figures-value {
+  font-size: 1.25rem;
+  color: var(--text);
+}
+.figures-sub {
+  font-size: 0.6875rem;
+}
+.figures-failed {
+  color: var(--danger);
+}
+/* The overview: a card a loop, which opens its detail. */
+.figures-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+.figures-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--canvas);
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  text-align: left;
+  cursor: pointer;
+}
+.figures-card:hover {
+  border-color: var(--text-muted);
+  background: var(--surface);
+}
+.figures-card:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+.figures-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.figures-card-name {
+  color: var(--text);
+  font-size: 0.8125rem;
+}
+.figures-card-line {
+  font-family: var(--sans);
+  font-size: 0.8125rem;
+}
+.figures-card .figures-turn-bars {
+  height: 2rem;
+  margin-top: 6px;
+}
+.figures-back {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+}
+/* Each turn's spend: a bar per turn, the whole column its hover target. */
+.figures-turns {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+.figures-turn-bars {
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+  height: 3rem;
+  border-bottom: 1px solid var(--hairline);
+}
+.figures-turn {
+  flex: 1 1 0;
+  min-width: 1px;
+  display: flex;
+  align-items: flex-end;
+}
+.figures-turn > span {
+  width: 100%;
+  border-radius: 2px 2px 0 0;
+  background: var(--fill);
+  opacity: 0.45;
+}
+.figures-turn.at > span {
+  opacity: 1;
+}
+.figures-turn.failed > span {
+  background: var(--danger);
+  opacity: 1;
+}
+.figures-turn-line {
+  font-size: 0.6875rem;
+}
+.figures-lists {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 12px 32px;
+}
+@media (max-width: 640px) {
+  .figures-lists {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.figures-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.figures-tool {
+  display: grid;
+  /* the calls and the failed in columns of their own, so every bar's
+     track ends at the same edge */
+  grid-template-columns: minmax(0, 13rem) minmax(3rem, 1fr) 4ch 9ch;
+  align-items: center;
+  gap: 10px;
+}
+.figures-tool-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+.figures-tool.other .figures-tool-name {
+  color: var(--text-muted);
+}
+.figures-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--hairline);
+  overflow: hidden;
+}
+.figures-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--fill);
+  opacity: 0.55;
+}
+.figures-num {
+  text-align: right;
+  white-space: nowrap;
+}
+.figures-failure {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
 .feed-item {
   /* contains the hidden status label, which is pinned to its row */
   position: relative;

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api'
 import { channelLabel, whereSaid } from '../channels'
@@ -12,6 +12,8 @@ import { PollBallot } from '../components/Poll'
 import { ReactionList } from '../components/Reactions'
 import { UndeliveredMark } from '../components/UndeliveredMark'
 import { DroppedMark } from '../components/DroppedMark'
+import { FiguresStrip } from '../components/FiguresStrip'
+import { figuresWindow } from '../figures'
 
 // The newest messages and changes the feed asks for.
 const FEED = 100
@@ -22,6 +24,22 @@ const FEED = 100
 // and nothing else: what a loop hears is the hub's to decide (#549).
 export default function Activity() {
   const [channel, setChannel] = useState('')
+  // The figures' loop and window (#1301) live in the URL, so a link can
+  // open the page on one loop's week. With no loop, every loop's card.
+  const [params, setParams] = useSearchParams()
+  const { data: loops } = useQuery({ queryKey: ['loops'], queryFn: api.loops })
+  const loopNames = (loops ?? []).map((l) => l.name).sort()
+  const figuresLoop = loopNames.find((n) => n === params.get('loop')) ?? ''
+  const pick = (key: string, value: string, replace: boolean) =>
+    setParams(
+      (p) => {
+        const next = new URLSearchParams(p)
+        if (value) next.set(key, value)
+        else next.delete(key)
+        return next
+      },
+      { replace },
+    )
   const channels = useQuery({ queryKey: ['channels'], queryFn: api.channels, retry: false })
   // Under the activity key, so the stream's refetch of the feed covers a
   // filtered one too.
@@ -45,6 +63,15 @@ export default function Activity() {
   return (
     <div className="page">
       <h1>Activity</h1>
+      {loopNames.length > 0 && (
+        <FiguresStrip
+          loops={loopNames}
+          loop={figuresLoop}
+          window={figuresWindow(params.get('window'))}
+          onLoop={(name) => pick('loop', name, false)}
+          onWindow={(w) => pick('window', w, true)}
+        />
+      )}
       {channels.data && (
         <label className="activity-filter">
           <span>channel</span>
