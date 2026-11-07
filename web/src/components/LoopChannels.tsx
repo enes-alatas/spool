@@ -347,7 +347,10 @@ function ForgetButton({
         : `@${loop.name} stops reading and posting there, and #${room.channel} has no ${one} until another is bound.`
     // With no fleet channel room left, the next room to write binds to the
     // fleet channel by itself (roomChannel in either surface's inbound),
-    // this one included.
+    // this one included, and on Telegram so does the next group a linked
+    // account adds the bot to (ADR-0038, #1320). Slack's confirm says so;
+    // Telegram's stops at what Forget does, by the operator's call (#1356),
+    // and the Add to a group steps say it before the add.
     const fleetRoomStays = rooms.some(
       (other) => other.channel === FLEET_CHANNEL && other.room_id !== room.room_id,
     )
@@ -358,8 +361,8 @@ function ForgetButton({
           : "The next Slack channel an allowed sender writes in, this one included, becomes the fleet channel's room by itself."
         : fleetRoomStays
           ? 'If the group messages the bot again, it comes back unbound.'
-          : "The next group to message the bot, this one included, becomes the fleet channel's room by itself."
-    if (confirm(`Forget ${name}? ${what} ${after}`)) onForget()
+          : ''
+    if (confirm(`Forget ${name}? ${what}${after ? ` ${after}` : ''}`)) onForget()
   }
   if (!manage) return null
   return (
@@ -376,10 +379,12 @@ function roomSurface(room: Room): RoomSurface {
 }
 
 // Adding a loop's bot to a Telegram group, step by step (#1319): add the
-// bot, then send /spool_status there from a linked account, since the hub
-// learns of a group only from a message an allowed sender writes in it
-// (ADR-0051). The steps wait on the group live. The first group carries the
-// fleet channel by itself; a later one is bound here, from a pick-list.
+// bot, then send /spool_status there from a linked account. The hub learns
+// of a group when a linked account adds the bot, or from a linked
+// account's message the bot sees there (ADR-0051, #1320). The steps wait on
+// the group live. The first group carries the fleet channel by itself, with
+// no message sent, so while the loop has none the steps say so before the
+// add (#1356); a later one is bound here, from a pick-list.
 function GroupSteps({ loop, rooms, channels }: { loop: LoopView; rooms: Room[]; channels: string[] }) {
   // The groups known when the steps opened: the one that arrives is the
   // first not among them.
@@ -398,9 +403,16 @@ function GroupSteps({ loop, rooms, channels }: { loop: LoopView; rooms: Room[]; 
   // always gets one that names it. The hub reads either.
   const command = loop.tg_bot_username ? `/spool_status@${loop.tg_bot_username}` : '/spool_status'
   const steps = [
-    <>
-      In Telegram, add <strong>{bot}</strong> to the group.
-    </>,
+    needsChannel ? (
+      <>
+        In Telegram, add <strong>{bot}</strong> to the group.
+      </>
+    ) : (
+      <>
+        In Telegram, add <strong>{bot}</strong> to your fleet's group first. The first group you add it to
+        becomes the fleet channel.
+      </>
+    ),
     <>
       Send <Copyable text={command} /> there, from an account linked to Spool.
     </>,

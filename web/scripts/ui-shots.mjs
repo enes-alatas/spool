@@ -288,6 +288,22 @@ for (const [name, query] of [
   taken.push(file)
 }
 await page.unroute('**/api/connections')
+
+// A loop's Add to a group steps while it has no fleet group (#1356): the
+// first step says, before the add, that the first group a linked account
+// adds the bot to becomes the fleet channel's. The gardener's groups are
+// taken away for it.
+await page.setViewportSize({ width: 1180, height: 900 })
+await page.route('**/api/loops/gardener/rooms', (route) => route.fulfill({ json: [] }))
+await page.goto(base + '/loops/gardener', { waitUntil: 'networkidle' })
+await page.getByRole('button', { name: 'Add to a group' }).click()
+const groupDialog = page.locator('.group-dialog')
+await groupDialog.locator('.link-steps').waitFor({ timeout: 15000 })
+const groupFirstFile = `${outDir}/group-steps-first.png`
+await groupDialog.screenshot({ path: groupFirstFile })
+taken.push(groupFirstFile)
+await groupDialog.locator('form[method=dialog] button').click()
+await page.unroute('**/api/loops/gardener/rooms')
 await page.setViewportSize({ width: 1180, height: 1900 })
 
 // Settings' Users and access section (#691, #732), as the owner admin sees
