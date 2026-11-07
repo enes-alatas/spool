@@ -381,6 +381,11 @@ type Langfuse struct {
 	// stops using, so it opens the project until the operator deletes it
 	// there, as a rotated connection value does (ADR-0043). Never served.
 	Retired []string `json:"retired,omitempty"`
+	// File is the hub's Langfuse file these settings were read
+	// from at the hub's start, "" for settings stored through the API
+	// (#1388). While it is set the file is in force, and the API refuses
+	// to change them.
+	File string `json:"file,omitempty"`
 }
 
 // EgressHosts is the hosts every docker loop may reach on top of the

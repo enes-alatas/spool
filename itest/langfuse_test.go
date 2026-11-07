@@ -5,6 +5,9 @@ package itest
 import (
 	"encoding/base64"
 	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -210,5 +213,111 @@ func dockerSessionExportsToTheRelay(t *testing.T) {
 	})
 	if !strings.Contains(quiet.ResultText, "CLAUDE_CODE_ENABLE_TELEMETRY=0") || strings.Contains(quiet.ResultText, "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") {
 		t.Errorf("with the upstream cleared, a new session still exports:\n%s", quiet.ResultText)
+	}
+}
+
+// The hub's Langfuse file turns traces on at the hub's start with
+// no settings step: a bare loop's session exports to the profile's UI
+// port with the file's key pair, and the API refuses to change what the
+// file set. A file missing a key stops the hub, naming the file and the
+// variable but no value, and with the file gone a restart turns traces
+// off (#1388).
+func TestTheBundledLangfusesFileTurnsTracesOn(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+	envFile := filepath.Join(t.TempDir(), "hub.env")
+	public, secret, _ := strings.Cut(syntheticIngestKey, ":")
+	keys := "# Written by scripts/langfuse-setup.sh: what the hub reads at start\n" +
+		"LANGFUSE_PUBLIC_KEY=" + public + "\nLANGFUSE_SECRET_KEY=" + secret + "\n"
+	if err := os.WriteFile(envFile, []byte(keys), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	hub := startServerArgs(t, dataDir, "--runtime", "bare", "--langfuse-env", envFile)
+	var view struct {
+		langfuseSettings
+		File string `json:"file"`
+	}
+	hub.mustJSON("GET", "/api/settings/langfuse", nil, &view)
+	want := langfuseSettings{RelayUpstream: "http://langfuse-web", ReadAddress: "http://127.0.0.1:3000",
+		IngestKeySet: true, ReadKeySet: true, Exporting: true, Default: "http://langfuse-web"}
+	if view.langfuseSettings != want || view.File != envFile {
+		t.Fatalf("settings from the file = %+v, want %+v from %s", view, want, envFile)
+	}
+	resp, body := hub.do("PUT", "/api/settings/langfuse", map[string]any{"relay_upstream": ""})
+	if resp.StatusCode != http.StatusConflict || !strings.Contains(string(body), envFile) {
+		t.Fatalf("PUT over the file's settings = %d %s, want 409 naming the file", resp.StatusCode, body)
+	}
+
+	workspace := workspaceWithScript(t, traceEnvProbe+"\n")
+	hub.createLoop("filed", map[string]any{"workspace_path": workspace})
+	probed := hub.waitTurn("filed", firstTurnWait, func(tn turn) bool { return strings.HasPrefix(tn.ResultText, "sh: ") })
+	for _, wanted := range []string{
+		"CLAUDE_CODE_ENABLE_TELEMETRY=1",
+		"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:3000/api/public/otel/v1/traces",
+		"OTEL_EXPORTER_OTLP_TRACES_HEADERS=Authorization=",
+	} {
+		if !strings.Contains(probed.ResultText, wanted) {
+			t.Errorf("the session lacks %s:\n%s", wanted, probed.ResultText)
+		}
+	}
+	authorization := base64.StdEncoding.EncodeToString([]byte(syntheticIngestKey))
+	for _, unwanted := range []string{secret, authorization[:16]} {
+		if strings.Contains(probed.ResultText, unwanted) || strings.Contains(hub.log(), unwanted) {
+			t.Errorf("the turn or the log shows the file's key (%.8s…)", unwanted)
+		}
+	}
+	hub.stop()
+
+	// a file the hub's user can't read, as one the setup script wrote as
+	// another user, warns and leaves the stored settings
+	if os.Geteuid() != 0 {
+		if err := os.Chmod(envFile, 0); err != nil {
+			t.Fatal(err)
+		}
+		hub = startServerArgs(t, dataDir, "--runtime", "bare", "--langfuse-env", envFile)
+		hub.mustJSON("GET", "/api/settings/langfuse", nil, &view)
+		if !view.Exporting || view.File != envFile || !strings.Contains(hub.log(), "Langfuse file is not read") {
+			t.Fatalf("over an unreadable file = %+v, want the stored settings and a warning", view)
+		}
+		hub.stop()
+		if err := os.Chmod(envFile, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// a file missing a key stops the hub, and says which, with no value
+	if err := os.WriteFile(envFile, []byte("LANGFUSE_PUBLIC_KEY="+public+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(filepath.Join(repoRoot(t), "bin", "spool"),
+		"--runtime", "bare", "--data-dir", dataDir, "--claude-bin", filepath.Join(repoRoot(t), "bin", "fakeclaude"),
+		"--listen", "127.0.0.1:0", "--mcp-listen", "127.0.0.1:0", "--langfuse-env", envFile)
+	cmd.Env = append(os.Environ(), "HOME="+t.TempDir())
+	out, err := cmd.CombinedOutput()
+	if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 1 {
+		t.Fatalf("a hub with a bad Langfuse file did not exit 1: err=%v, output:\n%s", err, out)
+	}
+	for _, wanted := range []string{envFile, "LANGFUSE_SECRET_KEY is missing"} {
+		if !strings.Contains(string(out), wanted) {
+			t.Errorf("the refusal never mentions %q:\n%s", wanted, out)
+		}
+	}
+	if strings.Contains(string(out), public) {
+		t.Errorf("the refusal shows a value from the file:\n%s", out)
+	}
+
+	// with the file gone, the settings it set are cleared: traces off
+	if err := os.Remove(envFile); err != nil {
+		t.Fatal(err)
+	}
+	hub = startServerArgs(t, dataDir, "--runtime", "bare", "--langfuse-env", envFile)
+	hub.mustJSON("GET", "/api/settings/langfuse", nil, &view)
+	if view.Exporting || view.IngestKeySet || view.File != "" {
+		t.Fatalf("with the file gone = %+v, want traces off", view)
+	}
+	// and the log says so, naming the file: traces just stop arriving
+	if log := hub.log(); !strings.Contains(log, "Langfuse file is gone") || !strings.Contains(log, envFile) {
+		t.Fatalf("the hub cleared the file's settings without a log line naming %s:\n%s", envFile, log)
 	}
 }

@@ -239,7 +239,10 @@ Langfuse with the ingest key, stamped with the loop whose network they came
 in on, so the loop holds no Langfuse key and can't write as another loop
 (ADR-0064, #1296). Its settings, two addresses and two key pairs sealed under
 `hub.key`, are `/api/settings/langfuse`, which serves each key as whether
-it is set. A docker loop's session exports to the relay while an upstream
+it is set. With the bundled compose profile, the hub sets them at start
+from the hub's Langfuse file (`hub.env`, the key pair alone), and the API
+can't change them while that file is there (#1388). A docker loop's
+session exports to the relay while an upstream
 and an ingest key are set (#1297). A bare loop's session exports straight
 to the read address, with the ingest key in its environment and its own
 `spool.loop.*` stamp, while the read address is set too, since the relay

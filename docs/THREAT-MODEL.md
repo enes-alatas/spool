@@ -936,6 +936,16 @@ the CLI (ADR-0018).
     is trusted no further than the loop;
   - the relay's bounds don't apply to it.
 
+  A bare loop can also read the hub's Langfuse file, `hub.env`, which the
+  hub reads at start (#1388). That file holds the key pair alone, which
+  the bare loop already reaches. The profile's env file, `langfuse.env`,
+  holds the rest: the Langfuse admin's password, and the datastores'
+  passwords. The hub never reads that file, so the operator keeps it
+  from the hub's user. If the hub's user can read it, so can every bare
+  loop. It can then sign in to Langfuse's UI as admin. Docker gives the
+  host an address on an internal network too, so with the datastores'
+  passwords it can likely read, write and delete every stored trace,
+  docker loops' included.
   A bare loop that copied the key keeps it, so turning its export off
   means deleting or rotating the pair in Langfuse too. Its session also
   reads the Claude Code settings of the hub's user, which every bare

@@ -100,6 +100,7 @@ func main() {
 	dataDir := flag.String("data-dir", defaultDataDir(), "directory for spool.db, loop homes and worktrees")
 	claudeBin := flag.String("claude-bin", "claude", "path to the claude binary (bare runtime)")
 	hookBin := flag.String("hook-bin", "", "path to spool-hook, the PreToolUse hook bare loops run (ADR-0042); unset: spool-hook next to this binary")
+	langfuseEnv := flag.String("langfuse-env", "", "the hub's Langfuse file, which scripts/langfuse-setup.sh writes: read at start, it turns traces on with its keys, and its absence turns traces it set off (ADR-0064, #1388); unset: docker/langfuse/hub.env in the checkout this binary's bin/ is in")
 	githubBin := flag.String("github-bin", "", "path to spool-github, the helper that hands a bare loop's git and gh its github-app token (#1054); unset: spool-github next to this binary")
 	runtimeChoice := flag.String("runtime", "auto", "default runtime for new loops: auto (docker when the daemon is reachable), docker, or bare")
 	allowBare := flag.Bool("allow-bare", false, "let the control room create uncontained bare loops on a hub whose default is docker; implied by --runtime bare (ADR-0017)")
@@ -379,11 +380,29 @@ func main() {
 	// removed: a proxy that outlived the last hub keeps its tmpfs, and a
 	// removal waits for the relay to forget the loop only once the runtime
 	// has been given settings (#1296). A failed hand-over is retried at the
-	// next wake.
-	langfuse, err := loop.LoadLangfuse(context.Background(), db.Settings())
+	// next wake. The hub's Langfuse file is read first, before the
+	// redactor's first load below, which takes its keys (#1388).
+	langfuseFile := langfuseEnvPath(*langfuseEnv)
+	langfuse, cleared, err := loop.ApplyLangfuseFile(context.Background(), db.Settings(), langfuseFile)
+	if errors.Is(err, loop.ErrLangfuseFileUnreadable) {
+		// the stored settings stay in force, as they were
+		log.Warn("the hub's Langfuse file is not read; the stored Langfuse settings stay", "err", err)
+		langfuse, err = loop.LoadLangfuse(context.Background(), db.Settings())
+	}
 	if err != nil {
 		log.Error("langfuse settings", "err", err)
 		os.Exit(1)
+	}
+	if cleared != "" {
+		// traces stop arriving, so the log says why: the file moved, a
+		// binary in another checkout, or a mistyped --langfuse-env
+		log.Warn("the hub's Langfuse file is gone; the Langfuse settings it set are cleared, and traces are off",
+			"file", cleared, "langfuse_env", langfuseFile)
+	}
+	if langfuse.File != "" {
+		// the addresses and the file, never a key
+		log.Info("langfuse settings from the hub's Langfuse file", "file", langfuse.File,
+			"relay_upstream", langfuse.RelayUpstream, "read_address", langfuse.ReadAddress)
 	}
 	if err := dockerRuntime.SetRelay(context.Background(), relaySettings(langfuse)); err != nil {
 		log.Warn("the trace relay's settings were not handed to the egress proxy; the next wake retries", "err", err)
@@ -1343,6 +1362,25 @@ func companionBin(flagPath, name string) string {
 	}
 	if info, err := os.Stat(path); err != nil || info.IsDir() {
 		return ""
+	}
+	return path
+}
+
+// langfuseEnvPath is the Langfuse file the hub reads at
+// start: the flag's path, or docker/langfuse/hub.env in the checkout
+// whose bin/ holds this binary, where scripts/langfuse-setup.sh writes it
+// (#1388). Not the working directory: a unit's is the hub user's home.
+func langfuseEnvPath(flagPath string) string {
+	path := flagPath
+	if path == "" {
+		self, err := os.Executable()
+		if err != nil {
+			return ""
+		}
+		path = filepath.Join(filepath.Dir(filepath.Dir(self)), "docker", "langfuse", "hub.env")
+	}
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
 	}
 	return path
 }

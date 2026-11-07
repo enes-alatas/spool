@@ -1,6 +1,6 @@
 # ADR-0064: Loops trace to the operator's own Langfuse, docker loops through the egress proxy
 
-Date: 2026-11-04 · Status: accepted (operator decision of 2026-11-05, in a direct message to Terra, recorded on #1310, accepting the ADR; operator decision of 2026-11-03, in a direct message to Elliot, recorded on #1187: way 2 with every `OTEL_LOG_*` off, and the relay in the egress proxy; operator decision of 2026-11-04, in a direct message to Terra, recorded on #1310: bare loops export straight to Langfuse with the key in their environment) · Amended: 2026-11-05 (item 5: langfuse-web's networks, #1299; accepted by the operator on 2026-11-05, in a direct message to Elliot, recorded on #1315) · Relates to: ADR-0013, ADR-0028, ADR-0043, ADR-0046, ADR-0053, ADR-0059
+Date: 2026-11-04 · Status: accepted (operator decision of 2026-11-05, in a direct message to Terra, recorded on #1310, accepting the ADR; operator decision of 2026-11-03, in a direct message to Elliot, recorded on #1187: way 2 with every `OTEL_LOG_*` off, and the relay in the egress proxy; operator decision of 2026-11-04, in a direct message to Terra, recorded on #1310: bare loops export straight to Langfuse with the key in their environment) · Amended: 2026-11-05 (item 5: langfuse-web's networks, #1299; accepted by the operator on 2026-11-05, in a direct message to Elliot, recorded on #1315); 2026-11-07 (item 3: the hub's Langfuse file, #1388) · Relates to: ADR-0013, ADR-0028, ADR-0043, ADR-0046, ADR-0053, ADR-0059
 
 ## Context
 
@@ -167,6 +167,50 @@ needs such a relay. It is new surface, and this ADR places it.
    - Langfuse doesn't scope a key pair. Either pair can read every trace in
      its project, so the two fields may hold the same pair. Neither
      reaches a docker loop; the ingest key reaches a bare loop.
+
+   **Amendment (2026-11-07, #1388):** with the compose profile, the hub
+   learns the settings from a file the setup script writes, not from the
+   operator. The control room holds no Langfuse settings (operator
+   decision of 2026-11-07, recorded on #1298), so without this the
+   settings API would be the only way to turn traces on.
+   - **The setup script writes two files** (item 5). One is the
+     profile's env file, holding every secret compose reads. The other
+     is the hub's Langfuse file, `docker/langfuse/hub.env`, holding the
+     project's key pair alone. Both are 0600, and the script never
+     overwrites either.
+   - **The hub reads its own file only.** The profile's env file also
+     holds the Langfuse admin's password and the datastores' passwords.
+     Every bare loop runs as the hub's user, so a file the hub could
+     read would give each bare loop those too. The hub's file holds
+     nothing a bare loop doesn't already reach. The operator gives it
+     to the hub's user, and keeps the env file from that user.
+   - **At start the hub reads the hub's Langfuse file.** By default that
+     is `docker/langfuse/hub.env` in the checkout whose `bin/` holds the
+     binary, not the working directory, which a unit sets to the hub
+     user's home. `--langfuse-env` names another path.
+   - **A file that is there sets all four settings:** the upstream
+     `http://langfuse-web`; the read address, which is `LANGFUSE_URL`
+     if the operator added one, or else the UI port
+     `http://127.0.0.1:3000`; and
+     `LANGFUSE_PUBLIC_KEY:LANGFUSE_SECRET_KEY` as both keys. The hub
+     stores them sealed like any other settings, and marks them as the
+     file's. The redactor's first load, after the read, takes the keys.
+   - **The file wins while it is there.** The settings API refuses to
+     change settings the file set, naming the file, since the next start
+     would undo the change. Settings stored through the API, for a
+     Langfuse the operator runs elsewhere, apply only while there is no
+     file.
+   - **A file the hub can't use stops it.** That covers a line that isn't
+     `NAME=VALUE`, a missing key, or a `LANGFUSE_URL` that breaks this
+     item's rule. The refusal names the file and the line or variable,
+     never a value. A file the hub's user may not read only warns, and
+     the stored settings stay: Langfuse is optional, and the fleet runs
+     without it.
+   - **No file is no change,** except that settings an earlier start
+     took from a file are cleared, and the hub logs that it did. That is
+     traces off at each loop's next session start, and it adds an off
+     switch beside item 5's: remove the file and restart the hub. Either
+     way, a pair let go of stays redacted.
 
 4. **Bare loops export straight to Langfuse; cloud loops export nothing.**
    - **A bare loop** runs on the host with no wall and no loop network.
